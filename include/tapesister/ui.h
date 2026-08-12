@@ -2,6 +2,7 @@
 #define TAPESISTER_UI_H
 
 #include <stdint.h>
+#include "tapesister/audition.h"
 #include "tapesister/browser.h"
 #include "tapesister/sample.h"
 
@@ -32,9 +33,15 @@ typedef struct {
     int active_key;
     int selecting;
     int commit_armed;
+    int playback_active;
+    int text_cursor_visible;
     TsFxPage fx_page;
+    TsAuditionSource audition_source;
+    TsAuditionSource playhead_source;
     TsBrowser browser;
     size_t selection_anchor;
+    size_t playhead_frame;
+    size_t playhead_frames;
     char status[160];
 } TsUiState;
 

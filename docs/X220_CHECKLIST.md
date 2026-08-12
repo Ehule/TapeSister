@@ -50,6 +50,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Single-click selects; double-click or Enter opens a directory or loads the selected WAV.
 - [ ] Up/Down, Page Up/Down, Home/End, and Backspace navigation remain visible and bounded.
 - [ ] Save/Export filename entry appends `.tsr`/`.wav` when omitted without duplicating an existing extension.
+- [ ] A blinking caret sits at the end of the visible Save/Export filename only while that field has focus, including for horizontally clipped long names.
 - [ ] A first Save/Export action on an existing destination only arms overwrite; the second performs it.
 - [ ] Cancel and Escape close the browser without loading, saving, exporting, or leaking a click to the instrument.
 - [ ] A malformed WAV reports the real load error and preserves the prior Parent and Current.
@@ -57,9 +58,19 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] The last visited directory remains active when switching among Load, Save, and Export.
 - [ ] Ctrl+Z and Ctrl+Y match the buttons.
 
+## A/B audition and playhead
+
+- [ ] Current is selected by default; Parent and Current buttons plus `Ctrl+B` switch the audition source without changing Current.
+- [ ] Play All, Play Selection, Play Displayed, computer keys, and onscreen keys all use the chosen audition source.
+- [ ] After Crop, Parent selection/displayed audition maps to the matching uncropped Parent frames.
+- [ ] Switching Parent/Current during playback preserves relative progress rather than restarting.
+- [ ] The amber Current or green Parent playhead tracks the sounding source and range smoothly.
+- [ ] Stop All, Space, Escape, and natural playback completion hide the playhead.
+- [ ] Save, Export, edits, Undo, Redo, Reset, and Commit continue to target Current regardless of audition choice.
+
 ## Existing foundation
 
-- [ ] Computer and onscreen keys audition Current at different pitches.
+- [ ] Computer and onscreen keys audition the selected A/B source at different pitches.
 - [ ] Space, Escape, and Stop All stop playback reliably.
 - [ ] A bad WAV path reports an error and preserves Parent and Current.
 - [ ] Save creates readable schema-4 JSON with renderer version, lineage, ordered sample edits, all DSP parameters, explicit bypass states, and crop state.

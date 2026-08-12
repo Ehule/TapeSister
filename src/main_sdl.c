@@ -14,7 +14,11 @@ typedef struct {
     const TsSample *sample;
     double position;
     double step;
+    double pitch;
+    size_t range_start;
     size_t range_end;
+    TsAuditionSource source;
+    TsAuditionRange range;
     int playing;
 } AudioState;
 
@@ -57,32 +61,71 @@ static int note_for_key(SDL_Keycode key)
     return -1;
 }
 
-static void begin_range(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                        size_t first, size_t last, double pitch, int output_rate,
-                        const char *label)
+static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                           const TsInstrument *instrument, TsAuditionRange range,
+                           double pitch, int output_rate)
 {
+    TsAuditionPlan plan;
     if (!device || output_rate <= 0) {
         snprintf(ui->status, sizeof(ui->status), "AUDIO UNAVAILABLE");
         return;
     }
-    if (!audio->sample || !audio->sample->data || first >= last || last > audio->sample->frames)
+    if (!ts_audition_plan(instrument, ui->audition_source, range, &plan)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 range == TS_AUDITION_SELECTION ? "SELECT A RANGE FIRST" :
+                 "NOTHING TO AUDITION");
         return;
-    if (device) SDL_LockAudioDevice(device);
-    audio->position = (double)first;
-    audio->range_end = last;
-    audio->step = ((double)audio->sample->sample_rate / output_rate) * pitch;
+    }
+    SDL_LockAudioDevice(device);
+    audio->sample = plan.sample;
+    audio->position = (double)plan.first;
+    audio->pitch = pitch;
+    audio->range_start = plan.first;
+    audio->range_end = plan.last;
+    audio->source = ui->audition_source;
+    audio->range = range;
+    audio->step = ((double)plan.sample->sample_rate / output_rate) * pitch;
     audio->playing = 1;
-    if (device) SDL_UnlockAudioDevice(device);
-    snprintf(ui->status, sizeof(ui->status), "PLAYING %s", label);
+    SDL_UnlockAudioDevice(device);
+    snprintf(ui->status, sizeof(ui->status), "PLAYING %s %s",
+             ts_audition_source_name(ui->audition_source),
+             ts_audition_range_name(range));
 }
 
 static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                       int note, int output_rate)
+                       const TsInstrument *instrument, int note, int output_rate)
 {
-    if (!audio->sample) return;
-    begin_range(device, audio, ui, 0, audio->sample->frames, pow(2.0, note / 12.0),
-                output_rate, "CURRENT");
+    begin_audition(device, audio, ui, instrument, TS_AUDITION_NOTE,
+                   pow(2.0, note / 12.0), output_rate);
     ui->active_key = note;
+}
+
+static void switch_audition_source(SDL_AudioDeviceID device, AudioState *audio,
+                                   TsUiState *ui, const TsInstrument *instrument,
+                                   TsAuditionSource source, int output_rate)
+{
+    TsAuditionPlan plan;
+    if (source == ui->audition_source) return;
+    if (!ts_audition_plan(instrument, source,
+                          audio->playing ? audio->range : TS_AUDITION_ALL, &plan)) {
+        snprintf(ui->status, sizeof(ui->status), "NOTHING TO AUDITION");
+        return;
+    }
+    if (device) SDL_LockAudioDevice(device);
+    if (audio->playing) {
+        audio->position = ts_audition_map_progress(
+            audio->position, audio->range_start, audio->range_end, plan.first, plan.last);
+        audio->range_start = plan.first;
+        audio->range_end = plan.last;
+        if (output_rate > 0)
+            audio->step = ((double)plan.sample->sample_rate / output_rate) * audio->pitch;
+    }
+    audio->sample = plan.sample;
+    audio->source = source;
+    if (device) SDL_UnlockAudioDevice(device);
+    ui->audition_source = source;
+    snprintf(ui->status, sizeof(ui->status), "AUDITIONING %s%s",
+             ts_audition_source_name(source), audio->playing ? " - PLAYING" : "");
 }
 
 static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
@@ -100,9 +143,12 @@ static void lock_edit(SDL_AudioDeviceID device, AudioState *audio)
     audio->playing = 0;
 }
 
-static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsInstrument *instrument)
+static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                        TsInstrument *instrument)
 {
-    audio->sample = &instrument->current;
+    audio->sample = ui->audition_source == TS_AUDITION_PARENT ?
+                    &instrument->parent : &instrument->current;
+    audio->source = ui->audition_source;
     if (device) SDL_UnlockAudioDevice(device);
 }
 
@@ -113,7 +159,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     int ok;
     lock_edit(device, audio);
     ok = ts_instrument_load_wav(instrument, path, error, sizeof(error));
-    unlock_edit(device, audio, instrument);
+    unlock_edit(device, audio, ui, instrument);
     if (ok) snprintf(ui->status, sizeof(ui->status), "IMPORTED PARENT %.112s", instrument->parent.name);
     else snprintf(ui->status, sizeof(ui->status), "LOAD FAILED: %.135s", error);
     return ok;
@@ -132,7 +178,7 @@ static int generate_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     }
     lock_edit(device, audio);
     ok = ts_instrument_generate(instrument, kind, seed, error, sizeof(error));
-    unlock_edit(device, audio, instrument);
+    unlock_edit(device, audio, ui, instrument);
     if (ok) snprintf(ui->status, sizeof(ui->status), "NEW %s PARENT %08X",
                      ts_generator_name(kind), seed);
     else snprintf(ui->status, sizeof(ui->status), "GENERATE FAILED: %.130s", error);
@@ -147,7 +193,7 @@ static void reseed_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     int ok;
     lock_edit(device, audio);
     ok = ts_instrument_reseed(instrument, error, sizeof(error));
-    unlock_edit(device, audio, instrument);
+    unlock_edit(device, audio, ui, instrument);
     if (!ok) snprintf(ui->status, sizeof(ui->status), "RESEED FAILED: %.132s", error);
     else if (ts_sample_hash(&instrument->parent) == old_parent)
         snprintf(ui->status, sizeof(ui->status), "RESEEDED PROCESSING - PARENT PRESERVED");
@@ -163,7 +209,7 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     int ok;
     lock_edit(device, audio);
     ok = ts_instrument_set_process(instrument, &process, error, sizeof(error));
-    unlock_edit(device, audio, instrument);
+    unlock_edit(device, audio, ui, instrument);
     if (ok && strcmp(label, "BODY") == 0)
         snprintf(ui->status, sizeof(ui->status), "BODY %.2F - PARENT PRESERVED", process.body);
     else if (ok && strcmp(label, "EDGE") == 0)
@@ -181,7 +227,7 @@ static void reset_current(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     int ok;
     lock_edit(device, audio);
     ok = ts_instrument_reset_current(instrument, error, sizeof(error));
-    unlock_edit(device, audio, instrument);
+    unlock_edit(device, audio, ui, instrument);
     if (ok) snprintf(ui->status, sizeof(ui->status), "CURRENT RESET EXACTLY TO PARENT");
     else snprintf(ui->status, sizeof(ui->status), "RESET FAILED: %.137s", error);
 }
@@ -193,7 +239,7 @@ static void commit_current(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     int ok;
     lock_edit(device, audio);
     ok = ts_instrument_commit_current(instrument, error, sizeof(error));
-    unlock_edit(device, audio, instrument);
+    unlock_edit(device, audio, ui, instrument);
     ui->commit_armed = 0;
     if (ok) snprintf(ui->status, sizeof(ui->status), "COMMITTED CURRENT AS GENERATION %u PARENT",
                      instrument->generation);
@@ -207,7 +253,7 @@ static void crop_selection(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     int ok;
     lock_edit(device, audio);
     ok = ts_instrument_crop_selection(instrument, error, sizeof(error));
-    unlock_edit(device, audio, instrument);
+    unlock_edit(device, audio, ui, instrument);
     if (ok) snprintf(ui->status, sizeof(ui->status), "CROPPED CURRENT - PARENT PRESERVED");
     else snprintf(ui->status, sizeof(ui->status), "CROP FAILED: %.135s", error);
 }
@@ -220,7 +266,7 @@ static void apply_sample_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiS
     int selected = instrument->has_selection;
     lock_edit(device, audio);
     ok = ts_instrument_apply_sample_edit(instrument, kind, amount, error, sizeof(error));
-    unlock_edit(device, audio, instrument);
+    unlock_edit(device, audio, ui, instrument);
     if (ok) snprintf(ui->status, sizeof(ui->status), "%s %s - PARENT PRESERVED",
                      ts_sample_edit_name(kind), selected ? "SELECTION" : "ALL");
     else snprintf(ui->status, sizeof(ui->status), "EDIT FAILED: %.137s", error);
@@ -234,7 +280,7 @@ static void history_move(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
     lock_edit(device, audio);
     ok = redo ? ts_instrument_redo(instrument, error, sizeof(error)) :
                 ts_instrument_undo(instrument, error, sizeof(error));
-    unlock_edit(device, audio, instrument);
+    unlock_edit(device, audio, ui, instrument);
     if (ok) snprintf(ui->status, sizeof(ui->status), "%s", redo ? "REDO" : "UNDO");
     else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
 }
@@ -486,6 +532,10 @@ int main(int argc, char **argv)
                     browser_open(&ui, TS_BROWSER_SAVE_RECIPE);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_e) {
                     browser_open(&ui, TS_BROWSER_EXPORT_WAV);
+                } else if ((mod & KMOD_CTRL) && key == SDLK_b) {
+                    switch_audition_source(device, &audio, &ui, &instrument,
+                        ui.audition_source == TS_AUDITION_CURRENT ?
+                        TS_AUDITION_PARENT : TS_AUDITION_CURRENT, obtained.freq);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_z) {
                     history_move(device, &audio, &ui, &instrument, 0);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_y) {
@@ -540,7 +590,8 @@ int main(int argc, char **argv)
                     stop_all(device, &audio, &ui);
                 } else {
                     int note = note_for_key(key);
-                    if (note >= 0 && device) begin_note(device, &audio, &ui, note, obtained.freq);
+                    if (note >= 0 && device)
+                        begin_note(device, &audio, &ui, &instrument, note, obtained.freq);
                 }
             } else if (event.type == SDL_KEYUP && ui.active_key == note_for_key(event.key.keysym.sym)) {
                 ui.active_key = -1;
@@ -680,6 +731,12 @@ int main(int argc, char **argv)
                 } else if (y >= 205 && y < 228 && x >= 330 && x < 402) {
                     ui.commit_armed = 0;
                     reset_current(device, &audio, &ui, &instrument);
+                } else if (y >= 205 && y < 228 && x >= 407 && x < 468) {
+                    switch_audition_source(device, &audio, &ui, &instrument,
+                                           TS_AUDITION_PARENT, obtained.freq);
+                } else if (y >= 205 && y < 228 && x >= 472 && x < 535) {
+                    switch_audition_source(device, &audio, &ui, &instrument,
+                                           TS_AUDITION_CURRENT, obtained.freq);
                 } else if (y >= 205 && y < 228 && x >= 540 && x < 630) {
                     ui.commit_armed = 0;
                     stop_all(device, &audio, &ui);
@@ -767,16 +824,14 @@ int main(int argc, char **argv)
                     }
                     if (changed) apply_process(device, &audio, &ui, &instrument, process, label);
                 } else if (y >= 289 && y < 312 && x >= 10 && x < 80) {
-                    begin_range(device, &audio, &ui, 0, instrument.current.frames, 1.0,
-                                obtained.freq, "ALL");
+                    begin_audition(device, &audio, &ui, &instrument,
+                                   TS_AUDITION_ALL, 1.0, obtained.freq);
                 } else if (y >= 289 && y < 312 && x >= 85 && x < 157) {
-                    if (instrument.has_selection)
-                        begin_range(device, &audio, &ui, instrument.selection_first,
-                                    instrument.selection_last, 1.0, obtained.freq, "SELECTION");
-                    else snprintf(ui.status, sizeof(ui.status), "SELECT A RANGE FIRST");
+                    begin_audition(device, &audio, &ui, &instrument,
+                                   TS_AUDITION_SELECTION, 1.0, obtained.freq);
                 } else if (y >= 289 && y < 312 && x >= 162 && x < 240) {
-                    begin_range(device, &audio, &ui, instrument.view_first, instrument.view_last,
-                                1.0, obtained.freq, "DISPLAYED RANGE");
+                    begin_audition(device, &audio, &ui, &instrument,
+                                   TS_AUDITION_DISPLAYED, 1.0, obtained.freq);
                 } else if (y >= 289 && y < 312 && x >= 245 && x < 297) {
                     crop_selection(device, &audio, &ui, &instrument);
                 } else if (y >= 289 && y < 312 && x >= 302 && x < 376) {
@@ -791,7 +846,8 @@ int main(int argc, char **argv)
                     history_move(device, &audio, &ui, &instrument, 1);
                 } else {
                     int note = ts_ui_key_from_point(x, y);
-                    if (note >= 0 && device) begin_note(device, &audio, &ui, note, obtained.freq);
+                    if (note >= 0 && device)
+                        begin_note(device, &audio, &ui, &instrument, note, obtained.freq);
                 }
             } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
                 ui.browser.dragging_scrollbar = 0;
@@ -804,6 +860,13 @@ int main(int argc, char **argv)
             }
         }
 
+        if (device) SDL_LockAudioDevice(device);
+        ui.playback_active = audio.playing;
+        ui.playhead_source = audio.source;
+        ui.playhead_frame = audio.position > 0.0 ? (size_t)audio.position : 0;
+        ui.playhead_frames = audio.sample ? audio.sample->frames : 0;
+        if (device) SDL_UnlockAudioDevice(device);
+        ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         ts_ui_render(&framebuffer, &ui, &instrument);
         SDL_UpdateTexture(texture, NULL, framebuffer.pixels, TS_UI_WIDTH * (int)sizeof(uint32_t));
         SDL_RenderClear(renderer);

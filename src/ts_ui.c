@@ -137,7 +137,7 @@ static void slider(TsFramebuffer *fb, int x, int y, int w, const char *label, fl
     rect(fb, knob, y + 10, 6, 12, PAL_MOUSE);
 }
 
-static void browser_render(TsFramebuffer *fb, const TsBrowser *browser)
+static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int cursor_visible)
 {
     char shown[96];
     char footer[40];
@@ -188,6 +188,11 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser)
         rect(fb, 58, 294, 518, 24, RGB(8, 8, 8));
         if (length > 78) filename += length - 78;
         text(fb, 64, 303, filename, browser->filename_focus ? PAL_MOUSE : PAL_TEXT, 1);
+        if (browser->filename_focus && cursor_visible) {
+            int cursor_x = 64 + (int)strlen(filename) * 6;
+            if (cursor_x > 572) cursor_x = 572;
+            rect(fb, cursor_x, 301, 2, 11, PAL_MOUSE);
+        }
     } else {
         text(fb, 58, 300, "SELECT AN EXISTING WAV", PAL_EFFECT, 1);
     }
@@ -207,6 +212,7 @@ void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
     ui->active_key = -1;
+    ui->audition_source = TS_AUDITION_CURRENT;
     ts_browser_init(&ui->browser);
     snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR GENERATE A PARENT");
 }
@@ -235,7 +241,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
     if (instrument->parent.frames) {
         char parent[96], info[112];
-        snprintf(parent, sizeof(parent), "PARENT %.34s", instrument->parent.name);
+        snprintf(parent, sizeof(parent), "PARENT G%u %.28s",
+                 instrument->generation, instrument->parent.name);
         snprintf(info, sizeof(info), "CURRENT %u HZ %.2F SEC",
                  sample->sample_rate, (double)sample->frames / sample->sample_rate);
         text(fb, 20, 49, parent, PAL_INSTRUMENT, 1);
@@ -280,16 +287,31 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 211, 135, "DROP WAV HERE", RGB(120, 113, 121), 2);
     }
 
+    if (ui->playback_active && ui->playhead_frames > 0) {
+        int playhead_x = -1;
+        uint32_t playhead_color = ui->playhead_source == TS_AUDITION_PARENT ?
+                                  PAL_INSTRUMENT : PAL_MOUSE;
+        if (ui->playhead_source == TS_AUDITION_PARENT) {
+            size_t frame_index = ui->playhead_frame > ui->playhead_frames ?
+                                 ui->playhead_frames : ui->playhead_frame;
+            playhead_x = TS_WAVE_X + (int)(frame_index * TS_WAVE_W / ui->playhead_frames);
+        } else if (ui->playhead_frame >= view_first && ui->playhead_frame <= view_last) {
+            playhead_x = frame_x(ui->playhead_frame, view_first, view_last);
+        }
+        if (playhead_x >= TS_WAVE_X && playhead_x <= TS_WAVE_X + TS_WAVE_W) {
+            if (playhead_x == TS_WAVE_X + TS_WAVE_W) --playhead_x;
+            rect(fb, playhead_x, TS_WAVE_Y, 2, TS_WAVE_H, playhead_color);
+            rect(fb, playhead_x - 2, TS_WAVE_Y, 6, 3, playhead_color);
+        }
+    }
+
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
     button(fb, 85, 205, 82, "GENERATE", 0);
     button(fb, 172, 205, 70, "RESEED", 0);
     button(fb, 247, 205, 78, "COMMIT", ui->commit_armed);
     button(fb, 330, 205, 72, "RESET", 0);
-    {
-        char generation[32];
-        snprintf(generation, sizeof(generation), "GEN %u", instrument->generation);
-        text(fb, 420, 213, generation, PAL_INSTRUMENT, 1);
-    }
+    button(fb, 407, 205, 61, "PARENT", ui->audition_source == TS_AUDITION_PARENT);
+    button(fb, 472, 205, 63, "CURRENT", ui->audition_source == TS_AUDITION_CURRENT);
     button(fb, 540, 205, 90, "STOP ALL", 0);
 
     slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
@@ -358,7 +380,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
     text(fb, 8, 389, ui->status, PAL_MOUSE, 1);
 
-    if (ui->browser.mode != TS_BROWSER_CLOSED) browser_render(fb, &ui->browser);
+    if (ui->browser.mode != TS_BROWSER_CLOSED)
+        browser_render(fb, &ui->browser, ui->text_cursor_visible);
 }
 
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path)

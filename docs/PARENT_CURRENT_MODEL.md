@@ -14,6 +14,8 @@ generated recipe or imported WAV
 
 Parent changes only when the user explicitly imports, generates, reseeds a generated Parent, or confirms Commit. Body, Edge, Drift, selection, zoom, crop, audition, undo, redo, saving, and export do not replace Parent.
 
+The audition selector does not change this ownership model. Current remains the only edit, Save, and Export target; Parent is an alternate read-only playback source. Selection and displayed-range playback translate Current-relative frames through `crop_first` when Parent is selected. A live A/B switch maps fractional progress from the active source range to the equivalent position in the other source range.
+
 Reverse, Normalize, gain, and fades are stored as deterministic, selection-aware operations between Parent/Crop and the live DSP. Noise, Delay, and Space also render only into Current. Reset is an undoable edit that clears the crop, ordered sample-edit stack, and DSP recipe so Current becomes sample-for-sample identical to Parent.
 
 Waveform selection, zoom, and panning are view/editor state. They never alter Parent audio. Commit prints the heard Current into the next Parent generation, then clears the edit stack, DSP, and history as a deliberate hard boundary.

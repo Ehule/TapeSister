@@ -1,8 +1,8 @@
 # TapeSister
 
-TapeSister is a standalone sample-instrument forge. The current development slice joins its durable Parent/Current sound model to an undoable FT2-informed sample-edit stack, pointer-centered waveform navigation, and the deterministic DSP shelf.
+TapeSister is a standalone sample-instrument forge. The current development slice joins its durable Parent/Current sound model to direct A/B audition, a visible playback head, an undoable FT2-informed sample-edit stack, pointer-centered waveform navigation, and the deterministic DSP shelf.
 
-![TapeSister scrollable file browser](docs/file-browser-preview.png)
+![TapeSister Parent/Current A/B audition and playhead](docs/ab-playhead-preview.png)
 
 ## Parent and Current
 
@@ -16,6 +16,14 @@ Dragging or loading a WAV makes that WAV the Parent. Moving a processing control
 **Generate** advances to a new Tonal, Metallic, Noise, or Pulse generator family and creates a new Parent. **Reseed** keeps the family but creates a different generated Parent. For an imported or committed Parent, Reseed changes only stochastic processing and preserves Parent audio byte-for-byte.
 
 **Reset** returns Current exactly to Parent and is undoable. **Commit** requires a deliberate second click (or second `Ctrl+P`), promotes Current into a new immutable Parent generation, records the previous Parent hash as its immediate ancestor, resets the processing shelf, and starts a fresh edit history.
+
+## A/B audition and playhead
+
+The **Parent** and **Current** buttons choose what every playback trigger auditions without changing the editing target: edits, Save, and Export always operate on Current. `Ctrl+B` toggles the same selector.
+
+Play All and keyboard notes use the complete chosen source. Play Selection and Play Displayed map Current's crop-relative range back to the matching frames in Parent, so comparisons remain meaningful after cropping. Switching Parent/Current during playback preserves fractional progress through the active range instead of restarting it.
+
+A source-colored playhead is visible only while audio is running: green identifies Parent playback and amber identifies Current playback. Stop All, Space, Escape, and natural playback completion hide it.
 
 ## DSP shelf
 
@@ -56,7 +64,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - Export lists directories and WAV files;
 - mouse wheel, draggable scrollbar, Up/Down, Page Up/Down, Home/End, and row clicking navigate long directories;
 - double-click or Enter opens a directory or selected WAV;
-- Save and Export remember the current directory, provide filename entry, and append the proper extension;
+- Save and Export remember the current directory, provide filename entry with a focus-aware blinking caret, and append the proper extension;
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
@@ -91,6 +99,7 @@ Pass a WAV path on the command line, drag a WAV onto the window, or choose it th
 - Stop all: `Space` or `Escape`
 - Load browser: `Ctrl+O`
 - Save browser / Export browser: `Ctrl+S` / `Ctrl+E`
+- Toggle Parent/Current audition: `Ctrl+B`
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`
 - Select all: `Ctrl+A`
 - Reverse / Normalize: `Ctrl+R` / `Ctrl+N`
@@ -104,4 +113,4 @@ Pass a WAV path on the command line, drag a WAV onto the window, or choose it th
 - Browser parent directory: `Backspace` while the file list is focused
 - Browser confirm/cancel: `Enter` / `Escape`
 
-Cut/copy/paste, loop editing, deeper synthesis/filter/shaper stages, destination selection, and full genealogy/propagation remain separate, visually verified slices.
+Cut/copy/paste, loop editing, deeper synthesis/filter/shaper stages, and full genealogy/propagation remain separate, visually verified slices.

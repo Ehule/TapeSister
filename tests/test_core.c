@@ -47,7 +47,7 @@ static int browser_find(const TsBrowser *browser, const char *name)
 int main(void)
 {
     TsSample a, b, loaded, copy, dry, effected, repeated;
-    TsInstrument generated, imported, committed;
+    TsInstrument generated, imported, committed, audition;
     TsUiState ui;
     TsBrowser browser;
     TsFramebuffer fb;
@@ -56,6 +56,7 @@ int main(void)
     ts_sample_init(&a); ts_sample_init(&b); ts_sample_init(&loaded); ts_sample_init(&copy);
     ts_sample_init(&dry); ts_sample_init(&effected); ts_sample_init(&repeated);
     ts_instrument_init(&generated); ts_instrument_init(&imported); ts_instrument_init(&committed);
+    ts_instrument_init(&audition);
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
     CHECK(ts_sample_generate(&a, &first, error, sizeof(error)));
@@ -196,6 +197,31 @@ int main(void)
     CHECK(committed.undo_count == 0 && committed.redo_count == 0);
     CHECK(!committed.process.delay_enabled && !committed.process.reverb_enabled);
 
+    {
+        TsAuditionPlan plan;
+        CHECK(ts_instrument_generate(&audition, TS_GENERATOR_PULSE, 0x41420001u,
+                                     error, sizeof(error)));
+        ts_instrument_set_selection(&audition, 100, 1000);
+        CHECK(ts_instrument_crop_selection(&audition, error, sizeof(error)));
+        CHECK(audition.crop_first == 100);
+        ts_instrument_set_selection(&audition, 10, 20);
+        audition.view_first = 5;
+        audition.view_last = 50;
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
+                               TS_AUDITION_SELECTION, &plan));
+        CHECK(plan.sample == &audition.current && plan.first == 10 && plan.last == 20);
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_PARENT,
+                               TS_AUDITION_SELECTION, &plan));
+        CHECK(plan.sample == &audition.parent && plan.first == 110 && plan.last == 120);
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_PARENT,
+                               TS_AUDITION_DISPLAYED, &plan));
+        CHECK(plan.first == 105 && plan.last == 150);
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_PARENT,
+                               TS_AUDITION_ALL, &plan));
+        CHECK(plan.first == 0 && plan.last == audition.parent.frames);
+        CHECK(fabs(ts_audition_map_progress(15.0, 10, 20, 110, 120) - 115.0) < 0.000001);
+    }
+
     CHECK(ts_sample_clone(&copy, &committed.current, error, sizeof(error)));
     parent_hash = ts_sample_hash(&committed.parent);
     ts_instrument_set_selection(&committed, 100, 1000);
@@ -323,6 +349,28 @@ int main(void)
     CHECK(framebuffer_contains(&fb, 0xffffe700u));
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     CHECK(framebuffer_contains(&fb, 0xff009ee3u));
+    ui.playback_active = 1;
+    ui.playhead_source = TS_AUDITION_CURRENT;
+    ui.playhead_frame = imported.current.frames / 2;
+    ui.playhead_frames = imported.current.frames;
+    ts_instrument_show_all(&imported);
+    ts_ui_render(&fb, &ui, &imported);
+    CHECK(fb.pixels[(TS_WAVE_Y + 1) * TS_UI_WIDTH + TS_WAVE_X + TS_WAVE_W / 2] ==
+          0xffffd265u);
+    ui.playhead_source = TS_AUDITION_PARENT;
+    ui.playhead_frame = imported.parent.frames / 2;
+    ui.playhead_frames = imported.parent.frames;
+    ts_ui_render(&fb, &ui, &imported);
+    CHECK(fb.pixels[(TS_WAVE_Y + 1) * TS_UI_WIDTH + TS_WAVE_X + TS_WAVE_W / 2] ==
+          0xff18ff00u);
+    CHECK(ts_browser_open(&ui.browser, TS_BROWSER_EXPORT_WAV, "cursor.wav"));
+    ui.text_cursor_visible = 1;
+    ts_ui_render(&fb, &ui, &imported);
+    CHECK(fb.pixels[301 * TS_UI_WIDTH + 64 + 10 * 6] == 0xffffd265u);
+    ui.browser.filename_focus = 0;
+    ts_ui_render(&fb, &ui, &imported);
+    CHECK(fb.pixels[301 * TS_UI_WIDTH + 64 + 10 * 6] != 0xffffd265u);
+    ts_browser_close(&ui.browser);
     CHECK(ts_ui_key_from_point(20, 370) == 0);
     CHECK(ts_ui_key_from_point(50, 340) == 1);
     CHECK(ts_ui_key_from_point(0, 0) == -1);
@@ -330,7 +378,8 @@ int main(void)
     ts_sample_free(&a); ts_sample_free(&b); ts_sample_free(&loaded); ts_sample_free(&copy);
     ts_sample_free(&dry); ts_sample_free(&effected); ts_sample_free(&repeated);
     ts_instrument_free(&generated); ts_instrument_free(&imported); ts_instrument_free(&committed);
+    ts_instrument_free(&audition);
     if (failures) return 1;
-    puts("TapeSister Parent/Current, DSP, commit, and editor tests passed");
+    puts("TapeSister Parent/Current, A/B audition, playhead, browser, and editor tests passed");
     return 0;
 }
