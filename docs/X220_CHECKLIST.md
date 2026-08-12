@@ -73,7 +73,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Space, Escape, and natural playback completion hide the playhead.
 - [ ] Save, Export, edits, Undo, Redo, Reset, and Commit continue to target Current regardless of audition choice.
 
-## Zero-crossing selection and forward loops
+## Zero-crossing selection and loop modes
 
 - [ ] Slow waveform drags show both highlight endpoints jumping live to nearby zero crossings in Current.
 - [ ] Magenta zero-crossing pixels remain visible across selection and loop regions and the blue loop flags land directly on them.
@@ -82,7 +82,9 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] On a waveform with no sign crossing, selection falls back to its quietest sample without hanging or leaving the valid range.
 - [ ] `Ctrl+A` still selects exact frame 0 through the Current frame count.
 - [ ] Reverse, Normalize, Amplify, fades, Crop, and Set Loop all use the visibly snapped highlight.
-- [ ] Set Loop creates one blue forward-loop region with unmistakable start/end markers; Clear removes it.
+- [ ] Set Loop creates one blue loop region with unmistakable start/end markers; Clear removes it.
+- [ ] Mode cycles Forward, Reverse, and Ping-Pong; the waveform arrows and audible travel agree.
+- [ ] Play Loop, held computer notes, ordinary onscreen notes, and latched chords all use the same selected mode.
 - [ ] Each blue flag drags smoothly, remains zero-snapped, updates a playing loop live, and swaps start/end role when crossed.
 - [ ] Releasing a dragged loop flag does not release a note held from the computer keyboard or onscreen keyboard.
 - [ ] Play Loop repeats until Space or Escape; no note or loop remains stuck.
@@ -94,9 +96,9 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] The 0–50 ms crossfade is clearly audible on difficult joins and remains stable at both limits and on short loops.
 - [ ] Switching Parent/Current during loop playback maps the region and relative playhead position without restarting.
 - [ ] Crop keeps the overlapping loop portion in correct Current-relative coordinates; Undo restores the prior crop and loop exactly.
-- [ ] Loop Set, Clear, and crossfade changes traverse correctly through Undo/Redo.
+- [ ] Loop Set, Clear, mode, and crossfade changes traverse correctly through Undo/Redo.
 - [ ] Reset clears the loop and is undoable; Commit carries the loop onto the promoted Parent and clears old history.
-- [ ] Saved TSR7 projects contain embedded Parent audio, loop state/range/crossfade, bank audio, and complete reconstructive state.
+- [ ] Saved TSR8 projects contain embedded Parent audio, loop state/range/mode/crossfade, bank audio, and complete reconstructive state.
 - [ ] KEYS/BANK switches the lower panel without affecting computer-key audition or Space/Escape stopping.
 
 ## Existing foundation
@@ -104,7 +106,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Computer and onscreen keys audition the selected A/B source at different pitches.
 - [ ] Space and Escape stop every one-shot, loop, held note, and latched chord reliably without a mouse Stop All button.
 - [ ] A bad WAV path reports an error and preserves Parent and Current.
-- [ ] Save creates a self-contained TSR7 project that reopens without access to the original WAV.
+- [ ] Save creates a self-contained TSR8 project that reopens without access to the original WAV.
 - [ ] Export creates a valid mono 16-bit WAV containing Current.
 - [ ] The supplied Tapehead palette is applied consistently and remains legible.
 - [ ] No action leaks through the path-entry overlay.
@@ -119,7 +121,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Left-clicking any slot auditions it and changes the waveform display to that member; an empty slot produces silence and a blank waveform.
 - [ ] Shift-left-click captures all Current; Alt-left-click captures Loop; Ctrl-left-click captures Selection.
 - [ ] Selection and Loop captures contain exactly the visibly snapped range.
-- [ ] Loop capture retains a full-slot forward loop and the active crossfade milliseconds.
+- [ ] Loop capture retains a full-slot loop, its Forward/Reverse/Ping-Pong mode, and the active crossfade milliseconds.
 - [ ] Clicking each occupied slot auditions the correct audio; loop slots continue looping until Space or Escape.
 - [ ] Set Current is inactive without a filled auditioned slot and becomes active after auditioning one.
 - [ ] Set Current stops audition, makes Parent and Current exactly equal to the selected bank audio, and returns the waveform to Current.
@@ -132,8 +134,25 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] BANK-mode Export and `Ctrl+E` propose a folder derived from the initial Parent name.
 - [ ] Whole-bank export creates one correctly numbered WAV per occupied slot and never replaces an existing folder.
 - [ ] A failed bank export cleans up its partial WAV files and temporary folder.
-- [ ] Saving and reopening TSR7 restores exact names, hashes, capture types, loop ranges, and crossfades for every occupied slot.
+- [ ] Saving and reopening TSR8 restores exact names, hashes, capture types, loop ranges, modes, and crossfades for every occupied slot.
 - [ ] Opening a TSR6 project remains supported and creates a root-only bank from its Parent.
+
+## Physical tape gestures
+
+- [ ] Begin each gesture inside the snapped highlight; beginning outside it leaves audio unchanged and explains the requirement.
+- [ ] Shift + left-drag shows a cyan ghost and copies the complete selection by mixing it with underlying audio.
+- [ ] Shift + right-drag copies the complete selection and overwrites underlying audio.
+- [ ] Ctrl + left-drag lifts the selection, leaves the same-duration silent gap, and mixes it at the destination.
+- [ ] Ctrl + right-drag lifts the selection, leaves the same-duration silent gap, and overwrites at the destination.
+- [ ] The ghost follows the pointer smoothly and the released placement lands at the same nearby zero-aligned location shown by the preview.
+- [ ] A move that overlaps its source is intact and repeatable; no part is recursively copied or cleared before capture.
+- [ ] Dragging before frame zero prepends silence; dragging beyond the end appends silence; Show All reveals the expanded Current.
+- [ ] Tiny source/destination edge fades prevent obvious new clicks without audibly shortening the lifted tape.
+- [ ] Each completed drag adds exactly one Undo step; Undo restores source, destination, length, selection, loop, and view together, and Redo reproduces the exact hash.
+- [ ] Reverse, Normalize, Amplify, Fade, and Crop applied after a tape drag affect the heard placement in order and remain undoable.
+- [ ] Reset removes the complete post-DSP tape timeline and is undoable; Commit prints it into Parent and clears old history.
+- [ ] Saving and reopening TSR8 restores the exact Current hash, post-DSP operation order, expanded duration, selection, and loop metadata.
+- [ ] While dragging, Space and Escape still stop Play Loop, one-shots, held notes, and latched chords without applying a stuck gesture.
 
 ## DSP shelf
 

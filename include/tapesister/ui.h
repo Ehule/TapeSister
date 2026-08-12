@@ -59,11 +59,18 @@ typedef struct {
     int renaming_bank_slot;
     int dragging_loop_endpoint;
     int loop_drag_started;
+    int tape_dragging;
+    int tape_drag_button;
+    TsPostEditKind tape_drag_kind;
     TsFxPage fx_page;
     TsAuditionSource audition_source;
     TsAuditionSource playhead_source;
     TsBrowser browser;
     size_t selection_anchor;
+    size_t tape_source_first;
+    size_t tape_source_last;
+    size_t tape_grab_offset;
+    int64_t tape_destination;
     size_t playhead_frame;
     size_t playhead_frames;
     size_t parent_view_first;
@@ -78,6 +85,7 @@ int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
 int ts_ui_bank_slot_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
+int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind);
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames);
 int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
                            float anchor_ratio, float scale);

@@ -337,6 +337,16 @@ int main(void)
         CHECK(fabsf(audition.loop_crossfade_ms - 8.0f) < 0.0001f);
         CHECK(ts_instrument_redo(&audition, error, sizeof(error)));
         CHECK(fabsf(audition.loop_crossfade_ms - 12.5f) < 0.0001f);
+        CHECK(audition.loop_mode == TS_LOOP_FORWARD);
+        CHECK(ts_instrument_set_loop_mode(&audition, TS_LOOP_REVERSE,
+                                          error, sizeof(error)));
+        CHECK(audition.loop_mode == TS_LOOP_REVERSE);
+        CHECK(ts_instrument_undo(&audition, error, sizeof(error)) &&
+              audition.loop_mode == TS_LOOP_FORWARD);
+        CHECK(ts_instrument_redo(&audition, error, sizeof(error)) &&
+              audition.loop_mode == TS_LOOP_REVERSE);
+        CHECK(ts_instrument_set_loop_mode(&audition, TS_LOOP_PING_PONG,
+                                          error, sizeof(error)));
         {
             size_t loop_first = audition.loop_first;
             size_t loop_last = audition.loop_last;
@@ -348,11 +358,13 @@ int main(void)
             CHECK(audition.has_loop && audition.loop_first == loop_first &&
                   audition.loop_last == loop_last);
             CHECK(ts_instrument_reset_current(&audition, error, sizeof(error)));
-            CHECK(!audition.has_loop);
-            CHECK(ts_instrument_undo(&audition, error, sizeof(error)) && audition.has_loop);
+            CHECK(!audition.has_loop && audition.loop_mode == TS_LOOP_FORWARD);
+            CHECK(ts_instrument_undo(&audition, error, sizeof(error)) && audition.has_loop &&
+                  audition.loop_mode == TS_LOOP_PING_PONG);
             CHECK(ts_instrument_commit_current(&audition, error, sizeof(error)));
             CHECK(audition.has_loop && audition.loop_first == loop_first &&
                   audition.loop_last == loop_last);
+            CHECK(audition.loop_mode == TS_LOOP_PING_PONG);
             CHECK(audition.undo_count == 0 && audition.redo_count == 0);
         }
     }
@@ -364,6 +376,100 @@ int main(void)
         CHECK(fabsf(blended) < 0.0001f);
         CHECK(fabs(ts_audition_wrap_position(8.0, 0, 8, 2) - 2.0) < 0.000001);
         CHECK(fabs(ts_audition_wrap_position(14.0, 0, 8, 2) - 2.0) < 0.000001);
+        {
+            int direction = -1;
+            CHECK(fabs(ts_audition_loop_position(-1.0, 0, 8, 2,
+                                                  TS_LOOP_REVERSE, &direction) - 4.0) <
+                  0.000001);
+            direction = 1;
+            CHECK(fabs(ts_audition_loop_position(8.0, 0, 8, 0,
+                                                  TS_LOOP_PING_PONG, &direction) - 6.0) <
+                  0.000001);
+            CHECK(direction == -1);
+            CHECK(fabsf(ts_audition_read_looped_mode(&loop_sample, 6.0, 0, 8, 0,
+                                                      TS_LOOP_PING_PONG) + 1.0f) <
+                  0.0001f);
+        }
+    }
+
+    {
+        TsInstrument tape;
+        TsInstrument tape_loaded;
+        uint64_t before;
+        uint64_t after;
+        size_t original_frames;
+        size_t source_first = 1000u;
+        size_t source_last = 1600u;
+        ts_instrument_init(&tape);
+        ts_instrument_init(&tape_loaded);
+        CHECK(ts_instrument_generate(&tape, TS_GENERATOR_METALLIC, 0x54415038u,
+                                     error, sizeof(error)));
+        original_frames = tape.current.frames;
+        before = ts_sample_hash(&tape.current);
+        ts_instrument_set_selection(&tape, source_first, source_last);
+        CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_MIX,
+                                            source_first, source_last, 3000,
+                                            error, sizeof(error)));
+        CHECK(tape.post_edit_count == 1 && tape.current.frames == original_frames);
+        CHECK(tape.selection_first == (size_t)tape.post_edits[0].destination &&
+              tape.selection_last - tape.selection_first == source_last - source_first);
+        after = ts_sample_hash(&tape.current);
+        CHECK(after != before);
+        CHECK(ts_instrument_undo(&tape, error, sizeof(error)) &&
+              ts_sample_hash(&tape.current) == before && tape.post_edit_count == 0);
+        CHECK(ts_instrument_redo(&tape, error, sizeof(error)) &&
+              ts_sample_hash(&tape.current) == after && tape.post_edit_count == 1);
+
+        CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_MOVE_OVERWRITE,
+                                            source_first, source_last, 1250,
+                                            error, sizeof(error)));
+        CHECK(tape.post_edit_count == 2);
+        after = ts_sample_hash(&tape.current);
+        CHECK(ts_instrument_undo(&tape, error, sizeof(error)));
+        CHECK(ts_instrument_redo(&tape, error, sizeof(error)) &&
+              ts_sample_hash(&tape.current) == after);
+
+        CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_OVERWRITE,
+                                            2000, 2400, -100,
+                                            error, sizeof(error)));
+        CHECK(tape.current.frames == original_frames + 100u);
+        CHECK(tape.selection_first == 0 && tape.selection_last == 400u);
+        CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_MOVE_MIX,
+                                            500, 800,
+                                            (int64_t)tape.current.frames + 20,
+                                            error, sizeof(error)));
+        CHECK(tape.current.frames == original_frames + 420u);
+        CHECK(tape.post_edit_count == 4);
+        CHECK(fabsf(tape.current.data[550]) < 0.000001f);
+        ts_instrument_set_selection(&tape, tape.selection_first, tape.selection_last);
+        CHECK(ts_instrument_apply_sample_edit(&tape, TS_SAMPLE_EDIT_GAIN, 0.5f,
+                                              error, sizeof(error)));
+        CHECK(tape.post_edit_count == 5);
+        {
+            size_t crop_length = tape.selection_last - tape.selection_first;
+            uint64_t pre_crop_hash = ts_sample_hash(&tape.current);
+            CHECK(ts_instrument_crop_selection(&tape, error, sizeof(error)));
+            CHECK(tape.current.frames == crop_length && tape.post_edit_count == 6);
+            CHECK(ts_instrument_undo(&tape, error, sizeof(error)) &&
+                  ts_sample_hash(&tape.current) == pre_crop_hash &&
+                  tape.post_edit_count == 5);
+        }
+
+        ts_instrument_set_selection(&tape, 100, 900);
+        CHECK(ts_instrument_set_loop_from_selection(&tape, error, sizeof(error)));
+        CHECK(ts_instrument_set_loop_mode(&tape, TS_LOOP_PING_PONG,
+                                          error, sizeof(error)));
+        CHECK(ts_instrument_save_recipe(&tape, "test-tape.tsr", error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&tape_loaded, "test-tape.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_sample_hash(&tape_loaded.current) == ts_sample_hash(&tape.current));
+        CHECK(tape_loaded.post_edit_count == tape.post_edit_count);
+        CHECK(tape_loaded.loop_mode == TS_LOOP_PING_PONG);
+        CHECK(tape_loaded.has_loop && tape_loaded.loop_first == tape.loop_first &&
+              tape_loaded.loop_last == tape.loop_last);
+        remove("test-tape.tsr");
+        ts_instrument_free(&tape);
+        ts_instrument_free(&tape_loaded);
     }
 
     CHECK(ts_sample_clone(&copy, &committed.current, error, sizeof(error)));
@@ -413,6 +519,8 @@ int main(void)
 
     CHECK(ts_instrument_set_loop_from_selection(&committed, error, sizeof(error)));
     CHECK(ts_instrument_set_loop_crossfade(&committed, 9.5f, error, sizeof(error)));
+    CHECK(ts_instrument_set_loop_mode(&committed, TS_LOOP_PING_PONG,
+                                      error, sizeof(error)));
     process = committed.process;
     process.noise_enabled = 1;
     process.noise_amount = 0.11f;
@@ -454,7 +562,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR7", 4) == 0);
+        CHECK(memcmp(magic, "TSR8", 4) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -465,6 +573,7 @@ int main(void)
     CHECK(restored.has_loop && restored.loop_first == committed.loop_first &&
           restored.loop_last == committed.loop_last);
     CHECK(fabsf(restored.loop_crossfade_ms - 9.5f) < 0.0001f);
+    CHECK(restored.loop_mode == TS_LOOP_PING_PONG);
     CHECK(ts_instrument_bank_count(&restored) == 4);
     CHECK(strcmp(restored.bank[2].sample.name, "Growing Tail") == 0);
     for (int slot = 0; slot < 4; ++slot) {
@@ -472,6 +581,7 @@ int main(void)
         CHECK(ts_sample_hash(&restored.bank[slot].sample) ==
               ts_sample_hash(&committed.bank[slot].sample));
         CHECK(restored.bank[slot].capture_kind == committed.bank[slot].capture_kind);
+        CHECK(restored.bank[slot].loop_mode == committed.bank[slot].loop_mode);
         CHECK(restored.bank[slot].has_loop == committed.bank[slot].has_loop);
     }
     CHECK(ts_instrument_export_bank(&restored, "test-bank-family", error, sizeof(error)));
@@ -659,6 +769,19 @@ int main(void)
             if (fb.pixels[middle * TS_UI_WIDTH + x] == 0xffff1ce7u) ++zero_pixels;
         CHECK(zero_pixels > 0);
     }
+    {
+        int ghost_pixels = 0;
+        ui.tape_dragging = 1;
+        ui.tape_source_first = imported.selection_first;
+        ui.tape_source_last = imported.selection_last;
+        ui.tape_destination = (int64_t)(imported.current.frames * 3u / 5u);
+        ts_ui_render(&fb, &ui, &imported);
+        for (int y = TS_WAVE_Y; y < TS_WAVE_Y + TS_WAVE_H; ++y)
+            for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; ++x)
+                if (fb.pixels[y * TS_UI_WIDTH + x] == 0xff35ffffu) ++ghost_pixels;
+        CHECK(ghost_pixels > 1000);
+        ui.tape_dragging = 0;
+    }
     ui.show_keyboard = 0;
     ts_ui_render(&fb, &ui, &imported);
     CHECK(ts_ui_bank_slot_from_point(46, 341) == 0);
@@ -679,6 +802,20 @@ int main(void)
     CHECK(ts_ui_bank_action(1, TS_UI_BANK_MOD_SHIFT) == TS_UI_BANK_ACTION_CLEAR);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL) ==
           TS_UI_BANK_ACTION_INVALID);
+    {
+        TsPostEditKind action;
+        CHECK(ts_ui_tape_action(0, TS_UI_BANK_MOD_SHIFT, &action) &&
+              action == TS_POST_COPY_MIX);
+        CHECK(ts_ui_tape_action(1, TS_UI_BANK_MOD_SHIFT, &action) &&
+              action == TS_POST_COPY_OVERWRITE);
+        CHECK(ts_ui_tape_action(0, TS_UI_BANK_MOD_CTRL, &action) &&
+              action == TS_POST_MOVE_MIX);
+        CHECK(ts_ui_tape_action(1, TS_UI_BANK_MOD_CTRL, &action) &&
+              action == TS_POST_MOVE_OVERWRITE);
+        CHECK(!ts_ui_tape_action(0, 0, &action));
+        CHECK(!ts_ui_tape_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL,
+                                 &action));
+    }
     {
         uint64_t current_waveform;
         uint64_t bank_waveform;
@@ -780,6 +917,6 @@ int main(void)
     ts_instrument_free(&restored);
     ts_instrument_free(&bank_edit);
     if (failures) return 1;
-    puts("TapeSister zero-snap, loop, A/B audition, browser, and editor tests passed");
+    puts("TapeSister tape gestures, loop modes, bank, A/B, browser, and editor tests passed");
     return 0;
 }

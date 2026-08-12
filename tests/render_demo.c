@@ -99,6 +99,32 @@ int main(int argc, char **argv)
         ui.playhead_frames = instrument.bank[2].sample.frames;
         snprintf(ui.status, sizeof(ui.status),
                  "BANK 03 AUDITION - WAVEFORM FOLLOWS SLOT  RMB RENAME  SHIFT+RMB CLEAR");
+    } else if (argc > 2 && strcmp(argv[2], "tape") == 0) {
+        size_t source_first = instrument.current.frames / 7u;
+        size_t source_last = instrument.current.frames * 3u / 8u;
+        size_t loop_first = instrument.current.frames / 2u;
+        size_t loop_last = instrument.current.frames * 6u / 7u;
+        ts_instrument_set_selection_snapped(&instrument, source_first, source_last);
+        source_first = instrument.selection_first;
+        source_last = instrument.selection_last;
+        ts_instrument_set_selection_snapped(&instrument, loop_first, loop_last);
+        if (!ts_instrument_set_loop_from_selection(&instrument, error, sizeof(error)) ||
+            !ts_instrument_set_loop_mode(&instrument, TS_LOOP_PING_PONG,
+                                         error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ts_instrument_set_selection(&instrument, source_first, source_last);
+        ui.fx_page = TS_FX_LOOP;
+        ui.tape_dragging = 1;
+        ui.tape_drag_button = 1;
+        ui.tape_drag_kind = TS_POST_COPY_MIX;
+        ui.tape_source_first = source_first;
+        ui.tape_source_last = source_last;
+        ui.tape_destination = (int64_t)(instrument.current.frames * 9u / 16u);
+        snprintf(ui.status, sizeof(ui.status),
+                 "COPY MIX GHOST - RELEASE AT ZERO CROSSING  LOOP PING-PONG");
     }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {

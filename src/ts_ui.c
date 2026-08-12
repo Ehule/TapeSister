@@ -320,6 +320,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     size_t loop_last = instrument->loop_last;
     int has_selection = !showing_bank && instrument->has_selection;
     int has_loop = showing_bank ? shown_slot->has_loop : instrument->has_loop;
+    TsLoopMode display_loop_mode = showing_bank ? shown_slot->loop_mode :
+                                                  instrument->loop_mode;
     if (showing_bank) {
         view_first = 0;
         view_last = sample->frames;
@@ -414,6 +416,65 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
              RGB(120, 113, 121), 2);
     }
 
+    if (ui->tape_dragging && !showing_bank && !showing_parent &&
+        ui->tape_source_last > ui->tape_source_first &&
+        ui->tape_source_last <= instrument->current.frames) {
+        size_t source_length = ui->tape_source_last - ui->tape_source_first;
+        int64_t destination = ui->tape_destination;
+        int first_visible = TS_WAVE_X + (int)((destination - (int64_t)view_first) *
+                            TS_WAVE_W / (int64_t)(view_last - view_first));
+        int last_visible = TS_WAVE_X + (int)(((destination + (int64_t)source_length) -
+                           (int64_t)view_first) * TS_WAVE_W /
+                           (int64_t)(view_last - view_first));
+        int clipped_first = first_visible < TS_WAVE_X ? TS_WAVE_X : first_visible;
+        int clipped_last = last_visible > TS_WAVE_X + TS_WAVE_W ?
+                           TS_WAVE_X + TS_WAVE_W : last_visible;
+        for (int x = clipped_first; x < clipped_last; ++x) {
+            int64_t frame_begin = (int64_t)view_first +
+                                  (int64_t)(x - TS_WAVE_X) *
+                                  (int64_t)(view_last - view_first) / TS_WAVE_W;
+            int64_t frame_end = (int64_t)view_first +
+                                (int64_t)(x - TS_WAVE_X + 1) *
+                                (int64_t)(view_last - view_first) / TS_WAVE_W;
+            int64_t source_begin = frame_begin - destination +
+                                   (int64_t)ui->tape_source_first;
+            int64_t source_end = frame_end - destination +
+                                 (int64_t)ui->tape_source_first;
+            if (source_begin < (int64_t)ui->tape_source_first)
+                source_begin = (int64_t)ui->tape_source_first;
+            if (source_end > (int64_t)ui->tape_source_last)
+                source_end = (int64_t)ui->tape_source_last;
+            if (source_end <= source_begin &&
+                source_begin >= (int64_t)ui->tape_source_first &&
+                source_begin < (int64_t)ui->tape_source_last)
+                source_end = source_begin + 1;
+            if (source_begin < source_end) {
+                float low = 1.0f;
+                float high = -1.0f;
+                int middle = TS_WAVE_Y + TS_WAVE_H / 2;
+                int y0;
+                int y1;
+                for (int64_t source_at = source_begin; source_at < source_end; ++source_at) {
+                    float value = instrument->current.data[source_at];
+                    if (value < low) low = value;
+                    if (value > high) high = value;
+                }
+                y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
+                y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
+                if (y0 == y1) rect(fb, x, y0 - 1, 1, 3, PAL_EFFECT);
+                else line(fb, x, y0, x, y1, PAL_EFFECT);
+            }
+        }
+        if (clipped_last > clipped_first) {
+            rect(fb, clipped_first, TS_WAVE_Y + 2, clipped_last - clipped_first, 2,
+                 PAL_EFFECT);
+            rect(fb, clipped_first, TS_WAVE_Y + TS_WAVE_H - 4,
+                 clipped_last - clipped_first, 2, PAL_EFFECT);
+            rect(fb, clipped_first, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
+            rect(fb, clipped_last - 2, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
+        }
+    }
+
     if (has_loop && loop_last > view_first && loop_first < view_last) {
         int lx0 = frame_x(loop_first, view_first, view_last);
         int lx1 = frame_x(loop_last, view_first, view_last);
@@ -421,6 +482,21 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, lx1 - 2, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
         rect(fb, lx0, TS_WAVE_Y, 7, 4, PAL_TUNING);
         rect(fb, lx1 - 7, TS_WAVE_Y + TS_WAVE_H - 4, 7, 4, PAL_TUNING);
+        {
+            int cy = TS_WAVE_Y + 10;
+            int center = (lx0 + lx1) / 2;
+            if (display_loop_mode != TS_LOOP_REVERSE) {
+                line(fb, center - 8, cy, center + 8, cy, PAL_TUNING);
+                line(fb, center + 8, cy, center + 3, cy - 4, PAL_TUNING);
+                line(fb, center + 8, cy, center + 3, cy + 4, PAL_TUNING);
+            }
+            if (display_loop_mode != TS_LOOP_FORWARD) {
+                int offset = display_loop_mode == TS_LOOP_PING_PONG ? 18 : 0;
+                line(fb, center - 8, cy + offset, center + 8, cy + offset, PAL_TUNING);
+                line(fb, center - 8, cy + offset, center - 3, cy + offset - 4, PAL_TUNING);
+                line(fb, center - 8, cy + offset, center - 3, cy + offset + 4, PAL_TUNING);
+            }
+        }
     }
 
     if (ui->playback_active && ui->playhead_frames > 0) {
@@ -488,11 +564,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         slider(fb, 382, 261, 120, "MIX", instrument->process.reverb_mix, PAL_EFFECT);
     } else {
         char crossfade[32];
-        button(fb, 10, 261, 84, "SET LOOP", instrument->has_loop);
-        button(fb, 99, 261, 84, "CLEAR", 0);
-        button(fb, 188, 261, 94, "PLAY LOOP", ui->playback_active);
+        char mode[32];
+        button(fb, 10, 261, 74, "SET LOOP", instrument->has_loop);
+        button(fb, 89, 261, 64, "CLEAR", 0);
+        button(fb, 158, 261, 84, "PLAY LOOP", ui->playback_active);
+        snprintf(mode, sizeof(mode), "MODE %.9s", ts_loop_mode_name(instrument->loop_mode));
+        button(fb, 247, 261, 108, mode, instrument->loop_mode != TS_LOOP_FORWARD);
         snprintf(crossfade, sizeof(crossfade), "XFADE %.1F MS", instrument->loop_crossfade_ms);
-        slider(fb, 297, 261, 280, crossfade, instrument->loop_crossfade_ms / 50.0f,
+        slider(fb, 365, 261, 212, crossfade, instrument->loop_crossfade_ms / 50.0f,
                PAL_TUNING);
     }
 
@@ -621,4 +700,19 @@ TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)
     if (relevant == TS_UI_BANK_MOD_ALT) return TS_UI_BANK_ACTION_CAPTURE_LOOP;
     if (relevant == TS_UI_BANK_MOD_CTRL) return TS_UI_BANK_ACTION_CAPTURE_SELECTION;
     return TS_UI_BANK_ACTION_INVALID;
+}
+
+int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind)
+{
+    unsigned relevant = modifiers & (TS_UI_BANK_MOD_SHIFT |
+                                     TS_UI_BANK_MOD_CTRL |
+                                     TS_UI_BANK_MOD_ALT);
+    if (kind == NULL ||
+        (relevant != TS_UI_BANK_MOD_SHIFT && relevant != TS_UI_BANK_MOD_CTRL))
+        return 0;
+    if (relevant == TS_UI_BANK_MOD_SHIFT)
+        *kind = right_button ? TS_POST_COPY_OVERWRITE : TS_POST_COPY_MIX;
+    else
+        *kind = right_button ? TS_POST_MOVE_OVERWRITE : TS_POST_MOVE_MIX;
+    return 1;
 }

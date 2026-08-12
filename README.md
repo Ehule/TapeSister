@@ -1,8 +1,8 @@
 # TapeSister
 
-TapeSister is a standalone sample-instrument forge. The current development slice adds a 16-slot sample-family bank to its durable Parent/Current sound model, zero-crossing editor, seamless forward loops, polyphonic audition, and deterministic DSP shelf.
+TapeSister is a standalone sample-instrument forge. The current development slice adds physical tape gestures and forward, reverse, and ping-pong loops to its durable Parent/Current sound model, zero-crossing editor, 16-slot sample-family bank, polyphonic audition, and deterministic DSP shelf.
 
-![TapeSister 16-slot sample-family bank](docs/sample-bank-preview.png)
+![TapeSister copy-mix ghost and ping-pong loop](docs/tape-drag-preview.png)
 
 ## Parent and Current
 
@@ -25,13 +25,13 @@ Play All and keyboard notes use the complete chosen source. Play Selection and P
 
 A source-colored playhead is visible only while audio is running: green identifies Parent playback and amber identifies Current playback. Space, Escape, and natural playback completion hide it.
 
-## Zero-snapped selection and forward loops
+## Zero-snapped selection and loop modes
 
 Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in Current. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop. Parent view maps pointer positions through Current's crop before snapping. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
 
-The Loop page turns the current selection into one forward loop, clears it, plays it continuously, and sets a 0–50 ms wrap crossfade. Blue boundaries and handles distinguish the loop from the purple/cyan selection. Either handle can be dragged live; it remains zero-snapped and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape.
+The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape.
 
-Parent/Current A/B maps the same loop through the crop offset and preserves relative playback progress. Loop range and crossfade participate in Undo/Redo. Reset clears them and can be undone; Commit carries the completed loop onto the newly promoted Parent while clearing prior edit history.
+Parent/Current A/B maps the same loop through the crop offset, preserves relative playback progress, and uses the same direction mode. Loop range, mode, and crossfade participate in Undo/Redo. Reset clears them and can be undone; Commit carries the completed loop onto the newly promoted Parent while clearing prior edit history.
 
 The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary click clears the chord and returns to momentary audition. Sustained voices survive loop-handle changes and Current rerenders.
 
@@ -45,9 +45,20 @@ Every newly generated or imported source starts a 16-slot family with its initia
 
 Click any slot to audition it and place that member in the waveform display; an empty slot produces silence and a blank waveform. Right-click an occupied slot 02–16 to rename it, or Shift-right-click to clear it. Slot 01 remains the fixed family root, and occupied slots must be cleared deliberately before reuse. This makes it possible to capture a small snapped selection, grow it, name the successive forms, and keep them as one related sample family.
 
-After auditioning a filled slot, **Set Current** checks that family member out as a new clean editing base. Parent and Current become sample-for-sample identical to the selected audio, stored loop/crossfade metadata follows it, and the complete family bank remains intact. Because every later render must have a stable Parent, this is a deliberate genealogy boundary: it advances the generation, records the previous Parent hash, resets DSP and edit history, and cannot be crossed with Undo. Space and Escape retain the reliable stop-all behavior formerly provided by the redundant mouse button.
+After auditioning a filled slot, **Set Current** checks that family member out as a new clean editing base. Parent and Current become sample-for-sample identical to the selected audio, stored loop/mode/crossfade metadata follows it, and the complete family bank remains intact. Because every later render must have a stable Parent, this is a deliberate genealogy boundary: it advances the generation, records the previous Parent hash, resets DSP and edit history, and cannot be crossed with Undo. Space and Escape retain the reliable stop-all behavior formerly provided by the redundant mouse button.
 
-While BANK is visible, the top **Export** button and `Ctrl+E` export every occupied slot as a numbered WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR7 projects embed all occupied bank audio and loop metadata; opening a TSR6 project remains supported and initializes its bank root from the embedded Parent.
+While BANK is visible, the top **Export** button and `Ctrl+E` export every occupied slot as a numbered WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR8 projects embed all occupied bank audio and loop metadata; opening TSR6 and TSR7 projects remains supported and initializes missing loop modes as Forward.
+
+## Physical tape gestures
+
+Start any tape gesture inside the existing snapped selection. A cyan ghost waveform follows the pointer and previews the zero-crossing-aware destination before release:
+
+- Shift + left-drag copies and mixes with the audio underneath;
+- Shift + right-drag copies and overwrites the audio underneath;
+- Ctrl + left-drag lifts/moves and mixes at the destination; and
+- Ctrl + right-drag lifts/moves and overwrites at the destination.
+
+Move captures the entire source before clearing it, so an overlapping placement cannot corrupt itself. The lifted range remains the same duration and is filled with silence, with a roughly 1 ms protective fade at exposed edges. Dragging beyond either end grows Current with silence; the placed audio becomes the new selection and Show All reveals the expanded result. Every completed drag is one undoable operation that restores source and destination together. Later Reverse, Normalize, gain, fades, and Crop remain replayable after tape placement; Reset removes the timeline and Commit prints it into the next Parent.
 
 ## DSP shelf
 
@@ -72,7 +83,7 @@ Every stage is equally available to generated and imported Parents. Bypass is ex
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
-- self-contained native TSR7 project saving with embedded Parent audio, all bank slots, lineage, editor view, selection, loop metadata, sample-edit stack, and every DSP parameter; and
+- self-contained native TSR8 project saving with embedded Parent audio, all bank slots, lineage, editor view, selection, loop mode/metadata, pre- and post-DSP edit timelines, and every DSP parameter; and
 - mono 16-bit Current export.
 
 Sample edits run deterministically between the preserved Parent and the live DSP. With no selection they affect the whole Current; with a selection they affect only that range. Commit prints the heard result into the next Parent generation and clears both the edit stack and Undo/Redo history.
@@ -92,7 +103,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR7 embeds the Parent waveform, complete sample-family bank, and all reconstructive state in one portable file. TSR6 projects remain loadable and gain a root-only bank. Older experimental JSON recipes did not contain Parent audio and therefore cannot reopen as self-contained projects.
+TSR8 embeds the Parent waveform, complete sample-family bank, loop directions, and the replayable tape-edit timeline in one portable file. TSR6/TSR7 projects remain loadable; TSR6 gains a root-only bank, and both older formats default to Forward looping. Older experimental JSON recipes did not contain Parent audio and therefore cannot reopen as self-contained projects.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV and TSR files can also be dragged onto the window or passed on the command line.
 
@@ -140,4 +151,4 @@ Pass a WAV or TSR path on the command line, drag it onto the window, or choose i
 - Browser confirm/cancel: `Enter` / `Escape`
 - Build/toggle a five-note chord: `Shift` + onscreen-key click
 
-Cut/copy/paste, ping-pong/reverse/multiple loops, automatic loop candidates, the zero-crossing loop-maker transformation, deeper synthesis/filter/shaper stages, expanded factory recipes, and full genealogy/propagation remain separate, visually verified slices.
+Ripple cut, multiple loops, automatic loop candidates, the zero-crossing loop-maker transformation, deeper synthesis/filter/shaper stages, expanded factory recipes, and full genealogy/propagation remain separate, visually verified slices.

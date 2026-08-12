@@ -31,6 +31,10 @@ static void update_voice(TsNoteVoice *voice, const TsInstrument *instrument,
     voice->range_last = plan.last;
     voice->source = source;
     voice->looping = looping;
+    voice->loop_mode = instrument->loop_mode;
+    if (voice->loop_mode == TS_LOOP_REVERSE) voice->direction = -1;
+    else if (voice->loop_mode == TS_LOOP_FORWARD) voice->direction = 1;
+    else if (voice->direction == 0) voice->direction = 1;
     voice->crossfade_frames = voice->looping ?
                               ts_audition_crossfade_frames(
                                   &plan, instrument->loop_crossfade_ms) : 0;
@@ -81,7 +85,9 @@ TsNoteStartResult ts_note_bank_start(TsNoteBank *bank, const TsInstrument *instr
         TsNoteVoice *voice = &bank->voices[free_voice];
         memset(voice, 0, sizeof(*voice));
         voice->sample = plan.sample;
-        voice->position = (double)plan.first;
+        voice->position = instrument->loop_mode == TS_LOOP_REVERSE &&
+                          instrument->has_loop ? (double)(plan.last - 1u) :
+                          (double)plan.first;
         voice->pitch = pow(2.0, note / 12.0);
         voice->step = (double)plan.sample->sample_rate / output_rate * voice->pitch;
         voice->range_first = plan.first;
@@ -90,6 +96,8 @@ TsNoteStartResult ts_note_bank_start(TsNoteBank *bank, const TsInstrument *instr
         voice->serial = ++bank->next_serial;
         voice->note = note;
         voice->looping = instrument->has_loop;
+        voice->loop_mode = instrument->loop_mode;
+        voice->direction = voice->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
         voice->latched = latched != 0;
         voice->crossfade_frames = voice->looping ?
                                   ts_audition_crossfade_frames(
@@ -136,12 +144,12 @@ float ts_note_bank_read(TsNoteBank *bank)
         float value;
         if (!voice->active || voice->sample == NULL || voice->sample->data == NULL) continue;
         if (voice->looping) {
-            voice->position = ts_audition_wrap_position(
+            voice->position = ts_audition_loop_position(
                 voice->position, voice->range_first, voice->range_last,
-                voice->crossfade_frames);
-            value = ts_audition_read_looped(
+                voice->crossfade_frames, voice->loop_mode, &voice->direction);
+            value = ts_audition_read_looped_mode(
                 voice->sample, voice->position, voice->range_first,
-                voice->range_last, voice->crossfade_frames);
+                voice->range_last, voice->crossfade_frames, voice->loop_mode);
         } else {
             size_t at = voice->position > 0.0 ? (size_t)voice->position : 0;
             if (at + 1u >= voice->range_last || at + 1u >= voice->sample->frames) {
@@ -154,7 +162,7 @@ float ts_note_bank_read(TsNoteBank *bank)
                         (voice->sample->data[at + 1u] - voice->sample->data[at]) * fraction;
             }
         }
-        voice->position += voice->step;
+        voice->position += voice->step * voice->direction;
         mixed += value;
         ++count;
     }
