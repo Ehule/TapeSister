@@ -1,0 +1,8 @@
+/build*/
+/tapesister
+/tapesister_core_tests
+/tapesister_render_demo
+/test-roundtrip.wav
+/tapesister-export.wav
+/tapesister-recipe.tsr
+/artifacts/*.ppm
