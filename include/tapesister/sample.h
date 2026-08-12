@@ -24,8 +24,17 @@ typedef enum {
 typedef enum {
     TS_SOURCE_NONE = 0,
     TS_SOURCE_GENERATED,
-    TS_SOURCE_IMPORTED
+    TS_SOURCE_IMPORTED,
+    TS_SOURCE_COMMITTED
 } TsSourceKind;
+
+typedef enum {
+    TS_NOISE_WHITE = 0,
+    TS_NOISE_PINK,
+    TS_NOISE_BROWN,
+    TS_NOISE_METALLIC,
+    TS_NOISE_COLOR_COUNT
+} TsNoiseColor;
 
 typedef struct {
     uint32_t seed;
@@ -39,6 +48,18 @@ typedef struct {
     float body;
     float edge;
     float drift;
+    int noise_enabled;
+    float noise_amount;
+    TsNoiseColor noise_color;
+    int delay_enabled;
+    float delay_seconds;
+    float delay_feedback;
+    float delay_damping;
+    float delay_mix;
+    int reverb_enabled;
+    float reverb_decay;
+    float reverb_damping;
+    float reverb_mix;
 } TsProcessRecipe;
 
 typedef struct {
@@ -58,6 +79,8 @@ typedef struct {
     TsSourceKind source_kind;
     TsGeneratorRecipe generator;
     TsProcessRecipe process;
+    uint32_t generation;
+    uint64_t ancestor_hash;
     size_t crop_first;
     size_t crop_last;
     size_t selection_first;
@@ -91,6 +114,8 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
 int ts_instrument_reseed(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_set_process(TsInstrument *instrument, const TsProcessRecipe *process,
                               char *error, size_t error_size);
+int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t error_size);
+int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t error_size);
 void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t last);
 void ts_instrument_clear_selection(TsInstrument *instrument);
 int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t error_size);
@@ -100,5 +125,9 @@ int ts_instrument_undo(TsInstrument *instrument, char *error, size_t error_size)
 int ts_instrument_redo(TsInstrument *instrument, char *error, size_t error_size);
 size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, int width);
 const char *ts_generator_name(TsGeneratorKind kind);
+const char *ts_noise_color_name(TsNoiseColor color);
+void ts_process_recipe_reset(TsProcessRecipe *process);
+int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
+                              char *error, size_t error_size);
 
 #endif

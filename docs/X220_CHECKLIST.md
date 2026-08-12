@@ -1,4 +1,4 @@
-# X220 Parent / Current revision checklist
+# X220 DSP / Commit revision checklist
 
 This is a musical and interaction checkpoint. Passing tests alone is not approval.
 
@@ -33,10 +33,29 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Computer and onscreen keys audition Current at different pitches.
 - [ ] Space, Escape, and Stop All stop playback reliably.
 - [ ] A bad WAV path reports an error and preserves Parent and Current.
-- [ ] Save creates readable schema-2 JSON with source, generator, processing, and crop state.
+- [ ] Save creates readable schema-3 JSON with renderer version, lineage, all DSP parameters, explicit bypass states, and crop state.
 - [ ] Export creates a valid mono 16-bit WAV containing Current.
 - [ ] The supplied Tapehead palette is applied consistently and remains legible.
 - [ ] No action leaks through the path-entry overlay.
 - [ ] Closing the window exits cleanly.
 
-Record the exact commit, compiler, SDL version, and any interaction, appearance, or musical problems before approving the next DSP slice.
+## DSP shelf
+
+- [ ] Noise bypass is exact; enabling it adds an obvious but controllable texture.
+- [ ] White, Pink, Brown, and Metallic are audibly distinct as the Color button cycles.
+- [ ] Reseed changes deterministic noise detail without replacing imported or committed Parent audio.
+- [ ] Delay Time changes echo spacing; Feedback, Damp, and Mix remain stable across their full ranges.
+- [ ] Space Decay, Damp, and Mix produce a useful compact ambience without runaway feedback.
+- [ ] Noise, Delay, and Space work on both generated sounds and a dragged-in WAV.
+- [ ] Undo and Redo restore DSP toggles and values as well as the exact rendered Current.
+
+## Commit lifecycle
+
+- [ ] Reset returns Current exactly to Parent and can be undone/redone.
+- [ ] The first Commit click only arms the action; clicking elsewhere cancels it.
+- [ ] The second Commit click promotes the heard Current to Parent and increments `GEN`.
+- [ ] Immediately after Commit, Current sounds identical to the new Parent and all DSP stages are bypassed.
+- [ ] New processing starts from the committed sound rather than the original source.
+- [ ] Committing again increments the generation and records the immediately previous Parent as ancestry.
+
+Record the exact commit, compiler, SDL version, and any interaction, appearance, or musical problems before approving the next slice.
