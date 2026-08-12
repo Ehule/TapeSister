@@ -26,6 +26,19 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Crop reduces Current to the selected range while retaining the same Parent.
 - [ ] Undo restores the pre-crop Current, selection, and zoom.
 - [ ] Redo reapplies the crop.
+
+## FT2 editing and waveform navigation
+
+- [ ] Wheel up/down over the waveform zooms in/out while the sample beneath the pointer stays fixed.
+- [ ] Shift+wheel pans the zoomed waveform without changing selection or audio.
+- [ ] `+` / `-` zoom and Left/Right pan; `0` restores Show All.
+- [ ] Reverse affects only the selection, or the whole Current when there is no selection.
+- [ ] Normalize brings the selected peak close to 0.98 without altering Parent.
+- [ ] Amplify Up/Down changes the selected range by 3 dB and can be repeated.
+- [ ] Fade In reaches silence at the selection start; Fade Out reaches silence at its end.
+- [ ] Undo/Redo traverses edits in order and restores exact prior audio.
+- [ ] Active Noise/Delay/Space continues to rerender after sample edits.
+- [ ] Commit prints all edits and DSP into the next Parent, resets the edit/DSP shelves, and clears history.
 - [ ] Ctrl+Z and Ctrl+Y match the buttons.
 
 ## Existing foundation
@@ -33,7 +46,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Computer and onscreen keys audition Current at different pitches.
 - [ ] Space, Escape, and Stop All stop playback reliably.
 - [ ] A bad WAV path reports an error and preserves Parent and Current.
-- [ ] Save creates readable schema-3 JSON with renderer version, lineage, all DSP parameters, explicit bypass states, and crop state.
+- [ ] Save creates readable schema-4 JSON with renderer version, lineage, ordered sample edits, all DSP parameters, explicit bypass states, and crop state.
 - [ ] Export creates a valid mono 16-bit WAV containing Current.
 - [ ] The supplied Tapehead palette is applied consistently and remains legible.
 - [ ] No action leaks through the path-entry overlay.

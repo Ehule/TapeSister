@@ -7,14 +7,16 @@ generated recipe or imported WAV
               |
            Parent
               |
-    crop range plus processing
+    crop range plus ordered sample edits plus processing
               |
            Current
 ```
 
 Parent changes only when the user explicitly imports, generates, reseeds a generated Parent, or confirms Commit. Body, Edge, Drift, selection, zoom, crop, audition, undo, redo, saving, and export do not replace Parent.
 
-Noise, Delay, and Space also render only into Current. Each has an explicit bypass state. Reset is an undoable edit that clears the crop and DSP recipe so Current becomes sample-for-sample identical to Parent.
+Reverse, Normalize, gain, and fades are stored as deterministic, selection-aware operations between Parent/Crop and the live DSP. Noise, Delay, and Space also render only into Current. Reset is an undoable edit that clears the crop, ordered sample-edit stack, and DSP recipe so Current becomes sample-for-sample identical to Parent.
+
+Waveform selection, zoom, and panning are view/editor state. They never alter Parent audio. Commit prints the heard Current into the next Parent generation, then clears the edit stack, DSP, and history as a deliberate hard boundary.
 
 Commit is the deliberate bridge between shaping and genealogy. It requires confirmation in the interface, deep-copies Current into a new Parent, records the previous Parent hash as the new generation's immediate ancestor, resets Current to that Parent, and clears the old edit history. This prevents Undo from crossing an ancestry boundary accidentally.
 

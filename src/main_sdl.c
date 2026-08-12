@@ -208,6 +208,20 @@ static void crop_selection(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     else snprintf(ui->status, sizeof(ui->status), "CROP FAILED: %.135s", error);
 }
 
+static void apply_sample_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                              TsInstrument *instrument, TsSampleEditKind kind, float amount)
+{
+    char error[160];
+    int ok;
+    int selected = instrument->has_selection;
+    lock_edit(device, audio);
+    ok = ts_instrument_apply_sample_edit(instrument, kind, amount, error, sizeof(error));
+    unlock_edit(device, audio, instrument);
+    if (ok) snprintf(ui->status, sizeof(ui->status), "%s %s - PARENT PRESERVED",
+                     ts_sample_edit_name(kind), selected ? "SELECTION" : "ALL");
+    else snprintf(ui->status, sizeof(ui->status), "EDIT FAILED: %.137s", error);
+}
+
 static void history_move(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                          TsInstrument *instrument, int redo)
 {
@@ -333,6 +347,52 @@ int main(int argc, char **argv)
                     history_move(device, &audio, &ui, &instrument, 0);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_y) {
                     history_move(device, &audio, &ui, &instrument, 1);
+                } else if ((mod & KMOD_CTRL) && key == SDLK_a) {
+                    ts_instrument_set_selection(&instrument, 0, instrument.current.frames);
+                    snprintf(ui.status, sizeof(ui.status), "SELECTED ALL CURRENT");
+                } else if ((mod & KMOD_CTRL) && key == SDLK_r) {
+                    apply_sample_edit(device, &audio, &ui, &instrument,
+                                      TS_SAMPLE_EDIT_REVERSE, 1.0f);
+                } else if ((mod & KMOD_CTRL) && key == SDLK_n) {
+                    apply_sample_edit(device, &audio, &ui, &instrument,
+                                      TS_SAMPLE_EDIT_NORMALIZE, 0.98f);
+                } else if ((mod & KMOD_CTRL) && key == SDLK_i) {
+                    apply_sample_edit(device, &audio, &ui, &instrument,
+                                      TS_SAMPLE_EDIT_FADE_IN, 1.0f);
+                } else if ((mod & KMOD_CTRL) && key == SDLK_u) {
+                    apply_sample_edit(device, &audio, &ui, &instrument,
+                                      TS_SAMPLE_EDIT_FADE_OUT, 1.0f);
+                } else if ((mod & KMOD_CTRL) && key == SDLK_UP) {
+                    apply_sample_edit(device, &audio, &ui, &instrument,
+                                      TS_SAMPLE_EDIT_GAIN, 1.4125376f);
+                } else if ((mod & KMOD_CTRL) && key == SDLK_DOWN) {
+                    apply_sample_edit(device, &audio, &ui, &instrument,
+                                      TS_SAMPLE_EDIT_GAIN, 0.7079458f);
+                } else if (key == SDLK_PLUS || key == SDLK_KP_PLUS ||
+                           (key == SDLK_EQUALS && (mod & KMOD_SHIFT))) {
+                    size_t anchor = instrument.has_selection ?
+                                    (instrument.selection_first + instrument.selection_last) / 2u :
+                                    (instrument.view_first + instrument.view_last) / 2u;
+                    snprintf(ui.status, sizeof(ui.status),
+                             ts_instrument_zoom_view(&instrument, anchor, 0.5f, 0.5f) ?
+                             "ZOOMED IN" : "ZOOM LIMIT");
+                } else if (key == SDLK_MINUS || key == SDLK_KP_MINUS) {
+                    size_t anchor = instrument.has_selection ?
+                                    (instrument.selection_first + instrument.selection_last) / 2u :
+                                    (instrument.view_first + instrument.view_last) / 2u;
+                    snprintf(ui.status, sizeof(ui.status),
+                             ts_instrument_zoom_view(&instrument, anchor, 0.5f, 2.0f) ?
+                             "ZOOMED OUT" : "SHOWING ALL CURRENT");
+                } else if (key == SDLK_0) {
+                    ts_instrument_show_all(&instrument);
+                    snprintf(ui.status, sizeof(ui.status), "SHOWING ALL CURRENT");
+                } else if (key == SDLK_LEFT || key == SDLK_RIGHT) {
+                    ptrdiff_t amount = (ptrdiff_t)((instrument.view_last - instrument.view_first) / 8u);
+                    if (amount < 1) amount = 1;
+                    if (key == SDLK_LEFT) amount = -amount;
+                    snprintf(ui.status, sizeof(ui.status),
+                             ts_instrument_pan_view(&instrument, amount) ?
+                             "PANNED WAVEFORM VIEW" : "PAN LIMIT");
                 } else if (key == SDLK_ESCAPE || key == SDLK_SPACE) {
                     ui.commit_armed = 0;
                     stop_all(device, &audio, &ui);
@@ -342,6 +402,38 @@ int main(int argc, char **argv)
                 }
             } else if (event.type == SDL_KEYUP && ui.active_key == note_for_key(event.key.keysym.sym)) {
                 ui.active_key = -1;
+            } else if (event.type == SDL_MOUSEWHEEL && !ui.path_entry) {
+                int raw_x, raw_y, x, y;
+                int wheel_y = event.wheel.y;
+                int wheel_x = event.wheel.x;
+                SDL_GetMouseState(&raw_x, &raw_y);
+                logical_mouse(window, raw_x, raw_y, &x, &y);
+                if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
+                    wheel_y = -wheel_y;
+                    wheel_x = -wheel_x;
+                }
+                if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
+                    y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
+                    SDL_Keymod mod = SDL_GetModState();
+                    if ((mod & KMOD_SHIFT) || wheel_x != 0) {
+                        size_t span = instrument.view_last - instrument.view_first;
+                        ptrdiff_t step = (ptrdiff_t)(span / 8u);
+                        ptrdiff_t amount;
+                        if (step < 1) step = 1;
+                        amount = -(ptrdiff_t)wheel_y * step + (ptrdiff_t)wheel_x * step;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 ts_instrument_pan_view(&instrument, amount) ?
+                                 "MOUSE PANNED WAVEFORM VIEW" : "PAN LIMIT");
+                    } else if (wheel_y != 0) {
+                        size_t anchor = ts_instrument_frame_from_view_x(
+                            &instrument, x - TS_WAVE_X, TS_WAVE_W);
+                        float ratio = (float)(x - TS_WAVE_X) / (float)TS_WAVE_W;
+                        float scale = powf(0.75f, (float)wheel_y);
+                        snprintf(ui.status, sizeof(ui.status),
+                                 ts_instrument_zoom_view(&instrument, anchor, ratio, scale) ?
+                                 "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
+                    }
+                }
             } else if (event.type == SDL_MOUSEMOTION && ui.selecting) {
                 int x, y;
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
@@ -390,27 +482,30 @@ int main(int argc, char **argv)
                 } else if (y >= 205 && y < 228 && x >= 540 && x < 630) {
                     ui.commit_armed = 0;
                     stop_all(device, &audio, &ui);
-                } else if (y >= 233 && y < 257 && x >= 10 && x < 360) {
+                } else if (y >= 233 && y < 257 && x >= 10 && x < 330) {
                     TsProcessRecipe process = instrument.process;
                     const char *label;
                     int start;
                     int width;
                     float *control;
                     ui.commit_armed = 0;
-                    if (x < 120) { control = &process.body; start = 10; width = 110; label = "BODY"; }
-                    else if (x < 240) { control = &process.edge; start = 130; width = 110; label = "EDGE"; }
-                    else { control = &process.drift; start = 250; width = 110; label = "DRIFT"; }
+                    if (x < 110) { control = &process.body; start = 10; width = 100; label = "BODY"; }
+                    else if (x < 220) { control = &process.edge; start = 120; width = 100; label = "EDGE"; }
+                    else { control = &process.drift; start = 230; width = 100; label = "DRIFT"; }
                     *control = (float)(x - start) / (float)width;
                     if (*control < 0.0f) *control = 0.0f;
                     if (*control > 1.0f) *control = 1.0f;
                     apply_process(device, &audio, &ui, &instrument, process, label);
-                } else if (y >= 233 && y < 256 && x >= 380 && x < 455) {
+                } else if (y >= 233 && y < 256 && x >= 345 && x < 410) {
+                    ui.commit_armed = 0; ui.fx_page = TS_FX_EDIT;
+                    snprintf(ui.status, sizeof(ui.status), "SAMPLE EDITING PAGE");
+                } else if (y >= 233 && y < 256 && x >= 415 && x < 480) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_NOISE;
                     snprintf(ui.status, sizeof(ui.status), "NOISE PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 460 && x < 535) {
+                } else if (y >= 233 && y < 256 && x >= 485 && x < 550) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_DELAY;
                     snprintf(ui.status, sizeof(ui.status), "DELAY PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 540 && x < 630) {
+                } else if (y >= 233 && y < 256 && x >= 555 && x < 630) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_SPACE;
                     snprintf(ui.status, sizeof(ui.status), "SPACE PROCESSING PAGE");
                 } else if (y >= 261 && y < 285) {
@@ -418,7 +513,26 @@ int main(int argc, char **argv)
                     int changed = 0;
                     const char *label = "DSP";
                     ui.commit_armed = 0;
-                    if (ui.fx_page == TS_FX_NOISE) {
+                    if (ui.fx_page == TS_FX_EDIT) {
+                        if (x >= 10 && x < 104)
+                            apply_sample_edit(device, &audio, &ui, &instrument,
+                                              TS_SAMPLE_EDIT_REVERSE, 1.0f);
+                        else if (x >= 109 && x < 203)
+                            apply_sample_edit(device, &audio, &ui, &instrument,
+                                              TS_SAMPLE_EDIT_NORMALIZE, 0.98f);
+                        else if (x >= 208 && x < 292)
+                            apply_sample_edit(device, &audio, &ui, &instrument,
+                                              TS_SAMPLE_EDIT_GAIN, 0.7079458f);
+                        else if (x >= 297 && x < 381)
+                            apply_sample_edit(device, &audio, &ui, &instrument,
+                                              TS_SAMPLE_EDIT_GAIN, 1.4125376f);
+                        else if (x >= 386 && x < 496)
+                            apply_sample_edit(device, &audio, &ui, &instrument,
+                                              TS_SAMPLE_EDIT_FADE_IN, 1.0f);
+                        else if (x >= 501 && x < 611)
+                            apply_sample_edit(device, &audio, &ui, &instrument,
+                                              TS_SAMPLE_EDIT_FADE_OUT, 1.0f);
+                    } else if (ui.fx_page == TS_FX_NOISE) {
                         label = "NOISE";
                         if (x >= 10 && x < 104) { process.noise_enabled = !process.noise_enabled; changed = 1; }
                         else if (x >= 118 && x < 298) {

@@ -284,6 +284,13 @@ const char *ts_noise_color_name(TsNoiseColor color)
     return color >= 0 && color < TS_NOISE_COLOR_COUNT ? names[color] : "UNKNOWN";
 }
 
+const char *ts_sample_edit_name(TsSampleEditKind kind)
+{
+    static const char *names[] = {"REVERSE", "NORMALIZE", "GAIN", "FADE_IN", "FADE_OUT"};
+    return kind >= TS_SAMPLE_EDIT_REVERSE && kind <= TS_SAMPLE_EDIT_FADE_OUT ?
+           names[kind] : "UNKNOWN";
+}
+
 int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
                        char *error, size_t error_size)
 {
@@ -546,6 +553,8 @@ static TsEditSnapshot snapshot(const TsInstrument *instrument)
     result.view_last = instrument->view_last;
     result.has_selection = instrument->has_selection;
     result.process = instrument->process;
+    memcpy(result.sample_edits, instrument->sample_edits, sizeof(result.sample_edits));
+    result.sample_edit_count = instrument->sample_edit_count;
     return result;
 }
 
@@ -573,15 +582,93 @@ static void reset_editor(TsInstrument *instrument)
     instrument->has_selection = 0;
     instrument->view_first = 0;
     instrument->view_last = instrument->parent.frames;
+    instrument->sample_edit_count = 0;
     instrument->undo_count = 0;
     instrument->redo_count = 0;
+}
+
+static int render_edit_source(TsSample *destination, const TsSample *parent,
+                              size_t first, size_t last,
+                              const TsSampleEdit *edits, int edit_count,
+                              char *error, size_t error_size)
+{
+    float *data;
+    size_t frames;
+    if (parent == NULL || parent->data == NULL || first >= last || last > parent->frames) {
+        set_error(error, error_size, "Invalid Parent edit range");
+        return 0;
+    }
+    frames = last - first;
+    if (frames > SIZE_MAX / sizeof(float)) {
+        set_error(error, error_size, "Edited sample is too large");
+        return 0;
+    }
+    data = (float *)malloc(frames * sizeof(float));
+    if (data == NULL) {
+        set_error(error, error_size, "Out of memory while applying sample edits");
+        return 0;
+    }
+    memcpy(data, parent->data + first, frames * sizeof(float));
+    for (int edit_index = 0; edit_index < edit_count; ++edit_index) {
+        const TsSampleEdit *edit = &edits[edit_index];
+        size_t edit_first = clamps(edit->first, frames);
+        size_t edit_last = clamps(edit->last, frames);
+        size_t length;
+        if (edit_last <= edit_first) continue;
+        length = edit_last - edit_first;
+        if (edit->kind == TS_SAMPLE_EDIT_REVERSE) {
+            for (size_t i = 0; i < length / 2; ++i) {
+                float swap = data[edit_first + i];
+                data[edit_first + i] = data[edit_last - 1u - i];
+                data[edit_last - 1u - i] = swap;
+            }
+        } else if (edit->kind == TS_SAMPLE_EDIT_NORMALIZE) {
+            float peak = 0.0f;
+            float target = clampf(edit->amount, 0.0f, 1.0f);
+            for (size_t i = edit_first; i < edit_last; ++i)
+                if (fabsf(data[i]) > peak) peak = fabsf(data[i]);
+            if (peak > 0.0000001f) {
+                float gain = target / peak;
+                for (size_t i = edit_first; i < edit_last; ++i)
+                    data[i] = clampf(data[i] * gain, -1.0f, 1.0f);
+            }
+        } else if (edit->kind == TS_SAMPLE_EDIT_GAIN) {
+            for (size_t i = edit_first; i < edit_last; ++i)
+                data[i] = clampf(data[i] * edit->amount, -1.0f, 1.0f);
+        } else if (edit->kind == TS_SAMPLE_EDIT_FADE_IN) {
+            for (size_t i = 0; i < length; ++i) {
+                float gain = length > 1 ? (float)i / (float)(length - 1u) : 1.0f;
+                data[edit_first + i] *= gain;
+            }
+        } else if (edit->kind == TS_SAMPLE_EDIT_FADE_OUT) {
+            for (size_t i = 0; i < length; ++i) {
+                float gain = length > 1 ? (float)(length - 1u - i) /
+                                          (float)(length - 1u) : 1.0f;
+                data[edit_first + i] *= gain;
+            }
+        }
+    }
+    ts_sample_free(destination);
+    destination->data = data;
+    destination->frames = frames;
+    destination->sample_rate = parent->sample_rate;
+    snprintf(destination->name, sizeof(destination->name), "%s", parent->name);
+    return 1;
 }
 
 static int render_snapshot(TsSample *destination, const TsInstrument *instrument,
                            const TsEditSnapshot *state, char *error, size_t error_size)
 {
-    return ts_sample_process(destination, &instrument->parent, state->crop_first,
-                             state->crop_last, &state->process, error, error_size);
+    TsSample edited;
+    int ok;
+    ts_sample_init(&edited);
+    if (!render_edit_source(&edited, &instrument->parent, state->crop_first,
+                            state->crop_last, state->sample_edits,
+                            state->sample_edit_count, error, error_size)) return 0;
+    ok = ts_sample_process(destination, &edited, 0, edited.frames,
+                           &state->process, error, error_size);
+    ts_sample_free(&edited);
+    return ok;
 }
 
 void ts_process_recipe_reset(TsProcessRecipe *process)
@@ -697,9 +784,10 @@ int ts_instrument_set_process(TsInstrument *instrument, const TsProcessRecipe *p
                               char *error, size_t error_size)
 {
     TsSample current;
+    TsEditSnapshot target = snapshot(instrument);
     ts_sample_init(&current);
-    if (!ts_sample_process(&current, &instrument->parent, instrument->crop_first,
-                           instrument->crop_last, process, error, error_size)) return 0;
+    target.process = *process;
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
     begin_edit(instrument);
     ts_sample_free(&instrument->current);
     instrument->current = current;
@@ -723,6 +811,7 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
     target.view_first = 0;
     target.view_last = instrument->parent.frames;
     target.has_selection = 0;
+    target.sample_edit_count = 0;
     ts_process_recipe_reset(&target.process);
     target.process.seed = instrument->process.seed;
     ts_sample_init(&current);
@@ -738,6 +827,8 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
     instrument->view_last = current.frames;
     instrument->has_selection = 0;
     instrument->process = target.process;
+    memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
+    instrument->sample_edit_count = target.sample_edit_count;
     return 1;
 }
 
@@ -800,6 +891,7 @@ void ts_instrument_clear_selection(TsInstrument *instrument)
 
 int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t error_size)
 {
+    TsEditSnapshot target;
     TsSample current;
     size_t new_first, new_last;
     if (!instrument->has_selection || instrument->selection_last <= instrument->selection_first) {
@@ -808,16 +900,72 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
     }
     new_first = instrument->crop_first + instrument->selection_first;
     new_last = instrument->crop_first + instrument->selection_last;
+    target = snapshot(instrument);
+    target.crop_first = new_first;
+    target.crop_last = new_last;
+    target.sample_edit_count = 0;
+    for (int i = 0; i < instrument->sample_edit_count; ++i) {
+        TsSampleEdit edit = instrument->sample_edits[i];
+        size_t kept_first = edit.first > instrument->selection_first ?
+                            edit.first : instrument->selection_first;
+        size_t kept_last = edit.last < instrument->selection_last ?
+                           edit.last : instrument->selection_last;
+        if (kept_last <= kept_first) continue;
+        edit.first = kept_first - instrument->selection_first;
+        edit.last = kept_last - instrument->selection_first;
+        target.sample_edits[target.sample_edit_count++] = edit;
+    }
+    target.selection_first = 0;
+    target.selection_last = 0;
+    target.view_first = 0;
+    target.view_last = new_last - new_first;
+    target.has_selection = 0;
     ts_sample_init(&current);
-    if (!ts_sample_process(&current, &instrument->parent, new_first, new_last,
-                           &instrument->process, error, error_size)) return 0;
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
     begin_edit(instrument);
     ts_sample_free(&instrument->current);
     instrument->current = current;
     instrument->crop_first = new_first;
     instrument->crop_last = new_last;
+    memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
+    instrument->sample_edit_count = target.sample_edit_count;
     ts_instrument_clear_selection(instrument);
     ts_instrument_show_all(instrument);
+    return 1;
+}
+
+int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind kind,
+                                    float amount, char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsSample current;
+    TsSampleEdit edit;
+    if (instrument == NULL || instrument->current.data == NULL) {
+        set_error(error, error_size, "No Current sample to edit");
+        return 0;
+    }
+    if (kind < TS_SAMPLE_EDIT_REVERSE || kind > TS_SAMPLE_EDIT_FADE_OUT) {
+        set_error(error, error_size, "Unknown sample edit");
+        return 0;
+    }
+    if (instrument->sample_edit_count >= TS_SAMPLE_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more sample edits");
+        return 0;
+    }
+    target = snapshot(instrument);
+    edit.kind = kind;
+    edit.first = instrument->has_selection ? instrument->selection_first : 0;
+    edit.last = instrument->has_selection ? instrument->selection_last : instrument->current.frames;
+    edit.amount = amount;
+    target.sample_edits[target.sample_edit_count++] = edit;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    begin_edit(instrument);
+    ts_sample_free(&instrument->current);
+    instrument->current = current;
+    memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
+    instrument->sample_edit_count = target.sample_edit_count;
+    set_error(error, error_size, "");
     return 1;
 }
 
@@ -827,6 +975,56 @@ int ts_instrument_zoom_selection(TsInstrument *instrument)
         return 0;
     instrument->view_first = instrument->selection_first;
     instrument->view_last = instrument->selection_last;
+    return 1;
+}
+
+int ts_instrument_zoom_view(TsInstrument *instrument, size_t anchor_frame,
+                            float anchor_ratio, float scale)
+{
+    size_t frames = instrument->current.frames;
+    size_t old_span;
+    size_t new_span;
+    size_t first;
+    if (frames == 0 || instrument->view_last <= instrument->view_first || scale <= 0.0f)
+        return 0;
+    old_span = instrument->view_last - instrument->view_first;
+    new_span = (size_t)lrint((double)old_span * scale);
+    if (new_span < 32u) new_span = frames < 32u ? frames : 32u;
+    if (new_span > frames) new_span = frames;
+    anchor_frame = clamps(anchor_frame, frames);
+    anchor_ratio = clampf(anchor_ratio, 0.0f, 1.0f);
+    {
+        double wanted = (double)anchor_frame - (double)new_span * anchor_ratio;
+        first = wanted <= 0.0 ? 0u : (size_t)wanted;
+    }
+    if (first + new_span > frames) first = frames - new_span;
+    if (first == instrument->view_first && first + new_span == instrument->view_last)
+        return 0;
+    instrument->view_first = first;
+    instrument->view_last = first + new_span;
+    return 1;
+}
+
+int ts_instrument_pan_view(TsInstrument *instrument, ptrdiff_t frames)
+{
+    size_t total = instrument->current.frames;
+    size_t span;
+    size_t first;
+    if (total == 0 || instrument->view_last <= instrument->view_first) return 0;
+    span = instrument->view_last - instrument->view_first;
+    if (span >= total || frames == 0) return 0;
+    if (frames < 0) {
+        size_t amount = (size_t)(-(frames + 1)) + 1u;
+        first = amount > instrument->view_first ? 0u : instrument->view_first - amount;
+    } else {
+        size_t maximum = total - span;
+        size_t amount = (size_t)frames;
+        first = amount > maximum - instrument->view_first ? maximum :
+                instrument->view_first + amount;
+    }
+    if (first == instrument->view_first) return 0;
+    instrument->view_first = first;
+    instrument->view_last = first + span;
     return 1;
 }
 
@@ -854,6 +1052,8 @@ static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
     instrument->view_last = target.view_last;
     instrument->has_selection = target.has_selection;
     instrument->process = target.process;
+    memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
+    instrument->sample_edit_count = target.sample_edit_count;
     return 1;
 }
 
@@ -927,7 +1127,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     }
     source = instrument->source_kind == TS_SOURCE_IMPORTED ? "imported" :
              instrument->source_kind == TS_SOURCE_COMMITTED ? "committed" : "generated";
-    fputs("{\n  \"schema\": 3,\n  \"renderer\": 2,\n  \"source\": ", f);
+    fputs("{\n  \"schema\": 4,\n  \"renderer\": 3,\n  \"source\": ", f);
     write_json_string(f, source);
     fputs(",\n  \"parent_name\": ", f);
     write_json_string(f, instrument->parent.name);
@@ -954,14 +1154,23 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
             "    \"reverb\": {\"bypass\": %s, \"decay\": %.9g, \"damping\": %.9g, "
             "\"mix\": %.9g}\n"
             "  },\n"
-            "  \"crop\": [%zu, %zu]\n"
-            "}\n",
+            "  \"crop\": [%zu, %zu],\n"
+            "  \"sample_edits\": [",
             instrument->process.delay_enabled ? "false" : "true",
             instrument->process.delay_seconds, instrument->process.delay_feedback,
             instrument->process.delay_damping, instrument->process.delay_mix,
             instrument->process.reverb_enabled ? "false" : "true",
             instrument->process.reverb_decay, instrument->process.reverb_damping,
             instrument->process.reverb_mix, instrument->crop_first, instrument->crop_last);
+    for (int i = 0; i < instrument->sample_edit_count; ++i) {
+        const TsSampleEdit *edit = &instrument->sample_edits[i];
+        if (i > 0) fputs(",", f);
+        fputs("\n    {\"kind\": ", f);
+        write_json_string(f, ts_sample_edit_name(edit->kind));
+        fprintf(f, ", \"range\": [%zu, %zu], \"amount\": %.9g}",
+                edit->first, edit->last, edit->amount);
+    }
+    fputs(instrument->sample_edit_count > 0 ? "\n  ]\n}\n" : "]\n}\n", f);
     {
         int failed = ferror(f);
         if (fclose(f) != 0) failed = 1;

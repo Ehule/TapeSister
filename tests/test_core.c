@@ -186,12 +186,59 @@ int main(void)
     CHECK(committed.undo_count == 0 && committed.redo_count == 0);
     CHECK(!committed.process.delay_enabled && !committed.process.reverb_enabled);
 
+    CHECK(ts_sample_clone(&copy, &committed.current, error, sizeof(error)));
+    parent_hash = ts_sample_hash(&committed.parent);
+    ts_instrument_set_selection(&committed, 100, 1000);
+    CHECK(ts_instrument_apply_sample_edit(&committed, TS_SAMPLE_EDIT_REVERSE, 1.0f,
+                                          error, sizeof(error)));
+    CHECK(committed.sample_edit_count == 1);
+    CHECK(ts_sample_hash(&committed.parent) == parent_hash);
+    CHECK(fabsf(committed.current.data[100] - copy.data[999]) < 0.000001f);
+    CHECK(fabsf(committed.current.data[999] - copy.data[100]) < 0.000001f);
+    edited_hash = ts_sample_hash(&committed.current);
+    CHECK(ts_instrument_undo(&committed, error, sizeof(error)));
+    CHECK(ts_sample_hash(&committed.current) == ts_sample_hash(&copy));
+    CHECK(committed.sample_edit_count == 0);
+    CHECK(ts_instrument_redo(&committed, error, sizeof(error)));
+    CHECK(ts_sample_hash(&committed.current) == edited_hash);
+    CHECK(committed.sample_edit_count == 1);
+
+    CHECK(ts_instrument_apply_sample_edit(&committed, TS_SAMPLE_EDIT_FADE_IN, 1.0f,
+                                          error, sizeof(error)));
+    CHECK(fabsf(committed.current.data[100]) < 0.000001f);
+    CHECK(ts_instrument_apply_sample_edit(&committed, TS_SAMPLE_EDIT_FADE_OUT, 1.0f,
+                                          error, sizeof(error)));
+    CHECK(fabsf(committed.current.data[999]) < 0.000001f);
+    CHECK(ts_instrument_apply_sample_edit(&committed, TS_SAMPLE_EDIT_GAIN, 0.5f,
+                                          error, sizeof(error)));
+    CHECK(ts_instrument_apply_sample_edit(&committed, TS_SAMPLE_EDIT_NORMALIZE, 0.98f,
+                                          error, sizeof(error)));
+    CHECK(committed.sample_edit_count == 5);
+
+    ts_instrument_show_all(&committed);
+    {
+        size_t anchor = committed.current.frames / 4u;
+        CHECK(ts_instrument_zoom_view(&committed, anchor, 0.25f, 0.5f));
+        CHECK(committed.view_last - committed.view_first == committed.current.frames / 2u);
+        {
+            size_t mapped = ts_instrument_frame_from_view_x(&committed, 150, 600);
+            CHECK(mapped + 1u >= anchor && mapped <= anchor + 1u);
+        }
+        CHECK(ts_instrument_pan_view(&committed,
+                                     (ptrdiff_t)((committed.view_last - committed.view_first) / 8u)));
+        CHECK(ts_instrument_pan_view(&committed,
+                                     -(ptrdiff_t)((committed.view_last - committed.view_first) / 8u)));
+        ts_instrument_show_all(&committed);
+    }
+
     CHECK(ts_instrument_save_recipe(&committed, "test-recipe.tsr", error, sizeof(error)));
-    CHECK(file_contains("test-recipe.tsr", "\"schema\": 3"));
-    CHECK(file_contains("test-recipe.tsr", "\"renderer\": 2"));
+    CHECK(file_contains("test-recipe.tsr", "\"schema\": 4"));
+    CHECK(file_contains("test-recipe.tsr", "\"renderer\": 3"));
     CHECK(file_contains("test-recipe.tsr", "\"bypass\": true"));
     CHECK(file_contains("test-recipe.tsr", "\"generation\": 1"));
     CHECK(file_contains("test-recipe.tsr", "\"ancestor_hash\""));
+    CHECK(file_contains("test-recipe.tsr", "\"sample_edits\""));
+    CHECK(file_contains("test-recipe.tsr", "\"REVERSE\""));
     remove("test-recipe.tsr");
     remove("test-roundtrip.wav");
 

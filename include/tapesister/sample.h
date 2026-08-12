@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum { TS_HISTORY_DEPTH = 24 };
+enum { TS_HISTORY_DEPTH = 24, TS_SAMPLE_EDIT_DEPTH = 64 };
 
 typedef struct {
     float *data;
@@ -62,6 +62,21 @@ typedef struct {
     float reverb_mix;
 } TsProcessRecipe;
 
+typedef enum {
+    TS_SAMPLE_EDIT_REVERSE = 0,
+    TS_SAMPLE_EDIT_NORMALIZE,
+    TS_SAMPLE_EDIT_GAIN,
+    TS_SAMPLE_EDIT_FADE_IN,
+    TS_SAMPLE_EDIT_FADE_OUT
+} TsSampleEditKind;
+
+typedef struct {
+    TsSampleEditKind kind;
+    size_t first;
+    size_t last;
+    float amount;
+} TsSampleEdit;
+
 typedef struct {
     size_t crop_first;
     size_t crop_last;
@@ -71,6 +86,8 @@ typedef struct {
     size_t view_last;
     int has_selection;
     TsProcessRecipe process;
+    TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
+    int sample_edit_count;
 } TsEditSnapshot;
 
 typedef struct {
@@ -88,6 +105,8 @@ typedef struct {
     size_t view_first;
     size_t view_last;
     int has_selection;
+    TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
+    int sample_edit_count;
     TsEditSnapshot undo[TS_HISTORY_DEPTH];
     TsEditSnapshot redo[TS_HISTORY_DEPTH];
     int undo_count;
@@ -119,13 +138,19 @@ int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t e
 void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t last);
 void ts_instrument_clear_selection(TsInstrument *instrument);
 int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t error_size);
+int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind kind,
+                                    float amount, char *error, size_t error_size);
 int ts_instrument_zoom_selection(TsInstrument *instrument);
+int ts_instrument_zoom_view(TsInstrument *instrument, size_t anchor_frame,
+                            float anchor_ratio, float scale);
+int ts_instrument_pan_view(TsInstrument *instrument, ptrdiff_t frames);
 void ts_instrument_show_all(TsInstrument *instrument);
 int ts_instrument_undo(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_redo(TsInstrument *instrument, char *error, size_t error_size);
 size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, int width);
 const char *ts_generator_name(TsGeneratorKind kind);
 const char *ts_noise_color_name(TsNoiseColor color);
+const char *ts_sample_edit_name(TsSampleEditKind kind);
 void ts_process_recipe_reset(TsProcessRecipe *process);
 int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
                               char *error, size_t error_size);
