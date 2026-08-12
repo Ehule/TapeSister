@@ -31,10 +31,11 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 
 - [ ] Wheel up/down over the waveform zooms in/out while the sample beneath the pointer stays fixed.
 - [ ] Shift+wheel pans the zoomed waveform without changing selection or audio.
-- [ ] `+` / `-` zoom and Left/Right pan; `0` restores Show All.
+- [ ] `=` or `+` / `-` zoom and Left/Right pan; `0` restores Show All.
 - [ ] Reverse affects only the selection, or the whole Current when there is no selection.
 - [ ] Normalize brings the selected peak close to 0.98 without altering Parent.
 - [ ] Amplify Up/Down changes the selected range by 3 dB and can be repeated.
+- [ ] Amplify Down after a clipping Amplify Up lowers the level while deliberately preserving the flattened peaks.
 - [ ] Fade In reaches silence at the selection start; Fade Out reaches silence at its end.
 - [ ] Undo/Redo traverses edits in order and restores exact prior audio.
 - [ ] Active Noise/Delay/Space continues to rerender after sample edits.

@@ -368,8 +368,7 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_DOWN) {
                     apply_sample_edit(device, &audio, &ui, &instrument,
                                       TS_SAMPLE_EDIT_GAIN, 0.7079458f);
-                } else if (key == SDLK_PLUS || key == SDLK_KP_PLUS ||
-                           (key == SDLK_EQUALS && (mod & KMOD_SHIFT))) {
+                } else if (key == SDLK_EQUALS || key == SDLK_PLUS || key == SDLK_KP_PLUS) {
                     size_t anchor = instrument.has_selection ?
                                     (instrument.selection_first + instrument.selection_last) / 2u :
                                     (instrument.view_first + instrument.view_last) / 2u;

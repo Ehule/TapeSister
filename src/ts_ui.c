@@ -271,7 +271,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 460, 289, 56, "UNDO", instrument->undo_count > 0);
     button(fb, 521, 289, 62, "REDO", instrument->redo_count > 0);
 
-    text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  +/- ZOOM  ARROWS PAN", RGB(184, 180, 184), 1);
+    text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  =/- ZOOM  ARROWS PAN", RGB(184, 180, 184), 1);
     const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
     const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
     for (int i = 0; i < 14; ++i) {

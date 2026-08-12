@@ -32,7 +32,7 @@ Every stage is equally available to generated and imported Parents. Bypass is ex
 
 - drag across the waveform to select a range;
 - mouse-wheel zoom anchored to the sample beneath the pointer;
-- Shift+wheel panning, direct `+`/`-` keyboard zoom, arrow-key panning, and `0` Show All;
+- Shift+wheel panning, direct `=` or `+` / `-` keyboard zoom, arrow-key panning, and `0` Show All;
 - Play All, Play Selection, and Play Displayed;
 - Zoom Selection and Show All;
 - nondestructive Crop with Parent preservation;
@@ -44,6 +44,8 @@ Every stage is equally available to generated and imported Parents. Bypass is ex
 - mono 16-bit Current export.
 
 Sample edits run deterministically between the preserved Parent and the live DSP. With no selection they affect the whole Current; with a selection they affect only that range. Commit prints the heard result into the next Parent generation and clears both the edit stack and Undo/Redo history.
+
+Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the result without reconstructing clipped peaks, preserving that flattened distortion as a repeatable sculpting operation.
 
 The temporary colors come directly from `assets/tapehead.pal`, supplied by the user. The interface remains standalone: FT2 and the archived prototype are reference shelves, not inherited architecture, and TapeSister does not depend on or modify FT2 Tapehead Edition.
 
@@ -78,7 +80,7 @@ Pass a WAV path on the command line, drag a WAV onto the window, or click **Load
 - Reverse / Normalize: `Ctrl+R` / `Ctrl+N`
 - Fade in / Fade out: `Ctrl+I` / `Ctrl+U`
 - Amplify up/down 3 dB: `Ctrl+Up` / `Ctrl+Down`
-- Zoom in/out: `+` / `-`
+- Zoom in/out: `=` or `+` / `-`
 - Pan waveform: `Left` / `Right`
 - Show all: `0`
 - Commit Current as Parent: `Ctrl+P` twice
