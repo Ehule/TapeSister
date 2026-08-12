@@ -2,9 +2,13 @@
 #include "tapesister/ui.h"
 
 #include <SDL2/SDL.h>
+#include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 typedef struct {
     const TsSample *sample;
@@ -235,17 +239,136 @@ static void history_move(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
     else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
 }
 
-static int save_recipe(const TsInstrument *instrument, const char *path)
+static void browser_open(TsUiState *ui, TsBrowserMode mode)
 {
-    char error[160];
-    return ts_instrument_save_recipe(instrument, path, error, sizeof(error));
+    const char *filename = mode == TS_BROWSER_SAVE_RECIPE ? "tapesister-recipe.tsr" :
+                           mode == TS_BROWSER_EXPORT_WAV ? "tapesister-export.wav" : "";
+    ui->commit_armed = 0;
+    SDL_StopTextInput();
+    if (ts_browser_open(&ui->browser, mode, filename)) {
+        if (mode != TS_BROWSER_LOAD_WAV) SDL_StartTextInput();
+        snprintf(ui->status, sizeof(ui->status), "%s", ts_browser_mode_title(mode));
+    } else {
+        snprintf(ui->status, sizeof(ui->status), "BROWSER FAILED: %.142s", ui->browser.message);
+        ts_browser_close(&ui->browser);
+    }
 }
 
-static void path_text(TsUiState *ui, const char *input)
+static void browser_cancel(TsUiState *ui)
 {
-    size_t used = strlen(ui->path);
-    size_t available = sizeof(ui->path) - used - 1;
-    strncat(ui->path, input, available);
+    SDL_StopTextInput();
+    ts_browser_close(&ui->browser);
+    snprintf(ui->status, sizeof(ui->status), "FILE OPERATION CANCELLED");
+}
+
+static int finish_atomic_file(const char *temporary, const char *destination,
+                              char *error, size_t error_size)
+{
+#ifdef _WIN32
+    if (MoveFileExA(temporary, destination,
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return 1;
+    snprintf(error, error_size, "Could not replace destination (Windows error %lu)",
+             (unsigned long)GetLastError());
+#else
+    if (rename(temporary, destination) == 0) return 1;
+    snprintf(error, error_size, "Could not replace destination: %s", strerror(errno));
+#endif
+    remove(temporary);
+    return 0;
+}
+
+static int save_recipe_atomic(const TsInstrument *instrument, const char *destination,
+                              char *error, size_t error_size)
+{
+    char temporary[TS_BROWSER_PATH_MAX + 32];
+    int written = snprintf(temporary, sizeof(temporary), "%s.tapesister-tmp", destination);
+    if (written < 0 || (size_t)written >= sizeof(temporary)) {
+        snprintf(error, error_size, "Destination path is too long");
+        return 0;
+    }
+    if (!ts_instrument_save_recipe(instrument, temporary, error, error_size)) {
+        remove(temporary);
+        return 0;
+    }
+    return finish_atomic_file(temporary, destination, error, error_size);
+}
+
+static int export_wav_atomic(const TsSample *sample, const char *destination,
+                             char *error, size_t error_size)
+{
+    char temporary[TS_BROWSER_PATH_MAX + 32];
+    int written = snprintf(temporary, sizeof(temporary), "%s.tapesister-tmp", destination);
+    if (written < 0 || (size_t)written >= sizeof(temporary)) {
+        snprintf(error, error_size, "Destination path is too long");
+        return 0;
+    }
+    if (!ts_sample_save_wav16(sample, temporary, error, error_size)) {
+        remove(temporary);
+        return 0;
+    }
+    return finish_atomic_file(temporary, destination, error, error_size);
+}
+
+static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                           TsInstrument *instrument)
+{
+    TsBrowser *browser = &ui->browser;
+    char path[TS_BROWSER_PATH_MAX];
+    char error[160];
+    int ok = 0;
+    if (browser->mode == TS_BROWSER_LOAD_WAV && browser->selected >= 0 &&
+        browser->selected < browser->entry_count &&
+        browser->entries[browser->selected].is_directory) {
+        if (!ts_browser_enter_selected_directory(browser))
+            snprintf(browser->message, sizeof(browser->message), "COULD NOT ENTER DIRECTORY");
+        return;
+    }
+    if (browser->mode == TS_BROWSER_LOAD_WAV) {
+        if (!ts_browser_selected_path(browser, path, sizeof(path))) {
+            snprintf(browser->message, sizeof(browser->message), "SELECT A WAV FILE");
+            return;
+        }
+        ok = load_instrument(device, audio, ui, instrument, path);
+    } else {
+        if (!ts_browser_destination_path(browser, path, sizeof(path))) {
+            snprintf(browser->message, sizeof(browser->message), "ENTER A VALID FILENAME");
+            return;
+        }
+        if (ts_browser_path_exists(path) && !browser->overwrite_armed) {
+            browser->overwrite_armed = 1;
+            snprintf(browser->message, sizeof(browser->message), "PRESS AGAIN TO OVERWRITE");
+            return;
+        }
+        if (browser->mode == TS_BROWSER_SAVE_RECIPE) {
+            ok = save_recipe_atomic(instrument, path, error, sizeof(error));
+            snprintf(ui->status, sizeof(ui->status), ok ? "SAVED RECIPE %.108s" :
+                     "SAVE FAILED: %.135s", ok ? path : error);
+        } else {
+            ok = export_wav_atomic(&instrument->current, path, error, sizeof(error));
+            snprintf(ui->status, sizeof(ui->status), ok ? "EXPORTED CURRENT %.101s" :
+                     "EXPORT FAILED: %.133s", ok ? path : error);
+        }
+    }
+    if (ok) {
+        SDL_StopTextInput();
+        ts_browser_close(browser);
+    } else if (browser->mode != TS_BROWSER_CLOSED) {
+        browser->overwrite_armed = 0;
+        snprintf(browser->message, sizeof(browser->message), "%.150s", ui->status);
+    }
+}
+
+static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *audio,
+                                       TsUiState *ui, TsInstrument *instrument)
+{
+    TsBrowser *browser = &ui->browser;
+    if (browser->selected >= 0 && browser->selected < browser->entry_count &&
+        browser->entries[browser->selected].is_directory && !browser->filename_focus) {
+        if (!ts_browser_enter_selected_directory(browser))
+            snprintf(browser->message, sizeof(browser->message), "COULD NOT ENTER DIRECTORY");
+        return;
+    }
+    browser_action(device, audio, ui, instrument);
 }
 
 static void logical_mouse(SDL_Window *window, int raw_x, int raw_y, int *x, int *y)
@@ -309,26 +432,50 @@ int main(int argc, char **argv)
             else if (event.type == SDL_DROPFILE) {
                 load_instrument(device, &audio, &ui, &instrument, event.drop.file);
                 SDL_free(event.drop.file);
-            } else if (event.type == SDL_TEXTINPUT && ui.path_entry) {
-                path_text(&ui, event.text.text);
+            } else if (event.type == SDL_TEXTINPUT && ui.browser.mode != TS_BROWSER_CLOSED) {
+                if (ui.browser.filename_focus && ui.browser.mode != TS_BROWSER_LOAD_WAV)
+                    ts_browser_append_filename(&ui.browser, event.text.text);
             } else if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
                 if (!((mod & KMOD_CTRL) && key == SDLK_p)) ui.commit_armed = 0;
-                if (ui.path_entry) {
-                    if (key == SDLK_ESCAPE) {
-                        ui.path_entry = 0; SDL_StopTextInput();
-                        snprintf(ui.status, sizeof(ui.status), "LOAD CANCELLED");
+                if (ui.browser.mode != TS_BROWSER_CLOSED) {
+                    if (key == SDLK_ESCAPE) browser_cancel(&ui);
+                    else if (key == SDLK_UP) {
+                        ui.browser.filename_focus = 0;
+                        ts_browser_move_selection(&ui.browser, -1);
+                    } else if (key == SDLK_DOWN) {
+                        ui.browser.filename_focus = 0;
+                        ts_browser_move_selection(&ui.browser, 1);
+                    } else if (key == SDLK_PAGEUP) {
+                        ui.browser.filename_focus = 0;
+                        ts_browser_move_selection(&ui.browser, -TS_BROWSER_VISIBLE_ROWS);
+                    } else if (key == SDLK_PAGEDOWN) {
+                        ui.browser.filename_focus = 0;
+                        ts_browser_move_selection(&ui.browser, TS_BROWSER_VISIBLE_ROWS);
+                    }
+                    else if (key == SDLK_HOME) {
+                        ui.browser.filename_focus = 0;
+                        ui.browser.selected = ui.browser.entry_count > 0 ? 0 : -1;
+                        ts_browser_set_scroll(&ui.browser, 0);
+                        ui.browser.overwrite_armed = 0;
+                    } else if (key == SDLK_END) {
+                        ui.browser.filename_focus = 0;
+                        ui.browser.selected = ui.browser.entry_count - 1;
+                        ts_browser_set_scroll(&ui.browser, ui.browser.entry_count);
+                        ui.browser.overwrite_armed = 0;
+                    } else if (key == SDLK_TAB && ui.browser.mode != TS_BROWSER_LOAD_WAV) {
+                        ui.browser.filename_focus = !ui.browser.filename_focus;
+                        ui.browser.overwrite_armed = 0;
+                    } else if (key == SDLK_BACKSPACE) {
+                        if (ui.browser.filename_focus && ui.browser.mode != TS_BROWSER_LOAD_WAV)
+                            ts_browser_backspace_filename(&ui.browser);
+                        else ts_browser_parent(&ui.browser);
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
-                        if (ui.path[0] && load_instrument(device, &audio, &ui, &instrument, ui.path)) {
-                            ui.path_entry = 0; SDL_StopTextInput();
-                        }
-                    } else if (key == SDLK_BACKSPACE && ui.path[0]) {
-                        ui.path[strlen(ui.path) - 1] = '\0';
+                        browser_activate_selection(device, &audio, &ui, &instrument);
                     }
                 } else if ((mod & KMOD_CTRL) && key == SDLK_o) {
-                    ui.path_entry = 1; ui.path[0] = '\0'; SDL_StartTextInput();
-                    snprintf(ui.status, sizeof(ui.status), "ENTER A WAV PATH");
+                    browser_open(&ui, TS_BROWSER_LOAD_WAV);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_p) {
                     if (ui.commit_armed) commit_current(device, &audio, &ui, &instrument);
                     else {
@@ -336,13 +483,9 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status), "CTRL+P AGAIN TO COMMIT CURRENT AS PARENT");
                     }
                 } else if ((mod & KMOD_CTRL) && key == SDLK_s) {
-                    snprintf(ui.status, sizeof(ui.status), save_recipe(&instrument, "tapesister-recipe.tsr") ?
-                             "SAVED TAPESISTER-RECIPE.TSR" : "RECIPE SAVE FAILED");
+                    browser_open(&ui, TS_BROWSER_SAVE_RECIPE);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_e) {
-                    char error[120];
-                    snprintf(ui.status, sizeof(ui.status),
-                             ts_sample_save_wav16(&instrument.current, "tapesister-export.wav", error, sizeof(error)) ?
-                             "EXPORTED CURRENT TO TAPESISTER-EXPORT.WAV" : "EXPORT FAILED: %.100s", error);
+                    browser_open(&ui, TS_BROWSER_EXPORT_WAV);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_z) {
                     history_move(device, &audio, &ui, &instrument, 0);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_y) {
@@ -401,7 +544,11 @@ int main(int argc, char **argv)
                 }
             } else if (event.type == SDL_KEYUP && ui.active_key == note_for_key(event.key.keysym.sym)) {
                 ui.active_key = -1;
-            } else if (event.type == SDL_MOUSEWHEEL && !ui.path_entry) {
+            } else if (event.type == SDL_MOUSEWHEEL && ui.browser.mode != TS_BROWSER_CLOSED) {
+                int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
+                              -event.wheel.y : event.wheel.y;
+                ts_browser_scroll(&ui.browser, -wheel_y * 3);
+            } else if (event.type == SDL_MOUSEWHEEL) {
                 int raw_x, raw_y, x, y;
                 int wheel_y = event.wheel.y;
                 int wheel_x = event.wheel.x;
@@ -433,6 +580,23 @@ int main(int argc, char **argv)
                                  "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
                     }
                 }
+            } else if (event.type == SDL_MOUSEMOTION && ui.browser.dragging_scrollbar) {
+                int x, y;
+                int maximum = ui.browser.entry_count - TS_BROWSER_VISIBLE_ROWS;
+                int thumb_h = maximum <= 0 ? TS_BROWSER_SCROLL_H :
+                              TS_BROWSER_SCROLL_H * TS_BROWSER_VISIBLE_ROWS /
+                              ui.browser.entry_count;
+                int travel;
+                int thumb_top;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
+                (void)x;
+                if (thumb_h < 18) thumb_h = 18;
+                travel = TS_BROWSER_SCROLL_H - thumb_h;
+                thumb_top = y - ui.browser.scrollbar_drag_offset - TS_BROWSER_LIST_Y;
+                if (thumb_top < 0) thumb_top = 0;
+                if (thumb_top > travel) thumb_top = travel;
+                ts_browser_set_scroll(&ui.browser, travel > 0 ?
+                                      (thumb_top * maximum + travel / 2) / travel : 0);
             } else if (event.type == SDL_MOUSEMOTION && ui.selecting) {
                 int x, y;
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
@@ -443,16 +607,55 @@ int main(int argc, char **argv)
                 int x, y;
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
                 if (!(y >= 205 && y < 228 && x >= 247 && x < 325)) ui.commit_armed = 0;
-                if (ui.path_entry) {
-                    /* The path editor owns the modal surface. */
+                if (ui.browser.mode != TS_BROWSER_CLOSED) {
+                    if (x >= TS_BROWSER_LIST_X && x < TS_BROWSER_LIST_X + TS_BROWSER_LIST_W &&
+                        y >= TS_BROWSER_LIST_Y && y < TS_BROWSER_LIST_Y + TS_BROWSER_SCROLL_H) {
+                        int row = (y - TS_BROWSER_LIST_Y) / TS_BROWSER_ROW_H;
+                        int index = ui.browser.scroll + row;
+                        ts_browser_select(&ui.browser, index);
+                        ui.browser.filename_focus = 0;
+                        if (event.button.clicks >= 2)
+                            browser_activate_selection(device, &audio, &ui, &instrument);
+                    } else if (x >= TS_BROWSER_SCROLL_X &&
+                               x < TS_BROWSER_SCROLL_X + TS_BROWSER_SCROLL_W &&
+                               y >= TS_BROWSER_LIST_Y &&
+                               y < TS_BROWSER_LIST_Y + TS_BROWSER_SCROLL_H) {
+                        int maximum = ui.browser.entry_count - TS_BROWSER_VISIBLE_ROWS;
+                        int thumb_h = maximum <= 0 ? TS_BROWSER_SCROLL_H :
+                                      TS_BROWSER_SCROLL_H * TS_BROWSER_VISIBLE_ROWS /
+                                      ui.browser.entry_count;
+                        int travel;
+                        int thumb_y;
+                        if (thumb_h < 18) thumb_h = 18;
+                        travel = TS_BROWSER_SCROLL_H - thumb_h;
+                        thumb_y = TS_BROWSER_LIST_Y + (maximum > 0 ?
+                                  ui.browser.scroll * travel / maximum : 0);
+                        ui.browser.dragging_scrollbar = 1;
+                        ui.browser.scrollbar_drag_offset = y >= thumb_y && y < thumb_y + thumb_h ?
+                                                           y - thumb_y : thumb_h / 2;
+                        if (!(y >= thumb_y && y < thumb_y + thumb_h)) {
+                            int top = y - ui.browser.scrollbar_drag_offset - TS_BROWSER_LIST_Y;
+                            if (top < 0) top = 0;
+                            if (top > travel) top = travel;
+                            ts_browser_set_scroll(&ui.browser, travel > 0 ?
+                                                  (top * maximum + travel / 2) / travel : 0);
+                        }
+                    } else if (ui.browser.mode != TS_BROWSER_LOAD_WAV &&
+                               x >= 58 && x < 576 && y >= 294 && y < 318) {
+                        ui.browser.filename_focus = 1;
+                        ui.browser.overwrite_armed = 0;
+                        SDL_StartTextInput();
+                    } else if (x >= 58 && x < 130 && y >= 326 && y < 349) {
+                        ts_browser_parent(&ui.browser);
+                    } else if (x >= 135 && x < 255 && y >= 326 && y < 349) {
+                        browser_action(device, &audio, &ui, &instrument);
+                    } else if (x >= 260 && x < 344 && y >= 326 && y < 349) {
+                        browser_cancel(&ui);
+                    }
                 } else if (y >= 4 && y < 28 && x >= 447 && x < 529) {
-                    snprintf(ui.status, sizeof(ui.status), save_recipe(&instrument, "tapesister-recipe.tsr") ?
-                             "SAVED TAPESISTER-RECIPE.TSR" : "RECIPE SAVE FAILED");
+                    browser_open(&ui, TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 535 && x < 630) {
-                    char error[120];
-                    int ok = ts_sample_save_wav16(&instrument.current, "tapesister-export.wav", error, sizeof(error));
-                    snprintf(ui.status, sizeof(ui.status), ok ? "EXPORTED CURRENT TO TAPESISTER-EXPORT.WAV" :
-                             "EXPORT FAILED: %.100s", error);
+                    browser_open(&ui, TS_BROWSER_EXPORT_WAV);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     ui.selection_anchor = ts_instrument_frame_from_view_x(&instrument, x - TS_WAVE_X, TS_WAVE_W);
@@ -461,8 +664,7 @@ int main(int argc, char **argv)
                     snprintf(ui.status, sizeof(ui.status), "SELECTING CURRENT");
                 } else if (y >= 205 && y < 228 && x >= 10 && x < 80) {
                     ui.commit_armed = 0;
-                    ui.path_entry = 1; ui.path[0] = '\0'; SDL_StartTextInput();
-                    snprintf(ui.status, sizeof(ui.status), "ENTER A WAV PATH");
+                    browser_open(&ui, TS_BROWSER_LOAD_WAV);
                 } else if (y >= 205 && y < 228 && x >= 85 && x < 167) {
                     ui.commit_armed = 0;
                     generate_parent(device, &audio, &ui, &instrument, 1);
@@ -592,6 +794,7 @@ int main(int argc, char **argv)
                     if (note >= 0 && device) begin_note(device, &audio, &ui, note, obtained.freq);
                 }
             } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
+                ui.browser.dragging_scrollbar = 0;
                 if (ui.selecting) {
                     ui.selecting = 0;
                     snprintf(ui.status, sizeof(ui.status), "SELECTED %zu FRAMES",

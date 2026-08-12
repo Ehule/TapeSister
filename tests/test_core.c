@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static int failures;
 
@@ -35,11 +37,19 @@ static int file_contains(const char *path, const char *needle)
     return strstr(buffer, needle) != NULL;
 }
 
+static int browser_find(const TsBrowser *browser, const char *name)
+{
+    for (int i = 0; i < browser->entry_count; ++i)
+        if (strcmp(browser->entries[i].name, name) == 0) return i;
+    return -1;
+}
+
 int main(void)
 {
     TsSample a, b, loaded, copy, dry, effected, repeated;
     TsInstrument generated, imported, committed;
     TsUiState ui;
+    TsBrowser browser;
     TsFramebuffer fb;
     char error[160];
     uint64_t parent_hash, current_hash, edited_hash;
@@ -241,6 +251,69 @@ int main(void)
     CHECK(file_contains("test-recipe.tsr", "\"REVERSE\""));
     remove("test-recipe.tsr");
     remove("test-roundtrip.wav");
+
+    {
+        FILE *test_file;
+        char path[TS_BROWSER_PATH_MAX];
+        mkdir("test-browser-dir", 0700);
+        test_file = fopen("test-browser-load.wav", "wb");
+        CHECK(test_file != NULL);
+        if (test_file != NULL) fclose(test_file);
+        test_file = fopen("test-browser-save.tsr", "wb");
+        CHECK(test_file != NULL);
+        if (test_file != NULL) fclose(test_file);
+        test_file = fopen("test-browser-ignore.txt", "wb");
+        CHECK(test_file != NULL);
+        if (test_file != NULL) fclose(test_file);
+
+        ts_browser_init(&browser);
+        CHECK(ts_browser_open(&browser, TS_BROWSER_LOAD_WAV, NULL));
+        CHECK(browser_find(&browser, "test-browser-dir") >= 0);
+        CHECK(browser_find(&browser, "test-browser-load.wav") >= 0);
+        CHECK(browser_find(&browser, "test-browser-save.tsr") < 0);
+        CHECK(browser_find(&browser, "test-browser-ignore.txt") < 0);
+        ts_browser_select(&browser, browser_find(&browser, "test-browser-load.wav"));
+        CHECK(ts_browser_selected_path(&browser, path, sizeof(path)));
+        CHECK(strstr(path, "test-browser-load.wav") != NULL);
+        ts_browser_select(&browser, browser_find(&browser, "test-browser-dir"));
+        CHECK(ts_browser_enter_selected_directory(&browser));
+        CHECK(strstr(browser.directory, "test-browser-dir") != NULL);
+        CHECK(ts_browser_parent(&browser));
+
+        CHECK(ts_browser_open(&browser, TS_BROWSER_SAVE_RECIPE, "new-family"));
+        CHECK(browser_find(&browser, "test-browser-save.tsr") >= 0);
+        CHECK(browser_find(&browser, "test-browser-load.wav") < 0);
+        CHECK(ts_browser_destination_path(&browser, path, sizeof(path)));
+        CHECK(strstr(path, "new-family.tsr") != NULL);
+        ts_browser_set_filename(&browser, "named.tsr");
+        CHECK(ts_browser_destination_path(&browser, path, sizeof(path)));
+        CHECK(strstr(path, "named.tsr") != NULL);
+        CHECK(strstr(path, "named.tsr.tsr") == NULL);
+        ts_browser_set_filename(&browser, "safe");
+        ts_browser_append_filename(&browser, "/name");
+        CHECK(strcmp(browser.filename, "safename") == 0);
+        ts_browser_backspace_filename(&browser);
+        CHECK(strcmp(browser.filename, "safenam") == 0);
+
+        CHECK(ts_browser_open(&browser, TS_BROWSER_EXPORT_WAV, "current"));
+        CHECK(ts_browser_destination_path(&browser, path, sizeof(path)));
+        CHECK(strstr(path, "current.wav") != NULL);
+        browser.entry_count = 30;
+        browser.selected = 0;
+        ts_browser_set_scroll(&browser, 999);
+        CHECK(browser.scroll == 30 - TS_BROWSER_VISIBLE_ROWS);
+        ts_browser_move_selection(&browser, 999);
+        CHECK(browser.selected == 29);
+        ts_browser_move_selection(&browser, -999);
+        CHECK(browser.selected == 0);
+        ts_browser_close(&browser);
+        CHECK(browser.mode == TS_BROWSER_CLOSED);
+
+        remove("test-browser-load.wav");
+        remove("test-browser-save.tsr");
+        remove("test-browser-ignore.txt");
+        rmdir("test-browser-dir");
+    }
 
     ts_ui_init(&ui);
     ts_instrument_set_selection(&imported, imported.current.frames / 4, imported.current.frames / 2);

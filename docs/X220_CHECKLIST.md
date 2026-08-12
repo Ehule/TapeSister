@@ -40,6 +40,21 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Undo/Redo traverses edits in order and restores exact prior audio.
 - [ ] Active Noise/Delay/Space continues to rerender after sample edits.
 - [ ] Commit prints all edits and DSP into the next Parent, resets the edit/DSP shelves, and clears history.
+
+## Scrollable file browser
+
+- [ ] Load, Save, and Export open the same compact browser with the correct title and action button.
+- [ ] Load lists directories and WAVs only; Save lists directories and `.tsr` files; Export lists directories and WAVs.
+- [ ] Mouse wheel scrolls without changing the selected row.
+- [ ] The scrollbar thumb size reflects the directory length and can be dragged across the full list.
+- [ ] Single-click selects; double-click or Enter opens a directory or loads the selected WAV.
+- [ ] Up/Down, Page Up/Down, Home/End, and Backspace navigation remain visible and bounded.
+- [ ] Save/Export filename entry appends `.tsr`/`.wav` when omitted without duplicating an existing extension.
+- [ ] A first Save/Export action on an existing destination only arms overwrite; the second performs it.
+- [ ] Cancel and Escape close the browser without loading, saving, exporting, or leaking a click to the instrument.
+- [ ] A malformed WAV reports the real load error and preserves the prior Parent and Current.
+- [ ] A failed Save/Export reports the real write error and leaves an existing destination intact.
+- [ ] The last visited directory remains active when switching among Load, Save, and Export.
 - [ ] Ctrl+Z and Ctrl+Y match the buttons.
 
 ## Existing foundation
