@@ -185,7 +185,9 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
     if (browser->mode != TS_BROWSER_LOAD_WAV) {
         const char *filename = browser->filename;
         size_t length = strlen(filename);
-        text(fb, 58, 282, "FILENAME", PAL_EFFECT, 1);
+        text(fb, 58, 282,
+             browser->mode == TS_BROWSER_EXPORT_BANK ? "FAMILY FOLDER" : "FILENAME",
+             PAL_EFFECT, 1);
         rect(fb, 58, 294, 518, 24, RGB(8, 8, 8));
         if (length > 78) filename += length - 78;
         text(fb, 64, 303, filename, browser->filename_focus ? PAL_MOUSE : PAL_TEXT, 1);
@@ -213,6 +215,9 @@ void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
     ui->mouse_note = -1;
+    ui->bank_view_slot = -1;
+    ui->playhead_bank_slot = -1;
+    ui->renaming_bank_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->show_keyboard = 1;
     ts_browser_init(&ui->browser);
@@ -302,15 +307,26 @@ static int frame_x(size_t frame_index, size_t view_first, size_t view_last)
 
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
-    int showing_parent = ui->audition_source == TS_AUDITION_PARENT;
-    const TsSample *sample = showing_parent ? &instrument->parent : &instrument->current;
+    int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
+    int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
+    const TsBankSlot *shown_slot = showing_bank ? &instrument->bank[ui->bank_view_slot] : NULL;
+    const TsSample *sample = showing_bank ? &shown_slot->sample :
+                             showing_parent ? &instrument->parent : &instrument->current;
     size_t view_first = instrument->view_first;
     size_t view_last = instrument->view_last;
     size_t selection_first = instrument->selection_first;
     size_t selection_last = instrument->selection_last;
     size_t loop_first = instrument->loop_first;
     size_t loop_last = instrument->loop_last;
-    if (showing_parent) {
+    int has_selection = !showing_bank && instrument->has_selection;
+    int has_loop = showing_bank ? shown_slot->has_loop : instrument->has_loop;
+    if (showing_bank) {
+        view_first = 0;
+        view_last = sample->frames;
+        selection_first = selection_last = 0;
+        loop_first = shown_slot->loop_first;
+        loop_last = shown_slot->loop_last;
+    } else if (showing_parent) {
         valid_parent_view(ui, instrument->parent.frames, &view_first, &view_last);
         selection_first += instrument->crop_first;
         selection_last += instrument->crop_first;
@@ -329,9 +345,17 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char parent[96], info[112];
         snprintf(parent, sizeof(parent), "PARENT G%u %.28s",
                  instrument->generation, instrument->parent.name);
-        snprintf(info, sizeof(info), "AUDITION %s %u HZ %.2F SEC",
-                 showing_parent ? "PARENT" : "CURRENT", sample->sample_rate,
-                 (double)sample->frames / sample->sample_rate);
+        if (showing_bank && shown_slot->occupied)
+            snprintf(info, sizeof(info), "BANK %02d %.28s %u HZ %.2F SEC",
+                     ui->bank_view_slot + 1, sample->name, sample->sample_rate,
+                     (double)sample->frames / sample->sample_rate);
+        else if (showing_bank)
+            snprintf(info, sizeof(info), "BANK %02d EMPTY - SILENCE",
+                     ui->bank_view_slot + 1);
+        else
+            snprintf(info, sizeof(info), "AUDITION %s %u HZ %.2F SEC",
+                     showing_parent ? "PARENT" : "CURRENT", sample->sample_rate,
+                     (double)sample->frames / sample->sample_rate);
         text(fb, 20, 49, parent, PAL_INSTRUMENT, 1);
         text(fb, 390, 49, info, PAL_EFFECT, 1);
     } else {
@@ -345,13 +369,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1, RGB(26, 24, 27));
     rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2, TS_WAVE_W, 1, RGB(74, 67, 75));
 
-    if (instrument->has_loop && loop_last > view_first && loop_first < view_last) {
+    if (has_loop && loop_last > view_first && loop_first < view_last) {
         int lx0 = frame_x(loop_first, view_first, view_last);
         int lx1 = frame_x(loop_last, view_first, view_last);
         rect(fb, lx0, TS_WAVE_Y, lx1 - lx0, TS_WAVE_H, RGB(5, 24, 48));
     }
 
-    if (instrument->has_selection && selection_last > view_first &&
+    if (has_selection && selection_last > view_first &&
         selection_first < view_last) {
         int sx0 = frame_x(selection_first, view_first, view_last);
         int sx1 = frame_x(selection_last, view_first, view_last);
@@ -372,7 +396,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
             int y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
             size_t at = begin;
-            uint32_t color = instrument->has_selection && at >= selection_first &&
+            uint32_t color = has_selection && at >= selection_first &&
                              at < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
             line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
             for (size_t i = begin; i < end && i < sample->frames; ++i) {
@@ -385,10 +409,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             }
         }
     } else {
-        text(fb, 211, 135, "DROP WAV HERE", RGB(120, 113, 121), 2);
+        text(fb, showing_bank ? 199 : 211, 135,
+             showing_bank ? "EMPTY BANK SLOT" : "DROP WAV HERE",
+             RGB(120, 113, 121), 2);
     }
 
-    if (instrument->has_loop && loop_last > view_first && loop_first < view_last) {
+    if (has_loop && loop_last > view_first && loop_first < view_last) {
         int lx0 = frame_x(loop_first, view_first, view_last);
         int lx1 = frame_x(loop_last, view_first, view_last);
         rect(fb, lx0, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
@@ -401,7 +427,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         int playhead_x = -1;
         uint32_t playhead_color = ui->playhead_source == TS_AUDITION_PARENT ?
                                   PAL_INSTRUMENT : PAL_MOUSE;
-        if (ui->playhead_source == ui->audition_source &&
+        if (((showing_bank && ui->playhead_bank_slot == ui->bank_view_slot) ||
+             (!showing_bank && ui->playhead_bank_slot < 0 &&
+              ui->playhead_source == ui->audition_source)) &&
             ui->playhead_frame >= view_first && ui->playhead_frame <= view_last) {
             playhead_x = frame_x(ui->playhead_frame, view_first, view_last);
         }
@@ -417,9 +445,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 172, 205, 70, "RESEED", 0);
     button(fb, 247, 205, 78, "COMMIT", ui->commit_armed);
     button(fb, 330, 205, 72, "RESET", 0);
-    button(fb, 407, 205, 61, "PARENT", ui->audition_source == TS_AUDITION_PARENT);
-    button(fb, 472, 205, 63, "CURRENT", ui->audition_source == TS_AUDITION_CURRENT);
-    button(fb, 540, 205, 90, "STOP ALL", 0);
+    button(fb, 407, 205, 61, "PARENT", !showing_bank && ui->audition_source == TS_AUDITION_PARENT);
+    button(fb, 472, 205, 63, "CURRENT", !showing_bank && ui->audition_source == TS_AUDITION_CURRENT);
+    button(fb, 540, 205, 90, "SET CURRENT",
+           showing_bank && shown_slot->occupied);
 
     slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);
@@ -475,10 +504,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 381, 289, 74, "SHOW ALL", 0);
     button(fb, 460, 289, 56, "UNDO", instrument->undo_count > 0);
     button(fb, 521, 289, 62, "REDO", instrument->redo_count > 0);
-    button(fb, 588, 289, 42, "KEYS", ui->show_keyboard);
+    button(fb, 588, 289, 42, ui->show_keyboard ? "BANK" : "KEYS", !ui->show_keyboard);
 
-    text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  =/- ZOOM  ARROWS PAN  SHIFT+CLICK CHORD", RGB(184, 180, 184), 1);
     if (ui->show_keyboard) {
+        text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  =/- ZOOM  ARROWS PAN  SHIFT+CLICK CHORD", RGB(184, 180, 184), 1);
         const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
         const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
         const int white_semitones[14] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
@@ -498,12 +527,40 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                      active ? PAL_VOLUME : RGB(18, 18, 18));
             }
         }
+    } else {
+        text(fb, 11, 318, "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  RMB RENAME  SHIFT+RMB CLEAR", RGB(184, 180, 184), 1);
+        for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+            const TsBankSlot *slot = &instrument->bank[i];
+            char label[24];
+            int x = 10 + (i % 8) * 77;
+            int y = 330 + (i / 8) * 25;
+            if (slot->occupied)
+                snprintf(label, sizeof(label), "%02d %.7s", i + 1, slot->sample.name);
+            else
+                snprintf(label, sizeof(label), "%02d ---", i + 1);
+            button(fb, x, y, 72, label, slot->occupied);
+            if (i == ui->bank_view_slot) rect(fb, x + 2, y + 2, 68, 2, PAL_MOUSE);
+        }
     }
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
     text(fb, 8, 389, ui->status, PAL_MOUSE, 1);
 
     if (ui->browser.mode != TS_BROWSER_CLOSED)
         browser_render(fb, &ui->browser, ui->text_cursor_visible);
+    else if (ui->renaming_bank_slot >= 0) {
+        const char *shown = ui->bank_rename;
+        size_t length = strlen(shown);
+        char title[40];
+        if (length > 62) shown += length - 62;
+        frame(fb, 104, 306, 432, 76, RGB(36, 33, 37), PAL_MOUSE);
+        snprintf(title, sizeof(title), "RENAME BANK %02d", ui->renaming_bank_slot + 1);
+        text(fb, 116, 316, title, PAL_NOTE, 1);
+        rect(fb, 116, 332, 408, 23, RGB(8, 8, 8));
+        text(fb, 122, 340, shown, PAL_MOUSE, 1);
+        if (ui->text_cursor_visible)
+            rect(fb, 122 + (int)strlen(shown) * 6, 338, 2, 11, PAL_MOUSE);
+        text(fb, 116, 365, "ENTER ACCEPTS   ESC CANCELS", RGB(190, 185, 190), 1);
+    }
 }
 
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path)
@@ -537,4 +594,31 @@ int ts_ui_key_from_point(int x, int y)
     static const int white_semitones[] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
     int index = (x - 10) / white_w;
     return index >= 0 && index < 14 ? white_semitones[index] : -1;
+}
+
+int ts_ui_bank_slot_from_point(int x, int y)
+{
+    int column;
+    int row;
+    if (x < 10 || x >= 626 || y < 330 || y >= 379) return -1;
+    column = (x - 10) / 77;
+    row = (y - 330) / 25;
+    if (column < 0 || column >= 8 || row < 0 || row >= 2) return -1;
+    if ((x - 10) % 77 >= 72 || (y - 330) % 25 >= 24) return -1;
+    return row * 8 + column;
+}
+
+TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)
+{
+    unsigned relevant = modifiers & (TS_UI_BANK_MOD_SHIFT |
+                                     TS_UI_BANK_MOD_CTRL |
+                                     TS_UI_BANK_MOD_ALT);
+    if (right_button)
+        return relevant == TS_UI_BANK_MOD_SHIFT ? TS_UI_BANK_ACTION_CLEAR :
+               relevant == 0 ? TS_UI_BANK_ACTION_RENAME : TS_UI_BANK_ACTION_INVALID;
+    if (relevant == 0) return TS_UI_BANK_ACTION_AUDITION;
+    if (relevant == TS_UI_BANK_MOD_SHIFT) return TS_UI_BANK_ACTION_CAPTURE_CURRENT;
+    if (relevant == TS_UI_BANK_MOD_ALT) return TS_UI_BANK_ACTION_CAPTURE_LOOP;
+    if (relevant == TS_UI_BANK_MOD_CTRL) return TS_UI_BANK_ACTION_CAPTURE_SELECTION;
+    return TS_UI_BANK_ACTION_INVALID;
 }

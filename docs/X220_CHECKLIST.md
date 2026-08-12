@@ -70,7 +70,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] After Crop, Parent selection/displayed audition maps to the matching uncropped Parent frames.
 - [ ] Switching Parent/Current during playback preserves relative progress rather than restarting.
 - [ ] The amber Current or green Parent playhead tracks the sounding source and range smoothly.
-- [ ] Stop All, Space, Escape, and natural playback completion hide the playhead.
+- [ ] Space, Escape, and natural playback completion hide the playhead.
 - [ ] Save, Export, edits, Undo, Redo, Reset, and Commit continue to target Current regardless of audition choice.
 
 ## Zero-crossing selection and forward loops
@@ -85,7 +85,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Set Loop creates one blue forward-loop region with unmistakable start/end markers; Clear removes it.
 - [ ] Each blue flag drags smoothly, remains zero-snapped, updates a playing loop live, and swaps start/end role when crossed.
 - [ ] Releasing a dragged loop flag does not release a note held from the computer keyboard or onscreen keyboard.
-- [ ] Play Loop repeats until Stop All, Space, or Escape; no note or loop remains stuck.
+- [ ] Play Loop repeats until Space or Escape; no note or loop remains stuck.
 - [ ] Computer and onscreen notes provide up to five independent voices, sustain the loop while held, and stop individually on release; without a loop they retain one-shot behavior.
 - [ ] Shift-click builds a latched onscreen chord up to five notes, toggles an active chord note off, and refuses a sixth without stealing a voice.
 - [ ] Every latched white or black key lights at the exact pointer location and sounds the corresponding pitch.
@@ -96,19 +96,44 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Crop keeps the overlapping loop portion in correct Current-relative coordinates; Undo restores the prior crop and loop exactly.
 - [ ] Loop Set, Clear, and crossfade changes traverse correctly through Undo/Redo.
 - [ ] Reset clears the loop and is undoable; Commit carries the loop onto the promoted Parent and clears old history.
-- [ ] Saved TSR6 projects contain embedded Parent audio, loop state/range/crossfade, and complete reconstructive state.
-- [ ] KEYS hides/shows the onscreen keyboard without affecting computer-key audition or Stop All.
+- [ ] Saved TSR7 projects contain embedded Parent audio, loop state/range/crossfade, bank audio, and complete reconstructive state.
+- [ ] KEYS/BANK switches the lower panel without affecting computer-key audition or Space/Escape stopping.
 
 ## Existing foundation
 
 - [ ] Computer and onscreen keys audition the selected A/B source at different pitches.
-- [ ] Space, Escape, and Stop All stop playback reliably.
+- [ ] Space and Escape stop every one-shot, loop, held note, and latched chord reliably without a mouse Stop All button.
 - [ ] A bad WAV path reports an error and preserves Parent and Current.
-- [ ] Save creates a self-contained TSR6 project that reopens without access to the original WAV.
+- [ ] Save creates a self-contained TSR7 project that reopens without access to the original WAV.
 - [ ] Export creates a valid mono 16-bit WAV containing Current.
 - [ ] The supplied Tapehead palette is applied consistently and remains legible.
 - [ ] No action leaks through the path-entry overlay.
 - [ ] Closing the window exits cleanly.
+
+## Sample-family bank
+
+- [ ] BANK and KEYS switch the lower panel without interrupting held or latched notes.
+- [ ] Slot 01 contains the initial Parent root and cannot be cleared or overwritten.
+- [ ] Commit changes Parent/Current but preserves slot 01 and every captured family member.
+- [ ] Generate, generated Reseed, and WAV import deliberately start a new root-only family.
+- [ ] Left-clicking any slot auditions it and changes the waveform display to that member; an empty slot produces silence and a blank waveform.
+- [ ] Shift-left-click captures all Current; Alt-left-click captures Loop; Ctrl-left-click captures Selection.
+- [ ] Selection and Loop captures contain exactly the visibly snapped range.
+- [ ] Loop capture retains a full-slot forward loop and the active crossfade milliseconds.
+- [ ] Clicking each occupied slot auditions the correct audio; loop slots continue looping until Space or Escape.
+- [ ] Set Current is inactive without a filled auditioned slot and becomes active after auditioning one.
+- [ ] Set Current stops audition, makes Parent and Current exactly equal to the selected bank audio, and returns the waveform to Current.
+- [ ] A Loop member transfers its full-slot loop and exact crossfade setting into the new Current editing base.
+- [ ] Editing after Set Current rerenders from the selected bank member and never snaps back to the former Parent.
+- [ ] Set Current preserves slot 01 and every sibling, advances generation/ancestry, clears DSP/history, and cannot be undone across that boundary.
+- [ ] Right-click renames occupied slots 02–16 with a visible text caret; Enter accepts and Escape cancels.
+- [ ] Shift-right-click clears slots 02–16, but never slot 01.
+- [ ] A filled slot must be cleared before it can be captured again.
+- [ ] BANK-mode Export and `Ctrl+E` propose a folder derived from the initial Parent name.
+- [ ] Whole-bank export creates one correctly numbered WAV per occupied slot and never replaces an existing folder.
+- [ ] A failed bank export cleans up its partial WAV files and temporary folder.
+- [ ] Saving and reopening TSR7 restores exact names, hashes, capture types, loop ranges, and crossfades for every occupied slot.
+- [ ] Opening a TSR6 project remains supported and creates a root-only bank from its Parent.
 
 ## DSP shelf
 

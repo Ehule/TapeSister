@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 
 static int failures;
 
@@ -48,18 +49,19 @@ static int browser_find(const TsBrowser *browser, const char *name)
 int main(void)
 {
     TsSample a, b, loaded, copy, dry, effected, repeated;
-    TsInstrument generated, imported, committed, audition, restored;
+    TsInstrument generated, imported, committed, audition, restored, bank_edit;
     TsUiState ui;
     TsNoteBank notes;
     TsBrowser browser;
     TsFramebuffer fb;
     char error[160];
-    uint64_t parent_hash, current_hash, edited_hash;
+    uint64_t parent_hash, current_hash, edited_hash, family_root_hash;
     ts_sample_init(&a); ts_sample_init(&b); ts_sample_init(&loaded); ts_sample_init(&copy);
     ts_sample_init(&dry); ts_sample_init(&effected); ts_sample_init(&repeated);
     ts_instrument_init(&generated); ts_instrument_init(&imported); ts_instrument_init(&committed);
     ts_instrument_init(&audition);
     ts_instrument_init(&restored);
+    ts_instrument_init(&bank_edit);
     ts_note_bank_init(&notes);
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
@@ -172,6 +174,8 @@ int main(void)
     CHECK(ts_instrument_reseed(&generated, error, sizeof(error)));
     CHECK(ts_sample_hash(&generated.parent) != parent_hash);
     CHECK(generated.generator.kind == TS_GENERATOR_TONAL);
+    CHECK(ts_instrument_bank_count(&generated) == 1);
+    CHECK(ts_sample_hash(&generated.bank[0].sample) == ts_sample_hash(&generated.parent));
 
     CHECK(ts_instrument_load_wav(&imported, "test-roundtrip.wav", error, sizeof(error)));
     CHECK(imported.source_kind == TS_SOURCE_IMPORTED);
@@ -181,6 +185,7 @@ int main(void)
     CHECK(ts_instrument_reseed(&imported, error, sizeof(error)));
     CHECK(ts_sample_hash(&imported.parent) == parent_hash);
     CHECK(ts_sample_hash(&imported.current) == current_hash);
+    CHECK(ts_sample_hash(&imported.bank[0].sample) == parent_hash);
 
     process = imported.process;
     process.noise_enabled = 1;
@@ -204,6 +209,11 @@ int main(void)
 
     CHECK(ts_instrument_generate(&committed, TS_GENERATOR_METALLIC, 0x90909090u,
                                  error, sizeof(error)));
+    CHECK(ts_instrument_bank_count(&committed) == 1);
+    CHECK(committed.bank[0].occupied &&
+          committed.bank[0].capture_kind == TS_BANK_CAPTURE_ROOT);
+    family_root_hash = ts_sample_hash(&committed.bank[0].sample);
+    CHECK(family_root_hash == ts_sample_hash(&committed.parent));
     parent_hash = ts_sample_hash(&committed.parent);
     process = committed.process;
     process.delay_enabled = 1;
@@ -224,6 +234,61 @@ int main(void)
                  committed.parent.frames * sizeof(float)) == 0);
     CHECK(committed.undo_count == 0 && committed.redo_count == 0);
     CHECK(!committed.process.delay_enabled && !committed.process.reverb_enabled);
+    CHECK(ts_sample_hash(&committed.bank[0].sample) == family_root_hash);
+
+    {
+        uint64_t bank_root;
+        uint64_t prior_parent;
+        uint64_t selected_hash;
+        uint32_t prior_generation;
+        CHECK(ts_instrument_generate(&bank_edit, TS_GENERATOR_TONAL, 0x42414e4bu,
+                                     error, sizeof(error)));
+        bank_root = ts_sample_hash(&bank_edit.bank[0].sample);
+        prior_parent = ts_sample_hash(&bank_edit.parent);
+        prior_generation = bank_edit.generation;
+        ts_instrument_set_selection(&bank_edit, bank_edit.current.frames / 4u,
+                                    bank_edit.current.frames * 3u / 4u);
+        CHECK(ts_instrument_set_loop_from_selection(&bank_edit, error, sizeof(error)));
+        CHECK(ts_instrument_set_loop_crossfade(&bank_edit, 13.0f,
+                                               error, sizeof(error)));
+        CHECK(ts_instrument_bank_capture(&bank_edit, 1, TS_BANK_CAPTURE_LOOP,
+                                         error, sizeof(error)));
+        CHECK(ts_instrument_bank_rename(&bank_edit, 1, "Drone Core",
+                                        error, sizeof(error)));
+        selected_hash = ts_sample_hash(&bank_edit.bank[1].sample);
+        process = bank_edit.process;
+        process.edge = 0.71f;
+        CHECK(ts_instrument_set_process(&bank_edit, &process, error, sizeof(error)));
+        CHECK(bank_edit.undo_count > 0);
+        CHECK(ts_instrument_set_bank_as_current(&bank_edit, 1,
+                                                error, sizeof(error)));
+        CHECK(bank_edit.generation == prior_generation + 1u);
+        CHECK(bank_edit.ancestor_hash == prior_parent);
+        CHECK(bank_edit.source_kind == TS_SOURCE_COMMITTED);
+        CHECK(ts_sample_hash(&bank_edit.parent) == selected_hash);
+        CHECK(ts_sample_hash(&bank_edit.current) == selected_hash);
+        CHECK(strcmp(bank_edit.parent.name, "Drone Core") == 0);
+        CHECK(memcmp(bank_edit.current.data, bank_edit.parent.data,
+                     bank_edit.parent.frames * sizeof(float)) == 0);
+        CHECK(bank_edit.has_loop && bank_edit.loop_first == 0 &&
+              bank_edit.loop_last == bank_edit.current.frames);
+        CHECK(fabsf(bank_edit.loop_crossfade_ms - 13.0f) < 0.0001f);
+        CHECK(bank_edit.undo_count == 0 && bank_edit.redo_count == 0);
+        CHECK(bank_edit.sample_edit_count == 0 && !bank_edit.has_selection);
+        CHECK(!bank_edit.process.noise_enabled && !bank_edit.process.delay_enabled &&
+              !bank_edit.process.reverb_enabled);
+        CHECK(ts_instrument_bank_count(&bank_edit) == 2);
+        CHECK(ts_sample_hash(&bank_edit.bank[0].sample) == bank_root);
+        CHECK(ts_sample_hash(&bank_edit.bank[1].sample) == selected_hash);
+        CHECK(!ts_instrument_set_bank_as_current(&bank_edit, 2,
+                                                 error, sizeof(error)));
+        process = bank_edit.process;
+        process.body = 0.82f;
+        CHECK(ts_instrument_set_process(&bank_edit, &process, error, sizeof(error)));
+        CHECK(ts_sample_hash(&bank_edit.parent) == selected_hash);
+        CHECK(ts_instrument_reset_current(&bank_edit, error, sizeof(error)));
+        CHECK(ts_sample_hash(&bank_edit.current) == selected_hash);
+    }
 
     {
         TsAuditionPlan plan;
@@ -355,7 +420,42 @@ int main(void)
     process.delay_seconds = 0.019f;
     process.delay_mix = 0.22f;
     CHECK(ts_instrument_set_process(&committed, &process, error, sizeof(error)));
+    CHECK(ts_instrument_bank_capture(&committed, 1, TS_BANK_CAPTURE_CURRENT,
+                                     error, sizeof(error)));
+    CHECK(ts_instrument_bank_capture(&committed, 2, TS_BANK_CAPTURE_SELECTION,
+                                     error, sizeof(error)));
+    CHECK(ts_instrument_bank_capture(&committed, 3, TS_BANK_CAPTURE_LOOP,
+                                     error, sizeof(error)));
+    CHECK(ts_instrument_bank_count(&committed) == 4);
+    CHECK(ts_instrument_bank_first_empty(&committed) == 4);
+    CHECK(committed.bank[1].sample.frames == committed.current.frames);
+    CHECK(committed.bank[2].sample.frames ==
+          committed.selection_last - committed.selection_first);
+    CHECK(committed.bank[3].has_loop && committed.bank[3].loop_first == 0 &&
+          committed.bank[3].loop_last == committed.bank[3].sample.frames);
+    CHECK(ts_instrument_bank_rename(&committed, 2, "  Growing Tail  ",
+                                    error, sizeof(error)));
+    CHECK(strcmp(committed.bank[2].sample.name, "Growing Tail") == 0);
+    CHECK(!ts_instrument_bank_rename(&committed, 0, "New Root",
+                                     error, sizeof(error)));
+    CHECK(!ts_instrument_bank_rename(&committed, 4, "Empty",
+                                     error, sizeof(error)));
+    CHECK(!ts_instrument_bank_rename(&committed, 2, "   ",
+                                     error, sizeof(error)));
+    CHECK(!ts_instrument_bank_capture(&committed, 3, TS_BANK_CAPTURE_CURRENT,
+                                      error, sizeof(error)));
+    CHECK(!ts_instrument_bank_clear(&committed, 0, error, sizeof(error)));
     CHECK(ts_instrument_save_recipe(&committed, "test-recipe.tsr", error, sizeof(error)));
+    {
+        FILE *recipe = fopen("test-recipe.tsr", "rb");
+        char magic[4] = {0};
+        CHECK(recipe != NULL);
+        if (recipe != NULL) {
+            CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
+            fclose(recipe);
+        }
+        CHECK(memcmp(magic, "TSR7", 4) == 0);
+    }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
     CHECK(ts_sample_hash(&restored.current) == ts_sample_hash(&committed.current));
@@ -365,6 +465,36 @@ int main(void)
     CHECK(restored.has_loop && restored.loop_first == committed.loop_first &&
           restored.loop_last == committed.loop_last);
     CHECK(fabsf(restored.loop_crossfade_ms - 9.5f) < 0.0001f);
+    CHECK(ts_instrument_bank_count(&restored) == 4);
+    CHECK(strcmp(restored.bank[2].sample.name, "Growing Tail") == 0);
+    for (int slot = 0; slot < 4; ++slot) {
+        CHECK(restored.bank[slot].occupied);
+        CHECK(ts_sample_hash(&restored.bank[slot].sample) ==
+              ts_sample_hash(&committed.bank[slot].sample));
+        CHECK(restored.bank[slot].capture_kind == committed.bank[slot].capture_kind);
+        CHECK(restored.bank[slot].has_loop == committed.bank[slot].has_loop);
+    }
+    CHECK(ts_instrument_export_bank(&restored, "test-bank-family", error, sizeof(error)));
+    {
+        DIR *directory = opendir("test-bank-family");
+        struct dirent *entry;
+        int wav_count = 0;
+        CHECK(directory != NULL);
+        if (directory != NULL) {
+            while ((entry = readdir(directory)) != NULL) {
+                size_t length = strlen(entry->d_name);
+                if (length > 4 && strcmp(entry->d_name + length - 4, ".wav") == 0) {
+                    char exported[512];
+                    snprintf(exported, sizeof(exported), "test-bank-family/%s", entry->d_name);
+                    ++wav_count;
+                    remove(exported);
+                }
+            }
+            closedir(directory);
+        }
+        CHECK(wav_count == 4);
+        rmdir("test-bank-family");
+    }
     {
         FILE *bad = fopen("test-malformed.tsr", "wb");
         uint64_t parent_before = ts_sample_hash(&restored.parent);
@@ -484,6 +614,10 @@ int main(void)
         CHECK(ts_browser_open(&browser, TS_BROWSER_EXPORT_WAV, "current"));
         CHECK(ts_browser_destination_path(&browser, path, sizeof(path)));
         CHECK(strstr(path, "current.wav") != NULL);
+        CHECK(ts_browser_open(&browser, TS_BROWSER_EXPORT_BANK, "metallic_family"));
+        CHECK(ts_browser_destination_path(&browser, path, sizeof(path)));
+        CHECK(strstr(path, "metallic_family") != NULL);
+        CHECK(strstr(path, "metallic_family.wav") == NULL);
         browser.entry_count = 30;
         browser.selected = 0;
         ts_browser_set_scroll(&browser, 999);
@@ -527,7 +661,46 @@ int main(void)
     }
     ui.show_keyboard = 0;
     ts_ui_render(&fb, &ui, &imported);
-    CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] == 0xff1c1c1cu);
+    CHECK(ts_ui_bank_slot_from_point(46, 341) == 0);
+    CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] != 0xff1c1c1cu);
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        int x = 10 + (slot % 8) * 77 + 36;
+        int y = 330 + (slot / 8) * 25 + 12;
+        CHECK(ts_ui_bank_slot_from_point(x, y) == slot);
+    }
+    CHECK(ts_ui_bank_action(0, 0) == TS_UI_BANK_ACTION_AUDITION);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT) ==
+          TS_UI_BANK_ACTION_CAPTURE_CURRENT);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_ALT) ==
+          TS_UI_BANK_ACTION_CAPTURE_LOOP);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_CTRL) ==
+          TS_UI_BANK_ACTION_CAPTURE_SELECTION);
+    CHECK(ts_ui_bank_action(1, 0) == TS_UI_BANK_ACTION_RENAME);
+    CHECK(ts_ui_bank_action(1, TS_UI_BANK_MOD_SHIFT) == TS_UI_BANK_ACTION_CLEAR);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL) ==
+          TS_UI_BANK_ACTION_INVALID);
+    {
+        uint64_t current_waveform;
+        uint64_t bank_waveform;
+        ui.bank_view_slot = -1;
+        ts_ui_render(&fb, &ui, &restored);
+        current_waveform = waveform_hash(&fb);
+        ui.bank_view_slot = 2;
+        ts_ui_render(&fb, &ui, &restored);
+        bank_waveform = waveform_hash(&fb);
+        CHECK(bank_waveform != current_waveform);
+        CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff2d0039u);
+        ui.bank_view_slot = -1;
+        ts_ui_render(&fb, &ui, &restored);
+        CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff5d555du);
+    }
+    ui.renaming_bank_slot = 2;
+    ui.text_cursor_visible = 1;
+    snprintf(ui.bank_rename, sizeof(ui.bank_rename), "TAIL");
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(fb.pixels[338 * TS_UI_WIDTH + 146] == 0xffffd265u);
+    ui.renaming_bank_slot = -1;
+    ui.bank_rename[0] = '\0';
     ui.show_keyboard = 1;
     {
         uint64_t current_waveform = waveform_hash(&fb);
@@ -605,6 +778,7 @@ int main(void)
     ts_instrument_free(&generated); ts_instrument_free(&imported); ts_instrument_free(&committed);
     ts_instrument_free(&audition);
     ts_instrument_free(&restored);
+    ts_instrument_free(&bank_edit);
     if (failures) return 1;
     puts("TapeSister zero-snap, loop, A/B audition, browser, and editor tests passed");
     return 0;

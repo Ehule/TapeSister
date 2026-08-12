@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum { TS_HISTORY_DEPTH = 24, TS_SAMPLE_EDIT_DEPTH = 64 };
+enum { TS_HISTORY_DEPTH = 24, TS_SAMPLE_EDIT_DEPTH = 64, TS_BANK_SLOT_COUNT = 16 };
 
 typedef struct {
     float *data;
@@ -77,6 +77,23 @@ typedef struct {
     float amount;
 } TsSampleEdit;
 
+typedef enum {
+    TS_BANK_CAPTURE_ROOT = 0,
+    TS_BANK_CAPTURE_CURRENT,
+    TS_BANK_CAPTURE_SELECTION,
+    TS_BANK_CAPTURE_LOOP
+} TsBankCaptureKind;
+
+typedef struct {
+    TsSample sample;
+    size_t loop_first;
+    size_t loop_last;
+    float loop_crossfade_ms;
+    TsBankCaptureKind capture_kind;
+    int has_loop;
+    int occupied;
+} TsBankSlot;
+
 typedef struct {
     size_t crop_first;
     size_t crop_last;
@@ -119,6 +136,7 @@ typedef struct {
     TsEditSnapshot redo[TS_HISTORY_DEPTH];
     int undo_count;
     int redo_count;
+    TsBankSlot bank[TS_BANK_SLOT_COUNT];
 } TsInstrument;
 
 void ts_sample_init(TsSample *sample);
@@ -173,5 +191,18 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                               char *error, size_t error_size);
 void ts_instrument_begin_loop_drag(TsInstrument *instrument);
 int ts_instrument_move_loop_endpoint(TsInstrument *instrument, int endpoint, size_t frame);
+int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
+                               TsBankCaptureKind kind, char *error, size_t error_size);
+int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
+                             char *error, size_t error_size);
+int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *name,
+                              char *error, size_t error_size);
+int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
+                                      char *error, size_t error_size);
+int ts_instrument_bank_count(const TsInstrument *instrument);
+int ts_instrument_bank_first_empty(const TsInstrument *instrument);
+int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder,
+                              char *error, size_t error_size);
+const char *ts_bank_capture_name(TsBankCaptureKind kind);
 
 #endif

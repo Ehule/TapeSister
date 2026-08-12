@@ -61,6 +61,44 @@ int main(int argc, char **argv)
         ui.playhead_frames = instrument.current.frames;
         ui.active_notes = (1u << 0) | (1u << 4) | (1u << 7);
         snprintf(ui.status, sizeof(ui.status), "LATCHED CHORD 3/5 - DRAG LOOP FLAGS LIVE");
+    } else if (argc > 2 && strcmp(argv[2], "bank") == 0) {
+        TsProcessRecipe process = instrument.process;
+        ts_instrument_set_selection_snapped(&instrument, instrument.current.frames / 5,
+                                            instrument.current.frames * 3 / 5);
+        if (!ts_instrument_set_loop_from_selection(&instrument, error, sizeof(error)) ||
+            !ts_instrument_bank_capture(&instrument, 1, TS_BANK_CAPTURE_CURRENT,
+                                        error, sizeof(error)) ||
+            !ts_instrument_bank_capture(&instrument, 2, TS_BANK_CAPTURE_SELECTION,
+                                        error, sizeof(error)) ||
+            !ts_instrument_bank_capture(&instrument, 3, TS_BANK_CAPTURE_LOOP,
+                                        error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        process.edge = 0.64f;
+        process.drift = 0.37f;
+        if (!ts_instrument_set_process(&instrument, &process, error, sizeof(error)) ||
+            !ts_instrument_bank_capture(&instrument, 4, TS_BANK_CAPTURE_CURRENT,
+                                        error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        if (!ts_instrument_bank_rename(&instrument, 2, "TAIL LAYER",
+                                       error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ui.show_keyboard = 0;
+        ui.bank_view_slot = 2;
+        ui.playback_active = 1;
+        ui.playhead_bank_slot = 2;
+        ui.playhead_frame = instrument.bank[2].sample.frames / 2u;
+        ui.playhead_frames = instrument.bank[2].sample.frames;
+        snprintf(ui.status, sizeof(ui.status),
+                 "BANK 03 AUDITION - WAVEFORM FOLLOWS SLOT  RMB RENAME  SHIFT+RMB CLEAR");
     }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {

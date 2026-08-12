@@ -26,6 +26,22 @@ typedef enum {
     TS_FX_LOOP
 } TsFxPage;
 
+enum {
+    TS_UI_BANK_MOD_SHIFT = 1u << 0,
+    TS_UI_BANK_MOD_CTRL = 1u << 1,
+    TS_UI_BANK_MOD_ALT = 1u << 2
+};
+
+typedef enum {
+    TS_UI_BANK_ACTION_AUDITION = 0,
+    TS_UI_BANK_ACTION_CAPTURE_CURRENT,
+    TS_UI_BANK_ACTION_CAPTURE_LOOP,
+    TS_UI_BANK_ACTION_CAPTURE_SELECTION,
+    TS_UI_BANK_ACTION_RENAME,
+    TS_UI_BANK_ACTION_CLEAR,
+    TS_UI_BANK_ACTION_INVALID
+} TsUiBankAction;
+
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
@@ -38,6 +54,9 @@ typedef struct {
     int playback_active;
     int text_cursor_visible;
     int show_keyboard;
+    int bank_view_slot;
+    int playhead_bank_slot;
+    int renaming_bank_slot;
     int dragging_loop_endpoint;
     int loop_drag_started;
     TsFxPage fx_page;
@@ -49,6 +68,7 @@ typedef struct {
     size_t playhead_frames;
     size_t parent_view_first;
     size_t parent_view_last;
+    char bank_rename[128];
     char status[160];
 } TsUiState;
 
@@ -56,6 +76,8 @@ void ts_ui_init(TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
+int ts_ui_bank_slot_from_point(int x, int y);
+TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames);
 int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
                            float anchor_ratio, float scale);
