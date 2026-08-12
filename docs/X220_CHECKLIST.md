@@ -70,7 +70,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] After Crop, Parent selection/displayed audition maps to the matching uncropped Parent frames.
 - [ ] Switching Parent/Current during playback preserves relative progress rather than restarting.
 - [ ] The amber Current or green Parent playhead tracks the sounding source and range smoothly.
-- [ ] Stop All, Space, Escape, and natural playback completion hide the playhead.
+- [ ] Space, Escape, and natural playback completion hide the playhead.
 - [ ] Save, Export, edits, Undo, Redo, Reset, and Commit continue to target Current regardless of audition choice.
 
 ## Zero-crossing selection and forward loops
@@ -85,7 +85,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Set Loop creates one blue forward-loop region with unmistakable start/end markers; Clear removes it.
 - [ ] Each blue flag drags smoothly, remains zero-snapped, updates a playing loop live, and swaps start/end role when crossed.
 - [ ] Releasing a dragged loop flag does not release a note held from the computer keyboard or onscreen keyboard.
-- [ ] Play Loop repeats until Stop All, Space, or Escape; no note or loop remains stuck.
+- [ ] Play Loop repeats until Space or Escape; no note or loop remains stuck.
 - [ ] Computer and onscreen notes provide up to five independent voices, sustain the loop while held, and stop individually on release; without a loop they retain one-shot behavior.
 - [ ] Shift-click builds a latched onscreen chord up to five notes, toggles an active chord note off, and refuses a sixth without stealing a voice.
 - [ ] Every latched white or black key lights at the exact pointer location and sounds the corresponding pitch.
@@ -97,12 +97,12 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Loop Set, Clear, and crossfade changes traverse correctly through Undo/Redo.
 - [ ] Reset clears the loop and is undoable; Commit carries the loop onto the promoted Parent and clears old history.
 - [ ] Saved TSR7 projects contain embedded Parent audio, loop state/range/crossfade, bank audio, and complete reconstructive state.
-- [ ] KEYS/BANK switches the lower panel without affecting computer-key audition or Stop All.
+- [ ] KEYS/BANK switches the lower panel without affecting computer-key audition or Space/Escape stopping.
 
 ## Existing foundation
 
 - [ ] Computer and onscreen keys audition the selected A/B source at different pitches.
-- [ ] Space, Escape, and Stop All stop playback reliably.
+- [ ] Space and Escape stop every one-shot, loop, held note, and latched chord reliably without a mouse Stop All button.
 - [ ] A bad WAV path reports an error and preserves Parent and Current.
 - [ ] Save creates a self-contained TSR7 project that reopens without access to the original WAV.
 - [ ] Export creates a valid mono 16-bit WAV containing Current.
@@ -120,7 +120,12 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Shift-left-click captures all Current; Alt-left-click captures Loop; Ctrl-left-click captures Selection.
 - [ ] Selection and Loop captures contain exactly the visibly snapped range.
 - [ ] Loop capture retains a full-slot forward loop and the active crossfade milliseconds.
-- [ ] Clicking each occupied slot auditions the correct audio; loop slots continue looping until Stop All, Space, or Escape.
+- [ ] Clicking each occupied slot auditions the correct audio; loop slots continue looping until Space or Escape.
+- [ ] Set Current is inactive without a filled auditioned slot and becomes active after auditioning one.
+- [ ] Set Current stops audition, makes Parent and Current exactly equal to the selected bank audio, and returns the waveform to Current.
+- [ ] A Loop member transfers its full-slot loop and exact crossfade setting into the new Current editing base.
+- [ ] Editing after Set Current rerenders from the selected bank member and never snaps back to the former Parent.
+- [ ] Set Current preserves slot 01 and every sibling, advances generation/ancestry, clears DSP/history, and cannot be undone across that boundary.
 - [ ] Right-click renames occupied slots 02–16 with a visible text caret; Enter accepts and Escape cancels.
 - [ ] Shift-right-click clears slots 02–16, but never slot 01.
 - [ ] A filled slot must be cleared before it can be captured again.

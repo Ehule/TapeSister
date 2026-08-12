@@ -591,6 +591,36 @@ static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
     else snprintf(ui->status, sizeof(ui->status), "BANK CLEAR FAILED: %.132s", error);
 }
 
+static void set_auditioned_bank_current(SDL_AudioDeviceID device, AudioState *audio,
+                                        TsUiState *ui, TsInstrument *instrument)
+{
+    char error[160];
+    int slot = ui->bank_view_slot;
+    int ok;
+    if (slot < 0 || slot >= TS_BANK_SLOT_COUNT || !instrument->bank[slot].occupied) {
+        snprintf(ui->status, sizeof(ui->status), "AUDITION A FILLED BANK SLOT FIRST");
+        return;
+    }
+    lock_edit(device, audio);
+    audio->playing = 0;
+    audio->bank_slot = -1;
+    ts_note_bank_clear(&audio->notes);
+    ui->audition_source = TS_AUDITION_CURRENT;
+    ok = ts_instrument_set_bank_as_current(instrument, slot, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    ui->active_notes = 0;
+    ui->mouse_note = -1;
+    ui->commit_armed = 0;
+    if (ok) {
+        ts_ui_reset_parent_view(ui, instrument->parent.frames);
+        snprintf(ui->status, sizeof(ui->status),
+                 "BANK %02d SET AS CURRENT - CLEAN EDIT BASE G%u",
+                 slot + 1, instrument->generation);
+    } else {
+        snprintf(ui->status, sizeof(ui->status), "SET CURRENT FAILED: %.133s", error);
+    }
+}
+
 static void begin_bank_rename(TsUiState *ui, const TsInstrument *instrument, int slot)
 {
     if (slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
@@ -1301,7 +1331,7 @@ int main(int argc, char **argv)
                                            TS_AUDITION_CURRENT, obtained.freq);
                 } else if (y >= 205 && y < 228 && x >= 540 && x < 630) {
                     ui.commit_armed = 0;
-                    stop_all(device, &audio, &ui);
+                    set_auditioned_bank_current(device, &audio, &ui, &instrument);
                 } else if (y >= 233 && y < 257 && x >= 10 && x < 330) {
                     TsProcessRecipe process = instrument.process;
                     const char *label;

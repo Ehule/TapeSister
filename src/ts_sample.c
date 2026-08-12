@@ -1326,6 +1326,57 @@ int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *na
     return 1;
 }
 
+int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
+                                      char *error, size_t error_size)
+{
+    TsSample parent;
+    TsSample current;
+    TsProcessRecipe neutral;
+    const TsBankSlot *source;
+    uint64_t prior_hash;
+    size_t loop_first;
+    size_t loop_last;
+    float loop_crossfade_ms;
+    int has_loop;
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[slot].occupied) {
+        set_error(error, error_size, "Audition a filled bank slot first");
+        return 0;
+    }
+    source = &instrument->bank[slot];
+    ts_sample_init(&parent);
+    ts_sample_init(&current);
+    if (!ts_sample_clone(&parent, &source->sample, error, error_size)) return 0;
+    ts_process_recipe_reset(&neutral);
+    neutral.seed = instrument->process.seed;
+    if (!ts_sample_process(&current, &parent, 0, parent.frames,
+                           &neutral, error, error_size)) {
+        ts_sample_free(&parent);
+        return 0;
+    }
+    prior_hash = ts_sample_hash(&instrument->parent);
+    loop_first = source->loop_first;
+    loop_last = source->loop_last;
+    loop_crossfade_ms = source->loop_crossfade_ms;
+    has_loop = source->has_loop;
+    ts_sample_free(&instrument->parent);
+    ts_sample_free(&instrument->current);
+    instrument->parent = parent;
+    instrument->current = current;
+    instrument->source_kind = TS_SOURCE_COMMITTED;
+    instrument->process = neutral;
+    instrument->ancestor_hash = prior_hash;
+    ++instrument->generation;
+    reset_editor(instrument);
+    instrument->loop_first = loop_first;
+    instrument->loop_last = loop_last;
+    instrument->loop_crossfade_ms = loop_crossfade_ms;
+    instrument->has_loop = has_loop && loop_first < loop_last &&
+                           loop_last <= current.frames;
+    set_error(error, error_size, "");
+    return 1;
+}
+
 static void bank_safe_name(const char *source, char *destination, size_t size)
 {
     size_t used = 0;

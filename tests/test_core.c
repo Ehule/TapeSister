@@ -49,7 +49,7 @@ static int browser_find(const TsBrowser *browser, const char *name)
 int main(void)
 {
     TsSample a, b, loaded, copy, dry, effected, repeated;
-    TsInstrument generated, imported, committed, audition, restored;
+    TsInstrument generated, imported, committed, audition, restored, bank_edit;
     TsUiState ui;
     TsNoteBank notes;
     TsBrowser browser;
@@ -61,6 +61,7 @@ int main(void)
     ts_instrument_init(&generated); ts_instrument_init(&imported); ts_instrument_init(&committed);
     ts_instrument_init(&audition);
     ts_instrument_init(&restored);
+    ts_instrument_init(&bank_edit);
     ts_note_bank_init(&notes);
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
@@ -234,6 +235,60 @@ int main(void)
     CHECK(committed.undo_count == 0 && committed.redo_count == 0);
     CHECK(!committed.process.delay_enabled && !committed.process.reverb_enabled);
     CHECK(ts_sample_hash(&committed.bank[0].sample) == family_root_hash);
+
+    {
+        uint64_t bank_root;
+        uint64_t prior_parent;
+        uint64_t selected_hash;
+        uint32_t prior_generation;
+        CHECK(ts_instrument_generate(&bank_edit, TS_GENERATOR_TONAL, 0x42414e4bu,
+                                     error, sizeof(error)));
+        bank_root = ts_sample_hash(&bank_edit.bank[0].sample);
+        prior_parent = ts_sample_hash(&bank_edit.parent);
+        prior_generation = bank_edit.generation;
+        ts_instrument_set_selection(&bank_edit, bank_edit.current.frames / 4u,
+                                    bank_edit.current.frames * 3u / 4u);
+        CHECK(ts_instrument_set_loop_from_selection(&bank_edit, error, sizeof(error)));
+        CHECK(ts_instrument_set_loop_crossfade(&bank_edit, 13.0f,
+                                               error, sizeof(error)));
+        CHECK(ts_instrument_bank_capture(&bank_edit, 1, TS_BANK_CAPTURE_LOOP,
+                                         error, sizeof(error)));
+        CHECK(ts_instrument_bank_rename(&bank_edit, 1, "Drone Core",
+                                        error, sizeof(error)));
+        selected_hash = ts_sample_hash(&bank_edit.bank[1].sample);
+        process = bank_edit.process;
+        process.edge = 0.71f;
+        CHECK(ts_instrument_set_process(&bank_edit, &process, error, sizeof(error)));
+        CHECK(bank_edit.undo_count > 0);
+        CHECK(ts_instrument_set_bank_as_current(&bank_edit, 1,
+                                                error, sizeof(error)));
+        CHECK(bank_edit.generation == prior_generation + 1u);
+        CHECK(bank_edit.ancestor_hash == prior_parent);
+        CHECK(bank_edit.source_kind == TS_SOURCE_COMMITTED);
+        CHECK(ts_sample_hash(&bank_edit.parent) == selected_hash);
+        CHECK(ts_sample_hash(&bank_edit.current) == selected_hash);
+        CHECK(strcmp(bank_edit.parent.name, "Drone Core") == 0);
+        CHECK(memcmp(bank_edit.current.data, bank_edit.parent.data,
+                     bank_edit.parent.frames * sizeof(float)) == 0);
+        CHECK(bank_edit.has_loop && bank_edit.loop_first == 0 &&
+              bank_edit.loop_last == bank_edit.current.frames);
+        CHECK(fabsf(bank_edit.loop_crossfade_ms - 13.0f) < 0.0001f);
+        CHECK(bank_edit.undo_count == 0 && bank_edit.redo_count == 0);
+        CHECK(bank_edit.sample_edit_count == 0 && !bank_edit.has_selection);
+        CHECK(!bank_edit.process.noise_enabled && !bank_edit.process.delay_enabled &&
+              !bank_edit.process.reverb_enabled);
+        CHECK(ts_instrument_bank_count(&bank_edit) == 2);
+        CHECK(ts_sample_hash(&bank_edit.bank[0].sample) == bank_root);
+        CHECK(ts_sample_hash(&bank_edit.bank[1].sample) == selected_hash);
+        CHECK(!ts_instrument_set_bank_as_current(&bank_edit, 2,
+                                                 error, sizeof(error)));
+        process = bank_edit.process;
+        process.body = 0.82f;
+        CHECK(ts_instrument_set_process(&bank_edit, &process, error, sizeof(error)));
+        CHECK(ts_sample_hash(&bank_edit.parent) == selected_hash);
+        CHECK(ts_instrument_reset_current(&bank_edit, error, sizeof(error)));
+        CHECK(ts_sample_hash(&bank_edit.current) == selected_hash);
+    }
 
     {
         TsAuditionPlan plan;
@@ -634,7 +689,10 @@ int main(void)
         ts_ui_render(&fb, &ui, &restored);
         bank_waveform = waveform_hash(&fb);
         CHECK(bank_waveform != current_waveform);
+        CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff2d0039u);
         ui.bank_view_slot = -1;
+        ts_ui_render(&fb, &ui, &restored);
+        CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff5d555du);
     }
     ui.renaming_bank_slot = 2;
     ui.text_cursor_visible = 1;
@@ -720,6 +778,7 @@ int main(void)
     ts_instrument_free(&generated); ts_instrument_free(&imported); ts_instrument_free(&committed);
     ts_instrument_free(&audition);
     ts_instrument_free(&restored);
+    ts_instrument_free(&bank_edit);
     if (failures) return 1;
     puts("TapeSister zero-snap, loop, A/B audition, browser, and editor tests passed");
     return 0;

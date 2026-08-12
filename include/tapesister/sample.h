@@ -197,6 +197,8 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size);
 int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *name,
                               char *error, size_t error_size);
+int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
+                                      char *error, size_t error_size);
 int ts_instrument_bank_count(const TsInstrument *instrument);
 int ts_instrument_bank_first_empty(const TsInstrument *instrument);
 int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder,

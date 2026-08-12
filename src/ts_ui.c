@@ -447,7 +447,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 330, 205, 72, "RESET", 0);
     button(fb, 407, 205, 61, "PARENT", !showing_bank && ui->audition_source == TS_AUDITION_PARENT);
     button(fb, 472, 205, 63, "CURRENT", !showing_bank && ui->audition_source == TS_AUDITION_CURRENT);
-    button(fb, 540, 205, 90, "STOP ALL", 0);
+    button(fb, 540, 205, 90, "SET CURRENT",
+           showing_bank && shown_slot->occupied);
 
     slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);
