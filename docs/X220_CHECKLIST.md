@@ -116,16 +116,18 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Slot 01 contains the initial Parent root and cannot be cleared or overwritten.
 - [ ] Commit changes Parent/Current but preserves slot 01 and every captured family member.
 - [ ] Generate, generated Reseed, and WAV import deliberately start a new root-only family.
-- [ ] Clicking an empty slot captures all Current; Shift-click captures Selection; Ctrl-click captures Loop.
+- [ ] Left-clicking any slot auditions it and changes the waveform display to that member; an empty slot produces silence and a blank waveform.
+- [ ] Shift-left-click captures all Current; Alt-left-click captures Loop; Ctrl-left-click captures Selection.
 - [ ] Selection and Loop captures contain exactly the visibly snapped range.
 - [ ] Loop capture retains a full-slot forward loop and the active crossfade milliseconds.
 - [ ] Clicking each occupied slot auditions the correct audio; loop slots continue looping until Stop All, Space, or Escape.
-- [ ] Right-click clears slots 02–16, but never slot 01.
+- [ ] Right-click renames occupied slots 02–16 with a visible text caret; Enter accepts and Escape cancels.
+- [ ] Shift-right-click clears slots 02–16, but never slot 01.
 - [ ] A filled slot must be cleared before it can be captured again.
 - [ ] BANK-mode Export and `Ctrl+E` propose a folder derived from the initial Parent name.
 - [ ] Whole-bank export creates one correctly numbered WAV per occupied slot and never replaces an existing folder.
 - [ ] A failed bank export cleans up its partial WAV files and temporary folder.
-- [ ] Saving and reopening TSR7 restores exact hashes, capture types, loop ranges, and crossfades for every occupied slot.
+- [ ] Saving and reopening TSR7 restores exact names, hashes, capture types, loop ranges, and crossfades for every occupied slot.
 - [ ] Opening a TSR6 project remains supported and creates a root-only bank from its Parent.
 
 ## DSP shelf

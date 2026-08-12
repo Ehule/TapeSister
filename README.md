@@ -39,11 +39,11 @@ The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-v
 
 Every newly generated or imported source starts a 16-slot family with its initial Parent permanently copied into slot 1 as the immutable root. Commit can promote Current without replacing that family root. Slots 2–16 can capture three useful zero-aligned forms:
 
-- click an empty slot to capture all of Current;
-- Shift-click an empty slot to capture the snapped Selection; or
-- Ctrl-click an empty slot to capture the active Loop, including its crossfade setting.
+- Shift-click an empty slot to capture all of Current;
+- Alt-click an empty slot to capture the active Loop, including its crossfade setting; or
+- Ctrl-click an empty slot to capture the snapped Selection.
 
-Click a filled slot to audition it. Right-click clears any non-root slot; occupied slots must be cleared deliberately before reuse. This makes it possible to capture a small snapped selection, grow it, and capture the successive forms as one related sample family.
+Click any slot to audition it and place that member in the waveform display; an empty slot produces silence and a blank waveform. Right-click an occupied slot 02–16 to rename it, or Shift-right-click to clear it. Slot 01 remains the fixed family root, and occupied slots must be cleared deliberately before reuse. This makes it possible to capture a small snapped selection, grow it, name the successive forms, and keep them as one related sample family.
 
 While BANK is visible, the top **Export** button and `Ctrl+E` export every occupied slot as a numbered WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR7 projects embed all occupied bank audio and loop metadata; opening a TSR6 project remains supported and initializes its bank root from the embedded Parent.
 

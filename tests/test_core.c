@@ -378,6 +378,15 @@ int main(void)
           committed.selection_last - committed.selection_first);
     CHECK(committed.bank[3].has_loop && committed.bank[3].loop_first == 0 &&
           committed.bank[3].loop_last == committed.bank[3].sample.frames);
+    CHECK(ts_instrument_bank_rename(&committed, 2, "  Growing Tail  ",
+                                    error, sizeof(error)));
+    CHECK(strcmp(committed.bank[2].sample.name, "Growing Tail") == 0);
+    CHECK(!ts_instrument_bank_rename(&committed, 0, "New Root",
+                                     error, sizeof(error)));
+    CHECK(!ts_instrument_bank_rename(&committed, 4, "Empty",
+                                     error, sizeof(error)));
+    CHECK(!ts_instrument_bank_rename(&committed, 2, "   ",
+                                     error, sizeof(error)));
     CHECK(!ts_instrument_bank_capture(&committed, 3, TS_BANK_CAPTURE_CURRENT,
                                       error, sizeof(error)));
     CHECK(!ts_instrument_bank_clear(&committed, 0, error, sizeof(error)));
@@ -402,6 +411,7 @@ int main(void)
           restored.loop_last == committed.loop_last);
     CHECK(fabsf(restored.loop_crossfade_ms - 9.5f) < 0.0001f);
     CHECK(ts_instrument_bank_count(&restored) == 4);
+    CHECK(strcmp(restored.bank[2].sample.name, "Growing Tail") == 0);
     for (int slot = 0; slot < 4; ++slot) {
         CHECK(restored.bank[slot].occupied);
         CHECK(ts_sample_hash(&restored.bank[slot].sample) ==
@@ -603,6 +613,36 @@ int main(void)
         int y = 330 + (slot / 8) * 25 + 12;
         CHECK(ts_ui_bank_slot_from_point(x, y) == slot);
     }
+    CHECK(ts_ui_bank_action(0, 0) == TS_UI_BANK_ACTION_AUDITION);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT) ==
+          TS_UI_BANK_ACTION_CAPTURE_CURRENT);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_ALT) ==
+          TS_UI_BANK_ACTION_CAPTURE_LOOP);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_CTRL) ==
+          TS_UI_BANK_ACTION_CAPTURE_SELECTION);
+    CHECK(ts_ui_bank_action(1, 0) == TS_UI_BANK_ACTION_RENAME);
+    CHECK(ts_ui_bank_action(1, TS_UI_BANK_MOD_SHIFT) == TS_UI_BANK_ACTION_CLEAR);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL) ==
+          TS_UI_BANK_ACTION_INVALID);
+    {
+        uint64_t current_waveform;
+        uint64_t bank_waveform;
+        ui.bank_view_slot = -1;
+        ts_ui_render(&fb, &ui, &restored);
+        current_waveform = waveform_hash(&fb);
+        ui.bank_view_slot = 2;
+        ts_ui_render(&fb, &ui, &restored);
+        bank_waveform = waveform_hash(&fb);
+        CHECK(bank_waveform != current_waveform);
+        ui.bank_view_slot = -1;
+    }
+    ui.renaming_bank_slot = 2;
+    ui.text_cursor_visible = 1;
+    snprintf(ui.bank_rename, sizeof(ui.bank_rename), "TAIL");
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(fb.pixels[338 * TS_UI_WIDTH + 146] == 0xffffd265u);
+    ui.renaming_bank_slot = -1;
+    ui.bank_rename[0] = '\0';
     ui.show_keyboard = 1;
     {
         uint64_t current_waveform = waveform_hash(&fb);

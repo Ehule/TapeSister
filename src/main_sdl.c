@@ -116,6 +116,7 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                            double pitch, int output_rate)
 {
     TsAuditionPlan plan;
+    ui->bank_view_slot = -1;
     if (!device || output_rate <= 0) {
         snprintf(ui->status, sizeof(ui->status), "AUDIO UNAVAILABLE");
         return;
@@ -154,6 +155,7 @@ static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
 {
     TsNoteStartResult result;
     int voice_count;
+    ui->bank_view_slot = -1;
     if (!device || output_rate <= 0) {
         snprintf(ui->status, sizeof(ui->status), "AUDIO UNAVAILABLE");
         return;
@@ -190,7 +192,22 @@ static void switch_audition_source(SDL_AudioDeviceID device, AudioState *audio,
                                    TsAuditionSource source, int output_rate)
 {
     TsAuditionPlan plan;
-    if (source == ui->audition_source) return;
+    int was_bank_view = ui->bank_view_slot >= 0;
+    ui->bank_view_slot = -1;
+    if (source == ui->audition_source) {
+        if (was_bank_view && audio->bank_slot >= 0) {
+            if (device) SDL_LockAudioDevice(device);
+            audio->playing = 0;
+            audio->bank_slot = -1;
+            audio->sample = source == TS_AUDITION_PARENT ?
+                            &instrument->parent : &instrument->current;
+            if (device) SDL_UnlockAudioDevice(device);
+        }
+        if (was_bank_view)
+            snprintf(ui->status, sizeof(ui->status), "AUDITIONING %s",
+                     ts_audition_source_name(source));
+        return;
+    }
     if (!audition_plan_ui(instrument, ui, source,
                           audio->playing && audio->bank_slot < 0 ?
                           audio->range : TS_AUDITION_ALL, &plan)) {
@@ -243,6 +260,7 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
                         TsInstrument *instrument)
 {
     TsAuditionPlan plan;
+    ui->bank_view_slot = -1;
     if (audio->playing && audio->bank_slot >= 0) {
         /* Bank slots own stable buffers and do not remap through Current edits. */
     } else if (audio->playing && audition_plan_ui(instrument, ui, audio->source,
@@ -279,6 +297,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     int recipe = path_is_tsr(path);
     int ok;
     lock_edit(device, audio);
+    ui->bank_view_slot = -1;
     if (audio->bank_slot >= 0) {
         audio->playing = 0;
         audio->bank_slot = -1;
@@ -310,6 +329,7 @@ static int generate_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         seed = advance_seed(seed);
     }
     lock_edit(device, audio);
+    ui->bank_view_slot = -1;
     if (audio->bank_slot >= 0) {
         audio->playing = 0;
         audio->bank_slot = -1;
@@ -498,14 +518,30 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
 {
     const TsBankSlot *slot;
     TsAuditionPlan plan;
-    if (!device || slot_index < 0 || slot_index >= TS_BANK_SLOT_COUNT ||
-        !instrument->bank[slot_index].occupied) return;
+    if (slot_index < 0 || slot_index >= TS_BANK_SLOT_COUNT) return;
     slot = &instrument->bank[slot_index];
+    ui->bank_view_slot = slot_index;
+    if (device) SDL_LockAudioDevice(device);
+    ts_note_bank_clear(&audio->notes);
+    audio->playing = 0;
+    audio->bank_slot = -1;
+    if (!slot->occupied) {
+        audio->sample = NULL;
+        if (device) SDL_UnlockAudioDevice(device);
+        snprintf(ui->status, sizeof(ui->status), "BANK %02d EMPTY - SILENCE",
+                 slot_index + 1);
+        return;
+    }
+    if (!device || output_rate <= 0) {
+        audio->sample = &slot->sample;
+        if (device) SDL_UnlockAudioDevice(device);
+        snprintf(ui->status, sizeof(ui->status), "BANK %02d SHOWN - AUDIO UNAVAILABLE",
+                 slot_index + 1);
+        return;
+    }
     plan.sample = &slot->sample;
     plan.first = slot->has_loop ? slot->loop_first : 0;
     plan.last = slot->has_loop ? slot->loop_last : slot->sample.frames;
-    SDL_LockAudioDevice(device);
-    ts_note_bank_clear(&audio->notes);
     audio->sample = &slot->sample;
     audio->position = (double)plan.first;
     audio->pitch = 1.0;
@@ -553,6 +589,57 @@ static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
     if (device) SDL_UnlockAudioDevice(device);
     if (ok) snprintf(ui->status, sizeof(ui->status), "CLEARED BANK %02d", slot + 1);
     else snprintf(ui->status, sizeof(ui->status), "BANK CLEAR FAILED: %.132s", error);
+}
+
+static void begin_bank_rename(TsUiState *ui, const TsInstrument *instrument, int slot)
+{
+    if (slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
+        snprintf(ui->status, sizeof(ui->status), "BANK 01 ROOT NAME IS FIXED");
+        return;
+    }
+    if (!instrument->bank[slot].occupied) {
+        snprintf(ui->status, sizeof(ui->status), "BANK %02d EMPTY - CAPTURE BEFORE RENAMING",
+                 slot + 1);
+        return;
+    }
+    ui->renaming_bank_slot = slot;
+    snprintf(ui->bank_rename, sizeof(ui->bank_rename), "%s",
+             instrument->bank[slot].sample.name);
+    SDL_StartTextInput();
+    snprintf(ui->status, sizeof(ui->status), "RENAMING BANK %02d", slot + 1);
+}
+
+static void cancel_bank_rename(TsUiState *ui)
+{
+    int slot = ui->renaming_bank_slot;
+    ui->renaming_bank_slot = -1;
+    ui->bank_rename[0] = '\0';
+    SDL_StopTextInput();
+    snprintf(ui->status, sizeof(ui->status), "BANK %02d RENAME CANCELLED", slot + 1);
+}
+
+static void finish_bank_rename(TsUiState *ui, TsInstrument *instrument)
+{
+    char error[160];
+    int slot = ui->renaming_bank_slot;
+    if (!ts_instrument_bank_rename(instrument, slot, ui->bank_rename,
+                                   error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "BANK RENAME FAILED: %.132s", error);
+        return;
+    }
+    ui->renaming_bank_slot = -1;
+    ui->bank_rename[0] = '\0';
+    SDL_StopTextInput();
+    snprintf(ui->status, sizeof(ui->status), "RENAMED BANK %02d", slot + 1);
+}
+
+static unsigned bank_modifiers(SDL_Keymod mod)
+{
+    unsigned result = 0;
+    if (mod & KMOD_SHIFT) result |= TS_UI_BANK_MOD_SHIFT;
+    if (mod & KMOD_CTRL) result |= TS_UI_BANK_MOD_CTRL;
+    if (mod & KMOD_ALT) result |= TS_UI_BANK_MOD_ALT;
+    return result;
 }
 
 static void browser_open(TsUiState *ui, TsBrowserMode mode)
@@ -826,9 +913,22 @@ int main(int argc, char **argv)
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) running = 0;
+            else if (event.type == SDL_DROPFILE && ui.renaming_bank_slot >= 0) {
+                snprintf(ui.status, sizeof(ui.status),
+                         "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");
+                SDL_free(event.drop.file);
+            }
             else if (event.type == SDL_DROPFILE) {
                 load_instrument(device, &audio, &ui, &instrument, event.drop.file);
                 SDL_free(event.drop.file);
+            } else if (event.type == SDL_TEXTINPUT && ui.renaming_bank_slot >= 0) {
+                size_t length = strlen(ui.bank_rename);
+                for (const unsigned char *at = (const unsigned char *)event.text.text;
+                     *at != '\0' && length + 1u < sizeof(ui.bank_rename); ++at) {
+                    if (*at >= 32u && *at <= 126u)
+                        ui.bank_rename[length++] = (char)*at;
+                }
+                ui.bank_rename[length] = '\0';
             } else if (event.type == SDL_TEXTINPUT && ui.browser.mode != TS_BROWSER_CLOSED) {
                 if (ui.browser.filename_focus && ui.browser.mode != TS_BROWSER_LOAD_WAV)
                     ts_browser_append_filename(&ui.browser, event.text.text);
@@ -836,7 +936,21 @@ int main(int argc, char **argv)
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
                 if (!((mod & KMOD_CTRL) && key == SDLK_p)) ui.commit_armed = 0;
-                if (ui.browser.mode != TS_BROWSER_CLOSED) {
+                if (ui.renaming_bank_slot >= 0) {
+                    if (key == SDLK_ESCAPE) cancel_bank_rename(&ui);
+                    else if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
+                        finish_bank_rename(&ui, &instrument);
+                    else if (key == SDLK_BACKSPACE) {
+                        size_t length = strlen(ui.bank_rename);
+                        if (length > 0) {
+                            --length;
+                            while (length > 0 &&
+                                   ((unsigned char)ui.bank_rename[length] & 0xc0u) == 0x80u)
+                                --length;
+                            ui.bank_rename[length] = '\0';
+                        }
+                    }
+                } else if (ui.browser.mode != TS_BROWSER_CLOSED) {
                     if (key == SDLK_ESCAPE) browser_cancel(&ui);
                     else if (key == SDLK_UP) {
                         ui.browser.filename_focus = 0;
@@ -893,6 +1007,7 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_y) {
                     history_move(device, &audio, &ui, &instrument, 1);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_a) {
+                    ui.bank_view_slot = -1;
                     ts_instrument_set_selection(&instrument, 0, instrument.current.frames);
                     snprintf(ui.status, sizeof(ui.status), "SELECTED ALL CURRENT");
                 } else if ((mod & KMOD_CTRL) && key == SDLK_r) {
@@ -914,6 +1029,7 @@ int main(int argc, char **argv)
                     apply_sample_edit(device, &audio, &ui, &instrument,
                                       TS_SAMPLE_EDIT_GAIN, 0.7079458f);
                 } else if (key == SDLK_EQUALS || key == SDLK_PLUS || key == SDLK_KP_PLUS) {
+                    ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT) {
                         size_t anchor = instrument.has_selection ?
                                         instrument.crop_first +
@@ -934,6 +1050,7 @@ int main(int argc, char **argv)
                                  "ZOOMED IN" : "ZOOM LIMIT");
                     }
                 } else if (key == SDLK_MINUS || key == SDLK_KP_MINUS) {
+                    ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT) {
                         size_t anchor = instrument.has_selection ?
                                         instrument.crop_first +
@@ -954,6 +1071,7 @@ int main(int argc, char **argv)
                                  "ZOOMED OUT" : "SHOWING ALL CURRENT");
                     }
                 } else if (key == SDLK_0) {
+                    ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT) {
                         ts_ui_reset_parent_view(&ui, instrument.parent.frames);
                         snprintf(ui.status, sizeof(ui.status), "SHOWING ALL PARENT");
@@ -962,6 +1080,7 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status), "SHOWING ALL CURRENT");
                     }
                 } else if (key == SDLK_LEFT || key == SDLK_RIGHT) {
+                    ui.bank_view_slot = -1;
                     size_t span = ui.audition_source == TS_AUDITION_PARENT ?
                                   ui.parent_view_last - ui.parent_view_first :
                                   instrument.view_last - instrument.view_first;
@@ -981,8 +1100,12 @@ int main(int argc, char **argv)
                     if (note >= 0 && device)
                         begin_note(device, &audio, &ui, &instrument, note, obtained.freq, 0);
                 }
-            } else if (event.type == SDL_KEYUP && note_for_key(event.key.keysym.sym) >= 0) {
+            } else if (event.type == SDL_KEYUP && ui.renaming_bank_slot < 0 &&
+                       note_for_key(event.key.keysym.sym) >= 0) {
                 release_note(device, &audio, &ui, note_for_key(event.key.keysym.sym));
+            } else if (event.type == SDL_MOUSEWHEEL && ui.renaming_bank_slot >= 0) {
+                snprintf(ui.status, sizeof(ui.status),
+                         "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");
             } else if (event.type == SDL_MOUSEWHEEL && ui.browser.mode != TS_BROWSER_CLOSED) {
                 int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
                               -event.wheel.y : event.wheel.y;
@@ -1000,6 +1123,7 @@ int main(int argc, char **argv)
                 if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                     y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     SDL_Keymod mod = SDL_GetModState();
+                    ui.bank_view_slot = -1;
                     if ((mod & KMOD_SHIFT) || wheel_x != 0) {
                         size_t span = ui.audition_source == TS_AUDITION_PARENT ?
                                       ui.parent_view_last - ui.parent_view_first :
@@ -1031,6 +1155,8 @@ int main(int argc, char **argv)
                                  "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
                     }
                 }
+            } else if (event.type == SDL_MOUSEMOTION && ui.renaming_bank_slot >= 0) {
+                /* Bank rename is modal; pointer actions cannot leak through it. */
             } else if (event.type == SDL_MOUSEMOTION && ui.browser.dragging_scrollbar) {
                 int x, y;
                 int maximum = ui.browser.entry_count - TS_BROWSER_VISIBLE_ROWS;
@@ -1074,7 +1200,10 @@ int main(int argc, char **argv)
                 SDL_Keymod mod = SDL_GetModState();
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
                 if (!(y >= 205 && y < 228 && x >= 247 && x < 325)) ui.commit_armed = 0;
-                if (ui.browser.mode != TS_BROWSER_CLOSED) {
+                if (ui.renaming_bank_slot >= 0) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");
+                } else if (ui.browser.mode != TS_BROWSER_CLOSED) {
                     if (x >= TS_BROWSER_LIST_X && x < TS_BROWSER_LIST_X + TS_BROWSER_LIST_W &&
                         y >= TS_BROWSER_LIST_Y && y < TS_BROWSER_LIST_Y + TS_BROWSER_SCROLL_H) {
                         int row = (y - TS_BROWSER_LIST_Y) / TS_BROWSER_ROW_H;
@@ -1126,6 +1255,7 @@ int main(int argc, char **argv)
                     else browser_open_bank(&ui, &instrument);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
+                    ui.bank_view_slot = -1;
                     int first_x = instrument.has_loop ? loop_marker_x(&instrument, &ui, 1) : -1000;
                     int last_x = instrument.has_loop ? loop_marker_x(&instrument, &ui, 2) : -1000;
                     if (instrument.has_loop && abs(x - first_x) <= 6) {
@@ -1281,6 +1411,7 @@ int main(int argc, char **argv)
                 } else if (y >= 289 && y < 312 && x >= 245 && x < 297) {
                     crop_selection(device, &audio, &ui, &instrument);
                 } else if (y >= 289 && y < 312 && x >= 302 && x < 376) {
+                    ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT &&
                         instrument.has_selection) {
                         ui.parent_view_first = instrument.crop_first +
@@ -1294,6 +1425,7 @@ int main(int argc, char **argv)
                                  "ZOOMED TO SELECTION" : "SELECT A RANGE FIRST");
                     }
                 } else if (y >= 289 && y < 312 && x >= 381 && x < 455) {
+                    ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT) {
                         ts_ui_reset_parent_view(&ui, instrument.parent.frames);
                         snprintf(ui.status, sizeof(ui.status), "SHOWING ALL PARENT");
@@ -1313,17 +1445,24 @@ int main(int argc, char **argv)
                     int note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
                     int bank_slot = ui.show_keyboard ? -1 : ts_ui_bank_slot_from_point(x, y);
                     if (bank_slot >= 0) {
-                        if (instrument.bank[bank_slot].occupied)
+                        TsUiBankAction action = ts_ui_bank_action(
+                            0, bank_modifiers(mod));
+                        if (action == TS_UI_BANK_ACTION_AUDITION) {
                             begin_bank_audition(device, &audio, &ui, &instrument,
                                                 bank_slot, obtained.freq);
-                        else {
-                            TsBankCaptureKind kind = (mod & KMOD_CTRL) ?
-                                                     TS_BANK_CAPTURE_LOOP :
-                                                     (mod & KMOD_SHIFT) ?
-                                                     TS_BANK_CAPTURE_SELECTION :
-                                                     TS_BANK_CAPTURE_CURRENT;
+                        } else if (action == TS_UI_BANK_ACTION_CAPTURE_CURRENT ||
+                                   action == TS_UI_BANK_ACTION_CAPTURE_LOOP ||
+                                   action == TS_UI_BANK_ACTION_CAPTURE_SELECTION) {
+                            TsBankCaptureKind kind =
+                                action == TS_UI_BANK_ACTION_CAPTURE_CURRENT ?
+                                TS_BANK_CAPTURE_CURRENT :
+                                action == TS_UI_BANK_ACTION_CAPTURE_LOOP ?
+                                TS_BANK_CAPTURE_LOOP : TS_BANK_CAPTURE_SELECTION;
                             capture_bank_slot(device, &ui, &instrument,
                                               bank_slot, kind);
+                        } else {
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "USE ONE BANK CAPTURE MODIFIER AT A TIME");
                         }
                     } else if (ui.show_keyboard && note >= 0 && device) {
                         if (mod & KMOD_SHIFT) {
@@ -1345,10 +1484,21 @@ int main(int argc, char **argv)
                        ui.browser.mode == TS_BROWSER_CLOSED && !ui.show_keyboard) {
                 int x, y;
                 int bank_slot;
+                TsUiBankAction action;
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
                 bank_slot = ts_ui_bank_slot_from_point(x, y);
-                if (bank_slot >= 0)
+                action = ts_ui_bank_action(1, bank_modifiers(SDL_GetModState()));
+                if (ui.renaming_bank_slot >= 0) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");
+                } else if (bank_slot >= 0 && action == TS_UI_BANK_ACTION_CLEAR) {
                     clear_bank_slot(device, &audio, &ui, &instrument, bank_slot);
+                } else if (bank_slot >= 0 && action == TS_UI_BANK_ACTION_RENAME) {
+                    begin_bank_rename(&ui, &instrument, bank_slot);
+                } else if (bank_slot >= 0) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "RMB RENAME  SHIFT+RMB CLEAR");
+                }
             } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
                 ui.browser.dragging_scrollbar = 0;
                 ui.dragging_loop_endpoint = 0;
@@ -1372,13 +1522,16 @@ int main(int argc, char **argv)
             ui.playback_active = audio.playing || voice != NULL;
             if (audio.playing) {
                 ui.playhead_source = audio.source;
+                ui.playhead_bank_slot = audio.bank_slot;
                 ui.playhead_frame = audio.position > 0.0 ? (size_t)audio.position : 0;
                 ui.playhead_frames = audio.sample ? audio.sample->frames : 0;
             } else if (voice != NULL) {
                 ui.playhead_source = voice->source;
+                ui.playhead_bank_slot = -1;
                 ui.playhead_frame = voice->position > 0.0 ? (size_t)voice->position : 0;
                 ui.playhead_frames = voice->sample ? voice->sample->frames : 0;
             } else {
+                ui.playhead_bank_slot = -1;
                 ui.playhead_frame = 0;
                 ui.playhead_frames = 0;
             }

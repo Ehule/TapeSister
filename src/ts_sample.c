@@ -1288,6 +1288,44 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
     return 1;
 }
 
+int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *name,
+                              char *error, size_t error_size)
+{
+    const char *first;
+    const char *last;
+    size_t length;
+    if (instrument == NULL || slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "The family root name is fixed");
+        return 0;
+    }
+    if (!instrument->bank[slot].occupied) {
+        set_error(error, error_size, "Capture audio before naming this bank slot");
+        return 0;
+    }
+    if (name == NULL) {
+        set_error(error, error_size, "Enter a bank slot name");
+        return 0;
+    }
+    first = name;
+    while (*first == ' ' || *first == '\t' || *first == '\r' || *first == '\n') ++first;
+    last = first + strlen(first);
+    while (last > first && (last[-1] == ' ' || last[-1] == '\t' ||
+                            last[-1] == '\r' || last[-1] == '\n')) --last;
+    length = (size_t)(last - first);
+    if (length == 0) {
+        set_error(error, error_size, "Bank slot name cannot be empty");
+        return 0;
+    }
+    if (length >= sizeof(instrument->bank[slot].sample.name)) {
+        set_error(error, error_size, "Bank slot name is too long");
+        return 0;
+    }
+    memmove(instrument->bank[slot].sample.name, first, length);
+    instrument->bank[slot].sample.name[length] = '\0';
+    set_error(error, error_size, "");
+    return 1;
+}
+
 static void bank_safe_name(const char *source, char *destination, size_t size)
 {
     size_t used = 0;

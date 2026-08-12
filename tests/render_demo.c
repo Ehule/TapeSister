@@ -85,9 +85,20 @@ int main(int argc, char **argv)
             ts_instrument_free(&instrument);
             return 1;
         }
+        if (!ts_instrument_bank_rename(&instrument, 2, "TAIL LAYER",
+                                       error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
         ui.show_keyboard = 0;
+        ui.bank_view_slot = 2;
+        ui.playback_active = 1;
+        ui.playhead_bank_slot = 2;
+        ui.playhead_frame = instrument.bank[2].sample.frames / 2u;
+        ui.playhead_frames = instrument.bank[2].sample.frames;
         snprintf(ui.status, sizeof(ui.status),
-                 "FAMILY 5/16 - CLICK PLAY  EMPTY CAPTURE  RMB CLEAR  EXPORT FOLDER");
+                 "BANK 03 AUDITION - WAVEFORM FOLLOWS SLOT  RMB RENAME  SHIFT+RMB CLEAR");
     }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {
