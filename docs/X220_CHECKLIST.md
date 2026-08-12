@@ -96,19 +96,37 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Crop keeps the overlapping loop portion in correct Current-relative coordinates; Undo restores the prior crop and loop exactly.
 - [ ] Loop Set, Clear, and crossfade changes traverse correctly through Undo/Redo.
 - [ ] Reset clears the loop and is undoable; Commit carries the loop onto the promoted Parent and clears old history.
-- [ ] Saved TSR6 projects contain embedded Parent audio, loop state/range/crossfade, and complete reconstructive state.
-- [ ] KEYS hides/shows the onscreen keyboard without affecting computer-key audition or Stop All.
+- [ ] Saved TSR7 projects contain embedded Parent audio, loop state/range/crossfade, bank audio, and complete reconstructive state.
+- [ ] KEYS/BANK switches the lower panel without affecting computer-key audition or Stop All.
 
 ## Existing foundation
 
 - [ ] Computer and onscreen keys audition the selected A/B source at different pitches.
 - [ ] Space, Escape, and Stop All stop playback reliably.
 - [ ] A bad WAV path reports an error and preserves Parent and Current.
-- [ ] Save creates a self-contained TSR6 project that reopens without access to the original WAV.
+- [ ] Save creates a self-contained TSR7 project that reopens without access to the original WAV.
 - [ ] Export creates a valid mono 16-bit WAV containing Current.
 - [ ] The supplied Tapehead palette is applied consistently and remains legible.
 - [ ] No action leaks through the path-entry overlay.
 - [ ] Closing the window exits cleanly.
+
+## Sample-family bank
+
+- [ ] BANK and KEYS switch the lower panel without interrupting held or latched notes.
+- [ ] Slot 01 contains the initial Parent root and cannot be cleared or overwritten.
+- [ ] Commit changes Parent/Current but preserves slot 01 and every captured family member.
+- [ ] Generate, generated Reseed, and WAV import deliberately start a new root-only family.
+- [ ] Clicking an empty slot captures all Current; Shift-click captures Selection; Ctrl-click captures Loop.
+- [ ] Selection and Loop captures contain exactly the visibly snapped range.
+- [ ] Loop capture retains a full-slot forward loop and the active crossfade milliseconds.
+- [ ] Clicking each occupied slot auditions the correct audio; loop slots continue looping until Stop All, Space, or Escape.
+- [ ] Right-click clears slots 02–16, but never slot 01.
+- [ ] A filled slot must be cleared before it can be captured again.
+- [ ] BANK-mode Export and `Ctrl+E` propose a folder derived from the initial Parent name.
+- [ ] Whole-bank export creates one correctly numbered WAV per occupied slot and never replaces an existing folder.
+- [ ] A failed bank export cleans up its partial WAV files and temporary folder.
+- [ ] Saving and reopening TSR7 restores exact hashes, capture types, loop ranges, and crossfades for every occupied slot.
+- [ ] Opening a TSR6 project remains supported and creates a root-only bank from its Parent.
 
 ## DSP shelf
 

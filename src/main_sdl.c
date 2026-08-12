@@ -26,6 +26,7 @@ typedef struct {
     int looping;
     int playing;
     int output_rate;
+    int bank_slot;
     TsNoteBank notes;
 } AudioState;
 
@@ -128,6 +129,7 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     }
     SDL_LockAudioDevice(device);
     ts_note_bank_clear(&audio->notes);
+    audio->bank_slot = -1;
     audio->sample = plan.sample;
     audio->position = (double)plan.first;
     audio->pitch = pitch;
@@ -158,6 +160,7 @@ static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
     }
     SDL_LockAudioDevice(device);
     audio->playing = 0;
+    audio->bank_slot = -1;
     result = ts_note_bank_start(&audio->notes, instrument, ui->audition_source,
                                 note, latched, output_rate);
     voice_count = ts_note_bank_count(&audio->notes);
@@ -189,12 +192,16 @@ static void switch_audition_source(SDL_AudioDeviceID device, AudioState *audio,
     TsAuditionPlan plan;
     if (source == ui->audition_source) return;
     if (!audition_plan_ui(instrument, ui, source,
-                          audio->playing ? audio->range : TS_AUDITION_ALL, &plan)) {
+                          audio->playing && audio->bank_slot < 0 ?
+                          audio->range : TS_AUDITION_ALL, &plan)) {
         snprintf(ui->status, sizeof(ui->status), "NOTHING TO AUDITION");
         return;
     }
     if (device) SDL_LockAudioDevice(device);
-    if (audio->playing) {
+    if (audio->playing && audio->bank_slot >= 0) {
+        audio->playing = 0;
+        audio->bank_slot = -1;
+    } else if (audio->playing) {
         audio->position = ts_audition_map_progress(
             audio->position, audio->range_start, audio->range_end, plan.first, plan.last);
         audio->range_start = plan.first;
@@ -218,6 +225,7 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
     if (device) SDL_LockAudioDevice(device);
     audio->playing = 0;
+    audio->bank_slot = -1;
     ts_note_bank_clear(&audio->notes);
     if (device) SDL_UnlockAudioDevice(device);
     ui->active_notes = 0;
@@ -235,7 +243,9 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
                         TsInstrument *instrument)
 {
     TsAuditionPlan plan;
-    if (audio->playing && audition_plan_ui(instrument, ui, audio->source,
+    if (audio->playing && audio->bank_slot >= 0) {
+        /* Bank slots own stable buffers and do not remap through Current edits. */
+    } else if (audio->playing && audition_plan_ui(instrument, ui, audio->source,
                                            audio->range, &plan)) {
         audio->position = ts_audition_map_progress(
             audio->position, audio->range_start, audio->range_end,
@@ -269,6 +279,10 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     int recipe = path_is_tsr(path);
     int ok;
     lock_edit(device, audio);
+    if (audio->bank_slot >= 0) {
+        audio->playing = 0;
+        audio->bank_slot = -1;
+    }
     if (recipe)
         ok = ts_instrument_load_recipe(instrument, path, error, sizeof(error));
     else
@@ -296,6 +310,10 @@ static int generate_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         seed = advance_seed(seed);
     }
     lock_edit(device, audio);
+    if (audio->bank_slot >= 0) {
+        audio->playing = 0;
+        audio->bank_slot = -1;
+    }
     ok = ts_instrument_generate(instrument, kind, seed, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
@@ -312,6 +330,10 @@ static void reseed_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     uint64_t old_parent = ts_sample_hash(&instrument->parent);
     int ok;
     lock_edit(device, audio);
+    if (instrument->source_kind == TS_SOURCE_GENERATED && audio->bank_slot >= 0) {
+        audio->playing = 0;
+        audio->bank_slot = -1;
+    }
     ok = ts_instrument_reseed(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (ok && ts_sample_hash(&instrument->parent) != old_parent)
@@ -456,7 +478,7 @@ static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
 {
     TsAuditionPlan plan;
     if (device) SDL_LockAudioDevice(device);
-    if (audio->playing && audio->looping &&
+    if (audio->playing && audio->bank_slot < 0 && audio->looping &&
         ts_audition_plan(instrument, audio->source, TS_AUDITION_LOOP, &plan)) {
         audio->sample = plan.sample;
         audio->range_start = plan.first;
@@ -470,6 +492,69 @@ static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
     if (device) SDL_UnlockAudioDevice(device);
 }
 
+static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, const TsInstrument *instrument,
+                                int slot_index, int output_rate)
+{
+    const TsBankSlot *slot;
+    TsAuditionPlan plan;
+    if (!device || slot_index < 0 || slot_index >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[slot_index].occupied) return;
+    slot = &instrument->bank[slot_index];
+    plan.sample = &slot->sample;
+    plan.first = slot->has_loop ? slot->loop_first : 0;
+    plan.last = slot->has_loop ? slot->loop_last : slot->sample.frames;
+    SDL_LockAudioDevice(device);
+    ts_note_bank_clear(&audio->notes);
+    audio->sample = &slot->sample;
+    audio->position = (double)plan.first;
+    audio->pitch = 1.0;
+    audio->step = (double)slot->sample.sample_rate / output_rate;
+    audio->range_start = plan.first;
+    audio->range_end = plan.last;
+    audio->source = TS_AUDITION_CURRENT;
+    audio->range = slot->has_loop ? TS_AUDITION_LOOP : TS_AUDITION_ALL;
+    audio->looping = slot->has_loop;
+    audio->crossfade_frames = slot->has_loop ?
+                              ts_audition_crossfade_frames(
+                                  &plan, slot->loop_crossfade_ms) : 0;
+    audio->bank_slot = slot_index;
+    audio->playing = 1;
+    SDL_UnlockAudioDevice(device);
+    snprintf(ui->status, sizeof(ui->status), "PLAYING BANK %02d %s",
+             slot_index + 1, ts_bank_capture_name(slot->capture_kind));
+}
+
+static void capture_bank_slot(SDL_AudioDeviceID device, TsUiState *ui,
+                              TsInstrument *instrument,
+                              int slot, TsBankCaptureKind kind)
+{
+    char error[160];
+    int ok;
+    if (device) SDL_LockAudioDevice(device);
+    ok = ts_instrument_bank_capture(instrument, slot, kind, error, sizeof(error));
+    if (device) SDL_UnlockAudioDevice(device);
+    if (ok) snprintf(ui->status, sizeof(ui->status), "CAPTURED %s TO BANK %02d",
+                     ts_bank_capture_name(kind), slot + 1);
+    else snprintf(ui->status, sizeof(ui->status), "BANK CAPTURE FAILED: %.130s", error);
+}
+
+static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
+                            TsUiState *ui, TsInstrument *instrument, int slot)
+{
+    char error[160];
+    int ok;
+    if (device) SDL_LockAudioDevice(device);
+    if (audio->bank_slot == slot) {
+        audio->playing = 0;
+        audio->bank_slot = -1;
+    }
+    ok = ts_instrument_bank_clear(instrument, slot, error, sizeof(error));
+    if (device) SDL_UnlockAudioDevice(device);
+    if (ok) snprintf(ui->status, sizeof(ui->status), "CLEARED BANK %02d", slot + 1);
+    else snprintf(ui->status, sizeof(ui->status), "BANK CLEAR FAILED: %.132s", error);
+}
+
 static void browser_open(TsUiState *ui, TsBrowserMode mode)
 {
     const char *filename = mode == TS_BROWSER_SAVE_RECIPE ? "tapesister-recipe.tsr" :
@@ -479,6 +564,35 @@ static void browser_open(TsUiState *ui, TsBrowserMode mode)
     if (ts_browser_open(&ui->browser, mode, filename)) {
         if (mode != TS_BROWSER_LOAD_WAV) SDL_StartTextInput();
         snprintf(ui->status, sizeof(ui->status), "%s", ts_browser_mode_title(mode));
+    } else {
+        snprintf(ui->status, sizeof(ui->status), "BROWSER FAILED: %.142s", ui->browser.message);
+        ts_browser_close(&ui->browser);
+    }
+}
+
+static void browser_open_bank(TsUiState *ui, const TsInstrument *instrument)
+{
+    char folder[TS_BROWSER_NAME_MAX + 1];
+    size_t used = 0;
+    const char *source = instrument->bank[0].occupied ?
+                         instrument->bank[0].sample.name : instrument->parent.name;
+    const char *source_end = strrchr(source, '.');
+    if (source_end == NULL || source_end == source) source_end = source + strlen(source);
+    while (source < source_end && used + 8u < sizeof(folder)) {
+        unsigned char c = (unsigned char)*source++;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_')
+            folder[used++] = (char)c;
+        else if (used > 0 && folder[used - 1u] != '_') folder[used++] = '_';
+    }
+    while (used > 0 && folder[used - 1u] == '_') --used;
+    if (used == 0) memcpy(folder + used, "TapeSister", 10), used += 10;
+    memcpy(folder + used, "_family", 8);
+    ui->commit_armed = 0;
+    SDL_StopTextInput();
+    if (ts_browser_open(&ui->browser, TS_BROWSER_EXPORT_BANK, folder)) {
+        SDL_StartTextInput();
+        snprintf(ui->status, sizeof(ui->status), "EXPORT SAMPLE FAMILY");
     } else {
         snprintf(ui->status, sizeof(ui->status), "BROWSER FAILED: %.142s", ui->browser.message);
         ts_browser_close(&ui->browser);
@@ -565,6 +679,11 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             snprintf(browser->message, sizeof(browser->message), "ENTER A VALID FILENAME");
             return;
         }
+        if (browser->mode == TS_BROWSER_EXPORT_BANK && ts_browser_path_exists(path)) {
+            snprintf(browser->message, sizeof(browser->message),
+                     "FOLDER EXISTS - CHOOSE A NEW NAME");
+            return;
+        }
         if (ts_browser_path_exists(path) && !browser->overwrite_armed) {
             browser->overwrite_armed = 1;
             snprintf(browser->message, sizeof(browser->message), "PRESS AGAIN TO OVERWRITE");
@@ -574,10 +693,17 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             ok = save_recipe_atomic(instrument, path, error, sizeof(error));
             snprintf(ui->status, sizeof(ui->status), ok ? "SAVED RECIPE %.108s" :
                      "SAVE FAILED: %.135s", ok ? path : error);
-        } else {
+        } else if (browser->mode == TS_BROWSER_EXPORT_WAV) {
             ok = export_wav_atomic(&instrument->current, path, error, sizeof(error));
             snprintf(ui->status, sizeof(ui->status), ok ? "EXPORTED CURRENT %.101s" :
                      "EXPORT FAILED: %.133s", ok ? path : error);
+        } else {
+            ok = ts_instrument_export_bank(instrument, path, error, sizeof(error));
+            if (ok) snprintf(ui->status, sizeof(ui->status),
+                             "EXPORTED %d-SAMPLE FAMILY %.88s",
+                             ts_instrument_bank_count(instrument), path);
+            else snprintf(ui->status, sizeof(ui->status),
+                          "BANK EXPORT FAILED: %.128s", error);
         }
     }
     if (ok) {
@@ -663,6 +789,7 @@ int main(int argc, char **argv)
     ts_instrument_init(&instrument);
     ts_ui_init(&ui);
     ts_note_bank_init(&audio.notes);
+    audio.bank_slot = -1;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
         return 1;
@@ -755,7 +882,8 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_s) {
                     browser_open(&ui, TS_BROWSER_SAVE_RECIPE);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_e) {
-                    browser_open(&ui, TS_BROWSER_EXPORT_WAV);
+                    if (ui.show_keyboard) browser_open(&ui, TS_BROWSER_EXPORT_WAV);
+                    else browser_open_bank(&ui, &instrument);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_b) {
                     switch_audition_source(device, &audio, &ui, &instrument,
                         ui.audition_source == TS_AUDITION_CURRENT ?
@@ -994,7 +1122,8 @@ int main(int argc, char **argv)
                 } else if (y >= 4 && y < 28 && x >= 447 && x < 529) {
                     browser_open(&ui, TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 535 && x < 630) {
-                    browser_open(&ui, TS_BROWSER_EXPORT_WAV);
+                    if (ui.show_keyboard) browser_open(&ui, TS_BROWSER_EXPORT_WAV);
+                    else browser_open_bank(&ui, &instrument);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     int first_x = instrument.has_loop ? loop_marker_x(&instrument, &ui, 1) : -1000;
@@ -1178,11 +1307,25 @@ int main(int argc, char **argv)
                     history_move(device, &audio, &ui, &instrument, 1);
                 } else if (y >= 289 && y < 312 && x >= 588 && x < 630) {
                     ui.show_keyboard = !ui.show_keyboard;
-                    snprintf(ui.status, sizeof(ui.status), "ONSCREEN KEYS %s",
-                             ui.show_keyboard ? "SHOWN" : "HIDDEN");
+                    snprintf(ui.status, sizeof(ui.status), "%s PANEL",
+                             ui.show_keyboard ? "KEYS" : "SAMPLE BANK");
                 } else {
-                    int note = ts_ui_key_from_point(x, y);
-                    if (ui.show_keyboard && note >= 0 && device) {
+                    int note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
+                    int bank_slot = ui.show_keyboard ? -1 : ts_ui_bank_slot_from_point(x, y);
+                    if (bank_slot >= 0) {
+                        if (instrument.bank[bank_slot].occupied)
+                            begin_bank_audition(device, &audio, &ui, &instrument,
+                                                bank_slot, obtained.freq);
+                        else {
+                            TsBankCaptureKind kind = (mod & KMOD_CTRL) ?
+                                                     TS_BANK_CAPTURE_LOOP :
+                                                     (mod & KMOD_SHIFT) ?
+                                                     TS_BANK_CAPTURE_SELECTION :
+                                                     TS_BANK_CAPTURE_CURRENT;
+                            capture_bank_slot(device, &ui, &instrument,
+                                              bank_slot, kind);
+                        }
+                    } else if (ui.show_keyboard && note >= 0 && device) {
                         if (mod & KMOD_SHIFT) {
                             ui.mouse_note = -1;
                             begin_note(device, &audio, &ui, &instrument,
@@ -1197,6 +1340,15 @@ int main(int argc, char **argv)
                         }
                     }
                 }
+            } else if (event.type == SDL_MOUSEBUTTONDOWN &&
+                       event.button.button == SDL_BUTTON_RIGHT &&
+                       ui.browser.mode == TS_BROWSER_CLOSED && !ui.show_keyboard) {
+                int x, y;
+                int bank_slot;
+                logical_mouse(window, event.button.x, event.button.y, &x, &y);
+                bank_slot = ts_ui_bank_slot_from_point(x, y);
+                if (bank_slot >= 0)
+                    clear_bank_slot(device, &audio, &ui, &instrument, bank_slot);
             } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
                 ui.browser.dragging_scrollbar = 0;
                 ui.dragging_loop_endpoint = 0;

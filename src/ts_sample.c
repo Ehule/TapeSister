@@ -5,6 +5,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#define ts_mkdir(path) _mkdir(path)
+#define ts_rmdir(path) _rmdir(path)
+#else
+#include <unistd.h>
+#define ts_mkdir(path) mkdir(path, 0755)
+#define ts_rmdir(path) rmdir(path)
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -737,11 +747,68 @@ void ts_process_recipe_reset(TsProcessRecipe *process)
     process->reverb_mix = 0.24f;
 }
 
+const char *ts_bank_capture_name(TsBankCaptureKind kind)
+{
+    if (kind == TS_BANK_CAPTURE_ROOT) return "ROOT";
+    if (kind == TS_BANK_CAPTURE_SELECTION) return "SEL";
+    if (kind == TS_BANK_CAPTURE_LOOP) return "LOOP";
+    return "FULL";
+}
+
+static void bank_slot_init(TsBankSlot *slot)
+{
+    memset(slot, 0, sizeof(*slot));
+    ts_sample_init(&slot->sample);
+    slot->loop_crossfade_ms = 8.0f;
+}
+
+static void bank_slot_free(TsBankSlot *slot)
+{
+    ts_sample_free(&slot->sample);
+    bank_slot_init(slot);
+}
+
+static void bank_free(TsInstrument *instrument)
+{
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) bank_slot_free(&instrument->bank[i]);
+}
+
+static int bank_root_clone(TsBankSlot *slot, const TsSample *parent,
+                           char *error, size_t error_size)
+{
+    bank_slot_init(slot);
+    if (!ts_sample_clone(&slot->sample, parent, error, error_size)) return 0;
+    slot->capture_kind = TS_BANK_CAPTURE_ROOT;
+    slot->occupied = 1;
+    return 1;
+}
+
+static int sample_clone_range(TsSample *destination, const TsSample *source,
+                              size_t first, size_t last, char *error, size_t error_size)
+{
+    size_t frames;
+    if (source == NULL || source->data == NULL || first >= last || last > source->frames) {
+        set_error(error, error_size, "Invalid bank capture range");
+        return 0;
+    }
+    frames = last - first;
+    destination->data = (float *)malloc(frames * sizeof(float));
+    if (destination->data == NULL) {
+        set_error(error, error_size, "Out of memory while capturing bank slot");
+        return 0;
+    }
+    memcpy(destination->data, source->data + first, frames * sizeof(float));
+    destination->frames = frames;
+    destination->sample_rate = source->sample_rate;
+    return 1;
+}
+
 void ts_instrument_init(TsInstrument *instrument)
 {
     memset(instrument, 0, sizeof(*instrument));
     ts_sample_init(&instrument->parent);
     ts_sample_init(&instrument->current);
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) bank_slot_init(&instrument->bank[i]);
     instrument->generator.seed = 0x54415045u;
     instrument->generator.kind = TS_GENERATOR_TONAL;
     instrument->generator.seconds = 2.0f;
@@ -753,6 +820,7 @@ void ts_instrument_free(TsInstrument *instrument)
 {
     ts_sample_free(&instrument->parent);
     ts_sample_free(&instrument->current);
+    bank_free(instrument);
     memset(instrument, 0, sizeof(*instrument));
 }
 
@@ -760,24 +828,30 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
                            char *error, size_t error_size)
 {
     TsSample parent, current;
+    TsBankSlot root;
     TsGeneratorRecipe generator = instrument->generator;
     TsProcessRecipe neutral;
     ts_sample_init(&parent);
     ts_sample_init(&current);
+    bank_slot_init(&root);
     generator.kind = kind;
     generator.seed = seed;
     ts_process_recipe_reset(&neutral);
     if (!ts_sample_generate(&parent, &generator, error, error_size) ||
         !ts_sample_process(&current, &parent, 0, parent.frames, &neutral,
-                           error, error_size)) {
+                           error, error_size) ||
+        !bank_root_clone(&root, &parent, error, error_size)) {
         ts_sample_free(&parent);
         ts_sample_free(&current);
+        bank_slot_free(&root);
         return 0;
     }
     ts_sample_free(&instrument->parent);
     ts_sample_free(&instrument->current);
+    bank_free(instrument);
     instrument->parent = parent;
     instrument->current = current;
+    instrument->bank[0] = root;
     instrument->source_kind = TS_SOURCE_GENERATED;
     instrument->generator = generator;
     instrument->process = neutral;
@@ -791,21 +865,27 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
                            char *error, size_t error_size)
 {
     TsSample parent, current;
+    TsBankSlot root;
     TsProcessRecipe neutral;
     ts_sample_init(&parent);
     ts_sample_init(&current);
+    bank_slot_init(&root);
     ts_process_recipe_reset(&neutral);
     if (!ts_sample_load_wav(&parent, path, error, error_size) ||
         !ts_sample_process(&current, &parent, 0, parent.frames, &neutral,
-                           error, error_size)) {
+                           error, error_size) ||
+        !bank_root_clone(&root, &parent, error, error_size)) {
         ts_sample_free(&parent);
         ts_sample_free(&current);
+        bank_slot_free(&root);
         return 0;
     }
     ts_sample_free(&instrument->parent);
     ts_sample_free(&instrument->current);
+    bank_free(instrument);
     instrument->parent = parent;
     instrument->current = current;
+    instrument->bank[0] = root;
     instrument->source_kind = TS_SOURCE_IMPORTED;
     instrument->process = neutral;
     instrument->generation = 0;
@@ -849,7 +929,8 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
 {
     TsEditSnapshot target;
     TsSample current;
-    if (instrument == NULL || instrument->parent.data == NULL) {
+    if (instrument == NULL || instrument->parent.data == NULL ||
+        !instrument->bank[0].occupied) {
         set_error(error, error_size, "No Parent to reset to");
         return 0;
     }
@@ -1114,6 +1195,159 @@ int ts_instrument_move_loop_endpoint(TsInstrument *instrument, int endpoint, siz
     return endpoint;
 }
 
+int ts_instrument_bank_count(const TsInstrument *instrument)
+{
+    int count = 0;
+    if (instrument == NULL) return 0;
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i)
+        if (instrument->bank[i].occupied) ++count;
+    return count;
+}
+
+int ts_instrument_bank_first_empty(const TsInstrument *instrument)
+{
+    if (instrument == NULL) return -1;
+    for (int i = 1; i < TS_BANK_SLOT_COUNT; ++i)
+        if (!instrument->bank[i].occupied) return i;
+    return -1;
+}
+
+int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
+                               TsBankCaptureKind kind, char *error, size_t error_size)
+{
+    TsBankSlot captured;
+    size_t first = 0;
+    size_t last;
+    if (instrument == NULL || instrument->current.data == NULL) {
+        set_error(error, error_size, "No Current sample to capture");
+        return 0;
+    }
+    if (slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Bank slot 1 is the immutable family root");
+        return 0;
+    }
+    if (instrument->bank[slot].occupied) {
+        set_error(error, error_size, "Clear the occupied bank slot before capturing");
+        return 0;
+    }
+    last = instrument->current.frames;
+    if (kind == TS_BANK_CAPTURE_SELECTION) {
+        if (!instrument->has_selection ||
+            instrument->selection_last <= instrument->selection_first) {
+            set_error(error, error_size, "Select a range before capturing Selection");
+            return 0;
+        }
+        first = instrument->selection_first;
+        last = instrument->selection_last;
+    } else if (kind == TS_BANK_CAPTURE_LOOP) {
+        if (!instrument->has_loop || instrument->loop_last <= instrument->loop_first) {
+            set_error(error, error_size, "Set a loop before capturing Loop");
+            return 0;
+        }
+        first = instrument->loop_first;
+        last = instrument->loop_last;
+    } else if (kind != TS_BANK_CAPTURE_CURRENT) {
+        set_error(error, error_size, "Unsupported bank capture type");
+        return 0;
+    }
+    bank_slot_init(&captured);
+    if (!sample_clone_range(&captured.sample, &instrument->current,
+                            first, last, error, error_size)) return 0;
+    snprintf(captured.sample.name, sizeof(captured.sample.name), "%s G%02u",
+             ts_bank_capture_name(kind), instrument->generation);
+    captured.capture_kind = kind;
+    captured.occupied = 1;
+    captured.loop_crossfade_ms = instrument->loop_crossfade_ms;
+    if (kind == TS_BANK_CAPTURE_LOOP) {
+        captured.has_loop = 1;
+        captured.loop_first = 0;
+        captured.loop_last = captured.sample.frames;
+    } else if (kind == TS_BANK_CAPTURE_CURRENT && instrument->has_loop) {
+        captured.has_loop = 1;
+        captured.loop_first = instrument->loop_first;
+        captured.loop_last = instrument->loop_last;
+    }
+    instrument->bank[slot] = captured;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
+                             char *error, size_t error_size)
+{
+    if (instrument == NULL || slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "The family root cannot be cleared");
+        return 0;
+    }
+    if (!instrument->bank[slot].occupied) {
+        set_error(error, error_size, "Bank slot is already empty");
+        return 0;
+    }
+    bank_slot_free(&instrument->bank[slot]);
+    set_error(error, error_size, "");
+    return 1;
+}
+
+static void bank_safe_name(const char *source, char *destination, size_t size)
+{
+    size_t used = 0;
+    if (size == 0) return;
+    while (source != NULL && *source != '\0' && used + 1u < size) {
+        unsigned char c = (unsigned char)*source++;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_')
+            destination[used++] = (char)c;
+        else if (used > 0 && destination[used - 1u] != '_')
+            destination[used++] = '_';
+    }
+    while (used > 0 && destination[used - 1u] == '_') --used;
+    destination[used] = '\0';
+    if (used == 0) snprintf(destination, size, "sample");
+}
+
+int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder,
+                              char *error, size_t error_size)
+{
+    char created[TS_BANK_SLOT_COUNT][1152];
+    int created_count = 0;
+    if (instrument == NULL || folder == NULL || folder[0] == '\0' ||
+        !instrument->bank[0].occupied) {
+        set_error(error, error_size, "No sample family to export");
+        return 0;
+    }
+    if (ts_mkdir(folder) != 0) {
+        snprintf(error, error_size, errno == EEXIST ?
+                 "Bank folder already exists; choose a new name" :
+                 "Could not create bank folder: %s", strerror(errno));
+        return 0;
+    }
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+        const TsBankSlot *slot = &instrument->bank[i];
+        char safe[96];
+        int written;
+        if (!slot->occupied) continue;
+        bank_safe_name(slot->sample.name, safe, sizeof(safe));
+        written = snprintf(created[created_count], sizeof(created[created_count]),
+                           "%s/%02d_%s.wav", folder, i + 1, safe);
+        if (written < 0 || (size_t)written >= sizeof(created[created_count])) {
+            set_error(error, error_size, "Bank export path is too long");
+            goto failed;
+        }
+        if (!ts_sample_save_wav16(&slot->sample, created[created_count],
+                                  error, error_size)) {
+            remove(created[created_count]);
+            goto failed;
+        }
+        ++created_count;
+    }
+    set_error(error, error_size, "");
+    return 1;
+failed:
+    for (int i = 0; i < created_count; ++i) remove(created[i]);
+    ts_rmdir(folder);
+    return 0;
+}
+
 int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t error_size)
 {
     TsEditSnapshot target;
@@ -1350,7 +1584,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    fwrite("TSR6\r\n\032\n", 1, 8, f);
+    fwrite("TSR7\r\n\032\n", 1, 8, f);
     put32(f, (uint32_t)instrument->source_kind);
     put32(f, instrument->generation);
     put64(f, instrument->ancestor_hash);
@@ -1396,6 +1630,24 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     for (size_t i = 0; i < instrument->parent.frames; ++i)
         put_float(f, instrument->parent.data[i]);
     put64(f, ts_sample_hash(&instrument->parent));
+    put32(f, TS_BANK_SLOT_COUNT);
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+        const TsBankSlot *slot = &instrument->bank[i];
+        put32(f, (uint32_t)slot->occupied);
+        if (!slot->occupied) continue;
+        put32(f, (uint32_t)slot->capture_kind);
+        put32(f, (uint32_t)slot->has_loop);
+        put64(f, slot->loop_first); put64(f, slot->loop_last);
+        put_float(f, slot->loop_crossfade_ms);
+        put32(f, slot->sample.sample_rate);
+        put64(f, slot->sample.frames);
+        name_length = strlen(slot->sample.name);
+        put32(f, (uint32_t)name_length);
+        fwrite(slot->sample.name, 1, name_length, f);
+        for (size_t frame = 0; frame < slot->sample.frames; ++frame)
+            put_float(f, slot->sample.data[frame]);
+        put64(f, ts_sample_hash(&slot->sample));
+    }
     {
         int failed = ferror(f);
         if (fclose(f) != 0) failed = 1;
@@ -1419,7 +1671,9 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     uint64_t u64;
     uint64_t stored_hash;
     uint32_t name_length;
+    uint32_t bank_slot_count;
     size_t frames;
+    int version;
     memset(&state, 0, sizeof(state));
     ts_instrument_init(&loaded);
     f = fopen(path, "rb");
@@ -1427,12 +1681,19 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not open TSR project");
         return 0;
     }
-    if (fread(magic, 1, sizeof(magic), f) != sizeof(magic) ||
-        memcmp(magic, "TSR6\r\n\032\n", 8) != 0) {
+    if (fread(magic, 1, sizeof(magic), f) != sizeof(magic)) {
+        fclose(f);
+        ts_instrument_free(&loaded);
+        set_error(error, error_size, "Truncated TSR project");
+        return 0;
+    }
+    if (memcmp(magic, "TSR7\r\n\032\n", 8) == 0) version = 7;
+    else if (memcmp(magic, "TSR6\r\n\032\n", 8) == 0) version = 6;
+    else {
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6 project (older recipes did not embed Parent audio)");
+                  "Not a self-contained TSR6/TSR7 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -1489,8 +1750,50 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     loaded.parent.frames = frames;
     for (size_t i = 0; i < frames; ++i)
         if (!get_float(f, &loaded.parent.data[i])) goto malformed;
-    if (!get64(f, &stored_hash) || fgetc(f) != EOF ||
+    if (!get64(f, &stored_hash) ||
         stored_hash != ts_sample_hash(&loaded.parent)) goto malformed;
+    if (version == 6) {
+        if (fgetc(f) != EOF ||
+            !bank_root_clone(&loaded.bank[0], &loaded.parent, error, error_size))
+            goto malformed;
+    } else {
+        GET_U32(bank_slot_count);
+        if (bank_slot_count != TS_BANK_SLOT_COUNT) goto malformed;
+        for (int slot_index = 0; slot_index < TS_BANK_SLOT_COUNT; ++slot_index) {
+            TsBankSlot *slot = &loaded.bank[slot_index];
+            uint64_t slot_hash;
+            GET_U32(slot->occupied);
+            if (slot->occupied != 0 && slot->occupied != 1) goto malformed;
+            if (!slot->occupied) continue;
+            GET_U32(slot->capture_kind); GET_U32(slot->has_loop);
+            GET_U64(slot->loop_first); GET_U64(slot->loop_last);
+            GET_FLOAT(slot->loop_crossfade_ms);
+            GET_U32(slot->sample.sample_rate); GET_U64(slot->sample.frames);
+            GET_U32(name_length);
+            if (slot->capture_kind > TS_BANK_CAPTURE_LOOP ||
+                (slot->has_loop != 0 && slot->has_loop != 1) ||
+                !isfinite(slot->loop_crossfade_ms) ||
+                slot->loop_crossfade_ms < 0.0f || slot->loop_crossfade_ms > 50.0f ||
+                slot->sample.sample_rate < 1000 || slot->sample.frames == 0 ||
+                slot->sample.frames > 100000000u ||
+                slot->sample.frames > SIZE_MAX / sizeof(float) ||
+                name_length >= sizeof(slot->sample.name)) goto malformed;
+            if (fread(slot->sample.name, 1, name_length, f) != name_length) goto malformed;
+            slot->sample.name[name_length] = '\0';
+            slot->sample.data = (float *)malloc(slot->sample.frames * sizeof(float));
+            if (slot->sample.data == NULL) goto out_of_memory;
+            for (size_t frame = 0; frame < slot->sample.frames; ++frame)
+                if (!get_float(f, &slot->sample.data[frame])) goto malformed;
+            if (!get64(f, &slot_hash) || slot_hash != ts_sample_hash(&slot->sample) ||
+                (slot->has_loop && (slot->loop_last <= slot->loop_first ||
+                                    slot->loop_last > slot->sample.frames)) ||
+                (!slot->has_loop && (slot->loop_first != 0 || slot->loop_last != 0)))
+                goto malformed;
+        }
+        if (!loaded.bank[0].occupied ||
+            loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT || fgetc(f) != EOF)
+            goto malformed;
+    }
     if (state.crop_first >= state.crop_last || state.crop_last > loaded.parent.frames ||
         state.selection_first > state.selection_last ||
         state.selection_last > state.crop_last - state.crop_first ||
@@ -1521,7 +1824,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6/TSR7 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

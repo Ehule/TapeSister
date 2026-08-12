@@ -1,8 +1,8 @@
 # TapeSister
 
-TapeSister is a standalone sample-instrument forge. The current development slice joins its durable Parent/Current sound model to zero-crossing sample selection, seamless forward loops, direct A/B audition, a visible playback head, an undoable FT2-informed sample-edit stack, pointer-centered waveform navigation, and the deterministic DSP shelf.
+TapeSister is a standalone sample-instrument forge. The current development slice adds a 16-slot sample-family bank to its durable Parent/Current sound model, zero-crossing editor, seamless forward loops, polyphonic audition, and deterministic DSP shelf.
 
-![TapeSister zero-snapped forward loop editor](docs/loop-editor-preview.png)
+![TapeSister 16-slot sample-family bank](docs/sample-bank-preview.png)
 
 ## Parent and Current
 
@@ -33,7 +33,19 @@ The Loop page turns the current selection into one forward loop, clears it, play
 
 Parent/Current A/B maps the same loop through the crop offset and preserves relative playback progress. Loop range and crossfade participate in Undo/Redo. Reset clears them and can be undone; Commit carries the completed loop onto the newly promoted Parent while clearing prior edit history.
 
-The small **KEYS** button shows or hides the onscreen keyboard, freeing its lower-panel area for future controls. Computer-key audition remains available in either state. The keyboard is five-voice polyphonic: Shift-click toggles notes into a latched chord/drone, Shift-clicking an active note removes it, and an ordinary onscreen-key click clears the chord and returns to momentary audition. Sustained voices survive loop-handle changes and Current rerenders, remapping to the new audio at the same relative position.
+The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary click clears the chord and returns to momentary audition. Sustained voices survive loop-handle changes and Current rerenders.
+
+## Sample-family bank
+
+Every newly generated or imported source starts a 16-slot family with its initial Parent permanently copied into slot 1 as the immutable root. Commit can promote Current without replacing that family root. Slots 2–16 can capture three useful zero-aligned forms:
+
+- click an empty slot to capture all of Current;
+- Shift-click an empty slot to capture the snapped Selection; or
+- Ctrl-click an empty slot to capture the active Loop, including its crossfade setting.
+
+Click a filled slot to audition it. Right-click clears any non-root slot; occupied slots must be cleared deliberately before reuse. This makes it possible to capture a small snapped selection, grow it, and capture the successive forms as one related sample family.
+
+While BANK is visible, the top **Export** button and `Ctrl+E` export every occupied slot as a numbered WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR7 projects embed all occupied bank audio and loop metadata; opening a TSR6 project remains supported and initializes its bank root from the embedded Parent.
 
 ## DSP shelf
 
@@ -58,7 +70,7 @@ Every stage is equally available to generated and imported Parents. Bypass is ex
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
-- self-contained native TSR6 project saving with embedded Parent audio, lineage, editor view, selection, loop metadata, sample-edit stack, and every DSP parameter; and
+- self-contained native TSR7 project saving with embedded Parent audio, all bank slots, lineage, editor view, selection, loop metadata, sample-edit stack, and every DSP parameter; and
 - mono 16-bit Current export.
 
 Sample edits run deterministically between the preserved Parent and the live DSP. With no selection they affect the whole Current; with a selection they affect only that range. Commit prints the heard result into the next Parent generation and clears both the edit stack and Undo/Redo history.
@@ -78,7 +90,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR6 embeds the Parent waveform and all reconstructive state in one portable file. Opening it restores the exact saved Parent/Current relationship rather than starting neutral. Older experimental JSON recipes did not contain Parent audio and therefore cannot reopen as self-contained projects.
+TSR7 embeds the Parent waveform, complete sample-family bank, and all reconstructive state in one portable file. TSR6 projects remain loadable and gain a root-only bank. Older experimental JSON recipes did not contain Parent audio and therefore cannot reopen as self-contained projects.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV and TSR files can also be dragged onto the window or passed on the command line.
 
@@ -110,7 +122,7 @@ Pass a WAV or TSR path on the command line, drag it onto the window, or choose i
 - Upper octave: `Q 2 W 3 E R 5 T 6 Y 7 U`
 - Stop all: `Space` or `Escape`
 - Load browser: `Ctrl+O`
-- Save browser / Export browser: `Ctrl+S` / `Ctrl+E`
+- Save browser / Export Current or visible Bank: `Ctrl+S` / `Ctrl+E`
 - Toggle Parent/Current audition: `Ctrl+B`
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`
 - Select all: `Ctrl+A`
@@ -126,6 +138,4 @@ Pass a WAV or TSR path on the command line, drag it onto the window, or choose i
 - Browser confirm/cancel: `Enter` / `Escape`
 - Build/toggle a five-note chord: `Shift` + onscreen-key click
 
-The next architectural slice is a 16-slot sample-family bank: the initial Parent occupies the first slot, shaped Current states can be captured into later slots, and the whole family can be exported into a folder derived from the initial Parent name. Slot lineage, naming, overwrite behavior, and how sound-shaping recipes are stored will be designed together rather than hidden inside the loop editor.
-
-Cut/copy/paste, ping-pong/reverse/multiple loops, automatic loop candidates, deeper synthesis/filter/shaper stages, expanded factory recipes, and full genealogy/propagation remain separate, visually verified slices.
+Cut/copy/paste, ping-pong/reverse/multiple loops, automatic loop candidates, the zero-crossing loop-maker transformation, deeper synthesis/filter/shaper stages, expanded factory recipes, and full genealogy/propagation remain separate, visually verified slices.

@@ -61,6 +61,33 @@ int main(int argc, char **argv)
         ui.playhead_frames = instrument.current.frames;
         ui.active_notes = (1u << 0) | (1u << 4) | (1u << 7);
         snprintf(ui.status, sizeof(ui.status), "LATCHED CHORD 3/5 - DRAG LOOP FLAGS LIVE");
+    } else if (argc > 2 && strcmp(argv[2], "bank") == 0) {
+        TsProcessRecipe process = instrument.process;
+        ts_instrument_set_selection_snapped(&instrument, instrument.current.frames / 5,
+                                            instrument.current.frames * 3 / 5);
+        if (!ts_instrument_set_loop_from_selection(&instrument, error, sizeof(error)) ||
+            !ts_instrument_bank_capture(&instrument, 1, TS_BANK_CAPTURE_CURRENT,
+                                        error, sizeof(error)) ||
+            !ts_instrument_bank_capture(&instrument, 2, TS_BANK_CAPTURE_SELECTION,
+                                        error, sizeof(error)) ||
+            !ts_instrument_bank_capture(&instrument, 3, TS_BANK_CAPTURE_LOOP,
+                                        error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        process.edge = 0.64f;
+        process.drift = 0.37f;
+        if (!ts_instrument_set_process(&instrument, &process, error, sizeof(error)) ||
+            !ts_instrument_bank_capture(&instrument, 4, TS_BANK_CAPTURE_CURRENT,
+                                        error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ui.show_keyboard = 0;
+        snprintf(ui.status, sizeof(ui.status),
+                 "FAMILY 5/16 - CLICK PLAY  EMPTY CAPTURE  RMB CLEAR  EXPORT FOLDER");
     }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {

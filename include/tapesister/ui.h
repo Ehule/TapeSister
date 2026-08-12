@@ -56,6 +56,7 @@ void ts_ui_init(TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
+int ts_ui_bank_slot_from_point(int x, int y);
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames);
 int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
                            float anchor_ratio, float scale);

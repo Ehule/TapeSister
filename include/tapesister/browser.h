@@ -14,7 +14,8 @@ typedef enum {
     TS_BROWSER_CLOSED = 0,
     TS_BROWSER_LOAD_WAV,
     TS_BROWSER_SAVE_RECIPE,
-    TS_BROWSER_EXPORT_WAV
+    TS_BROWSER_EXPORT_WAV,
+    TS_BROWSER_EXPORT_BANK
 } TsBrowserMode;
 
 typedef struct {

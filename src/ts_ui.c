@@ -185,7 +185,9 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
     if (browser->mode != TS_BROWSER_LOAD_WAV) {
         const char *filename = browser->filename;
         size_t length = strlen(filename);
-        text(fb, 58, 282, "FILENAME", PAL_EFFECT, 1);
+        text(fb, 58, 282,
+             browser->mode == TS_BROWSER_EXPORT_BANK ? "FAMILY FOLDER" : "FILENAME",
+             PAL_EFFECT, 1);
         rect(fb, 58, 294, 518, 24, RGB(8, 8, 8));
         if (length > 78) filename += length - 78;
         text(fb, 64, 303, filename, browser->filename_focus ? PAL_MOUSE : PAL_TEXT, 1);
@@ -475,10 +477,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 381, 289, 74, "SHOW ALL", 0);
     button(fb, 460, 289, 56, "UNDO", instrument->undo_count > 0);
     button(fb, 521, 289, 62, "REDO", instrument->redo_count > 0);
-    button(fb, 588, 289, 42, "KEYS", ui->show_keyboard);
+    button(fb, 588, 289, 42, ui->show_keyboard ? "BANK" : "KEYS", !ui->show_keyboard);
 
-    text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  =/- ZOOM  ARROWS PAN  SHIFT+CLICK CHORD", RGB(184, 180, 184), 1);
     if (ui->show_keyboard) {
+        text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  =/- ZOOM  ARROWS PAN  SHIFT+CLICK CHORD", RGB(184, 180, 184), 1);
         const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
         const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
         const int white_semitones[14] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
@@ -497,6 +499,17 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 rect(fb, white_x + (black_after[i] + 1) * white_w - 16, white_y, 31, 31,
                      active ? PAL_VOLUME : RGB(18, 18, 18));
             }
+        }
+    } else {
+        text(fb, 11, 318, "EMPTY: CLICK FULL  SHIFT SEL  CTRL LOOP    FILLED: CLICK PLAY  RMB CLEAR", RGB(184, 180, 184), 1);
+        for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+            const TsBankSlot *slot = &instrument->bank[i];
+            char label[16];
+            int x = 10 + (i % 8) * 77;
+            int y = 330 + (i / 8) * 25;
+            snprintf(label, sizeof(label), "%02d %s", i + 1,
+                     slot->occupied ? ts_bank_capture_name(slot->capture_kind) : "---");
+            button(fb, x, y, 72, label, slot->occupied);
         }
     }
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
@@ -537,4 +550,16 @@ int ts_ui_key_from_point(int x, int y)
     static const int white_semitones[] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
     int index = (x - 10) / white_w;
     return index >= 0 && index < 14 ? white_semitones[index] : -1;
+}
+
+int ts_ui_bank_slot_from_point(int x, int y)
+{
+    int column;
+    int row;
+    if (x < 10 || x >= 626 || y < 330 || y >= 379) return -1;
+    column = (x - 10) / 77;
+    row = (y - 330) / 25;
+    if (column < 0 || column >= 8 || row < 0 || row >= 2) return -1;
+    if ((x - 10) % 77 >= 72 || (y - 330) % 25 >= 24) return -1;
+    return row * 8 + column;
 }
