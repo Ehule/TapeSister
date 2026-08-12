@@ -46,6 +46,21 @@ int main(int argc, char **argv)
         ui.playhead_frame = instrument.parent.frames * 7u / 16u;
         ui.playhead_frames = instrument.parent.frames;
         snprintf(ui.status, sizeof(ui.status), "AUDITIONING PARENT - PLAYING SELECTION");
+    } else if (argc > 2 && strcmp(argv[2], "loop") == 0) {
+        ts_instrument_set_selection_snapped(&instrument, instrument.current.frames / 5,
+                                            instrument.current.frames * 3 / 5);
+        if (!ts_instrument_set_loop_from_selection(&instrument, error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ui.fx_page = TS_FX_LOOP;
+        ui.playback_active = 1;
+        ui.playhead_source = TS_AUDITION_CURRENT;
+        ui.playhead_frame = (instrument.loop_first + instrument.loop_last) / 2u;
+        ui.playhead_frames = instrument.current.frames;
+        ui.active_notes = (1u << 0) | (1u << 4) | (1u << 7);
+        snprintf(ui.status, sizeof(ui.status), "LATCHED CHORD 3/5 - DRAG LOOP FLAGS LIVE");
     }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {

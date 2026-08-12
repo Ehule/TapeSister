@@ -14,7 +14,15 @@ generated recipe or imported WAV
 
 Parent changes only when the user explicitly imports, generates, reseeds a generated Parent, or confirms Commit. Body, Edge, Drift, selection, zoom, crop, audition, undo, redo, saving, and export do not replace Parent.
 
-The audition selector does not change this ownership model. Current remains the only edit, Save, and Export target; Parent is an alternate read-only playback source. Selection and displayed-range playback translate Current-relative frames through `crop_first` when Parent is selected. A live A/B switch maps fractional progress from the active source range to the equivalent position in the other source range.
+Generate and WAV import always install neutral processing before Current is created, making a new Parent and Current sample-for-sample identical. Opening a TSR6 project is intentionally different: it restores the saved embedded Parent and reconstructive edit/DSP state, so its saved A/B difference returns exactly.
+
+The audition selector does not change this ownership model. Current remains the only edit, Save, and Export target; Parent is an alternate read-only playback source. Parent and Current keep independent viewports for zoom, pan, Show All, and displayed-range audition. Selection playback still translates Current-relative frames through `crop_first` when Parent is selected. A live A/B switch maps fractional progress from the active source range to the equivalent position in the other source range.
+
+Keyboard voices are playback state, not rendered sample state. Up to five voices may remain active while Current is rebuilt. The audio device is locked during the offline render, then each voice is remapped onto the replacement buffer and corresponding loop range before callbacks resume. This preserves the musical gesture across parameter changes without weakening Parent immutability.
+
+Selection endpoints and loop boundaries are Current-relative editor metadata. Mouse selection snaps to Current zero crossings even while Parent is displayed. Parent loop audition adds `crop_first` to reach the corresponding immutable-source frames. Loop crossfade is performed during playback and never rewrites either buffer. Reset clears loop metadata as an undoable edit; Commit preserves it because the heard Current becomes the new Parent with one-to-one frame coordinates.
+
+TSR6 is the native self-contained project container. It stores the embedded Parent audio with an integrity hash plus every field required to deterministically rebuild Current. Loading validates the complete container before replacing the live instrument.
 
 Reverse, Normalize, gain, and fades are stored as deterministic, selection-aware operations between Parent/Crop and the live DSP. Noise, Delay, and Space also render only into Current. Reset is an undoable edit that clears the crop, ordered sample-edit stack, and DSP recipe so Current becomes sample-for-sample identical to Parent.
 

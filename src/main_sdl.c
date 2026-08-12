@@ -1,10 +1,13 @@
 #include "tapesister/sample.h"
+#include "tapesister/note_bank.h"
 #include "tapesister/ui.h"
 
 #include <SDL2/SDL.h>
+#include <ctype.h>
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -19,12 +22,25 @@ typedef struct {
     size_t range_end;
     TsAuditionSource source;
     TsAuditionRange range;
+    size_t crossfade_frames;
+    int looping;
     int playing;
+    int output_rate;
+    TsNoteBank notes;
 } AudioState;
 
 static uint32_t advance_seed(uint32_t seed)
 {
     return seed * 1664525u + 1013904223u;
+}
+
+static int path_is_tsr(const char *path)
+{
+    const char *extension = path != NULL ? strrchr(path, '.') : NULL;
+    return extension != NULL && strlen(extension) == 4u &&
+           tolower((unsigned char)extension[1]) == 't' &&
+           tolower((unsigned char)extension[2]) == 's' &&
+           tolower((unsigned char)extension[3]) == 'r';
 }
 
 static void audio_callback(void *userdata, Uint8 *stream, int bytes)
@@ -35,19 +51,52 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     for (int i = 0; i < values; i += 2) {
         float value = 0.0f;
         if (audio->playing && audio->sample && audio->sample->data && audio->sample->frames > 1) {
-            size_t at = (size_t)audio->position;
-            if (at + 1 < audio->range_end && at + 1 < audio->sample->frames) {
-                float fraction = (float)(audio->position - (double)at);
-                value = audio->sample->data[at] +
-                        (audio->sample->data[at + 1] - audio->sample->data[at]) * fraction;
+            if (audio->looping) {
+                audio->position = ts_audition_wrap_position(
+                    audio->position, audio->range_start, audio->range_end,
+                    audio->crossfade_frames);
+                value = ts_audition_read_looped(
+                    audio->sample, audio->position, audio->range_start,
+                    audio->range_end, audio->crossfade_frames);
                 audio->position += audio->step;
             } else {
-                audio->playing = 0;
+                size_t at = (size_t)audio->position;
+                if (at + 1 < audio->range_end && at + 1 < audio->sample->frames) {
+                    float fraction = (float)(audio->position - (double)at);
+                    value = audio->sample->data[at] +
+                            (audio->sample->data[at + 1] - audio->sample->data[at]) * fraction;
+                    audio->position += audio->step;
+                } else {
+                    audio->playing = 0;
+                }
             }
         }
+        value += ts_note_bank_read(&audio->notes);
+        if (value > 1.0f) value = 1.0f;
+        if (value < -1.0f) value = -1.0f;
         out[i] = value * 0.8f;
         if (i + 1 < values) out[i + 1] = value * 0.8f;
     }
+}
+
+static int audition_plan_ui(const TsInstrument *instrument, const TsUiState *ui,
+                            TsAuditionSource source, TsAuditionRange range,
+                            TsAuditionPlan *plan)
+{
+    if (source == TS_AUDITION_PARENT && range == TS_AUDITION_DISPLAYED) {
+        size_t first = ui->parent_view_first;
+        size_t last = ui->parent_view_last;
+        if (last <= first || last > instrument->parent.frames) {
+            first = 0;
+            last = instrument->parent.frames;
+        }
+        if (instrument->parent.data == NULL || last <= first) return 0;
+        plan->sample = &instrument->parent;
+        plan->first = first;
+        plan->last = last;
+        return 1;
+    }
+    return ts_audition_plan(instrument, source, range, plan);
 }
 
 static int note_for_key(SDL_Keycode key)
@@ -70,13 +119,15 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         snprintf(ui->status, sizeof(ui->status), "AUDIO UNAVAILABLE");
         return;
     }
-    if (!ts_audition_plan(instrument, ui->audition_source, range, &plan)) {
+    if (!audition_plan_ui(instrument, ui, ui->audition_source, range, &plan)) {
         snprintf(ui->status, sizeof(ui->status),
                  range == TS_AUDITION_SELECTION ? "SELECT A RANGE FIRST" :
+                 range == TS_AUDITION_LOOP ? "SET A LOOP FIRST" :
                  "NOTHING TO AUDITION");
         return;
     }
     SDL_LockAudioDevice(device);
+    ts_note_bank_clear(&audio->notes);
     audio->sample = plan.sample;
     audio->position = (double)plan.first;
     audio->pitch = pitch;
@@ -84,6 +135,10 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     audio->range_end = plan.last;
     audio->source = ui->audition_source;
     audio->range = range;
+    audio->looping = range == TS_AUDITION_LOOP;
+    audio->crossfade_frames = audio->looping ?
+                              ts_audition_crossfade_frames(&plan,
+                                  instrument->loop_crossfade_ms) : 0;
     audio->step = ((double)plan.sample->sample_rate / output_rate) * pitch;
     audio->playing = 1;
     SDL_UnlockAudioDevice(device);
@@ -93,11 +148,38 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 }
 
 static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                       const TsInstrument *instrument, int note, int output_rate)
+                       const TsInstrument *instrument, int note, int output_rate, int latched)
 {
-    begin_audition(device, audio, ui, instrument, TS_AUDITION_NOTE,
-                   pow(2.0, note / 12.0), output_rate);
-    ui->active_key = note;
+    TsNoteStartResult result;
+    int voice_count;
+    if (!device || output_rate <= 0) {
+        snprintf(ui->status, sizeof(ui->status), "AUDIO UNAVAILABLE");
+        return;
+    }
+    SDL_LockAudioDevice(device);
+    audio->playing = 0;
+    result = ts_note_bank_start(&audio->notes, instrument, ui->audition_source,
+                                note, latched, output_rate);
+    voice_count = ts_note_bank_count(&audio->notes);
+    SDL_UnlockAudioDevice(device);
+    if (result == TS_NOTE_LIMIT_REACHED)
+        snprintf(ui->status, sizeof(ui->status), "CHORD LIMIT %d NOTES", TS_NOTE_VOICE_LIMIT);
+    else if (result == TS_NOTE_TOGGLED_OFF)
+        snprintf(ui->status, sizeof(ui->status), "CHORD NOTE REMOVED");
+    else if (result == TS_NOTE_STARTED && latched)
+        snprintf(ui->status, sizeof(ui->status), "CHORD %d/%d - SHIFT+CLICK TO TOGGLE",
+                 voice_count, TS_NOTE_VOICE_LIMIT);
+    else if (result == TS_NOTE_STARTED)
+        snprintf(ui->status, sizeof(ui->status), "PLAYING %s NOTE",
+                 ts_audition_source_name(ui->audition_source));
+}
+
+static void release_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui, int note)
+{
+    if (device) SDL_LockAudioDevice(device);
+    ts_note_bank_release(&audio->notes, note);
+    if (device) SDL_UnlockAudioDevice(device);
+    snprintf(ui->status, sizeof(ui->status), "NOTE RELEASED");
 }
 
 static void switch_audition_source(SDL_AudioDeviceID device, AudioState *audio,
@@ -106,7 +188,7 @@ static void switch_audition_source(SDL_AudioDeviceID device, AudioState *audio,
 {
     TsAuditionPlan plan;
     if (source == ui->audition_source) return;
-    if (!ts_audition_plan(instrument, source,
+    if (!audition_plan_ui(instrument, ui, source,
                           audio->playing ? audio->range : TS_AUDITION_ALL, &plan)) {
         snprintf(ui->status, sizeof(ui->status), "NOTHING TO AUDITION");
         return;
@@ -117,11 +199,15 @@ static void switch_audition_source(SDL_AudioDeviceID device, AudioState *audio,
             audio->position, audio->range_start, audio->range_end, plan.first, plan.last);
         audio->range_start = plan.first;
         audio->range_end = plan.last;
+        audio->crossfade_frames = audio->looping ?
+                                  ts_audition_crossfade_frames(&plan,
+                                      instrument->loop_crossfade_ms) : 0;
         if (output_rate > 0)
             audio->step = ((double)plan.sample->sample_rate / output_rate) * audio->pitch;
     }
     audio->sample = plan.sample;
     audio->source = source;
+    ts_note_bank_set_source(&audio->notes, instrument, source, output_rate);
     if (device) SDL_UnlockAudioDevice(device);
     ui->audition_source = source;
     snprintf(ui->status, sizeof(ui->status), "AUDITIONING %s%s",
@@ -132,22 +218,46 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
     if (device) SDL_LockAudioDevice(device);
     audio->playing = 0;
+    ts_note_bank_clear(&audio->notes);
     if (device) SDL_UnlockAudioDevice(device);
-    ui->active_key = -1;
+    ui->active_notes = 0;
+    ui->mouse_note = -1;
     snprintf(ui->status, sizeof(ui->status), "STOPPED");
 }
 
 static void lock_edit(SDL_AudioDeviceID device, AudioState *audio)
 {
     if (device) SDL_LockAudioDevice(device);
-    audio->playing = 0;
+    (void)audio;
 }
 
 static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                         TsInstrument *instrument)
 {
-    audio->sample = ui->audition_source == TS_AUDITION_PARENT ?
-                    &instrument->parent : &instrument->current;
+    TsAuditionPlan plan;
+    if (audio->playing && audition_plan_ui(instrument, ui, audio->source,
+                                           audio->range, &plan)) {
+        audio->position = ts_audition_map_progress(
+            audio->position, audio->range_start, audio->range_end,
+            plan.first, plan.last);
+        if (audio->position >= (double)plan.last) audio->position = (double)plan.first;
+        audio->sample = plan.sample;
+        audio->range_start = plan.first;
+        audio->range_end = plan.last;
+        audio->looping = audio->range == TS_AUDITION_LOOP && instrument->has_loop;
+        audio->crossfade_frames = audio->looping ?
+                                  ts_audition_crossfade_frames(
+                                      &plan, instrument->loop_crossfade_ms) : 0;
+        if (audio->output_rate > 0)
+            audio->step = (double)plan.sample->sample_rate /
+                          audio->output_rate * audio->pitch;
+    } else if (audio->playing) {
+        audio->playing = 0;
+    }
+    ts_note_bank_sync(&audio->notes, instrument, audio->output_rate);
+    audio->sample = audio->playing ? audio->sample :
+                    (ui->audition_source == TS_AUDITION_PARENT ?
+                     &instrument->parent : &instrument->current);
     audio->source = ui->audition_source;
     if (device) SDL_UnlockAudioDevice(device);
 }
@@ -156,11 +266,20 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                            TsInstrument *instrument, const char *path)
 {
     char error[160];
+    int recipe = path_is_tsr(path);
     int ok;
     lock_edit(device, audio);
-    ok = ts_instrument_load_wav(instrument, path, error, sizeof(error));
+    if (recipe)
+        ok = ts_instrument_load_recipe(instrument, path, error, sizeof(error));
+    else
+        ok = ts_instrument_load_wav(instrument, path, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "IMPORTED PARENT %.112s", instrument->parent.name);
+    if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
+    if (ok && recipe)
+        snprintf(ui->status, sizeof(ui->status), "OPENED TSR PROJECT %.112s",
+                 instrument->parent.name);
+    else if (ok) snprintf(ui->status, sizeof(ui->status), "IMPORTED NEUTRAL PARENT %.104s",
+                          instrument->parent.name);
     else snprintf(ui->status, sizeof(ui->status), "LOAD FAILED: %.135s", error);
     return ok;
 }
@@ -179,6 +298,7 @@ static int generate_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     lock_edit(device, audio);
     ok = ts_instrument_generate(instrument, kind, seed, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
+    if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
     if (ok) snprintf(ui->status, sizeof(ui->status), "NEW %s PARENT %08X",
                      ts_generator_name(kind), seed);
     else snprintf(ui->status, sizeof(ui->status), "GENERATE FAILED: %.130s", error);
@@ -194,6 +314,8 @@ static void reseed_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     lock_edit(device, audio);
     ok = ts_instrument_reseed(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
+    if (ok && ts_sample_hash(&instrument->parent) != old_parent)
+        ts_ui_reset_parent_view(ui, instrument->parent.frames);
     if (!ok) snprintf(ui->status, sizeof(ui->status), "RESEED FAILED: %.132s", error);
     else if (ts_sample_hash(&instrument->parent) == old_parent)
         snprintf(ui->status, sizeof(ui->status), "RESEEDED PROCESSING - PARENT PRESERVED");
@@ -241,6 +363,7 @@ static void commit_current(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     ok = ts_instrument_commit_current(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     ui->commit_armed = 0;
+    if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
     if (ok) snprintf(ui->status, sizeof(ui->status), "COMMITTED CURRENT AS GENERATION %u PARENT",
                      instrument->generation);
     else snprintf(ui->status, sizeof(ui->status), "COMMIT FAILED: %.136s", error);
@@ -283,6 +406,68 @@ static void history_move(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
     unlock_edit(device, audio, ui, instrument);
     if (ok) snprintf(ui->status, sizeof(ui->status), "%s", redo ? "REDO" : "UNDO");
     else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
+}
+
+static void set_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                     TsInstrument *instrument)
+{
+    char error[160];
+    int ok;
+    lock_edit(device, audio);
+    ok = ts_instrument_set_loop_from_selection(instrument, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok) snprintf(ui->status, sizeof(ui->status), "LOOP SET %zu FRAMES - ZERO SNAPPED",
+                     instrument->loop_last - instrument->loop_first);
+    else snprintf(ui->status, sizeof(ui->status), "LOOP FAILED: %.140s", error);
+}
+
+static void clear_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                       TsInstrument *instrument)
+{
+    char error[160];
+    int ok;
+    lock_edit(device, audio);
+    ok = ts_instrument_clear_loop(instrument, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    snprintf(ui->status, sizeof(ui->status), "%s", ok ? "LOOP CLEARED" : error);
+}
+
+static void set_loop_crossfade(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                               TsInstrument *instrument, float milliseconds)
+{
+    char error[160];
+    int ok;
+    if (device) SDL_LockAudioDevice(device);
+    ok = ts_instrument_set_loop_crossfade(instrument, milliseconds, error, sizeof(error));
+    if (ok && audio->looping && audio->sample != NULL) {
+        TsAuditionPlan plan = {audio->sample, audio->range_start, audio->range_end};
+        audio->crossfade_frames = ts_audition_crossfade_frames(
+            &plan, instrument->loop_crossfade_ms);
+    }
+    if (ok) ts_note_bank_sync(&audio->notes, instrument, audio->output_rate);
+    if (device) SDL_UnlockAudioDevice(device);
+    if (ok) snprintf(ui->status, sizeof(ui->status), "LOOP CROSSFADE %.1F MS",
+                     instrument->loop_crossfade_ms);
+    else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
+}
+
+static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
+                              const TsInstrument *instrument)
+{
+    TsAuditionPlan plan;
+    if (device) SDL_LockAudioDevice(device);
+    if (audio->playing && audio->looping &&
+        ts_audition_plan(instrument, audio->source, TS_AUDITION_LOOP, &plan)) {
+        audio->sample = plan.sample;
+        audio->range_start = plan.first;
+        audio->range_end = plan.last;
+        audio->crossfade_frames = ts_audition_crossfade_frames(
+            &plan, instrument->loop_crossfade_ms);
+        if (audio->position < (double)plan.first || audio->position >= (double)plan.last)
+            audio->position = (double)plan.first;
+    }
+    ts_note_bank_sync(&audio->notes, instrument, audio->output_rate);
+    if (device) SDL_UnlockAudioDevice(device);
 }
 
 static void browser_open(TsUiState *ui, TsBrowserMode mode)
@@ -371,7 +556,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     }
     if (browser->mode == TS_BROWSER_LOAD_WAV) {
         if (!ts_browser_selected_path(browser, path, sizeof(path))) {
-            snprintf(browser->message, sizeof(browser->message), "SELECT A WAV FILE");
+            snprintf(browser->message, sizeof(browser->message), "SELECT A WAV OR TSR FILE");
             return;
         }
         ok = load_instrument(device, audio, ui, instrument, path);
@@ -425,6 +610,43 @@ static void logical_mouse(SDL_Window *window, int raw_x, int raw_y, int *x, int 
     *y = raw_y * TS_UI_HEIGHT / wh;
 }
 
+static size_t selection_frame_from_x(const TsInstrument *instrument, const TsUiState *ui,
+                                     int x)
+{
+    if (ui->audition_source == TS_AUDITION_PARENT && instrument->parent.frames > 0) {
+        size_t parent_frame = ts_ui_parent_frame_from_x(
+            ui, instrument->parent.frames, x, TS_WAVE_W);
+        if (parent_frame <= instrument->crop_first) return 0;
+        if (parent_frame >= instrument->crop_last) return instrument->current.frames;
+        return parent_frame - instrument->crop_first;
+    }
+    return ts_instrument_frame_from_view_x(instrument, x, TS_WAVE_W);
+}
+
+static int loop_marker_x(const TsInstrument *instrument, const TsUiState *ui, int endpoint)
+{
+    size_t frame = endpoint == 1 ? instrument->loop_first : instrument->loop_last;
+    size_t first;
+    size_t last;
+    if (ui->audition_source == TS_AUDITION_PARENT) {
+        frame += instrument->crop_first;
+        first = ui->parent_view_first;
+        last = ui->parent_view_last;
+        if (last <= first || last > instrument->parent.frames) {
+            first = 0;
+            last = instrument->parent.frames;
+        }
+    } else {
+        first = instrument->view_first;
+        last = instrument->view_last;
+    }
+    if (last <= first || frame < first || frame > last) return -1000;
+    {
+        int x = TS_WAVE_X + (int)((frame - first) * TS_WAVE_W / (last - first));
+        return x >= TS_WAVE_X + TS_WAVE_W ? TS_WAVE_X + TS_WAVE_W - 1 : x;
+    }
+}
+
 int main(int argc, char **argv)
 {
     SDL_Window *window = NULL;
@@ -440,6 +662,7 @@ int main(int argc, char **argv)
 
     ts_instrument_init(&instrument);
     ts_ui_init(&ui);
+    ts_note_bank_init(&audio.notes);
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
         return 1;
@@ -464,6 +687,7 @@ int main(int argc, char **argv)
     desired.callback = audio_callback;
     desired.userdata = &audio;
     device = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
+    audio.output_rate = obtained.freq;
     if (!device) snprintf(ui.status, sizeof(ui.status), "AUDIO UNAVAILABLE: %.130s", SDL_GetError());
     else SDL_PauseAudioDevice(device, 0);
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
@@ -562,28 +786,64 @@ int main(int argc, char **argv)
                     apply_sample_edit(device, &audio, &ui, &instrument,
                                       TS_SAMPLE_EDIT_GAIN, 0.7079458f);
                 } else if (key == SDLK_EQUALS || key == SDLK_PLUS || key == SDLK_KP_PLUS) {
-                    size_t anchor = instrument.has_selection ?
-                                    (instrument.selection_first + instrument.selection_last) / 2u :
-                                    (instrument.view_first + instrument.view_last) / 2u;
-                    snprintf(ui.status, sizeof(ui.status),
-                             ts_instrument_zoom_view(&instrument, anchor, 0.5f, 0.5f) ?
-                             "ZOOMED IN" : "ZOOM LIMIT");
+                    if (ui.audition_source == TS_AUDITION_PARENT) {
+                        size_t anchor = instrument.has_selection ?
+                                        instrument.crop_first +
+                                        (instrument.selection_first +
+                                         instrument.selection_last) / 2u :
+                                        (ui.parent_view_first + ui.parent_view_last) / 2u;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 ts_ui_zoom_parent_view(&ui, instrument.parent.frames,
+                                                        anchor, 0.5f, 0.5f) ?
+                                 "ZOOMED PARENT IN" : "ZOOM LIMIT");
+                    } else {
+                        size_t anchor = instrument.has_selection ?
+                                        (instrument.selection_first +
+                                         instrument.selection_last) / 2u :
+                                        (instrument.view_first + instrument.view_last) / 2u;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 ts_instrument_zoom_view(&instrument, anchor, 0.5f, 0.5f) ?
+                                 "ZOOMED IN" : "ZOOM LIMIT");
+                    }
                 } else if (key == SDLK_MINUS || key == SDLK_KP_MINUS) {
-                    size_t anchor = instrument.has_selection ?
-                                    (instrument.selection_first + instrument.selection_last) / 2u :
-                                    (instrument.view_first + instrument.view_last) / 2u;
-                    snprintf(ui.status, sizeof(ui.status),
-                             ts_instrument_zoom_view(&instrument, anchor, 0.5f, 2.0f) ?
-                             "ZOOMED OUT" : "SHOWING ALL CURRENT");
+                    if (ui.audition_source == TS_AUDITION_PARENT) {
+                        size_t anchor = instrument.has_selection ?
+                                        instrument.crop_first +
+                                        (instrument.selection_first +
+                                         instrument.selection_last) / 2u :
+                                        (ui.parent_view_first + ui.parent_view_last) / 2u;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 ts_ui_zoom_parent_view(&ui, instrument.parent.frames,
+                                                        anchor, 0.5f, 2.0f) ?
+                                 "ZOOMED PARENT OUT" : "SHOWING ALL PARENT");
+                    } else {
+                        size_t anchor = instrument.has_selection ?
+                                        (instrument.selection_first +
+                                         instrument.selection_last) / 2u :
+                                        (instrument.view_first + instrument.view_last) / 2u;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 ts_instrument_zoom_view(&instrument, anchor, 0.5f, 2.0f) ?
+                                 "ZOOMED OUT" : "SHOWING ALL CURRENT");
+                    }
                 } else if (key == SDLK_0) {
-                    ts_instrument_show_all(&instrument);
-                    snprintf(ui.status, sizeof(ui.status), "SHOWING ALL CURRENT");
+                    if (ui.audition_source == TS_AUDITION_PARENT) {
+                        ts_ui_reset_parent_view(&ui, instrument.parent.frames);
+                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL PARENT");
+                    } else {
+                        ts_instrument_show_all(&instrument);
+                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL CURRENT");
+                    }
                 } else if (key == SDLK_LEFT || key == SDLK_RIGHT) {
-                    ptrdiff_t amount = (ptrdiff_t)((instrument.view_last - instrument.view_first) / 8u);
+                    size_t span = ui.audition_source == TS_AUDITION_PARENT ?
+                                  ui.parent_view_last - ui.parent_view_first :
+                                  instrument.view_last - instrument.view_first;
+                    ptrdiff_t amount = (ptrdiff_t)(span / 8u);
                     if (amount < 1) amount = 1;
                     if (key == SDLK_LEFT) amount = -amount;
                     snprintf(ui.status, sizeof(ui.status),
-                             ts_instrument_pan_view(&instrument, amount) ?
+                             (ui.audition_source == TS_AUDITION_PARENT ?
+                              ts_ui_pan_parent_view(&ui, instrument.parent.frames, amount) :
+                              ts_instrument_pan_view(&instrument, amount)) ?
                              "PANNED WAVEFORM VIEW" : "PAN LIMIT");
                 } else if (key == SDLK_ESCAPE || key == SDLK_SPACE) {
                     ui.commit_armed = 0;
@@ -591,10 +851,10 @@ int main(int argc, char **argv)
                 } else {
                     int note = note_for_key(key);
                     if (note >= 0 && device)
-                        begin_note(device, &audio, &ui, &instrument, note, obtained.freq);
+                        begin_note(device, &audio, &ui, &instrument, note, obtained.freq, 0);
                 }
-            } else if (event.type == SDL_KEYUP && ui.active_key == note_for_key(event.key.keysym.sym)) {
-                ui.active_key = -1;
+            } else if (event.type == SDL_KEYUP && note_for_key(event.key.keysym.sym) >= 0) {
+                release_note(device, &audio, &ui, note_for_key(event.key.keysym.sym));
             } else if (event.type == SDL_MOUSEWHEEL && ui.browser.mode != TS_BROWSER_CLOSED) {
                 int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
                               -event.wheel.y : event.wheel.y;
@@ -613,21 +873,33 @@ int main(int argc, char **argv)
                     y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     SDL_Keymod mod = SDL_GetModState();
                     if ((mod & KMOD_SHIFT) || wheel_x != 0) {
-                        size_t span = instrument.view_last - instrument.view_first;
+                        size_t span = ui.audition_source == TS_AUDITION_PARENT ?
+                                      ui.parent_view_last - ui.parent_view_first :
+                                      instrument.view_last - instrument.view_first;
                         ptrdiff_t step = (ptrdiff_t)(span / 8u);
                         ptrdiff_t amount;
                         if (step < 1) step = 1;
                         amount = -(ptrdiff_t)wheel_y * step + (ptrdiff_t)wheel_x * step;
                         snprintf(ui.status, sizeof(ui.status),
-                                 ts_instrument_pan_view(&instrument, amount) ?
+                                 (ui.audition_source == TS_AUDITION_PARENT ?
+                                  ts_ui_pan_parent_view(&ui, instrument.parent.frames, amount) :
+                                  ts_instrument_pan_view(&instrument, amount)) ?
                                  "MOUSE PANNED WAVEFORM VIEW" : "PAN LIMIT");
                     } else if (wheel_y != 0) {
-                        size_t anchor = ts_instrument_frame_from_view_x(
-                            &instrument, x - TS_WAVE_X, TS_WAVE_W);
+                        size_t anchor = ui.audition_source == TS_AUDITION_PARENT ?
+                                        ts_ui_parent_frame_from_x(
+                                            &ui, instrument.parent.frames,
+                                            x - TS_WAVE_X, TS_WAVE_W) :
+                                        ts_instrument_frame_from_view_x(
+                                            &instrument, x - TS_WAVE_X, TS_WAVE_W);
                         float ratio = (float)(x - TS_WAVE_X) / (float)TS_WAVE_W;
                         float scale = powf(0.75f, (float)wheel_y);
                         snprintf(ui.status, sizeof(ui.status),
-                                 ts_instrument_zoom_view(&instrument, anchor, ratio, scale) ?
+                                 (ui.audition_source == TS_AUDITION_PARENT ?
+                                  ts_ui_zoom_parent_view(&ui, instrument.parent.frames,
+                                                         anchor, ratio, scale) :
+                                  ts_instrument_zoom_view(
+                                      &instrument, anchor, ratio, scale)) ?
                                  "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
                     }
                 }
@@ -648,14 +920,30 @@ int main(int argc, char **argv)
                 if (thumb_top > travel) thumb_top = travel;
                 ts_browser_set_scroll(&ui.browser, travel > 0 ?
                                       (thumb_top * maximum + travel / 2) / travel : 0);
+            } else if (event.type == SDL_MOUSEMOTION && ui.dragging_loop_endpoint) {
+                int x, y;
+                size_t frame;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
+                (void)y;
+                frame = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
+                if (!ui.loop_drag_started) {
+                    ts_instrument_begin_loop_drag(&instrument);
+                    ui.loop_drag_started = 1;
+                }
+                ui.dragging_loop_endpoint = ts_instrument_move_loop_endpoint(
+                    &instrument, ui.dragging_loop_endpoint, frame);
+                sync_playing_loop(device, &audio, &instrument);
+                snprintf(ui.status, sizeof(ui.status), "LOOP FLAGS %zu - %zu ZERO SNAPPED",
+                         instrument.loop_first, instrument.loop_last);
             } else if (event.type == SDL_MOUSEMOTION && ui.selecting) {
                 int x, y;
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
                 (void)y;
-                size_t at = ts_instrument_frame_from_view_x(&instrument, x - TS_WAVE_X, TS_WAVE_W);
-                ts_instrument_set_selection(&instrument, ui.selection_anchor, at);
+                size_t at = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
+                ts_instrument_set_selection_snapped(&instrument, ui.selection_anchor, at);
             } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
                 int x, y;
+                SDL_Keymod mod = SDL_GetModState();
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
                 if (!(y >= 205 && y < 228 && x >= 247 && x < 325)) ui.commit_armed = 0;
                 if (ui.browser.mode != TS_BROWSER_CLOSED) {
@@ -709,10 +997,25 @@ int main(int argc, char **argv)
                     browser_open(&ui, TS_BROWSER_EXPORT_WAV);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
-                    ui.selection_anchor = ts_instrument_frame_from_view_x(&instrument, x - TS_WAVE_X, TS_WAVE_W);
-                    ts_instrument_set_selection(&instrument, ui.selection_anchor, ui.selection_anchor);
-                    ui.selecting = 1;
-                    snprintf(ui.status, sizeof(ui.status), "SELECTING CURRENT");
+                    int first_x = instrument.has_loop ? loop_marker_x(&instrument, &ui, 1) : -1000;
+                    int last_x = instrument.has_loop ? loop_marker_x(&instrument, &ui, 2) : -1000;
+                    if (instrument.has_loop && abs(x - first_x) <= 6) {
+                        ui.dragging_loop_endpoint = 1;
+                        ui.loop_drag_started = 0;
+                        snprintf(ui.status, sizeof(ui.status), "DRAG LOOP START - ZERO SNAPPED");
+                    } else if (instrument.has_loop && abs(x - last_x) <= 6) {
+                        ui.dragging_loop_endpoint = 2;
+                        ui.loop_drag_started = 0;
+                        snprintf(ui.status, sizeof(ui.status), "DRAG LOOP END - ZERO SNAPPED");
+                    } else {
+                        ui.selection_anchor = ts_sample_nearest_zero_crossing(
+                            &instrument.current, selection_frame_from_x(
+                                &instrument, &ui, x - TS_WAVE_X));
+                        ts_instrument_set_selection_snapped(
+                            &instrument, ui.selection_anchor, ui.selection_anchor);
+                        ui.selecting = 1;
+                        snprintf(ui.status, sizeof(ui.status), "SELECTING CURRENT - ZERO SNAP");
+                    }
                 } else if (y >= 205 && y < 228 && x >= 10 && x < 80) {
                     ui.commit_armed = 0;
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
@@ -754,18 +1057,21 @@ int main(int argc, char **argv)
                     if (*control < 0.0f) *control = 0.0f;
                     if (*control > 1.0f) *control = 1.0f;
                     apply_process(device, &audio, &ui, &instrument, process, label);
-                } else if (y >= 233 && y < 256 && x >= 345 && x < 410) {
+                } else if (y >= 233 && y < 256 && x >= 345 && x < 398) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_EDIT;
                     snprintf(ui.status, sizeof(ui.status), "SAMPLE EDITING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 415 && x < 480) {
+                } else if (y >= 233 && y < 256 && x >= 402 && x < 455) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_NOISE;
                     snprintf(ui.status, sizeof(ui.status), "NOISE PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 485 && x < 550) {
+                } else if (y >= 233 && y < 256 && x >= 459 && x < 512) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_DELAY;
                     snprintf(ui.status, sizeof(ui.status), "DELAY PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 555 && x < 630) {
+                } else if (y >= 233 && y < 256 && x >= 516 && x < 569) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_SPACE;
                     snprintf(ui.status, sizeof(ui.status), "SPACE PROCESSING PAGE");
+                } else if (y >= 233 && y < 256 && x >= 573 && x < 630) {
+                    ui.commit_armed = 0; ui.fx_page = TS_FX_LOOP;
+                    snprintf(ui.status, sizeof(ui.status), "FORWARD LOOP EDITING PAGE");
                 } else if (y >= 261 && y < 285) {
                     TsProcessRecipe process = instrument.process;
                     int changed = 0;
@@ -811,7 +1117,7 @@ int main(int argc, char **argv)
                         } else if (x >= 424 && x < 516) {
                             process.delay_mix = (float)(x - 424) / 92.0f; changed = 1;
                         }
-                    } else {
+                    } else if (ui.fx_page == TS_FX_SPACE) {
                         label = "SPACE";
                         if (x >= 10 && x < 104) { process.reverb_enabled = !process.reverb_enabled; changed = 1; }
                         else if (x >= 118 && x < 238) {
@@ -821,6 +1127,17 @@ int main(int argc, char **argv)
                         } else if (x >= 382 && x < 502) {
                             process.reverb_mix = (float)(x - 382) / 120.0f; changed = 1;
                         }
+                    } else {
+                        if (x >= 10 && x < 94)
+                            set_loop(device, &audio, &ui, &instrument);
+                        else if (x >= 99 && x < 183)
+                            clear_loop(device, &audio, &ui, &instrument);
+                        else if (x >= 188 && x < 282)
+                            begin_audition(device, &audio, &ui, &instrument,
+                                           TS_AUDITION_LOOP, 1.0, obtained.freq);
+                        else if (x >= 297 && x < 577)
+                            set_loop_crossfade(device, &audio, &ui, &instrument,
+                                               (float)(x - 297) / 280.0f * 50.0f);
                     }
                     if (changed) apply_process(device, &audio, &ui, &instrument, process, label);
                 } else if (y >= 289 && y < 312 && x >= 10 && x < 80) {
@@ -835,36 +1152,85 @@ int main(int argc, char **argv)
                 } else if (y >= 289 && y < 312 && x >= 245 && x < 297) {
                     crop_selection(device, &audio, &ui, &instrument);
                 } else if (y >= 289 && y < 312 && x >= 302 && x < 376) {
-                    snprintf(ui.status, sizeof(ui.status), ts_instrument_zoom_selection(&instrument) ?
-                             "ZOOMED TO SELECTION" : "SELECT A RANGE FIRST");
+                    if (ui.audition_source == TS_AUDITION_PARENT &&
+                        instrument.has_selection) {
+                        ui.parent_view_first = instrument.crop_first +
+                                               instrument.selection_first;
+                        ui.parent_view_last = instrument.crop_first +
+                                              instrument.selection_last;
+                        snprintf(ui.status, sizeof(ui.status), "ZOOMED PARENT TO SELECTION");
+                    } else {
+                        snprintf(ui.status, sizeof(ui.status),
+                                 ts_instrument_zoom_selection(&instrument) ?
+                                 "ZOOMED TO SELECTION" : "SELECT A RANGE FIRST");
+                    }
                 } else if (y >= 289 && y < 312 && x >= 381 && x < 455) {
-                    ts_instrument_show_all(&instrument);
-                    snprintf(ui.status, sizeof(ui.status), "SHOWING ALL CURRENT");
+                    if (ui.audition_source == TS_AUDITION_PARENT) {
+                        ts_ui_reset_parent_view(&ui, instrument.parent.frames);
+                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL PARENT");
+                    } else {
+                        ts_instrument_show_all(&instrument);
+                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL CURRENT");
+                    }
                 } else if (y >= 289 && y < 312 && x >= 460 && x < 516) {
                     history_move(device, &audio, &ui, &instrument, 0);
                 } else if (y >= 289 && y < 312 && x >= 521 && x < 583) {
                     history_move(device, &audio, &ui, &instrument, 1);
+                } else if (y >= 289 && y < 312 && x >= 588 && x < 630) {
+                    ui.show_keyboard = !ui.show_keyboard;
+                    snprintf(ui.status, sizeof(ui.status), "ONSCREEN KEYS %s",
+                             ui.show_keyboard ? "SHOWN" : "HIDDEN");
                 } else {
                     int note = ts_ui_key_from_point(x, y);
-                    if (note >= 0 && device)
-                        begin_note(device, &audio, &ui, &instrument, note, obtained.freq);
+                    if (ui.show_keyboard && note >= 0 && device) {
+                        if (mod & KMOD_SHIFT) {
+                            ui.mouse_note = -1;
+                            begin_note(device, &audio, &ui, &instrument,
+                                       note, obtained.freq, 1);
+                        } else {
+                            SDL_LockAudioDevice(device);
+                            ts_note_bank_clear(&audio.notes);
+                            SDL_UnlockAudioDevice(device);
+                            ui.mouse_note = note;
+                            begin_note(device, &audio, &ui, &instrument,
+                                       note, obtained.freq, 0);
+                        }
+                    }
                 }
             } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
                 ui.browser.dragging_scrollbar = 0;
+                ui.dragging_loop_endpoint = 0;
+                ui.loop_drag_started = 0;
                 if (ui.selecting) {
                     ui.selecting = 0;
                     snprintf(ui.status, sizeof(ui.status), "SELECTED %zu FRAMES",
                              instrument.selection_last - instrument.selection_first);
                 }
-                ui.active_key = -1;
+                if (ui.mouse_note >= 0) {
+                    release_note(device, &audio, &ui, ui.mouse_note);
+                    ui.mouse_note = -1;
+                }
             }
         }
 
         if (device) SDL_LockAudioDevice(device);
-        ui.playback_active = audio.playing;
-        ui.playhead_source = audio.source;
-        ui.playhead_frame = audio.position > 0.0 ? (size_t)audio.position : 0;
-        ui.playhead_frames = audio.sample ? audio.sample->frames : 0;
+        {
+            const TsNoteVoice *voice = ts_note_bank_display_voice(&audio.notes);
+            ui.active_notes = ts_note_bank_mask(&audio.notes);
+            ui.playback_active = audio.playing || voice != NULL;
+            if (audio.playing) {
+                ui.playhead_source = audio.source;
+                ui.playhead_frame = audio.position > 0.0 ? (size_t)audio.position : 0;
+                ui.playhead_frames = audio.sample ? audio.sample->frames : 0;
+            } else if (voice != NULL) {
+                ui.playhead_source = voice->source;
+                ui.playhead_frame = voice->position > 0.0 ? (size_t)voice->position : 0;
+                ui.playhead_frames = voice->sample ? voice->sample->frames : 0;
+            } else {
+                ui.playhead_frame = 0;
+                ui.playhead_frames = 0;
+            }
+        }
         if (device) SDL_UnlockAudioDevice(device);
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         ts_ui_render(&framebuffer, &ui, &instrument);
