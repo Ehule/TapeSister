@@ -2,7 +2,7 @@
 
 TapeSister is a standalone sample-instrument forge. The current development slice joins its durable Parent/Current sound model to an undoable FT2-informed sample-edit stack, pointer-centered waveform navigation, and the deterministic DSP shelf.
 
-![TapeSister FT2 editing revision](docs/ft2-editing-preview.png)
+![TapeSister scrollable file browser](docs/file-browser-preview.png)
 
 ## Parent and Current
 
@@ -47,6 +47,21 @@ Sample edits run deterministically between the preserved Parent and the live DSP
 
 Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the result without reconstructing clipped peaks, preserving that flattened distortion as a repeatable sculpting operation.
 
+## File browser
+
+Load, Save, and Export now open one shared FT2-informed browser rather than writing fixed filenames or requiring a typed path:
+
+- Load lists directories and WAV files and preserves the existing Parent/Current if a file is invalid;
+- Save lists directories and `.tsr` recipes;
+- Export lists directories and WAV files;
+- mouse wheel, draggable scrollbar, Up/Down, Page Up/Down, Home/End, and row clicking navigate long directories;
+- double-click or Enter opens a directory or selected WAV;
+- Save and Export remember the current directory, provide filename entry, and append the proper extension;
+- replacing an existing file requires a deliberate second Save/Export action; and
+- completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
+
+The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file.
+
 The temporary colors come directly from `assets/tapehead.pal`, supplied by the user. The interface remains standalone: FT2 and the archived prototype are reference shelves, not inherited architecture, and TapeSister does not depend on or modify FT2 Tapehead Edition.
 
 ## Build on Linux
@@ -67,14 +82,15 @@ make
 ./tapesister
 ```
 
-Pass a WAV path on the command line, drag a WAV onto the window, or click **Load** and type its path.
+Pass a WAV path on the command line, drag a WAV onto the window, or choose it through **Load**.
 
 ## Keys and files
 
 - Lower octave: `Z S X D C V G B H N J M`
 - Upper octave: `Q 2 W 3 E R 5 T 6 Y 7 U`
 - Stop all: `Space` or `Escape`
-- Load WAV path: `Ctrl+O`
+- Load browser: `Ctrl+O`
+- Save browser / Export browser: `Ctrl+S` / `Ctrl+E`
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`
 - Select all: `Ctrl+A`
 - Reverse / Normalize: `Ctrl+R` / `Ctrl+N`
@@ -84,7 +100,8 @@ Pass a WAV path on the command line, drag a WAV onto the window, or click **Load
 - Pan waveform: `Left` / `Right`
 - Show all: `0`
 - Commit Current as Parent: `Ctrl+P` twice
-- Save recipe to `tapesister-recipe.tsr`: `Ctrl+S`
-- Export Current to `tapesister-export.wav`: `Ctrl+E`
+- Browser navigation: `Up` / `Down`, `Page Up` / `Page Down`, `Home` / `End`
+- Browser parent directory: `Backspace` while the file list is focused
+- Browser confirm/cancel: `Enter` / `Escape`
 
 Cut/copy/paste, loop editing, deeper synthesis/filter/shaper stages, destination selection, and full genealogy/propagation remain separate, visually verified slices.

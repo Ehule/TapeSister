@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-add_library(tapesister_core src/ts_sample.c src/ts_ui.c)
+add_library(tapesister_core src/ts_sample.c src/ts_browser.c src/ts_ui.c)
 target_include_directories(tapesister_core PUBLIC include)
 target_link_libraries(tapesister_core PUBLIC m)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")

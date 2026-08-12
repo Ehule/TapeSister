@@ -2,10 +2,20 @@
 #define TAPESISTER_UI_H
 
 #include <stdint.h>
+#include "tapesister/browser.h"
 #include "tapesister/sample.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
+enum {
+    TS_BROWSER_LIST_X = 58,
+    TS_BROWSER_LIST_Y = 87,
+    TS_BROWSER_LIST_W = 494,
+    TS_BROWSER_ROW_H = 17,
+    TS_BROWSER_SCROLL_X = 558,
+    TS_BROWSER_SCROLL_W = 18,
+    TS_BROWSER_SCROLL_H = TS_BROWSER_VISIBLE_ROWS * TS_BROWSER_ROW_H
+};
 
 typedef enum {
     TS_FX_EDIT = 0,
@@ -20,12 +30,11 @@ typedef struct {
 
 typedef struct {
     int active_key;
-    int path_entry;
     int selecting;
     int commit_armed;
     TsFxPage fx_page;
+    TsBrowser browser;
     size_t selection_anchor;
-    char path[256];
     char status[160];
 } TsUiState;
 

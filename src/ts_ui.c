@@ -137,10 +137,77 @@ static void slider(TsFramebuffer *fb, int x, int y, int w, const char *label, fl
     rect(fb, knob, y + 10, 6, 12, PAL_MOUSE);
 }
 
+static void browser_render(TsFramebuffer *fb, const TsBrowser *browser)
+{
+    char shown[96];
+    char footer[40];
+    const char *directory = browser->directory;
+    size_t directory_length = strlen(directory);
+    frame(fb, 42, 34, 556, 342, RGB(36, 33, 37), PAL_MOUSE);
+    rect(fb, 44, 36, 552, 28, RGB(12, 12, 12));
+    text(fb, 56, 45, ts_browser_mode_title(browser->mode), PAL_NOTE, 1);
+    if (directory_length > 73) directory += directory_length - 73;
+    text(fb, 56, 70, directory, PAL_INSTRUMENT, 1);
+
+    rect(fb, TS_BROWSER_LIST_X, TS_BROWSER_LIST_Y, TS_BROWSER_LIST_W,
+         TS_BROWSER_SCROLL_H, RGB(8, 8, 8));
+    for (int row = 0; row < TS_BROWSER_VISIBLE_ROWS; ++row) {
+        int index = browser->scroll + row;
+        int y = TS_BROWSER_LIST_Y + row * TS_BROWSER_ROW_H;
+        if (index >= browser->entry_count) break;
+        if (index == browser->selected)
+            rect(fb, TS_BROWSER_LIST_X + 1, y + 1, TS_BROWSER_LIST_W - 2,
+                 TS_BROWSER_ROW_H - 1, PAL_BLOCK);
+        snprintf(shown, sizeof(shown), browser->entries[index].is_directory ?
+                 "[DIR] %.72s" : "      %.72s", browser->entries[index].name);
+        text(fb, TS_BROWSER_LIST_X + 6, y + 6, shown,
+             index == browser->selected ? PAL_BLOCK_TEXT :
+             browser->entries[index].is_directory ? PAL_INSTRUMENT : PAL_TEXT, 1);
+    }
+
+    rect(fb, TS_BROWSER_SCROLL_X, TS_BROWSER_LIST_Y, TS_BROWSER_SCROLL_W,
+         TS_BROWSER_SCROLL_H, RGB(16, 16, 16));
+    {
+        int thumb_h = browser->entry_count <= TS_BROWSER_VISIBLE_ROWS ? TS_BROWSER_SCROLL_H :
+                      TS_BROWSER_SCROLL_H * TS_BROWSER_VISIBLE_ROWS / browser->entry_count;
+        int maximum_scroll = browser->entry_count - TS_BROWSER_VISIBLE_ROWS;
+        int travel;
+        int thumb_y;
+        if (thumb_h < 18) thumb_h = 18;
+        travel = TS_BROWSER_SCROLL_H - thumb_h;
+        thumb_y = TS_BROWSER_LIST_Y + (maximum_scroll > 0 ?
+                  browser->scroll * travel / maximum_scroll : 0);
+        frame(fb, TS_BROWSER_SCROLL_X + 2, thumb_y, TS_BROWSER_SCROLL_W - 4, thumb_h,
+              PAL_BUTTON, PAL_MOUSE);
+    }
+
+    if (browser->mode != TS_BROWSER_LOAD_WAV) {
+        const char *filename = browser->filename;
+        size_t length = strlen(filename);
+        text(fb, 58, 282, "FILENAME", PAL_EFFECT, 1);
+        rect(fb, 58, 294, 518, 24, RGB(8, 8, 8));
+        if (length > 78) filename += length - 78;
+        text(fb, 64, 303, filename, browser->filename_focus ? PAL_MOUSE : PAL_TEXT, 1);
+    } else {
+        text(fb, 58, 300, "SELECT AN EXISTING WAV", PAL_EFFECT, 1);
+    }
+
+    button(fb, 58, 326, 72, "UP DIR", 0);
+    button(fb, 135, 326, 120, browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
+           browser->mode == TS_BROWSER_SAVE_RECIPE ? "SAVE" : "EXPORT",
+           browser->overwrite_armed);
+    button(fb, 260, 326, 84, "CANCEL", 0);
+    snprintf(footer, sizeof(footer), "%.38s", browser->overwrite_armed ?
+             "PRESS AGAIN TO OVERWRITE" : browser->message);
+    text(fb, 354, 334, footer,
+         browser->overwrite_armed ? PAL_VOLUME : RGB(190, 185, 190), 1);
+}
+
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
     ui->active_key = -1;
+    ts_browser_init(&ui->browser);
     snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR GENERATE A PARENT");
 }
 
@@ -213,7 +280,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 211, 135, "DROP WAV HERE", RGB(120, 113, 121), 2);
     }
 
-    button(fb, 10, 205, 70, "LOAD", ui->path_entry);
+    button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
     button(fb, 85, 205, 82, "GENERATE", 0);
     button(fb, 172, 205, 70, "RESEED", 0);
     button(fb, 247, 205, 78, "COMMIT", ui->commit_armed);
@@ -291,16 +358,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
     text(fb, 8, 389, ui->status, PAL_MOUSE, 1);
 
-    if (ui->path_entry) {
-        frame(fb, 58, 126, 524, 88, PAL_BUTTON, PAL_MOUSE);
-        text(fb, 72, 140, "LOAD WAV PATH", PAL_NOTE, 1);
-        rect(fb, 72, 158, 496, 25, RGB(8, 8, 8));
-        const char *shown = ui->path[0] ? ui->path : "TYPE PATH OR DROP FILE";
-        size_t length = strlen(shown);
-        if (length > 80) shown += length - 80;
-        text(fb, 78, 167, shown, PAL_EFFECT, 1);
-        text(fb, 72, 192, "ENTER LOADS   ESC CANCELS", RGB(210, 205, 210), 1);
-    }
+    if (ui->browser.mode != TS_BROWSER_CLOSED) browser_render(fb, &ui->browser);
 }
 
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path)
