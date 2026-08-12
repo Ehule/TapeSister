@@ -61,6 +61,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 ## A/B audition and playhead
 
 - [ ] Current is selected by default; Parent and Current buttons plus `Ctrl+B` switch the audition source without changing Current.
+- [ ] The waveform changes immediately with the A/B selector: Parent shows the full Parent and Current restores the active Current editor view.
 - [ ] Play All, Play Selection, Play Displayed, computer keys, and onscreen keys all use the chosen audition source.
 - [ ] After Crop, Parent selection/displayed audition maps to the matching uncropped Parent frames.
 - [ ] Switching Parent/Current during playback preserves relative progress rather than restarting.

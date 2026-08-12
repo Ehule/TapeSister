@@ -25,6 +25,18 @@ static int framebuffer_contains(const TsFramebuffer *fb, uint32_t color)
     return 0;
 }
 
+static uint64_t waveform_hash(const TsFramebuffer *fb)
+{
+    uint64_t hash = 1469598103934665603ull;
+    for (int y = TS_WAVE_Y; y < TS_WAVE_Y + TS_WAVE_H; ++y) {
+        for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; ++x) {
+            hash ^= fb->pixels[y * TS_UI_WIDTH + x];
+            hash *= 1099511628211ull;
+        }
+    }
+    return hash;
+}
+
 static int file_contains(const char *path, const char *needle)
 {
     FILE *f = fopen(path, "rb");
@@ -349,6 +361,13 @@ int main(void)
     CHECK(framebuffer_contains(&fb, 0xffffe700u));
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     CHECK(framebuffer_contains(&fb, 0xff009ee3u));
+    {
+        uint64_t current_waveform = waveform_hash(&fb);
+        ui.audition_source = TS_AUDITION_PARENT;
+        ts_ui_render(&fb, &ui, &imported);
+        CHECK(waveform_hash(&fb) != current_waveform);
+        ui.audition_source = TS_AUDITION_CURRENT;
+    }
     ui.playback_active = 1;
     ui.playhead_source = TS_AUDITION_CURRENT;
     ui.playhead_frame = imported.current.frames / 2;
@@ -358,6 +377,7 @@ int main(void)
     CHECK(fb.pixels[(TS_WAVE_Y + 1) * TS_UI_WIDTH + TS_WAVE_X + TS_WAVE_W / 2] ==
           0xffffd265u);
     ui.playhead_source = TS_AUDITION_PARENT;
+    ui.audition_source = TS_AUDITION_PARENT;
     ui.playhead_frame = imported.parent.frames / 2;
     ui.playhead_frames = imported.parent.frames;
     ts_ui_render(&fb, &ui, &imported);

@@ -228,9 +228,16 @@ static int frame_x(size_t frame_index, size_t view_first, size_t view_last)
 
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
-    const TsSample *sample = &instrument->current;
-    size_t view_first = instrument->view_first;
-    size_t view_last = instrument->view_last;
+    int showing_parent = ui->audition_source == TS_AUDITION_PARENT;
+    const TsSample *sample = showing_parent ? &instrument->parent : &instrument->current;
+    size_t view_first = showing_parent ? 0 : instrument->view_first;
+    size_t view_last = showing_parent ? instrument->parent.frames : instrument->view_last;
+    size_t selection_first = instrument->selection_first;
+    size_t selection_last = instrument->selection_last;
+    if (showing_parent) {
+        selection_first += instrument->crop_first;
+        selection_last += instrument->crop_first;
+    }
     clear(fb, PAL_DESKTOP);
 
     rect(fb, 0, 0, TS_UI_WIDTH, 32, RGB(12, 12, 12));
@@ -243,8 +250,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char parent[96], info[112];
         snprintf(parent, sizeof(parent), "PARENT G%u %.28s",
                  instrument->generation, instrument->parent.name);
-        snprintf(info, sizeof(info), "CURRENT %u HZ %.2F SEC",
-                 sample->sample_rate, (double)sample->frames / sample->sample_rate);
+        snprintf(info, sizeof(info), "AUDITION %s %u HZ %.2F SEC",
+                 showing_parent ? "PARENT" : "CURRENT", sample->sample_rate,
+                 (double)sample->frames / sample->sample_rate);
         text(fb, 20, 49, parent, PAL_INSTRUMENT, 1);
         text(fb, 390, 49, info, PAL_EFFECT, 1);
     } else {
@@ -258,10 +266,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1, RGB(26, 24, 27));
     rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2, TS_WAVE_W, 1, RGB(74, 67, 75));
 
-    if (instrument->has_selection && instrument->selection_last > view_first &&
-        instrument->selection_first < view_last) {
-        int sx0 = frame_x(instrument->selection_first, view_first, view_last);
-        int sx1 = frame_x(instrument->selection_last, view_first, view_last);
+    if (instrument->has_selection && selection_last > view_first &&
+        selection_first < view_last) {
+        int sx0 = frame_x(selection_first, view_first, view_last);
+        int sx1 = frame_x(selection_last, view_first, view_last);
         rect(fb, sx0, TS_WAVE_Y, sx1 - sx0, TS_WAVE_H, PAL_BLOCK);
     }
     if (sample->frames && view_last > view_first) {
@@ -279,8 +287,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
             int y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
             size_t at = begin;
-            uint32_t color = instrument->has_selection && at >= instrument->selection_first &&
-                             at < instrument->selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
+            uint32_t color = instrument->has_selection && at >= selection_first &&
+                             at < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
             line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
         }
     } else {
@@ -291,11 +299,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         int playhead_x = -1;
         uint32_t playhead_color = ui->playhead_source == TS_AUDITION_PARENT ?
                                   PAL_INSTRUMENT : PAL_MOUSE;
-        if (ui->playhead_source == TS_AUDITION_PARENT) {
-            size_t frame_index = ui->playhead_frame > ui->playhead_frames ?
-                                 ui->playhead_frames : ui->playhead_frame;
-            playhead_x = TS_WAVE_X + (int)(frame_index * TS_WAVE_W / ui->playhead_frames);
-        } else if (ui->playhead_frame >= view_first && ui->playhead_frame <= view_last) {
+        if (ui->playhead_source == ui->audition_source &&
+            ui->playhead_frame >= view_first && ui->playhead_frame <= view_last) {
             playhead_x = frame_x(ui->playhead_frame, view_first, view_last);
         }
         if (playhead_x >= TS_WAVE_X && playhead_x <= TS_WAVE_X + TS_WAVE_W) {

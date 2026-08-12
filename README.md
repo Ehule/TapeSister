@@ -19,7 +19,7 @@ Dragging or loading a WAV makes that WAV the Parent. Moving a processing control
 
 ## A/B audition and playhead
 
-The **Parent** and **Current** buttons choose what every playback trigger auditions without changing the editing target: edits, Save, and Export always operate on Current. `Ctrl+B` toggles the same selector.
+The **Parent** and **Current** buttons choose what every playback trigger auditions without changing the editing target: edits, Save, and Export always operate on Current. `Ctrl+B` toggles the same selector. The waveform switches with the audition source, showing the full immutable Parent or Current's active editor view.
 
 Play All and keyboard notes use the complete chosen source. Play Selection and Play Displayed map Current's crop-relative range back to the matching frames in Parent, so comparisons remain meaningful after cropping. Switching Parent/Current during playback preserves fractional progress through the active range instead of restarting it.
 
