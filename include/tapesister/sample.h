@@ -4,7 +4,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum { TS_HISTORY_DEPTH = 24, TS_SAMPLE_EDIT_DEPTH = 64, TS_BANK_SLOT_COUNT = 16 };
+enum {
+    TS_HISTORY_DEPTH = 24,
+    TS_SAMPLE_EDIT_DEPTH = 64,
+    TS_POST_EDIT_DEPTH = 64,
+    TS_BANK_SLOT_COUNT = 16
+};
 
 typedef struct {
     float *data;
@@ -78,6 +83,35 @@ typedef struct {
 } TsSampleEdit;
 
 typedef enum {
+    TS_LOOP_FORWARD = 0,
+    TS_LOOP_REVERSE,
+    TS_LOOP_PING_PONG,
+    TS_LOOP_MODE_COUNT
+} TsLoopMode;
+
+typedef enum {
+    TS_POST_COPY_MIX = 0,
+    TS_POST_COPY_OVERWRITE,
+    TS_POST_MOVE_MIX,
+    TS_POST_MOVE_OVERWRITE,
+    TS_POST_REVERSE,
+    TS_POST_NORMALIZE,
+    TS_POST_GAIN,
+    TS_POST_FADE_IN,
+    TS_POST_FADE_OUT,
+    TS_POST_CROP
+} TsPostEditKind;
+
+typedef struct {
+    TsPostEditKind kind;
+    size_t first;
+    size_t last;
+    int64_t destination;
+    float amount;
+    uint32_t crossfade_frames;
+} TsPostEdit;
+
+typedef enum {
     TS_BANK_CAPTURE_ROOT = 0,
     TS_BANK_CAPTURE_CURRENT,
     TS_BANK_CAPTURE_SELECTION,
@@ -90,6 +124,7 @@ typedef struct {
     size_t loop_last;
     float loop_crossfade_ms;
     TsBankCaptureKind capture_kind;
+    TsLoopMode loop_mode;
     int has_loop;
     int occupied;
 } TsBankSlot;
@@ -104,11 +139,14 @@ typedef struct {
     size_t loop_first;
     size_t loop_last;
     float loop_crossfade_ms;
+    TsLoopMode loop_mode;
     int has_selection;
     int has_loop;
     TsProcessRecipe process;
     TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
     int sample_edit_count;
+    TsPostEdit post_edits[TS_POST_EDIT_DEPTH];
+    int post_edit_count;
 } TsEditSnapshot;
 
 typedef struct {
@@ -128,10 +166,13 @@ typedef struct {
     size_t loop_first;
     size_t loop_last;
     float loop_crossfade_ms;
+    TsLoopMode loop_mode;
     int has_selection;
     int has_loop;
     TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
     int sample_edit_count;
+    TsPostEdit post_edits[TS_POST_EDIT_DEPTH];
+    int post_edit_count;
     TsEditSnapshot undo[TS_HISTORY_DEPTH];
     TsEditSnapshot redo[TS_HISTORY_DEPTH];
     int undo_count;
@@ -170,6 +211,8 @@ int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
 int ts_instrument_clear_loop(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_set_loop_crossfade(TsInstrument *instrument, float milliseconds,
                                      char *error, size_t error_size);
+int ts_instrument_set_loop_mode(TsInstrument *instrument, TsLoopMode mode,
+                                char *error, size_t error_size);
 int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind kind,
                                     float amount, char *error, size_t error_size);
@@ -199,10 +242,16 @@ int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *na
                               char *error, size_t error_size);
 int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
                                       char *error, size_t error_size);
+int64_t ts_sample_snap_tape_destination(const TsSample *sample, int64_t target,
+                                        size_t source_frames);
+int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
+                                  size_t first, size_t last, int64_t destination,
+                                  char *error, size_t error_size);
 int ts_instrument_bank_count(const TsInstrument *instrument);
 int ts_instrument_bank_first_empty(const TsInstrument *instrument);
 int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder,
                               char *error, size_t error_size);
 const char *ts_bank_capture_name(TsBankCaptureKind kind);
+const char *ts_loop_mode_name(TsLoopMode mode);
 
 #endif

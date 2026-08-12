@@ -602,11 +602,14 @@ static TsEditSnapshot snapshot(const TsInstrument *instrument)
     result.loop_first = instrument->loop_first;
     result.loop_last = instrument->loop_last;
     result.loop_crossfade_ms = instrument->loop_crossfade_ms;
+    result.loop_mode = instrument->loop_mode;
     result.has_selection = instrument->has_selection;
     result.has_loop = instrument->has_loop;
     result.process = instrument->process;
     memcpy(result.sample_edits, instrument->sample_edits, sizeof(result.sample_edits));
     result.sample_edit_count = instrument->sample_edit_count;
+    memcpy(result.post_edits, instrument->post_edits, sizeof(result.post_edits));
+    result.post_edit_count = instrument->post_edit_count;
     return result;
 }
 
@@ -637,8 +640,10 @@ static void reset_editor(TsInstrument *instrument)
     instrument->loop_first = 0;
     instrument->loop_last = 0;
     instrument->loop_crossfade_ms = 8.0f;
+    instrument->loop_mode = TS_LOOP_FORWARD;
     instrument->has_loop = 0;
     instrument->sample_edit_count = 0;
+    instrument->post_edit_count = 0;
     instrument->undo_count = 0;
     instrument->redo_count = 0;
 }
@@ -724,7 +729,129 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
     ok = ts_sample_process(destination, &edited, 0, edited.frames,
                            &state->process, error, error_size);
     ts_sample_free(&edited);
-    return ok;
+    if (!ok) return 0;
+    for (int index = 0; index < state->post_edit_count; ++index) {
+        const TsPostEdit *operation = &state->post_edits[index];
+        size_t first = operation->first;
+        size_t last = operation->last;
+        size_t length;
+        if (first > destination->frames) first = destination->frames;
+        if (last > destination->frames) last = destination->frames;
+        if (last <= first) continue;
+        length = last - first;
+        if (operation->kind >= TS_POST_REVERSE) {
+            if (operation->kind == TS_POST_CROP) {
+                float *cropped = (float *)malloc(length * sizeof(float));
+                if (cropped == NULL) {
+                    set_error(error, error_size, "Out of memory while cropping tape");
+                    return 0;
+                }
+                memcpy(cropped, destination->data + first, length * sizeof(float));
+                ts_sample_free(destination);
+                destination->data = cropped;
+                destination->frames = length;
+                destination->sample_rate = instrument->parent.sample_rate;
+                snprintf(destination->name, sizeof(destination->name), "%s",
+                         instrument->parent.name);
+            } else if (operation->kind == TS_POST_REVERSE) {
+                for (size_t i = 0; i < length / 2u; ++i) {
+                    float swap = destination->data[first + i];
+                    destination->data[first + i] = destination->data[last - 1u - i];
+                    destination->data[last - 1u - i] = swap;
+                }
+            } else if (operation->kind == TS_POST_NORMALIZE) {
+                float peak = 0.0f;
+                float target = clampf(operation->amount, 0.0f, 1.0f);
+                for (size_t i = first; i < last; ++i)
+                    if (fabsf(destination->data[i]) > peak) peak = fabsf(destination->data[i]);
+                if (peak > 0.0000001f) {
+                    float gain = target / peak;
+                    for (size_t i = first; i < last; ++i)
+                        destination->data[i] = clampf(destination->data[i] * gain, -1.0f, 1.0f);
+                }
+            } else if (operation->kind == TS_POST_GAIN) {
+                for (size_t i = first; i < last; ++i)
+                    destination->data[i] = clampf(destination->data[i] * operation->amount,
+                                                  -1.0f, 1.0f);
+            } else if (operation->kind == TS_POST_FADE_IN ||
+                       operation->kind == TS_POST_FADE_OUT) {
+                for (size_t i = 0; i < length; ++i) {
+                    float gain = length > 1u ?
+                        (operation->kind == TS_POST_FADE_IN ?
+                         (float)i / (float)(length - 1u) :
+                         (float)(length - 1u - i) / (float)(length - 1u)) : 1.0f;
+                    destination->data[first + i] *= gain;
+                }
+            }
+        } else {
+            float *source;
+            float *output;
+            int64_t left = operation->destination < 0 ? operation->destination : 0;
+            int64_t right = operation->destination + (int64_t)length;
+            size_t prepend = left < 0 ? (size_t)(-left) : 0u;
+            size_t output_frames;
+            size_t destination_first;
+            size_t fade = operation->crossfade_frames;
+            int moving = operation->kind == TS_POST_MOVE_MIX ||
+                         operation->kind == TS_POST_MOVE_OVERWRITE;
+            int overwrite = operation->kind == TS_POST_COPY_OVERWRITE ||
+                            operation->kind == TS_POST_MOVE_OVERWRITE;
+            if (right < (int64_t)destination->frames) right = (int64_t)destination->frames;
+            if (right < left || (uint64_t)(right - left) > SIZE_MAX / sizeof(float)) {
+                set_error(error, error_size, "Tape placement is too large");
+                return 0;
+            }
+            output_frames = (size_t)(right - left);
+            source = (float *)malloc(length * sizeof(float));
+            output = (float *)calloc(output_frames, sizeof(float));
+            if (source == NULL || output == NULL) {
+                free(source); free(output);
+                set_error(error, error_size, "Out of memory while moving tape");
+                return 0;
+            }
+            memcpy(source, destination->data + first, length * sizeof(float));
+            memcpy(output + prepend, destination->data,
+                   destination->frames * sizeof(float));
+            if (fade > length / 2u) fade = length / 2u;
+            if (moving) {
+                size_t cleared = prepend + first;
+                for (size_t i = 0; i < length; ++i) output[cleared + i] = 0.0f;
+                for (size_t i = 0; i < fade; ++i) {
+                    float gain = (float)(i + 1u) / (float)(fade + 1u);
+                    if (cleared > prepend + i)
+                        output[cleared - 1u - i] *= gain;
+                    if (cleared + length + i < prepend + destination->frames)
+                        output[cleared + length + i] *= gain;
+                }
+            }
+            destination_first = (size_t)(operation->destination - left);
+            for (size_t i = 0; i < length; ++i) {
+                size_t at = destination_first + i;
+                float gain = 1.0f;
+                float value;
+                if (fade > 0u) {
+                    if (i < fade) gain = (float)(i + 1u) / (float)(fade + 1u);
+                    if (length - 1u - i < fade) {
+                        float tail = (float)(length - i) / (float)(fade + 1u);
+                        if (tail < gain) gain = tail;
+                    }
+                }
+                value = source[i] * gain;
+                if (overwrite)
+                    output[at] = output[at] * (1.0f - gain) + value;
+                else
+                    output[at] = clampf(output[at] + value, -1.0f, 1.0f);
+            }
+            free(source);
+            ts_sample_free(destination);
+            destination->data = output;
+            destination->frames = output_frames;
+            destination->sample_rate = instrument->parent.sample_rate;
+            snprintf(destination->name, sizeof(destination->name), "%s",
+                     instrument->parent.name);
+        }
+    }
+    return 1;
 }
 
 void ts_process_recipe_reset(TsProcessRecipe *process)
@@ -944,9 +1071,11 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
     target.loop_first = 0;
     target.loop_last = 0;
     target.loop_crossfade_ms = 8.0f;
+    target.loop_mode = TS_LOOP_FORWARD;
     target.has_selection = 0;
     target.has_loop = 0;
     target.sample_edit_count = 0;
+    target.post_edit_count = 0;
     ts_process_recipe_reset(&target.process);
     target.process.seed = instrument->process.seed;
     ts_sample_init(&current);
@@ -963,11 +1092,13 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
     instrument->loop_first = 0;
     instrument->loop_last = 0;
     instrument->loop_crossfade_ms = target.loop_crossfade_ms;
+    instrument->loop_mode = target.loop_mode;
     instrument->has_selection = 0;
     instrument->has_loop = 0;
     instrument->process = target.process;
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
+    instrument->post_edit_count = 0;
     return 1;
 }
 
@@ -979,6 +1110,7 @@ int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t e
     size_t loop_first;
     size_t loop_last;
     float loop_crossfade_ms;
+    TsLoopMode loop_mode;
     int has_loop;
     if (instrument == NULL || instrument->current.data == NULL || instrument->current.frames == 0) {
         set_error(error, error_size, "No Current to commit");
@@ -989,6 +1121,7 @@ int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t e
     loop_first = instrument->loop_first;
     loop_last = instrument->loop_last;
     loop_crossfade_ms = instrument->loop_crossfade_ms;
+    loop_mode = instrument->loop_mode;
     has_loop = instrument->has_loop;
     prior_hash = ts_sample_hash(&instrument->parent);
     if (!ts_sample_clone(&parent, &instrument->current, error, error_size)) return 0;
@@ -1012,6 +1145,7 @@ int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t e
     instrument->loop_first = loop_first;
     instrument->loop_last = loop_last;
     instrument->loop_crossfade_ms = loop_crossfade_ms;
+    instrument->loop_mode = loop_mode;
     instrument->has_loop = has_loop && loop_first < loop_last && loop_last <= current.frames;
     set_error(error, error_size, "");
     return 1;
@@ -1164,6 +1298,30 @@ int ts_instrument_set_loop_crossfade(TsInstrument *instrument, float millisecond
     return 1;
 }
 
+const char *ts_loop_mode_name(TsLoopMode mode)
+{
+    if (mode == TS_LOOP_REVERSE) return "REVERSE";
+    if (mode == TS_LOOP_PING_PONG) return "PING-PONG";
+    return "FORWARD";
+}
+
+int ts_instrument_set_loop_mode(TsInstrument *instrument, TsLoopMode mode,
+                                char *error, size_t error_size)
+{
+    if (instrument == NULL || mode < TS_LOOP_FORWARD || mode >= TS_LOOP_MODE_COUNT) {
+        set_error(error, error_size, "Invalid loop direction mode");
+        return 0;
+    }
+    if (instrument->loop_mode == mode) {
+        set_error(error, error_size, "Loop mode unchanged");
+        return 0;
+    }
+    begin_edit(instrument);
+    instrument->loop_mode = mode;
+    set_error(error, error_size, "");
+    return 1;
+}
+
 void ts_instrument_begin_loop_drag(TsInstrument *instrument)
 {
     if (instrument != NULL && instrument->has_loop) begin_edit(instrument);
@@ -1193,6 +1351,121 @@ int ts_instrument_move_loop_endpoint(TsInstrument *instrument, int endpoint, siz
         }
     }
     return endpoint;
+}
+
+int64_t ts_sample_snap_tape_destination(const TsSample *sample, int64_t target,
+                                        size_t source_frames)
+{
+    size_t wanted;
+    size_t maximum;
+    size_t radius;
+    size_t best;
+    int best_crossings = -1;
+    float best_level = 0.0f;
+    size_t best_distance = 0;
+    if (sample == NULL || sample->data == NULL || sample->frames == 0 ||
+        target < 0 || (uint64_t)target + source_frames > sample->frames)
+        return target;
+    wanted = (size_t)target;
+    maximum = sample->frames - source_frames;
+    radius = sample->sample_rate / 20u;
+    if (radius < 64u) radius = 64u;
+    if (radius > maximum) radius = maximum;
+    best = wanted;
+    for (size_t distance = 0; distance <= radius; ++distance) {
+        size_t candidates[2];
+        int count = 0;
+        if (distance <= wanted) candidates[count++] = wanted - distance;
+        if (distance > 0 && wanted + distance <= maximum)
+            candidates[count++] = wanted + distance;
+        for (int candidate_index = 0; candidate_index < count; ++candidate_index) {
+            size_t candidate = candidates[candidate_index];
+            size_t end = candidate + source_frames;
+            int crossings = is_zero_crossing(sample, candidate) +
+                            (end < sample->frames && is_zero_crossing(sample, end));
+            float level = fabsf(sample->data[candidate]) +
+                          (end < sample->frames ? fabsf(sample->data[end]) : 0.0f);
+            if (crossings > best_crossings ||
+                (crossings == best_crossings &&
+                 (level < best_level ||
+                  (fabsf(level - best_level) < 0.0000001f && distance < best_distance)))) {
+                best = candidate;
+                best_crossings = crossings;
+                best_level = level;
+                best_distance = distance;
+            }
+        }
+        if (best_crossings == 2) break;
+    }
+    return (int64_t)best;
+}
+
+int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
+                                  size_t first, size_t last, int64_t destination,
+                                  char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsSample current;
+    TsPostEdit operation;
+    size_t length;
+    size_t prepend;
+    size_t placed_first;
+    if (instrument == NULL || instrument->current.data == NULL) {
+        set_error(error, error_size, "No Current sample for tape drag");
+        return 0;
+    }
+    if (kind < TS_POST_COPY_MIX || kind > TS_POST_MOVE_OVERWRITE) {
+        set_error(error, error_size, "Invalid tape drag gesture");
+        return 0;
+    }
+    if (first >= last || last > instrument->current.frames) {
+        set_error(error, error_size, "Select a valid tape range first");
+        return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more tape operations");
+        return 0;
+    }
+    length = last - first;
+    destination = ts_sample_snap_tape_destination(&instrument->current,
+                                                   destination, length);
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = kind;
+    operation.first = first;
+    operation.last = last;
+    operation.destination = destination;
+    operation.crossfade_frames = instrument->current.sample_rate / 1000u;
+    if (operation.crossfade_frames < 8u) operation.crossfade_frames = 8u;
+    if (operation.crossfade_frames > 64u) operation.crossfade_frames = 64u;
+    target = snapshot(instrument);
+    target.post_edits[target.post_edit_count++] = operation;
+    prepend = destination < 0 ? (size_t)(-destination) : 0u;
+    placed_first = destination < 0 ? 0u : (size_t)destination + prepend;
+    target.selection_first = placed_first;
+    target.selection_last = placed_first + length;
+    target.has_selection = 1;
+    if (prepend > 0u && target.has_loop) {
+        target.loop_first += prepend;
+        target.loop_last += prepend;
+    }
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    target.view_first = 0;
+    target.view_last = current.frames;
+    begin_edit(instrument);
+    ts_sample_free(&instrument->current);
+    instrument->current = current;
+    instrument->selection_first = target.selection_first;
+    instrument->selection_last = target.selection_last;
+    instrument->has_selection = 1;
+    instrument->view_first = 0;
+    instrument->view_last = current.frames;
+    instrument->loop_first = target.loop_first;
+    instrument->loop_last = target.loop_last;
+    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
+    set_error(error, error_size, "");
+    return 1;
 }
 
 int ts_instrument_bank_count(const TsInstrument *instrument)
@@ -1256,6 +1529,7 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
     snprintf(captured.sample.name, sizeof(captured.sample.name), "%s G%02u",
              ts_bank_capture_name(kind), instrument->generation);
     captured.capture_kind = kind;
+    captured.loop_mode = instrument->loop_mode;
     captured.occupied = 1;
     captured.loop_crossfade_ms = instrument->loop_crossfade_ms;
     if (kind == TS_BANK_CAPTURE_LOOP) {
@@ -1337,6 +1611,7 @@ int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
     size_t loop_first;
     size_t loop_last;
     float loop_crossfade_ms;
+    TsLoopMode loop_mode;
     int has_loop;
     if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT ||
         !instrument->bank[slot].occupied) {
@@ -1358,6 +1633,7 @@ int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
     loop_first = source->loop_first;
     loop_last = source->loop_last;
     loop_crossfade_ms = source->loop_crossfade_ms;
+    loop_mode = source->loop_mode;
     has_loop = source->has_loop;
     ts_sample_free(&instrument->parent);
     ts_sample_free(&instrument->current);
@@ -1371,6 +1647,7 @@ int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
     instrument->loop_first = loop_first;
     instrument->loop_last = loop_last;
     instrument->loop_crossfade_ms = loop_crossfade_ms;
+    instrument->loop_mode = loop_mode;
     instrument->has_loop = has_loop && loop_first < loop_last &&
                            loop_last <= current.frames;
     set_error(error, error_size, "");
@@ -1446,6 +1723,47 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
         set_error(error, error_size, "Select a range before cropping");
         return 0;
     }
+    if (instrument->post_edit_count > 0) {
+        TsPostEdit operation;
+        if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+            set_error(error, error_size, "Commit before adding more tape operations");
+            return 0;
+        }
+        target = snapshot(instrument);
+        memset(&operation, 0, sizeof(operation));
+        operation.kind = TS_POST_CROP;
+        operation.first = instrument->selection_first;
+        operation.last = instrument->selection_last;
+        target.post_edits[target.post_edit_count++] = operation;
+        if (instrument->has_loop) {
+            size_t kept_first = instrument->loop_first > operation.first ?
+                                instrument->loop_first : operation.first;
+            size_t kept_last = instrument->loop_last < operation.last ?
+                               instrument->loop_last : operation.last;
+            target.has_loop = kept_last > kept_first + 1u;
+            target.loop_first = target.has_loop ? kept_first - operation.first : 0u;
+            target.loop_last = target.has_loop ? kept_last - operation.first : 0u;
+        }
+        target.selection_first = 0;
+        target.selection_last = 0;
+        target.has_selection = 0;
+        target.view_first = 0;
+        target.view_last = operation.last - operation.first;
+        ts_sample_init(&current);
+        if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+        begin_edit(instrument);
+        ts_sample_free(&instrument->current);
+        instrument->current = current;
+        instrument->loop_first = target.loop_first;
+        instrument->loop_last = target.loop_last;
+        instrument->has_loop = target.has_loop;
+        memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+        instrument->post_edit_count = target.post_edit_count;
+        ts_instrument_clear_selection(instrument);
+        ts_instrument_show_all(instrument);
+        set_error(error, error_size, "");
+        return 1;
+    }
     new_first = instrument->crop_first + instrument->selection_first;
     new_last = instrument->crop_first + instrument->selection_last;
     target = snapshot(instrument);
@@ -1507,6 +1825,34 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
     if (kind < TS_SAMPLE_EDIT_REVERSE || kind > TS_SAMPLE_EDIT_FADE_OUT) {
         set_error(error, error_size, "Unknown sample edit");
         return 0;
+    }
+    if (instrument->post_edit_count > 0) {
+        TsPostEdit operation;
+        static const TsPostEditKind kinds[] = {
+            TS_POST_REVERSE, TS_POST_NORMALIZE, TS_POST_GAIN,
+            TS_POST_FADE_IN, TS_POST_FADE_OUT
+        };
+        if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+            set_error(error, error_size, "Commit before adding more post-DSP edits");
+            return 0;
+        }
+        target = snapshot(instrument);
+        memset(&operation, 0, sizeof(operation));
+        operation.kind = kinds[kind];
+        operation.first = instrument->has_selection ? instrument->selection_first : 0;
+        operation.last = instrument->has_selection ? instrument->selection_last :
+                                                       instrument->current.frames;
+        operation.amount = amount;
+        target.post_edits[target.post_edit_count++] = operation;
+        ts_sample_init(&current);
+        if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+        begin_edit(instrument);
+        ts_sample_free(&instrument->current);
+        instrument->current = current;
+        memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+        instrument->post_edit_count = target.post_edit_count;
+        set_error(error, error_size, "");
+        return 1;
     }
     if (instrument->sample_edit_count >= TS_SAMPLE_EDIT_DEPTH) {
         set_error(error, error_size, "Commit before adding more sample edits");
@@ -1613,11 +1959,14 @@ static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
     instrument->loop_first = target.loop_first;
     instrument->loop_last = target.loop_last;
     instrument->loop_crossfade_ms = target.loop_crossfade_ms;
+    instrument->loop_mode = target.loop_mode;
     instrument->has_selection = target.has_selection;
     instrument->has_loop = target.has_loop;
     instrument->process = target.process;
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
+    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
     return 1;
 }
 
@@ -1673,7 +2022,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    fwrite("TSR7\r\n\032\n", 1, 8, f);
+    fwrite("TSR8\r\n\032\n", 1, 8, f);
     put32(f, (uint32_t)instrument->source_kind);
     put32(f, instrument->generation);
     put64(f, instrument->ancestor_hash);
@@ -1702,6 +2051,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     put64(f, instrument->view_first); put64(f, instrument->view_last);
     put64(f, instrument->loop_first); put64(f, instrument->loop_last);
     put_float(f, instrument->loop_crossfade_ms);
+    put32(f, (uint32_t)instrument->loop_mode);
     put32(f, (uint32_t)instrument->has_selection);
     put32(f, (uint32_t)instrument->has_loop);
     put32(f, (uint32_t)instrument->sample_edit_count);
@@ -1710,6 +2060,15 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         put32(f, (uint32_t)edit->kind);
         put64(f, edit->first); put64(f, edit->last);
         put_float(f, edit->amount);
+    }
+    put32(f, (uint32_t)instrument->post_edit_count);
+    for (int i = 0; i < instrument->post_edit_count; ++i) {
+        const TsPostEdit *edit = &instrument->post_edits[i];
+        put32(f, (uint32_t)edit->kind);
+        put64(f, edit->first); put64(f, edit->last);
+        put64(f, (uint64_t)edit->destination);
+        put_float(f, edit->amount);
+        put32(f, edit->crossfade_frames);
     }
     put32(f, instrument->parent.sample_rate);
     put64(f, instrument->parent.frames);
@@ -1725,6 +2084,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         put32(f, (uint32_t)slot->occupied);
         if (!slot->occupied) continue;
         put32(f, (uint32_t)slot->capture_kind);
+        put32(f, (uint32_t)slot->loop_mode);
         put32(f, (uint32_t)slot->has_loop);
         put64(f, slot->loop_first); put64(f, slot->loop_last);
         put_float(f, slot->loop_crossfade_ms);
@@ -1776,13 +2136,14 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR7\r\n\032\n", 8) == 0) version = 7;
+    if (memcmp(magic, "TSR8\r\n\032\n", 8) == 0) version = 8;
+    else if (memcmp(magic, "TSR7\r\n\032\n", 8) == 0) version = 7;
     else if (memcmp(magic, "TSR6\r\n\032\n", 8) == 0) version = 6;
     else {
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6/TSR7 project");
+                  "Not a self-contained TSR6/TSR7/TSR8 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -1805,10 +2166,13 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     GET_U64(state.view_first); GET_U64(state.view_last);
     GET_U64(state.loop_first); GET_U64(state.loop_last);
     GET_FLOAT(state.loop_crossfade_ms);
+    if (version >= 8) GET_U32(state.loop_mode);
+    else state.loop_mode = TS_LOOP_FORWARD;
     GET_U32(state.has_selection); GET_U32(state.has_loop);
     GET_U32(state.sample_edit_count);
     if (loaded.source_kind < TS_SOURCE_GENERATED || loaded.source_kind > TS_SOURCE_COMMITTED ||
         loaded.generator.kind >= TS_GENERATOR_COUNT ||
+        state.loop_mode >= TS_LOOP_MODE_COUNT ||
         state.process.noise_color >= TS_NOISE_COLOR_COUNT ||
         state.sample_edit_count < 0 || state.sample_edit_count > TS_SAMPLE_EDIT_DEPTH ||
         (state.has_selection != 0 && state.has_selection != 1) ||
@@ -1826,6 +2190,26 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         if (state.sample_edits[i].kind > TS_SAMPLE_EDIT_FADE_OUT ||
             state.sample_edits[i].last <= state.sample_edits[i].first ||
             !isfinite(state.sample_edits[i].amount)) goto malformed;
+    }
+    if (version >= 8) {
+        GET_U32(state.post_edit_count);
+        if (state.post_edit_count < 0 || state.post_edit_count > TS_POST_EDIT_DEPTH)
+            goto malformed;
+        for (int i = 0; i < state.post_edit_count; ++i) {
+            TsPostEdit *edit = &state.post_edits[i];
+            uint64_t destination_bits;
+            GET_U32(edit->kind);
+            GET_U64(edit->first); GET_U64(edit->last);
+            if (!get64(f, &destination_bits)) goto malformed;
+            edit->destination = (int64_t)destination_bits;
+            GET_FLOAT(edit->amount); GET_U32(edit->crossfade_frames);
+            if (edit->kind > TS_POST_CROP || edit->last <= edit->first ||
+                edit->first > 100000000u || edit->last > 100000000u ||
+                edit->destination < -100000000LL ||
+                edit->destination > 100000000LL ||
+                !isfinite(edit->amount) || edit->crossfade_frames > 65536u)
+                goto malformed;
+        }
     }
     GET_U32(loaded.parent.sample_rate); GET_U64(frames);
     GET_U32(name_length);
@@ -1854,12 +2238,16 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             GET_U32(slot->occupied);
             if (slot->occupied != 0 && slot->occupied != 1) goto malformed;
             if (!slot->occupied) continue;
-            GET_U32(slot->capture_kind); GET_U32(slot->has_loop);
+            GET_U32(slot->capture_kind);
+            if (version >= 8) GET_U32(slot->loop_mode);
+            else slot->loop_mode = TS_LOOP_FORWARD;
+            GET_U32(slot->has_loop);
             GET_U64(slot->loop_first); GET_U64(slot->loop_last);
             GET_FLOAT(slot->loop_crossfade_ms);
             GET_U32(slot->sample.sample_rate); GET_U64(slot->sample.frames);
             GET_U32(name_length);
             if (slot->capture_kind > TS_BANK_CAPTURE_LOOP ||
+                slot->loop_mode >= TS_LOOP_MODE_COUNT ||
                 (slot->has_loop != 0 && slot->has_loop != 1) ||
                 !isfinite(slot->loop_crossfade_ms) ||
                 slot->loop_crossfade_ms < 0.0f || slot->loop_crossfade_ms > 50.0f ||
@@ -1883,24 +2271,28 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT || fgetc(f) != EOF)
             goto malformed;
     }
-    if (state.crop_first >= state.crop_last || state.crop_last > loaded.parent.frames ||
-        state.selection_first > state.selection_last ||
-        state.selection_last > state.crop_last - state.crop_first ||
+    if (state.crop_first >= state.crop_last || state.crop_last > loaded.parent.frames)
+        goto malformed;
+    if (!render_snapshot(&loaded.current, &loaded, &state, error, error_size)) goto failed;
+    if (state.selection_first > state.selection_last ||
+        state.selection_last > loaded.current.frames ||
         state.view_first >= state.view_last ||
-        state.view_last > state.crop_last - state.crop_first ||
-        state.loop_last > state.crop_last - state.crop_first ||
+        state.view_last > loaded.current.frames ||
+        state.loop_last > loaded.current.frames ||
         (state.has_loop && state.loop_last <= state.loop_first) ||
         (!state.has_loop && (state.loop_first != 0 || state.loop_last != 0))) goto malformed;
-    if (!render_snapshot(&loaded.current, &loaded, &state, error, error_size)) goto failed;
     loaded.process = state.process;
     loaded.crop_first = state.crop_first; loaded.crop_last = state.crop_last;
     loaded.selection_first = state.selection_first; loaded.selection_last = state.selection_last;
     loaded.view_first = state.view_first; loaded.view_last = state.view_last;
     loaded.loop_first = state.loop_first; loaded.loop_last = state.loop_last;
     loaded.loop_crossfade_ms = state.loop_crossfade_ms;
+    loaded.loop_mode = state.loop_mode;
     loaded.has_selection = state.has_selection; loaded.has_loop = state.has_loop;
     memcpy(loaded.sample_edits, state.sample_edits, sizeof(loaded.sample_edits));
     loaded.sample_edit_count = state.sample_edit_count;
+    memcpy(loaded.post_edits, state.post_edits, sizeof(loaded.post_edits));
+    loaded.post_edit_count = state.post_edit_count;
     fclose(f);
     ts_instrument_free(instrument);
     *instrument = loaded;
@@ -1913,7 +2305,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6/TSR7 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6/TSR7/TSR8 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

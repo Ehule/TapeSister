@@ -119,6 +119,66 @@ float ts_audition_read_looped(const TsSample *sample, double position,
     return tail;
 }
 
+double ts_audition_loop_position(double position, size_t first, size_t last,
+                                 size_t crossfade_frames, TsLoopMode mode,
+                                 int *direction)
+{
+    int travel = direction != NULL && *direction < 0 ? -1 : 1;
+    if (last <= first + 1u) return (double)first;
+    if (mode == TS_LOOP_FORWARD)
+        return ts_audition_wrap_position(position, first, last, crossfade_frames);
+    if (mode == TS_LOOP_REVERSE) {
+        double cycle;
+        double end;
+        if (crossfade_frames > (last - first) / 2u)
+            crossfade_frames = (last - first) / 2u;
+        if (direction != NULL) *direction = -1;
+        if (position >= (double)last) return (double)(last - 1u);
+        if (position >= (double)first) return position;
+        cycle = (double)(last - first - crossfade_frames);
+        end = (double)(last - 1u - crossfade_frames);
+        if (cycle <= 0.0) return (double)(last - 1u);
+        return end - fmod((double)first - position, cycle);
+    }
+    if (direction == NULL) direction = &travel;
+    for (int guard = 0; guard < 8; ++guard) {
+        double end = (double)(last - 1u);
+        if (*direction > 0 && position > end) {
+            position = end - (position - end);
+            *direction = -1;
+        } else if (*direction < 0 && position < (double)first) {
+            position = (double)first + ((double)first - position);
+            *direction = 1;
+        } else break;
+    }
+    if (position < (double)first) position = (double)first;
+    if (position > (double)(last - 1u)) position = (double)(last - 1u);
+    return position;
+}
+
+float ts_audition_read_looped_mode(const TsSample *sample, double position,
+                                   size_t first, size_t last, size_t crossfade_frames,
+                                   TsLoopMode mode)
+{
+    if (mode == TS_LOOP_FORWARD)
+        return ts_audition_read_looped(sample, position, first, last, crossfade_frames);
+    if (sample == NULL || sample->data == NULL || last <= first || last > sample->frames)
+        return 0.0f;
+    if (mode == TS_LOOP_REVERSE && crossfade_frames > 0u &&
+        position < (double)(first + crossfade_frames)) {
+        double offset = position - (double)first;
+        float blend;
+        float head;
+        float tail;
+        if (offset < 0.0) offset = 0.0;
+        blend = 1.0f - (float)(offset / (double)crossfade_frames);
+        head = interpolated(sample, position, last);
+        tail = interpolated(sample, (double)(last - crossfade_frames) + offset, last);
+        return head * (1.0f - blend) + tail * blend;
+    }
+    return interpolated(sample, position, last);
+}
+
 double ts_audition_map_progress(double position, size_t first, size_t last,
                                 size_t target_first, size_t target_last)
 {

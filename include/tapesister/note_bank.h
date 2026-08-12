@@ -16,9 +16,11 @@ typedef struct {
     size_t range_last;
     size_t crossfade_frames;
     TsAuditionSource source;
+    TsLoopMode loop_mode;
     uint64_t serial;
     int note;
     int looping;
+    int direction;
     int latched;
     int active;
 } TsNoteVoice;
