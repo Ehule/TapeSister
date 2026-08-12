@@ -165,7 +165,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 447, 4, 82, "SAVE", 0);
     button(fb, 535, 4, 95, "EXPORT", 0);
 
-    frame(fb, 10, 40, 620, 188, RGB(42, 39, 42), RGB(105, 98, 105));
+    frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
     if (instrument->parent.frames) {
         char parent[96], info[112];
         snprintf(parent, sizeof(parent), "PARENT %.34s", instrument->parent.name);
@@ -213,38 +213,71 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 211, 135, "DROP WAV HERE", RGB(120, 113, 121), 2);
     }
 
-    button(fb, 10, 234, 74, "LOAD", ui->path_entry);
-    button(fb, 89, 234, 86, "GENERATE", 0);
-    button(fb, 180, 234, 72, "RESEED", 0);
-    slider(fb, 267, 234, 70, "BODY", instrument->process.body, PAL_INSTRUMENT);
-    slider(fb, 354, 234, 70, "EDGE", instrument->process.edge, PAL_VOLUME);
-    slider(fb, 441, 234, 70, "DRIFT", instrument->process.drift, PAL_TUNING);
-    button(fb, 540, 234, 90, "STOP ALL", 0);
+    button(fb, 10, 205, 70, "LOAD", ui->path_entry);
+    button(fb, 85, 205, 82, "GENERATE", 0);
+    button(fb, 172, 205, 70, "RESEED", 0);
+    button(fb, 247, 205, 78, "COMMIT", ui->commit_armed);
+    button(fb, 330, 205, 72, "RESET", 0);
+    {
+        char generation[32];
+        snprintf(generation, sizeof(generation), "GEN %u", instrument->generation);
+        text(fb, 420, 213, generation, PAL_INSTRUMENT, 1);
+    }
+    button(fb, 540, 205, 90, "STOP ALL", 0);
 
-    button(fb, 10, 262, 74, "PLAY ALL", 0);
-    button(fb, 89, 262, 76, "PLAY SEL", 0);
-    button(fb, 170, 262, 82, "PLAY VIEW", 0);
-    button(fb, 257, 262, 58, "CROP", 0);
-    button(fb, 320, 262, 82, "ZOOM SEL", 0);
-    button(fb, 407, 262, 82, "SHOW ALL", 0);
-    button(fb, 494, 262, 62, "UNDO", instrument->undo_count > 0);
-    button(fb, 561, 262, 69, "REDO", instrument->redo_count > 0);
+    slider(fb, 10, 233, 110, "BODY", instrument->process.body, PAL_INSTRUMENT);
+    slider(fb, 130, 233, 110, "EDGE", instrument->process.edge, PAL_VOLUME);
+    slider(fb, 250, 233, 110, "DRIFT", instrument->process.drift, PAL_TUNING);
+    button(fb, 380, 233, 75, "NOISE", ui->fx_page == TS_FX_NOISE);
+    button(fb, 460, 233, 75, "DELAY", ui->fx_page == TS_FX_DELAY);
+    button(fb, 540, 233, 90, "SPACE", ui->fx_page == TS_FX_SPACE);
 
-    text(fb, 11, 291, "SELECT WAVEFORM WITH MOUSE   PLAY KEYS Z-M AND Q-U", RGB(184, 180, 184), 1);
-    const int white_x = 10, white_y = 306, white_w = 43, white_h = 73;
+    if (ui->fx_page == TS_FX_NOISE) {
+        char color[32];
+        button(fb, 10, 261, 94, instrument->process.noise_enabled ? "NOISE ON" : "NOISE OFF",
+               instrument->process.noise_enabled);
+        slider(fb, 118, 261, 180, "AMOUNT", instrument->process.noise_amount, PAL_NOTE);
+        snprintf(color, sizeof(color), "COLOR %s", ts_noise_color_name(instrument->process.noise_color));
+        button(fb, 312, 261, 150, color, 0);
+    } else if (ui->fx_page == TS_FX_DELAY) {
+        button(fb, 10, 261, 94, instrument->process.delay_enabled ? "DELAY ON" : "DELAY OFF",
+               instrument->process.delay_enabled);
+        slider(fb, 118, 261, 92, "TIME", instrument->process.delay_seconds, PAL_NOTE);
+        slider(fb, 220, 261, 92, "FEEDBACK", instrument->process.delay_feedback / 0.85f, PAL_VOLUME);
+        slider(fb, 322, 261, 92, "DAMP", instrument->process.delay_damping, PAL_TUNING);
+        slider(fb, 424, 261, 92, "MIX", instrument->process.delay_mix, PAL_EFFECT);
+    } else {
+        button(fb, 10, 261, 94, instrument->process.reverb_enabled ? "SPACE ON" : "SPACE OFF",
+               instrument->process.reverb_enabled);
+        slider(fb, 118, 261, 120, "DECAY", instrument->process.reverb_decay / 0.9f, PAL_NOTE);
+        slider(fb, 250, 261, 120, "DAMP", instrument->process.reverb_damping, PAL_TUNING);
+        slider(fb, 382, 261, 120, "MIX", instrument->process.reverb_mix, PAL_EFFECT);
+    }
+
+    button(fb, 10, 289, 70, "PLAY ALL", 0);
+    button(fb, 85, 289, 72, "PLAY SEL", 0);
+    button(fb, 162, 289, 78, "PLAY VIEW", 0);
+    button(fb, 245, 289, 52, "CROP", 0);
+    button(fb, 302, 289, 74, "ZOOM SEL", 0);
+    button(fb, 381, 289, 74, "SHOW ALL", 0);
+    button(fb, 460, 289, 56, "UNDO", instrument->undo_count > 0);
+    button(fb, 521, 289, 62, "REDO", instrument->redo_count > 0);
+
+    text(fb, 11, 318, "SELECT WAVEFORM WITH MOUSE   PLAY KEYS Z-M AND Q-U", RGB(184, 180, 184), 1);
+    const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
     const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
     for (int i = 0; i < 14; ++i) {
         int active = ui->active_key == i;
         rect(fb, white_x + i * white_w, white_y, white_w - 1, white_h,
              active ? PAL_MOUSE : RGB(220, 216, 207));
-        text(fb, white_x + i * white_w + 23, white_y + 58, labels[i], RGB(24, 24, 24), 1);
+        text(fb, white_x + i * white_w + 23, white_y + 36, labels[i], RGB(24, 24, 24), 1);
     }
     const int black_after[] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
     const int semitones[] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
     for (int i = 0; i < 10; ++i) {
         int key = semitones[i];
         int active = ui->active_key == key;
-        rect(fb, white_x + (black_after[i] + 1) * white_w - 16, white_y, 31, 44,
+        rect(fb, white_x + (black_after[i] + 1) * white_w - 16, white_y, 31, 31,
              active ? PAL_VOLUME : RGB(18, 18, 18));
     }
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
@@ -280,11 +313,11 @@ int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path)
 
 int ts_ui_key_from_point(int x, int y)
 {
-    if (x < 10 || x >= 622 || y < 306 || y >= 379) return -1;
+    if (x < 10 || x >= 622 || y < 330 || y >= 379) return -1;
     const int white_w = 43;
     const int black_after[] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
     const int semitones[] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
-    if (y < 350) {
+    if (y < 361) {
         for (int i = 0; i < 10; ++i) {
             int left = 10 + (black_after[i] + 1) * white_w - 16;
             if (x >= left && x < left + 31) return semitones[i];

@@ -278,6 +278,12 @@ const char *ts_generator_name(TsGeneratorKind kind)
     return kind >= 0 && kind < TS_GENERATOR_COUNT ? names[kind] : "UNKNOWN";
 }
 
+const char *ts_noise_color_name(TsNoiseColor color)
+{
+    static const char *names[] = {"WHITE", "PINK", "BROWN", "METALLIC"};
+    return color >= 0 && color < TS_NOISE_COLOR_COUNT ? names[color] : "UNKNOWN";
+}
+
 int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
                        char *error, size_t error_size)
 {
@@ -365,10 +371,27 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
                       const TsProcessRecipe *recipe, char *error, size_t error_size)
 {
     float *data;
+    float *delay = NULL;
+    float *comb[3] = {NULL, NULL, NULL};
+    float *allpass = NULL;
+    const float comb_ms[3] = {29.7f, 37.1f, 41.1f};
+    size_t comb_len[3] = {0, 0, 0};
+    size_t comb_at[3] = {0, 0, 0};
+    size_t delay_len = 0, delay_at = 0, allpass_len = 0, allpass_at = 0;
     float low = 0.0f, fast = 0.0f, wander = 0.0f;
+    float pink = 0.0f, brown = 0.0f, delay_lp = 0.0f;
+    float comb_lp[3] = {0.0f, 0.0f, 0.0f};
+    float amplitude = 0.0f;
     float body = clampf(recipe->body, 0.0f, 1.0f);
     float edge = clampf(recipe->edge, 0.0f, 1.0f);
     float drift = clampf(recipe->drift, 0.0f, 1.0f);
+    float noise_amount = clampf(recipe->noise_amount, 0.0f, 1.0f);
+    float delay_feedback = clampf(recipe->delay_feedback, 0.0f, 0.85f);
+    float delay_damping = clampf(recipe->delay_damping, 0.0f, 1.0f);
+    float delay_mix = clampf(recipe->delay_mix, 0.0f, 1.0f);
+    float reverb_decay = clampf(recipe->reverb_decay, 0.0f, 0.9f);
+    float reverb_damping = clampf(recipe->reverb_damping, 0.0f, 1.0f);
+    float reverb_mix = clampf(recipe->reverb_mix, 0.0f, 1.0f);
     uint32_t rng = recipe->seed;
     double phase = rng_unit(&rng) * 2.0 * M_PI;
     double drift_rate = 0.15 + rng_unit(&rng) * 0.9;
@@ -386,6 +409,25 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
         set_error(error, error_size, "Out of memory while rendering Current");
         return 0;
     }
+
+    if (recipe->delay_enabled && delay_mix > 0.0f) {
+        double wanted = clampf(recipe->delay_seconds, 0.005f, 1.0f) * parent->sample_rate;
+        delay_len = (size_t)(wanted + 0.5);
+        if (delay_len < 1) delay_len = 1;
+        delay = (float *)calloc(delay_len, sizeof(float));
+        if (delay == NULL) goto out_of_memory;
+    }
+    if (recipe->reverb_enabled && reverb_mix > 0.0f) {
+        for (int line_index = 0; line_index < 3; ++line_index) {
+            comb_len[line_index] = (size_t)(comb_ms[line_index] * 0.001f * parent->sample_rate) + 1u;
+            comb[line_index] = (float *)calloc(comb_len[line_index], sizeof(float));
+            if (comb[line_index] == NULL) goto out_of_memory;
+        }
+        allpass_len = (size_t)(0.005f * parent->sample_rate) + 1u;
+        allpass = (float *)calloc(allpass_len, sizeof(float));
+        if (allpass == NULL) goto out_of_memory;
+    }
+
     for (size_t i = 0; i < frames; ++i) {
         float random = rng_bipolar(&rng);
         wander += (random - wander) * 0.00008f;
@@ -402,8 +444,55 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
             shaped = tanhf(shaped * drive) / tanhf(drive);
         }
         shaped += random * drift * 0.006f;
+
+        if (recipe->noise_enabled && noise_amount > 0.0f) {
+            float colored = random;
+            pink += (random - pink) * 0.075f;
+            brown = clampf(brown + random * 0.035f, -1.0f, 1.0f);
+            if (recipe->noise_color == TS_NOISE_PINK) colored = pink * 2.6f;
+            else if (recipe->noise_color == TS_NOISE_BROWN) colored = brown;
+            else if (recipe->noise_color == TS_NOISE_METALLIC)
+                colored = random * ((rng_next(&rng) & 31u) < 7u ? 1.0f : -0.28f);
+            amplitude += (fabsf(shaped) - amplitude) *
+                         (fabsf(shaped) > amplitude ? 0.08f : 0.0015f);
+            shaped += colored * noise_amount * (0.04f + amplitude * 0.42f);
+        }
+
+        if (delay != NULL) {
+            float delayed = delay[delay_at];
+            float damp_rate = 0.02f + (1.0f - delay_damping) * 0.78f;
+            delay_lp += (delayed - delay_lp) * damp_rate;
+            delay[delay_at] = clampf(shaped + delay_lp * delay_feedback, -2.0f, 2.0f);
+            delay_at = (delay_at + 1u) % delay_len;
+            shaped = shaped * (1.0f - delay_mix) + delayed * delay_mix;
+        }
+
+        if (allpass != NULL) {
+            float wet = 0.0f;
+            for (int line_index = 0; line_index < 3; ++line_index) {
+                float delayed = comb[line_index][comb_at[line_index]];
+                float damp_rate = 0.02f + (1.0f - reverb_damping) * 0.72f;
+                comb_lp[line_index] += (delayed - comb_lp[line_index]) * damp_rate;
+                comb[line_index][comb_at[line_index]] =
+                    clampf(shaped + comb_lp[line_index] * reverb_decay, -2.0f, 2.0f);
+                comb_at[line_index] = (comb_at[line_index] + 1u) % comb_len[line_index];
+                wet += delayed;
+            }
+            wet /= 3.0f;
+            {
+                const float stored = allpass[allpass_at];
+                const float allpass_out = stored - wet * 0.5f;
+                allpass[allpass_at] = clampf(wet + stored * 0.5f, -2.0f, 2.0f);
+                allpass_at = (allpass_at + 1u) % allpass_len;
+                shaped = shaped * (1.0f - reverb_mix) + allpass_out * reverb_mix;
+            }
+        }
         data[i] = clampf(shaped, -1.0f, 1.0f);
     }
+
+    free(delay);
+    for (int line_index = 0; line_index < 3; ++line_index) free(comb[line_index]);
+    free(allpass);
     ts_sample_free(sample);
     sample->data = data;
     sample->frames = frames;
@@ -411,6 +500,14 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
     snprintf(sample->name, sizeof(sample->name), "%s", parent->name);
     set_error(error, error_size, "");
     return 1;
+
+out_of_memory:
+    free(data);
+    free(delay);
+    for (int line_index = 0; line_index < 3; ++line_index) free(comb[line_index]);
+    free(allpass);
+    set_error(error, error_size, "Out of memory while creating DSP delay lines");
+    return 0;
 }
 
 float ts_sample_peak(const TsSample *sample)
@@ -487,6 +584,26 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                              state->crop_last, &state->process, error, error_size);
 }
 
+void ts_process_recipe_reset(TsProcessRecipe *process)
+{
+    process->seed = 0x53495354u;
+    process->body = 0.5f;
+    process->edge = 0.0f;
+    process->drift = 0.0f;
+    process->noise_enabled = 0;
+    process->noise_amount = 0.16f;
+    process->noise_color = TS_NOISE_PINK;
+    process->delay_enabled = 0;
+    process->delay_seconds = 0.18f;
+    process->delay_feedback = 0.38f;
+    process->delay_damping = 0.45f;
+    process->delay_mix = 0.25f;
+    process->reverb_enabled = 0;
+    process->reverb_decay = 0.62f;
+    process->reverb_damping = 0.50f;
+    process->reverb_mix = 0.24f;
+}
+
 void ts_instrument_init(TsInstrument *instrument)
 {
     memset(instrument, 0, sizeof(*instrument));
@@ -496,8 +613,7 @@ void ts_instrument_init(TsInstrument *instrument)
     instrument->generator.kind = TS_GENERATOR_TONAL;
     instrument->generator.seconds = 2.0f;
     instrument->generator.frequency = 130.8128f;
-    instrument->process.seed = 0x53495354u;
-    instrument->process.body = 0.5f;
+    ts_process_recipe_reset(&instrument->process);
     instrument->process.edge = 0.12f;
     instrument->process.drift = 0.23f;
 }
@@ -531,6 +647,8 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
     instrument->current = current;
     instrument->source_kind = TS_SOURCE_GENERATED;
     instrument->generator = generator;
+    instrument->generation = 0;
+    instrument->ancestor_hash = 0;
     reset_editor(instrument);
     return 1;
 }
@@ -553,6 +671,8 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
     instrument->parent = parent;
     instrument->current = current;
     instrument->source_kind = TS_SOURCE_IMPORTED;
+    instrument->generation = 0;
+    instrument->ancestor_hash = 0;
     reset_editor(instrument);
     return 1;
 }
@@ -563,7 +683,8 @@ int ts_instrument_reseed(TsInstrument *instrument, char *error, size_t error_siz
         return ts_instrument_generate(instrument, instrument->generator.kind,
                                       advance_seed(instrument->generator.seed), error, error_size);
     }
-    if (instrument->source_kind == TS_SOURCE_IMPORTED) {
+    if (instrument->source_kind == TS_SOURCE_IMPORTED ||
+        instrument->source_kind == TS_SOURCE_COMMITTED) {
         TsProcessRecipe process = instrument->process;
         process.seed = advance_seed(process.seed);
         return ts_instrument_set_process(instrument, &process, error, error_size);
@@ -583,6 +704,74 @@ int ts_instrument_set_process(TsInstrument *instrument, const TsProcessRecipe *p
     ts_sample_free(&instrument->current);
     instrument->current = current;
     instrument->process = *process;
+    return 1;
+}
+
+int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsSample current;
+    if (instrument == NULL || instrument->parent.data == NULL) {
+        set_error(error, error_size, "No Parent to reset to");
+        return 0;
+    }
+    target = snapshot(instrument);
+    target.crop_first = 0;
+    target.crop_last = instrument->parent.frames;
+    target.selection_first = 0;
+    target.selection_last = 0;
+    target.view_first = 0;
+    target.view_last = instrument->parent.frames;
+    target.has_selection = 0;
+    ts_process_recipe_reset(&target.process);
+    target.process.seed = instrument->process.seed;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    begin_edit(instrument);
+    ts_sample_free(&instrument->current);
+    instrument->current = current;
+    instrument->crop_first = target.crop_first;
+    instrument->crop_last = target.crop_last;
+    instrument->selection_first = 0;
+    instrument->selection_last = 0;
+    instrument->view_first = 0;
+    instrument->view_last = current.frames;
+    instrument->has_selection = 0;
+    instrument->process = target.process;
+    return 1;
+}
+
+int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t error_size)
+{
+    TsSample parent, current;
+    TsProcessRecipe neutral;
+    uint64_t prior_hash;
+    if (instrument == NULL || instrument->current.data == NULL || instrument->current.frames == 0) {
+        set_error(error, error_size, "No Current to commit");
+        return 0;
+    }
+    ts_sample_init(&parent);
+    ts_sample_init(&current);
+    prior_hash = ts_sample_hash(&instrument->parent);
+    if (!ts_sample_clone(&parent, &instrument->current, error, error_size)) return 0;
+    snprintf(parent.name, sizeof(parent.name), "G%02u %.116s", instrument->generation + 1u,
+             instrument->parent.name);
+    ts_process_recipe_reset(&neutral);
+    neutral.seed = instrument->process.seed;
+    if (!ts_sample_process(&current, &parent, 0, parent.frames, &neutral, error, error_size)) {
+        ts_sample_free(&parent);
+        return 0;
+    }
+    ts_sample_free(&instrument->parent);
+    ts_sample_free(&instrument->current);
+    instrument->parent = parent;
+    instrument->current = current;
+    instrument->source_kind = TS_SOURCE_COMMITTED;
+    instrument->process = neutral;
+    instrument->ancestor_hash = prior_hash;
+    ++instrument->generation;
+    reset_editor(instrument);
+    set_error(error, error_size, "");
     return 1;
 }
 
@@ -704,4 +893,83 @@ size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, in
     if (x < 0) x = 0;
     if (x >= width) x = width - 1;
     return first + (size_t)x * (last - first) / (size_t)width;
+}
+
+static void write_json_string(FILE *f, const char *value)
+{
+    fputc('"', f);
+    for (; *value != '\0'; ++value) {
+        unsigned char c = (unsigned char)*value;
+        if (c == '"' || c == '\\') {
+            fputc('\\', f);
+            fputc(c, f);
+        } else if (c == '\n') fputs("\\n", f);
+        else if (c == '\r') fputs("\\r", f);
+        else if (c == '\t') fputs("\\t", f);
+        else if (c >= 0x20) fputc(c, f);
+    }
+    fputc('"', f);
+}
+
+int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
+                              char *error, size_t error_size)
+{
+    const char *source;
+    FILE *f;
+    if (instrument == NULL || instrument->parent.data == NULL) {
+        set_error(error, error_size, "No instrument recipe to save");
+        return 0;
+    }
+    f = fopen(path, "wb");
+    if (f == NULL) {
+        set_error(error, error_size, "Could not create recipe file");
+        return 0;
+    }
+    source = instrument->source_kind == TS_SOURCE_IMPORTED ? "imported" :
+             instrument->source_kind == TS_SOURCE_COMMITTED ? "committed" : "generated";
+    fputs("{\n  \"schema\": 3,\n  \"renderer\": 2,\n  \"source\": ", f);
+    write_json_string(f, source);
+    fputs(",\n  \"parent_name\": ", f);
+    write_json_string(f, instrument->parent.name);
+    fprintf(f,
+            ",\n  \"lineage\": {\"generation\": %u, \"ancestor_hash\": \"%016llx\"},\n"
+            "  \"generator\": {\"kind\": ", instrument->generation,
+            (unsigned long long)instrument->ancestor_hash);
+    write_json_string(f, ts_generator_name(instrument->generator.kind));
+    fprintf(f,
+            ", \"seed\": %u, \"seconds\": %.9g, \"frequency\": %.9g},\n"
+            "  \"processing\": {\n"
+            "    \"seed\": %u, \"body\": %.9g, \"edge\": %.9g, \"drift\": %.9g,\n"
+            "    \"noise\": {\"bypass\": %s, \"amount\": %.9g, \"color\": ",
+            instrument->generator.seed, instrument->generator.seconds,
+            instrument->generator.frequency, instrument->process.seed,
+            instrument->process.body, instrument->process.edge, instrument->process.drift,
+            instrument->process.noise_enabled ? "false" : "true",
+            instrument->process.noise_amount);
+    write_json_string(f, ts_noise_color_name(instrument->process.noise_color));
+    fprintf(f,
+            "},\n"
+            "    \"delay\": {\"bypass\": %s, \"seconds\": %.9g, \"feedback\": %.9g, "
+            "\"damping\": %.9g, \"mix\": %.9g},\n"
+            "    \"reverb\": {\"bypass\": %s, \"decay\": %.9g, \"damping\": %.9g, "
+            "\"mix\": %.9g}\n"
+            "  },\n"
+            "  \"crop\": [%zu, %zu]\n"
+            "}\n",
+            instrument->process.delay_enabled ? "false" : "true",
+            instrument->process.delay_seconds, instrument->process.delay_feedback,
+            instrument->process.delay_damping, instrument->process.delay_mix,
+            instrument->process.reverb_enabled ? "false" : "true",
+            instrument->process.reverb_decay, instrument->process.reverb_damping,
+            instrument->process.reverb_mix, instrument->crop_first, instrument->crop_last);
+    {
+        int failed = ferror(f);
+        if (fclose(f) != 0) failed = 1;
+        if (failed) {
+            set_error(error, error_size, "Could not finish recipe file");
+            return 0;
+        }
+    }
+    set_error(error, error_size, "");
+    return 1;
 }
