@@ -69,12 +69,30 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Stop All, Space, Escape, and natural playback completion hide the playhead.
 - [ ] Save, Export, edits, Undo, Redo, Reset, and Commit continue to target Current regardless of audition choice.
 
+## Zero-crossing selection and forward loops
+
+- [ ] Slow waveform drags show both highlight endpoints jumping live to nearby zero crossings in Current.
+- [ ] Left-to-right and right-to-left drags produce the same snapped range; very short drags never invent an unsnapped endpoint.
+- [ ] While Parent is displayed, dragging maps through Current's crop and the resulting highlight matches after returning to Current.
+- [ ] On a waveform with no sign crossing, selection falls back to its quietest sample without hanging or leaving the valid range.
+- [ ] `Ctrl+A` still selects exact frame 0 through the Current frame count.
+- [ ] Reverse, Normalize, Amplify, fades, Crop, and Set Loop all use the visibly snapped highlight.
+- [ ] Set Loop creates one blue forward-loop region with unmistakable start/end markers; Clear removes it.
+- [ ] Play Loop repeats until Stop All, Space, or Escape; no note or loop remains stuck.
+- [ ] Computer and onscreen notes sustain the loop while held and stop on release; without a loop they retain one-shot behavior.
+- [ ] The 0–50 ms crossfade is clearly audible on difficult joins and remains stable at both limits and on short loops.
+- [ ] Switching Parent/Current during loop playback maps the region and relative playhead position without restarting.
+- [ ] Crop keeps the overlapping loop portion in correct Current-relative coordinates; Undo restores the prior crop and loop exactly.
+- [ ] Loop Set, Clear, and crossfade changes traverse correctly through Undo/Redo.
+- [ ] Reset clears the loop and is undoable; Commit carries the loop onto the promoted Parent and clears old history.
+- [ ] Saved schema-5 recipes contain loop enabled state, range, and crossfade milliseconds.
+
 ## Existing foundation
 
 - [ ] Computer and onscreen keys audition the selected A/B source at different pitches.
 - [ ] Space, Escape, and Stop All stop playback reliably.
 - [ ] A bad WAV path reports an error and preserves Parent and Current.
-- [ ] Save creates readable schema-4 JSON with renderer version, lineage, ordered sample edits, all DSP parameters, explicit bypass states, and crop state.
+- [ ] Save creates readable schema-5 JSON with renderer version, lineage, loop metadata, ordered sample edits, all DSP parameters, explicit bypass states, and crop state.
 - [ ] Export creates a valid mono 16-bit WAV containing Current.
 - [ ] The supplied Tapehead palette is applied consistently and remains legible.
 - [ ] No action leaks through the path-entry overlay.

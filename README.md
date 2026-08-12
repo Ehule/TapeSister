@@ -1,8 +1,8 @@
 # TapeSister
 
-TapeSister is a standalone sample-instrument forge. The current development slice joins its durable Parent/Current sound model to direct A/B audition, a visible playback head, an undoable FT2-informed sample-edit stack, pointer-centered waveform navigation, and the deterministic DSP shelf.
+TapeSister is a standalone sample-instrument forge. The current development slice joins its durable Parent/Current sound model to zero-crossing sample selection, seamless forward loops, direct A/B audition, a visible playback head, an undoable FT2-informed sample-edit stack, pointer-centered waveform navigation, and the deterministic DSP shelf.
 
-![TapeSister Parent/Current A/B audition and playhead](docs/ab-playhead-preview.png)
+![TapeSister zero-snapped forward loop editor](docs/loop-editor-preview.png)
 
 ## Parent and Current
 
@@ -24,6 +24,14 @@ The **Parent** and **Current** buttons choose what every playback trigger auditi
 Play All and keyboard notes use the complete chosen source. Play Selection and Play Displayed map Current's crop-relative range back to the matching frames in Parent, so comparisons remain meaningful after cropping. Switching Parent/Current during playback preserves fractional progress through the active range instead of restarting it.
 
 A source-colored playhead is visible only while audio is running: green identifies Parent playback and amber identifies Current playback. Stop All, Space, Escape, and natural playback completion hide it.
+
+## Zero-snapped selection and forward loops
+
+Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in Current. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop. Parent view maps pointer positions through Current's crop before snapping. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
+
+The Loop page turns the current selection into one forward loop, clears it, plays it continuously, and sets a 0–50 ms wrap crossfade. Blue boundaries and handles distinguish the loop from the purple/cyan selection. Computer and onscreen notes sustain the loop only while held; Play Loop continues until Stop All, Space, or Escape.
+
+Parent/Current A/B maps the same loop through the crop offset and preserves relative playback progress. Loop range and crossfade participate in Undo/Redo. Reset clears them and can be undone; Commit carries the completed loop onto the newly promoted Parent while clearing prior edit history. Recipe schema 5 stores the loop enable state, range, and crossfade.
 
 ## DSP shelf
 
@@ -48,7 +56,7 @@ Every stage is equally available to generated and imported Parents. Bypass is ex
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
-- canonical schema-4 JSON recipe saving with renderer version, lineage, sample-edit stack, DSP parameters, and explicit bypass states; and
+- canonical schema-5 JSON recipe saving with renderer version, lineage, loop metadata, sample-edit stack, DSP parameters, and explicit bypass states; and
 - mono 16-bit Current export.
 
 Sample edits run deterministically between the preserved Parent and the live DSP. With no selection they affect the whole Current; with a selection they affect only that range. Commit prints the heard result into the next Parent generation and clears both the edit stack and Undo/Redo history.
@@ -113,4 +121,4 @@ Pass a WAV path on the command line, drag a WAV onto the window, or choose it th
 - Browser parent directory: `Backspace` while the file list is focused
 - Browser confirm/cancel: `Enter` / `Escape`
 
-Cut/copy/paste, loop editing, deeper synthesis/filter/shaper stages, and full genealogy/propagation remain separate, visually verified slices.
+Cut/copy/paste, ping-pong/reverse/multiple loops, automatic loop candidates, deeper synthesis/filter/shaper stages, and full genealogy/propagation remain separate, visually verified slices.

@@ -22,7 +22,8 @@ typedef enum {
     TS_FX_EDIT = 0,
     TS_FX_NOISE,
     TS_FX_DELAY,
-    TS_FX_SPACE
+    TS_FX_SPACE,
+    TS_FX_LOOP
 } TsFxPage;
 
 typedef struct {

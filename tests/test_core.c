@@ -80,6 +80,26 @@ int main(void)
     CHECK(ts_sample_clone(&copy, &a, error, sizeof(error)));
     CHECK(ts_sample_hash(&copy) == ts_sample_hash(&a));
 
+    {
+        float crossings[] = {0.8f, 0.5f, -0.2f, -0.4f, 0.1f};
+        float no_crossings[] = {0.8f, 0.2f, 0.5f};
+        TsSample crossing_sample = {crossings, 5, 44100, "crossings"};
+        TsSample fallback_sample = {no_crossings, 3, 44100, "fallback"};
+        TsInstrument snap_instrument = {0};
+        CHECK(ts_sample_nearest_zero_crossing(&crossing_sample, 3) == 2);
+        CHECK(ts_sample_nearest_zero_crossing(&crossing_sample, 4) == 4);
+        CHECK(ts_sample_nearest_zero_crossing(&fallback_sample, 2) == 1);
+        snap_instrument.current = crossing_sample;
+        ts_instrument_set_selection_snapped(&snap_instrument, 3, 4);
+        CHECK(snap_instrument.has_selection);
+        CHECK(snap_instrument.selection_first == 2 && snap_instrument.selection_last == 4);
+        ts_instrument_set_selection_snapped(&snap_instrument, 4, 3);
+        CHECK(snap_instrument.selection_first == 2 && snap_instrument.selection_last == 4);
+        ts_instrument_set_selection(&snap_instrument, 0, crossing_sample.frames);
+        CHECK(snap_instrument.selection_first == 0 &&
+              snap_instrument.selection_last == crossing_sample.frames);
+    }
+
     TsProcessRecipe neutral;
     ts_process_recipe_reset(&neutral);
     CHECK(ts_sample_process(&dry, &a, 0, a.frames, &neutral, error, sizeof(error)));
@@ -216,22 +236,73 @@ int main(void)
         ts_instrument_set_selection(&audition, 100, 1000);
         CHECK(ts_instrument_crop_selection(&audition, error, sizeof(error)));
         CHECK(audition.crop_first == 100);
-        ts_instrument_set_selection(&audition, 10, 20);
+        ts_instrument_set_selection(&audition, 10, 500);
         audition.view_first = 5;
-        audition.view_last = 50;
+        audition.view_last = 550;
         CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
                                TS_AUDITION_SELECTION, &plan));
-        CHECK(plan.sample == &audition.current && plan.first == 10 && plan.last == 20);
+        CHECK(plan.sample == &audition.current && plan.first == 10 && plan.last == 500);
         CHECK(ts_audition_plan(&audition, TS_AUDITION_PARENT,
                                TS_AUDITION_SELECTION, &plan));
-        CHECK(plan.sample == &audition.parent && plan.first == 110 && plan.last == 120);
+        CHECK(plan.sample == &audition.parent && plan.first == 110 && plan.last == 600);
         CHECK(ts_audition_plan(&audition, TS_AUDITION_PARENT,
                                TS_AUDITION_DISPLAYED, &plan));
-        CHECK(plan.first == 105 && plan.last == 150);
+        CHECK(plan.first == 105 && plan.last == 650);
         CHECK(ts_audition_plan(&audition, TS_AUDITION_PARENT,
                                TS_AUDITION_ALL, &plan));
         CHECK(plan.first == 0 && plan.last == audition.parent.frames);
         CHECK(fabs(ts_audition_map_progress(15.0, 10, 20, 110, 120) - 115.0) < 0.000001);
+        CHECK(ts_instrument_set_loop_from_selection(&audition, error, sizeof(error)));
+        CHECK(audition.has_loop);
+        CHECK(audition.loop_first ==
+              ts_sample_nearest_zero_crossing(&audition.current, 10));
+        CHECK(audition.loop_last ==
+              ts_sample_nearest_zero_crossing(&audition.current, 500));
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT, TS_AUDITION_LOOP, &plan));
+        CHECK(plan.first == audition.loop_first && plan.last == audition.loop_last);
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_PARENT, TS_AUDITION_LOOP, &plan));
+        CHECK(plan.first == audition.loop_first + audition.crop_first);
+        CHECK(plan.last == audition.loop_last + audition.crop_first);
+        CHECK(ts_audition_crossfade_frames(&plan, audition.loop_crossfade_ms) <=
+              (plan.last - plan.first) / 2u);
+        CHECK(ts_instrument_clear_loop(&audition, error, sizeof(error)));
+        CHECK(!audition.has_loop);
+        CHECK(ts_instrument_undo(&audition, error, sizeof(error)) && audition.has_loop);
+        CHECK(ts_instrument_redo(&audition, error, sizeof(error)) && !audition.has_loop);
+        CHECK(ts_instrument_undo(&audition, error, sizeof(error)) && audition.has_loop);
+        CHECK(ts_instrument_set_loop_crossfade(&audition, 12.5f, error, sizeof(error)));
+        CHECK(fabsf(audition.loop_crossfade_ms - 12.5f) < 0.0001f);
+        CHECK(ts_instrument_undo(&audition, error, sizeof(error)));
+        CHECK(fabsf(audition.loop_crossfade_ms - 8.0f) < 0.0001f);
+        CHECK(ts_instrument_redo(&audition, error, sizeof(error)));
+        CHECK(fabsf(audition.loop_crossfade_ms - 12.5f) < 0.0001f);
+        {
+            size_t loop_first = audition.loop_first;
+            size_t loop_last = audition.loop_last;
+            ts_instrument_set_selection(&audition, loop_first, loop_last);
+            CHECK(ts_instrument_crop_selection(&audition, error, sizeof(error)));
+            CHECK(audition.has_loop && audition.loop_first == 0 &&
+                  audition.loop_last == loop_last - loop_first);
+            CHECK(ts_instrument_undo(&audition, error, sizeof(error)));
+            CHECK(audition.has_loop && audition.loop_first == loop_first &&
+                  audition.loop_last == loop_last);
+            CHECK(ts_instrument_reset_current(&audition, error, sizeof(error)));
+            CHECK(!audition.has_loop);
+            CHECK(ts_instrument_undo(&audition, error, sizeof(error)) && audition.has_loop);
+            CHECK(ts_instrument_commit_current(&audition, error, sizeof(error)));
+            CHECK(audition.has_loop && audition.loop_first == loop_first &&
+                  audition.loop_last == loop_last);
+            CHECK(audition.undo_count == 0 && audition.redo_count == 0);
+        }
+    }
+
+    {
+        float loop_data[] = {1.0f, 1.0f, 0.5f, 0.0f, -0.5f, -1.0f, -1.0f, -1.0f};
+        TsSample loop_sample = {loop_data, 8, 1000, "loop"};
+        float blended = ts_audition_read_looped(&loop_sample, 7.0, 0, 8, 2);
+        CHECK(fabsf(blended) < 0.0001f);
+        CHECK(fabs(ts_audition_wrap_position(8.0, 0, 8, 2) - 2.0) < 0.000001);
+        CHECK(fabs(ts_audition_wrap_position(14.0, 0, 8, 2) - 2.0) < 0.000001);
     }
 
     CHECK(ts_sample_clone(&copy, &committed.current, error, sizeof(error)));
@@ -279,14 +350,18 @@ int main(void)
         ts_instrument_show_all(&committed);
     }
 
+    CHECK(ts_instrument_set_loop_from_selection(&committed, error, sizeof(error)));
+    CHECK(ts_instrument_set_loop_crossfade(&committed, 9.5f, error, sizeof(error)));
     CHECK(ts_instrument_save_recipe(&committed, "test-recipe.tsr", error, sizeof(error)));
-    CHECK(file_contains("test-recipe.tsr", "\"schema\": 4"));
+    CHECK(file_contains("test-recipe.tsr", "\"schema\": 5"));
     CHECK(file_contains("test-recipe.tsr", "\"renderer\": 3"));
     CHECK(file_contains("test-recipe.tsr", "\"bypass\": true"));
     CHECK(file_contains("test-recipe.tsr", "\"generation\": 1"));
     CHECK(file_contains("test-recipe.tsr", "\"ancestor_hash\""));
     CHECK(file_contains("test-recipe.tsr", "\"sample_edits\""));
     CHECK(file_contains("test-recipe.tsr", "\"REVERSE\""));
+    CHECK(file_contains("test-recipe.tsr", "\"loop\": {\"enabled\": true"));
+    CHECK(file_contains("test-recipe.tsr", "\"crossfade_ms\": 9.5"));
     remove("test-recipe.tsr");
     remove("test-roundtrip.wav");
 
@@ -354,6 +429,15 @@ int main(void)
     }
 
     ts_ui_init(&ui);
+    ui.fx_page = TS_FX_LOOP;
+    ts_instrument_show_all(&committed);
+    ts_ui_render(&fb, &ui, &committed);
+    {
+        int loop_x = TS_WAVE_X + (int)(committed.loop_first * TS_WAVE_W /
+                                       committed.current.frames);
+        CHECK(fb.pixels[(TS_WAVE_Y + 10) * TS_UI_WIDTH + loop_x] == 0xff147dffu);
+    }
+    ts_ui_init(&ui);
     ts_instrument_set_selection(&imported, imported.current.frames / 4, imported.current.frames / 2);
     ts_ui_render(&fb, &ui, &imported);
     CHECK(fb.pixels[0] != 0);
@@ -400,6 +484,6 @@ int main(void)
     ts_instrument_free(&generated); ts_instrument_free(&imported); ts_instrument_free(&committed);
     ts_instrument_free(&audition);
     if (failures) return 1;
-    puts("TapeSister Parent/Current, A/B audition, playhead, browser, and editor tests passed");
+    puts("TapeSister zero-snap, loop, A/B audition, browser, and editor tests passed");
     return 0;
 }

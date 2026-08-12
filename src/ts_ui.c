@@ -234,9 +234,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     size_t view_last = showing_parent ? instrument->parent.frames : instrument->view_last;
     size_t selection_first = instrument->selection_first;
     size_t selection_last = instrument->selection_last;
+    size_t loop_first = instrument->loop_first;
+    size_t loop_last = instrument->loop_last;
     if (showing_parent) {
         selection_first += instrument->crop_first;
         selection_last += instrument->crop_first;
+        loop_first += instrument->crop_first;
+        loop_last += instrument->crop_first;
     }
     clear(fb, PAL_DESKTOP);
 
@@ -265,6 +269,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     for (int y = TS_WAVE_Y + 20; y < TS_WAVE_Y + TS_WAVE_H; y += 20)
         rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1, RGB(26, 24, 27));
     rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2, TS_WAVE_W, 1, RGB(74, 67, 75));
+
+    if (instrument->has_loop && loop_last > view_first && loop_first < view_last) {
+        int lx0 = frame_x(loop_first, view_first, view_last);
+        int lx1 = frame_x(loop_last, view_first, view_last);
+        rect(fb, lx0, TS_WAVE_Y, lx1 - lx0, TS_WAVE_H, RGB(5, 24, 48));
+    }
 
     if (instrument->has_selection && selection_last > view_first &&
         selection_first < view_last) {
@@ -295,6 +305,15 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 211, 135, "DROP WAV HERE", RGB(120, 113, 121), 2);
     }
 
+    if (instrument->has_loop && loop_last > view_first && loop_first < view_last) {
+        int lx0 = frame_x(loop_first, view_first, view_last);
+        int lx1 = frame_x(loop_last, view_first, view_last);
+        rect(fb, lx0, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
+        rect(fb, lx1 - 2, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
+        rect(fb, lx0, TS_WAVE_Y, 7, 4, PAL_TUNING);
+        rect(fb, lx1 - 7, TS_WAVE_Y + TS_WAVE_H - 4, 7, 4, PAL_TUNING);
+    }
+
     if (ui->playback_active && ui->playhead_frames > 0) {
         int playhead_x = -1;
         uint32_t playhead_color = ui->playhead_source == TS_AUDITION_PARENT ?
@@ -322,10 +341,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);
     slider(fb, 230, 233, 100, "DRIFT", instrument->process.drift, PAL_TUNING);
-    button(fb, 345, 233, 65, "EDIT", ui->fx_page == TS_FX_EDIT);
-    button(fb, 415, 233, 65, "NOISE", ui->fx_page == TS_FX_NOISE);
-    button(fb, 485, 233, 65, "DELAY", ui->fx_page == TS_FX_DELAY);
-    button(fb, 555, 233, 75, "SPACE", ui->fx_page == TS_FX_SPACE);
+    button(fb, 345, 233, 53, "EDIT", ui->fx_page == TS_FX_EDIT);
+    button(fb, 402, 233, 53, "NOISE", ui->fx_page == TS_FX_NOISE);
+    button(fb, 459, 233, 53, "DELAY", ui->fx_page == TS_FX_DELAY);
+    button(fb, 516, 233, 53, "SPACE", ui->fx_page == TS_FX_SPACE);
+    button(fb, 573, 233, 57, "LOOP", ui->fx_page == TS_FX_LOOP);
 
     if (ui->fx_page == TS_FX_EDIT) {
         button(fb, 10, 261, 94, "REVERSE", 0);
@@ -348,12 +368,20 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         slider(fb, 220, 261, 92, "FEEDBACK", instrument->process.delay_feedback / 0.85f, PAL_VOLUME);
         slider(fb, 322, 261, 92, "DAMP", instrument->process.delay_damping, PAL_TUNING);
         slider(fb, 424, 261, 92, "MIX", instrument->process.delay_mix, PAL_EFFECT);
-    } else {
+    } else if (ui->fx_page == TS_FX_SPACE) {
         button(fb, 10, 261, 94, instrument->process.reverb_enabled ? "SPACE ON" : "SPACE OFF",
                instrument->process.reverb_enabled);
         slider(fb, 118, 261, 120, "DECAY", instrument->process.reverb_decay / 0.9f, PAL_NOTE);
         slider(fb, 250, 261, 120, "DAMP", instrument->process.reverb_damping, PAL_TUNING);
         slider(fb, 382, 261, 120, "MIX", instrument->process.reverb_mix, PAL_EFFECT);
+    } else {
+        char crossfade[32];
+        button(fb, 10, 261, 84, "SET LOOP", instrument->has_loop);
+        button(fb, 99, 261, 84, "CLEAR", 0);
+        button(fb, 188, 261, 94, "PLAY LOOP", ui->playback_active);
+        snprintf(crossfade, sizeof(crossfade), "XFADE %.1F MS", instrument->loop_crossfade_ms);
+        slider(fb, 297, 261, 280, crossfade, instrument->loop_crossfade_ms / 50.0f,
+               PAL_TUNING);
     }
 
     button(fb, 10, 289, 70, "PLAY ALL", 0);

@@ -551,7 +551,11 @@ static TsEditSnapshot snapshot(const TsInstrument *instrument)
     result.selection_last = instrument->selection_last;
     result.view_first = instrument->view_first;
     result.view_last = instrument->view_last;
+    result.loop_first = instrument->loop_first;
+    result.loop_last = instrument->loop_last;
+    result.loop_crossfade_ms = instrument->loop_crossfade_ms;
     result.has_selection = instrument->has_selection;
+    result.has_loop = instrument->has_loop;
     result.process = instrument->process;
     memcpy(result.sample_edits, instrument->sample_edits, sizeof(result.sample_edits));
     result.sample_edit_count = instrument->sample_edit_count;
@@ -582,6 +586,10 @@ static void reset_editor(TsInstrument *instrument)
     instrument->has_selection = 0;
     instrument->view_first = 0;
     instrument->view_last = instrument->parent.frames;
+    instrument->loop_first = 0;
+    instrument->loop_last = 0;
+    instrument->loop_crossfade_ms = 8.0f;
+    instrument->has_loop = 0;
     instrument->sample_edit_count = 0;
     instrument->undo_count = 0;
     instrument->redo_count = 0;
@@ -810,7 +818,11 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
     target.selection_last = 0;
     target.view_first = 0;
     target.view_last = instrument->parent.frames;
+    target.loop_first = 0;
+    target.loop_last = 0;
+    target.loop_crossfade_ms = 8.0f;
     target.has_selection = 0;
+    target.has_loop = 0;
     target.sample_edit_count = 0;
     ts_process_recipe_reset(&target.process);
     target.process.seed = instrument->process.seed;
@@ -825,7 +837,11 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
     instrument->selection_last = 0;
     instrument->view_first = 0;
     instrument->view_last = current.frames;
+    instrument->loop_first = 0;
+    instrument->loop_last = 0;
+    instrument->loop_crossfade_ms = target.loop_crossfade_ms;
     instrument->has_selection = 0;
+    instrument->has_loop = 0;
     instrument->process = target.process;
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
@@ -837,12 +853,20 @@ int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t e
     TsSample parent, current;
     TsProcessRecipe neutral;
     uint64_t prior_hash;
+    size_t loop_first;
+    size_t loop_last;
+    float loop_crossfade_ms;
+    int has_loop;
     if (instrument == NULL || instrument->current.data == NULL || instrument->current.frames == 0) {
         set_error(error, error_size, "No Current to commit");
         return 0;
     }
     ts_sample_init(&parent);
     ts_sample_init(&current);
+    loop_first = instrument->loop_first;
+    loop_last = instrument->loop_last;
+    loop_crossfade_ms = instrument->loop_crossfade_ms;
+    has_loop = instrument->has_loop;
     prior_hash = ts_sample_hash(&instrument->parent);
     if (!ts_sample_clone(&parent, &instrument->current, error, error_size)) return 0;
     snprintf(parent.name, sizeof(parent.name), "G%02u %.116s", instrument->generation + 1u,
@@ -862,6 +886,10 @@ int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t e
     instrument->ancestor_hash = prior_hash;
     ++instrument->generation;
     reset_editor(instrument);
+    instrument->loop_first = loop_first;
+    instrument->loop_last = loop_last;
+    instrument->loop_crossfade_ms = loop_crossfade_ms;
+    instrument->has_loop = has_loop && loop_first < loop_last && loop_last <= current.frames;
     set_error(error, error_size, "");
     return 1;
 }
@@ -882,11 +910,135 @@ void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t 
     instrument->has_selection = first < last;
 }
 
+static int is_zero_crossing(const TsSample *sample, size_t frame)
+{
+    float before;
+    float after;
+    if (sample == NULL || sample->data == NULL || frame >= sample->frames) return 0;
+    after = sample->data[frame];
+    if (after == 0.0f) return 1;
+    if (frame == 0) return 0;
+    before = sample->data[frame - 1u];
+    return before == 0.0f || (before < 0.0f && after > 0.0f) ||
+           (before > 0.0f && after < 0.0f);
+}
+
+size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
+{
+    size_t target;
+    size_t maximum_distance;
+    size_t closest = 0;
+    float closest_level;
+    if (sample == NULL || sample->data == NULL || sample->frames == 0) return 0;
+    target = frame >= sample->frames ? sample->frames - 1u : frame;
+    maximum_distance = target > sample->frames - 1u - target ?
+                       target : sample->frames - 1u - target;
+    for (size_t distance = 0; distance <= maximum_distance; ++distance) {
+        if (distance <= target) {
+            size_t left = target - distance;
+            if (is_zero_crossing(sample, left)) return left;
+        }
+        if (distance > 0 && target + distance < sample->frames &&
+            is_zero_crossing(sample, target + distance)) return target + distance;
+    }
+    closest_level = fabsf(sample->data[0]);
+    for (size_t i = 1; i < sample->frames; ++i) {
+        float level = fabsf(sample->data[i]);
+        if (level < closest_level) {
+            closest = i;
+            closest_level = level;
+        }
+    }
+    return closest;
+}
+
+void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last)
+{
+    size_t snapped_first;
+    size_t snapped_last;
+    if (instrument == NULL || instrument->current.data == NULL) return;
+    snapped_first = ts_sample_nearest_zero_crossing(&instrument->current, first);
+    snapped_last = ts_sample_nearest_zero_crossing(&instrument->current, last);
+    if (snapped_first > snapped_last) {
+        size_t swap = snapped_first;
+        snapped_first = snapped_last;
+        snapped_last = swap;
+    }
+    instrument->selection_first = snapped_first;
+    instrument->selection_last = snapped_last;
+    instrument->has_selection = snapped_first < snapped_last;
+}
+
 void ts_instrument_clear_selection(TsInstrument *instrument)
 {
     instrument->selection_first = 0;
     instrument->selection_last = 0;
     instrument->has_selection = 0;
+}
+
+int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
+                                          char *error, size_t error_size)
+{
+    size_t first;
+    size_t last;
+    if (instrument == NULL || !instrument->has_selection) {
+        set_error(error, error_size, "Select a range before setting a loop");
+        return 0;
+    }
+    first = ts_sample_nearest_zero_crossing(&instrument->current,
+                                            instrument->selection_first);
+    last = ts_sample_nearest_zero_crossing(&instrument->current,
+                                           instrument->selection_last);
+    if (first > last) {
+        size_t swap = first;
+        first = last;
+        last = swap;
+    }
+    if (last <= first + 1u) {
+        set_error(error, error_size, "Selection is too short for a loop");
+        return 0;
+    }
+    begin_edit(instrument);
+    instrument->selection_first = first;
+    instrument->selection_last = last;
+    instrument->has_selection = 1;
+    instrument->loop_first = first;
+    instrument->loop_last = last;
+    instrument->has_loop = 1;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_clear_loop(TsInstrument *instrument, char *error, size_t error_size)
+{
+    if (instrument == NULL || !instrument->has_loop) {
+        set_error(error, error_size, "No loop to clear");
+        return 0;
+    }
+    begin_edit(instrument);
+    instrument->loop_first = 0;
+    instrument->loop_last = 0;
+    instrument->has_loop = 0;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_set_loop_crossfade(TsInstrument *instrument, float milliseconds,
+                                     char *error, size_t error_size)
+{
+    if (instrument == NULL) {
+        set_error(error, error_size, "No instrument for loop crossfade");
+        return 0;
+    }
+    milliseconds = clampf(milliseconds, 0.0f, 50.0f);
+    if (fabsf(milliseconds - instrument->loop_crossfade_ms) < 0.0001f) {
+        set_error(error, error_size, "Loop crossfade unchanged");
+        return 0;
+    }
+    begin_edit(instrument);
+    instrument->loop_crossfade_ms = milliseconds;
+    set_error(error, error_size, "");
+    return 1;
 }
 
 int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t error_size)
@@ -915,6 +1067,15 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
         edit.last = kept_last - instrument->selection_first;
         target.sample_edits[target.sample_edit_count++] = edit;
     }
+    if (instrument->has_loop) {
+        size_t kept_first = instrument->loop_first > instrument->selection_first ?
+                            instrument->loop_first : instrument->selection_first;
+        size_t kept_last = instrument->loop_last < instrument->selection_last ?
+                           instrument->loop_last : instrument->selection_last;
+        target.has_loop = kept_last > kept_first + 1u;
+        target.loop_first = target.has_loop ? kept_first - instrument->selection_first : 0;
+        target.loop_last = target.has_loop ? kept_last - instrument->selection_first : 0;
+    }
     target.selection_first = 0;
     target.selection_last = 0;
     target.view_first = 0;
@@ -927,6 +1088,9 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
     instrument->current = current;
     instrument->crop_first = new_first;
     instrument->crop_last = new_last;
+    instrument->loop_first = target.loop_first;
+    instrument->loop_last = target.loop_last;
+    instrument->has_loop = target.has_loop;
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
     ts_instrument_clear_selection(instrument);
@@ -1050,7 +1214,11 @@ static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
     instrument->selection_last = target.selection_last;
     instrument->view_first = target.view_first;
     instrument->view_last = target.view_last;
+    instrument->loop_first = target.loop_first;
+    instrument->loop_last = target.loop_last;
+    instrument->loop_crossfade_ms = target.loop_crossfade_ms;
     instrument->has_selection = target.has_selection;
+    instrument->has_loop = target.has_loop;
     instrument->process = target.process;
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
@@ -1127,7 +1295,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     }
     source = instrument->source_kind == TS_SOURCE_IMPORTED ? "imported" :
              instrument->source_kind == TS_SOURCE_COMMITTED ? "committed" : "generated";
-    fputs("{\n  \"schema\": 4,\n  \"renderer\": 3,\n  \"source\": ", f);
+    fputs("{\n  \"schema\": 5,\n  \"renderer\": 3,\n  \"source\": ", f);
     write_json_string(f, source);
     fputs(",\n  \"parent_name\": ", f);
     write_json_string(f, instrument->parent.name);
@@ -1155,13 +1323,17 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
             "\"mix\": %.9g}\n"
             "  },\n"
             "  \"crop\": [%zu, %zu],\n"
+            "  \"loop\": {\"enabled\": %s, \"range\": [%zu, %zu], "
+            "\"crossfade_ms\": %.9g},\n"
             "  \"sample_edits\": [",
             instrument->process.delay_enabled ? "false" : "true",
             instrument->process.delay_seconds, instrument->process.delay_feedback,
             instrument->process.delay_damping, instrument->process.delay_mix,
             instrument->process.reverb_enabled ? "false" : "true",
             instrument->process.reverb_decay, instrument->process.reverb_damping,
-            instrument->process.reverb_mix, instrument->crop_first, instrument->crop_last);
+            instrument->process.reverb_mix, instrument->crop_first, instrument->crop_last,
+            instrument->has_loop ? "true" : "false", instrument->loop_first,
+            instrument->loop_last, instrument->loop_crossfade_ms);
     for (int i = 0; i < instrument->sample_edit_count; ++i) {
         const TsSampleEdit *edit = &instrument->sample_edits[i];
         if (i > 0) fputs(",", f);

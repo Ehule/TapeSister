@@ -84,7 +84,11 @@ typedef struct {
     size_t selection_last;
     size_t view_first;
     size_t view_last;
+    size_t loop_first;
+    size_t loop_last;
+    float loop_crossfade_ms;
     int has_selection;
+    int has_loop;
     TsProcessRecipe process;
     TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
     int sample_edit_count;
@@ -104,7 +108,11 @@ typedef struct {
     size_t selection_last;
     size_t view_first;
     size_t view_last;
+    size_t loop_first;
+    size_t loop_last;
+    float loop_crossfade_ms;
     int has_selection;
+    int has_loop;
     TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
     int sample_edit_count;
     TsEditSnapshot undo[TS_HISTORY_DEPTH];
@@ -136,7 +144,14 @@ int ts_instrument_set_process(TsInstrument *instrument, const TsProcessRecipe *p
 int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t error_size);
 void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t last);
+void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last);
 void ts_instrument_clear_selection(TsInstrument *instrument);
+size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame);
+int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
+                                          char *error, size_t error_size);
+int ts_instrument_clear_loop(TsInstrument *instrument, char *error, size_t error_size);
+int ts_instrument_set_loop_crossfade(TsInstrument *instrument, float milliseconds,
+                                     char *error, size_t error_size);
 int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind kind,
                                     float amount, char *error, size_t error_size);
