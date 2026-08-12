@@ -5,6 +5,19 @@
 
 #define RGB(r,g,b) (0xff000000u | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
 
+/* Temporary visual authority: tapehead.pal supplied by the user. */
+#define PAL_TEXT RGB(255, 28, 0)
+#define PAL_BLOCK RGB(45, 0, 57)
+#define PAL_BLOCK_TEXT RGB(0, 158, 227)
+#define PAL_MOUSE RGB(255, 210, 101)
+#define PAL_DESKTOP RGB(28, 28, 28)
+#define PAL_BUTTON RGB(93, 85, 93)
+#define PAL_NOTE RGB(255, 231, 0)
+#define PAL_INSTRUMENT RGB(24, 255, 0)
+#define PAL_VOLUME RGB(255, 28, 231)
+#define PAL_TUNING RGB(20, 125, 255)
+#define PAL_EFFECT RGB(53, 255, 255)
+
 static void clear(TsFramebuffer *fb, uint32_t color)
 {
     for (int i = 0; i < TS_UI_WIDTH * TS_UI_HEIGHT; ++i) fb->pixels[i] = color;
@@ -16,6 +29,7 @@ static void rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t color)
     if (y < 0) { h += y; y = 0; }
     if (x + w > TS_UI_WIDTH) w = TS_UI_WIDTH - x;
     if (y + h > TS_UI_HEIGHT) h = TS_UI_HEIGHT - y;
+    if (w <= 0 || h <= 0) return;
     for (int py = y; py < y + h; ++py)
         for (int px = x; px < x + w; ++px) fb->pixels[py * TS_UI_WIDTH + px] = color;
 }
@@ -92,129 +106,159 @@ static void text(TsFramebuffer *fb, int x, int y, const char *value, uint32_t co
         const char *bits = glyph(c);
         for (int gy = 0; gy < 7; ++gy)
             for (int gx = 0; gx < 5; ++gx)
-                if (bits[gy * 5 + gx] == '1') rect(fb, x + gx * scale, y + gy * scale, scale, scale, color);
+                if (bits[gy * 5 + gx] == '1')
+                    rect(fb, x + gx * scale, y + gy * scale, scale, scale, color);
     }
 }
 
-static void frame(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t dark, uint32_t light)
+static void frame(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t fill, uint32_t light)
 {
-    rect(fb, x, y, w, h, dark);
+    rect(fb, x, y, w, h, fill);
     rect(fb, x, y, w, 2, light);
     rect(fb, x, y, 2, h, light);
-    rect(fb, x, y + h - 2, w, 2, RGB(21, 22, 29));
-    rect(fb, x + w - 2, y, 2, h, RGB(21, 22, 29));
+    rect(fb, x, y + h - 2, w, 2, RGB(14, 14, 14));
+    rect(fb, x + w - 2, y, 2, h, RGB(14, 14, 14));
 }
 
 static void button(TsFramebuffer *fb, int x, int y, int w, const char *label, int active)
 {
-    uint32_t fill = active ? RGB(184, 108, 78) : RGB(64, 67, 79);
-    frame(fb, x, y, w, 24, fill, active ? RGB(242, 165, 108) : RGB(126, 131, 145));
-    text(fb, x + 8, y + 8, label, RGB(238, 232, 215), 1);
+    uint32_t fill = active ? PAL_BLOCK : PAL_BUTTON;
+    frame(fb, x, y, w, 23, fill, active ? PAL_MOUSE : RGB(140, 133, 140));
+    text(fb, x + 6, y + 8, label, active ? PAL_BLOCK_TEXT : RGB(245, 242, 235), 1);
 }
 
-static void slider(TsFramebuffer *fb, int x, int y, int w, const char *label, float value)
+static void slider(TsFramebuffer *fb, int x, int y, int w, const char *label, float value,
+                   uint32_t color)
 {
-    text(fb, x, y, label, RGB(187, 189, 195), 1);
-    rect(fb, x, y + 14, w, 6, RGB(28, 29, 36));
-    rect(fb, x + 1, y + 15, (int)((w - 2) * value), 4, RGB(144, 95, 164));
+    text(fb, x, y, label, RGB(222, 218, 214), 1);
+    rect(fb, x, y + 13, w, 6, RGB(12, 12, 12));
+    rect(fb, x + 1, y + 14, (int)((w - 2) * value), 4, color);
     int knob = x + (int)((w - 6) * value);
-    rect(fb, knob, y + 11, 6, 12, RGB(223, 174, 109));
+    rect(fb, knob, y + 10, 6, 12, PAL_MOUSE);
 }
 
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
-    ui->recipe.seed = 0x54415045u;
-    ui->recipe.body = 0.62f;
-    ui->recipe.edge = 0.34f;
-    ui->recipe.drift = 0.23f;
-    ui->recipe.seconds = 2.0f;
-    ui->recipe.frequency = 130.8128f;
     ui->active_key = -1;
-    snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR GENERATE");
+    snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR GENERATE A PARENT");
 }
 
-void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsSample *sample)
+static int frame_x(size_t frame_index, size_t view_first, size_t view_last)
 {
-    const uint32_t bg = RGB(38, 39, 48);
-    const uint32_t panel = RGB(52, 54, 65);
-    const uint32_t ink = RGB(232, 225, 210);
-    const uint32_t purple = RGB(162, 102, 181);
-    clear(fb, bg);
+    if (view_last <= view_first) return TS_WAVE_X;
+    if (frame_index <= view_first) return TS_WAVE_X;
+    if (frame_index >= view_last) return TS_WAVE_X + TS_WAVE_W;
+    return TS_WAVE_X + (int)((frame_index - view_first) * TS_WAVE_W /
+                             (view_last - view_first));
+}
 
-    rect(fb, 0, 0, TS_UI_WIDTH, 32, RGB(26, 27, 34));
-    text(fb, 14, 9, "TAPESISTER", RGB(234, 165, 101), 2);
+void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
+{
+    const TsSample *sample = &instrument->current;
+    size_t view_first = instrument->view_first;
+    size_t view_last = instrument->view_last;
+    clear(fb, PAL_DESKTOP);
+
+    rect(fb, 0, 0, TS_UI_WIDTH, 32, RGB(12, 12, 12));
+    text(fb, 14, 9, "TAPESISTER", PAL_TEXT, 2);
     button(fb, 447, 4, 82, "SAVE", 0);
     button(fb, 535, 4, 95, "EXPORT", 0);
 
-    frame(fb, 10, 42, 620, 202, panel, RGB(91, 94, 107));
-    text(fb, 20, 52, sample && sample->frames ? sample->name : "NO SAMPLE", ink, 1);
-    if (sample && sample->frames) {
-        char info[96];
-        snprintf(info, sizeof(info), "%u HZ  %.2F SEC  PEAK %.2F", sample->sample_rate,
-                 (double)sample->frames / sample->sample_rate, ts_sample_peak(sample));
-        text(fb, 360, 52, info, RGB(153, 156, 166), 1);
+    frame(fb, 10, 40, 620, 188, RGB(42, 39, 42), RGB(105, 98, 105));
+    if (instrument->parent.frames) {
+        char parent[96], info[112];
+        snprintf(parent, sizeof(parent), "PARENT %.34s", instrument->parent.name);
+        snprintf(info, sizeof(info), "CURRENT %u HZ %.2F SEC",
+                 sample->sample_rate, (double)sample->frames / sample->sample_rate);
+        text(fb, 20, 49, parent, PAL_INSTRUMENT, 1);
+        text(fb, 390, 49, info, PAL_EFFECT, 1);
+    } else {
+        text(fb, 20, 49, "NO PARENT", PAL_INSTRUMENT, 1);
     }
 
-    rect(fb, 20, 70, 600, 154, RGB(17, 18, 23));
-    for (int x = 20; x < 620; x += 30) rect(fb, x, 70, 1, 154, RGB(31, 32, 40));
-    for (int y = 90; y < 224; y += 20) rect(fb, 20, y, 600, 1, RGB(31, 32, 40));
-    rect(fb, 20, 146, 600, 1, RGB(71, 63, 77));
-    if (sample && sample->frames) {
-        for (int x = 0; x < 600; ++x) {
-            size_t begin = (size_t)x * sample->frames / 600u;
-            size_t end = (size_t)(x + 1) * sample->frames / 600u;
+    rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
+    for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; x += 30)
+        rect(fb, x, TS_WAVE_Y, 1, TS_WAVE_H, RGB(26, 24, 27));
+    for (int y = TS_WAVE_Y + 20; y < TS_WAVE_Y + TS_WAVE_H; y += 20)
+        rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1, RGB(26, 24, 27));
+    rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2, TS_WAVE_W, 1, RGB(74, 67, 75));
+
+    if (instrument->has_selection && instrument->selection_last > view_first &&
+        instrument->selection_first < view_last) {
+        int sx0 = frame_x(instrument->selection_first, view_first, view_last);
+        int sx1 = frame_x(instrument->selection_last, view_first, view_last);
+        rect(fb, sx0, TS_WAVE_Y, sx1 - sx0, TS_WAVE_H, PAL_BLOCK);
+    }
+    if (sample->frames && view_last > view_first) {
+        if (view_last > sample->frames) view_last = sample->frames;
+        for (int x = 0; x < TS_WAVE_W; ++x) {
+            size_t begin = view_first + (size_t)x * (view_last - view_first) / TS_WAVE_W;
+            size_t end = view_first + (size_t)(x + 1) * (view_last - view_first) / TS_WAVE_W;
             if (end <= begin) end = begin + 1;
             float low = 1.0f, high = -1.0f;
             for (size_t i = begin; i < end && i < sample->frames; ++i) {
                 if (sample->data[i] < low) low = sample->data[i];
                 if (sample->data[i] > high) high = sample->data[i];
             }
-            int y0 = 146 - (int)(high * 68.0f);
-            int y1 = 146 - (int)(low * 68.0f);
-            line(fb, 20 + x, y0, 20 + x, y1, purple);
+            int middle = TS_WAVE_Y + TS_WAVE_H / 2;
+            int y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
+            int y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
+            size_t at = begin;
+            uint32_t color = instrument->has_selection && at >= instrument->selection_first &&
+                             at < instrument->selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
+            line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
         }
     } else {
-        text(fb, 211, 139, "DROP WAV HERE", RGB(101, 103, 114), 2);
+        text(fb, 211, 135, "DROP WAV HERE", RGB(120, 113, 121), 2);
     }
 
-    button(fb, 10, 254, 86, "LOAD WAV", ui->path_entry);
-    button(fb, 102, 254, 96, "GENERATE", 0);
-    button(fb, 204, 254, 82, "RESEED", 0);
-    button(fb, 544, 254, 86, "STOP ALL", 0);
-    slider(fb, 304, 254, 62, "BODY", ui->recipe.body);
-    slider(fb, 383, 254, 62, "EDGE", ui->recipe.edge);
-    slider(fb, 462, 254, 62, "DRIFT", ui->recipe.drift);
+    button(fb, 10, 234, 74, "LOAD", ui->path_entry);
+    button(fb, 89, 234, 86, "GENERATE", 0);
+    button(fb, 180, 234, 72, "RESEED", 0);
+    slider(fb, 267, 234, 70, "BODY", instrument->process.body, PAL_INSTRUMENT);
+    slider(fb, 354, 234, 70, "EDGE", instrument->process.edge, PAL_VOLUME);
+    slider(fb, 441, 234, 70, "DRIFT", instrument->process.drift, PAL_TUNING);
+    button(fb, 540, 234, 90, "STOP ALL", 0);
 
-    text(fb, 11, 290, "PLAY: Z S X D C V G B H N J M   UPPER OCTAVE: Q 2 W 3 E R 5 T 6 Y 7 U", RGB(165, 166, 175), 1);
-    const int white_x = 10, white_y = 310, white_w = 43, white_h = 69;
+    button(fb, 10, 262, 74, "PLAY ALL", 0);
+    button(fb, 89, 262, 76, "PLAY SEL", 0);
+    button(fb, 170, 262, 82, "PLAY VIEW", 0);
+    button(fb, 257, 262, 58, "CROP", 0);
+    button(fb, 320, 262, 82, "ZOOM SEL", 0);
+    button(fb, 407, 262, 82, "SHOW ALL", 0);
+    button(fb, 494, 262, 62, "UNDO", instrument->undo_count > 0);
+    button(fb, 561, 262, 69, "REDO", instrument->redo_count > 0);
+
+    text(fb, 11, 291, "SELECT WAVEFORM WITH MOUSE   PLAY KEYS Z-M AND Q-U", RGB(184, 180, 184), 1);
+    const int white_x = 10, white_y = 306, white_w = 43, white_h = 73;
     const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
     for (int i = 0; i < 14; ++i) {
         int active = ui->active_key == i;
         rect(fb, white_x + i * white_w, white_y, white_w - 1, white_h,
-             active ? RGB(226, 164, 104) : RGB(218, 212, 195));
-        text(fb, white_x + i * white_w + 23, white_y + 54, labels[i], RGB(35, 36, 43), 1);
+             active ? PAL_MOUSE : RGB(220, 216, 207));
+        text(fb, white_x + i * white_w + 23, white_y + 58, labels[i], RGB(24, 24, 24), 1);
     }
     const int black_after[] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
     const int semitones[] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
     for (int i = 0; i < 10; ++i) {
         int key = semitones[i];
         int active = ui->active_key == key;
-        rect(fb, white_x + (black_after[i] + 1) * white_w - 16, white_y, 31, 42,
-             active ? RGB(172, 92, 119) : RGB(31, 32, 39));
+        rect(fb, white_x + (black_after[i] + 1) * white_w - 16, white_y, 31, 44,
+             active ? PAL_VOLUME : RGB(18, 18, 18));
     }
-    rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(25, 26, 32));
-    text(fb, 8, 389, ui->status, RGB(194, 188, 174), 1);
+    rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
+    text(fb, 8, 389, ui->status, PAL_MOUSE, 1);
 
     if (ui->path_entry) {
-        frame(fb, 58, 126, 524, 88, RGB(55, 57, 69), RGB(219, 161, 98));
-        text(fb, 72, 140, "LOAD WAV PATH", RGB(238, 225, 204), 1);
-        rect(fb, 72, 158, 496, 25, RGB(19, 20, 25));
+        frame(fb, 58, 126, 524, 88, PAL_BUTTON, PAL_MOUSE);
+        text(fb, 72, 140, "LOAD WAV PATH", PAL_NOTE, 1);
+        rect(fb, 72, 158, 496, 25, RGB(8, 8, 8));
         const char *shown = ui->path[0] ? ui->path : "TYPE PATH OR DROP FILE";
         size_t length = strlen(shown);
         if (length > 80) shown += length - 80;
-        text(fb, 78, 167, shown, RGB(202, 198, 188), 1);
-        text(fb, 72, 192, "ENTER LOADS   ESC CANCELS", RGB(151, 153, 164), 1);
+        text(fb, 78, 167, shown, PAL_EFFECT, 1);
+        text(fb, 72, 192, "ENTER LOADS   ESC CANCELS", RGB(210, 205, 210), 1);
     }
 }
 
@@ -236,11 +280,11 @@ int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path)
 
 int ts_ui_key_from_point(int x, int y)
 {
-    if (x < 10 || x >= 622 || y < 310 || y >= 379) return -1;
+    if (x < 10 || x >= 622 || y < 306 || y >= 379) return -1;
     const int white_w = 43;
     const int black_after[] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
     const int semitones[] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
-    if (y < 352) {
+    if (y < 350) {
         for (int i = 0; i < 10; ++i) {
             int left = 10 + (black_after[i] + 1) * white_w - 16;
             if (x >= left && x < left + 31) return semitones[i];

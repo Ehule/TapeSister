@@ -1,0 +1,18 @@
+; Tapehead Edition palette
+; Temporary visual authority for the TapeSister foundation revision.
+
+[TapeheadPalette]
+PatternText=#FF1C00
+BlockMark=#2D0039
+TextOnBlock=#009EE3
+Mouse=#FFD265
+Desktop=#1C1C1C
+Buttons=#5D555D
+PatternNote=#FFE700
+PatternInstrument=#18FF00
+PatternVolume=#FF1CE7
+PatternTuning=#147DFF
+PatternEffect=#35FFFF
+PatternEmpty=#5900FF
+DesktopContrast=52
+ButtonsContrast=57

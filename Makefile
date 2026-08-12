@@ -20,7 +20,7 @@ test: tapesister_core_tests
 	./tapesister_core_tests
 
 screenshot: tapesister_render_demo
-	./tapesister_render_demo artifacts/tapesister-first-slice.ppm
+	./tapesister_render_demo artifacts/tapesister-parent-current.ppm
 
 clean:
 	rm -f tapesister tapesister_core_tests tapesister_render_demo test-roundtrip.wav artifacts/*.ppm

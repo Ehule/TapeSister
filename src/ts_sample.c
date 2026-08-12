@@ -12,9 +12,7 @@
 
 static void set_error(char *dst, size_t size, const char *message)
 {
-    if (dst != NULL && size > 0) {
-        snprintf(dst, size, "%s", message);
-    }
+    if (dst != NULL && size > 0) snprintf(dst, size, "%s", message);
 }
 
 static uint16_t le16(const unsigned char *p)
@@ -45,6 +43,11 @@ static float clampf(float value, float low, float high)
     return value < low ? low : value > high ? high : value;
 }
 
+static size_t clamps(size_t value, size_t high)
+{
+    return value > high ? high : value;
+}
+
 static uint32_t rng_next(uint32_t *state)
 {
     uint32_t x = *state == 0 ? 0x6d2b79f5u : *state;
@@ -55,9 +58,19 @@ static uint32_t rng_next(uint32_t *state)
     return x;
 }
 
+static uint32_t advance_seed(uint32_t seed)
+{
+    return seed * 1664525u + 1013904223u;
+}
+
+static float rng_unit(uint32_t *state)
+{
+    return (float)(rng_next(state) & 0x00ffffffu) / 16777215.0f;
+}
+
 static float rng_bipolar(uint32_t *state)
 {
-    return ((float)(rng_next(state) & 0x00ffffffu) / 8388607.5f) - 1.0f;
+    return rng_unit(state) * 2.0f - 1.0f;
 }
 
 void ts_sample_init(TsSample *sample)
@@ -69,6 +82,32 @@ void ts_sample_free(TsSample *sample)
 {
     free(sample->data);
     ts_sample_init(sample);
+}
+
+int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, size_t error_size)
+{
+    float *copy;
+    if (source == NULL || source->data == NULL || source->frames == 0) {
+        set_error(error, error_size, "No sample to copy");
+        return 0;
+    }
+    if (source->frames > SIZE_MAX / sizeof(float)) {
+        set_error(error, error_size, "Sample is too large to copy");
+        return 0;
+    }
+    copy = (float *)malloc(source->frames * sizeof(float));
+    if (copy == NULL) {
+        set_error(error, error_size, "Out of memory while copying sample");
+        return 0;
+    }
+    memcpy(copy, source->data, source->frames * sizeof(float));
+    ts_sample_free(destination);
+    destination->data = copy;
+    destination->frames = source->frames;
+    destination->sample_rate = source->sample_rate;
+    snprintf(destination->name, sizeof(destination->name), "%s", source->name);
+    set_error(error, error_size, "");
+    return 1;
 }
 
 static float decode_pcm(const unsigned char *p, uint16_t format, uint16_t bits)
@@ -139,8 +178,9 @@ int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t e
 
     if ((format != 1 && format != 3) || channels == 0 || channels > 32 || rate < 1000 ||
         block_align == 0 || data_offset < 0 || data_size < block_align ||
-        !((format == 3 && bits == 32) || (format == 1 && (bits == 8 || bits == 16 || bits == 24 || bits == 32)))) {
-        set_error(error, error_size, "Unsupported or incomplete WAV (PCM/float mono or multichannel required)");
+        !((format == 3 && bits == 32) ||
+          (format == 1 && (bits == 8 || bits == 16 || bits == 24 || bits == 32)))) {
+        set_error(error, error_size, "Unsupported or incomplete WAV (PCM/float required)");
         fclose(f);
         return 0;
     }
@@ -180,7 +220,8 @@ int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t e
             fclose(f);
             return 0;
         }
-        for (uint16_t ch = 0; ch < channels; ++ch) sum += decode_pcm(frame + ch * bytes, format, bits);
+        for (uint16_t ch = 0; ch < channels; ++ch)
+            sum += decode_pcm(frame + ch * bytes, format, bits);
         decoded[i] = clampf(sum / (float)channels, -1.0f, 1.0f);
     }
     fclose(f);
@@ -191,7 +232,8 @@ int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t e
     sample->sample_rate = rate;
     const char *slash = strrchr(path, '/');
     const char *backslash = strrchr(path, '\\');
-    const char *base = slash && (!backslash || slash > backslash) ? slash + 1 : backslash ? backslash + 1 : path;
+    const char *base = slash && (!backslash || slash > backslash) ? slash + 1 :
+                       backslash ? backslash + 1 : path;
     snprintf(sample->name, sizeof(sample->name), "%s", base);
     set_error(error, error_size, "");
     return 1;
@@ -230,42 +272,143 @@ int ts_sample_save_wav16(const TsSample *sample, const char *path, char *error, 
     return 1;
 }
 
-int ts_sample_generate(TsSample *sample, const TsRecipe *recipe, char *error, size_t error_size)
+const char *ts_generator_name(TsGeneratorKind kind)
+{
+    static const char *names[] = {"TONAL", "METALLIC", "NOISE", "PULSE"};
+    return kind >= 0 && kind < TS_GENERATOR_COUNT ? names[kind] : "UNKNOWN";
+}
+
+int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
+                       char *error, size_t error_size)
 {
     const uint32_t rate = 44100;
     float seconds = clampf(recipe->seconds, 0.1f, 8.0f);
     size_t frames = (size_t)(seconds * (float)rate);
     float *data = (float *)malloc(frames * sizeof(float));
     uint32_t rng = recipe->seed;
-    float body = clampf(recipe->body, 0.0f, 1.0f);
-    float edge = clampf(recipe->edge, 0.0f, 1.0f);
-    float drift = clampf(recipe->drift, 0.0f, 1.0f);
     float frequency = clampf(recipe->frequency, 30.0f, 2000.0f);
-    float phase = 0.0f, wander = 0.0f, noise_lp = 0.0f;
+    float phase = 0.0f, mod_phase = 0.0f, noise_lp = 0.0f, noise_slow = 0.0f;
+    float seed_a = rng_unit(&rng);
+    float seed_b = rng_unit(&rng);
     if (data == NULL) {
         set_error(error, error_size, "Out of memory while generating sample");
         return 0;
     }
     for (size_t i = 0; i < frames; ++i) {
         float t = (float)i / (float)rate;
-        float env = fminf(1.0f, t * 120.0f) * fminf(1.0f, (seconds - t) * 18.0f);
+        float attack = fminf(1.0f, t * (80.0f + seed_a * 180.0f));
+        float tail = fminf(1.0f, (seconds - t) * 24.0f);
+        float decay = expf(-t * (1.2f + seed_b * 3.8f));
         float random = rng_bipolar(&rng);
-        wander += (random - wander) * (0.00003f + drift * 0.0002f);
-        noise_lp += (random - noise_lp) * (0.02f + edge * 0.2f);
-        float hz = frequency * (1.0f + wander * drift * 0.08f);
-        phase += (float)(2.0 * M_PI) * hz / (float)rate;
-        if (phase > (float)(2.0 * M_PI)) phase -= (float)(2.0 * M_PI);
-        float tone = sinf(phase);
-        tone += (0.1f + body * 0.32f) * sinf(phase * 0.5f);
-        tone += edge * 0.18f * sinf(phase * 3.0f + 0.7f);
-        tone += edge * noise_lp * 0.22f;
-        data[i] = tanhf(tone * (0.8f + edge * 1.5f)) * env * 0.72f;
+        float value;
+        noise_lp += (random - noise_lp) * (0.015f + seed_a * 0.08f);
+        noise_slow += (random - noise_slow) * 0.00015f;
+        switch (recipe->kind) {
+        case TS_GENERATOR_METALLIC: {
+            float ratio = 2.37f + seed_a * 4.1f;
+            float sweep = 1.0f + expf(-t * 7.0f) * (1.5f + seed_b * 4.0f);
+            mod_phase += (float)(2.0 * M_PI) * frequency * ratio / (float)rate;
+            phase += (float)(2.0 * M_PI) * frequency * sweep / (float)rate;
+            value = sinf(phase + sinf(mod_phase) * (2.0f + seed_b * 7.0f));
+            value += sinf(phase * (1.413f + seed_a * 0.11f)) * 0.34f;
+            value *= attack * tail * decay;
+            break;
+        }
+        case TS_GENERATOR_NOISE: {
+            float resonant = sinf((float)(2.0 * M_PI) * frequency * t + noise_slow * 8.0f);
+            float burst = random * 0.55f + noise_lp * 1.1f + resonant * 0.32f;
+            value = burst * attack * tail * expf(-t * (2.2f + seed_a * 5.0f));
+            break;
+        }
+        case TS_GENERATOR_PULSE: {
+            float sweep_hz = frequency * (1.0f + expf(-t * 9.0f) * (0.5f + seed_b * 3.0f));
+            phase += (float)(2.0 * M_PI) * sweep_hz / (float)rate;
+            if (phase > (float)(2.0 * M_PI)) phase -= (float)(2.0 * M_PI);
+            value = (phase < (0.35f + seed_a * 0.3f) * (float)(2.0 * M_PI) ? 0.72f : -0.72f);
+            value += noise_lp * 0.22f;
+            value *= attack * tail * decay;
+            break;
+        }
+        case TS_GENERATOR_TONAL:
+        default: {
+            float pitch_drop = 1.0f + expf(-t * 14.0f) * (0.04f + seed_a * 0.3f);
+            phase += (float)(2.0 * M_PI) * frequency * pitch_drop / (float)rate;
+            value = sinf(phase) + sinf(phase * 0.5f) * (0.12f + seed_a * 0.28f);
+            value += sinf(phase * 2.0f + seed_b) * (0.08f + seed_b * 0.16f);
+            value += noise_lp * 0.06f;
+            value *= attack * tail * (0.35f + decay * 0.65f);
+            break;
+        }
+        }
+        data[i] = tanhf(value * 1.15f) * 0.78f;
     }
     ts_sample_free(sample);
     sample->data = data;
     sample->frames = frames;
     sample->sample_rate = rate;
-    snprintf(sample->name, sizeof(sample->name), "SEED %08X", recipe->seed);
+    snprintf(sample->name, sizeof(sample->name), "%s %08X", ts_generator_name(recipe->kind), recipe->seed);
+    set_error(error, error_size, "");
+    return 1;
+}
+
+static float sample_linear(const TsSample *sample, double position, size_t first, size_t last)
+{
+    if (position < (double)first) position = (double)first;
+    if (position > (double)(last - 1)) position = (double)(last - 1);
+    size_t at = (size_t)position;
+    size_t next = at + 1 < last ? at + 1 : at;
+    float fraction = (float)(position - (double)at);
+    return sample->data[at] + (sample->data[next] - sample->data[at]) * fraction;
+}
+
+int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, size_t last,
+                      const TsProcessRecipe *recipe, char *error, size_t error_size)
+{
+    float *data;
+    float low = 0.0f, fast = 0.0f, wander = 0.0f;
+    float body = clampf(recipe->body, 0.0f, 1.0f);
+    float edge = clampf(recipe->edge, 0.0f, 1.0f);
+    float drift = clampf(recipe->drift, 0.0f, 1.0f);
+    uint32_t rng = recipe->seed;
+    double phase = rng_unit(&rng) * 2.0 * M_PI;
+    double drift_rate = 0.15 + rng_unit(&rng) * 0.9;
+    if (parent == NULL || parent->data == NULL || parent->frames == 0 || first >= last || last > parent->frames) {
+        set_error(error, error_size, "Invalid Parent range");
+        return 0;
+    }
+    size_t frames = last - first;
+    if (frames > SIZE_MAX / sizeof(float)) {
+        set_error(error, error_size, "Current sample is too large");
+        return 0;
+    }
+    data = (float *)malloc(frames * sizeof(float));
+    if (data == NULL) {
+        set_error(error, error_size, "Out of memory while rendering Current");
+        return 0;
+    }
+    for (size_t i = 0; i < frames; ++i) {
+        float random = rng_bipolar(&rng);
+        wander += (random - wander) * 0.00008f;
+        double lfo = sin(phase + (double)i * (2.0 * M_PI * drift_rate) /
+                         (double)parent->sample_rate);
+        double offset = drift * (4.0 + drift * 120.0) * (lfo + wander * 0.7);
+        float input = sample_linear(parent, (double)(first + i) + offset, first, last);
+        low += (input - low) * 0.018f;
+        fast += (input - fast) * 0.22f;
+        float shaped = input + (body - 0.5f) * 1.5f * low;
+        shaped += edge * 1.45f * (input - fast);
+        if (edge > 0.001f) {
+            float drive = 1.0f + edge * 3.5f;
+            shaped = tanhf(shaped * drive) / tanhf(drive);
+        }
+        shaped += random * drift * 0.006f;
+        data[i] = clampf(shaped, -1.0f, 1.0f);
+    }
+    ts_sample_free(sample);
+    sample->data = data;
+    sample->frames = frames;
+    sample->sample_rate = parent->sample_rate;
+    snprintf(sample->name, sizeof(sample->name), "%s", parent->name);
     set_error(error, error_size, "");
     return 1;
 }
@@ -293,4 +436,272 @@ uint64_t ts_sample_hash(const TsSample *sample)
         hash *= 1099511628211ull;
     }
     return hash;
+}
+
+static TsEditSnapshot snapshot(const TsInstrument *instrument)
+{
+    TsEditSnapshot result;
+    result.crop_first = instrument->crop_first;
+    result.crop_last = instrument->crop_last;
+    result.selection_first = instrument->selection_first;
+    result.selection_last = instrument->selection_last;
+    result.view_first = instrument->view_first;
+    result.view_last = instrument->view_last;
+    result.has_selection = instrument->has_selection;
+    result.process = instrument->process;
+    return result;
+}
+
+static void stack_push(TsEditSnapshot *stack, int *count, TsEditSnapshot value)
+{
+    if (*count == TS_HISTORY_DEPTH) {
+        memmove(stack, stack + 1, (TS_HISTORY_DEPTH - 1) * sizeof(*stack));
+        --*count;
+    }
+    stack[(*count)++] = value;
+}
+
+static void begin_edit(TsInstrument *instrument)
+{
+    stack_push(instrument->undo, &instrument->undo_count, snapshot(instrument));
+    instrument->redo_count = 0;
+}
+
+static void reset_editor(TsInstrument *instrument)
+{
+    instrument->crop_first = 0;
+    instrument->crop_last = instrument->parent.frames;
+    instrument->selection_first = 0;
+    instrument->selection_last = 0;
+    instrument->has_selection = 0;
+    instrument->view_first = 0;
+    instrument->view_last = instrument->parent.frames;
+    instrument->undo_count = 0;
+    instrument->redo_count = 0;
+}
+
+static int render_snapshot(TsSample *destination, const TsInstrument *instrument,
+                           const TsEditSnapshot *state, char *error, size_t error_size)
+{
+    return ts_sample_process(destination, &instrument->parent, state->crop_first,
+                             state->crop_last, &state->process, error, error_size);
+}
+
+void ts_instrument_init(TsInstrument *instrument)
+{
+    memset(instrument, 0, sizeof(*instrument));
+    ts_sample_init(&instrument->parent);
+    ts_sample_init(&instrument->current);
+    instrument->generator.seed = 0x54415045u;
+    instrument->generator.kind = TS_GENERATOR_TONAL;
+    instrument->generator.seconds = 2.0f;
+    instrument->generator.frequency = 130.8128f;
+    instrument->process.seed = 0x53495354u;
+    instrument->process.body = 0.5f;
+    instrument->process.edge = 0.12f;
+    instrument->process.drift = 0.23f;
+}
+
+void ts_instrument_free(TsInstrument *instrument)
+{
+    ts_sample_free(&instrument->parent);
+    ts_sample_free(&instrument->current);
+    memset(instrument, 0, sizeof(*instrument));
+}
+
+int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint32_t seed,
+                           char *error, size_t error_size)
+{
+    TsSample parent, current;
+    TsGeneratorRecipe generator = instrument->generator;
+    ts_sample_init(&parent);
+    ts_sample_init(&current);
+    generator.kind = kind;
+    generator.seed = seed;
+    if (!ts_sample_generate(&parent, &generator, error, error_size) ||
+        !ts_sample_process(&current, &parent, 0, parent.frames, &instrument->process,
+                           error, error_size)) {
+        ts_sample_free(&parent);
+        ts_sample_free(&current);
+        return 0;
+    }
+    ts_sample_free(&instrument->parent);
+    ts_sample_free(&instrument->current);
+    instrument->parent = parent;
+    instrument->current = current;
+    instrument->source_kind = TS_SOURCE_GENERATED;
+    instrument->generator = generator;
+    reset_editor(instrument);
+    return 1;
+}
+
+int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
+                           char *error, size_t error_size)
+{
+    TsSample parent, current;
+    ts_sample_init(&parent);
+    ts_sample_init(&current);
+    if (!ts_sample_load_wav(&parent, path, error, error_size) ||
+        !ts_sample_process(&current, &parent, 0, parent.frames, &instrument->process,
+                           error, error_size)) {
+        ts_sample_free(&parent);
+        ts_sample_free(&current);
+        return 0;
+    }
+    ts_sample_free(&instrument->parent);
+    ts_sample_free(&instrument->current);
+    instrument->parent = parent;
+    instrument->current = current;
+    instrument->source_kind = TS_SOURCE_IMPORTED;
+    reset_editor(instrument);
+    return 1;
+}
+
+int ts_instrument_reseed(TsInstrument *instrument, char *error, size_t error_size)
+{
+    if (instrument->source_kind == TS_SOURCE_GENERATED) {
+        return ts_instrument_generate(instrument, instrument->generator.kind,
+                                      advance_seed(instrument->generator.seed), error, error_size);
+    }
+    if (instrument->source_kind == TS_SOURCE_IMPORTED) {
+        TsProcessRecipe process = instrument->process;
+        process.seed = advance_seed(process.seed);
+        return ts_instrument_set_process(instrument, &process, error, error_size);
+    }
+    set_error(error, error_size, "No Parent to reseed");
+    return 0;
+}
+
+int ts_instrument_set_process(TsInstrument *instrument, const TsProcessRecipe *process,
+                              char *error, size_t error_size)
+{
+    TsSample current;
+    ts_sample_init(&current);
+    if (!ts_sample_process(&current, &instrument->parent, instrument->crop_first,
+                           instrument->crop_last, process, error, error_size)) return 0;
+    begin_edit(instrument);
+    ts_sample_free(&instrument->current);
+    instrument->current = current;
+    instrument->process = *process;
+    return 1;
+}
+
+void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t last)
+{
+    size_t frames = instrument->current.frames;
+    first = clamps(first, frames);
+    last = clamps(last, frames);
+    if (first > last) {
+        size_t swap = first;
+        first = last;
+        last = swap;
+    }
+    if (first == last && last < frames) ++last;
+    instrument->selection_first = first;
+    instrument->selection_last = last;
+    instrument->has_selection = first < last;
+}
+
+void ts_instrument_clear_selection(TsInstrument *instrument)
+{
+    instrument->selection_first = 0;
+    instrument->selection_last = 0;
+    instrument->has_selection = 0;
+}
+
+int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t error_size)
+{
+    TsSample current;
+    size_t new_first, new_last;
+    if (!instrument->has_selection || instrument->selection_last <= instrument->selection_first) {
+        set_error(error, error_size, "Select a range before cropping");
+        return 0;
+    }
+    new_first = instrument->crop_first + instrument->selection_first;
+    new_last = instrument->crop_first + instrument->selection_last;
+    ts_sample_init(&current);
+    if (!ts_sample_process(&current, &instrument->parent, new_first, new_last,
+                           &instrument->process, error, error_size)) return 0;
+    begin_edit(instrument);
+    ts_sample_free(&instrument->current);
+    instrument->current = current;
+    instrument->crop_first = new_first;
+    instrument->crop_last = new_last;
+    ts_instrument_clear_selection(instrument);
+    ts_instrument_show_all(instrument);
+    return 1;
+}
+
+int ts_instrument_zoom_selection(TsInstrument *instrument)
+{
+    if (!instrument->has_selection || instrument->selection_last <= instrument->selection_first)
+        return 0;
+    instrument->view_first = instrument->selection_first;
+    instrument->view_last = instrument->selection_last;
+    return 1;
+}
+
+void ts_instrument_show_all(TsInstrument *instrument)
+{
+    instrument->view_first = 0;
+    instrument->view_last = instrument->current.frames;
+}
+
+static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
+                           TsEditSnapshot *destination, int *destination_count,
+                           char *error, size_t error_size)
+{
+    TsSample current;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    stack_push(destination, destination_count, snapshot(instrument));
+    ts_sample_free(&instrument->current);
+    instrument->current = current;
+    instrument->crop_first = target.crop_first;
+    instrument->crop_last = target.crop_last;
+    instrument->selection_first = target.selection_first;
+    instrument->selection_last = target.selection_last;
+    instrument->view_first = target.view_first;
+    instrument->view_last = target.view_last;
+    instrument->has_selection = target.has_selection;
+    instrument->process = target.process;
+    return 1;
+}
+
+int ts_instrument_undo(TsInstrument *instrument, char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    if (instrument->undo_count == 0) {
+        set_error(error, error_size, "Nothing to undo");
+        return 0;
+    }
+    target = instrument->undo[instrument->undo_count - 1];
+    if (!restore_history(instrument, target, instrument->redo, &instrument->redo_count,
+                         error, error_size)) return 0;
+    --instrument->undo_count;
+    return 1;
+}
+
+int ts_instrument_redo(TsInstrument *instrument, char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    if (instrument->redo_count == 0) {
+        set_error(error, error_size, "Nothing to redo");
+        return 0;
+    }
+    target = instrument->redo[instrument->redo_count - 1];
+    if (!restore_history(instrument, target, instrument->undo, &instrument->undo_count,
+                         error, error_size)) return 0;
+    --instrument->redo_count;
+    return 1;
+}
+
+size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, int width)
+{
+    size_t first = instrument->view_first;
+    size_t last = instrument->view_last;
+    if (width <= 0 || last <= first) return first;
+    if (x < 0) x = 0;
+    if (x >= width) x = width - 1;
+    return first + (size_t)x * (last - first) / (size_t)width;
 }
