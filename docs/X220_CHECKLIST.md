@@ -88,6 +88,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Play Loop repeats until Stop All, Space, or Escape; no note or loop remains stuck.
 - [ ] Computer and onscreen notes provide up to five independent voices, sustain the loop while held, and stop individually on release; without a loop they retain one-shot behavior.
 - [ ] Shift-click builds a latched onscreen chord up to five notes, toggles an active chord note off, and refuses a sixth without stealing a voice.
+- [ ] Every latched white or black key lights at the exact pointer location and sounds the corresponding pitch.
 - [ ] An ordinary onscreen-key click clears the latched chord and returns to momentary audition.
 - [ ] Held and latched notes survive Body/Edge/Drift and DSP rerenders, continuing at the corresponding loop position after the render pause.
 - [ ] The 0–50 ms crossfade is clearly audible on difficult joins and remains stable at both limits and on short loops.

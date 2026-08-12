@@ -481,8 +481,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     if (ui->show_keyboard) {
         const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
         const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
+        const int white_semitones[14] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
         for (int i = 0; i < 14; ++i) {
-            int active = (ui->active_notes & (1u << i)) != 0;
+            int active = (ui->active_notes & (1u << white_semitones[i])) != 0;
             rect(fb, white_x + i * white_w, white_y, white_w - 1, white_h,
                  active ? PAL_MOUSE : RGB(220, 216, 207));
             text(fb, white_x + i * white_w + 23, white_y + 36, labels[i], RGB(24, 24, 24), 1);

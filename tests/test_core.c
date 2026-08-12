@@ -558,6 +558,10 @@ int main(void)
     ts_ui_render(&fb, &ui, &imported);
     CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] == 0xffffd265u);
     CHECK(fb.pixels[340 * TS_UI_WIDTH + 50] == 0xffff1ce7u);
+    ui.active_notes = 1u << 4;
+    ts_ui_render(&fb, &ui, &imported);
+    CHECK(fb.pixels[370 * TS_UI_WIDTH + 116] == 0xffffd265u);
+    CHECK(fb.pixels[370 * TS_UI_WIDTH + 73] == 0xffdcd8cfu);
     ui.playback_active = 1;
     ui.playhead_source = TS_AUDITION_CURRENT;
     ui.playhead_frame = imported.current.frames / 2;
@@ -584,6 +588,16 @@ int main(void)
     ts_browser_close(&ui.browser);
     CHECK(ts_ui_key_from_point(20, 370) == 0);
     CHECK(ts_ui_key_from_point(50, 340) == 1);
+    {
+        const int white_semitones[14] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
+        const int black_after[10] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
+        const int black_semitones[10] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
+        for (int i = 0; i < 14; ++i)
+            CHECK(ts_ui_key_from_point(10 + i * 43 + 21, 370) == white_semitones[i]);
+        for (int i = 0; i < 10; ++i)
+            CHECK(ts_ui_key_from_point(10 + (black_after[i] + 1) * 43, 345) ==
+                  black_semitones[i]);
+    }
     CHECK(ts_ui_key_from_point(0, 0) == -1);
 
     ts_sample_free(&a); ts_sample_free(&b); ts_sample_free(&loaded); ts_sample_free(&copy);
