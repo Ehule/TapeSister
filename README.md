@@ -11,7 +11,7 @@ Every sound now has two explicit layers:
 - **Parent** is the generated or imported source. Preview rendering never overwrites it.
 - **Current** is the audible and exportable result after nondestructive editing and the active processing recipe are applied.
 
-Dragging or loading a WAV makes that WAV the Parent. Moving a processing control rerenders Current from that Parent; it cannot silently return to the factory waveform.
+Dragging or loading a WAV makes that WAV the Parent. Every freshly generated or imported source starts with neutral processing, so Parent and Current are sample-for-sample identical until the first edit. Moving a processing control then rerenders Current from that Parent; it cannot silently return to the factory waveform.
 
 **Generate** advances to a new Tonal, Metallic, Noise, or Pulse generator family and creates a new Parent. **Reseed** keeps the family but creates a different generated Parent. For an imported or committed Parent, Reseed changes only stochastic processing and preserves Parent audio byte-for-byte.
 
@@ -27,11 +27,13 @@ A source-colored playhead is visible only while audio is running: green identifi
 
 ## Zero-snapped selection and forward loops
 
-Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in Current. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop. Parent view maps pointer positions through Current's crop before snapping. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
+Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in Current. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop. Parent view maps pointer positions through Current's crop before snapping. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
 
-The Loop page turns the current selection into one forward loop, clears it, plays it continuously, and sets a 0–50 ms wrap crossfade. Blue boundaries and handles distinguish the loop from the purple/cyan selection. Computer and onscreen notes sustain the loop only while held; Play Loop continues until Stop All, Space, or Escape.
+The Loop page turns the current selection into one forward loop, clears it, plays it continuously, and sets a 0–50 ms wrap crossfade. Blue boundaries and handles distinguish the loop from the purple/cyan selection. Either handle can be dragged live; it remains zero-snapped and automatically becomes the opposite endpoint when crossed. Computer and onscreen notes sustain the loop only while held; Play Loop continues until Stop All, Space, or Escape.
 
-Parent/Current A/B maps the same loop through the crop offset and preserves relative playback progress. Loop range and crossfade participate in Undo/Redo. Reset clears them and can be undone; Commit carries the completed loop onto the newly promoted Parent while clearing prior edit history. Recipe schema 5 stores the loop enable state, range, and crossfade.
+Parent/Current A/B maps the same loop through the crop offset and preserves relative playback progress. Loop range and crossfade participate in Undo/Redo. Reset clears them and can be undone; Commit carries the completed loop onto the newly promoted Parent while clearing prior edit history.
+
+The small **KEYS** button shows or hides the onscreen keyboard, freeing its lower-panel area for future controls. Computer-key audition remains available in either state.
 
 ## DSP shelf
 
@@ -56,7 +58,7 @@ Every stage is equally available to generated and imported Parents. Bypass is ex
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
-- canonical schema-5 JSON recipe saving with renderer version, lineage, loop metadata, sample-edit stack, DSP parameters, and explicit bypass states; and
+- self-contained native TSR6 project saving with embedded Parent audio, lineage, editor view, selection, loop metadata, sample-edit stack, and every DSP parameter; and
 - mono 16-bit Current export.
 
 Sample edits run deterministically between the preserved Parent and the live DSP. With no selection they affect the whole Current; with a selection they affect only that range. Commit prints the heard result into the next Parent generation and clears both the edit stack and Undo/Redo history.
@@ -67,16 +69,18 @@ Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the
 
 Load, Save, and Export now open one shared FT2-informed browser rather than writing fixed filenames or requiring a typed path:
 
-- Load lists directories and WAV files and preserves the existing Parent/Current if a file is invalid;
+- Load lists WAV source files and self-contained `.tsr` projects and preserves the existing instrument if either is invalid;
 - Save lists directories and `.tsr` recipes;
 - Export lists directories and WAV files;
 - mouse wheel, draggable scrollbar, Up/Down, Page Up/Down, Home/End, and row clicking navigate long directories;
-- double-click or Enter opens a directory or selected WAV;
+- double-click or Enter opens a directory, WAV, or TSR project;
 - Save and Export remember the current directory, provide filename entry with a focus-aware blinking caret, and append the proper extension;
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file.
+TSR6 embeds the Parent waveform and all reconstructive state in one portable file. Opening it restores the exact saved Parent/Current relationship rather than starting neutral. Older experimental JSON recipes did not contain Parent audio and therefore cannot reopen as self-contained projects.
+
+The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV and TSR files can also be dragged onto the window or passed on the command line.
 
 The temporary colors come directly from `assets/tapehead.pal`, supplied by the user. The interface remains standalone: FT2 and the archived prototype are reference shelves, not inherited architecture, and TapeSister does not depend on or modify FT2 Tapehead Edition.
 
@@ -98,7 +102,7 @@ make
 ./tapesister
 ```
 
-Pass a WAV path on the command line, drag a WAV onto the window, or choose it through **Load**.
+Pass a WAV or TSR path on the command line, drag it onto the window, or choose it through **Load**.
 
 ## Keys and files
 

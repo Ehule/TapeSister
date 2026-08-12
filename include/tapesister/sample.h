@@ -169,5 +169,9 @@ const char *ts_sample_edit_name(TsSampleEditKind kind);
 void ts_process_recipe_reset(TsProcessRecipe *process);
 int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
                               char *error, size_t error_size);
+int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
+                              char *error, size_t error_size);
+void ts_instrument_begin_loop_drag(TsInstrument *instrument);
+int ts_instrument_move_loop_endpoint(TsInstrument *instrument, int endpoint, size_t frame);
 
 #endif

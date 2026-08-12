@@ -48,7 +48,7 @@ const char *ts_browser_mode_extension(TsBrowserMode mode)
 
 const char *ts_browser_mode_title(TsBrowserMode mode)
 {
-    if (mode == TS_BROWSER_LOAD_WAV) return "LOAD WAV";
+    if (mode == TS_BROWSER_LOAD_WAV) return "LOAD WAV OR TSR";
     if (mode == TS_BROWSER_SAVE_RECIPE) return "SAVE RECIPE";
     if (mode == TS_BROWSER_EXPORT_WAV) return "EXPORT CURRENT WAV";
     return "FILE BROWSER";
@@ -87,6 +87,8 @@ int ts_browser_path_exists(const char *path)
 
 static int mode_accepts(const TsBrowser *browser, const char *name)
 {
+    if (browser->mode == TS_BROWSER_LOAD_WAV)
+        return ends_with_case(name, ".wav") || ends_with_case(name, ".tsr");
     return ends_with_case(name, ts_browser_mode_extension(browser->mode));
 }
 

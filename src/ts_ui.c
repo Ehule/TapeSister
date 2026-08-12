@@ -194,7 +194,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
             rect(fb, cursor_x, 301, 2, 11, PAL_MOUSE);
         }
     } else {
-        text(fb, 58, 300, "SELECT AN EXISTING WAV", PAL_EFFECT, 1);
+        text(fb, 58, 300, "SELECT AN EXISTING WAV OR TSR", PAL_EFFECT, 1);
     }
 
     button(fb, 58, 326, 72, "UP DIR", 0);
@@ -213,6 +213,7 @@ void ts_ui_init(TsUiState *ui)
     memset(ui, 0, sizeof(*ui));
     ui->active_key = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
+    ui->show_keyboard = 1;
     ts_browser_init(&ui->browser);
     snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR GENERATE A PARENT");
 }
@@ -300,6 +301,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             uint32_t color = instrument->has_selection && at >= selection_first &&
                              at < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
             line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
+            for (size_t i = begin; i < end && i < sample->frames; ++i) {
+                if (sample->data[i] == 0.0f ||
+                    (i > 0 && ((sample->data[i - 1u] < 0.0f && sample->data[i] > 0.0f) ||
+                               (sample->data[i - 1u] > 0.0f && sample->data[i] < 0.0f)))) {
+                    rect(fb, TS_WAVE_X + x, middle - 1, 1, 3, PAL_VOLUME);
+                    break;
+                }
+            }
         }
     } else {
         text(fb, 211, 135, "DROP WAV HERE", RGB(120, 113, 121), 2);
@@ -392,23 +401,28 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 381, 289, 74, "SHOW ALL", 0);
     button(fb, 460, 289, 56, "UNDO", instrument->undo_count > 0);
     button(fb, 521, 289, 62, "REDO", instrument->redo_count > 0);
+    button(fb, 588, 289, 42, "KEYS", ui->show_keyboard);
 
     text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  =/- ZOOM  ARROWS PAN", RGB(184, 180, 184), 1);
-    const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
-    const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
-    for (int i = 0; i < 14; ++i) {
-        int active = ui->active_key == i;
-        rect(fb, white_x + i * white_w, white_y, white_w - 1, white_h,
-             active ? PAL_MOUSE : RGB(220, 216, 207));
-        text(fb, white_x + i * white_w + 23, white_y + 36, labels[i], RGB(24, 24, 24), 1);
-    }
-    const int black_after[] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
-    const int semitones[] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
-    for (int i = 0; i < 10; ++i) {
-        int key = semitones[i];
-        int active = ui->active_key == key;
-        rect(fb, white_x + (black_after[i] + 1) * white_w - 16, white_y, 31, 31,
-             active ? PAL_VOLUME : RGB(18, 18, 18));
+    if (ui->show_keyboard) {
+        const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
+        const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
+        for (int i = 0; i < 14; ++i) {
+            int active = ui->active_key == i;
+            rect(fb, white_x + i * white_w, white_y, white_w - 1, white_h,
+                 active ? PAL_MOUSE : RGB(220, 216, 207));
+            text(fb, white_x + i * white_w + 23, white_y + 36, labels[i], RGB(24, 24, 24), 1);
+        }
+        {
+            const int black_after[] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
+            const int semitones[] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
+            for (int i = 0; i < 10; ++i) {
+                int key = semitones[i];
+                int active = ui->active_key == key;
+                rect(fb, white_x + (black_after[i] + 1) * white_w - 16, white_y, 31, 31,
+                     active ? PAL_VOLUME : RGB(18, 18, 18));
+            }
+        }
     }
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
     text(fb, 8, 389, ui->status, PAL_MOUSE, 1);

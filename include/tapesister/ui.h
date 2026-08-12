@@ -36,6 +36,9 @@ typedef struct {
     int commit_armed;
     int playback_active;
     int text_cursor_visible;
+    int show_keyboard;
+    int dragging_loop_endpoint;
+    int loop_drag_started;
     TsFxPage fx_page;
     TsAuditionSource audition_source;
     TsAuditionSource playhead_source;

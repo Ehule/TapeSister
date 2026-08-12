@@ -38,6 +38,44 @@ static void put32(FILE *f, uint32_t value)
     put16(f, (uint16_t)(value >> 16));
 }
 
+static void put64(FILE *f, uint64_t value)
+{
+    put32(f, (uint32_t)value);
+    put32(f, (uint32_t)(value >> 32));
+}
+
+static void put_float(FILE *f, float value)
+{
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    put32(f, bits);
+}
+
+static int get32(FILE *f, uint32_t *value)
+{
+    unsigned char bytes[4];
+    if (fread(bytes, 1, sizeof(bytes), f) != sizeof(bytes)) return 0;
+    *value = le32(bytes);
+    return 1;
+}
+
+static int get64(FILE *f, uint64_t *value)
+{
+    uint32_t low;
+    uint32_t high;
+    if (!get32(f, &low) || !get32(f, &high)) return 0;
+    *value = (uint64_t)low | ((uint64_t)high << 32);
+    return 1;
+}
+
+static int get_float(FILE *f, float *value)
+{
+    uint32_t bits;
+    if (!get32(f, &bits)) return 0;
+    memcpy(value, &bits, sizeof(bits));
+    return isfinite(*value);
+}
+
 static float clampf(float value, float low, float high)
 {
     return value < low ? low : value > high ? high : value;
@@ -709,8 +747,6 @@ void ts_instrument_init(TsInstrument *instrument)
     instrument->generator.seconds = 2.0f;
     instrument->generator.frequency = 130.8128f;
     ts_process_recipe_reset(&instrument->process);
-    instrument->process.edge = 0.12f;
-    instrument->process.drift = 0.23f;
 }
 
 void ts_instrument_free(TsInstrument *instrument)
@@ -725,12 +761,14 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
 {
     TsSample parent, current;
     TsGeneratorRecipe generator = instrument->generator;
+    TsProcessRecipe neutral;
     ts_sample_init(&parent);
     ts_sample_init(&current);
     generator.kind = kind;
     generator.seed = seed;
+    ts_process_recipe_reset(&neutral);
     if (!ts_sample_generate(&parent, &generator, error, error_size) ||
-        !ts_sample_process(&current, &parent, 0, parent.frames, &instrument->process,
+        !ts_sample_process(&current, &parent, 0, parent.frames, &neutral,
                            error, error_size)) {
         ts_sample_free(&parent);
         ts_sample_free(&current);
@@ -742,6 +780,7 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
     instrument->current = current;
     instrument->source_kind = TS_SOURCE_GENERATED;
     instrument->generator = generator;
+    instrument->process = neutral;
     instrument->generation = 0;
     instrument->ancestor_hash = 0;
     reset_editor(instrument);
@@ -752,10 +791,12 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
                            char *error, size_t error_size)
 {
     TsSample parent, current;
+    TsProcessRecipe neutral;
     ts_sample_init(&parent);
     ts_sample_init(&current);
+    ts_process_recipe_reset(&neutral);
     if (!ts_sample_load_wav(&parent, path, error, error_size) ||
-        !ts_sample_process(&current, &parent, 0, parent.frames, &instrument->process,
+        !ts_sample_process(&current, &parent, 0, parent.frames, &neutral,
                            error, error_size)) {
         ts_sample_free(&parent);
         ts_sample_free(&current);
@@ -766,6 +807,7 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
     instrument->parent = parent;
     instrument->current = current;
     instrument->source_kind = TS_SOURCE_IMPORTED;
+    instrument->process = neutral;
     instrument->generation = 0;
     instrument->ancestor_hash = 0;
     reset_editor(instrument);
@@ -1041,6 +1083,37 @@ int ts_instrument_set_loop_crossfade(TsInstrument *instrument, float millisecond
     return 1;
 }
 
+void ts_instrument_begin_loop_drag(TsInstrument *instrument)
+{
+    if (instrument != NULL && instrument->has_loop) begin_edit(instrument);
+}
+
+int ts_instrument_move_loop_endpoint(TsInstrument *instrument, int endpoint, size_t frame)
+{
+    size_t snapped;
+    if (instrument == NULL || !instrument->has_loop ||
+        (endpoint != 1 && endpoint != 2)) return 0;
+    snapped = ts_sample_nearest_zero_crossing(&instrument->current, frame);
+    if (endpoint == 1) {
+        if (snapped < instrument->loop_last) instrument->loop_first = snapped;
+        else if (snapped == instrument->loop_last) return endpoint;
+        else {
+            instrument->loop_first = instrument->loop_last;
+            instrument->loop_last = snapped;
+            endpoint = 2;
+        }
+    } else {
+        if (snapped > instrument->loop_first) instrument->loop_last = snapped;
+        else if (snapped == instrument->loop_first) return endpoint;
+        else {
+            instrument->loop_last = instrument->loop_first;
+            instrument->loop_first = snapped;
+            endpoint = 1;
+        }
+    }
+    return endpoint;
+}
+
 int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t error_size)
 {
     TsEditSnapshot target;
@@ -1263,27 +1336,11 @@ size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, in
     return first + (size_t)x * (last - first) / (size_t)width;
 }
 
-static void write_json_string(FILE *f, const char *value)
-{
-    fputc('"', f);
-    for (; *value != '\0'; ++value) {
-        unsigned char c = (unsigned char)*value;
-        if (c == '"' || c == '\\') {
-            fputc('\\', f);
-            fputc(c, f);
-        } else if (c == '\n') fputs("\\n", f);
-        else if (c == '\r') fputs("\\r", f);
-        else if (c == '\t') fputs("\\t", f);
-        else if (c >= 0x20) fputc(c, f);
-    }
-    fputc('"', f);
-}
-
 int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
                               char *error, size_t error_size)
 {
-    const char *source;
     FILE *f;
+    size_t name_length;
     if (instrument == NULL || instrument->parent.data == NULL) {
         set_error(error, error_size, "No instrument recipe to save");
         return 0;
@@ -1293,56 +1350,52 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    source = instrument->source_kind == TS_SOURCE_IMPORTED ? "imported" :
-             instrument->source_kind == TS_SOURCE_COMMITTED ? "committed" : "generated";
-    fputs("{\n  \"schema\": 5,\n  \"renderer\": 3,\n  \"source\": ", f);
-    write_json_string(f, source);
-    fputs(",\n  \"parent_name\": ", f);
-    write_json_string(f, instrument->parent.name);
-    fprintf(f,
-            ",\n  \"lineage\": {\"generation\": %u, \"ancestor_hash\": \"%016llx\"},\n"
-            "  \"generator\": {\"kind\": ", instrument->generation,
-            (unsigned long long)instrument->ancestor_hash);
-    write_json_string(f, ts_generator_name(instrument->generator.kind));
-    fprintf(f,
-            ", \"seed\": %u, \"seconds\": %.9g, \"frequency\": %.9g},\n"
-            "  \"processing\": {\n"
-            "    \"seed\": %u, \"body\": %.9g, \"edge\": %.9g, \"drift\": %.9g,\n"
-            "    \"noise\": {\"bypass\": %s, \"amount\": %.9g, \"color\": ",
-            instrument->generator.seed, instrument->generator.seconds,
-            instrument->generator.frequency, instrument->process.seed,
-            instrument->process.body, instrument->process.edge, instrument->process.drift,
-            instrument->process.noise_enabled ? "false" : "true",
-            instrument->process.noise_amount);
-    write_json_string(f, ts_noise_color_name(instrument->process.noise_color));
-    fprintf(f,
-            "},\n"
-            "    \"delay\": {\"bypass\": %s, \"seconds\": %.9g, \"feedback\": %.9g, "
-            "\"damping\": %.9g, \"mix\": %.9g},\n"
-            "    \"reverb\": {\"bypass\": %s, \"decay\": %.9g, \"damping\": %.9g, "
-            "\"mix\": %.9g}\n"
-            "  },\n"
-            "  \"crop\": [%zu, %zu],\n"
-            "  \"loop\": {\"enabled\": %s, \"range\": [%zu, %zu], "
-            "\"crossfade_ms\": %.9g},\n"
-            "  \"sample_edits\": [",
-            instrument->process.delay_enabled ? "false" : "true",
-            instrument->process.delay_seconds, instrument->process.delay_feedback,
-            instrument->process.delay_damping, instrument->process.delay_mix,
-            instrument->process.reverb_enabled ? "false" : "true",
-            instrument->process.reverb_decay, instrument->process.reverb_damping,
-            instrument->process.reverb_mix, instrument->crop_first, instrument->crop_last,
-            instrument->has_loop ? "true" : "false", instrument->loop_first,
-            instrument->loop_last, instrument->loop_crossfade_ms);
+    fwrite("TSR6\r\n\032\n", 1, 8, f);
+    put32(f, (uint32_t)instrument->source_kind);
+    put32(f, instrument->generation);
+    put64(f, instrument->ancestor_hash);
+    put32(f, instrument->generator.seed);
+    put32(f, (uint32_t)instrument->generator.kind);
+    put_float(f, instrument->generator.seconds);
+    put_float(f, instrument->generator.frequency);
+    put32(f, instrument->process.seed);
+    put_float(f, instrument->process.body);
+    put_float(f, instrument->process.edge);
+    put_float(f, instrument->process.drift);
+    put32(f, (uint32_t)instrument->process.noise_enabled);
+    put_float(f, instrument->process.noise_amount);
+    put32(f, (uint32_t)instrument->process.noise_color);
+    put32(f, (uint32_t)instrument->process.delay_enabled);
+    put_float(f, instrument->process.delay_seconds);
+    put_float(f, instrument->process.delay_feedback);
+    put_float(f, instrument->process.delay_damping);
+    put_float(f, instrument->process.delay_mix);
+    put32(f, (uint32_t)instrument->process.reverb_enabled);
+    put_float(f, instrument->process.reverb_decay);
+    put_float(f, instrument->process.reverb_damping);
+    put_float(f, instrument->process.reverb_mix);
+    put64(f, instrument->crop_first); put64(f, instrument->crop_last);
+    put64(f, instrument->selection_first); put64(f, instrument->selection_last);
+    put64(f, instrument->view_first); put64(f, instrument->view_last);
+    put64(f, instrument->loop_first); put64(f, instrument->loop_last);
+    put_float(f, instrument->loop_crossfade_ms);
+    put32(f, (uint32_t)instrument->has_selection);
+    put32(f, (uint32_t)instrument->has_loop);
+    put32(f, (uint32_t)instrument->sample_edit_count);
     for (int i = 0; i < instrument->sample_edit_count; ++i) {
         const TsSampleEdit *edit = &instrument->sample_edits[i];
-        if (i > 0) fputs(",", f);
-        fputs("\n    {\"kind\": ", f);
-        write_json_string(f, ts_sample_edit_name(edit->kind));
-        fprintf(f, ", \"range\": [%zu, %zu], \"amount\": %.9g}",
-                edit->first, edit->last, edit->amount);
+        put32(f, (uint32_t)edit->kind);
+        put64(f, edit->first); put64(f, edit->last);
+        put_float(f, edit->amount);
     }
-    fputs(instrument->sample_edit_count > 0 ? "\n  ]\n}\n" : "]\n}\n", f);
+    put32(f, instrument->parent.sample_rate);
+    put64(f, instrument->parent.frames);
+    name_length = strlen(instrument->parent.name);
+    put32(f, (uint32_t)name_length);
+    fwrite(instrument->parent.name, 1, name_length, f);
+    for (size_t i = 0; i < instrument->parent.frames; ++i)
+        put_float(f, instrument->parent.data[i]);
+    put64(f, ts_sample_hash(&instrument->parent));
     {
         int failed = ferror(f);
         if (fclose(f) != 0) failed = 1;
@@ -1353,4 +1406,127 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     }
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
+                              char *error, size_t error_size)
+{
+    FILE *f;
+    char magic[8];
+    TsInstrument loaded;
+    TsEditSnapshot state;
+    uint32_t u32;
+    uint64_t u64;
+    uint64_t stored_hash;
+    uint32_t name_length;
+    size_t frames;
+    memset(&state, 0, sizeof(state));
+    ts_instrument_init(&loaded);
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        set_error(error, error_size, "Could not open TSR project");
+        return 0;
+    }
+    if (fread(magic, 1, sizeof(magic), f) != sizeof(magic) ||
+        memcmp(magic, "TSR6\r\n\032\n", 8) != 0) {
+        fclose(f);
+        ts_instrument_free(&loaded);
+        set_error(error, error_size,
+                  "Not a self-contained TSR6 project (older recipes did not embed Parent audio)");
+        return 0;
+    }
+#define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
+#define GET_U64(dst) do { if (!get64(f, &u64) || u64 > SIZE_MAX) goto malformed; (dst) = (size_t)u64; } while (0)
+#define GET_FLOAT(dst) do { if (!get_float(f, &(dst))) goto malformed; } while (0)
+    GET_U32(loaded.source_kind); GET_U32(loaded.generation);
+    if (!get64(f, &loaded.ancestor_hash)) goto malformed;
+    GET_U32(loaded.generator.seed); GET_U32(loaded.generator.kind);
+    GET_FLOAT(loaded.generator.seconds); GET_FLOAT(loaded.generator.frequency);
+    GET_U32(state.process.seed);
+    GET_FLOAT(state.process.body); GET_FLOAT(state.process.edge); GET_FLOAT(state.process.drift);
+    GET_U32(state.process.noise_enabled); GET_FLOAT(state.process.noise_amount);
+    GET_U32(state.process.noise_color); GET_U32(state.process.delay_enabled);
+    GET_FLOAT(state.process.delay_seconds); GET_FLOAT(state.process.delay_feedback);
+    GET_FLOAT(state.process.delay_damping); GET_FLOAT(state.process.delay_mix);
+    GET_U32(state.process.reverb_enabled); GET_FLOAT(state.process.reverb_decay);
+    GET_FLOAT(state.process.reverb_damping); GET_FLOAT(state.process.reverb_mix);
+    GET_U64(state.crop_first); GET_U64(state.crop_last);
+    GET_U64(state.selection_first); GET_U64(state.selection_last);
+    GET_U64(state.view_first); GET_U64(state.view_last);
+    GET_U64(state.loop_first); GET_U64(state.loop_last);
+    GET_FLOAT(state.loop_crossfade_ms);
+    GET_U32(state.has_selection); GET_U32(state.has_loop);
+    GET_U32(state.sample_edit_count);
+    if (loaded.source_kind < TS_SOURCE_GENERATED || loaded.source_kind > TS_SOURCE_COMMITTED ||
+        loaded.generator.kind >= TS_GENERATOR_COUNT ||
+        state.process.noise_color >= TS_NOISE_COLOR_COUNT ||
+        state.sample_edit_count < 0 || state.sample_edit_count > TS_SAMPLE_EDIT_DEPTH ||
+        (state.has_selection != 0 && state.has_selection != 1) ||
+        (state.has_loop != 0 && state.has_loop != 1) ||
+        (state.process.noise_enabled != 0 && state.process.noise_enabled != 1) ||
+        (state.process.delay_enabled != 0 && state.process.delay_enabled != 1) ||
+        (state.process.reverb_enabled != 0 && state.process.reverb_enabled != 1) ||
+        !isfinite(state.loop_crossfade_ms) || state.loop_crossfade_ms < 0.0f ||
+        state.loop_crossfade_ms > 50.0f)
+        goto malformed;
+    for (int i = 0; i < state.sample_edit_count; ++i) {
+        GET_U32(state.sample_edits[i].kind);
+        GET_U64(state.sample_edits[i].first); GET_U64(state.sample_edits[i].last);
+        GET_FLOAT(state.sample_edits[i].amount);
+        if (state.sample_edits[i].kind > TS_SAMPLE_EDIT_FADE_OUT ||
+            state.sample_edits[i].last <= state.sample_edits[i].first ||
+            !isfinite(state.sample_edits[i].amount)) goto malformed;
+    }
+    GET_U32(loaded.parent.sample_rate); GET_U64(frames);
+    GET_U32(name_length);
+    if (loaded.parent.sample_rate < 1000 || frames == 0 || frames > 100000000u ||
+        name_length >= sizeof(loaded.parent.name) || frames > SIZE_MAX / sizeof(float))
+        goto malformed;
+    if (fread(loaded.parent.name, 1, name_length, f) != name_length) goto malformed;
+    loaded.parent.name[name_length] = '\0';
+    loaded.parent.data = (float *)malloc(frames * sizeof(float));
+    if (loaded.parent.data == NULL) goto out_of_memory;
+    loaded.parent.frames = frames;
+    for (size_t i = 0; i < frames; ++i)
+        if (!get_float(f, &loaded.parent.data[i])) goto malformed;
+    if (!get64(f, &stored_hash) || fgetc(f) != EOF ||
+        stored_hash != ts_sample_hash(&loaded.parent)) goto malformed;
+    if (state.crop_first >= state.crop_last || state.crop_last > loaded.parent.frames ||
+        state.selection_first > state.selection_last ||
+        state.selection_last > state.crop_last - state.crop_first ||
+        state.view_first >= state.view_last ||
+        state.view_last > state.crop_last - state.crop_first ||
+        state.loop_last > state.crop_last - state.crop_first ||
+        (state.has_loop && state.loop_last <= state.loop_first) ||
+        (!state.has_loop && (state.loop_first != 0 || state.loop_last != 0))) goto malformed;
+    if (!render_snapshot(&loaded.current, &loaded, &state, error, error_size)) goto failed;
+    loaded.process = state.process;
+    loaded.crop_first = state.crop_first; loaded.crop_last = state.crop_last;
+    loaded.selection_first = state.selection_first; loaded.selection_last = state.selection_last;
+    loaded.view_first = state.view_first; loaded.view_last = state.view_last;
+    loaded.loop_first = state.loop_first; loaded.loop_last = state.loop_last;
+    loaded.loop_crossfade_ms = state.loop_crossfade_ms;
+    loaded.has_selection = state.has_selection; loaded.has_loop = state.has_loop;
+    memcpy(loaded.sample_edits, state.sample_edits, sizeof(loaded.sample_edits));
+    loaded.sample_edit_count = state.sample_edit_count;
+    fclose(f);
+    ts_instrument_free(instrument);
+    *instrument = loaded;
+    set_error(error, error_size, "");
+#undef GET_U32
+#undef GET_U64
+#undef GET_FLOAT
+    return 1;
+out_of_memory:
+    set_error(error, error_size, "Out of memory while loading TSR project");
+    goto failed;
+malformed:
+    set_error(error, error_size, "Malformed or unsupported TSR6 project");
+failed:
+    fclose(f);
+    ts_instrument_free(&loaded);
+#undef GET_U32
+#undef GET_U64
+#undef GET_FLOAT
+    return 0;
 }

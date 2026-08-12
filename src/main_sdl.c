@@ -2,9 +2,11 @@
 #include "tapesister/ui.h"
 
 #include <SDL2/SDL.h>
+#include <ctype.h>
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -28,6 +30,15 @@ typedef struct {
 static uint32_t advance_seed(uint32_t seed)
 {
     return seed * 1664525u + 1013904223u;
+}
+
+static int path_is_tsr(const char *path)
+{
+    const char *extension = path != NULL ? strrchr(path, '.') : NULL;
+    return extension != NULL && strlen(extension) == 4u &&
+           tolower((unsigned char)extension[1]) == 't' &&
+           tolower((unsigned char)extension[2]) == 's' &&
+           tolower((unsigned char)extension[3]) == 'r';
 }
 
 static void audio_callback(void *userdata, Uint8 *stream, int bytes)
@@ -195,11 +206,19 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                            TsInstrument *instrument, const char *path)
 {
     char error[160];
+    int recipe = path_is_tsr(path);
     int ok;
     lock_edit(device, audio);
-    ok = ts_instrument_load_wav(instrument, path, error, sizeof(error));
+    if (recipe)
+        ok = ts_instrument_load_recipe(instrument, path, error, sizeof(error));
+    else
+        ok = ts_instrument_load_wav(instrument, path, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "IMPORTED PARENT %.112s", instrument->parent.name);
+    if (ok && recipe)
+        snprintf(ui->status, sizeof(ui->status), "OPENED TSR PROJECT %.112s",
+                 instrument->parent.name);
+    else if (ok) snprintf(ui->status, sizeof(ui->status), "IMPORTED NEUTRAL PARENT %.104s",
+                          instrument->parent.name);
     else snprintf(ui->status, sizeof(ui->status), "LOAD FAILED: %.135s", error);
     return ok;
 }
@@ -366,6 +385,23 @@ static void set_loop_crossfade(SDL_AudioDeviceID device, AudioState *audio, TsUi
     else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
 }
 
+static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
+                              const TsInstrument *instrument)
+{
+    TsAuditionPlan plan;
+    if (!audio->playing || !audio->looping ||
+        !ts_audition_plan(instrument, audio->source, TS_AUDITION_LOOP, &plan)) return;
+    if (device) SDL_LockAudioDevice(device);
+    audio->sample = plan.sample;
+    audio->range_start = plan.first;
+    audio->range_end = plan.last;
+    audio->crossfade_frames = ts_audition_crossfade_frames(
+        &plan, instrument->loop_crossfade_ms);
+    if (audio->position < (double)plan.first || audio->position >= (double)plan.last)
+        audio->position = (double)plan.first;
+    if (device) SDL_UnlockAudioDevice(device);
+}
+
 static void browser_open(TsUiState *ui, TsBrowserMode mode)
 {
     const char *filename = mode == TS_BROWSER_SAVE_RECIPE ? "tapesister-recipe.tsr" :
@@ -452,7 +488,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     }
     if (browser->mode == TS_BROWSER_LOAD_WAV) {
         if (!ts_browser_selected_path(browser, path, sizeof(path))) {
-            snprintf(browser->message, sizeof(browser->message), "SELECT A WAV FILE");
+            snprintf(browser->message, sizeof(browser->message), "SELECT A WAV OR TSR FILE");
             return;
         }
         ok = load_instrument(device, audio, ui, instrument, path);
@@ -519,6 +555,26 @@ static size_t selection_frame_from_x(const TsInstrument *instrument, const TsUiS
         return parent_frame - instrument->crop_first;
     }
     return ts_instrument_frame_from_view_x(instrument, x, TS_WAVE_W);
+}
+
+static int loop_marker_x(const TsInstrument *instrument, const TsUiState *ui, int endpoint)
+{
+    size_t frame = endpoint == 1 ? instrument->loop_first : instrument->loop_last;
+    size_t first;
+    size_t last;
+    if (ui->audition_source == TS_AUDITION_PARENT) {
+        frame += instrument->crop_first;
+        first = 0;
+        last = instrument->parent.frames;
+    } else {
+        first = instrument->view_first;
+        last = instrument->view_last;
+    }
+    if (last <= first || frame < first || frame > last) return -1000;
+    {
+        int x = TS_WAVE_X + (int)((frame - first) * TS_WAVE_W / (last - first));
+        return x >= TS_WAVE_X + TS_WAVE_W ? TS_WAVE_X + TS_WAVE_W - 1 : x;
+    }
 }
 
 int main(int argc, char **argv)
@@ -745,6 +801,21 @@ int main(int argc, char **argv)
                 if (thumb_top > travel) thumb_top = travel;
                 ts_browser_set_scroll(&ui.browser, travel > 0 ?
                                       (thumb_top * maximum + travel / 2) / travel : 0);
+            } else if (event.type == SDL_MOUSEMOTION && ui.dragging_loop_endpoint) {
+                int x, y;
+                size_t frame;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
+                (void)y;
+                frame = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
+                if (!ui.loop_drag_started) {
+                    ts_instrument_begin_loop_drag(&instrument);
+                    ui.loop_drag_started = 1;
+                }
+                ui.dragging_loop_endpoint = ts_instrument_move_loop_endpoint(
+                    &instrument, ui.dragging_loop_endpoint, frame);
+                sync_playing_loop(device, &audio, &instrument);
+                snprintf(ui.status, sizeof(ui.status), "LOOP FLAGS %zu - %zu ZERO SNAPPED",
+                         instrument.loop_first, instrument.loop_last);
             } else if (event.type == SDL_MOUSEMOTION && ui.selecting) {
                 int x, y;
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
@@ -806,13 +877,25 @@ int main(int argc, char **argv)
                     browser_open(&ui, TS_BROWSER_EXPORT_WAV);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
-                    ui.selection_anchor = ts_sample_nearest_zero_crossing(
-                        &instrument.current, selection_frame_from_x(
-                            &instrument, &ui, x - TS_WAVE_X));
-                    ts_instrument_set_selection_snapped(
-                        &instrument, ui.selection_anchor, ui.selection_anchor);
-                    ui.selecting = 1;
-                    snprintf(ui.status, sizeof(ui.status), "SELECTING CURRENT");
+                    int first_x = instrument.has_loop ? loop_marker_x(&instrument, &ui, 1) : -1000;
+                    int last_x = instrument.has_loop ? loop_marker_x(&instrument, &ui, 2) : -1000;
+                    if (instrument.has_loop && abs(x - first_x) <= 6) {
+                        ui.dragging_loop_endpoint = 1;
+                        ui.loop_drag_started = 0;
+                        snprintf(ui.status, sizeof(ui.status), "DRAG LOOP START - ZERO SNAPPED");
+                    } else if (instrument.has_loop && abs(x - last_x) <= 6) {
+                        ui.dragging_loop_endpoint = 2;
+                        ui.loop_drag_started = 0;
+                        snprintf(ui.status, sizeof(ui.status), "DRAG LOOP END - ZERO SNAPPED");
+                    } else {
+                        ui.selection_anchor = ts_sample_nearest_zero_crossing(
+                            &instrument.current, selection_frame_from_x(
+                                &instrument, &ui, x - TS_WAVE_X));
+                        ts_instrument_set_selection_snapped(
+                            &instrument, ui.selection_anchor, ui.selection_anchor);
+                        ui.selecting = 1;
+                        snprintf(ui.status, sizeof(ui.status), "SELECTING CURRENT - ZERO SNAP");
+                    }
                 } else if (y >= 205 && y < 228 && x >= 10 && x < 80) {
                     ui.commit_armed = 0;
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
@@ -958,13 +1041,19 @@ int main(int argc, char **argv)
                     history_move(device, &audio, &ui, &instrument, 0);
                 } else if (y >= 289 && y < 312 && x >= 521 && x < 583) {
                     history_move(device, &audio, &ui, &instrument, 1);
+                } else if (y >= 289 && y < 312 && x >= 588 && x < 630) {
+                    ui.show_keyboard = !ui.show_keyboard;
+                    snprintf(ui.status, sizeof(ui.status), "ONSCREEN KEYS %s",
+                             ui.show_keyboard ? "SHOWN" : "HIDDEN");
                 } else {
                     int note = ts_ui_key_from_point(x, y);
-                    if (note >= 0 && device)
+                    if (ui.show_keyboard && note >= 0 && device)
                         begin_note(device, &audio, &ui, &instrument, note, obtained.freq);
                 }
             } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
                 ui.browser.dragging_scrollbar = 0;
+                ui.dragging_loop_endpoint = 0;
+                ui.loop_drag_started = 0;
                 if (ui.selecting) {
                     ui.selecting = 0;
                     snprintf(ui.status, sizeof(ui.status), "SELECTED %zu FRAMES",

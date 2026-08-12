@@ -37,18 +37,6 @@ static uint64_t waveform_hash(const TsFramebuffer *fb)
     return hash;
 }
 
-static int file_contains(const char *path, const char *needle)
-{
-    FILE *f = fopen(path, "rb");
-    char buffer[8192];
-    size_t used;
-    if (f == NULL) return 0;
-    used = fread(buffer, 1, sizeof(buffer) - 1, f);
-    buffer[used] = '\0';
-    fclose(f);
-    return strstr(buffer, needle) != NULL;
-}
-
 static int browser_find(const TsBrowser *browser, const char *name)
 {
     for (int i = 0; i < browser->entry_count; ++i)
@@ -59,7 +47,7 @@ static int browser_find(const TsBrowser *browser, const char *name)
 int main(void)
 {
     TsSample a, b, loaded, copy, dry, effected, repeated;
-    TsInstrument generated, imported, committed, audition;
+    TsInstrument generated, imported, committed, audition, restored;
     TsUiState ui;
     TsBrowser browser;
     TsFramebuffer fb;
@@ -69,6 +57,7 @@ int main(void)
     ts_sample_init(&dry); ts_sample_init(&effected); ts_sample_init(&repeated);
     ts_instrument_init(&generated); ts_instrument_init(&imported); ts_instrument_init(&committed);
     ts_instrument_init(&audition);
+    ts_instrument_init(&restored);
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
     CHECK(ts_sample_generate(&a, &first, error, sizeof(error)));
@@ -138,6 +127,9 @@ int main(void)
                                  error, sizeof(error)));
     CHECK(generated.source_kind == TS_SOURCE_GENERATED);
     CHECK(generated.parent.frames == generated.current.frames);
+    CHECK(ts_sample_hash(&generated.parent) == ts_sample_hash(&generated.current));
+    CHECK(generated.process.body == 0.5f && generated.process.edge == 0.0f &&
+          generated.process.drift == 0.0f);
     parent_hash = ts_sample_hash(&generated.parent);
     current_hash = ts_sample_hash(&generated.current);
 
@@ -180,11 +172,12 @@ int main(void)
 
     CHECK(ts_instrument_load_wav(&imported, "test-roundtrip.wav", error, sizeof(error)));
     CHECK(imported.source_kind == TS_SOURCE_IMPORTED);
+    CHECK(ts_sample_hash(&imported.parent) == ts_sample_hash(&imported.current));
     parent_hash = ts_sample_hash(&imported.parent);
     current_hash = ts_sample_hash(&imported.current);
     CHECK(ts_instrument_reseed(&imported, error, sizeof(error)));
     CHECK(ts_sample_hash(&imported.parent) == parent_hash);
-    CHECK(ts_sample_hash(&imported.current) != current_hash);
+    CHECK(ts_sample_hash(&imported.current) == current_hash);
 
     process = imported.process;
     process.noise_enabled = 1;
@@ -352,16 +345,51 @@ int main(void)
 
     CHECK(ts_instrument_set_loop_from_selection(&committed, error, sizeof(error)));
     CHECK(ts_instrument_set_loop_crossfade(&committed, 9.5f, error, sizeof(error)));
+    process = committed.process;
+    process.noise_enabled = 1;
+    process.noise_amount = 0.11f;
+    process.delay_enabled = 1;
+    process.delay_seconds = 0.019f;
+    process.delay_mix = 0.22f;
+    CHECK(ts_instrument_set_process(&committed, &process, error, sizeof(error)));
     CHECK(ts_instrument_save_recipe(&committed, "test-recipe.tsr", error, sizeof(error)));
-    CHECK(file_contains("test-recipe.tsr", "\"schema\": 5"));
-    CHECK(file_contains("test-recipe.tsr", "\"renderer\": 3"));
-    CHECK(file_contains("test-recipe.tsr", "\"bypass\": true"));
-    CHECK(file_contains("test-recipe.tsr", "\"generation\": 1"));
-    CHECK(file_contains("test-recipe.tsr", "\"ancestor_hash\""));
-    CHECK(file_contains("test-recipe.tsr", "\"sample_edits\""));
-    CHECK(file_contains("test-recipe.tsr", "\"REVERSE\""));
-    CHECK(file_contains("test-recipe.tsr", "\"loop\": {\"enabled\": true"));
-    CHECK(file_contains("test-recipe.tsr", "\"crossfade_ms\": 9.5"));
+    CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
+    CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
+    CHECK(ts_sample_hash(&restored.current) == ts_sample_hash(&committed.current));
+    CHECK(restored.generation == committed.generation &&
+          restored.ancestor_hash == committed.ancestor_hash);
+    CHECK(restored.sample_edit_count == committed.sample_edit_count);
+    CHECK(restored.has_loop && restored.loop_first == committed.loop_first &&
+          restored.loop_last == committed.loop_last);
+    CHECK(fabsf(restored.loop_crossfade_ms - 9.5f) < 0.0001f);
+    {
+        FILE *bad = fopen("test-malformed.tsr", "wb");
+        uint64_t parent_before = ts_sample_hash(&restored.parent);
+        uint64_t current_before = ts_sample_hash(&restored.current);
+        CHECK(bad != NULL);
+        if (bad != NULL) {
+            CHECK(fwrite("TSR6", 1, 4, bad) == 4);
+            fclose(bad);
+        }
+        CHECK(!ts_instrument_load_recipe(&restored, "test-malformed.tsr",
+                                         error, sizeof(error)));
+        CHECK(ts_sample_hash(&restored.parent) == parent_before);
+        CHECK(ts_sample_hash(&restored.current) == current_before);
+        CHECK(restored.has_loop && restored.loop_first == committed.loop_first &&
+              restored.loop_last == committed.loop_last);
+        remove("test-malformed.tsr");
+    }
+    {
+        size_t old_first = restored.loop_first;
+        size_t old_last = restored.loop_last;
+        int role;
+        ts_instrument_begin_loop_drag(&restored);
+        role = ts_instrument_move_loop_endpoint(&restored, 2, 0);
+        CHECK(role == 1);
+        CHECK(restored.loop_first < restored.loop_last);
+        CHECK(ts_instrument_undo(&restored, error, sizeof(error)));
+        CHECK(restored.loop_first == old_first && restored.loop_last == old_last);
+    }
     remove("test-recipe.tsr");
     remove("test-roundtrip.wav");
 
@@ -383,7 +411,7 @@ int main(void)
         CHECK(ts_browser_open(&browser, TS_BROWSER_LOAD_WAV, NULL));
         CHECK(browser_find(&browser, "test-browser-dir") >= 0);
         CHECK(browser_find(&browser, "test-browser-load.wav") >= 0);
-        CHECK(browser_find(&browser, "test-browser-save.tsr") < 0);
+        CHECK(browser_find(&browser, "test-browser-save.tsr") >= 0);
         CHECK(browser_find(&browser, "test-browser-ignore.txt") < 0);
         ts_browser_select(&browser, browser_find(&browser, "test-browser-load.wav"));
         CHECK(ts_browser_selected_path(&browser, path, sizeof(path)));
@@ -446,6 +474,17 @@ int main(void)
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     CHECK(framebuffer_contains(&fb, 0xff009ee3u));
     {
+        int zero_pixels = 0;
+        int middle = TS_WAVE_Y + TS_WAVE_H / 2;
+        for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; ++x)
+            if (fb.pixels[middle * TS_UI_WIDTH + x] == 0xffff1ce7u) ++zero_pixels;
+        CHECK(zero_pixels > 0);
+    }
+    ui.show_keyboard = 0;
+    ts_ui_render(&fb, &ui, &imported);
+    CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] == 0xff1c1c1cu);
+    ui.show_keyboard = 1;
+    {
         uint64_t current_waveform = waveform_hash(&fb);
         ui.audition_source = TS_AUDITION_PARENT;
         ts_ui_render(&fb, &ui, &imported);
@@ -483,6 +522,7 @@ int main(void)
     ts_sample_free(&dry); ts_sample_free(&effected); ts_sample_free(&repeated);
     ts_instrument_free(&generated); ts_instrument_free(&imported); ts_instrument_free(&committed);
     ts_instrument_free(&audition);
+    ts_instrument_free(&restored);
     if (failures) return 1;
     puts("TapeSister zero-snap, loop, A/B audition, browser, and editor tests passed");
     return 0;
