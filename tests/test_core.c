@@ -769,6 +769,19 @@ int main(void)
             if (fb.pixels[middle * TS_UI_WIDTH + x] == 0xffff1ce7u) ++zero_pixels;
         CHECK(zero_pixels > 0);
     }
+    {
+        int ghost_pixels = 0;
+        ui.tape_dragging = 1;
+        ui.tape_source_first = imported.selection_first;
+        ui.tape_source_last = imported.selection_last;
+        ui.tape_destination = (int64_t)(imported.current.frames * 3u / 5u);
+        ts_ui_render(&fb, &ui, &imported);
+        for (int y = TS_WAVE_Y; y < TS_WAVE_Y + TS_WAVE_H; ++y)
+            for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; ++x)
+                if (fb.pixels[y * TS_UI_WIDTH + x] == 0xff35ffffu) ++ghost_pixels;
+        CHECK(ghost_pixels > 1000);
+        ui.tape_dragging = 0;
+    }
     ui.show_keyboard = 0;
     ts_ui_render(&fb, &ui, &imported);
     CHECK(ts_ui_bank_slot_from_point(46, 341) == 0);

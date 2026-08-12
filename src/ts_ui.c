@@ -430,22 +430,48 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         int clipped_last = last_visible > TS_WAVE_X + TS_WAVE_W ?
                            TS_WAVE_X + TS_WAVE_W : last_visible;
         for (int x = clipped_first; x < clipped_last; ++x) {
-            int64_t frame = (int64_t)view_first +
-                            (int64_t)(x - TS_WAVE_X) *
-                            (int64_t)(view_last - view_first) / TS_WAVE_W;
-            int64_t source_at = frame - destination + (int64_t)ui->tape_source_first;
-            if (source_at >= (int64_t)ui->tape_source_first &&
-                source_at < (int64_t)ui->tape_source_last) {
-                float value = instrument->current.data[source_at];
+            int64_t frame_begin = (int64_t)view_first +
+                                  (int64_t)(x - TS_WAVE_X) *
+                                  (int64_t)(view_last - view_first) / TS_WAVE_W;
+            int64_t frame_end = (int64_t)view_first +
+                                (int64_t)(x - TS_WAVE_X + 1) *
+                                (int64_t)(view_last - view_first) / TS_WAVE_W;
+            int64_t source_begin = frame_begin - destination +
+                                   (int64_t)ui->tape_source_first;
+            int64_t source_end = frame_end - destination +
+                                 (int64_t)ui->tape_source_first;
+            if (source_begin < (int64_t)ui->tape_source_first)
+                source_begin = (int64_t)ui->tape_source_first;
+            if (source_end > (int64_t)ui->tape_source_last)
+                source_end = (int64_t)ui->tape_source_last;
+            if (source_end <= source_begin &&
+                source_begin >= (int64_t)ui->tape_source_first &&
+                source_begin < (int64_t)ui->tape_source_last)
+                source_end = source_begin + 1;
+            if (source_begin < source_end) {
+                float low = 1.0f;
+                float high = -1.0f;
                 int middle = TS_WAVE_Y + TS_WAVE_H / 2;
-                int y = middle - (int)(value * (TS_WAVE_H / 2 - 6));
-                rect(fb, x, y - 1, 1, 3, PAL_EFFECT);
+                int y0;
+                int y1;
+                for (int64_t source_at = source_begin; source_at < source_end; ++source_at) {
+                    float value = instrument->current.data[source_at];
+                    if (value < low) low = value;
+                    if (value > high) high = value;
+                }
+                y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
+                y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
+                if (y0 == y1) rect(fb, x, y0 - 1, 1, 3, PAL_EFFECT);
+                else line(fb, x, y0, x, y1, PAL_EFFECT);
             }
         }
         if (clipped_last > clipped_first) {
-            rect(fb, clipped_first, TS_WAVE_Y + 2, clipped_last - clipped_first, 1, PAL_EFFECT);
-            rect(fb, clipped_first, TS_WAVE_Y + TS_WAVE_H - 3,
-                 clipped_last - clipped_first, 1, PAL_EFFECT);
+            rect(fb, clipped_first, TS_WAVE_Y + 2, clipped_last - clipped_first, 2,
+                 PAL_EFFECT);
+            rect(fb, clipped_first, TS_WAVE_Y + TS_WAVE_H - 4,
+                 clipped_last - clipped_first, 2, PAL_EFFECT);
+            rect(fb, clipped_first, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
+            rect(fb, clipped_last - 2, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
         }
     }
 
