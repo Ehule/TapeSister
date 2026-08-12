@@ -8,7 +8,8 @@ enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
 
 typedef enum {
-    TS_FX_NOISE = 0,
+    TS_FX_EDIT = 0,
+    TS_FX_NOISE,
     TS_FX_DELAY,
     TS_FX_SPACE
 } TsFxPage;

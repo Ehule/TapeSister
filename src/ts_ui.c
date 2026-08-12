@@ -225,14 +225,22 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     }
     button(fb, 540, 205, 90, "STOP ALL", 0);
 
-    slider(fb, 10, 233, 110, "BODY", instrument->process.body, PAL_INSTRUMENT);
-    slider(fb, 130, 233, 110, "EDGE", instrument->process.edge, PAL_VOLUME);
-    slider(fb, 250, 233, 110, "DRIFT", instrument->process.drift, PAL_TUNING);
-    button(fb, 380, 233, 75, "NOISE", ui->fx_page == TS_FX_NOISE);
-    button(fb, 460, 233, 75, "DELAY", ui->fx_page == TS_FX_DELAY);
-    button(fb, 540, 233, 90, "SPACE", ui->fx_page == TS_FX_SPACE);
+    slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
+    slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);
+    slider(fb, 230, 233, 100, "DRIFT", instrument->process.drift, PAL_TUNING);
+    button(fb, 345, 233, 65, "EDIT", ui->fx_page == TS_FX_EDIT);
+    button(fb, 415, 233, 65, "NOISE", ui->fx_page == TS_FX_NOISE);
+    button(fb, 485, 233, 65, "DELAY", ui->fx_page == TS_FX_DELAY);
+    button(fb, 555, 233, 75, "SPACE", ui->fx_page == TS_FX_SPACE);
 
-    if (ui->fx_page == TS_FX_NOISE) {
+    if (ui->fx_page == TS_FX_EDIT) {
+        button(fb, 10, 261, 94, "REVERSE", 0);
+        button(fb, 109, 261, 94, "NORMALIZE", 0);
+        button(fb, 208, 261, 84, "AMP DOWN", 0);
+        button(fb, 297, 261, 84, "AMP UP", 0);
+        button(fb, 386, 261, 110, "FADE IN", 0);
+        button(fb, 501, 261, 110, "FADE OUT", 0);
+    } else if (ui->fx_page == TS_FX_NOISE) {
         char color[32];
         button(fb, 10, 261, 94, instrument->process.noise_enabled ? "NOISE ON" : "NOISE OFF",
                instrument->process.noise_enabled);
@@ -263,7 +271,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 460, 289, 56, "UNDO", instrument->undo_count > 0);
     button(fb, 521, 289, 62, "REDO", instrument->redo_count > 0);
 
-    text(fb, 11, 318, "SELECT WAVEFORM WITH MOUSE   PLAY KEYS Z-M AND Q-U", RGB(184, 180, 184), 1);
+    text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  =/- ZOOM  ARROWS PAN", RGB(184, 180, 184), 1);
     const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
     const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
     for (int i = 0; i < 14; ++i) {
