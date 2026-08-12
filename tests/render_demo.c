@@ -23,6 +23,7 @@ int main(int argc, char **argv)
     snprintf(ui.status, sizeof(ui.status), "PARENT PRESERVED - CURRENT READY TO SHAPE");
     if (argc > 2 && strcmp(argv[2], "browser") == 0) {
         ts_browser_open(&ui.browser, TS_BROWSER_EXPORT_WAV, "metallic-family-07.wav");
+        ui.text_cursor_visible = 1;
         snprintf(ui.browser.directory, sizeof(ui.browser.directory),
                  "/home/user/Samples/TapeSister/Metallic Family");
         ui.browser.entry_count = 18;
@@ -38,6 +39,13 @@ int main(int argc, char **argv)
         ui.browser.selected = 7;
         ui.browser.scroll = 0;
         snprintf(ui.browser.message, sizeof(ui.browser.message), "18 ITEMS");
+    } else if (argc > 2 && strcmp(argv[2], "ab") == 0) {
+        ui.audition_source = TS_AUDITION_PARENT;
+        ui.playback_active = 1;
+        ui.playhead_source = TS_AUDITION_PARENT;
+        ui.playhead_frame = instrument.parent.frames * 7u / 16u;
+        ui.playhead_frames = instrument.parent.frames;
+        snprintf(ui.status, sizeof(ui.status), "AUDITIONING PARENT - PLAYING SELECTION");
     }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {
