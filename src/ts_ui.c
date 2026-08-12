@@ -1,5 +1,6 @@
 #include "tapesister/ui.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -211,11 +212,83 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
-    ui->active_key = -1;
+    ui->mouse_note = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->show_keyboard = 1;
     ts_browser_init(&ui->browser);
     snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR GENERATE A PARENT");
+}
+
+void ts_ui_reset_parent_view(TsUiState *ui, size_t frames)
+{
+    if (ui == NULL) return;
+    ui->parent_view_first = 0;
+    ui->parent_view_last = frames;
+}
+
+static void valid_parent_view(const TsUiState *ui, size_t frames,
+                              size_t *first, size_t *last)
+{
+    *first = ui != NULL ? ui->parent_view_first : 0;
+    *last = ui != NULL ? ui->parent_view_last : frames;
+    if (*last <= *first || *last > frames) {
+        *first = 0;
+        *last = frames;
+    }
+}
+
+int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
+                           float anchor_ratio, float scale)
+{
+    size_t first, last, span, new_span, new_first;
+    if (ui == NULL || frames < 2 || scale <= 0.0f) return 0;
+    valid_parent_view(ui, frames, &first, &last);
+    span = last - first;
+    new_span = (size_t)lrintf((float)span * scale);
+    if (new_span < 16u) new_span = frames < 16u ? frames : 16u;
+    if (new_span > frames) new_span = frames;
+    if (new_span == span) return 0;
+    if (anchor > frames) anchor = frames;
+    if (anchor_ratio < 0.0f) anchor_ratio = 0.0f;
+    if (anchor_ratio > 1.0f) anchor_ratio = 1.0f;
+    {
+        size_t before = (size_t)lrintf((float)new_span * anchor_ratio);
+        new_first = anchor > before ? anchor - before : 0;
+    }
+    if (new_first + new_span > frames) new_first = frames - new_span;
+    ui->parent_view_first = new_first;
+    ui->parent_view_last = new_first + new_span;
+    return 1;
+}
+
+int ts_ui_pan_parent_view(TsUiState *ui, size_t frames, ptrdiff_t amount)
+{
+    size_t first, last, span, new_first;
+    if (ui == NULL || frames < 2 || amount == 0) return 0;
+    valid_parent_view(ui, frames, &first, &last);
+    span = last - first;
+    if (span >= frames) return 0;
+    if (amount < 0) {
+        size_t magnitude = (size_t)(-amount);
+        new_first = magnitude > first ? 0 : first - magnitude;
+    } else {
+        new_first = first + (size_t)amount;
+        if (new_first + span > frames) new_first = frames - span;
+    }
+    if (new_first == first) return 0;
+    ui->parent_view_first = new_first;
+    ui->parent_view_last = new_first + span;
+    return 1;
+}
+
+size_t ts_ui_parent_frame_from_x(const TsUiState *ui, size_t frames, int x, int width)
+{
+    size_t first, last;
+    if (width <= 0 || frames == 0) return 0;
+    valid_parent_view(ui, frames, &first, &last);
+    if (x < 0) x = 0;
+    if (x >= width) x = width - 1;
+    return first + (size_t)x * (last - first) / (size_t)width;
 }
 
 static int frame_x(size_t frame_index, size_t view_first, size_t view_last)
@@ -231,13 +304,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 {
     int showing_parent = ui->audition_source == TS_AUDITION_PARENT;
     const TsSample *sample = showing_parent ? &instrument->parent : &instrument->current;
-    size_t view_first = showing_parent ? 0 : instrument->view_first;
-    size_t view_last = showing_parent ? instrument->parent.frames : instrument->view_last;
+    size_t view_first = instrument->view_first;
+    size_t view_last = instrument->view_last;
     size_t selection_first = instrument->selection_first;
     size_t selection_last = instrument->selection_last;
     size_t loop_first = instrument->loop_first;
     size_t loop_last = instrument->loop_last;
     if (showing_parent) {
+        valid_parent_view(ui, instrument->parent.frames, &view_first, &view_last);
         selection_first += instrument->crop_first;
         selection_last += instrument->crop_first;
         loop_first += instrument->crop_first;
@@ -403,12 +477,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 521, 289, 62, "REDO", instrument->redo_count > 0);
     button(fb, 588, 289, 42, "KEYS", ui->show_keyboard);
 
-    text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  =/- ZOOM  ARROWS PAN", RGB(184, 180, 184), 1);
+    text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  =/- ZOOM  ARROWS PAN  SHIFT+CLICK CHORD", RGB(184, 180, 184), 1);
     if (ui->show_keyboard) {
         const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
         const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
         for (int i = 0; i < 14; ++i) {
-            int active = ui->active_key == i;
+            int active = (ui->active_notes & (1u << i)) != 0;
             rect(fb, white_x + i * white_w, white_y, white_w - 1, white_h,
                  active ? PAL_MOUSE : RGB(220, 216, 207));
             text(fb, white_x + i * white_w + 23, white_y + 36, labels[i], RGB(24, 24, 24), 1);
@@ -418,7 +492,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             const int semitones[] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
             for (int i = 0; i < 10; ++i) {
                 int key = semitones[i];
-                int active = ui->active_key == key;
+                int active = (ui->active_notes & (1u << key)) != 0;
                 rect(fb, white_x + (black_after[i] + 1) * white_w - 16, white_y, 31, 31,
                      active ? PAL_VOLUME : RGB(18, 18, 18));
             }

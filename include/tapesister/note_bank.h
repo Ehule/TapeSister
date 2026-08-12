@@ -1,0 +1,53 @@
+#ifndef TAPESISTER_NOTE_BANK_H
+#define TAPESISTER_NOTE_BANK_H
+
+#include <stdint.h>
+
+#include "tapesister/audition.h"
+
+#define TS_NOTE_VOICE_LIMIT 5
+
+typedef struct {
+    const TsSample *sample;
+    double position;
+    double step;
+    double pitch;
+    size_t range_first;
+    size_t range_last;
+    size_t crossfade_frames;
+    TsAuditionSource source;
+    uint64_t serial;
+    int note;
+    int looping;
+    int latched;
+    int active;
+} TsNoteVoice;
+
+typedef struct {
+    TsNoteVoice voices[TS_NOTE_VOICE_LIMIT];
+    uint64_t next_serial;
+} TsNoteBank;
+
+typedef enum {
+    TS_NOTE_START_FAILED = 0,
+    TS_NOTE_STARTED,
+    TS_NOTE_TOGGLED_OFF,
+    TS_NOTE_LIMIT_REACHED
+} TsNoteStartResult;
+
+void ts_note_bank_init(TsNoteBank *bank);
+void ts_note_bank_clear(TsNoteBank *bank);
+void ts_note_bank_clear_latched(TsNoteBank *bank);
+TsNoteStartResult ts_note_bank_start(TsNoteBank *bank, const TsInstrument *instrument,
+                                     TsAuditionSource source, int note, int latched,
+                                     int output_rate);
+void ts_note_bank_release(TsNoteBank *bank, int note);
+void ts_note_bank_sync(TsNoteBank *bank, const TsInstrument *instrument, int output_rate);
+void ts_note_bank_set_source(TsNoteBank *bank, const TsInstrument *instrument,
+                             TsAuditionSource source, int output_rate);
+float ts_note_bank_read(TsNoteBank *bank);
+int ts_note_bank_count(const TsNoteBank *bank);
+uint32_t ts_note_bank_mask(const TsNoteBank *bank);
+const TsNoteVoice *ts_note_bank_display_voice(const TsNoteBank *bank);
+
+#endif

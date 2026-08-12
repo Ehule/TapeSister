@@ -31,7 +31,8 @@ typedef struct {
 } TsFramebuffer;
 
 typedef struct {
-    int active_key;
+    uint32_t active_notes;
+    int mouse_note;
     int selecting;
     int commit_armed;
     int playback_active;
@@ -46,6 +47,8 @@ typedef struct {
     size_t selection_anchor;
     size_t playhead_frame;
     size_t playhead_frames;
+    size_t parent_view_first;
+    size_t parent_view_last;
     char status[160];
 } TsUiState;
 
@@ -53,5 +56,10 @@ void ts_ui_init(TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
+void ts_ui_reset_parent_view(TsUiState *ui, size_t frames);
+int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
+                           float anchor_ratio, float scale);
+int ts_ui_pan_parent_view(TsUiState *ui, size_t frames, ptrdiff_t amount);
+size_t ts_ui_parent_frame_from_x(const TsUiState *ui, size_t frames, int x, int width);
 
 #endif

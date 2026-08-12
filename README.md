@@ -19,7 +19,7 @@ Dragging or loading a WAV makes that WAV the Parent. Every freshly generated or 
 
 ## A/B audition and playhead
 
-The **Parent** and **Current** buttons choose what every playback trigger auditions without changing the editing target: edits, Save, and Export always operate on Current. `Ctrl+B` toggles the same selector. The waveform switches with the audition source, showing the full immutable Parent or Current's active editor view.
+The **Parent** and **Current** buttons choose what every playback trigger auditions without changing the editing target: edits, Save, and Export always operate on Current. `Ctrl+B` toggles the same selector. Each source has its own viewport, so wheel/keyboard zoom, panning, Zoom Selection, Show All, and Play View work directly on the waveform currently displayed without disturbing the other source's view.
 
 Play All and keyboard notes use the complete chosen source. Play Selection and Play Displayed map Current's crop-relative range back to the matching frames in Parent, so comparisons remain meaningful after cropping. Switching Parent/Current during playback preserves fractional progress through the active range instead of restarting it.
 
@@ -29,11 +29,11 @@ A source-colored playhead is visible only while audio is running: green identifi
 
 Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in Current. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop. Parent view maps pointer positions through Current's crop before snapping. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
 
-The Loop page turns the current selection into one forward loop, clears it, plays it continuously, and sets a 0–50 ms wrap crossfade. Blue boundaries and handles distinguish the loop from the purple/cyan selection. Either handle can be dragged live; it remains zero-snapped and automatically becomes the opposite endpoint when crossed. Computer and onscreen notes sustain the loop only while held; Play Loop continues until Stop All, Space, or Escape.
+The Loop page turns the current selection into one forward loop, clears it, plays it continuously, and sets a 0–50 ms wrap crossfade. Blue boundaries and handles distinguish the loop from the purple/cyan selection. Either handle can be dragged live; it remains zero-snapped and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Stop All, Space, or Escape.
 
 Parent/Current A/B maps the same loop through the crop offset and preserves relative playback progress. Loop range and crossfade participate in Undo/Redo. Reset clears them and can be undone; Commit carries the completed loop onto the newly promoted Parent while clearing prior edit history.
 
-The small **KEYS** button shows or hides the onscreen keyboard, freeing its lower-panel area for future controls. Computer-key audition remains available in either state.
+The small **KEYS** button shows or hides the onscreen keyboard, freeing its lower-panel area for future controls. Computer-key audition remains available in either state. The keyboard is five-voice polyphonic: Shift-click toggles notes into a latched chord/drone, Shift-clicking an active note removes it, and an ordinary onscreen-key click clears the chord and returns to momentary audition. Sustained voices survive loop-handle changes and Current rerenders, remapping to the new audio at the same relative position.
 
 ## DSP shelf
 
@@ -124,5 +124,8 @@ Pass a WAV or TSR path on the command line, drag it onto the window, or choose i
 - Browser navigation: `Up` / `Down`, `Page Up` / `Page Down`, `Home` / `End`
 - Browser parent directory: `Backspace` while the file list is focused
 - Browser confirm/cancel: `Enter` / `Escape`
+- Build/toggle a five-note chord: `Shift` + onscreen-key click
 
-Cut/copy/paste, ping-pong/reverse/multiple loops, automatic loop candidates, deeper synthesis/filter/shaper stages, and full genealogy/propagation remain separate, visually verified slices.
+The next architectural slice is a 16-slot sample-family bank: the initial Parent occupies the first slot, shaped Current states can be captured into later slots, and the whole family can be exported into a folder derived from the initial Parent name. Slot lineage, naming, overwrite behavior, and how sound-shaping recipes are stored will be designed together rather than hidden inside the loop editor.
+
+Cut/copy/paste, ping-pong/reverse/multiple loops, automatic loop candidates, deeper synthesis/filter/shaper stages, expanded factory recipes, and full genealogy/propagation remain separate, visually verified slices.

@@ -1,4 +1,5 @@
 #include "tapesister/sample.h"
+#include "tapesister/note_bank.h"
 #include "tapesister/ui.h"
 
 #include <math.h>
@@ -49,6 +50,7 @@ int main(void)
     TsSample a, b, loaded, copy, dry, effected, repeated;
     TsInstrument generated, imported, committed, audition, restored;
     TsUiState ui;
+    TsNoteBank notes;
     TsBrowser browser;
     TsFramebuffer fb;
     char error[160];
@@ -58,6 +60,7 @@ int main(void)
     ts_instrument_init(&generated); ts_instrument_init(&imported); ts_instrument_init(&committed);
     ts_instrument_init(&audition);
     ts_instrument_init(&restored);
+    ts_note_bank_init(&notes);
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
     CHECK(ts_sample_generate(&a, &first, error, sizeof(error)));
@@ -390,6 +393,48 @@ int main(void)
         CHECK(ts_instrument_undo(&restored, error, sizeof(error)));
         CHECK(restored.loop_first == old_first && restored.loop_last == old_last);
     }
+    CHECK(ts_note_bank_start(&notes, &restored, TS_AUDITION_CURRENT,
+                             0, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start(&notes, &restored, TS_AUDITION_CURRENT,
+                             4, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start(&notes, &restored, TS_AUDITION_CURRENT,
+                             7, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start(&notes, &restored, TS_AUDITION_CURRENT,
+                             12, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start(&notes, &restored, TS_AUDITION_CURRENT,
+                             16, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_count(&notes) == TS_NOTE_VOICE_LIMIT);
+    CHECK(ts_note_bank_display_voice(&notes) != NULL &&
+          ts_note_bank_display_voice(&notes)->note == 16);
+    CHECK(ts_note_bank_mask(&notes) == ((1u << 0) | (1u << 4) | (1u << 7) |
+                                        (1u << 12) | (1u << 16)));
+    CHECK(ts_note_bank_start(&notes, &restored, TS_AUDITION_CURRENT,
+                             19, 1, 48000) == TS_NOTE_LIMIT_REACHED);
+    CHECK(ts_note_bank_start(&notes, &restored, TS_AUDITION_CURRENT,
+                             7, 1, 48000) == TS_NOTE_TOGGLED_OFF);
+    CHECK(ts_note_bank_count(&notes) == 4);
+    CHECK(ts_note_bank_start(&notes, &restored, TS_AUDITION_CURRENT,
+                             2, 0, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_count(&notes) == 5);
+    ts_note_bank_release(&notes, 2);
+    CHECK(ts_note_bank_count(&notes) == 4);
+    {
+        const TsNoteVoice *voice = ts_note_bank_display_voice(&notes);
+        double before = voice != NULL ? voice->position : 0.0;
+        (void)ts_note_bank_read(&notes);
+        voice = ts_note_bank_display_voice(&notes);
+        CHECK(voice != NULL && voice->position > before);
+    }
+    process = restored.process;
+    process.body = 0.73f;
+    CHECK(ts_instrument_set_process(&restored, &process, error, sizeof(error)));
+    ts_note_bank_sync(&notes, &restored, 48000);
+    CHECK(ts_note_bank_count(&notes) == 4);
+    CHECK(ts_note_bank_display_voice(&notes)->sample == &restored.current);
+    ts_note_bank_set_source(&notes, &restored, TS_AUDITION_PARENT, 48000);
+    CHECK(ts_note_bank_display_voice(&notes)->sample == &restored.parent);
+    ts_note_bank_clear_latched(&notes);
+    CHECK(ts_note_bank_count(&notes) == 0);
     remove("test-recipe.tsr");
     remove("test-roundtrip.wav");
 
@@ -491,6 +536,28 @@ int main(void)
         CHECK(waveform_hash(&fb) != current_waveform);
         ui.audition_source = TS_AUDITION_CURRENT;
     }
+    ts_ui_reset_parent_view(&ui, imported.parent.frames);
+    ui.audition_source = TS_AUDITION_PARENT;
+    ts_ui_render(&fb, &ui, &imported);
+    {
+        uint64_t full_parent = waveform_hash(&fb);
+        size_t anchor = imported.parent.frames / 3u;
+        CHECK(ts_ui_zoom_parent_view(&ui, imported.parent.frames,
+                                     anchor, 0.5f, 0.5f));
+        CHECK(ui.parent_view_last - ui.parent_view_first == imported.parent.frames / 2u);
+        CHECK(ts_ui_parent_frame_from_x(&ui, imported.parent.frames, 300, 600) + 1u >=
+              anchor);
+        ts_ui_render(&fb, &ui, &imported);
+        CHECK(waveform_hash(&fb) != full_parent);
+        CHECK(ts_ui_pan_parent_view(&ui, imported.parent.frames,
+                                    (ptrdiff_t)((ui.parent_view_last -
+                                                 ui.parent_view_first) / 8u)));
+    }
+    ui.audition_source = TS_AUDITION_CURRENT;
+    ui.active_notes = (1u << 0) | (1u << 1);
+    ts_ui_render(&fb, &ui, &imported);
+    CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] == 0xffffd265u);
+    CHECK(fb.pixels[340 * TS_UI_WIDTH + 50] == 0xffff1ce7u);
     ui.playback_active = 1;
     ui.playhead_source = TS_AUDITION_CURRENT;
     ui.playhead_frame = imported.current.frames / 2;
@@ -501,6 +568,7 @@ int main(void)
           0xffffd265u);
     ui.playhead_source = TS_AUDITION_PARENT;
     ui.audition_source = TS_AUDITION_PARENT;
+    ts_ui_reset_parent_view(&ui, imported.parent.frames);
     ui.playhead_frame = imported.parent.frames / 2;
     ui.playhead_frames = imported.parent.frames;
     ts_ui_render(&fb, &ui, &imported);

@@ -59,7 +59,8 @@ int main(int argc, char **argv)
         ui.playhead_source = TS_AUDITION_CURRENT;
         ui.playhead_frame = (instrument.loop_first + instrument.loop_last) / 2u;
         ui.playhead_frames = instrument.current.frames;
-        snprintf(ui.status, sizeof(ui.status), "PLAYING CURRENT LOOP - FORWARD CROSSFADE");
+        ui.active_notes = (1u << 0) | (1u << 4) | (1u << 7);
+        snprintf(ui.status, sizeof(ui.status), "LATCHED CHORD 3/5 - DRAG LOOP FLAGS LIVE");
     }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {

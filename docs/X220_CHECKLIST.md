@@ -64,7 +64,8 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 ## A/B audition and playhead
 
 - [ ] Current is selected by default; Parent and Current buttons plus `Ctrl+B` switch the audition source without changing Current.
-- [ ] The waveform changes immediately with the A/B selector: Parent shows the full Parent and Current restores the active Current editor view.
+- [ ] The waveform changes immediately with the A/B selector and each source restores its own independent zoom/pan view.
+- [ ] Wheel, Shift+wheel, `+/-`, arrows, Zoom Selection, Show All, and Play View all operate on Parent while Parent is displayed.
 - [ ] Play All, Play Selection, Play Displayed, computer keys, and onscreen keys all use the chosen audition source.
 - [ ] After Crop, Parent selection/displayed audition maps to the matching uncropped Parent frames.
 - [ ] Switching Parent/Current during playback preserves relative progress rather than restarting.
@@ -83,8 +84,12 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Reverse, Normalize, Amplify, fades, Crop, and Set Loop all use the visibly snapped highlight.
 - [ ] Set Loop creates one blue forward-loop region with unmistakable start/end markers; Clear removes it.
 - [ ] Each blue flag drags smoothly, remains zero-snapped, updates a playing loop live, and swaps start/end role when crossed.
+- [ ] Releasing a dragged loop flag does not release a note held from the computer keyboard or onscreen keyboard.
 - [ ] Play Loop repeats until Stop All, Space, or Escape; no note or loop remains stuck.
-- [ ] Computer and onscreen notes sustain the loop while held and stop on release; without a loop they retain one-shot behavior.
+- [ ] Computer and onscreen notes provide up to five independent voices, sustain the loop while held, and stop individually on release; without a loop they retain one-shot behavior.
+- [ ] Shift-click builds a latched onscreen chord up to five notes, toggles an active chord note off, and refuses a sixth without stealing a voice.
+- [ ] An ordinary onscreen-key click clears the latched chord and returns to momentary audition.
+- [ ] Held and latched notes survive Body/Edge/Drift and DSP rerenders, continuing at the corresponding loop position after the render pause.
 - [ ] The 0–50 ms crossfade is clearly audible on difficult joins and remains stable at both limits and on short loops.
 - [ ] Switching Parent/Current during loop playback maps the region and relative playhead position without restarting.
 - [ ] Crop keeps the overlapping loop portion in correct Current-relative coordinates; Undo restores the prior crop and loop exactly.
