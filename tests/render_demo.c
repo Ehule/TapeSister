@@ -125,6 +125,19 @@ int main(int argc, char **argv)
         ui.tape_destination = (int64_t)(instrument.current.frames * 9u / 16u);
         snprintf(ui.status, sizeof(ui.status),
                  "COPY MIX GHOST - RELEASE AT ZERO CROSSING  LOOP PING-PONG");
+    } else if (argc > 2 && strcmp(argv[2], "recipe") == 0) {
+        TsProcessRecipe process = ui.recipes.slots[7].process;
+        if (!ts_instrument_set_process(&instrument, &process, error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ui.fx_page = TS_FX_SHAPE;
+        ui.show_keyboard = 0;
+        ui.show_recipes = 1;
+        ui.recipes.active_slot = 7;
+        snprintf(ui.status, sizeof(ui.status),
+                 "BROKEN FOLD APPLIED - PARENT PRESERVED  UNDO RESTORES");
     }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {

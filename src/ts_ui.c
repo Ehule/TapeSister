@@ -197,12 +197,13 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
             rect(fb, cursor_x, 301, 2, 11, PAL_MOUSE);
         }
     } else {
-        text(fb, 58, 300, "SELECT AN EXISTING WAV OR TSR", PAL_EFFECT, 1);
+        text(fb, 58, 300, "SELECT AN EXISTING WAV, TSR, OR TSP", PAL_EFFECT, 1);
     }
 
     button(fb, 58, 326, 72, "UP DIR", 0);
     button(fb, 135, 326, 120, browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
-           browser->mode == TS_BROWSER_SAVE_RECIPE ? "SAVE" : "EXPORT",
+           (browser->mode == TS_BROWSER_SAVE_RECIPE ||
+            browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVE" : "EXPORT",
            browser->overwrite_armed);
     button(fb, 260, 326, 84, "CANCEL", 0);
     snprintf(footer, sizeof(footer), "%.38s", browser->overwrite_armed ?
@@ -220,7 +221,9 @@ void ts_ui_init(TsUiState *ui)
     ui->renaming_bank_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->show_keyboard = 1;
+    ui->show_recipes = 0;
     ts_browser_init(&ui->browser);
+    ts_recipe_bank_init(&ui->recipes);
     snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR GENERATE A PARENT");
 }
 
@@ -529,11 +532,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);
     slider(fb, 230, 233, 100, "DRIFT", instrument->process.drift, PAL_TUNING);
-    button(fb, 345, 233, 53, "EDIT", ui->fx_page == TS_FX_EDIT);
-    button(fb, 402, 233, 53, "NOISE", ui->fx_page == TS_FX_NOISE);
-    button(fb, 459, 233, 53, "DELAY", ui->fx_page == TS_FX_DELAY);
-    button(fb, 516, 233, 53, "SPACE", ui->fx_page == TS_FX_SPACE);
-    button(fb, 573, 233, 57, "LOOP", ui->fx_page == TS_FX_LOOP);
+    button(fb, 345, 233, 45, "EDIT", ui->fx_page == TS_FX_EDIT);
+    button(fb, 394, 233, 45, "NOISE", ui->fx_page == TS_FX_NOISE);
+    button(fb, 443, 233, 45, "SHAPE", ui->fx_page == TS_FX_SHAPE);
+    button(fb, 492, 233, 45, "DELAY", ui->fx_page == TS_FX_DELAY);
+    button(fb, 541, 233, 43, "SPACE", ui->fx_page == TS_FX_SPACE);
+    button(fb, 588, 233, 42, "LOOP", ui->fx_page == TS_FX_LOOP);
 
     if (ui->fx_page == TS_FX_EDIT) {
         button(fb, 10, 261, 94, "REVERSE", 0);
@@ -549,6 +553,24 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         slider(fb, 118, 261, 180, "AMOUNT", instrument->process.noise_amount, PAL_NOTE);
         snprintf(color, sizeof(color), "COLOR %s", ts_noise_color_name(instrument->process.noise_color));
         button(fb, 312, 261, 150, color, 0);
+    } else if (ui->fx_page == TS_FX_SHAPE) {
+        char filter[28];
+        char shaper[28];
+        float cutoff = logf(instrument->process.filter_cutoff_hz / 20.0f) /
+                       logf(1000.0f);
+        float drive = (instrument->process.shaper_drive - 1.0f) / 15.0f;
+        snprintf(filter, sizeof(filter), "FILTER %s",
+                 instrument->process.filter_enabled ?
+                 ts_filter_mode_name(instrument->process.filter_mode) : "OFF");
+        snprintf(shaper, sizeof(shaper), "SHAPER %s",
+                 instrument->process.shaper_enabled ?
+                 ts_shaper_mode_name(instrument->process.shaper_mode) : "OFF");
+        button(fb, 10, 261, 90, filter, instrument->process.filter_enabled);
+        slider(fb, 104, 261, 94, "CUTOFF", cutoff, PAL_INSTRUMENT);
+        slider(fb, 202, 261, 80, "RES", instrument->process.filter_resonance, PAL_TUNING);
+        button(fb, 286, 261, 94, shaper, instrument->process.shaper_enabled);
+        slider(fb, 384, 261, 92, "DRIVE", drive, PAL_VOLUME);
+        slider(fb, 480, 261, 92, "MIX", instrument->process.shaper_mix, PAL_EFFECT);
     } else if (ui->fx_page == TS_FX_DELAY) {
         button(fb, 10, 261, 94, instrument->process.delay_enabled ? "DELAY ON" : "DELAY OFF",
                instrument->process.delay_enabled);
@@ -583,7 +605,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 381, 289, 74, "SHOW ALL", 0);
     button(fb, 460, 289, 56, "UNDO", instrument->undo_count > 0);
     button(fb, 521, 289, 62, "REDO", instrument->redo_count > 0);
-    button(fb, 588, 289, 42, ui->show_keyboard ? "BANK" : "KEYS", !ui->show_keyboard);
+    button(fb, 588, 289, 42, ui->show_keyboard ? "BANK" :
+           ui->show_recipes ? "KEYS" : "RCPE", !ui->show_keyboard);
 
     if (ui->show_keyboard) {
         text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  =/- ZOOM  ARROWS PAN  SHIFT+CLICK CHORD", RGB(184, 180, 184), 1);
@@ -605,6 +628,22 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 rect(fb, white_x + (black_after[i] + 1) * white_w - 16, white_y, 31, 31,
                      active ? PAL_VOLUME : RGB(18, 18, 18));
             }
+        }
+    } else if (ui->show_recipes) {
+        text(fb, 11, 318,
+             "CLICK APPLY  SHIFT CLICK CAPTURE USER  TOP SAVE WRITES TSP  SHIFT+RMB CLEAR",
+             RGB(184, 180, 184), 1);
+        for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
+            const TsPortableRecipe *slot = &ui->recipes.slots[i];
+            char label[24];
+            int x = 10 + (i % 8) * 77;
+            int y = 330 + (i / 8) * 25;
+            if (slot->occupied)
+                snprintf(label, sizeof(label), "%02d %.7s", i + 1, slot->name);
+            else
+                snprintf(label, sizeof(label), "%02d USER", i + 1);
+            button(fb, x, y, 72, label, i == ui->recipes.active_slot);
+            if (slot->factory) rect(fb, x + 2, y + 2, 3, 19, PAL_INSTRUMENT);
         }
     } else {
         text(fb, 11, 318, "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  RMB RENAME  SHIFT+RMB CLEAR", RGB(184, 180, 184), 1);
@@ -685,6 +724,11 @@ int ts_ui_bank_slot_from_point(int x, int y)
     if (column < 0 || column >= 8 || row < 0 || row >= 2) return -1;
     if ((x - 10) % 77 >= 72 || (y - 330) % 25 >= 24) return -1;
     return row * 8 + column;
+}
+
+int ts_ui_recipe_slot_from_point(int x, int y)
+{
+    return ts_ui_bank_slot_from_point(x, y);
 }
 
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)

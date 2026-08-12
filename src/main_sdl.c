@@ -46,6 +46,15 @@ static int path_is_tsr(const char *path)
            tolower((unsigned char)extension[3]) == 'r';
 }
 
+static int path_is_tsp(const char *path)
+{
+    const char *extension = path != NULL ? strrchr(path, '.') : NULL;
+    return extension != NULL && strlen(extension) == 4u &&
+           tolower((unsigned char)extension[1]) == 't' &&
+           tolower((unsigned char)extension[2]) == 's' &&
+           tolower((unsigned char)extension[3]) == 'p';
+}
+
 static void audio_callback(void *userdata, Uint8 *stream, int bytes)
 {
     AudioState *audio = (AudioState *)userdata;
@@ -310,7 +319,35 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 {
     char error[160];
     int recipe = path_is_tsr(path);
+    int preset = path_is_tsp(path);
     int ok;
+    if (preset) {
+        TsPortableRecipe loaded;
+        int slot = 0;
+        ok = ts_recipe_load(&loaded, path, error, sizeof(error));
+        if (ok) {
+            slot = ts_recipe_bank_add_user(&ui->recipes, &loaded, error, sizeof(error));
+            ok = slot > 0;
+        }
+        if (ok) {
+            lock_edit(device, audio);
+            ok = ts_instrument_set_process(instrument, &loaded.process,
+                                           error, sizeof(error));
+            unlock_edit(device, audio, ui, instrument);
+        }
+        if (!ok && slot > 0) {
+            char ignored[80];
+            ts_recipe_bank_clear(&ui->recipes, slot - 1,
+                                 ignored, sizeof(ignored));
+        }
+        if (ok) {
+            ui->show_keyboard = 0;
+            ui->show_recipes = 1;
+            snprintf(ui->status, sizeof(ui->status), "LOADED RECIPE %.31s - UNDO RESTORES",
+                     loaded.name);
+        } else snprintf(ui->status, sizeof(ui->status), "TSP LOAD FAILED: %.131s", error);
+        return ok;
+    }
     lock_edit(device, audio);
     ui->bank_view_slot = -1;
     if (audio->bank_slot >= 0) {
@@ -389,6 +426,7 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     lock_edit(device, audio);
     ok = ts_instrument_set_process(instrument, &process, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
+    if (ok) ui->recipes.active_slot = -1;
     if (ok && strcmp(label, "BODY") == 0)
         snprintf(ui->status, sizeof(ui->status), "BODY %.2F - PARENT PRESERVED", process.body);
     else if (ok && strcmp(label, "EDGE") == 0)
@@ -397,6 +435,30 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
         snprintf(ui->status, sizeof(ui->status), "DRIFT %.2F - PARENT PRESERVED", process.drift);
     else if (ok) snprintf(ui->status, sizeof(ui->status), "%s UPDATED - PARENT PRESERVED", label);
     else snprintf(ui->status, sizeof(ui->status), "PROCESS FAILED: %.130s", error);
+}
+
+static void apply_recipe_slot(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                              TsInstrument *instrument, int slot)
+{
+    if (slot < 0 || slot >= TS_RECIPE_SLOT_COUNT ||
+        !ui->recipes.slots[slot].occupied) {
+        snprintf(ui->status, sizeof(ui->status), "EMPTY USER RECIPE - SHIFT+CLICK CAPTURES");
+        return;
+    }
+    apply_process(device, audio, ui, instrument,
+                  ui->recipes.slots[slot].process, ui->recipes.slots[slot].name);
+    ui->recipes.active_slot = slot;
+}
+
+static void capture_recipe_slot(TsUiState *ui, const TsInstrument *instrument, int slot)
+{
+    char error[160];
+    char name[32];
+    snprintf(name, sizeof(name), "USER %02d", slot - TS_FACTORY_RECIPE_COUNT + 1);
+    if (ts_recipe_bank_capture(&ui->recipes, slot, &instrument->process,
+                               name, error, sizeof(error)))
+        snprintf(ui->status, sizeof(ui->status), "CAPTURED %.31s - TOP SAVE WRITES TSP", name);
+    else snprintf(ui->status, sizeof(ui->status), "RECIPE CAPTURE FAILED: %.126s", error);
 }
 
 static void reset_current(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -717,6 +779,7 @@ static unsigned bank_modifiers(SDL_Keymod mod)
 static void browser_open(TsUiState *ui, TsBrowserMode mode)
 {
     const char *filename = mode == TS_BROWSER_SAVE_RECIPE ? "tapesister-recipe.tsr" :
+                           mode == TS_BROWSER_SAVE_PRESET ? "my-process.tsp" :
                            mode == TS_BROWSER_EXPORT_WAV ? "tapesister-export.wav" : "";
     ui->commit_armed = 0;
     SDL_StopTextInput();
@@ -797,6 +860,24 @@ static int save_recipe_atomic(const TsInstrument *instrument, const char *destin
     return finish_atomic_file(temporary, destination, error, error_size);
 }
 
+static int save_preset_atomic(const TsProcessRecipe *process, const char *name,
+                              const char *destination, char *error, size_t error_size)
+{
+    char temporary[TS_BROWSER_PATH_MAX + 32];
+    TsPortableRecipe recipe;
+    int written = snprintf(temporary, sizeof(temporary), "%s.tapesister-tmp", destination);
+    if (written < 0 || (size_t)written >= sizeof(temporary)) {
+        snprintf(error, error_size, "Destination path is too long");
+        return 0;
+    }
+    if (!ts_recipe_from_process(&recipe, process, name) ||
+        !ts_recipe_save(&recipe, temporary, error, error_size)) {
+        remove(temporary);
+        return 0;
+    }
+    return finish_atomic_file(temporary, destination, error, error_size);
+}
+
 static int export_wav_atomic(const TsSample *sample, const char *destination,
                              char *error, size_t error_size)
 {
@@ -850,8 +931,18 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         }
         if (browser->mode == TS_BROWSER_SAVE_RECIPE) {
             ok = save_recipe_atomic(instrument, path, error, sizeof(error));
-            snprintf(ui->status, sizeof(ui->status), ok ? "SAVED RECIPE %.108s" :
+            snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
                      "SAVE FAILED: %.135s", ok ? path : error);
+        } else if (browser->mode == TS_BROWSER_SAVE_PRESET) {
+            char name[TS_RECIPE_NAME_MAX + 1];
+            size_t length;
+            snprintf(name, sizeof(name), "%.31s", browser->filename);
+            length = strlen(name);
+            if (length > 4u && name[length - 4u] == '.') name[length - 4u] = '\0';
+            ok = save_preset_atomic(&instrument->process, name, path,
+                                    error, sizeof(error));
+            snprintf(ui->status, sizeof(ui->status), ok ? "SAVED PROCESS RECIPE %.99s" :
+                     "TSP SAVE FAILED: %.131s", ok ? path : error);
         } else if (browser->mode == TS_BROWSER_EXPORT_WAV) {
             ok = export_wav_atomic(&instrument->current, path, error, sizeof(error));
             snprintf(ui->status, sizeof(ui->status), ok ? "EXPORTED CURRENT %.101s" :
@@ -1143,10 +1234,12 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status), "CTRL+P AGAIN TO COMMIT CURRENT AS PARENT");
                     }
                 } else if ((mod & KMOD_CTRL) && key == SDLK_s) {
-                    browser_open(&ui, TS_BROWSER_SAVE_RECIPE);
+                    browser_open(&ui, ui.show_recipes ?
+                                 TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_e) {
-                    if (ui.show_keyboard) browser_open(&ui, TS_BROWSER_EXPORT_WAV);
-                    else browser_open_bank(&ui, &instrument);
+                    if (!ui.show_keyboard && !ui.show_recipes)
+                        browser_open_bank(&ui, &instrument);
+                    else browser_open(&ui, TS_BROWSER_EXPORT_WAV);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_b) {
                     switch_audition_source(device, &audio, &ui, &instrument,
                         ui.audition_source == TS_AUDITION_CURRENT ?
@@ -1403,10 +1496,12 @@ int main(int argc, char **argv)
                         browser_cancel(&ui);
                     }
                 } else if (y >= 4 && y < 28 && x >= 447 && x < 529) {
-                    browser_open(&ui, TS_BROWSER_SAVE_RECIPE);
+                    browser_open(&ui, ui.show_recipes ?
+                                 TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 535 && x < 630) {
-                    if (ui.show_keyboard) browser_open(&ui, TS_BROWSER_EXPORT_WAV);
-                    else browser_open_bank(&ui, &instrument);
+                    if (!ui.show_keyboard && !ui.show_recipes)
+                        browser_open_bank(&ui, &instrument);
+                    else browser_open(&ui, TS_BROWSER_EXPORT_WAV);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     ui.bank_view_slot = -1;
@@ -1473,21 +1568,24 @@ int main(int argc, char **argv)
                     if (*control < 0.0f) *control = 0.0f;
                     if (*control > 1.0f) *control = 1.0f;
                     apply_process(device, &audio, &ui, &instrument, process, label);
-                } else if (y >= 233 && y < 256 && x >= 345 && x < 398) {
+                } else if (y >= 233 && y < 256 && x >= 345 && x < 390) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_EDIT;
                     snprintf(ui.status, sizeof(ui.status), "SAMPLE EDITING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 402 && x < 455) {
+                } else if (y >= 233 && y < 256 && x >= 394 && x < 439) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_NOISE;
                     snprintf(ui.status, sizeof(ui.status), "NOISE PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 459 && x < 512) {
+                } else if (y >= 233 && y < 256 && x >= 443 && x < 488) {
+                    ui.commit_armed = 0; ui.fx_page = TS_FX_SHAPE;
+                    snprintf(ui.status, sizeof(ui.status), "FILTER AND SHAPER PAGE");
+                } else if (y >= 233 && y < 256 && x >= 492 && x < 537) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_DELAY;
                     snprintf(ui.status, sizeof(ui.status), "DELAY PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 516 && x < 569) {
+                } else if (y >= 233 && y < 256 && x >= 541 && x < 584) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_SPACE;
                     snprintf(ui.status, sizeof(ui.status), "SPACE PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 573 && x < 630) {
+                } else if (y >= 233 && y < 256 && x >= 588 && x < 630) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_LOOP;
-                    snprintf(ui.status, sizeof(ui.status), "FORWARD LOOP EDITING PAGE");
+                    snprintf(ui.status, sizeof(ui.status), "LOOP EDITING PAGE");
                 } else if (y >= 261 && y < 285) {
                     TsProcessRecipe process = instrument.process;
                     int changed = 0;
@@ -1519,6 +1617,38 @@ int main(int argc, char **argv)
                             process.noise_amount = (float)(x - 118) / 180.0f; changed = 1;
                         } else if (x >= 312 && x < 462) {
                             process.noise_color = (TsNoiseColor)((process.noise_color + 1) % TS_NOISE_COLOR_COUNT);
+                            changed = 1;
+                        }
+                    } else if (ui.fx_page == TS_FX_SHAPE) {
+                        label = "SHAPE";
+                        if (x >= 10 && x < 100) {
+                            if (!process.filter_enabled) {
+                                process.filter_enabled = 1;
+                                process.filter_mode = TS_FILTER_LOWPASS;
+                            } else if (process.filter_mode + 1 < TS_FILTER_MODE_COUNT) {
+                                process.filter_mode = (TsFilterMode)(process.filter_mode + 1);
+                            } else process.filter_enabled = 0;
+                            changed = 1;
+                        } else if (x >= 104 && x < 198) {
+                            float normalized = (float)(x - 104) / 94.0f;
+                            process.filter_cutoff_hz = 20.0f * powf(1000.0f, normalized);
+                            changed = 1;
+                        } else if (x >= 202 && x < 282) {
+                            process.filter_resonance = (float)(x - 202) / 80.0f;
+                            changed = 1;
+                        } else if (x >= 286 && x < 380) {
+                            if (!process.shaper_enabled) {
+                                process.shaper_enabled = 1;
+                                process.shaper_mode = TS_SHAPER_TAPE;
+                            } else if (process.shaper_mode + 1 < TS_SHAPER_MODE_COUNT) {
+                                process.shaper_mode = (TsShaperMode)(process.shaper_mode + 1);
+                            } else process.shaper_enabled = 0;
+                            changed = 1;
+                        } else if (x >= 384 && x < 476) {
+                            process.shaper_drive = 1.0f + (float)(x - 384) / 92.0f * 15.0f;
+                            changed = 1;
+                        } else if (x >= 480 && x < 572) {
+                            process.shaper_mix = (float)(x - 480) / 92.0f;
                             changed = 1;
                         }
                     } else if (ui.fx_page == TS_FX_DELAY) {
@@ -1597,13 +1727,34 @@ int main(int argc, char **argv)
                 } else if (y >= 289 && y < 312 && x >= 521 && x < 583) {
                     history_move(device, &audio, &ui, &instrument, 1);
                 } else if (y >= 289 && y < 312 && x >= 588 && x < 630) {
-                    ui.show_keyboard = !ui.show_keyboard;
+                    if (ui.show_keyboard) {
+                        ui.show_keyboard = 0;
+                        ui.show_recipes = 0;
+                    } else if (!ui.show_recipes) {
+                        ui.show_recipes = 1;
+                        ui.bank_view_slot = -1;
+                    } else {
+                        ui.show_keyboard = 1;
+                        ui.show_recipes = 0;
+                    }
                     snprintf(ui.status, sizeof(ui.status), "%s PANEL",
-                             ui.show_keyboard ? "KEYS" : "SAMPLE BANK");
+                             ui.show_keyboard ? "KEYS" :
+                             ui.show_recipes ? "PROCESS RECIPES" : "SAMPLE BANK");
                 } else {
                     int note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
-                    int bank_slot = ui.show_keyboard ? -1 : ts_ui_bank_slot_from_point(x, y);
-                    if (bank_slot >= 0) {
+                    int bank_slot = !ui.show_keyboard && !ui.show_recipes ?
+                                    ts_ui_bank_slot_from_point(x, y) : -1;
+                    int recipe_slot = ui.show_recipes ?
+                                      ts_ui_recipe_slot_from_point(x, y) : -1;
+                    if (recipe_slot >= 0) {
+                        unsigned modifiers = bank_modifiers(mod);
+                        if (modifiers == 0)
+                            apply_recipe_slot(device, &audio, &ui, &instrument, recipe_slot);
+                        else if (modifiers == TS_UI_BANK_MOD_SHIFT)
+                            capture_recipe_slot(&ui, &instrument, recipe_slot);
+                        else snprintf(ui.status, sizeof(ui.status),
+                                      "CLICK APPLY  SHIFT+CLICK CAPTURE USER");
+                    } else if (bank_slot >= 0) {
                         TsUiBankAction action = ts_ui_bank_action(
                             0, bank_modifiers(mod));
                         if (action == TS_UI_BANK_ACTION_AUDITION) {
@@ -1643,10 +1794,12 @@ int main(int argc, char **argv)
                        ui.browser.mode == TS_BROWSER_CLOSED) {
                 int x, y;
                 int bank_slot;
+                int recipe_slot;
                 TsUiBankAction action;
                 SDL_Keymod mod = SDL_GetModState();
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
                 bank_slot = ts_ui_bank_slot_from_point(x, y);
+                recipe_slot = ts_ui_recipe_slot_from_point(x, y);
                 action = ts_ui_bank_action(1, bank_modifiers(mod));
                 if (ui.renaming_bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
@@ -1657,13 +1810,25 @@ int main(int argc, char **argv)
                                          mod, x - TS_WAVE_X))
                         snprintf(ui.status, sizeof(ui.status),
                                  "SHIFT+RMB COPY OVERWRITE  CTRL+RMB MOVE OVERWRITE");
-                } else if (!ui.show_keyboard && bank_slot >= 0 &&
+                } else if (ui.show_recipes && recipe_slot >= 0 &&
+                           (mod & KMOD_SHIFT)) {
+                    char error[160];
+                    if (ts_recipe_bank_clear(&ui.recipes, recipe_slot,
+                                             error, sizeof(error)))
+                        snprintf(ui.status, sizeof(ui.status), "CLEARED USER RECIPE %02d",
+                                 recipe_slot + 1);
+                    else snprintf(ui.status, sizeof(ui.status),
+                                  "RECIPE CLEAR FAILED: %.126s", error);
+                } else if (ui.show_recipes && recipe_slot >= 0) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "SHIFT+RMB CLEARS USER RECIPE  TOP SAVE WRITES TSP");
+                } else if (!ui.show_keyboard && !ui.show_recipes && bank_slot >= 0 &&
                            action == TS_UI_BANK_ACTION_CLEAR) {
                     clear_bank_slot(device, &audio, &ui, &instrument, bank_slot);
-                } else if (!ui.show_keyboard && bank_slot >= 0 &&
+                } else if (!ui.show_keyboard && !ui.show_recipes && bank_slot >= 0 &&
                            action == TS_UI_BANK_ACTION_RENAME) {
                     begin_bank_rename(&ui, &instrument, bank_slot);
-                } else if (!ui.show_keyboard && bank_slot >= 0) {
+                } else if (!ui.show_keyboard && !ui.show_recipes && bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "RMB RENAME  SHIFT+RMB CLEAR");
                 }

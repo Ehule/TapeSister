@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "tapesister/audition.h"
 #include "tapesister/browser.h"
+#include "tapesister/recipe.h"
 #include "tapesister/sample.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
@@ -21,6 +22,7 @@ enum {
 typedef enum {
     TS_FX_EDIT = 0,
     TS_FX_NOISE,
+    TS_FX_SHAPE,
     TS_FX_DELAY,
     TS_FX_SPACE,
     TS_FX_LOOP
@@ -54,6 +56,7 @@ typedef struct {
     int playback_active;
     int text_cursor_visible;
     int show_keyboard;
+    int show_recipes;
     int bank_view_slot;
     int playhead_bank_slot;
     int renaming_bank_slot;
@@ -66,6 +69,7 @@ typedef struct {
     TsAuditionSource audition_source;
     TsAuditionSource playhead_source;
     TsBrowser browser;
+    TsRecipeBank recipes;
     size_t selection_anchor;
     size_t tape_source_first;
     size_t tape_source_last;
@@ -84,6 +88,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
 int ts_ui_bank_slot_from_point(int x, int y);
+int ts_ui_recipe_slot_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
 int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind);
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames);

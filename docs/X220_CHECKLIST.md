@@ -44,18 +44,18 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 ## Scrollable file browser
 
 - [ ] Load, Save, and Export open the same compact browser with the correct title and action button.
-- [ ] Load lists directories, WAVs, and `.tsr` projects; Save lists directories and `.tsr` files; Export lists directories and WAVs.
+- [ ] Load lists directories, WAVs, `.tsr` projects, and `.tsp` processing recipes; Save lists `.tsr` or `.tsp` according to the visible lower panel; Export lists directories and WAVs.
 - [ ] Mouse wheel scrolls without changing the selected row.
 - [ ] The scrollbar thumb size reflects the directory length and can be dragged across the full list.
-- [ ] Single-click selects; double-click or Enter opens a directory or loads the selected WAV/TSR.
+- [ ] Single-click selects; double-click or Enter opens a directory or loads the selected WAV/TSR/TSP.
 - [ ] Up/Down, Page Up/Down, Home/End, and Backspace navigation remain visible and bounded.
-- [ ] Save/Export filename entry appends `.tsr`/`.wav` when omitted without duplicating an existing extension.
+- [ ] Save/Export filename entry appends `.tsr`/`.tsp`/`.wav` when omitted without duplicating an existing extension.
 - [ ] A blinking caret sits at the end of the visible Save/Export filename only while that field has focus, including for horizontally clipped long names.
 - [ ] A first Save/Export action on an existing destination only arms overwrite; the second performs it.
 - [ ] Cancel and Escape close the browser without loading, saving, exporting, or leaking a click to the instrument.
 - [ ] A malformed WAV reports the real load error and preserves the prior Parent and Current.
 - [ ] A malformed, truncated, or legacy non-self-contained TSR reports the real error and preserves the complete prior instrument.
-- [ ] Browser, drag-and-drop, and command-line opening all accept both WAV and TSR files.
+- [ ] Browser, drag-and-drop, and command-line opening all accept WAV, TSR, and TSP files.
 - [ ] Saving then reopening a TSR restores exact Parent/Current hashes, loop, crossfade, crop, sample edits, DSP, view, selection, and lineage.
 - [ ] A failed Save/Export reports the real write error and leaves an existing destination intact.
 - [ ] The last visited directory remains active when switching among Load, Save, and Export.
@@ -98,7 +98,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Crop keeps the overlapping loop portion in correct Current-relative coordinates; Undo restores the prior crop and loop exactly.
 - [ ] Loop Set, Clear, mode, and crossfade changes traverse correctly through Undo/Redo.
 - [ ] Reset clears the loop and is undoable; Commit carries the loop onto the promoted Parent and clears old history.
-- [ ] Saved TSR8 projects contain embedded Parent audio, loop state/range/mode/crossfade, bank audio, and complete reconstructive state.
+- [ ] Saved TSR9 projects contain embedded Parent audio, loop state/range/mode/crossfade, bank audio, filter/shaper settings, and complete reconstructive state.
 - [ ] KEYS/BANK switches the lower panel without affecting computer-key audition or Space/Escape stopping.
 
 ## Existing foundation
@@ -106,7 +106,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Computer and onscreen keys audition the selected A/B source at different pitches.
 - [ ] Space and Escape stop every one-shot, loop, held note, and latched chord reliably without a mouse Stop All button.
 - [ ] A bad WAV path reports an error and preserves Parent and Current.
-- [ ] Save creates a self-contained TSR8 project that reopens without access to the original WAV.
+- [ ] Save creates a self-contained TSR9 project that reopens without access to the original WAV.
 - [ ] Export creates a valid mono 16-bit WAV containing Current.
 - [ ] The supplied Tapehead palette is applied consistently and remains legible.
 - [ ] No action leaks through the path-entry overlay.
@@ -134,7 +134,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] BANK-mode Export and `Ctrl+E` propose a folder derived from the initial Parent name.
 - [ ] Whole-bank export creates one correctly numbered WAV per occupied slot and never replaces an existing folder.
 - [ ] A failed bank export cleans up its partial WAV files and temporary folder.
-- [ ] Saving and reopening TSR8 restores exact names, hashes, capture types, loop ranges, modes, and crossfades for every occupied slot.
+- [ ] Saving and reopening TSR9 restores exact names, hashes, capture types, loop ranges, modes, and crossfades for every occupied slot.
 - [ ] Opening a TSR6 project remains supported and creates a root-only bank from its Parent.
 
 ## Physical tape gestures
@@ -151,7 +151,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Each completed drag adds exactly one Undo step; Undo restores source, destination, length, selection, loop, and view together, and Redo reproduces the exact hash.
 - [ ] Reverse, Normalize, Amplify, Fade, and Crop applied after a tape drag affect the heard placement in order and remain undoable.
 - [ ] Reset removes the complete post-DSP tape timeline and is undoable; Commit prints it into Parent and clears old history.
-- [ ] Saving and reopening TSR8 restores the exact Current hash, post-DSP operation order, expanded duration, selection, and loop metadata.
+- [ ] Saving and reopening TSR9 restores the exact Current hash, post-DSP operation order, expanded duration, selection, and loop metadata.
 - [ ] While dragging, Space and Escape still stop Play Loop, one-shots, held notes, and latched chords without applying a stuck gesture.
 
 ## DSP shelf
@@ -163,6 +163,25 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Space Decay, Damp, and Mix produce a useful compact ambience without runaway feedback.
 - [ ] Noise, Delay, and Space work on both generated sounds and a dragged-in WAV.
 - [ ] Undo and Redo restore DSP toggles and values as well as the exact rendered Current.
+
+## Processing recipes and shaping
+
+- [ ] KEYS, BANK, and RCPE cycle the lower panel without interrupting held or latched notes.
+- [ ] RCPE exposes eight named factory slots and eight user slots; factory slots cannot be captured over or cleared.
+- [ ] Clicking a filled slot applies it visibly and audibly; the active highlight follows it, while a later manual shelf change clears only that highlight.
+- [ ] Applying a recipe changes Current as one Undo step while preserving the exact Parent, crop, selection, loop, tape timeline, and sample-family bank.
+- [ ] Shift-click captures the live shelf into an empty user slot, refuses to overwrite an occupied slot, and Shift-right-click clears only user slots.
+- [ ] While RCPE is visible, Save and `Ctrl+S` write a named `.tsp`; outside RCPE they continue to write the full `.tsr` project.
+- [ ] Browser, drag-and-drop, and command-line TSP loading add the recipe to the next free user slot and apply it without replacing the instrument.
+- [ ] Loading with all user slots occupied reports the bank-full error and preserves Current and every slot.
+- [ ] A malformed or truncated TSP reports the real error and preserves Current, Parent, history, and every recipe slot.
+- [ ] A TSP saved from one WAV applies the same shelf settings to a different generated or imported Parent without carrying source audio or editor coordinates.
+- [ ] Undo after recipe application restores the exact prior Current hash and settings; Redo restores the applied hash.
+- [ ] Held computer notes and held/latched onscreen notes survive recipe application at their corresponding playback positions.
+- [ ] Filter OFF is sample-exact; Lowpass, Highpass, and Bandpass are audibly distinct and stable across the full logarithmic Cutoff and Resonance ranges.
+- [ ] Shaper OFF is sample-exact; Tape, Clip, and Fold are audibly distinct and remain bounded across the full Drive and Mix ranges.
+- [ ] Filter and shaper affect both generated and imported sounds, render before Delay/Space, and keep ordered tape gestures downstream.
+- [ ] TSR9 save/reopen restores the exact filter mode, cutoff, resonance, shaper mode, drive, mix, and rendered Current hash.
 
 ## Commit lifecycle
 

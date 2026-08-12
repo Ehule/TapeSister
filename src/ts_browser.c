@@ -43,14 +43,16 @@ static int ends_with_case(const char *value, const char *suffix)
 const char *ts_browser_mode_extension(TsBrowserMode mode)
 {
     if (mode == TS_BROWSER_SAVE_RECIPE) return ".tsr";
+    if (mode == TS_BROWSER_SAVE_PRESET) return ".tsp";
     if (mode == TS_BROWSER_EXPORT_BANK) return "";
     return ".wav";
 }
 
 const char *ts_browser_mode_title(TsBrowserMode mode)
 {
-    if (mode == TS_BROWSER_LOAD_WAV) return "LOAD WAV OR TSR";
-    if (mode == TS_BROWSER_SAVE_RECIPE) return "SAVE RECIPE";
+    if (mode == TS_BROWSER_LOAD_WAV) return "LOAD WAV, TSR, OR TSP";
+    if (mode == TS_BROWSER_SAVE_RECIPE) return "SAVE TSR PROJECT";
+    if (mode == TS_BROWSER_SAVE_PRESET) return "SAVE PROCESS RECIPE";
     if (mode == TS_BROWSER_EXPORT_WAV) return "EXPORT CURRENT WAV";
     if (mode == TS_BROWSER_EXPORT_BANK) return "EXPORT SAMPLE FAMILY";
     return "FILE BROWSER";
@@ -90,7 +92,8 @@ int ts_browser_path_exists(const char *path)
 static int mode_accepts(const TsBrowser *browser, const char *name)
 {
     if (browser->mode == TS_BROWSER_LOAD_WAV)
-        return ends_with_case(name, ".wav") || ends_with_case(name, ".tsr");
+        return ends_with_case(name, ".wav") || ends_with_case(name, ".tsr") ||
+               ends_with_case(name, ".tsp");
     if (browser->mode == TS_BROWSER_EXPORT_BANK) return 0;
     return ends_with_case(name, ts_browser_mode_extension(browser->mode));
 }
@@ -308,6 +311,7 @@ int ts_browser_destination_path(const TsBrowser *browser, char *path, size_t pat
     const char *extension;
     int written;
     if (browser->mode != TS_BROWSER_SAVE_RECIPE &&
+        browser->mode != TS_BROWSER_SAVE_PRESET &&
         browser->mode != TS_BROWSER_EXPORT_WAV &&
         browser->mode != TS_BROWSER_EXPORT_BANK)
         return 0;

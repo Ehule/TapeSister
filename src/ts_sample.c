@@ -437,6 +437,9 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
     float pink = 0.0f, brown = 0.0f, delay_lp = 0.0f;
     float comb_lp[3] = {0.0f, 0.0f, 0.0f};
     float amplitude = 0.0f;
+    float filter_x1 = 0.0f, filter_x2 = 0.0f, filter_y1 = 0.0f, filter_y2 = 0.0f;
+    float filter_b0 = 1.0f, filter_b1 = 0.0f, filter_b2 = 0.0f;
+    float filter_a1 = 0.0f, filter_a2 = 0.0f;
     float body = clampf(recipe->body, 0.0f, 1.0f);
     float edge = clampf(recipe->edge, 0.0f, 1.0f);
     float drift = clampf(recipe->drift, 0.0f, 1.0f);
@@ -463,6 +466,32 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
     if (data == NULL) {
         set_error(error, error_size, "Out of memory while rendering Current");
         return 0;
+    }
+
+    if (recipe->filter_enabled) {
+        double cutoff = clampf(recipe->filter_cutoff_hz, 20.0f,
+                               parent->sample_rate * 0.45f);
+        double q = 0.5 + clampf(recipe->filter_resonance, 0.0f, 1.0f) * 11.5;
+        double omega = 2.0 * M_PI * cutoff / parent->sample_rate;
+        double cosine = cos(omega);
+        double sine = sin(omega);
+        double alpha = sine / (2.0 * q);
+        double a0 = 1.0 + alpha;
+        if (recipe->filter_mode == TS_FILTER_HIGHPASS) {
+            filter_b0 = (float)((1.0 + cosine) * 0.5 / a0);
+            filter_b1 = (float)(-(1.0 + cosine) / a0);
+            filter_b2 = filter_b0;
+        } else if (recipe->filter_mode == TS_FILTER_BANDPASS) {
+            filter_b0 = (float)(alpha / a0);
+            filter_b1 = 0.0f;
+            filter_b2 = -filter_b0;
+        } else {
+            filter_b0 = (float)((1.0 - cosine) * 0.5 / a0);
+            filter_b1 = (float)((1.0 - cosine) / a0);
+            filter_b2 = filter_b0;
+        }
+        filter_a1 = (float)(-2.0 * cosine / a0);
+        filter_a2 = (float)((1.0 - alpha) / a0);
     }
 
     if (recipe->delay_enabled && delay_mix > 0.0f) {
@@ -511,6 +540,34 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
             amplitude += (fabsf(shaped) - amplitude) *
                          (fabsf(shaped) > amplitude ? 0.08f : 0.0015f);
             shaped += colored * noise_amount * (0.04f + amplitude * 0.42f);
+        }
+
+        if (recipe->shaper_enabled && recipe->shaper_mix > 0.0f) {
+            float dry = shaped;
+            float drive = clampf(recipe->shaper_drive, 1.0f, 16.0f);
+            float wet = shaped * drive;
+            float mix = clampf(recipe->shaper_mix, 0.0f, 1.0f);
+            if (recipe->shaper_mode == TS_SHAPER_CLIP) {
+                wet = clampf(wet, -1.0f, 1.0f);
+            } else if (recipe->shaper_mode == TS_SHAPER_FOLD) {
+                for (int fold = 0; fold < 16 && (wet > 1.0f || wet < -1.0f); ++fold)
+                    wet = wet > 1.0f ? 2.0f - wet : -2.0f - wet;
+                wet = clampf(wet, -1.0f, 1.0f);
+            } else {
+                wet = tanhf(wet) / tanhf(drive);
+            }
+            shaped = dry * (1.0f - mix) + wet * mix;
+        }
+
+        if (recipe->filter_enabled) {
+            float filtered = filter_b0 * shaped + filter_b1 * filter_x1 +
+                             filter_b2 * filter_x2 - filter_a1 * filter_y1 -
+                             filter_a2 * filter_y2;
+            filter_x2 = filter_x1;
+            filter_x1 = shaped;
+            filter_y2 = filter_y1;
+            filter_y1 = filtered;
+            shaped = filtered;
         }
 
         if (delay != NULL) {
@@ -872,6 +929,28 @@ void ts_process_recipe_reset(TsProcessRecipe *process)
     process->reverb_decay = 0.62f;
     process->reverb_damping = 0.50f;
     process->reverb_mix = 0.24f;
+    process->filter_enabled = 0;
+    process->filter_mode = TS_FILTER_LOWPASS;
+    process->filter_cutoff_hz = 8000.0f;
+    process->filter_resonance = 0.20f;
+    process->shaper_enabled = 0;
+    process->shaper_mode = TS_SHAPER_TAPE;
+    process->shaper_drive = 2.5f;
+    process->shaper_mix = 0.65f;
+}
+
+const char *ts_filter_mode_name(TsFilterMode mode)
+{
+    if (mode == TS_FILTER_HIGHPASS) return "HIGH";
+    if (mode == TS_FILTER_BANDPASS) return "BAND";
+    return "LOW";
+}
+
+const char *ts_shaper_mode_name(TsShaperMode mode)
+{
+    if (mode == TS_SHAPER_CLIP) return "CLIP";
+    if (mode == TS_SHAPER_FOLD) return "FOLD";
+    return "TAPE";
 }
 
 const char *ts_bank_capture_name(TsBankCaptureKind kind)
@@ -2022,7 +2101,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    fwrite("TSR8\r\n\032\n", 1, 8, f);
+    fwrite("TSR9\r\n\032\n", 1, 8, f);
     put32(f, (uint32_t)instrument->source_kind);
     put32(f, instrument->generation);
     put64(f, instrument->ancestor_hash);
@@ -2046,6 +2125,14 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     put_float(f, instrument->process.reverb_decay);
     put_float(f, instrument->process.reverb_damping);
     put_float(f, instrument->process.reverb_mix);
+    put32(f, (uint32_t)instrument->process.filter_enabled);
+    put32(f, (uint32_t)instrument->process.filter_mode);
+    put_float(f, instrument->process.filter_cutoff_hz);
+    put_float(f, instrument->process.filter_resonance);
+    put32(f, (uint32_t)instrument->process.shaper_enabled);
+    put32(f, (uint32_t)instrument->process.shaper_mode);
+    put_float(f, instrument->process.shaper_drive);
+    put_float(f, instrument->process.shaper_mix);
     put64(f, instrument->crop_first); put64(f, instrument->crop_last);
     put64(f, instrument->selection_first); put64(f, instrument->selection_last);
     put64(f, instrument->view_first); put64(f, instrument->view_last);
@@ -2124,6 +2211,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     size_t frames;
     int version;
     memset(&state, 0, sizeof(state));
+    ts_process_recipe_reset(&state.process);
     ts_instrument_init(&loaded);
     f = fopen(path, "rb");
     if (f == NULL) {
@@ -2136,14 +2224,15 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR8\r\n\032\n", 8) == 0) version = 8;
+    if (memcmp(magic, "TSR9\r\n\032\n", 8) == 0) version = 9;
+    else if (memcmp(magic, "TSR8\r\n\032\n", 8) == 0) version = 8;
     else if (memcmp(magic, "TSR7\r\n\032\n", 8) == 0) version = 7;
     else if (memcmp(magic, "TSR6\r\n\032\n", 8) == 0) version = 6;
     else {
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6/TSR7/TSR8 project");
+                  "Not a self-contained TSR6/TSR7/TSR8/TSR9 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -2161,6 +2250,13 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     GET_FLOAT(state.process.delay_damping); GET_FLOAT(state.process.delay_mix);
     GET_U32(state.process.reverb_enabled); GET_FLOAT(state.process.reverb_decay);
     GET_FLOAT(state.process.reverb_damping); GET_FLOAT(state.process.reverb_mix);
+    if (version >= 9) {
+        GET_U32(state.process.filter_enabled); GET_U32(state.process.filter_mode);
+        GET_FLOAT(state.process.filter_cutoff_hz);
+        GET_FLOAT(state.process.filter_resonance);
+        GET_U32(state.process.shaper_enabled); GET_U32(state.process.shaper_mode);
+        GET_FLOAT(state.process.shaper_drive); GET_FLOAT(state.process.shaper_mix);
+    }
     GET_U64(state.crop_first); GET_U64(state.crop_last);
     GET_U64(state.selection_first); GET_U64(state.selection_last);
     GET_U64(state.view_first); GET_U64(state.view_last);
@@ -2180,6 +2276,17 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         (state.process.noise_enabled != 0 && state.process.noise_enabled != 1) ||
         (state.process.delay_enabled != 0 && state.process.delay_enabled != 1) ||
         (state.process.reverb_enabled != 0 && state.process.reverb_enabled != 1) ||
+        (state.process.filter_enabled != 0 && state.process.filter_enabled != 1) ||
+        state.process.filter_mode >= TS_FILTER_MODE_COUNT ||
+        !isfinite(state.process.filter_cutoff_hz) ||
+        state.process.filter_cutoff_hz < 20.0f || state.process.filter_cutoff_hz > 20000.0f ||
+        !isfinite(state.process.filter_resonance) ||
+        state.process.filter_resonance < 0.0f || state.process.filter_resonance > 1.0f ||
+        (state.process.shaper_enabled != 0 && state.process.shaper_enabled != 1) ||
+        state.process.shaper_mode >= TS_SHAPER_MODE_COUNT ||
+        !isfinite(state.process.shaper_drive) || state.process.shaper_drive < 1.0f ||
+        state.process.shaper_drive > 16.0f || !isfinite(state.process.shaper_mix) ||
+        state.process.shaper_mix < 0.0f || state.process.shaper_mix > 1.0f ||
         !isfinite(state.loop_crossfade_ms) || state.loop_crossfade_ms < 0.0f ||
         state.loop_crossfade_ms > 50.0f)
         goto malformed;
@@ -2305,7 +2412,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6/TSR7/TSR8 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6/TSR7/TSR8/TSR9 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);
