@@ -455,9 +455,9 @@ static void apply_tuning(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
     unlock_edit(device, audio, ui, instrument);
     if (ok) {
         ui->has_pitch_suggestion = 0;
-        snprintf(ui->status, sizeof(ui->status), "ROOT %s  %+.1F CENTS  %.2F HZ",
+        snprintf(ui->status, sizeof(ui->status), "ROOT %s  TRIM %+.1F CENTS  %.2F HZ",
                  ts_midi_note_name(instrument->tuning.root_note, note, sizeof(note)),
-                 instrument->tuning.fine_tune_cents,
+                 -instrument->tuning.fine_tune_cents,
                  ts_tuning_frequency(&instrument->tuning));
     } else snprintf(ui->status, sizeof(ui->status), "TUNING: %.145s", error);
 }
@@ -1843,18 +1843,18 @@ int main(int argc, char **argv)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_FADE_OUT, 1.0f);
                     } else if (ui.fx_page == TS_FX_TUNE) {
-                        if (x >= 10 && x < 58 && instrument.tuning.root_note > 0)
-                            apply_tuning(device, &audio, &ui, &instrument,
-                                         instrument.tuning.root_note - 1,
-                                         instrument.tuning.fine_tune_cents);
-                        else if (x >= 156 && x < 204 && instrument.tuning.root_note < 127)
+                        if (x >= 10 && x < 58 && instrument.tuning.root_note < 127)
                             apply_tuning(device, &audio, &ui, &instrument,
                                          instrument.tuning.root_note + 1,
+                                         instrument.tuning.fine_tune_cents);
+                        else if (x >= 156 && x < 204 && instrument.tuning.root_note > 0)
+                            apply_tuning(device, &audio, &ui, &instrument,
+                                         instrument.tuning.root_note - 1,
                                          instrument.tuning.fine_tune_cents);
                         else if (x >= 214 && x < 360)
                             apply_tuning(device, &audio, &ui, &instrument,
                                          instrument.tuning.root_note,
-                                         (float)(x - 214) / 146.0f * 200.0f - 100.0f);
+                                         100.0f - (float)(x - 214) / 146.0f * 200.0f);
                         else if (x >= 470 && x < 630)
                             suggest_or_accept_pitch(device, &audio, &ui, &instrument);
                     } else if (ui.fx_page == TS_FX_NOISE) {

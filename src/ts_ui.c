@@ -563,14 +563,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char fine[32];
         snprintf(root, sizeof(root), "ROOT %s",
                  ts_midi_note_name(instrument->tuning.root_note, note, sizeof(note)));
-        snprintf(fine, sizeof(fine), "FINE %+.1F C", instrument->tuning.fine_tune_cents);
+        snprintf(fine, sizeof(fine), "TRIM %+.1F C", -instrument->tuning.fine_tune_cents);
         snprintf(frequency, sizeof(frequency), "%.2F HZ",
                  ts_tuning_frequency(&instrument->tuning));
-        button(fb, 10, 261, 48, "- NOTE", 0);
+        button(fb, 10, 261, 48, "DOWN", 0);
         button(fb, 62, 261, 90, root, 1);
-        button(fb, 156, 261, 48, "+ NOTE", 0);
+        button(fb, 156, 261, 48, "UP", 0);
         slider(fb, 214, 261, 146, fine,
-               (instrument->tuning.fine_tune_cents + 100.0f) / 200.0f, PAL_TUNING);
+               (100.0f - instrument->tuning.fine_tune_cents) / 200.0f, PAL_TUNING);
         button(fb, 370, 261, 90, frequency, 0);
         button(fb, 470, 261, 160,
                ui->has_pitch_suggestion ? "ACCEPT SUGGESTION" : "SUGGEST PITCH",

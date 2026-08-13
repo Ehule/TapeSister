@@ -107,7 +107,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 ## Pitch and tuning
 
 - [ ] A newly imported WAV without sampler metadata defaults to C3 and sounds exactly as before on the first onscreen C.
-- [ ] Root minus/plus traverses notes cleanly; Fine spans -100 to +100 cents and the displayed frequency follows both controls.
+- [ ] Down lowers and Up raises a held sound; Trim spans -100 to +100 cents with rightward travel sharpening the sound.
 - [ ] Shift-right-clicking each white and black onscreen key assigns the note under the pointer as root without starting or releasing a voice.
 - [ ] Computer and onscreen keys are pitched relative to the root; assigning a sounding key as root makes that key unity playback.
 - [ ] Parent and Current always share one mapping, including while switching A/B during sustained notes.

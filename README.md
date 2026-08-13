@@ -37,7 +37,7 @@ The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-v
 
 ## Pitch and tuning
 
-The **Tune** page gives every instrument one shared root note and ±100-cent fine offset. Parent/Current A/B therefore compares the same musical mapping, while the two-octave keyboard pitches audio relative to that root instead of assuming the first C is always unity. The default root is C3 (MIDI 48), preserving the previous keyboard behavior for older WAV and TSR files. Shift-right-clicking an onscreen key assigns it as the root; held and latched notes retune in place without restarting.
+The **Tune** page gives every instrument one shared root note and ±100-cent audible Trim. Parent/Current A/B therefore compares the same musical mapping, while the two-octave keyboard pitches audio relative to that root instead of assuming the first C is always unity. The default root is C3 (MIDI 48), preserving the previous keyboard behavior for older WAV and TSR files. **Down** and **Up** always move a held sound in the labeled audible direction, and moving Trim right sharpens it. Shift-right-clicking an onscreen key assigns it as the root; held and latched notes retune in place without restarting.
 
 **Suggest Pitch** analyzes the snapped Selection first, then the Loop, then all of Current. It reports a note, cents, and confidence without changing the instrument; a second explicit click accepts it. Quiet, noisy, or unstable material is rejected rather than forced into a misleading note. Manual tuning remains authoritative.
 
