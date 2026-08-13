@@ -43,10 +43,21 @@ void ts_note_bank_clear_latched(TsNoteBank *bank);
 TsNoteStartResult ts_note_bank_start(TsNoteBank *bank, const TsInstrument *instrument,
                                      TsAuditionSource source, int note, int latched,
                                      int output_rate);
+TsNoteStartResult ts_note_bank_start_tuned(TsNoteBank *bank,
+                                           const TsInstrument *instrument,
+                                           const TsTuning *tuning,
+                                           TsAuditionSource source, int note,
+                                           int latched, int output_rate);
 void ts_note_bank_release(TsNoteBank *bank, int note);
 void ts_note_bank_sync(TsNoteBank *bank, const TsInstrument *instrument, int output_rate);
+void ts_note_bank_sync_tuned(TsNoteBank *bank, const TsInstrument *instrument,
+                             const TsTuning *tuning, int output_rate);
 void ts_note_bank_set_source(TsNoteBank *bank, const TsInstrument *instrument,
                              TsAuditionSource source, int output_rate);
+void ts_note_bank_set_source_tuned(TsNoteBank *bank,
+                                   const TsInstrument *instrument,
+                                   const TsTuning *tuning,
+                                   TsAuditionSource source, int output_rate);
 float ts_note_bank_read(TsNoteBank *bank);
 int ts_note_bank_count(const TsNoteBank *bank);
 uint32_t ts_note_bank_mask(const TsNoteBank *bank);

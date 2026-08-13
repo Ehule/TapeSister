@@ -82,6 +82,35 @@ int ts_recipe_from_process(TsPortableRecipe *recipe, const TsProcessRecipe *proc
     return 1;
 }
 
+int ts_recipe_from_process_and_tuning(TsPortableRecipe *recipe,
+                                      const TsProcessRecipe *process,
+                                      const TsTuning *tuning, const char *name)
+{
+    return ts_recipe_from_process_and_tunings(recipe, process, tuning, tuning, name);
+}
+
+int ts_recipe_from_process_and_tunings(TsPortableRecipe *recipe,
+                                       const TsProcessRecipe *process,
+                                       const TsTuning *tuning,
+                                       const TsTuning *audible_tuning,
+                                       const char *name)
+{
+    if (!ts_recipe_from_process(recipe, process, name) || tuning == NULL ||
+        tuning->root_note < 0 || tuning->root_note > 127 ||
+        !isfinite(tuning->fine_tune_cents) ||
+        tuning->fine_tune_cents < -100.0f || tuning->fine_tune_cents > 100.0f ||
+        audible_tuning == NULL || audible_tuning->root_note < 0 ||
+        audible_tuning->root_note > 127 ||
+        !isfinite(audible_tuning->fine_tune_cents) ||
+        audible_tuning->fine_tune_cents < -100.0f ||
+        audible_tuning->fine_tune_cents > 100.0f)
+        return 0;
+    recipe->tuning = *tuning;
+    recipe->audible_tuning = *audible_tuning;
+    recipe->has_tuning = 1;
+    return 1;
+}
+
 static void factory(TsPortableRecipe *slot, const char *name,
                     float body, float edge, float drift)
 {
@@ -145,7 +174,9 @@ void ts_recipe_bank_init(TsRecipeBank *bank)
 }
 
 int ts_recipe_bank_capture(TsRecipeBank *bank, int slot, const TsProcessRecipe *process,
-                           const char *name, char *error, size_t error_size)
+                           const TsTuning *tuning, const TsTuning *audible_tuning,
+                           const char *name,
+                           char *error, size_t error_size)
 {
     if (bank == NULL || slot < TS_FACTORY_RECIPE_COUNT || slot >= TS_RECIPE_SLOT_COUNT) {
         set_error(error, error_size, "Choose a user recipe slot 09-16");
@@ -155,7 +186,8 @@ int ts_recipe_bank_capture(TsRecipeBank *bank, int slot, const TsProcessRecipe *
         set_error(error, error_size, "Clear the user recipe slot before capturing");
         return 0;
     }
-    if (!ts_recipe_from_process(&bank->slots[slot], process, name)) {
+    if (!ts_recipe_from_process_and_tunings(&bank->slots[slot], process, tuning,
+                                            audible_tuning, name)) {
         set_error(error, error_size, "Invalid processing recipe");
         return 0;
     }
@@ -207,7 +239,17 @@ int ts_recipe_bank_add_user(TsRecipeBank *bank, const TsPortableRecipe *recipe,
                             char *error, size_t error_size)
 {
     if (bank == NULL || recipe == NULL || !recipe->occupied ||
-        !ts_recipe_process_valid(&recipe->process)) {
+        !ts_recipe_process_valid(&recipe->process) ||
+        (recipe->has_tuning &&
+         (recipe->tuning.root_note < 0 || recipe->tuning.root_note > 127 ||
+          !isfinite(recipe->tuning.fine_tune_cents) ||
+          recipe->tuning.fine_tune_cents < -100.0f ||
+          recipe->tuning.fine_tune_cents > 100.0f ||
+          recipe->audible_tuning.root_note < 0 ||
+          recipe->audible_tuning.root_note > 127 ||
+          !isfinite(recipe->audible_tuning.fine_tune_cents) ||
+          recipe->audible_tuning.fine_tune_cents < -100.0f ||
+          recipe->audible_tuning.fine_tune_cents > 100.0f))) {
         set_error(error, error_size, "Invalid portable recipe");
         return 0;
     }
@@ -280,10 +322,17 @@ int ts_recipe_save(const TsPortableRecipe *recipe, const char *path,
         set_error(error, error_size, "Could not create TSP recipe");
         return 0;
     }
-    fwrite("TSP1\r\n\032\n", 1, 8, file);
+    fwrite("TSP2\r\n\032\n", 1, 8, file);
     put32(file, (uint32_t)length);
     fwrite(recipe->name, 1, length, file);
     write_process(file, &recipe->process);
+    put32(file, (uint32_t)recipe->has_tuning);
+    if (recipe->has_tuning) {
+        put32(file, (uint32_t)recipe->tuning.root_note);
+        put_float(file, recipe->tuning.fine_tune_cents);
+        put32(file, (uint32_t)recipe->audible_tuning.root_note);
+        put_float(file, recipe->audible_tuning.fine_tune_cents);
+    }
     {
         int failed = ferror(file);
         if (fclose(file) != 0) failed = 1;
@@ -302,6 +351,8 @@ int ts_recipe_load(TsPortableRecipe *recipe, const char *path,
     FILE *file;
     char magic[8];
     uint32_t length;
+    uint32_t value;
+    int version;
     TsPortableRecipe loaded;
     if (recipe == NULL || path == NULL) {
         set_error(error, error_size, "No TSP recipe path");
@@ -313,12 +364,32 @@ int ts_recipe_load(TsPortableRecipe *recipe, const char *path,
         set_error(error, error_size, "Could not open TSP recipe");
         return 0;
     }
-    if (fread(magic, 1, sizeof(magic), file) != sizeof(magic) ||
-        memcmp(magic, "TSP1\r\n\032\n", 8) != 0 || !get32(file, &length) ||
+    if (fread(magic, 1, sizeof(magic), file) != sizeof(magic)) goto malformed;
+    if (memcmp(magic, "TSP2\r\n\032\n", 8) == 0) version = 2;
+    else if (memcmp(magic, "TSP1\r\n\032\n", 8) == 0) version = 1;
+    else goto malformed;
+    if (!get32(file, &length) ||
         length == 0 || length > TS_RECIPE_NAME_MAX ||
         fread(loaded.name, 1, length, file) != length) goto malformed;
     loaded.name[length] = '\0';
-    if (!read_process(file, &loaded.process) || fgetc(file) != EOF) goto malformed;
+    if (!read_process(file, &loaded.process)) goto malformed;
+    if (version >= 2) {
+        if (!get32(file, &value) || value > 1u) goto malformed;
+        loaded.has_tuning = (int)value;
+        if (loaded.has_tuning) {
+            if (!get32(file, &value) || value > 127u ||
+                !get_float(file, &loaded.tuning.fine_tune_cents) ||
+                loaded.tuning.fine_tune_cents < -100.0f ||
+                loaded.tuning.fine_tune_cents > 100.0f) goto malformed;
+            loaded.tuning.root_note = (int)value;
+            if (!get32(file, &value) || value > 127u ||
+                !get_float(file, &loaded.audible_tuning.fine_tune_cents) ||
+                loaded.audible_tuning.fine_tune_cents < -100.0f ||
+                loaded.audible_tuning.fine_tune_cents > 100.0f) goto malformed;
+            loaded.audible_tuning.root_note = (int)value;
+        }
+    }
+    if (fgetc(file) != EOF) goto malformed;
     loaded.occupied = 1;
     fclose(file);
     *recipe = loaded;
@@ -326,6 +397,6 @@ int ts_recipe_load(TsPortableRecipe *recipe, const char *path,
     return 1;
 malformed:
     fclose(file);
-    set_error(error, error_size, "Malformed or unsupported TSP1 recipe");
+    set_error(error, error_size, "Malformed or unsupported TSP1/TSP2 recipe");
     return 0;
 }

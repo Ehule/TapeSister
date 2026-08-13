@@ -21,6 +21,7 @@ enum {
 
 typedef enum {
     TS_FX_EDIT = 0,
+    TS_FX_TUNE,
     TS_FX_NOISE,
     TS_FX_SHAPE,
     TS_FX_DELAY,
@@ -72,6 +73,9 @@ typedef struct {
     TsAuditionSource playhead_source;
     TsBrowser browser;
     TsRecipeBank recipes;
+    TsTuning pitch_suggestion;
+    float pitch_confidence;
+    int has_pitch_suggestion;
     size_t selection_anchor;
     size_t tape_source_first;
     size_t tape_source_last;
@@ -89,6 +93,10 @@ typedef struct {
 } TsUiState;
 
 void ts_ui_init(TsUiState *ui);
+const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
+                                      const TsInstrument *instrument);
+const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
+                                     const TsInstrument *instrument);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);

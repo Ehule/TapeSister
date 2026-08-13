@@ -132,6 +132,172 @@ void ts_sample_free(TsSample *sample)
     ts_sample_init(sample);
 }
 
+static TsTuning default_tuning(void)
+{
+    TsTuning tuning = {TS_KEYBOARD_BASE_NOTE, 0.0f};
+    return tuning;
+}
+
+static TsTuning tuning_from_frequency(double frequency);
+
+static TsTuning tuning_from_midi(double midi)
+{
+    TsTuning tuning;
+    int root = (int)floor(midi + 0.5);
+    if (root < 0) root = 0;
+    if (root > 127) root = 127;
+    tuning.root_note = root;
+    tuning.fine_tune_cents = (float)((midi - root) * 100.0);
+    if (tuning.fine_tune_cents < -100.0f) tuning.fine_tune_cents = -100.0f;
+    if (tuning.fine_tune_cents > 100.0f) tuning.fine_tune_cents = 100.0f;
+    return tuning;
+}
+
+static int tuning_valid(const TsTuning *tuning)
+{
+    return tuning != NULL && tuning->root_note >= 0 && tuning->root_note <= 127 &&
+           isfinite(tuning->fine_tune_cents) &&
+           tuning->fine_tune_cents >= -100.0f && tuning->fine_tune_cents <= 100.0f;
+}
+
+double ts_tuning_frequency(const TsTuning *tuning)
+{
+    if (!tuning_valid(tuning)) return 0.0;
+    return 440.0 * pow(2.0, ((double)tuning->root_note - 69.0 +
+                            (double)tuning->fine_tune_cents / 100.0) / 12.0);
+}
+
+double ts_tuning_note_pitch(const TsTuning *tuning, int keyboard_note)
+{
+    if (!tuning_valid(tuning)) return 1.0;
+    return pow(2.0, ((double)(TS_KEYBOARD_BASE_NOTE + keyboard_note -
+                              tuning->root_note) -
+                     (double)tuning->fine_tune_cents / 100.0) / 12.0);
+}
+
+const char *ts_midi_note_name(int note, char *name, size_t size)
+{
+    static const char *classes[] = {"C", "C#", "D", "D#", "E", "F",
+                                    "F#", "G", "G#", "A", "A#", "B"};
+    if (name == NULL || size == 0) return "";
+    if (note < 0 || note > 127) {
+        snprintf(name, size, "---");
+        return name;
+    }
+    snprintf(name, size, "%s%d", classes[note % 12], note / 12 - 1);
+    return name;
+}
+
+int ts_instrument_suggest_pitch(const TsInstrument *instrument, TsTuning *suggestion,
+                                float *confidence, char *error, size_t error_size)
+{
+    const TsSample *sample;
+    size_t first;
+    size_t last;
+    size_t frames;
+    size_t lag_min;
+    size_t lag_max;
+    float *correlation;
+    double mean = 0.0;
+    double energy = 0.0;
+    float strongest = -1.0f;
+    size_t strongest_lag = 0;
+    size_t chosen_lag = 0;
+    if (instrument == NULL || suggestion == NULL || instrument->current.data == NULL) {
+        set_error(error, error_size, "No Current audio to analyze");
+        return 0;
+    }
+    sample = &instrument->current;
+    if (instrument->has_selection) {
+        first = instrument->selection_first;
+        last = instrument->selection_last;
+    } else if (instrument->has_loop) {
+        first = instrument->loop_first;
+        last = instrument->loop_last;
+    } else {
+        first = 0;
+        last = sample->frames;
+    }
+    if (last <= first + 128u || last > sample->frames) {
+        set_error(error, error_size, "Choose at least 128 frames for pitch analysis");
+        return 0;
+    }
+    frames = last - first;
+    if (frames > 16384u) frames = 16384u;
+    lag_min = sample->sample_rate / 2000u;
+    if (lag_min < 2u) lag_min = 2u;
+    lag_max = sample->sample_rate / 30u;
+    if (lag_max > frames / 2u) lag_max = frames / 2u;
+    if (lag_max <= lag_min + 2u) {
+        set_error(error, error_size, "Selection is too short for pitch analysis");
+        return 0;
+    }
+    correlation = (float *)calloc(lag_max + 1u, sizeof(float));
+    if (correlation == NULL) {
+        set_error(error, error_size, "Out of memory while suggesting pitch");
+        return 0;
+    }
+    for (size_t i = 0; i < frames; ++i) mean += sample->data[first + i];
+    mean /= (double)frames;
+    for (size_t i = 0; i < frames; ++i) {
+        double value = sample->data[first + i] - mean;
+        energy += value * value;
+    }
+    if (energy < 0.00000001) {
+        free(correlation);
+        set_error(error, error_size, "Audio is too quiet for a pitch suggestion");
+        return 0;
+    }
+    for (size_t lag = lag_min; lag <= lag_max; ++lag) {
+        double numerator = 0.0;
+        double left_energy = 0.0;
+        double right_energy = 0.0;
+        for (size_t i = 0; i + lag < frames; ++i) {
+            double left_value = sample->data[first + i] - mean;
+            double right_value = sample->data[first + i + lag] - mean;
+            numerator += left_value * right_value;
+            left_energy += left_value * left_value;
+            right_energy += right_value * right_value;
+        }
+        if (left_energy > 0.0 && right_energy > 0.0)
+            correlation[lag] = (float)(numerator / sqrt(left_energy * right_energy));
+        if (correlation[lag] > strongest) {
+            strongest = correlation[lag];
+            strongest_lag = lag;
+        }
+    }
+    if (strongest < 0.35f) {
+        free(correlation);
+        set_error(error, error_size, "No stable pitch found - try a tonal selection or loop");
+        return 0;
+    }
+    for (size_t lag = lag_min + 1u; lag < lag_max; ++lag) {
+        if (correlation[lag] >= 0.35f && correlation[lag] >= strongest * 0.85f &&
+            correlation[lag] >= correlation[lag - 1u] &&
+            correlation[lag] > correlation[lag + 1u]) {
+            chosen_lag = lag;
+            break;
+        }
+    }
+    if (chosen_lag == 0) chosen_lag = strongest_lag;
+    {
+        double refined = (double)chosen_lag;
+        double left_value = correlation[chosen_lag - 1u];
+        double center_value = correlation[chosen_lag];
+        double right_value = correlation[chosen_lag + 1u];
+        double divisor = left_value - 2.0 * center_value + right_value;
+        double frequency;
+        if (fabs(divisor) > 0.0000001)
+            refined += 0.5 * (left_value - right_value) / divisor;
+        frequency = sample->sample_rate / refined;
+        *suggestion = tuning_from_frequency(frequency);
+    }
+    if (confidence != NULL) *confidence = correlation[chosen_lag];
+    free(correlation);
+    set_error(error, error_size, "");
+    return 1;
+}
+
 int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, size_t error_size)
 {
     float *copy;
@@ -177,7 +343,8 @@ static float decode_pcm(const unsigned char *p, uint16_t format, uint16_t bits)
     return 0.0f;
 }
 
-int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t error_size)
+int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *path,
+                             char *error, size_t error_size)
 {
     FILE *f = fopen(path, "rb");
     unsigned char header[12];
@@ -186,6 +353,7 @@ int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t e
     uint32_t rate = 0, data_size = 0;
     long data_offset = -1;
     float *decoded = NULL;
+    TsTuning loaded_tuning = default_tuning();
 
     if (f == NULL) {
         char message[256];
@@ -218,6 +386,26 @@ int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t e
             data_offset = ftell(f);
             data_size = size;
             fseek(f, (long)size, SEEK_CUR);
+        } else if (memcmp(chunk, "smpl", 4) == 0 && size >= 20u) {
+            unsigned char smpl[20];
+            uint32_t unity;
+            uint32_t fraction_bits;
+            double midi;
+            int root;
+            if (fread(smpl, 1, sizeof(smpl), f) != sizeof(smpl)) break;
+            unity = le32(smpl + 12);
+            fraction_bits = le32(smpl + 16);
+            midi = (double)unity + (double)fraction_bits / 4294967296.0;
+            root = (int)floor(midi + 0.5);
+            if (root < 0) root = 0;
+            if (root > 127) root = 127;
+            loaded_tuning.root_note = root;
+            loaded_tuning.fine_tune_cents = (float)((midi - root) * 100.0);
+            if (loaded_tuning.fine_tune_cents < -100.0f)
+                loaded_tuning.fine_tune_cents = -100.0f;
+            if (loaded_tuning.fine_tune_cents > 100.0f)
+                loaded_tuning.fine_tune_cents = 100.0f;
+            if (size > sizeof(smpl)) fseek(f, (long)(size - sizeof(smpl)), SEEK_CUR);
         } else {
             fseek(f, (long)size, SEEK_CUR);
         }
@@ -283,17 +471,25 @@ int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t e
     const char *base = slash && (!backslash || slash > backslash) ? slash + 1 :
                        backslash ? backslash + 1 : path;
     snprintf(sample->name, sizeof(sample->name), "%s", base);
+    if (tuning != NULL) *tuning = loaded_tuning;
     set_error(error, error_size, "");
     return 1;
 }
 
-int ts_sample_save_wav16(const TsSample *sample, const char *path, char *error, size_t error_size)
+int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t error_size)
 {
+    return ts_sample_load_wav_tuned(sample, NULL, path, error, error_size);
+}
+
+int ts_sample_save_wav16_tuned(const TsSample *sample, const TsTuning *tuning,
+                               const char *path, char *error, size_t error_size)
+{
+    TsTuning actual = tuning_valid(tuning) ? *tuning : default_tuning();
     if (sample == NULL || sample->data == NULL || sample->frames == 0 || sample->sample_rate == 0) {
         set_error(error, error_size, "No sample to export");
         return 0;
     }
-    if (sample->frames > (UINT32_MAX - 36u) / 2u) {
+    if (sample->frames > (UINT32_MAX - 80u) / 2u) {
         set_error(error, error_size, "Sample is too long for a RIFF WAV");
         return 0;
     }
@@ -303,9 +499,27 @@ int ts_sample_save_wav16(const TsSample *sample, const char *path, char *error, 
         return 0;
     }
     uint32_t data_bytes = (uint32_t)(sample->frames * 2u);
-    fwrite("RIFF", 1, 4, f); put32(f, 36u + data_bytes); fwrite("WAVE", 1, 4, f);
+    fwrite("RIFF", 1, 4, f); put32(f, 80u + data_bytes); fwrite("WAVE", 1, 4, f);
     fwrite("fmt ", 1, 4, f); put32(f, 16); put16(f, 1); put16(f, 1);
     put32(f, sample->sample_rate); put32(f, sample->sample_rate * 2u); put16(f, 2); put16(f, 16);
+    {
+        double midi = (double)actual.root_note + (double)actual.fine_tune_cents / 100.0;
+        int unity = (int)floor(midi);
+        double fraction = midi - unity;
+        uint64_t fraction_bits;
+        if (unity < 0) unity = 0, fraction = 0.0;
+        if (unity > 127) unity = 127, fraction = 0.0;
+        fraction_bits = (uint64_t)llround(fraction * 4294967296.0);
+        if (fraction_bits >= UINT64_C(4294967296)) {
+            if (unity < 127) ++unity;
+            fraction_bits = 0;
+        }
+        fwrite("smpl", 1, 4, f); put32(f, 36u);
+        put32(f, 0); put32(f, 0);
+        put32(f, (uint32_t)llround(1000000000.0 / sample->sample_rate));
+        put32(f, (uint32_t)unity); put32(f, (uint32_t)fraction_bits);
+        put32(f, 0); put32(f, 0); put32(f, 0); put32(f, 0);
+    }
     fwrite("data", 1, 4, f); put32(f, data_bytes);
     for (size_t i = 0; i < sample->frames; ++i) {
         float value = clampf(sample->data[i], -1.0f, 1.0f);
@@ -318,6 +532,13 @@ int ts_sample_save_wav16(const TsSample *sample, const char *path, char *error, 
     }
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_sample_save_wav16(const TsSample *sample, const char *path,
+                         char *error, size_t error_size)
+{
+    TsTuning tuning = default_tuning();
+    return ts_sample_save_wav16_tuned(sample, &tuning, path, error, error_size);
 }
 
 const char *ts_generator_name(TsGeneratorKind kind)
@@ -726,6 +947,8 @@ static TsEditSnapshot snapshot(const TsInstrument *instrument)
     result.loop_mode = instrument->loop_mode;
     result.has_selection = instrument->has_selection;
     result.has_loop = instrument->has_loop;
+    result.tuning = instrument->tuning;
+    result.audible_tuning = instrument->audible_tuning;
     result.process = instrument->process;
     memcpy(result.sample_edits, instrument->sample_edits, sizeof(result.sample_edits));
     result.sample_edit_count = instrument->sample_edit_count;
@@ -1033,6 +1256,8 @@ static void bank_slot_init(TsBankSlot *slot)
     memset(slot, 0, sizeof(*slot));
     ts_sample_init(&slot->sample);
     slot->loop_crossfade_ms = 8.0f;
+    slot->tuning = default_tuning();
+    slot->audible_tuning = default_tuning();
 }
 
 static void bank_slot_free(TsBankSlot *slot)
@@ -1047,11 +1272,14 @@ static void bank_free(TsInstrument *instrument)
 }
 
 static int bank_root_clone(TsBankSlot *slot, const TsSample *parent,
+                           const TsTuning *tuning,
                            char *error, size_t error_size)
 {
     bank_slot_init(slot);
     if (!ts_sample_clone(&slot->sample, parent, error, error_size)) return 0;
     slot->capture_kind = TS_BANK_CAPTURE_ROOT;
+    slot->tuning = tuning_valid(tuning) ? *tuning : default_tuning();
+    slot->audible_tuning = slot->tuning;
     slot->occupied = 1;
     return 1;
 }
@@ -1086,7 +1314,33 @@ void ts_instrument_init(TsInstrument *instrument)
     instrument->generator.kind = TS_GENERATOR_TONAL;
     instrument->generator.seconds = 2.0f;
     instrument->generator.frequency = 130.8128f;
+    instrument->tuning = default_tuning();
+    instrument->audible_tuning = default_tuning();
     ts_process_recipe_reset(&instrument->process);
+}
+
+static TsTuning tuning_from_frequency(double frequency)
+{
+    TsTuning tuning = default_tuning();
+    double midi;
+    int root;
+    if (!isfinite(frequency) || frequency <= 0.0) return tuning;
+    midi = 69.0 + 12.0 * log2(frequency / 440.0);
+    root = (int)floor(midi + 0.5);
+    if (root < 0) root = 0;
+    if (root > 127) root = 127;
+    tuning.root_note = root;
+    tuning.fine_tune_cents = (float)((midi - root) * 100.0);
+    return tuning;
+}
+
+static TsTuning generator_tuning(const TsGeneratorRecipe *generator)
+{
+    static const float pitch_ratios[] = {0.5f, 0.75f, 1.0f, 1.5f, 2.0f};
+    uint32_t rng = generator->seed;
+    for (int i = 0; i < 4; ++i) (void)rng_unit(&rng);
+    return tuning_from_frequency(generator->frequency *
+                                 pitch_ratios[(rng >> 2) % 5u]);
 }
 
 void ts_instrument_free(TsInstrument *instrument)
@@ -1104,16 +1358,18 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
     TsBankSlot root;
     TsGeneratorRecipe generator = instrument->generator;
     TsProcessRecipe neutral;
+    TsTuning tuning;
     ts_sample_init(&parent);
     ts_sample_init(&current);
     bank_slot_init(&root);
     generator.kind = kind;
     generator.seed = seed;
+    tuning = generator_tuning(&generator);
     ts_process_recipe_reset(&neutral);
     if (!ts_sample_generate(&parent, &generator, error, error_size) ||
         !ts_sample_process(&current, &parent, 0, parent.frames, &neutral,
                            error, error_size) ||
-        !bank_root_clone(&root, &parent, error, error_size)) {
+        !bank_root_clone(&root, &parent, &tuning, error, error_size)) {
         ts_sample_free(&parent);
         ts_sample_free(&current);
         bank_slot_free(&root);
@@ -1127,6 +1383,8 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
     instrument->bank[0] = root;
     instrument->source_kind = TS_SOURCE_GENERATED;
     instrument->generator = generator;
+    instrument->tuning = tuning;
+    instrument->audible_tuning = tuning;
     instrument->process = neutral;
     instrument->generation = 0;
     instrument->ancestor_hash = 0;
@@ -1140,14 +1398,15 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
     TsSample parent, current;
     TsBankSlot root;
     TsProcessRecipe neutral;
+    TsTuning tuning = default_tuning();
     ts_sample_init(&parent);
     ts_sample_init(&current);
     bank_slot_init(&root);
     ts_process_recipe_reset(&neutral);
-    if (!ts_sample_load_wav(&parent, path, error, error_size) ||
+    if (!ts_sample_load_wav_tuned(&parent, &tuning, path, error, error_size) ||
         !ts_sample_process(&current, &parent, 0, parent.frames, &neutral,
                            error, error_size) ||
-        !bank_root_clone(&root, &parent, error, error_size)) {
+        !bank_root_clone(&root, &parent, &tuning, error, error_size)) {
         ts_sample_free(&parent);
         ts_sample_free(&current);
         bank_slot_free(&root);
@@ -1161,6 +1420,8 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
     instrument->bank[0] = root;
     instrument->source_kind = TS_SOURCE_IMPORTED;
     instrument->process = neutral;
+    instrument->tuning = tuning;
+    instrument->audible_tuning = tuning;
     instrument->generation = 0;
     instrument->ancestor_hash = 0;
     reset_editor(instrument);
@@ -1186,15 +1447,103 @@ int ts_instrument_reseed(TsInstrument *instrument, char *error, size_t error_siz
 int ts_instrument_set_process(TsInstrument *instrument, const TsProcessRecipe *process,
                               char *error, size_t error_size)
 {
+    if (instrument == NULL) {
+        set_error(error, error_size, "No instrument to process");
+        return 0;
+    }
+    return ts_instrument_set_process_and_tuning(instrument, process,
+                                                &instrument->tuning,
+                                                error, error_size);
+}
+
+int ts_instrument_set_process_and_tuning(TsInstrument *instrument,
+                                         const TsProcessRecipe *process,
+                                         const TsTuning *tuning,
+                                         char *error, size_t error_size)
+{
+    return ts_instrument_set_process_and_tunings(instrument, process, tuning,
+                                                  tuning, error, error_size);
+}
+
+int ts_instrument_set_process_and_tunings(TsInstrument *instrument,
+                                          const TsProcessRecipe *process,
+                                          const TsTuning *tuning,
+                                          const TsTuning *audible_tuning,
+                                          char *error, size_t error_size)
+{
     TsSample current;
-    TsEditSnapshot target = snapshot(instrument);
+    TsEditSnapshot target;
+    if (instrument == NULL || process == NULL || !tuning_valid(tuning) ||
+        !tuning_valid(audible_tuning)) {
+        set_error(error, error_size, "Invalid process or tuning settings");
+        return 0;
+    }
+    target = snapshot(instrument);
     ts_sample_init(&current);
     target.process = *process;
+    target.tuning = *tuning;
+    target.audible_tuning = *audible_tuning;
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
     begin_edit(instrument);
     ts_sample_free(&instrument->current);
     instrument->current = current;
     instrument->process = *process;
+    instrument->tuning = *tuning;
+    instrument->audible_tuning = *audible_tuning;
+    return 1;
+}
+
+int ts_instrument_set_tuning(TsInstrument *instrument, int root_note,
+                             float fine_tune_cents, char *error, size_t error_size)
+{
+    TsTuning tuning = {root_note, fine_tune_cents};
+    if (instrument == NULL || instrument->current.data == NULL || !tuning_valid(&tuning)) {
+        set_error(error, error_size, "Root must be MIDI 0-127 and fine tune -100 to +100 cents");
+        return 0;
+    }
+    if (instrument->tuning.root_note == root_note &&
+        fabsf(instrument->tuning.fine_tune_cents - fine_tune_cents) < 0.0001f) {
+        set_error(error, error_size, "Tuning is already set");
+        return 0;
+    }
+    begin_edit(instrument);
+    instrument->tuning = tuning;
+    instrument->audible_tuning = tuning;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_set_audible_tuning(TsInstrument *instrument, int root_note,
+                                     float fine_tune_cents,
+                                     char *error, size_t error_size)
+{
+    TsTuning audible = {root_note, fine_tune_cents};
+    double old_audible;
+    double new_audible;
+    double mapping;
+    TsTuning adjusted;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        !tuning_valid(&audible) || !tuning_valid(&instrument->audible_tuning)) {
+        set_error(error, error_size,
+                  "Pitch must be MIDI 0-127 and trim -100 to +100 cents");
+        return 0;
+    }
+    if (instrument->audible_tuning.root_note == root_note &&
+        fabsf(instrument->audible_tuning.fine_tune_cents - fine_tune_cents) < 0.0001f) {
+        set_error(error, error_size, "Audible tuning is already set");
+        return 0;
+    }
+    old_audible = instrument->audible_tuning.root_note +
+                   instrument->audible_tuning.fine_tune_cents / 100.0;
+    new_audible = root_note + fine_tune_cents / 100.0;
+    mapping = instrument->tuning.root_note +
+              instrument->tuning.fine_tune_cents / 100.0 -
+              (new_audible - old_audible);
+    adjusted = tuning_from_midi(mapping);
+    begin_edit(instrument);
+    instrument->tuning = adjusted;
+    instrument->audible_tuning = audible;
+    set_error(error, error_size, "");
     return 1;
 }
 
@@ -1685,6 +2034,8 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
     snprintf(captured.sample.name, sizeof(captured.sample.name), "%s G%02u",
              ts_bank_capture_name(kind), instrument->generation);
     captured.capture_kind = kind;
+    captured.tuning = instrument->tuning;
+    captured.audible_tuning = instrument->audible_tuning;
     captured.loop_mode = instrument->loop_mode;
     captured.occupied = 1;
     captured.loop_crossfade_ms = instrument->loop_crossfade_ms;
@@ -1797,6 +2148,8 @@ int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
     instrument->current = current;
     instrument->source_kind = TS_SOURCE_COMMITTED;
     instrument->process = neutral;
+    instrument->tuning = source->tuning;
+    instrument->audible_tuning = source->audible_tuning;
     instrument->ancestor_hash = prior_hash;
     ++instrument->generation;
     reset_editor(instrument);
@@ -1855,8 +2208,8 @@ int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder
             set_error(error, error_size, "Bank export path is too long");
             goto failed;
         }
-        if (!ts_sample_save_wav16(&slot->sample, created[created_count],
-                                  error, error_size)) {
+        if (!ts_sample_save_wav16_tuned(&slot->sample, &slot->tuning,
+                                        created[created_count], error, error_size)) {
             remove(created[created_count]);
             goto failed;
         }
@@ -2118,6 +2471,8 @@ static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
     instrument->loop_mode = target.loop_mode;
     instrument->has_selection = target.has_selection;
     instrument->has_loop = target.has_loop;
+    instrument->tuning = target.tuning;
+    instrument->audible_tuning = target.audible_tuning;
     instrument->process = target.process;
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
@@ -2178,7 +2533,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    fwrite("TSR9\r\n\032\n", 1, 8, f);
+    fwrite("TSR10\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->source_kind);
     put32(f, instrument->generation);
     put64(f, instrument->ancestor_hash);
@@ -2186,6 +2541,10 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     put32(f, (uint32_t)instrument->generator.kind);
     put_float(f, instrument->generator.seconds);
     put_float(f, instrument->generator.frequency);
+    put32(f, (uint32_t)instrument->tuning.root_note);
+    put_float(f, instrument->tuning.fine_tune_cents);
+    put32(f, (uint32_t)instrument->audible_tuning.root_note);
+    put_float(f, instrument->audible_tuning.fine_tune_cents);
     put32(f, instrument->process.seed);
     put_float(f, instrument->process.body);
     put_float(f, instrument->process.edge);
@@ -2248,6 +2607,10 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         put32(f, (uint32_t)slot->occupied);
         if (!slot->occupied) continue;
         put32(f, (uint32_t)slot->capture_kind);
+        put32(f, (uint32_t)slot->tuning.root_note);
+        put_float(f, slot->tuning.fine_tune_cents);
+        put32(f, (uint32_t)slot->audible_tuning.root_note);
+        put_float(f, slot->audible_tuning.fine_tune_cents);
         put32(f, (uint32_t)slot->loop_mode);
         put32(f, (uint32_t)slot->has_loop);
         put64(f, slot->loop_first); put64(f, slot->loop_last);
@@ -2301,7 +2664,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR9\r\n\032\n", 8) == 0) version = 9;
+    if (memcmp(magic, "TSR10\r\n\032", 8) == 0) version = 10;
+    else if (memcmp(magic, "TSR9\r\n\032\n", 8) == 0) version = 9;
     else if (memcmp(magic, "TSR8\r\n\032\n", 8) == 0) version = 8;
     else if (memcmp(magic, "TSR7\r\n\032\n", 8) == 0) version = 7;
     else if (memcmp(magic, "TSR6\r\n\032\n", 8) == 0) version = 6;
@@ -2309,7 +2673,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6/TSR7/TSR8/TSR9 project");
+                  "Not a self-contained TSR6-TSR10 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -2319,6 +2683,12 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     if (!get64(f, &loaded.ancestor_hash)) goto malformed;
     GET_U32(loaded.generator.seed); GET_U32(loaded.generator.kind);
     GET_FLOAT(loaded.generator.seconds); GET_FLOAT(loaded.generator.frequency);
+    if (version >= 10) {
+        GET_U32(loaded.tuning.root_note);
+        GET_FLOAT(loaded.tuning.fine_tune_cents);
+        GET_U32(loaded.audible_tuning.root_note);
+        GET_FLOAT(loaded.audible_tuning.fine_tune_cents);
+    }
     GET_U32(state.process.seed);
     GET_FLOAT(state.process.body); GET_FLOAT(state.process.edge); GET_FLOAT(state.process.drift);
     GET_U32(state.process.noise_enabled); GET_FLOAT(state.process.noise_amount);
@@ -2345,6 +2715,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     GET_U32(state.sample_edit_count);
     if (loaded.source_kind < TS_SOURCE_GENERATED || loaded.source_kind > TS_SOURCE_COMMITTED ||
         loaded.generator.kind >= TS_GENERATOR_COUNT ||
+        !tuning_valid(&loaded.tuning) ||
+        !tuning_valid(&loaded.audible_tuning) ||
         state.loop_mode >= TS_LOOP_MODE_COUNT ||
         state.process.noise_color >= TS_NOISE_COLOR_COUNT ||
         state.sample_edit_count < 0 || state.sample_edit_count > TS_SAMPLE_EDIT_DEPTH ||
@@ -2411,7 +2783,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         stored_hash != ts_sample_hash(&loaded.parent)) goto malformed;
     if (version == 6) {
         if (fgetc(f) != EOF ||
-            !bank_root_clone(&loaded.bank[0], &loaded.parent, error, error_size))
+            !bank_root_clone(&loaded.bank[0], &loaded.parent, &loaded.tuning,
+                             error, error_size))
             goto malformed;
     } else {
         GET_U32(bank_slot_count);
@@ -2423,6 +2796,12 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             if (slot->occupied != 0 && slot->occupied != 1) goto malformed;
             if (!slot->occupied) continue;
             GET_U32(slot->capture_kind);
+            if (version >= 10) {
+                GET_U32(slot->tuning.root_note);
+                GET_FLOAT(slot->tuning.fine_tune_cents);
+                GET_U32(slot->audible_tuning.root_note);
+                GET_FLOAT(slot->audible_tuning.fine_tune_cents);
+            }
             if (version >= 8) GET_U32(slot->loop_mode);
             else slot->loop_mode = TS_LOOP_FORWARD;
             GET_U32(slot->has_loop);
@@ -2432,6 +2811,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             GET_U32(name_length);
             if (slot->capture_kind > TS_BANK_CAPTURE_LOOP ||
                 slot->loop_mode >= TS_LOOP_MODE_COUNT ||
+                !tuning_valid(&slot->tuning) ||
+                !tuning_valid(&slot->audible_tuning) ||
                 (slot->has_loop != 0 && slot->has_loop != 1) ||
                 !isfinite(slot->loop_crossfade_ms) ||
                 slot->loop_crossfade_ms < 0.0f || slot->loop_crossfade_ms > 50.0f ||
@@ -2489,7 +2870,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6/TSR7/TSR8/TSR9 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR10 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

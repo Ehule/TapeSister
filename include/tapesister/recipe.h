@@ -12,6 +12,9 @@ enum {
 typedef struct {
     char name[TS_RECIPE_NAME_MAX + 1];
     TsProcessRecipe process;
+    TsTuning tuning;
+    TsTuning audible_tuning;
+    int has_tuning;
     int factory;
     int occupied;
 } TsPortableRecipe;
@@ -23,7 +26,9 @@ typedef struct {
 
 void ts_recipe_bank_init(TsRecipeBank *bank);
 int ts_recipe_bank_capture(TsRecipeBank *bank, int slot, const TsProcessRecipe *process,
-                           const char *name, char *error, size_t error_size);
+                           const TsTuning *tuning, const TsTuning *audible_tuning,
+                           const char *name,
+                           char *error, size_t error_size);
 int ts_recipe_bank_clear(TsRecipeBank *bank, int slot, char *error, size_t error_size);
 int ts_recipe_bank_rename(TsRecipeBank *bank, int slot, const char *name,
                           char *error, size_t error_size);
@@ -35,6 +40,14 @@ int ts_recipe_load(TsPortableRecipe *recipe, const char *path,
                    char *error, size_t error_size);
 int ts_recipe_from_process(TsPortableRecipe *recipe, const TsProcessRecipe *process,
                            const char *name);
+int ts_recipe_from_process_and_tuning(TsPortableRecipe *recipe,
+                                      const TsProcessRecipe *process,
+                                      const TsTuning *tuning, const char *name);
+int ts_recipe_from_process_and_tunings(TsPortableRecipe *recipe,
+                                       const TsProcessRecipe *process,
+                                       const TsTuning *tuning,
+                                       const TsTuning *audible_tuning,
+                                       const char *name);
 int ts_recipe_process_valid(const TsProcessRecipe *process);
 
 #endif

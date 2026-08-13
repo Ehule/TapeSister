@@ -101,15 +101,32 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Crop keeps the overlapping loop portion in correct Current-relative coordinates; Undo restores the prior crop and loop exactly.
 - [ ] Loop Set, Clear, mode, and crossfade changes traverse correctly through Undo/Redo.
 - [ ] Reset clears the loop and is undoable; Commit carries the loop onto the promoted Parent and clears old history.
-- [ ] Saved TSR9 projects contain embedded Parent audio, loop state/range/mode/crossfade, bank audio, filter/shaper settings, and complete reconstructive state.
+- [ ] Saved TSR10 projects contain embedded Parent audio, tuning, loop state/range/mode/crossfade, bank audio, filter/shaper settings, and complete reconstructive state.
 - [ ] KEYS/BANK switches the lower panel without affecting computer-key audition or Space/Escape stopping.
+
+## Pitch and tuning
+
+- [ ] A newly imported WAV without sampler metadata defaults to C3 and sounds exactly as before on the first onscreen C.
+- [ ] Down lowers and Up raises a held sound, and the displayed note and Hz move in the same direction; Trim spans -100 to +100 cents with rightward travel sharpening both sound and readout.
+- [ ] Shift-right-clicking each white and black onscreen key assigns the note under the pointer as root without starting or releasing a voice.
+- [ ] Computer and onscreen keys are pitched relative to the root; assigning a sounding key as root makes that key unity playback.
+- [ ] Parent and Current always share one mapping, including while switching A/B during sustained notes.
+- [ ] Held and latched notes change pitch in place after root, fine-tune, recipe, Undo, or Redo changes, without restarting or becoming stuck.
+- [ ] Suggest Pitch analyzes Selection before Loop before all Current, previews its mapping on new and already-held keyboard voices without mutating saved state, and requires a second click to accept.
+- [ ] During suggestion preview the Tune readout follows the candidate; Space stops notes but retains it, while Escape cancels it and reliably stops everything.
+- [ ] A stable tonal source gives a musically plausible suggestion; silence and unstable noise report no reliable pitch instead of changing tuning.
+- [ ] Reset and Commit preserve root/fine tuning. Undo/Redo traverse manual tuning changes exactly.
+- [ ] Shift/Alt/Ctrl family captures retain tuning, and Set Current restores the chosen member's mapping with its audio and loop.
+- [ ] Current and Family WAV exports contain sampler root/fraction metadata that TapeSister reads back within one cent.
+- [ ] TSR10 save/reopen restores the live mapping and every occupied bank member's mapping; TSR6-9 open with C3 defaults where tuning was absent.
+- [ ] User-captured TSP2 recipes restore processing and tuning together as one undo step; factory recipes and legacy TSP1 never alter tuning.
 
 ## Existing foundation
 
 - [ ] Computer and onscreen keys audition the selected A/B source at different pitches.
 - [ ] Space and Escape stop every one-shot, loop, held note, and latched chord reliably without a mouse Stop All button.
 - [ ] A bad WAV path reports an error and preserves Parent and Current.
-- [ ] Save creates a self-contained TSR9 project that reopens without access to the original WAV.
+- [ ] Save creates a self-contained TSR10 project that reopens without access to the original WAV.
 - [ ] Export creates a valid mono 16-bit WAV containing Current.
 - [ ] The supplied Tapehead palette is applied consistently and remains legible.
 - [ ] No action leaks through the path-entry overlay.
@@ -138,7 +155,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Family export proposes a folder derived from the initial Parent name.
 - [ ] Whole-bank export creates one correctly numbered WAV per occupied slot and never replaces an existing folder.
 - [ ] A failed bank export cleans up its partial WAV files and temporary folder.
-- [ ] Saving and reopening TSR9 restores exact names, hashes, capture types, loop ranges, modes, and crossfades for every occupied slot.
+- [ ] Saving and reopening TSR10 restores exact names, hashes, tuning, capture types, loop ranges, modes, and crossfades for every occupied slot.
 - [ ] Opening a TSR6 project remains supported and creates a root-only bank from its Parent.
 
 ## Physical tape gestures
@@ -156,7 +173,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Each completed drag adds exactly one Undo step; Undo restores source, destination, length, selection, loop, and view together, and Redo reproduces the exact hash.
 - [ ] Reverse, Normalize, Amplify, Fade, and Crop applied after a tape drag affect the heard placement in order and remain undoable.
 - [ ] Reset removes the complete post-DSP tape timeline and is undoable; Commit prints it into Parent and clears old history.
-- [ ] Saving and reopening TSR9 restores the exact Current hash, post-DSP operation order, expanded duration, selection, and loop metadata.
+- [ ] Saving and reopening TSR10 restores the exact Current hash, post-DSP operation order, expanded duration, selection, and loop metadata.
 - [ ] While dragging, Space and Escape still stop Play Loop, one-shots, held notes, and latched chords without applying a stuck gesture.
 
 ## DSP shelf
@@ -187,7 +204,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Filter OFF is sample-exact; Lowpass, Highpass, and Bandpass are audibly distinct and stable across the full logarithmic Cutoff and Resonance ranges.
 - [ ] Shaper OFF is sample-exact; Tape, Clip, and Fold are audibly distinct and remain bounded across the full Drive and Mix ranges.
 - [ ] Filter and shaper affect both generated and imported sounds, render before Delay/Space, and keep ordered tape gestures downstream.
-- [ ] TSR9 save/reopen restores the exact filter mode, cutoff, resonance, shaper mode, drive, mix, and rendered Current hash.
+- [ ] TSR10 save/reopen restores the exact filter mode, cutoff, resonance, shaper mode, drive, mix, and rendered Current hash.
 
 ## Commit lifecycle
 

@@ -151,24 +151,29 @@ int main(void)
         TsPortableRecipe reopened;
         TsSample filtered, saturated, folded;
         TsProcessRecipe shaped;
+        TsTuning recipe_tuning = {57, -12.5f};
         uint64_t neutral_hash;
         char recipe_error[160];
         ts_sample_init(&filtered); ts_sample_init(&saturated); ts_sample_init(&folded);
         CHECK(recipe_bank.slots[0].occupied && recipe_bank.slots[0].factory);
         CHECK(strcmp(recipe_bank.slots[0].name, "NEUTRAL") == 0);
         CHECK(recipe_bank.slots[7].occupied && recipe_bank.slots[7].factory);
-        CHECK(!ts_recipe_bank_capture(&recipe_bank, 0, &neutral, "NO",
+        CHECK(!ts_recipe_bank_capture(&recipe_bank, 0, &neutral, &recipe_tuning,
+                                      &recipe_tuning, "NO",
                                       recipe_error, sizeof(recipe_error)));
-        CHECK(ts_recipe_bank_capture(&recipe_bank, 8, &dsp, "MY TEXTURE",
+        CHECK(ts_recipe_bank_capture(&recipe_bank, 8, &dsp, &recipe_tuning,
+                                     &recipe_tuning, "MY TEXTURE",
                                      recipe_error, sizeof(recipe_error)));
-        CHECK(!ts_recipe_bank_capture(&recipe_bank, 8, &neutral, "OVERWRITE",
+        CHECK(!ts_recipe_bank_capture(&recipe_bank, 8, &neutral, &recipe_tuning,
+                                      &recipe_tuning, "OVERWRITE",
                                       recipe_error, sizeof(recipe_error)));
         CHECK(!ts_recipe_bank_rename(&recipe_bank, 0, "RENAMED FACTORY",
                                      recipe_error, sizeof(recipe_error)));
         CHECK(ts_recipe_bank_rename(&recipe_bank, 8, "  DRONE BED  ",
                                     recipe_error, sizeof(recipe_error)));
         CHECK(strcmp(recipe_bank.slots[8].name, "DRONE BED") == 0);
-        CHECK(ts_recipe_from_process(&portable, &dsp, "PORTABLE TEXTURE"));
+        CHECK(ts_recipe_from_process_and_tuning(&portable, &dsp, &recipe_tuning,
+                                                "PORTABLE TEXTURE"));
         CHECK(ts_recipe_save(&portable, "test-portable.tsp",
                              recipe_error, sizeof(recipe_error)));
         CHECK(ts_recipe_load(&reopened, "test-portable.tsp",
@@ -176,6 +181,8 @@ int main(void)
         CHECK(strcmp(reopened.name, "PORTABLE TEXTURE") == 0);
         CHECK(memcmp(&reopened.process, &portable.process,
                      sizeof(portable.process)) == 0);
+        CHECK(reopened.has_tuning && reopened.tuning.root_note == 57 &&
+              fabsf(reopened.tuning.fine_tune_cents + 12.5f) < 0.001f);
         {
             TsPortableRecipe guarded = reopened;
             FILE *broken = fopen("test-portable-broken.tsp", "wb");
@@ -258,6 +265,45 @@ int main(void)
     CHECK(loaded.frames == a.frames);
     CHECK(loaded.sample_rate == a.sample_rate);
     CHECK(fabsf(ts_sample_peak(&loaded) - ts_sample_peak(&a)) < 0.001f);
+    {
+        TsTuning written = {57, -23.25f};
+        TsTuning reopened = {0, 0.0f};
+        char note_name[12];
+        CHECK(ts_sample_save_wav16_tuned(&a, &written, "test-tuned.wav",
+                                         error, sizeof(error)));
+        CHECK(ts_sample_load_wav_tuned(&loaded, &reopened, "test-tuned.wav",
+                                       error, sizeof(error)));
+        CHECK(reopened.root_note == written.root_note);
+        CHECK(fabsf(reopened.fine_tune_cents - written.fine_tune_cents) < 0.001f);
+        CHECK(fabs(ts_tuning_frequency(&(TsTuning){69, 0.0f}) - 440.0) < 0.0001);
+        CHECK(fabs(ts_tuning_note_pitch(&(TsTuning){60, 0.0f}, 12) - 1.0) < 0.0001);
+        CHECK(strcmp(ts_midi_note_name(60, note_name, sizeof(note_name)), "C4") == 0);
+        remove("test-tuned.wav");
+    }
+    {
+        TsInstrument pitch;
+        TsTuning suggestion;
+        float confidence = 0.0f;
+        ts_instrument_init(&pitch);
+        pitch.current.frames = 16384;
+        pitch.current.sample_rate = 44100;
+        pitch.current.data = (float *)malloc(pitch.current.frames * sizeof(float));
+        CHECK(pitch.current.data != NULL);
+        if (pitch.current.data != NULL) {
+            for (size_t i = 0; i < pitch.current.frames; ++i)
+                pitch.current.data[i] = sinf((float)(2.0 * 3.14159265358979323846 * 440.0 *
+                                                      (double)i / 44100.0));
+            CHECK(ts_instrument_suggest_pitch(&pitch, &suggestion, &confidence,
+                                               error, sizeof(error)));
+            CHECK(suggestion.root_note == 69);
+            CHECK(fabsf(suggestion.fine_tune_cents) < 1.0f);
+            CHECK(confidence > 0.9f);
+            memset(pitch.current.data, 0, pitch.current.frames * sizeof(float));
+            CHECK(!ts_instrument_suggest_pitch(&pitch, &suggestion, &confidence,
+                                                error, sizeof(error)));
+        }
+        ts_instrument_free(&pitch);
+    }
 
     CHECK(ts_instrument_generate(&generated, TS_GENERATOR_TONAL, 0x11223344u,
                                  error, sizeof(error)));
@@ -266,6 +312,8 @@ int main(void)
     CHECK(ts_sample_hash(&generated.parent) == ts_sample_hash(&generated.current));
     CHECK(generated.process.body == 0.5f && generated.process.edge == 0.0f &&
           generated.process.drift == 0.0f);
+    CHECK(generated.tuning.root_note >= 0 && generated.tuning.root_note <= 127);
+    CHECK(generated.bank[0].tuning.root_note == generated.tuning.root_note);
     parent_hash = ts_sample_hash(&generated.parent);
     current_hash = ts_sample_hash(&generated.current);
 
@@ -283,6 +331,30 @@ int main(void)
     CHECK(ts_sample_hash(&generated.parent) == parent_hash);
     CHECK(ts_instrument_redo(&generated, error, sizeof(error)));
     CHECK(ts_sample_hash(&generated.current) == edited_hash);
+    {
+        TsTuning original = generated.tuning;
+        CHECK(ts_instrument_set_tuning(&generated, 64, 17.5f,
+                                       error, sizeof(error)));
+        CHECK(generated.tuning.root_note == 64 &&
+              fabsf(generated.tuning.fine_tune_cents - 17.5f) < 0.001f);
+        CHECK(ts_instrument_undo(&generated, error, sizeof(error)));
+        CHECK(generated.tuning.root_note == original.root_note &&
+              fabsf(generated.tuning.fine_tune_cents -
+                    original.fine_tune_cents) < 0.001f);
+        CHECK(ts_instrument_redo(&generated, error, sizeof(error)));
+        CHECK(generated.tuning.root_note == 64);
+        {
+            double before_pitch = ts_tuning_note_pitch(&generated.tuning, 0);
+            CHECK(ts_instrument_set_audible_tuning(&generated, 65, 17.5f,
+                                                    error, sizeof(error)));
+            CHECK(generated.audible_tuning.root_note == 65);
+            CHECK(ts_tuning_note_pitch(&generated.tuning, 0) > before_pitch);
+            CHECK(ts_instrument_undo(&generated, error, sizeof(error)));
+            CHECK(generated.audible_tuning.root_note == 64);
+            CHECK(ts_instrument_redo(&generated, error, sizeof(error)));
+            CHECK(generated.audible_tuning.root_note == 65);
+        }
+    }
 
     size_t original_frames = generated.current.frames;
     ts_instrument_set_selection(&generated, 100, 1000);
@@ -340,6 +412,7 @@ int main(void)
 
     CHECK(ts_instrument_generate(&committed, TS_GENERATOR_METALLIC, 0x90909090u,
                                  error, sizeof(error)));
+    CHECK(ts_instrument_set_tuning(&committed, 58, -9.0f, error, sizeof(error)));
     CHECK(ts_instrument_bank_count(&committed) == 1);
     CHECK(committed.bank[0].occupied &&
           committed.bank[0].capture_kind == TS_BANK_CAPTURE_ROOT);
@@ -364,6 +437,8 @@ int main(void)
     CHECK(memcmp(committed.current.data, committed.parent.data,
                  committed.parent.frames * sizeof(float)) == 0);
     CHECK(committed.undo_count == 0 && committed.redo_count == 0);
+    CHECK(committed.tuning.root_note == 58 &&
+          fabsf(committed.tuning.fine_tune_cents + 9.0f) < 0.001f);
     CHECK(!committed.process.delay_enabled && !committed.process.reverb_enabled);
     CHECK(ts_sample_hash(&committed.bank[0].sample) == family_root_hash);
 
@@ -374,6 +449,8 @@ int main(void)
         uint32_t prior_generation;
         CHECK(ts_instrument_generate(&bank_edit, TS_GENERATOR_TONAL, 0x42414e4bu,
                                      error, sizeof(error)));
+        CHECK(ts_instrument_set_tuning(&bank_edit, 53, 14.0f,
+                                       error, sizeof(error)));
         bank_root = ts_sample_hash(&bank_edit.bank[0].sample);
         prior_parent = ts_sample_hash(&bank_edit.parent);
         prior_generation = bank_edit.generation;
@@ -386,16 +463,21 @@ int main(void)
                                          error, sizeof(error)));
         CHECK(ts_instrument_bank_rename(&bank_edit, 1, "Drone Core",
                                         error, sizeof(error)));
+        CHECK(bank_edit.bank[1].tuning.root_note == 53 &&
+              fabsf(bank_edit.bank[1].tuning.fine_tune_cents - 14.0f) < 0.001f);
         selected_hash = ts_sample_hash(&bank_edit.bank[1].sample);
         process = bank_edit.process;
         process.edge = 0.71f;
         CHECK(ts_instrument_set_process(&bank_edit, &process, error, sizeof(error)));
+        CHECK(ts_instrument_set_tuning(&bank_edit, 70, 0.0f, error, sizeof(error)));
         CHECK(bank_edit.undo_count > 0);
         CHECK(ts_instrument_set_bank_as_current(&bank_edit, 1,
                                                 error, sizeof(error)));
         CHECK(bank_edit.generation == prior_generation + 1u);
         CHECK(bank_edit.ancestor_hash == prior_parent);
         CHECK(bank_edit.source_kind == TS_SOURCE_COMMITTED);
+        CHECK(bank_edit.tuning.root_note == 53 &&
+              fabsf(bank_edit.tuning.fine_tune_cents - 14.0f) < 0.001f);
         CHECK(ts_sample_hash(&bank_edit.parent) == selected_hash);
         CHECK(ts_sample_hash(&bank_edit.current) == selected_hash);
         CHECK(strcmp(bank_edit.parent.name, "Drone Core") == 0);
@@ -685,6 +767,9 @@ int main(void)
     CHECK(ts_instrument_bank_count(&committed) == 4);
     CHECK(ts_instrument_bank_first_empty(&committed) == 4);
     CHECK(committed.bank[1].sample.frames == committed.current.frames);
+    CHECK(committed.bank[1].tuning.root_note == committed.tuning.root_note);
+    CHECK(committed.bank[1].audible_tuning.root_note ==
+          committed.audible_tuning.root_note);
     CHECK(committed.bank[2].sample.frames ==
           committed.selection_last - committed.selection_first);
     CHECK(committed.bank[3].has_loop && committed.bank[3].loop_first == 0 &&
@@ -704,13 +789,13 @@ int main(void)
     CHECK(ts_instrument_save_recipe(&committed, "test-recipe.tsr", error, sizeof(error)));
     {
         FILE *recipe = fopen("test-recipe.tsr", "rb");
-        char magic[4] = {0};
+        char magic[5] = {0};
         CHECK(recipe != NULL);
         if (recipe != NULL) {
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR9", 4) == 0);
+        CHECK(memcmp(magic, "TSR10", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -727,6 +812,12 @@ int main(void)
     CHECK(fabsf(restored.process.filter_cutoff_hz - 1337.0f) < 0.001f);
     CHECK(restored.process.shaper_enabled &&
           restored.process.shaper_mode == TS_SHAPER_FOLD);
+    CHECK(restored.tuning.root_note == committed.tuning.root_note &&
+          fabsf(restored.tuning.fine_tune_cents -
+                committed.tuning.fine_tune_cents) < 0.001f);
+    CHECK(restored.audible_tuning.root_note == committed.audible_tuning.root_note &&
+          fabsf(restored.audible_tuning.fine_tune_cents -
+                committed.audible_tuning.fine_tune_cents) < 0.001f);
     CHECK(fabsf(restored.process.shaper_drive - 4.75f) < 0.001f);
     CHECK(ts_instrument_bank_count(&restored) == 4);
     CHECK(strcmp(restored.bank[2].sample.name, "Growing Tail") == 0);
@@ -735,6 +826,7 @@ int main(void)
         CHECK(ts_sample_hash(&restored.bank[slot].sample) ==
               ts_sample_hash(&committed.bank[slot].sample));
         CHECK(restored.bank[slot].capture_kind == committed.bank[slot].capture_kind);
+        CHECK(restored.bank[slot].tuning.root_note == committed.bank[slot].tuning.root_note);
         CHECK(restored.bank[slot].loop_mode == committed.bank[slot].loop_mode);
         CHECK(restored.bank[slot].has_loop == committed.bank[slot].has_loop);
     }
@@ -789,6 +881,22 @@ int main(void)
     }
     CHECK(ts_note_bank_start(&notes, &restored, TS_AUDITION_CURRENT,
                              0, 1, 48000) == TS_NOTE_STARTED);
+    {
+        const TsNoteVoice *voice = ts_note_bank_display_voice(&notes);
+        double prior_pitch = voice != NULL ? voice->pitch : 0.0;
+        TsTuning preview = {60, 0.0f};
+        int accepted_root = restored.tuning.root_note;
+        ts_note_bank_sync_tuned(&notes, &restored, &preview, 48000);
+        voice = ts_note_bank_display_voice(&notes);
+        CHECK(voice != NULL && fabs(voice->pitch - 0.5) < 0.0001);
+        CHECK(restored.tuning.root_note == accepted_root);
+        CHECK(ts_instrument_set_tuning(&restored, TS_KEYBOARD_BASE_NOTE, 0.0f,
+                                       error, sizeof(error)));
+        ts_note_bank_sync(&notes, &restored, 48000);
+        voice = ts_note_bank_display_voice(&notes);
+        CHECK(voice != NULL && fabs(voice->pitch - 1.0) < 0.0001);
+        CHECK(fabs(prior_pitch - voice->pitch) > 0.01);
+    }
     CHECK(ts_note_bank_start(&notes, &restored, TS_AUDITION_CURRENT,
                              4, 1, 48000) == TS_NOTE_STARTED);
     CHECK(ts_note_bank_start(&notes, &restored, TS_AUDITION_CURRENT,
@@ -924,6 +1032,19 @@ int main(void)
                                        committed.current.frames);
         CHECK(fb.pixels[(TS_WAVE_Y + 10) * TS_UI_WIDTH + loop_x] == 0xff147dffu);
     }
+    ts_ui_init(&ui);
+    ui.fx_page = TS_FX_TUNE;
+    CHECK(ts_ui_audition_tuning(&ui, &committed) == &committed.tuning);
+    CHECK(ts_ui_display_tuning(&ui, &committed) == &committed.audible_tuning);
+    ui.pitch_suggestion.root_note = 71;
+    ui.pitch_suggestion.fine_tune_cents = 8.0f;
+    ui.has_pitch_suggestion = 1;
+    CHECK(ts_ui_audition_tuning(&ui, &committed) == &ui.pitch_suggestion);
+    CHECK(ts_ui_display_tuning(&ui, &committed) == &ui.pitch_suggestion);
+    CHECK(committed.tuning.root_note != ui.pitch_suggestion.root_note);
+    ts_ui_render(&fb, &ui, &committed);
+    CHECK(framebuffer_contains(&fb, 0xff147dffu));
+    CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     ts_ui_init(&ui);
     ts_instrument_set_selection(&imported, imported.current.frames / 4, imported.current.frames / 2);
     ts_ui_render(&fb, &ui, &imported);
@@ -1107,6 +1228,6 @@ int main(void)
     ts_instrument_free(&bank_edit);
     ts_instrument_free(&recipe_target);
     if (failures) return 1;
-    puts("TapeSister recipes, shaping, tape gestures, loops, bank, and editor tests passed");
+    puts("TapeSister tuning, recipes, shaping, tape gestures, loops, bank, and editor tests passed");
     return 0;
 }
