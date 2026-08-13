@@ -112,6 +112,63 @@ int main(int argc, char **argv)
         ui.playhead_frames = instrument.bank[2].sample.frames;
         snprintf(ui.status, sizeof(ui.status),
                  "BANK 03 AUDITION - WAVEFORM FOLLOWS SLOT  RMB RENAME  SHIFT+RMB CLEAR");
+    } else if (argc > 2 && strcmp(argv[2], "family") == 0) {
+        int child = -1;
+        int cousin = -1;
+        int path = -1;
+        ts_instrument_set_selection(&instrument, instrument.current.frames / 5u,
+                                    instrument.current.frames * 4u / 5u);
+        if (!ts_instrument_set_loop_from_selection(&instrument, error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        instrument.bank[0].has_loop = 1;
+        instrument.bank[0].loop_first = instrument.loop_first;
+        instrument.bank[0].loop_last = instrument.loop_last;
+        instrument.bank[0].loop_mode = TS_LOOP_FORWARD;
+        instrument.bank[0].loop_crossfade_ms = instrument.loop_crossfade_ms;
+        instrument.family_relation = TS_FAMILY_CHILD;
+        instrument.family_mutation = 0.28f;
+        instrument.family_locks = TS_FAMILY_LOCK_LOOP |
+                                  TS_FAMILY_LOCK_DURATION |
+                                  TS_FAMILY_LOCK_PITCH;
+        if (!ts_instrument_generate_family_candidate(&instrument, 0, 0, &child,
+                                                       error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        instrument.family_relation = TS_FAMILY_COUSIN;
+        instrument.family_mutation = 0.68f;
+        instrument.family_locks = TS_FAMILY_LOCK_LOOP |
+                                  TS_FAMILY_LOCK_PITCH |
+                                  TS_FAMILY_LOCK_ENVELOPE;
+        if (!ts_instrument_generate_family_candidate(&instrument, 0, 0, &cousin,
+                                                       error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        instrument.family_trajectory = 1;
+        instrument.family_relation = TS_FAMILY_CHILD;
+        if (!ts_instrument_generate_family_candidate(&instrument, cousin, 0, &path,
+                                                       error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ui.fx_page = TS_FX_FAMILY;
+        ui.show_keyboard = 0;
+        ui.show_recipes = 0;
+        ui.bank_view_slot = path;
+        ui.playback_active = 1;
+        ui.playhead_bank_slot = path;
+        ui.playhead_frame = instrument.bank[path].sample.frames / 2u;
+        ui.playhead_frames = instrument.bank[path].sample.frames;
+        snprintf(ui.status, sizeof(ui.status),
+                 "PATH ON  CHILD %02d OF COUSIN %02d  LOCK LOOP PITCH ENV",
+                 path + 1, cousin + 1);
     } else if (argc > 2 && strcmp(argv[2], "tape") == 0) {
         size_t source_first = instrument.current.frames / 7u;
         size_t source_last = instrument.current.frames * 3u / 8u;

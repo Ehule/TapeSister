@@ -142,6 +142,15 @@ static void slider(TsFramebuffer *fb, int x, int y, int w, const char *label, fl
     rect(fb, knob, y + 10, 6, 12, PAL_MOUSE);
 }
 
+static uint32_t family_relation_color(TsFamilyRelation relation)
+{
+    if (relation == TS_FAMILY_CHILD) return PAL_INSTRUMENT;
+    if (relation == TS_FAMILY_COUSIN) return PAL_TUNING;
+    if (relation == TS_FAMILY_STRANGER) return PAL_VOLUME;
+    if (relation == TS_FAMILY_CAPTURED) return PAL_EFFECT;
+    return PAL_NOTE;
+}
+
 static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int cursor_visible)
 {
     char shown[96];
@@ -418,10 +427,19 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char parent[96], info[112];
         snprintf(parent, sizeof(parent), "PARENT G%u %.28s",
                  instrument->generation, instrument->parent.name);
-        if (showing_bank && shown_slot->occupied)
-            snprintf(info, sizeof(info), "BANK %02d %.28s %u HZ %.2F SEC",
-                     ui->bank_view_slot + 1, sample->name, sample->sample_rate,
-                     (double)sample->frames / sample->sample_rate);
+        if (showing_bank && shown_slot->occupied) {
+            if (shown_slot->parent_slot >= 0)
+                snprintf(info, sizeof(info), "BANK %02d %s OF %02d  %.2F SEC",
+                         ui->bank_view_slot + 1,
+                         ts_family_relation_name(shown_slot->relation),
+                         shown_slot->parent_slot + 1,
+                         (double)sample->frames / sample->sample_rate);
+            else
+                snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
+                         ui->bank_view_slot + 1,
+                         ts_family_relation_name(shown_slot->relation),
+                         (double)sample->frames / sample->sample_rate);
+        }
         else if (showing_bank)
             snprintf(info, sizeof(info), "BANK %02d EMPTY - SILENCE",
                      ui->bank_view_slot + 1);
@@ -600,13 +618,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);
     slider(fb, 230, 233, 100, "DRIFT", instrument->process.drift, PAL_TUNING);
-    button(fb, 335, 233, 39, "EDIT", ui->fx_page == TS_FX_EDIT);
-    button(fb, 378, 233, 39, "TUNE", ui->fx_page == TS_FX_TUNE);
-    button(fb, 421, 233, 39, "NOISE", ui->fx_page == TS_FX_NOISE);
-    button(fb, 464, 233, 43, "SHAPE", ui->fx_page == TS_FX_SHAPE);
-    button(fb, 511, 233, 39, "DELY", ui->fx_page == TS_FX_DELAY);
-    button(fb, 554, 233, 34, "SPC", ui->fx_page == TS_FX_SPACE);
-    button(fb, 592, 233, 38, "LOOP", ui->fx_page == TS_FX_LOOP);
+    button(fb, 335, 233, 34, "EDIT", ui->fx_page == TS_FX_EDIT);
+    button(fb, 372, 233, 34, "TUNE", ui->fx_page == TS_FX_TUNE);
+    button(fb, 409, 233, 36, "NOIS", ui->fx_page == TS_FX_NOISE);
+    button(fb, 448, 233, 38, "SHAP", ui->fx_page == TS_FX_SHAPE);
+    button(fb, 489, 233, 34, "FAM", ui->fx_page == TS_FX_FAMILY);
+    button(fb, 526, 233, 36, "DELY", ui->fx_page == TS_FX_DELAY);
+    button(fb, 565, 233, 29, "SPC", ui->fx_page == TS_FX_SPACE);
+    button(fb, 597, 233, 33, "LOOP", ui->fx_page == TS_FX_LOOP);
 
     if (ui->fx_page == TS_FX_EDIT) {
         button(fb, 10, 261, 94, "REVERSE", 0);
@@ -660,6 +679,28 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 286, 261, 94, shaper, instrument->process.shaper_enabled);
         slider(fb, 384, 261, 92, "DRIVE", drive, PAL_VOLUME);
         slider(fb, 480, 261, 92, "MIX", instrument->process.shaper_mix, PAL_EFFECT);
+    } else if (ui->fx_page == TS_FX_FAMILY) {
+        char relation[24];
+        char mutation[24];
+        snprintf(relation, sizeof(relation), "REL %s",
+                 ts_family_relation_name(instrument->family_relation));
+        snprintf(mutation, sizeof(mutation), "MUT %d%%",
+                 (int)lrintf(instrument->family_mutation * 100.0f));
+        button(fb, 10, 261, 100, relation, 1);
+        slider(fb, 115, 261, 110, mutation, instrument->family_mutation, PAL_VOLUME);
+        button(fb, 230, 261, 60, "LOOP",
+               (instrument->family_locks & TS_FAMILY_LOCK_LOOP) != 0u);
+        button(fb, 294, 261, 52, "DUR",
+               (instrument->family_locks & TS_FAMILY_LOCK_DURATION) != 0u);
+        button(fb, 350, 261, 60, "PITCH",
+               (instrument->family_locks & TS_FAMILY_LOCK_PITCH) != 0u);
+        button(fb, 414, 261, 54, "ENV",
+               (instrument->family_locks & TS_FAMILY_LOCK_ENVELOPE) != 0u);
+        button(fb, 472, 261, 62, "SPEC",
+               (instrument->family_locks & TS_FAMILY_LOCK_SPECTRAL) != 0u);
+        button(fb, 538, 261, 92,
+               instrument->family_trajectory ? "PATH ON" : "PATH OFF",
+               instrument->family_trajectory);
     } else if (ui->fx_page == TS_FX_DELAY) {
         button(fb, 10, 261, 94, instrument->process.delay_enabled ? "DELAY ON" : "DELAY OFF",
                instrument->process.delay_enabled);
@@ -737,7 +778,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             if (slot->factory) rect(fb, x + 2, y + 2, 3, 19, PAL_INSTRUMENT);
         }
     } else {
-        text(fb, 11, 318, "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  RMB RENAME  SHIFT+RMB CLEAR", RGB(184, 180, 184), 1);
+        text(fb, 11, 318,
+             ui->fx_page == TS_FX_FAMILY ?
+             "GENERATE ADDS SLOT  RESEED SIBLING  SHIFT PROMOTES  CTRL GEN STRANGER" :
+             "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  RMB RENAME  SHIFT+RMB CLEAR",
+             RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
             const TsBankSlot *slot = &instrument->bank[i];
             char label[24];
@@ -750,6 +795,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             button(fb, x, y, 72, label, slot->occupied);
             if (slot->occupied && slot->has_loop)
                 rect(fb, x + 66, y + 4, 3, 15, PAL_TUNING);
+            if (slot->occupied)
+                rect(fb, x + 2, y + 19, 61, 2,
+                     family_relation_color(slot->relation));
             if (i == ui->bank_view_slot) rect(fb, x + 2, y + 2, 68, 2, PAL_MOUSE);
         }
     }

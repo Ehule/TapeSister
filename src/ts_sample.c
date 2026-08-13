@@ -1195,6 +1195,7 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
             size_t output_frames;
             size_t destination_first;
             size_t fade = operation->crossfade_frames;
+            float mix_scale = 1.0f;
             int moving = operation->kind == TS_POST_MOVE_MIX ||
                          operation->kind == TS_POST_MOVE_OVERWRITE;
             int overwrite = operation->kind == TS_POST_COPY_OVERWRITE ||
@@ -1228,6 +1229,36 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                 }
             }
             destination_first = (size_t)(operation->destination - left);
+            if (!overwrite) {
+                float source_peak = 0.0f;
+                float destination_peak = 0.0f;
+                float summed_peak = 0.0f;
+                for (size_t i = 0; i < length; ++i)
+                    if (fabsf(source[i]) > source_peak) source_peak = fabsf(source[i]);
+                for (size_t i = 0; i < length; ++i) {
+                    size_t at = destination_first + i;
+                    float edge_gain = 1.0f;
+                    float summed;
+                    if (at < prepend || at >= prepend + destination->frames) continue;
+                    if (fade > 0u) {
+                        if (i < fade)
+                            edge_gain = (float)(i + 1u) / (float)(fade + 1u);
+                        if (length - 1u - i < fade) {
+                            float tail = (float)(length - i) / (float)(fade + 1u);
+                            if (tail < edge_gain) edge_gain = tail;
+                        }
+                    }
+                    if (fabsf(output[at]) > destination_peak)
+                        destination_peak = fabsf(output[at]);
+                    summed = output[at] + source[i] * edge_gain;
+                    if (fabsf(summed) > summed_peak) summed_peak = fabsf(summed);
+                }
+                if (summed_peak > 0.0000001f) {
+                    float target_peak = source_peak > destination_peak ?
+                                        source_peak : destination_peak;
+                    mix_scale = target_peak / summed_peak;
+                }
+            }
             for (size_t i = 0; i < length; ++i) {
                 size_t at = destination_first + i;
                 float gain = 1.0f;
@@ -1243,10 +1274,10 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                 if (overwrite)
                     output[at] = output[at] * (1.0f - gain) + value;
                 else if (at >= prepend && at < prepend + destination->frames)
-                    output[at] = clampf(output[at] * (1.0f - gain * 0.5f) +
-                                        value * 0.5f, -1.0f, 1.0f);
+                    output[at] = clampf((output[at] + value) * mix_scale,
+                                        -1.0f, 1.0f);
                 else
-                    output[at] = value;
+                    output[at] = source[i];
             }
             free(source);
             ts_sample_free(destination);
@@ -1310,6 +1341,15 @@ const char *ts_bank_capture_name(TsBankCaptureKind kind)
     return "FULL";
 }
 
+const char *ts_family_relation_name(TsFamilyRelation relation)
+{
+    static const char *names[] = {
+        "ROOT", "CAPTURED", "CHILD", "COUSIN", "STRANGER"
+    };
+    return relation >= TS_FAMILY_ROOT && relation < TS_FAMILY_RELATION_COUNT ?
+           names[relation] : "UNKNOWN";
+}
+
 static void bank_slot_init(TsBankSlot *slot)
 {
     memset(slot, 0, sizeof(*slot));
@@ -1317,6 +1357,9 @@ static void bank_slot_init(TsBankSlot *slot)
     slot->loop_crossfade_ms = 8.0f;
     slot->tuning = default_tuning();
     slot->audible_tuning = default_tuning();
+    slot->relation = TS_FAMILY_CAPTURED;
+    slot->parent_slot = -1;
+    slot->lineage_mutation = 0.35f;
 }
 
 static void bank_slot_free(TsBankSlot *slot)
@@ -1337,6 +1380,8 @@ static int bank_root_clone(TsBankSlot *slot, const TsSample *parent,
     bank_slot_init(slot);
     if (!ts_sample_clone(&slot->sample, parent, error, error_size)) return 0;
     slot->capture_kind = TS_BANK_CAPTURE_ROOT;
+    slot->relation = TS_FAMILY_ROOT;
+    slot->lineage_seed = (uint32_t)ts_sample_hash(parent);
     slot->tuning = tuning_valid(tuning) ? *tuning : default_tuning();
     slot->audible_tuning = slot->tuning;
     slot->occupied = 1;
@@ -1373,6 +1418,13 @@ void ts_instrument_init(TsInstrument *instrument)
     instrument->generator.kind = TS_GENERATOR_TONAL;
     instrument->generator.seconds = 2.0f;
     instrument->generator.frequency = 130.8128f;
+    instrument->family_relation = TS_FAMILY_CHILD;
+    instrument->family_mutation = 0.35f;
+    instrument->family_locks = TS_FAMILY_LOCK_LOOP |
+                               TS_FAMILY_LOCK_DURATION |
+                               TS_FAMILY_LOCK_PITCH;
+    instrument->family_anchor_slot = 0;
+    instrument->family_last_slot = -1;
     instrument->tuning = default_tuning();
     instrument->audible_tuning = default_tuning();
     ts_process_recipe_reset(&instrument->process);
@@ -1393,13 +1445,18 @@ static TsTuning tuning_from_frequency(double frequency)
     return tuning;
 }
 
-static TsTuning generator_tuning(const TsGeneratorRecipe *generator)
+static float generator_pitch_ratio(uint32_t seed)
 {
     static const float pitch_ratios[] = {0.5f, 0.75f, 1.0f, 1.5f, 2.0f};
-    uint32_t rng = generator->seed;
+    uint32_t rng = seed;
     for (int i = 0; i < 4; ++i) (void)rng_unit(&rng);
+    return pitch_ratios[(rng >> 2) % 5u];
+}
+
+static TsTuning generator_tuning(const TsGeneratorRecipe *generator)
+{
     return tuning_from_frequency(generator->frequency *
-                                 pitch_ratios[(rng >> 2) % 5u]);
+                                 generator_pitch_ratio(generator->seed));
 }
 
 void ts_instrument_free(TsInstrument *instrument)
@@ -1434,6 +1491,9 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
         bank_slot_free(&root);
         return 0;
     }
+    root.generator = generator;
+    root.has_generator = 1;
+    root.lineage_seed = generator.seed;
     ts_sample_free(&instrument->parent);
     ts_sample_free(&instrument->current);
     bank_free(instrument);
@@ -1447,6 +1507,9 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
     instrument->process = neutral;
     instrument->generation = 0;
     instrument->ancestor_hash = 0;
+    instrument->family_sequence = 0;
+    instrument->family_anchor_slot = 0;
+    instrument->family_last_slot = -1;
     reset_editor(instrument);
     return 1;
 }
@@ -1498,6 +1561,11 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
     instrument->bank[0].loop_first = loop_first;
     instrument->bank[0].loop_last = loop_last;
     instrument->bank[0].loop_mode = loop_mode;
+    instrument->bank[0].has_generator = 0;
+    instrument->bank[0].lineage_seed = (uint32_t)ts_sample_hash(&parent);
+    instrument->family_sequence = 0;
+    instrument->family_anchor_slot = 0;
+    instrument->family_last_slot = -1;
     return 1;
 }
 
@@ -2063,6 +2131,278 @@ int ts_instrument_bank_first_empty(const TsInstrument *instrument)
     return -1;
 }
 
+static TsTuning tuning_shifted(TsTuning source, float semitones)
+{
+    double note = (double)source.root_note +
+                  (double)source.fine_tune_cents / 100.0 + semitones;
+    int root = (int)floor(note + 0.5);
+    if (root < 0) root = 0;
+    if (root > 127) root = 127;
+    source.root_note = root;
+    source.fine_tune_cents = (float)((note - root) * 100.0);
+    if (source.fine_tune_cents < -100.0f) source.fine_tune_cents = -100.0f;
+    if (source.fine_tune_cents > 100.0f) source.fine_tune_cents = 100.0f;
+    return source;
+}
+
+static int family_mutate_sample(TsSample *destination, const TsSample *source,
+                                TsFamilyRelation relation, uint32_t seed,
+                                float mutation, uint32_t locks,
+                                char *error, size_t error_size)
+{
+    uint32_t rng = seed;
+    float relation_scale = relation == TS_FAMILY_CHILD ? 0.34f : 0.72f;
+    float strength = clampf(0.06f + mutation * relation_scale, 0.02f, 0.92f);
+    size_t frames = source->frames;
+    float *data;
+    float envelope = 0.0f;
+    float prior_noise = 0.0f;
+    double phase = rng_unit(&rng) * 2.0 * M_PI;
+    double modulation_hz = 0.4 + rng_unit(&rng) * (9.0 + strength * 31.0);
+    if ((locks & TS_FAMILY_LOCK_DURATION) == 0u) {
+        float maximum = relation == TS_FAMILY_CHILD ? 0.18f : 0.42f;
+        float scale = 1.0f + rng_bipolar(&rng) * maximum * mutation;
+        frames = (size_t)lrintf((float)source->frames * clampf(scale, 0.55f, 1.55f));
+        if (frames < 32u) frames = 32u;
+    }
+    if (frames > SIZE_MAX / sizeof(float)) {
+        set_error(error, error_size, "Generated family member is too large");
+        return 0;
+    }
+    data = (float *)malloc(frames * sizeof(float));
+    if (data == NULL) {
+        set_error(error, error_size, "Out of memory while breeding family member");
+        return 0;
+    }
+    for (size_t i = 0; i < frames; ++i) {
+        size_t source_at;
+        float base;
+        float random = rng_bipolar(&rng);
+        float colored;
+        float wet;
+        float value;
+        if (i < source->frames) source_at = i;
+        else {
+            size_t tail_first = source->frames > 8u ? source->frames / 2u : 0u;
+            size_t tail_frames = source->frames - tail_first;
+            source_at = tail_first + (tail_frames > 0u ?
+                        (i - tail_first) % tail_frames : 0u);
+        }
+        base = source->data[source_at];
+        envelope += (fabsf(base) - envelope) * 0.0125f;
+        colored = random - prior_noise * 0.82f;
+        prior_noise = random;
+        phase += 2.0 * M_PI * modulation_hz / (double)source->sample_rate;
+        if ((locks & TS_FAMILY_LOCK_SPECTRAL) != 0u) {
+            value = base * (1.0f + sinf((float)phase) * strength * 0.16f);
+        } else {
+            float drive = 1.0f + strength * 6.0f;
+            float shaped = tanhf(base * drive) / tanhf(drive);
+            wet = shaped * 0.82f + colored * strength * 0.28f;
+            value = base * (1.0f - strength) + wet * strength;
+        }
+        if ((locks & TS_FAMILY_LOCK_PITCH) == 0u)
+            value *= 1.0f + sinf((float)phase * 0.37f) * strength * 0.23f;
+        if ((locks & TS_FAMILY_LOCK_ENVELOPE) != 0u) {
+            float limit = envelope * 1.8f + 0.002f;
+            value = clampf(value, -limit, limit);
+        }
+        data[i] = clampf(value, -1.0f, 1.0f);
+    }
+    if (frames > 16u) {
+        size_t fade = frames < 256u ? frames / 8u : 32u;
+        for (size_t i = 0; i < fade; ++i)
+            data[frames - 1u - i] *= (float)i / (float)fade;
+    }
+    {
+        float source_peak = ts_sample_peak(source);
+        float output_peak = 0.0f;
+        for (size_t i = 0; i < frames; ++i)
+            if (fabsf(data[i]) > output_peak) output_peak = fabsf(data[i]);
+        if (source_peak > 0.0000001f && output_peak > 0.0000001f) {
+            float gain = source_peak / output_peak;
+            for (size_t i = 0; i < frames; ++i)
+                data[i] = clampf(data[i] * gain, -1.0f, 1.0f);
+        }
+    }
+    ts_sample_free(destination);
+    destination->data = data;
+    destination->frames = frames;
+    destination->sample_rate = source->sample_rate;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+static void family_copy_or_vary_loop(TsBankSlot *candidate,
+                                     const TsBankSlot *anchor,
+                                     uint32_t seed)
+{
+    uint32_t rng = seed;
+    if ((candidate->lineage_locks & TS_FAMILY_LOCK_LOOP) != 0u) {
+        if (!anchor->has_loop) return;
+        candidate->has_loop = 1;
+        candidate->loop_first = anchor->loop_first * candidate->sample.frames /
+                                anchor->sample.frames;
+        candidate->loop_last = anchor->loop_last * candidate->sample.frames /
+                               anchor->sample.frames;
+        candidate->loop_mode = anchor->loop_mode;
+        candidate->loop_crossfade_ms = anchor->loop_crossfade_ms;
+    } else if (anchor->has_loop && rng_unit(&rng) > candidate->lineage_mutation * 0.35f) {
+        size_t first = anchor->loop_first * candidate->sample.frames /
+                       anchor->sample.frames;
+        size_t last = anchor->loop_last * candidate->sample.frames /
+                      anchor->sample.frames;
+        size_t span = last > first ? last - first : 0u;
+        size_t wander = (size_t)((float)span * candidate->lineage_mutation * 0.16f);
+        if (wander > 0u) {
+            size_t before = (size_t)(rng_unit(&rng) * (float)wander);
+            size_t after = (size_t)(rng_unit(&rng) * (float)wander);
+            first = first > before ? first - before : 0u;
+            last += after;
+            if (last > candidate->sample.frames) last = candidate->sample.frames;
+        }
+        if (last > first + 1u) {
+            candidate->has_loop = 1;
+            candidate->loop_first = first;
+            candidate->loop_last = last;
+            candidate->loop_mode = (TsLoopMode)(rng_next(&rng) % TS_LOOP_MODE_COUNT);
+            candidate->loop_crossfade_ms = anchor->loop_crossfade_ms;
+        }
+    }
+}
+
+int ts_instrument_generate_family_candidate(TsInstrument *instrument,
+                                            int anchor_slot, int reseed,
+                                            int *created_slot,
+                                            char *error, size_t error_size)
+{
+    TsBankSlot candidate;
+    const TsBankSlot *anchor;
+    TsFamilyRelation relation;
+    uint32_t locks;
+    uint32_t seed;
+    uint32_t rng;
+    float mutation;
+    int slot;
+    if (created_slot != NULL) *created_slot = -1;
+    if (instrument == NULL || instrument->parent.data == NULL ||
+        !instrument->bank[0].occupied) {
+        set_error(error, error_size, "Generate a Parent before breeding its family");
+        return 0;
+    }
+    slot = ts_instrument_bank_first_empty(instrument);
+    if (slot < 0) {
+        set_error(error, error_size, "Family bank is full - clear a slot first");
+        return 0;
+    }
+    if (instrument->family_trajectory && instrument->family_last_slot > 0 &&
+        instrument->family_last_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[instrument->family_last_slot].occupied)
+        anchor_slot = instrument->family_last_slot;
+    if (anchor_slot < 0 || anchor_slot >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[anchor_slot].occupied)
+        anchor_slot = instrument->family_anchor_slot;
+    if (anchor_slot < 0 || anchor_slot >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[anchor_slot].occupied)
+        anchor_slot = 0;
+    relation = instrument->family_relation;
+    locks = instrument->family_locks & TS_FAMILY_LOCK_ALL;
+    mutation = clampf(instrument->family_mutation, 0.0f, 1.0f);
+    if (relation != TS_FAMILY_CHILD && relation != TS_FAMILY_COUSIN &&
+        relation != TS_FAMILY_STRANGER)
+        relation = TS_FAMILY_CHILD;
+    if (reseed && instrument->family_last_slot > 0 &&
+        instrument->family_last_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[instrument->family_last_slot].occupied) {
+        const TsBankSlot *last = &instrument->bank[instrument->family_last_slot];
+        if (!instrument->family_trajectory && last->parent_slot >= 0 &&
+            last->parent_slot < TS_BANK_SLOT_COUNT &&
+            instrument->bank[last->parent_slot].occupied)
+            anchor_slot = last->parent_slot;
+        relation = last->relation;
+        locks = last->lineage_locks;
+        mutation = last->lineage_mutation;
+    }
+    anchor = &instrument->bank[anchor_slot];
+    seed = reseed && instrument->family_last_slot > 0 &&
+           instrument->bank[instrument->family_last_slot].occupied ?
+           advance_seed(instrument->bank[instrument->family_last_slot].lineage_seed) :
+           advance_seed(anchor->lineage_seed ^ 0x9e3779b9u ^
+                        advance_seed(instrument->family_sequence + 1u));
+    rng = seed;
+    bank_slot_init(&candidate);
+    candidate.capture_kind = TS_BANK_CAPTURE_CURRENT;
+    candidate.relation = relation;
+    candidate.parent_slot = anchor_slot;
+    candidate.lineage_seed = seed;
+    candidate.lineage_locks = locks;
+    candidate.lineage_mutation = mutation;
+    candidate.trajectory_step = instrument->family_trajectory ?
+                                anchor->trajectory_step + 1u : 0u;
+    if (relation == TS_FAMILY_STRANGER) {
+        const TsBankSlot *last = reseed && instrument->family_last_slot > 0 &&
+                                 instrument->family_last_slot < TS_BANK_SLOT_COUNT &&
+                                 instrument->bank[instrument->family_last_slot].occupied ?
+                                 &instrument->bank[instrument->family_last_slot] : NULL;
+        TsGeneratorRecipe recipe = last != NULL && last->has_generator ?
+                                   last->generator : anchor->has_generator ?
+                                   anchor->generator : instrument->generator;
+        double anchor_frequency = ts_tuning_frequency(&anchor->audible_tuning);
+        float duration = (float)anchor->sample.frames /
+                         (float)anchor->sample.sample_rate;
+        if (!reseed)
+            recipe.kind = (TsGeneratorKind)((recipe.kind + 1) % TS_GENERATOR_COUNT);
+        recipe.seed = seed;
+        if ((locks & TS_FAMILY_LOCK_DURATION) != 0u)
+            recipe.seconds = duration;
+        else
+            recipe.seconds = duration * (0.55f + rng_unit(&rng) * 1.25f);
+        if ((locks & TS_FAMILY_LOCK_PITCH) != 0u)
+            recipe.frequency = (float)(anchor_frequency /
+                               generator_pitch_ratio(recipe.seed));
+        else
+            recipe.frequency = (float)(anchor_frequency *
+                               pow(2.0, rng_bipolar(&rng) * mutation));
+        recipe.seconds = clampf(recipe.seconds, 0.1f, 8.0f);
+        recipe.frequency = clampf(recipe.frequency, 30.0f, 2000.0f);
+        if (!ts_sample_generate(&candidate.sample, &recipe, error, error_size))
+            return 0;
+        candidate.generator = recipe;
+        candidate.has_generator = 1;
+        candidate.tuning = (locks & TS_FAMILY_LOCK_PITCH) != 0u ?
+                           anchor->tuning : generator_tuning(&recipe);
+        candidate.audible_tuning = (locks & TS_FAMILY_LOCK_PITCH) != 0u ?
+                                   anchor->audible_tuning : candidate.tuning;
+    } else {
+        float semitone_shift = rng_bipolar(&rng) * mutation *
+                               (relation == TS_FAMILY_CHILD ? 3.0f : 9.0f);
+        if (!family_mutate_sample(&candidate.sample, &anchor->sample,
+                                  relation, seed, mutation, locks,
+                                  error, error_size))
+            return 0;
+        candidate.generator = anchor->generator;
+        candidate.has_generator = anchor->has_generator;
+        candidate.tuning = (locks & TS_FAMILY_LOCK_PITCH) != 0u ?
+                           anchor->tuning : tuning_shifted(anchor->tuning,
+                                                          semitone_shift);
+        candidate.audible_tuning = (locks & TS_FAMILY_LOCK_PITCH) != 0u ?
+                                   anchor->audible_tuning :
+                                   tuning_shifted(anchor->audible_tuning,
+                                                  semitone_shift);
+    }
+    snprintf(candidate.sample.name, sizeof(candidate.sample.name), "%s %02u %08X",
+             ts_family_relation_name(relation), candidate.trajectory_step, seed);
+    family_copy_or_vary_loop(&candidate, anchor, seed);
+    candidate.occupied = 1;
+    instrument->bank[slot] = candidate;
+    instrument->family_last_slot = slot;
+    instrument->family_anchor_slot = instrument->family_trajectory ? slot : anchor_slot;
+    ++instrument->family_sequence;
+    if (created_slot != NULL) *created_slot = slot;
+    set_error(error, error_size, "");
+    return 1;
+}
+
 int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
                                TsBankCaptureKind kind, char *error, size_t error_size)
 {
@@ -2107,6 +2447,18 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
     snprintf(captured.sample.name, sizeof(captured.sample.name), "%s G%02u",
              ts_bank_capture_name(kind), instrument->generation);
     captured.capture_kind = kind;
+    captured.relation = TS_FAMILY_CAPTURED;
+    captured.parent_slot = instrument->family_anchor_slot;
+    captured.lineage_seed = advance_seed(instrument->process.seed ^
+                                         (uint32_t)ts_sample_hash(&captured.sample));
+    captured.lineage_locks = TS_FAMILY_LOCK_ALL;
+    captured.lineage_mutation = 0.0f;
+    if (captured.parent_slot >= 0 && captured.parent_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[captured.parent_slot].occupied &&
+        instrument->bank[captured.parent_slot].has_generator) {
+        captured.generator = instrument->bank[captured.parent_slot].generator;
+        captured.has_generator = 1;
+    }
     captured.tuning = instrument->tuning;
     captured.audible_tuning = instrument->audible_tuning;
     captured.loop_mode = instrument->loop_mode;
@@ -2138,6 +2490,8 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
         return 0;
     }
     bank_slot_free(&instrument->bank[slot]);
+    if (instrument->family_last_slot == slot) instrument->family_last_slot = -1;
+    if (instrument->family_anchor_slot == slot) instrument->family_anchor_slot = 0;
     set_error(error, error_size, "");
     return 1;
 }
@@ -2329,6 +2683,7 @@ int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
     instrument->process = neutral;
     instrument->tuning = source->tuning;
     instrument->audible_tuning = source->audible_tuning;
+    if (source->has_generator) instrument->generator = source->generator;
     instrument->ancestor_hash = prior_hash;
     ++instrument->generation;
     reset_editor(instrument);
@@ -2338,6 +2693,7 @@ int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
     instrument->loop_mode = loop_mode;
     instrument->has_loop = has_loop && loop_first < loop_last &&
                            loop_last <= current.frames;
+    instrument->family_anchor_slot = slot;
     set_error(error, error_size, "");
     return 1;
 }
@@ -2780,7 +3136,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    fwrite("TSR10\r\n\032", 1, 8, f);
+    fwrite("TSR11\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->source_kind);
     put32(f, instrument->generation);
     put64(f, instrument->ancestor_hash);
@@ -2788,6 +3144,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     put32(f, (uint32_t)instrument->generator.kind);
     put_float(f, instrument->generator.seconds);
     put_float(f, instrument->generator.frequency);
+    put32(f, (uint32_t)instrument->family_relation);
+    put_float(f, instrument->family_mutation);
+    put32(f, instrument->family_locks);
+    put32(f, instrument->family_sequence);
+    put32(f, (uint32_t)instrument->family_trajectory);
+    put32(f, (uint32_t)(instrument->family_anchor_slot + 1));
+    put32(f, (uint32_t)(instrument->family_last_slot + 1));
     put32(f, (uint32_t)instrument->tuning.root_note);
     put_float(f, instrument->tuning.fine_tune_cents);
     put32(f, (uint32_t)instrument->audible_tuning.root_note);
@@ -2854,6 +3217,19 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         put32(f, (uint32_t)slot->occupied);
         if (!slot->occupied) continue;
         put32(f, (uint32_t)slot->capture_kind);
+        put32(f, (uint32_t)slot->relation);
+        put32(f, (uint32_t)(slot->parent_slot + 1));
+        put32(f, slot->lineage_seed);
+        put32(f, slot->lineage_locks);
+        put32(f, slot->trajectory_step);
+        put_float(f, slot->lineage_mutation);
+        put32(f, (uint32_t)slot->has_generator);
+        if (slot->has_generator) {
+            put32(f, slot->generator.seed);
+            put32(f, (uint32_t)slot->generator.kind);
+            put_float(f, slot->generator.seconds);
+            put_float(f, slot->generator.frequency);
+        }
         put32(f, (uint32_t)slot->tuning.root_note);
         put_float(f, slot->tuning.fine_tune_cents);
         put32(f, (uint32_t)slot->audible_tuning.root_note);
@@ -2911,7 +3287,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR10\r\n\032", 8) == 0) version = 10;
+    if (memcmp(magic, "TSR11\r\n\032", 8) == 0) version = 11;
+    else if (memcmp(magic, "TSR10\r\n\032", 8) == 0) version = 10;
     else if (memcmp(magic, "TSR9\r\n\032\n", 8) == 0) version = 9;
     else if (memcmp(magic, "TSR8\r\n\032\n", 8) == 0) version = 8;
     else if (memcmp(magic, "TSR7\r\n\032\n", 8) == 0) version = 7;
@@ -2920,7 +3297,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR10 project");
+                  "Not a self-contained TSR6-TSR11 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -2930,6 +3307,17 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     if (!get64(f, &loaded.ancestor_hash)) goto malformed;
     GET_U32(loaded.generator.seed); GET_U32(loaded.generator.kind);
     GET_FLOAT(loaded.generator.seconds); GET_FLOAT(loaded.generator.frequency);
+    if (version >= 11) {
+        GET_U32(loaded.family_relation);
+        GET_FLOAT(loaded.family_mutation);
+        GET_U32(loaded.family_locks);
+        GET_U32(loaded.family_sequence);
+        GET_U32(loaded.family_trajectory);
+        GET_U32(u32);
+        loaded.family_anchor_slot = (int)u32 - 1;
+        GET_U32(u32);
+        loaded.family_last_slot = (int)u32 - 1;
+    }
     if (version >= 10) {
         GET_U32(loaded.tuning.root_note);
         GET_FLOAT(loaded.tuning.fine_tune_cents);
@@ -2962,6 +3350,16 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     GET_U32(state.sample_edit_count);
     if (loaded.source_kind < TS_SOURCE_GENERATED || loaded.source_kind > TS_SOURCE_COMMITTED ||
         loaded.generator.kind >= TS_GENERATOR_COUNT ||
+        loaded.family_relation < TS_FAMILY_CHILD ||
+        loaded.family_relation > TS_FAMILY_STRANGER ||
+        !isfinite(loaded.family_mutation) || loaded.family_mutation < 0.0f ||
+        loaded.family_mutation > 1.0f ||
+        (loaded.family_locks & ~TS_FAMILY_LOCK_ALL) != 0u ||
+        (loaded.family_trajectory != 0 && loaded.family_trajectory != 1) ||
+        loaded.family_anchor_slot < 0 ||
+        loaded.family_anchor_slot >= TS_BANK_SLOT_COUNT ||
+        loaded.family_last_slot < -1 ||
+        loaded.family_last_slot >= TS_BANK_SLOT_COUNT ||
         !tuning_valid(&loaded.tuning) ||
         !tuning_valid(&loaded.audible_tuning) ||
         state.loop_mode >= TS_LOOP_MODE_COUNT ||
@@ -3043,6 +3441,22 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             if (slot->occupied != 0 && slot->occupied != 1) goto malformed;
             if (!slot->occupied) continue;
             GET_U32(slot->capture_kind);
+            if (version >= 11) {
+                GET_U32(slot->relation);
+                GET_U32(u32);
+                slot->parent_slot = (int)u32 - 1;
+                GET_U32(slot->lineage_seed);
+                GET_U32(slot->lineage_locks);
+                GET_U32(slot->trajectory_step);
+                GET_FLOAT(slot->lineage_mutation);
+                GET_U32(slot->has_generator);
+                if (slot->has_generator) {
+                    GET_U32(slot->generator.seed);
+                    GET_U32(slot->generator.kind);
+                    GET_FLOAT(slot->generator.seconds);
+                    GET_FLOAT(slot->generator.frequency);
+                }
+            }
             if (version >= 10) {
                 GET_U32(slot->tuning.root_note);
                 GET_FLOAT(slot->tuning.fine_tune_cents);
@@ -3057,6 +3471,19 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             GET_U32(slot->sample.sample_rate); GET_U64(slot->sample.frames);
             GET_U32(name_length);
             if (slot->capture_kind > TS_BANK_CAPTURE_LOOP ||
+                slot->relation >= TS_FAMILY_RELATION_COUNT ||
+                slot->parent_slot < -1 || slot->parent_slot >= TS_BANK_SLOT_COUNT ||
+                (slot->lineage_locks & ~TS_FAMILY_LOCK_ALL) != 0u ||
+                !isfinite(slot->lineage_mutation) ||
+                slot->lineage_mutation < 0.0f || slot->lineage_mutation > 1.0f ||
+                (slot->has_generator != 0 && slot->has_generator != 1) ||
+                (slot->has_generator &&
+                 (slot->generator.kind >= TS_GENERATOR_COUNT ||
+                  !isfinite(slot->generator.seconds) ||
+                  slot->generator.seconds < 0.1f || slot->generator.seconds > 8.0f ||
+                  !isfinite(slot->generator.frequency) ||
+                  slot->generator.frequency < 30.0f ||
+                  slot->generator.frequency > 2000.0f)) ||
                 slot->loop_mode >= TS_LOOP_MODE_COUNT ||
                 !tuning_valid(&slot->tuning) ||
                 !tuning_valid(&slot->audible_tuning) ||
@@ -3078,9 +3505,24 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                                     slot->loop_last > slot->sample.frames)) ||
                 (!slot->has_loop && (slot->loop_first != 0 || slot->loop_last != 0)))
                 goto malformed;
+            if (version < 11) {
+                slot->relation = slot_index == 0 ? TS_FAMILY_ROOT : TS_FAMILY_CAPTURED;
+                slot->parent_slot = slot_index == 0 ? -1 : 0;
+                slot->lineage_seed = (uint32_t)slot_hash;
+                slot->lineage_locks = TS_FAMILY_LOCK_ALL;
+                slot->lineage_mutation = 0.0f;
+                slot->has_generator = slot_index == 0 &&
+                                      loaded.source_kind == TS_SOURCE_GENERATED;
+                if (slot->has_generator) slot->generator = loaded.generator;
+            }
         }
         if (!loaded.bank[0].occupied ||
-            loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT || fgetc(f) != EOF)
+            loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT ||
+            loaded.bank[0].relation != TS_FAMILY_ROOT ||
+            !loaded.bank[loaded.family_anchor_slot].occupied ||
+            (loaded.family_last_slot >= 0 &&
+             !loaded.bank[loaded.family_last_slot].occupied) ||
+            fgetc(f) != EOF)
             goto malformed;
     }
     if (state.crop_first >= state.crop_last || state.crop_last > loaded.parent.frames)
@@ -3117,7 +3559,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR10 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR11 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

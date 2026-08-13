@@ -25,6 +25,7 @@ typedef enum {
     TS_FX_TUNE,
     TS_FX_NOISE,
     TS_FX_SHAPE,
+    TS_FX_FAMILY,
     TS_FX_DELAY,
     TS_FX_SPACE,
     TS_FX_LOOP

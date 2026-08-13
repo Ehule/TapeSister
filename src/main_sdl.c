@@ -497,27 +497,53 @@ static int generate_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     return ok;
 }
 
-static void reseed_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                          TsInstrument *instrument)
+static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, const TsInstrument *instrument,
+                                int slot, int output_rate);
+
+static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio,
+                                      TsUiState *ui, TsInstrument *instrument,
+                                      int reseed, int promote, int force_stranger)
 {
     char error[160];
-    uint64_t old_parent = ts_sample_hash(&instrument->parent);
+    TsFamilyRelation selected_relation = instrument->family_relation;
+    int anchor = ui->bank_view_slot;
+    int slot = -1;
     int ok;
+    if (force_stranger) instrument->family_relation = TS_FAMILY_STRANGER;
     lock_edit(device, audio);
-    if (instrument->source_kind == TS_SOURCE_GENERATED && audio->bank_slot >= 0) {
+    if (audio->bank_slot >= 0) {
         audio->playing = 0;
         audio->bank_slot = -1;
     }
-    ok = ts_instrument_reseed(instrument, error, sizeof(error));
+    ok = ts_instrument_generate_family_candidate(instrument, anchor, reseed,
+                                                  &slot, error, sizeof(error));
+    instrument->family_relation = selected_relation;
+    if (ok && promote)
+        ok = ts_instrument_set_bank_as_current(instrument, slot,
+                                               error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok && ts_sample_hash(&instrument->parent) != old_parent)
+    if (!ok) {
+        snprintf(ui->status, sizeof(ui->status), "FAMILY GENERATE FAILED: %.124s", error);
+        return;
+    }
+    if (promote) {
+        ui->bank_view_slot = -1;
         ts_ui_reset_parent_view(ui, instrument->parent.frames);
-    if (!ok) snprintf(ui->status, sizeof(ui->status), "RESEED FAILED: %.132s", error);
-    else if (ts_sample_hash(&instrument->parent) == old_parent)
-        snprintf(ui->status, sizeof(ui->status), "RESEEDED PROCESSING - PARENT PRESERVED");
-    else
-        snprintf(ui->status, sizeof(ui->status), "RESEEDED %s PARENT %08X",
-                 ts_generator_name(instrument->generator.kind), instrument->generator.seed);
+        snprintf(ui->status, sizeof(ui->status),
+                 "BANK %02d %s GENERATED AND SET CURRENT",
+                 slot + 1, ts_family_relation_name(instrument->bank[slot].relation));
+        return;
+    }
+    ui->show_keyboard = 0;
+    ui->show_recipes = 0;
+    begin_bank_audition(device, audio, ui, instrument, slot, audio->output_rate);
+    snprintf(ui->status, sizeof(ui->status),
+             "BANK %02d %s OF %02d  SEED %08X%s",
+             slot + 1, ts_family_relation_name(instrument->bank[slot].relation),
+             instrument->bank[slot].parent_slot + 1,
+             instrument->bank[slot].lineage_seed,
+             instrument->family_trajectory ? "  PATH" : "");
 }
 
 static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -2237,10 +2263,13 @@ int main(int argc, char **argv)
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
                 } else if (y >= 205 && y < 228 && x >= 85 && x < 167) {
                     ui.commit_armed = 0;
-                    generate_parent(device, &audio, &ui, &instrument, 1);
+                    generate_family_candidate(device, &audio, &ui, &instrument,
+                                              0, (mod & KMOD_SHIFT) != 0,
+                                              (mod & KMOD_CTRL) != 0);
                 } else if (y >= 205 && y < 228 && x >= 172 && x < 242) {
                     ui.commit_armed = 0;
-                    reseed_parent(device, &audio, &ui, &instrument);
+                    generate_family_candidate(device, &audio, &ui, &instrument,
+                                              1, (mod & KMOD_SHIFT) != 0, 0);
                 } else if (y >= 205 && y < 228 && x >= 247 && x < 325) {
                     if (ui.commit_armed) commit_current(device, &audio, &ui, &instrument);
                     else {
@@ -2273,25 +2302,29 @@ int main(int argc, char **argv)
                     if (*control < 0.0f) *control = 0.0f;
                     if (*control > 1.0f) *control = 1.0f;
                     apply_process(device, &audio, &ui, &instrument, process, label);
-                } else if (y >= 233 && y < 256 && x >= 335 && x < 374) {
+                } else if (y >= 233 && y < 256 && x >= 335 && x < 369) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_EDIT;
                     snprintf(ui.status, sizeof(ui.status), "SAMPLE EDITING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 378 && x < 417) {
+                } else if (y >= 233 && y < 256 && x >= 372 && x < 406) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_TUNE;
                     snprintf(ui.status, sizeof(ui.status), "ROOT NOTE AND FINE TUNING");
-                } else if (y >= 233 && y < 256 && x >= 421 && x < 460) {
+                } else if (y >= 233 && y < 256 && x >= 409 && x < 445) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_NOISE;
                     snprintf(ui.status, sizeof(ui.status), "NOISE PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 464 && x < 507) {
+                } else if (y >= 233 && y < 256 && x >= 448 && x < 486) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_SHAPE;
                     snprintf(ui.status, sizeof(ui.status), "FILTER AND SHAPER PAGE");
-                } else if (y >= 233 && y < 256 && x >= 511 && x < 550) {
+                } else if (y >= 233 && y < 256 && x >= 489 && x < 523) {
+                    ui.commit_armed = 0; ui.fx_page = TS_FX_FAMILY;
+                    snprintf(ui.status, sizeof(ui.status),
+                             "FAMILY RELATION MUTATION LOCKS AND TRAJECTORY");
+                } else if (y >= 233 && y < 256 && x >= 526 && x < 562) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_DELAY;
                     snprintf(ui.status, sizeof(ui.status), "DELAY PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 554 && x < 588) {
+                } else if (y >= 233 && y < 256 && x >= 565 && x < 594) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_SPACE;
                     snprintf(ui.status, sizeof(ui.status), "SPACE PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 592 && x < 630) {
+                } else if (y >= 233 && y < 256 && x >= 597 && x < 630) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_LOOP;
                     snprintf(ui.status, sizeof(ui.status), "LOOP EDITING PAGE");
                 } else if (y >= 261 && y < 285) {
@@ -2378,6 +2411,39 @@ int main(int argc, char **argv)
                         } else if (x >= 480 && x < 572) {
                             process.shaper_mix = (float)(x - 480) / 92.0f;
                             changed = 1;
+                        }
+                    } else if (ui.fx_page == TS_FX_FAMILY) {
+                        if (x >= 10 && x < 110) {
+                            if (instrument.family_relation == TS_FAMILY_CHILD)
+                                instrument.family_relation = TS_FAMILY_COUSIN;
+                            else if (instrument.family_relation == TS_FAMILY_COUSIN)
+                                instrument.family_relation = TS_FAMILY_STRANGER;
+                            else instrument.family_relation = TS_FAMILY_CHILD;
+                            snprintf(ui.status, sizeof(ui.status), "NEXT CANDIDATE RELATION %s",
+                                     ts_family_relation_name(instrument.family_relation));
+                        } else if (x >= 115 && x < 225) {
+                            instrument.family_mutation = (float)(x - 115) / 110.0f;
+                            snprintf(ui.status, sizeof(ui.status), "FAMILY MUTATION %d%%",
+                                     (int)lrintf(instrument.family_mutation * 100.0f));
+                        } else if (x >= 230 && x < 290)
+                            instrument.family_locks ^= TS_FAMILY_LOCK_LOOP;
+                        else if (x >= 294 && x < 346)
+                            instrument.family_locks ^= TS_FAMILY_LOCK_DURATION;
+                        else if (x >= 350 && x < 410)
+                            instrument.family_locks ^= TS_FAMILY_LOCK_PITCH;
+                        else if (x >= 414 && x < 468)
+                            instrument.family_locks ^= TS_FAMILY_LOCK_ENVELOPE;
+                        else if (x >= 472 && x < 534)
+                            instrument.family_locks ^= TS_FAMILY_LOCK_SPECTRAL;
+                        else if (x >= 538 && x < 630) {
+                            instrument.family_trajectory = !instrument.family_trajectory;
+                            if (!instrument.family_trajectory)
+                                instrument.family_anchor_slot = ui.bank_view_slot >= 0 ?
+                                                                ui.bank_view_slot : 0;
+                            snprintf(ui.status, sizeof(ui.status),
+                                     instrument.family_trajectory ?
+                                     "TRAJECTORY ON - EACH MEMBER BREEDS THE NEXT" :
+                                     "TRAJECTORY OFF - CANDIDATES SHARE AN ANCHOR");
                         }
                     } else if (ui.fx_page == TS_FX_DELAY) {
                         label = "DELAY";

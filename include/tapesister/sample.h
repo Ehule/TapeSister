@@ -146,6 +146,24 @@ typedef enum {
     TS_BANK_CAPTURE_LOOP
 } TsBankCaptureKind;
 
+typedef enum {
+    TS_FAMILY_ROOT = 0,
+    TS_FAMILY_CAPTURED,
+    TS_FAMILY_CHILD,
+    TS_FAMILY_COUSIN,
+    TS_FAMILY_STRANGER,
+    TS_FAMILY_RELATION_COUNT
+} TsFamilyRelation;
+
+enum {
+    TS_FAMILY_LOCK_LOOP = 1u << 0,
+    TS_FAMILY_LOCK_DURATION = 1u << 1,
+    TS_FAMILY_LOCK_PITCH = 1u << 2,
+    TS_FAMILY_LOCK_ENVELOPE = 1u << 3,
+    TS_FAMILY_LOCK_SPECTRAL = 1u << 4,
+    TS_FAMILY_LOCK_ALL = (1u << 5) - 1u
+};
+
 typedef struct {
     TsSample sample;
     TsTuning tuning;
@@ -154,6 +172,14 @@ typedef struct {
     size_t loop_last;
     float loop_crossfade_ms;
     TsBankCaptureKind capture_kind;
+    TsFamilyRelation relation;
+    TsGeneratorRecipe generator;
+    uint32_t lineage_seed;
+    uint32_t lineage_locks;
+    uint32_t trajectory_step;
+    float lineage_mutation;
+    int parent_slot;
+    int has_generator;
     TsLoopMode loop_mode;
     int has_loop;
     int occupied;
@@ -187,6 +213,13 @@ typedef struct {
     TsSourceKind source_kind;
     TsGeneratorRecipe generator;
     TsProcessRecipe process;
+    TsFamilyRelation family_relation;
+    float family_mutation;
+    uint32_t family_locks;
+    uint32_t family_sequence;
+    int family_trajectory;
+    int family_anchor_slot;
+    int family_last_slot;
     uint32_t generation;
     uint64_t ancestor_hash;
     TsTuning tuning;
@@ -323,6 +356,10 @@ int ts_instrument_bank_move_loop_endpoint(TsInstrument *instrument, int slot,
                                           int endpoint, size_t frame);
 int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
                                       char *error, size_t error_size);
+int ts_instrument_generate_family_candidate(TsInstrument *instrument,
+                                            int anchor_slot, int reseed,
+                                            int *created_slot,
+                                            char *error, size_t error_size);
 int64_t ts_sample_snap_tape_destination(const TsSample *sample, int64_t target,
                                         size_t source_frames);
 int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
@@ -339,6 +376,7 @@ int ts_instrument_next_family_path(const TsInstrument *instrument,
                                    char *path, size_t path_size,
                                    char *error, size_t error_size);
 const char *ts_bank_capture_name(TsBankCaptureKind kind);
+const char *ts_family_relation_name(TsFamilyRelation relation);
 const char *ts_loop_mode_name(TsLoopMode mode);
 
 #endif
