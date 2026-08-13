@@ -41,9 +41,7 @@ static void p13_reconcile(TsInstrument *inst, TsUiState *ui)
         if ((history_changed && ts_sample_hash(&inst->current) != ts_sample_hash(&slot->sample)) ||
             p13_metadata_differs(inst, slot)) {
             if (ts_instrument_set_bank_as_current(inst, p13_slot, error, sizeof(error))) {
-                inst->process.body = 0.0f;
-                inst->process.edge = 0.0f;
-                inst->process.drift = 0.5f;
+                inst->process.body = 0.0f; inst->process.edge = 0.0f; inst->process.drift = 0.5f;
                 snprintf(ui->status, sizeof(ui->status), "BANK %02d LOCKED - EDIT DISCARDED", p13_slot + 1);
             }
         }
@@ -55,38 +53,28 @@ static void p13_reconcile(TsInstrument *inst, TsUiState *ui)
     } else if (p13_metadata_differs(inst, slot)) {
         ts_pr13_sync_active_slot(inst, p13_slot, error, sizeof(error));
     }
-    p13_seen_undo = inst->undo_count;
-    p13_seen_redo = inst->redo_count;
+    p13_seen_undo = inst->undo_count; p13_seen_redo = inst->redo_count;
 }
 
 static void p13_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *inst)
 {
-    p13_inst = (TsInstrument *)inst;
-    p13_ui = (TsUiState *)ui;
+    p13_inst = (TsInstrument *)inst; p13_ui = (TsUiState *)ui;
     p13_reconcile(p13_inst, p13_ui);
     ts_ui_render(fb, ui, inst);
     p13_rect(fb, 247, 205, 383, 23, 0x00181818u);
     if (!ui->show_keyboard && !ui->show_recipes) {
         for (int s = 0; s < TS_BANK_SLOT_COUNT; ++s) if (inst->bank[s].occupied) {
-            int x = 10 + (s % 8) * 77;
-            int y = 330 + (s / 8) * 25;
-            p13_rect(fb, x + 59, y + 4, 7, 10,
-                     ts_pr13_slot_locked(inst, s) ? 0x00f0d060u : 0x00404040u);
-            if (s == p13_slot) {
-                p13_rect(fb, x, y, 72, 2, 0x00ffffffu);
-                p13_rect(fb, x, y + 21, 72, 2, 0x00ffffffu);
-            }
+            int x = 10 + (s % 8) * 77, y = 330 + (s / 8) * 25;
+            p13_rect(fb, x + 59, y + 4, 7, 10, ts_pr13_slot_locked(inst, s) ? 0x00f0d060u : 0x00404040u);
+            if (s == p13_slot) { p13_rect(fb, x, y, 72, 2, 0x00ffffffu); p13_rect(fb, x, y + 21, 72, 2, 0x00ffffffu); }
         }
     }
 }
 
 static void p13_logical(SDL_Event *e, int *x, int *y)
 {
-    SDL_Window *w = SDL_GetWindowFromID(e->button.windowID);
-    int ww = TS_UI_WIDTH, wh = TS_UI_HEIGHT;
-    if (w) SDL_GetWindowSize(w, &ww, &wh);
-    *x = e->button.x * TS_UI_WIDTH / ww;
-    *y = e->button.y * TS_UI_HEIGHT / wh;
+    SDL_Window *w = SDL_GetWindowFromID(e->button.windowID); int ww = TS_UI_WIDTH, wh = TS_UI_HEIGHT;
+    if (w) SDL_GetWindowSize(w, &ww, &wh); *x = e->button.x * TS_UI_WIDTH / ww; *y = e->button.y * TS_UI_HEIGHT / wh;
 }
 
 static void p13_touch(int x, int y)
@@ -115,50 +103,28 @@ static void p13_touch(int x, int y)
 
 static int p13_nudge(SDL_Event *e, int d)
 {
-    SDL_Window *w = SDL_GetWindowFromID(e->wheel.windowID);
-    int ww = TS_UI_WIDTH, wh = TS_UI_HEIGHT;
-    if (p13_max <= p13_min) return 0;
-    if (w) SDL_GetWindowSize(w, &ww, &wh);
-    p13_x += d;
-    if (p13_x < p13_min) p13_x = p13_min;
-    if (p13_x > p13_max) p13_x = p13_max;
-    memset(e, 0, sizeof(*e));
-    e->type = SDL_MOUSEBUTTONDOWN;
-    e->button.button = SDL_BUTTON_LEFT;
-    e->button.windowID = w ? SDL_GetWindowID(w) : 0;
-    e->button.x = p13_x * ww / TS_UI_WIDTH;
-    e->button.y = p13_y * wh / TS_UI_HEIGHT;
-    return 1;
+    SDL_Window *w = SDL_GetWindowFromID(e->wheel.windowID); int ww = TS_UI_WIDTH, wh = TS_UI_HEIGHT;
+    if (p13_max <= p13_min) return 0; if (w) SDL_GetWindowSize(w, &ww, &wh);
+    p13_x += d; if (p13_x < p13_min) p13_x = p13_min; if (p13_x > p13_max) p13_x = p13_max;
+    memset(e, 0, sizeof(*e)); e->type = SDL_MOUSEBUTTONDOWN; e->button.button = SDL_BUTTON_LEFT;
+    e->button.windowID = w ? SDL_GetWindowID(w) : 0; e->button.x = p13_x * ww / TS_UI_WIDTH; e->button.y = p13_y * wh / TS_UI_HEIGHT; return 1;
 }
 
 static int p13_poll(SDL_Event *e)
 {
     while (SDL_PollEvent(e)) {
-        if (e->type == SDL_MOUSEWHEEL && p13_max > p13_min)
-            return p13_nudge(e, e->wheel.y >= 0 ? 1 : -1);
-        if (e->type == SDL_KEYDOWN && !e->key.repeat && p13_max > p13_min &&
-            (e->key.keysym.sym == SDLK_LEFT || e->key.keysym.sym == SDLK_RIGHT)) {
-            e->wheel.windowID = e->key.windowID;
-            return p13_nudge(e, e->key.keysym.sym == SDLK_RIGHT ? 1 : -1);
+        if (e->type == SDL_MOUSEWHEEL && p13_max > p13_min) return p13_nudge(e, e->wheel.y >= 0 ? 1 : -1);
+        if (e->type == SDL_KEYDOWN && !e->key.repeat && p13_max > p13_min && (e->key.keysym.sym == SDLK_LEFT || e->key.keysym.sym == SDLK_RIGHT)) {
+            e->wheel.windowID = e->key.windowID; return p13_nudge(e, e->key.keysym.sym == SDLK_RIGHT ? 1 : -1);
         }
         if (e->type == SDL_MOUSEBUTTONDOWN && e->button.button == SDL_BUTTON_LEFT && p13_ui) {
-            int x,y,s;
-            p13_logical(e,&x,&y);
-            p13_touch(x,y);
-            if (y>=205&&y<228&&x>=247&&x<630) continue;
+            int x,y,s; p13_logical(e,&x,&y); p13_touch(x,y); if (y>=205&&y<228&&x>=247&&x<630) continue;
             if (!p13_ui->show_keyboard && !p13_ui->show_recipes && p13_inst) {
                 s=ts_ui_bank_slot_from_point(x,y);
                 if(s>=0&&p13_inst->bank[s].occupied){
-                    int sx=10+(s%8)*77, sy=330+(s/8)*25;
-                    char error[160];
-                    if(x>=sx+57&&x<sx+68&&y>=sy+2&&y<sy+18){
-                        ts_pr13_toggle_slot_lock(p13_inst,s,error,sizeof(error));
-                        continue;
-                    }
-                    if(ts_instrument_set_bank_as_current(p13_inst,s,error,sizeof(error))){
-                        p13_inst->process.body=0.0f; p13_inst->process.edge=0.0f; p13_inst->process.drift=0.5f;
-                        p13_slot=s;p13_seen_undo=p13_inst->undo_count;p13_seen_redo=p13_inst->redo_count;
-                    }
+                    int sx=10+(s%8)*77, sy=330+(s/8)*25; char error[160];
+                    if(x>=sx+57&&x<sx+68&&y>=sy+2&&y<sy+18){ts_pr13_toggle_slot_lock(p13_inst,s,error,sizeof(error));continue;}
+                    if(ts_instrument_set_bank_as_current(p13_inst,s,error,sizeof(error))){p13_inst->process.body=0.0f;p13_inst->process.edge=0.0f;p13_inst->process.drift=0.5f;p13_slot=s;p13_seen_undo=p13_inst->undo_count;p13_seen_redo=p13_inst->redo_count;}
                 }
             }
         }
@@ -177,14 +143,18 @@ static int p13_process_t(TsInstrument *i,const TsProcessRecipe *p,const TsTuning
 static int p13_process_tt(TsInstrument *i,const TsProcessRecipe *p,const TsTuning *t,const TsTuning *a,char *e,size_t n){return ts_pr13_set_process_and_tunings(i,p13_slot,p,t,a,e,n);}
 static int p13_family(TsInstrument *i,int a,int r,int *s,char *e,size_t n)
 {
-    int ok;(void)a;
-    if(p13_slot>=0&&!ts_pr13_slot_locked(i,p13_slot))ts_pr13_rerender(i,p13_slot,e,n);
+    int ok;(void)a;if(p13_slot>=0&&!ts_pr13_slot_locked(i,p13_slot))ts_pr13_rerender(i,p13_slot,e,n);
     ok=ts_pr13_generate_family_candidate(i,p13_slot,r,s,e,n);
-    if(ok&&s&&*s>=0&&ts_instrument_set_bank_as_current(i,*s,e,n)){
-        p13_slot=*s;i->process.body=0.0f;i->process.edge=0.0f;i->process.drift=0.5f;
-        p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;
-    }
+    if(ok&&s&&*s>=0&&ts_instrument_set_bank_as_current(i,*s,e,n)){p13_slot=*s;i->process.body=0.0f;i->process.edge=0.0f;i->process.drift=0.5f;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}
     return ok;
+}
+static int p13_generate_root(TsInstrument *i,TsGeneratorKind k,uint32_t seed,char *e,size_t n)
+{
+    int ok=ts_instrument_generate(i,k,seed,e,n);if(ok){i->process.body=0.0f;i->process.edge=0.0f;i->process.drift=0.5f;p13_slot=0;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}return ok;
+}
+static int p13_load_wav(TsInstrument *i,const char *path,char *e,size_t n)
+{
+    int ok=ts_instrument_load_wav(i,path,e,n);if(ok){i->process.body=0.0f;i->process.edge=0.0f;i->process.drift=0.5f;p13_slot=0;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}return ok;
 }
 
 #define SDL_PollEvent p13_poll
@@ -193,6 +163,8 @@ static int p13_family(TsInstrument *i,int a,int r,int *s,char *e,size_t n)
 #define ts_instrument_set_process_and_tuning p13_process_t
 #define ts_instrument_set_process_and_tunings p13_process_tt
 #define ts_instrument_generate_family_candidate p13_family
+#define ts_instrument_generate p13_generate_root
+#define ts_instrument_load_wav p13_load_wav
 #define ts_instrument_save_recipe ts_pr13_save_project
 #define ts_instrument_load_recipe ts_pr13_load_project
 #include "main_sdl.c"
