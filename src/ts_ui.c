@@ -97,6 +97,8 @@ static const char *glyph(char c)
     case '+': return "00000001000010011111001000010000000";
     case '#': return "01010010101111101010111110101000000";
     case '/': return "00001000100001000100010001000010000";
+    case '\\': return "10000010000010000100000100000100001";
+    case '~': return "00000000000100110110000000000000000";
     case '_': return "00000000000000000000000000000011111";
     default:  return "00000000000000000000000000000000000";
     }
@@ -220,6 +222,45 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
          browser->overwrite_armed ? PAL_VOLUME : RGB(190, 185, 190), 1);
 }
 
+static void config_render(TsFramebuffer *fb, const TsUiState *ui)
+{
+    static const int field_y[TS_CONFIG_FIELD_COUNT] = {103, 158, 213};
+    frame(fb, 34, 46, 572, 306, RGB(36, 33, 37), PAL_MOUSE);
+    text(fb, 50, 60, "CONFIGURATION", PAL_NOTE, 1);
+    text(fb, 50, 75,
+         "PATHS MAY BE BLANK  TAB CHANGES FIELD  CTRL BACKSPACE CLEARS",
+         RGB(190, 185, 190), 1);
+    for (int i = 0; i < TS_CONFIG_FIELD_COUNT; ++i) {
+        const char *value = ts_config_field_const(&ui->config, (TsConfigField)i);
+        size_t length = strlen(value);
+        size_t cursor = i == (int)ui->config_field ? ui->config_cursor : length;
+        size_t first = length > 82u ? length - 82u : 0u;
+        char shown[83];
+        if (cursor > length) cursor = length;
+        if (cursor < first) first = cursor;
+        if (cursor > first + 82u) first = cursor - 82u;
+        snprintf(shown, sizeof(shown), "%.82s", value + first);
+        text(fb, 50, field_y[i] - 13,
+             ts_config_field_name((TsConfigField)i),
+             i == (int)ui->config_field ? PAL_EFFECT : RGB(190, 185, 190), 1);
+        rect(fb, 50, field_y[i], 540, 24, RGB(8, 8, 8));
+        text(fb, 56, field_y[i] + 8, shown,
+             i == (int)ui->config_field ? PAL_MOUSE : PAL_INSTRUMENT, 1);
+        if (i == (int)ui->config_field && ui->text_cursor_visible)
+            rect(fb, 56 + (int)(cursor - first) * 6,
+                 field_y[i] + 5, 2, 14, PAL_MOUSE);
+    }
+    button(fb, 50, 274, 110, "SAVE CONFIG", 0);
+    button(fb, 170, 274, 100, "USE CWD", 0);
+    button(fb, 280, 274, 82, "CANCEL", 0);
+    text(fb, 50, 312,
+         "SEND FT2 EXPORTS A LOOP AWARE FAMILY THEN LAUNCHES FT2",
+         PAL_TUNING, 1);
+    text(fb, 50, 327,
+         "PALETTE IMPORT EDIT EXPORT WILL LIVE IN THIS WINDOW NEXT",
+         PAL_VOLUME, 1);
+}
+
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
@@ -232,6 +273,7 @@ void ts_ui_init(TsUiState *ui)
     ui->show_keyboard = 1;
     ui->show_recipes = 0;
     ts_browser_init(&ui->browser);
+    ts_config_init(&ui->config);
     ts_recipe_bank_init(&ui->recipes);
     snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR GENERATE A PARENT");
 }
@@ -366,8 +408,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 
     rect(fb, 0, 0, TS_UI_WIDTH, 32, RGB(12, 12, 12));
     text(fb, 14, 9, "TAPESISTER", PAL_TEXT, 2);
-    button(fb, 447, 4, 82, "SAVE", 0);
-    button(fb, 535, 4, 95, "EXPORT", 0);
+    button(fb, 350, 4, 76, "CONFIG", ui->config_open);
+    button(fb, 431, 4, 80, "SEND FT2", 0);
+    button(fb, 516, 4, 52, "SAVE", 0);
+    button(fb, 573, 4, 57, "EXPORT", 0);
 
     frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
     if (instrument->parent.frames) {
@@ -632,13 +676,15 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else {
         char crossfade[32];
         char mode[32];
-        button(fb, 10, 261, 74, "SET LOOP", instrument->has_loop);
+        float display_crossfade = showing_bank ? shown_slot->loop_crossfade_ms :
+                                                instrument->loop_crossfade_ms;
+        button(fb, 10, 261, 74, "SET LOOP", has_loop);
         button(fb, 89, 261, 64, "CLEAR", 0);
         button(fb, 158, 261, 84, "PLAY LOOP", ui->playback_active);
-        snprintf(mode, sizeof(mode), "MODE %.9s", ts_loop_mode_name(instrument->loop_mode));
-        button(fb, 247, 261, 108, mode, instrument->loop_mode != TS_LOOP_FORWARD);
-        snprintf(crossfade, sizeof(crossfade), "XFADE %.1F MS", instrument->loop_crossfade_ms);
-        slider(fb, 365, 261, 212, crossfade, instrument->loop_crossfade_ms / 50.0f,
+        snprintf(mode, sizeof(mode), "MODE %.9s", ts_loop_mode_name(display_loop_mode));
+        button(fb, 247, 261, 108, mode, display_loop_mode != TS_LOOP_FORWARD);
+        snprintf(crossfade, sizeof(crossfade), "XFADE %.1F MS", display_crossfade);
+        slider(fb, 365, 261, 212, crossfade, display_crossfade / 50.0f,
                PAL_TUNING);
     }
 
@@ -702,13 +748,17 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             else
                 snprintf(label, sizeof(label), "%02d ---", i + 1);
             button(fb, x, y, 72, label, slot->occupied);
+            if (slot->occupied && slot->has_loop)
+                rect(fb, x + 66, y + 4, 3, 15, PAL_TUNING);
             if (i == ui->bank_view_slot) rect(fb, x + 2, y + 2, 68, 2, PAL_MOUSE);
         }
     }
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
     text(fb, 8, 389, ui->status, PAL_MOUSE, 1);
 
-    if (ui->browser.mode != TS_BROWSER_CLOSED)
+    if (ui->config_open)
+        config_render(fb, ui);
+    else if (ui->browser.mode != TS_BROWSER_CLOSED)
         browser_render(fb, &ui->browser, ui->text_cursor_visible);
     else if (ui->renaming_bank_slot >= 0) {
         size_t length = strlen(ui->bank_rename);

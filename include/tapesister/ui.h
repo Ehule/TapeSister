@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "tapesister/audition.h"
 #include "tapesister/browser.h"
+#include "tapesister/config.h"
 #include "tapesister/recipe.h"
 #include "tapesister/sample.h"
 
@@ -63,6 +64,9 @@ typedef struct {
     int renaming_bank_slot;
     int renaming_recipe_slot;
     int export_choice_open;
+    int config_open;
+    TsConfigField config_field;
+    size_t config_cursor;
     int dragging_loop_endpoint;
     int loop_drag_started;
     int tape_dragging;
@@ -72,6 +76,8 @@ typedef struct {
     TsAuditionSource audition_source;
     TsAuditionSource playhead_source;
     TsBrowser browser;
+    TsConfig config;
+    TsConfig config_before_edit;
     TsRecipeBank recipes;
     TsTuning pitch_suggestion;
     float pitch_confidence;

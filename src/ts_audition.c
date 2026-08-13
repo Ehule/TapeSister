@@ -63,6 +63,22 @@ int ts_audition_plan(const TsInstrument *instrument, TsAuditionSource source,
     return 1;
 }
 
+int ts_bank_audition_plan(const TsInstrument *instrument, int slot,
+                          TsAuditionPlan *plan)
+{
+    const TsBankSlot *bank_slot;
+    if (instrument == NULL || plan == NULL ||
+        slot < 0 || slot >= TS_BANK_SLOT_COUNT) return 0;
+    bank_slot = &instrument->bank[slot];
+    if (!bank_slot->occupied || bank_slot->sample.data == NULL ||
+        bank_slot->sample.frames < 2u) return 0;
+    plan->sample = &bank_slot->sample;
+    plan->first = bank_slot->has_loop ? bank_slot->loop_first : 0;
+    plan->last = bank_slot->has_loop ? bank_slot->loop_last : bank_slot->sample.frames;
+    if (plan->first >= plan->last || plan->last > bank_slot->sample.frames) return 0;
+    return 1;
+}
+
 size_t ts_audition_crossfade_frames(const TsAuditionPlan *plan, float milliseconds)
 {
     size_t frames;

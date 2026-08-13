@@ -6,5 +6,6 @@
 /test-roundtrip.wav
 /tapesister-export.wav
 /tapesister-recipe.tsr
+/tapesister.ini
 /artifacts/*.ppm
 /artifacts/*.png

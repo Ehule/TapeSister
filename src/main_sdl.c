@@ -9,9 +9,100 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #ifdef _WIN32
 #include <windows.h>
+#include <direct.h>
+#else
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
+
+static const char *config_file_path(void)
+{
+    const char *override = getenv("TAPESISTER_CONFIG");
+    return override != NULL && override[0] != '\0' ? override : "tapesister.ini";
+}
+
+static int path_is_directory(const char *path)
+{
+#ifdef _WIN32
+    struct _stat info;
+    return path != NULL && path[0] != '\0' && _stat(path, &info) == 0 &&
+           (info.st_mode & _S_IFDIR) != 0;
+#else
+    struct stat info;
+    return path != NULL && path[0] != '\0' && stat(path, &info) == 0 &&
+           S_ISDIR(info.st_mode);
+#endif
+}
+
+static int launch_program(const char *path, char *error, size_t error_size)
+{
+    if (path == NULL || path[0] == '\0') {
+        snprintf(error, error_size, "FastTracker executable path is blank");
+        return 0;
+    }
+#ifdef _WIN32
+    if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) {
+        snprintf(error, error_size, "FastTracker executable was not found");
+        return 0;
+    }
+#else
+    if (access(path, X_OK) != 0) {
+        snprintf(error, error_size, "FastTracker executable is not runnable: %s",
+                 strerror(errno));
+        return 0;
+    }
+#endif
+#ifdef _WIN32
+    {
+        STARTUPINFOA startup;
+        PROCESS_INFORMATION process;
+        char command[TS_CONFIG_PATH_MAX + 4];
+        int written = snprintf(command, sizeof(command), "\"%s\"", path);
+        if (written < 0 || (size_t)written >= sizeof(command)) {
+            snprintf(error, error_size, "FastTracker executable path is too long");
+            return 0;
+        }
+        memset(&startup, 0, sizeof(startup));
+        memset(&process, 0, sizeof(process));
+        startup.cb = sizeof(startup);
+        if (!CreateProcessA(path, command, NULL, NULL, FALSE, 0,
+                            NULL, NULL, &startup, &process)) {
+            snprintf(error, error_size, "Could not launch FastTracker (Windows error %lu)",
+                     (unsigned long)GetLastError());
+            return 0;
+        }
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+    }
+#else
+    {
+        pid_t first = fork();
+        int status = 0;
+        if (first < 0) {
+            snprintf(error, error_size, "Could not launch FastTracker: %s", strerror(errno));
+            return 0;
+        }
+        if (first == 0) {
+            pid_t second = fork();
+            if (second < 0) _exit(126);
+            if (second > 0) _exit(0);
+            setsid();
+            execl(path, path, (char *)NULL);
+            _exit(127);
+        }
+        if (waitpid(first, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+            snprintf(error, error_size, "Could not start FastTracker launch process");
+            return 0;
+        }
+    }
+#endif
+    error[0] = '\0';
+    return 1;
+}
 
 typedef struct {
     const TsSample *sample;
@@ -629,12 +720,31 @@ static void history_move(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
     else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
 }
 
+static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
+                              const TsInstrument *instrument);
+
 static void set_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                      TsInstrument *instrument)
 {
     char error[160];
+    int bank_slot = ui->bank_view_slot;
     int selected_automatically = !instrument->has_selection;
     int ok;
+    if (bank_slot >= 0 && bank_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[bank_slot].occupied) {
+        if (device) SDL_LockAudioDevice(device);
+        ok = ts_instrument_bank_set_loop_full(instrument, bank_slot,
+                                              error, sizeof(error));
+        if (device) SDL_UnlockAudioDevice(device);
+        if (ok) {
+            sync_playing_loop(device, audio, instrument);
+            snprintf(ui->status, sizeof(ui->status),
+                     "BANK %02d WHOLE SAMPLE LOOPED - DRAG FLAGS TO TRIM",
+                     bank_slot + 1);
+        } else snprintf(ui->status, sizeof(ui->status),
+                        "BANK LOOP FAILED: %.135s", error);
+        return;
+    }
     lock_edit(device, audio);
     ok = ts_instrument_set_loop_from_selection(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
@@ -652,7 +762,21 @@ static void clear_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
                        TsInstrument *instrument)
 {
     char error[160];
+    int bank_slot = ui->bank_view_slot;
     int ok;
+    if (bank_slot >= 0 && bank_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[bank_slot].occupied) {
+        if (device) SDL_LockAudioDevice(device);
+        ok = ts_instrument_bank_clear_loop(instrument, bank_slot,
+                                           error, sizeof(error));
+        if (device) SDL_UnlockAudioDevice(device);
+        if (ok) sync_playing_loop(device, audio, instrument);
+        if (ok) snprintf(ui->status, sizeof(ui->status),
+                         "BANK %02d LOOP CLEARED - ONE-SHOT AUDITION",
+                         bank_slot + 1);
+        else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
+        return;
+    }
     lock_edit(device, audio);
     ok = ts_instrument_clear_loop(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
@@ -663,7 +787,23 @@ static void set_loop_crossfade(SDL_AudioDeviceID device, AudioState *audio, TsUi
                                TsInstrument *instrument, float milliseconds)
 {
     char error[160];
+    int bank_slot = ui->bank_view_slot;
     int ok;
+    if (bank_slot >= 0 && bank_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[bank_slot].occupied) {
+        if (device) SDL_LockAudioDevice(device);
+        ok = ts_instrument_bank_set_loop_crossfade(instrument, bank_slot,
+                                                   milliseconds,
+                                                   error, sizeof(error));
+        if (device) SDL_UnlockAudioDevice(device);
+        if (ok) sync_playing_loop(device, audio, instrument);
+        if (ok) snprintf(ui->status, sizeof(ui->status),
+                         "BANK %02d LOOP CROSSFADE %.1F MS",
+                         bank_slot + 1,
+                         instrument->bank[bank_slot].loop_crossfade_ms);
+        else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
+        return;
+    }
     if (device) SDL_LockAudioDevice(device);
     ok = ts_instrument_set_loop_crossfade(instrument, milliseconds, error, sizeof(error));
     if (ok && audio->looping && audio->sample != NULL) {
@@ -682,8 +822,27 @@ static void cycle_loop_mode(SDL_AudioDeviceID device, AudioState *audio, TsUiSta
                             TsInstrument *instrument)
 {
     char error[160];
-    TsLoopMode mode = (TsLoopMode)((instrument->loop_mode + 1) % TS_LOOP_MODE_COUNT);
+    int bank_slot = ui->bank_view_slot;
+    TsLoopMode current_mode = bank_slot >= 0 && bank_slot < TS_BANK_SLOT_COUNT &&
+                              instrument->bank[bank_slot].occupied ?
+                              instrument->bank[bank_slot].loop_mode :
+                              instrument->loop_mode;
+    TsLoopMode mode = (TsLoopMode)((current_mode + 1) % TS_LOOP_MODE_COUNT);
     int ok;
+    if (bank_slot >= 0 && bank_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[bank_slot].occupied) {
+        if (device) SDL_LockAudioDevice(device);
+        ok = ts_instrument_bank_set_loop_mode(instrument, bank_slot, mode,
+                                              error, sizeof(error));
+        if (device) SDL_UnlockAudioDevice(device);
+        if (ok) sync_playing_loop(device, audio, instrument);
+        if (ok) snprintf(ui->status, sizeof(ui->status),
+                         "BANK %02d LOOP MODE %s",
+                         bank_slot + 1, ts_loop_mode_name(mode));
+        else snprintf(ui->status, sizeof(ui->status),
+                      "BANK LOOP MODE FAILED: %.118s", error);
+        return;
+    }
     if (device) SDL_LockAudioDevice(device);
     ok = ts_instrument_set_loop_mode(instrument, mode, error, sizeof(error));
     if (ok && audio->playing && audio->bank_slot < 0 && audio->looping) {
@@ -702,7 +861,32 @@ static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
 {
     TsAuditionPlan plan;
     if (device) SDL_LockAudioDevice(device);
-    if (audio->playing && audio->bank_slot < 0 && audio->looping &&
+    if (audio->playing && audio->bank_slot >= 0 &&
+        audio->bank_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[audio->bank_slot].occupied) {
+        const TsBankSlot *slot = &instrument->bank[audio->bank_slot];
+        if (!ts_bank_audition_plan(instrument, audio->bank_slot, &plan)) {
+            audio->playing = 0;
+            audio->bank_slot = -1;
+            if (device) SDL_UnlockAudioDevice(device);
+            return;
+        }
+        audio->sample = plan.sample;
+        audio->range_start = plan.first;
+        audio->range_end = plan.last;
+        audio->range = slot->has_loop ? TS_AUDITION_LOOP : TS_AUDITION_ALL;
+        audio->looping = slot->has_loop;
+        audio->crossfade_frames = slot->has_loop ?
+                                  ts_audition_crossfade_frames(
+                                      &plan, slot->loop_crossfade_ms) : 0;
+        audio->loop_mode = slot->loop_mode;
+        if (audio->loop_mode == TS_LOOP_REVERSE) audio->loop_direction = -1;
+        else if (audio->loop_mode == TS_LOOP_FORWARD) audio->loop_direction = 1;
+        else if (audio->loop_direction == 0) audio->loop_direction = 1;
+        if (audio->position < (double)plan.first || audio->position >= (double)plan.last)
+            audio->position = audio->loop_mode == TS_LOOP_REVERSE && slot->has_loop ?
+                              (double)(plan.last - 1u) : (double)plan.first;
+    } else if (audio->playing && audio->bank_slot < 0 && audio->looping &&
         ts_audition_plan(instrument, audio->source, TS_AUDITION_LOOP, &plan)) {
         audio->sample = plan.sample;
         audio->range_start = plan.first;
@@ -748,9 +932,13 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
                  slot_index + 1);
         return;
     }
-    plan.sample = &slot->sample;
-    plan.first = slot->has_loop ? slot->loop_first : 0;
-    plan.last = slot->has_loop ? slot->loop_last : slot->sample.frames;
+    if (!ts_bank_audition_plan(instrument, slot_index, &plan)) {
+        audio->sample = NULL;
+        if (device) SDL_UnlockAudioDevice(device);
+        snprintf(ui->status, sizeof(ui->status), "BANK %02d CANNOT AUDITION",
+                 slot_index + 1);
+        return;
+    }
     audio->sample = &slot->sample;
     audio->loop_mode = slot->loop_mode;
     audio->loop_direction = audio->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
@@ -769,8 +957,9 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
     audio->bank_slot = slot_index;
     audio->playing = 1;
     SDL_UnlockAudioDevice(device);
-    snprintf(ui->status, sizeof(ui->status), "PLAYING BANK %02d %s",
-             slot_index + 1, ts_bank_capture_name(slot->capture_kind));
+    snprintf(ui->status, sizeof(ui->status), "PLAYING BANK %02d %s %s",
+             slot_index + 1, ts_bank_capture_name(slot->capture_kind),
+             slot->has_loop ? ts_loop_mode_name(slot->loop_mode) : "ONE-SHOT");
 }
 
 static void capture_bank_slot(SDL_AudioDeviceID device, TsUiState *ui,
@@ -896,6 +1085,69 @@ static void text_move_cursor(const char *buffer, size_t *cursor, int amount)
     *cursor = (size_t)position;
 }
 
+static void select_config_field(TsUiState *ui, TsConfigField field)
+{
+    const char *value;
+    if (field < 0) field = (TsConfigField)(TS_CONFIG_FIELD_COUNT - 1);
+    if ((int)field >= TS_CONFIG_FIELD_COUNT) field = TS_CONFIG_SAMPLE_PATH;
+    ui->config_field = field;
+    value = ts_config_field_const(&ui->config, field);
+    ui->config_cursor = value != NULL ? strlen(value) : 0;
+}
+
+static void begin_config(TsUiState *ui)
+{
+    ui->commit_armed = 0;
+    ui->config_before_edit = ui->config;
+    ui->config_open = 1;
+    select_config_field(ui, TS_CONFIG_SAMPLE_PATH);
+    SDL_StartTextInput();
+    snprintf(ui->status, sizeof(ui->status), "EDITING TAPESISTER PATHS");
+}
+
+static void cancel_config(TsUiState *ui)
+{
+    ui->config = ui->config_before_edit;
+    ui->config_open = 0;
+    ui->config_cursor = 0;
+    SDL_StopTextInput();
+    snprintf(ui->status, sizeof(ui->status), "CONFIG CHANGES CANCELLED");
+}
+
+static void save_config(TsUiState *ui)
+{
+    char error[160];
+    if (!ts_config_save(&ui->config, config_file_path(), error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "CONFIG SAVE FAILED: %.130s", error);
+        return;
+    }
+    ui->config_before_edit = ui->config;
+    if (path_is_directory(ui->config.sample_path))
+        snprintf(ui->browser.directory, sizeof(ui->browser.directory), "%s",
+                 ui->config.sample_path);
+    ui->config_open = 0;
+    ui->config_cursor = 0;
+    SDL_StopTextInput();
+    snprintf(ui->status, sizeof(ui->status), "SAVED CONFIG %.112s", config_file_path());
+}
+
+static void config_use_cwd(TsUiState *ui)
+{
+    char *field = ts_config_field(&ui->config, ui->config_field);
+    if (field == NULL) return;
+#ifdef _WIN32
+    if (_getcwd(field, TS_CONFIG_PATH_MAX) == NULL)
+#else
+    if (getcwd(field, TS_CONFIG_PATH_MAX) == NULL)
+#endif
+        snprintf(ui->status, sizeof(ui->status), "COULD NOT READ CURRENT DIRECTORY");
+    else {
+        ui->config_cursor = strlen(field);
+        snprintf(ui->status, sizeof(ui->status), "CURRENT DIRECTORY COPIED TO %s",
+                 ts_config_field_name(ui->config_field));
+    }
+}
+
 static void cancel_bank_rename(TsUiState *ui)
 {
     int slot = ui->renaming_bank_slot;
@@ -1002,21 +1254,8 @@ static void browser_open(TsUiState *ui, TsBrowserMode mode)
 static void browser_open_bank(TsUiState *ui, const TsInstrument *instrument)
 {
     char folder[TS_BROWSER_NAME_MAX + 1];
-    size_t used = 0;
-    const char *source = instrument->bank[0].occupied ?
-                         instrument->bank[0].sample.name : instrument->parent.name;
-    const char *source_end = strrchr(source, '.');
-    if (source_end == NULL || source_end == source) source_end = source + strlen(source);
-    while (source < source_end && used + 8u < sizeof(folder)) {
-        unsigned char c = (unsigned char)*source++;
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == '-' || c == '_')
-            folder[used++] = (char)c;
-        else if (used > 0 && folder[used - 1u] != '_') folder[used++] = '_';
-    }
-    while (used > 0 && folder[used - 1u] == '_') --used;
-    if (used == 0) memcpy(folder + used, "TapeSister", 10), used += 10;
-    memcpy(folder + used, "_family", 8);
+    if (!ts_instrument_family_folder_name(instrument, folder, sizeof(folder)))
+        snprintf(folder, sizeof(folder), "TapeSister_family");
     ui->commit_armed = 0;
     SDL_StopTextInput();
     if (ts_browser_open(&ui->browser, TS_BROWSER_EXPORT_BANK, folder)) {
@@ -1026,6 +1265,43 @@ static void browser_open_bank(TsUiState *ui, const TsInstrument *instrument)
         snprintf(ui->status, sizeof(ui->status), "BROWSER FAILED: %.142s", ui->browser.message);
         ts_browser_close(&ui->browser);
     }
+}
+
+static void send_to_fasttracker(TsUiState *ui, const TsInstrument *instrument)
+{
+    const char *directory = ui->config.exchange_path[0] != '\0' ?
+                            ui->config.exchange_path : ui->config.sample_path;
+    char destination[TS_BROWSER_PATH_MAX];
+    char error[160];
+    if (!path_is_directory(directory)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "CONFIGURE AN EXISTING FT2 EXCHANGE OR SAMPLE PATH FIRST");
+        return;
+    }
+    if (!ts_instrument_next_family_path(instrument, directory,
+                                        destination, sizeof(destination),
+                                        error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "FT2 PATH FAILED: %.134s", error);
+        return;
+    }
+    if (!ts_instrument_export_bank(instrument, destination, error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "FT2 EXPORT FAILED: %.132s", error);
+        return;
+    }
+    if (ui->config.fasttracker_path[0] == '\0') {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FT2 FAMILY READY %.104s - SET EXECUTABLE TO AUTO LAUNCH",
+                 destination);
+        return;
+    }
+    if (!launch_program(ui->config.fasttracker_path, error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FAMILY READY %.64s  LAUNCH FAILED %.48s", destination, error);
+        return;
+    }
+    snprintf(ui->status, sizeof(ui->status),
+             "SENT %d LOOP AWARE SAMPLES TO %.83s - FASTTRACKER LAUNCHED",
+             ts_instrument_bank_count(instrument), destination);
 }
 
 static void browser_cancel(TsUiState *ui)
@@ -1089,6 +1365,8 @@ static int save_preset_atomic(const TsProcessRecipe *process, const TsTuning *tu
 }
 
 static int export_wav_atomic(const TsSample *sample, const TsTuning *tuning,
+                             int has_loop, size_t loop_first, size_t loop_last,
+                             TsLoopMode loop_mode,
                              const char *destination,
                              char *error, size_t error_size)
 {
@@ -1098,7 +1376,9 @@ static int export_wav_atomic(const TsSample *sample, const TsTuning *tuning,
         snprintf(error, error_size, "Destination path is too long");
         return 0;
     }
-    if (!ts_sample_save_wav16_tuned(sample, tuning, temporary, error, error_size)) {
+    if (!ts_sample_save_wav16_tuned_looped(sample, tuning, has_loop,
+                                           loop_first, loop_last, loop_mode,
+                                           temporary, error, error_size)) {
         remove(temporary);
         return 0;
     }
@@ -1157,6 +1437,9 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                      "TSP SAVE FAILED: %.131s", ok ? path : error);
         } else if (browser->mode == TS_BROWSER_EXPORT_WAV) {
             ok = export_wav_atomic(&instrument->current, &instrument->tuning,
+                                   instrument->has_loop,
+                                   instrument->loop_first, instrument->loop_last,
+                                   instrument->loop_mode,
                                    path, error, sizeof(error));
             snprintf(ui->status, sizeof(ui->status), ok ? "EXPORTED CURRENT %.101s" :
                      "EXPORT FAILED: %.133s", ok ? path : error);
@@ -1291,10 +1574,19 @@ static void finish_tape_drag(SDL_AudioDeviceID device, AudioState *audio,
 
 static int loop_marker_x(const TsInstrument *instrument, const TsUiState *ui, int endpoint)
 {
-    size_t frame = endpoint == 1 ? instrument->loop_first : instrument->loop_last;
+    const TsBankSlot *bank_slot = ui->bank_view_slot >= 0 &&
+                                  ui->bank_view_slot < TS_BANK_SLOT_COUNT &&
+                                  instrument->bank[ui->bank_view_slot].occupied ?
+                                  &instrument->bank[ui->bank_view_slot] : NULL;
+    size_t frame = bank_slot != NULL ?
+                   (endpoint == 1 ? bank_slot->loop_first : bank_slot->loop_last) :
+                   (endpoint == 1 ? instrument->loop_first : instrument->loop_last);
     size_t first;
     size_t last;
-    if (ui->audition_source == TS_AUDITION_PARENT) {
+    if (bank_slot != NULL) {
+        first = 0;
+        last = bank_slot->sample.frames;
+    } else if (ui->audition_source == TS_AUDITION_PARENT) {
         frame += instrument->crop_first;
         first = ui->parent_view_first;
         last = ui->parent_view_last;
@@ -1313,6 +1605,14 @@ static int loop_marker_x(const TsInstrument *instrument, const TsUiState *ui, in
     }
 }
 
+static size_t bank_frame_from_x(const TsBankSlot *slot, int x)
+{
+    if (slot == NULL || slot->sample.frames == 0) return 0;
+    if (x < 0) x = 0;
+    if (x >= TS_WAVE_W) x = TS_WAVE_W - 1;
+    return (size_t)x * slot->sample.frames / (size_t)TS_WAVE_W;
+}
+
 int main(int argc, char **argv)
 {
     SDL_Window *window = NULL;
@@ -1328,6 +1628,15 @@ int main(int argc, char **argv)
 
     ts_instrument_init(&instrument);
     ts_ui_init(&ui);
+    {
+        char config_error[160];
+        if (!ts_config_load(&ui.config, config_file_path(),
+                            config_error, sizeof(config_error)))
+            fprintf(stderr, "TapeSister config: %s\n", config_error);
+        else if (path_is_directory(ui.config.sample_path))
+            snprintf(ui.browser.directory, sizeof(ui.browser.directory), "%s",
+                     ui.config.sample_path);
+    }
     ts_note_bank_init(&audio.notes);
     audio.bank_slot = -1;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
@@ -1368,7 +1677,8 @@ int main(int argc, char **argv)
             if (event.type == SDL_QUIT) running = 0;
             else if (event.type == SDL_DROPFILE &&
                      (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                      ui.export_choice_open || ui.browser.mode != TS_BROWSER_CLOSED)) {
+                      ui.config_open || ui.export_choice_open ||
+                      ui.browser.mode != TS_BROWSER_CLOSED)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
                 SDL_free(event.drop.file);
@@ -1376,6 +1686,11 @@ int main(int argc, char **argv)
             else if (event.type == SDL_DROPFILE) {
                 load_instrument(device, &audio, &ui, &instrument, event.drop.file);
                 SDL_free(event.drop.file);
+            } else if (event.type == SDL_TEXTINPUT && ui.config_open) {
+                char *field = ts_config_field(&ui.config, ui.config_field);
+                if (field != NULL)
+                    text_insert_ascii(field, TS_CONFIG_PATH_MAX,
+                                      &ui.config_cursor, event.text.text);
             } else if (event.type == SDL_TEXTINPUT && ui.renaming_bank_slot >= 0) {
                 text_insert_ascii(ui.bank_rename, sizeof(ui.bank_rename),
                                   &ui.bank_rename_cursor, event.text.text);
@@ -1389,7 +1704,32 @@ int main(int argc, char **argv)
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
                 if (!((mod & KMOD_CTRL) && key == SDLK_p)) ui.commit_armed = 0;
-                if (ui.renaming_bank_slot >= 0) {
+                if (ui.config_open) {
+                    char *field = ts_config_field(&ui.config, ui.config_field);
+                    if (key == SDLK_ESCAPE) cancel_config(&ui);
+                    else if ((mod & KMOD_CTRL) && key == SDLK_BACKSPACE && field != NULL) {
+                        field[0] = '\0';
+                        ui.config_cursor = 0;
+                    } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
+                        save_config(&ui);
+                    else if (key == SDLK_TAB || key == SDLK_DOWN)
+                        select_config_field(&ui,
+                            (TsConfigField)(ui.config_field + 1));
+                    else if (key == SDLK_UP)
+                        select_config_field(&ui,
+                            (TsConfigField)(ui.config_field - 1));
+                    else if (key == SDLK_BACKSPACE && field != NULL)
+                        text_backspace(field, &ui.config_cursor);
+                    else if (key == SDLK_DELETE && field != NULL)
+                        text_delete(field, &ui.config_cursor);
+                    else if (key == SDLK_LEFT && field != NULL)
+                        text_move_cursor(field, &ui.config_cursor, -1);
+                    else if (key == SDLK_RIGHT && field != NULL)
+                        text_move_cursor(field, &ui.config_cursor, 1);
+                    else if (key == SDLK_HOME) ui.config_cursor = 0;
+                    else if (key == SDLK_END && field != NULL)
+                        ui.config_cursor = strlen(field);
+                } else if (ui.renaming_bank_slot >= 0) {
                     if (key == SDLK_ESCAPE) cancel_bank_rename(&ui);
                     else if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
                         finish_bank_rename(&ui, &instrument);
@@ -1597,14 +1937,15 @@ int main(int argc, char **argv)
                     if (note >= 0 && device)
                         begin_note(device, &audio, &ui, &instrument, note, obtained.freq, 0);
                 }
-            } else if (event.type == SDL_KEYUP && ui.renaming_bank_slot < 0 &&
+            } else if (event.type == SDL_KEYUP && !ui.config_open &&
+                       ui.renaming_bank_slot < 0 &&
                        ui.renaming_recipe_slot < 0 && !ui.export_choice_open &&
                        ui.browser.mode == TS_BROWSER_CLOSED &&
                        note_for_key(event.key.keysym.sym) >= 0) {
                 release_note(device, &audio, &ui, note_for_key(event.key.keysym.sym));
             } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                        ui.export_choice_open)) {
+                        ui.config_open || ui.export_choice_open)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
             } else if (event.type == SDL_MOUSEWHEEL && ui.browser.mode != TS_BROWSER_CLOSED) {
@@ -1658,7 +1999,7 @@ int main(int argc, char **argv)
                 }
             } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                        ui.export_choice_open)) {
+                        ui.config_open || ui.export_choice_open)) {
                 /* Modal dialogs own pointer input. */
             } else if (event.type == SDL_MOUSEMOTION && ui.browser.dragging_scrollbar) {
                 int x, y;
@@ -1687,16 +2028,30 @@ int main(int argc, char **argv)
                 size_t frame;
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
                 (void)y;
-                frame = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
-                if (!ui.loop_drag_started) {
-                    ts_instrument_begin_loop_drag(&instrument);
-                    ui.loop_drag_started = 1;
+                if (ui.bank_view_slot >= 0 && ui.bank_view_slot < TS_BANK_SLOT_COUNT &&
+                    instrument.bank[ui.bank_view_slot].occupied) {
+                    TsBankSlot *slot = &instrument.bank[ui.bank_view_slot];
+                    frame = bank_frame_from_x(slot, x - TS_WAVE_X);
+                    ui.dragging_loop_endpoint = ts_instrument_bank_move_loop_endpoint(
+                        &instrument, ui.bank_view_slot,
+                        ui.dragging_loop_endpoint, frame);
+                    sync_playing_loop(device, &audio, &instrument);
+                    snprintf(ui.status, sizeof(ui.status),
+                             "BANK %02d LOOP FLAGS %zu - %zu ZERO SNAPPED",
+                             ui.bank_view_slot + 1, slot->loop_first, slot->loop_last);
+                } else {
+                    frame = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
+                    if (!ui.loop_drag_started) {
+                        ts_instrument_begin_loop_drag(&instrument);
+                        ui.loop_drag_started = 1;
+                    }
+                    ui.dragging_loop_endpoint = ts_instrument_move_loop_endpoint(
+                        &instrument, ui.dragging_loop_endpoint, frame);
+                    sync_playing_loop(device, &audio, &instrument);
+                    snprintf(ui.status, sizeof(ui.status),
+                             "LOOP FLAGS %zu - %zu ZERO SNAPPED",
+                             instrument.loop_first, instrument.loop_last);
                 }
-                ui.dragging_loop_endpoint = ts_instrument_move_loop_endpoint(
-                    &instrument, ui.dragging_loop_endpoint, frame);
-                sync_playing_loop(device, &audio, &instrument);
-                snprintf(ui.status, sizeof(ui.status), "LOOP FLAGS %zu - %zu ZERO SNAPPED",
-                         instrument.loop_first, instrument.loop_last);
             } else if (event.type == SDL_MOUSEMOTION && ui.selecting) {
                 int x, y;
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
@@ -1708,7 +2063,36 @@ int main(int argc, char **argv)
                 SDL_Keymod mod = SDL_GetModState();
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
                 if (!(y >= 205 && y < 228 && x >= 247 && x < 325)) ui.commit_armed = 0;
-                if (ui.renaming_bank_slot >= 0) {
+                if (ui.config_open) {
+                    static const int field_y[TS_CONFIG_FIELD_COUNT] = {103, 158, 213};
+                    int selected = -1;
+                    for (int i = 0; i < TS_CONFIG_FIELD_COUNT; ++i)
+                        if (x >= 50 && x < 590 && y >= field_y[i] && y < field_y[i] + 24)
+                            selected = i;
+                    if (selected >= 0) {
+                        const char *field;
+                        size_t length;
+                        size_t cursor;
+                        size_t first;
+                        size_t clicked;
+                        if (selected != (int)ui.config_field)
+                            select_config_field(&ui, (TsConfigField)selected);
+                        field = ts_config_field_const(&ui.config, ui.config_field);
+                        length = strlen(field);
+                        cursor = ui.config_cursor > length ? length : ui.config_cursor;
+                        first = length > 82u ? length - 82u : 0u;
+                        if (cursor < first) first = cursor;
+                        if (cursor > first + 82u) first = cursor - 82u;
+                        clicked = first + (size_t)((x - 56 + 3) / 6);
+                        if (clicked > length) clicked = length;
+                        ui.config_cursor = clicked;
+                    } else if (x >= 50 && x < 160 && y >= 274 && y < 297)
+                        save_config(&ui);
+                    else if (x >= 170 && x < 270 && y >= 274 && y < 297)
+                        config_use_cwd(&ui);
+                    else if (x >= 280 && x < 362 && y >= 274 && y < 297)
+                        cancel_config(&ui);
+                } else if (ui.renaming_bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");
                 } else if (ui.renaming_recipe_slot >= 0) {
@@ -1776,38 +2160,77 @@ int main(int argc, char **argv)
                     } else if (x >= 260 && x < 344 && y >= 326 && y < 349) {
                         browser_cancel(&ui);
                     }
-                } else if (y >= 4 && y < 28 && x >= 447 && x < 529) {
+                } else if (y >= 4 && y < 28 && x >= 350 && x < 426) {
+                    begin_config(&ui);
+                } else if (y >= 4 && y < 28 && x >= 431 && x < 511) {
+                    send_to_fasttracker(&ui, &instrument);
+                } else if (y >= 4 && y < 28 && x >= 516 && x < 568) {
                     browser_open(&ui, ui.show_recipes ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
-                } else if (y >= 4 && y < 28 && x >= 535 && x < 630) {
+                } else if (y >= 4 && y < 28 && x >= 573 && x < 630) {
                     begin_export_choice(&ui);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
-                    ui.bank_view_slot = -1;
-                    int first_x = instrument.has_loop ? loop_marker_x(&instrument, &ui, 1) : -1000;
-                    int last_x = instrument.has_loop ? loop_marker_x(&instrument, &ui, 2) : -1000;
-                    if (begin_tape_drag(&ui, &instrument, SDL_BUTTON_LEFT,
-                                        mod, x - TS_WAVE_X)) {
-                        /* Modifier drag owns this gesture. */
-                    } else if (instrument.has_loop && abs(x - first_x) <= 6) {
+                    TsBankSlot *shown_bank = ui.bank_view_slot >= 0 &&
+                                             ui.bank_view_slot < TS_BANK_SLOT_COUNT &&
+                                             instrument.bank[ui.bank_view_slot].occupied ?
+                                             &instrument.bank[ui.bank_view_slot] : NULL;
+                    int has_visible_loop = shown_bank != NULL ? shown_bank->has_loop :
+                                           instrument.has_loop;
+                    int first_x = has_visible_loop ?
+                                  loop_marker_x(&instrument, &ui, 1) : -1000;
+                    int last_x = has_visible_loop ?
+                                 loop_marker_x(&instrument, &ui, 2) : -1000;
+                    if (shown_bank != NULL && has_visible_loop &&
+                        abs(x - first_x) <= 6) {
                         cancel_pitch_preview(device, &audio, &ui, &instrument);
                         ui.dragging_loop_endpoint = 1;
                         ui.loop_drag_started = 0;
-                        snprintf(ui.status, sizeof(ui.status), "DRAG LOOP START - ZERO SNAPPED");
-                    } else if (instrument.has_loop && abs(x - last_x) <= 6) {
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "DRAG BANK %02d LOOP START - ZERO SNAPPED",
+                                 ui.bank_view_slot + 1);
+                    } else if (shown_bank != NULL && has_visible_loop &&
+                               abs(x - last_x) <= 6) {
                         cancel_pitch_preview(device, &audio, &ui, &instrument);
                         ui.dragging_loop_endpoint = 2;
                         ui.loop_drag_started = 0;
-                        snprintf(ui.status, sizeof(ui.status), "DRAG LOOP END - ZERO SNAPPED");
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "DRAG BANK %02d LOOP END - ZERO SNAPPED",
+                                 ui.bank_view_slot + 1);
+                    } else if (shown_bank != NULL) {
+                        snprintf(ui.status, sizeof(ui.status),
+                                 shown_bank->has_loop ?
+                                 "BANK %02d LOOP SAVED - DRAG CYAN FLAGS" :
+                                 "BANK %02d IS ONE-SHOT - USE SET LOOP",
+                                 ui.bank_view_slot + 1);
                     } else {
-                        cancel_pitch_preview(device, &audio, &ui, &instrument);
-                        ui.selection_anchor = ts_sample_nearest_zero_crossing(
-                            &instrument.current, selection_frame_from_x(
-                                &instrument, &ui, x - TS_WAVE_X));
-                        ts_instrument_set_selection_snapped(
-                            &instrument, ui.selection_anchor, ui.selection_anchor);
-                        ui.selecting = 1;
-                        snprintf(ui.status, sizeof(ui.status), "SELECTING CURRENT - ZERO SNAP");
+                        ui.bank_view_slot = -1;
+                        if (begin_tape_drag(&ui, &instrument, SDL_BUTTON_LEFT,
+                                            mod, x - TS_WAVE_X)) {
+                            /* Modifier drag owns this gesture. */
+                        } else if (instrument.has_loop && abs(x - first_x) <= 6) {
+                            cancel_pitch_preview(device, &audio, &ui, &instrument);
+                            ui.dragging_loop_endpoint = 1;
+                            ui.loop_drag_started = 0;
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "DRAG LOOP START - ZERO SNAPPED");
+                        } else if (instrument.has_loop && abs(x - last_x) <= 6) {
+                            cancel_pitch_preview(device, &audio, &ui, &instrument);
+                            ui.dragging_loop_endpoint = 2;
+                            ui.loop_drag_started = 0;
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "DRAG LOOP END - ZERO SNAPPED");
+                        } else {
+                            cancel_pitch_preview(device, &audio, &ui, &instrument);
+                            ui.selection_anchor = ts_sample_nearest_zero_crossing(
+                                &instrument.current, selection_frame_from_x(
+                                    &instrument, &ui, x - TS_WAVE_X));
+                            ts_instrument_set_selection_snapped(
+                                &instrument, ui.selection_anchor, ui.selection_anchor);
+                            ui.selecting = 1;
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "SELECTING CURRENT - ZERO SNAP");
+                        }
                     }
                 } else if (y >= 205 && y < 228 && x >= 10 && x < 80) {
                     ui.commit_armed = 0;
@@ -1983,9 +2406,21 @@ int main(int argc, char **argv)
                             set_loop(device, &audio, &ui, &instrument);
                         else if (x >= 89 && x < 153)
                             clear_loop(device, &audio, &ui, &instrument);
-                        else if (x >= 158 && x < 242)
-                            begin_audition(device, &audio, &ui, &instrument,
-                                           TS_AUDITION_LOOP, 1.0, obtained.freq);
+                        else if (x >= 158 && x < 242) {
+                            int slot = ui.bank_view_slot;
+                            if (slot >= 0 && slot < TS_BANK_SLOT_COUNT &&
+                                instrument.bank[slot].occupied) {
+                                if (instrument.bank[slot].has_loop)
+                                    begin_bank_audition(device, &audio, &ui,
+                                                        &instrument, slot,
+                                                        obtained.freq);
+                                else snprintf(ui.status, sizeof(ui.status),
+                                              "BANK %02d HAS NO LOOP - USE SET LOOP",
+                                              slot + 1);
+                            } else begin_audition(device, &audio, &ui, &instrument,
+                                                  TS_AUDITION_LOOP, 1.0,
+                                                  obtained.freq);
+                        }
                         else if (x >= 247 && x < 355)
                             cycle_loop_mode(device, &audio, &ui, &instrument);
                         else if (x >= 365 && x < 577)
@@ -2096,7 +2531,7 @@ int main(int argc, char **argv)
                 }
             } else if (event.type == SDL_MOUSEBUTTONDOWN &&
                        event.button.button == SDL_BUTTON_RIGHT &&
-                       ui.browser.mode == TS_BROWSER_CLOSED) {
+                       !ui.config_open && ui.browser.mode == TS_BROWSER_CLOSED) {
                 int x, y;
                 int bank_slot;
                 int recipe_slot;

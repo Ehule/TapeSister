@@ -281,6 +281,32 @@ int main(void)
         remove("test-tuned.wav");
     }
     {
+        TsTuning written = {62, 7.5f};
+        for (int mode = TS_LOOP_FORWARD; mode < TS_LOOP_MODE_COUNT; ++mode) {
+            TsTuning reopened = {0, 0.0f};
+            TsLoopMode reopened_mode = TS_LOOP_FORWARD;
+            size_t loop_first = 0, loop_last = 0;
+            int has_loop = 0;
+            CHECK(ts_sample_save_wav16_tuned_looped(
+                &a, &written, 1, 123, 4321, (TsLoopMode)mode,
+                "test-looped.wav", error, sizeof(error)));
+            CHECK(ts_sample_load_wav_metadata(
+                &loaded, &reopened, &has_loop, &loop_first, &loop_last,
+                &reopened_mode, "test-looped.wav", error, sizeof(error)));
+            CHECK(has_loop && loop_first == 123 && loop_last == 4321);
+            CHECK(reopened_mode == (TsLoopMode)mode);
+            CHECK(reopened.root_note == written.root_note);
+            CHECK(fabsf(reopened.fine_tune_cents - written.fine_tune_cents) < 0.001f);
+        }
+        CHECK(ts_instrument_load_wav(&imported, "test-looped.wav",
+                                     error, sizeof(error)));
+        CHECK(imported.has_loop && imported.loop_first == 123 &&
+              imported.loop_last == 4321 &&
+              imported.loop_mode == TS_LOOP_PING_PONG);
+        CHECK(imported.bank[0].has_loop && imported.bank[0].loop_first == 123);
+        remove("test-looped.wav");
+    }
+    {
         TsInstrument pitch;
         TsTuning suggestion;
         float confidence = 0.0f;
@@ -774,6 +800,46 @@ int main(void)
           committed.selection_last - committed.selection_first);
     CHECK(committed.bank[3].has_loop && committed.bank[3].loop_first == 0 &&
           committed.bank[3].loop_last == committed.bank[3].sample.frames);
+    {
+        TsAuditionPlan bank_plan;
+        size_t preserved_first = committed.bank[1].loop_first;
+        size_t preserved_last = committed.bank[1].loop_last;
+        TsLoopMode preserved_mode = committed.bank[1].loop_mode;
+        float preserved_crossfade = committed.bank[1].loop_crossfade_ms;
+        CHECK(!committed.bank[2].has_loop);
+        CHECK(ts_instrument_bank_set_loop_full(&committed, 2,
+                                               error, sizeof(error)));
+        CHECK(committed.bank[2].has_loop && committed.bank[2].loop_first == 0 &&
+              committed.bank[2].loop_last == committed.bank[2].sample.frames);
+        CHECK(ts_instrument_bank_clear_loop(&committed, 2,
+                                            error, sizeof(error)));
+        CHECK(!committed.bank[2].has_loop);
+        CHECK(ts_instrument_bank_set_loop_full(&committed, 2,
+                                               error, sizeof(error)));
+        CHECK(ts_instrument_bank_move_loop_endpoint(
+                  &committed, 2, 1, committed.bank[2].sample.frames / 4u) != 0);
+        CHECK(ts_instrument_bank_move_loop_endpoint(
+                  &committed, 2, 2, committed.bank[2].sample.frames * 3u / 4u) != 0);
+        CHECK(committed.bank[2].loop_first < committed.bank[2].loop_last);
+        CHECK(ts_instrument_bank_set_loop_mode(&committed, 2, TS_LOOP_REVERSE,
+                                               error, sizeof(error)));
+        CHECK(ts_instrument_bank_set_loop_crossfade(&committed, 2, 17.0f,
+                                                    error, sizeof(error)));
+        CHECK(ts_bank_audition_plan(&committed, 2, &bank_plan));
+        CHECK(bank_plan.sample == &committed.bank[2].sample &&
+              bank_plan.first == committed.bank[2].loop_first &&
+              bank_plan.last == committed.bank[2].loop_last);
+        CHECK(ts_bank_audition_plan(&committed, 0, &bank_plan));
+        CHECK(bank_plan.first == 0 &&
+              bank_plan.last == committed.bank[0].sample.frames);
+        CHECK(!ts_bank_audition_plan(&committed, 4, &bank_plan));
+        CHECK(committed.bank[1].loop_first == preserved_first &&
+              committed.bank[1].loop_last == preserved_last &&
+              committed.bank[1].loop_mode == preserved_mode &&
+              fabsf(committed.bank[1].loop_crossfade_ms - preserved_crossfade) < 0.0001f);
+        CHECK(!ts_instrument_bank_set_loop_full(&committed, 4,
+                                                error, sizeof(error)));
+    }
     CHECK(ts_instrument_bank_rename(&committed, 2, "  Growing Tail  ",
                                     error, sizeof(error)));
     CHECK(strcmp(committed.bank[2].sample.name, "Growing Tail") == 0);
@@ -829,19 +895,41 @@ int main(void)
         CHECK(restored.bank[slot].tuning.root_note == committed.bank[slot].tuning.root_note);
         CHECK(restored.bank[slot].loop_mode == committed.bank[slot].loop_mode);
         CHECK(restored.bank[slot].has_loop == committed.bank[slot].has_loop);
+        CHECK(restored.bank[slot].loop_first == committed.bank[slot].loop_first);
+        CHECK(restored.bank[slot].loop_last == committed.bank[slot].loop_last);
+        CHECK(fabsf(restored.bank[slot].loop_crossfade_ms -
+                    committed.bank[slot].loop_crossfade_ms) < 0.0001f);
     }
     CHECK(ts_instrument_export_bank(&restored, "test-bank-family", error, sizeof(error)));
     {
         DIR *directory = opendir("test-bank-family");
         struct dirent *entry;
         int wav_count = 0;
+        int looped_wav_count = 0;
+        int expected_looped = 0;
+        for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
+            if (restored.bank[slot].occupied && restored.bank[slot].has_loop)
+                ++expected_looped;
         CHECK(directory != NULL);
         if (directory != NULL) {
             while ((entry = readdir(directory)) != NULL) {
                 size_t length = strlen(entry->d_name);
                 if (length > 4 && strcmp(entry->d_name + length - 4, ".wav") == 0) {
                     char exported[512];
+                    TsSample bank_wav;
+                    int has_loop = 0;
+                    size_t loop_first = 0, loop_last = 0;
+                    TsLoopMode loop_mode = TS_LOOP_FORWARD;
                     snprintf(exported, sizeof(exported), "test-bank-family/%s", entry->d_name);
+                    ts_sample_init(&bank_wav);
+                    CHECK(ts_sample_load_wav_metadata(
+                        &bank_wav, NULL, &has_loop, &loop_first, &loop_last,
+                        &loop_mode, exported, error, sizeof(error)));
+                    if (has_loop) {
+                        CHECK(loop_last > loop_first);
+                        ++looped_wav_count;
+                    }
+                    ts_sample_free(&bank_wav);
                     ++wav_count;
                     remove(exported);
                 }
@@ -849,6 +937,7 @@ int main(void)
             closedir(directory);
         }
         CHECK(wav_count == 4);
+        CHECK(looped_wav_count == expected_looped);
         rmdir("test-bank-family");
     }
     {
@@ -940,6 +1029,44 @@ int main(void)
     remove("test-recipe.tsr");
     remove("test-roundtrip.wav");
 
+    {
+        TsConfig config;
+        TsConfig reopened;
+        ts_config_init(&config);
+        snprintf(config.sample_path, sizeof(config.sample_path), "/samples/drums");
+        snprintf(config.fasttracker_path, sizeof(config.fasttracker_path),
+                 "/opt/ft2 tapehead/ft2-clone");
+        snprintf(config.exchange_path, sizeof(config.exchange_path), "/samples/handoff");
+        CHECK(ts_config_save(&config, "test-tapesister.ini", error, sizeof(error)));
+        ts_config_init(&reopened);
+        CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+        CHECK(strcmp(reopened.sample_path, config.sample_path) == 0);
+        CHECK(strcmp(reopened.fasttracker_path, config.fasttracker_path) == 0);
+        CHECK(strcmp(reopened.exchange_path, config.exchange_path) == 0);
+        CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
+                     "FASTTRACKER EXECUTABLE") == 0);
+        remove("test-tapesister.ini");
+    }
+    {
+        char name[256];
+        char first_path[512];
+        char next_path[512];
+        CHECK(ts_instrument_family_folder_name(&restored, name, sizeof(name)));
+        CHECK(strstr(name, "_family") != NULL);
+        CHECK(mkdir("test-handoff-root", 0700) == 0);
+        CHECK(ts_instrument_next_family_path(
+            &restored, "test-handoff-root", first_path, sizeof(first_path),
+            error, sizeof(error)));
+        CHECK(strstr(first_path, name) != NULL);
+        CHECK(mkdir(first_path, 0700) == 0);
+        CHECK(ts_instrument_next_family_path(
+            &restored, "test-handoff-root", next_path, sizeof(next_path),
+            error, sizeof(error)));
+        CHECK(strcmp(first_path, next_path) != 0);
+        CHECK(strstr(next_path, "_02") != NULL);
+        CHECK(rmdir(first_path) == 0);
+        CHECK(rmdir("test-handoff-root") == 0);
+    }
     {
         FILE *test_file;
         char path[TS_BROWSER_PATH_MAX];
@@ -1125,6 +1252,7 @@ int main(void)
         bank_waveform = waveform_hash(&fb);
         CHECK(bank_waveform != current_waveform);
         CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff2d0039u);
+        CHECK(fb.pixels[340 * TS_UI_WIDTH + 231] == 0xff147dffu);
         ui.bank_view_slot = -1;
         ts_ui_render(&fb, &ui, &restored);
         CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff5d555du);
@@ -1148,6 +1276,16 @@ int main(void)
     ts_ui_render(&fb, &ui, &restored);
     CHECK(fb.pixels[180 * TS_UI_WIDTH + 175] == 0xff5d555du);
     ui.export_choice_open = 0;
+    ui.config_open = 1;
+    ui.config_field = TS_CONFIG_FASTTRACKER_PATH;
+    snprintf(ui.config.fasttracker_path, sizeof(ui.config.fasttracker_path),
+             "/opt/ft2/ft2-clone");
+    ui.config_cursor = strlen(ui.config.fasttracker_path);
+    ui.text_cursor_visible = 1;
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(fb.pixels[163 * TS_UI_WIDTH + 56 +
+                    (int)ui.config_cursor * 6] == 0xffffd265u);
+    ui.config_open = 0;
     ui.show_keyboard = 1;
     {
         uint64_t current_waveform = waveform_hash(&fb);
