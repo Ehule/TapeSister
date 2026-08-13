@@ -9,7 +9,8 @@ static int failures;
 int main(void)
 {
     TsInstrument instrument;
-    TsSample base, body, edge, drift;
+    TsInstrument loaded;
+    TsSample base, body, edge, drift, neutral;
     TsGeneratorRecipe generator = {0x13572468u, TS_GENERATOR_TONAL, 0.25f, 130.8128f};
     char error[160];
     uint64_t base_hash;
@@ -18,17 +19,24 @@ int main(void)
     int sibling = -1;
 
     ts_instrument_init(&instrument);
+    ts_instrument_init(&loaded);
     ts_sample_init(&base);
     ts_sample_init(&body);
     ts_sample_init(&edge);
     ts_sample_init(&drift);
+    ts_sample_init(&neutral);
 
     CHECK(ts_sample_generate(&base, &generator, error, sizeof(error)));
     CHECK(ts_sample_clone(&body, &base, error, sizeof(error)));
     CHECK(ts_sample_clone(&edge, &base, error, sizeof(error)));
     CHECK(ts_sample_clone(&drift, &base, error, sizeof(error)));
+    CHECK(ts_sample_clone(&neutral, &base, error, sizeof(error)));
     base_hash = ts_sample_hash(&base);
     base_peak = ts_sample_peak(&base);
+
+    CHECK(ts_pr13_apply_body_edge_drift(&neutral, 0.0f, 0.0f, 0.5f,
+                                        error, sizeof(error)));
+    CHECK(ts_sample_hash(&neutral) == base_hash);
 
     CHECK(ts_pr13_apply_body_edge_drift(&body, 0.8f, 0.0f, 0.5f,
                                         error, sizeof(error)));
@@ -53,6 +61,9 @@ int main(void)
 
     CHECK(ts_instrument_generate(&instrument, TS_GENERATOR_TONAL, 0x24681357u,
                                  error, sizeof(error)));
+    instrument.process.body = 0.0f;
+    instrument.process.edge = 0.0f;
+    instrument.process.drift = 0.5f;
     instrument.family_relation = TS_FAMILY_CHILD;
     instrument.family_mutation = 0.9f;
     CHECK(ts_pr13_generate_family_candidate(&instrument, 0, 0, &child,
@@ -72,6 +83,11 @@ int main(void)
         process.edge = 0.6f;
         CHECK(!ts_pr13_set_process(&instrument, child, &process, error, sizeof(error)));
     }
+    CHECK(ts_pr13_save_project(&instrument, "test-pr13-lock.tsr", error, sizeof(error)));
+    CHECK(ts_pr13_load_project(&loaded, "test-pr13-lock.tsr", error, sizeof(error)));
+    CHECK(ts_pr13_slot_locked(&loaded, child));
+    remove("test-pr13-lock.tsr");
+
     CHECK(ts_pr13_set_slot_locked(&instrument, child, 0, error, sizeof(error)));
     CHECK(!ts_pr13_slot_locked(&instrument, child));
 
@@ -79,6 +95,8 @@ int main(void)
     ts_sample_free(&body);
     ts_sample_free(&edge);
     ts_sample_free(&drift);
+    ts_sample_free(&neutral);
+    ts_instrument_free(&loaded);
     ts_instrument_free(&instrument);
     if (failures) return 1;
     puts("PR13 tests passed");
