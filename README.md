@@ -1,8 +1,8 @@
 # TapeSister
 
-TapeSister is a standalone sample-instrument forge. The current development slice adds physical tape gestures and forward, reverse, and ping-pong loops to its durable Parent/Current sound model, zero-crossing editor, 16-slot sample-family bank, polyphonic audition, and deterministic DSP shelf.
+TapeSister is a standalone sample-instrument forge. The current development slice adds portable processing recipes, resonant filtering, and three nonlinear shapers to its durable Parent/Current sound model, zero-crossing editor, physical tape gestures, sample-family bank, polyphonic audition, and deterministic DSP shelf.
 
-![TapeSister copy-mix ghost and ping-pong loop](docs/tape-drag-preview.png)
+![TapeSister recipe bank and Shape page](docs/recipe-shaping-preview.png)
 
 ## Parent and Current
 
@@ -13,7 +13,7 @@ Every sound now has two explicit layers:
 
 Dragging or loading a WAV makes that WAV the Parent. Every freshly generated or imported source starts with neutral processing, so Parent and Current are sample-for-sample identical until the first edit. Moving a processing control then rerenders Current from that Parent; it cannot silently return to the factory waveform.
 
-**Generate** advances to a new Tonal, Metallic, Noise, or Pulse generator family and creates a new Parent. **Reseed** keeps the family but creates a different generated Parent. For an imported or committed Parent, Reseed changes only stochastic processing and preserves Parent audio byte-for-byte.
+**Generate** advances to a new Tonal, Metallic, Noise, or Pulse generator family and creates a new Parent. Each family now contains four substantially different synthesis characters plus seeded pitch, envelope, modulation, and spectral variation. **Reseed** keeps the family but chooses a different deterministic member rather than merely changing surface noise. For an imported or committed Parent, Reseed changes only stochastic processing and preserves Parent audio byte-for-byte.
 
 **Reset** returns Current exactly to Parent and is undoable. **Commit** requires a deliberate second click (or second `Ctrl+P`), promotes Current into a new immutable Parent generation, records the previous Parent hash as its immediate ancestor, resets the processing shelf, and starts a fresh edit history.
 
@@ -29,7 +29,7 @@ A source-colored playhead is visible only while audio is running: green identifi
 
 Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in Current. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop. Parent view maps pointer positions through Current's crop before snapping. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
 
-The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape.
+The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. If no selection exists, Set Loop first selects and loops the exact whole Current. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape.
 
 Parent/Current A/B maps the same loop through the crop offset, preserves relative playback progress, and uses the same direction mode. Loop range, mode, and crossfade participate in Undo/Redo. Reset clears them and can be undone; Commit carries the completed loop onto the newly promoted Parent while clearing prior edit history.
 
@@ -47,24 +47,34 @@ Click any slot to audition it and place that member in the waveform display; an 
 
 After auditioning a filled slot, **Set Current** checks that family member out as a new clean editing base. Parent and Current become sample-for-sample identical to the selected audio, stored loop/mode/crossfade metadata follows it, and the complete family bank remains intact. Because every later render must have a stable Parent, this is a deliberate genealogy boundary: it advances the generation, records the previous Parent hash, resets DSP and edit history, and cannot be crossed with Undo. Space and Escape retain the reliable stop-all behavior formerly provided by the redundant mouse button.
 
-While BANK is visible, the top **Export** button and `Ctrl+E` export every occupied slot as a numbered WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR8 projects embed all occupied bank audio and loop metadata; opening TSR6 and TSR7 projects remains supported and initializes missing loop modes as Forward.
+The top **Export** button and `Ctrl+E` always ask whether to export the single Current WAV or the complete Family. Family export writes every occupied slot as a numbered WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR9 projects embed all occupied bank audio and loop metadata; opening TSR6 through TSR8 projects remains supported and initializes fields that did not yet exist.
 
 ## Physical tape gestures
 
 Start any tape gesture inside the existing snapped selection. A cyan ghost waveform follows the pointer and previews the zero-crossing-aware destination before release:
 
-- Shift + left-drag copies and mixes with the audio underneath;
+- Shift + left-drag copies and mixes with the audio underneath using an equal average rather than additive gain;
 - Shift + right-drag copies and overwrites the audio underneath;
-- Ctrl + left-drag lifts/moves and mixes at the destination; and
+- Ctrl + left-drag lifts/moves and mixes at the destination using the same equal average; and
 - Ctrl + right-drag lifts/moves and overwrites at the destination.
 
-Move captures the entire source before clearing it, so an overlapping placement cannot corrupt itself. The lifted range remains the same duration and is filled with silence, with a roughly 1 ms protective fade at exposed edges. Dragging beyond either end grows Current with silence; the placed audio becomes the new selection and Show All reveals the expanded result. Every completed drag is one undoable operation that restores source and destination together. Later Reverse, Normalize, gain, fades, and Crop remain replayable after tape placement; Reset removes the timeline and Commit prints it into the next Parent.
+Where source and existing audio overlap, Mix produces `(underlying + source) / 2`, avoiding the level jump and clipping caused by additive summing. Material placed beyond the existing sample keeps its source level. Move captures the entire source before clearing it, so an overlapping placement cannot corrupt itself. The lifted range remains the same duration and is filled with silence, with a roughly 1 ms protective fade at exposed edges. Dragging beyond either end grows Current with silence; the placed audio becomes the new selection and Show All reveals the expanded result. Every completed drag is one undoable operation that restores source and destination together. Later Reverse, Normalize, gain, fades, and Crop remain replayable after tape placement; Reset removes the timeline and Commit prints it into the next Parent.
+
+## Processing recipes and shaping
+
+The lower panel now cycles **KEYS**, **BANK**, and **RCPE**. RCPE contains eight immutable factory recipes and eight user slots. Click a filled slot to apply its processing to Current as one undoable render. Shift-click an empty user slot to capture the live processing shelf, right-click a filled user slot to rename it, and Shift-right-click to clear it. Factory recipes and their names remain immutable. Manual shelf changes remove the active-slot highlight without altering the stored recipe.
+
+Portable `.tsp` files contain only the named processing settings—never Parent audio, crop, selection, loop, tape edits, or bank members—so the same sound treatment can be applied to unrelated sources. While RCPE is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the instrument. Full `.tsr` projects remain the self-contained way to save a complete sound.
+
+The **Shape** page combines a bypassable resonant Lowpass, Highpass, or Bandpass filter with a bypassable Tape, Clip, or Fold shaper. Cutoff uses logarithmic travel, while resonance, drive, and wet/dry mix expose the musically useful range. These deterministic stages live in the processing recipe and render before Delay and Space; existing ordered tape placements remain downstream. Held and latched notes are remapped across recipe application just like other Current rerenders.
 
 ## DSP shelf
 
-The switchable Noise, Delay, and Space pages preserve the compact interface while exposing useful sound-shaping depth:
+The switchable Noise, Shape, Delay, and Space pages preserve the compact interface while exposing useful sound-shaping depth:
 
 - deterministic white, pink-ish, brown-ish, and metallic noise;
+- resonant lowpass, highpass, and bandpass filtering with explicit bypass;
+- Tape, Clip, and Fold nonlinear shaping with drive, mix, and explicit bypass;
 - mono delay with time, feedback, damping, mix, and explicit bypass;
 - compact mono Schroeder-style ambience with decay, damping, mix, and explicit bypass;
 - one deterministic offline render path for display, audition, export, Reset, Commit, Undo, and Redo.
@@ -83,7 +93,7 @@ Every stage is equally available to generated and imported Parents. Bypass is ex
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
-- self-contained native TSR8 project saving with embedded Parent audio, all bank slots, lineage, editor view, selection, loop mode/metadata, pre- and post-DSP edit timelines, and every DSP parameter; and
+- self-contained native TSR9 project saving with embedded Parent audio, all bank slots, lineage, editor view, selection, loop mode/metadata, pre- and post-DSP edit timelines, and every DSP parameter; and
 - mono 16-bit Current export.
 
 Sample edits run deterministically between the preserved Parent and the live DSP. With no selection they affect the whole Current; with a selection they affect only that range. Commit prints the heard result into the next Parent generation and clears both the edit stack and Undo/Redo history.
@@ -94,18 +104,18 @@ Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the
 
 Load, Save, and Export now open one shared FT2-informed browser rather than writing fixed filenames or requiring a typed path:
 
-- Load lists WAV source files and self-contained `.tsr` projects and preserves the existing instrument if either is invalid;
-- Save lists directories and `.tsr` recipes;
+- Load lists WAV source files, self-contained `.tsr` projects, and portable `.tsp` processing recipes and preserves the existing instrument if any is invalid;
+- Save lists directories and `.tsr` projects, or `.tsp` processing recipes while RCPE is visible;
 - Export lists directories and WAV files;
 - mouse wheel, draggable scrollbar, Up/Down, Page Up/Down, Home/End, and row clicking navigate long directories;
-- double-click or Enter opens a directory, WAV, or TSR project;
-- Save and Export remember the current directory, provide filename entry with a focus-aware blinking caret, and append the proper extension;
+- double-click or Enter opens a directory, WAV, TSR project, or TSP recipe;
+- Save and Export remember the current directory, provide filename entry with a focus-aware blinking caret, support Left/Right/Home/End navigation plus insertion, Backspace, and Delete at the caret, and append the proper extension;
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR8 embeds the Parent waveform, complete sample-family bank, loop directions, and the replayable tape-edit timeline in one portable file. TSR6/TSR7 projects remain loadable; TSR6 gains a root-only bank, and both older formats default to Forward looping. Older experimental JSON recipes did not contain Parent audio and therefore cannot reopen as self-contained projects.
+TSR9 embeds the Parent waveform, complete sample-family bank, loop directions, replayable tape-edit timeline, filter, and shaper in one portable file. TSR6 through TSR8 projects remain loadable with deterministic defaults for fields absent from those versions. TSP1 is deliberately source-independent and therefore complements rather than replaces the project format.
 
-The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV and TSR files can also be dragged onto the window or passed on the command line.
+The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 
 The temporary colors come directly from `assets/tapehead.pal`, supplied by the user. The interface remains standalone: FT2 and the archived prototype are reference shelves, not inherited architecture, and TapeSister does not depend on or modify FT2 Tapehead Edition.
 
@@ -127,7 +137,7 @@ make
 ./tapesister
 ```
 
-Pass a WAV or TSR path on the command line, drag it onto the window, or choose it through **Load**.
+Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or choose it through **Load**.
 
 ## Keys and files
 
@@ -135,7 +145,7 @@ Pass a WAV or TSR path on the command line, drag it onto the window, or choose i
 - Upper octave: `Q 2 W 3 E R 5 T 6 Y 7 U`
 - Stop all: `Space` or `Escape`
 - Load browser: `Ctrl+O`
-- Save browser / Export Current or visible Bank: `Ctrl+S` / `Ctrl+E`
+- Save browser / choose Export Current or Family: `Ctrl+S` / `Ctrl+E`
 - Toggle Parent/Current audition: `Ctrl+B`
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`
 - Select all: `Ctrl+A`
@@ -151,4 +161,4 @@ Pass a WAV or TSR path on the command line, drag it onto the window, or choose i
 - Browser confirm/cancel: `Enter` / `Escape`
 - Build/toggle a five-note chord: `Shift` + onscreen-key click
 
-Ripple cut, multiple loops, automatic loop candidates, the zero-crossing loop-maker transformation, deeper synthesis/filter/shaper stages, expanded factory recipes, and full genealogy/propagation remain separate, visually verified slices.
+Ripple cut, multiple loops, automatic loop candidates, the zero-crossing loop-maker transformation, deeper synthesis and modulation stages, recipe renaming/organization, and full genealogy/propagation remain separate, visually verified slices.

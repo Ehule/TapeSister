@@ -41,6 +41,20 @@ typedef enum {
     TS_NOISE_COLOR_COUNT
 } TsNoiseColor;
 
+typedef enum {
+    TS_FILTER_LOWPASS = 0,
+    TS_FILTER_HIGHPASS,
+    TS_FILTER_BANDPASS,
+    TS_FILTER_MODE_COUNT
+} TsFilterMode;
+
+typedef enum {
+    TS_SHAPER_TAPE = 0,
+    TS_SHAPER_CLIP,
+    TS_SHAPER_FOLD,
+    TS_SHAPER_MODE_COUNT
+} TsShaperMode;
+
 typedef struct {
     uint32_t seed;
     TsGeneratorKind kind;
@@ -65,6 +79,14 @@ typedef struct {
     float reverb_decay;
     float reverb_damping;
     float reverb_mix;
+    int filter_enabled;
+    TsFilterMode filter_mode;
+    float filter_cutoff_hz;
+    float filter_resonance;
+    int shaper_enabled;
+    TsShaperMode shaper_mode;
+    float shaper_drive;
+    float shaper_mix;
 } TsProcessRecipe;
 
 typedef enum {
@@ -226,6 +248,8 @@ int ts_instrument_redo(TsInstrument *instrument, char *error, size_t error_size)
 size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, int width);
 const char *ts_generator_name(TsGeneratorKind kind);
 const char *ts_noise_color_name(TsNoiseColor color);
+const char *ts_filter_mode_name(TsFilterMode mode);
+const char *ts_shaper_mode_name(TsShaperMode mode);
 const char *ts_sample_edit_name(TsSampleEditKind kind);
 void ts_process_recipe_reset(TsProcessRecipe *process);
 int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,

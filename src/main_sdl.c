@@ -46,6 +46,15 @@ static int path_is_tsr(const char *path)
            tolower((unsigned char)extension[3]) == 'r';
 }
 
+static int path_is_tsp(const char *path)
+{
+    const char *extension = path != NULL ? strrchr(path, '.') : NULL;
+    return extension != NULL && strlen(extension) == 4u &&
+           tolower((unsigned char)extension[1]) == 't' &&
+           tolower((unsigned char)extension[2]) == 's' &&
+           tolower((unsigned char)extension[3]) == 'p';
+}
+
 static void audio_callback(void *userdata, Uint8 *stream, int bytes)
 {
     AudioState *audio = (AudioState *)userdata;
@@ -310,7 +319,35 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 {
     char error[160];
     int recipe = path_is_tsr(path);
+    int preset = path_is_tsp(path);
     int ok;
+    if (preset) {
+        TsPortableRecipe loaded;
+        int slot = 0;
+        ok = ts_recipe_load(&loaded, path, error, sizeof(error));
+        if (ok) {
+            slot = ts_recipe_bank_add_user(&ui->recipes, &loaded, error, sizeof(error));
+            ok = slot > 0;
+        }
+        if (ok) {
+            lock_edit(device, audio);
+            ok = ts_instrument_set_process(instrument, &loaded.process,
+                                           error, sizeof(error));
+            unlock_edit(device, audio, ui, instrument);
+        }
+        if (!ok && slot > 0) {
+            char ignored[80];
+            ts_recipe_bank_clear(&ui->recipes, slot - 1,
+                                 ignored, sizeof(ignored));
+        }
+        if (ok) {
+            ui->show_keyboard = 0;
+            ui->show_recipes = 1;
+            snprintf(ui->status, sizeof(ui->status), "LOADED RECIPE %.31s - UNDO RESTORES",
+                     loaded.name);
+        } else snprintf(ui->status, sizeof(ui->status), "TSP LOAD FAILED: %.131s", error);
+        return ok;
+    }
     lock_edit(device, audio);
     ui->bank_view_slot = -1;
     if (audio->bank_slot >= 0) {
@@ -389,6 +426,7 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     lock_edit(device, audio);
     ok = ts_instrument_set_process(instrument, &process, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
+    if (ok) ui->recipes.active_slot = -1;
     if (ok && strcmp(label, "BODY") == 0)
         snprintf(ui->status, sizeof(ui->status), "BODY %.2F - PARENT PRESERVED", process.body);
     else if (ok && strcmp(label, "EDGE") == 0)
@@ -397,6 +435,30 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
         snprintf(ui->status, sizeof(ui->status), "DRIFT %.2F - PARENT PRESERVED", process.drift);
     else if (ok) snprintf(ui->status, sizeof(ui->status), "%s UPDATED - PARENT PRESERVED", label);
     else snprintf(ui->status, sizeof(ui->status), "PROCESS FAILED: %.130s", error);
+}
+
+static void apply_recipe_slot(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                              TsInstrument *instrument, int slot)
+{
+    if (slot < 0 || slot >= TS_RECIPE_SLOT_COUNT ||
+        !ui->recipes.slots[slot].occupied) {
+        snprintf(ui->status, sizeof(ui->status), "EMPTY USER RECIPE - SHIFT+CLICK CAPTURES");
+        return;
+    }
+    apply_process(device, audio, ui, instrument,
+                  ui->recipes.slots[slot].process, ui->recipes.slots[slot].name);
+    ui->recipes.active_slot = slot;
+}
+
+static void capture_recipe_slot(TsUiState *ui, const TsInstrument *instrument, int slot)
+{
+    char error[160];
+    char name[32];
+    snprintf(name, sizeof(name), "USER %02d", slot - TS_FACTORY_RECIPE_COUNT + 1);
+    if (ts_recipe_bank_capture(&ui->recipes, slot, &instrument->process,
+                               name, error, sizeof(error)))
+        snprintf(ui->status, sizeof(ui->status), "CAPTURED %.31s - TOP SAVE WRITES TSP", name);
+    else snprintf(ui->status, sizeof(ui->status), "RECIPE CAPTURE FAILED: %.126s", error);
 }
 
 static void reset_current(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -469,12 +531,18 @@ static void set_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                      TsInstrument *instrument)
 {
     char error[160];
+    int selected_automatically = !instrument->has_selection;
     int ok;
     lock_edit(device, audio);
     ok = ts_instrument_set_loop_from_selection(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "LOOP SET %zu FRAMES - ZERO SNAPPED",
-                     instrument->loop_last - instrument->loop_first);
+    if (ok && selected_automatically)
+        snprintf(ui->status, sizeof(ui->status),
+                 "WHOLE CURRENT SELECTED AND LOOPED - %zu FRAMES",
+                 instrument->loop_last - instrument->loop_first);
+    else if (ok) snprintf(ui->status, sizeof(ui->status),
+                          "LOOP SET %zu FRAMES - ZERO SNAPPED",
+                          instrument->loop_last - instrument->loop_first);
     else snprintf(ui->status, sizeof(ui->status), "LOOP FAILED: %.140s", error);
 }
 
@@ -677,8 +745,53 @@ static void begin_bank_rename(TsUiState *ui, const TsInstrument *instrument, int
     ui->renaming_bank_slot = slot;
     snprintf(ui->bank_rename, sizeof(ui->bank_rename), "%s",
              instrument->bank[slot].sample.name);
+    ui->bank_rename_cursor = strlen(ui->bank_rename);
     SDL_StartTextInput();
     snprintf(ui->status, sizeof(ui->status), "RENAMING BANK %02d", slot + 1);
+}
+
+static void text_insert_ascii(char *buffer, size_t capacity, size_t *cursor,
+                              const char *text)
+{
+    size_t length = strlen(buffer);
+    if (*cursor > length) *cursor = length;
+    while (text != NULL && *text != '\0' && length + 1u < capacity) {
+        unsigned char c = (unsigned char)*text++;
+        if (c >= 32u && c <= 126u) {
+            memmove(buffer + *cursor + 1u, buffer + *cursor,
+                    length - *cursor + 1u);
+            buffer[(*cursor)++] = (char)c;
+            ++length;
+        }
+    }
+}
+
+static void text_backspace(char *buffer, size_t *cursor)
+{
+    size_t length = strlen(buffer);
+    if (*cursor > length) *cursor = length;
+    if (*cursor > 0) {
+        memmove(buffer + *cursor - 1u, buffer + *cursor,
+                length - *cursor + 1u);
+        --*cursor;
+    }
+}
+
+static void text_delete(char *buffer, size_t *cursor)
+{
+    size_t length = strlen(buffer);
+    if (*cursor > length) *cursor = length;
+    if (*cursor < length)
+        memmove(buffer + *cursor, buffer + *cursor + 1u, length - *cursor);
+}
+
+static void text_move_cursor(const char *buffer, size_t *cursor, int amount)
+{
+    ptrdiff_t position = (ptrdiff_t)*cursor + amount;
+    size_t length = strlen(buffer);
+    if (position < 0) position = 0;
+    if ((size_t)position > length) position = (ptrdiff_t)length;
+    *cursor = (size_t)position;
 }
 
 static void cancel_bank_rename(TsUiState *ui)
@@ -686,6 +799,7 @@ static void cancel_bank_rename(TsUiState *ui)
     int slot = ui->renaming_bank_slot;
     ui->renaming_bank_slot = -1;
     ui->bank_rename[0] = '\0';
+    ui->bank_rename_cursor = 0;
     SDL_StopTextInput();
     snprintf(ui->status, sizeof(ui->status), "BANK %02d RENAME CANCELLED", slot + 1);
 }
@@ -701,8 +815,61 @@ static void finish_bank_rename(TsUiState *ui, TsInstrument *instrument)
     }
     ui->renaming_bank_slot = -1;
     ui->bank_rename[0] = '\0';
+    ui->bank_rename_cursor = 0;
     SDL_StopTextInput();
     snprintf(ui->status, sizeof(ui->status), "RENAMED BANK %02d", slot + 1);
+}
+
+static void begin_recipe_rename(TsUiState *ui, int slot)
+{
+    if (slot < TS_FACTORY_RECIPE_COUNT) {
+        snprintf(ui->status, sizeof(ui->status), "FACTORY RECIPE NAMES ARE FIXED");
+        return;
+    }
+    if (slot >= TS_RECIPE_SLOT_COUNT || !ui->recipes.slots[slot].occupied) {
+        snprintf(ui->status, sizeof(ui->status), "CAPTURE OR LOAD A USER RECIPE FIRST");
+        return;
+    }
+    ui->renaming_recipe_slot = slot;
+    snprintf(ui->recipe_rename, sizeof(ui->recipe_rename), "%s",
+             ui->recipes.slots[slot].name);
+    ui->recipe_rename_cursor = strlen(ui->recipe_rename);
+    SDL_StartTextInput();
+    snprintf(ui->status, sizeof(ui->status), "RENAMING USER RECIPE %02d", slot + 1);
+}
+
+static void cancel_recipe_rename(TsUiState *ui)
+{
+    int slot = ui->renaming_recipe_slot;
+    ui->renaming_recipe_slot = -1;
+    ui->recipe_rename[0] = '\0';
+    ui->recipe_rename_cursor = 0;
+    SDL_StopTextInput();
+    snprintf(ui->status, sizeof(ui->status), "RECIPE %02d RENAME CANCELLED", slot + 1);
+}
+
+static void finish_recipe_rename(TsUiState *ui)
+{
+    char error[160];
+    int slot = ui->renaming_recipe_slot;
+    if (!ts_recipe_bank_rename(&ui->recipes, slot, ui->recipe_rename,
+                               error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "RECIPE RENAME FAILED: %.130s", error);
+        return;
+    }
+    ui->renaming_recipe_slot = -1;
+    ui->recipe_rename[0] = '\0';
+    ui->recipe_rename_cursor = 0;
+    SDL_StopTextInput();
+    snprintf(ui->status, sizeof(ui->status), "RENAMED USER RECIPE %02d", slot + 1);
+}
+
+static void begin_export_choice(TsUiState *ui)
+{
+    ui->commit_armed = 0;
+    ui->export_choice_open = 1;
+    SDL_StopTextInput();
+    snprintf(ui->status, sizeof(ui->status), "EXPORT CURRENT WAV OR COMPLETE FAMILY");
 }
 
 static unsigned bank_modifiers(SDL_Keymod mod)
@@ -717,6 +884,7 @@ static unsigned bank_modifiers(SDL_Keymod mod)
 static void browser_open(TsUiState *ui, TsBrowserMode mode)
 {
     const char *filename = mode == TS_BROWSER_SAVE_RECIPE ? "tapesister-recipe.tsr" :
+                           mode == TS_BROWSER_SAVE_PRESET ? "my-process.tsp" :
                            mode == TS_BROWSER_EXPORT_WAV ? "tapesister-export.wav" : "";
     ui->commit_armed = 0;
     SDL_StopTextInput();
@@ -797,6 +965,24 @@ static int save_recipe_atomic(const TsInstrument *instrument, const char *destin
     return finish_atomic_file(temporary, destination, error, error_size);
 }
 
+static int save_preset_atomic(const TsProcessRecipe *process, const char *name,
+                              const char *destination, char *error, size_t error_size)
+{
+    char temporary[TS_BROWSER_PATH_MAX + 32];
+    TsPortableRecipe recipe;
+    int written = snprintf(temporary, sizeof(temporary), "%s.tapesister-tmp", destination);
+    if (written < 0 || (size_t)written >= sizeof(temporary)) {
+        snprintf(error, error_size, "Destination path is too long");
+        return 0;
+    }
+    if (!ts_recipe_from_process(&recipe, process, name) ||
+        !ts_recipe_save(&recipe, temporary, error, error_size)) {
+        remove(temporary);
+        return 0;
+    }
+    return finish_atomic_file(temporary, destination, error, error_size);
+}
+
 static int export_wav_atomic(const TsSample *sample, const char *destination,
                              char *error, size_t error_size)
 {
@@ -850,8 +1036,18 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         }
         if (browser->mode == TS_BROWSER_SAVE_RECIPE) {
             ok = save_recipe_atomic(instrument, path, error, sizeof(error));
-            snprintf(ui->status, sizeof(ui->status), ok ? "SAVED RECIPE %.108s" :
+            snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
                      "SAVE FAILED: %.135s", ok ? path : error);
+        } else if (browser->mode == TS_BROWSER_SAVE_PRESET) {
+            char name[TS_RECIPE_NAME_MAX + 1];
+            size_t length;
+            snprintf(name, sizeof(name), "%.31s", browser->filename);
+            length = strlen(name);
+            if (length > 4u && name[length - 4u] == '.') name[length - 4u] = '\0';
+            ok = save_preset_atomic(&instrument->process, name, path,
+                                    error, sizeof(error));
+            snprintf(ui->status, sizeof(ui->status), ok ? "SAVED PROCESS RECIPE %.99s" :
+                     "TSP SAVE FAILED: %.131s", ok ? path : error);
         } else if (browser->mode == TS_BROWSER_EXPORT_WAV) {
             ok = export_wav_atomic(&instrument->current, path, error, sizeof(error));
             snprintf(ui->status, sizeof(ui->status), ok ? "EXPORTED CURRENT %.101s" :
@@ -1062,22 +1258,22 @@ int main(int argc, char **argv)
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) running = 0;
-            else if (event.type == SDL_DROPFILE && ui.renaming_bank_slot >= 0) {
+            else if (event.type == SDL_DROPFILE &&
+                     (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
+                      ui.export_choice_open || ui.browser.mode != TS_BROWSER_CLOSED)) {
                 snprintf(ui.status, sizeof(ui.status),
-                         "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");
+                         "FINISH OR CANCEL THE OPEN DIALOG FIRST");
                 SDL_free(event.drop.file);
             }
             else if (event.type == SDL_DROPFILE) {
                 load_instrument(device, &audio, &ui, &instrument, event.drop.file);
                 SDL_free(event.drop.file);
             } else if (event.type == SDL_TEXTINPUT && ui.renaming_bank_slot >= 0) {
-                size_t length = strlen(ui.bank_rename);
-                for (const unsigned char *at = (const unsigned char *)event.text.text;
-                     *at != '\0' && length + 1u < sizeof(ui.bank_rename); ++at) {
-                    if (*at >= 32u && *at <= 126u)
-                        ui.bank_rename[length++] = (char)*at;
-                }
-                ui.bank_rename[length] = '\0';
+                text_insert_ascii(ui.bank_rename, sizeof(ui.bank_rename),
+                                  &ui.bank_rename_cursor, event.text.text);
+            } else if (event.type == SDL_TEXTINPUT && ui.renaming_recipe_slot >= 0) {
+                text_insert_ascii(ui.recipe_rename, sizeof(ui.recipe_rename),
+                                  &ui.recipe_rename_cursor, event.text.text);
             } else if (event.type == SDL_TEXTINPUT && ui.browser.mode != TS_BROWSER_CLOSED) {
                 if (ui.browser.filename_focus && ui.browser.mode != TS_BROWSER_LOAD_WAV)
                     ts_browser_append_filename(&ui.browser, event.text.text);
@@ -1089,18 +1285,55 @@ int main(int argc, char **argv)
                     if (key == SDLK_ESCAPE) cancel_bank_rename(&ui);
                     else if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
                         finish_bank_rename(&ui, &instrument);
-                    else if (key == SDLK_BACKSPACE) {
-                        size_t length = strlen(ui.bank_rename);
-                        if (length > 0) {
-                            --length;
-                            while (length > 0 &&
-                                   ((unsigned char)ui.bank_rename[length] & 0xc0u) == 0x80u)
-                                --length;
-                            ui.bank_rename[length] = '\0';
-                        }
+                    else if (key == SDLK_BACKSPACE)
+                        text_backspace(ui.bank_rename, &ui.bank_rename_cursor);
+                    else if (key == SDLK_DELETE)
+                        text_delete(ui.bank_rename, &ui.bank_rename_cursor);
+                    else if (key == SDLK_LEFT)
+                        text_move_cursor(ui.bank_rename, &ui.bank_rename_cursor, -1);
+                    else if (key == SDLK_RIGHT)
+                        text_move_cursor(ui.bank_rename, &ui.bank_rename_cursor, 1);
+                    else if (key == SDLK_HOME) ui.bank_rename_cursor = 0;
+                    else if (key == SDLK_END) ui.bank_rename_cursor = strlen(ui.bank_rename);
+                } else if (ui.renaming_recipe_slot >= 0) {
+                    if (key == SDLK_ESCAPE) cancel_recipe_rename(&ui);
+                    else if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
+                        finish_recipe_rename(&ui);
+                    else if (key == SDLK_BACKSPACE)
+                        text_backspace(ui.recipe_rename, &ui.recipe_rename_cursor);
+                    else if (key == SDLK_DELETE)
+                        text_delete(ui.recipe_rename, &ui.recipe_rename_cursor);
+                    else if (key == SDLK_LEFT)
+                        text_move_cursor(ui.recipe_rename, &ui.recipe_rename_cursor, -1);
+                    else if (key == SDLK_RIGHT)
+                        text_move_cursor(ui.recipe_rename, &ui.recipe_rename_cursor, 1);
+                    else if (key == SDLK_HOME) ui.recipe_rename_cursor = 0;
+                    else if (key == SDLK_END)
+                        ui.recipe_rename_cursor = strlen(ui.recipe_rename);
+                } else if (ui.export_choice_open) {
+                    if (key == SDLK_ESCAPE) {
+                        ui.export_choice_open = 0;
+                        snprintf(ui.status, sizeof(ui.status), "EXPORT CANCELLED");
+                    } else if (key == SDLK_c || key == SDLK_RETURN || key == SDLK_KP_ENTER) {
+                        ui.export_choice_open = 0;
+                        browser_open(&ui, TS_BROWSER_EXPORT_WAV);
+                    } else if (key == SDLK_f) {
+                        ui.export_choice_open = 0;
+                        browser_open_bank(&ui, &instrument);
                     }
                 } else if (ui.browser.mode != TS_BROWSER_CLOSED) {
                     if (key == SDLK_ESCAPE) browser_cancel(&ui);
+                    else if (ui.browser.filename_focus && key == SDLK_LEFT)
+                        ts_browser_move_filename_cursor(&ui.browser, -1);
+                    else if (ui.browser.filename_focus && key == SDLK_RIGHT)
+                        ts_browser_move_filename_cursor(&ui.browser, 1);
+                    else if (ui.browser.filename_focus && key == SDLK_HOME)
+                        ts_browser_set_filename_cursor(&ui.browser, 0);
+                    else if (ui.browser.filename_focus && key == SDLK_END)
+                        ts_browser_set_filename_cursor(&ui.browser,
+                                                       strlen(ui.browser.filename));
+                    else if (ui.browser.filename_focus && key == SDLK_DELETE)
+                        ts_browser_delete_filename(&ui.browser);
                     else if (key == SDLK_UP) {
                         ui.browser.filename_focus = 0;
                         ts_browser_move_selection(&ui.browser, -1);
@@ -1143,10 +1376,10 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status), "CTRL+P AGAIN TO COMMIT CURRENT AS PARENT");
                     }
                 } else if ((mod & KMOD_CTRL) && key == SDLK_s) {
-                    browser_open(&ui, TS_BROWSER_SAVE_RECIPE);
+                    browser_open(&ui, ui.show_recipes ?
+                                 TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_e) {
-                    if (ui.show_keyboard) browser_open(&ui, TS_BROWSER_EXPORT_WAV);
-                    else browser_open_bank(&ui, &instrument);
+                    begin_export_choice(&ui);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_b) {
                     switch_audition_source(device, &audio, &ui, &instrument,
                         ui.audition_source == TS_AUDITION_CURRENT ?
@@ -1250,11 +1483,15 @@ int main(int argc, char **argv)
                         begin_note(device, &audio, &ui, &instrument, note, obtained.freq, 0);
                 }
             } else if (event.type == SDL_KEYUP && ui.renaming_bank_slot < 0 &&
+                       ui.renaming_recipe_slot < 0 && !ui.export_choice_open &&
+                       ui.browser.mode == TS_BROWSER_CLOSED &&
                        note_for_key(event.key.keysym.sym) >= 0) {
                 release_note(device, &audio, &ui, note_for_key(event.key.keysym.sym));
-            } else if (event.type == SDL_MOUSEWHEEL && ui.renaming_bank_slot >= 0) {
+            } else if (event.type == SDL_MOUSEWHEEL &&
+                       (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
+                        ui.export_choice_open)) {
                 snprintf(ui.status, sizeof(ui.status),
-                         "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");
+                         "FINISH OR CANCEL THE OPEN DIALOG FIRST");
             } else if (event.type == SDL_MOUSEWHEEL && ui.browser.mode != TS_BROWSER_CLOSED) {
                 int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
                               -event.wheel.y : event.wheel.y;
@@ -1304,8 +1541,10 @@ int main(int argc, char **argv)
                                  "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
                     }
                 }
-            } else if (event.type == SDL_MOUSEMOTION && ui.renaming_bank_slot >= 0) {
-                /* Bank rename is modal; pointer actions cannot leak through it. */
+            } else if (event.type == SDL_MOUSEMOTION &&
+                       (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
+                        ui.export_choice_open)) {
+                /* Modal dialogs own pointer input. */
             } else if (event.type == SDL_MOUSEMOTION && ui.browser.dragging_scrollbar) {
                 int x, y;
                 int maximum = ui.browser.entry_count - TS_BROWSER_VISIBLE_ROWS;
@@ -1357,6 +1596,17 @@ int main(int argc, char **argv)
                 if (ui.renaming_bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");
+                } else if (ui.renaming_recipe_slot >= 0) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "FINISH RECIPE NAME WITH ENTER OR CANCEL WITH ESC");
+                } else if (ui.export_choice_open) {
+                    if (x >= 172 && x < 308 && y >= 176 && y < 199) {
+                        ui.export_choice_open = 0;
+                        browser_open(&ui, TS_BROWSER_EXPORT_WAV);
+                    } else if (x >= 324 && x < 468 && y >= 176 && y < 199) {
+                        ui.export_choice_open = 0;
+                        browser_open_bank(&ui, &instrument);
+                    }
                 } else if (ui.browser.mode != TS_BROWSER_CLOSED) {
                     if (x >= TS_BROWSER_LIST_X && x < TS_BROWSER_LIST_X + TS_BROWSER_LIST_W &&
                         y >= TS_BROWSER_LIST_Y && y < TS_BROWSER_LIST_Y + TS_BROWSER_SCROLL_H) {
@@ -1392,6 +1642,15 @@ int main(int argc, char **argv)
                         }
                     } else if (ui.browser.mode != TS_BROWSER_LOAD_WAV &&
                                x >= 58 && x < 576 && y >= 294 && y < 318) {
+                        size_t length = strlen(ui.browser.filename);
+                        size_t cursor = ui.browser.filename_cursor > length ? length :
+                                        ui.browser.filename_cursor;
+                        size_t first = length > 78 ? length - 78 : 0;
+                        size_t clicked;
+                        if (cursor < first) first = cursor;
+                        if (cursor > first + 78) first = cursor - 78;
+                        clicked = first + (size_t)((x - 64 + 3) / 6);
+                        ts_browser_set_filename_cursor(&ui.browser, clicked);
                         ui.browser.filename_focus = 1;
                         ui.browser.overwrite_armed = 0;
                         SDL_StartTextInput();
@@ -1403,10 +1662,10 @@ int main(int argc, char **argv)
                         browser_cancel(&ui);
                     }
                 } else if (y >= 4 && y < 28 && x >= 447 && x < 529) {
-                    browser_open(&ui, TS_BROWSER_SAVE_RECIPE);
+                    browser_open(&ui, ui.show_recipes ?
+                                 TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 535 && x < 630) {
-                    if (ui.show_keyboard) browser_open(&ui, TS_BROWSER_EXPORT_WAV);
-                    else browser_open_bank(&ui, &instrument);
+                    begin_export_choice(&ui);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     ui.bank_view_slot = -1;
@@ -1473,21 +1732,24 @@ int main(int argc, char **argv)
                     if (*control < 0.0f) *control = 0.0f;
                     if (*control > 1.0f) *control = 1.0f;
                     apply_process(device, &audio, &ui, &instrument, process, label);
-                } else if (y >= 233 && y < 256 && x >= 345 && x < 398) {
+                } else if (y >= 233 && y < 256 && x >= 345 && x < 390) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_EDIT;
                     snprintf(ui.status, sizeof(ui.status), "SAMPLE EDITING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 402 && x < 455) {
+                } else if (y >= 233 && y < 256 && x >= 394 && x < 439) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_NOISE;
                     snprintf(ui.status, sizeof(ui.status), "NOISE PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 459 && x < 512) {
+                } else if (y >= 233 && y < 256 && x >= 443 && x < 488) {
+                    ui.commit_armed = 0; ui.fx_page = TS_FX_SHAPE;
+                    snprintf(ui.status, sizeof(ui.status), "FILTER AND SHAPER PAGE");
+                } else if (y >= 233 && y < 256 && x >= 492 && x < 537) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_DELAY;
                     snprintf(ui.status, sizeof(ui.status), "DELAY PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 516 && x < 569) {
+                } else if (y >= 233 && y < 256 && x >= 541 && x < 584) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_SPACE;
                     snprintf(ui.status, sizeof(ui.status), "SPACE PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 573 && x < 630) {
+                } else if (y >= 233 && y < 256 && x >= 588 && x < 630) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_LOOP;
-                    snprintf(ui.status, sizeof(ui.status), "FORWARD LOOP EDITING PAGE");
+                    snprintf(ui.status, sizeof(ui.status), "LOOP EDITING PAGE");
                 } else if (y >= 261 && y < 285) {
                     TsProcessRecipe process = instrument.process;
                     int changed = 0;
@@ -1519,6 +1781,38 @@ int main(int argc, char **argv)
                             process.noise_amount = (float)(x - 118) / 180.0f; changed = 1;
                         } else if (x >= 312 && x < 462) {
                             process.noise_color = (TsNoiseColor)((process.noise_color + 1) % TS_NOISE_COLOR_COUNT);
+                            changed = 1;
+                        }
+                    } else if (ui.fx_page == TS_FX_SHAPE) {
+                        label = "SHAPE";
+                        if (x >= 10 && x < 100) {
+                            if (!process.filter_enabled) {
+                                process.filter_enabled = 1;
+                                process.filter_mode = TS_FILTER_LOWPASS;
+                            } else if (process.filter_mode + 1 < TS_FILTER_MODE_COUNT) {
+                                process.filter_mode = (TsFilterMode)(process.filter_mode + 1);
+                            } else process.filter_enabled = 0;
+                            changed = 1;
+                        } else if (x >= 104 && x < 198) {
+                            float normalized = (float)(x - 104) / 94.0f;
+                            process.filter_cutoff_hz = 20.0f * powf(1000.0f, normalized);
+                            changed = 1;
+                        } else if (x >= 202 && x < 282) {
+                            process.filter_resonance = (float)(x - 202) / 80.0f;
+                            changed = 1;
+                        } else if (x >= 286 && x < 380) {
+                            if (!process.shaper_enabled) {
+                                process.shaper_enabled = 1;
+                                process.shaper_mode = TS_SHAPER_TAPE;
+                            } else if (process.shaper_mode + 1 < TS_SHAPER_MODE_COUNT) {
+                                process.shaper_mode = (TsShaperMode)(process.shaper_mode + 1);
+                            } else process.shaper_enabled = 0;
+                            changed = 1;
+                        } else if (x >= 384 && x < 476) {
+                            process.shaper_drive = 1.0f + (float)(x - 384) / 92.0f * 15.0f;
+                            changed = 1;
+                        } else if (x >= 480 && x < 572) {
+                            process.shaper_mix = (float)(x - 480) / 92.0f;
                             changed = 1;
                         }
                     } else if (ui.fx_page == TS_FX_DELAY) {
@@ -1597,13 +1891,34 @@ int main(int argc, char **argv)
                 } else if (y >= 289 && y < 312 && x >= 521 && x < 583) {
                     history_move(device, &audio, &ui, &instrument, 1);
                 } else if (y >= 289 && y < 312 && x >= 588 && x < 630) {
-                    ui.show_keyboard = !ui.show_keyboard;
+                    if (ui.show_keyboard) {
+                        ui.show_keyboard = 0;
+                        ui.show_recipes = 0;
+                    } else if (!ui.show_recipes) {
+                        ui.show_recipes = 1;
+                        ui.bank_view_slot = -1;
+                    } else {
+                        ui.show_keyboard = 1;
+                        ui.show_recipes = 0;
+                    }
                     snprintf(ui.status, sizeof(ui.status), "%s PANEL",
-                             ui.show_keyboard ? "KEYS" : "SAMPLE BANK");
+                             ui.show_keyboard ? "KEYS" :
+                             ui.show_recipes ? "PROCESS RECIPES" : "SAMPLE BANK");
                 } else {
                     int note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
-                    int bank_slot = ui.show_keyboard ? -1 : ts_ui_bank_slot_from_point(x, y);
-                    if (bank_slot >= 0) {
+                    int bank_slot = !ui.show_keyboard && !ui.show_recipes ?
+                                    ts_ui_bank_slot_from_point(x, y) : -1;
+                    int recipe_slot = ui.show_recipes ?
+                                      ts_ui_recipe_slot_from_point(x, y) : -1;
+                    if (recipe_slot >= 0) {
+                        unsigned modifiers = bank_modifiers(mod);
+                        if (modifiers == 0)
+                            apply_recipe_slot(device, &audio, &ui, &instrument, recipe_slot);
+                        else if (modifiers == TS_UI_BANK_MOD_SHIFT)
+                            capture_recipe_slot(&ui, &instrument, recipe_slot);
+                        else snprintf(ui.status, sizeof(ui.status),
+                                      "CLICK APPLY  SHIFT+CLICK CAPTURE USER");
+                    } else if (bank_slot >= 0) {
                         TsUiBankAction action = ts_ui_bank_action(
                             0, bank_modifiers(mod));
                         if (action == TS_UI_BANK_ACTION_AUDITION) {
@@ -1643,27 +1958,50 @@ int main(int argc, char **argv)
                        ui.browser.mode == TS_BROWSER_CLOSED) {
                 int x, y;
                 int bank_slot;
+                int recipe_slot;
                 TsUiBankAction action;
                 SDL_Keymod mod = SDL_GetModState();
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
                 bank_slot = ts_ui_bank_slot_from_point(x, y);
+                recipe_slot = ts_ui_recipe_slot_from_point(x, y);
                 action = ts_ui_bank_action(1, bank_modifiers(mod));
                 if (ui.renaming_bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");
+                } else if (ui.renaming_recipe_slot >= 0) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "FINISH RECIPE NAME WITH ENTER OR CANCEL WITH ESC");
+                } else if (ui.export_choice_open) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "CHOOSE CURRENT OR FAMILY  ESC CANCELS");
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     if (!begin_tape_drag(&ui, &instrument, SDL_BUTTON_RIGHT,
                                          mod, x - TS_WAVE_X))
                         snprintf(ui.status, sizeof(ui.status),
                                  "SHIFT+RMB COPY OVERWRITE  CTRL+RMB MOVE OVERWRITE");
-                } else if (!ui.show_keyboard && bank_slot >= 0 &&
+                } else if (ui.show_recipes && recipe_slot >= 0 &&
+                           (mod & KMOD_SHIFT)) {
+                    char error[160];
+                    if (ts_recipe_bank_clear(&ui.recipes, recipe_slot,
+                                             error, sizeof(error)))
+                        snprintf(ui.status, sizeof(ui.status), "CLEARED USER RECIPE %02d",
+                                 recipe_slot + 1);
+                    else snprintf(ui.status, sizeof(ui.status),
+                                  "RECIPE CLEAR FAILED: %.126s", error);
+                } else if (ui.show_recipes && recipe_slot >= 0 &&
+                           bank_modifiers(mod) == 0) {
+                    begin_recipe_rename(&ui, recipe_slot);
+                } else if (ui.show_recipes && recipe_slot >= 0) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "RMB RENAME  SHIFT+RMB CLEAR");
+                } else if (!ui.show_keyboard && !ui.show_recipes && bank_slot >= 0 &&
                            action == TS_UI_BANK_ACTION_CLEAR) {
                     clear_bank_slot(device, &audio, &ui, &instrument, bank_slot);
-                } else if (!ui.show_keyboard && bank_slot >= 0 &&
+                } else if (!ui.show_keyboard && !ui.show_recipes && bank_slot >= 0 &&
                            action == TS_UI_BANK_ACTION_RENAME) {
                     begin_bank_rename(&ui, &instrument, bank_slot);
-                } else if (!ui.show_keyboard && bank_slot >= 0) {
+                } else if (!ui.show_keyboard && !ui.show_recipes && bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "RMB RENAME  SHIFT+RMB CLEAR");
                 }
