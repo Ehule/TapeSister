@@ -1,7 +1,7 @@
 CC ?= cc
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
 CPPFLAGS ?= -Iinclude
-CORE = src/ts_sample.c src/ts_audition.c src/ts_note_bank.c src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_ui.c
+CORE = src/ts_sample.c src/ts_audition.c src/ts_note_bank.c src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_ui.c src/ts_pr13_dsp.c src/ts_pr13_lock.c src/ts_pr13_process.c src/ts_pr13_similarity.c src/ts_pr13_family.c src/ts_pr13_project.c
 
 .PHONY: all test screenshot clean
 
@@ -13,14 +13,18 @@ tapesister: $(CORE) src/main_sdl.c
 tapesister_core_tests: $(CORE) tests/test_core.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
+tapesister_pr13_tests: $(CORE) tests/test_pr13.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
 tapesister_render_demo: $(CORE) tests/render_demo.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
-test: tapesister_core_tests
+test: tapesister_core_tests tapesister_pr13_tests
 	./tapesister_core_tests
+	./tapesister_pr13_tests
 
 screenshot: tapesister_render_demo
 	./tapesister_render_demo artifacts/tapesister-parent-current.ppm
 
 clean:
-	rm -f tapesister tapesister_core_tests tapesister_render_demo test-roundtrip.wav artifacts/*.ppm
+	rm -f tapesister tapesister_core_tests tapesister_pr13_tests tapesister_render_demo test-roundtrip.wav artifacts/*.ppm
