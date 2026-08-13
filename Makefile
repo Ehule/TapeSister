@@ -7,7 +7,7 @@ CORE = src/ts_sample.c src/ts_audition.c src/ts_note_bank.c src/ts_browser.c src
 
 all: tapesister
 
-tapesister: $(CORE) src/main_sdl.c
+tapesister: $(CORE) src/main_sdl_pr13.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $^ -o $@ $(shell sdl2-config --libs) -lm
 
 tapesister_core_tests: $(CORE) tests/test_core.c
