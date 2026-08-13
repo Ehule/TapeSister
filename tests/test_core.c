@@ -158,11 +158,14 @@ int main(void)
         CHECK(recipe_bank.slots[0].occupied && recipe_bank.slots[0].factory);
         CHECK(strcmp(recipe_bank.slots[0].name, "NEUTRAL") == 0);
         CHECK(recipe_bank.slots[7].occupied && recipe_bank.slots[7].factory);
-        CHECK(!ts_recipe_bank_capture(&recipe_bank, 0, &neutral, &recipe_tuning, "NO",
+        CHECK(!ts_recipe_bank_capture(&recipe_bank, 0, &neutral, &recipe_tuning,
+                                      &recipe_tuning, "NO",
                                       recipe_error, sizeof(recipe_error)));
-        CHECK(ts_recipe_bank_capture(&recipe_bank, 8, &dsp, &recipe_tuning, "MY TEXTURE",
+        CHECK(ts_recipe_bank_capture(&recipe_bank, 8, &dsp, &recipe_tuning,
+                                     &recipe_tuning, "MY TEXTURE",
                                      recipe_error, sizeof(recipe_error)));
-        CHECK(!ts_recipe_bank_capture(&recipe_bank, 8, &neutral, &recipe_tuning, "OVERWRITE",
+        CHECK(!ts_recipe_bank_capture(&recipe_bank, 8, &neutral, &recipe_tuning,
+                                      &recipe_tuning, "OVERWRITE",
                                       recipe_error, sizeof(recipe_error)));
         CHECK(!ts_recipe_bank_rename(&recipe_bank, 0, "RENAMED FACTORY",
                                      recipe_error, sizeof(recipe_error)));
@@ -340,6 +343,17 @@ int main(void)
                     original.fine_tune_cents) < 0.001f);
         CHECK(ts_instrument_redo(&generated, error, sizeof(error)));
         CHECK(generated.tuning.root_note == 64);
+        {
+            double before_pitch = ts_tuning_note_pitch(&generated.tuning, 0);
+            CHECK(ts_instrument_set_audible_tuning(&generated, 65, 17.5f,
+                                                    error, sizeof(error)));
+            CHECK(generated.audible_tuning.root_note == 65);
+            CHECK(ts_tuning_note_pitch(&generated.tuning, 0) > before_pitch);
+            CHECK(ts_instrument_undo(&generated, error, sizeof(error)));
+            CHECK(generated.audible_tuning.root_note == 64);
+            CHECK(ts_instrument_redo(&generated, error, sizeof(error)));
+            CHECK(generated.audible_tuning.root_note == 65);
+        }
     }
 
     size_t original_frames = generated.current.frames;
@@ -754,6 +768,8 @@ int main(void)
     CHECK(ts_instrument_bank_first_empty(&committed) == 4);
     CHECK(committed.bank[1].sample.frames == committed.current.frames);
     CHECK(committed.bank[1].tuning.root_note == committed.tuning.root_note);
+    CHECK(committed.bank[1].audible_tuning.root_note ==
+          committed.audible_tuning.root_note);
     CHECK(committed.bank[2].sample.frames ==
           committed.selection_last - committed.selection_first);
     CHECK(committed.bank[3].has_loop && committed.bank[3].loop_first == 0 &&
@@ -799,6 +815,9 @@ int main(void)
     CHECK(restored.tuning.root_note == committed.tuning.root_note &&
           fabsf(restored.tuning.fine_tune_cents -
                 committed.tuning.fine_tune_cents) < 0.001f);
+    CHECK(restored.audible_tuning.root_note == committed.audible_tuning.root_note &&
+          fabsf(restored.audible_tuning.fine_tune_cents -
+                committed.audible_tuning.fine_tune_cents) < 0.001f);
     CHECK(fabsf(restored.process.shaper_drive - 4.75f) < 0.001f);
     CHECK(ts_instrument_bank_count(&restored) == 4);
     CHECK(strcmp(restored.bank[2].sample.name, "Growing Tail") == 0);
@@ -1016,10 +1035,12 @@ int main(void)
     ts_ui_init(&ui);
     ui.fx_page = TS_FX_TUNE;
     CHECK(ts_ui_audition_tuning(&ui, &committed) == &committed.tuning);
+    CHECK(ts_ui_display_tuning(&ui, &committed) == &committed.audible_tuning);
     ui.pitch_suggestion.root_note = 71;
     ui.pitch_suggestion.fine_tune_cents = 8.0f;
     ui.has_pitch_suggestion = 1;
     CHECK(ts_ui_audition_tuning(&ui, &committed) == &ui.pitch_suggestion);
+    CHECK(ts_ui_display_tuning(&ui, &committed) == &ui.pitch_suggestion);
     CHECK(committed.tuning.root_note != ui.pitch_suggestion.root_note);
     ts_ui_render(&fb, &ui, &committed);
     CHECK(framebuffer_contains(&fb, 0xff147dffu));

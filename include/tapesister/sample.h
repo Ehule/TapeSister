@@ -149,6 +149,7 @@ typedef enum {
 typedef struct {
     TsSample sample;
     TsTuning tuning;
+    TsTuning audible_tuning;
     size_t loop_first;
     size_t loop_last;
     float loop_crossfade_ms;
@@ -172,6 +173,7 @@ typedef struct {
     int has_selection;
     int has_loop;
     TsTuning tuning;
+    TsTuning audible_tuning;
     TsProcessRecipe process;
     TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
     int sample_edit_count;
@@ -188,6 +190,7 @@ typedef struct {
     uint32_t generation;
     uint64_t ancestor_hash;
     TsTuning tuning;
+    TsTuning audible_tuning;
     size_t crop_first;
     size_t crop_last;
     size_t selection_first;
@@ -239,8 +242,16 @@ int ts_instrument_set_process_and_tuning(TsInstrument *instrument,
                                          const TsProcessRecipe *process,
                                          const TsTuning *tuning,
                                          char *error, size_t error_size);
+int ts_instrument_set_process_and_tunings(TsInstrument *instrument,
+                                          const TsProcessRecipe *process,
+                                          const TsTuning *tuning,
+                                          const TsTuning *audible_tuning,
+                                          char *error, size_t error_size);
 int ts_instrument_set_tuning(TsInstrument *instrument, int root_note,
                              float fine_tune_cents, char *error, size_t error_size);
+int ts_instrument_set_audible_tuning(TsInstrument *instrument, int root_note,
+                                     float fine_tune_cents,
+                                     char *error, size_t error_size);
 double ts_tuning_frequency(const TsTuning *tuning);
 double ts_tuning_note_pitch(const TsTuning *tuning, int keyboard_note);
 const char *ts_midi_note_name(int note, char *name, size_t size);

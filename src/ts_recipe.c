@@ -86,12 +86,27 @@ int ts_recipe_from_process_and_tuning(TsPortableRecipe *recipe,
                                       const TsProcessRecipe *process,
                                       const TsTuning *tuning, const char *name)
 {
+    return ts_recipe_from_process_and_tunings(recipe, process, tuning, tuning, name);
+}
+
+int ts_recipe_from_process_and_tunings(TsPortableRecipe *recipe,
+                                       const TsProcessRecipe *process,
+                                       const TsTuning *tuning,
+                                       const TsTuning *audible_tuning,
+                                       const char *name)
+{
     if (!ts_recipe_from_process(recipe, process, name) || tuning == NULL ||
         tuning->root_note < 0 || tuning->root_note > 127 ||
         !isfinite(tuning->fine_tune_cents) ||
-        tuning->fine_tune_cents < -100.0f || tuning->fine_tune_cents > 100.0f)
+        tuning->fine_tune_cents < -100.0f || tuning->fine_tune_cents > 100.0f ||
+        audible_tuning == NULL || audible_tuning->root_note < 0 ||
+        audible_tuning->root_note > 127 ||
+        !isfinite(audible_tuning->fine_tune_cents) ||
+        audible_tuning->fine_tune_cents < -100.0f ||
+        audible_tuning->fine_tune_cents > 100.0f)
         return 0;
     recipe->tuning = *tuning;
+    recipe->audible_tuning = *audible_tuning;
     recipe->has_tuning = 1;
     return 1;
 }
@@ -159,7 +174,8 @@ void ts_recipe_bank_init(TsRecipeBank *bank)
 }
 
 int ts_recipe_bank_capture(TsRecipeBank *bank, int slot, const TsProcessRecipe *process,
-                           const TsTuning *tuning, const char *name,
+                           const TsTuning *tuning, const TsTuning *audible_tuning,
+                           const char *name,
                            char *error, size_t error_size)
 {
     if (bank == NULL || slot < TS_FACTORY_RECIPE_COUNT || slot >= TS_RECIPE_SLOT_COUNT) {
@@ -170,7 +186,8 @@ int ts_recipe_bank_capture(TsRecipeBank *bank, int slot, const TsProcessRecipe *
         set_error(error, error_size, "Clear the user recipe slot before capturing");
         return 0;
     }
-    if (!ts_recipe_from_process_and_tuning(&bank->slots[slot], process, tuning, name)) {
+    if (!ts_recipe_from_process_and_tunings(&bank->slots[slot], process, tuning,
+                                            audible_tuning, name)) {
         set_error(error, error_size, "Invalid processing recipe");
         return 0;
     }
@@ -227,7 +244,12 @@ int ts_recipe_bank_add_user(TsRecipeBank *bank, const TsPortableRecipe *recipe,
          (recipe->tuning.root_note < 0 || recipe->tuning.root_note > 127 ||
           !isfinite(recipe->tuning.fine_tune_cents) ||
           recipe->tuning.fine_tune_cents < -100.0f ||
-          recipe->tuning.fine_tune_cents > 100.0f))) {
+          recipe->tuning.fine_tune_cents > 100.0f ||
+          recipe->audible_tuning.root_note < 0 ||
+          recipe->audible_tuning.root_note > 127 ||
+          !isfinite(recipe->audible_tuning.fine_tune_cents) ||
+          recipe->audible_tuning.fine_tune_cents < -100.0f ||
+          recipe->audible_tuning.fine_tune_cents > 100.0f))) {
         set_error(error, error_size, "Invalid portable recipe");
         return 0;
     }
@@ -308,6 +330,8 @@ int ts_recipe_save(const TsPortableRecipe *recipe, const char *path,
     if (recipe->has_tuning) {
         put32(file, (uint32_t)recipe->tuning.root_note);
         put_float(file, recipe->tuning.fine_tune_cents);
+        put32(file, (uint32_t)recipe->audible_tuning.root_note);
+        put_float(file, recipe->audible_tuning.fine_tune_cents);
     }
     {
         int failed = ferror(file);
@@ -358,6 +382,11 @@ int ts_recipe_load(TsPortableRecipe *recipe, const char *path,
                 loaded.tuning.fine_tune_cents < -100.0f ||
                 loaded.tuning.fine_tune_cents > 100.0f) goto malformed;
             loaded.tuning.root_note = (int)value;
+            if (!get32(file, &value) || value > 127u ||
+                !get_float(file, &loaded.audible_tuning.fine_tune_cents) ||
+                loaded.audible_tuning.fine_tune_cents < -100.0f ||
+                loaded.audible_tuning.fine_tune_cents > 100.0f) goto malformed;
+            loaded.audible_tuning.root_note = (int)value;
         }
     }
     if (fgetc(file) != EOF) goto malformed;

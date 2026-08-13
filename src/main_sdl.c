@@ -336,9 +336,10 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         if (ok) {
             lock_edit(device, audio);
             ok = loaded.has_tuning ?
-                 ts_instrument_set_process_and_tuning(instrument, &loaded.process,
-                                                      &loaded.tuning,
-                                                      error, sizeof(error)) :
+                 ts_instrument_set_process_and_tunings(instrument, &loaded.process,
+                                                       &loaded.tuning,
+                                                       &loaded.audible_tuning,
+                                                       error, sizeof(error)) :
                  ts_instrument_set_process(instrument, &loaded.process,
                                            error, sizeof(error));
             unlock_edit(device, audio, ui, instrument);
@@ -459,10 +460,31 @@ static void apply_tuning(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
     if (ok) {
         ui->has_pitch_suggestion = 0;
         snprintf(ui->status, sizeof(ui->status), "ROOT %s  TRIM %+.1F CENTS  %.2F HZ",
-                 ts_midi_note_name(instrument->tuning.root_note, note, sizeof(note)),
-                 -instrument->tuning.fine_tune_cents,
-                 ts_tuning_frequency(&instrument->tuning));
+                 ts_midi_note_name(instrument->audible_tuning.root_note,
+                                   note, sizeof(note)),
+                 instrument->audible_tuning.fine_tune_cents,
+                 ts_tuning_frequency(&instrument->audible_tuning));
     } else snprintf(ui->status, sizeof(ui->status), "TUNING: %.145s", error);
+}
+
+static void apply_audible_tuning(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui, TsInstrument *instrument,
+                                 int root_note, float cents)
+{
+    char error[160];
+    char note[12];
+    int ok;
+    lock_edit(device, audio);
+    ok = ts_instrument_set_audible_tuning(instrument, root_note, cents,
+                                          error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok)
+        snprintf(ui->status, sizeof(ui->status), "PITCH %s  TRIM %+.1F C  %.2F HZ",
+                 ts_midi_note_name(instrument->audible_tuning.root_note,
+                                   note, sizeof(note)),
+                 instrument->audible_tuning.fine_tune_cents,
+                 ts_tuning_frequency(&instrument->audible_tuning));
+    else snprintf(ui->status, sizeof(ui->status), "TUNING: %.145s", error);
 }
 
 static void suggest_or_accept_pitch(SDL_AudioDeviceID device, AudioState *audio,
@@ -515,8 +537,10 @@ static void apply_recipe_slot(SDL_AudioDeviceID device, AudioState *audio, TsUiS
     recipe = &ui->recipes.slots[slot];
     lock_edit(device, audio);
     ok = recipe->has_tuning ?
-         ts_instrument_set_process_and_tuning(instrument, &recipe->process,
-                                              &recipe->tuning, error, sizeof(error)) :
+         ts_instrument_set_process_and_tunings(instrument, &recipe->process,
+                                               &recipe->tuning,
+                                               &recipe->audible_tuning,
+                                               error, sizeof(error)) :
          ts_instrument_set_process(instrument, &recipe->process, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (ok) {
@@ -533,7 +557,8 @@ static void capture_recipe_slot(TsUiState *ui, const TsInstrument *instrument, i
     char name[32];
     snprintf(name, sizeof(name), "USER %02d", slot - TS_FACTORY_RECIPE_COUNT + 1);
     if (ts_recipe_bank_capture(&ui->recipes, slot, &instrument->process,
-                               &instrument->tuning, name, error, sizeof(error)))
+                               &instrument->tuning, &instrument->audible_tuning,
+                               name, error, sizeof(error)))
         snprintf(ui->status, sizeof(ui->status), "CAPTURED %.31s - TOP SAVE WRITES TSP", name);
     else snprintf(ui->status, sizeof(ui->status), "RECIPE CAPTURE FAILED: %.126s", error);
 }
@@ -1043,6 +1068,7 @@ static int save_recipe_atomic(const TsInstrument *instrument, const char *destin
 }
 
 static int save_preset_atomic(const TsProcessRecipe *process, const TsTuning *tuning,
+                              const TsTuning *audible_tuning,
                               const char *name,
                               const char *destination, char *error, size_t error_size)
 {
@@ -1053,7 +1079,8 @@ static int save_preset_atomic(const TsProcessRecipe *process, const TsTuning *tu
         snprintf(error, error_size, "Destination path is too long");
         return 0;
     }
-    if (!ts_recipe_from_process_and_tuning(&recipe, process, tuning, name) ||
+    if (!ts_recipe_from_process_and_tunings(&recipe, process, tuning,
+                                            audible_tuning, name) ||
         !ts_recipe_save(&recipe, temporary, error, error_size)) {
         remove(temporary);
         return 0;
@@ -1123,7 +1150,8 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             snprintf(name, sizeof(name), "%.31s", browser->filename);
             length = strlen(name);
             if (length > 4u && name[length - 4u] == '.') name[length - 4u] = '\0';
-            ok = save_preset_atomic(&instrument->process, &instrument->tuning, name, path,
+            ok = save_preset_atomic(&instrument->process, &instrument->tuning,
+                                    &instrument->audible_tuning, name, path,
                                     error, sizeof(error));
             snprintf(ui->status, sizeof(ui->status), ok ? "SAVED PROCESS RECIPE %.99s" :
                      "TSP SAVE FAILED: %.131s", ok ? path : error);
@@ -1871,18 +1899,20 @@ int main(int argc, char **argv)
                         if (ui.has_pitch_suggestion && x < 470)
                             snprintf(ui.status, sizeof(ui.status),
                                      "PITCH PREVIEW ACTIVE - ACCEPT OR ESC CANCEL");
-                        else if (x >= 10 && x < 58 && instrument.tuning.root_note < 127)
-                            apply_tuning(device, &audio, &ui, &instrument,
-                                         instrument.tuning.root_note + 1,
-                                         instrument.tuning.fine_tune_cents);
-                        else if (x >= 156 && x < 204 && instrument.tuning.root_note > 0)
-                            apply_tuning(device, &audio, &ui, &instrument,
-                                         instrument.tuning.root_note - 1,
-                                         instrument.tuning.fine_tune_cents);
+                        else if (x >= 10 && x < 58 &&
+                                 instrument.audible_tuning.root_note > 0)
+                            apply_audible_tuning(device, &audio, &ui, &instrument,
+                                                 instrument.audible_tuning.root_note - 1,
+                                                 instrument.audible_tuning.fine_tune_cents);
+                        else if (x >= 156 && x < 204 &&
+                                 instrument.audible_tuning.root_note < 127)
+                            apply_audible_tuning(device, &audio, &ui, &instrument,
+                                                 instrument.audible_tuning.root_note + 1,
+                                                 instrument.audible_tuning.fine_tune_cents);
                         else if (x >= 214 && x < 360)
-                            apply_tuning(device, &audio, &ui, &instrument,
-                                         instrument.tuning.root_note,
-                                         100.0f - (float)(x - 214) / 146.0f * 200.0f);
+                            apply_audible_tuning(device, &audio, &ui, &instrument,
+                                                 instrument.audible_tuning.root_note,
+                                                 (float)(x - 214) / 146.0f * 200.0f - 100.0f);
                         else if (x >= 470 && x < 630)
                             suggest_or_accept_pitch(device, &audio, &ui, &instrument);
                     } else if (ui.fx_page == TS_FX_NOISE) {
@@ -2096,7 +2126,7 @@ int main(int argc, char **argv)
                 } else if (note >= 0 && (mod & KMOD_SHIFT)) {
                     apply_tuning(device, &audio, &ui, &instrument,
                                  TS_KEYBOARD_BASE_NOTE + note,
-                                 instrument.tuning.fine_tune_cents);
+                                 instrument.audible_tuning.fine_tune_cents);
                 } else if (ui.show_recipes && recipe_slot >= 0 &&
                            (mod & KMOD_SHIFT)) {
                     char error[160];
