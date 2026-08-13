@@ -157,9 +157,7 @@ static int p13_poll(SDL_Event *e)
                     }
                     if(ts_instrument_set_bank_as_current(p13_inst,s,error,sizeof(error))){
                         p13_inst->process.body=0.0f; p13_inst->process.edge=0.0f; p13_inst->process.drift=0.5f;
-                        p13_slot=s;
-                        p13_seen_undo=p13_inst->undo_count;
-                        p13_seen_redo=p13_inst->redo_count;
+                        p13_slot=s;p13_seen_undo=p13_inst->undo_count;p13_seen_redo=p13_inst->redo_count;
                     }
                 }
             }
@@ -169,10 +167,25 @@ static int p13_poll(SDL_Event *e)
     return 0;
 }
 
-static int p13_process(TsInstrument *i,const TsProcessRecipe *p,char *e,size_t n){return ts_pr13_set_process(i,p13_slot,p,e,n);}
+static int p13_process(TsInstrument *i,const TsProcessRecipe *p,char *e,size_t n)
+{
+    TsProcessRecipe q=*p;
+    if(i&&q.shaper_drive!=i->process.shaper_drive&&!q.shaper_enabled){q.shaper_enabled=1;q.shaper_mode=TS_SHAPER_CLIP;if(q.shaper_mix<0.5f)q.shaper_mix=0.5f;}
+    return ts_pr13_set_process(i,p13_slot,&q,e,n);
+}
 static int p13_process_t(TsInstrument *i,const TsProcessRecipe *p,const TsTuning *t,char *e,size_t n){return ts_pr13_set_process_and_tuning(i,p13_slot,p,t,e,n);}
 static int p13_process_tt(TsInstrument *i,const TsProcessRecipe *p,const TsTuning *t,const TsTuning *a,char *e,size_t n){return ts_pr13_set_process_and_tunings(i,p13_slot,p,t,a,e,n);}
-static int p13_family(TsInstrument *i,int a,int r,int *s,char *e,size_t n){(void)a;return ts_pr13_generate_family_candidate(i,p13_slot,r,s,e,n);}
+static int p13_family(TsInstrument *i,int a,int r,int *s,char *e,size_t n)
+{
+    int ok;(void)a;
+    if(p13_slot>=0&&!ts_pr13_slot_locked(i,p13_slot))ts_pr13_rerender(i,p13_slot,e,n);
+    ok=ts_pr13_generate_family_candidate(i,p13_slot,r,s,e,n);
+    if(ok&&s&&*s>=0&&ts_instrument_set_bank_as_current(i,*s,e,n)){
+        p13_slot=*s;i->process.body=0.0f;i->process.edge=0.0f;i->process.drift=0.5f;
+        p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;
+    }
+    return ok;
+}
 
 #define SDL_PollEvent p13_poll
 #define ts_ui_render p13_render
