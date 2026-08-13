@@ -1,0 +1,19 @@
+name: PR13 CI
+
+on:
+  push:
+    branches:
+      - agent/pr13-rerun-active-family
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build core tests
+        run: cmake -S . -B build -DTAPESISTER_BUILD_SDL=OFF -DCMAKE_BUILD_TYPE=Release
+      - name: Compile
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
