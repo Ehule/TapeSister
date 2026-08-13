@@ -2,12 +2,11 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 static float at_normalized(const TsSample *sample, double n)
 {
-    double p;
-    size_t a,b;
-    float f;
+    double p; size_t a,b; float f;
     if(n<=0.0)return sample->data[0];
     if(n>=1.0)return sample->data[sample->frames-1];
     p=n*(double)(sample->frames-1);a=(size_t)p;b=a+1<sample->frames?a+1:a;f=(float)(p-(double)a);
@@ -25,6 +24,49 @@ static void blend_stranger(TsBankSlot *candidate,const TsBankSlot *anchor,float 
         candidate->sample.data[i]=x;if(fabsf(x)>out_peak)out_peak=fabsf(x);
     }
     if(peak>0.000001f&&out_peak>0.000001f){float g=peak/out_peak;for(size_t i=0;i<candidate->sample.frames;++i){float x=candidate->sample.data[i]*g;candidate->sample.data[i]=x>1.0f?1.0f:x<-1.0f?-1.0f:x;}}
+}
+
+static uint32_t next_seed(uint32_t x)
+{
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    return x ? x : 0x54415045u;
+}
+
+int ts_pr13_generate_parent_in_slot(TsInstrument *instrument,int active_slot,int reseed,
+                                    char *error,size_t error_size)
+{
+    TsInstrument temp;
+    TsBankSlot *dst;
+    TsGeneratorRecipe recipe;
+    TsGeneratorKind kind;
+    int locked;
+    char clone_error[160];
+    if(!instrument||active_slot<0||active_slot>=TS_BANK_SLOT_COUNT){snprintf(error,error_size,"Select a bank tile first");return 0;}
+    dst=&instrument->bank[active_slot];
+    locked=ts_pr13_slot_locked(instrument,active_slot);
+    if(locked){snprintf(error,error_size,"Selected bank tile is locked");return 0;}
+    recipe=dst->has_generator?dst->generator:instrument->generator;
+    if(reseed){kind=recipe.kind;recipe.seed=next_seed(recipe.seed^0x9e3779b9u);}
+    else{kind=(TsGeneratorKind)(((int)recipe.kind+1+(int)(next_seed(recipe.seed)&1u))%TS_GENERATOR_COUNT);recipe.seed=next_seed(recipe.seed^0x7f4a7c15u^instrument->family_sequence);}
+    ts_instrument_init(&temp);
+    temp.generator.seconds=recipe.seconds;
+    temp.generator.frequency=recipe.frequency;
+    if(!ts_instrument_generate(&temp,kind,recipe.seed,error,error_size)){ts_instrument_free(&temp);return 0;}
+    ts_sample_free(&dst->sample);
+    if(!ts_sample_clone(&dst->sample,&temp.bank[0].sample,clone_error,sizeof(clone_error))){ts_instrument_free(&temp);snprintf(error,error_size,"Could not replace selected tile");return 0;}
+    dst->tuning=temp.bank[0].tuning; dst->audible_tuning=temp.bank[0].audible_tuning;
+    dst->generator=temp.bank[0].generator; dst->has_generator=1;
+    dst->capture_kind=TS_BANK_CAPTURE_ROOT; dst->relation=TS_FAMILY_ROOT;
+    dst->parent_slot=-1; dst->lineage_seed=recipe.seed; dst->lineage_mutation=0.0f;
+    dst->trajectory_step=0; dst->has_loop=0; dst->loop_first=dst->loop_last=0;
+    dst->loop_crossfade_ms=8.0f; dst->loop_mode=TS_LOOP_FORWARD; dst->occupied=1;
+    instrument->generator=dst->generator;
+    instrument->family_anchor_slot=active_slot; instrument->family_last_slot=-1;
+    ++instrument->family_sequence;
+    ts_instrument_free(&temp);
+    if(!ts_instrument_set_bank_as_current(instrument,active_slot,error,error_size))return 0;
+    snprintf(error,error_size,reseed?"RESEEDED PARENT IN BANK %02d":"NEW PARENT IN BANK %02d",active_slot+1);
+    return 1;
 }
 
 int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
