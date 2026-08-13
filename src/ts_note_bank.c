@@ -12,7 +12,8 @@ static int voice_plan(const TsInstrument *instrument, TsAuditionSource source,
 }
 
 static void update_voice(TsNoteVoice *voice, const TsInstrument *instrument,
-                         TsAuditionSource source, int output_rate)
+                         const TsTuning *tuning, TsAuditionSource source,
+                         int output_rate)
 {
     TsAuditionPlan plan;
     int looping = instrument->has_loop;
@@ -38,7 +39,7 @@ static void update_voice(TsNoteVoice *voice, const TsInstrument *instrument,
     voice->crossfade_frames = voice->looping ?
                               ts_audition_crossfade_frames(
                                   &plan, instrument->loop_crossfade_ms) : 0;
-    voice->pitch = ts_tuning_note_pitch(&instrument->tuning, voice->note);
+    voice->pitch = ts_tuning_note_pitch(tuning, voice->note);
     voice->step = (double)plan.sample->sample_rate / output_rate * voice->pitch;
 }
 
@@ -63,10 +64,22 @@ TsNoteStartResult ts_note_bank_start(TsNoteBank *bank, const TsInstrument *instr
                                      TsAuditionSource source, int note, int latched,
                                      int output_rate)
 {
+    return ts_note_bank_start_tuned(bank, instrument,
+                                    instrument != NULL ? &instrument->tuning : NULL,
+                                    source, note, latched, output_rate);
+}
+
+TsNoteStartResult ts_note_bank_start_tuned(TsNoteBank *bank,
+                                           const TsInstrument *instrument,
+                                           const TsTuning *tuning,
+                                           TsAuditionSource source, int note,
+                                           int latched, int output_rate)
+{
     TsAuditionPlan plan;
     int free_voice = -1;
     if (bank == NULL || instrument == NULL || note < 0 || note >= 24 ||
-        output_rate <= 0 || !voice_plan(instrument, source, instrument->has_loop, &plan))
+        tuning == NULL || output_rate <= 0 ||
+        !voice_plan(instrument, source, instrument->has_loop, &plan))
         return TS_NOTE_START_FAILED;
     for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
@@ -89,7 +102,7 @@ TsNoteStartResult ts_note_bank_start(TsNoteBank *bank, const TsInstrument *instr
         voice->position = instrument->loop_mode == TS_LOOP_REVERSE &&
                           instrument->has_loop ? (double)(plan.last - 1u) :
                           (double)plan.first;
-        voice->pitch = ts_tuning_note_pitch(&instrument->tuning, note);
+        voice->pitch = ts_tuning_note_pitch(tuning, note);
         voice->step = (double)plan.sample->sample_rate / output_rate * voice->pitch;
         voice->range_first = plan.first;
         voice->range_last = plan.last;
@@ -120,19 +133,38 @@ void ts_note_bank_release(TsNoteBank *bank, int note)
 
 void ts_note_bank_sync(TsNoteBank *bank, const TsInstrument *instrument, int output_rate)
 {
-    if (bank == NULL || instrument == NULL) return;
+    ts_note_bank_sync_tuned(bank, instrument,
+                            instrument != NULL ? &instrument->tuning : NULL,
+                            output_rate);
+}
+
+void ts_note_bank_sync_tuned(TsNoteBank *bank, const TsInstrument *instrument,
+                             const TsTuning *tuning, int output_rate)
+{
+    if (bank == NULL || instrument == NULL || tuning == NULL) return;
     for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
         if (bank->voices[i].active)
-            update_voice(&bank->voices[i], instrument, bank->voices[i].source, output_rate);
+            update_voice(&bank->voices[i], instrument, tuning,
+                         bank->voices[i].source, output_rate);
 }
 
 void ts_note_bank_set_source(TsNoteBank *bank, const TsInstrument *instrument,
                              TsAuditionSource source, int output_rate)
 {
-    if (bank == NULL || instrument == NULL) return;
+    ts_note_bank_set_source_tuned(bank, instrument,
+                                  instrument != NULL ? &instrument->tuning : NULL,
+                                  source, output_rate);
+}
+
+void ts_note_bank_set_source_tuned(TsNoteBank *bank,
+                                   const TsInstrument *instrument,
+                                   const TsTuning *tuning,
+                                   TsAuditionSource source, int output_rate)
+{
+    if (bank == NULL || instrument == NULL || tuning == NULL) return;
     for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
         if (bank->voices[i].active)
-            update_voice(&bank->voices[i], instrument, source, output_rate);
+            update_voice(&bank->voices[i], instrument, tuning, source, output_rate);
 }
 
 float ts_note_bank_read(TsNoteBank *bank)

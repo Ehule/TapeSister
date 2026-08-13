@@ -93,6 +93,8 @@ typedef struct {
 } TsUiState;
 
 void ts_ui_init(TsUiState *ui);
+const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
+                                      const TsInstrument *instrument);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);

@@ -112,7 +112,8 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Computer and onscreen keys are pitched relative to the root; assigning a sounding key as root makes that key unity playback.
 - [ ] Parent and Current always share one mapping, including while switching A/B during sustained notes.
 - [ ] Held and latched notes change pitch in place after root, fine-tune, recipe, Undo, or Redo changes, without restarting or becoming stuck.
-- [ ] Suggest Pitch analyzes Selection before Loop before all Current, displays note/cents/confidence without mutating state, and requires a second click to accept.
+- [ ] Suggest Pitch analyzes Selection before Loop before all Current, previews its mapping on new and already-held keyboard voices without mutating saved state, and requires a second click to accept.
+- [ ] During suggestion preview the Tune readout follows the candidate; Space stops notes but retains it, while Escape cancels it and reliably stops everything.
 - [ ] A stable tonal source gives a musically plausible suggestion; silence and unstable noise report no reliable pitch instead of changing tuning.
 - [ ] Reset and Commit preserve root/fine tuning. Undo/Redo traverse manual tuning changes exactly.
 - [ ] Shift/Alt/Ctrl family captures retain tuning, and Set Current restores the chosen member's mapping with its audio and loop.

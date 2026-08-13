@@ -178,8 +178,9 @@ static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
     SDL_LockAudioDevice(device);
     audio->playing = 0;
     audio->bank_slot = -1;
-    result = ts_note_bank_start(&audio->notes, instrument, ui->audition_source,
-                                note, latched, output_rate);
+    result = ts_note_bank_start_tuned(&audio->notes, instrument,
+                                      ts_ui_audition_tuning(ui, instrument),
+                                      ui->audition_source, note, latched, output_rate);
     voice_count = ts_note_bank_count(&audio->notes);
     SDL_UnlockAudioDevice(device);
     if (result == TS_NOTE_LIMIT_REACHED)
@@ -246,7 +247,9 @@ static void switch_audition_source(SDL_AudioDeviceID device, AudioState *audio,
     }
     audio->sample = plan.sample;
     audio->source = source;
-    ts_note_bank_set_source(&audio->notes, instrument, source, output_rate);
+    ts_note_bank_set_source_tuned(&audio->notes, instrument,
+                                  ts_ui_audition_tuning(ui, instrument),
+                                  source, output_rate);
     if (device) SDL_UnlockAudioDevice(device);
     ui->audition_source = source;
     snprintf(ui->status, sizeof(ui->status), "AUDITIONING %s%s",
@@ -476,11 +479,26 @@ static void suggest_or_accept_pitch(SDL_AudioDeviceID device, AudioState *audio,
     if (ts_instrument_suggest_pitch(instrument, &ui->pitch_suggestion,
                                     &ui->pitch_confidence, error, sizeof(error))) {
         ui->has_pitch_suggestion = 1;
-        snprintf(ui->status, sizeof(ui->status), "SUGGEST %s %+.1F C  CONF %.0F%% - CLICK ACCEPT",
+        if (device) SDL_LockAudioDevice(device);
+        ts_note_bank_sync_tuned(&audio->notes, instrument, &ui->pitch_suggestion,
+                                audio->output_rate);
+        if (device) SDL_UnlockAudioDevice(device);
+        snprintf(ui->status, sizeof(ui->status),
+                 "PREVIEW %s %+.1F C  CONF %.0F%% - ACCEPT OR ESC CANCEL",
                  ts_midi_note_name(ui->pitch_suggestion.root_note, note, sizeof(note)),
                  ui->pitch_suggestion.fine_tune_cents,
                  ui->pitch_confidence * 100.0f);
     } else snprintf(ui->status, sizeof(ui->status), "PITCH SUGGESTION: %.137s", error);
+}
+
+static void cancel_pitch_preview(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui, const TsInstrument *instrument)
+{
+    if (!ui->has_pitch_suggestion) return;
+    ui->has_pitch_suggestion = 0;
+    if (device) SDL_LockAudioDevice(device);
+    ts_note_bank_sync(&audio->notes, instrument, audio->output_rate);
+    if (device) SDL_UnlockAudioDevice(device);
 }
 
 static void apply_recipe_slot(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -1451,6 +1469,7 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_y) {
                     history_move(device, &audio, &ui, &instrument, 1);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_a) {
+                    cancel_pitch_preview(device, &audio, &ui, &instrument);
                     ui.bank_view_slot = -1;
                     ts_instrument_set_selection(&instrument, 0, instrument.current.frames);
                     snprintf(ui.status, sizeof(ui.status), "SELECTED ALL CURRENT");
@@ -1537,8 +1556,14 @@ int main(int argc, char **argv)
                               ts_instrument_pan_view(&instrument, amount)) ?
                              "PANNED WAVEFORM VIEW" : "PAN LIMIT");
                 } else if (key == SDLK_ESCAPE || key == SDLK_SPACE) {
+                    int cancelled_preview = key == SDLK_ESCAPE && ui.has_pitch_suggestion;
                     ui.commit_armed = 0;
+                    if (cancelled_preview)
+                        cancel_pitch_preview(device, &audio, &ui, &instrument);
                     stop_all(device, &audio, &ui);
+                    if (cancelled_preview)
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "PITCH PREVIEW CANCELLED - STOPPED");
                 } else {
                     int note = note_for_key(key);
                     if (note >= 0 && device)
@@ -1737,23 +1762,23 @@ int main(int argc, char **argv)
                                         mod, x - TS_WAVE_X)) {
                         /* Modifier drag owns this gesture. */
                     } else if (instrument.has_loop && abs(x - first_x) <= 6) {
+                        cancel_pitch_preview(device, &audio, &ui, &instrument);
                         ui.dragging_loop_endpoint = 1;
                         ui.loop_drag_started = 0;
-                        ui.has_pitch_suggestion = 0;
                         snprintf(ui.status, sizeof(ui.status), "DRAG LOOP START - ZERO SNAPPED");
                     } else if (instrument.has_loop && abs(x - last_x) <= 6) {
+                        cancel_pitch_preview(device, &audio, &ui, &instrument);
                         ui.dragging_loop_endpoint = 2;
                         ui.loop_drag_started = 0;
-                        ui.has_pitch_suggestion = 0;
                         snprintf(ui.status, sizeof(ui.status), "DRAG LOOP END - ZERO SNAPPED");
                     } else {
+                        cancel_pitch_preview(device, &audio, &ui, &instrument);
                         ui.selection_anchor = ts_sample_nearest_zero_crossing(
                             &instrument.current, selection_frame_from_x(
                                 &instrument, &ui, x - TS_WAVE_X));
                         ts_instrument_set_selection_snapped(
                             &instrument, ui.selection_anchor, ui.selection_anchor);
                         ui.selecting = 1;
-                        ui.has_pitch_suggestion = 0;
                         snprintf(ui.status, sizeof(ui.status), "SELECTING CURRENT - ZERO SNAP");
                     }
                 } else if (y >= 205 && y < 228 && x >= 10 && x < 80) {
@@ -1843,7 +1868,10 @@ int main(int argc, char **argv)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_FADE_OUT, 1.0f);
                     } else if (ui.fx_page == TS_FX_TUNE) {
-                        if (x >= 10 && x < 58 && instrument.tuning.root_note < 127)
+                        if (ui.has_pitch_suggestion && x < 470)
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "PITCH PREVIEW ACTIVE - ACCEPT OR ESC CANCEL");
+                        else if (x >= 10 && x < 58 && instrument.tuning.root_note < 127)
                             apply_tuning(device, &audio, &ui, &instrument,
                                          instrument.tuning.root_note + 1,
                                          instrument.tuning.fine_tune_cents);

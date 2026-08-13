@@ -317,8 +317,16 @@ static int frame_x(size_t frame_index, size_t view_first, size_t view_last)
                              (view_last - view_first));
 }
 
+const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
+                                      const TsInstrument *instrument)
+{
+    if (ui != NULL && ui->has_pitch_suggestion) return &ui->pitch_suggestion;
+    return instrument != NULL ? &instrument->tuning : NULL;
+}
+
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
+    const TsTuning *audition_tuning = ts_ui_audition_tuning(ui, instrument);
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
     int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
     const TsBankSlot *shown_slot = showing_bank ? &instrument->bank[ui->bank_view_slot] : NULL;
@@ -562,15 +570,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char frequency[32];
         char fine[32];
         snprintf(root, sizeof(root), "ROOT %s",
-                 ts_midi_note_name(instrument->tuning.root_note, note, sizeof(note)));
-        snprintf(fine, sizeof(fine), "TRIM %+.1F C", -instrument->tuning.fine_tune_cents);
+                 ts_midi_note_name(audition_tuning->root_note, note, sizeof(note)));
+        snprintf(fine, sizeof(fine), "TRIM %+.1F C",
+                 -audition_tuning->fine_tune_cents);
         snprintf(frequency, sizeof(frequency), "%.2F HZ",
-                 ts_tuning_frequency(&instrument->tuning));
+                 ts_tuning_frequency(audition_tuning));
         button(fb, 10, 261, 48, "DOWN", 0);
         button(fb, 62, 261, 90, root, 1);
         button(fb, 156, 261, 48, "UP", 0);
         slider(fb, 214, 261, 146, fine,
-               (100.0f - instrument->tuning.fine_tune_cents) / 200.0f, PAL_TUNING);
+               (100.0f - audition_tuning->fine_tune_cents) / 200.0f, PAL_TUNING);
         button(fb, 370, 261, 90, frequency, 0);
         button(fb, 470, 261, 160,
                ui->has_pitch_suggestion ? "ACCEPT SUGGESTION" : "SUGGEST PITCH",

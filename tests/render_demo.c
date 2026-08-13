@@ -152,7 +152,7 @@ int main(int argc, char **argv)
         ui.pitch_confidence = 0.91f;
         ui.active_notes = (1u << 0) | (1u << 7) | (1u << 12);
         snprintf(ui.status, sizeof(ui.status),
-                 "SUGGEST A#3 +3.7 C  CONF 91%% - CLICK ACCEPT");
+                 "PREVIEW A#3 +3.7 C  CONF 91%% - ACCEPT OR ESC CANCEL");
     }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {

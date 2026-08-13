@@ -865,6 +865,12 @@ int main(void)
     {
         const TsNoteVoice *voice = ts_note_bank_display_voice(&notes);
         double prior_pitch = voice != NULL ? voice->pitch : 0.0;
+        TsTuning preview = {60, 0.0f};
+        int accepted_root = restored.tuning.root_note;
+        ts_note_bank_sync_tuned(&notes, &restored, &preview, 48000);
+        voice = ts_note_bank_display_voice(&notes);
+        CHECK(voice != NULL && fabs(voice->pitch - 0.5) < 0.0001);
+        CHECK(restored.tuning.root_note == accepted_root);
         CHECK(ts_instrument_set_tuning(&restored, TS_KEYBOARD_BASE_NOTE, 0.0f,
                                        error, sizeof(error)));
         ts_note_bank_sync(&notes, &restored, 48000);
@@ -1009,7 +1015,12 @@ int main(void)
     }
     ts_ui_init(&ui);
     ui.fx_page = TS_FX_TUNE;
+    CHECK(ts_ui_audition_tuning(&ui, &committed) == &committed.tuning);
+    ui.pitch_suggestion.root_note = 71;
+    ui.pitch_suggestion.fine_tune_cents = 8.0f;
     ui.has_pitch_suggestion = 1;
+    CHECK(ts_ui_audition_tuning(&ui, &committed) == &ui.pitch_suggestion);
+    CHECK(committed.tuning.root_note != ui.pitch_suggestion.root_note);
     ts_ui_render(&fb, &ui, &committed);
     CHECK(framebuffer_contains(&fb, 0xff147dffu));
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
