@@ -2180,6 +2180,112 @@ int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *na
     return 1;
 }
 
+static TsBankSlot *editable_bank_slot(TsInstrument *instrument, int slot,
+                                      char *error, size_t error_size)
+{
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Invalid bank slot");
+        return NULL;
+    }
+    if (!instrument->bank[slot].occupied || instrument->bank[slot].sample.data == NULL ||
+        instrument->bank[slot].sample.frames < 2u) {
+        set_error(error, error_size, "Capture audio before editing this bank loop");
+        return NULL;
+    }
+    return &instrument->bank[slot];
+}
+
+int ts_instrument_bank_set_loop_full(TsInstrument *instrument, int slot,
+                                     char *error, size_t error_size)
+{
+    TsBankSlot *bank_slot = editable_bank_slot(instrument, slot, error, error_size);
+    if (bank_slot == NULL) return 0;
+    bank_slot->loop_first = 0;
+    bank_slot->loop_last = bank_slot->sample.frames;
+    bank_slot->has_loop = 1;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_bank_clear_loop(TsInstrument *instrument, int slot,
+                                  char *error, size_t error_size)
+{
+    TsBankSlot *bank_slot = editable_bank_slot(instrument, slot, error, error_size);
+    if (bank_slot == NULL) return 0;
+    if (!bank_slot->has_loop) {
+        set_error(error, error_size, "Bank slot has no loop to clear");
+        return 0;
+    }
+    bank_slot->loop_first = 0;
+    bank_slot->loop_last = 0;
+    bank_slot->has_loop = 0;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_bank_set_loop_crossfade(TsInstrument *instrument, int slot,
+                                          float milliseconds,
+                                          char *error, size_t error_size)
+{
+    TsBankSlot *bank_slot = editable_bank_slot(instrument, slot, error, error_size);
+    if (bank_slot == NULL) return 0;
+    milliseconds = clampf(milliseconds, 0.0f, 50.0f);
+    if (fabsf(milliseconds - bank_slot->loop_crossfade_ms) < 0.0001f) {
+        set_error(error, error_size, "Bank loop crossfade unchanged");
+        return 0;
+    }
+    bank_slot->loop_crossfade_ms = milliseconds;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_bank_set_loop_mode(TsInstrument *instrument, int slot,
+                                     TsLoopMode mode,
+                                     char *error, size_t error_size)
+{
+    TsBankSlot *bank_slot = editable_bank_slot(instrument, slot, error, error_size);
+    if (bank_slot == NULL) return 0;
+    if (mode < TS_LOOP_FORWARD || mode >= TS_LOOP_MODE_COUNT) {
+        set_error(error, error_size, "Invalid bank loop direction mode");
+        return 0;
+    }
+    if (bank_slot->loop_mode == mode) {
+        set_error(error, error_size, "Bank loop mode unchanged");
+        return 0;
+    }
+    bank_slot->loop_mode = mode;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_bank_move_loop_endpoint(TsInstrument *instrument, int slot,
+                                          int endpoint, size_t frame)
+{
+    TsBankSlot *bank_slot = editable_bank_slot(instrument, slot, NULL, 0);
+    size_t snapped;
+    if (bank_slot == NULL || !bank_slot->has_loop ||
+        (endpoint != 1 && endpoint != 2)) return 0;
+    snapped = ts_sample_nearest_zero_crossing(&bank_slot->sample, frame);
+    if (endpoint == 1) {
+        if (snapped < bank_slot->loop_last) bank_slot->loop_first = snapped;
+        else if (snapped == bank_slot->loop_last) return endpoint;
+        else {
+            bank_slot->loop_first = bank_slot->loop_last;
+            bank_slot->loop_last = snapped;
+            endpoint = 2;
+        }
+    } else {
+        if (snapped > bank_slot->loop_first) bank_slot->loop_last = snapped;
+        else if (snapped == bank_slot->loop_first) return endpoint;
+        else {
+            bank_slot->loop_last = bank_slot->loop_first;
+            bank_slot->loop_first = snapped;
+            endpoint = 1;
+        }
+    }
+    return endpoint;
+}
+
 int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
                                       char *error, size_t error_size)
 {

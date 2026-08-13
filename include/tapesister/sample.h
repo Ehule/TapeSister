@@ -309,6 +309,18 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size);
 int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *name,
                               char *error, size_t error_size);
+int ts_instrument_bank_set_loop_full(TsInstrument *instrument, int slot,
+                                     char *error, size_t error_size);
+int ts_instrument_bank_clear_loop(TsInstrument *instrument, int slot,
+                                  char *error, size_t error_size);
+int ts_instrument_bank_set_loop_crossfade(TsInstrument *instrument, int slot,
+                                          float milliseconds,
+                                          char *error, size_t error_size);
+int ts_instrument_bank_set_loop_mode(TsInstrument *instrument, int slot,
+                                     TsLoopMode mode,
+                                     char *error, size_t error_size);
+int ts_instrument_bank_move_loop_endpoint(TsInstrument *instrument, int slot,
+                                          int endpoint, size_t frame);
 int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
                                       char *error, size_t error_size);
 int64_t ts_sample_snap_tape_destination(const TsSample *sample, int64_t target,

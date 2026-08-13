@@ -800,6 +800,46 @@ int main(void)
           committed.selection_last - committed.selection_first);
     CHECK(committed.bank[3].has_loop && committed.bank[3].loop_first == 0 &&
           committed.bank[3].loop_last == committed.bank[3].sample.frames);
+    {
+        TsAuditionPlan bank_plan;
+        size_t preserved_first = committed.bank[1].loop_first;
+        size_t preserved_last = committed.bank[1].loop_last;
+        TsLoopMode preserved_mode = committed.bank[1].loop_mode;
+        float preserved_crossfade = committed.bank[1].loop_crossfade_ms;
+        CHECK(!committed.bank[2].has_loop);
+        CHECK(ts_instrument_bank_set_loop_full(&committed, 2,
+                                               error, sizeof(error)));
+        CHECK(committed.bank[2].has_loop && committed.bank[2].loop_first == 0 &&
+              committed.bank[2].loop_last == committed.bank[2].sample.frames);
+        CHECK(ts_instrument_bank_clear_loop(&committed, 2,
+                                            error, sizeof(error)));
+        CHECK(!committed.bank[2].has_loop);
+        CHECK(ts_instrument_bank_set_loop_full(&committed, 2,
+                                               error, sizeof(error)));
+        CHECK(ts_instrument_bank_move_loop_endpoint(
+                  &committed, 2, 1, committed.bank[2].sample.frames / 4u) != 0);
+        CHECK(ts_instrument_bank_move_loop_endpoint(
+                  &committed, 2, 2, committed.bank[2].sample.frames * 3u / 4u) != 0);
+        CHECK(committed.bank[2].loop_first < committed.bank[2].loop_last);
+        CHECK(ts_instrument_bank_set_loop_mode(&committed, 2, TS_LOOP_REVERSE,
+                                               error, sizeof(error)));
+        CHECK(ts_instrument_bank_set_loop_crossfade(&committed, 2, 17.0f,
+                                                    error, sizeof(error)));
+        CHECK(ts_bank_audition_plan(&committed, 2, &bank_plan));
+        CHECK(bank_plan.sample == &committed.bank[2].sample &&
+              bank_plan.first == committed.bank[2].loop_first &&
+              bank_plan.last == committed.bank[2].loop_last);
+        CHECK(ts_bank_audition_plan(&committed, 0, &bank_plan));
+        CHECK(bank_plan.first == 0 &&
+              bank_plan.last == committed.bank[0].sample.frames);
+        CHECK(!ts_bank_audition_plan(&committed, 4, &bank_plan));
+        CHECK(committed.bank[1].loop_first == preserved_first &&
+              committed.bank[1].loop_last == preserved_last &&
+              committed.bank[1].loop_mode == preserved_mode &&
+              fabsf(committed.bank[1].loop_crossfade_ms - preserved_crossfade) < 0.0001f);
+        CHECK(!ts_instrument_bank_set_loop_full(&committed, 4,
+                                                error, sizeof(error)));
+    }
     CHECK(ts_instrument_bank_rename(&committed, 2, "  Growing Tail  ",
                                     error, sizeof(error)));
     CHECK(strcmp(committed.bank[2].sample.name, "Growing Tail") == 0);
@@ -855,6 +895,10 @@ int main(void)
         CHECK(restored.bank[slot].tuning.root_note == committed.bank[slot].tuning.root_note);
         CHECK(restored.bank[slot].loop_mode == committed.bank[slot].loop_mode);
         CHECK(restored.bank[slot].has_loop == committed.bank[slot].has_loop);
+        CHECK(restored.bank[slot].loop_first == committed.bank[slot].loop_first);
+        CHECK(restored.bank[slot].loop_last == committed.bank[slot].loop_last);
+        CHECK(fabsf(restored.bank[slot].loop_crossfade_ms -
+                    committed.bank[slot].loop_crossfade_ms) < 0.0001f);
     }
     CHECK(ts_instrument_export_bank(&restored, "test-bank-family", error, sizeof(error)));
     {
@@ -1208,6 +1252,7 @@ int main(void)
         bank_waveform = waveform_hash(&fb);
         CHECK(bank_waveform != current_waveform);
         CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff2d0039u);
+        CHECK(fb.pixels[340 * TS_UI_WIDTH + 231] == 0xff147dffu);
         ui.bank_view_slot = -1;
         ts_ui_render(&fb, &ui, &restored);
         CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff5d555du);

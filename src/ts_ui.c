@@ -676,13 +676,15 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else {
         char crossfade[32];
         char mode[32];
-        button(fb, 10, 261, 74, "SET LOOP", instrument->has_loop);
+        float display_crossfade = showing_bank ? shown_slot->loop_crossfade_ms :
+                                                instrument->loop_crossfade_ms;
+        button(fb, 10, 261, 74, "SET LOOP", has_loop);
         button(fb, 89, 261, 64, "CLEAR", 0);
         button(fb, 158, 261, 84, "PLAY LOOP", ui->playback_active);
-        snprintf(mode, sizeof(mode), "MODE %.9s", ts_loop_mode_name(instrument->loop_mode));
-        button(fb, 247, 261, 108, mode, instrument->loop_mode != TS_LOOP_FORWARD);
-        snprintf(crossfade, sizeof(crossfade), "XFADE %.1F MS", instrument->loop_crossfade_ms);
-        slider(fb, 365, 261, 212, crossfade, instrument->loop_crossfade_ms / 50.0f,
+        snprintf(mode, sizeof(mode), "MODE %.9s", ts_loop_mode_name(display_loop_mode));
+        button(fb, 247, 261, 108, mode, display_loop_mode != TS_LOOP_FORWARD);
+        snprintf(crossfade, sizeof(crossfade), "XFADE %.1F MS", display_crossfade);
+        slider(fb, 365, 261, 212, crossfade, display_crossfade / 50.0f,
                PAL_TUNING);
     }
 
@@ -746,6 +748,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             else
                 snprintf(label, sizeof(label), "%02d ---", i + 1);
             button(fb, x, y, 72, label, slot->occupied);
+            if (slot->occupied && slot->has_loop)
+                rect(fb, x + 66, y + 4, 3, 15, PAL_TUNING);
             if (i == ui->bank_view_slot) rect(fb, x + 2, y + 2, 68, 2, PAL_MOUSE);
         }
     }

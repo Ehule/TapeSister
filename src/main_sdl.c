@@ -720,12 +720,31 @@ static void history_move(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
     else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
 }
 
+static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
+                              const TsInstrument *instrument);
+
 static void set_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                      TsInstrument *instrument)
 {
     char error[160];
+    int bank_slot = ui->bank_view_slot;
     int selected_automatically = !instrument->has_selection;
     int ok;
+    if (bank_slot >= 0 && bank_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[bank_slot].occupied) {
+        if (device) SDL_LockAudioDevice(device);
+        ok = ts_instrument_bank_set_loop_full(instrument, bank_slot,
+                                              error, sizeof(error));
+        if (device) SDL_UnlockAudioDevice(device);
+        if (ok) {
+            sync_playing_loop(device, audio, instrument);
+            snprintf(ui->status, sizeof(ui->status),
+                     "BANK %02d WHOLE SAMPLE LOOPED - DRAG FLAGS TO TRIM",
+                     bank_slot + 1);
+        } else snprintf(ui->status, sizeof(ui->status),
+                        "BANK LOOP FAILED: %.135s", error);
+        return;
+    }
     lock_edit(device, audio);
     ok = ts_instrument_set_loop_from_selection(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
@@ -743,7 +762,21 @@ static void clear_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
                        TsInstrument *instrument)
 {
     char error[160];
+    int bank_slot = ui->bank_view_slot;
     int ok;
+    if (bank_slot >= 0 && bank_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[bank_slot].occupied) {
+        if (device) SDL_LockAudioDevice(device);
+        ok = ts_instrument_bank_clear_loop(instrument, bank_slot,
+                                           error, sizeof(error));
+        if (device) SDL_UnlockAudioDevice(device);
+        if (ok) sync_playing_loop(device, audio, instrument);
+        if (ok) snprintf(ui->status, sizeof(ui->status),
+                         "BANK %02d LOOP CLEARED - ONE-SHOT AUDITION",
+                         bank_slot + 1);
+        else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
+        return;
+    }
     lock_edit(device, audio);
     ok = ts_instrument_clear_loop(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
@@ -754,7 +787,23 @@ static void set_loop_crossfade(SDL_AudioDeviceID device, AudioState *audio, TsUi
                                TsInstrument *instrument, float milliseconds)
 {
     char error[160];
+    int bank_slot = ui->bank_view_slot;
     int ok;
+    if (bank_slot >= 0 && bank_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[bank_slot].occupied) {
+        if (device) SDL_LockAudioDevice(device);
+        ok = ts_instrument_bank_set_loop_crossfade(instrument, bank_slot,
+                                                   milliseconds,
+                                                   error, sizeof(error));
+        if (device) SDL_UnlockAudioDevice(device);
+        if (ok) sync_playing_loop(device, audio, instrument);
+        if (ok) snprintf(ui->status, sizeof(ui->status),
+                         "BANK %02d LOOP CROSSFADE %.1F MS",
+                         bank_slot + 1,
+                         instrument->bank[bank_slot].loop_crossfade_ms);
+        else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
+        return;
+    }
     if (device) SDL_LockAudioDevice(device);
     ok = ts_instrument_set_loop_crossfade(instrument, milliseconds, error, sizeof(error));
     if (ok && audio->looping && audio->sample != NULL) {
@@ -773,8 +822,27 @@ static void cycle_loop_mode(SDL_AudioDeviceID device, AudioState *audio, TsUiSta
                             TsInstrument *instrument)
 {
     char error[160];
-    TsLoopMode mode = (TsLoopMode)((instrument->loop_mode + 1) % TS_LOOP_MODE_COUNT);
+    int bank_slot = ui->bank_view_slot;
+    TsLoopMode current_mode = bank_slot >= 0 && bank_slot < TS_BANK_SLOT_COUNT &&
+                              instrument->bank[bank_slot].occupied ?
+                              instrument->bank[bank_slot].loop_mode :
+                              instrument->loop_mode;
+    TsLoopMode mode = (TsLoopMode)((current_mode + 1) % TS_LOOP_MODE_COUNT);
     int ok;
+    if (bank_slot >= 0 && bank_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[bank_slot].occupied) {
+        if (device) SDL_LockAudioDevice(device);
+        ok = ts_instrument_bank_set_loop_mode(instrument, bank_slot, mode,
+                                              error, sizeof(error));
+        if (device) SDL_UnlockAudioDevice(device);
+        if (ok) sync_playing_loop(device, audio, instrument);
+        if (ok) snprintf(ui->status, sizeof(ui->status),
+                         "BANK %02d LOOP MODE %s",
+                         bank_slot + 1, ts_loop_mode_name(mode));
+        else snprintf(ui->status, sizeof(ui->status),
+                      "BANK LOOP MODE FAILED: %.118s", error);
+        return;
+    }
     if (device) SDL_LockAudioDevice(device);
     ok = ts_instrument_set_loop_mode(instrument, mode, error, sizeof(error));
     if (ok && audio->playing && audio->bank_slot < 0 && audio->looping) {
@@ -793,7 +861,32 @@ static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
 {
     TsAuditionPlan plan;
     if (device) SDL_LockAudioDevice(device);
-    if (audio->playing && audio->bank_slot < 0 && audio->looping &&
+    if (audio->playing && audio->bank_slot >= 0 &&
+        audio->bank_slot < TS_BANK_SLOT_COUNT &&
+        instrument->bank[audio->bank_slot].occupied) {
+        const TsBankSlot *slot = &instrument->bank[audio->bank_slot];
+        if (!ts_bank_audition_plan(instrument, audio->bank_slot, &plan)) {
+            audio->playing = 0;
+            audio->bank_slot = -1;
+            if (device) SDL_UnlockAudioDevice(device);
+            return;
+        }
+        audio->sample = plan.sample;
+        audio->range_start = plan.first;
+        audio->range_end = plan.last;
+        audio->range = slot->has_loop ? TS_AUDITION_LOOP : TS_AUDITION_ALL;
+        audio->looping = slot->has_loop;
+        audio->crossfade_frames = slot->has_loop ?
+                                  ts_audition_crossfade_frames(
+                                      &plan, slot->loop_crossfade_ms) : 0;
+        audio->loop_mode = slot->loop_mode;
+        if (audio->loop_mode == TS_LOOP_REVERSE) audio->loop_direction = -1;
+        else if (audio->loop_mode == TS_LOOP_FORWARD) audio->loop_direction = 1;
+        else if (audio->loop_direction == 0) audio->loop_direction = 1;
+        if (audio->position < (double)plan.first || audio->position >= (double)plan.last)
+            audio->position = audio->loop_mode == TS_LOOP_REVERSE && slot->has_loop ?
+                              (double)(plan.last - 1u) : (double)plan.first;
+    } else if (audio->playing && audio->bank_slot < 0 && audio->looping &&
         ts_audition_plan(instrument, audio->source, TS_AUDITION_LOOP, &plan)) {
         audio->sample = plan.sample;
         audio->range_start = plan.first;
@@ -839,9 +932,13 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
                  slot_index + 1);
         return;
     }
-    plan.sample = &slot->sample;
-    plan.first = slot->has_loop ? slot->loop_first : 0;
-    plan.last = slot->has_loop ? slot->loop_last : slot->sample.frames;
+    if (!ts_bank_audition_plan(instrument, slot_index, &plan)) {
+        audio->sample = NULL;
+        if (device) SDL_UnlockAudioDevice(device);
+        snprintf(ui->status, sizeof(ui->status), "BANK %02d CANNOT AUDITION",
+                 slot_index + 1);
+        return;
+    }
     audio->sample = &slot->sample;
     audio->loop_mode = slot->loop_mode;
     audio->loop_direction = audio->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
@@ -860,8 +957,9 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
     audio->bank_slot = slot_index;
     audio->playing = 1;
     SDL_UnlockAudioDevice(device);
-    snprintf(ui->status, sizeof(ui->status), "PLAYING BANK %02d %s",
-             slot_index + 1, ts_bank_capture_name(slot->capture_kind));
+    snprintf(ui->status, sizeof(ui->status), "PLAYING BANK %02d %s %s",
+             slot_index + 1, ts_bank_capture_name(slot->capture_kind),
+             slot->has_loop ? ts_loop_mode_name(slot->loop_mode) : "ONE-SHOT");
 }
 
 static void capture_bank_slot(SDL_AudioDeviceID device, TsUiState *ui,
@@ -1476,10 +1574,19 @@ static void finish_tape_drag(SDL_AudioDeviceID device, AudioState *audio,
 
 static int loop_marker_x(const TsInstrument *instrument, const TsUiState *ui, int endpoint)
 {
-    size_t frame = endpoint == 1 ? instrument->loop_first : instrument->loop_last;
+    const TsBankSlot *bank_slot = ui->bank_view_slot >= 0 &&
+                                  ui->bank_view_slot < TS_BANK_SLOT_COUNT &&
+                                  instrument->bank[ui->bank_view_slot].occupied ?
+                                  &instrument->bank[ui->bank_view_slot] : NULL;
+    size_t frame = bank_slot != NULL ?
+                   (endpoint == 1 ? bank_slot->loop_first : bank_slot->loop_last) :
+                   (endpoint == 1 ? instrument->loop_first : instrument->loop_last);
     size_t first;
     size_t last;
-    if (ui->audition_source == TS_AUDITION_PARENT) {
+    if (bank_slot != NULL) {
+        first = 0;
+        last = bank_slot->sample.frames;
+    } else if (ui->audition_source == TS_AUDITION_PARENT) {
         frame += instrument->crop_first;
         first = ui->parent_view_first;
         last = ui->parent_view_last;
@@ -1496,6 +1603,14 @@ static int loop_marker_x(const TsInstrument *instrument, const TsUiState *ui, in
         int x = TS_WAVE_X + (int)((frame - first) * TS_WAVE_W / (last - first));
         return x >= TS_WAVE_X + TS_WAVE_W ? TS_WAVE_X + TS_WAVE_W - 1 : x;
     }
+}
+
+static size_t bank_frame_from_x(const TsBankSlot *slot, int x)
+{
+    if (slot == NULL || slot->sample.frames == 0) return 0;
+    if (x < 0) x = 0;
+    if (x >= TS_WAVE_W) x = TS_WAVE_W - 1;
+    return (size_t)x * slot->sample.frames / (size_t)TS_WAVE_W;
 }
 
 int main(int argc, char **argv)
@@ -1913,16 +2028,30 @@ int main(int argc, char **argv)
                 size_t frame;
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
                 (void)y;
-                frame = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
-                if (!ui.loop_drag_started) {
-                    ts_instrument_begin_loop_drag(&instrument);
-                    ui.loop_drag_started = 1;
+                if (ui.bank_view_slot >= 0 && ui.bank_view_slot < TS_BANK_SLOT_COUNT &&
+                    instrument.bank[ui.bank_view_slot].occupied) {
+                    TsBankSlot *slot = &instrument.bank[ui.bank_view_slot];
+                    frame = bank_frame_from_x(slot, x - TS_WAVE_X);
+                    ui.dragging_loop_endpoint = ts_instrument_bank_move_loop_endpoint(
+                        &instrument, ui.bank_view_slot,
+                        ui.dragging_loop_endpoint, frame);
+                    sync_playing_loop(device, &audio, &instrument);
+                    snprintf(ui.status, sizeof(ui.status),
+                             "BANK %02d LOOP FLAGS %zu - %zu ZERO SNAPPED",
+                             ui.bank_view_slot + 1, slot->loop_first, slot->loop_last);
+                } else {
+                    frame = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
+                    if (!ui.loop_drag_started) {
+                        ts_instrument_begin_loop_drag(&instrument);
+                        ui.loop_drag_started = 1;
+                    }
+                    ui.dragging_loop_endpoint = ts_instrument_move_loop_endpoint(
+                        &instrument, ui.dragging_loop_endpoint, frame);
+                    sync_playing_loop(device, &audio, &instrument);
+                    snprintf(ui.status, sizeof(ui.status),
+                             "LOOP FLAGS %zu - %zu ZERO SNAPPED",
+                             instrument.loop_first, instrument.loop_last);
                 }
-                ui.dragging_loop_endpoint = ts_instrument_move_loop_endpoint(
-                    &instrument, ui.dragging_loop_endpoint, frame);
-                sync_playing_loop(device, &audio, &instrument);
-                snprintf(ui.status, sizeof(ui.status), "LOOP FLAGS %zu - %zu ZERO SNAPPED",
-                         instrument.loop_first, instrument.loop_last);
             } else if (event.type == SDL_MOUSEMOTION && ui.selecting) {
                 int x, y;
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
@@ -2042,31 +2171,66 @@ int main(int argc, char **argv)
                     begin_export_choice(&ui);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
-                    ui.bank_view_slot = -1;
-                    int first_x = instrument.has_loop ? loop_marker_x(&instrument, &ui, 1) : -1000;
-                    int last_x = instrument.has_loop ? loop_marker_x(&instrument, &ui, 2) : -1000;
-                    if (begin_tape_drag(&ui, &instrument, SDL_BUTTON_LEFT,
-                                        mod, x - TS_WAVE_X)) {
-                        /* Modifier drag owns this gesture. */
-                    } else if (instrument.has_loop && abs(x - first_x) <= 6) {
+                    TsBankSlot *shown_bank = ui.bank_view_slot >= 0 &&
+                                             ui.bank_view_slot < TS_BANK_SLOT_COUNT &&
+                                             instrument.bank[ui.bank_view_slot].occupied ?
+                                             &instrument.bank[ui.bank_view_slot] : NULL;
+                    int has_visible_loop = shown_bank != NULL ? shown_bank->has_loop :
+                                           instrument.has_loop;
+                    int first_x = has_visible_loop ?
+                                  loop_marker_x(&instrument, &ui, 1) : -1000;
+                    int last_x = has_visible_loop ?
+                                 loop_marker_x(&instrument, &ui, 2) : -1000;
+                    if (shown_bank != NULL && has_visible_loop &&
+                        abs(x - first_x) <= 6) {
                         cancel_pitch_preview(device, &audio, &ui, &instrument);
                         ui.dragging_loop_endpoint = 1;
                         ui.loop_drag_started = 0;
-                        snprintf(ui.status, sizeof(ui.status), "DRAG LOOP START - ZERO SNAPPED");
-                    } else if (instrument.has_loop && abs(x - last_x) <= 6) {
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "DRAG BANK %02d LOOP START - ZERO SNAPPED",
+                                 ui.bank_view_slot + 1);
+                    } else if (shown_bank != NULL && has_visible_loop &&
+                               abs(x - last_x) <= 6) {
                         cancel_pitch_preview(device, &audio, &ui, &instrument);
                         ui.dragging_loop_endpoint = 2;
                         ui.loop_drag_started = 0;
-                        snprintf(ui.status, sizeof(ui.status), "DRAG LOOP END - ZERO SNAPPED");
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "DRAG BANK %02d LOOP END - ZERO SNAPPED",
+                                 ui.bank_view_slot + 1);
+                    } else if (shown_bank != NULL) {
+                        snprintf(ui.status, sizeof(ui.status),
+                                 shown_bank->has_loop ?
+                                 "BANK %02d LOOP SAVED - DRAG CYAN FLAGS" :
+                                 "BANK %02d IS ONE-SHOT - USE SET LOOP",
+                                 ui.bank_view_slot + 1);
                     } else {
-                        cancel_pitch_preview(device, &audio, &ui, &instrument);
-                        ui.selection_anchor = ts_sample_nearest_zero_crossing(
-                            &instrument.current, selection_frame_from_x(
-                                &instrument, &ui, x - TS_WAVE_X));
-                        ts_instrument_set_selection_snapped(
-                            &instrument, ui.selection_anchor, ui.selection_anchor);
-                        ui.selecting = 1;
-                        snprintf(ui.status, sizeof(ui.status), "SELECTING CURRENT - ZERO SNAP");
+                        ui.bank_view_slot = -1;
+                        if (begin_tape_drag(&ui, &instrument, SDL_BUTTON_LEFT,
+                                            mod, x - TS_WAVE_X)) {
+                            /* Modifier drag owns this gesture. */
+                        } else if (instrument.has_loop && abs(x - first_x) <= 6) {
+                            cancel_pitch_preview(device, &audio, &ui, &instrument);
+                            ui.dragging_loop_endpoint = 1;
+                            ui.loop_drag_started = 0;
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "DRAG LOOP START - ZERO SNAPPED");
+                        } else if (instrument.has_loop && abs(x - last_x) <= 6) {
+                            cancel_pitch_preview(device, &audio, &ui, &instrument);
+                            ui.dragging_loop_endpoint = 2;
+                            ui.loop_drag_started = 0;
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "DRAG LOOP END - ZERO SNAPPED");
+                        } else {
+                            cancel_pitch_preview(device, &audio, &ui, &instrument);
+                            ui.selection_anchor = ts_sample_nearest_zero_crossing(
+                                &instrument.current, selection_frame_from_x(
+                                    &instrument, &ui, x - TS_WAVE_X));
+                            ts_instrument_set_selection_snapped(
+                                &instrument, ui.selection_anchor, ui.selection_anchor);
+                            ui.selecting = 1;
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "SELECTING CURRENT - ZERO SNAP");
+                        }
                     }
                 } else if (y >= 205 && y < 228 && x >= 10 && x < 80) {
                     ui.commit_armed = 0;
@@ -2242,9 +2406,21 @@ int main(int argc, char **argv)
                             set_loop(device, &audio, &ui, &instrument);
                         else if (x >= 89 && x < 153)
                             clear_loop(device, &audio, &ui, &instrument);
-                        else if (x >= 158 && x < 242)
-                            begin_audition(device, &audio, &ui, &instrument,
-                                           TS_AUDITION_LOOP, 1.0, obtained.freq);
+                        else if (x >= 158 && x < 242) {
+                            int slot = ui.bank_view_slot;
+                            if (slot >= 0 && slot < TS_BANK_SLOT_COUNT &&
+                                instrument.bank[slot].occupied) {
+                                if (instrument.bank[slot].has_loop)
+                                    begin_bank_audition(device, &audio, &ui,
+                                                        &instrument, slot,
+                                                        obtained.freq);
+                                else snprintf(ui.status, sizeof(ui.status),
+                                              "BANK %02d HAS NO LOOP - USE SET LOOP",
+                                              slot + 1);
+                            } else begin_audition(device, &audio, &ui, &instrument,
+                                                  TS_AUDITION_LOOP, 1.0,
+                                                  obtained.freq);
+                        }
                         else if (x >= 247 && x < 355)
                             cycle_loop_mode(device, &audio, &ui, &instrument);
                         else if (x >= 365 && x < 577)

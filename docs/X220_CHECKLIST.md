@@ -160,6 +160,9 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Selection and Loop captures contain exactly the visibly snapped range.
 - [ ] Loop capture retains a full-slot loop, its Forward/Reverse/Ping-Pong mode, and the active crossfade milliseconds.
 - [ ] Clicking each occupied slot auditions the correct audio; loop slots continue looping until Space or Escape.
+- [ ] Looped slots have a blue bank-tile marker; switching between looped and one-shot slots never clears either member's metadata.
+- [ ] With a filled bank waveform visible, Set/Clear/Mode/Xfade/Play Loop address that member rather than Current; the blue flags drag live and remain zero-snapped.
+- [ ] After giving two bank members different loop ranges, modes, and crossfades, each left-click audition uses the selected member's own settings.
 - [ ] Set Current is inactive without a filled auditioned slot and becomes active after auditioning one.
 - [ ] Set Current stops audition, makes Parent and Current exactly equal to the selected bank audio, and returns the waveform to Current.
 - [ ] A Loop member transfers its full-slot loop and exact crossfade setting into the new Current editing base.

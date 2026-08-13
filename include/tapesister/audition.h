@@ -25,6 +25,8 @@ typedef struct {
 
 int ts_audition_plan(const TsInstrument *instrument, TsAuditionSource source,
                      TsAuditionRange range, TsAuditionPlan *plan);
+int ts_bank_audition_plan(const TsInstrument *instrument, int slot,
+                          TsAuditionPlan *plan);
 double ts_audition_map_progress(double position, size_t first, size_t last,
                                 size_t target_first, size_t target_last);
 size_t ts_audition_crossfade_frames(const TsAuditionPlan *plan, float milliseconds);
