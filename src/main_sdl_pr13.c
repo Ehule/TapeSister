@@ -1,6 +1,7 @@
 #include "tapesister/pr13.h"
 #include "tapesister/ui.h"
 #include <SDL2/SDL.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -8,6 +9,7 @@ static TsInstrument *p13_inst;
 static TsUiState *p13_ui;
 static int p13_slot = -1;
 static int p13_x, p13_min, p13_max, p13_y;
+static int p13_seen_undo = -1, p13_seen_redo = -1;
 
 static void p13_rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t c)
 {
@@ -16,11 +18,53 @@ static void p13_rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t c)
             fb->pixels[yy * TS_UI_WIDTH + xx] = c;
 }
 
+static int p13_metadata_differs(const TsInstrument *inst, const TsBankSlot *slot)
+{
+    return slot->tuning.root_note != inst->tuning.root_note ||
+           fabsf(slot->tuning.fine_tune_cents - inst->tuning.fine_tune_cents) > 0.0001f ||
+           slot->audible_tuning.root_note != inst->audible_tuning.root_note ||
+           fabsf(slot->audible_tuning.fine_tune_cents - inst->audible_tuning.fine_tune_cents) > 0.0001f ||
+           slot->has_loop != inst->has_loop || slot->loop_first != inst->loop_first ||
+           slot->loop_last != inst->loop_last || slot->loop_mode != inst->loop_mode ||
+           fabsf(slot->loop_crossfade_ms - inst->loop_crossfade_ms) > 0.0001f;
+}
+
+static void p13_reconcile(TsInstrument *inst, TsUiState *ui)
+{
+    TsBankSlot *slot;
+    char error[160];
+    int history_changed;
+    if (p13_slot < 0 || p13_slot >= TS_BANK_SLOT_COUNT || !inst->bank[p13_slot].occupied) return;
+    slot = &inst->bank[p13_slot];
+    history_changed = inst->undo_count != p13_seen_undo || inst->redo_count != p13_seen_redo;
+    if (ts_pr13_slot_locked(inst, p13_slot)) {
+        if ((history_changed && ts_sample_hash(&inst->current) != ts_sample_hash(&slot->sample)) ||
+            p13_metadata_differs(inst, slot)) {
+            if (ts_instrument_set_bank_as_current(inst, p13_slot, error, sizeof(error))) {
+                inst->process.body = 0.0f;
+                inst->process.edge = 0.0f;
+                inst->process.drift = 0.5f;
+                snprintf(ui->status, sizeof(ui->status), "BANK %02d LOCKED - EDIT DISCARDED", p13_slot + 1);
+            }
+        }
+    } else if (history_changed) {
+        if (ts_sample_hash(&inst->current) != ts_sample_hash(&slot->sample))
+            ts_pr13_rerender(inst, p13_slot, error, sizeof(error));
+        else if (p13_metadata_differs(inst, slot))
+            ts_pr13_sync_active_slot(inst, p13_slot, error, sizeof(error));
+    } else if (p13_metadata_differs(inst, slot)) {
+        ts_pr13_sync_active_slot(inst, p13_slot, error, sizeof(error));
+    }
+    p13_seen_undo = inst->undo_count;
+    p13_seen_redo = inst->redo_count;
+}
+
 static void p13_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *inst)
 {
-    ts_ui_render(fb, ui, inst);
     p13_inst = (TsInstrument *)inst;
     p13_ui = (TsUiState *)ui;
+    p13_reconcile(p13_inst, p13_ui);
+    ts_ui_render(fb, ui, inst);
     p13_rect(fb, 247, 205, 383, 23, 0x00181818u);
     if (!ui->show_keyboard && !ui->show_recipes) {
         for (int s = 0; s < TS_BANK_SLOT_COUNT; ++s) if (inst->bank[s].occupied) {
@@ -114,6 +158,8 @@ static int p13_poll(SDL_Event *e)
                     if(ts_instrument_set_bank_as_current(p13_inst,s,error,sizeof(error))){
                         p13_inst->process.body=0.0f; p13_inst->process.edge=0.0f; p13_inst->process.drift=0.5f;
                         p13_slot=s;
+                        p13_seen_undo=p13_inst->undo_count;
+                        p13_seen_redo=p13_inst->redo_count;
                     }
                 }
             }
