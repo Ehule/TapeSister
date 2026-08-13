@@ -1,7 +1,7 @@
 CC ?= cc
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
 CPPFLAGS ?= -Iinclude
-CORE = src/ts_sample.c src/ts_audition.c src/ts_note_bank.c src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_ui.c
+CORE = src/ts_sample.c src/ts_audition.c src/ts_note_bank.c src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_macro.c src/ts_ui.c
 
 .PHONY: all test screenshot clean
 
