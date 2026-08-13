@@ -8,6 +8,7 @@ int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
     int old_last;
     int old_path;
     float old_mutation;
+    float lineage_mutation;
     TsFamilyRelation old_relation;
 
     if (instrument == 0) return 0;
@@ -27,6 +28,7 @@ int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
         instrument->family_relation = selected->relation;
         instrument->family_mutation = selected->lineage_mutation;
     }
+    lineage_mutation = instrument->family_mutation;
 
     if (instrument->family_relation == TS_FAMILY_CHILD)
         instrument->family_mutation *= 0.50f;
@@ -40,6 +42,8 @@ int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
     {
         int ok = ts_instrument_generate_family_candidate(instrument, anchor, 0,
                                                           created_slot, error, error_size);
+        if (ok && created_slot != 0 && *created_slot >= 0)
+            instrument->bank[*created_slot].lineage_mutation = lineage_mutation;
         instrument->family_relation = old_relation;
         instrument->family_mutation = old_mutation;
         instrument->family_trajectory = old_path;
