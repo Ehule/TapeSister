@@ -138,6 +138,21 @@ int main(int argc, char **argv)
         ui.recipes.active_slot = 7;
         snprintf(ui.status, sizeof(ui.status),
                  "BROKEN FOLD APPLIED - PARENT PRESERVED  UNDO RESTORES");
+    } else if (argc > 2 && strcmp(argv[2], "tuning") == 0) {
+        if (!ts_instrument_set_tuning(&instrument, 57, -14.2f,
+                                      error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ui.fx_page = TS_FX_TUNE;
+        ui.has_pitch_suggestion = 1;
+        ui.pitch_suggestion.root_note = 58;
+        ui.pitch_suggestion.fine_tune_cents = 3.7f;
+        ui.pitch_confidence = 0.91f;
+        ui.active_notes = (1u << 0) | (1u << 7) | (1u << 12);
+        snprintf(ui.status, sizeof(ui.status),
+                 "SUGGEST A#3 +3.7 C  CONF 91%% - CLICK ACCEPT");
     }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {

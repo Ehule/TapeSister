@@ -94,6 +94,8 @@ static const char *glyph(char c)
     case '.': return "00000000000000000000000000010000100";
     case ':': return "00000001000010000000001000010000000";
     case '-': return "00000000000000011111000000000000000";
+    case '+': return "00000001000010011111001000010000000";
+    case '#': return "01010010101111101010111110101000000";
     case '/': return "00001000100001000100010001000010000";
     case '_': return "00000000000000000000000000000011111";
     default:  return "00000000000000000000000000000000000";
@@ -539,12 +541,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);
     slider(fb, 230, 233, 100, "DRIFT", instrument->process.drift, PAL_TUNING);
-    button(fb, 345, 233, 45, "EDIT", ui->fx_page == TS_FX_EDIT);
-    button(fb, 394, 233, 45, "NOISE", ui->fx_page == TS_FX_NOISE);
-    button(fb, 443, 233, 45, "SHAPE", ui->fx_page == TS_FX_SHAPE);
-    button(fb, 492, 233, 45, "DELAY", ui->fx_page == TS_FX_DELAY);
-    button(fb, 541, 233, 43, "SPACE", ui->fx_page == TS_FX_SPACE);
-    button(fb, 588, 233, 42, "LOOP", ui->fx_page == TS_FX_LOOP);
+    button(fb, 335, 233, 39, "EDIT", ui->fx_page == TS_FX_EDIT);
+    button(fb, 378, 233, 39, "TUNE", ui->fx_page == TS_FX_TUNE);
+    button(fb, 421, 233, 39, "NOISE", ui->fx_page == TS_FX_NOISE);
+    button(fb, 464, 233, 43, "SHAPE", ui->fx_page == TS_FX_SHAPE);
+    button(fb, 511, 233, 39, "DELY", ui->fx_page == TS_FX_DELAY);
+    button(fb, 554, 233, 34, "SPC", ui->fx_page == TS_FX_SPACE);
+    button(fb, 592, 233, 38, "LOOP", ui->fx_page == TS_FX_LOOP);
 
     if (ui->fx_page == TS_FX_EDIT) {
         button(fb, 10, 261, 94, "REVERSE", 0);
@@ -553,6 +556,25 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 297, 261, 84, "AMP UP", 0);
         button(fb, 386, 261, 110, "FADE IN", 0);
         button(fb, 501, 261, 110, "FADE OUT", 0);
+    } else if (ui->fx_page == TS_FX_TUNE) {
+        char root[32];
+        char note[12];
+        char frequency[32];
+        char fine[32];
+        snprintf(root, sizeof(root), "ROOT %s",
+                 ts_midi_note_name(instrument->tuning.root_note, note, sizeof(note)));
+        snprintf(fine, sizeof(fine), "FINE %+.1F C", instrument->tuning.fine_tune_cents);
+        snprintf(frequency, sizeof(frequency), "%.2F HZ",
+                 ts_tuning_frequency(&instrument->tuning));
+        button(fb, 10, 261, 48, "- NOTE", 0);
+        button(fb, 62, 261, 90, root, 1);
+        button(fb, 156, 261, 48, "+ NOTE", 0);
+        slider(fb, 214, 261, 146, fine,
+               (instrument->tuning.fine_tune_cents + 100.0f) / 200.0f, PAL_TUNING);
+        button(fb, 370, 261, 90, frequency, 0);
+        button(fb, 470, 261, 160,
+               ui->has_pitch_suggestion ? "ACCEPT SUGGESTION" : "SUGGEST PITCH",
+               ui->has_pitch_suggestion);
     } else if (ui->fx_page == TS_FX_NOISE) {
         char color[32];
         button(fb, 10, 261, 94, instrument->process.noise_enabled ? "NOISE ON" : "NOISE OFF",
@@ -616,7 +638,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
            ui->show_recipes ? "KEYS" : "RCPE", !ui->show_keyboard);
 
     if (ui->show_keyboard) {
-        text(fb, 11, 318, "WHEEL ZOOM  SHIFT+WHEEL PAN  =/- ZOOM  ARROWS PAN  SHIFT+CLICK CHORD", RGB(184, 180, 184), 1);
+        text(fb, 11, 318, "SHIFT+CLICK CHORD  SHIFT+RIGHT CLICK SETS ROOT NOTE", RGB(184, 180, 184), 1);
         const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
         const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
         const int white_semitones[14] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};

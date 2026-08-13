@@ -281,6 +281,7 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
 {
     TsAuditionPlan plan;
     ui->bank_view_slot = -1;
+    ui->has_pitch_suggestion = 0;
     if (audio->playing && audio->bank_slot >= 0) {
         /* Bank slots own stable buffers and do not remap through Current edits. */
     } else if (audio->playing && audition_plan_ui(instrument, ui, audio->source,
@@ -331,7 +332,11 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         }
         if (ok) {
             lock_edit(device, audio);
-            ok = ts_instrument_set_process(instrument, &loaded.process,
+            ok = loaded.has_tuning ?
+                 ts_instrument_set_process_and_tuning(instrument, &loaded.process,
+                                                      &loaded.tuning,
+                                                      error, sizeof(error)) :
+                 ts_instrument_set_process(instrument, &loaded.process,
                                            error, sizeof(error));
             unlock_edit(device, audio, ui, instrument);
         }
@@ -343,8 +348,10 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         if (ok) {
             ui->show_keyboard = 0;
             ui->show_recipes = 1;
-            snprintf(ui->status, sizeof(ui->status), "LOADED RECIPE %.31s - UNDO RESTORES",
-                     loaded.name);
+            ui->recipes.active_slot = slot - 1;
+            ui->has_pitch_suggestion = 0;
+            snprintf(ui->status, sizeof(ui->status), "LOADED RECIPE %.31s%s - UNDO RESTORES",
+                     loaded.name, loaded.has_tuning ? " + TUNING" : "");
         } else snprintf(ui->status, sizeof(ui->status), "TSP LOAD FAILED: %.131s", error);
         return ok;
     }
@@ -437,17 +444,69 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     else snprintf(ui->status, sizeof(ui->status), "PROCESS FAILED: %.130s", error);
 }
 
+static void apply_tuning(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                         TsInstrument *instrument, int root_note, float cents)
+{
+    char error[160];
+    char note[12];
+    int ok;
+    lock_edit(device, audio);
+    ok = ts_instrument_set_tuning(instrument, root_note, cents, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok) {
+        ui->has_pitch_suggestion = 0;
+        snprintf(ui->status, sizeof(ui->status), "ROOT %s  %+.1F CENTS  %.2F HZ",
+                 ts_midi_note_name(instrument->tuning.root_note, note, sizeof(note)),
+                 instrument->tuning.fine_tune_cents,
+                 ts_tuning_frequency(&instrument->tuning));
+    } else snprintf(ui->status, sizeof(ui->status), "TUNING: %.145s", error);
+}
+
+static void suggest_or_accept_pitch(SDL_AudioDeviceID device, AudioState *audio,
+                                    TsUiState *ui, TsInstrument *instrument)
+{
+    char error[160];
+    char note[12];
+    if (ui->has_pitch_suggestion) {
+        TsTuning suggestion = ui->pitch_suggestion;
+        apply_tuning(device, audio, ui, instrument, suggestion.root_note,
+                     suggestion.fine_tune_cents);
+        return;
+    }
+    if (ts_instrument_suggest_pitch(instrument, &ui->pitch_suggestion,
+                                    &ui->pitch_confidence, error, sizeof(error))) {
+        ui->has_pitch_suggestion = 1;
+        snprintf(ui->status, sizeof(ui->status), "SUGGEST %s %+.1F C  CONF %.0F%% - CLICK ACCEPT",
+                 ts_midi_note_name(ui->pitch_suggestion.root_note, note, sizeof(note)),
+                 ui->pitch_suggestion.fine_tune_cents,
+                 ui->pitch_confidence * 100.0f);
+    } else snprintf(ui->status, sizeof(ui->status), "PITCH SUGGESTION: %.137s", error);
+}
+
 static void apply_recipe_slot(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                               TsInstrument *instrument, int slot)
 {
+    char error[160];
+    int ok;
+    const TsPortableRecipe *recipe;
     if (slot < 0 || slot >= TS_RECIPE_SLOT_COUNT ||
         !ui->recipes.slots[slot].occupied) {
         snprintf(ui->status, sizeof(ui->status), "EMPTY USER RECIPE - SHIFT+CLICK CAPTURES");
         return;
     }
-    apply_process(device, audio, ui, instrument,
-                  ui->recipes.slots[slot].process, ui->recipes.slots[slot].name);
-    ui->recipes.active_slot = slot;
+    recipe = &ui->recipes.slots[slot];
+    lock_edit(device, audio);
+    ok = recipe->has_tuning ?
+         ts_instrument_set_process_and_tuning(instrument, &recipe->process,
+                                              &recipe->tuning, error, sizeof(error)) :
+         ts_instrument_set_process(instrument, &recipe->process, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok) {
+        ui->recipes.active_slot = slot;
+        ui->has_pitch_suggestion = 0;
+        snprintf(ui->status, sizeof(ui->status), "APPLIED %.31s%s",
+                 recipe->name, recipe->has_tuning ? " + TUNING" : "");
+    } else snprintf(ui->status, sizeof(ui->status), "RECIPE FAILED: %.135s", error);
 }
 
 static void capture_recipe_slot(TsUiState *ui, const TsInstrument *instrument, int slot)
@@ -456,7 +515,7 @@ static void capture_recipe_slot(TsUiState *ui, const TsInstrument *instrument, i
     char name[32];
     snprintf(name, sizeof(name), "USER %02d", slot - TS_FACTORY_RECIPE_COUNT + 1);
     if (ts_recipe_bank_capture(&ui->recipes, slot, &instrument->process,
-                               name, error, sizeof(error)))
+                               &instrument->tuning, name, error, sizeof(error)))
         snprintf(ui->status, sizeof(ui->status), "CAPTURED %.31s - TOP SAVE WRITES TSP", name);
     else snprintf(ui->status, sizeof(ui->status), "RECIPE CAPTURE FAILED: %.126s", error);
 }
@@ -965,7 +1024,8 @@ static int save_recipe_atomic(const TsInstrument *instrument, const char *destin
     return finish_atomic_file(temporary, destination, error, error_size);
 }
 
-static int save_preset_atomic(const TsProcessRecipe *process, const char *name,
+static int save_preset_atomic(const TsProcessRecipe *process, const TsTuning *tuning,
+                              const char *name,
                               const char *destination, char *error, size_t error_size)
 {
     char temporary[TS_BROWSER_PATH_MAX + 32];
@@ -975,7 +1035,7 @@ static int save_preset_atomic(const TsProcessRecipe *process, const char *name,
         snprintf(error, error_size, "Destination path is too long");
         return 0;
     }
-    if (!ts_recipe_from_process(&recipe, process, name) ||
+    if (!ts_recipe_from_process_and_tuning(&recipe, process, tuning, name) ||
         !ts_recipe_save(&recipe, temporary, error, error_size)) {
         remove(temporary);
         return 0;
@@ -983,7 +1043,8 @@ static int save_preset_atomic(const TsProcessRecipe *process, const char *name,
     return finish_atomic_file(temporary, destination, error, error_size);
 }
 
-static int export_wav_atomic(const TsSample *sample, const char *destination,
+static int export_wav_atomic(const TsSample *sample, const TsTuning *tuning,
+                             const char *destination,
                              char *error, size_t error_size)
 {
     char temporary[TS_BROWSER_PATH_MAX + 32];
@@ -992,7 +1053,7 @@ static int export_wav_atomic(const TsSample *sample, const char *destination,
         snprintf(error, error_size, "Destination path is too long");
         return 0;
     }
-    if (!ts_sample_save_wav16(sample, temporary, error, error_size)) {
+    if (!ts_sample_save_wav16_tuned(sample, tuning, temporary, error, error_size)) {
         remove(temporary);
         return 0;
     }
@@ -1044,12 +1105,13 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             snprintf(name, sizeof(name), "%.31s", browser->filename);
             length = strlen(name);
             if (length > 4u && name[length - 4u] == '.') name[length - 4u] = '\0';
-            ok = save_preset_atomic(&instrument->process, name, path,
+            ok = save_preset_atomic(&instrument->process, &instrument->tuning, name, path,
                                     error, sizeof(error));
             snprintf(ui->status, sizeof(ui->status), ok ? "SAVED PROCESS RECIPE %.99s" :
                      "TSP SAVE FAILED: %.131s", ok ? path : error);
         } else if (browser->mode == TS_BROWSER_EXPORT_WAV) {
-            ok = export_wav_atomic(&instrument->current, path, error, sizeof(error));
+            ok = export_wav_atomic(&instrument->current, &instrument->tuning,
+                                   path, error, sizeof(error));
             snprintf(ui->status, sizeof(ui->status), ok ? "EXPORTED CURRENT %.101s" :
                      "EXPORT FAILED: %.133s", ok ? path : error);
         } else {
@@ -1677,10 +1739,12 @@ int main(int argc, char **argv)
                     } else if (instrument.has_loop && abs(x - first_x) <= 6) {
                         ui.dragging_loop_endpoint = 1;
                         ui.loop_drag_started = 0;
+                        ui.has_pitch_suggestion = 0;
                         snprintf(ui.status, sizeof(ui.status), "DRAG LOOP START - ZERO SNAPPED");
                     } else if (instrument.has_loop && abs(x - last_x) <= 6) {
                         ui.dragging_loop_endpoint = 2;
                         ui.loop_drag_started = 0;
+                        ui.has_pitch_suggestion = 0;
                         snprintf(ui.status, sizeof(ui.status), "DRAG LOOP END - ZERO SNAPPED");
                     } else {
                         ui.selection_anchor = ts_sample_nearest_zero_crossing(
@@ -1689,6 +1753,7 @@ int main(int argc, char **argv)
                         ts_instrument_set_selection_snapped(
                             &instrument, ui.selection_anchor, ui.selection_anchor);
                         ui.selecting = 1;
+                        ui.has_pitch_suggestion = 0;
                         snprintf(ui.status, sizeof(ui.status), "SELECTING CURRENT - ZERO SNAP");
                     }
                 } else if (y >= 205 && y < 228 && x >= 10 && x < 80) {
@@ -1732,22 +1797,25 @@ int main(int argc, char **argv)
                     if (*control < 0.0f) *control = 0.0f;
                     if (*control > 1.0f) *control = 1.0f;
                     apply_process(device, &audio, &ui, &instrument, process, label);
-                } else if (y >= 233 && y < 256 && x >= 345 && x < 390) {
+                } else if (y >= 233 && y < 256 && x >= 335 && x < 374) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_EDIT;
                     snprintf(ui.status, sizeof(ui.status), "SAMPLE EDITING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 394 && x < 439) {
+                } else if (y >= 233 && y < 256 && x >= 378 && x < 417) {
+                    ui.commit_armed = 0; ui.fx_page = TS_FX_TUNE;
+                    snprintf(ui.status, sizeof(ui.status), "ROOT NOTE AND FINE TUNING");
+                } else if (y >= 233 && y < 256 && x >= 421 && x < 460) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_NOISE;
                     snprintf(ui.status, sizeof(ui.status), "NOISE PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 443 && x < 488) {
+                } else if (y >= 233 && y < 256 && x >= 464 && x < 507) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_SHAPE;
                     snprintf(ui.status, sizeof(ui.status), "FILTER AND SHAPER PAGE");
-                } else if (y >= 233 && y < 256 && x >= 492 && x < 537) {
+                } else if (y >= 233 && y < 256 && x >= 511 && x < 550) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_DELAY;
                     snprintf(ui.status, sizeof(ui.status), "DELAY PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 541 && x < 584) {
+                } else if (y >= 233 && y < 256 && x >= 554 && x < 588) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_SPACE;
                     snprintf(ui.status, sizeof(ui.status), "SPACE PROCESSING PAGE");
-                } else if (y >= 233 && y < 256 && x >= 588 && x < 630) {
+                } else if (y >= 233 && y < 256 && x >= 592 && x < 630) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_LOOP;
                     snprintf(ui.status, sizeof(ui.status), "LOOP EDITING PAGE");
                 } else if (y >= 261 && y < 285) {
@@ -1774,6 +1842,21 @@ int main(int argc, char **argv)
                         else if (x >= 501 && x < 611)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_FADE_OUT, 1.0f);
+                    } else if (ui.fx_page == TS_FX_TUNE) {
+                        if (x >= 10 && x < 58 && instrument.tuning.root_note > 0)
+                            apply_tuning(device, &audio, &ui, &instrument,
+                                         instrument.tuning.root_note - 1,
+                                         instrument.tuning.fine_tune_cents);
+                        else if (x >= 156 && x < 204 && instrument.tuning.root_note < 127)
+                            apply_tuning(device, &audio, &ui, &instrument,
+                                         instrument.tuning.root_note + 1,
+                                         instrument.tuning.fine_tune_cents);
+                        else if (x >= 214 && x < 360)
+                            apply_tuning(device, &audio, &ui, &instrument,
+                                         instrument.tuning.root_note,
+                                         (float)(x - 214) / 146.0f * 200.0f - 100.0f);
+                        else if (x >= 470 && x < 630)
+                            suggest_or_accept_pitch(device, &audio, &ui, &instrument);
                     } else if (ui.fx_page == TS_FX_NOISE) {
                         label = "NOISE";
                         if (x >= 10 && x < 104) { process.noise_enabled = !process.noise_enabled; changed = 1; }
@@ -1959,11 +2042,13 @@ int main(int argc, char **argv)
                 int x, y;
                 int bank_slot;
                 int recipe_slot;
+                int note;
                 TsUiBankAction action;
                 SDL_Keymod mod = SDL_GetModState();
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
                 bank_slot = ts_ui_bank_slot_from_point(x, y);
                 recipe_slot = ts_ui_recipe_slot_from_point(x, y);
+                note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
                 action = ts_ui_bank_action(1, bank_modifiers(mod));
                 if (ui.renaming_bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
@@ -1980,6 +2065,10 @@ int main(int argc, char **argv)
                                          mod, x - TS_WAVE_X))
                         snprintf(ui.status, sizeof(ui.status),
                                  "SHIFT+RMB COPY OVERWRITE  CTRL+RMB MOVE OVERWRITE");
+                } else if (note >= 0 && (mod & KMOD_SHIFT)) {
+                    apply_tuning(device, &audio, &ui, &instrument,
+                                 TS_KEYBOARD_BASE_NOTE + note,
+                                 instrument.tuning.fine_tune_cents);
                 } else if (ui.show_recipes && recipe_slot >= 0 &&
                            (mod & KMOD_SHIFT)) {
                     char error[160];

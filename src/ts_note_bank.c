@@ -38,6 +38,7 @@ static void update_voice(TsNoteVoice *voice, const TsInstrument *instrument,
     voice->crossfade_frames = voice->looping ?
                               ts_audition_crossfade_frames(
                                   &plan, instrument->loop_crossfade_ms) : 0;
+    voice->pitch = ts_tuning_note_pitch(&instrument->tuning, voice->note);
     voice->step = (double)plan.sample->sample_rate / output_rate * voice->pitch;
 }
 
@@ -88,7 +89,7 @@ TsNoteStartResult ts_note_bank_start(TsNoteBank *bank, const TsInstrument *instr
         voice->position = instrument->loop_mode == TS_LOOP_REVERSE &&
                           instrument->has_loop ? (double)(plan.last - 1u) :
                           (double)plan.first;
-        voice->pitch = pow(2.0, note / 12.0);
+        voice->pitch = ts_tuning_note_pitch(&instrument->tuning, note);
         voice->step = (double)plan.sample->sample_rate / output_rate * voice->pitch;
         voice->range_first = plan.first;
         voice->range_last = plan.last;

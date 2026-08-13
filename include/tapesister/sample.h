@@ -8,8 +8,14 @@ enum {
     TS_HISTORY_DEPTH = 24,
     TS_SAMPLE_EDIT_DEPTH = 64,
     TS_POST_EDIT_DEPTH = 64,
-    TS_BANK_SLOT_COUNT = 16
+    TS_BANK_SLOT_COUNT = 16,
+    TS_KEYBOARD_BASE_NOTE = 48
 };
+
+typedef struct {
+    int root_note;
+    float fine_tune_cents;
+} TsTuning;
 
 typedef struct {
     float *data;
@@ -142,6 +148,7 @@ typedef enum {
 
 typedef struct {
     TsSample sample;
+    TsTuning tuning;
     size_t loop_first;
     size_t loop_last;
     float loop_crossfade_ms;
@@ -164,6 +171,7 @@ typedef struct {
     TsLoopMode loop_mode;
     int has_selection;
     int has_loop;
+    TsTuning tuning;
     TsProcessRecipe process;
     TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
     int sample_edit_count;
@@ -179,6 +187,7 @@ typedef struct {
     TsProcessRecipe process;
     uint32_t generation;
     uint64_t ancestor_hash;
+    TsTuning tuning;
     size_t crop_first;
     size_t crop_last;
     size_t selection_first;
@@ -206,7 +215,11 @@ void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
 int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, size_t error_size);
 int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t error_size);
+int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *path,
+                             char *error, size_t error_size);
 int ts_sample_save_wav16(const TsSample *sample, const char *path, char *error, size_t error_size);
+int ts_sample_save_wav16_tuned(const TsSample *sample, const TsTuning *tuning,
+                               const char *path, char *error, size_t error_size);
 int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe, char *error, size_t error_size);
 int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, size_t last,
                       const TsProcessRecipe *recipe, char *error, size_t error_size);
@@ -222,6 +235,17 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
 int ts_instrument_reseed(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_set_process(TsInstrument *instrument, const TsProcessRecipe *process,
                               char *error, size_t error_size);
+int ts_instrument_set_process_and_tuning(TsInstrument *instrument,
+                                         const TsProcessRecipe *process,
+                                         const TsTuning *tuning,
+                                         char *error, size_t error_size);
+int ts_instrument_set_tuning(TsInstrument *instrument, int root_note,
+                             float fine_tune_cents, char *error, size_t error_size);
+double ts_tuning_frequency(const TsTuning *tuning);
+double ts_tuning_note_pitch(const TsTuning *tuning, int keyboard_note);
+const char *ts_midi_note_name(int note, char *name, size_t size);
+int ts_instrument_suggest_pitch(const TsInstrument *instrument, TsTuning *suggestion,
+                                float *confidence, char *error, size_t error_size);
 int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t error_size);
 void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t last);

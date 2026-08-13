@@ -1,8 +1,8 @@
 # TapeSister
 
-TapeSister is a standalone sample-instrument forge. The current development slice adds portable processing recipes, resonant filtering, and three nonlinear shapers to its durable Parent/Current sound model, zero-crossing editor, physical tape gestures, sample-family bank, polyphonic audition, and deterministic DSP shelf.
+TapeSister is a standalone sample-instrument forge. The current development slice adds root-note and fine-tuning metadata, root-relative keyboard audition, sampler-compatible WAV metadata, and an advisory pitch finder to its durable Parent/Current sound model, zero-crossing editor, physical tape gestures, sample-family bank, polyphonic audition, and deterministic DSP shelf.
 
-![TapeSister recipe bank and Shape page](docs/recipe-shaping-preview.png)
+![TapeSister Tune page and advisory pitch suggestion](docs/pitch-tuning-preview.png)
 
 ## Parent and Current
 
@@ -33,7 +33,15 @@ The Loop page turns the current selection into one loop, clears it, plays it con
 
 Parent/Current A/B maps the same loop through the crop offset, preserves relative playback progress, and uses the same direction mode. Loop range, mode, and crossfade participate in Undo/Redo. Reset clears them and can be undone; Commit carries the completed loop onto the newly promoted Parent while clearing prior edit history.
 
-The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary click clears the chord and returns to momentary audition. Sustained voices survive loop-handle changes and Current rerenders.
+The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary click clears the chord and returns to momentary audition. Sustained voices survive loop-handle changes, Current rerenders, and tuning changes.
+
+## Pitch and tuning
+
+The **Tune** page gives every instrument one shared root note and ±100-cent fine offset. Parent/Current A/B therefore compares the same musical mapping, while the two-octave keyboard pitches audio relative to that root instead of assuming the first C is always unity. The default root is C3 (MIDI 48), preserving the previous keyboard behavior for older WAV and TSR files. Shift-right-clicking an onscreen key assigns it as the root; held and latched notes retune in place without restarting.
+
+**Suggest Pitch** analyzes the snapped Selection first, then the Loop, then all of Current. It reports a note, cents, and confidence without changing the instrument; a second explicit click accepts it. Quiet, noisy, or unstable material is rejected rather than forced into a misleading note. Manual tuning remains authoritative.
+
+Root and fine tuning survive Undo/Redo, Reset, Commit, family capture, and Set Current. Each bank member carries its own mapping. Current and Family WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. TSR10 stores tuning for the live instrument and every bank member. User-captured TSP2 recipes optionally carry tuning; the eight factory recipes remain processing-only and never retune a sound unexpectedly.
 
 ## Sample-family bank
 
@@ -47,7 +55,7 @@ Click any slot to audition it and place that member in the waveform display; an 
 
 After auditioning a filled slot, **Set Current** checks that family member out as a new clean editing base. Parent and Current become sample-for-sample identical to the selected audio, stored loop/mode/crossfade metadata follows it, and the complete family bank remains intact. Because every later render must have a stable Parent, this is a deliberate genealogy boundary: it advances the generation, records the previous Parent hash, resets DSP and edit history, and cannot be crossed with Undo. Space and Escape retain the reliable stop-all behavior formerly provided by the redundant mouse button.
 
-The top **Export** button and `Ctrl+E` always ask whether to export the single Current WAV or the complete Family. Family export writes every occupied slot as a numbered WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR9 projects embed all occupied bank audio and loop metadata; opening TSR6 through TSR8 projects remains supported and initializes fields that did not yet exist.
+The top **Export** button and `Ctrl+E` always ask whether to export the single Current WAV or the complete Family. Family export writes every occupied slot as a numbered WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR10 projects embed all occupied bank audio, loop metadata, and tuning; opening TSR6 through TSR9 projects remains supported and initializes fields that did not yet exist.
 
 ## Physical tape gestures
 
@@ -64,7 +72,7 @@ Where source and existing audio overlap, Mix produces `(underlying + source) / 2
 
 The lower panel now cycles **KEYS**, **BANK**, and **RCPE**. RCPE contains eight immutable factory recipes and eight user slots. Click a filled slot to apply its processing to Current as one undoable render. Shift-click an empty user slot to capture the live processing shelf, right-click a filled user slot to rename it, and Shift-right-click to clear it. Factory recipes and their names remain immutable. Manual shelf changes remove the active-slot highlight without altering the stored recipe.
 
-Portable `.tsp` files contain only the named processing settings—never Parent audio, crop, selection, loop, tape edits, or bank members—so the same sound treatment can be applied to unrelated sources. While RCPE is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the instrument. Full `.tsr` projects remain the self-contained way to save a complete sound.
+Portable `.tsp` files contain the named processing settings and, for user captures, optional tuning metadata—never Parent audio, crop, selection, loop, tape edits, or bank members—so the same treatment can be applied to unrelated sources. Factory recipes omit tuning. While RCPE is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the instrument. Full `.tsr` projects remain the self-contained way to save a complete sound.
 
 The **Shape** page combines a bypassable resonant Lowpass, Highpass, or Bandpass filter with a bypassable Tape, Clip, or Fold shaper. Cutoff uses logarithmic travel, while resonance, drive, and wet/dry mix expose the musically useful range. These deterministic stages live in the processing recipe and render before Delay and Space; existing ordered tape placements remain downstream. Held and latched notes are remapped across recipe application just like other Current rerenders.
 
@@ -93,8 +101,8 @@ Every stage is equally available to generated and imported Parents. Bypass is ex
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
-- self-contained native TSR9 project saving with embedded Parent audio, all bank slots, lineage, editor view, selection, loop mode/metadata, pre- and post-DSP edit timelines, and every DSP parameter; and
-- mono 16-bit Current export.
+- self-contained native TSR10 project saving with embedded Parent audio, all bank slots and tuning, lineage, editor view, selection, loop mode/metadata, pre- and post-DSP edit timelines, and every DSP parameter; and
+- mono 16-bit Current export with sampler-compatible root/fine-tune metadata.
 
 Sample edits run deterministically between the preserved Parent and the live DSP. With no selection they affect the whole Current; with a selection they affect only that range. Commit prints the heard result into the next Parent generation and clears both the edit stack and Undo/Redo history.
 
@@ -113,7 +121,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR9 embeds the Parent waveform, complete sample-family bank, loop directions, replayable tape-edit timeline, filter, and shaper in one portable file. TSR6 through TSR8 projects remain loadable with deterministic defaults for fields absent from those versions. TSP1 is deliberately source-independent and therefore complements rather than replaces the project format.
+TSR10 embeds the Parent waveform, complete sample-family bank, per-member tuning, loop directions, replayable tape-edit timeline, filter, and shaper in one portable file. TSR6 through TSR9 projects remain loadable with deterministic defaults for fields absent from those versions. TSP2 remains source-audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 
