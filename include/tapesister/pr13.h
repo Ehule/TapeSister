@@ -30,6 +30,9 @@ int ts_pr13_rerender(TsInstrument *instrument, int active_slot,
 int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
                                       int reseed, int *created_slot,
                                       char *error, size_t error_size);
+int ts_pr13_generate_parent_in_slot(TsInstrument *instrument, int active_slot,
+                                    int reseed,
+                                    char *error, size_t error_size);
 int ts_pr13_save_project(const TsInstrument *instrument, const char *path,
                          char *error, size_t error_size);
 int ts_pr13_load_project(TsInstrument *instrument, const char *path,
