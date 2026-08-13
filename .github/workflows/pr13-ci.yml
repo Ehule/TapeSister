@@ -7,12 +7,14 @@ on:
   pull_request:
 
 jobs:
-  core:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build core tests
-        run: cmake -S . -B build -DTAPESISTER_BUILD_SDL=OFF -DCMAKE_BUILD_TYPE=Release
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Compile
         run: cmake --build build --parallel
       - name: Test
