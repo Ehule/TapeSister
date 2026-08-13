@@ -9,9 +9,100 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #ifdef _WIN32
 #include <windows.h>
+#include <direct.h>
+#else
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
+
+static const char *config_file_path(void)
+{
+    const char *override = getenv("TAPESISTER_CONFIG");
+    return override != NULL && override[0] != '\0' ? override : "tapesister.ini";
+}
+
+static int path_is_directory(const char *path)
+{
+#ifdef _WIN32
+    struct _stat info;
+    return path != NULL && path[0] != '\0' && _stat(path, &info) == 0 &&
+           (info.st_mode & _S_IFDIR) != 0;
+#else
+    struct stat info;
+    return path != NULL && path[0] != '\0' && stat(path, &info) == 0 &&
+           S_ISDIR(info.st_mode);
+#endif
+}
+
+static int launch_program(const char *path, char *error, size_t error_size)
+{
+    if (path == NULL || path[0] == '\0') {
+        snprintf(error, error_size, "FastTracker executable path is blank");
+        return 0;
+    }
+#ifdef _WIN32
+    if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) {
+        snprintf(error, error_size, "FastTracker executable was not found");
+        return 0;
+    }
+#else
+    if (access(path, X_OK) != 0) {
+        snprintf(error, error_size, "FastTracker executable is not runnable: %s",
+                 strerror(errno));
+        return 0;
+    }
+#endif
+#ifdef _WIN32
+    {
+        STARTUPINFOA startup;
+        PROCESS_INFORMATION process;
+        char command[TS_CONFIG_PATH_MAX + 4];
+        int written = snprintf(command, sizeof(command), "\"%s\"", path);
+        if (written < 0 || (size_t)written >= sizeof(command)) {
+            snprintf(error, error_size, "FastTracker executable path is too long");
+            return 0;
+        }
+        memset(&startup, 0, sizeof(startup));
+        memset(&process, 0, sizeof(process));
+        startup.cb = sizeof(startup);
+        if (!CreateProcessA(path, command, NULL, NULL, FALSE, 0,
+                            NULL, NULL, &startup, &process)) {
+            snprintf(error, error_size, "Could not launch FastTracker (Windows error %lu)",
+                     (unsigned long)GetLastError());
+            return 0;
+        }
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+    }
+#else
+    {
+        pid_t first = fork();
+        int status = 0;
+        if (first < 0) {
+            snprintf(error, error_size, "Could not launch FastTracker: %s", strerror(errno));
+            return 0;
+        }
+        if (first == 0) {
+            pid_t second = fork();
+            if (second < 0) _exit(126);
+            if (second > 0) _exit(0);
+            setsid();
+            execl(path, path, (char *)NULL);
+            _exit(127);
+        }
+        if (waitpid(first, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+            snprintf(error, error_size, "Could not start FastTracker launch process");
+            return 0;
+        }
+    }
+#endif
+    error[0] = '\0';
+    return 1;
+}
 
 typedef struct {
     const TsSample *sample;
@@ -896,6 +987,69 @@ static void text_move_cursor(const char *buffer, size_t *cursor, int amount)
     *cursor = (size_t)position;
 }
 
+static void select_config_field(TsUiState *ui, TsConfigField field)
+{
+    const char *value;
+    if (field < 0) field = (TsConfigField)(TS_CONFIG_FIELD_COUNT - 1);
+    if ((int)field >= TS_CONFIG_FIELD_COUNT) field = TS_CONFIG_SAMPLE_PATH;
+    ui->config_field = field;
+    value = ts_config_field_const(&ui->config, field);
+    ui->config_cursor = value != NULL ? strlen(value) : 0;
+}
+
+static void begin_config(TsUiState *ui)
+{
+    ui->commit_armed = 0;
+    ui->config_before_edit = ui->config;
+    ui->config_open = 1;
+    select_config_field(ui, TS_CONFIG_SAMPLE_PATH);
+    SDL_StartTextInput();
+    snprintf(ui->status, sizeof(ui->status), "EDITING TAPESISTER PATHS");
+}
+
+static void cancel_config(TsUiState *ui)
+{
+    ui->config = ui->config_before_edit;
+    ui->config_open = 0;
+    ui->config_cursor = 0;
+    SDL_StopTextInput();
+    snprintf(ui->status, sizeof(ui->status), "CONFIG CHANGES CANCELLED");
+}
+
+static void save_config(TsUiState *ui)
+{
+    char error[160];
+    if (!ts_config_save(&ui->config, config_file_path(), error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "CONFIG SAVE FAILED: %.130s", error);
+        return;
+    }
+    ui->config_before_edit = ui->config;
+    if (path_is_directory(ui->config.sample_path))
+        snprintf(ui->browser.directory, sizeof(ui->browser.directory), "%s",
+                 ui->config.sample_path);
+    ui->config_open = 0;
+    ui->config_cursor = 0;
+    SDL_StopTextInput();
+    snprintf(ui->status, sizeof(ui->status), "SAVED CONFIG %.112s", config_file_path());
+}
+
+static void config_use_cwd(TsUiState *ui)
+{
+    char *field = ts_config_field(&ui->config, ui->config_field);
+    if (field == NULL) return;
+#ifdef _WIN32
+    if (_getcwd(field, TS_CONFIG_PATH_MAX) == NULL)
+#else
+    if (getcwd(field, TS_CONFIG_PATH_MAX) == NULL)
+#endif
+        snprintf(ui->status, sizeof(ui->status), "COULD NOT READ CURRENT DIRECTORY");
+    else {
+        ui->config_cursor = strlen(field);
+        snprintf(ui->status, sizeof(ui->status), "CURRENT DIRECTORY COPIED TO %s",
+                 ts_config_field_name(ui->config_field));
+    }
+}
+
 static void cancel_bank_rename(TsUiState *ui)
 {
     int slot = ui->renaming_bank_slot;
@@ -1002,21 +1156,8 @@ static void browser_open(TsUiState *ui, TsBrowserMode mode)
 static void browser_open_bank(TsUiState *ui, const TsInstrument *instrument)
 {
     char folder[TS_BROWSER_NAME_MAX + 1];
-    size_t used = 0;
-    const char *source = instrument->bank[0].occupied ?
-                         instrument->bank[0].sample.name : instrument->parent.name;
-    const char *source_end = strrchr(source, '.');
-    if (source_end == NULL || source_end == source) source_end = source + strlen(source);
-    while (source < source_end && used + 8u < sizeof(folder)) {
-        unsigned char c = (unsigned char)*source++;
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == '-' || c == '_')
-            folder[used++] = (char)c;
-        else if (used > 0 && folder[used - 1u] != '_') folder[used++] = '_';
-    }
-    while (used > 0 && folder[used - 1u] == '_') --used;
-    if (used == 0) memcpy(folder + used, "TapeSister", 10), used += 10;
-    memcpy(folder + used, "_family", 8);
+    if (!ts_instrument_family_folder_name(instrument, folder, sizeof(folder)))
+        snprintf(folder, sizeof(folder), "TapeSister_family");
     ui->commit_armed = 0;
     SDL_StopTextInput();
     if (ts_browser_open(&ui->browser, TS_BROWSER_EXPORT_BANK, folder)) {
@@ -1026,6 +1167,43 @@ static void browser_open_bank(TsUiState *ui, const TsInstrument *instrument)
         snprintf(ui->status, sizeof(ui->status), "BROWSER FAILED: %.142s", ui->browser.message);
         ts_browser_close(&ui->browser);
     }
+}
+
+static void send_to_fasttracker(TsUiState *ui, const TsInstrument *instrument)
+{
+    const char *directory = ui->config.exchange_path[0] != '\0' ?
+                            ui->config.exchange_path : ui->config.sample_path;
+    char destination[TS_BROWSER_PATH_MAX];
+    char error[160];
+    if (!path_is_directory(directory)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "CONFIGURE AN EXISTING FT2 EXCHANGE OR SAMPLE PATH FIRST");
+        return;
+    }
+    if (!ts_instrument_next_family_path(instrument, directory,
+                                        destination, sizeof(destination),
+                                        error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "FT2 PATH FAILED: %.134s", error);
+        return;
+    }
+    if (!ts_instrument_export_bank(instrument, destination, error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "FT2 EXPORT FAILED: %.132s", error);
+        return;
+    }
+    if (ui->config.fasttracker_path[0] == '\0') {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FT2 FAMILY READY %.104s - SET EXECUTABLE TO AUTO LAUNCH",
+                 destination);
+        return;
+    }
+    if (!launch_program(ui->config.fasttracker_path, error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FAMILY READY %.64s  LAUNCH FAILED %.48s", destination, error);
+        return;
+    }
+    snprintf(ui->status, sizeof(ui->status),
+             "SENT %d LOOP AWARE SAMPLES TO %.83s - FASTTRACKER LAUNCHED",
+             ts_instrument_bank_count(instrument), destination);
 }
 
 static void browser_cancel(TsUiState *ui)
@@ -1089,6 +1267,8 @@ static int save_preset_atomic(const TsProcessRecipe *process, const TsTuning *tu
 }
 
 static int export_wav_atomic(const TsSample *sample, const TsTuning *tuning,
+                             int has_loop, size_t loop_first, size_t loop_last,
+                             TsLoopMode loop_mode,
                              const char *destination,
                              char *error, size_t error_size)
 {
@@ -1098,7 +1278,9 @@ static int export_wav_atomic(const TsSample *sample, const TsTuning *tuning,
         snprintf(error, error_size, "Destination path is too long");
         return 0;
     }
-    if (!ts_sample_save_wav16_tuned(sample, tuning, temporary, error, error_size)) {
+    if (!ts_sample_save_wav16_tuned_looped(sample, tuning, has_loop,
+                                           loop_first, loop_last, loop_mode,
+                                           temporary, error, error_size)) {
         remove(temporary);
         return 0;
     }
@@ -1157,6 +1339,9 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                      "TSP SAVE FAILED: %.131s", ok ? path : error);
         } else if (browser->mode == TS_BROWSER_EXPORT_WAV) {
             ok = export_wav_atomic(&instrument->current, &instrument->tuning,
+                                   instrument->has_loop,
+                                   instrument->loop_first, instrument->loop_last,
+                                   instrument->loop_mode,
                                    path, error, sizeof(error));
             snprintf(ui->status, sizeof(ui->status), ok ? "EXPORTED CURRENT %.101s" :
                      "EXPORT FAILED: %.133s", ok ? path : error);
@@ -1328,6 +1513,15 @@ int main(int argc, char **argv)
 
     ts_instrument_init(&instrument);
     ts_ui_init(&ui);
+    {
+        char config_error[160];
+        if (!ts_config_load(&ui.config, config_file_path(),
+                            config_error, sizeof(config_error)))
+            fprintf(stderr, "TapeSister config: %s\n", config_error);
+        else if (path_is_directory(ui.config.sample_path))
+            snprintf(ui.browser.directory, sizeof(ui.browser.directory), "%s",
+                     ui.config.sample_path);
+    }
     ts_note_bank_init(&audio.notes);
     audio.bank_slot = -1;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
@@ -1368,7 +1562,8 @@ int main(int argc, char **argv)
             if (event.type == SDL_QUIT) running = 0;
             else if (event.type == SDL_DROPFILE &&
                      (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                      ui.export_choice_open || ui.browser.mode != TS_BROWSER_CLOSED)) {
+                      ui.config_open || ui.export_choice_open ||
+                      ui.browser.mode != TS_BROWSER_CLOSED)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
                 SDL_free(event.drop.file);
@@ -1376,6 +1571,11 @@ int main(int argc, char **argv)
             else if (event.type == SDL_DROPFILE) {
                 load_instrument(device, &audio, &ui, &instrument, event.drop.file);
                 SDL_free(event.drop.file);
+            } else if (event.type == SDL_TEXTINPUT && ui.config_open) {
+                char *field = ts_config_field(&ui.config, ui.config_field);
+                if (field != NULL)
+                    text_insert_ascii(field, TS_CONFIG_PATH_MAX,
+                                      &ui.config_cursor, event.text.text);
             } else if (event.type == SDL_TEXTINPUT && ui.renaming_bank_slot >= 0) {
                 text_insert_ascii(ui.bank_rename, sizeof(ui.bank_rename),
                                   &ui.bank_rename_cursor, event.text.text);
@@ -1389,7 +1589,32 @@ int main(int argc, char **argv)
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
                 if (!((mod & KMOD_CTRL) && key == SDLK_p)) ui.commit_armed = 0;
-                if (ui.renaming_bank_slot >= 0) {
+                if (ui.config_open) {
+                    char *field = ts_config_field(&ui.config, ui.config_field);
+                    if (key == SDLK_ESCAPE) cancel_config(&ui);
+                    else if ((mod & KMOD_CTRL) && key == SDLK_BACKSPACE && field != NULL) {
+                        field[0] = '\0';
+                        ui.config_cursor = 0;
+                    } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
+                        save_config(&ui);
+                    else if (key == SDLK_TAB || key == SDLK_DOWN)
+                        select_config_field(&ui,
+                            (TsConfigField)(ui.config_field + 1));
+                    else if (key == SDLK_UP)
+                        select_config_field(&ui,
+                            (TsConfigField)(ui.config_field - 1));
+                    else if (key == SDLK_BACKSPACE && field != NULL)
+                        text_backspace(field, &ui.config_cursor);
+                    else if (key == SDLK_DELETE && field != NULL)
+                        text_delete(field, &ui.config_cursor);
+                    else if (key == SDLK_LEFT && field != NULL)
+                        text_move_cursor(field, &ui.config_cursor, -1);
+                    else if (key == SDLK_RIGHT && field != NULL)
+                        text_move_cursor(field, &ui.config_cursor, 1);
+                    else if (key == SDLK_HOME) ui.config_cursor = 0;
+                    else if (key == SDLK_END && field != NULL)
+                        ui.config_cursor = strlen(field);
+                } else if (ui.renaming_bank_slot >= 0) {
                     if (key == SDLK_ESCAPE) cancel_bank_rename(&ui);
                     else if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
                         finish_bank_rename(&ui, &instrument);
@@ -1597,14 +1822,15 @@ int main(int argc, char **argv)
                     if (note >= 0 && device)
                         begin_note(device, &audio, &ui, &instrument, note, obtained.freq, 0);
                 }
-            } else if (event.type == SDL_KEYUP && ui.renaming_bank_slot < 0 &&
+            } else if (event.type == SDL_KEYUP && !ui.config_open &&
+                       ui.renaming_bank_slot < 0 &&
                        ui.renaming_recipe_slot < 0 && !ui.export_choice_open &&
                        ui.browser.mode == TS_BROWSER_CLOSED &&
                        note_for_key(event.key.keysym.sym) >= 0) {
                 release_note(device, &audio, &ui, note_for_key(event.key.keysym.sym));
             } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                        ui.export_choice_open)) {
+                        ui.config_open || ui.export_choice_open)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
             } else if (event.type == SDL_MOUSEWHEEL && ui.browser.mode != TS_BROWSER_CLOSED) {
@@ -1658,7 +1884,7 @@ int main(int argc, char **argv)
                 }
             } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                        ui.export_choice_open)) {
+                        ui.config_open || ui.export_choice_open)) {
                 /* Modal dialogs own pointer input. */
             } else if (event.type == SDL_MOUSEMOTION && ui.browser.dragging_scrollbar) {
                 int x, y;
@@ -1708,7 +1934,36 @@ int main(int argc, char **argv)
                 SDL_Keymod mod = SDL_GetModState();
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
                 if (!(y >= 205 && y < 228 && x >= 247 && x < 325)) ui.commit_armed = 0;
-                if (ui.renaming_bank_slot >= 0) {
+                if (ui.config_open) {
+                    static const int field_y[TS_CONFIG_FIELD_COUNT] = {103, 158, 213};
+                    int selected = -1;
+                    for (int i = 0; i < TS_CONFIG_FIELD_COUNT; ++i)
+                        if (x >= 50 && x < 590 && y >= field_y[i] && y < field_y[i] + 24)
+                            selected = i;
+                    if (selected >= 0) {
+                        const char *field;
+                        size_t length;
+                        size_t cursor;
+                        size_t first;
+                        size_t clicked;
+                        if (selected != (int)ui.config_field)
+                            select_config_field(&ui, (TsConfigField)selected);
+                        field = ts_config_field_const(&ui.config, ui.config_field);
+                        length = strlen(field);
+                        cursor = ui.config_cursor > length ? length : ui.config_cursor;
+                        first = length > 82u ? length - 82u : 0u;
+                        if (cursor < first) first = cursor;
+                        if (cursor > first + 82u) first = cursor - 82u;
+                        clicked = first + (size_t)((x - 56 + 3) / 6);
+                        if (clicked > length) clicked = length;
+                        ui.config_cursor = clicked;
+                    } else if (x >= 50 && x < 160 && y >= 274 && y < 297)
+                        save_config(&ui);
+                    else if (x >= 170 && x < 270 && y >= 274 && y < 297)
+                        config_use_cwd(&ui);
+                    else if (x >= 280 && x < 362 && y >= 274 && y < 297)
+                        cancel_config(&ui);
+                } else if (ui.renaming_bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");
                 } else if (ui.renaming_recipe_slot >= 0) {
@@ -1776,10 +2031,14 @@ int main(int argc, char **argv)
                     } else if (x >= 260 && x < 344 && y >= 326 && y < 349) {
                         browser_cancel(&ui);
                     }
-                } else if (y >= 4 && y < 28 && x >= 447 && x < 529) {
+                } else if (y >= 4 && y < 28 && x >= 350 && x < 426) {
+                    begin_config(&ui);
+                } else if (y >= 4 && y < 28 && x >= 431 && x < 511) {
+                    send_to_fasttracker(&ui, &instrument);
+                } else if (y >= 4 && y < 28 && x >= 516 && x < 568) {
                     browser_open(&ui, ui.show_recipes ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
-                } else if (y >= 4 && y < 28 && x >= 535 && x < 630) {
+                } else if (y >= 4 && y < 28 && x >= 573 && x < 630) {
                     begin_export_choice(&ui);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
@@ -2096,7 +2355,7 @@ int main(int argc, char **argv)
                 }
             } else if (event.type == SDL_MOUSEBUTTONDOWN &&
                        event.button.button == SDL_BUTTON_RIGHT &&
-                       ui.browser.mode == TS_BROWSER_CLOSED) {
+                       !ui.config_open && ui.browser.mode == TS_BROWSER_CLOSED) {
                 int x, y;
                 int bank_slot;
                 int recipe_slot;

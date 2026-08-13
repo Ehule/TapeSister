@@ -21,7 +21,20 @@ int main(int argc, char **argv)
     ts_instrument_set_selection(&instrument, instrument.current.frames / 5,
                                 instrument.current.frames * 3 / 5);
     snprintf(ui.status, sizeof(ui.status), "PARENT PRESERVED - CURRENT READY TO SHAPE");
-    if (argc > 2 && strcmp(argv[2], "browser") == 0) {
+    if (argc > 2 && strcmp(argv[2], "config") == 0) {
+        ui.config_open = 1;
+        ui.config_field = TS_CONFIG_EXCHANGE_PATH;
+        snprintf(ui.config.sample_path, sizeof(ui.config.sample_path),
+                 "/home/user/Samples");
+        snprintf(ui.config.fasttracker_path, sizeof(ui.config.fasttracker_path),
+                 "/home/user/FT2-Tapehead/ft2-clone");
+        snprintf(ui.config.exchange_path, sizeof(ui.config.exchange_path),
+                 "/home/user/Samples/TapeSister-Handoff");
+        ui.config_cursor = strlen(ui.config.exchange_path);
+        ui.text_cursor_visible = 1;
+        snprintf(ui.status, sizeof(ui.status),
+                 "CONFIG PATHS ARE SAVED IN TAPESISTER INI");
+    } else if (argc > 2 && strcmp(argv[2], "browser") == 0) {
         ts_browser_open(&ui.browser, TS_BROWSER_EXPORT_WAV, "metallic-family-07.wav");
         ui.text_cursor_visible = 1;
         snprintf(ui.browser.directory, sizeof(ui.browser.directory),

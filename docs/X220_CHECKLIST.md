@@ -121,6 +121,23 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] TSR10 save/reopen restores the live mapping and every occupied bank member's mapping; TSR6-9 open with C3 defaults where tuning was absent.
 - [ ] User-captured TSP2 recipes restore processing and tuning together as one undo step; factory recipes and legacy TSP1 never alter tuning.
 
+## FastTracker handoff and configuration
+
+- [ ] Config opens above the instrument and owns keyboard, mouse, wheel, drag/drop, and text input until Save Config or Cancel.
+- [ ] Sample, FastTracker executable, and exchange paths accept spaces, support insertion plus Left/Right/Home/End/Backspace/Delete, and retain a visible caret while horizontally clipped.
+- [ ] Tab and Up/Down cycle the three fields; Ctrl+Backspace clears only the active field; Use CWD replaces only the active field.
+- [ ] Cancel restores every pre-dialog path. Save Config writes `tapesister.ini`, and reopening TapeSister restores the exact paths.
+- [ ] A valid configured sample path becomes the initial Load/Save/Export browser directory; blank or missing config remains safe.
+- [ ] Send FT2 uses Exchange Path first and Sample Path as fallback, exports every occupied family member, and never overwrites an existing handoff folder.
+- [ ] Repeated Send FT2 actions create deterministic numbered sibling folders.
+- [ ] A blank executable still completes the family export and explains how to enable auto-launch; an invalid executable reports the launch failure without deleting the exported family.
+- [ ] A valid executable launches FastTracker without passing the folder as a false module argument.
+- [ ] Import the handoff folder into FT2: Forward and Ping-Pong members arrive with loop enabled and exact start/length; non-loop members remain one-shot.
+- [ ] A Current WAV exported through the ordinary Export browser also reopens with exact loop start/end/type in TapeSister.
+- [ ] Reverse writes the standard WAV backward-loop type; record that current FT2 maps it to Ping-Pong pending the reciprocal loader refinement.
+- [ ] Root/fine-tune remains present in every WAV; record that current FT2 still derives tuning from sample rate pending its `smpl` unity-note refinement.
+- [ ] Config does not copy palette values or tracker globals. Palette import/edit/export remains a separate palette-only control group in this window.
+
 ## Existing foundation
 
 - [ ] Computer and onscreen keys audition the selected A/B source at different pitches.

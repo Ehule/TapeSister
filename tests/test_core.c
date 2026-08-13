@@ -281,6 +281,32 @@ int main(void)
         remove("test-tuned.wav");
     }
     {
+        TsTuning written = {62, 7.5f};
+        for (int mode = TS_LOOP_FORWARD; mode < TS_LOOP_MODE_COUNT; ++mode) {
+            TsTuning reopened = {0, 0.0f};
+            TsLoopMode reopened_mode = TS_LOOP_FORWARD;
+            size_t loop_first = 0, loop_last = 0;
+            int has_loop = 0;
+            CHECK(ts_sample_save_wav16_tuned_looped(
+                &a, &written, 1, 123, 4321, (TsLoopMode)mode,
+                "test-looped.wav", error, sizeof(error)));
+            CHECK(ts_sample_load_wav_metadata(
+                &loaded, &reopened, &has_loop, &loop_first, &loop_last,
+                &reopened_mode, "test-looped.wav", error, sizeof(error)));
+            CHECK(has_loop && loop_first == 123 && loop_last == 4321);
+            CHECK(reopened_mode == (TsLoopMode)mode);
+            CHECK(reopened.root_note == written.root_note);
+            CHECK(fabsf(reopened.fine_tune_cents - written.fine_tune_cents) < 0.001f);
+        }
+        CHECK(ts_instrument_load_wav(&imported, "test-looped.wav",
+                                     error, sizeof(error)));
+        CHECK(imported.has_loop && imported.loop_first == 123 &&
+              imported.loop_last == 4321 &&
+              imported.loop_mode == TS_LOOP_PING_PONG);
+        CHECK(imported.bank[0].has_loop && imported.bank[0].loop_first == 123);
+        remove("test-looped.wav");
+    }
+    {
         TsInstrument pitch;
         TsTuning suggestion;
         float confidence = 0.0f;
@@ -835,13 +861,31 @@ int main(void)
         DIR *directory = opendir("test-bank-family");
         struct dirent *entry;
         int wav_count = 0;
+        int looped_wav_count = 0;
+        int expected_looped = 0;
+        for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
+            if (restored.bank[slot].occupied && restored.bank[slot].has_loop)
+                ++expected_looped;
         CHECK(directory != NULL);
         if (directory != NULL) {
             while ((entry = readdir(directory)) != NULL) {
                 size_t length = strlen(entry->d_name);
                 if (length > 4 && strcmp(entry->d_name + length - 4, ".wav") == 0) {
                     char exported[512];
+                    TsSample bank_wav;
+                    int has_loop = 0;
+                    size_t loop_first = 0, loop_last = 0;
+                    TsLoopMode loop_mode = TS_LOOP_FORWARD;
                     snprintf(exported, sizeof(exported), "test-bank-family/%s", entry->d_name);
+                    ts_sample_init(&bank_wav);
+                    CHECK(ts_sample_load_wav_metadata(
+                        &bank_wav, NULL, &has_loop, &loop_first, &loop_last,
+                        &loop_mode, exported, error, sizeof(error)));
+                    if (has_loop) {
+                        CHECK(loop_last > loop_first);
+                        ++looped_wav_count;
+                    }
+                    ts_sample_free(&bank_wav);
                     ++wav_count;
                     remove(exported);
                 }
@@ -849,6 +893,7 @@ int main(void)
             closedir(directory);
         }
         CHECK(wav_count == 4);
+        CHECK(looped_wav_count == expected_looped);
         rmdir("test-bank-family");
     }
     {
@@ -940,6 +985,44 @@ int main(void)
     remove("test-recipe.tsr");
     remove("test-roundtrip.wav");
 
+    {
+        TsConfig config;
+        TsConfig reopened;
+        ts_config_init(&config);
+        snprintf(config.sample_path, sizeof(config.sample_path), "/samples/drums");
+        snprintf(config.fasttracker_path, sizeof(config.fasttracker_path),
+                 "/opt/ft2 tapehead/ft2-clone");
+        snprintf(config.exchange_path, sizeof(config.exchange_path), "/samples/handoff");
+        CHECK(ts_config_save(&config, "test-tapesister.ini", error, sizeof(error)));
+        ts_config_init(&reopened);
+        CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+        CHECK(strcmp(reopened.sample_path, config.sample_path) == 0);
+        CHECK(strcmp(reopened.fasttracker_path, config.fasttracker_path) == 0);
+        CHECK(strcmp(reopened.exchange_path, config.exchange_path) == 0);
+        CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
+                     "FASTTRACKER EXECUTABLE") == 0);
+        remove("test-tapesister.ini");
+    }
+    {
+        char name[256];
+        char first_path[512];
+        char next_path[512];
+        CHECK(ts_instrument_family_folder_name(&restored, name, sizeof(name)));
+        CHECK(strstr(name, "_family") != NULL);
+        CHECK(mkdir("test-handoff-root", 0700) == 0);
+        CHECK(ts_instrument_next_family_path(
+            &restored, "test-handoff-root", first_path, sizeof(first_path),
+            error, sizeof(error)));
+        CHECK(strstr(first_path, name) != NULL);
+        CHECK(mkdir(first_path, 0700) == 0);
+        CHECK(ts_instrument_next_family_path(
+            &restored, "test-handoff-root", next_path, sizeof(next_path),
+            error, sizeof(error)));
+        CHECK(strcmp(first_path, next_path) != 0);
+        CHECK(strstr(next_path, "_02") != NULL);
+        CHECK(rmdir(first_path) == 0);
+        CHECK(rmdir("test-handoff-root") == 0);
+    }
     {
         FILE *test_file;
         char path[TS_BROWSER_PATH_MAX];
@@ -1148,6 +1231,16 @@ int main(void)
     ts_ui_render(&fb, &ui, &restored);
     CHECK(fb.pixels[180 * TS_UI_WIDTH + 175] == 0xff5d555du);
     ui.export_choice_open = 0;
+    ui.config_open = 1;
+    ui.config_field = TS_CONFIG_FASTTRACKER_PATH;
+    snprintf(ui.config.fasttracker_path, sizeof(ui.config.fasttracker_path),
+             "/opt/ft2/ft2-clone");
+    ui.config_cursor = strlen(ui.config.fasttracker_path);
+    ui.text_cursor_visible = 1;
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(fb.pixels[163 * TS_UI_WIDTH + 56 +
+                    (int)ui.config_cursor * 6] == 0xffffd265u);
+    ui.config_open = 0;
     ui.show_keyboard = 1;
     {
         uint64_t current_waveform = waveform_hash(&fb);

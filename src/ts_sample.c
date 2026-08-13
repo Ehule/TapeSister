@@ -343,8 +343,10 @@ static float decode_pcm(const unsigned char *p, uint16_t format, uint16_t bits)
     return 0.0f;
 }
 
-int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *path,
-                             char *error, size_t error_size)
+int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
+                                int *has_loop, size_t *loop_first,
+                                size_t *loop_last, TsLoopMode *loop_mode,
+                                const char *path, char *error, size_t error_size)
 {
     FILE *f = fopen(path, "rb");
     unsigned char header[12];
@@ -354,6 +356,10 @@ int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *pat
     long data_offset = -1;
     float *decoded = NULL;
     TsTuning loaded_tuning = default_tuning();
+    uint32_t loaded_loop_start = 0;
+    uint32_t loaded_loop_end = 0;
+    uint32_t loaded_loop_type = 0;
+    int loaded_has_loop = 0;
 
     if (f == NULL) {
         char message[256];
@@ -387,12 +393,13 @@ int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *pat
             data_size = size;
             fseek(f, (long)size, SEEK_CUR);
         } else if (memcmp(chunk, "smpl", 4) == 0 && size >= 20u) {
-            unsigned char smpl[20];
+            unsigned char smpl[60] = {0};
+            size_t keep = size < sizeof(smpl) ? size : sizeof(smpl);
             uint32_t unity;
             uint32_t fraction_bits;
             double midi;
             int root;
-            if (fread(smpl, 1, sizeof(smpl), f) != sizeof(smpl)) break;
+            if (fread(smpl, 1, keep, f) != keep) break;
             unity = le32(smpl + 12);
             fraction_bits = le32(smpl + 16);
             midi = (double)unity + (double)fraction_bits / 4294967296.0;
@@ -405,7 +412,13 @@ int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *pat
                 loaded_tuning.fine_tune_cents = -100.0f;
             if (loaded_tuning.fine_tune_cents > 100.0f)
                 loaded_tuning.fine_tune_cents = 100.0f;
-            if (size > sizeof(smpl)) fseek(f, (long)(size - sizeof(smpl)), SEEK_CUR);
+            if (keep >= 60u && le32(smpl + 28) > 0u) {
+                loaded_loop_type = le32(smpl + 40);
+                loaded_loop_start = le32(smpl + 44);
+                loaded_loop_end = le32(smpl + 48);
+                loaded_has_loop = 1;
+            }
+            if (size > keep) fseek(f, (long)(size - keep), SEEK_CUR);
         } else {
             fseek(f, (long)size, SEEK_CUR);
         }
@@ -472,8 +485,30 @@ int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *pat
                        backslash ? backslash + 1 : path;
     snprintf(sample->name, sizeof(sample->name), "%s", base);
     if (tuning != NULL) *tuning = loaded_tuning;
+    if (loaded_has_loop && loaded_loop_start < frames &&
+        loaded_loop_end >= loaded_loop_start && loaded_loop_end < frames) {
+        if (has_loop != NULL) *has_loop = 1;
+        if (loop_first != NULL) *loop_first = loaded_loop_start;
+        if (loop_last != NULL) *loop_last = (size_t)loaded_loop_end + 1u;
+        if (loop_mode != NULL)
+            *loop_mode = loaded_loop_type == 0u ? TS_LOOP_FORWARD :
+                         loaded_loop_type == 2u ? TS_LOOP_REVERSE :
+                         TS_LOOP_PING_PONG;
+    } else {
+        if (has_loop != NULL) *has_loop = 0;
+        if (loop_first != NULL) *loop_first = 0;
+        if (loop_last != NULL) *loop_last = 0;
+        if (loop_mode != NULL) *loop_mode = TS_LOOP_FORWARD;
+    }
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *path,
+                             char *error, size_t error_size)
+{
+    return ts_sample_load_wav_metadata(sample, tuning, NULL, NULL, NULL, NULL,
+                                       path, error, error_size);
 }
 
 int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t error_size)
@@ -481,15 +516,20 @@ int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t e
     return ts_sample_load_wav_tuned(sample, NULL, path, error, error_size);
 }
 
-int ts_sample_save_wav16_tuned(const TsSample *sample, const TsTuning *tuning,
-                               const char *path, char *error, size_t error_size)
+int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
+                                      const TsTuning *tuning,
+                                      int has_loop, size_t loop_first,
+                                      size_t loop_last, TsLoopMode loop_mode,
+                                      const char *path,
+                                      char *error, size_t error_size)
 {
     TsTuning actual = tuning_valid(tuning) ? *tuning : default_tuning();
     if (sample == NULL || sample->data == NULL || sample->frames == 0 || sample->sample_rate == 0) {
         set_error(error, error_size, "No sample to export");
         return 0;
     }
-    if (sample->frames > (UINT32_MAX - 80u) / 2u) {
+    has_loop = has_loop && loop_first < loop_last && loop_last <= sample->frames;
+    if (sample->frames > (UINT32_MAX - 104u) / 2u) {
         set_error(error, error_size, "Sample is too long for a RIFF WAV");
         return 0;
     }
@@ -499,7 +539,8 @@ int ts_sample_save_wav16_tuned(const TsSample *sample, const TsTuning *tuning,
         return 0;
     }
     uint32_t data_bytes = (uint32_t)(sample->frames * 2u);
-    fwrite("RIFF", 1, 4, f); put32(f, 80u + data_bytes); fwrite("WAVE", 1, 4, f);
+    uint32_t loop_bytes = has_loop ? 24u : 0u;
+    fwrite("RIFF", 1, 4, f); put32(f, 80u + loop_bytes + data_bytes); fwrite("WAVE", 1, 4, f);
     fwrite("fmt ", 1, 4, f); put32(f, 16); put16(f, 1); put16(f, 1);
     put32(f, sample->sample_rate); put32(f, sample->sample_rate * 2u); put16(f, 2); put16(f, 16);
     {
@@ -514,11 +555,21 @@ int ts_sample_save_wav16_tuned(const TsSample *sample, const TsTuning *tuning,
             if (unity < 127) ++unity;
             fraction_bits = 0;
         }
-        fwrite("smpl", 1, 4, f); put32(f, 36u);
+        fwrite("smpl", 1, 4, f); put32(f, 36u + loop_bytes);
         put32(f, 0); put32(f, 0);
         put32(f, (uint32_t)llround(1000000000.0 / sample->sample_rate));
         put32(f, (uint32_t)unity); put32(f, (uint32_t)fraction_bits);
-        put32(f, 0); put32(f, 0); put32(f, 0); put32(f, 0);
+        put32(f, 0); put32(f, 0); put32(f, has_loop ? 1u : 0u); put32(f, 0);
+        if (has_loop) {
+            uint32_t type = loop_mode == TS_LOOP_PING_PONG ? 1u :
+                            loop_mode == TS_LOOP_REVERSE ? 2u : 0u;
+            put32(f, 0);
+            put32(f, type);
+            put32(f, (uint32_t)loop_first);
+            put32(f, (uint32_t)(loop_last - 1u));
+            put32(f, 0);
+            put32(f, 0);
+        }
     }
     fwrite("data", 1, 4, f); put32(f, data_bytes);
     for (size_t i = 0; i < sample->frames; ++i) {
@@ -532,6 +583,14 @@ int ts_sample_save_wav16_tuned(const TsSample *sample, const TsTuning *tuning,
     }
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_sample_save_wav16_tuned(const TsSample *sample, const TsTuning *tuning,
+                               const char *path, char *error, size_t error_size)
+{
+    return ts_sample_save_wav16_tuned_looped(sample, tuning, 0, 0, 0,
+                                             TS_LOOP_FORWARD, path,
+                                             error, error_size);
 }
 
 int ts_sample_save_wav16(const TsSample *sample, const char *path,
@@ -1399,11 +1458,17 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
     TsBankSlot root;
     TsProcessRecipe neutral;
     TsTuning tuning = default_tuning();
+    size_t loop_first = 0;
+    size_t loop_last = 0;
+    TsLoopMode loop_mode = TS_LOOP_FORWARD;
+    int has_loop = 0;
     ts_sample_init(&parent);
     ts_sample_init(&current);
     bank_slot_init(&root);
     ts_process_recipe_reset(&neutral);
-    if (!ts_sample_load_wav_tuned(&parent, &tuning, path, error, error_size) ||
+    if (!ts_sample_load_wav_metadata(&parent, &tuning, &has_loop,
+                                     &loop_first, &loop_last, &loop_mode,
+                                     path, error, error_size) ||
         !ts_sample_process(&current, &parent, 0, parent.frames, &neutral,
                            error, error_size) ||
         !bank_root_clone(&root, &parent, &tuning, error, error_size)) {
@@ -1425,6 +1490,14 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
     instrument->generation = 0;
     instrument->ancestor_hash = 0;
     reset_editor(instrument);
+    instrument->has_loop = has_loop;
+    instrument->loop_first = loop_first;
+    instrument->loop_last = loop_last;
+    instrument->loop_mode = loop_mode;
+    instrument->bank[0].has_loop = has_loop;
+    instrument->bank[0].loop_first = loop_first;
+    instrument->bank[0].loop_last = loop_last;
+    instrument->bank[0].loop_mode = loop_mode;
     return 1;
 }
 
@@ -2180,6 +2253,72 @@ static void bank_safe_name(const char *source, char *destination, size_t size)
     if (used == 0) snprintf(destination, size, "sample");
 }
 
+int ts_instrument_family_folder_name(const TsInstrument *instrument,
+                                     char *name, size_t name_size)
+{
+    const char *source;
+    const char *extension;
+    char stem[128];
+    size_t length;
+    if (instrument == NULL || name == NULL || name_size == 0) return 0;
+    source = instrument->bank[0].occupied ? instrument->bank[0].sample.name :
+                                           instrument->parent.name;
+    extension = strrchr(source, '.');
+    length = extension != NULL && extension > source ?
+             (size_t)(extension - source) : strlen(source);
+    if (length >= sizeof(stem)) length = sizeof(stem) - 1u;
+    memcpy(stem, source, length);
+    stem[length] = '\0';
+    bank_safe_name(stem, stem, sizeof(stem));
+    {
+        int written = snprintf(name, name_size, "%s_family", stem);
+        return written >= 0 && (size_t)written < name_size;
+    }
+}
+
+static int export_path_exists(const char *path)
+{
+    struct stat info;
+    return path != NULL && stat(path, &info) == 0;
+}
+
+int ts_instrument_next_family_path(const TsInstrument *instrument,
+                                   const char *directory,
+                                   char *path, size_t path_size,
+                                   char *error, size_t error_size)
+{
+    char base[256];
+    char name[256];
+    size_t directory_length;
+    int suffix = 1;
+    int written;
+    if (directory == NULL || directory[0] == '\0' || path == NULL || path_size == 0 ||
+        !ts_instrument_family_folder_name(instrument, base, sizeof(base))) {
+        set_error(error, error_size, "Invalid family handoff path");
+        return 0;
+    }
+    directory_length = strlen(directory);
+    snprintf(name, sizeof(name), "%s", base);
+    for (;;) {
+        written = snprintf(path, path_size, "%s%s%s", directory,
+                           directory[directory_length - 1u] == '/' ||
+                           directory[directory_length - 1u] == '\\' ? "" : "/",
+                           name);
+        if (written < 0 || (size_t)written >= path_size) {
+            set_error(error, error_size, "Family handoff path is too long");
+            return 0;
+        }
+        if (!export_path_exists(path)) break;
+        if (++suffix >= 999) {
+            set_error(error, error_size, "Could not find a free family handoff name");
+            return 0;
+        }
+        snprintf(name, sizeof(name), "%.240s_%02d", base, suffix);
+    }
+    set_error(error, error_size, "");
+    return 1;
+}
+
 int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder,
                               char *error, size_t error_size)
 {
@@ -2208,8 +2347,10 @@ int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder
             set_error(error, error_size, "Bank export path is too long");
             goto failed;
         }
-        if (!ts_sample_save_wav16_tuned(&slot->sample, &slot->tuning,
-                                        created[created_count], error, error_size)) {
+        if (!ts_sample_save_wav16_tuned_looped(
+                &slot->sample, &slot->tuning,
+                slot->has_loop, slot->loop_first, slot->loop_last,
+                slot->loop_mode, created[created_count], error, error_size)) {
             remove(created[created_count]);
             goto failed;
         }

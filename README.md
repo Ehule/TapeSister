@@ -1,8 +1,8 @@
 # TapeSister
 
-TapeSister is a standalone sample-instrument forge. The current development slice adds root-note and fine-tuning metadata, root-relative keyboard audition, sampler-compatible WAV metadata, and an advisory pitch finder to its durable Parent/Current sound model, zero-crossing editor, physical tape gestures, sample-family bank, polyphonic audition, and deterministic DSP shelf.
+TapeSister is a standalone sample-instrument forge. The current development slice adds a file-based FastTracker handoff, persistent path configuration, and sampler loop metadata to its durable Parent/Current sound model, tuning, zero-crossing editor, physical tape gestures, sample-family bank, polyphonic audition, and deterministic DSP shelf.
 
-![TapeSister Tune page and advisory pitch suggestion](docs/pitch-tuning-preview.png)
+![TapeSister FastTracker handoff configuration](docs/fasttracker-config-preview.png)
 
 ## Parent and Current
 
@@ -41,7 +41,15 @@ The **Tune** page gives every instrument one shared pitch readout and ±100-cent
 
 **Suggest Pitch** analyzes the snapped Selection first, then the Loop, then all of Current. It temporarily places the suggested mapping on the keyboard so new, held, and latched notes can audition it immediately; the Tune readout follows that preview, while saved tuning and Undo history remain untouched. A second explicit click accepts it. Escape cancels the preview and still performs Stop All; Space stops audition without discarding the preview. Quiet, noisy, or unstable material is rejected rather than forced into a misleading note. Manual tuning remains authoritative.
 
-Root and fine tuning survive Undo/Redo, Reset, Commit, family capture, and Set Current. Each bank member carries its own mapping. Current and Family WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. TSR10 stores tuning for the live instrument and every bank member. User-captured TSP2 recipes optionally carry tuning; the eight factory recipes remain processing-only and never retune a sound unexpectedly.
+Root and fine tuning survive Undo/Redo, Reset, Commit, family capture, and Set Current. Each bank member carries its own mapping. Current and Family WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. The same chunk now carries loop start/end/type; importing the WAV restores that loop in TapeSister. TSR10 stores tuning for the live instrument and every bank member. User-captured TSP2 recipes optionally carry tuning; the eight factory recipes remain processing-only and never retune a sound unexpectedly.
+
+## FastTracker handoff and configuration
+
+**Config** opens one compact modal with blank-safe editable paths for the sample root, FastTracker executable, and FT2 exchange folder. The values persist in portable `tapesister.ini`; Tab or Up/Down changes field, the usual caret keys edit anywhere in a path, Ctrl+Backspace clears it, and **Use CWD** copies the current directory. The configured sample root becomes the file browser's starting directory while normal browsing still remembers later navigation.
+
+**Send FT2** exports every occupied family slot into an automatically numbered folder under the exchange path (falling back to the sample path), then launches the configured FastTracker executable without shell interpolation. No existing handoff folder is replaced. The handoff remains deliberately file-based: TapeSister does not link against tracker state, and FT2's existing folder importer decides whether the family replaces the current instrument, fills another instrument, or becomes a launcher bank.
+
+Every handoff WAV includes root/fine-tune metadata plus loop start, inclusive end, and standard Forward/Ping-Pong/Backward type. FT2 already reads the loop record, so forward and ping-pong family members arrive with looping enabled instead of requiring manual flags. Its current WAV loader treats the standard backward type as ping-pong; exact reverse-loop interpretation and `smpl` root-note adoption belong to the reciprocal FT2-side handoff slice. Palette import/edit/export will share the Config window in its own focused slice rather than mixing palette state into `tapesister.ini`.
 
 ## Sample-family bank
 
@@ -55,7 +63,7 @@ Click any slot to audition it and place that member in the waveform display; an 
 
 After auditioning a filled slot, **Set Current** checks that family member out as a new clean editing base. Parent and Current become sample-for-sample identical to the selected audio, stored loop/mode/crossfade metadata follows it, and the complete family bank remains intact. Because every later render must have a stable Parent, this is a deliberate genealogy boundary: it advances the generation, records the previous Parent hash, resets DSP and edit history, and cannot be crossed with Undo. Space and Escape retain the reliable stop-all behavior formerly provided by the redundant mouse button.
 
-The top **Export** button and `Ctrl+E` always ask whether to export the single Current WAV or the complete Family. Family export writes every occupied slot as a numbered WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR10 projects embed all occupied bank audio, loop metadata, and tuning; opening TSR6 through TSR9 projects remains supported and initializes fields that did not yet exist.
+The top **Export** button and `Ctrl+E` always ask whether to export the single Current WAV or the complete Family. Family export writes every occupied slot as a numbered, loop-aware WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR10 projects embed all occupied bank audio, loop metadata, and tuning; opening TSR6 through TSR9 projects remains supported and initializes fields that did not yet exist.
 
 ## Physical tape gestures
 
@@ -102,7 +110,7 @@ Every stage is equally available to generated and imported Parents. Bypass is ex
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
 - self-contained native TSR10 project saving with embedded Parent audio, all bank slots and tuning, lineage, editor view, selection, loop mode/metadata, pre- and post-DSP edit timelines, and every DSP parameter; and
-- mono 16-bit Current export with sampler-compatible root/fine-tune metadata.
+- mono 16-bit Current export with sampler-compatible root/fine-tune and loop metadata.
 
 Sample edits run deterministically between the preserved Parent and the live DSP. With no selection they affect the whole Current; with a selection they affect only that range. Commit prints the heard result into the next Parent generation and clears both the edit stack and Undo/Redo history.
 
@@ -168,5 +176,7 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Browser parent directory: `Backspace` while the file list is focused
 - Browser confirm/cancel: `Enter` / `Escape`
 - Build/toggle a five-note chord: `Shift` + onscreen-key click
+- Config paths: top **Config** button
+- Export family to exchange folder and launch FT2: top **Send FT2** button
 
 Ripple cut, multiple loops, automatic loop candidates, the zero-crossing loop-maker transformation, deeper synthesis and modulation stages, recipe renaming/organization, and full genealogy/propagation remain separate, visually verified slices.

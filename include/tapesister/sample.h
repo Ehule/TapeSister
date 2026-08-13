@@ -220,9 +220,19 @@ int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, 
 int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t error_size);
 int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *path,
                              char *error, size_t error_size);
+int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
+                                int *has_loop, size_t *loop_first,
+                                size_t *loop_last, TsLoopMode *loop_mode,
+                                const char *path, char *error, size_t error_size);
 int ts_sample_save_wav16(const TsSample *sample, const char *path, char *error, size_t error_size);
 int ts_sample_save_wav16_tuned(const TsSample *sample, const TsTuning *tuning,
                                const char *path, char *error, size_t error_size);
+int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
+                                      const TsTuning *tuning,
+                                      int has_loop, size_t loop_first,
+                                      size_t loop_last, TsLoopMode loop_mode,
+                                      const char *path,
+                                      char *error, size_t error_size);
 int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe, char *error, size_t error_size);
 int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, size_t last,
                       const TsProcessRecipe *recipe, char *error, size_t error_size);
@@ -310,6 +320,12 @@ int ts_instrument_bank_count(const TsInstrument *instrument);
 int ts_instrument_bank_first_empty(const TsInstrument *instrument);
 int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder,
                               char *error, size_t error_size);
+int ts_instrument_family_folder_name(const TsInstrument *instrument,
+                                     char *name, size_t name_size);
+int ts_instrument_next_family_path(const TsInstrument *instrument,
+                                   const char *directory,
+                                   char *path, size_t path_size,
+                                   char *error, size_t error_size);
 const char *ts_bank_capture_name(TsBankCaptureKind kind);
 const char *ts_loop_mode_name(TsLoopMode mode);
 
