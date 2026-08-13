@@ -13,7 +13,7 @@ Every sound now has two explicit layers:
 
 Dragging or loading a WAV makes that WAV the Parent. Every freshly generated or imported source starts with neutral processing, so Parent and Current are sample-for-sample identical until the first edit. Moving a processing control then rerenders Current from that Parent; it cannot silently return to the factory waveform.
 
-**Generate** advances to a new Tonal, Metallic, Noise, or Pulse generator family and creates a new Parent. **Reseed** keeps the family but creates a different generated Parent. For an imported or committed Parent, Reseed changes only stochastic processing and preserves Parent audio byte-for-byte.
+**Generate** advances to a new Tonal, Metallic, Noise, or Pulse generator family and creates a new Parent. Each family now contains four substantially different synthesis characters plus seeded pitch, envelope, modulation, and spectral variation. **Reseed** keeps the family but chooses a different deterministic member rather than merely changing surface noise. For an imported or committed Parent, Reseed changes only stochastic processing and preserves Parent audio byte-for-byte.
 
 **Reset** returns Current exactly to Parent and is undoable. **Commit** requires a deliberate second click (or second `Ctrl+P`), promotes Current into a new immutable Parent generation, records the previous Parent hash as its immediate ancestor, resets the processing shelf, and starts a fresh edit history.
 
@@ -29,7 +29,7 @@ A source-colored playhead is visible only while audio is running: green identifi
 
 Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in Current. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop. Parent view maps pointer positions through Current's crop before snapping. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
 
-The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape.
+The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. If no selection exists, Set Loop first selects and loops the exact whole Current. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape.
 
 Parent/Current A/B maps the same loop through the crop offset, preserves relative playback progress, and uses the same direction mode. Loop range, mode, and crossfade participate in Undo/Redo. Reset clears them and can be undone; Commit carries the completed loop onto the newly promoted Parent while clearing prior edit history.
 
@@ -47,22 +47,22 @@ Click any slot to audition it and place that member in the waveform display; an 
 
 After auditioning a filled slot, **Set Current** checks that family member out as a new clean editing base. Parent and Current become sample-for-sample identical to the selected audio, stored loop/mode/crossfade metadata follows it, and the complete family bank remains intact. Because every later render must have a stable Parent, this is a deliberate genealogy boundary: it advances the generation, records the previous Parent hash, resets DSP and edit history, and cannot be crossed with Undo. Space and Escape retain the reliable stop-all behavior formerly provided by the redundant mouse button.
 
-While BANK is visible, the top **Export** button and `Ctrl+E` export every occupied slot as a numbered WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR9 projects embed all occupied bank audio and loop metadata; opening TSR6 through TSR8 projects remains supported and initializes fields that did not yet exist.
+The top **Export** button and `Ctrl+E` always ask whether to export the single Current WAV or the complete Family. Family export writes every occupied slot as a numbered WAV into a new folder named from the initial Parent. Existing folders are never silently replaced. A failed member export removes the partial files and folder. TSR9 projects embed all occupied bank audio and loop metadata; opening TSR6 through TSR8 projects remains supported and initializes fields that did not yet exist.
 
 ## Physical tape gestures
 
 Start any tape gesture inside the existing snapped selection. A cyan ghost waveform follows the pointer and previews the zero-crossing-aware destination before release:
 
-- Shift + left-drag copies and mixes with the audio underneath;
+- Shift + left-drag copies and mixes with the audio underneath using an equal average rather than additive gain;
 - Shift + right-drag copies and overwrites the audio underneath;
-- Ctrl + left-drag lifts/moves and mixes at the destination; and
+- Ctrl + left-drag lifts/moves and mixes at the destination using the same equal average; and
 - Ctrl + right-drag lifts/moves and overwrites at the destination.
 
-Move captures the entire source before clearing it, so an overlapping placement cannot corrupt itself. The lifted range remains the same duration and is filled with silence, with a roughly 1 ms protective fade at exposed edges. Dragging beyond either end grows Current with silence; the placed audio becomes the new selection and Show All reveals the expanded result. Every completed drag is one undoable operation that restores source and destination together. Later Reverse, Normalize, gain, fades, and Crop remain replayable after tape placement; Reset removes the timeline and Commit prints it into the next Parent.
+Where source and existing audio overlap, Mix produces `(underlying + source) / 2`, avoiding the level jump and clipping caused by additive summing. Material placed beyond the existing sample keeps its source level. Move captures the entire source before clearing it, so an overlapping placement cannot corrupt itself. The lifted range remains the same duration and is filled with silence, with a roughly 1 ms protective fade at exposed edges. Dragging beyond either end grows Current with silence; the placed audio becomes the new selection and Show All reveals the expanded result. Every completed drag is one undoable operation that restores source and destination together. Later Reverse, Normalize, gain, fades, and Crop remain replayable after tape placement; Reset removes the timeline and Commit prints it into the next Parent.
 
 ## Processing recipes and shaping
 
-The lower panel now cycles **KEYS**, **BANK**, and **RCPE**. RCPE contains eight immutable factory recipes and eight user slots. Click a filled slot to apply its processing to Current as one undoable render. Shift-click an empty user slot to capture the live processing shelf; Shift-right-click clears a user slot. Manual shelf changes remove the active-slot highlight without altering the stored recipe.
+The lower panel now cycles **KEYS**, **BANK**, and **RCPE**. RCPE contains eight immutable factory recipes and eight user slots. Click a filled slot to apply its processing to Current as one undoable render. Shift-click an empty user slot to capture the live processing shelf, right-click a filled user slot to rename it, and Shift-right-click to clear it. Factory recipes and their names remain immutable. Manual shelf changes remove the active-slot highlight without altering the stored recipe.
 
 Portable `.tsp` files contain only the named processing settings—never Parent audio, crop, selection, loop, tape edits, or bank members—so the same sound treatment can be applied to unrelated sources. While RCPE is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the instrument. Full `.tsr` projects remain the self-contained way to save a complete sound.
 
@@ -109,7 +109,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - Export lists directories and WAV files;
 - mouse wheel, draggable scrollbar, Up/Down, Page Up/Down, Home/End, and row clicking navigate long directories;
 - double-click or Enter opens a directory, WAV, TSR project, or TSP recipe;
-- Save and Export remember the current directory, provide filename entry with a focus-aware blinking caret, and append the proper extension;
+- Save and Export remember the current directory, provide filename entry with a focus-aware blinking caret, support Left/Right/Home/End navigation plus insertion, Backspace, and Delete at the caret, and append the proper extension;
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
@@ -145,7 +145,7 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Upper octave: `Q 2 W 3 E R 5 T 6 Y 7 U`
 - Stop all: `Space` or `Escape`
 - Load browser: `Ctrl+O`
-- Save browser / Export Current or visible Bank: `Ctrl+S` / `Ctrl+E`
+- Save browser / choose Export Current or Family: `Ctrl+S` / `Ctrl+E`
 - Toggle Parent/Current audition: `Ctrl+B`
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`
 - Select all: `Ctrl+A`

@@ -13,7 +13,8 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 ## Generation
 
 - [ ] Repeated Generate clicks visibly and audibly cycle Tonal, Metallic, Noise, and Pulse Parents.
-- [ ] Reseed keeps the displayed generator family but produces a clearly different member.
+- [ ] Each family produces meaningfully different synthesis characters, pitches, envelopes, and spectra rather than near-duplicates with different noise.
+- [ ] Reseed keeps the displayed generator family but produces a clearly different member and variation label.
 - [ ] Body, Edge, and Drift materially change each generator family.
 
 ## Sample editor
@@ -51,6 +52,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Up/Down, Page Up/Down, Home/End, and Backspace navigation remain visible and bounded.
 - [ ] Save/Export filename entry appends `.tsr`/`.tsp`/`.wav` when omitted without duplicating an existing extension.
 - [ ] A blinking caret sits at the end of the visible Save/Export filename only while that field has focus, including for horizontally clipped long names.
+- [ ] Left/Right and Home/End move the filename caret; typing inserts at it, Backspace removes before it, and Delete removes after it.
 - [ ] A first Save/Export action on an existing destination only arms overwrite; the second performs it.
 - [ ] Cancel and Escape close the browser without loading, saving, exporting, or leaking a click to the instrument.
 - [ ] A malformed WAV reports the real load error and preserves the prior Parent and Current.
@@ -83,6 +85,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] `Ctrl+A` still selects exact frame 0 through the Current frame count.
 - [ ] Reverse, Normalize, Amplify, fades, Crop, and Set Loop all use the visibly snapped highlight.
 - [ ] Set Loop creates one blue loop region with unmistakable start/end markers; Clear removes it.
+- [ ] With no selection, Set Loop automatically highlights and loops the exact complete Current rather than reporting an error.
 - [ ] Mode cycles Forward, Reverse, and Ping-Pong; the waveform arrows and audible travel agree.
 - [ ] Play Loop, held computer notes, ordinary onscreen notes, and latched chords all use the same selected mode.
 - [ ] Each blue flag drags smoothly, remains zero-snapped, updates a playing loop live, and swaps start/end role when crossed.
@@ -131,7 +134,8 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Right-click renames occupied slots 02–16 with a visible text caret; Enter accepts and Escape cancels.
 - [ ] Shift-right-click clears slots 02–16, but never slot 01.
 - [ ] A filled slot must be cleared before it can be captured again.
-- [ ] BANK-mode Export and `Ctrl+E` propose a folder derived from the initial Parent name.
+- [ ] Export and `Ctrl+E` always offer an explicit Current WAV or complete Family choice regardless of the visible lower panel.
+- [ ] Family export proposes a folder derived from the initial Parent name.
 - [ ] Whole-bank export creates one correctly numbered WAV per occupied slot and never replaces an existing folder.
 - [ ] A failed bank export cleans up its partial WAV files and temporary folder.
 - [ ] Saving and reopening TSR9 restores exact names, hashes, capture types, loop ranges, modes, and crossfades for every occupied slot.
@@ -140,9 +144,10 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 ## Physical tape gestures
 
 - [ ] Begin each gesture inside the snapped highlight; beginning outside it leaves audio unchanged and explains the requirement.
-- [ ] Shift + left-drag shows a cyan ghost and copies the complete selection by mixing it with underlying audio.
+- [ ] Shift + left-drag shows a cyan ghost and copies the complete selection by averaging it equally with underlying audio, without additive clipping or a level jump.
 - [ ] Shift + right-drag copies the complete selection and overwrites underlying audio.
-- [ ] Ctrl + left-drag lifts the selection, leaves the same-duration silent gap, and mixes it at the destination.
+- [ ] Ctrl + left-drag lifts the selection, leaves the same-duration silent gap, and uses the same equal-average mix at the destination.
+- [ ] Mix material extending outside the original sample retains its source gain; only genuine overlap is averaged.
 - [ ] Ctrl + right-drag lifts the selection, leaves the same-duration silent gap, and overwrites at the destination.
 - [ ] The ghost follows the pointer smoothly and the released placement lands at the same nearby zero-aligned location shown by the preview.
 - [ ] A move that overlaps its source is intact and repeatable; no part is recursively copied or cleared before capture.
@@ -168,6 +173,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 
 - [ ] KEYS, BANK, and RCPE cycle the lower panel without interrupting held or latched notes.
 - [ ] RCPE exposes eight named factory slots and eight user slots; factory slots cannot be captured over or cleared.
+- [ ] Right-click renames a filled user recipe with a navigable caret; factory names remain fixed and empty slots explain that capture/load comes first.
 - [ ] Clicking a filled slot applies it visibly and audibly; the active highlight follows it, while a later manual shelf change clears only that highlight.
 - [ ] Applying a recipe changes Current as one Undo step while preserving the exact Parent, crop, selection, loop, tape timeline, and sample-family bank.
 - [ ] Shift-click captures the live shelf into an empty user slot, refuses to overwrite an occupied slot, and Shift-right-click clears only user slots.

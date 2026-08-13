@@ -185,14 +185,20 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
     if (browser->mode != TS_BROWSER_LOAD_WAV) {
         const char *filename = browser->filename;
         size_t length = strlen(filename);
+        size_t cursor = browser->filename_cursor > length ? length :
+                        browser->filename_cursor;
+        size_t first = length > 78 ? length - 78 : 0;
         text(fb, 58, 282,
              browser->mode == TS_BROWSER_EXPORT_BANK ? "FAMILY FOLDER" : "FILENAME",
              PAL_EFFECT, 1);
         rect(fb, 58, 294, 518, 24, RGB(8, 8, 8));
-        if (length > 78) filename += length - 78;
-        text(fb, 64, 303, filename, browser->filename_focus ? PAL_MOUSE : PAL_TEXT, 1);
+        if (cursor < first) first = cursor;
+        if (cursor > first + 78) first = cursor - 78;
+        filename += first;
+        snprintf(shown, sizeof(shown), "%.78s", filename);
+        text(fb, 64, 303, shown, browser->filename_focus ? PAL_MOUSE : PAL_TEXT, 1);
         if (browser->filename_focus && cursor_visible) {
-            int cursor_x = 64 + (int)strlen(filename) * 6;
+            int cursor_x = 64 + (int)(cursor - first) * 6;
             if (cursor_x > 572) cursor_x = 572;
             rect(fb, cursor_x, 301, 2, 11, PAL_MOUSE);
         }
@@ -219,6 +225,7 @@ void ts_ui_init(TsUiState *ui)
     ui->bank_view_slot = -1;
     ui->playhead_bank_slot = -1;
     ui->renaming_bank_slot = -1;
+    ui->renaming_recipe_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->show_keyboard = 1;
     ui->show_recipes = 0;
@@ -631,7 +638,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         }
     } else if (ui->show_recipes) {
         text(fb, 11, 318,
-             "CLICK APPLY  SHIFT CLICK CAPTURE USER  TOP SAVE WRITES TSP  SHIFT+RMB CLEAR",
+             "CLICK APPLY  SHIFT CLICK CAPTURE  RMB RENAME  SHIFT+RMB CLEAR  SAVE TSP",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
             const TsPortableRecipe *slot = &ui->recipes.slots[i];
@@ -666,18 +673,41 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     if (ui->browser.mode != TS_BROWSER_CLOSED)
         browser_render(fb, &ui->browser, ui->text_cursor_visible);
     else if (ui->renaming_bank_slot >= 0) {
-        const char *shown = ui->bank_rename;
-        size_t length = strlen(shown);
+        size_t length = strlen(ui->bank_rename);
+        size_t cursor = ui->bank_rename_cursor > length ? length : ui->bank_rename_cursor;
+        size_t first = length > 62 ? length - 62 : 0;
+        char shown[63];
         char title[40];
-        if (length > 62) shown += length - 62;
+        if (cursor < first) first = cursor;
+        if (cursor > first + 62) first = cursor - 62;
+        snprintf(shown, sizeof(shown), "%.62s", ui->bank_rename + first);
         frame(fb, 104, 306, 432, 76, RGB(36, 33, 37), PAL_MOUSE);
         snprintf(title, sizeof(title), "RENAME BANK %02d", ui->renaming_bank_slot + 1);
         text(fb, 116, 316, title, PAL_NOTE, 1);
         rect(fb, 116, 332, 408, 23, RGB(8, 8, 8));
         text(fb, 122, 340, shown, PAL_MOUSE, 1);
         if (ui->text_cursor_visible)
-            rect(fb, 122 + (int)strlen(shown) * 6, 338, 2, 11, PAL_MOUSE);
+            rect(fb, 122 + (int)(cursor - first) * 6, 338, 2, 11, PAL_MOUSE);
         text(fb, 116, 365, "ENTER ACCEPTS   ESC CANCELS", RGB(190, 185, 190), 1);
+    } else if (ui->renaming_recipe_slot >= 0) {
+        size_t length = strlen(ui->recipe_rename);
+        size_t cursor = ui->recipe_rename_cursor > length ? length :
+                        ui->recipe_rename_cursor;
+        char title[40];
+        frame(fb, 160, 306, 320, 76, RGB(36, 33, 37), PAL_MOUSE);
+        snprintf(title, sizeof(title), "RENAME RECIPE %02d", ui->renaming_recipe_slot + 1);
+        text(fb, 172, 316, title, PAL_NOTE, 1);
+        rect(fb, 172, 332, 296, 23, RGB(8, 8, 8));
+        text(fb, 178, 340, ui->recipe_rename, PAL_MOUSE, 1);
+        if (ui->text_cursor_visible)
+            rect(fb, 178 + (int)cursor * 6, 338, 2, 11, PAL_MOUSE);
+        text(fb, 172, 365, "ENTER ACCEPTS   ESC CANCELS", RGB(190, 185, 190), 1);
+    } else if (ui->export_choice_open) {
+        frame(fb, 154, 135, 332, 112, RGB(36, 33, 37), PAL_MOUSE);
+        text(fb, 172, 150, "EXPORT WHAT?", PAL_NOTE, 1);
+        button(fb, 172, 176, 136, "CURRENT WAV", 0);
+        button(fb, 324, 176, 144, "FAMILY FOLDER", 0);
+        text(fb, 172, 218, "C CURRENT   F FAMILY   ESC CANCEL", RGB(190, 185, 190), 1);
     }
 }
 

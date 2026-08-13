@@ -33,6 +33,7 @@ typedef struct {
     int selected;
     int scroll;
     int filename_focus;
+    size_t filename_cursor;
     int overwrite_armed;
     int dragging_scrollbar;
     int scrollbar_drag_offset;
@@ -52,6 +53,9 @@ void ts_browser_set_scroll(TsBrowser *browser, int first_row);
 void ts_browser_set_filename(TsBrowser *browser, const char *filename);
 void ts_browser_append_filename(TsBrowser *browser, const char *text);
 void ts_browser_backspace_filename(TsBrowser *browser);
+void ts_browser_delete_filename(TsBrowser *browser);
+void ts_browser_move_filename_cursor(TsBrowser *browser, int amount);
+void ts_browser_set_filename_cursor(TsBrowser *browser, size_t position);
 int ts_browser_selected_path(const TsBrowser *browser, char *path, size_t path_size);
 int ts_browser_destination_path(const TsBrowser *browser, char *path, size_t path_size);
 int ts_browser_path_exists(const char *path);

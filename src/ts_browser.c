@@ -206,6 +206,7 @@ int ts_browser_open(TsBrowser *browser, TsBrowserMode mode, const char *default_
     browser->overwrite_armed = 0;
     snprintf(browser->filename, sizeof(browser->filename), "%s",
              default_filename != NULL ? default_filename : "");
+    browser->filename_cursor = strlen(browser->filename);
     return ts_browser_refresh(browser);
 }
 
@@ -235,6 +236,7 @@ void ts_browser_select(TsBrowser *browser, int index)
     if (!browser->entries[index].is_directory)
         snprintf(browser->filename, sizeof(browser->filename), "%s",
                  browser->entries[index].name);
+    browser->filename_cursor = strlen(browser->filename);
 }
 
 void ts_browser_scroll(TsBrowser *browser, int rows)
@@ -284,25 +286,64 @@ void ts_browser_set_filename(TsBrowser *browser, const char *filename)
 {
     snprintf(browser->filename, sizeof(browser->filename), "%s",
              filename != NULL ? filename : "");
+    browser->filename_cursor = strlen(browser->filename);
     browser->overwrite_armed = 0;
 }
 
 void ts_browser_append_filename(TsBrowser *browser, const char *text)
 {
     size_t used = strlen(browser->filename);
+    size_t cursor = browser->filename_cursor > used ? used : browser->filename_cursor;
     while (text != NULL && *text != '\0' && used < TS_BROWSER_NAME_MAX) {
         unsigned char c = (unsigned char)*text++;
-        if (c >= 32u && c != '/' && c != '\\') browser->filename[used++] = (char)c;
+        if (c >= 32u && c <= 126u && c != '/' && c != '\\') {
+            memmove(browser->filename + cursor + 1u, browser->filename + cursor,
+                    used - cursor + 1u);
+            browser->filename[cursor++] = (char)c;
+            ++used;
+        }
     }
-    browser->filename[used] = '\0';
+    browser->filename_cursor = cursor;
     browser->overwrite_armed = 0;
 }
 
 void ts_browser_backspace_filename(TsBrowser *browser)
 {
     size_t length = strlen(browser->filename);
-    if (length > 0) browser->filename[length - 1u] = '\0';
+    size_t cursor = browser->filename_cursor > length ? length : browser->filename_cursor;
+    if (cursor > 0) {
+        memmove(browser->filename + cursor - 1u, browser->filename + cursor,
+                length - cursor + 1u);
+        browser->filename_cursor = cursor - 1u;
+    }
     browser->overwrite_armed = 0;
+}
+
+void ts_browser_delete_filename(TsBrowser *browser)
+{
+    size_t length = strlen(browser->filename);
+    size_t cursor = browser->filename_cursor > length ? length : browser->filename_cursor;
+    if (cursor < length)
+        memmove(browser->filename + cursor, browser->filename + cursor + 1u,
+                length - cursor);
+    browser->filename_cursor = cursor;
+    browser->overwrite_armed = 0;
+}
+
+void ts_browser_move_filename_cursor(TsBrowser *browser, int amount)
+{
+    size_t length = strlen(browser->filename);
+    ptrdiff_t position = (ptrdiff_t)(browser->filename_cursor > length ?
+                         length : browser->filename_cursor) + amount;
+    if (position < 0) position = 0;
+    if ((size_t)position > length) position = (ptrdiff_t)length;
+    browser->filename_cursor = (size_t)position;
+}
+
+void ts_browser_set_filename_cursor(TsBrowser *browser, size_t position)
+{
+    size_t length = strlen(browser->filename);
+    browser->filename_cursor = position > length ? length : position;
 }
 
 int ts_browser_destination_path(const TsBrowser *browser, char *path, size_t path_size)

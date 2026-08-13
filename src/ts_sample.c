@@ -348,45 +348,89 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
     float *data = (float *)malloc(frames * sizeof(float));
     uint32_t rng = recipe->seed;
     float frequency = clampf(recipe->frequency, 30.0f, 2000.0f);
-    float phase = 0.0f, mod_phase = 0.0f, noise_lp = 0.0f, noise_slow = 0.0f;
+    float phase = 0.0f, mod_phase = 0.0f, aux_phase = 0.0f;
+    float noise_lp = 0.0f, noise_slow = 0.0f;
     float seed_a = rng_unit(&rng);
     float seed_b = rng_unit(&rng);
+    float seed_c = rng_unit(&rng);
+    float seed_d = rng_unit(&rng);
+    unsigned variation = rng & 3u;
+    static const float pitch_ratios[] = {0.5f, 0.75f, 1.0f, 1.5f, 2.0f};
+    frequency = clampf(frequency * pitch_ratios[(rng >> 2) % 5u], 30.0f, 2000.0f);
     if (data == NULL) {
         set_error(error, error_size, "Out of memory while generating sample");
         return 0;
     }
     for (size_t i = 0; i < frames; ++i) {
         float t = (float)i / (float)rate;
-        float attack = fminf(1.0f, t * (80.0f + seed_a * 180.0f));
-        float tail = fminf(1.0f, (seconds - t) * 24.0f);
-        float decay = expf(-t * (1.2f + seed_b * 3.8f));
+        float attack = fminf(1.0f, t * (35.0f + seed_a * 420.0f));
+        float tail = fminf(1.0f, (seconds - t) * (12.0f + seed_d * 48.0f));
+        float decay = expf(-t * (0.45f + seed_b * 6.5f));
         float random = rng_bipolar(&rng);
         float value;
         noise_lp += (random - noise_lp) * (0.015f + seed_a * 0.08f);
         noise_slow += (random - noise_slow) * 0.00015f;
         switch (recipe->kind) {
         case TS_GENERATOR_METALLIC: {
-            float ratio = 2.37f + seed_a * 4.1f;
-            float sweep = 1.0f + expf(-t * 7.0f) * (1.5f + seed_b * 4.0f);
-            mod_phase += (float)(2.0 * M_PI) * frequency * ratio / (float)rate;
+            float ratio = 1.37f + seed_a * 6.1f;
+            float sweep = 1.0f + expf(-t * (4.0f + seed_c * 15.0f)) *
+                                      (0.4f + seed_b * 6.5f);
             phase += (float)(2.0 * M_PI) * frequency * sweep / (float)rate;
-            value = sinf(phase + sinf(mod_phase) * (2.0f + seed_b * 7.0f));
-            value += sinf(phase * (1.413f + seed_a * 0.11f)) * 0.34f;
-            value *= attack * tail * decay;
+            mod_phase += (float)(2.0 * M_PI) * frequency * ratio / (float)rate;
+            aux_phase += (float)(2.0 * M_PI) * frequency *
+                         (2.11f + seed_d * 3.8f) / (float)rate;
+            if (variation == 0) {
+                value = sinf(phase + sinf(mod_phase) * (2.0f + seed_b * 8.0f));
+                value += sinf(aux_phase) * 0.28f;
+            } else if (variation == 1) {
+                value = sinf(phase) * 0.56f + sinf(mod_phase) * 0.38f +
+                        sinf(aux_phase) * 0.32f;
+                value *= 0.45f + fabsf(sinf(mod_phase * 0.173f)) * 0.75f;
+            } else if (variation == 2) {
+                value = sinf(phase + sinf(aux_phase) * (0.8f + seed_c * 3.2f));
+                value += (random - noise_lp) * expf(-t * 22.0f) * 0.72f;
+            } else {
+                value = random * sinf(phase) * 0.66f + sinf(mod_phase) * 0.42f;
+                value += sinf(aux_phase + noise_slow * 12.0f) * 0.25f;
+            }
+            value *= attack * tail * expf(-t * (0.7f + seed_b * 7.4f));
             break;
         }
         case TS_GENERATOR_NOISE: {
             float resonant = sinf((float)(2.0 * M_PI) * frequency * t + noise_slow * 8.0f);
-            float burst = random * 0.55f + noise_lp * 1.1f + resonant * 0.32f;
-            value = burst * attack * tail * expf(-t * (2.2f + seed_a * 5.0f));
+            if (variation == 0)
+                value = random * 0.50f + noise_lp * 1.2f + resonant * 0.28f;
+            else if (variation == 1)
+                value = (random - noise_lp) * 0.9f + resonant * noise_lp * 0.8f;
+            else if (variation == 2)
+                value = noise_lp * 1.6f + noise_slow * 3.5f + resonant * 0.18f;
+            else {
+                float crack = fabsf(random) > 0.92f - seed_c * 0.12f ? random : 0.0f;
+                value = crack * 1.5f + noise_lp * 0.42f + resonant * 0.25f;
+            }
+            value *= attack * tail * expf(-t * (0.8f + seed_a * 8.0f));
             break;
         }
         case TS_GENERATOR_PULSE: {
             float sweep_hz = frequency * (1.0f + expf(-t * 9.0f) * (0.5f + seed_b * 3.0f));
             phase += (float)(2.0 * M_PI) * sweep_hz / (float)rate;
             if (phase > (float)(2.0 * M_PI)) phase -= (float)(2.0 * M_PI);
-            value = (phase < (0.35f + seed_a * 0.3f) * (float)(2.0 * M_PI) ? 0.72f : -0.72f);
-            value += noise_lp * 0.22f;
+            if (variation == 0) {
+                value = phase < (0.22f + seed_a * 0.56f) * (float)(2.0 * M_PI) ?
+                        0.72f : -0.72f;
+            } else if (variation == 1) {
+                float duty = 0.12f + seed_a * 0.24f +
+                             sinf((float)(2.0 * M_PI) * t * (0.3f + seed_c * 4.0f)) * 0.09f;
+                value = phase < duty * (float)(2.0 * M_PI) ? 0.88f : -0.52f;
+            } else if (variation == 2) {
+                value = phase / (float)M_PI - 1.0f;
+                value += sinf(phase * (2.0f + floorf(seed_d * 5.0f))) * 0.3f;
+            } else {
+                float duty = 0.015f + seed_a * 0.055f;
+                value = phase < duty * (float)(2.0 * M_PI) ? 1.0f : -0.08f;
+                value += random * (phase < duty * (float)(2.0 * M_PI) ? 0.7f : 0.04f);
+            }
+            value += noise_lp * (0.08f + seed_d * 0.3f);
             value *= attack * tail * decay;
             break;
         }
@@ -394,10 +438,29 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
         default: {
             float pitch_drop = 1.0f + expf(-t * 14.0f) * (0.04f + seed_a * 0.3f);
             phase += (float)(2.0 * M_PI) * frequency * pitch_drop / (float)rate;
-            value = sinf(phase) + sinf(phase * 0.5f) * (0.12f + seed_a * 0.28f);
-            value += sinf(phase * 2.0f + seed_b) * (0.08f + seed_b * 0.16f);
-            value += noise_lp * 0.06f;
-            value *= attack * tail * (0.35f + decay * 0.65f);
+            mod_phase += (float)(2.0 * M_PI) * frequency *
+                         (1.49f + seed_c * 3.6f) / (float)rate;
+            aux_phase += (float)(2.0 * M_PI) * frequency *
+                         (0.498f + seed_d * 1.51f) / (float)rate;
+            if (variation == 0) {
+                value = sinf(phase) + sinf(aux_phase) * (0.12f + seed_a * 0.34f);
+                value += sinf(phase * 2.0f + seed_b) * (0.06f + seed_b * 0.18f);
+            } else if (variation == 1) {
+                value = sinf(phase) * 0.72f + sinf(phase * 3.0f) * 0.28f +
+                        sinf(phase * 5.0f) * 0.16f;
+                value *= 0.72f + sinf((float)(2.0 * M_PI) * t *
+                                      (1.0f + seed_c * 6.0f)) * 0.18f;
+            } else if (variation == 2) {
+                value = sinf(phase + sinf(mod_phase) *
+                             (0.35f + seed_b * 2.8f) * expf(-t * 1.8f));
+                value += sinf(aux_phase) * 0.3f;
+            } else {
+                value = sinf(phase) * 0.62f + sinf(aux_phase) * 0.48f;
+                value += sinf(mod_phase) * 0.18f + noise_lp * 0.12f;
+                value *= expf(-t * (0.25f + seed_d * 2.4f));
+            }
+            value += noise_lp * (0.02f + seed_c * 0.10f);
+            value *= attack * tail * (0.25f + decay * 0.75f);
             break;
         }
         }
@@ -407,7 +470,8 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
     sample->data = data;
     sample->frames = frames;
     sample->sample_rate = rate;
-    snprintf(sample->name, sizeof(sample->name), "%s %08X", ts_generator_name(recipe->kind), recipe->seed);
+    snprintf(sample->name, sizeof(sample->name), "%s V%u %08X",
+             ts_generator_name(recipe->kind), variation + 1u, recipe->seed);
     set_error(error, error_size, "");
     return 1;
 }
@@ -896,8 +960,11 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                 value = source[i] * gain;
                 if (overwrite)
                     output[at] = output[at] * (1.0f - gain) + value;
+                else if (at >= prepend && at < prepend + destination->frames)
+                    output[at] = clampf(output[at] * (1.0f - gain * 0.5f) +
+                                        value * 0.5f, -1.0f, 1.0f);
                 else
-                    output[at] = clampf(output[at] + value, -1.0f, 1.0f);
+                    output[at] = value;
             }
             free(source);
             ts_sample_free(destination);
@@ -1317,14 +1384,24 @@ int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
 {
     size_t first;
     size_t last;
-    if (instrument == NULL || !instrument->has_selection) {
-        set_error(error, error_size, "Select a range before setting a loop");
+    int whole_sample;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        instrument->current.frames < 2u) {
+        set_error(error, error_size, "No Current audio to loop");
         return 0;
     }
-    first = ts_sample_nearest_zero_crossing(&instrument->current,
-                                            instrument->selection_first);
-    last = ts_sample_nearest_zero_crossing(&instrument->current,
-                                           instrument->selection_last);
+    whole_sample = !instrument->has_selection ||
+                   (instrument->selection_first == 0 &&
+                    instrument->selection_last == instrument->current.frames);
+    if (whole_sample) {
+        first = 0;
+        last = instrument->current.frames;
+    } else {
+        first = ts_sample_nearest_zero_crossing(&instrument->current,
+                                                instrument->selection_first);
+        last = ts_sample_nearest_zero_crossing(&instrument->current,
+                                               instrument->selection_last);
+    }
     if (first > last) {
         size_t swap = first;
         first = last;

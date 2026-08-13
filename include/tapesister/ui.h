@@ -60,6 +60,8 @@ typedef struct {
     int bank_view_slot;
     int playhead_bank_slot;
     int renaming_bank_slot;
+    int renaming_recipe_slot;
+    int export_choice_open;
     int dragging_loop_endpoint;
     int loop_drag_started;
     int tape_dragging;
@@ -80,6 +82,9 @@ typedef struct {
     size_t parent_view_first;
     size_t parent_view_last;
     char bank_rename[128];
+    size_t bank_rename_cursor;
+    char recipe_rename[TS_RECIPE_NAME_MAX + 1];
+    size_t recipe_rename_cursor;
     char status[160];
 } TsUiState;
 

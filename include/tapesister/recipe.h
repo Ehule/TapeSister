@@ -25,6 +25,8 @@ void ts_recipe_bank_init(TsRecipeBank *bank);
 int ts_recipe_bank_capture(TsRecipeBank *bank, int slot, const TsProcessRecipe *process,
                            const char *name, char *error, size_t error_size);
 int ts_recipe_bank_clear(TsRecipeBank *bank, int slot, char *error, size_t error_size);
+int ts_recipe_bank_rename(TsRecipeBank *bank, int slot, const char *name,
+                          char *error, size_t error_size);
 int ts_recipe_bank_add_user(TsRecipeBank *bank, const TsPortableRecipe *recipe,
                             char *error, size_t error_size);
 int ts_recipe_save(const TsPortableRecipe *recipe, const char *path,

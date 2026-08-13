@@ -177,6 +177,32 @@ int ts_recipe_bank_clear(TsRecipeBank *bank, int slot, char *error, size_t error
     return 1;
 }
 
+int ts_recipe_bank_rename(TsRecipeBank *bank, int slot, const char *name,
+                          char *error, size_t error_size)
+{
+    const char *first;
+    const char *last;
+    size_t length;
+    if (bank == NULL || slot < TS_FACTORY_RECIPE_COUNT || slot >= TS_RECIPE_SLOT_COUNT ||
+        !bank->slots[slot].occupied) {
+        set_error(error, error_size, "Only occupied user recipes can be renamed");
+        return 0;
+    }
+    first = name != NULL ? name : "";
+    while (*first == ' ' || *first == '\t') ++first;
+    last = first + strlen(first);
+    while (last > first && (last[-1] == ' ' || last[-1] == '\t')) --last;
+    length = (size_t)(last - first);
+    if (length == 0 || length > TS_RECIPE_NAME_MAX) {
+        set_error(error, error_size, "Recipe name must be 1-31 characters");
+        return 0;
+    }
+    memcpy(bank->slots[slot].name, first, length);
+    bank->slots[slot].name[length] = '\0';
+    set_error(error, error_size, "");
+    return 1;
+}
+
 int ts_recipe_bank_add_user(TsRecipeBank *bank, const TsPortableRecipe *recipe,
                             char *error, size_t error_size)
 {

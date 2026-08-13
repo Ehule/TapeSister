@@ -76,6 +76,24 @@ int main(void)
     CHECK(ts_sample_peak(&a) > 0.1f && ts_sample_peak(&a) <= 1.0f);
     CHECK(ts_sample_clone(&copy, &a, error, sizeof(error)));
     CHECK(ts_sample_hash(&copy) == ts_sample_hash(&a));
+    {
+        const uint32_t seeds[4] = {0x10203040u, 0x55667788u,
+                                   0x89abcdefu, 0xfedcba98u};
+        for (int kind = 0; kind < TS_GENERATOR_COUNT; ++kind) {
+            TsSample variants[4];
+            uint64_t hashes[4];
+            for (int i = 0; i < 4; ++i) {
+                TsGeneratorRecipe varied = generator(seeds[i], (TsGeneratorKind)kind);
+                ts_sample_init(&variants[i]);
+                CHECK(ts_sample_generate(&variants[i], &varied, error, sizeof(error)));
+                hashes[i] = ts_sample_hash(&variants[i]);
+                CHECK(strstr(variants[i].name, " V") != NULL);
+            }
+            for (int i = 0; i < 4; ++i)
+                for (int j = i + 1; j < 4; ++j) CHECK(hashes[i] != hashes[j]);
+            for (int i = 0; i < 4; ++i) ts_sample_free(&variants[i]);
+        }
+    }
 
     {
         float crossings[] = {0.8f, 0.5f, -0.2f, -0.4f, 0.1f};
@@ -95,6 +113,14 @@ int main(void)
         ts_instrument_set_selection(&snap_instrument, 0, crossing_sample.frames);
         CHECK(snap_instrument.selection_first == 0 &&
               snap_instrument.selection_last == crossing_sample.frames);
+        ts_instrument_clear_selection(&snap_instrument);
+        CHECK(ts_instrument_set_loop_from_selection(&snap_instrument,
+                                                     error, sizeof(error)));
+        CHECK(snap_instrument.has_selection && snap_instrument.has_loop);
+        CHECK(snap_instrument.selection_first == 0 &&
+              snap_instrument.selection_last == crossing_sample.frames);
+        CHECK(snap_instrument.loop_first == 0 &&
+              snap_instrument.loop_last == crossing_sample.frames);
     }
 
     TsProcessRecipe neutral;
@@ -137,6 +163,11 @@ int main(void)
                                      recipe_error, sizeof(recipe_error)));
         CHECK(!ts_recipe_bank_capture(&recipe_bank, 8, &neutral, "OVERWRITE",
                                       recipe_error, sizeof(recipe_error)));
+        CHECK(!ts_recipe_bank_rename(&recipe_bank, 0, "RENAMED FACTORY",
+                                     recipe_error, sizeof(recipe_error)));
+        CHECK(ts_recipe_bank_rename(&recipe_bank, 8, "  DRONE BED  ",
+                                    recipe_error, sizeof(recipe_error)));
+        CHECK(strcmp(recipe_bank.slots[8].name, "DRONE BED") == 0);
         CHECK(ts_recipe_from_process(&portable, &dsp, "PORTABLE TEXTURE"));
         CHECK(ts_recipe_save(&portable, "test-portable.tsp",
                              recipe_error, sizeof(recipe_error)));
@@ -500,12 +531,19 @@ int main(void)
         size_t original_frames;
         size_t source_first = 1000u;
         size_t source_last = 1600u;
+        int64_t mixed_destination;
+        float mixed_source_value;
+        float mixed_under_value;
         ts_instrument_init(&tape);
         ts_instrument_init(&tape_loaded);
         CHECK(ts_instrument_generate(&tape, TS_GENERATOR_METALLIC, 0x54415038u,
                                      error, sizeof(error)));
         original_frames = tape.current.frames;
         before = ts_sample_hash(&tape.current);
+        mixed_destination = ts_sample_snap_tape_destination(
+            &tape.current, 3000, source_last - source_first);
+        mixed_source_value = tape.current.data[source_first + 300u];
+        mixed_under_value = tape.current.data[(size_t)mixed_destination + 300u];
         ts_instrument_set_selection(&tape, source_first, source_last);
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_MIX,
                                             source_first, source_last, 3000,
@@ -513,6 +551,8 @@ int main(void)
         CHECK(tape.post_edit_count == 1 && tape.current.frames == original_frames);
         CHECK(tape.selection_first == (size_t)tape.post_edits[0].destination &&
               tape.selection_last - tape.selection_first == source_last - source_first);
+        CHECK(fabsf(tape.current.data[(size_t)mixed_destination + 300u] -
+                    (mixed_under_value + mixed_source_value) * 0.5f) < 0.00001f);
         after = ts_sample_hash(&tape.current);
         CHECK(after != before);
         CHECK(ts_instrument_undo(&tape, error, sizeof(error)) &&
@@ -839,8 +879,16 @@ int main(void)
         ts_browser_set_filename(&browser, "safe");
         ts_browser_append_filename(&browser, "/name");
         CHECK(strcmp(browser.filename, "safename") == 0);
+        ts_browser_move_filename_cursor(&browser, -4);
+        ts_browser_append_filename(&browser, "-");
+        CHECK(strcmp(browser.filename, "safe-name") == 0);
         ts_browser_backspace_filename(&browser);
-        CHECK(strcmp(browser.filename, "safenam") == 0);
+        CHECK(strcmp(browser.filename, "safename") == 0);
+        ts_browser_move_filename_cursor(&browser, 1);
+        ts_browser_delete_filename(&browser);
+        CHECK(strcmp(browser.filename, "safenme") == 0);
+        ts_browser_set_filename_cursor(&browser, 999);
+        CHECK(browser.filename_cursor == strlen(browser.filename));
 
         CHECK(ts_browser_open(&browser, TS_BROWSER_EXPORT_WAV, "current"));
         CHECK(ts_browser_destination_path(&browser, path, sizeof(path)));
@@ -963,10 +1011,22 @@ int main(void)
     ui.renaming_bank_slot = 2;
     ui.text_cursor_visible = 1;
     snprintf(ui.bank_rename, sizeof(ui.bank_rename), "TAIL");
+    ui.bank_rename_cursor = strlen(ui.bank_rename);
     ts_ui_render(&fb, &ui, &restored);
     CHECK(fb.pixels[338 * TS_UI_WIDTH + 146] == 0xffffd265u);
     ui.renaming_bank_slot = -1;
     ui.bank_rename[0] = '\0';
+    ui.renaming_recipe_slot = 8;
+    snprintf(ui.recipe_rename, sizeof(ui.recipe_rename), "DRONE BED");
+    ui.recipe_rename_cursor = 5;
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(fb.pixels[338 * TS_UI_WIDTH + 178 + 5 * 6] == 0xffffd265u);
+    ui.renaming_recipe_slot = -1;
+    ui.recipe_rename[0] = '\0';
+    ui.export_choice_open = 1;
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(fb.pixels[180 * TS_UI_WIDTH + 175] == 0xff5d555du);
+    ui.export_choice_open = 0;
     ui.show_keyboard = 1;
     {
         uint64_t current_waveform = waveform_hash(&fb);
