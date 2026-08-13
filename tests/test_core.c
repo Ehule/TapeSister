@@ -50,6 +50,7 @@ int main(void)
 {
     TsSample a, b, loaded, copy, dry, effected, repeated;
     TsInstrument generated, imported, committed, audition, restored, bank_edit, recipe_target;
+    TsInstrument family, family_repeat, family_restored;
     TsUiState ui;
     TsNoteBank notes;
     TsRecipeBank recipe_bank;
@@ -64,6 +65,9 @@ int main(void)
     ts_instrument_init(&restored);
     ts_instrument_init(&bank_edit);
     ts_instrument_init(&recipe_target);
+    ts_instrument_init(&family);
+    ts_instrument_init(&family_repeat);
+    ts_instrument_init(&family_restored);
     ts_note_bank_init(&notes);
     ts_recipe_bank_init(&recipe_bank);
 
@@ -406,6 +410,124 @@ int main(void)
     CHECK(ts_instrument_bank_count(&generated) == 1);
     CHECK(ts_sample_hash(&generated.bank[0].sample) == ts_sample_hash(&generated.parent));
 
+    {
+        int child_slot = -1;
+        int sibling_slot = -1;
+        int path_slot = -1;
+        int stranger_slot = -1;
+        int stranger_reseed_slot = -1;
+        int repeated_slot = -1;
+        uint64_t stable_parent;
+        CHECK(ts_instrument_generate(&family, TS_GENERATOR_TONAL, 0x46414d31u,
+                                     error, sizeof(error)));
+        CHECK(ts_instrument_generate(&family_repeat, TS_GENERATOR_TONAL, 0x46414d31u,
+                                     error, sizeof(error)));
+        ts_instrument_set_selection(&family, family.current.frames / 4u,
+                                    family.current.frames * 3u / 4u);
+        CHECK(ts_instrument_set_loop_from_selection(&family, error, sizeof(error)));
+        family.bank[0].has_loop = family.has_loop;
+        family.bank[0].loop_first = family.loop_first;
+        family.bank[0].loop_last = family.loop_last;
+        family.bank[0].loop_mode = family.loop_mode;
+        family.bank[0].loop_crossfade_ms = family.loop_crossfade_ms;
+        family_repeat.bank[0].has_loop = family.bank[0].has_loop;
+        family_repeat.bank[0].loop_first = family.bank[0].loop_first;
+        family_repeat.bank[0].loop_last = family.bank[0].loop_last;
+        stable_parent = ts_sample_hash(&family.parent);
+        family.family_relation = TS_FAMILY_CHILD;
+        family.family_mutation = 0.42f;
+        family.family_locks = TS_FAMILY_LOCK_ALL;
+        family_repeat.family_relation = family.family_relation;
+        family_repeat.family_mutation = family.family_mutation;
+        family_repeat.family_locks = family.family_locks;
+        CHECK(ts_instrument_generate_family_candidate(&family, 0, 0, &child_slot,
+                                                       error, sizeof(error)));
+        CHECK(ts_instrument_generate_family_candidate(&family_repeat, 0, 0,
+                                                       &repeated_slot,
+                                                       error, sizeof(error)));
+        CHECK(child_slot == 1 && repeated_slot == 1);
+        CHECK(ts_sample_hash(&family.parent) == stable_parent);
+        CHECK(family.bank[child_slot].relation == TS_FAMILY_CHILD &&
+              family.bank[child_slot].parent_slot == 0);
+        CHECK(family.bank[child_slot].sample.frames == family.bank[0].sample.frames);
+        CHECK(family.bank[child_slot].tuning.root_note == family.bank[0].tuning.root_note);
+        CHECK(family.bank[child_slot].has_loop &&
+              family.bank[child_slot].loop_first == family.bank[0].loop_first &&
+              family.bank[child_slot].loop_last == family.bank[0].loop_last);
+        CHECK(ts_sample_hash(&family.bank[child_slot].sample) ==
+              ts_sample_hash(&family_repeat.bank[repeated_slot].sample));
+        CHECK(ts_instrument_generate_family_candidate(&family, 0, 1, &sibling_slot,
+                                                       error, sizeof(error)));
+        CHECK(sibling_slot == 2 && family.bank[sibling_slot].relation == TS_FAMILY_CHILD &&
+              family.bank[sibling_slot].parent_slot == 0 &&
+              family.bank[sibling_slot].lineage_seed !=
+              family.bank[child_slot].lineage_seed);
+        CHECK(ts_sample_hash(&family.bank[sibling_slot].sample) !=
+              ts_sample_hash(&family.bank[child_slot].sample));
+        family.family_trajectory = 1;
+        family.family_relation = TS_FAMILY_COUSIN;
+        family.family_locks = TS_FAMILY_LOCK_LOOP | TS_FAMILY_LOCK_PITCH;
+        CHECK(ts_instrument_generate_family_candidate(&family, 0, 0, &path_slot,
+                                                       error, sizeof(error)));
+        CHECK(path_slot == 3 && family.bank[path_slot].relation == TS_FAMILY_COUSIN &&
+              family.bank[path_slot].parent_slot == sibling_slot &&
+              family.bank[path_slot].trajectory_step == 1u);
+        family.family_trajectory = 0;
+        family.family_relation = TS_FAMILY_STRANGER;
+        family.family_locks = TS_FAMILY_LOCK_DURATION | TS_FAMILY_LOCK_PITCH;
+        CHECK(ts_instrument_generate_family_candidate(&family, 0, 0, &stranger_slot,
+                                                       error, sizeof(error)));
+        CHECK(stranger_slot == 4 && family.bank[stranger_slot].relation == TS_FAMILY_STRANGER &&
+              family.bank[stranger_slot].has_generator &&
+              family.bank[stranger_slot].sample.frames == family.bank[0].sample.frames);
+        CHECK(ts_instrument_generate_family_candidate(&family, 0, 1,
+                                                       &stranger_reseed_slot,
+                                                       error, sizeof(error)));
+        CHECK(stranger_reseed_slot == 5 &&
+              family.bank[stranger_reseed_slot].relation == TS_FAMILY_STRANGER &&
+              family.bank[stranger_reseed_slot].generator.kind ==
+              family.bank[stranger_slot].generator.kind &&
+              family.bank[stranger_reseed_slot].lineage_seed !=
+              family.bank[stranger_slot].lineage_seed);
+        CHECK(ts_instrument_save_recipe(&family, "test-family.tsr", error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&family_restored, "test-family.tsr",
+                                        error, sizeof(error)));
+        CHECK(family_restored.family_sequence == family.family_sequence &&
+              family_restored.family_relation == family.family_relation &&
+              family_restored.family_locks == family.family_locks);
+        for (int slot = 0; slot <= stranger_reseed_slot; ++slot) {
+            CHECK(family_restored.bank[slot].relation == family.bank[slot].relation);
+            CHECK(family_restored.bank[slot].parent_slot == family.bank[slot].parent_slot);
+            CHECK(family_restored.bank[slot].lineage_seed ==
+                  family.bank[slot].lineage_seed);
+            CHECK(ts_sample_hash(&family_restored.bank[slot].sample) ==
+                  ts_sample_hash(&family.bank[slot].sample));
+        }
+        for (int slot = stranger_reseed_slot + 1;
+             slot < TS_BANK_SLOT_COUNT; ++slot)
+            CHECK(ts_instrument_bank_capture(&family, slot,
+                                             TS_BANK_CAPTURE_CURRENT,
+                                             error, sizeof(error)));
+        {
+            uint64_t full_parent = ts_sample_hash(&family.parent);
+            uint32_t full_sequence = family.family_sequence;
+            int refused_slot = -1;
+            CHECK(ts_instrument_bank_count(&family) == TS_BANK_SLOT_COUNT);
+            CHECK(!ts_instrument_generate_family_candidate(&family, 0, 0,
+                                                            &refused_slot,
+                                                            error, sizeof(error)));
+            CHECK(refused_slot == -1 &&
+                  ts_sample_hash(&family.parent) == full_parent &&
+                  family.family_sequence == full_sequence);
+            CHECK(ts_instrument_bank_clear(&family, 8, error, sizeof(error)));
+            CHECK(ts_instrument_generate_family_candidate(&family, 0, 0,
+                                                           &refused_slot,
+                                                           error, sizeof(error)));
+            CHECK(refused_slot == 8);
+        }
+        remove("test-family.tsr");
+    }
+
     CHECK(ts_instrument_load_wav(&imported, "test-roundtrip.wav", error, sizeof(error)));
     CHECK(imported.source_kind == TS_SOURCE_IMPORTED);
     CHECK(ts_sample_hash(&imported.parent) == ts_sample_hash(&imported.current));
@@ -642,6 +764,11 @@ int main(void)
         int64_t mixed_destination;
         float mixed_source_value;
         float mixed_under_value;
+        float source_peak = 0.0f;
+        float destination_peak = 0.0f;
+        float summed_peak = 0.0f;
+        float target_peak;
+        float mix_scale;
         ts_instrument_init(&tape);
         ts_instrument_init(&tape_loaded);
         CHECK(ts_instrument_generate(&tape, TS_GENERATOR_METALLIC, 0x54415038u,
@@ -652,6 +779,27 @@ int main(void)
             &tape.current, 3000, source_last - source_first);
         mixed_source_value = tape.current.data[source_first + 300u];
         mixed_under_value = tape.current.data[(size_t)mixed_destination + 300u];
+        for (size_t i = 0; i < source_last - source_first; ++i) {
+            float source_value = tape.current.data[source_first + i];
+            float under_value = tape.current.data[(size_t)mixed_destination + i];
+            float edge_gain = 1.0f;
+            size_t fade = tape.current.sample_rate / 1000u;
+            if (fade < 8u) fade = 8u;
+            if (fade > 64u) fade = 64u;
+            if (i < fade) edge_gain = (float)(i + 1u) / (float)(fade + 1u);
+            if (source_last - source_first - 1u - i < fade) {
+                float tail = (float)(source_last - source_first - i) /
+                             (float)(fade + 1u);
+                if (tail < edge_gain) edge_gain = tail;
+            }
+            if (fabsf(source_value) > source_peak) source_peak = fabsf(source_value);
+            if (fabsf(under_value) > destination_peak)
+                destination_peak = fabsf(under_value);
+            if (fabsf(under_value + source_value * edge_gain) > summed_peak)
+                summed_peak = fabsf(under_value + source_value * edge_gain);
+        }
+        target_peak = source_peak > destination_peak ? source_peak : destination_peak;
+        mix_scale = target_peak / summed_peak;
         ts_instrument_set_selection(&tape, source_first, source_last);
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_MIX,
                                             source_first, source_last, 3000,
@@ -660,7 +808,15 @@ int main(void)
         CHECK(tape.selection_first == (size_t)tape.post_edits[0].destination &&
               tape.selection_last - tape.selection_first == source_last - source_first);
         CHECK(fabsf(tape.current.data[(size_t)mixed_destination + 300u] -
-                    (mixed_under_value + mixed_source_value) * 0.5f) < 0.00001f);
+                    (mixed_under_value + mixed_source_value) * mix_scale) < 0.00001f);
+        {
+            float merged_peak = 0.0f;
+            for (size_t i = 0; i < source_last - source_first; ++i) {
+                float value = fabsf(tape.current.data[(size_t)mixed_destination + i]);
+                if (value > merged_peak) merged_peak = value;
+            }
+            CHECK(fabsf(merged_peak - target_peak) < 0.00001f);
+        }
         after = ts_sample_hash(&tape.current);
         CHECK(after != before);
         CHECK(ts_instrument_undo(&tape, error, sizeof(error)) &&
@@ -718,6 +874,41 @@ int main(void)
         remove("test-tape.tsr");
         ts_instrument_free(&tape);
         ts_instrument_free(&tape_loaded);
+    }
+
+    {
+        TsInstrument move_mix;
+        size_t first = 1000u;
+        size_t last = 1800u;
+        int64_t destination;
+        float source_peak = 0.0f;
+        float underneath_peak = 0.0f;
+        float expected_peak;
+        float result_peak = 0.0f;
+        ts_instrument_init(&move_mix);
+        CHECK(ts_instrument_generate(&move_mix, TS_GENERATOR_PULSE, 0x4d495831u,
+                                     error, sizeof(error)));
+        destination = ts_sample_snap_tape_destination(&move_mix.current, 1400,
+                                                       last - first);
+        for (size_t i = 0; i < last - first; ++i) {
+            size_t at = (size_t)destination + i;
+            float source_value = fabsf(move_mix.current.data[first + i]);
+            float under_value = at >= first && at < last ? 0.0f :
+                                fabsf(move_mix.current.data[at]);
+            if (source_value > source_peak) source_peak = source_value;
+            if (under_value > underneath_peak) underneath_peak = under_value;
+        }
+        expected_peak = source_peak > underneath_peak ? source_peak : underneath_peak;
+        CHECK(ts_instrument_apply_tape_drag(&move_mix, TS_POST_MOVE_MIX,
+                                            first, last, 1400,
+                                            error, sizeof(error)));
+        for (size_t i = 0; i < last - first; ++i) {
+            float value = fabsf(move_mix.current.data[(size_t)destination + i]);
+            if (value > result_peak) result_peak = value;
+        }
+        CHECK(fabsf(result_peak - expected_peak) < 0.00001f);
+        CHECK(fabsf(move_mix.current.data[first + 100u]) < 0.000001f);
+        ts_instrument_free(&move_mix);
     }
 
     CHECK(ts_sample_clone(&copy, &committed.current, error, sizeof(error)));
@@ -861,7 +1052,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR10", 5) == 0);
+        CHECK(memcmp(magic, "TSR11", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -1358,6 +1549,14 @@ int main(void)
     }
     CHECK(ts_ui_key_from_point(0, 0) == -1);
 
+    ui.fx_page = TS_FX_FAMILY;
+    ui.show_keyboard = 0;
+    ui.show_recipes = 0;
+    ui.bank_view_slot = 1;
+    ts_ui_render(&fb, &ui, &family);
+    CHECK(fb.pixels[349 * TS_UI_WIDTH + 89] == 0xff18ff00u);
+    CHECK(fb.pixels[280 * TS_UI_WIDTH + 340] == 0xff2d0039u);
+
     ts_sample_free(&a); ts_sample_free(&b); ts_sample_free(&loaded); ts_sample_free(&copy);
     ts_sample_free(&dry); ts_sample_free(&effected); ts_sample_free(&repeated);
     ts_instrument_free(&generated); ts_instrument_free(&imported); ts_instrument_free(&committed);
@@ -1365,7 +1564,10 @@ int main(void)
     ts_instrument_free(&restored);
     ts_instrument_free(&bank_edit);
     ts_instrument_free(&recipe_target);
+    ts_instrument_free(&family);
+    ts_instrument_free(&family_repeat);
+    ts_instrument_free(&family_restored);
     if (failures) return 1;
-    puts("TapeSister tuning, recipes, shaping, tape gestures, loops, bank, and editor tests passed");
+    puts("TapeSister family, tuning, recipes, shaping, tape gestures, loops, bank, and editor tests passed");
     return 0;
 }

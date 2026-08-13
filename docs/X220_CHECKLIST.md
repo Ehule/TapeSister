@@ -7,15 +7,22 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Drag a recognizable WAV into TapeSister and note its Parent name.
 - [ ] Move Body, Edge, and Drift. The imported sound changes, but never returns to the factory waveform.
 - [ ] The Parent name remains the imported filename after every processing change.
-- [ ] Reseed changes the Current subtly while the imported Parent remains recognizably intact.
-- [ ] Generate explicitly replaces it with a clearly different generated Parent.
+- [ ] Generate and Reseed add auditionable bank candidates while the imported Parent and Current remain byte-for-byte unchanged.
+- [ ] Shift+Generate is the explicit shortcut that promotes the resulting candidate into Parent/Current.
 
-## Generation
+## Family generation and lineage
 
-- [ ] Repeated Generate clicks visibly and audibly cycle Tonal, Metallic, Noise, and Pulse Parents.
-- [ ] Each family produces meaningfully different synthesis characters, pitches, envelopes, and spectra rather than near-duplicates with different noise.
-- [ ] Reseed keeps the displayed generator family but produces a clearly different member and variation label.
-- [ ] Body, Edge, and Drift materially change each generator family.
+- [ ] With a root-only project, Generate fills slot 02, automatically displays and auditions it, and leaves Parent/Current unchanged.
+- [ ] The Family relation control cycles Child, Cousin, and Stranger. Children stay closest to their anchor, Cousins travel farther, and Strangers introduce clearly new Tonal/Metallic/Noise/Pulse material.
+- [ ] Mutation moves continuously from restrained to strong variation and the same root, controls, and sequence reproduce identical hashes after TSR reload.
+- [ ] Reseed adds another member with the last candidate's relationship, mutation, locks, and anchor while advancing its seed.
+- [ ] Displaying a different occupied bank member before Generate makes that member the direct parent when Path is off.
+- [ ] Path On makes each new candidate the next anchor and increments the stored trajectory step; Path Off returns to sibling generation from one anchor.
+- [ ] Loop, Duration, Pitch, Envelope, and Spectral locks each protect the labeled trait. Loop lock carries range/mode/crossfade and rescales endpoints safely if duration changes.
+- [ ] Colored bank underlines and the waveform header distinguish Root, Captured, Child, Cousin, and Stranger and report the direct parent slot.
+- [ ] Ctrl+Generate creates one Stranger without changing the selected relation; Shift+Generate/Reseed creates the slot and immediately promotes it.
+- [ ] A full 16-slot bank refuses Generate/Reseed without replacing any member; clearing a non-root slot makes generation available again.
+- [ ] Manually captured and unrelated members remain valid and do not need synthetic lineage.
 
 ## Sample editor
 
@@ -101,7 +108,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Crop keeps the overlapping loop portion in correct Current-relative coordinates; Undo restores the prior crop and loop exactly.
 - [ ] Loop Set, Clear, mode, and crossfade changes traverse correctly through Undo/Redo.
 - [ ] Reset clears the loop and is undoable; Commit carries the loop onto the promoted Parent and clears old history.
-- [ ] Saved TSR10 projects contain embedded Parent audio, tuning, loop state/range/mode/crossfade, bank audio, filter/shaper settings, and complete reconstructive state.
+- [ ] Saved TSR11 projects contain embedded Parent audio, tuning, loop state/range/mode/crossfade, bank audio and lineage, Family controls, filter/shaper settings, and complete reconstructive state.
 - [ ] KEYS/BANK switches the lower panel without affecting computer-key audition or Space/Escape stopping.
 
 ## Pitch and tuning
@@ -118,7 +125,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Reset and Commit preserve root/fine tuning. Undo/Redo traverse manual tuning changes exactly.
 - [ ] Shift/Alt/Ctrl family captures retain tuning, and Set Current restores the chosen member's mapping with its audio and loop.
 - [ ] Current and Family WAV exports contain sampler root/fraction metadata that TapeSister reads back within one cent.
-- [ ] TSR10 save/reopen restores the live mapping and every occupied bank member's mapping; TSR6-9 open with C3 defaults where tuning was absent.
+- [ ] TSR11 save/reopen restores the live mapping and every occupied bank member's mapping; TSR6-9 open with C3 defaults where tuning was absent.
 - [ ] User-captured TSP2 recipes restore processing and tuning together as one undo step; factory recipes and legacy TSP1 never alter tuning.
 
 ## FastTracker handoff and configuration
@@ -143,7 +150,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Computer and onscreen keys audition the selected A/B source at different pitches.
 - [ ] Space and Escape stop every one-shot, loop, held note, and latched chord reliably without a mouse Stop All button.
 - [ ] A bad WAV path reports an error and preserves Parent and Current.
-- [ ] Save creates a self-contained TSR10 project that reopens without access to the original WAV.
+- [ ] Save creates a self-contained TSR11 project that reopens without access to the original WAV.
 - [ ] Export creates a valid mono 16-bit WAV containing Current.
 - [ ] The supplied Tapehead palette is applied consistently and remains legible.
 - [ ] No action leaks through the path-entry overlay.
@@ -154,7 +161,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] BANK and KEYS switch the lower panel without interrupting held or latched notes.
 - [ ] Slot 01 contains the initial Parent root and cannot be cleared or overwritten.
 - [ ] Commit changes Parent/Current but preserves slot 01 and every captured family member.
-- [ ] Generate, generated Reseed, and WAV import deliberately start a new root-only family.
+- [ ] Startup generation and WAV import deliberately start a new root-only family; ordinary Generate/Reseed thereafter only add members.
 - [ ] Left-clicking any slot auditions it and changes the waveform display to that member; an empty slot produces silence and a blank waveform.
 - [ ] Shift-left-click captures all Current; Alt-left-click captures Loop; Ctrl-left-click captures Selection.
 - [ ] Selection and Loop captures contain exactly the visibly snapped range.
@@ -175,16 +182,17 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Family export proposes a folder derived from the initial Parent name.
 - [ ] Whole-bank export creates one correctly numbered WAV per occupied slot and never replaces an existing folder.
 - [ ] A failed bank export cleans up its partial WAV files and temporary folder.
-- [ ] Saving and reopening TSR10 restores exact names, hashes, tuning, capture types, loop ranges, modes, and crossfades for every occupied slot.
+- [ ] Saving and reopening TSR11 restores exact names, hashes, tuning, capture types, loop ranges, modes, crossfades, relationships, parents, seeds, locks, mutation, and trajectory steps for every occupied slot.
 - [ ] Opening a TSR6 project remains supported and creates a root-only bank from its Parent.
 
 ## Physical tape gestures
 
 - [ ] Begin each gesture inside the snapped highlight; beginning outside it leaves audio unchanged and explains the requirement.
-- [ ] Shift + left-drag shows a cyan ghost and copies the complete selection by averaging it equally with underlying audio, without additive clipping or a level jump.
+- [ ] Shift + left-drag shows a cyan ghost, sums source and destination normally, and scales the complete overlap so its peak equals the louder original region.
 - [ ] Shift + right-drag copies the complete selection and overwrites underlying audio.
-- [ ] Ctrl + left-drag lifts the selection, leaves the same-duration silent gap, and uses the same equal-average mix at the destination.
-- [ ] Mix material extending outside the original sample retains its source gain; only genuine overlap is averaged.
+- [ ] Ctrl + left-drag lifts the selection, leaves the same-duration silent gap, and uses the same peak-matched merge at the destination.
+- [ ] Copy-Mix and overlapping Move-Mix both hit `max(source peak, destination peak)` within float tolerance; neither uses per-frame normalization.
+- [ ] Mix material extending outside the original sample retains its unscaled source gain; only genuine overlap receives the shared merge gain.
 - [ ] Ctrl + right-drag lifts the selection, leaves the same-duration silent gap, and overwrites at the destination.
 - [ ] The ghost follows the pointer smoothly and the released placement lands at the same nearby zero-aligned location shown by the preview.
 - [ ] A move that overlaps its source is intact and repeatable; no part is recursively copied or cleared before capture.
@@ -193,14 +201,14 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Each completed drag adds exactly one Undo step; Undo restores source, destination, length, selection, loop, and view together, and Redo reproduces the exact hash.
 - [ ] Reverse, Normalize, Amplify, Fade, and Crop applied after a tape drag affect the heard placement in order and remain undoable.
 - [ ] Reset removes the complete post-DSP tape timeline and is undoable; Commit prints it into Parent and clears old history.
-- [ ] Saving and reopening TSR10 restores the exact Current hash, post-DSP operation order, expanded duration, selection, and loop metadata.
+- [ ] Saving and reopening TSR11 restores the exact Current hash, post-DSP operation order, expanded duration, selection, and loop metadata.
 - [ ] While dragging, Space and Escape still stop Play Loop, one-shots, held notes, and latched chords without applying a stuck gesture.
 
 ## DSP shelf
 
 - [ ] Noise bypass is exact; enabling it adds an obvious but controllable texture.
 - [ ] White, Pink, Brown, and Metallic are audibly distinct as the Color button cycles.
-- [ ] Reseed changes deterministic noise detail without replacing imported or committed Parent audio.
+- [ ] Applying a processing recipe with a different seed changes deterministic noise detail without replacing imported or committed Parent audio.
 - [ ] Delay Time changes echo spacing; Feedback, Damp, and Mix remain stable across their full ranges.
 - [ ] Space Decay, Damp, and Mix produce a useful compact ambience without runaway feedback.
 - [ ] Noise, Delay, and Space work on both generated sounds and a dragged-in WAV.
@@ -224,7 +232,7 @@ This is a musical and interaction checkpoint. Passing tests alone is not approva
 - [ ] Filter OFF is sample-exact; Lowpass, Highpass, and Bandpass are audibly distinct and stable across the full logarithmic Cutoff and Resonance ranges.
 - [ ] Shaper OFF is sample-exact; Tape, Clip, and Fold are audibly distinct and remain bounded across the full Drive and Mix ranges.
 - [ ] Filter and shaper affect both generated and imported sounds, render before Delay/Space, and keep ordered tape gestures downstream.
-- [ ] TSR10 save/reopen restores the exact filter mode, cutoff, resonance, shaper mode, drive, mix, and rendered Current hash.
+- [ ] TSR11 save/reopen restores the exact filter mode, cutoff, resonance, shaper mode, drive, mix, and rendered Current hash.
 
 ## Commit lifecycle
 
