@@ -3,7 +3,7 @@ name: PR13 CI
 on:
   push:
     branches:
-      - agent/pr13-rerun-active-family
+      - agent/pr13-final-audiogenetics
   pull_request:
 
 jobs:
