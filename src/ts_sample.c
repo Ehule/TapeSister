@@ -2505,8 +2505,17 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
                                    tuning_shifted(anchor->audible_tuning,
                                                   semitone_shift);
     }
-    snprintf(candidate.sample.name, sizeof(candidate.sample.name), "%s %02u %08X",
-             ts_family_relation_name(relation), candidate.trajectory_step, seed);
+    if (relation == TS_FAMILY_STRANGER && candidate.has_generator) {
+        if (candidate.generator.kind != TS_GENERATOR_FM)
+            snprintf(candidate.sample.name, sizeof(candidate.sample.name),
+                     "%s RAD %02u %08X",
+                     ts_generator_name(candidate.generator.kind),
+                     candidate.trajectory_step, seed);
+        /* FM already carries its structure and ratio family in the name. */
+    } else {
+        snprintf(candidate.sample.name, sizeof(candidate.sample.name), "%s %02u %08X",
+                 ts_family_relation_name(relation), candidate.trajectory_step, seed);
+    }
     family_copy_or_vary_loop(&candidate, anchor, seed);
     candidate.occupied = 1;
     instrument->bank[slot] = candidate;
