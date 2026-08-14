@@ -78,6 +78,53 @@ int main(void)
     CHECK(a.sample_rate == 44100);
     CHECK(ts_sample_hash(&a) == ts_sample_hash(&b));
     CHECK(ts_sample_peak(&a) > 0.1f && ts_sample_peak(&a) <= 1.0f);
+    {
+        TsSample fm_a, fm_b, fm_other;
+        TsGeneratorRecipe fm_recipe = generator(0x464d0001u, TS_GENERATOR_FM);
+        TsFmPatch patch;
+        ts_sample_init(&fm_a);
+        ts_sample_init(&fm_b);
+        ts_sample_init(&fm_other);
+        ts_fm_patch_from_recipe(&fm_recipe, &patch);
+        CHECK(patch.structure >= 0 && patch.structure < TS_FM_STRUCTURE_COUNT);
+        CHECK(patch.ratio_family >= 0 &&
+              patch.ratio_family < TS_FM_RATIO_FAMILY_COUNT);
+        CHECK(patch.depth >= 0.8f && patch.depth <= 8.0f);
+        CHECK(strcmp(ts_fm_structure_name(patch.structure), "UNKNOWN") != 0);
+        CHECK(strcmp(ts_fm_ratio_family_name(patch.ratio_family), "UNKNOWN") != 0);
+        CHECK(ts_sample_generate(&fm_a, &fm_recipe, error, sizeof(error)));
+        CHECK(ts_sample_generate(&fm_b, &fm_recipe, error, sizeof(error)));
+        CHECK(ts_sample_hash(&fm_a) == ts_sample_hash(&fm_b));
+        CHECK(ts_sample_peak(&fm_a) > 0.05f && ts_sample_peak(&fm_a) <= 1.0f);
+        CHECK(strncmp(fm_a.name, "FM ", 3) == 0);
+        fm_recipe.seed = 0x464d0002u;
+        CHECK(ts_sample_generate(&fm_other, &fm_recipe, error, sizeof(error)));
+        CHECK(ts_sample_hash(&fm_other) != ts_sample_hash(&fm_a));
+        for (size_t i = 0; i < fm_a.frames; ++i) CHECK(isfinite(fm_a.data[i]));
+        ts_sample_free(&fm_a);
+        ts_sample_free(&fm_b);
+        ts_sample_free(&fm_other);
+    }
+    {
+        TsInstrument fm_instrument, fm_restored;
+        uint64_t fm_hash;
+        ts_instrument_init(&fm_instrument);
+        ts_instrument_init(&fm_restored);
+        CHECK(ts_instrument_generate(&fm_instrument, TS_GENERATOR_FM,
+                                     0x464d5453u, error, sizeof(error)));
+        fm_hash = ts_sample_hash(&fm_instrument.parent);
+        CHECK(fm_instrument.generator.kind == TS_GENERATOR_FM);
+        CHECK(ts_instrument_save_recipe(&fm_instrument, "test-fm.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&fm_restored, "test-fm.tsr",
+                                        error, sizeof(error)));
+        CHECK(fm_restored.generator.kind == TS_GENERATOR_FM);
+        CHECK(ts_sample_hash(&fm_restored.parent) == fm_hash);
+        CHECK(ts_sample_hash(&fm_restored.bank[0].sample) == fm_hash);
+        remove("test-fm.tsr");
+        ts_instrument_free(&fm_instrument);
+        ts_instrument_free(&fm_restored);
+    }
     CHECK(ts_sample_clone(&copy, &a, error, sizeof(error)));
     CHECK(ts_sample_hash(&copy) == ts_sample_hash(&a));
     {
@@ -91,7 +138,9 @@ int main(void)
                 ts_sample_init(&variants[i]);
                 CHECK(ts_sample_generate(&variants[i], &varied, error, sizeof(error)));
                 hashes[i] = ts_sample_hash(&variants[i]);
-                CHECK(strstr(variants[i].name, " V") != NULL);
+                CHECK(kind == TS_GENERATOR_FM ?
+                      strncmp(variants[i].name, "FM ", 3) == 0 :
+                      strstr(variants[i].name, " V") != NULL);
             }
             for (int i = 0; i < 4; ++i)
                 for (int j = i + 1; j < 4; ++j) CHECK(hashes[i] != hashes[j]);
