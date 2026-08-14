@@ -11,8 +11,23 @@ int ts_pr13_toggle_slot_lock(TsInstrument *instrument, int slot,
                              char *error, size_t error_size);
 int ts_pr13_apply_body_edge_drift(TsSample *sample, float body, float edge,
                                   float drift, char *error, size_t error_size);
+void ts_pr13_neutral_process(TsProcessRecipe *process);
 int ts_pr13_sync_active_slot(TsInstrument *instrument, int active_slot,
                              char *error, size_t error_size);
+int ts_pr13_activate_slot(TsInstrument *instrument, int active_slot,
+                          char *error, size_t error_size);
+int ts_pr13_bank_capture(TsInstrument *instrument, int active_slot, int slot,
+                         TsBankCaptureKind kind, char *error, size_t error_size);
+int ts_pr13_bank_clear(TsInstrument *instrument, int slot,
+                       char *error, size_t error_size);
+int ts_pr13_apply_sample_edit(TsInstrument *instrument, int active_slot,
+                              TsSampleEditKind kind, float amount,
+                              char *error, size_t error_size);
+int ts_pr13_crop_selection(TsInstrument *instrument, int active_slot,
+                           char *error, size_t error_size);
+int ts_pr13_apply_tape_drag(TsInstrument *instrument, int active_slot,
+                            TsPostEditKind kind, size_t first, size_t last,
+                            int64_t destination, char *error, size_t error_size);
 int ts_pr13_set_process(TsInstrument *instrument, int active_slot,
                         const TsProcessRecipe *process,
                         char *error, size_t error_size);
