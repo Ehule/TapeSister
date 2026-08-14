@@ -1483,9 +1483,30 @@ static void bank_slot_free(TsBankSlot *slot)
     bank_slot_init(slot);
 }
 
+static void tile_state_init(TsTileState *state)
+{
+    memset(state, 0, sizeof(*state));
+    ts_sample_init(&state->parent);
+    bank_slot_init(&state->vary_undo);
+    bank_slot_init(&state->vary_anchor);
+}
+
+static void tile_state_free(TsTileState *state)
+{
+    ts_sample_free(&state->parent);
+    free(state->undo);
+    free(state->redo);
+    bank_slot_free(&state->vary_undo);
+    bank_slot_free(&state->vary_anchor);
+    tile_state_init(state);
+}
+
 static void bank_free(TsInstrument *instrument)
 {
-    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) bank_slot_free(&instrument->bank[i]);
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+        bank_slot_free(&instrument->bank[i]);
+        tile_state_free(&instrument->tile_states[i]);
+    }
     bank_slot_free(&instrument->variation);
     bank_slot_free(&instrument->working_undo);
     bank_slot_free(&instrument->working_anchor);
@@ -1531,7 +1552,10 @@ void ts_instrument_init(TsInstrument *instrument)
     memset(instrument, 0, sizeof(*instrument));
     ts_sample_init(&instrument->parent);
     ts_sample_init(&instrument->current);
-    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) bank_slot_init(&instrument->bank[i]);
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+        bank_slot_init(&instrument->bank[i]);
+        tile_state_init(&instrument->tile_states[i]);
+    }
     bank_slot_init(&instrument->variation);
     bank_slot_init(&instrument->working_undo);
     bank_slot_init(&instrument->working_anchor);
@@ -2652,6 +2676,7 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
         return 0;
     }
     bank_slot_free(&instrument->bank[slot]);
+    tile_state_free(&instrument->tile_states[slot]);
     if (instrument->family_last_slot == slot) instrument->family_last_slot = -1;
     if (instrument->active_bank_slot == slot) instrument->active_bank_slot = -1;
     if (instrument->family_anchor_slot == slot)
@@ -2669,7 +2694,10 @@ int ts_instrument_bank_clear_all(TsInstrument *instrument,
         return 0;
     }
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
+    {
         bank_slot_free(&instrument->bank[slot]);
+        tile_state_free(&instrument->tile_states[slot]);
+    }
     bank_slot_free(&instrument->variation);
     bank_slot_free(&instrument->working_undo);
     bank_slot_free(&instrument->working_anchor);
@@ -2899,15 +2927,110 @@ static int bank_slot_clone(TsBankSlot *destination, const TsBankSlot *source,
     return 1;
 }
 
+static int tile_state_store(TsInstrument *instrument, int slot,
+                            char *error, size_t error_size)
+{
+    TsTileState *state;
+    TsEditSnapshot *undo = NULL;
+    TsEditSnapshot *redo = NULL;
+    if (slot < 0 || slot >= TS_BANK_SLOT_COUNT || !instrument->bank[slot].occupied)
+        return 1;
+    state = &instrument->tile_states[slot];
+    if (instrument->undo_count > 0) {
+        undo = (TsEditSnapshot *)malloc((size_t)instrument->undo_count * sizeof(*undo));
+        if (undo == NULL) goto memory_error;
+        memcpy(undo, instrument->undo,
+               (size_t)instrument->undo_count * sizeof(*undo));
+    }
+    if (instrument->redo_count > 0) {
+        redo = (TsEditSnapshot *)malloc((size_t)instrument->redo_count * sizeof(*redo));
+        if (redo == NULL) goto memory_error;
+        memcpy(redo, instrument->redo,
+               (size_t)instrument->redo_count * sizeof(*redo));
+    }
+    if (!ts_sample_clone(&state->parent, &instrument->parent, error, error_size)) {
+        free(undo); free(redo);
+        return 0;
+    }
+    free(state->undo); free(state->redo);
+    state->undo = undo; state->redo = redo;
+    state->undo_count = instrument->undo_count;
+    state->redo_count = instrument->redo_count;
+    state->editor = snapshot(instrument);
+    if (instrument->working_undo.occupied)
+        bank_slot_clone(&state->vary_undo, &instrument->working_undo, NULL, 0);
+    else bank_slot_free(&state->vary_undo);
+    if (instrument->working_anchor.occupied)
+        bank_slot_clone(&state->vary_anchor, &instrument->working_anchor, NULL, 0);
+    else bank_slot_free(&state->vary_anchor);
+    state->initialized = 1;
+    return 1;
+memory_error:
+    free(undo); free(redo);
+    set_error(error, error_size, "Out of memory while saving tile edit state");
+    return 0;
+}
+
+static int tile_state_restore(TsInstrument *instrument, int slot,
+                              char *error, size_t error_size)
+{
+    TsTileState *state = &instrument->tile_states[slot];
+    TsSample current;
+    if (!state->initialized) return 0;
+    ts_sample_init(&current);
+    ts_sample_free(&instrument->parent);
+    if (!ts_sample_clone(&instrument->parent, &state->parent, error, error_size)) return 0;
+    if (!render_snapshot(&current, instrument, &state->editor, error, error_size)) return 0;
+    ts_sample_free(&instrument->current);
+    instrument->current = current;
+    instrument->crop_first = state->editor.crop_first;
+    instrument->crop_last = state->editor.crop_last;
+    instrument->selection_first = state->editor.selection_first;
+    instrument->selection_last = state->editor.selection_last;
+    instrument->view_first = state->editor.view_first;
+    instrument->view_last = state->editor.view_last;
+    instrument->loop_first = state->editor.loop_first;
+    instrument->loop_last = state->editor.loop_last;
+    instrument->loop_crossfade_ms = state->editor.loop_crossfade_ms;
+    instrument->loop_mode = state->editor.loop_mode;
+    instrument->has_selection = state->editor.has_selection;
+    instrument->has_loop = state->editor.has_loop;
+    instrument->tuning = state->editor.tuning;
+    instrument->audible_tuning = state->editor.audible_tuning;
+    instrument->process = state->editor.process;
+    memcpy(instrument->sample_edits, state->editor.sample_edits,
+           sizeof(instrument->sample_edits));
+    instrument->sample_edit_count = state->editor.sample_edit_count;
+    memcpy(instrument->post_edits, state->editor.post_edits,
+           sizeof(instrument->post_edits));
+    instrument->post_edit_count = state->editor.post_edit_count;
+    instrument->undo_count = state->undo_count;
+    instrument->redo_count = state->redo_count;
+    if (state->undo_count) memcpy(instrument->undo, state->undo,
+                                  (size_t)state->undo_count * sizeof(instrument->undo[0]));
+    if (state->redo_count) memcpy(instrument->redo, state->redo,
+                                  (size_t)state->redo_count * sizeof(instrument->redo[0]));
+    bank_slot_free(&instrument->working_undo);
+    bank_slot_free(&instrument->working_anchor);
+    if (state->vary_undo.occupied)
+        bank_slot_clone(&instrument->working_undo, &state->vary_undo, NULL, 0);
+    if (state->vary_anchor.occupied)
+        bank_slot_clone(&instrument->working_anchor, &state->vary_anchor, NULL, 0);
+    instrument->working_undo_slot = instrument->working_undo.occupied ? slot : -1;
+    return 1;
+}
+
 int ts_instrument_select_bank_slot(TsInstrument *instrument, int slot,
                                    char *error, size_t error_size)
 {
-    if (!ts_instrument_set_bank_as_current(instrument, slot, error, error_size)) return 0;
+    if (instrument->active_bank_slot >= 0 && instrument->active_bank_slot != slot &&
+        !tile_state_store(instrument, instrument->active_bank_slot,
+                          error, error_size)) return 0;
+    if (!tile_state_restore(instrument, slot, error, error_size) &&
+        !ts_instrument_set_bank_as_current(instrument, slot, error, error_size)) return 0;
     instrument->active_bank_slot = slot;
-    bank_slot_free(&instrument->variation);
-    bank_slot_free(&instrument->working_undo);
-    bank_slot_free(&instrument->working_anchor);
-    instrument->working_undo_slot = -1;
+    if (!instrument->tile_states[slot].initialized)
+        tile_state_store(instrument, slot, NULL, 0);
     return 1;
 }
 
@@ -2927,7 +3050,8 @@ int ts_instrument_sync_active_bank_slot(TsInstrument *instrument,
     slot->loop_last = instrument->has_loop ? instrument->loop_last : 0;
     slot->loop_mode = instrument->loop_mode;
     slot->loop_crossfade_ms = instrument->loop_crossfade_ms;
-    return 1;
+    return tile_state_store(instrument, instrument->active_bank_slot,
+                            error, error_size);
 }
 
 int ts_instrument_create_bank_source(TsInstrument *instrument, int slot,
@@ -3010,8 +3134,9 @@ int ts_instrument_vary_active_bank_slot(TsInstrument *instrument, int reseed,
     bank_slot_free(&instrument->bank[slot]);
     instrument->bank[slot] = instrument->variation;
     bank_slot_init(&instrument->variation);
-    return ts_instrument_set_bank_as_current(instrument, slot, error, error_size) &&
-           (instrument->active_bank_slot = slot, 1);
+    if (!ts_instrument_set_bank_as_current(instrument, slot, error, error_size)) return 0;
+    instrument->active_bank_slot = slot;
+    return tile_state_store(instrument, slot, error, error_size);
 }
 
 static void bank_safe_name(const char *source, char *destination, size_t size)
@@ -3410,8 +3535,9 @@ int ts_instrument_undo(TsInstrument *instrument, char *error, size_t error_size)
         instrument->bank[slot] = instrument->working_undo;
         bank_slot_init(&instrument->working_undo);
         instrument->working_undo_slot = -1;
-        return ts_instrument_set_bank_as_current(instrument, slot, error, error_size) &&
-               (instrument->active_bank_slot = slot, 1);
+        if (!ts_instrument_set_bank_as_current(instrument, slot, error, error_size)) return 0;
+        instrument->active_bank_slot = slot;
+        return tile_state_store(instrument, slot, error, error_size);
     }
     if (instrument->undo_count == 0) {
         set_error(error, error_size, "Nothing to undo");
@@ -3421,6 +3547,8 @@ int ts_instrument_undo(TsInstrument *instrument, char *error, size_t error_size)
     if (!restore_history(instrument, target, instrument->redo, &instrument->redo_count,
                          error, error_size)) return 0;
     --instrument->undo_count;
+    if (instrument->active_bank_slot >= 0)
+        return ts_instrument_sync_active_bank_slot(instrument, error, error_size);
     return 1;
 }
 
@@ -3435,6 +3563,8 @@ int ts_instrument_redo(TsInstrument *instrument, char *error, size_t error_size)
     if (!restore_history(instrument, target, instrument->undo, &instrument->undo_count,
                          error, error_size)) return 0;
     --instrument->redo_count;
+    if (instrument->active_bank_slot >= 0)
+        return ts_instrument_sync_active_bank_slot(instrument, error, error_size);
     return 1;
 }
 
@@ -3462,7 +3592,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    fwrite("TSR13\r\n\032", 1, 8, f);
+    fwrite("TSR14\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->source_kind);
     put32(f, instrument->generation);
     put64(f, instrument->ancestor_hash);
@@ -3575,6 +3705,28 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
             put_float(f, slot->sample.data[frame]);
         put64(f, ts_sample_hash(&slot->sample));
     }
+    put32(f, TS_BANK_SLOT_COUNT);
+    put32(f, (uint32_t)sizeof(TsEditSnapshot));
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+        const TsTileState *state = &instrument->tile_states[i];
+        put32(f, (uint32_t)state->initialized);
+        if (!state->initialized) continue;
+        put32(f, state->parent.sample_rate);
+        put64(f, state->parent.frames);
+        name_length = strlen(state->parent.name);
+        put32(f, (uint32_t)name_length);
+        fwrite(state->parent.name, 1, name_length, f);
+        for (size_t frame = 0; frame < state->parent.frames; ++frame)
+            put_float(f, state->parent.data[frame]);
+        put64(f, ts_sample_hash(&state->parent));
+        fwrite(&state->editor, sizeof(state->editor), 1, f);
+        put32(f, (uint32_t)state->undo_count);
+        if (state->undo_count)
+            fwrite(state->undo, sizeof(*state->undo), (size_t)state->undo_count, f);
+        put32(f, (uint32_t)state->redo_count);
+        if (state->redo_count)
+            fwrite(state->redo, sizeof(*state->redo), (size_t)state->redo_count, f);
+    }
     {
         int failed = ferror(f);
         if (fclose(f) != 0) failed = 1;
@@ -3615,7 +3767,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR13\r\n\032", 8) == 0) version = 13;
+    if (memcmp(magic, "TSR14\r\n\032", 8) == 0) version = 14;
+    else if (memcmp(magic, "TSR13\r\n\032", 8) == 0) version = 13;
     else if (memcmp(magic, "TSR12\r\n\032", 8) == 0) version = 12;
     else if (memcmp(magic, "TSR11\r\n\032", 8) == 0) version = 11;
     else if (memcmp(magic, "TSR10\r\n\032", 8) == 0) version = 10;
@@ -3627,7 +3780,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR13 project");
+                  "Not a self-contained TSR6-TSR14 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -3854,6 +4007,59 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                 if (slot->has_generator) slot->generator = loaded.generator;
             }
         }
+        if (version >= 14) {
+            uint32_t tile_count;
+            uint32_t snapshot_size;
+            GET_U32(tile_count); GET_U32(snapshot_size);
+            if (tile_count != TS_BANK_SLOT_COUNT ||
+                snapshot_size != sizeof(TsEditSnapshot)) goto malformed;
+            for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+                TsTileState *tile = &loaded.tile_states[i];
+                uint64_t tile_hash;
+                GET_U32(tile->initialized);
+                if (tile->initialized != 0 && tile->initialized != 1) goto malformed;
+                if (!tile->initialized) continue;
+                GET_U32(tile->parent.sample_rate); GET_U64(tile->parent.frames);
+                GET_U32(name_length);
+                if (tile->parent.sample_rate < 1000 || tile->parent.frames == 0 ||
+                    tile->parent.frames > 100000000u ||
+                    name_length >= sizeof(tile->parent.name) ||
+                    tile->parent.frames > SIZE_MAX / sizeof(float)) goto malformed;
+                if (fread(tile->parent.name, 1, name_length, f) != name_length)
+                    goto malformed;
+                tile->parent.name[name_length] = '\0';
+                tile->parent.data = (float *)malloc(tile->parent.frames * sizeof(float));
+                if (tile->parent.data == NULL) goto out_of_memory;
+                for (size_t frame = 0; frame < tile->parent.frames; ++frame)
+                    if (!get_float(f, &tile->parent.data[frame])) goto malformed;
+                if (!get64(f, &tile_hash) ||
+                    tile_hash != ts_sample_hash(&tile->parent) ||
+                    fread(&tile->editor, sizeof(tile->editor), 1, f) != 1)
+                    goto malformed;
+                GET_U32(tile->undo_count);
+                if (tile->undo_count < 0 || tile->undo_count > TS_HISTORY_DEPTH)
+                    goto malformed;
+                if (tile->undo_count) {
+                    tile->undo = (TsEditSnapshot *)malloc(
+                        (size_t)tile->undo_count * sizeof(*tile->undo));
+                    if (tile->undo == NULL) goto out_of_memory;
+                    if (fread(tile->undo, sizeof(*tile->undo),
+                              (size_t)tile->undo_count, f) != (size_t)tile->undo_count)
+                        goto malformed;
+                }
+                GET_U32(tile->redo_count);
+                if (tile->redo_count < 0 || tile->redo_count > TS_HISTORY_DEPTH)
+                    goto malformed;
+                if (tile->redo_count) {
+                    tile->redo = (TsEditSnapshot *)malloc(
+                        (size_t)tile->redo_count * sizeof(*tile->redo));
+                    if (tile->redo == NULL) goto out_of_memory;
+                    if (fread(tile->redo, sizeof(*tile->redo),
+                              (size_t)tile->redo_count, f) != (size_t)tile->redo_count)
+                        goto malformed;
+                }
+            }
+        }
         if (version < 13) loaded.active_bank_slot = loaded.bank[0].occupied ? 0 : -1;
         if ((loaded.bank[0].occupied &&
              (loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT ||
@@ -3863,8 +4069,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             (loaded.family_last_slot >= 0 &&
              !loaded.bank[loaded.family_last_slot].occupied) ||
             (loaded.active_bank_slot >= 0 &&
-             !loaded.bank[loaded.active_bank_slot].occupied) ||
-            fgetc(f) != EOF)
+             !loaded.bank[loaded.active_bank_slot].occupied) || fgetc(f) != EOF)
             goto malformed;
     }
     if (state.crop_first >= state.crop_last || state.crop_last > loaded.parent.frames)
@@ -3901,7 +4106,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR13 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR14 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

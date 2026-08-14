@@ -43,7 +43,7 @@ The **Tune** page gives every instrument one shared pitch readout and ±100-cent
 
 **Suggest Pitch** analyzes the snapped Selection first, then the Loop, then all of Current. It temporarily places the suggested mapping on the keyboard so new, held, and latched notes can audition it immediately; the Tune readout follows that preview, while saved tuning and Undo history remain untouched. A second explicit click accepts it. Escape cancels the preview and still performs Stop All; Space stops audition without discarding the preview. Quiet, noisy, or unstable material is rejected rather than forced into a misleading note. Manual tuning remains authoritative.
 
-Root and fine tuning survive Undo/Redo, Reset, Commit, and collection selection. Each bank member carries its own mapping. Current and Collection WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. The same chunk carries loop start/end/type; importing the WAV restores that loop in TapeSister. TSR13 stores the selected working tile alongside the complete collection; TSR6–TSR12 remain loadable. User-captured TSP2 recipes optionally carry tuning; the eight factory recipes remain processing-only and never retune a sound unexpectedly.
+Root and fine tuning survive Undo/Redo, Reset, Commit, and collection selection. Each bank member carries its own mapping and editable construction. Current and Collection WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. The same chunk carries loop start/end/type; importing the WAV restores that loop in TapeSister. TSR14 stores each tile's processing, edit timeline, editor state, and scoped Undo/Redo history; TSR6–TSR13 remain loadable. User-captured TSP2 recipes optionally carry tuning; the eight factory recipes remain processing-only and never retune a sound unexpectedly.
 
 ## FastTracker handoff and configuration
 
@@ -67,11 +67,11 @@ The **Variation** page selects Close, Wide, or Radical and sets Amount from 0–
 
 With **Chain** off, repeated variations derive from the selected tile's preserved pre-Vary snapshot. With Chain on, every in-place replacement becomes the next deterministic source. The selected tile retains its seed, locks, relation, generator recipe, and trajectory provenance; unrelated tiles remain unchanged.
 
-The top **Export** button and `Ctrl+E` always ask whether to export the working sound or the complete Collection. Collection export writes every occupied slot as a numbered, loop-aware WAV into a new folder named from the initial Source. Existing folders are never silently replaced. A failed export removes the partial files and folder. TSR6–TSR12 projects remain loadable; TSR13 records the selected working tile.
+The top **Export** button and `Ctrl+E` always ask whether to export the working sound or the complete Collection. Collection export writes every occupied slot as a numbered, loop-aware WAV into a new folder named from the initial Source. Existing folders are never silently replaced. A failed export removes the partial files and folder. TSR6–TSR13 projects remain loadable; TSR14 records independent editable state for every occupied tile.
 
 ## Six-operator FM source proof
 
-FM is an additive fifth source kind alongside Tonal, Metallic, Noise, and Pulse. Each seed selects a complete hidden six-operator patch from curated Structure and Ratio families, plus Depth, Shape, feedback, and a short existing-engine noise transient. The stored generator kind and seed reproduce the exact FM sound through TSR13 save/load. Existing source render paths are unchanged.
+FM is an additive fifth source kind alongside Tonal, Metallic, Noise, and Pulse. Each seed selects a complete hidden six-operator patch from curated Structure and Ratio families, plus Depth, Shape, feedback, and a short existing-engine noise transient. The stored generator kind and seed reproduce the exact FM sound through TSR14 save/load. Existing source render paths are unchanged.
 
 The first proof deliberately keeps these controls under the surface. With Variation set to Radical and Chain enabled, repeated **Create** actions cycle through the source kinds and FM; **Vary** produces a new related seeded patch when FM is active. The next focused slice exposes Structure, Ratio, Depth, and Shape as four compact macros. See [the staged FM Source plan](docs/FM_SOURCE_PLAN.md).
 
@@ -119,7 +119,7 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
-- self-contained native TSR13 project saving with the selected working tile, all bank slots, tuning and collection provenance, editor view, selection, loop mode/metadata, pre- and post-DSP edit timelines, and every DSP parameter; and
+- self-contained native TSR14 project saving with independent editable state and scoped history for every tile, all bank slots, tuning and collection provenance, editor view, selection, loop mode/metadata, pre- and post-DSP edit timelines, and every DSP parameter; and
 - mono 16-bit Current export with sampler-compatible root/fine-tune and loop metadata.
 
 Sample edits run deterministically between the preserved Source and the live DSP. With no selection they affect the whole Current; with a selection they affect only that range. Commit prints the heard result into the next Source generation and clears both the edit stack and Undo/Redo history.
@@ -139,7 +139,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR13 embeds the selected working tile, complete sound-collection bank, per-member tuning and provenance, Collection controls, loop directions, replayable tape-edit timeline, filter, and shaper in one portable file. TSR6 through TSR12 projects remain loadable with deterministic defaults for fields absent from those versions. TSP2 remains source-audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR14 embeds independent per-tile source state, edit timelines, scoped Undo/Redo histories, the selected working tile, complete sound-collection bank, tuning and provenance, loop directions, filter, and shaper in one portable file. TSR6 through TSR13 projects remain loadable with deterministic defaults for fields absent from those versions. TSP2 remains source-audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 

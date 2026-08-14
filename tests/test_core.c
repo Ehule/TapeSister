@@ -693,6 +693,34 @@ int main(void)
                                     working.current.frames * 3u / 4u);
         CHECK(ts_instrument_set_loop_from_selection(&working, error, sizeof(error)));
         CHECK(ts_instrument_sync_active_bank_slot(&working, error, sizeof(error)));
+        {
+            uint64_t tile_a_audio = ts_sample_hash(&working.bank[1].sample);
+            uint64_t tile_b_audio;
+            int tile_a_undo = working.undo_count;
+            int tile_b_undo;
+            CHECK(ts_instrument_select_bank_slot(&working, 2, error, sizeof(error)));
+            changed = working.process;
+            changed.edge = 0.13f;
+            CHECK(ts_instrument_set_process(&working, &changed, error, sizeof(error)));
+            CHECK(ts_instrument_apply_sample_edit(&working, TS_SAMPLE_EDIT_REVERSE,
+                                                  1.0f, error, sizeof(error)));
+            CHECK(ts_instrument_sync_active_bank_slot(&working, error, sizeof(error)));
+            tile_b_audio = ts_sample_hash(&working.bank[2].sample);
+            tile_b_undo = working.undo_count;
+            CHECK(ts_instrument_select_bank_slot(&working, 1, error, sizeof(error)));
+            CHECK(fabsf(working.process.body - 0.77f) < 0.0001f);
+            CHECK(working.undo_count == tile_a_undo && working.has_loop);
+            CHECK(ts_sample_hash(&working.bank[1].sample) == tile_a_audio);
+            CHECK(ts_instrument_undo(&working, error, sizeof(error)));
+            CHECK(ts_sample_hash(&working.bank[2].sample) == tile_b_audio);
+            CHECK(ts_instrument_set_loop_from_selection(&working, error, sizeof(error)));
+            CHECK(ts_instrument_sync_active_bank_slot(&working, error, sizeof(error)));
+            CHECK(ts_instrument_select_bank_slot(&working, 2, error, sizeof(error)));
+            CHECK(fabsf(working.process.edge - 0.13f) < 0.0001f);
+            CHECK(working.sample_edit_count == 1 && working.undo_count == tile_b_undo);
+            CHECK(ts_sample_hash(&working.bank[2].sample) == tile_b_audio);
+            CHECK(ts_instrument_select_bank_slot(&working, 1, error, sizeof(error)));
+        }
         CHECK(ts_instrument_save_recipe(&working, "test-working.tsr", error, sizeof(error)));
         CHECK(ts_instrument_load_recipe(&working_loaded, "test-working.tsr",
                                         error, sizeof(error)));
@@ -706,6 +734,12 @@ int main(void)
         CHECK(working_loaded.bank[1].has_loop &&
               working_loaded.bank[1].loop_first == working.bank[1].loop_first &&
               working_loaded.bank[1].loop_last == working.bank[1].loop_last);
+        CHECK(ts_instrument_select_bank_slot(&working_loaded, 2, error, sizeof(error)));
+        CHECK(fabsf(working_loaded.process.edge - 0.13f) < 0.0001f);
+        CHECK(working_loaded.sample_edit_count == 1 && working_loaded.undo_count > 0);
+        CHECK(ts_instrument_select_bank_slot(&working_loaded, 1, error, sizeof(error)));
+        CHECK(fabsf(working_loaded.process.body - 0.77f) < 0.0001f);
+        CHECK(working_loaded.has_loop);
         remove("test-working.tsr");
         ts_instrument_free(&working);
         ts_instrument_free(&working_loaded);
@@ -1257,7 +1291,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR13", 5) == 0);
+        CHECK(memcmp(magic, "TSR14", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));

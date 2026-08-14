@@ -226,6 +226,18 @@ typedef struct {
 
 typedef struct {
     TsSample parent;
+    TsEditSnapshot editor;
+    TsEditSnapshot *undo;
+    TsEditSnapshot *redo;
+    TsBankSlot vary_undo;
+    TsBankSlot vary_anchor;
+    int undo_count;
+    int redo_count;
+    int initialized;
+} TsTileState;
+
+typedef struct {
+    TsSample parent;
     TsSample current;
     TsSourceKind source_kind;
     TsGeneratorRecipe generator;
@@ -267,6 +279,7 @@ typedef struct {
     int undo_count;
     int redo_count;
     TsBankSlot bank[TS_BANK_SLOT_COUNT];
+    TsTileState tile_states[TS_BANK_SLOT_COUNT];
 } TsInstrument;
 
 void ts_sample_init(TsSample *sample);
