@@ -83,6 +83,8 @@ typedef struct {
     TsGeneratorKind kind;
     float seconds;
     float frequency;
+    TsFmPatch fm_patch;
+    int has_fm_patch;
 } TsGeneratorRecipe;
 
 typedef struct {
@@ -353,6 +355,9 @@ const char *ts_generator_name(TsGeneratorKind kind);
 const char *ts_fm_structure_name(int structure);
 const char *ts_fm_ratio_family_name(int family);
 void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch);
+void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
+                      TsFmPatch *varied);
+float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied);
 const char *ts_noise_color_name(TsNoiseColor color);
 const char *ts_filter_mode_name(TsFilterMode mode);
 const char *ts_shaper_mode_name(TsShaperMode mode);

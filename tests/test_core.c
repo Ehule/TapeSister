@@ -16,7 +16,8 @@ static int failures;
 
 static TsGeneratorRecipe generator(uint32_t seed, TsGeneratorKind kind)
 {
-    TsGeneratorRecipe result = {seed, kind, 0.25f, 130.8128f};
+    TsGeneratorRecipe result = {.seed = seed, .kind = kind, .seconds = 0.25f,
+                                .frequency = 130.8128f};
     return result;
 }
 
@@ -1140,7 +1141,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR12", 5) == 0);
+        CHECK(memcmp(magic, "TSR13", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -1666,6 +1667,8 @@ int main(void)
         workflow.family_mutation = 0.0f;
         CHECK(ts_instrument_vary_selected(&workflow, 0, &destination, error, sizeof(error)));
         CHECK(destination == 5 && ts_sample_hash(&workflow.bank[5].sample) == original_hash);
+        CHECK(ts_sample_hash(&workflow.bank[5].edit_parent) ==
+              ts_sample_hash(&workflow.current));
         CHECK(ts_instrument_vary_selected(&workflow, 1, &destination, error, sizeof(error)));
         CHECK(destination == 6 && workflow.selected_slot == 6);
         exact_hash = ts_sample_hash(&workflow.bank[6].sample);
@@ -1686,6 +1689,10 @@ int main(void)
             CHECK(workflow_loaded.selected_slot == 9);
             CHECK(workflow_loaded.bank[9].occupied &&
                   workflow_loaded.bank[9].generator.kind == TS_GENERATOR_FM);
+            CHECK(workflow_loaded.bank[9].generator.has_fm_patch);
+            CHECK(memcmp(&workflow_loaded.bank[9].generator.fm_patch,
+                         &workflow.bank[9].generator.fm_patch,
+                         sizeof(TsFmPatch)) == 0);
             CHECK(ts_sample_hash(&workflow_loaded.bank[6].sample) == exact_hash);
             ts_instrument_free(&workflow_loaded);
         }
@@ -1695,6 +1702,78 @@ int main(void)
         CHECK(ts_instrument_create_selected(&workflow, 99u, error, sizeof(error)));
         CHECK(workflow.bank[0].occupied && workflow.bank[0].generator.kind == TS_GENERATOR_FM);
         ts_instrument_free(&workflow);
+    }
+
+    {
+        TsFmPatch base = {0}, zero, low, medium, high, repeat;
+        float low_distance, medium_distance, high_distance;
+        base.structure = 4; base.ratio_family = 2;
+        base.depth = 4.0f; base.shape = 0.5f; base.feedback = 0.4f;
+        base.transient_mix = 0.25f;
+        for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op)
+            base.ratios[op] = 0.75f + (float)op * 0.65f;
+        ts_fm_patch_vary(&base, 0x13579bdu, 0.0f, &zero);
+        ts_fm_patch_vary(&base, 0x13579bdu, 0.12f, &low);
+        ts_fm_patch_vary(&base, 0x13579bdu, 0.50f, &medium);
+        ts_fm_patch_vary(&base, 0x13579bdu, 1.0f, &high);
+        ts_fm_patch_vary(&base, 0x13579bdu, 0.50f, &repeat);
+        CHECK(memcmp(&base, &zero, sizeof(base)) == 0);
+        CHECK(base.structure == low.structure && base.structure == medium.structure &&
+              base.structure == high.structure);
+        CHECK(base.ratio_family == low.ratio_family &&
+              base.ratio_family == medium.ratio_family &&
+              base.ratio_family == high.ratio_family);
+        CHECK(memcmp(&medium, &repeat, sizeof(medium)) == 0);
+        low_distance = ts_fm_patch_distance(&base, &low);
+        medium_distance = ts_fm_patch_distance(&base, &medium);
+        high_distance = ts_fm_patch_distance(&base, &high);
+        CHECK(low_distance > 0.0f && low_distance < medium_distance &&
+              medium_distance < high_distance);
+        CHECK(high.feedback >= 0.0f && high.feedback <= 0.82f);
+        for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op)
+            CHECK(isfinite(high.ratios[op]) && high.ratios[op] >= 0.05f &&
+                  high.ratios[op] <= 16.0f);
+        {
+            TsSample rendered_high;
+            TsGeneratorRecipe high_recipe = generator(0x777777u, TS_GENERATOR_FM);
+            ts_sample_init(&rendered_high);
+            high_recipe.fm_patch = high; high_recipe.has_fm_patch = 1;
+            CHECK(ts_sample_generate(&rendered_high, &high_recipe, error, sizeof(error)));
+            CHECK(ts_sample_peak(&rendered_high) > 0.01f &&
+                  ts_sample_peak(&rendered_high) <= 1.0f);
+            for (size_t frame = 0; frame < rendered_high.frames; ++frame)
+                CHECK(isfinite(rendered_high.data[frame]));
+            ts_sample_free(&rendered_high);
+        }
+    }
+
+    {
+        TsInstrument first, repeat;
+        TsFmPatch first_patch, repeat_patch, next_patch;
+        uint64_t first_source_hash, first_final_hash;
+        int slot = -1;
+        ts_instrument_init(&first); ts_instrument_init(&repeat);
+        CHECK(ts_instrument_bank_clear_all(&first, error, sizeof(error)));
+        CHECK(ts_instrument_bank_clear_all(&repeat, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&first, 4, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&repeat, 4, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&first, 0x2468aceu, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&repeat, 0x2468aceu, error, sizeof(error)));
+        first.family_mutation = repeat.family_mutation = 0.55f;
+        CHECK(ts_instrument_vary_selected(&first, 0, &slot, error, sizeof(error)));
+        CHECK(ts_instrument_vary_selected(&repeat, 0, &slot, error, sizeof(error)));
+        ts_fm_patch_from_recipe(&first.bank[4].generator, &first_patch);
+        ts_fm_patch_from_recipe(&repeat.bank[4].generator, &repeat_patch);
+        first_source_hash = ts_sample_hash(&first.bank[4].edit_parent);
+        first_final_hash = ts_sample_hash(&first.bank[4].sample);
+        CHECK(memcmp(&first_patch, &repeat_patch, sizeof(first_patch)) == 0);
+        CHECK(first_source_hash == ts_sample_hash(&repeat.bank[4].edit_parent));
+        CHECK(first_final_hash == ts_sample_hash(&repeat.bank[4].sample));
+        CHECK(ts_instrument_vary_selected(&repeat, 0, &slot, error, sizeof(error)));
+        ts_fm_patch_from_recipe(&repeat.bank[4].generator, &next_patch);
+        CHECK(memcmp(&first_patch, &next_patch, sizeof(first_patch)) != 0);
+        CHECK(first_source_hash != ts_sample_hash(&repeat.bank[4].edit_parent));
+        ts_instrument_free(&first); ts_instrument_free(&repeat);
     }
 
     {
@@ -1722,16 +1801,29 @@ int main(void)
         CHECK(ts_sample_hash(&gesture.current) == before);
         CHECK(ts_instrument_redo(&gesture, error, sizeof(error)));
         CHECK(ts_sample_hash(&gesture.current) == edited);
+        {
+            uint64_t source_before_zero = ts_sample_hash(&gesture.bank[1].edit_parent);
+            TsGeneratorRecipe recipe_before_zero = gesture.bank[1].generator;
+            gesture.family_mutation = 0.0f;
+            CHECK(ts_instrument_vary_selected(&gesture, 0, &destination, error, sizeof(error)));
+            CHECK(ts_sample_hash(&gesture.current) == edited);
+            CHECK(ts_sample_hash(&gesture.bank[1].edit_parent) == source_before_zero);
+            CHECK(memcmp(&gesture.bank[1].generator, &recipe_before_zero,
+                         sizeof(recipe_before_zero)) == 0);
+        }
         CHECK(ts_instrument_copy_selected(&gesture, 3, error, sizeof(error)));
         gesture.family_mutation = 0.5f;
         CHECK(ts_instrument_vary_selected(&gesture, 0, &destination, error, sizeof(error)));
         varied_from_a = ts_sample_hash(&gesture.current);
+        CHECK(gesture.bank[3].generator.has_fm_patch);
+        CHECK(gesture.bank[3].edit.post_edit_count == 1);
+        CHECK(ts_sample_hash(&gesture.bank[3].edit_parent) != before);
         CHECK(ts_instrument_select_bank(&gesture, 1, error, sizeof(error)));
         CHECK(ts_instrument_copy_selected(&gesture, 5, error, sizeof(error)));
         gesture.family_mutation = 0.5f;
         CHECK(ts_instrument_vary_selected(&gesture, 1, &destination, error, sizeof(error)));
         chained = ts_sample_hash(&gesture.current);
-        CHECK(destination == 6 && chained == varied_from_a);
+        CHECK(destination == 6 && chained != edited && varied_from_a != edited);
         CHECK(ts_sample_hash(&gesture.bank[2].sample) == b_hash);
         CHECK(ts_instrument_select_bank(&gesture, 1, error, sizeof(error)));
         CHECK(ts_instrument_save_recipe(&gesture, "test-gesture.tsr", error, sizeof(error)));
