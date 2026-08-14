@@ -13,6 +13,37 @@ static float at_normalized(const TsSample *sample, double n)
     return sample->data[a]+(sample->data[b]-sample->data[a])*f;
 }
 
+static float sample_rms(const TsSample *sample)
+{
+    double sum=0.0;
+    if(!sample||!sample->data||sample->frames==0)return 0.0f;
+    for(size_t i=0;i<sample->frames;++i){double x=sample->data[i];sum+=x*x;}
+    return (float)sqrt(sum/(double)sample->frames);
+}
+
+/* Family mutation contains nonlinear shaping, so equal peaks do not imply equal
+   loudness. Match average energy to the parent, then enforce the parent's peak
+   as a hard ceiling. This keeps genetics timbral rather than acting like an
+   accidental compressor that makes later family members sound progressively
+   louder. */
+static void match_family_level(TsSample *candidate,const TsSample *parent)
+{
+    float parent_rms=sample_rms(parent);
+    float child_rms=sample_rms(candidate);
+    float parent_peak=ts_sample_peak(parent);
+    float child_peak;
+    float gain=1.0f;
+    if(!candidate||!candidate->data||candidate->frames==0||!parent||!parent->data)return;
+    if(parent_rms>0.0000001f&&child_rms>0.0000001f)gain=parent_rms/child_rms;
+    child_peak=ts_sample_peak(candidate);
+    if(parent_peak>0.0000001f&&child_peak>0.0000001f&&child_peak*gain>parent_peak)
+        gain=parent_peak/child_peak;
+    for(size_t i=0;i<candidate->frames;++i){
+        float x=candidate->data[i]*gain;
+        candidate->data[i]=x>1.0f?1.0f:x<-1.0f?-1.0f:x;
+    }
+}
+
 static void blend_stranger(TsBankSlot *candidate,const TsBankSlot *anchor,float mutation)
 {
     float similarity=1.0f-mutation*0.95f;
@@ -125,7 +156,10 @@ int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
                 candidate->tuning=parent->tuning;candidate->audible_tuning=parent->audible_tuning;
                 candidate->has_loop=parent->has_loop;candidate->loop_first=parent->loop_first;candidate->loop_last=parent->loop_last;
                 candidate->loop_crossfade_ms=parent->loop_crossfade_ms;candidate->loop_mode=parent->loop_mode;
-            }else if(candidate->relation==TS_FAMILY_STRANGER)blend_stranger(candidate,parent,lineage_mutation);
+            }else{
+                if(candidate->relation==TS_FAMILY_STRANGER)blend_stranger(candidate,parent,lineage_mutation);
+                match_family_level(&candidate->sample,&parent->sample);
+            }
         }
         instrument->family_relation=old_relation;instrument->family_mutation=old_mutation;instrument->family_trajectory=old_path;
         if(!ok)instrument->family_last_slot=old_last;
