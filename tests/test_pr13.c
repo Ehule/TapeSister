@@ -78,25 +78,57 @@ int main(void)
     instrument.family_relation = TS_FAMILY_CHILD;
     instrument.family_mutation = 0.9f;
     {
+        uint64_t root_source_hash=ts_sample_hash(&instrument.bank[0].sample);
+        float root_source_peak=ts_sample_peak(&instrument.bank[0].sample);
         TsProcessRecipe root_process=instrument.process;
-        root_process.noise_enabled=1;root_process.noise_amount=0.11f;
+        root_process.filter_enabled=1;
+        root_process.filter_mode=TS_FILTER_LOWPASS;
+        root_process.filter_cutoff_hz=900.0f;
+        root_process.filter_resonance=0.35f;
+        root_process.noise_enabled=1;
+        root_process.noise_amount=0.11f;
         CHECK(ts_pr13_set_process(&instrument,0,&root_process,error,sizeof(error)));
+        /* Editing the environment must never print it into the genetic source. */
+        CHECK(ts_sample_hash(&instrument.bank[0].sample)==root_source_hash);
+        CHECK(fabsf(ts_sample_peak(&instrument.bank[0].sample)-root_source_peak)<0.000001f);
     }
     CHECK(ts_pr13_generate_family_candidate(&instrument, 0, 0, &child,
                                              error, sizeof(error)));
     CHECK(child > 0 && instrument.bank[child].parent_slot == 0);
     CHECK(instrument.bank[child].has_process);
     CHECK(fabsf(instrument.bank[child].process.noise_amount-instrument.bank[0].process.noise_amount)<0.0001f);
+    CHECK(fabsf(instrument.bank[child].process.filter_cutoff_hz-instrument.bank[0].process.filter_cutoff_hz)<0.001f);
     CHECK(ts_pr13_activate_slot(&instrument,child,error,sizeof(error)));
     {
+        uint64_t child_source_hash=ts_sample_hash(&instrument.bank[child].sample);
         TsProcessRecipe child_process=instrument.process;
+        child_process.filter_cutoff_hz=2400.0f;
         child_process.delay_enabled=1;child_process.delay_mix=0.41f;
         CHECK(ts_pr13_set_process(&instrument,child,&child_process,error,sizeof(error)));
+        CHECK(ts_sample_hash(&instrument.bank[child].sample)==child_source_hash);
     }
     CHECK(ts_pr13_activate_slot(&instrument,0,error,sizeof(error)));
     CHECK(!instrument.process.delay_enabled);
+    CHECK(fabsf(instrument.process.filter_cutoff_hz-900.0f)<0.001f);
     CHECK(ts_pr13_activate_slot(&instrument,child,error,sizeof(error)));
     CHECK(instrument.process.delay_enabled && fabsf(instrument.process.delay_mix-0.41f)<0.0001f);
+    CHECK(fabsf(instrument.process.filter_cutoff_hz-2400.0f)<0.001f);
+
+    {
+        uint64_t root_source_hash=ts_sample_hash(&instrument.bank[0].sample);
+        float root_source_peak=ts_sample_peak(&instrument.bank[0].sample);
+        int generated=-1;
+        /* Repeated sibling generation/activation may change children, but it
+           must not progressively process or amplify the parent source. */
+        for(int i=0;i<3;++i){
+            CHECK(ts_pr13_generate_family_candidate(&instrument,0,0,&generated,error,sizeof(error)));
+            CHECK(generated>0);
+            CHECK(ts_pr13_activate_slot(&instrument,generated,error,sizeof(error)));
+            CHECK(ts_sample_hash(&instrument.bank[0].sample)==root_source_hash);
+            CHECK(fabsf(ts_sample_peak(&instrument.bank[0].sample)-root_source_peak)<0.000001f);
+            CHECK(ts_pr13_activate_slot(&instrument,0,error,sizeof(error)));
+        }
+    }
 
     CHECK(ts_pr13_generate_family_candidate(&instrument, child, 1, &sibling,
                                              error, sizeof(error)));
@@ -118,6 +150,7 @@ int main(void)
     CHECK(ts_pr13_slot_locked(&loaded, child));
     CHECK(loaded.bank[child].has_process);
     CHECK(fabsf(loaded.bank[child].process.delay_mix-instrument.bank[child].process.delay_mix)<0.0001f);
+    CHECK(fabsf(loaded.bank[child].process.filter_cutoff_hz-instrument.bank[child].process.filter_cutoff_hz)<0.001f);
     remove("test-pr13-lock.tsr");
 
     CHECK(ts_pr13_set_slot_locked(&instrument, child, 0, error, sizeof(error)));
@@ -131,6 +164,18 @@ int main(void)
         CHECK(ts_sample_hash(&instrument.bank[child].sample)==child_hash);
         CHECK(ts_pr13_generate_family_candidate(&instrument,child,1,&sibling,error,sizeof(error)));
         CHECK(sibling>=0&&instrument.bank[sibling].occupied);
+    }
+
+    {
+        TsInstrument empty;
+        ts_instrument_init(&empty);
+        CHECK(ts_instrument_generate(&empty,TS_GENERATOR_TONAL,0x11112222u,error,sizeof(error)));
+        CHECK(ts_pr13_bank_clear(&empty,0,error,sizeof(error)));
+        CHECK(!empty.bank[0].occupied);
+        /* An entirely empty family must be recoverable without a filled anchor. */
+        CHECK(ts_pr13_generate_parent_in_slot(&empty,0,0,error,sizeof(error)));
+        CHECK(empty.bank[0].occupied);
+        ts_instrument_free(&empty);
     }
 
     {
