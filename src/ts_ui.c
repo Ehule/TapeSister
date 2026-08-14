@@ -386,8 +386,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 {
     const TsTuning *display_tuning = ts_ui_display_tuning(ui, instrument);
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
-    int showing_candidate = !showing_bank && instrument->variation.occupied &&
-                            ui->audition_source == TS_AUDITION_CURRENT;
+    int showing_candidate = !showing_bank && ui->candidate_view &&
+                            instrument->variation.occupied;
     int showing_parent = !showing_bank && !showing_candidate &&
                          ui->audition_source == TS_AUDITION_PARENT;
     const TsBankSlot *shown_slot = showing_bank ? &instrument->bank[ui->bank_view_slot] :
@@ -600,9 +600,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 
     if (ui->playback_active && ui->playhead_frames > 0) {
         int playhead_x = -1;
-        uint32_t playhead_color = ui->playhead_source == TS_AUDITION_PARENT ?
+        uint32_t playhead_color = showing_candidate ? PAL_MOUSE :
+                                  ui->playhead_source == TS_AUDITION_PARENT ?
                                   PAL_INSTRUMENT : PAL_MOUSE;
-        if (((showing_bank && ui->playhead_bank_slot == ui->bank_view_slot) ||
+        if (((showing_candidate && ui->playhead_bank_slot == TS_BANK_SLOT_COUNT) ||
+             (showing_bank && ui->playhead_bank_slot == ui->bank_view_slot) ||
              (!showing_bank && ui->playhead_bank_slot < 0 &&
               ui->playhead_source == ui->audition_source)) &&
             ui->playhead_frame >= view_first && ui->playhead_frame <= view_last) {

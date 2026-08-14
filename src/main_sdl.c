@@ -468,6 +468,7 @@ static void switch_audition_source(SDL_AudioDeviceID device, AudioState *audio,
     TsAuditionPlan plan;
     int was_bank_view = ui->bank_view_slot >= 0;
     ui->bank_view_slot = -1;
+    ui->candidate_view = 0;
     if (source == ui->audition_source) {
         if (was_bank_view && audio->bank_slot >= 0) {
             if (device) SDL_LockAudioDevice(device);
@@ -1132,6 +1133,7 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
     slot = slot_index == TS_BANK_SLOT_COUNT ? &instrument->variation :
                                               &instrument->bank[slot_index];
     ui->bank_view_slot = slot_index == TS_BANK_SLOT_COUNT ? -1 : slot_index;
+    ui->candidate_view = slot_index == TS_BANK_SLOT_COUNT;
     if (device) SDL_LockAudioDevice(device);
     ts_note_bank_clear(&audio->notes);
     audio->playing = 0;
@@ -1221,7 +1223,7 @@ static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
     if (!ui->bank_clear_armed) {
         ui->bank_clear_armed = 1;
         snprintf(ui->status, sizeof(ui->status),
-                 "CLICK CLEAR ALL AGAIN - ALL 16 SLOTS WILL BE CLEARED");
+                 "CLICK AGAIN - CLEAR 16 RETAINED SLOTS AND CANDIDATE");
         return;
     }
     if (device) SDL_LockAudioDevice(device);
@@ -1232,9 +1234,10 @@ static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
     if (device) SDL_UnlockAudioDevice(device);
     ui->bank_clear_armed = 0;
     ui->bank_view_slot = -1;
+    ui->candidate_view = 0;
     if (ok)
         snprintf(ui->status, sizeof(ui->status),
-                 "CLEARED ALL 16 COLLECTION SLOTS");
+                 "CLEARED 16 RETAINED SLOTS AND EXPLORATORY CANDIDATE");
     else
         snprintf(ui->status, sizeof(ui->status),
                  "CLEAR ALL FAILED: %.137s", error);
@@ -1256,6 +1259,7 @@ static void set_auditioned_bank_current(SDL_AudioDeviceID device, AudioState *au
         unlock_edit(device, audio, ui, instrument);
         if (ok) {
             ui->bank_view_slot = slot;
+            ui->candidate_view = 0;
             snprintf(ui->status, sizeof(ui->status),
                      "KEPT CANDIDATE ONCE IN BANK %02d", slot + 1);
         } else snprintf(ui->status, sizeof(ui->status), "KEEP FAILED: %.140s", error);

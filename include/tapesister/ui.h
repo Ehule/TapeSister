@@ -62,6 +62,7 @@ typedef struct {
     int show_keyboard;
     int show_recipes;
     int bank_view_slot;
+    int candidate_view;
     int playhead_bank_slot;
     int renaming_bank_slot;
     int renaming_recipe_slot;

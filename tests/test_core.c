@@ -132,6 +132,27 @@ int main(void)
             CHECK(structure_count == TS_FM_STRUCTURE_COUNT);
             CHECK(family_count == TS_FM_RATIO_FAMILY_COUNT);
         }
+        {
+            TsSample high_feedback;
+            int found = 0;
+            ts_sample_init(&high_feedback);
+            for (uint32_t seed = 1; seed < 1000000u; ++seed) {
+                fm_recipe.seed = seed;
+                ts_fm_patch_from_recipe(&fm_recipe, &patch);
+                if (patch.feedback >= 0.815f) {
+                    found = 1;
+                    break;
+                }
+            }
+            CHECK(found && patch.feedback >= 0.815f && patch.feedback <= 0.82f);
+            CHECK(ts_sample_generate(&high_feedback, &fm_recipe,
+                                     error, sizeof(error)));
+            CHECK(ts_sample_peak(&high_feedback) > 0.01f &&
+                  ts_sample_peak(&high_feedback) <= 0.7801f);
+            for (size_t i = 0; i < high_feedback.frames; ++i)
+                CHECK(isfinite(high_feedback.data[i]));
+            ts_sample_free(&high_feedback);
+        }
         ts_sample_free(&fm_a);
         ts_sample_free(&fm_b);
         ts_sample_free(&fm_other);
@@ -605,6 +626,27 @@ int main(void)
         CHECK(family_repeat.variation.trajectory_step == 2u);
         CHECK(ts_sample_hash(&family_repeat.variation.sample) ==
               ts_sample_hash(&family.variation.sample));
+        CHECK(ts_instrument_bank_clear_all(&family_restored,
+                                           error, sizeof(error)));
+        CHECK(ts_instrument_bank_count(&family_restored) == 0);
+        CHECK(!family_restored.variation.occupied);
+        {
+            TsInstrument candidate_only;
+            ts_instrument_init(&candidate_only);
+            CHECK(ts_instrument_generate(&candidate_only, TS_GENERATOR_FM,
+                                         0x434c5243u, error, sizeof(error)));
+            CHECK(ts_instrument_generate_family_candidate(&candidate_only, 0, 0,
+                                                           &ignored_slot,
+                                                           error, sizeof(error)));
+            CHECK(ts_instrument_bank_clear(&candidate_only, 0,
+                                           error, sizeof(error)));
+            CHECK(ts_instrument_bank_count(&candidate_only) == 0 &&
+                  candidate_only.variation.occupied);
+            CHECK(ts_instrument_bank_clear_all(&candidate_only,
+                                               error, sizeof(error)));
+            CHECK(!candidate_only.variation.occupied);
+            ts_instrument_free(&candidate_only);
+        }
         remove("test-family.tsr");
     }
 
@@ -1664,6 +1706,24 @@ int main(void)
     ts_ui_render(&fb, &ui, &family);
     CHECK(fb.pixels[349 * TS_UI_WIDTH + 89] == 0xff18ff00u);
     CHECK(fb.pixels[280 * TS_UI_WIDTH + 340] == 0xff2d0039u);
+    {
+        uint64_t candidate_from_source;
+        ui.bank_view_slot = -1;
+        ui.candidate_view = 1;
+        ui.playback_active = 1;
+        ui.playhead_bank_slot = TS_BANK_SLOT_COUNT;
+        ui.playhead_source = TS_AUDITION_PARENT;
+        ui.playhead_frame = family.variation.sample.frames / 2u;
+        ui.playhead_frames = family.variation.sample.frames;
+        ui.audition_source = TS_AUDITION_PARENT;
+        ts_ui_render(&fb, &ui, &family);
+        candidate_from_source = waveform_hash(&fb);
+        CHECK(fb.pixels[(TS_WAVE_Y + 1) * TS_UI_WIDTH +
+                        TS_WAVE_X + TS_WAVE_W / 2] == 0xffffd265u);
+        ui.audition_source = TS_AUDITION_CURRENT;
+        ts_ui_render(&fb, &ui, &family);
+        CHECK(waveform_hash(&fb) == candidate_from_source);
+    }
 
     ts_sample_free(&a); ts_sample_free(&b); ts_sample_free(&loaded); ts_sample_free(&copy);
     ts_sample_free(&dry); ts_sample_free(&effected); ts_sample_free(&repeated);

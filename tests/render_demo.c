@@ -174,6 +174,7 @@ int main(int argc, char **argv)
         ui.show_keyboard = 0;
         ui.show_recipes = 0;
         ui.bank_view_slot = -1;
+        ui.candidate_view = 1;
         ui.playback_active = 1;
         ui.playhead_bank_slot = TS_BANK_SLOT_COUNT;
         ui.playhead_frame = instrument.variation.sample.frames / 2u;

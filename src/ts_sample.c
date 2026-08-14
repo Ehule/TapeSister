@@ -2653,7 +2653,8 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
 int ts_instrument_bank_clear_all(TsInstrument *instrument,
                                  char *error, size_t error_size)
 {
-    if (instrument == NULL || ts_instrument_bank_count(instrument) == 0) {
+    if (instrument == NULL ||
+        (ts_instrument_bank_count(instrument) == 0 && !instrument->variation.occupied)) {
         set_error(error, error_size, "Collection is already empty");
         return 0;
     }
