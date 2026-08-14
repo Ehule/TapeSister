@@ -35,6 +35,48 @@ static int editable(const TsInstrument *instrument, int slot,
     return 1;
 }
 
+static int is_terminal_fade(TsPostEditKind kind)
+{
+    return kind == TS_POST_FADE_IN || kind == TS_POST_FADE_OUT;
+}
+
+static void hide_terminal_fades(TsInstrument *instrument, TsPostEdit *saved, int *saved_count)
+{
+    int kept = 0;
+    *saved_count = instrument->post_edit_count;
+    memcpy(saved, instrument->post_edits, sizeof(instrument->post_edits));
+    for (int i = 0; i < *saved_count; ++i)
+        if (!is_terminal_fade(saved[i].kind)) instrument->post_edits[kept++] = saved[i];
+    instrument->post_edit_count = kept;
+}
+
+static void restore_terminal_stack(TsInstrument *instrument, const TsPostEdit *saved, int saved_count)
+{
+    memcpy(instrument->post_edits, saved, sizeof(instrument->post_edits));
+    instrument->post_edit_count = saved_count;
+}
+
+static void apply_terminal_fades(TsSample *sample, const TsPostEdit *saved, int saved_count)
+{
+    if (sample == NULL || sample->data == NULL) return;
+    for (int index = 0; index < saved_count; ++index) {
+        const TsPostEdit *operation = &saved[index];
+        size_t first, last, length;
+        if (!is_terminal_fade(operation->kind)) continue;
+        first = operation->first > sample->frames ? sample->frames : operation->first;
+        last = operation->last > sample->frames ? sample->frames : operation->last;
+        if (last <= first) continue;
+        length = last - first;
+        for (size_t i = 0; i < length; ++i) {
+            float gain = length > 1u ?
+                (operation->kind == TS_POST_FADE_IN ?
+                 (float)i / (float)(length - 1u) :
+                 (float)(length - 1u - i) / (float)(length - 1u)) : 1.0f;
+            sample->data[first + i] *= gain;
+        }
+    }
+}
+
 static void init_empty_slot13(TsBankSlot *slot)
 {
     TsTuning tuning = {TS_KEYBOARD_BASE_NOTE, 0.0f};
@@ -225,18 +267,33 @@ int ts_pr13_set_process_and_tunings(TsInstrument *instrument, int active_slot,
                                     char *error, size_t error_size)
 {
     TsProcessRecipe core_process;
+    TsPostEdit saved_post[TS_POST_EDIT_DEPTH];
+    int saved_post_count;
+    int before_undo;
     if (instrument == NULL || process == NULL || tuning == NULL || audible_tuning == NULL) {
         set_error13(error, error_size, "Invalid PR13 process settings");
         return 0;
     }
     if (!editable(instrument, active_slot, error, error_size)) return 0;
     core_process = legacy_neutral(*process);
+    before_undo = instrument->undo_count;
+    hide_terminal_fades(instrument, saved_post, &saved_post_count);
     if (!ts_instrument_set_process_and_tunings(instrument, &core_process, tuning,
-                                               audible_tuning, error, error_size)) return 0;
+                                               audible_tuning, error, error_size)) {
+        restore_terminal_stack(instrument, saved_post, saved_post_count);
+        return 0;
+    }
+    restore_terminal_stack(instrument, saved_post, saved_post_count);
+    if (instrument->undo_count > before_undo) {
+        TsEditSnapshot *prior = &instrument->undo[instrument->undo_count - 1];
+        memcpy(prior->post_edits, saved_post, sizeof(prior->post_edits));
+        prior->post_edit_count = saved_post_count;
+    }
     instrument->process = *process;
     if (!ts_pr13_apply_body_edge_drift(&instrument->current,
                                        process->body, process->edge, process->drift,
                                        error, error_size)) return 0;
+    apply_terminal_fades(&instrument->current, saved_post, saved_post_count);
     return ts_pr13_sync_active_slot(instrument, active_slot, error, error_size);
 }
 
@@ -264,6 +321,8 @@ int ts_pr13_rerender(TsInstrument *instrument, int active_slot,
 {
     TsEditSnapshot undo[TS_HISTORY_DEPTH];
     TsEditSnapshot redo[TS_HISTORY_DEPTH];
+    TsPostEdit saved_post[TS_POST_EDIT_DEPTH];
+    int saved_post_count;
     int undo_count;
     int redo_count;
     TsProcessRecipe desired;
@@ -275,10 +334,15 @@ int ts_pr13_rerender(TsInstrument *instrument, int active_slot,
     memcpy(redo, instrument->redo, sizeof(redo));
     undo_count = instrument->undo_count;
     redo_count = instrument->redo_count;
+    hide_terminal_fades(instrument, saved_post, &saved_post_count);
     if (!ts_instrument_set_process_and_tunings(instrument, &core_process,
                                                &instrument->tuning,
                                                &instrument->audible_tuning,
-                                               error, error_size)) return 0;
+                                               error, error_size)) {
+        restore_terminal_stack(instrument, saved_post, saved_post_count);
+        return 0;
+    }
+    restore_terminal_stack(instrument, saved_post, saved_post_count);
     memcpy(instrument->undo, undo, sizeof(undo));
     memcpy(instrument->redo, redo, sizeof(redo));
     instrument->undo_count = undo_count;
@@ -287,5 +351,6 @@ int ts_pr13_rerender(TsInstrument *instrument, int active_slot,
     if (!ts_pr13_apply_body_edge_drift(&instrument->current,
                                        desired.body, desired.edge, desired.drift,
                                        error, error_size)) return 0;
+    apply_terminal_fades(&instrument->current, saved_post, saved_post_count);
     return ts_pr13_sync_active_slot(instrument, active_slot, error, error_size);
 }
