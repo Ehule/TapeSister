@@ -202,7 +202,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
                         browser->filename_cursor;
         size_t first = length > 78 ? length - 78 : 0;
         text(fb, 58, 282,
-             browser->mode == TS_BROWSER_EXPORT_BANK ? "FAMILY FOLDER" : "FILENAME",
+             browser->mode == TS_BROWSER_EXPORT_BANK ? "COLLECTION FOLDER" : "FILENAME",
              PAL_EFFECT, 1);
         rect(fb, 58, 294, 518, 24, RGB(8, 8, 8));
         if (cursor < first) first = cursor;
@@ -263,7 +263,7 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
     button(fb, 170, 274, 100, "USE CWD", 0);
     button(fb, 280, 274, 82, "CANCEL", 0);
     text(fb, 50, 312,
-         "SEND FT2 EXPORTS A LOOP AWARE FAMILY THEN LAUNCHES FT2",
+         "SEND FT2 EXPORTS THE LOOP AWARE COLLECTION THEN LAUNCHES FT2",
          PAL_TUNING, 1);
     text(fb, 50, 327,
          "PALETTE IMPORT EDIT EXPORT WILL LIVE IN THIS WINDOW NEXT",
@@ -284,7 +284,7 @@ void ts_ui_init(TsUiState *ui)
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
     ts_recipe_bank_init(&ui->recipes);
-    snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR GENERATE A PARENT");
+    snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR CREATE A SOURCE");
 }
 
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames)
@@ -425,7 +425,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
     if (instrument->parent.frames) {
         char parent[96], info[112];
-        snprintf(parent, sizeof(parent), "PARENT G%u %.28s",
+        snprintf(parent, sizeof(parent), "SOURCE G%u %.28s",
                  instrument->generation, instrument->parent.name);
         if (showing_bank && shown_slot->occupied) {
             if (shown_slot->parent_slot >= 0)
@@ -445,12 +445,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                      ui->bank_view_slot + 1);
         else
             snprintf(info, sizeof(info), "AUDITION %s %u HZ %.2F SEC",
-                     showing_parent ? "PARENT" : "CURRENT", sample->sample_rate,
+                     showing_parent ? "SOURCE" : "CURRENT", sample->sample_rate,
                      (double)sample->frames / sample->sample_rate);
         text(fb, 20, 49, parent, PAL_INSTRUMENT, 1);
         text(fb, 390, 49, info, PAL_EFFECT, 1);
     } else {
-        text(fb, 20, 49, "NO PARENT", PAL_INSTRUMENT, 1);
+        text(fb, 20, 49, "NO SOURCE", PAL_INSTRUMENT, 1);
     }
 
     rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
@@ -606,11 +606,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     }
 
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
-    button(fb, 85, 205, 82, "GENERATE", 0);
-    button(fb, 172, 205, 70, "RESEED", 0);
+    button(fb, 85, 205, 82, "CREATE", 0);
+    button(fb, 172, 205, 70, "VARY", 0);
     button(fb, 247, 205, 78, "COMMIT", ui->commit_armed);
     button(fb, 330, 205, 72, "RESET", 0);
-    button(fb, 407, 205, 61, "PARENT", !showing_bank && ui->audition_source == TS_AUDITION_PARENT);
+    button(fb, 407, 205, 61, "SOURCE", !showing_bank && ui->audition_source == TS_AUDITION_PARENT);
     button(fb, 472, 205, 63, "CURRENT", !showing_bank && ui->audition_source == TS_AUDITION_CURRENT);
     button(fb, 540, 205, 90, "SET CURRENT",
            showing_bank && shown_slot->occupied);
@@ -622,7 +622,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 372, 233, 34, "TUNE", ui->fx_page == TS_FX_TUNE);
     button(fb, 409, 233, 36, "NOIS", ui->fx_page == TS_FX_NOISE);
     button(fb, 448, 233, 38, "SHAP", ui->fx_page == TS_FX_SHAPE);
-    button(fb, 489, 233, 34, "FAM", ui->fx_page == TS_FX_FAMILY);
+    button(fb, 489, 233, 34, "VAR", ui->fx_page == TS_FX_FAMILY);
     button(fb, 526, 233, 36, "DELY", ui->fx_page == TS_FX_DELAY);
     button(fb, 565, 233, 29, "SPC", ui->fx_page == TS_FX_SPACE);
     button(fb, 597, 233, 33, "LOOP", ui->fx_page == TS_FX_LOOP);
@@ -682,9 +682,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else if (ui->fx_page == TS_FX_FAMILY) {
         char relation[24];
         char mutation[24];
-        snprintf(relation, sizeof(relation), "REL %s",
+        snprintf(relation, sizeof(relation), "RANGE %s",
                  ts_family_relation_name(instrument->family_relation));
-        snprintf(mutation, sizeof(mutation), "MUT %d%%",
+        snprintf(mutation, sizeof(mutation), "AMT %d%%",
                  (int)lrintf(instrument->family_mutation * 100.0f));
         button(fb, 10, 261, 100, relation, 1);
         slider(fb, 115, 261, 110, mutation, instrument->family_mutation, PAL_VOLUME);
@@ -699,7 +699,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 472, 261, 62, "SPEC",
                (instrument->family_locks & TS_FAMILY_LOCK_SPECTRAL) != 0u);
         button(fb, 538, 261, 92,
-               instrument->family_trajectory ? "PATH ON" : "PATH OFF",
+               instrument->family_trajectory ? "CHAIN ON" : "CHAIN OFF",
                instrument->family_trajectory);
     } else if (ui->fx_page == TS_FX_DELAY) {
         button(fb, 10, 261, 94, instrument->process.delay_enabled ? "DELAY ON" : "DELAY OFF",
@@ -780,7 +780,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else {
         text(fb, 11, 318,
              ui->fx_page == TS_FX_FAMILY ?
-             "GENERATE ADDS SLOT  RESEED SIBLING  SHIFT PROMOTES  CTRL GEN STRANGER" :
+             "CREATE ADDS SLOT  VARY RELATED  SHIFT PROMOTES  CTRL CREATE RADICAL" :
              "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  RMB RENAME  SHIFT+RMB CLEAR",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
@@ -842,8 +842,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         frame(fb, 154, 135, 332, 112, RGB(36, 33, 37), PAL_MOUSE);
         text(fb, 172, 150, "EXPORT WHAT?", PAL_NOTE, 1);
         button(fb, 172, 176, 136, "CURRENT WAV", 0);
-        button(fb, 324, 176, 144, "FAMILY FOLDER", 0);
-        text(fb, 172, 218, "C CURRENT   F FAMILY   ESC CANCEL", RGB(190, 185, 190), 1);
+        button(fb, 324, 176, 144, "COLLECTION", 0);
+        text(fb, 172, 218, "C CURRENT   F FULL COLLECTION   ESC CANCEL", RGB(190, 185, 190), 1);
     }
 }
 
