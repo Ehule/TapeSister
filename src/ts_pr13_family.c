@@ -32,6 +32,12 @@ static uint32_t next_seed(uint32_t x)
     return x ? x : 0x54415045u;
 }
 
+static void inherit_environment(TsBankSlot *candidate,const TsBankSlot *parent)
+{
+    if(parent->has_process){candidate->process=parent->process;candidate->has_process=1;}
+    else{ts_pr13_neutral_process(&candidate->process);candidate->has_process=1;}
+}
+
 int ts_pr13_generate_parent_in_slot(TsInstrument *instrument,int active_slot,int reseed,
                                     char *error,size_t error_size)
 {
@@ -56,6 +62,7 @@ int ts_pr13_generate_parent_in_slot(TsInstrument *instrument,int active_slot,int
     if(!ts_sample_clone(&dst->sample,&temp.bank[0].sample,clone_error,sizeof(clone_error))){ts_instrument_free(&temp);snprintf(error,error_size,"Could not replace selected tile");return 0;}
     dst->tuning=temp.bank[0].tuning; dst->audible_tuning=temp.bank[0].audible_tuning;
     dst->generator=temp.bank[0].generator; dst->has_generator=1;
+    ts_pr13_neutral_process(&dst->process); dst->has_process=1;
     dst->capture_kind=TS_BANK_CAPTURE_ROOT; dst->relation=TS_FAMILY_ROOT;
     dst->parent_slot=-1; dst->lineage_seed=recipe.seed; dst->lineage_mutation=0.0f;
     dst->trajectory_step=0; dst->has_loop=0; dst->loop_first=dst->loop_last=0;
@@ -64,7 +71,7 @@ int ts_pr13_generate_parent_in_slot(TsInstrument *instrument,int active_slot,int
     instrument->family_anchor_slot=active_slot; instrument->family_last_slot=-1;
     ++instrument->family_sequence;
     ts_instrument_free(&temp);
-    if(!ts_instrument_set_bank_as_current(instrument,active_slot,error,error_size))return 0;
+    if(!ts_pr13_activate_slot(instrument,active_slot,error,error_size))return 0;
     snprintf(error,error_size,reseed?"RESEEDED PARENT IN BANK %02d":"NEW PARENT IN BANK %02d",active_slot+1);
     return 1;
 }
@@ -78,11 +85,13 @@ int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
     TsFamilyRelation old_relation;
     if(instrument==0)return 0;
     if(anchor<0||anchor>=TS_BANK_SLOT_COUNT||!instrument->bank[anchor].occupied)anchor=instrument->family_anchor_slot;
+    if(anchor<0||anchor>=TS_BANK_SLOT_COUNT||!instrument->bank[anchor].occupied){snprintf(error,error_size,"Select a filled bank tile first");return 0;}
     old_last=instrument->family_last_slot;old_path=instrument->family_trajectory;
     old_mutation=instrument->family_mutation;old_relation=instrument->family_relation;
-    if(reseed&&active_slot>0&&active_slot<TS_BANK_SLOT_COUNT&&instrument->bank[active_slot].occupied){
+    if(reseed&&active_slot>=0&&active_slot<TS_BANK_SLOT_COUNT&&instrument->bank[active_slot].occupied){
         TsBankSlot *selected=&instrument->bank[active_slot];
-        if(selected->parent_slot>=0&&selected->parent_slot<TS_BANK_SLOT_COUNT)anchor=selected->parent_slot;
+        if(selected->parent_slot>=0&&selected->parent_slot<TS_BANK_SLOT_COUNT&&instrument->bank[selected->parent_slot].occupied)anchor=selected->parent_slot;
+        else anchor=active_slot;
         instrument->family_relation=selected->relation;instrument->family_mutation=selected->lineage_mutation;
     }
     lineage_mutation=instrument->family_mutation;
@@ -95,6 +104,7 @@ int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
             TsBankSlot *candidate=&instrument->bank[*created_slot];
             TsBankSlot *parent=&instrument->bank[anchor];
             candidate->lineage_mutation=lineage_mutation;
+            inherit_environment(candidate,parent);
             if(lineage_mutation<=0.0001f){
                 char clone_error[80];
                 ts_sample_clone(&candidate->sample,&parent->sample,clone_error,sizeof(clone_error));
