@@ -29,8 +29,25 @@ typedef enum {
     TS_GENERATOR_METALLIC,
     TS_GENERATOR_NOISE,
     TS_GENERATOR_PULSE,
+    TS_GENERATOR_FM,
     TS_GENERATOR_COUNT
 } TsGeneratorKind;
+
+enum {
+    TS_FM_OPERATOR_COUNT = 6,
+    TS_FM_STRUCTURE_COUNT = 6,
+    TS_FM_RATIO_FAMILY_COUNT = 6
+};
+
+typedef struct {
+    int structure;
+    int ratio_family;
+    float depth;
+    float shape;
+    float feedback;
+    float transient_mix;
+    float ratios[TS_FM_OPERATOR_COUNT];
+} TsFmPatch;
 
 typedef enum {
     TS_SOURCE_NONE = 0,
@@ -325,6 +342,9 @@ int ts_instrument_undo(TsInstrument *instrument, char *error, size_t error_size)
 int ts_instrument_redo(TsInstrument *instrument, char *error, size_t error_size);
 size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, int width);
 const char *ts_generator_name(TsGeneratorKind kind);
+const char *ts_fm_structure_name(int structure);
+const char *ts_fm_ratio_family_name(int family);
+void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch);
 const char *ts_noise_color_name(TsNoiseColor color);
 const char *ts_filter_mode_name(TsFilterMode mode);
 const char *ts_shaper_mode_name(TsShaperMode mode);
