@@ -2605,8 +2605,8 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
 int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size)
 {
-    if (instrument == NULL || slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "The Source slot cannot be cleared");
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Invalid collection slot");
         return 0;
     }
     if (!instrument->bank[slot].occupied) {
@@ -2615,7 +2615,8 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
     }
     bank_slot_free(&instrument->bank[slot]);
     if (instrument->family_last_slot == slot) instrument->family_last_slot = -1;
-    if (instrument->family_anchor_slot == slot) instrument->family_anchor_slot = 0;
+    if (instrument->family_anchor_slot == slot)
+        instrument->family_anchor_slot = instrument->bank[0].occupied ? 0 : -1;
     set_error(error, error_size, "");
     return 1;
 }
@@ -2623,13 +2624,13 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
 int ts_instrument_bank_clear_all(TsInstrument *instrument,
                                  char *error, size_t error_size)
 {
-    if (instrument == NULL || !instrument->bank[0].occupied) {
-        set_error(error, error_size, "No Source collection to clear");
+    if (instrument == NULL || ts_instrument_bank_count(instrument) == 0) {
+        set_error(error, error_size, "Collection is already empty");
         return 0;
     }
-    for (int slot = 1; slot < TS_BANK_SLOT_COUNT; ++slot)
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
         bank_slot_free(&instrument->bank[slot]);
-    instrument->family_anchor_slot = 0;
+    instrument->family_anchor_slot = -1;
     instrument->family_last_slot = -1;
     set_error(error, error_size, "");
     return 1;
@@ -3495,7 +3496,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         loaded.family_mutation > 1.0f ||
         (loaded.family_locks & ~TS_FAMILY_LOCK_ALL) != 0u ||
         (loaded.family_trajectory != 0 && loaded.family_trajectory != 1) ||
-        loaded.family_anchor_slot < 0 ||
+        loaded.family_anchor_slot < -1 ||
         loaded.family_anchor_slot >= TS_BANK_SLOT_COUNT ||
         loaded.family_last_slot < -1 ||
         loaded.family_last_slot >= TS_BANK_SLOT_COUNT ||
@@ -3655,10 +3656,11 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                 if (slot->has_generator) slot->generator = loaded.generator;
             }
         }
-        if (!loaded.bank[0].occupied ||
-            loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT ||
-            loaded.bank[0].relation != TS_FAMILY_ROOT ||
-            !loaded.bank[loaded.family_anchor_slot].occupied ||
+        if ((loaded.bank[0].occupied &&
+             (loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT ||
+              loaded.bank[0].relation != TS_FAMILY_ROOT)) ||
+            (loaded.family_anchor_slot >= 0 &&
+             !loaded.bank[loaded.family_anchor_slot].occupied) ||
             (loaded.family_last_slot >= 0 &&
              !loaded.bank[loaded.family_last_slot].occupied) ||
             fgetc(f) != EOF)

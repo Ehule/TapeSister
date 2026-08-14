@@ -101,6 +101,37 @@ int main(void)
         CHECK(ts_sample_generate(&fm_other, &fm_recipe, error, sizeof(error)));
         CHECK(ts_sample_hash(&fm_other) != ts_sample_hash(&fm_a));
         for (size_t i = 0; i < fm_a.frames; ++i) CHECK(isfinite(fm_a.data[i]));
+        {
+            int structures[TS_FM_STRUCTURE_COUNT] = {0};
+            int families[TS_FM_RATIO_FAMILY_COUNT] = {0};
+            int structure_count = 0;
+            int family_count = 0;
+            for (uint32_t seed = 1; seed < 100000u &&
+                 (structure_count < TS_FM_STRUCTURE_COUNT ||
+                  family_count < TS_FM_RATIO_FAMILY_COUNT); ++seed) {
+                TsSample reachable;
+                fm_recipe.seed = seed;
+                ts_fm_patch_from_recipe(&fm_recipe, &patch);
+                if (structures[patch.structure] && families[patch.ratio_family]) continue;
+                ts_sample_init(&reachable);
+                CHECK(ts_sample_generate(&reachable, &fm_recipe, error, sizeof(error)));
+                CHECK(ts_sample_peak(&reachable) > 0.01f &&
+                      ts_sample_peak(&reachable) <= 0.7801f);
+                for (size_t i = 0; i < reachable.frames; ++i)
+                    CHECK(isfinite(reachable.data[i]));
+                ts_sample_free(&reachable);
+                if (!structures[patch.structure]) {
+                    structures[patch.structure] = 1;
+                    ++structure_count;
+                }
+                if (!families[patch.ratio_family]) {
+                    families[patch.ratio_family] = 1;
+                    ++family_count;
+                }
+            }
+            CHECK(structure_count == TS_FM_STRUCTURE_COUNT);
+            CHECK(family_count == TS_FM_RATIO_FAMILY_COUNT);
+        }
         ts_sample_free(&fm_a);
         ts_sample_free(&fm_b);
         ts_sample_free(&fm_other);
@@ -600,20 +631,17 @@ int main(void)
                                                            error, sizeof(error)));
             CHECK(refused_slot == 8);
             {
-                uint64_t source_slot_hash = ts_sample_hash(&family_repeat.bank[0].sample);
                 uint32_t sequence_before_clear = family_repeat.family_sequence;
                 CHECK(ts_instrument_bank_clear_all(&family_repeat, error, sizeof(error)));
-                CHECK(ts_instrument_bank_count(&family_repeat) == 1);
+                CHECK(ts_instrument_bank_count(&family_repeat) == 0);
                 CHECK(ts_instrument_bank_first_empty(&family_repeat) == 1);
-                CHECK(family_repeat.bank[0].occupied &&
-                      ts_sample_hash(&family_repeat.bank[0].sample) == source_slot_hash);
-                CHECK(family_repeat.family_anchor_slot == 0 &&
+                CHECK(!family_repeat.bank[0].occupied);
+                CHECK(family_repeat.family_anchor_slot == -1 &&
                       family_repeat.family_last_slot == -1);
                 CHECK(family_repeat.family_sequence == sequence_before_clear);
-                CHECK(ts_instrument_generate_family_candidate(&family_repeat, 0, 0,
-                                                               &refused_slot,
-                                                               error, sizeof(error)));
-                CHECK(refused_slot == 1 && ts_instrument_bank_count(&family_repeat) == 2);
+                CHECK(!ts_instrument_generate_family_candidate(&family_repeat, 0, 0,
+                                                                &refused_slot,
+                                                                error, sizeof(error)));
             }
         }
         remove("test-family.tsr");
@@ -1133,7 +1161,29 @@ int main(void)
                                      error, sizeof(error)));
     CHECK(!ts_instrument_bank_capture(&committed, 3, TS_BANK_CAPTURE_CURRENT,
                                       error, sizeof(error)));
-    CHECK(!ts_instrument_bank_clear(&committed, 0, error, sizeof(error)));
+    {
+        TsInstrument clear_case;
+        uint64_t retained_hash;
+        ts_instrument_init(&clear_case);
+        CHECK(ts_instrument_generate(&clear_case, TS_GENERATOR_FM,
+                                     0x434c4541u, error, sizeof(error)));
+        CHECK(ts_instrument_bank_capture(&clear_case, 1, TS_BANK_CAPTURE_CURRENT,
+                                         error, sizeof(error)));
+        retained_hash = ts_sample_hash(&clear_case.bank[1].sample);
+        CHECK(ts_instrument_bank_clear(&clear_case, 0, error, sizeof(error)));
+        CHECK(!clear_case.bank[0].occupied && clear_case.bank[1].occupied);
+        CHECK(ts_sample_hash(&clear_case.bank[1].sample) == retained_hash);
+        CHECK(ts_instrument_save_recipe(&clear_case, "test-cleared-source.tsr",
+                                        error, sizeof(error)));
+        ts_instrument_free(&clear_case);
+        ts_instrument_init(&clear_case);
+        CHECK(ts_instrument_load_recipe(&clear_case, "test-cleared-source.tsr",
+                                        error, sizeof(error)));
+        CHECK(!clear_case.bank[0].occupied && clear_case.bank[1].occupied);
+        CHECK(ts_sample_hash(&clear_case.bank[1].sample) == retained_hash);
+        remove("test-cleared-source.tsr");
+        ts_instrument_free(&clear_case);
+    }
     CHECK(ts_instrument_save_recipe(&committed, "test-recipe.tsr", error, sizeof(error)));
     {
         FILE *recipe = fopen("test-recipe.tsr", "rb");

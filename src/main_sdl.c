@@ -1213,7 +1213,7 @@ static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
     if (!ui->bank_clear_armed) {
         ui->bank_clear_armed = 1;
         snprintf(ui->status, sizeof(ui->status),
-                 "CLICK CLEAR ALL AGAIN - SOURCE SLOT 01 WILL BE KEPT");
+                 "CLICK CLEAR ALL AGAIN - ALL 16 SLOTS WILL BE CLEARED");
         return;
     }
     if (device) SDL_LockAudioDevice(device);
@@ -1226,7 +1226,7 @@ static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
     ui->bank_view_slot = -1;
     if (ok)
         snprintf(ui->status, sizeof(ui->status),
-                 "CLEARED COLLECTION SLOTS 02-16 - SOURCE KEPT");
+                 "CLEARED ALL 16 COLLECTION SLOTS");
     else
         snprintf(ui->status, sizeof(ui->status),
                  "CLEAR ALL FAILED: %.137s", error);
