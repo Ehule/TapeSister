@@ -174,12 +174,14 @@ typedef struct {
     TsBankCaptureKind capture_kind;
     TsFamilyRelation relation;
     TsGeneratorRecipe generator;
+    TsProcessRecipe process;
     uint32_t lineage_seed;
     uint32_t lineage_locks;
     uint32_t trajectory_step;
     float lineage_mutation;
     int parent_slot;
     int has_generator;
+    int has_process;
     TsLoopMode loop_mode;
     int has_loop;
     int occupied;
