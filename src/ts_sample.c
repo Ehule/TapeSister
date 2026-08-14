@@ -2567,7 +2567,7 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
         return 0;
     }
     if (slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "Bank slot 1 is the immutable Source");
+        set_error(error, error_size, "Bank slot 1 is reserved for Source");
         return 0;
     }
     if (instrument->bank[slot].occupied) {

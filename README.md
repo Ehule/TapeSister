@@ -1,6 +1,6 @@
 # TapeSister
 
-TapeSister is a standalone sample-making laboratory for FT2 Tapehead Edition. Its compact loop is **Source -> Variation -> Transform -> Edit -> Keep -> Repeat**. The 16-slot sound collection preserves useful results while deterministic Close, Wide, and Radical variation explores related material without replacing the stable Source/Current editing model.
+TapeSister is a standalone sample-making laboratory for FT2 Tapehead Edition. Its compact loop is **Source -> Variation -> Transform -> Keep -> Repeat**. Editing remains an important capability within that loop, while the 16-slot sound collection preserves useful results and deterministic Close, Wide, and Radical variation explores related material without replacing the stable Source/Current editing model.
 
 ![TapeSister variation page and sound collection](docs/family-generation-preview.png)
 
@@ -13,7 +13,7 @@ Every sound now has two explicit layers:
 
 Dragging or loading a WAV makes that WAV the Source. Every freshly created or imported source starts with neutral processing, so Source and Current are sample-for-sample identical until the first edit. Moving a processing control then rerenders Current from that Source; it cannot silently return to the factory waveform.
 
-The startup sound or an imported WAV creates a Source in slot 01. After that, **Create** or **Vary** replaces one transient exploratory candidate without occupying another collection slot. The candidate is auditioned immediately; **Keep** deliberately moves it into the next empty collection slot exactly once. Chain uses the previous transient candidate as its deterministic source. Shift+Create or Shift+Vary keeps and promotes in one gesture, while Ctrl+Create temporarily forces a Radical departure. A full collection can still be explored; Keep refuses safely until a non-Source slot is cleared.
+The startup sound or an imported WAV creates a Source in slot 01. After that, **Create** or **Vary** replaces one transient exploratory candidate without occupying another collection slot. The candidate is auditioned immediately; **Keep** deliberately moves it into the next empty collection slot exactly once. Chain uses the previous transient candidate as its deterministic source. Shift+Create or Shift+Vary performs Keep and then Set Current in one gesture, while Ctrl+Create temporarily forces a Radical departure. A full collection can still be explored; Keep refuses safely until a non-Source slot is cleared.
 
 **Reset** returns Current exactly to Source and is undoable. **Commit** requires a deliberate second click (or second `Ctrl+P`), promotes Current into a new immutable Source generation, records the previous Source hash, resets the processing shelf, and starts a fresh edit history.
 
@@ -63,7 +63,7 @@ Every newly created or imported sound starts a 16-slot collection with its initi
 
 Click any slot to audition it and place that sound in the waveform display; an empty slot produces silence and a blank waveform. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. While a filled bank waveform is visible, the Loop page edits that slot directly. Right-click an occupied slot 02–16 to rename it, or Shift-right-click any occupied slot—including Source in slot 01—to clear only that slot. Clearing Source does not remove retained results. **Clear All** requires a confirming second click and explicitly empties all 16 retained collection slots plus the transient exploratory candidate.
 
-The **Variation** page selects Close, Wide, or Radical and sets Amount from 0–100%. Close makes a restrained deterministic variation of the chosen sound; Wide allows a larger timbral and structural departure; Radical creates a new Tonal, Metallic, Noise, or Pulse source. Loop, Duration, Pitch, Envelope, and Spectral locks protect those traits. Colored lines identify Source, Kept, Close, Wide, and Radical results, while the waveform header names each result's direct source slot.
+The **Variation** page selects Close, Wide, or Radical and sets Amount from 0–100%. Close makes a restrained deterministic variation of the chosen sound; Wide allows a larger timbral and structural departure; Radical creates a new Tonal, Metallic, Noise, Pulse, or FM source. Loop, Duration, Pitch, Envelope, and Spectral locks protect those traits. Colored lines identify Source, Kept, Close, Wide, and Radical results, while the waveform header names each result's direct source slot.
 
 With **Chain** off, repeated variations share the selected retained anchor. With Chain on, every transient candidate becomes the next exploratory source, creating a repeatable chain without filling the collection. The candidate carries its direct source, variation range, seed, amount, active locks, chain step, and generator recipe; Keep transfers that provenance with the audio into a retained slot. These are descriptions, not restrictions: manually kept and unrelated samples remain valid collection entries.
 
@@ -189,7 +189,7 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Browser confirm/cancel: `Enter` / `Escape`
 - Build/toggle a five-note chord: `Shift` + onscreen-key click
 - Create variation / related variation: **Create** / **Vary**
-- Create and immediately Set Current: `Shift` + Create or Vary
+- Keep the new candidate and immediately Set Current: `Shift` + Create or Vary
 - Force one Radical result: `Ctrl` + Create
 - Config paths: top **Config** button
 - Export collection to exchange folder and launch FT2: top **Send FT2** button

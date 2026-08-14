@@ -799,7 +799,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else {
         text(fb, 11, 318,
              ui->fx_page == TS_FX_FAMILY ?
-             "CREATE ADDS SLOT  VARY RELATED  SHIFT PROMOTES  CTRL CREATE RADICAL" :
+             "CREATE/VARY EXPLORE  KEEP RETAINS  SHIFT KEEPS + SETS CURRENT" :
              "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  RMB RENAME  SHIFT+RMB CLEAR",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
