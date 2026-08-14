@@ -43,10 +43,10 @@ static void p13_text(TsFramebuffer *fb,int x,int y,const char *s,uint32_t color)
 
 static void p13_button(TsFramebuffer *fb,int x,int w,const char *label,int active)
 {
-    p13_rect(fb,x,205,w,23,active?0x005d555du:0x003b383bu);
-    p13_rect(fb,x,205,w,2,active?0x00ffd265u:0x008c858cu);
-    p13_rect(fb,x,226,w,2,0x000e0e0eu);
-    p13_text(fb,x+7,213,label,active?0x00ffd265u:0x00f5f2ebu);
+    p13_rect(fb,x,205,w,23,active?0xff5d555du:0xff3b383bu);
+    p13_rect(fb,x,205,w,2,active?0xffffd265u:0xff8c858cu);
+    p13_rect(fb,x,226,w,2,0xff0e0e0eu);
+    p13_text(fb,x+7,213,label,active?0xffffd265u:0xfff5f2ebu);
 }
 
 static int p13_process_differs(const TsProcessRecipe *a,const TsProcessRecipe *b)
@@ -73,14 +73,15 @@ static void p13_reconcile(TsInstrument *inst, TsUiState *ui)
     slot = &inst->bank[p13_slot];
     history_changed = inst->undo_count != p13_seen_undo || inst->redo_count != p13_seen_redo;
     if (ts_pr13_slot_locked(inst, p13_slot)) {
-        if ((history_changed && ts_sample_hash(&inst->current) != ts_sample_hash(&slot->sample)) || p13_metadata_differs(inst, slot)) {
+        if (history_changed || p13_metadata_differs(inst, slot)) {
             if (ts_pr13_activate_slot(inst, p13_slot, error, sizeof(error)))
                 snprintf(ui->status, sizeof(ui->status), "BANK %02d LOCKED - EDIT DISCARDED", p13_slot + 1);
         }
     } else if (history_changed) {
-        if (ts_sample_hash(&inst->current) != ts_sample_hash(&slot->sample)) ts_pr13_rerender(inst, p13_slot, error, sizeof(error));
-        else if (p13_metadata_differs(inst, slot)) ts_pr13_sync_active_slot(inst, p13_slot, error, sizeof(error));
-    } else if (p13_metadata_differs(inst, slot)) ts_pr13_sync_active_slot(inst, p13_slot, error, sizeof(error));
+        ts_pr13_rerender(inst, p13_slot, error, sizeof(error));
+    } else if (p13_metadata_differs(inst, slot)) {
+        ts_pr13_sync_active_slot(inst, p13_slot, error, sizeof(error));
+    }
     p13_seen_undo = inst->undo_count; p13_seen_redo = inst->redo_count;
 }
 
@@ -88,14 +89,19 @@ static void p13_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrumen
 {
     p13_inst = (TsInstrument *)inst; p13_ui = (TsUiState *)ui;
     p13_reconcile(p13_inst, p13_ui); ts_ui_render(fb, ui, inst);
-    p13_rect(fb, 247, 205, 383, 23, 0x00181818u);
+    /* Opaque patch panel: do not let the superseded core controls bleed through. */
+    p13_rect(fb, 240, 202, 400, 29, 0xff181818u);
     p13_button(fb,247,70,"NEW",0); p13_button(fb,322,92,"RESEED",0);
-    p13_button(fb,540,90,(p13_slot>=0&&ts_pr13_slot_locked(inst,p13_slot))?"UNLOCK":"LOCK",p13_slot>=0&&ts_pr13_slot_locked(inst,p13_slot));
+    p13_button(fb,540,90,(p13_slot>=0&&p13_slot<TS_BANK_SLOT_COUNT&&inst->bank[p13_slot].occupied&&ts_pr13_slot_locked(inst,p13_slot))?"UNLOCK":"LOCK",p13_slot>=0&&p13_slot<TS_BANK_SLOT_COUNT&&inst->bank[p13_slot].occupied&&ts_pr13_slot_locked(inst,p13_slot));
     if (!ui->show_keyboard && !ui->show_recipes) {
-        for (int s = 0; s < TS_BANK_SLOT_COUNT; ++s) if (inst->bank[s].occupied) {
+        for (int s = 0; s < TS_BANK_SLOT_COUNT; ++s) {
             int x = 10 + (s % 8) * 77, y = 330 + (s / 8) * 25;
-            p13_rect(fb, x + 59, y + 4, 7, 10, ts_pr13_slot_locked(inst, s) ? 0x00f0d060u : 0x00404040u);
-            if (s == p13_slot) { p13_rect(fb, x, y, 72, 2, 0x00ffffffu); p13_rect(fb, x, y + 21, 72, 2, 0x00ffffffu); }
+            if (inst->bank[s].occupied)
+                p13_rect(fb, x + 59, y + 4, 7, 10, ts_pr13_slot_locked(inst, s) ? 0xfff0d060u : 0xff404040u);
+            if (s == p13_slot) {
+                p13_rect(fb, x, y, 72, 2, 0xffffffffu);
+                p13_rect(fb, x, y + 21, 72, 2, 0xffffffffu);
+            }
         }
     }
 }
@@ -139,7 +145,14 @@ static int p13_nudge(SDL_Event *e, int d)
 static int p13_parent_action(int reseed)
 {
     char error[160];
-    if(!p13_inst||p13_slot<0){if(p13_ui)snprintf(p13_ui->status,sizeof(p13_ui->status),"SELECT A FILLED BANK TILE FIRST");return 0;}
+    if(!p13_inst) return 0;
+    if(p13_slot<0||p13_slot>=TS_BANK_SLOT_COUNT){
+        for(int s=0;s<TS_BANK_SLOT_COUNT;++s)if(!p13_inst->bank[s].occupied){p13_slot=s;break;}
+    }
+    if(p13_slot<0||p13_slot>=TS_BANK_SLOT_COUNT){
+        if(p13_ui)snprintf(p13_ui->status,sizeof(p13_ui->status),"BANK FULL - CLEAR A TILE FIRST");
+        return 0;
+    }
     if(ts_pr13_generate_parent_in_slot(p13_inst,p13_slot,reseed,error,sizeof(error))){
         p13_seen_undo=p13_inst->undo_count;p13_seen_redo=p13_inst->redo_count;
         if(p13_ui)snprintf(p13_ui->status,sizeof(p13_ui->status),"%s PARENT IN BANK %02d",reseed?"RESEEDED":"NEW",p13_slot+1);
@@ -158,15 +171,21 @@ static int p13_poll(SDL_Event *e)
             if(y>=205&&y<228){
                 if(x>=247&&x<317){p13_parent_action(0);continue;}
                 if(x>=322&&x<414){p13_parent_action(1);continue;}
-                if(x>=540&&x<630&&p13_inst&&p13_slot>=0){char error[160];ts_pr13_toggle_slot_lock(p13_inst,p13_slot,error,sizeof(error));snprintf(p13_ui->status,sizeof(p13_ui->status),"BANK %02d %s",p13_slot+1,ts_pr13_slot_locked(p13_inst,p13_slot)?"LOCKED":"UNLOCKED");continue;}
+                if(x>=540&&x<630&&p13_inst&&p13_slot>=0&&p13_slot<TS_BANK_SLOT_COUNT&&p13_inst->bank[p13_slot].occupied){char error[160];ts_pr13_toggle_slot_lock(p13_inst,p13_slot,error,sizeof(error));snprintf(p13_ui->status,sizeof(p13_ui->status),"BANK %02d %s",p13_slot+1,ts_pr13_slot_locked(p13_inst,p13_slot)?"LOCKED":"UNLOCKED");continue;}
                 if(x>=247&&x<630)continue;
             }
             if (!p13_ui->show_keyboard && !p13_ui->show_recipes && p13_inst) {
                 s=ts_ui_bank_slot_from_point(x,y);
-                if(s>=0&&p13_inst->bank[s].occupied){
+                if(s>=0){
                     int sx=10+(s%8)*77, sy=330+(s/8)*25; char error[160];
-                    if(x>=sx+57&&x<sx+68&&y>=sy+2&&y<sy+18){ts_pr13_toggle_slot_lock(p13_inst,s,error,sizeof(error));continue;}
-                    if(ts_pr13_activate_slot(p13_inst,s,error,sizeof(error))){p13_slot=s;p13_seen_undo=p13_inst->undo_count;p13_seen_redo=p13_inst->redo_count;}
+                    if(p13_inst->bank[s].occupied&&x>=sx+57&&x<sx+68&&y>=sy+2&&y<sy+18){ts_pr13_toggle_slot_lock(p13_inst,s,error,sizeof(error));continue;}
+                    p13_slot=s;
+                    if(p13_inst->bank[s].occupied){
+                        if(ts_pr13_activate_slot(p13_inst,s,error,sizeof(error))){p13_seen_undo=p13_inst->undo_count;p13_seen_redo=p13_inst->redo_count;}
+                    }else{
+                        snprintf(p13_ui->status,sizeof(p13_ui->status),"EMPTY BANK %02d - NEW CREATES PARENT",s+1);
+                    }
+                    continue;
                 }
             }
         }
@@ -177,15 +196,13 @@ static int p13_poll(SDL_Event *e)
 
 static int p13_process(TsInstrument *i,const TsProcessRecipe *p,char *e,size_t n)
 {
-    TsProcessRecipe q=*p;
-    if(i&&q.shaper_drive!=i->process.shaper_drive&&!q.shaper_enabled){q.shaper_enabled=1;q.shaper_mode=TS_SHAPER_CLIP;if(q.shaper_mix<0.5f)q.shaper_mix=0.5f;}
-    return ts_pr13_set_process(i,p13_slot,&q,e,n);
+    return ts_pr13_set_process(i,p13_slot,p,e,n);
 }
 static int p13_process_t(TsInstrument *i,const TsProcessRecipe *p,const TsTuning *t,char *e,size_t n){return ts_pr13_set_process_and_tuning(i,p13_slot,p,t,e,n);}
 static int p13_process_tt(TsInstrument *i,const TsProcessRecipe *p,const TsTuning *t,const TsTuning *a,char *e,size_t n){return ts_pr13_set_process_and_tunings(i,p13_slot,p,t,a,e,n);}
 static int p13_family(TsInstrument *i,int a,int r,int *s,char *e,size_t n)
 {
-    int ok;(void)a;if(p13_slot>=0&&!ts_pr13_slot_locked(i,p13_slot))ts_pr13_rerender(i,p13_slot,e,n);
+    int ok;(void)a;if(p13_slot>=0&&p13_slot<TS_BANK_SLOT_COUNT&&i->bank[p13_slot].occupied&&!ts_pr13_slot_locked(i,p13_slot))ts_pr13_rerender(i,p13_slot,e,n);
     ok=ts_pr13_generate_family_candidate(i,p13_slot,r,s,e,n);
     if(ok&&s&&*s>=0&&ts_pr13_activate_slot(i,*s,e,n)){p13_slot=*s;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}
     return ok;
@@ -208,7 +225,7 @@ static int p13_bank_capture(TsInstrument *i,int s,TsBankCaptureKind k,char *e,si
 }
 static int p13_bank_clear(TsInstrument *i,int s,char *e,size_t n)
 {
-    int ok=ts_pr13_bank_clear(i,s,e,n);if(ok&&s==p13_slot)p13_slot=-1;return ok;
+    int ok=ts_pr13_bank_clear(i,s,e,n);if(ok){p13_slot=s;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}return ok;
 }
 static int p13_sample_edit(TsInstrument *i,TsSampleEditKind k,float a,char *e,size_t n)
 {
