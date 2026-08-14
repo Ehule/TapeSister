@@ -205,6 +205,7 @@ typedef struct {
 
 typedef struct {
     TsSample sample;
+    TsSample edit_parent;
     TsTuning tuning;
     TsTuning audible_tuning;
     size_t loop_first;
@@ -224,6 +225,8 @@ typedef struct {
     int occupied;
     TsProcessRecipe process;
     TsEditSnapshot edit;
+    TsEditSnapshot *undo;
+    TsEditSnapshot *redo;
     int undo_count;
     int redo_count;
 } TsBankSlot;

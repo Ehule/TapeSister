@@ -1697,6 +1697,57 @@ int main(void)
         ts_instrument_free(&workflow);
     }
 
+    {
+        TsInstrument gesture;
+        uint64_t before, edited, b_hash, varied_from_a, chained;
+        int destination = -1;
+        ts_instrument_init(&gesture);
+        CHECK(ts_instrument_bank_clear_all(&gesture, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&gesture, 1, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&gesture, 0xabc123u, error, sizeof(error)));
+        before = ts_sample_hash(&gesture.current);
+        CHECK(ts_instrument_apply_tape_drag(&gesture, TS_POST_COPY_OVERWRITE,
+                                            0, gesture.current.frames / 4u,
+                                            (int64_t)(gesture.current.frames / 2u),
+                                            error, sizeof(error)));
+        edited = ts_sample_hash(&gesture.current);
+        CHECK(edited != before && ts_sample_hash(&gesture.bank[1].sample) == edited);
+        CHECK(ts_instrument_select_bank(&gesture, 2, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&gesture, 0xdef456u, error, sizeof(error)));
+        b_hash = ts_sample_hash(&gesture.bank[2].sample);
+        CHECK(ts_instrument_select_bank(&gesture, 1, error, sizeof(error)));
+        CHECK(ts_sample_hash(&gesture.current) == edited);
+        CHECK(ts_sample_hash(&gesture.bank[2].sample) == b_hash);
+        CHECK(ts_instrument_undo(&gesture, error, sizeof(error)));
+        CHECK(ts_sample_hash(&gesture.current) == before);
+        CHECK(ts_instrument_redo(&gesture, error, sizeof(error)));
+        CHECK(ts_sample_hash(&gesture.current) == edited);
+        CHECK(ts_instrument_copy_selected(&gesture, 3, error, sizeof(error)));
+        gesture.family_mutation = 0.5f;
+        CHECK(ts_instrument_vary_selected(&gesture, 0, &destination, error, sizeof(error)));
+        varied_from_a = ts_sample_hash(&gesture.current);
+        CHECK(ts_instrument_select_bank(&gesture, 1, error, sizeof(error)));
+        CHECK(ts_instrument_copy_selected(&gesture, 5, error, sizeof(error)));
+        gesture.family_mutation = 0.5f;
+        CHECK(ts_instrument_vary_selected(&gesture, 1, &destination, error, sizeof(error)));
+        chained = ts_sample_hash(&gesture.current);
+        CHECK(destination == 6 && chained == varied_from_a);
+        CHECK(ts_sample_hash(&gesture.bank[2].sample) == b_hash);
+        CHECK(ts_instrument_select_bank(&gesture, 1, error, sizeof(error)));
+        CHECK(ts_instrument_save_recipe(&gesture, "test-gesture.tsr", error, sizeof(error)));
+        {
+            TsInstrument loaded_gesture;
+            ts_instrument_init(&loaded_gesture);
+            CHECK(ts_instrument_load_recipe(&loaded_gesture, "test-gesture.tsr", error, sizeof(error)));
+            CHECK(loaded_gesture.selected_slot == 1);
+            CHECK(ts_sample_hash(&loaded_gesture.current) == edited);
+            CHECK(ts_sample_hash(&loaded_gesture.bank[2].sample) == b_hash);
+            ts_instrument_free(&loaded_gesture);
+        }
+        remove("test-gesture.tsr");
+        ts_instrument_free(&gesture);
+    }
+
     ts_sample_free(&a); ts_sample_free(&b); ts_sample_free(&loaded); ts_sample_free(&copy);
     ts_sample_free(&dry); ts_sample_free(&effected); ts_sample_free(&repeated);
     ts_instrument_free(&generated); ts_instrument_free(&imported); ts_instrument_free(&committed);
