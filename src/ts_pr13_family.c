@@ -21,6 +21,36 @@ static float sample_rms(const TsSample *sample)
     return (float)sqrt(sum/(double)sample->frames);
 }
 
+static float local_parent_envelope(const TsSample *parent,double n)
+{
+    size_t center,radius=64,first,last;
+    float peak=0.0f;
+    if(!parent||!parent->data||parent->frames==0)return 0.0f;
+    center=(size_t)(n*(double)(parent->frames-1));
+    first=center>radius?center-radius:0;
+    last=center+radius+1<parent->frames?center+radius+1:parent->frames;
+    for(size_t i=first;i<last;++i){float x=fabsf(parent->data[i]);if(x>peak)peak=x;}
+    return peak;
+}
+
+/* The core family mutator intentionally injects broadband colored noise.  That
+   must follow the parent's amplitude envelope instead of becoming a permanent
+   noise bed after the parent has decayed.  Preserve room for timbral mutation,
+   but force quiet parent regions back toward quiet. */
+static void contain_family_floor(TsSample *candidate,const TsSample *parent)
+{
+    float parent_peak=ts_sample_peak(parent);
+    float floor=parent_peak*0.0015f;
+    if(!candidate||!candidate->data||candidate->frames==0||!parent||!parent->data)return;
+    for(size_t i=0;i<candidate->frames;++i){
+        double n=candidate->frames>1?(double)i/(double)(candidate->frames-1):0.0;
+        float env=local_parent_envelope(parent,n);
+        float limit=env*1.8f+floor;
+        if(candidate->data[i]>limit)candidate->data[i]=limit;
+        else if(candidate->data[i]<-limit)candidate->data[i]=-limit;
+    }
+}
+
 /* Family mutation contains nonlinear shaping, so equal peaks do not imply equal
    loudness. Match average energy to the parent, then enforce the parent's peak
    as a hard ceiling. This keeps genetics timbral rather than acting like an
@@ -158,6 +188,7 @@ int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
                 candidate->loop_crossfade_ms=parent->loop_crossfade_ms;candidate->loop_mode=parent->loop_mode;
             }else{
                 if(candidate->relation==TS_FAMILY_STRANGER)blend_stranger(candidate,parent,lineage_mutation);
+                contain_family_floor(&candidate->sample,&parent->sample);
                 match_family_level(&candidate->sample,&parent->sample);
             }
         }
