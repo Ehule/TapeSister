@@ -182,27 +182,6 @@ enum {
 };
 
 typedef struct {
-    TsSample sample;
-    TsTuning tuning;
-    TsTuning audible_tuning;
-    size_t loop_first;
-    size_t loop_last;
-    float loop_crossfade_ms;
-    TsBankCaptureKind capture_kind;
-    TsFamilyRelation relation;
-    TsGeneratorRecipe generator;
-    uint32_t lineage_seed;
-    uint32_t lineage_locks;
-    uint32_t trajectory_step;
-    float lineage_mutation;
-    int parent_slot;
-    int has_generator;
-    TsLoopMode loop_mode;
-    int has_loop;
-    int occupied;
-} TsBankSlot;
-
-typedef struct {
     size_t crop_first;
     size_t crop_last;
     size_t selection_first;
@@ -225,6 +204,31 @@ typedef struct {
 } TsEditSnapshot;
 
 typedef struct {
+    TsSample sample;
+    TsTuning tuning;
+    TsTuning audible_tuning;
+    size_t loop_first;
+    size_t loop_last;
+    float loop_crossfade_ms;
+    TsBankCaptureKind capture_kind;
+    TsFamilyRelation relation;
+    TsGeneratorRecipe generator;
+    uint32_t lineage_seed;
+    uint32_t lineage_locks;
+    uint32_t trajectory_step;
+    float lineage_mutation;
+    int parent_slot;
+    int has_generator;
+    TsLoopMode loop_mode;
+    int has_loop;
+    int occupied;
+    TsProcessRecipe process;
+    TsEditSnapshot edit;
+    int undo_count;
+    int redo_count;
+} TsBankSlot;
+
+typedef struct {
     TsSample parent;
     TsSample current;
     TsSourceKind source_kind;
@@ -237,6 +241,7 @@ typedef struct {
     int family_trajectory;
     int family_anchor_slot;
     int family_last_slot;
+    int selected_slot;
     uint32_t generation;
     uint64_t ancestor_hash;
     TsTuning tuning;
@@ -378,6 +383,15 @@ int ts_instrument_bank_move_loop_endpoint(TsInstrument *instrument, int slot,
                                           int endpoint, size_t frame);
 int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
                                       char *error, size_t error_size);
+int ts_instrument_select_bank(TsInstrument *instrument, int slot,
+                              char *error, size_t error_size);
+int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
+                                  char *error, size_t error_size);
+int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
+                                int *destination_slot,
+                                char *error, size_t error_size);
+int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
+                                char *error, size_t error_size);
 int ts_instrument_generate_family_candidate(TsInstrument *instrument,
                                             int anchor_slot, int reseed,
                                             int *created_slot,

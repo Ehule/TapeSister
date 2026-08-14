@@ -600,20 +600,17 @@ int main(void)
                                                            error, sizeof(error)));
             CHECK(refused_slot == 8);
             {
-                uint64_t source_slot_hash = ts_sample_hash(&family_repeat.bank[0].sample);
                 uint32_t sequence_before_clear = family_repeat.family_sequence;
                 CHECK(ts_instrument_bank_clear_all(&family_repeat, error, sizeof(error)));
-                CHECK(ts_instrument_bank_count(&family_repeat) == 1);
-                CHECK(ts_instrument_bank_first_empty(&family_repeat) == 1);
-                CHECK(family_repeat.bank[0].occupied &&
-                      ts_sample_hash(&family_repeat.bank[0].sample) == source_slot_hash);
+                CHECK(ts_instrument_bank_count(&family_repeat) == 0);
+                CHECK(ts_instrument_bank_first_empty(&family_repeat) == 0);
+                CHECK(!family_repeat.bank[0].occupied);
                 CHECK(family_repeat.family_anchor_slot == 0 &&
                       family_repeat.family_last_slot == -1);
                 CHECK(family_repeat.family_sequence == sequence_before_clear);
-                CHECK(ts_instrument_generate_family_candidate(&family_repeat, 0, 0,
-                                                               &refused_slot,
-                                                               error, sizeof(error)));
-                CHECK(refused_slot == 1 && ts_instrument_bank_count(&family_repeat) == 2);
+                CHECK(!ts_instrument_generate_family_candidate(&family_repeat, 0, 0,
+                                                                &refused_slot,
+                                                                error, sizeof(error)));
             }
         }
         remove("test-family.tsr");
@@ -1143,7 +1140,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR11", 5) == 0);
+        CHECK(memcmp(magic, "TSR12", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -1533,11 +1530,9 @@ int main(void)
         ts_ui_render(&fb, &ui, &restored);
         bank_waveform = waveform_hash(&fb);
         CHECK(bank_waveform != current_waveform);
-        CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff2d0039u);
         CHECK(fb.pixels[340 * TS_UI_WIDTH + 231] == 0xff147dffu);
         ui.bank_view_slot = -1;
         ts_ui_render(&fb, &ui, &restored);
-        CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff5d555du);
     }
     ui.renaming_bank_slot = 2;
     ui.text_cursor_visible = 1;
@@ -1652,7 +1647,55 @@ int main(void)
     ui.bank_view_slot = 1;
     ts_ui_render(&fb, &ui, &family);
     CHECK(fb.pixels[349 * TS_UI_WIDTH + 89] == 0xff18ff00u);
-    CHECK(fb.pixels[280 * TS_UI_WIDTH + 340] == 0xff2d0039u);
+
+    {
+        TsInstrument workflow;
+        TsFmPatch created_patch, varied_patch;
+        uint64_t original_hash, exact_hash;
+        int destination = -1;
+        ts_instrument_init(&workflow);
+        CHECK(ts_instrument_bank_clear_all(&workflow, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&workflow, 5, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&workflow, 0x12345678u, error, sizeof(error)));
+        CHECK(workflow.selected_slot == 5 && workflow.bank[5].occupied);
+        CHECK(workflow.bank[5].has_generator &&
+              workflow.bank[5].generator.kind == TS_GENERATOR_FM);
+        CHECK(ts_sample_hash(&workflow.current) == ts_sample_hash(&workflow.bank[5].sample));
+        original_hash = ts_sample_hash(&workflow.bank[5].sample);
+        ts_fm_patch_from_recipe(&workflow.bank[5].generator, &created_patch);
+        workflow.family_mutation = 0.0f;
+        CHECK(ts_instrument_vary_selected(&workflow, 0, &destination, error, sizeof(error)));
+        CHECK(destination == 5 && ts_sample_hash(&workflow.bank[5].sample) == original_hash);
+        CHECK(ts_instrument_vary_selected(&workflow, 1, &destination, error, sizeof(error)));
+        CHECK(destination == 6 && workflow.selected_slot == 6);
+        exact_hash = ts_sample_hash(&workflow.bank[6].sample);
+        CHECK(exact_hash == original_hash);
+        CHECK(ts_instrument_copy_selected(&workflow, 9, error, sizeof(error)));
+        CHECK(workflow.selected_slot == 9 && ts_sample_hash(&workflow.bank[9].sample) == exact_hash);
+        workflow.family_mutation = 0.75f;
+        CHECK(ts_instrument_vary_selected(&workflow, 0, &destination, error, sizeof(error)));
+        ts_fm_patch_from_recipe(&workflow.bank[9].generator, &varied_patch);
+        CHECK(varied_patch.structure == created_patch.structure);
+        CHECK(ts_sample_hash(&workflow.bank[9].sample) != exact_hash);
+        CHECK(ts_sample_hash(&workflow.bank[6].sample) == exact_hash);
+        CHECK(ts_instrument_save_recipe(&workflow, "test-workflow.tsr", error, sizeof(error)));
+        {
+            TsInstrument workflow_loaded;
+            ts_instrument_init(&workflow_loaded);
+            CHECK(ts_instrument_load_recipe(&workflow_loaded, "test-workflow.tsr", error, sizeof(error)));
+            CHECK(workflow_loaded.selected_slot == 9);
+            CHECK(workflow_loaded.bank[9].occupied &&
+                  workflow_loaded.bank[9].generator.kind == TS_GENERATOR_FM);
+            CHECK(ts_sample_hash(&workflow_loaded.bank[6].sample) == exact_hash);
+            ts_instrument_free(&workflow_loaded);
+        }
+        remove("test-workflow.tsr");
+        CHECK(ts_instrument_bank_clear_all(&workflow, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&workflow, 0, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&workflow, 99u, error, sizeof(error)));
+        CHECK(workflow.bank[0].occupied && workflow.bank[0].generator.kind == TS_GENERATOR_FM);
+        ts_instrument_free(&workflow);
+    }
 
     ts_sample_free(&a); ts_sample_free(&b); ts_sample_free(&loaded); ts_sample_free(&copy);
     ts_sample_free(&dry); ts_sample_free(&effected); ts_sample_free(&repeated);

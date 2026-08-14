@@ -608,12 +608,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
     button(fb, 85, 205, 82, "CREATE", 0);
     button(fb, 172, 205, 70, "VARY", 0);
-    button(fb, 247, 205, 78, "COMMIT", ui->commit_armed);
-    button(fb, 330, 205, 72, "RESET", 0);
-    button(fb, 407, 205, 61, "SOURCE", !showing_bank && ui->audition_source == TS_AUDITION_PARENT);
-    button(fb, 472, 205, 63, "CURRENT", !showing_bank && ui->audition_source == TS_AUDITION_CURRENT);
-    button(fb, 540, 205, 90, "SET CURRENT",
-           showing_bank && shown_slot->occupied);
+    button(fb, 247, 205, 78, "UNDO", instrument->undo_count > 0);
+    button(fb, 330, 205, 72, "REDO", instrument->redo_count > 0);
 
     slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);
@@ -680,24 +676,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         slider(fb, 384, 261, 92, "DRIVE", drive, PAL_VOLUME);
         slider(fb, 480, 261, 92, "MIX", instrument->process.shaper_mix, PAL_EFFECT);
     } else if (ui->fx_page == TS_FX_FAMILY) {
-        char relation[24];
-        char mutation[24];
-        snprintf(relation, sizeof(relation), "RANGE %s",
-                 ts_family_relation_name(instrument->family_relation));
-        snprintf(mutation, sizeof(mutation), "AMT %d%%",
+        char mutation[32];
+        snprintf(mutation, sizeof(mutation), "RANGE %d",
                  (int)lrintf(instrument->family_mutation * 100.0f));
-        button(fb, 10, 261, 100, relation, 1);
-        slider(fb, 115, 261, 110, mutation, instrument->family_mutation, PAL_VOLUME);
-        button(fb, 230, 261, 60, "LOOP",
-               (instrument->family_locks & TS_FAMILY_LOCK_LOOP) != 0u);
-        button(fb, 294, 261, 52, "DUR",
-               (instrument->family_locks & TS_FAMILY_LOCK_DURATION) != 0u);
-        button(fb, 350, 261, 60, "PITCH",
-               (instrument->family_locks & TS_FAMILY_LOCK_PITCH) != 0u);
-        button(fb, 414, 261, 54, "ENV",
-               (instrument->family_locks & TS_FAMILY_LOCK_ENVELOPE) != 0u);
-        button(fb, 472, 261, 62, "SPEC",
-               (instrument->family_locks & TS_FAMILY_LOCK_SPECTRAL) != 0u);
+        slider(fb, 10, 261, 520, mutation, instrument->family_mutation, PAL_VOLUME);
         button(fb, 538, 261, 92,
                instrument->family_trajectory ? "CHAIN ON" : "CHAIN OFF",
                instrument->family_trajectory);
