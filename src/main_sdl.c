@@ -22,7 +22,7 @@
 #include <unistd.h>
 #endif
 
-enum { TS_SPLASH_MILLISECONDS = 1500 };
+enum { TS_SPLASH_MILLISECONDS = 5000 };
 
 static SDL_Texture *load_splash_texture(SDL_Renderer *renderer, int *width, int *height)
 {
