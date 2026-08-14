@@ -599,6 +599,20 @@ int main(void)
                                                            &refused_slot,
                                                            error, sizeof(error)));
             CHECK(refused_slot == 8);
+            {
+                uint64_t source_slot_hash = ts_sample_hash(&family_repeat.bank[0].sample);
+                CHECK(ts_instrument_bank_clear_all(&family_repeat, error, sizeof(error)));
+                CHECK(ts_instrument_bank_count(&family_repeat) == 1);
+                CHECK(ts_instrument_bank_first_empty(&family_repeat) == 1);
+                CHECK(family_repeat.bank[0].occupied &&
+                      ts_sample_hash(&family_repeat.bank[0].sample) == source_slot_hash);
+                CHECK(family_repeat.family_anchor_slot == 0 &&
+                      family_repeat.family_last_slot == -1);
+                CHECK(ts_instrument_generate_family_candidate(&family_repeat, 0, 0,
+                                                               &refused_slot,
+                                                               error, sizeof(error)));
+                CHECK(refused_slot == 1 && ts_instrument_bank_count(&family_repeat) == 2);
+            }
         }
         remove("test-family.tsr");
     }
@@ -1542,6 +1556,12 @@ int main(void)
     ts_ui_render(&fb, &ui, &restored);
     CHECK(fb.pixels[180 * TS_UI_WIDTH + 175] == 0xff5d555du);
     ui.export_choice_open = 0;
+    ui.exit_confirm_open = 1;
+    ui.exit_has_unsaved = 1;
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(fb.pixels[192 * TS_UI_WIDTH + 175] == 0xff5d555du);
+    CHECK(fb.pixels[192 * TS_UI_WIDTH + 327] == 0xff2d0039u);
+    ui.exit_confirm_open = 0;
     ui.config_open = 1;
     ui.config_field = TS_CONFIG_FASTTRACKER_PATH;
     snprintf(ui.config.fasttracker_path, sizeof(ui.config.fasttracker_path),

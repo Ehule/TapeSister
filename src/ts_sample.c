@@ -2620,6 +2620,22 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
     return 1;
 }
 
+int ts_instrument_bank_clear_all(TsInstrument *instrument,
+                                 char *error, size_t error_size)
+{
+    if (instrument == NULL || !instrument->bank[0].occupied) {
+        set_error(error, error_size, "No Source collection to clear");
+        return 0;
+    }
+    for (int slot = 1; slot < TS_BANK_SLOT_COUNT; ++slot)
+        bank_slot_free(&instrument->bank[slot]);
+    instrument->family_sequence = 0;
+    instrument->family_anchor_slot = 0;
+    instrument->family_last_slot = -1;
+    set_error(error, error_size, "");
+    return 1;
+}
+
 int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *name,
                               char *error, size_t error_size)
 {

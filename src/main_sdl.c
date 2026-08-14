@@ -119,6 +119,91 @@ static int path_is_directory(const char *path)
 #endif
 }
 
+static void state_hash_bytes(uint64_t *hash, const void *data, size_t size)
+{
+    const unsigned char *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        *hash ^= bytes[i];
+        *hash *= 1099511628211ull;
+    }
+}
+
+static void state_hash_sample(uint64_t *hash, const TsSample *sample)
+{
+    uint64_t waveform = ts_sample_hash(sample);
+    size_t name_length = strlen(sample->name);
+    state_hash_bytes(hash, &waveform, sizeof(waveform));
+    state_hash_bytes(hash, &name_length, sizeof(name_length));
+    state_hash_bytes(hash, sample->name, name_length);
+}
+
+static uint64_t instrument_state_hash(const TsInstrument *instrument)
+{
+    uint64_t hash = 1469598103934665603ull;
+    state_hash_sample(&hash, &instrument->parent);
+    state_hash_sample(&hash, &instrument->current);
+    state_hash_bytes(&hash, &instrument->source_kind, sizeof(instrument->source_kind));
+    state_hash_bytes(&hash, &instrument->generator, sizeof(instrument->generator));
+    state_hash_bytes(&hash, &instrument->process, sizeof(instrument->process));
+    state_hash_bytes(&hash, &instrument->family_relation,
+                     sizeof(instrument->family_relation));
+    state_hash_bytes(&hash, &instrument->family_mutation,
+                     sizeof(instrument->family_mutation));
+    state_hash_bytes(&hash, &instrument->family_locks, sizeof(instrument->family_locks));
+    state_hash_bytes(&hash, &instrument->family_sequence,
+                     sizeof(instrument->family_sequence));
+    state_hash_bytes(&hash, &instrument->family_trajectory,
+                     sizeof(instrument->family_trajectory));
+    state_hash_bytes(&hash, &instrument->family_anchor_slot,
+                     sizeof(instrument->family_anchor_slot));
+    state_hash_bytes(&hash, &instrument->family_last_slot,
+                     sizeof(instrument->family_last_slot));
+    state_hash_bytes(&hash, &instrument->generation, sizeof(instrument->generation));
+    state_hash_bytes(&hash, &instrument->ancestor_hash, sizeof(instrument->ancestor_hash));
+    state_hash_bytes(&hash, &instrument->tuning, sizeof(instrument->tuning));
+    state_hash_bytes(&hash, &instrument->audible_tuning,
+                     sizeof(instrument->audible_tuning));
+    state_hash_bytes(&hash, &instrument->crop_first, sizeof(instrument->crop_first));
+    state_hash_bytes(&hash, &instrument->crop_last, sizeof(instrument->crop_last));
+    state_hash_bytes(&hash, &instrument->loop_first, sizeof(instrument->loop_first));
+    state_hash_bytes(&hash, &instrument->loop_last, sizeof(instrument->loop_last));
+    state_hash_bytes(&hash, &instrument->loop_crossfade_ms,
+                     sizeof(instrument->loop_crossfade_ms));
+    state_hash_bytes(&hash, &instrument->loop_mode, sizeof(instrument->loop_mode));
+    state_hash_bytes(&hash, &instrument->has_loop, sizeof(instrument->has_loop));
+    state_hash_bytes(&hash, &instrument->sample_edit_count,
+                     sizeof(instrument->sample_edit_count));
+    state_hash_bytes(&hash, instrument->sample_edits,
+                     (size_t)instrument->sample_edit_count * sizeof(instrument->sample_edits[0]));
+    state_hash_bytes(&hash, &instrument->post_edit_count,
+                     sizeof(instrument->post_edit_count));
+    state_hash_bytes(&hash, instrument->post_edits,
+                     (size_t)instrument->post_edit_count * sizeof(instrument->post_edits[0]));
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        const TsBankSlot *bank = &instrument->bank[slot];
+        state_hash_bytes(&hash, &bank->occupied, sizeof(bank->occupied));
+        if (!bank->occupied) continue;
+        state_hash_sample(&hash, &bank->sample);
+        state_hash_bytes(&hash, &bank->tuning, sizeof(bank->tuning));
+        state_hash_bytes(&hash, &bank->audible_tuning, sizeof(bank->audible_tuning));
+        state_hash_bytes(&hash, &bank->loop_first, sizeof(bank->loop_first));
+        state_hash_bytes(&hash, &bank->loop_last, sizeof(bank->loop_last));
+        state_hash_bytes(&hash, &bank->loop_crossfade_ms, sizeof(bank->loop_crossfade_ms));
+        state_hash_bytes(&hash, &bank->capture_kind, sizeof(bank->capture_kind));
+        state_hash_bytes(&hash, &bank->relation, sizeof(bank->relation));
+        state_hash_bytes(&hash, &bank->generator, sizeof(bank->generator));
+        state_hash_bytes(&hash, &bank->lineage_seed, sizeof(bank->lineage_seed));
+        state_hash_bytes(&hash, &bank->lineage_locks, sizeof(bank->lineage_locks));
+        state_hash_bytes(&hash, &bank->trajectory_step, sizeof(bank->trajectory_step));
+        state_hash_bytes(&hash, &bank->lineage_mutation, sizeof(bank->lineage_mutation));
+        state_hash_bytes(&hash, &bank->parent_slot, sizeof(bank->parent_slot));
+        state_hash_bytes(&hash, &bank->has_generator, sizeof(bank->has_generator));
+        state_hash_bytes(&hash, &bank->loop_mode, sizeof(bank->loop_mode));
+        state_hash_bytes(&hash, &bank->has_loop, sizeof(bank->has_loop));
+    }
+    return hash;
+}
+
 static int launch_program(const char *path, char *error, size_t error_size)
 {
     if (path == NULL || path[0] == '\0') {
@@ -445,6 +530,17 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
     snprintf(ui->status, sizeof(ui->status), "STOPPED");
 }
 
+static void begin_exit_confirmation(SDL_AudioDeviceID device, AudioState *audio,
+                                    TsUiState *ui, const TsInstrument *instrument)
+{
+    stop_all(device, audio, ui);
+    ui->exit_has_unsaved = instrument_state_hash(instrument) != ui->saved_state_hash;
+    ui->exit_confirm_open = 1;
+    snprintf(ui->status, sizeof(ui->status), "%s",
+             ui->exit_has_unsaved ?
+             "EXIT? UNSAVED CHANGES WILL BE LOST" : "EXIT TAPESISTER?");
+}
+
 static void lock_edit(SDL_AudioDeviceID device, AudioState *audio)
 {
     if (device) SDL_LockAudioDevice(device);
@@ -549,6 +645,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     else if (ok) snprintf(ui->status, sizeof(ui->status), "IMPORTED NEUTRAL SOURCE %.104s",
                           instrument->parent.name);
     else snprintf(ui->status, sizeof(ui->status), "LOAD FAILED: %.135s", error);
+    if (ok && recipe) ui->saved_state_hash = instrument_state_hash(instrument);
     return ok;
 }
 
@@ -1108,6 +1205,33 @@ static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
     else snprintf(ui->status, sizeof(ui->status), "BANK CLEAR FAILED: %.132s", error);
 }
 
+static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui, TsInstrument *instrument)
+{
+    char error[160];
+    int ok;
+    if (!ui->bank_clear_armed) {
+        ui->bank_clear_armed = 1;
+        snprintf(ui->status, sizeof(ui->status),
+                 "CLICK CLEAR ALL AGAIN - SOURCE SLOT 01 WILL BE KEPT");
+        return;
+    }
+    if (device) SDL_LockAudioDevice(device);
+    audio->playing = 0;
+    audio->bank_slot = -1;
+    ts_note_bank_clear(&audio->notes);
+    ok = ts_instrument_bank_clear_all(instrument, error, sizeof(error));
+    if (device) SDL_UnlockAudioDevice(device);
+    ui->bank_clear_armed = 0;
+    ui->bank_view_slot = -1;
+    if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 "CLEARED COLLECTION SLOTS 02-16 - SOURCE KEPT");
+    else
+        snprintf(ui->status, sizeof(ui->status),
+                 "CLEAR ALL FAILED: %.137s", error);
+}
+
 static void set_auditioned_bank_current(SDL_AudioDeviceID device, AudioState *audio,
                                         TsUiState *ui, TsInstrument *instrument)
 {
@@ -1538,6 +1662,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         }
         if (browser->mode == TS_BROWSER_SAVE_RECIPE) {
             ok = save_recipe_atomic(instrument, path, error, sizeof(error));
+            if (ok) ui->saved_state_hash = instrument_state_hash(instrument);
             snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
                      "SAVE FAILED: %.135s", ok ? path : error);
         } else if (browser->mode == TS_BROWSER_SAVE_PRESET) {
@@ -1760,7 +1885,8 @@ int main(int argc, char **argv)
         return 1;
     }
     window = SDL_CreateWindow("TapeSister", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                              TS_UI_WIDTH * 2, TS_UI_HEIGHT * 2, SDL_WINDOW_RESIZABLE);
+                              TS_UI_WIDTH * 2, TS_UI_HEIGHT * 2,
+                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN_DESKTOP);
     renderer = window ? SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : NULL;
     if (!renderer && window) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     texture = renderer ? SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
@@ -1794,14 +1920,18 @@ int main(int argc, char **argv)
 
     generate_parent(device, &audio, &ui, &instrument, 0);
     if (argc > 1) load_instrument(device, &audio, &ui, &instrument, argv[1]);
+    ui.saved_state_hash = instrument_state_hash(&instrument);
 
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) running = 0;
+            if (event.type == SDL_QUIT) {
+                if (!ui.exit_confirm_open)
+                    begin_exit_confirmation(device, &audio, &ui, &instrument);
+            }
             else if (event.type == SDL_DROPFILE &&
                      (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                      ui.config_open || ui.export_choice_open ||
+                      ui.config_open || ui.export_choice_open || ui.exit_confirm_open ||
                       ui.browser.mode != TS_BROWSER_CLOSED)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
@@ -1810,25 +1940,38 @@ int main(int argc, char **argv)
             else if (event.type == SDL_DROPFILE) {
                 load_instrument(device, &audio, &ui, &instrument, event.drop.file);
                 SDL_free(event.drop.file);
-            } else if (event.type == SDL_TEXTINPUT && ui.config_open) {
+            } else if (event.type == SDL_TEXTINPUT && ui.config_open &&
+                       !ui.exit_confirm_open) {
                 char *field = ts_config_field(&ui.config, ui.config_field);
                 if (field != NULL)
                     text_insert_ascii(field, TS_CONFIG_PATH_MAX,
                                       &ui.config_cursor, event.text.text);
-            } else if (event.type == SDL_TEXTINPUT && ui.renaming_bank_slot >= 0) {
+            } else if (event.type == SDL_TEXTINPUT && ui.renaming_bank_slot >= 0 &&
+                       !ui.exit_confirm_open) {
                 text_insert_ascii(ui.bank_rename, sizeof(ui.bank_rename),
                                   &ui.bank_rename_cursor, event.text.text);
-            } else if (event.type == SDL_TEXTINPUT && ui.renaming_recipe_slot >= 0) {
+            } else if (event.type == SDL_TEXTINPUT && ui.renaming_recipe_slot >= 0 &&
+                       !ui.exit_confirm_open) {
                 text_insert_ascii(ui.recipe_rename, sizeof(ui.recipe_rename),
                                   &ui.recipe_rename_cursor, event.text.text);
-            } else if (event.type == SDL_TEXTINPUT && ui.browser.mode != TS_BROWSER_CLOSED) {
+            } else if (event.type == SDL_TEXTINPUT &&
+                       ui.browser.mode != TS_BROWSER_CLOSED && !ui.exit_confirm_open) {
                 if (ui.browser.filename_focus && ui.browser.mode != TS_BROWSER_LOAD_WAV)
                     ts_browser_append_filename(&ui.browser, event.text.text);
             } else if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
                 if (!((mod & KMOD_CTRL) && key == SDLK_p)) ui.commit_armed = 0;
-                if (ui.config_open) {
+                ui.bank_clear_armed = 0;
+                if (ui.exit_confirm_open) {
+                    if (key == SDLK_ESCAPE || key == SDLK_n) {
+                        ui.exit_confirm_open = 0;
+                        snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
+                    } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
+                               key == SDLK_y) {
+                        running = 0;
+                    }
+                } else if (ui.config_open) {
                     char *field = ts_config_field(&ui.config, ui.config_field);
                     if (key == SDLK_ESCAPE) cancel_config(&ui);
                     else if ((mod & KMOD_CTRL) && key == SDLK_BACKSPACE && field != NULL) {
@@ -2047,15 +2190,32 @@ int main(int argc, char **argv)
                               ts_ui_pan_parent_view(&ui, instrument.parent.frames, amount) :
                               ts_instrument_pan_view(&instrument, amount)) ?
                              "PANNED WAVEFORM VIEW" : "PAN LIMIT");
-                } else if (key == SDLK_ESCAPE || key == SDLK_SPACE) {
-                    int cancelled_preview = key == SDLK_ESCAPE && ui.has_pitch_suggestion;
+                } else if (key == SDLK_ESCAPE) {
                     ui.commit_armed = 0;
-                    if (cancelled_preview)
+                    ui.bank_clear_armed = 0;
+                    if (ui.has_pitch_suggestion) {
                         cancel_pitch_preview(device, &audio, &ui, &instrument);
-                    stop_all(device, &audio, &ui);
-                    if (cancelled_preview)
+                        stop_all(device, &audio, &ui);
                         snprintf(ui.status, sizeof(ui.status),
                                  "PITCH PREVIEW CANCELLED - STOPPED");
+                    } else if (ui.tape_dragging) {
+                        ui.tape_dragging = 0;
+                        ui.tape_drag_button = 0;
+                        snprintf(ui.status, sizeof(ui.status), "TAPE DRAG CANCELLED");
+                    } else if (ui.selecting) {
+                        ui.selecting = 0;
+                        snprintf(ui.status, sizeof(ui.status), "SELECTION DRAG CANCELLED");
+                    } else if (ui.dragging_loop_endpoint) {
+                        ui.dragging_loop_endpoint = 0;
+                        ui.loop_drag_started = 0;
+                        snprintf(ui.status, sizeof(ui.status), "LOOP DRAG ENDED");
+                    } else {
+                        begin_exit_confirmation(device, &audio, &ui, &instrument);
+                    }
+                } else if (key == SDLK_SPACE) {
+                    ui.commit_armed = 0;
+                    ui.bank_clear_armed = 0;
+                    stop_all(device, &audio, &ui);
                 } else {
                     int note = note_for_key(key);
                     if (note >= 0 && device)
@@ -2064,12 +2224,13 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_KEYUP && !ui.config_open &&
                        ui.renaming_bank_slot < 0 &&
                        ui.renaming_recipe_slot < 0 && !ui.export_choice_open &&
+                       !ui.exit_confirm_open &&
                        ui.browser.mode == TS_BROWSER_CLOSED &&
                        note_for_key(event.key.keysym.sym) >= 0) {
                 release_note(device, &audio, &ui, note_for_key(event.key.keysym.sym));
             } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                        ui.config_open || ui.export_choice_open)) {
+                        ui.config_open || ui.export_choice_open || ui.exit_confirm_open)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
             } else if (event.type == SDL_MOUSEWHEEL && ui.browser.mode != TS_BROWSER_CLOSED) {
@@ -2123,7 +2284,7 @@ int main(int argc, char **argv)
                 }
             } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                        ui.config_open || ui.export_choice_open)) {
+                        ui.config_open || ui.export_choice_open || ui.exit_confirm_open)) {
                 /* Modal dialogs own pointer input. */
             } else if (event.type == SDL_MOUSEMOTION && ui.browser.dragging_scrollbar) {
                 int x, y;
@@ -2187,7 +2348,17 @@ int main(int argc, char **argv)
                 SDL_Keymod mod = SDL_GetModState();
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
                 if (!(y >= 205 && y < 228 && x >= 247 && x < 325)) ui.commit_armed = 0;
-                if (ui.config_open) {
+                if (!(y >= 289 && y < 312 && x >= 245 && x < 376 &&
+                      !ui.show_keyboard && !ui.show_recipes))
+                    ui.bank_clear_armed = 0;
+                if (ui.exit_confirm_open) {
+                    if (x >= 172 && x < 308 && y >= 188 && y < 211) {
+                        running = 0;
+                    } else if (x >= 324 && x < 468 && y >= 188 && y < 211) {
+                        ui.exit_confirm_open = 0;
+                        snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
+                    }
+                } else if (ui.config_open) {
                     static const int field_y[TS_CONFIG_FIELD_COUNT] = {103, 158, 213};
                     int selected = -1;
                     for (int i = 0; i < TS_CONFIG_FIELD_COUNT; ++i)
@@ -2601,9 +2772,14 @@ int main(int argc, char **argv)
                 } else if (y >= 289 && y < 312 && x >= 162 && x < 240) {
                     begin_audition(device, &audio, &ui, &instrument,
                                    TS_AUDITION_DISPLAYED, 1.0, obtained.freq);
+                } else if (y >= 289 && y < 312 && x >= 245 && x < 376 &&
+                           !ui.show_keyboard && !ui.show_recipes) {
+                    clear_all_bank_slots(device, &audio, &ui, &instrument);
                 } else if (y >= 289 && y < 312 && x >= 245 && x < 297) {
+                    ui.bank_clear_armed = 0;
                     crop_selection(device, &audio, &ui, &instrument);
                 } else if (y >= 289 && y < 312 && x >= 302 && x < 376) {
+                    ui.bank_clear_armed = 0;
                     ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT &&
                         instrument.has_selection) {
@@ -2703,11 +2879,15 @@ int main(int argc, char **argv)
                 TsUiBankAction action;
                 SDL_Keymod mod = SDL_GetModState();
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
+                ui.bank_clear_armed = 0;
                 bank_slot = ts_ui_bank_slot_from_point(x, y);
                 recipe_slot = ts_ui_recipe_slot_from_point(x, y);
                 note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
                 action = ts_ui_bank_action(1, bank_modifiers(mod));
-                if (ui.renaming_bank_slot >= 0) {
+                if (ui.exit_confirm_open) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "CHOOSE EXIT OR CANCEL - ESC CANCELS");
+                } else if (ui.renaming_bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");
                 } else if (ui.renaming_recipe_slot >= 0) {

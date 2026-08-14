@@ -732,8 +732,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 10, 289, 70, "PLAY ALL", 0);
     button(fb, 85, 289, 72, "PLAY SEL", 0);
     button(fb, 162, 289, 78, "PLAY VIEW", 0);
-    button(fb, 245, 289, 52, "CROP", 0);
-    button(fb, 302, 289, 74, "ZOOM SEL", 0);
+    if (!ui->show_keyboard && !ui->show_recipes)
+        button(fb, 245, 289, 131,
+               ui->bank_clear_armed ? "CONFIRM CLEAR" : "CLEAR ALL",
+               ui->bank_clear_armed);
+    else {
+        button(fb, 245, 289, 52, "CROP", 0);
+        button(fb, 302, 289, 74, "ZOOM SEL", 0);
+    }
     button(fb, 381, 289, 74, "SHOW ALL", 0);
     button(fb, 460, 289, 56, "UNDO", instrument->undo_count > 0);
     button(fb, 521, 289, 62, "REDO", instrument->redo_count > 0);
@@ -804,7 +810,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
     text(fb, 8, 389, ui->status, PAL_MOUSE, 1);
 
-    if (ui->config_open)
+    if (ui->exit_confirm_open) {
+        frame(fb, 154, 128, 332, 130, RGB(36, 33, 37), PAL_MOUSE);
+        text(fb, 172, 143, "EXIT TAPESISTER?", PAL_NOTE, 1);
+        text(fb, 172, 164,
+             ui->exit_has_unsaved ? "UNSAVED CHANGES WILL BE LOST" : "CLOSE TAPESISTER",
+             ui->exit_has_unsaved ? PAL_VOLUME : RGB(190, 185, 190), 1);
+        button(fb, 172, 188, 136, "EXIT", 0);
+        button(fb, 324, 188, 144, "CANCEL", 1);
+        text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
+    } else if (ui->config_open)
         config_render(fb, ui);
     else if (ui->browser.mode != TS_BROWSER_CLOSED)
         browser_render(fb, &ui->browser, ui->text_cursor_visible);

@@ -35,6 +35,8 @@ Source/Current A/B maps the same loop through the crop offset, preserves relativ
 
 The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary click clears the chord and returns to momentary audition. Sustained voices survive loop-handle changes, Current rerenders, and tuning changes.
 
+TapeSister starts in FT2-style borderless desktop fullscreen. Escape first cancels an active dialog, preview, or editing gesture; otherwise it stops playback and opens the exit confirmation. Closing the window uses the same confirmation, with an explicit warning whenever the instrument or collection differs from the last opened or saved TSR project.
+
 ## Pitch and tuning
 
 The **Tune** page gives every instrument one shared pitch readout and ±100-cent audible Trim. Source/Current A/B therefore compares the same musical mapping, while the two-octave keyboard pitches audio relative to its accepted source root instead of assuming the first C is always unity. The default root is C3 (MIDI 48), preserving the previous keyboard behavior for older WAV and TSR files. **Down** lowers both the held sound and displayed note/frequency; **Up** raises all three; moving Trim right sharpens them. TapeSister keeps the inverse sampler-unity value internally so exported WAV mapping remains correct. Shift-right-clicking an onscreen key assigns it as the source root; held and latched notes retune in place without restarting.
@@ -59,7 +61,7 @@ Every newly created or imported sound starts a 16-slot collection with its initi
 - Alt-click an empty slot to capture the active Loop, including its crossfade setting; or
 - Ctrl-click an empty slot to capture the snapped Selection.
 
-Click any slot to audition it and place that sound in the waveform display; an empty slot produces silence and a blank waveform. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. While a filled bank waveform is visible, the Loop page edits that slot directly. Right-click an occupied slot 02–16 to rename it, or Shift-right-click to clear it. Slot 01 remains the fixed Source, and occupied slots must be cleared deliberately before reuse.
+Click any slot to audition it and place that sound in the waveform display; an empty slot produces silence and a blank waveform. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. While a filled bank waveform is visible, the Loop page edits that slot directly. Right-click an occupied slot 02–16 to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click, empties slots 02–16, and preserves the fixed Source in slot 01 so creation and variation remain usable.
 
 The **Variation** page selects Close, Wide, or Radical and sets Amount from 0–100%. Close makes a restrained deterministic variation of the chosen sound; Wide allows a larger timbral and structural departure; Radical creates a new Tonal, Metallic, Noise, or Pulse source. Loop, Duration, Pitch, Envelope, and Spectral locks protect those traits. Colored lines identify Source, Kept, Close, Wide, and Radical results, while the waveform header names each result's direct source slot.
 
@@ -169,7 +171,7 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 
 - Lower octave: `Z S X D C V G B H N J M`
 - Upper octave: `Q 2 W 3 E R 5 T 6 Y 7 U`
-- Stop all: `Space` or `Escape`
+- Stop all: `Space`; `Escape` cancels the active gesture/dialog first, otherwise opens exit confirmation
 - Load browser: `Ctrl+O`
 - Save browser / choose Export Current or Collection: `Ctrl+S` / `Ctrl+E`
 - Toggle Source/Current audition: `Ctrl+B`

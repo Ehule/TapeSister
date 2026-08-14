@@ -56,6 +56,7 @@ typedef struct {
     int mouse_note;
     int selecting;
     int commit_armed;
+    int bank_clear_armed;
     int playback_active;
     int text_cursor_visible;
     int show_keyboard;
@@ -65,6 +66,9 @@ typedef struct {
     int renaming_bank_slot;
     int renaming_recipe_slot;
     int export_choice_open;
+    int exit_confirm_open;
+    int exit_has_unsaved;
+    uint64_t saved_state_hash;
     int config_open;
     TsConfigField config_field;
     size_t config_cursor;
