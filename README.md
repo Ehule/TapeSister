@@ -113,6 +113,8 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 
 - drag across the waveform to select a range;
 - mouse-wheel zoom anchored to the sample beneath the pointer;
+- Ctrl+mouse-wheel circularly rotates Current (or only its fixed selection), one
+  deterministic zero-crossing seam per detent; reversing the wheel retraces the crossings;
 - Shift+wheel panning, direct `=` or `+` / `-` keyboard zoom, arrow-key panning, and `0` Show All;
 - Play All, Play Selection, and Play Displayed;
 - Zoom Selection and Show All;

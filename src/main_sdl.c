@@ -2251,7 +2251,19 @@ int main(int argc, char **argv)
                     y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     SDL_Keymod mod = SDL_GetModState();
                     ui.bank_view_slot = -1;
-                    if ((mod & KMOD_SHIFT) || wheel_x != 0) {
+                    if ((mod & KMOD_CTRL) && (wheel_y != 0 || wheel_x != 0)) {
+                        int detents = wheel_y != 0 ? wheel_y : -wheel_x;
+                        int direction = detents < 0 ? 1 : -1;
+                        int count = detents < 0 ? -detents : detents;
+                        char error[160];
+                        int moved = 0;
+                        while (count-- > 0 &&
+                               ts_instrument_rotate_zero_crossing(
+                                   &instrument, direction, error, sizeof(error)))
+                            moved = 1;
+                        snprintf(ui.status, sizeof(ui.status), moved ?
+                                 "CTRL+WHEEL ROTATED TO ZERO CROSSING" : error);
+                    } else if ((mod & KMOD_SHIFT) || wheel_x != 0) {
                         size_t span = ui.audition_source == TS_AUDITION_PARENT ?
                                       ui.parent_view_last - ui.parent_view_first :
                                       instrument.view_last - instrument.view_first;

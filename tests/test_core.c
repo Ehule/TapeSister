@@ -202,6 +202,69 @@ int main(void)
               snap_instrument.loop_last == crossing_sample.frames);
     }
 
+    {
+        float values[] = {0.8f, 0.2f, -0.2f, -0.5f, 0.1f, 0.6f, -0.1f};
+        float original[7];
+        TsSample source = {values, 7, 44100, "rotation crossings"};
+        TsInstrument rotation;
+        ts_instrument_init(&rotation);
+        memcpy(original, values, sizeof(original));
+        CHECK(ts_sample_clone(&rotation.parent, &source, error, sizeof(error)));
+        CHECK(ts_sample_clone(&rotation.current, &source, error, sizeof(error)));
+        rotation.crop_last = rotation.current.frames;
+        CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, error, sizeof(error)));
+        CHECK(rotation.current.data[0] == original[2]);
+        CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, error, sizeof(error)));
+        CHECK(rotation.current.data[0] == original[4]);
+        CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, error, sizeof(error)));
+        CHECK(rotation.current.data[0] == original[2]);
+        CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, error, sizeof(error)));
+        CHECK(memcmp(rotation.current.data, original, sizeof(original)) == 0);
+
+        ts_instrument_set_selection(&rotation, 1, 6);
+        CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, error, sizeof(error)));
+        CHECK(rotation.current.frames == 7);
+        CHECK(rotation.current.data[0] == original[0]);
+        CHECK(rotation.current.data[6] == original[6]);
+        CHECK(rotation.selection_first == 1 && rotation.selection_last == 6);
+        for (size_t i = 1; i < 6; ++i) {
+            int found = 0;
+            for (size_t j = 1; j < 6; ++j)
+                if (rotation.current.data[i] == original[j]) found = 1;
+            CHECK(found);
+        }
+        ts_instrument_free(&rotation);
+    }
+
+    {
+        float flat_values[] = {0.8f, 0.6f, 0.4f};
+        float one_value[] = {0.25f};
+        TsSample flat = {flat_values, 3, 44100, "no crossings"};
+        TsSample one = {one_value, 1, 44100, "one frame"};
+        TsInstrument short_rotation;
+        ts_instrument_init(&short_rotation);
+        CHECK(ts_sample_clone(&short_rotation.parent, &flat, error, sizeof(error)));
+        CHECK(ts_sample_clone(&short_rotation.current, &flat, error, sizeof(error)));
+        short_rotation.crop_last = short_rotation.current.frames;
+        CHECK(ts_instrument_rotate_zero_crossing(&short_rotation, 1,
+                                                  error, sizeof(error)));
+        CHECK(short_rotation.current.data[0] == 0.6f);
+        CHECK(ts_instrument_rotate_zero_crossing(&short_rotation, -1,
+                                                  error, sizeof(error)));
+        CHECK(memcmp(short_rotation.current.data, flat_values,
+                     sizeof(flat_values)) == 0);
+        ts_sample_free(&short_rotation.parent);
+        ts_sample_free(&short_rotation.current);
+        CHECK(ts_sample_clone(&short_rotation.parent, &one, error, sizeof(error)));
+        CHECK(ts_sample_clone(&short_rotation.current, &one, error, sizeof(error)));
+        short_rotation.crop_last = short_rotation.current.frames;
+        CHECK(!ts_instrument_rotate_zero_crossing(&short_rotation, 1,
+                                                   error, sizeof(error)));
+        CHECK(short_rotation.current.frames == 1 &&
+              short_rotation.current.data[0] == one_value[0]);
+        ts_instrument_free(&short_rotation);
+    }
+
     TsProcessRecipe neutral;
     ts_process_recipe_reset(&neutral);
     CHECK(ts_sample_process(&dry, &a, 0, a.frames, &neutral, error, sizeof(error)));

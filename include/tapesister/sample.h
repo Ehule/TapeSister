@@ -144,7 +144,8 @@ typedef enum {
     TS_POST_GAIN,
     TS_POST_FADE_IN,
     TS_POST_FADE_OUT,
-    TS_POST_CROP
+    TS_POST_CROP,
+    TS_POST_ROTATE
 } TsPostEditKind;
 
 typedef struct {
@@ -323,6 +324,8 @@ void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t 
 void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last);
 void ts_instrument_clear_selection(TsInstrument *instrument);
 size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame);
+int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
+                                       char *error, size_t error_size);
 int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
                                           char *error, size_t error_size);
 int ts_instrument_clear_loop(TsInstrument *instrument, char *error, size_t error_size);

@@ -1271,6 +1271,21 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                 destination->sample_rate = instrument->parent.sample_rate;
                 snprintf(destination->name, sizeof(destination->name), "%s",
                          instrument->parent.name);
+            } else if (operation->kind == TS_POST_ROTATE) {
+                size_t offset = (size_t)operation->destination;
+                float *rotated;
+                if (offset == 0u || offset >= length) continue;
+                rotated = (float *)malloc(length * sizeof(float));
+                if (rotated == NULL) {
+                    set_error(error, error_size, "Out of memory while rotating tape");
+                    return 0;
+                }
+                memcpy(rotated, destination->data + first + offset,
+                       (length - offset) * sizeof(float));
+                memcpy(rotated + length - offset, destination->data + first,
+                       offset * sizeof(float));
+                memcpy(destination->data + first, rotated, length * sizeof(float));
+                free(rotated);
             } else if (operation->kind == TS_POST_REVERSE) {
                 for (size_t i = 0; i < length / 2u; ++i) {
                     float swap = destination->data[first + i];
@@ -1958,6 +1973,69 @@ size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
         }
     }
     return closest;
+}
+
+int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
+                                       char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsSample current;
+    TsPostEdit operation;
+    size_t first;
+    size_t last;
+    size_t length;
+    size_t offset = 0u;
+    if (instrument == NULL || instrument->current.data == NULL || direction == 0) {
+        set_error(error, error_size, "No Current audio to rotate");
+        return 0;
+    }
+    first = instrument->has_selection ? instrument->selection_first : 0u;
+    last = instrument->has_selection ? instrument->selection_last :
+                                       instrument->current.frames;
+    if (last > instrument->current.frames) last = instrument->current.frames;
+    if (first >= last || last - first < 2u) {
+        set_error(error, error_size, "Rotation region is too short");
+        return 0;
+    }
+    length = last - first;
+    if (direction > 0) {
+        for (size_t i = 1u; i < length; ++i) {
+            if (is_zero_crossing(&instrument->current, first + i)) {
+                offset = i;
+                break;
+            }
+        }
+    } else {
+        for (size_t i = length - 1u; i > 0u; --i) {
+            if (is_zero_crossing(&instrument->current, first + i)) {
+                offset = i;
+                break;
+            }
+        }
+    }
+    /* Match selection snapping's deterministic spirit on material without a
+       mathematical crossing, while still making every detent reversible. */
+    if (offset == 0u) offset = direction > 0 ? 1u : length - 1u;
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits");
+        return 0;
+    }
+    target = snapshot(instrument);
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_ROTATE;
+    operation.first = first;
+    operation.last = last;
+    operation.destination = (int64_t)offset;
+    target.post_edits[target.post_edit_count++] = operation;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    begin_edit(instrument);
+    ts_sample_free(&instrument->current);
+    instrument->current = current;
+    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
+    set_error(error, error_size, "");
+    return 1;
 }
 
 void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last)
@@ -3543,7 +3621,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             if (!get64(f, &destination_bits)) goto malformed;
             edit->destination = (int64_t)destination_bits;
             GET_FLOAT(edit->amount); GET_U32(edit->crossfade_frames);
-            if (edit->kind > TS_POST_CROP || edit->last <= edit->first ||
+            if (edit->kind > TS_POST_ROTATE || edit->last <= edit->first ||
                 edit->first > 100000000u || edit->last > 100000000u ||
                 edit->destination < -100000000LL ||
                 edit->destination > 100000000LL ||
