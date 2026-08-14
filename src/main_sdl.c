@@ -556,7 +556,7 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
 {
     TsAuditionPlan plan;
     ts_instrument_sync_active_bank_slot(instrument, NULL, 0);
-    ui->bank_view_slot = -1;
+    ts_ui_show_working_current(ui);
     ui->has_pitch_suggestion = 0;
     if (audio->playing && audio->bank_slot >= 0) {
         if (audio->bank_slot == instrument->active_bank_slot &&

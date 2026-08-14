@@ -680,9 +680,15 @@ int main(void)
             CHECK(route_ui.bank_view_slot == -1 && !route_ui.candidate_view);
             ts_ui_render(&fb, &route_ui, &working);
             waveform_before = waveform_hash(&fb);
+            route_ui.audition_source = TS_AUDITION_PARENT;
+            route_ui.bank_view_slot = 2;
+            route_ui.candidate_view = 1;
             routed.body = 0.91f;
             CHECK(ts_instrument_set_process(&working, &routed, error, sizeof(error)));
             CHECK(ts_instrument_sync_active_bank_slot(&working, error, sizeof(error)));
+            ts_ui_show_working_current(&route_ui);
+            CHECK(route_ui.audition_source == TS_AUDITION_CURRENT);
+            CHECK(route_ui.bank_view_slot == -1 && !route_ui.candidate_view);
             ts_ui_render(&fb, &route_ui, &working);
             CHECK(waveform_hash(&fb) != waveform_before);
             CHECK(ts_sample_hash(&working.current) ==
