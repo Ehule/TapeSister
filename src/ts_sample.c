@@ -602,8 +602,54 @@ int ts_sample_save_wav16(const TsSample *sample, const char *path,
 
 const char *ts_generator_name(TsGeneratorKind kind)
 {
-    static const char *names[] = {"TONAL", "METALLIC", "NOISE", "PULSE"};
+    static const char *names[] = {"TONAL", "METALLIC", "NOISE", "PULSE", "FM"};
     return kind >= 0 && kind < TS_GENERATOR_COUNT ? names[kind] : "UNKNOWN";
+}
+
+const char *ts_fm_structure_name(int structure)
+{
+    static const char *names[] = {
+        "CHAIN", "BRANCH", "TWIN", "PARALLEL", "STRIKE", "CLUSTER"
+    };
+    return structure >= 0 && structure < TS_FM_STRUCTURE_COUNT ?
+           names[structure] : "UNKNOWN";
+}
+
+const char *ts_fm_ratio_family_name(int family)
+{
+    static const char *names[] = {
+        "HARMONIC", "FIFTHS", "SUBHARMONIC", "CLUSTERED", "METALLIC", "MIXED"
+    };
+    return family >= 0 && family < TS_FM_RATIO_FAMILY_COUNT ?
+           names[family] : "UNKNOWN";
+}
+
+void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch)
+{
+    static const float ratio_families[TS_FM_RATIO_FAMILY_COUNT][TS_FM_OPERATOR_COUNT] = {
+        {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f},
+        {1.0f, 1.5f, 2.25f, 3.0f, 4.5f, 6.75f},
+        {1.0f, 0.5f, 0.333333f, 0.25f, 0.2f, 1.5f},
+        {1.0f, 1.006f, 0.994f, 2.01f, 1.99f, 3.03f},
+        {1.0f, 1.414214f, 2.718282f, 3.141593f, 4.236068f, 0.618034f},
+        {1.0f, 2.5f, 1.333333f, 3.75f, 0.75f, 5.125f}
+    };
+    uint32_t rng;
+    if (patch == NULL) return;
+    memset(patch, 0, sizeof(*patch));
+    if (recipe == NULL) return;
+    rng = recipe->seed ^ 0x464d3655u;
+    patch->structure = (int)(rng_next(&rng) % TS_FM_STRUCTURE_COUNT);
+    patch->ratio_family = (int)(rng_next(&rng) % TS_FM_RATIO_FAMILY_COUNT);
+    patch->depth = 0.8f + rng_unit(&rng) * 7.2f;
+    patch->shape = rng_unit(&rng);
+    patch->feedback = rng_unit(&rng) * 0.82f;
+    patch->transient_mix = 0.08f + rng_unit(&rng) * 0.42f;
+    for (int i = 0; i < TS_FM_OPERATOR_COUNT; ++i) {
+        float spread = 1.0f + rng_bipolar(&rng) *
+                       (patch->ratio_family == 3 ? 0.004f : 0.018f);
+        patch->ratios[i] = ratio_families[patch->ratio_family][i] * spread;
+    }
 }
 
 const char *ts_noise_color_name(TsNoiseColor color)
@@ -629,6 +675,9 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
     uint32_t rng = recipe->seed;
     float frequency = clampf(recipe->frequency, 30.0f, 2000.0f);
     float phase = 0.0f, mod_phase = 0.0f, aux_phase = 0.0f;
+    float fm_phase[TS_FM_OPERATOR_COUNT] = {0.0f};
+    float fm_previous[TS_FM_OPERATOR_COUNT] = {0.0f};
+    TsFmPatch fm_patch;
     float noise_lp = 0.0f, noise_slow = 0.0f;
     float seed_a = rng_unit(&rng);
     float seed_b = rng_unit(&rng);
@@ -637,6 +686,7 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
     unsigned variation = rng & 3u;
     static const float pitch_ratios[] = {0.5f, 0.75f, 1.0f, 1.5f, 2.0f};
     frequency = clampf(frequency * pitch_ratios[(rng >> 2) % 5u], 30.0f, 2000.0f);
+    ts_fm_patch_from_recipe(recipe, &fm_patch);
     if (data == NULL) {
         set_error(error, error_size, "Out of memory while generating sample");
         return 0;
@@ -651,6 +701,66 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
         noise_lp += (random - noise_lp) * (0.015f + seed_a * 0.08f);
         noise_slow += (random - noise_slow) * 0.00015f;
         switch (recipe->kind) {
+        case TS_GENERATOR_FM: {
+            float operators[TS_FM_OPERATOR_COUNT] = {0.0f};
+            float carriers = 0.0f;
+            float carrier_count = 1.0f;
+            for (int op = TS_FM_OPERATOR_COUNT - 1; op >= 0; --op) {
+                float modulation = 0.0f;
+                float op_attack = fminf(1.0f, t * (45.0f + fm_patch.shape * 720.0f));
+                float op_decay = 0.35f + fm_patch.shape * 3.8f;
+                int carrier = 0;
+                if (fm_patch.structure == 0) {
+                    if (op < 5) modulation = operators[op + 1];
+                    carrier = op == 0;
+                } else if (fm_patch.structure == 1) {
+                    if (op == 4 || op == 3) modulation = operators[5];
+                    else if (op == 2) modulation = operators[3];
+                    else if (op == 1) modulation = operators[4];
+                    else if (op == 0) modulation = operators[1] + operators[2];
+                    carrier = op == 0;
+                } else if (fm_patch.structure == 2) {
+                    if (op == 4) modulation = operators[5];
+                    else if (op == 2) modulation = operators[3];
+                    else if (op == 1) modulation = operators[2];
+                    else if (op == 0) modulation = operators[4];
+                    carrier = op <= 1;
+                } else if (fm_patch.structure == 3) {
+                    if (op <= 2) modulation = operators[op + 3];
+                    carrier = op <= 2;
+                } else if (fm_patch.structure == 4) {
+                    if (op == 4) modulation = operators[5];
+                    else if (op == 3) modulation = operators[4];
+                    else if (op <= 2) modulation = operators[3] * (1.0f - op * 0.18f);
+                    carrier = op <= 2;
+                } else {
+                    if (op == 2) modulation = operators[5] + operators[4] * 0.3f;
+                    else if (op == 1) modulation = operators[4] + operators[3] * 0.3f;
+                    else if (op == 0) modulation = operators[3] + operators[5] * 0.3f;
+                    carrier = op <= 2;
+                }
+                if (op == 5)
+                    modulation += fm_previous[5] * fm_patch.feedback;
+                if (!carrier)
+                    op_decay += 0.9f + (float)op * 0.38f + fm_patch.shape * 8.0f;
+                fm_phase[op] += (float)(2.0 * M_PI) * frequency *
+                                fm_patch.ratios[op] / (float)rate;
+                if (fm_phase[op] > (float)(2.0 * M_PI))
+                    fm_phase[op] -= (float)(2.0 * M_PI);
+                operators[op] = sinf(fm_phase[op] +
+                                     modulation * fm_patch.depth) *
+                                op_attack * tail * expf(-t * op_decay);
+                fm_previous[op] = operators[op];
+                if (carrier) carriers += operators[op];
+            }
+            if (fm_patch.structure == 2) carrier_count = 2.0f;
+            else if (fm_patch.structure >= 3) carrier_count = 3.0f;
+            value = carriers / sqrtf(carrier_count);
+            value += (random - noise_lp) *
+                     expf(-t * (24.0f + fm_patch.shape * 92.0f)) *
+                     fm_patch.transient_mix;
+            break;
+        }
         case TS_GENERATOR_METALLIC: {
             float ratio = 1.37f + seed_a * 6.1f;
             float sweep = 1.0f + expf(-t * (4.0f + seed_c * 15.0f)) *
@@ -750,8 +860,13 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
     sample->data = data;
     sample->frames = frames;
     sample->sample_rate = rate;
-    snprintf(sample->name, sizeof(sample->name), "%s V%u %08X",
-             ts_generator_name(recipe->kind), variation + 1u, recipe->seed);
+    if (recipe->kind == TS_GENERATOR_FM)
+        snprintf(sample->name, sizeof(sample->name), "FM %.8s %.8s %08X",
+                 ts_fm_structure_name(fm_patch.structure),
+                 ts_fm_ratio_family_name(fm_patch.ratio_family), recipe->seed);
+    else
+        snprintf(sample->name, sizeof(sample->name), "%s V%u %08X",
+                 ts_generator_name(recipe->kind), variation + 1u, recipe->seed);
     set_error(error, error_size, "");
     return 1;
 }
