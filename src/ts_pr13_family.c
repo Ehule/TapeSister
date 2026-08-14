@@ -81,6 +81,7 @@ int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
                                       char *error, size_t error_size)
 {
     int anchor=active_slot,old_last,old_path;
+    int root_was_empty=0;
     float old_mutation,lineage_mutation;
     TsFamilyRelation old_relation;
     if(instrument==0)return 0;
@@ -98,8 +99,14 @@ int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
     if(instrument->family_relation==TS_FAMILY_CHILD)instrument->family_mutation*=1.2941176f;
     else if(instrument->family_relation==TS_FAMILY_COUSIN)instrument->family_mutation*=0.9583333f;
     instrument->family_last_slot=-1;instrument->family_trajectory=0;
+    /* The legacy generator treats bank 0 as a mandatory root even when a valid
+       descendant is supplied as the anchor. PR13 permits clearing any tile, so
+       temporarily satisfy only that legacy guard; the explicit occupied anchor
+       remains the source and bank 0 is restored immediately after generation. */
+    if(!instrument->bank[0].occupied){root_was_empty=1;instrument->bank[0].occupied=1;}
     {
         int ok=ts_instrument_generate_family_candidate(instrument,anchor,0,created_slot,error,error_size);
+        if(root_was_empty)instrument->bank[0].occupied=0;
         if(ok&&created_slot!=0&&*created_slot>=0){
             TsBankSlot *candidate=&instrument->bank[*created_slot];
             TsBankSlot *parent=&instrument->bank[anchor];
