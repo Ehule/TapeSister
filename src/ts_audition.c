@@ -9,7 +9,7 @@ static size_t clamp_size(size_t value, size_t maximum)
 
 const char *ts_audition_source_name(TsAuditionSource source)
 {
-    return source == TS_AUDITION_PARENT ? "PARENT" : "CURRENT";
+    return source == TS_AUDITION_PARENT ? "SOURCE" : "CURRENT";
 }
 
 const char *ts_audition_range_name(TsAuditionRange range)
