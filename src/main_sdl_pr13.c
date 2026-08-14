@@ -49,12 +49,18 @@ static void p13_button(TsFramebuffer *fb,int x,int w,const char *label,int activ
     p13_text(fb,x+7,213,label,active?0x00ffd265u:0x00f5f2ebu);
 }
 
+static int p13_process_differs(const TsProcessRecipe *a,const TsProcessRecipe *b)
+{
+    return memcmp(a,b,sizeof(*a))!=0;
+}
+
 static int p13_metadata_differs(const TsInstrument *inst, const TsBankSlot *slot)
 {
     return slot->tuning.root_note != inst->tuning.root_note ||
            fabsf(slot->tuning.fine_tune_cents - inst->tuning.fine_tune_cents) > 0.0001f ||
            slot->audible_tuning.root_note != inst->audible_tuning.root_note ||
            fabsf(slot->audible_tuning.fine_tune_cents - inst->audible_tuning.fine_tune_cents) > 0.0001f ||
+           (slot->has_process && p13_process_differs(&slot->process,&inst->process)) ||
            slot->has_loop != inst->has_loop || slot->loop_first != inst->loop_first ||
            slot->loop_last != inst->loop_last || slot->loop_mode != inst->loop_mode ||
            fabsf(slot->loop_crossfade_ms - inst->loop_crossfade_ms) > 0.0001f;
@@ -68,10 +74,8 @@ static void p13_reconcile(TsInstrument *inst, TsUiState *ui)
     history_changed = inst->undo_count != p13_seen_undo || inst->redo_count != p13_seen_redo;
     if (ts_pr13_slot_locked(inst, p13_slot)) {
         if ((history_changed && ts_sample_hash(&inst->current) != ts_sample_hash(&slot->sample)) || p13_metadata_differs(inst, slot)) {
-            if (ts_instrument_set_bank_as_current(inst, p13_slot, error, sizeof(error))) {
-                inst->process.body = 0.0f; inst->process.edge = 0.0f; inst->process.drift = 0.5f;
+            if (ts_pr13_activate_slot(inst, p13_slot, error, sizeof(error)))
                 snprintf(ui->status, sizeof(ui->status), "BANK %02d LOCKED - EDIT DISCARDED", p13_slot + 1);
-            }
         }
     } else if (history_changed) {
         if (ts_sample_hash(&inst->current) != ts_sample_hash(&slot->sample)) ts_pr13_rerender(inst, p13_slot, error, sizeof(error));
@@ -137,7 +141,6 @@ static int p13_parent_action(int reseed)
     char error[160];
     if(!p13_inst||p13_slot<0){if(p13_ui)snprintf(p13_ui->status,sizeof(p13_ui->status),"SELECT A FILLED BANK TILE FIRST");return 0;}
     if(ts_pr13_generate_parent_in_slot(p13_inst,p13_slot,reseed,error,sizeof(error))){
-        p13_inst->process.body=0.0f;p13_inst->process.edge=0.0f;p13_inst->process.drift=0.5f;
         p13_seen_undo=p13_inst->undo_count;p13_seen_redo=p13_inst->redo_count;
         if(p13_ui)snprintf(p13_ui->status,sizeof(p13_ui->status),"%s PARENT IN BANK %02d",reseed?"RESEEDED":"NEW",p13_slot+1);
         return 1;
@@ -163,7 +166,7 @@ static int p13_poll(SDL_Event *e)
                 if(s>=0&&p13_inst->bank[s].occupied){
                     int sx=10+(s%8)*77, sy=330+(s/8)*25; char error[160];
                     if(x>=sx+57&&x<sx+68&&y>=sy+2&&y<sy+18){ts_pr13_toggle_slot_lock(p13_inst,s,error,sizeof(error));continue;}
-                    if(ts_instrument_set_bank_as_current(p13_inst,s,error,sizeof(error))){p13_inst->process.body=0.0f;p13_inst->process.edge=0.0f;p13_inst->process.drift=0.5f;p13_slot=s;p13_seen_undo=p13_inst->undo_count;p13_seen_redo=p13_inst->redo_count;}
+                    if(ts_pr13_activate_slot(p13_inst,s,error,sizeof(error))){p13_slot=s;p13_seen_undo=p13_inst->undo_count;p13_seen_redo=p13_inst->redo_count;}
                 }
             }
         }
@@ -184,16 +187,40 @@ static int p13_family(TsInstrument *i,int a,int r,int *s,char *e,size_t n)
 {
     int ok;(void)a;if(p13_slot>=0&&!ts_pr13_slot_locked(i,p13_slot))ts_pr13_rerender(i,p13_slot,e,n);
     ok=ts_pr13_generate_family_candidate(i,p13_slot,r,s,e,n);
-    if(ok&&s&&*s>=0&&ts_instrument_set_bank_as_current(i,*s,e,n)){p13_slot=*s;i->process.body=0.0f;i->process.edge=0.0f;i->process.drift=0.5f;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}
+    if(ok&&s&&*s>=0&&ts_pr13_activate_slot(i,*s,e,n)){p13_slot=*s;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}
     return ok;
 }
 static int p13_generate_root(TsInstrument *i,TsGeneratorKind k,uint32_t seed,char *e,size_t n)
 {
-    int ok=ts_instrument_generate(i,k,seed,e,n);if(ok){i->process.body=0.0f;i->process.edge=0.0f;i->process.drift=0.5f;p13_slot=0;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}return ok;
+    int ok=ts_instrument_generate(i,k,seed,e,n);if(ok){ts_pr13_neutral_process(&i->process);i->bank[0].process=i->process;i->bank[0].has_process=1;p13_slot=0;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}return ok;
 }
 static int p13_load_wav(TsInstrument *i,const char *path,char *e,size_t n)
 {
-    int ok=ts_instrument_load_wav(i,path,e,n);if(ok){i->process.body=0.0f;i->process.edge=0.0f;i->process.drift=0.5f;p13_slot=0;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}return ok;
+    int ok=ts_instrument_load_wav(i,path,e,n);if(ok){ts_pr13_neutral_process(&i->process);i->bank[0].process=i->process;i->bank[0].has_process=1;p13_slot=0;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}return ok;
+}
+static int p13_activate(TsInstrument *i,int s,char *e,size_t n)
+{
+    int ok=ts_pr13_activate_slot(i,s,e,n);if(ok){p13_slot=s;p13_seen_undo=i->undo_count;p13_seen_redo=i->redo_count;}return ok;
+}
+static int p13_bank_capture(TsInstrument *i,int s,TsBankCaptureKind k,char *e,size_t n)
+{
+    return ts_pr13_bank_capture(i,p13_slot,s,k,e,n);
+}
+static int p13_bank_clear(TsInstrument *i,int s,char *e,size_t n)
+{
+    int ok=ts_pr13_bank_clear(i,s,e,n);if(ok&&s==p13_slot)p13_slot=-1;return ok;
+}
+static int p13_sample_edit(TsInstrument *i,TsSampleEditKind k,float a,char *e,size_t n)
+{
+    return ts_pr13_apply_sample_edit(i,p13_slot,k,a,e,n);
+}
+static int p13_crop(TsInstrument *i,char *e,size_t n)
+{
+    return ts_pr13_crop_selection(i,p13_slot,e,n);
+}
+static int p13_tape_drag(TsInstrument *i,TsPostEditKind k,size_t f,size_t l,int64_t d,char *e,size_t n)
+{
+    return ts_pr13_apply_tape_drag(i,p13_slot,k,f,l,d,e,n);
 }
 
 #define SDL_PollEvent p13_poll
@@ -204,6 +231,12 @@ static int p13_load_wav(TsInstrument *i,const char *path,char *e,size_t n)
 #define ts_instrument_generate_family_candidate p13_family
 #define ts_instrument_generate p13_generate_root
 #define ts_instrument_load_wav p13_load_wav
+#define ts_instrument_set_bank_as_current p13_activate
+#define ts_instrument_bank_capture p13_bank_capture
+#define ts_instrument_bank_clear p13_bank_clear
+#define ts_instrument_apply_sample_edit p13_sample_edit
+#define ts_instrument_crop_selection p13_crop
+#define ts_instrument_apply_tape_drag p13_tape_drag
 #define ts_instrument_save_recipe ts_pr13_save_project
 #define ts_instrument_load_recipe ts_pr13_load_project
 #include "main_sdl.c"
