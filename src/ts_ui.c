@@ -287,6 +287,14 @@ void ts_ui_init(TsUiState *ui)
     snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR CREATE A SOURCE");
 }
 
+void ts_ui_show_working_current(TsUiState *ui)
+{
+    if (ui == NULL) return;
+    ui->audition_source = TS_AUDITION_CURRENT;
+    ui->bank_view_slot = -1;
+    ui->candidate_view = 0;
+}
+
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames)
 {
     if (ui == NULL) return;

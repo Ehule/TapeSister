@@ -666,6 +666,29 @@ int main(void)
                                                0x464d574bu, error, sizeof(error)));
         CHECK(working.active_bank_slot == 2 && working.bank[2].occupied);
         CHECK(ts_sample_hash(&working.current) == ts_sample_hash(&working.bank[2].sample));
+        {
+            TsUiState route_ui;
+            uint64_t parent_before = ts_sample_hash(&working.parent);
+            uint64_t waveform_before;
+            TsProcessRecipe routed = working.process;
+            ts_ui_init(&route_ui);
+            route_ui.audition_source = TS_AUDITION_PARENT;
+            route_ui.bank_view_slot = 2;
+            route_ui.candidate_view = 1;
+            ts_ui_show_working_current(&route_ui);
+            CHECK(route_ui.audition_source == TS_AUDITION_CURRENT);
+            CHECK(route_ui.bank_view_slot == -1 && !route_ui.candidate_view);
+            ts_ui_render(&fb, &route_ui, &working);
+            waveform_before = waveform_hash(&fb);
+            routed.body = 0.91f;
+            CHECK(ts_instrument_set_process(&working, &routed, error, sizeof(error)));
+            CHECK(ts_instrument_sync_active_bank_slot(&working, error, sizeof(error)));
+            ts_ui_render(&fb, &route_ui, &working);
+            CHECK(waveform_hash(&fb) != waveform_before);
+            CHECK(ts_sample_hash(&working.current) ==
+                  ts_sample_hash(&working.bank[2].sample));
+            CHECK(ts_sample_hash(&working.parent) == parent_before);
+        }
         CHECK(ts_note_bank_start(&working_notes, &working, TS_AUDITION_CURRENT,
                                  0, 0, 44100) == TS_NOTE_STARTED);
         CHECK(ts_note_bank_display_voice(&working_notes)->sample == &working.current);

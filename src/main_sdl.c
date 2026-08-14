@@ -1150,7 +1150,7 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     slot = &instrument->bank[slot_index];
-    ui->bank_view_slot = -1;
+    ts_ui_show_working_current(ui);
     if (!device || output_rate <= 0) {
         audio->sample = &slot->sample;
         if (device) SDL_UnlockAudioDevice(device);

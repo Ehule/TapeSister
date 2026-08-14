@@ -105,6 +105,7 @@ typedef struct {
 } TsUiState;
 
 void ts_ui_init(TsUiState *ui);
+void ts_ui_show_working_current(TsUiState *ui);
 const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
                                       const TsInstrument *instrument);
 const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
