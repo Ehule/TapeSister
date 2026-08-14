@@ -650,6 +650,67 @@ int main(void)
         remove("test-family.tsr");
     }
 
+    {
+        TsInstrument working, working_loaded;
+        TsNoteBank working_notes;
+        TsProcessRecipe changed;
+        uint64_t slot1_hash, slot2_hash, varied_hash;
+        int occupied;
+        ts_instrument_init(&working);
+        ts_instrument_init(&working_loaded);
+        ts_note_bank_init(&working_notes);
+        CHECK(ts_instrument_generate(&working, TS_GENERATOR_TONAL,
+                                     0x574f524bu, error, sizeof(error)));
+        CHECK(ts_instrument_bank_clear_all(&working, error, sizeof(error)));
+        CHECK(ts_instrument_create_bank_source(&working, 2, TS_GENERATOR_FM,
+                                               0x464d574bu, error, sizeof(error)));
+        CHECK(working.active_bank_slot == 2 && working.bank[2].occupied);
+        CHECK(ts_sample_hash(&working.current) == ts_sample_hash(&working.bank[2].sample));
+        CHECK(ts_note_bank_start(&working_notes, &working, TS_AUDITION_CURRENT,
+                                 0, 0, 44100) == TS_NOTE_STARTED);
+        CHECK(ts_note_bank_display_voice(&working_notes)->sample == &working.current);
+        CHECK(ts_instrument_create_bank_source(&working, 0, TS_GENERATOR_PULSE,
+                                               0x50554c53u, error, sizeof(error)));
+        CHECK(working.active_bank_slot == 0 && working.bank[0].occupied);
+        CHECK(ts_instrument_create_bank_source(&working, 1, TS_GENERATOR_METALLIC,
+                                               0x4d455441u, error, sizeof(error)));
+        slot1_hash = ts_sample_hash(&working.bank[0].sample);
+        slot2_hash = ts_sample_hash(&working.bank[2].sample);
+        occupied = ts_instrument_bank_count(&working);
+        CHECK(ts_instrument_vary_active_bank_slot(&working, 0, error, sizeof(error)));
+        varied_hash = ts_sample_hash(&working.bank[1].sample);
+        CHECK(varied_hash != slot1_hash && ts_instrument_bank_count(&working) == occupied);
+        CHECK(ts_sample_hash(&working.bank[0].sample) == slot1_hash);
+        CHECK(ts_sample_hash(&working.bank[2].sample) == slot2_hash);
+        CHECK(ts_instrument_undo(&working, error, sizeof(error)));
+        CHECK(ts_sample_hash(&working.bank[1].sample) != varied_hash);
+        changed = working.process;
+        changed.body = 0.77f;
+        CHECK(ts_instrument_set_process(&working, &changed, error, sizeof(error)));
+        CHECK(ts_instrument_sync_active_bank_slot(&working, error, sizeof(error)));
+        CHECK(ts_sample_hash(&working.bank[1].sample) == ts_sample_hash(&working.current));
+        ts_instrument_set_selection(&working, working.current.frames / 4u,
+                                    working.current.frames * 3u / 4u);
+        CHECK(ts_instrument_set_loop_from_selection(&working, error, sizeof(error)));
+        CHECK(ts_instrument_sync_active_bank_slot(&working, error, sizeof(error)));
+        CHECK(ts_instrument_save_recipe(&working, "test-working.tsr", error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&working_loaded, "test-working.tsr",
+                                        error, sizeof(error)));
+        CHECK(working_loaded.active_bank_slot == 1);
+        CHECK(ts_instrument_bank_count(&working_loaded) == occupied);
+        CHECK(ts_sample_hash(&working_loaded.bank[1].sample) ==
+              ts_sample_hash(&working.bank[1].sample));
+        CHECK(working_loaded.bank[1].lineage_seed == working.bank[1].lineage_seed);
+        CHECK(working_loaded.bank[1].lineage_locks == working.bank[1].lineage_locks);
+        CHECK(working_loaded.bank[1].parent_slot == working.bank[1].parent_slot);
+        CHECK(working_loaded.bank[1].has_loop &&
+              working_loaded.bank[1].loop_first == working.bank[1].loop_first &&
+              working_loaded.bank[1].loop_last == working.bank[1].loop_last);
+        remove("test-working.tsr");
+        ts_instrument_free(&working);
+        ts_instrument_free(&working_loaded);
+    }
+
     CHECK(ts_instrument_load_wav(&imported, "test-roundtrip.wav", error, sizeof(error)));
     CHECK(imported.source_kind == TS_SOURCE_IMPORTED);
     CHECK(ts_sample_hash(&imported.parent) == ts_sample_hash(&imported.current));
@@ -1196,7 +1257,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR12", 5) == 0);
+        CHECK(memcmp(magic, "TSR13", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -1590,7 +1651,7 @@ int main(void)
         CHECK(fb.pixels[340 * TS_UI_WIDTH + 231] == 0xff147dffu);
         ui.bank_view_slot = -1;
         ts_ui_render(&fb, &ui, &restored);
-        CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff5d555du);
+        CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff2d0039u);
     }
     ui.renaming_bank_slot = 2;
     ui.text_cursor_visible = 1;

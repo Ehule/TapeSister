@@ -238,6 +238,10 @@ typedef struct {
     int family_anchor_slot;
     int family_last_slot;
     TsBankSlot variation;
+    TsBankSlot working_undo;
+    TsBankSlot working_anchor;
+    int working_undo_slot;
+    int active_bank_slot;
     uint32_t generation;
     uint64_t ancestor_hash;
     TsTuning tuning;
@@ -384,6 +388,15 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
                                             int *created_slot,
                                             char *error, size_t error_size);
 int ts_instrument_keep_family_candidate(TsInstrument *instrument, int *kept_slot,
+                                        char *error, size_t error_size);
+int ts_instrument_select_bank_slot(TsInstrument *instrument, int slot,
+                                   char *error, size_t error_size);
+int ts_instrument_sync_active_bank_slot(TsInstrument *instrument,
+                                        char *error, size_t error_size);
+int ts_instrument_create_bank_source(TsInstrument *instrument, int slot,
+                                     TsGeneratorKind kind, uint32_t seed,
+                                     char *error, size_t error_size);
+int ts_instrument_vary_active_bank_slot(TsInstrument *instrument, int reseed,
                                         char *error, size_t error_size);
 int64_t ts_sample_snap_tape_destination(const TsSample *sample, int64_t target,
                                         size_t source_frames);

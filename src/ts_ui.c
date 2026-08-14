@@ -624,9 +624,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 330, 205, 72, "RESET", 0);
     button(fb, 407, 205, 61, "SOURCE", !showing_bank && ui->audition_source == TS_AUDITION_PARENT);
     button(fb, 472, 205, 63, "CURRENT", !showing_bank && ui->audition_source == TS_AUDITION_CURRENT);
-    button(fb, 540, 205, 90,
-           instrument->variation.occupied ? "KEEP" : "SET CURRENT",
-           instrument->variation.occupied || (showing_bank && shown_slot->occupied));
+    button(fb, 540, 205, 90, "WORKING",
+           instrument->active_bank_slot >= 0);
 
     slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);
@@ -799,7 +798,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else {
         text(fb, 11, 318,
              ui->fx_page == TS_FX_FAMILY ?
-             "CREATE/VARY EXPLORE  KEEP RETAINS  SHIFT KEEPS + SETS CURRENT" :
+             "SELECT TILE = WORKING SOUND  CREATE FILLS EMPTY  VARY REPLACES" :
              "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  RMB RENAME  SHIFT+RMB CLEAR",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {

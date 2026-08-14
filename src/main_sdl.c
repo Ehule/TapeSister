@@ -158,6 +158,8 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
                      sizeof(instrument->family_anchor_slot));
     state_hash_bytes(&hash, &instrument->family_last_slot,
                      sizeof(instrument->family_last_slot));
+    state_hash_bytes(&hash, &instrument->active_bank_slot,
+                     sizeof(instrument->active_bank_slot));
     state_hash_bytes(&hash, &instrument->generation, sizeof(instrument->generation));
     state_hash_bytes(&hash, &instrument->ancestor_hash, sizeof(instrument->ancestor_hash));
     state_hash_bytes(&hash, &instrument->tuning, sizeof(instrument->tuning));
@@ -553,10 +555,18 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
                         TsInstrument *instrument)
 {
     TsAuditionPlan plan;
+    ts_instrument_sync_active_bank_slot(instrument, NULL, 0);
     ui->bank_view_slot = -1;
     ui->has_pitch_suggestion = 0;
     if (audio->playing && audio->bank_slot >= 0) {
-        /* Bank slots own stable buffers and do not remap through Current edits. */
+        if (audio->bank_slot == instrument->active_bank_slot &&
+            ts_bank_audition_plan(instrument, audio->bank_slot, &plan)) {
+            audio->sample = plan.sample;
+            audio->range_start = plan.first;
+            audio->range_end = plan.last;
+            if (audio->position >= (double)plan.last)
+                audio->position = (double)plan.first;
+        }
     } else if (audio->playing && audition_plan_ui(instrument, ui, audio->source,
                                            audio->range, &plan)) {
         audio->position = ts_audition_map_progress(
@@ -678,7 +688,7 @@ static int generate_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 }
 
 static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
-                                TsUiState *ui, const TsInstrument *instrument,
+                                TsUiState *ui, TsInstrument *instrument,
                                 int slot, int output_rate);
 
 static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio,
@@ -687,8 +697,8 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
 {
     char error[160];
     TsFamilyRelation selected_relation = instrument->family_relation;
-    int anchor = ui->bank_view_slot;
-    int slot = -1;
+    int anchor = ui->bank_view_slot >= 0 ? ui->bank_view_slot :
+                 instrument->active_bank_slot;
     int ok;
     if (force_stranger) instrument->family_relation = TS_FAMILY_STRANGER;
     lock_edit(device, audio);
@@ -696,46 +706,34 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
         audio->playing = 0;
         audio->bank_slot = -1;
     }
-    ok = ts_instrument_generate_family_candidate(instrument, anchor, reseed,
-                                                  &slot, error, sizeof(error));
+    if (anchor >= 0 && anchor < TS_BANK_SLOT_COUNT &&
+        !instrument->bank[anchor].occupied) {
+        TsGeneratorKind kind = instrument->generator.kind;
+        if (force_stranger) kind = (TsGeneratorKind)((kind + 1) % TS_GENERATOR_COUNT);
+        ok = ts_instrument_create_bank_source(instrument, anchor, kind,
+                                              (instrument->family_sequence +
+                                               instrument->generator.seed) * 1664525u +
+                                               1013904223u,
+                                              error, sizeof(error));
+    } else {
+        if (anchor >= 0) instrument->active_bank_slot = anchor;
+        ok = ts_instrument_vary_active_bank_slot(instrument, reseed,
+                                                 error, sizeof(error));
+    }
     instrument->family_relation = selected_relation;
-    if (ok && promote)
-        ok = ts_instrument_keep_family_candidate(instrument, &slot,
-                                                  error, sizeof(error)) &&
-             ts_instrument_set_bank_as_current(instrument, slot,
-                                               error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status), "VARIATION FAILED: %.132s", error);
         return;
     }
-    if (promote) {
-        ui->bank_view_slot = -1;
-        ts_ui_reset_parent_view(ui, instrument->parent.frames);
-        snprintf(ui->status, sizeof(ui->status),
-                 "BANK %02d %s CREATED AND SET CURRENT",
-                 slot + 1, ts_family_relation_name(instrument->bank[slot].relation));
-        return;
-    }
+    (void)promote;
     ui->show_keyboard = 0;
     ui->show_recipes = 0;
-    begin_bank_audition(device, audio, ui, instrument, TS_BANK_SLOT_COUNT,
+    begin_bank_audition(device, audio, ui, instrument, instrument->active_bank_slot,
                         audio->output_rate);
-    if (instrument->variation.has_generator)
-        snprintf(ui->status, sizeof(ui->status),
-                 "EXPLORE %s %s OF %02d  SEED %08X%s - KEEP TO RETAIN",
-                 ts_family_relation_name(instrument->variation.relation),
-                 ts_generator_name(instrument->variation.generator.kind),
-                 instrument->variation.parent_slot + 1,
-                 instrument->variation.lineage_seed,
-                 instrument->family_trajectory ? "  CHAIN" : "");
-    else
-        snprintf(ui->status, sizeof(ui->status),
-                 "EXPLORE %s OF %02d  SEED %08X%s - KEEP TO RETAIN",
-                 ts_family_relation_name(instrument->variation.relation),
-                 instrument->variation.parent_slot + 1,
-                 instrument->variation.lineage_seed,
-                 instrument->family_trajectory ? "  CHAIN" : "");
+    snprintf(ui->status, sizeof(ui->status), "BANK %02d IS THE WORKING SOUND%s",
+             instrument->active_bank_slot + 1,
+             instrument->family_trajectory ? "  CHAIN" : "");
 }
 
 static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -1124,7 +1122,7 @@ static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
 }
 
 static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
-                                TsUiState *ui, const TsInstrument *instrument,
+                                TsUiState *ui, TsInstrument *instrument,
                                 int slot_index, int output_rate)
 {
     const TsBankSlot *slot;
@@ -1141,9 +1139,18 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
     if (!slot->occupied) {
         audio->sample = NULL;
         if (device) SDL_UnlockAudioDevice(device);
-        snprintf(ui->status, sizeof(ui->status), "EXPLORATORY CANDIDATE IS EMPTY");
+        instrument->active_bank_slot = slot_index;
+        snprintf(ui->status, sizeof(ui->status), "BANK %02d EMPTY - CREATE A SOURCE",
+                 slot_index + 1);
         return;
     }
+    if (slot_index < TS_BANK_SLOT_COUNT &&
+        !ts_instrument_select_bank_slot(instrument, slot_index, NULL, 0)) {
+        if (device) SDL_UnlockAudioDevice(device);
+        return;
+    }
+    slot = &instrument->bank[slot_index];
+    ui->bank_view_slot = -1;
     if (!device || output_rate <= 0) {
         audio->sample = &slot->sample;
         if (device) SDL_UnlockAudioDevice(device);
@@ -2583,7 +2590,9 @@ int main(int argc, char **argv)
                                            TS_AUDITION_CURRENT, obtained.freq);
                 } else if (y >= 205 && y < 228 && x >= 540 && x < 630) {
                     ui.commit_armed = 0;
-                    set_auditioned_bank_current(device, &audio, &ui, &instrument);
+                    snprintf(ui.status, sizeof(ui.status),
+                             "SELECTED BANK %02d IS THE WORKING SOUND",
+                             instrument.active_bank_slot + 1);
                 } else if (y >= 233 && y < 257 && x >= 10 && x < 330) {
                     TsProcessRecipe process = instrument.process;
                     const char *label;

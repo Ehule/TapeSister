@@ -1487,6 +1487,8 @@ static void bank_free(TsInstrument *instrument)
 {
     for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) bank_slot_free(&instrument->bank[i]);
     bank_slot_free(&instrument->variation);
+    bank_slot_free(&instrument->working_undo);
+    bank_slot_free(&instrument->working_anchor);
 }
 
 static int bank_root_clone(TsBankSlot *slot, const TsSample *parent,
@@ -1531,6 +1533,8 @@ void ts_instrument_init(TsInstrument *instrument)
     ts_sample_init(&instrument->current);
     for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) bank_slot_init(&instrument->bank[i]);
     bank_slot_init(&instrument->variation);
+    bank_slot_init(&instrument->working_undo);
+    bank_slot_init(&instrument->working_anchor);
     instrument->generator.seed = 0x54415045u;
     instrument->generator.kind = TS_GENERATOR_TONAL;
     instrument->generator.seconds = 2.0f;
@@ -1542,6 +1546,9 @@ void ts_instrument_init(TsInstrument *instrument)
                                TS_FAMILY_LOCK_PITCH;
     instrument->family_anchor_slot = 0;
     instrument->family_last_slot = -1;
+    instrument->active_bank_slot = -1;
+    instrument->working_undo_slot = -1;
+    instrument->working_undo_slot = -1;
     instrument->tuning = default_tuning();
     instrument->audible_tuning = default_tuning();
     ts_process_recipe_reset(&instrument->process);
@@ -1627,6 +1634,7 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
     instrument->family_sequence = 0;
     instrument->family_anchor_slot = 0;
     instrument->family_last_slot = -1;
+    instrument->active_bank_slot = 0;
     reset_editor(instrument);
     return 1;
 }
@@ -1683,6 +1691,7 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
     instrument->family_sequence = 0;
     instrument->family_anchor_slot = 0;
     instrument->family_last_slot = -1;
+    instrument->active_bank_slot = 0;
     return 1;
 }
 
@@ -2644,6 +2653,7 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
     }
     bank_slot_free(&instrument->bank[slot]);
     if (instrument->family_last_slot == slot) instrument->family_last_slot = -1;
+    if (instrument->active_bank_slot == slot) instrument->active_bank_slot = -1;
     if (instrument->family_anchor_slot == slot)
         instrument->family_anchor_slot = instrument->bank[0].occupied ? 0 : -1;
     set_error(error, error_size, "");
@@ -2661,8 +2671,12 @@ int ts_instrument_bank_clear_all(TsInstrument *instrument,
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
         bank_slot_free(&instrument->bank[slot]);
     bank_slot_free(&instrument->variation);
+    bank_slot_free(&instrument->working_undo);
+    bank_slot_free(&instrument->working_anchor);
     instrument->family_anchor_slot = -1;
     instrument->family_last_slot = -1;
+    instrument->active_bank_slot = -1;
+    instrument->working_undo_slot = -1;
     set_error(error, error_size, "");
     return 1;
 }
@@ -2867,6 +2881,137 @@ int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
     instrument->family_anchor_slot = slot;
     set_error(error, error_size, "");
     return 1;
+}
+
+static int bank_slot_clone(TsBankSlot *destination, const TsBankSlot *source,
+                           char *error, size_t error_size)
+{
+    TsBankSlot copy;
+    if (source == NULL || !source->occupied) {
+        set_error(error, error_size, "Bank slot is empty");
+        return 0;
+    }
+    copy = *source;
+    ts_sample_init(&copy.sample);
+    if (!ts_sample_clone(&copy.sample, &source->sample, error, error_size)) return 0;
+    bank_slot_free(destination);
+    *destination = copy;
+    return 1;
+}
+
+int ts_instrument_select_bank_slot(TsInstrument *instrument, int slot,
+                                   char *error, size_t error_size)
+{
+    if (!ts_instrument_set_bank_as_current(instrument, slot, error, error_size)) return 0;
+    instrument->active_bank_slot = slot;
+    bank_slot_free(&instrument->variation);
+    bank_slot_free(&instrument->working_undo);
+    bank_slot_free(&instrument->working_anchor);
+    instrument->working_undo_slot = -1;
+    return 1;
+}
+
+int ts_instrument_sync_active_bank_slot(TsInstrument *instrument,
+                                        char *error, size_t error_size)
+{
+    TsBankSlot *slot;
+    if (instrument == NULL || instrument->active_bank_slot < 0 ||
+        instrument->active_bank_slot >= TS_BANK_SLOT_COUNT) return 1;
+    slot = &instrument->bank[instrument->active_bank_slot];
+    if (!slot->occupied) return 1;
+    if (!ts_sample_clone(&slot->sample, &instrument->current, error, error_size)) return 0;
+    slot->tuning = instrument->tuning;
+    slot->audible_tuning = instrument->audible_tuning;
+    slot->has_loop = instrument->has_loop;
+    slot->loop_first = instrument->has_loop ? instrument->loop_first : 0;
+    slot->loop_last = instrument->has_loop ? instrument->loop_last : 0;
+    slot->loop_mode = instrument->loop_mode;
+    slot->loop_crossfade_ms = instrument->loop_crossfade_ms;
+    return 1;
+}
+
+int ts_instrument_create_bank_source(TsInstrument *instrument, int slot,
+                                     TsGeneratorKind kind, uint32_t seed,
+                                     char *error, size_t error_size)
+{
+    TsBankSlot created;
+    TsGeneratorRecipe recipe;
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT ||
+        instrument->bank[slot].occupied) {
+        set_error(error, error_size, "Select an empty collection slot");
+        return 0;
+    }
+    recipe = instrument->generator;
+    recipe.kind = kind;
+    recipe.seed = seed;
+    bank_slot_init(&created);
+    if (!ts_sample_generate(&created.sample, &recipe, error, error_size)) return 0;
+    created.capture_kind = slot == 0 ? TS_BANK_CAPTURE_ROOT : TS_BANK_CAPTURE_CURRENT;
+    created.relation = slot == 0 ? TS_FAMILY_ROOT : TS_FAMILY_STRANGER;
+    created.parent_slot = -1;
+    created.generator = recipe;
+    created.has_generator = 1;
+    created.lineage_seed = seed;
+    created.lineage_locks = instrument->family_locks;
+    created.lineage_mutation = instrument->family_mutation;
+    created.tuning = generator_tuning(&recipe);
+    created.audible_tuning = created.tuning;
+    created.loop_mode = TS_LOOP_FORWARD;
+    created.loop_crossfade_ms = 8.0f;
+    created.occupied = 1;
+    instrument->bank[slot] = created;
+    return ts_instrument_select_bank_slot(instrument, slot, error, error_size);
+}
+
+int ts_instrument_vary_active_bank_slot(TsInstrument *instrument, int reseed,
+                                        char *error, size_t error_size)
+{
+    int slot;
+    TsBankSlot prior;
+    if (instrument == NULL || instrument->active_bank_slot < 0 ||
+        instrument->active_bank_slot >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[instrument->active_bank_slot].occupied) {
+        set_error(error, error_size, "Select an occupied collection slot");
+        return 0;
+    }
+    slot = instrument->active_bank_slot;
+    bank_slot_init(&prior);
+    if (!bank_slot_clone(&prior, &instrument->bank[slot], error, error_size)) return 0;
+    if (!instrument->working_anchor.occupied &&
+        !bank_slot_clone(&instrument->working_anchor, &instrument->bank[slot],
+                         error, error_size)) {
+        bank_slot_free(&prior);
+        return 0;
+    }
+    bank_slot_free(&instrument->variation);
+    instrument->family_last_slot = slot;
+    instrument->family_anchor_slot = slot;
+    if (!instrument->family_trajectory) {
+        TsBankSlot current = instrument->bank[slot];
+        instrument->bank[slot] = instrument->working_anchor;
+        bank_slot_init(&instrument->working_anchor);
+        if (!ts_instrument_generate_family_candidate(instrument, slot, reseed, NULL,
+                                                      error, error_size)) {
+            instrument->working_anchor = instrument->bank[slot];
+            instrument->bank[slot] = current;
+            bank_slot_free(&prior);
+            return 0;
+        }
+        instrument->working_anchor = instrument->bank[slot];
+        instrument->bank[slot] = current;
+    } else if (!ts_instrument_generate_family_candidate(instrument, slot, reseed, NULL,
+                                                         error, error_size)) {
+        bank_slot_free(&prior);
+        return 0;
+    }
+    bank_slot_free(&instrument->working_undo);
+    instrument->working_undo = prior;
+    instrument->working_undo_slot = slot;
+    bank_slot_free(&instrument->bank[slot]);
+    instrument->bank[slot] = instrument->variation;
+    bank_slot_init(&instrument->variation);
+    return ts_instrument_set_bank_as_current(instrument, slot, error, error_size) &&
+           (instrument->active_bank_slot = slot, 1);
 }
 
 static void bank_safe_name(const char *source, char *destination, size_t size)
@@ -3258,6 +3403,16 @@ static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
 int ts_instrument_undo(TsInstrument *instrument, char *error, size_t error_size)
 {
     TsEditSnapshot target;
+    if (instrument != NULL && instrument->working_undo.occupied &&
+        instrument->working_undo_slot == instrument->active_bank_slot) {
+        int slot = instrument->active_bank_slot;
+        bank_slot_free(&instrument->bank[slot]);
+        instrument->bank[slot] = instrument->working_undo;
+        bank_slot_init(&instrument->working_undo);
+        instrument->working_undo_slot = -1;
+        return ts_instrument_set_bank_as_current(instrument, slot, error, error_size) &&
+               (instrument->active_bank_slot = slot, 1);
+    }
     if (instrument->undo_count == 0) {
         set_error(error, error_size, "Nothing to undo");
         return 0;
@@ -3307,7 +3462,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    fwrite("TSR12\r\n\032", 1, 8, f);
+    fwrite("TSR13\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->source_kind);
     put32(f, instrument->generation);
     put64(f, instrument->ancestor_hash);
@@ -3382,6 +3537,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     for (size_t i = 0; i < instrument->parent.frames; ++i)
         put_float(f, instrument->parent.data[i]);
     put64(f, ts_sample_hash(&instrument->parent));
+    put32(f, (uint32_t)(instrument->active_bank_slot + 1));
     put32(f, TS_BANK_SLOT_COUNT + 1u);
     for (int i = 0; i <= TS_BANK_SLOT_COUNT; ++i) {
         const TsBankSlot *slot = i == TS_BANK_SLOT_COUNT ?
@@ -3459,7 +3615,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR12\r\n\032", 8) == 0) version = 12;
+    if (memcmp(magic, "TSR13\r\n\032", 8) == 0) version = 13;
+    else if (memcmp(magic, "TSR12\r\n\032", 8) == 0) version = 12;
     else if (memcmp(magic, "TSR11\r\n\032", 8) == 0) version = 11;
     else if (memcmp(magic, "TSR10\r\n\032", 8) == 0) version = 10;
     else if (memcmp(magic, "TSR9\r\n\032\n", 8) == 0) version = 9;
@@ -3470,7 +3627,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR12 project");
+                  "Not a self-contained TSR6-TSR13 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -3599,6 +3756,12 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         if (!get_float(f, &loaded.parent.data[i])) goto malformed;
     if (!get64(f, &stored_hash) ||
         stored_hash != ts_sample_hash(&loaded.parent)) goto malformed;
+    if (version >= 13) {
+        GET_U32(u32);
+        loaded.active_bank_slot = (int)u32 - 1;
+        if (loaded.active_bank_slot < -1 ||
+            loaded.active_bank_slot >= TS_BANK_SLOT_COUNT) goto malformed;
+    } else loaded.active_bank_slot = loaded.bank[0].occupied ? 0 : -1;
     if (version == 6) {
         if (fgetc(f) != EOF ||
             !bank_root_clone(&loaded.bank[0], &loaded.parent, &loaded.tuning,
@@ -3691,6 +3854,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                 if (slot->has_generator) slot->generator = loaded.generator;
             }
         }
+        if (version < 13) loaded.active_bank_slot = loaded.bank[0].occupied ? 0 : -1;
         if ((loaded.bank[0].occupied &&
              (loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT ||
               loaded.bank[0].relation != TS_FAMILY_ROOT)) ||
@@ -3698,6 +3862,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
              !loaded.bank[loaded.family_anchor_slot].occupied) ||
             (loaded.family_last_slot >= 0 &&
              !loaded.bank[loaded.family_last_slot].occupied) ||
+            (loaded.active_bank_slot >= 0 &&
+             !loaded.bank[loaded.active_bank_slot].occupied) ||
             fgetc(f) != EOF)
             goto malformed;
     }
@@ -3735,7 +3901,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR12 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR13 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);
