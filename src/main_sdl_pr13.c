@@ -89,7 +89,6 @@ static void p13_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrumen
 {
     p13_inst = (TsInstrument *)inst; p13_ui = (TsUiState *)ui;
     p13_reconcile(p13_inst, p13_ui); ts_ui_render(fb, ui, inst);
-    /* Opaque patch panel: do not let the superseded core controls bleed through. */
     p13_rect(fb, 240, 202, 400, 29, 0xff181818u);
     p13_button(fb,247,70,"NEW",0); p13_button(fb,322,92,"RESEED",0);
     p13_button(fb,540,90,(p13_slot>=0&&p13_slot<TS_BANK_SLOT_COUNT&&inst->bank[p13_slot].occupied&&ts_pr13_slot_locked(inst,p13_slot))?"UNLOCK":"LOCK",p13_slot>=0&&p13_slot<TS_BANK_SLOT_COUNT&&inst->bank[p13_slot].occupied&&ts_pr13_slot_locked(inst,p13_slot));
@@ -110,6 +109,14 @@ static void p13_logical(SDL_Event *e, int *x, int *y)
 {
     SDL_Window *w = SDL_GetWindowFromID(e->button.windowID); int ww = TS_UI_WIDTH, wh = TS_UI_HEIGHT;
     if (w) SDL_GetWindowSize(w, &ww, &wh); *x = e->button.x * TS_UI_WIDTH / ww; *y = e->button.y * TS_UI_HEIGHT / wh;
+}
+
+static void p13_redirect_click(SDL_Event *e, int x, int y)
+{
+    SDL_Window *w = SDL_GetWindowFromID(e->button.windowID); int ww = TS_UI_WIDTH, wh = TS_UI_HEIGHT;
+    if (w) SDL_GetWindowSize(w, &ww, &wh);
+    e->button.x = x * ww / TS_UI_WIDTH;
+    e->button.y = y * wh / TS_UI_HEIGHT;
 }
 
 static void p13_touch(int x, int y)
@@ -181,7 +188,15 @@ static int p13_poll(SDL_Event *e)
                     if(p13_inst->bank[s].occupied&&x>=sx+57&&x<sx+68&&y>=sy+2&&y<sy+18){ts_pr13_toggle_slot_lock(p13_inst,s,error,sizeof(error));continue;}
                     p13_slot=s;
                     if(p13_inst->bank[s].occupied){
-                        if(ts_pr13_activate_slot(p13_inst,s,error,sizeof(error))){p13_seen_undo=p13_inst->undo_count;p13_seen_redo=p13_inst->redo_count;}
+                        if(ts_pr13_activate_slot(p13_inst,s,error,sizeof(error))){
+                            p13_inst->family_anchor_slot=s;
+                            p13_seen_undo=p13_inst->undo_count;p13_seen_redo=p13_inst->redo_count;
+                            /* The core bank audition points at slot source audio. PR13's
+                               active Current is the rendered editable tile, so redirect
+                               this click to the normal Play All handler instead. */
+                            p13_redirect_click(e,20,300);
+                            return 1;
+                        }
                     }else{
                         snprintf(p13_ui->status,sizeof(p13_ui->status),"EMPTY BANK %02d - NEW CREATES PARENT",s+1);
                     }
