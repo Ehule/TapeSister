@@ -275,6 +275,7 @@ void ts_ui_init(TsUiState *ui)
     memset(ui, 0, sizeof(*ui));
     ui->mouse_note = -1;
     ui->bank_view_slot = -1;
+    ui->load_bank_slot = -1;
     ui->playhead_bank_slot = -1;
     ui->renaming_bank_slot = -1;
     ui->renaming_recipe_slot = -1;

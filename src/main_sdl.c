@@ -635,15 +635,24 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     }
     if (recipe)
         ok = ts_instrument_load_recipe(instrument, path, error, sizeof(error));
-    else
-        ok = ts_instrument_load_wav(instrument, path, error, sizeof(error));
+    else {
+        int destination = ui->load_bank_slot;
+        if (destination < 0 || destination >= TS_BANK_SLOT_COUNT)
+            destination = instrument->selected_slot;
+        ok = ts_instrument_select_bank(instrument, destination, error, sizeof(error)) &&
+             ts_instrument_load_wav(instrument, path, error, sizeof(error));
+    }
     unlock_edit(device, audio, ui, instrument);
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
     if (ok && recipe)
         snprintf(ui->status, sizeof(ui->status), "OPENED TSR PROJECT %.112s",
                  instrument->parent.name);
-    else if (ok) snprintf(ui->status, sizeof(ui->status), "IMPORTED NEUTRAL SOURCE %.104s",
-                          instrument->parent.name);
+    else if (ok) {
+        ui->audition_source = TS_AUDITION_CURRENT;
+        ui->load_bank_slot = -1;
+        snprintf(ui->status, sizeof(ui->status), "IMPORTED WAV INTO BANK %02d %.91s",
+                 instrument->selected_slot + 1, instrument->parent.name);
+    }
     else snprintf(ui->status, sizeof(ui->status), "LOAD FAILED: %.135s", error);
     if (ok && recipe) ui->saved_state_hash = instrument_state_hash(instrument);
     return ok;
@@ -2061,6 +2070,7 @@ int main(int argc, char **argv)
                         browser_activate_selection(device, &audio, &ui, &instrument);
                     }
                 } else if ((mod & KMOD_CTRL) && key == SDLK_o) {
+                    ui.load_bank_slot = instrument.selected_slot;
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_p) {
                     if (ui.commit_armed) commit_current(device, &audio, &ui, &instrument);
@@ -2521,6 +2531,7 @@ int main(int argc, char **argv)
                     }
                 } else if (y >= 205 && y < 228 && x >= 10 && x < 80) {
                     ui.commit_armed = 0;
+                    ui.load_bank_slot = instrument.selected_slot;
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
                 } else if (y >= 205 && y < 228 && x >= 85 && x < 167) {
                     ui.commit_armed = 0;

@@ -1840,6 +1840,99 @@ int main(void)
         ts_instrument_free(&gesture);
     }
 
+    {
+        TsInstrument load_bank, empty_first, reopened_bank;
+        TsSample known, reopened_wav;
+        TsGeneratorRecipe known_recipe = generator(0x10adedu, TS_GENERATOR_METALLIC);
+        uint64_t slot0_hash, slot0_parent_hash, slot2_hash, slot2_parent_hash, wav_hash;
+        TsGeneratorRecipe slot0_generator, slot2_generator;
+        int slot0_undo, slot2_undo;
+        ts_sample_init(&known); ts_sample_init(&reopened_wav);
+        ts_instrument_init(&load_bank); ts_instrument_init(&empty_first);
+        ts_instrument_init(&reopened_bank);
+        CHECK(ts_sample_generate(&known, &known_recipe, error, sizeof(error)));
+        CHECK(ts_sample_save_wav16(&known, "test-selected-load.wav", error, sizeof(error)));
+        CHECK(ts_sample_load_wav(&reopened_wav, "test-selected-load.wav", error, sizeof(error)));
+        wav_hash = ts_sample_hash(&reopened_wav);
+
+        CHECK(ts_instrument_bank_clear_all(&load_bank, error, sizeof(error)));
+        for (int slot = 0; slot < 3; ++slot) {
+            CHECK(ts_instrument_select_bank(&load_bank, slot, error, sizeof(error)));
+            CHECK(ts_instrument_create_selected(&load_bank, 0x710000u + (uint32_t)slot,
+                                                error, sizeof(error)));
+        }
+        slot0_hash = ts_sample_hash(&load_bank.bank[0].sample);
+        slot0_parent_hash = ts_sample_hash(&load_bank.bank[0].edit_parent);
+        slot2_hash = ts_sample_hash(&load_bank.bank[2].sample);
+        slot2_parent_hash = ts_sample_hash(&load_bank.bank[2].edit_parent);
+        slot0_generator = load_bank.bank[0].generator;
+        slot2_generator = load_bank.bank[2].generator;
+        slot0_undo = load_bank.bank[0].undo_count;
+        slot2_undo = load_bank.bank[2].undo_count;
+        CHECK(ts_instrument_select_bank(&load_bank, 1, error, sizeof(error)));
+        CHECK(ts_instrument_load_wav(&load_bank, "test-selected-load.wav",
+                                     error, sizeof(error)));
+        CHECK(load_bank.selected_slot == 1 && load_bank.bank[1].occupied);
+        CHECK(ts_sample_hash(&load_bank.bank[1].sample) == wav_hash);
+        CHECK(ts_sample_hash(&load_bank.current) == wav_hash);
+        CHECK(!load_bank.bank[1].has_generator &&
+              !load_bank.bank[1].generator.has_fm_patch);
+        CHECK(ts_sample_hash(&load_bank.bank[0].sample) == slot0_hash &&
+              ts_sample_hash(&load_bank.bank[0].edit_parent) == slot0_parent_hash &&
+              memcmp(&load_bank.bank[0].generator, &slot0_generator,
+                     sizeof(slot0_generator)) == 0 &&
+              load_bank.bank[0].undo_count == slot0_undo);
+        CHECK(ts_sample_hash(&load_bank.bank[2].sample) == slot2_hash &&
+              ts_sample_hash(&load_bank.bank[2].edit_parent) == slot2_parent_hash &&
+              memcmp(&load_bank.bank[2].generator, &slot2_generator,
+                     sizeof(slot2_generator)) == 0 &&
+              load_bank.bank[2].undo_count == slot2_undo);
+        ts_instrument_set_selection(&load_bank, 0, load_bank.current.frames / 3u);
+        CHECK(ts_instrument_apply_sample_edit(&load_bank, TS_SAMPLE_EDIT_REVERSE, 1.0f,
+                                              error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) != wav_hash);
+        CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) == wav_hash);
+
+        CHECK(ts_instrument_select_bank(&load_bank, 4, error, sizeof(error)));
+        CHECK(!load_bank.bank[4].occupied);
+        CHECK(ts_instrument_load_wav(&load_bank, "test-selected-load.wav",
+                                     error, sizeof(error)));
+        CHECK(load_bank.selected_slot == 4 &&
+              ts_sample_hash(&load_bank.current) == wav_hash);
+        CHECK(ts_sample_hash(&load_bank.bank[0].sample) == slot0_hash &&
+              ts_sample_hash(&load_bank.bank[2].sample) == slot2_hash);
+
+        CHECK(ts_instrument_bank_clear_all(&empty_first, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&empty_first, 1, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&empty_first, 0x810001u, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&empty_first, 2, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&empty_first, 0x810002u, error, sizeof(error)));
+        slot2_hash = ts_sample_hash(&empty_first.bank[2].sample);
+        CHECK(ts_instrument_select_bank(&empty_first, 0, error, sizeof(error)));
+        CHECK(!empty_first.bank[0].occupied);
+        CHECK(ts_instrument_load_wav(&empty_first, "test-selected-load.wav",
+                                     error, sizeof(error)));
+        CHECK(empty_first.selected_slot == 0 &&
+              ts_sample_hash(&empty_first.bank[0].sample) == wav_hash &&
+              empty_first.bank[1].occupied &&
+              ts_sample_hash(&empty_first.bank[2].sample) == slot2_hash);
+
+        CHECK(ts_instrument_save_recipe(&load_bank, "test-selected-load.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&reopened_bank, "test-selected-load.tsr",
+                                        error, sizeof(error)));
+        CHECK(reopened_bank.selected_slot == load_bank.selected_slot);
+        CHECK(ts_sample_hash(&reopened_bank.bank[4].sample) == wav_hash);
+        CHECK(ts_sample_hash(&reopened_bank.bank[0].sample) == slot0_hash);
+        CHECK(ts_sample_hash(&reopened_bank.bank[2].sample) ==
+              ts_sample_hash(&load_bank.bank[2].sample));
+        remove("test-selected-load.wav"); remove("test-selected-load.tsr");
+        ts_sample_free(&known); ts_sample_free(&reopened_wav);
+        ts_instrument_free(&load_bank); ts_instrument_free(&empty_first);
+        ts_instrument_free(&reopened_bank);
+    }
+
     ts_sample_free(&a); ts_sample_free(&b); ts_sample_free(&loaded); ts_sample_free(&copy);
     ts_sample_free(&dry); ts_sample_free(&effected); ts_sample_free(&repeated);
     ts_instrument_free(&generated); ts_instrument_free(&imported); ts_instrument_free(&committed);

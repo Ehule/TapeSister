@@ -1715,58 +1715,60 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
     return 1;
 }
 
+static int bank_sync_selected(TsInstrument *instrument, char *error, size_t error_size);
+
 int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
                            char *error, size_t error_size)
 {
-    TsSample parent, current;
-    TsBankSlot root;
-    TsProcessRecipe neutral;
+    TsBankSlot imported;
     TsTuning tuning = default_tuning();
-    size_t loop_first = 0;
-    size_t loop_last = 0;
+    size_t loop_first = 0, loop_last = 0;
     TsLoopMode loop_mode = TS_LOOP_FORWARD;
     int has_loop = 0;
-    ts_sample_init(&parent);
-    ts_sample_init(&current);
-    bank_slot_init(&root);
-    ts_process_recipe_reset(&neutral);
-    if (!ts_sample_load_wav_metadata(&parent, &tuning, &has_loop,
-                                     &loop_first, &loop_last, &loop_mode,
-                                     path, error, error_size) ||
-        !ts_sample_process(&current, &parent, 0, parent.frames, &neutral,
-                           error, error_size) ||
-        !bank_root_clone(&root, &parent, &tuning, error, error_size)) {
-        ts_sample_free(&parent);
-        ts_sample_free(&current);
-        bank_slot_free(&root);
+    int slot;
+    if (instrument == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Select a bank tile before loading a WAV");
         return 0;
     }
-    ts_sample_free(&instrument->parent);
-    ts_sample_free(&instrument->current);
-    bank_free(instrument);
-    instrument->parent = parent;
-    instrument->current = current;
-    instrument->bank[0] = root;
+    slot = instrument->selected_slot;
+    bank_slot_init(&imported);
+    if (!ts_sample_load_wav_metadata(&imported.sample, &tuning, &has_loop,
+                                     &loop_first, &loop_last, &loop_mode,
+                                     path, error, error_size) ||
+        !ts_sample_clone(&imported.edit_parent, &imported.sample,
+                         error, error_size)) {
+        bank_slot_free(&imported);
+        return 0;
+    }
+    imported.occupied = 1;
+    imported.capture_kind = TS_BANK_CAPTURE_CURRENT;
+    imported.relation = TS_FAMILY_CAPTURED;
+    imported.parent_slot = -1;
+    imported.has_generator = 0;
+    memset(&imported.generator, 0, sizeof(imported.generator));
+    imported.lineage_seed = (uint32_t)ts_sample_hash(&imported.sample);
+    imported.lineage_locks = TS_FAMILY_LOCK_ALL;
+    imported.lineage_mutation = 0.0f;
+    imported.tuning = tuning;
+    imported.audible_tuning = tuning;
+    imported.has_loop = has_loop;
+    imported.loop_first = loop_first;
+    imported.loop_last = loop_last;
+    imported.loop_mode = loop_mode;
+    bank_slot_free(&instrument->bank[slot]);
+    instrument->bank[slot] = imported;
+    if (!ts_instrument_select_bank(instrument, slot, error, error_size)) return 0;
     instrument->source_kind = TS_SOURCE_IMPORTED;
-    instrument->process = neutral;
-    instrument->tuning = tuning;
-    instrument->audible_tuning = tuning;
-    instrument->generation = 0;
-    instrument->ancestor_hash = 0;
-    reset_editor(instrument);
+    memset(&instrument->generator, 0, sizeof(instrument->generator));
     instrument->has_loop = has_loop;
     instrument->loop_first = loop_first;
     instrument->loop_last = loop_last;
     instrument->loop_mode = loop_mode;
-    instrument->bank[0].has_loop = has_loop;
-    instrument->bank[0].loop_first = loop_first;
-    instrument->bank[0].loop_last = loop_last;
-    instrument->bank[0].loop_mode = loop_mode;
-    instrument->bank[0].has_generator = 0;
-    instrument->bank[0].lineage_seed = (uint32_t)ts_sample_hash(&parent);
-    instrument->family_sequence = 0;
-    instrument->family_anchor_slot = 0;
-    instrument->family_last_slot = -1;
+    instrument->undo_count = 0;
+    instrument->redo_count = 0;
+    if (!bank_sync_selected(instrument, error, error_size)) return 0;
+    set_error(error, error_size, "");
     return 1;
 }
 
@@ -2246,8 +2248,6 @@ int64_t ts_sample_snap_tape_destination(const TsSample *sample, int64_t target,
     }
     return (int64_t)best;
 }
-
-static int bank_sync_selected(TsInstrument *instrument, char *error, size_t error_size);
 
 int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
                                   size_t first, size_t last, int64_t destination,
