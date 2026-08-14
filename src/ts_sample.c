@@ -1357,6 +1357,21 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                     destination->data[first + i] = destination->data[last - 1u - i];
                     destination->data[last - 1u - i] = swap;
                 }
+            } else if (operation->kind == TS_POST_ROTATE) {
+                size_t offset = (size_t)operation->destination;
+                float *rotated;
+                if (offset == 0 || offset >= length) continue;
+                rotated = (float *)malloc(length * sizeof(float));
+                if (rotated == NULL) {
+                    set_error(error, error_size, "Out of memory while rotating waveform");
+                    return 0;
+                }
+                memcpy(rotated, destination->data + first + offset,
+                       (length - offset) * sizeof(float));
+                memcpy(rotated + length - offset, destination->data + first,
+                       offset * sizeof(float));
+                memcpy(destination->data + first, rotated, length * sizeof(float));
+                free(rotated);
             } else if (operation->kind == TS_POST_NORMALIZE) {
                 float peak = 0.0f;
                 float target = clampf(operation->amount, 0.0f, 1.0f);
@@ -3462,6 +3477,93 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
     return 1;
 }
 
+int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
+                                       char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsSample current;
+    TsPostEdit operation;
+    size_t first, last, offset = 0;
+    if (instrument == NULL || instrument->current.data == NULL || direction == 0) {
+        set_error(error, error_size, "No Current sample to rotate");
+        return 0;
+    }
+    first = instrument->has_selection ? instrument->selection_first : 0u;
+    last = instrument->has_selection ? instrument->selection_last :
+                                       instrument->current.frames;
+    if (last <= first + 1u) {
+        set_error(error, error_size, "Waveform range is too short to rotate");
+        return 0;
+    }
+    if (instrument->post_edit_count > 0) {
+        const TsPostEdit *previous =
+            &instrument->post_edits[instrument->post_edit_count - 1];
+        if (previous->kind == TS_POST_ROTATE && previous->first == first &&
+            previous->last == last && previous->amount * (float)direction < 0.0f) {
+            target = snapshot(instrument);
+            --target.post_edit_count;
+            ts_sample_init(&current);
+            if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+            begin_edit(instrument);
+            ts_sample_free(&instrument->current);
+            instrument->current = current;
+            memcpy(instrument->post_edits, target.post_edits,
+                   sizeof(instrument->post_edits));
+            instrument->post_edit_count = target.post_edit_count;
+            set_error(error, error_size, "");
+            return bank_sync_selected(instrument, error, error_size);
+        }
+    }
+    if (direction > 0) {
+        for (size_t frame = first + 1u; frame < last; ++frame) {
+            if (is_zero_crossing(&instrument->current, frame)) {
+                offset = frame - first;
+                break;
+            }
+        }
+    } else {
+        for (size_t frame = last - 1u; frame > first; --frame) {
+            if (is_zero_crossing(&instrument->current, frame)) {
+                offset = frame - first;
+                break;
+            }
+        }
+    }
+    if (offset == 0) {
+        /* Match the established nearest-crossing fallback for crossing-free material. */
+        TsSample range = instrument->current;
+        range.data += first;
+        range.frames = last - first;
+        offset = ts_sample_nearest_zero_crossing(
+            &range, direction > 0 ? 1u : range.frames - 1u);
+        if (offset == 0 || offset >= range.frames) {
+            set_error(error, error_size, "No usable zero crossing in waveform range");
+            return 0;
+        }
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits");
+        return 0;
+    }
+    target = snapshot(instrument);
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_ROTATE;
+    operation.first = first;
+    operation.last = last;
+    operation.destination = (int64_t)offset;
+    operation.amount = direction > 0 ? 1.0f : -1.0f;
+    target.post_edits[target.post_edit_count++] = operation;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    begin_edit(instrument);
+    ts_sample_free(&instrument->current);
+    instrument->current = current;
+    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
+    set_error(error, error_size, "");
+    return bank_sync_selected(instrument, error, error_size);
+}
+
 int ts_instrument_zoom_selection(TsInstrument *instrument)
 {
     if (!instrument->has_selection || instrument->selection_last <= instrument->selection_first)
@@ -3894,7 +3996,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             if (!get64(f, &destination_bits)) goto malformed;
             edit->destination = (int64_t)destination_bits;
             GET_FLOAT(edit->amount); GET_U32(edit->crossfade_frames);
-            if (edit->kind > TS_POST_CROP || edit->last <= edit->first ||
+            if (edit->kind > TS_POST_ROTATE || edit->last <= edit->first ||
                 edit->first > 100000000u || edit->last > 100000000u ||
                 edit->destination < -100000000LL ||
                 edit->destination > 100000000LL ||

@@ -146,7 +146,8 @@ typedef enum {
     TS_POST_GAIN,
     TS_POST_FADE_IN,
     TS_POST_FADE_OUT,
-    TS_POST_CROP
+    TS_POST_CROP,
+    TS_POST_ROTATE
 } TsPostEditKind;
 
 typedef struct {
@@ -343,6 +344,8 @@ int ts_instrument_set_loop_mode(TsInstrument *instrument, TsLoopMode mode,
 int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind kind,
                                     float amount, char *error, size_t error_size);
+int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
+                                       char *error, size_t error_size);
 int ts_instrument_zoom_selection(TsInstrument *instrument);
 int ts_instrument_zoom_view(TsInstrument *instrument, size_t anchor_frame,
                             float anchor_ratio, float scale);
