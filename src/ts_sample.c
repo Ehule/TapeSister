@@ -1,4 +1,5 @@
 #include "tapesister/sample.h"
+#include "tapesister/recipe.h"
 
 #include <errno.h>
 #include <math.h>
@@ -3493,6 +3494,178 @@ void ts_instrument_show_all(TsInstrument *instrument)
     instrument->view_last = instrument->current.frames;
 }
 
+static void write_edit_snapshot_fixed(FILE *f, const TsEditSnapshot *s)
+{
+    put64(f, s->crop_first); put64(f, s->crop_last);
+    put64(f, s->selection_first); put64(f, s->selection_last);
+    put64(f, s->view_first); put64(f, s->view_last);
+    put64(f, s->loop_first); put64(f, s->loop_last);
+    put_float(f, s->loop_crossfade_ms); put32(f, (uint32_t)s->loop_mode);
+    put32(f, (uint32_t)s->has_selection); put32(f, (uint32_t)s->has_loop);
+    put32(f, (uint32_t)s->tuning.root_note); put_float(f, s->tuning.fine_tune_cents);
+    put32(f, (uint32_t)s->audible_tuning.root_note);
+    put_float(f, s->audible_tuning.fine_tune_cents);
+#define WP(field) put_float(f, s->process.field)
+    put32(f, s->process.seed); WP(body); WP(edge); WP(drift);
+    put32(f, (uint32_t)s->process.noise_enabled); WP(noise_amount);
+    put32(f, (uint32_t)s->process.noise_color);
+    put32(f, (uint32_t)s->process.delay_enabled); WP(delay_seconds);
+    WP(delay_feedback); WP(delay_damping); WP(delay_mix);
+    put32(f, (uint32_t)s->process.reverb_enabled); WP(reverb_decay);
+    WP(reverb_damping); WP(reverb_mix);
+    put32(f, (uint32_t)s->process.filter_enabled);
+    put32(f, (uint32_t)s->process.filter_mode); WP(filter_cutoff_hz);
+    WP(filter_resonance); put32(f, (uint32_t)s->process.shaper_enabled);
+    put32(f, (uint32_t)s->process.shaper_mode); WP(shaper_drive); WP(shaper_mix);
+#undef WP
+    put32(f, (uint32_t)s->sample_edit_count);
+    for (int i = 0; i < s->sample_edit_count; ++i) {
+        put32(f, (uint32_t)s->sample_edits[i].kind);
+        put64(f, s->sample_edits[i].first); put64(f, s->sample_edits[i].last);
+        put_float(f, s->sample_edits[i].amount);
+    }
+    put32(f, (uint32_t)s->post_edit_count);
+    for (int i = 0; i < s->post_edit_count; ++i) {
+        put32(f, (uint32_t)s->post_edits[i].kind);
+        put64(f, s->post_edits[i].first); put64(f, s->post_edits[i].last);
+        put64(f, (uint64_t)s->post_edits[i].destination);
+        put_float(f, s->post_edits[i].amount);
+        put32(f, s->post_edits[i].crossfade_frames);
+    }
+}
+
+static int read_u64_size(FILE *f, size_t *value)
+{
+    uint64_t v;
+    if (!get64(f, &v) || v > SIZE_MAX) return 0;
+    *value = (size_t)v;
+    return 1;
+}
+
+static int read_edit_snapshot_fixed(FILE *f, TsEditSnapshot *s)
+{
+    uint32_t u;
+    uint64_t bits;
+    memset(s, 0, sizeof(*s));
+#define RS(field) do { if (!read_u64_size(f, &s->field)) return 0; } while (0)
+#define R32(field) do { if (!get32(f, &u)) return 0; s->field = u; } while (0)
+#define RF(field) do { if (!get_float(f, &s->field)) return 0; } while (0)
+    RS(crop_first); RS(crop_last); RS(selection_first); RS(selection_last);
+    RS(view_first); RS(view_last); RS(loop_first); RS(loop_last);
+    RF(loop_crossfade_ms); R32(loop_mode); R32(has_selection); R32(has_loop);
+    R32(tuning.root_note); RF(tuning.fine_tune_cents);
+    R32(audible_tuning.root_note); RF(audible_tuning.fine_tune_cents);
+    R32(process.seed); RF(process.body); RF(process.edge); RF(process.drift);
+    R32(process.noise_enabled); RF(process.noise_amount); R32(process.noise_color);
+    R32(process.delay_enabled); RF(process.delay_seconds); RF(process.delay_feedback);
+    RF(process.delay_damping); RF(process.delay_mix); R32(process.reverb_enabled);
+    RF(process.reverb_decay); RF(process.reverb_damping); RF(process.reverb_mix);
+    R32(process.filter_enabled); R32(process.filter_mode); RF(process.filter_cutoff_hz);
+    RF(process.filter_resonance); R32(process.shaper_enabled); R32(process.shaper_mode);
+    RF(process.shaper_drive); RF(process.shaper_mix);
+    R32(sample_edit_count);
+    if (s->sample_edit_count < 0 || s->sample_edit_count > TS_SAMPLE_EDIT_DEPTH) return 0;
+    for (int i = 0; i < s->sample_edit_count; ++i) {
+        R32(sample_edits[i].kind); RS(sample_edits[i].first); RS(sample_edits[i].last);
+        RF(sample_edits[i].amount);
+        if (s->sample_edits[i].kind > TS_SAMPLE_EDIT_FADE_OUT ||
+            s->sample_edits[i].last <= s->sample_edits[i].first) return 0;
+    }
+    R32(post_edit_count);
+    if (s->post_edit_count < 0 || s->post_edit_count > TS_POST_EDIT_DEPTH) return 0;
+    for (int i = 0; i < s->post_edit_count; ++i) {
+        R32(post_edits[i].kind); RS(post_edits[i].first); RS(post_edits[i].last);
+        if (!get64(f, &bits)) return 0;
+        s->post_edits[i].destination = (int64_t)bits;
+        RF(post_edits[i].amount); R32(post_edits[i].crossfade_frames);
+        if (s->post_edits[i].kind > TS_POST_CROP ||
+            s->post_edits[i].last <= s->post_edits[i].first) return 0;
+    }
+#undef RS
+#undef R32
+#undef RF
+    return tuning_valid(&s->tuning) && tuning_valid(&s->audible_tuning) &&
+           ts_recipe_process_valid(&s->process) &&
+           s->loop_mode < TS_LOOP_MODE_COUNT &&
+           (s->has_selection == 0 || s->has_selection == 1) &&
+           (s->has_loop == 0 || s->has_loop == 1) &&
+           isfinite(s->loop_crossfade_ms) && s->loop_crossfade_ms >= 0.0f &&
+           s->loop_crossfade_ms <= 50.0f;
+}
+
+static void write_bank_slot_fixed(FILE *f, const TsBankSlot *slot)
+{
+    size_t n;
+    put32(f, (uint32_t)slot->occupied);
+    if (!slot->occupied) return;
+    put32(f, (uint32_t)slot->capture_kind); put32(f, (uint32_t)slot->relation);
+    put32(f, (uint32_t)(slot->parent_slot + 1)); put32(f, slot->lineage_seed);
+    put32(f, slot->lineage_locks); put32(f, slot->trajectory_step);
+    put_float(f, slot->lineage_mutation); put32(f, (uint32_t)slot->has_generator);
+    if (slot->has_generator) {
+        put32(f, slot->generator.seed); put32(f, (uint32_t)slot->generator.kind);
+        put_float(f, slot->generator.seconds); put_float(f, slot->generator.frequency);
+    }
+    put32(f, (uint32_t)slot->tuning.root_note); put_float(f, slot->tuning.fine_tune_cents);
+    put32(f, (uint32_t)slot->audible_tuning.root_note);
+    put_float(f, slot->audible_tuning.fine_tune_cents);
+    put32(f, (uint32_t)slot->loop_mode); put32(f, (uint32_t)slot->has_loop);
+    put64(f, slot->loop_first); put64(f, slot->loop_last);
+    put_float(f, slot->loop_crossfade_ms); put32(f, slot->sample.sample_rate);
+    put64(f, slot->sample.frames); n = strlen(slot->sample.name);
+    put32(f, (uint32_t)n); fwrite(slot->sample.name, 1, n, f);
+    for (size_t i = 0; i < slot->sample.frames; ++i) put_float(f, slot->sample.data[i]);
+    put64(f, ts_sample_hash(&slot->sample));
+}
+
+static int read_bank_slot_fixed(FILE *f, TsBankSlot *slot)
+{
+    uint32_t u, name_length;
+    uint64_t frames, hash;
+#define B32(field) do { if (!get32(f, &u)) return 0; slot->field = u; } while (0)
+#define BF(field) do { if (!get_float(f, &slot->field)) return 0; } while (0)
+    B32(occupied);
+    if (slot->occupied != 0 && slot->occupied != 1) return 0;
+    if (!slot->occupied) return 1;
+    B32(capture_kind); B32(relation); B32(parent_slot); --slot->parent_slot;
+    B32(lineage_seed); B32(lineage_locks); B32(trajectory_step); BF(lineage_mutation);
+    B32(has_generator);
+    if (slot->has_generator) {
+        B32(generator.seed); B32(generator.kind); BF(generator.seconds); BF(generator.frequency);
+    }
+    B32(tuning.root_note); BF(tuning.fine_tune_cents);
+    B32(audible_tuning.root_note); BF(audible_tuning.fine_tune_cents);
+    B32(loop_mode); B32(has_loop);
+    if (!get64(f, &frames) || frames > SIZE_MAX) return 0;
+    slot->loop_first = (size_t)frames;
+    if (!get64(f, &frames) || frames > SIZE_MAX) return 0;
+    slot->loop_last = (size_t)frames;
+    BF(loop_crossfade_ms); B32(sample.sample_rate);
+    if (!get64(f, &frames) || frames == 0 || frames > 100000000u ||
+        frames > SIZE_MAX / sizeof(float) || !get32(f, &name_length) ||
+        name_length >= sizeof(slot->sample.name)) return 0;
+    slot->sample.frames = (size_t)frames;
+    if (fread(slot->sample.name, 1, name_length, f) != name_length) return 0;
+    slot->sample.name[name_length] = '\0';
+    slot->sample.data = (float *)malloc(slot->sample.frames * sizeof(float));
+    if (slot->sample.data == NULL) return 0;
+    for (size_t i = 0; i < slot->sample.frames; ++i)
+        if (!get_float(f, &slot->sample.data[i])) return 0;
+    if (!get64(f, &hash) || hash != ts_sample_hash(&slot->sample)) return 0;
+#undef B32
+#undef BF
+    return slot->capture_kind <= TS_BANK_CAPTURE_LOOP &&
+           slot->relation < TS_FAMILY_RELATION_COUNT &&
+           slot->parent_slot >= -1 && slot->parent_slot < TS_BANK_SLOT_COUNT &&
+           (slot->lineage_locks & ~TS_FAMILY_LOCK_ALL) == 0u &&
+           isfinite(slot->lineage_mutation) && slot->lineage_mutation >= 0.0f &&
+           slot->lineage_mutation <= 1.0f && tuning_valid(&slot->tuning) &&
+           tuning_valid(&slot->audible_tuning) && slot->loop_mode < TS_LOOP_MODE_COUNT &&
+           (slot->has_loop == 0 || slot->has_loop == 1) &&
+           (!slot->has_loop || (slot->loop_last > slot->loop_first &&
+                                slot->loop_last <= slot->sample.frames));
+}
+
 static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
                            TsEditSnapshot *destination, int *destination_count,
                            char *error, size_t error_size)
@@ -3706,7 +3879,6 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         put64(f, ts_sample_hash(&slot->sample));
     }
     put32(f, TS_BANK_SLOT_COUNT);
-    put32(f, (uint32_t)sizeof(TsEditSnapshot));
     for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
         const TsTileState *state = &instrument->tile_states[i];
         put32(f, (uint32_t)state->initialized);
@@ -3719,13 +3891,16 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         for (size_t frame = 0; frame < state->parent.frames; ++frame)
             put_float(f, state->parent.data[frame]);
         put64(f, ts_sample_hash(&state->parent));
-        fwrite(&state->editor, sizeof(state->editor), 1, f);
+        write_edit_snapshot_fixed(f, &state->editor);
         put32(f, (uint32_t)state->undo_count);
-        if (state->undo_count)
-            fwrite(state->undo, sizeof(*state->undo), (size_t)state->undo_count, f);
+        for (int j = 0; j < state->undo_count; ++j)
+            write_edit_snapshot_fixed(f, &state->undo[j]);
         put32(f, (uint32_t)state->redo_count);
-        if (state->redo_count)
-            fwrite(state->redo, sizeof(*state->redo), (size_t)state->redo_count, f);
+        for (int j = 0; j < state->redo_count; ++j)
+            write_edit_snapshot_fixed(f, &state->redo[j]);
+        write_bank_slot_fixed(f, &state->vary_undo);
+        write_bank_slot_fixed(f, &state->vary_anchor);
+        put32(f, 0x54494c45u);
     }
     {
         int failed = ferror(f);
@@ -4009,10 +4184,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         }
         if (version >= 14) {
             uint32_t tile_count;
-            uint32_t snapshot_size;
-            GET_U32(tile_count); GET_U32(snapshot_size);
-            if (tile_count != TS_BANK_SLOT_COUNT ||
-                snapshot_size != sizeof(TsEditSnapshot)) goto malformed;
+            GET_U32(tile_count);
+            if (tile_count != TS_BANK_SLOT_COUNT) goto malformed;
             for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
                 TsTileState *tile = &loaded.tile_states[i];
                 uint64_t tile_hash;
@@ -4034,7 +4207,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                     if (!get_float(f, &tile->parent.data[frame])) goto malformed;
                 if (!get64(f, &tile_hash) ||
                     tile_hash != ts_sample_hash(&tile->parent) ||
-                    fread(&tile->editor, sizeof(tile->editor), 1, f) != 1)
+                    !read_edit_snapshot_fixed(f, &tile->editor))
                     goto malformed;
                 GET_U32(tile->undo_count);
                 if (tile->undo_count < 0 || tile->undo_count > TS_HISTORY_DEPTH)
@@ -4043,9 +4216,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                     tile->undo = (TsEditSnapshot *)malloc(
                         (size_t)tile->undo_count * sizeof(*tile->undo));
                     if (tile->undo == NULL) goto out_of_memory;
-                    if (fread(tile->undo, sizeof(*tile->undo),
-                              (size_t)tile->undo_count, f) != (size_t)tile->undo_count)
-                        goto malformed;
+                    for (int j = 0; j < tile->undo_count; ++j)
+                        if (!read_edit_snapshot_fixed(f, &tile->undo[j])) goto malformed;
                 }
                 GET_U32(tile->redo_count);
                 if (tile->redo_count < 0 || tile->redo_count > TS_HISTORY_DEPTH)
@@ -4054,14 +4226,17 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                     tile->redo = (TsEditSnapshot *)malloc(
                         (size_t)tile->redo_count * sizeof(*tile->redo));
                     if (tile->redo == NULL) goto out_of_memory;
-                    if (fread(tile->redo, sizeof(*tile->redo),
-                              (size_t)tile->redo_count, f) != (size_t)tile->redo_count)
-                        goto malformed;
+                    for (int j = 0; j < tile->redo_count; ++j)
+                        if (!read_edit_snapshot_fixed(f, &tile->redo[j])) goto malformed;
                 }
+                if (!read_bank_slot_fixed(f, &tile->vary_undo) ||
+                    !read_bank_slot_fixed(f, &tile->vary_anchor)) goto malformed;
+                GET_U32(tile_count);
+                if (tile_count != 0x54494c45u) goto malformed;
             }
         }
         if (version < 13) loaded.active_bank_slot = loaded.bank[0].occupied ? 0 : -1;
-        if ((loaded.bank[0].occupied &&
+        if ((version < 13 && loaded.bank[0].occupied &&
              (loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT ||
               loaded.bank[0].relation != TS_FAMILY_ROOT)) ||
             (loaded.family_anchor_slot >= 0 &&
@@ -4069,8 +4244,9 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             (loaded.family_last_slot >= 0 &&
              !loaded.bank[loaded.family_last_slot].occupied) ||
             (loaded.active_bank_slot >= 0 &&
-             !loaded.bank[loaded.active_bank_slot].occupied) || fgetc(f) != EOF)
+             !loaded.bank[loaded.active_bank_slot].occupied))
             goto malformed;
+        if (fgetc(f) != EOF) goto malformed;
     }
     if (state.crop_first >= state.crop_last || state.crop_last > loaded.parent.frames)
         goto malformed;
@@ -4094,6 +4270,18 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     loaded.sample_edit_count = state.sample_edit_count;
     memcpy(loaded.post_edits, state.post_edits, sizeof(loaded.post_edits));
     loaded.post_edit_count = state.post_edit_count;
+    if (version >= 14 && loaded.active_bank_slot >= 0 &&
+        loaded.tile_states[loaded.active_bank_slot].initialized) {
+        TsTileState *active = &loaded.tile_states[loaded.active_bank_slot];
+        if (active->vary_undo.occupied &&
+            !bank_slot_clone(&loaded.working_undo, &active->vary_undo,
+                             error, error_size)) goto failed;
+        if (active->vary_anchor.occupied &&
+            !bank_slot_clone(&loaded.working_anchor, &active->vary_anchor,
+                             error, error_size)) goto failed;
+        loaded.working_undo_slot = loaded.working_undo.occupied ?
+                                   loaded.active_bank_slot : -1;
+    }
     fclose(f);
     ts_instrument_free(instrument);
     *instrument = loaded;

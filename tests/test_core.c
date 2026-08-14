@@ -737,12 +737,46 @@ int main(void)
         CHECK(ts_instrument_select_bank_slot(&working_loaded, 2, error, sizeof(error)));
         CHECK(fabsf(working_loaded.process.edge - 0.13f) < 0.0001f);
         CHECK(working_loaded.sample_edit_count == 1 && working_loaded.undo_count > 0);
+        slot1_hash = ts_sample_hash(&working_loaded.bank[1].sample);
+        CHECK(ts_instrument_undo(&working_loaded, error, sizeof(error)));
+        CHECK(ts_sample_hash(&working_loaded.bank[1].sample) == slot1_hash);
         CHECK(ts_instrument_select_bank_slot(&working_loaded, 1, error, sizeof(error)));
         CHECK(fabsf(working_loaded.process.body - 0.77f) < 0.0001f);
         CHECK(working_loaded.has_loop);
         remove("test-working.tsr");
         ts_instrument_free(&working);
         ts_instrument_free(&working_loaded);
+    }
+
+    {
+        TsInstrument uninterrupted, resumed;
+        uint64_t before_vary;
+        ts_instrument_init(&uninterrupted);
+        ts_instrument_init(&resumed);
+        CHECK(ts_instrument_generate(&uninterrupted, TS_GENERATOR_FM,
+                                     0x43484e30u, error, sizeof(error)));
+        uninterrupted.family_trajectory = 0;
+        before_vary = ts_sample_hash(&uninterrupted.bank[0].sample);
+        CHECK(ts_instrument_vary_active_bank_slot(&uninterrupted, 0,
+                                                  error, sizeof(error)));
+        CHECK(ts_instrument_save_recipe(&uninterrupted, "test-chain-resume.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&resumed, "test-chain-resume.tsr",
+                                        error, sizeof(error)));
+        CHECK(resumed.working_undo.occupied && resumed.working_anchor.occupied);
+        CHECK(ts_instrument_vary_active_bank_slot(&uninterrupted, 1,
+                                                  error, sizeof(error)));
+        CHECK(ts_instrument_vary_active_bank_slot(&resumed, 1,
+                                                  error, sizeof(error)));
+        CHECK(ts_sample_hash(&uninterrupted.bank[0].sample) ==
+              ts_sample_hash(&resumed.bank[0].sample));
+        CHECK(ts_instrument_load_recipe(&resumed, "test-chain-resume.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_undo(&resumed, error, sizeof(error)));
+        CHECK(ts_sample_hash(&resumed.bank[0].sample) == before_vary);
+        remove("test-chain-resume.tsr");
+        ts_instrument_free(&uninterrupted);
+        ts_instrument_free(&resumed);
     }
 
     CHECK(ts_instrument_load_wav(&imported, "test-roundtrip.wav", error, sizeof(error)));
