@@ -1486,6 +1486,7 @@ static void bank_slot_free(TsBankSlot *slot)
 static void bank_free(TsInstrument *instrument)
 {
     for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) bank_slot_free(&instrument->bank[i]);
+    bank_slot_free(&instrument->variation);
 }
 
 static int bank_root_clone(TsBankSlot *slot, const TsSample *parent,
@@ -1529,6 +1530,7 @@ void ts_instrument_init(TsInstrument *instrument)
     ts_sample_init(&instrument->parent);
     ts_sample_init(&instrument->current);
     for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) bank_slot_init(&instrument->bank[i]);
+    bank_slot_init(&instrument->variation);
     instrument->generator.seed = 0x54415045u;
     instrument->generator.kind = TS_GENERATOR_TONAL;
     instrument->generator.seconds = 2.0f;
@@ -2398,22 +2400,20 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
     uint32_t seed;
     uint32_t rng;
     float mutation;
-    int slot;
     if (created_slot != NULL) *created_slot = -1;
     if (instrument == NULL || instrument->parent.data == NULL ||
         !instrument->bank[0].occupied) {
         set_error(error, error_size, "Create a Source before making variations");
         return 0;
     }
-    slot = ts_instrument_bank_first_empty(instrument);
-    if (slot < 0) {
-        set_error(error, error_size, "Sound collection is full - clear a slot first");
-        return 0;
-    }
-    if (instrument->family_trajectory && instrument->family_last_slot > 0 &&
-        instrument->family_last_slot < TS_BANK_SLOT_COUNT &&
-        instrument->bank[instrument->family_last_slot].occupied)
+    if (instrument->family_trajectory && instrument->variation.occupied)
+        anchor = &instrument->variation;
+    else if (instrument->family_trajectory && instrument->family_last_slot > 0 &&
+             instrument->family_last_slot < TS_BANK_SLOT_COUNT &&
+             instrument->bank[instrument->family_last_slot].occupied) {
         anchor_slot = instrument->family_last_slot;
+        anchor = &instrument->bank[anchor_slot];
+    } else anchor = NULL;
     if (anchor_slot < 0 || anchor_slot >= TS_BANK_SLOT_COUNT ||
         !instrument->bank[anchor_slot].occupied)
         anchor_slot = instrument->family_anchor_slot;
@@ -2426,10 +2426,13 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
     if (relation != TS_FAMILY_CHILD && relation != TS_FAMILY_COUSIN &&
         relation != TS_FAMILY_STRANGER)
         relation = TS_FAMILY_CHILD;
-    if (reseed && instrument->family_last_slot > 0 &&
-        instrument->family_last_slot < TS_BANK_SLOT_COUNT &&
-        instrument->bank[instrument->family_last_slot].occupied) {
-        const TsBankSlot *last = &instrument->bank[instrument->family_last_slot];
+    if (reseed && (instrument->variation.occupied ||
+        (instrument->family_last_slot > 0 &&
+         instrument->family_last_slot < TS_BANK_SLOT_COUNT &&
+         instrument->bank[instrument->family_last_slot].occupied))) {
+        const TsBankSlot *last = instrument->variation.occupied ?
+                                 &instrument->variation :
+                                 &instrument->bank[instrument->family_last_slot];
         if (!instrument->family_trajectory && last->parent_slot >= 0 &&
             last->parent_slot < TS_BANK_SLOT_COUNT &&
             instrument->bank[last->parent_slot].occupied)
@@ -2438,8 +2441,10 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
         locks = last->lineage_locks;
         mutation = last->lineage_mutation;
     }
-    anchor = &instrument->bank[anchor_slot];
-    seed = reseed && instrument->family_last_slot > 0 &&
+    if (anchor == NULL) anchor = &instrument->bank[anchor_slot];
+    seed = reseed && instrument->variation.occupied ?
+           advance_seed(instrument->variation.lineage_seed) :
+           reseed && instrument->family_last_slot > 0 &&
            instrument->bank[instrument->family_last_slot].occupied ?
            advance_seed(instrument->bank[instrument->family_last_slot].lineage_seed) :
            advance_seed(anchor->lineage_seed ^ 0x9e3779b9u ^
@@ -2455,7 +2460,9 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
     candidate.trajectory_step = instrument->family_trajectory ?
                                 anchor->trajectory_step + 1u : 0u;
     if (relation == TS_FAMILY_STRANGER) {
-        const TsBankSlot *last = reseed && instrument->family_last_slot > 0 &&
+        const TsBankSlot *last = reseed && instrument->variation.occupied ?
+                                 &instrument->variation :
+                                 reseed && instrument->family_last_slot > 0 &&
                                  instrument->family_last_slot < TS_BANK_SLOT_COUNT &&
                                  instrument->bank[instrument->family_last_slot].occupied ?
                                  &instrument->bank[instrument->family_last_slot] : NULL;
@@ -2518,11 +2525,33 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
     }
     family_copy_or_vary_loop(&candidate, anchor, seed);
     candidate.occupied = 1;
-    instrument->bank[slot] = candidate;
-    instrument->family_last_slot = slot;
-    instrument->family_anchor_slot = instrument->family_trajectory ? slot : anchor_slot;
+    bank_slot_free(&instrument->variation);
+    instrument->variation = candidate;
+    instrument->family_anchor_slot = anchor_slot;
     ++instrument->family_sequence;
-    if (created_slot != NULL) *created_slot = slot;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_keep_family_candidate(TsInstrument *instrument, int *kept_slot,
+                                        char *error, size_t error_size)
+{
+    int slot;
+    if (kept_slot != NULL) *kept_slot = -1;
+    if (instrument == NULL || !instrument->variation.occupied) {
+        set_error(error, error_size, "No exploratory variation to keep");
+        return 0;
+    }
+    slot = ts_instrument_bank_first_empty(instrument);
+    if (slot < 0) {
+        set_error(error, error_size, "Sound collection is full - clear a slot first");
+        return 0;
+    }
+    instrument->bank[slot] = instrument->variation;
+    bank_slot_init(&instrument->variation);
+    instrument->family_last_slot = slot;
+    if (instrument->family_trajectory) instrument->family_anchor_slot = slot;
+    if (kept_slot != NULL) *kept_slot = slot;
     set_error(error, error_size, "");
     return 1;
 }
@@ -2630,6 +2659,7 @@ int ts_instrument_bank_clear_all(TsInstrument *instrument,
     }
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
         bank_slot_free(&instrument->bank[slot]);
+    bank_slot_free(&instrument->variation);
     instrument->family_anchor_slot = -1;
     instrument->family_last_slot = -1;
     set_error(error, error_size, "");
@@ -3276,7 +3306,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    fwrite("TSR11\r\n\032", 1, 8, f);
+    fwrite("TSR12\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->source_kind);
     put32(f, instrument->generation);
     put64(f, instrument->ancestor_hash);
@@ -3351,9 +3381,10 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
     for (size_t i = 0; i < instrument->parent.frames; ++i)
         put_float(f, instrument->parent.data[i]);
     put64(f, ts_sample_hash(&instrument->parent));
-    put32(f, TS_BANK_SLOT_COUNT);
-    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
-        const TsBankSlot *slot = &instrument->bank[i];
+    put32(f, TS_BANK_SLOT_COUNT + 1u);
+    for (int i = 0; i <= TS_BANK_SLOT_COUNT; ++i) {
+        const TsBankSlot *slot = i == TS_BANK_SLOT_COUNT ?
+                                 &instrument->variation : &instrument->bank[i];
         put32(f, (uint32_t)slot->occupied);
         if (!slot->occupied) continue;
         put32(f, (uint32_t)slot->capture_kind);
@@ -3427,7 +3458,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR11\r\n\032", 8) == 0) version = 11;
+    if (memcmp(magic, "TSR12\r\n\032", 8) == 0) version = 12;
+    else if (memcmp(magic, "TSR11\r\n\032", 8) == 0) version = 11;
     else if (memcmp(magic, "TSR10\r\n\032", 8) == 0) version = 10;
     else if (memcmp(magic, "TSR9\r\n\032\n", 8) == 0) version = 9;
     else if (memcmp(magic, "TSR8\r\n\032\n", 8) == 0) version = 8;
@@ -3437,7 +3469,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR11 project");
+                  "Not a self-contained TSR6-TSR12 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -3573,9 +3605,11 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             goto malformed;
     } else {
         GET_U32(bank_slot_count);
-        if (bank_slot_count != TS_BANK_SLOT_COUNT) goto malformed;
-        for (int slot_index = 0; slot_index < TS_BANK_SLOT_COUNT; ++slot_index) {
-            TsBankSlot *slot = &loaded.bank[slot_index];
+        if (bank_slot_count != (uint32_t)(TS_BANK_SLOT_COUNT +
+                                         (version >= 12 ? 1 : 0))) goto malformed;
+        for (int slot_index = 0; slot_index < (int)bank_slot_count; ++slot_index) {
+            TsBankSlot *slot = slot_index == TS_BANK_SLOT_COUNT ?
+                               &loaded.variation : &loaded.bank[slot_index];
             uint64_t slot_hash;
             GET_U32(slot->occupied);
             if (slot->occupied != 0 && slot->occupied != 1) goto malformed;
@@ -3700,7 +3734,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR11 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR12 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

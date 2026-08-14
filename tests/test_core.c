@@ -171,15 +171,15 @@ int main(void)
         for (int i = 0; i < 4; ++i) {
             CHECK(ts_instrument_generate_family_candidate(&cycle, 0, 0, &slot,
                                                            error, sizeof(error)));
-            CHECK(slot == i + 1);
-            CHECK(cycle.bank[slot].has_generator);
-            CHECK(cycle.bank[slot].generator.kind == expected[i]);
-            CHECK(strncmp(cycle.bank[slot].sample.name,
+            CHECK(slot == -1);
+            CHECK(cycle.variation.has_generator);
+            CHECK(cycle.variation.generator.kind == expected[i]);
+            CHECK(strncmp(cycle.variation.sample.name,
                           ts_generator_name(expected[i]),
                           strlen(ts_generator_name(expected[i]))) == 0);
         }
-        CHECK(cycle.bank[slot].generator.kind == TS_GENERATOR_FM);
-        CHECK(strncmp(cycle.bank[slot].sample.name, "FM ", 3) == 0);
+        CHECK(cycle.variation.generator.kind == TS_GENERATOR_FM);
+        CHECK(strncmp(cycle.variation.sample.name, "FM ", 3) == 0);
         ts_instrument_free(&cycle);
     }
     CHECK(ts_sample_clone(&copy, &a, error, sizeof(error)));
@@ -517,133 +517,94 @@ int main(void)
     CHECK(ts_sample_hash(&generated.bank[0].sample) == ts_sample_hash(&generated.parent));
 
     {
-        int child_slot = -1;
-        int sibling_slot = -1;
-        int path_slot = -1;
-        int stranger_slot = -1;
-        int stranger_reseed_slot = -1;
-        int repeated_slot = -1;
-        uint64_t stable_parent;
+        int kept_slot = -1;
+        int ignored_slot = -1;
+        uint64_t first_hash;
+        uint64_t second_hash;
+        uint32_t first_seed;
         CHECK(ts_instrument_generate(&family, TS_GENERATOR_TONAL, 0x46414d31u,
                                      error, sizeof(error)));
-        CHECK(ts_instrument_generate(&family_repeat, TS_GENERATOR_TONAL, 0x46414d31u,
-                                     error, sizeof(error)));
-        ts_instrument_set_selection(&family, family.current.frames / 4u,
-                                    family.current.frames * 3u / 4u);
-        CHECK(ts_instrument_set_loop_from_selection(&family, error, sizeof(error)));
-        family.bank[0].has_loop = family.has_loop;
-        family.bank[0].loop_first = family.loop_first;
-        family.bank[0].loop_last = family.loop_last;
-        family.bank[0].loop_mode = family.loop_mode;
-        family.bank[0].loop_crossfade_ms = family.loop_crossfade_ms;
-        family_repeat.bank[0].has_loop = family.bank[0].has_loop;
-        family_repeat.bank[0].loop_first = family.bank[0].loop_first;
-        family_repeat.bank[0].loop_last = family.bank[0].loop_last;
-        stable_parent = ts_sample_hash(&family.parent);
         family.family_relation = TS_FAMILY_CHILD;
         family.family_mutation = 0.42f;
         family.family_locks = TS_FAMILY_LOCK_ALL;
-        family_repeat.family_relation = family.family_relation;
-        family_repeat.family_mutation = family.family_mutation;
-        family_repeat.family_locks = family.family_locks;
-        CHECK(ts_instrument_generate_family_candidate(&family, 0, 0, &child_slot,
+        CHECK(ts_instrument_bank_count(&family) == 1);
+        CHECK(ts_instrument_generate_family_candidate(&family, 0, 0, &ignored_slot,
                                                        error, sizeof(error)));
-        CHECK(ts_instrument_generate_family_candidate(&family_repeat, 0, 0,
-                                                       &repeated_slot,
+        {
+            TsAuditionPlan candidate_plan;
+            CHECK(ts_bank_audition_plan(&family, TS_BANK_SLOT_COUNT,
+                                        &candidate_plan));
+            CHECK(candidate_plan.sample == &family.variation.sample);
+        }
+        CHECK(ignored_slot == -1 && family.variation.occupied);
+        CHECK(ts_instrument_bank_count(&family) == 1);
+        first_hash = ts_sample_hash(&family.variation.sample);
+        first_seed = family.variation.lineage_seed;
+        CHECK(ts_instrument_generate_family_candidate(&family, 0, 1, &ignored_slot,
                                                        error, sizeof(error)));
-        CHECK(child_slot == 1 && repeated_slot == 1);
-        CHECK(ts_sample_hash(&family.parent) == stable_parent);
-        CHECK(family.bank[child_slot].relation == TS_FAMILY_CHILD &&
-              family.bank[child_slot].parent_slot == 0);
-        CHECK(family.bank[child_slot].sample.frames == family.bank[0].sample.frames);
-        CHECK(family.bank[child_slot].tuning.root_note == family.bank[0].tuning.root_note);
-        CHECK(family.bank[child_slot].has_loop &&
-              family.bank[child_slot].loop_first == family.bank[0].loop_first &&
-              family.bank[child_slot].loop_last == family.bank[0].loop_last);
-        CHECK(ts_sample_hash(&family.bank[child_slot].sample) ==
-              ts_sample_hash(&family_repeat.bank[repeated_slot].sample));
-        CHECK(ts_instrument_generate_family_candidate(&family, 0, 1, &sibling_slot,
-                                                       error, sizeof(error)));
-        CHECK(sibling_slot == 2 && family.bank[sibling_slot].relation == TS_FAMILY_CHILD &&
-              family.bank[sibling_slot].parent_slot == 0 &&
-              family.bank[sibling_slot].lineage_seed !=
-              family.bank[child_slot].lineage_seed);
-        CHECK(ts_sample_hash(&family.bank[sibling_slot].sample) !=
-              ts_sample_hash(&family.bank[child_slot].sample));
+        CHECK(ts_instrument_bank_count(&family) == 1);
+        second_hash = ts_sample_hash(&family.variation.sample);
+        CHECK(second_hash != first_hash && family.variation.lineage_seed != first_seed);
+        CHECK(ts_instrument_keep_family_candidate(&family, &kept_slot,
+                                                   error, sizeof(error)));
+        CHECK(kept_slot == 1 && ts_instrument_bank_count(&family) == 2);
+        CHECK(!family.variation.occupied);
+        CHECK(ts_sample_hash(&family.bank[kept_slot].sample) == second_hash);
+        CHECK(!ts_instrument_keep_family_candidate(&family, &ignored_slot,
+                                                    error, sizeof(error)));
+        CHECK(ts_instrument_bank_count(&family) == 2);
+
         family.family_trajectory = 1;
-        family.family_relation = TS_FAMILY_COUSIN;
-        family.family_locks = TS_FAMILY_LOCK_LOOP | TS_FAMILY_LOCK_PITCH;
-        CHECK(ts_instrument_generate_family_candidate(&family, 0, 0, &path_slot,
+        CHECK(ts_instrument_generate_family_candidate(&family, kept_slot, 0,
+                                                       &ignored_slot,
                                                        error, sizeof(error)));
-        CHECK(path_slot == 3 && family.bank[path_slot].relation == TS_FAMILY_COUSIN &&
-              family.bank[path_slot].parent_slot == sibling_slot &&
-              family.bank[path_slot].trajectory_step == 1u);
-        family.family_trajectory = 0;
-        family.family_relation = TS_FAMILY_STRANGER;
-        family.family_locks = TS_FAMILY_LOCK_DURATION | TS_FAMILY_LOCK_PITCH;
-        CHECK(ts_instrument_generate_family_candidate(&family, 0, 0, &stranger_slot,
+        CHECK(family.variation.trajectory_step ==
+              family.bank[kept_slot].trajectory_step + 1u);
+        first_seed = family.variation.lineage_seed;
+        first_hash = ts_sample_hash(&family.variation.sample);
+        CHECK(ts_instrument_generate_family_candidate(&family, kept_slot, 1,
+                                                       &ignored_slot,
                                                        error, sizeof(error)));
-        CHECK(stranger_slot == 4 && family.bank[stranger_slot].relation == TS_FAMILY_STRANGER &&
-              family.bank[stranger_slot].has_generator &&
-              family.bank[stranger_slot].sample.frames == family.bank[0].sample.frames);
-        CHECK(ts_instrument_generate_family_candidate(&family, 0, 1,
-                                                       &stranger_reseed_slot,
-                                                       error, sizeof(error)));
-        CHECK(stranger_reseed_slot == 5 &&
-              family.bank[stranger_reseed_slot].relation == TS_FAMILY_STRANGER &&
-              family.bank[stranger_reseed_slot].generator.kind ==
-              family.bank[stranger_slot].generator.kind &&
-              family.bank[stranger_reseed_slot].lineage_seed !=
-              family.bank[stranger_slot].lineage_seed);
+        CHECK(family.variation.trajectory_step ==
+              family.bank[kept_slot].trajectory_step + 2u);
+        CHECK(family.variation.lineage_seed != first_seed);
+        CHECK(ts_sample_hash(&family.variation.sample) != first_hash);
+        CHECK(ts_instrument_bank_count(&family) == 2);
+
         CHECK(ts_instrument_save_recipe(&family, "test-family.tsr", error, sizeof(error)));
         CHECK(ts_instrument_load_recipe(&family_restored, "test-family.tsr",
                                         error, sizeof(error)));
-        CHECK(family_restored.family_sequence == family.family_sequence &&
-              family_restored.family_relation == family.family_relation &&
-              family_restored.family_locks == family.family_locks);
-        for (int slot = 0; slot <= stranger_reseed_slot; ++slot) {
-            CHECK(family_restored.bank[slot].relation == family.bank[slot].relation);
-            CHECK(family_restored.bank[slot].parent_slot == family.bank[slot].parent_slot);
-            CHECK(family_restored.bank[slot].lineage_seed ==
-                  family.bank[slot].lineage_seed);
-            CHECK(ts_sample_hash(&family_restored.bank[slot].sample) ==
-                  ts_sample_hash(&family.bank[slot].sample));
-        }
-        for (int slot = stranger_reseed_slot + 1;
-             slot < TS_BANK_SLOT_COUNT; ++slot)
-            CHECK(ts_instrument_bank_capture(&family, slot,
-                                             TS_BANK_CAPTURE_CURRENT,
-                                             error, sizeof(error)));
-        {
-            uint64_t full_parent = ts_sample_hash(&family.parent);
-            uint32_t full_sequence = family.family_sequence;
-            int refused_slot = -1;
-            CHECK(ts_instrument_bank_count(&family) == TS_BANK_SLOT_COUNT);
-            CHECK(!ts_instrument_generate_family_candidate(&family, 0, 0,
-                                                            &refused_slot,
-                                                            error, sizeof(error)));
-            CHECK(refused_slot == -1 &&
-                  ts_sample_hash(&family.parent) == full_parent &&
-                  family.family_sequence == full_sequence);
-            CHECK(ts_instrument_bank_clear(&family, 8, error, sizeof(error)));
-            CHECK(ts_instrument_generate_family_candidate(&family, 0, 0,
-                                                           &refused_slot,
+        CHECK(family_restored.variation.occupied);
+        CHECK(family_restored.variation.lineage_seed == family.variation.lineage_seed);
+        CHECK(family_restored.variation.lineage_locks == family.variation.lineage_locks);
+        CHECK(family_restored.variation.trajectory_step ==
+              family.variation.trajectory_step);
+        CHECK(ts_sample_hash(&family_restored.variation.sample) ==
+              ts_sample_hash(&family.variation.sample));
+        CHECK(ts_instrument_bank_count(&family_restored) == 2);
+        CHECK(ts_instrument_generate(&family_repeat, TS_GENERATOR_TONAL,
+                                     0x46414d31u, error, sizeof(error)));
+        family_repeat.family_relation = TS_FAMILY_CHILD;
+        family_repeat.family_mutation = 0.42f;
+        family_repeat.family_locks = TS_FAMILY_LOCK_ALL;
+        CHECK(ts_instrument_generate_family_candidate(&family_repeat, 0, 0,
+                                                       &ignored_slot,
+                                                       error, sizeof(error)));
+        CHECK(ts_instrument_generate_family_candidate(&family_repeat, 0, 1,
+                                                       &ignored_slot,
+                                                       error, sizeof(error)));
+        CHECK(ts_instrument_keep_family_candidate(&family_repeat, &kept_slot,
+                                                   error, sizeof(error)));
+        family_repeat.family_trajectory = 1;
+        for (int step = 0; step < 2; ++step) {
+            CHECK(ts_instrument_generate_family_candidate(&family_repeat, kept_slot,
+                                                           step != 0,
+                                                           &ignored_slot,
                                                            error, sizeof(error)));
-            CHECK(refused_slot == 8);
-            {
-                uint32_t sequence_before_clear = family_repeat.family_sequence;
-                CHECK(ts_instrument_bank_clear_all(&family_repeat, error, sizeof(error)));
-                CHECK(ts_instrument_bank_count(&family_repeat) == 0);
-                CHECK(ts_instrument_bank_first_empty(&family_repeat) == 1);
-                CHECK(!family_repeat.bank[0].occupied);
-                CHECK(family_repeat.family_anchor_slot == -1 &&
-                      family_repeat.family_last_slot == -1);
-                CHECK(family_repeat.family_sequence == sequence_before_clear);
-                CHECK(!ts_instrument_generate_family_candidate(&family_repeat, 0, 0,
-                                                                &refused_slot,
-                                                                error, sizeof(error)));
-            }
         }
+        CHECK(family_repeat.variation.trajectory_step == 2u);
+        CHECK(ts_sample_hash(&family_repeat.variation.sample) ==
+              ts_sample_hash(&family.variation.sample));
         remove("test-family.tsr");
     }
 
@@ -1193,7 +1154,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR11", 5) == 0);
+        CHECK(memcmp(magic, "TSR12", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));

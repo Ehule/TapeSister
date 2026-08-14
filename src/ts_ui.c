@@ -386,9 +386,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 {
     const TsTuning *display_tuning = ts_ui_display_tuning(ui, instrument);
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
-    int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
-    const TsBankSlot *shown_slot = showing_bank ? &instrument->bank[ui->bank_view_slot] : NULL;
-    const TsSample *sample = showing_bank ? &shown_slot->sample :
+    int showing_candidate = !showing_bank && instrument->variation.occupied &&
+                            ui->audition_source == TS_AUDITION_CURRENT;
+    int showing_parent = !showing_bank && !showing_candidate &&
+                         ui->audition_source == TS_AUDITION_PARENT;
+    const TsBankSlot *shown_slot = showing_bank ? &instrument->bank[ui->bank_view_slot] :
+                                   showing_candidate ? &instrument->variation : NULL;
+    const TsSample *sample = showing_bank || showing_candidate ? &shown_slot->sample :
                              showing_parent ? &instrument->parent : &instrument->current;
     size_t view_first = instrument->view_first;
     size_t view_last = instrument->view_last;
@@ -396,11 +400,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     size_t selection_last = instrument->selection_last;
     size_t loop_first = instrument->loop_first;
     size_t loop_last = instrument->loop_last;
-    int has_selection = !showing_bank && instrument->has_selection;
-    int has_loop = showing_bank ? shown_slot->has_loop : instrument->has_loop;
-    TsLoopMode display_loop_mode = showing_bank ? shown_slot->loop_mode :
+    int has_selection = !showing_bank && !showing_candidate && instrument->has_selection;
+    int has_loop = showing_bank || showing_candidate ? shown_slot->has_loop : instrument->has_loop;
+    TsLoopMode display_loop_mode = showing_bank || showing_candidate ? shown_slot->loop_mode :
                                                   instrument->loop_mode;
-    if (showing_bank) {
+    if (showing_bank || showing_candidate) {
         view_first = 0;
         view_last = sample->frames;
         selection_first = selection_last = 0;
@@ -427,7 +431,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char parent[96], info[112];
         snprintf(parent, sizeof(parent), "SOURCE G%u %.28s",
                  instrument->generation, instrument->parent.name);
-        if (showing_bank && shown_slot->occupied) {
+        if (showing_candidate) {
+            snprintf(info, sizeof(info), "EXPLORE %s  SEED %08X  %.2F SEC",
+                     ts_family_relation_name(shown_slot->relation),
+                     shown_slot->lineage_seed,
+                     (double)sample->frames / sample->sample_rate);
+        }
+        else if (showing_bank && shown_slot->occupied) {
             if (shown_slot->parent_slot >= 0)
                 snprintf(info, sizeof(info), "BANK %02d %s OF %02d  %.2F SEC",
                          ui->bank_view_slot + 1,
@@ -612,8 +622,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 330, 205, 72, "RESET", 0);
     button(fb, 407, 205, 61, "SOURCE", !showing_bank && ui->audition_source == TS_AUDITION_PARENT);
     button(fb, 472, 205, 63, "CURRENT", !showing_bank && ui->audition_source == TS_AUDITION_CURRENT);
-    button(fb, 540, 205, 90, "SET CURRENT",
-           showing_bank && shown_slot->occupied);
+    button(fb, 540, 205, 90,
+           instrument->variation.occupied ? "KEEP" : "SET CURRENT",
+           instrument->variation.occupied || (showing_bank && shown_slot->occupied));
 
     slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);

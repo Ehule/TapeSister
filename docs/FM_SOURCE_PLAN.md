@@ -13,7 +13,7 @@ These are useful TapeSister materials, not placeholders for FM. Existing direct 
 
 ## First architectural proof
 
-FM is an additive fifth source kind. Its hidden six-operator patch is deterministically derived from the generator recipe seed, so the existing TSR11 seed and kind fields retain the complete state needed to reproduce it.
+FM is an additive fifth source kind. Its hidden six-operator patch is deterministically derived from the generator recipe seed, so TSR12 retains the transient candidate and the seed and kind fields needed to reproduce it. TSR6–TSR11 remain loadable.
 
 The proof includes six curated structures:
 

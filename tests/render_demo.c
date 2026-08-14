@@ -139,6 +139,12 @@ int main(int argc, char **argv)
             ts_instrument_free(&instrument);
             return 1;
         }
+        if (!ts_instrument_keep_family_candidate(&instrument, &child,
+                                                  error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
         instrument.family_relation = TS_FAMILY_COUSIN;
         instrument.family_mutation = 0.68f;
         instrument.family_locks = TS_FAMILY_LOCK_LOOP |
@@ -146,6 +152,12 @@ int main(int argc, char **argv)
                                   TS_FAMILY_LOCK_ENVELOPE;
         if (!ts_instrument_generate_family_candidate(&instrument, 0, 0, &cousin,
                                                        error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        if (!ts_instrument_keep_family_candidate(&instrument, &cousin,
+                                                  error, sizeof(error))) {
             fprintf(stderr, "%s\n", error);
             ts_instrument_free(&instrument);
             return 1;
@@ -161,14 +173,13 @@ int main(int argc, char **argv)
         ui.fx_page = TS_FX_FAMILY;
         ui.show_keyboard = 0;
         ui.show_recipes = 0;
-        ui.bank_view_slot = path;
+        ui.bank_view_slot = -1;
         ui.playback_active = 1;
-        ui.playhead_bank_slot = path;
-        ui.playhead_frame = instrument.bank[path].sample.frames / 2u;
-        ui.playhead_frames = instrument.bank[path].sample.frames;
+        ui.playhead_bank_slot = TS_BANK_SLOT_COUNT;
+        ui.playhead_frame = instrument.variation.sample.frames / 2u;
+        ui.playhead_frames = instrument.variation.sample.frames;
         snprintf(ui.status, sizeof(ui.status),
-                 "PATH ON  CHILD %02d OF COUSIN %02d  LOCK LOOP PITCH ENV",
-                 path + 1, cousin + 1);
+                 "EXPLORATORY CHAIN CANDIDATE - KEEP RETAINS EXACTLY ONCE");
     } else if (argc > 2 && strcmp(argv[2], "tape") == 0) {
         size_t source_first = instrument.current.frames / 7u;
         size_t source_last = instrument.current.frames * 3u / 8u;

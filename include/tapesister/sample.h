@@ -237,6 +237,7 @@ typedef struct {
     int family_trajectory;
     int family_anchor_slot;
     int family_last_slot;
+    TsBankSlot variation;
     uint32_t generation;
     uint64_t ancestor_hash;
     TsTuning tuning;
@@ -382,6 +383,8 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
                                             int anchor_slot, int reseed,
                                             int *created_slot,
                                             char *error, size_t error_size);
+int ts_instrument_keep_family_candidate(TsInstrument *instrument, int *kept_slot,
+                                        char *error, size_t error_size);
 int64_t ts_sample_snap_tape_destination(const TsSample *sample, int64_t target,
                                         size_t source_frames);
 int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,

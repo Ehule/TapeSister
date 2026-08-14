@@ -68,8 +68,9 @@ int ts_bank_audition_plan(const TsInstrument *instrument, int slot,
 {
     const TsBankSlot *bank_slot;
     if (instrument == NULL || plan == NULL ||
-        slot < 0 || slot >= TS_BANK_SLOT_COUNT) return 0;
-    bank_slot = &instrument->bank[slot];
+        slot < 0 || slot > TS_BANK_SLOT_COUNT) return 0;
+    bank_slot = slot == TS_BANK_SLOT_COUNT ? &instrument->variation :
+                                             &instrument->bank[slot];
     if (!bank_slot->occupied || bank_slot->sample.data == NULL ||
         bank_slot->sample.frames < 2u) return 0;
     plan->sample = &bank_slot->sample;

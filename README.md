@@ -13,7 +13,7 @@ Every sound now has two explicit layers:
 
 Dragging or loading a WAV makes that WAV the Source. Every freshly created or imported source starts with neutral processing, so Source and Current are sample-for-sample identical until the first edit. Moving a processing control then rerenders Current from that Source; it cannot silently return to the factory waveform.
 
-The startup sound or an imported WAV creates a Source in slot 01. After that, **Create** puts a variation into the next empty slot without replacing Source; **Vary** makes another deterministic result using the previous range, amount, locks, and anchor. The result is auditioned immediately, and **Set Current** remains the deliberate promotion boundary. Shift+Create or Shift+Vary creates and promotes in one gesture, while Ctrl+Create temporarily forces a Radical departure. A full collection refuses safely until a non-Source slot is cleared.
+The startup sound or an imported WAV creates a Source in slot 01. After that, **Create** or **Vary** replaces one transient exploratory candidate without occupying another collection slot. The candidate is auditioned immediately; **Keep** deliberately moves it into the next empty collection slot exactly once. Chain uses the previous transient candidate as its deterministic source. Shift+Create or Shift+Vary keeps and promotes in one gesture, while Ctrl+Create temporarily forces a Radical departure. A full collection can still be explored; Keep refuses safely until a non-Source slot is cleared.
 
 **Reset** returns Current exactly to Source and is undoable. **Commit** requires a deliberate second click (or second `Ctrl+P`), promotes Current into a new immutable Source generation, records the previous Source hash, resets the processing shelf, and starts a fresh edit history.
 
@@ -43,7 +43,7 @@ The **Tune** page gives every instrument one shared pitch readout and ±100-cent
 
 **Suggest Pitch** analyzes the snapped Selection first, then the Loop, then all of Current. It temporarily places the suggested mapping on the keyboard so new, held, and latched notes can audition it immediately; the Tune readout follows that preview, while saved tuning and Undo history remain untouched. A second explicit click accepts it. Escape cancels the preview and still performs Stop All; Space stops audition without discarding the preview. Quiet, noisy, or unstable material is rejected rather than forced into a misleading note. Manual tuning remains authoritative.
 
-Root and fine tuning survive Undo/Redo, Reset, Commit, collection capture, and Set Current. Each bank member carries its own mapping. Current and Collection WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. The same chunk carries loop start/end/type; importing the WAV restores that loop in TapeSister. TSR11 stores tuning for the live instrument and every bank member. User-captured TSP2 recipes optionally carry tuning; the eight factory recipes remain processing-only and never retune a sound unexpectedly.
+Root and fine tuning survive Undo/Redo, Reset, Commit, collection capture, and Set Current. Each bank member carries its own mapping. Current and Collection WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. The same chunk carries loop start/end/type; importing the WAV restores that loop in TapeSister. TSR12 stores tuning for the live instrument, every bank member, and the transient candidate. User-captured TSP2 recipes optionally carry tuning; the eight factory recipes remain processing-only and never retune a sound unexpectedly.
 
 ## FastTracker handoff and configuration
 
@@ -65,15 +65,15 @@ Click any slot to audition it and place that sound in the waveform display; an e
 
 The **Variation** page selects Close, Wide, or Radical and sets Amount from 0–100%. Close makes a restrained deterministic variation of the chosen sound; Wide allows a larger timbral and structural departure; Radical creates a new Tonal, Metallic, Noise, or Pulse source. Loop, Duration, Pitch, Envelope, and Spectral locks protect those traits. Colored lines identify Source, Kept, Close, Wide, and Radical results, while the waveform header names each result's direct source slot.
 
-With **Chain** off, repeated variations share the displayed slot (or saved anchor). With Chain on, every new result becomes the next source, creating a repeatable chain through the collection. Each created slot stores its direct source, variation range, seed, amount, active locks, chain step, and generator recipe. These are descriptions, not restrictions: manually kept and unrelated samples remain valid collection entries.
+With **Chain** off, repeated variations share the selected retained anchor. With Chain on, every transient candidate becomes the next exploratory source, creating a repeatable chain without filling the collection. The candidate carries its direct source, variation range, seed, amount, active locks, chain step, and generator recipe; Keep transfers that provenance with the audio into a retained slot. These are descriptions, not restrictions: manually kept and unrelated samples remain valid collection entries.
 
 After auditioning a filled slot, **Set Current** makes it the new clean editing base. Source and Current become sample-for-sample identical to the selected audio, stored loop/mode/crossfade metadata follows it, and the complete collection remains intact. This deliberate source boundary advances the generation, records the previous Source hash, resets DSP and edit history, and cannot be crossed with Undo.
 
-The top **Export** button and `Ctrl+E` always ask whether to export the single Current WAV or the complete Collection. Collection export writes every occupied slot as a numbered, loop-aware WAV into a new folder named from the initial Source. Existing folders are never silently replaced. A failed export removes the partial files and folder. TSR11 projects remain fully compatible; legacy field names and numeric values are preserved internally while the visible vocabulary changes.
+The top **Export** button and `Ctrl+E` always ask whether to export the single Current WAV or the complete Collection. Collection export writes every occupied slot as a numbered, loop-aware WAV into a new folder named from the initial Source. Existing folders are never silently replaced. A failed export removes the partial files and folder. TSR6–TSR11 projects remain loadable; TSR12 adds the transient candidate without changing compatibility-era field values.
 
 ## Six-operator FM source proof
 
-FM is an additive fifth source kind alongside Tonal, Metallic, Noise, and Pulse. Each seed selects a complete hidden six-operator patch from curated Structure and Ratio families, plus Depth, Shape, feedback, and a short existing-engine noise transient. The stored generator kind and seed reproduce the exact FM sound through TSR11 save/load. Existing source render paths are unchanged.
+FM is an additive fifth source kind alongside Tonal, Metallic, Noise, and Pulse. Each seed selects a complete hidden six-operator patch from curated Structure and Ratio families, plus Depth, Shape, feedback, and a short existing-engine noise transient. The stored generator kind and seed reproduce the exact FM sound through TSR12 save/load. Existing source render paths are unchanged.
 
 The first proof deliberately keeps these controls under the surface. With Variation set to Radical and Chain enabled, repeated **Create** actions cycle through the source kinds and FM; **Vary** produces a new related seeded patch when FM is active. The next focused slice exposes Structure, Ratio, Depth, and Shape as four compact macros. See [the staged FM Source plan](docs/FM_SOURCE_PLAN.md).
 
@@ -121,7 +121,7 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
-- self-contained native TSR11 project saving with embedded Source audio, all bank slots, tuning and collection provenance, editor view, selection, loop mode/metadata, pre- and post-DSP edit timelines, and every DSP parameter; and
+- self-contained native TSR12 project saving with embedded Source audio, transient candidate, all bank slots, tuning and collection provenance, editor view, selection, loop mode/metadata, pre- and post-DSP edit timelines, and every DSP parameter; and
 - mono 16-bit Current export with sampler-compatible root/fine-tune and loop metadata.
 
 Sample edits run deterministically between the preserved Source and the live DSP. With no selection they affect the whole Current; with a selection they affect only that range. Commit prints the heard result into the next Source generation and clears both the edit stack and Undo/Redo history.
@@ -141,7 +141,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR11 embeds the Source waveform, complete sound-collection bank, per-member tuning and provenance, Collection controls, loop directions, replayable tape-edit timeline, filter, and shaper in one portable file. TSR6 through TSR10 projects remain loadable with deterministic defaults for fields absent from those versions. TSP2 remains source-audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR12 embeds the Source waveform, transient exploratory candidate, complete sound-collection bank, per-member tuning and provenance, Collection controls, loop directions, replayable tape-edit timeline, filter, and shaper in one portable file. TSR6 through TSR11 projects remain loadable with deterministic defaults for fields absent from those versions. TSP2 remains source-audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 

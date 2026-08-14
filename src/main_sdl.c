@@ -179,8 +179,9 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
                      sizeof(instrument->post_edit_count));
     state_hash_bytes(&hash, instrument->post_edits,
                      (size_t)instrument->post_edit_count * sizeof(instrument->post_edits[0]));
-    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
-        const TsBankSlot *bank = &instrument->bank[slot];
+    for (int slot = 0; slot <= TS_BANK_SLOT_COUNT; ++slot) {
+        const TsBankSlot *bank = slot == TS_BANK_SLOT_COUNT ?
+                                 &instrument->variation : &instrument->bank[slot];
         state_hash_bytes(&hash, &bank->occupied, sizeof(bank->occupied));
         if (!bank->occupied) continue;
         state_hash_sample(&hash, &bank->sample);
@@ -698,7 +699,9 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
                                                   &slot, error, sizeof(error));
     instrument->family_relation = selected_relation;
     if (ok && promote)
-        ok = ts_instrument_set_bank_as_current(instrument, slot,
+        ok = ts_instrument_keep_family_candidate(instrument, &slot,
+                                                  error, sizeof(error)) &&
+             ts_instrument_set_bank_as_current(instrument, slot,
                                                error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (!ok) {
@@ -715,21 +718,22 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
     }
     ui->show_keyboard = 0;
     ui->show_recipes = 0;
-    begin_bank_audition(device, audio, ui, instrument, slot, audio->output_rate);
-    if (instrument->bank[slot].has_generator)
+    begin_bank_audition(device, audio, ui, instrument, TS_BANK_SLOT_COUNT,
+                        audio->output_rate);
+    if (instrument->variation.has_generator)
         snprintf(ui->status, sizeof(ui->status),
-                 "BANK %02d %s %s OF %02d  SEED %08X%s",
-                 slot + 1, ts_family_relation_name(instrument->bank[slot].relation),
-                 ts_generator_name(instrument->bank[slot].generator.kind),
-                 instrument->bank[slot].parent_slot + 1,
-                 instrument->bank[slot].lineage_seed,
+                 "EXPLORE %s %s OF %02d  SEED %08X%s - KEEP TO RETAIN",
+                 ts_family_relation_name(instrument->variation.relation),
+                 ts_generator_name(instrument->variation.generator.kind),
+                 instrument->variation.parent_slot + 1,
+                 instrument->variation.lineage_seed,
                  instrument->family_trajectory ? "  CHAIN" : "");
     else
         snprintf(ui->status, sizeof(ui->status),
-                 "BANK %02d %s OF %02d  SEED %08X%s",
-                 slot + 1, ts_family_relation_name(instrument->bank[slot].relation),
-                 instrument->bank[slot].parent_slot + 1,
-                 instrument->bank[slot].lineage_seed,
+                 "EXPLORE %s OF %02d  SEED %08X%s - KEEP TO RETAIN",
+                 ts_family_relation_name(instrument->variation.relation),
+                 instrument->variation.parent_slot + 1,
+                 instrument->variation.lineage_seed,
                  instrument->family_trajectory ? "  CHAIN" : "");
 }
 
@@ -1124,9 +1128,10 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
 {
     const TsBankSlot *slot;
     TsAuditionPlan plan;
-    if (slot_index < 0 || slot_index >= TS_BANK_SLOT_COUNT) return;
-    slot = &instrument->bank[slot_index];
-    ui->bank_view_slot = slot_index;
+    if (slot_index < 0 || slot_index > TS_BANK_SLOT_COUNT) return;
+    slot = slot_index == TS_BANK_SLOT_COUNT ? &instrument->variation :
+                                              &instrument->bank[slot_index];
+    ui->bank_view_slot = slot_index == TS_BANK_SLOT_COUNT ? -1 : slot_index;
     if (device) SDL_LockAudioDevice(device);
     ts_note_bank_clear(&audio->notes);
     audio->playing = 0;
@@ -1134,15 +1139,13 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
     if (!slot->occupied) {
         audio->sample = NULL;
         if (device) SDL_UnlockAudioDevice(device);
-        snprintf(ui->status, sizeof(ui->status), "BANK %02d EMPTY - SILENCE",
-                 slot_index + 1);
+        snprintf(ui->status, sizeof(ui->status), "EXPLORATORY CANDIDATE IS EMPTY");
         return;
     }
     if (!device || output_rate <= 0) {
         audio->sample = &slot->sample;
         if (device) SDL_UnlockAudioDevice(device);
-        snprintf(ui->status, sizeof(ui->status), "BANK %02d SHOWN - AUDIO UNAVAILABLE",
-                 slot_index + 1);
+        snprintf(ui->status, sizeof(ui->status), "CANDIDATE SHOWN - AUDIO UNAVAILABLE");
         return;
     }
     if (!ts_bank_audition_plan(instrument, slot_index, &plan)) {
@@ -1170,9 +1173,14 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
     audio->bank_slot = slot_index;
     audio->playing = 1;
     SDL_UnlockAudioDevice(device);
-    snprintf(ui->status, sizeof(ui->status), "PLAYING BANK %02d %s %s",
-             slot_index + 1, ts_bank_capture_name(slot->capture_kind),
-             slot->has_loop ? ts_loop_mode_name(slot->loop_mode) : "ONE-SHOT");
+    if (slot_index == TS_BANK_SLOT_COUNT)
+        snprintf(ui->status, sizeof(ui->status), "PLAYING CANDIDATE %s %s",
+                 ts_family_relation_name(slot->relation),
+                 slot->has_loop ? ts_loop_mode_name(slot->loop_mode) : "ONE-SHOT");
+    else
+        snprintf(ui->status, sizeof(ui->status), "PLAYING BANK %02d %s",
+                 slot_index + 1,
+                 slot->has_loop ? ts_loop_mode_name(slot->loop_mode) : "ONE-SHOT");
 }
 
 static void capture_bank_slot(SDL_AudioDeviceID device, TsUiState *ui,
@@ -1238,6 +1246,21 @@ static void set_auditioned_bank_current(SDL_AudioDeviceID device, AudioState *au
     char error[160];
     int slot = ui->bank_view_slot;
     int ok;
+    if (instrument->variation.occupied) {
+        lock_edit(device, audio);
+        audio->playing = 0;
+        audio->bank_slot = -1;
+        ts_note_bank_clear(&audio->notes);
+        ok = ts_instrument_keep_family_candidate(instrument, &slot,
+                                                  error, sizeof(error));
+        unlock_edit(device, audio, ui, instrument);
+        if (ok) {
+            ui->bank_view_slot = slot;
+            snprintf(ui->status, sizeof(ui->status),
+                     "KEPT CANDIDATE ONCE IN BANK %02d", slot + 1);
+        } else snprintf(ui->status, sizeof(ui->status), "KEEP FAILED: %.140s", error);
+        return;
+    }
     if (slot < 0 || slot >= TS_BANK_SLOT_COUNT || !instrument->bank[slot].occupied) {
         snprintf(ui->status, sizeof(ui->status), "AUDITION A FILLED BANK SLOT FIRST");
         return;
