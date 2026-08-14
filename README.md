@@ -69,6 +69,12 @@ After auditioning a filled slot, **Set Current** makes it the new clean editing 
 
 The top **Export** button and `Ctrl+E` always ask whether to export the single Current WAV or the complete Collection. Collection export writes every occupied slot as a numbered, loop-aware WAV into a new folder named from the initial Source. Existing folders are never silently replaced. A failed export removes the partial files and folder. TSR11 projects remain fully compatible; legacy field names and numeric values are preserved internally while the visible vocabulary changes.
 
+## Six-operator FM source proof
+
+FM is an additive fifth source kind alongside Tonal, Metallic, Noise, and Pulse. Each seed selects a complete hidden six-operator patch from curated Structure and Ratio families, plus Depth, Shape, feedback, and a short existing-engine noise transient. The stored generator kind and seed reproduce the exact FM sound through TSR11 save/load. Existing source render paths are unchanged.
+
+The first proof deliberately keeps these controls under the surface. With Variation set to Radical and Chain enabled, repeated **Create** actions cycle through the source kinds and FM; **Vary** produces a new related seeded patch when FM is active. The next focused slice exposes Structure, Ratio, Depth, and Shape as four compact macros. See [the staged FM Source plan](docs/FM_SOURCE_PLAN.md).
+
 ## Physical tape gestures
 
 Start any tape gesture inside the existing snapped selection. A cyan ghost waveform follows the pointer and previews the zero-crossing-aware destination before release:
