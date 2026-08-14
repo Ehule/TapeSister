@@ -465,7 +465,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     if (ok && recipe)
         snprintf(ui->status, sizeof(ui->status), "OPENED TSR PROJECT %.112s",
                  instrument->parent.name);
-    else if (ok) snprintf(ui->status, sizeof(ui->status), "IMPORTED NEUTRAL PARENT %.104s",
+    else if (ok) snprintf(ui->status, sizeof(ui->status), "IMPORTED NEUTRAL SOURCE %.104s",
                           instrument->parent.name);
     else snprintf(ui->status, sizeof(ui->status), "LOAD FAILED: %.135s", error);
     return ok;
@@ -491,9 +491,9 @@ static int generate_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     ok = ts_instrument_generate(instrument, kind, seed, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "NEW %s PARENT %08X",
+    if (ok) snprintf(ui->status, sizeof(ui->status), "NEW %s SOURCE %08X",
                      ts_generator_name(kind), seed);
-    else snprintf(ui->status, sizeof(ui->status), "GENERATE FAILED: %.130s", error);
+    else snprintf(ui->status, sizeof(ui->status), "CREATE FAILED: %.130s", error);
     return ok;
 }
 
@@ -524,14 +524,14 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
                                                error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (!ok) {
-        snprintf(ui->status, sizeof(ui->status), "FAMILY GENERATE FAILED: %.124s", error);
+        snprintf(ui->status, sizeof(ui->status), "VARIATION FAILED: %.124s", error);
         return;
     }
     if (promote) {
         ui->bank_view_slot = -1;
         ts_ui_reset_parent_view(ui, instrument->parent.frames);
         snprintf(ui->status, sizeof(ui->status),
-                 "BANK %02d %s GENERATED AND SET CURRENT",
+                 "BANK %02d %s CREATED AND SET CURRENT",
                  slot + 1, ts_family_relation_name(instrument->bank[slot].relation));
         return;
     }
@@ -543,7 +543,7 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
              slot + 1, ts_family_relation_name(instrument->bank[slot].relation),
              instrument->bank[slot].parent_slot + 1,
              instrument->bank[slot].lineage_seed,
-             instrument->family_trajectory ? "  PATH" : "");
+             instrument->family_trajectory ? "  CHAIN" : "");
 }
 
 static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -556,7 +556,7 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     unlock_edit(device, audio, ui, instrument);
     if (ok) ui->recipes.active_slot = -1;
     if (ok && strcmp(label, "BODY") == 0)
-        snprintf(ui->status, sizeof(ui->status), "BODY %.2F - PARENT PRESERVED", process.body);
+        snprintf(ui->status, sizeof(ui->status), "BODY %.2F - SOURCE PRESERVED", process.body);
     else if (ok && strcmp(label, "EDGE") == 0)
         snprintf(ui->status, sizeof(ui->status), "EDGE %.2F - PARENT PRESERVED", process.edge);
     else if (ok && strcmp(label, "DRIFT") == 0)
@@ -688,7 +688,7 @@ static void reset_current(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     lock_edit(device, audio);
     ok = ts_instrument_reset_current(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "CURRENT RESET EXACTLY TO PARENT");
+    if (ok) snprintf(ui->status, sizeof(ui->status), "CURRENT RESET EXACTLY TO SOURCE");
     else snprintf(ui->status, sizeof(ui->status), "RESET FAILED: %.137s", error);
 }
 
@@ -702,7 +702,7 @@ static void commit_current(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     unlock_edit(device, audio, ui, instrument);
     ui->commit_armed = 0;
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "COMMITTED CURRENT AS GENERATION %u PARENT",
+    if (ok) snprintf(ui->status, sizeof(ui->status), "COMMITTED CURRENT AS GENERATION %u SOURCE",
                      instrument->generation);
     else snprintf(ui->status, sizeof(ui->status), "COMMIT FAILED: %.136s", error);
 }
@@ -1249,7 +1249,7 @@ static void begin_export_choice(TsUiState *ui)
     ui->commit_armed = 0;
     ui->export_choice_open = 1;
     SDL_StopTextInput();
-    snprintf(ui->status, sizeof(ui->status), "EXPORT CURRENT WAV OR COMPLETE FAMILY");
+    snprintf(ui->status, sizeof(ui->status), "EXPORT CURRENT WAV OR COMPLETE COLLECTION");
 }
 
 static unsigned bank_modifiers(SDL_Keymod mod)
@@ -1281,12 +1281,12 @@ static void browser_open_bank(TsUiState *ui, const TsInstrument *instrument)
 {
     char folder[TS_BROWSER_NAME_MAX + 1];
     if (!ts_instrument_family_folder_name(instrument, folder, sizeof(folder)))
-        snprintf(folder, sizeof(folder), "TapeSister_family");
+        snprintf(folder, sizeof(folder), "TapeSister_set");
     ui->commit_armed = 0;
     SDL_StopTextInput();
     if (ts_browser_open(&ui->browser, TS_BROWSER_EXPORT_BANK, folder)) {
         SDL_StartTextInput();
-        snprintf(ui->status, sizeof(ui->status), "EXPORT SAMPLE FAMILY");
+        snprintf(ui->status, sizeof(ui->status), "EXPORT SOUND COLLECTION");
     } else {
         snprintf(ui->status, sizeof(ui->status), "BROWSER FAILED: %.142s", ui->browser.message);
         ts_browser_close(&ui->browser);
@@ -1316,13 +1316,13 @@ static void send_to_fasttracker(TsUiState *ui, const TsInstrument *instrument)
     }
     if (ui->config.fasttracker_path[0] == '\0') {
         snprintf(ui->status, sizeof(ui->status),
-                 "FT2 FAMILY READY %.104s - SET EXECUTABLE TO AUTO LAUNCH",
+                 "FT2 COLLECTION READY %.104s - SET EXECUTABLE TO AUTO LAUNCH",
                  destination);
         return;
     }
     if (!launch_program(ui->config.fasttracker_path, error, sizeof(error))) {
         snprintf(ui->status, sizeof(ui->status),
-                 "FAMILY READY %.64s  LAUNCH FAILED %.48s", destination, error);
+                 "COLLECTION READY %.60s  LAUNCH FAILED %.48s", destination, error);
         return;
     }
     snprintf(ui->status, sizeof(ui->status),
@@ -1472,7 +1472,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         } else {
             ok = ts_instrument_export_bank(instrument, path, error, sizeof(error));
             if (ok) snprintf(ui->status, sizeof(ui->status),
-                             "EXPORTED %d-SAMPLE FAMILY %.88s",
+                             "EXPORTED %d-SAMPLE COLLECTION %.84s",
                              ts_instrument_bank_count(instrument), path);
             else snprintf(ui->status, sizeof(ui->status),
                           "BANK EXPORT FAILED: %.128s", error);
@@ -1847,7 +1847,7 @@ int main(int argc, char **argv)
                     if (ui.commit_armed) commit_current(device, &audio, &ui, &instrument);
                     else {
                         ui.commit_armed = 1;
-                        snprintf(ui.status, sizeof(ui.status), "CTRL+P AGAIN TO COMMIT CURRENT AS PARENT");
+                        snprintf(ui.status, sizeof(ui.status), "CTRL+P AGAIN TO COMMIT CURRENT AS SOURCE");
                     }
                 } else if ((mod & KMOD_CTRL) && key == SDLK_s) {
                     browser_open(&ui, ui.show_recipes ?
@@ -1896,7 +1896,7 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status),
                                  ts_ui_zoom_parent_view(&ui, instrument.parent.frames,
                                                         anchor, 0.5f, 0.5f) ?
-                                 "ZOOMED PARENT IN" : "ZOOM LIMIT");
+                                 "ZOOMED SOURCE IN" : "ZOOM LIMIT");
                     } else {
                         size_t anchor = instrument.has_selection ?
                                         (instrument.selection_first +
@@ -1917,7 +1917,7 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status),
                                  ts_ui_zoom_parent_view(&ui, instrument.parent.frames,
                                                         anchor, 0.5f, 2.0f) ?
-                                 "ZOOMED PARENT OUT" : "SHOWING ALL PARENT");
+                                 "ZOOMED SOURCE OUT" : "SHOWING ALL SOURCE");
                     } else {
                         size_t anchor = instrument.has_selection ?
                                         (instrument.selection_first +
@@ -2274,7 +2274,7 @@ int main(int argc, char **argv)
                     if (ui.commit_armed) commit_current(device, &audio, &ui, &instrument);
                     else {
                         ui.commit_armed = 1;
-                        snprintf(ui.status, sizeof(ui.status), "CLICK COMMIT AGAIN TO MAKE CURRENT THE PARENT");
+                        snprintf(ui.status, sizeof(ui.status), "CLICK COMMIT AGAIN TO MAKE CURRENT THE SOURCE");
                     }
                 } else if (y >= 205 && y < 228 && x >= 330 && x < 402) {
                     ui.commit_armed = 0;
@@ -2317,7 +2317,7 @@ int main(int argc, char **argv)
                 } else if (y >= 233 && y < 256 && x >= 489 && x < 523) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_FAMILY;
                     snprintf(ui.status, sizeof(ui.status),
-                             "FAMILY RELATION MUTATION LOCKS AND TRAJECTORY");
+                             "VARIATION RANGE AMOUNT LOCKS AND CHAIN");
                 } else if (y >= 233 && y < 256 && x >= 526 && x < 562) {
                     ui.commit_armed = 0; ui.fx_page = TS_FX_DELAY;
                     snprintf(ui.status, sizeof(ui.status), "DELAY PROCESSING PAGE");
@@ -2423,7 +2423,7 @@ int main(int argc, char **argv)
                                      ts_family_relation_name(instrument.family_relation));
                         } else if (x >= 115 && x < 225) {
                             instrument.family_mutation = (float)(x - 115) / 110.0f;
-                            snprintf(ui.status, sizeof(ui.status), "FAMILY MUTATION %d%%",
+                            snprintf(ui.status, sizeof(ui.status), "VARIATION AMOUNT %d%%",
                                      (int)lrintf(instrument.family_mutation * 100.0f));
                         } else if (x >= 230 && x < 290)
                             instrument.family_locks ^= TS_FAMILY_LOCK_LOOP;
@@ -2442,8 +2442,8 @@ int main(int argc, char **argv)
                                                                 ui.bank_view_slot : 0;
                             snprintf(ui.status, sizeof(ui.status),
                                      instrument.family_trajectory ?
-                                     "TRAJECTORY ON - EACH MEMBER BREEDS THE NEXT" :
-                                     "TRAJECTORY OFF - CANDIDATES SHARE AN ANCHOR");
+                                     "CHAIN ON - EACH RESULT BECOMES THE NEXT SOURCE" :
+                                     "CHAIN OFF - VARIATIONS SHARE A SOURCE");
                         }
                     } else if (ui.fx_page == TS_FX_DELAY) {
                         label = "DELAY";
@@ -2513,7 +2513,7 @@ int main(int argc, char **argv)
                                                instrument.selection_first;
                         ui.parent_view_last = instrument.crop_first +
                                               instrument.selection_last;
-                        snprintf(ui.status, sizeof(ui.status), "ZOOMED PARENT TO SELECTION");
+                        snprintf(ui.status, sizeof(ui.status), "ZOOMED SOURCE TO SELECTION");
                     } else {
                         snprintf(ui.status, sizeof(ui.status),
                                  ts_instrument_zoom_selection(&instrument) ?
@@ -2617,7 +2617,7 @@ int main(int argc, char **argv)
                              "FINISH RECIPE NAME WITH ENTER OR CANCEL WITH ESC");
                 } else if (ui.export_choice_open) {
                     snprintf(ui.status, sizeof(ui.status),
-                             "CHOOSE CURRENT OR FAMILY  ESC CANCELS");
+                             "CHOOSE CURRENT OR COLLECTION  ESC CANCELS");
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     if (!begin_tape_drag(&ui, &instrument, SDL_BUTTON_RIGHT,
