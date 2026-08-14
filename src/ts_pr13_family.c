@@ -85,14 +85,21 @@ int ts_pr13_generate_family_candidate(TsInstrument *instrument, int active_slot,
     float old_mutation,lineage_mutation;
     TsFamilyRelation old_relation;
     if(instrument==0)return 0;
-    if(anchor<0||anchor>=TS_BANK_SLOT_COUNT||!instrument->bank[anchor].occupied)anchor=instrument->family_anchor_slot;
+    /* Path Off means siblings from one explicit anchor. Auto-selecting the last
+       generated child must not silently turn the next Generate into a grandchild. */
+    if(!instrument->family_trajectory&&instrument->family_anchor_slot>=0&&
+       instrument->family_anchor_slot<TS_BANK_SLOT_COUNT&&
+       instrument->bank[instrument->family_anchor_slot].occupied)
+        anchor=instrument->family_anchor_slot;
+    else if(anchor<0||anchor>=TS_BANK_SLOT_COUNT||!instrument->bank[anchor].occupied)
+        anchor=instrument->family_anchor_slot;
     if(anchor<0||anchor>=TS_BANK_SLOT_COUNT||!instrument->bank[anchor].occupied){snprintf(error,error_size,"Select a filled bank tile first");return 0;}
     old_last=instrument->family_last_slot;old_path=instrument->family_trajectory;
     old_mutation=instrument->family_mutation;old_relation=instrument->family_relation;
     if(reseed&&active_slot>=0&&active_slot<TS_BANK_SLOT_COUNT&&instrument->bank[active_slot].occupied){
         TsBankSlot *selected=&instrument->bank[active_slot];
         if(selected->parent_slot>=0&&selected->parent_slot<TS_BANK_SLOT_COUNT&&instrument->bank[selected->parent_slot].occupied)anchor=selected->parent_slot;
-        else anchor=active_slot;
+        else if(instrument->family_trajectory)anchor=active_slot;
         instrument->family_relation=selected->relation;instrument->family_mutation=selected->lineage_mutation;
     }
     lineage_mutation=instrument->family_mutation;
