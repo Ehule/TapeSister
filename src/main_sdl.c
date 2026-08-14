@@ -22,7 +22,7 @@
 #include <unistd.h>
 #endif
 
-enum { TS_SPLASH_MILLISECONDS = 5000 };
+enum { TS_SPLASH_MILLISECONDS = 1500 };
 
 static SDL_Texture *load_splash_texture(SDL_Renderer *renderer, int *width, int *height)
 {
@@ -605,7 +605,7 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
                                                error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (!ok) {
-        snprintf(ui->status, sizeof(ui->status), "VARIATION FAILED: %.124s", error);
+        snprintf(ui->status, sizeof(ui->status), "VARIATION FAILED: %.132s", error);
         return;
     }
     if (promote) {
@@ -619,12 +619,21 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
     ui->show_keyboard = 0;
     ui->show_recipes = 0;
     begin_bank_audition(device, audio, ui, instrument, slot, audio->output_rate);
-    snprintf(ui->status, sizeof(ui->status),
-             "BANK %02d %s OF %02d  SEED %08X%s",
-             slot + 1, ts_family_relation_name(instrument->bank[slot].relation),
-             instrument->bank[slot].parent_slot + 1,
-             instrument->bank[slot].lineage_seed,
-             instrument->family_trajectory ? "  CHAIN" : "");
+    if (instrument->bank[slot].has_generator)
+        snprintf(ui->status, sizeof(ui->status),
+                 "BANK %02d %s %s OF %02d  SEED %08X%s",
+                 slot + 1, ts_family_relation_name(instrument->bank[slot].relation),
+                 ts_generator_name(instrument->bank[slot].generator.kind),
+                 instrument->bank[slot].parent_slot + 1,
+                 instrument->bank[slot].lineage_seed,
+                 instrument->family_trajectory ? "  CHAIN" : "");
+    else
+        snprintf(ui->status, sizeof(ui->status),
+                 "BANK %02d %s OF %02d  SEED %08X%s",
+                 slot + 1, ts_family_relation_name(instrument->bank[slot].relation),
+                 instrument->bank[slot].parent_slot + 1,
+                 instrument->bank[slot].lineage_seed,
+                 instrument->family_trajectory ? "  CHAIN" : "");
 }
 
 static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -639,10 +648,10 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     if (ok && strcmp(label, "BODY") == 0)
         snprintf(ui->status, sizeof(ui->status), "BODY %.2F - SOURCE PRESERVED", process.body);
     else if (ok && strcmp(label, "EDGE") == 0)
-        snprintf(ui->status, sizeof(ui->status), "EDGE %.2F - PARENT PRESERVED", process.edge);
+        snprintf(ui->status, sizeof(ui->status), "EDGE %.2F - SOURCE PRESERVED", process.edge);
     else if (ok && strcmp(label, "DRIFT") == 0)
-        snprintf(ui->status, sizeof(ui->status), "DRIFT %.2F - PARENT PRESERVED", process.drift);
-    else if (ok) snprintf(ui->status, sizeof(ui->status), "%s UPDATED - PARENT PRESERVED", label);
+        snprintf(ui->status, sizeof(ui->status), "DRIFT %.2F - SOURCE PRESERVED", process.drift);
+    else if (ok) snprintf(ui->status, sizeof(ui->status), "%s UPDATED - SOURCE PRESERVED", label);
     else snprintf(ui->status, sizeof(ui->status), "PROCESS FAILED: %.130s", error);
 }
 
@@ -796,7 +805,7 @@ static void crop_selection(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     lock_edit(device, audio);
     ok = ts_instrument_crop_selection(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "CROPPED CURRENT - PARENT PRESERVED");
+    if (ok) snprintf(ui->status, sizeof(ui->status), "CROPPED CURRENT - SOURCE PRESERVED");
     else snprintf(ui->status, sizeof(ui->status), "CROP FAILED: %.135s", error);
 }
 
@@ -809,7 +818,7 @@ static void apply_sample_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiS
     lock_edit(device, audio);
     ok = ts_instrument_apply_sample_edit(instrument, kind, amount, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "%s %s - PARENT PRESERVED",
+    if (ok) snprintf(ui->status, sizeof(ui->status), "%s %s - SOURCE PRESERVED",
                      ts_sample_edit_name(kind), selected ? "SELECTION" : "ALL");
     else snprintf(ui->status, sizeof(ui->status), "EDIT FAILED: %.137s", error);
 }
@@ -1397,7 +1406,7 @@ static void send_to_fasttracker(TsUiState *ui, const TsInstrument *instrument)
     }
     if (ui->config.fasttracker_path[0] == '\0') {
         snprintf(ui->status, sizeof(ui->status),
-                 "FT2 COLLECTION READY %.104s - SET EXECUTABLE TO AUTO LAUNCH",
+                 "FT2 COLLECTION READY %.100s - SET EXECUTABLE TO AUTO LAUNCH",
                  destination);
         return;
     }
@@ -2020,7 +2029,7 @@ int main(int argc, char **argv)
                     ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT) {
                         ts_ui_reset_parent_view(&ui, instrument.parent.frames);
-                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL PARENT");
+                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL SOURCE");
                     } else {
                         ts_instrument_show_all(&instrument);
                         snprintf(ui.status, sizeof(ui.status), "SHOWING ALL CURRENT");
@@ -2612,7 +2621,7 @@ int main(int argc, char **argv)
                     ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT) {
                         ts_ui_reset_parent_view(&ui, instrument.parent.frames);
-                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL PARENT");
+                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL SOURCE");
                     } else {
                         ts_instrument_show_all(&instrument);
                         snprintf(ui.status, sizeof(ui.status), "SHOWING ALL CURRENT");
