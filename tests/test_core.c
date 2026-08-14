@@ -125,6 +125,32 @@ int main(void)
         ts_instrument_free(&fm_instrument);
         ts_instrument_free(&fm_restored);
     }
+    {
+        static const TsGeneratorKind expected[] = {
+            TS_GENERATOR_METALLIC, TS_GENERATOR_NOISE,
+            TS_GENERATOR_PULSE, TS_GENERATOR_FM
+        };
+        TsInstrument cycle;
+        int slot = -1;
+        ts_instrument_init(&cycle);
+        CHECK(ts_instrument_generate(&cycle, TS_GENERATOR_TONAL,
+                                     0x4359434cu, error, sizeof(error)));
+        cycle.family_relation = TS_FAMILY_STRANGER;
+        cycle.family_trajectory = 1;
+        for (int i = 0; i < 4; ++i) {
+            CHECK(ts_instrument_generate_family_candidate(&cycle, 0, 0, &slot,
+                                                           error, sizeof(error)));
+            CHECK(slot == i + 1);
+            CHECK(cycle.bank[slot].has_generator);
+            CHECK(cycle.bank[slot].generator.kind == expected[i]);
+            CHECK(strncmp(cycle.bank[slot].sample.name,
+                          ts_generator_name(expected[i]),
+                          strlen(ts_generator_name(expected[i]))) == 0);
+        }
+        CHECK(cycle.bank[slot].generator.kind == TS_GENERATOR_FM);
+        CHECK(strncmp(cycle.bank[slot].sample.name, "FM ", 3) == 0);
+        ts_instrument_free(&cycle);
+    }
     CHECK(ts_sample_clone(&copy, &a, error, sizeof(error)));
     CHECK(ts_sample_hash(&copy) == ts_sample_hash(&a));
     {
