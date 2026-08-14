@@ -1344,7 +1344,7 @@ const char *ts_bank_capture_name(TsBankCaptureKind kind)
 const char *ts_family_relation_name(TsFamilyRelation relation)
 {
     static const char *names[] = {
-        "ROOT", "CAPTURED", "CHILD", "COUSIN", "STRANGER"
+        "SOURCE", "KEPT", "CLOSE", "WIDE", "RADICAL"
     };
     return relation >= TS_FAMILY_ROOT && relation < TS_FAMILY_RELATION_COUNT ?
            names[relation] : "UNKNOWN";
@@ -2166,12 +2166,12 @@ static int family_mutate_sample(TsSample *destination, const TsSample *source,
         if (frames < 32u) frames = 32u;
     }
     if (frames > SIZE_MAX / sizeof(float)) {
-        set_error(error, error_size, "Generated family member is too large");
+        set_error(error, error_size, "Variation is too large");
         return 0;
     }
     data = (float *)malloc(frames * sizeof(float));
     if (data == NULL) {
-        set_error(error, error_size, "Out of memory while breeding family member");
+        set_error(error, error_size, "Out of memory while creating variation");
         return 0;
     }
     for (size_t i = 0; i < frames; ++i) {
@@ -2287,12 +2287,12 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
     if (created_slot != NULL) *created_slot = -1;
     if (instrument == NULL || instrument->parent.data == NULL ||
         !instrument->bank[0].occupied) {
-        set_error(error, error_size, "Generate a Parent before breeding its family");
+        set_error(error, error_size, "Create a Source before making variations");
         return 0;
     }
     slot = ts_instrument_bank_first_empty(instrument);
     if (slot < 0) {
-        set_error(error, error_size, "Family bank is full - clear a slot first");
+        set_error(error, error_size, "Sound collection is full - clear a slot first");
         return 0;
     }
     if (instrument->family_trajectory && instrument->family_last_slot > 0 &&
@@ -2414,7 +2414,7 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
         return 0;
     }
     if (slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "Bank slot 1 is the immutable family root");
+        set_error(error, error_size, "Bank slot 1 is the immutable Source");
         return 0;
     }
     if (instrument->bank[slot].occupied) {
@@ -2482,7 +2482,7 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size)
 {
     if (instrument == NULL || slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "The family root cannot be cleared");
+        set_error(error, error_size, "The Source slot cannot be cleared");
         return 0;
     }
     if (!instrument->bank[slot].occupied) {
@@ -2503,7 +2503,7 @@ int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *na
     const char *last;
     size_t length;
     if (instrument == NULL || slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "The family root name is fixed");
+        set_error(error, error_size, "The Source slot name is fixed");
         return 0;
     }
     if (!instrument->bank[slot].occupied) {
@@ -2733,7 +2733,7 @@ int ts_instrument_family_folder_name(const TsInstrument *instrument,
     stem[length] = '\0';
     bank_safe_name(stem, stem, sizeof(stem));
     {
-        int written = snprintf(name, name_size, "%s_family", stem);
+        int written = snprintf(name, name_size, "%s_set", stem);
         return written >= 0 && (size_t)written < name_size;
     }
 }
@@ -2756,7 +2756,7 @@ int ts_instrument_next_family_path(const TsInstrument *instrument,
     int written;
     if (directory == NULL || directory[0] == '\0' || path == NULL || path_size == 0 ||
         !ts_instrument_family_folder_name(instrument, base, sizeof(base))) {
-        set_error(error, error_size, "Invalid family handoff path");
+        set_error(error, error_size, "Invalid collection handoff path");
         return 0;
     }
     directory_length = strlen(directory);
@@ -2767,12 +2767,12 @@ int ts_instrument_next_family_path(const TsInstrument *instrument,
                            directory[directory_length - 1u] == '\\' ? "" : "/",
                            name);
         if (written < 0 || (size_t)written >= path_size) {
-            set_error(error, error_size, "Family handoff path is too long");
+            set_error(error, error_size, "Collection handoff path is too long");
             return 0;
         }
         if (!export_path_exists(path)) break;
         if (++suffix >= 999) {
-            set_error(error, error_size, "Could not find a free family handoff name");
+            set_error(error, error_size, "Could not find a free collection handoff name");
             return 0;
         }
         snprintf(name, sizeof(name), "%.240s_%02d", base, suffix);
@@ -2788,7 +2788,7 @@ int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder
     int created_count = 0;
     if (instrument == NULL || folder == NULL || folder[0] == '\0' ||
         !instrument->bank[0].occupied) {
-        set_error(error, error_size, "No sample family to export");
+        set_error(error, error_size, "No sound collection to export");
         return 0;
     }
     if (ts_mkdir(folder) != 0) {
