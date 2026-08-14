@@ -601,6 +601,7 @@ int main(void)
             CHECK(refused_slot == 8);
             {
                 uint64_t source_slot_hash = ts_sample_hash(&family_repeat.bank[0].sample);
+                uint32_t sequence_before_clear = family_repeat.family_sequence;
                 CHECK(ts_instrument_bank_clear_all(&family_repeat, error, sizeof(error)));
                 CHECK(ts_instrument_bank_count(&family_repeat) == 1);
                 CHECK(ts_instrument_bank_first_empty(&family_repeat) == 1);
@@ -608,6 +609,7 @@ int main(void)
                       ts_sample_hash(&family_repeat.bank[0].sample) == source_slot_hash);
                 CHECK(family_repeat.family_anchor_slot == 0 &&
                       family_repeat.family_last_slot == -1);
+                CHECK(family_repeat.family_sequence == sequence_before_clear);
                 CHECK(ts_instrument_generate_family_candidate(&family_repeat, 0, 0,
                                                                &refused_slot,
                                                                error, sizeof(error)));

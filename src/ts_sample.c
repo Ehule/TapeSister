@@ -2629,7 +2629,6 @@ int ts_instrument_bank_clear_all(TsInstrument *instrument,
     }
     for (int slot = 1; slot < TS_BANK_SLOT_COUNT; ++slot)
         bank_slot_free(&instrument->bank[slot]);
-    instrument->family_sequence = 0;
     instrument->family_anchor_slot = 0;
     instrument->family_last_slot = -1;
     set_error(error, error_size, "");
