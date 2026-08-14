@@ -54,7 +54,7 @@ const char *ts_browser_mode_title(TsBrowserMode mode)
     if (mode == TS_BROWSER_SAVE_RECIPE) return "SAVE TSR PROJECT";
     if (mode == TS_BROWSER_SAVE_PRESET) return "SAVE PROCESS RECIPE";
     if (mode == TS_BROWSER_EXPORT_WAV) return "EXPORT CURRENT WAV";
-    if (mode == TS_BROWSER_EXPORT_BANK) return "EXPORT SAMPLE FAMILY";
+    if (mode == TS_BROWSER_EXPORT_BANK) return "EXPORT SOUND COLLECTION";
     return "FILE BROWSER";
 }
 

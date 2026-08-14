@@ -1,6 +1,8 @@
-# Parent / Current model
+# Source / Current model
 
-TapeSister owns one immutable source buffer called **Parent** and one rendered buffer called **Current**.
+The interface calls the immutable audition base **Source**. The C API and TSR11 fields retain their established `Parent` and `family_*` identifiers so existing projects remain byte-compatible; those internal compatibility names are not user-facing concepts.
+
+TapeSister owns one immutable source buffer called **Source** (`Parent` internally) and one rendered buffer called **Current**.
 
 ```text
 generated recipe or imported WAV
@@ -12,7 +14,7 @@ generated recipe or imported WAV
            Current
 ```
 
-Parent changes only when the user imports a genuinely new source, confirms Commit, or explicitly promotes a bank member with Set Current (including the Shift+Generate shortcut). Body, Edge, Drift, ordinary Generate/Reseed, selection, zoom, crop, audition, undo, redo, saving, and export do not replace Parent.
+Source changes only when the user imports a genuinely new source, confirms Commit, or explicitly promotes a collection slot with Set Current (including the Shift+Create shortcut). Body, Edge, Drift, ordinary Create/Vary, selection, zoom, crop, audition, undo, redo, saving, and export do not replace Source.
 
 Startup generation and WAV import install neutral processing before Current is created, making a new Parent and Current sample-for-sample identical. Once a project exists, Generate and Reseed write candidates only into empty family slots. Opening a self-contained TSR project restores the saved embedded Parent and reconstructive edit/DSP state, so its saved A/B difference returns exactly.
 
@@ -26,7 +28,7 @@ A pitch suggestion is temporary UI playback state rather than instrument metadat
 
 Selection endpoints and loop boundaries are Current-relative editor metadata. Mouse selection snaps to Current zero crossings even while Parent is displayed. Set Loop without a selection creates the deliberate exact-boundary whole-Current selection; manually drawn loop ranges remain zero-snapped. Parent loop audition adds `crop_first` to reach the corresponding immutable-source frames. Forward, Reverse, and Ping-Pong travel plus loop crossfade are playback state and never rewrite either buffer. Reset clears loop metadata as an undoable edit; Commit preserves it because the heard Current becomes the new Parent with one-to-one frame coordinates.
 
-The sample-family bank is a sibling collection, not part of the Parent-to-Current render chain. A new generated/imported source copies its initial Parent and tuning into immutable bank slot 1. Capturing Current, Selection, or Loop deep-copies rendered audio and the active tuning into slots 2–16. Generate adds a seeded Child, Cousin, or Stranger to the next empty slot; Reseed creates another candidate of the last relationship. Every generated member records its direct parent slot, relationship, seed, mutation, active trait locks, trajectory step, and generator recipe. Path mode chooses the preceding generated member as the next anchor, while ordinary mode keeps siblings attached to the displayed or saved anchor. These metadata describe provenance without restricting captured or unrelated samples.
+The sound collection is not part of the Source-to-Current render chain. A new created/imported source copies its initial Source and tuning into immutable bank slot 01. Capturing Current, Selection, or Loop deep-copies rendered audio and the active tuning into slots 02–16. Create adds a seeded Close, Wide, or Radical result to the next empty slot; Vary creates another result with the last range and source. Every created slot records its direct source slot, variation range, seed, amount, active trait locks, chain step, and generator recipe. Chain mode chooses the preceding result as the next source. These metadata describe provenance without restricting kept or unrelated samples.
 
 Renaming a sibling changes only its bank/export name. Auditioning a sibling temporarily places that stable buffer in the waveform display without changing the Current editing target. Each sibling owns independent loop range, mode, crossfade, and tuning metadata. **Set Current** deliberately checks the displayed sibling out as both the new clean Parent and Current so future deterministic renders use that audio rather than snapping back to the former Parent. It preserves the complete bank, transfers stored loop and tuning metadata, advances genealogy, records the previous Parent hash, and clears edit history. Commit likewise changes Parent while preserving the family root and siblings. Starting a genuinely new source starts a new bank.
 

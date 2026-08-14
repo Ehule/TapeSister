@@ -1243,7 +1243,7 @@ int main(void)
         char first_path[512];
         char next_path[512];
         CHECK(ts_instrument_family_folder_name(&restored, name, sizeof(name)));
-        CHECK(strstr(name, "_family") != NULL);
+        CHECK(strstr(name, "_set") != NULL);
         CHECK(mkdir("test-handoff-root", 0700) == 0);
         CHECK(ts_instrument_next_family_path(
             &restored, "test-handoff-root", first_path, sizeof(first_path),
@@ -1568,6 +1568,6 @@ int main(void)
     ts_instrument_free(&family_repeat);
     ts_instrument_free(&family_restored);
     if (failures) return 1;
-    puts("TapeSister family, tuning, recipes, shaping, tape gestures, loops, bank, and editor tests passed");
+    puts("TapeSister variation, tuning, recipes, shaping, tape gestures, loops, collection, and editor tests passed");
     return 0;
 }
