@@ -1323,9 +1323,47 @@ int main(void)
         CHECK(strcmp(reopened.sample_path, config.sample_path) == 0);
         CHECK(strcmp(reopened.fasttracker_path, config.fasttracker_path) == 0);
         CHECK(strcmp(reopened.exchange_path, config.exchange_path) == 0);
+        CHECK(reopened.startup_welcome_sample == 1 &&
+              reopened.startup_welcome_autoplay == 1);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
                      "FASTTRACKER EXECUTABLE") == 0);
         remove("test-tapesister.ini");
+        {
+            FILE *config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("startup_welcome_sample=0\nstartup_welcome_autoplay=0\n",
+                      config_file);
+                fclose(config_file);
+            }
+            CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            CHECK(!reopened.startup_welcome_sample && !reopened.startup_welcome_autoplay);
+            config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("startup_welcome_sample=yes\n", config_file);
+                fclose(config_file);
+            }
+            CHECK(!ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            remove("test-tapesister.ini");
+        }
+        {
+            TsUiState startup_ui;
+            ts_ui_init(&startup_ui);
+            startup_ui.startup_welcome_installed = 1;
+            startup_ui.startup_welcome_autoplay = 1;
+            CHECK(!ts_ui_request_startup_welcome(&startup_ui, 0, 1));
+            CHECK(!startup_ui.startup_welcome_playback_requested);
+            CHECK(ts_ui_request_startup_welcome(&startup_ui, 1, 1));
+            CHECK(startup_ui.startup_welcome_playback_requested);
+            CHECK(!ts_ui_request_startup_welcome(&startup_ui, 1, 1));
+            CHECK(!ts_ui_request_startup_welcome(&startup_ui, 1, 0));
+            ts_ui_init(&startup_ui);
+            startup_ui.startup_welcome_installed = 1;
+            startup_ui.startup_welcome_autoplay = 0;
+            CHECK(!ts_ui_request_startup_welcome(&startup_ui, 1, 1));
+            CHECK(startup_ui.startup_welcome_playback_requested);
+        }
     }
     {
         char name[256];

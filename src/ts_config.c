@@ -13,7 +13,11 @@ static void set_error(char *error, size_t error_size, const char *message)
 
 void ts_config_init(TsConfig *config)
 {
-    if (config != NULL) memset(config, 0, sizeof(*config));
+    if (config != NULL) {
+        memset(config, 0, sizeof(*config));
+        config->startup_welcome_sample = 1;
+        config->startup_welcome_autoplay = 1;
+    }
 }
 
 char *ts_config_field(TsConfig *config, TsConfigField field)
@@ -58,6 +62,13 @@ static int copy_value(char *destination, const char *value,
     }
     memcpy(destination, value, length + 1u);
     return 1;
+}
+
+static int parse_boolean(const char *value, int *destination)
+{
+    if (strcmp(value, "0") == 0) { *destination = 0; return 1; }
+    if (strcmp(value, "1") == 0) { *destination = 1; return 1; }
+    return 0;
 }
 
 int ts_config_load(TsConfig *config, const char *path,
@@ -114,6 +125,16 @@ int ts_config_load(TsConfig *config, const char *path,
                 fclose(file);
                 return 0;
             }
+        } else if (strcmp(key, "startup_welcome_sample") == 0) {
+            if (!parse_boolean(value, &loaded.startup_welcome_sample)) {
+                snprintf(error, error_size, "Invalid boolean on config line %d", line_number);
+                fclose(file); return 0;
+            }
+        } else if (strcmp(key, "startup_welcome_autoplay") == 0) {
+            if (!parse_boolean(value, &loaded.startup_welcome_autoplay)) {
+                snprintf(error, error_size, "Invalid boolean on config line %d", line_number);
+                fclose(file); return 0;
+            }
         }
     }
     if (ferror(file)) {
@@ -146,9 +167,13 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "[Paths]\n"
                 "SamplePath=%s\n"
                 "FastTrackerPath=%s\n"
-                "ExchangePath=%s\n",
+                "ExchangePath=%s\n"
+                "\n[Startup]\n"
+                "startup_welcome_sample=%d\n"
+                "startup_welcome_autoplay=%d\n",
                 config->sample_path, config->fasttracker_path,
-                config->exchange_path) < 0;
+                config->exchange_path, config->startup_welcome_sample,
+                config->startup_welcome_autoplay) < 0;
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {
         set_error(error, error_size, "Could not finish writing config");

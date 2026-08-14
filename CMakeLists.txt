@@ -25,6 +25,13 @@ if(TAPESISTER_BUILD_SDL)
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_splash.png"
             "$<TARGET_FILE_DIR:tapesister>/assets/tapesister_splash.png"
     COMMENT "Copying TapeSister splash artwork")
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_welcome.wav")
+    add_custom_command(TARGET tapesister POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_welcome.wav"
+              "$<TARGET_FILE_DIR:tapesister>/assets/tapesister_welcome.wav"
+      COMMENT "Copying TapeSister welcome sample")
+  endif()
 endif()
 
 enable_testing()

@@ -3,12 +3,15 @@ CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
 CPPFLAGS ?= -Iinclude -Ithird_party
 CORE = src/ts_sample.c src/ts_audition.c src/ts_note_bank.c src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_ui.c
 
-.PHONY: all test screenshot clean
+.PHONY: all test screenshot runtime-assets clean
 
-all: tapesister
+all: tapesister runtime-assets
 
 tapesister: $(CORE) src/main_sdl.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $^ -o $@ $(shell sdl2-config --libs) -lm
+
+runtime-assets:
+	@test ! -f assets/tapesister_welcome.wav || test -s assets/tapesister_welcome.wav
 
 tapesister_core_tests: $(CORE) tests/test_core.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm

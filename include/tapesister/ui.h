@@ -58,6 +58,9 @@ typedef struct {
     int commit_armed;
     int bank_clear_armed;
     int playback_active;
+    int startup_welcome_installed;
+    int startup_welcome_autoplay;
+    int startup_welcome_playback_requested;
     int text_cursor_visible;
     int show_keyboard;
     int show_recipes;
@@ -105,6 +108,8 @@ typedef struct {
 } TsUiState;
 
 void ts_ui_init(TsUiState *ui);
+int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
+                                  int audio_ready);
 const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
                                       const TsInstrument *instrument);
 const TsTuning *ts_ui_display_tuning(const TsUiState *ui,

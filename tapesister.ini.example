@@ -1,0 +1,11 @@
+; TapeSister portable configuration
+[Paths]
+SamplePath=
+FastTrackerPath=
+ExchangePath=
+
+[Startup]
+; Install assets/tapesister_welcome.wav into bank 01 on a fresh launch.
+startup_welcome_sample=1
+; Audition the welcome tile once after the splash closes and audio is ready.
+startup_welcome_autoplay=1

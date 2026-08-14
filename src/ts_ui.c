@@ -270,6 +270,15 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
          PAL_VOLUME, 1);
 }
 
+int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
+                                  int audio_ready)
+{
+    if (ui == NULL || !splash_complete || ui->startup_welcome_playback_requested)
+        return 0;
+    ui->startup_welcome_playback_requested = 1;
+    return ui->startup_welcome_installed && ui->startup_welcome_autoplay && audio_ready;
+}
+
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));

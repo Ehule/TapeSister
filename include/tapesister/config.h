@@ -18,6 +18,8 @@ typedef struct {
     char sample_path[TS_CONFIG_PATH_MAX];
     char fasttracker_path[TS_CONFIG_PATH_MAX];
     char exchange_path[TS_CONFIG_PATH_MAX];
+    int startup_welcome_sample;
+    int startup_welcome_autoplay;
 } TsConfig;
 
 void ts_config_init(TsConfig *config);

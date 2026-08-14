@@ -100,6 +100,21 @@ static int show_splash(SDL_Renderer *renderer)
     return 1;
 }
 
+static int runtime_asset_path(const char *relative_path, char *path, size_t path_size)
+{
+    char *base = SDL_GetBasePath();
+    struct stat info;
+    if (base != NULL) {
+        int written = snprintf(path, path_size, "%s%s", base, relative_path);
+        SDL_free(base);
+        if (written > 0 && (size_t)written < path_size && stat(path, &info) == 0)
+            return 1;
+    }
+    if (snprintf(path, path_size, "%s", relative_path) > 0 &&
+        stat(path, &info) == 0) return 1;
+    return 0;
+}
+
 static const char *config_file_path(void)
 {
     const char *override = getenv("TAPESISTER_CONFIG");
@@ -288,11 +303,6 @@ typedef struct {
     int bank_slot;
     TsNoteBank notes;
 } AudioState;
-
-static uint32_t advance_seed(uint32_t seed)
-{
-    return seed * 1664525u + 1013904223u;
-}
 
 static int path_is_tsr(const char *path)
 {
@@ -658,31 +668,6 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     return ok;
 }
 
-static int generate_parent(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                           TsInstrument *instrument, int next_family)
-{
-    char error[160];
-    TsGeneratorKind kind = instrument->generator.kind;
-    uint32_t seed = instrument->generator.seed;
-    int ok;
-    if (next_family) {
-        kind = (TsGeneratorKind)((kind + 1) % TS_GENERATOR_COUNT);
-        seed = advance_seed(seed);
-    }
-    lock_edit(device, audio);
-    ui->bank_view_slot = -1;
-    if (audio->bank_slot >= 0) {
-        audio->playing = 0;
-        audio->bank_slot = -1;
-    }
-    ok = ts_instrument_generate(instrument, kind, seed, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
-    if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "NEW %s SOURCE %08X",
-                     ts_generator_name(kind), seed);
-    else snprintf(ui->status, sizeof(ui->status), "CREATE FAILED: %.130s", error);
-    return ok;
-}
 
 static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, const TsInstrument *instrument,
@@ -1905,8 +1890,27 @@ int main(int argc, char **argv)
     else SDL_PauseAudioDevice(device, 0);
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
-    generate_parent(device, &audio, &ui, &instrument, 0);
-    if (argc > 1) load_instrument(device, &audio, &ui, &instrument, argv[1]);
+    if (argc > 1) {
+        load_instrument(device, &audio, &ui, &instrument, argv[1]);
+    } else if (ui.config.startup_welcome_sample) {
+        char welcome_path[1024];
+        if (runtime_asset_path("assets/tapesister_welcome.wav",
+                               welcome_path, sizeof(welcome_path))) {
+            ui.load_bank_slot = 0;
+            if (load_instrument(device, &audio, &ui, &instrument, welcome_path)) {
+                ui.startup_welcome_installed = 1;
+                ui.startup_welcome_autoplay = ui.config.startup_welcome_autoplay;
+            }
+        } else {
+            fprintf(stderr, "TapeSister welcome: assets/tapesister_welcome.wav not found\n");
+            snprintf(ui.status, sizeof(ui.status), "WELCOME SAMPLE MISSING - BANK 01 EMPTY");
+        }
+    }
+    if (ts_ui_request_startup_welcome(&ui, 1, device != 0)) {
+        ui.audition_source = TS_AUDITION_CURRENT;
+        begin_audition(device, &audio, &ui, &instrument,
+                       TS_AUDITION_ALL, 1.0, obtained.freq);
+    }
     ui.saved_state_hash = instrument_state_hash(&instrument);
 
     while (running) {
