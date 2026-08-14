@@ -3,6 +3,9 @@
 #include "tapesister/ui.h"
 
 #include <SDL2/SDL.h>
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#include "stb_image.h"
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
@@ -18,6 +21,84 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
+
+enum { TS_SPLASH_MILLISECONDS = 1500 };
+
+static SDL_Texture *load_splash_texture(SDL_Renderer *renderer, int *width, int *height)
+{
+    static const char relative_path[] = "assets/tapesister_splash.png";
+    SDL_Texture *texture = NULL;
+    SDL_Surface *surface = NULL;
+    unsigned char *pixels = NULL;
+    char *base = SDL_GetBasePath();
+    char path[1024];
+    int channels = 0;
+
+    if (base != NULL) {
+        int written = snprintf(path, sizeof(path), "%s%s", base, relative_path);
+        if (written > 0 && (size_t)written < sizeof(path))
+            pixels = stbi_load(path, width, height, &channels, STBI_rgb_alpha);
+        SDL_free(base);
+    }
+    if (pixels == NULL)
+        pixels = stbi_load(relative_path, width, height, &channels, STBI_rgb_alpha);
+    if (pixels == NULL) {
+        fprintf(stderr, "TapeSister splash: %s\n", stbi_failure_reason());
+        return NULL;
+    }
+
+    surface = SDL_CreateRGBSurfaceWithFormatFrom(
+        pixels, *width, *height, 32, *width * 4, SDL_PIXELFORMAT_RGBA32);
+    if (surface != NULL) texture = SDL_CreateTextureFromSurface(renderer, surface);
+    if (texture == NULL)
+        fprintf(stderr, "TapeSister splash texture: %s\n", SDL_GetError());
+    if (surface != NULL) SDL_FreeSurface(surface);
+    stbi_image_free(pixels);
+    return texture;
+}
+
+static int show_splash(SDL_Renderer *renderer)
+{
+    SDL_Texture *splash;
+    int image_width = 0;
+    int image_height = 0;
+    Uint32 started;
+    int showing = 1;
+
+    splash = load_splash_texture(renderer, &image_width, &image_height);
+    if (splash == NULL) return 1;
+    started = SDL_GetTicks();
+    while (showing && SDL_GetTicks() - started < TS_SPLASH_MILLISECONDS) {
+        SDL_Event event;
+        int output_width;
+        int output_height;
+        SDL_Rect destination;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                SDL_DestroyTexture(splash);
+                return 0;
+            }
+            if (event.type == SDL_KEYDOWN || event.type == SDL_MOUSEBUTTONDOWN)
+                showing = 0;
+        }
+        SDL_GetRendererOutputSize(renderer, &output_width, &output_height);
+        destination.w = output_width;
+        destination.h = image_width > 0 ? output_width * image_height / image_width : 0;
+        if (destination.h > output_height) {
+            destination.h = output_height;
+            destination.w = image_height > 0 ? output_height * image_width / image_height : 0;
+        }
+        destination.x = (output_width - destination.w) / 2;
+        destination.y = (output_height - destination.h) / 2;
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        SDL_RenderCopy(renderer, splash, NULL, &destination);
+        SDL_RenderPresent(renderer);
+        SDL_Delay(8);
+    }
+    SDL_DestroyTexture(splash);
+    return 1;
+}
 
 static const char *config_file_path(void)
 {
@@ -1678,6 +1759,14 @@ int main(int argc, char **argv)
     if (!window || !renderer || !texture) {
         fprintf(stderr, "Video setup failed: %s\n", SDL_GetError());
         running = 0;
+    }
+    if (running && !show_splash(renderer)) {
+        SDL_DestroyTexture(texture);
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        ts_instrument_free(&instrument);
+        return 0;
     }
 
     SDL_zero(desired);

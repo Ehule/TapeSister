@@ -17,7 +17,14 @@ option(TAPESISTER_BUILD_SDL "Build the playable SDL2 instrument" ON)
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
   add_executable(tapesister src/main_sdl.c)
+  target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
+  add_custom_command(TARGET tapesister POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/assets"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_splash.png"
+            "$<TARGET_FILE_DIR:tapesister>/assets/tapesister_splash.png"
+    COMMENT "Copying TapeSister splash artwork")
 endif()
 
 enable_testing()
