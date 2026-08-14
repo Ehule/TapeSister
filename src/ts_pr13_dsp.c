@@ -5,6 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 static float clampf13(float value, float low, float high)
 {
     return value < low ? low : value > high ? high : value;
@@ -34,6 +38,19 @@ static void match_peak13(float *data, size_t frames, float target)
         for (size_t i = 0; i < frames; ++i)
             data[i] = clampf13(data[i] * gain, -1.0f, 1.0f);
     }
+}
+
+static float interpolated13(const float *data, size_t frames, double position)
+{
+    size_t first;
+    size_t second;
+    float fraction;
+    if (position <= 0.0) return data[0];
+    if (position >= (double)(frames - 1u)) return data[frames - 1u];
+    first = (size_t)position;
+    second = first + 1u;
+    fraction = (float)(position - (double)first);
+    return data[first] + (data[second] - data[first]) * fraction;
 }
 
 int ts_pr13_apply_body_edge_drift(TsSample *sample, float body, float edge,
@@ -107,15 +124,26 @@ int ts_pr13_apply_body_edge_drift(TsSample *sample, float body, float edge,
 
     {
         const float bipolar = (drift - 0.5f) * 2.0f;
-        if (fabsf(bipolar) > 0.0001f && frames > 1) {
-            long long shift = llround((double)bipolar * 0.95 * (double)frames);
+        if (fabsf(bipolar) > 0.0001f && frames > 2u) {
+            double depth = (double)sample->sample_rate * 0.012 * fabs((double)bipolar);
+            double frame_limit = (double)frames * 0.02;
+            float target;
+            if (depth > frame_limit) depth = frame_limit;
+            if (depth < 0.25) depth = 0.25;
             memcpy(source, sample->data, frames * sizeof(float));
+            target = peak13(source, frames);
             for (size_t i = 0; i < frames; ++i) {
-                long long destination = (long long)i + shift;
-                destination %= (long long)frames;
-                if (destination < 0) destination += (long long)frames;
-                sample->data[(size_t)destination] = source[i];
+                double normalized = (double)i / (double)(frames - 1u);
+                double sine = sin(M_PI * normalized);
+                double taper = sine * sine;
+                double wander = sin(2.0 * M_PI * normalized * 1.37 + 0.35) * 0.68 +
+                                sin(2.0 * M_PI * normalized * 3.11 + 1.10) * 0.32;
+                double position = (double)i + (double)bipolar * depth * taper * wander;
+                if (position < 0.0) position = 0.0;
+                if (position > (double)(frames - 1u)) position = (double)(frames - 1u);
+                sample->data[i] = interpolated13(source, frames, position);
             }
+            match_peak13(sample->data, frames, target);
         }
     }
 
