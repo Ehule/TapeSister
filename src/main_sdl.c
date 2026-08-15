@@ -901,8 +901,11 @@ static void apply_warp(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
     lock_edit(device, audio);
     ok = ts_instrument_apply_warp(instrument, amount, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "WARP %.2F %s - SOURCE PRESERVED",
-                     amount, selected ? "SELECTION" : "ALL");
+    if (ok) {
+        ui->warp_amount = amount;
+        snprintf(ui->status, sizeof(ui->status), "WARP %.2F %s - SOURCE PRESERVED",
+                 amount, selected ? "SELECTION" : "ALL");
+    }
     else snprintf(ui->status, sizeof(ui->status), "WARP FAILED: %.137s", error);
 }
 

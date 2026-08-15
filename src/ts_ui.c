@@ -35,7 +35,16 @@ static void rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t color)
         for (int px = x; px < x + w; ++px) fb->pixels[py * TS_UI_WIDTH + px] = color;
 }
 
-static void line(TsFramebuffer *fb, int x0, int y0, int x1, int y1, uint32_t color)
+static void wave_rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t color)
+{
+    if (x < TS_WAVE_X) { w -= TS_WAVE_X - x; x = TS_WAVE_X; }
+    if (y < TS_WAVE_Y) { h -= TS_WAVE_Y - y; y = TS_WAVE_Y; }
+    if (x + w > TS_WAVE_X + TS_WAVE_W) w = TS_WAVE_X + TS_WAVE_W - x;
+    if (y + h > TS_WAVE_Y + TS_WAVE_H) h = TS_WAVE_Y + TS_WAVE_H - y;
+    if (w > 0 && h > 0) rect(fb, x, y, w, h, color);
+}
+
+static void wave_line(TsFramebuffer *fb, int x0, int y0, int x1, int y1, uint32_t color)
 {
     int dx = x1 > x0 ? x1 - x0 : x0 - x1;
     int sx = x0 < x1 ? 1 : -1;
@@ -43,12 +52,15 @@ static void line(TsFramebuffer *fb, int x0, int y0, int x1, int y1, uint32_t col
     int sy = y0 < y1 ? 1 : -1;
     int error = dx + dy;
     for (;;) {
-        if (x0 >= 0 && x0 < TS_UI_WIDTH && y0 >= 0 && y0 < TS_UI_HEIGHT)
+        if (x0 >= TS_WAVE_X && x0 < TS_WAVE_X + TS_WAVE_W &&
+            y0 >= TS_WAVE_Y && y0 < TS_WAVE_Y + TS_WAVE_H)
             fb->pixels[y0 * TS_UI_WIDTH + x0] = color;
         if (x0 == x1 && y0 == y1) break;
-        int twice = error * 2;
-        if (twice >= dy) { error += dy; x0 += sx; }
-        if (twice <= dx) { error += dx; y0 += sy; }
+        {
+            int twice = error * 2;
+            if (twice >= dy) { error += dy; x0 += sx; }
+            if (twice <= dx) { error += dx; y0 += sy; }
+        }
     }
 }
 
@@ -463,24 +475,24 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 20, 49, "NO SOURCE", PAL_INSTRUMENT, 1);
     }
 
-    rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
+    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
     for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; x += 30)
-        rect(fb, x, TS_WAVE_Y, 1, TS_WAVE_H, RGB(26, 24, 27));
+        wave_rect(fb, x, TS_WAVE_Y, 1, TS_WAVE_H, RGB(26, 24, 27));
     for (int y = TS_WAVE_Y + 20; y < TS_WAVE_Y + TS_WAVE_H; y += 20)
-        rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1, RGB(26, 24, 27));
-    rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2, TS_WAVE_W, 1, RGB(74, 67, 75));
+        wave_rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1, RGB(26, 24, 27));
+    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2, TS_WAVE_W, 1, RGB(74, 67, 75));
 
     if (has_loop && loop_last > view_first && loop_first < view_last) {
         int lx0 = frame_x(loop_first, view_first, view_last);
         int lx1 = frame_x(loop_last, view_first, view_last);
-        rect(fb, lx0, TS_WAVE_Y, lx1 - lx0, TS_WAVE_H, RGB(5, 24, 48));
+        wave_rect(fb, lx0, TS_WAVE_Y, lx1 - lx0, TS_WAVE_H, RGB(5, 24, 48));
     }
 
     if (has_selection && selection_last > view_first &&
         selection_first < view_last) {
         int sx0 = frame_x(selection_first, view_first, view_last);
         int sx1 = frame_x(selection_last, view_first, view_last);
-        rect(fb, sx0, TS_WAVE_Y, sx1 - sx0, TS_WAVE_H, PAL_BLOCK);
+        wave_rect(fb, sx0, TS_WAVE_Y, sx1 - sx0, TS_WAVE_H, PAL_BLOCK);
     }
     if (sample->frames && view_last > view_first) {
         if (view_last > sample->frames) view_last = sample->frames;
@@ -499,12 +511,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             size_t at = begin;
             uint32_t color = has_selection && at >= selection_first &&
                              at < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
-            line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
+            wave_line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
             for (size_t i = begin; i < end && i < sample->frames; ++i) {
                 if (sample->data[i] == 0.0f ||
                     (i > 0 && ((sample->data[i - 1u] < 0.0f && sample->data[i] > 0.0f) ||
                                (sample->data[i - 1u] > 0.0f && sample->data[i] < 0.0f)))) {
-                    rect(fb, TS_WAVE_X + x, middle - 1, 1, 3, PAL_VOLUME);
+                    wave_rect(fb, TS_WAVE_X + x, middle - 1, 1, 3, PAL_VOLUME);
                     break;
                 }
             }
@@ -560,40 +572,40 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 }
                 y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
                 y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
-                if (y0 == y1) rect(fb, x, y0 - 1, 1, 3, PAL_EFFECT);
-                else line(fb, x, y0, x, y1, PAL_EFFECT);
+                if (y0 == y1) wave_rect(fb, x, y0 - 1, 1, 3, PAL_EFFECT);
+                else wave_line(fb, x, y0, x, y1, PAL_EFFECT);
             }
         }
         if (clipped_last > clipped_first) {
-            rect(fb, clipped_first, TS_WAVE_Y + 2, clipped_last - clipped_first, 2,
+            wave_rect(fb, clipped_first, TS_WAVE_Y + 2, clipped_last - clipped_first, 2,
                  PAL_EFFECT);
-            rect(fb, clipped_first, TS_WAVE_Y + TS_WAVE_H - 4,
+            wave_rect(fb, clipped_first, TS_WAVE_Y + TS_WAVE_H - 4,
                  clipped_last - clipped_first, 2, PAL_EFFECT);
-            rect(fb, clipped_first, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
-            rect(fb, clipped_last - 2, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
+            wave_rect(fb, clipped_first, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
+            wave_rect(fb, clipped_last - 2, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
         }
     }
 
     if (has_loop && loop_last > view_first && loop_first < view_last) {
         int lx0 = frame_x(loop_first, view_first, view_last);
         int lx1 = frame_x(loop_last, view_first, view_last);
-        rect(fb, lx0, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
-        rect(fb, lx1 - 2, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
-        rect(fb, lx0, TS_WAVE_Y, 7, 4, PAL_TUNING);
-        rect(fb, lx1 - 7, TS_WAVE_Y + TS_WAVE_H - 4, 7, 4, PAL_TUNING);
+        wave_rect(fb, lx0, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
+        wave_rect(fb, lx1 - 2, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
+        wave_rect(fb, lx0, TS_WAVE_Y, 7, 4, PAL_TUNING);
+        wave_rect(fb, lx1 - 7, TS_WAVE_Y + TS_WAVE_H - 4, 7, 4, PAL_TUNING);
         {
             int cy = TS_WAVE_Y + 10;
             int center = (lx0 + lx1) / 2;
             if (display_loop_mode != TS_LOOP_REVERSE) {
-                line(fb, center - 8, cy, center + 8, cy, PAL_TUNING);
-                line(fb, center + 8, cy, center + 3, cy - 4, PAL_TUNING);
-                line(fb, center + 8, cy, center + 3, cy + 4, PAL_TUNING);
+                wave_line(fb, center - 8, cy, center + 8, cy, PAL_TUNING);
+                wave_line(fb, center + 8, cy, center + 3, cy - 4, PAL_TUNING);
+                wave_line(fb, center + 8, cy, center + 3, cy + 4, PAL_TUNING);
             }
             if (display_loop_mode != TS_LOOP_FORWARD) {
                 int offset = display_loop_mode == TS_LOOP_PING_PONG ? 18 : 0;
-                line(fb, center - 8, cy + offset, center + 8, cy + offset, PAL_TUNING);
-                line(fb, center - 8, cy + offset, center - 3, cy + offset - 4, PAL_TUNING);
-                line(fb, center - 8, cy + offset, center - 3, cy + offset + 4, PAL_TUNING);
+                wave_line(fb, center - 8, cy + offset, center + 8, cy + offset, PAL_TUNING);
+                wave_line(fb, center - 8, cy + offset, center - 3, cy + offset - 4, PAL_TUNING);
+                wave_line(fb, center - 8, cy + offset, center - 3, cy + offset + 4, PAL_TUNING);
             }
         }
     }
@@ -610,8 +622,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         }
         if (playhead_x >= TS_WAVE_X && playhead_x <= TS_WAVE_X + TS_WAVE_W) {
             if (playhead_x == TS_WAVE_X + TS_WAVE_W) --playhead_x;
-            rect(fb, playhead_x, TS_WAVE_Y, 2, TS_WAVE_H, playhead_color);
-            rect(fb, playhead_x - 2, TS_WAVE_Y, 6, 3, playhead_color);
+            wave_rect(fb, playhead_x, TS_WAVE_Y, 2, TS_WAVE_H, playhead_color);
+            wave_rect(fb, playhead_x - 2, TS_WAVE_Y, 6, 3, playhead_color);
         }
     }
 
@@ -624,7 +636,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     slider(fb, 10, 233, 72, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 88, 233, 72, "EDGE", instrument->process.edge, PAL_VOLUME);
     slider(fb, 166, 233, 72, "DRIFT", instrument->process.drift, PAL_TUNING);
-    slider(fb, 244, 233, 86, "WARP", 0.0f, PAL_MOUSE);
+    slider(fb, 244, 233, 86, "WARP", ui->warp_amount, PAL_MOUSE);
     button(fb, 335, 233, 34, "EDIT", ui->fx_page == TS_FX_EDIT);
     button(fb, 372, 233, 34, "TUNE", ui->fx_page == TS_FX_TUNE);
     button(fb, 409, 233, 36, "NOIS", ui->fx_page == TS_FX_NOISE);

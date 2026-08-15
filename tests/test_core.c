@@ -1668,6 +1668,31 @@ int main(void)
     CHECK(framebuffer_contains(&fb, 0xffffe700u));
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     CHECK(framebuffer_contains(&fb, 0xff009ee3u));
+    CHECK(ui.warp_amount == 0.0f);
+    ui.warp_amount = 0.75f;
+    ts_ui_render(&fb, &ui, &imported);
+    CHECK(fb.pixels[247 * TS_UI_WIDTH + 295] == 0xffffd265u);
+    CHECK(fb.pixels[247 * TS_UI_WIDTH + 325] == 0xff0c0c0cu);
+    {
+        float *saved = (float *)malloc(imported.current.frames * sizeof(float));
+        CHECK(saved != NULL);
+        if (saved != NULL) {
+            memcpy(saved, imported.current.data, imported.current.frames * sizeof(float));
+            for (size_t i = 0; i < imported.current.frames; ++i)
+                imported.current.data[i] = (i & 1u) ? 8.0f : -8.0f;
+            ts_instrument_clear_selection(&imported);
+            ts_ui_render(&fb, &ui, &imported);
+            for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; ++x) {
+                CHECK(fb.pixels[(TS_WAVE_Y - 1) * TS_UI_WIDTH + x] != 0xffffe700u);
+                CHECK(fb.pixels[(TS_WAVE_Y + TS_WAVE_H) * TS_UI_WIDTH + x] !=
+                      0xffffe700u);
+            }
+            memcpy(imported.current.data, saved, imported.current.frames * sizeof(float));
+            free(saved);
+            ts_instrument_set_selection(&imported, imported.current.frames / 4,
+                                        imported.current.frames / 2);
+        }
+    }
     {
         int zero_pixels = 0;
         int middle = TS_WAVE_Y + TS_WAVE_H / 2;
