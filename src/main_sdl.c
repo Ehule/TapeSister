@@ -892,21 +892,82 @@ static void apply_sample_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiS
     else snprintf(ui->status, sizeof(ui->status), "EDIT FAILED: %.137s", error);
 }
 
-static void apply_warp(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                       TsInstrument *instrument, float amount)
+static int begin_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
+                              TsUiState *ui, TsInstrument *instrument, int wheel)
 {
     char error[160];
-    int selected = instrument->has_selection;
     int ok;
     lock_edit(device, audio);
-    ok = ts_instrument_apply_warp(instrument, amount, error, sizeof(error));
+    ok = ts_instrument_warp_gesture_begin(instrument, &ui->warp_gesture,
+                                          error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (ok) {
-        ui->warp_amount = amount;
-        snprintf(ui->status, sizeof(ui->status), "WARP %.2F %s - SOURCE PRESERVED",
-                 amount, selected ? "SELECTION" : "ALL");
+        ui->warp_dragging = !wheel;
+        ui->warp_wheel_active = wheel;
+        ui->warp_amount = 0.0f;
+        ui->warp_last_audition_ms = 0;
+    } else snprintf(ui->status, sizeof(ui->status),
+                    "WARP BEGIN FAILED: %.131s", error);
+    return ok;
+}
+
+static int preview_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, TsInstrument *instrument,
+                                float amount, int output_rate)
+{
+    char error[160];
+    uint32_t now;
+    int ok;
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    lock_edit(device, audio);
+    ok = ts_instrument_warp_gesture_preview(instrument, &ui->warp_gesture,
+                                            amount, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (!ok) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "WARP PREVIEW FAILED: %.129s", error);
+        return 0;
     }
-    else snprintf(ui->status, sizeof(ui->status), "WARP FAILED: %.137s", error);
+    ui->warp_amount = amount;
+    now = SDL_GetTicks();
+    if (ui->warp_last_audition_ms == 0 || now - ui->warp_last_audition_ms >= 100u) {
+        TsAuditionRange range = ui->warp_gesture.start.has_selection ?
+                                TS_AUDITION_SELECTION : TS_AUDITION_ALL;
+        ui->audition_source = TS_AUDITION_CURRENT;
+        begin_audition(device, audio, ui, instrument, range, 1.0, output_rate);
+        ui->warp_last_audition_ms = now;
+    } else snprintf(ui->status, sizeof(ui->status), "WARP PREVIEW %.2F", amount);
+    return 1;
+}
+
+static void end_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
+                             TsUiState *ui, TsInstrument *instrument, int cancel)
+{
+    char error[160];
+    float amount = ui->warp_gesture.amount;
+    int ok;
+    lock_edit(device, audio);
+    ok = cancel ? ts_instrument_warp_gesture_cancel(
+                      instrument, &ui->warp_gesture, error, sizeof(error)) :
+                  ts_instrument_warp_gesture_commit(
+                      instrument, &ui->warp_gesture, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    ui->warp_dragging = 0;
+    ui->warp_wheel_active = 0;
+    ui->warp_amount = 0.0f;
+    ui->warp_last_audition_ms = 0;
+    if (cancel) stop_all(device, audio, ui);
+    if (ok && cancel)
+        snprintf(ui->status, sizeof(ui->status),
+                 "WARP CANCELLED - ORIGINAL RESTORED");
+    else if (ok && amount > 0.0f)
+        snprintf(ui->status, sizeof(ui->status), "WARP %.2F COMMITTED", amount);
+    else if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 "WARP RETURNED TO ZERO - NO EDIT");
+    else snprintf(ui->status, sizeof(ui->status),
+                  "WARP END FAILED: %.133s", error);
 }
 
 static void rotate_waveform(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -1955,7 +2016,13 @@ int main(int argc, char **argv)
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
+            if (event.type == SDL_DROPFILE && ui.warp_gesture.active) {
+                end_warp_gesture(device, &audio, &ui, &instrument, 1);
+                SDL_free(event.drop.file);
+                continue;
+            } else if (event.type == SDL_QUIT) {
+                if (ui.warp_gesture.active)
+                    end_warp_gesture(device, &audio, &ui, &instrument, 1);
                 if (!ui.exit_confirm_open)
                     begin_exit_confirmation(device, &audio, &ui, &instrument);
             }
@@ -1988,12 +2055,21 @@ int main(int argc, char **argv)
                        ui.browser.mode != TS_BROWSER_CLOSED && !ui.exit_confirm_open) {
                 if (ui.browser.filename_focus && ui.browser.mode != TS_BROWSER_LOAD_WAV)
                     ts_browser_append_filename(&ui.browser, event.text.text);
+            } else if (event.type == SDL_WINDOWEVENT &&
+                       event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
+                       ui.warp_gesture.active) {
+                end_warp_gesture(device, &audio, &ui, &instrument, 1);
             } else if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
                 if (!((mod & KMOD_CTRL) && key == SDLK_p)) ui.commit_armed = 0;
                 ui.bank_clear_armed = 0;
-                if (ui.exit_confirm_open) {
+                if (ui.warp_gesture.active && key == SDLK_ESCAPE) {
+                    end_warp_gesture(device, &audio, &ui, &instrument, 1);
+                } else if (ui.warp_gesture.active) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "FINISH OR CANCEL THE WARP GESTURE FIRST");
+                } else if (ui.exit_confirm_open) {
                     if (key == SDLK_ESCAPE || key == SDLK_n) {
                         ui.exit_confirm_open = 0;
                         snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
@@ -2260,6 +2336,10 @@ int main(int argc, char **argv)
                     if (note >= 0 && device)
                         begin_note(device, &audio, &ui, &instrument, note, obtained.freq, 0);
                 }
+            } else if (event.type == SDL_KEYUP && ui.warp_wheel_active &&
+                       (event.key.keysym.sym == SDLK_LCTRL ||
+                        event.key.keysym.sym == SDLK_RCTRL)) {
+                end_warp_gesture(device, &audio, &ui, &instrument, 0);
             } else if (event.type == SDL_KEYUP && !ui.config_open &&
                        ui.renaming_bank_slot < 0 &&
                        ui.renaming_recipe_slot < 0 && !ui.export_choice_open &&
@@ -2286,7 +2366,16 @@ int main(int argc, char **argv)
                     wheel_y = -wheel_y;
                     wheel_x = -wheel_x;
                 }
-                if (ui.fx_page == TS_FX_FAMILY && y >= 261 && y < 285) {
+                if ((SDL_GetModState() & KMOD_CTRL) && wheel_y != 0 &&
+                    x >= 244 && x < 330 && y >= 233 && y < 257) {
+                    if ((!ui.warp_gesture.active &&
+                         begin_warp_gesture(device, &audio, &ui, &instrument, 1)) ||
+                        ui.warp_wheel_active) {
+                        float amount = ui.warp_amount + (float)wheel_y * 0.015f;
+                        preview_warp_gesture(device, &audio, &ui, &instrument,
+                                             amount, obtained.freq);
+                    }
+                } else if (ui.fx_page == TS_FX_FAMILY && y >= 261 && y < 285) {
                     instrument.family_mutation += (float)wheel_y * 0.01f;
                     if (instrument.family_mutation < 0.0f) instrument.family_mutation = 0.0f;
                     if (instrument.family_mutation > 1.0f) instrument.family_mutation = 1.0f;
@@ -2332,6 +2421,14 @@ int main(int argc, char **argv)
                                  "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
                     }
                 }
+            } else if (event.type == SDL_MOUSEMOTION && ui.warp_dragging) {
+                int x, y;
+                float amount;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
+                (void)y;
+                amount = (float)(x - 244) / 86.0f;
+                preview_warp_gesture(device, &audio, &ui, &instrument,
+                                     amount, obtained.freq);
             } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.export_choice_open || ui.exit_confirm_open)) {
@@ -2393,6 +2490,9 @@ int main(int argc, char **argv)
                 (void)y;
                 size_t at = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
                 ts_instrument_set_selection_snapped(&instrument, ui.selection_anchor, at);
+            } else if (event.type == SDL_MOUSEBUTTONDOWN && ui.warp_gesture.active) {
+                end_warp_gesture(device, &audio, &ui, &instrument, 1);
+                continue;
             } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
                 int x, y;
                 SDL_Keymod mod = SDL_GetModState();
@@ -2604,7 +2704,9 @@ int main(int argc, char **argv)
                     if (x >= 244) {
                         float amount = (float)(x - 244) / 86.0f;
                         if (amount > 1.0f) amount = 1.0f;
-                        apply_warp(device, &audio, &ui, &instrument, amount);
+                        if (begin_warp_gesture(device, &audio, &ui, &instrument, 0))
+                            preview_warp_gesture(device, &audio, &ui, &instrument,
+                                                 amount, obtained.freq);
                         continue;
                     } else if (x < 82) {
                         control = &process.body; start = 10; width = 72; label = "BODY";
@@ -2965,6 +3067,10 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONUP &&
                        (event.button.button == SDL_BUTTON_LEFT ||
                         event.button.button == SDL_BUTTON_RIGHT)) {
+                if (ui.warp_dragging && event.button.button == SDL_BUTTON_LEFT) {
+                    end_warp_gesture(device, &audio, &ui, &instrument, 0);
+                    continue;
+                }
                 if (ui.tape_dragging && event.button.button == ui.tape_drag_button) {
                     finish_tape_drag(device, &audio, &ui, &instrument);
                     continue;

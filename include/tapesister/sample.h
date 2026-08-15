@@ -276,6 +276,16 @@ typedef struct {
     TsBankSlot bank[TS_BANK_SLOT_COUNT];
 } TsInstrument;
 
+typedef struct {
+    TsEditSnapshot start;
+    TsSample original;
+    const float *owner_parent_data;
+    uint32_t owner_generation;
+    int owner_slot;
+    float amount;
+    int active;
+} TsWarpGesture;
+
 void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
 int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, size_t error_size);
@@ -350,6 +360,19 @@ int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
                                        char *error, size_t error_size);
 int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
                              char *error, size_t error_size);
+void ts_warp_gesture_init(TsWarpGesture *gesture);
+int ts_instrument_warp_gesture_begin(TsInstrument *instrument,
+                                     TsWarpGesture *gesture,
+                                     char *error, size_t error_size);
+int ts_instrument_warp_gesture_preview(TsInstrument *instrument,
+                                       TsWarpGesture *gesture, float amount,
+                                       char *error, size_t error_size);
+int ts_instrument_warp_gesture_commit(TsInstrument *instrument,
+                                      TsWarpGesture *gesture,
+                                      char *error, size_t error_size);
+int ts_instrument_warp_gesture_cancel(TsInstrument *instrument,
+                                      TsWarpGesture *gesture,
+                                      char *error, size_t error_size);
 int ts_instrument_zoom_selection(TsInstrument *instrument);
 int ts_instrument_zoom_view(TsInstrument *instrument, size_t anchor_frame,
                             float anchor_ratio, float scale);

@@ -3703,6 +3703,143 @@ int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
     return bank_sync_selected(instrument, error, error_size);
 }
 
+void ts_warp_gesture_init(TsWarpGesture *gesture)
+{
+    if (gesture == NULL) return;
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+static int warp_gesture_owns(const TsInstrument *instrument,
+                             const TsWarpGesture *gesture)
+{
+    return instrument != NULL && gesture != NULL && gesture->active &&
+           instrument->selected_slot == gesture->owner_slot &&
+           instrument->generation == gesture->owner_generation &&
+           instrument->parent.data == gesture->owner_parent_data &&
+           instrument->current.frames == gesture->original.frames;
+}
+
+static void warp_gesture_clear(TsWarpGesture *gesture)
+{
+    ts_sample_free(&gesture->original);
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+int ts_instrument_warp_gesture_begin(TsInstrument *instrument,
+                                     TsWarpGesture *gesture,
+                                     char *error, size_t error_size)
+{
+    if (instrument == NULL || gesture == NULL || gesture->active ||
+        instrument->current.data == NULL) {
+        set_error(error, error_size, "Could not begin WARP gesture");
+        return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits");
+        return 0;
+    }
+    gesture->start = snapshot(instrument);
+    if (!ts_sample_clone(&gesture->original, &instrument->current,
+                         error, error_size)) return 0;
+    gesture->owner_parent_data = instrument->parent.data;
+    gesture->owner_generation = instrument->generation;
+    gesture->owner_slot = instrument->selected_slot;
+    gesture->amount = 0.0f;
+    gesture->active = 1;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_warp_gesture_preview(TsInstrument *instrument,
+                                       TsWarpGesture *gesture, float amount,
+                                       char *error, size_t error_size)
+{
+    TsSample preview;
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size, "WARP gesture no longer owns Current");
+        return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "WARP amount must be between zero and one");
+        return 0;
+    }
+    ts_sample_init(&preview);
+    if (amount == 0.0f) {
+        if (!ts_sample_clone(&preview, &gesture->original, error, error_size)) return 0;
+    } else {
+        target = gesture->start;
+        memset(&operation, 0, sizeof(operation));
+        operation.kind = TS_POST_WARP;
+        operation.first = target.has_selection ? target.selection_first : 0u;
+        operation.last = target.has_selection ? target.selection_last :
+                                                 gesture->original.frames;
+        operation.amount = amount;
+        target.post_edits[target.post_edit_count++] = operation;
+        if (!render_snapshot(&preview, instrument, &target, error, error_size)) return 0;
+    }
+    ts_sample_free(&instrument->current);
+    instrument->current = preview;
+    gesture->amount = amount;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_warp_gesture_cancel(TsInstrument *instrument,
+                                      TsWarpGesture *gesture,
+                                      char *error, size_t error_size)
+{
+    TsSample restored;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture);
+        set_error(error, error_size, "WARP gesture no longer owns Current");
+        return 0;
+    }
+    ts_sample_init(&restored);
+    if (!ts_sample_clone(&restored, &gesture->original, error, error_size)) return 0;
+    ts_sample_free(&instrument->current);
+    instrument->current = restored;
+    warp_gesture_clear(gesture);
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_warp_gesture_commit(TsInstrument *instrument,
+                                      TsWarpGesture *gesture,
+                                      char *error, size_t error_size)
+{
+    TsPostEdit operation;
+    int ok;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture);
+        set_error(error, error_size, "WARP gesture no longer owns Current");
+        return 0;
+    }
+    if (gesture->amount == 0.0f)
+        return ts_instrument_warp_gesture_cancel(instrument, gesture,
+                                                 error, error_size);
+    stack_push(instrument->undo, &instrument->undo_count, gesture->start);
+    instrument->redo_count = 0;
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_WARP;
+    operation.first = gesture->start.has_selection ?
+                      gesture->start.selection_first : 0u;
+    operation.last = gesture->start.has_selection ?
+                     gesture->start.selection_last : gesture->original.frames;
+    operation.amount = gesture->amount;
+    memcpy(instrument->post_edits, gesture->start.post_edits,
+           sizeof(instrument->post_edits));
+    instrument->post_edit_count = gesture->start.post_edit_count;
+    instrument->post_edits[instrument->post_edit_count++] = operation;
+    ok = bank_sync_selected(instrument, error, error_size);
+    warp_gesture_clear(gesture);
+    if (ok) set_error(error, error_size, "");
+    return ok;
+}
+
 int ts_instrument_zoom_selection(TsInstrument *instrument)
 {
     if (!instrument->has_selection || instrument->selection_last <= instrument->selection_first)

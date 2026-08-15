@@ -91,6 +91,10 @@ typedef struct {
     TsTuning pitch_suggestion;
     float pitch_confidence;
     float warp_amount;
+    TsWarpGesture warp_gesture;
+    uint32_t warp_last_audition_ms;
+    int warp_dragging;
+    int warp_wheel_active;
     int has_pitch_suggestion;
     size_t selection_anchor;
     size_t tape_source_first;

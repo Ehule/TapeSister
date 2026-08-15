@@ -582,6 +582,80 @@ int main(void)
         ts_instrument_free(&warp);
     }
     {
+        TsInstrument warp;
+        TsWarpGesture gesture;
+        float original[192];
+        float preview_20[192];
+        ts_instrument_init(&warp);
+        ts_warp_gesture_init(&gesture);
+        for (size_t i = 0; i < 192; ++i)
+            original[i] = 0.61f * sinf((float)i * 0.093f) +
+                          0.13f * cosf((float)i * 0.317f);
+        warp.parent.frames = 192;
+        warp.parent.sample_rate = 44100;
+        warp.parent.data = (float *)malloc(sizeof(original));
+        CHECK(warp.parent.data != NULL);
+        if (warp.parent.data != NULL) {
+            memcpy(warp.parent.data, original, sizeof(original));
+            CHECK(ts_sample_clone(&warp.current, &warp.parent, error, sizeof(error)));
+            warp.crop_last = warp.parent.frames;
+            warp.view_last = warp.current.frames;
+            ts_instrument_set_selection(&warp, 24, 168);
+
+            CHECK(ts_instrument_warp_gesture_begin(&warp, &gesture,
+                                                    error, sizeof(error)));
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.2f,
+                                                      error, sizeof(error)));
+            memcpy(preview_20, warp.current.data, sizeof(preview_20));
+            CHECK(memcmp(warp.current.data, original, 24 * sizeof(float)) == 0);
+            CHECK(memcmp(warp.current.data + 168, original + 168,
+                         24 * sizeof(float)) == 0);
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.8f,
+                                                      error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, preview_20, sizeof(preview_20)) != 0);
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.2f,
+                                                      error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, preview_20, sizeof(preview_20)) == 0);
+            CHECK(warp.undo_count == 0);
+            CHECK(ts_instrument_warp_gesture_commit(&warp, &gesture,
+                                                     error, sizeof(error)));
+            CHECK(warp.undo_count == 1);
+            CHECK(ts_instrument_undo(&warp, error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+
+            CHECK(ts_instrument_warp_gesture_begin(&warp, &gesture,
+                                                    error, sizeof(error)));
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.9f,
+                                                      error, sizeof(error)));
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.0f,
+                                                      error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+            CHECK(ts_instrument_warp_gesture_commit(&warp, &gesture,
+                                                     error, sizeof(error)));
+            CHECK(warp.undo_count == 0);
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+
+            CHECK(ts_instrument_warp_gesture_begin(&warp, &gesture,
+                                                    error, sizeof(error)));
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.7f,
+                                                      error, sizeof(error)));
+            CHECK(ts_instrument_warp_gesture_cancel(&warp, &gesture,
+                                                     error, sizeof(error)));
+            CHECK(warp.undo_count == 0);
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+
+            CHECK(ts_instrument_warp_gesture_begin(&warp, &gesture,
+                                                    error, sizeof(error)));
+            ++warp.generation;
+            CHECK(!ts_instrument_warp_gesture_preview(&warp, &gesture, 0.5f,
+                                                       error, sizeof(error)));
+            --warp.generation;
+            CHECK(ts_instrument_warp_gesture_cancel(&warp, &gesture,
+                                                     error, sizeof(error)));
+        }
+        ts_instrument_free(&warp);
+    }
+    {
         TsInstrument rotation;
         float original[12];
         ts_instrument_init(&rotation);

@@ -23,11 +23,13 @@ number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead
 Set `rotate_wheel_fine` (1–20, default 5) and `rotate_wheel_coarse` (20–100,
 default 50) in the `[Waveform]` section of `tapesister.ini`.
 
-The compact **WARP** control applies one deterministic, length-preserving offline
-Transform to Current, or only to the fixed waveform selection when one is active.
-Click near the left for subtle read-position shimmer, the middle for metallic bending,
-or the right for aggressive modulation. Each nonzero click is one Undo/Redo action;
-samples outside a selection remain unchanged.
+The compact **WARP** control is a spring-loaded, deterministic offline Transform for
+Current, or only for the fixed waveform selection when one is active. Hold and drag
+right to hear increasing read-position bend, ease left to hear less, and release to
+commit one Undo/Redo action; releasing at zero restores the exact gesture-start audio.
+Ctrl+wheel over WARP provides fine exploration and commits when Ctrl is released.
+Every preview auto-auditions from the same frozen starting point, and the control
+springs back to zero after commit or Escape cancellation.
 
 ## A/B audition and playhead
 

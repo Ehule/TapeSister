@@ -294,6 +294,7 @@ int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
+    ts_warp_gesture_init(&ui->warp_gesture);
     ui->mouse_note = -1;
     ui->bank_view_slot = -1;
     ui->load_bank_slot = -1;
