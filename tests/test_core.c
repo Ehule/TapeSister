@@ -71,6 +71,20 @@ int main(void)
     ts_instrument_init(&family_restored);
     ts_note_bank_init(&notes);
     ts_recipe_bank_init(&recipe_bank);
+    ts_ui_init(&ui);
+    CHECK(ts_ui_transform_auto_audition_allowed(&ui));
+    ui.workbench_loop_active = 1;
+    CHECK(!ts_ui_transform_auto_audition_allowed(&ui));
+    ui.workbench_loop_active = 0;
+    CHECK(ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+    ts_ui_cycle_panel(&ui);
+    CHECK(!ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+    ts_ui_cycle_panel(&ui);
+    CHECK(!ui.show_keyboard && ui.show_recipes && !ui.show_ingredients);
+    ts_ui_cycle_panel(&ui);
+    CHECK(!ui.show_keyboard && !ui.show_recipes && ui.show_ingredients);
+    ts_ui_cycle_panel(&ui);
+    CHECK(ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
     CHECK(ts_sample_generate(&a, &first, error, sizeof(error)));
@@ -969,6 +983,25 @@ int main(void)
         CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
                                TS_AUDITION_SELECTION, &plan));
         CHECK(plan.sample == &audition.current && plan.first == 10 && plan.last == 500);
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
+                               TS_AUDITION_WORKBENCH_LOOP, &plan));
+        CHECK(plan.first == 10 && plan.last == 500);
+        audition.view_first = 20;
+        audition.view_last = 400;
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
+                               TS_AUDITION_WORKBENCH_LOOP, &plan));
+        CHECK(plan.first == 10 && plan.last == 500);
+        ts_instrument_clear_selection(&audition);
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
+                               TS_AUDITION_WORKBENCH_LOOP, &plan));
+        CHECK(plan.first == 20 && plan.last == 400);
+        audition.view_first = audition.current.frames + 10u;
+        audition.view_last = audition.current.frames + 20u;
+        CHECK(!ts_audition_plan(&audition, TS_AUDITION_CURRENT,
+                                TS_AUDITION_WORKBENCH_LOOP, &plan));
+        audition.view_first = 5;
+        audition.view_last = 550;
+        ts_instrument_set_selection(&audition, 10, 500);
         CHECK(ts_audition_plan(&audition, TS_AUDITION_PARENT,
                                TS_AUDITION_SELECTION, &plan));
         CHECK(plan.sample == &audition.parent && plan.first == 110 && plan.last == 600);

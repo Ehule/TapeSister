@@ -64,6 +64,8 @@ typedef struct {
     int text_cursor_visible;
     int show_keyboard;
     int show_recipes;
+    int show_ingredients;
+    int workbench_loop_active;
     int bank_view_slot;
     int load_bank_slot;
     int playhead_bank_slot;
@@ -131,6 +133,8 @@ int ts_ui_bank_slot_from_point(int x, int y);
 int ts_ui_recipe_slot_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
 int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind);
+void ts_ui_cycle_panel(TsUiState *ui);
+int ts_ui_transform_auto_audition_allowed(const TsUiState *ui);
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames);
 int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
                            float anchor_ratio, float scale);

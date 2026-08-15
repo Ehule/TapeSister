@@ -311,6 +311,27 @@ void ts_ui_init(TsUiState *ui)
     snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR CREATE A SOURCE");
 }
 
+void ts_ui_cycle_panel(TsUiState *ui)
+{
+    if (ui == NULL) return;
+    if (ui->show_keyboard) {
+        ui->show_keyboard = 0;
+    } else if (!ui->show_recipes && !ui->show_ingredients) {
+        ui->show_recipes = 1;
+    } else if (ui->show_recipes) {
+        ui->show_recipes = 0;
+        ui->show_ingredients = 1;
+    } else {
+        ui->show_ingredients = 0;
+        ui->show_keyboard = 1;
+    }
+}
+
+int ts_ui_transform_auto_audition_allowed(const TsUiState *ui)
+{
+    return ui == NULL || !ui->workbench_loop_active;
+}
+
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames)
 {
     if (ui == NULL) return;
@@ -632,8 +653,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
     button(fb, 85, 205, 82, "CREATE", 0);
     button(fb, 172, 205, 70, "VARY", 0);
-    button(fb, 247, 205, 78, "UNDO", instrument->undo_count > 0);
-    button(fb, 330, 205, 72, "REDO", instrument->redo_count > 0);
+    button(fb, 247, 205, 78, "LOOP", ui->workbench_loop_active);
 
     slider(fb, 10, 233, 72, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 88, 233, 72, "EDGE", instrument->process.edge, PAL_VOLUME);
@@ -740,7 +760,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 10, 289, 70, "PLAY ALL", 0);
     button(fb, 85, 289, 72, "PLAY SEL", 0);
     button(fb, 162, 289, 78, "PLAY VIEW", 0);
-    if (!ui->show_keyboard && !ui->show_recipes)
+    if (!ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients)
         button(fb, 245, 289, 131,
                ui->bank_clear_armed ? "CONFIRM CLEAR" : "CLEAR ALL",
                ui->bank_clear_armed);
@@ -749,10 +769,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 302, 289, 74, "ZOOM SEL", 0);
     }
     button(fb, 381, 289, 74, "SHOW ALL", 0);
-    button(fb, 460, 289, 56, "UNDO", instrument->undo_count > 0);
-    button(fb, 521, 289, 62, "REDO", instrument->redo_count > 0);
     button(fb, 588, 289, 42, ui->show_keyboard ? "BANK" :
-           ui->show_recipes ? "KEYS" : "RCPE", !ui->show_keyboard);
+           ui->show_recipes ? "INGR" : ui->show_ingredients ? "KEYS" : "RCPE",
+           !ui->show_keyboard);
 
     if (ui->show_keyboard) {
         text(fb, 11, 318, "SHIFT+CLICK CHORD  SHIFT+RIGHT CLICK SETS ROOT NOTE", RGB(184, 180, 184), 1);
@@ -791,6 +810,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             button(fb, x, y, 72, label, i == ui->recipes.active_slot);
             if (slot->factory) rect(fb, x + 2, y + 2, 3, 19, PAL_INSTRUMENT);
         }
+    } else if (ui->show_ingredients) {
+        text(fb, 11, 318, "INGR  INGREDIENT SHELVES COMING SOON",
+             RGB(184, 180, 184), 1);
+        text(fb, 11, 348, "CURRENT REMAINS ON THE WORKBENCH",
+             PAL_INSTRUMENT, 1);
     } else {
         text(fb, 11, 318,
              ui->fx_page == TS_FX_FAMILY ?

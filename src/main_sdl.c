@@ -420,16 +420,62 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     audio->range_end = plan.last;
     audio->source = ui->audition_source;
     audio->range = range;
-    audio->looping = range == TS_AUDITION_LOOP;
+    audio->looping = range == TS_AUDITION_LOOP ||
+                     range == TS_AUDITION_WORKBENCH_LOOP;
     audio->crossfade_frames = audio->looping ?
-                              ts_audition_crossfade_frames(&plan,
-                                  instrument->loop_crossfade_ms) : 0;
+                              ts_audition_crossfade_frames(
+                                  &plan, range == TS_AUDITION_WORKBENCH_LOOP ?
+                                  2.0f : instrument->loop_crossfade_ms) : 0;
     audio->step = ((double)plan.sample->sample_rate / output_rate) * pitch;
     audio->playing = 1;
     SDL_UnlockAudioDevice(device);
     snprintf(ui->status, sizeof(ui->status), "PLAYING %s %s",
              ts_audition_source_name(ui->audition_source),
              ts_audition_range_name(range));
+}
+
+static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui);
+
+static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
+                                  TsUiState *ui, const TsInstrument *instrument,
+                                  int output_rate)
+{
+    if (!ts_ui_transform_auto_audition_allowed(ui)) {
+        stop_all(device, audio, ui);
+        return;
+    }
+    ui->audition_source = TS_AUDITION_CURRENT;
+    ui->workbench_loop_active = 1;
+    begin_audition(device, audio, ui, instrument,
+                   TS_AUDITION_WORKBENCH_LOOP, 1.0, output_rate);
+    if (!audio->playing) ui->workbench_loop_active = 0;
+    else snprintf(ui->status, sizeof(ui->status), "LOOP: %s",
+                  instrument->has_selection ? "SELECTION" : "VIEW");
+}
+
+static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
+                                   TsUiState *ui, const TsInstrument *instrument)
+{
+    TsAuditionPlan plan;
+    if (!ui->workbench_loop_active) return;
+    if (!audition_plan_ui(instrument, ui, TS_AUDITION_CURRENT,
+                          TS_AUDITION_WORKBENCH_LOOP, &plan)) {
+        stop_all(device, audio, ui);
+        return;
+    }
+    if (device) SDL_LockAudioDevice(device);
+    audio->position = ts_audition_map_progress(
+        audio->position, audio->range_start, audio->range_end, plan.first, plan.last);
+    if (audio->position >= (double)plan.last) audio->position = (double)plan.first;
+    audio->sample = plan.sample;
+    audio->range_start = plan.first;
+    audio->range_end = plan.last;
+    audio->range = TS_AUDITION_WORKBENCH_LOOP;
+    audio->looping = audio->playing = 1;
+    audio->loop_mode = TS_LOOP_FORWARD;
+    audio->loop_direction = 1;
+    audio->crossfade_frames = ts_audition_crossfade_frames(&plan, 2.0f);
+    if (device) SDL_UnlockAudioDevice(device);
 }
 
 static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -537,6 +583,7 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
     ui->selecting = 0;
     ui->dragging_loop_endpoint = 0;
     ui->loop_drag_started = 0;
+    ui->workbench_loop_active = 0;
     snprintf(ui->status, sizeof(ui->status), "STOPPED");
 }
 
@@ -574,7 +621,8 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
         audio->sample = plan.sample;
         audio->range_start = plan.first;
         audio->range_end = plan.last;
-        audio->looping = audio->range == TS_AUDITION_LOOP && instrument->has_loop;
+        audio->looping = audio->range == TS_AUDITION_WORKBENCH_LOOP ||
+                         (audio->range == TS_AUDITION_LOOP && instrument->has_loop);
         audio->loop_mode = instrument->loop_mode;
         if (audio->loop_mode == TS_LOOP_REVERSE) audio->loop_direction = -1;
         else if (audio->loop_mode == TS_LOOP_FORWARD) audio->loop_direction = 1;
@@ -637,6 +685,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         } else snprintf(ui->status, sizeof(ui->status), "TSP LOAD FAILED: %.131s", error);
         return ok;
     }
+    if (ui->workbench_loop_active) stop_all(device, audio, ui);
     lock_edit(device, audio);
     ui->bank_view_slot = -1;
     if (audio->bank_slot >= 0) {
@@ -681,6 +730,7 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
     int slot = instrument->selected_slot;
     int ok;
     (void)unused_promote; (void)unused_radical;
+    if (ui->workbench_loop_active) stop_all(device, audio, ui);
     lock_edit(device, audio);
     audio->playing = 0; audio->bank_slot = -1;
     if (vary)
@@ -931,7 +981,9 @@ static int preview_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
     }
     ui->warp_amount = amount;
     now = SDL_GetTicks();
-    if (ui->warp_last_audition_ms == 0 || now - ui->warp_last_audition_ms >= 100u) {
+    if (!ts_ui_transform_auto_audition_allowed(ui)) {
+        snprintf(ui->status, sizeof(ui->status), "WARP PREVIEW %.2F - LOOP OWNS AUDITION", amount);
+    } else if (ui->warp_last_audition_ms == 0 || now - ui->warp_last_audition_ms >= 100u) {
         TsAuditionRange range = ui->warp_gesture.start.has_selection ?
                                 TS_AUDITION_SELECTION : TS_AUDITION_ALL;
         ui->audition_source = TS_AUDITION_CURRENT;
@@ -996,7 +1048,9 @@ static int preview_smear_gesture(SDL_AudioDeviceID device, AudioState *audio,
     unlock_edit(device, audio, ui, instrument);
     if (!ok) { snprintf(ui->status, sizeof(ui->status), "SMEAR PREVIEW FAILED: %.128s", error); return 0; }
     ui->smear_amount = amount; now = SDL_GetTicks();
-    if (ui->smear_last_audition_ms == 0 || now - ui->smear_last_audition_ms >= 150u) {
+    if (!ts_ui_transform_auto_audition_allowed(ui)) {
+        snprintf(ui->status, sizeof(ui->status), "SMEAR PREVIEW %.2F - LOOP OWNS AUDITION", amount);
+    } else if (ui->smear_last_audition_ms == 0 || now - ui->smear_last_audition_ms >= 150u) {
         TsAuditionRange range = ui->smear_gesture.start.has_selection ? TS_AUDITION_SELECTION : TS_AUDITION_ALL;
         ui->audition_source = TS_AUDITION_CURRENT;
         begin_audition(device, audio, ui, instrument, range, 1.0, output_rate);
@@ -1249,6 +1303,7 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
     const TsBankSlot *slot;
     TsAuditionPlan plan;
     if (slot_index < 0 || slot_index >= TS_BANK_SLOT_COUNT) return;
+    if (ui->workbench_loop_active) stop_all(device, audio, ui);
     slot = &instrument->bank[slot_index];
     ui->bank_view_slot = slot_index;
     if (device) SDL_LockAudioDevice(device);
@@ -2771,9 +2826,8 @@ int main(int argc, char **argv)
                     generate_family_candidate(device, &audio, &ui, &instrument,
                                               1, (mod & KMOD_SHIFT) != 0, 0);
                 } else if (y >= 205 && y < 228 && x >= 247 && x < 325) {
-                    history_move(device, &audio, &ui, &instrument, 0);
-                } else if (y >= 205 && y < 228 && x >= 330 && x < 402) {
-                    history_move(device, &audio, &ui, &instrument, 1);
+                    toggle_workbench_loop(device, &audio, &ui, &instrument,
+                                          obtained.freq);
                 } else if (y >= 205 && y < 229 && x >= 505 && x < 630) {
                     float amount = (float)(x - 505) / 125.0f;
                     if (begin_smear_gesture(device, &audio, &ui, &instrument, 0))
@@ -2983,7 +3037,7 @@ int main(int argc, char **argv)
                     begin_audition(device, &audio, &ui, &instrument,
                                    TS_AUDITION_DISPLAYED, 1.0, obtained.freq);
                 } else if (y >= 289 && y < 312 && x >= 245 && x < 376 &&
-                           !ui.show_keyboard && !ui.show_recipes) {
+                           !ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients) {
                     clear_all_bank_slots(device, &audio, &ui, &instrument);
                 } else if (y >= 289 && y < 312 && x >= 245 && x < 297) {
                     ui.bank_clear_armed = 0;
@@ -3012,27 +3066,17 @@ int main(int argc, char **argv)
                         ts_instrument_show_all(&instrument);
                         snprintf(ui.status, sizeof(ui.status), "SHOWING ALL CURRENT");
                     }
-                } else if (y >= 289 && y < 312 && x >= 460 && x < 516) {
-                    history_move(device, &audio, &ui, &instrument, 0);
-                } else if (y >= 289 && y < 312 && x >= 521 && x < 583) {
-                    history_move(device, &audio, &ui, &instrument, 1);
                 } else if (y >= 289 && y < 312 && x >= 588 && x < 630) {
-                    if (ui.show_keyboard) {
-                        ui.show_keyboard = 0;
-                        ui.show_recipes = 0;
-                    } else if (!ui.show_recipes) {
-                        ui.show_recipes = 1;
-                        ui.bank_view_slot = -1;
-                    } else {
-                        ui.show_keyboard = 1;
-                        ui.show_recipes = 0;
-                    }
+                    ts_ui_cycle_panel(&ui);
+                    ui.bank_view_slot = -1;
                     snprintf(ui.status, sizeof(ui.status), "%s PANEL",
                              ui.show_keyboard ? "KEYS" :
-                             ui.show_recipes ? "PROCESS RECIPES" : "SAMPLE BANK");
+                             ui.show_recipes ? "PROCESS RECIPES" :
+                             ui.show_ingredients ? "INGREDIENTS" : "SAMPLE BANK");
                 } else {
                     int note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
-                    int bank_slot = !ui.show_keyboard && !ui.show_recipes ?
+                    int bank_slot = !ui.show_keyboard && !ui.show_recipes &&
+                                    !ui.show_ingredients ?
                                     ts_ui_bank_slot_from_point(x, y) : -1;
                     int recipe_slot = ui.show_recipes ?
                                       ts_ui_recipe_slot_from_point(x, y) : -1;
@@ -3139,13 +3183,16 @@ int main(int argc, char **argv)
                 } else if (ui.show_recipes && recipe_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "RMB RENAME  SHIFT+RMB CLEAR");
-                } else if (!ui.show_keyboard && !ui.show_recipes && bank_slot >= 0 &&
+                } else if (!ui.show_keyboard && !ui.show_recipes &&
+                           !ui.show_ingredients && bank_slot >= 0 &&
                            action == TS_UI_BANK_ACTION_CLEAR) {
                     clear_bank_slot(device, &audio, &ui, &instrument, bank_slot);
-                } else if (!ui.show_keyboard && !ui.show_recipes && bank_slot >= 0 &&
+                } else if (!ui.show_keyboard && !ui.show_recipes &&
+                           !ui.show_ingredients && bank_slot >= 0 &&
                            action == TS_UI_BANK_ACTION_RENAME) {
                     begin_bank_rename(&ui, &instrument, bank_slot);
-                } else if (!ui.show_keyboard && !ui.show_recipes && bank_slot >= 0) {
+                } else if (!ui.show_keyboard && !ui.show_recipes &&
+                           !ui.show_ingredients && bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "RMB RENAME  SHIFT+RMB CLEAR");
                 }
@@ -3179,6 +3226,7 @@ int main(int argc, char **argv)
             }
         }
 
+        refresh_workbench_loop(device, &audio, &ui, &instrument);
         if (device) SDL_LockAudioDevice(device);
         {
             const TsNoteVoice *voice = ts_note_bank_display_voice(&audio.notes);
