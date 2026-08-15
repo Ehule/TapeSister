@@ -19,11 +19,15 @@ tapesister_core_tests: $(CORE) tests/test_core.c
 tapesister_render_demo: $(CORE) tests/render_demo.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
-test: tapesister_core_tests
+test: tapesister_core_tests tapesister_smear_tests
 	./tapesister_core_tests
+	./tapesister_smear_tests
+
+tapesister_smear_tests: $(CORE) tests/test_smear.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
 screenshot: tapesister_render_demo
 	./tapesister_render_demo artifacts/tapesister-parent-current.ppm
 
 clean:
-	rm -f tapesister tapesister_core_tests tapesister_render_demo test-roundtrip.wav artifacts/*.ppm
+	rm -f tapesister tapesister_core_tests tapesister_smear_tests tapesister_render_demo test-roundtrip.wav artifacts/*.ppm

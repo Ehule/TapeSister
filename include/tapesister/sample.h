@@ -148,7 +148,8 @@ typedef enum {
     TS_POST_FADE_OUT,
     TS_POST_CROP,
     TS_POST_ROTATE,
-    TS_POST_WARP
+    TS_POST_WARP,
+    TS_POST_SMEAR
 } TsPostEditKind;
 
 typedef struct {
@@ -286,6 +287,8 @@ typedef struct {
     int active;
 } TsWarpGesture;
 
+typedef TsWarpGesture TsSmearGesture;
+
 void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
 int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, size_t error_size);
@@ -373,6 +376,21 @@ int ts_instrument_warp_gesture_commit(TsInstrument *instrument,
 int ts_instrument_warp_gesture_cancel(TsInstrument *instrument,
                                       TsWarpGesture *gesture,
                                       char *error, size_t error_size);
+int ts_instrument_apply_smear(TsInstrument *instrument, float amount,
+                              char *error, size_t error_size);
+void ts_smear_gesture_init(TsSmearGesture *gesture);
+int ts_instrument_smear_gesture_begin(TsInstrument *instrument,
+                                      TsSmearGesture *gesture,
+                                      char *error, size_t error_size);
+int ts_instrument_smear_gesture_preview(TsInstrument *instrument,
+                                        TsSmearGesture *gesture, float amount,
+                                        char *error, size_t error_size);
+int ts_instrument_smear_gesture_commit(TsInstrument *instrument,
+                                       TsSmearGesture *gesture,
+                                       char *error, size_t error_size);
+int ts_instrument_smear_gesture_cancel(TsInstrument *instrument,
+                                       TsSmearGesture *gesture,
+                                       char *error, size_t error_size);
 int ts_instrument_zoom_selection(TsInstrument *instrument);
 int ts_instrument_zoom_view(TsInstrument *instrument, size_t anchor_frame,
                             float anchor_ratio, float scale);

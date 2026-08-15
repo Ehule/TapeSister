@@ -39,5 +39,9 @@ add_executable(tapesister_core_tests tests/test_core.c)
 target_link_libraries(tapesister_core_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_core_tests COMMAND tapesister_core_tests)
 
+add_executable(tapesister_smear_tests tests/test_smear.c)
+target_link_libraries(tapesister_smear_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_smear_tests COMMAND tapesister_smear_tests)
+
 add_executable(tapesister_render_demo tests/render_demo.c)
 target_link_libraries(tapesister_render_demo PRIVATE tapesister_core)

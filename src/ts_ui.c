@@ -295,6 +295,7 @@ void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
     ts_warp_gesture_init(&ui->warp_gesture);
+    ts_smear_gesture_init(&ui->smear_gesture);
     ui->mouse_note = -1;
     ui->bank_view_slot = -1;
     ui->load_bank_slot = -1;
@@ -638,6 +639,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     slider(fb, 88, 233, 72, "EDGE", instrument->process.edge, PAL_VOLUME);
     slider(fb, 166, 233, 72, "DRIFT", instrument->process.drift, PAL_TUNING);
     slider(fb, 244, 233, 86, "WARP", ui->warp_amount, PAL_MOUSE);
+    slider(fb, 505, 205, 125, "SMEAR", ui->smear_amount, PAL_MOUSE);
     button(fb, 335, 233, 34, "EDIT", ui->fx_page == TS_FX_EDIT);
     button(fb, 372, 233, 34, "TUNE", ui->fx_page == TS_FX_TUNE);
     button(fb, 409, 233, 36, "NOIS", ui->fx_page == TS_FX_NOISE);

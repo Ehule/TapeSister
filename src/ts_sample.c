@@ -1379,6 +1379,106 @@ static int render_edit_source(TsSample *destination, const TsSample *parent,
     return 1;
 }
 
+typedef struct { double re, im; } TsComplex;
+
+static void smear_fft(TsComplex *values, size_t count, int inverse)
+{
+    for (size_t i = 1, j = 0; i < count; ++i) {
+        size_t bit = count >> 1u;
+        while (j & bit) { j ^= bit; bit >>= 1u; }
+        j ^= bit;
+        if (i < j) { TsComplex swap = values[i]; values[i] = values[j]; values[j] = swap; }
+    }
+    for (size_t length = 2; length <= count; length <<= 1u) {
+        double angle = (inverse ? 2.0 : -2.0) * M_PI / (double)length;
+        TsComplex step = { cos(angle), sin(angle) };
+        for (size_t base = 0; base < count; base += length) {
+            TsComplex twiddle = { 1.0, 0.0 };
+            for (size_t j = 0; j < length / 2u; ++j) {
+                TsComplex even = values[base + j];
+                TsComplex odd = values[base + j + length / 2u];
+                TsComplex product = { odd.re * twiddle.re - odd.im * twiddle.im,
+                                      odd.re * twiddle.im + odd.im * twiddle.re };
+                values[base + j].re = even.re + product.re;
+                values[base + j].im = even.im + product.im;
+                values[base + j + length / 2u].re = even.re - product.re;
+                values[base + j + length / 2u].im = even.im - product.im;
+                product.re = twiddle.re * step.re - twiddle.im * step.im;
+                twiddle.im = twiddle.re * step.im + twiddle.im * step.re;
+                twiddle.re = product.re;
+            }
+        }
+    }
+    if (inverse)
+        for (size_t i = 0; i < count; ++i) { values[i].re /= count; values[i].im /= count; }
+}
+
+/* A causal wet path: a window is emitted one window after it is observed. */
+static int smear_range(TsSample *sample, size_t first, size_t last, float amount,
+                       char *error, size_t error_size)
+{
+    enum { WINDOW = 512, HOP = 128, BINS = WINDOW / 2 + 1 };
+    size_t length = last - first;
+    TsComplex *spectrum;
+    double *memory, *phase, *wet, *weight;
+    float *source;
+    double shaped, seconds, decay, mix;
+    if (amount == 0.0f || length == 0u) return 1;
+    spectrum = (TsComplex *)calloc(WINDOW, sizeof(*spectrum));
+    memory = (double *)calloc(BINS, sizeof(*memory));
+    phase = (double *)calloc(BINS, sizeof(*phase));
+    wet = (double *)calloc(length, sizeof(*wet));
+    weight = (double *)calloc(length, sizeof(*weight));
+    source = (float *)malloc(length * sizeof(*source));
+    if (!spectrum || !memory || !phase || !wet || !weight || !source) {
+        free(spectrum); free(memory); free(phase); free(wet); free(weight); free(source);
+        set_error(error, error_size, "Out of memory while smearing spectrum");
+        return 0;
+    }
+    memcpy(source, sample->data + first, length * sizeof(*source));
+    shaped = pow((double)amount, 0.72);
+    seconds = 0.025 * pow(480.0, shaped);
+    decay = exp(-(double)HOP / ((double)sample->sample_rate * seconds));
+    mix = 0.10 + 0.78 * shaped;
+    for (size_t position = 0; position < length; position += HOP) {
+        for (size_t i = 0; i < WINDOW; ++i) {
+            double window = 0.5 - 0.5 * cos(2.0 * M_PI * (double)i / (WINDOW - 1));
+            spectrum[i].re = position + i < length ? source[position + i] * window : 0.0;
+            spectrum[i].im = 0.0;
+        }
+        smear_fft(spectrum, WINDOW, 0);
+        for (size_t bin = 0; bin < BINS; ++bin) {
+            double magnitude = hypot(spectrum[bin].re, spectrum[bin].im);
+            memory[bin] *= decay;
+            if (magnitude > memory[bin]) {
+                memory[bin] = magnitude;
+                phase[bin] = atan2(spectrum[bin].im, spectrum[bin].re);
+            } else phase[bin] += 2.0 * M_PI * (double)bin * HOP / WINDOW;
+            spectrum[bin].re = memory[bin] * cos(phase[bin]);
+            spectrum[bin].im = memory[bin] * sin(phase[bin]);
+            if (bin == 0 || bin == WINDOW / 2) spectrum[bin].im = 0.0;
+            if (bin > 0 && bin < WINDOW / 2) {
+                spectrum[WINDOW - bin].re = spectrum[bin].re;
+                spectrum[WINDOW - bin].im = -spectrum[bin].im;
+            }
+        }
+        smear_fft(spectrum, WINDOW, 1);
+        for (size_t i = 0; i < WINDOW && position + WINDOW + i < length; ++i) {
+            size_t output = position + WINDOW + i;
+            double window = 0.5 - 0.5 * cos(2.0 * M_PI * (double)i / (WINDOW - 1));
+            wet[output] += spectrum[i].re * window;
+            weight[output] += window * window;
+        }
+    }
+    for (size_t i = 0; i < length; ++i) {
+        double processed = weight[i] > 1e-12 ? wet[i] / weight[i] : source[i];
+        sample->data[first + i] = (float)(source[i] * (1.0 - mix) + processed * mix);
+    }
+    free(spectrum); free(memory); free(phase); free(wet); free(weight); free(source);
+    set_error(error, error_size, "");
+    return 1;
+}
+
 static int render_snapshot(TsSample *destination, const TsInstrument *instrument,
                            const TsEditSnapshot *state, char *error, size_t error_size)
 {
@@ -1439,6 +1539,9 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
             } else if (operation->kind == TS_POST_WARP) {
                 if (!warp_range(destination, first, last, operation->amount,
                                 error, error_size)) return 0;
+            } else if (operation->kind == TS_POST_SMEAR) {
+                if (!smear_range(destination, first, last, operation->amount,
+                                 error, error_size)) return 0;
             } else if (operation->kind == TS_POST_NORMALIZE) {
                 float peak = 0.0f;
                 float target = clampf(operation->amount, 0.0f, 1.0f);
@@ -3840,6 +3943,121 @@ int ts_instrument_warp_gesture_commit(TsInstrument *instrument,
     return ok;
 }
 
+int ts_instrument_apply_smear(TsInstrument *instrument, float amount,
+                              char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    TsSample current;
+    if (instrument == NULL || instrument->current.data == NULL) {
+        set_error(error, error_size, "No Current sample to smear"); return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "SMEAR amount must be between zero and one"); return 0;
+    }
+    if (amount == 0.0f) { set_error(error, error_size, ""); return 1; }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
+    }
+    target = snapshot(instrument);
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_SMEAR;
+    operation.first = instrument->has_selection ? instrument->selection_first : 0u;
+    operation.last = instrument->has_selection ? instrument->selection_last : instrument->current.frames;
+    operation.amount = amount;
+    target.post_edits[target.post_edit_count++] = operation;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    begin_edit(instrument);
+    ts_sample_free(&instrument->current); instrument->current = current;
+    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
+    return bank_sync_selected(instrument, error, error_size);
+}
+
+void ts_smear_gesture_init(TsSmearGesture *gesture) { ts_warp_gesture_init(gesture); }
+
+int ts_instrument_smear_gesture_begin(TsInstrument *instrument, TsSmearGesture *gesture,
+                                      char *error, size_t error_size)
+{
+    if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
+        set_error(error, error_size, "Could not begin SMEAR gesture"); return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
+    }
+    gesture->start = snapshot(instrument);
+    if (!ts_sample_clone(&gesture->original, &instrument->current, error, error_size)) return 0;
+    gesture->owner_parent_data = instrument->parent.data;
+    gesture->owner_generation = instrument->generation;
+    gesture->owner_slot = instrument->selected_slot;
+    gesture->active = 1; gesture->amount = 0.0f;
+    set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_smear_gesture_preview(TsInstrument *instrument, TsSmearGesture *gesture,
+                                        float amount, char *error, size_t error_size)
+{
+    TsSample preview;
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size, "SMEAR gesture no longer owns Current"); return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "SMEAR amount must be between zero and one"); return 0;
+    }
+    ts_sample_init(&preview);
+    if (amount == 0.0f) {
+        if (!ts_sample_clone(&preview, &gesture->original, error, error_size)) return 0;
+    } else {
+        target = gesture->start;
+        memset(&operation, 0, sizeof(operation)); operation.kind = TS_POST_SMEAR;
+        operation.first = target.has_selection ? target.selection_first : 0u;
+        operation.last = target.has_selection ? target.selection_last : gesture->original.frames;
+        operation.amount = amount; target.post_edits[target.post_edit_count++] = operation;
+        if (!render_snapshot(&preview, instrument, &target, error, error_size)) return 0;
+    }
+    ts_sample_free(&instrument->current); instrument->current = preview;
+    gesture->amount = amount; set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_smear_gesture_cancel(TsInstrument *instrument, TsSmearGesture *gesture,
+                                       char *error, size_t error_size)
+{
+    TsSample restored;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture); set_error(error, error_size, "SMEAR gesture no longer owns Current"); return 0;
+    }
+    ts_sample_init(&restored);
+    if (!ts_sample_clone(&restored, &gesture->original, error, error_size)) return 0;
+    ts_sample_free(&instrument->current); instrument->current = restored;
+    warp_gesture_clear(gesture); set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_smear_gesture_commit(TsInstrument *instrument, TsSmearGesture *gesture,
+                                       char *error, size_t error_size)
+{
+    TsPostEdit operation;
+    int ok;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture); set_error(error, error_size, "SMEAR gesture no longer owns Current"); return 0;
+    }
+    if (gesture->amount == 0.0f)
+        return ts_instrument_smear_gesture_cancel(instrument, gesture, error, error_size);
+    stack_push(instrument->undo, &instrument->undo_count, gesture->start);
+    instrument->redo_count = 0;
+    memset(&operation, 0, sizeof(operation)); operation.kind = TS_POST_SMEAR;
+    operation.first = gesture->start.has_selection ? gesture->start.selection_first : 0u;
+    operation.last = gesture->start.has_selection ? gesture->start.selection_last : gesture->original.frames;
+    operation.amount = gesture->amount;
+    memcpy(instrument->post_edits, gesture->start.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = gesture->start.post_edit_count;
+    instrument->post_edits[instrument->post_edit_count++] = operation;
+    ok = bank_sync_selected(instrument, error, error_size);
+    warp_gesture_clear(gesture); if (ok) set_error(error, error_size, ""); return ok;
+}
+
 int ts_instrument_zoom_selection(TsInstrument *instrument)
 {
     if (!instrument->has_selection || instrument->selection_last <= instrument->selection_first)
@@ -4272,7 +4490,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             if (!get64(f, &destination_bits)) goto malformed;
             edit->destination = (int64_t)destination_bits;
             GET_FLOAT(edit->amount); GET_U32(edit->crossfade_frames);
-            if (edit->kind > TS_POST_WARP || edit->last <= edit->first ||
+            if (edit->kind > TS_POST_SMEAR || edit->last <= edit->first ||
                 edit->first > 100000000u || edit->last > 100000000u ||
                 edit->destination < -100000000LL ||
                 edit->destination > 100000000LL ||
