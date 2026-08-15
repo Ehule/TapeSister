@@ -345,6 +345,7 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
 int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind kind,
                                     float amount, char *error, size_t error_size);
 int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
+                                       size_t crossing_count,
                                        char *error, size_t error_size);
 int ts_instrument_zoom_selection(TsInstrument *instrument);
 int ts_instrument_zoom_view(TsInstrument *instrument, size_t anchor_frame,

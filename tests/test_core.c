@@ -492,22 +492,61 @@ int main(void)
             CHECK(ts_sample_clone(&rotation.current, &rotation.parent, error, sizeof(error)));
             rotation.crop_last = rotation.parent.frames;
             rotation.view_last = rotation.current.frames;
-            CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, error, sizeof(error)));
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, 1, error, sizeof(error)));
             CHECK(rotation.current.frames == rotation.parent.frames);
             CHECK(rotation.current.data[0] == original[2]);
             CHECK(rotation.current.data[4] == original[0]);
-            CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, error, sizeof(error)));
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, 1, error, sizeof(error)));
             CHECK(memcmp(rotation.current.data, original, sizeof(original)) == 0);
             CHECK(ts_instrument_undo(&rotation, error, sizeof(error)));
             CHECK(rotation.current.data[0] == original[2]);
             CHECK(ts_instrument_undo(&rotation, error, sizeof(error)));
             CHECK(memcmp(rotation.current.data, original, sizeof(original)) == 0);
             ts_instrument_set_selection(&rotation, 1, 5);
-            CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, error, sizeof(error)));
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, 1, error, sizeof(error)));
             CHECK(rotation.current.data[0] == original[0]);
             CHECK(rotation.current.data[5] == original[5]);
             CHECK(ts_instrument_undo(&rotation, error, sizeof(error)));
             CHECK(memcmp(rotation.current.data, original, sizeof(original)) == 0);
+        }
+        ts_instrument_free(&rotation);
+    }
+    {
+        TsInstrument rotation;
+        float original[12];
+        ts_instrument_init(&rotation);
+        for (size_t i = 0; i < 12; ++i) original[i] = (i & 1u) ? 1.0f : -1.0f;
+        rotation.parent.frames = 12;
+        rotation.parent.sample_rate = 44100;
+        rotation.parent.data = (float *)malloc(sizeof(original));
+        CHECK(rotation.parent.data != NULL);
+        if (rotation.parent.data != NULL) {
+            memcpy(rotation.parent.data, original, sizeof(original));
+            CHECK(ts_sample_clone(&rotation.current, &rotation.parent, error, sizeof(error)));
+            rotation.crop_last = rotation.parent.frames;
+            rotation.view_last = rotation.current.frames;
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, 5,
+                                                      error, sizeof(error)));
+            CHECK(rotation.current.data[0] == original[5]);
+            CHECK(rotation.post_edit_count == 1);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, 50,
+                                                      error, sizeof(error)));
+            CHECK(rotation.current.data[0] == original[11]);
+            CHECK(rotation.post_edit_count == 1);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, 50,
+                                                      error, sizeof(error)));
+            CHECK(rotation.current.data[0] == original[5]);
+            CHECK(rotation.post_edit_count == 1);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, 5,
+                                                      error, sizeof(error)));
+            CHECK(memcmp(rotation.current.data, original, sizeof(original)) == 0);
+            CHECK(rotation.post_edit_count == 0);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, 1000000,
+                                                      error, sizeof(error)));
+            CHECK(rotation.current.frames == 12 && rotation.post_edit_count == 1);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, 100,
+                                                      error, sizeof(error)));
+            CHECK(rotation.post_edit_count == 1);
         }
         ts_instrument_free(&rotation);
     }
@@ -1346,6 +1385,8 @@ int main(void)
         TsConfig config;
         TsConfig reopened;
         ts_config_init(&config);
+        CHECK(config.rotate_wheel_fine == 5);
+        CHECK(config.rotate_wheel_coarse == 50);
         snprintf(config.sample_path, sizeof(config.sample_path), "/samples/drums");
         snprintf(config.fasttracker_path, sizeof(config.fasttracker_path),
                  "/opt/ft2 tapehead/ft2-clone");
@@ -1358,6 +1399,7 @@ int main(void)
         CHECK(strcmp(reopened.exchange_path, config.exchange_path) == 0);
         CHECK(reopened.startup_welcome_sample == 1 &&
               reopened.startup_welcome_autoplay == 1);
+        CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
                      "FASTTRACKER EXECUTABLE") == 0);
         remove("test-tapesister.ini");
@@ -1371,6 +1413,31 @@ int main(void)
             }
             CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
             CHECK(!reopened.startup_welcome_sample && !reopened.startup_welcome_autoplay);
+            CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
+            config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("rotate_wheel_fine=1\nrotate_wheel_coarse=20\n", config_file);
+                fclose(config_file);
+            }
+            CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            CHECK(reopened.rotate_wheel_fine == 1 && reopened.rotate_wheel_coarse == 20);
+            config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("rotate_wheel_fine=20\nrotate_wheel_coarse=100\n", config_file);
+                fclose(config_file);
+            }
+            CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            CHECK(reopened.rotate_wheel_fine == 20 && reopened.rotate_wheel_coarse == 100);
+            config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("rotate_wheel_fine=-99\nrotate_wheel_coarse=999\n", config_file);
+                fclose(config_file);
+            }
+            CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            CHECK(reopened.rotate_wheel_fine == 1 && reopened.rotate_wheel_coarse == 100);
             config_file = fopen("test-tapesister.ini", "wb");
             CHECK(config_file != NULL);
             if (config_file != NULL) {

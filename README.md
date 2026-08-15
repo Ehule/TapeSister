@@ -17,6 +17,12 @@ The startup sound or an imported WAV creates a Source in slot 01. After that, **
 
 **Reset** returns Current exactly to Source and is undoable. **Commit** requires a deliberate second click (or second `Ctrl+P`), promotes Current into a new immutable Source generation, records the previous Source hash, resets the processing shelf, and starts a fresh edit history.
 
+Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
+horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
+number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead.
+Set `rotate_wheel_fine` (1–20, default 5) and `rotate_wheel_coarse` (20–100,
+default 50) in the `[Waveform]` section of `tapesister.ini`.
+
 ## A/B audition and playhead
 
 The **Source** and **Current** buttons choose what every playback trigger auditions without changing the editing target: edits, Save, and Export always operate on Current. `Ctrl+B` toggles the same selector. Each has its own viewport, so wheel/keyboard zoom, panning, Zoom Selection, Show All, and Play View work directly on the waveform currently displayed without disturbing the other view.

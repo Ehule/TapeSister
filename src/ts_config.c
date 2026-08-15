@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void set_error(char *error, size_t error_size, const char *message)
@@ -17,6 +18,8 @@ void ts_config_init(TsConfig *config)
         memset(config, 0, sizeof(*config));
         config->startup_welcome_sample = 1;
         config->startup_welcome_autoplay = 1;
+        config->rotate_wheel_fine = TS_ROTATE_WHEEL_FINE_DEFAULT;
+        config->rotate_wheel_coarse = TS_ROTATE_WHEEL_COARSE_DEFAULT;
     }
 }
 
@@ -69,6 +72,20 @@ static int parse_boolean(const char *value, int *destination)
     if (strcmp(value, "0") == 0) { *destination = 0; return 1; }
     if (strcmp(value, "1") == 0) { *destination = 1; return 1; }
     return 0;
+}
+
+static int parse_clamped_integer(const char *value, int minimum, int maximum,
+                                 int *destination)
+{
+    char *end;
+    long parsed;
+    errno = 0;
+    parsed = strtol(value, &end, 10);
+    if (errno != 0 || end == value || *end != '\0') return 0;
+    if (parsed < minimum) parsed = minimum;
+    if (parsed > maximum) parsed = maximum;
+    *destination = (int)parsed;
+    return 1;
 }
 
 int ts_config_load(TsConfig *config, const char *path,
@@ -135,6 +152,20 @@ int ts_config_load(TsConfig *config, const char *path,
                 snprintf(error, error_size, "Invalid boolean on config line %d", line_number);
                 fclose(file); return 0;
             }
+        } else if (strcmp(key, "rotate_wheel_fine") == 0) {
+            if (!parse_clamped_integer(value, TS_ROTATE_WHEEL_FINE_MIN,
+                                       TS_ROTATE_WHEEL_FINE_MAX,
+                                       &loaded.rotate_wheel_fine)) {
+                snprintf(error, error_size, "Invalid integer on config line %d", line_number);
+                fclose(file); return 0;
+            }
+        } else if (strcmp(key, "rotate_wheel_coarse") == 0) {
+            if (!parse_clamped_integer(value, TS_ROTATE_WHEEL_COARSE_MIN,
+                                       TS_ROTATE_WHEEL_COARSE_MAX,
+                                       &loaded.rotate_wheel_coarse)) {
+                snprintf(error, error_size, "Invalid integer on config line %d", line_number);
+                fclose(file); return 0;
+            }
         }
     }
     if (ferror(file)) {
@@ -170,10 +201,14 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "ExchangePath=%s\n"
                 "\n[Startup]\n"
                 "startup_welcome_sample=%d\n"
-                "startup_welcome_autoplay=%d\n",
+                "startup_welcome_autoplay=%d\n"
+                "\n[Waveform]\n"
+                "rotate_wheel_fine=%d\n"
+                "rotate_wheel_coarse=%d\n",
                 config->sample_path, config->fasttracker_path,
                 config->exchange_path, config->startup_welcome_sample,
-                config->startup_welcome_autoplay) < 0;
+                config->startup_welcome_autoplay, config->rotate_wheel_fine,
+                config->rotate_wheel_coarse) < 0;
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {
         set_error(error, error_size, "Could not finish writing config");

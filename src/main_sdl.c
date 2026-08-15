@@ -893,13 +893,19 @@ static void apply_sample_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiS
 }
 
 static void rotate_waveform(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                            TsInstrument *instrument, int direction)
+                            TsInstrument *instrument, int direction, int crossing_count)
 {
     char error[160];
     int selected = instrument->has_selection;
+    size_t detents = direction < 0 ? (size_t)(-(int64_t)direction) : (size_t)direction;
+    size_t candidates = (size_t)crossing_count;
     int ok;
+    if (detents > SIZE_MAX / candidates) candidates = SIZE_MAX;
+    else candidates *= detents;
     lock_edit(device, audio);
-    ok = ts_instrument_rotate_zero_crossing(instrument, direction, error, sizeof(error));
+    ok = ts_instrument_rotate_zero_crossing(instrument, direction > 0 ? 1 : -1,
+                                             candidates,
+                                             error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (ok) snprintf(ui->status, sizeof(ui->status),
                      "ROTATED %s TO %s ZERO CROSSING",
@@ -2274,7 +2280,10 @@ int main(int argc, char **argv)
                     SDL_Keymod mod = SDL_GetModState();
                     ui.bank_view_slot = -1;
                     if ((mod & KMOD_CTRL) && wheel_y != 0) {
-                        rotate_waveform(device, &audio, &ui, &instrument, wheel_y);
+                        int crossings = (mod & KMOD_SHIFT) ? ui.config.rotate_wheel_fine :
+                                                            ui.config.rotate_wheel_coarse;
+                        rotate_waveform(device, &audio, &ui, &instrument,
+                                        wheel_y, crossings);
                     } else if ((mod & KMOD_SHIFT) || wheel_x != 0) {
                         size_t span = ui.audition_source == TS_AUDITION_PARENT ?
                                       ui.parent_view_last - ui.parent_view_first :

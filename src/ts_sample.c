@@ -3478,13 +3478,18 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
 }
 
 int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
+                                       size_t crossing_count,
                                        char *error, size_t error_size)
 {
     TsEditSnapshot target;
-    TsSample current;
+    TsSample base;
     TsPostEdit operation;
-    size_t first, last, offset = 0;
-    if (instrument == NULL || instrument->current.data == NULL || direction == 0) {
+    const TsPostEdit *previous = NULL;
+    size_t first, last, usable = 0, wanted, offset = 0;
+    int64_t logical_steps;
+    int coalescing = 0;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        direction == 0 || crossing_count == 0) {
         set_error(error, error_size, "No Current sample to rotate");
         return 0;
     }
@@ -3495,69 +3500,95 @@ int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
         set_error(error, error_size, "Waveform range is too short to rotate");
         return 0;
     }
-    if (instrument->post_edit_count > 0) {
-        const TsPostEdit *previous =
-            &instrument->post_edits[instrument->post_edit_count - 1];
-        if (previous->kind == TS_POST_ROTATE && previous->first == first &&
-            previous->last == last && previous->amount * (float)direction < 0.0f) {
-            target = snapshot(instrument);
-            --target.post_edit_count;
-            ts_sample_init(&current);
-            if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
-            begin_edit(instrument);
-            ts_sample_free(&instrument->current);
-            instrument->current = current;
-            memcpy(instrument->post_edits, target.post_edits,
-                   sizeof(instrument->post_edits));
-            instrument->post_edit_count = target.post_edit_count;
-            set_error(error, error_size, "");
-            return bank_sync_selected(instrument, error, error_size);
-        }
+
+    target = snapshot(instrument);
+    if (target.post_edit_count > 0) {
+        previous = &target.post_edits[target.post_edit_count - 1];
+        coalescing = previous->kind == TS_POST_ROTATE && previous->first == first &&
+                     previous->last == last;
     }
-    if (direction > 0) {
-        for (size_t frame = first + 1u; frame < last; ++frame) {
-            if (is_zero_crossing(&instrument->current, frame)) {
-                offset = frame - first;
-                break;
-            }
-        }
+    ts_sample_init(&base);
+    if (coalescing) {
+        logical_steps = (int64_t)previous->amount;
+        --target.post_edit_count;
+        if (!render_snapshot(&base, instrument, &target, error, error_size)) return 0;
     } else {
-        for (size_t frame = last - 1u; frame > first; --frame) {
-            if (is_zero_crossing(&instrument->current, frame)) {
-                offset = frame - first;
-                break;
-            }
-        }
+        logical_steps = 0;
+        if (!ts_sample_clone(&base, &instrument->current, error, error_size)) return 0;
     }
-    if (offset == 0) {
-        /* Match the established nearest-crossing fallback for crossing-free material. */
-        TsSample range = instrument->current;
+
+    for (size_t frame = first + 1u; frame < last; ++frame)
+        if (is_zero_crossing(&base, frame)) ++usable;
+    if (usable == 0) {
+        TsSample range = base;
         range.data += first;
         range.frames = last - first;
         offset = ts_sample_nearest_zero_crossing(
             &range, direction > 0 ? 1u : range.frames - 1u);
         if (offset == 0 || offset >= range.frames) {
+            ts_sample_free(&base);
             set_error(error, error_size, "No usable zero crossing in waveform range");
             return 0;
         }
+        usable = 1;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+
+    if (crossing_count > (size_t)INT64_MAX) crossing_count = (size_t)INT64_MAX;
+    if (direction > 0) {
+        if (logical_steps > INT64_MAX - (int64_t)crossing_count)
+            logical_steps = (int64_t)((uint64_t)logical_steps % usable);
+        logical_steps += (int64_t)crossing_count;
+    } else {
+        if (logical_steps < INT64_MIN + (int64_t)crossing_count)
+            logical_steps = -(int64_t)((uint64_t)(-logical_steps) % usable);
+        logical_steps -= (int64_t)crossing_count;
+    }
+
+    if (logical_steps == 0) {
+        TsSample current = base;
+        begin_edit(instrument);
+        ts_sample_free(&instrument->current);
+        instrument->current = current;
+        memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+        instrument->post_edit_count = target.post_edit_count;
+        set_error(error, error_size, "");
+        return bank_sync_selected(instrument, error, error_size);
+    }
+    if (offset == 0) {
+        uint64_t magnitude = logical_steps > 0 ? (uint64_t)logical_steps :
+                                                (uint64_t)(-(logical_steps + 1)) + 1u;
+        if (logical_steps > 0)
+            wanted = (size_t)((magnitude - 1u) % usable);
+        else
+            wanted = usable - 1u - (size_t)((magnitude - 1u) % usable);
+        for (size_t frame = first + 1u, index = 0; frame < last; ++frame) {
+            if (!is_zero_crossing(&base, frame)) continue;
+            if (index++ == wanted) {
+                offset = frame - first;
+                break;
+            }
+        }
+    }
+    ts_sample_free(&base);
+    if (!coalescing && target.post_edit_count >= TS_POST_EDIT_DEPTH) {
         set_error(error, error_size, "Commit before adding more post-DSP edits");
         return 0;
     }
-    target = snapshot(instrument);
     memset(&operation, 0, sizeof(operation));
     operation.kind = TS_POST_ROTATE;
     operation.first = first;
     operation.last = last;
     operation.destination = (int64_t)offset;
-    operation.amount = direction > 0 ? 1.0f : -1.0f;
+    operation.amount = (float)logical_steps;
     target.post_edits[target.post_edit_count++] = operation;
-    ts_sample_init(&current);
-    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
-    begin_edit(instrument);
-    ts_sample_free(&instrument->current);
-    instrument->current = current;
+    {
+        TsSample current;
+        ts_sample_init(&current);
+        if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+        begin_edit(instrument);
+        ts_sample_free(&instrument->current);
+        instrument->current = current;
+    }
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target.post_edit_count;
     set_error(error, error_size, "");
