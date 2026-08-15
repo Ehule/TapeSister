@@ -102,6 +102,11 @@ typedef struct {
     uint32_t smear_last_audition_ms;
     int smear_dragging;
     int smear_wheel_active;
+    float tear_amount;
+    TsTearGesture tear_gesture;
+    uint32_t tear_last_audition_ms;
+    int tear_dragging;
+    int tear_wheel_active;
     int has_pitch_suggestion;
     size_t selection_anchor;
     size_t tape_source_first;

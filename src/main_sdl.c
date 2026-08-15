@@ -1076,6 +1076,61 @@ static void end_smear_gesture(SDL_AudioDeviceID device, AudioState *audio,
     else snprintf(ui->status, sizeof(ui->status), "SMEAR END FAILED: %.132s", error);
 }
 
+static int begin_tear_gesture(SDL_AudioDeviceID device, AudioState *audio,
+                              TsUiState *ui, TsInstrument *instrument, int wheel)
+{
+    char error[160]; int ok;
+    lock_edit(device, audio);
+    ok = ts_instrument_tear_gesture_begin(instrument, &ui->tear_gesture,
+                                          error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok) {
+        ui->tear_dragging = !wheel; ui->tear_wheel_active = wheel;
+        ui->tear_amount = 0.0f; ui->tear_last_audition_ms = 0;
+    } else snprintf(ui->status, sizeof(ui->status), "TEAR BEGIN FAILED: %.131s", error);
+    return ok;
+}
+
+static int preview_tear_gesture(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, TsInstrument *instrument,
+                                float amount, int output_rate)
+{
+    char error[160]; uint32_t now; int ok;
+    if (amount < 0.0f) amount = 0.0f; if (amount > 1.0f) amount = 1.0f;
+    lock_edit(device, audio);
+    ok = ts_instrument_tear_gesture_preview(instrument, &ui->tear_gesture,
+                                            amount, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (!ok) { snprintf(ui->status, sizeof(ui->status), "TEAR PREVIEW FAILED: %.129s", error); return 0; }
+    ui->tear_amount = amount; now = SDL_GetTicks();
+    if (!ts_ui_transform_auto_audition_allowed(ui)) {
+        snprintf(ui->status, sizeof(ui->status), "TEAR PREVIEW %.2F - LOOP OWNS AUDITION", amount);
+    } else if (ui->tear_last_audition_ms == 0 || now - ui->tear_last_audition_ms >= 125u) {
+        TsAuditionRange range = ui->tear_gesture.start.has_selection ? TS_AUDITION_SELECTION : TS_AUDITION_ALL;
+        ui->audition_source = TS_AUDITION_CURRENT;
+        begin_audition(device, audio, ui, instrument, range, 1.0, output_rate);
+        ui->tear_last_audition_ms = now;
+    } else snprintf(ui->status, sizeof(ui->status), "TEAR PREVIEW %.2F", amount);
+    return 1;
+}
+
+static void end_tear_gesture(SDL_AudioDeviceID device, AudioState *audio,
+                             TsUiState *ui, TsInstrument *instrument, int cancel)
+{
+    char error[160]; float amount = ui->tear_gesture.amount; int ok;
+    lock_edit(device, audio);
+    ok = cancel ? ts_instrument_tear_gesture_cancel(instrument, &ui->tear_gesture, error, sizeof(error)) :
+                  ts_instrument_tear_gesture_commit(instrument, &ui->tear_gesture, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    ui->tear_dragging = ui->tear_wheel_active = 0; ui->tear_amount = 0.0f;
+    ui->tear_last_audition_ms = 0;
+    if (cancel && !ui->workbench_loop_active) stop_all(device, audio, ui);
+    if (ok && cancel) snprintf(ui->status, sizeof(ui->status), "TEAR CANCELLED - ORIGINAL RESTORED");
+    else if (ok && amount > 0.0f) snprintf(ui->status, sizeof(ui->status), "TEAR %.2F COMMITTED", amount);
+    else if (ok) snprintf(ui->status, sizeof(ui->status), "TEAR RETURNED TO ZERO - NO EDIT");
+    else snprintf(ui->status, sizeof(ui->status), "TEAR END FAILED: %.133s", error);
+}
+
 static void rotate_waveform(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                             TsInstrument *instrument, int direction, int crossing_count)
 {
@@ -2123,6 +2178,8 @@ int main(int argc, char **argv)
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_DROPFILE && ui.tear_gesture.active)
+                end_tear_gesture(device, &audio, &ui, &instrument, 1);
             if (event.type == SDL_DROPFILE && ui.smear_gesture.active) {
                 end_smear_gesture(device, &audio, &ui, &instrument, 1);
             }
@@ -2135,6 +2192,8 @@ int main(int argc, char **argv)
                     end_smear_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.warp_gesture.active)
                     end_warp_gesture(device, &audio, &ui, &instrument, 1);
+                if (ui.tear_gesture.active)
+                    end_tear_gesture(device, &audio, &ui, &instrument, 1);
                 if (!ui.exit_confirm_open)
                     begin_exit_confirmation(device, &audio, &ui, &instrument);
             }
@@ -2169,15 +2228,21 @@ int main(int argc, char **argv)
                     ts_browser_append_filename(&ui.browser, event.text.text);
             } else if (event.type == SDL_WINDOWEVENT &&
                        event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
-                       (ui.warp_gesture.active || ui.smear_gesture.active)) {
+                       (ui.warp_gesture.active || ui.smear_gesture.active ||
+                        ui.tear_gesture.active)) {
                 if (ui.warp_gesture.active) end_warp_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.smear_gesture.active) end_smear_gesture(device, &audio, &ui, &instrument, 1);
+                if (ui.tear_gesture.active) end_tear_gesture(device, &audio, &ui, &instrument, 1);
             } else if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
                 if (!((mod & KMOD_CTRL) && key == SDLK_p)) ui.commit_armed = 0;
                 ui.bank_clear_armed = 0;
-                if (ui.smear_gesture.active && key == SDLK_ESCAPE) {
+                if (ui.tear_gesture.active && key == SDLK_ESCAPE) {
+                    end_tear_gesture(device, &audio, &ui, &instrument, 1);
+                } else if (ui.tear_gesture.active) {
+                    snprintf(ui.status, sizeof(ui.status), "FINISH OR CANCEL THE TEAR GESTURE FIRST");
+                } else if (ui.smear_gesture.active && key == SDLK_ESCAPE) {
                     end_smear_gesture(device, &audio, &ui, &instrument, 1);
                 } else if (ui.smear_gesture.active) {
                     snprintf(ui.status, sizeof(ui.status), "FINISH OR CANCEL THE SMEAR GESTURE FIRST");
@@ -2460,6 +2525,9 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_KEYUP && ui.smear_wheel_active &&
                        (event.key.keysym.sym == SDLK_LCTRL || event.key.keysym.sym == SDLK_RCTRL)) {
                 end_smear_gesture(device, &audio, &ui, &instrument, 0);
+            } else if (event.type == SDL_KEYUP && ui.tear_wheel_active &&
+                       (event.key.keysym.sym == SDLK_LCTRL || event.key.keysym.sym == SDLK_RCTRL)) {
+                end_tear_gesture(device, &audio, &ui, &instrument, 0);
             } else if (event.type == SDL_KEYUP && !ui.config_open &&
                        ui.renaming_bank_slot < 0 &&
                        ui.renaming_recipe_slot < 0 && !ui.export_choice_open &&
@@ -2487,6 +2555,13 @@ int main(int argc, char **argv)
                     wheel_x = -wheel_x;
                 }
                 if ((SDL_GetModState() & KMOD_CTRL) && wheel_y != 0 &&
+                    x >= 407 && x < 500 && y >= 205 && y < 229) {
+                    if ((!ui.tear_gesture.active && begin_tear_gesture(device, &audio, &ui, &instrument, 1)) ||
+                        ui.tear_wheel_active) {
+                        float amount = ui.tear_amount + (float)wheel_y * 0.015f;
+                        preview_tear_gesture(device, &audio, &ui, &instrument, amount, obtained.freq);
+                    }
+                } else if ((SDL_GetModState() & KMOD_CTRL) && wheel_y != 0 &&
                     x >= 505 && x < 630 && y >= 205 && y < 229) {
                     if ((!ui.smear_gesture.active && begin_smear_gesture(device, &audio, &ui, &instrument, 1)) ||
                         ui.smear_wheel_active) {
@@ -2561,6 +2636,11 @@ int main(int argc, char **argv)
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y); (void)y;
                 amount = (float)(x - 505) / 125.0f;
                 preview_smear_gesture(device, &audio, &ui, &instrument, amount, obtained.freq);
+            } else if (event.type == SDL_MOUSEMOTION && ui.tear_dragging) {
+                int x, y; float amount;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y); (void)y;
+                amount = (float)(x - 407) / 93.0f;
+                preview_tear_gesture(device, &audio, &ui, &instrument, amount, obtained.freq);
             } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.export_choice_open || ui.exit_confirm_open)) {
@@ -2627,6 +2707,9 @@ int main(int argc, char **argv)
                 continue;
             } else if (event.type == SDL_MOUSEBUTTONDOWN && ui.warp_gesture.active) {
                 end_warp_gesture(device, &audio, &ui, &instrument, 1);
+                continue;
+            } else if (event.type == SDL_MOUSEBUTTONDOWN && ui.tear_gesture.active) {
+                end_tear_gesture(device, &audio, &ui, &instrument, 1);
                 continue;
             } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
                 int x, y;
@@ -2831,6 +2914,11 @@ int main(int argc, char **argv)
                     float amount = (float)(x - 505) / 125.0f;
                     if (begin_smear_gesture(device, &audio, &ui, &instrument, 0))
                         preview_smear_gesture(device, &audio, &ui, &instrument, amount, obtained.freq);
+                    continue;
+                } else if (y >= 205 && y < 229 && x >= 407 && x < 500) {
+                    float amount = (float)(x - 407) / 93.0f;
+                    if (begin_tear_gesture(device, &audio, &ui, &instrument, 0))
+                        preview_tear_gesture(device, &audio, &ui, &instrument, amount, obtained.freq);
                     continue;
                 } else if (y >= 233 && y < 257 && x >= 10 && x < 330) {
                     TsProcessRecipe process = instrument.process;
@@ -3204,6 +3292,10 @@ int main(int argc, char **argv)
                 }
                 if (ui.smear_dragging && event.button.button == SDL_BUTTON_LEFT) {
                     end_smear_gesture(device, &audio, &ui, &instrument, 0);
+                    continue;
+                }
+                if (ui.tear_dragging && event.button.button == SDL_BUTTON_LEFT) {
+                    end_tear_gesture(device, &audio, &ui, &instrument, 0);
                     continue;
                 }
                 if (ui.tape_dragging && event.button.button == ui.tape_drag_button) {

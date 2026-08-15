@@ -149,7 +149,8 @@ typedef enum {
     TS_POST_CROP,
     TS_POST_ROTATE,
     TS_POST_WARP,
-    TS_POST_SMEAR
+    TS_POST_SMEAR,
+    TS_POST_TEAR
 } TsPostEditKind;
 
 typedef struct {
@@ -288,6 +289,7 @@ typedef struct {
 } TsWarpGesture;
 
 typedef TsWarpGesture TsSmearGesture;
+typedef TsWarpGesture TsTearGesture;
 
 void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
@@ -391,6 +393,21 @@ int ts_instrument_smear_gesture_commit(TsInstrument *instrument,
 int ts_instrument_smear_gesture_cancel(TsInstrument *instrument,
                                        TsSmearGesture *gesture,
                                        char *error, size_t error_size);
+int ts_instrument_apply_tear(TsInstrument *instrument, float amount,
+                             char *error, size_t error_size);
+void ts_tear_gesture_init(TsTearGesture *gesture);
+int ts_instrument_tear_gesture_begin(TsInstrument *instrument,
+                                     TsTearGesture *gesture,
+                                     char *error, size_t error_size);
+int ts_instrument_tear_gesture_preview(TsInstrument *instrument,
+                                       TsTearGesture *gesture, float amount,
+                                       char *error, size_t error_size);
+int ts_instrument_tear_gesture_commit(TsInstrument *instrument,
+                                      TsTearGesture *gesture,
+                                      char *error, size_t error_size);
+int ts_instrument_tear_gesture_cancel(TsInstrument *instrument,
+                                      TsTearGesture *gesture,
+                                      char *error, size_t error_size);
 int ts_instrument_zoom_selection(TsInstrument *instrument);
 int ts_instrument_zoom_view(TsInstrument *instrument, size_t anchor_frame,
                             float anchor_ratio, float scale);

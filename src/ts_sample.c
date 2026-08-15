@@ -20,6 +20,8 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+static int is_zero_crossing(const TsSample *sample, size_t frame);
+
 static void set_error(char *dst, size_t size, const char *message)
 {
     if (dst != NULL && size > 0) snprintf(dst, size, "%s", message);
@@ -1498,6 +1500,64 @@ static int smear_range(TsSample *sample, size_t first, size_t last, float amount
     return 1;
 }
 
+static uint32_t tear_hash(uint32_t value)
+{
+    value ^= value >> 16; value *= 0x7feb352du;
+    value ^= value >> 15; value *= 0x846ca68bu;
+    return value ^ (value >> 16);
+}
+
+static int tear_range(TsSample *sample, size_t first, size_t last, float amount,
+                      char *error, size_t error_size)
+{
+    size_t length = last - first;
+    size_t minimum;
+    size_t *boundary;
+    float *source;
+    float *output;
+    size_t count = 1;
+    if (amount <= 0.0f || length < 8u) return 1;
+    minimum = sample->sample_rate / 1000u;
+    if (minimum < 24u) minimum = 24u;
+    if (minimum > 128u) minimum = 128u;
+    boundary = malloc((length / minimum + 3u) * sizeof(*boundary));
+    source = malloc(length * sizeof(*source));
+    output = malloc(length * sizeof(*output));
+    if (boundary == NULL || source == NULL || output == NULL) {
+        free(boundary); free(source); free(output);
+        set_error(error, error_size, "Out of memory while tearing waveform");
+        return 0;
+    }
+    memcpy(source, sample->data + first, length * sizeof(*source));
+    memcpy(output, source, length * sizeof(*output));
+    boundary[0] = 0;
+    for (size_t frame = minimum; frame + minimum < length; ++frame) {
+        size_t absolute = first + frame;
+        if (frame - boundary[count - 1u] >= minimum &&
+            is_zero_crossing(sample, absolute)) boundary[count++] = frame;
+    }
+    if (length - boundary[count - 1u] < minimum && count > 1u) --count;
+    boundary[count++] = length;
+    for (size_t packet = 0; packet + 2u < count; packet += 2u) {
+        size_t a = boundary[packet], b = boundary[packet + 1u];
+        size_t c = boundary[packet + 2u];
+        uint32_t field = tear_hash((uint32_t)packet ^ 0x54454152u);
+        float threshold = (float)(field & 0xffffu) / 65535.0f;
+        if (threshold > amount) continue;
+        if (field & 0x10000u) {
+            memcpy(output + a, source + b, (c - b) * sizeof(*output));
+            memcpy(output + a + c - b, source + a, (b - a) * sizeof(*output));
+        } else {
+            for (size_t i = a; i < b; ++i) output[i] = source[b - 1u - (i - a)];
+            for (size_t i = b; i < c; ++i) output[i] = source[c - 1u - (i - b)];
+        }
+    }
+    memcpy(sample->data + first, output, length * sizeof(*output));
+    free(boundary); free(source); free(output);
+    set_error(error, error_size, "");
+    return 1;
+}
+
 static int render_snapshot(TsSample *destination, const TsInstrument *instrument,
                            const TsEditSnapshot *state, char *error, size_t error_size)
 {
@@ -1561,6 +1621,9 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
             } else if (operation->kind == TS_POST_SMEAR) {
                 if (!smear_range(destination, first, last, operation->amount,
                                  error, error_size)) return 0;
+            } else if (operation->kind == TS_POST_TEAR) {
+                if (!tear_range(destination, first, last, operation->amount,
+                                error, error_size)) return 0;
             } else if (operation->kind == TS_POST_NORMALIZE) {
                 float peak = 0.0f;
                 float target = clampf(operation->amount, 0.0f, 1.0f);
@@ -2507,16 +2570,11 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
     }
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
-    target.view_first = 0;
-    target.view_last = current.frames;
     begin_edit(instrument);
-    ts_sample_free(&instrument->current);
-    instrument->current = current;
+    replace_current_preserving_view(instrument, &current);
     instrument->selection_first = target.selection_first;
     instrument->selection_last = target.selection_last;
     instrument->has_selection = 1;
-    instrument->view_first = 0;
-    instrument->view_last = current.frames;
     instrument->loop_first = target.loop_first;
     instrument->loop_last = target.loop_last;
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
@@ -4074,6 +4132,113 @@ int ts_instrument_smear_gesture_commit(TsInstrument *instrument, TsSmearGesture 
     warp_gesture_clear(gesture); if (ok) set_error(error, error_size, ""); return ok;
 }
 
+int ts_instrument_apply_tear(TsInstrument *instrument, float amount,
+                             char *error, size_t error_size)
+{
+    TsEditSnapshot target; TsPostEdit operation; TsSample current;
+    if (instrument == NULL || instrument->current.data == NULL) {
+        set_error(error, error_size, "No Current sample to tear"); return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "TEAR amount must be between zero and one"); return 0;
+    }
+    if (amount == 0.0f) { set_error(error, error_size, ""); return 1; }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
+    }
+    target = snapshot(instrument); memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_TEAR;
+    operation.first = instrument->has_selection ? instrument->selection_first : 0u;
+    operation.last = instrument->has_selection ? instrument->selection_last : instrument->current.frames;
+    operation.amount = amount; target.post_edits[target.post_edit_count++] = operation;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    begin_edit(instrument); replace_current_preserving_view(instrument, &current);
+    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
+    return bank_sync_selected(instrument, error, error_size);
+}
+
+void ts_tear_gesture_init(TsTearGesture *gesture) { ts_warp_gesture_init(gesture); }
+
+int ts_instrument_tear_gesture_begin(TsInstrument *instrument, TsTearGesture *gesture,
+                                     char *error, size_t error_size)
+{
+    if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
+        set_error(error, error_size, "Could not begin TEAR gesture"); return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
+    }
+    gesture->start = snapshot(instrument);
+    if (!ts_sample_clone(&gesture->original, &instrument->current, error, error_size)) return 0;
+    gesture->owner_parent_data = instrument->parent.data;
+    gesture->owner_generation = instrument->generation;
+    gesture->owner_slot = instrument->selected_slot;
+    gesture->active = 1; gesture->amount = 0.0f;
+    set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_tear_gesture_preview(TsInstrument *instrument, TsTearGesture *gesture,
+                                       float amount, char *error, size_t error_size)
+{
+    TsSample preview; TsEditSnapshot target; TsPostEdit operation;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size, "TEAR gesture no longer owns Current"); return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "TEAR amount must be between zero and one"); return 0;
+    }
+    ts_sample_init(&preview);
+    if (amount == 0.0f) {
+        if (!ts_sample_clone(&preview, &gesture->original, error, error_size)) return 0;
+    } else {
+        target = gesture->start; memset(&operation, 0, sizeof(operation));
+        operation.kind = TS_POST_TEAR;
+        operation.first = target.has_selection ? target.selection_first : 0u;
+        operation.last = target.has_selection ? target.selection_last : gesture->original.frames;
+        operation.amount = amount; target.post_edits[target.post_edit_count++] = operation;
+        if (!render_snapshot(&preview, instrument, &target, error, error_size)) return 0;
+    }
+    replace_current_preserving_view(instrument, &preview);
+    gesture->amount = amount; set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_tear_gesture_cancel(TsInstrument *instrument, TsTearGesture *gesture,
+                                      char *error, size_t error_size)
+{
+    TsSample restored;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture); set_error(error, error_size, "TEAR gesture no longer owns Current"); return 0;
+    }
+    ts_sample_init(&restored);
+    if (!ts_sample_clone(&restored, &gesture->original, error, error_size)) return 0;
+    replace_current_preserving_view(instrument, &restored);
+    warp_gesture_clear(gesture); set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_tear_gesture_commit(TsInstrument *instrument, TsTearGesture *gesture,
+                                      char *error, size_t error_size)
+{
+    TsPostEdit operation; int ok;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture); set_error(error, error_size, "TEAR gesture no longer owns Current"); return 0;
+    }
+    if (gesture->amount == 0.0f)
+        return ts_instrument_tear_gesture_cancel(instrument, gesture, error, error_size);
+    stack_push(instrument->undo, &instrument->undo_count, gesture->start);
+    instrument->redo_count = 0; memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_TEAR;
+    operation.first = gesture->start.has_selection ? gesture->start.selection_first : 0u;
+    operation.last = gesture->start.has_selection ? gesture->start.selection_last : gesture->original.frames;
+    operation.amount = gesture->amount;
+    memcpy(instrument->post_edits, gesture->start.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = gesture->start.post_edit_count;
+    instrument->post_edits[instrument->post_edit_count++] = operation;
+    ok = bank_sync_selected(instrument, error, error_size);
+    warp_gesture_clear(gesture); if (ok) set_error(error, error_size, ""); return ok;
+}
+
 int ts_instrument_zoom_selection(TsInstrument *instrument)
 {
     if (!instrument->has_selection || instrument->selection_last <= instrument->selection_first)
@@ -4223,7 +4388,7 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    fwrite("TSR13\r\n\032", 1, 8, f);
+    fwrite("TSR14\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->source_kind);
     put32(f, instrument->generation);
     put64(f, instrument->ancestor_hash);
@@ -4379,7 +4544,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR13\r\n\032", 8) == 0) version = 13;
+    if (memcmp(magic, "TSR14\r\n\032", 8) == 0) version = 14;
+    else if (memcmp(magic, "TSR13\r\n\032", 8) == 0) version = 13;
     else if (memcmp(magic, "TSR12\r\n\032", 8) == 0) version = 12;
     else if (memcmp(magic, "TSR11\r\n\032", 8) == 0) version = 11;
     else if (memcmp(magic, "TSR10\r\n\032", 8) == 0) version = 10;
@@ -4391,7 +4557,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR13 project");
+                  "Not a self-contained TSR6-TSR14 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -4506,7 +4672,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             if (!get64(f, &destination_bits)) goto malformed;
             edit->destination = (int64_t)destination_bits;
             GET_FLOAT(edit->amount); GET_U32(edit->crossfade_frames);
-            if (edit->kind > TS_POST_SMEAR || edit->last <= edit->first ||
+            if (edit->kind > (version >= 14 ? TS_POST_TEAR : TS_POST_SMEAR) ||
+                edit->last <= edit->first ||
                 edit->first > 100000000u || edit->last > 100000000u ||
                 edit->destination < -100000000LL ||
                 edit->destination > 100000000LL ||
@@ -4668,7 +4835,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR13 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR14 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

@@ -1160,10 +1160,12 @@ int main(void)
         target_peak = source_peak > destination_peak ? source_peak : destination_peak;
         mix_scale = target_peak / summed_peak;
         ts_instrument_set_selection(&tape, source_first, source_last);
+        tape.view_first = 200u; tape.view_last = 900u;
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_MIX,
                                             source_first, source_last, 3000,
                                             error, sizeof(error)));
         CHECK(tape.post_edit_count == 1 && tape.current.frames == original_frames);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
         CHECK(tape.selection_first == (size_t)tape.post_edits[0].destination &&
               tape.selection_last - tape.selection_first == source_last - source_first);
         CHECK(fabsf(tape.current.data[(size_t)mixed_destination + 300u] -
@@ -1180,22 +1182,27 @@ int main(void)
         CHECK(after != before);
         CHECK(ts_instrument_undo(&tape, error, sizeof(error)) &&
               ts_sample_hash(&tape.current) == before && tape.post_edit_count == 0);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
         CHECK(ts_instrument_redo(&tape, error, sizeof(error)) &&
               ts_sample_hash(&tape.current) == after && tape.post_edit_count == 1);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
 
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_MOVE_OVERWRITE,
                                             source_first, source_last, 1250,
                                             error, sizeof(error)));
         CHECK(tape.post_edit_count == 2);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
         after = ts_sample_hash(&tape.current);
         CHECK(ts_instrument_undo(&tape, error, sizeof(error)));
         CHECK(ts_instrument_redo(&tape, error, sizeof(error)) &&
               ts_sample_hash(&tape.current) == after);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
 
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_OVERWRITE,
                                             2000, 2400, -100,
                                             error, sizeof(error)));
         CHECK(tape.current.frames == original_frames + 100u);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
         CHECK(tape.selection_first == 0 && tape.selection_last == 400u);
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_MOVE_MIX,
                                             500, 800,
@@ -1203,6 +1210,10 @@ int main(void)
                                             error, sizeof(error)));
         CHECK(tape.current.frames == original_frames + 420u);
         CHECK(tape.post_edit_count == 4);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
+        CHECK(!ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_MIX,
+                                             12u, 12u, 20, error, sizeof(error)));
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
         CHECK(fabsf(tape.current.data[550]) < 0.000001f);
         ts_instrument_set_selection(&tape, tape.selection_first, tape.selection_last);
         CHECK(ts_instrument_apply_sample_edit(&tape, TS_SAMPLE_EDIT_GAIN, 0.5f,
@@ -1411,7 +1422,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR13", 5) == 0);
+        CHECK(memcmp(magic, "TSR14", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));

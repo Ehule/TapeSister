@@ -28,6 +28,11 @@ Current, or only for the fixed waveform selection when one is active. Hold and d
 right to hear increasing read-position bend, ease left to hear less, and release to
 commit one Undo/Redo action; releasing at zero restores the exact gesture-start audio.
 Ctrl+wheel over WARP provides fine exploration and commits when Ctrl is released.
+
+**TEAR** is the third spring-loaded native Transform. It groups nearby zero-crossing
+regions into practical waveset packets, then progressively reveals one deterministic
+field of local swaps and reversals. It is length-preserving and selection-aware;
+Ctrl+wheel over TEAR provides the same fine frozen-start exploration as WARP and SMEAR.
 Every preview auto-auditions from the same frozen starting point, and the control
 springs back to zero after commit or Escape cancellation.
 
@@ -108,7 +113,7 @@ Where source and existing audio overlap, Mix measures the source peak and underl
 
 The lower panel now cycles **KEYS**, **BANK**, **RCPE**, and **INGR**. INGR is an empty navigation scaffold for future ingredient shelves; entering it does not alter Current, bank contents, recipes, or Undo history. RCPE contains eight immutable factory recipes and eight user slots. Click a filled slot to apply its processing to Current as one undoable render. Shift-click an empty user slot to capture the live processing shelf, right-click a filled user slot to rename it, and Shift-right-click to clear it. Factory recipes and their names remain immutable. Manual shelf changes remove the active-slot highlight without altering the stored recipe.
 
-The compact **LOOP** audition button repeats a fixed selection when one exists, otherwise it follows the visible Current view as that view is zoomed or panned. A short boundary crossfade uses the existing audition engine. While LOOP is active it remains the audition owner, so WARP and SMEAR continue publishing spring-loaded previews without their usual timed playback retriggers. Loading or creating another sound, selecting a bank tile, Stop, or quit cancels workbench LOOP ownership.
+The compact **LOOP** audition button repeats a fixed selection when one exists, otherwise it follows the visible Current view as that view is zoomed or panned. A short boundary crossfade uses the existing audition engine. While LOOP is active it remains the audition owner, so WARP, SMEAR, and TEAR continue publishing spring-loaded previews without their usual timed playback retriggers. Loading or creating another sound, selecting a bank tile, Stop, or quit cancels workbench LOOP ownership.
 
 Portable `.tsp` files contain the named processing settings and, for user captures, optional tuning metadata—never Source audio, crop, selection, loop, tape edits, or bank members—so the same treatment can be applied to unrelated sources. Factory recipes omit tuning. While RCPE is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the instrument. Full `.tsr` projects remain the self-contained way to save a complete sound.
 
@@ -159,7 +164,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR11 embeds the Source waveform, complete sound-collection bank, per-member tuning and provenance, Collection controls, loop directions, replayable tape-edit timeline, filter, and shaper in one portable file. TSR6 through TSR10 projects remain loadable with deterministic defaults for fields absent from those versions. TSP2 remains source-audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR14 embeds the Source waveform, complete sound-collection bank, per-member tuning and provenance, Collection controls, loop directions, replayable tape-edit timeline including TEAR, filter, and shaper in one portable file. TSR6 through TSR13 projects remain loadable with deterministic defaults for fields absent from those versions. TSP2 remains source-audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 
