@@ -511,6 +511,76 @@ int main(void)
         }
         ts_instrument_free(&rotation);
     }
+
+    {
+        TsInstrument warp;
+        float original[256];
+        float first_render[256];
+        ts_instrument_init(&warp);
+        for (size_t i = 0; i < 256; ++i)
+            original[i] = 0.55f * sinf((float)i * 0.071f) +
+                          0.18f * sinf((float)i * 0.233f);
+        warp.parent.frames = 256;
+        warp.parent.sample_rate = 44100;
+        warp.parent.data = (float *)malloc(sizeof(original));
+        CHECK(warp.parent.data != NULL);
+        if (warp.parent.data != NULL) {
+            memcpy(warp.parent.data, original, sizeof(original));
+            CHECK(ts_sample_clone(&warp.current, &warp.parent, error, sizeof(error)));
+            warp.crop_last = warp.parent.frames;
+            warp.view_last = warp.current.frames;
+
+            CHECK(ts_instrument_apply_warp(&warp, 0.0f, error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+            CHECK(warp.undo_count == 0);
+
+            ts_instrument_set_selection(&warp, 40, 220);
+            CHECK(ts_instrument_apply_warp(&warp, 0.72f, error, sizeof(error)));
+            CHECK(warp.current.frames == 256);
+            CHECK(warp.undo_count == 1);
+            CHECK(memcmp(warp.current.data, original, 40 * sizeof(float)) == 0);
+            CHECK(memcmp(warp.current.data + 220, original + 220,
+                         (256 - 220) * sizeof(float)) == 0);
+            CHECK(warp.current.data[40] == original[40]);
+            CHECK(warp.current.data[219] == original[219]);
+            CHECK(memcmp(warp.current.data + 41, original + 41,
+                         (220 - 42) * sizeof(float)) != 0);
+            for (size_t i = 0; i < warp.current.frames; ++i)
+                CHECK(isfinite(warp.current.data[i]));
+            memcpy(first_render, warp.current.data, sizeof(first_render));
+            CHECK(ts_instrument_undo(&warp, error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+            CHECK(ts_instrument_apply_warp(&warp, 0.72f, error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, first_render, sizeof(first_render)) == 0);
+        }
+        ts_instrument_free(&warp);
+    }
+
+    {
+        TsInstrument warp;
+        float silence[9] = {0};
+        ts_instrument_init(&warp);
+        warp.parent.frames = 9;
+        warp.parent.sample_rate = 8000;
+        warp.parent.data = (float *)malloc(sizeof(silence));
+        CHECK(warp.parent.data != NULL);
+        if (warp.parent.data != NULL) {
+            memcpy(warp.parent.data, silence, sizeof(silence));
+            CHECK(ts_sample_clone(&warp.current, &warp.parent, error, sizeof(error)));
+            warp.crop_last = warp.parent.frames;
+            warp.view_last = warp.current.frames;
+            CHECK(ts_instrument_apply_warp(&warp, 1.0f, error, sizeof(error)));
+            CHECK(warp.current.frames == 9);
+            CHECK(memcmp(warp.current.data, silence, sizeof(silence)) == 0);
+            CHECK(ts_instrument_undo(&warp, error, sizeof(error)));
+            ts_instrument_set_selection(&warp, 3, 4);
+            CHECK(ts_instrument_apply_warp(&warp, 1.0f, error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, silence, sizeof(silence)) == 0);
+            CHECK(!ts_instrument_apply_warp(&warp, NAN, error, sizeof(error)));
+            CHECK(!ts_instrument_apply_warp(&warp, 1.1f, error, sizeof(error)));
+        }
+        ts_instrument_free(&warp);
+    }
     {
         TsInstrument rotation;
         float original[12];

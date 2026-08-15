@@ -23,6 +23,12 @@ number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead
 Set `rotate_wheel_fine` (1–20, default 5) and `rotate_wheel_coarse` (20–100,
 default 50) in the `[Waveform]` section of `tapesister.ini`.
 
+The compact **WARP** control applies one deterministic, length-preserving offline
+Transform to Current, or only to the fixed waveform selection when one is active.
+Click near the left for subtle read-position shimmer, the middle for metallic bending,
+or the right for aggressive modulation. Each nonzero click is one Undo/Redo action;
+samples outside a selection remain unchanged.
+
 ## A/B audition and playhead
 
 The **Source** and **Current** buttons choose what every playback trigger auditions without changing the editing target: edits, Save, and Export always operate on Current. `Ctrl+B` toggles the same selector. Each has its own viewport, so wheel/keyboard zoom, panning, Zoom Selection, Show All, and Play View work directly on the waveform currently displayed without disturbing the other view.

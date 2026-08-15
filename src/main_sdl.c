@@ -892,6 +892,20 @@ static void apply_sample_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiS
     else snprintf(ui->status, sizeof(ui->status), "EDIT FAILED: %.137s", error);
 }
 
+static void apply_warp(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                       TsInstrument *instrument, float amount)
+{
+    char error[160];
+    int selected = instrument->has_selection;
+    int ok;
+    lock_edit(device, audio);
+    ok = ts_instrument_apply_warp(instrument, amount, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok) snprintf(ui->status, sizeof(ui->status), "WARP %.2F %s - SOURCE PRESERVED",
+                     amount, selected ? "SELECTION" : "ALL");
+    else snprintf(ui->status, sizeof(ui->status), "WARP FAILED: %.137s", error);
+}
+
 static void rotate_waveform(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                             TsInstrument *instrument, int direction, int crossing_count)
 {
@@ -2584,9 +2598,18 @@ int main(int argc, char **argv)
                     int width;
                     float *control;
                     ui.commit_armed = 0;
-                    if (x < 110) { control = &process.body; start = 10; width = 100; label = "BODY"; }
-                    else if (x < 220) { control = &process.edge; start = 120; width = 100; label = "EDGE"; }
-                    else { control = &process.drift; start = 230; width = 100; label = "DRIFT"; }
+                    if (x >= 244) {
+                        float amount = (float)(x - 244) / 86.0f;
+                        if (amount > 1.0f) amount = 1.0f;
+                        apply_warp(device, &audio, &ui, &instrument, amount);
+                        continue;
+                    } else if (x < 82) {
+                        control = &process.body; start = 10; width = 72; label = "BODY";
+                    } else if (x >= 88 && x < 160) {
+                        control = &process.edge; start = 88; width = 72; label = "EDGE";
+                    } else if (x >= 166 && x < 238) {
+                        control = &process.drift; start = 166; width = 72; label = "DRIFT";
+                    } else continue;
                     *control = (float)(x - start) / (float)width;
                     if (*control < 0.0f) *control = 0.0f;
                     if (*control > 1.0f) *control = 1.0f;

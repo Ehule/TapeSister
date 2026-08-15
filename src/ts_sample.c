@@ -961,6 +961,70 @@ static float sample_linear(const TsSample *sample, double position, size_t first
     return sample->data[at] + (sample->data[next] - sample->data[at]) * fraction;
 }
 
+static float sample_cubic_range(const float *data, size_t first, size_t last,
+                                double position)
+{
+    size_t i1, i0, i2, i3;
+    float fraction, a, b, c, d;
+    if (position < (double)first) position = (double)first;
+    if (position > (double)(last - 1u)) position = (double)(last - 1u);
+    i1 = (size_t)position;
+    i0 = i1 > first ? i1 - 1u : i1;
+    i2 = i1 + 1u < last ? i1 + 1u : i1;
+    i3 = i2 + 1u < last ? i2 + 1u : i2;
+    fraction = (float)(position - (double)i1);
+    a = -0.5f * data[i0] + 1.5f * data[i1] - 1.5f * data[i2] + 0.5f * data[i3];
+    b = data[i0] - 2.5f * data[i1] + 2.0f * data[i2] - 0.5f * data[i3];
+    c = -0.5f * data[i0] + 0.5f * data[i2];
+    d = data[i1];
+    return ((a * fraction + b) * fraction + c) * fraction + d;
+}
+
+static int warp_range(TsSample *sample, size_t first, size_t last, float amount,
+                      char *error, size_t error_size)
+{
+    float *source;
+    size_t length = last - first;
+    double phase = 0.0;
+    double rate;
+    double depth;
+    if (amount <= 0.0f || length < 2u) return 1;
+    source = (float *)malloc(length * sizeof(float));
+    if (source == NULL) {
+        set_error(error, error_size, "Out of memory while warping waveform");
+        return 0;
+    }
+    memcpy(source, sample->data + first, length * sizeof(float));
+    amount = clampf(amount, 0.0f, 1.0f);
+    rate = 31.0 + 1969.0 * (double)amount * (double)amount;
+    depth = 0.15 + 191.85 * (double)amount * (double)amount;
+    for (size_t i = 0; i < length; ++i) {
+        double edge = (double)(i < length - 1u - i ? i : length - 1u - i);
+        double p = phase + (double)i * 2.0 * M_PI * rate / sample->sample_rate;
+        double simple = sin(p);
+        double metallic = sin(p * 1.61803398875 + 1.35 * sin(p * 0.503));
+        double unstable = tanh(1.8 * sin(p * 2.414 + 2.2 * metallic));
+        double middle = clampf((amount - 0.20f) / 0.55f, 0.0f, 1.0f);
+        double high = clampf((amount - 0.68f) / 0.32f, 0.0f, 1.0f);
+        double modulator = simple + (metallic - simple) * middle;
+        double displacement;
+        float value;
+        modulator += (unstable - modulator) * high;
+        displacement = depth * modulator;
+        if (displacement > edge) displacement = edge;
+        if (displacement < -edge) displacement = -edge;
+        value = sample_cubic_range(source, 0u, length, (double)i + displacement);
+        if (!isfinite(value)) {
+            free(source);
+            set_error(error, error_size, "WARP produced non-finite audio");
+            return 0;
+        }
+        sample->data[first + i] = value;
+    }
+    free(source);
+    return 1;
+}
+
 int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, size_t last,
                       const TsProcessRecipe *recipe, char *error, size_t error_size)
 {
@@ -1372,6 +1436,9 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                        offset * sizeof(float));
                 memcpy(destination->data + first, rotated, length * sizeof(float));
                 free(rotated);
+            } else if (operation->kind == TS_POST_WARP) {
+                if (!warp_range(destination, first, last, operation->amount,
+                                error, error_size)) return 0;
             } else if (operation->kind == TS_POST_NORMALIZE) {
                 float peak = 0.0f;
                 float target = clampf(operation->amount, 0.0f, 1.0f);
@@ -3595,6 +3662,47 @@ int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
     return bank_sync_selected(instrument, error, error_size);
 }
 
+int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
+                             char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    TsSample current;
+    if (instrument == NULL || instrument->current.data == NULL) {
+        set_error(error, error_size, "No Current sample to warp");
+        return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "WARP amount must be between zero and one");
+        return 0;
+    }
+    if (amount == 0.0f) {
+        set_error(error, error_size, "");
+        return 1;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits");
+        return 0;
+    }
+    target = snapshot(instrument);
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_WARP;
+    operation.first = instrument->has_selection ? instrument->selection_first : 0u;
+    operation.last = instrument->has_selection ? instrument->selection_last :
+                                                  instrument->current.frames;
+    operation.amount = amount;
+    target.post_edits[target.post_edit_count++] = operation;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    begin_edit(instrument);
+    ts_sample_free(&instrument->current);
+    instrument->current = current;
+    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
+    set_error(error, error_size, "");
+    return bank_sync_selected(instrument, error, error_size);
+}
+
 int ts_instrument_zoom_selection(TsInstrument *instrument)
 {
     if (!instrument->has_selection || instrument->selection_last <= instrument->selection_first)
@@ -4027,7 +4135,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             if (!get64(f, &destination_bits)) goto malformed;
             edit->destination = (int64_t)destination_bits;
             GET_FLOAT(edit->amount); GET_U32(edit->crossfade_frames);
-            if (edit->kind > TS_POST_ROTATE || edit->last <= edit->first ||
+            if (edit->kind > TS_POST_WARP || edit->last <= edit->first ||
                 edit->first > 100000000u || edit->last > 100000000u ||
                 edit->destination < -100000000LL ||
                 edit->destination > 100000000LL ||

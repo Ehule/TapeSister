@@ -621,9 +621,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 247, 205, 78, "UNDO", instrument->undo_count > 0);
     button(fb, 330, 205, 72, "REDO", instrument->redo_count > 0);
 
-    slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
-    slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);
-    slider(fb, 230, 233, 100, "DRIFT", instrument->process.drift, PAL_TUNING);
+    slider(fb, 10, 233, 72, "BODY", instrument->process.body, PAL_INSTRUMENT);
+    slider(fb, 88, 233, 72, "EDGE", instrument->process.edge, PAL_VOLUME);
+    slider(fb, 166, 233, 72, "DRIFT", instrument->process.drift, PAL_TUNING);
+    slider(fb, 244, 233, 86, "WARP", 0.0f, PAL_MOUSE);
     button(fb, 335, 233, 34, "EDIT", ui->fx_page == TS_FX_EDIT);
     button(fb, 372, 233, 34, "TUNE", ui->fx_page == TS_FX_TUNE);
     button(fb, 409, 233, 36, "NOIS", ui->fx_page == TS_FX_NOISE);
