@@ -80,21 +80,26 @@ int main(void)
     }
     ts_smear_gesture_init(&gesture); ts_instrument_free(&selected); setup(&selected, tone, N, RATE);
     ts_instrument_set_selection(&selected, 300, 5000);
+    selected.view_first = 32; selected.view_last = 160;
     CHECK(ts_instrument_smear_gesture_begin(&selected, &gesture, error, sizeof(error)));
     CHECK(ts_instrument_smear_gesture_preview(&selected, &gesture, 0.2f, error, sizeof(error)));
+    CHECK(selected.view_first == 32 && selected.view_last == 160);
     { float *preview = malloc(N * sizeof(float)); memcpy(preview, selected.current.data, N * sizeof(float));
       CHECK(selected.undo_count == 0); CHECK(ts_instrument_smear_gesture_preview(&selected, &gesture, 0.8f, error, sizeof(error)));
       CHECK(ts_instrument_smear_gesture_preview(&selected, &gesture, 0.2f, error, sizeof(error)));
       CHECK(memcmp(preview, selected.current.data, N * sizeof(float)) == 0); free(preview); }
     CHECK(ts_instrument_smear_gesture_commit(&selected, &gesture, error, sizeof(error)) && selected.undo_count == 1);
+    CHECK(selected.view_first == 32 && selected.view_last == 160);
     CHECK(ts_instrument_undo(&selected, error, sizeof(error))); CHECK(memcmp(selected.current.data, tone, N * sizeof(float)) == 0);
     CHECK(ts_instrument_smear_gesture_begin(&selected, &gesture, error, sizeof(error)));
     CHECK(ts_instrument_smear_gesture_preview(&selected, &gesture, 0.7f, error, sizeof(error)));
     CHECK(ts_instrument_smear_gesture_preview(&selected, &gesture, 0.0f, error, sizeof(error)));
     CHECK(ts_instrument_smear_gesture_commit(&selected, &gesture, error, sizeof(error)) && selected.undo_count == 0);
+    CHECK(selected.view_first == 32 && selected.view_last == 160);
     CHECK(ts_instrument_smear_gesture_begin(&selected, &gesture, error, sizeof(error)));
     CHECK(ts_instrument_smear_gesture_preview(&selected, &gesture, 0.5f, error, sizeof(error)));
     CHECK(ts_instrument_smear_gesture_cancel(&selected, &gesture, error, sizeof(error)) && selected.undo_count == 0);
+    CHECK(selected.view_first == 32 && selected.view_last == 160);
     CHECK(ts_instrument_smear_gesture_begin(&selected, &gesture, error, sizeof(error))); ++selected.generation;
     CHECK(!ts_instrument_smear_gesture_preview(&selected, &gesture, 0.5f, error, sizeof(error))); --selected.generation;
     CHECK(ts_instrument_smear_gesture_cancel(&selected, &gesture, error, sizeof(error)));

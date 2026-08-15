@@ -207,6 +207,10 @@ int main(void)
         ts_instrument_set_selection(&snap_instrument, 0, crossing_sample.frames);
         CHECK(snap_instrument.selection_first == 0 &&
               snap_instrument.selection_last == crossing_sample.frames);
+        ts_instrument_set_selection_snapped(&snap_instrument, 0,
+                                             crossing_sample.frames);
+        CHECK(snap_instrument.selection_first == 0 &&
+              snap_instrument.selection_last == crossing_sample.frames);
         ts_instrument_clear_selection(&snap_instrument);
         CHECK(ts_instrument_set_loop_from_selection(&snap_instrument,
                                                      error, sizeof(error)));
@@ -482,7 +486,19 @@ int main(void)
     CHECK(ts_instrument_zoom_selection(&generated));
     CHECK(generated.view_first == 100 && generated.view_last == 1000);
     CHECK(ts_instrument_frame_from_view_x(&generated, 0, 600) == 100);
-    CHECK(ts_instrument_frame_from_view_x(&generated, 599, 600) < 1000);
+    CHECK(ts_instrument_frame_from_view_x(&generated, 599, 600) == 1000);
+    generated.view_first = generated.current.frames - 200u;
+    generated.view_last = generated.current.frames;
+    CHECK(ts_instrument_frame_from_view_x(&generated, 599, 600) ==
+          generated.current.frames);
+    ts_instrument_set_selection_snapped(&generated,
+                                        generated.current.frames - 100u,
+                                        generated.current.frames);
+    CHECK(generated.selection_last == generated.current.frames);
+    CHECK(generated.selection_last - generated.selection_first > 0u);
+    generated.view_first = 100;
+    generated.view_last = 1000;
+    ts_instrument_set_selection(&generated, 100, 1000);
     CHECK(ts_instrument_crop_selection(&generated, error, sizeof(error)));
     CHECK(generated.current.frames == 900);
     CHECK(ts_sample_hash(&generated.parent) == parent_hash);
@@ -613,13 +629,15 @@ int main(void)
             memcpy(warp.parent.data, original, sizeof(original));
             CHECK(ts_sample_clone(&warp.current, &warp.parent, error, sizeof(error)));
             warp.crop_last = warp.parent.frames;
-            warp.view_last = warp.current.frames;
+            warp.view_first = 48;
+            warp.view_last = 144;
             ts_instrument_set_selection(&warp, 24, 168);
 
             CHECK(ts_instrument_warp_gesture_begin(&warp, &gesture,
                                                     error, sizeof(error)));
             CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.2f,
                                                       error, sizeof(error)));
+            CHECK(warp.view_first == 48 && warp.view_last == 144);
             memcpy(preview_20, warp.current.data, sizeof(preview_20));
             CHECK(memcmp(warp.current.data, original, 24 * sizeof(float)) == 0);
             CHECK(memcmp(warp.current.data + 168, original + 168,
@@ -633,6 +651,7 @@ int main(void)
             CHECK(warp.undo_count == 0);
             CHECK(ts_instrument_warp_gesture_commit(&warp, &gesture,
                                                      error, sizeof(error)));
+            CHECK(warp.view_first == 48 && warp.view_last == 144);
             CHECK(warp.undo_count == 1);
             CHECK(ts_instrument_undo(&warp, error, sizeof(error)));
             CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
@@ -646,6 +665,7 @@ int main(void)
             CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
             CHECK(ts_instrument_warp_gesture_commit(&warp, &gesture,
                                                      error, sizeof(error)));
+            CHECK(warp.view_first == 48 && warp.view_last == 144);
             CHECK(warp.undo_count == 0);
             CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
 
@@ -655,6 +675,7 @@ int main(void)
                                                       error, sizeof(error)));
             CHECK(ts_instrument_warp_gesture_cancel(&warp, &gesture,
                                                      error, sizeof(error)));
+            CHECK(warp.view_first == 48 && warp.view_last == 144);
             CHECK(warp.undo_count == 0);
             CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
 
@@ -1927,6 +1948,8 @@ int main(void)
         CHECK(ts_ui_zoom_parent_view(&ui, imported.parent.frames,
                                      anchor, 0.5f, 0.5f));
         CHECK(ui.parent_view_last - ui.parent_view_first == imported.parent.frames / 2u);
+        CHECK(ts_ui_parent_frame_from_x(&ui, imported.parent.frames, 599, 600) ==
+              ui.parent_view_last);
         CHECK(ts_ui_parent_frame_from_x(&ui, imported.parent.frames, 300, 600) + 1u >=
               anchor);
         ts_ui_render(&fb, &ui, &imported);

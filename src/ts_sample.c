@@ -1310,6 +1310,25 @@ static void reset_editor(TsInstrument *instrument)
     instrument->redo_count = 0;
 }
 
+static void replace_current_preserving_view(TsInstrument *instrument,
+                                            TsSample *replacement)
+{
+    size_t first = instrument->view_first;
+    size_t last = instrument->view_last;
+    size_t frames = replacement->frames;
+    ts_sample_free(&instrument->current);
+    instrument->current = *replacement;
+    ts_sample_init(replacement);
+    if (frames == 0) {
+        instrument->view_first = instrument->view_last = 0;
+        return;
+    }
+    if (last > frames) last = frames;
+    if (first >= last) first = last > 0 ? last - 1u : 0u;
+    instrument->view_first = first;
+    instrument->view_last = last;
+}
+
 static int render_edit_source(TsSample *destination, const TsSample *parent,
                               size_t first, size_t last,
                               const TsSampleEdit *edits, int edit_count,
@@ -2238,8 +2257,12 @@ void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first,
     size_t snapped_first;
     size_t snapped_last;
     if (instrument == NULL || instrument->current.data == NULL) return;
-    snapped_first = ts_sample_nearest_zero_crossing(&instrument->current, first);
-    snapped_last = ts_sample_nearest_zero_crossing(&instrument->current, last);
+    snapped_first = first == 0 ? 0 :
+                    first >= instrument->current.frames ? instrument->current.frames :
+                    ts_sample_nearest_zero_crossing(&instrument->current, first);
+    snapped_last = last == 0 ? 0 :
+                   last >= instrument->current.frames ? instrument->current.frames :
+                   ts_sample_nearest_zero_crossing(&instrument->current, last);
     if (snapped_first > snapped_last) {
         size_t swap = snapped_first;
         snapped_first = snapped_last;
@@ -3619,8 +3642,7 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
         ts_sample_init(&current);
         if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
         begin_edit(instrument);
-        ts_sample_free(&instrument->current);
-        instrument->current = current;
+        replace_current_preserving_view(instrument, &current);
         memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
         instrument->post_edit_count = target.post_edit_count;
         set_error(error, error_size, "");
@@ -3639,8 +3661,7 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
     begin_edit(instrument);
-    ts_sample_free(&instrument->current);
-    instrument->current = current;
+    replace_current_preserving_view(instrument, &current);
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
     set_error(error, error_size, "");
@@ -3717,8 +3738,7 @@ int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
     if (logical_steps == 0) {
         TsSample current = base;
         begin_edit(instrument);
-        ts_sample_free(&instrument->current);
-        instrument->current = current;
+        replace_current_preserving_view(instrument, &current);
         memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
         instrument->post_edit_count = target.post_edit_count;
         set_error(error, error_size, "");
@@ -3756,8 +3776,7 @@ int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
         ts_sample_init(&current);
         if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
         begin_edit(instrument);
-        ts_sample_free(&instrument->current);
-        instrument->current = current;
+        replace_current_preserving_view(instrument, &current);
     }
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target.post_edit_count;
@@ -3798,8 +3817,7 @@ int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
     begin_edit(instrument);
-    ts_sample_free(&instrument->current);
-    instrument->current = current;
+    replace_current_preserving_view(instrument, &current);
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target.post_edit_count;
     set_error(error, error_size, "");
@@ -3884,8 +3902,7 @@ int ts_instrument_warp_gesture_preview(TsInstrument *instrument,
         target.post_edits[target.post_edit_count++] = operation;
         if (!render_snapshot(&preview, instrument, &target, error, error_size)) return 0;
     }
-    ts_sample_free(&instrument->current);
-    instrument->current = preview;
+    replace_current_preserving_view(instrument, &preview);
     gesture->amount = amount;
     set_error(error, error_size, "");
     return 1;
@@ -3903,8 +3920,7 @@ int ts_instrument_warp_gesture_cancel(TsInstrument *instrument,
     }
     ts_sample_init(&restored);
     if (!ts_sample_clone(&restored, &gesture->original, error, error_size)) return 0;
-    ts_sample_free(&instrument->current);
-    instrument->current = restored;
+    replace_current_preserving_view(instrument, &restored);
     warp_gesture_clear(gesture);
     set_error(error, error_size, "");
     return 1;
@@ -3969,7 +3985,7 @@ int ts_instrument_apply_smear(TsInstrument *instrument, float amount,
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
     begin_edit(instrument);
-    ts_sample_free(&instrument->current); instrument->current = current;
+    replace_current_preserving_view(instrument, &current);
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target.post_edit_count;
     return bank_sync_selected(instrument, error, error_size);
@@ -4018,7 +4034,7 @@ int ts_instrument_smear_gesture_preview(TsInstrument *instrument, TsSmearGesture
         operation.amount = amount; target.post_edits[target.post_edit_count++] = operation;
         if (!render_snapshot(&preview, instrument, &target, error, error_size)) return 0;
     }
-    ts_sample_free(&instrument->current); instrument->current = preview;
+    replace_current_preserving_view(instrument, &preview);
     gesture->amount = amount; set_error(error, error_size, ""); return 1;
 }
 
@@ -4031,7 +4047,7 @@ int ts_instrument_smear_gesture_cancel(TsInstrument *instrument, TsSmearGesture 
     }
     ts_sample_init(&restored);
     if (!ts_sample_clone(&restored, &gesture->original, error, error_size)) return 0;
-    ts_sample_free(&instrument->current); instrument->current = restored;
+    replace_current_preserving_view(instrument, &restored);
     warp_gesture_clear(gesture); set_error(error, error_size, ""); return 1;
 }
 
@@ -4189,7 +4205,7 @@ size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, in
     size_t last = instrument->view_last;
     if (width <= 0 || last <= first) return first;
     if (x < 0) x = 0;
-    if (x >= width) x = width - 1;
+    if (x >= width - 1) return last;
     return first + (size_t)x * (last - first) / (size_t)width;
 }
 

@@ -2802,9 +2802,8 @@ int main(int argc, char **argv)
                                      "DRAG LOOP END - ZERO SNAPPED");
                         } else {
                             cancel_pitch_preview(device, &audio, &ui, &instrument);
-                            ui.selection_anchor = ts_sample_nearest_zero_crossing(
-                                &instrument.current, selection_frame_from_x(
-                                    &instrument, &ui, x - TS_WAVE_X));
+                            ui.selection_anchor = selection_frame_from_x(
+                                &instrument, &ui, x - TS_WAVE_X);
                             ts_instrument_set_selection_snapped(
                                 &instrument, ui.selection_anchor, ui.selection_anchor);
                             ui.selecting = 1;

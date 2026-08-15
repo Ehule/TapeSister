@@ -400,7 +400,7 @@ size_t ts_ui_parent_frame_from_x(const TsUiState *ui, size_t frames, int x, int 
     if (width <= 0 || frames == 0) return 0;
     valid_parent_view(ui, frames, &first, &last);
     if (x < 0) x = 0;
-    if (x >= width) x = width - 1;
+    if (x >= width - 1) return last;
     return first + (size_t)x * (last - first) / (size_t)width;
 }
 
