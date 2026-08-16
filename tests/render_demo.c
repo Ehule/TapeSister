@@ -8,10 +8,12 @@ int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "tapesister-independent-tiles.ppm";
     TsInstrument instrument;
+    TsSample drone_preview;
     TsUiState ui;
     TsFramebuffer fb;
     char error[160];
     ts_instrument_init(&instrument);
+    ts_sample_init(&drone_preview);
     ts_ui_init(&ui);
     if (!ts_instrument_generate(&instrument, TS_GENERATOR_METALLIC, 0x54415045u,
                                 error, sizeof(error))) {
@@ -65,18 +67,27 @@ int main(int argc, char **argv)
         snprintf(ui.status, sizeof(ui.status),
                  "CHOOSE PASTE, FIT, OR CANCEL FOR THE SELECTED RANGE");
     } else if (argc > 2 && strcmp(argv[2], "drone") == 0) {
-        size_t overlap = instrument.current.sample_rate / 20u;
+        size_t split = 0;
+        size_t overlap = 0;
+        if (!ts_sample_make_drone(
+                &drone_preview, &instrument.current,
+                instrument.selection_first, instrument.selection_last, 50,
+                &split, &overlap, error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
         ui.drone_open = 1;
         ui.drone_preview_active = 1;
+        ui.drone_preview_sample = &drone_preview;
         ui.drone_effective_crossfade_ms =
             (float)((double)overlap * 1000.0 /
                     (double)instrument.current.sample_rate);
         ui.drone_source_first = instrument.selection_first;
         ui.drone_source_last = instrument.selection_last;
-        ui.drone_split_frame = (instrument.selection_first +
-                                instrument.selection_last) / 2u;
-        ui.drone_output_frames = instrument.selection_last -
-                                 instrument.selection_first - overlap;
+        ui.drone_split_frame = split;
+        ui.drone_output_frames = drone_preview.frames;
+        ui.drone_overlap_frames = overlap;
         snprintf(ui.status, sizeof(ui.status),
                  "DRONE PREVIEW IS TEMPORARY - SOURCE AND HISTORY UNCHANGED");
     } else if (argc > 2 && strcmp(argv[2], "stretch") == 0) {
@@ -283,9 +294,11 @@ int main(int argc, char **argv)
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {
         fprintf(stderr, "Could not write %s\n", path);
+        ts_sample_free(&drone_preview);
         ts_instrument_free(&instrument);
         return 1;
     }
+    ts_sample_free(&drone_preview);
     ts_instrument_free(&instrument);
     printf("Wrote %s\n", path);
     return 0;

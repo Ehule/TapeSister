@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define RGB(r,g,b) (0xff000000u | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
@@ -385,31 +386,136 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
     text(fb, 364, 182, "TAB FIELD  CTRL BACKSPACE CLEAR", PAL_TUNING, 1);
 }
 
+static int drone_crossfade_range(const TsUiState *ui, size_t *first, size_t *last)
+{
+    size_t right_frames;
+    if (first != NULL) *first = 0;
+    if (last != NULL) *last = 0;
+    if (ui == NULL || ui->drone_output_frames == 0 ||
+        ui->drone_source_last <= ui->drone_split_frame ||
+        ui->drone_overlap_frames == 0)
+        return 0;
+    right_frames = ui->drone_source_last - ui->drone_split_frame;
+    if (right_frames > ui->drone_output_frames ||
+        ui->drone_overlap_frames > right_frames)
+        return 0;
+    if (first != NULL) *first = right_frames - ui->drone_overlap_frames;
+    if (last != NULL) *last = right_frames;
+    return 1;
+}
+
+int ts_ui_drone_waveform_contains(int x, int y)
+{
+    return x >= TS_DRONE_WAVE_X && x < TS_DRONE_WAVE_X + TS_DRONE_WAVE_W &&
+           y >= TS_DRONE_WAVE_Y && y < TS_DRONE_WAVE_Y + TS_DRONE_WAVE_H;
+}
+
+int ts_ui_drone_crossfade_handle_from_point(const TsUiState *ui, int x, int y)
+{
+    size_t first;
+    size_t last;
+    int first_x;
+    int last_x;
+    if (!ts_ui_drone_waveform_contains(x, y) ||
+        !drone_crossfade_range(ui, &first, &last))
+        return 0;
+    first_x = TS_DRONE_WAVE_X +
+              (int)(first * TS_DRONE_WAVE_W / ui->drone_output_frames);
+    last_x = TS_DRONE_WAVE_X +
+             (int)(last * TS_DRONE_WAVE_W / ui->drone_output_frames);
+    if (abs(x - first_x) <= 5 && abs(x - last_x) <= 5)
+        return x <= first_x + (last_x - first_x) / 2 ? 1 : 2;
+    if (abs(x - first_x) <= 5) return 1;
+    if (abs(x - last_x) <= 5) return 2;
+    return 0;
+}
+
+static void drone_waveform(TsFramebuffer *fb, const TsUiState *ui)
+{
+    const TsSample *sample = ui->drone_preview_sample;
+    size_t crossfade_first = 0;
+    size_t crossfade_last = 0;
+    int has_crossfade = drone_crossfade_range(
+        ui, &crossfade_first, &crossfade_last);
+    int center = TS_DRONE_WAVE_Y + TS_DRONE_WAVE_H / 2;
+    rect(fb, TS_DRONE_WAVE_X, TS_DRONE_WAVE_Y,
+         TS_DRONE_WAVE_W, TS_DRONE_WAVE_H, RGB(8, 8, 8));
+    for (int x = TS_DRONE_WAVE_X; x < TS_DRONE_WAVE_X + TS_DRONE_WAVE_W;
+         x += 50)
+        rect(fb, x, TS_DRONE_WAVE_Y, 1, TS_DRONE_WAVE_H, RGB(35, 32, 36));
+    if (has_crossfade) {
+        int first_x = TS_DRONE_WAVE_X +
+                      (int)(crossfade_first * TS_DRONE_WAVE_W /
+                            ui->drone_output_frames);
+        int last_x = TS_DRONE_WAVE_X +
+                     (int)(crossfade_last * TS_DRONE_WAVE_W /
+                           ui->drone_output_frames);
+        if (last_x <= first_x) last_x = first_x + 1;
+        rect(fb, first_x, TS_DRONE_WAVE_Y, last_x - first_x,
+             TS_DRONE_WAVE_H, PAL_WAVE_SELECTION);
+    }
+    rect(fb, TS_DRONE_WAVE_X, center, TS_DRONE_WAVE_W, 1, RGB(80, 73, 81));
+    if (sample != NULL && sample->data != NULL && sample->frames > 0) {
+        for (int column = 0; column < TS_DRONE_WAVE_W; ++column) {
+            size_t first = (size_t)column * sample->frames / TS_DRONE_WAVE_W;
+            size_t last = (size_t)(column + 1) * sample->frames / TS_DRONE_WAVE_W;
+            float minimum;
+            float maximum;
+            int y0;
+            int y1;
+            uint32_t color;
+            if (last <= first) last = first + 1u;
+            if (last > sample->frames) last = sample->frames;
+            minimum = maximum = sample->data[first];
+            for (size_t frame = first + 1u; frame < last; ++frame) {
+                if (sample->data[frame] < minimum) minimum = sample->data[frame];
+                if (sample->data[frame] > maximum) maximum = sample->data[frame];
+            }
+            if (minimum < -1.0f) minimum = -1.0f;
+            if (minimum > 1.0f) minimum = 1.0f;
+            if (maximum < -1.0f) maximum = -1.0f;
+            if (maximum > 1.0f) maximum = 1.0f;
+            y0 = center - (int)lrintf(maximum * (TS_DRONE_WAVE_H / 2 - 3));
+            y1 = center - (int)lrintf(minimum * (TS_DRONE_WAVE_H / 2 - 3));
+            color = has_crossfade && first < crossfade_last && last > crossfade_first ?
+                    PAL_BLOCK_TEXT : PAL_NOTE;
+            wave_line(fb, TS_DRONE_WAVE_X + column, y0,
+                      TS_DRONE_WAVE_X + column, y1, color);
+        }
+    } else {
+        text(fb, 224, 108, "PREVIEW WAVEFORM UNAVAILABLE", PAL_EFFECT, 1);
+    }
+    rect(fb, TS_DRONE_WAVE_X, TS_DRONE_WAVE_Y, 3, TS_DRONE_WAVE_H, PAL_TUNING);
+    rect(fb, TS_DRONE_WAVE_X + TS_DRONE_WAVE_W - 3, TS_DRONE_WAVE_Y,
+         3, TS_DRONE_WAVE_H, PAL_TUNING);
+    if (has_crossfade) {
+        int first_x = TS_DRONE_WAVE_X +
+                      (int)(crossfade_first * TS_DRONE_WAVE_W /
+                            ui->drone_output_frames);
+        int last_x = TS_DRONE_WAVE_X +
+                     (int)(crossfade_last * TS_DRONE_WAVE_W /
+                           ui->drone_output_frames);
+        rect(fb, first_x - 1, TS_DRONE_WAVE_Y, 3, TS_DRONE_WAVE_H, PAL_EFFECT);
+        rect(fb, last_x - 1, TS_DRONE_WAVE_Y, 3, TS_DRONE_WAVE_H, PAL_EFFECT);
+    }
+}
+
 static void drone_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     char crossfade[64];
-    char output[72];
+    char output[64];
     frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
           TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 47, "DRONE MAKER", PAL_NOTE, 1);
     snprintf(crossfade, sizeof(crossfade), "CROSSFADE: %.2F MS",
              ui->drone_effective_crossfade_ms);
     text(fb, 414, 47, crossfade, PAL_EFFECT, 1);
-    text(fb, 20, 65, "ROTATED LOOP  ORIGINAL END + BEGIN CROSSFADED INSIDE",
+    text(fb, 20, 63, "WHEEL COARSE  SHIFT+WHEEL FINE  DRAG EDGES - ZERO SNAP",
          RGB(190, 185, 190), 1);
-    rect(fb, 20, 82, 294, 44, RGB(8, 8, 8));
-    rect(fb, 23, 85, 144, 38, PAL_NOTE);
-    rect(fb, 167, 85, 144, 38, PAL_INSTRUMENT);
-    rect(fb, 157, 85, 20, 38, PAL_EFFECT);
-    rect(fb, 20, 82, 3, 44, PAL_TUNING);
-    rect(fb, 311, 82, 3, 44, PAL_TUNING);
-    text(fb, 68, 101, "RIGHT", PAL_BLOCK_TEXT, 1);
-    text(fb, 218, 101, "LEFT", PAL_BLOCK_TEXT, 1);
-    text(fb, 332, 87, "OUTER BOUNDARY KEEPS", PAL_TUNING, 1);
-    text(fb, 332, 101, "MIDPOINT NEIGHBORS", PAL_TUNING, 1);
-    snprintf(output, sizeof(output), "OUTPUT: %zu FRAMES  SPLIT: %zu",
+    snprintf(output, sizeof(output), "OUT %zu  SPLIT %zu",
              ui->drone_output_frames, ui->drone_split_frame);
-    text(fb, 332, 117, output, PAL_EFFECT, 1);
+    text(fb, 476, 63, output, PAL_TUNING, 1);
+    drone_waveform(fb, ui);
     button(fb, 20, 161, 110, "PREVIEW LOOP", ui->drone_preview_active);
     button(fb, 136, 161, 60, "STOP", 0);
     button(fb, 202, 161, 120, "COPY NEW TILE", 0);

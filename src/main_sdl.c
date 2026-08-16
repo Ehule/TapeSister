@@ -686,13 +686,18 @@ static void close_drone_dialog(SDL_AudioDeviceID device, AudioState *audio,
                                TsUiState *ui, TsSample *drone)
 {
     stop_drone_preview(device, audio, ui, drone);
+    ui->drone_preview_sample = NULL;
     ts_sample_free(drone);
     ui->drone_open = 0;
+    ui->drone_crossfade_dragging = 0;
+    ui->drone_crossfade_drag_start_x = 0;
+    ui->drone_crossfade_drag_start_frames = 0;
     ui->drone_source_slot = -1;
     ui->drone_source_first = 0;
     ui->drone_source_last = 0;
     ui->drone_split_frame = 0;
     ui->drone_output_frames = 0;
+    ui->drone_overlap_frames = 0;
     ui->drone_source_hash = 0;
     ui->drone_effective_crossfade_ms = 0.0f;
 }
@@ -705,6 +710,56 @@ static int drone_context_matches(const TsUiState *ui,
            instrument->selection_first == ui->drone_source_first &&
            instrument->selection_last == ui->drone_source_last &&
            ts_sample_hash(&instrument->current) == ui->drone_source_hash;
+}
+
+static size_t drone_maximum_overlap(size_t first, size_t last, size_t split)
+{
+    size_t maximum;
+    if (last <= first || split <= first || split >= last) return 0;
+    maximum = (last - first) / 4u;
+    if (maximum >= split - first) maximum = split - first - 1u;
+    if (maximum >= last - split) maximum = last - split - 1u;
+    return maximum;
+}
+
+static size_t drone_snap_overlap(const TsSample *source,
+                                 size_t first, size_t last, size_t split,
+                                 size_t requested, int handle,
+                                 int overlap_direction, size_t current)
+{
+    size_t maximum = drone_maximum_overlap(first, last, split);
+    size_t range_first;
+    size_t range_last;
+    size_t target;
+    size_t boundary;
+    size_t overlap;
+    if (maximum == 0 || source == NULL || source->data == NULL)
+        return 0;
+    if (requested < 1u) requested = 1u;
+    if (requested > maximum) requested = maximum;
+    if (handle == 1) {
+        range_first = last - maximum;
+        range_last = last - 1u;
+        target = last - requested;
+    } else {
+        range_first = first + 1u;
+        range_last = first + maximum;
+        target = first + requested;
+    }
+    boundary = ts_sample_nearest_zero_crossing_in_range(
+        source, target, range_first, range_last);
+    overlap = handle == 1 ? last - boundary : boundary - first;
+    if (overlap_direction != 0 && overlap == current) {
+        int sample_direction = handle == 1 ? -overlap_direction : overlap_direction;
+        size_t current_boundary = handle == 1 ? last - current : first + current;
+        size_t moved = ts_sample_zero_crossing_in_direction(
+            source, current_boundary, sample_direction, 1u);
+        if (moved >= range_first && moved <= range_last)
+            overlap = handle == 1 ? last - moved : moved - first;
+    }
+    if (overlap < 1u) overlap = 1u;
+    if (overlap > maximum) overlap = maximum;
+    return overlap;
 }
 
 static void begin_drone_dialog(SDL_AudioDeviceID device, AudioState *audio,
@@ -722,6 +777,7 @@ static void begin_drone_dialog(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     stop_all(device, audio, ui);
+    ui->drone_preview_sample = NULL;
     ts_sample_free(drone);
     if (!ts_sample_make_drone(drone, &instrument->current,
                               instrument->selection_first,
@@ -731,6 +787,21 @@ static void begin_drone_dialog(SDL_AudioDeviceID device, AudioState *audio,
         snprintf(ui->status, sizeof(ui->status), "DRONE FAILED: %.142s", error);
         return;
     }
+    {
+        size_t snapped = drone_snap_overlap(
+            &instrument->current, instrument->selection_first,
+            instrument->selection_last, split, overlap, 2, 0, overlap);
+        if (snapped != 0 && snapped != overlap &&
+            !ts_sample_make_drone_at_split(
+                drone, &instrument->current, instrument->selection_first,
+                instrument->selection_last, split, snapped, &overlap,
+                error, sizeof(error))) {
+            snprintf(ui->status, sizeof(ui->status),
+                     "DRONE FAILED: %.142s", error);
+            ts_sample_free(drone);
+            return;
+        }
+    }
     ui->drone_open = 1;
     ui->drone_preview_active = 0;
     ui->drone_source_slot = instrument->selected_slot;
@@ -738,6 +809,8 @@ static void begin_drone_dialog(SDL_AudioDeviceID device, AudioState *audio,
     ui->drone_source_last = instrument->selection_last;
     ui->drone_split_frame = split;
     ui->drone_output_frames = drone->frames;
+    ui->drone_overlap_frames = overlap;
+    ui->drone_preview_sample = drone;
     ui->drone_source_hash = ts_sample_hash(&instrument->current);
     ui->drone_effective_crossfade_ms =
         (float)((double)overlap * 1000.0 / (double)drone->sample_rate);
@@ -781,6 +854,57 @@ static void preview_drone(SDL_AudioDeviceID device, AudioState *audio,
              "PREVIEWING DRONE LOOP - SPACE OR STOP ENDS PREVIEW");
 }
 
+static int adjust_drone_crossfade(SDL_AudioDeviceID device, AudioState *audio,
+                                  TsUiState *ui, const TsInstrument *instrument,
+                                  TsSample *drone, size_t requested_overlap,
+                                  int handle, int overlap_direction,
+                                  int output_rate)
+{
+    char error[160];
+    size_t snapped;
+    size_t effective = 0;
+    int was_previewing;
+    if (!drone_context_matches(ui, instrument)) {
+        close_drone_dialog(device, audio, ui, drone);
+        snprintf(ui->status, sizeof(ui->status),
+                 "DRONE CANCELLED - EDITING CONTEXT CHANGED");
+        return 0;
+    }
+    snapped = drone_snap_overlap(
+        &instrument->current, ui->drone_source_first, ui->drone_source_last,
+        ui->drone_split_frame, requested_overlap, handle,
+        overlap_direction, ui->drone_overlap_frames);
+    if (snapped == 0 || snapped == ui->drone_overlap_frames) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "DRONE CROSSFADE ZERO-SNAP LIMIT");
+        return 0;
+    }
+    was_previewing = ui->drone_preview_active;
+    stop_drone_preview(device, audio, ui, drone);
+    if (!ts_sample_make_drone_at_split(
+            drone, &instrument->current, ui->drone_source_first,
+            ui->drone_source_last, ui->drone_split_frame, snapped,
+            &effective, error, sizeof(error))) {
+        if (was_previewing)
+            preview_drone(device, audio, ui, instrument, drone, output_rate);
+        snprintf(ui->status, sizeof(ui->status),
+                 "DRONE CROSSFADE FAILED: %.132s", error);
+        return 0;
+    }
+    ui->drone_preview_sample = drone;
+    ui->drone_overlap_frames = effective;
+    ui->drone_output_frames = drone->frames;
+    ui->drone_effective_crossfade_ms =
+        (float)((double)effective * 1000.0 / (double)drone->sample_rate);
+    if (was_previewing)
+        preview_drone(device, audio, ui, instrument, drone, output_rate);
+    snprintf(ui->status, sizeof(ui->status),
+             "DRONE CROSSFADE %.2F MS - %s EDGE ZERO SNAPPED",
+             ui->drone_effective_crossfade_ms,
+             handle == 1 ? "LEFT" : "RIGHT");
+    return 1;
+}
+
 static void commit_drone(SDL_AudioDeviceID device, AudioState *audio,
                          TsUiState *ui, TsInstrument *instrument,
                          TsSample *drone, int copy_to_new_tile)
@@ -809,6 +933,8 @@ static void commit_drone(SDL_AudioDeviceID device, AudioState *audio,
     ui->drone_open = 0;
     ui->drone_source_slot = -1;
     ui->drone_preview_active = 0;
+    ui->drone_crossfade_dragging = 0;
+    ui->drone_preview_sample = NULL;
     ts_sample_free(drone);
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->bank_view_slot = -1;
@@ -2908,6 +3034,9 @@ int main(int argc, char **argv)
                        event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
                        ui.drone_open) {
                 stop_drone_preview(device, &audio, &ui, &drone_preview);
+                ui.drone_crossfade_dragging = 0;
+                ui.drone_crossfade_drag_start_x = 0;
+                ui.drone_crossfade_drag_start_frames = 0;
                 snprintf(ui.status, sizeof(ui.status),
                          "DRONE PREVIEW STOPPED - WINDOW LOST FOCUS");
             } else if (event.type == SDL_WINDOWEVENT &&
@@ -3366,11 +3495,41 @@ int main(int argc, char **argv)
                                    ((SDL_GetModState() & KMOD_SHIFT) ? 8 : 1));
                 } else snprintf(ui.status, sizeof(ui.status),
                                 "HOVER A PALETTE SLIDER TO USE THE WHEEL");
+            } else if (event.type == SDL_MOUSEWHEEL && ui.drone_open) {
+                int raw_x, raw_y, x, y;
+                int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
+                              -event.wheel.y : event.wheel.y;
+                SDL_GetMouseState(&raw_x, &raw_y);
+                logical_mouse(window, raw_x, raw_y, &x, &y);
+                if (wheel_y != 0 && ts_ui_drone_waveform_contains(x, y)) {
+                    int handle = ts_ui_drone_crossfade_handle_from_point(&ui, x, y);
+                    int fine = (SDL_GetModState() & KMOD_SHIFT) != 0;
+                    size_t frames_per_step =
+                        (size_t)instrument.current.sample_rate * (fine ? 1u : 10u) /
+                        1000u;
+                    size_t amount;
+                    size_t requested;
+                    if (frames_per_step < 1u) frames_per_step = 1u;
+                    amount = frames_per_step *
+                             (size_t)(wheel_y < 0 ? -(int64_t)wheel_y : wheel_y);
+                    if (handle == 0)
+                        handle = x < TS_DRONE_WAVE_X + TS_DRONE_WAVE_W / 2 ? 1 : 2;
+                    if (wheel_y > 0) {
+                        requested = ui.drone_overlap_frames > SIZE_MAX - amount ?
+                                    SIZE_MAX : ui.drone_overlap_frames + amount;
+                    } else {
+                        requested = amount >= ui.drone_overlap_frames ?
+                                    1u : ui.drone_overlap_frames - amount;
+                    }
+                    (void)adjust_drone_crossfade(
+                        device, &audio, &ui, &instrument, &drone_preview,
+                        requested, handle, wheel_y > 0 ? 1 : -1, obtained.freq);
+                } else snprintf(ui.status, sizeof(ui.status),
+                                "HOVER THE DRONE WAVEFORM TO ADJUST CROSSFADE");
             } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.export_choice_open ||
                         ui.load_selection_choice_open ||
-                        ui.drone_open ||
                         ui.exit_confirm_open)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
@@ -3521,6 +3680,28 @@ int main(int argc, char **argv)
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y); (void)y;
                 amount = (float)(x - 407) / 93.0f;
                 preview_tear_gesture(device, &audio, &ui, &instrument, amount, obtained.freq);
+            } else if (event.type == SDL_MOUSEMOTION &&
+                       ui.drone_open && ui.drone_crossfade_dragging) {
+                int x, y;
+                int delta_x;
+                int64_t delta_frames;
+                int64_t requested;
+                size_t selection_frames = ui.drone_source_last - ui.drone_source_first;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
+                (void)y;
+                delta_x = x - ui.drone_crossfade_drag_start_x;
+                delta_frames = (int64_t)delta_x * (int64_t)selection_frames /
+                               TS_DRONE_WAVE_W;
+                if (ui.drone_crossfade_dragging == 1) delta_frames = -delta_frames;
+                requested = (int64_t)ui.drone_crossfade_drag_start_frames +
+                            delta_frames;
+                if (requested < 1) requested = 1;
+                (void)adjust_drone_crossfade(
+                    device, &audio, &ui, &instrument, &drone_preview,
+                    (size_t)requested, ui.drone_crossfade_dragging,
+                    requested > (int64_t)ui.drone_overlap_frames ? 1 :
+                    requested < (int64_t)ui.drone_overlap_frames ? -1 : 0,
+                    obtained.freq);
             } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.palette_open || ui.export_choice_open ||
@@ -3674,7 +3855,16 @@ int main(int argc, char **argv)
                     }
                 } else if (ui.drone_open) {
                     TsUiDroneAction action = ts_ui_drone_action_from_point(x, y);
-                    if (action == TS_UI_DRONE_ACTION_PREVIEW)
+                    int handle = ts_ui_drone_crossfade_handle_from_point(&ui, x, y);
+                    if (handle != 0) {
+                        ui.drone_crossfade_dragging = handle;
+                        ui.drone_crossfade_drag_start_x = x;
+                        ui.drone_crossfade_drag_start_frames =
+                            ui.drone_overlap_frames;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "DRAG %s CROSSFADE EDGE - ZERO SNAPPED",
+                                 handle == 1 ? "LEFT" : "RIGHT");
+                    } else if (action == TS_UI_DRONE_ACTION_PREVIEW)
                         preview_drone(device, &audio, &ui, &instrument,
                                       &drone_preview, obtained.freq);
                     else if (action == TS_UI_DRONE_ACTION_STOP) {
@@ -4383,6 +4573,16 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONUP &&
                        (event.button.button == SDL_BUTTON_LEFT ||
                         event.button.button == SDL_BUTTON_RIGHT)) {
+                if (ui.drone_crossfade_dragging &&
+                    event.button.button == SDL_BUTTON_LEFT) {
+                    ui.drone_crossfade_dragging = 0;
+                    ui.drone_crossfade_drag_start_x = 0;
+                    ui.drone_crossfade_drag_start_frames = 0;
+                    snprintf(ui.status, sizeof(ui.status),
+                             "DRONE CROSSFADE %.2F MS - ZERO SNAPPED",
+                             ui.drone_effective_crossfade_ms);
+                    continue;
+                }
                 if (ui.warp_dragging && event.button.button == SDL_BUTTON_LEFT) {
                     end_warp_gesture(device, &audio, &ui, &instrument, 0);
                     continue;

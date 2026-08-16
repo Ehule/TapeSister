@@ -2550,13 +2550,22 @@ size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
     return closest;
 }
 
-static size_t nearest_zero_crossing_in_range(const TsSample *sample,
-                                             size_t target,
-                                             size_t first, size_t last)
+size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
+                                                size_t target,
+                                                size_t first, size_t last)
 {
     size_t maximum_distance;
     size_t closest;
     float closest_level;
+    if (sample == NULL || sample->data == NULL || sample->frames == 0)
+        return 0;
+    if (first >= sample->frames) first = sample->frames - 1u;
+    if (last >= sample->frames) last = sample->frames - 1u;
+    if (first > last) {
+        size_t swap = first;
+        first = last;
+        last = swap;
+    }
     if (target < first) target = first;
     if (target > last) target = last;
     maximum_distance = target - first > last - target ?
@@ -2583,19 +2592,96 @@ static size_t nearest_zero_crossing_in_range(const TsSample *sample,
     return closest;
 }
 
+static int make_drone_from_split(TsSample *destination, const TsSample *source,
+                                 size_t first, size_t last, size_t split,
+                                 size_t overlap, char *error, size_t error_size)
+{
+    TsSample made;
+    size_t left_frames;
+    size_t right_frames;
+    size_t output_frames;
+    size_t at = 0;
+    left_frames = split - first;
+    right_frames = last - split;
+    output_frames = last - first - overlap;
+    ts_sample_init(&made);
+    made.data = (float *)malloc(output_frames * sizeof(*made.data));
+    if (made.data == NULL) {
+        set_error(error, error_size, "Out of memory creating Drone loop");
+        return 0;
+    }
+    memcpy(made.data, source->data + split,
+           (right_frames - overlap) * sizeof(*made.data));
+    at += right_frames - overlap;
+    for (size_t i = 0; i < overlap; ++i) {
+        double phase = (double)(i + 1u) / (double)(overlap + 1u);
+        float fade_in = (float)(0.5 - 0.5 * cos(M_PI * phase));
+        float fade_out = 1.0f - fade_in;
+        made.data[at++] = source->data[last - overlap + i] * fade_out +
+                          source->data[first + i] * fade_in;
+    }
+    memcpy(made.data + at, source->data + first + overlap,
+           (left_frames - overlap) * sizeof(*made.data));
+    made.frames = output_frames;
+    made.sample_rate = source->sample_rate;
+    snprintf(made.name, sizeof(made.name), "DRONE %.120s", source->name);
+    ts_sample_free(destination);
+    *destination = made;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_sample_make_drone_at_split(TsSample *destination, const TsSample *source,
+                                  size_t first, size_t last, size_t split_frame,
+                                  size_t requested_overlap_frames,
+                                  size_t *effective_overlap_frames,
+                                  char *error, size_t error_size)
+{
+    size_t selection_frames;
+    size_t maximum_overlap;
+    size_t overlap;
+    if (effective_overlap_frames != NULL) *effective_overlap_frames = 0;
+    if (destination == NULL || source == NULL || source->data == NULL ||
+        source->sample_rate == 0 || first >= last || last > source->frames) {
+        set_error(error, error_size, "Drone needs a valid nonempty selection");
+        return 0;
+    }
+    selection_frames = last - first;
+    if (selection_frames < 4u) {
+        set_error(error, error_size, "Drone selection is too short");
+        return 0;
+    }
+    if (split_frame <= first || split_frame >= last) {
+        set_error(error, error_size, "Drone split is outside the selection");
+        return 0;
+    }
+    maximum_overlap = selection_frames / 4u;
+    if (maximum_overlap >= split_frame - first)
+        maximum_overlap = split_frame - first - 1u;
+    if (maximum_overlap >= last - split_frame)
+        maximum_overlap = last - split_frame - 1u;
+    if (maximum_overlap == 0) {
+        set_error(error, error_size, "Drone split cannot support a crossfade");
+        return 0;
+    }
+    overlap = requested_overlap_frames;
+    if (overlap < 1u) overlap = 1u;
+    if (overlap > maximum_overlap) overlap = maximum_overlap;
+    if (!make_drone_from_split(destination, source, first, last, split_frame,
+                               overlap, error, error_size))
+        return 0;
+    if (effective_overlap_frames != NULL) *effective_overlap_frames = overlap;
+    return 1;
+}
+
 int ts_sample_make_drone(TsSample *destination, const TsSample *source,
                          size_t first, size_t last, int crossfade_ms,
                          size_t *split_frame, size_t *overlap_frames,
                          char *error, size_t error_size)
 {
-    TsSample made;
     size_t selection_frames;
     size_t overlap;
     size_t split;
-    size_t left_frames;
-    size_t right_frames;
-    size_t output_frames;
-    size_t at = 0;
     if (split_frame != NULL) *split_frame = 0;
     if (overlap_frames != NULL) *overlap_frames = 0;
     if (destination == NULL || source == NULL || source->data == NULL ||
@@ -2624,42 +2710,14 @@ int ts_sample_make_drone(TsSample *destination, const TsSample *source,
         set_error(error, error_size, "Drone selection cannot support a crossfade");
         return 0;
     }
-    split = nearest_zero_crossing_in_range(
+    split = ts_sample_nearest_zero_crossing_in_range(
         source, first + selection_frames / 2u,
         first + overlap + 1u, last - overlap - 1u);
-    left_frames = split - first;
-    right_frames = last - split;
-    if (overlap >= left_frames || overlap >= right_frames) {
-        set_error(error, error_size, "Drone split cannot support its crossfade");
+    if (!ts_sample_make_drone_at_split(destination, source, first, last, split,
+                                       overlap, &overlap, error, error_size))
         return 0;
-    }
-    output_frames = selection_frames - overlap;
-    ts_sample_init(&made);
-    made.data = (float *)malloc(output_frames * sizeof(*made.data));
-    if (made.data == NULL) {
-        set_error(error, error_size, "Out of memory creating Drone loop");
-        return 0;
-    }
-    memcpy(made.data, source->data + split,
-           (right_frames - overlap) * sizeof(*made.data));
-    at += right_frames - overlap;
-    for (size_t i = 0; i < overlap; ++i) {
-        double phase = (double)(i + 1u) / (double)(overlap + 1u);
-        float fade_in = (float)(0.5 - 0.5 * cos(M_PI * phase));
-        float fade_out = 1.0f - fade_in;
-        made.data[at++] = source->data[last - overlap + i] * fade_out +
-                          source->data[first + i] * fade_in;
-    }
-    memcpy(made.data + at, source->data + first + overlap,
-           (left_frames - overlap) * sizeof(*made.data));
-    made.frames = output_frames;
-    made.sample_rate = source->sample_rate;
-    snprintf(made.name, sizeof(made.name), "DRONE %.120s", source->name);
-    ts_sample_free(destination);
-    *destination = made;
     if (split_frame != NULL) *split_frame = split;
     if (overlap_frames != NULL) *overlap_frames = overlap;
-    set_error(error, error_size, "");
     return 1;
 }
 
@@ -2728,8 +2786,8 @@ int ts_instrument_reset_selection_playhead(TsInstrument *instrument)
     return changed;
 }
 
-static size_t directional_zero_crossing(const TsSample *sample, size_t frame,
-                                        int direction, size_t count)
+size_t ts_sample_zero_crossing_in_direction(const TsSample *sample, size_t frame,
+                                            int direction, size_t count)
 {
     size_t at;
     if (sample == NULL || sample->data == NULL || sample->frames == 0 || count == 0)
@@ -2759,16 +2817,16 @@ int ts_instrument_resize_selection(TsInstrument *instrument, int endpoint,
         instrument->selection_last <= instrument->selection_first ||
         (endpoint != 1 && endpoint != 2) || crossing_count == 0) return 0;
     if (endpoint == 1) {
-        moved = directional_zero_crossing(&instrument->current,
-                                          instrument->selection_first,
-                                          expand ? -1 : 1, crossing_count);
+        moved = ts_sample_zero_crossing_in_direction(
+            &instrument->current, instrument->selection_first,
+            expand ? -1 : 1, crossing_count);
         if (moved >= instrument->selection_last) return 0;
         if (moved == instrument->selection_first) return 0;
         instrument->selection_first = moved;
     } else {
-        moved = directional_zero_crossing(&instrument->current,
-                                          instrument->selection_last,
-                                          expand ? 1 : -1, crossing_count);
+        moved = ts_sample_zero_crossing_in_direction(
+            &instrument->current, instrument->selection_last,
+            expand ? 1 : -1, crossing_count);
         if (moved <= instrument->selection_first) return 0;
         if (moved == instrument->selection_last) return 0;
         instrument->selection_last = moved;
@@ -3669,19 +3727,19 @@ static int stretch_target_range(const TsSample *source, size_t first, size_t las
                   ts_sample_nearest_zero_crossing(source, target_last);
     if (expanding) {
         if (target_first >= first && first > 0)
-            target_first = directional_zero_crossing(source, first, -1, 1);
+            target_first = ts_sample_zero_crossing_in_direction(source, first, -1, 1);
         if (target_last <= last && last < source->frames)
-            target_last = directional_zero_crossing(source, last, 1, 1);
+            target_last = ts_sample_zero_crossing_in_direction(source, last, 1, 1);
     } else {
         if (target_first <= first)
-            target_first = directional_zero_crossing(source, first, 1, 1);
+            target_first = ts_sample_zero_crossing_in_direction(source, first, 1, 1);
         if (target_last >= last)
-            target_last = directional_zero_crossing(source, last, -1, 1);
+            target_last = ts_sample_zero_crossing_in_direction(source, last, -1, 1);
     }
     if (target_first >= pivot && pivot > 0)
-        target_first = directional_zero_crossing(source, pivot, -1, 1);
+        target_first = ts_sample_zero_crossing_in_direction(source, pivot, -1, 1);
     if (target_last <= pivot)
-        target_last = directional_zero_crossing(source, pivot, 1, 1);
+        target_last = ts_sample_zero_crossing_in_direction(source, pivot, 1, 1);
     if (target_last <= target_first + 1u) {
         set_error(error, error_size, "Tape length reached its zero-crossing limit");
         return 0;

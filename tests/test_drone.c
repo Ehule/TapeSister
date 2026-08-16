@@ -74,6 +74,19 @@ static void test_processing_core(void)
     for (size_t i = 0; i < 4; ++i)
         CHECK(drone.data[8u + i] == source.data[4u + i]);
 
+    CHECK(ts_sample_make_drone_at_split(&drone, &source, 0, source.frames,
+                                        8, 2, &overlap,
+                                        error, sizeof(error)));
+    CHECK(overlap == 2);
+    CHECK(drone.frames == 14);
+    CHECK(drone.data[0] == source.data[8]);
+    CHECK(drone.data[drone.frames - 1u] == source.data[7]);
+    CHECK(ts_sample_make_drone_at_split(&drone, &source, 0, source.frames,
+                                        8, 1000, &overlap,
+                                        error, sizeof(error)));
+    CHECK(overlap == 4);
+    CHECK(drone.frames == 12);
+
     CHECK(ts_sample_make_drone(&drone, &source, 1, 14, 1000,
                                &split, &overlap, error, sizeof(error)));
     CHECK(overlap == 3);
@@ -366,30 +379,70 @@ static void test_config(void)
 static void test_ui_contract(void)
 {
     TsInstrument instrument;
+    TsSample drone;
+    TsSample muted;
     TsUiState closed;
     TsUiState open;
     TsFramebuffer before;
     TsFramebuffer after;
+    TsFramebuffer muted_frame;
+    size_t split = 0;
+    size_t overlap = 0;
+    size_t region_differences = 0;
     char error[160];
     ts_instrument_init(&instrument);
+    ts_sample_init(&drone);
+    ts_sample_init(&muted);
     ts_ui_init(&closed);
     CHECK(ts_instrument_generate(&instrument, TS_GENERATOR_METALLIC,
                                  0x55494354u, error, sizeof(error)));
     ts_instrument_set_selection(&instrument, 1000, 5000);
     open = closed;
+    CHECK(ts_sample_make_drone(&drone, &instrument.current, 1000, 5000, 50,
+                               &split, &overlap, error, sizeof(error)));
+    CHECK(ts_sample_clone(&muted, &drone, error, sizeof(error)));
+    if (muted.data != NULL)
+        memset(muted.data, 0, muted.frames * sizeof(*muted.data));
     open.drone_open = 1;
     open.drone_preview_active = 1;
-    open.drone_effective_crossfade_ms = 50.0f;
-    open.drone_split_frame = 3000;
-    open.drone_output_frames = 3800;
+    open.drone_preview_sample = &drone;
+    open.drone_effective_crossfade_ms =
+        (float)((double)overlap * 1000.0 / drone.sample_rate);
+    open.drone_source_first = 1000;
+    open.drone_source_last = 5000;
+    open.drone_split_frame = split;
+    open.drone_output_frames = drone.frames;
+    open.drone_overlap_frames = overlap;
     ts_ui_render(&before, &closed, &instrument);
     ts_ui_render(&after, &open, &instrument);
+    open.drone_preview_sample = &muted;
+    ts_ui_render(&muted_frame, &open, &instrument);
     CHECK(ts_ui_drone_action_from_point(60, 170) == TS_UI_DRONE_ACTION_PREVIEW);
     CHECK(ts_ui_drone_action_from_point(160, 170) == TS_UI_DRONE_ACTION_STOP);
     CHECK(ts_ui_drone_action_from_point(250, 170) == TS_UI_DRONE_ACTION_COPY);
     CHECK(ts_ui_drone_action_from_point(390, 170) == TS_UI_DRONE_ACTION_REPLACE);
     CHECK(ts_ui_drone_action_from_point(500, 170) == TS_UI_DRONE_ACTION_CANCEL);
     CHECK(ts_ui_drone_action_from_point(250, 205) == TS_UI_DRONE_ACTION_NONE);
+    CHECK(ts_ui_drone_waveform_contains(TS_DRONE_WAVE_X, TS_DRONE_WAVE_Y));
+    CHECK(!ts_ui_drone_waveform_contains(TS_DRONE_WAVE_X, 205));
+    {
+        size_t right_frames = open.drone_source_last - open.drone_split_frame;
+        int first_x = TS_DRONE_WAVE_X +
+            (int)((right_frames - overlap) * TS_DRONE_WAVE_W / drone.frames);
+        int last_x = TS_DRONE_WAVE_X +
+            (int)(right_frames * TS_DRONE_WAVE_W / drone.frames);
+        CHECK(ts_ui_drone_crossfade_handle_from_point(
+                  &open, first_x, TS_DRONE_WAVE_Y + 10) == 1);
+        CHECK(ts_ui_drone_crossfade_handle_from_point(
+                  &open, last_x, TS_DRONE_WAVE_Y + 10) == 2);
+        CHECK(ts_ui_drone_crossfade_handle_from_point(&open, 5, 5) == 0);
+    }
+    for (int y = TS_DRONE_WAVE_Y; y < TS_DRONE_WAVE_Y + TS_DRONE_WAVE_H; ++y)
+        for (int x = TS_DRONE_WAVE_X; x < TS_DRONE_WAVE_X + TS_DRONE_WAVE_W; ++x)
+            if (after.pixels[y * TS_UI_WIDTH + x] !=
+                muted_frame.pixels[y * TS_UI_WIDTH + x])
+                ++region_differences;
+    CHECK(region_differences > 20u);
     for (int y = 205; y < TS_UI_HEIGHT; ++y) {
         for (int x = 0; x < TS_UI_WIDTH; ++x) {
             if (y < 229 && x >= 330 && x < 402) continue;
@@ -397,6 +450,8 @@ static void test_ui_contract(void)
                   after.pixels[y * TS_UI_WIDTH + x]);
         }
     }
+    ts_sample_free(&muted);
+    ts_sample_free(&drone);
     ts_instrument_free(&instrument);
 }
 

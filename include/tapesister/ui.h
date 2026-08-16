@@ -13,6 +13,8 @@ enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
 enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,
        TS_MODAL_PANEL_W = 620, TS_MODAL_PANEL_H = 164 };
+enum { TS_DRONE_WAVE_X = 20, TS_DRONE_WAVE_Y = 77,
+       TS_DRONE_WAVE_W = 600, TS_DRONE_WAVE_H = 70 };
 enum { TS_CONFIG_FIELD_X = 20, TS_CONFIG_FIELD_Y = 63,
        TS_CONFIG_FIELD_W = 600, TS_CONFIG_FIELD_H = 19,
        TS_CONFIG_FIELD_STEP_Y = 31 };
@@ -149,6 +151,8 @@ typedef struct {
     int load_selection_choice_open;
     int drone_open;
     int drone_preview_active;
+    int drone_crossfade_dragging;
+    int drone_crossfade_drag_start_x;
     int exit_confirm_open;
     int exit_has_unsaved;
     uint64_t saved_state_hash;
@@ -200,10 +204,13 @@ typedef struct {
     float stretch_pitch_semitones;
     float stretch_duration_ratio;
     float drone_effective_crossfade_ms;
+    const TsSample *drone_preview_sample;
     size_t drone_source_first;
     size_t drone_source_last;
     size_t drone_split_frame;
     size_t drone_output_frames;
+    size_t drone_overlap_frames;
+    size_t drone_crossfade_drag_start_frames;
     uint64_t drone_source_hash;
     int drone_source_slot;
     int has_pitch_suggestion;
@@ -251,6 +258,8 @@ int ts_ui_palette_channel_from_point(int x, int y, int *value);
 TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y);
 TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y);
 TsUiDroneAction ts_ui_drone_action_from_point(int x, int y);
+int ts_ui_drone_waveform_contains(int x, int y);
+int ts_ui_drone_crossfade_handle_from_point(const TsUiState *ui, int x, int y);
 TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y);
 int ts_ui_palette_cycle_entry(int entry, int amount);
 int ts_ui_palette_cycle_channel(int channel, int amount);

@@ -27,8 +27,12 @@ section of `tapesister.ini`.
 **DRONE** turns the current selection into a purpose-built seamless loop. It
 zero-snaps a split near the selection midpoint, rotates the two halves, and uses a
 constant-sum raised-cosine crossfade where the old selection end meets its beginning.
+The dialog draws that actual temporary waveform and highlights the internal crossfade.
+Hover it and use the wheel for coarse zero-snapped crossfade changes or Shift+wheel for
+fine changes; either highlighted edge can also be dragged and remains zero-snapped.
 Preview Loop repeats the temporary result without changing audio, history, or project
-state. Copy New Tile places only the loop in the first available independent tile,
+state, including these dialog-only adjustments. Copy New Tile places only the loop in
+the first available independent tile,
 preserves the source tuning, and marks the whole result as a zero-crossfade forward loop;
 Replace Selection splices the shorter result in place and selects it exactly. Both
 commit modes support Undo/Redo. The internal crossfade defaults to 50 ms, clamps to at

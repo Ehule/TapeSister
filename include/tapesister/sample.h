@@ -409,10 +409,20 @@ int ts_instrument_stretch_gesture_cancel(TsInstrument *instrument,
                                          TsStretchGesture *gesture,
                                          char *error, size_t error_size);
 size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame);
+size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
+                                                size_t frame,
+                                                size_t first, size_t last);
+size_t ts_sample_zero_crossing_in_direction(const TsSample *sample, size_t frame,
+                                            int direction, size_t count);
 int ts_sample_make_drone(TsSample *destination, const TsSample *source,
                          size_t first, size_t last, int crossfade_ms,
                          size_t *split_frame, size_t *overlap_frames,
                          char *error, size_t error_size);
+int ts_sample_make_drone_at_split(TsSample *destination, const TsSample *source,
+                                  size_t first, size_t last, size_t split_frame,
+                                  size_t requested_overlap_frames,
+                                  size_t *effective_overlap_frames,
+                                  char *error, size_t error_size);
 int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
                                           char *error, size_t error_size);
 int ts_instrument_clear_loop(TsInstrument *instrument, char *error, size_t error_size);
