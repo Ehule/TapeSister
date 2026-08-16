@@ -47,5 +47,9 @@ add_executable(tapesister_tear_tests tests/test_tear.c)
 target_link_libraries(tapesister_tear_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_tear_tests COMMAND tapesister_tear_tests)
 
+add_executable(tapesister_bank_tests tests/test_bank.c)
+target_link_libraries(tapesister_bank_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_bank_tests COMMAND tapesister_bank_tests)
+
 add_executable(tapesister_render_demo tests/render_demo.c)
 target_link_libraries(tapesister_render_demo PRIVATE tapesister_core)

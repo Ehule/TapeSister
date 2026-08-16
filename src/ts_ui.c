@@ -961,6 +961,43 @@ TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)
     return TS_UI_BANK_ACTION_INVALID;
 }
 
+int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
+                              TsUiBankAction action,
+                              char *error, size_t error_size)
+{
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        if (error != NULL && error_size > 0)
+            snprintf(error, error_size, "Invalid bank slot");
+        return 0;
+    }
+    if (action == TS_UI_BANK_ACTION_CAPTURE_CURRENT)
+        return ts_instrument_bank_capture(instrument, slot,
+                                          TS_BANK_CAPTURE_CURRENT,
+                                          error, error_size);
+    if (action == TS_UI_BANK_ACTION_CAPTURE_LOOP)
+        return ts_instrument_bank_capture(instrument, slot,
+                                          TS_BANK_CAPTURE_LOOP,
+                                          error, error_size);
+    if (action == TS_UI_BANK_ACTION_CAPTURE_SELECTION)
+        return ts_instrument_bank_capture(instrument, slot,
+                                          TS_BANK_CAPTURE_SELECTION,
+                                          error, error_size);
+    if (action == TS_UI_BANK_ACTION_CLEAR)
+        return ts_instrument_bank_clear(instrument, slot, error, error_size);
+    if (action == TS_UI_BANK_ACTION_AUDITION || action == TS_UI_BANK_ACTION_RENAME) {
+        if (!instrument->bank[slot].occupied) {
+            if (error != NULL && error_size > 0)
+                snprintf(error, error_size, "Bank slot is empty");
+            return 0;
+        }
+        if (error != NULL && error_size > 0) error[0] = '\0';
+        return 1;
+    }
+    if (error != NULL && error_size > 0)
+        snprintf(error, error_size, "Unsupported bank command");
+    return 0;
+}
+
 int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind)
 {
     unsigned relevant = modifiers & (TS_UI_BANK_MOD_SHIFT |

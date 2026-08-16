@@ -2162,8 +2162,7 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
 {
     TsEditSnapshot target;
     TsSample current;
-    if (instrument == NULL || instrument->parent.data == NULL ||
-        !instrument->bank[0].occupied) {
+    if (instrument == NULL || instrument->parent.data == NULL) {
         set_error(error, error_size, "No Parent to reset to");
         return 0;
     }
@@ -3002,9 +3001,8 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
     float mutation;
     int slot;
     if (created_slot != NULL) *created_slot = -1;
-    if (instrument == NULL || instrument->parent.data == NULL ||
-        !instrument->bank[0].occupied) {
-        set_error(error, error_size, "Create a Source before making variations");
+    if (instrument == NULL || instrument->parent.data == NULL) {
+        set_error(error, error_size, "Create material before making variations");
         return 0;
     }
     slot = ts_instrument_bank_first_empty(instrument);
@@ -3012,7 +3010,7 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
         set_error(error, error_size, "Sound collection is full - clear a slot first");
         return 0;
     }
-    if (instrument->family_trajectory && instrument->family_last_slot > 0 &&
+    if (instrument->family_trajectory && instrument->family_last_slot >= 0 &&
         instrument->family_last_slot < TS_BANK_SLOT_COUNT &&
         instrument->bank[instrument->family_last_slot].occupied)
         anchor_slot = instrument->family_last_slot;
@@ -3139,8 +3137,8 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
         set_error(error, error_size, "No Current sample to capture");
         return 0;
     }
-    if (slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "Bank slot 1 is the immutable Source");
+    if (slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Invalid bank slot");
         return 0;
     }
     if (instrument->bank[slot].occupied) {
@@ -3207,8 +3205,8 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
 int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size)
 {
-    if (instrument == NULL || slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "The Source slot cannot be cleared");
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Invalid bank slot");
         return 0;
     }
     if (!instrument->bank[slot].occupied) {
@@ -3217,7 +3215,18 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
     }
     bank_slot_free(&instrument->bank[slot]);
     if (instrument->family_last_slot == slot) instrument->family_last_slot = -1;
-    if (instrument->family_anchor_slot == slot) instrument->family_anchor_slot = 0;
+    if (instrument->family_anchor_slot == slot) {
+        instrument->family_anchor_slot = instrument->selected_slot != slot &&
+                                         instrument->selected_slot >= 0 &&
+                                         instrument->selected_slot < TS_BANK_SLOT_COUNT &&
+                                         instrument->bank[instrument->selected_slot].occupied ?
+                                         instrument->selected_slot : 0;
+        for (int candidate = 0; candidate < TS_BANK_SLOT_COUNT; ++candidate)
+            if (instrument->bank[candidate].occupied) {
+                instrument->family_anchor_slot = candidate;
+                break;
+            }
+    }
     set_error(error, error_size, "");
     return 1;
 }
@@ -3243,8 +3252,8 @@ int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *na
     const char *first;
     const char *last;
     size_t length;
-    if (instrument == NULL || slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "The Source slot name is fixed");
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Invalid bank slot");
         return 0;
     }
     if (!instrument->bank[slot].occupied) {
@@ -3464,8 +3473,11 @@ int ts_instrument_family_folder_name(const TsInstrument *instrument,
     char stem[128];
     size_t length;
     if (instrument == NULL || name == NULL || name_size == 0) return 0;
-    source = instrument->bank[0].occupied ? instrument->bank[0].sample.name :
-                                           instrument->parent.name;
+    source = instrument->selected_slot >= 0 &&
+             instrument->selected_slot < TS_BANK_SLOT_COUNT &&
+             instrument->bank[instrument->selected_slot].occupied ?
+             instrument->bank[instrument->selected_slot].sample.name :
+             instrument->parent.name;
     extension = strrchr(source, '.');
     length = extension != NULL && extension > source ?
              (size_t)(extension - source) : strlen(source);
@@ -3528,7 +3540,7 @@ int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder
     char created[TS_BANK_SLOT_COUNT][1152];
     int created_count = 0;
     if (instrument == NULL || folder == NULL || folder[0] == '\0' ||
-        !instrument->bank[0].occupied) {
+        ts_instrument_bank_count(instrument) == 0) {
         set_error(error, error_size, "No sound collection to export");
         return 0;
     }
@@ -4794,7 +4806,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         if ((version < 12 && (!loaded.bank[0].occupied ||
                               loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT ||
                               loaded.bank[0].relation != TS_FAMILY_ROOT)) ||
-            (version >= 12 && !loaded.bank[loaded.selected_slot].occupied) ||
+            (version >= 12 && version < 14 &&
+             !loaded.bank[loaded.selected_slot].occupied) ||
             !loaded.bank[loaded.family_anchor_slot].occupied ||
             (loaded.family_last_slot >= 0 &&
              !loaded.bank[loaded.family_last_slot].occupied) ||

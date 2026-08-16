@@ -137,6 +137,9 @@ int ts_ui_key_from_point(int x, int y);
 int ts_ui_bank_slot_from_point(int x, int y);
 int ts_ui_recipe_slot_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
+int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
+                              TsUiBankAction action,
+                              char *error, size_t error_size);
 int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind);
 void ts_ui_cycle_panel(TsUiState *ui);
 int ts_ui_transform_auto_audition_allowed(const TsUiState *ui);

@@ -1411,12 +1411,17 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
 
 static void capture_bank_slot(SDL_AudioDeviceID device, TsUiState *ui,
                               TsInstrument *instrument,
-                              int slot, TsBankCaptureKind kind)
+                              int slot, TsUiBankAction action)
 {
     char error[160];
     int ok;
+    TsBankCaptureKind kind = action == TS_UI_BANK_ACTION_CAPTURE_LOOP ?
+                             TS_BANK_CAPTURE_LOOP :
+                             action == TS_UI_BANK_ACTION_CAPTURE_SELECTION ?
+                             TS_BANK_CAPTURE_SELECTION : TS_BANK_CAPTURE_CURRENT;
     if (device) SDL_LockAudioDevice(device);
-    ok = ts_instrument_bank_capture(instrument, slot, kind, error, sizeof(error));
+    ok = ts_ui_execute_bank_action(instrument, slot, action,
+                                   error, sizeof(error));
     if (device) SDL_UnlockAudioDevice(device);
     if (ok) snprintf(ui->status, sizeof(ui->status), "CAPTURED %s TO BANK %02d",
                      ts_bank_capture_name(kind), slot + 1);
@@ -1433,7 +1438,8 @@ static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
         audio->playing = 0;
         audio->bank_slot = -1;
     }
-    ok = ts_instrument_bank_clear(instrument, slot, error, sizeof(error));
+    ok = ts_ui_execute_bank_action(instrument, slot, TS_UI_BANK_ACTION_CLEAR,
+                                   error, sizeof(error));
     if (device) SDL_UnlockAudioDevice(device);
     if (ok) snprintf(ui->status, sizeof(ui->status), "CLEARED BANK %02d", slot + 1);
     else snprintf(ui->status, sizeof(ui->status), "BANK CLEAR FAILED: %.132s", error);
@@ -1447,7 +1453,7 @@ static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
     if (!ui->bank_clear_armed) {
         ui->bank_clear_armed = 1;
         snprintf(ui->status, sizeof(ui->status),
-                 "CLICK CLEAR ALL AGAIN - SOURCE SLOT 01 WILL BE KEPT");
+                 "CLICK CLEAR ALL AGAIN - ALL 16 BANK SLOTS WILL BE EMPTIED");
         return;
     }
     if (device) SDL_LockAudioDevice(device);
@@ -1460,7 +1466,7 @@ static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
     ui->bank_view_slot = -1;
     if (ok)
         snprintf(ui->status, sizeof(ui->status),
-                 "CLEARED COLLECTION SLOTS 02-16 - SOURCE KEPT");
+                 "CLEARED ALL 16 BANK SLOTS");
     else
         snprintf(ui->status, sizeof(ui->status),
                  "CLEAR ALL FAILED: %.137s", error);
@@ -1498,8 +1504,8 @@ static void set_auditioned_bank_current(SDL_AudioDeviceID device, AudioState *au
 
 static void begin_bank_rename(TsUiState *ui, const TsInstrument *instrument, int slot)
 {
-    if (slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        snprintf(ui->status, sizeof(ui->status), "BANK 01 ROOT NAME IS FIXED");
+    if (slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        snprintf(ui->status, sizeof(ui->status), "INVALID BANK SLOT");
         return;
     }
     if (!instrument->bank[slot].occupied) {
@@ -3179,29 +3185,20 @@ int main(int argc, char **argv)
                         TsUiBankAction action = ts_ui_bank_action(
                             0, bank_modifiers(mod));
                         if (action == TS_UI_BANK_ACTION_AUDITION) {
-                            char select_error[160];
-                            lock_edit(device, &audio);
-                            if (ts_instrument_select_bank(&instrument, bank_slot,
-                                                          select_error, sizeof(select_error))) {
-                                ui.bank_view_slot = -1;
-                                ui.audition_source = TS_AUDITION_CURRENT;
-                                snprintf(ui.status, sizeof(ui.status),
-                                         "BANK %02d SELECTED%s", bank_slot + 1,
-                                         instrument.bank[bank_slot].occupied ? "" : " - CREATE DESTINATION");
-                            } else snprintf(ui.status, sizeof(ui.status), "SELECT FAILED: %.130s", select_error);
-                            unlock_edit(device, &audio, &ui, &instrument);
+                            begin_bank_audition(device, &audio, &ui, &instrument,
+                                                bank_slot, obtained.freq);
                         } else if (action == TS_UI_BANK_ACTION_CAPTURE_CURRENT) {
-                            char copy_error[160];
-                            lock_edit(device, &audio);
-                            if (ts_instrument_copy_selected(&instrument, bank_slot,
-                                                            copy_error, sizeof(copy_error))) {
-                                ui.bank_view_slot = -1;
-                                snprintf(ui.status, sizeof(ui.status), "BANK %02d DEEP-COPIED AND SELECTED", bank_slot + 1);
-                            } else snprintf(ui.status, sizeof(ui.status), "COPY FAILED: %.132s", copy_error);
-                            unlock_edit(device, &audio, &ui, &instrument);
+                            capture_bank_slot(device, &ui, &instrument, bank_slot,
+                                              action);
+                        } else if (action == TS_UI_BANK_ACTION_CAPTURE_LOOP) {
+                            capture_bank_slot(device, &ui, &instrument, bank_slot,
+                                              action);
+                        } else if (action == TS_UI_BANK_ACTION_CAPTURE_SELECTION) {
+                            capture_bank_slot(device, &ui, &instrument, bank_slot,
+                                              action);
                         } else {
                             snprintf(ui.status, sizeof(ui.status),
-                                     "CLICK SELECT  SHIFT+CLICK EMPTY COPY");
+                                     "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL");
                         }
                     } else if (ui.show_keyboard && note >= 0 && device) {
                         if (mod & KMOD_SHIFT) {

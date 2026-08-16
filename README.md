@@ -13,7 +13,7 @@ Every sound now has two explicit layers:
 
 Dragging or loading a WAV makes that WAV the Source. Every freshly created or imported source starts with neutral processing, so Source and Current are sample-for-sample identical until the first edit. Moving a processing control then rerenders Current from that Source; it cannot silently return to the factory waveform.
 
-The startup sound or an imported WAV creates a Source in slot 01. After that, **Create** puts a variation into the next empty slot without replacing Source; **Vary** makes another deterministic result using the previous range, amount, locks, and anchor. The result is auditioned immediately, and **Set Current** remains the deliberate promotion boundary. Shift+Create or Shift+Vary creates and promotes in one gesture, while Ctrl+Create temporarily forces a Radical departure. A full collection refuses safely until a non-Source slot is cleared.
+The startup sound or an imported WAV initially uses the selected Bank destination. All 16 Bank tiles are independent peers: click plays, Shift+click captures full Current, Alt+click captures Loop, Ctrl+click captures Selection, right-click renames, and Shift+right-click clears the clicked tile. **Create** and **Vary** retain their selected-tile ownership workflow without making Bank 01 privileged. **Set Current** remains the deliberate promotion boundary.
 
 **Reset** returns Current exactly to Source and is undoable. **Commit** requires a deliberate second click (or second `Ctrl+P`), promotes Current into a new immutable Source generation, records the previous Source hash, resets the processing shelf, and starts a fresh edit history.
 
