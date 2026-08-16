@@ -46,6 +46,28 @@ typedef enum {
     TS_FX_LOOP
 } TsFxPage;
 
+typedef enum {
+    TS_UI_SLIDER_NONE = 0,
+    TS_UI_SLIDER_BODY,
+    TS_UI_SLIDER_EDGE,
+    TS_UI_SLIDER_DRIFT,
+    TS_UI_SLIDER_TUNE_FINE,
+    TS_UI_SLIDER_NOISE_AMOUNT,
+    TS_UI_SLIDER_FILTER_CUTOFF,
+    TS_UI_SLIDER_FILTER_RESONANCE,
+    TS_UI_SLIDER_SHAPER_DRIVE,
+    TS_UI_SLIDER_SHAPER_MIX,
+    TS_UI_SLIDER_VARIATION_RANGE,
+    TS_UI_SLIDER_DELAY_TIME,
+    TS_UI_SLIDER_DELAY_FEEDBACK,
+    TS_UI_SLIDER_DELAY_DAMPING,
+    TS_UI_SLIDER_DELAY_MIX,
+    TS_UI_SLIDER_REVERB_DECAY,
+    TS_UI_SLIDER_REVERB_DAMPING,
+    TS_UI_SLIDER_REVERB_MIX,
+    TS_UI_SLIDER_LOOP_CROSSFADE
+} TsUiSlider;
+
 enum {
     TS_UI_BANK_MOD_SHIFT = 1u << 0,
     TS_UI_BANK_MOD_CTRL = 1u << 1,
@@ -99,6 +121,7 @@ typedef struct {
     int show_recipes;
     int show_ingredients;
     int workbench_loop_active;
+    int workbench_loop_persistent;
     int bank_view_slot;
     int load_bank_slot;
     int playhead_bank_slot;
@@ -179,6 +202,7 @@ TsUiConfigAction ts_ui_config_action_from_point(int x, int y);
 int ts_ui_palette_entry_from_point(int x, int y);
 int ts_ui_palette_channel_from_point(int x, int y, int *value);
 TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y);
+TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y);
 int ts_ui_palette_cycle_entry(int entry, int amount);
 int ts_ui_palette_cycle_channel(int channel, int amount);
 TsConfigField ts_ui_config_cycle_field(TsConfigField field, int amount);

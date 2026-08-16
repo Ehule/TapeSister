@@ -145,6 +145,24 @@ static int path_is_directory(const char *path)
 #endif
 }
 
+static int parent_directory_of(const char *path, char *directory, size_t directory_size)
+{
+    char *slash;
+    char *backslash;
+    if (path == NULL || path[0] == '\0' || directory == NULL || directory_size == 0)
+        return 0;
+    if (snprintf(directory, directory_size, "%s", path) < 0 ||
+        strlen(path) >= directory_size) return 0;
+    slash = strrchr(directory, '/');
+    backslash = strrchr(directory, '\\');
+    if (backslash != NULL && (slash == NULL || backslash > slash)) slash = backslash;
+    if (slash == NULL) return 0;
+    if (slash == directory) slash[1] = '\0';
+    else if (slash == directory + 2 && directory[1] == ':') slash[1] = '\0';
+    else *slash = '\0';
+    return path_is_directory(directory);
+}
+
 static void state_hash_bytes(uint64_t *hash, const void *data, size_t size)
 {
     const unsigned char *bytes = data;
@@ -449,7 +467,7 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 
 static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
                                   TsUiState *ui, const TsInstrument *instrument,
-                                  int output_rate)
+                                  int output_rate, int persistent)
 {
     if (!ts_ui_transform_auto_audition_allowed(ui)) {
         stop_all(device, audio, ui);
@@ -457,11 +475,15 @@ static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
     }
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->workbench_loop_active = 1;
+    ui->workbench_loop_persistent = persistent != 0;
     begin_audition(device, audio, ui, instrument,
                    TS_AUDITION_WORKBENCH_LOOP, 1.0, output_rate);
-    if (!audio->playing) ui->workbench_loop_active = 0;
-    else snprintf(ui->status, sizeof(ui->status), "LOOP: %s",
-                  instrument->has_selection ? "SELECTION" : "VIEW");
+    if (!audio->playing) {
+        ui->workbench_loop_active = 0;
+        ui->workbench_loop_persistent = 0;
+    } else snprintf(ui->status, sizeof(ui->status), "%s: %s",
+                    persistent ? "LOOP LOCKED" : "LOOP",
+                    instrument->has_selection ? "SELECTION" : "VIEW");
 }
 
 static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
@@ -542,6 +564,7 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
     ui->dragging_loop_endpoint = 0;
     ui->loop_drag_started = 0;
     ui->workbench_loop_active = 0;
+    ui->workbench_loop_persistent = 0;
     snprintf(ui->status, sizeof(ui->status), "STOPPED");
 }
 
@@ -1472,7 +1495,10 @@ static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
         audio->playing = 0;
         audio->bank_slot = -1;
         ts_note_bank_clear(&audio->notes);
-        if (clearing_active) ui->workbench_loop_active = 0;
+        if (clearing_active) {
+            ui->workbench_loop_active = 0;
+            ui->workbench_loop_persistent = 0;
+        }
     }
     ok = ts_ui_execute_bank_action(instrument, slot, TS_UI_BANK_ACTION_CLEAR,
                                    error, sizeof(error));
@@ -1789,11 +1815,50 @@ static void browser_open(TsUiState *ui, TsBrowserMode mode)
                            mode == TS_BROWSER_EXPORT_WAV ? "tapesister-export.wav" : "";
     SDL_StopTextInput();
     if (ts_browser_open(&ui->browser, mode, filename)) {
-        if (mode != TS_BROWSER_LOAD_WAV) SDL_StartTextInput();
+        if (ts_browser_mode_edits_filename(mode)) SDL_StartTextInput();
         snprintf(ui->status, sizeof(ui->status), "%s", ts_browser_mode_title(mode));
     } else {
         snprintf(ui->status, sizeof(ui->status), "BROWSER FAILED: %.142s", ui->browser.message);
         ts_browser_close(&ui->browser);
+    }
+}
+
+static TsBrowserMode config_browser_mode(TsConfigField field)
+{
+    if (field == TS_CONFIG_SAMPLE_PATH) return TS_BROWSER_SELECT_SAMPLE_DIRECTORY;
+    if (field == TS_CONFIG_FASTTRACKER_PATH)
+        return TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE;
+    return TS_BROWSER_SELECT_EXCHANGE_DIRECTORY;
+}
+
+static TsConfigField browser_config_field(TsBrowserMode mode)
+{
+    if (mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY) return TS_CONFIG_SAMPLE_PATH;
+    if (mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE)
+        return TS_CONFIG_FASTTRACKER_PATH;
+    return TS_CONFIG_EXCHANGE_PATH;
+}
+
+static void browser_open_config_path(TsUiState *ui, TsConfigField field)
+{
+    TsBrowserMode mode = config_browser_mode(field);
+    const char *configured = ts_config_field_const(&ui->config, field);
+    char initial[TS_BROWSER_PATH_MAX];
+    if (path_is_directory(configured))
+        snprintf(ui->browser.directory, sizeof(ui->browser.directory), "%s", configured);
+    else if (field == TS_CONFIG_FASTTRACKER_PATH &&
+             parent_directory_of(configured, initial, sizeof(initial)))
+        snprintf(ui->browser.directory, sizeof(ui->browser.directory), "%s", initial);
+    SDL_StopTextInput();
+    ui->config_open = 0;
+    if (ts_browser_open(&ui->browser, mode, NULL)) {
+        snprintf(ui->status, sizeof(ui->status), "%s", ts_browser_mode_title(mode));
+    } else {
+        snprintf(ui->status, sizeof(ui->status), "BROWSER FAILED: %.142s",
+                 ui->browser.message);
+        ts_browser_close(&ui->browser);
+        ui->config_open = 1;
+        SDL_StartTextInput();
     }
 }
 
@@ -1851,9 +1916,15 @@ static void send_to_fasttracker(TsUiState *ui, const TsInstrument *instrument)
 
 static void browser_cancel(TsUiState *ui)
 {
+    int returning_to_config = ts_browser_mode_selects_config(ui->browser.mode);
     SDL_StopTextInput();
     ts_browser_close(&ui->browser);
-    snprintf(ui->status, sizeof(ui->status), "FILE OPERATION CANCELLED");
+    if (returning_to_config) {
+        ui->config_open = 1;
+        select_config_field(ui, ui->config_field);
+        SDL_StartTextInput();
+        snprintf(ui->status, sizeof(ui->status), "CONFIG PATH BROWSE CANCELLED");
+    } else snprintf(ui->status, sizeof(ui->status), "FILE OPERATION CANCELLED");
 }
 
 static int finish_atomic_file(const char *temporary, const char *destination,
@@ -1937,6 +2008,39 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     char path[TS_BROWSER_PATH_MAX];
     char error[160];
     int ok = 0;
+    if (ts_browser_mode_selects_config(browser->mode)) {
+        TsBrowserMode mode = browser->mode;
+        TsConfigField field = browser_config_field(mode);
+        char *destination = ts_config_field(&ui->config, field);
+        if (mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE) {
+            if (browser->selected >= 0 && browser->selected < browser->entry_count &&
+                browser->entries[browser->selected].is_directory) {
+                if (!ts_browser_enter_selected_directory(browser))
+                    snprintf(browser->message, sizeof(browser->message),
+                             "COULD NOT ENTER DIRECTORY");
+                return;
+            }
+            if (!ts_browser_selected_path(browser, path, sizeof(path))) {
+                snprintf(browser->message, sizeof(browser->message),
+                         "SELECT AN EXECUTABLE FILE");
+                return;
+            }
+        } else snprintf(path, sizeof(path), "%s", browser->directory);
+        if (destination == NULL || strlen(path) >= TS_CONFIG_PATH_MAX) {
+            snprintf(browser->message, sizeof(browser->message), "SELECTED PATH IS TOO LONG");
+            return;
+        }
+        snprintf(destination, TS_CONFIG_PATH_MAX, "%s", path);
+        ui->config_field = field;
+        ui->config_cursor = strlen(destination);
+        SDL_StopTextInput();
+        ts_browser_close(browser);
+        ui->config_open = 1;
+        SDL_StartTextInput();
+        snprintf(ui->status, sizeof(ui->status), "%s SET - SAVE CONFIG TO KEEP IT",
+                 ts_config_field_name(field));
+        return;
+    }
     if (browser->mode == TS_BROWSER_LOAD_WAV && browser->selected >= 0 &&
         browser->selected < browser->entry_count &&
         browser->entries[browser->selected].is_directory) {
@@ -2026,6 +2130,109 @@ static void logical_mouse(SDL_Window *window, int raw_x, int raw_y, int *x, int 
     SDL_GetWindowSize(window, &ww, &wh);
     *x = raw_x * TS_UI_WIDTH / ww;
     *y = raw_y * TS_UI_HEIGHT / wh;
+}
+
+static float clamp_unit(float value)
+{
+    if (value < 0.0f) return 0.0f;
+    if (value > 1.0f) return 1.0f;
+    return value;
+}
+
+static int adjust_hovered_slider(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui, TsInstrument *instrument,
+                                 TsUiSlider slider, int amount, int coarse)
+{
+    TsProcessRecipe process;
+    float step;
+    const char *label = NULL;
+    if (slider == TS_UI_SLIDER_NONE || amount == 0) return 0;
+    step = (coarse ? 0.05f : 0.01f) * (float)amount;
+    process = instrument->process;
+    switch (slider) {
+    case TS_UI_SLIDER_BODY:
+        process.body = clamp_unit(process.body + step); label = "BODY"; break;
+    case TS_UI_SLIDER_EDGE:
+        process.edge = clamp_unit(process.edge + step); label = "EDGE"; break;
+    case TS_UI_SLIDER_DRIFT:
+        process.drift = clamp_unit(process.drift + step); label = "DRIFT"; break;
+    case TS_UI_SLIDER_TUNE_FINE:
+        if (ui->has_pitch_suggestion) {
+            snprintf(ui->status, sizeof(ui->status),
+                     "ACCEPT OR CANCEL THE PITCH SUGGESTION FIRST");
+            return 1;
+        }
+        apply_audible_tuning(device, audio, ui, instrument,
+                             instrument->audible_tuning.root_note,
+                             instrument->audible_tuning.fine_tune_cents +
+                             (float)amount * (coarse ? 5.0f : 1.0f));
+        return 1;
+    case TS_UI_SLIDER_NOISE_AMOUNT:
+        process.noise_amount = clamp_unit(process.noise_amount + step);
+        label = "NOISE"; break;
+    case TS_UI_SLIDER_FILTER_CUTOFF: {
+        float normalized = logf(process.filter_cutoff_hz / 20.0f) / logf(1000.0f);
+        normalized = clamp_unit(normalized + step);
+        process.filter_cutoff_hz = 20.0f * powf(1000.0f, normalized);
+        label = "SHAPE";
+        break;
+    }
+    case TS_UI_SLIDER_FILTER_RESONANCE:
+        process.filter_resonance = clamp_unit(process.filter_resonance + step);
+        label = "SHAPE"; break;
+    case TS_UI_SLIDER_SHAPER_DRIVE: {
+        float normalized = (process.shaper_drive - 1.0f) / 15.0f;
+        process.shaper_drive = 1.0f + clamp_unit(normalized + step) * 15.0f;
+        label = "SHAPE";
+        break;
+    }
+    case TS_UI_SLIDER_SHAPER_MIX:
+        process.shaper_mix = clamp_unit(process.shaper_mix + step);
+        label = "SHAPE"; break;
+    case TS_UI_SLIDER_VARIATION_RANGE:
+        instrument->family_mutation = clamp_unit(instrument->family_mutation + step);
+        snprintf(ui->status, sizeof(ui->status), "RANGE %d",
+                 (int)lrintf(instrument->family_mutation * 100.0f));
+        return 1;
+    case TS_UI_SLIDER_DELAY_TIME: {
+        float normalized = (process.delay_seconds - 0.005f) / 0.995f;
+        process.delay_seconds = 0.005f + clamp_unit(normalized + step) * 0.995f;
+        label = "DELAY";
+        break;
+    }
+    case TS_UI_SLIDER_DELAY_FEEDBACK:
+        process.delay_feedback = clamp_unit(process.delay_feedback / 0.85f + step) * 0.85f;
+        label = "DELAY"; break;
+    case TS_UI_SLIDER_DELAY_DAMPING:
+        process.delay_damping = clamp_unit(process.delay_damping + step);
+        label = "DELAY"; break;
+    case TS_UI_SLIDER_DELAY_MIX:
+        process.delay_mix = clamp_unit(process.delay_mix + step);
+        label = "DELAY"; break;
+    case TS_UI_SLIDER_REVERB_DECAY:
+        process.reverb_decay = clamp_unit(process.reverb_decay / 0.9f + step) * 0.9f;
+        label = "SPACE"; break;
+    case TS_UI_SLIDER_REVERB_DAMPING:
+        process.reverb_damping = clamp_unit(process.reverb_damping + step);
+        label = "SPACE"; break;
+    case TS_UI_SLIDER_REVERB_MIX:
+        process.reverb_mix = clamp_unit(process.reverb_mix + step);
+        label = "SPACE"; break;
+    case TS_UI_SLIDER_LOOP_CROSSFADE: {
+        int bank_slot = ui->bank_view_slot;
+        float current = bank_slot >= 0 && bank_slot < TS_BANK_SLOT_COUNT &&
+                        instrument->bank[bank_slot].occupied ?
+                        instrument->bank[bank_slot].loop_crossfade_ms :
+                        instrument->loop_crossfade_ms;
+        set_loop_crossfade(device, audio, ui, instrument,
+                           clamp_unit(current / 50.0f + step) * 50.0f);
+        return 1;
+    }
+    default:
+        return 0;
+    }
+    apply_process(device, audio, ui, instrument, process, label);
+    return 1;
 }
 
 static size_t selection_frame_from_x(const TsInstrument *instrument, const TsUiState *ui,
@@ -2315,7 +2522,8 @@ int main(int argc, char **argv)
                                   &ui.recipe_rename_cursor, event.text.text);
             } else if (event.type == SDL_TEXTINPUT &&
                        ui.browser.mode != TS_BROWSER_CLOSED && !ui.exit_confirm_open) {
-                if (ui.browser.filename_focus && ui.browser.mode != TS_BROWSER_LOAD_WAV)
+                if (ui.browser.filename_focus &&
+                    ts_browser_mode_edits_filename(ui.browser.mode))
                     ts_browser_append_filename(&ui.browser, event.text.text);
             } else if (event.type == SDL_WINDOWEVENT &&
                        event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
@@ -2327,6 +2535,14 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
+                TsUiSlider hovered_slider = TS_UI_SLIDER_NONE;
+                if ((key == SDLK_LEFT || key == SDLK_RIGHT) &&
+                    (mod & (KMOD_CTRL | KMOD_ALT)) == 0) {
+                    int raw_x, raw_y, mouse_x, mouse_y;
+                    SDL_GetMouseState(&raw_x, &raw_y);
+                    logical_mouse(window, raw_x, raw_y, &mouse_x, &mouse_y);
+                    hovered_slider = ts_ui_slider_from_point(&ui, mouse_x, mouse_y);
+                }
                 ui.bank_clear_armed = 0;
                 if ((mod & KMOD_ALT) &&
                     (key == SDLK_RETURN || key == SDLK_KP_ENTER)) {
@@ -2371,8 +2587,16 @@ int main(int argc, char **argv)
                     else if (key == SDLK_UP)
                         ui.palette_channel = ts_ui_palette_cycle_channel(
                                                  ui.palette_channel, -1);
-                    else if (key == SDLK_LEFT) palette_adjust(&ui, -step);
-                    else if (key == SDLK_RIGHT) palette_adjust(&ui, step);
+                    else if (key == SDLK_LEFT || key == SDLK_RIGHT) {
+                        int raw_x, raw_y, mouse_x, mouse_y, ignored;
+                        int channel;
+                        SDL_GetMouseState(&raw_x, &raw_y);
+                        logical_mouse(window, raw_x, raw_y, &mouse_x, &mouse_y);
+                        channel = ts_ui_palette_channel_from_point(
+                                      mouse_x, mouse_y, &ignored);
+                        if (channel >= 0) ui.palette_channel = channel;
+                        palette_adjust(&ui, key == SDLK_LEFT ? -step : step);
+                    }
                     else if (key == SDLK_PAGEUP)
                         ui.palette_entry = ts_ui_palette_cycle_entry(
                                                ui.palette_entry, -1);
@@ -2384,7 +2608,8 @@ int main(int argc, char **argv)
                     else if (key == SDLK_e) palette_save(&ui, 1);
                     else if (key == SDLK_r) {
                         ts_palette_default(&ui.palette);
-                        snprintf(ui.status, sizeof(ui.status), "RESTORED FACTORY TAPEHEAD PALETTE");
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "RESTORED FACTORY TAPESISTER PALETTE");
                     }
                 } else if (ui.config_open) {
                     char *field = ts_config_field(&ui.config, ui.config_field);
@@ -2487,16 +2712,23 @@ int main(int argc, char **argv)
                         ui.browser.selected = ui.browser.entry_count - 1;
                         ts_browser_set_scroll(&ui.browser, ui.browser.entry_count);
                         ui.browser.overwrite_armed = 0;
-                    } else if (key == SDLK_TAB && ui.browser.mode != TS_BROWSER_LOAD_WAV) {
+                    } else if (key == SDLK_TAB &&
+                               ts_browser_mode_edits_filename(ui.browser.mode)) {
                         ui.browser.filename_focus = !ui.browser.filename_focus;
                         ui.browser.overwrite_armed = 0;
                     } else if (key == SDLK_BACKSPACE) {
-                        if (ui.browser.filename_focus && ui.browser.mode != TS_BROWSER_LOAD_WAV)
+                        if (ui.browser.filename_focus &&
+                            ts_browser_mode_edits_filename(ui.browser.mode))
                             ts_browser_backspace_filename(&ui.browser);
                         else ts_browser_parent(&ui.browser);
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
                         browser_activate_selection(device, &audio, &ui, &instrument);
                     }
+                } else if (hovered_slider != TS_UI_SLIDER_NONE) {
+                    adjust_hovered_slider(device, &audio, &ui, &instrument,
+                                          hovered_slider,
+                                          key == SDLK_RIGHT ? 1 : -1,
+                                          (mod & KMOD_SHIFT) != 0);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_c) {
                     copy_selection_to_clipboard(device, &audio, &ui, &instrument,
                                                 &clipboard, &clipboard_origin_first,
@@ -2597,14 +2829,6 @@ int main(int argc, char **argv)
                         ts_instrument_show_all(&instrument);
                         snprintf(ui.status, sizeof(ui.status), "SHOWING ALL TILE");
                     }
-                } else if ((key == SDLK_LEFT || key == SDLK_RIGHT) &&
-                           ui.fx_page == TS_FX_FAMILY) {
-                    float step = (event.key.keysym.mod & KMOD_SHIFT) ? 0.1f : 0.01f;
-                    instrument.family_mutation += key == SDLK_RIGHT ? step : -step;
-                    if (instrument.family_mutation < 0.0f) instrument.family_mutation = 0.0f;
-                    if (instrument.family_mutation > 1.0f) instrument.family_mutation = 1.0f;
-                    snprintf(ui.status, sizeof(ui.status), "RANGE %d",
-                             (int)lrintf(instrument.family_mutation * 100.0f));
                 } else if (key == SDLK_LEFT || key == SDLK_RIGHT) {
                     ui.bank_view_slot = -1;
                     size_t span = ui.audition_source == TS_AUDITION_PARENT ?
@@ -2664,9 +2888,23 @@ int main(int argc, char **argv)
                        ui.browser.mode == TS_BROWSER_CLOSED &&
                        note_for_key(event.key.keysym.sym) >= 0) {
                 release_note(device, &audio, &ui, note_for_key(event.key.keysym.sym));
+            } else if (event.type == SDL_MOUSEWHEEL && ui.palette_open) {
+                int raw_x, raw_y, x, y, ignored;
+                int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
+                              -event.wheel.y : event.wheel.y;
+                int channel;
+                SDL_GetMouseState(&raw_x, &raw_y);
+                logical_mouse(window, raw_x, raw_y, &x, &y);
+                channel = ts_ui_palette_channel_from_point(x, y, &ignored);
+                if (channel >= 0 && wheel_y != 0) {
+                    ui.palette_channel = channel;
+                    palette_adjust(&ui, wheel_y *
+                                   ((SDL_GetModState() & KMOD_SHIFT) ? 8 : 1));
+                } else snprintf(ui.status, sizeof(ui.status),
+                                "HOVER A PALETTE SLIDER TO USE THE WHEEL");
             } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                        ui.config_open || ui.palette_open || ui.export_choice_open ||
+                        ui.config_open || ui.export_choice_open ||
                         ui.exit_confirm_open)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
@@ -2707,12 +2945,12 @@ int main(int argc, char **argv)
                         preview_warp_gesture(device, &audio, &ui, &instrument,
                                              amount, obtained.freq);
                     }
-                } else if (ui.fx_page == TS_FX_FAMILY && y >= 261 && y < 285) {
-                    instrument.family_mutation += (float)wheel_y * 0.01f;
-                    if (instrument.family_mutation < 0.0f) instrument.family_mutation = 0.0f;
-                    if (instrument.family_mutation > 1.0f) instrument.family_mutation = 1.0f;
-                    snprintf(ui.status, sizeof(ui.status), "RANGE %d",
-                             (int)lrintf(instrument.family_mutation * 100.0f));
+                } else if (wheel_y != 0 &&
+                           ts_ui_slider_from_point(&ui, x, y) != TS_UI_SLIDER_NONE) {
+                    adjust_hovered_slider(device, &audio, &ui, &instrument,
+                                          ts_ui_slider_from_point(&ui, x, y),
+                                          wheel_y,
+                                          (SDL_GetModState() & KMOD_SHIFT) != 0);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                     y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     SDL_Keymod mod = SDL_GetModState();
@@ -2881,7 +3119,8 @@ int main(int argc, char **argv)
                         palette_save(&ui, 1);
                     else if (action == TS_UI_PALETTE_ACTION_RESET) {
                         ts_palette_default(&ui.palette);
-                        snprintf(ui.status, sizeof(ui.status), "RESTORED FACTORY TAPEHEAD PALETTE");
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "RESTORED FACTORY TAPESISTER PALETTE");
                     } else if (action == TS_UI_PALETTE_ACTION_DONE)
                         finish_palette(&ui, 0);
                     else if (action == TS_UI_PALETTE_ACTION_CANCEL)
@@ -2894,6 +3133,8 @@ int main(int argc, char **argv)
                             select_config_field(&ui, (TsConfigField)selected);
                         ui.config_cursor = ts_ui_config_cursor_from_point(
                                                &ui, ui.config_field, x);
+                        if (event.button.clicks >= 2)
+                            browser_open_config_path(&ui, ui.config_field);
                     } else if (action == TS_UI_CONFIG_ACTION_SAVE)
                         save_config(&ui);
                     else if (action == TS_UI_CONFIG_ACTION_USE_CWD)
@@ -2949,7 +3190,7 @@ int main(int argc, char **argv)
                             ts_browser_set_scroll(&ui.browser, travel > 0 ?
                                                   (top * maximum + travel / 2) / travel : 0);
                         }
-                    } else if (ui.browser.mode != TS_BROWSER_LOAD_WAV &&
+                    } else if (ts_browser_mode_edits_filename(ui.browser.mode) &&
                                x >= 58 && x < 576 && y >= 294 && y < 318) {
                         size_t length = strlen(ui.browser.filename);
                         size_t cursor = ui.browser.filename_cursor > length ? length :
@@ -3053,7 +3294,7 @@ int main(int argc, char **argv)
                                               1, (mod & KMOD_SHIFT) != 0, 0);
                 } else if (y >= 205 && y < 228 && x >= 247 && x < 325) {
                     toggle_workbench_loop(device, &audio, &ui, &instrument,
-                                          obtained.freq);
+                                          obtained.freq, (mod & KMOD_SHIFT) != 0);
                 } else if (y >= 205 && y < 229 && x >= 505 && x < 630) {
                     float amount = (float)(x - 505) / 125.0f;
                     if (begin_smear_gesture(device, &audio, &ui, &instrument, 0))
@@ -3359,22 +3600,45 @@ int main(int argc, char **argv)
                             }
                             unlock_edit(device, &audio, &ui, &instrument);
                             if (activated_silence) {
-                                stop_all(device, &audio, &ui);
-                                snprintf(ui.status, sizeof(ui.status),
-                                         "BANK %02d SILENT CANVAS - %zu FRAMES AT %u HZ",
-                                         bank_slot + 1, instrument.current.frames,
-                                         instrument.current.sample_rate);
+                                if (ui.workbench_loop_active &&
+                                    ui.workbench_loop_persistent) {
+                                    ui.audition_source = TS_AUDITION_CURRENT;
+                                    refresh_workbench_loop(device, &audio, &ui,
+                                                           &instrument);
+                                    snprintf(ui.status, sizeof(ui.status),
+                                             "LOOP LOCKED TO SILENT BANK %02d VIEW",
+                                             bank_slot + 1);
+                                } else {
+                                    stop_all(device, &audio, &ui);
+                                    snprintf(ui.status, sizeof(ui.status),
+                                             "BANK %02d SILENT CANVAS - %zu FRAMES AT %u HZ",
+                                             bank_slot + 1, instrument.current.frames,
+                                             instrument.current.sample_rate);
+                                }
                             }
                             else if (selected && occupied) {
-                                if (ui.workbench_loop_active)
-                                    stop_all(device, &audio, &ui);
-                                /* Keep the selected tile in Current-edit mode. Bank-preview
-                                   mode intentionally makes the waveform read-only. */
-                                ui.audition_source = TS_AUDITION_CURRENT;
-                                begin_audition(device, &audio, &ui, &instrument,
-                                               instrument.has_loop ? TS_AUDITION_LOOP :
-                                               TS_AUDITION_ALL,
-                                               1.0, obtained.freq);
+                                if (ui.workbench_loop_active &&
+                                    ui.workbench_loop_persistent) {
+                                    ui.audition_source = TS_AUDITION_CURRENT;
+                                    ui.bank_view_slot = -1;
+                                    refresh_workbench_loop(device, &audio, &ui,
+                                                           &instrument);
+                                    snprintf(ui.status, sizeof(ui.status),
+                                             "LOOP LOCKED TO BANK %02d %s",
+                                             bank_slot + 1,
+                                             instrument.has_selection ?
+                                             "SELECTION" : "VIEW");
+                                } else {
+                                    if (ui.workbench_loop_active)
+                                        stop_all(device, &audio, &ui);
+                                    /* Keep the selected tile in Current-edit mode. Bank-preview
+                                       mode intentionally makes the waveform read-only. */
+                                    ui.audition_source = TS_AUDITION_CURRENT;
+                                    begin_audition(device, &audio, &ui, &instrument,
+                                                   instrument.has_loop ? TS_AUDITION_LOOP :
+                                                   TS_AUDITION_ALL,
+                                                   1.0, obtained.freq);
+                                }
                             }
                             else if (attempted_silence) {
                                 stop_all(device, &audio, &ui);

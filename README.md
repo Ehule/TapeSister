@@ -6,7 +6,7 @@ TapeSister is a standalone sample-making laboratory for FT2 Tapehead Edition. It
 
 Each of the 16 Bank tiles is a complete editable sound object. A tile owns its audio, tuning, loop, selection, viewport, processing and edit state, and Undo/Redo history. There is no separate Source, Parent, Current, promotion, or commit workflow in the interface.
 
-Clicking an occupied tile selects it, immediately restores its own editor state for waveform selection, and auditions it. Clicking an empty tile selects that exact Create/Load destination without playing anything; double-clicking it activates a silent editable canvas. When the audio clipboard has a source timeline, the canvas adopts that full duration and sample rate so Paste-in-place lands at the same time. With no clipboard it defaults to one second at 44.1 kHz. A thick Mouse-color outline always marks the active editing tile; a separate cyan mark identifies a bank tile being previewed. Clearing the active tile leaves the same empty destination selected. Bank 01 has no special protection or authority.
+Clicking an occupied tile selects it, immediately restores its own editor state for waveform selection, and auditions it. Clicking an empty tile selects that exact Create/Load destination without playing anything; double-clicking it activates a silent editable canvas. When the audio clipboard has a source timeline, the canvas adopts that full duration and sample rate so Paste-in-place lands at the same time. With no clipboard it defaults to one second at 44.1 kHz. A thick Active Tile-color outline always marks the active editing tile; a separate cyan mark identifies a bank tile being previewed. Clearing the active tile leaves the same empty destination selected. Bank 01 has no special protection or authority.
 
 With no waveform selection, Create and Load replace only the selected tile. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. With a waveform selection, Create and Vary instead stamp a fitted FM sound into exactly that range on the active tile; audio outside the range and the tile duration stay unchanged, and Chain does not move the stamp to another tile.
 
@@ -15,6 +15,8 @@ horizontally. Ctrl+wheel rotates the editable waveform through the configured co
 number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead.
 Set `rotate_wheel_fine` (1–20, default 5) and `rotate_wheel_coarse` (20–100,
 default 50) in the `[Waveform]` section of `tapesister.ini`.
+
+Every ordinary slider responds to click/drag, mouse wheel while hovered, and Left/Right while the pointer is over its box; Shift makes wheel or arrow adjustments coarser. This includes Palette RGB and contrast controls. WARP, SMEAR, and TEAR remain spring-loaded gestures and deliberately keep their separate Ctrl+wheel behavior.
 
 The compact **WARP** control is a spring-loaded, deterministic offline Transform for
 the selected tile, or only for the fixed waveform selection when one is active. Hold and drag
@@ -35,6 +37,8 @@ Every mouse-created or adjusted selection endpoint snaps live to the nearest zer
 
 The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. If no selection exists, Set Loop first selects and loops the exact whole tile. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape. Loop range, mode, and crossfade belong to the tile and participate in its Undo/Redo history.
 
+The compact workbench **LOOP** button follows the current selection, or the visible view when there is no selection. Shift-clicking it enables **LOOP LOCK**, which stays active while occupied tiles are selected and immediately follows each tile's restored selection/view. Click LOOP again, press Space, or select an empty tile to stop and release the lock.
+
 The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary click clears the chord and returns to momentary audition. Sustained voices follow the selected tile.
 
 TapeSister starts in FT2-style borderless desktop fullscreen. **Alt+Enter** toggles between fullscreen and a normal resizable window without changing the active tile, selection, clipboard, or playback state. Escape first cancels an active dialog, preview, or editing gesture; otherwise it stops playback and opens the exit confirmation. Closing the window uses the same confirmation, with an explicit warning whenever the instrument or collection differs from the last opened or saved TSR project.
@@ -49,7 +53,7 @@ Root and fine tuning participate in the selected tile's state and Undo/Redo hist
 
 ## FastTracker handoff and configuration
 
-**Config** replaces only the framed waveform panel with compact blank-safe editable paths for the sample root, FastTracker executable, and FT2 exchange folder, leaving the toolbar and every control below `y=205` visible. The values persist in portable `tapesister.ini`; Tab or Up/Down changes field, the usual caret keys edit anywhere in a path, Ctrl+Backspace clears it, and **Use CWD** copies the current directory. The configured sample root becomes the file browser's starting directory while normal browsing still remembers later navigation.
+**Config** replaces only the framed waveform panel with compact blank-safe editable paths for the sample root, FastTracker executable, and FT2 exchange folder, leaving the toolbar and every control below `y=205` visible. The values persist in portable `tapesister.ini`; Tab or Up/Down changes field, the usual caret keys edit anywhere in a path, Ctrl+Backspace clears it, and **Use CWD** copies the current directory. Double-click a path field to browse: the sample and exchange fields select a folder, while the FastTracker field selects the executable file. Browser Cancel returns to the unchanged, still-unsaved Config edit. The configured sample root becomes the file browser's starting directory while normal browsing still remembers later navigation.
 
 Fresh launches also use two boolean startup settings (both default to `1` when absent): `startup_welcome_sample` installs `assets/tapesister_welcome.wav` as the ordinary imported working sound in bank 01, and `startup_welcome_autoplay` auditions it once after the splash closes. Set autoplay to `0` to keep the waveform without the greeting, or sample to `0` to start with an empty selected bank 01. Command-line WAV/TSR loading takes precedence and is never overwritten by the welcome artifact. See `tapesister.ini.example`.
 
@@ -57,7 +61,26 @@ Fresh launches also use two boolean startup settings (both default to `1` when a
 
 Every handoff WAV includes root/fine-tune metadata plus loop start, inclusive end, and standard Forward/Ping-Pong/Backward type. FT2 already reads the loop record, so forward and ping-pong collection members arrive with looping enabled instead of requiring manual flags. Its current WAV loader treats the standard backward type as ping-pong; exact reverse-loop interpretation and `smpl` root-note adoption belong to the reciprocal FT2-side handoff slice.
 
-**Config -> Palette** replaces the same waveform panel with a live 13-color RGB editor: the original 12 named FT2 Tapehead Edition fields plus TapeSister's independent **Wave Selection** fill. It also exposes Tapehead-compatible Desktop and Buttons contrast values: button and tile bevels derive from the Buttons color and contrast, while Mouse remains an independent interaction and active-tile highlight color. **Import TH** reads `tapehead.pal`, **Export TH** writes only Tapehead's original fields, and **Save TS** writes `tapesister.pal` including Wave Selection, which TapeSister automatically reloads on the next launch. If an imported or older palette omits Wave Selection, it inherits `BlockMark`, preserving its previous appearance; older six-color Tapehead palettes still give the other additional waveform colors `PatternText`. `TAPESISTER_PALETTE` can override the TapeSister palette path.
+**Config -> Palette** replaces the same waveform panel with a live 14-color RGB editor: Tapehead's original 12 persisted fields plus TapeSister's independent **Wave Selection** fill and **Active Tile** outline. The editor uses TapeSister-facing names while import/export keeps the established keys. It also exposes Tapehead-compatible Desktop and Buttons contrast values: button and tile bevels derive from Controls/`Buttons` and Buttons Contrast, while Pointer/`Mouse` and Active Tile are independent. **Import TH** reads `tapehead.pal`, **Export TH** writes only Tapehead's original fields, and **Save TS** writes `tapesister.pal` including both TapeSister-only colors, which TapeSister automatically reloads on the next launch. If an imported or older palette omits Wave Selection it inherits `BlockMark`; if it omits Active Tile it inherits `Mouse`, preserving the former appearance. Older six-color Tapehead palettes still give the other additional waveform colors `PatternText`. `TAPESISTER_PALETTE` can override the TapeSister palette path.
+
+Tapehead compatibility mapping:
+
+| Tapehead `.pal` key | TapeSister editor label | TapeSister role |
+| --- | --- | --- |
+| `PatternText` | Title / Text | logo, browser text, red-channel accent |
+| `BlockMark` | Active Control | active buttons and selected blocks |
+| `TextOnBlock` | Active Text | text/waveform drawn over selected blocks |
+| `Mouse` | Pointer | slider knobs, carets, pointer/focus accents |
+| `Desktop` | Desktop | application background |
+| `Buttons` | Controls | buttons, tiles, and their contrast bevels |
+| `PatternNote` | Waveform | ordinary waveform and modal titles |
+| `PatternInstrument` | Primary | primary labels and main sound controls |
+| `PatternVolume` | Edge / Zero | edge controls, zero crossings, warnings |
+| `PatternTuning` | Loop / Drift | loop markers, tuning, drift, damping |
+| `PatternEffect` | Effect | effect accents and selection-duration text |
+| `PatternEmpty` | Spare | reserved compatible color |
+| `WaveSelection` (TapeSister only) | Wave Selection | waveform selection fill only |
+| `ActiveTile` (TapeSister only) | Active Tile | active Bank tile outline only |
 
 ## Sound collection and variation
 
@@ -93,7 +116,7 @@ Where source and existing audio overlap, Mix measures the source peak and underl
 
 The lower panel now cycles **KEYS**, **BANK**, **RCPE**, and **INGR**. INGR is an empty navigation scaffold for future ingredient shelves; entering it does not alter the selected tile, bank contents, recipes, or Undo history. RCPE contains eight immutable factory recipes and eight user slots. Click a filled slot to apply its processing to the selected tile as one undoable render. Shift-click an empty user slot to capture the live processing shelf, right-click a filled user slot to rename it, and Shift-right-click to clear it. Factory recipes and their names remain immutable. Manual shelf changes remove the active-slot highlight without altering the stored recipe.
 
-The compact **LOOP** audition button repeats a fixed selection when one exists, otherwise it follows the visible tile view as that view is zoomed or panned. A short boundary crossfade uses the existing audition engine. While LOOP is active it remains the audition owner, so WARP, SMEAR, and TEAR continue publishing spring-loaded previews without their usual timed playback retriggers. Loading or creating another sound, selecting a bank tile, Stop, or quit cancels workbench LOOP ownership.
+The compact **LOOP** audition button repeats a fixed selection when one exists, otherwise it follows the visible tile view as that view is zoomed or panned. A short boundary crossfade uses the existing audition engine. While LOOP is active it remains the audition owner, so WARP, SMEAR, and TEAR continue publishing spring-loaded previews without their usual timed playback retriggers. Ordinary LOOP is cancelled by selecting another tile; Shift-click **LOOP** to lock it across occupied-tile changes. Loading or creating another sound, selecting an empty tile, Stop, or quit cancels workbench LOOP ownership.
 
 Portable `.tsp` files contain named processing settings and, for user captures, optional tuning metadata—never tile audio, crop, selection, loop, tape edits, or bank members—so the same treatment can be applied to unrelated material. Factory recipes omit tuning. While RCPE is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the selected tile. Full `.tsr` projects remain the self-contained way to save a complete bank.
 

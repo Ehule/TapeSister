@@ -31,6 +31,7 @@ static const TsPalette *active_palette(void)
 #define PAL_TUNING (active_palette()->colors[TS_PALETTE_PATTERN_TUNING])
 #define PAL_EFFECT (active_palette()->colors[TS_PALETTE_PATTERN_EFFECT])
 #define PAL_WAVE_SELECTION (active_palette()->colors[TS_PALETTE_WAVE_SELECTION])
+#define PAL_ACTIVE_TILE (active_palette()->colors[TS_PALETTE_ACTIVE_TILE])
 
 typedef struct {
     int x;
@@ -306,7 +307,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
               PAL_BUTTON, PAL_MOUSE);
     }
 
-    if (browser->mode != TS_BROWSER_LOAD_WAV) {
+    if (ts_browser_mode_edits_filename(browser->mode)) {
         const char *filename = browser->filename;
         size_t length = strlen(filename);
         size_t cursor = browser->filename_cursor > length ? length :
@@ -326,12 +327,19 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
             if (cursor_x > 572) cursor_x = 572;
             rect(fb, cursor_x, 301, 2, 11, PAL_MOUSE);
         }
-    } else {
+    } else if (browser->mode == TS_BROWSER_LOAD_WAV) {
         text(fb, 58, 300, "SELECT AN EXISTING WAV, TSR, OR TSP", PAL_EFFECT, 1);
+    } else if (ts_browser_mode_selects_directory(browser->mode)) {
+        text(fb, 58, 300, "NAVIGATE, THEN USE THIS FOLDER", PAL_EFFECT, 1);
+    } else {
+        text(fb, 58, 300, "SELECT AN EXECUTABLE FILE", PAL_EFFECT, 1);
     }
 
     button(fb, 58, 326, 72, "UP DIR", 0);
-    button(fb, 135, 326, 120, browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
+    button(fb, 135, 326, 120,
+           ts_browser_mode_selects_directory(browser->mode) ? "USE FOLDER" :
+           browser->mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE ? "USE FILE" :
+           browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
            (browser->mode == TS_BROWSER_SAVE_RECIPE ||
             browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVE" : "EXPORT",
            browser->overwrite_armed);
@@ -373,14 +381,15 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
     for (size_t i = 0; i < sizeof(config_buttons) / sizeof(config_buttons[0]); ++i)
         button(fb, config_buttons[i].x, TS_PALETTE_ACTION_Y,
                config_buttons[i].width, config_buttons[i].label, 0);
+    text(fb, 20, 157, "DOUBLE CLICK A PATH TO BROWSE", PAL_EFFECT, 1);
     text(fb, 364, 182, "TAB FIELD  CTRL BACKSPACE CLEAR", PAL_TUNING, 1);
 }
 
 static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     static const char *const short_names[TS_PALETTE_COLOR_COUNT] = {
-        "TEXT", "BLOCK", "BLOCK TXT", "MOUSE", "DESKTOP", "BUTTONS", "WAVE",
-        "INSTR", "ZERO", "LOOP", "EFFECT", "EMPTY", "WAVE SEL"
+        "TITLE", "ACTIVE", "ACT TEXT", "POINTER", "DESKTOP", "CONTROLS", "WAVE",
+        "PRIMARY", "EDGE/ZERO", "LOOP", "EFFECT", "SPARE", "WAVE SEL", "ACT TILE"
     };
     static const char *const channel_names[3] = {"RED", "GREEN", "BLUE"};
     char value[48];
@@ -388,7 +397,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
     frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
           TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 45, "PALETTE EDITOR", PAL_NOTE, 1);
-    text(fb, 438, 45, "LIVE TAPEHEAD COLORS", PAL_EFFECT, 1);
+    text(fb, 438, 45, "LIVE TAPESISTER COLORS", PAL_EFFECT, 1);
     for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
         int column = color % TS_PALETTE_SWATCH_COLUMNS;
         int row = color / TS_PALETTE_SWATCH_COLUMNS;
@@ -588,6 +597,53 @@ TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y)
             x < palette_buttons[i].x + palette_buttons[i].width)
             return (TsUiPaletteAction)(i + 1u);
     return TS_UI_PALETTE_ACTION_NONE;
+}
+
+static int point_in_slider(int x, int y, int left, int top, int width)
+{
+    return x >= left && x < left + width && y >= top && y < top + 24;
+}
+
+TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y)
+{
+    if (point_in_slider(x, y, 10, 233, 72)) return TS_UI_SLIDER_BODY;
+    if (point_in_slider(x, y, 88, 233, 72)) return TS_UI_SLIDER_EDGE;
+    if (point_in_slider(x, y, 166, 233, 72)) return TS_UI_SLIDER_DRIFT;
+    if (ui == NULL) return TS_UI_SLIDER_NONE;
+    switch (ui->fx_page) {
+    case TS_FX_TUNE:
+        if (point_in_slider(x, y, 214, 261, 146)) return TS_UI_SLIDER_TUNE_FINE;
+        break;
+    case TS_FX_NOISE:
+        if (point_in_slider(x, y, 118, 261, 180)) return TS_UI_SLIDER_NOISE_AMOUNT;
+        break;
+    case TS_FX_SHAPE:
+        if (point_in_slider(x, y, 104, 261, 94)) return TS_UI_SLIDER_FILTER_CUTOFF;
+        if (point_in_slider(x, y, 202, 261, 80)) return TS_UI_SLIDER_FILTER_RESONANCE;
+        if (point_in_slider(x, y, 384, 261, 92)) return TS_UI_SLIDER_SHAPER_DRIVE;
+        if (point_in_slider(x, y, 480, 261, 92)) return TS_UI_SLIDER_SHAPER_MIX;
+        break;
+    case TS_FX_FAMILY:
+        if (point_in_slider(x, y, 10, 261, 520)) return TS_UI_SLIDER_VARIATION_RANGE;
+        break;
+    case TS_FX_DELAY:
+        if (point_in_slider(x, y, 118, 261, 92)) return TS_UI_SLIDER_DELAY_TIME;
+        if (point_in_slider(x, y, 220, 261, 92)) return TS_UI_SLIDER_DELAY_FEEDBACK;
+        if (point_in_slider(x, y, 322, 261, 92)) return TS_UI_SLIDER_DELAY_DAMPING;
+        if (point_in_slider(x, y, 424, 261, 92)) return TS_UI_SLIDER_DELAY_MIX;
+        break;
+    case TS_FX_SPACE:
+        if (point_in_slider(x, y, 118, 261, 120)) return TS_UI_SLIDER_REVERB_DECAY;
+        if (point_in_slider(x, y, 250, 261, 120)) return TS_UI_SLIDER_REVERB_DAMPING;
+        if (point_in_slider(x, y, 382, 261, 120)) return TS_UI_SLIDER_REVERB_MIX;
+        break;
+    case TS_FX_LOOP:
+        if (point_in_slider(x, y, 365, 261, 212)) return TS_UI_SLIDER_LOOP_CROSSFADE;
+        break;
+    default:
+        break;
+    }
+    return TS_UI_SLIDER_NONE;
 }
 
 static int cycle_index(int value, int amount, int count)
@@ -982,7 +1038,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
     button(fb, 85, 205, 82, "CREATE", 0);
     button(fb, 172, 205, 70, "VARY", 0);
-    button(fb, 247, 205, 78, "LOOP", ui->workbench_loop_active);
+    button(fb, 247, 205, 78,
+           ui->workbench_loop_persistent ? "LOOP LOCK" : "LOOP",
+           ui->workbench_loop_active);
 
     slider(fb, 10, 233, 72, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 88, 233, 72, "EDGE", instrument->process.edge, PAL_VOLUME);
@@ -1066,7 +1124,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else if (ui->fx_page == TS_FX_DELAY) {
         button(fb, 10, 261, 94, instrument->process.delay_enabled ? "DELAY ON" : "DELAY OFF",
                instrument->process.delay_enabled);
-        slider(fb, 118, 261, 92, "TIME", instrument->process.delay_seconds, PAL_NOTE);
+        slider(fb, 118, 261, 92, "TIME",
+               (instrument->process.delay_seconds - 0.005f) / 0.995f, PAL_NOTE);
         slider(fb, 220, 261, 92, "FEEDBACK", instrument->process.delay_feedback / 0.85f, PAL_VOLUME);
         slider(fb, 322, 261, 92, "DAMP", instrument->process.delay_damping, PAL_TUNING);
         slider(fb, 424, 261, 92, "MIX", instrument->process.delay_mix, PAL_EFFECT);
@@ -1174,10 +1233,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                      family_relation_color(slot->relation));
             if (i == ui->bank_view_slot) rect(fb, x + 4, y + 4, 64, 2, PAL_EFFECT);
             if (i == instrument->selected_slot) {
-                rect(fb, x - 2, y - 2, 76, 3, PAL_MOUSE);
-                rect(fb, x - 2, y + 22, 76, 3, PAL_MOUSE);
-                rect(fb, x - 2, y - 2, 3, 27, PAL_MOUSE);
-                rect(fb, x + 71, y - 2, 3, 27, PAL_MOUSE);
+                rect(fb, x - 2, y - 2, 76, 3, PAL_ACTIVE_TILE);
+                rect(fb, x - 2, y + 22, 76, 3, PAL_ACTIVE_TILE);
+                rect(fb, x - 2, y - 2, 3, 27, PAL_ACTIVE_TILE);
+                rect(fb, x + 71, y - 2, 3, 27, PAL_ACTIVE_TILE);
             }
         }
     }

@@ -45,6 +45,7 @@ const char *ts_browser_mode_extension(TsBrowserMode mode)
     if (mode == TS_BROWSER_SAVE_RECIPE) return ".tsr";
     if (mode == TS_BROWSER_SAVE_PRESET) return ".tsp";
     if (mode == TS_BROWSER_EXPORT_BANK) return "";
+    if (ts_browser_mode_selects_config(mode)) return "";
     return ".wav";
 }
 
@@ -55,7 +56,30 @@ const char *ts_browser_mode_title(TsBrowserMode mode)
     if (mode == TS_BROWSER_SAVE_PRESET) return "SAVE PROCESS RECIPE";
     if (mode == TS_BROWSER_EXPORT_WAV) return "EXPORT CURRENT WAV";
     if (mode == TS_BROWSER_EXPORT_BANK) return "EXPORT SOUND COLLECTION";
+    if (mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY) return "SELECT SAMPLE FOLDER";
+    if (mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE)
+        return "SELECT FASTTRACKER EXECUTABLE";
+    if (mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY) return "SELECT FT2 EXCHANGE FOLDER";
     return "FILE BROWSER";
+}
+
+int ts_browser_mode_edits_filename(TsBrowserMode mode)
+{
+    return mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
+           mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
+}
+
+int ts_browser_mode_selects_config(TsBrowserMode mode)
+{
+    return mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
+           mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE ||
+           mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY;
+}
+
+int ts_browser_mode_selects_directory(TsBrowserMode mode)
+{
+    return mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
+           mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY;
 }
 
 static int join_path(const char *directory, const char *name, char *path, size_t path_size)
@@ -95,6 +119,8 @@ static int mode_accepts(const TsBrowser *browser, const char *name)
         return ends_with_case(name, ".wav") || ends_with_case(name, ".tsr") ||
                ends_with_case(name, ".tsp");
     if (browser->mode == TS_BROWSER_EXPORT_BANK) return 0;
+    if (ts_browser_mode_selects_directory(browser->mode)) return 0;
+    if (browser->mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE) return 1;
     return ends_with_case(name, ts_browser_mode_extension(browser->mode));
 }
 
@@ -201,7 +227,7 @@ int ts_browser_refresh(TsBrowser *browser)
 int ts_browser_open(TsBrowser *browser, TsBrowserMode mode, const char *default_filename)
 {
     browser->mode = mode;
-    browser->filename_focus = mode != TS_BROWSER_LOAD_WAV;
+    browser->filename_focus = ts_browser_mode_edits_filename(mode);
     browser->dragging_scrollbar = 0;
     browser->overwrite_armed = 0;
     snprintf(browser->filename, sizeof(browser->filename), "%s",

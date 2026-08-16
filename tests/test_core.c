@@ -144,26 +144,33 @@ int main(void)
         ts_palette_default(&palette);
         CHECK(palette.colors[TS_PALETTE_WAVE_SELECTION] ==
               palette.colors[TS_PALETTE_BLOCK_MARK]);
+        CHECK(palette.colors[TS_PALETTE_ACTIVE_TILE] ==
+              palette.colors[TS_PALETTE_MOUSE]);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 0, 0x12);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 1, 0x34);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 2, 0x56);
         palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xffabcdefu;
+        palette.colors[TS_PALETTE_ACTIVE_TILE] = 0xff654321u;
         palette.desktop_contrast = 17;
         palette.buttons_contrast = 83;
         CHECK(palette.colors[TS_PALETTE_MOUSE] == 0xff123456u);
         CHECK(ts_palette_save(&palette, "test-tapesister.pal", error, sizeof(error)));
         CHECK(file_contains_text("test-tapesister.pal", "WaveSelection=#ABCDEF"));
+        CHECK(file_contains_text("test-tapesister.pal", "ActiveTile=#654321"));
         ts_palette_default(&reopened);
         CHECK(ts_palette_load(&reopened, "test-tapesister.pal", error, sizeof(error)));
         CHECK(memcmp(&palette, &reopened, sizeof(palette)) == 0);
         CHECK(ts_palette_save_tapehead(&palette, "test-tapehead.pal",
                                        error, sizeof(error)));
         CHECK(!file_contains_text("test-tapehead.pal", "WaveSelection"));
+        CHECK(!file_contains_text("test-tapehead.pal", "ActiveTile"));
         ts_palette_default(&tapehead_reopened);
         CHECK(ts_palette_load(&tapehead_reopened, "test-tapehead.pal",
                               error, sizeof(error)));
         CHECK(tapehead_reopened.colors[TS_PALETTE_WAVE_SELECTION] ==
               palette.colors[TS_PALETTE_BLOCK_MARK]);
+        CHECK(tapehead_reopened.colors[TS_PALETTE_ACTIVE_TILE] ==
+              palette.colors[TS_PALETTE_MOUSE]);
         for (int color = 0; color < TS_PALETTE_WAVE_SELECTION; ++color)
             CHECK(tapehead_reopened.colors[color] == palette.colors[color]);
         CHECK(tapehead_reopened.desktop_contrast == palette.desktop_contrast);
@@ -183,6 +190,11 @@ int main(void)
         CHECK(reopened.colors[TS_PALETTE_PATTERN_NOTE] == 0xff102030u);
         CHECK(reopened.colors[TS_PALETTE_PATTERN_EMPTY] == 0xff102030u);
         CHECK(reopened.colors[TS_PALETTE_WAVE_SELECTION] == 0xff203040u);
+        CHECK(reopened.colors[TS_PALETTE_ACTIVE_TILE] == 0xff405060u);
+        CHECK(strcmp(ts_palette_color_name(TS_PALETTE_PATTERN_INSTRUMENT),
+                     "PRIMARY") == 0);
+        CHECK(strcmp(ts_palette_color_name(TS_PALETTE_ACTIVE_TILE),
+                     "ACTIVE TILE") == 0);
         remove("test-tapesister.pal");
         remove("test-tapehead.pal");
         remove("test-tapehead-legacy.pal");
@@ -249,13 +261,54 @@ int main(void)
         ts_ui_begin_palette_edit(&ui);
         CHECK(ui.palette_open && !ui.config_open);
         ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff010203u;
+        ui.palette.colors[TS_PALETTE_ACTIVE_TILE] = 0xff101112u;
         ts_ui_finish_palette_edit(&ui, 1);
         CHECK(!ui.palette_open && ui.config_open);
         CHECK(memcmp(&ui.palette, &before, sizeof(before)) == 0);
         ts_ui_begin_palette_edit(&ui);
         ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff040506u;
+        ui.palette.colors[TS_PALETTE_ACTIVE_TILE] = 0xff131415u;
         ts_ui_finish_palette_edit(&ui, 0);
         CHECK(ui.palette.colors[TS_PALETTE_WAVE_SELECTION] == 0xff040506u);
+        CHECK(ui.palette.colors[TS_PALETTE_ACTIVE_TILE] == 0xff131415u);
+    }
+
+    {
+        static const struct {
+            TsFxPage page;
+            int x;
+            TsUiSlider slider;
+        } sliders[] = {
+            {TS_FX_TUNE, 250, TS_UI_SLIDER_TUNE_FINE},
+            {TS_FX_NOISE, 180, TS_UI_SLIDER_NOISE_AMOUNT},
+            {TS_FX_SHAPE, 120, TS_UI_SLIDER_FILTER_CUTOFF},
+            {TS_FX_SHAPE, 230, TS_UI_SLIDER_FILTER_RESONANCE},
+            {TS_FX_SHAPE, 420, TS_UI_SLIDER_SHAPER_DRIVE},
+            {TS_FX_SHAPE, 520, TS_UI_SLIDER_SHAPER_MIX},
+            {TS_FX_FAMILY, 300, TS_UI_SLIDER_VARIATION_RANGE},
+            {TS_FX_DELAY, 150, TS_UI_SLIDER_DELAY_TIME},
+            {TS_FX_DELAY, 250, TS_UI_SLIDER_DELAY_FEEDBACK},
+            {TS_FX_DELAY, 350, TS_UI_SLIDER_DELAY_DAMPING},
+            {TS_FX_DELAY, 450, TS_UI_SLIDER_DELAY_MIX},
+            {TS_FX_SPACE, 150, TS_UI_SLIDER_REVERB_DECAY},
+            {TS_FX_SPACE, 300, TS_UI_SLIDER_REVERB_DAMPING},
+            {TS_FX_SPACE, 420, TS_UI_SLIDER_REVERB_MIX},
+            {TS_FX_LOOP, 450, TS_UI_SLIDER_LOOP_CROSSFADE}
+        };
+        ts_ui_init(&ui);
+        CHECK(ts_ui_slider_from_point(&ui, 40, 244) == TS_UI_SLIDER_BODY);
+        CHECK(ts_ui_slider_from_point(&ui, 110, 244) == TS_UI_SLIDER_EDGE);
+        CHECK(ts_ui_slider_from_point(&ui, 190, 244) == TS_UI_SLIDER_DRIFT);
+        CHECK(ts_ui_slider_from_point(&ui, 280, 244) == TS_UI_SLIDER_NONE);
+        CHECK(ts_ui_slider_from_point(&ui, 450, 216) == TS_UI_SLIDER_NONE);
+        CHECK(ts_ui_slider_from_point(&ui, 550, 216) == TS_UI_SLIDER_NONE);
+        for (size_t i = 0; i < sizeof(sliders) / sizeof(sliders[0]); ++i) {
+            ui.fx_page = sliders[i].page;
+            CHECK(ts_ui_slider_from_point(&ui, sliders[i].x, 272) ==
+                  sliders[i].slider);
+        }
+        ui.fx_page = TS_FX_EDIT;
+        CHECK(ts_ui_slider_from_point(&ui, 300, 272) == TS_UI_SLIDER_NONE);
     }
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
@@ -2138,6 +2191,24 @@ int main(void)
         CHECK(ts_browser_destination_path(&browser, path, sizeof(path)));
         CHECK(strstr(path, "metallic_family") != NULL);
         CHECK(strstr(path, "metallic_family.wav") == NULL);
+        CHECK(!ts_browser_mode_edits_filename(TS_BROWSER_LOAD_WAV));
+        CHECK(ts_browser_mode_edits_filename(TS_BROWSER_EXPORT_WAV));
+        CHECK(ts_browser_mode_selects_config(TS_BROWSER_SELECT_SAMPLE_DIRECTORY));
+        CHECK(ts_browser_mode_selects_directory(TS_BROWSER_SELECT_EXCHANGE_DIRECTORY));
+        CHECK(!ts_browser_mode_selects_directory(
+                  TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE));
+        CHECK(strcmp(ts_browser_mode_title(TS_BROWSER_SELECT_SAMPLE_DIRECTORY),
+                     "SELECT SAMPLE FOLDER") == 0);
+        CHECK(ts_browser_open(&browser, TS_BROWSER_SELECT_SAMPLE_DIRECTORY, NULL));
+        CHECK(browser_find(&browser, "test-browser-dir") >= 0);
+        CHECK(browser_find(&browser, "test-browser-load.wav") < 0);
+        CHECK(browser_find(&browser, "test-browser-ignore.txt") < 0);
+        CHECK(!browser.filename_focus);
+        CHECK(ts_browser_open(&browser,
+                              TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE, NULL));
+        CHECK(browser_find(&browser, "test-browser-load.wav") >= 0);
+        CHECK(browser_find(&browser, "test-browser-ignore.txt") >= 0);
+        CHECK(!browser.filename_focus);
         browser.entry_count = 30;
         browser.selected = 0;
         ts_browser_set_scroll(&browser, 999);
@@ -2283,16 +2354,17 @@ int main(void)
         uint32_t low_contrast;
         uint32_t high_contrast;
         ui.palette.colors[TS_PALETTE_MOUSE] = 0xff123456u;
+        ui.palette.colors[TS_PALETTE_ACTIVE_TILE] = 0xff654321u;
         ui.palette.buttons_contrast = 1;
         ts_ui_render(&fb, &ui, &imported);
-        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff123456u);
+        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff654321u);
         low_contrast = fb.pixels[330 * TS_UI_WIDTH + 100];
         CHECK(low_contrast != 0xff123456u);
         ui.palette.buttons_contrast = 100;
         ts_ui_render(&fb, &ui, &imported);
         high_contrast = fb.pixels[330 * TS_UI_WIDTH + 100];
         CHECK(high_contrast != low_contrast && high_contrast != 0xff123456u);
-        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff123456u);
+        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff654321u);
         ts_palette_default(&ui.palette);
     }
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
