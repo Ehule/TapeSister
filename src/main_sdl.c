@@ -2264,7 +2264,9 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
-                if (!((mod & KMOD_CTRL) && key == SDLK_p)) ui.commit_armed = 0;
+                TsUiEditorCommand editor_command =
+                    ts_ui_editor_shortcut(bank_modifiers(mod), (int)key);
+                if (editor_command != TS_UI_EDITOR_COMMAND_COMMIT) ui.commit_armed = 0;
                 ui.bank_clear_armed = 0;
                 if (ui.tear_gesture.active && key == SDLK_ESCAPE) {
                     end_tear_gesture(device, &audio, &ui, &instrument, 1);
@@ -2401,7 +2403,7 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_o) {
                     ui.load_bank_slot = instrument.selected_slot;
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
-                } else if ((mod & KMOD_CTRL) && key == SDLK_p) {
+                } else if (editor_command == TS_UI_EDITOR_COMMAND_COMMIT) {
                     if (ui.commit_armed) commit_current(device, &audio, &ui, &instrument);
                     else {
                         ui.commit_armed = 1;
@@ -2412,7 +2414,7 @@ int main(int argc, char **argv)
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_e) {
                     begin_export_choice(&ui);
-                } else if ((mod & KMOD_CTRL) && key == SDLK_b) {
+                } else if (editor_command == TS_UI_EDITOR_COMMAND_TOGGLE_AB) {
                     switch_audition_source(device, &audio, &ui, &instrument,
                         ui.audition_source == TS_AUDITION_CURRENT ?
                         TS_AUDITION_PARENT : TS_AUDITION_CURRENT, obtained.freq);
@@ -2425,7 +2427,7 @@ int main(int argc, char **argv)
                     ui.bank_view_slot = -1;
                     ts_instrument_set_selection(&instrument, 0, instrument.current.frames);
                     snprintf(ui.status, sizeof(ui.status), "SELECTED ALL CURRENT");
-                } else if ((mod & KMOD_CTRL) && (mod & KMOD_SHIFT) && key == SDLK_r) {
+                } else if (editor_command == TS_UI_EDITOR_COMMAND_RESET) {
                     reset_current(device, &audio, &ui, &instrument);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_r) {
                     apply_sample_edit(device, &audio, &ui, &instrument,

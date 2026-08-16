@@ -963,6 +963,22 @@ TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)
     return TS_UI_BANK_ACTION_INVALID;
 }
 
+TsUiEditorCommand ts_ui_editor_shortcut(unsigned modifiers, int key)
+{
+    unsigned relevant = modifiers & (TS_UI_BANK_MOD_SHIFT |
+                                     TS_UI_BANK_MOD_CTRL |
+                                     TS_UI_BANK_MOD_ALT);
+    if ((relevant & TS_UI_BANK_MOD_CTRL) != 0u &&
+        (relevant & TS_UI_BANK_MOD_ALT) == 0u && key == 'b')
+        return TS_UI_EDITOR_COMMAND_TOGGLE_AB;
+    if ((relevant & TS_UI_BANK_MOD_CTRL) != 0u &&
+        (relevant & TS_UI_BANK_MOD_ALT) == 0u && key == 'p')
+        return TS_UI_EDITOR_COMMAND_COMMIT;
+    if (relevant == (TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_SHIFT) && key == 'r')
+        return TS_UI_EDITOR_COMMAND_RESET;
+    return TS_UI_EDITOR_COMMAND_NONE;
+}
+
 int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
                               TsUiBankAction action,
                               char *error, size_t error_size)
