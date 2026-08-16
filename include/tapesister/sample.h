@@ -383,6 +383,8 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
 int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t error_size);
 void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t last);
 void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last);
+int ts_instrument_select_all(TsInstrument *instrument);
+int ts_instrument_select_wave(TsInstrument *instrument);
 void ts_instrument_clear_selection(TsInstrument *instrument);
 void ts_instrument_set_playhead(TsInstrument *instrument, size_t frame);
 void ts_instrument_set_playhead_snapped(TsInstrument *instrument, size_t frame);
@@ -409,6 +411,20 @@ int ts_instrument_stretch_gesture_cancel(TsInstrument *instrument,
                                          TsStretchGesture *gesture,
                                          char *error, size_t error_size);
 size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame);
+size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
+                                                size_t frame,
+                                                size_t first, size_t last);
+size_t ts_sample_zero_crossing_in_direction(const TsSample *sample, size_t frame,
+                                            int direction, size_t count);
+int ts_sample_make_drone(TsSample *destination, const TsSample *source,
+                         size_t first, size_t last, int crossfade_ms,
+                         size_t *split_frame, size_t *overlap_frames,
+                         char *error, size_t error_size);
+int ts_sample_make_drone_at_split(TsSample *destination, const TsSample *source,
+                                  size_t first, size_t last, size_t split_frame,
+                                  size_t requested_overlap_frames,
+                                  size_t *effective_overlap_frames,
+                                  char *error, size_t error_size);
 int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
                                           char *error, size_t error_size);
 int ts_instrument_clear_loop(TsInstrument *instrument, char *error, size_t error_size);
@@ -536,6 +552,13 @@ int ts_instrument_cut_selection(TsInstrument *instrument,
 int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
                         size_t origin_first, int fit_selection,
                         char *error, size_t error_size);
+int ts_instrument_replace_selection_with_drone(TsInstrument *instrument,
+                                                const TsSample *drone,
+                                                char *error, size_t error_size);
+int ts_instrument_copy_drone_to_new_tile(TsInstrument *instrument,
+                                          const TsSample *drone,
+                                          int *destination_slot,
+                                          char *error, size_t error_size);
 int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
                                char *error, size_t error_size);
 int ts_instrument_stamp_vary(TsInstrument *instrument,

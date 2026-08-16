@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define RGB(r,g,b) (0xff000000u | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
@@ -48,6 +49,26 @@ static const TsPanelButton palette_buttons[] = {
     {20, 78, "IMPORT TH"}, {103, 68, "SAVE TS"},
     {176, 78, "EXPORT TH"}, {259, 61, "RESET"},
     {325, 54, "DONE"}, {384, 66, "CANCEL"}
+};
+
+typedef struct {
+    TsUiWaveAction action;
+    int x;
+    int width;
+    const char *label;
+} TsWaveButton;
+
+static const TsWaveButton wave_buttons[] = {
+    {TS_UI_WAVE_ACTION_PLAY_ALL, 10, 58, "PLAY ALL"},
+    {TS_UI_WAVE_ACTION_PLAY_SELECTION, 72, 58, "PLAY SEL"},
+    {TS_UI_WAVE_ACTION_PLAY_VIEW, 134, 64, "PLAY VIEW"},
+    {TS_UI_WAVE_ACTION_CROP, 202, 38, "CROP"},
+    {TS_UI_WAVE_ACTION_ZOOM_SELECTION, 244, 58, "ZOOM SEL"},
+    {TS_UI_WAVE_ACTION_SELECT_ALL, 306, 52, "SEL ALL"},
+    {TS_UI_WAVE_ACTION_SELECT_WAVE, 362, 58, "SEL WAVE"},
+    {TS_UI_WAVE_ACTION_SHOW_ALL, 424, 58, "SHOW ALL"},
+    {TS_UI_WAVE_ACTION_CLEAR_ALL, 486, 97, "CLEAR ALL"},
+    {TS_UI_WAVE_ACTION_CYCLE_PANEL, 588, 42, "BANK"}
 };
 
 static void clear(TsFramebuffer *fb, uint32_t color)
@@ -385,6 +406,145 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
     text(fb, 364, 182, "TAB FIELD  CTRL BACKSPACE CLEAR", PAL_TUNING, 1);
 }
 
+static int drone_crossfade_range(const TsUiState *ui, size_t *first, size_t *last)
+{
+    size_t right_frames;
+    if (first != NULL) *first = 0;
+    if (last != NULL) *last = 0;
+    if (ui == NULL || ui->drone_output_frames == 0 ||
+        ui->drone_source_last <= ui->drone_split_frame ||
+        ui->drone_overlap_frames == 0)
+        return 0;
+    right_frames = ui->drone_source_last - ui->drone_split_frame;
+    if (right_frames > ui->drone_output_frames ||
+        ui->drone_overlap_frames > right_frames)
+        return 0;
+    if (first != NULL) *first = right_frames - ui->drone_overlap_frames;
+    if (last != NULL) *last = right_frames;
+    return 1;
+}
+
+int ts_ui_drone_waveform_contains(int x, int y)
+{
+    return x >= TS_DRONE_WAVE_X && x < TS_DRONE_WAVE_X + TS_DRONE_WAVE_W &&
+           y >= TS_DRONE_WAVE_Y && y < TS_DRONE_WAVE_Y + TS_DRONE_WAVE_H;
+}
+
+int ts_ui_drone_crossfade_handle_from_point(const TsUiState *ui, int x, int y)
+{
+    size_t first;
+    size_t last;
+    int first_x;
+    int last_x;
+    if (!ts_ui_drone_waveform_contains(x, y) ||
+        !drone_crossfade_range(ui, &first, &last))
+        return 0;
+    first_x = TS_DRONE_WAVE_X +
+              (int)(first * TS_DRONE_WAVE_W / ui->drone_output_frames);
+    last_x = TS_DRONE_WAVE_X +
+             (int)(last * TS_DRONE_WAVE_W / ui->drone_output_frames);
+    if (abs(x - first_x) <= 5 && abs(x - last_x) <= 5)
+        return x <= first_x + (last_x - first_x) / 2 ? 1 : 2;
+    if (abs(x - first_x) <= 5) return 1;
+    if (abs(x - last_x) <= 5) return 2;
+    return 0;
+}
+
+static void drone_waveform(TsFramebuffer *fb, const TsUiState *ui)
+{
+    const TsSample *sample = ui->drone_preview_sample;
+    size_t crossfade_first = 0;
+    size_t crossfade_last = 0;
+    int has_crossfade = drone_crossfade_range(
+        ui, &crossfade_first, &crossfade_last);
+    int center = TS_DRONE_WAVE_Y + TS_DRONE_WAVE_H / 2;
+    rect(fb, TS_DRONE_WAVE_X, TS_DRONE_WAVE_Y,
+         TS_DRONE_WAVE_W, TS_DRONE_WAVE_H, RGB(8, 8, 8));
+    for (int x = TS_DRONE_WAVE_X; x < TS_DRONE_WAVE_X + TS_DRONE_WAVE_W;
+         x += 50)
+        rect(fb, x, TS_DRONE_WAVE_Y, 1, TS_DRONE_WAVE_H, RGB(35, 32, 36));
+    if (has_crossfade) {
+        int first_x = TS_DRONE_WAVE_X +
+                      (int)(crossfade_first * TS_DRONE_WAVE_W /
+                            ui->drone_output_frames);
+        int last_x = TS_DRONE_WAVE_X +
+                     (int)(crossfade_last * TS_DRONE_WAVE_W /
+                           ui->drone_output_frames);
+        if (last_x <= first_x) last_x = first_x + 1;
+        rect(fb, first_x, TS_DRONE_WAVE_Y, last_x - first_x,
+             TS_DRONE_WAVE_H, PAL_WAVE_SELECTION);
+    }
+    rect(fb, TS_DRONE_WAVE_X, center, TS_DRONE_WAVE_W, 1, RGB(80, 73, 81));
+    if (sample != NULL && sample->data != NULL && sample->frames > 0) {
+        for (int column = 0; column < TS_DRONE_WAVE_W; ++column) {
+            size_t first = (size_t)column * sample->frames / TS_DRONE_WAVE_W;
+            size_t last = (size_t)(column + 1) * sample->frames / TS_DRONE_WAVE_W;
+            float minimum;
+            float maximum;
+            int y0;
+            int y1;
+            uint32_t color;
+            if (last <= first) last = first + 1u;
+            if (last > sample->frames) last = sample->frames;
+            minimum = maximum = sample->data[first];
+            for (size_t frame = first + 1u; frame < last; ++frame) {
+                if (sample->data[frame] < minimum) minimum = sample->data[frame];
+                if (sample->data[frame] > maximum) maximum = sample->data[frame];
+            }
+            if (minimum < -1.0f) minimum = -1.0f;
+            if (minimum > 1.0f) minimum = 1.0f;
+            if (maximum < -1.0f) maximum = -1.0f;
+            if (maximum > 1.0f) maximum = 1.0f;
+            y0 = center - (int)lrintf(maximum * (TS_DRONE_WAVE_H / 2 - 3));
+            y1 = center - (int)lrintf(minimum * (TS_DRONE_WAVE_H / 2 - 3));
+            color = has_crossfade && first < crossfade_last && last > crossfade_first ?
+                    PAL_BLOCK_TEXT : PAL_NOTE;
+            wave_line(fb, TS_DRONE_WAVE_X + column, y0,
+                      TS_DRONE_WAVE_X + column, y1, color);
+        }
+    } else {
+        text(fb, 224, 108, "PREVIEW WAVEFORM UNAVAILABLE", PAL_EFFECT, 1);
+    }
+    rect(fb, TS_DRONE_WAVE_X, TS_DRONE_WAVE_Y, 3, TS_DRONE_WAVE_H, PAL_TUNING);
+    rect(fb, TS_DRONE_WAVE_X + TS_DRONE_WAVE_W - 3, TS_DRONE_WAVE_Y,
+         3, TS_DRONE_WAVE_H, PAL_TUNING);
+    if (has_crossfade) {
+        int first_x = TS_DRONE_WAVE_X +
+                      (int)(crossfade_first * TS_DRONE_WAVE_W /
+                            ui->drone_output_frames);
+        int last_x = TS_DRONE_WAVE_X +
+                     (int)(crossfade_last * TS_DRONE_WAVE_W /
+                           ui->drone_output_frames);
+        rect(fb, first_x - 1, TS_DRONE_WAVE_Y, 3, TS_DRONE_WAVE_H, PAL_EFFECT);
+        rect(fb, last_x - 1, TS_DRONE_WAVE_Y, 3, TS_DRONE_WAVE_H, PAL_EFFECT);
+    }
+}
+
+static void drone_render(TsFramebuffer *fb, const TsUiState *ui)
+{
+    char crossfade[64];
+    char output[64];
+    frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
+          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
+    text(fb, 20, 47, "DRONE MAKER", PAL_NOTE, 1);
+    snprintf(crossfade, sizeof(crossfade), "CROSSFADE: %.2F MS",
+             ui->drone_effective_crossfade_ms);
+    text(fb, 414, 47, crossfade, PAL_EFFECT, 1);
+    text(fb, 20, 63, "WHEEL COARSE  SHIFT+WHEEL FINE  DRAG EDGES - ZERO SNAP",
+         RGB(190, 185, 190), 1);
+    snprintf(output, sizeof(output), "OUT %zu  SPLIT %zu",
+             ui->drone_output_frames, ui->drone_split_frame);
+    text(fb, 476, 63, output, PAL_TUNING, 1);
+    drone_waveform(fb, ui);
+    button(fb, 20, 161, 110, "PREVIEW LOOP", ui->drone_preview_active);
+    button(fb, 136, 161, 60, "STOP", 0);
+    button(fb, 202, 161, 120, "COPY NEW TILE", 0);
+    button(fb, 328, 161, 132, "REPLACE SELECTION", 0);
+    button(fb, 466, 161, 80, "CANCEL", 0);
+    text(fb, 20, 190, "P PREVIEW  SPACE STOP  C COPY  R REPLACE  ESC CANCEL",
+         RGB(190, 185, 190), 1);
+}
+
 static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     static const char *const short_names[TS_PALETTE_COLOR_COUNT] = {
@@ -482,6 +642,7 @@ void ts_ui_init(TsUiState *ui)
     ui->bank_view_slot = -1;
     ui->load_bank_slot = -1;
     ui->playhead_bank_slot = -1;
+    ui->drone_source_slot = -1;
     ui->renaming_bank_slot = -1;
     ui->renaming_recipe_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
@@ -609,6 +770,27 @@ TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y)
     if (x >= 272 && x < 368) return TS_UI_LOAD_SELECTION_FIT;
     if (x >= 398 && x < 494) return TS_UI_LOAD_SELECTION_CANCEL;
     return TS_UI_LOAD_SELECTION_NONE;
+}
+
+TsUiDroneAction ts_ui_drone_action_from_point(int x, int y)
+{
+    if (y < 161 || y >= 184) return TS_UI_DRONE_ACTION_NONE;
+    if (x >= 20 && x < 130) return TS_UI_DRONE_ACTION_PREVIEW;
+    if (x >= 136 && x < 196) return TS_UI_DRONE_ACTION_STOP;
+    if (x >= 202 && x < 322) return TS_UI_DRONE_ACTION_COPY;
+    if (x >= 328 && x < 460) return TS_UI_DRONE_ACTION_REPLACE;
+    if (x >= 466 && x < 546) return TS_UI_DRONE_ACTION_CANCEL;
+    return TS_UI_DRONE_ACTION_NONE;
+}
+
+TsUiWaveAction ts_ui_wave_action_from_point(int x, int y)
+{
+    if (y < 289 || y >= 312) return TS_UI_WAVE_ACTION_NONE;
+    for (size_t i = 0; i < sizeof(wave_buttons) / sizeof(wave_buttons[0]); ++i)
+        if (x >= wave_buttons[i].x &&
+            x < wave_buttons[i].x + wave_buttons[i].width)
+            return wave_buttons[i].action;
+    return TS_UI_WAVE_ACTION_NONE;
 }
 
 static int point_in_slider(int x, int y, int left, int top, int width)
@@ -955,9 +1137,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int middle = TS_WAVE_Y + TS_WAVE_H / 2;
             int y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
             int y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
-            size_t at = begin;
-            uint32_t color = has_selection && at >= selection_first &&
-                             at < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
+            uint32_t color = has_selection && end > selection_first &&
+                             begin < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
             wave_line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
             for (size_t i = begin; i < end && i < sample->frames; ++i) {
                 if (sample->data[i] == 0.0f ||
@@ -1111,6 +1292,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 247, 205, 78,
            ui->workbench_loop_persistent ? "LOOP LOCK" : "LOOP",
            ui->workbench_loop_active);
+    button(fb, 330, 205, 72, "DRONE", ui->drone_open);
 
     slider(fb, 10, 233, 72, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 88, 233, 72, "EDGE", instrument->process.edge, PAL_VOLUME);
@@ -1220,19 +1402,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                PAL_TUNING);
     }
 
-    button(fb, 10, 289, 70, "PLAY ALL", 0);
-    button(fb, 85, 289, 72, "PLAY SEL", 0);
-    button(fb, 162, 289, 78, "PLAY VIEW", 0);
-    button(fb, 245, 289, 52, "CROP", 0);
-    button(fb, 302, 289, 74, "ZOOM SEL", 0);
-    button(fb, 381, 289, 74, "SHOW ALL", 0);
+    for (size_t i = 0; i < 8u; ++i)
+        button(fb, wave_buttons[i].x, 289, wave_buttons[i].width,
+               wave_buttons[i].label, 0);
     if (!ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients)
-        button(fb, 460, 289, 123,
+        button(fb, wave_buttons[8].x, 289, wave_buttons[8].width,
                ui->bank_clear_armed ? "CONFIRM CLEAR" : "CLEAR ALL",
                ui->bank_clear_armed);
-    button(fb, 588, 289, 42, ui->show_keyboard ? "BANK" :
-           ui->show_recipes ? "INGR" : ui->show_ingredients ? "KEYS" : "RCPE",
-           !ui->show_keyboard);
+    button(fb, wave_buttons[9].x, 289, wave_buttons[9].width,
+           ui->show_keyboard ? "BANK" : ui->show_recipes ? "INGR" :
+           ui->show_ingredients ? "KEYS" : "RCPE", !ui->show_keyboard);
 
     if (ui->show_keyboard) {
         char keyboard_hint[96];
@@ -1341,7 +1520,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 172, 188, 136, "EXIT", 0);
         button(fb, 324, 188, 144, "CANCEL", 1);
         text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
-    } else if (ui->load_selection_choice_open) {
+    } else if (ui->drone_open)
+        drone_render(fb, ui);
+    else if (ui->load_selection_choice_open) {
         char source[58];
         snprintf(source, sizeof(source), "%.52s", ui->load_selection_name);
         frame(fb, 126, 78, 388, 108, RGB(36, 33, 37), PAL_MOUSE);

@@ -48,6 +48,56 @@ int main(void)
     CONTRACT("unsupported_bank_modifier_combo_is_rejected",
              ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_ALT) ==
              TS_UI_BANK_ACTION_INVALID);
+    CONTRACT("wave_toolbar_play_all_hitbox",
+             ts_ui_wave_action_from_point(20, 300) == TS_UI_WAVE_ACTION_PLAY_ALL);
+    CONTRACT("wave_toolbar_play_selection_hitbox",
+             ts_ui_wave_action_from_point(80, 300) ==
+             TS_UI_WAVE_ACTION_PLAY_SELECTION);
+    CONTRACT("wave_toolbar_play_view_hitbox",
+             ts_ui_wave_action_from_point(150, 300) == TS_UI_WAVE_ACTION_PLAY_VIEW);
+    CONTRACT("wave_toolbar_crop_hitbox",
+             ts_ui_wave_action_from_point(220, 300) == TS_UI_WAVE_ACTION_CROP);
+    CONTRACT("wave_toolbar_zoom_selection_hitbox",
+             ts_ui_wave_action_from_point(250, 300) ==
+             TS_UI_WAVE_ACTION_ZOOM_SELECTION);
+    CONTRACT("wave_toolbar_select_all_hitbox",
+             ts_ui_wave_action_from_point(320, 300) ==
+             TS_UI_WAVE_ACTION_SELECT_ALL);
+    CONTRACT("wave_toolbar_select_wave_hitbox",
+             ts_ui_wave_action_from_point(380, 300) ==
+             TS_UI_WAVE_ACTION_SELECT_WAVE);
+    CONTRACT("wave_toolbar_show_all_hitbox",
+             ts_ui_wave_action_from_point(440, 300) == TS_UI_WAVE_ACTION_SHOW_ALL);
+    CONTRACT("wave_toolbar_clear_all_hitbox",
+             ts_ui_wave_action_from_point(520, 300) == TS_UI_WAVE_ACTION_CLEAR_ALL);
+    CONTRACT("wave_toolbar_panel_hitbox",
+             ts_ui_wave_action_from_point(600, 300) ==
+             TS_UI_WAVE_ACTION_CYCLE_PANEL);
+    CONTRACT("wave_toolbar_gap_is_inert",
+             ts_ui_wave_action_from_point(70, 300) == TS_UI_WAVE_ACTION_NONE);
+    CONTRACT("wave_toolbar_stops_above_lower_panel",
+             ts_ui_wave_action_from_point(320, 318) == TS_UI_WAVE_ACTION_NONE);
+
+    {
+        TsInstrument visual;
+        TsUiState visual_ui;
+        TsFramebuffer visual_fb;
+        int waveform_y = TS_WAVE_Y + TS_WAVE_H / 2 -
+                         (int)(0.5f * (TS_WAVE_H / 2 - 6));
+        ts_instrument_init(&visual);
+        ts_ui_init(&visual_ui);
+        CONTRACT("selection_render_fixture_activates",
+                 ts_instrument_activate_silence(&visual, 1200, 44100,
+                                                error, sizeof(error)));
+        for (size_t frame = 0; frame < visual.current.frames; ++frame)
+            visual.current.data[frame] = 0.5f;
+        ts_instrument_set_selection(&visual, 1, 1199);
+        ts_ui_render(&visual_fb, &visual_ui, &visual);
+        CONTRACT("selection_waveform_color_covers_straddling_left_pixel",
+                 visual_fb.pixels[waveform_y * TS_UI_WIDTH + TS_WAVE_X] ==
+                 visual_ui.palette.colors[TS_PALETTE_TEXT_ON_BLOCK]);
+        ts_instrument_free(&visual);
+    }
 
     ts_instrument_init(&instrument);
     CONTRACT("bank_clear_all_accepts_empty_instrument",

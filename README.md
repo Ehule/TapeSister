@@ -24,6 +24,21 @@ Set `rotate_wheel_fine` (1–20, default 5), `rotate_wheel_coarse` (20–100,
 default 50), and `playhead_zero_snap` (0/1, default 1) in the `[Waveform]`
 section of `tapesister.ini`.
 
+**DRONE** turns the current selection into a purpose-built seamless loop. It
+zero-snaps a split near the selection midpoint, rotates the two halves, and uses a
+constant-sum raised-cosine crossfade where the old selection end meets its beginning.
+The dialog draws that actual temporary waveform and highlights the internal crossfade.
+Hover it and use the wheel for coarse zero-snapped crossfade changes or Shift+wheel for
+fine changes; either highlighted edge can also be dragged and remains zero-snapped.
+Preview Loop repeats the temporary result without changing audio, history, or project
+state, including these dialog-only adjustments. Copy New Tile places only the loop in
+the first available independent tile,
+preserves the source tuning, and marks the whole result as a zero-crossfade forward loop;
+Replace Selection splices the shorter result in place and selects it exactly. Both
+commit modes support Undo/Redo. The internal crossfade defaults to 50 ms, clamps to at
+most one quarter of the selection, and can be changed with
+`drone_crossfade_ms=50` in `[Waveform]`.
+
 Every ordinary slider responds to click/drag, mouse wheel while hovered, and Left/Right while the pointer is over its box; Shift makes wheel or arrow adjustments coarser. This includes Palette RGB and contrast controls. WARP, SMEAR, and TEAR remain spring-loaded gestures and deliberately keep their separate Ctrl+wheel behavior.
 
 The compact **WARP** control is a spring-loaded, deterministic offline Transform for
@@ -41,7 +56,7 @@ springs back to zero after commit or Escape cancellation.
 
 ## Zero-snapped selection and loop modes
 
-Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in the selected tile. A left click places the persistent edit playhead without changing the selection; a right click places it and plays from that point. Clicked playheads zero-snap by default (`playhead_zero_snap=0` opts into exact placement), and Space toggles playback from the playhead to the tile end regardless of selection. On an idle tile with neither a selection nor a playhead, Space creates the playhead at frame 0 and immediately plays. Middle-clicking the waveform or pressing Escape clears the selection and returns the playhead to frame 0. Left-drag keeps ordinary selection behavior, while right-drag makes a selection and keeps the playhead at the drag-start edge: left for a left-to-right drag, right for a right-to-left drag. Tile playheads are restored with their editor state, using the same proportional position when a target tile has no saved playhead or a saved frame cannot fit. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop, with an Effect-color readout at its visible upper-left reporting the complete selection duration. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
+Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in the selected tile. A left click places the persistent edit playhead without changing the selection; a right click places it and plays from that point. Clicked playheads zero-snap by default (`playhead_zero_snap=0` opts into exact placement), and Space toggles playback from the playhead to the tile end regardless of selection. On an idle tile with neither a selection nor a playhead, Space creates the playhead at frame 0 and immediately plays. Middle-clicking the waveform or pressing Escape clears the selection and returns the playhead to frame 0. Left-drag keeps ordinary selection behavior, while right-drag makes a selection and keeps the playhead at the drag-start edge: left for a left-to-right drag, right for a right-to-left drag. Tile playheads are restored with their editor state, using the same proportional position when a target tile has no saved playhead or a saved frame cannot fit. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop, with an Effect-color readout at its visible upper-left reporting the complete selection duration. **SEL ALL**, `Ctrl+A`, and an unmodified double-left-click in the waveform select the exact half-open whole-tile range `[0, frames)`, including silent canvas margins. **SEL WAVE** instead selects from the first non-silent sample through one frame after the last non-silent sample, preparing the audible waveform for editing or Crop without changing the audio. If a sound has no mathematical sign crossing, ordinary dragged selection falls back deterministically to its closest-to-zero sample.
 
 The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. If no selection exists, Set Loop first selects and loops the exact whole tile. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape. Loop range, mode, and crossfade belong to the tile and participate in its Undo/Redo history.
 

@@ -17,3 +17,5 @@ playhead_zero_snap=1
 rotate_wheel_fine=5
 ; Zero-crossing candidates traversed by one Ctrl+wheel detent (20-100).
 rotate_wheel_coarse=50
+; Drone Maker internal-junction crossfade in milliseconds (1-1000, default 50).
+drone_crossfade_ms=50
