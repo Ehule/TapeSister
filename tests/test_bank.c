@@ -27,7 +27,7 @@ static void setup(TsInstrument *instrument)
 
 int main(void)
 {
-    TsInstrument bank, all, destinations, serial, restored;
+    TsInstrument bank, all, destinations, clone_reset, serial, restored;
     TsTearGesture tear;
     TsNoteBank notes;
     TsAuditionPlan plan;
@@ -41,9 +41,11 @@ int main(void)
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT) == TS_UI_BANK_ACTION_CAPTURE_CURRENT);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_ALT) == TS_UI_BANK_ACTION_CAPTURE_LOOP);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_CTRL) == TS_UI_BANK_ACTION_CAPTURE_SELECTION);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL) ==
+          TS_UI_BANK_ACTION_CLONE);
     CHECK(ts_ui_bank_action(1, 0) == TS_UI_BANK_ACTION_RENAME);
     CHECK(ts_ui_bank_action(1, TS_UI_BANK_MOD_SHIFT) == TS_UI_BANK_ACTION_CLEAR);
-    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL) ==
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_ALT) ==
           TS_UI_BANK_ACTION_INVALID);
 
     setup(&bank);
@@ -170,6 +172,81 @@ int main(void)
           ts_sample_hash(&destinations.bank[4].sample) == slot5_hash);
     remove("test-bank-load.wav");
 
+    ts_instrument_init(&clone_reset);
+    CHECK(ts_instrument_generate(&clone_reset, TS_GENERATOR_PULSE, 0x434c4f4eu,
+                                 error, sizeof(error)));
+    clone_reset.view_first = 100; clone_reset.view_last = 700;
+    ts_instrument_set_selection(&clone_reset, 150, 650);
+    clone_reset.has_loop = 1; clone_reset.loop_first = 180; clone_reset.loop_last = 620;
+    clone_reset.loop_mode = TS_LOOP_PING_PONG;
+    {
+        TsProcessRecipe clone_process = clone_reset.process;
+        clone_process.edge = 0.64f;
+        CHECK(ts_instrument_set_process(&clone_reset, &clone_process,
+                                        error, sizeof(error)));
+    }
+    CHECK(ts_instrument_apply_tear(&clone_reset, 0.62f, error, sizeof(error)));
+    CHECK(ts_instrument_apply_sample_edit(&clone_reset, TS_SAMPLE_EDIT_GAIN, 0.8f,
+                                          error, sizeof(error)));
+    CHECK(ts_instrument_undo(&clone_reset, error, sizeof(error)));
+    slot0_hash = ts_sample_hash(&clone_reset.current);
+    CHECK(clone_reset.post_edit_count == 1 && clone_reset.undo_count > 0 &&
+          clone_reset.redo_count == 1);
+    CHECK(ts_ui_execute_bank_action(&clone_reset, 5, TS_UI_BANK_ACTION_CLONE,
+                                    error, sizeof(error)));
+    CHECK(clone_reset.selected_slot == 5 && clone_reset.bank[0].occupied &&
+          clone_reset.bank[5].occupied &&
+          ts_sample_hash(&clone_reset.bank[0].sample) == slot0_hash &&
+          ts_sample_hash(&clone_reset.bank[5].sample) == slot0_hash &&
+          clone_reset.bank[0].sample.data != clone_reset.bank[5].sample.data &&
+          clone_reset.bank[0].edit_parent.data != clone_reset.bank[5].edit_parent.data &&
+          clone_reset.bank[0].undo != clone_reset.bank[5].undo &&
+          clone_reset.bank[0].redo != clone_reset.bank[5].redo);
+    CHECK(clone_reset.view_first == 100 && clone_reset.view_last == 700 &&
+          clone_reset.has_selection && clone_reset.selection_first == 150 &&
+          clone_reset.selection_last == 650 && clone_reset.has_loop &&
+          clone_reset.loop_first == 180 && clone_reset.loop_last == 620 &&
+          clone_reset.loop_mode == TS_LOOP_PING_PONG &&
+          fabsf(clone_reset.process.edge - 0.64f) < 0.0001f &&
+          clone_reset.post_edit_count == 1 && clone_reset.redo_count == 1);
+    CHECK(ts_instrument_apply_tear(&clone_reset, 0.91f, error, sizeof(error)));
+    slot5_hash = ts_sample_hash(&clone_reset.current);
+    CHECK(slot5_hash != slot0_hash &&
+          ts_sample_hash(&clone_reset.bank[0].sample) == slot0_hash);
+    {
+        int undo_before_reset = clone_reset.undo_count;
+        CHECK(ts_instrument_reset_current(&clone_reset, error, sizeof(error)));
+        CHECK(clone_reset.undo_count == undo_before_reset + 1 &&
+              ts_sample_hash(&clone_reset.current) ==
+                  ts_sample_hash(&clone_reset.parent) &&
+              ts_sample_hash(&clone_reset.bank[5].sample) ==
+                  ts_sample_hash(&clone_reset.current) &&
+              clone_reset.view_first == 0 &&
+              clone_reset.view_last == clone_reset.current.frames &&
+              !clone_reset.has_selection && !clone_reset.has_loop &&
+              clone_reset.post_edit_count == 0);
+        CHECK(ts_instrument_undo(&clone_reset, error, sizeof(error)) &&
+              ts_sample_hash(&clone_reset.current) == slot5_hash &&
+              clone_reset.view_first == 100 && clone_reset.view_last == 700 &&
+              clone_reset.has_selection && clone_reset.selection_first == 150 &&
+              clone_reset.selection_last == 650 && clone_reset.post_edit_count == 2);
+        CHECK(ts_instrument_redo(&clone_reset, error, sizeof(error)) &&
+              ts_sample_hash(&clone_reset.current) ==
+                  ts_sample_hash(&clone_reset.parent) &&
+              clone_reset.view_first == 0 &&
+              clone_reset.view_last == clone_reset.current.frames &&
+              !clone_reset.has_selection && clone_reset.post_edit_count == 0);
+    }
+    CHECK(ts_instrument_select_bank(&clone_reset, 0, error, sizeof(error)) &&
+          ts_sample_hash(&clone_reset.current) == slot0_hash &&
+          clone_reset.view_first == 100 && clone_reset.view_last == 700 &&
+          clone_reset.has_selection && clone_reset.post_edit_count == 1);
+    CHECK(ts_instrument_select_bank(&clone_reset, 5, error, sizeof(error)) &&
+          ts_sample_hash(&clone_reset.current) == ts_sample_hash(&clone_reset.parent) &&
+          clone_reset.view_first == 0 &&
+          clone_reset.view_last == clone_reset.current.frames &&
+          !clone_reset.has_selection && clone_reset.post_edit_count == 0);
+
     ts_instrument_init(&serial); ts_instrument_init(&restored);
     CHECK(ts_instrument_generate(&serial, TS_GENERATOR_PULSE, 0x42414e4bu,
                                  error, sizeof(error)));
@@ -262,6 +339,7 @@ int main(void)
     ts_instrument_free(&bank);
     ts_instrument_free(&all);
     ts_instrument_free(&destinations);
+    ts_instrument_free(&clone_reset);
     ts_instrument_free(&serial);
     ts_instrument_free(&restored);
     if (failures) return 1;

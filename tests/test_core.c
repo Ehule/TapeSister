@@ -1872,9 +1872,11 @@ int main(void)
           TS_UI_BANK_ACTION_CAPTURE_LOOP);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_CTRL) ==
           TS_UI_BANK_ACTION_CAPTURE_SELECTION);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL) ==
+          TS_UI_BANK_ACTION_CLONE);
     CHECK(ts_ui_bank_action(1, 0) == TS_UI_BANK_ACTION_RENAME);
     CHECK(ts_ui_bank_action(1, TS_UI_BANK_MOD_SHIFT) == TS_UI_BANK_ACTION_CLEAR);
-    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL) ==
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_ALT) ==
           TS_UI_BANK_ACTION_INVALID);
     ui.show_keyboard = 0;
     ui.show_recipes = 1;

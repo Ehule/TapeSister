@@ -38,7 +38,7 @@ springs back to zero after commit or Escape cancellation.
 
 ## A/B audition and playhead
 
-The **Source** and **Current** buttons choose what every playback trigger auditions without changing the editing target: edits, Save, and Export always operate on Current. `Ctrl+B` toggles the same selector. Each has its own viewport, so wheel/keyboard zoom, panning, Zoom Selection, Show All, and Play View work directly on the waveform currently displayed without disturbing the other view.
+`Ctrl+B` toggles Source/Current audition without changing the editing target: edits, Save, and Export always operate on Current. Each has its own viewport, so wheel/keyboard zoom, panning, Zoom Selection, Show All, and Play View work directly on the waveform currently displayed without disturbing the other view.
 
 Play All and keyboard notes use the complete chosen source. Play Selection and Play Displayed map Current's crop-relative range back to the matching frames in Source, so comparisons remain meaningful after cropping. Switching Source/Current during playback preserves fractional progress through the active range instead of restarting it.
 
@@ -76,13 +76,14 @@ Every handoff WAV includes root/fine-tune metadata plus loop start, inclusive en
 
 ## Sound collection and variation
 
-Every newly created or imported sound starts a 16-slot collection with its initial Source copied into slot 01. Commit can promote Current without replacing that collection Source. Slots 02–16 can capture three useful zero-aligned forms:
+Every newly created or imported sound starts a 16-slot collection with its initial Source copied into slot 01. Commit can promote Current without replacing that collection material. All 16 slots are peers, and any empty slot can capture three useful zero-aligned forms:
 
 - Shift-click an empty slot to capture all of Current;
 - Alt-click an empty slot to capture the active Loop, including its crossfade setting; or
-- Ctrl-click an empty slot to capture the snapped Selection.
+- Ctrl-click an empty slot to capture the snapped Selection; or
+- Ctrl+Shift-click an empty slot to Clone the active tile's complete editable state and history.
 
-Click any slot to audition it and place that sound in the waveform display; an empty slot produces silence and a blank waveform. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. While a filled bank waveform is visible, the Loop page edits that slot directly. Right-click an occupied slot 02–16 to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click, empties slots 02–16, and preserves the fixed Source in slot 01 so creation and variation remain usable.
+Click an occupied slot to select its independent editable state and audition it. Click an empty slot to select that exact CREATE/LOAD destination without auditioning. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. While a filled bank waveform is visible, the Loop page edits that slot directly. Right-click any occupied slot to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click and empties all 16 peer slots.
 
 The **Variation** page selects Close, Wide, or Radical and sets Amount from 0–100%. Close makes a restrained deterministic variation of the chosen sound; Wide allows a larger timbral and structural departure; Radical creates a new Tonal, Metallic, Noise, or Pulse source. Loop, Duration, Pitch, Envelope, and Spectral locks protect those traits. Colored lines identify Source, Kept, Close, Wide, and Radical results, while the waveform header names each result's direct source slot.
 
@@ -201,6 +202,7 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`
 - Select all: `Ctrl+A`
 - Reverse / Normalize: `Ctrl+R` / `Ctrl+N`
+- Reset active Current to its Parent: `Ctrl+Shift+R`
 - Fade in / Fade out: `Ctrl+I` / `Ctrl+U`
 - Amplify up/down 3 dB: `Ctrl+Up` / `Ctrl+Down`
 - Zoom in/out: `=` or `+` / `-`

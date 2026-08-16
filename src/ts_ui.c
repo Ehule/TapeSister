@@ -821,7 +821,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 11, 318,
              ui->fx_page == TS_FX_FAMILY ?
              "CREATE ADDS SLOT  VARY RELATED  SHIFT PROMOTES  CTRL CREATE RADICAL" :
-             "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  RMB RENAME  SHIFT+RMB CLEAR",
+             "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  CTRL+SHIFT CLONE  RMB NAME  SHIFT+RMB CLEAR",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
             const TsBankSlot *slot = &instrument->bank[i];
@@ -958,6 +958,8 @@ TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)
     if (relevant == TS_UI_BANK_MOD_SHIFT) return TS_UI_BANK_ACTION_CAPTURE_CURRENT;
     if (relevant == TS_UI_BANK_MOD_ALT) return TS_UI_BANK_ACTION_CAPTURE_LOOP;
     if (relevant == TS_UI_BANK_MOD_CTRL) return TS_UI_BANK_ACTION_CAPTURE_SELECTION;
+    if (relevant == (TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_SHIFT))
+        return TS_UI_BANK_ACTION_CLONE;
     return TS_UI_BANK_ACTION_INVALID;
 }
 
@@ -982,6 +984,8 @@ int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
         return ts_instrument_bank_capture(instrument, slot,
                                           TS_BANK_CAPTURE_SELECTION,
                                           error, error_size);
+    if (action == TS_UI_BANK_ACTION_CLONE)
+        return ts_instrument_copy_selected(instrument, slot, error, error_size);
     if (action == TS_UI_BANK_ACTION_CLEAR)
         return ts_instrument_bank_clear(instrument, slot, error, error_size);
     if (action == TS_UI_BANK_ACTION_AUDITION)

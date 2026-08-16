@@ -1428,6 +1428,22 @@ static void capture_bank_slot(SDL_AudioDeviceID device, TsUiState *ui,
     else snprintf(ui->status, sizeof(ui->status), "BANK CAPTURE FAILED: %.130s", error);
 }
 
+static void clone_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
+                            TsUiState *ui, TsInstrument *instrument, int slot)
+{
+    char error[160];
+    int ok;
+    lock_edit(device, audio);
+    ok = ts_ui_execute_bank_action(instrument, slot, TS_UI_BANK_ACTION_CLONE,
+                                   error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 "CLONED ACTIVE TILE TO BANK %02d - INDEPENDENT EDIT COPY", slot + 1);
+    else
+        snprintf(ui->status, sizeof(ui->status), "BANK CLONE FAILED: %.132s", error);
+}
+
 static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
                             TsUiState *ui, TsInstrument *instrument, int slot)
 {
@@ -2409,6 +2425,8 @@ int main(int argc, char **argv)
                     ui.bank_view_slot = -1;
                     ts_instrument_set_selection(&instrument, 0, instrument.current.frames);
                     snprintf(ui.status, sizeof(ui.status), "SELECTED ALL CURRENT");
+                } else if ((mod & KMOD_CTRL) && (mod & KMOD_SHIFT) && key == SDLK_r) {
+                    reset_current(device, &audio, &ui, &instrument);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_r) {
                     apply_sample_edit(device, &audio, &ui, &instrument,
                                       TS_SAMPLE_EDIT_REVERSE, 1.0f);
@@ -3219,6 +3237,8 @@ int main(int argc, char **argv)
                         } else if (action == TS_UI_BANK_ACTION_CAPTURE_SELECTION) {
                             capture_bank_slot(device, &ui, &instrument, bank_slot,
                                               action);
+                        } else if (action == TS_UI_BANK_ACTION_CLONE) {
+                            clone_bank_slot(device, &audio, &ui, &instrument, bank_slot);
                         } else {
                             snprintf(ui.status, sizeof(ui.status),
                                      "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL");

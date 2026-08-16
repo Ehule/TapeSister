@@ -2204,7 +2204,7 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
     instrument->post_edit_count = 0;
-    return 1;
+    return bank_sync_selected(instrument, error, error_size);
 }
 
 int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t error_size)
@@ -2907,11 +2907,11 @@ int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
     int source;
     if (instrument == NULL || destination_slot < 0 || destination_slot >= TS_BANK_SLOT_COUNT ||
         instrument->bank[destination_slot].occupied) {
-        set_error(error, error_size, "Shift-copy needs an empty destination tile"); return 0;
+        set_error(error, error_size, "Clone needs an empty destination tile"); return 0;
     }
     source = instrument->selected_slot;
     if (source < 0 || source >= TS_BANK_SLOT_COUNT || !instrument->bank[source].occupied) {
-        set_error(error, error_size, "Select an occupied tile before Shift-copy"); return 0;
+        set_error(error, error_size, "Select an occupied tile before Clone"); return 0;
     }
     if (!ts_instrument_select_bank(instrument, source, error, error_size) ||
         !bank_sync_selected(instrument, error, error_size)) return 0;
