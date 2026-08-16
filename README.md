@@ -13,6 +13,12 @@ With no waveform selection, Create and Load replace only the selected tile. With
 Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
 number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead.
+Alt+wheel expands or contracts the selection endpoint on the pointer's side of its
+center. Shift+Alt+wheel changes the selected audio by one tape-speed semitone per
+detent around the visible playhead (or the selection center when it lies outside):
+expansion blends into neighboring audio, contraction severs at zero crossings, and
+the waveform reports the resulting pitch and time ratio. Each tape-length step is
+undoable.
 Set `rotate_wheel_fine` (1–20, default 5) and `rotate_wheel_coarse` (20–100,
 default 50) in the `[Waveform]` section of `tapesister.ini`.
 
@@ -33,13 +39,13 @@ springs back to zero after commit or Escape cancellation.
 
 ## Zero-snapped selection and loop modes
 
-Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in the selected tile. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop, with an Effect-color readout at its visible upper-left reporting the complete selection duration. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
+Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in the selected tile. A left click places the persistent edit playhead without changing the selection; a right click places it and plays from that point. Left-drag keeps ordinary selection behavior, while right-drag makes a selection and snaps the playhead to its left edge. Tile playheads are restored with their editor state, using the same proportional position when a target tile has no saved playhead or a saved frame cannot fit. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop, with an Effect-color readout at its visible upper-left reporting the complete selection duration. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
 
 The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. If no selection exists, Set Loop first selects and loops the exact whole tile. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape. Loop range, mode, and crossfade belong to the tile and participate in its Undo/Redo history.
 
 The compact workbench **LOOP** button follows the current selection, or the visible view when there is no selection. Shift-clicking it enables **LOOP LOCK**, which stays active while occupied tiles are selected and immediately follows each tile's restored selection/view. Click LOOP again, press Space, or select an empty tile to stop and release the lock.
 
-The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary unmodified click or computer-key note clears the chord and returns to momentary audition. Hover KEYS and use Shift+wheel to cycle its starting octave, or choose octaves 0–7 directly with F1–F8. Octave navigation never stops the latched chord, so another Shift-click can add a note from the new octave. Sustained voices follow the selected tile.
+The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary unmodified click or computer-key note clears the chord and returns to momentary audition. Hover KEYS and use Shift+wheel to move its starting note one semitone at a time, or choose C0–C7 directly with F1–F8. Keyboard navigation never stops the latched chord, so another Shift-click can add a note from the new range. Sustained voices follow the selected tile.
 
 TapeSister starts in FT2-style borderless desktop fullscreen. **Alt+Enter** toggles between fullscreen and a normal resizable window without changing the active tile, selection, clipboard, or playback state. Escape first cancels an active dialog, preview, or editing gesture; otherwise it stops playback and opens the exit confirmation. Closing the window uses the same confirmation, with an explicit warning whenever the instrument or collection differs from the last opened or saved TSR project.
 
@@ -137,7 +143,7 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 
 ## Editor slice
 
-- drag across the waveform to select a range;
+- click to place the playhead, right-click to play from it, or drag to select a range;
 - mouse-wheel zoom anchored to the sample beneath the pointer;
 - Shift+wheel panning, direct `=` or `+` / `-` keyboard zoom, arrow-key panning, and `0` Show All;
 - Play All, Play Selection, and Play Displayed;
@@ -147,7 +153,7 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - cross-tile Copy, ripple Cut, exact Paste, and duration-preserving Fit Paste;
 - selection-scoped Create and Vary FM stamping;
 - Undo and Redo for processing, crop, and sample-edit operations;
-- two-octave computer and onscreen keyboard audition with Shift+wheel/F1–F8 octave selection;
+- two-octave computer and onscreen keyboard audition with semitone Shift+wheel movement and F1–F8 octave selection;
 - mono PCM/float WAV loading, including multichannel fold-down;
 - self-contained project saving with all bank slots, tuning, editor state, selection, loop metadata, edit timelines, and DSP parameters; and
 - mono 16-bit selected-tile export with sampler-compatible root/fine-tune and loop metadata.
@@ -171,7 +177,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR16 stores every occupied tile as a complete independent object: audio, private render baseline, tuning, loop, selection, viewport, processing and edit timelines, Undo/Redo stacks, and the audio patches needed to replay Paste and FM stamp history. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR15 remain loadable for compatibility. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR17 stores every occupied tile as a complete independent object: audio, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, and the audio patches needed to replay Paste, FM stamp, and tape-length history. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR16 remain loadable for compatibility. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 

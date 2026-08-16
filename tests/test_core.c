@@ -1852,7 +1852,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR16", 5) == 0);
+        CHECK(memcmp(magic, "TSR17", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -2268,6 +2268,9 @@ int main(void)
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     ts_ui_init(&ui);
     CHECK(ui.keyboard_octave == 3 && ts_ui_keyboard_base_note(&ui) == 48);
+    CHECK(ts_ui_keyboard_shift_semitone(&ui, 1) == 49 &&
+          ts_ui_keyboard_base_note(&ui) == 49);
+    CHECK(ts_ui_keyboard_shift_semitone(&ui, -1) == 48);
     CHECK(ts_ui_keyboard_cycle_octave(&ui, 1) == 4 &&
           ts_ui_keyboard_base_note(&ui) == 60);
     CHECK(ts_ui_keyboard_set_octave(&ui, 7) == 7 &&
@@ -2566,6 +2569,24 @@ int main(void)
     ts_ui_render(&fb, &ui, &imported);
     CHECK(fb.pixels[370 * TS_UI_WIDTH + 116] == 0xffffd265u);
     CHECK(fb.pixels[370 * TS_UI_WIDTH + 73] == 0xffdcd8cfu);
+    ui.active_notes = 0;
+    ui.playback_active = 0;
+    ui.audition_source = TS_AUDITION_CURRENT;
+    ts_instrument_show_all(&imported);
+    ts_instrument_set_playhead(&imported, imported.current.frames / 3u);
+    ts_ui_render(&fb, &ui, &imported);
+    CHECK(framebuffer_color_count(&fb, 0xffffd265u,
+                                  TS_WAVE_X + TS_WAVE_W / 3 - 2,
+                                  TS_WAVE_Y, 5, 4) > 0);
+    {
+        uint64_t before_stretch_readout = waveform_hash(&fb);
+    ui.has_stretch_readout = 1;
+    ui.stretch_pitch_semitones = -1.0f;
+    ui.stretch_duration_ratio = powf(2.0f, 1.0f / 12.0f);
+    ts_ui_render(&fb, &ui, &imported);
+        CHECK(waveform_hash(&fb) != before_stretch_readout);
+    }
+    ui.has_stretch_readout = 0;
     ui.playback_active = 1;
     ui.playhead_source = TS_AUDITION_CURRENT;
     ui.playhead_frame = imported.current.frames / 2;
@@ -2924,6 +2945,85 @@ int main(void)
         ts_sample_free(&known); ts_sample_free(&reopened_wav);
         ts_instrument_free(&load_bank); ts_instrument_free(&empty_first);
         ts_instrument_free(&reopened_bank);
+    }
+
+    {
+        TsInstrument stretch;
+        TsInstrument stretch_reopened;
+        uint64_t before_hash;
+        uint64_t expanded_hash;
+        size_t first;
+        size_t last;
+        size_t before_frames;
+        size_t expanded_frames;
+        size_t mapped_expected;
+        float pitch = 0.0f;
+        ts_instrument_init(&stretch);
+        ts_instrument_init(&stretch_reopened);
+        CHECK(ts_instrument_generate(&stretch, TS_GENERATOR_FM,
+                                     0x53545231u, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&stretch, 1, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&stretch, 0x53545232u,
+                                            error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&stretch, 0, error, sizeof(error)));
+        first = stretch.current.frames / 4u;
+        last = stretch.current.frames * 3u / 4u;
+        ts_instrument_set_selection_snapped(&stretch, first, last);
+        first = stretch.selection_first;
+        last = stretch.selection_last;
+        before_frames = last - first;
+        ts_instrument_set_playhead(&stretch, first + before_frames / 3u);
+        CHECK(stretch.has_playhead && stretch.playhead_frame >= first &&
+              stretch.playhead_frame < last);
+        {
+            size_t original_first = stretch.selection_first;
+            CHECK(ts_instrument_resize_selection(&stretch, 1, 1, 1));
+            CHECK(stretch.selection_first < original_first &&
+                  stretch.selection_last == last);
+            ts_instrument_set_selection(&stretch, first, last);
+        }
+        before_hash = ts_sample_hash(&stretch.current);
+        CHECK(ts_instrument_stretch_selection(
+            &stretch, stretch.playhead_frame, powf(2.0f, 1.0f / 12.0f),
+            &pitch, error, sizeof(error)));
+        expanded_frames = stretch.selection_last - stretch.selection_first;
+        expanded_hash = ts_sample_hash(&stretch.current);
+        CHECK(expanded_frames > before_frames && expanded_hash != before_hash);
+        CHECK(pitch < 0.0f && fabsf(pitch + 1.0f) < 0.35f);
+        CHECK(stretch.current.frames == stretch.bank[0].sample.frames);
+        CHECK(stretch.has_playhead);
+        CHECK(ts_instrument_undo(&stretch, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == before_hash &&
+              stretch.selection_first == first && stretch.selection_last == last &&
+              stretch.has_playhead);
+        CHECK(ts_instrument_redo(&stretch, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == expanded_hash &&
+              stretch.selection_last - stretch.selection_first == expanded_frames);
+        CHECK(ts_instrument_stretch_selection(
+            &stretch, stretch.playhead_frame, powf(2.0f, -1.0f / 12.0f),
+            &pitch, error, sizeof(error)));
+        CHECK(stretch.selection_last - stretch.selection_first < expanded_frames &&
+              pitch > 0.0f);
+        CHECK(ts_instrument_undo(&stretch, error, sizeof(error)) &&
+              ts_sample_hash(&stretch.current) == expanded_hash);
+        CHECK(ts_instrument_save_recipe(&stretch, "test-stretch.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&stretch_reopened, "test-stretch.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch_reopened.current) == expanded_hash &&
+              stretch_reopened.has_playhead &&
+              stretch_reopened.playhead_frame == stretch.playhead_frame);
+        mapped_expected = stretch.current.frames > 1u ?
+            (size_t)llround((double)stretch.playhead_frame *
+                            (double)(stretch.bank[1].sample.frames - 1u) /
+                            (double)(stretch.current.frames - 1u)) : 0u;
+        CHECK(ts_instrument_select_bank(&stretch, 1, error, sizeof(error)));
+        CHECK(stretch.has_playhead && stretch.playhead_frame == mapped_expected);
+        CHECK(ts_instrument_select_bank(&stretch, 0, error, sizeof(error)));
+        CHECK(stretch.has_playhead);
+        remove("test-stretch.tsr");
+        ts_instrument_free(&stretch);
+        ts_instrument_free(&stretch_reopened);
     }
 
     ts_sample_free(&a); ts_sample_free(&b); ts_sample_free(&loaded); ts_sample_free(&copy);

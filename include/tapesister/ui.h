@@ -126,6 +126,7 @@ typedef struct {
     int text_cursor_visible;
     int show_keyboard;
     int keyboard_octave;
+    int keyboard_base_note;
     int show_recipes;
     int show_ingredients;
     int workbench_loop_active;
@@ -150,6 +151,10 @@ typedef struct {
     int loop_drag_started;
     int tape_dragging;
     int tape_drag_button;
+    int wave_pointer_pending;
+    int wave_pointer_button;
+    int wave_pointer_start_x;
+    int selecting_button;
     TsPostEditKind tape_drag_kind;
     TsFxPage fx_page;
     TsAuditionSource audition_source;
@@ -177,6 +182,9 @@ typedef struct {
     uint32_t tear_last_audition_ms;
     int tear_dragging;
     int tear_wheel_active;
+    int has_stretch_readout;
+    float stretch_pitch_semitones;
+    float stretch_duration_ratio;
     int has_pitch_suggestion;
     size_t selection_anchor;
     size_t tape_source_first;
@@ -208,6 +216,7 @@ int ts_ui_key_from_point(int x, int y);
 int ts_ui_keyboard_base_note(const TsUiState *ui);
 int ts_ui_keyboard_set_octave(TsUiState *ui, int octave);
 int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount);
+int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount);
 int ts_ui_config_field_from_point(int x, int y);
 size_t ts_ui_config_cursor_from_point(const TsUiState *ui,
                                       TsConfigField field, int x);

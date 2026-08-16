@@ -486,6 +486,7 @@ void ts_ui_init(TsUiState *ui)
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->show_keyboard = 1;
     ui->keyboard_octave = 3;
+    ui->keyboard_base_note = 48;
     ui->show_recipes = 0;
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
@@ -666,10 +667,10 @@ static int cycle_index(int value, int amount, int count)
 
 int ts_ui_keyboard_base_note(const TsUiState *ui)
 {
-    int octave = ui != NULL ? ui->keyboard_octave : 3;
-    if (octave < 0) octave = 0;
-    if (octave > 7) octave = 7;
-    return (octave + 1) * 12;
+    int note = ui != NULL ? ui->keyboard_base_note : 48;
+    if (note < 0) note = 0;
+    if (note > 104) note = 104;
+    return note;
 }
 
 int ts_ui_keyboard_set_octave(TsUiState *ui, int octave)
@@ -678,6 +679,7 @@ int ts_ui_keyboard_set_octave(TsUiState *ui, int octave)
     if (octave < 0) octave = 0;
     if (octave > 7) octave = 7;
     ui->keyboard_octave = octave;
+    ui->keyboard_base_note = (octave + 1) * 12;
     return octave;
 }
 
@@ -685,7 +687,22 @@ int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount)
 {
     if (ui == NULL) return 3;
     ui->keyboard_octave = cycle_index(ui->keyboard_octave, amount, 8);
+    ui->keyboard_base_note = (ui->keyboard_octave + 1) * 12;
     return ui->keyboard_octave;
+}
+
+int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount)
+{
+    int note;
+    if (ui == NULL) return 48;
+    note = ui->keyboard_base_note + amount;
+    if (note < 0) note = 0;
+    if (note > 104) note = 104;
+    ui->keyboard_base_note = note;
+    ui->keyboard_octave = note / 12 - 1;
+    if (ui->keyboard_octave < 0) ui->keyboard_octave = 0;
+    if (ui->keyboard_octave > 7) ui->keyboard_octave = 7;
+    return note;
 }
 
 int ts_ui_palette_cycle_entry(int entry, int amount)
@@ -1052,15 +1069,33 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         wave_text(fb, selection_x + 4, TS_WAVE_Y + 5, duration, PAL_EFFECT, 1);
     }
 
-    if (ui->playback_active && ui->playhead_frames > 0) {
+    if (ui->has_stretch_readout) {
+        char pitch[64];
+        snprintf(pitch, sizeof(pitch), "PITCH %+.2F ST  TIME X%.3F",
+                 ui->stretch_pitch_semitones,
+                 ui->stretch_duration_ratio);
+        wave_text(fb, TS_WAVE_X + TS_WAVE_W - 200, TS_WAVE_Y + 5,
+                  pitch, PAL_EFFECT, 1);
+    }
+
+    {
         int playhead_x = -1;
-        uint32_t playhead_color = ui->playhead_source == TS_AUDITION_PARENT ?
-                                  PAL_INSTRUMENT : PAL_MOUSE;
-        if (((showing_bank && ui->playhead_bank_slot == ui->bank_view_slot) ||
+        uint32_t playhead_color = PAL_MOUSE;
+        int playback_matches = ui->playback_active && ui->playhead_frames > 0 &&
+            ((showing_bank && ui->playhead_bank_slot == ui->bank_view_slot) ||
              (!showing_bank && ui->playhead_bank_slot < 0 &&
-              ui->playhead_source == ui->audition_source)) &&
-            ui->playhead_frame >= view_first && ui->playhead_frame <= view_last) {
+              ui->playhead_source == ui->audition_source));
+        if (playback_matches && ui->playhead_frame >= view_first &&
+            ui->playhead_frame <= view_last) {
+            playhead_color = ui->playhead_source == TS_AUDITION_PARENT ?
+                             PAL_INSTRUMENT : PAL_MOUSE;
             playhead_x = frame_x(ui->playhead_frame, view_first, view_last);
+        } else if (!showing_bank && instrument->has_playhead) {
+            size_t editor_playhead = ui->audition_source == TS_AUDITION_PARENT ?
+                instrument->crop_first + instrument->playhead_frame :
+                instrument->playhead_frame;
+            if (editor_playhead >= view_first && editor_playhead <= view_last)
+                playhead_x = frame_x(editor_playhead, view_first, view_last);
         }
         if (playhead_x >= TS_WAVE_X && playhead_x <= TS_WAVE_X + TS_WAVE_W) {
             if (playhead_x == TS_WAVE_X + TS_WAVE_W) --playhead_x;
@@ -1200,9 +1235,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 
     if (ui->show_keyboard) {
         char keyboard_hint[96];
+        char base_note[8];
         snprintf(keyboard_hint, sizeof(keyboard_hint),
-                 "OCT %d  SHIFT+WHEEL / F1-F8  SHIFT+CLICK CHORD  SHIFT+RMB ROOT",
-                 ui->keyboard_octave);
+                 "KEY %s  SHIFT+WHEEL SEMITONE / F1-F8  SHIFT+CLICK CHORD",
+                 ts_midi_note_name(ts_ui_keyboard_base_note(ui),
+                                   base_note, sizeof(base_note)));
         text(fb, 11, 318, keyboard_hint, RGB(184, 180, 184), 1);
         const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
         const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};

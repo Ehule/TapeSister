@@ -64,6 +64,30 @@ int main(int argc, char **argv)
                  "glass-harmonic-source.wav");
         snprintf(ui.status, sizeof(ui.status),
                  "CHOOSE PASTE, FIT, OR CANCEL FOR THE SELECTED RANGE");
+    } else if (argc > 2 && strcmp(argv[2], "stretch") == 0) {
+        float pitch = 0.0f;
+        size_t before;
+        ts_instrument_set_selection_snapped(&instrument,
+                                            instrument.current.frames / 4u,
+                                            instrument.current.frames * 3u / 4u);
+        before = instrument.selection_last - instrument.selection_first;
+        ts_instrument_set_playhead(&instrument,
+                                   instrument.selection_first + before / 3u);
+        if (!ts_instrument_stretch_selection(&instrument,
+                                             instrument.playhead_frame,
+                                             1.0594631f, &pitch,
+                                             error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ui.has_stretch_readout = 1;
+        ui.stretch_pitch_semitones = pitch;
+        ui.stretch_duration_ratio =
+            (float)(instrument.selection_last - instrument.selection_first) /
+            (float)before;
+        snprintf(ui.status, sizeof(ui.status),
+                 "PLAYHEAD-ANCHORED TAPE EXPANSION - UNDOABLE");
     } else if (argc > 2 && strcmp(argv[2], "ab") == 0) {
         ui.audition_source = TS_AUDITION_PARENT;
         ui.playback_active = 1;

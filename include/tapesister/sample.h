@@ -154,7 +154,9 @@ typedef enum {
     TS_POST_TEAR,
     TS_POST_DELETE,
     TS_POST_PATCH_REPLACE,
-    TS_POST_PATCH_FIT
+    TS_POST_PATCH_FIT,
+    TS_POST_PATCH_STRETCH_EXPAND,
+    TS_POST_PATCH_STRETCH_CONTRACT
 } TsPostEditKind;
 
 typedef struct {
@@ -203,6 +205,7 @@ typedef struct {
     size_t crop_last;
     size_t selection_first;
     size_t selection_last;
+    size_t playhead_frame;
     size_t view_first;
     size_t view_last;
     size_t loop_first;
@@ -210,6 +213,7 @@ typedef struct {
     float loop_crossfade_ms;
     TsLoopMode loop_mode;
     int has_selection;
+    int has_playhead;
     int has_loop;
     TsTuning tuning;
     TsTuning audible_tuning;
@@ -273,6 +277,7 @@ typedef struct {
     size_t crop_last;
     size_t selection_first;
     size_t selection_last;
+    size_t playhead_frame;
     size_t view_first;
     size_t view_last;
     size_t loop_first;
@@ -280,6 +285,7 @@ typedef struct {
     float loop_crossfade_ms;
     TsLoopMode loop_mode;
     int has_selection;
+    int has_playhead;
     int has_loop;
     TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
     int sample_edit_count;
@@ -363,6 +369,13 @@ int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t e
 void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t last);
 void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last);
 void ts_instrument_clear_selection(TsInstrument *instrument);
+void ts_instrument_set_playhead(TsInstrument *instrument, size_t frame);
+void ts_instrument_clear_playhead(TsInstrument *instrument);
+int ts_instrument_resize_selection(TsInstrument *instrument, int endpoint,
+                                   int expand, size_t crossing_count);
+int ts_instrument_stretch_selection(TsInstrument *instrument, size_t pivot,
+                                    float duration_ratio, float *pitch_semitones,
+                                    char *error, size_t error_size);
 size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame);
 int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
                                           char *error, size_t error_size);

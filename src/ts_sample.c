@@ -1259,6 +1259,7 @@ static TsEditSnapshot snapshot(const TsInstrument *instrument)
     result.crop_last = instrument->crop_last;
     result.selection_first = instrument->selection_first;
     result.selection_last = instrument->selection_last;
+    result.playhead_frame = instrument->playhead_frame;
     result.view_first = instrument->view_first;
     result.view_last = instrument->view_last;
     result.loop_first = instrument->loop_first;
@@ -1266,6 +1267,7 @@ static TsEditSnapshot snapshot(const TsInstrument *instrument)
     result.loop_crossfade_ms = instrument->loop_crossfade_ms;
     result.loop_mode = instrument->loop_mode;
     result.has_selection = instrument->has_selection;
+    result.has_playhead = instrument->has_playhead;
     result.has_loop = instrument->has_loop;
     result.tuning = instrument->tuning;
     result.audible_tuning = instrument->audible_tuning;
@@ -1299,6 +1301,8 @@ static void reset_editor(TsInstrument *instrument)
     instrument->selection_first = 0;
     instrument->selection_last = 0;
     instrument->has_selection = 0;
+    instrument->playhead_frame = 0;
+    instrument->has_playhead = 0;
     instrument->view_first = 0;
     instrument->view_last = instrument->parent.frames;
     instrument->loop_first = 0;
@@ -1672,6 +1676,91 @@ static const TsAudioPatch *audio_patch_for_operation(const TsInstrument *instrum
     return &slot->patches[operation->patch_index];
 }
 
+static int stretch_patch_range(TsSample *sample, const TsSample *patch,
+                               size_t original_first, size_t original_last,
+                               size_t target_first, int contracting,
+                               size_t fade, char *error, size_t error_size)
+{
+    if (sample == NULL || sample->data == NULL || patch == NULL || patch->data == NULL ||
+        original_first >= original_last || original_last > sample->frames ||
+        patch->frames == 0 || target_first > sample->frames ||
+        patch->frames > sample->frames - target_first) {
+        set_error(error, error_size, "Invalid tape stretch range");
+        return 0;
+    }
+    if (fade > patch->frames / 2u) fade = patch->frames / 2u;
+    if (contracting) {
+        for (size_t frame = original_first; frame < original_last; ++frame)
+            sample->data[frame] = 0.0f;
+        for (size_t i = 0; i < fade; ++i) {
+            float gain = (float)(i + 1u) / (float)(fade + 1u);
+            if (original_first > i)
+                sample->data[original_first - 1u - i] *= gain;
+            if (original_last + i < sample->frames)
+                sample->data[original_last + i] *= gain;
+        }
+        for (size_t i = 0; i < patch->frames; ++i) {
+            float gain = 1.0f;
+            if (fade > 0u) {
+                if (i < fade) gain = (float)(i + 1u) / (float)(fade + 1u);
+                if (patch->frames - 1u - i < fade) {
+                    float tail = (float)(patch->frames - i) / (float)(fade + 1u);
+                    if (tail < gain) gain = tail;
+                }
+            }
+            sample->data[target_first + i] = patch->data[i] * gain;
+        }
+    } else {
+        float source_peak = 0.0f;
+        float destination_peak = 0.0f;
+        float summed_peak = 0.0f;
+        float mix_scale = 1.0f;
+        for (size_t i = 0; i < patch->frames; ++i) {
+            size_t at = target_first + i;
+            float edge_gain = 1.0f;
+            float source;
+            float summed;
+            if (at >= original_first && at < original_last) continue;
+            if (fade > 0u) {
+                if (i < fade) edge_gain = (float)(i + 1u) / (float)(fade + 1u);
+                if (patch->frames - 1u - i < fade) {
+                    float tail = (float)(patch->frames - i) / (float)(fade + 1u);
+                    if (tail < edge_gain) edge_gain = tail;
+                }
+            }
+            source = patch->data[i] * edge_gain;
+            summed = sample->data[at] + source;
+            if (fabsf(source) > source_peak) source_peak = fabsf(source);
+            if (fabsf(sample->data[at]) > destination_peak)
+                destination_peak = fabsf(sample->data[at]);
+            if (fabsf(summed) > summed_peak) summed_peak = fabsf(summed);
+        }
+        if (summed_peak > 0.0000001f) {
+            float wanted = source_peak > destination_peak ? source_peak : destination_peak;
+            if (wanted > 0.0000001f && wanted < summed_peak) mix_scale = wanted / summed_peak;
+        }
+        for (size_t i = 0; i < patch->frames; ++i) {
+            size_t at = target_first + i;
+            if (at >= original_first && at < original_last) {
+                sample->data[at] = patch->data[i];
+            } else {
+                float edge_gain = 1.0f;
+                if (fade > 0u) {
+                    if (i < fade) edge_gain = (float)(i + 1u) / (float)(fade + 1u);
+                    if (patch->frames - 1u - i < fade) {
+                        float tail = (float)(patch->frames - i) / (float)(fade + 1u);
+                        if (tail < edge_gain) edge_gain = tail;
+                    }
+                }
+                sample->data[at] = clampf(sample->data[at] +
+                                          patch->data[i] * edge_gain * mix_scale,
+                                          -1.0f, 1.0f);
+            }
+        }
+    }
+    return 1;
+}
+
 static int render_snapshot(TsSample *destination, const TsInstrument *instrument,
                            const TsEditSnapshot *state, char *error, size_t error_size)
 {
@@ -1704,6 +1793,20 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
             if (!patch_range(destination, &patch->sample, first, last,
                              operation->kind == TS_POST_PATCH_FIT,
                              error, error_size)) return 0;
+            continue;
+        }
+        if (operation->kind == TS_POST_PATCH_STRETCH_EXPAND ||
+            operation->kind == TS_POST_PATCH_STRETCH_CONTRACT) {
+            const TsAudioPatch *patch = audio_patch_for_operation(instrument, operation);
+            if (patch == NULL || operation->destination < 0) {
+                set_error(error, error_size, "Tape stretch source is missing from this tile");
+                return 0;
+            }
+            if (!stretch_patch_range(destination, &patch->sample, first, last,
+                                     (size_t)operation->destination,
+                                     operation->kind == TS_POST_PATCH_STRETCH_CONTRACT,
+                                     operation->crossfade_frames,
+                                     error, error_size)) return 0;
             continue;
         }
         if (first > destination->frames) first = destination->frames;
@@ -2475,6 +2578,70 @@ void ts_instrument_clear_selection(TsInstrument *instrument)
     instrument->has_selection = 0;
 }
 
+void ts_instrument_set_playhead(TsInstrument *instrument, size_t frame)
+{
+    if (instrument == NULL || instrument->current.data == NULL ||
+        instrument->current.frames == 0) return;
+    if (frame >= instrument->current.frames) frame = instrument->current.frames - 1u;
+    instrument->playhead_frame = frame;
+    instrument->has_playhead = 1;
+}
+
+void ts_instrument_clear_playhead(TsInstrument *instrument)
+{
+    if (instrument == NULL) return;
+    instrument->playhead_frame = 0;
+    instrument->has_playhead = 0;
+}
+
+static size_t directional_zero_crossing(const TsSample *sample, size_t frame,
+                                        int direction, size_t count)
+{
+    size_t at;
+    if (sample == NULL || sample->data == NULL || sample->frames == 0 || count == 0)
+        return frame;
+    at = frame > sample->frames ? sample->frames : frame;
+    while (count > 0) {
+        if (direction < 0) {
+            if (at == 0) return 0;
+            --at;
+            while (at > 0 && !is_zero_crossing(sample, at)) --at;
+        } else {
+            if (at >= sample->frames) return sample->frames;
+            ++at;
+            while (at < sample->frames && !is_zero_crossing(sample, at)) ++at;
+        }
+        --count;
+    }
+    return at;
+}
+
+int ts_instrument_resize_selection(TsInstrument *instrument, int endpoint,
+                                   int expand, size_t crossing_count)
+{
+    size_t moved;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        !instrument->has_selection ||
+        instrument->selection_last <= instrument->selection_first ||
+        (endpoint != 1 && endpoint != 2) || crossing_count == 0) return 0;
+    if (endpoint == 1) {
+        moved = directional_zero_crossing(&instrument->current,
+                                          instrument->selection_first,
+                                          expand ? -1 : 1, crossing_count);
+        if (moved >= instrument->selection_last) return 0;
+        if (moved == instrument->selection_first) return 0;
+        instrument->selection_first = moved;
+    } else {
+        moved = directional_zero_crossing(&instrument->current,
+                                          instrument->selection_last,
+                                          expand ? 1 : -1, crossing_count);
+        if (moved <= instrument->selection_first) return 0;
+        if (moved == instrument->selection_last) return 0;
+        instrument->selection_last = moved;
+    }
+    return 1;
+}
+
 int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
                                           char *error, size_t error_size)
 {
@@ -2700,6 +2867,7 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
         target.loop_first += prepend;
         target.loop_last += prepend;
     }
+    if (prepend > 0u && target.has_playhead) target.playhead_frame += prepend;
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
     begin_edit(instrument);
@@ -2707,6 +2875,8 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
     instrument->selection_first = target.selection_first;
     instrument->selection_last = target.selection_last;
     instrument->has_selection = 1;
+    instrument->playhead_frame = target.playhead_frame;
+    instrument->has_playhead = target.has_playhead;
     instrument->loop_first = target.loop_first;
     instrument->loop_last = target.loop_last;
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
@@ -2973,10 +3143,20 @@ int ts_instrument_select_bank(TsInstrument *instrument, int slot,
     TsSample parent, current;
     TsProcessRecipe neutral;
     TsBankSlot *chosen;
+    size_t previous_playhead = 0;
+    size_t previous_frames = 0;
+    int previous_has_playhead = 0;
+    int switching;
     if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
         set_error(error, error_size, "Invalid bank tile"); return 0;
     }
-    if (instrument->selected_slot != slot &&
+    switching = instrument->selected_slot != slot;
+    if (switching) {
+        previous_playhead = instrument->playhead_frame;
+        previous_frames = instrument->current.frames;
+        previous_has_playhead = instrument->has_playhead;
+    }
+    if (switching &&
         !bank_sync_selected(instrument, error, error_size)) return 0;
     instrument->selected_slot = slot;
     instrument->family_anchor_slot = slot;
@@ -3003,16 +3183,29 @@ int ts_instrument_select_bank(TsInstrument *instrument, int slot,
         TsEditSnapshot state = chosen->edit;
         instrument->crop_first = state.crop_first; instrument->crop_last = state.crop_last;
         instrument->selection_first = state.selection_first; instrument->selection_last = state.selection_last;
+        instrument->playhead_frame = state.playhead_frame;
         instrument->view_first = state.view_first; instrument->view_last = state.view_last;
         instrument->loop_first = state.loop_first; instrument->loop_last = state.loop_last;
         instrument->loop_crossfade_ms = state.loop_crossfade_ms; instrument->loop_mode = state.loop_mode;
-        instrument->has_selection = state.has_selection; instrument->has_loop = state.has_loop;
+        instrument->has_selection = state.has_selection;
+        instrument->has_playhead = state.has_playhead;
+        instrument->has_loop = state.has_loop;
         instrument->process = state.process;
         memcpy(instrument->sample_edits, state.sample_edits, sizeof(instrument->sample_edits));
         instrument->sample_edit_count = state.sample_edit_count;
         memcpy(instrument->post_edits, state.post_edits, sizeof(instrument->post_edits));
         instrument->post_edit_count = state.post_edit_count;
     } else reset_editor(instrument);
+    if (switching && !instrument->has_playhead && previous_has_playhead &&
+        previous_frames > 0 && instrument->current.frames > 0) {
+        if (previous_frames > 1u && instrument->current.frames > 1u) {
+            double position = (double)previous_playhead /
+                              (double)(previous_frames - 1u);
+            instrument->playhead_frame = (size_t)llround(
+                position * (double)(instrument->current.frames - 1u));
+        } else instrument->playhead_frame = 0;
+        instrument->has_playhead = 1;
+    }
     instrument->undo_count = chosen->undo_count; instrument->redo_count = chosen->redo_count;
     if (chosen->undo_count > 0) memcpy(instrument->undo, chosen->undo, (size_t)chosen->undo_count * sizeof(*chosen->undo));
     if (chosen->redo_count > 0) memcpy(instrument->redo, chosen->redo, (size_t)chosen->redo_count * sizeof(*chosen->redo));
@@ -3145,6 +3338,16 @@ static void update_snapshot_after_replace(TsEditSnapshot *target,
     }
     target->view_first = view_first;
     target->view_last = view_last;
+    if (target->has_playhead) {
+        target->playhead_frame = replace_point(target->playhead_frame,
+                                               first, last, inserted);
+        if (frames == 0) {
+            target->playhead_frame = 0;
+            target->has_playhead = 0;
+        } else if (target->playhead_frame >= frames) {
+            target->playhead_frame = frames - 1u;
+        }
+    }
     if (target->has_loop) {
         if (target->loop_last <= first) {
             /* The loop is before the edit. */
@@ -3233,15 +3436,191 @@ static int commit_post_snapshot(TsInstrument *instrument, TsEditSnapshot *target
     ts_sample_init(current);
     instrument->selection_first = target->selection_first;
     instrument->selection_last = target->selection_last;
+    instrument->playhead_frame = target->playhead_frame;
     instrument->view_first = target->view_first;
     instrument->view_last = target->view_last;
     instrument->loop_first = target->loop_first;
     instrument->loop_last = target->loop_last;
     instrument->has_selection = target->has_selection;
+    instrument->has_playhead = target->has_playhead;
     instrument->has_loop = target->has_loop;
     memcpy(instrument->post_edits, target->post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target->post_edit_count;
     return bank_sync_selected(instrument, error, error_size);
+}
+
+static int resample_selection_patch(TsSample *patch, const TsSample *source,
+                                    size_t first, size_t last, size_t frames,
+                                    size_t source_pivot, size_t target_pivot,
+                                    char *error, size_t error_size)
+{
+    float *data;
+    size_t source_frames;
+    if (patch == NULL || source == NULL || source->data == NULL ||
+        first >= last || last > source->frames || frames == 0) {
+        set_error(error, error_size, "Invalid selection for tape stretch");
+        return 0;
+    }
+    if (frames > SIZE_MAX / sizeof(*data)) {
+        set_error(error, error_size, "Stretched selection is too large");
+        return 0;
+    }
+    data = malloc(frames * sizeof(*data));
+    if (data == NULL) {
+        set_error(error, error_size, "Out of memory stretching selection");
+        return 0;
+    }
+    source_frames = last - first;
+    if (source_pivot >= source_frames) source_pivot = source_frames - 1u;
+    if (target_pivot >= frames) target_pivot = frames - 1u;
+    for (size_t i = 0; i < frames; ++i) {
+        double position;
+        if (i <= target_pivot) {
+            position = target_pivot > 0u ?
+                (double)i * (double)source_pivot / (double)target_pivot : 0.0;
+        } else {
+            size_t target_right = frames - 1u - target_pivot;
+            size_t source_right = source_frames - 1u - source_pivot;
+            position = (double)source_pivot +
+                (target_right > 0u ?
+                 (double)(i - target_pivot) * (double)source_right /
+                 (double)target_right : 0.0);
+        }
+        size_t at = (size_t)position;
+        double fraction = position - (double)at;
+        float a = source->data[first + at];
+        float b = at + 1u < source_frames ? source->data[first + at + 1u] : a;
+        data[i] = a + (b - a) * (float)fraction;
+    }
+    ts_sample_free(patch);
+    patch->data = data;
+    patch->frames = frames;
+    patch->sample_rate = source->sample_rate;
+    snprintf(patch->name, sizeof(patch->name), "STRETCH %.112s", source->name);
+    return 1;
+}
+
+int ts_instrument_stretch_selection(TsInstrument *instrument, size_t pivot,
+                                    float duration_ratio, float *pitch_semitones,
+                                    char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    TsSample patch;
+    TsSample current;
+    size_t first, last, old_frames, wanted_frames;
+    size_t target_first, target_last, left_frames;
+    uint32_t patch_index;
+    double pivot_fraction;
+    float actual_ratio;
+    int expanding;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        !instrument->has_selection ||
+        instrument->selection_last <= instrument->selection_first) {
+        set_error(error, error_size, "Select audio before changing its tape length");
+        return 0;
+    }
+    if (!isfinite(duration_ratio) || duration_ratio <= 0.0f) {
+        set_error(error, error_size, "Invalid tape length ratio");
+        return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more tape operations");
+        return 0;
+    }
+    first = instrument->selection_first;
+    last = instrument->selection_last;
+    old_frames = last - first;
+    expanding = duration_ratio > 1.0f;
+    if (pivot < first || pivot >= last) pivot = first + old_frames / 2u;
+    wanted_frames = (size_t)llround((double)old_frames * (double)duration_ratio);
+    if (wanted_frames < 2u) wanted_frames = 2u;
+    if (wanted_frames > instrument->current.frames)
+        wanted_frames = instrument->current.frames;
+    pivot_fraction = old_frames > 0 ? (double)(pivot - first) / (double)old_frames : 0.5;
+    left_frames = (size_t)llround((double)wanted_frames * pivot_fraction);
+    if (left_frames > pivot) target_first = 0;
+    else target_first = pivot - left_frames;
+    if (wanted_frames > instrument->current.frames - target_first)
+        target_first = instrument->current.frames - wanted_frames;
+    target_last = target_first + wanted_frames;
+    target_first = target_first == 0 ? 0 :
+                   ts_sample_nearest_zero_crossing(&instrument->current, target_first);
+    target_last = target_last >= instrument->current.frames ? instrument->current.frames :
+                  ts_sample_nearest_zero_crossing(&instrument->current, target_last);
+    if (expanding) {
+        if (target_first >= first && first > 0)
+            target_first = directional_zero_crossing(&instrument->current,
+                                                     first, -1, 1);
+        if (target_last <= last && last < instrument->current.frames)
+            target_last = directional_zero_crossing(&instrument->current,
+                                                    last, 1, 1);
+    } else {
+        if (target_first <= first)
+            target_first = directional_zero_crossing(&instrument->current,
+                                                     first, 1, 1);
+        if (target_last >= last)
+            target_last = directional_zero_crossing(&instrument->current,
+                                                    last, -1, 1);
+    }
+    if (target_first >= pivot && pivot > 0)
+        target_first = directional_zero_crossing(&instrument->current, pivot, -1, 1);
+    if (target_last <= pivot)
+        target_last = directional_zero_crossing(&instrument->current, pivot, 1, 1);
+    if (target_last <= target_first + 1u) {
+        set_error(error, error_size, "Tape length reached its zero-crossing limit");
+        return 0;
+    }
+    wanted_frames = target_last - target_first;
+    if (wanted_frames == old_frames) {
+        set_error(error, error_size, "Tape length unchanged at the nearest zero crossings");
+        return 0;
+    }
+    actual_ratio = (float)((double)wanted_frames / (double)old_frames);
+    ts_sample_init(&patch);
+    if (!resample_selection_patch(&patch, &instrument->current, first, last,
+                                  wanted_frames, pivot - first,
+                                  pivot - target_first,
+                                  error, error_size)) return 0;
+    if (!append_audio_patch(instrument, &patch, NULL, &patch_index,
+                            error, error_size)) {
+        ts_sample_free(&patch);
+        return 0;
+    }
+    ts_sample_free(&patch);
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = wanted_frames > old_frames ?
+                     TS_POST_PATCH_STRETCH_EXPAND :
+                     TS_POST_PATCH_STRETCH_CONTRACT;
+    operation.first = first;
+    operation.last = last;
+    operation.destination = (int64_t)target_first;
+    operation.amount = actual_ratio;
+    operation.patch_index = patch_index;
+    operation.crossfade_frames = instrument->current.sample_rate / 1000u;
+    if (operation.crossfade_frames < 8u) operation.crossfade_frames = 8u;
+    if (operation.crossfade_frames > 64u) operation.crossfade_frames = 64u;
+    target = snapshot(instrument);
+    target.post_edits[target.post_edit_count++] = operation;
+    target.selection_first = target_first;
+    target.selection_last = target_last;
+    target.has_selection = 1;
+    if (target.has_loop && target.loop_last > (first < target_first ? first : target_first) &&
+        target.loop_first < (last > target_last ? last : target_last)) {
+        target.has_loop = 0;
+        target.loop_first = target.loop_last = 0;
+    }
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) {
+        discard_last_audio_patch(instrument, patch_index);
+        return 0;
+    }
+    if (!commit_post_snapshot(instrument, &target, &current, error, error_size))
+        return 0;
+    if (pitch_semitones != NULL)
+        *pitch_semitones = -12.0f * log2f(actual_ratio);
+    set_error(error, error_size, "");
+    return 1;
 }
 
 int ts_instrument_copy_selection(const TsInstrument *instrument,
@@ -4224,6 +4603,10 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
         target.selection_first = 0;
         target.selection_last = 0;
         target.has_selection = 0;
+        if (target.has_playhead && target.playhead_frame >= operation.first &&
+            target.playhead_frame < operation.last)
+            target.playhead_frame -= operation.first;
+        else target.has_playhead = 0;
         target.view_first = 0;
         target.view_last = operation.last - operation.first;
         ts_sample_init(&current);
@@ -4234,6 +4617,8 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
         instrument->loop_first = target.loop_first;
         instrument->loop_last = target.loop_last;
         instrument->has_loop = target.has_loop;
+        instrument->playhead_frame = target.playhead_frame;
+        instrument->has_playhead = target.has_playhead;
         memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
         instrument->post_edit_count = target.post_edit_count;
         ts_instrument_clear_selection(instrument);
@@ -4272,6 +4657,10 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
     target.view_first = 0;
     target.view_last = new_last - new_first;
     target.has_selection = 0;
+    if (target.has_playhead && target.playhead_frame >= instrument->selection_first &&
+        target.playhead_frame < instrument->selection_last)
+        target.playhead_frame -= instrument->selection_first;
+    else target.has_playhead = 0;
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
     begin_edit(instrument);
@@ -4282,6 +4671,8 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
     instrument->loop_first = target.loop_first;
     instrument->loop_last = target.loop_last;
     instrument->has_loop = target.has_loop;
+    instrument->playhead_frame = target.playhead_frame;
+    instrument->has_playhead = target.has_playhead;
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
     ts_instrument_clear_selection(instrument);
@@ -4942,6 +5333,7 @@ static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
     instrument->crop_last = target.crop_last;
     instrument->selection_first = target.selection_first;
     instrument->selection_last = target.selection_last;
+    instrument->playhead_frame = target.playhead_frame;
     instrument->view_first = target.view_first;
     instrument->view_last = target.view_last;
     instrument->loop_first = target.loop_first;
@@ -4949,6 +5341,7 @@ static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
     instrument->loop_crossfade_ms = target.loop_crossfade_ms;
     instrument->loop_mode = target.loop_mode;
     instrument->has_selection = target.has_selection;
+    instrument->has_playhead = target.has_playhead;
     instrument->has_loop = target.has_loop;
     instrument->tuning = target.tuning;
     instrument->audible_tuning = target.audible_tuning;
@@ -5100,6 +5493,7 @@ static void put_edit_snapshot(FILE *f, const TsEditSnapshot *state)
 {
     put64(f, state->crop_first); put64(f, state->crop_last);
     put64(f, state->selection_first); put64(f, state->selection_last);
+    put64(f, state->playhead_frame); put32(f, (uint32_t)state->has_playhead);
     put64(f, state->view_first); put64(f, state->view_last);
     put64(f, state->loop_first); put64(f, state->loop_last);
     put_float(f, state->loop_crossfade_ms);
@@ -5135,6 +5529,9 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
     memset(state, 0, sizeof(*state));
     GET_STATE_SIZE(state->crop_first); GET_STATE_SIZE(state->crop_last);
     GET_STATE_SIZE(state->selection_first); GET_STATE_SIZE(state->selection_last);
+    if (version >= 17) {
+        GET_STATE_SIZE(state->playhead_frame); GET_STATE_U32(state->has_playhead);
+    }
     GET_STATE_SIZE(state->view_first); GET_STATE_SIZE(state->view_last);
     GET_STATE_SIZE(state->loop_first); GET_STATE_SIZE(state->loop_last);
     if (!get_float(f, &state->loop_crossfade_ms)) return 0;
@@ -5161,7 +5558,8 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
         edit->destination = (int64_t)wide;
         if (!get_float(f, &edit->amount) || !get32(f, &edit->crossfade_frames) ||
             (version >= 16 && !get32(f, &edit->patch_index)) ||
-            edit->kind > (version >= 16 ? TS_POST_PATCH_FIT : TS_POST_TEAR) ||
+            edit->kind > (version >= 17 ? TS_POST_PATCH_STRETCH_CONTRACT :
+                          version >= 16 ? TS_POST_PATCH_FIT : TS_POST_TEAR) ||
             (edit->kind != TS_POST_PATCH_REPLACE && edit->last <= edit->first) ||
             (edit->kind == TS_POST_PATCH_REPLACE && edit->last < edit->first) ||
             edit->last > frame_limit || edit->destination < -(int64_t)frame_limit ||
@@ -5177,6 +5575,7 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
            state->loop_crossfade_ms >= 0.0f && state->loop_crossfade_ms <= 50.0f &&
            state->loop_mode < TS_LOOP_MODE_COUNT &&
            (state->has_selection == 0 || state->has_selection == 1) &&
+           (state->has_playhead == 0 || state->has_playhead == 1) &&
            (state->has_loop == 0 || state->has_loop == 1) &&
            tuning_valid(&state->tuning) && tuning_valid(&state->audible_tuning);
 }
@@ -5215,13 +5614,14 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->selection_last <= slot->sample.frames &&
            state->view_last <= slot->sample.frames &&
            state->loop_last <= slot->sample.frames &&
+           (!state->has_playhead || state->playhead_frame < slot->sample.frames) &&
            (!state->has_selection || state->selection_first < state->selection_last) &&
            (!state->has_loop || state->loop_first < state->loop_last);
 }
 
-static int save_tsr16(const TsInstrument *instrument, FILE *f)
+static int save_tsr17(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR16\r\n\032", 1, 8, f);
+    fwrite("TSR17\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -5318,13 +5718,15 @@ static int snapshot_patches_valid(const TsEditSnapshot *state, const TsBankSlot 
 {
     for (int i = 0; i < state->post_edit_count; ++i) {
         const TsPostEdit *edit = &state->post_edits[i];
-        if ((edit->kind == TS_POST_PATCH_REPLACE || edit->kind == TS_POST_PATCH_FIT) &&
+        if ((edit->kind == TS_POST_PATCH_REPLACE || edit->kind == TS_POST_PATCH_FIT ||
+             edit->kind == TS_POST_PATCH_STRETCH_EXPAND ||
+             edit->kind == TS_POST_PATCH_STRETCH_CONTRACT) &&
             edit->patch_index >= (uint32_t)slot->patch_count) return 0;
     }
     return 1;
 }
 
-static int load_tsr15_or_16(FILE *f, int version, TsInstrument *instrument,
+static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
                             char *error, size_t error_size)
 {
     TsInstrument loaded;
@@ -5455,10 +5857,10 @@ static int load_tsr15_or_16(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15/TSR16 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR17 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15/TSR16 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR17 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -5477,13 +5879,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr16(instrument, f)) {
+    if (!save_tsr17(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR16 project");
+        set_error(error, error_size, "Could not write TSR17 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR16 project");
+        set_error(error, error_size, "Could not finish TSR17 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -5518,10 +5920,12 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = magic[4] == '6' ? 16 : 15;
-        int ok = load_tsr15_or_16(f, self_contained_version, instrument,
+        int self_contained_version = magic[4] == '7' ? 17 :
+                                     magic[4] == '6' ? 16 : 15;
+        int ok = load_tsr15_or_newer(f, self_contained_version, instrument,
                                   error, error_size);
         fclose(f);
         ts_instrument_free(&loaded);
@@ -5540,7 +5944,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR16 project");
+                  "Not a self-contained TSR6-TSR17 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -5819,7 +6223,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR16 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR17 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);
