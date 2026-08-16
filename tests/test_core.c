@@ -144,26 +144,33 @@ int main(void)
         ts_palette_default(&palette);
         CHECK(palette.colors[TS_PALETTE_WAVE_SELECTION] ==
               palette.colors[TS_PALETTE_BLOCK_MARK]);
+        CHECK(palette.colors[TS_PALETTE_ACTIVE_TILE] ==
+              palette.colors[TS_PALETTE_MOUSE]);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 0, 0x12);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 1, 0x34);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 2, 0x56);
         palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xffabcdefu;
+        palette.colors[TS_PALETTE_ACTIVE_TILE] = 0xff654321u;
         palette.desktop_contrast = 17;
         palette.buttons_contrast = 83;
         CHECK(palette.colors[TS_PALETTE_MOUSE] == 0xff123456u);
         CHECK(ts_palette_save(&palette, "test-tapesister.pal", error, sizeof(error)));
         CHECK(file_contains_text("test-tapesister.pal", "WaveSelection=#ABCDEF"));
+        CHECK(file_contains_text("test-tapesister.pal", "ActiveTile=#654321"));
         ts_palette_default(&reopened);
         CHECK(ts_palette_load(&reopened, "test-tapesister.pal", error, sizeof(error)));
         CHECK(memcmp(&palette, &reopened, sizeof(palette)) == 0);
         CHECK(ts_palette_save_tapehead(&palette, "test-tapehead.pal",
                                        error, sizeof(error)));
         CHECK(!file_contains_text("test-tapehead.pal", "WaveSelection"));
+        CHECK(!file_contains_text("test-tapehead.pal", "ActiveTile"));
         ts_palette_default(&tapehead_reopened);
         CHECK(ts_palette_load(&tapehead_reopened, "test-tapehead.pal",
                               error, sizeof(error)));
         CHECK(tapehead_reopened.colors[TS_PALETTE_WAVE_SELECTION] ==
               palette.colors[TS_PALETTE_BLOCK_MARK]);
+        CHECK(tapehead_reopened.colors[TS_PALETTE_ACTIVE_TILE] ==
+              palette.colors[TS_PALETTE_MOUSE]);
         for (int color = 0; color < TS_PALETTE_WAVE_SELECTION; ++color)
             CHECK(tapehead_reopened.colors[color] == palette.colors[color]);
         CHECK(tapehead_reopened.desktop_contrast == palette.desktop_contrast);
@@ -183,6 +190,11 @@ int main(void)
         CHECK(reopened.colors[TS_PALETTE_PATTERN_NOTE] == 0xff102030u);
         CHECK(reopened.colors[TS_PALETTE_PATTERN_EMPTY] == 0xff102030u);
         CHECK(reopened.colors[TS_PALETTE_WAVE_SELECTION] == 0xff203040u);
+        CHECK(reopened.colors[TS_PALETTE_ACTIVE_TILE] == 0xff405060u);
+        CHECK(strcmp(ts_palette_color_name(TS_PALETTE_PATTERN_INSTRUMENT),
+                     "PRIMARY") == 0);
+        CHECK(strcmp(ts_palette_color_name(TS_PALETTE_ACTIVE_TILE),
+                     "ACTIVE TILE") == 0);
         remove("test-tapesister.pal");
         remove("test-tapehead.pal");
         remove("test-tapehead-legacy.pal");
@@ -249,13 +261,54 @@ int main(void)
         ts_ui_begin_palette_edit(&ui);
         CHECK(ui.palette_open && !ui.config_open);
         ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff010203u;
+        ui.palette.colors[TS_PALETTE_ACTIVE_TILE] = 0xff101112u;
         ts_ui_finish_palette_edit(&ui, 1);
         CHECK(!ui.palette_open && ui.config_open);
         CHECK(memcmp(&ui.palette, &before, sizeof(before)) == 0);
         ts_ui_begin_palette_edit(&ui);
         ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff040506u;
+        ui.palette.colors[TS_PALETTE_ACTIVE_TILE] = 0xff131415u;
         ts_ui_finish_palette_edit(&ui, 0);
         CHECK(ui.palette.colors[TS_PALETTE_WAVE_SELECTION] == 0xff040506u);
+        CHECK(ui.palette.colors[TS_PALETTE_ACTIVE_TILE] == 0xff131415u);
+    }
+
+    {
+        static const struct {
+            TsFxPage page;
+            int x;
+            TsUiSlider slider;
+        } sliders[] = {
+            {TS_FX_TUNE, 250, TS_UI_SLIDER_TUNE_FINE},
+            {TS_FX_NOISE, 180, TS_UI_SLIDER_NOISE_AMOUNT},
+            {TS_FX_SHAPE, 120, TS_UI_SLIDER_FILTER_CUTOFF},
+            {TS_FX_SHAPE, 230, TS_UI_SLIDER_FILTER_RESONANCE},
+            {TS_FX_SHAPE, 420, TS_UI_SLIDER_SHAPER_DRIVE},
+            {TS_FX_SHAPE, 520, TS_UI_SLIDER_SHAPER_MIX},
+            {TS_FX_FAMILY, 300, TS_UI_SLIDER_VARIATION_RANGE},
+            {TS_FX_DELAY, 150, TS_UI_SLIDER_DELAY_TIME},
+            {TS_FX_DELAY, 250, TS_UI_SLIDER_DELAY_FEEDBACK},
+            {TS_FX_DELAY, 350, TS_UI_SLIDER_DELAY_DAMPING},
+            {TS_FX_DELAY, 450, TS_UI_SLIDER_DELAY_MIX},
+            {TS_FX_SPACE, 150, TS_UI_SLIDER_REVERB_DECAY},
+            {TS_FX_SPACE, 300, TS_UI_SLIDER_REVERB_DAMPING},
+            {TS_FX_SPACE, 420, TS_UI_SLIDER_REVERB_MIX},
+            {TS_FX_LOOP, 450, TS_UI_SLIDER_LOOP_CROSSFADE}
+        };
+        ts_ui_init(&ui);
+        CHECK(ts_ui_slider_from_point(&ui, 40, 244) == TS_UI_SLIDER_BODY);
+        CHECK(ts_ui_slider_from_point(&ui, 110, 244) == TS_UI_SLIDER_EDGE);
+        CHECK(ts_ui_slider_from_point(&ui, 190, 244) == TS_UI_SLIDER_DRIFT);
+        CHECK(ts_ui_slider_from_point(&ui, 280, 244) == TS_UI_SLIDER_NONE);
+        CHECK(ts_ui_slider_from_point(&ui, 450, 216) == TS_UI_SLIDER_NONE);
+        CHECK(ts_ui_slider_from_point(&ui, 550, 216) == TS_UI_SLIDER_NONE);
+        for (size_t i = 0; i < sizeof(sliders) / sizeof(sliders[0]); ++i) {
+            ui.fx_page = sliders[i].page;
+            CHECK(ts_ui_slider_from_point(&ui, sliders[i].x, 272) ==
+                  sliders[i].slider);
+        }
+        ui.fx_page = TS_FX_EDIT;
+        CHECK(ts_ui_slider_from_point(&ui, 300, 272) == TS_UI_SLIDER_NONE);
     }
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
@@ -1799,7 +1852,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR16", 5) == 0);
+        CHECK(memcmp(magic, "TSR17", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -1966,6 +2019,23 @@ int main(void)
     CHECK(ts_note_bank_display_voice(&notes)->sample == &restored.parent);
     ts_note_bank_clear_latched(&notes);
     CHECK(ts_note_bank_count(&notes) == 0);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              0, 48, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              0, 60, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_count(&notes) == 2);
+    CHECK(notes.voices[0].active && notes.voices[0].midi_note == 48 &&
+          fabs(notes.voices[0].pitch - 1.0) < 0.0001);
+    CHECK(notes.voices[1].active && notes.voices[1].midi_note == 60 &&
+          fabs(notes.voices[1].pitch - 2.0) < 0.0001);
+    CHECK(ts_note_bank_mask(&notes) == 1u);
+    ts_note_bank_sync(&notes, &restored, 48000);
+    CHECK(notes.voices[0].midi_note == 48 && notes.voices[1].midi_note == 60 &&
+          fabs(notes.voices[0].pitch - 1.0) < 0.0001 &&
+          fabs(notes.voices[1].pitch - 2.0) < 0.0001);
+    ts_note_bank_clear(&notes);
     remove("test-recipe.tsr");
     remove("test-roundtrip.wav");
 
@@ -1975,6 +2045,8 @@ int main(void)
         ts_config_init(&config);
         CHECK(config.rotate_wheel_fine == 5);
         CHECK(config.rotate_wheel_coarse == 50);
+        CHECK(config.playhead_zero_snap == 1);
+        config.playhead_zero_snap = 0;
         snprintf(config.sample_path, sizeof(config.sample_path), "/samples/drums");
         snprintf(config.fasttracker_path, sizeof(config.fasttracker_path),
                  "/opt/ft2 tapehead/ft2-clone");
@@ -1988,6 +2060,7 @@ int main(void)
         CHECK(reopened.startup_welcome_sample == 1 &&
               reopened.startup_welcome_autoplay == 1);
         CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
+        CHECK(reopened.playhead_zero_snap == 0);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
                      "FASTTRACKER EXECUTABLE") == 0);
         remove("test-tapesister.ini");
@@ -2002,6 +2075,7 @@ int main(void)
             CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
             CHECK(!reopened.startup_welcome_sample && !reopened.startup_welcome_autoplay);
             CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
+            CHECK(reopened.playhead_zero_snap == 1);
             config_file = fopen("test-tapesister.ini", "wb");
             CHECK(config_file != NULL);
             if (config_file != NULL) {
@@ -2138,6 +2212,24 @@ int main(void)
         CHECK(ts_browser_destination_path(&browser, path, sizeof(path)));
         CHECK(strstr(path, "metallic_family") != NULL);
         CHECK(strstr(path, "metallic_family.wav") == NULL);
+        CHECK(!ts_browser_mode_edits_filename(TS_BROWSER_LOAD_WAV));
+        CHECK(ts_browser_mode_edits_filename(TS_BROWSER_EXPORT_WAV));
+        CHECK(ts_browser_mode_selects_config(TS_BROWSER_SELECT_SAMPLE_DIRECTORY));
+        CHECK(ts_browser_mode_selects_directory(TS_BROWSER_SELECT_EXCHANGE_DIRECTORY));
+        CHECK(!ts_browser_mode_selects_directory(
+                  TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE));
+        CHECK(strcmp(ts_browser_mode_title(TS_BROWSER_SELECT_SAMPLE_DIRECTORY),
+                     "SELECT SAMPLE FOLDER") == 0);
+        CHECK(ts_browser_open(&browser, TS_BROWSER_SELECT_SAMPLE_DIRECTORY, NULL));
+        CHECK(browser_find(&browser, "test-browser-dir") >= 0);
+        CHECK(browser_find(&browser, "test-browser-load.wav") < 0);
+        CHECK(browser_find(&browser, "test-browser-ignore.txt") < 0);
+        CHECK(!browser.filename_focus);
+        CHECK(ts_browser_open(&browser,
+                              TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE, NULL));
+        CHECK(browser_find(&browser, "test-browser-load.wav") >= 0);
+        CHECK(browser_find(&browser, "test-browser-ignore.txt") >= 0);
+        CHECK(!browser.filename_focus);
         browser.entry_count = 30;
         browser.selected = 0;
         ts_browser_set_scroll(&browser, 999);
@@ -2179,6 +2271,19 @@ int main(void)
     CHECK(framebuffer_contains(&fb, 0xff147dffu));
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     ts_ui_init(&ui);
+    CHECK(ui.keyboard_octave == 3 && ts_ui_keyboard_base_note(&ui) == 48);
+    CHECK(ts_ui_keyboard_shift_semitone(&ui, 1) == 49 &&
+          ts_ui_keyboard_base_note(&ui) == 49);
+    CHECK(ts_ui_keyboard_shift_semitone(&ui, -1) == 48);
+    CHECK(ts_ui_keyboard_cycle_octave(&ui, 1) == 4 &&
+          ts_ui_keyboard_base_note(&ui) == 60);
+    CHECK(ts_ui_keyboard_set_octave(&ui, 7) == 7 &&
+          ts_ui_keyboard_cycle_octave(&ui, 1) == 0 &&
+          ts_ui_keyboard_base_note(&ui) == 12);
+    CHECK(ts_ui_keyboard_set_octave(&ui, 3) == 3);
+    CHECK(ts_ui_right_drag_playhead_frame(100, 140, 96, 144, 200) == 96);
+    CHECK(ts_ui_right_drag_playhead_frame(140, 100, 96, 144, 200) == 144);
+    CHECK(ts_ui_right_drag_playhead_frame(200, 100, 96, 200, 200) == 199);
     ts_instrument_set_selection(&imported, imported.current.frames / 4, imported.current.frames / 2);
     ts_ui_render(&fb, &ui, &imported);
     CHECK(fb.pixels[0] != 0);
@@ -2283,16 +2388,17 @@ int main(void)
         uint32_t low_contrast;
         uint32_t high_contrast;
         ui.palette.colors[TS_PALETTE_MOUSE] = 0xff123456u;
+        ui.palette.colors[TS_PALETTE_ACTIVE_TILE] = 0xff654321u;
         ui.palette.buttons_contrast = 1;
         ts_ui_render(&fb, &ui, &imported);
-        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff123456u);
+        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff654321u);
         low_contrast = fb.pixels[330 * TS_UI_WIDTH + 100];
         CHECK(low_contrast != 0xff123456u);
         ui.palette.buttons_contrast = 100;
         ts_ui_render(&fb, &ui, &imported);
         high_contrast = fb.pixels[330 * TS_UI_WIDTH + 100];
         CHECK(high_contrast != low_contrast && high_contrast != 0xff123456u);
-        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff123456u);
+        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff654321u);
         ts_palette_default(&ui.palette);
     }
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
@@ -2367,6 +2473,20 @@ int main(void)
     ts_ui_render(&fb, &ui, &restored);
     CHECK(fb.pixels[180 * TS_UI_WIDTH + 175] == 0xff5d555du);
     ui.export_choice_open = 0;
+    ui.load_selection_choice_open = 1;
+    snprintf(ui.load_selection_name, sizeof(ui.load_selection_name),
+             "selection-source.wav");
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(ts_ui_load_selection_action_from_point(160, 140) ==
+          TS_UI_LOAD_SELECTION_PASTE);
+    CHECK(ts_ui_load_selection_action_from_point(300, 140) ==
+          TS_UI_LOAD_SELECTION_FIT);
+    CHECK(ts_ui_load_selection_action_from_point(420, 140) ==
+          TS_UI_LOAD_SELECTION_CANCEL);
+    CHECK(ts_ui_load_selection_action_from_point(260, 140) ==
+          TS_UI_LOAD_SELECTION_NONE);
+    CHECK(fb.pixels[136 * TS_UI_WIDTH + 149] == 0xff5d555du);
+    ui.load_selection_choice_open = 0;
     ui.exit_confirm_open = 1;
     ui.exit_has_unsaved = 1;
     ts_ui_render(&fb, &ui, &restored);
@@ -2410,6 +2530,15 @@ int main(void)
         CHECK(framebuffer_diff_count(&normal, &fb, 0, 204,
                                      TS_UI_WIDTH, 1) == 0);
         ui.palette_open = 0;
+        ts_ui_render(&normal, &ui, &restored);
+        ui.load_selection_choice_open = 1;
+        snprintf(ui.load_selection_name, sizeof(ui.load_selection_name),
+                 "selection-source.wav");
+        ts_ui_render(&fb, &ui, &restored);
+        CHECK(framebuffer_diff_count(&normal, &fb, 0, 205,
+                                     TS_UI_WIDTH, TS_UI_HEIGHT - 205) == 0);
+        CHECK(framebuffer_diff_count(&normal, &fb, 126, 78, 388, 108) > 1000);
+        ui.load_selection_choice_open = 0;
     }
     ui.show_keyboard = 1;
     {
@@ -2447,6 +2576,24 @@ int main(void)
     ts_ui_render(&fb, &ui, &imported);
     CHECK(fb.pixels[370 * TS_UI_WIDTH + 116] == 0xffffd265u);
     CHECK(fb.pixels[370 * TS_UI_WIDTH + 73] == 0xffdcd8cfu);
+    ui.active_notes = 0;
+    ui.playback_active = 0;
+    ui.audition_source = TS_AUDITION_CURRENT;
+    ts_instrument_show_all(&imported);
+    ts_instrument_set_playhead(&imported, imported.current.frames / 3u);
+    ts_ui_render(&fb, &ui, &imported);
+    CHECK(framebuffer_color_count(&fb, 0xffffd265u,
+                                  TS_WAVE_X + TS_WAVE_W / 3 - 2,
+                                  TS_WAVE_Y, 5, 4) > 0);
+    {
+        uint64_t before_stretch_readout = waveform_hash(&fb);
+    ui.has_stretch_readout = 1;
+    ui.stretch_pitch_semitones = -1.0f;
+    ui.stretch_duration_ratio = powf(2.0f, 1.0f / 12.0f);
+    ts_ui_render(&fb, &ui, &imported);
+        CHECK(waveform_hash(&fb) != before_stretch_readout);
+    }
+    ui.has_stretch_readout = 0;
     ui.playback_active = 1;
     ui.playhead_source = TS_AUDITION_CURRENT;
     ui.playhead_frame = imported.current.frames / 2;
@@ -2688,6 +2835,8 @@ int main(void)
         TsSample known, reopened_wav;
         TsGeneratorRecipe known_recipe = generator(0x10adedu, TS_GENERATOR_METALLIC);
         uint64_t slot0_hash, slot0_parent_hash, slot2_hash, slot2_parent_hash, wav_hash;
+        uint64_t pasted_hash, fit_hash;
+        size_t before_load_paste_frames, selected_load_frames;
         TsGeneratorRecipe slot0_generator, slot2_generator;
         int slot0_undo, slot2_undo;
         ts_sample_init(&known); ts_sample_init(&reopened_wav);
@@ -2737,6 +2886,35 @@ int main(void)
         CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
         CHECK(ts_sample_hash(&load_bank.current) == wav_hash);
 
+        /* A WAV chosen for an occupied selection reuses exact Paste/Fit history. */
+        before_load_paste_frames = load_bank.current.frames;
+        selected_load_frames = load_bank.selection_last - load_bank.selection_first;
+        CHECK(selected_load_frames > 0);
+        CHECK(ts_instrument_paste(&load_bank, &reopened_wav,
+                                  load_bank.selection_first, 0,
+                                  error, sizeof(error)));
+        CHECK(load_bank.current.frames == before_load_paste_frames -
+              selected_load_frames + reopened_wav.frames);
+        pasted_hash = ts_sample_hash(&load_bank.current);
+        CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
+        CHECK(load_bank.current.frames == before_load_paste_frames &&
+              ts_sample_hash(&load_bank.current) == wav_hash);
+        CHECK(ts_instrument_redo(&load_bank, error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) == pasted_hash);
+        CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) == wav_hash);
+        CHECK(ts_instrument_paste(&load_bank, &reopened_wav,
+                                  load_bank.selection_first, 1,
+                                  error, sizeof(error)));
+        CHECK(load_bank.current.frames == before_load_paste_frames);
+        fit_hash = ts_sample_hash(&load_bank.current);
+        CHECK(fit_hash != wav_hash);
+        CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) == wav_hash);
+        CHECK(ts_instrument_redo(&load_bank, error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) == fit_hash);
+        CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
+
         CHECK(ts_instrument_select_bank(&load_bank, 4, error, sizeof(error)));
         CHECK(!load_bank.bank[4].occupied);
         CHECK(ts_instrument_load_wav(&load_bank, "test-selected-load.wav",
@@ -2774,6 +2952,187 @@ int main(void)
         ts_sample_free(&known); ts_sample_free(&reopened_wav);
         ts_instrument_free(&load_bank); ts_instrument_free(&empty_first);
         ts_instrument_free(&reopened_bank);
+    }
+
+    {
+        TsInstrument stretch;
+        TsInstrument stretch_reopened;
+        uint64_t before_hash;
+        uint64_t expanded_hash;
+        size_t first;
+        size_t last;
+        size_t before_frames;
+        size_t expanded_frames;
+        size_t mapped_expected;
+        float pitch = 0.0f;
+        ts_instrument_init(&stretch);
+        ts_instrument_init(&stretch_reopened);
+        CHECK(ts_instrument_generate(&stretch, TS_GENERATOR_FM,
+                                     0x53545231u, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&stretch, 1, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&stretch, 0x53545232u,
+                                            error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&stretch, 0, error, sizeof(error)));
+        first = stretch.current.frames / 4u;
+        last = stretch.current.frames * 3u / 4u;
+        ts_instrument_set_selection_snapped(&stretch, first, last);
+        first = stretch.selection_first;
+        last = stretch.selection_last;
+        before_frames = last - first;
+        ts_instrument_set_playhead(&stretch, first + before_frames / 3u);
+        CHECK(stretch.has_playhead && stretch.playhead_frame >= first &&
+              stretch.playhead_frame < last);
+        CHECK(ts_instrument_reset_selection_playhead(&stretch));
+        CHECK(!stretch.has_selection && stretch.has_playhead &&
+              stretch.playhead_frame == 0);
+        CHECK(!ts_instrument_reset_selection_playhead(&stretch));
+        ts_instrument_clear_playhead(&stretch);
+        CHECK(ts_instrument_reset_selection_playhead(&stretch));
+        CHECK(!stretch.has_selection && stretch.has_playhead &&
+              stretch.playhead_frame == 0);
+        ts_instrument_set_selection(&stretch, first, last);
+        ts_instrument_set_playhead(&stretch, first + before_frames / 3u);
+        {
+            size_t requested = first + before_frames / 5u;
+            size_t expected = ts_sample_nearest_zero_crossing(
+                &stretch.current, requested);
+            ts_instrument_set_playhead_snapped(&stretch, requested);
+            CHECK(stretch.playhead_frame == expected);
+            ts_instrument_set_playhead(&stretch, first + before_frames / 3u);
+        }
+        {
+            size_t original_first = stretch.selection_first;
+            CHECK(ts_instrument_resize_selection(&stretch, 1, 1, 1));
+            CHECK(stretch.selection_first < original_first &&
+                  stretch.selection_last == last);
+            ts_instrument_set_selection(&stretch, first, last);
+        }
+        before_hash = ts_sample_hash(&stretch.current);
+        CHECK(ts_instrument_stretch_selection(
+            &stretch, stretch.playhead_frame, powf(2.0f, 1.0f / 12.0f),
+            &pitch, error, sizeof(error)));
+        expanded_frames = stretch.selection_last - stretch.selection_first;
+        expanded_hash = ts_sample_hash(&stretch.current);
+        CHECK(expanded_frames > before_frames && expanded_hash != before_hash);
+        CHECK(pitch < 0.0f && fabsf(pitch + 1.0f) < 0.35f);
+        CHECK(stretch.current.frames == stretch.bank[0].sample.frames);
+        CHECK(stretch.has_playhead);
+        CHECK(ts_instrument_undo(&stretch, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == before_hash &&
+              stretch.selection_first == first && stretch.selection_last == last &&
+              stretch.has_playhead);
+        CHECK(ts_instrument_redo(&stretch, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == expanded_hash &&
+              stretch.selection_last - stretch.selection_first == expanded_frames);
+        CHECK(ts_instrument_stretch_selection(
+            &stretch, stretch.playhead_frame, powf(2.0f, -1.0f / 12.0f),
+            &pitch, error, sizeof(error)));
+        CHECK(stretch.selection_last - stretch.selection_first < expanded_frames &&
+              pitch > 0.0f);
+        CHECK(ts_instrument_undo(&stretch, error, sizeof(error)) &&
+              ts_sample_hash(&stretch.current) == expanded_hash);
+        CHECK(ts_instrument_save_recipe(&stretch, "test-stretch.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&stretch_reopened, "test-stretch.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch_reopened.current) == expanded_hash &&
+              stretch_reopened.has_playhead &&
+              stretch_reopened.playhead_frame == stretch.playhead_frame);
+        mapped_expected = stretch.current.frames > 1u ?
+            (size_t)llround((double)stretch.playhead_frame *
+                            (double)(stretch.bank[1].sample.frames - 1u) /
+                            (double)(stretch.current.frames - 1u)) : 0u;
+        CHECK(ts_instrument_select_bank(&stretch, 1, error, sizeof(error)));
+        CHECK(stretch.has_playhead && stretch.playhead_frame == mapped_expected);
+        CHECK(ts_instrument_select_bank(&stretch, 0, error, sizeof(error)));
+        CHECK(stretch.has_playhead);
+        remove("test-stretch.tsr");
+        ts_instrument_free(&stretch);
+        ts_instrument_free(&stretch_reopened);
+    }
+
+    {
+        TsInstrument stretch;
+        TsStretchGesture gesture;
+        uint64_t before_hash;
+        uint64_t preview_hash;
+        size_t first, last;
+        int patch_count;
+        int post_count;
+        int undo_count;
+        float pitch = 0.0f;
+        ts_instrument_init(&stretch);
+        ts_stretch_gesture_init(&gesture);
+        CHECK(ts_instrument_generate(&stretch, TS_GENERATOR_FM,
+                                     0x47455354u, error, sizeof(error)));
+        ts_instrument_set_selection_snapped(&stretch,
+                                            stretch.current.frames / 4u,
+                                            stretch.current.frames * 3u / 4u);
+        first = stretch.selection_first;
+        last = stretch.selection_last;
+        before_hash = ts_sample_hash(&stretch.current);
+        patch_count = stretch.bank[stretch.selected_slot].patch_count;
+        post_count = stretch.post_edit_count;
+        undo_count = stretch.undo_count;
+        CHECK(ts_instrument_stretch_gesture_begin(
+            &stretch, &gesture, first + (last - first) / 3u,
+            error, sizeof(error)));
+        for (int step = 0; step < 80; ++step) {
+            float ratio = step & 1 ? powf(2.0f, 1.0f / 12.0f) :
+                                     powf(2.0f, 2.0f / 12.0f);
+            CHECK(ts_instrument_stretch_gesture_preview(
+                &stretch, &gesture, ratio, &pitch, error, sizeof(error)));
+            CHECK(stretch.bank[stretch.selected_slot].patch_count == patch_count);
+            CHECK(stretch.post_edit_count == post_count);
+            CHECK(stretch.undo_count == undo_count);
+        }
+        preview_hash = ts_sample_hash(&stretch.current);
+        CHECK(preview_hash != before_hash && pitch < 0.0f);
+        CHECK(ts_instrument_stretch_gesture_commit(
+            &stretch, &gesture, error, sizeof(error)));
+        CHECK(stretch.bank[stretch.selected_slot].patch_count == patch_count + 1);
+        CHECK(stretch.post_edit_count == post_count + 1);
+        CHECK(stretch.undo_count == undo_count + 1);
+        CHECK(ts_sample_hash(&stretch.current) == preview_hash);
+        CHECK(ts_instrument_undo(&stretch, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == before_hash &&
+              stretch.selection_first == first && stretch.selection_last == last);
+        CHECK(ts_instrument_redo(&stretch, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == preview_hash);
+
+        patch_count = stretch.bank[stretch.selected_slot].patch_count;
+        post_count = stretch.post_edit_count;
+        undo_count = stretch.undo_count;
+        before_hash = ts_sample_hash(&stretch.current);
+        first = stretch.selection_first;
+        last = stretch.selection_last;
+        CHECK(ts_instrument_stretch_gesture_begin(
+            &stretch, &gesture, first + (last - first) / 2u,
+            error, sizeof(error)));
+        CHECK(ts_instrument_stretch_gesture_preview(
+            &stretch, &gesture, powf(2.0f, -2.0f / 12.0f),
+            &pitch, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) != before_hash);
+        CHECK(ts_instrument_stretch_gesture_cancel(
+            &stretch, &gesture, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == before_hash &&
+              stretch.selection_first == first && stretch.selection_last == last);
+        CHECK(stretch.bank[stretch.selected_slot].patch_count == patch_count);
+        CHECK(stretch.post_edit_count == post_count);
+        CHECK(stretch.undo_count == undo_count);
+
+        CHECK(ts_instrument_stretch_gesture_begin(
+            &stretch, &gesture, first + (last - first) / 2u,
+            error, sizeof(error)));
+        CHECK(ts_instrument_stretch_gesture_preview(
+            &stretch, &gesture, 1.0f, &pitch, error, sizeof(error)));
+        CHECK(ts_instrument_stretch_gesture_commit(
+            &stretch, &gesture, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == before_hash);
+        CHECK(stretch.bank[stretch.selected_slot].patch_count == patch_count);
+        CHECK(stretch.post_edit_count == post_count);
+        CHECK(stretch.undo_count == undo_count);
+        ts_instrument_free(&stretch);
     }
 
     ts_sample_free(&a); ts_sample_free(&b); ts_sample_free(&loaded); ts_sample_free(&copy);

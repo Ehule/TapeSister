@@ -46,6 +46,28 @@ typedef enum {
     TS_FX_LOOP
 } TsFxPage;
 
+typedef enum {
+    TS_UI_SLIDER_NONE = 0,
+    TS_UI_SLIDER_BODY,
+    TS_UI_SLIDER_EDGE,
+    TS_UI_SLIDER_DRIFT,
+    TS_UI_SLIDER_TUNE_FINE,
+    TS_UI_SLIDER_NOISE_AMOUNT,
+    TS_UI_SLIDER_FILTER_CUTOFF,
+    TS_UI_SLIDER_FILTER_RESONANCE,
+    TS_UI_SLIDER_SHAPER_DRIVE,
+    TS_UI_SLIDER_SHAPER_MIX,
+    TS_UI_SLIDER_VARIATION_RANGE,
+    TS_UI_SLIDER_DELAY_TIME,
+    TS_UI_SLIDER_DELAY_FEEDBACK,
+    TS_UI_SLIDER_DELAY_DAMPING,
+    TS_UI_SLIDER_DELAY_MIX,
+    TS_UI_SLIDER_REVERB_DECAY,
+    TS_UI_SLIDER_REVERB_DAMPING,
+    TS_UI_SLIDER_REVERB_MIX,
+    TS_UI_SLIDER_LOOP_CROSSFADE
+} TsUiSlider;
+
 enum {
     TS_UI_BANK_MOD_SHIFT = 1u << 0,
     TS_UI_BANK_MOD_CTRL = 1u << 1,
@@ -81,6 +103,13 @@ typedef enum {
     TS_UI_PALETTE_ACTION_CANCEL
 } TsUiPaletteAction;
 
+typedef enum {
+    TS_UI_LOAD_SELECTION_NONE = 0,
+    TS_UI_LOAD_SELECTION_PASTE,
+    TS_UI_LOAD_SELECTION_FIT,
+    TS_UI_LOAD_SELECTION_CANCEL
+} TsUiLoadSelectionAction;
+
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
@@ -96,15 +125,19 @@ typedef struct {
     int startup_welcome_playback_requested;
     int text_cursor_visible;
     int show_keyboard;
+    int keyboard_octave;
+    int keyboard_base_note;
     int show_recipes;
     int show_ingredients;
     int workbench_loop_active;
+    int workbench_loop_persistent;
     int bank_view_slot;
     int load_bank_slot;
     int playhead_bank_slot;
     int renaming_bank_slot;
     int renaming_recipe_slot;
     int export_choice_open;
+    int load_selection_choice_open;
     int exit_confirm_open;
     int exit_has_unsaved;
     uint64_t saved_state_hash;
@@ -118,6 +151,10 @@ typedef struct {
     int loop_drag_started;
     int tape_dragging;
     int tape_drag_button;
+    int wave_pointer_pending;
+    int wave_pointer_button;
+    int wave_pointer_start_x;
+    int selecting_button;
     TsPostEditKind tape_drag_kind;
     TsFxPage fx_page;
     TsAuditionSource audition_source;
@@ -145,6 +182,12 @@ typedef struct {
     uint32_t tear_last_audition_ms;
     int tear_dragging;
     int tear_wheel_active;
+    TsStretchGesture stretch_gesture;
+    int stretch_wheel_active;
+    int stretch_wheel_steps;
+    int has_stretch_readout;
+    float stretch_pitch_semitones;
+    float stretch_duration_ratio;
     int has_pitch_suggestion;
     size_t selection_anchor;
     size_t tape_source_first;
@@ -159,6 +202,7 @@ typedef struct {
     size_t bank_rename_cursor;
     char recipe_rename[TS_RECIPE_NAME_MAX + 1];
     size_t recipe_rename_cursor;
+    char load_selection_name[128];
     char status[160];
 } TsUiState;
 
@@ -172,6 +216,14 @@ const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
+int ts_ui_keyboard_base_note(const TsUiState *ui);
+size_t ts_ui_right_drag_playhead_frame(size_t anchor, size_t pointer,
+                                       size_t selection_first,
+                                       size_t selection_last,
+                                       size_t sample_frames);
+int ts_ui_keyboard_set_octave(TsUiState *ui, int octave);
+int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount);
+int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount);
 int ts_ui_config_field_from_point(int x, int y);
 size_t ts_ui_config_cursor_from_point(const TsUiState *ui,
                                       TsConfigField field, int x);
@@ -179,6 +231,8 @@ TsUiConfigAction ts_ui_config_action_from_point(int x, int y);
 int ts_ui_palette_entry_from_point(int x, int y);
 int ts_ui_palette_channel_from_point(int x, int y, int *value);
 TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y);
+TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y);
+TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y);
 int ts_ui_palette_cycle_entry(int entry, int amount);
 int ts_ui_palette_cycle_channel(int channel, int amount);
 TsConfigField ts_ui_config_cycle_field(TsConfigField field, int amount);

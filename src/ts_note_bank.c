@@ -39,7 +39,8 @@ static void update_voice(TsNoteVoice *voice, const TsInstrument *instrument,
     voice->crossfade_frames = voice->looping ?
                               ts_audition_crossfade_frames(
                                   &plan, instrument->loop_crossfade_ms) : 0;
-    voice->pitch = ts_tuning_note_pitch(tuning, voice->note);
+    voice->pitch = ts_tuning_note_pitch(
+        tuning, voice->midi_note - TS_KEYBOARD_BASE_NOTE);
     voice->step = (double)plan.sample->sample_rate / output_rate * voice->pitch;
 }
 
@@ -75,15 +76,28 @@ TsNoteStartResult ts_note_bank_start_tuned(TsNoteBank *bank,
                                            TsAuditionSource source, int note,
                                            int latched, int output_rate)
 {
+    return ts_note_bank_start_tuned_at(bank, instrument, tuning, source, note,
+                                       TS_KEYBOARD_BASE_NOTE, latched, output_rate);
+}
+
+TsNoteStartResult ts_note_bank_start_tuned_at(TsNoteBank *bank,
+                                              const TsInstrument *instrument,
+                                              const TsTuning *tuning,
+                                              TsAuditionSource source, int note,
+                                              int keyboard_base_note,
+                                              int latched, int output_rate)
+{
     TsAuditionPlan plan;
     int free_voice = -1;
     if (bank == NULL || instrument == NULL || note < 0 || note >= 24 ||
+        keyboard_base_note < 0 || keyboard_base_note + note > 127 ||
         tuning == NULL || output_rate <= 0 ||
         !voice_plan(instrument, source, instrument->has_loop, &plan))
         return TS_NOTE_START_FAILED;
     for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
-        if (voice->active && voice->note == note) {
+        if (voice->active && voice->note == note &&
+            voice->midi_note == keyboard_base_note + note) {
             if (latched && voice->latched) {
                 voice->active = 0;
                 return TS_NOTE_TOGGLED_OFF;
@@ -102,13 +116,15 @@ TsNoteStartResult ts_note_bank_start_tuned(TsNoteBank *bank,
         voice->position = instrument->loop_mode == TS_LOOP_REVERSE &&
                           instrument->has_loop ? (double)(plan.last - 1u) :
                           (double)plan.first;
-        voice->pitch = ts_tuning_note_pitch(tuning, note);
+        voice->pitch = ts_tuning_note_pitch(
+            tuning, keyboard_base_note + note - TS_KEYBOARD_BASE_NOTE);
         voice->step = (double)plan.sample->sample_rate / output_rate * voice->pitch;
         voice->range_first = plan.first;
         voice->range_last = plan.last;
         voice->source = source;
         voice->serial = ++bank->next_serial;
         voice->note = note;
+        voice->midi_note = keyboard_base_note + note;
         voice->looping = instrument->has_loop;
         voice->loop_mode = instrument->loop_mode;
         voice->direction = voice->loop_mode == TS_LOOP_REVERSE ? -1 : 1;

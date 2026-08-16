@@ -19,6 +19,7 @@ typedef struct {
     TsLoopMode loop_mode;
     uint64_t serial;
     int note;
+    int midi_note;
     int looping;
     int direction;
     int latched;
@@ -48,6 +49,12 @@ TsNoteStartResult ts_note_bank_start_tuned(TsNoteBank *bank,
                                            const TsTuning *tuning,
                                            TsAuditionSource source, int note,
                                            int latched, int output_rate);
+TsNoteStartResult ts_note_bank_start_tuned_at(TsNoteBank *bank,
+                                              const TsInstrument *instrument,
+                                              const TsTuning *tuning,
+                                              TsAuditionSource source, int note,
+                                              int keyboard_base_note,
+                                              int latched, int output_rate);
 void ts_note_bank_release(TsNoteBank *bank, int note);
 void ts_note_bank_sync(TsNoteBank *bank, const TsInstrument *instrument, int output_rate);
 void ts_note_bank_sync_tuned(TsNoteBank *bank, const TsInstrument *instrument,

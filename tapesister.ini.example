@@ -11,6 +11,8 @@ startup_welcome_sample=1
 startup_welcome_autoplay=1
 
 [Waveform]
+; Snap clicked playheads to the nearest zero crossing. Set to 0 for exact clicks.
+playhead_zero_snap=1
 ; Zero-crossing candidates traversed by one Ctrl+Shift+wheel detent (1-20).
 rotate_wheel_fine=5
 ; Zero-crossing candidates traversed by one Ctrl+wheel detent (20-100).

@@ -31,6 +31,7 @@ static const TsPalette *active_palette(void)
 #define PAL_TUNING (active_palette()->colors[TS_PALETTE_PATTERN_TUNING])
 #define PAL_EFFECT (active_palette()->colors[TS_PALETTE_PATTERN_EFFECT])
 #define PAL_WAVE_SELECTION (active_palette()->colors[TS_PALETTE_WAVE_SELECTION])
+#define PAL_ACTIVE_TILE (active_palette()->colors[TS_PALETTE_ACTIVE_TILE])
 
 typedef struct {
     int x;
@@ -306,7 +307,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
               PAL_BUTTON, PAL_MOUSE);
     }
 
-    if (browser->mode != TS_BROWSER_LOAD_WAV) {
+    if (ts_browser_mode_edits_filename(browser->mode)) {
         const char *filename = browser->filename;
         size_t length = strlen(filename);
         size_t cursor = browser->filename_cursor > length ? length :
@@ -326,12 +327,19 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
             if (cursor_x > 572) cursor_x = 572;
             rect(fb, cursor_x, 301, 2, 11, PAL_MOUSE);
         }
-    } else {
+    } else if (browser->mode == TS_BROWSER_LOAD_WAV) {
         text(fb, 58, 300, "SELECT AN EXISTING WAV, TSR, OR TSP", PAL_EFFECT, 1);
+    } else if (ts_browser_mode_selects_directory(browser->mode)) {
+        text(fb, 58, 300, "NAVIGATE, THEN USE THIS FOLDER", PAL_EFFECT, 1);
+    } else {
+        text(fb, 58, 300, "SELECT AN EXECUTABLE FILE", PAL_EFFECT, 1);
     }
 
     button(fb, 58, 326, 72, "UP DIR", 0);
-    button(fb, 135, 326, 120, browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
+    button(fb, 135, 326, 120,
+           ts_browser_mode_selects_directory(browser->mode) ? "USE FOLDER" :
+           browser->mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE ? "USE FILE" :
+           browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
            (browser->mode == TS_BROWSER_SAVE_RECIPE ||
             browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVE" : "EXPORT",
            browser->overwrite_armed);
@@ -373,14 +381,15 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
     for (size_t i = 0; i < sizeof(config_buttons) / sizeof(config_buttons[0]); ++i)
         button(fb, config_buttons[i].x, TS_PALETTE_ACTION_Y,
                config_buttons[i].width, config_buttons[i].label, 0);
+    text(fb, 20, 157, "DOUBLE CLICK A PATH TO BROWSE", PAL_EFFECT, 1);
     text(fb, 364, 182, "TAB FIELD  CTRL BACKSPACE CLEAR", PAL_TUNING, 1);
 }
 
 static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     static const char *const short_names[TS_PALETTE_COLOR_COUNT] = {
-        "TEXT", "BLOCK", "BLOCK TXT", "MOUSE", "DESKTOP", "BUTTONS", "WAVE",
-        "INSTR", "ZERO", "LOOP", "EFFECT", "EMPTY", "WAVE SEL"
+        "TITLE", "ACTIVE", "ACT TEXT", "POINTER", "DESKTOP", "CONTROLS", "WAVE",
+        "PRIMARY", "EDGE/ZERO", "LOOP", "EFFECT", "SPARE", "WAVE SEL", "ACT TILE"
     };
     static const char *const channel_names[3] = {"RED", "GREEN", "BLUE"};
     char value[48];
@@ -388,7 +397,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
     frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
           TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 45, "PALETTE EDITOR", PAL_NOTE, 1);
-    text(fb, 438, 45, "LIVE TAPEHEAD COLORS", PAL_EFFECT, 1);
+    text(fb, 438, 45, "LIVE TAPESISTER COLORS", PAL_EFFECT, 1);
     for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
         int column = color % TS_PALETTE_SWATCH_COLUMNS;
         int row = color / TS_PALETTE_SWATCH_COLUMNS;
@@ -468,6 +477,7 @@ void ts_ui_init(TsUiState *ui)
     ts_warp_gesture_init(&ui->warp_gesture);
     ts_smear_gesture_init(&ui->smear_gesture);
     ts_tear_gesture_init(&ui->tear_gesture);
+    ts_stretch_gesture_init(&ui->stretch_gesture);
     ui->mouse_note = -1;
     ui->bank_view_slot = -1;
     ui->load_bank_slot = -1;
@@ -476,6 +486,8 @@ void ts_ui_init(TsUiState *ui)
     ui->renaming_recipe_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->show_keyboard = 1;
+    ui->keyboard_octave = 3;
+    ui->keyboard_base_note = 48;
     ui->show_recipes = 0;
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
@@ -590,12 +602,108 @@ TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y)
     return TS_UI_PALETTE_ACTION_NONE;
 }
 
+TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y)
+{
+    if (y < 132 || y >= 155) return TS_UI_LOAD_SELECTION_NONE;
+    if (x >= 146 && x < 242) return TS_UI_LOAD_SELECTION_PASTE;
+    if (x >= 272 && x < 368) return TS_UI_LOAD_SELECTION_FIT;
+    if (x >= 398 && x < 494) return TS_UI_LOAD_SELECTION_CANCEL;
+    return TS_UI_LOAD_SELECTION_NONE;
+}
+
+static int point_in_slider(int x, int y, int left, int top, int width)
+{
+    return x >= left && x < left + width && y >= top && y < top + 24;
+}
+
+TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y)
+{
+    if (point_in_slider(x, y, 10, 233, 72)) return TS_UI_SLIDER_BODY;
+    if (point_in_slider(x, y, 88, 233, 72)) return TS_UI_SLIDER_EDGE;
+    if (point_in_slider(x, y, 166, 233, 72)) return TS_UI_SLIDER_DRIFT;
+    if (ui == NULL) return TS_UI_SLIDER_NONE;
+    switch (ui->fx_page) {
+    case TS_FX_TUNE:
+        if (point_in_slider(x, y, 214, 261, 146)) return TS_UI_SLIDER_TUNE_FINE;
+        break;
+    case TS_FX_NOISE:
+        if (point_in_slider(x, y, 118, 261, 180)) return TS_UI_SLIDER_NOISE_AMOUNT;
+        break;
+    case TS_FX_SHAPE:
+        if (point_in_slider(x, y, 104, 261, 94)) return TS_UI_SLIDER_FILTER_CUTOFF;
+        if (point_in_slider(x, y, 202, 261, 80)) return TS_UI_SLIDER_FILTER_RESONANCE;
+        if (point_in_slider(x, y, 384, 261, 92)) return TS_UI_SLIDER_SHAPER_DRIVE;
+        if (point_in_slider(x, y, 480, 261, 92)) return TS_UI_SLIDER_SHAPER_MIX;
+        break;
+    case TS_FX_FAMILY:
+        if (point_in_slider(x, y, 10, 261, 520)) return TS_UI_SLIDER_VARIATION_RANGE;
+        break;
+    case TS_FX_DELAY:
+        if (point_in_slider(x, y, 118, 261, 92)) return TS_UI_SLIDER_DELAY_TIME;
+        if (point_in_slider(x, y, 220, 261, 92)) return TS_UI_SLIDER_DELAY_FEEDBACK;
+        if (point_in_slider(x, y, 322, 261, 92)) return TS_UI_SLIDER_DELAY_DAMPING;
+        if (point_in_slider(x, y, 424, 261, 92)) return TS_UI_SLIDER_DELAY_MIX;
+        break;
+    case TS_FX_SPACE:
+        if (point_in_slider(x, y, 118, 261, 120)) return TS_UI_SLIDER_REVERB_DECAY;
+        if (point_in_slider(x, y, 250, 261, 120)) return TS_UI_SLIDER_REVERB_DAMPING;
+        if (point_in_slider(x, y, 382, 261, 120)) return TS_UI_SLIDER_REVERB_MIX;
+        break;
+    case TS_FX_LOOP:
+        if (point_in_slider(x, y, 365, 261, 212)) return TS_UI_SLIDER_LOOP_CROSSFADE;
+        break;
+    default:
+        break;
+    }
+    return TS_UI_SLIDER_NONE;
+}
+
 static int cycle_index(int value, int amount, int count)
 {
     int result;
     if (count <= 0) return 0;
     result = (value + amount) % count;
     return result < 0 ? result + count : result;
+}
+
+int ts_ui_keyboard_base_note(const TsUiState *ui)
+{
+    int note = ui != NULL ? ui->keyboard_base_note : 48;
+    if (note < 0) note = 0;
+    if (note > 104) note = 104;
+    return note;
+}
+
+int ts_ui_keyboard_set_octave(TsUiState *ui, int octave)
+{
+    if (ui == NULL) return 3;
+    if (octave < 0) octave = 0;
+    if (octave > 7) octave = 7;
+    ui->keyboard_octave = octave;
+    ui->keyboard_base_note = (octave + 1) * 12;
+    return octave;
+}
+
+int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount)
+{
+    if (ui == NULL) return 3;
+    ui->keyboard_octave = cycle_index(ui->keyboard_octave, amount, 8);
+    ui->keyboard_base_note = (ui->keyboard_octave + 1) * 12;
+    return ui->keyboard_octave;
+}
+
+int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount)
+{
+    int note;
+    if (ui == NULL) return 48;
+    note = ui->keyboard_base_note + amount;
+    if (note < 0) note = 0;
+    if (note > 104) note = 104;
+    ui->keyboard_base_note = note;
+    ui->keyboard_octave = note / 12 - 1;
+    if (ui->keyboard_octave < 0) ui->keyboard_octave = 0;
+    if (ui->keyboard_octave > 7) ui->keyboard_octave = 7;
+    return note;
 }
 
 int ts_ui_palette_cycle_entry(int entry, int amount)
@@ -962,15 +1070,33 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         wave_text(fb, selection_x + 4, TS_WAVE_Y + 5, duration, PAL_EFFECT, 1);
     }
 
-    if (ui->playback_active && ui->playhead_frames > 0) {
+    if (ui->has_stretch_readout) {
+        char pitch[64];
+        snprintf(pitch, sizeof(pitch), "PITCH %+.2F ST  TIME X%.3F",
+                 ui->stretch_pitch_semitones,
+                 ui->stretch_duration_ratio);
+        wave_text(fb, TS_WAVE_X + TS_WAVE_W - 200, TS_WAVE_Y + 5,
+                  pitch, PAL_EFFECT, 1);
+    }
+
+    {
         int playhead_x = -1;
-        uint32_t playhead_color = ui->playhead_source == TS_AUDITION_PARENT ?
-                                  PAL_INSTRUMENT : PAL_MOUSE;
-        if (((showing_bank && ui->playhead_bank_slot == ui->bank_view_slot) ||
+        uint32_t playhead_color = PAL_MOUSE;
+        int playback_matches = ui->playback_active && ui->playhead_frames > 0 &&
+            ((showing_bank && ui->playhead_bank_slot == ui->bank_view_slot) ||
              (!showing_bank && ui->playhead_bank_slot < 0 &&
-              ui->playhead_source == ui->audition_source)) &&
-            ui->playhead_frame >= view_first && ui->playhead_frame <= view_last) {
+              ui->playhead_source == ui->audition_source));
+        if (playback_matches && ui->playhead_frame >= view_first &&
+            ui->playhead_frame <= view_last) {
+            playhead_color = ui->playhead_source == TS_AUDITION_PARENT ?
+                             PAL_INSTRUMENT : PAL_MOUSE;
             playhead_x = frame_x(ui->playhead_frame, view_first, view_last);
+        } else if (!showing_bank && instrument->has_playhead) {
+            size_t editor_playhead = ui->audition_source == TS_AUDITION_PARENT ?
+                instrument->crop_first + instrument->playhead_frame :
+                instrument->playhead_frame;
+            if (editor_playhead >= view_first && editor_playhead <= view_last)
+                playhead_x = frame_x(editor_playhead, view_first, view_last);
         }
         if (playhead_x >= TS_WAVE_X && playhead_x <= TS_WAVE_X + TS_WAVE_W) {
             if (playhead_x == TS_WAVE_X + TS_WAVE_W) --playhead_x;
@@ -982,7 +1108,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
     button(fb, 85, 205, 82, "CREATE", 0);
     button(fb, 172, 205, 70, "VARY", 0);
-    button(fb, 247, 205, 78, "LOOP", ui->workbench_loop_active);
+    button(fb, 247, 205, 78,
+           ui->workbench_loop_persistent ? "LOOP LOCK" : "LOOP",
+           ui->workbench_loop_active);
 
     slider(fb, 10, 233, 72, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 88, 233, 72, "EDGE", instrument->process.edge, PAL_VOLUME);
@@ -1066,7 +1194,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else if (ui->fx_page == TS_FX_DELAY) {
         button(fb, 10, 261, 94, instrument->process.delay_enabled ? "DELAY ON" : "DELAY OFF",
                instrument->process.delay_enabled);
-        slider(fb, 118, 261, 92, "TIME", instrument->process.delay_seconds, PAL_NOTE);
+        slider(fb, 118, 261, 92, "TIME",
+               (instrument->process.delay_seconds - 0.005f) / 0.995f, PAL_NOTE);
         slider(fb, 220, 261, 92, "FEEDBACK", instrument->process.delay_feedback / 0.85f, PAL_VOLUME);
         slider(fb, 322, 261, 92, "DAMP", instrument->process.delay_damping, PAL_TUNING);
         slider(fb, 424, 261, 92, "MIX", instrument->process.delay_mix, PAL_EFFECT);
@@ -1106,24 +1235,43 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
            !ui->show_keyboard);
 
     if (ui->show_keyboard) {
-        text(fb, 11, 318, "SHIFT+CLICK CHORD  SHIFT+RIGHT CLICK SETS ROOT NOTE", RGB(184, 180, 184), 1);
+        char keyboard_hint[96];
+        char base_note[8];
+        snprintf(keyboard_hint, sizeof(keyboard_hint),
+                 "KEY %s  SHIFT+WHEEL SEMITONE / F1-F8  SHIFT+CLICK CHORD",
+                 ts_midi_note_name(ts_ui_keyboard_base_note(ui),
+                                   base_note, sizeof(base_note)));
+        text(fb, 11, 318, keyboard_hint, RGB(184, 180, 184), 1);
         const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
-        const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
         const int white_semitones[14] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
         for (int i = 0; i < 14; ++i) {
+            char label[8];
+            int label_x;
             int active = (ui->active_notes & (1u << white_semitones[i])) != 0;
             rect(fb, white_x + i * white_w, white_y, white_w - 1, white_h,
                  active ? PAL_MOUSE : RGB(220, 216, 207));
-            text(fb, white_x + i * white_w + 23, white_y + 36, labels[i], RGB(24, 24, 24), 1);
+            ts_midi_note_name(ts_ui_keyboard_base_note(ui) + white_semitones[i],
+                              label, sizeof(label));
+            label_x = white_x + i * white_w +
+                      (white_w - 1 - (int)strlen(label) * 6) / 2;
+            text(fb, label_x, white_y + 36, label, RGB(24, 24, 24), 1);
         }
         {
             const int black_after[] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
             const int semitones[] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
             for (int i = 0; i < 10; ++i) {
+                char label[8];
+                int left = white_x + (black_after[i] + 1) * white_w - 16;
+                int label_x;
                 int key = semitones[i];
                 int active = (ui->active_notes & (1u << key)) != 0;
-                rect(fb, white_x + (black_after[i] + 1) * white_w - 16, white_y, 31, 31,
+                rect(fb, left, white_y, 31, 31,
                      active ? PAL_VOLUME : RGB(18, 18, 18));
+                ts_midi_note_name(ts_ui_keyboard_base_note(ui) + key,
+                                  label, sizeof(label));
+                label_x = left + (31 - (int)strlen(label) * 6) / 2;
+                text(fb, label_x, white_y + 19, label,
+                     active ? PAL_BLOCK_TEXT : RGB(220, 216, 207), 1);
             }
         }
     } else if (ui->show_recipes) {
@@ -1174,10 +1322,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                      family_relation_color(slot->relation));
             if (i == ui->bank_view_slot) rect(fb, x + 4, y + 4, 64, 2, PAL_EFFECT);
             if (i == instrument->selected_slot) {
-                rect(fb, x - 2, y - 2, 76, 3, PAL_MOUSE);
-                rect(fb, x - 2, y + 22, 76, 3, PAL_MOUSE);
-                rect(fb, x - 2, y - 2, 3, 27, PAL_MOUSE);
-                rect(fb, x + 71, y - 2, 3, 27, PAL_MOUSE);
+                rect(fb, x - 2, y - 2, 76, 3, PAL_ACTIVE_TILE);
+                rect(fb, x - 2, y + 22, 76, 3, PAL_ACTIVE_TILE);
+                rect(fb, x - 2, y - 2, 3, 27, PAL_ACTIVE_TILE);
+                rect(fb, x + 71, y - 2, 3, 27, PAL_ACTIVE_TILE);
             }
         }
     }
@@ -1193,6 +1341,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 172, 188, 136, "EXIT", 0);
         button(fb, 324, 188, 144, "CANCEL", 1);
         text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
+    } else if (ui->load_selection_choice_open) {
+        char source[58];
+        snprintf(source, sizeof(source), "%.52s", ui->load_selection_name);
+        frame(fb, 126, 78, 388, 108, RGB(36, 33, 37), PAL_MOUSE);
+        text(fb, 146, 91, "LOAD WAV INTO SELECTION?", PAL_NOTE, 1);
+        text(fb, 146, 108, source, PAL_EFFECT, 1);
+        button(fb, 146, 132, 96, "PASTE", 0);
+        button(fb, 272, 132, 96, "FIT", 1);
+        button(fb, 398, 132, 96, "CANCEL", 0);
+        text(fb, 146, 164, "P/ENTER EXACT   F FITS RANGE   ESC CANCEL", RGB(190, 185, 190), 1);
     } else if (ui->palette_open)
         palette_render(fb, ui);
     else if (ui->config_open)
@@ -1269,6 +1427,17 @@ int ts_ui_key_from_point(int x, int y)
     static const int white_semitones[] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
     int index = (x - 10) / white_w;
     return index >= 0 && index < 14 ? white_semitones[index] : -1;
+}
+
+size_t ts_ui_right_drag_playhead_frame(size_t anchor, size_t pointer,
+                                       size_t selection_first,
+                                       size_t selection_last,
+                                       size_t sample_frames)
+{
+    size_t frame = pointer >= anchor ? selection_first : selection_last;
+    if (sample_frames == 0) return 0;
+    if (frame >= sample_frames) frame = sample_frames - 1u;
+    return frame;
 }
 
 int ts_ui_bank_slot_from_point(int x, int y)

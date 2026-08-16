@@ -16,7 +16,10 @@ typedef enum {
     TS_BROWSER_SAVE_RECIPE,
     TS_BROWSER_SAVE_PRESET,
     TS_BROWSER_EXPORT_WAV,
-    TS_BROWSER_EXPORT_BANK
+    TS_BROWSER_EXPORT_BANK,
+    TS_BROWSER_SELECT_SAMPLE_DIRECTORY,
+    TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE,
+    TS_BROWSER_SELECT_EXCHANGE_DIRECTORY
 } TsBrowserMode;
 
 typedef struct {
@@ -61,5 +64,8 @@ int ts_browser_destination_path(const TsBrowser *browser, char *path, size_t pat
 int ts_browser_path_exists(const char *path);
 const char *ts_browser_mode_title(TsBrowserMode mode);
 const char *ts_browser_mode_extension(TsBrowserMode mode);
+int ts_browser_mode_edits_filename(TsBrowserMode mode);
+int ts_browser_mode_selects_config(TsBrowserMode mode);
+int ts_browser_mode_selects_directory(TsBrowserMode mode);
 
 #endif
