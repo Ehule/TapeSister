@@ -21,6 +21,7 @@ void ts_config_init(TsConfig *config)
         config->playhead_zero_snap = 1;
         config->rotate_wheel_fine = TS_ROTATE_WHEEL_FINE_DEFAULT;
         config->rotate_wheel_coarse = TS_ROTATE_WHEEL_COARSE_DEFAULT;
+        config->drone_crossfade_ms = TS_DRONE_CROSSFADE_MS_DEFAULT;
     }
 }
 
@@ -172,6 +173,13 @@ int ts_config_load(TsConfig *config, const char *path,
                 snprintf(error, error_size, "Invalid integer on config line %d", line_number);
                 fclose(file); return 0;
             }
+        } else if (strcmp(key, "drone_crossfade_ms") == 0) {
+            if (!parse_clamped_integer(value, TS_DRONE_CROSSFADE_MS_MIN,
+                                       TS_DRONE_CROSSFADE_MS_MAX,
+                                       &loaded.drone_crossfade_ms)) {
+                snprintf(error, error_size, "Invalid integer on config line %d", line_number);
+                fclose(file); return 0;
+            }
         }
     }
     if (ferror(file)) {
@@ -211,12 +219,14 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "\n[Waveform]\n"
                 "playhead_zero_snap=%d\n"
                 "rotate_wheel_fine=%d\n"
-                "rotate_wheel_coarse=%d\n",
+                "rotate_wheel_coarse=%d\n"
+                "drone_crossfade_ms=%d\n",
                 config->sample_path, config->fasttracker_path,
                 config->exchange_path, config->startup_welcome_sample,
                 config->startup_welcome_autoplay, config->playhead_zero_snap,
                 config->rotate_wheel_fine,
-                config->rotate_wheel_coarse) < 0;
+                config->rotate_wheel_coarse,
+                config->drone_crossfade_ms) < 0;
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {
         set_error(error, error_size, "Could not finish writing config");

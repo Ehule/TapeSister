@@ -2550,6 +2550,119 @@ size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
     return closest;
 }
 
+static size_t nearest_zero_crossing_in_range(const TsSample *sample,
+                                             size_t target,
+                                             size_t first, size_t last)
+{
+    size_t maximum_distance;
+    size_t closest;
+    float closest_level;
+    if (target < first) target = first;
+    if (target > last) target = last;
+    maximum_distance = target - first > last - target ?
+                       target - first : last - target;
+    for (size_t distance = 0; distance <= maximum_distance; ++distance) {
+        if (distance <= target - first) {
+            size_t left = target - distance;
+            if (is_zero_crossing(sample, left)) return left;
+        }
+        if (distance > 0 && distance <= last - target) {
+            size_t right = target + distance;
+            if (is_zero_crossing(sample, right)) return right;
+        }
+    }
+    closest = first;
+    closest_level = fabsf(sample->data[first]);
+    for (size_t frame = first + 1u; frame <= last; ++frame) {
+        float level = fabsf(sample->data[frame]);
+        if (level < closest_level) {
+            closest = frame;
+            closest_level = level;
+        }
+    }
+    return closest;
+}
+
+int ts_sample_make_drone(TsSample *destination, const TsSample *source,
+                         size_t first, size_t last, int crossfade_ms,
+                         size_t *split_frame, size_t *overlap_frames,
+                         char *error, size_t error_size)
+{
+    TsSample made;
+    size_t selection_frames;
+    size_t overlap;
+    size_t split;
+    size_t left_frames;
+    size_t right_frames;
+    size_t output_frames;
+    size_t at = 0;
+    if (split_frame != NULL) *split_frame = 0;
+    if (overlap_frames != NULL) *overlap_frames = 0;
+    if (destination == NULL || source == NULL || source->data == NULL ||
+        source->sample_rate == 0 || first >= last || last > source->frames) {
+        set_error(error, error_size, "Drone needs a valid nonempty selection");
+        return 0;
+    }
+    selection_frames = last - first;
+    if (selection_frames < 4u) {
+        set_error(error, error_size, "Drone selection is too short");
+        return 0;
+    }
+    if (crossfade_ms < 0) {
+        set_error(error, error_size, "Drone crossfade cannot be negative");
+        return 0;
+    }
+    overlap = selection_frames / 4u;
+    {
+        double requested = (double)source->sample_rate *
+                           (double)crossfade_ms / 1000.0;
+        if (requested < 1.0) requested = 1.0;
+        if (requested < (double)overlap)
+            overlap = (size_t)llround(requested);
+    }
+    if (overlap == 0) {
+        set_error(error, error_size, "Drone selection cannot support a crossfade");
+        return 0;
+    }
+    split = nearest_zero_crossing_in_range(
+        source, first + selection_frames / 2u,
+        first + overlap + 1u, last - overlap - 1u);
+    left_frames = split - first;
+    right_frames = last - split;
+    if (overlap >= left_frames || overlap >= right_frames) {
+        set_error(error, error_size, "Drone split cannot support its crossfade");
+        return 0;
+    }
+    output_frames = selection_frames - overlap;
+    ts_sample_init(&made);
+    made.data = (float *)malloc(output_frames * sizeof(*made.data));
+    if (made.data == NULL) {
+        set_error(error, error_size, "Out of memory creating Drone loop");
+        return 0;
+    }
+    memcpy(made.data, source->data + split,
+           (right_frames - overlap) * sizeof(*made.data));
+    at += right_frames - overlap;
+    for (size_t i = 0; i < overlap; ++i) {
+        double phase = (double)(i + 1u) / (double)(overlap + 1u);
+        float fade_in = (float)(0.5 - 0.5 * cos(M_PI * phase));
+        float fade_out = 1.0f - fade_in;
+        made.data[at++] = source->data[last - overlap + i] * fade_out +
+                          source->data[first + i] * fade_in;
+    }
+    memcpy(made.data + at, source->data + first + overlap,
+           (left_frames - overlap) * sizeof(*made.data));
+    made.frames = output_frames;
+    made.sample_rate = source->sample_rate;
+    snprintf(made.name, sizeof(made.name), "DRONE %.120s", source->name);
+    ts_sample_free(destination);
+    *destination = made;
+    if (split_frame != NULL) *split_frame = split;
+    if (overlap_frames != NULL) *overlap_frames = overlap;
+    set_error(error, error_size, "");
+    return 1;
+}
+
 void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last)
 {
     size_t snapped_first;
@@ -4091,6 +4204,87 @@ int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
     }
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_instrument_replace_selection_with_drone(TsInstrument *instrument,
+                                                const TsSample *drone,
+                                                char *error, size_t error_size)
+{
+    size_t first;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        !instrument->has_selection ||
+        instrument->selection_last <= instrument->selection_first) {
+        set_error(error, error_size, "Drone needs a valid selection");
+        return 0;
+    }
+    first = instrument->selection_first;
+    return ts_instrument_paste(instrument, drone, first, 0, error, error_size);
+}
+
+int ts_instrument_copy_drone_to_new_tile(TsInstrument *instrument,
+                                          const TsSample *drone,
+                                          int *destination_slot,
+                                          char *error, size_t error_size)
+{
+    char name[sizeof(drone->name)];
+    TsTuning source_tuning;
+    TsTuning source_audible_tuning;
+    int source;
+    int destination;
+    if (destination_slot != NULL) *destination_slot = -1;
+    if (instrument == NULL || drone == NULL || drone->data == NULL ||
+        drone->frames == 0 || drone->sample_rate == 0) {
+        set_error(error, error_size, "No Drone loop is ready to copy");
+        return 0;
+    }
+    source = instrument->selected_slot;
+    if (source < 0 || source >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[source].occupied) {
+        set_error(error, error_size, "Drone source tile is unavailable");
+        return 0;
+    }
+    destination = ts_instrument_bank_first_empty(instrument);
+    if (destination < 0) {
+        set_error(error, error_size, "No empty tile is available for Drone");
+        return 0;
+    }
+    snprintf(name, sizeof(name), "%.127s", drone->name);
+    source_tuning = instrument->tuning;
+    source_audible_tuning = instrument->audible_tuning;
+    if (!bank_sync_selected(instrument, error, error_size) ||
+        !ts_instrument_select_bank(instrument, destination, error, error_size) ||
+        !ts_instrument_activate_silence(instrument, drone->frames,
+                                       drone->sample_rate, error, error_size))
+        goto failed;
+    ts_instrument_set_selection(instrument, 0, drone->frames);
+    if (!ts_instrument_paste(instrument, drone, 0, 0, error, error_size))
+        goto failed;
+    snprintf(instrument->current.name, sizeof(instrument->current.name), "%s", name);
+    snprintf(instrument->parent.name, sizeof(instrument->parent.name), "%s", name);
+    snprintf(instrument->bank[destination].sample.name,
+             sizeof(instrument->bank[destination].sample.name), "%s", name);
+    snprintf(instrument->bank[destination].edit_parent.name,
+             sizeof(instrument->bank[destination].edit_parent.name), "%s", name);
+    instrument->tuning = source_tuning;
+    instrument->audible_tuning = source_audible_tuning;
+    instrument->has_loop = 1;
+    instrument->loop_first = 0;
+    instrument->loop_last = drone->frames;
+    instrument->loop_mode = TS_LOOP_FORWARD;
+    instrument->loop_crossfade_ms = 0.0f;
+    instrument->source_kind = TS_SOURCE_COMMITTED;
+    if (!bank_sync_selected(instrument, error, error_size)) goto failed;
+    if (destination_slot != NULL) *destination_slot = destination;
+    set_error(error, error_size, "");
+    return 1;
+
+failed:
+    if (destination >= 0 && destination < TS_BANK_SLOT_COUNT &&
+        instrument->bank[destination].occupied)
+        bank_slot_free(&instrument->bank[destination]);
+    if (source >= 0 && source < TS_BANK_SLOT_COUNT)
+        (void)ts_instrument_select_bank(instrument, source, NULL, 0);
+    return 0;
 }
 
 static int stamp_generated_patch(TsInstrument *instrument,

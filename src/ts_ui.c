@@ -385,6 +385,40 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
     text(fb, 364, 182, "TAB FIELD  CTRL BACKSPACE CLEAR", PAL_TUNING, 1);
 }
 
+static void drone_render(TsFramebuffer *fb, const TsUiState *ui)
+{
+    char crossfade[64];
+    char output[72];
+    frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
+          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
+    text(fb, 20, 47, "DRONE MAKER", PAL_NOTE, 1);
+    snprintf(crossfade, sizeof(crossfade), "CROSSFADE: %.2F MS",
+             ui->drone_effective_crossfade_ms);
+    text(fb, 414, 47, crossfade, PAL_EFFECT, 1);
+    text(fb, 20, 65, "ROTATED LOOP  ORIGINAL END + BEGIN CROSSFADED INSIDE",
+         RGB(190, 185, 190), 1);
+    rect(fb, 20, 82, 294, 44, RGB(8, 8, 8));
+    rect(fb, 23, 85, 144, 38, PAL_NOTE);
+    rect(fb, 167, 85, 144, 38, PAL_INSTRUMENT);
+    rect(fb, 157, 85, 20, 38, PAL_EFFECT);
+    rect(fb, 20, 82, 3, 44, PAL_TUNING);
+    rect(fb, 311, 82, 3, 44, PAL_TUNING);
+    text(fb, 68, 101, "RIGHT", PAL_BLOCK_TEXT, 1);
+    text(fb, 218, 101, "LEFT", PAL_BLOCK_TEXT, 1);
+    text(fb, 332, 87, "OUTER BOUNDARY KEEPS", PAL_TUNING, 1);
+    text(fb, 332, 101, "MIDPOINT NEIGHBORS", PAL_TUNING, 1);
+    snprintf(output, sizeof(output), "OUTPUT: %zu FRAMES  SPLIT: %zu",
+             ui->drone_output_frames, ui->drone_split_frame);
+    text(fb, 332, 117, output, PAL_EFFECT, 1);
+    button(fb, 20, 161, 110, "PREVIEW LOOP", ui->drone_preview_active);
+    button(fb, 136, 161, 60, "STOP", 0);
+    button(fb, 202, 161, 120, "COPY NEW TILE", 0);
+    button(fb, 328, 161, 132, "REPLACE SELECTION", 0);
+    button(fb, 466, 161, 80, "CANCEL", 0);
+    text(fb, 20, 190, "P PREVIEW  SPACE STOP  C COPY  R REPLACE  ESC CANCEL",
+         RGB(190, 185, 190), 1);
+}
+
 static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     static const char *const short_names[TS_PALETTE_COLOR_COUNT] = {
@@ -482,6 +516,7 @@ void ts_ui_init(TsUiState *ui)
     ui->bank_view_slot = -1;
     ui->load_bank_slot = -1;
     ui->playhead_bank_slot = -1;
+    ui->drone_source_slot = -1;
     ui->renaming_bank_slot = -1;
     ui->renaming_recipe_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
@@ -609,6 +644,17 @@ TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y)
     if (x >= 272 && x < 368) return TS_UI_LOAD_SELECTION_FIT;
     if (x >= 398 && x < 494) return TS_UI_LOAD_SELECTION_CANCEL;
     return TS_UI_LOAD_SELECTION_NONE;
+}
+
+TsUiDroneAction ts_ui_drone_action_from_point(int x, int y)
+{
+    if (y < 161 || y >= 184) return TS_UI_DRONE_ACTION_NONE;
+    if (x >= 20 && x < 130) return TS_UI_DRONE_ACTION_PREVIEW;
+    if (x >= 136 && x < 196) return TS_UI_DRONE_ACTION_STOP;
+    if (x >= 202 && x < 322) return TS_UI_DRONE_ACTION_COPY;
+    if (x >= 328 && x < 460) return TS_UI_DRONE_ACTION_REPLACE;
+    if (x >= 466 && x < 546) return TS_UI_DRONE_ACTION_CANCEL;
+    return TS_UI_DRONE_ACTION_NONE;
 }
 
 static int point_in_slider(int x, int y, int left, int top, int width)
@@ -1111,6 +1157,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 247, 205, 78,
            ui->workbench_loop_persistent ? "LOOP LOCK" : "LOOP",
            ui->workbench_loop_active);
+    button(fb, 330, 205, 72, "DRONE", ui->drone_open);
 
     slider(fb, 10, 233, 72, "BODY", instrument->process.body, PAL_INSTRUMENT);
     slider(fb, 88, 233, 72, "EDGE", instrument->process.edge, PAL_VOLUME);
@@ -1341,7 +1388,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 172, 188, 136, "EXIT", 0);
         button(fb, 324, 188, 144, "CANCEL", 1);
         text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
-    } else if (ui->load_selection_choice_open) {
+    } else if (ui->drone_open)
+        drone_render(fb, ui);
+    else if (ui->load_selection_choice_open) {
         char source[58];
         snprintf(source, sizeof(source), "%.52s", ui->load_selection_name);
         frame(fb, 126, 78, 388, 108, RGB(36, 33, 37), PAL_MOUSE);

@@ -24,6 +24,17 @@ Set `rotate_wheel_fine` (1–20, default 5), `rotate_wheel_coarse` (20–100,
 default 50), and `playhead_zero_snap` (0/1, default 1) in the `[Waveform]`
 section of `tapesister.ini`.
 
+**DRONE** turns the current selection into a purpose-built seamless loop. It
+zero-snaps a split near the selection midpoint, rotates the two halves, and uses a
+constant-sum raised-cosine crossfade where the old selection end meets its beginning.
+Preview Loop repeats the temporary result without changing audio, history, or project
+state. Copy New Tile places only the loop in the first available independent tile,
+preserves the source tuning, and marks the whole result as a zero-crossfade forward loop;
+Replace Selection splices the shorter result in place and selects it exactly. Both
+commit modes support Undo/Redo. The internal crossfade defaults to 50 ms, clamps to at
+most one quarter of the selection, and can be changed with
+`drone_crossfade_ms=50` in `[Waveform]`.
+
 Every ordinary slider responds to click/drag, mouse wheel while hovered, and Left/Right while the pointer is over its box; Shift makes wheel or arrow adjustments coarser. This includes Palette RGB and contrast controls. WARP, SMEAR, and TEAR remain spring-loaded gestures and deliberately keep their separate Ctrl+wheel behavior.
 
 The compact **WARP** control is a spring-loaded, deterministic offline Transform for

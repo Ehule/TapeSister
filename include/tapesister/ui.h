@@ -110,6 +110,15 @@ typedef enum {
     TS_UI_LOAD_SELECTION_CANCEL
 } TsUiLoadSelectionAction;
 
+typedef enum {
+    TS_UI_DRONE_ACTION_NONE = 0,
+    TS_UI_DRONE_ACTION_PREVIEW,
+    TS_UI_DRONE_ACTION_STOP,
+    TS_UI_DRONE_ACTION_COPY,
+    TS_UI_DRONE_ACTION_REPLACE,
+    TS_UI_DRONE_ACTION_CANCEL
+} TsUiDroneAction;
+
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
@@ -138,6 +147,8 @@ typedef struct {
     int renaming_recipe_slot;
     int export_choice_open;
     int load_selection_choice_open;
+    int drone_open;
+    int drone_preview_active;
     int exit_confirm_open;
     int exit_has_unsaved;
     uint64_t saved_state_hash;
@@ -188,6 +199,13 @@ typedef struct {
     int has_stretch_readout;
     float stretch_pitch_semitones;
     float stretch_duration_ratio;
+    float drone_effective_crossfade_ms;
+    size_t drone_source_first;
+    size_t drone_source_last;
+    size_t drone_split_frame;
+    size_t drone_output_frames;
+    uint64_t drone_source_hash;
+    int drone_source_slot;
     int has_pitch_suggestion;
     size_t selection_anchor;
     size_t tape_source_first;
@@ -232,6 +250,7 @@ int ts_ui_palette_entry_from_point(int x, int y);
 int ts_ui_palette_channel_from_point(int x, int y, int *value);
 TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y);
 TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y);
+TsUiDroneAction ts_ui_drone_action_from_point(int x, int y);
 TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y);
 int ts_ui_palette_cycle_entry(int entry, int amount);
 int ts_ui_palette_cycle_channel(int channel, int amount);

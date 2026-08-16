@@ -64,6 +64,21 @@ int main(int argc, char **argv)
                  "glass-harmonic-source.wav");
         snprintf(ui.status, sizeof(ui.status),
                  "CHOOSE PASTE, FIT, OR CANCEL FOR THE SELECTED RANGE");
+    } else if (argc > 2 && strcmp(argv[2], "drone") == 0) {
+        size_t overlap = instrument.current.sample_rate / 20u;
+        ui.drone_open = 1;
+        ui.drone_preview_active = 1;
+        ui.drone_effective_crossfade_ms =
+            (float)((double)overlap * 1000.0 /
+                    (double)instrument.current.sample_rate);
+        ui.drone_source_first = instrument.selection_first;
+        ui.drone_source_last = instrument.selection_last;
+        ui.drone_split_frame = (instrument.selection_first +
+                                instrument.selection_last) / 2u;
+        ui.drone_output_frames = instrument.selection_last -
+                                 instrument.selection_first - overlap;
+        snprintf(ui.status, sizeof(ui.status),
+                 "DRONE PREVIEW IS TEMPORARY - SOURCE AND HISTORY UNCHANGED");
     } else if (argc > 2 && strcmp(argv[2], "stretch") == 0) {
         float pitch = 0.0f;
         size_t before;

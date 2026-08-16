@@ -11,7 +11,10 @@ enum {
     TS_ROTATE_WHEEL_FINE_DEFAULT = 5,
     TS_ROTATE_WHEEL_COARSE_MIN = 20,
     TS_ROTATE_WHEEL_COARSE_MAX = 100,
-    TS_ROTATE_WHEEL_COARSE_DEFAULT = 50
+    TS_ROTATE_WHEEL_COARSE_DEFAULT = 50,
+    TS_DRONE_CROSSFADE_MS_MIN = 1,
+    TS_DRONE_CROSSFADE_MS_MAX = 1000,
+    TS_DRONE_CROSSFADE_MS_DEFAULT = 50
 };
 
 typedef enum {
@@ -29,6 +32,7 @@ typedef struct {
     int playhead_zero_snap;
     int rotate_wheel_fine;
     int rotate_wheel_coarse;
+    int drone_crossfade_ms;
 } TsConfig;
 
 void ts_config_init(TsConfig *config);
