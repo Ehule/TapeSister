@@ -90,6 +90,22 @@ int main(int argc, char **argv)
         ui.drone_overlap_frames = overlap;
         snprintf(ui.status, sizeof(ui.status),
                  "DRONE PREVIEW IS TEMPORARY - SOURCE AND HISTORY UNCHANGED");
+    } else if (argc > 2 && strcmp(argv[2], "canvas") == 0) {
+        size_t before = instrument.current.frames;
+        if (!ts_instrument_toggle_grid_snap(&instrument) ||
+            !ts_instrument_canvas_gesture_begin(
+                &instrument, &ui.canvas_gesture, 1, error, sizeof(error)) ||
+            !ts_instrument_canvas_gesture_preview(
+                &instrument, &ui.canvas_gesture,
+                (int64_t)instrument.current.sample_rate / 2,
+                error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ui.canvas_drag_start_frames = before;
+        snprintf(ui.status, sizeof(ui.status),
+                 "CAPTURED LEFT EDGE - RELEASE COMMITS ONCE  ESC RESTORES");
     } else if (argc > 2 && strcmp(argv[2], "stretch") == 0) {
         float pitch = 0.0f;
         size_t before;
@@ -298,6 +314,9 @@ int main(int argc, char **argv)
         ts_instrument_free(&instrument);
         return 1;
     }
+    if (ui.canvas_gesture.active)
+        (void)ts_instrument_canvas_gesture_cancel(
+            &instrument, &ui.canvas_gesture, error, sizeof(error));
     ts_sample_free(&drone_preview);
     ts_instrument_free(&instrument);
     printf("Wrote %s\n", path);

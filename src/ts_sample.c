@@ -1269,6 +1269,8 @@ static TsEditSnapshot snapshot(const TsInstrument *instrument)
     result.has_selection = instrument->has_selection;
     result.has_playhead = instrument->has_playhead;
     result.has_loop = instrument->has_loop;
+    result.grid_divisions = instrument->grid_divisions;
+    result.grid_snap = instrument->grid_snap;
     result.tuning = instrument->tuning;
     result.audible_tuning = instrument->audible_tuning;
     result.process = instrument->process;
@@ -1310,6 +1312,8 @@ static void reset_editor(TsInstrument *instrument)
     instrument->loop_crossfade_ms = 8.0f;
     instrument->loop_mode = TS_LOOP_FORWARD;
     instrument->has_loop = 0;
+    instrument->grid_divisions = TS_GRID_DIVISION_DEFAULT;
+    instrument->grid_snap = 0;
     instrument->sample_edit_count = 0;
     instrument->post_edit_count = 0;
     instrument->undo_count = 0;
@@ -1593,6 +1597,59 @@ static int delete_range(TsSample *sample, size_t first, size_t last,
     return 1;
 }
 
+static int resize_canvas_sample(TsSample *sample, int edge, int64_t delta,
+                                char *error, size_t error_size)
+{
+    float *data;
+    size_t amount;
+    size_t frames;
+    if (sample == NULL || sample->data == NULL || sample->frames < TS_CANVAS_MIN_FRAMES ||
+        (edge != 1 && edge != 2)) {
+        set_error(error, error_size, "Invalid audio canvas");
+        return 0;
+    }
+    if (delta == 0) return 1;
+    if (delta > 0) {
+        amount = (uint64_t)delta > SIZE_MAX ? SIZE_MAX : (size_t)delta;
+        if (amount > SIZE_MAX - sample->frames ||
+            sample->frames + amount > TS_CANVAS_MAX_FRAMES ||
+            sample->frames + amount > SIZE_MAX / sizeof(*data)) {
+            set_error(error, error_size, "Audio canvas is too large");
+            return 0;
+        }
+        frames = sample->frames + amount;
+    } else {
+        uint64_t magnitude = (uint64_t)(-(delta + 1)) + 1u;
+        if (magnitude > SIZE_MAX) {
+            set_error(error, error_size, "Invalid audio canvas contraction");
+            return 0;
+        }
+        amount = (size_t)magnitude;
+        if (amount > sample->frames - TS_CANVAS_MIN_FRAMES) {
+            set_error(error, error_size, "Audio canvas reached its minimum length");
+            return 0;
+        }
+        frames = sample->frames - amount;
+    }
+    data = (float *)calloc(frames, sizeof(*data));
+    if (data == NULL) {
+        set_error(error, error_size, "Out of memory resizing audio canvas");
+        return 0;
+    }
+    if (delta > 0) {
+        size_t offset = edge == 1 ? amount : 0u;
+        memcpy(data + offset, sample->data, sample->frames * sizeof(*data));
+    } else if (edge == 1) {
+        memcpy(data, sample->data + amount, frames * sizeof(*data));
+    } else {
+        memcpy(data, sample->data, frames * sizeof(*data));
+    }
+    free(sample->data);
+    sample->data = data;
+    sample->frames = frames;
+    return 1;
+}
+
 static int patch_range(TsSample *sample, const TsSample *patch,
                        size_t first, size_t last, int fit,
                        char *error, size_t error_size)
@@ -1779,6 +1836,15 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
         size_t first = operation->first;
         size_t last = operation->last;
         size_t length;
+        if (operation->kind == TS_POST_CANVAS_LEFT_RESIZE ||
+            operation->kind == TS_POST_CANVAS_RIGHT_RESIZE) {
+            if (!resize_canvas_sample(
+                    destination,
+                    operation->kind == TS_POST_CANVAS_LEFT_RESIZE ? 1 : 2,
+                    operation->destination, error, error_size))
+                return 0;
+            continue;
+        }
         if (operation->kind == TS_POST_DELETE) {
             if (!delete_range(destination, first, last, error, error_size)) return 0;
             continue;
@@ -2056,6 +2122,8 @@ static void bank_slot_init(TsBankSlot *slot)
     slot->relation = TS_FAMILY_CAPTURED;
     slot->parent_slot = -1;
     slot->lineage_mutation = 0.35f;
+    slot->edit.grid_divisions = TS_GRID_DIVISION_DEFAULT;
+    slot->edit.grid_snap = 0;
     ts_process_recipe_reset(&slot->process);
 }
 
@@ -2129,6 +2197,8 @@ void ts_instrument_init(TsInstrument *instrument)
     instrument->family_anchor_slot = 0;
     instrument->family_last_slot = -1;
     instrument->selected_slot = 0;
+    instrument->grid_divisions = TS_GRID_DIVISION_DEFAULT;
+    instrument->grid_snap = 0;
     instrument->tuning = default_tuning();
     instrument->audible_tuning = default_tuning();
     ts_process_recipe_reset(&instrument->process);
@@ -2453,6 +2523,8 @@ int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t e
     float loop_crossfade_ms;
     TsLoopMode loop_mode;
     int has_loop;
+    uint32_t grid_divisions;
+    int grid_snap;
     if (instrument == NULL || instrument->current.data == NULL || instrument->current.frames == 0) {
         set_error(error, error_size, "No Current to commit");
         return 0;
@@ -2464,6 +2536,8 @@ int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t e
     loop_crossfade_ms = instrument->loop_crossfade_ms;
     loop_mode = instrument->loop_mode;
     has_loop = instrument->has_loop;
+    grid_divisions = instrument->grid_divisions;
+    grid_snap = instrument->grid_snap;
     prior_hash = ts_sample_hash(&instrument->parent);
     if (!ts_sample_clone(&parent, &instrument->current, error, error_size)) return 0;
     snprintf(parent.name, sizeof(parent.name), "G%02u %.116s", instrument->generation + 1u,
@@ -2488,6 +2562,8 @@ int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t e
     instrument->loop_crossfade_ms = loop_crossfade_ms;
     instrument->loop_mode = loop_mode;
     instrument->has_loop = has_loop && loop_first < loop_last && loop_last <= current.frames;
+    instrument->grid_divisions = grid_divisions;
+    instrument->grid_snap = grid_snap;
     set_error(error, error_size, "");
     return 1;
 }
@@ -2751,17 +2827,112 @@ int ts_sample_make_drone(TsSample *destination, const TsSample *source,
     return 1;
 }
 
+static int valid_grid_divisions(uint32_t divisions)
+{
+    return divisions >= TS_GRID_DIVISION_MIN &&
+           divisions <= TS_GRID_DIVISION_MAX &&
+           (divisions & (divisions - 1u)) == 0u;
+}
+
+static size_t grid_target_for_frames(size_t frames, uint32_t divisions, size_t frame)
+{
+    size_t index;
+    size_t quotient;
+    size_t remainder;
+    if (frames == 0) return 0;
+    if (frame >= frames) return frames;
+    if (!valid_grid_divisions(divisions)) divisions = TS_GRID_DIVISION_DEFAULT;
+    if (frame <= (SIZE_MAX - frames / 2u) / divisions)
+        index = (frame * divisions + frames / 2u) / frames;
+    else
+        index = (size_t)floorl((long double)frame * divisions / frames + 0.5L);
+    if (index > divisions) index = divisions;
+    quotient = frames / divisions;
+    remainder = frames % divisions;
+    return quotient * index + remainder * index / divisions;
+}
+
+static size_t resolve_sample_boundary(const TsSample *sample,
+                                      uint32_t divisions, int grid_snap,
+                                      size_t frame)
+{
+    size_t target;
+    if (sample == NULL || sample->data == NULL || sample->frames == 0) return 0;
+    if (frame >= sample->frames) return sample->frames;
+    target = grid_snap ? grid_target_for_frames(sample->frames, divisions, frame) : frame;
+    if (target == 0 || target >= sample->frames) return target;
+    return ts_sample_nearest_zero_crossing(sample, target);
+}
+
+size_t ts_instrument_grid_target(const TsInstrument *instrument, size_t frame)
+{
+    if (instrument == NULL) return 0;
+    return grid_target_for_frames(instrument->current.frames,
+                                  instrument->grid_divisions, frame);
+}
+
+size_t ts_instrument_resolve_boundary(const TsInstrument *instrument, size_t frame)
+{
+    if (instrument == NULL || instrument->current.data == NULL ||
+        instrument->current.frames == 0) return 0;
+    return resolve_sample_boundary(&instrument->current,
+                                   instrument->grid_divisions,
+                                   instrument->grid_snap, frame);
+}
+
+static void sync_selected_grid_state(TsInstrument *instrument)
+{
+    TsBankSlot *slot;
+    if (instrument == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT) return;
+    slot = &instrument->bank[instrument->selected_slot];
+    if (!slot->occupied) return;
+    slot->edit.grid_divisions = instrument->grid_divisions;
+    slot->edit.grid_snap = instrument->grid_snap;
+}
+
+int ts_instrument_set_grid_divisions(TsInstrument *instrument, uint32_t divisions)
+{
+    if (instrument == NULL || !valid_grid_divisions(divisions) ||
+        instrument->grid_divisions == divisions) return 0;
+    instrument->grid_divisions = divisions;
+    sync_selected_grid_state(instrument);
+    return 1;
+}
+
+int ts_instrument_cycle_grid_divisions(TsInstrument *instrument, int direction)
+{
+    uint32_t divisions;
+    if (instrument == NULL || direction == 0) return 0;
+    divisions = valid_grid_divisions(instrument->grid_divisions) ?
+                instrument->grid_divisions : TS_GRID_DIVISION_DEFAULT;
+    if (direction < 0) {
+        if (divisions <= TS_GRID_DIVISION_MIN) return 0;
+        divisions /= 2u;
+    } else {
+        if (divisions >= TS_GRID_DIVISION_MAX) return 0;
+        divisions *= 2u;
+    }
+    instrument->grid_divisions = divisions;
+    sync_selected_grid_state(instrument);
+    return 1;
+}
+
+int ts_instrument_toggle_grid_snap(TsInstrument *instrument)
+{
+    if (instrument == NULL) return 0;
+    instrument->grid_snap = !instrument->grid_snap;
+    sync_selected_grid_state(instrument);
+    return 1;
+}
+
 void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last)
 {
     size_t snapped_first;
     size_t snapped_last;
     if (instrument == NULL || instrument->current.data == NULL) return;
-    snapped_first = first == 0 ? 0 :
-                    first >= instrument->current.frames ? instrument->current.frames :
-                    ts_sample_nearest_zero_crossing(&instrument->current, first);
-    snapped_last = last == 0 ? 0 :
-                   last >= instrument->current.frames ? instrument->current.frames :
-                   ts_sample_nearest_zero_crossing(&instrument->current, last);
+    snapped_first = ts_instrument_resolve_boundary(instrument, first);
+    snapped_last = ts_instrument_resolve_boundary(instrument, last);
     if (snapped_first > snapped_last) {
         size_t swap = snapped_first;
         snapped_first = snapped_last;
@@ -2973,7 +3144,7 @@ int ts_instrument_move_loop_endpoint(TsInstrument *instrument, int endpoint, siz
     size_t snapped;
     if (instrument == NULL || !instrument->has_loop ||
         (endpoint != 1 && endpoint != 2)) return 0;
-    snapped = ts_sample_nearest_zero_crossing(&instrument->current, frame);
+    snapped = ts_instrument_resolve_boundary(instrument, frame);
     if (endpoint == 1) {
         if (snapped < instrument->loop_last) instrument->loop_first = snapped;
         else if (snapped == instrument->loop_last) return endpoint;
@@ -3068,6 +3239,10 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
         return 0;
     }
     length = last - first;
+    if (instrument->grid_snap && destination >= 0 &&
+        (uint64_t)destination <= instrument->current.frames)
+        destination = (int64_t)ts_instrument_grid_target(
+            instrument, (size_t)destination);
     destination = ts_sample_snap_tape_destination(&instrument->current,
                                                    destination, length);
     memset(&operation, 0, sizeof(operation));
@@ -3412,6 +3587,8 @@ int ts_instrument_select_bank(TsInstrument *instrument, int slot,
         instrument->has_selection = state.has_selection;
         instrument->has_playhead = state.has_playhead;
         instrument->has_loop = state.has_loop;
+        instrument->grid_divisions = state.grid_divisions;
+        instrument->grid_snap = state.grid_snap;
         instrument->process = state.process;
         memcpy(instrument->sample_edits, state.sample_edits, sizeof(instrument->sample_edits));
         instrument->sample_edit_count = state.sample_edit_count;
@@ -3666,6 +3843,8 @@ static int commit_post_snapshot(TsInstrument *instrument, TsEditSnapshot *target
     instrument->has_selection = target->has_selection;
     instrument->has_playhead = target->has_playhead;
     instrument->has_loop = target->has_loop;
+    instrument->grid_divisions = target->grid_divisions;
+    instrument->grid_snap = target->grid_snap;
     memcpy(instrument->post_edits, target->post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target->post_edit_count;
     return bank_sync_selected(instrument, error, error_size);
@@ -3906,6 +4085,8 @@ static void restore_stretch_snapshot(TsInstrument *instrument,
     instrument->has_selection = state->has_selection;
     instrument->has_playhead = state->has_playhead;
     instrument->has_loop = state->has_loop;
+    instrument->grid_divisions = state->grid_divisions;
+    instrument->grid_snap = state->grid_snap;
     instrument->tuning = state->tuning;
     instrument->audible_tuning = state->audible_tuning;
     instrument->process = state->process;
@@ -4125,6 +4306,351 @@ int ts_instrument_stretch_gesture_commit(TsInstrument *instrument,
     stretch_gesture_clear(gesture);
     if (ok) set_error(error, error_size, "");
     return ok;
+}
+
+void ts_canvas_gesture_init(TsCanvasGesture *gesture)
+{
+    if (gesture == NULL) return;
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+static int canvas_gesture_owns(const TsInstrument *instrument,
+                               const TsCanvasGesture *gesture)
+{
+    return instrument != NULL && gesture != NULL && gesture->active &&
+           instrument->selected_slot == gesture->owner_slot &&
+           instrument->generation == gesture->owner_generation &&
+           instrument->parent.data == gesture->owner_parent_data;
+}
+
+static void canvas_gesture_clear(TsCanvasGesture *gesture)
+{
+    ts_sample_free(&gesture->original);
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+static size_t canvas_contraction_boundary(const TsCanvasGesture *gesture,
+                                          size_t target, size_t first, size_t last)
+{
+    size_t macro = gesture->start.grid_snap ?
+                   grid_target_for_frames(gesture->original.frames,
+                                          gesture->start.grid_divisions,
+                                          target) : target;
+    return ts_sample_nearest_zero_crossing_in_range(
+        &gesture->original, macro, first, last);
+}
+
+static void canvas_adjust_range(size_t *first, size_t *last, int *active,
+                                int edge, int64_t delta, size_t new_frames,
+                                size_t minimum_span)
+{
+    size_t amount;
+    size_t adjusted_first = *first;
+    size_t adjusted_last = *last;
+    if (!*active) return;
+    if (delta > 0 && edge == 1) {
+        amount = (size_t)delta;
+        adjusted_first += amount;
+        adjusted_last += amount;
+    } else if (delta < 0 && edge == 1) {
+        amount = (size_t)((uint64_t)(-(delta + 1)) + 1u);
+        if (adjusted_last <= amount) {
+            *first = *last = 0;
+            *active = 0;
+            return;
+        }
+        adjusted_first = adjusted_first > amount ? adjusted_first - amount : 0u;
+        adjusted_last -= amount;
+    } else if (delta < 0 && edge == 2) {
+        if (adjusted_first >= new_frames) {
+            *first = *last = 0;
+            *active = 0;
+            return;
+        }
+        if (adjusted_last > new_frames) adjusted_last = new_frames;
+    }
+    if (adjusted_last > new_frames) adjusted_last = new_frames;
+    if (adjusted_first > adjusted_last) adjusted_first = adjusted_last;
+    if (adjusted_last - adjusted_first < minimum_span) {
+        *first = *last = 0;
+        *active = 0;
+        return;
+    }
+    *first = adjusted_first;
+    *last = adjusted_last;
+}
+
+static void canvas_adjust_view(TsInstrument *instrument, int edge, int64_t delta,
+                               size_t old_frames, size_t new_frames)
+{
+    size_t first = instrument->view_first;
+    size_t last = instrument->view_last;
+    size_t span = last > first ? last - first : old_frames;
+    int showing_all = first == 0u && last >= old_frames;
+    if (showing_all) {
+        instrument->view_first = 0u;
+        instrument->view_last = new_frames;
+        return;
+    }
+    if (span > new_frames) span = new_frames;
+    if (delta > 0 && edge == 1) {
+        size_t amount = (size_t)delta;
+        first += amount;
+        last += amount;
+    } else if (delta < 0 && edge == 1) {
+        size_t amount = (size_t)((uint64_t)(-(delta + 1)) + 1u);
+        if (first >= amount) {
+            first -= amount;
+            last = first + span;
+        } else {
+            first = 0;
+            last = span;
+        }
+    } else if (delta < 0 && edge == 2 && last > new_frames) {
+        last = new_frames;
+        first = last > span ? last - span : 0u;
+    }
+    if (last > new_frames) last = new_frames;
+    if (first >= last) {
+        last = new_frames;
+        first = last > span ? last - span : 0u;
+    }
+    instrument->view_first = first;
+    instrument->view_last = last;
+}
+
+static void canvas_apply_state(TsInstrument *instrument, int edge, int64_t delta,
+                               size_t old_frames, size_t new_frames)
+{
+    canvas_adjust_range(&instrument->selection_first,
+                        &instrument->selection_last,
+                        &instrument->has_selection,
+                        edge, delta, new_frames, 1u);
+    canvas_adjust_range(&instrument->loop_first, &instrument->loop_last,
+                        &instrument->has_loop,
+                        edge, delta, new_frames, 2u);
+    if (instrument->has_playhead) {
+        if (delta > 0 && edge == 1)
+            instrument->playhead_frame += (size_t)delta;
+        else if (delta < 0 && edge == 1) {
+            size_t amount = (size_t)((uint64_t)(-(delta + 1)) + 1u);
+            instrument->playhead_frame = instrument->playhead_frame > amount ?
+                                         instrument->playhead_frame - amount : 0u;
+        }
+        if (instrument->playhead_frame >= new_frames)
+            instrument->playhead_frame = new_frames - 1u;
+    }
+    canvas_adjust_view(instrument, edge, delta, old_frames, new_frames);
+}
+
+int ts_instrument_canvas_gesture_begin(TsInstrument *instrument,
+                                       TsCanvasGesture *gesture, int edge,
+                                       char *error, size_t error_size)
+{
+    if (instrument == NULL || gesture == NULL || gesture->active ||
+        instrument->current.data == NULL ||
+        instrument->current.frames < TS_CANVAS_MIN_FRAMES ||
+        (edge != 1 && edge != 2)) {
+        set_error(error, error_size, "Select an occupied tile before resizing its canvas");
+        return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more canvas operations");
+        return 0;
+    }
+    gesture->start = snapshot(instrument);
+    if (!ts_sample_clone(&gesture->original, &instrument->current,
+                         error, error_size)) return 0;
+    gesture->owner_parent_data = instrument->parent.data;
+    gesture->owner_generation = instrument->generation;
+    gesture->owner_slot = instrument->selected_slot;
+    gesture->edge = edge;
+    gesture->delta_frames = 0;
+    gesture->active = 1;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_canvas_gesture_preview(TsInstrument *instrument,
+                                         TsCanvasGesture *gesture,
+                                         int64_t delta_frames,
+                                         char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    TsSample preview;
+    size_t old_frames;
+    size_t new_frames;
+    if (!canvas_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size, "Canvas gesture no longer owns Current");
+        return 0;
+    }
+    old_frames = gesture->original.frames;
+    if (delta_frames > 0) {
+        if ((uint64_t)delta_frames > SIZE_MAX - old_frames ||
+            old_frames + (size_t)delta_frames > TS_CANVAS_MAX_FRAMES ||
+            old_frames + (size_t)delta_frames > SIZE_MAX / sizeof(float)) {
+            set_error(error, error_size, "Audio canvas is too large");
+            return 0;
+        }
+    } else if (delta_frames < 0) {
+        uint64_t requested = (uint64_t)(-(delta_frames + 1)) + 1u;
+        size_t maximum = old_frames - TS_CANVAS_MIN_FRAMES;
+        size_t boundary;
+        if (requested > maximum) requested = maximum;
+        if (gesture->edge == 1) {
+            boundary = canvas_contraction_boundary(
+                gesture, (size_t)requested, 0u, maximum);
+            if (boundary > maximum) boundary = maximum;
+            delta_frames = -(int64_t)boundary;
+        } else {
+            size_t proposed = old_frames - (size_t)requested;
+            boundary = canvas_contraction_boundary(
+                gesture, proposed, TS_CANVAS_MIN_FRAMES, old_frames - 1u);
+            if (boundary < TS_CANVAS_MIN_FRAMES) boundary = TS_CANVAS_MIN_FRAMES;
+            delta_frames = (int64_t)boundary - (int64_t)old_frames;
+        }
+    }
+    if (delta_frames == 0) {
+        ts_sample_init(&preview);
+        if (!ts_sample_clone(&preview, &gesture->original,
+                             error, error_size)) return 0;
+        replace_current_preserving_view(instrument, &preview);
+        restore_stretch_snapshot(instrument, &gesture->start);
+        gesture->delta_frames = 0;
+        set_error(error, error_size, "");
+        return 1;
+    }
+    new_frames = delta_frames > 0 ? old_frames + (size_t)delta_frames :
+                 old_frames - (size_t)((uint64_t)(-(delta_frames + 1)) + 1u);
+    target = gesture->start;
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = gesture->edge == 1 ?
+                     TS_POST_CANVAS_LEFT_RESIZE :
+                     TS_POST_CANVAS_RIGHT_RESIZE;
+    operation.destination = delta_frames;
+    target.post_edits[target.post_edit_count++] = operation;
+    ts_sample_init(&preview);
+    if (!render_snapshot(&preview, instrument, &target, error, error_size)) return 0;
+    replace_current_preserving_view(instrument, &preview);
+    restore_stretch_snapshot(instrument, &gesture->start);
+    memcpy(instrument->post_edits, target.post_edits,
+           sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
+    canvas_apply_state(instrument, gesture->edge, delta_frames,
+                       old_frames, new_frames);
+    gesture->delta_frames = delta_frames;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_canvas_gesture_cancel(TsInstrument *instrument,
+                                        TsCanvasGesture *gesture,
+                                        char *error, size_t error_size)
+{
+    TsSample restored;
+    if (!canvas_gesture_owns(instrument, gesture)) {
+        canvas_gesture_clear(gesture);
+        set_error(error, error_size, "Canvas gesture no longer owns Current");
+        return 0;
+    }
+    ts_sample_init(&restored);
+    if (!ts_sample_clone(&restored, &gesture->original,
+                         error, error_size)) return 0;
+    replace_current_preserving_view(instrument, &restored);
+    restore_stretch_snapshot(instrument, &gesture->start);
+    canvas_gesture_clear(gesture);
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_canvas_gesture_commit(TsInstrument *instrument,
+                                        TsCanvasGesture *gesture,
+                                        char *error, size_t error_size)
+{
+    int ok;
+    if (!canvas_gesture_owns(instrument, gesture)) {
+        canvas_gesture_clear(gesture);
+        set_error(error, error_size, "Canvas gesture no longer owns Current");
+        return 0;
+    }
+    if (gesture->delta_frames == 0)
+        return ts_instrument_canvas_gesture_cancel(instrument, gesture,
+                                                   error, error_size);
+    stack_push(instrument->undo, &instrument->undo_count, gesture->start);
+    instrument->redo_count = 0;
+    ok = bank_sync_selected(instrument, error, error_size);
+    canvas_gesture_clear(gesture);
+    if (ok) set_error(error, error_size, "");
+    return ok;
+}
+
+int ts_instrument_resize_canvas(TsInstrument *instrument, int edge,
+                                int64_t delta_frames,
+                                char *error, size_t error_size)
+{
+    TsCanvasGesture gesture;
+    int ok;
+    ts_canvas_gesture_init(&gesture);
+    if (!ts_instrument_canvas_gesture_begin(instrument, &gesture, edge,
+                                            error, error_size)) return 0;
+    ok = ts_instrument_canvas_gesture_preview(instrument, &gesture, delta_frames,
+                                              error, error_size) &&
+         gesture.delta_frames != 0 &&
+         ts_instrument_canvas_gesture_commit(instrument, &gesture,
+                                             error, error_size);
+    if (!ok && gesture.active)
+        (void)ts_instrument_canvas_gesture_cancel(instrument, &gesture, NULL, 0);
+    return ok;
+}
+
+int ts_instrument_double_canvas(TsInstrument *instrument,
+                                char *error, size_t error_size)
+{
+    size_t frames;
+    uint32_t divisions;
+    if (instrument == NULL || instrument->current.data == NULL) {
+        set_error(error, error_size, "Select an occupied tile before doubling its canvas");
+        return 0;
+    }
+    frames = instrument->current.frames;
+    if (frames > (size_t)INT64_MAX || frames > SIZE_MAX - frames) {
+        set_error(error, error_size, "Audio canvas is too large to double");
+        return 0;
+    }
+    divisions = instrument->grid_divisions;
+    if (!ts_instrument_resize_canvas(instrument, 2, (int64_t)frames,
+                                     error, error_size)) return 0;
+    if (valid_grid_divisions(divisions) && divisions <= TS_GRID_DIVISION_MAX / 2u)
+        instrument->grid_divisions = divisions * 2u;
+    return bank_sync_selected(instrument, error, error_size);
+}
+
+int ts_instrument_half_canvas(TsInstrument *instrument,
+                              char *error, size_t error_size)
+{
+    size_t frames;
+    size_t wanted;
+    uint32_t divisions;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        instrument->current.frames <= TS_CANVAS_MIN_FRAMES) {
+        set_error(error, error_size, "Audio canvas is already at its minimum length");
+        return 0;
+    }
+    frames = instrument->current.frames;
+    wanted = frames / 2u;
+    if (wanted < TS_CANVAS_MIN_FRAMES) wanted = TS_CANVAS_MIN_FRAMES;
+    divisions = instrument->grid_divisions;
+    if (!ts_instrument_resize_canvas(
+            instrument, 2, -(int64_t)(frames - wanted),
+            error, error_size)) return 0;
+    if (instrument->current.frames <= SIZE_MAX / 2u &&
+        instrument->current.frames * 2u == frames &&
+        valid_grid_divisions(divisions) && divisions > TS_GRID_DIVISION_MIN)
+        instrument->grid_divisions = divisions / 2u;
+    return bank_sync_selected(instrument, error, error_size);
 }
 
 int ts_instrument_copy_selection(const TsInstrument *instrument,
@@ -4945,7 +5471,9 @@ int ts_instrument_bank_move_loop_endpoint(TsInstrument *instrument, int slot,
     size_t snapped;
     if (bank_slot == NULL || !bank_slot->has_loop ||
         (endpoint != 1 && endpoint != 2)) return 0;
-    snapped = ts_sample_nearest_zero_crossing(&bank_slot->sample, frame);
+    snapped = resolve_sample_boundary(
+        &bank_slot->sample, bank_slot->edit.grid_divisions,
+        bank_slot->edit.grid_snap, frame);
     if (endpoint == 1) {
         if (snapped < bank_slot->loop_last) bank_slot->loop_first = snapped;
         else if (snapped == bank_slot->loop_last) return endpoint;
@@ -5928,6 +6456,8 @@ static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
     instrument->has_selection = target.has_selection;
     instrument->has_playhead = target.has_playhead;
     instrument->has_loop = target.has_loop;
+    instrument->grid_divisions = target.grid_divisions;
+    instrument->grid_snap = target.grid_snap;
     instrument->tuning = target.tuning;
     instrument->audible_tuning = target.audible_tuning;
     instrument->process = target.process;
@@ -6084,6 +6614,7 @@ static void put_edit_snapshot(FILE *f, const TsEditSnapshot *state)
     put_float(f, state->loop_crossfade_ms);
     put32(f, (uint32_t)state->loop_mode);
     put32(f, (uint32_t)state->has_selection); put32(f, (uint32_t)state->has_loop);
+    put32(f, state->grid_divisions); put32(f, (uint32_t)state->grid_snap);
     put32(f, (uint32_t)state->tuning.root_note); put_float(f, state->tuning.fine_tune_cents);
     put32(f, (uint32_t)state->audible_tuning.root_note);
     put_float(f, state->audible_tuning.fine_tune_cents);
@@ -6121,7 +6652,14 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
     GET_STATE_SIZE(state->loop_first); GET_STATE_SIZE(state->loop_last);
     if (!get_float(f, &state->loop_crossfade_ms)) return 0;
     GET_STATE_U32(state->loop_mode); GET_STATE_U32(state->has_selection);
-    GET_STATE_U32(state->has_loop); GET_STATE_U32(state->tuning.root_note);
+    GET_STATE_U32(state->has_loop);
+    if (version >= 18) {
+        GET_STATE_U32(state->grid_divisions); GET_STATE_U32(state->grid_snap);
+    } else {
+        state->grid_divisions = TS_GRID_DIVISION_DEFAULT;
+        state->grid_snap = 0;
+    }
+    GET_STATE_U32(state->tuning.root_note);
     if (!get_float(f, &state->tuning.fine_tune_cents)) return 0;
     GET_STATE_U32(state->audible_tuning.root_note);
     if (!get_float(f, &state->audible_tuning.fine_tune_cents) ||
@@ -6143,9 +6681,13 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
         edit->destination = (int64_t)wide;
         if (!get_float(f, &edit->amount) || !get32(f, &edit->crossfade_frames) ||
             (version >= 16 && !get32(f, &edit->patch_index)) ||
-            edit->kind > (version >= 17 ? TS_POST_PATCH_STRETCH_CONTRACT :
+            edit->kind > (version >= 18 ? TS_POST_CANVAS_RIGHT_RESIZE :
+                          version >= 17 ? TS_POST_PATCH_STRETCH_CONTRACT :
                           version >= 16 ? TS_POST_PATCH_FIT : TS_POST_TEAR) ||
-            (edit->kind != TS_POST_PATCH_REPLACE && edit->last <= edit->first) ||
+            ((edit->kind != TS_POST_PATCH_REPLACE &&
+              edit->kind != TS_POST_CANVAS_LEFT_RESIZE &&
+              edit->kind != TS_POST_CANVAS_RIGHT_RESIZE) &&
+             edit->last <= edit->first) ||
             (edit->kind == TS_POST_PATCH_REPLACE && edit->last < edit->first) ||
             edit->last > frame_limit || edit->destination < -(int64_t)frame_limit ||
             edit->destination > (int64_t)frame_limit || edit->crossfade_frames > 65536u) return 0;
@@ -6162,6 +6704,8 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
            (state->has_selection == 0 || state->has_selection == 1) &&
            (state->has_playhead == 0 || state->has_playhead == 1) &&
            (state->has_loop == 0 || state->has_loop == 1) &&
+           valid_grid_divisions(state->grid_divisions) &&
+           (state->grid_snap == 0 || state->grid_snap == 1) &&
            tuning_valid(&state->tuning) && tuning_valid(&state->audible_tuning);
 }
 
@@ -6201,12 +6745,14 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->loop_last <= slot->sample.frames &&
            (!state->has_playhead || state->playhead_frame < slot->sample.frames) &&
            (!state->has_selection || state->selection_first < state->selection_last) &&
-           (!state->has_loop || state->loop_first < state->loop_last);
+           (!state->has_loop || state->loop_first < state->loop_last) &&
+           valid_grid_divisions(state->grid_divisions) &&
+           (state->grid_snap == 0 || state->grid_snap == 1);
 }
 
-static int save_tsr17(const TsInstrument *instrument, FILE *f)
+static int save_tsr18(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR17\r\n\032", 1, 8, f);
+    fwrite("TSR18\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -6261,6 +6807,8 @@ static int save_tsr17(const TsInstrument *instrument, FILE *f)
             default_edit.loop_crossfade_ms = slot->loop_crossfade_ms;
             default_edit.loop_mode = slot->loop_mode;
             default_edit.has_loop = slot->has_loop;
+            default_edit.grid_divisions = TS_GRID_DIVISION_DEFAULT;
+            default_edit.grid_snap = 0;
             default_edit.tuning = slot->tuning;
             default_edit.audible_tuning = slot->audible_tuning;
             ts_process_recipe_reset(&default_edit.process);
@@ -6442,10 +6990,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR17 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR18 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR17 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR18 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -6464,13 +7012,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr17(instrument, f)) {
+    if (!save_tsr18(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR17 project");
+        set_error(error, error_size, "Could not write TSR18 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR17 project");
+        set_error(error, error_size, "Could not finish TSR18 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -6505,10 +7053,12 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR18\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = magic[4] == '7' ? 17 :
+        int self_contained_version = magic[4] == '8' ? 18 :
+                                     magic[4] == '7' ? 17 :
                                      magic[4] == '6' ? 16 : 15;
         int ok = load_tsr15_or_newer(f, self_contained_version, instrument,
                                   error, error_size);
@@ -6529,7 +7079,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR17 project");
+                  "Not a self-contained TSR6-TSR18 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -6808,7 +7358,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR17 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR18 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

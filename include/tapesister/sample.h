@@ -10,7 +10,14 @@ enum {
     TS_POST_EDIT_DEPTH = 64,
     TS_AUDIO_PATCH_DEPTH = 64,
     TS_BANK_SLOT_COUNT = 16,
-    TS_KEYBOARD_BASE_NOTE = 48
+    TS_KEYBOARD_BASE_NOTE = 48,
+    TS_CANVAS_MIN_FRAMES = 2,
+    TS_CANVAS_MAX_FRAMES = 100000000,
+    TS_DEFAULT_CANVAS_FRAMES = 44100,
+    TS_DEFAULT_CANVAS_RATE = 44100,
+    TS_GRID_DIVISION_MIN = 2,
+    TS_GRID_DIVISION_MAX = 64,
+    TS_GRID_DIVISION_DEFAULT = 16
 };
 
 typedef struct {
@@ -156,7 +163,9 @@ typedef enum {
     TS_POST_PATCH_REPLACE,
     TS_POST_PATCH_FIT,
     TS_POST_PATCH_STRETCH_EXPAND,
-    TS_POST_PATCH_STRETCH_CONTRACT
+    TS_POST_PATCH_STRETCH_CONTRACT,
+    TS_POST_CANVAS_LEFT_RESIZE,
+    TS_POST_CANVAS_RIGHT_RESIZE
 } TsPostEditKind;
 
 typedef struct {
@@ -215,6 +224,8 @@ typedef struct {
     int has_selection;
     int has_playhead;
     int has_loop;
+    uint32_t grid_divisions;
+    int grid_snap;
     TsTuning tuning;
     TsTuning audible_tuning;
     TsProcessRecipe process;
@@ -287,6 +298,8 @@ typedef struct {
     int has_selection;
     int has_playhead;
     int has_loop;
+    uint32_t grid_divisions;
+    int grid_snap;
     TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
     int sample_edit_count;
     TsPostEdit post_edits[TS_POST_EDIT_DEPTH];
@@ -325,6 +338,17 @@ typedef struct {
     float pitch_semitones;
     int active;
 } TsStretchGesture;
+
+typedef struct {
+    TsEditSnapshot start;
+    TsSample original;
+    const float *owner_parent_data;
+    uint32_t owner_generation;
+    int owner_slot;
+    int edge;
+    int64_t delta_frames;
+    int active;
+} TsCanvasGesture;
 
 void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
@@ -383,6 +407,11 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
 int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t error_size);
 void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t last);
 void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last);
+size_t ts_instrument_grid_target(const TsInstrument *instrument, size_t frame);
+size_t ts_instrument_resolve_boundary(const TsInstrument *instrument, size_t frame);
+int ts_instrument_set_grid_divisions(TsInstrument *instrument, uint32_t divisions);
+int ts_instrument_cycle_grid_divisions(TsInstrument *instrument, int direction);
+int ts_instrument_toggle_grid_snap(TsInstrument *instrument);
 int ts_instrument_select_all(TsInstrument *instrument);
 int ts_instrument_select_wave(TsInstrument *instrument);
 void ts_instrument_clear_selection(TsInstrument *instrument);
@@ -410,6 +439,27 @@ int ts_instrument_stretch_gesture_commit(TsInstrument *instrument,
 int ts_instrument_stretch_gesture_cancel(TsInstrument *instrument,
                                          TsStretchGesture *gesture,
                                          char *error, size_t error_size);
+int ts_instrument_resize_canvas(TsInstrument *instrument, int edge,
+                                int64_t delta_frames,
+                                char *error, size_t error_size);
+int ts_instrument_double_canvas(TsInstrument *instrument,
+                                char *error, size_t error_size);
+int ts_instrument_half_canvas(TsInstrument *instrument,
+                              char *error, size_t error_size);
+void ts_canvas_gesture_init(TsCanvasGesture *gesture);
+int ts_instrument_canvas_gesture_begin(TsInstrument *instrument,
+                                       TsCanvasGesture *gesture, int edge,
+                                       char *error, size_t error_size);
+int ts_instrument_canvas_gesture_preview(TsInstrument *instrument,
+                                         TsCanvasGesture *gesture,
+                                         int64_t delta_frames,
+                                         char *error, size_t error_size);
+int ts_instrument_canvas_gesture_commit(TsInstrument *instrument,
+                                        TsCanvasGesture *gesture,
+                                        char *error, size_t error_size);
+int ts_instrument_canvas_gesture_cancel(TsInstrument *instrument,
+                                        TsCanvasGesture *gesture,
+                                        char *error, size_t error_size);
 size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame);
 size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
                                                 size_t frame,

@@ -77,6 +77,35 @@ int main(void)
              ts_ui_wave_action_from_point(70, 300) == TS_UI_WAVE_ACTION_NONE);
     CONTRACT("wave_toolbar_stops_above_lower_panel",
              ts_ui_wave_action_from_point(320, 318) == TS_UI_WAVE_ACTION_NONE);
+    CONTRACT("canvas_half_hitbox",
+             ts_ui_canvas_action_from_point(30, 190) ==
+             TS_UI_CANVAS_ACTION_HALF);
+    CONTRACT("canvas_double_hitbox",
+             ts_ui_canvas_action_from_point(60, 190) ==
+             TS_UI_CANVAS_ACTION_DOUBLE);
+    CONTRACT("canvas_grid_coarser_hitbox",
+             ts_ui_canvas_action_from_point(460, 190) ==
+             TS_UI_CANVAS_ACTION_GRID_COARSER);
+    CONTRACT("canvas_division_readout_is_informational",
+             ts_ui_canvas_action_from_point(500, 190) ==
+             TS_UI_CANVAS_ACTION_NONE);
+    CONTRACT("canvas_grid_finer_hitbox",
+             ts_ui_canvas_action_from_point(545, 190) ==
+             TS_UI_CANVAS_ACTION_GRID_FINER);
+    CONTRACT("canvas_grid_snap_hitbox",
+             ts_ui_canvas_action_from_point(590, 190) ==
+             TS_UI_CANVAS_ACTION_GRID_SNAP);
+    CONTRACT("canvas_controls_do_not_cover_lower_controls",
+             ts_ui_canvas_action_from_point(30, 205) ==
+             TS_UI_CANVAS_ACTION_NONE);
+    CONTRACT("canvas_left_edge_handle_hitbox",
+             ts_ui_canvas_edge_from_point(25, 120) == 1);
+    CONTRACT("canvas_right_edge_handle_hitbox",
+             ts_ui_canvas_edge_from_point(612, 120) == 2);
+    CONTRACT("canvas_handle_gap_is_inert",
+             ts_ui_canvas_edge_from_point(320, 100) == 0);
+    CONTRACT("canvas_handles_stop_before_control_strip",
+             ts_ui_canvas_edge_from_point(25, 190) == 0);
 
     {
         TsInstrument visual;
@@ -96,6 +125,46 @@ int main(void)
         CONTRACT("selection_waveform_color_covers_straddling_left_pixel",
                  visual_fb.pixels[waveform_y * TS_UI_WIDTH + TS_WAVE_X] ==
                  visual_ui.palette.colors[TS_PALETTE_TEXT_ON_BLOCK]);
+        ts_instrument_free(&visual);
+    }
+
+    {
+        TsInstrument visual;
+        TsUiState visual_ui;
+        TsFramebuffer full_fb;
+        TsFramebuffer zoom_fb;
+        TsFramebuffer snap_fb;
+        size_t target = 500;
+        int y = TS_WAVE_Y + 35;
+        int full_x = TS_WAVE_X + (int)(target * TS_WAVE_W / 1600u);
+        int zoom_x = TS_WAVE_X + (int)((target - 400u) * TS_WAVE_W / 800u);
+        uint32_t full_grid;
+        ts_instrument_init(&visual);
+        ts_ui_init(&visual_ui);
+        CONTRACT("grid_render_fixture_activates",
+                 ts_instrument_activate_silence(&visual, 1600, 44100,
+                                                error, sizeof(error)));
+        CONTRACT("grid_division_fixture_sets_div16",
+                 visual.grid_divisions == 16u);
+        ts_ui_render(&full_fb, &visual_ui, &visual);
+        full_grid = full_fb.pixels[y * TS_UI_WIDTH + full_x];
+        CONTRACT("grid_target_is_visible_in_full_canvas",
+                 full_grid != full_fb.pixels[y * TS_UI_WIDTH + full_x + 2]);
+        visual.view_first = 400;
+        visual.view_last = 1200;
+        ts_ui_render(&zoom_fb, &visual_ui, &visual);
+        CONTRACT("zoomed_grid_uses_same_full_canvas_target",
+                 zoom_fb.pixels[y * TS_UI_WIDTH + zoom_x] == full_grid);
+        CONTRACT("zoomed_grid_does_not_stay_at_old_screen_coordinate",
+                 zoom_fb.pixels[y * TS_UI_WIDTH + full_x] != full_grid);
+        CONTRACT("grid_snap_toggle_activates",
+                 ts_instrument_toggle_grid_snap(&visual));
+        ts_ui_render(&snap_fb, &visual_ui, &visual);
+        CONTRACT("snap_on_renders_grid_more_prominently",
+                 snap_fb.pixels[y * TS_UI_WIDTH + zoom_x] != full_grid);
+        CONTRACT("canvas_left_handle_renders_inside_wave_panel",
+                 snap_fb.pixels[120 * TS_UI_WIDTH + 23] ==
+                 visual_ui.palette.colors[TS_PALETTE_PATTERN_EFFECT]);
         ts_instrument_free(&visual);
     }
 

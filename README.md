@@ -120,6 +120,12 @@ The **Variation** page exposes one continuous Range and the **Chain** switch. Va
 
 The top **Export** button and `Ctrl+E` ask whether to export the selected tile or the complete Collection. Collection export writes every occupied slot as a numbered, loop-aware WAV into a new folder. Existing folders are never silently replaced. A failed export removes the partial files and folder.
 
+## Audio canvas and grid
+
+Every occupied tile is an explicit audio canvas whose sample count is independent of the visible viewport. **X2** appends exact digital silence and **/2** removes the right half at the nearest safe zero crossing. The small open handles just inside the waveform edges resize either side: outward motion adds silence, inward motion removes audio at a safe boundary, left-side changes shift selection/playhead/loop coordinates with the sound, and right-side changes keep existing coordinates fixed. The pointer is captured and returned to the handle during the drag, so it behaves like an endless relative control. Release commits one tile-local Undo step; Escape or focus loss restores the frozen pre-drag state exactly. A one-second, 44.1 kHz silent canvas remains the named default when an empty tile is double-clicked without clipboard timing.
+
+The restrained waveform grid is anchored to the complete canvas rather than the zoomed view. **<** and **>** choose 2, 4, 8, 16, 32, or 64 divisions. **SNAP** first chooses the nearest full-canvas division and then resolves it through TapeSister's zero-crossing safety; with SNAP off, the freely chosen boundary still receives the same zero-crossing treatment. If no crossing exists in the valid search range, the existing deterministic lowest-amplitude fallback is used. Selection edges, loop flags, destructive canvas edges, and tape-placement destinations share this macro-grid-to-zero resolver. Continuous WARP/SMEAR amounts, rotation, Drone seams, zoom, and navigation are not quantized. Grid division and SNAP state are stored independently with each tile but are not added to audio Undo history.
+
 ## Six-operator FM source proof
 
 Create produces a deterministic six-operator FM tile. Each seed selects a complete hidden patch from curated Structure and Ratio sets, plus Depth, Shape, feedback, and a short transient layer. Vary changes that stored FM recipe according to Range. A later focused slice can expose a small set of musically useful macros without adding an operator table to the primary interface.
@@ -162,6 +168,7 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 
 - click to place the playhead, right-click to play from it, or drag to select a range;
 - mouse-wheel zoom anchored to the sample beneath the pointer;
+- tile-local canvas **/2**, **X2**, captured left/right edge resizing, and full-canvas grid snapping;
 - Shift+wheel panning, direct `=` or `+` / `-` keyboard zoom, arrow-key panning, and `0` Show All;
 - Play All, Play Selection, and Play Displayed;
 - Zoom Selection and Show All;
@@ -194,7 +201,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR17 stores every occupied tile as a complete independent object: audio, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, and the audio patches needed to replay Paste, FM stamp, and tape-length history. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR16 remain loadable for compatibility. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR18 stores every occupied tile as a complete independent object: audio canvas, tile-local grid state, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, and the audio patches needed to replay Paste, FM stamp, tape-length, and canvas-resize history. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR17 remain loadable for compatibility. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 
