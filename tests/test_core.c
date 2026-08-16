@@ -2045,6 +2045,8 @@ int main(void)
         ts_config_init(&config);
         CHECK(config.rotate_wheel_fine == 5);
         CHECK(config.rotate_wheel_coarse == 50);
+        CHECK(config.playhead_zero_snap == 1);
+        config.playhead_zero_snap = 0;
         snprintf(config.sample_path, sizeof(config.sample_path), "/samples/drums");
         snprintf(config.fasttracker_path, sizeof(config.fasttracker_path),
                  "/opt/ft2 tapehead/ft2-clone");
@@ -2058,6 +2060,7 @@ int main(void)
         CHECK(reopened.startup_welcome_sample == 1 &&
               reopened.startup_welcome_autoplay == 1);
         CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
+        CHECK(reopened.playhead_zero_snap == 0);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
                      "FASTTRACKER EXECUTABLE") == 0);
         remove("test-tapesister.ini");
@@ -2072,6 +2075,7 @@ int main(void)
             CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
             CHECK(!reopened.startup_welcome_sample && !reopened.startup_welcome_autoplay);
             CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
+            CHECK(reopened.playhead_zero_snap == 1);
             config_file = fopen("test-tapesister.ini", "wb");
             CHECK(config_file != NULL);
             if (config_file != NULL) {
@@ -2277,6 +2281,9 @@ int main(void)
           ts_ui_keyboard_cycle_octave(&ui, 1) == 0 &&
           ts_ui_keyboard_base_note(&ui) == 12);
     CHECK(ts_ui_keyboard_set_octave(&ui, 3) == 3);
+    CHECK(ts_ui_right_drag_playhead_frame(100, 140, 96, 144, 200) == 96);
+    CHECK(ts_ui_right_drag_playhead_frame(140, 100, 96, 144, 200) == 144);
+    CHECK(ts_ui_right_drag_playhead_frame(200, 100, 96, 200, 200) == 199);
     ts_instrument_set_selection(&imported, imported.current.frames / 4, imported.current.frames / 2);
     ts_ui_render(&fb, &ui, &imported);
     CHECK(fb.pixels[0] != 0);
@@ -2976,6 +2983,14 @@ int main(void)
         CHECK(stretch.has_playhead && stretch.playhead_frame >= first &&
               stretch.playhead_frame < last);
         {
+            size_t requested = first + before_frames / 5u;
+            size_t expected = ts_sample_nearest_zero_crossing(
+                &stretch.current, requested);
+            ts_instrument_set_playhead_snapped(&stretch, requested);
+            CHECK(stretch.playhead_frame == expected);
+            ts_instrument_set_playhead(&stretch, first + before_frames / 3u);
+        }
+        {
             size_t original_first = stretch.selection_first;
             CHECK(ts_instrument_resize_selection(&stretch, 1, 1, 1));
             CHECK(stretch.selection_first < original_first &&
@@ -3024,6 +3039,90 @@ int main(void)
         remove("test-stretch.tsr");
         ts_instrument_free(&stretch);
         ts_instrument_free(&stretch_reopened);
+    }
+
+    {
+        TsInstrument stretch;
+        TsStretchGesture gesture;
+        uint64_t before_hash;
+        uint64_t preview_hash;
+        size_t first, last;
+        int patch_count;
+        int post_count;
+        int undo_count;
+        float pitch = 0.0f;
+        ts_instrument_init(&stretch);
+        ts_stretch_gesture_init(&gesture);
+        CHECK(ts_instrument_generate(&stretch, TS_GENERATOR_FM,
+                                     0x47455354u, error, sizeof(error)));
+        ts_instrument_set_selection_snapped(&stretch,
+                                            stretch.current.frames / 4u,
+                                            stretch.current.frames * 3u / 4u);
+        first = stretch.selection_first;
+        last = stretch.selection_last;
+        before_hash = ts_sample_hash(&stretch.current);
+        patch_count = stretch.bank[stretch.selected_slot].patch_count;
+        post_count = stretch.post_edit_count;
+        undo_count = stretch.undo_count;
+        CHECK(ts_instrument_stretch_gesture_begin(
+            &stretch, &gesture, first + (last - first) / 3u,
+            error, sizeof(error)));
+        for (int step = 0; step < 80; ++step) {
+            float ratio = step & 1 ? powf(2.0f, 1.0f / 12.0f) :
+                                     powf(2.0f, 2.0f / 12.0f);
+            CHECK(ts_instrument_stretch_gesture_preview(
+                &stretch, &gesture, ratio, &pitch, error, sizeof(error)));
+            CHECK(stretch.bank[stretch.selected_slot].patch_count == patch_count);
+            CHECK(stretch.post_edit_count == post_count);
+            CHECK(stretch.undo_count == undo_count);
+        }
+        preview_hash = ts_sample_hash(&stretch.current);
+        CHECK(preview_hash != before_hash && pitch < 0.0f);
+        CHECK(ts_instrument_stretch_gesture_commit(
+            &stretch, &gesture, error, sizeof(error)));
+        CHECK(stretch.bank[stretch.selected_slot].patch_count == patch_count + 1);
+        CHECK(stretch.post_edit_count == post_count + 1);
+        CHECK(stretch.undo_count == undo_count + 1);
+        CHECK(ts_sample_hash(&stretch.current) == preview_hash);
+        CHECK(ts_instrument_undo(&stretch, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == before_hash &&
+              stretch.selection_first == first && stretch.selection_last == last);
+        CHECK(ts_instrument_redo(&stretch, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == preview_hash);
+
+        patch_count = stretch.bank[stretch.selected_slot].patch_count;
+        post_count = stretch.post_edit_count;
+        undo_count = stretch.undo_count;
+        before_hash = ts_sample_hash(&stretch.current);
+        first = stretch.selection_first;
+        last = stretch.selection_last;
+        CHECK(ts_instrument_stretch_gesture_begin(
+            &stretch, &gesture, first + (last - first) / 2u,
+            error, sizeof(error)));
+        CHECK(ts_instrument_stretch_gesture_preview(
+            &stretch, &gesture, powf(2.0f, -2.0f / 12.0f),
+            &pitch, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) != before_hash);
+        CHECK(ts_instrument_stretch_gesture_cancel(
+            &stretch, &gesture, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == before_hash &&
+              stretch.selection_first == first && stretch.selection_last == last);
+        CHECK(stretch.bank[stretch.selected_slot].patch_count == patch_count);
+        CHECK(stretch.post_edit_count == post_count);
+        CHECK(stretch.undo_count == undo_count);
+
+        CHECK(ts_instrument_stretch_gesture_begin(
+            &stretch, &gesture, first + (last - first) / 2u,
+            error, sizeof(error)));
+        CHECK(ts_instrument_stretch_gesture_preview(
+            &stretch, &gesture, 1.0f, &pitch, error, sizeof(error)));
+        CHECK(ts_instrument_stretch_gesture_commit(
+            &stretch, &gesture, error, sizeof(error)));
+        CHECK(ts_sample_hash(&stretch.current) == before_hash);
+        CHECK(stretch.bank[stretch.selected_slot].patch_count == patch_count);
+        CHECK(stretch.post_edit_count == post_count);
+        CHECK(stretch.undo_count == undo_count);
+        ts_instrument_free(&stretch);
     }
 
     ts_sample_free(&a); ts_sample_free(&b); ts_sample_free(&loaded); ts_sample_free(&copy);

@@ -1233,22 +1233,17 @@ static void rotate_waveform(SDL_AudioDeviceID device, AudioState *audio, TsUiSta
     else snprintf(ui->status, sizeof(ui->status), "ROTATE FAILED: %.135s", error);
 }
 
-static void stretch_waveform(SDL_AudioDeviceID device, AudioState *audio,
-                             TsUiState *ui, TsInstrument *instrument,
-                             int wheel_y)
+static int begin_stretch_gesture(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui, TsInstrument *instrument)
 {
     char error[160];
     size_t pivot;
-    float pitch = 0.0f;
-    float requested_ratio;
-    size_t before_frames;
     int ok;
-    if (wheel_y == 0) return;
     if (!instrument->has_selection ||
         instrument->selection_last <= instrument->selection_first) {
         snprintf(ui->status, sizeof(ui->status),
                  "SELECT AUDIO BEFORE CHANGING ITS TAPE LENGTH");
-        return;
+        return 0;
     }
     pivot = instrument->has_playhead &&
             instrument->playhead_frame >= instrument->selection_first &&
@@ -1256,24 +1251,92 @@ static void stretch_waveform(SDL_AudioDeviceID device, AudioState *audio,
             instrument->playhead_frame :
             instrument->selection_first +
             (instrument->selection_last - instrument->selection_first) / 2u;
-    before_frames = instrument->selection_last - instrument->selection_first;
-    requested_ratio = powf(2.0f, (float)wheel_y / 12.0f);
     lock_edit(device, audio);
-    ok = ts_instrument_stretch_selection(instrument, pivot, requested_ratio,
-                                         &pitch, error, sizeof(error));
+    ok = ts_instrument_stretch_gesture_begin(
+        instrument, &ui->stretch_gesture, pivot, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (ok) {
-        size_t after_frames = instrument->selection_last - instrument->selection_first;
+        ui->stretch_wheel_active = 1;
+        ui->stretch_wheel_steps = 0;
+    } else snprintf(ui->status, sizeof(ui->status),
+                    "TAPE LENGTH BEGIN FAILED: %.120s", error);
+    return ok;
+}
+
+static void stretch_waveform(SDL_AudioDeviceID device, AudioState *audio,
+                             TsUiState *ui, TsInstrument *instrument,
+                             int wheel_y)
+{
+    char error[160];
+    float pitch = 0.0f;
+    float requested_ratio;
+    size_t before_frames, after_frames;
+    int requested_steps;
+    int ok;
+    if (wheel_y == 0) return;
+    if (!ui->stretch_gesture.active &&
+        !begin_stretch_gesture(device, audio, ui, instrument)) return;
+    before_frames = ui->stretch_gesture.start.selection_last -
+                    ui->stretch_gesture.start.selection_first;
+    requested_steps = ui->stretch_wheel_steps + wheel_y;
+    requested_ratio = powf(2.0f, (float)requested_steps / 12.0f);
+    lock_edit(device, audio);
+    ok = ts_instrument_stretch_gesture_preview(
+        instrument, &ui->stretch_gesture, requested_ratio,
+        &pitch, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok) {
+        ui->stretch_wheel_steps = requested_steps;
+        after_frames = instrument->selection_last - instrument->selection_first;
         ui->has_stretch_readout = 1;
         ui->stretch_pitch_semitones = pitch;
         ui->stretch_duration_ratio = before_frames > 0 ?
             (float)after_frames / (float)before_frames : 1.0f;
         snprintf(ui->status, sizeof(ui->status),
-                 "TAPE %s %zu -> %zu FRAMES  PITCH %+.2F ST",
-                 after_frames > before_frames ? "EXPANDED" : "CONTRACTED",
+                 "TAPE PREVIEW %zu -> %zu  PITCH %+.2F ST - RELEASE MODIFIER",
                  before_frames, after_frames, pitch);
     } else snprintf(ui->status, sizeof(ui->status),
-                    "TAPE LENGTH FAILED: %.126s", error);
+                    "TAPE LENGTH PREVIEW LIMIT: %.119s", error);
+}
+
+static void end_stretch_gesture(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, TsInstrument *instrument,
+                                int cancel)
+{
+    char error[160];
+    float pitch = ui->stretch_gesture.pitch_semitones;
+    float ratio = ui->stretch_gesture.actual_ratio;
+    int changed = ui->stretch_wheel_steps != 0;
+    int ok;
+    lock_edit(device, audio);
+    ok = cancel ? ts_instrument_stretch_gesture_cancel(
+                      instrument, &ui->stretch_gesture, error, sizeof(error)) :
+                  ts_instrument_stretch_gesture_commit(
+                      instrument, &ui->stretch_gesture, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (!ok && ui->stretch_gesture.active) {
+        char restore_error[160];
+        lock_edit(device, audio);
+        (void)ts_instrument_stretch_gesture_cancel(
+            instrument, &ui->stretch_gesture,
+            restore_error, sizeof(restore_error));
+        unlock_edit(device, audio, ui, instrument);
+    }
+    ui->stretch_wheel_active = 0;
+    ui->stretch_wheel_steps = 0;
+    if (cancel || !changed) ui->has_stretch_readout = 0;
+    if (ok && cancel)
+        snprintf(ui->status, sizeof(ui->status),
+                 "TAPE LENGTH CANCELLED - ORIGINAL RESTORED");
+    else if (ok && changed)
+        snprintf(ui->status, sizeof(ui->status),
+                 "TAPE LENGTH X%.3F  PITCH %+.2F ST - ONE UNDO",
+                 ratio, pitch);
+    else if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 "TAPE LENGTH RETURNED TO START - NO EDIT");
+    else snprintf(ui->status, sizeof(ui->status),
+                  "TAPE LENGTH END FAILED: %.122s", error);
 }
 
 static void history_move(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -2623,6 +2686,8 @@ int main(int argc, char **argv)
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_DROPFILE && ui.stretch_gesture.active)
+                end_stretch_gesture(device, &audio, &ui, &instrument, 1);
             if (event.type == SDL_DROPFILE && ui.tear_gesture.active)
                 end_tear_gesture(device, &audio, &ui, &instrument, 1);
             if (event.type == SDL_DROPFILE && ui.smear_gesture.active) {
@@ -2639,6 +2704,8 @@ int main(int argc, char **argv)
                     end_warp_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.tear_gesture.active)
                     end_tear_gesture(device, &audio, &ui, &instrument, 1);
+                if (ui.stretch_gesture.active)
+                    end_stretch_gesture(device, &audio, &ui, &instrument, 1);
                 if (!ui.exit_confirm_open)
                     begin_exit_confirmation(device, &audio, &ui, &instrument);
             }
@@ -2677,10 +2744,12 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_WINDOWEVENT &&
                        event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
                        (ui.warp_gesture.active || ui.smear_gesture.active ||
-                        ui.tear_gesture.active)) {
+                        ui.tear_gesture.active || ui.stretch_gesture.active)) {
                 if (ui.warp_gesture.active) end_warp_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.smear_gesture.active) end_smear_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.tear_gesture.active) end_tear_gesture(device, &audio, &ui, &instrument, 1);
+                if (ui.stretch_gesture.active)
+                    end_stretch_gesture(device, &audio, &ui, &instrument, 1);
             } else if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
@@ -2704,6 +2773,11 @@ int main(int argc, char **argv)
                     else
                         snprintf(ui.status, sizeof(ui.status),
                                  "FULLSCREEN TOGGLE FAILED: %.119s", SDL_GetError());
+                } else if (ui.stretch_gesture.active && key == SDLK_ESCAPE) {
+                    end_stretch_gesture(device, &audio, &ui, &instrument, 1);
+                } else if (ui.stretch_gesture.active) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "RELEASE SHIFT OR ALT TO COMMIT TAPE LENGTH - ESC CANCELS");
                 } else if (ui.tear_gesture.active && key == SDLK_ESCAPE) {
                     end_tear_gesture(device, &audio, &ui, &instrument, 1);
                 } else if (ui.tear_gesture.active) {
@@ -3033,7 +3107,11 @@ int main(int argc, char **argv)
                     }
                 } else if (key == SDLK_SPACE) {
                     ui.bank_clear_armed = 0;
-                    stop_all(device, &audio, &ui);
+                    if (audio.playing || ts_note_bank_count(&audio.notes) > 0 ||
+                        ui.workbench_loop_active)
+                        stop_all(device, &audio, &ui);
+                    else begin_playhead_audition(device, &audio, &ui, &instrument,
+                                                 obtained.freq);
                 } else {
                     int note = note_for_key(key);
                     if (note >= 0 && device) {
@@ -3045,6 +3123,12 @@ int main(int argc, char **argv)
                         begin_note(device, &audio, &ui, &instrument, note, obtained.freq, 0);
                     }
                 }
+            } else if (event.type == SDL_KEYUP && ui.stretch_wheel_active &&
+                       (event.key.keysym.sym == SDLK_LSHIFT ||
+                        event.key.keysym.sym == SDLK_RSHIFT ||
+                        event.key.keysym.sym == SDLK_LALT ||
+                        event.key.keysym.sym == SDLK_RALT)) {
+                end_stretch_gesture(device, &audio, &ui, &instrument, 0);
             } else if (event.type == SDL_KEYUP && ui.warp_wheel_active &&
                        (event.key.keysym.sym == SDLK_LCTRL ||
                         event.key.keysym.sym == SDLK_RCTRL)) {
@@ -3098,6 +3182,11 @@ int main(int argc, char **argv)
                 if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
                     wheel_y = -wheel_y;
                     wheel_x = -wheel_x;
+                }
+                if (ui.stretch_wheel_active &&
+                    ((mod & KMOD_SHIFT) == 0 || (mod & KMOD_ALT) == 0)) {
+                    end_stretch_gesture(device, &audio, &ui, &instrument, 0);
+                    continue;
                 }
                 if (ui.show_keyboard && (mod & KMOD_SHIFT) && wheel_y != 0 &&
                     x >= 10 && x < 622 && y >= 318 && y < 379) {
@@ -3297,11 +3386,15 @@ int main(int argc, char **argv)
                         &instrument, ui.selection_anchor, at);
                     if (ui.selecting_button == SDL_BUTTON_RIGHT &&
                         instrument.has_selection)
-                        ts_instrument_set_playhead(&instrument,
-                                                   instrument.selection_first);
+                        ts_instrument_set_playhead(
+                            &instrument, ts_ui_right_drag_playhead_frame(
+                                ui.selection_anchor, at,
+                                instrument.selection_first,
+                                instrument.selection_last,
+                                instrument.current.frames));
                     snprintf(ui.status, sizeof(ui.status),
                              ui.selecting_button == SDL_BUTTON_RIGHT ?
-                             "RIGHT-DRAG SELECTION - PLAYHEAD AT LEFT" :
+                             "RIGHT-DRAG SELECTION - PLAYHEAD AT START EDGE" :
                              "SELECTING TILE - ZERO SNAP");
                 }
             } else if (event.type == SDL_MOUSEMOTION && ui.selecting) {
@@ -3311,8 +3404,15 @@ int main(int argc, char **argv)
                 size_t at = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
                 ts_instrument_set_selection_snapped(&instrument, ui.selection_anchor, at);
                 if (ui.selecting_button == SDL_BUTTON_RIGHT && instrument.has_selection)
-                    ts_instrument_set_playhead(&instrument,
-                                               instrument.selection_first);
+                    ts_instrument_set_playhead(
+                        &instrument, ts_ui_right_drag_playhead_frame(
+                            ui.selection_anchor, at,
+                            instrument.selection_first,
+                            instrument.selection_last,
+                            instrument.current.frames));
+            } else if (event.type == SDL_MOUSEBUTTONDOWN && ui.stretch_gesture.active) {
+                end_stretch_gesture(device, &audio, &ui, &instrument, 0);
+                continue;
             } else if (event.type == SDL_MOUSEBUTTONDOWN && ui.smear_gesture.active) {
                 end_smear_gesture(device, &audio, &ui, &instrument, 1);
                 continue;
@@ -4055,13 +4155,19 @@ int main(int argc, char **argv)
                     int button = ui.wave_pointer_button;
                     ui.wave_pointer_pending = 0;
                     ui.wave_pointer_button = 0;
-                    ts_instrument_set_playhead(&instrument, ui.selection_anchor);
+                    if (ui.config.playhead_zero_snap)
+                        ts_instrument_set_playhead_snapped(&instrument,
+                                                          ui.selection_anchor);
+                    else ts_instrument_set_playhead(&instrument,
+                                                    ui.selection_anchor);
                     if (button == SDL_BUTTON_RIGHT)
                         begin_playhead_audition(device, &audio, &ui, &instrument,
                                                 obtained.freq);
                     else snprintf(ui.status, sizeof(ui.status),
-                                  "PLAYHEAD %zu - RMB PLAYS FROM HERE",
-                                  instrument.playhead_frame);
+                                  "PLAYHEAD %zu %s - SPACE PLAYS FROM HERE",
+                                  instrument.playhead_frame,
+                                  ui.config.playhead_zero_snap ?
+                                  "ZERO SNAPPED" : "EXACT");
                 }
                 if (event.button.button == SDL_BUTTON_LEFT && ui.mouse_note >= 0) {
                     release_note(device, &audio, &ui, ui.mouse_note);

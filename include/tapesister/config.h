@@ -26,6 +26,7 @@ typedef struct {
     char exchange_path[TS_CONFIG_PATH_MAX];
     int startup_welcome_sample;
     int startup_welcome_autoplay;
+    int playhead_zero_snap;
     int rotate_wheel_fine;
     int rotate_wheel_coarse;
 } TsConfig;

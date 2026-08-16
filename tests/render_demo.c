@@ -88,6 +88,11 @@ int main(int argc, char **argv)
             (float)before;
         snprintf(ui.status, sizeof(ui.status),
                  "PLAYHEAD-ANCHORED TAPE EXPANSION - UNDOABLE");
+    } else if (argc > 2 && strcmp(argv[2], "keyboard-shift") == 0) {
+        ts_ui_keyboard_shift_semitone(&ui, 1);
+        ui.active_notes = (1u << 0) | (1u << 4) | (1u << 7);
+        snprintf(ui.status, sizeof(ui.status),
+                 "KEY RANGE SHIFTED ONE SEMITONE - EVERY KEY SHOWS NOTE/OCTAVE");
     } else if (argc > 2 && strcmp(argv[2], "ab") == 0) {
         ui.audition_source = TS_AUDITION_PARENT;
         ui.playback_active = 1;

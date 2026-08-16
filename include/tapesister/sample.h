@@ -311,6 +311,21 @@ typedef struct {
 typedef TsWarpGesture TsSmearGesture;
 typedef TsWarpGesture TsTearGesture;
 
+typedef struct {
+    TsEditSnapshot start;
+    TsSample original;
+    const float *owner_parent_data;
+    uint32_t owner_generation;
+    int owner_slot;
+    size_t pivot;
+    size_t target_first;
+    size_t target_last;
+    float requested_ratio;
+    float actual_ratio;
+    float pitch_semitones;
+    int active;
+} TsStretchGesture;
+
 void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
 int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, size_t error_size);
@@ -370,12 +385,28 @@ void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t 
 void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last);
 void ts_instrument_clear_selection(TsInstrument *instrument);
 void ts_instrument_set_playhead(TsInstrument *instrument, size_t frame);
+void ts_instrument_set_playhead_snapped(TsInstrument *instrument, size_t frame);
 void ts_instrument_clear_playhead(TsInstrument *instrument);
 int ts_instrument_resize_selection(TsInstrument *instrument, int endpoint,
                                    int expand, size_t crossing_count);
 int ts_instrument_stretch_selection(TsInstrument *instrument, size_t pivot,
                                     float duration_ratio, float *pitch_semitones,
                                     char *error, size_t error_size);
+void ts_stretch_gesture_init(TsStretchGesture *gesture);
+int ts_instrument_stretch_gesture_begin(TsInstrument *instrument,
+                                        TsStretchGesture *gesture, size_t pivot,
+                                        char *error, size_t error_size);
+int ts_instrument_stretch_gesture_preview(TsInstrument *instrument,
+                                          TsStretchGesture *gesture,
+                                          float duration_ratio,
+                                          float *pitch_semitones,
+                                          char *error, size_t error_size);
+int ts_instrument_stretch_gesture_commit(TsInstrument *instrument,
+                                         TsStretchGesture *gesture,
+                                         char *error, size_t error_size);
+int ts_instrument_stretch_gesture_cancel(TsInstrument *instrument,
+                                         TsStretchGesture *gesture,
+                                         char *error, size_t error_size);
 size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame);
 int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
                                           char *error, size_t error_size);

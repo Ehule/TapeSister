@@ -14,13 +14,15 @@ Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel s
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
 number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead.
 Alt+wheel expands or contracts the selection endpoint on the pointer's side of its
-center. Shift+Alt+wheel changes the selected audio by one tape-speed semitone per
+center. Shift+Alt+wheel previews the selected audio by one tape-speed semitone per
 detent around the visible playhead (or the selection center when it lies outside):
 expansion blends into neighboring audio, contraction severs at zero crossings, and
-the waveform reports the resulting pitch and time ratio. Each tape-length step is
-undoable.
-Set `rotate_wheel_fine` (1–20, default 5) and `rotate_wheel_coarse` (20–100,
-default 50) in the `[Waveform]` section of `tapesister.ini`.
+the waveform reports the resulting pitch and time ratio. Releasing either modifier
+commits the complete gesture as one Undo/post-edit; Escape restores the untouched
+starting audio without history.
+Set `rotate_wheel_fine` (1–20, default 5), `rotate_wheel_coarse` (20–100,
+default 50), and `playhead_zero_snap` (0/1, default 1) in the `[Waveform]`
+section of `tapesister.ini`.
 
 Every ordinary slider responds to click/drag, mouse wheel while hovered, and Left/Right while the pointer is over its box; Shift makes wheel or arrow adjustments coarser. This includes Palette RGB and contrast controls. WARP, SMEAR, and TEAR remain spring-loaded gestures and deliberately keep their separate Ctrl+wheel behavior.
 
@@ -39,13 +41,13 @@ springs back to zero after commit or Escape cancellation.
 
 ## Zero-snapped selection and loop modes
 
-Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in the selected tile. A left click places the persistent edit playhead without changing the selection; a right click places it and plays from that point. Left-drag keeps ordinary selection behavior, while right-drag makes a selection and snaps the playhead to its left edge. Tile playheads are restored with their editor state, using the same proportional position when a target tile has no saved playhead or a saved frame cannot fit. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop, with an Effect-color readout at its visible upper-left reporting the complete selection duration. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
+Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in the selected tile. A left click places the persistent edit playhead without changing the selection; a right click places it and plays from that point. Clicked playheads zero-snap by default (`playhead_zero_snap=0` opts into exact placement), and Space toggles playback from the playhead to the tile end regardless of selection. Left-drag keeps ordinary selection behavior, while right-drag makes a selection and keeps the playhead at the drag-start edge: left for a left-to-right drag, right for a right-to-left drag. Tile playheads are restored with their editor state, using the same proportional position when a target tile has no saved playhead or a saved frame cannot fit. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop, with an Effect-color readout at its visible upper-left reporting the complete selection duration. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
 
 The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. If no selection exists, Set Loop first selects and loops the exact whole tile. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape. Loop range, mode, and crossfade belong to the tile and participate in its Undo/Redo history.
 
 The compact workbench **LOOP** button follows the current selection, or the visible view when there is no selection. Shift-clicking it enables **LOOP LOCK**, which stays active while occupied tiles are selected and immediately follows each tile's restored selection/view. Click LOOP again, press Space, or select an empty tile to stop and release the lock.
 
-The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary unmodified click or computer-key note clears the chord and returns to momentary audition. Hover KEYS and use Shift+wheel to move its starting note one semitone at a time, or choose C0–C7 directly with F1–F8. Keyboard navigation never stops the latched chord, so another Shift-click can add a note from the new range. Sustained voices follow the selected tile.
+The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary unmodified click or computer-key note clears the chord and returns to momentary audition. Every key carries its actual note/octave label. Hover KEYS and use Shift+wheel to move its starting note one semitone at a time, or choose C0–C7 directly with F1–F8. Keyboard navigation never stops the latched chord, so another Shift-click can add a note from the new range. Sustained voices follow the selected tile.
 
 TapeSister starts in FT2-style borderless desktop fullscreen. **Alt+Enter** toggles between fullscreen and a normal resizable window without changing the active tile, selection, clipboard, or playback state. Escape first cancels an active dialog, preview, or editing gesture; otherwise it stops playback and opens the exit confirmation. Closing the window uses the same confirmation, with an explicit warning whenever the instrument or collection differs from the last opened or saved TSR project.
 
@@ -207,7 +209,7 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 
 - Lower octave: `Z S X D C V G B H N J M`
 - Upper octave: `Q 2 W 3 E R 5 T 6 Y 7 U`
-- Stop all: `Space`; `Escape` cancels the active gesture/dialog first, otherwise opens exit confirmation
+- Play from the edit playhead / Stop all: `Space`; `Escape` cancels the active gesture/dialog first, otherwise opens exit confirmation
 - Load browser: `Ctrl+O`
 - Save browser / choose Export Selected Tile or Collection: `Ctrl+S` / `Ctrl+E`
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`

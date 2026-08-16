@@ -2587,6 +2587,15 @@ void ts_instrument_set_playhead(TsInstrument *instrument, size_t frame)
     instrument->has_playhead = 1;
 }
 
+void ts_instrument_set_playhead_snapped(TsInstrument *instrument, size_t frame)
+{
+    if (instrument == NULL || instrument->current.data == NULL ||
+        instrument->current.frames == 0) return;
+    if (frame >= instrument->current.frames) frame = instrument->current.frames - 1u;
+    ts_instrument_set_playhead(
+        instrument, ts_sample_nearest_zero_crossing(&instrument->current, frame));
+}
+
 void ts_instrument_clear_playhead(TsInstrument *instrument)
 {
     if (instrument == NULL) return;
@@ -3500,6 +3509,69 @@ static int resample_selection_patch(TsSample *patch, const TsSample *source,
     return 1;
 }
 
+static int stretch_target_range(const TsSample *source, size_t first, size_t last,
+                                size_t pivot, float duration_ratio,
+                                size_t *target_first_out,
+                                size_t *target_last_out,
+                                float *actual_ratio_out,
+                                char *error, size_t error_size)
+{
+    size_t old_frames, wanted_frames, target_first, target_last, left_frames;
+    double pivot_fraction;
+    int expanding;
+    if (source == NULL || source->data == NULL || first >= last ||
+        last > source->frames || !isfinite(duration_ratio) ||
+        duration_ratio <= 0.0f) {
+        set_error(error, error_size, "Invalid selection for tape stretch");
+        return 0;
+    }
+    old_frames = last - first;
+    expanding = duration_ratio > 1.0f;
+    if (pivot < first || pivot >= last) pivot = first + old_frames / 2u;
+    wanted_frames = (size_t)llround((double)old_frames * (double)duration_ratio);
+    if (wanted_frames < 2u) wanted_frames = 2u;
+    if (wanted_frames > source->frames) wanted_frames = source->frames;
+    pivot_fraction = (double)(pivot - first) / (double)old_frames;
+    left_frames = (size_t)llround((double)wanted_frames * pivot_fraction);
+    if (left_frames > pivot) target_first = 0;
+    else target_first = pivot - left_frames;
+    if (wanted_frames > source->frames - target_first)
+        target_first = source->frames - wanted_frames;
+    target_last = target_first + wanted_frames;
+    target_first = target_first == 0 ? 0 :
+                   ts_sample_nearest_zero_crossing(source, target_first);
+    target_last = target_last >= source->frames ? source->frames :
+                  ts_sample_nearest_zero_crossing(source, target_last);
+    if (expanding) {
+        if (target_first >= first && first > 0)
+            target_first = directional_zero_crossing(source, first, -1, 1);
+        if (target_last <= last && last < source->frames)
+            target_last = directional_zero_crossing(source, last, 1, 1);
+    } else {
+        if (target_first <= first)
+            target_first = directional_zero_crossing(source, first, 1, 1);
+        if (target_last >= last)
+            target_last = directional_zero_crossing(source, last, -1, 1);
+    }
+    if (target_first >= pivot && pivot > 0)
+        target_first = directional_zero_crossing(source, pivot, -1, 1);
+    if (target_last <= pivot)
+        target_last = directional_zero_crossing(source, pivot, 1, 1);
+    if (target_last <= target_first + 1u) {
+        set_error(error, error_size, "Tape length reached its zero-crossing limit");
+        return 0;
+    }
+    wanted_frames = target_last - target_first;
+    if (wanted_frames == old_frames) {
+        set_error(error, error_size, "Tape length unchanged at the nearest zero crossings");
+        return 0;
+    }
+    *target_first_out = target_first;
+    *target_last_out = target_last;
+    *actual_ratio_out = (float)((double)wanted_frames / (double)old_frames);
+    return 1;
+}
+
 int ts_instrument_stretch_selection(TsInstrument *instrument, size_t pivot,
                                     float duration_ratio, float *pitch_semitones,
                                     char *error, size_t error_size)
@@ -3509,11 +3581,9 @@ int ts_instrument_stretch_selection(TsInstrument *instrument, size_t pivot,
     TsSample patch;
     TsSample current;
     size_t first, last, old_frames, wanted_frames;
-    size_t target_first, target_last, left_frames;
+    size_t target_first, target_last;
     uint32_t patch_index;
-    double pivot_fraction;
     float actual_ratio;
-    int expanding;
     if (instrument == NULL || instrument->current.data == NULL ||
         !instrument->has_selection ||
         instrument->selection_last <= instrument->selection_first) {
@@ -3531,52 +3601,11 @@ int ts_instrument_stretch_selection(TsInstrument *instrument, size_t pivot,
     first = instrument->selection_first;
     last = instrument->selection_last;
     old_frames = last - first;
-    expanding = duration_ratio > 1.0f;
     if (pivot < first || pivot >= last) pivot = first + old_frames / 2u;
-    wanted_frames = (size_t)llround((double)old_frames * (double)duration_ratio);
-    if (wanted_frames < 2u) wanted_frames = 2u;
-    if (wanted_frames > instrument->current.frames)
-        wanted_frames = instrument->current.frames;
-    pivot_fraction = old_frames > 0 ? (double)(pivot - first) / (double)old_frames : 0.5;
-    left_frames = (size_t)llround((double)wanted_frames * pivot_fraction);
-    if (left_frames > pivot) target_first = 0;
-    else target_first = pivot - left_frames;
-    if (wanted_frames > instrument->current.frames - target_first)
-        target_first = instrument->current.frames - wanted_frames;
-    target_last = target_first + wanted_frames;
-    target_first = target_first == 0 ? 0 :
-                   ts_sample_nearest_zero_crossing(&instrument->current, target_first);
-    target_last = target_last >= instrument->current.frames ? instrument->current.frames :
-                  ts_sample_nearest_zero_crossing(&instrument->current, target_last);
-    if (expanding) {
-        if (target_first >= first && first > 0)
-            target_first = directional_zero_crossing(&instrument->current,
-                                                     first, -1, 1);
-        if (target_last <= last && last < instrument->current.frames)
-            target_last = directional_zero_crossing(&instrument->current,
-                                                    last, 1, 1);
-    } else {
-        if (target_first <= first)
-            target_first = directional_zero_crossing(&instrument->current,
-                                                     first, 1, 1);
-        if (target_last >= last)
-            target_last = directional_zero_crossing(&instrument->current,
-                                                    last, -1, 1);
-    }
-    if (target_first >= pivot && pivot > 0)
-        target_first = directional_zero_crossing(&instrument->current, pivot, -1, 1);
-    if (target_last <= pivot)
-        target_last = directional_zero_crossing(&instrument->current, pivot, 1, 1);
-    if (target_last <= target_first + 1u) {
-        set_error(error, error_size, "Tape length reached its zero-crossing limit");
-        return 0;
-    }
+    if (!stretch_target_range(&instrument->current, first, last, pivot,
+                              duration_ratio, &target_first, &target_last,
+                              &actual_ratio, error, error_size)) return 0;
     wanted_frames = target_last - target_first;
-    if (wanted_frames == old_frames) {
-        set_error(error, error_size, "Tape length unchanged at the nearest zero crossings");
-        return 0;
-    }
-    actual_ratio = (float)((double)wanted_frames / (double)old_frames);
     ts_sample_init(&patch);
     if (!resample_selection_patch(&patch, &instrument->current, first, last,
                                   wanted_frames, pivot - first,
@@ -3621,6 +3650,268 @@ int ts_instrument_stretch_selection(TsInstrument *instrument, size_t pivot,
         *pitch_semitones = -12.0f * log2f(actual_ratio);
     set_error(error, error_size, "");
     return 1;
+}
+
+void ts_stretch_gesture_init(TsStretchGesture *gesture)
+{
+    if (gesture == NULL) return;
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+static int stretch_gesture_owns(const TsInstrument *instrument,
+                                const TsStretchGesture *gesture)
+{
+    return instrument != NULL && gesture != NULL && gesture->active &&
+           instrument->selected_slot == gesture->owner_slot &&
+           instrument->generation == gesture->owner_generation &&
+           instrument->parent.data == gesture->owner_parent_data &&
+           instrument->current.frames == gesture->original.frames;
+}
+
+static void stretch_gesture_clear(TsStretchGesture *gesture)
+{
+    ts_sample_free(&gesture->original);
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+static void restore_stretch_snapshot(TsInstrument *instrument,
+                                     const TsEditSnapshot *state)
+{
+    instrument->crop_first = state->crop_first;
+    instrument->crop_last = state->crop_last;
+    instrument->selection_first = state->selection_first;
+    instrument->selection_last = state->selection_last;
+    instrument->playhead_frame = state->playhead_frame;
+    instrument->view_first = state->view_first;
+    instrument->view_last = state->view_last;
+    instrument->loop_first = state->loop_first;
+    instrument->loop_last = state->loop_last;
+    instrument->loop_crossfade_ms = state->loop_crossfade_ms;
+    instrument->loop_mode = state->loop_mode;
+    instrument->has_selection = state->has_selection;
+    instrument->has_playhead = state->has_playhead;
+    instrument->has_loop = state->has_loop;
+    instrument->tuning = state->tuning;
+    instrument->audible_tuning = state->audible_tuning;
+    instrument->process = state->process;
+    memcpy(instrument->sample_edits, state->sample_edits,
+           sizeof(instrument->sample_edits));
+    instrument->sample_edit_count = state->sample_edit_count;
+    memcpy(instrument->post_edits, state->post_edits,
+           sizeof(instrument->post_edits));
+    instrument->post_edit_count = state->post_edit_count;
+}
+
+static size_t stretch_crossfade_frames(const TsSample *sample)
+{
+    size_t frames = sample != NULL ? sample->sample_rate / 1000u : 0u;
+    if (frames < 8u) frames = 8u;
+    if (frames > 64u) frames = 64u;
+    return frames;
+}
+
+int ts_instrument_stretch_gesture_begin(TsInstrument *instrument,
+                                        TsStretchGesture *gesture, size_t pivot,
+                                        char *error, size_t error_size)
+{
+    if (instrument == NULL || gesture == NULL || gesture->active ||
+        instrument->current.data == NULL || !instrument->has_selection ||
+        instrument->selection_last <= instrument->selection_first) {
+        set_error(error, error_size, "Select audio before changing its tape length");
+        return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more tape operations");
+        return 0;
+    }
+    if (instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[instrument->selected_slot].occupied ||
+        instrument->bank[instrument->selected_slot].patch_count >=
+            TS_AUDIO_PATCH_DEPTH) {
+        set_error(error, error_size, "This tile has reached its audio stamp limit");
+        return 0;
+    }
+    gesture->start = snapshot(instrument);
+    if (!ts_sample_clone(&gesture->original, &instrument->current,
+                         error, error_size)) return 0;
+    gesture->owner_parent_data = instrument->parent.data;
+    gesture->owner_generation = instrument->generation;
+    gesture->owner_slot = instrument->selected_slot;
+    gesture->pivot = pivot >= instrument->selection_first &&
+                     pivot < instrument->selection_last ? pivot :
+                     instrument->selection_first +
+                     (instrument->selection_last - instrument->selection_first) / 2u;
+    gesture->target_first = instrument->selection_first;
+    gesture->target_last = instrument->selection_last;
+    gesture->requested_ratio = 1.0f;
+    gesture->actual_ratio = 1.0f;
+    gesture->pitch_semitones = 0.0f;
+    gesture->active = 1;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_stretch_gesture_preview(TsInstrument *instrument,
+                                          TsStretchGesture *gesture,
+                                          float duration_ratio,
+                                          float *pitch_semitones,
+                                          char *error, size_t error_size)
+{
+    TsSample patch;
+    TsSample preview;
+    size_t target_first, target_last, wanted_frames;
+    float actual_ratio;
+    if (!stretch_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size, "Tape-length gesture no longer owns Current");
+        return 0;
+    }
+    if (!isfinite(duration_ratio) || duration_ratio <= 0.0f) {
+        set_error(error, error_size, "Invalid tape length ratio");
+        return 0;
+    }
+    ts_sample_init(&patch);
+    ts_sample_init(&preview);
+    if (fabsf(duration_ratio - 1.0f) < 0.000001f) {
+        if (!ts_sample_clone(&preview, &gesture->original,
+                             error, error_size)) return 0;
+        replace_current_preserving_view(instrument, &preview);
+        restore_stretch_snapshot(instrument, &gesture->start);
+        gesture->target_first = gesture->start.selection_first;
+        gesture->target_last = gesture->start.selection_last;
+        gesture->requested_ratio = 1.0f;
+        gesture->actual_ratio = 1.0f;
+        gesture->pitch_semitones = 0.0f;
+        if (pitch_semitones != NULL) *pitch_semitones = 0.0f;
+        set_error(error, error_size, "");
+        return 1;
+    }
+    if (!stretch_target_range(&gesture->original,
+                              gesture->start.selection_first,
+                              gesture->start.selection_last,
+                              gesture->pivot, duration_ratio,
+                              &target_first, &target_last, &actual_ratio,
+                              error, error_size)) return 0;
+    wanted_frames = target_last - target_first;
+    if (!resample_selection_patch(
+            &patch, &gesture->original,
+            gesture->start.selection_first, gesture->start.selection_last,
+            wanted_frames, gesture->pivot - gesture->start.selection_first,
+            gesture->pivot - target_first, error, error_size) ||
+        !ts_sample_clone(&preview, &gesture->original, error, error_size)) {
+        ts_sample_free(&patch);
+        ts_sample_free(&preview);
+        return 0;
+    }
+    if (!stretch_patch_range(
+            &preview, &patch, gesture->start.selection_first,
+            gesture->start.selection_last, target_first,
+            wanted_frames < gesture->start.selection_last -
+                            gesture->start.selection_first,
+            stretch_crossfade_frames(&gesture->original), error, error_size)) {
+        ts_sample_free(&patch);
+        ts_sample_free(&preview);
+        return 0;
+    }
+    ts_sample_free(&patch);
+    replace_current_preserving_view(instrument, &preview);
+    restore_stretch_snapshot(instrument, &gesture->start);
+    instrument->selection_first = target_first;
+    instrument->selection_last = target_last;
+    instrument->has_selection = 1;
+    if (instrument->has_loop &&
+        instrument->loop_last > (gesture->start.selection_first < target_first ?
+                                 gesture->start.selection_first : target_first) &&
+        instrument->loop_first < (gesture->start.selection_last > target_last ?
+                                  gesture->start.selection_last : target_last)) {
+        instrument->has_loop = 0;
+        instrument->loop_first = instrument->loop_last = 0;
+    }
+    gesture->target_first = target_first;
+    gesture->target_last = target_last;
+    gesture->requested_ratio = duration_ratio;
+    gesture->actual_ratio = actual_ratio;
+    gesture->pitch_semitones = -12.0f * log2f(actual_ratio);
+    if (pitch_semitones != NULL) *pitch_semitones = gesture->pitch_semitones;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_stretch_gesture_cancel(TsInstrument *instrument,
+                                         TsStretchGesture *gesture,
+                                         char *error, size_t error_size)
+{
+    TsSample restored;
+    if (!stretch_gesture_owns(instrument, gesture)) {
+        stretch_gesture_clear(gesture);
+        set_error(error, error_size, "Tape-length gesture no longer owns Current");
+        return 0;
+    }
+    ts_sample_init(&restored);
+    if (!ts_sample_clone(&restored, &gesture->original,
+                         error, error_size)) return 0;
+    replace_current_preserving_view(instrument, &restored);
+    restore_stretch_snapshot(instrument, &gesture->start);
+    stretch_gesture_clear(gesture);
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_stretch_gesture_commit(TsInstrument *instrument,
+                                         TsStretchGesture *gesture,
+                                         char *error, size_t error_size)
+{
+    TsSample patch;
+    TsPostEdit operation;
+    uint32_t patch_index;
+    size_t wanted_frames;
+    int ok;
+    if (!stretch_gesture_owns(instrument, gesture)) {
+        stretch_gesture_clear(gesture);
+        set_error(error, error_size, "Tape-length gesture no longer owns Current");
+        return 0;
+    }
+    if (fabsf(gesture->requested_ratio - 1.0f) < 0.000001f ||
+        gesture->target_last - gesture->target_first ==
+        gesture->start.selection_last - gesture->start.selection_first)
+        return ts_instrument_stretch_gesture_cancel(instrument, gesture,
+                                                     error, error_size);
+    wanted_frames = gesture->target_last - gesture->target_first;
+    ts_sample_init(&patch);
+    if (!resample_selection_patch(
+            &patch, &gesture->original,
+            gesture->start.selection_first, gesture->start.selection_last,
+            wanted_frames, gesture->pivot - gesture->start.selection_first,
+            gesture->pivot - gesture->target_first, error, error_size)) return 0;
+    if (!append_audio_patch(instrument, &patch, NULL, &patch_index,
+                            error, error_size)) {
+        ts_sample_free(&patch);
+        return 0;
+    }
+    ts_sample_free(&patch);
+    stack_push(instrument->undo, &instrument->undo_count, gesture->start);
+    instrument->redo_count = 0;
+    memcpy(instrument->post_edits, gesture->start.post_edits,
+           sizeof(instrument->post_edits));
+    instrument->post_edit_count = gesture->start.post_edit_count;
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = wanted_frames > gesture->start.selection_last -
+                                      gesture->start.selection_first ?
+                     TS_POST_PATCH_STRETCH_EXPAND :
+                     TS_POST_PATCH_STRETCH_CONTRACT;
+    operation.first = gesture->start.selection_first;
+    operation.last = gesture->start.selection_last;
+    operation.destination = (int64_t)gesture->target_first;
+    operation.amount = gesture->actual_ratio;
+    operation.patch_index = patch_index;
+    operation.crossfade_frames = stretch_crossfade_frames(&gesture->original);
+    instrument->post_edits[instrument->post_edit_count++] = operation;
+    ok = bank_sync_selected(instrument, error, error_size);
+    stretch_gesture_clear(gesture);
+    if (ok) set_error(error, error_size, "");
+    return ok;
 }
 
 int ts_instrument_copy_selection(const TsInstrument *instrument,

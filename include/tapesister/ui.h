@@ -182,6 +182,9 @@ typedef struct {
     uint32_t tear_last_audition_ms;
     int tear_dragging;
     int tear_wheel_active;
+    TsStretchGesture stretch_gesture;
+    int stretch_wheel_active;
+    int stretch_wheel_steps;
     int has_stretch_readout;
     float stretch_pitch_semitones;
     float stretch_duration_ratio;
@@ -214,6 +217,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
 int ts_ui_keyboard_base_note(const TsUiState *ui);
+size_t ts_ui_right_drag_playhead_frame(size_t anchor, size_t pointer,
+                                       size_t selection_first,
+                                       size_t selection_last,
+                                       size_t sample_frames);
 int ts_ui_keyboard_set_octave(TsUiState *ui, int octave);
 int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount);
 int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount);

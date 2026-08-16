@@ -477,6 +477,7 @@ void ts_ui_init(TsUiState *ui)
     ts_warp_gesture_init(&ui->warp_gesture);
     ts_smear_gesture_init(&ui->smear_gesture);
     ts_tear_gesture_init(&ui->tear_gesture);
+    ts_stretch_gesture_init(&ui->stretch_gesture);
     ui->mouse_note = -1;
     ui->bank_view_slot = -1;
     ui->load_bank_slot = -1;
@@ -1242,22 +1243,35 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                                    base_note, sizeof(base_note)));
         text(fb, 11, 318, keyboard_hint, RGB(184, 180, 184), 1);
         const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
-        const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
         const int white_semitones[14] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
         for (int i = 0; i < 14; ++i) {
+            char label[8];
+            int label_x;
             int active = (ui->active_notes & (1u << white_semitones[i])) != 0;
             rect(fb, white_x + i * white_w, white_y, white_w - 1, white_h,
                  active ? PAL_MOUSE : RGB(220, 216, 207));
-            text(fb, white_x + i * white_w + 23, white_y + 36, labels[i], RGB(24, 24, 24), 1);
+            ts_midi_note_name(ts_ui_keyboard_base_note(ui) + white_semitones[i],
+                              label, sizeof(label));
+            label_x = white_x + i * white_w +
+                      (white_w - 1 - (int)strlen(label) * 6) / 2;
+            text(fb, label_x, white_y + 36, label, RGB(24, 24, 24), 1);
         }
         {
             const int black_after[] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
             const int semitones[] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
             for (int i = 0; i < 10; ++i) {
+                char label[8];
+                int left = white_x + (black_after[i] + 1) * white_w - 16;
+                int label_x;
                 int key = semitones[i];
                 int active = (ui->active_notes & (1u << key)) != 0;
-                rect(fb, white_x + (black_after[i] + 1) * white_w - 16, white_y, 31, 31,
+                rect(fb, left, white_y, 31, 31,
                      active ? PAL_VOLUME : RGB(18, 18, 18));
+                ts_midi_note_name(ts_ui_keyboard_base_note(ui) + key,
+                                  label, sizeof(label));
+                label_x = left + (31 - (int)strlen(label) * 6) / 2;
+                text(fb, label_x, white_y + 19, label,
+                     active ? PAL_BLOCK_TEXT : RGB(220, 216, 207), 1);
             }
         }
     } else if (ui->show_recipes) {
@@ -1413,6 +1427,17 @@ int ts_ui_key_from_point(int x, int y)
     static const int white_semitones[] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
     int index = (x - 10) / white_w;
     return index >= 0 && index < 14 ? white_semitones[index] : -1;
+}
+
+size_t ts_ui_right_drag_playhead_frame(size_t anchor, size_t pointer,
+                                       size_t selection_first,
+                                       size_t selection_last,
+                                       size_t sample_frames)
+{
+    size_t frame = pointer >= anchor ? selection_first : selection_last;
+    if (sample_frames == 0) return 0;
+    if (frame >= sample_frames) frame = sample_frames - 1u;
+    return frame;
 }
 
 int ts_ui_bank_slot_from_point(int x, int y)
