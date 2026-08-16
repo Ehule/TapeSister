@@ -2088,12 +2088,14 @@ int main(void)
         snprintf(config.fasttracker_path, sizeof(config.fasttracker_path),
                  "/opt/ft2 tapehead/ft2-clone");
         snprintf(config.exchange_path, sizeof(config.exchange_path), "/samples/handoff");
+        snprintf(config.cdp_bin_path, sizeof(config.cdp_bin_path), "/opt/cdp/bin");
         CHECK(ts_config_save(&config, "test-tapesister.ini", error, sizeof(error)));
         ts_config_init(&reopened);
         CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
         CHECK(strcmp(reopened.sample_path, config.sample_path) == 0);
         CHECK(strcmp(reopened.fasttracker_path, config.fasttracker_path) == 0);
         CHECK(strcmp(reopened.exchange_path, config.exchange_path) == 0);
+        CHECK(strcmp(reopened.cdp_bin_path, config.cdp_bin_path) == 0);
         CHECK(reopened.startup_welcome_sample == 1 &&
               reopened.startup_welcome_autoplay == 1);
         CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);

@@ -622,6 +622,10 @@ int ts_instrument_cut_selection(TsInstrument *instrument,
 int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
                         size_t origin_first, int fit_selection,
                         char *error, size_t error_size);
+int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
+                                             const TsSample *rendered,
+                                             size_t first, size_t last,
+                                             char *error, size_t error_size);
 int ts_instrument_replace_selection_with_drone(TsInstrument *instrument,
                                                 const TsSample *drone,
                                                 char *error, size_t error_size);

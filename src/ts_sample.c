@@ -4941,6 +4941,88 @@ int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
     return 1;
 }
 
+int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
+                                             const TsSample *rendered,
+                                             size_t first, size_t last,
+                                             char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    TsSample current;
+    uint32_t patch_index;
+    size_t inserted;
+    size_t output_frames;
+    size_t original_view_first;
+    size_t original_view_last;
+    if (instrument == NULL || rendered == NULL || rendered->data == NULL ||
+        rendered->frames == 0u || rendered->sample_rate == 0u ||
+        instrument->current.data == NULL || first > last ||
+        last > instrument->current.frames ||
+        rendered->sample_rate != instrument->current.sample_rate) {
+        set_error(error, error_size, "Invalid rendered replacement");
+        return 0;
+    }
+    inserted = rendered->frames;
+    if (instrument->current.frames - (last - first) > SIZE_MAX - inserted ||
+        instrument->current.frames - (last - first) + inserted > TS_CANVAS_MAX_FRAMES) {
+        set_error(error, error_size, "Rendered replacement is too large");
+        return 0;
+    }
+    output_frames = instrument->current.frames - (last - first) + inserted;
+    if (output_frames < TS_CANVAS_MIN_FRAMES) {
+        set_error(error, error_size, "Rendered replacement is too short");
+        return 0;
+    }
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
+    if (!append_audio_patch(instrument, rendered, NULL, &patch_index,
+                            error, error_size)) return 0;
+    target = snapshot(instrument);
+    original_view_first = target.view_first;
+    original_view_last = target.view_last;
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_PATCH_REPLACE;
+    operation.first = first;
+    operation.last = last;
+    operation.patch_index = patch_index;
+    target.post_edits[target.post_edit_count++] = operation;
+    update_snapshot_after_replace(&target, first, last, inserted, output_frames, 1);
+    if (inserted == last - first && original_view_last > original_view_first &&
+        original_view_last <= output_frames) {
+        target.view_first = original_view_first;
+        target.view_last = original_view_last;
+    } else if (original_view_last > original_view_first) {
+        size_t view_first = replace_point(original_view_first, first, last, inserted);
+        size_t view_last = replace_point(original_view_last, first, last, inserted);
+        size_t span = original_view_last - original_view_first;
+        if (view_last > output_frames) view_last = output_frames;
+        if (view_first >= view_last) {
+            view_first = first < output_frames ? first : output_frames - 1u;
+            view_last = view_first + 1u;
+        }
+        if (first < view_first || first + inserted > view_last) {
+            size_t wanted = span > inserted ? span : inserted;
+            if (wanted > output_frames) wanted = output_frames;
+            view_first = first;
+            if (view_first + wanted > output_frames) view_first = output_frames - wanted;
+            view_last = view_first + wanted;
+        }
+        target.view_first = view_first;
+        target.view_last = view_last;
+    }
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) {
+        discard_last_audio_patch(instrument, patch_index);
+        return 0;
+    }
+    if (!commit_post_snapshot(instrument, &target, &current, error, error_size)) {
+        ts_sample_free(&current);
+        discard_last_audio_patch(instrument, patch_index);
+        return 0;
+    }
+    set_error(error, error_size, "");
+    return 1;
+}
+
 int ts_instrument_replace_selection_with_drone(TsInstrument *instrument,
                                                 const TsSample *drone,
                                                 char *error, size_t error_size)

@@ -3,6 +3,9 @@
 SamplePath=
 FastTrackerPath=
 ExchangePath=
+; Optional CDP runtime override. Folder must contain pvoc and glisten.
+; When blank, TapeSister checks cdp/bin beside the executable, then ./cdp/bin.
+CdpBinPath=
 
 [Startup]
 ; Install assets/tapesister_welcome.wav into bank 01 on a fresh launch.

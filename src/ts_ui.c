@@ -569,6 +569,142 @@ static void drone_render(TsFramebuffer *fb, const TsUiState *ui)
          RGB(190, 185, 190), 1);
 }
 
+static int transform_frame_x(size_t frame, size_t first, size_t last)
+{
+    if (last <= first || frame <= first) return TS_TRANSFORM_WAVE_X;
+    if (frame >= last) return TS_TRANSFORM_WAVE_X + TS_TRANSFORM_WAVE_W;
+    return TS_TRANSFORM_WAVE_X +
+           (int)((frame - first) * TS_TRANSFORM_WAVE_W / (last - first));
+}
+
+static void transform_waveform(TsFramebuffer *fb, const TsUiState *ui,
+                               const TsInstrument *instrument)
+{
+    const TsSample *sample = &instrument->current;
+    size_t first = instrument->view_first;
+    size_t last = instrument->view_last;
+    int middle = TS_TRANSFORM_WAVE_Y + TS_TRANSFORM_WAVE_H / 2;
+    rect(fb, TS_TRANSFORM_WAVE_X, TS_TRANSFORM_WAVE_Y,
+         TS_TRANSFORM_WAVE_W, TS_TRANSFORM_WAVE_H, RGB(8, 8, 8));
+    if (sample->data == NULL || sample->frames == 0u) return;
+    if (last <= first || last > sample->frames) { first = 0u; last = sample->frames; }
+    if (instrument->has_selection && instrument->selection_last > first &&
+        instrument->selection_first < last) {
+        int x0 = transform_frame_x(instrument->selection_first, first, last);
+        int x1 = transform_frame_x(instrument->selection_last, first, last);
+        if (x0 < TS_TRANSFORM_WAVE_X) x0 = TS_TRANSFORM_WAVE_X;
+        if (x1 > TS_TRANSFORM_WAVE_X + TS_TRANSFORM_WAVE_W)
+            x1 = TS_TRANSFORM_WAVE_X + TS_TRANSFORM_WAVE_W;
+        rect(fb, x0, TS_TRANSFORM_WAVE_Y, x1 - x0,
+             TS_TRANSFORM_WAVE_H, PAL_WAVE_SELECTION);
+    }
+    rect(fb, TS_TRANSFORM_WAVE_X, middle, TS_TRANSFORM_WAVE_W, 1, PAL_BUTTON);
+    for (int column = 0; column < TS_TRANSFORM_WAVE_W; ++column) {
+        size_t begin = first + (size_t)column * (last - first) / TS_TRANSFORM_WAVE_W;
+        size_t end = first + (size_t)(column + 1) * (last - first) /
+                     TS_TRANSFORM_WAVE_W;
+        float low = 1.0f;
+        float high = -1.0f;
+        int y0;
+        int y1;
+        if (end <= begin) end = begin + 1u;
+        for (size_t at = begin; at < end && at < sample->frames; ++at) {
+            if (sample->data[at] < low) low = sample->data[at];
+            if (sample->data[at] > high) high = sample->data[at];
+        }
+        y0 = middle - (int)lrintf(high * (TS_TRANSFORM_WAVE_H / 2 - 4));
+        y1 = middle - (int)lrintf(low * (TS_TRANSFORM_WAVE_H / 2 - 4));
+        if (y0 > y1) { int swap = y0; y0 = y1; y1 = swap; }
+        if (y0 < TS_TRANSFORM_WAVE_Y) y0 = TS_TRANSFORM_WAVE_Y;
+        if (y1 >= TS_TRANSFORM_WAVE_Y + TS_TRANSFORM_WAVE_H)
+            y1 = TS_TRANSFORM_WAVE_Y + TS_TRANSFORM_WAVE_H - 1;
+        rect(fb, TS_TRANSFORM_WAVE_X + column, y0, 1,
+             y1 > y0 ? y1 - y0 + 1 : 1,
+             instrument->has_selection && end > instrument->selection_first &&
+             begin < instrument->selection_last ? PAL_BLOCK_TEXT : PAL_NOTE);
+    }
+    if (instrument->has_selection) {
+        int x0 = transform_frame_x(instrument->selection_first, first, last);
+        int x1 = transform_frame_x(instrument->selection_last, first, last);
+        if (x0 >= TS_TRANSFORM_WAVE_X &&
+            x0 < TS_TRANSFORM_WAVE_X + TS_TRANSFORM_WAVE_W)
+            rect(fb, x0, TS_TRANSFORM_WAVE_Y, 2, TS_TRANSFORM_WAVE_H, PAL_EFFECT);
+        if (x1 > TS_TRANSFORM_WAVE_X &&
+            x1 <= TS_TRANSFORM_WAVE_X + TS_TRANSFORM_WAVE_W)
+            rect(fb, x1 - 2, TS_TRANSFORM_WAVE_Y, 2, TS_TRANSFORM_WAVE_H, PAL_EFFECT);
+    }
+    (void)ui;
+}
+
+static void transform_control(TsFramebuffer *fb, const TsCdpRecipe *recipe,
+                              const TsCdpRecipeValues *values, size_t index,
+                              uint32_t sample_rate)
+{
+    const TsCdpControlSpec *control = &recipe->controls[index];
+    int x = 20 + (int)index * 150;
+    float value = ts_cdp_control_quantize(control, values->controls[index]);
+    float amount = control->maximum > control->minimum ?
+                   (value - control->minimum) /
+                   (control->maximum - control->minimum) : 0.0f;
+    char shown[48];
+    ts_cdp_control_format(control, value, sample_rate, recipe->analysis_points,
+                          recipe->analysis_overlap, shown, sizeof(shown));
+    text(fb, x, 155, control->label, PAL_TUNING, 1);
+    text(fb, x + 62, 155, shown, PAL_EFFECT, 1);
+    frame(fb, x, 166, 140, 18, RGB(12, 12, 12), PAL_BUTTON);
+    rect(fb, x + 3, 169, (int)lrintf(amount * 134.0f), 12, PAL_BLOCK);
+}
+
+static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
+                             const TsInstrument *instrument)
+{
+    const TsCdpRecipe *recipe = ts_cdp_recipe_find("glisten");
+    char mix[32];
+    char selection[48];
+    frame(fb, 10, 40, 620, 264, RGB(36, 33, 37), PAL_MOUSE);
+    text(fb, 20, 46, "TRANSFORM", PAL_NOTE, 1);
+    text(fb, 452, 46, "OFFLINE CDP8", PAL_EFFECT, 1);
+    transform_waveform(fb, ui, instrument);
+    button(fb, 20, 126, 94, recipe->display_name, 1);
+    text(fb, 124, 134, recipe->description, PAL_INSTRUMENT, 1);
+    for (size_t i = 0; i < TS_CDP_CONTROL_COUNT; ++i)
+        transform_control(fb, recipe, &ui->transform_values, i,
+                          instrument->current.sample_rate);
+    if (recipe->mix_policy == TS_CDP_MIX_UNSUPPORTED)
+        snprintf(mix, sizeof(mix), "MIX N/A");
+    else
+        snprintf(mix, sizeof(mix), "MIX %d%%",
+                 (int)lrintf(ui->transform_values.mix * 100.0f));
+    button(fb, 20, 190, 112, mix, 0);
+    button(fb, 142, 190, 110, "SELECTION",
+           ui->transform_scope == TS_TRANSFORM_SELECTION &&
+           instrument->has_selection);
+    button(fb, 258, 190, 78, "WHOLE",
+           ui->transform_scope == TS_TRANSFORM_WHOLE);
+    snprintf(selection, sizeof(selection), instrument->has_selection ?
+             "SEL %zu:%zu" : "NO SELECTION",
+             instrument->selection_first, instrument->selection_last);
+    text(fb, 350, 198, selection,
+         instrument->has_selection ? PAL_TUNING : RGB(150, 145, 150), 1);
+    button(fb, 20, 220, 88, ui->transform_rendering ? "WORKING" : "RENDER",
+           ui->transform_rendering);
+    button(fb, 116, 220, 78, "APPLY", ui->transform_preview_available);
+    button(fb, 202, 220, 102,
+           ui->transform_preview_active ? "STOP" : "AUDITION",
+           ui->transform_preview_active);
+    button(fb, 312, 220, 78, ui->transform_rendering ? "CANCEL" : "BACK", 0);
+    text(fb, 408, 228,
+         ui->transform_preview_available ? ts_cdp_safety_name(ui->transform_safety) :
+         ui->transform_runtime_available ? "READY" : "NO RUNTIME",
+         ui->transform_safety == TS_CDP_SAFETY_HOT ? PAL_VOLUME : PAL_EFFECT, 1);
+    text(fb, 20, 254, ui->transform_message, PAL_MOUSE, 1);
+    text(fb, 20, 273,
+         ui->transform_runtime_available ?
+         "SPACE AUDITIONS  ENTER RENDERS  ESC CANCELS OR RETURNS" :
+         "SET CDP BIN PATH IN TAPESISTER.INI - PVOC AND GLISTEN REQUIRED",
+         ui->transform_runtime_available ? PAL_TUNING : PAL_VOLUME, 1);
+}
+
 static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     static const char *const short_names[TS_PALETTE_COLOR_COUNT] = {
@@ -684,6 +820,12 @@ void ts_ui_init(TsUiState *ui)
     ui->palette_entry = TS_PALETTE_PATTERN_TEXT;
     ui->palette_channel = 0;
     ts_recipe_bank_init(&ui->recipes);
+    ui->transform_scope = TS_TRANSFORM_WHOLE;
+    ui->transform_safety = TS_CDP_SAFETY_INVALID;
+    ts_cdp_recipe_values_default(ts_cdp_recipe_find("glisten"),
+                                 &ui->transform_values);
+    snprintf(ui->transform_message, sizeof(ui->transform_message),
+             "SELECT A SCOPE AND RENDER");
     snprintf(ui->status, sizeof(ui->status), "READY - SELECT A TILE, LOAD, OR CREATE");
 }
 
@@ -809,6 +951,46 @@ TsUiDroneAction ts_ui_drone_action_from_point(int x, int y)
     if (x >= 328 && x < 460) return TS_UI_DRONE_ACTION_REPLACE;
     if (x >= 466 && x < 546) return TS_UI_DRONE_ACTION_CANCEL;
     return TS_UI_DRONE_ACTION_NONE;
+}
+
+TsUiTransformAction ts_ui_transform_action_from_point(int x, int y)
+{
+    if (x >= 20 && x < 114 && y >= 126 && y < 149)
+        return TS_UI_TRANSFORM_ACTION_RECIPE;
+    if (x >= 142 && x < 252 && y >= 190 && y < 213)
+        return TS_UI_TRANSFORM_ACTION_SELECTION;
+    if (x >= 258 && x < 336 && y >= 190 && y < 213)
+        return TS_UI_TRANSFORM_ACTION_WHOLE;
+    if (y >= 220 && y < 243) {
+        if (x >= 20 && x < 108) return TS_UI_TRANSFORM_ACTION_RENDER;
+        if (x >= 116 && x < 194) return TS_UI_TRANSFORM_ACTION_APPLY;
+        if (x >= 202 && x < 304) return TS_UI_TRANSFORM_ACTION_AUDITION;
+        if (x >= 312 && x < 390) return TS_UI_TRANSFORM_ACTION_BACK;
+    }
+    return TS_UI_TRANSFORM_ACTION_NONE;
+}
+
+int ts_ui_transform_control_from_point(int x, int y)
+{
+    if (y < 155 || y >= 184) return -1;
+    for (int index = 0; index < TS_CDP_CONTROL_COUNT; ++index) {
+        int left = 20 + index * 150;
+        if (x >= left && x < left + 140) return index;
+    }
+    return -1;
+}
+
+int ts_ui_transform_mix_contains(int x, int y)
+{
+    return x >= 20 && x < 132 && y >= 190 && y < 213;
+}
+
+int ts_ui_transform_waveform_contains(int x, int y)
+{
+    return x >= TS_TRANSFORM_WAVE_X &&
+           x < TS_TRANSFORM_WAVE_X + TS_TRANSFORM_WAVE_W &&
+           y >= TS_TRANSFORM_WAVE_Y &&
+           y < TS_TRANSFORM_WAVE_Y + TS_TRANSFORM_WAVE_H;
 }
 
 TsUiWaveAction ts_ui_wave_action_from_point(int x, int y)
@@ -1175,12 +1357,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                      instrument->selected_slot + 1, sample->sample_rate,
                      (double)sample->frames / sample->sample_rate);
         text(fb, 20, 49, tile, PAL_INSTRUMENT, 1);
-        text(fb, 390, 49, info, PAL_EFFECT, 1);
+        text(fb, 310, 49, info, PAL_EFFECT, 1);
     } else {
         char empty[40];
         snprintf(empty, sizeof(empty), "TILE %02d EMPTY", instrument->selected_slot + 1);
         text(fb, 20, 49, empty, PAL_INSTRUMENT, 1);
     }
+    if (sample->frames && !showing_bank && !showing_parent)
+        button(fb, 522, 40, 98, "TRANSFORM", ui->transform_open);
 
     wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
     if (grid_divisions < TS_GRID_DIVISION_MIN ||
@@ -1692,7 +1876,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 172, 188, 136, "EXIT", 0);
         button(fb, 324, 188, 144, "CANCEL", 1);
         text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
-    } else if (ui->drone_open)
+    } else if (ui->transform_open)
+        transform_render(fb, ui, instrument);
+    else if (ui->drone_open)
         drone_render(fb, ui);
     else if (ui->load_selection_choice_open) {
         char source[58];

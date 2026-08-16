@@ -59,6 +59,38 @@ commit modes support Undo/Redo. The internal crossfade defaults to 50 ms, clamps
 most one quarter of the selection, and can be changed with
 `drone_crossfade_ms=50` in `[Waveform]`.
 
+## Curated offline CDP Transform
+
+**TRANSFORM** opens a compact workspace over the waveform editor. Its mini waveform
+uses the active tile's exact persistent selection and viewport—drag either selection
+edge to resize it, drag inside it to move it, or drag elsewhere to make a new range.
+The same half-open range is immediately visible in the main editor when Transform is
+closed. Choose **Selection** or **Whole**, adjust GLISTEN's four direct controls, then
+press **Render**. The fixed universal Mix position remains visible but reads **N/A**
+for GLISTEN because its natural PVOC result changes duration. Rendering runs off the
+UI and audio threads; ordinary playback keeps using the unchanged tile while CDP works.
+
+A successful render becomes independent audition memory and never changes the tile
+until **Apply** is pressed. Space auditions or stops that preview, Enter renders, A
+applies, and Escape cancels a running job before it returns to the editor. Parameter,
+scope, selection, tile, audio, Undo, and Redo changes invalidate prior work. Apply
+replaces only the selected range at the render's natural duration (or replaces the
+whole tile), selects the exact result, and creates one tile-local Undo transaction.
+
+GLISTEN maps **Divide** to valid power-of-two spectral group counts, **Hold** to valid
+analysis windows with a millisecond readout, **Shift** to CDP's documented symmetric
+random semitone range, and **Scatter** deliberately drives duration randomization plus
+a gentler squared group-size randomization. Actual CDP8 validation shows that PVOC
+analysis/resynthesis adds padding, so GLISTEN is declared duration-changing and Mix is
+disabled rather than silently truncating, stretching, or approximately aligning audio.
+
+TapeSister does not bundle CDP in this slice. Put compatible `pvoc` and `glisten`
+executables in `cdp/bin` beside TapeSister, or set `CdpBinPath` under `[Paths]` in
+`tapesister.ini` to their folder. A missing runtime leaves Transform available for
+selection work but disables rendering with a clear status. See
+[`docs/CDP_TRANSFORM.md`](docs/CDP_TRANSFORM.md) for the verified command pipeline,
+runtime closure, safety model, platform notes, and licensing obligations.
+
 Every ordinary slider responds to click/drag, mouse wheel while hovered, and Left/Right while the pointer is over its box; Shift makes wheel or arrow adjustments coarser. This includes Palette RGB and contrast controls. WARP, SMEAR, and TEAR remain spring-loaded gestures and deliberately keep their separate Ctrl+wheel behavior.
 
 The compact **WARP** control is a spring-loaded, deterministic offline Transform for
