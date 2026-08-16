@@ -6,18 +6,30 @@
 
 #define RGB(r,g,b) (0xff000000u | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
 
-/* Temporary visual authority: tapehead.pal supplied by the user. */
-#define PAL_TEXT RGB(255, 28, 0)
-#define PAL_BLOCK RGB(45, 0, 57)
-#define PAL_BLOCK_TEXT RGB(0, 158, 227)
-#define PAL_MOUSE RGB(255, 210, 101)
-#define PAL_DESKTOP RGB(28, 28, 28)
-#define PAL_BUTTON RGB(93, 85, 93)
-#define PAL_NOTE RGB(255, 231, 0)
-#define PAL_INSTRUMENT RGB(24, 255, 0)
-#define PAL_VOLUME RGB(255, 28, 231)
-#define PAL_TUNING RGB(20, 125, 255)
-#define PAL_EFFECT RGB(53, 255, 255)
+static const TsPalette *render_palette;
+
+static const TsPalette *active_palette(void)
+{
+    static TsPalette fallback;
+    static int initialized;
+    if (!initialized) {
+        ts_palette_default(&fallback);
+        initialized = 1;
+    }
+    return render_palette != NULL ? render_palette : &fallback;
+}
+
+#define PAL_TEXT (active_palette()->colors[TS_PALETTE_PATTERN_TEXT])
+#define PAL_BLOCK (active_palette()->colors[TS_PALETTE_BLOCK_MARK])
+#define PAL_BLOCK_TEXT (active_palette()->colors[TS_PALETTE_TEXT_ON_BLOCK])
+#define PAL_MOUSE (active_palette()->colors[TS_PALETTE_MOUSE])
+#define PAL_DESKTOP (active_palette()->colors[TS_PALETTE_DESKTOP])
+#define PAL_BUTTON (active_palette()->colors[TS_PALETTE_BUTTONS])
+#define PAL_NOTE (active_palette()->colors[TS_PALETTE_PATTERN_NOTE])
+#define PAL_INSTRUMENT (active_palette()->colors[TS_PALETTE_PATTERN_INSTRUMENT])
+#define PAL_VOLUME (active_palette()->colors[TS_PALETTE_PATTERN_VOLUME])
+#define PAL_TUNING (active_palette()->colors[TS_PALETTE_PATTERN_TUNING])
+#define PAL_EFFECT (active_palette()->colors[TS_PALETTE_PATTERN_EFFECT])
 
 static void clear(TsFramebuffer *fb, uint32_t color)
 {
@@ -273,13 +285,69 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
     }
     button(fb, 50, 274, 110, "SAVE CONFIG", 0);
     button(fb, 170, 274, 100, "USE CWD", 0);
-    button(fb, 280, 274, 82, "CANCEL", 0);
+    button(fb, 280, 274, 88, "PALETTE", 0);
+    button(fb, 378, 274, 82, "CANCEL", 0);
     text(fb, 50, 312,
          "SEND FT2 EXPORTS THE LOOP AWARE COLLECTION THEN LAUNCHES FT2",
          PAL_TUNING, 1);
     text(fb, 50, 327,
-         "PALETTE IMPORT EDIT EXPORT WILL LIVE IN THIS WINDOW NEXT",
+         "PALETTE EDITOR READS AND WRITES TAPEHEAD COMPATIBLE PAL FILES",
          PAL_VOLUME, 1);
+}
+
+static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
+{
+    static const char *const channel_names[3] = {"RED", "GREEN", "BLUE"};
+    char value[48];
+    uint32_t selected = ui->palette.colors[ui->palette_entry];
+    frame(fb, 28, 34, 584, 344, RGB(36, 33, 37), PAL_MOUSE);
+    text(fb, 44, 47, "PALETTE EDITOR", PAL_NOTE, 1);
+    text(fb, 350, 47, "TAPEHEAD PAL COMPATIBLE", PAL_EFFECT, 1);
+    for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
+        int column = color / 6;
+        int row = color % 6;
+        int x = 44 + column * 282;
+        int y = 66 + row * 25;
+        uint32_t entry = ui->palette.colors[color];
+        rect(fb, x, y, 268, 21, color == ui->palette_entry ? PAL_BLOCK : RGB(18, 18, 18));
+        if (color == ui->palette_entry) {
+            rect(fb, x, y, 268, 2, PAL_MOUSE);
+            rect(fb, x, y + 19, 268, 2, PAL_MOUSE);
+            rect(fb, x, y, 2, 21, PAL_MOUSE);
+            rect(fb, x + 266, y, 2, 21, PAL_MOUSE);
+        }
+        rect(fb, x + 5, y + 4, 24, 13, entry);
+        text(fb, x + 36, y + 7, ts_palette_color_name((TsPaletteColor)color),
+             color == ui->palette_entry ? PAL_BLOCK_TEXT : RGB(222, 218, 214), 1);
+        snprintf(value, sizeof(value), "#%06X", (unsigned)(entry & 0xffffffu));
+        text(fb, x + 200, y + 7, value, color == ui->palette_entry ? PAL_MOUSE : PAL_TEXT, 1);
+    }
+    snprintf(value, sizeof(value), "%s  #%06X",
+             ts_palette_color_name((TsPaletteColor)ui->palette_entry),
+             (unsigned)(selected & 0xffffffu));
+    text(fb, 44, 220, value, PAL_INSTRUMENT, 1);
+    for (int component = 0; component < 3; ++component) {
+        float amount = ts_palette_component(&ui->palette,
+                       (TsPaletteColor)ui->palette_entry, component) / 255.0f;
+        int y = 237 + component * 27;
+        slider(fb, 44, y, 322, channel_names[component], amount,
+               component == 0 ? PAL_TEXT : component == 1 ? PAL_INSTRUMENT : PAL_TUNING);
+        if (component == ui->palette_channel)
+            rect(fb, 40, y + 9, 3, 14, PAL_MOUSE);
+        snprintf(value, sizeof(value), "%3u",
+                 (unsigned)ts_palette_component(&ui->palette,
+                 (TsPaletteColor)ui->palette_entry, component));
+        text(fb, 378, y + 13, value, component == ui->palette_channel ? PAL_MOUSE : PAL_EFFECT, 1);
+    }
+    rect(fb, 456, 226, 132, 82, selected);
+    frame(fb, 456, 226, 132, 82, selected, PAL_MOUSE);
+    button(fb, 44, 339, 82, "IMPORT TH", 0);
+    button(fb, 132, 339, 76, "SAVE TS", 0);
+    button(fb, 214, 339, 88, "EXPORT TH", 0);
+    button(fb, 308, 339, 68, "RESET", 0);
+    button(fb, 382, 339, 62, "DONE", 1);
+    button(fb, 450, 339, 76, "CANCEL", 0);
+    text(fb, 532, 347, "ARROWS", PAL_TUNING, 1);
 }
 
 int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
@@ -308,6 +376,9 @@ void ts_ui_init(TsUiState *ui)
     ui->show_recipes = 0;
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
+    ts_palette_default(&ui->palette);
+    ui->palette_entry = TS_PALETTE_PATTERN_TEXT;
+    ui->palette_channel = 0;
     ts_recipe_bank_init(&ui->recipes);
     snprintf(ui->status, sizeof(ui->status), "READY - SELECT A TILE, LOAD, OR CREATE");
 }
@@ -430,6 +501,7 @@ const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
 
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
+    render_palette = &ui->palette;
     const TsTuning *display_tuning = ts_ui_display_tuning(ui, instrument);
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
     int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
@@ -668,12 +740,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 597, 233, 33, "LOOP", ui->fx_page == TS_FX_LOOP);
 
     if (ui->fx_page == TS_FX_EDIT) {
-        button(fb, 10, 261, 94, "REVERSE", 0);
-        button(fb, 109, 261, 94, "NORMALIZE", 0);
-        button(fb, 208, 261, 84, "AMP DOWN", 0);
-        button(fb, 297, 261, 84, "AMP UP", 0);
-        button(fb, 386, 261, 110, "FADE IN", 0);
-        button(fb, 501, 261, 110, "FADE OUT", 0);
+        button(fb, 10, 261, 55, "COPY", 0);
+        button(fb, 69, 261, 47, "CUT", 0);
+        button(fb, 120, 261, 61, "PASTE", 0);
+        button(fb, 185, 261, 47, "FIT", 0);
+        button(fb, 236, 261, 55, "REV", 0);
+        button(fb, 295, 261, 65, "NORM", 0);
+        button(fb, 364, 261, 55, "-3 DB", 0);
+        button(fb, 423, 261, 55, "+3 DB", 0);
+        button(fb, 482, 261, 69, "FADE IN", 0);
+        button(fb, 555, 261, 75, "FADE OUT", 0);
     } else if (ui->fx_page == TS_FX_TUNE) {
         char root[32];
         char note[12];
@@ -815,8 +891,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
              PAL_INSTRUMENT, 1);
     } else {
         text(fb, 11, 318,
+             ui->fx_page == TS_FX_EDIT ?
+             "PASTE EXACT RESIZES  FIT STRETCHES INTO TARGET  CTRL+C/X/V" :
+             ui->fx_page == TS_FX_FAMILY && instrument->has_selection ?
+             "CREATE/VARY STAMP FM INSIDE SELECTION  OUTSIDE STAYS UNCHANGED" :
              ui->fx_page == TS_FX_FAMILY ?
-             "CREATE ADDS SLOT  VARY RELATED  SHIFT PROMOTES  CTRL CREATE RADICAL" :
+             "CREATE FILLS ACTIVE TILE  VARY REPLACES OR CHAINS TO NEXT EMPTY" :
              "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  CTRL+SHIFT CLONE  RMB NAME  SHIFT+RMB CLEAR",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
@@ -834,7 +914,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             if (slot->occupied)
                 rect(fb, x + 2, y + 19, 61, 2,
                      family_relation_color(slot->relation));
-            if (i == ui->bank_view_slot) rect(fb, x + 2, y + 2, 68, 2, PAL_MOUSE);
+            if (i == ui->bank_view_slot) rect(fb, x + 4, y + 4, 64, 2, PAL_EFFECT);
+            if (i == instrument->selected_slot) {
+                rect(fb, x - 2, y - 2, 76, 3, PAL_MOUSE);
+                rect(fb, x - 2, y + 22, 76, 3, PAL_MOUSE);
+                rect(fb, x - 2, y - 2, 3, 27, PAL_MOUSE);
+                rect(fb, x + 71, y - 2, 3, 27, PAL_MOUSE);
+            }
         }
     }
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
@@ -849,7 +935,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 172, 188, 136, "EXIT", 0);
         button(fb, 324, 188, 144, "CANCEL", 1);
         text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
-    } else if (ui->config_open)
+    } else if (ui->palette_open)
+        palette_render(fb, ui);
+    else if (ui->config_open)
         config_render(fb, ui);
     else if (ui->browser.mode != TS_BROWSER_CLOSED)
         browser_render(fb, &ui->browser, ui->text_cursor_visible);

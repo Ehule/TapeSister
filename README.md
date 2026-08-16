@@ -6,9 +6,9 @@ TapeSister is a standalone sample-making laboratory for FT2 Tapehead Edition. It
 
 Each of the 16 Bank tiles is a complete editable sound object. A tile owns its audio, tuning, loop, selection, viewport, processing and edit state, and Undo/Redo history. There is no separate Source, Parent, Current, promotion, or commit workflow in the interface.
 
-Clicking an occupied tile selects it, restores its own editor state, and auditions it. Clicking an empty tile selects that exact Create/Load destination without playing anything. Clearing the active tile leaves the same empty destination selected. Bank 01 has no special protection or authority.
+Clicking an occupied tile selects it, restores its own editor state, and auditions it. Clicking an empty tile selects that exact Create/Load destination without playing anything. A thick gold outline always marks the active editing tile; a separate cyan mark identifies a bank tile being viewed or auditioned. Clearing the active tile leaves the same empty destination selected. Bank 01 has no special protection or authority.
 
-Create and Load replace only the selected tile. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. CHAIN is the only normal operation that establishes a relationship across tiles.
+With no waveform selection, Create and Load replace only the selected tile. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. With a waveform selection, Create and Vary instead stamp a fitted FM sound into exactly that range on the active tile; audio outside the range and the tile duration stay unchanged, and Chain does not move the stamp to another tile.
 
 Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
@@ -55,7 +55,9 @@ Fresh launches also use two boolean startup settings (both default to `1` when a
 
 **Send FT2** exports every occupied collection slot into an automatically numbered folder under the exchange path (falling back to the sample path), then launches the configured FastTracker executable without shell interpolation. No existing handoff folder is replaced. The handoff remains deliberately file-based: TapeSister does not link against tracker state, and FT2's existing folder importer decides whether the collection replaces the current instrument, fills another instrument, or becomes a launcher bank.
 
-Every handoff WAV includes root/fine-tune metadata plus loop start, inclusive end, and standard Forward/Ping-Pong/Backward type. FT2 already reads the loop record, so forward and ping-pong collection members arrive with looping enabled instead of requiring manual flags. Its current WAV loader treats the standard backward type as ping-pong; exact reverse-loop interpretation and `smpl` root-note adoption belong to the reciprocal FT2-side handoff slice. Palette import/edit/export will share the Config window in its own focused slice rather than mixing palette state into `tapesister.ini`.
+Every handoff WAV includes root/fine-tune metadata plus loop start, inclusive end, and standard Forward/Ping-Pong/Backward type. FT2 already reads the loop record, so forward and ping-pong collection members arrive with looping enabled instead of requiring manual flags. Its current WAV loader treats the standard backward type as ping-pong; exact reverse-loop interpretation and `smpl` root-note adoption belong to the reciprocal FT2-side handoff slice.
+
+**Config -> Palette** opens a live 12-color RGB editor using the same named fields as FT2 Tapehead Edition. **Import TH** reads `tapehead.pal`, **Export TH** writes it, and **Save TS** writes `tapesister.pal`, which TapeSister automatically reloads on the next launch. If that file is absent, the bundled `assets/tapehead.pal` is used. `TAPESISTER_PALETTE` can override the TapeSister palette path. Older six-color Tapehead palettes are accepted, with the additional waveform colors inheriting `PatternText`.
 
 ## Sound collection and variation
 
@@ -119,6 +121,8 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - Zoom Selection and Show All;
 - nondestructive Crop with Source preservation;
 - selection-aware Reverse, Normalize, 3 dB Amplify Up/Down, Fade In, and Fade Out;
+- cross-tile Copy, ripple Cut, exact Paste, and duration-preserving Fit Paste;
+- selection-scoped Create and Vary FM stamping;
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
@@ -126,6 +130,8 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - mono 16-bit selected-tile export with sampler-compatible root/fine-tune and loop metadata.
 
 Sample edits are deterministic and tile-owned. With no selection they affect the whole selected tile; with a selection they affect only that range.
+
+The audio clipboard survives tile changes for the lifetime of the app, while every tile keeps its own selection. **Paste** replaces the destination selection with the copied sound at its exact duration: a shorter destination makes the tile grow and a longer destination makes it shrink. With no destination selection, Paste inserts at the source selection's original time position, clamped to the end of a shorter target. **Fit** stretches or compresses the copied sound into the destination selection, keeping the tile length fixed and deliberately changing playback speed and pitch. Cut ripple-removes the selected range; cutting the whole tile is refused in favor of the explicit Clear command. All mutations participate in the destination tile's Undo/Redo history.
 
 Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the result without reconstructing clipped peaks, preserving that flattened distortion as a repeatable sculpting operation.
 
@@ -142,11 +148,11 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR15 stores every occupied tile as a complete independent object: audio, private render baseline, tuning, loop, selection, viewport, processing and edit timelines, and Undo/Redo stacks. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR14 remain loadable for compatibility. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR16 stores every occupied tile as a complete independent object: audio, private render baseline, tuning, loop, selection, viewport, processing and edit timelines, Undo/Redo stacks, and the audio patches needed to replay Paste and FM stamp history. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR15 remain loadable for compatibility. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 
-The temporary colors come directly from `assets/tapehead.pal`, supplied by the user. The interface remains standalone: FT2 and the archived prototype are reference shelves, not inherited architecture, and TapeSister does not depend on or modify FT2 Tapehead Edition.
+The default colors come from `assets/tapehead.pal`, and the live palette remains compatible with Tapehead's named palette fields. The interface remains standalone: FT2 and the archived prototype are reference shelves, not inherited architecture, and TapeSister does not depend on or modify FT2 Tapehead Edition.
 
 ## Build on Linux
 
@@ -177,6 +183,8 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Save browser / choose Export Selected Tile or Collection: `Ctrl+S` / `Ctrl+E`
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`
 - Select all: `Ctrl+A`
+- Copy / Cut / exact Paste: `Ctrl+C` / `Ctrl+X` / `Ctrl+V`
+- Fit Paste into the target selection: `Ctrl+Shift+V`
 - Reverse / Normalize: `Ctrl+R` / `Ctrl+N`
 - Fade in / Fade out: `Ctrl+I` / `Ctrl+U`
 - Amplify up/down 3 dB: `Ctrl+Up` / `Ctrl+Down`
@@ -187,8 +195,9 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Browser parent directory: `Backspace` while the file list is focused
 - Browser confirm/cancel: `Enter` / `Escape`
 - Build/toggle a five-note chord: `Shift` + onscreen-key click
-- Create FM tile / vary selected FM tile: **Create** / **Vary**
+- Create FM tile / vary selected FM tile, or stamp the selected range: **Create** / **Vary**
 - Config paths: top **Config** button
+- Tapehead-compatible colors: **Config -> Palette**
 - Export collection to exchange folder and launch FT2: top **Send FT2** button
 
-Ripple cut, multiple loops, automatic loop candidates, the zero-crossing loop-maker transformation, deeper synthesis and modulation stages, palette editing, and multi-source variation remain separate, visually verified slices.
+Multiple loops, automatic loop candidates, the zero-crossing loop-maker transformation, deeper synthesis and modulation stages, and multi-source variation remain separate, visually verified slices.

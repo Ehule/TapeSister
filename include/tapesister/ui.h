@@ -5,6 +5,7 @@
 #include "tapesister/audition.h"
 #include "tapesister/browser.h"
 #include "tapesister/config.h"
+#include "tapesister/palette.h"
 #include "tapesister/recipe.h"
 #include "tapesister/sample.h"
 
@@ -76,6 +77,9 @@ typedef struct {
     int exit_has_unsaved;
     uint64_t saved_state_hash;
     int config_open;
+    int palette_open;
+    int palette_entry;
+    int palette_channel;
     TsConfigField config_field;
     size_t config_cursor;
     int dragging_loop_endpoint;
@@ -89,6 +93,8 @@ typedef struct {
     TsBrowser browser;
     TsConfig config;
     TsConfig config_before_edit;
+    TsPalette palette;
+    TsPalette palette_before_edit;
     TsRecipeBank recipes;
     TsTuning pitch_suggestion;
     float pitch_confidence;

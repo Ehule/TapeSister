@@ -8,6 +8,7 @@ enum {
     TS_HISTORY_DEPTH = 24,
     TS_SAMPLE_EDIT_DEPTH = 64,
     TS_POST_EDIT_DEPTH = 64,
+    TS_AUDIO_PATCH_DEPTH = 64,
     TS_BANK_SLOT_COUNT = 16,
     TS_KEYBOARD_BASE_NOTE = 48
 };
@@ -150,7 +151,10 @@ typedef enum {
     TS_POST_ROTATE,
     TS_POST_WARP,
     TS_POST_SMEAR,
-    TS_POST_TEAR
+    TS_POST_TEAR,
+    TS_POST_DELETE,
+    TS_POST_PATCH_REPLACE,
+    TS_POST_PATCH_FIT
 } TsPostEditKind;
 
 typedef struct {
@@ -160,7 +164,14 @@ typedef struct {
     int64_t destination;
     float amount;
     uint32_t crossfade_frames;
+    uint32_t patch_index;
 } TsPostEdit;
+
+typedef struct {
+    TsSample sample;
+    TsGeneratorRecipe generator;
+    int has_generator;
+} TsAudioPatch;
 
 typedef enum {
     TS_BANK_CAPTURE_ROOT = 0,
@@ -235,6 +246,9 @@ typedef struct {
     TsEditSnapshot *redo;
     int undo_count;
     int redo_count;
+    TsAudioPatch *patches;
+    int patch_count;
+    int patch_capacity;
 } TsBankSlot;
 
 typedef struct {
@@ -465,6 +479,19 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
                                 char *error, size_t error_size);
 int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
                                 char *error, size_t error_size);
+int ts_instrument_copy_selection(const TsInstrument *instrument,
+                                 TsSample *clipboard, size_t *origin_first,
+                                 char *error, size_t error_size);
+int ts_instrument_cut_selection(TsInstrument *instrument,
+                                TsSample *clipboard, size_t *origin_first,
+                                char *error, size_t error_size);
+int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
+                        size_t origin_first, int fit_selection,
+                        char *error, size_t error_size);
+int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
+                               char *error, size_t error_size);
+int ts_instrument_stamp_vary(TsInstrument *instrument,
+                             char *error, size_t error_size);
 int ts_instrument_generate_family_candidate(TsInstrument *instrument,
                                             int anchor_slot, int reseed,
                                             int *created_slot,

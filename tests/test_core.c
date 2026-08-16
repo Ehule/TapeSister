@@ -40,6 +40,19 @@ static uint64_t waveform_hash(const TsFramebuffer *fb)
     return hash;
 }
 
+static int samples_equal_outside(const TsSample *left, const TsSample *right,
+                                 size_t first, size_t last)
+{
+    if (left == NULL || right == NULL || left->frames != right->frames ||
+        left->sample_rate != right->sample_rate || first > last ||
+        last > left->frames) return 0;
+    if (first > 0 && memcmp(left->data, right->data,
+                            first * sizeof(*left->data)) != 0) return 0;
+    return last == left->frames ||
+           memcmp(left->data + last, right->data + last,
+                  (left->frames - last) * sizeof(*left->data)) == 0;
+}
+
 static int browser_find(const TsBrowser *browser, const char *name)
 {
     for (int i = 0; i < browser->entry_count; ++i)
@@ -85,6 +98,37 @@ int main(void)
     CHECK(!ui.show_keyboard && !ui.show_recipes && ui.show_ingredients);
     ts_ui_cycle_panel(&ui);
     CHECK(ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+
+    {
+        TsPalette palette;
+        TsPalette reopened;
+        FILE *legacy;
+        ts_palette_default(&palette);
+        ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 0, 0x12);
+        ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 1, 0x34);
+        ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 2, 0x56);
+        CHECK(palette.colors[TS_PALETTE_MOUSE] == 0xff123456u);
+        CHECK(ts_palette_save(&palette, "test-tapehead.pal", error, sizeof(error)));
+        ts_palette_default(&reopened);
+        CHECK(ts_palette_load(&reopened, "test-tapehead.pal", error, sizeof(error)));
+        CHECK(memcmp(&palette, &reopened, sizeof(palette)) == 0);
+        legacy = fopen("test-tapehead-legacy.pal", "wb");
+        CHECK(legacy != NULL);
+        if (legacy != NULL) {
+            CHECK(fputs("[TapeheadPalette]\n"
+                        "PatternText=#102030\nBlockMark=#203040\n"
+                        "TextOnBlock=#304050\nMouse=#405060\n"
+                        "Desktop=#506070\nButtons=#607080\n",
+                        legacy) >= 0);
+            CHECK(fclose(legacy) == 0);
+        }
+        CHECK(ts_palette_load(&reopened, "test-tapehead-legacy.pal",
+                              error, sizeof(error)));
+        CHECK(reopened.colors[TS_PALETTE_PATTERN_NOTE] == 0xff102030u);
+        CHECK(reopened.colors[TS_PALETTE_PATTERN_EMPTY] == 0xff102030u);
+        remove("test-tapehead.pal");
+        remove("test-tapehead-legacy.pal");
+    }
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
     CHECK(ts_sample_generate(&a, &first, error, sizeof(error)));
@@ -165,6 +209,160 @@ int main(void)
         CHECK(cycle.bank[slot].generator.kind == TS_GENERATOR_FM);
         CHECK(strncmp(cycle.bank[slot].sample.name, "FM ", 3) == 0);
         ts_instrument_free(&cycle);
+    }
+    {
+        TsInstrument editor;
+        TsInstrument reopened;
+        TsSample clipboard;
+        TsSample target_before;
+        TsSample stamp_before;
+        size_t origin = 0;
+        size_t original_frames;
+        uint64_t original_hash;
+        uint64_t create_hash;
+        uint64_t vary_hash;
+        ts_instrument_init(&editor);
+        ts_instrument_init(&reopened);
+        ts_sample_init(&clipboard);
+        ts_sample_init(&target_before);
+        ts_sample_init(&stamp_before);
+
+        CHECK(ts_instrument_generate(&editor, TS_GENERATOR_FM,
+                                     0x434c4950u, error, sizeof(error)));
+        CHECK(ts_instrument_bank_capture(&editor, 1, TS_BANK_CAPTURE_CURRENT,
+                                         error, sizeof(error)));
+        ts_instrument_set_selection(&editor, 100, 400);
+        CHECK(ts_instrument_copy_selection(&editor, &clipboard, &origin,
+                                            error, sizeof(error)));
+        CHECK(origin == 100 && clipboard.frames == 300);
+        CHECK(memcmp(clipboard.data, editor.current.data + 100,
+                     clipboard.frames * sizeof(*clipboard.data)) == 0);
+
+        CHECK(ts_instrument_select_bank(&editor, 1, error, sizeof(error)));
+        CHECK(ts_sample_clone(&target_before, &editor.current, error, sizeof(error)));
+        original_frames = editor.current.frames;
+        original_hash = ts_sample_hash(&editor.current);
+
+        /* Exact Paste replaces a shorter target and grows the tile. */
+        ts_instrument_set_selection(&editor, 800, 950);
+        CHECK(ts_instrument_paste(&editor, &clipboard, origin, 0,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames + 150);
+        CHECK(editor.selection_first == 800 && editor.selection_last == 1100);
+        CHECK(memcmp(editor.current.data + 800, clipboard.data,
+                     clipboard.frames * sizeof(*clipboard.data)) == 0);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames &&
+              ts_sample_hash(&editor.current) == original_hash);
+        CHECK(ts_instrument_redo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames + 150);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+
+        /* Exact Paste replaces a longer target and shrinks the tile. */
+        ts_instrument_set_selection(&editor, 800, 1400);
+        CHECK(ts_instrument_paste(&editor, &clipboard, origin, 0,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames - 300);
+        CHECK(editor.selection_first == 800 && editor.selection_last == 1100);
+        CHECK(ts_instrument_save_recipe(&editor, "test-exact-paste.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&reopened, "test-exact-paste.tsr",
+                                        error, sizeof(error)));
+        CHECK(reopened.current.frames == original_frames - 300 &&
+              ts_sample_hash(&reopened.current) == ts_sample_hash(&editor.current));
+        CHECK(ts_instrument_undo(&reopened, error, sizeof(error)));
+        CHECK(reopened.current.frames == original_frames &&
+              ts_sample_hash(&reopened.current) == original_hash);
+        CHECK(ts_instrument_redo(&reopened, error, sizeof(error)));
+        CHECK(reopened.current.frames == original_frames - 300);
+        ts_instrument_free(&reopened);
+        ts_instrument_init(&reopened);
+        remove("test-exact-paste.tsr");
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames &&
+              ts_sample_hash(&editor.current) == original_hash);
+
+        /* Fit Paste stretches into the target without changing tile length. */
+        ts_instrument_set_selection(&editor, 800, 1400);
+        CHECK(ts_instrument_paste(&editor, &clipboard, origin, 1,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames);
+        CHECK(editor.selection_first == 800 && editor.selection_last == 1400);
+        CHECK(samples_equal_outside(&editor.current, &target_before, 800, 1400));
+        CHECK(ts_sample_hash(&editor.current) != original_hash);
+        CHECK(ts_instrument_save_recipe(&editor, "test-clipboard.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&reopened, "test-clipboard.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == ts_sample_hash(&editor.current));
+        CHECK(reopened.bank[1].patch_count == editor.bank[1].patch_count);
+        CHECK(ts_instrument_undo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == original_hash);
+        CHECK(ts_instrument_redo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == ts_sample_hash(&editor.current));
+        remove("test-clipboard.tsr");
+
+        /* Each tile remembers its own selection; Cut ripples and is reversible. */
+        CHECK(ts_instrument_select_bank(&editor, 0, error, sizeof(error)));
+        CHECK(editor.selection_first == 100 && editor.selection_last == 400);
+        original_frames = editor.current.frames;
+        original_hash = ts_sample_hash(&editor.current);
+        CHECK(ts_instrument_cut_selection(&editor, &clipboard, &origin,
+                                           error, sizeof(error)));
+        CHECK(origin == 100 && clipboard.frames == 300);
+        CHECK(editor.current.frames == original_frames - 300 && !editor.has_selection);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames &&
+              ts_sample_hash(&editor.current) == original_hash);
+        CHECK(ts_instrument_redo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames - 300);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+
+        /* With no target range, Paste uses the clipboard's original position. */
+        ts_instrument_clear_selection(&editor);
+        CHECK(ts_instrument_paste(&editor, &clipboard, origin, 0,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames + clipboard.frames);
+        CHECK(editor.selection_first == origin &&
+              editor.selection_last == origin + clipboard.frames);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(ts_sample_hash(&editor.current) == original_hash);
+
+        /* Create and Vary sculpt only the active selection and survive TSR16. */
+        ts_instrument_set_selection(&editor, 1000, 1500);
+        CHECK(ts_sample_clone(&stamp_before, &editor.current, error, sizeof(error)));
+        CHECK(ts_instrument_stamp_create(&editor, 0x5354414du,
+                                         error, sizeof(error)));
+        CHECK(editor.current.frames == stamp_before.frames);
+        CHECK(samples_equal_outside(&editor.current, &stamp_before, 1000, 1500));
+        create_hash = ts_sample_hash(&editor.current);
+        CHECK(create_hash != ts_sample_hash(&stamp_before));
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(ts_sample_hash(&editor.current) == ts_sample_hash(&stamp_before));
+        CHECK(ts_instrument_redo(&editor, error, sizeof(error)));
+        CHECK(ts_sample_hash(&editor.current) == create_hash);
+        CHECK(ts_instrument_stamp_vary(&editor, error, sizeof(error)));
+        vary_hash = ts_sample_hash(&editor.current);
+        CHECK(vary_hash != create_hash);
+        CHECK(samples_equal_outside(&editor.current, &stamp_before, 1000, 1500));
+        CHECK(ts_instrument_save_recipe(&editor, "test-stamps.tsr",
+                                        error, sizeof(error)));
+        ts_instrument_free(&reopened);
+        ts_instrument_init(&reopened);
+        CHECK(ts_instrument_load_recipe(&reopened, "test-stamps.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == vary_hash);
+        CHECK(ts_instrument_undo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == create_hash);
+        CHECK(ts_instrument_redo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == vary_hash);
+        remove("test-stamps.tsr");
+
+        ts_sample_free(&clipboard);
+        ts_sample_free(&target_before);
+        ts_sample_free(&stamp_before);
+        ts_instrument_free(&editor);
+        ts_instrument_free(&reopened);
     }
     CHECK(ts_sample_clone(&copy, &a, error, sizeof(error)));
     CHECK(ts_sample_hash(&copy) == ts_sample_hash(&a));
@@ -1425,7 +1623,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR15", 5) == 0);
+        CHECK(memcmp(magic, "TSR16", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -1861,6 +2059,15 @@ int main(void)
     ts_ui_render(&fb, &ui, &imported);
     CHECK(ts_ui_bank_slot_from_point(46, 341) == 0);
     CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] != 0xff1c1c1cu);
+    {
+        int selected = imported.selected_slot;
+        int outline_x = 8 + (selected % 8) * 77;
+        int outline_y = 328 + (selected / 8) * 25;
+        ui.palette.colors[TS_PALETTE_MOUSE] = 0xff123456u;
+        ts_ui_render(&fb, &ui, &imported);
+        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff123456u);
+        ts_palette_default(&ui.palette);
+    }
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
         int x = 10 + (slot % 8) * 77 + 36;
         int y = 330 + (slot / 8) * 25 + 12;

@@ -1558,6 +1558,110 @@ static int tear_range(TsSample *sample, size_t first, size_t last, float amount,
     return 1;
 }
 
+static int delete_range(TsSample *sample, size_t first, size_t last,
+                        char *error, size_t error_size)
+{
+    float *data;
+    size_t removed;
+    size_t frames;
+    if (sample == NULL || sample->data == NULL || first >= last || last > sample->frames) {
+        set_error(error, error_size, "Invalid Cut range");
+        return 0;
+    }
+    removed = last - first;
+    frames = sample->frames - removed;
+    if (frames == 0) {
+        set_error(error, error_size, "Cut cannot remove the entire tile");
+        return 0;
+    }
+    data = (float *)malloc(frames * sizeof(*data));
+    if (data == NULL) {
+        set_error(error, error_size, "Out of memory while cutting selection");
+        return 0;
+    }
+    if (first > 0) memcpy(data, sample->data, first * sizeof(*data));
+    if (last < sample->frames)
+        memcpy(data + first, sample->data + last,
+               (sample->frames - last) * sizeof(*data));
+    free(sample->data);
+    sample->data = data;
+    sample->frames = frames;
+    return 1;
+}
+
+static int patch_range(TsSample *sample, const TsSample *patch,
+                       size_t first, size_t last, int fit,
+                       char *error, size_t error_size)
+{
+    float *resampled;
+    float *output;
+    size_t target_frames;
+    size_t patch_frames;
+    size_t output_frames;
+    if (sample == NULL || sample->data == NULL || patch == NULL || patch->data == NULL ||
+        patch->frames == 0 || patch->sample_rate == 0 || sample->sample_rate == 0 ||
+        first > last || last > sample->frames || (fit && first == last)) {
+        set_error(error, error_size, "Invalid Paste range");
+        return 0;
+    }
+    target_frames = last - first;
+    if (fit) patch_frames = target_frames;
+    else {
+        double converted = (double)patch->frames * (double)sample->sample_rate /
+                           (double)patch->sample_rate;
+        if (converted > (double)SIZE_MAX) {
+            set_error(error, error_size, "Clipboard is too large to paste");
+            return 0;
+        }
+        patch_frames = (size_t)llround(converted);
+        if (patch_frames == 0) patch_frames = 1;
+    }
+    if (sample->frames - target_frames > SIZE_MAX - patch_frames ||
+        sample->frames - target_frames + patch_frames > SIZE_MAX / sizeof(float)) {
+        set_error(error, error_size, "Pasted tile would be too large");
+        return 0;
+    }
+    output_frames = sample->frames - target_frames + patch_frames;
+    resampled = (float *)malloc(patch_frames * sizeof(*resampled));
+    output = (float *)malloc(output_frames * sizeof(*output));
+    if (resampled == NULL || output == NULL) {
+        free(resampled); free(output);
+        set_error(error, error_size, "Out of memory while pasting selection");
+        return 0;
+    }
+    for (size_t frame = 0; frame < patch_frames; ++frame) {
+        double position = patch_frames > 1u ?
+                          (double)frame * (double)(patch->frames - 1u) /
+                          (double)(patch_frames - 1u) : 0.0;
+        size_t at = (size_t)position;
+        double fraction = position - (double)at;
+        float a = patch->data[at];
+        float b = at + 1u < patch->frames ? patch->data[at + 1u] : a;
+        resampled[frame] = a + (b - a) * (float)fraction;
+    }
+    if (first > 0) memcpy(output, sample->data, first * sizeof(*output));
+    memcpy(output + first, resampled, patch_frames * sizeof(*output));
+    if (last < sample->frames)
+        memcpy(output + first + patch_frames, sample->data + last,
+               (sample->frames - last) * sizeof(*output));
+    free(resampled);
+    free(sample->data);
+    sample->data = output;
+    sample->frames = output_frames;
+    return 1;
+}
+
+static const TsAudioPatch *audio_patch_for_operation(const TsInstrument *instrument,
+                                                      const TsPostEdit *operation)
+{
+    const TsBankSlot *slot;
+    if (instrument == NULL || operation == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT) return NULL;
+    slot = &instrument->bank[instrument->selected_slot];
+    if (operation->patch_index >= (uint32_t)slot->patch_count) return NULL;
+    return &slot->patches[operation->patch_index];
+}
+
 static int render_snapshot(TsSample *destination, const TsInstrument *instrument,
                            const TsEditSnapshot *state, char *error, size_t error_size)
 {
@@ -1576,6 +1680,22 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
         size_t first = operation->first;
         size_t last = operation->last;
         size_t length;
+        if (operation->kind == TS_POST_DELETE) {
+            if (!delete_range(destination, first, last, error, error_size)) return 0;
+            continue;
+        }
+        if (operation->kind == TS_POST_PATCH_REPLACE ||
+            operation->kind == TS_POST_PATCH_FIT) {
+            const TsAudioPatch *patch = audio_patch_for_operation(instrument, operation);
+            if (patch == NULL) {
+                set_error(error, error_size, "Paste source is missing from this tile");
+                return 0;
+            }
+            if (!patch_range(destination, &patch->sample, first, last,
+                             operation->kind == TS_POST_PATCH_FIT,
+                             error, error_size)) return 0;
+            continue;
+        }
         if (first > destination->frames) first = destination->frames;
         if (last > destination->frames) last = destination->frames;
         if (last <= first) continue;
@@ -1830,6 +1950,9 @@ static void bank_slot_free(TsBankSlot *slot)
 {
     ts_sample_free(&slot->sample);
     ts_sample_free(&slot->edit_parent);
+    for (int i = 0; i < slot->patch_count; ++i)
+        ts_sample_free(&slot->patches[i].sample);
+    free(slot->patches);
     free(slot->undo);
     free(slot->redo);
     bank_slot_init(slot);
@@ -2797,9 +2920,22 @@ static int bank_slot_deep_clone(TsBankSlot *destination, const TsBankSlot *sourc
     TsBankSlot copy = *source;
     ts_sample_init(&copy.sample); ts_sample_init(&copy.edit_parent);
     copy.undo = NULL; copy.redo = NULL;
+    copy.patches = NULL;
+    copy.patch_capacity = 0;
     if (!ts_sample_clone(&copy.sample, &source->sample, error, error_size) ||
         !ts_sample_clone(&copy.edit_parent, source->edit_parent.data != NULL ?
                          &source->edit_parent : &source->sample, error, error_size)) goto failed;
+    if (source->patch_count > 0) {
+        copy.patches = calloc((size_t)source->patch_count, sizeof(*copy.patches));
+        if (copy.patches == NULL) goto failed;
+        copy.patch_capacity = source->patch_count;
+    }
+    for (int i = 0; i < source->patch_count; ++i) {
+        copy.patches[i].generator = source->patches[i].generator;
+        copy.patches[i].has_generator = source->patches[i].has_generator;
+        if (!ts_sample_clone(&copy.patches[i].sample, &source->patches[i].sample,
+                             error, error_size)) goto failed;
+    }
     if (source->undo_count > 0) {
         copy.undo = malloc((size_t)source->undo_count * sizeof(*copy.undo));
         if (copy.undo == NULL) goto failed;
@@ -2813,6 +2949,10 @@ static int bank_slot_deep_clone(TsBankSlot *destination, const TsBankSlot *sourc
     bank_slot_free(destination); *destination = copy; return 1;
 failed:
     ts_sample_free(&copy.sample); ts_sample_free(&copy.edit_parent);
+    if (copy.patches != NULL)
+        for (int i = 0; i < source->patch_count; ++i)
+            ts_sample_free(&copy.patches[i].sample);
+    free(copy.patches);
     free(copy.undo); free(copy.redo);
     set_error(error, error_size, "Out of memory deep-copying tile state"); return 0;
 }
@@ -2919,6 +3059,389 @@ int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
                               error, error_size)) return 0;
     instrument->bank[destination_slot].parent_slot = source;
     return ts_instrument_select_bank(instrument, destination_slot, error, error_size);
+}
+
+static size_t replace_point(size_t point, size_t first, size_t last,
+                            size_t inserted)
+{
+    if (point <= first) return point;
+    if (point >= last) {
+        if (inserted >= last - first) return point + inserted - (last - first);
+        return point - ((last - first) - inserted);
+    }
+    if (point - first > inserted) return first + inserted;
+    return first + (point - first);
+}
+
+static void update_snapshot_after_replace(TsEditSnapshot *target,
+                                          size_t first, size_t last,
+                                          size_t inserted, size_t frames,
+                                          int select_inserted)
+{
+    size_t view_first = replace_point(target->view_first, first, last, inserted);
+    size_t view_last = replace_point(target->view_last, first, last, inserted);
+    if (view_last > frames) view_last = frames;
+    if (view_first >= view_last) {
+        view_first = 0;
+        view_last = frames;
+    }
+    target->view_first = view_first;
+    target->view_last = view_last;
+    if (target->has_loop) {
+        if (target->loop_last <= first) {
+            /* The loop is before the edit. */
+        } else if (target->loop_first >= last) {
+            target->loop_first = replace_point(target->loop_first, first, last, inserted);
+            target->loop_last = replace_point(target->loop_last, first, last, inserted);
+        } else {
+            target->has_loop = 0;
+            target->loop_first = 0;
+            target->loop_last = 0;
+        }
+    }
+    target->has_selection = select_inserted && inserted > 0;
+    target->selection_first = target->has_selection ? first : 0;
+    target->selection_last = target->has_selection ? first + inserted : 0;
+}
+
+static int append_audio_patch(TsInstrument *instrument, const TsSample *sample,
+                              const TsGeneratorRecipe *generator,
+                              uint32_t *patch_index,
+                              char *error, size_t error_size)
+{
+    TsBankSlot *slot;
+    TsAudioPatch *patch;
+    if (instrument == NULL || sample == NULL || sample->data == NULL ||
+        instrument->selected_slot < 0 || instrument->selected_slot >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[instrument->selected_slot].occupied) {
+        set_error(error, error_size, "Paste needs an occupied selected tile");
+        return 0;
+    }
+    slot = &instrument->bank[instrument->selected_slot];
+    if (slot->patch_count >= TS_AUDIO_PATCH_DEPTH) {
+        set_error(error, error_size, "This tile has reached its audio stamp limit");
+        return 0;
+    }
+    if (slot->patch_count >= slot->patch_capacity) {
+        int capacity = slot->patch_capacity > 0 ? slot->patch_capacity * 2 : 4;
+        TsAudioPatch *grown;
+        if (capacity > TS_AUDIO_PATCH_DEPTH) capacity = TS_AUDIO_PATCH_DEPTH;
+        grown = realloc(slot->patches, (size_t)capacity * sizeof(*grown));
+        if (grown == NULL) {
+            set_error(error, error_size, "Out of memory storing audio stamp");
+            return 0;
+        }
+        memset(grown + slot->patch_capacity, 0,
+               (size_t)(capacity - slot->patch_capacity) * sizeof(*grown));
+        slot->patches = grown;
+        slot->patch_capacity = capacity;
+    }
+    patch = &slot->patches[slot->patch_count];
+    ts_sample_init(&patch->sample);
+    if (!ts_sample_clone(&patch->sample, sample, error, error_size)) return 0;
+    patch->has_generator = generator != NULL;
+    if (generator != NULL) patch->generator = *generator;
+    else memset(&patch->generator, 0, sizeof(patch->generator));
+    *patch_index = (uint32_t)slot->patch_count++;
+    return 1;
+}
+
+static void discard_last_audio_patch(TsInstrument *instrument, uint32_t patch_index)
+{
+    TsBankSlot *slot;
+    if (instrument == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT) return;
+    slot = &instrument->bank[instrument->selected_slot];
+    if (slot->patch_count > 0 && patch_index == (uint32_t)(slot->patch_count - 1)) {
+        ts_sample_free(&slot->patches[patch_index].sample);
+        memset(&slot->patches[patch_index], 0, sizeof(slot->patches[patch_index]));
+        --slot->patch_count;
+    }
+}
+
+static int commit_post_snapshot(TsInstrument *instrument, TsEditSnapshot *target,
+                                TsSample *current,
+                                char *error, size_t error_size)
+{
+    begin_edit(instrument);
+    ts_sample_free(&instrument->current);
+    instrument->current = *current;
+    ts_sample_init(current);
+    instrument->selection_first = target->selection_first;
+    instrument->selection_last = target->selection_last;
+    instrument->view_first = target->view_first;
+    instrument->view_last = target->view_last;
+    instrument->loop_first = target->loop_first;
+    instrument->loop_last = target->loop_last;
+    instrument->has_selection = target->has_selection;
+    instrument->has_loop = target->has_loop;
+    memcpy(instrument->post_edits, target->post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target->post_edit_count;
+    return bank_sync_selected(instrument, error, error_size);
+}
+
+int ts_instrument_copy_selection(const TsInstrument *instrument,
+                                 TsSample *clipboard, size_t *origin_first,
+                                 char *error, size_t error_size)
+{
+    TsSample copied;
+    if (instrument == NULL || clipboard == NULL || instrument->current.data == NULL ||
+        !instrument->has_selection ||
+        instrument->selection_last <= instrument->selection_first) {
+        set_error(error, error_size, "Select a range before Copy");
+        return 0;
+    }
+    ts_sample_init(&copied);
+    if (!sample_clone_range(&copied, &instrument->current,
+                            instrument->selection_first, instrument->selection_last,
+                            error, error_size)) return 0;
+    snprintf(copied.name, sizeof(copied.name), "CLIP %.116s", instrument->current.name);
+    ts_sample_free(clipboard);
+    *clipboard = copied;
+    if (origin_first != NULL) *origin_first = instrument->selection_first;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_cut_selection(TsInstrument *instrument,
+                                TsSample *clipboard, size_t *origin_first,
+                                char *error, size_t error_size)
+{
+    TsSample copied;
+    TsSample current;
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    size_t first;
+    size_t last;
+    if (instrument == NULL || clipboard == NULL || instrument->current.data == NULL ||
+        !instrument->has_selection ||
+        instrument->selection_last <= instrument->selection_first) {
+        set_error(error, error_size, "Select a range before Cut");
+        return 0;
+    }
+    first = instrument->selection_first;
+    last = instrument->selection_last;
+    if (first == 0 && last == instrument->current.frames) {
+        set_error(error, error_size, "Cut cannot remove the entire tile - Clear the tile instead");
+        return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Post-edit history is full");
+        return 0;
+    }
+    ts_sample_init(&copied);
+    ts_sample_init(&current);
+    if (!sample_clone_range(&copied, &instrument->current, first, last,
+                            error, error_size)) return 0;
+    snprintf(copied.name, sizeof(copied.name), "CLIP %.116s", instrument->current.name);
+    target = snapshot(instrument);
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_DELETE;
+    operation.first = first;
+    operation.last = last;
+    target.post_edits[target.post_edit_count++] = operation;
+    update_snapshot_after_replace(&target, first, last, 0,
+                                  instrument->current.frames - (last - first), 0);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) {
+        ts_sample_free(&copied);
+        return 0;
+    }
+    if (!commit_post_snapshot(instrument, &target, &current, error, error_size)) {
+        ts_sample_free(&copied);
+        ts_sample_free(&current);
+        return 0;
+    }
+    ts_sample_free(clipboard);
+    *clipboard = copied;
+    if (origin_first != NULL) *origin_first = first;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
+                        size_t origin_first, int fit_selection,
+                        char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    TsSample current;
+    uint32_t patch_index;
+    size_t first;
+    size_t last;
+    size_t inserted;
+    if (instrument == NULL || clipboard == NULL || clipboard->data == NULL ||
+        clipboard->frames == 0) {
+        set_error(error, error_size, "Clipboard is empty");
+        return 0;
+    }
+    if (instrument->current.data == NULL || instrument->current.frames == 0) {
+        set_error(error, error_size, "Paste currently needs an occupied target tile");
+        return 0;
+    }
+    if (fit_selection && (!instrument->has_selection ||
+        instrument->selection_last <= instrument->selection_first)) {
+        set_error(error, error_size, "Fit Paste needs a target selection");
+        return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Post-edit history is full");
+        return 0;
+    }
+    if (instrument->has_selection) {
+        first = instrument->selection_first;
+        last = instrument->selection_last;
+    } else {
+        first = origin_first < instrument->current.frames ? origin_first : instrument->current.frames;
+        last = first;
+    }
+    if (fit_selection) inserted = last - first;
+    else {
+        inserted = (size_t)llround((double)clipboard->frames *
+                   (double)instrument->current.sample_rate /
+                   (double)clipboard->sample_rate);
+        if (inserted == 0) inserted = 1;
+    }
+    if (!append_audio_patch(instrument, clipboard, NULL, &patch_index,
+                            error, error_size)) return 0;
+    target = snapshot(instrument);
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = fit_selection ? TS_POST_PATCH_FIT : TS_POST_PATCH_REPLACE;
+    operation.first = first;
+    operation.last = last;
+    operation.patch_index = patch_index;
+    target.post_edits[target.post_edit_count++] = operation;
+    update_snapshot_after_replace(&target, first, last, inserted,
+        instrument->current.frames - (last - first) + inserted, 1);
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) {
+        discard_last_audio_patch(instrument, patch_index);
+        return 0;
+    }
+    if (!commit_post_snapshot(instrument, &target, &current, error, error_size)) {
+        ts_sample_free(&current);
+        discard_last_audio_patch(instrument, patch_index);
+        return 0;
+    }
+    set_error(error, error_size, "");
+    return 1;
+}
+
+static int stamp_generated_patch(TsInstrument *instrument,
+                                 const TsGeneratorRecipe *recipe,
+                                 char *error, size_t error_size)
+{
+    TsSample generated;
+    TsSample current;
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    uint32_t patch_index;
+    size_t first;
+    size_t last;
+    if (instrument == NULL || recipe == NULL || instrument->current.data == NULL ||
+        !instrument->has_selection ||
+        instrument->selection_last <= instrument->selection_first) {
+        set_error(error, error_size, "Select a range on an occupied tile before stamping");
+        return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Post-edit history is full");
+        return 0;
+    }
+    first = instrument->selection_first;
+    last = instrument->selection_last;
+    ts_sample_init(&generated);
+    ts_sample_init(&current);
+    if (!ts_sample_generate(&generated, recipe, error, error_size)) return 0;
+    if (!append_audio_patch(instrument, &generated, recipe, &patch_index,
+                            error, error_size)) {
+        ts_sample_free(&generated);
+        return 0;
+    }
+    ts_sample_free(&generated);
+    target = snapshot(instrument);
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_PATCH_FIT;
+    operation.first = first;
+    operation.last = last;
+    operation.patch_index = patch_index;
+    target.post_edits[target.post_edit_count++] = operation;
+    update_snapshot_after_replace(&target, first, last, last - first,
+                                  instrument->current.frames, 1);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) {
+        discard_last_audio_patch(instrument, patch_index);
+        return 0;
+    }
+    if (!commit_post_snapshot(instrument, &target, &current, error, error_size)) {
+        ts_sample_free(&current);
+        discard_last_audio_patch(instrument, patch_index);
+        return 0;
+    }
+    return 1;
+}
+
+int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
+                               char *error, size_t error_size)
+{
+    TsGeneratorRecipe recipe;
+    uint32_t rng = seed;
+    if (instrument == NULL || instrument->current.sample_rate == 0 ||
+        !instrument->has_selection || instrument->selection_last <= instrument->selection_first) {
+        set_error(error, error_size, "Select a range before Create stamping");
+        return 0;
+    }
+    memset(&recipe, 0, sizeof(recipe));
+    recipe.kind = TS_GENERATOR_FM;
+    recipe.seed = seed;
+    recipe.seconds = clampf(
+        (float)(instrument->selection_last - instrument->selection_first) /
+        (float)instrument->current.sample_rate, 0.1f, 8.0f);
+    recipe.frequency = 30.0f * powf(2000.0f / 30.0f, rng_unit(&rng));
+    if (!stamp_generated_patch(instrument, &recipe, error, error_size)) return 0;
+    ++instrument->family_sequence;
+    return 1;
+}
+
+int ts_instrument_stamp_vary(TsInstrument *instrument,
+                             char *error, size_t error_size)
+{
+    const TsBankSlot *slot;
+    const TsGeneratorRecipe *source_recipe = NULL;
+    TsGeneratorRecipe recipe;
+    TsFmPatch source_patch;
+    uint32_t seed;
+    if (instrument == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT ||
+        !instrument->has_selection || instrument->selection_last <= instrument->selection_first) {
+        set_error(error, error_size, "Select a range before Vary stamping");
+        return 0;
+    }
+    slot = &instrument->bank[instrument->selected_slot];
+    for (int i = slot->patch_count - 1; i >= 0; --i) {
+        if (slot->patches[i].has_generator &&
+            slot->patches[i].generator.kind == TS_GENERATOR_FM) {
+            source_recipe = &slot->patches[i].generator;
+            break;
+        }
+    }
+    if (source_recipe == NULL && slot->has_generator &&
+        slot->generator.kind == TS_GENERATOR_FM) source_recipe = &slot->generator;
+    if (source_recipe == NULL) {
+        set_error(error, error_size, "Use Create once before Varying a selection");
+        return 0;
+    }
+    recipe = *source_recipe;
+    seed = advance_seed(source_recipe->seed ^ advance_seed(instrument->family_sequence + 1u));
+    recipe.seed = seed;
+    recipe.has_fm_patch = 1;
+    ts_fm_patch_from_recipe(source_recipe, &source_patch);
+    ts_fm_patch_vary(&source_patch, seed, instrument->family_mutation,
+                     &recipe.fm_patch);
+    recipe.seconds = clampf(
+        (float)(instrument->selection_last - instrument->selection_first) /
+        (float)instrument->current.sample_rate, 0.1f, 8.0f);
+    if (!stamp_generated_patch(instrument, &recipe, error, error_size)) return 0;
+    ++instrument->family_sequence;
+    return 1;
 }
 
 int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
@@ -4513,10 +5036,11 @@ static void put_edit_snapshot(FILE *f, const TsEditSnapshot *state)
         put32(f, (uint32_t)edit->kind); put64(f, edit->first); put64(f, edit->last);
         put64(f, (uint64_t)edit->destination); put_float(f, edit->amount);
         put32(f, edit->crossfade_frames);
+        put32(f, edit->patch_index);
     }
 }
 
-static int get_edit_snapshot(FILE *f, TsEditSnapshot *state)
+static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
 {
     const size_t frame_limit = 100000000u;
     uint32_t value;
@@ -4551,7 +5075,10 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state)
         if (!get64(f, &wide)) return 0;
         edit->destination = (int64_t)wide;
         if (!get_float(f, &edit->amount) || !get32(f, &edit->crossfade_frames) ||
-            edit->kind > TS_POST_TEAR || edit->last <= edit->first ||
+            (version >= 16 && !get32(f, &edit->patch_index)) ||
+            edit->kind > (version >= 16 ? TS_POST_PATCH_FIT : TS_POST_TEAR) ||
+            (edit->kind != TS_POST_PATCH_REPLACE && edit->last <= edit->first) ||
+            (edit->kind == TS_POST_PATCH_REPLACE && edit->last < edit->first) ||
             edit->last > frame_limit || edit->destination < -(int64_t)frame_limit ||
             edit->destination > (int64_t)frame_limit || edit->crossfade_frames > 65536u) return 0;
     }
@@ -4607,9 +5134,9 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            (!state->has_loop || state->loop_first < state->loop_last);
 }
 
-static int save_tsr15(const TsInstrument *instrument, FILE *f)
+static int save_tsr16(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR15\r\n\032", 1, 8, f);
+    fwrite("TSR16\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -4686,6 +5213,13 @@ static int save_tsr15(const TsInstrument *instrument, FILE *f)
         put_float(f, slot->loop_crossfade_ms);
         put_sample_block(f, audio);
         put_sample_block(f, baseline);
+        put32(f, (uint32_t)slot->patch_count);
+        for (int patch = 0; patch < slot->patch_count; ++patch) {
+            put32(f, (uint32_t)slot->patches[patch].has_generator);
+            if (slot->patches[patch].has_generator)
+                put_generator_recipe(f, &slot->patches[patch].generator);
+            put_sample_block(f, &slot->patches[patch].sample);
+        }
         put_edit_snapshot(f, edit);
         put32(f, (uint32_t)undo_count);
         for (int h = 0; h < undo_count; ++h) put_edit_snapshot(f, &undo[h]);
@@ -4695,7 +5229,18 @@ static int save_tsr15(const TsInstrument *instrument, FILE *f)
     return !ferror(f);
 }
 
-static int load_tsr15(FILE *f, TsInstrument *instrument, char *error, size_t error_size)
+static int snapshot_patches_valid(const TsEditSnapshot *state, const TsBankSlot *slot)
+{
+    for (int i = 0; i < state->post_edit_count; ++i) {
+        const TsPostEdit *edit = &state->post_edits[i];
+        if ((edit->kind == TS_POST_PATCH_REPLACE || edit->kind == TS_POST_PATCH_FIT) &&
+            edit->patch_index >= (uint32_t)slot->patch_count) return 0;
+    }
+    return 1;
+}
+
+static int load_tsr15_or_16(FILE *f, int version, TsInstrument *instrument,
+                            char *error, size_t error_size)
 {
     TsInstrument loaded;
     uint32_t value;
@@ -4761,14 +5306,33 @@ static int load_tsr15(FILE *f, TsInstrument *instrument, char *error, size_t err
         if (!sample_result) goto malformed;
         sample_result = get_sample_block(f, &slot->edit_parent);
         if (sample_result < 0) goto out_of_memory;
-        if (!sample_result || !get_edit_snapshot(f, &slot->edit)) goto malformed;
+        if (!sample_result) goto malformed;
+        if (version >= 16) {
+            if (!get32(f, &value) || value > TS_AUDIO_PATCH_DEPTH) goto malformed;
+            slot->patch_count = (int)value;
+            if (slot->patch_count > 0) {
+                slot->patches = calloc((size_t)slot->patch_count, sizeof(*slot->patches));
+                if (slot->patches == NULL) goto out_of_memory;
+                slot->patch_capacity = slot->patch_count;
+            }
+            for (int patch = 0; patch < slot->patch_count; ++patch) {
+                if (!get32(f, &value) || value > 1u) goto malformed;
+                slot->patches[patch].has_generator = (int)value;
+                if (slot->patches[patch].has_generator &&
+                    !get_generator_recipe(f, &slot->patches[patch].generator)) goto malformed;
+                sample_result = get_sample_block(f, &slot->patches[patch].sample);
+                if (sample_result < 0) goto out_of_memory;
+                if (!sample_result) goto malformed;
+            }
+        }
+        if (!get_edit_snapshot(f, &slot->edit, version)) goto malformed;
         if (!get32(f, &value) || value > TS_HISTORY_DEPTH) goto malformed;
         slot->undo_count = (int)value;
         if (slot->undo_count > 0) {
             slot->undo = malloc((size_t)slot->undo_count * sizeof(*slot->undo));
             if (slot->undo == NULL) goto out_of_memory;
             for (int h = 0; h < slot->undo_count; ++h)
-                if (!get_edit_snapshot(f, &slot->undo[h])) goto malformed;
+                if (!get_edit_snapshot(f, &slot->undo[h], version)) goto malformed;
         }
         if (!get32(f, &value) || value > TS_HISTORY_DEPTH) goto malformed;
         slot->redo_count = (int)value;
@@ -4776,7 +5340,7 @@ static int load_tsr15(FILE *f, TsInstrument *instrument, char *error, size_t err
             slot->redo = malloc((size_t)slot->redo_count * sizeof(*slot->redo));
             if (slot->redo == NULL) goto out_of_memory;
             for (int h = 0; h < slot->redo_count; ++h)
-                if (!get_edit_snapshot(f, &slot->redo[h])) goto malformed;
+                if (!get_edit_snapshot(f, &slot->redo[h], version)) goto malformed;
         }
         slot->process = slot->edit.process;
         if (slot->capture_kind > TS_BANK_CAPTURE_LOOP ||
@@ -4791,7 +5355,12 @@ static int load_tsr15(FILE *f, TsInstrument *instrument, char *error, size_t err
             slot->loop_crossfade_ms < 0.0f || slot->loop_crossfade_ms > 50.0f ||
             (slot->has_loop && (slot->loop_first >= slot->loop_last ||
                                 slot->loop_last > slot->sample.frames)) ||
-            !snapshot_fits_tile(&slot->edit, slot)) goto malformed;
+            !snapshot_fits_tile(&slot->edit, slot) ||
+            !snapshot_patches_valid(&slot->edit, slot)) goto malformed;
+        for (int h = 0; h < slot->undo_count; ++h)
+            if (!snapshot_patches_valid(&slot->undo[h], slot)) goto malformed;
+        for (int h = 0; h < slot->redo_count; ++h)
+            if (!snapshot_patches_valid(&slot->redo[h], slot)) goto malformed;
     }
     if (fgetc(f) != EOF) goto malformed;
     loaded.selected_slot = selected;
@@ -4801,10 +5370,10 @@ static int load_tsr15(FILE *f, TsInstrument *instrument, char *error, size_t err
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15 project");
+    set_error(error, error_size, "Out of memory while loading TSR15/TSR16 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15/TSR16 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -4823,13 +5392,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr15(instrument, f)) {
+    if (!save_tsr16(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR15 project");
+        set_error(error, error_size, "Could not write TSR16 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR15 project");
+        set_error(error, error_size, "Could not finish TSR16 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -4864,8 +5433,11 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int ok = load_tsr15(f, instrument, error, error_size);
+    if (memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR15\r\n\032", 8) == 0) {
+        int self_contained_version = magic[4] == '6' ? 16 : 15;
+        int ok = load_tsr15_or_16(f, self_contained_version, instrument,
+                                  error, error_size);
         fclose(f);
         ts_instrument_free(&loaded);
         return ok;
@@ -4883,7 +5455,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR15 project");
+                  "Not a self-contained TSR6-TSR16 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -5162,7 +5734,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR15 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR16 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

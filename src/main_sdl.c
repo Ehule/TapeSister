@@ -121,6 +121,17 @@ static const char *config_file_path(void)
     return override != NULL && override[0] != '\0' ? override : "tapesister.ini";
 }
 
+static const char *tapesister_palette_path(void)
+{
+    const char *override = getenv("TAPESISTER_PALETTE");
+    return override != NULL && override[0] != '\0' ? override : "tapesister.pal";
+}
+
+static const char *tapehead_palette_path(void)
+{
+    return "tapehead.pal";
+}
+
 static int path_is_directory(const char *path)
 {
 #ifdef _WIN32
@@ -675,12 +686,23 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
 {
     char error[160];
     int slot = instrument->selected_slot;
+    int stamp = instrument->has_selection && instrument->current.data != NULL &&
+                instrument->selection_last > instrument->selection_first;
+    size_t stamp_frames = stamp ? instrument->selection_last -
+                                 instrument->selection_first : 0;
     int ok;
     (void)unused_promote; (void)unused_radical;
     if (ui->workbench_loop_active) stop_all(device, audio, ui);
     lock_edit(device, audio);
     audio->playing = 0; audio->bank_slot = -1;
-    if (vary)
+    if (stamp && vary)
+        ok = ts_instrument_stamp_vary(instrument, error, sizeof(error));
+    else if (stamp)
+        ok = ts_instrument_stamp_create(instrument,
+                instrument->generator.seed * 1664525u + 1013904223u +
+                instrument->family_sequence * 2246822519u,
+                error, sizeof(error));
+    else if (vary)
         ok = ts_instrument_vary_selected(instrument, instrument->family_trajectory,
                                          &slot, error, sizeof(error));
     else
@@ -695,11 +717,17 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
     }
     ui->bank_view_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
-    ts_ui_reset_parent_view(ui, instrument->current.frames);
-    snprintf(ui->status, sizeof(ui->status), "BANK %02d %s FM - RANGE %d%s",
-             slot + 1, vary ? "VARIED" : "CREATED",
-             (int)lrintf(instrument->family_mutation * 100.0f),
-             vary && instrument->family_trajectory ? " CHAIN" : "");
+    if (stamp)
+        snprintf(ui->status, sizeof(ui->status),
+                 "BANK %02d %s FM STAMP IN %zu-FRAME SELECTION",
+                 slot + 1, vary ? "VARIED" : "CREATED", stamp_frames);
+    else {
+        ts_ui_reset_parent_view(ui, instrument->current.frames);
+        snprintf(ui->status, sizeof(ui->status), "BANK %02d %s FM - RANGE %d%s",
+                 slot + 1, vary ? "VARIED" : "CREATED",
+                 (int)lrintf(instrument->family_mutation * 100.0f),
+                 vary && instrument->family_trajectory ? " CHAIN" : "");
+    }
 }
 
 static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -862,6 +890,65 @@ static void apply_sample_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiS
     else snprintf(ui->status, sizeof(ui->status), "EDIT FAILED: %.137s", error);
 }
 
+static void copy_selection_to_clipboard(SDL_AudioDeviceID device, AudioState *audio,
+                                        TsUiState *ui, const TsInstrument *instrument,
+                                        TsSample *clipboard, size_t *origin_first)
+{
+    char error[160];
+    int ok;
+    lock_edit(device, audio);
+    ok = ts_instrument_copy_selection(instrument, clipboard, origin_first,
+                                      error, sizeof(error));
+    if (device) SDL_UnlockAudioDevice(device);
+    if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 "COPIED %zu FRAMES FROM TILE %02d",
+                 clipboard->frames, instrument->selected_slot + 1);
+    else snprintf(ui->status, sizeof(ui->status), "COPY FAILED: %.137s", error);
+}
+
+static void cut_selection_to_clipboard(SDL_AudioDeviceID device, AudioState *audio,
+                                       TsUiState *ui, TsInstrument *instrument,
+                                       TsSample *clipboard, size_t *origin_first)
+{
+    char error[160];
+    int ok;
+    lock_edit(device, audio);
+    ok = ts_instrument_cut_selection(instrument, clipboard, origin_first,
+                                     error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 "CUT %zu FRAMES FROM TILE %02d - UNDO AVAILABLE",
+                 clipboard->frames, instrument->selected_slot + 1);
+    else snprintf(ui->status, sizeof(ui->status), "CUT FAILED: %.138s", error);
+}
+
+static void paste_from_clipboard(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui, TsInstrument *instrument,
+                                 const TsSample *clipboard, size_t origin_first,
+                                 int fit_selection)
+{
+    char error[160];
+    int ok;
+    size_t target_frames = instrument->has_selection ?
+                           instrument->selection_last - instrument->selection_first : 0;
+    lock_edit(device, audio);
+    ok = ts_instrument_paste(instrument, clipboard, origin_first, fit_selection,
+                             error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok && fit_selection)
+        snprintf(ui->status, sizeof(ui->status),
+                 "FIT-PASTED %zu FRAMES INTO %zu ON TILE %02d",
+                 clipboard->frames, target_frames, instrument->selected_slot + 1);
+    else if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 "PASTED %zu FRAMES ON TILE %02d - EXACT LENGTH",
+                 clipboard->frames, instrument->selected_slot + 1);
+    else snprintf(ui->status, sizeof(ui->status), "%s FAILED: %.132s",
+                  fit_selection ? "FIT PASTE" : "PASTE", error);
+}
+
 static int begin_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
                               TsUiState *ui, TsInstrument *instrument, int wheel)
 {
@@ -961,7 +1048,8 @@ static int preview_smear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                                  float amount, int output_rate)
 {
     char error[160]; uint32_t now; int ok;
-    if (amount < 0.0f) amount = 0.0f; if (amount > 1.0f) amount = 1.0f;
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
     lock_edit(device, audio);
     ok = ts_instrument_smear_gesture_preview(instrument, &ui->smear_gesture,
                                              amount, error, sizeof(error));
@@ -1016,7 +1104,8 @@ static int preview_tear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                                 float amount, int output_rate)
 {
     char error[160]; uint32_t now; int ok;
-    if (amount < 0.0f) amount = 0.0f; if (amount > 1.0f) amount = 1.0f;
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
     lock_edit(device, audio);
     ok = ts_instrument_tear_gesture_preview(instrument, &ui->tear_gesture,
                                             amount, error, sizeof(error));
@@ -1494,6 +1583,56 @@ static void begin_config(TsUiState *ui)
     select_config_field(ui, TS_CONFIG_SAMPLE_PATH);
     SDL_StartTextInput();
     snprintf(ui->status, sizeof(ui->status), "EDITING TAPESISTER PATHS");
+}
+
+static void begin_palette(TsUiState *ui)
+{
+    ui->palette_before_edit = ui->palette;
+    ui->palette_open = 1;
+    ui->config_open = 0;
+    SDL_StopTextInput();
+    snprintf(ui->status, sizeof(ui->status), "EDITING LIVE PALETTE");
+}
+
+static void finish_palette(TsUiState *ui, int cancel)
+{
+    if (cancel) ui->palette = ui->palette_before_edit;
+    ui->palette_open = 0;
+    ui->config_open = 1;
+    select_config_field(ui, ui->config_field);
+    SDL_StartTextInput();
+    snprintf(ui->status, sizeof(ui->status), cancel ?
+             "PALETTE CHANGES CANCELLED" : "PALETTE APPLIED - SAVE TS TO KEEP IT");
+}
+
+static void palette_import(TsUiState *ui)
+{
+    char error[160];
+    TsPalette loaded = ui->palette;
+    if (ts_palette_load(&loaded, tapehead_palette_path(), error, sizeof(error))) {
+        ui->palette = loaded;
+        snprintf(ui->status, sizeof(ui->status), "IMPORTED TAPEHEAD.PAL");
+    } else snprintf(ui->status, sizeof(ui->status), "PALETTE IMPORT FAILED: %.130s", error);
+}
+
+static void palette_save(TsUiState *ui, int tapehead)
+{
+    char error[160];
+    const char *path = tapehead ? tapehead_palette_path() : tapesister_palette_path();
+    if (ts_palette_save(&ui->palette, path, error, sizeof(error)))
+        snprintf(ui->status, sizeof(ui->status), "%s %.112s",
+                 tapehead ? "EXPORTED" : "SAVED", path);
+    else snprintf(ui->status, sizeof(ui->status), "PALETTE SAVE FAILED: %.132s", error);
+}
+
+static void palette_adjust(TsUiState *ui, int amount)
+{
+    int value = ts_palette_component(&ui->palette,
+                (TsPaletteColor)ui->palette_entry, ui->palette_channel) + amount;
+    if (value < 0) value = 0;
+    if (value > 255) value = 255;
+    ts_palette_set_component(&ui->palette, (TsPaletteColor)ui->palette_entry,
+                             ui->palette_channel, (uint8_t)value);
 }
 
 static void cancel_config(TsUiState *ui)
@@ -2012,10 +2151,13 @@ int main(int argc, char **argv)
     TsInstrument instrument;
     TsUiState ui;
     TsFramebuffer framebuffer;
+    TsSample clipboard;
+    size_t clipboard_origin_first = 0;
     AudioState audio = {0};
     int running = 1;
 
     ts_instrument_init(&instrument);
+    ts_sample_init(&clipboard);
     ts_ui_init(&ui);
     {
         char config_error[160];
@@ -2030,7 +2172,20 @@ int main(int argc, char **argv)
     audio.bank_slot = -1;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
+        ts_sample_free(&clipboard);
+        ts_instrument_free(&instrument);
         return 1;
+    }
+    {
+        char palette_error[160];
+        char bundled_palette[1024];
+        if (!ts_palette_load(&ui.palette, tapesister_palette_path(),
+                             palette_error, sizeof(palette_error)) &&
+            runtime_asset_path("assets/tapehead.pal", bundled_palette,
+                               sizeof(bundled_palette)) &&
+            !ts_palette_load(&ui.palette, bundled_palette,
+                             palette_error, sizeof(palette_error)))
+            fprintf(stderr, "TapeSister palette: %s\n", palette_error);
     }
     window = SDL_CreateWindow("TapeSister", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                               TS_UI_WIDTH * 2, TS_UI_HEIGHT * 2,
@@ -2048,6 +2203,7 @@ int main(int argc, char **argv)
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         SDL_Quit();
+        ts_sample_free(&clipboard);
         ts_instrument_free(&instrument);
         return 0;
     }
@@ -2113,7 +2269,8 @@ int main(int argc, char **argv)
             }
             else if (event.type == SDL_DROPFILE &&
                      (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                      ui.config_open || ui.export_choice_open || ui.exit_confirm_open ||
+                      ui.config_open || ui.palette_open || ui.export_choice_open ||
+                      ui.exit_confirm_open ||
                       ui.browser.mode != TS_BROWSER_CLOSED)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
@@ -2171,6 +2328,29 @@ int main(int argc, char **argv)
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
                                key == SDLK_y) {
                         running = 0;
+                    }
+                } else if (ui.palette_open) {
+                    int step = (mod & KMOD_SHIFT) ? 8 : 1;
+                    if (key == SDLK_ESCAPE) finish_palette(&ui, 1);
+                    else if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_d)
+                        finish_palette(&ui, 0);
+                    else if (key == SDLK_TAB || key == SDLK_DOWN)
+                        ui.palette_channel = (ui.palette_channel + 1) % 3;
+                    else if (key == SDLK_UP)
+                        ui.palette_channel = (ui.palette_channel + 2) % 3;
+                    else if (key == SDLK_LEFT) palette_adjust(&ui, -step);
+                    else if (key == SDLK_RIGHT) palette_adjust(&ui, step);
+                    else if (key == SDLK_PAGEUP)
+                        ui.palette_entry = (ui.palette_entry + TS_PALETTE_COLOR_COUNT - 1) %
+                                           TS_PALETTE_COLOR_COUNT;
+                    else if (key == SDLK_PAGEDOWN)
+                        ui.palette_entry = (ui.palette_entry + 1) % TS_PALETTE_COLOR_COUNT;
+                    else if (key == SDLK_i) palette_import(&ui);
+                    else if (key == SDLK_s) palette_save(&ui, 0);
+                    else if (key == SDLK_e) palette_save(&ui, 1);
+                    else if (key == SDLK_r) {
+                        ts_palette_default(&ui.palette);
+                        snprintf(ui.status, sizeof(ui.status), "RESTORED FACTORY TAPEHEAD PALETTE");
                     }
                 } else if (ui.config_open) {
                     char *field = ts_config_field(&ui.config, ui.config_field);
@@ -2283,6 +2463,16 @@ int main(int argc, char **argv)
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
                         browser_activate_selection(device, &audio, &ui, &instrument);
                     }
+                } else if ((mod & KMOD_CTRL) && key == SDLK_c) {
+                    copy_selection_to_clipboard(device, &audio, &ui, &instrument,
+                                                &clipboard, &clipboard_origin_first);
+                } else if ((mod & KMOD_CTRL) && key == SDLK_x) {
+                    cut_selection_to_clipboard(device, &audio, &ui, &instrument,
+                                               &clipboard, &clipboard_origin_first);
+                } else if ((mod & KMOD_CTRL) && key == SDLK_v) {
+                    paste_from_clipboard(device, &audio, &ui, &instrument,
+                                         &clipboard, clipboard_origin_first,
+                                         (mod & KMOD_SHIFT) != 0);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_o) {
                     ui.load_bank_slot = instrument.selected_slot;
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
@@ -2429,7 +2619,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_KEYUP && ui.tear_wheel_active &&
                        (event.key.keysym.sym == SDLK_LCTRL || event.key.keysym.sym == SDLK_RCTRL)) {
                 end_tear_gesture(device, &audio, &ui, &instrument, 0);
-            } else if (event.type == SDL_KEYUP && !ui.config_open &&
+            } else if (event.type == SDL_KEYUP && !ui.config_open && !ui.palette_open &&
                        ui.renaming_bank_slot < 0 &&
                        ui.renaming_recipe_slot < 0 && !ui.export_choice_open &&
                        !ui.exit_confirm_open &&
@@ -2438,7 +2628,8 @@ int main(int argc, char **argv)
                 release_note(device, &audio, &ui, note_for_key(event.key.keysym.sym));
             } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                        ui.config_open || ui.export_choice_open || ui.exit_confirm_open)) {
+                        ui.config_open || ui.palette_open || ui.export_choice_open ||
+                        ui.exit_confirm_open)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
             } else if (event.type == SDL_MOUSEWHEEL && ui.browser.mode != TS_BROWSER_CLOSED) {
@@ -2544,7 +2735,8 @@ int main(int argc, char **argv)
                 preview_tear_gesture(device, &audio, &ui, &instrument, amount, obtained.freq);
             } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
-                        ui.config_open || ui.export_choice_open || ui.exit_confirm_open)) {
+                        ui.config_open || ui.palette_open || ui.export_choice_open ||
+                        ui.exit_confirm_open)) {
                 /* Modal dialogs own pointer input. */
             } else if (event.type == SDL_MOUSEMOTION && ui.browser.dragging_scrollbar) {
                 int x, y;
@@ -2626,6 +2818,39 @@ int main(int argc, char **argv)
                         ui.exit_confirm_open = 0;
                         snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
                     }
+                } else if (ui.palette_open) {
+                    int selected = -1;
+                    for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
+                        int column = color / 6;
+                        int row = color % 6;
+                        int left = 44 + column * 282;
+                        int top = 66 + row * 25;
+                        if (x >= left && x < left + 268 && y >= top && y < top + 21)
+                            selected = color;
+                    }
+                    if (selected >= 0) ui.palette_entry = selected;
+                    else if (x >= 44 && x < 366 && y >= 237 && y < 318) {
+                        int component = (y - 237) / 27;
+                        int value = (x - 44) * 255 / 321;
+                        if (component > 2) component = 2;
+                        if (value < 0) value = 0;
+                        if (value > 255) value = 255;
+                        ui.palette_channel = component;
+                        ts_palette_set_component(&ui.palette,
+                            (TsPaletteColor)ui.palette_entry, component, (uint8_t)value);
+                    } else if (y >= 339 && y < 362 && x >= 44 && x < 126)
+                        palette_import(&ui);
+                    else if (y >= 339 && y < 362 && x >= 132 && x < 208)
+                        palette_save(&ui, 0);
+                    else if (y >= 339 && y < 362 && x >= 214 && x < 302)
+                        palette_save(&ui, 1);
+                    else if (y >= 339 && y < 362 && x >= 308 && x < 376) {
+                        ts_palette_default(&ui.palette);
+                        snprintf(ui.status, sizeof(ui.status), "RESTORED FACTORY TAPEHEAD PALETTE");
+                    } else if (y >= 339 && y < 362 && x >= 382 && x < 444)
+                        finish_palette(&ui, 0);
+                    else if (y >= 339 && y < 362 && x >= 450 && x < 526)
+                        finish_palette(&ui, 1);
                 } else if (ui.config_open) {
                     static const int field_y[TS_CONFIG_FIELD_COUNT] = {103, 158, 213};
                     int selected = -1;
@@ -2653,7 +2878,9 @@ int main(int argc, char **argv)
                         save_config(&ui);
                     else if (x >= 170 && x < 270 && y >= 274 && y < 297)
                         config_use_cwd(&ui);
-                    else if (x >= 280 && x < 362 && y >= 274 && y < 297)
+                    else if (x >= 280 && x < 368 && y >= 274 && y < 297)
+                        begin_palette(&ui);
+                    else if (x >= 378 && x < 460 && y >= 274 && y < 297)
                         cancel_config(&ui);
                 } else if (ui.renaming_bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
@@ -2871,22 +3098,34 @@ int main(int argc, char **argv)
                     int changed = 0;
                     const char *label = "DSP";
                     if (ui.fx_page == TS_FX_EDIT) {
-                        if (x >= 10 && x < 104)
+                        if (x >= 10 && x < 65)
+                            copy_selection_to_clipboard(device, &audio, &ui, &instrument,
+                                                        &clipboard, &clipboard_origin_first);
+                        else if (x >= 69 && x < 116)
+                            cut_selection_to_clipboard(device, &audio, &ui, &instrument,
+                                                       &clipboard, &clipboard_origin_first);
+                        else if (x >= 120 && x < 181)
+                            paste_from_clipboard(device, &audio, &ui, &instrument,
+                                                 &clipboard, clipboard_origin_first, 0);
+                        else if (x >= 185 && x < 232)
+                            paste_from_clipboard(device, &audio, &ui, &instrument,
+                                                 &clipboard, clipboard_origin_first, 1);
+                        else if (x >= 236 && x < 291)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_REVERSE, 1.0f);
-                        else if (x >= 109 && x < 203)
+                        else if (x >= 295 && x < 360)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_NORMALIZE, 0.98f);
-                        else if (x >= 208 && x < 292)
+                        else if (x >= 364 && x < 419)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_GAIN, 0.7079458f);
-                        else if (x >= 297 && x < 381)
+                        else if (x >= 423 && x < 478)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_GAIN, 1.4125376f);
-                        else if (x >= 386 && x < 496)
+                        else if (x >= 482 && x < 551)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_FADE_IN, 1.0f);
-                        else if (x >= 501 && x < 611)
+                        else if (x >= 555 && x < 630)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_FADE_OUT, 1.0f);
                     } else if (ui.fx_page == TS_FX_TUNE) {
@@ -3125,7 +3364,8 @@ int main(int argc, char **argv)
                 }
             } else if (event.type == SDL_MOUSEBUTTONDOWN &&
                        event.button.button == SDL_BUTTON_RIGHT &&
-                       !ui.config_open && ui.browser.mode == TS_BROWSER_CLOSED) {
+                       !ui.config_open && !ui.palette_open &&
+                       ui.browser.mode == TS_BROWSER_CLOSED) {
                 int x, y;
                 int bank_slot;
                 int recipe_slot;
@@ -3254,6 +3494,7 @@ int main(int argc, char **argv)
     }
 
     if (device) SDL_CloseAudioDevice(device);
+    ts_sample_free(&clipboard);
     ts_instrument_free(&instrument);
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);
