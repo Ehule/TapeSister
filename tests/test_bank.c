@@ -27,7 +27,7 @@ static void setup(TsInstrument *instrument)
 
 int main(void)
 {
-    TsInstrument bank, all, serial, restored;
+    TsInstrument bank, all, destinations, serial, restored;
     TsTearGesture tear;
     TsNoteBank notes;
     TsAuditionPlan plan;
@@ -88,9 +88,11 @@ int main(void)
     CHECK(plan.sample == &bank.bank[0].sample && bank.selected_slot == 0 &&
           ts_sample_hash(&bank.current) == slot0_hash);
     CHECK(ts_sample_hash(&bank.bank[5].sample) == slot5_hash);
-    CHECK(!ts_ui_execute_bank_action(&bank, 2, TS_UI_BANK_ACTION_AUDITION,
-                                     error, sizeof(error)));
-    CHECK(bank.selected_slot == 0 && ts_sample_hash(&bank.current) == slot0_hash);
+    CHECK(ts_ui_execute_bank_action(&bank, 2, TS_UI_BANK_ACTION_AUDITION,
+                                    error, sizeof(error)));
+    CHECK(bank.selected_slot == 2 && !bank.bank[2].occupied &&
+          bank.parent.data == NULL && bank.current.data == NULL &&
+          ts_sample_hash(&bank.bank[0].sample) == slot0_hash);
 
     CHECK(ts_ui_execute_bank_action(&bank, 0, TS_UI_BANK_ACTION_CLEAR,
                                     error, sizeof(error)));
@@ -118,6 +120,55 @@ int main(void)
         CHECK(!all.bank[slot].occupied);
     CHECK(ts_instrument_create_selected(&all, 0x434c4541u, error, sizeof(error)));
     CHECK(all.bank[0].occupied && all.current.data != NULL);
+
+    ts_instrument_init(&destinations);
+    CHECK(ts_instrument_generate(&destinations, TS_GENERATOR_PULSE, 0x44535441u,
+                                 error, sizeof(error)));
+    ts_instrument_set_selection(&destinations, 20, 300);
+    CHECK(ts_instrument_apply_sample_edit(&destinations, TS_SAMPLE_EDIT_GAIN, 0.6f,
+                                          error, sizeof(error)));
+    slot0_hash = ts_sample_hash(&destinations.current);
+    CHECK(ts_ui_execute_bank_action(&destinations, 4, TS_UI_BANK_ACTION_AUDITION,
+                                    error, sizeof(error)));
+    CHECK(destinations.selected_slot == 4 && !destinations.bank[4].occupied &&
+          destinations.current.data == NULL && destinations.parent.data == NULL &&
+          ts_sample_hash(&destinations.bank[0].sample) == slot0_hash &&
+          destinations.bank[0].edit.sample_edit_count == 1);
+    CHECK(ts_instrument_create_selected(&destinations, 0x44535442u,
+                                        error, sizeof(error)));
+    CHECK(destinations.selected_slot == 4 && destinations.bank[4].occupied &&
+          destinations.current.data != NULL &&
+          ts_sample_hash(&destinations.bank[0].sample) == slot0_hash);
+    slot5_hash = ts_sample_hash(&destinations.bank[4].sample);
+
+    CHECK(ts_sample_save_wav16(&destinations.bank[0].sample, "test-bank-load.wav",
+                               error, sizeof(error)));
+    CHECK(ts_ui_execute_bank_action(&destinations, 6, TS_UI_BANK_ACTION_AUDITION,
+                                    error, sizeof(error)));
+    CHECK(destinations.selected_slot == 6 && !destinations.bank[6].occupied &&
+          destinations.current.data == NULL);
+    CHECK(ts_instrument_load_wav(&destinations, "test-bank-load.wav",
+                                 error, sizeof(error)));
+    CHECK(destinations.selected_slot == 6 && destinations.bank[6].occupied &&
+          ts_sample_hash(&destinations.current) ==
+              ts_sample_hash(&destinations.bank[6].sample) &&
+          destinations.current.frames == destinations.bank[0].sample.frames &&
+          ts_sample_hash(&destinations.bank[0].sample) == slot0_hash &&
+          ts_sample_hash(&destinations.bank[4].sample) == slot5_hash);
+
+    CHECK(ts_ui_execute_bank_action(&destinations, 6, TS_UI_BANK_ACTION_CLEAR,
+                                    error, sizeof(error)));
+    CHECK(destinations.selected_slot == 6 && !destinations.bank[6].occupied &&
+          destinations.parent.data == NULL && destinations.current.data == NULL &&
+          ts_sample_hash(&destinations.bank[0].sample) == slot0_hash &&
+          ts_sample_hash(&destinations.bank[4].sample) == slot5_hash);
+    CHECK(ts_instrument_create_selected(&destinations, 0x44535443u,
+                                        error, sizeof(error)));
+    CHECK(destinations.selected_slot == 6 && destinations.bank[6].occupied &&
+          destinations.current.data != NULL &&
+          ts_sample_hash(&destinations.bank[0].sample) == slot0_hash &&
+          ts_sample_hash(&destinations.bank[4].sample) == slot5_hash);
+    remove("test-bank-load.wav");
 
     ts_instrument_init(&serial); ts_instrument_init(&restored);
     CHECK(ts_instrument_generate(&serial, TS_GENERATOR_PULSE, 0x42414e4bu,
@@ -210,6 +261,7 @@ int main(void)
 
     ts_instrument_free(&bank);
     ts_instrument_free(&all);
+    ts_instrument_free(&destinations);
     ts_instrument_free(&serial);
     ts_instrument_free(&restored);
     if (failures) return 1;

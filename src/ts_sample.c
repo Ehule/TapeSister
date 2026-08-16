@@ -3205,6 +3205,7 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
 int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size)
 {
+    int was_selected;
     if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
         set_error(error, error_size, "Invalid bank slot");
         return 0;
@@ -3213,6 +3214,7 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
         set_error(error, error_size, "Bank slot is already empty");
         return 0;
     }
+    was_selected = instrument->selected_slot == slot;
     bank_slot_free(&instrument->bank[slot]);
     if (instrument->family_last_slot == slot) instrument->family_last_slot = -1;
     if (instrument->family_anchor_slot == slot) {
@@ -3227,6 +3229,8 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                 break;
             }
     }
+    if (was_selected)
+        return ts_instrument_select_bank(instrument, slot, error, error_size);
     set_error(error, error_size, "");
     return 1;
 }

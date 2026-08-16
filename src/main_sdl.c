@@ -1432,16 +1432,22 @@ static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
                             TsUiState *ui, TsInstrument *instrument, int slot)
 {
     char error[160];
+    int clearing_active = instrument->selected_slot == slot;
     int ok;
     if (device) SDL_LockAudioDevice(device);
-    if (audio->bank_slot == slot) {
+    if (audio->bank_slot == slot || clearing_active) {
         audio->playing = 0;
         audio->bank_slot = -1;
+        ts_note_bank_clear(&audio->notes);
+        if (clearing_active) ui->workbench_loop_active = 0;
     }
     ok = ts_ui_execute_bank_action(instrument, slot, TS_UI_BANK_ACTION_CLEAR,
                                    error, sizeof(error));
-    if (device) SDL_UnlockAudioDevice(device);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "CLEARED BANK %02d", slot + 1);
+    unlock_edit(device, audio, ui, instrument);
+    if (ok && clearing_active)
+        snprintf(ui->status, sizeof(ui->status),
+                 "CLEARED BANK %02d - EMPTY DESTINATION SELECTED", slot + 1);
+    else if (ok) snprintf(ui->status, sizeof(ui->status), "CLEARED BANK %02d", slot + 1);
     else snprintf(ui->status, sizeof(ui->status), "BANK CLEAR FAILED: %.132s", error);
 }
 
@@ -3186,15 +3192,20 @@ int main(int argc, char **argv)
                             0, bank_modifiers(mod));
                         if (action == TS_UI_BANK_ACTION_AUDITION) {
                             char select_error[160];
+                            int occupied = instrument.bank[bank_slot].occupied;
                             int selected;
                             lock_edit(device, &audio);
                             selected = ts_ui_execute_bank_action(
                                 &instrument, bank_slot, action,
                                 select_error, sizeof(select_error));
                             unlock_edit(device, &audio, &ui, &instrument);
-                            if (selected)
+                            if (selected && occupied)
                                 begin_bank_audition(device, &audio, &ui, &instrument,
                                                     bank_slot, obtained.freq);
+                            else if (selected)
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "BANK %02d EMPTY DESTINATION SELECTED - CREATE OR LOAD",
+                                         bank_slot + 1);
                             else
                                 snprintf(ui.status, sizeof(ui.status),
                                          "BANK %02d: %.100s - ACTIVE TILE UNCHANGED",

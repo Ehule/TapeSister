@@ -1413,9 +1413,9 @@ int main(void)
                                      error, sizeof(error)));
     CHECK(!ts_instrument_bank_capture(&committed, 3, TS_BANK_CAPTURE_CURRENT,
                                       error, sizeof(error)));
-    CHECK(ts_instrument_bank_clear(&committed, 0, error, sizeof(error)));
-    CHECK(!committed.bank[0].occupied && committed.bank[1].occupied &&
-          committed.bank[2].occupied && committed.bank[3].occupied);
+    CHECK(ts_instrument_bank_clear(&committed, 3, error, sizeof(error)));
+    CHECK(committed.bank[0].occupied && committed.bank[1].occupied &&
+          committed.bank[2].occupied && !committed.bank[3].occupied);
     CHECK(ts_instrument_save_recipe(&committed, "test-recipe.tsr", error, sizeof(error)));
     {
         FILE *recipe = fopen("test-recipe.tsr", "rb");
@@ -1450,9 +1450,9 @@ int main(void)
                 committed.audible_tuning.fine_tune_cents) < 0.001f);
     CHECK(fabsf(restored.process.shaper_drive - 4.75f) < 0.001f);
     CHECK(ts_instrument_bank_count(&restored) == 3);
-    CHECK(!restored.bank[0].occupied);
+    CHECK(!restored.bank[3].occupied);
     CHECK(strcmp(restored.bank[2].sample.name, "Growing Tail") == 0);
-    for (int slot = 1; slot < 4; ++slot) {
+    for (int slot = 0; slot < 3; ++slot) {
         CHECK(restored.bank[slot].occupied);
         CHECK(ts_sample_hash(&restored.bank[slot].sample) ==
               ts_sample_hash(&committed.bank[slot].sample));
