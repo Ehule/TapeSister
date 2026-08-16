@@ -668,6 +668,9 @@ void ts_ui_init(TsUiState *ui)
     ui->load_bank_slot = -1;
     ui->playhead_bank_slot = -1;
     ui->drone_source_slot = -1;
+    ui->capture_destination_slot = -1;
+    ui->capture_source_slot = -1;
+    ui->capture_state = TS_CAPTURE_IDLE;
     ui->renaming_bank_slot = -1;
     ui->renaming_recipe_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
@@ -829,6 +832,11 @@ TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y)
     if (x >= 538 && x < 558) return TS_UI_CANVAS_ACTION_GRID_FINER;
     if (x >= 562 && x < 615) return TS_UI_CANVAS_ACTION_GRID_SNAP;
     return TS_UI_CANVAS_ACTION_NONE;
+}
+
+int ts_ui_capture_button_from_point(int x, int y)
+{
+    return x >= 522 && x < 630 && y >= 313 && y < 330;
 }
 
 int ts_ui_canvas_edge_from_point(int x, int y)
@@ -1552,10 +1560,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     if (ui->show_keyboard) {
         char keyboard_hint[96];
         char base_note[8];
-        snprintf(keyboard_hint, sizeof(keyboard_hint),
-                 "KEY %s  SHIFT+WHEEL SEMITONE / F1-F8  SHIFT+CLICK CHORD",
-                 ts_midi_note_name(ts_ui_keyboard_base_note(ui),
-                                   base_note, sizeof(base_note)));
+        if (ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER)
+            snprintf(keyboard_hint, sizeof(keyboard_hint),
+                     "KEY %s  SHIFT+CLICK STAGES  CLICK STAGED KEY LAUNCHES",
+                     ts_midi_note_name(ts_ui_keyboard_base_note(ui),
+                                       base_note, sizeof(base_note)));
+        else
+            snprintf(keyboard_hint, sizeof(keyboard_hint),
+                     "KEY %s  SHIFT+WHEEL SEMITONE / F1-F8  SHIFT+CLICK CHORD",
+                     ts_midi_note_name(ts_ui_keyboard_base_note(ui),
+                                       base_note, sizeof(base_note)));
         text(fb, 11, 318, keyboard_hint, RGB(184, 180, 184), 1);
         const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
         const int white_semitones[14] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
@@ -1563,8 +1577,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             char label[8];
             int label_x;
             int active = (ui->active_notes & (1u << white_semitones[i])) != 0;
+            int staged = (ui->staged_notes & (1u << white_semitones[i])) != 0;
             rect(fb, white_x + i * white_w, white_y, white_w - 1, white_h,
-                 active ? PAL_MOUSE : RGB(220, 216, 207));
+                 staged ? PAL_TUNING : active ? PAL_MOUSE : RGB(220, 216, 207));
             ts_midi_note_name(ts_ui_keyboard_base_note(ui) + white_semitones[i],
                               label, sizeof(label));
             label_x = white_x + i * white_w +
@@ -1580,13 +1595,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 int label_x;
                 int key = semitones[i];
                 int active = (ui->active_notes & (1u << key)) != 0;
+                int staged = (ui->staged_notes & (1u << key)) != 0;
                 rect(fb, left, white_y, 31, 31,
-                     active ? PAL_VOLUME : RGB(18, 18, 18));
+                     staged ? PAL_TUNING : active ? PAL_VOLUME : RGB(18, 18, 18));
                 ts_midi_note_name(ts_ui_keyboard_base_note(ui) + key,
                                   label, sizeof(label));
                 label_x = left + (31 - (int)strlen(label) * 6) / 2;
                 text(fb, label_x, white_y + 19, label,
-                     active ? PAL_BLOCK_TEXT : RGB(220, 216, 207), 1);
+                     active || staged ? PAL_BLOCK_TEXT : RGB(220, 216, 207), 1);
             }
         }
     } else if (ui->show_recipes) {
@@ -1611,15 +1627,24 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 11, 348, "SELECTED TILE REMAINS ON THE WORKBENCH",
              PAL_INSTRUMENT, 1);
     } else {
-        text(fb, 11, 318,
-             ui->fx_page == TS_FX_EDIT ?
-             "PASTE REPLACES TARGET  NO RANGE PASTES IN PLACE  FIT STRETCHES" :
-             ui->fx_page == TS_FX_FAMILY && instrument->has_selection ?
-             "CREATE/VARY STAMP FM INSIDE SELECTION  OUTSIDE STAYS UNCHANGED" :
-             ui->fx_page == TS_FX_FAMILY ?
-             "CREATE FILLS ACTIVE TILE  VARY REPLACES OR CHAINS TO NEXT EMPTY" :
-             "CLICK PLAY  DOUBLE EMPTY SILENCE  SHIFT FULL  ALT LOOP  CTRL SEL  CTRL+SHIFT CLONE",
-             RGB(184, 180, 184), 1);
+        const char *capture_label = ui->capture_state == TS_CAPTURE_RECORDING ? "STOP" :
+                                    ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
+                                    "ARMED" : "CAPTURE";
+        const char *bank_hint =
+            ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
+            "CLICK OCCUPIED SOURCE  TARGET STAYS ARMED" :
+            ui->capture_state == TS_CAPTURE_RECORDING ?
+            "PERFORMING  CLICK STOP TO KEEP EARLY" :
+            ui->fx_page == TS_FX_EDIT ?
+            "PASTE REPLACES RANGE  NO RANGE PASTES IN PLACE  FIT STRETCHES" :
+            ui->fx_page == TS_FX_FAMILY && instrument->has_selection ?
+            "CREATE/VARY STAMPS SELECTION  OUTSIDE STAYS UNCHANGED" :
+            ui->fx_page == TS_FX_FAMILY ?
+            "CREATE FILLS TILE  VARY REPLACES OR CHAINS NEXT EMPTY" :
+            "CLICK PLAY  DOUBLE EMPTY BLANK TAPE  RESIZE THEN ARM";
+        text(fb, 11, 318, bank_hint, RGB(184, 180, 184), 1);
+        mini_button(fb, 522, 313, 108, capture_label,
+                    ui->capture_state != TS_CAPTURE_IDLE);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
             const TsBankSlot *slot = &instrument->bank[i];
             char label[24];
@@ -1636,6 +1661,17 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 rect(fb, x + 2, y + 19, 61, 2,
                      family_relation_color(slot->relation));
             if (i == ui->bank_view_slot) rect(fb, x + 4, y + 4, 64, 2, PAL_EFFECT);
+            if (i == ui->capture_source_slot) {
+                rect(fb, x + 4, y + 4, 3, 15, PAL_NOTE);
+                text(fb, x + 10, y + 8, "SRC", PAL_NOTE, 1);
+            }
+            if (i == ui->capture_destination_slot) {
+                uint32_t record_color = ui->text_cursor_visible ? PAL_VOLUME : PAL_EFFECT;
+                rect(fb, x - 2, y - 2, 76, 3, record_color);
+                rect(fb, x - 2, y + 22, 76, 3, record_color);
+                rect(fb, x - 2, y - 2, 3, 27, record_color);
+                rect(fb, x + 71, y - 2, 3, 27, record_color);
+            }
             if (i == instrument->selected_slot) {
                 rect(fb, x - 2, y - 2, 76, 3, PAL_ACTIVE_TILE);
                 rect(fb, x - 2, y + 22, 76, 3, PAL_ACTIVE_TILE);
@@ -1710,6 +1746,29 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 172, 176, 136, "SELECTED WAV", 0);
         button(fb, 324, 176, 144, "COLLECTION", 0);
         text(fb, 172, 218, "C SELECTED  F FULL COLLECTION   ESC CANCEL", RGB(190, 185, 190), 1);
+    }
+
+    if (ui->capture_state == TS_CAPTURE_RECORDING) {
+        size_t capacity = ui->capture_capacity_frames;
+        size_t recorded = ui->capture_recorded_frames;
+        int progress = capacity > 0u ?
+                       (int)((double)recorded * TS_UI_WIDTH / (double)capacity) : 0;
+        if (progress < 0) progress = 0;
+        if (progress > TS_UI_WIDTH) progress = TS_UI_WIDTH;
+        rect(fb, 0, 0, TS_UI_WIDTH, 3, PAL_VOLUME);
+        rect(fb, 0, TS_UI_HEIGHT - 3, TS_UI_WIDTH, 3, PAL_VOLUME);
+        rect(fb, 0, 0, 3, TS_UI_HEIGHT, PAL_VOLUME);
+        rect(fb, TS_UI_WIDTH - 3, 0, 3, TS_UI_HEIGHT, PAL_VOLUME);
+        rect(fb, 0, 32, TS_UI_WIDTH, 4, RGB(30, 8, 8));
+        rect(fb, 0, 32, progress, 4, PAL_VOLUME);
+    }
+    if (ui->overlay[0] != '\0') {
+        int scale = strlen(ui->overlay) <= 46u ? 2 : 1;
+        int width = (int)strlen(ui->overlay) * 6 * scale;
+        int x = (TS_UI_WIDTH - width) / 2;
+        frame(fb, 24, 126, 592, 76, RGB(12, 12, 12), PAL_VOLUME);
+        if (x < 34) x = 34;
+        text(fb, x, 153, ui->overlay, PAL_VOLUME, scale);
     }
 }
 

@@ -6,6 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_audition.c src/ts_note_bank.c
+             src/ts_capture.c
              src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_palette.c src/ts_ui.c)
 target_include_directories(tapesister_core PUBLIC include)
 target_link_libraries(tapesister_core PUBLIC m)
@@ -61,6 +62,10 @@ add_test(NAME tapesister_editor_contract_tests COMMAND tapesister_editor_contrac
 add_executable(tapesister_canvas_tests tests/test_canvas.c)
 target_link_libraries(tapesister_canvas_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_canvas_tests COMMAND tapesister_canvas_tests)
+
+add_executable(tapesister_capture_tests tests/test_capture.c)
+target_link_libraries(tapesister_capture_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_capture_tests COMMAND tapesister_capture_tests)
 
 add_executable(tapesister_render_demo tests/render_demo.c)
 target_link_libraries(tapesister_render_demo PRIVATE tapesister_core)

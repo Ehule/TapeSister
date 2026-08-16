@@ -1,4 +1,5 @@
 #include "tapesister/sample.h"
+#include "tapesister/capture.h"
 #include "tapesister/note_bank.h"
 #include "tapesister/ui.h"
 
@@ -340,6 +341,7 @@ typedef struct {
     int output_rate;
     int bank_slot;
     TsNoteBank notes;
+    TsCaptureRecorder capture;
 } AudioState;
 
 static float loop_lock_silence_data[TS_DEFAULT_CANVAS_FRAMES];
@@ -400,6 +402,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         value += ts_note_bank_read(&audio->notes);
         if (value > 1.0f) value = 1.0f;
         if (value < -1.0f) value = -1.0f;
+        if (ts_capture_write_sample(&audio->capture, value)) {
+            audio->playing = 0;
+            audio->bank_slot = -1;
+            ts_note_bank_clear(&audio->notes);
+        }
         out[i] = value * 0.8f;
         if (i + 1 < values) out[i + 1] = value * 0.8f;
     }
@@ -436,11 +443,19 @@ static int note_for_key(SDL_Keycode key)
     return -1;
 }
 
+static void show_overlay(TsUiState *ui, const char *message, uint32_t milliseconds)
+{
+    if (ui == NULL) return;
+    snprintf(ui->overlay, sizeof(ui->overlay), "%s", message != NULL ? message : "");
+    ui->overlay_until_ms = SDL_GetTicks() + milliseconds;
+}
+
 static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            const TsInstrument *instrument, TsAuditionRange range,
                            double pitch, int output_rate)
 {
     TsAuditionPlan plan;
+    int capture_started = 0;
     ui->bank_view_slot = -1;
     if (!device || output_rate <= 0) {
         snprintf(ui->status, sizeof(ui->status), "AUDIO UNAVAILABLE");
@@ -474,16 +489,27 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                                   2.0f : instrument->loop_crossfade_ms) : 0;
     audio->step = ((double)plan.sample->sample_rate / output_rate) * pitch;
     audio->playing = 1;
+    if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+        audio->capture.source_slot == instrument->selected_slot)
+        capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
     SDL_UnlockAudioDevice(device);
-    snprintf(ui->status, sizeof(ui->status), "PLAYING %s %s",
-             ts_audition_source_name(ui->audition_source),
-             ts_audition_range_name(range));
+    if (capture_started) {
+        show_overlay(ui, "CAPTURE STARTED", 650u);
+        snprintf(ui->status, sizeof(ui->status),
+                 "CAPTURE RECORDING TILE %02d FROM %02d",
+                 audio->capture.destination_slot + 1,
+                 audio->capture.source_slot + 1);
+    } else
+        snprintf(ui->status, sizeof(ui->status), "PLAYING %s %s",
+                 ts_audition_source_name(ui->audition_source),
+                 ts_audition_range_name(range));
 }
 
 static void begin_playhead_audition(SDL_AudioDeviceID device, AudioState *audio,
                                     TsUiState *ui, const TsInstrument *instrument,
                                     int output_rate)
 {
+    int capture_started = 0;
     if (instrument == NULL || !instrument->has_playhead ||
         instrument->current.data == NULL ||
         instrument->playhead_frame >= instrument->current.frames) {
@@ -512,9 +538,17 @@ static void begin_playhead_audition(SDL_AudioDeviceID device, AudioState *audio,
     audio->bank_slot = -1;
     audio->step = (double)instrument->current.sample_rate / (double)output_rate;
     audio->playing = 1;
+    if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+        audio->capture.source_slot == instrument->selected_slot)
+        capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
     SDL_UnlockAudioDevice(device);
-    snprintf(ui->status, sizeof(ui->status), "PLAYING FROM PLAYHEAD %zu",
-             instrument->playhead_frame);
+    if (capture_started) {
+        show_overlay(ui, "CAPTURE STARTED", 650u);
+        snprintf(ui->status, sizeof(ui->status),
+                 "CAPTURE RECORDING FROM PLAYHEAD %zu", instrument->playhead_frame);
+    } else
+        snprintf(ui->status, sizeof(ui->status), "PLAYING FROM PLAYHEAD %zu",
+                 instrument->playhead_frame);
 }
 
 static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui);
@@ -578,9 +612,14 @@ static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
             snprintf(ui->status, sizeof(ui->status),
                      "LOOP LOCKED: SILENT TILE VIEW");
         } else ui->workbench_loop_active = 0;
-    } else snprintf(ui->status, sizeof(ui->status), "%s: %s",
-                    ui->workbench_loop_persistent ? "LOOP LOCKED" : "LOOP",
-                    instrument->has_selection ? "SELECTION" : "VIEW");
+    } else if (audio->capture.state == TS_CAPTURE_RECORDING)
+        snprintf(ui->status, sizeof(ui->status),
+                 "CAPTURE RECORDING %s LOOP TO TILE %02d",
+                 instrument->has_selection ? "SELECTION" : "VIEW",
+                 audio->capture.destination_slot + 1);
+    else snprintf(ui->status, sizeof(ui->status), "%s: %s",
+                  ui->workbench_loop_persistent ? "LOOP LOCKED" : "LOOP",
+                  instrument->has_selection ? "SELECTION" : "VIEW");
 }
 
 static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
@@ -614,18 +653,24 @@ static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
 {
     TsNoteStartResult result;
     int voice_count;
+    int capture_started = 0;
     ui->bank_view_slot = -1;
     if (!device || output_rate <= 0) {
         snprintf(ui->status, sizeof(ui->status), "AUDIO UNAVAILABLE");
         return;
     }
     SDL_LockAudioDevice(device);
-    audio->playing = 0;
+    if (audio->capture.state != TS_CAPTURE_RECORDING)
+        audio->playing = 0;
     audio->bank_slot = -1;
     result = ts_note_bank_start_tuned_at(
         &audio->notes, instrument, ts_ui_audition_tuning(ui, instrument),
         ui->audition_source, note, ts_ui_keyboard_base_note(ui),
         latched, output_rate);
+    if (result == TS_NOTE_STARTED &&
+        audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+        audio->capture.source_slot == instrument->selected_slot)
+        capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
     voice_count = ts_note_bank_count(&audio->notes);
     SDL_UnlockAudioDevice(device);
     if (result == TS_NOTE_LIMIT_REACHED)
@@ -635,9 +680,68 @@ static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
     else if (result == TS_NOTE_STARTED && latched)
         snprintf(ui->status, sizeof(ui->status), "CHORD %d/%d - SHIFT+CLICK TO TOGGLE",
                  voice_count, TS_NOTE_VOICE_LIMIT);
-    else if (result == TS_NOTE_STARTED)
+    else if (capture_started) {
+        show_overlay(ui, "CAPTURE STARTED", 650u);
+        snprintf(ui->status, sizeof(ui->status),
+                 "CAPTURE RECORDING LIVE NOTES TO TILE %02d",
+                 audio->capture.destination_slot + 1);
+    } else if (result == TS_NOTE_STARTED)
         snprintf(ui->status, sizeof(ui->status), "PLAYING %s NOTE",
                  ts_audition_source_name(ui->audition_source));
+}
+
+static void stage_capture_note(SDL_AudioDeviceID device, AudioState *audio,
+                               TsUiState *ui, int note)
+{
+    char error[160];
+    int count;
+    if (device) SDL_LockAudioDevice(device);
+    if (!ts_capture_toggle_staged_note(&audio->capture, note,
+                                       error, sizeof(error))) {
+        if (device) SDL_UnlockAudioDevice(device);
+        snprintf(ui->status, sizeof(ui->status), "STAGE FAILED: %.140s", error);
+        return;
+    }
+    count = 0;
+    for (uint32_t mask = audio->capture.staged_notes; mask != 0u; mask >>= 1u)
+        count += (int)(mask & 1u);
+    if (device) SDL_UnlockAudioDevice(device);
+    snprintf(ui->status, sizeof(ui->status),
+             "STAGED CHORD %d/%d - CLICK A STAGED KEY TO LAUNCH",
+             count, TS_NOTE_VOICE_LIMIT);
+}
+
+static void launch_staged_capture(SDL_AudioDeviceID device, AudioState *audio,
+                                  TsUiState *ui, const TsInstrument *instrument,
+                                  int note, int output_rate)
+{
+    uint32_t staged;
+    int started = 0;
+    if (!device || output_rate <= 0) return;
+    SDL_LockAudioDevice(device);
+    staged = audio->capture.staged_notes;
+    if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+        (staged & (1u << note)) != 0u &&
+        audio->capture.source_slot == instrument->selected_slot) {
+        audio->playing = 0;
+        audio->bank_slot = -1;
+        started = ts_note_bank_start_staged_chord(
+            &audio->notes, instrument, ts_ui_audition_tuning(ui, instrument),
+            ui->audition_source, staged, ts_ui_keyboard_base_note(ui),
+            output_rate);
+        if (started > 0 && !ts_capture_trigger(&audio->capture, NULL, 0)) {
+            ts_note_bank_clear(&audio->notes);
+            started = 0;
+        }
+    }
+    SDL_UnlockAudioDevice(device);
+    if (started > 0) {
+        show_overlay(ui, "CAPTURE STARTED", 650u);
+        snprintf(ui->status, sizeof(ui->status),
+                 "CAPTURE RECORDING SYNCHRONIZED %d-NOTE CHORD", started);
+    } else
+        snprintf(ui->status, sizeof(ui->status),
+                 "CLICK ONE OF THE STAGED KEYS TO LAUNCH THE CHORD");
 }
 
 static void release_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui, int note)
@@ -694,10 +798,167 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
     stop_all_force(device, audio, ui);
 }
 
+static void sync_capture_ui(SDL_AudioDeviceID device, AudioState *audio,
+                            TsUiState *ui)
+{
+    if (device) SDL_LockAudioDevice(device);
+    ui->capture_state = audio->capture.state;
+    ui->capture_destination_slot = audio->capture.destination_slot;
+    ui->capture_source_slot = audio->capture.source_slot;
+    ui->capture_recorded_frames = audio->capture.recorded_frames;
+    ui->capture_capacity_frames = audio->capture.capacity_frames;
+    ui->staged_notes = audio->capture.staged_notes;
+    if (device) SDL_UnlockAudioDevice(device);
+}
+
+static void arm_capture(SDL_AudioDeviceID device, AudioState *audio,
+                        TsUiState *ui, TsInstrument *instrument,
+                        int output_rate)
+{
+    char error[160];
+    size_t capacity = 0u;
+    int destination = instrument->selected_slot;
+    int ok;
+    if (audio->capture.state != TS_CAPTURE_IDLE) {
+        snprintf(ui->status, sizeof(ui->status),
+                 audio->capture.state == TS_CAPTURE_RECORDING ?
+                 "CAPTURE IS RECORDING - CLICK STOP TO KEEP IT" :
+                 "CAPTURE ARMED - SELECT A SOURCE AND PERFORM  ESC CANCELS");
+        return;
+    }
+    if (!ts_instrument_capture_target_frames(instrument, destination,
+                                              (uint32_t)output_rate,
+                                              &capacity, error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "CAPTURE ARM FAILED: %.126s", error);
+        return;
+    }
+    stop_all_force(device, audio, ui);
+    if (device) SDL_LockAudioDevice(device);
+    ok = ts_capture_arm(&audio->capture, destination, capacity,
+                        (uint32_t)output_rate, error, sizeof(error));
+    if (device) SDL_UnlockAudioDevice(device);
+    if (!ok) {
+        snprintf(ui->status, sizeof(ui->status), "CAPTURE ARM FAILED: %.126s", error);
+        return;
+    }
+    sync_capture_ui(device, audio, ui);
+    show_overlay(ui, "CAPTURE ARMED", 850u);
+    snprintf(ui->status, sizeof(ui->status),
+             "TILE %02d ARMED %.3F S - SELECT SOURCE  PLAY/LOOP/NOTE STARTS",
+             destination + 1, (double)capacity / output_rate);
+}
+
+static void cancel_capture(SDL_AudioDeviceID device, AudioState *audio,
+                           TsUiState *ui)
+{
+    int canceled;
+    if (device) SDL_LockAudioDevice(device);
+    canceled = ts_capture_cancel(&audio->capture);
+    audio->playing = 0;
+    audio->bank_slot = -1;
+    ts_note_bank_clear(&audio->notes);
+    if (canceled) ts_capture_free(&audio->capture);
+    if (device) SDL_UnlockAudioDevice(device);
+    if (!canceled) return;
+    ui->workbench_loop_active = 0;
+    ui->workbench_loop_persistent = 0;
+    ui->active_notes = 0u;
+    sync_capture_ui(device, audio, ui);
+    show_overlay(ui, "CAPTURE CANCELED", 950u);
+    snprintf(ui->status, sizeof(ui->status),
+             "CAPTURE CANCELED - BLANK DESTINATION UNCHANGED");
+}
+
+static void stop_capture_early(SDL_AudioDeviceID device, AudioState *audio,
+                               TsUiState *ui)
+{
+    char error[160];
+    int ok;
+    if (device) SDL_LockAudioDevice(device);
+    ok = ts_capture_stop(&audio->capture, error, sizeof(error));
+    if (ok) {
+        audio->playing = 0;
+        audio->bank_slot = -1;
+        ts_note_bank_clear(&audio->notes);
+    }
+    if (device) SDL_UnlockAudioDevice(device);
+    if (ok) {
+        ui->workbench_loop_active = 0;
+        ui->workbench_loop_persistent = 0;
+        snprintf(ui->status, sizeof(ui->status), "CAPTURE STOPPING - KEEPING AUDIO");
+    } else snprintf(ui->status, sizeof(ui->status), "CAPTURE STOP FAILED: %.126s", error);
+}
+
+static void capture_button(SDL_AudioDeviceID device, AudioState *audio,
+                           TsUiState *ui, TsInstrument *instrument,
+                           int output_rate)
+{
+    if (audio->capture.state == TS_CAPTURE_IDLE)
+        arm_capture(device, audio, ui, instrument, output_rate);
+    else if (audio->capture.state == TS_CAPTURE_RECORDING)
+        stop_capture_early(device, audio, ui);
+    else if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER)
+        snprintf(ui->status, sizeof(ui->status),
+                 "CAPTURE ARMED - SELECT SOURCE  STAGE OR PLAY  ESC CANCELS");
+}
+
+static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                             TsInstrument *instrument)
+{
+    char error[160];
+    char overlay[80];
+    int destination;
+    int source;
+    int stopped_early;
+    size_t frames;
+    uint32_t rate;
+    int ok;
+    if (audio->capture.state != TS_CAPTURE_COMPLETED) return;
+    destination = audio->capture.destination_slot;
+    source = audio->capture.source_slot;
+    stopped_early = audio->capture.stopped_early;
+    frames = audio->capture.recorded_frames;
+    rate = audio->capture.sample_rate;
+    ok = ts_instrument_commit_capture(instrument, destination, source,
+                                      audio->capture.buffer, frames, rate,
+                                      stopped_early, error, sizeof(error));
+    if (device) SDL_LockAudioDevice(device);
+    ts_capture_free(&audio->capture);
+    if (device) SDL_UnlockAudioDevice(device);
+    ui->workbench_loop_active = 0;
+    ui->workbench_loop_persistent = 0;
+    ui->active_notes = 0u;
+    ui->mouse_note = -1;
+    if (ok) {
+        ui->bank_view_slot = -1;
+        ui->audition_source = TS_AUDITION_CURRENT;
+        snprintf(overlay, sizeof(overlay), "%s TILE %02d  %.3F S",
+                 stopped_early ? "CAPTURE STOPPED" : "CAPTURE COMPLETE",
+                 destination + 1, (double)frames / rate);
+        show_overlay(ui, overlay, 1400u);
+        if (stopped_early)
+            snprintf(ui->status, sizeof(ui->status),
+                     "CAPTURE STOPPED - %.3F S KEPT IN TILE %02d",
+                     (double)frames / rate, destination + 1);
+        else
+            snprintf(ui->status, sizeof(ui->status),
+                     "CAPTURE COMPLETE - TILE %02d %.3F S",
+                     destination + 1, (double)frames / rate);
+    } else {
+        show_overlay(ui, "CAPTURE FAILED", 1200u);
+        snprintf(ui->status, sizeof(ui->status), "CAPTURE COMMIT FAILED: %.126s", error);
+    }
+}
+
 static void begin_exit_confirmation(SDL_AudioDeviceID device, AudioState *audio,
                                     TsUiState *ui, const TsInstrument *instrument)
 {
     stop_all_force(device, audio, ui);
+    if (device) SDL_LockAudioDevice(device);
+    if (audio->capture.state != TS_CAPTURE_IDLE)
+        ts_capture_free(&audio->capture);
+    if (device) SDL_UnlockAudioDevice(device);
+    sync_capture_ui(device, audio, ui);
     ui->exit_has_unsaved = instrument_state_hash(instrument) != ui->saved_state_hash;
     ui->exit_confirm_open = 1;
     snprintf(ui->status, sizeof(ui->status), "%s",
@@ -2280,6 +2541,19 @@ static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
     char error[160];
     int clearing_active = instrument->selected_slot == slot;
     int ok;
+    if (audio->capture.state != TS_CAPTURE_IDLE &&
+        slot == audio->capture.destination_slot) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d IS THE LOCKED CAPTURE DESTINATION - ESC CANCELS",
+                 slot + 1);
+        return;
+    }
+    if (audio->capture.state == TS_CAPTURE_RECORDING &&
+        slot == audio->capture.source_slot) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d IS THE RECORDING SOURCE", slot + 1);
+        return;
+    }
     if (device) SDL_LockAudioDevice(device);
     if (audio->bank_slot == slot || clearing_active) {
         audio->playing = 0;
@@ -2304,6 +2578,11 @@ static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
 {
     char error[160];
     int ok;
+    if (audio->capture.state != TS_CAPTURE_IDLE) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISH OR CANCEL CAPTURE BEFORE CLEAR ALL");
+        return;
+    }
     if (!ui->bank_clear_armed) {
         ui->bank_clear_armed = 1;
         snprintf(ui->status, sizeof(ui->status),
@@ -3255,6 +3534,7 @@ int main(int argc, char **argv)
                      ui.config.sample_path);
     }
     ts_note_bank_init(&audio.notes);
+    ts_capture_init(&audio.capture);
     audio.bank_slot = -1;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
@@ -3772,7 +4052,10 @@ int main(int argc, char **argv)
                              "PANNED WAVEFORM VIEW" : "PAN LIMIT");
                 } else if (key == SDLK_ESCAPE) {
                     ui.bank_clear_armed = 0;
-                    if (ui.has_pitch_suggestion) {
+                    if (audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
+                        audio.capture.state == TS_CAPTURE_RECORDING) {
+                        cancel_capture(device, &audio, &ui);
+                    } else if (ui.has_pitch_suggestion) {
                         cancel_pitch_preview(device, &audio, &ui, &instrument);
                         stop_all(device, &audio, &ui);
                         snprintf(ui.status, sizeof(ui.status),
@@ -3809,7 +4092,9 @@ int main(int argc, char **argv)
                     }
                 } else if (key == SDLK_SPACE) {
                     ui.bank_clear_armed = 0;
-                    if (audio.playing || ts_note_bank_count(&audio.notes) > 0 ||
+                    if (audio.capture.state == TS_CAPTURE_RECORDING)
+                        stop_capture_early(device, &audio, &ui);
+                    else if (audio.playing || ts_note_bank_count(&audio.notes) > 0 ||
                         ui.workbench_loop_active)
                         stop_all(device, &audio, &ui);
                     else {
@@ -3821,12 +4106,19 @@ int main(int argc, char **argv)
                 } else {
                     int note = note_for_key(key);
                     if (note >= 0 && device) {
-                        if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0) {
-                            SDL_LockAudioDevice(device);
-                            ts_note_bank_clear(&audio.notes);
-                            SDL_UnlockAudioDevice(device);
+                        if (audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+                            audio.capture.staged_notes != 0u) {
+                            launch_staged_capture(device, &audio, &ui, &instrument,
+                                                  note, obtained.freq);
+                        } else {
+                            if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0) {
+                                SDL_LockAudioDevice(device);
+                                ts_note_bank_clear(&audio.notes);
+                                SDL_UnlockAudioDevice(device);
+                            }
+                            begin_note(device, &audio, &ui, &instrument,
+                                       note, obtained.freq, 0);
                         }
-                        begin_note(device, &audio, &ui, &instrument, note, obtained.freq, 0);
                     }
                 }
             } else if (event.type == SDL_KEYUP && ui.stretch_wheel_active &&
@@ -4783,7 +5075,12 @@ int main(int argc, char **argv)
                                     ts_ui_bank_slot_from_point(x, y) : -1;
                     int recipe_slot = ui.show_recipes ?
                                       ts_ui_recipe_slot_from_point(x, y) : -1;
-                    if (recipe_slot >= 0) {
+                    int capture_control = !ui.show_keyboard && !ui.show_recipes &&
+                                          !ui.show_ingredients &&
+                                          ts_ui_capture_button_from_point(x, y);
+                    if (capture_control) {
+                        capture_button(device, &audio, &ui, &instrument, obtained.freq);
+                    } else if (recipe_slot >= 0) {
                         unsigned modifiers = bank_modifiers(mod);
                         if (modifiers == 0)
                             apply_recipe_slot(device, &audio, &ui, &instrument, recipe_slot);
@@ -4800,11 +5097,31 @@ int main(int argc, char **argv)
                             int selected;
                             int activated_silence = 0;
                             int attempted_silence = 0;
+                            int capture_source_selected = 0;
+                            if (audio.capture.state == TS_CAPTURE_RECORDING) {
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "CAPTURE RECORDING - SOURCE TILE %02d IS LOCKED",
+                                         audio.capture.source_slot + 1);
+                                continue;
+                            }
+                            if (audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+                                bank_slot == audio.capture.destination_slot) {
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "TILE %02d IS THE ARMED DESTINATION - SELECT ANOTHER SOURCE",
+                                         bank_slot + 1);
+                                continue;
+                            }
                             lock_edit(device, &audio);
                             selected = ts_ui_execute_bank_action(
                                 &instrument, bank_slot, action,
                                 select_error, sizeof(select_error));
-                            if (selected && !occupied && event.button.clicks >= 2) {
+                            if (selected && occupied &&
+                                audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER)
+                                capture_source_selected = ts_capture_set_source(
+                                    &audio.capture, bank_slot,
+                                    select_error, sizeof(select_error));
+                            if (selected && !occupied && event.button.clicks >= 2 &&
+                                audio.capture.state == TS_CAPTURE_IDLE) {
                                 size_t silent_frames = clipboard_source_frames > 0 ?
                                                        clipboard_source_frames :
                                                        TS_DEFAULT_CANVAS_FRAMES;
@@ -4818,7 +5135,14 @@ int main(int argc, char **argv)
                             }
                             unlock_edit(device, &audio, &ui, &instrument);
                             if (selected) ui.has_stretch_readout = 0;
-                            if (activated_silence) {
+                            if (capture_source_selected) {
+                                ui.audition_source = TS_AUDITION_CURRENT;
+                                ui.bank_view_slot = -1;
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "SOURCE TILE %02d READY - STAGE OR PLAY TO START CAPTURE",
+                                         bank_slot + 1);
+                            }
+                            else if (activated_silence) {
                                 if (ui.workbench_loop_active &&
                                     ui.workbench_loop_persistent) {
                                     ui.audition_source = TS_AUDITION_CURRENT;
@@ -4890,7 +5214,17 @@ int main(int argc, char **argv)
                                      "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL");
                         }
                     } else if (ui.show_keyboard && note >= 0 && device) {
-                        if (mod & KMOD_SHIFT) {
+                        if (audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+                            (mod & KMOD_SHIFT)) {
+                            ui.mouse_note = -1;
+                            stage_capture_note(device, &audio, &ui, note);
+                        } else if (audio.capture.state ==
+                                   TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+                                   audio.capture.staged_notes != 0u) {
+                            ui.mouse_note = -1;
+                            launch_staged_capture(device, &audio, &ui, &instrument,
+                                                  note, obtained.freq);
+                        } else if (mod & KMOD_SHIFT) {
                             ui.mouse_note = -1;
                             begin_note(device, &audio, &ui, &instrument,
                                        note, obtained.freq, 1);
@@ -5055,6 +5389,12 @@ int main(int argc, char **argv)
             }
         }
 
+        if (audio.capture.state == TS_CAPTURE_COMPLETED)
+            finalize_capture(device, &audio, &ui, &instrument);
+        sync_capture_ui(device, &audio, &ui);
+        if (ui.overlay[0] != '\0' &&
+            (Sint32)(SDL_GetTicks() - ui.overlay_until_ms) >= 0)
+            ui.overlay[0] = '\0';
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         if (device) SDL_LockAudioDevice(device);
         {
@@ -5089,6 +5429,7 @@ int main(int argc, char **argv)
     if (ui.canvas_gesture.active)
         end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
     if (device) SDL_CloseAudioDevice(device);
+    ts_capture_free(&audio.capture);
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);
     ts_sample_free(&clipboard);

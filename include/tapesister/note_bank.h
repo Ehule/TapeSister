@@ -55,6 +55,13 @@ TsNoteStartResult ts_note_bank_start_tuned_at(TsNoteBank *bank,
                                               TsAuditionSource source, int note,
                                               int keyboard_base_note,
                                               int latched, int output_rate);
+int ts_note_bank_start_staged_chord(TsNoteBank *bank,
+                                    const TsInstrument *instrument,
+                                    const TsTuning *tuning,
+                                    TsAuditionSource source,
+                                    uint32_t staged_notes,
+                                    int keyboard_base_note,
+                                    int output_rate);
 void ts_note_bank_release(TsNoteBank *bank, int note);
 void ts_note_bank_sync(TsNoteBank *bank, const TsInstrument *instrument, int output_rate);
 void ts_note_bank_sync_tuned(TsNoteBank *bank, const TsInstrument *instrument,
