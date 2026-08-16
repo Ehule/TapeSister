@@ -140,19 +140,54 @@ static void text(TsFramebuffer *fb, int x, int y, const char *value, uint32_t co
     }
 }
 
-static void frame(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t fill, uint32_t light)
+static uint32_t contrast_color(uint32_t base, int contrast, float scale)
+{
+    float exponent;
+    float multiplier;
+    int red;
+    int green;
+    int blue;
+    if (contrast < 1) contrast = 1;
+    if (contrast > 100) contrast = 100;
+    exponent = (float)contrast / 40.0f;
+    multiplier = powf(scale, exponent);
+    red = (int)((float)((base >> 16) & 0xffu) * multiplier + 0.5f);
+    green = (int)((float)((base >> 8) & 0xffu) * multiplier + 0.5f);
+    blue = (int)((float)(base & 0xffu) * multiplier + 0.5f);
+    if (red > 255) red = 255;
+    if (green > 255) green = 255;
+    if (blue > 255) blue = 255;
+    return RGB(red, green, blue);
+}
+
+static void bevel_frame(TsFramebuffer *fb, int x, int y, int w, int h,
+                        uint32_t fill, uint32_t light, uint32_t dark)
 {
     rect(fb, x, y, w, h, fill);
     rect(fb, x, y, w, 2, light);
     rect(fb, x, y, 2, h, light);
-    rect(fb, x, y + h - 2, w, 2, RGB(14, 14, 14));
-    rect(fb, x + w - 2, y, 2, h, RGB(14, 14, 14));
+    rect(fb, x, y + h - 2, w, 2, dark);
+    rect(fb, x + w - 2, y, 2, h, dark);
+}
+
+static void frame(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t fill, uint32_t light)
+{
+    uint32_t desktop_light = contrast_color(
+        PAL_DESKTOP, active_palette()->desktop_contrast, 1.5f);
+    uint32_t desktop_dark = contrast_color(
+        PAL_DESKTOP, active_palette()->desktop_contrast, 0.5f);
+    bevel_frame(fb, x, y, w, h, fill, light != 0 ? light : desktop_light,
+                desktop_dark);
 }
 
 static void button(TsFramebuffer *fb, int x, int y, int w, const char *label, int active)
 {
     uint32_t fill = active ? PAL_BLOCK : PAL_BUTTON;
-    frame(fb, x, y, w, 23, fill, active ? PAL_MOUSE : RGB(140, 133, 140));
+    uint32_t light = contrast_color(
+        PAL_BUTTON, active_palette()->buttons_contrast, 1.5f);
+    uint32_t dark = contrast_color(
+        PAL_BUTTON, active_palette()->buttons_contrast, 0.5f);
+    bevel_frame(fb, x, y, w, 23, fill, light, dark);
     text(fb, x + 6, y + 8, label, active ? PAL_BLOCK_TEXT : RGB(245, 242, 235), 1);
 }
 
@@ -339,8 +374,17 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
                  (TsPaletteColor)ui->palette_entry, component));
         text(fb, 378, y + 13, value, component == ui->palette_channel ? PAL_MOUSE : PAL_EFFECT, 1);
     }
-    rect(fb, 456, 226, 132, 82, selected);
-    frame(fb, 456, 226, 132, 82, selected, PAL_MOUSE);
+    frame(fb, 456, 226, 132, 50, selected, PAL_MOUSE);
+    snprintf(value, sizeof(value), "DESKTOP %d", ui->palette.desktop_contrast);
+    slider(fb, 456, 282, 132, value,
+           (float)(ui->palette.desktop_contrast - 1) / 99.0f, PAL_DESKTOP);
+    if (ui->palette_channel == 3)
+        rect(fb, 452, 291, 3, 14, PAL_MOUSE);
+    snprintf(value, sizeof(value), "BUTTON %d", ui->palette.buttons_contrast);
+    slider(fb, 456, 309, 132, value,
+           (float)(ui->palette.buttons_contrast - 1) / 99.0f, PAL_BUTTON);
+    if (ui->palette_channel == 4)
+        rect(fb, 452, 318, 3, 14, PAL_MOUSE);
     button(fb, 44, 339, 82, "IMPORT TH", 0);
     button(fb, 132, 339, 76, "SAVE TS", 0);
     button(fb, 214, 339, 88, "EXPORT TH", 0);
@@ -892,12 +936,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else {
         text(fb, 11, 318,
              ui->fx_page == TS_FX_EDIT ?
-             "PASTE EXACT RESIZES  FIT STRETCHES INTO TARGET  CTRL+C/X/V" :
+             "PASTE REPLACES TARGET  NO RANGE PASTES IN PLACE  FIT STRETCHES" :
              ui->fx_page == TS_FX_FAMILY && instrument->has_selection ?
              "CREATE/VARY STAMP FM INSIDE SELECTION  OUTSIDE STAYS UNCHANGED" :
              ui->fx_page == TS_FX_FAMILY ?
              "CREATE FILLS ACTIVE TILE  VARY REPLACES OR CHAINS TO NEXT EMPTY" :
-             "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  CTRL+SHIFT CLONE  RMB NAME  SHIFT+RMB CLEAR",
+             "CLICK PLAY  DOUBLE EMPTY SILENCE  SHIFT FULL  ALT LOOP  CTRL SEL  CTRL+SHIFT CLONE",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
             const TsBankSlot *slot = &instrument->bank[i];

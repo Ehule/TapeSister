@@ -318,15 +318,63 @@ int main(void)
         CHECK(editor.current.frames == original_frames - 300);
         CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
 
-        /* With no target range, Paste uses the clipboard's original position. */
+        /* With no target range, Paste overwrites at the original position. */
+        CHECK(ts_sample_clone(&stamp_before, &editor.current, error, sizeof(error)));
         ts_instrument_clear_selection(&editor);
         CHECK(ts_instrument_paste(&editor, &clipboard, origin, 0,
                                   error, sizeof(error)));
-        CHECK(editor.current.frames == original_frames + clipboard.frames);
+        CHECK(editor.current.frames == original_frames);
         CHECK(editor.selection_first == origin &&
               editor.selection_last == origin + clipboard.frames);
+        CHECK(memcmp(editor.current.data + origin, clipboard.data,
+                     clipboard.frames * sizeof(*clipboard.data)) == 0);
+        CHECK(samples_equal_outside(&editor.current, &stamp_before, origin,
+                                    origin + clipboard.frames));
         CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
         CHECK(ts_sample_hash(&editor.current) == original_hash);
+
+        /* An empty tile can become a silent, timeline-preserving paste canvas. */
+        CHECK(ts_instrument_select_bank(&editor, 2, error, sizeof(error)));
+        CHECK(!editor.bank[2].occupied);
+        CHECK(ts_instrument_activate_silence(&editor, original_frames,
+                                             clipboard.sample_rate,
+                                             error, sizeof(error)));
+        CHECK(editor.bank[2].occupied && editor.current.frames == original_frames &&
+              editor.current.sample_rate == clipboard.sample_rate &&
+              strcmp(editor.current.name, "SILENCE") == 0);
+        for (size_t frame = 0; frame < editor.current.frames; ++frame)
+            CHECK(editor.current.data[frame] == 0.0f);
+        original_hash = ts_sample_hash(&editor.current);
+        CHECK(ts_instrument_paste(&editor, &clipboard, origin, 0,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames);
+        CHECK(memcmp(editor.current.data + origin, clipboard.data,
+                     clipboard.frames * sizeof(*clipboard.data)) == 0);
+        create_hash = ts_sample_hash(&editor.current);
+        CHECK(ts_instrument_save_recipe(&editor, "test-silent-paste.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&reopened, "test-silent-paste.tsr",
+                                        error, sizeof(error)));
+        CHECK(reopened.selected_slot == 2 &&
+              ts_sample_hash(&reopened.current) == create_hash);
+        CHECK(ts_instrument_undo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == original_hash);
+        CHECK(ts_instrument_redo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == create_hash);
+        remove("test-silent-paste.tsr");
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        ts_instrument_clear_selection(&editor);
+        CHECK(ts_instrument_paste(&editor, &clipboard, original_frames + 100u, 0,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames + 100u + clipboard.frames);
+        for (size_t frame = original_frames; frame < original_frames + 100u; ++frame)
+            CHECK(editor.current.data[frame] == 0.0f);
+        CHECK(memcmp(editor.current.data + original_frames + 100u, clipboard.data,
+                     clipboard.frames * sizeof(*clipboard.data)) == 0);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames &&
+              ts_sample_hash(&editor.current) == original_hash);
+        CHECK(ts_instrument_select_bank(&editor, 0, error, sizeof(error)));
 
         /* Create and Vary sculpt only the active selection and survive TSR16. */
         ts_instrument_set_selection(&editor, 1000, 1500);
@@ -2056,6 +2104,8 @@ int main(void)
         ui.tape_dragging = 0;
     }
     ui.show_keyboard = 0;
+    CHECK(ts_instrument_bank_capture(&imported, 1, TS_BANK_CAPTURE_CURRENT,
+                                     error, sizeof(error)));
     ts_ui_render(&fb, &ui, &imported);
     CHECK(ts_ui_bank_slot_from_point(46, 341) == 0);
     CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] != 0xff1c1c1cu);
@@ -2063,8 +2113,18 @@ int main(void)
         int selected = imported.selected_slot;
         int outline_x = 8 + (selected % 8) * 77;
         int outline_y = 328 + (selected / 8) * 25;
+        uint32_t low_contrast;
+        uint32_t high_contrast;
         ui.palette.colors[TS_PALETTE_MOUSE] = 0xff123456u;
+        ui.palette.buttons_contrast = 1;
         ts_ui_render(&fb, &ui, &imported);
+        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff123456u);
+        low_contrast = fb.pixels[330 * TS_UI_WIDTH + 100];
+        CHECK(low_contrast != 0xff123456u);
+        ui.palette.buttons_contrast = 100;
+        ts_ui_render(&fb, &ui, &imported);
+        high_contrast = fb.pixels[330 * TS_UI_WIDTH + 100];
+        CHECK(high_contrast != low_contrast && high_contrast != 0xff123456u);
         CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff123456u);
         ts_palette_default(&ui.palette);
     }

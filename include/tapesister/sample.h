@@ -474,6 +474,9 @@ int ts_instrument_select_bank(TsInstrument *instrument, int slot,
                               char *error, size_t error_size);
 int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
                                   char *error, size_t error_size);
+int ts_instrument_activate_silence(TsInstrument *instrument, size_t frames,
+                                   uint32_t sample_rate,
+                                   char *error, size_t error_size);
 int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
                                 int *destination_slot,
                                 char *error, size_t error_size);

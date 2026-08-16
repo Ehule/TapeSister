@@ -892,7 +892,8 @@ static void apply_sample_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiS
 
 static void copy_selection_to_clipboard(SDL_AudioDeviceID device, AudioState *audio,
                                         TsUiState *ui, const TsInstrument *instrument,
-                                        TsSample *clipboard, size_t *origin_first)
+                                        TsSample *clipboard, size_t *origin_first,
+                                        size_t *source_frames, uint32_t *source_rate)
 {
     char error[160];
     int ok;
@@ -900,28 +901,35 @@ static void copy_selection_to_clipboard(SDL_AudioDeviceID device, AudioState *au
     ok = ts_instrument_copy_selection(instrument, clipboard, origin_first,
                                       error, sizeof(error));
     if (device) SDL_UnlockAudioDevice(device);
-    if (ok)
+    if (ok) {
+        if (source_frames != NULL) *source_frames = instrument->current.frames;
+        if (source_rate != NULL) *source_rate = instrument->current.sample_rate;
         snprintf(ui->status, sizeof(ui->status),
                  "COPIED %zu FRAMES FROM TILE %02d",
                  clipboard->frames, instrument->selected_slot + 1);
-    else snprintf(ui->status, sizeof(ui->status), "COPY FAILED: %.137s", error);
+    } else snprintf(ui->status, sizeof(ui->status), "COPY FAILED: %.137s", error);
 }
 
 static void cut_selection_to_clipboard(SDL_AudioDeviceID device, AudioState *audio,
                                        TsUiState *ui, TsInstrument *instrument,
-                                       TsSample *clipboard, size_t *origin_first)
+                                       TsSample *clipboard, size_t *origin_first,
+                                       size_t *source_frames, uint32_t *source_rate)
 {
     char error[160];
     int ok;
+    size_t copied_source_frames = instrument->current.frames;
+    uint32_t copied_source_rate = instrument->current.sample_rate;
     lock_edit(device, audio);
     ok = ts_instrument_cut_selection(instrument, clipboard, origin_first,
                                      error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok)
+    if (ok) {
+        if (source_frames != NULL) *source_frames = copied_source_frames;
+        if (source_rate != NULL) *source_rate = copied_source_rate;
         snprintf(ui->status, sizeof(ui->status),
                  "CUT %zu FRAMES FROM TILE %02d - UNDO AVAILABLE",
                  clipboard->frames, instrument->selected_slot + 1);
-    else snprintf(ui->status, sizeof(ui->status), "CUT FAILED: %.138s", error);
+    } else snprintf(ui->status, sizeof(ui->status), "CUT FAILED: %.138s", error);
 }
 
 static void paste_from_clipboard(SDL_AudioDeviceID device, AudioState *audio,
@@ -1627,12 +1635,23 @@ static void palette_save(TsUiState *ui, int tapehead)
 
 static void palette_adjust(TsUiState *ui, int amount)
 {
-    int value = ts_palette_component(&ui->palette,
-                (TsPaletteColor)ui->palette_entry, ui->palette_channel) + amount;
-    if (value < 0) value = 0;
-    if (value > 255) value = 255;
-    ts_palette_set_component(&ui->palette, (TsPaletteColor)ui->palette_entry,
-                             ui->palette_channel, (uint8_t)value);
+    int value;
+    if (ui->palette_channel == 3 || ui->palette_channel == 4) {
+        int *contrast = ui->palette_channel == 3 ?
+                        &ui->palette.desktop_contrast :
+                        &ui->palette.buttons_contrast;
+        value = *contrast + amount;
+        if (value < 1) value = 1;
+        if (value > 100) value = 100;
+        *contrast = value;
+    } else {
+        value = ts_palette_component(&ui->palette,
+                    (TsPaletteColor)ui->palette_entry, ui->palette_channel) + amount;
+        if (value < 0) value = 0;
+        if (value > 255) value = 255;
+        ts_palette_set_component(&ui->palette, (TsPaletteColor)ui->palette_entry,
+                                 ui->palette_channel, (uint8_t)value);
+    }
 }
 
 static void cancel_config(TsUiState *ui)
@@ -2153,6 +2172,8 @@ int main(int argc, char **argv)
     TsFramebuffer framebuffer;
     TsSample clipboard;
     size_t clipboard_origin_first = 0;
+    size_t clipboard_source_frames = 0;
+    uint32_t clipboard_source_rate = 0;
     AudioState audio = {0};
     int running = 1;
 
@@ -2308,7 +2329,18 @@ int main(int argc, char **argv)
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
                 ui.bank_clear_armed = 0;
-                if (ui.tear_gesture.active && key == SDLK_ESCAPE) {
+                if ((mod & KMOD_ALT) &&
+                    (key == SDLK_RETURN || key == SDLK_KP_ENTER)) {
+                    Uint32 flags = SDL_GetWindowFlags(window);
+                    int fullscreen = (flags & SDL_WINDOW_FULLSCREEN) != 0;
+                    if (SDL_SetWindowFullscreen(
+                            window, fullscreen ? 0u : SDL_WINDOW_FULLSCREEN_DESKTOP) == 0)
+                        snprintf(ui.status, sizeof(ui.status), "%s - ALT+ENTER TO TOGGLE",
+                                 fullscreen ? "WINDOWED" : "FULLSCREEN");
+                    else
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "FULLSCREEN TOGGLE FAILED: %.119s", SDL_GetError());
+                } else if (ui.tear_gesture.active && key == SDLK_ESCAPE) {
                     end_tear_gesture(device, &audio, &ui, &instrument, 1);
                 } else if (ui.tear_gesture.active) {
                     snprintf(ui.status, sizeof(ui.status), "FINISH OR CANCEL THE TEAR GESTURE FIRST");
@@ -2335,9 +2367,9 @@ int main(int argc, char **argv)
                     else if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_d)
                         finish_palette(&ui, 0);
                     else if (key == SDLK_TAB || key == SDLK_DOWN)
-                        ui.palette_channel = (ui.palette_channel + 1) % 3;
+                        ui.palette_channel = (ui.palette_channel + 1) % 5;
                     else if (key == SDLK_UP)
-                        ui.palette_channel = (ui.palette_channel + 2) % 3;
+                        ui.palette_channel = (ui.palette_channel + 4) % 5;
                     else if (key == SDLK_LEFT) palette_adjust(&ui, -step);
                     else if (key == SDLK_RIGHT) palette_adjust(&ui, step);
                     else if (key == SDLK_PAGEUP)
@@ -2465,10 +2497,14 @@ int main(int argc, char **argv)
                     }
                 } else if ((mod & KMOD_CTRL) && key == SDLK_c) {
                     copy_selection_to_clipboard(device, &audio, &ui, &instrument,
-                                                &clipboard, &clipboard_origin_first);
+                                                &clipboard, &clipboard_origin_first,
+                                                &clipboard_source_frames,
+                                                &clipboard_source_rate);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_x) {
                     cut_selection_to_clipboard(device, &audio, &ui, &instrument,
-                                               &clipboard, &clipboard_origin_first);
+                                               &clipboard, &clipboard_origin_first,
+                                               &clipboard_source_frames,
+                                               &clipboard_source_rate);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_v) {
                     paste_from_clipboard(device, &audio, &ui, &instrument,
                                          &clipboard, clipboard_origin_first,
@@ -2838,6 +2874,14 @@ int main(int argc, char **argv)
                         ui.palette_channel = component;
                         ts_palette_set_component(&ui.palette,
                             (TsPaletteColor)ui.palette_entry, component, (uint8_t)value);
+                    } else if (x >= 456 && x < 588 &&
+                               ((y >= 282 && y < 305) ||
+                                (y >= 309 && y < 332))) {
+                        int channel = y < 305 ? 3 : 4;
+                        int value = 1 + (x - 456) * 99 / 131;
+                        ui.palette_channel = channel;
+                        if (channel == 3) ui.palette.desktop_contrast = value;
+                        else ui.palette.buttons_contrast = value;
                     } else if (y >= 339 && y < 362 && x >= 44 && x < 126)
                         palette_import(&ui);
                     else if (y >= 339 && y < 362 && x >= 132 && x < 208)
@@ -3100,10 +3144,14 @@ int main(int argc, char **argv)
                     if (ui.fx_page == TS_FX_EDIT) {
                         if (x >= 10 && x < 65)
                             copy_selection_to_clipboard(device, &audio, &ui, &instrument,
-                                                        &clipboard, &clipboard_origin_first);
+                                                        &clipboard, &clipboard_origin_first,
+                                                        &clipboard_source_frames,
+                                                        &clipboard_source_rate);
                         else if (x >= 69 && x < 116)
                             cut_selection_to_clipboard(device, &audio, &ui, &instrument,
-                                                       &clipboard, &clipboard_origin_first);
+                                                       &clipboard, &clipboard_origin_first,
+                                                       &clipboard_source_frames,
+                                                       &clipboard_source_rate);
                         else if (x >= 120 && x < 181)
                             paste_from_clipboard(device, &audio, &ui, &instrument,
                                                  &clipboard, clipboard_origin_first, 0);
@@ -3316,18 +3364,52 @@ int main(int argc, char **argv)
                             char select_error[160];
                             int occupied = instrument.bank[bank_slot].occupied;
                             int selected;
+                            int activated_silence = 0;
+                            int attempted_silence = 0;
                             lock_edit(device, &audio);
                             selected = ts_ui_execute_bank_action(
                                 &instrument, bank_slot, action,
                                 select_error, sizeof(select_error));
+                            if (selected && !occupied && event.button.clicks >= 2) {
+                                size_t silent_frames = clipboard_source_frames > 0 ?
+                                                       clipboard_source_frames : 44100u;
+                                uint32_t silent_rate = clipboard_source_rate > 0 ?
+                                                       clipboard_source_rate : 44100u;
+                                attempted_silence = 1;
+                                activated_silence = ts_instrument_activate_silence(
+                                    &instrument, silent_frames, silent_rate,
+                                    select_error, sizeof(select_error));
+                            }
                             unlock_edit(device, &audio, &ui, &instrument);
-                            if (selected && occupied)
-                                begin_bank_audition(device, &audio, &ui, &instrument,
-                                                    bank_slot, obtained.freq);
-                            else if (selected)
+                            if (activated_silence) {
+                                stop_all(device, &audio, &ui);
                                 snprintf(ui.status, sizeof(ui.status),
-                                         "BANK %02d EMPTY DESTINATION SELECTED - CREATE OR LOAD",
+                                         "BANK %02d SILENT CANVAS - %zu FRAMES AT %u HZ",
+                                         bank_slot + 1, instrument.current.frames,
+                                         instrument.current.sample_rate);
+                            }
+                            else if (selected && occupied) {
+                                if (ui.workbench_loop_active)
+                                    stop_all(device, &audio, &ui);
+                                /* Keep the selected tile in Current-edit mode. Bank-preview
+                                   mode intentionally makes the waveform read-only. */
+                                ui.audition_source = TS_AUDITION_CURRENT;
+                                begin_audition(device, &audio, &ui, &instrument,
+                                               instrument.has_loop ? TS_AUDITION_LOOP :
+                                               TS_AUDITION_ALL,
+                                               1.0, obtained.freq);
+                            }
+                            else if (attempted_silence) {
+                                stop_all(device, &audio, &ui);
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "SILENT TILE FAILED: %.132s", select_error);
+                            }
+                            else if (selected) {
+                                stop_all(device, &audio, &ui);
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "BANK %02d EMPTY - DOUBLE CLICK FOR SILENCE",
                                          bank_slot + 1);
+                            }
                             else
                                 snprintf(ui.status, sizeof(ui.status),
                                          "BANK %02d: %.100s - ACTIVE TILE UNCHANGED",

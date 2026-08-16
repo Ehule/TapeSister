@@ -1598,12 +1598,16 @@ static int patch_range(TsSample *sample, const TsSample *patch,
     size_t target_frames;
     size_t patch_frames;
     size_t output_frames;
+    size_t gap_frames = 0;
     if (sample == NULL || sample->data == NULL || patch == NULL || patch->data == NULL ||
         patch->frames == 0 || patch->sample_rate == 0 || sample->sample_rate == 0 ||
-        first > last || last > sample->frames || (fit && first == last)) {
+        first > last ||
+        (last > sample->frames && (fit || first != last || first < sample->frames)) ||
+        (fit && first == last)) {
         set_error(error, error_size, "Invalid Paste range");
         return 0;
     }
+    if (first > sample->frames) gap_frames = first - sample->frames;
     target_frames = last - first;
     if (fit) patch_frames = target_frames;
     else {
@@ -1616,12 +1620,14 @@ static int patch_range(TsSample *sample, const TsSample *patch,
         patch_frames = (size_t)llround(converted);
         if (patch_frames == 0) patch_frames = 1;
     }
-    if (sample->frames - target_frames > SIZE_MAX - patch_frames ||
-        sample->frames - target_frames + patch_frames > SIZE_MAX / sizeof(float)) {
+    if (sample->frames > SIZE_MAX - gap_frames ||
+        sample->frames + gap_frames > SIZE_MAX - patch_frames ||
+        sample->frames + gap_frames - target_frames + patch_frames >
+        SIZE_MAX / sizeof(float)) {
         set_error(error, error_size, "Pasted tile would be too large");
         return 0;
     }
-    output_frames = sample->frames - target_frames + patch_frames;
+    output_frames = sample->frames + gap_frames - target_frames + patch_frames;
     resampled = (float *)malloc(patch_frames * sizeof(*resampled));
     output = (float *)malloc(output_frames * sizeof(*output));
     if (resampled == NULL || output == NULL) {
@@ -1639,7 +1645,11 @@ static int patch_range(TsSample *sample, const TsSample *patch,
         float b = at + 1u < patch->frames ? patch->data[at + 1u] : a;
         resampled[frame] = a + (b - a) * (float)fraction;
     }
-    if (first > 0) memcpy(output, sample->data, first * sizeof(*output));
+    if (sample->frames > 0)
+        memcpy(output, sample->data,
+               (first < sample->frames ? first : sample->frames) * sizeof(*output));
+    if (gap_frames > 0)
+        memset(output + sample->frames, 0, gap_frames * sizeof(*output));
     memcpy(output + first, resampled, patch_frames * sizeof(*output));
     if (last < sample->frames)
         memcpy(output + first + patch_frames, sample->data + last,
@@ -3041,6 +3051,54 @@ int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
     return ts_instrument_select_bank(instrument, slot, error, error_size);
 }
 
+int ts_instrument_activate_silence(TsInstrument *instrument, size_t frames,
+                                   uint32_t sample_rate,
+                                   char *error, size_t error_size)
+{
+    TsBankSlot made;
+    int slot;
+    if (instrument == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Select an empty bank tile first");
+        return 0;
+    }
+    slot = instrument->selected_slot;
+    if (instrument->bank[slot].occupied) {
+        set_error(error, error_size, "Silent activation needs an empty selected tile");
+        return 0;
+    }
+    if (frames == 0 || sample_rate == 0 || frames > SIZE_MAX / sizeof(float)) {
+        set_error(error, error_size, "Invalid silent tile duration");
+        return 0;
+    }
+    bank_slot_init(&made);
+    made.sample.data = (float *)calloc(frames, sizeof(*made.sample.data));
+    if (made.sample.data == NULL) {
+        set_error(error, error_size, "Out of memory creating silent tile");
+        return 0;
+    }
+    made.sample.frames = frames;
+    made.sample.sample_rate = sample_rate;
+    snprintf(made.sample.name, sizeof(made.sample.name), "SILENCE");
+    if (!ts_sample_clone(&made.edit_parent, &made.sample, error, error_size)) {
+        bank_slot_free(&made);
+        return 0;
+    }
+    made.occupied = 1;
+    made.capture_kind = TS_BANK_CAPTURE_CURRENT;
+    made.relation = TS_FAMILY_CAPTURED;
+    made.parent_slot = -1;
+    made.has_generator = 0;
+    made.lineage_seed = (uint32_t)ts_sample_hash(&made.sample);
+    made.lineage_locks = TS_FAMILY_LOCK_ALL;
+    made.lineage_mutation = 0.0f;
+    bank_slot_free(&instrument->bank[slot]);
+    instrument->bank[slot] = made;
+    instrument->source_kind = TS_SOURCE_IMPORTED;
+    memset(&instrument->generator, 0, sizeof(instrument->generator));
+    return ts_instrument_select_bank(instrument, slot, error, error_size);
+}
+
 int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
                                 char *error, size_t error_size)
 {
@@ -3102,6 +3160,12 @@ static void update_snapshot_after_replace(TsEditSnapshot *target,
     target->has_selection = select_inserted && inserted > 0;
     target->selection_first = target->has_selection ? first : 0;
     target->selection_last = target->has_selection ? first + inserted : 0;
+    if (target->has_selection &&
+        (target->selection_first < target->view_first ||
+         target->selection_last > target->view_last)) {
+        target->view_first = 0;
+        target->view_last = frames;
+    }
 }
 
 static int append_audio_patch(TsInstrument *instrument, const TsSample *sample,
@@ -3269,8 +3333,10 @@ int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
     size_t first;
     size_t last;
     size_t inserted;
+    size_t output_frames;
+    int has_target_selection;
     if (instrument == NULL || clipboard == NULL || clipboard->data == NULL ||
-        clipboard->frames == 0) {
+        clipboard->frames == 0 || clipboard->sample_rate == 0) {
         set_error(error, error_size, "Clipboard is empty");
         return 0;
     }
@@ -3287,11 +3353,13 @@ int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
         set_error(error, error_size, "Post-edit history is full");
         return 0;
     }
-    if (instrument->has_selection) {
+    has_target_selection = instrument->has_selection &&
+                           instrument->selection_last > instrument->selection_first;
+    if (has_target_selection) {
         first = instrument->selection_first;
         last = instrument->selection_last;
     } else {
-        first = origin_first < instrument->current.frames ? origin_first : instrument->current.frames;
+        first = origin_first;
         last = first;
     }
     if (fit_selection) inserted = last - first;
@@ -3300,6 +3368,24 @@ int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
                    (double)instrument->current.sample_rate /
                    (double)clipboard->sample_rate);
         if (inserted == 0) inserted = 1;
+    }
+    if (inserted > SIZE_MAX - first) {
+        set_error(error, error_size, "Pasted tile would be too large");
+        return 0;
+    }
+    if (!has_target_selection) {
+        if (first <= instrument->current.frames) {
+            size_t paste_end = first + inserted;
+            last = paste_end < instrument->current.frames ? paste_end :
+                   instrument->current.frames;
+            output_frames = instrument->current.frames - (last - first) + inserted;
+        } else output_frames = first + inserted;
+    } else {
+        if (instrument->current.frames - (last - first) > SIZE_MAX - inserted) {
+            set_error(error, error_size, "Pasted tile would be too large");
+            return 0;
+        }
+        output_frames = instrument->current.frames - (last - first) + inserted;
     }
     if (!append_audio_patch(instrument, clipboard, NULL, &patch_index,
                             error, error_size)) return 0;
@@ -3310,8 +3396,7 @@ int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
     operation.last = last;
     operation.patch_index = patch_index;
     target.post_edits[target.post_edit_count++] = operation;
-    update_snapshot_after_replace(&target, first, last, inserted,
-        instrument->current.frames - (last - first) + inserted, 1);
+    update_snapshot_after_replace(&target, first, last, inserted, output_frames, 1);
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) {
         discard_last_audio_patch(instrument, patch_index);
