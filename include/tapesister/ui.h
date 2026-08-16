@@ -42,6 +42,7 @@ typedef enum {
     TS_UI_BANK_ACTION_CAPTURE_CURRENT,
     TS_UI_BANK_ACTION_CAPTURE_LOOP,
     TS_UI_BANK_ACTION_CAPTURE_SELECTION,
+    TS_UI_BANK_ACTION_CLONE,
     TS_UI_BANK_ACTION_RENAME,
     TS_UI_BANK_ACTION_CLEAR,
     TS_UI_BANK_ACTION_INVALID
@@ -55,16 +56,25 @@ typedef struct {
     uint32_t active_notes;
     int mouse_note;
     int selecting;
-    int commit_armed;
+    int bank_clear_armed;
     int playback_active;
+    int startup_welcome_installed;
+    int startup_welcome_autoplay;
+    int startup_welcome_playback_requested;
     int text_cursor_visible;
     int show_keyboard;
     int show_recipes;
+    int show_ingredients;
+    int workbench_loop_active;
     int bank_view_slot;
+    int load_bank_slot;
     int playhead_bank_slot;
     int renaming_bank_slot;
     int renaming_recipe_slot;
     int export_choice_open;
+    int exit_confirm_open;
+    int exit_has_unsaved;
+    uint64_t saved_state_hash;
     int config_open;
     TsConfigField config_field;
     size_t config_cursor;
@@ -82,6 +92,21 @@ typedef struct {
     TsRecipeBank recipes;
     TsTuning pitch_suggestion;
     float pitch_confidence;
+    float warp_amount;
+    TsWarpGesture warp_gesture;
+    uint32_t warp_last_audition_ms;
+    int warp_dragging;
+    int warp_wheel_active;
+    float smear_amount;
+    TsSmearGesture smear_gesture;
+    uint32_t smear_last_audition_ms;
+    int smear_dragging;
+    int smear_wheel_active;
+    float tear_amount;
+    TsTearGesture tear_gesture;
+    uint32_t tear_last_audition_ms;
+    int tear_dragging;
+    int tear_wheel_active;
     int has_pitch_suggestion;
     size_t selection_anchor;
     size_t tape_source_first;
@@ -100,6 +125,8 @@ typedef struct {
 } TsUiState;
 
 void ts_ui_init(TsUiState *ui);
+int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
+                                  int audio_ready);
 const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
                                       const TsInstrument *instrument);
 const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
@@ -110,7 +137,12 @@ int ts_ui_key_from_point(int x, int y);
 int ts_ui_bank_slot_from_point(int x, int y);
 int ts_ui_recipe_slot_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
+int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
+                              TsUiBankAction action,
+                              char *error, size_t error_size);
 int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind);
+void ts_ui_cycle_panel(TsUiState *ui);
+int ts_ui_transform_auto_audition_allowed(const TsUiState *ui);
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames);
 int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
                            float anchor_ratio, float scale);

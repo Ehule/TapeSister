@@ -35,7 +35,16 @@ static void rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t color)
         for (int px = x; px < x + w; ++px) fb->pixels[py * TS_UI_WIDTH + px] = color;
 }
 
-static void line(TsFramebuffer *fb, int x0, int y0, int x1, int y1, uint32_t color)
+static void wave_rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t color)
+{
+    if (x < TS_WAVE_X) { w -= TS_WAVE_X - x; x = TS_WAVE_X; }
+    if (y < TS_WAVE_Y) { h -= TS_WAVE_Y - y; y = TS_WAVE_Y; }
+    if (x + w > TS_WAVE_X + TS_WAVE_W) w = TS_WAVE_X + TS_WAVE_W - x;
+    if (y + h > TS_WAVE_Y + TS_WAVE_H) h = TS_WAVE_Y + TS_WAVE_H - y;
+    if (w > 0 && h > 0) rect(fb, x, y, w, h, color);
+}
+
+static void wave_line(TsFramebuffer *fb, int x0, int y0, int x1, int y1, uint32_t color)
 {
     int dx = x1 > x0 ? x1 - x0 : x0 - x1;
     int sx = x0 < x1 ? 1 : -1;
@@ -43,12 +52,15 @@ static void line(TsFramebuffer *fb, int x0, int y0, int x1, int y1, uint32_t col
     int sy = y0 < y1 ? 1 : -1;
     int error = dx + dy;
     for (;;) {
-        if (x0 >= 0 && x0 < TS_UI_WIDTH && y0 >= 0 && y0 < TS_UI_HEIGHT)
+        if (x0 >= TS_WAVE_X && x0 < TS_WAVE_X + TS_WAVE_W &&
+            y0 >= TS_WAVE_Y && y0 < TS_WAVE_Y + TS_WAVE_H)
             fb->pixels[y0 * TS_UI_WIDTH + x0] = color;
         if (x0 == x1 && y0 == y1) break;
-        int twice = error * 2;
-        if (twice >= dy) { error += dy; x0 += sx; }
-        if (twice <= dx) { error += dx; y0 += sy; }
+        {
+            int twice = error * 2;
+            if (twice >= dy) { error += dy; x0 += sx; }
+            if (twice <= dx) { error += dx; y0 += sy; }
+        }
     }
 }
 
@@ -270,11 +282,24 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
          PAL_VOLUME, 1);
 }
 
+int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
+                                  int audio_ready)
+{
+    if (ui == NULL || !splash_complete || ui->startup_welcome_playback_requested)
+        return 0;
+    ui->startup_welcome_playback_requested = 1;
+    return ui->startup_welcome_installed && ui->startup_welcome_autoplay && audio_ready;
+}
+
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
+    ts_warp_gesture_init(&ui->warp_gesture);
+    ts_smear_gesture_init(&ui->smear_gesture);
+    ts_tear_gesture_init(&ui->tear_gesture);
     ui->mouse_note = -1;
     ui->bank_view_slot = -1;
+    ui->load_bank_slot = -1;
     ui->playhead_bank_slot = -1;
     ui->renaming_bank_slot = -1;
     ui->renaming_recipe_slot = -1;
@@ -284,7 +309,28 @@ void ts_ui_init(TsUiState *ui)
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
     ts_recipe_bank_init(&ui->recipes);
-    snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR CREATE A SOURCE");
+    snprintf(ui->status, sizeof(ui->status), "READY - SELECT A TILE, LOAD, OR CREATE");
+}
+
+void ts_ui_cycle_panel(TsUiState *ui)
+{
+    if (ui == NULL) return;
+    if (ui->show_keyboard) {
+        ui->show_keyboard = 0;
+    } else if (!ui->show_recipes && !ui->show_ingredients) {
+        ui->show_recipes = 1;
+    } else if (ui->show_recipes) {
+        ui->show_recipes = 0;
+        ui->show_ingredients = 1;
+    } else {
+        ui->show_ingredients = 0;
+        ui->show_keyboard = 1;
+    }
+}
+
+int ts_ui_transform_auto_audition_allowed(const TsUiState *ui)
+{
+    return ui == NULL || !ui->workbench_loop_active;
 }
 
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames)
@@ -355,7 +401,7 @@ size_t ts_ui_parent_frame_from_x(const TsUiState *ui, size_t frames, int x, int 
     if (width <= 0 || frames == 0) return 0;
     valid_parent_view(ui, frames, &first, &last);
     if (x < 0) x = 0;
-    if (x >= width) x = width - 1;
+    if (x >= width - 1) return last;
     return first + (size_t)x * (last - first) / (size_t)width;
 }
 
@@ -423,54 +469,50 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 573, 4, 57, "EXPORT", 0);
 
     frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
-    if (instrument->parent.frames) {
-        char parent[96], info[112];
-        snprintf(parent, sizeof(parent), "SOURCE G%u %.28s",
-                 instrument->generation, instrument->parent.name);
+    if (sample->frames) {
+        char tile[96], info[112];
+        int tile_number = showing_bank ? ui->bank_view_slot + 1 :
+                          instrument->selected_slot + 1;
+        snprintf(tile, sizeof(tile), "TILE %02d %.36s", tile_number, sample->name);
         if (showing_bank && shown_slot->occupied) {
-            if (shown_slot->parent_slot >= 0)
-                snprintf(info, sizeof(info), "BANK %02d %s OF %02d  %.2F SEC",
-                         ui->bank_view_slot + 1,
-                         ts_family_relation_name(shown_slot->relation),
-                         shown_slot->parent_slot + 1,
-                         (double)sample->frames / sample->sample_rate);
-            else
-                snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
-                         ui->bank_view_slot + 1,
-                         ts_family_relation_name(shown_slot->relation),
-                         (double)sample->frames / sample->sample_rate);
+            snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
+                     ui->bank_view_slot + 1,
+                     ts_bank_capture_name(shown_slot->capture_kind),
+                     (double)sample->frames / sample->sample_rate);
         }
         else if (showing_bank)
             snprintf(info, sizeof(info), "BANK %02d EMPTY - SILENCE",
                      ui->bank_view_slot + 1);
         else
-            snprintf(info, sizeof(info), "AUDITION %s %u HZ %.2F SEC",
-                     showing_parent ? "SOURCE" : "CURRENT", sample->sample_rate,
+            snprintf(info, sizeof(info), "EDITING TILE %02d  %u HZ %.2F SEC",
+                     instrument->selected_slot + 1, sample->sample_rate,
                      (double)sample->frames / sample->sample_rate);
-        text(fb, 20, 49, parent, PAL_INSTRUMENT, 1);
+        text(fb, 20, 49, tile, PAL_INSTRUMENT, 1);
         text(fb, 390, 49, info, PAL_EFFECT, 1);
     } else {
-        text(fb, 20, 49, "NO SOURCE", PAL_INSTRUMENT, 1);
+        char empty[40];
+        snprintf(empty, sizeof(empty), "TILE %02d EMPTY", instrument->selected_slot + 1);
+        text(fb, 20, 49, empty, PAL_INSTRUMENT, 1);
     }
 
-    rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
+    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
     for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; x += 30)
-        rect(fb, x, TS_WAVE_Y, 1, TS_WAVE_H, RGB(26, 24, 27));
+        wave_rect(fb, x, TS_WAVE_Y, 1, TS_WAVE_H, RGB(26, 24, 27));
     for (int y = TS_WAVE_Y + 20; y < TS_WAVE_Y + TS_WAVE_H; y += 20)
-        rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1, RGB(26, 24, 27));
-    rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2, TS_WAVE_W, 1, RGB(74, 67, 75));
+        wave_rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1, RGB(26, 24, 27));
+    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2, TS_WAVE_W, 1, RGB(74, 67, 75));
 
     if (has_loop && loop_last > view_first && loop_first < view_last) {
         int lx0 = frame_x(loop_first, view_first, view_last);
         int lx1 = frame_x(loop_last, view_first, view_last);
-        rect(fb, lx0, TS_WAVE_Y, lx1 - lx0, TS_WAVE_H, RGB(5, 24, 48));
+        wave_rect(fb, lx0, TS_WAVE_Y, lx1 - lx0, TS_WAVE_H, RGB(5, 24, 48));
     }
 
     if (has_selection && selection_last > view_first &&
         selection_first < view_last) {
         int sx0 = frame_x(selection_first, view_first, view_last);
         int sx1 = frame_x(selection_last, view_first, view_last);
-        rect(fb, sx0, TS_WAVE_Y, sx1 - sx0, TS_WAVE_H, PAL_BLOCK);
+        wave_rect(fb, sx0, TS_WAVE_Y, sx1 - sx0, TS_WAVE_H, PAL_BLOCK);
     }
     if (sample->frames && view_last > view_first) {
         if (view_last > sample->frames) view_last = sample->frames;
@@ -489,12 +531,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             size_t at = begin;
             uint32_t color = has_selection && at >= selection_first &&
                              at < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
-            line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
+            wave_line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
             for (size_t i = begin; i < end && i < sample->frames; ++i) {
                 if (sample->data[i] == 0.0f ||
                     (i > 0 && ((sample->data[i - 1u] < 0.0f && sample->data[i] > 0.0f) ||
                                (sample->data[i - 1u] > 0.0f && sample->data[i] < 0.0f)))) {
-                    rect(fb, TS_WAVE_X + x, middle - 1, 1, 3, PAL_VOLUME);
+                    wave_rect(fb, TS_WAVE_X + x, middle - 1, 1, 3, PAL_VOLUME);
                     break;
                 }
             }
@@ -550,40 +592,40 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 }
                 y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
                 y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
-                if (y0 == y1) rect(fb, x, y0 - 1, 1, 3, PAL_EFFECT);
-                else line(fb, x, y0, x, y1, PAL_EFFECT);
+                if (y0 == y1) wave_rect(fb, x, y0 - 1, 1, 3, PAL_EFFECT);
+                else wave_line(fb, x, y0, x, y1, PAL_EFFECT);
             }
         }
         if (clipped_last > clipped_first) {
-            rect(fb, clipped_first, TS_WAVE_Y + 2, clipped_last - clipped_first, 2,
+            wave_rect(fb, clipped_first, TS_WAVE_Y + 2, clipped_last - clipped_first, 2,
                  PAL_EFFECT);
-            rect(fb, clipped_first, TS_WAVE_Y + TS_WAVE_H - 4,
+            wave_rect(fb, clipped_first, TS_WAVE_Y + TS_WAVE_H - 4,
                  clipped_last - clipped_first, 2, PAL_EFFECT);
-            rect(fb, clipped_first, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
-            rect(fb, clipped_last - 2, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
+            wave_rect(fb, clipped_first, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
+            wave_rect(fb, clipped_last - 2, TS_WAVE_Y + 2, 2, TS_WAVE_H - 4, PAL_EFFECT);
         }
     }
 
     if (has_loop && loop_last > view_first && loop_first < view_last) {
         int lx0 = frame_x(loop_first, view_first, view_last);
         int lx1 = frame_x(loop_last, view_first, view_last);
-        rect(fb, lx0, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
-        rect(fb, lx1 - 2, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
-        rect(fb, lx0, TS_WAVE_Y, 7, 4, PAL_TUNING);
-        rect(fb, lx1 - 7, TS_WAVE_Y + TS_WAVE_H - 4, 7, 4, PAL_TUNING);
+        wave_rect(fb, lx0, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
+        wave_rect(fb, lx1 - 2, TS_WAVE_Y, 2, TS_WAVE_H, PAL_TUNING);
+        wave_rect(fb, lx0, TS_WAVE_Y, 7, 4, PAL_TUNING);
+        wave_rect(fb, lx1 - 7, TS_WAVE_Y + TS_WAVE_H - 4, 7, 4, PAL_TUNING);
         {
             int cy = TS_WAVE_Y + 10;
             int center = (lx0 + lx1) / 2;
             if (display_loop_mode != TS_LOOP_REVERSE) {
-                line(fb, center - 8, cy, center + 8, cy, PAL_TUNING);
-                line(fb, center + 8, cy, center + 3, cy - 4, PAL_TUNING);
-                line(fb, center + 8, cy, center + 3, cy + 4, PAL_TUNING);
+                wave_line(fb, center - 8, cy, center + 8, cy, PAL_TUNING);
+                wave_line(fb, center + 8, cy, center + 3, cy - 4, PAL_TUNING);
+                wave_line(fb, center + 8, cy, center + 3, cy + 4, PAL_TUNING);
             }
             if (display_loop_mode != TS_LOOP_FORWARD) {
                 int offset = display_loop_mode == TS_LOOP_PING_PONG ? 18 : 0;
-                line(fb, center - 8, cy + offset, center + 8, cy + offset, PAL_TUNING);
-                line(fb, center - 8, cy + offset, center - 3, cy + offset - 4, PAL_TUNING);
-                line(fb, center - 8, cy + offset, center - 3, cy + offset + 4, PAL_TUNING);
+                wave_line(fb, center - 8, cy + offset, center + 8, cy + offset, PAL_TUNING);
+                wave_line(fb, center - 8, cy + offset, center - 3, cy + offset - 4, PAL_TUNING);
+                wave_line(fb, center - 8, cy + offset, center - 3, cy + offset + 4, PAL_TUNING);
             }
         }
     }
@@ -600,24 +642,22 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         }
         if (playhead_x >= TS_WAVE_X && playhead_x <= TS_WAVE_X + TS_WAVE_W) {
             if (playhead_x == TS_WAVE_X + TS_WAVE_W) --playhead_x;
-            rect(fb, playhead_x, TS_WAVE_Y, 2, TS_WAVE_H, playhead_color);
-            rect(fb, playhead_x - 2, TS_WAVE_Y, 6, 3, playhead_color);
+            wave_rect(fb, playhead_x, TS_WAVE_Y, 2, TS_WAVE_H, playhead_color);
+            wave_rect(fb, playhead_x - 2, TS_WAVE_Y, 6, 3, playhead_color);
         }
     }
 
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
     button(fb, 85, 205, 82, "CREATE", 0);
     button(fb, 172, 205, 70, "VARY", 0);
-    button(fb, 247, 205, 78, "COMMIT", ui->commit_armed);
-    button(fb, 330, 205, 72, "RESET", 0);
-    button(fb, 407, 205, 61, "SOURCE", !showing_bank && ui->audition_source == TS_AUDITION_PARENT);
-    button(fb, 472, 205, 63, "CURRENT", !showing_bank && ui->audition_source == TS_AUDITION_CURRENT);
-    button(fb, 540, 205, 90, "SET CURRENT",
-           showing_bank && shown_slot->occupied);
+    button(fb, 247, 205, 78, "LOOP", ui->workbench_loop_active);
 
-    slider(fb, 10, 233, 100, "BODY", instrument->process.body, PAL_INSTRUMENT);
-    slider(fb, 120, 233, 100, "EDGE", instrument->process.edge, PAL_VOLUME);
-    slider(fb, 230, 233, 100, "DRIFT", instrument->process.drift, PAL_TUNING);
+    slider(fb, 10, 233, 72, "BODY", instrument->process.body, PAL_INSTRUMENT);
+    slider(fb, 88, 233, 72, "EDGE", instrument->process.edge, PAL_VOLUME);
+    slider(fb, 166, 233, 72, "DRIFT", instrument->process.drift, PAL_TUNING);
+    slider(fb, 244, 233, 86, "WARP", ui->warp_amount, PAL_MOUSE);
+    slider(fb, 505, 205, 125, "SMEAR", ui->smear_amount, PAL_MOUSE);
+    slider(fb, 407, 205, 93, "TEAR", ui->tear_amount, PAL_EFFECT);
     button(fb, 335, 233, 34, "EDIT", ui->fx_page == TS_FX_EDIT);
     button(fb, 372, 233, 34, "TUNE", ui->fx_page == TS_FX_TUNE);
     button(fb, 409, 233, 36, "NOIS", ui->fx_page == TS_FX_NOISE);
@@ -680,24 +720,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         slider(fb, 384, 261, 92, "DRIVE", drive, PAL_VOLUME);
         slider(fb, 480, 261, 92, "MIX", instrument->process.shaper_mix, PAL_EFFECT);
     } else if (ui->fx_page == TS_FX_FAMILY) {
-        char relation[24];
-        char mutation[24];
-        snprintf(relation, sizeof(relation), "RANGE %s",
-                 ts_family_relation_name(instrument->family_relation));
-        snprintf(mutation, sizeof(mutation), "AMT %d%%",
+        char mutation[32];
+        snprintf(mutation, sizeof(mutation), "RANGE %d",
                  (int)lrintf(instrument->family_mutation * 100.0f));
-        button(fb, 10, 261, 100, relation, 1);
-        slider(fb, 115, 261, 110, mutation, instrument->family_mutation, PAL_VOLUME);
-        button(fb, 230, 261, 60, "LOOP",
-               (instrument->family_locks & TS_FAMILY_LOCK_LOOP) != 0u);
-        button(fb, 294, 261, 52, "DUR",
-               (instrument->family_locks & TS_FAMILY_LOCK_DURATION) != 0u);
-        button(fb, 350, 261, 60, "PITCH",
-               (instrument->family_locks & TS_FAMILY_LOCK_PITCH) != 0u);
-        button(fb, 414, 261, 54, "ENV",
-               (instrument->family_locks & TS_FAMILY_LOCK_ENVELOPE) != 0u);
-        button(fb, 472, 261, 62, "SPEC",
-               (instrument->family_locks & TS_FAMILY_LOCK_SPECTRAL) != 0u);
+        slider(fb, 10, 261, 520, mutation, instrument->family_mutation, PAL_VOLUME);
         button(fb, 538, 261, 92,
                instrument->family_trajectory ? "CHAIN ON" : "CHAIN OFF",
                instrument->family_trajectory);
@@ -732,13 +758,18 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 10, 289, 70, "PLAY ALL", 0);
     button(fb, 85, 289, 72, "PLAY SEL", 0);
     button(fb, 162, 289, 78, "PLAY VIEW", 0);
-    button(fb, 245, 289, 52, "CROP", 0);
-    button(fb, 302, 289, 74, "ZOOM SEL", 0);
+    if (!ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients)
+        button(fb, 245, 289, 131,
+               ui->bank_clear_armed ? "CONFIRM CLEAR" : "CLEAR ALL",
+               ui->bank_clear_armed);
+    else {
+        button(fb, 245, 289, 52, "CROP", 0);
+        button(fb, 302, 289, 74, "ZOOM SEL", 0);
+    }
     button(fb, 381, 289, 74, "SHOW ALL", 0);
-    button(fb, 460, 289, 56, "UNDO", instrument->undo_count > 0);
-    button(fb, 521, 289, 62, "REDO", instrument->redo_count > 0);
     button(fb, 588, 289, 42, ui->show_keyboard ? "BANK" :
-           ui->show_recipes ? "KEYS" : "RCPE", !ui->show_keyboard);
+           ui->show_recipes ? "INGR" : ui->show_ingredients ? "KEYS" : "RCPE",
+           !ui->show_keyboard);
 
     if (ui->show_keyboard) {
         text(fb, 11, 318, "SHIFT+CLICK CHORD  SHIFT+RIGHT CLICK SETS ROOT NOTE", RGB(184, 180, 184), 1);
@@ -777,11 +808,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             button(fb, x, y, 72, label, i == ui->recipes.active_slot);
             if (slot->factory) rect(fb, x + 2, y + 2, 3, 19, PAL_INSTRUMENT);
         }
+    } else if (ui->show_ingredients) {
+        text(fb, 11, 318, "INGR  INGREDIENT SHELVES COMING SOON",
+             RGB(184, 180, 184), 1);
+        text(fb, 11, 348, "SELECTED TILE REMAINS ON THE WORKBENCH",
+             PAL_INSTRUMENT, 1);
     } else {
         text(fb, 11, 318,
              ui->fx_page == TS_FX_FAMILY ?
              "CREATE ADDS SLOT  VARY RELATED  SHIFT PROMOTES  CTRL CREATE RADICAL" :
-             "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  RMB RENAME  SHIFT+RMB CLEAR",
+             "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  CTRL+SHIFT CLONE  RMB NAME  SHIFT+RMB CLEAR",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
             const TsBankSlot *slot = &instrument->bank[i];
@@ -804,7 +840,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
     text(fb, 8, 389, ui->status, PAL_MOUSE, 1);
 
-    if (ui->config_open)
+    if (ui->exit_confirm_open) {
+        frame(fb, 154, 128, 332, 130, RGB(36, 33, 37), PAL_MOUSE);
+        text(fb, 172, 143, "EXIT TAPESISTER?", PAL_NOTE, 1);
+        text(fb, 172, 164,
+             ui->exit_has_unsaved ? "UNSAVED CHANGES WILL BE LOST" : "CLOSE TAPESISTER",
+             ui->exit_has_unsaved ? PAL_VOLUME : RGB(190, 185, 190), 1);
+        button(fb, 172, 188, 136, "EXIT", 0);
+        button(fb, 324, 188, 144, "CANCEL", 1);
+        text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
+    } else if (ui->config_open)
         config_render(fb, ui);
     else if (ui->browser.mode != TS_BROWSER_CLOSED)
         browser_render(fb, &ui->browser, ui->text_cursor_visible);
@@ -841,9 +886,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else if (ui->export_choice_open) {
         frame(fb, 154, 135, 332, 112, RGB(36, 33, 37), PAL_MOUSE);
         text(fb, 172, 150, "EXPORT WHAT?", PAL_NOTE, 1);
-        button(fb, 172, 176, 136, "CURRENT WAV", 0);
+        button(fb, 172, 176, 136, "SELECTED WAV", 0);
         button(fb, 324, 176, 144, "COLLECTION", 0);
-        text(fb, 172, 218, "C CURRENT   F FULL COLLECTION   ESC CANCEL", RGB(190, 185, 190), 1);
+        text(fb, 172, 218, "C SELECTED  F FULL COLLECTION   ESC CANCEL", RGB(190, 185, 190), 1);
     }
 }
 
@@ -909,7 +954,50 @@ TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)
     if (relevant == TS_UI_BANK_MOD_SHIFT) return TS_UI_BANK_ACTION_CAPTURE_CURRENT;
     if (relevant == TS_UI_BANK_MOD_ALT) return TS_UI_BANK_ACTION_CAPTURE_LOOP;
     if (relevant == TS_UI_BANK_MOD_CTRL) return TS_UI_BANK_ACTION_CAPTURE_SELECTION;
+    if (relevant == (TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_SHIFT))
+        return TS_UI_BANK_ACTION_CLONE;
     return TS_UI_BANK_ACTION_INVALID;
+}
+
+int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
+                              TsUiBankAction action,
+                              char *error, size_t error_size)
+{
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        if (error != NULL && error_size > 0)
+            snprintf(error, error_size, "Invalid bank slot");
+        return 0;
+    }
+    if (action == TS_UI_BANK_ACTION_CAPTURE_CURRENT)
+        return ts_instrument_bank_capture(instrument, slot,
+                                          TS_BANK_CAPTURE_CURRENT,
+                                          error, error_size);
+    if (action == TS_UI_BANK_ACTION_CAPTURE_LOOP)
+        return ts_instrument_bank_capture(instrument, slot,
+                                          TS_BANK_CAPTURE_LOOP,
+                                          error, error_size);
+    if (action == TS_UI_BANK_ACTION_CAPTURE_SELECTION)
+        return ts_instrument_bank_capture(instrument, slot,
+                                          TS_BANK_CAPTURE_SELECTION,
+                                          error, error_size);
+    if (action == TS_UI_BANK_ACTION_CLONE)
+        return ts_instrument_copy_selected(instrument, slot, error, error_size);
+    if (action == TS_UI_BANK_ACTION_CLEAR)
+        return ts_instrument_bank_clear(instrument, slot, error, error_size);
+    if (action == TS_UI_BANK_ACTION_AUDITION)
+        return ts_instrument_select_bank(instrument, slot, error, error_size);
+    if (action == TS_UI_BANK_ACTION_RENAME) {
+        if (!instrument->bank[slot].occupied) {
+            if (error != NULL && error_size > 0)
+                snprintf(error, error_size, "Bank slot is empty");
+            return 0;
+        }
+        if (error != NULL && error_size > 0) error[0] = '\0';
+        return 1;
+    }
+    if (error != NULL && error_size > 0)
+        snprintf(error, error_size, "Unsupported bank command");
+    return 0;
 }
 
 int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind)

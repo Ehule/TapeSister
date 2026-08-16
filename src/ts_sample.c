@@ -20,6 +20,8 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+static int is_zero_crossing(const TsSample *sample, size_t frame);
+
 static void set_error(char *dst, size_t size, const char *message)
 {
     if (dst != NULL && size > 0) snprintf(dst, size, "%s", message);
@@ -84,6 +86,35 @@ static int get_float(FILE *f, float *value)
     if (!get32(f, &bits)) return 0;
     memcpy(value, &bits, sizeof(bits));
     return isfinite(*value);
+}
+
+static void put_fm_patch(FILE *f, const TsFmPatch *patch)
+{
+    put32(f, (uint32_t)patch->structure);
+    put32(f, (uint32_t)patch->ratio_family);
+    put_float(f, patch->depth); put_float(f, patch->shape);
+    put_float(f, patch->feedback); put_float(f, patch->transient_mix);
+    for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op) put_float(f, patch->ratios[op]);
+}
+
+static int get_fm_patch(FILE *f, TsFmPatch *patch)
+{
+    uint32_t value;
+    if (!get32(f, &value)) return 0;
+    patch->structure = (int)value;
+    if (!get32(f, &value)) return 0;
+    patch->ratio_family = (int)value;
+    if (!get_float(f, &patch->depth) || !get_float(f, &patch->shape) ||
+        !get_float(f, &patch->feedback) || !get_float(f, &patch->transient_mix)) return 0;
+    for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op)
+        if (!get_float(f, &patch->ratios[op]) || patch->ratios[op] < 0.05f ||
+            patch->ratios[op] > 16.0f) return 0;
+    return patch->structure >= 0 && patch->structure < TS_FM_STRUCTURE_COUNT &&
+           patch->ratio_family >= 0 && patch->ratio_family < TS_FM_RATIO_FAMILY_COUNT &&
+           patch->depth >= 0.15f && patch->depth <= 12.0f &&
+           patch->shape >= 0.0f && patch->shape <= 1.0f &&
+           patch->feedback >= 0.0f && patch->feedback <= 0.82f &&
+           patch->transient_mix >= 0.0f && patch->transient_mix <= 0.60f;
 }
 
 static float clampf(float value, float low, float high)
@@ -602,8 +633,105 @@ int ts_sample_save_wav16(const TsSample *sample, const char *path,
 
 const char *ts_generator_name(TsGeneratorKind kind)
 {
-    static const char *names[] = {"TONAL", "METALLIC", "NOISE", "PULSE"};
+    static const char *names[] = {"TONAL", "METALLIC", "NOISE", "PULSE", "FM"};
     return kind >= 0 && kind < TS_GENERATOR_COUNT ? names[kind] : "UNKNOWN";
+}
+
+const char *ts_fm_structure_name(int structure)
+{
+    static const char *names[] = {
+        "CHAIN", "BRANCH", "TWIN", "PARALLEL", "STRIKE", "CLUSTER"
+    };
+    return structure >= 0 && structure < TS_FM_STRUCTURE_COUNT ?
+           names[structure] : "UNKNOWN";
+}
+
+const char *ts_fm_ratio_family_name(int family)
+{
+    static const char *names[] = {
+        "HARMONIC", "FIFTHS", "SUBHARMONIC", "CLUSTERED", "METALLIC", "MIXED"
+    };
+    return family >= 0 && family < TS_FM_RATIO_FAMILY_COUNT ?
+           names[family] : "UNKNOWN";
+}
+
+void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch)
+{
+    static const float ratio_families[TS_FM_RATIO_FAMILY_COUNT][TS_FM_OPERATOR_COUNT] = {
+        {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f},
+        {1.0f, 1.5f, 2.25f, 3.0f, 4.5f, 6.75f},
+        {1.0f, 0.5f, 0.333333f, 0.25f, 0.2f, 1.5f},
+        {1.0f, 1.006f, 0.994f, 2.01f, 1.99f, 3.03f},
+        {1.0f, 1.414214f, 2.718282f, 3.141593f, 4.236068f, 0.618034f},
+        {1.0f, 2.5f, 1.333333f, 3.75f, 0.75f, 5.125f}
+    };
+    uint32_t rng;
+    if (patch == NULL) return;
+    memset(patch, 0, sizeof(*patch));
+    if (recipe == NULL) return;
+    if (recipe->kind == TS_GENERATOR_FM && recipe->has_fm_patch) {
+        *patch = recipe->fm_patch;
+        return;
+    }
+    rng = recipe->seed ^ 0x464d3655u;
+    patch->structure = (int)(rng_next(&rng) % TS_FM_STRUCTURE_COUNT);
+    patch->ratio_family = (int)(rng_next(&rng) % TS_FM_RATIO_FAMILY_COUNT);
+    patch->depth = 0.8f + rng_unit(&rng) * 7.2f;
+    patch->shape = rng_unit(&rng);
+    patch->feedback = rng_unit(&rng) * 0.82f;
+    patch->transient_mix = 0.08f + rng_unit(&rng) * 0.42f;
+    for (int i = 0; i < TS_FM_OPERATOR_COUNT; ++i) {
+        float spread = 1.0f + rng_bipolar(&rng) *
+                       (patch->ratio_family == 3 ? 0.004f : 0.018f);
+        patch->ratios[i] = ratio_families[patch->ratio_family][i] * spread;
+    }
+}
+
+void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
+                      TsFmPatch *varied)
+{
+    uint32_t rng = seed ^ 0x56415259u;
+    float amount = clampf(range, 0.0f, 1.0f);
+    if (varied == NULL) return;
+    memset(varied, 0, sizeof(*varied));
+    if (source == NULL) return;
+    *varied = *source;
+    if (amount <= 0.0f) return;
+    /* Structure and ratio family are the retained FM architecture. Range controls
+       both the number of synthesis decisions rolled and their maximum distance. */
+    varied->depth = clampf(source->depth * exp2f(rng_bipolar(&rng) * amount * 1.35f),
+                           0.15f, 12.0f);
+    if (amount >= 0.08f)
+        varied->shape = clampf(source->shape + rng_bipolar(&rng) * amount * 0.55f, 0.0f, 1.0f);
+    if (amount >= 0.16f)
+        varied->feedback = clampf(source->feedback + rng_bipolar(&rng) * amount * 0.42f,
+                                  0.0f, 0.82f);
+    if (amount >= 0.24f)
+        varied->transient_mix = clampf(source->transient_mix +
+                                       rng_bipolar(&rng) * amount * 0.28f,
+                                       0.0f, 0.60f);
+    for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op) {
+        float threshold = 0.12f + (float)op * 0.11f;
+        if (amount >= threshold) {
+            float distance = rng_bipolar(&rng) * amount * 0.42f;
+            varied->ratios[op] = clampf(source->ratios[op] * exp2f(distance),
+                                        0.05f, 16.0f);
+        }
+    }
+}
+
+float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied)
+{
+    float distance;
+    if (source == NULL || varied == NULL || source->structure != varied->structure ||
+        source->ratio_family != varied->ratio_family) return INFINITY;
+    distance = fabsf(varied->depth - source->depth) / 11.85f +
+               fabsf(varied->shape - source->shape) +
+               fabsf(varied->feedback - source->feedback) / 0.82f +
+               fabsf(varied->transient_mix - source->transient_mix) / 0.60f;
+    for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op)
+        distance += fabsf(log2f(varied->ratios[op] / source->ratios[op])) / 4.0f;
+    return distance;
 }
 
 const char *ts_noise_color_name(TsNoiseColor color)
@@ -629,6 +757,9 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
     uint32_t rng = recipe->seed;
     float frequency = clampf(recipe->frequency, 30.0f, 2000.0f);
     float phase = 0.0f, mod_phase = 0.0f, aux_phase = 0.0f;
+    float fm_phase[TS_FM_OPERATOR_COUNT] = {0.0f};
+    float fm_previous[TS_FM_OPERATOR_COUNT] = {0.0f};
+    TsFmPatch fm_patch;
     float noise_lp = 0.0f, noise_slow = 0.0f;
     float seed_a = rng_unit(&rng);
     float seed_b = rng_unit(&rng);
@@ -637,6 +768,7 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
     unsigned variation = rng & 3u;
     static const float pitch_ratios[] = {0.5f, 0.75f, 1.0f, 1.5f, 2.0f};
     frequency = clampf(frequency * pitch_ratios[(rng >> 2) % 5u], 30.0f, 2000.0f);
+    ts_fm_patch_from_recipe(recipe, &fm_patch);
     if (data == NULL) {
         set_error(error, error_size, "Out of memory while generating sample");
         return 0;
@@ -651,6 +783,66 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
         noise_lp += (random - noise_lp) * (0.015f + seed_a * 0.08f);
         noise_slow += (random - noise_slow) * 0.00015f;
         switch (recipe->kind) {
+        case TS_GENERATOR_FM: {
+            float operators[TS_FM_OPERATOR_COUNT] = {0.0f};
+            float carriers = 0.0f;
+            float carrier_count = 1.0f;
+            for (int op = TS_FM_OPERATOR_COUNT - 1; op >= 0; --op) {
+                float modulation = 0.0f;
+                float op_attack = fminf(1.0f, t * (45.0f + fm_patch.shape * 720.0f));
+                float op_decay = 0.35f + fm_patch.shape * 3.8f;
+                int carrier = 0;
+                if (fm_patch.structure == 0) {
+                    if (op < 5) modulation = operators[op + 1];
+                    carrier = op == 0;
+                } else if (fm_patch.structure == 1) {
+                    if (op == 4 || op == 3) modulation = operators[5];
+                    else if (op == 2) modulation = operators[3];
+                    else if (op == 1) modulation = operators[4];
+                    else if (op == 0) modulation = operators[1] + operators[2];
+                    carrier = op == 0;
+                } else if (fm_patch.structure == 2) {
+                    if (op == 4) modulation = operators[5];
+                    else if (op == 2) modulation = operators[3];
+                    else if (op == 1) modulation = operators[2];
+                    else if (op == 0) modulation = operators[4];
+                    carrier = op <= 1;
+                } else if (fm_patch.structure == 3) {
+                    if (op <= 2) modulation = operators[op + 3];
+                    carrier = op <= 2;
+                } else if (fm_patch.structure == 4) {
+                    if (op == 4) modulation = operators[5];
+                    else if (op == 3) modulation = operators[4];
+                    else if (op <= 2) modulation = operators[3] * (1.0f - op * 0.18f);
+                    carrier = op <= 2;
+                } else {
+                    if (op == 2) modulation = operators[5] + operators[4] * 0.3f;
+                    else if (op == 1) modulation = operators[4] + operators[3] * 0.3f;
+                    else if (op == 0) modulation = operators[3] + operators[5] * 0.3f;
+                    carrier = op <= 2;
+                }
+                if (op == 5)
+                    modulation += fm_previous[5] * fm_patch.feedback;
+                if (!carrier)
+                    op_decay += 0.9f + (float)op * 0.38f + fm_patch.shape * 8.0f;
+                fm_phase[op] += (float)(2.0 * M_PI) * frequency *
+                                fm_patch.ratios[op] / (float)rate;
+                if (fm_phase[op] > (float)(2.0 * M_PI))
+                    fm_phase[op] -= (float)(2.0 * M_PI);
+                operators[op] = sinf(fm_phase[op] +
+                                     modulation * fm_patch.depth) *
+                                op_attack * tail * expf(-t * op_decay);
+                fm_previous[op] = operators[op];
+                if (carrier) carriers += operators[op];
+            }
+            if (fm_patch.structure == 2) carrier_count = 2.0f;
+            else if (fm_patch.structure >= 3) carrier_count = 3.0f;
+            value = carriers / sqrtf(carrier_count);
+            value += (random - noise_lp) *
+                     expf(-t * (24.0f + fm_patch.shape * 92.0f)) *
+                     fm_patch.transient_mix;
+            break;
+        }
         case TS_GENERATOR_METALLIC: {
             float ratio = 1.37f + seed_a * 6.1f;
             float sweep = 1.0f + expf(-t * (4.0f + seed_c * 15.0f)) *
@@ -750,8 +942,13 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
     sample->data = data;
     sample->frames = frames;
     sample->sample_rate = rate;
-    snprintf(sample->name, sizeof(sample->name), "%s V%u %08X",
-             ts_generator_name(recipe->kind), variation + 1u, recipe->seed);
+    if (recipe->kind == TS_GENERATOR_FM)
+        snprintf(sample->name, sizeof(sample->name), "FM %.8s %.8s %08X",
+                 ts_fm_structure_name(fm_patch.structure),
+                 ts_fm_ratio_family_name(fm_patch.ratio_family), recipe->seed);
+    else
+        snprintf(sample->name, sizeof(sample->name), "%s V%u %08X",
+                 ts_generator_name(recipe->kind), variation + 1u, recipe->seed);
     set_error(error, error_size, "");
     return 1;
 }
@@ -764,6 +961,70 @@ static float sample_linear(const TsSample *sample, double position, size_t first
     size_t next = at + 1 < last ? at + 1 : at;
     float fraction = (float)(position - (double)at);
     return sample->data[at] + (sample->data[next] - sample->data[at]) * fraction;
+}
+
+static float sample_cubic_range(const float *data, size_t first, size_t last,
+                                double position)
+{
+    size_t i1, i0, i2, i3;
+    float fraction, a, b, c, d;
+    if (position < (double)first) position = (double)first;
+    if (position > (double)(last - 1u)) position = (double)(last - 1u);
+    i1 = (size_t)position;
+    i0 = i1 > first ? i1 - 1u : i1;
+    i2 = i1 + 1u < last ? i1 + 1u : i1;
+    i3 = i2 + 1u < last ? i2 + 1u : i2;
+    fraction = (float)(position - (double)i1);
+    a = -0.5f * data[i0] + 1.5f * data[i1] - 1.5f * data[i2] + 0.5f * data[i3];
+    b = data[i0] - 2.5f * data[i1] + 2.0f * data[i2] - 0.5f * data[i3];
+    c = -0.5f * data[i0] + 0.5f * data[i2];
+    d = data[i1];
+    return ((a * fraction + b) * fraction + c) * fraction + d;
+}
+
+static int warp_range(TsSample *sample, size_t first, size_t last, float amount,
+                      char *error, size_t error_size)
+{
+    float *source;
+    size_t length = last - first;
+    double phase = 0.0;
+    double rate;
+    double depth;
+    if (amount <= 0.0f || length < 2u) return 1;
+    source = (float *)malloc(length * sizeof(float));
+    if (source == NULL) {
+        set_error(error, error_size, "Out of memory while warping waveform");
+        return 0;
+    }
+    memcpy(source, sample->data + first, length * sizeof(float));
+    amount = clampf(amount, 0.0f, 1.0f);
+    rate = 31.0 + 1969.0 * (double)amount * (double)amount;
+    depth = 0.15 + 191.85 * (double)amount * (double)amount;
+    for (size_t i = 0; i < length; ++i) {
+        double edge = (double)(i < length - 1u - i ? i : length - 1u - i);
+        double p = phase + (double)i * 2.0 * M_PI * rate / sample->sample_rate;
+        double simple = sin(p);
+        double metallic = sin(p * 1.61803398875 + 1.35 * sin(p * 0.503));
+        double unstable = tanh(1.8 * sin(p * 2.414 + 2.2 * metallic));
+        double middle = clampf((amount - 0.20f) / 0.55f, 0.0f, 1.0f);
+        double high = clampf((amount - 0.68f) / 0.32f, 0.0f, 1.0f);
+        double modulator = simple + (metallic - simple) * middle;
+        double displacement;
+        float value;
+        modulator += (unstable - modulator) * high;
+        displacement = depth * modulator;
+        if (displacement > edge) displacement = edge;
+        if (displacement < -edge) displacement = -edge;
+        value = sample_cubic_range(source, 0u, length, (double)i + displacement);
+        if (!isfinite(value)) {
+            free(source);
+            set_error(error, error_size, "WARP produced non-finite audio");
+            return 0;
+        }
+        sample->data[first + i] = value;
+    }
+    free(source);
+    return 1;
 }
 
 int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, size_t last,
@@ -1051,6 +1312,25 @@ static void reset_editor(TsInstrument *instrument)
     instrument->redo_count = 0;
 }
 
+static void replace_current_preserving_view(TsInstrument *instrument,
+                                            TsSample *replacement)
+{
+    size_t first = instrument->view_first;
+    size_t last = instrument->view_last;
+    size_t frames = replacement->frames;
+    ts_sample_free(&instrument->current);
+    instrument->current = *replacement;
+    ts_sample_init(replacement);
+    if (frames == 0) {
+        instrument->view_first = instrument->view_last = 0;
+        return;
+    }
+    if (last > frames) last = frames;
+    if (first >= last) first = last > 0 ? last - 1u : 0u;
+    instrument->view_first = first;
+    instrument->view_last = last;
+}
+
 static int render_edit_source(TsSample *destination, const TsSample *parent,
                               size_t first, size_t last,
                               const TsSampleEdit *edits, int edit_count,
@@ -1120,6 +1400,164 @@ static int render_edit_source(TsSample *destination, const TsSample *parent,
     return 1;
 }
 
+typedef struct { double re, im; } TsComplex;
+
+static void smear_fft(TsComplex *values, size_t count, int inverse)
+{
+    for (size_t i = 1, j = 0; i < count; ++i) {
+        size_t bit = count >> 1u;
+        while (j & bit) { j ^= bit; bit >>= 1u; }
+        j ^= bit;
+        if (i < j) { TsComplex swap = values[i]; values[i] = values[j]; values[j] = swap; }
+    }
+    for (size_t length = 2; length <= count; length <<= 1u) {
+        double angle = (inverse ? 2.0 : -2.0) * M_PI / (double)length;
+        TsComplex step = { cos(angle), sin(angle) };
+        for (size_t base = 0; base < count; base += length) {
+            TsComplex twiddle = { 1.0, 0.0 };
+            for (size_t j = 0; j < length / 2u; ++j) {
+                TsComplex even = values[base + j];
+                TsComplex odd = values[base + j + length / 2u];
+                TsComplex product = { odd.re * twiddle.re - odd.im * twiddle.im,
+                                      odd.re * twiddle.im + odd.im * twiddle.re };
+                values[base + j].re = even.re + product.re;
+                values[base + j].im = even.im + product.im;
+                values[base + j + length / 2u].re = even.re - product.re;
+                values[base + j + length / 2u].im = even.im - product.im;
+                product.re = twiddle.re * step.re - twiddle.im * step.im;
+                twiddle.im = twiddle.re * step.im + twiddle.im * step.re;
+                twiddle.re = product.re;
+            }
+        }
+    }
+    if (inverse)
+        for (size_t i = 0; i < count; ++i) { values[i].re /= count; values[i].im /= count; }
+}
+
+/* A causal wet path: a window is emitted one window after it is observed. */
+static int smear_range(TsSample *sample, size_t first, size_t last, float amount,
+                       char *error, size_t error_size)
+{
+    enum { WINDOW = 512, HOP = 128, BINS = WINDOW / 2 + 1 };
+    size_t length = last - first;
+    TsComplex *spectrum;
+    double *memory, *phase, *wet, *weight;
+    float *source;
+    double shaped, seconds, decay, mix;
+    if (amount == 0.0f || length == 0u) return 1;
+    spectrum = (TsComplex *)calloc(WINDOW, sizeof(*spectrum));
+    memory = (double *)calloc(BINS, sizeof(*memory));
+    phase = (double *)calloc(BINS, sizeof(*phase));
+    wet = (double *)calloc(length, sizeof(*wet));
+    weight = (double *)calloc(length, sizeof(*weight));
+    source = (float *)malloc(length * sizeof(*source));
+    if (!spectrum || !memory || !phase || !wet || !weight || !source) {
+        free(spectrum); free(memory); free(phase); free(wet); free(weight); free(source);
+        set_error(error, error_size, "Out of memory while smearing spectrum");
+        return 0;
+    }
+    memcpy(source, sample->data + first, length * sizeof(*source));
+    shaped = pow((double)amount, 0.72);
+    seconds = 0.025 * pow(480.0, shaped);
+    decay = exp(-(double)HOP / ((double)sample->sample_rate * seconds));
+    mix = 0.10 + 0.78 * shaped;
+    for (size_t position = 0; position < length; position += HOP) {
+        for (size_t i = 0; i < WINDOW; ++i) {
+            double window = 0.5 - 0.5 * cos(2.0 * M_PI * (double)i / (WINDOW - 1));
+            spectrum[i].re = position + i < length ? source[position + i] * window : 0.0;
+            spectrum[i].im = 0.0;
+        }
+        smear_fft(spectrum, WINDOW, 0);
+        for (size_t bin = 0; bin < BINS; ++bin) {
+            double magnitude = hypot(spectrum[bin].re, spectrum[bin].im);
+            memory[bin] *= decay;
+            if (magnitude > memory[bin]) {
+                memory[bin] = magnitude;
+                phase[bin] = atan2(spectrum[bin].im, spectrum[bin].re);
+            } else phase[bin] += 2.0 * M_PI * (double)bin * HOP / WINDOW;
+            spectrum[bin].re = memory[bin] * cos(phase[bin]);
+            spectrum[bin].im = memory[bin] * sin(phase[bin]);
+            if (bin == 0 || bin == WINDOW / 2) spectrum[bin].im = 0.0;
+            if (bin > 0 && bin < WINDOW / 2) {
+                spectrum[WINDOW - bin].re = spectrum[bin].re;
+                spectrum[WINDOW - bin].im = -spectrum[bin].im;
+            }
+        }
+        smear_fft(spectrum, WINDOW, 1);
+        for (size_t i = 0; i < WINDOW && position + WINDOW + i < length; ++i) {
+            size_t output = position + WINDOW + i;
+            double window = 0.5 - 0.5 * cos(2.0 * M_PI * (double)i / (WINDOW - 1));
+            wet[output] += spectrum[i].re * window;
+            weight[output] += window * window;
+        }
+    }
+    for (size_t i = 0; i < length; ++i) {
+        double processed = weight[i] > 1e-12 ? wet[i] / weight[i] : source[i];
+        sample->data[first + i] = (float)(source[i] * (1.0 - mix) + processed * mix);
+    }
+    free(spectrum); free(memory); free(phase); free(wet); free(weight); free(source);
+    set_error(error, error_size, "");
+    return 1;
+}
+
+static uint32_t tear_hash(uint32_t value)
+{
+    value ^= value >> 16; value *= 0x7feb352du;
+    value ^= value >> 15; value *= 0x846ca68bu;
+    return value ^ (value >> 16);
+}
+
+static int tear_range(TsSample *sample, size_t first, size_t last, float amount,
+                      char *error, size_t error_size)
+{
+    size_t length = last - first;
+    size_t minimum;
+    size_t *boundary;
+    float *source;
+    float *output;
+    size_t count = 1;
+    if (amount <= 0.0f || length < 8u) return 1;
+    minimum = sample->sample_rate / 1000u;
+    if (minimum < 24u) minimum = 24u;
+    if (minimum > 128u) minimum = 128u;
+    boundary = malloc((length / minimum + 3u) * sizeof(*boundary));
+    source = malloc(length * sizeof(*source));
+    output = malloc(length * sizeof(*output));
+    if (boundary == NULL || source == NULL || output == NULL) {
+        free(boundary); free(source); free(output);
+        set_error(error, error_size, "Out of memory while tearing waveform");
+        return 0;
+    }
+    memcpy(source, sample->data + first, length * sizeof(*source));
+    memcpy(output, source, length * sizeof(*output));
+    boundary[0] = 0;
+    for (size_t frame = minimum; frame + minimum < length; ++frame) {
+        size_t absolute = first + frame;
+        if (frame - boundary[count - 1u] >= minimum &&
+            is_zero_crossing(sample, absolute)) boundary[count++] = frame;
+    }
+    if (length - boundary[count - 1u] < minimum && count > 1u) --count;
+    boundary[count++] = length;
+    for (size_t packet = 0; packet + 2u < count; packet += 2u) {
+        size_t a = boundary[packet], b = boundary[packet + 1u];
+        size_t c = boundary[packet + 2u];
+        uint32_t field = tear_hash((uint32_t)packet ^ 0x54454152u);
+        float threshold = (float)(field & 0xffffu) / 65535.0f;
+        if (threshold > amount) continue;
+        if (field & 0x10000u) {
+            memcpy(output + a, source + b, (c - b) * sizeof(*output));
+            memcpy(output + a + c - b, source + a, (b - a) * sizeof(*output));
+        } else {
+            for (size_t i = a; i < b; ++i) output[i] = source[b - 1u - (i - a)];
+            for (size_t i = b; i < c; ++i) output[i] = source[c - 1u - (i - b)];
+        }
+    }
+    memcpy(sample->data + first, output, length * sizeof(*output));
+    free(boundary); free(source); free(output);
+    set_error(error, error_size, "");
+    return 1;
+}
+
 static int render_snapshot(TsSample *destination, const TsInstrument *instrument,
                            const TsEditSnapshot *state, char *error, size_t error_size)
 {
@@ -1162,6 +1600,30 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                     destination->data[first + i] = destination->data[last - 1u - i];
                     destination->data[last - 1u - i] = swap;
                 }
+            } else if (operation->kind == TS_POST_ROTATE) {
+                size_t offset = (size_t)operation->destination;
+                float *rotated;
+                if (offset == 0 || offset >= length) continue;
+                rotated = (float *)malloc(length * sizeof(float));
+                if (rotated == NULL) {
+                    set_error(error, error_size, "Out of memory while rotating waveform");
+                    return 0;
+                }
+                memcpy(rotated, destination->data + first + offset,
+                       (length - offset) * sizeof(float));
+                memcpy(rotated + length - offset, destination->data + first,
+                       offset * sizeof(float));
+                memcpy(destination->data + first, rotated, length * sizeof(float));
+                free(rotated);
+            } else if (operation->kind == TS_POST_WARP) {
+                if (!warp_range(destination, first, last, operation->amount,
+                                error, error_size)) return 0;
+            } else if (operation->kind == TS_POST_SMEAR) {
+                if (!smear_range(destination, first, last, operation->amount,
+                                 error, error_size)) return 0;
+            } else if (operation->kind == TS_POST_TEAR) {
+                if (!tear_range(destination, first, last, operation->amount,
+                                error, error_size)) return 0;
             } else if (operation->kind == TS_POST_NORMALIZE) {
                 float peak = 0.0f;
                 float target = clampf(operation->amount, 0.0f, 1.0f);
@@ -1354,17 +1816,22 @@ static void bank_slot_init(TsBankSlot *slot)
 {
     memset(slot, 0, sizeof(*slot));
     ts_sample_init(&slot->sample);
+    ts_sample_init(&slot->edit_parent);
     slot->loop_crossfade_ms = 8.0f;
     slot->tuning = default_tuning();
     slot->audible_tuning = default_tuning();
     slot->relation = TS_FAMILY_CAPTURED;
     slot->parent_slot = -1;
     slot->lineage_mutation = 0.35f;
+    ts_process_recipe_reset(&slot->process);
 }
 
 static void bank_slot_free(TsBankSlot *slot)
 {
     ts_sample_free(&slot->sample);
+    ts_sample_free(&slot->edit_parent);
+    free(slot->undo);
+    free(slot->redo);
     bank_slot_init(slot);
 }
 
@@ -1425,6 +1892,7 @@ void ts_instrument_init(TsInstrument *instrument)
                                TS_FAMILY_LOCK_PITCH;
     instrument->family_anchor_slot = 0;
     instrument->family_last_slot = -1;
+    instrument->selected_slot = 0;
     instrument->tuning = default_tuning();
     instrument->audible_tuning = default_tuning();
     ts_process_recipe_reset(&instrument->process);
@@ -1514,58 +1982,60 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
     return 1;
 }
 
+static int bank_sync_selected(TsInstrument *instrument, char *error, size_t error_size);
+
 int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
                            char *error, size_t error_size)
 {
-    TsSample parent, current;
-    TsBankSlot root;
-    TsProcessRecipe neutral;
+    TsBankSlot imported;
     TsTuning tuning = default_tuning();
-    size_t loop_first = 0;
-    size_t loop_last = 0;
+    size_t loop_first = 0, loop_last = 0;
     TsLoopMode loop_mode = TS_LOOP_FORWARD;
     int has_loop = 0;
-    ts_sample_init(&parent);
-    ts_sample_init(&current);
-    bank_slot_init(&root);
-    ts_process_recipe_reset(&neutral);
-    if (!ts_sample_load_wav_metadata(&parent, &tuning, &has_loop,
-                                     &loop_first, &loop_last, &loop_mode,
-                                     path, error, error_size) ||
-        !ts_sample_process(&current, &parent, 0, parent.frames, &neutral,
-                           error, error_size) ||
-        !bank_root_clone(&root, &parent, &tuning, error, error_size)) {
-        ts_sample_free(&parent);
-        ts_sample_free(&current);
-        bank_slot_free(&root);
+    int slot;
+    if (instrument == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Select a bank tile before loading a WAV");
         return 0;
     }
-    ts_sample_free(&instrument->parent);
-    ts_sample_free(&instrument->current);
-    bank_free(instrument);
-    instrument->parent = parent;
-    instrument->current = current;
-    instrument->bank[0] = root;
+    slot = instrument->selected_slot;
+    bank_slot_init(&imported);
+    if (!ts_sample_load_wav_metadata(&imported.sample, &tuning, &has_loop,
+                                     &loop_first, &loop_last, &loop_mode,
+                                     path, error, error_size) ||
+        !ts_sample_clone(&imported.edit_parent, &imported.sample,
+                         error, error_size)) {
+        bank_slot_free(&imported);
+        return 0;
+    }
+    imported.occupied = 1;
+    imported.capture_kind = TS_BANK_CAPTURE_CURRENT;
+    imported.relation = TS_FAMILY_CAPTURED;
+    imported.parent_slot = -1;
+    imported.has_generator = 0;
+    memset(&imported.generator, 0, sizeof(imported.generator));
+    imported.lineage_seed = (uint32_t)ts_sample_hash(&imported.sample);
+    imported.lineage_locks = TS_FAMILY_LOCK_ALL;
+    imported.lineage_mutation = 0.0f;
+    imported.tuning = tuning;
+    imported.audible_tuning = tuning;
+    imported.has_loop = has_loop;
+    imported.loop_first = loop_first;
+    imported.loop_last = loop_last;
+    imported.loop_mode = loop_mode;
+    bank_slot_free(&instrument->bank[slot]);
+    instrument->bank[slot] = imported;
+    if (!ts_instrument_select_bank(instrument, slot, error, error_size)) return 0;
     instrument->source_kind = TS_SOURCE_IMPORTED;
-    instrument->process = neutral;
-    instrument->tuning = tuning;
-    instrument->audible_tuning = tuning;
-    instrument->generation = 0;
-    instrument->ancestor_hash = 0;
-    reset_editor(instrument);
+    memset(&instrument->generator, 0, sizeof(instrument->generator));
     instrument->has_loop = has_loop;
     instrument->loop_first = loop_first;
     instrument->loop_last = loop_last;
     instrument->loop_mode = loop_mode;
-    instrument->bank[0].has_loop = has_loop;
-    instrument->bank[0].loop_first = loop_first;
-    instrument->bank[0].loop_last = loop_last;
-    instrument->bank[0].loop_mode = loop_mode;
-    instrument->bank[0].has_generator = 0;
-    instrument->bank[0].lineage_seed = (uint32_t)ts_sample_hash(&parent);
-    instrument->family_sequence = 0;
-    instrument->family_anchor_slot = 0;
-    instrument->family_last_slot = -1;
+    instrument->undo_count = 0;
+    instrument->redo_count = 0;
+    if (!bank_sync_selected(instrument, error, error_size)) return 0;
+    set_error(error, error_size, "");
     return 1;
 }
 
@@ -1692,8 +2162,7 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
 {
     TsEditSnapshot target;
     TsSample current;
-    if (instrument == NULL || instrument->parent.data == NULL ||
-        !instrument->bank[0].occupied) {
+    if (instrument == NULL || instrument->parent.data == NULL) {
         set_error(error, error_size, "No Parent to reset to");
         return 0;
     }
@@ -1735,7 +2204,7 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
     instrument->post_edit_count = 0;
-    return 1;
+    return bank_sync_selected(instrument, error, error_size);
 }
 
 int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t error_size)
@@ -1850,8 +2319,12 @@ void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first,
     size_t snapped_first;
     size_t snapped_last;
     if (instrument == NULL || instrument->current.data == NULL) return;
-    snapped_first = ts_sample_nearest_zero_crossing(&instrument->current, first);
-    snapped_last = ts_sample_nearest_zero_crossing(&instrument->current, last);
+    snapped_first = first == 0 ? 0 :
+                    first >= instrument->current.frames ? instrument->current.frames :
+                    ts_sample_nearest_zero_crossing(&instrument->current, first);
+    snapped_last = last == 0 ? 0 :
+                   last >= instrument->current.frames ? instrument->current.frames :
+                   ts_sample_nearest_zero_crossing(&instrument->current, last);
     if (snapped_first > snapped_last) {
         size_t swap = snapped_first;
         snapped_first = snapped_last;
@@ -2096,20 +2569,16 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
     }
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
-    target.view_first = 0;
-    target.view_last = current.frames;
     begin_edit(instrument);
-    ts_sample_free(&instrument->current);
-    instrument->current = current;
+    replace_current_preserving_view(instrument, &current);
     instrument->selection_first = target.selection_first;
     instrument->selection_last = target.selection_last;
     instrument->has_selection = 1;
-    instrument->view_first = 0;
-    instrument->view_last = current.frames;
     instrument->loop_first = target.loop_first;
     instrument->loop_last = target.loop_last;
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target.post_edit_count;
+    if (!bank_sync_selected(instrument, error, error_size)) return 0;
     set_error(error, error_size, "");
     return 1;
 }
@@ -2126,7 +2595,7 @@ int ts_instrument_bank_count(const TsInstrument *instrument)
 int ts_instrument_bank_first_empty(const TsInstrument *instrument)
 {
     if (instrument == NULL) return -1;
-    for (int i = 1; i < TS_BANK_SLOT_COUNT; ++i)
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i)
         if (!instrument->bank[i].occupied) return i;
     return -1;
 }
@@ -2271,6 +2740,253 @@ static void family_copy_or_vary_loop(TsBankSlot *candidate,
     }
 }
 
+static int bank_store_edit_state(TsBankSlot *slot, const TsInstrument *instrument,
+                                 char *error, size_t error_size)
+{
+    TsEditSnapshot *undo = NULL, *redo = NULL;
+    if (instrument->undo_count > 0) {
+        undo = malloc((size_t)instrument->undo_count * sizeof(*undo));
+        if (undo == NULL) { set_error(error, error_size, "Out of memory saving tile Undo"); return 0; }
+        memcpy(undo, instrument->undo, (size_t)instrument->undo_count * sizeof(*undo));
+    }
+    if (instrument->redo_count > 0) {
+        redo = malloc((size_t)instrument->redo_count * sizeof(*redo));
+        if (redo == NULL) { free(undo); set_error(error, error_size, "Out of memory saving tile Redo"); return 0; }
+        memcpy(redo, instrument->redo, (size_t)instrument->redo_count * sizeof(*redo));
+    }
+    free(slot->undo); free(slot->redo);
+    slot->undo = undo; slot->redo = redo;
+    slot->edit = snapshot(instrument);
+    slot->process = instrument->process;
+    slot->tuning = instrument->tuning;
+    slot->audible_tuning = instrument->audible_tuning;
+    slot->has_loop = instrument->has_loop;
+    slot->loop_first = instrument->loop_first;
+    slot->loop_last = instrument->loop_last;
+    slot->loop_mode = instrument->loop_mode;
+    slot->loop_crossfade_ms = instrument->loop_crossfade_ms;
+    slot->undo_count = instrument->undo_count;
+    slot->redo_count = instrument->redo_count;
+    return 1;
+}
+
+static int bank_sync_selected(TsInstrument *instrument, char *error, size_t error_size)
+{
+    TsBankSlot *slot;
+    TsSample current, parent;
+    if (instrument == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[instrument->selected_slot].occupied) return 1;
+    slot = &instrument->bank[instrument->selected_slot];
+    ts_sample_init(&current); ts_sample_init(&parent);
+    if (!ts_sample_clone(&current, &instrument->current, error, error_size) ||
+        !ts_sample_clone(&parent, &instrument->parent, error, error_size)) {
+        ts_sample_free(&current); ts_sample_free(&parent); return 0;
+    }
+    if (!bank_store_edit_state(slot, instrument, error, error_size)) {
+        ts_sample_free(&current); ts_sample_free(&parent); return 0;
+    }
+    ts_sample_free(&slot->sample); ts_sample_free(&slot->edit_parent);
+    slot->sample = current; slot->edit_parent = parent;
+    return 1;
+}
+
+static int bank_slot_deep_clone(TsBankSlot *destination, const TsBankSlot *source,
+                                char *error, size_t error_size)
+{
+    TsBankSlot copy = *source;
+    ts_sample_init(&copy.sample); ts_sample_init(&copy.edit_parent);
+    copy.undo = NULL; copy.redo = NULL;
+    if (!ts_sample_clone(&copy.sample, &source->sample, error, error_size) ||
+        !ts_sample_clone(&copy.edit_parent, source->edit_parent.data != NULL ?
+                         &source->edit_parent : &source->sample, error, error_size)) goto failed;
+    if (source->undo_count > 0) {
+        copy.undo = malloc((size_t)source->undo_count * sizeof(*copy.undo));
+        if (copy.undo == NULL) goto failed;
+        memcpy(copy.undo, source->undo, (size_t)source->undo_count * sizeof(*copy.undo));
+    }
+    if (source->redo_count > 0) {
+        copy.redo = malloc((size_t)source->redo_count * sizeof(*copy.redo));
+        if (copy.redo == NULL) goto failed;
+        memcpy(copy.redo, source->redo, (size_t)source->redo_count * sizeof(*copy.redo));
+    }
+    bank_slot_free(destination); *destination = copy; return 1;
+failed:
+    ts_sample_free(&copy.sample); ts_sample_free(&copy.edit_parent);
+    free(copy.undo); free(copy.redo);
+    set_error(error, error_size, "Out of memory deep-copying tile state"); return 0;
+}
+
+int ts_instrument_select_bank(TsInstrument *instrument, int slot,
+                              char *error, size_t error_size)
+{
+    TsSample parent, current;
+    TsProcessRecipe neutral;
+    TsBankSlot *chosen;
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Invalid bank tile"); return 0;
+    }
+    if (instrument->selected_slot != slot &&
+        !bank_sync_selected(instrument, error, error_size)) return 0;
+    instrument->selected_slot = slot;
+    instrument->family_anchor_slot = slot;
+    chosen = &instrument->bank[slot];
+    if (!chosen->occupied) {
+        ts_sample_free(&instrument->parent); ts_sample_init(&instrument->parent);
+        ts_sample_free(&instrument->current); ts_sample_init(&instrument->current);
+        reset_editor(instrument);
+        set_error(error, error_size, ""); return 1;
+    }
+    ts_sample_init(&parent); ts_sample_init(&current);
+    if (!ts_sample_clone(&parent, chosen->edit_parent.data != NULL ?
+                         &chosen->edit_parent : &chosen->sample, error, error_size) ||
+        !ts_sample_clone(&current, &chosen->sample, error, error_size)) {
+        ts_sample_free(&parent); ts_sample_free(&current); return 0;
+    }
+    ts_sample_free(&instrument->parent); ts_sample_free(&instrument->current);
+    instrument->parent = parent; instrument->current = current;
+    instrument->generator = chosen->generator;
+    instrument->tuning = chosen->tuning; instrument->audible_tuning = chosen->audible_tuning;
+    ts_process_recipe_reset(&neutral); instrument->process = neutral;
+    if (chosen->edit.crop_last > chosen->edit.crop_first &&
+        chosen->edit.crop_last <= instrument->parent.frames) {
+        TsEditSnapshot state = chosen->edit;
+        instrument->crop_first = state.crop_first; instrument->crop_last = state.crop_last;
+        instrument->selection_first = state.selection_first; instrument->selection_last = state.selection_last;
+        instrument->view_first = state.view_first; instrument->view_last = state.view_last;
+        instrument->loop_first = state.loop_first; instrument->loop_last = state.loop_last;
+        instrument->loop_crossfade_ms = state.loop_crossfade_ms; instrument->loop_mode = state.loop_mode;
+        instrument->has_selection = state.has_selection; instrument->has_loop = state.has_loop;
+        instrument->process = state.process;
+        memcpy(instrument->sample_edits, state.sample_edits, sizeof(instrument->sample_edits));
+        instrument->sample_edit_count = state.sample_edit_count;
+        memcpy(instrument->post_edits, state.post_edits, sizeof(instrument->post_edits));
+        instrument->post_edit_count = state.post_edit_count;
+    } else reset_editor(instrument);
+    instrument->undo_count = chosen->undo_count; instrument->redo_count = chosen->redo_count;
+    if (chosen->undo_count > 0) memcpy(instrument->undo, chosen->undo, (size_t)chosen->undo_count * sizeof(*chosen->undo));
+    if (chosen->redo_count > 0) memcpy(instrument->redo, chosen->redo, (size_t)chosen->redo_count * sizeof(*chosen->redo));
+    set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
+                                  char *error, size_t error_size)
+{
+    TsBankSlot made;
+    TsGeneratorRecipe recipe;
+    uint32_t rng = seed;
+    int slot;
+    if (instrument == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Select a bank tile before Create"); return 0;
+    }
+    slot = instrument->selected_slot;
+    bank_slot_init(&made);
+    recipe = instrument->generator;
+    recipe.kind = TS_GENERATOR_FM; recipe.seed = seed;
+    recipe.seconds = 0.1f + rng_unit(&rng) * 7.9f;
+    recipe.frequency = 30.0f * powf(2000.0f / 30.0f, rng_unit(&rng));
+    if (!ts_sample_generate(&made.sample, &recipe, error, error_size) ||
+        !ts_sample_clone(&made.edit_parent, &made.sample, error, error_size)) {
+        bank_slot_free(&made); return 0;
+    }
+    made.occupied = 1; made.capture_kind = TS_BANK_CAPTURE_CURRENT;
+    made.relation = TS_FAMILY_ROOT; made.parent_slot = -1;
+    made.generator = recipe; made.has_generator = 1; made.lineage_seed = seed;
+    made.lineage_mutation = instrument->family_mutation;
+    made.tuning = generator_tuning(&recipe); made.audible_tuning = made.tuning;
+    bank_slot_free(&instrument->bank[slot]); instrument->bank[slot] = made;
+    instrument->generator = recipe; instrument->source_kind = TS_SOURCE_GENERATED;
+    ++instrument->family_sequence;
+    return ts_instrument_select_bank(instrument, slot, error, error_size);
+}
+
+int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
+                                char *error, size_t error_size)
+{
+    int source;
+    if (instrument == NULL || destination_slot < 0 || destination_slot >= TS_BANK_SLOT_COUNT ||
+        instrument->bank[destination_slot].occupied) {
+        set_error(error, error_size, "Clone needs an empty destination tile"); return 0;
+    }
+    source = instrument->selected_slot;
+    if (source < 0 || source >= TS_BANK_SLOT_COUNT || !instrument->bank[source].occupied) {
+        set_error(error, error_size, "Select an occupied tile before Clone"); return 0;
+    }
+    if (!ts_instrument_select_bank(instrument, source, error, error_size) ||
+        !bank_sync_selected(instrument, error, error_size)) return 0;
+    if (!bank_slot_deep_clone(&instrument->bank[destination_slot], &instrument->bank[source],
+                              error, error_size)) return 0;
+    instrument->bank[destination_slot].parent_slot = source;
+    return ts_instrument_select_bank(instrument, destination_slot, error, error_size);
+}
+
+int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
+                                int *destination_slot, char *error, size_t error_size)
+{
+    TsBankSlot made;
+    TsFmPatch source_patch;
+    TsGeneratorRecipe recipe;
+    uint32_t seed;
+    int source, destination, steps;
+    if (destination_slot != NULL) *destination_slot = -1;
+    if (instrument == NULL || (source = instrument->selected_slot) < 0 ||
+        source >= TS_BANK_SLOT_COUNT || !instrument->bank[source].occupied ||
+        !instrument->bank[source].has_generator ||
+        instrument->bank[source].generator.kind != TS_GENERATOR_FM) {
+        set_error(error, error_size, "Vary needs a selected FM tile"); return 0;
+    }
+    destination = source;
+    if (chain) {
+        destination = -1;
+        for (int n = 1; n < TS_BANK_SLOT_COUNT; ++n) {
+            int candidate = (source + n) % TS_BANK_SLOT_COUNT;
+            if (!instrument->bank[candidate].occupied) { destination = candidate; break; }
+        }
+        if (destination < 0) { set_error(error, error_size, "Bank is full - Chain cannot vary"); return 0; }
+    }
+    if (!ts_instrument_select_bank(instrument, source, error, error_size) ||
+        !bank_sync_selected(instrument, error, error_size)) return 0;
+    if (instrument->family_mutation <= 0.0f) {
+        if (!chain) { if (destination_slot) *destination_slot = source; return 1; }
+        if (!bank_slot_deep_clone(&instrument->bank[destination], &instrument->bank[source], error, error_size)) return 0;
+    } else {
+        TsSample fm_source, rebuilt;
+        TsInstrument replay;
+        recipe = instrument->bank[source].generator;
+        ts_fm_patch_from_recipe(&recipe, &source_patch);
+        seed = advance_seed(instrument->bank[source].lineage_seed ^
+                            advance_seed(instrument->family_sequence + 1u));
+        steps = 1 + (int)lrintf(instrument->family_mutation * 31.0f);
+        for (int step = 1; step < steps; ++step) seed = advance_seed(seed);
+        recipe.kind = TS_GENERATOR_FM;
+        recipe.has_fm_patch = 1;
+        ts_fm_patch_vary(&source_patch, seed, instrument->family_mutation,
+                         &recipe.fm_patch);
+        ts_sample_init(&fm_source); ts_sample_init(&rebuilt);
+        if (!ts_sample_generate(&fm_source, &recipe, error, error_size)) return 0;
+        replay = *instrument;
+        replay.parent = fm_source;
+        if (!render_snapshot(&rebuilt, &replay, &instrument->bank[source].edit,
+                             error, error_size)) {
+            ts_sample_free(&fm_source); return 0;
+        }
+        bank_slot_init(&made);
+        if (!bank_slot_deep_clone(&made, &instrument->bank[source], error, error_size)) {
+            ts_sample_free(&fm_source); ts_sample_free(&rebuilt); return 0;
+        }
+        ts_sample_free(&made.sample); ts_sample_free(&made.edit_parent);
+        made.sample = rebuilt; made.edit_parent = fm_source;
+        made.generator = recipe; made.lineage_seed = seed; made.parent_slot = source;
+        made.lineage_mutation = instrument->family_mutation; made.trajectory_step++;
+        if (destination == source) bank_slot_free(&instrument->bank[source]);
+        instrument->bank[destination] = made;
+    }
+    ++instrument->family_sequence;
+    if (destination_slot) *destination_slot = destination;
+    return ts_instrument_select_bank(instrument, destination, error, error_size);
+}
+
 int ts_instrument_generate_family_candidate(TsInstrument *instrument,
                                             int anchor_slot, int reseed,
                                             int *created_slot,
@@ -2285,9 +3001,8 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
     float mutation;
     int slot;
     if (created_slot != NULL) *created_slot = -1;
-    if (instrument == NULL || instrument->parent.data == NULL ||
-        !instrument->bank[0].occupied) {
-        set_error(error, error_size, "Create a Source before making variations");
+    if (instrument == NULL || instrument->parent.data == NULL) {
+        set_error(error, error_size, "Create material before making variations");
         return 0;
     }
     slot = ts_instrument_bank_first_empty(instrument);
@@ -2295,7 +3010,7 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
         set_error(error, error_size, "Sound collection is full - clear a slot first");
         return 0;
     }
-    if (instrument->family_trajectory && instrument->family_last_slot > 0 &&
+    if (instrument->family_trajectory && instrument->family_last_slot >= 0 &&
         instrument->family_last_slot < TS_BANK_SLOT_COUNT &&
         instrument->bank[instrument->family_last_slot].occupied)
         anchor_slot = instrument->family_last_slot;
@@ -2390,8 +3105,17 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
                                    tuning_shifted(anchor->audible_tuning,
                                                   semitone_shift);
     }
-    snprintf(candidate.sample.name, sizeof(candidate.sample.name), "%s %02u %08X",
-             ts_family_relation_name(relation), candidate.trajectory_step, seed);
+    if (relation == TS_FAMILY_STRANGER && candidate.has_generator) {
+        if (candidate.generator.kind != TS_GENERATOR_FM)
+            snprintf(candidate.sample.name, sizeof(candidate.sample.name),
+                     "%s RAD %02u %08X",
+                     ts_generator_name(candidate.generator.kind),
+                     candidate.trajectory_step, seed);
+        /* FM already carries its structure and ratio family in the name. */
+    } else {
+        snprintf(candidate.sample.name, sizeof(candidate.sample.name), "%s %02u %08X",
+                 ts_family_relation_name(relation), candidate.trajectory_step, seed);
+    }
     family_copy_or_vary_loop(&candidate, anchor, seed);
     candidate.occupied = 1;
     instrument->bank[slot] = candidate;
@@ -2413,8 +3137,8 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
         set_error(error, error_size, "No Current sample to capture");
         return 0;
     }
-    if (slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "Bank slot 1 is the immutable Source");
+    if (slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Invalid bank slot");
         return 0;
     }
     if (instrument->bank[slot].occupied) {
@@ -2481,17 +3205,47 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
 int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size)
 {
-    if (instrument == NULL || slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "The Source slot cannot be cleared");
+    int was_selected;
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Invalid bank slot");
         return 0;
     }
     if (!instrument->bank[slot].occupied) {
         set_error(error, error_size, "Bank slot is already empty");
         return 0;
     }
+    was_selected = instrument->selected_slot == slot;
     bank_slot_free(&instrument->bank[slot]);
     if (instrument->family_last_slot == slot) instrument->family_last_slot = -1;
-    if (instrument->family_anchor_slot == slot) instrument->family_anchor_slot = 0;
+    if (instrument->family_anchor_slot == slot) {
+        instrument->family_anchor_slot = instrument->selected_slot != slot &&
+                                         instrument->selected_slot >= 0 &&
+                                         instrument->selected_slot < TS_BANK_SLOT_COUNT &&
+                                         instrument->bank[instrument->selected_slot].occupied ?
+                                         instrument->selected_slot : 0;
+        for (int candidate = 0; candidate < TS_BANK_SLOT_COUNT; ++candidate)
+            if (instrument->bank[candidate].occupied) {
+                instrument->family_anchor_slot = candidate;
+                break;
+            }
+    }
+    if (was_selected)
+        return ts_instrument_select_bank(instrument, slot, error, error_size);
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_bank_clear_all(TsInstrument *instrument,
+                                 char *error, size_t error_size)
+{
+    if (instrument == NULL) { set_error(error, error_size, "No collection to clear"); return 0; }
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
+        bank_slot_free(&instrument->bank[slot]);
+    ts_sample_free(&instrument->parent); ts_sample_init(&instrument->parent);
+    ts_sample_free(&instrument->current); ts_sample_init(&instrument->current);
+    instrument->selected_slot = 0;
+    instrument->family_anchor_slot = 0;
+    instrument->family_last_slot = -1;
     set_error(error, error_size, "");
     return 1;
 }
@@ -2502,8 +3256,8 @@ int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *na
     const char *first;
     const char *last;
     size_t length;
-    if (instrument == NULL || slot <= 0 || slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "The Source slot name is fixed");
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Invalid bank slot");
         return 0;
     }
     if (!instrument->bank[slot].occupied) {
@@ -2723,8 +3477,11 @@ int ts_instrument_family_folder_name(const TsInstrument *instrument,
     char stem[128];
     size_t length;
     if (instrument == NULL || name == NULL || name_size == 0) return 0;
-    source = instrument->bank[0].occupied ? instrument->bank[0].sample.name :
-                                           instrument->parent.name;
+    source = instrument->selected_slot >= 0 &&
+             instrument->selected_slot < TS_BANK_SLOT_COUNT &&
+             instrument->bank[instrument->selected_slot].occupied ?
+             instrument->bank[instrument->selected_slot].sample.name :
+             instrument->parent.name;
     extension = strrchr(source, '.');
     length = extension != NULL && extension > source ?
              (size_t)(extension - source) : strlen(source);
@@ -2787,7 +3544,7 @@ int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder
     char created[TS_BANK_SLOT_COUNT][1152];
     int created_count = 0;
     if (instrument == NULL || folder == NULL || folder[0] == '\0' ||
-        !instrument->bank[0].occupied) {
+        ts_instrument_bank_count(instrument) == 0) {
         set_error(error, error_size, "No sound collection to export");
         return 0;
     }
@@ -2959,8 +3716,7 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
         ts_sample_init(&current);
         if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
         begin_edit(instrument);
-        ts_sample_free(&instrument->current);
-        instrument->current = current;
+        replace_current_preserving_view(instrument, &current);
         memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
         instrument->post_edit_count = target.post_edit_count;
         set_error(error, error_size, "");
@@ -2979,12 +3735,524 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
     begin_edit(instrument);
-    ts_sample_free(&instrument->current);
-    instrument->current = current;
+    replace_current_preserving_view(instrument, &current);
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
+                                       size_t crossing_count,
+                                       char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsSample base;
+    TsPostEdit operation;
+    const TsPostEdit *previous = NULL;
+    size_t first, last, usable = 0, wanted, offset = 0;
+    int64_t logical_steps;
+    int coalescing = 0;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        direction == 0 || crossing_count == 0) {
+        set_error(error, error_size, "No Current sample to rotate");
+        return 0;
+    }
+    first = instrument->has_selection ? instrument->selection_first : 0u;
+    last = instrument->has_selection ? instrument->selection_last :
+                                       instrument->current.frames;
+    if (last <= first + 1u) {
+        set_error(error, error_size, "Waveform range is too short to rotate");
+        return 0;
+    }
+
+    target = snapshot(instrument);
+    if (target.post_edit_count > 0) {
+        previous = &target.post_edits[target.post_edit_count - 1];
+        coalescing = previous->kind == TS_POST_ROTATE && previous->first == first &&
+                     previous->last == last;
+    }
+    ts_sample_init(&base);
+    if (coalescing) {
+        logical_steps = (int64_t)previous->amount;
+        --target.post_edit_count;
+        if (!render_snapshot(&base, instrument, &target, error, error_size)) return 0;
+    } else {
+        logical_steps = 0;
+        if (!ts_sample_clone(&base, &instrument->current, error, error_size)) return 0;
+    }
+
+    for (size_t frame = first + 1u; frame < last; ++frame)
+        if (is_zero_crossing(&base, frame)) ++usable;
+    if (usable == 0) {
+        TsSample range = base;
+        range.data += first;
+        range.frames = last - first;
+        offset = ts_sample_nearest_zero_crossing(
+            &range, direction > 0 ? 1u : range.frames - 1u);
+        if (offset == 0 || offset >= range.frames) {
+            ts_sample_free(&base);
+            set_error(error, error_size, "No usable zero crossing in waveform range");
+            return 0;
+        }
+        usable = 1;
+    }
+
+    if (crossing_count > (size_t)INT64_MAX) crossing_count = (size_t)INT64_MAX;
+    if (direction > 0) {
+        if (logical_steps > INT64_MAX - (int64_t)crossing_count)
+            logical_steps = (int64_t)((uint64_t)logical_steps % usable);
+        logical_steps += (int64_t)crossing_count;
+    } else {
+        if (logical_steps < INT64_MIN + (int64_t)crossing_count)
+            logical_steps = -(int64_t)((uint64_t)(-logical_steps) % usable);
+        logical_steps -= (int64_t)crossing_count;
+    }
+
+    if (logical_steps == 0) {
+        TsSample current = base;
+        begin_edit(instrument);
+        replace_current_preserving_view(instrument, &current);
+        memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+        instrument->post_edit_count = target.post_edit_count;
+        set_error(error, error_size, "");
+        return bank_sync_selected(instrument, error, error_size);
+    }
+    if (offset == 0) {
+        uint64_t magnitude = logical_steps > 0 ? (uint64_t)logical_steps :
+                                                (uint64_t)(-(logical_steps + 1)) + 1u;
+        if (logical_steps > 0)
+            wanted = (size_t)((magnitude - 1u) % usable);
+        else
+            wanted = usable - 1u - (size_t)((magnitude - 1u) % usable);
+        for (size_t frame = first + 1u, index = 0; frame < last; ++frame) {
+            if (!is_zero_crossing(&base, frame)) continue;
+            if (index++ == wanted) {
+                offset = frame - first;
+                break;
+            }
+        }
+    }
+    ts_sample_free(&base);
+    if (!coalescing && target.post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits");
+        return 0;
+    }
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_ROTATE;
+    operation.first = first;
+    operation.last = last;
+    operation.destination = (int64_t)offset;
+    operation.amount = (float)logical_steps;
+    target.post_edits[target.post_edit_count++] = operation;
+    {
+        TsSample current;
+        ts_sample_init(&current);
+        if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+        begin_edit(instrument);
+        replace_current_preserving_view(instrument, &current);
+    }
+    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
+    set_error(error, error_size, "");
+    return bank_sync_selected(instrument, error, error_size);
+}
+
+int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
+                             char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    TsSample current;
+    if (instrument == NULL || instrument->current.data == NULL) {
+        set_error(error, error_size, "No Current sample to warp");
+        return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "WARP amount must be between zero and one");
+        return 0;
+    }
+    if (amount == 0.0f) {
+        set_error(error, error_size, "");
+        return 1;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits");
+        return 0;
+    }
+    target = snapshot(instrument);
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_WARP;
+    operation.first = instrument->has_selection ? instrument->selection_first : 0u;
+    operation.last = instrument->has_selection ? instrument->selection_last :
+                                                  instrument->current.frames;
+    operation.amount = amount;
+    target.post_edits[target.post_edit_count++] = operation;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    begin_edit(instrument);
+    replace_current_preserving_view(instrument, &current);
+    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
+    set_error(error, error_size, "");
+    return bank_sync_selected(instrument, error, error_size);
+}
+
+void ts_warp_gesture_init(TsWarpGesture *gesture)
+{
+    if (gesture == NULL) return;
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+static int warp_gesture_owns(const TsInstrument *instrument,
+                             const TsWarpGesture *gesture)
+{
+    return instrument != NULL && gesture != NULL && gesture->active &&
+           instrument->selected_slot == gesture->owner_slot &&
+           instrument->generation == gesture->owner_generation &&
+           instrument->parent.data == gesture->owner_parent_data &&
+           instrument->current.frames == gesture->original.frames;
+}
+
+static void warp_gesture_clear(TsWarpGesture *gesture)
+{
+    ts_sample_free(&gesture->original);
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+int ts_instrument_warp_gesture_begin(TsInstrument *instrument,
+                                     TsWarpGesture *gesture,
+                                     char *error, size_t error_size)
+{
+    if (instrument == NULL || gesture == NULL || gesture->active ||
+        instrument->current.data == NULL) {
+        set_error(error, error_size, "Could not begin WARP gesture");
+        return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits");
+        return 0;
+    }
+    gesture->start = snapshot(instrument);
+    if (!ts_sample_clone(&gesture->original, &instrument->current,
+                         error, error_size)) return 0;
+    gesture->owner_parent_data = instrument->parent.data;
+    gesture->owner_generation = instrument->generation;
+    gesture->owner_slot = instrument->selected_slot;
+    gesture->amount = 0.0f;
+    gesture->active = 1;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_warp_gesture_preview(TsInstrument *instrument,
+                                       TsWarpGesture *gesture, float amount,
+                                       char *error, size_t error_size)
+{
+    TsSample preview;
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size, "WARP gesture no longer owns Current");
+        return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "WARP amount must be between zero and one");
+        return 0;
+    }
+    ts_sample_init(&preview);
+    if (amount == 0.0f) {
+        if (!ts_sample_clone(&preview, &gesture->original, error, error_size)) return 0;
+    } else {
+        target = gesture->start;
+        memset(&operation, 0, sizeof(operation));
+        operation.kind = TS_POST_WARP;
+        operation.first = target.has_selection ? target.selection_first : 0u;
+        operation.last = target.has_selection ? target.selection_last :
+                                                 gesture->original.frames;
+        operation.amount = amount;
+        target.post_edits[target.post_edit_count++] = operation;
+        if (!render_snapshot(&preview, instrument, &target, error, error_size)) return 0;
+    }
+    replace_current_preserving_view(instrument, &preview);
+    gesture->amount = amount;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_warp_gesture_cancel(TsInstrument *instrument,
+                                      TsWarpGesture *gesture,
+                                      char *error, size_t error_size)
+{
+    TsSample restored;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture);
+        set_error(error, error_size, "WARP gesture no longer owns Current");
+        return 0;
+    }
+    ts_sample_init(&restored);
+    if (!ts_sample_clone(&restored, &gesture->original, error, error_size)) return 0;
+    replace_current_preserving_view(instrument, &restored);
+    warp_gesture_clear(gesture);
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_warp_gesture_commit(TsInstrument *instrument,
+                                      TsWarpGesture *gesture,
+                                      char *error, size_t error_size)
+{
+    TsPostEdit operation;
+    int ok;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture);
+        set_error(error, error_size, "WARP gesture no longer owns Current");
+        return 0;
+    }
+    if (gesture->amount == 0.0f)
+        return ts_instrument_warp_gesture_cancel(instrument, gesture,
+                                                 error, error_size);
+    stack_push(instrument->undo, &instrument->undo_count, gesture->start);
+    instrument->redo_count = 0;
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_WARP;
+    operation.first = gesture->start.has_selection ?
+                      gesture->start.selection_first : 0u;
+    operation.last = gesture->start.has_selection ?
+                     gesture->start.selection_last : gesture->original.frames;
+    operation.amount = gesture->amount;
+    memcpy(instrument->post_edits, gesture->start.post_edits,
+           sizeof(instrument->post_edits));
+    instrument->post_edit_count = gesture->start.post_edit_count;
+    instrument->post_edits[instrument->post_edit_count++] = operation;
+    ok = bank_sync_selected(instrument, error, error_size);
+    warp_gesture_clear(gesture);
+    if (ok) set_error(error, error_size, "");
+    return ok;
+}
+
+int ts_instrument_apply_smear(TsInstrument *instrument, float amount,
+                              char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    TsSample current;
+    if (instrument == NULL || instrument->current.data == NULL) {
+        set_error(error, error_size, "No Current sample to smear"); return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "SMEAR amount must be between zero and one"); return 0;
+    }
+    if (amount == 0.0f) { set_error(error, error_size, ""); return 1; }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
+    }
+    target = snapshot(instrument);
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_SMEAR;
+    operation.first = instrument->has_selection ? instrument->selection_first : 0u;
+    operation.last = instrument->has_selection ? instrument->selection_last : instrument->current.frames;
+    operation.amount = amount;
+    target.post_edits[target.post_edit_count++] = operation;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    begin_edit(instrument);
+    replace_current_preserving_view(instrument, &current);
+    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
+    return bank_sync_selected(instrument, error, error_size);
+}
+
+void ts_smear_gesture_init(TsSmearGesture *gesture) { ts_warp_gesture_init(gesture); }
+
+int ts_instrument_smear_gesture_begin(TsInstrument *instrument, TsSmearGesture *gesture,
+                                      char *error, size_t error_size)
+{
+    if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
+        set_error(error, error_size, "Could not begin SMEAR gesture"); return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
+    }
+    gesture->start = snapshot(instrument);
+    if (!ts_sample_clone(&gesture->original, &instrument->current, error, error_size)) return 0;
+    gesture->owner_parent_data = instrument->parent.data;
+    gesture->owner_generation = instrument->generation;
+    gesture->owner_slot = instrument->selected_slot;
+    gesture->active = 1; gesture->amount = 0.0f;
+    set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_smear_gesture_preview(TsInstrument *instrument, TsSmearGesture *gesture,
+                                        float amount, char *error, size_t error_size)
+{
+    TsSample preview;
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size, "SMEAR gesture no longer owns Current"); return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "SMEAR amount must be between zero and one"); return 0;
+    }
+    ts_sample_init(&preview);
+    if (amount == 0.0f) {
+        if (!ts_sample_clone(&preview, &gesture->original, error, error_size)) return 0;
+    } else {
+        target = gesture->start;
+        memset(&operation, 0, sizeof(operation)); operation.kind = TS_POST_SMEAR;
+        operation.first = target.has_selection ? target.selection_first : 0u;
+        operation.last = target.has_selection ? target.selection_last : gesture->original.frames;
+        operation.amount = amount; target.post_edits[target.post_edit_count++] = operation;
+        if (!render_snapshot(&preview, instrument, &target, error, error_size)) return 0;
+    }
+    replace_current_preserving_view(instrument, &preview);
+    gesture->amount = amount; set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_smear_gesture_cancel(TsInstrument *instrument, TsSmearGesture *gesture,
+                                       char *error, size_t error_size)
+{
+    TsSample restored;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture); set_error(error, error_size, "SMEAR gesture no longer owns Current"); return 0;
+    }
+    ts_sample_init(&restored);
+    if (!ts_sample_clone(&restored, &gesture->original, error, error_size)) return 0;
+    replace_current_preserving_view(instrument, &restored);
+    warp_gesture_clear(gesture); set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_smear_gesture_commit(TsInstrument *instrument, TsSmearGesture *gesture,
+                                       char *error, size_t error_size)
+{
+    TsPostEdit operation;
+    int ok;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture); set_error(error, error_size, "SMEAR gesture no longer owns Current"); return 0;
+    }
+    if (gesture->amount == 0.0f)
+        return ts_instrument_smear_gesture_cancel(instrument, gesture, error, error_size);
+    stack_push(instrument->undo, &instrument->undo_count, gesture->start);
+    instrument->redo_count = 0;
+    memset(&operation, 0, sizeof(operation)); operation.kind = TS_POST_SMEAR;
+    operation.first = gesture->start.has_selection ? gesture->start.selection_first : 0u;
+    operation.last = gesture->start.has_selection ? gesture->start.selection_last : gesture->original.frames;
+    operation.amount = gesture->amount;
+    memcpy(instrument->post_edits, gesture->start.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = gesture->start.post_edit_count;
+    instrument->post_edits[instrument->post_edit_count++] = operation;
+    ok = bank_sync_selected(instrument, error, error_size);
+    warp_gesture_clear(gesture); if (ok) set_error(error, error_size, ""); return ok;
+}
+
+int ts_instrument_apply_tear(TsInstrument *instrument, float amount,
+                             char *error, size_t error_size)
+{
+    TsEditSnapshot target; TsPostEdit operation; TsSample current;
+    if (instrument == NULL || instrument->current.data == NULL) {
+        set_error(error, error_size, "No Current sample to tear"); return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "TEAR amount must be between zero and one"); return 0;
+    }
+    if (amount == 0.0f) { set_error(error, error_size, ""); return 1; }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
+    }
+    target = snapshot(instrument); memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_TEAR;
+    operation.first = instrument->has_selection ? instrument->selection_first : 0u;
+    operation.last = instrument->has_selection ? instrument->selection_last : instrument->current.frames;
+    operation.amount = amount; target.post_edits[target.post_edit_count++] = operation;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    begin_edit(instrument); replace_current_preserving_view(instrument, &current);
+    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = target.post_edit_count;
+    return bank_sync_selected(instrument, error, error_size);
+}
+
+void ts_tear_gesture_init(TsTearGesture *gesture) { ts_warp_gesture_init(gesture); }
+
+int ts_instrument_tear_gesture_begin(TsInstrument *instrument, TsTearGesture *gesture,
+                                     char *error, size_t error_size)
+{
+    if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
+        set_error(error, error_size, "Could not begin TEAR gesture"); return 0;
+    }
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
+    }
+    gesture->start = snapshot(instrument);
+    if (!ts_sample_clone(&gesture->original, &instrument->current, error, error_size)) return 0;
+    gesture->owner_parent_data = instrument->parent.data;
+    gesture->owner_generation = instrument->generation;
+    gesture->owner_slot = instrument->selected_slot;
+    gesture->active = 1; gesture->amount = 0.0f;
+    set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_tear_gesture_preview(TsInstrument *instrument, TsTearGesture *gesture,
+                                       float amount, char *error, size_t error_size)
+{
+    TsSample preview; TsEditSnapshot target; TsPostEdit operation;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size, "TEAR gesture no longer owns Current"); return 0;
+    }
+    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+        set_error(error, error_size, "TEAR amount must be between zero and one"); return 0;
+    }
+    ts_sample_init(&preview);
+    if (amount == 0.0f) {
+        if (!ts_sample_clone(&preview, &gesture->original, error, error_size)) return 0;
+    } else {
+        target = gesture->start; memset(&operation, 0, sizeof(operation));
+        operation.kind = TS_POST_TEAR;
+        operation.first = target.has_selection ? target.selection_first : 0u;
+        operation.last = target.has_selection ? target.selection_last : gesture->original.frames;
+        operation.amount = amount; target.post_edits[target.post_edit_count++] = operation;
+        if (!render_snapshot(&preview, instrument, &target, error, error_size)) return 0;
+    }
+    replace_current_preserving_view(instrument, &preview);
+    gesture->amount = amount; set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_tear_gesture_cancel(TsInstrument *instrument, TsTearGesture *gesture,
+                                      char *error, size_t error_size)
+{
+    TsSample restored;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture); set_error(error, error_size, "TEAR gesture no longer owns Current"); return 0;
+    }
+    ts_sample_init(&restored);
+    if (!ts_sample_clone(&restored, &gesture->original, error, error_size)) return 0;
+    replace_current_preserving_view(instrument, &restored);
+    warp_gesture_clear(gesture); set_error(error, error_size, ""); return 1;
+}
+
+int ts_instrument_tear_gesture_commit(TsInstrument *instrument, TsTearGesture *gesture,
+                                      char *error, size_t error_size)
+{
+    TsPostEdit operation; int ok;
+    if (!warp_gesture_owns(instrument, gesture)) {
+        warp_gesture_clear(gesture); set_error(error, error_size, "TEAR gesture no longer owns Current"); return 0;
+    }
+    if (gesture->amount == 0.0f)
+        return ts_instrument_tear_gesture_cancel(instrument, gesture, error, error_size);
+    stack_push(instrument->undo, &instrument->undo_count, gesture->start);
+    instrument->redo_count = 0; memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_TEAR;
+    operation.first = gesture->start.has_selection ? gesture->start.selection_first : 0u;
+    operation.last = gesture->start.has_selection ? gesture->start.selection_last : gesture->original.frames;
+    operation.amount = gesture->amount;
+    memcpy(instrument->post_edits, gesture->start.post_edits, sizeof(instrument->post_edits));
+    instrument->post_edit_count = gesture->start.post_edit_count;
+    instrument->post_edits[instrument->post_edit_count++] = operation;
+    ok = bank_sync_selected(instrument, error, error_size);
+    warp_gesture_clear(gesture); if (ok) set_error(error, error_size, ""); return ok;
 }
 
 int ts_instrument_zoom_selection(TsInstrument *instrument)
@@ -3095,7 +4363,7 @@ int ts_instrument_undo(TsInstrument *instrument, char *error, size_t error_size)
     if (!restore_history(instrument, target, instrument->redo, &instrument->redo_count,
                          error, error_size)) return 0;
     --instrument->undo_count;
-    return 1;
+    return bank_sync_selected(instrument, error, error_size);
 }
 
 int ts_instrument_redo(TsInstrument *instrument, char *error, size_t error_size)
@@ -3109,7 +4377,7 @@ int ts_instrument_redo(TsInstrument *instrument, char *error, size_t error_size)
     if (!restore_history(instrument, target, instrument->undo, &instrument->undo_count,
                          error, error_size)) return 0;
     --instrument->redo_count;
-    return 1;
+    return bank_sync_selected(instrument, error, error_size);
 }
 
 size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, int width)
@@ -3118,17 +4386,436 @@ size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, in
     size_t last = instrument->view_last;
     if (width <= 0 || last <= first) return first;
     if (x < 0) x = 0;
-    if (x >= width) x = width - 1;
+    if (x >= width - 1) return last;
     return first + (size_t)x * (last - first) / (size_t)width;
+}
+
+static void put_generator_recipe(FILE *f, const TsGeneratorRecipe *recipe)
+{
+    put32(f, recipe->seed);
+    put32(f, (uint32_t)recipe->kind);
+    put_float(f, recipe->seconds);
+    put_float(f, recipe->frequency);
+    put32(f, (uint32_t)recipe->has_fm_patch);
+    if (recipe->has_fm_patch) put_fm_patch(f, &recipe->fm_patch);
+}
+
+static int get_generator_recipe(FILE *f, TsGeneratorRecipe *recipe)
+{
+    uint32_t value;
+    if (!get32(f, &recipe->seed) || !get32(f, &value)) return 0;
+    recipe->kind = (TsGeneratorKind)value;
+    if (!get_float(f, &recipe->seconds) || !get_float(f, &recipe->frequency) ||
+        !get32(f, &value)) return 0;
+    recipe->has_fm_patch = (int)value;
+    if (recipe->kind >= TS_GENERATOR_COUNT || recipe->seconds < 0.1f ||
+        recipe->seconds > 8.0f || recipe->frequency < 30.0f ||
+        recipe->frequency > 2000.0f ||
+        (recipe->has_fm_patch != 0 && recipe->has_fm_patch != 1)) return 0;
+    return !recipe->has_fm_patch || get_fm_patch(f, &recipe->fm_patch);
+}
+
+static void put_process_recipe(FILE *f, const TsProcessRecipe *process)
+{
+    put32(f, process->seed);
+    put_float(f, process->body); put_float(f, process->edge); put_float(f, process->drift);
+    put32(f, (uint32_t)process->noise_enabled); put_float(f, process->noise_amount);
+    put32(f, (uint32_t)process->noise_color);
+    put32(f, (uint32_t)process->delay_enabled);
+    put_float(f, process->delay_seconds); put_float(f, process->delay_feedback);
+    put_float(f, process->delay_damping); put_float(f, process->delay_mix);
+    put32(f, (uint32_t)process->reverb_enabled);
+    put_float(f, process->reverb_decay); put_float(f, process->reverb_damping);
+    put_float(f, process->reverb_mix);
+    put32(f, (uint32_t)process->filter_enabled);
+    put32(f, (uint32_t)process->filter_mode);
+    put_float(f, process->filter_cutoff_hz); put_float(f, process->filter_resonance);
+    put32(f, (uint32_t)process->shaper_enabled);
+    put32(f, (uint32_t)process->shaper_mode);
+    put_float(f, process->shaper_drive); put_float(f, process->shaper_mix);
+}
+
+static int get_process_recipe(FILE *f, TsProcessRecipe *process)
+{
+    uint32_t value;
+#define GET_PROCESS_U32(field) do { if (!get32(f, &value)) return 0; (field) = value; } while (0)
+    if (!get32(f, &process->seed) ||
+        !get_float(f, &process->body) || !get_float(f, &process->edge) ||
+        !get_float(f, &process->drift)) return 0;
+    GET_PROCESS_U32(process->noise_enabled);
+    if (!get_float(f, &process->noise_amount)) return 0;
+    GET_PROCESS_U32(process->noise_color);
+    GET_PROCESS_U32(process->delay_enabled);
+    if (!get_float(f, &process->delay_seconds) ||
+        !get_float(f, &process->delay_feedback) ||
+        !get_float(f, &process->delay_damping) ||
+        !get_float(f, &process->delay_mix)) return 0;
+    GET_PROCESS_U32(process->reverb_enabled);
+    if (!get_float(f, &process->reverb_decay) ||
+        !get_float(f, &process->reverb_damping) ||
+        !get_float(f, &process->reverb_mix)) return 0;
+    GET_PROCESS_U32(process->filter_enabled);
+    GET_PROCESS_U32(process->filter_mode);
+    if (!get_float(f, &process->filter_cutoff_hz) ||
+        !get_float(f, &process->filter_resonance)) return 0;
+    GET_PROCESS_U32(process->shaper_enabled);
+    GET_PROCESS_U32(process->shaper_mode);
+    if (!get_float(f, &process->shaper_drive) ||
+        !get_float(f, &process->shaper_mix)) return 0;
+#undef GET_PROCESS_U32
+    return process->body >= 0.0f && process->body <= 1.0f &&
+           process->edge >= 0.0f && process->edge <= 1.0f &&
+           process->drift >= 0.0f && process->drift <= 1.0f &&
+           (process->noise_enabled == 0 || process->noise_enabled == 1) &&
+           process->noise_amount >= 0.0f && process->noise_amount <= 1.0f &&
+           process->noise_color < TS_NOISE_COLOR_COUNT &&
+           (process->delay_enabled == 0 || process->delay_enabled == 1) &&
+           process->delay_seconds >= 0.0f && process->delay_seconds <= 1.0f &&
+           process->delay_feedback >= 0.0f && process->delay_feedback <= 0.95f &&
+           process->delay_damping >= 0.0f && process->delay_damping <= 1.0f &&
+           process->delay_mix >= 0.0f && process->delay_mix <= 1.0f &&
+           (process->reverb_enabled == 0 || process->reverb_enabled == 1) &&
+           process->reverb_decay >= 0.0f && process->reverb_decay <= 1.0f &&
+           process->reverb_damping >= 0.0f && process->reverb_damping <= 1.0f &&
+           process->reverb_mix >= 0.0f && process->reverb_mix <= 1.0f &&
+           (process->filter_enabled == 0 || process->filter_enabled == 1) &&
+           process->filter_mode < TS_FILTER_MODE_COUNT &&
+           process->filter_cutoff_hz >= 20.0f && process->filter_cutoff_hz <= 20000.0f &&
+           process->filter_resonance >= 0.0f && process->filter_resonance <= 1.0f &&
+           (process->shaper_enabled == 0 || process->shaper_enabled == 1) &&
+           process->shaper_mode < TS_SHAPER_MODE_COUNT &&
+           process->shaper_drive >= 1.0f && process->shaper_drive <= 16.0f &&
+           process->shaper_mix >= 0.0f && process->shaper_mix <= 1.0f;
+}
+
+static void put_edit_snapshot(FILE *f, const TsEditSnapshot *state)
+{
+    put64(f, state->crop_first); put64(f, state->crop_last);
+    put64(f, state->selection_first); put64(f, state->selection_last);
+    put64(f, state->view_first); put64(f, state->view_last);
+    put64(f, state->loop_first); put64(f, state->loop_last);
+    put_float(f, state->loop_crossfade_ms);
+    put32(f, (uint32_t)state->loop_mode);
+    put32(f, (uint32_t)state->has_selection); put32(f, (uint32_t)state->has_loop);
+    put32(f, (uint32_t)state->tuning.root_note); put_float(f, state->tuning.fine_tune_cents);
+    put32(f, (uint32_t)state->audible_tuning.root_note);
+    put_float(f, state->audible_tuning.fine_tune_cents);
+    put_process_recipe(f, &state->process);
+    put32(f, (uint32_t)state->sample_edit_count);
+    for (int i = 0; i < state->sample_edit_count; ++i) {
+        const TsSampleEdit *edit = &state->sample_edits[i];
+        put32(f, (uint32_t)edit->kind); put64(f, edit->first); put64(f, edit->last);
+        put_float(f, edit->amount);
+    }
+    put32(f, (uint32_t)state->post_edit_count);
+    for (int i = 0; i < state->post_edit_count; ++i) {
+        const TsPostEdit *edit = &state->post_edits[i];
+        put32(f, (uint32_t)edit->kind); put64(f, edit->first); put64(f, edit->last);
+        put64(f, (uint64_t)edit->destination); put_float(f, edit->amount);
+        put32(f, edit->crossfade_frames);
+    }
+}
+
+static int get_edit_snapshot(FILE *f, TsEditSnapshot *state)
+{
+    const size_t frame_limit = 100000000u;
+    uint32_t value;
+    uint64_t wide;
+#define GET_STATE_SIZE(field) do { if (!get64(f, &wide) || wide > SIZE_MAX) return 0; (field) = (size_t)wide; } while (0)
+#define GET_STATE_U32(field) do { if (!get32(f, &value)) return 0; (field) = value; } while (0)
+    memset(state, 0, sizeof(*state));
+    GET_STATE_SIZE(state->crop_first); GET_STATE_SIZE(state->crop_last);
+    GET_STATE_SIZE(state->selection_first); GET_STATE_SIZE(state->selection_last);
+    GET_STATE_SIZE(state->view_first); GET_STATE_SIZE(state->view_last);
+    GET_STATE_SIZE(state->loop_first); GET_STATE_SIZE(state->loop_last);
+    if (!get_float(f, &state->loop_crossfade_ms)) return 0;
+    GET_STATE_U32(state->loop_mode); GET_STATE_U32(state->has_selection);
+    GET_STATE_U32(state->has_loop); GET_STATE_U32(state->tuning.root_note);
+    if (!get_float(f, &state->tuning.fine_tune_cents)) return 0;
+    GET_STATE_U32(state->audible_tuning.root_note);
+    if (!get_float(f, &state->audible_tuning.fine_tune_cents) ||
+        !get_process_recipe(f, &state->process)) return 0;
+    GET_STATE_U32(state->sample_edit_count);
+    if (state->sample_edit_count < 0 || state->sample_edit_count > TS_SAMPLE_EDIT_DEPTH) return 0;
+    for (int i = 0; i < state->sample_edit_count; ++i) {
+        TsSampleEdit *edit = &state->sample_edits[i];
+        GET_STATE_U32(edit->kind); GET_STATE_SIZE(edit->first); GET_STATE_SIZE(edit->last);
+        if (!get_float(f, &edit->amount) || edit->kind > TS_SAMPLE_EDIT_FADE_OUT ||
+            edit->last <= edit->first || edit->last > frame_limit) return 0;
+    }
+    GET_STATE_U32(state->post_edit_count);
+    if (state->post_edit_count < 0 || state->post_edit_count > TS_POST_EDIT_DEPTH) return 0;
+    for (int i = 0; i < state->post_edit_count; ++i) {
+        TsPostEdit *edit = &state->post_edits[i];
+        GET_STATE_U32(edit->kind); GET_STATE_SIZE(edit->first); GET_STATE_SIZE(edit->last);
+        if (!get64(f, &wide)) return 0;
+        edit->destination = (int64_t)wide;
+        if (!get_float(f, &edit->amount) || !get32(f, &edit->crossfade_frames) ||
+            edit->kind > TS_POST_TEAR || edit->last <= edit->first ||
+            edit->last > frame_limit || edit->destination < -(int64_t)frame_limit ||
+            edit->destination > (int64_t)frame_limit || edit->crossfade_frames > 65536u) return 0;
+    }
+#undef GET_STATE_SIZE
+#undef GET_STATE_U32
+    return state->crop_first < state->crop_last && state->crop_last <= frame_limit &&
+           state->selection_first <= state->selection_last &&
+           state->selection_last <= frame_limit &&
+           state->view_first < state->view_last && state->view_last <= frame_limit &&
+           state->loop_first <= state->loop_last && state->loop_last <= frame_limit &&
+           state->loop_crossfade_ms >= 0.0f && state->loop_crossfade_ms <= 50.0f &&
+           state->loop_mode < TS_LOOP_MODE_COUNT &&
+           (state->has_selection == 0 || state->has_selection == 1) &&
+           (state->has_loop == 0 || state->has_loop == 1) &&
+           tuning_valid(&state->tuning) && tuning_valid(&state->audible_tuning);
+}
+
+static void put_sample_block(FILE *f, const TsSample *sample)
+{
+    size_t name_length = strlen(sample->name);
+    put32(f, sample->sample_rate); put64(f, sample->frames);
+    put32(f, (uint32_t)name_length); fwrite(sample->name, 1, name_length, f);
+    for (size_t frame = 0; frame < sample->frames; ++frame) put_float(f, sample->data[frame]);
+    put64(f, ts_sample_hash(sample));
+}
+
+static int get_sample_block(FILE *f, TsSample *sample)
+{
+    uint32_t name_length;
+    uint64_t frames;
+    uint64_t stored_hash;
+    if (!get32(f, &sample->sample_rate) || !get64(f, &frames) ||
+        !get32(f, &name_length) || sample->sample_rate < 1000u ||
+        frames == 0 || frames > 100000000u || frames > SIZE_MAX / sizeof(float) ||
+        name_length >= sizeof(sample->name)) return 0;
+    sample->frames = (size_t)frames;
+    if (fread(sample->name, 1, name_length, f) != name_length) return 0;
+    sample->name[name_length] = '\0';
+    sample->data = (float *)malloc(sample->frames * sizeof(float));
+    if (sample->data == NULL) return -1;
+    for (size_t frame = 0; frame < sample->frames; ++frame)
+        if (!get_float(f, &sample->data[frame])) return 0;
+    return get64(f, &stored_hash) && stored_hash == ts_sample_hash(sample);
+}
+
+static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slot)
+{
+    return state->crop_last <= slot->edit_parent.frames &&
+           state->selection_last <= slot->sample.frames &&
+           state->view_last <= slot->sample.frames &&
+           state->loop_last <= slot->sample.frames &&
+           (!state->has_selection || state->selection_first < state->selection_last) &&
+           (!state->has_loop || state->loop_first < state->loop_last);
+}
+
+static int save_tsr15(const TsInstrument *instrument, FILE *f)
+{
+    fwrite("TSR15\r\n\032", 1, 8, f);
+    put32(f, (uint32_t)instrument->selected_slot);
+    put_float(f, instrument->family_mutation);
+    put32(f, instrument->family_sequence);
+    put32(f, (uint32_t)instrument->family_trajectory);
+    put32(f, (uint32_t)instrument->family_relation);
+    put32(f, instrument->family_locks);
+    put32(f, (uint32_t)(instrument->family_anchor_slot + 1));
+    put32(f, (uint32_t)(instrument->family_last_slot + 1));
+    put32(f, (uint32_t)instrument->source_kind);
+    put32(f, instrument->generation);
+    put64(f, instrument->ancestor_hash);
+    put32(f, TS_BANK_SLOT_COUNT);
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+        const TsBankSlot *slot = &instrument->bank[i];
+        const TsSample *audio;
+        const TsSample *baseline;
+        const TsEditSnapshot *edit;
+        const TsEditSnapshot *undo;
+        const TsEditSnapshot *redo;
+        TsEditSnapshot live_edit;
+        TsEditSnapshot default_edit;
+        int undo_count;
+        int redo_count;
+        put32(f, (uint32_t)slot->occupied);
+        if (!slot->occupied) continue;
+        audio = &slot->sample;
+        baseline = slot->edit_parent.data != NULL ? &slot->edit_parent : &slot->sample;
+        edit = &slot->edit;
+        undo = slot->undo;
+        redo = slot->redo;
+        undo_count = slot->undo_count;
+        redo_count = slot->redo_count;
+        if (i == instrument->selected_slot && instrument->current.data != NULL &&
+            instrument->parent.data != NULL) {
+            audio = &instrument->current;
+            baseline = &instrument->parent;
+            live_edit = snapshot(instrument);
+            edit = &live_edit;
+            undo = instrument->undo;
+            redo = instrument->redo;
+            undo_count = instrument->undo_count;
+            redo_count = instrument->redo_count;
+        } else if (edit->crop_last <= edit->crop_first ||
+                   edit->crop_last > baseline->frames ||
+                   edit->view_last <= edit->view_first ||
+                   edit->view_last > audio->frames) {
+            memset(&default_edit, 0, sizeof(default_edit));
+            default_edit.crop_last = baseline->frames;
+            default_edit.view_last = audio->frames;
+            default_edit.loop_first = slot->loop_first;
+            default_edit.loop_last = slot->loop_last;
+            default_edit.loop_crossfade_ms = slot->loop_crossfade_ms;
+            default_edit.loop_mode = slot->loop_mode;
+            default_edit.has_loop = slot->has_loop;
+            default_edit.tuning = slot->tuning;
+            default_edit.audible_tuning = slot->audible_tuning;
+            ts_process_recipe_reset(&default_edit.process);
+            edit = &default_edit;
+            undo = NULL;
+            redo = NULL;
+            undo_count = 0;
+            redo_count = 0;
+        }
+        put32(f, (uint32_t)slot->capture_kind); put32(f, (uint32_t)slot->relation);
+        put32(f, (uint32_t)(slot->parent_slot + 1)); put32(f, slot->lineage_seed);
+        put32(f, slot->lineage_locks); put32(f, slot->trajectory_step);
+        put_float(f, slot->lineage_mutation); put32(f, (uint32_t)slot->has_generator);
+        if (slot->has_generator) put_generator_recipe(f, &slot->generator);
+        put32(f, (uint32_t)slot->tuning.root_note); put_float(f, slot->tuning.fine_tune_cents);
+        put32(f, (uint32_t)slot->audible_tuning.root_note);
+        put_float(f, slot->audible_tuning.fine_tune_cents);
+        put32(f, (uint32_t)slot->loop_mode); put32(f, (uint32_t)slot->has_loop);
+        put64(f, slot->loop_first); put64(f, slot->loop_last);
+        put_float(f, slot->loop_crossfade_ms);
+        put_sample_block(f, audio);
+        put_sample_block(f, baseline);
+        put_edit_snapshot(f, edit);
+        put32(f, (uint32_t)undo_count);
+        for (int h = 0; h < undo_count; ++h) put_edit_snapshot(f, &undo[h]);
+        put32(f, (uint32_t)redo_count);
+        for (int h = 0; h < redo_count; ++h) put_edit_snapshot(f, &redo[h]);
+    }
+    return !ferror(f);
+}
+
+static int load_tsr15(FILE *f, TsInstrument *instrument, char *error, size_t error_size)
+{
+    TsInstrument loaded;
+    uint32_t value;
+    uint64_t wide;
+    int selected;
+    ts_instrument_init(&loaded);
+    if (!get32(f, &value)) goto malformed;
+    selected = (int)value;
+    if (!get_float(f, &loaded.family_mutation) ||
+        !get32(f, &loaded.family_sequence) || !get32(f, &value)) goto malformed;
+    loaded.family_trajectory = (int)value;
+    if (!get32(f, &value)) goto malformed;
+    loaded.family_relation = (TsFamilyRelation)value;
+    if (!get32(f, &loaded.family_locks) || !get32(f, &value)) goto malformed;
+    loaded.family_anchor_slot = (int)value - 1;
+    if (!get32(f, &value)) goto malformed;
+    loaded.family_last_slot = (int)value - 1;
+    if (!get32(f, &value)) goto malformed;
+    loaded.source_kind = (TsSourceKind)value;
+    if (!get32(f, &loaded.generation) || !get64(f, &loaded.ancestor_hash) ||
+        !get32(f, &value) || value != TS_BANK_SLOT_COUNT ||
+        selected < 0 || selected >= TS_BANK_SLOT_COUNT ||
+        loaded.family_mutation < 0.0f || loaded.family_mutation > 1.0f ||
+        (loaded.family_trajectory != 0 && loaded.family_trajectory != 1) ||
+        loaded.family_relation >= TS_FAMILY_RELATION_COUNT ||
+        (loaded.family_locks & ~TS_FAMILY_LOCK_ALL) != 0u ||
+        loaded.family_anchor_slot < -1 || loaded.family_anchor_slot >= TS_BANK_SLOT_COUNT ||
+        loaded.family_last_slot < -1 || loaded.family_last_slot >= TS_BANK_SLOT_COUNT ||
+        loaded.source_kind > TS_SOURCE_COMMITTED) goto malformed;
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
+        TsBankSlot *slot = &loaded.bank[i];
+        int sample_result;
+        if (!get32(f, &value) || value > 1u) goto malformed;
+        slot->occupied = (int)value;
+        if (!slot->occupied) continue;
+        if (!get32(f, &value)) goto malformed;
+        slot->capture_kind = (TsBankCaptureKind)value;
+        if (!get32(f, &value)) goto malformed;
+        slot->relation = (TsFamilyRelation)value;
+        if (!get32(f, &value)) goto malformed;
+        slot->parent_slot = (int)value - 1;
+        if (!get32(f, &slot->lineage_seed) || !get32(f, &slot->lineage_locks) ||
+            !get32(f, &slot->trajectory_step) || !get_float(f, &slot->lineage_mutation) ||
+            !get32(f, &value)) goto malformed;
+        slot->has_generator = (int)value;
+        if (slot->has_generator && !get_generator_recipe(f, &slot->generator)) goto malformed;
+        if (!get32(f, &value)) goto malformed;
+        slot->tuning.root_note = (int)value;
+        if (!get_float(f, &slot->tuning.fine_tune_cents) || !get32(f, &value)) goto malformed;
+        slot->audible_tuning.root_note = (int)value;
+        if (!get_float(f, &slot->audible_tuning.fine_tune_cents) ||
+            !get32(f, &value)) goto malformed;
+        slot->loop_mode = (TsLoopMode)value;
+        if (!get32(f, &value)) goto malformed;
+        slot->has_loop = (int)value;
+        if (!get64(f, &wide) || wide > SIZE_MAX) goto malformed;
+        slot->loop_first = (size_t)wide;
+        if (!get64(f, &wide) || wide > SIZE_MAX) goto malformed;
+        slot->loop_last = (size_t)wide;
+        if (!get_float(f, &slot->loop_crossfade_ms)) goto malformed;
+        sample_result = get_sample_block(f, &slot->sample);
+        if (sample_result < 0) goto out_of_memory;
+        if (!sample_result) goto malformed;
+        sample_result = get_sample_block(f, &slot->edit_parent);
+        if (sample_result < 0) goto out_of_memory;
+        if (!sample_result || !get_edit_snapshot(f, &slot->edit)) goto malformed;
+        if (!get32(f, &value) || value > TS_HISTORY_DEPTH) goto malformed;
+        slot->undo_count = (int)value;
+        if (slot->undo_count > 0) {
+            slot->undo = malloc((size_t)slot->undo_count * sizeof(*slot->undo));
+            if (slot->undo == NULL) goto out_of_memory;
+            for (int h = 0; h < slot->undo_count; ++h)
+                if (!get_edit_snapshot(f, &slot->undo[h])) goto malformed;
+        }
+        if (!get32(f, &value) || value > TS_HISTORY_DEPTH) goto malformed;
+        slot->redo_count = (int)value;
+        if (slot->redo_count > 0) {
+            slot->redo = malloc((size_t)slot->redo_count * sizeof(*slot->redo));
+            if (slot->redo == NULL) goto out_of_memory;
+            for (int h = 0; h < slot->redo_count; ++h)
+                if (!get_edit_snapshot(f, &slot->redo[h])) goto malformed;
+        }
+        slot->process = slot->edit.process;
+        if (slot->capture_kind > TS_BANK_CAPTURE_LOOP ||
+            slot->relation >= TS_FAMILY_RELATION_COUNT || slot->parent_slot < -1 ||
+            slot->parent_slot >= TS_BANK_SLOT_COUNT ||
+            (slot->lineage_locks & ~TS_FAMILY_LOCK_ALL) != 0u ||
+            slot->lineage_mutation < 0.0f || slot->lineage_mutation > 1.0f ||
+            (slot->has_generator != 0 && slot->has_generator != 1) ||
+            !tuning_valid(&slot->tuning) || !tuning_valid(&slot->audible_tuning) ||
+            slot->loop_mode >= TS_LOOP_MODE_COUNT ||
+            (slot->has_loop != 0 && slot->has_loop != 1) ||
+            slot->loop_crossfade_ms < 0.0f || slot->loop_crossfade_ms > 50.0f ||
+            (slot->has_loop && (slot->loop_first >= slot->loop_last ||
+                                slot->loop_last > slot->sample.frames)) ||
+            !snapshot_fits_tile(&slot->edit, slot)) goto malformed;
+    }
+    if (fgetc(f) != EOF) goto malformed;
+    loaded.selected_slot = selected;
+    if (!ts_instrument_select_bank(&loaded, selected, error, error_size)) goto failed;
+    ts_instrument_free(instrument);
+    *instrument = loaded;
+    set_error(error, error_size, "");
+    return 1;
+out_of_memory:
+    set_error(error, error_size, "Out of memory while loading TSR15 project");
+    goto failed;
+malformed:
+    set_error(error, error_size, "Malformed or unsupported TSR15 project");
+failed:
+    ts_instrument_free(&loaded);
+    return 0;
 }
 
 int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
                               char *error, size_t error_size)
 {
     FILE *f;
-    size_t name_length;
-    if (instrument == NULL || instrument->parent.data == NULL) {
-        set_error(error, error_size, "No instrument recipe to save");
+    if (instrument == NULL) {
+        set_error(error, error_size, "No project to save");
         return 0;
     }
     f = fopen(path, "wb");
@@ -3136,124 +4823,14 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    fwrite("TSR11\r\n\032", 1, 8, f);
-    put32(f, (uint32_t)instrument->source_kind);
-    put32(f, instrument->generation);
-    put64(f, instrument->ancestor_hash);
-    put32(f, instrument->generator.seed);
-    put32(f, (uint32_t)instrument->generator.kind);
-    put_float(f, instrument->generator.seconds);
-    put_float(f, instrument->generator.frequency);
-    put32(f, (uint32_t)instrument->family_relation);
-    put_float(f, instrument->family_mutation);
-    put32(f, instrument->family_locks);
-    put32(f, instrument->family_sequence);
-    put32(f, (uint32_t)instrument->family_trajectory);
-    put32(f, (uint32_t)(instrument->family_anchor_slot + 1));
-    put32(f, (uint32_t)(instrument->family_last_slot + 1));
-    put32(f, (uint32_t)instrument->tuning.root_note);
-    put_float(f, instrument->tuning.fine_tune_cents);
-    put32(f, (uint32_t)instrument->audible_tuning.root_note);
-    put_float(f, instrument->audible_tuning.fine_tune_cents);
-    put32(f, instrument->process.seed);
-    put_float(f, instrument->process.body);
-    put_float(f, instrument->process.edge);
-    put_float(f, instrument->process.drift);
-    put32(f, (uint32_t)instrument->process.noise_enabled);
-    put_float(f, instrument->process.noise_amount);
-    put32(f, (uint32_t)instrument->process.noise_color);
-    put32(f, (uint32_t)instrument->process.delay_enabled);
-    put_float(f, instrument->process.delay_seconds);
-    put_float(f, instrument->process.delay_feedback);
-    put_float(f, instrument->process.delay_damping);
-    put_float(f, instrument->process.delay_mix);
-    put32(f, (uint32_t)instrument->process.reverb_enabled);
-    put_float(f, instrument->process.reverb_decay);
-    put_float(f, instrument->process.reverb_damping);
-    put_float(f, instrument->process.reverb_mix);
-    put32(f, (uint32_t)instrument->process.filter_enabled);
-    put32(f, (uint32_t)instrument->process.filter_mode);
-    put_float(f, instrument->process.filter_cutoff_hz);
-    put_float(f, instrument->process.filter_resonance);
-    put32(f, (uint32_t)instrument->process.shaper_enabled);
-    put32(f, (uint32_t)instrument->process.shaper_mode);
-    put_float(f, instrument->process.shaper_drive);
-    put_float(f, instrument->process.shaper_mix);
-    put64(f, instrument->crop_first); put64(f, instrument->crop_last);
-    put64(f, instrument->selection_first); put64(f, instrument->selection_last);
-    put64(f, instrument->view_first); put64(f, instrument->view_last);
-    put64(f, instrument->loop_first); put64(f, instrument->loop_last);
-    put_float(f, instrument->loop_crossfade_ms);
-    put32(f, (uint32_t)instrument->loop_mode);
-    put32(f, (uint32_t)instrument->has_selection);
-    put32(f, (uint32_t)instrument->has_loop);
-    put32(f, (uint32_t)instrument->sample_edit_count);
-    for (int i = 0; i < instrument->sample_edit_count; ++i) {
-        const TsSampleEdit *edit = &instrument->sample_edits[i];
-        put32(f, (uint32_t)edit->kind);
-        put64(f, edit->first); put64(f, edit->last);
-        put_float(f, edit->amount);
+    if (!save_tsr15(instrument, f)) {
+        fclose(f);
+        set_error(error, error_size, "Could not write TSR15 project");
+        return 0;
     }
-    put32(f, (uint32_t)instrument->post_edit_count);
-    for (int i = 0; i < instrument->post_edit_count; ++i) {
-        const TsPostEdit *edit = &instrument->post_edits[i];
-        put32(f, (uint32_t)edit->kind);
-        put64(f, edit->first); put64(f, edit->last);
-        put64(f, (uint64_t)edit->destination);
-        put_float(f, edit->amount);
-        put32(f, edit->crossfade_frames);
-    }
-    put32(f, instrument->parent.sample_rate);
-    put64(f, instrument->parent.frames);
-    name_length = strlen(instrument->parent.name);
-    put32(f, (uint32_t)name_length);
-    fwrite(instrument->parent.name, 1, name_length, f);
-    for (size_t i = 0; i < instrument->parent.frames; ++i)
-        put_float(f, instrument->parent.data[i]);
-    put64(f, ts_sample_hash(&instrument->parent));
-    put32(f, TS_BANK_SLOT_COUNT);
-    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
-        const TsBankSlot *slot = &instrument->bank[i];
-        put32(f, (uint32_t)slot->occupied);
-        if (!slot->occupied) continue;
-        put32(f, (uint32_t)slot->capture_kind);
-        put32(f, (uint32_t)slot->relation);
-        put32(f, (uint32_t)(slot->parent_slot + 1));
-        put32(f, slot->lineage_seed);
-        put32(f, slot->lineage_locks);
-        put32(f, slot->trajectory_step);
-        put_float(f, slot->lineage_mutation);
-        put32(f, (uint32_t)slot->has_generator);
-        if (slot->has_generator) {
-            put32(f, slot->generator.seed);
-            put32(f, (uint32_t)slot->generator.kind);
-            put_float(f, slot->generator.seconds);
-            put_float(f, slot->generator.frequency);
-        }
-        put32(f, (uint32_t)slot->tuning.root_note);
-        put_float(f, slot->tuning.fine_tune_cents);
-        put32(f, (uint32_t)slot->audible_tuning.root_note);
-        put_float(f, slot->audible_tuning.fine_tune_cents);
-        put32(f, (uint32_t)slot->loop_mode);
-        put32(f, (uint32_t)slot->has_loop);
-        put64(f, slot->loop_first); put64(f, slot->loop_last);
-        put_float(f, slot->loop_crossfade_ms);
-        put32(f, slot->sample.sample_rate);
-        put64(f, slot->sample.frames);
-        name_length = strlen(slot->sample.name);
-        put32(f, (uint32_t)name_length);
-        fwrite(slot->sample.name, 1, name_length, f);
-        for (size_t frame = 0; frame < slot->sample.frames; ++frame)
-            put_float(f, slot->sample.data[frame]);
-        put64(f, ts_sample_hash(&slot->sample));
-    }
-    {
-        int failed = ferror(f);
-        if (fclose(f) != 0) failed = 1;
-        if (failed) {
-            set_error(error, error_size, "Could not finish recipe file");
-            return 0;
-        }
+    if (fclose(f) != 0) {
+        set_error(error, error_size, "Could not finish TSR15 project");
+        return 0;
     }
     set_error(error, error_size, "");
     return 1;
@@ -3287,7 +4864,16 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR11\r\n\032", 8) == 0) version = 11;
+    if (memcmp(magic, "TSR15\r\n\032", 8) == 0) {
+        int ok = load_tsr15(f, instrument, error, error_size);
+        fclose(f);
+        ts_instrument_free(&loaded);
+        return ok;
+    }
+    if (memcmp(magic, "TSR14\r\n\032", 8) == 0) version = 14;
+    else if (memcmp(magic, "TSR13\r\n\032", 8) == 0) version = 13;
+    else if (memcmp(magic, "TSR12\r\n\032", 8) == 0) version = 12;
+    else if (memcmp(magic, "TSR11\r\n\032", 8) == 0) version = 11;
     else if (memcmp(magic, "TSR10\r\n\032", 8) == 0) version = 10;
     else if (memcmp(magic, "TSR9\r\n\032\n", 8) == 0) version = 9;
     else if (memcmp(magic, "TSR8\r\n\032\n", 8) == 0) version = 8;
@@ -3297,7 +4883,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR11 project");
+                  "Not a self-contained TSR6-TSR15 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -3307,6 +4893,10 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     if (!get64(f, &loaded.ancestor_hash)) goto malformed;
     GET_U32(loaded.generator.seed); GET_U32(loaded.generator.kind);
     GET_FLOAT(loaded.generator.seconds); GET_FLOAT(loaded.generator.frequency);
+    if (version >= 13) {
+        GET_U32(loaded.generator.has_fm_patch);
+        if (loaded.generator.has_fm_patch && !get_fm_patch(f, &loaded.generator.fm_patch)) goto malformed;
+    }
     if (version >= 11) {
         GET_U32(loaded.family_relation);
         GET_FLOAT(loaded.family_mutation);
@@ -3317,6 +4907,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         loaded.family_anchor_slot = (int)u32 - 1;
         GET_U32(u32);
         loaded.family_last_slot = (int)u32 - 1;
+        if (version >= 12) { GET_U32(loaded.selected_slot); }
+        else loaded.selected_slot = loaded.family_anchor_slot;
     }
     if (version >= 10) {
         GET_U32(loaded.tuning.root_note);
@@ -3350,6 +4942,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     GET_U32(state.sample_edit_count);
     if (loaded.source_kind < TS_SOURCE_GENERATED || loaded.source_kind > TS_SOURCE_COMMITTED ||
         loaded.generator.kind >= TS_GENERATOR_COUNT ||
+        (loaded.generator.has_fm_patch != 0 && loaded.generator.has_fm_patch != 1) ||
         loaded.family_relation < TS_FAMILY_CHILD ||
         loaded.family_relation > TS_FAMILY_STRANGER ||
         !isfinite(loaded.family_mutation) || loaded.family_mutation < 0.0f ||
@@ -3360,6 +4953,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         loaded.family_anchor_slot >= TS_BANK_SLOT_COUNT ||
         loaded.family_last_slot < -1 ||
         loaded.family_last_slot >= TS_BANK_SLOT_COUNT ||
+        loaded.selected_slot < 0 || loaded.selected_slot >= TS_BANK_SLOT_COUNT ||
         !tuning_valid(&loaded.tuning) ||
         !tuning_valid(&loaded.audible_tuning) ||
         state.loop_mode >= TS_LOOP_MODE_COUNT ||
@@ -3404,7 +4998,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             if (!get64(f, &destination_bits)) goto malformed;
             edit->destination = (int64_t)destination_bits;
             GET_FLOAT(edit->amount); GET_U32(edit->crossfade_frames);
-            if (edit->kind > TS_POST_CROP || edit->last <= edit->first ||
+            if (edit->kind > (version >= 14 ? TS_POST_TEAR : TS_POST_SMEAR) ||
+                edit->last <= edit->first ||
                 edit->first > 100000000u || edit->last > 100000000u ||
                 edit->destination < -100000000LL ||
                 edit->destination > 100000000LL ||
@@ -3455,6 +5050,11 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                     GET_U32(slot->generator.kind);
                     GET_FLOAT(slot->generator.seconds);
                     GET_FLOAT(slot->generator.frequency);
+                    if (version >= 13) {
+                        GET_U32(slot->generator.has_fm_patch);
+                        if (slot->generator.has_fm_patch &&
+                            !get_fm_patch(f, &slot->generator.fm_patch)) goto malformed;
+                    }
                 }
             }
             if (version >= 10) {
@@ -3479,6 +5079,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                 (slot->has_generator != 0 && slot->has_generator != 1) ||
                 (slot->has_generator &&
                  (slot->generator.kind >= TS_GENERATOR_COUNT ||
+                  (slot->generator.has_fm_patch != 0 && slot->generator.has_fm_patch != 1) ||
                   !isfinite(slot->generator.seconds) ||
                   slot->generator.seconds < 0.1f || slot->generator.seconds > 8.0f ||
                   !isfinite(slot->generator.frequency) ||
@@ -3516,9 +5117,11 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                 if (slot->has_generator) slot->generator = loaded.generator;
             }
         }
-        if (!loaded.bank[0].occupied ||
-            loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT ||
-            loaded.bank[0].relation != TS_FAMILY_ROOT ||
+        if ((version < 12 && (!loaded.bank[0].occupied ||
+                              loaded.bank[0].capture_kind != TS_BANK_CAPTURE_ROOT ||
+                              loaded.bank[0].relation != TS_FAMILY_ROOT)) ||
+            (version >= 12 && version < 14 &&
+             !loaded.bank[loaded.selected_slot].occupied) ||
             !loaded.bank[loaded.family_anchor_slot].occupied ||
             (loaded.family_last_slot >= 0 &&
              !loaded.bank[loaded.family_last_slot].occupied) ||
@@ -3559,7 +5162,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR11 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR15 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

@@ -25,12 +25,35 @@ if(TAPESISTER_BUILD_SDL)
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_splash.png"
             "$<TARGET_FILE_DIR:tapesister>/assets/tapesister_splash.png"
     COMMENT "Copying TapeSister splash artwork")
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_welcome.wav")
+    add_custom_command(TARGET tapesister POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_welcome.wav"
+              "$<TARGET_FILE_DIR:tapesister>/assets/tapesister_welcome.wav"
+      COMMENT "Copying TapeSister welcome sample")
+  endif()
 endif()
 
 enable_testing()
 add_executable(tapesister_core_tests tests/test_core.c)
 target_link_libraries(tapesister_core_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_core_tests COMMAND tapesister_core_tests)
+
+add_executable(tapesister_smear_tests tests/test_smear.c)
+target_link_libraries(tapesister_smear_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_smear_tests COMMAND tapesister_smear_tests)
+
+add_executable(tapesister_tear_tests tests/test_tear.c)
+target_link_libraries(tapesister_tear_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_tear_tests COMMAND tapesister_tear_tests)
+
+add_executable(tapesister_bank_tests tests/test_bank.c)
+target_link_libraries(tapesister_bank_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_bank_tests COMMAND tapesister_bank_tests)
+
+add_executable(tapesister_editor_contract_tests tests/test_editor_contract.c)
+target_link_libraries(tapesister_editor_contract_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_editor_contract_tests COMMAND tapesister_editor_contract_tests)
 
 add_executable(tapesister_render_demo tests/render_demo.c)
 target_link_libraries(tapesister_render_demo PRIVATE tapesister_core)

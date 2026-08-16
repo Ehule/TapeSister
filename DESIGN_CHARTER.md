@@ -16,8 +16,8 @@ The central loop is:
 1. Begin with generated sound, an imported sample, or both.
 2. See and hear the material immediately.
 3. Push it through a small set of consequential transformations.
-4. Capture a result as a reproducible recipe and an ordinary sample.
-5. Keep exploring without losing the parent sound.
+4. Keep the result as an independently editable Bank tile.
+5. Continue exploring without changing unrelated tiles.
 
 The interface should encourage listening and discovery rather than parameter management. A useful result should never be buried behind setup screens, routing diagrams, or a long session workflow.
 
@@ -35,9 +35,11 @@ TapeSister should be:
 
 ## The core object
 
-A TapeSister **recipe** is the reproducible description of a sound: its source material, seed, synthesis and processing choices, interaction structure, and render settings. The rendered sample is an outcome of the recipe, not a replacement for it.
+A TapeSister **Bank tile** is the sound object. It owns its audio, generator or import provenance, tuning, loop, selection, viewport, processing and edit state, and Undo/Redo history. All 16 tiles are peers; there is no privileged Source slot and no separate Parent/Current promotion workflow.
 
-Recipes should eventually be able to produce related children while preserving their parent. Genealogy is a future creative feature, not a requirement for the first instrument slice.
+Create and Load operate on the selected tile. Clone creates an independent copy. Editing and transforms affect only the selected tile. Vary with Chain enabled is the one intentional cross-tile continuation mechanism.
+
+A processing Recipe is a reusable procedure applied to material. It is not the identity or owner of a tile.
 
 ## Raw material, not inherited architecture
 

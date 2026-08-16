@@ -1,0 +1,17 @@
+; TapeSister portable configuration
+[Paths]
+SamplePath=
+FastTrackerPath=
+ExchangePath=
+
+[Startup]
+; Install assets/tapesister_welcome.wav into bank 01 on a fresh launch.
+startup_welcome_sample=1
+; Audition the welcome tile once after the splash closes and audio is ready.
+startup_welcome_autoplay=1
+
+[Waveform]
+; Zero-crossing candidates traversed by one Ctrl+Shift+wheel detent (1-20).
+rotate_wheel_fine=5
+; Zero-crossing candidates traversed by one Ctrl+wheel detent (20-100).
+rotate_wheel_coarse=50

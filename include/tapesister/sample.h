@@ -29,8 +29,25 @@ typedef enum {
     TS_GENERATOR_METALLIC,
     TS_GENERATOR_NOISE,
     TS_GENERATOR_PULSE,
+    TS_GENERATOR_FM,
     TS_GENERATOR_COUNT
 } TsGeneratorKind;
+
+enum {
+    TS_FM_OPERATOR_COUNT = 6,
+    TS_FM_STRUCTURE_COUNT = 6,
+    TS_FM_RATIO_FAMILY_COUNT = 6
+};
+
+typedef struct {
+    int structure;
+    int ratio_family;
+    float depth;
+    float shape;
+    float feedback;
+    float transient_mix;
+    float ratios[TS_FM_OPERATOR_COUNT];
+} TsFmPatch;
 
 typedef enum {
     TS_SOURCE_NONE = 0,
@@ -66,6 +83,8 @@ typedef struct {
     TsGeneratorKind kind;
     float seconds;
     float frequency;
+    TsFmPatch fm_patch;
+    int has_fm_patch;
 } TsGeneratorRecipe;
 
 typedef struct {
@@ -127,7 +146,11 @@ typedef enum {
     TS_POST_GAIN,
     TS_POST_FADE_IN,
     TS_POST_FADE_OUT,
-    TS_POST_CROP
+    TS_POST_CROP,
+    TS_POST_ROTATE,
+    TS_POST_WARP,
+    TS_POST_SMEAR,
+    TS_POST_TEAR
 } TsPostEditKind;
 
 typedef struct {
@@ -165,27 +188,6 @@ enum {
 };
 
 typedef struct {
-    TsSample sample;
-    TsTuning tuning;
-    TsTuning audible_tuning;
-    size_t loop_first;
-    size_t loop_last;
-    float loop_crossfade_ms;
-    TsBankCaptureKind capture_kind;
-    TsFamilyRelation relation;
-    TsGeneratorRecipe generator;
-    uint32_t lineage_seed;
-    uint32_t lineage_locks;
-    uint32_t trajectory_step;
-    float lineage_mutation;
-    int parent_slot;
-    int has_generator;
-    TsLoopMode loop_mode;
-    int has_loop;
-    int occupied;
-} TsBankSlot;
-
-typedef struct {
     size_t crop_first;
     size_t crop_last;
     size_t selection_first;
@@ -208,6 +210,34 @@ typedef struct {
 } TsEditSnapshot;
 
 typedef struct {
+    TsSample sample;
+    TsSample edit_parent;
+    TsTuning tuning;
+    TsTuning audible_tuning;
+    size_t loop_first;
+    size_t loop_last;
+    float loop_crossfade_ms;
+    TsBankCaptureKind capture_kind;
+    TsFamilyRelation relation;
+    TsGeneratorRecipe generator;
+    uint32_t lineage_seed;
+    uint32_t lineage_locks;
+    uint32_t trajectory_step;
+    float lineage_mutation;
+    int parent_slot;
+    int has_generator;
+    TsLoopMode loop_mode;
+    int has_loop;
+    int occupied;
+    TsProcessRecipe process;
+    TsEditSnapshot edit;
+    TsEditSnapshot *undo;
+    TsEditSnapshot *redo;
+    int undo_count;
+    int redo_count;
+} TsBankSlot;
+
+typedef struct {
     TsSample parent;
     TsSample current;
     TsSourceKind source_kind;
@@ -220,6 +250,7 @@ typedef struct {
     int family_trajectory;
     int family_anchor_slot;
     int family_last_slot;
+    int selected_slot;
     uint32_t generation;
     uint64_t ancestor_hash;
     TsTuning tuning;
@@ -246,6 +277,19 @@ typedef struct {
     int redo_count;
     TsBankSlot bank[TS_BANK_SLOT_COUNT];
 } TsInstrument;
+
+typedef struct {
+    TsEditSnapshot start;
+    TsSample original;
+    const float *owner_parent_data;
+    uint32_t owner_generation;
+    int owner_slot;
+    float amount;
+    int active;
+} TsWarpGesture;
+
+typedef TsWarpGesture TsSmearGesture;
+typedef TsWarpGesture TsTearGesture;
 
 void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
@@ -316,6 +360,54 @@ int ts_instrument_set_loop_mode(TsInstrument *instrument, TsLoopMode mode,
 int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind kind,
                                     float amount, char *error, size_t error_size);
+int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
+                                       size_t crossing_count,
+                                       char *error, size_t error_size);
+int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
+                             char *error, size_t error_size);
+void ts_warp_gesture_init(TsWarpGesture *gesture);
+int ts_instrument_warp_gesture_begin(TsInstrument *instrument,
+                                     TsWarpGesture *gesture,
+                                     char *error, size_t error_size);
+int ts_instrument_warp_gesture_preview(TsInstrument *instrument,
+                                       TsWarpGesture *gesture, float amount,
+                                       char *error, size_t error_size);
+int ts_instrument_warp_gesture_commit(TsInstrument *instrument,
+                                      TsWarpGesture *gesture,
+                                      char *error, size_t error_size);
+int ts_instrument_warp_gesture_cancel(TsInstrument *instrument,
+                                      TsWarpGesture *gesture,
+                                      char *error, size_t error_size);
+int ts_instrument_apply_smear(TsInstrument *instrument, float amount,
+                              char *error, size_t error_size);
+void ts_smear_gesture_init(TsSmearGesture *gesture);
+int ts_instrument_smear_gesture_begin(TsInstrument *instrument,
+                                      TsSmearGesture *gesture,
+                                      char *error, size_t error_size);
+int ts_instrument_smear_gesture_preview(TsInstrument *instrument,
+                                        TsSmearGesture *gesture, float amount,
+                                        char *error, size_t error_size);
+int ts_instrument_smear_gesture_commit(TsInstrument *instrument,
+                                       TsSmearGesture *gesture,
+                                       char *error, size_t error_size);
+int ts_instrument_smear_gesture_cancel(TsInstrument *instrument,
+                                       TsSmearGesture *gesture,
+                                       char *error, size_t error_size);
+int ts_instrument_apply_tear(TsInstrument *instrument, float amount,
+                             char *error, size_t error_size);
+void ts_tear_gesture_init(TsTearGesture *gesture);
+int ts_instrument_tear_gesture_begin(TsInstrument *instrument,
+                                     TsTearGesture *gesture,
+                                     char *error, size_t error_size);
+int ts_instrument_tear_gesture_preview(TsInstrument *instrument,
+                                       TsTearGesture *gesture, float amount,
+                                       char *error, size_t error_size);
+int ts_instrument_tear_gesture_commit(TsInstrument *instrument,
+                                      TsTearGesture *gesture,
+                                      char *error, size_t error_size);
+int ts_instrument_tear_gesture_cancel(TsInstrument *instrument,
+                                      TsTearGesture *gesture,
+                                      char *error, size_t error_size);
 int ts_instrument_zoom_selection(TsInstrument *instrument);
 int ts_instrument_zoom_view(TsInstrument *instrument, size_t anchor_frame,
                             float anchor_ratio, float scale);
@@ -325,6 +417,12 @@ int ts_instrument_undo(TsInstrument *instrument, char *error, size_t error_size)
 int ts_instrument_redo(TsInstrument *instrument, char *error, size_t error_size);
 size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, int width);
 const char *ts_generator_name(TsGeneratorKind kind);
+const char *ts_fm_structure_name(int structure);
+const char *ts_fm_ratio_family_name(int family);
+void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch);
+void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
+                      TsFmPatch *varied);
+float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied);
 const char *ts_noise_color_name(TsNoiseColor color);
 const char *ts_filter_mode_name(TsFilterMode mode);
 const char *ts_shaper_mode_name(TsShaperMode mode);
@@ -340,6 +438,8 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
                                TsBankCaptureKind kind, char *error, size_t error_size);
 int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size);
+int ts_instrument_bank_clear_all(TsInstrument *instrument,
+                                 char *error, size_t error_size);
 int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *name,
                               char *error, size_t error_size);
 int ts_instrument_bank_set_loop_full(TsInstrument *instrument, int slot,
@@ -356,6 +456,15 @@ int ts_instrument_bank_move_loop_endpoint(TsInstrument *instrument, int slot,
                                           int endpoint, size_t frame);
 int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
                                       char *error, size_t error_size);
+int ts_instrument_select_bank(TsInstrument *instrument, int slot,
+                              char *error, size_t error_size);
+int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
+                                  char *error, size_t error_size);
+int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
+                                int *destination_slot,
+                                char *error, size_t error_size);
+int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
+                                char *error, size_t error_size);
 int ts_instrument_generate_family_candidate(TsInstrument *instrument,
                                             int anchor_slot, int reseed,
                                             int *created_slot,

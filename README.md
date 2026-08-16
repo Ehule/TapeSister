@@ -1,51 +1,57 @@
 # TapeSister
 
-TapeSister is a standalone sample-making laboratory for FT2 Tapehead Edition. Its compact loop is **Source -> Variation -> Transform -> Edit -> Keep -> Repeat**. The 16-slot sound collection preserves useful results while deterministic Close, Wide, and Radical variation explores related material without replacing the stable Source/Current editing model.
+TapeSister is a standalone sample-making laboratory for FT2 Tapehead Edition. Its compact loop is **Create or Load -> Edit -> Transform -> Vary -> Keep -> Repeat**.
 
-![TapeSister variation page and sound collection](docs/family-generation-preview.png)
+## Independent Bank tiles
 
-## Source and Current
+Each of the 16 Bank tiles is a complete editable sound object. A tile owns its audio, tuning, loop, selection, viewport, processing and edit state, and Undo/Redo history. There is no separate Source, Parent, Current, promotion, or commit workflow in the interface.
 
-Every sound now has two explicit layers:
+Clicking an occupied tile selects it, restores its own editor state, and auditions it. Clicking an empty tile selects that exact Create/Load destination without playing anything. Clearing the active tile leaves the same empty destination selected. Bank 01 has no special protection or authority.
 
-- **Source** is the created or imported base (stored internally as the durable Parent buffer for project compatibility). Preview rendering never overwrites it.
-- **Current** is the audible and exportable result after nondestructive editing and the active processing recipe are applied.
+Create and Load replace only the selected tile. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. CHAIN is the only normal operation that establishes a relationship across tiles.
 
-Dragging or loading a WAV makes that WAV the Source. Every freshly created or imported source starts with neutral processing, so Source and Current are sample-for-sample identical until the first edit. Moving a processing control then rerenders Current from that Source; it cannot silently return to the factory waveform.
+Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
+horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
+number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead.
+Set `rotate_wheel_fine` (1–20, default 5) and `rotate_wheel_coarse` (20–100,
+default 50) in the `[Waveform]` section of `tapesister.ini`.
 
-The startup sound or an imported WAV creates a Source in slot 01. After that, **Create** puts a variation into the next empty slot without replacing Source; **Vary** makes another deterministic result using the previous range, amount, locks, and anchor. The result is auditioned immediately, and **Set Current** remains the deliberate promotion boundary. Shift+Create or Shift+Vary creates and promotes in one gesture, while Ctrl+Create temporarily forces a Radical departure. A full collection refuses safely until a non-Source slot is cleared.
+The compact **WARP** control is a spring-loaded, deterministic offline Transform for
+the selected tile, or only for the fixed waveform selection when one is active. Hold and drag
+right to hear increasing read-position bend, ease left to hear less, and release to
+commit one Undo/Redo action; releasing at zero restores the exact gesture-start audio.
+Ctrl+wheel over WARP provides fine exploration and commits when Ctrl is released.
 
-**Reset** returns Current exactly to Source and is undoable. **Commit** requires a deliberate second click (or second `Ctrl+P`), promotes Current into a new immutable Source generation, records the previous Source hash, resets the processing shelf, and starts a fresh edit history.
-
-## A/B audition and playhead
-
-The **Source** and **Current** buttons choose what every playback trigger auditions without changing the editing target: edits, Save, and Export always operate on Current. `Ctrl+B` toggles the same selector. Each has its own viewport, so wheel/keyboard zoom, panning, Zoom Selection, Show All, and Play View work directly on the waveform currently displayed without disturbing the other view.
-
-Play All and keyboard notes use the complete chosen source. Play Selection and Play Displayed map Current's crop-relative range back to the matching frames in Source, so comparisons remain meaningful after cropping. Switching Source/Current during playback preserves fractional progress through the active range instead of restarting it.
-
-A source-colored playhead is visible only while audio is running: green identifies Source playback and amber identifies Current playback. Space, Escape, and natural playback completion hide it.
+**TEAR** is the third spring-loaded native Transform. It groups nearby zero-crossing
+regions into practical waveset packets, then progressively reveals one deterministic
+field of local swaps and reversals. It is length-preserving and selection-aware;
+Ctrl+wheel over TEAR provides the same fine frozen-start exploration as WARP and SMEAR.
+Every preview auto-auditions from the same frozen starting point, and the control
+springs back to zero after commit or Escape cancellation.
 
 ## Zero-snapped selection and loop modes
 
-Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in Current. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop. Source view maps pointer positions through Current's crop before snapping. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
+Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in the selected tile. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
 
-The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. If no selection exists, Set Loop first selects and loops the exact whole Current. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape.
+The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. If no selection exists, Set Loop first selects and loops the exact whole tile. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape. Loop range, mode, and crossfade belong to the tile and participate in its Undo/Redo history.
 
-Source/Current A/B maps the same loop through the crop offset, preserves relative playback progress, and uses the same direction mode. Loop range, mode, and crossfade participate in Undo/Redo. Reset clears them and can be undone; Commit carries the completed loop onto the newly promoted Source while clearing prior edit history.
+The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary click clears the chord and returns to momentary audition. Sustained voices follow the selected tile.
 
-The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary click clears the chord and returns to momentary audition. Sustained voices survive loop-handle changes, Current rerenders, and tuning changes.
+TapeSister starts in FT2-style borderless desktop fullscreen. Escape first cancels an active dialog, preview, or editing gesture; otherwise it stops playback and opens the exit confirmation. Closing the window uses the same confirmation, with an explicit warning whenever the instrument or collection differs from the last opened or saved TSR project.
 
 ## Pitch and tuning
 
-The **Tune** page gives every instrument one shared pitch readout and ±100-cent audible Trim. Source/Current A/B therefore compares the same musical mapping, while the two-octave keyboard pitches audio relative to its accepted source root instead of assuming the first C is always unity. The default root is C3 (MIDI 48), preserving the previous keyboard behavior for older WAV and TSR files. **Down** lowers both the held sound and displayed note/frequency; **Up** raises all three; moving Trim right sharpens them. TapeSister keeps the inverse sampler-unity value internally so exported WAV mapping remains correct. Shift-right-clicking an onscreen key assigns it as the source root; held and latched notes retune in place without restarting.
+The **Tune** page gives the selected tile its own pitch readout and ±100-cent audible Trim. The two-octave keyboard pitches audio relative to that tile's accepted root instead of assuming the first C is always unity. The default root is C3 (MIDI 48). **Down** lowers both the held sound and displayed note/frequency; **Up** raises all three; moving Trim right sharpens them. Shift-right-clicking an onscreen key assigns the tile's root; held and latched notes retune in place without restarting.
 
-**Suggest Pitch** analyzes the snapped Selection first, then the Loop, then all of Current. It temporarily places the suggested mapping on the keyboard so new, held, and latched notes can audition it immediately; the Tune readout follows that preview, while saved tuning and Undo history remain untouched. A second explicit click accepts it. Escape cancels the preview and still performs Stop All; Space stops audition without discarding the preview. Quiet, noisy, or unstable material is rejected rather than forced into a misleading note. Manual tuning remains authoritative.
+**Suggest Pitch** analyzes the snapped Selection first, then the Loop, then the whole selected tile. It temporarily places the suggested mapping on the keyboard so new, held, and latched notes can audition it immediately; the Tune readout follows that preview, while saved tuning and Undo history remain untouched. A second explicit click accepts it. Escape cancels the preview and still performs Stop All; Space stops audition without discarding the preview. Quiet, noisy, or unstable material is rejected rather than forced into a misleading note. Manual tuning remains authoritative.
 
-Root and fine tuning survive Undo/Redo, Reset, Commit, collection capture, and Set Current. Each bank member carries its own mapping. Current and Collection WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. The same chunk carries loop start/end/type; importing the WAV restores that loop in TapeSister. TSR11 stores tuning for the live instrument and every bank member. User-captured TSP2 recipes optionally carry tuning; the eight factory recipes remain processing-only and never retune a sound unexpectedly.
+Root and fine tuning participate in the selected tile's state and Undo/Redo history. Selected-tile and Collection WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. The same chunk carries loop start/end/type; importing the WAV restores that loop in TapeSister. User-captured TSP2 recipes optionally carry tuning; the eight factory recipes remain processing-only and never retune a sound unexpectedly.
 
 ## FastTracker handoff and configuration
 
 **Config** opens one compact modal with blank-safe editable paths for the sample root, FastTracker executable, and FT2 exchange folder. The values persist in portable `tapesister.ini`; Tab or Up/Down changes field, the usual caret keys edit anywhere in a path, Ctrl+Backspace clears it, and **Use CWD** copies the current directory. The configured sample root becomes the file browser's starting directory while normal browsing still remembers later navigation.
+
+Fresh launches also use two boolean startup settings (both default to `1` when absent): `startup_welcome_sample` installs `assets/tapesister_welcome.wav` as the ordinary imported working sound in bank 01, and `startup_welcome_autoplay` auditions it once after the splash closes. Set autoplay to `0` to keep the waveform without the greeting, or sample to `0` to start with an empty selected bank 01. Command-line WAV/TSR loading takes precedence and is never overwritten by the welcome artifact. See `tapesister.ini.example`.
 
 **Send FT2** exports every occupied collection slot into an automatically numbered folder under the exchange path (falling back to the sample path), then launches the configured FastTracker executable without shell interpolation. No existing handoff folder is replaced. The handoff remains deliberately file-based: TapeSister does not link against tracker state, and FT2's existing folder importer decides whether the collection replaces the current instrument, fills another instrument, or becomes a launcher bank.
 
@@ -53,21 +59,22 @@ Every handoff WAV includes root/fine-tune metadata plus loop start, inclusive en
 
 ## Sound collection and variation
 
-Every newly created or imported sound starts a 16-slot collection with its initial Source copied into slot 01. Commit can promote Current without replacing that collection Source. Slots 02–16 can capture three useful zero-aligned forms:
+All 16 slots are peers. A newly created or imported sound fills the currently selected destination. Any empty slot can also capture useful zero-aligned material from the active tile:
 
-- Shift-click an empty slot to capture all of Current;
+- Shift-click an empty slot to capture the full active tile;
 - Alt-click an empty slot to capture the active Loop, including its crossfade setting; or
-- Ctrl-click an empty slot to capture the snapped Selection.
+- Ctrl-click an empty slot to capture the snapped Selection; or
+- Ctrl+Shift-click an empty slot to Clone the active tile's complete editable state and history.
 
-Click any slot to audition it and place that sound in the waveform display; an empty slot produces silence and a blank waveform. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. While a filled bank waveform is visible, the Loop page edits that slot directly. Right-click an occupied slot 02–16 to rename it, or Shift-right-click to clear it. Slot 01 remains the fixed Source, and occupied slots must be cleared deliberately before reuse.
+Click an occupied slot to select its independent editable state and audition it. Click an empty slot to select that exact CREATE/LOAD destination without auditioning. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. While a filled bank waveform is visible, the Loop page edits that slot directly. Right-click any occupied slot to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click and empties all 16 peer slots.
 
-The **Variation** page selects Close, Wide, or Radical and sets Amount from 0–100%. Close makes a restrained deterministic variation of the chosen sound; Wide allows a larger timbral and structural departure; Radical creates a new Tonal, Metallic, Noise, or Pulse source. Loop, Duration, Pitch, Envelope, and Spectral locks protect those traits. Colored lines identify Source, Kept, Close, Wide, and Radical results, while the waveform header names each result's direct source slot.
+The **Variation** page exposes one continuous Range and the **Chain** switch. Vary requires a selected FM tile. With Chain off, Vary replaces only that tile. With Chain on, Vary writes to the next empty tile, selects it, and uses it as the basis for the next chained result. If the bank is full, chained Vary refuses instead of overwriting another tile.
 
-With **Chain** off, repeated variations share the displayed slot (or saved anchor). With Chain on, every new result becomes the next source, creating a repeatable chain through the collection. Each created slot stores its direct source, variation range, seed, amount, active locks, chain step, and generator recipe. These are descriptions, not restrictions: manually kept and unrelated samples remain valid collection entries.
+The top **Export** button and `Ctrl+E` ask whether to export the selected tile or the complete Collection. Collection export writes every occupied slot as a numbered, loop-aware WAV into a new folder. Existing folders are never silently replaced. A failed export removes the partial files and folder.
 
-After auditioning a filled slot, **Set Current** makes it the new clean editing base. Source and Current become sample-for-sample identical to the selected audio, stored loop/mode/crossfade metadata follows it, and the complete collection remains intact. This deliberate source boundary advances the generation, records the previous Source hash, resets DSP and edit history, and cannot be crossed with Undo.
+## Six-operator FM source proof
 
-The top **Export** button and `Ctrl+E` always ask whether to export the single Current WAV or the complete Collection. Collection export writes every occupied slot as a numbered, loop-aware WAV into a new folder named from the initial Source. Existing folders are never silently replaced. A failed export removes the partial files and folder. TSR11 projects remain fully compatible; legacy field names and numeric values are preserved internally while the visible vocabulary changes.
+Create produces a deterministic six-operator FM tile. Each seed selects a complete hidden patch from curated Structure and Ratio sets, plus Depth, Shape, feedback, and a short transient layer. Vary changes that stored FM recipe according to Range. A later focused slice can expose a small set of musically useful macros without adding an operator table to the primary interface.
 
 ## Physical tape gestures
 
@@ -82,9 +89,11 @@ Where source and existing audio overlap, Mix measures the source peak and underl
 
 ## Processing recipes and shaping
 
-The lower panel now cycles **KEYS**, **BANK**, and **RCPE**. RCPE contains eight immutable factory recipes and eight user slots. Click a filled slot to apply its processing to Current as one undoable render. Shift-click an empty user slot to capture the live processing shelf, right-click a filled user slot to rename it, and Shift-right-click to clear it. Factory recipes and their names remain immutable. Manual shelf changes remove the active-slot highlight without altering the stored recipe.
+The lower panel now cycles **KEYS**, **BANK**, **RCPE**, and **INGR**. INGR is an empty navigation scaffold for future ingredient shelves; entering it does not alter the selected tile, bank contents, recipes, or Undo history. RCPE contains eight immutable factory recipes and eight user slots. Click a filled slot to apply its processing to the selected tile as one undoable render. Shift-click an empty user slot to capture the live processing shelf, right-click a filled user slot to rename it, and Shift-right-click to clear it. Factory recipes and their names remain immutable. Manual shelf changes remove the active-slot highlight without altering the stored recipe.
 
-Portable `.tsp` files contain the named processing settings and, for user captures, optional tuning metadata—never Source audio, crop, selection, loop, tape edits, or bank members—so the same treatment can be applied to unrelated sources. Factory recipes omit tuning. While RCPE is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the instrument. Full `.tsr` projects remain the self-contained way to save a complete sound.
+The compact **LOOP** audition button repeats a fixed selection when one exists, otherwise it follows the visible tile view as that view is zoomed or panned. A short boundary crossfade uses the existing audition engine. While LOOP is active it remains the audition owner, so WARP, SMEAR, and TEAR continue publishing spring-loaded previews without their usual timed playback retriggers. Loading or creating another sound, selecting a bank tile, Stop, or quit cancels workbench LOOP ownership.
+
+Portable `.tsp` files contain named processing settings and, for user captures, optional tuning metadata—never tile audio, crop, selection, loop, tape edits, or bank members—so the same treatment can be applied to unrelated material. Factory recipes omit tuning. While RCPE is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the selected tile. Full `.tsr` projects remain the self-contained way to save a complete bank.
 
 The **Shape** page combines a bypassable resonant Lowpass, Highpass, or Bandpass filter with a bypassable Tape, Clip, or Fold shaper. Cutoff uses logarithmic travel, while resonance, drive, and wet/dry mix expose the musically useful range. These deterministic stages live in the processing recipe and render before Delay and Space; existing ordered tape placements remain downstream. Held and latched notes are remapped across recipe application just like other Current rerenders.
 
@@ -113,10 +122,10 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
-- self-contained native TSR11 project saving with embedded Source audio, all bank slots, tuning and collection provenance, editor view, selection, loop mode/metadata, pre- and post-DSP edit timelines, and every DSP parameter; and
-- mono 16-bit Current export with sampler-compatible root/fine-tune and loop metadata.
+- self-contained project saving with all bank slots, tuning, editor state, selection, loop metadata, edit timelines, and DSP parameters; and
+- mono 16-bit selected-tile export with sampler-compatible root/fine-tune and loop metadata.
 
-Sample edits run deterministically between the preserved Source and the live DSP. With no selection they affect the whole Current; with a selection they affect only that range. Commit prints the heard result into the next Source generation and clears both the edit stack and Undo/Redo history.
+Sample edits are deterministic and tile-owned. With no selection they affect the whole selected tile; with a selection they affect only that range.
 
 Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the result without reconstructing clipped peaks, preserving that flattened distortion as a repeatable sculpting operation.
 
@@ -133,7 +142,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR11 embeds the Source waveform, complete sound-collection bank, per-member tuning and provenance, Collection controls, loop directions, replayable tape-edit timeline, filter, and shaper in one portable file. TSR6 through TSR10 projects remain loadable with deterministic defaults for fields absent from those versions. TSP2 remains source-audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR15 stores every occupied tile as a complete independent object: audio, private render baseline, tuning, loop, selection, viewport, processing and edit timelines, and Undo/Redo stacks. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR14 remain loadable for compatibility. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 
@@ -163,10 +172,9 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 
 - Lower octave: `Z S X D C V G B H N J M`
 - Upper octave: `Q 2 W 3 E R 5 T 6 Y 7 U`
-- Stop all: `Space` or `Escape`
+- Stop all: `Space`; `Escape` cancels the active gesture/dialog first, otherwise opens exit confirmation
 - Load browser: `Ctrl+O`
-- Save browser / choose Export Current or Collection: `Ctrl+S` / `Ctrl+E`
-- Toggle Source/Current audition: `Ctrl+B`
+- Save browser / choose Export Selected Tile or Collection: `Ctrl+S` / `Ctrl+E`
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`
 - Select all: `Ctrl+A`
 - Reverse / Normalize: `Ctrl+R` / `Ctrl+N`
@@ -175,14 +183,11 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Zoom in/out: `=` or `+` / `-`
 - Pan waveform: `Left` / `Right`
 - Show all: `0`
-- Commit Current as Source: `Ctrl+P` twice
 - Browser navigation: `Up` / `Down`, `Page Up` / `Page Down`, `Home` / `End`
 - Browser parent directory: `Backspace` while the file list is focused
 - Browser confirm/cancel: `Enter` / `Escape`
 - Build/toggle a five-note chord: `Shift` + onscreen-key click
-- Create variation / related variation: **Create** / **Vary**
-- Create and immediately Set Current: `Shift` + Create or Vary
-- Force one Radical result: `Ctrl` + Create
+- Create FM tile / vary selected FM tile: **Create** / **Vary**
 - Config paths: top **Config** button
 - Export collection to exchange folder and launch FT2: top **Send FT2** button
 

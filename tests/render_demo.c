@@ -6,7 +6,7 @@
 
 int main(int argc, char **argv)
 {
-    const char *path = argc > 1 ? argv[1] : "tapesister-parent-current.ppm";
+    const char *path = argc > 1 ? argv[1] : "tapesister-independent-tiles.ppm";
     TsInstrument instrument;
     TsUiState ui;
     TsFramebuffer fb;

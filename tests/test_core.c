@@ -16,7 +16,8 @@ static int failures;
 
 static TsGeneratorRecipe generator(uint32_t seed, TsGeneratorKind kind)
 {
-    TsGeneratorRecipe result = {seed, kind, 0.25f, 130.8128f};
+    TsGeneratorRecipe result = {.seed = seed, .kind = kind, .seconds = 0.25f,
+                                .frequency = 130.8128f};
     return result;
 }
 
@@ -70,6 +71,20 @@ int main(void)
     ts_instrument_init(&family_restored);
     ts_note_bank_init(&notes);
     ts_recipe_bank_init(&recipe_bank);
+    ts_ui_init(&ui);
+    CHECK(ts_ui_transform_auto_audition_allowed(&ui));
+    ui.workbench_loop_active = 1;
+    CHECK(!ts_ui_transform_auto_audition_allowed(&ui));
+    ui.workbench_loop_active = 0;
+    CHECK(ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+    ts_ui_cycle_panel(&ui);
+    CHECK(!ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+    ts_ui_cycle_panel(&ui);
+    CHECK(!ui.show_keyboard && ui.show_recipes && !ui.show_ingredients);
+    ts_ui_cycle_panel(&ui);
+    CHECK(!ui.show_keyboard && !ui.show_recipes && ui.show_ingredients);
+    ts_ui_cycle_panel(&ui);
+    CHECK(ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
     CHECK(ts_sample_generate(&a, &first, error, sizeof(error)));
@@ -78,6 +93,79 @@ int main(void)
     CHECK(a.sample_rate == 44100);
     CHECK(ts_sample_hash(&a) == ts_sample_hash(&b));
     CHECK(ts_sample_peak(&a) > 0.1f && ts_sample_peak(&a) <= 1.0f);
+    {
+        TsSample fm_a, fm_b, fm_other;
+        TsGeneratorRecipe fm_recipe = generator(0x464d0001u, TS_GENERATOR_FM);
+        TsFmPatch patch;
+        ts_sample_init(&fm_a);
+        ts_sample_init(&fm_b);
+        ts_sample_init(&fm_other);
+        ts_fm_patch_from_recipe(&fm_recipe, &patch);
+        CHECK(patch.structure >= 0 && patch.structure < TS_FM_STRUCTURE_COUNT);
+        CHECK(patch.ratio_family >= 0 &&
+              patch.ratio_family < TS_FM_RATIO_FAMILY_COUNT);
+        CHECK(patch.depth >= 0.8f && patch.depth <= 8.0f);
+        CHECK(strcmp(ts_fm_structure_name(patch.structure), "UNKNOWN") != 0);
+        CHECK(strcmp(ts_fm_ratio_family_name(patch.ratio_family), "UNKNOWN") != 0);
+        CHECK(ts_sample_generate(&fm_a, &fm_recipe, error, sizeof(error)));
+        CHECK(ts_sample_generate(&fm_b, &fm_recipe, error, sizeof(error)));
+        CHECK(ts_sample_hash(&fm_a) == ts_sample_hash(&fm_b));
+        CHECK(ts_sample_peak(&fm_a) > 0.05f && ts_sample_peak(&fm_a) <= 1.0f);
+        CHECK(strncmp(fm_a.name, "FM ", 3) == 0);
+        fm_recipe.seed = 0x464d0002u;
+        CHECK(ts_sample_generate(&fm_other, &fm_recipe, error, sizeof(error)));
+        CHECK(ts_sample_hash(&fm_other) != ts_sample_hash(&fm_a));
+        for (size_t i = 0; i < fm_a.frames; ++i) CHECK(isfinite(fm_a.data[i]));
+        ts_sample_free(&fm_a);
+        ts_sample_free(&fm_b);
+        ts_sample_free(&fm_other);
+    }
+    {
+        TsInstrument fm_instrument, fm_restored;
+        uint64_t fm_hash;
+        ts_instrument_init(&fm_instrument);
+        ts_instrument_init(&fm_restored);
+        CHECK(ts_instrument_generate(&fm_instrument, TS_GENERATOR_FM,
+                                     0x464d5453u, error, sizeof(error)));
+        fm_hash = ts_sample_hash(&fm_instrument.parent);
+        CHECK(fm_instrument.generator.kind == TS_GENERATOR_FM);
+        CHECK(ts_instrument_save_recipe(&fm_instrument, "test-fm.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&fm_restored, "test-fm.tsr",
+                                        error, sizeof(error)));
+        CHECK(fm_restored.generator.kind == TS_GENERATOR_FM);
+        CHECK(ts_sample_hash(&fm_restored.parent) == fm_hash);
+        CHECK(ts_sample_hash(&fm_restored.bank[0].sample) == fm_hash);
+        remove("test-fm.tsr");
+        ts_instrument_free(&fm_instrument);
+        ts_instrument_free(&fm_restored);
+    }
+    {
+        static const TsGeneratorKind expected[] = {
+            TS_GENERATOR_METALLIC, TS_GENERATOR_NOISE,
+            TS_GENERATOR_PULSE, TS_GENERATOR_FM
+        };
+        TsInstrument cycle;
+        int slot = -1;
+        ts_instrument_init(&cycle);
+        CHECK(ts_instrument_generate(&cycle, TS_GENERATOR_TONAL,
+                                     0x4359434cu, error, sizeof(error)));
+        cycle.family_relation = TS_FAMILY_STRANGER;
+        cycle.family_trajectory = 1;
+        for (int i = 0; i < 4; ++i) {
+            CHECK(ts_instrument_generate_family_candidate(&cycle, 0, 0, &slot,
+                                                           error, sizeof(error)));
+            CHECK(slot == i + 1);
+            CHECK(cycle.bank[slot].has_generator);
+            CHECK(cycle.bank[slot].generator.kind == expected[i]);
+            CHECK(strncmp(cycle.bank[slot].sample.name,
+                          ts_generator_name(expected[i]),
+                          strlen(ts_generator_name(expected[i]))) == 0);
+        }
+        CHECK(cycle.bank[slot].generator.kind == TS_GENERATOR_FM);
+        CHECK(strncmp(cycle.bank[slot].sample.name, "FM ", 3) == 0);
+        ts_instrument_free(&cycle);
+    }
     CHECK(ts_sample_clone(&copy, &a, error, sizeof(error)));
     CHECK(ts_sample_hash(&copy) == ts_sample_hash(&a));
     {
@@ -91,7 +179,9 @@ int main(void)
                 ts_sample_init(&variants[i]);
                 CHECK(ts_sample_generate(&variants[i], &varied, error, sizeof(error)));
                 hashes[i] = ts_sample_hash(&variants[i]);
-                CHECK(strstr(variants[i].name, " V") != NULL);
+                CHECK(kind == TS_GENERATOR_FM ?
+                      strncmp(variants[i].name, "FM ", 3) == 0 :
+                      strstr(variants[i].name, " V") != NULL);
             }
             for (int i = 0; i < 4; ++i)
                 for (int j = i + 1; j < 4; ++j) CHECK(hashes[i] != hashes[j]);
@@ -115,6 +205,10 @@ int main(void)
         ts_instrument_set_selection_snapped(&snap_instrument, 4, 3);
         CHECK(snap_instrument.selection_first == 2 && snap_instrument.selection_last == 4);
         ts_instrument_set_selection(&snap_instrument, 0, crossing_sample.frames);
+        CHECK(snap_instrument.selection_first == 0 &&
+              snap_instrument.selection_last == crossing_sample.frames);
+        ts_instrument_set_selection_snapped(&snap_instrument, 0,
+                                             crossing_sample.frames);
         CHECK(snap_instrument.selection_first == 0 &&
               snap_instrument.selection_last == crossing_sample.frames);
         ts_instrument_clear_selection(&snap_instrument);
@@ -392,7 +486,19 @@ int main(void)
     CHECK(ts_instrument_zoom_selection(&generated));
     CHECK(generated.view_first == 100 && generated.view_last == 1000);
     CHECK(ts_instrument_frame_from_view_x(&generated, 0, 600) == 100);
-    CHECK(ts_instrument_frame_from_view_x(&generated, 599, 600) < 1000);
+    CHECK(ts_instrument_frame_from_view_x(&generated, 599, 600) == 1000);
+    generated.view_first = generated.current.frames - 200u;
+    generated.view_last = generated.current.frames;
+    CHECK(ts_instrument_frame_from_view_x(&generated, 599, 600) ==
+          generated.current.frames);
+    ts_instrument_set_selection_snapped(&generated,
+                                        generated.current.frames - 100u,
+                                        generated.current.frames);
+    CHECK(generated.selection_last == generated.current.frames);
+    CHECK(generated.selection_last - generated.selection_first > 0u);
+    generated.view_first = 100;
+    generated.view_last = 1000;
+    ts_instrument_set_selection(&generated, 100, 1000);
     CHECK(ts_instrument_crop_selection(&generated, error, sizeof(error)));
     CHECK(generated.current.frames == 900);
     CHECK(ts_sample_hash(&generated.parent) == parent_hash);
@@ -402,6 +508,227 @@ int main(void)
     CHECK(generated.current.frames == original_frames);
     CHECK(generated.has_selection);
     CHECK(generated.view_first == 100 && generated.view_last == 1000);
+
+    {
+        TsInstrument rotation;
+        const float original[] = {-1.0f, -0.5f, 0.5f, 1.0f, -0.25f, -0.75f};
+        ts_instrument_init(&rotation);
+        rotation.parent.frames = sizeof(original) / sizeof(original[0]);
+        rotation.parent.sample_rate = 44100;
+        rotation.parent.data = (float *)malloc(sizeof(original));
+        CHECK(rotation.parent.data != NULL);
+        if (rotation.parent.data != NULL) {
+            memcpy(rotation.parent.data, original, sizeof(original));
+            CHECK(ts_sample_clone(&rotation.current, &rotation.parent, error, sizeof(error)));
+            rotation.crop_last = rotation.parent.frames;
+            rotation.view_last = rotation.current.frames;
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, 1, error, sizeof(error)));
+            CHECK(rotation.current.frames == rotation.parent.frames);
+            CHECK(rotation.current.data[0] == original[2]);
+            CHECK(rotation.current.data[4] == original[0]);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, 1, error, sizeof(error)));
+            CHECK(memcmp(rotation.current.data, original, sizeof(original)) == 0);
+            CHECK(ts_instrument_undo(&rotation, error, sizeof(error)));
+            CHECK(rotation.current.data[0] == original[2]);
+            CHECK(ts_instrument_undo(&rotation, error, sizeof(error)));
+            CHECK(memcmp(rotation.current.data, original, sizeof(original)) == 0);
+            ts_instrument_set_selection(&rotation, 1, 5);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, 1, error, sizeof(error)));
+            CHECK(rotation.current.data[0] == original[0]);
+            CHECK(rotation.current.data[5] == original[5]);
+            CHECK(ts_instrument_undo(&rotation, error, sizeof(error)));
+            CHECK(memcmp(rotation.current.data, original, sizeof(original)) == 0);
+        }
+        ts_instrument_free(&rotation);
+    }
+
+    {
+        TsInstrument warp;
+        float original[256];
+        float first_render[256];
+        ts_instrument_init(&warp);
+        for (size_t i = 0; i < 256; ++i)
+            original[i] = 0.55f * sinf((float)i * 0.071f) +
+                          0.18f * sinf((float)i * 0.233f);
+        warp.parent.frames = 256;
+        warp.parent.sample_rate = 44100;
+        warp.parent.data = (float *)malloc(sizeof(original));
+        CHECK(warp.parent.data != NULL);
+        if (warp.parent.data != NULL) {
+            memcpy(warp.parent.data, original, sizeof(original));
+            CHECK(ts_sample_clone(&warp.current, &warp.parent, error, sizeof(error)));
+            warp.crop_last = warp.parent.frames;
+            warp.view_last = warp.current.frames;
+
+            CHECK(ts_instrument_apply_warp(&warp, 0.0f, error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+            CHECK(warp.undo_count == 0);
+
+            ts_instrument_set_selection(&warp, 40, 220);
+            CHECK(ts_instrument_apply_warp(&warp, 0.72f, error, sizeof(error)));
+            CHECK(warp.current.frames == 256);
+            CHECK(warp.undo_count == 1);
+            CHECK(memcmp(warp.current.data, original, 40 * sizeof(float)) == 0);
+            CHECK(memcmp(warp.current.data + 220, original + 220,
+                         (256 - 220) * sizeof(float)) == 0);
+            CHECK(warp.current.data[40] == original[40]);
+            CHECK(warp.current.data[219] == original[219]);
+            CHECK(memcmp(warp.current.data + 41, original + 41,
+                         (220 - 42) * sizeof(float)) != 0);
+            for (size_t i = 0; i < warp.current.frames; ++i)
+                CHECK(isfinite(warp.current.data[i]));
+            memcpy(first_render, warp.current.data, sizeof(first_render));
+            CHECK(ts_instrument_undo(&warp, error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+            CHECK(ts_instrument_apply_warp(&warp, 0.72f, error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, first_render, sizeof(first_render)) == 0);
+        }
+        ts_instrument_free(&warp);
+    }
+
+    {
+        TsInstrument warp;
+        float silence[9] = {0};
+        ts_instrument_init(&warp);
+        warp.parent.frames = 9;
+        warp.parent.sample_rate = 8000;
+        warp.parent.data = (float *)malloc(sizeof(silence));
+        CHECK(warp.parent.data != NULL);
+        if (warp.parent.data != NULL) {
+            memcpy(warp.parent.data, silence, sizeof(silence));
+            CHECK(ts_sample_clone(&warp.current, &warp.parent, error, sizeof(error)));
+            warp.crop_last = warp.parent.frames;
+            warp.view_last = warp.current.frames;
+            CHECK(ts_instrument_apply_warp(&warp, 1.0f, error, sizeof(error)));
+            CHECK(warp.current.frames == 9);
+            CHECK(memcmp(warp.current.data, silence, sizeof(silence)) == 0);
+            CHECK(ts_instrument_undo(&warp, error, sizeof(error)));
+            ts_instrument_set_selection(&warp, 3, 4);
+            CHECK(ts_instrument_apply_warp(&warp, 1.0f, error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, silence, sizeof(silence)) == 0);
+            CHECK(!ts_instrument_apply_warp(&warp, NAN, error, sizeof(error)));
+            CHECK(!ts_instrument_apply_warp(&warp, 1.1f, error, sizeof(error)));
+        }
+        ts_instrument_free(&warp);
+    }
+    {
+        TsInstrument warp;
+        TsWarpGesture gesture;
+        float original[192];
+        float preview_20[192];
+        ts_instrument_init(&warp);
+        ts_warp_gesture_init(&gesture);
+        for (size_t i = 0; i < 192; ++i)
+            original[i] = 0.61f * sinf((float)i * 0.093f) +
+                          0.13f * cosf((float)i * 0.317f);
+        warp.parent.frames = 192;
+        warp.parent.sample_rate = 44100;
+        warp.parent.data = (float *)malloc(sizeof(original));
+        CHECK(warp.parent.data != NULL);
+        if (warp.parent.data != NULL) {
+            memcpy(warp.parent.data, original, sizeof(original));
+            CHECK(ts_sample_clone(&warp.current, &warp.parent, error, sizeof(error)));
+            warp.crop_last = warp.parent.frames;
+            warp.view_first = 48;
+            warp.view_last = 144;
+            ts_instrument_set_selection(&warp, 24, 168);
+
+            CHECK(ts_instrument_warp_gesture_begin(&warp, &gesture,
+                                                    error, sizeof(error)));
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.2f,
+                                                      error, sizeof(error)));
+            CHECK(warp.view_first == 48 && warp.view_last == 144);
+            memcpy(preview_20, warp.current.data, sizeof(preview_20));
+            CHECK(memcmp(warp.current.data, original, 24 * sizeof(float)) == 0);
+            CHECK(memcmp(warp.current.data + 168, original + 168,
+                         24 * sizeof(float)) == 0);
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.8f,
+                                                      error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, preview_20, sizeof(preview_20)) != 0);
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.2f,
+                                                      error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, preview_20, sizeof(preview_20)) == 0);
+            CHECK(warp.undo_count == 0);
+            CHECK(ts_instrument_warp_gesture_commit(&warp, &gesture,
+                                                     error, sizeof(error)));
+            CHECK(warp.view_first == 48 && warp.view_last == 144);
+            CHECK(warp.undo_count == 1);
+            CHECK(ts_instrument_undo(&warp, error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+
+            CHECK(ts_instrument_warp_gesture_begin(&warp, &gesture,
+                                                    error, sizeof(error)));
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.9f,
+                                                      error, sizeof(error)));
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.0f,
+                                                      error, sizeof(error)));
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+            CHECK(ts_instrument_warp_gesture_commit(&warp, &gesture,
+                                                     error, sizeof(error)));
+            CHECK(warp.view_first == 48 && warp.view_last == 144);
+            CHECK(warp.undo_count == 0);
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+
+            CHECK(ts_instrument_warp_gesture_begin(&warp, &gesture,
+                                                    error, sizeof(error)));
+            CHECK(ts_instrument_warp_gesture_preview(&warp, &gesture, 0.7f,
+                                                      error, sizeof(error)));
+            CHECK(ts_instrument_warp_gesture_cancel(&warp, &gesture,
+                                                     error, sizeof(error)));
+            CHECK(warp.view_first == 48 && warp.view_last == 144);
+            CHECK(warp.undo_count == 0);
+            CHECK(memcmp(warp.current.data, original, sizeof(original)) == 0);
+
+            CHECK(ts_instrument_warp_gesture_begin(&warp, &gesture,
+                                                    error, sizeof(error)));
+            ++warp.generation;
+            CHECK(!ts_instrument_warp_gesture_preview(&warp, &gesture, 0.5f,
+                                                       error, sizeof(error)));
+            --warp.generation;
+            CHECK(ts_instrument_warp_gesture_cancel(&warp, &gesture,
+                                                     error, sizeof(error)));
+        }
+        ts_instrument_free(&warp);
+    }
+    {
+        TsInstrument rotation;
+        float original[12];
+        ts_instrument_init(&rotation);
+        for (size_t i = 0; i < 12; ++i) original[i] = (i & 1u) ? 1.0f : -1.0f;
+        rotation.parent.frames = 12;
+        rotation.parent.sample_rate = 44100;
+        rotation.parent.data = (float *)malloc(sizeof(original));
+        CHECK(rotation.parent.data != NULL);
+        if (rotation.parent.data != NULL) {
+            memcpy(rotation.parent.data, original, sizeof(original));
+            CHECK(ts_sample_clone(&rotation.current, &rotation.parent, error, sizeof(error)));
+            rotation.crop_last = rotation.parent.frames;
+            rotation.view_last = rotation.current.frames;
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, 5,
+                                                      error, sizeof(error)));
+            CHECK(rotation.current.data[0] == original[5]);
+            CHECK(rotation.post_edit_count == 1);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, 50,
+                                                      error, sizeof(error)));
+            CHECK(rotation.current.data[0] == original[11]);
+            CHECK(rotation.post_edit_count == 1);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, 50,
+                                                      error, sizeof(error)));
+            CHECK(rotation.current.data[0] == original[5]);
+            CHECK(rotation.post_edit_count == 1);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, -1, 5,
+                                                      error, sizeof(error)));
+            CHECK(memcmp(rotation.current.data, original, sizeof(original)) == 0);
+            CHECK(rotation.post_edit_count == 0);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, 1000000,
+                                                      error, sizeof(error)));
+            CHECK(rotation.current.frames == 12 && rotation.post_edit_count == 1);
+            CHECK(ts_instrument_rotate_zero_crossing(&rotation, 1, 100,
+                                                      error, sizeof(error)));
+            CHECK(rotation.post_edit_count == 1);
+        }
+        ts_instrument_free(&rotation);
+    }
 
     parent_hash = ts_sample_hash(&generated.parent);
     CHECK(ts_instrument_reseed(&generated, error, sizeof(error)));
@@ -524,6 +851,19 @@ int main(void)
                                                            &refused_slot,
                                                            error, sizeof(error)));
             CHECK(refused_slot == 8);
+            {
+                uint32_t sequence_before_clear = family_repeat.family_sequence;
+                CHECK(ts_instrument_bank_clear_all(&family_repeat, error, sizeof(error)));
+                CHECK(ts_instrument_bank_count(&family_repeat) == 0);
+                CHECK(ts_instrument_bank_first_empty(&family_repeat) == 0);
+                CHECK(!family_repeat.bank[0].occupied);
+                CHECK(family_repeat.family_anchor_slot == 0 &&
+                      family_repeat.family_last_slot == -1);
+                CHECK(family_repeat.family_sequence == sequence_before_clear);
+                CHECK(!ts_instrument_generate_family_candidate(&family_repeat, 0, 0,
+                                                                &refused_slot,
+                                                                error, sizeof(error)));
+            }
         }
         remove("test-family.tsr");
     }
@@ -664,6 +1004,25 @@ int main(void)
         CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
                                TS_AUDITION_SELECTION, &plan));
         CHECK(plan.sample == &audition.current && plan.first == 10 && plan.last == 500);
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
+                               TS_AUDITION_WORKBENCH_LOOP, &plan));
+        CHECK(plan.first == 10 && plan.last == 500);
+        audition.view_first = 20;
+        audition.view_last = 400;
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
+                               TS_AUDITION_WORKBENCH_LOOP, &plan));
+        CHECK(plan.first == 10 && plan.last == 500);
+        ts_instrument_clear_selection(&audition);
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
+                               TS_AUDITION_WORKBENCH_LOOP, &plan));
+        CHECK(plan.first == 20 && plan.last == 400);
+        audition.view_first = audition.current.frames + 10u;
+        audition.view_last = audition.current.frames + 20u;
+        CHECK(!ts_audition_plan(&audition, TS_AUDITION_CURRENT,
+                                TS_AUDITION_WORKBENCH_LOOP, &plan));
+        audition.view_first = 5;
+        audition.view_last = 550;
+        ts_instrument_set_selection(&audition, 10, 500);
         CHECK(ts_audition_plan(&audition, TS_AUDITION_PARENT,
                                TS_AUDITION_SELECTION, &plan));
         CHECK(plan.sample == &audition.parent && plan.first == 110 && plan.last == 600);
@@ -801,10 +1160,12 @@ int main(void)
         target_peak = source_peak > destination_peak ? source_peak : destination_peak;
         mix_scale = target_peak / summed_peak;
         ts_instrument_set_selection(&tape, source_first, source_last);
+        tape.view_first = 200u; tape.view_last = 900u;
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_MIX,
                                             source_first, source_last, 3000,
                                             error, sizeof(error)));
         CHECK(tape.post_edit_count == 1 && tape.current.frames == original_frames);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
         CHECK(tape.selection_first == (size_t)tape.post_edits[0].destination &&
               tape.selection_last - tape.selection_first == source_last - source_first);
         CHECK(fabsf(tape.current.data[(size_t)mixed_destination + 300u] -
@@ -821,22 +1182,27 @@ int main(void)
         CHECK(after != before);
         CHECK(ts_instrument_undo(&tape, error, sizeof(error)) &&
               ts_sample_hash(&tape.current) == before && tape.post_edit_count == 0);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
         CHECK(ts_instrument_redo(&tape, error, sizeof(error)) &&
               ts_sample_hash(&tape.current) == after && tape.post_edit_count == 1);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
 
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_MOVE_OVERWRITE,
                                             source_first, source_last, 1250,
                                             error, sizeof(error)));
         CHECK(tape.post_edit_count == 2);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
         after = ts_sample_hash(&tape.current);
         CHECK(ts_instrument_undo(&tape, error, sizeof(error)));
         CHECK(ts_instrument_redo(&tape, error, sizeof(error)) &&
               ts_sample_hash(&tape.current) == after);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
 
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_OVERWRITE,
                                             2000, 2400, -100,
                                             error, sizeof(error)));
         CHECK(tape.current.frames == original_frames + 100u);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
         CHECK(tape.selection_first == 0 && tape.selection_last == 400u);
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_MOVE_MIX,
                                             500, 800,
@@ -844,6 +1210,10 @@ int main(void)
                                             error, sizeof(error)));
         CHECK(tape.current.frames == original_frames + 420u);
         CHECK(tape.post_edit_count == 4);
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
+        CHECK(!ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_MIX,
+                                             12u, 12u, 20, error, sizeof(error)));
+        CHECK(tape.view_first == 200u && tape.view_last == 900u);
         CHECK(fabsf(tape.current.data[550]) < 0.000001f);
         ts_instrument_set_selection(&tape, tape.selection_first, tape.selection_last);
         CHECK(ts_instrument_apply_sample_edit(&tape, TS_SAMPLE_EDIT_GAIN, 0.5f,
@@ -1034,15 +1404,18 @@ int main(void)
     CHECK(ts_instrument_bank_rename(&committed, 2, "  Growing Tail  ",
                                     error, sizeof(error)));
     CHECK(strcmp(committed.bank[2].sample.name, "Growing Tail") == 0);
-    CHECK(!ts_instrument_bank_rename(&committed, 0, "New Root",
-                                     error, sizeof(error)));
+    CHECK(ts_instrument_bank_rename(&committed, 0, "Bank One",
+                                    error, sizeof(error)));
+    CHECK(strcmp(committed.bank[0].sample.name, "Bank One") == 0);
     CHECK(!ts_instrument_bank_rename(&committed, 4, "Empty",
                                      error, sizeof(error)));
     CHECK(!ts_instrument_bank_rename(&committed, 2, "   ",
                                      error, sizeof(error)));
     CHECK(!ts_instrument_bank_capture(&committed, 3, TS_BANK_CAPTURE_CURRENT,
                                       error, sizeof(error)));
-    CHECK(!ts_instrument_bank_clear(&committed, 0, error, sizeof(error)));
+    CHECK(ts_instrument_bank_clear(&committed, 3, error, sizeof(error)));
+    CHECK(committed.bank[0].occupied && committed.bank[1].occupied &&
+          committed.bank[2].occupied && !committed.bank[3].occupied);
     CHECK(ts_instrument_save_recipe(&committed, "test-recipe.tsr", error, sizeof(error)));
     {
         FILE *recipe = fopen("test-recipe.tsr", "rb");
@@ -1052,7 +1425,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR11", 5) == 0);
+        CHECK(memcmp(magic, "TSR15", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -1076,12 +1449,14 @@ int main(void)
           fabsf(restored.audible_tuning.fine_tune_cents -
                 committed.audible_tuning.fine_tune_cents) < 0.001f);
     CHECK(fabsf(restored.process.shaper_drive - 4.75f) < 0.001f);
-    CHECK(ts_instrument_bank_count(&restored) == 4);
+    CHECK(ts_instrument_bank_count(&restored) == 3);
+    CHECK(!restored.bank[3].occupied);
     CHECK(strcmp(restored.bank[2].sample.name, "Growing Tail") == 0);
-    for (int slot = 0; slot < 4; ++slot) {
+    for (int slot = 0; slot < 3; ++slot) {
         CHECK(restored.bank[slot].occupied);
         CHECK(ts_sample_hash(&restored.bank[slot].sample) ==
-              ts_sample_hash(&committed.bank[slot].sample));
+              (slot == committed.selected_slot ? ts_sample_hash(&committed.current) :
+               ts_sample_hash(&committed.bank[slot].sample)));
         CHECK(restored.bank[slot].capture_kind == committed.bank[slot].capture_kind);
         CHECK(restored.bank[slot].tuning.root_note == committed.bank[slot].tuning.root_note);
         CHECK(restored.bank[slot].loop_mode == committed.bank[slot].loop_mode);
@@ -1127,7 +1502,7 @@ int main(void)
             }
             closedir(directory);
         }
-        CHECK(wav_count == 4);
+        CHECK(wav_count == 3);
         CHECK(looped_wav_count == expected_looped);
         rmdir("test-bank-family");
     }
@@ -1224,6 +1599,8 @@ int main(void)
         TsConfig config;
         TsConfig reopened;
         ts_config_init(&config);
+        CHECK(config.rotate_wheel_fine == 5);
+        CHECK(config.rotate_wheel_coarse == 50);
         snprintf(config.sample_path, sizeof(config.sample_path), "/samples/drums");
         snprintf(config.fasttracker_path, sizeof(config.fasttracker_path),
                  "/opt/ft2 tapehead/ft2-clone");
@@ -1234,9 +1611,73 @@ int main(void)
         CHECK(strcmp(reopened.sample_path, config.sample_path) == 0);
         CHECK(strcmp(reopened.fasttracker_path, config.fasttracker_path) == 0);
         CHECK(strcmp(reopened.exchange_path, config.exchange_path) == 0);
+        CHECK(reopened.startup_welcome_sample == 1 &&
+              reopened.startup_welcome_autoplay == 1);
+        CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
                      "FASTTRACKER EXECUTABLE") == 0);
         remove("test-tapesister.ini");
+        {
+            FILE *config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("startup_welcome_sample=0\nstartup_welcome_autoplay=0\n",
+                      config_file);
+                fclose(config_file);
+            }
+            CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            CHECK(!reopened.startup_welcome_sample && !reopened.startup_welcome_autoplay);
+            CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
+            config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("rotate_wheel_fine=1\nrotate_wheel_coarse=20\n", config_file);
+                fclose(config_file);
+            }
+            CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            CHECK(reopened.rotate_wheel_fine == 1 && reopened.rotate_wheel_coarse == 20);
+            config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("rotate_wheel_fine=20\nrotate_wheel_coarse=100\n", config_file);
+                fclose(config_file);
+            }
+            CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            CHECK(reopened.rotate_wheel_fine == 20 && reopened.rotate_wheel_coarse == 100);
+            config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("rotate_wheel_fine=-99\nrotate_wheel_coarse=999\n", config_file);
+                fclose(config_file);
+            }
+            CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            CHECK(reopened.rotate_wheel_fine == 1 && reopened.rotate_wheel_coarse == 100);
+            config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("startup_welcome_sample=yes\n", config_file);
+                fclose(config_file);
+            }
+            CHECK(!ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            remove("test-tapesister.ini");
+        }
+        {
+            TsUiState startup_ui;
+            ts_ui_init(&startup_ui);
+            startup_ui.startup_welcome_installed = 1;
+            startup_ui.startup_welcome_autoplay = 1;
+            CHECK(!ts_ui_request_startup_welcome(&startup_ui, 0, 1));
+            CHECK(!startup_ui.startup_welcome_playback_requested);
+            CHECK(ts_ui_request_startup_welcome(&startup_ui, 1, 1));
+            CHECK(startup_ui.startup_welcome_playback_requested);
+            CHECK(!ts_ui_request_startup_welcome(&startup_ui, 1, 1));
+            CHECK(!ts_ui_request_startup_welcome(&startup_ui, 1, 0));
+            ts_ui_init(&startup_ui);
+            startup_ui.startup_welcome_installed = 1;
+            startup_ui.startup_welcome_autoplay = 0;
+            CHECK(!ts_ui_request_startup_welcome(&startup_ui, 1, 1));
+            CHECK(startup_ui.startup_welcome_playback_requested);
+        }
     }
     {
         char name[256];
@@ -1371,6 +1812,31 @@ int main(void)
     CHECK(framebuffer_contains(&fb, 0xffffe700u));
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     CHECK(framebuffer_contains(&fb, 0xff009ee3u));
+    CHECK(ui.warp_amount == 0.0f);
+    ui.warp_amount = 0.75f;
+    ts_ui_render(&fb, &ui, &imported);
+    CHECK(fb.pixels[247 * TS_UI_WIDTH + 295] == 0xffffd265u);
+    CHECK(fb.pixels[247 * TS_UI_WIDTH + 325] == 0xff0c0c0cu);
+    {
+        float *saved = (float *)malloc(imported.current.frames * sizeof(float));
+        CHECK(saved != NULL);
+        if (saved != NULL) {
+            memcpy(saved, imported.current.data, imported.current.frames * sizeof(float));
+            for (size_t i = 0; i < imported.current.frames; ++i)
+                imported.current.data[i] = (i & 1u) ? 8.0f : -8.0f;
+            ts_instrument_clear_selection(&imported);
+            ts_ui_render(&fb, &ui, &imported);
+            for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; ++x) {
+                CHECK(fb.pixels[(TS_WAVE_Y - 1) * TS_UI_WIDTH + x] != 0xffffe700u);
+                CHECK(fb.pixels[(TS_WAVE_Y + TS_WAVE_H) * TS_UI_WIDTH + x] !=
+                      0xffffe700u);
+            }
+            memcpy(imported.current.data, saved, imported.current.frames * sizeof(float));
+            free(saved);
+            ts_instrument_set_selection(&imported, imported.current.frames / 4,
+                                        imported.current.frames / 2);
+        }
+    }
     {
         int zero_pixels = 0;
         int middle = TS_WAVE_Y + TS_WAVE_H / 2;
@@ -1407,9 +1873,11 @@ int main(void)
           TS_UI_BANK_ACTION_CAPTURE_LOOP);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_CTRL) ==
           TS_UI_BANK_ACTION_CAPTURE_SELECTION);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL) ==
+          TS_UI_BANK_ACTION_CLONE);
     CHECK(ts_ui_bank_action(1, 0) == TS_UI_BANK_ACTION_RENAME);
     CHECK(ts_ui_bank_action(1, TS_UI_BANK_MOD_SHIFT) == TS_UI_BANK_ACTION_CLEAR);
-    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL) ==
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_ALT) ==
           TS_UI_BANK_ACTION_INVALID);
     ui.show_keyboard = 0;
     ui.show_recipes = 1;
@@ -1442,11 +1910,9 @@ int main(void)
         ts_ui_render(&fb, &ui, &restored);
         bank_waveform = waveform_hash(&fb);
         CHECK(bank_waveform != current_waveform);
-        CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff2d0039u);
         CHECK(fb.pixels[340 * TS_UI_WIDTH + 231] == 0xff147dffu);
         ui.bank_view_slot = -1;
         ts_ui_render(&fb, &ui, &restored);
-        CHECK(fb.pixels[220 * TS_UI_WIDTH + 625] == 0xff5d555du);
     }
     ui.renaming_bank_slot = 2;
     ui.text_cursor_visible = 1;
@@ -1467,6 +1933,12 @@ int main(void)
     ts_ui_render(&fb, &ui, &restored);
     CHECK(fb.pixels[180 * TS_UI_WIDTH + 175] == 0xff5d555du);
     ui.export_choice_open = 0;
+    ui.exit_confirm_open = 1;
+    ui.exit_has_unsaved = 1;
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(fb.pixels[192 * TS_UI_WIDTH + 175] == 0xff5d555du);
+    CHECK(fb.pixels[192 * TS_UI_WIDTH + 327] == 0xff2d0039u);
+    ui.exit_confirm_open = 0;
     ui.config_open = 1;
     ui.config_field = TS_CONFIG_FASTTRACKER_PATH;
     snprintf(ui.config.fasttracker_path, sizeof(ui.config.fasttracker_path),
@@ -1494,6 +1966,8 @@ int main(void)
         CHECK(ts_ui_zoom_parent_view(&ui, imported.parent.frames,
                                      anchor, 0.5f, 0.5f));
         CHECK(ui.parent_view_last - ui.parent_view_first == imported.parent.frames / 2u);
+        CHECK(ts_ui_parent_frame_from_x(&ui, imported.parent.frames, 599, 600) ==
+              ui.parent_view_last);
         CHECK(ts_ui_parent_frame_from_x(&ui, imported.parent.frames, 300, 600) + 1u >=
               anchor);
         ts_ui_render(&fb, &ui, &imported);
@@ -1555,7 +2029,290 @@ int main(void)
     ui.bank_view_slot = 1;
     ts_ui_render(&fb, &ui, &family);
     CHECK(fb.pixels[349 * TS_UI_WIDTH + 89] == 0xff18ff00u);
-    CHECK(fb.pixels[280 * TS_UI_WIDTH + 340] == 0xff2d0039u);
+
+    {
+        TsInstrument workflow;
+        TsFmPatch created_patch, varied_patch;
+        uint64_t original_hash, exact_hash;
+        int destination = -1;
+        ts_instrument_init(&workflow);
+        CHECK(ts_instrument_bank_clear_all(&workflow, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&workflow, 5, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&workflow, 0x12345678u, error, sizeof(error)));
+        CHECK(workflow.selected_slot == 5 && workflow.bank[5].occupied);
+        CHECK(workflow.bank[5].has_generator &&
+              workflow.bank[5].generator.kind == TS_GENERATOR_FM);
+        CHECK(ts_sample_hash(&workflow.current) == ts_sample_hash(&workflow.bank[5].sample));
+        original_hash = ts_sample_hash(&workflow.bank[5].sample);
+        ts_fm_patch_from_recipe(&workflow.bank[5].generator, &created_patch);
+        workflow.family_mutation = 0.0f;
+        CHECK(ts_instrument_vary_selected(&workflow, 0, &destination, error, sizeof(error)));
+        CHECK(destination == 5 && ts_sample_hash(&workflow.bank[5].sample) == original_hash);
+        CHECK(ts_sample_hash(&workflow.bank[5].edit_parent) ==
+              ts_sample_hash(&workflow.current));
+        CHECK(ts_instrument_vary_selected(&workflow, 1, &destination, error, sizeof(error)));
+        CHECK(destination == 6 && workflow.selected_slot == 6);
+        exact_hash = ts_sample_hash(&workflow.bank[6].sample);
+        CHECK(exact_hash == original_hash);
+        CHECK(ts_instrument_copy_selected(&workflow, 9, error, sizeof(error)));
+        CHECK(workflow.selected_slot == 9 && ts_sample_hash(&workflow.bank[9].sample) == exact_hash);
+        workflow.family_mutation = 0.75f;
+        CHECK(ts_instrument_vary_selected(&workflow, 0, &destination, error, sizeof(error)));
+        ts_fm_patch_from_recipe(&workflow.bank[9].generator, &varied_patch);
+        CHECK(varied_patch.structure == created_patch.structure);
+        CHECK(ts_sample_hash(&workflow.bank[9].sample) != exact_hash);
+        CHECK(ts_sample_hash(&workflow.bank[6].sample) == exact_hash);
+        CHECK(ts_instrument_save_recipe(&workflow, "test-workflow.tsr", error, sizeof(error)));
+        {
+            TsInstrument workflow_loaded;
+            ts_instrument_init(&workflow_loaded);
+            CHECK(ts_instrument_load_recipe(&workflow_loaded, "test-workflow.tsr", error, sizeof(error)));
+            CHECK(workflow_loaded.selected_slot == 9);
+            CHECK(workflow_loaded.bank[9].occupied &&
+                  workflow_loaded.bank[9].generator.kind == TS_GENERATOR_FM);
+            CHECK(workflow_loaded.bank[9].generator.has_fm_patch);
+            CHECK(memcmp(&workflow_loaded.bank[9].generator.fm_patch,
+                         &workflow.bank[9].generator.fm_patch,
+                         sizeof(TsFmPatch)) == 0);
+            CHECK(ts_sample_hash(&workflow_loaded.bank[6].sample) == exact_hash);
+            ts_instrument_free(&workflow_loaded);
+        }
+        remove("test-workflow.tsr");
+        CHECK(ts_instrument_bank_clear_all(&workflow, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&workflow, 0, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&workflow, 99u, error, sizeof(error)));
+        CHECK(workflow.bank[0].occupied && workflow.bank[0].generator.kind == TS_GENERATOR_FM);
+        ts_instrument_free(&workflow);
+    }
+
+    {
+        TsFmPatch base = {0}, zero, low, medium, high, repeat;
+        float low_distance, medium_distance, high_distance;
+        base.structure = 4; base.ratio_family = 2;
+        base.depth = 4.0f; base.shape = 0.5f; base.feedback = 0.4f;
+        base.transient_mix = 0.25f;
+        for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op)
+            base.ratios[op] = 0.75f + (float)op * 0.65f;
+        ts_fm_patch_vary(&base, 0x13579bdu, 0.0f, &zero);
+        ts_fm_patch_vary(&base, 0x13579bdu, 0.12f, &low);
+        ts_fm_patch_vary(&base, 0x13579bdu, 0.50f, &medium);
+        ts_fm_patch_vary(&base, 0x13579bdu, 1.0f, &high);
+        ts_fm_patch_vary(&base, 0x13579bdu, 0.50f, &repeat);
+        CHECK(memcmp(&base, &zero, sizeof(base)) == 0);
+        CHECK(base.structure == low.structure && base.structure == medium.structure &&
+              base.structure == high.structure);
+        CHECK(base.ratio_family == low.ratio_family &&
+              base.ratio_family == medium.ratio_family &&
+              base.ratio_family == high.ratio_family);
+        CHECK(memcmp(&medium, &repeat, sizeof(medium)) == 0);
+        low_distance = ts_fm_patch_distance(&base, &low);
+        medium_distance = ts_fm_patch_distance(&base, &medium);
+        high_distance = ts_fm_patch_distance(&base, &high);
+        CHECK(low_distance > 0.0f && low_distance < medium_distance &&
+              medium_distance < high_distance);
+        CHECK(high.feedback >= 0.0f && high.feedback <= 0.82f);
+        for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op)
+            CHECK(isfinite(high.ratios[op]) && high.ratios[op] >= 0.05f &&
+                  high.ratios[op] <= 16.0f);
+        {
+            TsSample rendered_high;
+            TsGeneratorRecipe high_recipe = generator(0x777777u, TS_GENERATOR_FM);
+            ts_sample_init(&rendered_high);
+            high_recipe.fm_patch = high; high_recipe.has_fm_patch = 1;
+            CHECK(ts_sample_generate(&rendered_high, &high_recipe, error, sizeof(error)));
+            CHECK(ts_sample_peak(&rendered_high) > 0.01f &&
+                  ts_sample_peak(&rendered_high) <= 1.0f);
+            for (size_t frame = 0; frame < rendered_high.frames; ++frame)
+                CHECK(isfinite(rendered_high.data[frame]));
+            ts_sample_free(&rendered_high);
+        }
+    }
+
+    {
+        TsInstrument first, repeat;
+        TsFmPatch first_patch, repeat_patch, next_patch;
+        uint64_t first_source_hash, first_final_hash;
+        int slot = -1;
+        ts_instrument_init(&first); ts_instrument_init(&repeat);
+        CHECK(ts_instrument_bank_clear_all(&first, error, sizeof(error)));
+        CHECK(ts_instrument_bank_clear_all(&repeat, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&first, 4, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&repeat, 4, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&first, 0x2468aceu, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&repeat, 0x2468aceu, error, sizeof(error)));
+        first.family_mutation = repeat.family_mutation = 0.55f;
+        CHECK(ts_instrument_vary_selected(&first, 0, &slot, error, sizeof(error)));
+        CHECK(ts_instrument_vary_selected(&repeat, 0, &slot, error, sizeof(error)));
+        ts_fm_patch_from_recipe(&first.bank[4].generator, &first_patch);
+        ts_fm_patch_from_recipe(&repeat.bank[4].generator, &repeat_patch);
+        first_source_hash = ts_sample_hash(&first.bank[4].edit_parent);
+        first_final_hash = ts_sample_hash(&first.bank[4].sample);
+        CHECK(memcmp(&first_patch, &repeat_patch, sizeof(first_patch)) == 0);
+        CHECK(first_source_hash == ts_sample_hash(&repeat.bank[4].edit_parent));
+        CHECK(first_final_hash == ts_sample_hash(&repeat.bank[4].sample));
+        CHECK(ts_instrument_vary_selected(&repeat, 0, &slot, error, sizeof(error)));
+        ts_fm_patch_from_recipe(&repeat.bank[4].generator, &next_patch);
+        CHECK(memcmp(&first_patch, &next_patch, sizeof(first_patch)) != 0);
+        CHECK(first_source_hash != ts_sample_hash(&repeat.bank[4].edit_parent));
+        ts_instrument_free(&first); ts_instrument_free(&repeat);
+    }
+
+    {
+        TsInstrument gesture;
+        uint64_t before, edited, b_hash, varied_from_a, chained;
+        int destination = -1;
+        ts_instrument_init(&gesture);
+        CHECK(ts_instrument_bank_clear_all(&gesture, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&gesture, 1, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&gesture, 0xabc123u, error, sizeof(error)));
+        before = ts_sample_hash(&gesture.current);
+        CHECK(ts_instrument_apply_tape_drag(&gesture, TS_POST_COPY_OVERWRITE,
+                                            0, gesture.current.frames / 4u,
+                                            (int64_t)(gesture.current.frames / 2u),
+                                            error, sizeof(error)));
+        edited = ts_sample_hash(&gesture.current);
+        CHECK(edited != before && ts_sample_hash(&gesture.bank[1].sample) == edited);
+        CHECK(ts_instrument_select_bank(&gesture, 2, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&gesture, 0xdef456u, error, sizeof(error)));
+        b_hash = ts_sample_hash(&gesture.bank[2].sample);
+        CHECK(ts_instrument_select_bank(&gesture, 1, error, sizeof(error)));
+        CHECK(ts_sample_hash(&gesture.current) == edited);
+        CHECK(ts_sample_hash(&gesture.bank[2].sample) == b_hash);
+        CHECK(ts_instrument_undo(&gesture, error, sizeof(error)));
+        CHECK(ts_sample_hash(&gesture.current) == before);
+        CHECK(ts_instrument_redo(&gesture, error, sizeof(error)));
+        CHECK(ts_sample_hash(&gesture.current) == edited);
+        {
+            uint64_t source_before_zero = ts_sample_hash(&gesture.bank[1].edit_parent);
+            TsGeneratorRecipe recipe_before_zero = gesture.bank[1].generator;
+            gesture.family_mutation = 0.0f;
+            CHECK(ts_instrument_vary_selected(&gesture, 0, &destination, error, sizeof(error)));
+            CHECK(ts_sample_hash(&gesture.current) == edited);
+            CHECK(ts_sample_hash(&gesture.bank[1].edit_parent) == source_before_zero);
+            CHECK(memcmp(&gesture.bank[1].generator, &recipe_before_zero,
+                         sizeof(recipe_before_zero)) == 0);
+        }
+        CHECK(ts_instrument_copy_selected(&gesture, 3, error, sizeof(error)));
+        gesture.family_mutation = 0.5f;
+        CHECK(ts_instrument_vary_selected(&gesture, 0, &destination, error, sizeof(error)));
+        varied_from_a = ts_sample_hash(&gesture.current);
+        CHECK(gesture.bank[3].generator.has_fm_patch);
+        CHECK(gesture.bank[3].edit.post_edit_count == 1);
+        CHECK(ts_sample_hash(&gesture.bank[3].edit_parent) != before);
+        CHECK(ts_instrument_select_bank(&gesture, 1, error, sizeof(error)));
+        CHECK(ts_instrument_copy_selected(&gesture, 5, error, sizeof(error)));
+        gesture.family_mutation = 0.5f;
+        CHECK(ts_instrument_vary_selected(&gesture, 1, &destination, error, sizeof(error)));
+        chained = ts_sample_hash(&gesture.current);
+        CHECK(destination == 6 && chained != edited && varied_from_a != edited);
+        CHECK(ts_sample_hash(&gesture.bank[2].sample) == b_hash);
+        CHECK(ts_instrument_select_bank(&gesture, 1, error, sizeof(error)));
+        CHECK(ts_instrument_save_recipe(&gesture, "test-gesture.tsr", error, sizeof(error)));
+        {
+            TsInstrument loaded_gesture;
+            ts_instrument_init(&loaded_gesture);
+            CHECK(ts_instrument_load_recipe(&loaded_gesture, "test-gesture.tsr", error, sizeof(error)));
+            CHECK(loaded_gesture.selected_slot == 1);
+            CHECK(ts_sample_hash(&loaded_gesture.current) == edited);
+            CHECK(ts_sample_hash(&loaded_gesture.bank[2].sample) == b_hash);
+            ts_instrument_free(&loaded_gesture);
+        }
+        remove("test-gesture.tsr");
+        ts_instrument_free(&gesture);
+    }
+
+    {
+        TsInstrument load_bank, empty_first, reopened_bank;
+        TsSample known, reopened_wav;
+        TsGeneratorRecipe known_recipe = generator(0x10adedu, TS_GENERATOR_METALLIC);
+        uint64_t slot0_hash, slot0_parent_hash, slot2_hash, slot2_parent_hash, wav_hash;
+        TsGeneratorRecipe slot0_generator, slot2_generator;
+        int slot0_undo, slot2_undo;
+        ts_sample_init(&known); ts_sample_init(&reopened_wav);
+        ts_instrument_init(&load_bank); ts_instrument_init(&empty_first);
+        ts_instrument_init(&reopened_bank);
+        CHECK(ts_sample_generate(&known, &known_recipe, error, sizeof(error)));
+        CHECK(ts_sample_save_wav16(&known, "test-selected-load.wav", error, sizeof(error)));
+        CHECK(ts_sample_load_wav(&reopened_wav, "test-selected-load.wav", error, sizeof(error)));
+        wav_hash = ts_sample_hash(&reopened_wav);
+
+        CHECK(ts_instrument_bank_clear_all(&load_bank, error, sizeof(error)));
+        for (int slot = 0; slot < 3; ++slot) {
+            CHECK(ts_instrument_select_bank(&load_bank, slot, error, sizeof(error)));
+            CHECK(ts_instrument_create_selected(&load_bank, 0x710000u + (uint32_t)slot,
+                                                error, sizeof(error)));
+        }
+        slot0_hash = ts_sample_hash(&load_bank.bank[0].sample);
+        slot0_parent_hash = ts_sample_hash(&load_bank.bank[0].edit_parent);
+        slot2_hash = ts_sample_hash(&load_bank.bank[2].sample);
+        slot2_parent_hash = ts_sample_hash(&load_bank.bank[2].edit_parent);
+        slot0_generator = load_bank.bank[0].generator;
+        slot2_generator = load_bank.bank[2].generator;
+        slot0_undo = load_bank.bank[0].undo_count;
+        slot2_undo = load_bank.bank[2].undo_count;
+        CHECK(ts_instrument_select_bank(&load_bank, 1, error, sizeof(error)));
+        CHECK(ts_instrument_load_wav(&load_bank, "test-selected-load.wav",
+                                     error, sizeof(error)));
+        CHECK(load_bank.selected_slot == 1 && load_bank.bank[1].occupied);
+        CHECK(ts_sample_hash(&load_bank.bank[1].sample) == wav_hash);
+        CHECK(ts_sample_hash(&load_bank.current) == wav_hash);
+        CHECK(!load_bank.bank[1].has_generator &&
+              !load_bank.bank[1].generator.has_fm_patch);
+        CHECK(ts_sample_hash(&load_bank.bank[0].sample) == slot0_hash &&
+              ts_sample_hash(&load_bank.bank[0].edit_parent) == slot0_parent_hash &&
+              memcmp(&load_bank.bank[0].generator, &slot0_generator,
+                     sizeof(slot0_generator)) == 0 &&
+              load_bank.bank[0].undo_count == slot0_undo);
+        CHECK(ts_sample_hash(&load_bank.bank[2].sample) == slot2_hash &&
+              ts_sample_hash(&load_bank.bank[2].edit_parent) == slot2_parent_hash &&
+              memcmp(&load_bank.bank[2].generator, &slot2_generator,
+                     sizeof(slot2_generator)) == 0 &&
+              load_bank.bank[2].undo_count == slot2_undo);
+        ts_instrument_set_selection(&load_bank, 0, load_bank.current.frames / 3u);
+        CHECK(ts_instrument_apply_sample_edit(&load_bank, TS_SAMPLE_EDIT_REVERSE, 1.0f,
+                                              error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) != wav_hash);
+        CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) == wav_hash);
+
+        CHECK(ts_instrument_select_bank(&load_bank, 4, error, sizeof(error)));
+        CHECK(!load_bank.bank[4].occupied);
+        CHECK(ts_instrument_load_wav(&load_bank, "test-selected-load.wav",
+                                     error, sizeof(error)));
+        CHECK(load_bank.selected_slot == 4 &&
+              ts_sample_hash(&load_bank.current) == wav_hash);
+        CHECK(ts_sample_hash(&load_bank.bank[0].sample) == slot0_hash &&
+              ts_sample_hash(&load_bank.bank[2].sample) == slot2_hash);
+
+        CHECK(ts_instrument_bank_clear_all(&empty_first, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&empty_first, 1, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&empty_first, 0x810001u, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&empty_first, 2, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&empty_first, 0x810002u, error, sizeof(error)));
+        slot2_hash = ts_sample_hash(&empty_first.bank[2].sample);
+        CHECK(ts_instrument_select_bank(&empty_first, 0, error, sizeof(error)));
+        CHECK(!empty_first.bank[0].occupied);
+        CHECK(ts_instrument_load_wav(&empty_first, "test-selected-load.wav",
+                                     error, sizeof(error)));
+        CHECK(empty_first.selected_slot == 0 &&
+              ts_sample_hash(&empty_first.bank[0].sample) == wav_hash &&
+              empty_first.bank[1].occupied &&
+              ts_sample_hash(&empty_first.bank[2].sample) == slot2_hash);
+
+        CHECK(ts_instrument_save_recipe(&load_bank, "test-selected-load.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&reopened_bank, "test-selected-load.tsr",
+                                        error, sizeof(error)));
+        CHECK(reopened_bank.selected_slot == load_bank.selected_slot);
+        CHECK(ts_sample_hash(&reopened_bank.bank[4].sample) == wav_hash);
+        CHECK(ts_sample_hash(&reopened_bank.bank[0].sample) == slot0_hash);
+        CHECK(ts_sample_hash(&reopened_bank.bank[2].sample) ==
+              ts_sample_hash(&load_bank.bank[2].sample));
+        remove("test-selected-load.wav"); remove("test-selected-load.tsr");
+        ts_sample_free(&known); ts_sample_free(&reopened_wav);
+        ts_instrument_free(&load_bank); ts_instrument_free(&empty_first);
+        ts_instrument_free(&reopened_bank);
+    }
 
     ts_sample_free(&a); ts_sample_free(&b); ts_sample_free(&loaded); ts_sample_free(&copy);
     ts_sample_free(&dry); ts_sample_free(&effected); ts_sample_free(&repeated);
