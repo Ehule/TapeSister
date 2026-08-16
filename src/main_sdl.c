@@ -2844,8 +2844,9 @@ int main(int argc, char **argv)
                 int x, y;
                 SDL_Keymod mod = SDL_GetModState();
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
-                if (!(y >= 289 && y < 312 && x >= 245 && x < 376 &&
-                      !ui.show_keyboard && !ui.show_recipes))
+                if (!(y >= 289 && y < 312 && x >= 460 && x < 583 &&
+                      !ui.show_keyboard && !ui.show_recipes &&
+                      !ui.show_ingredients))
                     ui.bank_clear_armed = 0;
                 if (ui.exit_confirm_open) {
                     if (x >= 172 && x < 308 && y >= 188 && y < 211) {
@@ -3305,9 +3306,6 @@ int main(int argc, char **argv)
                 } else if (y >= 289 && y < 312 && x >= 162 && x < 240) {
                     begin_audition(device, &audio, &ui, &instrument,
                                    TS_AUDITION_DISPLAYED, 1.0, obtained.freq);
-                } else if (y >= 289 && y < 312 && x >= 245 && x < 376 &&
-                           !ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients) {
-                    clear_all_bank_slots(device, &audio, &ui, &instrument);
                 } else if (y >= 289 && y < 312 && x >= 245 && x < 297) {
                     ui.bank_clear_armed = 0;
                     crop_selection(device, &audio, &ui, &instrument);
@@ -3335,6 +3333,10 @@ int main(int argc, char **argv)
                         ts_instrument_show_all(&instrument);
                         snprintf(ui.status, sizeof(ui.status), "SHOWING ALL TILE");
                     }
+                } else if (y >= 289 && y < 312 && x >= 460 && x < 583 &&
+                           !ui.show_keyboard && !ui.show_recipes &&
+                           !ui.show_ingredients) {
+                    clear_all_bank_slots(device, &audio, &ui, &instrument);
                 } else if (y >= 289 && y < 312 && x >= 588 && x < 630) {
                     ts_ui_cycle_panel(&ui);
                     ui.bank_view_slot = -1;

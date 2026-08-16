@@ -878,15 +878,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 10, 289, 70, "PLAY ALL", 0);
     button(fb, 85, 289, 72, "PLAY SEL", 0);
     button(fb, 162, 289, 78, "PLAY VIEW", 0);
+    button(fb, 245, 289, 52, "CROP", 0);
+    button(fb, 302, 289, 74, "ZOOM SEL", 0);
+    button(fb, 381, 289, 74, "SHOW ALL", 0);
     if (!ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients)
-        button(fb, 245, 289, 131,
+        button(fb, 460, 289, 123,
                ui->bank_clear_armed ? "CONFIRM CLEAR" : "CLEAR ALL",
                ui->bank_clear_armed);
-    else {
-        button(fb, 245, 289, 52, "CROP", 0);
-        button(fb, 302, 289, 74, "ZOOM SEL", 0);
-    }
-    button(fb, 381, 289, 74, "SHOW ALL", 0);
     button(fb, 588, 289, 42, ui->show_keyboard ? "BANK" :
            ui->show_recipes ? "INGR" : ui->show_ingredients ? "KEYS" : "RCPE",
            !ui->show_keyboard);
