@@ -984,7 +984,15 @@ int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
                                           error, error_size);
     if (action == TS_UI_BANK_ACTION_CLEAR)
         return ts_instrument_bank_clear(instrument, slot, error, error_size);
-    if (action == TS_UI_BANK_ACTION_AUDITION || action == TS_UI_BANK_ACTION_RENAME) {
+    if (action == TS_UI_BANK_ACTION_AUDITION) {
+        if (!instrument->bank[slot].occupied) {
+            if (error != NULL && error_size > 0)
+                snprintf(error, error_size, "Bank slot is empty");
+            return 0;
+        }
+        return ts_instrument_select_bank(instrument, slot, error, error_size);
+    }
+    if (action == TS_UI_BANK_ACTION_RENAME) {
         if (!instrument->bank[slot].occupied) {
             if (error != NULL && error_size > 0)
                 snprintf(error, error_size, "Bank slot is empty");

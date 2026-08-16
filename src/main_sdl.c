@@ -3185,8 +3185,20 @@ int main(int argc, char **argv)
                         TsUiBankAction action = ts_ui_bank_action(
                             0, bank_modifiers(mod));
                         if (action == TS_UI_BANK_ACTION_AUDITION) {
-                            begin_bank_audition(device, &audio, &ui, &instrument,
-                                                bank_slot, obtained.freq);
+                            char select_error[160];
+                            int selected;
+                            lock_edit(device, &audio);
+                            selected = ts_ui_execute_bank_action(
+                                &instrument, bank_slot, action,
+                                select_error, sizeof(select_error));
+                            unlock_edit(device, &audio, &ui, &instrument);
+                            if (selected)
+                                begin_bank_audition(device, &audio, &ui, &instrument,
+                                                    bank_slot, obtained.freq);
+                            else
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "BANK %02d: %.100s - ACTIVE TILE UNCHANGED",
+                                         bank_slot + 1, select_error);
                         } else if (action == TS_UI_BANK_ACTION_CAPTURE_CURRENT) {
                             capture_bank_slot(device, &ui, &instrument, bank_slot,
                                               action);
