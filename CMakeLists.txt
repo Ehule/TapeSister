@@ -6,7 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_audition.c src/ts_note_bank.c
-             src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_ui.c)
+             src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_palette.c src/ts_ui.c)
 target_include_directories(tapesister_core PUBLIC include)
 target_link_libraries(tapesister_core PUBLIC m)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -24,7 +24,10 @@ if(TAPESISTER_BUILD_SDL)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_splash.png"
             "$<TARGET_FILE_DIR:tapesister>/assets/tapesister_splash.png"
-    COMMENT "Copying TapeSister splash artwork")
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapehead.pal"
+            "$<TARGET_FILE_DIR:tapesister>/assets/tapehead.pal"
+    COMMENT "Copying TapeSister runtime artwork and palette")
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_welcome.wav")
     add_custom_command(TARGET tapesister POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different

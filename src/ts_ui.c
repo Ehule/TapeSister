@@ -6,18 +6,48 @@
 
 #define RGB(r,g,b) (0xff000000u | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
 
-/* Temporary visual authority: tapehead.pal supplied by the user. */
-#define PAL_TEXT RGB(255, 28, 0)
-#define PAL_BLOCK RGB(45, 0, 57)
-#define PAL_BLOCK_TEXT RGB(0, 158, 227)
-#define PAL_MOUSE RGB(255, 210, 101)
-#define PAL_DESKTOP RGB(28, 28, 28)
-#define PAL_BUTTON RGB(93, 85, 93)
-#define PAL_NOTE RGB(255, 231, 0)
-#define PAL_INSTRUMENT RGB(24, 255, 0)
-#define PAL_VOLUME RGB(255, 28, 231)
-#define PAL_TUNING RGB(20, 125, 255)
-#define PAL_EFFECT RGB(53, 255, 255)
+static const TsPalette *render_palette;
+
+static const TsPalette *active_palette(void)
+{
+    static TsPalette fallback;
+    static int initialized;
+    if (!initialized) {
+        ts_palette_default(&fallback);
+        initialized = 1;
+    }
+    return render_palette != NULL ? render_palette : &fallback;
+}
+
+#define PAL_TEXT (active_palette()->colors[TS_PALETTE_PATTERN_TEXT])
+#define PAL_BLOCK (active_palette()->colors[TS_PALETTE_BLOCK_MARK])
+#define PAL_BLOCK_TEXT (active_palette()->colors[TS_PALETTE_TEXT_ON_BLOCK])
+#define PAL_MOUSE (active_palette()->colors[TS_PALETTE_MOUSE])
+#define PAL_DESKTOP (active_palette()->colors[TS_PALETTE_DESKTOP])
+#define PAL_BUTTON (active_palette()->colors[TS_PALETTE_BUTTONS])
+#define PAL_NOTE (active_palette()->colors[TS_PALETTE_PATTERN_NOTE])
+#define PAL_INSTRUMENT (active_palette()->colors[TS_PALETTE_PATTERN_INSTRUMENT])
+#define PAL_VOLUME (active_palette()->colors[TS_PALETTE_PATTERN_VOLUME])
+#define PAL_TUNING (active_palette()->colors[TS_PALETTE_PATTERN_TUNING])
+#define PAL_EFFECT (active_palette()->colors[TS_PALETTE_PATTERN_EFFECT])
+#define PAL_WAVE_SELECTION (active_palette()->colors[TS_PALETTE_WAVE_SELECTION])
+
+typedef struct {
+    int x;
+    int width;
+    const char *label;
+} TsPanelButton;
+
+static const TsPanelButton config_buttons[] = {
+    {20, 96, "SAVE CONFIG"}, {121, 76, "USE CWD"},
+    {202, 76, "PALETTE"}, {283, 68, "CANCEL"}
+};
+
+static const TsPanelButton palette_buttons[] = {
+    {20, 78, "IMPORT TH"}, {103, 68, "SAVE TS"},
+    {176, 78, "EXPORT TH"}, {259, 61, "RESET"},
+    {325, 54, "DONE"}, {384, 66, "CANCEL"}
+};
 
 static void clear(TsFramebuffer *fb, uint32_t color)
 {
@@ -128,19 +158,68 @@ static void text(TsFramebuffer *fb, int x, int y, const char *value, uint32_t co
     }
 }
 
-static void frame(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t fill, uint32_t light)
+static void wave_text(TsFramebuffer *fb, int x, int y, const char *value,
+                      uint32_t color, int scale)
+{
+    for (; *value; ++value, x += 6 * scale) {
+        char c = *value >= 'a' && *value <= 'z' ? (char)(*value - 32) : *value;
+        const char *bits = glyph(c);
+        for (int gy = 0; gy < 7; ++gy)
+            for (int gx = 0; gx < 5; ++gx)
+                if (bits[gy * 5 + gx] == '1')
+                    wave_rect(fb, x + gx * scale, y + gy * scale,
+                              scale, scale, color);
+    }
+}
+
+static uint32_t contrast_color(uint32_t base, int contrast, float scale)
+{
+    float exponent;
+    float multiplier;
+    int red;
+    int green;
+    int blue;
+    if (contrast < 1) contrast = 1;
+    if (contrast > 100) contrast = 100;
+    exponent = (float)contrast / 40.0f;
+    multiplier = powf(scale, exponent);
+    red = (int)((float)((base >> 16) & 0xffu) * multiplier + 0.5f);
+    green = (int)((float)((base >> 8) & 0xffu) * multiplier + 0.5f);
+    blue = (int)((float)(base & 0xffu) * multiplier + 0.5f);
+    if (red > 255) red = 255;
+    if (green > 255) green = 255;
+    if (blue > 255) blue = 255;
+    return RGB(red, green, blue);
+}
+
+static void bevel_frame(TsFramebuffer *fb, int x, int y, int w, int h,
+                        uint32_t fill, uint32_t light, uint32_t dark)
 {
     rect(fb, x, y, w, h, fill);
     rect(fb, x, y, w, 2, light);
     rect(fb, x, y, 2, h, light);
-    rect(fb, x, y + h - 2, w, 2, RGB(14, 14, 14));
-    rect(fb, x + w - 2, y, 2, h, RGB(14, 14, 14));
+    rect(fb, x, y + h - 2, w, 2, dark);
+    rect(fb, x + w - 2, y, 2, h, dark);
+}
+
+static void frame(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t fill, uint32_t light)
+{
+    uint32_t desktop_light = contrast_color(
+        PAL_DESKTOP, active_palette()->desktop_contrast, 1.5f);
+    uint32_t desktop_dark = contrast_color(
+        PAL_DESKTOP, active_palette()->desktop_contrast, 0.5f);
+    bevel_frame(fb, x, y, w, h, fill, light != 0 ? light : desktop_light,
+                desktop_dark);
 }
 
 static void button(TsFramebuffer *fb, int x, int y, int w, const char *label, int active)
 {
     uint32_t fill = active ? PAL_BLOCK : PAL_BUTTON;
-    frame(fb, x, y, w, 23, fill, active ? PAL_MOUSE : RGB(140, 133, 140));
+    uint32_t light = contrast_color(
+        PAL_BUTTON, active_palette()->buttons_contrast, 1.5f);
+    uint32_t dark = contrast_color(
+        PAL_BUTTON, active_palette()->buttons_contrast, 0.5f);
+    bevel_frame(fb, x, y, w, 23, fill, light, dark);
     text(fb, x + 6, y + 8, label, active ? PAL_BLOCK_TEXT : RGB(245, 242, 235), 1);
 }
 
@@ -152,6 +231,26 @@ static void slider(TsFramebuffer *fb, int x, int y, int w, const char *label, fl
     rect(fb, x + 1, y + 14, (int)((w - 2) * value), 4, color);
     int knob = x + (int)((w - 6) * value);
     rect(fb, knob, y + 10, 6, 12, PAL_MOUSE);
+}
+
+static void compact_slider(TsFramebuffer *fb, int x, int y, int w,
+                           const char *label, float value, int numeric,
+                           uint32_t color, int active)
+{
+    char shown[8];
+    int track_x = x + 54;
+    int track_w = w - 78;
+    int knob;
+    if (value < 0.0f) value = 0.0f;
+    if (value > 1.0f) value = 1.0f;
+    if (active) rect(fb, x - 4, y + 1, 3, 11, PAL_MOUSE);
+    text(fb, x, y + 3, label, active ? PAL_MOUSE : RGB(222, 218, 214), 1);
+    rect(fb, track_x, y + 5, track_w, 4, RGB(8, 8, 8));
+    rect(fb, track_x + 1, y + 6, (int)((track_w - 2) * value), 2, color);
+    knob = track_x + (int)((track_w - 4) * value);
+    rect(fb, knob, y + 2, 4, 10, PAL_MOUSE);
+    snprintf(shown, sizeof(shown), "%3d", numeric);
+    text(fb, x + w - 20, y + 3, shown, active ? PAL_MOUSE : PAL_EFFECT, 1);
 }
 
 static uint32_t family_relation_color(TsFamilyRelation relation)
@@ -245,41 +344,113 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
 
 static void config_render(TsFramebuffer *fb, const TsUiState *ui)
 {
-    static const int field_y[TS_CONFIG_FIELD_COUNT] = {103, 158, 213};
-    frame(fb, 34, 46, 572, 306, RGB(36, 33, 37), PAL_MOUSE);
-    text(fb, 50, 60, "CONFIGURATION", PAL_NOTE, 1);
-    text(fb, 50, 75,
-         "PATHS MAY BE BLANK  TAB CHANGES FIELD  CTRL BACKSPACE CLEARS",
-         RGB(190, 185, 190), 1);
+    frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
+          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
+    text(fb, 20, 45, "CONFIGURATION", PAL_NOTE, 1);
+    text(fb, 472, 45, "PATHS MAY BE BLANK", PAL_EFFECT, 1);
     for (int i = 0; i < TS_CONFIG_FIELD_COUNT; ++i) {
         const char *value = ts_config_field_const(&ui->config, (TsConfigField)i);
         size_t length = strlen(value);
         size_t cursor = i == (int)ui->config_field ? ui->config_cursor : length;
-        size_t first = length > 82u ? length - 82u : 0u;
-        char shown[83];
+        size_t first = length > 96u ? length - 96u : 0u;
+        int y = TS_CONFIG_FIELD_Y + i * TS_CONFIG_FIELD_STEP_Y;
+        char shown[97];
         if (cursor > length) cursor = length;
         if (cursor < first) first = cursor;
-        if (cursor > first + 82u) first = cursor - 82u;
-        snprintf(shown, sizeof(shown), "%.82s", value + first);
-        text(fb, 50, field_y[i] - 13,
+        if (cursor > first + 96u) first = cursor - 96u;
+        snprintf(shown, sizeof(shown), "%.96s", value + first);
+        text(fb, TS_CONFIG_FIELD_X, y - 9,
              ts_config_field_name((TsConfigField)i),
              i == (int)ui->config_field ? PAL_EFFECT : RGB(190, 185, 190), 1);
-        rect(fb, 50, field_y[i], 540, 24, RGB(8, 8, 8));
-        text(fb, 56, field_y[i] + 8, shown,
+        rect(fb, TS_CONFIG_FIELD_X, y,
+             TS_CONFIG_FIELD_W, TS_CONFIG_FIELD_H, RGB(8, 8, 8));
+        text(fb, TS_CONFIG_FIELD_X + 6, y + 6, shown,
              i == (int)ui->config_field ? PAL_MOUSE : PAL_INSTRUMENT, 1);
         if (i == (int)ui->config_field && ui->text_cursor_visible)
-            rect(fb, 56 + (int)(cursor - first) * 6,
-                 field_y[i] + 5, 2, 14, PAL_MOUSE);
+            rect(fb, TS_CONFIG_FIELD_X + 6 + (int)(cursor - first) * 6,
+                 y + 3, 2, 13, PAL_MOUSE);
     }
-    button(fb, 50, 274, 110, "SAVE CONFIG", 0);
-    button(fb, 170, 274, 100, "USE CWD", 0);
-    button(fb, 280, 274, 82, "CANCEL", 0);
-    text(fb, 50, 312,
-         "SEND FT2 EXPORTS THE LOOP AWARE COLLECTION THEN LAUNCHES FT2",
-         PAL_TUNING, 1);
-    text(fb, 50, 327,
-         "PALETTE IMPORT EDIT EXPORT WILL LIVE IN THIS WINDOW NEXT",
-         PAL_VOLUME, 1);
+    for (size_t i = 0; i < sizeof(config_buttons) / sizeof(config_buttons[0]); ++i)
+        button(fb, config_buttons[i].x, TS_PALETTE_ACTION_Y,
+               config_buttons[i].width, config_buttons[i].label, 0);
+    text(fb, 364, 182, "TAB FIELD  CTRL BACKSPACE CLEAR", PAL_TUNING, 1);
+}
+
+static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
+{
+    static const char *const short_names[TS_PALETTE_COLOR_COUNT] = {
+        "TEXT", "BLOCK", "BLOCK TXT", "MOUSE", "DESKTOP", "BUTTONS", "WAVE",
+        "INSTR", "ZERO", "LOOP", "EFFECT", "EMPTY", "WAVE SEL"
+    };
+    static const char *const channel_names[3] = {"RED", "GREEN", "BLUE"};
+    char value[48];
+    uint32_t selected = ui->palette.colors[ui->palette_entry];
+    frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
+          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
+    text(fb, 20, 45, "PALETTE EDITOR", PAL_NOTE, 1);
+    text(fb, 438, 45, "LIVE TAPEHEAD COLORS", PAL_EFFECT, 1);
+    for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
+        int column = color % TS_PALETTE_SWATCH_COLUMNS;
+        int row = color / TS_PALETTE_SWATCH_COLUMNS;
+        int x = TS_PALETTE_SWATCH_X + column * TS_PALETTE_SWATCH_STEP_X;
+        int y = TS_PALETTE_SWATCH_Y + row * TS_PALETTE_SWATCH_STEP_Y;
+        uint32_t entry = ui->palette.colors[color];
+        rect(fb, x, y, TS_PALETTE_SWATCH_W, TS_PALETTE_SWATCH_H,
+             color == ui->palette_entry ? PAL_BLOCK : RGB(18, 18, 18));
+        if (color == ui->palette_entry) {
+            rect(fb, x, y, TS_PALETTE_SWATCH_W, 1, PAL_MOUSE);
+            rect(fb, x, y + TS_PALETTE_SWATCH_H - 1, TS_PALETTE_SWATCH_W, 1, PAL_MOUSE);
+            rect(fb, x, y, 1, TS_PALETTE_SWATCH_H, PAL_MOUSE);
+            rect(fb, x + TS_PALETTE_SWATCH_W - 1, y, 1, TS_PALETTE_SWATCH_H, PAL_MOUSE);
+        }
+        rect(fb, x + 3, y + 3, 11, 7, entry);
+        text(fb, x + 18, y + 3, short_names[color],
+             color == ui->palette_entry ? PAL_BLOCK_TEXT : RGB(222, 218, 214), 1);
+    }
+    snprintf(value, sizeof(value), "%s  #%06X",
+             ts_palette_color_name((TsPaletteColor)ui->palette_entry),
+             (unsigned)(selected & 0xffffffu));
+    text(fb, 20, 88, value, PAL_INSTRUMENT, 1);
+    for (int component = 0; component < 3; ++component) {
+        float amount = ts_palette_component(&ui->palette,
+                       (TsPaletteColor)ui->palette_entry, component) / 255.0f;
+        int y = TS_PALETTE_SLIDER_Y + component * TS_PALETTE_SLIDER_STEP_Y;
+        compact_slider(fb, TS_PALETTE_SLIDER_X, y, TS_PALETTE_SLIDER_W,
+                       channel_names[component], amount,
+                       ts_palette_component(&ui->palette,
+                           (TsPaletteColor)ui->palette_entry, component),
+                       component == 0 ? PAL_TEXT : component == 1 ?
+                       PAL_INSTRUMENT : PAL_TUNING,
+                       component == ui->palette_channel);
+    }
+    compact_slider(fb, TS_PALETTE_CONTRAST_X, TS_PALETTE_SLIDER_Y,
+                   TS_PALETTE_CONTRAST_W, "DESKTOP",
+                   (float)(ui->palette.desktop_contrast - 1) / 99.0f,
+                   ui->palette.desktop_contrast, PAL_DESKTOP,
+                   ui->palette_channel == 3);
+    compact_slider(fb, TS_PALETTE_CONTRAST_X,
+                   TS_PALETTE_SLIDER_Y + TS_PALETTE_SLIDER_STEP_Y,
+                   TS_PALETTE_CONTRAST_W, "BUTTONS",
+                   (float)(ui->palette.buttons_contrast - 1) / 99.0f,
+                   ui->palette.buttons_contrast, PAL_BUTTON,
+                   ui->palette_channel == 4);
+    text(fb, 432, 89, "COLOR", PAL_TUNING, 1);
+    frame(fb, 432, 99, 70, 47, selected, PAL_MOUSE);
+    text(fb, 510, 89, "WAVE SEL", PAL_TUNING, 1);
+    frame(fb, 510, 99, 108, 47, RGB(8, 8, 8), PAL_MOUSE);
+    rect(fb, 538, 102, 40, 41, PAL_WAVE_SELECTION);
+    rect(fb, 513, 121, 102, 1, RGB(74, 67, 75));
+    for (int x = 516; x < 612; x += 8) {
+        int height = 8 + ((x / 8) % 4) * 4;
+        rect(fb, x, 122 - height / 2, 1, height,
+             x >= 538 && x < 578 ? PAL_BLOCK_TEXT : PAL_NOTE);
+    }
+    text(fb, 541, 104, "0.25S", PAL_EFFECT, 1);
+    for (size_t i = 0; i < sizeof(palette_buttons) / sizeof(palette_buttons[0]); ++i)
+        button(fb, palette_buttons[i].x, TS_PALETTE_ACTION_Y,
+               palette_buttons[i].width, palette_buttons[i].label,
+               i + 1u == TS_UI_PALETTE_ACTION_DONE);
+    text(fb, 462, 182, "PGUP/DN COLOR  ARROWS", PAL_TUNING, 1);
 }
 
 int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
@@ -308,8 +479,154 @@ void ts_ui_init(TsUiState *ui)
     ui->show_recipes = 0;
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
+    ts_palette_default(&ui->palette);
+    ui->palette_entry = TS_PALETTE_PATTERN_TEXT;
+    ui->palette_channel = 0;
     ts_recipe_bank_init(&ui->recipes);
     snprintf(ui->status, sizeof(ui->status), "READY - SELECT A TILE, LOAD, OR CREATE");
+}
+
+int ts_ui_config_field_from_point(int x, int y)
+{
+    if (x < TS_CONFIG_FIELD_X || x >= TS_CONFIG_FIELD_X + TS_CONFIG_FIELD_W)
+        return -1;
+    for (int field = 0; field < TS_CONFIG_FIELD_COUNT; ++field) {
+        int top = TS_CONFIG_FIELD_Y + field * TS_CONFIG_FIELD_STEP_Y;
+        if (y >= top && y < top + TS_CONFIG_FIELD_H) return field;
+    }
+    return -1;
+}
+
+size_t ts_ui_config_cursor_from_point(const TsUiState *ui,
+                                      TsConfigField field, int x)
+{
+    const char *value;
+    size_t length;
+    size_t cursor;
+    size_t first;
+    size_t clicked;
+    if (ui == NULL || (int)field < 0 || (int)field >= TS_CONFIG_FIELD_COUNT) return 0;
+    value = ts_config_field_const(&ui->config, field);
+    if (value == NULL) return 0;
+    length = strlen(value);
+    cursor = field == ui->config_field ? ui->config_cursor : length;
+    if (cursor > length) cursor = length;
+    first = length > 96u ? length - 96u : 0u;
+    if (cursor < first) first = cursor;
+    if (cursor > first + 96u) first = cursor - 96u;
+    if (x <= TS_CONFIG_FIELD_X + 6) return first;
+    clicked = first + (size_t)((x - (TS_CONFIG_FIELD_X + 6) + 3) / 6);
+    return clicked > length ? length : clicked;
+}
+
+TsUiConfigAction ts_ui_config_action_from_point(int x, int y)
+{
+    if (y < TS_PALETTE_ACTION_Y || y >= TS_PALETTE_ACTION_Y + 23)
+        return TS_UI_CONFIG_ACTION_NONE;
+    for (size_t i = 0; i < sizeof(config_buttons) / sizeof(config_buttons[0]); ++i)
+        if (x >= config_buttons[i].x &&
+            x < config_buttons[i].x + config_buttons[i].width)
+            return (TsUiConfigAction)(i + 1u);
+    return TS_UI_CONFIG_ACTION_NONE;
+}
+
+int ts_ui_palette_entry_from_point(int x, int y)
+{
+    for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
+        int column = color % TS_PALETTE_SWATCH_COLUMNS;
+        int row = color / TS_PALETTE_SWATCH_COLUMNS;
+        int left = TS_PALETTE_SWATCH_X + column * TS_PALETTE_SWATCH_STEP_X;
+        int top = TS_PALETTE_SWATCH_Y + row * TS_PALETTE_SWATCH_STEP_Y;
+        if (x >= left && x < left + TS_PALETTE_SWATCH_W &&
+            y >= top && y < top + TS_PALETTE_SWATCH_H) return color;
+    }
+    return -1;
+}
+
+static int slider_value_from_point(int x, int left, int width, int maximum)
+{
+    int track_left = left + 54;
+    int track_width = width - 78;
+    if (x < track_left || x >= track_left + track_width) return -1;
+    return (x - track_left) * maximum / (track_width - 1);
+}
+
+int ts_ui_palette_channel_from_point(int x, int y, int *value)
+{
+    if (value != NULL) *value = -1;
+    for (int channel = 0; channel < 3; ++channel) {
+        int top = TS_PALETTE_SLIDER_Y + channel * TS_PALETTE_SLIDER_STEP_Y;
+        if (x >= TS_PALETTE_SLIDER_X &&
+            x < TS_PALETTE_SLIDER_X + TS_PALETTE_SLIDER_W &&
+            y >= top && y < top + TS_PALETTE_SLIDER_H) {
+            if (value != NULL)
+                *value = slider_value_from_point(x, TS_PALETTE_SLIDER_X,
+                                                  TS_PALETTE_SLIDER_W, 255);
+            return channel;
+        }
+    }
+    for (int contrast = 0; contrast < 2; ++contrast) {
+        int top = TS_PALETTE_SLIDER_Y + contrast * TS_PALETTE_SLIDER_STEP_Y;
+        if (x >= TS_PALETTE_CONTRAST_X &&
+            x < TS_PALETTE_CONTRAST_X + TS_PALETTE_CONTRAST_W &&
+            y >= top && y < top + TS_PALETTE_SLIDER_H) {
+            int adjusted = slider_value_from_point(x, TS_PALETTE_CONTRAST_X,
+                                                    TS_PALETTE_CONTRAST_W, 99);
+            if (value != NULL && adjusted >= 0) *value = adjusted + 1;
+            return contrast + 3;
+        }
+    }
+    return -1;
+}
+
+TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y)
+{
+    if (y < TS_PALETTE_ACTION_Y || y >= TS_PALETTE_ACTION_Y + 23)
+        return TS_UI_PALETTE_ACTION_NONE;
+    for (size_t i = 0; i < sizeof(palette_buttons) / sizeof(palette_buttons[0]); ++i)
+        if (x >= palette_buttons[i].x &&
+            x < palette_buttons[i].x + palette_buttons[i].width)
+            return (TsUiPaletteAction)(i + 1u);
+    return TS_UI_PALETTE_ACTION_NONE;
+}
+
+static int cycle_index(int value, int amount, int count)
+{
+    int result;
+    if (count <= 0) return 0;
+    result = (value + amount) % count;
+    return result < 0 ? result + count : result;
+}
+
+int ts_ui_palette_cycle_entry(int entry, int amount)
+{
+    return cycle_index(entry, amount, TS_PALETTE_COLOR_COUNT);
+}
+
+int ts_ui_palette_cycle_channel(int channel, int amount)
+{
+    return cycle_index(channel, amount, 5);
+}
+
+TsConfigField ts_ui_config_cycle_field(TsConfigField field, int amount)
+{
+    return (TsConfigField)cycle_index((int)field, amount, TS_CONFIG_FIELD_COUNT);
+}
+
+void ts_ui_begin_palette_edit(TsUiState *ui)
+{
+    if (ui == NULL) return;
+    ui->palette_before_edit = ui->palette;
+    ui->palette_open = 1;
+    ui->config_open = 0;
+}
+
+void ts_ui_finish_palette_edit(TsUiState *ui, int cancel)
+{
+    if (ui == NULL) return;
+    if (cancel) ui->palette = ui->palette_before_edit;
+    ui->palette_open = 0;
+    ui->config_open = 1;
 }
 
 void ts_ui_cycle_panel(TsUiState *ui)
@@ -430,6 +747,7 @@ const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
 
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
+    render_palette = &ui->palette;
     const TsTuning *display_tuning = ts_ui_display_tuning(ui, instrument);
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
     int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
@@ -512,7 +830,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         selection_first < view_last) {
         int sx0 = frame_x(selection_first, view_first, view_last);
         int sx1 = frame_x(selection_last, view_first, view_last);
-        wave_rect(fb, sx0, TS_WAVE_Y, sx1 - sx0, TS_WAVE_H, PAL_BLOCK);
+        wave_rect(fb, sx0, TS_WAVE_Y, sx1 - sx0, TS_WAVE_H,
+                  PAL_WAVE_SELECTION);
     }
     if (sample->frames && view_last > view_first) {
         if (view_last > sample->frames) view_last = sample->frames;
@@ -630,6 +949,19 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         }
     }
 
+    if (has_selection && selection_last > selection_first &&
+        selection_last > view_first && selection_first < view_last &&
+        sample->sample_rate > 0) {
+        char duration[40];
+        size_t visible_first = selection_first > view_first ?
+                               selection_first : view_first;
+        int selection_x = frame_x(visible_first, view_first, view_last);
+        double seconds = (double)(selection_last - selection_first) /
+                         (double)sample->sample_rate;
+        snprintf(duration, sizeof(duration), "SEL %.3F SEC", seconds);
+        wave_text(fb, selection_x + 4, TS_WAVE_Y + 5, duration, PAL_EFFECT, 1);
+    }
+
     if (ui->playback_active && ui->playhead_frames > 0) {
         int playhead_x = -1;
         uint32_t playhead_color = ui->playhead_source == TS_AUDITION_PARENT ?
@@ -668,12 +1000,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 597, 233, 33, "LOOP", ui->fx_page == TS_FX_LOOP);
 
     if (ui->fx_page == TS_FX_EDIT) {
-        button(fb, 10, 261, 94, "REVERSE", 0);
-        button(fb, 109, 261, 94, "NORMALIZE", 0);
-        button(fb, 208, 261, 84, "AMP DOWN", 0);
-        button(fb, 297, 261, 84, "AMP UP", 0);
-        button(fb, 386, 261, 110, "FADE IN", 0);
-        button(fb, 501, 261, 110, "FADE OUT", 0);
+        button(fb, 10, 261, 55, "COPY", 0);
+        button(fb, 69, 261, 47, "CUT", 0);
+        button(fb, 120, 261, 61, "PASTE", 0);
+        button(fb, 185, 261, 47, "FIT", 0);
+        button(fb, 236, 261, 55, "REV", 0);
+        button(fb, 295, 261, 65, "NORM", 0);
+        button(fb, 364, 261, 55, "-3 DB", 0);
+        button(fb, 423, 261, 55, "+3 DB", 0);
+        button(fb, 482, 261, 69, "FADE IN", 0);
+        button(fb, 555, 261, 75, "FADE OUT", 0);
     } else if (ui->fx_page == TS_FX_TUNE) {
         char root[32];
         char note[12];
@@ -758,15 +1094,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 10, 289, 70, "PLAY ALL", 0);
     button(fb, 85, 289, 72, "PLAY SEL", 0);
     button(fb, 162, 289, 78, "PLAY VIEW", 0);
+    button(fb, 245, 289, 52, "CROP", 0);
+    button(fb, 302, 289, 74, "ZOOM SEL", 0);
+    button(fb, 381, 289, 74, "SHOW ALL", 0);
     if (!ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients)
-        button(fb, 245, 289, 131,
+        button(fb, 460, 289, 123,
                ui->bank_clear_armed ? "CONFIRM CLEAR" : "CLEAR ALL",
                ui->bank_clear_armed);
-    else {
-        button(fb, 245, 289, 52, "CROP", 0);
-        button(fb, 302, 289, 74, "ZOOM SEL", 0);
-    }
-    button(fb, 381, 289, 74, "SHOW ALL", 0);
     button(fb, 588, 289, 42, ui->show_keyboard ? "BANK" :
            ui->show_recipes ? "INGR" : ui->show_ingredients ? "KEYS" : "RCPE",
            !ui->show_keyboard);
@@ -815,9 +1149,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
              PAL_INSTRUMENT, 1);
     } else {
         text(fb, 11, 318,
+             ui->fx_page == TS_FX_EDIT ?
+             "PASTE REPLACES TARGET  NO RANGE PASTES IN PLACE  FIT STRETCHES" :
+             ui->fx_page == TS_FX_FAMILY && instrument->has_selection ?
+             "CREATE/VARY STAMP FM INSIDE SELECTION  OUTSIDE STAYS UNCHANGED" :
              ui->fx_page == TS_FX_FAMILY ?
-             "CREATE ADDS SLOT  VARY RELATED  SHIFT PROMOTES  CTRL CREATE RADICAL" :
-             "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL  CTRL+SHIFT CLONE  RMB NAME  SHIFT+RMB CLEAR",
+             "CREATE FILLS ACTIVE TILE  VARY REPLACES OR CHAINS TO NEXT EMPTY" :
+             "CLICK PLAY  DOUBLE EMPTY SILENCE  SHIFT FULL  ALT LOOP  CTRL SEL  CTRL+SHIFT CLONE",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
             const TsBankSlot *slot = &instrument->bank[i];
@@ -834,7 +1172,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             if (slot->occupied)
                 rect(fb, x + 2, y + 19, 61, 2,
                      family_relation_color(slot->relation));
-            if (i == ui->bank_view_slot) rect(fb, x + 2, y + 2, 68, 2, PAL_MOUSE);
+            if (i == ui->bank_view_slot) rect(fb, x + 4, y + 4, 64, 2, PAL_EFFECT);
+            if (i == instrument->selected_slot) {
+                rect(fb, x - 2, y - 2, 76, 3, PAL_MOUSE);
+                rect(fb, x - 2, y + 22, 76, 3, PAL_MOUSE);
+                rect(fb, x - 2, y - 2, 3, 27, PAL_MOUSE);
+                rect(fb, x + 71, y - 2, 3, 27, PAL_MOUSE);
+            }
         }
     }
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
@@ -849,7 +1193,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 172, 188, 136, "EXIT", 0);
         button(fb, 324, 188, 144, "CANCEL", 1);
         text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
-    } else if (ui->config_open)
+    } else if (ui->palette_open)
+        palette_render(fb, ui);
+    else if (ui->config_open)
         config_render(fb, ui);
     else if (ui->browser.mode != TS_BROWSER_CLOSED)
         browser_render(fb, &ui->browser, ui->text_cursor_visible);

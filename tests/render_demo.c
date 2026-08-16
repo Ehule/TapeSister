@@ -21,7 +21,13 @@ int main(int argc, char **argv)
     ts_instrument_set_selection(&instrument, instrument.current.frames / 5,
                                 instrument.current.frames * 3 / 5);
     snprintf(ui.status, sizeof(ui.status), "PARENT PRESERVED - CURRENT READY TO SHAPE");
-    if (argc > 2 && strcmp(argv[2], "config") == 0) {
+    if (argc > 2 && strcmp(argv[2], "palette") == 0) {
+        ui.palette_open = 1;
+        ui.palette_entry = TS_PALETTE_WAVE_SELECTION;
+        ui.palette_channel = 1;
+        snprintf(ui.status, sizeof(ui.status),
+                 "LIVE PALETTE - WAVE SELECTION IS TAPESISTER ONLY");
+    } else if (argc > 2 && strcmp(argv[2], "config") == 0) {
         ui.config_open = 1;
         ui.config_field = TS_CONFIG_EXCHANGE_PATH;
         snprintf(ui.config.sample_path, sizeof(ui.config.sample_path),

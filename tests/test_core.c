@@ -28,6 +28,43 @@ static int framebuffer_contains(const TsFramebuffer *fb, uint32_t color)
     return 0;
 }
 
+static int framebuffer_color_count(const TsFramebuffer *fb, uint32_t color,
+                                   int x, int y, int w, int h)
+{
+    int count = 0;
+    for (int py = y; py < y + h; ++py)
+        for (int px = x; px < x + w; ++px)
+            if (fb->pixels[py * TS_UI_WIDTH + px] == color) ++count;
+    return count;
+}
+
+static int framebuffer_diff_count(const TsFramebuffer *left,
+                                  const TsFramebuffer *right,
+                                  int x, int y, int w, int h)
+{
+    int count = 0;
+    for (int py = y; py < y + h; ++py)
+        for (int px = x; px < x + w; ++px)
+            if (left->pixels[py * TS_UI_WIDTH + px] !=
+                right->pixels[py * TS_UI_WIDTH + px]) ++count;
+    return count;
+}
+
+static int file_contains_text(const char *path, const char *needle)
+{
+    FILE *file = fopen(path, "rb");
+    char line[256];
+    if (file == NULL) return 0;
+    while (fgets(line, sizeof(line), file) != NULL) {
+        if (strstr(line, needle) != NULL) {
+            fclose(file);
+            return 1;
+        }
+    }
+    fclose(file);
+    return 0;
+}
+
 static uint64_t waveform_hash(const TsFramebuffer *fb)
 {
     uint64_t hash = 1469598103934665603ull;
@@ -38,6 +75,19 @@ static uint64_t waveform_hash(const TsFramebuffer *fb)
         }
     }
     return hash;
+}
+
+static int samples_equal_outside(const TsSample *left, const TsSample *right,
+                                 size_t first, size_t last)
+{
+    if (left == NULL || right == NULL || left->frames != right->frames ||
+        left->sample_rate != right->sample_rate || first > last ||
+        last > left->frames) return 0;
+    if (first > 0 && memcmp(left->data, right->data,
+                            first * sizeof(*left->data)) != 0) return 0;
+    return last == left->frames ||
+           memcmp(left->data + last, right->data + last,
+                  (left->frames - last) * sizeof(*left->data)) == 0;
 }
 
 static int browser_find(const TsBrowser *browser, const char *name)
@@ -85,6 +135,128 @@ int main(void)
     CHECK(!ui.show_keyboard && !ui.show_recipes && ui.show_ingredients);
     ts_ui_cycle_panel(&ui);
     CHECK(ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+
+    {
+        TsPalette palette;
+        TsPalette reopened;
+        TsPalette tapehead_reopened;
+        FILE *legacy;
+        ts_palette_default(&palette);
+        CHECK(palette.colors[TS_PALETTE_WAVE_SELECTION] ==
+              palette.colors[TS_PALETTE_BLOCK_MARK]);
+        ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 0, 0x12);
+        ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 1, 0x34);
+        ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 2, 0x56);
+        palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xffabcdefu;
+        palette.desktop_contrast = 17;
+        palette.buttons_contrast = 83;
+        CHECK(palette.colors[TS_PALETTE_MOUSE] == 0xff123456u);
+        CHECK(ts_palette_save(&palette, "test-tapesister.pal", error, sizeof(error)));
+        CHECK(file_contains_text("test-tapesister.pal", "WaveSelection=#ABCDEF"));
+        ts_palette_default(&reopened);
+        CHECK(ts_palette_load(&reopened, "test-tapesister.pal", error, sizeof(error)));
+        CHECK(memcmp(&palette, &reopened, sizeof(palette)) == 0);
+        CHECK(ts_palette_save_tapehead(&palette, "test-tapehead.pal",
+                                       error, sizeof(error)));
+        CHECK(!file_contains_text("test-tapehead.pal", "WaveSelection"));
+        ts_palette_default(&tapehead_reopened);
+        CHECK(ts_palette_load(&tapehead_reopened, "test-tapehead.pal",
+                              error, sizeof(error)));
+        CHECK(tapehead_reopened.colors[TS_PALETTE_WAVE_SELECTION] ==
+              palette.colors[TS_PALETTE_BLOCK_MARK]);
+        for (int color = 0; color < TS_PALETTE_WAVE_SELECTION; ++color)
+            CHECK(tapehead_reopened.colors[color] == palette.colors[color]);
+        CHECK(tapehead_reopened.desktop_contrast == palette.desktop_contrast);
+        CHECK(tapehead_reopened.buttons_contrast == palette.buttons_contrast);
+        legacy = fopen("test-tapehead-legacy.pal", "wb");
+        CHECK(legacy != NULL);
+        if (legacy != NULL) {
+            CHECK(fputs("[TapeheadPalette]\n"
+                        "PatternText=#102030\nBlockMark=#203040\n"
+                        "TextOnBlock=#304050\nMouse=#405060\n"
+                        "Desktop=#506070\nButtons=#607080\n",
+                        legacy) >= 0);
+            CHECK(fclose(legacy) == 0);
+        }
+        CHECK(ts_palette_load(&reopened, "test-tapehead-legacy.pal",
+                              error, sizeof(error)));
+        CHECK(reopened.colors[TS_PALETTE_PATTERN_NOTE] == 0xff102030u);
+        CHECK(reopened.colors[TS_PALETTE_PATTERN_EMPTY] == 0xff102030u);
+        CHECK(reopened.colors[TS_PALETTE_WAVE_SELECTION] == 0xff203040u);
+        remove("test-tapesister.pal");
+        remove("test-tapehead.pal");
+        remove("test-tapehead-legacy.pal");
+    }
+
+    {
+        TsPalette before;
+        int value = -1;
+        for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
+            int column = color % TS_PALETTE_SWATCH_COLUMNS;
+            int row = color / TS_PALETTE_SWATCH_COLUMNS;
+            int x = TS_PALETTE_SWATCH_X + column * TS_PALETTE_SWATCH_STEP_X +
+                    TS_PALETTE_SWATCH_W / 2;
+            int y = TS_PALETTE_SWATCH_Y + row * TS_PALETTE_SWATCH_STEP_Y +
+                    TS_PALETTE_SWATCH_H / 2;
+            CHECK(ts_ui_palette_entry_from_point(x, y) == color);
+        }
+        CHECK(ts_ui_palette_entry_from_point(610, 90) == -1);
+        CHECK(ts_ui_palette_channel_from_point(74, 108, &value) == 0 && value == 0);
+        CHECK(ts_ui_palette_channel_from_point(215, 108, &value) == 0 && value == 255);
+        CHECK(ts_ui_palette_channel_from_point(304, 124, &value) == 4 && value == 1);
+        CHECK(ts_ui_palette_channel_from_point(395, 124, &value) == 4 && value == 100);
+        CHECK(ts_ui_palette_channel_from_point(50, 210, &value) == -1);
+        CHECK(ts_ui_palette_action_from_point(59, 185) ==
+              TS_UI_PALETTE_ACTION_IMPORT_TAPEHEAD);
+        CHECK(ts_ui_palette_action_from_point(137, 185) ==
+              TS_UI_PALETTE_ACTION_SAVE_TAPESISTER);
+        CHECK(ts_ui_palette_action_from_point(215, 185) ==
+              TS_UI_PALETTE_ACTION_EXPORT_TAPEHEAD);
+        CHECK(ts_ui_palette_action_from_point(289, 185) ==
+              TS_UI_PALETTE_ACTION_RESET);
+        CHECK(ts_ui_palette_action_from_point(352, 185) ==
+              TS_UI_PALETTE_ACTION_DONE);
+        CHECK(ts_ui_palette_action_from_point(417, 185) ==
+              TS_UI_PALETTE_ACTION_CANCEL);
+        CHECK(ts_ui_palette_action_from_point(50, 205) == TS_UI_PALETTE_ACTION_NONE);
+        CHECK(ts_ui_palette_cycle_entry(0, -1) == TS_PALETTE_COLOR_COUNT - 1);
+        CHECK(ts_ui_palette_cycle_entry(TS_PALETTE_COLOR_COUNT - 1, 1) == 0);
+        CHECK(ts_ui_palette_cycle_channel(0, -1) == 4);
+        CHECK(ts_ui_palette_cycle_channel(4, 1) == 0);
+        CHECK(ts_ui_config_cycle_field(TS_CONFIG_SAMPLE_PATH, -1) ==
+              TS_CONFIG_EXCHANGE_PATH);
+        CHECK(ts_ui_config_cycle_field(TS_CONFIG_EXCHANGE_PATH, 1) ==
+              TS_CONFIG_SAMPLE_PATH);
+        for (int field = 0; field < TS_CONFIG_FIELD_COUNT; ++field) {
+            int y = TS_CONFIG_FIELD_Y + field * TS_CONFIG_FIELD_STEP_Y +
+                    TS_CONFIG_FIELD_H / 2;
+            CHECK(ts_ui_config_field_from_point(TS_CONFIG_FIELD_X + 20, y) == field);
+        }
+        CHECK(ts_ui_config_field_from_point(50, 205) == -1);
+        CHECK(ts_ui_config_action_from_point(68, 185) == TS_UI_CONFIG_ACTION_SAVE);
+        CHECK(ts_ui_config_action_from_point(159, 185) == TS_UI_CONFIG_ACTION_USE_CWD);
+        CHECK(ts_ui_config_action_from_point(240, 185) == TS_UI_CONFIG_ACTION_PALETTE);
+        CHECK(ts_ui_config_action_from_point(317, 185) == TS_UI_CONFIG_ACTION_CANCEL);
+        CHECK(ts_ui_config_action_from_point(50, 205) == TS_UI_CONFIG_ACTION_NONE);
+
+        ts_ui_init(&ui);
+        snprintf(ui.config.sample_path, sizeof(ui.config.sample_path), "ABCDE");
+        ui.config_field = TS_CONFIG_SAMPLE_PATH;
+        ui.config_cursor = 5;
+        CHECK(ts_ui_config_cursor_from_point(&ui, TS_CONFIG_SAMPLE_PATH,
+                                             TS_CONFIG_FIELD_X + 6 + 12) == 2u);
+        before = ui.palette;
+        ts_ui_begin_palette_edit(&ui);
+        CHECK(ui.palette_open && !ui.config_open);
+        ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff010203u;
+        ts_ui_finish_palette_edit(&ui, 1);
+        CHECK(!ui.palette_open && ui.config_open);
+        CHECK(memcmp(&ui.palette, &before, sizeof(before)) == 0);
+        ts_ui_begin_palette_edit(&ui);
+        ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff040506u;
+        ts_ui_finish_palette_edit(&ui, 0);
+        CHECK(ui.palette.colors[TS_PALETTE_WAVE_SELECTION] == 0xff040506u);
+    }
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
     CHECK(ts_sample_generate(&a, &first, error, sizeof(error)));
@@ -165,6 +337,208 @@ int main(void)
         CHECK(cycle.bank[slot].generator.kind == TS_GENERATOR_FM);
         CHECK(strncmp(cycle.bank[slot].sample.name, "FM ", 3) == 0);
         ts_instrument_free(&cycle);
+    }
+    {
+        TsInstrument editor;
+        TsInstrument reopened;
+        TsSample clipboard;
+        TsSample target_before;
+        TsSample stamp_before;
+        size_t origin = 0;
+        size_t original_frames;
+        uint64_t original_hash;
+        uint64_t create_hash;
+        uint64_t vary_hash;
+        ts_instrument_init(&editor);
+        ts_instrument_init(&reopened);
+        ts_sample_init(&clipboard);
+        ts_sample_init(&target_before);
+        ts_sample_init(&stamp_before);
+
+        CHECK(ts_instrument_generate(&editor, TS_GENERATOR_FM,
+                                     0x434c4950u, error, sizeof(error)));
+        CHECK(ts_instrument_bank_capture(&editor, 1, TS_BANK_CAPTURE_CURRENT,
+                                         error, sizeof(error)));
+        ts_instrument_set_selection(&editor, 100, 400);
+        CHECK(ts_instrument_copy_selection(&editor, &clipboard, &origin,
+                                            error, sizeof(error)));
+        CHECK(origin == 100 && clipboard.frames == 300);
+        CHECK(memcmp(clipboard.data, editor.current.data + 100,
+                     clipboard.frames * sizeof(*clipboard.data)) == 0);
+
+        CHECK(ts_instrument_select_bank(&editor, 1, error, sizeof(error)));
+        CHECK(ts_sample_clone(&target_before, &editor.current, error, sizeof(error)));
+        original_frames = editor.current.frames;
+        original_hash = ts_sample_hash(&editor.current);
+
+        /* Exact Paste replaces a shorter target and grows the tile. */
+        ts_instrument_set_selection(&editor, 800, 950);
+        CHECK(ts_instrument_paste(&editor, &clipboard, origin, 0,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames + 150);
+        CHECK(editor.selection_first == 800 && editor.selection_last == 1100);
+        CHECK(memcmp(editor.current.data + 800, clipboard.data,
+                     clipboard.frames * sizeof(*clipboard.data)) == 0);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames &&
+              ts_sample_hash(&editor.current) == original_hash);
+        CHECK(ts_instrument_redo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames + 150);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+
+        /* Exact Paste replaces a longer target and shrinks the tile. */
+        ts_instrument_set_selection(&editor, 800, 1400);
+        CHECK(ts_instrument_paste(&editor, &clipboard, origin, 0,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames - 300);
+        CHECK(editor.selection_first == 800 && editor.selection_last == 1100);
+        CHECK(ts_instrument_save_recipe(&editor, "test-exact-paste.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&reopened, "test-exact-paste.tsr",
+                                        error, sizeof(error)));
+        CHECK(reopened.current.frames == original_frames - 300 &&
+              ts_sample_hash(&reopened.current) == ts_sample_hash(&editor.current));
+        CHECK(ts_instrument_undo(&reopened, error, sizeof(error)));
+        CHECK(reopened.current.frames == original_frames &&
+              ts_sample_hash(&reopened.current) == original_hash);
+        CHECK(ts_instrument_redo(&reopened, error, sizeof(error)));
+        CHECK(reopened.current.frames == original_frames - 300);
+        ts_instrument_free(&reopened);
+        ts_instrument_init(&reopened);
+        remove("test-exact-paste.tsr");
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames &&
+              ts_sample_hash(&editor.current) == original_hash);
+
+        /* Fit Paste stretches into the target without changing tile length. */
+        ts_instrument_set_selection(&editor, 800, 1400);
+        CHECK(ts_instrument_paste(&editor, &clipboard, origin, 1,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames);
+        CHECK(editor.selection_first == 800 && editor.selection_last == 1400);
+        CHECK(samples_equal_outside(&editor.current, &target_before, 800, 1400));
+        CHECK(ts_sample_hash(&editor.current) != original_hash);
+        CHECK(ts_instrument_save_recipe(&editor, "test-clipboard.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&reopened, "test-clipboard.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == ts_sample_hash(&editor.current));
+        CHECK(reopened.bank[1].patch_count == editor.bank[1].patch_count);
+        CHECK(ts_instrument_undo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == original_hash);
+        CHECK(ts_instrument_redo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == ts_sample_hash(&editor.current));
+        remove("test-clipboard.tsr");
+
+        /* Each tile remembers its own selection; Cut ripples and is reversible. */
+        CHECK(ts_instrument_select_bank(&editor, 0, error, sizeof(error)));
+        CHECK(editor.selection_first == 100 && editor.selection_last == 400);
+        original_frames = editor.current.frames;
+        original_hash = ts_sample_hash(&editor.current);
+        CHECK(ts_instrument_cut_selection(&editor, &clipboard, &origin,
+                                           error, sizeof(error)));
+        CHECK(origin == 100 && clipboard.frames == 300);
+        CHECK(editor.current.frames == original_frames - 300 && !editor.has_selection);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames &&
+              ts_sample_hash(&editor.current) == original_hash);
+        CHECK(ts_instrument_redo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames - 300);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+
+        /* With no target range, Paste overwrites at the original position. */
+        CHECK(ts_sample_clone(&stamp_before, &editor.current, error, sizeof(error)));
+        ts_instrument_clear_selection(&editor);
+        CHECK(ts_instrument_paste(&editor, &clipboard, origin, 0,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames);
+        CHECK(editor.selection_first == origin &&
+              editor.selection_last == origin + clipboard.frames);
+        CHECK(memcmp(editor.current.data + origin, clipboard.data,
+                     clipboard.frames * sizeof(*clipboard.data)) == 0);
+        CHECK(samples_equal_outside(&editor.current, &stamp_before, origin,
+                                    origin + clipboard.frames));
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(ts_sample_hash(&editor.current) == original_hash);
+
+        /* An empty tile can become a silent, timeline-preserving paste canvas. */
+        CHECK(ts_instrument_select_bank(&editor, 2, error, sizeof(error)));
+        CHECK(!editor.bank[2].occupied);
+        CHECK(ts_instrument_activate_silence(&editor, original_frames,
+                                             clipboard.sample_rate,
+                                             error, sizeof(error)));
+        CHECK(editor.bank[2].occupied && editor.current.frames == original_frames &&
+              editor.current.sample_rate == clipboard.sample_rate &&
+              strcmp(editor.current.name, "SILENCE") == 0);
+        for (size_t frame = 0; frame < editor.current.frames; ++frame)
+            CHECK(editor.current.data[frame] == 0.0f);
+        original_hash = ts_sample_hash(&editor.current);
+        CHECK(ts_instrument_paste(&editor, &clipboard, origin, 0,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames);
+        CHECK(memcmp(editor.current.data + origin, clipboard.data,
+                     clipboard.frames * sizeof(*clipboard.data)) == 0);
+        create_hash = ts_sample_hash(&editor.current);
+        CHECK(ts_instrument_save_recipe(&editor, "test-silent-paste.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_load_recipe(&reopened, "test-silent-paste.tsr",
+                                        error, sizeof(error)));
+        CHECK(reopened.selected_slot == 2 &&
+              ts_sample_hash(&reopened.current) == create_hash);
+        CHECK(ts_instrument_undo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == original_hash);
+        CHECK(ts_instrument_redo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == create_hash);
+        remove("test-silent-paste.tsr");
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        ts_instrument_clear_selection(&editor);
+        CHECK(ts_instrument_paste(&editor, &clipboard, original_frames + 100u, 0,
+                                  error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames + 100u + clipboard.frames);
+        for (size_t frame = original_frames; frame < original_frames + 100u; ++frame)
+            CHECK(editor.current.data[frame] == 0.0f);
+        CHECK(memcmp(editor.current.data + original_frames + 100u, clipboard.data,
+                     clipboard.frames * sizeof(*clipboard.data)) == 0);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames &&
+              ts_sample_hash(&editor.current) == original_hash);
+        CHECK(ts_instrument_select_bank(&editor, 0, error, sizeof(error)));
+
+        /* Create and Vary sculpt only the active selection and survive TSR16. */
+        ts_instrument_set_selection(&editor, 1000, 1500);
+        CHECK(ts_sample_clone(&stamp_before, &editor.current, error, sizeof(error)));
+        CHECK(ts_instrument_stamp_create(&editor, 0x5354414du,
+                                         error, sizeof(error)));
+        CHECK(editor.current.frames == stamp_before.frames);
+        CHECK(samples_equal_outside(&editor.current, &stamp_before, 1000, 1500));
+        create_hash = ts_sample_hash(&editor.current);
+        CHECK(create_hash != ts_sample_hash(&stamp_before));
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(ts_sample_hash(&editor.current) == ts_sample_hash(&stamp_before));
+        CHECK(ts_instrument_redo(&editor, error, sizeof(error)));
+        CHECK(ts_sample_hash(&editor.current) == create_hash);
+        CHECK(ts_instrument_stamp_vary(&editor, error, sizeof(error)));
+        vary_hash = ts_sample_hash(&editor.current);
+        CHECK(vary_hash != create_hash);
+        CHECK(samples_equal_outside(&editor.current, &stamp_before, 1000, 1500));
+        CHECK(ts_instrument_save_recipe(&editor, "test-stamps.tsr",
+                                        error, sizeof(error)));
+        ts_instrument_free(&reopened);
+        ts_instrument_init(&reopened);
+        CHECK(ts_instrument_load_recipe(&reopened, "test-stamps.tsr",
+                                        error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == vary_hash);
+        CHECK(ts_instrument_undo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == create_hash);
+        CHECK(ts_instrument_redo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == vary_hash);
+        remove("test-stamps.tsr");
+
+        ts_sample_free(&clipboard);
+        ts_sample_free(&target_before);
+        ts_sample_free(&stamp_before);
+        ts_instrument_free(&editor);
+        ts_instrument_free(&reopened);
     }
     CHECK(ts_sample_clone(&copy, &a, error, sizeof(error)));
     CHECK(ts_sample_hash(&copy) == ts_sample_hash(&a));
@@ -1425,7 +1799,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR15", 5) == 0);
+        CHECK(memcmp(magic, "TSR16", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -1812,6 +2186,45 @@ int main(void)
     CHECK(framebuffer_contains(&fb, 0xffffe700u));
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     CHECK(framebuffer_contains(&fb, 0xff009ee3u));
+    {
+        int selection_x = TS_WAVE_X +
+            (int)((imported.selection_first - imported.view_first) * TS_WAVE_W /
+                  (imported.view_last - imported.view_first));
+        int selection_last_x = TS_WAVE_X +
+            (int)((imported.selection_last - imported.view_first) * TS_WAVE_W /
+                  (imported.view_last - imported.view_first));
+        ui.palette.colors[TS_PALETTE_BLOCK_MARK] = 0xff102132u;
+        ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff405162u;
+        ts_ui_render(&fb, &ui, &imported);
+        CHECK(framebuffer_color_count(&fb, 0xff405162u, selection_x, TS_WAVE_Y,
+                                      selection_last_x - selection_x,
+                                      TS_WAVE_H) > 100);
+        CHECK(framebuffer_color_count(&fb, 0xff102132u, selection_x, TS_WAVE_Y,
+                                      selection_last_x - selection_x,
+                                      TS_WAVE_H) == 0);
+        CHECK(framebuffer_color_count(&fb, 0xff009ee3u, selection_x, TS_WAVE_Y,
+                                      selection_last_x - selection_x,
+                                      TS_WAVE_H) > 0);
+        ui.config_open = 1;
+        ts_ui_render(&fb, &ui, &imported);
+        CHECK(fb.pixels[10 * TS_UI_WIDTH + 420] == 0xff102132u);
+        ui.config_open = 0;
+        ts_palette_default(&ui.palette);
+    }
+    {
+        uint32_t saved_effect = ui.palette.colors[TS_PALETTE_PATTERN_EFFECT];
+        int label_x = TS_WAVE_X +
+                      (int)((imported.selection_first - imported.view_first) * TS_WAVE_W /
+                            (imported.view_last - imported.view_first)) + 4;
+        int effect_pixels = 0;
+        ui.palette.colors[TS_PALETTE_PATTERN_EFFECT] = 0xff010203u;
+        ts_ui_render(&fb, &ui, &imported);
+        for (int y = TS_WAVE_Y + 5; y < TS_WAVE_Y + 12; ++y)
+            for (int x = label_x; x < label_x + 84 && x < TS_WAVE_X + TS_WAVE_W; ++x)
+                if (fb.pixels[y * TS_UI_WIDTH + x] == 0xff010203u) ++effect_pixels;
+        CHECK(effect_pixels > 0);
+        ui.palette.colors[TS_PALETTE_PATTERN_EFFECT] = saved_effect;
+    }
     CHECK(ui.warp_amount == 0.0f);
     ui.warp_amount = 0.75f;
     ts_ui_render(&fb, &ui, &imported);
@@ -1858,9 +2271,30 @@ int main(void)
         ui.tape_dragging = 0;
     }
     ui.show_keyboard = 0;
+    CHECK(ts_instrument_bank_capture(&imported, 1, TS_BANK_CAPTURE_CURRENT,
+                                     error, sizeof(error)));
     ts_ui_render(&fb, &ui, &imported);
     CHECK(ts_ui_bank_slot_from_point(46, 341) == 0);
     CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] != 0xff1c1c1cu);
+    {
+        int selected = imported.selected_slot;
+        int outline_x = 8 + (selected % 8) * 77;
+        int outline_y = 328 + (selected / 8) * 25;
+        uint32_t low_contrast;
+        uint32_t high_contrast;
+        ui.palette.colors[TS_PALETTE_MOUSE] = 0xff123456u;
+        ui.palette.buttons_contrast = 1;
+        ts_ui_render(&fb, &ui, &imported);
+        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff123456u);
+        low_contrast = fb.pixels[330 * TS_UI_WIDTH + 100];
+        CHECK(low_contrast != 0xff123456u);
+        ui.palette.buttons_contrast = 100;
+        ts_ui_render(&fb, &ui, &imported);
+        high_contrast = fb.pixels[330 * TS_UI_WIDTH + 100];
+        CHECK(high_contrast != low_contrast && high_contrast != 0xff123456u);
+        CHECK(fb.pixels[outline_y * TS_UI_WIDTH + outline_x] == 0xff123456u);
+        ts_palette_default(&ui.palette);
+    }
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
         int x = 10 + (slot % 8) * 77 + 36;
         int y = 330 + (slot / 8) * 25 + 12;
@@ -1939,16 +2373,44 @@ int main(void)
     CHECK(fb.pixels[192 * TS_UI_WIDTH + 175] == 0xff5d555du);
     CHECK(fb.pixels[192 * TS_UI_WIDTH + 327] == 0xff2d0039u);
     ui.exit_confirm_open = 0;
-    ui.config_open = 1;
-    ui.config_field = TS_CONFIG_FASTTRACKER_PATH;
-    snprintf(ui.config.fasttracker_path, sizeof(ui.config.fasttracker_path),
-             "/opt/ft2/ft2-clone");
-    ui.config_cursor = strlen(ui.config.fasttracker_path);
-    ui.text_cursor_visible = 1;
-    ts_ui_render(&fb, &ui, &restored);
-    CHECK(fb.pixels[163 * TS_UI_WIDTH + 56 +
-                    (int)ui.config_cursor * 6] == 0xffffd265u);
-    ui.config_open = 0;
+    {
+        TsFramebuffer normal;
+        int differences;
+        ui.config_open = 0;
+        ui.palette_open = 0;
+        ts_ui_render(&normal, &ui, &restored);
+        ui.config_open = 1;
+        ui.config_field = TS_CONFIG_FASTTRACKER_PATH;
+        snprintf(ui.config.fasttracker_path, sizeof(ui.config.fasttracker_path),
+                 "/opt/ft2/ft2-clone");
+        ui.config_cursor = strlen(ui.config.fasttracker_path);
+        ui.text_cursor_visible = 1;
+        ts_ui_render(&fb, &ui, &restored);
+        CHECK(fb.pixels[(TS_CONFIG_FIELD_Y + TS_CONFIG_FIELD_STEP_Y + 3) *
+                        TS_UI_WIDTH + TS_CONFIG_FIELD_X + 6 +
+                        (int)ui.config_cursor * 6] == 0xffffd265u);
+        differences = framebuffer_diff_count(&normal, &fb, 0, 205,
+                                             TS_UI_WIDTH, TS_UI_HEIGHT - 205);
+        CHECK(differences == 0);
+        CHECK(framebuffer_diff_count(&normal, &fb, TS_MODAL_PANEL_X,
+                                     TS_MODAL_PANEL_Y, TS_MODAL_PANEL_W,
+                                     TS_MODAL_PANEL_H) > 1000);
+        ui.config_open = 0;
+        ts_ui_render(&normal, &ui, &restored);
+        ui.palette_open = 1;
+        ui.palette_entry = TS_PALETTE_WAVE_SELECTION;
+        ui.palette_channel = 2;
+        ts_ui_render(&fb, &ui, &restored);
+        differences = framebuffer_diff_count(&normal, &fb, 0, 205,
+                                             TS_UI_WIDTH, TS_UI_HEIGHT - 205);
+        CHECK(differences == 0);
+        CHECK(framebuffer_diff_count(&normal, &fb, TS_MODAL_PANEL_X,
+                                     TS_MODAL_PANEL_Y, TS_MODAL_PANEL_W,
+                                     TS_MODAL_PANEL_H) > 1000);
+        CHECK(framebuffer_diff_count(&normal, &fb, 0, 204,
+                                     TS_UI_WIDTH, 1) == 0);
+        ui.palette_open = 0;
+    }
     ui.show_keyboard = 1;
     {
         uint64_t current_waveform = waveform_hash(&fb);

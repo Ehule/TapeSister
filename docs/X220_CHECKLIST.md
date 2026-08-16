@@ -11,7 +11,7 @@ This is a musical and interaction checkpoint. Passing automated tests alone is n
 - [ ] Undo and Redo traverse only the selected tile's history; switching tiles never merges or clears histories.
 - [ ] Clearing a tile never changes another tile. Any tile, including tile 01, can be cleared.
 - [ ] Rename changes only the selected occupied tile's name.
-- [ ] Saving and reopening a TSR15 project restores every occupied tile as an independent object and preserves an empty selected tile.
+- [ ] Saving and reopening a TSR16 project restores every occupied tile as an independent object and preserves an empty selected tile.
 
 ## Create, Vary, and Chain
 
@@ -46,7 +46,7 @@ This is a musical and interaction checkpoint. Passing automated tests alone is n
 
 - [ ] Load, Save, and Export browser navigation, scrolling, filename editing, overwrite confirmation, and cancellation behave consistently.
 - [ ] A malformed or truncated input reports its real error and leaves the complete project untouched.
-- [ ] TSR15 restores all tile audio, baselines, editor state, histories, loops, tuning, and bank selection.
+- [ ] TSR16 restores all tile audio, baselines, editor state, histories, loops, tuning, paste/stamp patches, and bank selection.
 - [ ] Legacy TSR6 through TSR14 projects still open successfully.
 - [ ] Current-tile WAV export and whole-bank export contain the expected audio and sampler loop/tuning metadata.
 - [ ] Whole-bank export writes one numbered WAV per occupied tile and never replaces an existing folder.

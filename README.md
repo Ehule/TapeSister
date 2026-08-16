@@ -6,9 +6,9 @@ TapeSister is a standalone sample-making laboratory for FT2 Tapehead Edition. It
 
 Each of the 16 Bank tiles is a complete editable sound object. A tile owns its audio, tuning, loop, selection, viewport, processing and edit state, and Undo/Redo history. There is no separate Source, Parent, Current, promotion, or commit workflow in the interface.
 
-Clicking an occupied tile selects it, restores its own editor state, and auditions it. Clicking an empty tile selects that exact Create/Load destination without playing anything. Clearing the active tile leaves the same empty destination selected. Bank 01 has no special protection or authority.
+Clicking an occupied tile selects it, immediately restores its own editor state for waveform selection, and auditions it. Clicking an empty tile selects that exact Create/Load destination without playing anything; double-clicking it activates a silent editable canvas. When the audio clipboard has a source timeline, the canvas adopts that full duration and sample rate so Paste-in-place lands at the same time. With no clipboard it defaults to one second at 44.1 kHz. A thick Mouse-color outline always marks the active editing tile; a separate cyan mark identifies a bank tile being previewed. Clearing the active tile leaves the same empty destination selected. Bank 01 has no special protection or authority.
 
-Create and Load replace only the selected tile. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. CHAIN is the only normal operation that establishes a relationship across tiles.
+With no waveform selection, Create and Load replace only the selected tile. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. With a waveform selection, Create and Vary instead stamp a fitted FM sound into exactly that range on the active tile; audio outside the range and the tile duration stay unchanged, and Chain does not move the stamp to another tile.
 
 Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
@@ -31,13 +31,13 @@ springs back to zero after commit or Escape cancellation.
 
 ## Zero-snapped selection and loop modes
 
-Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in the selected tile. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
+Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in the selected tile. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop, with an Effect-color readout at its visible upper-left reporting the complete selection duration. `Ctrl+A` deliberately keeps exact sample boundaries. If a sound has no mathematical sign crossing, selection falls back deterministically to its closest-to-zero sample.
 
 The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. If no selection exists, Set Loop first selects and loops the exact whole tile. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape. Loop range, mode, and crossfade belong to the tile and participate in its Undo/Redo history.
 
 The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary click clears the chord and returns to momentary audition. Sustained voices follow the selected tile.
 
-TapeSister starts in FT2-style borderless desktop fullscreen. Escape first cancels an active dialog, preview, or editing gesture; otherwise it stops playback and opens the exit confirmation. Closing the window uses the same confirmation, with an explicit warning whenever the instrument or collection differs from the last opened or saved TSR project.
+TapeSister starts in FT2-style borderless desktop fullscreen. **Alt+Enter** toggles between fullscreen and a normal resizable window without changing the active tile, selection, clipboard, or playback state. Escape first cancels an active dialog, preview, or editing gesture; otherwise it stops playback and opens the exit confirmation. Closing the window uses the same confirmation, with an explicit warning whenever the instrument or collection differs from the last opened or saved TSR project.
 
 ## Pitch and tuning
 
@@ -49,13 +49,15 @@ Root and fine tuning participate in the selected tile's state and Undo/Redo hist
 
 ## FastTracker handoff and configuration
 
-**Config** opens one compact modal with blank-safe editable paths for the sample root, FastTracker executable, and FT2 exchange folder. The values persist in portable `tapesister.ini`; Tab or Up/Down changes field, the usual caret keys edit anywhere in a path, Ctrl+Backspace clears it, and **Use CWD** copies the current directory. The configured sample root becomes the file browser's starting directory while normal browsing still remembers later navigation.
+**Config** replaces only the framed waveform panel with compact blank-safe editable paths for the sample root, FastTracker executable, and FT2 exchange folder, leaving the toolbar and every control below `y=205` visible. The values persist in portable `tapesister.ini`; Tab or Up/Down changes field, the usual caret keys edit anywhere in a path, Ctrl+Backspace clears it, and **Use CWD** copies the current directory. The configured sample root becomes the file browser's starting directory while normal browsing still remembers later navigation.
 
 Fresh launches also use two boolean startup settings (both default to `1` when absent): `startup_welcome_sample` installs `assets/tapesister_welcome.wav` as the ordinary imported working sound in bank 01, and `startup_welcome_autoplay` auditions it once after the splash closes. Set autoplay to `0` to keep the waveform without the greeting, or sample to `0` to start with an empty selected bank 01. Command-line WAV/TSR loading takes precedence and is never overwritten by the welcome artifact. See `tapesister.ini.example`.
 
 **Send FT2** exports every occupied collection slot into an automatically numbered folder under the exchange path (falling back to the sample path), then launches the configured FastTracker executable without shell interpolation. No existing handoff folder is replaced. The handoff remains deliberately file-based: TapeSister does not link against tracker state, and FT2's existing folder importer decides whether the collection replaces the current instrument, fills another instrument, or becomes a launcher bank.
 
-Every handoff WAV includes root/fine-tune metadata plus loop start, inclusive end, and standard Forward/Ping-Pong/Backward type. FT2 already reads the loop record, so forward and ping-pong collection members arrive with looping enabled instead of requiring manual flags. Its current WAV loader treats the standard backward type as ping-pong; exact reverse-loop interpretation and `smpl` root-note adoption belong to the reciprocal FT2-side handoff slice. Palette import/edit/export will share the Config window in its own focused slice rather than mixing palette state into `tapesister.ini`.
+Every handoff WAV includes root/fine-tune metadata plus loop start, inclusive end, and standard Forward/Ping-Pong/Backward type. FT2 already reads the loop record, so forward and ping-pong collection members arrive with looping enabled instead of requiring manual flags. Its current WAV loader treats the standard backward type as ping-pong; exact reverse-loop interpretation and `smpl` root-note adoption belong to the reciprocal FT2-side handoff slice.
+
+**Config -> Palette** replaces the same waveform panel with a live 13-color RGB editor: the original 12 named FT2 Tapehead Edition fields plus TapeSister's independent **Wave Selection** fill. It also exposes Tapehead-compatible Desktop and Buttons contrast values: button and tile bevels derive from the Buttons color and contrast, while Mouse remains an independent interaction and active-tile highlight color. **Import TH** reads `tapehead.pal`, **Export TH** writes only Tapehead's original fields, and **Save TS** writes `tapesister.pal` including Wave Selection, which TapeSister automatically reloads on the next launch. If an imported or older palette omits Wave Selection, it inherits `BlockMark`, preserving its previous appearance; older six-color Tapehead palettes still give the other additional waveform colors `PatternText`. `TAPESISTER_PALETTE` can override the TapeSister palette path.
 
 ## Sound collection and variation
 
@@ -66,7 +68,7 @@ All 16 slots are peers. A newly created or imported sound fills the currently se
 - Ctrl-click an empty slot to capture the snapped Selection; or
 - Ctrl+Shift-click an empty slot to Clone the active tile's complete editable state and history.
 
-Click an occupied slot to select its independent editable state and audition it. Click an empty slot to select that exact CREATE/LOAD destination without auditioning. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. While a filled bank waveform is visible, the Loop page edits that slot directly. Right-click any occupied slot to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click and empties all 16 peer slots.
+Click an occupied slot to select its independent editable state and audition it; its saved selection is immediately active in the waveform. Click an empty slot to select that exact CREATE/LOAD destination without auditioning, or double-click it to activate silence for editing and paste. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. Right-click any occupied slot to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click and empties all 16 peer slots.
 
 The **Variation** page exposes one continuous Range and the **Chain** switch. Vary requires a selected FM tile. With Chain off, Vary replaces only that tile. With Chain on, Vary writes to the next empty tile, selects it, and uses it as the basis for the next chained result. If the bank is full, chained Vary refuses instead of overwriting another tile.
 
@@ -119,6 +121,8 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - Zoom Selection and Show All;
 - nondestructive Crop with Source preservation;
 - selection-aware Reverse, Normalize, 3 dB Amplify Up/Down, Fade In, and Fade Out;
+- cross-tile Copy, ripple Cut, exact Paste, and duration-preserving Fit Paste;
+- selection-scoped Create and Vary FM stamping;
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition;
 - mono PCM/float WAV loading, including multichannel fold-down;
@@ -126,6 +130,8 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - mono 16-bit selected-tile export with sampler-compatible root/fine-tune and loop metadata.
 
 Sample edits are deterministic and tile-owned. With no selection they affect the whole selected tile; with a selection they affect only that range.
+
+The audio clipboard survives tile changes for the lifetime of the app, while every tile keeps and immediately restores its own selection. **Paste** replaces the destination selection with the copied sound at its exact duration: a shorter destination makes the tile grow and a longer destination makes it shrink. With no destination selection, Paste overwrites at the source selection's original time position, preserves the target duration when the material fits, and extends the tile only when necessary; a target shorter than that time position is padded with silence. **Fit** stretches or compresses the copied sound into the destination selection, keeping the tile length fixed and deliberately changing playback speed and pitch. Cut ripple-removes the selected range; cutting the whole tile is refused in favor of the explicit Clear command. All mutations participate in the destination tile's Undo/Redo history.
 
 Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the result without reconstructing clipped peaks, preserving that flattened distortion as a repeatable sculpting operation.
 
@@ -142,11 +148,11 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR15 stores every occupied tile as a complete independent object: audio, private render baseline, tuning, loop, selection, viewport, processing and edit timelines, and Undo/Redo stacks. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR14 remain loadable for compatibility. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR16 stores every occupied tile as a complete independent object: audio, private render baseline, tuning, loop, selection, viewport, processing and edit timelines, Undo/Redo stacks, and the audio patches needed to replay Paste and FM stamp history. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR15 remain loadable for compatibility. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 
-The temporary colors come directly from `assets/tapehead.pal`, supplied by the user. The interface remains standalone: FT2 and the archived prototype are reference shelves, not inherited architecture, and TapeSister does not depend on or modify FT2 Tapehead Edition.
+The default colors come from `assets/tapehead.pal`, and the live palette remains compatible with Tapehead's named palette fields. The interface remains standalone: FT2 and the archived prototype are reference shelves, not inherited architecture, and TapeSister does not depend on or modify FT2 Tapehead Edition.
 
 ## Build on Linux
 
@@ -177,6 +183,8 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Save browser / choose Export Selected Tile or Collection: `Ctrl+S` / `Ctrl+E`
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`
 - Select all: `Ctrl+A`
+- Copy / Cut / exact Paste: `Ctrl+C` / `Ctrl+X` / `Ctrl+V`
+- Fit Paste into the target selection: `Ctrl+Shift+V`
 - Reverse / Normalize: `Ctrl+R` / `Ctrl+N`
 - Fade in / Fade out: `Ctrl+I` / `Ctrl+U`
 - Amplify up/down 3 dB: `Ctrl+Up` / `Ctrl+Down`
@@ -187,8 +195,9 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Browser parent directory: `Backspace` while the file list is focused
 - Browser confirm/cancel: `Enter` / `Escape`
 - Build/toggle a five-note chord: `Shift` + onscreen-key click
-- Create FM tile / vary selected FM tile: **Create** / **Vary**
+- Create FM tile / vary selected FM tile, or stamp the selected range: **Create** / **Vary**
 - Config paths: top **Config** button
+- Tapehead-compatible colors: **Config -> Palette**
 - Export collection to exchange folder and launch FT2: top **Send FT2** button
 
-Ripple cut, multiple loops, automatic loop candidates, the zero-crossing loop-maker transformation, deeper synthesis and modulation stages, palette editing, and multi-source variation remain separate, visually verified slices.
+Multiple loops, automatic loop candidates, the zero-crossing loop-maker transformation, deeper synthesis and modulation stages, and multi-source variation remain separate, visually verified slices.
