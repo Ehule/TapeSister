@@ -11,6 +11,20 @@
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
+enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,
+       TS_MODAL_PANEL_W = 620, TS_MODAL_PANEL_H = 164 };
+enum { TS_CONFIG_FIELD_X = 20, TS_CONFIG_FIELD_Y = 63,
+       TS_CONFIG_FIELD_W = 600, TS_CONFIG_FIELD_H = 19,
+       TS_CONFIG_FIELD_STEP_Y = 31 };
+enum { TS_PALETTE_SWATCH_X = 20, TS_PALETTE_SWATCH_Y = 57,
+       TS_PALETTE_SWATCH_W = 82, TS_PALETTE_SWATCH_H = 13,
+       TS_PALETTE_SWATCH_COLUMNS = 7, TS_PALETTE_SWATCH_STEP_X = 86,
+       TS_PALETTE_SWATCH_STEP_Y = 16 };
+enum { TS_PALETTE_SLIDER_X = 20, TS_PALETTE_SLIDER_Y = 102,
+       TS_PALETTE_SLIDER_W = 220, TS_PALETTE_SLIDER_H = 13,
+       TS_PALETTE_SLIDER_STEP_Y = 16,
+       TS_PALETTE_CONTRAST_X = 250, TS_PALETTE_CONTRAST_W = 170,
+       TS_PALETTE_ACTION_Y = 174 };
 enum {
     TS_BROWSER_LIST_X = 58,
     TS_BROWSER_LIST_Y = 87,
@@ -48,6 +62,24 @@ typedef enum {
     TS_UI_BANK_ACTION_CLEAR,
     TS_UI_BANK_ACTION_INVALID
 } TsUiBankAction;
+
+typedef enum {
+    TS_UI_CONFIG_ACTION_NONE = 0,
+    TS_UI_CONFIG_ACTION_SAVE,
+    TS_UI_CONFIG_ACTION_USE_CWD,
+    TS_UI_CONFIG_ACTION_PALETTE,
+    TS_UI_CONFIG_ACTION_CANCEL
+} TsUiConfigAction;
+
+typedef enum {
+    TS_UI_PALETTE_ACTION_NONE = 0,
+    TS_UI_PALETTE_ACTION_IMPORT_TAPEHEAD,
+    TS_UI_PALETTE_ACTION_SAVE_TAPESISTER,
+    TS_UI_PALETTE_ACTION_EXPORT_TAPEHEAD,
+    TS_UI_PALETTE_ACTION_RESET,
+    TS_UI_PALETTE_ACTION_DONE,
+    TS_UI_PALETTE_ACTION_CANCEL
+} TsUiPaletteAction;
 
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
@@ -140,6 +172,18 @@ const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
+int ts_ui_config_field_from_point(int x, int y);
+size_t ts_ui_config_cursor_from_point(const TsUiState *ui,
+                                      TsConfigField field, int x);
+TsUiConfigAction ts_ui_config_action_from_point(int x, int y);
+int ts_ui_palette_entry_from_point(int x, int y);
+int ts_ui_palette_channel_from_point(int x, int y, int *value);
+TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y);
+int ts_ui_palette_cycle_entry(int entry, int amount);
+int ts_ui_palette_cycle_channel(int channel, int amount);
+TsConfigField ts_ui_config_cycle_field(TsConfigField field, int amount);
+void ts_ui_begin_palette_edit(TsUiState *ui);
+void ts_ui_finish_palette_edit(TsUiState *ui, int cancel);
 int ts_ui_bank_slot_from_point(int x, int y);
 int ts_ui_recipe_slot_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);

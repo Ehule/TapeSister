@@ -23,10 +23,10 @@ int main(int argc, char **argv)
     snprintf(ui.status, sizeof(ui.status), "PARENT PRESERVED - CURRENT READY TO SHAPE");
     if (argc > 2 && strcmp(argv[2], "palette") == 0) {
         ui.palette_open = 1;
-        ui.palette_entry = TS_PALETTE_PATTERN_EFFECT;
+        ui.palette_entry = TS_PALETTE_WAVE_SELECTION;
         ui.palette_channel = 1;
         snprintf(ui.status, sizeof(ui.status),
-                 "LIVE TAPEHEAD-COMPATIBLE PALETTE EDITOR");
+                 "LIVE PALETTE - WAVE SELECTION IS TAPESISTER ONLY");
     } else if (argc > 2 && strcmp(argv[2], "config") == 0) {
         ui.config_open = 1;
         ui.config_field = TS_CONFIG_EXCHANGE_PATH;

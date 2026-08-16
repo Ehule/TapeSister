@@ -17,6 +17,7 @@ typedef enum {
     TS_PALETTE_PATTERN_TUNING,
     TS_PALETTE_PATTERN_EFFECT,
     TS_PALETTE_PATTERN_EMPTY,
+    TS_PALETTE_WAVE_SELECTION,
     TS_PALETTE_COLOR_COUNT
 } TsPaletteColor;
 
@@ -33,6 +34,8 @@ int ts_palette_load(TsPalette *palette, const char *path,
                     char *error, size_t error_size);
 int ts_palette_save(const TsPalette *palette, const char *path,
                     char *error, size_t error_size);
+int ts_palette_save_tapehead(const TsPalette *palette, const char *path,
+                             char *error, size_t error_size);
 uint8_t ts_palette_component(const TsPalette *palette, TsPaletteColor color,
                              int component);
 void ts_palette_set_component(TsPalette *palette, TsPaletteColor color,

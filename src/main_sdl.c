@@ -1595,18 +1595,14 @@ static void begin_config(TsUiState *ui)
 
 static void begin_palette(TsUiState *ui)
 {
-    ui->palette_before_edit = ui->palette;
-    ui->palette_open = 1;
-    ui->config_open = 0;
+    ts_ui_begin_palette_edit(ui);
     SDL_StopTextInput();
     snprintf(ui->status, sizeof(ui->status), "EDITING LIVE PALETTE");
 }
 
 static void finish_palette(TsUiState *ui, int cancel)
 {
-    if (cancel) ui->palette = ui->palette_before_edit;
-    ui->palette_open = 0;
-    ui->config_open = 1;
+    ts_ui_finish_palette_edit(ui, cancel);
     select_config_field(ui, ui->config_field);
     SDL_StartTextInput();
     snprintf(ui->status, sizeof(ui->status), cancel ?
@@ -1627,7 +1623,10 @@ static void palette_save(TsUiState *ui, int tapehead)
 {
     char error[160];
     const char *path = tapehead ? tapehead_palette_path() : tapesister_palette_path();
-    if (ts_palette_save(&ui->palette, path, error, sizeof(error)))
+    if ((tapehead ? ts_palette_save_tapehead(&ui->palette, path,
+                                             error, sizeof(error)) :
+                    ts_palette_save(&ui->palette, path,
+                                    error, sizeof(error))))
         snprintf(ui->status, sizeof(ui->status), "%s %.112s",
                  tapehead ? "EXPORTED" : "SAVED", path);
     else snprintf(ui->status, sizeof(ui->status), "PALETTE SAVE FAILED: %.132s", error);
@@ -2367,16 +2366,19 @@ int main(int argc, char **argv)
                     else if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_d)
                         finish_palette(&ui, 0);
                     else if (key == SDLK_TAB || key == SDLK_DOWN)
-                        ui.palette_channel = (ui.palette_channel + 1) % 5;
+                        ui.palette_channel = ts_ui_palette_cycle_channel(
+                                                 ui.palette_channel, 1);
                     else if (key == SDLK_UP)
-                        ui.palette_channel = (ui.palette_channel + 4) % 5;
+                        ui.palette_channel = ts_ui_palette_cycle_channel(
+                                                 ui.palette_channel, -1);
                     else if (key == SDLK_LEFT) palette_adjust(&ui, -step);
                     else if (key == SDLK_RIGHT) palette_adjust(&ui, step);
                     else if (key == SDLK_PAGEUP)
-                        ui.palette_entry = (ui.palette_entry + TS_PALETTE_COLOR_COUNT - 1) %
-                                           TS_PALETTE_COLOR_COUNT;
+                        ui.palette_entry = ts_ui_palette_cycle_entry(
+                                               ui.palette_entry, -1);
                     else if (key == SDLK_PAGEDOWN)
-                        ui.palette_entry = (ui.palette_entry + 1) % TS_PALETTE_COLOR_COUNT;
+                        ui.palette_entry = ts_ui_palette_cycle_entry(
+                                               ui.palette_entry, 1);
                     else if (key == SDLK_i) palette_import(&ui);
                     else if (key == SDLK_s) palette_save(&ui, 0);
                     else if (key == SDLK_e) palette_save(&ui, 1);
@@ -2394,10 +2396,10 @@ int main(int argc, char **argv)
                         save_config(&ui);
                     else if (key == SDLK_TAB || key == SDLK_DOWN)
                         select_config_field(&ui,
-                            (TsConfigField)(ui.config_field + 1));
+                            ts_ui_config_cycle_field(ui.config_field, 1));
                     else if (key == SDLK_UP)
                         select_config_field(&ui,
-                            (TsConfigField)(ui.config_field - 1));
+                            ts_ui_config_cycle_field(ui.config_field, -1));
                     else if (key == SDLK_BACKSPACE && field != NULL)
                         text_backspace(field, &ui.config_cursor);
                     else if (key == SDLK_DELETE && field != NULL)
@@ -2856,76 +2858,49 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
                     }
                 } else if (ui.palette_open) {
-                    int selected = -1;
-                    for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
-                        int column = color / 6;
-                        int row = color % 6;
-                        int left = 44 + column * 282;
-                        int top = 66 + row * 25;
-                        if (x >= left && x < left + 268 && y >= top && y < top + 21)
-                            selected = color;
-                    }
+                    int value = -1;
+                    int selected = ts_ui_palette_entry_from_point(x, y);
+                    int channel = ts_ui_palette_channel_from_point(x, y, &value);
+                    TsUiPaletteAction action = ts_ui_palette_action_from_point(x, y);
                     if (selected >= 0) ui.palette_entry = selected;
-                    else if (x >= 44 && x < 366 && y >= 237 && y < 318) {
-                        int component = (y - 237) / 27;
-                        int value = (x - 44) * 255 / 321;
-                        if (component > 2) component = 2;
-                        if (value < 0) value = 0;
-                        if (value > 255) value = 255;
-                        ui.palette_channel = component;
-                        ts_palette_set_component(&ui.palette,
-                            (TsPaletteColor)ui.palette_entry, component, (uint8_t)value);
-                    } else if (x >= 456 && x < 588 &&
-                               ((y >= 282 && y < 305) ||
-                                (y >= 309 && y < 332))) {
-                        int channel = y < 305 ? 3 : 4;
-                        int value = 1 + (x - 456) * 99 / 131;
+                    else if (channel >= 0) {
                         ui.palette_channel = channel;
-                        if (channel == 3) ui.palette.desktop_contrast = value;
-                        else ui.palette.buttons_contrast = value;
-                    } else if (y >= 339 && y < 362 && x >= 44 && x < 126)
+                        if (value >= 0 && channel < 3)
+                            ts_palette_set_component(&ui.palette,
+                                (TsPaletteColor)ui.palette_entry, channel,
+                                (uint8_t)value);
+                        else if (value >= 0 && channel == 3)
+                            ui.palette.desktop_contrast = value;
+                        else if (value >= 0)
+                            ui.palette.buttons_contrast = value;
+                    } else if (action == TS_UI_PALETTE_ACTION_IMPORT_TAPEHEAD)
                         palette_import(&ui);
-                    else if (y >= 339 && y < 362 && x >= 132 && x < 208)
+                    else if (action == TS_UI_PALETTE_ACTION_SAVE_TAPESISTER)
                         palette_save(&ui, 0);
-                    else if (y >= 339 && y < 362 && x >= 214 && x < 302)
+                    else if (action == TS_UI_PALETTE_ACTION_EXPORT_TAPEHEAD)
                         palette_save(&ui, 1);
-                    else if (y >= 339 && y < 362 && x >= 308 && x < 376) {
+                    else if (action == TS_UI_PALETTE_ACTION_RESET) {
                         ts_palette_default(&ui.palette);
                         snprintf(ui.status, sizeof(ui.status), "RESTORED FACTORY TAPEHEAD PALETTE");
-                    } else if (y >= 339 && y < 362 && x >= 382 && x < 444)
+                    } else if (action == TS_UI_PALETTE_ACTION_DONE)
                         finish_palette(&ui, 0);
-                    else if (y >= 339 && y < 362 && x >= 450 && x < 526)
+                    else if (action == TS_UI_PALETTE_ACTION_CANCEL)
                         finish_palette(&ui, 1);
                 } else if (ui.config_open) {
-                    static const int field_y[TS_CONFIG_FIELD_COUNT] = {103, 158, 213};
-                    int selected = -1;
-                    for (int i = 0; i < TS_CONFIG_FIELD_COUNT; ++i)
-                        if (x >= 50 && x < 590 && y >= field_y[i] && y < field_y[i] + 24)
-                            selected = i;
+                    int selected = ts_ui_config_field_from_point(x, y);
+                    TsUiConfigAction action = ts_ui_config_action_from_point(x, y);
                     if (selected >= 0) {
-                        const char *field;
-                        size_t length;
-                        size_t cursor;
-                        size_t first;
-                        size_t clicked;
                         if (selected != (int)ui.config_field)
                             select_config_field(&ui, (TsConfigField)selected);
-                        field = ts_config_field_const(&ui.config, ui.config_field);
-                        length = strlen(field);
-                        cursor = ui.config_cursor > length ? length : ui.config_cursor;
-                        first = length > 82u ? length - 82u : 0u;
-                        if (cursor < first) first = cursor;
-                        if (cursor > first + 82u) first = cursor - 82u;
-                        clicked = first + (size_t)((x - 56 + 3) / 6);
-                        if (clicked > length) clicked = length;
-                        ui.config_cursor = clicked;
-                    } else if (x >= 50 && x < 160 && y >= 274 && y < 297)
+                        ui.config_cursor = ts_ui_config_cursor_from_point(
+                                               &ui, ui.config_field, x);
+                    } else if (action == TS_UI_CONFIG_ACTION_SAVE)
                         save_config(&ui);
-                    else if (x >= 170 && x < 270 && y >= 274 && y < 297)
+                    else if (action == TS_UI_CONFIG_ACTION_USE_CWD)
                         config_use_cwd(&ui);
-                    else if (x >= 280 && x < 368 && y >= 274 && y < 297)
+                    else if (action == TS_UI_CONFIG_ACTION_PALETTE)
                         begin_palette(&ui);
-                    else if (x >= 378 && x < 460 && y >= 274 && y < 297)
+                    else if (action == TS_UI_CONFIG_ACTION_CANCEL)
                         cancel_config(&ui);
                 } else if (ui.renaming_bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),

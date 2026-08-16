@@ -12,12 +12,13 @@
 static const char *const color_keys[TS_PALETTE_COLOR_COUNT] = {
     "PatternText", "BlockMark", "TextOnBlock", "Mouse", "Desktop", "Buttons",
     "PatternNote", "PatternInstrument", "PatternVolume", "PatternTuning",
-    "PatternEffect", "PatternEmpty"
+    "PatternEffect", "PatternEmpty", "WaveSelection"
 };
 
 static const char *const color_names[TS_PALETTE_COLOR_COUNT] = {
     "TEXT", "SELECTION", "SELECTED TEXT", "MOUSE", "DESKTOP", "BUTTONS",
-    "WAVE", "INSTRUMENT", "ZERO CROSS", "LOOP", "EFFECT", "EMPTY"
+    "WAVE", "INSTRUMENT", "ZERO CROSS", "LOOP", "EFFECT", "EMPTY",
+    "WAVE SELECTION"
 };
 
 static void set_error(char *error, size_t error_size, const char *message)
@@ -80,7 +81,8 @@ void ts_palette_default(TsPalette *palette)
     static const uint32_t defaults[TS_PALETTE_COLOR_COUNT] = {
         RGB(255, 28, 0), RGB(45, 0, 57), RGB(0, 158, 227), RGB(255, 210, 101),
         RGB(28, 28, 28), RGB(93, 85, 93), RGB(255, 231, 0), RGB(24, 255, 0),
-        RGB(255, 28, 231), RGB(20, 125, 255), RGB(53, 255, 255), RGB(89, 0, 255)
+        RGB(255, 28, 231), RGB(20, 125, 255), RGB(53, 255, 255), RGB(89, 0, 255),
+        RGB(45, 0, 57)
     };
     if (palette == NULL) return;
     memcpy(palette->colors, defaults, sizeof(defaults));
@@ -169,8 +171,10 @@ int ts_palette_load(TsPalette *palette, const char *path,
             return 0;
         }
     }
-    for (int color = 6; color < TS_PALETTE_COLOR_COUNT; ++color)
+    for (int color = 6; color < TS_PALETTE_WAVE_SELECTION; ++color)
         if (!found[color]) loaded.colors[color] = loaded.colors[TS_PALETTE_PATTERN_TEXT];
+    if (!found[TS_PALETTE_WAVE_SELECTION])
+        loaded.colors[TS_PALETTE_WAVE_SELECTION] = loaded.colors[TS_PALETTE_BLOCK_MARK];
     *palette = loaded;
     set_error(error, error_size, "");
     return 1;
@@ -182,8 +186,9 @@ malformed:
     return 0;
 }
 
-int ts_palette_save(const TsPalette *palette, const char *path,
-                    char *error, size_t error_size)
+static int save_palette(const TsPalette *palette, const char *path,
+                        int include_wave_selection,
+                        char *error, size_t error_size)
 {
     FILE *file;
     int failed = 0;
@@ -197,11 +202,16 @@ int ts_palette_save(const TsPalette *palette, const char *path,
             snprintf(error, error_size, "Could not create palette: %s", path);
         return 0;
     }
-    failed |= fprintf(file,
+    failed |= fprintf(file, include_wave_selection ?
+                      "; TapeSister palette; Tapehead-compatible entries are unchanged.\n"
+                      "; WaveSelection is TapeSister-only and is omitted by Export TH.\n\n"
+                      "[TapeheadPalette]\n" :
                       "; Tapehead Edition compatible palette\n"
-                      "; Editable by TapeSister and importable by FT2 Tapehead Edition.\n\n"
+                      "; Exported by TapeSister without TapeSister-only entries.\n\n"
                       "[TapeheadPalette]\n") < 0;
-    for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
+    for (int color = 0; color < (include_wave_selection ?
+                                TS_PALETTE_COLOR_COUNT : TS_PALETTE_WAVE_SELECTION);
+         ++color) {
         uint32_t value = palette->colors[color];
         failed |= fprintf(file, "%s=#%02X%02X%02X\n", color_keys[color],
                           (unsigned)((value >> 16) & 0xffu),
@@ -217,6 +227,18 @@ int ts_palette_save(const TsPalette *palette, const char *path,
     }
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_palette_save(const TsPalette *palette, const char *path,
+                    char *error, size_t error_size)
+{
+    return save_palette(palette, path, 1, error, error_size);
+}
+
+int ts_palette_save_tapehead(const TsPalette *palette, const char *path,
+                             char *error, size_t error_size)
+{
+    return save_palette(palette, path, 0, error, error_size);
 }
 
 uint8_t ts_palette_component(const TsPalette *palette, TsPaletteColor color,

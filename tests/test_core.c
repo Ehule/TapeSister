@@ -28,6 +28,43 @@ static int framebuffer_contains(const TsFramebuffer *fb, uint32_t color)
     return 0;
 }
 
+static int framebuffer_color_count(const TsFramebuffer *fb, uint32_t color,
+                                   int x, int y, int w, int h)
+{
+    int count = 0;
+    for (int py = y; py < y + h; ++py)
+        for (int px = x; px < x + w; ++px)
+            if (fb->pixels[py * TS_UI_WIDTH + px] == color) ++count;
+    return count;
+}
+
+static int framebuffer_diff_count(const TsFramebuffer *left,
+                                  const TsFramebuffer *right,
+                                  int x, int y, int w, int h)
+{
+    int count = 0;
+    for (int py = y; py < y + h; ++py)
+        for (int px = x; px < x + w; ++px)
+            if (left->pixels[py * TS_UI_WIDTH + px] !=
+                right->pixels[py * TS_UI_WIDTH + px]) ++count;
+    return count;
+}
+
+static int file_contains_text(const char *path, const char *needle)
+{
+    FILE *file = fopen(path, "rb");
+    char line[256];
+    if (file == NULL) return 0;
+    while (fgets(line, sizeof(line), file) != NULL) {
+        if (strstr(line, needle) != NULL) {
+            fclose(file);
+            return 1;
+        }
+    }
+    fclose(file);
+    return 0;
+}
+
 static uint64_t waveform_hash(const TsFramebuffer *fb)
 {
     uint64_t hash = 1469598103934665603ull;
@@ -102,16 +139,35 @@ int main(void)
     {
         TsPalette palette;
         TsPalette reopened;
+        TsPalette tapehead_reopened;
         FILE *legacy;
         ts_palette_default(&palette);
+        CHECK(palette.colors[TS_PALETTE_WAVE_SELECTION] ==
+              palette.colors[TS_PALETTE_BLOCK_MARK]);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 0, 0x12);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 1, 0x34);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 2, 0x56);
+        palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xffabcdefu;
+        palette.desktop_contrast = 17;
+        palette.buttons_contrast = 83;
         CHECK(palette.colors[TS_PALETTE_MOUSE] == 0xff123456u);
-        CHECK(ts_palette_save(&palette, "test-tapehead.pal", error, sizeof(error)));
+        CHECK(ts_palette_save(&palette, "test-tapesister.pal", error, sizeof(error)));
+        CHECK(file_contains_text("test-tapesister.pal", "WaveSelection=#ABCDEF"));
         ts_palette_default(&reopened);
-        CHECK(ts_palette_load(&reopened, "test-tapehead.pal", error, sizeof(error)));
+        CHECK(ts_palette_load(&reopened, "test-tapesister.pal", error, sizeof(error)));
         CHECK(memcmp(&palette, &reopened, sizeof(palette)) == 0);
+        CHECK(ts_palette_save_tapehead(&palette, "test-tapehead.pal",
+                                       error, sizeof(error)));
+        CHECK(!file_contains_text("test-tapehead.pal", "WaveSelection"));
+        ts_palette_default(&tapehead_reopened);
+        CHECK(ts_palette_load(&tapehead_reopened, "test-tapehead.pal",
+                              error, sizeof(error)));
+        CHECK(tapehead_reopened.colors[TS_PALETTE_WAVE_SELECTION] ==
+              palette.colors[TS_PALETTE_BLOCK_MARK]);
+        for (int color = 0; color < TS_PALETTE_WAVE_SELECTION; ++color)
+            CHECK(tapehead_reopened.colors[color] == palette.colors[color]);
+        CHECK(tapehead_reopened.desktop_contrast == palette.desktop_contrast);
+        CHECK(tapehead_reopened.buttons_contrast == palette.buttons_contrast);
         legacy = fopen("test-tapehead-legacy.pal", "wb");
         CHECK(legacy != NULL);
         if (legacy != NULL) {
@@ -126,8 +182,80 @@ int main(void)
                               error, sizeof(error)));
         CHECK(reopened.colors[TS_PALETTE_PATTERN_NOTE] == 0xff102030u);
         CHECK(reopened.colors[TS_PALETTE_PATTERN_EMPTY] == 0xff102030u);
+        CHECK(reopened.colors[TS_PALETTE_WAVE_SELECTION] == 0xff203040u);
+        remove("test-tapesister.pal");
         remove("test-tapehead.pal");
         remove("test-tapehead-legacy.pal");
+    }
+
+    {
+        TsPalette before;
+        int value = -1;
+        for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
+            int column = color % TS_PALETTE_SWATCH_COLUMNS;
+            int row = color / TS_PALETTE_SWATCH_COLUMNS;
+            int x = TS_PALETTE_SWATCH_X + column * TS_PALETTE_SWATCH_STEP_X +
+                    TS_PALETTE_SWATCH_W / 2;
+            int y = TS_PALETTE_SWATCH_Y + row * TS_PALETTE_SWATCH_STEP_Y +
+                    TS_PALETTE_SWATCH_H / 2;
+            CHECK(ts_ui_palette_entry_from_point(x, y) == color);
+        }
+        CHECK(ts_ui_palette_entry_from_point(610, 90) == -1);
+        CHECK(ts_ui_palette_channel_from_point(74, 108, &value) == 0 && value == 0);
+        CHECK(ts_ui_palette_channel_from_point(215, 108, &value) == 0 && value == 255);
+        CHECK(ts_ui_palette_channel_from_point(304, 124, &value) == 4 && value == 1);
+        CHECK(ts_ui_palette_channel_from_point(395, 124, &value) == 4 && value == 100);
+        CHECK(ts_ui_palette_channel_from_point(50, 210, &value) == -1);
+        CHECK(ts_ui_palette_action_from_point(59, 185) ==
+              TS_UI_PALETTE_ACTION_IMPORT_TAPEHEAD);
+        CHECK(ts_ui_palette_action_from_point(137, 185) ==
+              TS_UI_PALETTE_ACTION_SAVE_TAPESISTER);
+        CHECK(ts_ui_palette_action_from_point(215, 185) ==
+              TS_UI_PALETTE_ACTION_EXPORT_TAPEHEAD);
+        CHECK(ts_ui_palette_action_from_point(289, 185) ==
+              TS_UI_PALETTE_ACTION_RESET);
+        CHECK(ts_ui_palette_action_from_point(352, 185) ==
+              TS_UI_PALETTE_ACTION_DONE);
+        CHECK(ts_ui_palette_action_from_point(417, 185) ==
+              TS_UI_PALETTE_ACTION_CANCEL);
+        CHECK(ts_ui_palette_action_from_point(50, 205) == TS_UI_PALETTE_ACTION_NONE);
+        CHECK(ts_ui_palette_cycle_entry(0, -1) == TS_PALETTE_COLOR_COUNT - 1);
+        CHECK(ts_ui_palette_cycle_entry(TS_PALETTE_COLOR_COUNT - 1, 1) == 0);
+        CHECK(ts_ui_palette_cycle_channel(0, -1) == 4);
+        CHECK(ts_ui_palette_cycle_channel(4, 1) == 0);
+        CHECK(ts_ui_config_cycle_field(TS_CONFIG_SAMPLE_PATH, -1) ==
+              TS_CONFIG_EXCHANGE_PATH);
+        CHECK(ts_ui_config_cycle_field(TS_CONFIG_EXCHANGE_PATH, 1) ==
+              TS_CONFIG_SAMPLE_PATH);
+        for (int field = 0; field < TS_CONFIG_FIELD_COUNT; ++field) {
+            int y = TS_CONFIG_FIELD_Y + field * TS_CONFIG_FIELD_STEP_Y +
+                    TS_CONFIG_FIELD_H / 2;
+            CHECK(ts_ui_config_field_from_point(TS_CONFIG_FIELD_X + 20, y) == field);
+        }
+        CHECK(ts_ui_config_field_from_point(50, 205) == -1);
+        CHECK(ts_ui_config_action_from_point(68, 185) == TS_UI_CONFIG_ACTION_SAVE);
+        CHECK(ts_ui_config_action_from_point(159, 185) == TS_UI_CONFIG_ACTION_USE_CWD);
+        CHECK(ts_ui_config_action_from_point(240, 185) == TS_UI_CONFIG_ACTION_PALETTE);
+        CHECK(ts_ui_config_action_from_point(317, 185) == TS_UI_CONFIG_ACTION_CANCEL);
+        CHECK(ts_ui_config_action_from_point(50, 205) == TS_UI_CONFIG_ACTION_NONE);
+
+        ts_ui_init(&ui);
+        snprintf(ui.config.sample_path, sizeof(ui.config.sample_path), "ABCDE");
+        ui.config_field = TS_CONFIG_SAMPLE_PATH;
+        ui.config_cursor = 5;
+        CHECK(ts_ui_config_cursor_from_point(&ui, TS_CONFIG_SAMPLE_PATH,
+                                             TS_CONFIG_FIELD_X + 6 + 12) == 2u);
+        before = ui.palette;
+        ts_ui_begin_palette_edit(&ui);
+        CHECK(ui.palette_open && !ui.config_open);
+        ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff010203u;
+        ts_ui_finish_palette_edit(&ui, 1);
+        CHECK(!ui.palette_open && ui.config_open);
+        CHECK(memcmp(&ui.palette, &before, sizeof(before)) == 0);
+        ts_ui_begin_palette_edit(&ui);
+        ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff040506u;
+        ts_ui_finish_palette_edit(&ui, 0);
+        CHECK(ui.palette.colors[TS_PALETTE_WAVE_SELECTION] == 0xff040506u);
     }
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
@@ -2059,6 +2187,31 @@ int main(void)
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     CHECK(framebuffer_contains(&fb, 0xff009ee3u));
     {
+        int selection_x = TS_WAVE_X +
+            (int)((imported.selection_first - imported.view_first) * TS_WAVE_W /
+                  (imported.view_last - imported.view_first));
+        int selection_last_x = TS_WAVE_X +
+            (int)((imported.selection_last - imported.view_first) * TS_WAVE_W /
+                  (imported.view_last - imported.view_first));
+        ui.palette.colors[TS_PALETTE_BLOCK_MARK] = 0xff102132u;
+        ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff405162u;
+        ts_ui_render(&fb, &ui, &imported);
+        CHECK(framebuffer_color_count(&fb, 0xff405162u, selection_x, TS_WAVE_Y,
+                                      selection_last_x - selection_x,
+                                      TS_WAVE_H) > 100);
+        CHECK(framebuffer_color_count(&fb, 0xff102132u, selection_x, TS_WAVE_Y,
+                                      selection_last_x - selection_x,
+                                      TS_WAVE_H) == 0);
+        CHECK(framebuffer_color_count(&fb, 0xff009ee3u, selection_x, TS_WAVE_Y,
+                                      selection_last_x - selection_x,
+                                      TS_WAVE_H) > 0);
+        ui.config_open = 1;
+        ts_ui_render(&fb, &ui, &imported);
+        CHECK(fb.pixels[10 * TS_UI_WIDTH + 420] == 0xff102132u);
+        ui.config_open = 0;
+        ts_palette_default(&ui.palette);
+    }
+    {
         uint32_t saved_effect = ui.palette.colors[TS_PALETTE_PATTERN_EFFECT];
         int label_x = TS_WAVE_X +
                       (int)((imported.selection_first - imported.view_first) * TS_WAVE_W /
@@ -2220,16 +2373,44 @@ int main(void)
     CHECK(fb.pixels[192 * TS_UI_WIDTH + 175] == 0xff5d555du);
     CHECK(fb.pixels[192 * TS_UI_WIDTH + 327] == 0xff2d0039u);
     ui.exit_confirm_open = 0;
-    ui.config_open = 1;
-    ui.config_field = TS_CONFIG_FASTTRACKER_PATH;
-    snprintf(ui.config.fasttracker_path, sizeof(ui.config.fasttracker_path),
-             "/opt/ft2/ft2-clone");
-    ui.config_cursor = strlen(ui.config.fasttracker_path);
-    ui.text_cursor_visible = 1;
-    ts_ui_render(&fb, &ui, &restored);
-    CHECK(fb.pixels[163 * TS_UI_WIDTH + 56 +
-                    (int)ui.config_cursor * 6] == 0xffffd265u);
-    ui.config_open = 0;
+    {
+        TsFramebuffer normal;
+        int differences;
+        ui.config_open = 0;
+        ui.palette_open = 0;
+        ts_ui_render(&normal, &ui, &restored);
+        ui.config_open = 1;
+        ui.config_field = TS_CONFIG_FASTTRACKER_PATH;
+        snprintf(ui.config.fasttracker_path, sizeof(ui.config.fasttracker_path),
+                 "/opt/ft2/ft2-clone");
+        ui.config_cursor = strlen(ui.config.fasttracker_path);
+        ui.text_cursor_visible = 1;
+        ts_ui_render(&fb, &ui, &restored);
+        CHECK(fb.pixels[(TS_CONFIG_FIELD_Y + TS_CONFIG_FIELD_STEP_Y + 3) *
+                        TS_UI_WIDTH + TS_CONFIG_FIELD_X + 6 +
+                        (int)ui.config_cursor * 6] == 0xffffd265u);
+        differences = framebuffer_diff_count(&normal, &fb, 0, 205,
+                                             TS_UI_WIDTH, TS_UI_HEIGHT - 205);
+        CHECK(differences == 0);
+        CHECK(framebuffer_diff_count(&normal, &fb, TS_MODAL_PANEL_X,
+                                     TS_MODAL_PANEL_Y, TS_MODAL_PANEL_W,
+                                     TS_MODAL_PANEL_H) > 1000);
+        ui.config_open = 0;
+        ts_ui_render(&normal, &ui, &restored);
+        ui.palette_open = 1;
+        ui.palette_entry = TS_PALETTE_WAVE_SELECTION;
+        ui.palette_channel = 2;
+        ts_ui_render(&fb, &ui, &restored);
+        differences = framebuffer_diff_count(&normal, &fb, 0, 205,
+                                             TS_UI_WIDTH, TS_UI_HEIGHT - 205);
+        CHECK(differences == 0);
+        CHECK(framebuffer_diff_count(&normal, &fb, TS_MODAL_PANEL_X,
+                                     TS_MODAL_PANEL_Y, TS_MODAL_PANEL_W,
+                                     TS_MODAL_PANEL_H) > 1000);
+        CHECK(framebuffer_diff_count(&normal, &fb, 0, 204,
+                                     TS_UI_WIDTH, 1) == 0);
+        ui.palette_open = 0;
+    }
     ui.show_keyboard = 1;
     {
         uint64_t current_waveform = waveform_hash(&fb);
