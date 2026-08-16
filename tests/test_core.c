@@ -638,6 +638,9 @@ int main(void)
                                              crossing_sample.frames);
         CHECK(snap_instrument.selection_first == 0 &&
               snap_instrument.selection_last == crossing_sample.frames);
+        CHECK(ts_instrument_select_all(&snap_instrument));
+        CHECK(snap_instrument.selection_first == 0 &&
+              snap_instrument.selection_last == crossing_sample.frames);
         ts_instrument_clear_selection(&snap_instrument);
         CHECK(ts_instrument_set_loop_from_selection(&snap_instrument,
                                                      error, sizeof(error)));
@@ -646,6 +649,25 @@ int main(void)
               snap_instrument.selection_last == crossing_sample.frames);
         CHECK(snap_instrument.loop_first == 0 &&
               snap_instrument.loop_last == crossing_sample.frames);
+        {
+            float margins[] = {0.0f, 0.0f, 0.25f, -0.40f, 0.10f, 0.0f, 0.0f};
+            float silent[7] = {0};
+            TsInstrument wave = {0};
+            TsInstrument empty_wave = {0};
+            wave.current.data = margins;
+            wave.current.frames = 7;
+            wave.current.sample_rate = 44100;
+            CHECK(ts_instrument_select_wave(&wave));
+            CHECK(wave.selection_first == 2 && wave.selection_last == 5);
+            CHECK(wave.selection_last - wave.selection_first == 3);
+            CHECK(ts_instrument_select_all(&wave));
+            CHECK(wave.selection_first == 0 && wave.selection_last == 7);
+            empty_wave.current.data = silent;
+            empty_wave.current.frames = 7;
+            empty_wave.current.sample_rate = 44100;
+            CHECK(!ts_instrument_select_wave(&empty_wave));
+            CHECK(!empty_wave.has_selection);
+        }
     }
 
     TsProcessRecipe neutral;
@@ -918,6 +940,13 @@ int main(void)
     generated.view_last = generated.current.frames;
     CHECK(ts_instrument_frame_from_view_x(&generated, 599, 600) ==
           generated.current.frames);
+    ts_instrument_show_all(&generated);
+    ts_instrument_set_selection_snapped(
+        &generated,
+        ts_instrument_frame_from_view_x(&generated, 0, 600),
+        ts_instrument_frame_from_view_x(&generated, 599, 600));
+    CHECK(generated.selection_first == 0 &&
+          generated.selection_last == generated.current.frames);
     ts_instrument_set_selection_snapped(&generated,
                                         generated.current.frames - 100u,
                                         generated.current.frames);

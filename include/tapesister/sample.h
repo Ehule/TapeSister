@@ -383,6 +383,8 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
 int ts_instrument_commit_current(TsInstrument *instrument, char *error, size_t error_size);
 void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t last);
 void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last);
+int ts_instrument_select_all(TsInstrument *instrument);
+int ts_instrument_select_wave(TsInstrument *instrument);
 void ts_instrument_clear_selection(TsInstrument *instrument);
 void ts_instrument_set_playhead(TsInstrument *instrument, size_t frame);
 void ts_instrument_set_playhead_snapped(TsInstrument *instrument, size_t frame);

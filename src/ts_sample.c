@@ -2508,6 +2508,36 @@ void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t 
     instrument->has_selection = first < last;
 }
 
+int ts_instrument_select_all(TsInstrument *instrument)
+{
+    if (instrument == NULL || instrument->current.data == NULL ||
+        instrument->current.frames == 0)
+        return 0;
+    ts_instrument_set_selection(instrument, 0, instrument->current.frames);
+    return instrument->has_selection && instrument->selection_first == 0 &&
+           instrument->selection_last == instrument->current.frames;
+}
+
+int ts_instrument_select_wave(TsInstrument *instrument)
+{
+    size_t first;
+    size_t last;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        instrument->current.frames == 0)
+        return 0;
+    first = 0;
+    while (first < instrument->current.frames &&
+           instrument->current.data[first] == 0.0f)
+        ++first;
+    if (first == instrument->current.frames) return 0;
+    last = instrument->current.frames;
+    while (last > first && instrument->current.data[last - 1u] == 0.0f)
+        --last;
+    ts_instrument_set_selection(instrument, first, last);
+    return instrument->has_selection && instrument->selection_first == first &&
+           instrument->selection_last == last;
+}
+
 static int is_zero_crossing(const TsSample *sample, size_t frame)
 {
     float before;

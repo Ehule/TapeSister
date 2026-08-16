@@ -121,6 +121,20 @@ typedef enum {
     TS_UI_DRONE_ACTION_CANCEL
 } TsUiDroneAction;
 
+typedef enum {
+    TS_UI_WAVE_ACTION_NONE = 0,
+    TS_UI_WAVE_ACTION_PLAY_ALL,
+    TS_UI_WAVE_ACTION_PLAY_SELECTION,
+    TS_UI_WAVE_ACTION_PLAY_VIEW,
+    TS_UI_WAVE_ACTION_CROP,
+    TS_UI_WAVE_ACTION_ZOOM_SELECTION,
+    TS_UI_WAVE_ACTION_SELECT_ALL,
+    TS_UI_WAVE_ACTION_SELECT_WAVE,
+    TS_UI_WAVE_ACTION_SHOW_ALL,
+    TS_UI_WAVE_ACTION_CLEAR_ALL,
+    TS_UI_WAVE_ACTION_CYCLE_PANEL
+} TsUiWaveAction;
+
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
@@ -258,6 +272,7 @@ int ts_ui_palette_channel_from_point(int x, int y, int *value);
 TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y);
 TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y);
 TsUiDroneAction ts_ui_drone_action_from_point(int x, int y);
+TsUiWaveAction ts_ui_wave_action_from_point(int x, int y);
 int ts_ui_drone_waveform_contains(int x, int y);
 int ts_ui_drone_crossfade_handle_from_point(const TsUiState *ui, int x, int y);
 TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y);

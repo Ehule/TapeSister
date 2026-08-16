@@ -1171,6 +1171,36 @@ static void cancel_pitch_preview(SDL_AudioDeviceID device, AudioState *audio,
     if (device) SDL_UnlockAudioDevice(device);
 }
 
+static void select_current_tile(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, TsInstrument *instrument,
+                                int wave_only)
+{
+    int selected;
+    cancel_pitch_preview(device, audio, ui, instrument);
+    ui->bank_view_slot = -1;
+    ui->audition_source = TS_AUDITION_CURRENT;
+    ui->selecting = 0;
+    ui->selecting_button = 0;
+    ui->wave_pointer_pending = 0;
+    ui->wave_pointer_button = 0;
+    ui->has_stretch_readout = 0;
+    selected = wave_only ? ts_instrument_select_wave(instrument) :
+                           ts_instrument_select_all(instrument);
+    if (selected) {
+        if (wave_only)
+            snprintf(ui->status, sizeof(ui->status),
+                     "SELECTED WAVE %zu - %zu  SILENT MARGINS SKIPPED",
+                     instrument->selection_first, instrument->selection_last);
+        else
+            snprintf(ui->status, sizeof(ui->status),
+                     "SELECTED WHOLE TILE 0 - %zu", instrument->selection_last);
+    } else {
+        snprintf(ui->status, sizeof(ui->status),
+                 wave_only ? "NO NON-SILENT WAVE IN TILE" :
+                             "SELECT ALL NEEDS AN ACTIVE TILE");
+    }
+}
+
 static void apply_recipe_slot(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                               TsInstrument *instrument, int slot)
 {
@@ -3311,10 +3341,7 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_y) {
                     history_move(device, &audio, &ui, &instrument, 1);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_a) {
-                    cancel_pitch_preview(device, &audio, &ui, &instrument);
-                    ui.bank_view_slot = -1;
-                    ts_instrument_set_selection(&instrument, 0, instrument.current.frames);
-                    snprintf(ui.status, sizeof(ui.status), "SELECTED WHOLE TILE");
+                    select_current_tile(device, &audio, &ui, &instrument, 0);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_r) {
                     apply_sample_edit(device, &audio, &ui, &instrument,
                                       TS_SAMPLE_EDIT_REVERSE, 1.0f);
@@ -3841,8 +3868,10 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
                 int x, y;
                 SDL_Keymod mod = SDL_GetModState();
+                TsUiWaveAction wave_action;
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
-                if (!(y >= 289 && y < 312 && x >= 460 && x < 583 &&
+                wave_action = ts_ui_wave_action_from_point(x, y);
+                if (!(wave_action == TS_UI_WAVE_ACTION_CLEAR_ALL &&
                       !ui.show_keyboard && !ui.show_recipes &&
                       !ui.show_ingredients))
                     ui.bank_clear_armed = 0;
@@ -4031,7 +4060,9 @@ int main(int argc, char **argv)
                                   loop_marker_x(&instrument, &ui, 1) : -1000;
                     int last_x = has_visible_loop ?
                                  loop_marker_x(&instrument, &ui, 2) : -1000;
-                    if (shown_bank != NULL && has_visible_loop &&
+                    if (event.button.clicks >= 2 && bank_modifiers(mod) == 0) {
+                        select_current_tile(device, &audio, &ui, &instrument, 0);
+                    } else if (shown_bank != NULL && has_visible_loop &&
                         abs(x - first_x) <= 6) {
                         cancel_pitch_preview(device, &audio, &ui, &instrument);
                         ui.dragging_loop_endpoint = 1;
@@ -4315,19 +4346,19 @@ int main(int argc, char **argv)
                                                (float)(x - 365) / 212.0f * 50.0f);
                     }
                     if (changed) apply_process(device, &audio, &ui, &instrument, process, label);
-                } else if (y >= 289 && y < 312 && x >= 10 && x < 80) {
+                } else if (wave_action == TS_UI_WAVE_ACTION_PLAY_ALL) {
                     begin_audition(device, &audio, &ui, &instrument,
                                    TS_AUDITION_ALL, 1.0, obtained.freq);
-                } else if (y >= 289 && y < 312 && x >= 85 && x < 157) {
+                } else if (wave_action == TS_UI_WAVE_ACTION_PLAY_SELECTION) {
                     begin_audition(device, &audio, &ui, &instrument,
                                    TS_AUDITION_SELECTION, 1.0, obtained.freq);
-                } else if (y >= 289 && y < 312 && x >= 162 && x < 240) {
+                } else if (wave_action == TS_UI_WAVE_ACTION_PLAY_VIEW) {
                     begin_audition(device, &audio, &ui, &instrument,
                                    TS_AUDITION_DISPLAYED, 1.0, obtained.freq);
-                } else if (y >= 289 && y < 312 && x >= 245 && x < 297) {
+                } else if (wave_action == TS_UI_WAVE_ACTION_CROP) {
                     ui.bank_clear_armed = 0;
                     crop_selection(device, &audio, &ui, &instrument);
-                } else if (y >= 289 && y < 312 && x >= 302 && x < 376) {
+                } else if (wave_action == TS_UI_WAVE_ACTION_ZOOM_SELECTION) {
                     ui.bank_clear_armed = 0;
                     ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT &&
@@ -4342,7 +4373,11 @@ int main(int argc, char **argv)
                                  ts_instrument_zoom_selection(&instrument) ?
                                  "ZOOMED TO SELECTION" : "SELECT A RANGE FIRST");
                     }
-                } else if (y >= 289 && y < 312 && x >= 381 && x < 455) {
+                } else if (wave_action == TS_UI_WAVE_ACTION_SELECT_ALL) {
+                    select_current_tile(device, &audio, &ui, &instrument, 0);
+                } else if (wave_action == TS_UI_WAVE_ACTION_SELECT_WAVE) {
+                    select_current_tile(device, &audio, &ui, &instrument, 1);
+                } else if (wave_action == TS_UI_WAVE_ACTION_SHOW_ALL) {
                     ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT) {
                         ts_ui_reset_parent_view(&ui, instrument.parent.frames);
@@ -4351,11 +4386,11 @@ int main(int argc, char **argv)
                         ts_instrument_show_all(&instrument);
                         snprintf(ui.status, sizeof(ui.status), "SHOWING ALL TILE");
                     }
-                } else if (y >= 289 && y < 312 && x >= 460 && x < 583 &&
+                } else if (wave_action == TS_UI_WAVE_ACTION_CLEAR_ALL &&
                            !ui.show_keyboard && !ui.show_recipes &&
                            !ui.show_ingredients) {
                     clear_all_bank_slots(device, &audio, &ui, &instrument);
-                } else if (y >= 289 && y < 312 && x >= 588 && x < 630) {
+                } else if (wave_action == TS_UI_WAVE_ACTION_CYCLE_PANEL) {
                     ts_ui_cycle_panel(&ui);
                     ui.bank_view_slot = -1;
                     snprintf(ui.status, sizeof(ui.status), "%s PANEL",

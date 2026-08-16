@@ -51,6 +51,26 @@ static const TsPanelButton palette_buttons[] = {
     {325, 54, "DONE"}, {384, 66, "CANCEL"}
 };
 
+typedef struct {
+    TsUiWaveAction action;
+    int x;
+    int width;
+    const char *label;
+} TsWaveButton;
+
+static const TsWaveButton wave_buttons[] = {
+    {TS_UI_WAVE_ACTION_PLAY_ALL, 10, 58, "PLAY ALL"},
+    {TS_UI_WAVE_ACTION_PLAY_SELECTION, 72, 58, "PLAY SEL"},
+    {TS_UI_WAVE_ACTION_PLAY_VIEW, 134, 64, "PLAY VIEW"},
+    {TS_UI_WAVE_ACTION_CROP, 202, 38, "CROP"},
+    {TS_UI_WAVE_ACTION_ZOOM_SELECTION, 244, 58, "ZOOM SEL"},
+    {TS_UI_WAVE_ACTION_SELECT_ALL, 306, 52, "SEL ALL"},
+    {TS_UI_WAVE_ACTION_SELECT_WAVE, 362, 58, "SEL WAVE"},
+    {TS_UI_WAVE_ACTION_SHOW_ALL, 424, 58, "SHOW ALL"},
+    {TS_UI_WAVE_ACTION_CLEAR_ALL, 486, 97, "CLEAR ALL"},
+    {TS_UI_WAVE_ACTION_CYCLE_PANEL, 588, 42, "BANK"}
+};
+
 static void clear(TsFramebuffer *fb, uint32_t color)
 {
     for (int i = 0; i < TS_UI_WIDTH * TS_UI_HEIGHT; ++i) fb->pixels[i] = color;
@@ -763,6 +783,16 @@ TsUiDroneAction ts_ui_drone_action_from_point(int x, int y)
     return TS_UI_DRONE_ACTION_NONE;
 }
 
+TsUiWaveAction ts_ui_wave_action_from_point(int x, int y)
+{
+    if (y < 289 || y >= 312) return TS_UI_WAVE_ACTION_NONE;
+    for (size_t i = 0; i < sizeof(wave_buttons) / sizeof(wave_buttons[0]); ++i)
+        if (x >= wave_buttons[i].x &&
+            x < wave_buttons[i].x + wave_buttons[i].width)
+            return wave_buttons[i].action;
+    return TS_UI_WAVE_ACTION_NONE;
+}
+
 static int point_in_slider(int x, int y, int left, int top, int width)
 {
     return x >= left && x < left + width && y >= top && y < top + 24;
@@ -1107,9 +1137,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int middle = TS_WAVE_Y + TS_WAVE_H / 2;
             int y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
             int y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
-            size_t at = begin;
-            uint32_t color = has_selection && at >= selection_first &&
-                             at < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
+            uint32_t color = has_selection && end > selection_first &&
+                             begin < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
             wave_line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
             for (size_t i = begin; i < end && i < sample->frames; ++i) {
                 if (sample->data[i] == 0.0f ||
@@ -1373,19 +1402,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                PAL_TUNING);
     }
 
-    button(fb, 10, 289, 70, "PLAY ALL", 0);
-    button(fb, 85, 289, 72, "PLAY SEL", 0);
-    button(fb, 162, 289, 78, "PLAY VIEW", 0);
-    button(fb, 245, 289, 52, "CROP", 0);
-    button(fb, 302, 289, 74, "ZOOM SEL", 0);
-    button(fb, 381, 289, 74, "SHOW ALL", 0);
+    for (size_t i = 0; i < 8u; ++i)
+        button(fb, wave_buttons[i].x, 289, wave_buttons[i].width,
+               wave_buttons[i].label, 0);
     if (!ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients)
-        button(fb, 460, 289, 123,
+        button(fb, wave_buttons[8].x, 289, wave_buttons[8].width,
                ui->bank_clear_armed ? "CONFIRM CLEAR" : "CLEAR ALL",
                ui->bank_clear_armed);
-    button(fb, 588, 289, 42, ui->show_keyboard ? "BANK" :
-           ui->show_recipes ? "INGR" : ui->show_ingredients ? "KEYS" : "RCPE",
-           !ui->show_keyboard);
+    button(fb, wave_buttons[9].x, 289, wave_buttons[9].width,
+           ui->show_keyboard ? "BANK" : ui->show_recipes ? "INGR" :
+           ui->show_ingredients ? "KEYS" : "RCPE", !ui->show_keyboard);
 
     if (ui->show_keyboard) {
         char keyboard_hint[96];
