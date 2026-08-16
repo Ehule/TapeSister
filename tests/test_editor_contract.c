@@ -27,6 +27,82 @@ int main(void)
     char error[160];
     uint64_t tile_hash[4];
 
+    {
+        TsInstrument locked;
+        TsUiState locked_ui;
+        TsSample clipboard;
+        size_t clipboard_origin = 0;
+        ts_instrument_init(&locked);
+        ts_ui_init(&locked_ui);
+        ts_sample_init(&clipboard);
+        locked_ui.workbench_loop_active = 1;
+        locked_ui.workbench_loop_persistent = 1;
+        CONTRACT("loop_lock_fixture_activates",
+                 ts_instrument_activate_silence(&locked, 256, 44100,
+                                                error, sizeof(error)));
+        for (size_t frame = 0; frame < locked.current.frames; ++frame) {
+            float value = frame & 1u ? -0.25f : 0.25f;
+            locked.current.data[frame] = value;
+            locked.parent.data[frame] = value;
+        }
+        locked.view_first = 16;
+        locked.view_last = 192;
+        ts_instrument_set_selection(&locked, 32, 96);
+        CONTRACT("loop_lock_selection_range_follows_selection",
+                 ts_audition_plan(&locked, TS_AUDITION_CURRENT,
+                                  TS_AUDITION_WORKBENCH_LOOP, &plan) &&
+                 plan.first == 32 && plan.last == 96);
+        CONTRACT("loop_lock_survives_transform",
+                 ts_instrument_apply_sample_edit(
+                     &locked, TS_SAMPLE_EDIT_REVERSE, 1.0f,
+                     error, sizeof(error)) &&
+                 ts_ui_loop_command(&locked_ui, 0) == TS_UI_LOOP_LOCKED);
+        CONTRACT("loop_lock_survives_copy",
+                 ts_instrument_copy_selection(&locked, &clipboard,
+                                              &clipboard_origin,
+                                              error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_paste",
+                 ts_instrument_paste(&locked, &clipboard, clipboard_origin, 0,
+                                     error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_multiply",
+                 ts_instrument_double_canvas(&locked, error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_undo",
+                 ts_instrument_undo(&locked, error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_redo",
+                 ts_instrument_redo(&locked, error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_capture",
+                 ts_instrument_bank_capture(&locked, 1, TS_BANK_CAPTURE_CURRENT,
+                                            error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        ts_instrument_clear_selection(&locked);
+        CONTRACT("loop_lock_view_range_follows_visible_waveform",
+                 ts_audition_plan(&locked, TS_AUDITION_CURRENT,
+                                  TS_AUDITION_WORKBENCH_LOOP, &plan) &&
+                 plan.first == locked.view_first && plan.last == locked.view_last);
+        CONTRACT("loop_lock_survives_selection_clear",
+                 locked_ui.workbench_loop_persistent &&
+                 !ts_ui_loop_transport_can_stop(&locked_ui, 0));
+        CONTRACT("loop_lock_survives_create",
+                 ts_instrument_create_selected(&locked, 0x4c4f434bu,
+                                               error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_vary",
+                 ts_instrument_vary_selected(&locked, 0, NULL,
+                                             error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("plain_loop_cannot_release_lock",
+                 ts_ui_loop_command(&locked_ui, 0) == TS_UI_LOOP_LOCKED);
+        CONTRACT("only_shift_loop_requests_release",
+                 ts_ui_loop_command(&locked_ui, 1) == TS_UI_LOOP_LOCK_RELEASE);
+        ts_sample_free(&clipboard);
+        ts_instrument_free(&locked);
+    }
+
     CONTRACT("bank_plain_click_routes_to_select_play",
              ts_ui_bank_action(0, 0) == TS_UI_BANK_ACTION_AUDITION);
     CONTRACT("bank_shift_click_routes_to_full_capture",
@@ -77,6 +153,35 @@ int main(void)
              ts_ui_wave_action_from_point(70, 300) == TS_UI_WAVE_ACTION_NONE);
     CONTRACT("wave_toolbar_stops_above_lower_panel",
              ts_ui_wave_action_from_point(320, 318) == TS_UI_WAVE_ACTION_NONE);
+    CONTRACT("canvas_half_hitbox",
+             ts_ui_canvas_action_from_point(30, 190) ==
+             TS_UI_CANVAS_ACTION_HALF);
+    CONTRACT("canvas_double_hitbox",
+             ts_ui_canvas_action_from_point(60, 190) ==
+             TS_UI_CANVAS_ACTION_DOUBLE);
+    CONTRACT("canvas_grid_coarser_hitbox",
+             ts_ui_canvas_action_from_point(460, 190) ==
+             TS_UI_CANVAS_ACTION_GRID_COARSER);
+    CONTRACT("canvas_division_readout_is_informational",
+             ts_ui_canvas_action_from_point(500, 190) ==
+             TS_UI_CANVAS_ACTION_NONE);
+    CONTRACT("canvas_grid_finer_hitbox",
+             ts_ui_canvas_action_from_point(545, 190) ==
+             TS_UI_CANVAS_ACTION_GRID_FINER);
+    CONTRACT("canvas_grid_snap_hitbox",
+             ts_ui_canvas_action_from_point(590, 190) ==
+             TS_UI_CANVAS_ACTION_GRID_SNAP);
+    CONTRACT("canvas_controls_do_not_cover_lower_controls",
+             ts_ui_canvas_action_from_point(30, 205) ==
+             TS_UI_CANVAS_ACTION_NONE);
+    CONTRACT("canvas_left_edge_handle_hitbox",
+             ts_ui_canvas_edge_from_point(25, 120) == 1);
+    CONTRACT("canvas_right_edge_handle_hitbox",
+             ts_ui_canvas_edge_from_point(612, 120) == 2);
+    CONTRACT("canvas_handle_gap_is_inert",
+             ts_ui_canvas_edge_from_point(320, 100) == 0);
+    CONTRACT("canvas_handles_stop_before_control_strip",
+             ts_ui_canvas_edge_from_point(25, 190) == 0);
 
     {
         TsInstrument visual;
@@ -96,6 +201,46 @@ int main(void)
         CONTRACT("selection_waveform_color_covers_straddling_left_pixel",
                  visual_fb.pixels[waveform_y * TS_UI_WIDTH + TS_WAVE_X] ==
                  visual_ui.palette.colors[TS_PALETTE_TEXT_ON_BLOCK]);
+        ts_instrument_free(&visual);
+    }
+
+    {
+        TsInstrument visual;
+        TsUiState visual_ui;
+        TsFramebuffer full_fb;
+        TsFramebuffer zoom_fb;
+        TsFramebuffer snap_fb;
+        size_t target = 500;
+        int y = TS_WAVE_Y + 35;
+        int full_x = TS_WAVE_X + (int)(target * TS_WAVE_W / 1600u);
+        int zoom_x = TS_WAVE_X + (int)((target - 400u) * TS_WAVE_W / 800u);
+        uint32_t full_grid;
+        ts_instrument_init(&visual);
+        ts_ui_init(&visual_ui);
+        CONTRACT("grid_render_fixture_activates",
+                 ts_instrument_activate_silence(&visual, 1600, 44100,
+                                                error, sizeof(error)));
+        CONTRACT("grid_division_fixture_sets_div16",
+                 visual.grid_divisions == 16u);
+        ts_ui_render(&full_fb, &visual_ui, &visual);
+        full_grid = full_fb.pixels[y * TS_UI_WIDTH + full_x];
+        CONTRACT("grid_target_is_visible_in_full_canvas",
+                 full_grid != full_fb.pixels[y * TS_UI_WIDTH + full_x + 2]);
+        visual.view_first = 400;
+        visual.view_last = 1200;
+        ts_ui_render(&zoom_fb, &visual_ui, &visual);
+        CONTRACT("zoomed_grid_uses_same_full_canvas_target",
+                 zoom_fb.pixels[y * TS_UI_WIDTH + zoom_x] == full_grid);
+        CONTRACT("zoomed_grid_does_not_stay_at_old_screen_coordinate",
+                 zoom_fb.pixels[y * TS_UI_WIDTH + full_x] != full_grid);
+        CONTRACT("grid_snap_toggle_activates",
+                 ts_instrument_toggle_grid_snap(&visual));
+        ts_ui_render(&snap_fb, &visual_ui, &visual);
+        CONTRACT("snap_on_renders_grid_more_prominently",
+                 snap_fb.pixels[y * TS_UI_WIDTH + zoom_x] != full_grid);
+        CONTRACT("canvas_left_handle_renders_inside_wave_panel",
+                 snap_fb.pixels[120 * TS_UI_WIDTH + 23] ==
+                 visual_ui.palette.colors[TS_PALETTE_PATTERN_EFFECT]);
         ts_instrument_free(&visual);
     }
 

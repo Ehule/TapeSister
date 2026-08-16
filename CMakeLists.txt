@@ -58,5 +58,9 @@ add_executable(tapesister_editor_contract_tests tests/test_editor_contract.c)
 target_link_libraries(tapesister_editor_contract_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_editor_contract_tests COMMAND tapesister_editor_contract_tests)
 
+add_executable(tapesister_canvas_tests tests/test_canvas.c)
+target_link_libraries(tapesister_canvas_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_canvas_tests COMMAND tapesister_canvas_tests)
+
 add_executable(tapesister_render_demo tests/render_demo.c)
 target_link_libraries(tapesister_render_demo PRIVATE tapesister_core)

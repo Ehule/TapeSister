@@ -8,6 +8,7 @@
 #include "stb_image.h"
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -215,6 +216,10 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
                      sizeof(instrument->loop_crossfade_ms));
     state_hash_bytes(&hash, &instrument->loop_mode, sizeof(instrument->loop_mode));
     state_hash_bytes(&hash, &instrument->has_loop, sizeof(instrument->has_loop));
+    state_hash_bytes(&hash, &instrument->grid_divisions,
+                     sizeof(instrument->grid_divisions));
+    state_hash_bytes(&hash, &instrument->grid_snap,
+                     sizeof(instrument->grid_snap));
     state_hash_bytes(&hash, &instrument->sample_edit_count,
                      sizeof(instrument->sample_edit_count));
     state_hash_bytes(&hash, instrument->sample_edits,
@@ -244,6 +249,10 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
         state_hash_bytes(&hash, &bank->has_generator, sizeof(bank->has_generator));
         state_hash_bytes(&hash, &bank->loop_mode, sizeof(bank->loop_mode));
         state_hash_bytes(&hash, &bank->has_loop, sizeof(bank->has_loop));
+        state_hash_bytes(&hash, &bank->edit.grid_divisions,
+                         sizeof(bank->edit.grid_divisions));
+        state_hash_bytes(&hash, &bank->edit.grid_snap,
+                         sizeof(bank->edit.grid_snap));
     }
     return hash;
 }
@@ -332,6 +341,14 @@ typedef struct {
     int bank_slot;
     TsNoteBank notes;
 } AudioState;
+
+static float loop_lock_silence_data[TS_DEFAULT_CANVAS_FRAMES];
+static const TsSample loop_lock_silence = {
+    loop_lock_silence_data,
+    TS_DEFAULT_CANVAS_FRAMES,
+    TS_DEFAULT_CANVAS_RATE,
+    "LOOP LOCK SILENCE"
+};
 
 static int path_is_tsr(const char *path)
 {
@@ -501,25 +518,68 @@ static void begin_playhead_audition(SDL_AudioDeviceID device, AudioState *audio,
 }
 
 static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui);
+static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui);
+
+static void set_loop_lock_silence(SDL_AudioDeviceID device, AudioState *audio)
+{
+    if (device) SDL_LockAudioDevice(device);
+    audio->sample = &loop_lock_silence;
+    audio->position = ts_audition_map_progress(
+        audio->position, audio->range_start, audio->range_end,
+        0, loop_lock_silence.frames);
+    if (audio->position >= (double)loop_lock_silence.frames)
+        audio->position = 0.0;
+    audio->pitch = 1.0;
+    audio->range_start = 0;
+    audio->range_end = loop_lock_silence.frames;
+    audio->source = TS_AUDITION_CURRENT;
+    audio->range = TS_AUDITION_WORKBENCH_LOOP;
+    audio->looping = 1;
+    audio->loop_mode = TS_LOOP_FORWARD;
+    audio->loop_direction = 1;
+    audio->crossfade_frames = 0;
+    audio->bank_slot = -1;
+    audio->step = audio->output_rate > 0 ?
+                  (double)loop_lock_silence.sample_rate / audio->output_rate : 1.0;
+    audio->playing = 1;
+    if (device) SDL_UnlockAudioDevice(device);
+}
 
 static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
                                   TsUiState *ui, const TsInstrument *instrument,
                                   int output_rate, int persistent)
 {
-    if (!ts_ui_transform_auto_audition_allowed(ui)) {
-        stop_all(device, audio, ui);
+    TsUiLoopCommand command = ts_ui_loop_command(ui, persistent);
+    if (command == TS_UI_LOOP_LOCKED) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "LOOP LOCKED - SHIFT+LOOP TO RELEASE");
         return;
+    }
+    if (command == TS_UI_LOOP_LOCK_RELEASE) {
+        stop_all_force(device, audio, ui);
+        snprintf(ui->status, sizeof(ui->status), "LOOP LOCK RELEASED");
+        return;
+    }
+    if (!ts_ui_transform_auto_audition_allowed(ui)) {
+        if (command == TS_UI_LOOP_LOCK_START) stop_all_force(device, audio, ui);
+        else {
+            stop_all(device, audio, ui);
+            return;
+        }
     }
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->workbench_loop_active = 1;
-    ui->workbench_loop_persistent = persistent != 0;
+    ui->workbench_loop_persistent = command == TS_UI_LOOP_LOCK_START;
     begin_audition(device, audio, ui, instrument,
                    TS_AUDITION_WORKBENCH_LOOP, 1.0, output_rate);
     if (!audio->playing) {
-        ui->workbench_loop_active = 0;
-        ui->workbench_loop_persistent = 0;
+        if (ui->workbench_loop_persistent) {
+            set_loop_lock_silence(device, audio);
+            snprintf(ui->status, sizeof(ui->status),
+                     "LOOP LOCKED: SILENT TILE VIEW");
+        } else ui->workbench_loop_active = 0;
     } else snprintf(ui->status, sizeof(ui->status), "%s: %s",
-                    persistent ? "LOOP LOCKED" : "LOOP",
+                    ui->workbench_loop_persistent ? "LOOP LOCKED" : "LOOP",
                     instrument->has_selection ? "SELECTION" : "VIEW");
 }
 
@@ -530,7 +590,8 @@ static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
     if (!ui->workbench_loop_active) return;
     if (!audition_plan_ui(instrument, ui, TS_AUDITION_CURRENT,
                           TS_AUDITION_WORKBENCH_LOOP, &plan)) {
-        stop_all(device, audio, ui);
+        if (ui->workbench_loop_persistent) set_loop_lock_silence(device, audio);
+        else stop_all(device, audio, ui);
         return;
     }
     if (device) SDL_LockAudioDevice(device);
@@ -587,7 +648,7 @@ static void release_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
     snprintf(ui->status, sizeof(ui->status), "NOTE RELEASED");
 }
 
-static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
+static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
     if (device) SDL_LockAudioDevice(device);
     audio->playing = 0;
@@ -609,10 +670,34 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
     snprintf(ui->status, sizeof(ui->status), "STOPPED");
 }
 
+static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
+{
+    if (!ts_ui_loop_transport_can_stop(ui, 0)) {
+        if (device) SDL_LockAudioDevice(device);
+        ts_note_bank_clear(&audio->notes);
+        audio->bank_slot = -1;
+        if (device) SDL_UnlockAudioDevice(device);
+        ui->active_notes = 0;
+        ui->mouse_note = -1;
+        ui->tape_dragging = 0;
+        ui->tape_drag_button = 0;
+        ui->selecting = 0;
+        ui->wave_pointer_pending = 0;
+        ui->wave_pointer_button = 0;
+        ui->dragging_loop_endpoint = 0;
+        ui->loop_drag_started = 0;
+        ui->drone_preview_active = 0;
+        snprintf(ui->status, sizeof(ui->status),
+                 "LOOP LOCKED - SHIFT+LOOP TO RELEASE");
+        return;
+    }
+    stop_all_force(device, audio, ui);
+}
+
 static void begin_exit_confirmation(SDL_AudioDeviceID device, AudioState *audio,
                                     TsUiState *ui, const TsInstrument *instrument)
 {
-    stop_all(device, audio, ui);
+    stop_all_force(device, audio, ui);
     ui->exit_has_unsaved = instrument_state_hash(instrument) != ui->saved_state_hash;
     ui->exit_confirm_open = 1;
     snprintf(ui->status, sizeof(ui->status), "%s",
@@ -1653,6 +1738,245 @@ static void end_stretch_gesture(SDL_AudioDeviceID device, AudioState *audio,
                   "TAPE LENGTH END FAILED: %.122s", error);
 }
 
+static void release_canvas_capture(TsUiState *ui)
+{
+    (void)SDL_CaptureMouse(SDL_FALSE);
+    ui->canvas_capture_raw_x = 0;
+    ui->canvas_capture_raw_y = 0;
+    ui->canvas_drag_logical_x = 0;
+    ui->canvas_drag_start_frames = 0;
+}
+
+static int begin_canvas_gesture(SDL_Window *window, SDL_AudioDeviceID device,
+                                AudioState *audio, TsUiState *ui,
+                                TsInstrument *instrument, int edge,
+                                int raw_x, int raw_y)
+{
+    char error[160];
+    int ok;
+    cancel_pitch_preview(device, audio, ui, instrument);
+    lock_edit(device, audio);
+    ok = ts_instrument_canvas_gesture_begin(
+        instrument, &ui->canvas_gesture, edge, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (!ok) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANVAS RESIZE FAILED: %.132s", error);
+        return 0;
+    }
+    if (SDL_CaptureMouse(SDL_TRUE) != 0) {
+        char restore_error[160];
+        lock_edit(device, audio);
+        (void)ts_instrument_canvas_gesture_cancel(
+            instrument, &ui->canvas_gesture,
+            restore_error, sizeof(restore_error));
+        unlock_edit(device, audio, ui, instrument);
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANVAS MOUSE CAPTURE FAILED: %.113s", SDL_GetError());
+        return 0;
+    }
+    ui->canvas_capture_raw_x = raw_x;
+    ui->canvas_capture_raw_y = raw_y;
+    ui->canvas_drag_logical_x = 0;
+    ui->canvas_drag_start_frames = instrument->current.frames;
+    SDL_WarpMouseInWindow(window, raw_x, raw_y);
+    snprintf(ui->status, sizeof(ui->status),
+             "DRAG %s CANVAS EDGE - RELEASE COMMITS ONCE  ESC CANCELS",
+             edge == 1 ? "LEFT" : "RIGHT");
+    return 1;
+}
+
+static int64_t canvas_delta_from_capture(SDL_Window *window,
+                                         const TsUiState *ui)
+{
+    int window_width = 0;
+    int window_height = 0;
+    double frames_per_logical_pixel;
+    double value;
+    int64_t delta;
+    SDL_GetWindowSize(window, &window_width, &window_height);
+    (void)window_height;
+    if (window_width <= 0 || ui->canvas_drag_start_frames == 0) return 0;
+    frames_per_logical_pixel =
+        (double)ui->canvas_drag_start_frames / (double)TS_WAVE_W;
+    if (frames_per_logical_pixel < 1.0) frames_per_logical_pixel = 1.0;
+    value = (double)ui->canvas_drag_logical_x * frames_per_logical_pixel;
+    if (ui->canvas_gesture.edge == 1) value = -value;
+    if (value > (double)INT64_MAX) return INT64_MAX;
+    if (value < (double)INT64_MIN) return INT64_MIN;
+    delta = value >= 0.0 ? (int64_t)(value + 0.5) : (int64_t)(value - 0.5);
+    return delta;
+}
+
+static void preserve_canvas_audition_position(AudioState *audio,
+                                              const TsUiState *ui,
+                                              const TsInstrument *instrument,
+                                              int edge,
+                                              int64_t coordinate_delta)
+{
+    TsAuditionPlan plan;
+    double position;
+    if (!audio->playing || audio->bank_slot >= 0 ||
+        audio->source != TS_AUDITION_CURRENT ||
+        !audition_plan_ui(instrument, ui, audio->source, audio->range, &plan))
+        return;
+    position = audio->position;
+    if (edge == 1) position += (double)coordinate_delta;
+    if (position < (double)plan.first) position = (double)plan.first;
+    if (position >= (double)plan.last) {
+        position = audio->looping ? (double)plan.first :
+                   plan.last > plan.first ? (double)(plan.last - 1u) :
+                   (double)plan.first;
+    }
+    audio->position = position;
+    audio->range_start = plan.first;
+    audio->range_end = plan.last;
+}
+
+static void preview_canvas_capture(SDL_Window *window, SDL_AudioDeviceID device,
+                                   AudioState *audio, TsUiState *ui,
+                                   TsInstrument *instrument, int raw_x)
+{
+    char error[160];
+    int raw_delta = raw_x - ui->canvas_capture_raw_x;
+    int window_width = 0;
+    int window_height = 0;
+    int logical_delta;
+    int64_t requested;
+    int64_t previous_delta;
+    int ok;
+    if (!ui->canvas_gesture.active || raw_delta == 0) return;
+    SDL_GetWindowSize(window, &window_width, &window_height);
+    (void)window_height;
+    if (window_width <= 0) return;
+    logical_delta = (int)((int64_t)raw_delta * TS_UI_WIDTH / window_width);
+    if (logical_delta == 0) logical_delta = raw_delta < 0 ? -1 : 1;
+    if (logical_delta > 0 && ui->canvas_drag_logical_x > INT_MAX - logical_delta)
+        ui->canvas_drag_logical_x = INT_MAX;
+    else if (logical_delta < 0 &&
+             ui->canvas_drag_logical_x < INT_MIN - logical_delta)
+        ui->canvas_drag_logical_x = INT_MIN;
+    else ui->canvas_drag_logical_x += logical_delta;
+    requested = canvas_delta_from_capture(window, ui);
+    previous_delta = ui->canvas_gesture.delta_frames;
+    lock_edit(device, audio);
+    ok = ts_instrument_canvas_gesture_preview(
+        instrument, &ui->canvas_gesture, requested, error, sizeof(error));
+    if (ok)
+        preserve_canvas_audition_position(
+            audio, ui, instrument, ui->canvas_gesture.edge,
+            ui->canvas_gesture.delta_frames - previous_delta);
+    unlock_edit(device, audio, ui, instrument);
+    SDL_WarpMouseInWindow(window, ui->canvas_capture_raw_x,
+                         ui->canvas_capture_raw_y);
+    if (ok) {
+        double seconds = instrument->current.sample_rate > 0 ?
+            (double)instrument->current.frames /
+            (double)instrument->current.sample_rate : 0.0;
+        double delta_seconds = instrument->current.sample_rate > 0 ?
+            (double)ui->canvas_gesture.delta_frames /
+            (double)instrument->current.sample_rate : 0.0;
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANVAS %.3F S (%+.3F S) - RELEASE COMMITS ONCE",
+                 seconds, delta_seconds);
+    } else {
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANVAS RESIZE LIMIT: %.132s", error);
+    }
+}
+
+static void end_canvas_gesture(SDL_Window *window, SDL_AudioDeviceID device,
+                               AudioState *audio, TsUiState *ui,
+                               TsInstrument *instrument, int cancel)
+{
+    char error[160];
+    int64_t delta = ui->canvas_gesture.delta_frames;
+    int edge = ui->canvas_gesture.edge;
+    int ok;
+    (void)window;
+    lock_edit(device, audio);
+    ok = cancel ? ts_instrument_canvas_gesture_cancel(
+                      instrument, &ui->canvas_gesture, error, sizeof(error)) :
+                  ts_instrument_canvas_gesture_commit(
+                      instrument, &ui->canvas_gesture, error, sizeof(error));
+    if (ok)
+        preserve_canvas_audition_position(
+            audio, ui, instrument, edge, cancel ? -delta : 0);
+    unlock_edit(device, audio, ui, instrument);
+    if (!ok && ui->canvas_gesture.active) {
+        char restore_error[160];
+        lock_edit(device, audio);
+        (void)ts_instrument_canvas_gesture_cancel(
+            instrument, &ui->canvas_gesture,
+            restore_error, sizeof(restore_error));
+        preserve_canvas_audition_position(audio, ui, instrument, edge, -delta);
+        unlock_edit(device, audio, ui, instrument);
+    }
+    release_canvas_capture(ui);
+    if (ok && cancel)
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANVAS RESIZE CANCELLED - ORIGINAL RESTORED");
+    else if (ok && delta != 0)
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANVAS RESIZED %+.3F S - ONE UNDO",
+                 instrument->current.sample_rate > 0 ?
+                 (double)delta / (double)instrument->current.sample_rate : 0.0);
+    else if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANVAS RETURNED TO START - NO EDIT");
+    else snprintf(ui->status, sizeof(ui->status),
+                  "CANVAS RESIZE END FAILED: %.120s", error);
+}
+
+static void apply_canvas_action(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, TsInstrument *instrument,
+                                TsUiCanvasAction action)
+{
+    char error[160];
+    int ok = 0;
+    if (action == TS_UI_CANVAS_ACTION_GRID_COARSER) {
+        ok = ts_instrument_cycle_grid_divisions(instrument, -1);
+        snprintf(ui->status, sizeof(ui->status), ok ?
+                 "GRID DIV %u - FULL CANVAS ANCHOR" : "GRID ALREADY COARSEST",
+                 instrument->grid_divisions);
+        return;
+    }
+    if (action == TS_UI_CANVAS_ACTION_GRID_FINER) {
+        ok = ts_instrument_cycle_grid_divisions(instrument, 1);
+        snprintf(ui->status, sizeof(ui->status), ok ?
+                 "GRID DIV %u - FULL CANVAS ANCHOR" : "GRID ALREADY FINEST",
+                 instrument->grid_divisions);
+        return;
+    }
+    if (action == TS_UI_CANVAS_ACTION_GRID_SNAP) {
+        (void)ts_instrument_toggle_grid_snap(instrument);
+        snprintf(ui->status, sizeof(ui->status),
+                 "GRID %s - ZERO-CROSSING SAFETY ALWAYS ON",
+                 instrument->grid_snap == TS_GRID_SNAP_ALL ?
+                 "SNAP SELECTION + MOVEMENT" :
+                 instrument->grid_snap == TS_GRID_SNAP_MOVE_ONLY ?
+                 "SNAP MOVEMENT ONLY" : "SNAP OFF");
+        return;
+    }
+    cancel_pitch_preview(device, audio, ui, instrument);
+    lock_edit(device, audio);
+    if (action == TS_UI_CANVAS_ACTION_HALF)
+        ok = ts_instrument_half_canvas(instrument, error, sizeof(error));
+    else if (action == TS_UI_CANVAS_ACTION_DOUBLE)
+        ok = ts_instrument_double_canvas(instrument, error, sizeof(error));
+    if (ok)
+        preserve_canvas_audition_position(audio, ui, instrument, 2, 0);
+    unlock_edit(device, audio, ui, instrument);
+    if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANVAS %s - %zu FRAMES  DIV %u  ONE UNDO",
+                 action == TS_UI_CANVAS_ACTION_HALF ? "HALVED" : "DOUBLED",
+                 instrument->current.frames, instrument->grid_divisions);
+    else snprintf(ui->status, sizeof(ui->status),
+                  "CANVAS %s FAILED: %.116s",
+                  action == TS_UI_CANVAS_ACTION_HALF ? "HALF" : "DOUBLE", error);
+}
+
 static void history_move(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                          TsInstrument *instrument, int redo)
 {
@@ -1859,6 +2183,11 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
     const TsBankSlot *slot;
     TsAuditionPlan plan;
     if (slot_index < 0 || slot_index >= TS_BANK_SLOT_COUNT) return;
+    if (ui->workbench_loop_persistent) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "LOOP LOCKED - SHIFT+LOOP TO RELEASE");
+        return;
+    }
     if (ui->workbench_loop_active) stop_all(device, audio, ui);
     slot = &instrument->bank[slot_index];
     ui->bank_view_slot = slot_index;
@@ -1956,9 +2285,8 @@ static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
         audio->playing = 0;
         audio->bank_slot = -1;
         ts_note_bank_clear(&audio->notes);
-        if (clearing_active) {
+        if (clearing_active && !ui->workbench_loop_persistent) {
             ui->workbench_loop_active = 0;
-            ui->workbench_loop_persistent = 0;
         }
     }
     ok = ts_ui_execute_bank_action(instrument, slot, TS_UI_BANK_ACTION_CLEAR,
@@ -2811,8 +3139,10 @@ static int begin_tape_drag(TsUiState *ui, TsInstrument *instrument,
     ui->tape_grab_offset = clicked - instrument->selection_first;
     ui->tape_destination = (int64_t)instrument->selection_first;
     ui->tape_drag_kind = kind;
-    snprintf(ui->status, sizeof(ui->status), "%s - DRAG GHOST TO ZERO-SNAPPED DESTINATION",
-             tape_gesture_name(ui->tape_drag_kind));
+    snprintf(ui->status, sizeof(ui->status),
+             "%s - DRAG GHOST TO %sZERO-SNAPPED DESTINATION",
+             tape_gesture_name(ui->tape_drag_kind),
+             ts_instrument_grid_moves_snap(instrument) ? "GRID + " : "");
     return 1;
 }
 
@@ -2821,6 +3151,10 @@ static void update_tape_drag(TsUiState *ui, const TsInstrument *instrument, int 
     int64_t pointer = tape_frame_from_x(instrument, x);
     size_t length = ui->tape_source_last - ui->tape_source_first;
     int64_t destination = pointer - (int64_t)ui->tape_grab_offset;
+    if (ts_instrument_grid_moves_snap(instrument) && destination >= 0 &&
+        (uint64_t)destination <= instrument->current.frames)
+        destination = (int64_t)ts_instrument_grid_target(
+            instrument, (size_t)destination);
     ui->tape_destination = ts_sample_snap_tape_destination(
         &instrument->current, destination, length);
     snprintf(ui->status, sizeof(ui->status), "%s GHOST AT %lld - RELEASE TO APPLY",
@@ -3004,6 +3338,8 @@ int main(int argc, char **argv)
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_DROPFILE && ui.canvas_gesture.active)
+                end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
             if (event.type == SDL_DROPFILE && ui.stretch_gesture.active)
                 end_stretch_gesture(device, &audio, &ui, &instrument, 1);
             if (event.type == SDL_DROPFILE && ui.tear_gesture.active)
@@ -3024,6 +3360,8 @@ int main(int argc, char **argv)
                     end_tear_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.stretch_gesture.active)
                     end_stretch_gesture(device, &audio, &ui, &instrument, 1);
+                if (ui.canvas_gesture.active)
+                    end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
                 if (!ui.exit_confirm_open)
                     begin_exit_confirmation(device, &audio, &ui, &instrument);
             }
@@ -3072,12 +3410,15 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_WINDOWEVENT &&
                        event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
                        (ui.warp_gesture.active || ui.smear_gesture.active ||
-                        ui.tear_gesture.active || ui.stretch_gesture.active)) {
+                        ui.tear_gesture.active || ui.stretch_gesture.active ||
+                        ui.canvas_gesture.active)) {
                 if (ui.warp_gesture.active) end_warp_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.smear_gesture.active) end_smear_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.tear_gesture.active) end_tear_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.stretch_gesture.active)
                     end_stretch_gesture(device, &audio, &ui, &instrument, 1);
+                if (ui.canvas_gesture.active)
+                    end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
             } else if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
@@ -3090,7 +3431,12 @@ int main(int argc, char **argv)
                     hovered_slider = ts_ui_slider_from_point(&ui, mouse_x, mouse_y);
                 }
                 ui.bank_clear_armed = 0;
-                if ((mod & KMOD_ALT) &&
+                if (ui.canvas_gesture.active && key == SDLK_ESCAPE) {
+                    end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
+                } else if (ui.canvas_gesture.active) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "RELEASE MOUSE TO COMMIT CANVAS - ESC CANCELS");
+                } else if ((mod & KMOD_ALT) &&
                     (key == SDLK_RETURN || key == SDLK_KP_ENTER)) {
                     Uint32 flags = SDL_GetWindowFlags(window);
                     int fullscreen = (flags & SDL_WINDOW_FULLSCREEN) != 0;
@@ -3508,6 +3854,9 @@ int main(int argc, char **argv)
                        ui.browser.mode == TS_BROWSER_CLOSED &&
                        note_for_key(event.key.keysym.sym) >= 0) {
                 release_note(device, &audio, &ui, note_for_key(event.key.keysym.sym));
+            } else if (event.type == SDL_MOUSEWHEEL && ui.canvas_gesture.active) {
+                snprintf(ui.status, sizeof(ui.status),
+                         "RELEASE MOUSE TO COMMIT CANVAS - ESC CANCELS");
             } else if (event.type == SDL_MOUSEWHEEL && ui.palette_open) {
                 int raw_x, raw_y, x, y, ignored;
                 int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
@@ -3633,8 +3982,11 @@ int main(int argc, char **argv)
                             &instrument, &ui, x - TS_WAVE_X);
                         size_t center;
                         int endpoint;
-                        size_t crossings = wheel_y < 0 ?
+                        size_t detents = wheel_y < 0 ?
                             (size_t)(-(int64_t)wheel_y) : (size_t)wheel_y;
+                        size_t crossings = (size_t)ui.config.rotate_wheel_coarse;
+                        if (detents > SIZE_MAX / crossings) crossings = SIZE_MAX;
+                        else crossings *= detents;
                         if (!instrument.has_selection ||
                             at < instrument.selection_first ||
                             at > instrument.selection_last) {
@@ -3689,6 +4041,9 @@ int main(int argc, char **argv)
                                  "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
                     }
                 }
+            } else if (event.type == SDL_MOUSEMOTION && ui.canvas_gesture.active) {
+                preview_canvas_capture(window, device, &audio, &ui, &instrument,
+                                       event.motion.x);
             } else if (event.type == SDL_MOUSEMOTION && ui.warp_dragging) {
                 int x, y;
                 float amount;
@@ -3810,7 +4165,9 @@ int main(int argc, char **argv)
                     snprintf(ui.status, sizeof(ui.status),
                              ui.selecting_button == SDL_BUTTON_RIGHT ?
                              "RIGHT-DRAG SELECTION - PLAYHEAD AT START EDGE" :
-                             "SELECTING TILE - ZERO SNAP");
+                             (instrument.grid_snap == TS_GRID_SNAP_ALL ?
+                              "SELECTING TILE - GRID + ZERO SNAP" :
+                              "SELECTING TILE - ZERO SNAP"));
                 }
             } else if (event.type == SDL_MOUSEMOTION && ui.selecting) {
                 int x, y;
@@ -3825,6 +4182,10 @@ int main(int argc, char **argv)
                             instrument.selection_first,
                             instrument.selection_last,
                             instrument.current.frames));
+            } else if (event.type == SDL_MOUSEBUTTONDOWN && ui.canvas_gesture.active) {
+                snprintf(ui.status, sizeof(ui.status),
+                         "RELEASE MOUSE TO COMMIT CANVAS - ESC CANCELS");
+                continue;
             } else if (event.type == SDL_MOUSEBUTTONDOWN && ui.stretch_gesture.active) {
                 end_stretch_gesture(device, &audio, &ui, &instrument, 0);
                 continue;
@@ -3869,8 +4230,12 @@ int main(int argc, char **argv)
                 int x, y;
                 SDL_Keymod mod = SDL_GetModState();
                 TsUiWaveAction wave_action;
+                TsUiCanvasAction canvas_action;
+                int canvas_edge;
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
                 wave_action = ts_ui_wave_action_from_point(x, y);
+                canvas_action = ts_ui_canvas_action_from_point(x, y);
+                canvas_edge = ts_ui_canvas_edge_from_point(x, y);
                 if (!(wave_action == TS_UI_WAVE_ACTION_CLEAR_ALL &&
                       !ui.show_keyboard && !ui.show_recipes &&
                       !ui.show_ingredients))
@@ -4060,7 +4425,21 @@ int main(int argc, char **argv)
                                   loop_marker_x(&instrument, &ui, 1) : -1000;
                     int last_x = has_visible_loop ?
                                  loop_marker_x(&instrument, &ui, 2) : -1000;
-                    if (event.button.clicks >= 2 && bank_modifiers(mod) == 0) {
+                    int editing_canvas = shown_bank == NULL &&
+                                         ui.audition_source == TS_AUDITION_CURRENT &&
+                                         instrument.current.data != NULL &&
+                                         instrument.current.frames >= TS_CANVAS_MIN_FRAMES;
+                    if (editing_canvas &&
+                        canvas_action != TS_UI_CANVAS_ACTION_NONE) {
+                        apply_canvas_action(device, &audio, &ui, &instrument,
+                                            canvas_action);
+                    } else if (editing_canvas && canvas_edge != 0 &&
+                               bank_modifiers(mod) == 0) {
+                        (void)begin_canvas_gesture(
+                            window, device, &audio, &ui, &instrument,
+                            canvas_edge, event.button.x, event.button.y);
+                    } else if (event.button.clicks >= 2 &&
+                               bank_modifiers(mod) == 0) {
                         select_current_tile(device, &audio, &ui, &instrument, 0);
                     } else if (shown_bank != NULL && has_visible_loop &&
                         abs(x - first_x) <= 6) {
@@ -4427,9 +4806,11 @@ int main(int argc, char **argv)
                                 select_error, sizeof(select_error));
                             if (selected && !occupied && event.button.clicks >= 2) {
                                 size_t silent_frames = clipboard_source_frames > 0 ?
-                                                       clipboard_source_frames : 44100u;
+                                                       clipboard_source_frames :
+                                                       TS_DEFAULT_CANVAS_FRAMES;
                                 uint32_t silent_rate = clipboard_source_rate > 0 ?
-                                                       clipboard_source_rate : 44100u;
+                                                       clipboard_source_rate :
+                                                       TS_DEFAULT_CANVAS_RATE;
                                 attempted_silence = 1;
                                 activated_silence = ts_instrument_activate_silence(
                                     &instrument, silent_frames, silent_rate,
@@ -4608,6 +4989,11 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONUP &&
                        (event.button.button == SDL_BUTTON_LEFT ||
                         event.button.button == SDL_BUTTON_RIGHT)) {
+                if (ui.canvas_gesture.active &&
+                    event.button.button == SDL_BUTTON_LEFT) {
+                    end_canvas_gesture(window, device, &audio, &ui, &instrument, 0);
+                    continue;
+                }
                 if (ui.drone_crossfade_dragging &&
                     event.button.button == SDL_BUTTON_LEFT) {
                     ui.drone_crossfade_dragging = 0;
@@ -4700,6 +5086,8 @@ int main(int argc, char **argv)
         SDL_RenderPresent(renderer);
     }
 
+    if (ui.canvas_gesture.active)
+        end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
     if (device) SDL_CloseAudioDevice(device);
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);

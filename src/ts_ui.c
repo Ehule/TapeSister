@@ -71,6 +71,16 @@ static const TsWaveButton wave_buttons[] = {
     {TS_UI_WAVE_ACTION_CYCLE_PANEL, 588, 42, "BANK"}
 };
 
+enum {
+    TS_CANVAS_CONTROLS_Y = TS_WAVE_Y + TS_WAVE_H - 19,
+    TS_CANVAS_CONTROLS_H = 17,
+    TS_CANVAS_LEFT_HANDLE_X = TS_WAVE_X + 3,
+    TS_CANVAS_RIGHT_HANDLE_X = TS_WAVE_X + TS_WAVE_W - 11,
+    TS_CANVAS_HANDLE_Y = TS_WAVE_Y + 48,
+    TS_CANVAS_HANDLE_W = 8,
+    TS_CANVAS_HANDLE_H = 36
+};
+
 static void clear(TsFramebuffer *fb, uint32_t color)
 {
     for (int i = 0; i < TS_UI_WIDTH * TS_UI_HEIGHT; ++i) fb->pixels[i] = color;
@@ -159,6 +169,8 @@ static const char *glyph(char c)
     case ':': return "00000001000010000000001000010000000";
     case '-': return "00000000000000011111000000000000000";
     case '+': return "00000001000010011111001000010000000";
+    case '<': return "00001000100100010000010000001000001";
+    case '>': return "10000010000001000001000100100010000";
     case '#': return "01010010101111101010111110101000000";
     case '/': return "00001000100001000100010001000010000";
     case '\\': return "10000010000010000100000100000100001";
@@ -243,6 +255,18 @@ static void button(TsFramebuffer *fb, int x, int y, int w, const char *label, in
         PAL_BUTTON, active_palette()->buttons_contrast, 0.5f);
     bevel_frame(fb, x, y, w, 23, fill, light, dark);
     text(fb, x + 6, y + 8, label, active ? PAL_BLOCK_TEXT : RGB(245, 242, 235), 1);
+}
+
+static void mini_button(TsFramebuffer *fb, int x, int y, int w,
+                        const char *label, int active)
+{
+    uint32_t fill = active ? PAL_BLOCK : PAL_BUTTON;
+    uint32_t light = contrast_color(
+        PAL_BUTTON, active_palette()->buttons_contrast, 1.5f);
+    uint32_t dark = contrast_color(
+        PAL_BUTTON, active_palette()->buttons_contrast, 0.5f);
+    bevel_frame(fb, x, y, w, TS_CANVAS_CONTROLS_H, fill, light, dark);
+    text(fb, x + 4, y + 5, label, active ? PAL_BLOCK_TEXT : PAL_TEXT, 1);
 }
 
 static void slider(TsFramebuffer *fb, int x, int y, int w, const char *label, float value,
@@ -638,6 +662,7 @@ void ts_ui_init(TsUiState *ui)
     ts_smear_gesture_init(&ui->smear_gesture);
     ts_tear_gesture_init(&ui->tear_gesture);
     ts_stretch_gesture_init(&ui->stretch_gesture);
+    ts_canvas_gesture_init(&ui->canvas_gesture);
     ui->mouse_note = -1;
     ui->bank_view_slot = -1;
     ui->load_bank_slot = -1;
@@ -793,6 +818,30 @@ TsUiWaveAction ts_ui_wave_action_from_point(int x, int y)
     return TS_UI_WAVE_ACTION_NONE;
 }
 
+TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y)
+{
+    if (y < TS_CANVAS_CONTROLS_Y ||
+        y >= TS_CANVAS_CONTROLS_Y + TS_CANVAS_CONTROLS_H)
+        return TS_UI_CANVAS_ACTION_NONE;
+    if (x >= 24 && x < 52) return TS_UI_CANVAS_ACTION_HALF;
+    if (x >= 56 && x < 84) return TS_UI_CANVAS_ACTION_DOUBLE;
+    if (x >= 456 && x < 476) return TS_UI_CANVAS_ACTION_GRID_COARSER;
+    if (x >= 538 && x < 558) return TS_UI_CANVAS_ACTION_GRID_FINER;
+    if (x >= 562 && x < 615) return TS_UI_CANVAS_ACTION_GRID_SNAP;
+    return TS_UI_CANVAS_ACTION_NONE;
+}
+
+int ts_ui_canvas_edge_from_point(int x, int y)
+{
+    if (y < TS_CANVAS_HANDLE_Y || y >= TS_CANVAS_HANDLE_Y + TS_CANVAS_HANDLE_H)
+        return 0;
+    if (x >= TS_CANVAS_LEFT_HANDLE_X &&
+        x < TS_CANVAS_LEFT_HANDLE_X + TS_CANVAS_HANDLE_W) return 1;
+    if (x >= TS_CANVAS_RIGHT_HANDLE_X &&
+        x < TS_CANVAS_RIGHT_HANDLE_X + TS_CANVAS_HANDLE_W) return 2;
+    return 0;
+}
+
 static int point_in_slider(int x, int y, int left, int top, int width)
 {
     return x >= left && x < left + width && y >= top && y < top + 24;
@@ -940,6 +989,18 @@ int ts_ui_transform_auto_audition_allowed(const TsUiState *ui)
     return ui == NULL || !ui->workbench_loop_active;
 }
 
+TsUiLoopCommand ts_ui_loop_command(const TsUiState *ui, int shift_pressed)
+{
+    if (ui != NULL && ui->workbench_loop_persistent)
+        return shift_pressed ? TS_UI_LOOP_LOCK_RELEASE : TS_UI_LOOP_LOCKED;
+    return shift_pressed ? TS_UI_LOOP_LOCK_START : TS_UI_LOOP_START;
+}
+
+int ts_ui_loop_transport_can_stop(const TsUiState *ui, int force)
+{
+    return force || ui == NULL || !ui->workbench_loop_persistent;
+}
+
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames)
 {
     if (ui == NULL) return;
@@ -1050,6 +1111,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     size_t selection_last = instrument->selection_last;
     size_t loop_first = instrument->loop_first;
     size_t loop_last = instrument->loop_last;
+    uint32_t grid_divisions = instrument->grid_divisions;
+    int grid_snap = instrument->grid_snap;
     int has_selection = !showing_bank && instrument->has_selection;
     int has_loop = showing_bank ? shown_slot->has_loop : instrument->has_loop;
     TsLoopMode display_loop_mode = showing_bank ? shown_slot->loop_mode :
@@ -1060,6 +1123,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         selection_first = selection_last = 0;
         loop_first = shown_slot->loop_first;
         loop_last = shown_slot->loop_last;
+        grid_divisions = shown_slot->edit.grid_divisions;
+        grid_snap = shown_slot->edit.grid_snap;
     } else if (showing_parent) {
         valid_parent_view(ui, instrument->parent.frames, &view_first, &view_last);
         selection_first += instrument->crop_first;
@@ -1071,6 +1136,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 
     rect(fb, 0, 0, TS_UI_WIDTH, 32, RGB(12, 12, 12));
     text(fb, 14, 9, "TAPESISTER", PAL_TEXT, 2);
+    {
+        char history[24];
+        snprintf(history, sizeof(history), "UNDO %02d/%02d",
+                 instrument->undo_count, TS_HISTORY_DEPTH);
+        text(fb, 280, 13, history, PAL_EFFECT, 1);
+    }
     button(fb, 350, 4, 76, "CONFIG", ui->config_open);
     button(fb, 431, 4, 80, "SEND FT2", 0);
     button(fb, 516, 4, 52, "SAVE", 0);
@@ -1104,11 +1175,31 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     }
 
     wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
-    for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; x += 30)
-        wave_rect(fb, x, TS_WAVE_Y, 1, TS_WAVE_H, RGB(26, 24, 27));
+    if (grid_divisions < TS_GRID_DIVISION_MIN ||
+        grid_divisions > TS_GRID_DIVISION_MAX ||
+        (grid_divisions & (grid_divisions - 1u)) != 0u)
+        grid_divisions = TS_GRID_DIVISION_DEFAULT;
+    if (!showing_parent && sample->frames > 0 && view_last > view_first) {
+        uint32_t grid_color = contrast_color(
+            PAL_DESKTOP, active_palette()->desktop_contrast,
+            grid_snap ? 1.35f : 0.72f);
+        size_t quotient = sample->frames / grid_divisions;
+        size_t remainder = sample->frames % grid_divisions;
+        for (uint32_t division = 0; division <= grid_divisions; ++division) {
+            size_t frame = quotient * division + remainder * division / grid_divisions;
+            if (frame >= view_first && frame <= view_last) {
+                int x = frame_x(frame, view_first, view_last);
+                if (x == TS_WAVE_X + TS_WAVE_W) --x;
+                wave_rect(fb, x, TS_WAVE_Y, 1, TS_WAVE_H, grid_color);
+            }
+        }
+    }
     for (int y = TS_WAVE_Y + 20; y < TS_WAVE_Y + TS_WAVE_H; y += 20)
-        wave_rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1, RGB(26, 24, 27));
-    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2, TS_WAVE_W, 1, RGB(74, 67, 75));
+        wave_rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1,
+                  contrast_color(PAL_DESKTOP,
+                                 active_palette()->desktop_contrast, 0.72f));
+    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2,
+              TS_WAVE_W, 1, PAL_BUTTON);
 
     if (has_loop && loop_last > view_first && loop_first < view_last) {
         int lx0 = frame_x(loop_first, view_first, view_last);
@@ -1284,6 +1375,51 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             wave_rect(fb, playhead_x, TS_WAVE_Y, 2, TS_WAVE_H, playhead_color);
             wave_rect(fb, playhead_x - 2, TS_WAVE_Y, 6, 3, playhead_color);
         }
+    }
+
+    if (!showing_bank && !showing_parent && sample->frames >= TS_CANVAS_MIN_FRAMES) {
+        char divisions[16];
+        uint32_t handle_color = ui->canvas_gesture.active ? PAL_MOUSE : PAL_EFFECT;
+        if (ui->canvas_gesture.active && sample->sample_rate > 0 &&
+            ui->canvas_drag_start_frames > 0) {
+            char canvas[64];
+            double seconds = (double)sample->frames / sample->sample_rate;
+            double change = ((double)sample->frames -
+                             (double)ui->canvas_drag_start_frames) /
+                            sample->sample_rate;
+            snprintf(canvas, sizeof(canvas), "CANVAS %.3F S (%+.3F S)",
+                     seconds, change);
+            wave_text(fb, TS_WAVE_X + TS_WAVE_W - 194, TS_WAVE_Y + 5,
+                      canvas, PAL_EFFECT, 1);
+        }
+        wave_rect(fb, TS_CANVAS_LEFT_HANDLE_X, TS_CANVAS_HANDLE_Y,
+                  TS_CANVAS_HANDLE_W, 2, handle_color);
+        wave_rect(fb, TS_CANVAS_LEFT_HANDLE_X,
+                  TS_CANVAS_HANDLE_Y + TS_CANVAS_HANDLE_H - 2,
+                  TS_CANVAS_HANDLE_W, 2, handle_color);
+        wave_rect(fb, TS_CANVAS_LEFT_HANDLE_X, TS_CANVAS_HANDLE_Y,
+                  2, TS_CANVAS_HANDLE_H, handle_color);
+        wave_rect(fb, TS_CANVAS_LEFT_HANDLE_X + TS_CANVAS_HANDLE_W - 2,
+                  TS_CANVAS_HANDLE_Y, 2, TS_CANVAS_HANDLE_H, handle_color);
+        wave_rect(fb, TS_CANVAS_RIGHT_HANDLE_X, TS_CANVAS_HANDLE_Y,
+                  TS_CANVAS_HANDLE_W, 2, handle_color);
+        wave_rect(fb, TS_CANVAS_RIGHT_HANDLE_X,
+                  TS_CANVAS_HANDLE_Y + TS_CANVAS_HANDLE_H - 2,
+                  TS_CANVAS_HANDLE_W, 2, handle_color);
+        wave_rect(fb, TS_CANVAS_RIGHT_HANDLE_X, TS_CANVAS_HANDLE_Y,
+                  2, TS_CANVAS_HANDLE_H, handle_color);
+        wave_rect(fb, TS_CANVAS_RIGHT_HANDLE_X + TS_CANVAS_HANDLE_W - 2,
+                  TS_CANVAS_HANDLE_Y, 2, TS_CANVAS_HANDLE_H, handle_color);
+        mini_button(fb, 24, TS_CANVAS_CONTROLS_Y, 28, "/2", 0);
+        mini_button(fb, 56, TS_CANVAS_CONTROLS_Y, 28, "X2", 0);
+        mini_button(fb, 456, TS_CANVAS_CONTROLS_Y, 20, "<", 0);
+        snprintf(divisions, sizeof(divisions), "DIV %u", grid_divisions);
+        mini_button(fb, 480, TS_CANVAS_CONTROLS_Y, 54, divisions, 0);
+        mini_button(fb, 538, TS_CANVAS_CONTROLS_Y, 20, ">", 0);
+        mini_button(fb, 562, TS_CANVAS_CONTROLS_Y, 53,
+                    grid_snap == TS_GRID_SNAP_ALL ? "SNAP" :
+                    grid_snap == TS_GRID_SNAP_MOVE_ONLY ? "MOVE" : "OFF",
+                    grid_snap != TS_GRID_SNAP_OFF);
     }
 
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);

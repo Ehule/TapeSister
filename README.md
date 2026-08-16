@@ -13,8 +13,9 @@ With no waveform selection, Create and Load replace only the selected tile. With
 Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
 number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead.
-Alt+wheel expands or contracts the selection endpoint on the pointer's side of its
-center. Shift+Alt+wheel previews the selected audio by one tape-speed semitone per
+Alt+wheel coarsely expands or contracts the selection endpoint on the pointer's side
+of its center, using the configured coarse zero-crossing count per detent.
+Shift+Alt+wheel previews the selected audio by one tape-speed semitone per
 detent around the visible playhead (or the selection center when it lies outside):
 expansion blends into neighboring audio, contraction severs at zero crossings, and
 the waveform reports the resulting pitch and time ratio. Releasing either modifier
@@ -60,7 +61,7 @@ Every mouse-created or adjusted selection endpoint snaps live to the nearest zer
 
 The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. If no selection exists, Set Loop first selects and loops the exact whole tile. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape. Loop range, mode, and crossfade belong to the tile and participate in its Undo/Redo history.
 
-The compact workbench **LOOP** button follows the current selection, or the visible view when there is no selection. Shift-clicking it enables **LOOP LOCK**, which stays active while occupied tiles are selected and immediately follows each tile's restored selection/view. Click LOOP again, press Space, or select an empty tile to stop and release the lock.
+The compact workbench **LOOP** button follows the current selection, or the visible view when there is no selection. Shift-clicking it enables **LOOP LOCK**, a persistent performance transport that follows occupied, silent, and empty tiles and immediately adopts each active tile's current selection or visible view. It survives Create, Vary, transformations, selection changes, clipboard edits, canvas changes, Undo/Redo, and Capture; buffer replacements are transferred under the audio lock. Plain LOOP, Space, and incidental Stop paths cannot release it. Only Shift+LOOP releases LOOP LOCK (application exit still performs a final safety stop).
 
 The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary unmodified click or computer-key note clears the chord and returns to momentary audition. Every key carries its actual note/octave label. Hover KEYS and use Shift+wheel to move its starting note one semitone at a time, or choose C0–C7 directly with F1–F8. Keyboard navigation never stops the latched chord, so another Shift-click can add a note from the new range. Sustained voices follow the selected tile.
 
@@ -120,6 +121,12 @@ The **Variation** page exposes one continuous Range and the **Chain** switch. Va
 
 The top **Export** button and `Ctrl+E` ask whether to export the selected tile or the complete Collection. Collection export writes every occupied slot as a numbered, loop-aware WAV into a new folder. Existing folders are never silently replaced. A failed export removes the partial files and folder.
 
+## Audio canvas and grid
+
+Every occupied tile is an explicit audio canvas whose sample count is independent of the visible viewport. **X2** appends exact digital silence and **/2** removes the right half at the nearest safe zero crossing. The small open handles just inside the waveform edges resize either side: outward motion adds silence, inward motion removes audio at a safe boundary, left-side changes shift selection/playhead/loop coordinates with the sound, and right-side changes keep existing coordinates fixed. The pointer is captured and returned to the handle during the drag, so it behaves like an endless relative control. Release commits one tile-local Undo step; Escape or focus loss restores the frozen pre-drag state exactly. A one-second, 44.1 kHz silent canvas remains the named default when an empty tile is double-clicked without clipboard timing.
+
+The restrained waveform grid is anchored to the complete canvas rather than the zoomed view. **<** and **>** choose 2, 4, 8, 16, 32, or 64 divisions. The snap button cycles **OFF**, **SNAP**, and **MOVE**. SNAP quantizes both newly drawn boundaries and movement gestures; MOVE leaves selections and loop flags tightly zero-snapped while quantizing tape placement and destructive canvas movement; OFF uses zero-crossing safety without macro-grid quantization. If no crossing exists in the valid search range, the existing deterministic lowest-amplitude fallback is used. Continuous WARP/SMEAR amounts, rotation, Drone seams, zoom, and navigation are not quantized. Grid division and snap mode are stored independently with each tile but are not added to audio Undo history.
+
 ## Six-operator FM source proof
 
 Create produces a deterministic six-operator FM tile. Each seed selects a complete hidden patch from curated Structure and Ratio sets, plus Depth, Shape, feedback, and a short transient layer. Vary changes that stored FM recipe according to Range. A later focused slice can expose a small set of musically useful macros without adding an operator table to the primary interface.
@@ -139,7 +146,7 @@ Where source and existing audio overlap, Mix measures the source peak and underl
 
 The lower panel now cycles **KEYS**, **BANK**, **RCPE**, and **INGR**. INGR is an empty navigation scaffold for future ingredient shelves; entering it does not alter the selected tile, bank contents, recipes, or Undo history. RCPE contains eight immutable factory recipes and eight user slots. Click a filled slot to apply its processing to the selected tile as one undoable render. Shift-click an empty user slot to capture the live processing shelf, right-click a filled user slot to rename it, and Shift-right-click to clear it. Factory recipes and their names remain immutable. Manual shelf changes remove the active-slot highlight without altering the stored recipe.
 
-The compact **LOOP** audition button repeats a fixed selection when one exists, otherwise it follows the visible tile view as that view is zoomed or panned. A short boundary crossfade uses the existing audition engine. While LOOP is active it remains the audition owner, so WARP, SMEAR, and TEAR continue publishing spring-loaded previews without their usual timed playback retriggers. Ordinary LOOP is cancelled by selecting another tile; Shift-click **LOOP** to lock it across occupied-tile changes. Loading or creating another sound, selecting an empty tile, Stop, or quit cancels workbench LOOP ownership.
+The compact **LOOP** audition button repeats a fixed selection when one exists, otherwise it follows the visible tile view as that view is zoomed or panned. A short boundary crossfade uses the existing audition engine. While LOOP is active it remains the audition owner, so WARP, SMEAR, and TEAR continue publishing spring-loaded previews without their usual timed playback retriggers. Ordinary LOOP remains temporary. Shift-click **LOOP** to engage LOOP LOCK across every editing and tile operation; Shift-click it again to release.
 
 Portable `.tsp` files contain named processing settings and, for user captures, optional tuning metadata—never tile audio, crop, selection, loop, tape edits, or bank members—so the same treatment can be applied to unrelated material. Factory recipes omit tuning. While RCPE is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the selected tile. Full `.tsr` projects remain the self-contained way to save a complete bank.
 
@@ -162,6 +169,7 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 
 - click to place the playhead, right-click to play from it, or drag to select a range;
 - mouse-wheel zoom anchored to the sample beneath the pointer;
+- tile-local canvas **/2**, **X2**, captured left/right edge resizing, and full-canvas grid snapping;
 - Shift+wheel panning, direct `=` or `+` / `-` keyboard zoom, arrow-key panning, and `0` Show All;
 - Play All, Play Selection, and Play Displayed;
 - Zoom Selection and Show All;
@@ -194,7 +202,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR17 stores every occupied tile as a complete independent object: audio, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, and the audio patches needed to replay Paste, FM stamp, and tape-length history. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR16 remain loadable for compatibility. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR19 stores every occupied tile as a complete independent object: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, and the audio patches needed to replay Paste, FM stamp, tape-length, and canvas-resize history. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR18 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 

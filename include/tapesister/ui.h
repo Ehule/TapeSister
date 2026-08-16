@@ -135,6 +135,22 @@ typedef enum {
     TS_UI_WAVE_ACTION_CYCLE_PANEL
 } TsUiWaveAction;
 
+typedef enum {
+    TS_UI_CANVAS_ACTION_NONE = 0,
+    TS_UI_CANVAS_ACTION_HALF,
+    TS_UI_CANVAS_ACTION_DOUBLE,
+    TS_UI_CANVAS_ACTION_GRID_COARSER,
+    TS_UI_CANVAS_ACTION_GRID_FINER,
+    TS_UI_CANVAS_ACTION_GRID_SNAP
+} TsUiCanvasAction;
+
+typedef enum {
+    TS_UI_LOOP_START = 0,
+    TS_UI_LOOP_LOCK_START,
+    TS_UI_LOOP_LOCKED,
+    TS_UI_LOOP_LOCK_RELEASE
+} TsUiLoopCommand;
+
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
@@ -217,6 +233,11 @@ typedef struct {
     int has_stretch_readout;
     float stretch_pitch_semitones;
     float stretch_duration_ratio;
+    TsCanvasGesture canvas_gesture;
+    int canvas_capture_raw_x;
+    int canvas_capture_raw_y;
+    int canvas_drag_logical_x;
+    size_t canvas_drag_start_frames;
     float drone_effective_crossfade_ms;
     const TsSample *drone_preview_sample;
     size_t drone_source_first;
@@ -273,6 +294,8 @@ TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y);
 TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y);
 TsUiDroneAction ts_ui_drone_action_from_point(int x, int y);
 TsUiWaveAction ts_ui_wave_action_from_point(int x, int y);
+TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y);
+int ts_ui_canvas_edge_from_point(int x, int y);
 int ts_ui_drone_waveform_contains(int x, int y);
 int ts_ui_drone_crossfade_handle_from_point(const TsUiState *ui, int x, int y);
 TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y);
@@ -290,6 +313,8 @@ int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
 int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind);
 void ts_ui_cycle_panel(TsUiState *ui);
 int ts_ui_transform_auto_audition_allowed(const TsUiState *ui);
+TsUiLoopCommand ts_ui_loop_command(const TsUiState *ui, int shift_pressed);
+int ts_ui_loop_transport_can_stop(const TsUiState *ui, int force);
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames);
 int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
                            float anchor_ratio, float scale);
