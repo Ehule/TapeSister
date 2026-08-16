@@ -2058,6 +2058,20 @@ int main(void)
     CHECK(framebuffer_contains(&fb, 0xffffe700u));
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     CHECK(framebuffer_contains(&fb, 0xff009ee3u));
+    {
+        uint32_t saved_effect = ui.palette.colors[TS_PALETTE_PATTERN_EFFECT];
+        int label_x = TS_WAVE_X +
+                      (int)((imported.selection_first - imported.view_first) * TS_WAVE_W /
+                            (imported.view_last - imported.view_first)) + 4;
+        int effect_pixels = 0;
+        ui.palette.colors[TS_PALETTE_PATTERN_EFFECT] = 0xff010203u;
+        ts_ui_render(&fb, &ui, &imported);
+        for (int y = TS_WAVE_Y + 5; y < TS_WAVE_Y + 12; ++y)
+            for (int x = label_x; x < label_x + 84 && x < TS_WAVE_X + TS_WAVE_W; ++x)
+                if (fb.pixels[y * TS_UI_WIDTH + x] == 0xff010203u) ++effect_pixels;
+        CHECK(effect_pixels > 0);
+        ui.palette.colors[TS_PALETTE_PATTERN_EFFECT] = saved_effect;
+    }
     CHECK(ui.warp_amount == 0.0f);
     ui.warp_amount = 0.75f;
     ts_ui_render(&fb, &ui, &imported);

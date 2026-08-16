@@ -140,6 +140,20 @@ static void text(TsFramebuffer *fb, int x, int y, const char *value, uint32_t co
     }
 }
 
+static void wave_text(TsFramebuffer *fb, int x, int y, const char *value,
+                      uint32_t color, int scale)
+{
+    for (; *value; ++value, x += 6 * scale) {
+        char c = *value >= 'a' && *value <= 'z' ? (char)(*value - 32) : *value;
+        const char *bits = glyph(c);
+        for (int gy = 0; gy < 7; ++gy)
+            for (int gx = 0; gx < 5; ++gx)
+                if (bits[gy * 5 + gx] == '1')
+                    wave_rect(fb, x + gx * scale, y + gy * scale,
+                              scale, scale, color);
+    }
+}
+
 static uint32_t contrast_color(uint32_t base, int contrast, float scale)
 {
     float exponent;
@@ -744,6 +758,19 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 wave_line(fb, center - 8, cy + offset, center - 3, cy + offset + 4, PAL_TUNING);
             }
         }
+    }
+
+    if (has_selection && selection_last > selection_first &&
+        selection_last > view_first && selection_first < view_last &&
+        sample->sample_rate > 0) {
+        char duration[40];
+        size_t visible_first = selection_first > view_first ?
+                               selection_first : view_first;
+        int selection_x = frame_x(visible_first, view_first, view_last);
+        double seconds = (double)(selection_last - selection_first) /
+                         (double)sample->sample_rate;
+        snprintf(duration, sizeof(duration), "SEL %.3F SEC", seconds);
+        wave_text(fb, selection_x + 4, TS_WAVE_Y + 5, duration, PAL_EFFECT, 1);
     }
 
     if (ui->playback_active && ui->playhead_frames > 0) {
