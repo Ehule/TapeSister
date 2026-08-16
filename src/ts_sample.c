@@ -2603,6 +2603,18 @@ void ts_instrument_clear_playhead(TsInstrument *instrument)
     instrument->has_playhead = 0;
 }
 
+int ts_instrument_reset_selection_playhead(TsInstrument *instrument)
+{
+    int changed;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        instrument->current.frames == 0) return 0;
+    changed = instrument->has_selection || !instrument->has_playhead ||
+              instrument->playhead_frame != 0;
+    ts_instrument_clear_selection(instrument);
+    ts_instrument_set_playhead(instrument, 0);
+    return changed;
+}
+
 static size_t directional_zero_crossing(const TsSample *sample, size_t frame,
                                         int direction, size_t count)
 {

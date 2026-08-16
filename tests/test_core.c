@@ -2982,6 +2982,16 @@ int main(void)
         ts_instrument_set_playhead(&stretch, first + before_frames / 3u);
         CHECK(stretch.has_playhead && stretch.playhead_frame >= first &&
               stretch.playhead_frame < last);
+        CHECK(ts_instrument_reset_selection_playhead(&stretch));
+        CHECK(!stretch.has_selection && stretch.has_playhead &&
+              stretch.playhead_frame == 0);
+        CHECK(!ts_instrument_reset_selection_playhead(&stretch));
+        ts_instrument_clear_playhead(&stretch);
+        CHECK(ts_instrument_reset_selection_playhead(&stretch));
+        CHECK(!stretch.has_selection && stretch.has_playhead &&
+              stretch.playhead_frame == 0);
+        ts_instrument_set_selection(&stretch, first, last);
+        ts_instrument_set_playhead(&stretch, first + before_frames / 3u);
         {
             size_t requested = first + before_frames / 5u;
             size_t expected = ts_sample_nearest_zero_crossing(

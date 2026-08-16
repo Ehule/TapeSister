@@ -387,6 +387,7 @@ void ts_instrument_clear_selection(TsInstrument *instrument);
 void ts_instrument_set_playhead(TsInstrument *instrument, size_t frame);
 void ts_instrument_set_playhead_snapped(TsInstrument *instrument, size_t frame);
 void ts_instrument_clear_playhead(TsInstrument *instrument);
+int ts_instrument_reset_selection_playhead(TsInstrument *instrument);
 int ts_instrument_resize_selection(TsInstrument *instrument, int endpoint,
                                    int expand, size_t crossing_count);
 int ts_instrument_stretch_selection(TsInstrument *instrument, size_t pivot,

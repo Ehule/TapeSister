@@ -3093,15 +3093,27 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status), "TAPE DRAG CANCELLED");
                     } else if (ui.selecting) {
                         ui.selecting = 0;
-                        snprintf(ui.status, sizeof(ui.status), "SELECTION DRAG CANCELLED");
+                        ui.selecting_button = 0;
+                        (void)ts_instrument_reset_selection_playhead(&instrument);
+                        ui.has_stretch_readout = 0;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "SELECTION CLEARED - PLAYHEAD AT START");
                     } else if (ui.wave_pointer_pending) {
                         ui.wave_pointer_pending = 0;
                         ui.wave_pointer_button = 0;
-                        snprintf(ui.status, sizeof(ui.status), "PLAYHEAD GESTURE CANCELLED");
+                        (void)ts_instrument_reset_selection_playhead(&instrument);
+                        ui.has_stretch_readout = 0;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "SELECTION CLEARED - PLAYHEAD AT START");
                     } else if (ui.dragging_loop_endpoint) {
                         ui.dragging_loop_endpoint = 0;
                         ui.loop_drag_started = 0;
                         snprintf(ui.status, sizeof(ui.status), "LOOP DRAG ENDED");
+                    } else if (ts_instrument_reset_selection_playhead(&instrument)) {
+                        ui.bank_view_slot = -1;
+                        ui.has_stretch_readout = 0;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "SELECTION CLEARED - PLAYHEAD AT START");
                     } else {
                         begin_exit_confirmation(device, &audio, &ui, &instrument);
                     }
@@ -3110,8 +3122,12 @@ int main(int argc, char **argv)
                     if (audio.playing || ts_note_bank_count(&audio.notes) > 0 ||
                         ui.workbench_loop_active)
                         stop_all(device, &audio, &ui);
-                    else begin_playhead_audition(device, &audio, &ui, &instrument,
-                                                 obtained.freq);
+                    else {
+                        if (!instrument.has_selection && !instrument.has_playhead)
+                            (void)ts_instrument_reset_selection_playhead(&instrument);
+                        begin_playhead_audition(device, &audio, &ui, &instrument,
+                                                obtained.freq);
+                    }
                 } else {
                     int note = note_for_key(key);
                     if (note >= 0 && device) {
@@ -3422,6 +3438,33 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONDOWN && ui.tear_gesture.active) {
                 end_tear_gesture(device, &audio, &ui, &instrument, 1);
                 continue;
+            } else if (event.type == SDL_MOUSEBUTTONDOWN &&
+                       event.button.button == SDL_BUTTON_MIDDLE &&
+                       !ui.config_open && !ui.palette_open &&
+                       !ui.load_selection_choice_open &&
+                       ui.browser.mode == TS_BROWSER_CLOSED) {
+                int x, y;
+                logical_mouse(window, event.button.x, event.button.y, &x, &y);
+                ui.bank_clear_armed = 0;
+                if (ui.exit_confirm_open || ui.renaming_bank_slot >= 0 ||
+                    ui.renaming_recipe_slot >= 0 || ui.export_choice_open) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "FINISH OR CANCEL THE OPEN DIALOG FIRST");
+                } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
+                           y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
+                    cancel_pitch_preview(device, &audio, &ui, &instrument);
+                    ui.bank_view_slot = -1;
+                    ui.selecting = 0;
+                    ui.selecting_button = 0;
+                    ui.wave_pointer_pending = 0;
+                    ui.wave_pointer_button = 0;
+                    ui.has_stretch_readout = 0;
+                    if (ts_instrument_reset_selection_playhead(&instrument))
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "SELECTION CLEARED - PLAYHEAD AT START");
+                    else snprintf(ui.status, sizeof(ui.status),
+                                  "PLAYHEAD ALREADY AT START");
+                }
             } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
                 int x, y;
                 SDL_Keymod mod = SDL_GetModState();
