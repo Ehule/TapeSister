@@ -1425,7 +1425,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR14", 5) == 0);
+        CHECK(memcmp(magic, "TSR15", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -1455,7 +1455,8 @@ int main(void)
     for (int slot = 0; slot < 3; ++slot) {
         CHECK(restored.bank[slot].occupied);
         CHECK(ts_sample_hash(&restored.bank[slot].sample) ==
-              ts_sample_hash(&committed.bank[slot].sample));
+              (slot == committed.selected_slot ? ts_sample_hash(&committed.current) :
+               ts_sample_hash(&committed.bank[slot].sample)));
         CHECK(restored.bank[slot].capture_kind == committed.bank[slot].capture_kind);
         CHECK(restored.bank[slot].tuning.root_note == committed.bank[slot].tuning.root_note);
         CHECK(restored.bank[slot].loop_mode == committed.bank[slot].loop_mode);

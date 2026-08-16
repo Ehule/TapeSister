@@ -27,7 +27,8 @@ static void setup(TsInstrument *instrument)
 
 int main(void)
 {
-    TsInstrument bank, all, destinations, clone_reset, serial, restored;
+    TsInstrument bank, all, destinations, clone_reset, serial, restored, empty_restored;
+    TsInstrument blank, blank_restored;
     TsTearGesture tear;
     TsNoteBank notes;
     TsAuditionPlan plan;
@@ -36,6 +37,7 @@ int main(void)
     uint64_t current_hash;
     uint64_t slot0_hash;
     uint64_t slot5_hash;
+    uint64_t slot7_before_tear;
 
     CHECK(ts_ui_bank_action(0, 0) == TS_UI_BANK_ACTION_AUDITION);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT) == TS_UI_BANK_ACTION_CAPTURE_CURRENT);
@@ -248,6 +250,8 @@ int main(void)
           !clone_reset.has_selection && clone_reset.post_edit_count == 0);
 
     ts_instrument_init(&serial); ts_instrument_init(&restored);
+    ts_instrument_init(&empty_restored);
+    ts_instrument_init(&blank); ts_instrument_init(&blank_restored);
     CHECK(ts_instrument_generate(&serial, TS_GENERATOR_PULSE, 0x42414e4bu,
                                  error, sizeof(error)));
     CHECK(ts_instrument_bank_rename(&serial, 0, "INDEPENDENT ONE",
@@ -275,6 +279,7 @@ int main(void)
     CHECK(ts_instrument_apply_sample_edit(&serial, TS_SAMPLE_EDIT_GAIN, 0.35f,
                                           error, sizeof(error)));
     slot5_hash = ts_sample_hash(&serial.current);
+    slot7_before_tear = slot5_hash;
     CHECK(slot5_hash != slot0_hash);
 
     CHECK(ts_ui_execute_bank_action(&serial, 0, TS_UI_BANK_ACTION_AUDITION,
@@ -334,6 +339,49 @@ int main(void)
           strcmp(restored.bank[7].sample.name, "INDEPENDENT EIGHT") == 0 &&
           ts_sample_hash(&restored.bank[0].sample) == slot0_hash &&
           ts_sample_hash(&restored.bank[7].sample) == slot5_hash);
+    CHECK(restored.view_first == 100 && restored.view_last == 600 &&
+          !restored.has_selection && restored.has_loop &&
+          restored.loop_first == 180 && restored.loop_last == 620 &&
+          restored.undo_count > 0);
+    CHECK(ts_instrument_undo(&restored, error, sizeof(error)) &&
+          ts_sample_hash(&restored.current) == slot7_before_tear);
+    CHECK(ts_instrument_redo(&restored, error, sizeof(error)) &&
+          ts_sample_hash(&restored.current) == slot5_hash);
+    CHECK(ts_instrument_select_bank(&restored, 0, error, sizeof(error)) &&
+          ts_sample_hash(&restored.current) == slot0_hash &&
+          restored.view_first == 20 && restored.view_last == 300 &&
+          restored.has_selection && restored.selection_first == 40 &&
+          restored.selection_last == 280 && restored.has_loop &&
+          restored.loop_first == 60 && restored.loop_last == 240 &&
+          restored.undo_count > 0);
+    CHECK(ts_instrument_select_bank(&restored, 7, error, sizeof(error)) &&
+          ts_sample_hash(&restored.current) == slot5_hash &&
+          restored.view_first == 100 && restored.view_last == 600 &&
+          !restored.has_selection && restored.has_loop &&
+          restored.loop_first == 180 && restored.loop_last == 620);
+    remove("test-bank-independent.tsr");
+    CHECK(ts_instrument_select_bank(&restored, 3, error, sizeof(error)) &&
+          restored.selected_slot == 3 && !restored.bank[3].occupied &&
+          restored.parent.data == NULL && restored.current.data == NULL);
+    CHECK(ts_instrument_save_recipe(&restored, "test-bank-independent.tsr",
+                                    error, sizeof(error)));
+    CHECK(ts_instrument_load_recipe(&empty_restored, "test-bank-independent.tsr",
+                                    error, sizeof(error)));
+    CHECK(empty_restored.selected_slot == 3 &&
+          !empty_restored.bank[3].occupied &&
+          empty_restored.parent.data == NULL && empty_restored.current.data == NULL &&
+          empty_restored.bank[0].occupied && empty_restored.bank[7].occupied &&
+          ts_sample_hash(&empty_restored.bank[0].sample) == slot0_hash &&
+          ts_sample_hash(&empty_restored.bank[7].sample) == slot5_hash);
+    remove("test-bank-independent.tsr");
+    CHECK(ts_instrument_save_recipe(&blank, "test-bank-independent.tsr",
+                                    error, sizeof(error)));
+    CHECK(ts_instrument_load_recipe(&blank_restored, "test-bank-independent.tsr",
+                                    error, sizeof(error)));
+    CHECK(blank_restored.selected_slot == 0 &&
+          blank_restored.parent.data == NULL && blank_restored.current.data == NULL);
+    for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i)
+        CHECK(!blank_restored.bank[i].occupied);
     remove("test-bank-independent.tsr");
 
     ts_instrument_free(&bank);
@@ -342,6 +390,9 @@ int main(void)
     ts_instrument_free(&clone_reset);
     ts_instrument_free(&serial);
     ts_instrument_free(&restored);
+    ts_instrument_free(&empty_restored);
+    ts_instrument_free(&blank);
+    ts_instrument_free(&blank_restored);
     if (failures) return 1;
     puts("TapeSister independent Bank command regression tests passed");
     return 0;

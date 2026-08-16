@@ -39,7 +39,7 @@ tapesister_editor_contract_tests: $(CORE) tests/test_editor_contract.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
 screenshot: tapesister_render_demo
-	./tapesister_render_demo artifacts/tapesister-parent-current.ppm
+	./tapesister_render_demo artifacts/tapesister-independent-tiles.ppm
 
 clean:
 	rm -f tapesister tapesister_core_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_render_demo test-roundtrip.wav test-tear.tsr test-bank-independent.tsr artifacts/*.ppm

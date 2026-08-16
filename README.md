@@ -142,7 +142,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR14 remains loadable for compatibility. The next project-format revision will make complete independent per-tile editor state explicit rather than treating one active workspace as special. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR15 stores every occupied tile as a complete independent object: audio, private render baseline, tuning, loop, selection, viewport, processing and edit timelines, and Undo/Redo stacks. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR14 remain loadable for compatibility. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 
