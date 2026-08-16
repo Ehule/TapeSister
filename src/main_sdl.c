@@ -524,9 +524,10 @@ static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
     SDL_LockAudioDevice(device);
     audio->playing = 0;
     audio->bank_slot = -1;
-    result = ts_note_bank_start_tuned(&audio->notes, instrument,
-                                      ts_ui_audition_tuning(ui, instrument),
-                                      ui->audition_source, note, latched, output_rate);
+    result = ts_note_bank_start_tuned_at(
+        &audio->notes, instrument, ts_ui_audition_tuning(ui, instrument),
+        ui->audition_source, note, ts_ui_keyboard_base_note(ui),
+        latched, output_rate);
     voice_count = ts_note_bank_count(&audio->notes);
     SDL_UnlockAudioDevice(device);
     if (result == TS_NOTE_LIMIT_REACHED)
@@ -2001,8 +2002,47 @@ static int export_wav_atomic(const TsSample *sample, const TsTuning *tuning,
     return finish_atomic_file(temporary, destination, error, error_size);
 }
 
+static void cancel_selection_load(TsUiState *ui, TsSample *pending)
+{
+    ts_sample_free(pending);
+    ui->load_selection_choice_open = 0;
+    ui->load_selection_name[0] = '\0';
+    snprintf(ui->status, sizeof(ui->status), "SELECTION LOAD CANCELLED");
+}
+
+static void apply_selection_load(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui, TsInstrument *instrument,
+                                 TsSample *pending, int fit)
+{
+    char error[160];
+    size_t source_frames = pending->frames;
+    size_t target_frames = instrument->has_selection ?
+                           instrument->selection_last - instrument->selection_first : 0;
+    int ok;
+    lock_edit(device, audio);
+    ok = ts_instrument_paste(instrument, pending, instrument->selection_first,
+                             fit, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (!ok) {
+        snprintf(ui->status, sizeof(ui->status), "%s LOAD FAILED: %.128s",
+                 fit ? "FIT" : "PASTE", error);
+        return;
+    }
+    ts_sample_free(pending);
+    ui->load_selection_choice_open = 0;
+    ui->load_selection_name[0] = '\0';
+    if (fit)
+        snprintf(ui->status, sizeof(ui->status),
+                 "FIT %zu WAV FRAMES INTO %zu - UNDO AVAILABLE",
+                 source_frames, target_frames);
+    else
+        snprintf(ui->status, sizeof(ui->status),
+                 "PASTED %zu WAV FRAMES INTO SELECTION - UNDO AVAILABLE",
+                 source_frames);
+}
+
 static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                           TsInstrument *instrument)
+                           TsInstrument *instrument, TsSample *pending_selection_load)
 {
     TsBrowser *browser = &ui->browser;
     char path[TS_BROWSER_PATH_MAX];
@@ -2051,6 +2091,26 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     if (browser->mode == TS_BROWSER_LOAD_WAV) {
         if (!ts_browser_selected_path(browser, path, sizeof(path))) {
             snprintf(browser->message, sizeof(browser->message), "SELECT A WAV OR TSR FILE");
+            return;
+        }
+        if (!path_is_tsr(path) && !path_is_tsp(path) &&
+            instrument->current.data != NULL && instrument->has_selection &&
+            instrument->selection_last > instrument->selection_first) {
+            ts_sample_free(pending_selection_load);
+            if (!ts_sample_load_wav(pending_selection_load, path,
+                                    error, sizeof(error))) {
+                snprintf(browser->message, sizeof(browser->message),
+                         "WAV LOAD FAILED: %.132s", error);
+                return;
+            }
+            snprintf(ui->load_selection_name, sizeof(ui->load_selection_name),
+                     "%s", pending_selection_load->name);
+            ui->load_selection_choice_open = 1;
+            ui->load_bank_slot = -1;
+            SDL_StopTextInput();
+            ts_browser_close(browser);
+            snprintf(ui->status, sizeof(ui->status),
+                     "CHOOSE PASTE, FIT, OR CANCEL FOR THE SELECTED RANGE");
             return;
         }
         ok = load_instrument(device, audio, ui, instrument, path);
@@ -2112,7 +2172,8 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 }
 
 static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *audio,
-                                       TsUiState *ui, TsInstrument *instrument)
+                                       TsUiState *ui, TsInstrument *instrument,
+                                       TsSample *pending_selection_load)
 {
     TsBrowser *browser = &ui->browser;
     if (browser->selected >= 0 && browser->selected < browser->entry_count &&
@@ -2121,7 +2182,7 @@ static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *aud
             snprintf(browser->message, sizeof(browser->message), "COULD NOT ENTER DIRECTORY");
         return;
     }
-    browser_action(device, audio, ui, instrument);
+    browser_action(device, audio, ui, instrument, pending_selection_load);
 }
 
 static void logical_mouse(SDL_Window *window, int raw_x, int raw_y, int *x, int *y)
@@ -2377,6 +2438,7 @@ int main(int argc, char **argv)
     TsUiState ui;
     TsFramebuffer framebuffer;
     TsSample clipboard;
+    TsSample pending_selection_load;
     size_t clipboard_origin_first = 0;
     size_t clipboard_source_frames = 0;
     uint32_t clipboard_source_rate = 0;
@@ -2385,6 +2447,7 @@ int main(int argc, char **argv)
 
     ts_instrument_init(&instrument);
     ts_sample_init(&clipboard);
+    ts_sample_init(&pending_selection_load);
     ts_ui_init(&ui);
     {
         char config_error[160];
@@ -2399,6 +2462,7 @@ int main(int argc, char **argv)
     audio.bank_slot = -1;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
+        ts_sample_free(&pending_selection_load);
         ts_sample_free(&clipboard);
         ts_instrument_free(&instrument);
         return 1;
@@ -2430,6 +2494,7 @@ int main(int argc, char **argv)
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         SDL_Quit();
+        ts_sample_free(&pending_selection_load);
         ts_sample_free(&clipboard);
         ts_instrument_free(&instrument);
         return 0;
@@ -2497,6 +2562,7 @@ int main(int argc, char **argv)
             else if (event.type == SDL_DROPFILE &&
                      (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                       ui.config_open || ui.palette_open || ui.export_choice_open ||
+                      ui.load_selection_choice_open ||
                       ui.exit_confirm_open ||
                       ui.browser.mode != TS_BROWSER_CLOSED)) {
                 snprintf(ui.status, sizeof(ui.status),
@@ -2576,6 +2642,16 @@ int main(int argc, char **argv)
                                key == SDLK_y) {
                         running = 0;
                     }
+                } else if (ui.load_selection_choice_open) {
+                    if (key == SDLK_ESCAPE || key == SDLK_c)
+                        cancel_selection_load(&ui, &pending_selection_load);
+                    else if (key == SDLK_f)
+                        apply_selection_load(device, &audio, &ui, &instrument,
+                                             &pending_selection_load, 1);
+                    else if (key == SDLK_p || key == SDLK_RETURN ||
+                             key == SDLK_KP_ENTER)
+                        apply_selection_load(device, &audio, &ui, &instrument,
+                                             &pending_selection_load, 0);
                 } else if (ui.palette_open) {
                     int step = (mod & KMOD_SHIFT) ? 8 : 1;
                     if (key == SDLK_ESCAPE) finish_palette(&ui, 1);
@@ -2722,8 +2798,13 @@ int main(int argc, char **argv)
                             ts_browser_backspace_filename(&ui.browser);
                         else ts_browser_parent(&ui.browser);
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
-                        browser_activate_selection(device, &audio, &ui, &instrument);
+                        browser_activate_selection(device, &audio, &ui, &instrument,
+                                                   &pending_selection_load);
                     }
+                } else if (key >= SDLK_F1 && key <= SDLK_F8) {
+                    int octave = ts_ui_keyboard_set_octave(&ui, (int)(key - SDLK_F1));
+                    snprintf(ui.status, sizeof(ui.status),
+                             "KEYBOARD OCTAVE %d - HELD CHORD PRESERVED", octave);
                 } else if (hovered_slider != TS_UI_SLIDER_NONE) {
                     adjust_hovered_slider(device, &audio, &ui, &instrument,
                                           hovered_slider,
@@ -2868,8 +2949,14 @@ int main(int argc, char **argv)
                     stop_all(device, &audio, &ui);
                 } else {
                     int note = note_for_key(key);
-                    if (note >= 0 && device)
+                    if (note >= 0 && device) {
+                        if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0) {
+                            SDL_LockAudioDevice(device);
+                            ts_note_bank_clear(&audio.notes);
+                            SDL_UnlockAudioDevice(device);
+                        }
                         begin_note(device, &audio, &ui, &instrument, note, obtained.freq, 0);
+                    }
                 }
             } else if (event.type == SDL_KEYUP && ui.warp_wheel_active &&
                        (event.key.keysym.sym == SDLK_LCTRL ||
@@ -2884,6 +2971,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_KEYUP && !ui.config_open && !ui.palette_open &&
                        ui.renaming_bank_slot < 0 &&
                        ui.renaming_recipe_slot < 0 && !ui.export_choice_open &&
+                       !ui.load_selection_choice_open &&
                        !ui.exit_confirm_open &&
                        ui.browser.mode == TS_BROWSER_CLOSED &&
                        note_for_key(event.key.keysym.sym) >= 0) {
@@ -2905,6 +2993,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.export_choice_open ||
+                        ui.load_selection_choice_open ||
                         ui.exit_confirm_open)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
@@ -2916,27 +3005,33 @@ int main(int argc, char **argv)
                 int raw_x, raw_y, x, y;
                 int wheel_y = event.wheel.y;
                 int wheel_x = event.wheel.x;
+                SDL_Keymod mod = SDL_GetModState();
                 SDL_GetMouseState(&raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
                     wheel_y = -wheel_y;
                     wheel_x = -wheel_x;
                 }
-                if ((SDL_GetModState() & KMOD_CTRL) && wheel_y != 0 &&
+                if (ui.show_keyboard && (mod & KMOD_SHIFT) && wheel_y != 0 &&
+                    x >= 10 && x < 622 && y >= 318 && y < 379) {
+                    int octave = ts_ui_keyboard_cycle_octave(&ui, wheel_y);
+                    snprintf(ui.status, sizeof(ui.status),
+                             "KEYBOARD OCTAVE %d - HELD CHORD PRESERVED", octave);
+                } else if ((mod & KMOD_CTRL) && wheel_y != 0 &&
                     x >= 407 && x < 500 && y >= 205 && y < 229) {
                     if ((!ui.tear_gesture.active && begin_tear_gesture(device, &audio, &ui, &instrument, 1)) ||
                         ui.tear_wheel_active) {
                         float amount = ui.tear_amount + (float)wheel_y * 0.015f;
                         preview_tear_gesture(device, &audio, &ui, &instrument, amount, obtained.freq);
                     }
-                } else if ((SDL_GetModState() & KMOD_CTRL) && wheel_y != 0 &&
+                } else if ((mod & KMOD_CTRL) && wheel_y != 0 &&
                     x >= 505 && x < 630 && y >= 205 && y < 229) {
                     if ((!ui.smear_gesture.active && begin_smear_gesture(device, &audio, &ui, &instrument, 1)) ||
                         ui.smear_wheel_active) {
                         float amount = ui.smear_amount + (float)wheel_y * 0.015f;
                         preview_smear_gesture(device, &audio, &ui, &instrument, amount, obtained.freq);
                     }
-                } else if ((SDL_GetModState() & KMOD_CTRL) && wheel_y != 0 &&
+                } else if ((mod & KMOD_CTRL) && wheel_y != 0 &&
                     x >= 244 && x < 330 && y >= 233 && y < 257) {
                     if ((!ui.warp_gesture.active &&
                          begin_warp_gesture(device, &audio, &ui, &instrument, 1)) ||
@@ -2950,10 +3045,9 @@ int main(int argc, char **argv)
                     adjust_hovered_slider(device, &audio, &ui, &instrument,
                                           ts_ui_slider_from_point(&ui, x, y),
                                           wheel_y,
-                                          (SDL_GetModState() & KMOD_SHIFT) != 0);
+                                          (mod & KMOD_SHIFT) != 0);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                     y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
-                    SDL_Keymod mod = SDL_GetModState();
                     ui.bank_view_slot = -1;
                     if ((mod & KMOD_CTRL) && wheel_y != 0) {
                         int crossings = (mod & KMOD_SHIFT) ? ui.config.rotate_wheel_fine :
@@ -3012,6 +3106,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.palette_open || ui.export_choice_open ||
+                        ui.load_selection_choice_open ||
                         ui.exit_confirm_open)) {
                 /* Modal dialogs own pointer input. */
             } else if (event.type == SDL_MOUSEMOTION && ui.browser.dragging_scrollbar) {
@@ -3095,6 +3190,17 @@ int main(int argc, char **argv)
                         ui.exit_confirm_open = 0;
                         snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
                     }
+                } else if (ui.load_selection_choice_open) {
+                    TsUiLoadSelectionAction action =
+                        ts_ui_load_selection_action_from_point(x, y);
+                    if (action == TS_UI_LOAD_SELECTION_PASTE)
+                        apply_selection_load(device, &audio, &ui, &instrument,
+                                             &pending_selection_load, 0);
+                    else if (action == TS_UI_LOAD_SELECTION_FIT)
+                        apply_selection_load(device, &audio, &ui, &instrument,
+                                             &pending_selection_load, 1);
+                    else if (action == TS_UI_LOAD_SELECTION_CANCEL)
+                        cancel_selection_load(&ui, &pending_selection_load);
                 } else if (ui.palette_open) {
                     int value = -1;
                     int selected = ts_ui_palette_entry_from_point(x, y);
@@ -3165,7 +3271,8 @@ int main(int argc, char **argv)
                         ts_browser_select(&ui.browser, index);
                         ui.browser.filename_focus = 0;
                         if (event.button.clicks >= 2)
-                            browser_activate_selection(device, &audio, &ui, &instrument);
+                            browser_activate_selection(device, &audio, &ui, &instrument,
+                                                       &pending_selection_load);
                     } else if (x >= TS_BROWSER_SCROLL_X &&
                                x < TS_BROWSER_SCROLL_X + TS_BROWSER_SCROLL_W &&
                                y >= TS_BROWSER_LIST_Y &&
@@ -3207,7 +3314,8 @@ int main(int argc, char **argv)
                     } else if (x >= 58 && x < 130 && y >= 326 && y < 349) {
                         ts_browser_parent(&ui.browser);
                     } else if (x >= 135 && x < 255 && y >= 326 && y < 349) {
-                        browser_action(device, &audio, &ui, &instrument);
+                        browser_action(device, &audio, &ui, &instrument,
+                                       &pending_selection_load);
                     } else if (x >= 260 && x < 344 && y >= 326 && y < 349) {
                         browser_cancel(&ui);
                     }
@@ -3676,9 +3784,11 @@ int main(int argc, char **argv)
                             begin_note(device, &audio, &ui, &instrument,
                                        note, obtained.freq, 1);
                         } else {
-                            SDL_LockAudioDevice(device);
-                            ts_note_bank_clear(&audio.notes);
-                            SDL_UnlockAudioDevice(device);
+                            if ((mod & (KMOD_CTRL | KMOD_ALT)) == 0) {
+                                SDL_LockAudioDevice(device);
+                                ts_note_bank_clear(&audio.notes);
+                                SDL_UnlockAudioDevice(device);
+                            }
                             ui.mouse_note = note;
                             begin_note(device, &audio, &ui, &instrument,
                                        note, obtained.freq, 0);
@@ -3688,6 +3798,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONDOWN &&
                        event.button.button == SDL_BUTTON_RIGHT &&
                        !ui.config_open && !ui.palette_open &&
+                       !ui.load_selection_choice_open &&
                        ui.browser.mode == TS_BROWSER_CLOSED) {
                 int x, y;
                 int bank_slot;
@@ -3721,7 +3832,7 @@ int main(int argc, char **argv)
                                  "SHIFT+RMB COPY OVERWRITE  CTRL+RMB MOVE OVERWRITE");
                 } else if (note >= 0 && (mod & KMOD_SHIFT)) {
                     apply_tuning(device, &audio, &ui, &instrument,
-                                 TS_KEYBOARD_BASE_NOTE + note,
+                                 ts_ui_keyboard_base_note(&ui) + note,
                                  instrument.audible_tuning.fine_tune_cents);
                 } else if (ui.show_recipes && recipe_slot >= 0 &&
                            (mod & KMOD_SHIFT)) {
@@ -3817,6 +3928,7 @@ int main(int argc, char **argv)
     }
 
     if (device) SDL_CloseAudioDevice(device);
+    ts_sample_free(&pending_selection_load);
     ts_sample_free(&clipboard);
     ts_instrument_free(&instrument);
     if (texture) SDL_DestroyTexture(texture);

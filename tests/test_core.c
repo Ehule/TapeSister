@@ -2019,6 +2019,23 @@ int main(void)
     CHECK(ts_note_bank_display_voice(&notes)->sample == &restored.parent);
     ts_note_bank_clear_latched(&notes);
     CHECK(ts_note_bank_count(&notes) == 0);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              0, 48, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              0, 60, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_count(&notes) == 2);
+    CHECK(notes.voices[0].active && notes.voices[0].midi_note == 48 &&
+          fabs(notes.voices[0].pitch - 1.0) < 0.0001);
+    CHECK(notes.voices[1].active && notes.voices[1].midi_note == 60 &&
+          fabs(notes.voices[1].pitch - 2.0) < 0.0001);
+    CHECK(ts_note_bank_mask(&notes) == 1u);
+    ts_note_bank_sync(&notes, &restored, 48000);
+    CHECK(notes.voices[0].midi_note == 48 && notes.voices[1].midi_note == 60 &&
+          fabs(notes.voices[0].pitch - 1.0) < 0.0001 &&
+          fabs(notes.voices[1].pitch - 2.0) < 0.0001);
+    ts_note_bank_clear(&notes);
     remove("test-recipe.tsr");
     remove("test-roundtrip.wav");
 
@@ -2250,6 +2267,13 @@ int main(void)
     CHECK(framebuffer_contains(&fb, 0xff147dffu));
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     ts_ui_init(&ui);
+    CHECK(ui.keyboard_octave == 3 && ts_ui_keyboard_base_note(&ui) == 48);
+    CHECK(ts_ui_keyboard_cycle_octave(&ui, 1) == 4 &&
+          ts_ui_keyboard_base_note(&ui) == 60);
+    CHECK(ts_ui_keyboard_set_octave(&ui, 7) == 7 &&
+          ts_ui_keyboard_cycle_octave(&ui, 1) == 0 &&
+          ts_ui_keyboard_base_note(&ui) == 12);
+    CHECK(ts_ui_keyboard_set_octave(&ui, 3) == 3);
     ts_instrument_set_selection(&imported, imported.current.frames / 4, imported.current.frames / 2);
     ts_ui_render(&fb, &ui, &imported);
     CHECK(fb.pixels[0] != 0);
@@ -2439,6 +2463,20 @@ int main(void)
     ts_ui_render(&fb, &ui, &restored);
     CHECK(fb.pixels[180 * TS_UI_WIDTH + 175] == 0xff5d555du);
     ui.export_choice_open = 0;
+    ui.load_selection_choice_open = 1;
+    snprintf(ui.load_selection_name, sizeof(ui.load_selection_name),
+             "selection-source.wav");
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(ts_ui_load_selection_action_from_point(160, 140) ==
+          TS_UI_LOAD_SELECTION_PASTE);
+    CHECK(ts_ui_load_selection_action_from_point(300, 140) ==
+          TS_UI_LOAD_SELECTION_FIT);
+    CHECK(ts_ui_load_selection_action_from_point(420, 140) ==
+          TS_UI_LOAD_SELECTION_CANCEL);
+    CHECK(ts_ui_load_selection_action_from_point(260, 140) ==
+          TS_UI_LOAD_SELECTION_NONE);
+    CHECK(fb.pixels[136 * TS_UI_WIDTH + 149] == 0xff5d555du);
+    ui.load_selection_choice_open = 0;
     ui.exit_confirm_open = 1;
     ui.exit_has_unsaved = 1;
     ts_ui_render(&fb, &ui, &restored);
@@ -2482,6 +2520,15 @@ int main(void)
         CHECK(framebuffer_diff_count(&normal, &fb, 0, 204,
                                      TS_UI_WIDTH, 1) == 0);
         ui.palette_open = 0;
+        ts_ui_render(&normal, &ui, &restored);
+        ui.load_selection_choice_open = 1;
+        snprintf(ui.load_selection_name, sizeof(ui.load_selection_name),
+                 "selection-source.wav");
+        ts_ui_render(&fb, &ui, &restored);
+        CHECK(framebuffer_diff_count(&normal, &fb, 0, 205,
+                                     TS_UI_WIDTH, TS_UI_HEIGHT - 205) == 0);
+        CHECK(framebuffer_diff_count(&normal, &fb, 126, 78, 388, 108) > 1000);
+        ui.load_selection_choice_open = 0;
     }
     ui.show_keyboard = 1;
     {
@@ -2760,6 +2807,8 @@ int main(void)
         TsSample known, reopened_wav;
         TsGeneratorRecipe known_recipe = generator(0x10adedu, TS_GENERATOR_METALLIC);
         uint64_t slot0_hash, slot0_parent_hash, slot2_hash, slot2_parent_hash, wav_hash;
+        uint64_t pasted_hash, fit_hash;
+        size_t before_load_paste_frames, selected_load_frames;
         TsGeneratorRecipe slot0_generator, slot2_generator;
         int slot0_undo, slot2_undo;
         ts_sample_init(&known); ts_sample_init(&reopened_wav);
@@ -2808,6 +2857,35 @@ int main(void)
         CHECK(ts_sample_hash(&load_bank.current) != wav_hash);
         CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
         CHECK(ts_sample_hash(&load_bank.current) == wav_hash);
+
+        /* A WAV chosen for an occupied selection reuses exact Paste/Fit history. */
+        before_load_paste_frames = load_bank.current.frames;
+        selected_load_frames = load_bank.selection_last - load_bank.selection_first;
+        CHECK(selected_load_frames > 0);
+        CHECK(ts_instrument_paste(&load_bank, &reopened_wav,
+                                  load_bank.selection_first, 0,
+                                  error, sizeof(error)));
+        CHECK(load_bank.current.frames == before_load_paste_frames -
+              selected_load_frames + reopened_wav.frames);
+        pasted_hash = ts_sample_hash(&load_bank.current);
+        CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
+        CHECK(load_bank.current.frames == before_load_paste_frames &&
+              ts_sample_hash(&load_bank.current) == wav_hash);
+        CHECK(ts_instrument_redo(&load_bank, error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) == pasted_hash);
+        CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) == wav_hash);
+        CHECK(ts_instrument_paste(&load_bank, &reopened_wav,
+                                  load_bank.selection_first, 1,
+                                  error, sizeof(error)));
+        CHECK(load_bank.current.frames == before_load_paste_frames);
+        fit_hash = ts_sample_hash(&load_bank.current);
+        CHECK(fit_hash != wav_hash);
+        CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) == wav_hash);
+        CHECK(ts_instrument_redo(&load_bank, error, sizeof(error)));
+        CHECK(ts_sample_hash(&load_bank.current) == fit_hash);
+        CHECK(ts_instrument_undo(&load_bank, error, sizeof(error)));
 
         CHECK(ts_instrument_select_bank(&load_bank, 4, error, sizeof(error)));
         CHECK(!load_bank.bank[4].occupied);

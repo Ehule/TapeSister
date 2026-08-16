@@ -485,6 +485,7 @@ void ts_ui_init(TsUiState *ui)
     ui->renaming_recipe_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->show_keyboard = 1;
+    ui->keyboard_octave = 3;
     ui->show_recipes = 0;
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
@@ -599,6 +600,15 @@ TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y)
     return TS_UI_PALETTE_ACTION_NONE;
 }
 
+TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y)
+{
+    if (y < 132 || y >= 155) return TS_UI_LOAD_SELECTION_NONE;
+    if (x >= 146 && x < 242) return TS_UI_LOAD_SELECTION_PASTE;
+    if (x >= 272 && x < 368) return TS_UI_LOAD_SELECTION_FIT;
+    if (x >= 398 && x < 494) return TS_UI_LOAD_SELECTION_CANCEL;
+    return TS_UI_LOAD_SELECTION_NONE;
+}
+
 static int point_in_slider(int x, int y, int left, int top, int width)
 {
     return x >= left && x < left + width && y >= top && y < top + 24;
@@ -652,6 +662,30 @@ static int cycle_index(int value, int amount, int count)
     if (count <= 0) return 0;
     result = (value + amount) % count;
     return result < 0 ? result + count : result;
+}
+
+int ts_ui_keyboard_base_note(const TsUiState *ui)
+{
+    int octave = ui != NULL ? ui->keyboard_octave : 3;
+    if (octave < 0) octave = 0;
+    if (octave > 7) octave = 7;
+    return (octave + 1) * 12;
+}
+
+int ts_ui_keyboard_set_octave(TsUiState *ui, int octave)
+{
+    if (ui == NULL) return 3;
+    if (octave < 0) octave = 0;
+    if (octave > 7) octave = 7;
+    ui->keyboard_octave = octave;
+    return octave;
+}
+
+int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount)
+{
+    if (ui == NULL) return 3;
+    ui->keyboard_octave = cycle_index(ui->keyboard_octave, amount, 8);
+    return ui->keyboard_octave;
 }
 
 int ts_ui_palette_cycle_entry(int entry, int amount)
@@ -1165,7 +1199,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
            !ui->show_keyboard);
 
     if (ui->show_keyboard) {
-        text(fb, 11, 318, "SHIFT+CLICK CHORD  SHIFT+RIGHT CLICK SETS ROOT NOTE", RGB(184, 180, 184), 1);
+        char keyboard_hint[96];
+        snprintf(keyboard_hint, sizeof(keyboard_hint),
+                 "OCT %d  SHIFT+WHEEL / F1-F8  SHIFT+CLICK CHORD  SHIFT+RMB ROOT",
+                 ui->keyboard_octave);
+        text(fb, 11, 318, keyboard_hint, RGB(184, 180, 184), 1);
         const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
         const char *labels[14] = {"C","D","E","F","G","A","B","C","D","E","F","G","A","B"};
         const int white_semitones[14] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
@@ -1252,6 +1290,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 172, 188, 136, "EXIT", 0);
         button(fb, 324, 188, 144, "CANCEL", 1);
         text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
+    } else if (ui->load_selection_choice_open) {
+        char source[58];
+        snprintf(source, sizeof(source), "%.52s", ui->load_selection_name);
+        frame(fb, 126, 78, 388, 108, RGB(36, 33, 37), PAL_MOUSE);
+        text(fb, 146, 91, "LOAD WAV INTO SELECTION?", PAL_NOTE, 1);
+        text(fb, 146, 108, source, PAL_EFFECT, 1);
+        button(fb, 146, 132, 96, "PASTE", 0);
+        button(fb, 272, 132, 96, "FIT", 1);
+        button(fb, 398, 132, 96, "CANCEL", 0);
+        text(fb, 146, 164, "P/ENTER EXACT   F FITS RANGE   ESC CANCEL", RGB(190, 185, 190), 1);
     } else if (ui->palette_open)
         palette_render(fb, ui);
     else if (ui->config_open)

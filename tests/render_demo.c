@@ -58,6 +58,12 @@ int main(int argc, char **argv)
         ui.browser.selected = 7;
         ui.browser.scroll = 0;
         snprintf(ui.browser.message, sizeof(ui.browser.message), "18 ITEMS");
+    } else if (argc > 2 && strcmp(argv[2], "load-selection") == 0) {
+        ui.load_selection_choice_open = 1;
+        snprintf(ui.load_selection_name, sizeof(ui.load_selection_name),
+                 "glass-harmonic-source.wav");
+        snprintf(ui.status, sizeof(ui.status),
+                 "CHOOSE PASTE, FIT, OR CANCEL FOR THE SELECTED RANGE");
     } else if (argc > 2 && strcmp(argv[2], "ab") == 0) {
         ui.audition_source = TS_AUDITION_PARENT;
         ui.playback_active = 1;

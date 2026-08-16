@@ -103,6 +103,13 @@ typedef enum {
     TS_UI_PALETTE_ACTION_CANCEL
 } TsUiPaletteAction;
 
+typedef enum {
+    TS_UI_LOAD_SELECTION_NONE = 0,
+    TS_UI_LOAD_SELECTION_PASTE,
+    TS_UI_LOAD_SELECTION_FIT,
+    TS_UI_LOAD_SELECTION_CANCEL
+} TsUiLoadSelectionAction;
+
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
@@ -118,6 +125,7 @@ typedef struct {
     int startup_welcome_playback_requested;
     int text_cursor_visible;
     int show_keyboard;
+    int keyboard_octave;
     int show_recipes;
     int show_ingredients;
     int workbench_loop_active;
@@ -128,6 +136,7 @@ typedef struct {
     int renaming_bank_slot;
     int renaming_recipe_slot;
     int export_choice_open;
+    int load_selection_choice_open;
     int exit_confirm_open;
     int exit_has_unsaved;
     uint64_t saved_state_hash;
@@ -182,6 +191,7 @@ typedef struct {
     size_t bank_rename_cursor;
     char recipe_rename[TS_RECIPE_NAME_MAX + 1];
     size_t recipe_rename_cursor;
+    char load_selection_name[128];
     char status[160];
 } TsUiState;
 
@@ -195,6 +205,9 @@ const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
+int ts_ui_keyboard_base_note(const TsUiState *ui);
+int ts_ui_keyboard_set_octave(TsUiState *ui, int octave);
+int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount);
 int ts_ui_config_field_from_point(int x, int y);
 size_t ts_ui_config_cursor_from_point(const TsUiState *ui,
                                       TsConfigField field, int x);
@@ -202,6 +215,7 @@ TsUiConfigAction ts_ui_config_action_from_point(int x, int y);
 int ts_ui_palette_entry_from_point(int x, int y);
 int ts_ui_palette_channel_from_point(int x, int y, int *value);
 TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y);
+TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y);
 TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y);
 int ts_ui_palette_cycle_entry(int entry, int amount);
 int ts_ui_palette_cycle_channel(int channel, int amount);

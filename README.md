@@ -8,7 +8,7 @@ Each of the 16 Bank tiles is a complete editable sound object. A tile owns its a
 
 Clicking an occupied tile selects it, immediately restores its own editor state for waveform selection, and auditions it. Clicking an empty tile selects that exact Create/Load destination without playing anything; double-clicking it activates a silent editable canvas. When the audio clipboard has a source timeline, the canvas adopts that full duration and sample rate so Paste-in-place lands at the same time. With no clipboard it defaults to one second at 44.1 kHz. A thick Active Tile-color outline always marks the active editing tile; a separate cyan mark identifies a bank tile being previewed. Clearing the active tile leaves the same empty destination selected. Bank 01 has no special protection or authority.
 
-With no waveform selection, Create and Load replace only the selected tile. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. With a waveform selection, Create and Vary instead stamp a fitted FM sound into exactly that range on the active tile; audio outside the range and the tile duration stay unchanged, and Chain does not move the stamp to another tile.
+With no waveform selection, Create and Load replace only the selected tile. With a selection on an occupied sound or silent canvas, choosing a WAV from Load asks for exact Paste, duration-preserving Fit, or Cancel; Paste and Fit are both Undo/Redo edits. TSR and TSP loading retain their existing behavior. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. With a waveform selection, Create and Vary instead stamp a fitted FM sound into exactly that range on the active tile; audio outside the range and the tile duration stay unchanged, and Chain does not move the stamp to another tile.
 
 Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
@@ -39,7 +39,7 @@ The Loop page turns the current selection into one loop, clears it, plays it con
 
 The compact workbench **LOOP** button follows the current selection, or the visible view when there is no selection. Shift-clicking it enables **LOOP LOCK**, which stays active while occupied tiles are selected and immediately follows each tile's restored selection/view. Click LOOP again, press Space, or select an empty tile to stop and release the lock.
 
-The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary click clears the chord and returns to momentary audition. Sustained voices follow the selected tile.
+The lower panel switches between **KEYS** and **BANK**. KEYS provides the five-voice chord/drone keyboard: Shift-click toggles latched notes, while an ordinary unmodified click or computer-key note clears the chord and returns to momentary audition. Hover KEYS and use Shift+wheel to cycle its starting octave, or choose octaves 0–7 directly with F1–F8. Octave navigation never stops the latched chord, so another Shift-click can add a note from the new octave. Sustained voices follow the selected tile.
 
 TapeSister starts in FT2-style borderless desktop fullscreen. **Alt+Enter** toggles between fullscreen and a normal resizable window without changing the active tile, selection, clipboard, or playback state. Escape first cancels an active dialog, preview, or editing gesture; otherwise it stops playback and opens the exit confirmation. Closing the window uses the same confirmation, with an explicit warning whenever the instrument or collection differs from the last opened or saved TSR project.
 
@@ -147,7 +147,7 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - cross-tile Copy, ripple Cut, exact Paste, and duration-preserving Fit Paste;
 - selection-scoped Create and Vary FM stamping;
 - Undo and Redo for processing, crop, and sample-edit operations;
-- two-octave computer and onscreen keyboard audition;
+- two-octave computer and onscreen keyboard audition with Shift+wheel/F1–F8 octave selection;
 - mono PCM/float WAV loading, including multichannel fold-down;
 - self-contained project saving with all bank slots, tuning, editor state, selection, loop metadata, edit timelines, and DSP parameters; and
 - mono 16-bit selected-tile export with sampler-compatible root/fine-tune and loop metadata.
