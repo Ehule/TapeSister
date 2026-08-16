@@ -49,19 +49,6 @@ int main(void)
              ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_ALT) ==
              TS_UI_BANK_ACTION_INVALID);
 
-    CONTRACT("ab_shortcut_is_reachable",
-             ts_ui_editor_shortcut(TS_UI_BANK_MOD_CTRL, 'b') ==
-             TS_UI_EDITOR_COMMAND_TOGGLE_AB);
-    CONTRACT("commit_shortcut_is_reachable",
-             ts_ui_editor_shortcut(TS_UI_BANK_MOD_CTRL, 'p') ==
-             TS_UI_EDITOR_COMMAND_COMMIT);
-    CONTRACT("reset_shortcut_is_reachable",
-             ts_ui_editor_shortcut(TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_SHIFT, 'r') ==
-             TS_UI_EDITOR_COMMAND_RESET);
-    CONTRACT("reset_does_not_steal_reverse_shortcut",
-             ts_ui_editor_shortcut(TS_UI_BANK_MOD_CTRL, 'r') ==
-             TS_UI_EDITOR_COMMAND_NONE);
-
     ts_instrument_init(&instrument);
     CONTRACT("bank_clear_all_accepts_empty_instrument",
              ts_instrument_bank_clear_all(&instrument, error, sizeof(error)));
@@ -181,35 +168,6 @@ int main(void)
                                         0, (TsLoopMode)mode, &direction);
         CONTRACT("forward_reverse_pingpong_loop_read_is_finite", isfinite(value));
     }
-
-    {
-        uint64_t before_reset = ts_sample_hash(&instrument.current);
-        int undo_before = instrument.undo_count;
-        CONTRACT("reset_is_scoped_to_active_tile",
-                 ts_instrument_reset_current(&instrument, error, sizeof(error)) &&
-                 instrument.undo_count == undo_before + 1 &&
-                 ts_sample_hash(&instrument.current) == ts_sample_hash(&instrument.parent) &&
-                 ts_sample_hash(&instrument.bank[0].sample) == tile_hash[0] &&
-                 ts_sample_hash(&instrument.bank[1].sample) == tile_hash[1]);
-        CONTRACT("reset_undo_restores_active_tile",
-                 ts_instrument_undo(&instrument, error, sizeof(error)) &&
-                 ts_sample_hash(&instrument.current) == before_reset);
-        CONTRACT("reset_redo_reapplies_active_tile_reset",
-                 ts_instrument_redo(&instrument, error, sizeof(error)) &&
-                 ts_sample_hash(&instrument.current) == ts_sample_hash(&instrument.parent));
-    }
-
-    CONTRACT("ab_current_plan_targets_current",
-             ts_audition_plan(&instrument, TS_AUDITION_CURRENT,
-                              TS_AUDITION_ALL, &plan) && plan.sample == &instrument.current);
-    CONTRACT("ab_parent_plan_targets_parent",
-             ts_audition_plan(&instrument, TS_AUDITION_PARENT,
-                              TS_AUDITION_ALL, &plan) && plan.sample == &instrument.parent);
-    CONTRACT("commit_current_remains_reachable_and_flattens",
-             ts_instrument_commit_current(&instrument, error, sizeof(error)) &&
-             instrument.source_kind == TS_SOURCE_COMMITTED &&
-             ts_sample_hash(&instrument.current) == ts_sample_hash(&instrument.parent) &&
-             instrument.undo_count == 0 && instrument.redo_count == 0);
 
     CONTRACT("active_bank_clear_leaves_selected_empty_destination",
              execute(&instrument, instrument.selected_slot, TS_UI_BANK_ACTION_CLEAR,

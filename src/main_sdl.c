@@ -516,59 +516,6 @@ static void release_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
     snprintf(ui->status, sizeof(ui->status), "NOTE RELEASED");
 }
 
-static void switch_audition_source(SDL_AudioDeviceID device, AudioState *audio,
-                                   TsUiState *ui, const TsInstrument *instrument,
-                                   TsAuditionSource source, int output_rate)
-{
-    TsAuditionPlan plan;
-    int was_bank_view = ui->bank_view_slot >= 0;
-    ui->bank_view_slot = -1;
-    if (source == ui->audition_source) {
-        if (was_bank_view && audio->bank_slot >= 0) {
-            if (device) SDL_LockAudioDevice(device);
-            audio->playing = 0;
-            audio->bank_slot = -1;
-            audio->sample = source == TS_AUDITION_PARENT ?
-                            &instrument->parent : &instrument->current;
-            if (device) SDL_UnlockAudioDevice(device);
-        }
-        if (was_bank_view)
-            snprintf(ui->status, sizeof(ui->status), "AUDITIONING %s",
-                     ts_audition_source_name(source));
-        return;
-    }
-    if (!audition_plan_ui(instrument, ui, source,
-                          audio->playing && audio->bank_slot < 0 ?
-                          audio->range : TS_AUDITION_ALL, &plan)) {
-        snprintf(ui->status, sizeof(ui->status), "NOTHING TO AUDITION");
-        return;
-    }
-    if (device) SDL_LockAudioDevice(device);
-    if (audio->playing && audio->bank_slot >= 0) {
-        audio->playing = 0;
-        audio->bank_slot = -1;
-    } else if (audio->playing) {
-        audio->position = ts_audition_map_progress(
-            audio->position, audio->range_start, audio->range_end, plan.first, plan.last);
-        audio->range_start = plan.first;
-        audio->range_end = plan.last;
-        audio->crossfade_frames = audio->looping ?
-                                  ts_audition_crossfade_frames(&plan,
-                                      instrument->loop_crossfade_ms) : 0;
-        if (output_rate > 0)
-            audio->step = ((double)plan.sample->sample_rate / output_rate) * audio->pitch;
-    }
-    audio->sample = plan.sample;
-    audio->source = source;
-    ts_note_bank_set_source_tuned(&audio->notes, instrument,
-                                  ts_ui_audition_tuning(ui, instrument),
-                                  source, output_rate);
-    if (device) SDL_UnlockAudioDevice(device);
-    ui->audition_source = source;
-    snprintf(ui->status, sizeof(ui->status), "AUDITIONING %s%s",
-             ts_audition_source_name(source), audio->playing ? " - PLAYING" : "");
-}
-
 static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
     if (device) SDL_LockAudioDevice(device);
@@ -765,12 +712,12 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     unlock_edit(device, audio, ui, instrument);
     if (ok) ui->recipes.active_slot = -1;
     if (ok && strcmp(label, "BODY") == 0)
-        snprintf(ui->status, sizeof(ui->status), "BODY %.2F - SOURCE PRESERVED", process.body);
+        snprintf(ui->status, sizeof(ui->status), "BODY %.2F - SELECTED TILE UPDATED", process.body);
     else if (ok && strcmp(label, "EDGE") == 0)
-        snprintf(ui->status, sizeof(ui->status), "EDGE %.2F - SOURCE PRESERVED", process.edge);
+        snprintf(ui->status, sizeof(ui->status), "EDGE %.2F - SELECTED TILE UPDATED", process.edge);
     else if (ok && strcmp(label, "DRIFT") == 0)
-        snprintf(ui->status, sizeof(ui->status), "DRIFT %.2F - SOURCE PRESERVED", process.drift);
-    else if (ok) snprintf(ui->status, sizeof(ui->status), "%s UPDATED - SOURCE PRESERVED", label);
+        snprintf(ui->status, sizeof(ui->status), "DRIFT %.2F - SELECTED TILE UPDATED", process.drift);
+    else if (ok) snprintf(ui->status, sizeof(ui->status), "%s UPDATED ON SELECTED TILE", label);
     else snprintf(ui->status, sizeof(ui->status), "PROCESS FAILED: %.130s", error);
 }
 
@@ -889,33 +836,6 @@ static void capture_recipe_slot(TsUiState *ui, const TsInstrument *instrument, i
     else snprintf(ui->status, sizeof(ui->status), "RECIPE CAPTURE FAILED: %.126s", error);
 }
 
-static void reset_current(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                          TsInstrument *instrument)
-{
-    char error[160];
-    int ok;
-    lock_edit(device, audio);
-    ok = ts_instrument_reset_current(instrument, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "CURRENT RESET EXACTLY TO SOURCE");
-    else snprintf(ui->status, sizeof(ui->status), "RESET FAILED: %.137s", error);
-}
-
-static void commit_current(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                           TsInstrument *instrument)
-{
-    char error[160];
-    int ok;
-    lock_edit(device, audio);
-    ok = ts_instrument_commit_current(instrument, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
-    ui->commit_armed = 0;
-    if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "COMMITTED CURRENT AS GENERATION %u SOURCE",
-                     instrument->generation);
-    else snprintf(ui->status, sizeof(ui->status), "COMMIT FAILED: %.136s", error);
-}
-
 static void crop_selection(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            TsInstrument *instrument)
 {
@@ -924,7 +844,7 @@ static void crop_selection(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     lock_edit(device, audio);
     ok = ts_instrument_crop_selection(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "CROPPED CURRENT - SOURCE PRESERVED");
+    if (ok) snprintf(ui->status, sizeof(ui->status), "CROPPED SELECTED TILE");
     else snprintf(ui->status, sizeof(ui->status), "CROP FAILED: %.135s", error);
 }
 
@@ -937,7 +857,7 @@ static void apply_sample_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiS
     lock_edit(device, audio);
     ok = ts_instrument_apply_sample_edit(instrument, kind, amount, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok) snprintf(ui->status, sizeof(ui->status), "%s %s - SOURCE PRESERVED",
+    if (ok) snprintf(ui->status, sizeof(ui->status), "%s %s - SELECTED TILE UPDATED",
                      ts_sample_edit_name(kind), selected ? "SELECTION" : "ALL");
     else snprintf(ui->status, sizeof(ui->status), "EDIT FAILED: %.137s", error);
 }
@@ -1196,7 +1116,7 @@ static void set_loop(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
     unlock_edit(device, audio, ui, instrument);
     if (ok && selected_automatically)
         snprintf(ui->status, sizeof(ui->status),
-                 "WHOLE CURRENT SELECTED AND LOOPED - %zu FRAMES",
+                 "WHOLE TILE SELECTED AND LOOPED - %zu FRAMES",
                  instrument->loop_last - instrument->loop_first);
     else if (ok) snprintf(ui->status, sizeof(ui->status),
                           "LOOP SET %zu FRAMES - ZERO SNAPPED",
@@ -1494,36 +1414,6 @@ static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
                  "CLEAR ALL FAILED: %.137s", error);
 }
 
-static void set_auditioned_bank_current(SDL_AudioDeviceID device, AudioState *audio,
-                                        TsUiState *ui, TsInstrument *instrument)
-{
-    char error[160];
-    int slot = ui->bank_view_slot;
-    int ok;
-    if (slot < 0 || slot >= TS_BANK_SLOT_COUNT || !instrument->bank[slot].occupied) {
-        snprintf(ui->status, sizeof(ui->status), "AUDITION A FILLED BANK SLOT FIRST");
-        return;
-    }
-    lock_edit(device, audio);
-    audio->playing = 0;
-    audio->bank_slot = -1;
-    ts_note_bank_clear(&audio->notes);
-    ui->audition_source = TS_AUDITION_CURRENT;
-    ok = ts_instrument_set_bank_as_current(instrument, slot, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
-    ui->active_notes = 0;
-    ui->mouse_note = -1;
-    ui->commit_armed = 0;
-    if (ok) {
-        ts_ui_reset_parent_view(ui, instrument->parent.frames);
-        snprintf(ui->status, sizeof(ui->status),
-                 "BANK %02d SET AS CURRENT - CLEAN EDIT BASE G%u",
-                 slot + 1, instrument->generation);
-    } else {
-        snprintf(ui->status, sizeof(ui->status), "SET CURRENT FAILED: %.133s", error);
-    }
-}
-
 static void begin_bank_rename(TsUiState *ui, const TsInstrument *instrument, int slot)
 {
     if (slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
@@ -1599,7 +1489,6 @@ static void select_config_field(TsUiState *ui, TsConfigField field)
 
 static void begin_config(TsUiState *ui)
 {
-    ui->commit_armed = 0;
     ui->config_before_edit = ui->config;
     ui->config_open = 1;
     select_config_field(ui, TS_CONFIG_SAMPLE_PATH);
@@ -1722,10 +1611,9 @@ static void finish_recipe_rename(TsUiState *ui)
 
 static void begin_export_choice(TsUiState *ui)
 {
-    ui->commit_armed = 0;
     ui->export_choice_open = 1;
     SDL_StopTextInput();
-    snprintf(ui->status, sizeof(ui->status), "EXPORT CURRENT WAV OR COMPLETE COLLECTION");
+    snprintf(ui->status, sizeof(ui->status), "EXPORT SELECTED TILE OR COMPLETE COLLECTION");
 }
 
 static unsigned bank_modifiers(SDL_Keymod mod)
@@ -1742,7 +1630,6 @@ static void browser_open(TsUiState *ui, TsBrowserMode mode)
     const char *filename = mode == TS_BROWSER_SAVE_RECIPE ? "tapesister-recipe.tsr" :
                            mode == TS_BROWSER_SAVE_PRESET ? "my-process.tsp" :
                            mode == TS_BROWSER_EXPORT_WAV ? "tapesister-export.wav" : "";
-    ui->commit_armed = 0;
     SDL_StopTextInput();
     if (ts_browser_open(&ui->browser, mode, filename)) {
         if (mode != TS_BROWSER_LOAD_WAV) SDL_StartTextInput();
@@ -1758,7 +1645,6 @@ static void browser_open_bank(TsUiState *ui, const TsInstrument *instrument)
     char folder[TS_BROWSER_NAME_MAX + 1];
     if (!ts_instrument_family_folder_name(instrument, folder, sizeof(folder)))
         snprintf(folder, sizeof(folder), "TapeSister_set");
-    ui->commit_armed = 0;
     SDL_StopTextInput();
     if (ts_browser_open(&ui->browser, TS_BROWSER_EXPORT_BANK, folder)) {
         SDL_StartTextInput();
@@ -1944,7 +1830,7 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                                    instrument->loop_first, instrument->loop_last,
                                    instrument->loop_mode,
                                    path, error, sizeof(error));
-            snprintf(ui->status, sizeof(ui->status), ok ? "EXPORTED CURRENT %.101s" :
+            snprintf(ui->status, sizeof(ui->status), ok ? "EXPORTED SELECTED TILE %.101s" :
                      "EXPORT FAILED: %.133s", ok ? path : error);
         } else {
             ok = ts_instrument_export_bank(instrument, path, error, sizeof(error));
@@ -2264,9 +2150,6 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
-                TsUiEditorCommand editor_command =
-                    ts_ui_editor_shortcut(bank_modifiers(mod), (int)key);
-                if (editor_command != TS_UI_EDITOR_COMMAND_COMMIT) ui.commit_armed = 0;
                 ui.bank_clear_armed = 0;
                 if (ui.tear_gesture.active && key == SDLK_ESCAPE) {
                     end_tear_gesture(device, &audio, &ui, &instrument, 1);
@@ -2403,21 +2286,11 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_o) {
                     ui.load_bank_slot = instrument.selected_slot;
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
-                } else if (editor_command == TS_UI_EDITOR_COMMAND_COMMIT) {
-                    if (ui.commit_armed) commit_current(device, &audio, &ui, &instrument);
-                    else {
-                        ui.commit_armed = 1;
-                        snprintf(ui.status, sizeof(ui.status), "CTRL+P AGAIN TO COMMIT CURRENT AS SOURCE");
-                    }
                 } else if ((mod & KMOD_CTRL) && key == SDLK_s) {
                     browser_open(&ui, ui.show_recipes ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_e) {
                     begin_export_choice(&ui);
-                } else if (editor_command == TS_UI_EDITOR_COMMAND_TOGGLE_AB) {
-                    switch_audition_source(device, &audio, &ui, &instrument,
-                        ui.audition_source == TS_AUDITION_CURRENT ?
-                        TS_AUDITION_PARENT : TS_AUDITION_CURRENT, obtained.freq);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_z) {
                     history_move(device, &audio, &ui, &instrument, 0);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_y) {
@@ -2426,9 +2299,7 @@ int main(int argc, char **argv)
                     cancel_pitch_preview(device, &audio, &ui, &instrument);
                     ui.bank_view_slot = -1;
                     ts_instrument_set_selection(&instrument, 0, instrument.current.frames);
-                    snprintf(ui.status, sizeof(ui.status), "SELECTED ALL CURRENT");
-                } else if (editor_command == TS_UI_EDITOR_COMMAND_RESET) {
-                    reset_current(device, &audio, &ui, &instrument);
+                    snprintf(ui.status, sizeof(ui.status), "SELECTED WHOLE TILE");
                 } else if ((mod & KMOD_CTRL) && key == SDLK_r) {
                     apply_sample_edit(device, &audio, &ui, &instrument,
                                       TS_SAMPLE_EDIT_REVERSE, 1.0f);
@@ -2487,7 +2358,7 @@ int main(int argc, char **argv)
                                         (instrument.view_first + instrument.view_last) / 2u;
                         snprintf(ui.status, sizeof(ui.status),
                                  ts_instrument_zoom_view(&instrument, anchor, 0.5f, 2.0f) ?
-                                 "ZOOMED OUT" : "SHOWING ALL CURRENT");
+                                 "ZOOMED OUT" : "SHOWING ALL TILE");
                     }
                 } else if (key == SDLK_0) {
                     ui.bank_view_slot = -1;
@@ -2496,7 +2367,7 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status), "SHOWING ALL SOURCE");
                     } else {
                         ts_instrument_show_all(&instrument);
-                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL CURRENT");
+                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL TILE");
                     }
                 } else if ((key == SDLK_LEFT || key == SDLK_RIGHT) &&
                            ui.fx_page == TS_FX_FAMILY) {
@@ -2520,7 +2391,6 @@ int main(int argc, char **argv)
                               ts_instrument_pan_view(&instrument, amount)) ?
                              "PANNED WAVEFORM VIEW" : "PAN LIMIT");
                 } else if (key == SDLK_ESCAPE) {
-                    ui.commit_armed = 0;
                     ui.bank_clear_armed = 0;
                     if (ui.has_pitch_suggestion) {
                         cancel_pitch_preview(device, &audio, &ui, &instrument);
@@ -2542,7 +2412,6 @@ int main(int argc, char **argv)
                         begin_exit_confirmation(device, &audio, &ui, &instrument);
                     }
                 } else if (key == SDLK_SPACE) {
-                    ui.commit_armed = 0;
                     ui.bank_clear_armed = 0;
                     stop_all(device, &audio, &ui);
                 } else {
@@ -2747,7 +2616,6 @@ int main(int argc, char **argv)
                 int x, y;
                 SDL_Keymod mod = SDL_GetModState();
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
-                if (!(y >= 205 && y < 228 && x >= 247 && x < 325)) ui.commit_armed = 0;
                 if (!(y >= 289 && y < 312 && x >= 245 && x < 376 &&
                       !ui.show_keyboard && !ui.show_recipes))
                     ui.bank_clear_armed = 0;
@@ -2923,20 +2791,17 @@ int main(int argc, char **argv)
                                 &instrument, ui.selection_anchor, ui.selection_anchor);
                             ui.selecting = 1;
                             snprintf(ui.status, sizeof(ui.status),
-                                     "SELECTING CURRENT - ZERO SNAP");
+                                     "SELECTING TILE - ZERO SNAP");
                         }
                     }
                 } else if (y >= 205 && y < 228 && x >= 10 && x < 80) {
-                    ui.commit_armed = 0;
                     ui.load_bank_slot = instrument.selected_slot;
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
                 } else if (y >= 205 && y < 228 && x >= 85 && x < 167) {
-                    ui.commit_armed = 0;
                     generate_family_candidate(device, &audio, &ui, &instrument,
                                               0, (mod & KMOD_SHIFT) != 0,
                                               (mod & KMOD_CTRL) != 0);
                 } else if (y >= 205 && y < 228 && x >= 172 && x < 242) {
-                    ui.commit_armed = 0;
                     generate_family_candidate(device, &audio, &ui, &instrument,
                                               1, (mod & KMOD_SHIFT) != 0, 0);
                 } else if (y >= 205 && y < 228 && x >= 247 && x < 325) {
@@ -2958,7 +2823,6 @@ int main(int argc, char **argv)
                     int start;
                     int width;
                     float *control;
-                    ui.commit_armed = 0;
                     if (x >= 244) {
                         float amount = (float)(x - 244) / 86.0f;
                         if (amount > 1.0f) amount = 1.0f;
@@ -2978,35 +2842,34 @@ int main(int argc, char **argv)
                     if (*control > 1.0f) *control = 1.0f;
                     apply_process(device, &audio, &ui, &instrument, process, label);
                 } else if (y >= 233 && y < 256 && x >= 335 && x < 369) {
-                    ui.commit_armed = 0; ui.fx_page = TS_FX_EDIT;
+                    ui.fx_page = TS_FX_EDIT;
                     snprintf(ui.status, sizeof(ui.status), "SAMPLE EDITING PAGE");
                 } else if (y >= 233 && y < 256 && x >= 372 && x < 406) {
-                    ui.commit_armed = 0; ui.fx_page = TS_FX_TUNE;
+                    ui.fx_page = TS_FX_TUNE;
                     snprintf(ui.status, sizeof(ui.status), "ROOT NOTE AND FINE TUNING");
                 } else if (y >= 233 && y < 256 && x >= 409 && x < 445) {
-                    ui.commit_armed = 0; ui.fx_page = TS_FX_NOISE;
+                    ui.fx_page = TS_FX_NOISE;
                     snprintf(ui.status, sizeof(ui.status), "NOISE PROCESSING PAGE");
                 } else if (y >= 233 && y < 256 && x >= 448 && x < 486) {
-                    ui.commit_armed = 0; ui.fx_page = TS_FX_SHAPE;
+                    ui.fx_page = TS_FX_SHAPE;
                     snprintf(ui.status, sizeof(ui.status), "FILTER AND SHAPER PAGE");
                 } else if (y >= 233 && y < 256 && x >= 489 && x < 523) {
-                    ui.commit_armed = 0; ui.fx_page = TS_FX_FAMILY;
+                    ui.fx_page = TS_FX_FAMILY;
                     snprintf(ui.status, sizeof(ui.status),
                              "VARIATION RANGE AMOUNT LOCKS AND CHAIN");
                 } else if (y >= 233 && y < 256 && x >= 526 && x < 562) {
-                    ui.commit_armed = 0; ui.fx_page = TS_FX_DELAY;
+                    ui.fx_page = TS_FX_DELAY;
                     snprintf(ui.status, sizeof(ui.status), "DELAY PROCESSING PAGE");
                 } else if (y >= 233 && y < 256 && x >= 565 && x < 594) {
-                    ui.commit_armed = 0; ui.fx_page = TS_FX_SPACE;
+                    ui.fx_page = TS_FX_SPACE;
                     snprintf(ui.status, sizeof(ui.status), "SPACE PROCESSING PAGE");
                 } else if (y >= 233 && y < 256 && x >= 597 && x < 630) {
-                    ui.commit_armed = 0; ui.fx_page = TS_FX_LOOP;
+                    ui.fx_page = TS_FX_LOOP;
                     snprintf(ui.status, sizeof(ui.status), "LOOP EDITING PAGE");
                 } else if (y >= 261 && y < 285) {
                     TsProcessRecipe process = instrument.process;
                     int changed = 0;
                     const char *label = "DSP";
-                    ui.commit_armed = 0;
                     if (ui.fx_page == TS_FX_EDIT) {
                         if (x >= 10 && x < 104)
                             apply_sample_edit(device, &audio, &ui, &instrument,
@@ -3183,7 +3046,7 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status), "SHOWING ALL SOURCE");
                     } else {
                         ts_instrument_show_all(&instrument);
-                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL CURRENT");
+                        snprintf(ui.status, sizeof(ui.status), "SHOWING ALL TILE");
                     }
                 } else if (y >= 289 && y < 312 && x >= 588 && x < 630) {
                     ts_ui_cycle_panel(&ui);
@@ -3286,7 +3149,7 @@ int main(int argc, char **argv)
                              "FINISH RECIPE NAME WITH ENTER OR CANCEL WITH ESC");
                 } else if (ui.export_choice_open) {
                     snprintf(ui.status, sizeof(ui.status),
-                             "CHOOSE CURRENT OR COLLECTION  ESC CANCELS");
+                             "CHOOSE SELECTED TILE OR COLLECTION  ESC CANCELS");
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     if (!begin_tape_drag(&ui, &instrument, SDL_BUTTON_RIGHT,

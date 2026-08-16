@@ -1,19 +1,19 @@
-# Six-operator FM Source plan
+# Six-operator FM tile plan
 
 ## Existing sound engine retained
 
-TapeSister's four established source kinds remain unchanged:
+TapeSister retains its four legacy generator kinds for compatible project loading:
 
 - Tonal combines seeded pitch drops, harmonic/inharmonic partials, decaying modulation, and a small noise body.
 - Metallic uses inharmonic ratios, fast sweeps, auxiliary partials, decaying FM, and short noise attacks.
 - Noise combines colored noise motion, sparse impulses, and a pitched resonant body.
 - Pulse supplies hard-edged duty-cycle, saw, and impulse-like transients.
 
-These are useful TapeSister materials, not placeholders for FM. Existing direct renders keep their established deterministic path.
+These remain useful internal render paths. Normal Create now produces an FM tile.
 
 ## First architectural proof
 
-FM is an additive fifth source kind. Its hidden six-operator patch is deterministically derived from the generator recipe seed, so the existing TSR11 seed and kind fields retain the complete state needed to reproduce it.
+An FM tile's hidden six-operator patch is deterministically derived from its generator recipe seed and stored FM state.
 
 The proof includes six curated structures:
 
@@ -24,17 +24,17 @@ The proof includes six curated structures:
 - Strike: a feedback-driven stack feeding three percussion carriers.
 - Cluster: three cross-colored carrier branches.
 
-It also includes six curated ratio families: Harmonic, Fifths, Subharmonic, Clustered, Metallic, and Mixed. Seeded Depth, Shape, feedback, and transient mix complete the hidden patch. The transient layer reuses the established noise-attack behavior around an FM body instead of making TapeSister a pure FM synthesizer.
+It also includes six curated ratio sets: Harmonic, Fifths, Subharmonic, Clustered, Metallic, and Mixed. Seeded Depth, Shape, feedback, and transient mix complete the hidden patch. The transient layer reuses the established noise-attack behavior around an FM body instead of making TapeSister a pure FM synthesizer.
 
-FM currently participates in Radical source cycling. With Variation set to Radical and Chain enabled, repeated Create actions walk through the existing source kinds and FM; Vary creates a new deterministic FM patch when FM is the active Radical source. Close and Wide continue to operate safely in the proven rendered-sample variation path.
+Create renders FM into the selected tile. Vary changes the selected FM recipe according to Range. With Chain off it replaces that tile; with Chain on it writes to the next empty tile and selects the result so the next Vary continues the chain.
 
 ## Staged follow-ups
 
-1. Expose Structure, Ratio, Depth, and Shape as four compact source macros without adding an operator table to the primary interface.
-2. Store explicitly adjusted macro values while preserving seed-derived defaults and TSR11 compatibility loading.
-3. Make Close, Wide, and Radical vary hidden FM state intelligently rather than relying only on rendered-sample variation.
+1. Expose Structure, Ratio, Depth, and Shape as four compact macros without adding an operator table to the primary interface.
+2. Store explicitly adjusted macro values while preserving seed-derived defaults and older-project compatibility loading.
+3. Refine Range so it varies hidden FM state musically across its full travel.
 4. Curate additional structures and ratio sets by listening tests, with special attention to bells, metal, percussion, bass, and unstable textures.
 5. Add an optional advanced view for operator envelopes, routing, ratios, feedback, and macro mapping.
-6. Begin separate CDP8 Transform slices only after Source and Variation are musically stable.
+6. Begin separate CDP8 Recipe slices only after FM Create/Vary and native Ingredients are musically stable.
 
-Every stage must retain deterministic rendering, Parent/Source ownership, collection behavior, waveform editing, tuning, loops, recipes, and FT2 handoff.
+Every stage must retain deterministic rendering, independent tile ownership, waveform editing, tuning, loops, recipes, and FT2 handoff.

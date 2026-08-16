@@ -48,13 +48,6 @@ typedef enum {
     TS_UI_BANK_ACTION_INVALID
 } TsUiBankAction;
 
-typedef enum {
-    TS_UI_EDITOR_COMMAND_NONE = 0,
-    TS_UI_EDITOR_COMMAND_TOGGLE_AB,
-    TS_UI_EDITOR_COMMAND_COMMIT,
-    TS_UI_EDITOR_COMMAND_RESET
-} TsUiEditorCommand;
-
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
@@ -63,7 +56,6 @@ typedef struct {
     uint32_t active_notes;
     int mouse_note;
     int selecting;
-    int commit_armed;
     int bank_clear_armed;
     int playback_active;
     int startup_welcome_installed;
@@ -145,7 +137,6 @@ int ts_ui_key_from_point(int x, int y);
 int ts_ui_bank_slot_from_point(int x, int y);
 int ts_ui_recipe_slot_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
-TsUiEditorCommand ts_ui_editor_shortcut(unsigned modifiers, int key);
 int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
                               TsUiBankAction action,
                               char *error, size_t error_size);

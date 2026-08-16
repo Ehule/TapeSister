@@ -309,7 +309,7 @@ void ts_ui_init(TsUiState *ui)
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
     ts_recipe_bank_init(&ui->recipes);
-    snprintf(ui->status, sizeof(ui->status), "READY - DROP A WAV OR CREATE A SOURCE");
+    snprintf(ui->status, sizeof(ui->status), "READY - SELECT A TILE, LOAD, OR CREATE");
 }
 
 void ts_ui_cycle_panel(TsUiState *ui)
@@ -469,34 +469,30 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 573, 4, 57, "EXPORT", 0);
 
     frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
-    if (instrument->parent.frames) {
-        char parent[96], info[112];
-        snprintf(parent, sizeof(parent), "SOURCE G%u %.28s",
-                 instrument->generation, instrument->parent.name);
+    if (sample->frames) {
+        char tile[96], info[112];
+        int tile_number = showing_bank ? ui->bank_view_slot + 1 :
+                          instrument->selected_slot + 1;
+        snprintf(tile, sizeof(tile), "TILE %02d %.36s", tile_number, sample->name);
         if (showing_bank && shown_slot->occupied) {
-            if (shown_slot->parent_slot >= 0)
-                snprintf(info, sizeof(info), "BANK %02d %s OF %02d  %.2F SEC",
-                         ui->bank_view_slot + 1,
-                         ts_family_relation_name(shown_slot->relation),
-                         shown_slot->parent_slot + 1,
-                         (double)sample->frames / sample->sample_rate);
-            else
-                snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
-                         ui->bank_view_slot + 1,
-                         ts_family_relation_name(shown_slot->relation),
-                         (double)sample->frames / sample->sample_rate);
+            snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
+                     ui->bank_view_slot + 1,
+                     ts_bank_capture_name(shown_slot->capture_kind),
+                     (double)sample->frames / sample->sample_rate);
         }
         else if (showing_bank)
             snprintf(info, sizeof(info), "BANK %02d EMPTY - SILENCE",
                      ui->bank_view_slot + 1);
         else
-            snprintf(info, sizeof(info), "AUDITION %s %u HZ %.2F SEC",
-                     showing_parent ? "SOURCE" : "CURRENT", sample->sample_rate,
+            snprintf(info, sizeof(info), "EDITING TILE %02d  %u HZ %.2F SEC",
+                     instrument->selected_slot + 1, sample->sample_rate,
                      (double)sample->frames / sample->sample_rate);
-        text(fb, 20, 49, parent, PAL_INSTRUMENT, 1);
+        text(fb, 20, 49, tile, PAL_INSTRUMENT, 1);
         text(fb, 390, 49, info, PAL_EFFECT, 1);
     } else {
-        text(fb, 20, 49, "NO SOURCE", PAL_INSTRUMENT, 1);
+        char empty[40];
+        snprintf(empty, sizeof(empty), "TILE %02d EMPTY", instrument->selected_slot + 1);
+        text(fb, 20, 49, empty, PAL_INSTRUMENT, 1);
     }
 
     wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
@@ -815,7 +811,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else if (ui->show_ingredients) {
         text(fb, 11, 318, "INGR  INGREDIENT SHELVES COMING SOON",
              RGB(184, 180, 184), 1);
-        text(fb, 11, 348, "CURRENT REMAINS ON THE WORKBENCH",
+        text(fb, 11, 348, "SELECTED TILE REMAINS ON THE WORKBENCH",
              PAL_INSTRUMENT, 1);
     } else {
         text(fb, 11, 318,
@@ -890,9 +886,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     } else if (ui->export_choice_open) {
         frame(fb, 154, 135, 332, 112, RGB(36, 33, 37), PAL_MOUSE);
         text(fb, 172, 150, "EXPORT WHAT?", PAL_NOTE, 1);
-        button(fb, 172, 176, 136, "CURRENT WAV", 0);
+        button(fb, 172, 176, 136, "SELECTED WAV", 0);
         button(fb, 324, 176, 144, "COLLECTION", 0);
-        text(fb, 172, 218, "C CURRENT   F FULL COLLECTION   ESC CANCEL", RGB(190, 185, 190), 1);
+        text(fb, 172, 218, "C SELECTED  F FULL COLLECTION   ESC CANCEL", RGB(190, 185, 190), 1);
     }
 }
 
@@ -961,22 +957,6 @@ TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)
     if (relevant == (TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_SHIFT))
         return TS_UI_BANK_ACTION_CLONE;
     return TS_UI_BANK_ACTION_INVALID;
-}
-
-TsUiEditorCommand ts_ui_editor_shortcut(unsigned modifiers, int key)
-{
-    unsigned relevant = modifiers & (TS_UI_BANK_MOD_SHIFT |
-                                     TS_UI_BANK_MOD_CTRL |
-                                     TS_UI_BANK_MOD_ALT);
-    if ((relevant & TS_UI_BANK_MOD_CTRL) != 0u &&
-        (relevant & TS_UI_BANK_MOD_ALT) == 0u && key == 'b')
-        return TS_UI_EDITOR_COMMAND_TOGGLE_AB;
-    if ((relevant & TS_UI_BANK_MOD_CTRL) != 0u &&
-        (relevant & TS_UI_BANK_MOD_ALT) == 0u && key == 'p')
-        return TS_UI_EDITOR_COMMAND_COMMIT;
-    if (relevant == (TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_SHIFT) && key == 'r')
-        return TS_UI_EDITOR_COMMAND_RESET;
-    return TS_UI_EDITOR_COMMAND_NONE;
 }
 
 int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
