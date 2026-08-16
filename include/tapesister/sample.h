@@ -196,7 +196,8 @@ typedef enum {
     TS_BANK_CAPTURE_ROOT = 0,
     TS_BANK_CAPTURE_CURRENT,
     TS_BANK_CAPTURE_SELECTION,
-    TS_BANK_CAPTURE_LOOP
+    TS_BANK_CAPTURE_LOOP,
+    TS_BANK_CAPTURE_PERFORMANCE
 } TsBankCaptureKind;
 
 typedef enum {
@@ -570,6 +571,16 @@ void ts_instrument_begin_loop_drag(TsInstrument *instrument);
 int ts_instrument_move_loop_endpoint(TsInstrument *instrument, int endpoint, size_t frame);
 int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
                                TsBankCaptureKind kind, char *error, size_t error_size);
+int ts_instrument_bank_is_blank_canvas(const TsInstrument *instrument, int slot);
+int ts_instrument_capture_target_frames(const TsInstrument *instrument, int slot,
+                                        uint32_t output_rate,
+                                        size_t *capacity_frames,
+                                        char *error, size_t error_size);
+int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
+                                 int source_slot, const float *captured,
+                                 size_t recorded_frames, uint32_t capture_rate,
+                                 int stopped_early,
+                                 char *error, size_t error_size);
 int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size);
 int ts_instrument_bank_clear_all(TsInstrument *instrument,

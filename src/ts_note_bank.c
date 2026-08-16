@@ -137,6 +137,32 @@ TsNoteStartResult ts_note_bank_start_tuned_at(TsNoteBank *bank,
     return TS_NOTE_STARTED;
 }
 
+int ts_note_bank_start_staged_chord(TsNoteBank *bank,
+                                    const TsInstrument *instrument,
+                                    const TsTuning *tuning,
+                                    TsAuditionSource source,
+                                    uint32_t staged_notes,
+                                    int keyboard_base_note,
+                                    int output_rate)
+{
+    int started = 0;
+    if (bank == NULL || instrument == NULL || tuning == NULL ||
+        staged_notes == 0u) return 0;
+    ts_note_bank_clear(bank);
+    for (int note = 0; note < 24; ++note) {
+        if ((staged_notes & (1u << note)) == 0u) continue;
+        if (started >= TS_NOTE_VOICE_LIMIT ||
+            ts_note_bank_start_tuned_at(bank, instrument, tuning, source,
+                                        note, keyboard_base_note, 1,
+                                        output_rate) != TS_NOTE_STARTED) {
+            ts_note_bank_clear(bank);
+            return 0;
+        }
+        ++started;
+    }
+    return started;
+}
+
 void ts_note_bank_release(TsNoteBank *bank, int note)
 {
     if (bank == NULL) return;

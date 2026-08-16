@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "tapesister/audition.h"
 #include "tapesister/browser.h"
+#include "tapesister/capture.h"
 #include "tapesister/config.h"
 #include "tapesister/palette.h"
 #include "tapesister/recipe.h"
@@ -170,6 +171,13 @@ typedef struct {
     int keyboard_base_note;
     int show_recipes;
     int show_ingredients;
+    TsCaptureState capture_state;
+    int capture_destination_slot;
+    int capture_source_slot;
+    size_t capture_recorded_frames;
+    size_t capture_capacity_frames;
+    uint32_t staged_notes;
+    uint32_t overlay_until_ms;
     int workbench_loop_active;
     int workbench_loop_persistent;
     int bank_view_slot;
@@ -263,6 +271,7 @@ typedef struct {
     char recipe_rename[TS_RECIPE_NAME_MAX + 1];
     size_t recipe_rename_cursor;
     char load_selection_name[128];
+    char overlay[80];
     char status[160];
 } TsUiState;
 
@@ -295,6 +304,7 @@ TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y);
 TsUiDroneAction ts_ui_drone_action_from_point(int x, int y);
 TsUiWaveAction ts_ui_wave_action_from_point(int x, int y);
 TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y);
+int ts_ui_capture_button_from_point(int x, int y);
 int ts_ui_canvas_edge_from_point(int x, int y);
 int ts_ui_drone_waveform_contains(int x, int y);
 int ts_ui_drone_crossfade_handle_from_point(const TsUiState *ui, int x, int y);

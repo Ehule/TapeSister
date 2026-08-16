@@ -10,6 +10,25 @@ Clicking an occupied tile selects it, immediately restores its own editor state 
 
 With no waveform selection, Create and Load replace only the selected tile. With a selection on an occupied sound or silent canvas, choosing a WAV from Load asks for exact Paste, duration-preserving Fit, or Cancel; Paste and Fit are both Undo/Redo edits. TSR and TSP loading retain their existing behavior. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. With a waveform selection, Create and Vary instead stamp a fitted FM sound into exactly that range on the active tile; audio outside the range and the tile duration stay unchanged, and Chain does not move the stamp to another tile.
 
+## Capture a performance to a new tile
+
+Capture prints TapeSister's final live audition mix into an independent Bank tile. In
+**BANK**, double-click an empty tile to make blank tape, set its capacity with the
+normal canvas controls, then click **CAPTURE**. Select a different occupied source
+tile and deliberately start its Play, Loop, playhead, or first keyboard note. Arming
+stops any audition that was already sounding, so this new trigger starts both the
+performance and recording on frame zero without clipping its onset. The armed tile
+stays fixed while the source waveform, selection, loop, pitch, and other live
+performance gestures remain available.
+
+With Capture armed, Shift-click up to five onscreen keys to assemble a silent staged
+chord; click any staged key normally to launch every voice sample-synchronously. With
+no staged chord, ordinary notes start and join recording at the time they are played.
+The red frame and tape-capacity bar remain visible until the destination fills. Click
+**STOP** or press Space to keep a shorter take and shrink the tile to it; Escape
+cancels and leaves the blank destination unchanged. A completed take becomes the
+active tile and one tile-local Undo removes the whole capture while Redo restores it.
+
 Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
 number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead.
@@ -202,7 +221,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR19 stores every occupied tile as a complete independent object: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, and the audio patches needed to replay Paste, FM stamp, tape-length, and canvas-resize history. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR18 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR20 stores every occupied tile as a complete independent object: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, and performance-capture history. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR19 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 

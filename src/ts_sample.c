@@ -2102,6 +2102,7 @@ const char *ts_bank_capture_name(TsBankCaptureKind kind)
     if (kind == TS_BANK_CAPTURE_ROOT) return "ROOT";
     if (kind == TS_BANK_CAPTURE_SELECTION) return "SEL";
     if (kind == TS_BANK_CAPTURE_LOOP) return "LOOP";
+    if (kind == TS_BANK_CAPTURE_PERFORMANCE) return "PERFORM";
     return "FULL";
 }
 
@@ -5417,6 +5418,168 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
     return 1;
 }
 
+int ts_instrument_bank_is_blank_canvas(const TsInstrument *instrument, int slot)
+{
+    const TsBankSlot *target;
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) return 0;
+    target = &instrument->bank[slot];
+    if (!target->occupied || target->sample.data == NULL ||
+        target->sample.frames < TS_CANVAS_MIN_FRAMES ||
+        target->sample.sample_rate == 0u) return 0;
+    for (size_t frame = 0; frame < target->sample.frames; ++frame)
+        if (target->sample.data[frame] != 0.0f) return 0;
+    return 1;
+}
+
+int ts_instrument_capture_target_frames(const TsInstrument *instrument, int slot,
+                                        uint32_t output_rate,
+                                        size_t *capacity_frames,
+                                        char *error, size_t error_size)
+{
+    const TsSample *canvas;
+    long double converted;
+    if (capacity_frames != NULL) *capacity_frames = 0u;
+    if (!ts_instrument_bank_is_blank_canvas(instrument, slot)) {
+        set_error(error, error_size,
+                  "Capture needs a blank silent canvas - it will not overwrite audio");
+        return 0;
+    }
+    if (output_rate == 0u || capacity_frames == NULL) {
+        set_error(error, error_size, "Capture audio rate is unavailable");
+        return 0;
+    }
+    canvas = &instrument->bank[slot].sample;
+    converted = (long double)canvas->frames * (long double)output_rate /
+                (long double)canvas->sample_rate;
+    if (converted < 1.0L || converted > (long double)TS_CANVAS_MAX_FRAMES ||
+        converted > (long double)SIZE_MAX) {
+        set_error(error, error_size, "Capture canvas duration is out of range");
+        return 0;
+    }
+    *capacity_frames = (size_t)llroundl(converted);
+    if (*capacity_frames == 0u) *capacity_frames = 1u;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
+                                 int source_slot, const float *captured,
+                                 size_t recorded_frames, uint32_t capture_rate,
+                                 int stopped_early,
+                                 char *error, size_t error_size)
+{
+    TsSample patch;
+    TsSample current;
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    TsBankSlot *destination;
+    TsTuning source_tuning;
+    TsTuning source_audible_tuning;
+    uint32_t patch_index;
+    size_t target_frames;
+    int operation_count;
+    char name[128];
+    if (instrument == NULL || captured == NULL || recorded_frames == 0u ||
+        capture_rate == 0u || destination_slot < 0 ||
+        destination_slot >= TS_BANK_SLOT_COUNT || source_slot < 0 ||
+        source_slot >= TS_BANK_SLOT_COUNT || source_slot == destination_slot ||
+        !instrument->bank[source_slot].occupied ||
+        !ts_instrument_bank_is_blank_canvas(instrument, destination_slot)) {
+        set_error(error, error_size, "Invalid Capture source, destination, or audio");
+        return 0;
+    }
+    source_tuning = instrument->bank[source_slot].tuning;
+    source_audible_tuning = instrument->bank[source_slot].audible_tuning;
+    if (!ts_instrument_select_bank(instrument, destination_slot,
+                                   error, error_size)) return 0;
+    target_frames = instrument->current.frames;
+    if (stopped_early) {
+        long double converted = (long double)recorded_frames *
+                                (long double)instrument->current.sample_rate /
+                                (long double)capture_rate;
+        if (converted < (long double)TS_CANVAS_MIN_FRAMES)
+            target_frames = TS_CANVAS_MIN_FRAMES;
+        else if (converted < (long double)target_frames)
+            target_frames = (size_t)llroundl(converted);
+        if (target_frames < TS_CANVAS_MIN_FRAMES)
+            target_frames = TS_CANVAS_MIN_FRAMES;
+        if (target_frames > instrument->current.frames)
+            target_frames = instrument->current.frames;
+    }
+    operation_count = target_frames < instrument->current.frames ? 2 : 1;
+    if (instrument->post_edit_count > TS_POST_EDIT_DEPTH - operation_count &&
+        !compact_edit_graph(instrument, error, error_size)) return 0;
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
+    ts_sample_init(&patch);
+    patch.data = (float *)captured;
+    patch.frames = recorded_frames;
+    patch.sample_rate = capture_rate;
+    snprintf(name, sizeof(name), "CAPTURE %02d FROM %02d",
+             destination_slot + 1, source_slot + 1);
+    snprintf(patch.name, sizeof(patch.name), "%s", name);
+    if (!append_audio_patch(instrument, &patch, NULL, &patch_index,
+                            error, error_size)) return 0;
+    target = snapshot(instrument);
+    if (target_frames < instrument->current.frames) {
+        memset(&operation, 0, sizeof(operation));
+        operation.kind = TS_POST_CANVAS_RIGHT_RESIZE;
+        operation.destination = -(int64_t)(instrument->current.frames - target_frames);
+        target.post_edits[target.post_edit_count++] = operation;
+    }
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_PATCH_FIT;
+    operation.first = 0u;
+    operation.last = target_frames;
+    operation.patch_index = patch_index;
+    target.post_edits[target.post_edit_count++] = operation;
+    target.crop_first = 0u;
+    target.crop_last = instrument->parent.frames;
+    target.selection_first = 0u;
+    target.selection_last = target_frames;
+    target.has_selection = 1;
+    target.playhead_frame = 0u;
+    target.has_playhead = 0;
+    target.view_first = 0u;
+    target.view_last = target_frames;
+    target.loop_first = 0u;
+    target.loop_last = 0u;
+    target.has_loop = 0;
+    target.tuning = source_tuning;
+    target.audible_tuning = source_audible_tuning;
+    snprintf(instrument->parent.name, sizeof(instrument->parent.name), "%s", name);
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) {
+        discard_last_audio_patch(instrument, patch_index);
+        return 0;
+    }
+    snprintf(current.name, sizeof(current.name), "%s", name);
+    if (!commit_post_snapshot(instrument, &target, &current, error, error_size)) {
+        ts_sample_free(&current);
+        return 0;
+    }
+    instrument->source_kind = TS_SOURCE_COMMITTED;
+    instrument->tuning = source_tuning;
+    instrument->audible_tuning = source_audible_tuning;
+    destination = &instrument->bank[destination_slot];
+    destination->capture_kind = TS_BANK_CAPTURE_PERFORMANCE;
+    destination->relation = TS_FAMILY_CAPTURED;
+    destination->parent_slot = source_slot;
+    destination->has_generator = 0;
+    memset(&destination->generator, 0, sizeof(destination->generator));
+    destination->lineage_seed = (uint32_t)ts_sample_hash(&destination->sample);
+    destination->lineage_locks = TS_FAMILY_LOCK_ALL;
+    destination->lineage_mutation = 0.0f;
+    destination->tuning = source_tuning;
+    destination->audible_tuning = source_audible_tuning;
+    destination->has_loop = 0;
+    destination->loop_first = 0u;
+    destination->loop_last = 0u;
+    instrument->family_anchor_slot = destination_slot;
+    if (!bank_sync_selected(instrument, error, error_size)) return 0;
+    set_error(error, error_size, "");
+    return 1;
+}
+
 int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size)
 {
@@ -6846,9 +7009,9 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr19(const TsInstrument *instrument, FILE *f)
+static int save_tsr20(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR19\r\n\032", 1, 8, f);
+    fwrite("TSR20\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -7077,7 +7240,8 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
             }
         }
         slot->process = slot->edit.process;
-        if (slot->capture_kind > TS_BANK_CAPTURE_LOOP ||
+        if (slot->capture_kind > (version >= 20 ? TS_BANK_CAPTURE_PERFORMANCE :
+                                                 TS_BANK_CAPTURE_LOOP) ||
             slot->relation >= TS_FAMILY_RELATION_COUNT || slot->parent_slot < -1 ||
             slot->parent_slot >= TS_BANK_SLOT_COUNT ||
             (slot->lineage_locks & ~TS_FAMILY_LOCK_ALL) != 0u ||
@@ -7104,10 +7268,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR19 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR20 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR19 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR20 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -7126,13 +7290,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr19(instrument, f)) {
+    if (!save_tsr20(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR19 project");
+        set_error(error, error_size, "Could not write TSR20 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR19 project");
+        set_error(error, error_size, "Could not finish TSR20 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -7167,12 +7331,14 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR19\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR20\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR19\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR18\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = magic[4] == '9' ? 19 :
+        int self_contained_version = magic[4] == '0' ? 20 :
+                                     magic[4] == '9' ? 19 :
                                      magic[4] == '8' ? 18 :
                                      magic[4] == '7' ? 17 :
                                      magic[4] == '6' ? 16 : 15;
@@ -7195,7 +7361,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR19 project");
+                  "Not a self-contained TSR6-TSR20 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -7474,7 +7640,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR19 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR20 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);
