@@ -93,6 +93,7 @@ int main(int argc, char **argv)
     } else if (argc > 2 && strcmp(argv[2], "canvas") == 0) {
         size_t before = instrument.current.frames;
         if (!ts_instrument_toggle_grid_snap(&instrument) ||
+            !ts_instrument_toggle_grid_snap(&instrument) ||
             !ts_instrument_canvas_gesture_begin(
                 &instrument, &ui.canvas_gesture, 1, error, sizeof(error)) ||
             !ts_instrument_canvas_gesture_preview(

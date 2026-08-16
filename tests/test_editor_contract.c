@@ -27,6 +27,82 @@ int main(void)
     char error[160];
     uint64_t tile_hash[4];
 
+    {
+        TsInstrument locked;
+        TsUiState locked_ui;
+        TsSample clipboard;
+        size_t clipboard_origin = 0;
+        ts_instrument_init(&locked);
+        ts_ui_init(&locked_ui);
+        ts_sample_init(&clipboard);
+        locked_ui.workbench_loop_active = 1;
+        locked_ui.workbench_loop_persistent = 1;
+        CONTRACT("loop_lock_fixture_activates",
+                 ts_instrument_activate_silence(&locked, 256, 44100,
+                                                error, sizeof(error)));
+        for (size_t frame = 0; frame < locked.current.frames; ++frame) {
+            float value = frame & 1u ? -0.25f : 0.25f;
+            locked.current.data[frame] = value;
+            locked.parent.data[frame] = value;
+        }
+        locked.view_first = 16;
+        locked.view_last = 192;
+        ts_instrument_set_selection(&locked, 32, 96);
+        CONTRACT("loop_lock_selection_range_follows_selection",
+                 ts_audition_plan(&locked, TS_AUDITION_CURRENT,
+                                  TS_AUDITION_WORKBENCH_LOOP, &plan) &&
+                 plan.first == 32 && plan.last == 96);
+        CONTRACT("loop_lock_survives_transform",
+                 ts_instrument_apply_sample_edit(
+                     &locked, TS_SAMPLE_EDIT_REVERSE, 1.0f,
+                     error, sizeof(error)) &&
+                 ts_ui_loop_command(&locked_ui, 0) == TS_UI_LOOP_LOCKED);
+        CONTRACT("loop_lock_survives_copy",
+                 ts_instrument_copy_selection(&locked, &clipboard,
+                                              &clipboard_origin,
+                                              error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_paste",
+                 ts_instrument_paste(&locked, &clipboard, clipboard_origin, 0,
+                                     error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_multiply",
+                 ts_instrument_double_canvas(&locked, error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_undo",
+                 ts_instrument_undo(&locked, error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_redo",
+                 ts_instrument_redo(&locked, error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_capture",
+                 ts_instrument_bank_capture(&locked, 1, TS_BANK_CAPTURE_CURRENT,
+                                            error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        ts_instrument_clear_selection(&locked);
+        CONTRACT("loop_lock_view_range_follows_visible_waveform",
+                 ts_audition_plan(&locked, TS_AUDITION_CURRENT,
+                                  TS_AUDITION_WORKBENCH_LOOP, &plan) &&
+                 plan.first == locked.view_first && plan.last == locked.view_last);
+        CONTRACT("loop_lock_survives_selection_clear",
+                 locked_ui.workbench_loop_persistent &&
+                 !ts_ui_loop_transport_can_stop(&locked_ui, 0));
+        CONTRACT("loop_lock_survives_create",
+                 ts_instrument_create_selected(&locked, 0x4c4f434bu,
+                                               error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("loop_lock_survives_vary",
+                 ts_instrument_vary_selected(&locked, 0, NULL,
+                                             error, sizeof(error)) &&
+                 locked_ui.workbench_loop_persistent);
+        CONTRACT("plain_loop_cannot_release_lock",
+                 ts_ui_loop_command(&locked_ui, 0) == TS_UI_LOOP_LOCKED);
+        CONTRACT("only_shift_loop_requests_release",
+                 ts_ui_loop_command(&locked_ui, 1) == TS_UI_LOOP_LOCK_RELEASE);
+        ts_sample_free(&clipboard);
+        ts_instrument_free(&locked);
+    }
+
     CONTRACT("bank_plain_click_routes_to_select_play",
              ts_ui_bank_action(0, 0) == TS_UI_BANK_ACTION_AUDITION);
     CONTRACT("bank_shift_click_routes_to_full_capture",

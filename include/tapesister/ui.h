@@ -144,6 +144,13 @@ typedef enum {
     TS_UI_CANVAS_ACTION_GRID_SNAP
 } TsUiCanvasAction;
 
+typedef enum {
+    TS_UI_LOOP_START = 0,
+    TS_UI_LOOP_LOCK_START,
+    TS_UI_LOOP_LOCKED,
+    TS_UI_LOOP_LOCK_RELEASE
+} TsUiLoopCommand;
+
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
@@ -306,6 +313,8 @@ int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
 int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind);
 void ts_ui_cycle_panel(TsUiState *ui);
 int ts_ui_transform_auto_audition_allowed(const TsUiState *ui);
+TsUiLoopCommand ts_ui_loop_command(const TsUiState *ui, int shift_pressed);
+int ts_ui_loop_transport_can_stop(const TsUiState *ui, int force);
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames);
 int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
                            float anchor_ratio, float scale);

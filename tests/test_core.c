@@ -123,9 +123,17 @@ int main(void)
     ts_recipe_bank_init(&recipe_bank);
     ts_ui_init(&ui);
     CHECK(ts_ui_transform_auto_audition_allowed(&ui));
+    CHECK(ts_ui_loop_command(&ui, 0) == TS_UI_LOOP_START);
+    CHECK(ts_ui_loop_command(&ui, 1) == TS_UI_LOOP_LOCK_START);
     ui.workbench_loop_active = 1;
     CHECK(!ts_ui_transform_auto_audition_allowed(&ui));
+    ui.workbench_loop_persistent = 1;
+    CHECK(ts_ui_loop_command(&ui, 0) == TS_UI_LOOP_LOCKED);
+    CHECK(ts_ui_loop_command(&ui, 1) == TS_UI_LOOP_LOCK_RELEASE);
+    CHECK(!ts_ui_loop_transport_can_stop(&ui, 0));
+    CHECK(ts_ui_loop_transport_can_stop(&ui, 1));
     ui.workbench_loop_active = 0;
+    ui.workbench_loop_persistent = 0;
     CHECK(ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
     ts_ui_cycle_panel(&ui);
     CHECK(!ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
@@ -1881,7 +1889,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR18", 5) == 0);
+        CHECK(memcmp(magic, "TSR19", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));

@@ -342,6 +342,14 @@ typedef struct {
     TsNoteBank notes;
 } AudioState;
 
+static float loop_lock_silence_data[TS_DEFAULT_CANVAS_FRAMES];
+static const TsSample loop_lock_silence = {
+    loop_lock_silence_data,
+    TS_DEFAULT_CANVAS_FRAMES,
+    TS_DEFAULT_CANVAS_RATE,
+    "LOOP LOCK SILENCE"
+};
+
 static int path_is_tsr(const char *path)
 {
     const char *extension = path != NULL ? strrchr(path, '.') : NULL;
@@ -510,25 +518,68 @@ static void begin_playhead_audition(SDL_AudioDeviceID device, AudioState *audio,
 }
 
 static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui);
+static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui);
+
+static void set_loop_lock_silence(SDL_AudioDeviceID device, AudioState *audio)
+{
+    if (device) SDL_LockAudioDevice(device);
+    audio->sample = &loop_lock_silence;
+    audio->position = ts_audition_map_progress(
+        audio->position, audio->range_start, audio->range_end,
+        0, loop_lock_silence.frames);
+    if (audio->position >= (double)loop_lock_silence.frames)
+        audio->position = 0.0;
+    audio->pitch = 1.0;
+    audio->range_start = 0;
+    audio->range_end = loop_lock_silence.frames;
+    audio->source = TS_AUDITION_CURRENT;
+    audio->range = TS_AUDITION_WORKBENCH_LOOP;
+    audio->looping = 1;
+    audio->loop_mode = TS_LOOP_FORWARD;
+    audio->loop_direction = 1;
+    audio->crossfade_frames = 0;
+    audio->bank_slot = -1;
+    audio->step = audio->output_rate > 0 ?
+                  (double)loop_lock_silence.sample_rate / audio->output_rate : 1.0;
+    audio->playing = 1;
+    if (device) SDL_UnlockAudioDevice(device);
+}
 
 static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
                                   TsUiState *ui, const TsInstrument *instrument,
                                   int output_rate, int persistent)
 {
-    if (!ts_ui_transform_auto_audition_allowed(ui)) {
-        stop_all(device, audio, ui);
+    TsUiLoopCommand command = ts_ui_loop_command(ui, persistent);
+    if (command == TS_UI_LOOP_LOCKED) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "LOOP LOCKED - SHIFT+LOOP TO RELEASE");
         return;
+    }
+    if (command == TS_UI_LOOP_LOCK_RELEASE) {
+        stop_all_force(device, audio, ui);
+        snprintf(ui->status, sizeof(ui->status), "LOOP LOCK RELEASED");
+        return;
+    }
+    if (!ts_ui_transform_auto_audition_allowed(ui)) {
+        if (command == TS_UI_LOOP_LOCK_START) stop_all_force(device, audio, ui);
+        else {
+            stop_all(device, audio, ui);
+            return;
+        }
     }
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->workbench_loop_active = 1;
-    ui->workbench_loop_persistent = persistent != 0;
+    ui->workbench_loop_persistent = command == TS_UI_LOOP_LOCK_START;
     begin_audition(device, audio, ui, instrument,
                    TS_AUDITION_WORKBENCH_LOOP, 1.0, output_rate);
     if (!audio->playing) {
-        ui->workbench_loop_active = 0;
-        ui->workbench_loop_persistent = 0;
+        if (ui->workbench_loop_persistent) {
+            set_loop_lock_silence(device, audio);
+            snprintf(ui->status, sizeof(ui->status),
+                     "LOOP LOCKED: SILENT TILE VIEW");
+        } else ui->workbench_loop_active = 0;
     } else snprintf(ui->status, sizeof(ui->status), "%s: %s",
-                    persistent ? "LOOP LOCKED" : "LOOP",
+                    ui->workbench_loop_persistent ? "LOOP LOCKED" : "LOOP",
                     instrument->has_selection ? "SELECTION" : "VIEW");
 }
 
@@ -539,7 +590,8 @@ static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
     if (!ui->workbench_loop_active) return;
     if (!audition_plan_ui(instrument, ui, TS_AUDITION_CURRENT,
                           TS_AUDITION_WORKBENCH_LOOP, &plan)) {
-        stop_all(device, audio, ui);
+        if (ui->workbench_loop_persistent) set_loop_lock_silence(device, audio);
+        else stop_all(device, audio, ui);
         return;
     }
     if (device) SDL_LockAudioDevice(device);
@@ -596,7 +648,7 @@ static void release_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
     snprintf(ui->status, sizeof(ui->status), "NOTE RELEASED");
 }
 
-static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
+static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
     if (device) SDL_LockAudioDevice(device);
     audio->playing = 0;
@@ -618,10 +670,34 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
     snprintf(ui->status, sizeof(ui->status), "STOPPED");
 }
 
+static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
+{
+    if (!ts_ui_loop_transport_can_stop(ui, 0)) {
+        if (device) SDL_LockAudioDevice(device);
+        ts_note_bank_clear(&audio->notes);
+        audio->bank_slot = -1;
+        if (device) SDL_UnlockAudioDevice(device);
+        ui->active_notes = 0;
+        ui->mouse_note = -1;
+        ui->tape_dragging = 0;
+        ui->tape_drag_button = 0;
+        ui->selecting = 0;
+        ui->wave_pointer_pending = 0;
+        ui->wave_pointer_button = 0;
+        ui->dragging_loop_endpoint = 0;
+        ui->loop_drag_started = 0;
+        ui->drone_preview_active = 0;
+        snprintf(ui->status, sizeof(ui->status),
+                 "LOOP LOCKED - SHIFT+LOOP TO RELEASE");
+        return;
+    }
+    stop_all_force(device, audio, ui);
+}
+
 static void begin_exit_confirmation(SDL_AudioDeviceID device, AudioState *audio,
                                     TsUiState *ui, const TsInstrument *instrument)
 {
-    stop_all(device, audio, ui);
+    stop_all_force(device, audio, ui);
     ui->exit_has_unsaved = instrument_state_hash(instrument) != ui->saved_state_hash;
     ui->exit_confirm_open = 1;
     snprintf(ui->status, sizeof(ui->status), "%s",
@@ -1875,8 +1951,11 @@ static void apply_canvas_action(SDL_AudioDeviceID device, AudioState *audio,
     if (action == TS_UI_CANVAS_ACTION_GRID_SNAP) {
         (void)ts_instrument_toggle_grid_snap(instrument);
         snprintf(ui->status, sizeof(ui->status),
-                 "GRID SNAP %s - ZERO-CROSSING SAFETY ALWAYS ON",
-                 instrument->grid_snap ? "ON" : "OFF");
+                 "GRID %s - ZERO-CROSSING SAFETY ALWAYS ON",
+                 instrument->grid_snap == TS_GRID_SNAP_ALL ?
+                 "SNAP SELECTION + MOVEMENT" :
+                 instrument->grid_snap == TS_GRID_SNAP_MOVE_ONLY ?
+                 "SNAP MOVEMENT ONLY" : "SNAP OFF");
         return;
     }
     cancel_pitch_preview(device, audio, ui, instrument);
@@ -2104,6 +2183,11 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
     const TsBankSlot *slot;
     TsAuditionPlan plan;
     if (slot_index < 0 || slot_index >= TS_BANK_SLOT_COUNT) return;
+    if (ui->workbench_loop_persistent) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "LOOP LOCKED - SHIFT+LOOP TO RELEASE");
+        return;
+    }
     if (ui->workbench_loop_active) stop_all(device, audio, ui);
     slot = &instrument->bank[slot_index];
     ui->bank_view_slot = slot_index;
@@ -2201,9 +2285,8 @@ static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
         audio->playing = 0;
         audio->bank_slot = -1;
         ts_note_bank_clear(&audio->notes);
-        if (clearing_active) {
+        if (clearing_active && !ui->workbench_loop_persistent) {
             ui->workbench_loop_active = 0;
-            ui->workbench_loop_persistent = 0;
         }
     }
     ok = ts_ui_execute_bank_action(instrument, slot, TS_UI_BANK_ACTION_CLEAR,
@@ -3059,7 +3142,7 @@ static int begin_tape_drag(TsUiState *ui, TsInstrument *instrument,
     snprintf(ui->status, sizeof(ui->status),
              "%s - DRAG GHOST TO %sZERO-SNAPPED DESTINATION",
              tape_gesture_name(ui->tape_drag_kind),
-             instrument->grid_snap ? "GRID + " : "");
+             ts_instrument_grid_moves_snap(instrument) ? "GRID + " : "");
     return 1;
 }
 
@@ -3068,7 +3151,7 @@ static void update_tape_drag(TsUiState *ui, const TsInstrument *instrument, int 
     int64_t pointer = tape_frame_from_x(instrument, x);
     size_t length = ui->tape_source_last - ui->tape_source_first;
     int64_t destination = pointer - (int64_t)ui->tape_grab_offset;
-    if (instrument->grid_snap && destination >= 0 &&
+    if (ts_instrument_grid_moves_snap(instrument) && destination >= 0 &&
         (uint64_t)destination <= instrument->current.frames)
         destination = (int64_t)ts_instrument_grid_target(
             instrument, (size_t)destination);
@@ -3899,8 +3982,11 @@ int main(int argc, char **argv)
                             &instrument, &ui, x - TS_WAVE_X);
                         size_t center;
                         int endpoint;
-                        size_t crossings = wheel_y < 0 ?
+                        size_t detents = wheel_y < 0 ?
                             (size_t)(-(int64_t)wheel_y) : (size_t)wheel_y;
+                        size_t crossings = (size_t)ui.config.rotate_wheel_coarse;
+                        if (detents > SIZE_MAX / crossings) crossings = SIZE_MAX;
+                        else crossings *= detents;
                         if (!instrument.has_selection ||
                             at < instrument.selection_first ||
                             at > instrument.selection_last) {
@@ -4079,7 +4165,7 @@ int main(int argc, char **argv)
                     snprintf(ui.status, sizeof(ui.status),
                              ui.selecting_button == SDL_BUTTON_RIGHT ?
                              "RIGHT-DRAG SELECTION - PLAYHEAD AT START EDGE" :
-                             (instrument.grid_snap ?
+                             (instrument.grid_snap == TS_GRID_SNAP_ALL ?
                               "SELECTING TILE - GRID + ZERO SNAP" :
                               "SELECTING TILE - ZERO SNAP"));
                 }

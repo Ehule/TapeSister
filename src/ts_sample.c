@@ -1296,6 +1296,9 @@ static void begin_edit(TsInstrument *instrument)
     instrument->redo_count = 0;
 }
 
+static int ensure_edit_graph_capacity(TsInstrument *instrument, int needs_patch,
+                                      char *error, size_t error_size);
+
 static void reset_editor(TsInstrument *instrument)
 {
     instrument->crop_first = 0;
@@ -2877,7 +2880,13 @@ size_t ts_instrument_resolve_boundary(const TsInstrument *instrument, size_t fra
         instrument->current.frames == 0) return 0;
     return resolve_sample_boundary(&instrument->current,
                                    instrument->grid_divisions,
-                                   instrument->grid_snap, frame);
+                                   instrument->grid_snap == TS_GRID_SNAP_ALL,
+                                   frame);
+}
+
+int ts_instrument_grid_moves_snap(const TsInstrument *instrument)
+{
+    return instrument != NULL && instrument->grid_snap != TS_GRID_SNAP_OFF;
 }
 
 static void sync_selected_grid_state(TsInstrument *instrument)
@@ -2921,7 +2930,7 @@ int ts_instrument_cycle_grid_divisions(TsInstrument *instrument, int direction)
 int ts_instrument_toggle_grid_snap(TsInstrument *instrument)
 {
     if (instrument == NULL) return 0;
-    instrument->grid_snap = !instrument->grid_snap;
+    instrument->grid_snap = (instrument->grid_snap + 1) % TS_GRID_SNAP_MODE_COUNT;
     sync_selected_grid_state(instrument);
     return 1;
 }
@@ -3234,12 +3243,9 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
         set_error(error, error_size, "Select a valid tape range first");
         return 0;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more tape operations");
-        return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     length = last - first;
-    if (instrument->grid_snap && destination >= 0 &&
+    if (ts_instrument_grid_moves_snap(instrument) && destination >= 0 &&
         (uint64_t)destination <= instrument->current.frames)
         destination = (int64_t)ts_instrument_grid_target(
             instrument, (size_t)destination);
@@ -3770,6 +3776,136 @@ static void update_snapshot_after_replace(TsEditSnapshot *target,
     }
 }
 
+static void free_audio_patches(TsAudioPatch *patches, int count)
+{
+    if (patches != NULL)
+        for (int index = 0; index < count; ++index)
+            ts_sample_free(&patches[index].sample);
+    free(patches);
+}
+
+static void checkpoint_snapshot(TsEditSnapshot *state, size_t baseline_frames,
+                                uint32_t patch_index)
+{
+    TsPostEdit checkpoint;
+    state->crop_first = 0;
+    state->crop_last = baseline_frames;
+    ts_process_recipe_reset(&state->process);
+    memset(state->sample_edits, 0, sizeof(state->sample_edits));
+    state->sample_edit_count = 0;
+    memset(state->post_edits, 0, sizeof(state->post_edits));
+    memset(&checkpoint, 0, sizeof(checkpoint));
+    checkpoint.kind = TS_POST_PATCH_REPLACE;
+    checkpoint.first = 0;
+    checkpoint.last = baseline_frames;
+    checkpoint.patch_index = patch_index;
+    state->post_edits[0] = checkpoint;
+    state->post_edit_count = 1;
+}
+
+static int compact_edit_graph(TsInstrument *instrument,
+                              char *error, size_t error_size)
+{
+    TsBankSlot *slot;
+    TsAudioPatch *checkpoints = NULL;
+    TsSample baseline;
+    int checkpoint_count;
+    int built = 0;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[instrument->selected_slot].occupied) {
+        set_error(error, error_size, "Cannot compact history without an active tile");
+        return 0;
+    }
+    checkpoint_count = instrument->undo_count + instrument->redo_count;
+    if (checkpoint_count > TS_AUDIO_PATCH_DEPTH) {
+        set_error(error, error_size, "Retained history exceeds checkpoint capacity");
+        return 0;
+    }
+    ts_sample_init(&baseline);
+    if (!ts_sample_clone(&baseline, &instrument->current,
+                         error, error_size)) return 0;
+    if (checkpoint_count > 0) {
+        checkpoints = calloc((size_t)checkpoint_count, sizeof(*checkpoints));
+        if (checkpoints == NULL) {
+            ts_sample_free(&baseline);
+            set_error(error, error_size, "Out of memory checkpointing tile history");
+            return 0;
+        }
+    }
+    for (int index = 0; index < instrument->undo_count; ++index) {
+        if (!render_snapshot(&checkpoints[built].sample, instrument,
+                             &instrument->undo[index], error, error_size))
+            goto failed;
+        ++built;
+    }
+    for (int index = 0; index < instrument->redo_count; ++index) {
+        if (!render_snapshot(&checkpoints[built].sample, instrument,
+                             &instrument->redo[index], error, error_size))
+            goto failed;
+        ++built;
+    }
+
+    slot = &instrument->bank[instrument->selected_slot];
+    free_audio_patches(slot->patches, slot->patch_count);
+    slot->patches = checkpoints;
+    slot->patch_count = checkpoint_count;
+    slot->patch_capacity = checkpoint_count;
+    checkpoints = NULL;
+    ts_sample_free(&instrument->parent);
+    instrument->parent = baseline;
+    ts_sample_init(&baseline);
+    for (int index = 0; index < instrument->undo_count; ++index)
+        checkpoint_snapshot(&instrument->undo[index], instrument->parent.frames,
+                            (uint32_t)index);
+    for (int index = 0; index < instrument->redo_count; ++index)
+        checkpoint_snapshot(&instrument->redo[index], instrument->parent.frames,
+                            (uint32_t)(instrument->undo_count + index));
+    instrument->crop_first = 0;
+    instrument->crop_last = instrument->current.frames;
+    ts_process_recipe_reset(&instrument->process);
+    memset(instrument->sample_edits, 0, sizeof(instrument->sample_edits));
+    instrument->sample_edit_count = 0;
+    memset(instrument->post_edits, 0, sizeof(instrument->post_edits));
+    instrument->post_edit_count = 0;
+    instrument->source_kind = TS_SOURCE_COMMITTED;
+    if (!bank_sync_selected(instrument, error, error_size)) return 0;
+    set_error(error, error_size, "");
+    return 1;
+
+failed:
+    free_audio_patches(checkpoints, built);
+    ts_sample_free(&baseline);
+    return 0;
+}
+
+static int ensure_edit_graph_capacity(TsInstrument *instrument, int needs_patch,
+                                      char *error, size_t error_size)
+{
+    TsBankSlot *slot;
+    int full;
+    if (instrument == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "No active tile for edit history");
+        return 0;
+    }
+    slot = &instrument->bank[instrument->selected_slot];
+    full = instrument->post_edit_count >= TS_POST_EDIT_DEPTH ||
+           instrument->sample_edit_count >= TS_SAMPLE_EDIT_DEPTH ||
+           (needs_patch && slot->patch_count >= TS_AUDIO_PATCH_DEPTH);
+    if (!full) return 1;
+    if (!compact_edit_graph(instrument, error, error_size)) return 0;
+    slot = &instrument->bank[instrument->selected_slot];
+    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH ||
+        instrument->sample_edit_count >= TS_SAMPLE_EDIT_DEPTH ||
+        (needs_patch && slot->patch_count >= TS_AUDIO_PATCH_DEPTH)) {
+        set_error(error, error_size, "Tile history could not free edit capacity");
+        return 0;
+    }
+    return 1;
+}
+
 static int append_audio_patch(TsInstrument *instrument, const TsSample *sample,
                               const TsGeneratorRecipe *generator,
                               uint32_t *patch_index,
@@ -3783,6 +3919,7 @@ static int append_audio_patch(TsInstrument *instrument, const TsSample *sample,
         set_error(error, error_size, "Paste needs an occupied selected tile");
         return 0;
     }
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     slot = &instrument->bank[instrument->selected_slot];
     if (slot->patch_count >= TS_AUDIO_PATCH_DEPTH) {
         set_error(error, error_size, "This tile has reached its audio stamp limit");
@@ -3986,10 +4123,7 @@ int ts_instrument_stretch_selection(TsInstrument *instrument, size_t pivot,
         set_error(error, error_size, "Invalid tape length ratio");
         return 0;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more tape operations");
-        return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     first = instrument->selection_first;
     last = instrument->selection_last;
     old_frames = last - first;
@@ -4116,15 +4250,10 @@ int ts_instrument_stretch_gesture_begin(TsInstrument *instrument,
         set_error(error, error_size, "Select audio before changing its tape length");
         return 0;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more tape operations");
-        return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     if (instrument->selected_slot < 0 ||
         instrument->selected_slot >= TS_BANK_SLOT_COUNT ||
-        !instrument->bank[instrument->selected_slot].occupied ||
-        instrument->bank[instrument->selected_slot].patch_count >=
-            TS_AUDIO_PATCH_DEPTH) {
+        !instrument->bank[instrument->selected_slot].occupied) {
         set_error(error, error_size, "This tile has reached its audio stamp limit");
         return 0;
     }
@@ -4334,7 +4463,7 @@ static void canvas_gesture_clear(TsCanvasGesture *gesture)
 static size_t canvas_contraction_boundary(const TsCanvasGesture *gesture,
                                           size_t target, size_t first, size_t last)
 {
-    size_t macro = gesture->start.grid_snap ?
+    size_t macro = gesture->start.grid_snap != TS_GRID_SNAP_OFF ?
                    grid_target_for_frames(gesture->original.frames,
                                           gesture->start.grid_divisions,
                                           target) : target;
@@ -4456,10 +4585,7 @@ int ts_instrument_canvas_gesture_begin(TsInstrument *instrument,
         set_error(error, error_size, "Select an occupied tile before resizing its canvas");
         return 0;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more canvas operations");
-        return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
     if (!ts_sample_clone(&gesture->original, &instrument->current,
                          error, error_size)) return 0;
@@ -4698,10 +4824,7 @@ int ts_instrument_cut_selection(TsInstrument *instrument,
         set_error(error, error_size, "Cut cannot remove the entire tile - Clear the tile instead");
         return 0;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Post-edit history is full");
-        return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     ts_sample_init(&copied);
     ts_sample_init(&current);
     if (!sample_clone_range(&copied, &instrument->current, first, last,
@@ -4758,10 +4881,7 @@ int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
         set_error(error, error_size, "Fit Paste needs a target selection");
         return 0;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Post-edit history is full");
-        return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     has_target_selection = instrument->has_selection &&
                            instrument->selection_last > instrument->selection_first;
     if (has_target_selection) {
@@ -4918,10 +5038,7 @@ static int stamp_generated_patch(TsInstrument *instrument,
         set_error(error, error_size, "Select a range on an occupied tile before stamping");
         return 0;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Post-edit history is full");
-        return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     first = instrument->selection_first;
     last = instrument->selection_last;
     ts_sample_init(&generated);
@@ -5473,7 +5590,7 @@ int ts_instrument_bank_move_loop_endpoint(TsInstrument *instrument, int slot,
         (endpoint != 1 && endpoint != 2)) return 0;
     snapped = resolve_sample_boundary(
         &bank_slot->sample, bank_slot->edit.grid_divisions,
-        bank_slot->edit.grid_snap, frame);
+        bank_slot->edit.grid_snap == TS_GRID_SNAP_ALL, frame);
     if (endpoint == 1) {
         if (snapped < bank_slot->loop_last) bank_slot->loop_first = snapped;
         else if (snapped == bank_slot->loop_last) return endpoint;
@@ -5694,10 +5811,8 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
     }
     if (instrument->post_edit_count > 0) {
         TsPostEdit operation;
-        if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-            set_error(error, error_size, "Commit before adding more tape operations");
-            return 0;
-        }
+        if (!ensure_edit_graph_capacity(instrument, 0,
+                                        error, error_size)) return 0;
         target = snapshot(instrument);
         memset(&operation, 0, sizeof(operation));
         operation.kind = TS_POST_CROP;
@@ -5813,10 +5928,8 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
             TS_POST_REVERSE, TS_POST_NORMALIZE, TS_POST_GAIN,
             TS_POST_FADE_IN, TS_POST_FADE_OUT
         };
-        if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-            set_error(error, error_size, "Commit before adding more post-DSP edits");
-            return 0;
-        }
+        if (!ensure_edit_graph_capacity(instrument, 0,
+                                        error, error_size)) return 0;
         target = snapshot(instrument);
         memset(&operation, 0, sizeof(operation));
         operation.kind = kinds[kind];
@@ -5834,10 +5947,7 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
         set_error(error, error_size, "");
         return 1;
     }
-    if (instrument->sample_edit_count >= TS_SAMPLE_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more sample edits");
-        return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     target = snapshot(instrument);
     edit.kind = kind;
     edit.first = instrument->has_selection ? instrument->selection_first : 0;
@@ -5877,6 +5987,7 @@ int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
         set_error(error, error_size, "Waveform range is too short to rotate");
         return 0;
     }
+    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
 
     target = snapshot(instrument);
     if (target.post_edit_count > 0) {
@@ -5946,10 +6057,6 @@ int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
         }
     }
     ts_sample_free(&base);
-    if (!coalescing && target.post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more post-DSP edits");
-        return 0;
-    }
     memset(&operation, 0, sizeof(operation));
     operation.kind = TS_POST_ROTATE;
     operation.first = first;
@@ -5988,10 +6095,7 @@ int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
         set_error(error, error_size, "");
         return 1;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more post-DSP edits");
-        return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     target = snapshot(instrument);
     memset(&operation, 0, sizeof(operation));
     operation.kind = TS_POST_WARP;
@@ -6043,10 +6147,7 @@ int ts_instrument_warp_gesture_begin(TsInstrument *instrument,
         set_error(error, error_size, "Could not begin WARP gesture");
         return 0;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more post-DSP edits");
-        return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
     if (!ts_sample_clone(&gesture->original, &instrument->current,
                          error, error_size)) return 0;
@@ -6158,9 +6259,7 @@ int ts_instrument_apply_smear(TsInstrument *instrument, float amount,
         set_error(error, error_size, "SMEAR amount must be between zero and one"); return 0;
     }
     if (amount == 0.0f) { set_error(error, error_size, ""); return 1; }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     target = snapshot(instrument);
     memset(&operation, 0, sizeof(operation));
     operation.kind = TS_POST_SMEAR;
@@ -6185,9 +6284,7 @@ int ts_instrument_smear_gesture_begin(TsInstrument *instrument, TsSmearGesture *
     if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
         set_error(error, error_size, "Could not begin SMEAR gesture"); return 0;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
     if (!ts_sample_clone(&gesture->original, &instrument->current, error, error_size)) return 0;
     gesture->owner_parent_data = instrument->parent.data;
@@ -6271,9 +6368,7 @@ int ts_instrument_apply_tear(TsInstrument *instrument, float amount,
         set_error(error, error_size, "TEAR amount must be between zero and one"); return 0;
     }
     if (amount == 0.0f) { set_error(error, error_size, ""); return 1; }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     target = snapshot(instrument); memset(&operation, 0, sizeof(operation));
     operation.kind = TS_POST_TEAR;
     operation.first = instrument->has_selection ? instrument->selection_first : 0u;
@@ -6295,9 +6390,7 @@ int ts_instrument_tear_gesture_begin(TsInstrument *instrument, TsTearGesture *ge
     if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
         set_error(error, error_size, "Could not begin TEAR gesture"); return 0;
     }
-    if (instrument->post_edit_count >= TS_POST_EDIT_DEPTH) {
-        set_error(error, error_size, "Commit before adding more post-DSP edits"); return 0;
-    }
+    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
     if (!ts_sample_clone(&gesture->original, &instrument->current, error, error_size)) return 0;
     gesture->owner_parent_data = instrument->parent.data;
@@ -6705,7 +6798,9 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
            (state->has_playhead == 0 || state->has_playhead == 1) &&
            (state->has_loop == 0 || state->has_loop == 1) &&
            valid_grid_divisions(state->grid_divisions) &&
-           (state->grid_snap == 0 || state->grid_snap == 1) &&
+           (state->grid_snap == TS_GRID_SNAP_OFF ||
+            state->grid_snap == TS_GRID_SNAP_ALL ||
+            (version >= 19 && state->grid_snap == TS_GRID_SNAP_MOVE_ONLY)) &&
            tuning_valid(&state->tuning) && tuning_valid(&state->audible_tuning);
 }
 
@@ -6747,12 +6842,13 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            (!state->has_selection || state->selection_first < state->selection_last) &&
            (!state->has_loop || state->loop_first < state->loop_last) &&
            valid_grid_divisions(state->grid_divisions) &&
-           (state->grid_snap == 0 || state->grid_snap == 1);
+           state->grid_snap >= TS_GRID_SNAP_OFF &&
+           state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr18(const TsInstrument *instrument, FILE *f)
+static int save_tsr19(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR18\r\n\032", 1, 8, f);
+    fwrite("TSR19\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -6946,21 +7042,39 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
             }
         }
         if (!get_edit_snapshot(f, &slot->edit, version)) goto malformed;
-        if (!get32(f, &value) || value > TS_HISTORY_DEPTH) goto malformed;
+        if (!get32(f, &value) ||
+            value > (uint32_t)(version >= 19 ? TS_HISTORY_DEPTH :
+                                                 TS_LEGACY_HISTORY_DEPTH))
+            goto malformed;
         slot->undo_count = (int)value;
         if (slot->undo_count > 0) {
             slot->undo = malloc((size_t)slot->undo_count * sizeof(*slot->undo));
             if (slot->undo == NULL) goto out_of_memory;
             for (int h = 0; h < slot->undo_count; ++h)
                 if (!get_edit_snapshot(f, &slot->undo[h], version)) goto malformed;
+            if (slot->undo_count > TS_HISTORY_DEPTH) {
+                memmove(slot->undo,
+                        slot->undo + (slot->undo_count - TS_HISTORY_DEPTH),
+                        (size_t)TS_HISTORY_DEPTH * sizeof(*slot->undo));
+                slot->undo_count = TS_HISTORY_DEPTH;
+            }
         }
-        if (!get32(f, &value) || value > TS_HISTORY_DEPTH) goto malformed;
+        if (!get32(f, &value) ||
+            value > (uint32_t)(version >= 19 ? TS_HISTORY_DEPTH :
+                                                 TS_LEGACY_HISTORY_DEPTH))
+            goto malformed;
         slot->redo_count = (int)value;
         if (slot->redo_count > 0) {
             slot->redo = malloc((size_t)slot->redo_count * sizeof(*slot->redo));
             if (slot->redo == NULL) goto out_of_memory;
             for (int h = 0; h < slot->redo_count; ++h)
                 if (!get_edit_snapshot(f, &slot->redo[h], version)) goto malformed;
+            if (slot->redo_count > TS_HISTORY_DEPTH) {
+                memmove(slot->redo,
+                        slot->redo + (slot->redo_count - TS_HISTORY_DEPTH),
+                        (size_t)TS_HISTORY_DEPTH * sizeof(*slot->redo));
+                slot->redo_count = TS_HISTORY_DEPTH;
+            }
         }
         slot->process = slot->edit.process;
         if (slot->capture_kind > TS_BANK_CAPTURE_LOOP ||
@@ -6990,10 +7104,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR18 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR19 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR18 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR19 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -7012,13 +7126,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr18(instrument, f)) {
+    if (!save_tsr19(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR18 project");
+        set_error(error, error_size, "Could not write TSR19 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR18 project");
+        set_error(error, error_size, "Could not finish TSR19 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -7053,11 +7167,13 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR18\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR19\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR18\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = magic[4] == '8' ? 18 :
+        int self_contained_version = magic[4] == '9' ? 19 :
+                                     magic[4] == '8' ? 18 :
                                      magic[4] == '7' ? 17 :
                                      magic[4] == '6' ? 16 : 15;
         int ok = load_tsr15_or_newer(f, self_contained_version, instrument,
@@ -7079,7 +7195,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR18 project");
+                  "Not a self-contained TSR6-TSR19 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -7358,7 +7474,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR18 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR19 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

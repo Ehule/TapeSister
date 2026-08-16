@@ -5,7 +5,8 @@
 #include <stdint.h>
 
 enum {
-    TS_HISTORY_DEPTH = 24,
+    TS_HISTORY_DEPTH = 20,
+    TS_LEGACY_HISTORY_DEPTH = 24,
     TS_SAMPLE_EDIT_DEPTH = 64,
     TS_POST_EDIT_DEPTH = 64,
     TS_AUDIO_PATCH_DEPTH = 64,
@@ -19,6 +20,13 @@ enum {
     TS_GRID_DIVISION_MAX = 64,
     TS_GRID_DIVISION_DEFAULT = 16
 };
+
+typedef enum {
+    TS_GRID_SNAP_OFF = 0,
+    TS_GRID_SNAP_ALL,
+    TS_GRID_SNAP_MOVE_ONLY,
+    TS_GRID_SNAP_MODE_COUNT
+} TsGridSnapMode;
 
 typedef struct {
     int root_note;
@@ -409,6 +417,7 @@ void ts_instrument_set_selection(TsInstrument *instrument, size_t first, size_t 
 void ts_instrument_set_selection_snapped(TsInstrument *instrument, size_t first, size_t last);
 size_t ts_instrument_grid_target(const TsInstrument *instrument, size_t frame);
 size_t ts_instrument_resolve_boundary(const TsInstrument *instrument, size_t frame);
+int ts_instrument_grid_moves_snap(const TsInstrument *instrument);
 int ts_instrument_set_grid_divisions(TsInstrument *instrument, uint32_t divisions);
 int ts_instrument_cycle_grid_divisions(TsInstrument *instrument, int direction);
 int ts_instrument_toggle_grid_snap(TsInstrument *instrument);

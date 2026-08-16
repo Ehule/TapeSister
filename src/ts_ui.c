@@ -989,6 +989,18 @@ int ts_ui_transform_auto_audition_allowed(const TsUiState *ui)
     return ui == NULL || !ui->workbench_loop_active;
 }
 
+TsUiLoopCommand ts_ui_loop_command(const TsUiState *ui, int shift_pressed)
+{
+    if (ui != NULL && ui->workbench_loop_persistent)
+        return shift_pressed ? TS_UI_LOOP_LOCK_RELEASE : TS_UI_LOOP_LOCKED;
+    return shift_pressed ? TS_UI_LOOP_LOCK_START : TS_UI_LOOP_START;
+}
+
+int ts_ui_loop_transport_can_stop(const TsUiState *ui, int force)
+{
+    return force || ui == NULL || !ui->workbench_loop_persistent;
+}
+
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames)
 {
     if (ui == NULL) return;
@@ -1124,6 +1136,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
 
     rect(fb, 0, 0, TS_UI_WIDTH, 32, RGB(12, 12, 12));
     text(fb, 14, 9, "TAPESISTER", PAL_TEXT, 2);
+    {
+        char history[24];
+        snprintf(history, sizeof(history), "UNDO %02d/%02d",
+                 instrument->undo_count, TS_HISTORY_DEPTH);
+        text(fb, 280, 13, history, PAL_EFFECT, 1);
+    }
     button(fb, 350, 4, 76, "CONFIG", ui->config_open);
     button(fb, 431, 4, 80, "SEND FT2", 0);
     button(fb, 516, 4, 52, "SAVE", 0);
@@ -1398,7 +1416,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         snprintf(divisions, sizeof(divisions), "DIV %u", grid_divisions);
         mini_button(fb, 480, TS_CANVAS_CONTROLS_Y, 54, divisions, 0);
         mini_button(fb, 538, TS_CANVAS_CONTROLS_Y, 20, ">", 0);
-        mini_button(fb, 562, TS_CANVAS_CONTROLS_Y, 53, "SNAP", grid_snap);
+        mini_button(fb, 562, TS_CANVAS_CONTROLS_Y, 53,
+                    grid_snap == TS_GRID_SNAP_ALL ? "SNAP" :
+                    grid_snap == TS_GRID_SNAP_MOVE_ONLY ? "MOVE" : "OFF",
+                    grid_snap != TS_GRID_SNAP_OFF);
     }
 
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);

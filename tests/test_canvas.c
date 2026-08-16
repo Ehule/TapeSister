@@ -159,7 +159,8 @@ static void test_grid_and_hierarchical_snap(void)
     ts_instrument_set_selection_snapped(&instrument, 18, 64);
     CHECK(instrument.selection_first == 15 && instrument.selection_last == 64);
     CHECK(ts_instrument_toggle_grid_snap(&instrument));
-    CHECK(!instrument.grid_snap);
+    CHECK(instrument.grid_snap == TS_GRID_SNAP_MOVE_ONLY);
+    CHECK(ts_instrument_grid_moves_snap(&instrument));
     CHECK(ts_instrument_resolve_boundary(&instrument, 18) == 20);
     CHECK(ts_instrument_cycle_grid_divisions(&instrument, -1) &&
           instrument.grid_divisions == 4);
@@ -169,6 +170,7 @@ static void test_grid_and_hierarchical_snap(void)
     CHECK(!ts_instrument_cycle_grid_divisions(&instrument, 1));
     CHECK(!ts_instrument_set_grid_divisions(&instrument, 3));
     CHECK(ts_instrument_toggle_grid_snap(&instrument));
+    CHECK(instrument.grid_snap == TS_GRID_SNAP_OFF);
     (void)error;
     ts_instrument_free(&instrument);
 
@@ -195,7 +197,71 @@ static void test_grid_and_hierarchical_snap(void)
     tape.loop_last = 40;
     CHECK(ts_instrument_move_loop_endpoint(&tape, 1, 18) == 1);
     CHECK(tape.loop_first == 16 && tape.loop_last == 40);
+    CHECK(ts_instrument_toggle_grid_snap(&tape));
+    CHECK(tape.grid_snap == TS_GRID_SNAP_MOVE_ONLY);
+    ts_instrument_set_selection_snapped(&tape, 17, 27);
+    CHECK(tape.selection_first == 17 && tape.selection_last == 27);
+    CHECK(ts_instrument_apply_tape_drag(
+              &tape, TS_POST_COPY_OVERWRITE, 17, 27, 34,
+              error, sizeof(error)));
+    CHECK(tape.selection_first == 32 && tape.selection_last == 42);
+    tape.loop_first = 8;
+    tape.loop_last = 40;
+    CHECK(ts_instrument_move_loop_endpoint(&tape, 1, 18) == 1);
+    CHECK(tape.loop_first == 18 && tape.loop_last == 40);
     ts_instrument_free(&tape);
+}
+
+static void test_rolling_history_and_checkpoint(void)
+{
+    TsInstrument instrument;
+    TsInstrument restored;
+    TsSample clipboard;
+    uint64_t newest;
+    size_t origin = 0;
+    char error[160];
+    int undone = 0;
+    ts_sample_init(&clipboard);
+    make_canvas(&instrument, 128, 44100, 0);
+    for (int edit = 0; edit < TS_SAMPLE_EDIT_DEPTH + 8; ++edit)
+        CHECK(ts_instrument_apply_sample_edit(
+                  &instrument, TS_SAMPLE_EDIT_GAIN, 0.995f,
+                  error, sizeof(error)));
+    newest = ts_sample_hash(&instrument.current);
+    CHECK(instrument.undo_count == TS_HISTORY_DEPTH);
+    CHECK(instrument.undo_count <= 20 && instrument.redo_count == 0);
+    CHECK(instrument.sample_edit_count < TS_SAMPLE_EDIT_DEPTH);
+    CHECK(instrument.bank[instrument.selected_slot].patch_count <=
+          TS_AUDIO_PATCH_DEPTH);
+    while (ts_instrument_undo(&instrument, error, sizeof(error))) ++undone;
+    CHECK(undone == TS_HISTORY_DEPTH);
+    while (ts_instrument_redo(&instrument, error, sizeof(error))) { }
+    CHECK(ts_sample_hash(&instrument.current) == newest);
+    ts_instrument_set_selection(&instrument, 0, 8);
+    CHECK(ts_instrument_copy_selection(&instrument, &clipboard, &origin,
+                                       error, sizeof(error)));
+    ts_instrument_set_selection(&instrument, 32, 40);
+    for (int edit = 0; edit < TS_AUDIO_PATCH_DEPTH + 8; ++edit)
+        CHECK(ts_instrument_paste(&instrument, &clipboard, origin, 1,
+                                  error, sizeof(error)));
+    newest = ts_sample_hash(&instrument.current);
+    CHECK(instrument.undo_count == TS_HISTORY_DEPTH);
+    CHECK(instrument.bank[instrument.selected_slot].patch_count <
+          TS_AUDIO_PATCH_DEPTH);
+    CHECK(ts_instrument_save_recipe(&instrument, "test-history.tsr",
+                                    error, sizeof(error)));
+    ts_instrument_init(&restored);
+    CHECK(ts_instrument_load_recipe(&restored, "test-history.tsr",
+                                    error, sizeof(error)));
+    CHECK(restored.undo_count == TS_HISTORY_DEPTH &&
+          ts_sample_hash(&restored.current) == newest);
+    CHECK(ts_instrument_undo(&restored, error, sizeof(error)));
+    CHECK(ts_instrument_redo(&restored, error, sizeof(error)) &&
+          ts_sample_hash(&restored.current) == newest);
+    remove("test-history.tsr");
+    ts_instrument_free(&restored);
+    ts_sample_free(&clipboard);
+    ts_instrument_free(&instrument);
 }
 
 static void test_frozen_gesture_commit_cancel(void)
@@ -248,10 +314,12 @@ static void test_tile_independence_and_roundtrip(void)
     CHECK(instrument.selected_slot == 1);
     CHECK(ts_instrument_set_grid_divisions(&instrument, 32));
     CHECK(ts_instrument_toggle_grid_snap(&instrument));
+    CHECK(ts_instrument_toggle_grid_snap(&instrument));
     CHECK(ts_instrument_select_bank(&instrument, 0, error, sizeof(error)) &&
           instrument.grid_divisions == 16 && !instrument.grid_snap);
     CHECK(ts_instrument_select_bank(&instrument, 1, error, sizeof(error)) &&
-          instrument.grid_divisions == 32 && instrument.grid_snap);
+          instrument.grid_divisions == 32 &&
+          instrument.grid_snap == TS_GRID_SNAP_MOVE_ONLY);
     CHECK(ts_instrument_resize_canvas(&instrument, 1, 5, error, sizeof(error)));
     resized_hash = ts_sample_hash(&instrument.current);
     CHECK(ts_sample_hash(&instrument.bank[0].sample) == source_hash);
@@ -260,7 +328,7 @@ static void test_tile_independence_and_roundtrip(void)
     file = fopen("test-canvas.tsr", "rb");
     CHECK(file != NULL);
     if (file != NULL) {
-        CHECK(fread(magic, 1, 5, file) == 5 && memcmp(magic, "TSR18", 5) == 0);
+        CHECK(fread(magic, 1, 5, file) == 5 && memcmp(magic, "TSR19", 5) == 0);
         fclose(file);
     }
     ts_instrument_init(&restored);
@@ -268,7 +336,8 @@ static void test_tile_independence_and_roundtrip(void)
                                     error, sizeof(error)));
     CHECK(restored.selected_slot == 1 &&
           ts_sample_hash(&restored.current) == resized_hash &&
-          restored.grid_divisions == 32 && restored.grid_snap);
+          restored.grid_divisions == 32 &&
+          restored.grid_snap == TS_GRID_SNAP_MOVE_ONLY);
     CHECK(ts_instrument_select_bank(&restored, 0, error, sizeof(error)) &&
           ts_sample_hash(&restored.current) == source_hash &&
           restored.grid_divisions == 16 && !restored.grid_snap);
@@ -284,6 +353,7 @@ int main(void)
     test_half_zero_snap_and_minimum();
     test_grid_and_hierarchical_snap();
     test_frozen_gesture_commit_cancel();
+    test_rolling_history_and_checkpoint();
     test_tile_independence_and_roundtrip();
     if (failures != 0) {
         fprintf(stderr, "%d canvas/grid checks failed\n", failures);
