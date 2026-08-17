@@ -14,11 +14,13 @@ recipe, and provenance versions; category; typed stage connections and executabl
 requirements; analysis configuration; required input and expected output channels;
 sample-rate preservation; safety, duration, determinism, and Mix policies; and exactly
 four control specifications.
-The production bank currently contains one enabled recipe, GLISTEN. Adding another
-factory recipe means adding a validated immutable schema entry, a typed mapping
-function, argument-plan tests, minimum-input validation, a declared duration/Mix
-policy, and adapter/output tests. User-supplied executable names or command text are
-not accepted.
+The production Recipe Bank currently contains one enabled curated CDP tile, GLISTEN.
+Selecting that tile opens the shared Transform workspace with GLISTEN active and its
+four controls in the fixed control positions. The ordinary factory and user process
+recipe slots remain intact below the curated CDP shelf. Adding another factory CDP
+recipe means adding a validated immutable schema entry, a typed mapping function,
+argument-plan tests, minimum-input validation, a declared duration/Mix policy, and
+adapter/output tests. User-supplied executable names or command text are not accepted.
 
 ## GLISTEN contract verified against supplied CDP8 source
 

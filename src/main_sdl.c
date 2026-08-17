@@ -1352,16 +1352,34 @@ static void discover_transform_runtime(TsUiState *ui,
         snprintf(ui->transform_message, sizeof(ui->transform_message), "%.92s", error);
 }
 
+static const TsCdpRecipe *active_transform_recipe(const TsUiState *ui)
+{
+    const TsCdpRecipe *recipe = ui != NULL && ui->transform_recipe_index >= 0 ?
+        ts_cdp_factory_recipe_at((size_t)ui->transform_recipe_index) : NULL;
+    return recipe != NULL ? recipe : ts_cdp_factory_recipe_at(0u);
+}
+
 static void begin_transform_workspace(TsUiState *ui,
                                       const TsInstrument *instrument,
-                                      TransformController *controller)
+                                      TransformController *controller,
+                                      int recipe_index)
 {
+    const TsCdpRecipe *recipe = recipe_index >= 0 ?
+        ts_cdp_factory_recipe_at((size_t)recipe_index) : NULL;
+    if (recipe == NULL) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "THAT TRANSFORM RECIPE IS NOT AVAILABLE");
+        return;
+    }
     if (instrument == NULL || instrument->current.data == NULL ||
         instrument->current.frames == 0u) {
         snprintf(ui->status, sizeof(ui->status),
-                 "TRANSFORM NEEDS AN OCCUPIED ACTIVE TILE");
+                 "%s NEEDS AN OCCUPIED ACTIVE TILE", recipe->display_name);
         return;
     }
+    if (ui->transform_recipe_index != recipe_index)
+        ts_cdp_recipe_values_default(recipe, &ui->transform_values);
+    ui->transform_recipe_index = recipe_index;
     ui->transform_open = 1;
     ui->transform_scope = instrument->has_selection &&
                           instrument->selection_last > instrument->selection_first ?
@@ -1370,9 +1388,10 @@ static void begin_transform_workspace(TsUiState *ui,
     discover_transform_runtime(ui, controller);
     if (ui->transform_runtime_available)
         snprintf(ui->transform_message, sizeof(ui->transform_message),
-                 "GLISTEN READY - RENDER IS NON-DESTRUCTIVE");
+                 "%s READY - RENDER IS NON-DESTRUCTIVE", recipe->display_name);
     snprintf(ui->status, sizeof(ui->status),
-             "TRANSFORM OPEN - SELECTION AND VIEW ARE SHARED WITH THE EDITOR");
+             "%s TRANSFORM OPEN - SELECTION AND VIEW ARE SHARED",
+             recipe->display_name);
 }
 
 static void close_transform_workspace(SDL_AudioDeviceID device, AudioState *audio,
@@ -1394,8 +1413,13 @@ static int launch_transform_worker(TsUiState *ui, TsInstrument *instrument,
                                    TransformController *controller)
 {
     TransformWorker *worker;
-    const TsCdpRecipe *recipe = ts_cdp_recipe_find("glisten");
+    const TsCdpRecipe *recipe = active_transform_recipe(ui);
     char error[160];
+    if (recipe == NULL) {
+        snprintf(ui->transform_message, sizeof(ui->transform_message),
+                 "TRANSFORM RECIPE IS NOT AVAILABLE");
+        return 0;
+    }
     if (!ui->transform_runtime_available || !controller->runtime.available) {
         discover_transform_runtime(ui, controller);
         if (!ui->transform_runtime_available) return 0;
@@ -1443,7 +1467,7 @@ static int launch_transform_worker(TsUiState *ui, TsInstrument *instrument,
     controller->worker = worker;
     ui->transform_rendering = 1;
     snprintf(ui->transform_message, sizeof(ui->transform_message),
-             "RENDERING GLISTEN JOB %llu",
+             "RENDERING %s JOB %llu", recipe->display_name,
              (unsigned long long)worker->identity.job_id);
     return 1;
 }
@@ -1469,7 +1493,7 @@ static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
                                   TransformController *controller)
 {
     TransformWorker *worker = controller->worker;
-    const TsCdpRecipe *recipe = ts_cdp_recipe_find("glisten");
+    const TsCdpRecipe *recipe = active_transform_recipe(ui);
     char error[160];
     int rerender;
     error[0] = '\0';
@@ -1557,7 +1581,7 @@ static void apply_transform_preview(SDL_AudioDeviceID device, AudioState *audio,
                                     TsUiState *ui, TsInstrument *instrument,
                                     TransformController *controller)
 {
-    const TsCdpRecipe *recipe = ts_cdp_recipe_find("glisten");
+    const TsCdpRecipe *recipe = active_transform_recipe(ui);
     char error[160];
     int ok;
     stop_transform_preview(device, audio, ui, controller);
@@ -1578,9 +1602,9 @@ static void apply_transform_preview(SDL_AudioDeviceID device, AudioState *audio,
     ui->transform_safety = TS_CDP_SAFETY_INVALID;
     ++controller->render_generation;
     snprintf(ui->transform_message, sizeof(ui->transform_message),
-             "GLISTEN APPLIED - ONE STEP UNDO");
+             "%s APPLIED - ONE STEP UNDO", recipe->display_name);
     snprintf(ui->status, sizeof(ui->status),
-             "GLISTEN APPLIED TO %s - SELECTION COVERS RESULT",
+             "%s APPLIED TO %s - SELECTION COVERS RESULT", recipe->display_name,
              ui->transform_scope == TS_TRANSFORM_SELECTION ? "SELECTION" : "WHOLE TILE");
 }
 
@@ -1588,7 +1612,7 @@ static void adjust_transform_control(SDL_AudioDeviceID device, AudioState *audio
                                      TsUiState *ui, TransformController *controller,
                                      int index, int direction, int coarse)
 {
-    const TsCdpRecipe *recipe = ts_cdp_recipe_find("glisten");
+    const TsCdpRecipe *recipe = active_transform_recipe(ui);
     const TsCdpControlSpec *control;
     float value;
     float step;
@@ -1618,7 +1642,7 @@ static void set_transform_control_from_x(SDL_AudioDeviceID device, AudioState *a
                                          TransformController *controller,
                                          int index, int x)
 {
-    const TsCdpRecipe *recipe = ts_cdp_recipe_find("glisten");
+    const TsCdpRecipe *recipe = active_transform_recipe(ui);
     const TsCdpControlSpec *control = &recipe->controls[index];
     int left = 20 + index * 150;
     float normalized = (float)(x - left) / 140.0f;
@@ -4744,11 +4768,12 @@ int main(int argc, char **argv)
                             wheel_y > 0 ? 1 : -1,
                             (SDL_GetModState() & KMOD_SHIFT) == 0);
                 } else if (wheel_y != 0 && ts_ui_transform_mix_contains(x, y)) {
-                    const TsCdpRecipe *recipe = ts_cdp_recipe_find("glisten");
+                    const TsCdpRecipe *recipe = active_transform_recipe(&ui);
                     if (recipe->mix_policy == TS_CDP_MIX_UNSUPPORTED) {
                         snprintf(ui.transform_message,
                                  sizeof(ui.transform_message),
-                                 "MIX DISABLED - GLISTEN USES NATURAL LENGTH");
+                                 "MIX DISABLED - %s USES NATURAL LENGTH",
+                                 recipe->display_name);
                     } else {
                         float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
                         ui.transform_values.mix += wheel_y > 0 ? step : -step;
@@ -5182,11 +5207,12 @@ int main(int argc, char **argv)
                         set_transform_control_from_x(
                             device, &audio, &ui, &transform, control, x);
                     } else if (ts_ui_transform_mix_contains(x, y)) {
-                        const TsCdpRecipe *recipe = ts_cdp_recipe_find("glisten");
+                        const TsCdpRecipe *recipe = active_transform_recipe(&ui);
                         if (recipe->mix_policy == TS_CDP_MIX_UNSUPPORTED) {
                             snprintf(ui.transform_message,
                                      sizeof(ui.transform_message),
-                                     "MIX DISABLED - GLISTEN USES NATURAL LENGTH");
+                                     "MIX DISABLED - %s USES NATURAL LENGTH",
+                                     recipe->display_name);
                         } else {
                             ui.transform_values.mix = (float)(x - 20) / 112.0f;
                             if (ui.transform_values.mix < 0.0f)
@@ -5365,9 +5391,6 @@ int main(int argc, char **argv)
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 573 && x < 630) {
                     begin_export_choice(&ui);
-                } else if (x >= 522 && x < 620 && y >= 40 && y < 63 &&
-                           instrument.current.data != NULL) {
-                    begin_transform_workspace(&ui, &instrument, &transform);
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     TsBankSlot *shown_bank = ui.bank_view_slot >= 0 &&
@@ -5729,7 +5752,7 @@ int main(int argc, char **argv)
                     ui.bank_view_slot = -1;
                     snprintf(ui.status, sizeof(ui.status), "%s PANEL",
                              ui.show_keyboard ? "KEYS" :
-                             ui.show_recipes ? "PROCESS RECIPES" :
+                             ui.show_recipes ? "RECIPE BANK" :
                              ui.show_ingredients ? "INGREDIENTS" : "SAMPLE BANK");
                 } else {
                     int note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
@@ -5738,11 +5761,16 @@ int main(int argc, char **argv)
                                     ts_ui_bank_slot_from_point(x, y) : -1;
                     int recipe_slot = ui.show_recipes ?
                                       ts_ui_recipe_slot_from_point(x, y) : -1;
+                    int cdp_recipe_tile = ui.show_recipes ?
+                        ts_ui_cdp_recipe_tile_from_point(x, y) : -1;
                     int capture_control = !ui.show_keyboard && !ui.show_recipes &&
                                           !ui.show_ingredients &&
                                           ts_ui_capture_button_from_point(x, y);
                     if (capture_control) {
                         capture_button(device, &audio, &ui, &instrument, obtained.freq);
+                    } else if (cdp_recipe_tile >= 0) {
+                        begin_transform_workspace(&ui, &instrument, &transform,
+                                                  cdp_recipe_tile);
                     } else if (recipe_slot >= 0) {
                         unsigned modifiers = bank_modifiers(mod);
                         if (modifiers == 0)

@@ -210,6 +210,7 @@ typedef struct {
     int transform_preview_available;
     int transform_preview_active;
     int transform_runtime_available;
+    int transform_recipe_index;
     int transform_selection_dragging;
     int transform_selection_drag_mode;
     size_t transform_selection_anchor;
@@ -349,6 +350,7 @@ void ts_ui_begin_palette_edit(TsUiState *ui);
 void ts_ui_finish_palette_edit(TsUiState *ui, int cancel);
 int ts_ui_bank_slot_from_point(int x, int y);
 int ts_ui_recipe_slot_from_point(int x, int y);
+int ts_ui_cdp_recipe_tile_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
 int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
                               TsUiBankAction action,

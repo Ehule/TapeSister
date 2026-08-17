@@ -2469,6 +2469,9 @@ int main(void)
     ui.show_keyboard = 0;
     ui.show_recipes = 1;
     ts_ui_render(&fb, &ui, &imported);
+    CHECK(ts_ui_cdp_recipe_tile_from_point(46, 321) == 0);
+    CHECK(ts_ui_cdp_recipe_tile_from_point(108, 321) == -1);
+    CHECK(ts_ui_cdp_recipe_tile_from_point(150, 321) == -1);
     CHECK(ts_ui_recipe_slot_from_point(46, 341) == 0);
     CHECK(ui.recipes.slots[0].occupied && ui.recipes.slots[0].factory);
     CHECK(fb.pixels[332 * TS_UI_WIDTH + 12] == 0xff18ff00u);

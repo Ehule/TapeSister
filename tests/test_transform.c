@@ -330,6 +330,7 @@ static void transform_ui_contract_tests(void)
     size_t view_last;
     setup(&instrument, 8192u);
     ts_ui_init(&ui);
+    CHECK(ui.transform_recipe_index == -1);
     ui.transform_open = 1;
     ui.transform_scope = TS_TRANSFORM_SELECTION;
     first = instrument.selection_first;

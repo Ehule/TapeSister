@@ -40,6 +40,15 @@ typedef struct {
     const char *label;
 } TsPanelButton;
 
+enum {
+    TS_CDP_BANK_TILE_X = 10,
+    TS_CDP_BANK_TILE_Y = 313,
+    TS_CDP_BANK_TILE_W = 96,
+    TS_CDP_BANK_TILE_H = 17,
+    TS_CDP_BANK_TILE_STEP_X = 101,
+    TS_CDP_BANK_TILE_MAX = 6
+};
+
 static const TsPanelButton config_buttons[] = {
     {20, 96, "SAVE CONFIG"}, {121, 76, "USE CWD"},
     {202, 76, "PALETTE"}, {283, 68, "CANCEL"}
@@ -657,9 +666,12 @@ static void transform_control(TsFramebuffer *fb, const TsCdpRecipe *recipe,
 static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
                              const TsInstrument *instrument)
 {
-    const TsCdpRecipe *recipe = ts_cdp_recipe_find("glisten");
+    const TsCdpRecipe *recipe =
+        ts_cdp_factory_recipe_at((size_t)ui->transform_recipe_index);
     char mix[32];
     char selection[48];
+    if (recipe == NULL) recipe = ts_cdp_factory_recipe_at(0u);
+    if (recipe == NULL) return;
     frame(fb, 10, 40, 620, 264, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 46, "TRANSFORM", PAL_NOTE, 1);
     text(fb, 452, 46, "OFFLINE CDP8", PAL_EFFECT, 1);
@@ -820,8 +832,9 @@ void ts_ui_init(TsUiState *ui)
     ui->palette_channel = 0;
     ts_recipe_bank_init(&ui->recipes);
     ui->transform_scope = TS_TRANSFORM_WHOLE;
+    ui->transform_recipe_index = -1;
     ui->transform_safety = TS_CDP_SAFETY_INVALID;
-    ts_cdp_recipe_values_default(ts_cdp_recipe_find("glisten"),
+    ts_cdp_recipe_values_default(ts_cdp_factory_recipe_at(0u),
                                  &ui->transform_values);
     snprintf(ui->transform_message, sizeof(ui->transform_message),
              "SELECT A SCOPE AND RENDER");
@@ -1362,9 +1375,6 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         snprintf(empty, sizeof(empty), "TILE %02d EMPTY", instrument->selected_slot + 1);
         text(fb, 20, 49, empty, PAL_INSTRUMENT, 1);
     }
-    if (sample->frames && !showing_bank && !showing_parent)
-        button(fb, 522, 40, 98, "TRANSFORM", ui->transform_open);
-
     wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
     if (grid_divisions < TS_GRID_DIVISION_MIN ||
         grid_divisions > TS_GRID_DIVISION_MAX ||
@@ -1789,8 +1799,21 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             }
         }
     } else if (ui->show_recipes) {
-        text(fb, 11, 318,
-             "CLICK APPLY  SHIFT CLICK CAPTURE  RMB RENAME  SHIFT+RMB CLEAR  SAVE TSP",
+        size_t cdp_count = ts_cdp_factory_recipe_count();
+        int hint_x;
+        if (cdp_count > TS_CDP_BANK_TILE_MAX) cdp_count = TS_CDP_BANK_TILE_MAX;
+        for (size_t i = 0; i < cdp_count; ++i) {
+            const TsCdpRecipe *recipe = ts_cdp_factory_recipe_at(i);
+            int x = TS_CDP_BANK_TILE_X + (int)i * TS_CDP_BANK_TILE_STEP_X;
+            mini_button(fb, x, TS_CDP_BANK_TILE_Y, TS_CDP_BANK_TILE_W,
+                        recipe->display_name,
+                        (int)i == ui->transform_recipe_index);
+            rect(fb, x + 2, TS_CDP_BANK_TILE_Y + 2, 3,
+                 TS_CDP_BANK_TILE_H - 4, PAL_EFFECT);
+        }
+        hint_x = TS_CDP_BANK_TILE_X + (int)cdp_count * TS_CDP_BANK_TILE_STEP_X + 5;
+        text(fb, hint_x, 318,
+             "CDP TRANSFORM  BELOW: CLICK APPLY  SHIFT CAPTURE  RMB RENAME",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
             const TsPortableRecipe *slot = &ui->recipes.slots[i];
@@ -2016,6 +2039,20 @@ int ts_ui_bank_slot_from_point(int x, int y)
 int ts_ui_recipe_slot_from_point(int x, int y)
 {
     return ts_ui_bank_slot_from_point(x, y);
+}
+
+int ts_ui_cdp_recipe_tile_from_point(int x, int y)
+{
+    int index;
+    if (x < TS_CDP_BANK_TILE_X || y < TS_CDP_BANK_TILE_Y ||
+        y >= TS_CDP_BANK_TILE_Y + TS_CDP_BANK_TILE_H)
+        return -1;
+    index = (x - TS_CDP_BANK_TILE_X) / TS_CDP_BANK_TILE_STEP_X;
+    if (index < 0 || index >= TS_CDP_BANK_TILE_MAX ||
+        (x - TS_CDP_BANK_TILE_X) % TS_CDP_BANK_TILE_STEP_X >= TS_CDP_BANK_TILE_W ||
+        (size_t)index >= ts_cdp_factory_recipe_count())
+        return -1;
+    return index;
 }
 
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)

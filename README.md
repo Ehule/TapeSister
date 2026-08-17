@@ -61,14 +61,15 @@ most one quarter of the selection, and can be changed with
 
 ## Curated offline CDP Transform
 
-**TRANSFORM** opens a compact workspace over the waveform editor. Its mini waveform
-uses the active tile's exact persistent selection and viewport—drag either selection
-edge to resize it, drag inside it to move it, or drag elsewhere to make a new range.
-The same half-open range is immediately visible in the main editor when Transform is
-closed. Choose **Selection** or **Whole**, adjust GLISTEN's four direct controls, then
-press **Render**. The fixed universal Mix position remains visible but reads **N/A**
-for GLISTEN because its natural PVOC result changes duration. Rendering runs off the
-UI and audio threads; ordinary playback keeps using the unchanged tile while CDP works.
+Open the **Recipe Bank** and choose the curated **GLISTEN** tile to open its compact
+Transform workspace over the waveform editor. Its mini waveform uses the active tile's
+exact persistent selection and viewport—drag either selection edge to resize it, drag
+inside it to move it, or drag elsewhere to make a new range. The same half-open range
+is immediately visible in the main editor when Transform is closed. Choose **Selection**
+or **Whole**, adjust GLISTEN's four direct controls, then press **Render**. The fixed
+universal Mix position remains visible but reads **N/A** for GLISTEN because its natural
+PVOC result changes duration. Rendering runs off the UI and audio threads; ordinary
+playback keeps using the unchanged tile while CDP works.
 
 A successful render becomes independent audition memory and never changes the tile
 until **Apply** is pressed. Space auditions or stops that preview, Enter renders, A
