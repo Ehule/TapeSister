@@ -224,12 +224,23 @@ switch, clear, workspace close, or shutdown. Playback and Capture continue on ex
 audio while CDP works.
 
 Apply promotes the already-auditioned preview; it never reruns a random process. The
-existing replacement path preserves outside audio, applies only the established short
+replacement path preserves outside audio, applies only the established short
 inside-boundary splice, accepts the wet result's natural duration, and selects exactly
 `[old_first, old_first + rendered_frames)`. Canvas and later audio expand/contract or
 shift as required. Same-length edits retain the viewport; length changes minimally
 bound it without Show All. The result retains tile identity, metadata, audible tuning,
 and keyboard mapping.
+
+The accepted complete result becomes one immutable `TS_POST_MATERIAL_REPLACE`
+checkpoint replayed before the live native process stage. Transform input comes from
+Current, so it already contains the BODY/EDGE/DRIFT and native-effect settings that
+were audible at render time. Apply therefore restarts the new live native stage at its
+neutral values: the accepted preview is reproduced exactly once rather than processing
+those baked settings twice. Later native-control changes always rebuild from the stable
+checkpoint, so the transformed region cannot mask BODY, EDGE, DRIFT, NOISE, SHAPE,
+DELAY, or SPACE and A→B→A changes remain deterministic. Undo retains the prior full
+edit/process graph; Redo restores the checkpoint and neutral live stage. TSR21 stores
+this ordering explicitly while TSR6–TSR20 remain loadable.
 
 Left-click quick Apply uses the identical render → validate → immutable preview → Apply
 path, but commits immediately after validation instead of displaying the workspace.

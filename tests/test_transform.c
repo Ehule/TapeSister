@@ -297,7 +297,16 @@ static void identity_and_apply_tests(void)
           restored.selection_first == instrument.selection_first &&
           restored.selection_last == instrument.selection_last &&
           restored.view_first == instrument.view_first &&
-          restored.view_last == instrument.view_last);
+          restored.view_last == instrument.view_last &&
+          restored.post_edit_count == 1 &&
+          restored.post_edits[0].kind == TS_POST_MATERIAL_REPLACE);
+    {
+        uint64_t restored_hash = ts_sample_hash(&restored.current);
+        TsProcessRecipe live = restored.process;
+        live.body = 1.0f;
+        CHECK(ts_instrument_set_process(&restored, &live, error, sizeof(error)) &&
+              ts_sample_hash(&restored.current) != restored_hash);
+    }
     remove("test-transform.tsr");
     ts_instrument_free(&restored);
     ts_transform_preview_free(&preview);
@@ -386,6 +395,238 @@ static void replacement_lengths_and_selection_persistence_tests(void)
     ts_sample_free(&rendered);
     ts_sample_free(&before);
     ts_instrument_free(&instrument);
+}
+
+static void rendered_replacement_native_process_regression_tests(void)
+{
+    char error[160];
+    TsInstrument instrument;
+    TsInstrument isolated;
+    TsSample accepted;
+    TsSample rendered;
+    TsProcessRecipe neutral;
+    TsProcessRecipe process;
+    uint64_t accepted_hash;
+    uint64_t a_hash;
+    uint64_t b_hash;
+    uint64_t other_hash;
+
+    /* Reproducer for the PR-31 failure: this same sequence produced an
+       unchanged hash when the accepted render was a post-process patch. */
+    setup(&instrument, 8192u);
+    ts_sample_init(&accepted);
+    ts_sample_init(&rendered);
+    rendered.frames = instrument.current.frames;
+    rendered.sample_rate = instrument.current.sample_rate;
+    rendered.data = malloc(rendered.frames * sizeof(*rendered.data));
+    CHECK(rendered.data != NULL);
+    for (size_t frame = 0; frame < rendered.frames; ++frame) {
+        double phase = (double)frame * 2.0 * 3.14159265358979323846 / 73.0;
+        rendered.data[frame] = 0.35f * (float)sin(phase) +
+                               ((frame & 1u) ? 0.12f : -0.12f);
+    }
+    CHECK(ts_instrument_apply_rendered_replacement(
+        &instrument, &rendered, 0u, instrument.current.frames,
+        error, sizeof(error)));
+    accepted_hash = ts_sample_hash(&instrument.current);
+    CHECK(instrument.post_edit_count == 1 &&
+          instrument.post_edits[0].kind == TS_POST_MATERIAL_REPLACE);
+    CHECK(ts_sample_clone(&accepted, &instrument.current, error, sizeof(error)));
+    ts_process_recipe_reset(&neutral);
+    neutral.seed = instrument.process.seed;
+    CHECK(ts_process_recipe_equal(&instrument.process, &neutral));
+
+    process = neutral;
+    process.body = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.edge = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.drift = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.noise_enabled = 1;
+    process.noise_amount = 1.0f;
+    process.noise_color = TS_NOISE_METALLIC;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.shaper_enabled = 1;
+    process.shaper_mode = TS_SHAPER_FOLD;
+    process.shaper_drive = 14.0f;
+    process.shaper_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.delay_enabled = 1;
+    process.delay_seconds = 0.005f;
+    process.delay_feedback = 0.8f;
+    process.delay_damping = 0.1f;
+    process.delay_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.reverb_enabled = 1;
+    process.reverb_decay = 0.95f;
+    process.reverb_damping = 0.1f;
+    process.reverb_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    /* Every parameter move rebuilds from the stable accepted material. */
+    process = neutral;
+    process.body = 0.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    a_hash = ts_sample_hash(&instrument.current);
+    process.body = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    b_hash = ts_sample_hash(&instrument.current);
+    CHECK(a_hash != b_hash);
+    process.body = 0.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) == a_hash);
+    ts_sample_free(&accepted);
+    ts_sample_free(&rendered);
+    ts_instrument_free(&instrument);
+
+    /* A duration-changing selection checkpoint remains live under the native
+       stage, including inside the transformed range. */
+    setup(&instrument, 8192u);
+    ts_sample_init(&accepted);
+    ts_sample_init(&rendered);
+    rendered.frames = 3072u;
+    rendered.sample_rate = instrument.current.sample_rate;
+    rendered.data = malloc(rendered.frames * sizeof(*rendered.data));
+    CHECK(rendered.data != NULL);
+    for (size_t frame = 0; frame < rendered.frames; ++frame)
+        rendered.data[frame] = 0.42f * (float)sin((double)frame * 0.071);
+    CHECK(ts_instrument_apply_rendered_replacement(
+        &instrument, &rendered, instrument.selection_first,
+        instrument.selection_last, error, sizeof(error)));
+    CHECK(instrument.current.frames == 9216u &&
+          instrument.selection_first == 2048u &&
+          instrument.selection_last == 5120u);
+    CHECK(ts_sample_clone(&accepted, &instrument.current, error, sizeof(error)));
+    process = instrument.process;
+    process.shaper_enabled = 1;
+    process.shaper_mode = TS_SHAPER_CLIP;
+    process.shaper_drive = 12.0f;
+    process.shaper_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(memcmp(instrument.current.data + instrument.selection_first,
+                 accepted.data + instrument.selection_first,
+                 (instrument.selection_last - instrument.selection_first) *
+                 sizeof(*accepted.data)) != 0);
+    ts_sample_free(&accepted);
+    ts_sample_free(&rendered);
+    ts_instrument_free(&instrument);
+
+    /* Whole-tile natural-duration output also becomes live native material. */
+    setup(&instrument, 8192u);
+    ts_instrument_clear_selection(&instrument);
+    ts_sample_init(&rendered);
+    rendered.frames = 9216u;
+    rendered.sample_rate = instrument.current.sample_rate;
+    rendered.data = malloc(rendered.frames * sizeof(*rendered.data));
+    CHECK(rendered.data != NULL);
+    for (size_t frame = 0; frame < rendered.frames; ++frame)
+        rendered.data[frame] = 0.31f * (float)sin((double)frame * 0.043);
+    CHECK(ts_instrument_apply_rendered_replacement(
+        &instrument, &rendered, 0u, instrument.current.frames,
+        error, sizeof(error)));
+    accepted_hash = ts_sample_hash(&instrument.current);
+    CHECK(instrument.current.frames == rendered.frames &&
+          instrument.selection_first == 0u &&
+          instrument.selection_last == rendered.frames);
+    process = instrument.process;
+    process.edge = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          instrument.current.frames == 8192u && !instrument.has_selection);
+    CHECK(ts_instrument_redo(&instrument, error, sizeof(error)) &&
+          instrument.current.frames == 9216u);
+    ts_sample_free(&rendered);
+    ts_instrument_free(&instrument);
+
+    /* Current already contains the active native process used as Transform
+       input. Apply must accept that preview exactly, reset the new live stage,
+       and keep Undo/Redo graph state exact rather than processing it twice. */
+    setup(&instrument, 8192u);
+    ts_sample_init(&rendered);
+    process = instrument.process;
+    process.body = 1.0f;
+    process.edge = 0.45f;
+    process.noise_enabled = 1;
+    process.noise_amount = 0.35f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_clone(&rendered, &instrument.current, error, sizeof(error)));
+    for (size_t frame = 0; frame < rendered.frames; ++frame)
+        rendered.data[frame] *= -0.73f;
+    {
+        int undo_before = instrument.undo_count;
+        TsProcessRecipe prior_process = instrument.process;
+        uint64_t prior_hash = ts_sample_hash(&instrument.current);
+        uint64_t rendered_hash = ts_sample_hash(&rendered);
+        instrument.view_first = 777u;
+        instrument.view_last = 7000u;
+        CHECK(ts_instrument_apply_rendered_replacement(
+            &instrument, &rendered, 0u, instrument.current.frames,
+            error, sizeof(error)));
+        CHECK(instrument.undo_count == undo_before + 1 &&
+              ts_sample_hash(&instrument.current) == rendered_hash &&
+              instrument.view_first == 777u && instrument.view_last == 7000u);
+        ts_process_recipe_reset(&neutral);
+        neutral.seed = prior_process.seed;
+        CHECK(ts_process_recipe_equal(&instrument.process, &neutral));
+        CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+              ts_sample_hash(&instrument.current) == prior_hash &&
+              ts_process_recipe_equal(&instrument.process, &prior_process) &&
+              instrument.selection_first == 2048u &&
+              instrument.selection_last == 4096u);
+        CHECK(ts_instrument_redo(&instrument, error, sizeof(error)) &&
+              ts_sample_hash(&instrument.current) == rendered_hash &&
+              ts_process_recipe_equal(&instrument.process, &neutral));
+        process = instrument.process;
+        process.body = 0.0f;
+        CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+              ts_sample_hash(&instrument.current) != rendered_hash);
+    }
+    ts_sample_free(&rendered);
+    ts_instrument_free(&instrument);
+
+    /* The checkpoint and all later native processing remain tile-local. */
+    setup(&isolated, 8192u);
+    CHECK(ts_instrument_copy_selected(&isolated, 1, error, sizeof(error)));
+    other_hash = ts_sample_hash(&isolated.current);
+    CHECK(ts_instrument_select_bank(&isolated, 0, error, sizeof(error)));
+    ts_sample_init(&rendered);
+    CHECK(ts_sample_clone(&rendered, &isolated.current, error, sizeof(error)));
+    for (size_t frame = 0; frame < rendered.frames; ++frame)
+        rendered.data[frame] = -rendered.data[frame];
+    CHECK(ts_instrument_apply_rendered_replacement(
+        &isolated, &rendered, 0u, isolated.current.frames,
+        error, sizeof(error)));
+    process = isolated.process;
+    process.edge = 1.0f;
+    CHECK(ts_instrument_set_process(&isolated, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&isolated.bank[1].sample) == other_hash);
+    CHECK(ts_instrument_select_bank(&isolated, 1, error, sizeof(error)) &&
+          ts_sample_hash(&isolated.current) == other_hash);
+    ts_sample_free(&rendered);
+    ts_instrument_free(&isolated);
 }
 
 static void native_dsp_recipe_and_preview_tests(void)
@@ -498,6 +739,15 @@ static void native_dsp_recipe_and_preview_tests(void)
           instrument.view_first == 900u && instrument.view_last == 6100u);
     CHECK(ts_instrument_redo(&instrument, error, sizeof(error)));
     CHECK(instrument.selection_first == first && instrument.selection_last == last);
+    {
+        uint64_t accepted_hash = ts_sample_hash(&instrument.current);
+        TsProcessRecipe live = instrument.process;
+        CHECK(instrument.post_edit_count == 1 &&
+              instrument.post_edits[0].kind == TS_POST_MATERIAL_REPLACE);
+        live.edge = 1.0f;
+        CHECK(ts_instrument_set_process(&instrument, &live, error, sizeof(error)) &&
+              ts_sample_hash(&instrument.current) != accepted_hash);
+    }
     ts_dsp_transform_preview_free(&preview);
     ts_sample_free(&rendered);
     ts_sample_free(&input);
@@ -876,6 +1126,7 @@ int main(void)
     identity_and_apply_tests();
     tile_isolation_and_whole_tests();
     replacement_lengths_and_selection_persistence_tests();
+    rendered_replacement_native_process_regression_tests();
     native_dsp_recipe_and_preview_tests();
     native_dsp_direct_and_body_range_tests();
     transform_ui_contract_tests();
