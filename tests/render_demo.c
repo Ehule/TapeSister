@@ -1,4 +1,5 @@
 #include "tapesister/sample.h"
+#include "tapesister/dsp_transform.h"
 #include "tapesister/ui.h"
 
 #include <stdio.h>
@@ -292,6 +293,18 @@ int main(int argc, char **argv)
         ui.recipes.active_slot = 7;
         snprintf(ui.status, sizeof(ui.status),
                  "BROKEN FOLD APPLIED - PARENT PRESERVED  UNDO RESTORES");
+    } else if (argc > 2 && strcmp(argv[2], "dsp") == 0) {
+        ui.show_keyboard = 0;
+        ui.show_ingredients = 1;
+        ui.dsp_page = 0;
+        snprintf(ui.status, sizeof(ui.status),
+                 "DSP 1 PROCESS - LEFT APPLY  MIDDLE EDIT  4 TOGGLES PAGE");
+    } else if (argc > 2 && strcmp(argv[2], "dsp2") == 0) {
+        ui.show_keyboard = 0;
+        ui.show_ingredients = 1;
+        ui.dsp_page = 1;
+        snprintf(ui.status, sizeof(ui.status),
+                 "DSP 2 PRIMITIVES - SOURCE MIX REPLACE MATERIAL GENERATORS");
     } else if (argc > 2 && strcmp(argv[2], "cdp") == 0) {
         ui.show_keyboard = 0;
         ui.show_recipes = 1;
@@ -305,26 +318,39 @@ int main(int argc, char **argv)
         snprintf(ui.status, sizeof(ui.status),
                  "CDP 2 - GLISTEN TILE 01  SAMPLE AND SELECTION PRESERVED");
     } else if (argc > 2 && strcmp(argv[2], "dsp-transform") == 0) {
-        TsPortableRecipe *working = &ui.transform_dsp_working;
-        *working = ui.recipes.slots[4];
-        if (!ts_dsp_preset_set_control(working, 0u, 0.42f) ||
-            !ts_dsp_preset_set_control(working, 1u, 0.72f) ||
-            !ts_dsp_preset_set_control(working, 2u, 0.61f) ||
-            !ts_dsp_preset_set_control(working, 3u, 0.54f) ||
-            !ts_sample_process(&drone_preview, &instrument.current,
-                               instrument.selection_first,
-                               instrument.selection_last,
-                               &working->process, error, sizeof(error))) {
+        const TsDspRecipe *recipe = ts_dsp_recipe_find("dub");
+        TsDspTransformIdentity identity;
+        TsSample input;
+        TsCdpSafetyStatus safety = TS_CDP_SAFETY_INVALID;
+        float peak = 0.0f;
+        double dc = 0.0;
+        int clipped = 0;
+        ts_sample_init(&input);
+        ui.transform_dsp_values = ui.dsp_presets[TS_DSP_RECIPE_DUB];
+        if (!ts_dsp_recipe_set_control(recipe, &ui.transform_dsp_values, 0u, 0.42f) ||
+            !ts_dsp_recipe_set_control(recipe, &ui.transform_dsp_values, 1u, 0.72f) ||
+            !ts_dsp_recipe_set_control(recipe, &ui.transform_dsp_values, 2u, 0.61f) ||
+            !ts_dsp_recipe_set_control(recipe, &ui.transform_dsp_values, 3u, 0.54f) ||
+            !ts_dsp_transform_identity_capture_recipe(
+                &identity, &instrument, TS_TRANSFORM_SELECTION, recipe,
+                &ui.transform_dsp_values, 1u, 1u, error, sizeof(error)) ||
+            !ts_dsp_transform_extract_input(&instrument, &identity, &input,
+                                            error, sizeof(error)) ||
+            !ts_dsp_transform_render_recipe(
+                &input, recipe, &ui.transform_dsp_values, &drone_preview,
+                &safety, &peak, &dc, &clipped, error, sizeof(error))) {
             fprintf(stderr, "%s\n", error);
+            ts_sample_free(&input);
             ts_instrument_free(&instrument);
             return 1;
         }
+        ts_sample_free(&input);
         ts_transform_boundary_splice(&drone_preview, &instrument.current,
                                      instrument.selection_first,
                                      instrument.selection_last);
         ui.transform_open = 1;
         ui.transform_backend = TS_TRANSFORM_BACKEND_DSP;
-        ui.transform_dsp_slot = 4;
+        ui.transform_dsp_slot = TS_DSP_RECIPE_DUB;
         ui.transform_scope = TS_TRANSFORM_SELECTION;
         ui.transform_preview_sample = &drone_preview;
         ui.transform_preview_first = instrument.selection_first;
@@ -334,7 +360,7 @@ int main(int argc, char **argv)
         snprintf(ui.transform_message, sizeof(ui.transform_message),
                  "PREVIEW READY - SOURCE AUDIO AND HISTORY ARE UNCHANGED");
         snprintf(ui.status, sizeof(ui.status),
-                 "DUB ECHO DSP - SAVE ONCE, LEFT CLICK TO PERFORM IT LATER");
+                 "DUB DSP - SAVE ONCE, LEFT CLICK TO PERFORM IT LATER");
     } else if (argc > 2 && strcmp(argv[2], "tuning") == 0) {
         if (!ts_instrument_set_tuning(&instrument, 57, -14.2f,
                                       error, sizeof(error))) {

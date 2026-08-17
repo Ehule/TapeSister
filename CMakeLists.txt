@@ -7,7 +7,8 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_audition.c src/ts_note_bank.c
              src/ts_capture.c
-             src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_palette.c
+             src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_dsp_recipe.c
+             src/ts_palette.c
              src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c
              src/ts_dsp_transform.c src/ts_ui.c)
 target_include_directories(tapesister_core PUBLIC include)

@@ -135,7 +135,7 @@ The **Tune** page gives the selected tile its own pitch readout and ±100-cent a
 
 **Suggest Pitch** analyzes the snapped Selection first, then the Loop, then the whole selected tile. It temporarily places the suggested mapping on the keyboard so new, held, and latched notes can audition it immediately; the Tune readout follows that preview, while saved tuning and Undo history remain untouched. A second explicit click accepts it. Escape cancels the preview and still performs Stop All; Space stops audition without discarding the preview. Quiet, noisy, or unstable material is rejected rather than forced into a misleading note. Manual tuning remains authoritative.
 
-Root and fine tuning participate in the selected tile's state and Undo/Redo history. Selected-tile and Collection WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. The same chunk carries loop start/end/type; importing the WAV restores that loop in TapeSister. User-captured TSP2 recipes optionally carry tuning; the eight factory recipes remain processing-only and never retune a sound unexpectedly.
+Root and fine tuning participate in the selected tile's state and Undo/Redo history. Selected-tile and Collection WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. The same chunk carries loop start/end/type; importing the WAV restores that loop in TapeSister. User-captured TSP2 recipes optionally carry tuning; legacy factory TSP processing recipes remain processing-only and never retune a sound unexpectedly.
 
 ## FastTracker handoff and configuration
 
@@ -212,18 +212,28 @@ CDP is one curated offline-transform mode with two internal 16-tile pages. Press
 inside CDP toggles the page; there is no fifth top-level mode or shortcut. All 32 fixed
 tiles are functional, from DRUNK through ITERATE on CDP 1 and GLISTEN through GRANULATE
 on CDP 2. CDP tiles use left-click quick Apply and middle-click editing, matching the
-DSP interaction language while retaining the external offline engine. DSP contains
-eight factory transformations and eight user slots.
-Left-click a filled DSP tile for the fast path: its saved settings transform the current
+DSP interaction language while retaining the external offline engine. DSP is also one
+top-level mode with two internal pages. Press `4` again, or use the visible toggle, to
+move between **DSP 1 PROCESS** and **DSP 2 PRIMITIVES** without changing the active
+tile, selection, or viewport.
+
+DSP1 provides 16 curated native processors: SPACE, CAVE, ROOM, ECHO, TAPE, DUB,
+COMB, RESONATE, LOW, HIGH, BAND, NOTCH, CHORUS, FLANGE, DRIVE, and CRUSH. DSP2
+provides 16 offline material generators: SINE, SHAPE, PULSE, SUB, METAL, CHIME,
+DRONE, BEAT, RUMBLE, HISS, DUST, KNOCK, PING, FM, AM, and CHAOS. DSP2's `SOURCE`
+macro travels continuously from generated replacement through aligned source mix to
+the exact dry waveform. Generated results are ordinary editable TapeSister material,
+not a separate synthesizer state.
+
+Left-click a DSP tile for the fast path: its saved settings transform the current
 selection, or the whole tile when no selection exists, as one Undo step. Middle-click a
-filled DSP tile to shape it in the shared Transform workspace. Its two to four musical
+DSP tile to shape it in the shared Transform workspace. Its four musical
 macros update an owned temporary preview without changing tile audio; Space auditions,
 Apply commits, Back/Escape discards, and Save/Update stores the tile's macro settings.
-Factory updates persist in `tapesister.ini`. A user tile keeps the update in its portable
-recipe and the normal top Save writes it as a TSP. Shift-click an empty user slot still
-captures the live processing shelf, right-click renames, and Shift-right-click clears.
-Factory names remain immutable. See `docs/DSP_TRANSFORM.md` for the processing and
-transaction contract.
+All 32 updates persist in `tapesister.ini`; DSP1 occupies rows 01–16 and DSP2 occupies
+17–32. Existing TSP processing files remain loadable and immediately applicable. See
+`docs/DSP_TRANSFORM.md` for the registry, shared render/preview transaction, primitive
+engine, and SOURCE alignment contract.
 
 The compact **LOOP** audition button repeats a fixed selection when one exists, otherwise it follows the visible tile view as that view is zoomed or panned. A short boundary crossfade uses the existing audition engine. While LOOP is active it remains the audition owner, so WARP, SMEAR, and TEAR continue publishing spring-loaded previews without their usual timed playback retriggers. Ordinary LOOP remains temporary. Shift-click **LOOP** to engage LOOP LOCK across every editing and tile operation; Shift-click it again to release.
 

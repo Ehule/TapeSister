@@ -673,21 +673,21 @@ static void transform_control(TsFramebuffer *fb, const TsCdpRecipe *recipe,
 }
 
 static void dsp_transform_control(TsFramebuffer *fb,
-                                  const TsDspPresetSpec *spec,
-                                  const TsPortableRecipe *working,
+                                  const TsDspRecipe *recipe,
+                                  const TsDspRecipeValues *values,
                                   size_t index)
 {
-    const TsDspControlSpec *control;
+    const TsDspRecipeControl *control;
     float amount;
     int x;
     char shown[48];
-    if (spec == NULL || working == NULL || index >= spec->control_count) return;
-    control = &spec->controls[index];
-    amount = working->dsp_controls[index];
+    if (recipe == NULL || values == NULL || index >= recipe->control_count) return;
+    control = &recipe->controls[index];
+    amount = values->controls[index];
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
     x = 20 + (int)index * 150;
-    ts_dsp_control_format(control, amount, shown, sizeof(shown));
+    ts_dsp_recipe_control_format(control, amount, shown, sizeof(shown));
     text(fb, x, 155, control->label, PAL_TUNING, 1);
     text(fb, x + 62, 155, shown, PAL_EFFECT, 1);
     frame(fb, x, 166, 140, 18, RGB(12, 12, 12), PAL_BUTTON);
@@ -700,17 +700,16 @@ static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
     const int dsp = ui->transform_backend == TS_TRANSFORM_BACKEND_DSP;
     const TsCdpRecipe *recipe = dsp ? NULL :
         ts_cdp_factory_recipe_at((size_t)ui->transform_recipe_index);
-    const TsPortableRecipe *working = dsp ? &ui->transform_dsp_working : NULL;
-    const TsDspPresetSpec *dsp_spec = dsp ?
-        ts_dsp_preset_spec(working->dsp_profile) : NULL;
+    const TsDspRecipe *dsp_recipe = dsp && ui->transform_dsp_slot >= 0 ?
+        ts_dsp_factory_recipe_at((size_t)ui->transform_dsp_slot) : NULL;
     const char *name;
     const char *description;
     char mix[32];
     char selection[48];
     if (!dsp && recipe == NULL) recipe = ts_cdp_factory_recipe_at(0u);
-    if (!dsp && recipe == NULL) return;
-    name = dsp ? working->name : recipe->display_name;
-    description = dsp ? dsp_spec->description : recipe->description;
+    if ((dsp && dsp_recipe == NULL) || (!dsp && recipe == NULL)) return;
+    name = dsp ? dsp_recipe->display_name : recipe->display_name;
+    description = dsp ? dsp_recipe->description : recipe->description;
     frame(fb, 10, 40, 620, 264, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 46, "TRANSFORM", PAL_NOTE, 1);
     text(fb, dsp ? 476 : 452, 46, dsp ? "NATIVE DSP" : "OFFLINE CDP8",
@@ -719,8 +718,8 @@ static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
     button(fb, 20, 126, 94, name, 1);
     text(fb, 124, 134, description, PAL_INSTRUMENT, 1);
     if (dsp) {
-        for (size_t i = 0; i < dsp_spec->control_count; ++i)
-            dsp_transform_control(fb, dsp_spec, working, i);
+        for (size_t i = 0; i < dsp_recipe->control_count; ++i)
+            dsp_transform_control(fb, dsp_recipe, &ui->transform_dsp_values, i);
         button(fb, 20, 190, 112, "AUTO PREVIEW", ui->transform_rendering);
     } else {
         for (size_t i = 0; i < recipe->control_count; ++i)
@@ -874,6 +873,7 @@ void ts_ui_init(TsUiState *ui)
     ui->keyboard_base_note = 48;
     ui->show_recipes = 0;
     ui->cdp_page = 0;
+    ui->dsp_page = 0;
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
     ts_palette_default(&ui->palette);
@@ -888,6 +888,9 @@ void ts_ui_init(TsUiState *ui)
     for (size_t recipe = 0; recipe < ts_cdp_factory_recipe_count(); ++recipe)
         ts_cdp_recipe_values_default(ts_cdp_factory_recipe_at(recipe),
                                      &ui->cdp_presets[recipe]);
+    for (size_t recipe = 0; recipe < ts_dsp_factory_recipe_count(); ++recipe)
+        ts_dsp_recipe_values_default(ts_dsp_factory_recipe_at(recipe),
+                                     &ui->dsp_presets[recipe]);
     ui->transform_values = ui->cdp_presets[0];
     snprintf(ui->transform_message, sizeof(ui->transform_message),
              "SELECT A SCOPE AND RENDER");
@@ -1255,6 +1258,10 @@ void ts_ui_select_panel(TsUiState *ui, TsUiPanel panel)
         return;
     if (panel == TS_UI_PANEL_CDP && ui->show_recipes) {
         ui->cdp_page = (ui->cdp_page + 1) % TS_CDP_BANK_COUNT;
+        return;
+    }
+    if (panel == TS_UI_PANEL_DSP && ui->show_ingredients) {
+        ui->dsp_page = (ui->dsp_page + 1) % TS_DSP_BANK_COUNT;
         return;
     }
     ui->show_keyboard = panel == TS_UI_PANEL_KEYBOARD;
@@ -1904,20 +1911,27 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             if (recipe != NULL) rect(fb, x + 2, y + 2, 3, 19, PAL_EFFECT);
         }
     } else if (ui->show_ingredients) {
-        text(fb, 11, 318,
-             "DSP  CLICK APPLY  MIDDLE EDIT  SHIFT CAPTURE  RMB RENAME  SAVE TSP",
+        mini_button(fb, 10, 312, 48, "DSP 1", ui->dsp_page == 0);
+        mini_button(fb, 62, 312, 48, "DSP 2", ui->dsp_page == 1);
+        text(fb, 120, 318,
+             ui->dsp_page == 0 ?
+             "PROCESS  LEFT APPLY  MIDDLE EDIT     4 TOGGLES PAGE" :
+             "PRIMITIVES  LEFT APPLY  MIDDLE EDIT  4 TOGGLES PAGE",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
-            const TsPortableRecipe *slot = &ui->recipes.slots[i];
+            const TsDspRecipe *slot =
+                ts_dsp_factory_recipe_for_slot((size_t)ui->dsp_page, (size_t)i);
             char label[24];
             int x = 10 + (i % 8) * 77;
             int y = 330 + (i / 8) * 25;
-            if (slot->occupied)
-                snprintf(label, sizeof(label), "%02d %.7s", i + 1, slot->name);
-            else
-                snprintf(label, sizeof(label), "%02d USER", i + 1);
-            button(fb, x, y, 72, label, i == ui->recipes.active_slot);
-            if (slot->factory) rect(fb, x + 2, y + 2, 3, 19, PAL_INSTRUMENT);
+            snprintf(label, sizeof(label), "%02d %.7s", i + 1,
+                     slot != NULL ? slot->display_name : "EMPTY");
+            button(fb, x, y, 72, label,
+                   ui->transform_dsp_slot ==
+                   ui->dsp_page * TS_DSP_BANK_SLOT_COUNT + i);
+            if (slot != NULL)
+                rect(fb, x + 2, y + 2, 3, 19,
+                     ui->dsp_page == 0 ? PAL_INSTRUMENT : PAL_EFFECT);
         }
     } else {
         const char *capture_label = ui->capture_state == TS_CAPTURE_RECORDING ? "STOP" :
@@ -2139,6 +2153,11 @@ int ts_ui_cdp_page_from_point(int x, int y)
     if (x >= 10 && x < 58) return 0;
     if (x >= 62 && x < 110) return 1;
     return -1;
+}
+
+int ts_ui_dsp_page_from_point(int x, int y)
+{
+    return ts_ui_cdp_page_from_point(x, y);
 }
 
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)

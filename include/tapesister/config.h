@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 
+#include "tapesister/dsp_recipe.h"
 #include "tapesister/recipe.h"
 #include "tapesister/cdp_recipe.h"
 
@@ -38,8 +39,8 @@ typedef struct {
     int rotate_wheel_fine;
     int rotate_wheel_coarse;
     int drone_crossfade_ms;
-    int dsp_factory_overridden[TS_FACTORY_RECIPE_COUNT];
-    float dsp_factory_controls[TS_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
+    int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];
+    float dsp_factory_controls[TS_DSP_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
     int cdp_factory_overridden[TS_CDP_FACTORY_RECIPE_COUNT];
     float cdp_factory_controls[TS_CDP_FACTORY_RECIPE_COUNT][TS_CDP_CONTROL_COUNT];
     float cdp_factory_mix[TS_CDP_FACTORY_RECIPE_COUNT];

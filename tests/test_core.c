@@ -2133,6 +2133,11 @@ int main(void)
         config.dsp_factory_controls[4][1] = 0.22f;
         config.dsp_factory_controls[4][2] = 0.33f;
         config.dsp_factory_controls[4][3] = 0.44f;
+        config.dsp_factory_overridden[23] = 1;
+        config.dsp_factory_controls[23][0] = 0.66f;
+        config.dsp_factory_controls[23][1] = 0.55f;
+        config.dsp_factory_controls[23][2] = 0.44f;
+        config.dsp_factory_controls[23][3] = 0.33f;
         config.cdp_factory_overridden[17] = 1;
         config.cdp_factory_controls[17][0] = 23.0f;
         config.cdp_factory_controls[17][1] = 2.0f;
@@ -2156,6 +2161,11 @@ int main(void)
               fabsf(reopened.dsp_factory_controls[4][1] - 0.22f) < 0.000001f &&
               fabsf(reopened.dsp_factory_controls[4][2] - 0.33f) < 0.000001f &&
               fabsf(reopened.dsp_factory_controls[4][3] - 0.44f) < 0.000001f);
+        CHECK(reopened.dsp_factory_overridden[23] &&
+              fabsf(reopened.dsp_factory_controls[23][0] - 0.66f) < 0.000001f &&
+              fabsf(reopened.dsp_factory_controls[23][1] - 0.55f) < 0.000001f &&
+              fabsf(reopened.dsp_factory_controls[23][2] - 0.44f) < 0.000001f &&
+              fabsf(reopened.dsp_factory_controls[23][3] - 0.33f) < 0.000001f);
         CHECK(reopened.cdp_factory_overridden[17] &&
               fabsf(reopened.cdp_factory_controls[17][0] - 23.0f) < 0.000001f &&
               fabsf(reopened.cdp_factory_controls[17][2] + 3.0f) < 0.000001f &&

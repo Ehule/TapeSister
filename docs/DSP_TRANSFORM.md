@@ -1,58 +1,73 @@
 # Native DSP Transform architecture
 
-## Interaction and ownership
+## Two curated pages, one DSP mode
 
-The DSP bank contains TapeSister-native C transformations; it does not invoke CDP.
-Left click is the performance path: apply a filled tile's saved process to the exact
-half-open selection `[first,last)`, or to the whole occupied tile when no selection
-exists. The replacement uses the existing owned audio-patch graph, boundary splice,
-tile-local state, and one Undo transaction.
+DSP remains one top-level TapeSister mode beside Sample Tiles, Keyboard, and CDP.
+Its internal pages are **DSP 1 PROCESS** and **DSP 2 PRIMITIVES**, with 16 fixed
+starting points on each page. Pressing `4` enters DSP and restores the last-used
+page; pressing `4` again while DSP is active toggles the page. The visible page
+buttons do the same without changing the active tile, selection, or viewport.
 
-Middle click is the design path. It opens the same compact workflow shell used by CDP:
-the active tile's authoritative selection and viewport, a miniature editable waveform,
-fixed macro positions, immutable preview playback, Apply, and Cancel/Back. DSP and CDP
-share this workflow and commit convention, but keep separate processors and job
+`TsDspRecipe` is the compiled, versioned registry for all 32 entries. Each recipe
+has a stable ID, bank/slot address, category, description, and exactly four musical
+controls. `TsDspRecipeValues` stores normalized control positions, a stable render
+seed, and the render-time tuning value. Factory definitions are trusted code; no tile
+can inject function names, shell commands, or raw processing parameters.
+
+DSP 1 contains SPACE, CAVE, ROOM, ECHO, TAPE, DUB, COMB, RESONATE, LOW, HIGH,
+BAND, NOTCH, CHORUS, FLANGE, DRIVE, and CRUSH. The implementations deliberately
+reuse the existing native filter, shaper, delay, reverb, BODY, and DRIFT stages where
+their graph is a good fit. Focused renderers provide feedback combing, a moving biquad
+notch, chorus/flange modulation delay, and sample/bit-rate reduction. Extreme values
+remain bounded and finite without reducing the processors to polite studio ranges.
+
+DSP 2 contains SINE, SHAPE, PULSE, SUB, METAL, CHIME, DRONE, BEAT, RUMBLE, HISS,
+DUST, KNOCK, PING, FM, AM, and CHAOS. They are configurations of a compact offline
+toolkit—oscillators, deterministic noise/impulses, modulation, envelopes, and
+resonant material—not 16 real-time synthesizers. Every primitive renders exactly the
+requested selection or whole-tile frame count into ordinary TapeSister-owned waveform
+memory. The fourth macro is `SOURCE`: zero is generated replacement, 100% is bit-exact
+dry source, and intermediate positions mix the aligned equal-length signals. Generated
+material receives short edge fades and DC correction before source mixing.
+
+## Interaction, ownership, and graph order
+
+Left click is the performance path: apply a tile's saved values to the exact half-open
+selection `[first,last)`, or to the whole occupied tile when no selection exists.
+Middle click is the design path. It opens the same compact shell used by CDP: the
+active tile's authoritative selection and viewport, miniature editable waveform, four
+fixed controls, immutable preview playback, Apply, Save/Update, and Cancel/Back. DSP
+and CDP share this workflow and commit convention but keep separate processors and job
 identities. No preview becomes another tile audio owner.
 
-Native preview jobs snapshot the tile slot, audio hash, frame count, persistent
-selection, scope, DSP preset slot, exact process values, job ID, and render generation.
-The worker processes an owned selection/whole-tile copy. A result publishes only when
-all identity fields still match; tile edits, selection moves, parameter changes,
+Native jobs snapshot the tile slot, audio hash, frame count, persistent selection,
+scope, DSP recipe and values, job ID, and render generation. A result publishes only
+when all identity fields still match; tile edits, selection moves, parameter changes,
 Undo/Redo, tile switching, workspace close, Capture completion, and newer requests
-make it stale. Preview samples are TapeSister-owned memory and do not alter history.
-Apply revalidates the identity and commits exactly once. Back or Cancel frees preview
-memory and leaves source audio, selection, viewport, metadata, and history untouched.
+make it stale. Preview samples are owned memory and do not alter history. Apply
+revalidates once and commits one tile-local Undo transaction. Back or Cancel frees the
+preview and leaves source audio, selection, viewport, metadata, and history untouched.
 
-## Curated macro profiles
+Accepted audio uses the PR31 material-checkpoint graph position. It becomes editable
+source material before the live native processing shelf, so BODY/EDGE/DRIFT and
+Noise/Shape/Delay/Space continue to affect it. Parameter movement reconstructs from a
+stable basis rather than accumulating processing, and the native shelf is not applied
+twice when a rendered transform is accepted.
 
-`TsDspPresetSpec` describes each factory profile's two to four controls while
-`TsPortableRecipe` stores their normalized positions and the exact mapped
-`TsProcessRecipe`. Values clamp to `[0,1]`; displayed units are derived from the
-control specification. The profiles intentionally expose musical controls rather
-than the complete engineering shelf:
+## Curated macros and persistent tile settings
 
-- NEUTRAL: BODY, EDGE, DRIFT
-- WARM TAPE: BODY, DRIVE, EDGE, MIX
-- DARK DRONE: BODY, CUTOFF, RES, DRIFT
-- BRIGHT DUST: CUTOFF, DUST, EDGE, DRIFT
-- DUB ECHO: TIME, FEEDBACK, TONE, MIX
-- HOLLOW SPACE: FOCUS, RES, SPACE, MIX
-- HARD CLIP: DRIVE, EDGE, BODY, MIX
-- BROKEN FOLD: FOLD, DUST, DRIFT, MIX
+Control positions clamp to `[0,1]`, then map linearly or logarithmically into honest
+units such as Hertz, milliseconds, seconds, drive ratio, or bit depth. Labels and
+mappings change with the recipe while the four screen positions stay fixed. A macro
+may deliberately coordinate several existing DSP values without exposing a plug-in
+style engineering panel.
 
-BODY is a broad spectral-weight macro. Above center it reinforces the slow/low
-component and slightly controls fast detail; below center it removes low mass and
-emphasizes the faster component. Center remains bit-neutral, and neither direction is
-implemented as uncontrolled gain. EDGE preserves the established high-motion plus
-saturating-detail character. DRIFT remains coherent: a deterministic low-rate sine
-and seeded random walk move the read position by a bounded number of samples, with a
-very small level-dependent noise contribution. It is not a bag of unrelated values.
-
-`SAVE/UPDATE` copies the working process back to the DSP tile. Factory macro positions
-are written as optional `DspPreset01` through `DspPreset08` rows in `[DSP Presets]` in
+`SAVE/UPDATE` copies the four working positions back to that stable DSP tile. Values
+are written as optional `DspPreset01` through `DspPreset32` rows in `[DSP Presets]` in
 `tapesister.ini`; absent rows retain defaults and invalid/non-finite rows are rejected.
-User recipes already serialize the exact underlying process in TSP, so no rendered
-audio is stored in a preset.
+Rows 01–16 address DSP1 and rows 17–32 address DSP2. Presets never own audio. Existing
+TSP files remain loadable and immediately apply their stored legacy native processing
+recipe, preserving portable-file compatibility independently of the fixed bank tiles.
 
 ## Tuned audition
 
@@ -66,14 +81,14 @@ its step immediately after a tuning edit, while the sample hash remains unchange
 
 ## Performance and testing
 
-DSP preview rendering runs on the existing single Transform worker path. Repeated
-macro changes cancel obsolete work and queue only the newest preview. Only the chosen
-selection is copied and processed for selection scope. Immediate left-click application
-keeps the established instrument-like one-click behavior and performs one direct
-native render/commit.
+DSP preview and quick Apply run on the existing single Transform worker. Repeated
+macro changes cancel obsolete work and queue only the newest preview. Selection scope
+copies and renders only the selected material. The SDL/audio threads continue using
+the unchanged committed sample until a validated Apply.
 
-Automated coverage checks schema/control ranges, parameter clamping, config round trips,
-temporary preview ownership, stale identity rejection, selection-only replacement,
-outside-audio identity, Apply/Undo/Redo, direct application, BODY extremes, whole and
-selection audition ranges, shared tuning ratios, keyboard transposition, and unchanged
-sample data across ROOT/PITCH edits.
+Automated coverage checks all 32 registry entries, default and extreme renders,
+finite/bounded/non-silent output, SOURCE/REPLACE/MIX endpoints, predictable oscillator
+pitch movement, config round trips across both pages, temporary preview ownership,
+stale identity rejection, selection-only replacement, outside-audio identity,
+Apply/Undo/Redo, BODY extremes, panel navigation, tuned audition, keyboard
+transposition, and unchanged sample data across ROOT/PITCH edits.
