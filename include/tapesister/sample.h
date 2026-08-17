@@ -641,6 +641,9 @@ int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
                                char *error, size_t error_size);
 int ts_instrument_stamp_vary(TsInstrument *instrument,
                              char *error, size_t error_size);
+int ts_instrument_stamp_vary_chained(TsInstrument *instrument,
+                                     int crossfade_ms,
+                                     char *error, size_t error_size);
 int ts_instrument_generate_family_candidate(TsInstrument *instrument,
                                             int anchor_slot, int reseed,
                                             int *created_slot,

@@ -23,6 +23,7 @@ void ts_config_init(TsConfig *config)
         config->rotate_wheel_fine = TS_ROTATE_WHEEL_FINE_DEFAULT;
         config->rotate_wheel_coarse = TS_ROTATE_WHEEL_COARSE_DEFAULT;
         config->drone_crossfade_ms = TS_DRONE_CROSSFADE_MS_DEFAULT;
+        config->chain_stamp_crossfade_ms = TS_CHAIN_STAMP_CROSSFADE_MS_DEFAULT;
     }
 }
 
@@ -234,6 +235,13 @@ int ts_config_load(TsConfig *config, const char *path,
                 snprintf(error, error_size, "Invalid integer on config line %d", line_number);
                 fclose(file); return 0;
             }
+        } else if (strcmp(key, "chain_stamp_crossfade_ms") == 0) {
+            if (!parse_clamped_integer(value, TS_CHAIN_STAMP_CROSSFADE_MS_MIN,
+                                       TS_CHAIN_STAMP_CROSSFADE_MS_MAX,
+                                       &loaded.chain_stamp_crossfade_ms)) {
+                snprintf(error, error_size, "Invalid integer on config line %d", line_number);
+                fclose(file); return 0;
+            }
         } else {
             int dsp = parse_dsp_preset(key, value, &loaded);
             int cdp = dsp == 0 ? parse_cdp_preset(key, value, &loaded) : 0;
@@ -287,6 +295,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "rotate_wheel_fine=%d\n"
                 "rotate_wheel_coarse=%d\n"
                 "drone_crossfade_ms=%d\n"
+                "chain_stamp_crossfade_ms=%d\n"
                 "\n[DSP Presets]\n"
                 "; SAVE/UPDATE writes normalized macro values here.\n",
                 config->sample_path, config->fasttracker_path,
@@ -295,7 +304,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->startup_welcome_autoplay, config->playhead_zero_snap,
                 config->rotate_wheel_fine,
                 config->rotate_wheel_coarse,
-                config->drone_crossfade_ms) < 0;
+                config->drone_crossfade_ms,
+                config->chain_stamp_crossfade_ms) < 0;
     for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
         if (!config->dsp_factory_overridden[slot]) continue;
         write_failed = fprintf(file, "DspPreset%02d=%.9g,%.9g,%.9g,%.9g\n",

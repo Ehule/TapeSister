@@ -2412,7 +2412,11 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
     if (ui->workbench_loop_active) stop_all(device, audio, ui);
     lock_edit(device, audio);
     audio->playing = 0; audio->bank_slot = -1;
-    if (stamp && vary)
+    if (stamp && vary && instrument->family_trajectory)
+        ok = ts_instrument_stamp_vary_chained(
+            instrument, ui->config.chain_stamp_crossfade_ms,
+            error, sizeof(error));
+    else if (stamp && vary)
         ok = ts_instrument_stamp_vary(instrument, error, sizeof(error));
     else if (stamp)
         ok = ts_instrument_stamp_create(instrument,
@@ -2434,7 +2438,12 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
     }
     ui->bank_view_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
-    if (stamp)
+    if (stamp && vary && instrument->family_trajectory)
+        snprintf(ui->status, sizeof(ui->status),
+                 "BANK %02d CHAIN STAMPED %zu FRAMES - NEXT %zu:%zu",
+                 slot + 1, stamp_frames, instrument->selection_first,
+                 instrument->selection_last);
+    else if (stamp)
         snprintf(ui->status, sizeof(ui->status),
                  "BANK %02d %s FM STAMP IN %zu-FRAME SELECTION",
                  slot + 1, vary ? "VARIED" : "CREATED", stamp_frames);
