@@ -1,11 +1,13 @@
 # Third-party runtime notices
 
-TapeSister can optionally execute two programs from the Composers Desktop Project
-(CDP): `pvoc` and `glisten`. CDP source identifies the work as copyright 1983–2023
+TapeSister can optionally execute a curated subset of programs from the Composers
+Desktop Project (CDP): `blur`, `distmore`, `distort`, `distshift`, `extend`, `filter`,
+`freeze`, `glisten`, `grain`, `hover`, `modify`, `motor`, `pvoc`, `scramble`, `sorter`,
+`splinter`, and `stutter`. CDP source identifies the work as copyright 1983–2023
 Trevor Wishart and Composers Desktop Project Ltd and licenses it under the GNU Lesser
 General Public License, version 2.1 or (at the user's option) any later version.
 
-PR-29 does not copy or distribute CDP source, binaries, libraries, or the supplied CDP
+TapeSister does not copy or distribute CDP source, binaries, libraries, or the supplied CDP
 and SoundThread archives. A compatible runtime is discovered externally. A distributor
 who bundles CDP must independently satisfy the LGPL and all dependency licenses,
 including providing the applicable license notices, corresponding source or compliant

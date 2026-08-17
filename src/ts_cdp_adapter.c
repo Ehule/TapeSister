@@ -88,6 +88,17 @@ static int regular_output_file(const char *path)
 #endif
 }
 
+static int nonempty_file(const char *path)
+{
+    FILE *file = fopen(path, "rb");
+    long size;
+    if (file == NULL) return 0;
+    if (fseek(file, 0L, SEEK_END) != 0) { fclose(file); return 0; }
+    size = ftell(file);
+    fclose(file);
+    return size > 0L;
+}
+
 static int directory_exists(const char *path)
 {
 #ifdef _WIN32
@@ -162,18 +173,47 @@ static int runtime_from_directory(TsCdpRuntime *runtime, const char *directory,
     if (!path_join(pvoc, sizeof(pvoc), canonical, name)) return 0;
     snprintf(name, sizeof(name), "glisten%s", TS_EXE_SUFFIX);
     if (!path_join(glisten, sizeof(glisten), canonical, name)) return 0;
-    if (!file_exists(pvoc) || !file_exists(glisten)) {
-        char message[256];
-        snprintf(message, sizeof(message),
-                 "CDP RUNTIME NEEDS PVOC%s AND GLISTEN%s", TS_EXE_SUFFIX,
-                 TS_EXE_SUFFIX);
-        set_error(error, error_size, message);
+    snprintf(runtime->bin_directory, sizeof(runtime->bin_directory), "%s", canonical);
+    if (file_exists(pvoc))
+        snprintf(runtime->pvoc_path, sizeof(runtime->pvoc_path), "%s", pvoc);
+    if (file_exists(glisten))
+        snprintf(runtime->glisten_path, sizeof(runtime->glisten_path), "%s", glisten);
+    runtime->available = 1;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+static int runtime_executable(const TsCdpRuntime *runtime, const char *executable,
+                              char *path, size_t path_size)
+{
+    char name[TS_CDP_TEXT_MAX + 8];
+    if (runtime == NULL || !runtime->available || runtime->bin_directory[0] == '\0' ||
+        executable == NULL || executable[0] == '\0' || strchr(executable, '/') != NULL ||
+        strchr(executable, '\\') != NULL || strstr(executable, "..") != NULL)
+        return 0;
+    snprintf(name, sizeof(name), "%s%s", executable, TS_EXE_SUFFIX);
+    return path_join(path, path_size, runtime->bin_directory, name) && file_exists(path);
+}
+
+int ts_cdp_runtime_recipe_available(const TsCdpRuntime *runtime,
+                                    const TsCdpRecipe *recipe,
+                                    char *error, size_t error_size)
+{
+    char path[TS_CDP_PATH_MAX];
+    char message[160];
+    if (runtime == NULL || !runtime->available || recipe == NULL) {
+        set_error(error, error_size, "CDP RUNTIME IS NOT AVAILABLE");
         return 0;
     }
-    snprintf(runtime->bin_directory, sizeof(runtime->bin_directory), "%s", canonical);
-    snprintf(runtime->pvoc_path, sizeof(runtime->pvoc_path), "%s", pvoc);
-    snprintf(runtime->glisten_path, sizeof(runtime->glisten_path), "%s", glisten);
-    runtime->available = 1;
+    for (size_t stage = 0; stage < recipe->stage_count; ++stage) {
+        const char *name = recipe->stages[stage].executable;
+        if (!runtime_executable(runtime, name, path, sizeof(path))) {
+            snprintf(message, sizeof(message), "CDP COMPONENT MISSING: %s%s",
+                     name != NULL ? name : "?", TS_EXE_SUFFIX);
+            set_error(error, error_size, message);
+            return 0;
+        }
+    }
     set_error(error, error_size, "");
     return 1;
 }
@@ -604,7 +644,7 @@ static float float_le32(const unsigned char *data)
     return value;
 }
 
-static int probe_wav(const char *path, TsCdpWavInfo *info,
+static int probe_wav(const char *path, uint16_t expected_channels, TsCdpWavInfo *info,
                      char *error, size_t error_size)
 {
     FILE *file = fopen(path, "rb");
@@ -639,12 +679,13 @@ static int probe_wav(const char *path, TsCdpWavInfo *info,
         } else (void)fseek(file, (long)size, SEEK_CUR);
         if ((size & 1u) != 0u) (void)fseek(file, 1, SEEK_CUR);
     }
-    if ((info->format != 1u && info->format != 3u) || info->channels != 1u ||
+    if ((info->format != 1u && info->format != 3u) ||
+        info->channels != expected_channels ||
         info->sample_rate < 1000u || info->block_align == 0u ||
         info->data_offset < 0 || info->data_size < info->block_align ||
         (info->format == 3u && info->bits != 32u)) {
         fclose(file); set_error(error, error_size,
-                               "CDP output must be a nonempty mono PCM/float WAV"); return 0;
+                               "CDP output channel or PCM/float format is invalid"); return 0;
     }
     info->frames = info->data_size / info->block_align;
     if (info->frames == 0u || info->frames > 100000000u) {
@@ -661,10 +702,12 @@ static int probe_wav(const char *path, TsCdpWavInfo *info,
             if (fread(frame, 1, info->block_align, file) != info->block_align) {
                 fclose(file); set_error(error, error_size, "CDP WAV ended early"); return 0;
             }
-            value = float_le32(frame);
-            if (!isfinite(value)) info->finite = 0;
-            if (isfinite(value) && fabsf(value) > info->raw_peak)
-                info->raw_peak = fabsf(value);
+            for (uint16_t channel = 0; channel < info->channels; ++channel) {
+                value = float_le32(frame + channel * 4u);
+                if (!isfinite(value)) info->finite = 0;
+                if (isfinite(value) && fabsf(value) > info->raw_peak)
+                    info->raw_peak = fabsf(value);
+            }
         }
     }
     fclose(file);
@@ -746,6 +789,43 @@ failed:
     return 0;
 }
 
+static int create_stutter_data(const TsCdpRecipe *recipe,
+                               const TsCdpRecipeValues *values,
+                               const TsSample *input, const char *job_directory,
+                               char *error, size_t error_size)
+{
+    char path[TS_CDP_PATH_MAX];
+    FILE *file;
+    double chunk;
+    double duration;
+    if (strcmp(recipe->id, "stutter") != 0) return 1;
+    if (!path_join(path, sizeof(path), job_directory, "stutter.txt")) {
+        set_error(error, error_size, "Could not create STUTTER cut-time path");
+        return 0;
+    }
+    file = fopen(path, "wb");
+    if (file == NULL) {
+        set_error(error, error_size, "Could not create STUTTER cut-time file");
+        return 0;
+    }
+    chunk = ts_cdp_control_quantize(&recipe->controls[0], values->controls[0]);
+    duration = (double)input->frames / input->sample_rate;
+    /* CDP STUTTER consumes a monotonically increasing list of source cut
+       times.  This generated job-local file never escapes the adapter. */
+    for (double at = chunk; at < duration; at += chunk) {
+        if (fprintf(file, "%.9g\n", at) < 0) {
+            fclose(file);
+            set_error(error, error_size, "Could not write STUTTER cut-time file");
+            return 0;
+        }
+    }
+    if (fprintf(file, "%.9g\n", duration) < 0 || fclose(file) != 0) {
+        set_error(error, error_size, "Could not finish STUTTER cut-time file");
+        return 0;
+    }
+    return 1;
+}
+
 int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
                       const TsCdpRecipe *recipe,
                       const TsCdpRecipeValues *values,
@@ -754,27 +834,28 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
                       TsCdpRunResult *result,
                       char *error, size_t error_size)
 {
-    TsCdpCommand commands[3];
+    TsCdpCommand commands[TS_CDP_MAX_STAGES];
     TsCdpWavInfo wav;
+    size_t command_count = 0u;
     char input_path[TS_CDP_PATH_MAX];
     char output_path[TS_CDP_PATH_MAX];
-    char intermediate_path[TS_CDP_PATH_MAX];
+    char stage_output[TS_CDP_PATH_MAX];
+    char executable[TS_CDP_PATH_MAX];
     char cleanup_error[160];
     int ok = 0;
     if (result == NULL) { set_error(error, error_size, "CDP result destination is missing"); return 0; }
     ts_cdp_run_result_free(result);
-    if (runtime == NULL || !runtime->available || !file_exists(runtime->pvoc_path) ||
-        !file_exists(runtime->glisten_path)) {
+    if (!ts_cdp_runtime_recipe_available(runtime, recipe, error, error_size)) {
         result->status = TS_CDP_RUN_FAILED;
-        set_error(error, error_size, "CDP RUNTIME NEEDS PVOC AND GLISTEN");
         return 0;
     }
-    if (input == NULL || input->data == NULL || input->frames == 0u ||
+    if (input == NULL || input->data == NULL || input->frames == 0u || values == NULL ||
         !ts_cdp_recipe_validate(recipe, error, error_size) ||
         !ts_cdp_recipe_input_valid(recipe, input->frames, input->sample_rate,
                                    error, error_size) ||
-        !ts_cdp_glisten_build_commands(recipe, values, commands,
-                                       error, error_size)) {
+        !ts_cdp_recipe_build_commands(recipe, values, input->frames,
+                                      input->sample_rate, commands,
+                                      &command_count, error, error_size)) {
         result->status = TS_CDP_RUN_FAILED;
         return 0;
     }
@@ -785,23 +866,32 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
     }
     if (!path_join(input_path, sizeof(input_path), result->job_directory, "input.wav") ||
         !path_join(output_path, sizeof(output_path), result->job_directory, "output.wav") ||
-        !ts_sample_save_wav16(input, input_path, error, error_size)) goto finished;
-    for (unsigned stage = 0; stage < 3u; ++stage) {
-        const char *executable = strcmp(commands[stage].executable, "pvoc") == 0 ?
-                                 runtime->pvoc_path : runtime->glisten_path;
-        snprintf(result->failed_executable, sizeof(result->failed_executable), "%s",
+        !ts_sample_save_wav16(input, input_path, error, error_size) ||
+        !create_stutter_data(recipe, values, input, result->job_directory,
+                             error, error_size)) goto finished;
+    for (unsigned stage = 0; stage < command_count; ++stage) {
+        if (!runtime_executable(runtime, commands[stage].executable,
+                                executable, sizeof(executable))) {
+            snprintf(error, error_size, "CDP COMPONENT MISSING: %.64s%s",
+                     commands[stage].executable, TS_EXE_SUFFIX);
+            goto finished;
+        }
+        snprintf(result->failed_executable, sizeof(result->failed_executable), "%.63s",
                  commands[stage].executable);
         if (!execute_command(executable, &commands[stage], result->job_directory,
                              stage, options, result, error, error_size)) goto finished;
-        if (stage < 2u) {
-            const char *name = stage == 0u ? "input.ana" : "glisten.ana";
-            if (!path_join(intermediate_path, sizeof(intermediate_path),
-                           result->job_directory, name) ||
-                !regular_output_file(intermediate_path)) {
-                set_error(error, error_size,
-                          "CDP stage did not create its required analysis file");
-                goto finished;
-            }
+        if (commands[stage].expected_output_type !=
+                recipe->stages[stage].output_type ||
+            commands[stage].expected_output[0] == '\0' ||
+            strchr(commands[stage].expected_output, '/') != NULL ||
+            strchr(commands[stage].expected_output, '\\') != NULL ||
+            strstr(commands[stage].expected_output, "..") != NULL ||
+            !path_join(stage_output, sizeof(stage_output), result->job_directory,
+                       commands[stage].expected_output) ||
+            !regular_output_file(stage_output) || !nonempty_file(stage_output)) {
+            set_error(error, error_size,
+                      "CDP stage did not create its required isolated output");
+            goto finished;
         }
     }
     result->failed_executable[0] = '\0';
@@ -831,7 +921,8 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
                   "CDP output is missing, not regular, or is a redirected path");
         goto finished;
     }
-    if (!probe_wav(output_path, &wav, error, error_size)) goto finished;
+    if (!probe_wav(output_path, recipe->expected_output_channels,
+                   &wav, error, error_size)) goto finished;
     if (wav.sample_rate != input->sample_rate) {
         set_error(error, error_size, "CDP output sample rate changed unexpectedly");
         goto finished;

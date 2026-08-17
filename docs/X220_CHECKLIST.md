@@ -56,6 +56,20 @@ This is a musical and interaction checkpoint. Passing automated tests alone is n
 - [ ] Starting several previews quickly publishes only the newest result; closing or switching tiles prevents stale publication.
 - [ ] BODY is clearly audible at both extremes, EDGE retains its established detail, and DRIFT reads as bounded organic timing motion.
 
+## Curated CDP transformations
+
+- [ ] `3` enters CDP at its last-used internal page; pressing `3` again toggles CDP 1/CDP 2 without leaving CDP or changing the sample, selection, or viewport.
+- [ ] The visible CDP 1/CDP 2 toggle selects the same pages, while the ordinary top-level cycle still treats CDP as one mode.
+- [ ] CDP 1 and CDP 2 show the documented 16 fixed recipes in their documented positions; empty or misleading recipe tiles are not shown.
+- [ ] Left-click renders and applies the tile's saved values to the selection, or the whole occupied sample when there is no selection, in one Undo step.
+- [ ] Middle-click opens the shared Transform workspace with the recipe's real one-to-four controls and persistent selection.
+- [ ] Render remains non-destructive, Space auditions the immutable preview, Apply commits it once, and Back/Escape leaves source audio unchanged.
+- [ ] SAVE/UPDATE persists exact recipe values, Mix policy, and supported seed in `tapesister.ini`; relaunch and quick Apply use those values.
+- [ ] Missing runtime programs identify the exact executable and never modify audio; the Configuration CDP BIN PATH accepts the compiled runtime folder.
+- [ ] Starting several renders quickly, editing or clearing the tile, completing Capture, switching tiles/pages, or closing Transform prevents stale publication.
+- [ ] Selection results keep outside audio unchanged, accept natural-length results, and update the selection to the inserted half-open range.
+- [ ] FILTER BANK follows the active tile's audible tuning; CDP preview playback uses the same tuning-aware audition path as the editor.
+
 ## Files, export, and compatibility
 
 - [ ] Load, Save, and Export browser navigation, scrolling, filename editing, overwrite confirmation, and cancellation behave consistently.

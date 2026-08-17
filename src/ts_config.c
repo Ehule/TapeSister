@@ -114,6 +114,31 @@ static int parse_dsp_preset(const char *key, const char *value,
     return 1;
 }
 
+static int parse_cdp_preset(const char *key, const char *value,
+                            TsConfig *config)
+{
+    int slot;
+    float controls[TS_CDP_CONTROL_COUNT];
+    float mix;
+    unsigned long long seed;
+    char trailing;
+    if (sscanf(key, "CdpPreset%2d%c", &slot, &trailing) != 1 ||
+        slot < 1 || slot > TS_CDP_FACTORY_RECIPE_COUNT)
+        return 0;
+    if (sscanf(value, "%f,%f,%f,%f,%f,%llu%c", &controls[0], &controls[1],
+               &controls[2], &controls[3], &mix, &seed, &trailing) != 6)
+        return -1;
+    for (int index = 0; index < TS_CDP_CONTROL_COUNT; ++index)
+        if (!isfinite(controls[index])) return -1;
+    if (!isfinite(mix) || mix < 0.0f || mix > 1.0f) return -1;
+    --slot;
+    memcpy(config->cdp_factory_controls[slot], controls, sizeof(controls));
+    config->cdp_factory_mix[slot] = mix;
+    config->cdp_factory_seed[slot] = (uint64_t)seed;
+    config->cdp_factory_overridden[slot] = 1;
+    return 1;
+}
+
 int ts_config_load(TsConfig *config, const char *path,
                    char *error, size_t error_size)
 {
@@ -211,9 +236,12 @@ int ts_config_load(TsConfig *config, const char *path,
             }
         } else {
             int dsp = parse_dsp_preset(key, value, &loaded);
-            if (dsp < 0 || (dsp == 0 && strncmp(key, "DspPreset", 9u) == 0)) {
+            int cdp = dsp == 0 ? parse_cdp_preset(key, value, &loaded) : 0;
+            if (dsp < 0 || cdp < 0 ||
+                (dsp == 0 && strncmp(key, "DspPreset", 9u) == 0) ||
+                (cdp == 0 && strncmp(key, "CdpPreset", 9u) == 0)) {
                 snprintf(error, error_size,
-                         "Invalid DSP preset on config line %d", line_number);
+                         "Invalid transform preset on config line %d", line_number);
                 fclose(file); return 0;
             }
         }
@@ -249,7 +277,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "SamplePath=%s\n"
                 "FastTrackerPath=%s\n"
                 "ExchangePath=%s\n"
-                "; Optional development/runtime override containing pvoc and glisten.\n"
+                "; Optional development/runtime override containing compatible CDP8 executables.\n"
                 "CdpBinPath=%s\n"
                 "\n[Startup]\n"
                 "startup_welcome_sample=%d\n"
@@ -276,6 +304,22 @@ int ts_config_save(const TsConfig *config, const char *path,
                                config->dsp_factory_controls[slot][1],
                                config->dsp_factory_controls[slot][2],
                                config->dsp_factory_controls[slot][3]) < 0;
+    }
+    if (!write_failed)
+        write_failed = fprintf(file,
+                               "\n[CDP Presets]\n"
+                               "; Four musical values, MIX, and the accepted variation seed.\n") < 0;
+    for (int slot = 0; slot < TS_CDP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
+        if (!config->cdp_factory_overridden[slot]) continue;
+        write_failed = fprintf(file,
+                               "CdpPreset%02d=%.9g,%.9g,%.9g,%.9g,%.9g,%llu\n",
+                               slot + 1,
+                               config->cdp_factory_controls[slot][0],
+                               config->cdp_factory_controls[slot][1],
+                               config->cdp_factory_controls[slot][2],
+                               config->cdp_factory_controls[slot][3],
+                               config->cdp_factory_mix[slot],
+                               (unsigned long long)config->cdp_factory_seed[slot]) < 0;
     }
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {

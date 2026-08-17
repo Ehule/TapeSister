@@ -609,15 +609,20 @@ static void transform_waveform(TsFramebuffer *fb, const TsUiState *ui,
         if (end <= begin) end = begin + 1u;
         for (size_t at = begin; at < end && at < sample->frames; ++at) {
             float value = sample->data[at];
-            if (ui->transform_backend == TS_TRANSFORM_BACKEND_DSP &&
-                ui->transform_preview_sample != NULL &&
+            if (ui->transform_preview_sample != NULL &&
                 ui->transform_preview_sample->data != NULL &&
                 ui->transform_preview_last > ui->transform_preview_first &&
-                ui->transform_preview_sample->frames ==
-                    ui->transform_preview_last - ui->transform_preview_first &&
-                at >= ui->transform_preview_first && at < ui->transform_preview_last)
-                value = ui->transform_preview_sample->data[
-                    at - ui->transform_preview_first];
+                ui->transform_preview_sample->frames > 0u &&
+                at >= ui->transform_preview_first && at < ui->transform_preview_last) {
+                size_t source_span = ui->transform_preview_last -
+                                     ui->transform_preview_first;
+                size_t preview_at = (at - ui->transform_preview_first) *
+                                    ui->transform_preview_sample->frames /
+                                    source_span;
+                if (preview_at >= ui->transform_preview_sample->frames)
+                    preview_at = ui->transform_preview_sample->frames - 1u;
+                value = ui->transform_preview_sample->data[preview_at];
+            }
             if (value < low) low = value;
             if (value > high) high = value;
         }
@@ -629,7 +634,6 @@ static void transform_waveform(TsFramebuffer *fb, const TsUiState *ui,
             y1 = TS_TRANSFORM_WAVE_Y + TS_TRANSFORM_WAVE_H - 1;
         rect(fb, TS_TRANSFORM_WAVE_X + column, y0, 1,
              y1 > y0 ? y1 - y0 + 1 : 1,
-             ui->transform_backend == TS_TRANSFORM_BACKEND_DSP &&
              ui->transform_preview_available &&
              end > ui->transform_preview_first &&
              begin < ui->transform_preview_last ? PAL_EFFECT :
@@ -719,7 +723,7 @@ static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
             dsp_transform_control(fb, dsp_spec, working, i);
         button(fb, 20, 190, 112, "AUTO PREVIEW", ui->transform_rendering);
     } else {
-        for (size_t i = 0; i < TS_CDP_CONTROL_COUNT; ++i)
+        for (size_t i = 0; i < recipe->control_count; ++i)
             transform_control(fb, recipe, &ui->transform_values, i,
                               instrument->current.sample_rate);
         if (recipe->mix_policy == TS_CDP_MIX_UNSUPPORTED)
@@ -745,7 +749,7 @@ static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
     button(fb, 186, 220, 92,
            ui->transform_preview_active ? "STOP" : "AUDITION",
            ui->transform_preview_active);
-    button(fb, 284, 220, 110, dsp ? "SAVE/UPDATE" : "SAVE N/A", 0);
+    button(fb, 284, 220, 110, "SAVE/UPDATE", 0);
     button(fb, 400, 220, 70, ui->transform_rendering ? "CANCEL" : "BACK", 0);
     text(fb, 480, 228,
          ui->transform_preview_available ? ts_cdp_safety_name(ui->transform_safety) :
@@ -755,8 +759,8 @@ static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
     text(fb, 20, 273,
          dsp ? "SPACE AUDITIONS  U SAVES PRESET  ESC CANCELS OR RETURNS" :
          ui->transform_runtime_available ?
-         "SPACE AUDITIONS  ENTER RENDERS  ESC CANCELS OR RETURNS" :
-         "SET CDP BIN PATH IN CONFIG - PVOC AND GLISTEN REQUIRED",
+         "CLICK NAME NEW TAKE  ENTER RENDERS  U SAVES  ESC RETURNS" :
+         "SET CDP BIN PATH IN CONFIG - REQUIRED PROCESS WILL BE NAMED",
          dsp || ui->transform_runtime_available ? PAL_TUNING : PAL_VOLUME, 1);
 }
 
@@ -869,6 +873,7 @@ void ts_ui_init(TsUiState *ui)
     ui->keyboard_octave = 3;
     ui->keyboard_base_note = 48;
     ui->show_recipes = 0;
+    ui->cdp_page = 0;
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
     ts_palette_default(&ui->palette);
@@ -880,8 +885,10 @@ void ts_ui_init(TsUiState *ui)
     ui->transform_recipe_index = -1;
     ui->transform_dsp_slot = -1;
     ui->transform_safety = TS_CDP_SAFETY_INVALID;
-    ts_cdp_recipe_values_default(ts_cdp_factory_recipe_at(0u),
-                                 &ui->transform_values);
+    for (size_t recipe = 0; recipe < ts_cdp_factory_recipe_count(); ++recipe)
+        ts_cdp_recipe_values_default(ts_cdp_factory_recipe_at(recipe),
+                                     &ui->cdp_presets[recipe]);
+    ui->transform_values = ui->cdp_presets[0];
     snprintf(ui->transform_message, sizeof(ui->transform_message),
              "SELECT A SCOPE AND RENDER");
     snprintf(ui->status, sizeof(ui->status), "READY - SELECT A TILE, LOAD, OR CREATE");
@@ -1246,6 +1253,10 @@ void ts_ui_select_panel(TsUiState *ui, TsUiPanel panel)
 {
     if (ui == NULL || panel < TS_UI_PANEL_SAMPLE_TILES || panel > TS_UI_PANEL_DSP)
         return;
+    if (panel == TS_UI_PANEL_CDP && ui->show_recipes) {
+        ui->cdp_page = (ui->cdp_page + 1) % TS_CDP_BANK_COUNT;
+        return;
+    }
     ui->show_keyboard = panel == TS_UI_PANEL_KEYBOARD;
     ui->show_recipes = panel == TS_UI_PANEL_CDP;
     ui->show_ingredients = panel == TS_UI_PANEL_DSP;
@@ -1871,13 +1882,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             }
         }
     } else if (ui->show_recipes) {
-        text(fb, 11, 318,
-             "CDP  CLICK TILE TO OPEN TRANSFORM     1 TILES  2 KEYS  3 CDP  4 DSP",
+        mini_button(fb, 10, 312, 48, "CDP 1", ui->cdp_page == 0);
+        mini_button(fb, 62, 312, 48, "CDP 2", ui->cdp_page == 1);
+        text(fb, 120, 318,
+             "LEFT APPLY  MIDDLE EDIT     1 TILES  2 KEYS  3 PAGE  4 DSP",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
             const TsCdpRecipe *recipe =
-                (size_t)i < ts_cdp_factory_recipe_count() ?
-                ts_cdp_factory_recipe_at((size_t)i) : NULL;
+                ts_cdp_factory_recipe_for_slot((size_t)ui->cdp_page, (size_t)i);
             char label[24];
             int x = 10 + (i % 8) * 77;
             int y = 330 + (i / 8) * 25;
@@ -1886,7 +1898,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                          recipe->display_name);
             else
                 snprintf(label, sizeof(label), "%02d EMPTY", i + 1);
-            button(fb, x, y, 72, label, i == ui->transform_recipe_index);
+            button(fb, x, y, 72, label,
+                   ui->transform_recipe_index ==
+                   ui->cdp_page * TS_CDP_BANK_SLOT_COUNT + i);
             if (recipe != NULL) rect(fb, x + 2, y + 2, 3, 19, PAL_EFFECT);
         }
     } else if (ui->show_ingredients) {
@@ -2117,6 +2131,14 @@ int ts_ui_recipe_slot_from_point(int x, int y)
 int ts_ui_cdp_slot_from_point(int x, int y)
 {
     return ts_ui_bank_slot_from_point(x, y);
+}
+
+int ts_ui_cdp_page_from_point(int x, int y)
+{
+    if (y < 312 || y >= 326) return -1;
+    if (x >= 10 && x < 58) return 0;
+    if (x >= 62 && x < 110) return 1;
+    return -1;
 }
 
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)

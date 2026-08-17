@@ -15,7 +15,7 @@ static int values_match(const TsCdpRecipeValues *left,
                         const TsCdpRecipeValues *right)
 {
     if (left == NULL || right == NULL || left->mix != right->mix ||
-        left->seed != right->seed) return 0;
+        left->seed != right->seed || left->tuning_hz != right->tuning_hz) return 0;
     for (size_t i = 0; i < TS_CDP_CONTROL_COUNT; ++i)
         if (left->controls[i] != right->controls[i]) return 0;
     return 1;
@@ -74,7 +74,7 @@ int ts_transform_identity_capture(TsTransformIdentity *identity,
     identity->recipe_schema_version = recipe->schema_version;
     identity->recipe_version = recipe->recipe_version;
     identity->values = *values;
-    for (size_t i = 0; i < TS_CDP_CONTROL_COUNT; ++i)
+    for (size_t i = 0; i < recipe->control_count; ++i)
         identity->values.controls[i] = ts_cdp_control_quantize(
             &recipe->controls[i], identity->values.controls[i]);
     if (recipe->mix_policy == TS_CDP_MIX_UNSUPPORTED) identity->values.mix = 1.0f;

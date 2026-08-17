@@ -198,6 +198,8 @@ typedef struct {
     int keyboard_base_note;
     int show_recipes;
     int show_ingredients;
+    int cdp_page;
+    TsCdpRecipeValues cdp_presets[TS_CDP_FACTORY_RECIPE_COUNT];
     TsCaptureState capture_state;
     int capture_destination_slot;
     int capture_source_slot;
@@ -369,6 +371,7 @@ void ts_ui_finish_palette_edit(TsUiState *ui, int cancel);
 int ts_ui_bank_slot_from_point(int x, int y);
 int ts_ui_recipe_slot_from_point(int x, int y);
 int ts_ui_cdp_slot_from_point(int x, int y);
+int ts_ui_cdp_page_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
 int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
                               TsUiBankAction action,

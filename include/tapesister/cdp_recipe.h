@@ -7,8 +7,11 @@
 enum {
     TS_CDP_CONTROL_COUNT = 4,
     TS_CDP_MAX_STAGES = 4,
-    TS_CDP_MAX_COMMAND_ARGS = 12,
-    TS_CDP_TEXT_MAX = 64
+    TS_CDP_MAX_COMMAND_ARGS = 32,
+    TS_CDP_TEXT_MAX = 64,
+    TS_CDP_BANK_COUNT = 2,
+    TS_CDP_BANK_SLOT_COUNT = 16,
+    TS_CDP_FACTORY_RECIPE_COUNT = TS_CDP_BANK_COUNT * TS_CDP_BANK_SLOT_COUNT
 };
 
 typedef enum {
@@ -42,6 +45,7 @@ typedef struct {
     float step;
     const float *valid_values;
     size_t valid_value_count;
+    const char *const *value_names;
     const char *unit;
 } TsCdpControlSpec;
 
@@ -58,6 +62,9 @@ typedef struct {
     const char *category;
     uint32_t schema_version;
     uint32_t recipe_version;
+    uint8_t bank;
+    uint8_t slot;
+    uint8_t control_count;
     TsCdpStageSpec stages[TS_CDP_MAX_STAGES];
     size_t stage_count;
     TsCdpControlSpec controls[TS_CDP_CONTROL_COUNT];
@@ -72,6 +79,7 @@ typedef struct {
     uint32_t analysis_points;
     uint32_t analysis_overlap;
     uint32_t minimum_analysis_windows;
+    uint32_t minimum_input_ms;
     uint32_t provenance_version;
 } TsCdpRecipe;
 
@@ -79,6 +87,7 @@ typedef struct {
     float controls[TS_CDP_CONTROL_COUNT];
     float mix;
     uint64_t seed;
+    float tuning_hz;
 } TsCdpRecipeValues;
 
 typedef struct {
@@ -93,10 +102,13 @@ typedef struct {
     char executable[TS_CDP_TEXT_MAX];
     int argc;
     char arguments[TS_CDP_MAX_COMMAND_ARGS][TS_CDP_TEXT_MAX];
+    char expected_output[TS_CDP_TEXT_MAX];
+    TsCdpIoType expected_output_type;
 } TsCdpCommand;
 
 size_t ts_cdp_factory_recipe_count(void);
 const TsCdpRecipe *ts_cdp_factory_recipe_at(size_t index);
+const TsCdpRecipe *ts_cdp_factory_recipe_for_slot(size_t bank, size_t slot);
 const TsCdpRecipe *ts_cdp_recipe_find(const char *id);
 int ts_cdp_recipe_validate(const TsCdpRecipe *recipe,
                            char *error, size_t error_size);
@@ -118,6 +130,12 @@ int ts_cdp_glisten_build_commands(const TsCdpRecipe *recipe,
                                   const TsCdpRecipeValues *values,
                                   TsCdpCommand commands[3],
                                   char *error, size_t error_size);
+int ts_cdp_recipe_build_commands(const TsCdpRecipe *recipe,
+                                 const TsCdpRecipeValues *values,
+                                 size_t input_frames, uint32_t sample_rate,
+                                 TsCdpCommand commands[TS_CDP_MAX_STAGES],
+                                 size_t *command_count,
+                                 char *error, size_t error_size);
 int ts_cdp_recipe_input_valid(const TsCdpRecipe *recipe,
                               size_t frames, uint32_t sample_rate,
                               char *error, size_t error_size);

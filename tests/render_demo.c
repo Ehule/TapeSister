@@ -295,8 +295,15 @@ int main(int argc, char **argv)
     } else if (argc > 2 && strcmp(argv[2], "cdp") == 0) {
         ui.show_keyboard = 0;
         ui.show_recipes = 1;
+        ui.cdp_page = 0;
         snprintf(ui.status, sizeof(ui.status),
-                 "CDP TILE 01 GLISTEN - CLICK OPENS FOUR-CONTROL TRANSFORM");
+                 "CDP 1 - LEFT APPLY  MIDDLE EDIT  3 TOGGLES THE INTERNAL PAGE");
+    } else if (argc > 2 && strcmp(argv[2], "cdp2") == 0) {
+        ui.show_keyboard = 0;
+        ui.show_recipes = 1;
+        ui.cdp_page = 1;
+        snprintf(ui.status, sizeof(ui.status),
+                 "CDP 2 - GLISTEN TILE 01  SAMPLE AND SELECTION PRESERVED");
     } else if (argc > 2 && strcmp(argv[2], "dsp-transform") == 0) {
         TsPortableRecipe *working = &ui.transform_dsp_working;
         *working = ui.recipes.slots[4];
