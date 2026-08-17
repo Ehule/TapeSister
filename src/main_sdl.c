@@ -344,6 +344,29 @@ typedef struct {
     TsCaptureRecorder capture;
 } AudioState;
 
+typedef struct {
+    SDL_Thread *thread;
+    SDL_atomic_t cancel;
+    SDL_atomic_t done;
+    TsCdpRuntime runtime;
+    const TsCdpRecipe *recipe;
+    TsCdpRecipeValues values;
+    TsTransformIdentity identity;
+    TsSample input;
+    TsCdpRunOptions options;
+    TsCdpRunResult result;
+    char error[160];
+} TransformWorker;
+
+typedef struct {
+    TsCdpRuntime runtime;
+    TransformWorker *worker;
+    TsTransformPreview preview;
+    uint64_t render_generation;
+    uint64_t next_job_id;
+    int rerender_requested;
+} TransformController;
+
 static float loop_lock_silence_data[TS_DEFAULT_CANVAS_FRAMES];
 static const TsSample loop_lock_silence = {
     loop_lock_silence_data,
@@ -1251,6 +1274,522 @@ static int adjust_drone_crossfade(SDL_AudioDeviceID device, AudioState *audio,
     return 1;
 }
 
+static int transform_cancel_check(void *userdata)
+{
+    TransformWorker *worker = userdata;
+    return worker != NULL && SDL_AtomicGet(&worker->cancel) != 0;
+}
+
+static int transform_worker_main(void *userdata)
+{
+    TransformWorker *worker = userdata;
+    (void)ts_cdp_run_recipe(&worker->runtime, worker->recipe, &worker->values,
+                            &worker->input, &worker->options, &worker->result,
+                            worker->error, sizeof(worker->error));
+    SDL_AtomicSet(&worker->done, 1);
+    return worker->result.status == TS_CDP_RUN_OK ? 0 : 1;
+}
+
+static void transform_controller_init(TransformController *controller)
+{
+    memset(controller, 0, sizeof(*controller));
+    ts_cdp_runtime_init(&controller->runtime);
+    ts_transform_preview_init(&controller->preview);
+    controller->next_job_id = 1u;
+}
+
+static void stop_transform_preview(SDL_AudioDeviceID device, AudioState *audio,
+                                   TsUiState *ui, TransformController *controller)
+{
+    if (device) SDL_LockAudioDevice(device);
+    if (audio->sample == &controller->preview.sample) {
+        audio->playing = 0;
+        audio->looping = 0;
+        audio->sample = NULL;
+        audio->range_start = 0u;
+        audio->range_end = 0u;
+        audio->bank_slot = -1;
+    }
+    if (device) SDL_UnlockAudioDevice(device);
+    ui->transform_preview_active = 0;
+}
+
+static void discard_transform_preview(SDL_AudioDeviceID device, AudioState *audio,
+                                      TsUiState *ui, TransformController *controller)
+{
+    stop_transform_preview(device, audio, ui, controller);
+    ts_transform_preview_free(&controller->preview);
+    ui->transform_preview_sample = NULL;
+    ui->transform_preview_available = 0;
+    ui->transform_safety = TS_CDP_SAFETY_INVALID;
+}
+
+static void mark_transform_stale(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui, TransformController *controller,
+                                 const char *message)
+{
+    ++controller->render_generation;
+    controller->rerender_requested = 0;
+    if (controller->worker != NULL)
+        SDL_AtomicSet(&controller->worker->cancel, 1);
+    discard_transform_preview(device, audio, ui, controller);
+    snprintf(ui->transform_message, sizeof(ui->transform_message), "%s",
+             message != NULL ? message : "CHANGED - RENDER AGAIN");
+}
+
+static void discover_transform_runtime(TsUiState *ui,
+                                       TransformController *controller)
+{
+    char error[160];
+    char *base = SDL_GetBasePath();
+    int ok = ts_cdp_runtime_discover(&controller->runtime,
+                                     ui->config.cdp_bin_path,
+                                     base != NULL ? base : ".",
+                                     error, sizeof(error));
+    if (base != NULL) SDL_free(base);
+    ui->transform_runtime_available = ok;
+    if (!ok)
+        snprintf(ui->transform_message, sizeof(ui->transform_message), "%.92s", error);
+}
+
+static const TsCdpRecipe *active_transform_recipe(const TsUiState *ui)
+{
+    const TsCdpRecipe *recipe = ui != NULL && ui->transform_recipe_index >= 0 ?
+        ts_cdp_factory_recipe_at((size_t)ui->transform_recipe_index) : NULL;
+    return recipe != NULL ? recipe : ts_cdp_factory_recipe_at(0u);
+}
+
+static void begin_transform_workspace(TsUiState *ui,
+                                      const TsInstrument *instrument,
+                                      TransformController *controller,
+                                      int recipe_index)
+{
+    const TsCdpRecipe *recipe = recipe_index >= 0 ?
+        ts_cdp_factory_recipe_at((size_t)recipe_index) : NULL;
+    if (recipe == NULL) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "THAT TRANSFORM RECIPE IS NOT AVAILABLE");
+        return;
+    }
+    if (instrument == NULL || instrument->current.data == NULL ||
+        instrument->current.frames == 0u) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "%s NEEDS AN OCCUPIED ACTIVE TILE", recipe->display_name);
+        return;
+    }
+    if (ui->transform_recipe_index != recipe_index)
+        ts_cdp_recipe_values_default(recipe, &ui->transform_values);
+    ui->transform_recipe_index = recipe_index;
+    ui->transform_open = 1;
+    ui->transform_scope = instrument->has_selection &&
+                          instrument->selection_last > instrument->selection_first ?
+                          TS_TRANSFORM_SELECTION : TS_TRANSFORM_WHOLE;
+    ui->transform_selection_dragging = 0;
+    discover_transform_runtime(ui, controller);
+    if (ui->transform_runtime_available)
+        snprintf(ui->transform_message, sizeof(ui->transform_message),
+                 "%s READY - RENDER IS NON-DESTRUCTIVE", recipe->display_name);
+    snprintf(ui->status, sizeof(ui->status),
+             "%s TRANSFORM OPEN - SELECTION AND VIEW ARE SHARED",
+             recipe->display_name);
+}
+
+static void close_transform_workspace(SDL_AudioDeviceID device, AudioState *audio,
+                                      TsUiState *ui, TransformController *controller)
+{
+    ++controller->render_generation;
+    controller->rerender_requested = 0;
+    if (controller->worker != NULL)
+        SDL_AtomicSet(&controller->worker->cancel, 1);
+    discard_transform_preview(device, audio, ui, controller);
+    ui->transform_open = 0;
+    ui->transform_rendering = 0;
+    ui->transform_selection_dragging = 0;
+    snprintf(ui->status, sizeof(ui->status),
+             "TRANSFORM CLOSED - TILE AND VIEW PRESERVED");
+}
+
+static int launch_transform_worker(TsUiState *ui, TsInstrument *instrument,
+                                   TransformController *controller)
+{
+    TransformWorker *worker;
+    const TsCdpRecipe *recipe = active_transform_recipe(ui);
+    char error[160];
+    if (recipe == NULL) {
+        snprintf(ui->transform_message, sizeof(ui->transform_message),
+                 "TRANSFORM RECIPE IS NOT AVAILABLE");
+        return 0;
+    }
+    if (!ui->transform_runtime_available || !controller->runtime.available) {
+        discover_transform_runtime(ui, controller);
+        if (!ui->transform_runtime_available) return 0;
+    }
+    worker = calloc(1u, sizeof(*worker));
+    if (worker == NULL) {
+        snprintf(ui->transform_message, sizeof(ui->transform_message),
+                 "OUT OF MEMORY STARTING RENDER");
+        return 0;
+    }
+    ts_sample_init(&worker->input);
+    ts_cdp_run_options_init(&worker->options);
+    ts_cdp_run_result_init(&worker->result);
+    worker->runtime = controller->runtime;
+    worker->recipe = recipe;
+    worker->values = ui->transform_values;
+    worker->options.job_id = controller->next_job_id++;
+    worker->options.cancel_check = transform_cancel_check;
+    worker->options.cancel_userdata = worker;
+    ++controller->render_generation;
+    if (!ts_transform_identity_capture(
+            &worker->identity, instrument, ui->transform_scope, recipe,
+            &worker->values, worker->options.job_id,
+            controller->render_generation, error, sizeof(error)) ||
+        !ts_transform_extract_input(instrument, &worker->identity,
+                                    &worker->input, error, sizeof(error)) ||
+        !ts_cdp_recipe_input_valid(recipe, worker->input.frames,
+                                   worker->input.sample_rate,
+                                   error, sizeof(error))) {
+        snprintf(ui->transform_message, sizeof(ui->transform_message), "%.92s", error);
+        ts_sample_free(&worker->input);
+        ts_cdp_run_result_free(&worker->result);
+        free(worker);
+        return 0;
+    }
+    worker->thread = SDL_CreateThread(transform_worker_main, "TapeSister CDP", worker);
+    if (worker->thread == NULL) {
+        snprintf(ui->transform_message, sizeof(ui->transform_message),
+                 "COULD NOT START RENDER WORKER: %.54s", SDL_GetError());
+        ts_sample_free(&worker->input);
+        ts_cdp_run_result_free(&worker->result);
+        free(worker);
+        return 0;
+    }
+    controller->worker = worker;
+    ui->transform_rendering = 1;
+    snprintf(ui->transform_message, sizeof(ui->transform_message),
+             "RENDERING %s JOB %llu", recipe->display_name,
+             (unsigned long long)worker->identity.job_id);
+    return 1;
+}
+
+static void request_transform_render(SDL_AudioDeviceID device, AudioState *audio,
+                                     TsUiState *ui, TsInstrument *instrument,
+                                     TransformController *controller)
+{
+    discard_transform_preview(device, audio, ui, controller);
+    if (controller->worker != NULL) {
+        ++controller->render_generation;
+        controller->rerender_requested = 1;
+        SDL_AtomicSet(&controller->worker->cancel, 1);
+        snprintf(ui->transform_message, sizeof(ui->transform_message),
+                 "CANCELING OLD JOB - NEWEST REQUEST QUEUED");
+        return;
+    }
+    (void)launch_transform_worker(ui, instrument, controller);
+}
+
+static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
+                                  TsUiState *ui, TsInstrument *instrument,
+                                  TransformController *controller)
+{
+    TransformWorker *worker = controller->worker;
+    const TsCdpRecipe *recipe = active_transform_recipe(ui);
+    char error[160];
+    int rerender;
+    error[0] = '\0';
+    (void)device;
+    (void)audio;
+    if (worker == NULL || SDL_AtomicGet(&worker->done) == 0) return;
+    SDL_WaitThread(worker->thread, NULL);
+    worker->thread = NULL;
+    rerender = controller->rerender_requested;
+    controller->rerender_requested = 0;
+    ui->transform_rendering = 0;
+    if (!rerender && ui->transform_open && worker->result.status == TS_CDP_RUN_OK &&
+        ts_transform_identity_matches(
+            &worker->identity, instrument, ui->transform_scope, recipe,
+            &ui->transform_values, controller->render_generation,
+            error, sizeof(error)) &&
+        ts_transform_prepare_preview(instrument, &worker->identity, recipe,
+                                     &worker->result, &controller->preview,
+                                     error, sizeof(error))) {
+        ui->transform_preview_sample = &controller->preview.sample;
+        ui->transform_preview_available = 1;
+        ui->transform_safety = controller->preview.safety;
+        snprintf(ui->transform_message, sizeof(ui->transform_message),
+                 "PREVIEW READY - %s PEAK %.3F",
+                 ts_cdp_safety_name(controller->preview.safety),
+                 controller->preview.peak);
+    } else if (!rerender && ui->transform_open) {
+        const char *message = error[0] != '\0' ? error : worker->error[0] != '\0' ?
+                              worker->error :
+                              worker->result.status == TS_CDP_RUN_CANCELLED ?
+                              "RENDER CANCELED - TILE UNCHANGED" :
+                              worker->result.status == TS_CDP_RUN_TIMEOUT ?
+                              "RENDER TIMED OUT - TILE UNCHANGED" :
+                              "RENDER FAILED - TILE UNCHANGED";
+        snprintf(ui->transform_message, sizeof(ui->transform_message), "%.92s", message);
+    }
+    ts_sample_free(&worker->input);
+    ts_cdp_run_result_free(&worker->result);
+    free(worker);
+    controller->worker = NULL;
+    if (rerender && ui->transform_open)
+        (void)launch_transform_worker(ui, instrument, controller);
+}
+
+static void audition_transform_preview(SDL_AudioDeviceID device, AudioState *audio,
+                                       TsUiState *ui, TransformController *controller,
+                                       int output_rate)
+{
+    TsSample *preview = &controller->preview.sample;
+    if (ui->transform_preview_active) {
+        stop_transform_preview(device, audio, ui, controller);
+        snprintf(ui->transform_message, sizeof(ui->transform_message),
+                 "PREVIEW STOPPED - TILE UNCHANGED");
+        return;
+    }
+    if (!ui->transform_preview_available || preview->data == NULL || !device ||
+        output_rate <= 0) {
+        snprintf(ui->transform_message, sizeof(ui->transform_message),
+                 "RENDER A PREVIEW BEFORE AUDITION");
+        return;
+    }
+    SDL_LockAudioDevice(device);
+    ts_note_bank_clear(&audio->notes);
+    audio->sample = preview;
+    audio->position = 0.0;
+    audio->pitch = 1.0;
+    audio->range_start = 0u;
+    audio->range_end = preview->frames;
+    audio->source = TS_AUDITION_CURRENT;
+    audio->range = TS_AUDITION_ALL;
+    audio->looping = 0;
+    audio->loop_mode = TS_LOOP_FORWARD;
+    audio->loop_direction = 1;
+    audio->crossfade_frames = 0u;
+    audio->bank_slot = -1;
+    audio->step = (double)preview->sample_rate / (double)output_rate;
+    audio->playing = 1;
+    SDL_UnlockAudioDevice(device);
+    ui->transform_preview_active = 1;
+    snprintf(ui->transform_message, sizeof(ui->transform_message),
+             "AUDITIONING IMMUTABLE PREVIEW - TILE UNCHANGED");
+}
+
+static void apply_transform_preview(SDL_AudioDeviceID device, AudioState *audio,
+                                    TsUiState *ui, TsInstrument *instrument,
+                                    TransformController *controller)
+{
+    const TsCdpRecipe *recipe = active_transform_recipe(ui);
+    char error[160];
+    int ok;
+    stop_transform_preview(device, audio, ui, controller);
+    lock_edit(device, audio);
+    ok = ts_transform_apply_preview(instrument, &controller->preview,
+                                    ui->transform_scope, recipe,
+                                    &ui->transform_values,
+                                    controller->render_generation,
+                                    error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (!ok) {
+        snprintf(ui->transform_message, sizeof(ui->transform_message), "%.92s", error);
+        return;
+    }
+    ts_transform_preview_free(&controller->preview);
+    ui->transform_preview_sample = NULL;
+    ui->transform_preview_available = 0;
+    ui->transform_safety = TS_CDP_SAFETY_INVALID;
+    ++controller->render_generation;
+    snprintf(ui->transform_message, sizeof(ui->transform_message),
+             "%s APPLIED - ONE STEP UNDO", recipe->display_name);
+    snprintf(ui->status, sizeof(ui->status),
+             "%s APPLIED TO %s - SELECTION COVERS RESULT", recipe->display_name,
+             ui->transform_scope == TS_TRANSFORM_SELECTION ? "SELECTION" : "WHOLE TILE");
+}
+
+static void adjust_transform_control(SDL_AudioDeviceID device, AudioState *audio,
+                                     TsUiState *ui, TransformController *controller,
+                                     int index, int direction, int coarse)
+{
+    const TsCdpRecipe *recipe = active_transform_recipe(ui);
+    const TsCdpControlSpec *control;
+    float value;
+    float step;
+    if (index < 0 || index >= TS_CDP_CONTROL_COUNT || direction == 0) return;
+    control = &recipe->controls[index];
+    value = ui->transform_values.controls[index];
+    if (control->type == TS_CDP_CONTROL_ENUMERATED) {
+        size_t at = 0u;
+        for (size_t i = 0; i < control->valid_value_count; ++i)
+            if (control->valid_values[i] == value) at = i;
+        if (direction > 0 && at + 1u < control->valid_value_count) ++at;
+        if (direction < 0 && at > 0u) --at;
+        value = control->valid_values[at];
+    } else {
+        step = control->step > 0.0f ? control->step :
+               (control->maximum - control->minimum) * (coarse ? 0.1f : 0.02f);
+        if (coarse && control->step > 0.0f) step *= 4.0f;
+        value += direction > 0 ? step : -step;
+    }
+    ts_cdp_recipe_set_control(recipe, &ui->transform_values, (size_t)index, value);
+    mark_transform_stale(device, audio, ui, controller,
+                         "CONTROL CHANGED - RENDER AGAIN");
+}
+
+static void set_transform_control_from_x(SDL_AudioDeviceID device, AudioState *audio,
+                                         TsUiState *ui,
+                                         TransformController *controller,
+                                         int index, int x)
+{
+    const TsCdpRecipe *recipe = active_transform_recipe(ui);
+    const TsCdpControlSpec *control = &recipe->controls[index];
+    int left = 20 + index * 150;
+    float normalized = (float)(x - left) / 140.0f;
+    float value;
+    if (normalized < 0.0f) normalized = 0.0f;
+    if (normalized > 1.0f) normalized = 1.0f;
+    if (control->type == TS_CDP_CONTROL_ENUMERATED) {
+        size_t at = (size_t)lrintf(normalized *
+                    (float)(control->valid_value_count - 1u));
+        value = control->valid_values[at];
+    } else value = control->minimum + normalized *
+                   (control->maximum - control->minimum);
+    ts_cdp_recipe_set_control(recipe, &ui->transform_values, (size_t)index, value);
+    mark_transform_stale(device, audio, ui, controller,
+                         "CONTROL CHANGED - RENDER AGAIN");
+}
+
+static size_t transform_frame_from_x(const TsInstrument *instrument, int x)
+{
+    return ts_instrument_frame_from_view_x(
+        instrument, x - TS_TRANSFORM_WAVE_X, TS_TRANSFORM_WAVE_W);
+}
+
+static void begin_transform_selection_drag(SDL_AudioDeviceID device,
+                                           AudioState *audio, TsUiState *ui,
+                                           TsInstrument *instrument,
+                                           TransformController *controller,
+                                           int x)
+{
+    size_t pointer = transform_frame_from_x(instrument, x);
+    size_t span = instrument->view_last > instrument->view_first ?
+                  instrument->view_last - instrument->view_first :
+                  instrument->current.frames;
+    size_t handle = span / TS_TRANSFORM_WAVE_W * 6u + 1u;
+    ui->transform_selection_dragging = 1;
+    ui->transform_selection_anchor = pointer;
+    ui->transform_selection_length = instrument->has_selection ?
+                                     instrument->selection_last -
+                                     instrument->selection_first : 0u;
+    ui->transform_selection_grab = 0u;
+    if (instrument->has_selection &&
+        pointer + handle >= instrument->selection_first &&
+        pointer <= instrument->selection_first + handle) {
+        ui->transform_selection_drag_mode = 2;
+        ui->transform_selection_anchor = instrument->selection_last;
+    } else if (instrument->has_selection &&
+               pointer + handle >= instrument->selection_last &&
+               pointer <= instrument->selection_last + handle) {
+        ui->transform_selection_drag_mode = 3;
+        ui->transform_selection_anchor = instrument->selection_first;
+    } else if (instrument->has_selection && pointer >= instrument->selection_first &&
+               pointer < instrument->selection_last) {
+        ui->transform_selection_drag_mode = 4;
+        ui->transform_selection_grab = pointer - instrument->selection_first;
+    } else {
+        ui->transform_selection_drag_mode = 1;
+        ts_instrument_set_selection(instrument, pointer, pointer);
+    }
+    mark_transform_stale(device, audio, ui, controller,
+                         "SELECTION CHANGED - RENDER AGAIN");
+}
+
+static void update_transform_selection_drag(TsUiState *ui,
+                                            TsInstrument *instrument, int x)
+{
+    size_t pointer = transform_frame_from_x(instrument, x);
+    if (!ui->transform_selection_dragging) return;
+    if (ui->transform_selection_drag_mode == 4) {
+        size_t length = ui->transform_selection_length;
+        size_t first = pointer >= ui->transform_selection_grab ?
+                       pointer - ui->transform_selection_grab : 0u;
+        if (ts_instrument_grid_moves_snap(instrument))
+            first = ts_instrument_grid_target(instrument, first);
+        if (length > instrument->current.frames) length = instrument->current.frames;
+        if (first + length > instrument->current.frames)
+            first = instrument->current.frames - length;
+        ts_instrument_set_selection(instrument, first, first + length);
+    } else if (ui->transform_selection_drag_mode == 2) {
+        if (pointer >= ui->transform_selection_anchor)
+            pointer = ui->transform_selection_anchor > 0u ?
+                      ui->transform_selection_anchor - 1u : 0u;
+        ts_instrument_set_selection_snapped(instrument, pointer,
+                                            ui->transform_selection_anchor);
+    } else if (ui->transform_selection_drag_mode == 3) {
+        if (pointer <= ui->transform_selection_anchor)
+            pointer = ui->transform_selection_anchor + 1u;
+        ts_instrument_set_selection_snapped(instrument,
+                                            ui->transform_selection_anchor,
+                                            pointer);
+    } else {
+        ts_instrument_set_selection_snapped(instrument,
+                                            ui->transform_selection_anchor,
+                                            pointer);
+    }
+    if (instrument->has_selection && ui->transform_scope == TS_TRANSFORM_WHOLE) {
+        /* WHOLE is intentionally retained while the persistent selection moves. */
+    } else if (instrument->has_selection) ui->transform_scope = TS_TRANSFORM_SELECTION;
+}
+
+static void handle_transform_action(SDL_AudioDeviceID device, AudioState *audio,
+                                    TsUiState *ui, TsInstrument *instrument,
+                                    TransformController *controller,
+                                    TsUiTransformAction action,
+                                    int output_rate)
+{
+    switch (action) {
+    case TS_UI_TRANSFORM_ACTION_SELECTION:
+        if (!instrument->has_selection ||
+            instrument->selection_last <= instrument->selection_first) {
+            snprintf(ui->transform_message, sizeof(ui->transform_message),
+                     "SELECTION SCOPE NEEDS A NONEMPTY SELECTION");
+        } else if (ui->transform_scope != TS_TRANSFORM_SELECTION) {
+            ui->transform_scope = TS_TRANSFORM_SELECTION;
+            mark_transform_stale(device, audio, ui, controller,
+                                 "SCOPE CHANGED - RENDER AGAIN");
+        }
+        break;
+    case TS_UI_TRANSFORM_ACTION_WHOLE:
+        if (ui->transform_scope != TS_TRANSFORM_WHOLE) {
+            ui->transform_scope = TS_TRANSFORM_WHOLE;
+            mark_transform_stale(device, audio, ui, controller,
+                                 "SCOPE CHANGED - SELECTION RETAINED");
+        }
+        break;
+    case TS_UI_TRANSFORM_ACTION_RENDER:
+        request_transform_render(device, audio, ui, instrument, controller);
+        break;
+    case TS_UI_TRANSFORM_ACTION_APPLY:
+        apply_transform_preview(device, audio, ui, instrument, controller);
+        break;
+    case TS_UI_TRANSFORM_ACTION_AUDITION:
+        audition_transform_preview(device, audio, ui, controller, output_rate);
+        break;
+    case TS_UI_TRANSFORM_ACTION_BACK:
+        if (controller->worker != NULL) {
+            ++controller->render_generation;
+            controller->rerender_requested = 0;
+            SDL_AtomicSet(&controller->worker->cancel, 1);
+            snprintf(ui->transform_message, sizeof(ui->transform_message),
+                     "CANCELING RENDER - TILE UNCHANGED");
+        } else close_transform_workspace(device, audio, ui, controller);
+        break;
+    default:
+        break;
+    }
+}
+
 static void commit_drone(SDL_AudioDeviceID device, AudioState *audio,
                          TsUiState *ui, TsInstrument *instrument,
                          TsSample *drone, int copy_to_new_tile)
@@ -1328,7 +1867,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         }
         if (ok) {
             ui->show_keyboard = 0;
-            ui->show_recipes = 1;
+            ui->show_recipes = 0;
+            ui->show_ingredients = 1;
             ui->recipes.active_slot = slot - 1;
             ui->has_pitch_suggestion = 0;
             snprintf(ui->status, sizeof(ui->status), "LOADED RECIPE %.31s%s - UNDO RESTORES",
@@ -2896,7 +3436,9 @@ static TsBrowserMode config_browser_mode(TsConfigField field)
     if (field == TS_CONFIG_SAMPLE_PATH) return TS_BROWSER_SELECT_SAMPLE_DIRECTORY;
     if (field == TS_CONFIG_FASTTRACKER_PATH)
         return TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE;
-    return TS_BROWSER_SELECT_EXCHANGE_DIRECTORY;
+    if (field == TS_CONFIG_EXCHANGE_PATH)
+        return TS_BROWSER_SELECT_EXCHANGE_DIRECTORY;
+    return TS_BROWSER_SELECT_CDP_BIN_DIRECTORY;
 }
 
 static TsConfigField browser_config_field(TsBrowserMode mode)
@@ -2904,7 +3446,9 @@ static TsConfigField browser_config_field(TsBrowserMode mode)
     if (mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY) return TS_CONFIG_SAMPLE_PATH;
     if (mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE)
         return TS_CONFIG_FASTTRACKER_PATH;
-    return TS_CONFIG_EXCHANGE_PATH;
+    if (mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY)
+        return TS_CONFIG_EXCHANGE_PATH;
+    return TS_CONFIG_CDP_BIN_PATH;
 }
 
 static void browser_open_config_path(TsUiState *ui, TsConfigField field)
@@ -3513,6 +4057,7 @@ int main(int argc, char **argv)
     TsSample clipboard;
     TsSample pending_selection_load;
     TsSample drone_preview;
+    TransformController transform;
     size_t clipboard_origin_first = 0;
     size_t clipboard_source_frames = 0;
     uint32_t clipboard_source_rate = 0;
@@ -3523,6 +4068,7 @@ int main(int argc, char **argv)
     ts_sample_init(&clipboard);
     ts_sample_init(&pending_selection_load);
     ts_sample_init(&drone_preview);
+    transform_controller_init(&transform);
     ts_ui_init(&ui);
     {
         char config_error[160];
@@ -3649,6 +4195,7 @@ int main(int argc, char **argv)
                      (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                       ui.config_open || ui.palette_open || ui.export_choice_open ||
                       ui.load_selection_choice_open ||
+                      ui.transform_open ||
                       ui.drone_open ||
                       ui.exit_confirm_open ||
                       ui.browser.mode != TS_BROWSER_CLOSED)) {
@@ -3678,6 +4225,13 @@ int main(int argc, char **argv)
                 if (ui.browser.filename_focus &&
                     ts_browser_mode_edits_filename(ui.browser.mode))
                     ts_browser_append_filename(&ui.browser, event.text.text);
+            } else if (event.type == SDL_WINDOWEVENT &&
+                       event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
+                       ui.transform_open) {
+                stop_transform_preview(device, &audio, &ui, &transform);
+                ui.transform_selection_dragging = 0;
+                snprintf(ui.transform_message, sizeof(ui.transform_message),
+                         "PREVIEW STOPPED - WINDOW LOST FOCUS");
             } else if (event.type == SDL_WINDOWEVENT &&
                        event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
                        ui.drone_open) {
@@ -3752,6 +4306,41 @@ int main(int argc, char **argv)
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
                                key == SDLK_y) {
                         running = 0;
+                    }
+                } else if (ui.transform_open) {
+                    if ((mod & KMOD_CTRL) && key == SDLK_z) {
+                        history_move(device, &audio, &ui, &instrument, 0);
+                        mark_transform_stale(device, &audio, &ui, &transform,
+                                             "UNDO CHANGED TILE - RENDER AGAIN");
+                    } else if ((mod & KMOD_CTRL) && key == SDLK_y) {
+                        history_move(device, &audio, &ui, &instrument, 1);
+                        mark_transform_stale(device, &audio, &ui, &transform,
+                                             "REDO CHANGED TILE - RENDER AGAIN");
+                    } else if (key == SDLK_ESCAPE) {
+                        handle_transform_action(device, &audio, &ui, &instrument,
+                                                &transform,
+                                                TS_UI_TRANSFORM_ACTION_BACK,
+                                                obtained.freq);
+                    } else if (key == SDLK_SPACE) {
+                        audition_transform_preview(device, &audio, &ui,
+                                                   &transform, obtained.freq);
+                    } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
+                               key == SDLK_r) {
+                        request_transform_render(device, &audio, &ui, &instrument,
+                                                 &transform);
+                    } else if (key == SDLK_a) {
+                        apply_transform_preview(device, &audio, &ui, &instrument,
+                                                &transform);
+                    } else if (key == SDLK_s && instrument.has_selection) {
+                        handle_transform_action(device, &audio, &ui, &instrument,
+                                                &transform,
+                                                TS_UI_TRANSFORM_ACTION_SELECTION,
+                                                obtained.freq);
+                    } else if (key == SDLK_w) {
+                        handle_transform_action(device, &audio, &ui, &instrument,
+                                                &transform,
+                                                TS_UI_TRANSFORM_ACTION_WHOLE,
+                                                obtained.freq);
                     }
                 } else if (ui.drone_open) {
                     if (key == SDLK_ESCAPE) {
@@ -3958,7 +4547,7 @@ int main(int argc, char **argv)
                     ui.load_bank_slot = instrument.selected_slot;
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_s) {
-                    browser_open(&ui, ui.show_recipes ?
+                    browser_open(&ui, ui.show_ingredients ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_e) {
                     begin_export_choice(&ui);
@@ -3986,6 +4575,16 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_DOWN) {
                     apply_sample_edit(device, &audio, &ui, &instrument,
                                       TS_SAMPLE_EDIT_GAIN, 0.7079458f);
+                } else if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0 &&
+                           key >= SDLK_1 && key <= SDLK_4) {
+                    TsUiPanel panel = (TsUiPanel)(key - SDLK_1);
+                    static const char *const names[] = {
+                        "SAMPLE TILES", "KEYBOARD", "CDP", "DSP"
+                    };
+                    ts_ui_select_panel(&ui, panel);
+                    ui.bank_view_slot = -1;
+                    snprintf(ui.status, sizeof(ui.status), "%s PANEL - KEYS 1 2 3 4",
+                             names[panel]);
                 } else if (key == SDLK_EQUALS || key == SDLK_PLUS || key == SDLK_KP_PLUS) {
                     ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT) {
@@ -4098,10 +4697,17 @@ int main(int argc, char **argv)
                         ui.workbench_loop_active)
                         stop_all(device, &audio, &ui);
                     else {
-                        if (!instrument.has_selection && !instrument.has_playhead)
-                            (void)ts_instrument_reset_selection_playhead(&instrument);
-                        begin_playhead_audition(device, &audio, &ui, &instrument,
-                                                obtained.freq);
+                        ui.audition_source = TS_AUDITION_CURRENT;
+                        if (ts_ui_space_plays_selection(&instrument))
+                            begin_audition(device, &audio, &ui, &instrument,
+                                           TS_AUDITION_SELECTION, 1.0,
+                                           obtained.freq);
+                        else {
+                            if (!instrument.has_playhead)
+                                (void)ts_instrument_reset_selection_playhead(&instrument);
+                            begin_playhead_audition(device, &audio, &ui, &instrument,
+                                                    obtained.freq);
+                        }
                     }
                 } else {
                     int note = note_for_key(key);
@@ -4141,6 +4747,7 @@ int main(int argc, char **argv)
                        ui.renaming_bank_slot < 0 &&
                        ui.renaming_recipe_slot < 0 && !ui.export_choice_open &&
                        !ui.load_selection_choice_open &&
+                       !ui.transform_open &&
                        !ui.drone_open &&
                        !ui.exit_confirm_open &&
                        ui.browser.mode == TS_BROWSER_CLOSED &&
@@ -4163,6 +4770,39 @@ int main(int argc, char **argv)
                                    ((SDL_GetModState() & KMOD_SHIFT) ? 8 : 1));
                 } else snprintf(ui.status, sizeof(ui.status),
                                 "HOVER A PALETTE SLIDER TO USE THE WHEEL");
+            } else if (event.type == SDL_MOUSEWHEEL && ui.transform_open) {
+                int raw_x, raw_y, x, y;
+                int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
+                              -event.wheel.y : event.wheel.y;
+                int control;
+                SDL_GetMouseState(&raw_x, &raw_y);
+                logical_mouse(window, raw_x, raw_y, &x, &y);
+                control = ts_ui_transform_control_from_point(x, y);
+                if (wheel_y != 0 && control >= 0) {
+                    int amount = wheel_y < 0 ? -wheel_y : wheel_y;
+                    for (int step = 0; step < amount; ++step)
+                        adjust_transform_control(
+                            device, &audio, &ui, &transform, control,
+                            wheel_y > 0 ? 1 : -1,
+                            (SDL_GetModState() & KMOD_SHIFT) == 0);
+                } else if (wheel_y != 0 && ts_ui_transform_mix_contains(x, y)) {
+                    const TsCdpRecipe *recipe = active_transform_recipe(&ui);
+                    if (recipe->mix_policy == TS_CDP_MIX_UNSUPPORTED) {
+                        snprintf(ui.transform_message,
+                                 sizeof(ui.transform_message),
+                                 "MIX DISABLED - %s USES NATURAL LENGTH",
+                                 recipe->display_name);
+                    } else {
+                        float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
+                        ui.transform_values.mix += wheel_y > 0 ? step : -step;
+                        if (ui.transform_values.mix < 0.0f) ui.transform_values.mix = 0.0f;
+                        if (ui.transform_values.mix > 1.0f) ui.transform_values.mix = 1.0f;
+                        mark_transform_stale(device, &audio, &ui, &transform,
+                                             "MIX CHANGED - RENDER AGAIN");
+                    }
+                } else snprintf(ui.transform_message,
+                                sizeof(ui.transform_message),
+                                "HOVER A CONTROL OR MIX TO USE THE WHEEL");
             } else if (event.type == SDL_MOUSEWHEEL && ui.drone_open) {
                 int raw_x, raw_y, x, y;
                 int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
@@ -4198,6 +4838,7 @@ int main(int argc, char **argv)
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.export_choice_open ||
                         ui.load_selection_choice_open ||
+                        ui.transform_open ||
                         ui.exit_confirm_open)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
@@ -4355,6 +4996,12 @@ int main(int argc, char **argv)
                 amount = (float)(x - 407) / 93.0f;
                 preview_tear_gesture(device, &audio, &ui, &instrument, amount, obtained.freq);
             } else if (event.type == SDL_MOUSEMOTION &&
+                       ui.transform_open && ui.transform_selection_dragging) {
+                int x, y;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
+                (void)y;
+                update_transform_selection_drag(&ui, &instrument, x);
+            } else if (event.type == SDL_MOUSEMOTION &&
                        ui.drone_open && ui.drone_crossfade_dragging) {
                 int x, y;
                 int delta_x;
@@ -4380,6 +5027,7 @@ int main(int argc, char **argv)
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.palette_open || ui.export_choice_open ||
                         ui.load_selection_choice_open ||
+                        ui.transform_open ||
                         ui.drone_open ||
                         ui.exit_confirm_open)) {
                 /* Modal dialogs own pointer input. */
@@ -4494,6 +5142,7 @@ int main(int argc, char **argv)
                        event.button.button == SDL_BUTTON_MIDDLE &&
                        !ui.config_open && !ui.palette_open &&
                        !ui.load_selection_choice_open &&
+                       !ui.transform_open &&
                        !ui.drone_open &&
                        ui.browser.mode == TS_BROWSER_CLOSED) {
                 int x, y;
@@ -4539,6 +5188,61 @@ int main(int argc, char **argv)
                         ui.exit_confirm_open = 0;
                         snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
                     }
+                } else if (ui.transform_open) {
+                    TsUiTransformAction action =
+                        ts_ui_transform_action_from_point(x, y);
+                    int control = ts_ui_transform_control_from_point(x, y);
+                    int bank_slot = !ui.show_keyboard && !ui.show_recipes &&
+                                    !ui.show_ingredients ?
+                                    ts_ui_bank_slot_from_point(x, y) : -1;
+                    if (bank_slot >= 0) {
+                        char select_error[160];
+                        int selected;
+                        mark_transform_stale(device, &audio, &ui, &transform,
+                                             "TILE CHANGED - RENDER AGAIN");
+                        lock_edit(device, &audio);
+                        selected = ts_ui_execute_bank_action(
+                            &instrument, bank_slot, TS_UI_BANK_ACTION_AUDITION,
+                            select_error, sizeof(select_error));
+                        unlock_edit(device, &audio, &ui, &instrument);
+                        if (selected) {
+                            ui.transform_scope = instrument.has_selection ?
+                                                 TS_TRANSFORM_SELECTION :
+                                                 TS_TRANSFORM_WHOLE;
+                            snprintf(ui.transform_message,
+                                     sizeof(ui.transform_message),
+                                     instrument.current.data != NULL ?
+                                     "TILE %02d READY - SELECTION IS TILE LOCAL" :
+                                     "TILE %02d EMPTY - CHOOSE AN OCCUPIED TILE",
+                                     bank_slot + 1);
+                        } else snprintf(ui.transform_message,
+                                        sizeof(ui.transform_message),
+                                        "TILE SWITCH FAILED: %.68s", select_error);
+                    } else if (ts_ui_transform_waveform_contains(x, y)) {
+                        begin_transform_selection_drag(
+                            device, &audio, &ui, &instrument, &transform, x);
+                    } else if (control >= 0) {
+                        set_transform_control_from_x(
+                            device, &audio, &ui, &transform, control, x);
+                    } else if (ts_ui_transform_mix_contains(x, y)) {
+                        const TsCdpRecipe *recipe = active_transform_recipe(&ui);
+                        if (recipe->mix_policy == TS_CDP_MIX_UNSUPPORTED) {
+                            snprintf(ui.transform_message,
+                                     sizeof(ui.transform_message),
+                                     "MIX DISABLED - %s USES NATURAL LENGTH",
+                                     recipe->display_name);
+                        } else {
+                            ui.transform_values.mix = (float)(x - 20) / 112.0f;
+                            if (ui.transform_values.mix < 0.0f)
+                                ui.transform_values.mix = 0.0f;
+                            if (ui.transform_values.mix > 1.0f)
+                                ui.transform_values.mix = 1.0f;
+                            mark_transform_stale(device, &audio, &ui, &transform,
+                                                 "MIX CHANGED - RENDER AGAIN");
+                        }
+                    } else handle_transform_action(
+                        device, &audio, &ui, &instrument, &transform,
+                        action, obtained.freq);
                 } else if (ui.drone_open) {
                     TsUiDroneAction action = ts_ui_drone_action_from_point(x, y);
                     int handle = ts_ui_drone_crossfade_handle_from_point(&ui, x, y);
@@ -4701,7 +5405,7 @@ int main(int argc, char **argv)
                 } else if (y >= 4 && y < 28 && x >= 431 && x < 511) {
                     send_to_fasttracker(&ui, &instrument);
                 } else if (y >= 4 && y < 28 && x >= 516 && x < 568) {
-                    browser_open(&ui, ui.show_recipes ?
+                    browser_open(&ui, ui.show_ingredients ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 573 && x < 630) {
                     begin_export_choice(&ui);
@@ -5066,20 +5770,29 @@ int main(int argc, char **argv)
                     ui.bank_view_slot = -1;
                     snprintf(ui.status, sizeof(ui.status), "%s PANEL",
                              ui.show_keyboard ? "KEYS" :
-                             ui.show_recipes ? "PROCESS RECIPES" :
-                             ui.show_ingredients ? "INGREDIENTS" : "SAMPLE BANK");
+                             ui.show_recipes ? "CDP" :
+                             ui.show_ingredients ? "DSP" : "SAMPLE TILES");
                 } else {
                     int note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
                     int bank_slot = !ui.show_keyboard && !ui.show_recipes &&
                                     !ui.show_ingredients ?
                                     ts_ui_bank_slot_from_point(x, y) : -1;
-                    int recipe_slot = ui.show_recipes ?
+                    int recipe_slot = ui.show_ingredients ?
                                       ts_ui_recipe_slot_from_point(x, y) : -1;
+                    int cdp_slot = ui.show_recipes ?
+                        ts_ui_cdp_slot_from_point(x, y) : -1;
                     int capture_control = !ui.show_keyboard && !ui.show_recipes &&
                                           !ui.show_ingredients &&
                                           ts_ui_capture_button_from_point(x, y);
                     if (capture_control) {
                         capture_button(device, &audio, &ui, &instrument, obtained.freq);
+                    } else if (cdp_slot >= 0) {
+                        if ((size_t)cdp_slot < ts_cdp_factory_recipe_count())
+                            begin_transform_workspace(&ui, &instrument, &transform,
+                                                      cdp_slot);
+                        else
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "CDP TILE %02d IS EMPTY", cdp_slot + 1);
                     } else if (recipe_slot >= 0) {
                         unsigned modifiers = bank_modifiers(mod);
                         if (modifiers == 0)
@@ -5244,6 +5957,7 @@ int main(int argc, char **argv)
                        event.button.button == SDL_BUTTON_RIGHT &&
                        !ui.config_open && !ui.palette_open &&
                        !ui.load_selection_choice_open &&
+                       !ui.transform_open &&
                        !ui.drone_open &&
                        ui.browser.mode == TS_BROWSER_CLOSED) {
                 int x, y;
@@ -5292,7 +6006,7 @@ int main(int argc, char **argv)
                     apply_tuning(device, &audio, &ui, &instrument,
                                  ts_ui_keyboard_base_note(&ui) + note,
                                  instrument.audible_tuning.fine_tune_cents);
-                } else if (ui.show_recipes && recipe_slot >= 0 &&
+                } else if (ui.show_ingredients && recipe_slot >= 0 &&
                            (mod & KMOD_SHIFT)) {
                     char error[160];
                     if (ts_recipe_bank_clear(&ui.recipes, recipe_slot,
@@ -5301,10 +6015,10 @@ int main(int argc, char **argv)
                                  recipe_slot + 1);
                     else snprintf(ui.status, sizeof(ui.status),
                                   "RECIPE CLEAR FAILED: %.126s", error);
-                } else if (ui.show_recipes && recipe_slot >= 0 &&
+                } else if (ui.show_ingredients && recipe_slot >= 0 &&
                            bank_modifiers(mod) == 0) {
                     begin_recipe_rename(&ui, recipe_slot);
-                } else if (ui.show_recipes && recipe_slot >= 0) {
+                } else if (ui.show_ingredients && recipe_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "RMB RENAME  SHIFT+RMB CLEAR");
                 } else if (!ui.show_keyboard && !ui.show_recipes &&
@@ -5323,6 +6037,17 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONUP &&
                        (event.button.button == SDL_BUTTON_LEFT ||
                         event.button.button == SDL_BUTTON_RIGHT)) {
+                if (ui.transform_selection_dragging &&
+                    event.button.button == SDL_BUTTON_LEFT) {
+                    ui.transform_selection_dragging = 0;
+                    ui.transform_selection_drag_mode = 0;
+                    snprintf(ui.transform_message, sizeof(ui.transform_message),
+                             instrument.has_selection ?
+                             "SELECTION %zu:%zu - RENDER AGAIN" :
+                             "SELECTION IS EMPTY - WHOLE REMAINS AVAILABLE",
+                             instrument.selection_first, instrument.selection_last);
+                    continue;
+                }
                 if (ui.canvas_gesture.active &&
                     event.button.button == SDL_BUTTON_LEFT) {
                     end_canvas_gesture(window, device, &audio, &ui, &instrument, 0);
@@ -5391,6 +6116,7 @@ int main(int argc, char **argv)
 
         if (audio.capture.state == TS_CAPTURE_COMPLETED)
             finalize_capture(device, &audio, &ui, &instrument);
+        poll_transform_worker(device, &audio, &ui, &instrument, &transform);
         sync_capture_ui(device, &audio, &ui);
         if (ui.overlay[0] != '\0' &&
             (Sint32)(SDL_GetTicks() - ui.overlay_until_ms) >= 0)
@@ -5399,6 +6125,9 @@ int main(int argc, char **argv)
         if (device) SDL_LockAudioDevice(device);
         {
             const TsNoteVoice *voice = ts_note_bank_display_voice(&audio.notes);
+            if (ui.transform_preview_active &&
+                audio.sample == &transform.preview.sample && !audio.playing)
+                ui.transform_preview_active = 0;
             ui.active_notes = ts_note_bank_mask(&audio.notes);
             ui.playback_active = audio.playing || voice != NULL;
             if (audio.playing) {
@@ -5428,6 +6157,15 @@ int main(int argc, char **argv)
 
     if (ui.canvas_gesture.active)
         end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
+    if (transform.worker != NULL) {
+        SDL_AtomicSet(&transform.worker->cancel, 1);
+        SDL_WaitThread(transform.worker->thread, NULL);
+        ts_sample_free(&transform.worker->input);
+        ts_cdp_run_result_free(&transform.worker->result);
+        free(transform.worker);
+        transform.worker = NULL;
+    }
+    discard_transform_preview(device, &audio, &ui, &transform);
     if (device) SDL_CloseAudioDevice(device);
     ts_capture_free(&audio.capture);
     ts_sample_free(&drone_preview);

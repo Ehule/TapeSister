@@ -5,7 +5,7 @@
 
 enum {
     TS_CONFIG_PATH_MAX = 1024,
-    TS_CONFIG_FIELD_COUNT = 3,
+    TS_CONFIG_FIELD_COUNT = 4,
     TS_ROTATE_WHEEL_FINE_MIN = 1,
     TS_ROTATE_WHEEL_FINE_MAX = 20,
     TS_ROTATE_WHEEL_FINE_DEFAULT = 5,
@@ -20,13 +20,15 @@ enum {
 typedef enum {
     TS_CONFIG_SAMPLE_PATH = 0,
     TS_CONFIG_FASTTRACKER_PATH,
-    TS_CONFIG_EXCHANGE_PATH
+    TS_CONFIG_EXCHANGE_PATH,
+    TS_CONFIG_CDP_BIN_PATH
 } TsConfigField;
 
 typedef struct {
     char sample_path[TS_CONFIG_PATH_MAX];
     char fasttracker_path[TS_CONFIG_PATH_MAX];
     char exchange_path[TS_CONFIG_PATH_MAX];
+    char cdp_bin_path[TS_CONFIG_PATH_MAX];
     int startup_welcome_sample;
     int startup_welcome_autoplay;
     int playhead_zero_snap;

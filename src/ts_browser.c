@@ -60,6 +60,7 @@ const char *ts_browser_mode_title(TsBrowserMode mode)
     if (mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE)
         return "SELECT FASTTRACKER EXECUTABLE";
     if (mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY) return "SELECT FT2 EXCHANGE FOLDER";
+    if (mode == TS_BROWSER_SELECT_CDP_BIN_DIRECTORY) return "SELECT CDP BIN FOLDER";
     return "FILE BROWSER";
 }
 
@@ -73,13 +74,15 @@ int ts_browser_mode_selects_config(TsBrowserMode mode)
 {
     return mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
            mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE ||
-           mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY;
+           mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY ||
+           mode == TS_BROWSER_SELECT_CDP_BIN_DIRECTORY;
 }
 
 int ts_browser_mode_selects_directory(TsBrowserMode mode)
 {
     return mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
-           mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY;
+           mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY ||
+           mode == TS_BROWSER_SELECT_CDP_BIN_DIRECTORY;
 }
 
 static int join_path(const char *directory, const char *name, char *path, size_t path_size)

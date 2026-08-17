@@ -135,6 +135,15 @@ int main(void)
     ui.workbench_loop_active = 0;
     ui.workbench_loop_persistent = 0;
     CHECK(ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_KEYBOARD);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_SAMPLE_TILES);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_SAMPLE_TILES &&
+          !ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_CDP);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_CDP && ui.show_recipes);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_DSP);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_DSP && ui.show_ingredients);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_KEYBOARD);
     ts_ui_cycle_panel(&ui);
     CHECK(!ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
     ts_ui_cycle_panel(&ui);
@@ -244,8 +253,8 @@ int main(void)
         CHECK(ts_ui_palette_cycle_channel(0, -1) == 4);
         CHECK(ts_ui_palette_cycle_channel(4, 1) == 0);
         CHECK(ts_ui_config_cycle_field(TS_CONFIG_SAMPLE_PATH, -1) ==
-              TS_CONFIG_EXCHANGE_PATH);
-        CHECK(ts_ui_config_cycle_field(TS_CONFIG_EXCHANGE_PATH, 1) ==
+              TS_CONFIG_CDP_BIN_PATH);
+        CHECK(ts_ui_config_cycle_field(TS_CONFIG_CDP_BIN_PATH, 1) ==
               TS_CONFIG_SAMPLE_PATH);
         for (int field = 0; field < TS_CONFIG_FIELD_COUNT; ++field) {
             int y = TS_CONFIG_FIELD_Y + field * TS_CONFIG_FIELD_STEP_Y +
@@ -2088,18 +2097,24 @@ int main(void)
         snprintf(config.fasttracker_path, sizeof(config.fasttracker_path),
                  "/opt/ft2 tapehead/ft2-clone");
         snprintf(config.exchange_path, sizeof(config.exchange_path), "/samples/handoff");
+        snprintf(config.cdp_bin_path, sizeof(config.cdp_bin_path), "/opt/cdp/bin");
         CHECK(ts_config_save(&config, "test-tapesister.ini", error, sizeof(error)));
         ts_config_init(&reopened);
         CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
         CHECK(strcmp(reopened.sample_path, config.sample_path) == 0);
         CHECK(strcmp(reopened.fasttracker_path, config.fasttracker_path) == 0);
         CHECK(strcmp(reopened.exchange_path, config.exchange_path) == 0);
+        CHECK(strcmp(reopened.cdp_bin_path, config.cdp_bin_path) == 0);
         CHECK(reopened.startup_welcome_sample == 1 &&
               reopened.startup_welcome_autoplay == 1);
         CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
         CHECK(reopened.playhead_zero_snap == 0);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
                      "FASTTRACKER EXECUTABLE") == 0);
+        CHECK(strcmp(ts_config_field_name(TS_CONFIG_CDP_BIN_PATH),
+                     "CDP BIN PATH") == 0);
+        CHECK(ts_config_field(&reopened, TS_CONFIG_CDP_BIN_PATH) ==
+              reopened.cdp_bin_path);
         remove("test-tapesister.ini");
         {
             FILE *config_file = fopen("test-tapesister.ini", "wb");
@@ -2253,10 +2268,14 @@ int main(void)
         CHECK(ts_browser_mode_edits_filename(TS_BROWSER_EXPORT_WAV));
         CHECK(ts_browser_mode_selects_config(TS_BROWSER_SELECT_SAMPLE_DIRECTORY));
         CHECK(ts_browser_mode_selects_directory(TS_BROWSER_SELECT_EXCHANGE_DIRECTORY));
+        CHECK(ts_browser_mode_selects_config(TS_BROWSER_SELECT_CDP_BIN_DIRECTORY));
+        CHECK(ts_browser_mode_selects_directory(TS_BROWSER_SELECT_CDP_BIN_DIRECTORY));
         CHECK(!ts_browser_mode_selects_directory(
                   TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE));
         CHECK(strcmp(ts_browser_mode_title(TS_BROWSER_SELECT_SAMPLE_DIRECTORY),
                      "SELECT SAMPLE FOLDER") == 0);
+        CHECK(strcmp(ts_browser_mode_title(TS_BROWSER_SELECT_CDP_BIN_DIRECTORY),
+                     "SELECT CDP BIN FOLDER") == 0);
         CHECK(ts_browser_open(&browser, TS_BROWSER_SELECT_SAMPLE_DIRECTORY, NULL));
         CHECK(browser_find(&browser, "test-browser-dir") >= 0);
         CHECK(browser_find(&browser, "test-browser-load.wav") < 0);
@@ -2459,10 +2478,17 @@ int main(void)
     ui.show_keyboard = 0;
     ui.show_recipes = 1;
     ts_ui_render(&fb, &ui, &imported);
+    CHECK(ts_ui_cdp_slot_from_point(46, 321) == -1);
+    CHECK(ts_ui_cdp_slot_from_point(46, 341) == 0);
+    CHECK(ts_ui_cdp_slot_from_point(123, 341) == 1);
+    CHECK(ts_ui_cdp_slot_from_point(46, 366) == 8);
+    ui.show_recipes = 0;
+    ui.show_ingredients = 1;
+    ts_ui_render(&fb, &ui, &imported);
     CHECK(ts_ui_recipe_slot_from_point(46, 341) == 0);
     CHECK(ui.recipes.slots[0].occupied && ui.recipes.slots[0].factory);
     CHECK(fb.pixels[332 * TS_UI_WIDTH + 12] == 0xff18ff00u);
-    ui.show_recipes = 0;
+    ui.show_ingredients = 0;
     {
         TsPostEditKind action;
         CHECK(ts_ui_tape_action(0, TS_UI_BANK_MOD_SHIFT, &action) &&

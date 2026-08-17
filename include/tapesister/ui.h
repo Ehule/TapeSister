@@ -9,6 +9,7 @@
 #include "tapesister/palette.h"
 #include "tapesister/recipe.h"
 #include "tapesister/sample.h"
+#include "tapesister/transform.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
@@ -16,9 +17,11 @@ enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,
        TS_MODAL_PANEL_W = 620, TS_MODAL_PANEL_H = 164 };
 enum { TS_DRONE_WAVE_X = 20, TS_DRONE_WAVE_Y = 77,
        TS_DRONE_WAVE_W = 600, TS_DRONE_WAVE_H = 70 };
+enum { TS_TRANSFORM_WAVE_X = 20, TS_TRANSFORM_WAVE_Y = 62,
+       TS_TRANSFORM_WAVE_W = 600, TS_TRANSFORM_WAVE_H = 58 };
 enum { TS_CONFIG_FIELD_X = 20, TS_CONFIG_FIELD_Y = 63,
        TS_CONFIG_FIELD_W = 600, TS_CONFIG_FIELD_H = 19,
-       TS_CONFIG_FIELD_STEP_Y = 31 };
+       TS_CONFIG_FIELD_STEP_Y = 28 };
 enum { TS_PALETTE_SWATCH_X = 20, TS_PALETTE_SWATCH_Y = 57,
        TS_PALETTE_SWATCH_W = 82, TS_PALETTE_SWATCH_H = 13,
        TS_PALETTE_SWATCH_COLUMNS = 7, TS_PALETTE_SWATCH_STEP_X = 86,
@@ -123,6 +126,17 @@ typedef enum {
 } TsUiDroneAction;
 
 typedef enum {
+    TS_UI_TRANSFORM_ACTION_NONE = 0,
+    TS_UI_TRANSFORM_ACTION_RECIPE,
+    TS_UI_TRANSFORM_ACTION_SELECTION,
+    TS_UI_TRANSFORM_ACTION_WHOLE,
+    TS_UI_TRANSFORM_ACTION_RENDER,
+    TS_UI_TRANSFORM_ACTION_APPLY,
+    TS_UI_TRANSFORM_ACTION_AUDITION,
+    TS_UI_TRANSFORM_ACTION_BACK
+} TsUiTransformAction;
+
+typedef enum {
     TS_UI_WAVE_ACTION_NONE = 0,
     TS_UI_WAVE_ACTION_PLAY_ALL,
     TS_UI_WAVE_ACTION_PLAY_SELECTION,
@@ -151,6 +165,13 @@ typedef enum {
     TS_UI_LOOP_LOCKED,
     TS_UI_LOOP_LOCK_RELEASE
 } TsUiLoopCommand;
+
+typedef enum {
+    TS_UI_PANEL_SAMPLE_TILES = 0,
+    TS_UI_PANEL_KEYBOARD,
+    TS_UI_PANEL_CDP,
+    TS_UI_PANEL_DSP
+} TsUiPanel;
 
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
@@ -191,6 +212,22 @@ typedef struct {
     int drone_preview_active;
     int drone_crossfade_dragging;
     int drone_crossfade_drag_start_x;
+    int transform_open;
+    int transform_rendering;
+    int transform_preview_available;
+    int transform_preview_active;
+    int transform_runtime_available;
+    int transform_recipe_index;
+    int transform_selection_dragging;
+    int transform_selection_drag_mode;
+    size_t transform_selection_anchor;
+    size_t transform_selection_length;
+    size_t transform_selection_grab;
+    TsTransformScope transform_scope;
+    TsCdpRecipeValues transform_values;
+    const TsSample *transform_preview_sample;
+    TsCdpSafetyStatus transform_safety;
+    char transform_message[96];
     int exit_confirm_open;
     int exit_has_unsaved;
     uint64_t saved_state_hash;
@@ -302,6 +339,10 @@ int ts_ui_palette_channel_from_point(int x, int y, int *value);
 TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y);
 TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y);
 TsUiDroneAction ts_ui_drone_action_from_point(int x, int y);
+TsUiTransformAction ts_ui_transform_action_from_point(int x, int y);
+int ts_ui_transform_control_from_point(int x, int y);
+int ts_ui_transform_mix_contains(int x, int y);
+int ts_ui_transform_waveform_contains(int x, int y);
 TsUiWaveAction ts_ui_wave_action_from_point(int x, int y);
 TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y);
 int ts_ui_capture_button_from_point(int x, int y);
@@ -316,15 +357,19 @@ void ts_ui_begin_palette_edit(TsUiState *ui);
 void ts_ui_finish_palette_edit(TsUiState *ui, int cancel);
 int ts_ui_bank_slot_from_point(int x, int y);
 int ts_ui_recipe_slot_from_point(int x, int y);
+int ts_ui_cdp_slot_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
 int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
                               TsUiBankAction action,
                               char *error, size_t error_size);
 int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind);
 void ts_ui_cycle_panel(TsUiState *ui);
+TsUiPanel ts_ui_panel(const TsUiState *ui);
+void ts_ui_select_panel(TsUiState *ui, TsUiPanel panel);
 int ts_ui_transform_auto_audition_allowed(const TsUiState *ui);
 TsUiLoopCommand ts_ui_loop_command(const TsUiState *ui, int shift_pressed);
 int ts_ui_loop_transport_can_stop(const TsUiState *ui, int force);
+int ts_ui_space_plays_selection(const TsInstrument *instrument);
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames);
 int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
                            float anchor_ratio, float scale);
