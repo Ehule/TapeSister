@@ -81,6 +81,9 @@ int ts_cdp_runtime_discover(TsCdpRuntime *runtime,
                             const char *configured_directory,
                             const char *executable_directory,
                             char *error, size_t error_size);
+int ts_cdp_runtime_recipe_available(const TsCdpRuntime *runtime,
+                                    const TsCdpRecipe *recipe,
+                                    char *error, size_t error_size);
 void ts_cdp_run_options_init(TsCdpRunOptions *options);
 void ts_cdp_run_result_init(TsCdpRunResult *result);
 void ts_cdp_run_result_free(TsCdpRunResult *result);

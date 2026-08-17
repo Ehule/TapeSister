@@ -140,9 +140,13 @@ int main(void)
     CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_SAMPLE_TILES &&
           !ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
     ts_ui_select_panel(&ui, TS_UI_PANEL_CDP);
-    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_CDP && ui.show_recipes);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_CDP && ui.show_recipes && ui.cdp_page == 0);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_CDP);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_CDP && ui.cdp_page == 1);
     ts_ui_select_panel(&ui, TS_UI_PANEL_DSP);
     CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_DSP && ui.show_ingredients);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_CDP);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_CDP && ui.cdp_page == 1);
     ts_ui_select_panel(&ui, TS_UI_PANEL_KEYBOARD);
     ts_ui_cycle_panel(&ui);
     CHECK(!ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
@@ -152,6 +156,10 @@ int main(void)
     CHECK(!ui.show_keyboard && !ui.show_recipes && ui.show_ingredients);
     ts_ui_cycle_panel(&ui);
     CHECK(ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+    CHECK(ui.cdp_page == 1);
+    CHECK(ts_ui_cdp_page_from_point(20, 315) == 0 &&
+          ts_ui_cdp_page_from_point(70, 315) == 1 &&
+          ts_ui_cdp_page_from_point(120, 315) == -1);
 
     {
         TsPalette palette;
@@ -1920,7 +1928,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR20", 5) == 0);
+        CHECK(memcmp(magic, "TSR21", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -2125,6 +2133,13 @@ int main(void)
         config.dsp_factory_controls[4][1] = 0.22f;
         config.dsp_factory_controls[4][2] = 0.33f;
         config.dsp_factory_controls[4][3] = 0.44f;
+        config.cdp_factory_overridden[17] = 1;
+        config.cdp_factory_controls[17][0] = 23.0f;
+        config.cdp_factory_controls[17][1] = 2.0f;
+        config.cdp_factory_controls[17][2] = -3.0f;
+        config.cdp_factory_controls[17][3] = 0.75f;
+        config.cdp_factory_mix[17] = 0.9f;
+        config.cdp_factory_seed[17] = UINT64_C(123456789);
         CHECK(ts_config_save(&config, "test-tapesister.ini", error, sizeof(error)));
         ts_config_init(&reopened);
         CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
@@ -2141,6 +2156,11 @@ int main(void)
               fabsf(reopened.dsp_factory_controls[4][1] - 0.22f) < 0.000001f &&
               fabsf(reopened.dsp_factory_controls[4][2] - 0.33f) < 0.000001f &&
               fabsf(reopened.dsp_factory_controls[4][3] - 0.44f) < 0.000001f);
+        CHECK(reopened.cdp_factory_overridden[17] &&
+              fabsf(reopened.cdp_factory_controls[17][0] - 23.0f) < 0.000001f &&
+              fabsf(reopened.cdp_factory_controls[17][2] + 3.0f) < 0.000001f &&
+              fabsf(reopened.cdp_factory_mix[17] - 0.9f) < 0.000001f &&
+              reopened.cdp_factory_seed[17] == UINT64_C(123456789));
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
                      "FASTTRACKER EXECUTABLE") == 0);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_CDP_BIN_PATH),

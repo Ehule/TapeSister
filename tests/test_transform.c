@@ -41,10 +41,14 @@ static void recipe_tests(void)
     char formatted[64];
     TsCdpRecipeValues values;
     TsCdpGlistenMapping mapped;
-    TsCdpCommand commands[3];
+    TsCdpCommand commands[TS_CDP_MAX_STAGES];
     const TsCdpRecipe *recipe = ts_cdp_recipe_find("glisten");
-    CHECK(ts_cdp_factory_recipe_count() == 1u);
-    CHECK(recipe != NULL && recipe == ts_cdp_factory_recipe_at(0));
+    CHECK(ts_cdp_factory_recipe_count() == TS_CDP_FACTORY_RECIPE_COUNT);
+    CHECK(recipe != NULL && recipe == ts_cdp_factory_recipe_at(16) &&
+          recipe == ts_cdp_factory_recipe_for_slot(1, 0));
+    CHECK(strcmp(ts_cdp_factory_recipe_for_slot(0, 0)->id, "drunk") == 0);
+    CHECK(strcmp(ts_cdp_factory_recipe_for_slot(0, 15)->id, "iterate") == 0);
+    CHECK(strcmp(ts_cdp_factory_recipe_for_slot(1, 15)->id, "granulate") == 0);
     CHECK(ts_cdp_recipe_find("missing") == NULL);
     CHECK(ts_cdp_recipe_validate(recipe, error, sizeof(error)));
     CHECK(recipe->stage_count == 3u);
@@ -79,14 +83,14 @@ static void recipe_tests(void)
           strcmp(commands[0].arguments[5], "-o3") == 0);
     CHECK(strcmp(commands[1].arguments[0], "glisten") == 0 &&
           strcmp(commands[1].arguments[1], "input.ana") == 0 &&
-          strcmp(commands[1].arguments[2], "glisten.ana") == 0 &&
+          strcmp(commands[1].arguments[2], "effect.ana") == 0 &&
           strcmp(commands[1].arguments[3], "8") == 0 &&
           strcmp(commands[1].arguments[4], "8") == 0 &&
           strcmp(commands[1].arguments[5], "-p3") == 0 &&
           strcmp(commands[1].arguments[6], "-d0.28") == 0 &&
           strcmp(commands[1].arguments[7], "-v0.0784") == 0);
     CHECK(strcmp(commands[2].arguments[0], "synth") == 0 &&
-          strcmp(commands[2].arguments[1], "glisten.ana") == 0 &&
+          strcmp(commands[2].arguments[1], "effect.ana") == 0 &&
           strcmp(commands[2].arguments[2], "output.wav") == 0);
     CHECK(!recipe->seed_supported && !recipe->deterministic);
     CHECK(recipe->duration_may_change);
@@ -95,7 +99,7 @@ static void recipe_tests(void)
     CHECK(recipe->required_input_channels == 1u &&
           recipe->expected_output_channels == 1u && recipe->preserve_sample_rate);
     CHECK(recipe->safety_policy == TS_CDP_SAFETY_ANALYZE_ONLY &&
-          recipe->provenance_version == 1u);
+          recipe->provenance_version == 2u);
     for (size_t i = 0; i < recipe->controls[0].valid_value_count; ++i) {
         int divide = (int)recipe->controls[0].valid_values[i];
         CHECK(divide >= 2 && divide < 513 && 513 % divide == 1);
@@ -107,12 +111,76 @@ static void recipe_tests(void)
         invalid = *recipe;
         invalid.stages[1].input_type = TS_CDP_IO_WAV;
         CHECK(!ts_cdp_recipe_validate(&invalid, error, sizeof(error)));
+        invalid = *recipe;
+        invalid.stages[1].executable = "../glisten";
+        CHECK(!ts_cdp_recipe_validate(&invalid, error, sizeof(error)));
     }
     CHECK(!ts_cdp_recipe_input_valid(recipe, 1000u, 48000u, error, sizeof(error)));
     CHECK(ts_cdp_recipe_input_valid(recipe, 5000u, 48000u, error, sizeof(error)));
     ts_cdp_control_format(&recipe->controls[1], 8.0f, 48000u, 1024u, 3u,
                           formatted, sizeof(formatted));
     CHECK(strstr(formatted, "43MS") != NULL);
+    ts_cdp_control_format(&recipe->controls[0], 8.0f, 48000u, 1024u, 3u,
+                          formatted, sizeof(formatted));
+    CHECK(strcmp(formatted, "8 GROUPS") == 0);
+    for (size_t index = 0; index < ts_cdp_factory_recipe_count(); ++index) {
+        const TsCdpRecipe *catalog = ts_cdp_factory_recipe_at(index);
+        TsCdpRecipeValues defaults;
+        TsCdpCommand built[TS_CDP_MAX_STAGES];
+        size_t count = 0u;
+        CHECK(catalog != NULL && catalog->bank == index / TS_CDP_BANK_SLOT_COUNT &&
+              catalog->slot == index % TS_CDP_BANK_SLOT_COUNT);
+        CHECK(ts_cdp_recipe_validate(catalog, error, sizeof(error)));
+        CHECK(catalog->control_count >= 1u &&
+              catalog->control_count <= TS_CDP_CONTROL_COUNT);
+        ts_cdp_recipe_values_default(catalog, &defaults);
+        CHECK(ts_cdp_recipe_build_commands(catalog, &defaults, 48000u, 48000u,
+                                           built, &count, error, sizeof(error)));
+        CHECK(count == catalog->stage_count && count >= 1u);
+        for (size_t stage = 0; stage < count; ++stage) {
+            CHECK(strcmp(built[stage].executable,
+                         catalog->stages[stage].executable) == 0);
+            CHECK(built[stage].argc > 0 && built[stage].expected_output[0] != '\0');
+        }
+        CHECK(strcmp(built[count - 1u].expected_output, "output.wav") == 0);
+        for (size_t other = index + 1u; other < ts_cdp_factory_recipe_count(); ++other)
+            CHECK(strcmp(catalog->id, ts_cdp_factory_recipe_at(other)->id) != 0 &&
+                  strcmp(catalog->display_name,
+                         ts_cdp_factory_recipe_at(other)->display_name) != 0);
+    }
+    {
+        const TsCdpRecipe *filter = ts_cdp_recipe_find("filter_bank");
+        size_t count = 0u;
+        CHECK(filter != NULL);
+        ts_cdp_recipe_values_default(filter, &values);
+        values.controls[1] = 2.0f;
+        values.tuning_hz = 440.0f;
+        CHECK(ts_cdp_recipe_build_commands(filter, &values, 48000u, 48000u,
+                                           commands, &count, error, sizeof(error)));
+        CHECK(count == 1u && strcmp(commands[0].executable, "filter") == 0 &&
+              strcmp(commands[0].arguments[0], "bank") == 0 &&
+              fabs(atof(commands[0].arguments[6]) - 440.0) < 0.01 &&
+              fabs(atof(commands[0].arguments[7]) - 1760.0) < 0.01);
+    }
+    {
+        const TsCdpRecipe *brassage = ts_cdp_recipe_find("brassage");
+        const TsCdpRecipe *shred = ts_cdp_recipe_find("shred");
+        const TsCdpRecipe *stutter = ts_cdp_recipe_find("stutter");
+        size_t count = 0u;
+        CHECK(brassage != NULL && brassage->expected_output_channels == 2u);
+        ts_cdp_recipe_values_default(brassage, &values);
+        CHECK(ts_cdp_recipe_build_commands(brassage, &values, 48000u, 48000u,
+                                           commands, &count, error, sizeof(error)));
+        CHECK(count == 1u && strcmp(commands[0].arguments[0], "brassage") == 0 &&
+              strcmp(commands[0].arguments[1], "6") == 0);
+        CHECK(shred != NULL && !shred->duration_may_change &&
+              shred->mix_policy == TS_CDP_MIX_EXACT_FRAMES);
+        CHECK(stutter != NULL && stutter->seed_supported);
+        ts_cdp_recipe_values_default(stutter, &values);
+        CHECK(ts_cdp_recipe_build_commands(stutter, &values, 48000u, 48000u,
+                                           commands, &count, error, sizeof(error)) &&
+              strcmp(commands[0].arguments[9], "1") == 0);
+    }
 }
 
 static void mix_tests(void)
@@ -229,7 +297,16 @@ static void identity_and_apply_tests(void)
           restored.selection_first == instrument.selection_first &&
           restored.selection_last == instrument.selection_last &&
           restored.view_first == instrument.view_first &&
-          restored.view_last == instrument.view_last);
+          restored.view_last == instrument.view_last &&
+          restored.post_edit_count == 1 &&
+          restored.post_edits[0].kind == TS_POST_MATERIAL_REPLACE);
+    {
+        uint64_t restored_hash = ts_sample_hash(&restored.current);
+        TsProcessRecipe live = restored.process;
+        live.body = 1.0f;
+        CHECK(ts_instrument_set_process(&restored, &live, error, sizeof(error)) &&
+              ts_sample_hash(&restored.current) != restored_hash);
+    }
     remove("test-transform.tsr");
     ts_instrument_free(&restored);
     ts_transform_preview_free(&preview);
@@ -318,6 +395,238 @@ static void replacement_lengths_and_selection_persistence_tests(void)
     ts_sample_free(&rendered);
     ts_sample_free(&before);
     ts_instrument_free(&instrument);
+}
+
+static void rendered_replacement_native_process_regression_tests(void)
+{
+    char error[160];
+    TsInstrument instrument;
+    TsInstrument isolated;
+    TsSample accepted;
+    TsSample rendered;
+    TsProcessRecipe neutral;
+    TsProcessRecipe process;
+    uint64_t accepted_hash;
+    uint64_t a_hash;
+    uint64_t b_hash;
+    uint64_t other_hash;
+
+    /* Reproducer for the PR-31 failure: this same sequence produced an
+       unchanged hash when the accepted render was a post-process patch. */
+    setup(&instrument, 8192u);
+    ts_sample_init(&accepted);
+    ts_sample_init(&rendered);
+    rendered.frames = instrument.current.frames;
+    rendered.sample_rate = instrument.current.sample_rate;
+    rendered.data = malloc(rendered.frames * sizeof(*rendered.data));
+    CHECK(rendered.data != NULL);
+    for (size_t frame = 0; frame < rendered.frames; ++frame) {
+        double phase = (double)frame * 2.0 * 3.14159265358979323846 / 73.0;
+        rendered.data[frame] = 0.35f * (float)sin(phase) +
+                               ((frame & 1u) ? 0.12f : -0.12f);
+    }
+    CHECK(ts_instrument_apply_rendered_replacement(
+        &instrument, &rendered, 0u, instrument.current.frames,
+        error, sizeof(error)));
+    accepted_hash = ts_sample_hash(&instrument.current);
+    CHECK(instrument.post_edit_count == 1 &&
+          instrument.post_edits[0].kind == TS_POST_MATERIAL_REPLACE);
+    CHECK(ts_sample_clone(&accepted, &instrument.current, error, sizeof(error)));
+    ts_process_recipe_reset(&neutral);
+    neutral.seed = instrument.process.seed;
+    CHECK(ts_process_recipe_equal(&instrument.process, &neutral));
+
+    process = neutral;
+    process.body = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.edge = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.drift = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.noise_enabled = 1;
+    process.noise_amount = 1.0f;
+    process.noise_color = TS_NOISE_METALLIC;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.shaper_enabled = 1;
+    process.shaper_mode = TS_SHAPER_FOLD;
+    process.shaper_drive = 14.0f;
+    process.shaper_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.delay_enabled = 1;
+    process.delay_seconds = 0.005f;
+    process.delay_feedback = 0.8f;
+    process.delay_damping = 0.1f;
+    process.delay_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    process = neutral;
+    process.reverb_enabled = 1;
+    process.reverb_decay = 0.95f;
+    process.reverb_damping = 0.1f;
+    process.reverb_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) != accepted_hash);
+
+    /* Every parameter move rebuilds from the stable accepted material. */
+    process = neutral;
+    process.body = 0.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    a_hash = ts_sample_hash(&instrument.current);
+    process.body = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    b_hash = ts_sample_hash(&instrument.current);
+    CHECK(a_hash != b_hash);
+    process.body = 0.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) == a_hash);
+    ts_sample_free(&accepted);
+    ts_sample_free(&rendered);
+    ts_instrument_free(&instrument);
+
+    /* A duration-changing selection checkpoint remains live under the native
+       stage, including inside the transformed range. */
+    setup(&instrument, 8192u);
+    ts_sample_init(&accepted);
+    ts_sample_init(&rendered);
+    rendered.frames = 3072u;
+    rendered.sample_rate = instrument.current.sample_rate;
+    rendered.data = malloc(rendered.frames * sizeof(*rendered.data));
+    CHECK(rendered.data != NULL);
+    for (size_t frame = 0; frame < rendered.frames; ++frame)
+        rendered.data[frame] = 0.42f * (float)sin((double)frame * 0.071);
+    CHECK(ts_instrument_apply_rendered_replacement(
+        &instrument, &rendered, instrument.selection_first,
+        instrument.selection_last, error, sizeof(error)));
+    CHECK(instrument.current.frames == 9216u &&
+          instrument.selection_first == 2048u &&
+          instrument.selection_last == 5120u);
+    CHECK(ts_sample_clone(&accepted, &instrument.current, error, sizeof(error)));
+    process = instrument.process;
+    process.shaper_enabled = 1;
+    process.shaper_mode = TS_SHAPER_CLIP;
+    process.shaper_drive = 12.0f;
+    process.shaper_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(memcmp(instrument.current.data + instrument.selection_first,
+                 accepted.data + instrument.selection_first,
+                 (instrument.selection_last - instrument.selection_first) *
+                 sizeof(*accepted.data)) != 0);
+    ts_sample_free(&accepted);
+    ts_sample_free(&rendered);
+    ts_instrument_free(&instrument);
+
+    /* Whole-tile natural-duration output also becomes live native material. */
+    setup(&instrument, 8192u);
+    ts_instrument_clear_selection(&instrument);
+    ts_sample_init(&rendered);
+    rendered.frames = 9216u;
+    rendered.sample_rate = instrument.current.sample_rate;
+    rendered.data = malloc(rendered.frames * sizeof(*rendered.data));
+    CHECK(rendered.data != NULL);
+    for (size_t frame = 0; frame < rendered.frames; ++frame)
+        rendered.data[frame] = 0.31f * (float)sin((double)frame * 0.043);
+    CHECK(ts_instrument_apply_rendered_replacement(
+        &instrument, &rendered, 0u, instrument.current.frames,
+        error, sizeof(error)));
+    accepted_hash = ts_sample_hash(&instrument.current);
+    CHECK(instrument.current.frames == rendered.frames &&
+          instrument.selection_first == 0u &&
+          instrument.selection_last == rendered.frames);
+    process = instrument.process;
+    process.edge = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          instrument.current.frames == 8192u && !instrument.has_selection);
+    CHECK(ts_instrument_redo(&instrument, error, sizeof(error)) &&
+          instrument.current.frames == 9216u);
+    ts_sample_free(&rendered);
+    ts_instrument_free(&instrument);
+
+    /* Current already contains the active native process used as Transform
+       input. Apply must accept that preview exactly, reset the new live stage,
+       and keep Undo/Redo graph state exact rather than processing it twice. */
+    setup(&instrument, 8192u);
+    ts_sample_init(&rendered);
+    process = instrument.process;
+    process.body = 1.0f;
+    process.edge = 0.45f;
+    process.noise_enabled = 1;
+    process.noise_amount = 0.35f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(ts_sample_clone(&rendered, &instrument.current, error, sizeof(error)));
+    for (size_t frame = 0; frame < rendered.frames; ++frame)
+        rendered.data[frame] *= -0.73f;
+    {
+        int undo_before = instrument.undo_count;
+        TsProcessRecipe prior_process = instrument.process;
+        uint64_t prior_hash = ts_sample_hash(&instrument.current);
+        uint64_t rendered_hash = ts_sample_hash(&rendered);
+        instrument.view_first = 777u;
+        instrument.view_last = 7000u;
+        CHECK(ts_instrument_apply_rendered_replacement(
+            &instrument, &rendered, 0u, instrument.current.frames,
+            error, sizeof(error)));
+        CHECK(instrument.undo_count == undo_before + 1 &&
+              ts_sample_hash(&instrument.current) == rendered_hash &&
+              instrument.view_first == 777u && instrument.view_last == 7000u);
+        ts_process_recipe_reset(&neutral);
+        neutral.seed = prior_process.seed;
+        CHECK(ts_process_recipe_equal(&instrument.process, &neutral));
+        CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+              ts_sample_hash(&instrument.current) == prior_hash &&
+              ts_process_recipe_equal(&instrument.process, &prior_process) &&
+              instrument.selection_first == 2048u &&
+              instrument.selection_last == 4096u);
+        CHECK(ts_instrument_redo(&instrument, error, sizeof(error)) &&
+              ts_sample_hash(&instrument.current) == rendered_hash &&
+              ts_process_recipe_equal(&instrument.process, &neutral));
+        process = instrument.process;
+        process.body = 0.0f;
+        CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+              ts_sample_hash(&instrument.current) != rendered_hash);
+    }
+    ts_sample_free(&rendered);
+    ts_instrument_free(&instrument);
+
+    /* The checkpoint and all later native processing remain tile-local. */
+    setup(&isolated, 8192u);
+    CHECK(ts_instrument_copy_selected(&isolated, 1, error, sizeof(error)));
+    other_hash = ts_sample_hash(&isolated.current);
+    CHECK(ts_instrument_select_bank(&isolated, 0, error, sizeof(error)));
+    ts_sample_init(&rendered);
+    CHECK(ts_sample_clone(&rendered, &isolated.current, error, sizeof(error)));
+    for (size_t frame = 0; frame < rendered.frames; ++frame)
+        rendered.data[frame] = -rendered.data[frame];
+    CHECK(ts_instrument_apply_rendered_replacement(
+        &isolated, &rendered, 0u, isolated.current.frames,
+        error, sizeof(error)));
+    process = isolated.process;
+    process.edge = 1.0f;
+    CHECK(ts_instrument_set_process(&isolated, &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&isolated.bank[1].sample) == other_hash);
+    CHECK(ts_instrument_select_bank(&isolated, 1, error, sizeof(error)) &&
+          ts_sample_hash(&isolated.current) == other_hash);
+    ts_sample_free(&rendered);
+    ts_instrument_free(&isolated);
 }
 
 static void native_dsp_recipe_and_preview_tests(void)
@@ -430,6 +739,15 @@ static void native_dsp_recipe_and_preview_tests(void)
           instrument.view_first == 900u && instrument.view_last == 6100u);
     CHECK(ts_instrument_redo(&instrument, error, sizeof(error)));
     CHECK(instrument.selection_first == first && instrument.selection_last == last);
+    {
+        uint64_t accepted_hash = ts_sample_hash(&instrument.current);
+        TsProcessRecipe live = instrument.process;
+        CHECK(instrument.post_edit_count == 1 &&
+              instrument.post_edits[0].kind == TS_POST_MATERIAL_REPLACE);
+        live.edge = 1.0f;
+        CHECK(ts_instrument_set_process(&instrument, &live, error, sizeof(error)) &&
+              ts_sample_hash(&instrument.current) != accepted_hash);
+    }
     ts_dsp_transform_preview_free(&preview);
     ts_sample_free(&rendered);
     ts_sample_free(&input);
@@ -569,6 +887,22 @@ static int write_executable(const char *path, const char *body)
     return chmod(path, 0700) == 0;
 }
 
+static int write_mock_stereo_wav(const char *path)
+{
+    static const unsigned char wav[] = {
+        'R','I','F','F', 40,0,0,0, 'W','A','V','E',
+        'f','m','t',' ', 16,0,0,0, 1,0, 2,0,
+        0x80,0xbb,0,0, 0,0xee,2,0, 4,0, 16,0,
+        'd','a','t','a', 4,0,0,0, 0,0x10, 0,0xf0
+    };
+    FILE *file = fopen(path, "wb");
+    int ok;
+    if (file == NULL) return 0;
+    ok = fwrite(wav, 1, sizeof(wav), file) == sizeof(wav);
+    if (fclose(file) != 0) ok = 0;
+    return ok;
+}
+
 static int cancel_immediately(void *userdata)
 {
     (void)userdata;
@@ -577,6 +911,11 @@ static int cancel_immediately(void *userdata)
 
 static void adapter_pipeline_and_fault_tests(void)
 {
+    static const char *const required_executables[] = {
+        "blur", "distmore", "distort", "distshift", "extend", "filter",
+        "freeze", "glisten", "grain", "hover", "modify", "motor", "pvoc",
+        "scramble", "sorter", "splinter", "stutter"
+    };
     static const TsCdpFault faults[] = {
         TS_CDP_FAULT_LAUNCH,
         TS_CDP_FAULT_NONZERO_EXIT,
@@ -611,11 +950,28 @@ static void adapter_pipeline_and_fault_tests(void)
         "sleep 1\n"
         "if [ \"$1\" = \"anal\" ]; then cp \"$3\" \"$4\"; exit $?; fi\n"
         "if [ \"$1\" = \"synth\" ]; then cp \"$2\" \"$3\"; exit $?; fi\n";
+    const char *generic_body =
+        "#!/bin/sh\n"
+        "input=\n"
+        "output=\n"
+        "for item in \"$@\"; do\n"
+        "  case \"$item\" in\n"
+        "    input.wav|input.ana) input=\"$item\" ;;\n"
+        "    output.wav|effect.ana) output=\"$item\" ;;\n"
+        "  esac\n"
+        "done\n"
+        "if [ -z \"$input\" ] || [ -z \"$output\" ]; then exit 8; fi\n"
+        "if [ \"$1\" = \"brassage\" ] && [ \"$2\" = \"6\" ]; then\n"
+        "  cp \"$(dirname \"$0\")/stereo.wav\" \"$output\"\n"
+        "else\n"
+        "  cp \"$input\" \"$output\"\n"
+        "fi\n";
     char root_template[] = "/tmp/tapesister-transform-test-XXXXXX";
     char runtime_dir[1024];
     char jobs_dir[1024];
     char pvoc_path[2048];
     char glisten_path[2048];
+    char stereo_path[2048];
     char error[160];
     char *root = mkdtemp(root_template);
     TsCdpRuntime runtime;
@@ -630,6 +986,7 @@ static void adapter_pipeline_and_fault_tests(void)
     snprintf(jobs_dir, sizeof(jobs_dir), "%s/jobs", root);
     snprintf(pvoc_path, sizeof(pvoc_path), "%s/pvoc", runtime_dir);
     snprintf(glisten_path, sizeof(glisten_path), "%s/glisten", runtime_dir);
+    snprintf(stereo_path, sizeof(stereo_path), "%s/stereo.wav", runtime_dir);
     CHECK(mkdir(runtime_dir, 0700) == 0);
     CHECK(mkdir(jobs_dir, 0700) == 0);
     CHECK(write_executable(pvoc_path, pvoc_body));
@@ -637,6 +994,12 @@ static void adapter_pipeline_and_fault_tests(void)
     ts_cdp_runtime_init(&runtime);
     CHECK(ts_cdp_runtime_discover(&runtime, runtime_dir, NULL,
                                   error, sizeof(error)));
+    CHECK(ts_cdp_runtime_recipe_available(&runtime, recipe,
+                                          error, sizeof(error)));
+    CHECK(!ts_cdp_runtime_recipe_available(&runtime,
+                                           ts_cdp_recipe_find("fractal"),
+                                           error, sizeof(error)) &&
+          strstr(error, "distort") != NULL);
     ts_sample_init(&input);
     input.frames = 8192u;
     input.sample_rate = 48000u;
@@ -658,6 +1021,31 @@ static void adapter_pipeline_and_fault_tests(void)
     CHECK(strstr(result.diagnostic, "pvoc") != NULL &&
           strstr(result.diagnostic, "diagnostic") != NULL);
     ts_cdp_run_result_free(&result);
+
+    CHECK(write_mock_stereo_wav(stereo_path));
+    for (size_t executable = 0;
+         executable < sizeof(required_executables) / sizeof(required_executables[0]);
+         ++executable) {
+        char path[2048];
+        const char *name = required_executables[executable];
+        if (strcmp(name, "pvoc") == 0 || strcmp(name, "glisten") == 0) continue;
+        snprintf(path, sizeof(path), "%s/%s", runtime_dir, name);
+        CHECK(write_executable(path, generic_body));
+    }
+    for (size_t index = 0; index < ts_cdp_factory_recipe_count(); ++index) {
+        const TsCdpRecipe *catalog = ts_cdp_factory_recipe_at(index);
+        ts_cdp_recipe_values_default(catalog, &values);
+        ts_cdp_run_options_init(&options);
+        options.job_id = 500u + index;
+        snprintf(options.temporary_root, sizeof(options.temporary_root), "%s", jobs_dir);
+        ts_cdp_run_result_init(&result);
+        CHECK(ts_cdp_run_recipe(&runtime, catalog, &values, &input, &options,
+                                &result, error, sizeof(error)));
+        CHECK(result.status == TS_CDP_RUN_OK && result.output.data != NULL &&
+              result.output.frames > 0u && result.output.sample_rate == 48000u &&
+              result.job_directory[0] == '\0');
+        ts_cdp_run_result_free(&result);
+    }
 
     CHECK(write_executable(pvoc_path, pvoc_missing_intermediate_body));
     ts_cdp_run_options_init(&options);
@@ -716,8 +1104,15 @@ static void adapter_pipeline_and_fault_tests(void)
     CHECK(ts_cdp_cleanup_job_directory(result.job_directory, error, sizeof(error)));
     ts_cdp_run_result_free(&result);
     ts_sample_free(&input);
-    CHECK(unlink(pvoc_path) == 0);
-    CHECK(unlink(glisten_path) == 0);
+    for (size_t executable = 0;
+         executable < sizeof(required_executables) / sizeof(required_executables[0]);
+         ++executable) {
+        char path[2048];
+        snprintf(path, sizeof(path), "%s/%s", runtime_dir,
+                 required_executables[executable]);
+        CHECK(unlink(path) == 0);
+    }
+    CHECK(unlink(stereo_path) == 0);
     CHECK(rmdir(runtime_dir) == 0);
     CHECK(rmdir(jobs_dir) == 0);
     CHECK(rmdir(root) == 0);
@@ -731,6 +1126,7 @@ int main(void)
     identity_and_apply_tests();
     tile_isolation_and_whole_tests();
     replacement_lengths_and_selection_persistence_tests();
+    rendered_replacement_native_process_regression_tests();
     native_dsp_recipe_and_preview_tests();
     native_dsp_direct_and_body_range_tests();
     transform_ui_contract_tests();

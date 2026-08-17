@@ -3,7 +3,8 @@
 SamplePath=
 FastTrackerPath=
 ExchangePath=
-; Optional CDP runtime override. Folder must contain pvoc and glisten.
+; Optional CDP runtime override. Select the folder containing the compatible
+; curated CDP8 executables; each recipe names a missing component precisely.
 ; When blank, TapeSister checks cdp/bin beside the executable, then ./cdp/bin.
 CdpBinPath=
 
@@ -27,3 +28,9 @@ drone_crossfade_ms=50
 ; SAVE/UPDATE in a factory DSP Transform writes four normalized macro positions.
 ; Missing rows keep the factory defaults. Example for DSP tile 05 (DUB ECHO):
 ; DspPreset05=0.30,0.75,0.55,0.45
+
+[CDP Presets]
+; SAVE/UPDATE writes the four fixed musical positions, MIX, and variation seed.
+; Recipes exposing fewer controls leave the unused positions at zero.
+; Missing rows keep factory defaults. Example for CDP 2 tile 01 (global seat 17):
+; CdpPreset17=8,8,3,0.28,1,1

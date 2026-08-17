@@ -1839,6 +1839,27 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
     if (!render_edit_source(&edited, &instrument->parent, state->crop_first,
                             state->crop_last, state->sample_edits,
                             state->sample_edit_count, error, error_size)) return 0;
+    /* Rendered Transforms are canonical editable material, not an effect placed
+       after the native process. Replay their checkpoint before BODY/EDGE/DRIFT
+       and the native effect sections so later parameter changes always rebuild
+       deterministically from the accepted audio. */
+    for (int index = 0; index < state->post_edit_count; ++index) {
+        const TsPostEdit *operation = &state->post_edits[index];
+        const TsAudioPatch *patch;
+        if (operation->kind != TS_POST_MATERIAL_REPLACE) continue;
+        patch = audio_patch_for_operation(instrument, operation);
+        if (patch == NULL) {
+            ts_sample_free(&edited);
+            set_error(error, error_size,
+                      "Transform material is missing from this tile");
+            return 0;
+        }
+        if (!patch_range(&edited, &patch->sample, operation->first,
+                         operation->last, 0, error, error_size)) {
+            ts_sample_free(&edited);
+            return 0;
+        }
+    }
     ok = ts_sample_process(destination, &edited, 0, edited.frames,
                            &state->process, error, error_size);
     ts_sample_free(&edited);
@@ -1848,6 +1869,7 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
         size_t first = operation->first;
         size_t last = operation->last;
         size_t length;
+        if (operation->kind == TS_POST_MATERIAL_REPLACE) continue;
         if (operation->kind == TS_POST_CANVAS_LEFT_RESIZE ||
             operation->kind == TS_POST_CANVAS_RIGHT_RESIZE) {
             if (!resize_canvas_sample(
@@ -3805,7 +3827,7 @@ static void checkpoint_snapshot(TsEditSnapshot *state, size_t baseline_frames,
     state->sample_edit_count = 0;
     memset(state->post_edits, 0, sizeof(state->post_edits));
     memset(&checkpoint, 0, sizeof(checkpoint));
-    checkpoint.kind = TS_POST_PATCH_REPLACE;
+    checkpoint.kind = TS_POST_MATERIAL_REPLACE;
     checkpoint.first = 0;
     checkpoint.last = baseline_frames;
     checkpoint.patch_index = patch_index;
@@ -3980,6 +4002,8 @@ static int commit_post_snapshot(TsInstrument *instrument, TsEditSnapshot *target
     ts_sample_free(&instrument->current);
     instrument->current = *current;
     ts_sample_init(current);
+    instrument->crop_first = target->crop_first;
+    instrument->crop_last = target->crop_last;
     instrument->selection_first = target->selection_first;
     instrument->selection_last = target->selection_last;
     instrument->playhead_frame = target->playhead_frame;
@@ -3987,11 +4011,19 @@ static int commit_post_snapshot(TsInstrument *instrument, TsEditSnapshot *target
     instrument->view_last = target->view_last;
     instrument->loop_first = target->loop_first;
     instrument->loop_last = target->loop_last;
+    instrument->loop_crossfade_ms = target->loop_crossfade_ms;
+    instrument->loop_mode = target->loop_mode;
     instrument->has_selection = target->has_selection;
     instrument->has_playhead = target->has_playhead;
     instrument->has_loop = target->has_loop;
     instrument->grid_divisions = target->grid_divisions;
     instrument->grid_snap = target->grid_snap;
+    instrument->tuning = target->tuning;
+    instrument->audible_tuning = target->audible_tuning;
+    instrument->process = target->process;
+    memcpy(instrument->sample_edits, target->sample_edits,
+           sizeof(instrument->sample_edits));
+    instrument->sample_edit_count = target->sample_edit_count;
     memcpy(instrument->post_edits, target->post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target->post_edit_count;
     return bank_sync_selected(instrument, error, error_size);
@@ -4957,8 +4989,10 @@ int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
 {
     TsEditSnapshot target;
     TsPostEdit operation;
+    TsSample material;
     TsSample current;
     uint32_t patch_index;
+    uint32_t process_seed;
     size_t inserted;
     size_t output_frames;
     size_t original_view_first;
@@ -4983,17 +5017,21 @@ int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
         return 0;
     }
     if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
-    if (!append_audio_patch(instrument, rendered, NULL, &patch_index,
-                            error, error_size)) return 0;
+    ts_sample_init(&material);
+    if (!ts_sample_clone(&material, &instrument->current, error, error_size) ||
+        !patch_range(&material, rendered, first, last, 0, error, error_size)) {
+        ts_sample_free(&material);
+        return 0;
+    }
+    if (!append_audio_patch(instrument, &material, NULL, &patch_index,
+                            error, error_size)) {
+        ts_sample_free(&material);
+        return 0;
+    }
+    ts_sample_free(&material);
     target = snapshot(instrument);
     original_view_first = target.view_first;
     original_view_last = target.view_last;
-    memset(&operation, 0, sizeof(operation));
-    operation.kind = TS_POST_PATCH_REPLACE;
-    operation.first = first;
-    operation.last = last;
-    operation.patch_index = patch_index;
-    target.post_edits[target.post_edit_count++] = operation;
     update_snapshot_after_replace(&target, first, last, inserted, output_frames, 1);
     if (inserted == last - first && original_view_last > original_view_first &&
         original_view_last <= output_frames) {
@@ -5018,6 +5056,27 @@ int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
         target.view_first = view_first;
         target.view_last = view_last;
     }
+    /* The CDP/DSP preview was rendered from Current, which already contains the
+       old native process and all earlier edits. Accept the complete replacement
+       result as the next canonical material checkpoint, then restart the live
+       native stage from neutral. This prevents both the old post-patch masking
+       bug and a second application of the process baked into the preview. Undo
+       retains the complete prior graph; Redo replays this checkpoint. */
+    process_seed = target.process.seed;
+    target.crop_first = 0u;
+    target.crop_last = instrument->parent.frames;
+    memset(target.sample_edits, 0, sizeof(target.sample_edits));
+    target.sample_edit_count = 0;
+    ts_process_recipe_reset(&target.process);
+    target.process.seed = process_seed;
+    memset(target.post_edits, 0, sizeof(target.post_edits));
+    target.post_edit_count = 0;
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_MATERIAL_REPLACE;
+    operation.first = 0u;
+    operation.last = instrument->parent.frames;
+    operation.patch_index = patch_index;
+    target.post_edits[target.post_edit_count++] = operation;
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) {
         discard_last_audio_patch(instrument, patch_index);
@@ -7028,7 +7087,8 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
         edit->destination = (int64_t)wide;
         if (!get_float(f, &edit->amount) || !get32(f, &edit->crossfade_frames) ||
             (version >= 16 && !get32(f, &edit->patch_index)) ||
-            edit->kind > (version >= 18 ? TS_POST_CANVAS_RIGHT_RESIZE :
+            edit->kind > (version >= 21 ? TS_POST_MATERIAL_REPLACE :
+                          version >= 18 ? TS_POST_CANVAS_RIGHT_RESIZE :
                           version >= 17 ? TS_POST_PATCH_STRETCH_CONTRACT :
                           version >= 16 ? TS_POST_PATCH_FIT : TS_POST_TEAR) ||
             ((edit->kind != TS_POST_PATCH_REPLACE &&
@@ -7100,9 +7160,9 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr20(const TsInstrument *instrument, FILE *f)
+static int save_tsr21(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR20\r\n\032", 1, 8, f);
+    fwrite("TSR21\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -7201,7 +7261,9 @@ static int snapshot_patches_valid(const TsEditSnapshot *state, const TsBankSlot 
 {
     for (int i = 0; i < state->post_edit_count; ++i) {
         const TsPostEdit *edit = &state->post_edits[i];
-        if ((edit->kind == TS_POST_PATCH_REPLACE || edit->kind == TS_POST_PATCH_FIT ||
+        if ((edit->kind == TS_POST_PATCH_REPLACE ||
+             edit->kind == TS_POST_MATERIAL_REPLACE ||
+             edit->kind == TS_POST_PATCH_FIT ||
              edit->kind == TS_POST_PATCH_STRETCH_EXPAND ||
              edit->kind == TS_POST_PATCH_STRETCH_CONTRACT) &&
             edit->patch_index >= (uint32_t)slot->patch_count) return 0;
@@ -7359,10 +7421,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR20 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR21 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR20 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR21 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -7381,13 +7443,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr20(instrument, f)) {
+    if (!save_tsr21(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR20 project");
+        set_error(error, error_size, "Could not write TSR21 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR20 project");
+        set_error(error, error_size, "Could not finish TSR21 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -7422,13 +7484,15 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR20\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR21\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR20\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR19\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR18\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = magic[4] == '0' ? 20 :
+        int self_contained_version = magic[4] == '1' ? 21 :
+                                     magic[4] == '0' ? 20 :
                                      magic[4] == '9' ? 19 :
                                      magic[4] == '8' ? 18 :
                                      magic[4] == '7' ? 17 :
@@ -7452,7 +7516,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR20 project");
+                  "Not a self-contained TSR6-TSR21 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -7731,7 +7795,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR20 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR21 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

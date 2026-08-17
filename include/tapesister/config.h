@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "tapesister/recipe.h"
+#include "tapesister/cdp_recipe.h"
 
 enum {
     TS_CONFIG_PATH_MAX = 1024,
@@ -39,6 +40,10 @@ typedef struct {
     int drone_crossfade_ms;
     int dsp_factory_overridden[TS_FACTORY_RECIPE_COUNT];
     float dsp_factory_controls[TS_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
+    int cdp_factory_overridden[TS_CDP_FACTORY_RECIPE_COUNT];
+    float cdp_factory_controls[TS_CDP_FACTORY_RECIPE_COUNT][TS_CDP_CONTROL_COUNT];
+    float cdp_factory_mix[TS_CDP_FACTORY_RECIPE_COUNT];
+    uint64_t cdp_factory_seed[TS_CDP_FACTORY_RECIPE_COUNT];
 } TsConfig;
 
 void ts_config_init(TsConfig *config);

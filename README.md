@@ -61,35 +61,44 @@ most one quarter of the selection, and can be changed with
 
 ## Curated offline CDP Transform
 
-Press `3` or cycle the lower panel to **CDP**, then choose **01 GLIST** to open
-GLISTEN's compact Transform workspace over the waveform editor. Its mini waveform uses the active tile's
-exact persistent selection and viewport—drag either selection edge to resize it, drag
-inside it to move it, or drag elsewhere to make a new range. The same half-open range
-is immediately visible in the main editor when Transform is closed. Choose **Selection**
-or **Whole**, adjust GLISTEN's four direct controls, then press **Render**. The fixed
-universal Mix position remains visible but reads **N/A** for GLISTEN because its natural
-PVOC result changes duration. Rendering runs off the UI and audio threads; ordinary
-playback keeps using the unchanged tile while CDP works.
+Press `3` or cycle the lower panel to **CDP**. CDP is one top-level mode with two
+internal 16-tile pages: use the visible **CDP 1 | CDP 2** toggle, or press `3` again
+while already in CDP. Leaving and returning with `3` restores the last page. Page
+changes never alter the active sample, selection, or viewport.
+
+Left-click any CDP tile for the fast path: TapeSister renders its saved settings
+offline and applies the accepted result to the selection, or the whole tile when no
+selection exists, as one Undo step. Middle-click opens that tile in the compact
+Transform workspace. Its mini waveform uses the active tile's exact persistent
+selection and viewport—drag either selection edge to resize it, drag inside it to move
+it, or drag elsewhere to make a new range. Adjust the recipe's one to four musical
+controls, choose **Selection** or **Whole**, and press **Render**. Rendering runs off
+the UI and audio threads; ordinary playback keeps using the unchanged tile while CDP
+works.
 
 A successful render becomes independent audition memory and never changes the tile
 until **Apply** is pressed. Space auditions or stops that preview, Enter renders, A
-applies, and Escape cancels a running job before it returns to the editor. Parameter,
+applies, U saves the current macro values/Mix/seed as the tile's preset, and Escape
+cancels a running job before it returns to the editor. Clicking the recipe name requests
+a fresh take; seeded recipes advance an explicit stored seed while processes without a
+CDP seed remain honestly nondeterministic. Parameter,
 scope, selection, tile, audio, Undo, and Redo changes invalidate prior work. Apply
 replaces only the selected range at the render's natural duration (or replaces the
 whole tile), selects the exact result, and creates one tile-local Undo transaction.
 
-GLISTEN maps **Divide** to valid power-of-two spectral group counts, **Hold** to valid
+GLISTEN is CDP 2 tile 01. It maps **Divide** to valid power-of-two spectral group counts, **Hold** to valid
 analysis windows with a millisecond readout, **Shift** to CDP's documented symmetric
 random semitone range, and **Scatter** deliberately drives duration randomization plus
 a gentler squared group-size randomization. Actual CDP8 validation shows that PVOC
 analysis/resynthesis adds padding, so GLISTEN is declared duration-changing and Mix is
 disabled rather than silently truncating, stretching, or approximately aligning audio.
 
-TapeSister does not bundle CDP in this slice. Put compatible `pvoc` and `glisten`
-executables in `cdp/bin` beside TapeSister, or set the **CDP BIN PATH** folder in the
+TapeSister does not bundle CDP. Put compatible CDP8 executables in `cdp/bin` beside
+TapeSister, or set the **CDP BIN PATH** folder in the
 Configuration screen (stored as `CdpBinPath` under `[Paths]` in `tapesister.ini`). A
-missing runtime leaves Transform available for selection work but disables rendering
-with a clear status. See
+missing executable is named for the selected recipe and leaves the tile unchanged.
+The complete catalog uses a curated 17-executable subset rather than exposing the CDP
+suite. See
 [`docs/CDP_TRANSFORM.md`](docs/CDP_TRANSFORM.md) for the verified command pipeline,
 runtime closure, safety model, platform notes, and licensing obligations.
 
@@ -199,10 +208,12 @@ Where source and existing audio overlap, Mix measures the source peak and underl
 
 The lower panel cycles **KEYS**, **BANK**, **CDP**, and **DSP**. The unmodified top-row
 number keys select them directly: `1` Sample Tiles, `2` Keyboard, `3` CDP, and `4` DSP.
-CDP is a 16-tile curated offline-transform bank; tile 01 contains GLISTEN and the other
-tiles remain visibly empty until functional transforms are added. Its future recipes may
-use validated CDP8 pipelines or native C implementations behind the same compact
-Transform workspace. DSP contains eight factory transformations and eight user slots.
+CDP is one curated offline-transform mode with two internal 16-tile pages. Pressing `3`
+inside CDP toggles the page; there is no fifth top-level mode or shortcut. All 32 fixed
+tiles are functional, from DRUNK through ITERATE on CDP 1 and GLISTEN through GRANULATE
+on CDP 2. CDP tiles use left-click quick Apply and middle-click editing, matching the
+DSP interaction language while retaining the external offline engine. DSP contains
+eight factory transformations and eight user slots.
 Left-click a filled DSP tile for the fast path: its saved settings transform the current
 selection, or the whole tile when no selection exists, as one Undo step. Middle-click a
 filled DSP tile to shape it in the shared Transform workspace. Its two to four musical
@@ -276,7 +287,7 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR20 stores every occupied tile as a complete independent object: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, and performance-capture history. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR19 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR21 stores every occupied tile as a complete independent object: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR20 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 

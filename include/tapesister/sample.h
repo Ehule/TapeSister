@@ -173,7 +173,11 @@ typedef enum {
     TS_POST_PATCH_STRETCH_EXPAND,
     TS_POST_PATCH_STRETCH_CONTRACT,
     TS_POST_CANVAS_LEFT_RESIZE,
-    TS_POST_CANVAS_RIGHT_RESIZE
+    TS_POST_CANVAS_RIGHT_RESIZE,
+    /* A rendered Transform is accepted as a stable editable-material checkpoint.
+       Unlike ordinary Paste patches, this checkpoint is replayed before the native
+       process stage so BODY/EDGE/DRIFT and the native effects remain live. */
+    TS_POST_MATERIAL_REPLACE
 } TsPostEditKind;
 
 typedef struct {
