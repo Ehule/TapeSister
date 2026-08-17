@@ -13,6 +13,8 @@ enum {
 
 #define TS_EXCHANGE_MANIFEST_NAME "exchange.tsexchange"
 #define TS_EXCHANGE_RECEIVED_NAME "tapesister.received"
+#define TS_EXCHANGE_TAPEHEAD_PRESENCE ".tapehead.running"
+#define TS_EXCHANGE_TAPESISTER_PRESENCE ".tapesister.running"
 
 typedef enum {
     TS_EXCHANGE_LAYOUT_INSTRUMENT_SAMPLES = 0,
@@ -42,6 +44,10 @@ int ts_exchange_offer_load(TsExchangeOffer *offer, const char *folder,
                            char *error, size_t error_size);
 int ts_exchange_find_pending(const char *exchange_root, TsExchangeOffer *offer,
                              char *error, size_t error_size);
+int ts_exchange_presence_touch(const char *exchange_root, const char *application);
+int ts_exchange_presence_active(const char *exchange_root,
+                                const char *application,
+                                unsigned int maximum_age_seconds);
 int ts_exchange_publish_bank(const TsInstrument *instrument,
                              const char *exchange_root,
                              TsExchangeLayout layout,

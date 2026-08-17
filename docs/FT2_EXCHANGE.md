@@ -54,9 +54,12 @@ The top **FT2 Link** button opens a choice instead of immediately launching FT2:
 - **Check Inbox**: immediately scans for a Tapehead-to-TapeSister transfer.
 - **Cancel**: closes the dialog without writing files or launching FT2.
 
-After a successful atomic publish, TapeSister launches the configured FastTracker
-executable when that path is set. A blank executable path leaves the completed transfer
-ready for manual import.
+Both programs refresh a small `.tapehead.running` or `.tapesister.running` marker in
+the shared directory once per second. After a successful atomic publish, TapeSister
+reuses a live Tapehead and lets its inbox poll discover the transfer. If no live marker
+is present, it launches the configured FastTracker executable when that path is set.
+Toggle **New Instance** before choosing a layout to deliberately launch another
+Tapehead. A blank executable path leaves the completed transfer ready for manual import.
 
 Every WAV carries TapeSister's standard `smpl` tuning and loop metadata. FT2 remains
 responsible for validating destination instruments/sample slots and for applying the

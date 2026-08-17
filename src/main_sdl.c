@@ -3940,6 +3940,8 @@ static const char *exchange_directory(const TsUiState *ui)
            ui->config.exchange_path : ui->config.sample_path;
 }
 
+enum { EXCHANGE_PRESENCE_MAX_AGE_SECONDS = 5 };
+
 static const char *path_basename(const char *path)
 {
     const char *slash = strrchr(path, '/');
@@ -3993,6 +3995,7 @@ static void begin_exchange_send(TsUiState *ui, const TsInstrument *instrument)
     }
     ui->exchange_dialog = TS_UI_EXCHANGE_SEND;
     ui->exchange_item_count = count;
+    ui->exchange_force_new_instance = 0;
     ui->exchange_name[0] = '\0';
     snprintf(ui->status, sizeof(ui->status),
              "CHOOSE HOW TAPESISTER TILES SHOULD ARRIVE IN TAPEHEAD");
@@ -4015,22 +4018,38 @@ static void send_to_fasttracker(TsUiState *ui, const TsInstrument *instrument,
         snprintf(ui->status, sizeof(ui->status), "FT2 EXPORT FAILED: %.132s", error);
         return;
     }
+    if (!ui->exchange_force_new_instance &&
+        ts_exchange_presence_active(directory, "tapehead",
+                                    EXCHANGE_PRESENCE_MAX_AGE_SECONDS)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "SENT %d SAMPLES AS %s - OPEN TAPEHEAD WILL RECEIVE",
+                 ts_instrument_bank_count(instrument),
+                 layout == TS_EXCHANGE_LAYOUT_SEPARATE_INSTRUMENTS ?
+                 "SEPARATE INSTRUMENTS" : "ONE INSTRUMENT");
+        ui->exchange_force_new_instance = 0;
+        return;
+    }
     if (ui->config.fasttracker_path[0] == '\0') {
         snprintf(ui->status, sizeof(ui->status),
                  "FT2 COLLECTION READY %.100s - SET EXECUTABLE TO AUTO LAUNCH",
                  destination);
+        ui->exchange_force_new_instance = 0;
         return;
     }
     if (!launch_program(ui->config.fasttracker_path, error, sizeof(error))) {
         snprintf(ui->status, sizeof(ui->status),
                  "COLLECTION READY %.60s  LAUNCH FAILED %.48s", destination, error);
+        ui->exchange_force_new_instance = 0;
         return;
     }
     snprintf(ui->status, sizeof(ui->status),
+             ui->exchange_force_new_instance ?
+             "SENT %d SAMPLES AS %s - NEW FASTTRACKER INSTANCE LAUNCHED" :
              "SENT %d SAMPLES AS %s - FASTTRACKER LAUNCHED",
              ts_instrument_bank_count(instrument),
              layout == TS_EXCHANGE_LAYOUT_SEPARATE_INSTRUMENTS ?
              "SEPARATE INSTRUMENTS" : "ONE INSTRUMENT");
+    ui->exchange_force_new_instance = 0;
 }
 
 static int import_incoming_exchange(SDL_AudioDeviceID device, AudioState *audio,
@@ -4718,6 +4737,7 @@ int main(int argc, char **argv)
     }
     ui.saved_state_hash = instrument_state_hash(&instrument);
     last_exchange_poll = SDL_GetTicks();
+    (void)ts_exchange_presence_touch(exchange_directory(&ui), "tapesister");
     (void)stage_incoming_exchange(&ui, &exchange_offer, ignored_exchange, 0);
 
     while (running) {
@@ -4947,6 +4967,13 @@ int main(int argc, char **argv)
                             ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
                             (void)stage_incoming_exchange(
                                 &ui, &exchange_offer, ignored_exchange, 1);
+                        } else if (key == SDLK_n) {
+                            ui.exchange_force_new_instance =
+                                !ui.exchange_force_new_instance;
+                            snprintf(ui.status, sizeof(ui.status),
+                                     ui.exchange_force_new_instance ?
+                                     "NEXT SEND WILL LAUNCH A NEW TAPEHEAD INSTANCE" :
+                                     "NEXT SEND WILL REUSE AN OPEN TAPEHEAD");
                         }
                     } else if (key == SDLK_ESCAPE || key == SDLK_l) {
                         snprintf(ignored_exchange, sizeof(ignored_exchange), "%s",
@@ -5937,6 +5964,14 @@ int main(int argc, char **argv)
                         ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
                         (void)stage_incoming_exchange(
                             &ui, &exchange_offer, ignored_exchange, 1);
+                    } else if (action ==
+                               TS_UI_EXCHANGE_ACTION_TOGGLE_NEW_INSTANCE) {
+                        ui.exchange_force_new_instance =
+                            !ui.exchange_force_new_instance;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 ui.exchange_force_new_instance ?
+                                 "NEXT SEND WILL LAUNCH A NEW TAPEHEAD INSTANCE" :
+                                 "NEXT SEND WILL REUSE AN OPEN TAPEHEAD");
                     } else if (action == TS_UI_EXCHANGE_ACTION_IMPORT) {
                         ignored_exchange[0] = '\0';
                         (void)import_incoming_exchange(
@@ -6804,6 +6839,8 @@ int main(int argc, char **argv)
 
         if (SDL_GetTicks() - last_exchange_poll >= 1000u) {
             last_exchange_poll = SDL_GetTicks();
+            (void)ts_exchange_presence_touch(
+                exchange_directory(&ui), "tapesister");
             if (!ui_dialog_open(&ui) && !ui.canvas_gesture.active &&
                 !ui.stretch_gesture.active && !ui.warp_gesture.active &&
                 !ui.smear_gesture.active && !ui.tear_gesture.active)

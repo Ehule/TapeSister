@@ -1021,8 +1021,10 @@ TsUiExchangeAction ts_ui_exchange_action_from_point(TsUiExchangeDialog dialog,
                 return TS_UI_EXCHANGE_ACTION_SEND_SEPARATE_INSTRUMENTS;
         }
         if (y >= 158 && y < 181) {
-            if (x >= 184 && x < 316) return TS_UI_EXCHANGE_ACTION_CHECK_INBOX;
-            if (x >= 330 && x < 456) return TS_UI_EXCHANGE_ACTION_LATER;
+            if (x >= 128 && x < 240) return TS_UI_EXCHANGE_ACTION_CHECK_INBOX;
+            if (x >= 250 && x < 390)
+                return TS_UI_EXCHANGE_ACTION_TOGGLE_NEW_INSTANCE;
+            if (x >= 400 && x < 512) return TS_UI_EXCHANGE_ACTION_LATER;
         }
     } else if (dialog == TS_UI_EXCHANGE_RECEIVE && y >= 158 && y < 181) {
         if (x >= 184 && x < 316) return TS_UI_EXCHANGE_ACTION_IMPORT;
@@ -2035,8 +2037,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             button(fb, 126, 112, 184, "ONE INSTRUMENT", 0);
             button(fb, 330, 112, 184, "SEPARATE INSTR", 0);
             text(fb, 128, 140, "WAVS + MANIFEST PUBLISH ATOMICALLY", PAL_INSTRUMENT, 1);
-            button(fb, 184, 158, 132, "CHECK INBOX", 0);
-            button(fb, 330, 158, 126, "CANCEL", 0);
+            button(fb, 128, 158, 112, "CHECK INBOX", 0);
+            button(fb, 250, 158, 140, "NEW INSTANCE",
+                   ui->exchange_force_new_instance);
+            button(fb, 400, 158, 112, "CANCEL", 0);
         } else {
             text(fb, 128, 68, "TAPEHEAD TRANSFER FOUND", PAL_NOTE, 1);
             snprintf(count, sizeof(count), "%d SAMPLES -> TILES 01-16",

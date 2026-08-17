@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -55,6 +56,51 @@ static int path_is_regular(const char *path)
 #else
     return S_ISREG(info.st_mode);
 #endif
+}
+
+static const char *presence_name(const char *application)
+{
+    if (application != NULL && strcmp(application, "tapehead") == 0)
+        return TS_EXCHANGE_TAPEHEAD_PRESENCE;
+    if (application != NULL && strcmp(application, "tapesister") == 0)
+        return TS_EXCHANGE_TAPESISTER_PRESENCE;
+    return NULL;
+}
+
+int ts_exchange_presence_touch(const char *exchange_root, const char *application)
+{
+    char path[TS_EXCHANGE_PATH_MAX];
+    const char *name = presence_name(application);
+    FILE *file;
+    if (!path_is_directory(exchange_root) || name == NULL ||
+        !path_join(path, sizeof(path), exchange_root, name)) return 0;
+    file = fopen(path, "wb");
+    if (file == NULL) return 0;
+    {
+        int written = fprintf(file, "application=%s\n", application) >= 0;
+        if (fclose(file) != 0) written = 0;
+        if (written) return 1;
+        remove(path);
+        return 0;
+    }
+}
+
+int ts_exchange_presence_active(const char *exchange_root,
+                                const char *application,
+                                unsigned int maximum_age_seconds)
+{
+    char path[TS_EXCHANGE_PATH_MAX];
+    struct stat info;
+    const char *name = presence_name(application);
+    time_t now;
+    if (!path_is_directory(exchange_root) || name == NULL ||
+        !path_join(path, sizeof(path), exchange_root, name) ||
+        stat(path, &info) != 0 || !path_is_regular(path)) return 0;
+    now = time(NULL);
+    if (now == (time_t)-1) return 0;
+    if (info.st_mtime > now)
+        return (unsigned long long)(info.st_mtime - now) <= maximum_age_seconds;
+    return (unsigned long long)(now - info.st_mtime) <= maximum_age_seconds;
 }
 
 static int safe_filename(const char *name)

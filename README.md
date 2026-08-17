@@ -164,6 +164,10 @@ The handoff remains deliberately file-based: TapeSister does not link against tr
 state. See [`docs/FT2_EXCHANGE.md`](docs/FT2_EXCHANGE.md) for the exact reciprocal
 protocol and Tapehead-side requirements.
 
+Each application refreshes a small presence marker in the exchange path. Normal sends
+reuse a live Tapehead instead of opening another copy; toggle **New Instance** in the
+FT2 Link dialog when a separate tracker process is intentionally wanted.
+
 Every handoff WAV includes root/fine-tune metadata plus loop start, inclusive end, and standard Forward/Ping-Pong/Backward type. FT2 already reads the loop record, so forward and ping-pong collection members arrive with looping enabled instead of requiring manual flags. Its current WAV loader treats the standard backward type as ping-pong; exact reverse-loop interpretation and `smpl` root-note adoption belong to the reciprocal FT2-side handoff slice.
 
 **Config -> Palette** replaces the same waveform panel with a live 14-color RGB editor: Tapehead's original 12 persisted fields plus TapeSister's independent **Wave Selection** fill and **Active Tile** outline. The editor uses TapeSister-facing names while import/export keeps the established keys. It also exposes Tapehead-compatible Desktop and Buttons contrast values: button and tile bevels derive from Controls/`Buttons` and Buttons Contrast, while Pointer/`Mouse` and Active Tile are independent. **Import TH** reads `tapehead.pal`, **Export TH** writes only Tapehead's original fields, and **Save TS** writes `tapesister.pal` including both TapeSister-only colors, which TapeSister automatically reloads on the next launch. If an imported or older palette omits Wave Selection it inherits `BlockMark`; if it omits Active Tile it inherits `Mouse`, preserving the former appearance. Older six-color Tapehead palettes still give the other additional waveform colors `PatternText`. `TAPESISTER_PALETTE` can override the TapeSister palette path.

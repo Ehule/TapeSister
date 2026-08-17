@@ -129,6 +129,7 @@ typedef enum {
     TS_UI_EXCHANGE_ACTION_SEND_ONE_INSTRUMENT,
     TS_UI_EXCHANGE_ACTION_SEND_SEPARATE_INSTRUMENTS,
     TS_UI_EXCHANGE_ACTION_CHECK_INBOX,
+    TS_UI_EXCHANGE_ACTION_TOGGLE_NEW_INSTANCE,
     TS_UI_EXCHANGE_ACTION_IMPORT,
     TS_UI_EXCHANGE_ACTION_LATER
 } TsUiExchangeAction;
@@ -237,6 +238,7 @@ typedef struct {
     TsUiExchangeDialog exchange_dialog;
     TsExchangeLayout exchange_layout;
     int exchange_item_count;
+    int exchange_force_new_instance;
     int load_selection_choice_open;
     int drone_open;
     int drone_preview_active;

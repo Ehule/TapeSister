@@ -2614,9 +2614,11 @@ int main(void)
           TS_UI_EXCHANGE_ACTION_SEND_ONE_INSTRUMENT);
     CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 360, 120) ==
           TS_UI_EXCHANGE_ACTION_SEND_SEPARATE_INSTRUMENTS);
-    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 210, 166) ==
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 180, 166) ==
           TS_UI_EXCHANGE_ACTION_CHECK_INBOX);
-    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 360, 166) ==
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 300, 166) ==
+          TS_UI_EXCHANGE_ACTION_TOGGLE_NEW_INSTANCE);
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 440, 166) ==
           TS_UI_EXCHANGE_ACTION_LATER);
     CHECK(fb.pixels[116 * TS_UI_WIDTH + 130] == 0xff5d555du);
     ui.exchange_dialog = TS_UI_EXCHANGE_RECEIVE;

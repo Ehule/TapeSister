@@ -88,6 +88,11 @@ int main(void)
     remove_test_folder("test-exchange-root/incoming_bad");
     remove_test_folder("test-exchange-root");
     CHECK(mkdir("test-exchange-root", 0700) == 0);
+    CHECK(ts_exchange_presence_touch("test-exchange-root", "tapesister"));
+    CHECK(ts_exchange_presence_active(
+        "test-exchange-root", "tapesister", 5));
+    CHECK(!ts_exchange_presence_active(
+        "test-exchange-root", "tapehead", 5));
 
     ts_instrument_init(&source);
     ts_instrument_init(&received);
@@ -188,6 +193,7 @@ int main(void)
     remove_test_folder("test-exchange-root/incoming_0002.partial");
     remove_test_folder("test-exchange-root/incoming_corrupt");
     remove_test_folder("test-exchange-root/incoming_bad");
+    remove("test-exchange-root/.tapesister.running");
     CHECK(rmdir("test-exchange-root") == 0);
 
     if (failures != 0) {
