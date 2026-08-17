@@ -14,13 +14,16 @@ recipe, and provenance versions; category; typed stage connections and executabl
 requirements; analysis configuration; required input and expected output channels;
 sample-rate preservation; safety, duration, determinism, and Mix policies; and exactly
 four control specifications.
-The production Recipe Bank currently contains one enabled curated CDP tile, GLISTEN.
-Selecting that tile opens the shared Transform workspace with GLISTEN active and its
-four controls in the fixed control positions. The ordinary factory and user process
-recipe slots remain intact below the curated CDP shelf. Adding another factory CDP
-recipe means adding a validated immutable schema entry, a typed mapping function,
-argument-plan tests, minimum-input validation, a declared duration/Mix policy, and
-adapter/output tests. User-supplied executable names or command text are not accepted.
+The lower **CDP** bank has the same 16-tile footprint as TapeSister's other banks.
+Tile 01 displays `GLIST` and opens the shared Transform workspace with GLISTEN active
+and its four controls in the fixed control positions. Empty CDP tiles are inert and
+visibly labeled; no placeholder claims to work. The existing factory and user process
+recipes live unchanged in the separate **DSP** bank. Future curated CDP-bank recipes
+may use a validated CDP8 pipeline or a native C implementation, but must retain the
+same safe render/preview/Apply contract. Adding another CDP8 recipe means adding a
+validated immutable schema entry, a typed mapping function, argument-plan tests,
+minimum-input validation, a declared duration/Mix policy, and adapter/output tests.
+User-supplied executable names or command text are not accepted.
 
 ## GLISTEN contract verified against supplied CDP8 source
 

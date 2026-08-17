@@ -61,8 +61,8 @@ most one quarter of the selection, and can be changed with
 
 ## Curated offline CDP Transform
 
-Open the **Recipe Bank** and choose the curated **GLISTEN** tile to open its compact
-Transform workspace over the waveform editor. Its mini waveform uses the active tile's
+Press `3` or cycle the lower panel to **CDP**, then choose **01 GLIST** to open
+GLISTEN's compact Transform workspace over the waveform editor. Its mini waveform uses the active tile's
 exact persistent selection and viewport—drag either selection edge to resize it, drag
 inside it to move it, or drag elsewhere to make a new range. The same half-open range
 is immediately visible in the main editor when Transform is closed. Choose **Selection**
@@ -110,7 +110,7 @@ springs back to zero after commit or Escape cancellation.
 
 ## Zero-snapped selection and loop modes
 
-Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in the selected tile. A left click places the persistent edit playhead without changing the selection; a right click places it and plays from that point. Clicked playheads zero-snap by default (`playhead_zero_snap=0` opts into exact placement), and Space toggles playback from the playhead to the tile end regardless of selection. On an idle tile with neither a selection nor a playhead, Space creates the playhead at frame 0 and immediately plays. Middle-clicking the waveform or pressing Escape clears the selection and returns the playhead to frame 0. Left-drag keeps ordinary selection behavior, while right-drag makes a selection and keeps the playhead at the drag-start edge: left for a left-to-right drag, right for a right-to-left drag. Tile playheads are restored with their editor state, using the same proportional position when a target tile has no saved playhead or a saved frame cannot fit. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop, with an Effect-color readout at its visible upper-left reporting the complete selection duration. **SEL ALL**, `Ctrl+A`, and an unmodified double-left-click in the waveform select the exact half-open whole-tile range `[0, frames)`, including silent canvas margins. **SEL WAVE** instead selects from the first non-silent sample through one frame after the last non-silent sample, preparing the audible waveform for editing or Crop without changing the audio. If a sound has no mathematical sign crossing, ordinary dragged selection falls back deterministically to its closest-to-zero sample.
+Every mouse-created or adjusted selection endpoint snaps live to the nearest zero crossing in the selected tile. A left click places the persistent edit playhead without changing the selection; a right click places it and plays from that point. Clicked playheads zero-snap by default (`playhead_zero_snap=0` opts into exact placement). Space plays the persistent selection when one exists; otherwise it toggles playback from the playhead to the tile end. On an idle tile with neither a selection nor a playhead, Space creates the playhead at frame 0 and immediately plays. Middle-clicking the waveform or pressing Escape clears the selection and returns the playhead to frame 0. Left-drag keeps ordinary selection behavior, while right-drag makes a selection and keeps the playhead at the drag-start edge: left for a left-to-right drag, right for a right-to-left drag. Tile playheads are restored with their editor state, using the same proportional position when a target tile has no saved playhead or a saved frame cannot fit. Magenta pixels mark the visible crossings directly on the waveform. The highlight always shows the actual snapped range used by Reverse, Normalize, gain, fades, Crop, and Set Loop, with an Effect-color readout at its visible upper-left reporting the complete selection duration. **SEL ALL**, `Ctrl+A`, and an unmodified double-left-click in the waveform select the exact half-open whole-tile range `[0, frames)`, including silent canvas margins. **SEL WAVE** instead selects from the first non-silent sample through one frame after the last non-silent sample, preparing the audible waveform for editing or Crop without changing the audio. If a sound has no mathematical sign crossing, ordinary dragged selection falls back deterministically to its closest-to-zero sample.
 
 The Loop page turns the current selection into one loop, clears it, plays it continuously, selects **Forward**, **Reverse**, or **Ping-Pong** travel, and sets a 0–50 ms wrap crossfade. If no selection exists, Set Loop first selects and loops the exact whole tile. Blue boundaries and handles distinguish the loop from the purple/cyan selection; direction arrows show the active mode directly in the waveform. Either handle can be dragged live, remains zero-snapped, and automatically becomes the opposite endpoint when crossed. Computer and ordinary onscreen notes sustain the loop only while held; dragging a loop flag never releases them. Play Loop continues until Space or Escape. Loop range, mode, and crossfade belong to the tile and participate in its Undo/Redo history.
 
@@ -197,11 +197,21 @@ Where source and existing audio overlap, Mix measures the source peak and underl
 
 ## Processing recipes and shaping
 
-The lower panel now cycles **KEYS**, **BANK**, **RCPE**, and **INGR**. INGR is an empty navigation scaffold for future ingredient shelves; entering it does not alter the selected tile, bank contents, recipes, or Undo history. RCPE contains eight immutable factory recipes and eight user slots. Click a filled slot to apply its processing to the selected tile as one undoable render. Shift-click an empty user slot to capture the live processing shelf, right-click a filled user slot to rename it, and Shift-right-click to clear it. Factory recipes and their names remain immutable. Manual shelf changes remove the active-slot highlight without altering the stored recipe.
+The lower panel cycles **KEYS**, **BANK**, **CDP**, and **DSP**. The unmodified top-row
+number keys select them directly: `1` Sample Tiles, `2` Keyboard, `3` CDP, and `4` DSP.
+CDP is a 16-tile curated offline-transform bank; tile 01 contains GLISTEN and the other
+tiles remain visibly empty until functional transforms are added. Its future recipes may
+use validated CDP8 pipelines or native C implementations behind the same compact
+Transform workspace. DSP contains the original eight immutable factory process recipes
+and eight user slots. Click a filled DSP slot to apply its processing to the selected
+tile as one undoable render. Shift-click an empty user slot to capture the live processing
+shelf, right-click a filled user slot to rename it, and Shift-right-click to clear it.
+Factory recipes and their names remain immutable. Manual shelf changes remove the
+active-slot highlight without altering the stored recipe.
 
 The compact **LOOP** audition button repeats a fixed selection when one exists, otherwise it follows the visible tile view as that view is zoomed or panned. A short boundary crossfade uses the existing audition engine. While LOOP is active it remains the audition owner, so WARP, SMEAR, and TEAR continue publishing spring-loaded previews without their usual timed playback retriggers. Ordinary LOOP remains temporary. Shift-click **LOOP** to engage LOOP LOCK across every editing and tile operation; Shift-click it again to release.
 
-Portable `.tsp` files contain named processing settings and, for user captures, optional tuning metadata—never tile audio, crop, selection, loop, tape edits, or bank members—so the same treatment can be applied to unrelated material. Factory recipes omit tuning. While RCPE is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the selected tile. Full `.tsr` projects remain the self-contained way to save a complete bank.
+Portable `.tsp` files contain named processing settings and, for user captures, optional tuning metadata—never tile audio, crop, selection, loop, tape edits, or bank members—so the same treatment can be applied to unrelated material. Factory recipes omit tuning. While DSP is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the selected tile. Full `.tsr` projects remain the self-contained way to save a complete bank.
 
 The **Shape** page combines a bypassable resonant Lowpass, Highpass, or Bandpass filter with a bypassable Tape, Clip, or Fold shaper. Cutoff uses logarithmic travel, while resonance, drive, and wet/dry mix expose the musically useful range. These deterministic stages live in the processing recipe and render before Delay and Space; existing ordered tape placements remain downstream. Held and latched notes are remapped across recipe application just like other Current rerenders.
 
@@ -247,7 +257,7 @@ Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the
 Load, Save, and Export now open one shared FT2-informed browser rather than writing fixed filenames or requiring a typed path:
 
 - Load lists WAV source files, self-contained `.tsr` projects, and portable `.tsp` processing recipes and preserves the existing instrument if any is invalid;
-- Save lists directories and `.tsr` projects, or `.tsp` processing recipes while RCPE is visible;
+- Save lists directories and `.tsr` projects, or `.tsp` processing recipes while DSP is visible;
 - Export lists directories and WAV files;
 - mouse wheel, draggable scrollbar, Up/Down, Page Up/Down, Home/End, and row clicking navigate long directories;
 - double-click or Enter opens a directory, WAV, TSR project, or TSP recipe;
@@ -285,7 +295,8 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 
 - Lower octave: `Z S X D C V G B H N J M`
 - Upper octave: `Q 2 W 3 E R 5 T 6 Y 7 U`
-- Play from the edit playhead / Stop all: `Space`; `Escape` cancels the active gesture/dialog first, otherwise opens exit confirmation
+- Play selection, otherwise play from the edit playhead / Stop all: `Space`; `Escape` cancels the active gesture/dialog first, otherwise opens exit confirmation
+- Select lower panel directly: top-row `1` Sample Tiles, `2` Keyboard, `3` CDP, `4` DSP
 - Load browser: `Ctrl+O`
 - Save browser / choose Export Selected Tile or Collection: `Ctrl+S` / `Ctrl+E`
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`

@@ -135,6 +135,15 @@ int main(void)
     ui.workbench_loop_active = 0;
     ui.workbench_loop_persistent = 0;
     CHECK(ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_KEYBOARD);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_SAMPLE_TILES);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_SAMPLE_TILES &&
+          !ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_CDP);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_CDP && ui.show_recipes);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_DSP);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_DSP && ui.show_ingredients);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_KEYBOARD);
     ts_ui_cycle_panel(&ui);
     CHECK(!ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
     ts_ui_cycle_panel(&ui);
@@ -2469,13 +2478,17 @@ int main(void)
     ui.show_keyboard = 0;
     ui.show_recipes = 1;
     ts_ui_render(&fb, &ui, &imported);
-    CHECK(ts_ui_cdp_recipe_tile_from_point(46, 321) == 0);
-    CHECK(ts_ui_cdp_recipe_tile_from_point(108, 321) == -1);
-    CHECK(ts_ui_cdp_recipe_tile_from_point(150, 321) == -1);
+    CHECK(ts_ui_cdp_slot_from_point(46, 321) == -1);
+    CHECK(ts_ui_cdp_slot_from_point(46, 341) == 0);
+    CHECK(ts_ui_cdp_slot_from_point(123, 341) == 1);
+    CHECK(ts_ui_cdp_slot_from_point(46, 366) == 8);
+    ui.show_recipes = 0;
+    ui.show_ingredients = 1;
+    ts_ui_render(&fb, &ui, &imported);
     CHECK(ts_ui_recipe_slot_from_point(46, 341) == 0);
     CHECK(ui.recipes.slots[0].occupied && ui.recipes.slots[0].factory);
     CHECK(fb.pixels[332 * TS_UI_WIDTH + 12] == 0xff18ff00u);
-    ui.show_recipes = 0;
+    ui.show_ingredients = 0;
     {
         TsPostEditKind action;
         CHECK(ts_ui_tape_action(0, TS_UI_BANK_MOD_SHIFT, &action) &&

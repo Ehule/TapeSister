@@ -1867,7 +1867,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         }
         if (ok) {
             ui->show_keyboard = 0;
-            ui->show_recipes = 1;
+            ui->show_recipes = 0;
+            ui->show_ingredients = 1;
             ui->recipes.active_slot = slot - 1;
             ui->has_pitch_suggestion = 0;
             snprintf(ui->status, sizeof(ui->status), "LOADED RECIPE %.31s%s - UNDO RESTORES",
@@ -4546,7 +4547,7 @@ int main(int argc, char **argv)
                     ui.load_bank_slot = instrument.selected_slot;
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_s) {
-                    browser_open(&ui, ui.show_recipes ?
+                    browser_open(&ui, ui.show_ingredients ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_e) {
                     begin_export_choice(&ui);
@@ -4574,6 +4575,16 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_DOWN) {
                     apply_sample_edit(device, &audio, &ui, &instrument,
                                       TS_SAMPLE_EDIT_GAIN, 0.7079458f);
+                } else if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0 &&
+                           key >= SDLK_1 && key <= SDLK_4) {
+                    TsUiPanel panel = (TsUiPanel)(key - SDLK_1);
+                    static const char *const names[] = {
+                        "SAMPLE TILES", "KEYBOARD", "CDP", "DSP"
+                    };
+                    ts_ui_select_panel(&ui, panel);
+                    ui.bank_view_slot = -1;
+                    snprintf(ui.status, sizeof(ui.status), "%s PANEL - KEYS 1 2 3 4",
+                             names[panel]);
                 } else if (key == SDLK_EQUALS || key == SDLK_PLUS || key == SDLK_KP_PLUS) {
                     ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT) {
@@ -4686,10 +4697,17 @@ int main(int argc, char **argv)
                         ui.workbench_loop_active)
                         stop_all(device, &audio, &ui);
                     else {
-                        if (!instrument.has_selection && !instrument.has_playhead)
-                            (void)ts_instrument_reset_selection_playhead(&instrument);
-                        begin_playhead_audition(device, &audio, &ui, &instrument,
-                                                obtained.freq);
+                        ui.audition_source = TS_AUDITION_CURRENT;
+                        if (ts_ui_space_plays_selection(&instrument))
+                            begin_audition(device, &audio, &ui, &instrument,
+                                           TS_AUDITION_SELECTION, 1.0,
+                                           obtained.freq);
+                        else {
+                            if (!instrument.has_playhead)
+                                (void)ts_instrument_reset_selection_playhead(&instrument);
+                            begin_playhead_audition(device, &audio, &ui, &instrument,
+                                                    obtained.freq);
+                        }
                     }
                 } else {
                     int note = note_for_key(key);
@@ -5387,7 +5405,7 @@ int main(int argc, char **argv)
                 } else if (y >= 4 && y < 28 && x >= 431 && x < 511) {
                     send_to_fasttracker(&ui, &instrument);
                 } else if (y >= 4 && y < 28 && x >= 516 && x < 568) {
-                    browser_open(&ui, ui.show_recipes ?
+                    browser_open(&ui, ui.show_ingredients ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 573 && x < 630) {
                     begin_export_choice(&ui);
@@ -5752,25 +5770,29 @@ int main(int argc, char **argv)
                     ui.bank_view_slot = -1;
                     snprintf(ui.status, sizeof(ui.status), "%s PANEL",
                              ui.show_keyboard ? "KEYS" :
-                             ui.show_recipes ? "RECIPE BANK" :
-                             ui.show_ingredients ? "INGREDIENTS" : "SAMPLE BANK");
+                             ui.show_recipes ? "CDP" :
+                             ui.show_ingredients ? "DSP" : "SAMPLE TILES");
                 } else {
                     int note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
                     int bank_slot = !ui.show_keyboard && !ui.show_recipes &&
                                     !ui.show_ingredients ?
                                     ts_ui_bank_slot_from_point(x, y) : -1;
-                    int recipe_slot = ui.show_recipes ?
+                    int recipe_slot = ui.show_ingredients ?
                                       ts_ui_recipe_slot_from_point(x, y) : -1;
-                    int cdp_recipe_tile = ui.show_recipes ?
-                        ts_ui_cdp_recipe_tile_from_point(x, y) : -1;
+                    int cdp_slot = ui.show_recipes ?
+                        ts_ui_cdp_slot_from_point(x, y) : -1;
                     int capture_control = !ui.show_keyboard && !ui.show_recipes &&
                                           !ui.show_ingredients &&
                                           ts_ui_capture_button_from_point(x, y);
                     if (capture_control) {
                         capture_button(device, &audio, &ui, &instrument, obtained.freq);
-                    } else if (cdp_recipe_tile >= 0) {
-                        begin_transform_workspace(&ui, &instrument, &transform,
-                                                  cdp_recipe_tile);
+                    } else if (cdp_slot >= 0) {
+                        if ((size_t)cdp_slot < ts_cdp_factory_recipe_count())
+                            begin_transform_workspace(&ui, &instrument, &transform,
+                                                      cdp_slot);
+                        else
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "CDP TILE %02d IS EMPTY", cdp_slot + 1);
                     } else if (recipe_slot >= 0) {
                         unsigned modifiers = bank_modifiers(mod);
                         if (modifiers == 0)
@@ -5984,7 +6006,7 @@ int main(int argc, char **argv)
                     apply_tuning(device, &audio, &ui, &instrument,
                                  ts_ui_keyboard_base_note(&ui) + note,
                                  instrument.audible_tuning.fine_tune_cents);
-                } else if (ui.show_recipes && recipe_slot >= 0 &&
+                } else if (ui.show_ingredients && recipe_slot >= 0 &&
                            (mod & KMOD_SHIFT)) {
                     char error[160];
                     if (ts_recipe_bank_clear(&ui.recipes, recipe_slot,
@@ -5993,10 +6015,10 @@ int main(int argc, char **argv)
                                  recipe_slot + 1);
                     else snprintf(ui.status, sizeof(ui.status),
                                   "RECIPE CLEAR FAILED: %.126s", error);
-                } else if (ui.show_recipes && recipe_slot >= 0 &&
+                } else if (ui.show_ingredients && recipe_slot >= 0 &&
                            bank_modifiers(mod) == 0) {
                     begin_recipe_rename(&ui, recipe_slot);
-                } else if (ui.show_recipes && recipe_slot >= 0) {
+                } else if (ui.show_ingredients && recipe_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "RMB RENAME  SHIFT+RMB CLEAR");
                 } else if (!ui.show_keyboard && !ui.show_recipes &&

@@ -40,15 +40,6 @@ typedef struct {
     const char *label;
 } TsPanelButton;
 
-enum {
-    TS_CDP_BANK_TILE_X = 10,
-    TS_CDP_BANK_TILE_Y = 313,
-    TS_CDP_BANK_TILE_W = 96,
-    TS_CDP_BANK_TILE_H = 17,
-    TS_CDP_BANK_TILE_STEP_X = 101,
-    TS_CDP_BANK_TILE_MAX = 6
-};
-
 static const TsPanelButton config_buttons[] = {
     {20, 96, "SAVE CONFIG"}, {121, 76, "USE CWD"},
     {202, 76, "PALETTE"}, {283, 68, "CANCEL"}
@@ -1186,6 +1177,24 @@ void ts_ui_cycle_panel(TsUiState *ui)
     }
 }
 
+TsUiPanel ts_ui_panel(const TsUiState *ui)
+{
+    if (ui == NULL) return TS_UI_PANEL_SAMPLE_TILES;
+    if (ui->show_keyboard) return TS_UI_PANEL_KEYBOARD;
+    if (ui->show_recipes) return TS_UI_PANEL_CDP;
+    if (ui->show_ingredients) return TS_UI_PANEL_DSP;
+    return TS_UI_PANEL_SAMPLE_TILES;
+}
+
+void ts_ui_select_panel(TsUiState *ui, TsUiPanel panel)
+{
+    if (ui == NULL || panel < TS_UI_PANEL_SAMPLE_TILES || panel > TS_UI_PANEL_DSP)
+        return;
+    ui->show_keyboard = panel == TS_UI_PANEL_KEYBOARD;
+    ui->show_recipes = panel == TS_UI_PANEL_CDP;
+    ui->show_ingredients = panel == TS_UI_PANEL_DSP;
+}
+
 int ts_ui_transform_auto_audition_allowed(const TsUiState *ui)
 {
     return ui == NULL || !ui->workbench_loop_active;
@@ -1201,6 +1210,13 @@ TsUiLoopCommand ts_ui_loop_command(const TsUiState *ui, int shift_pressed)
 int ts_ui_loop_transport_can_stop(const TsUiState *ui, int force)
 {
     return force || ui == NULL || !ui->workbench_loop_persistent;
+}
+
+int ts_ui_space_plays_selection(const TsInstrument *instrument)
+{
+    return instrument != NULL && instrument->has_selection &&
+           instrument->selection_last > instrument->selection_first &&
+           instrument->selection_last <= instrument->current.frames;
 }
 
 void ts_ui_reset_parent_view(TsUiState *ui, size_t frames)
@@ -1747,8 +1763,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                ui->bank_clear_armed ? "CONFIRM CLEAR" : "CLEAR ALL",
                ui->bank_clear_armed);
     button(fb, wave_buttons[9].x, 289, wave_buttons[9].width,
-           ui->show_keyboard ? "BANK" : ui->show_recipes ? "INGR" :
-           ui->show_ingredients ? "KEYS" : "RCPE", !ui->show_keyboard);
+           ui->show_keyboard ? "BANK" : ui->show_recipes ? "DSP" :
+           ui->show_ingredients ? "KEYS" : "CDP", !ui->show_keyboard);
 
     if (ui->show_keyboard) {
         char keyboard_hint[96];
@@ -1799,21 +1815,27 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             }
         }
     } else if (ui->show_recipes) {
-        size_t cdp_count = ts_cdp_factory_recipe_count();
-        int hint_x;
-        if (cdp_count > TS_CDP_BANK_TILE_MAX) cdp_count = TS_CDP_BANK_TILE_MAX;
-        for (size_t i = 0; i < cdp_count; ++i) {
-            const TsCdpRecipe *recipe = ts_cdp_factory_recipe_at(i);
-            int x = TS_CDP_BANK_TILE_X + (int)i * TS_CDP_BANK_TILE_STEP_X;
-            mini_button(fb, x, TS_CDP_BANK_TILE_Y, TS_CDP_BANK_TILE_W,
-                        recipe->display_name,
-                        (int)i == ui->transform_recipe_index);
-            rect(fb, x + 2, TS_CDP_BANK_TILE_Y + 2, 3,
-                 TS_CDP_BANK_TILE_H - 4, PAL_EFFECT);
+        text(fb, 11, 318,
+             "CDP  CLICK TILE TO OPEN TRANSFORM     1 TILES  2 KEYS  3 CDP  4 DSP",
+             RGB(184, 180, 184), 1);
+        for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
+            const TsCdpRecipe *recipe =
+                (size_t)i < ts_cdp_factory_recipe_count() ?
+                ts_cdp_factory_recipe_at((size_t)i) : NULL;
+            char label[24];
+            int x = 10 + (i % 8) * 77;
+            int y = 330 + (i / 8) * 25;
+            if (recipe != NULL)
+                snprintf(label, sizeof(label), "%02d %.5s", i + 1,
+                         recipe->display_name);
+            else
+                snprintf(label, sizeof(label), "%02d EMPTY", i + 1);
+            button(fb, x, y, 72, label, i == ui->transform_recipe_index);
+            if (recipe != NULL) rect(fb, x + 2, y + 2, 3, 19, PAL_EFFECT);
         }
-        hint_x = TS_CDP_BANK_TILE_X + (int)cdp_count * TS_CDP_BANK_TILE_STEP_X + 5;
-        text(fb, hint_x, 318,
-             "CDP TRANSFORM  BELOW: CLICK APPLY  SHIFT CAPTURE  RMB RENAME",
+    } else if (ui->show_ingredients) {
+        text(fb, 11, 318,
+             "DSP  CLICK APPLY  SHIFT CAPTURE  RMB RENAME  SHIFT+RMB CLEAR  SAVE TSP",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
             const TsPortableRecipe *slot = &ui->recipes.slots[i];
@@ -1827,11 +1849,6 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             button(fb, x, y, 72, label, i == ui->recipes.active_slot);
             if (slot->factory) rect(fb, x + 2, y + 2, 3, 19, PAL_INSTRUMENT);
         }
-    } else if (ui->show_ingredients) {
-        text(fb, 11, 318, "INGR  INGREDIENT SHELVES COMING SOON",
-             RGB(184, 180, 184), 1);
-        text(fb, 11, 348, "SELECTED TILE REMAINS ON THE WORKBENCH",
-             PAL_INSTRUMENT, 1);
     } else {
         const char *capture_label = ui->capture_state == TS_CAPTURE_RECORDING ? "STOP" :
                                     ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
@@ -2041,18 +2058,9 @@ int ts_ui_recipe_slot_from_point(int x, int y)
     return ts_ui_bank_slot_from_point(x, y);
 }
 
-int ts_ui_cdp_recipe_tile_from_point(int x, int y)
+int ts_ui_cdp_slot_from_point(int x, int y)
 {
-    int index;
-    if (x < TS_CDP_BANK_TILE_X || y < TS_CDP_BANK_TILE_Y ||
-        y >= TS_CDP_BANK_TILE_Y + TS_CDP_BANK_TILE_H)
-        return -1;
-    index = (x - TS_CDP_BANK_TILE_X) / TS_CDP_BANK_TILE_STEP_X;
-    if (index < 0 || index >= TS_CDP_BANK_TILE_MAX ||
-        (x - TS_CDP_BANK_TILE_X) % TS_CDP_BANK_TILE_STEP_X >= TS_CDP_BANK_TILE_W ||
-        (size_t)index >= ts_cdp_factory_recipe_count())
-        return -1;
-    return index;
+    return ts_ui_bank_slot_from_point(x, y);
 }
 
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)

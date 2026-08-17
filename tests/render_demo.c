@@ -288,10 +288,15 @@ int main(int argc, char **argv)
         }
         ui.fx_page = TS_FX_SHAPE;
         ui.show_keyboard = 0;
-        ui.show_recipes = 1;
+        ui.show_ingredients = 1;
         ui.recipes.active_slot = 7;
         snprintf(ui.status, sizeof(ui.status),
                  "BROKEN FOLD APPLIED - PARENT PRESERVED  UNDO RESTORES");
+    } else if (argc > 2 && strcmp(argv[2], "cdp") == 0) {
+        ui.show_keyboard = 0;
+        ui.show_recipes = 1;
+        snprintf(ui.status, sizeof(ui.status),
+                 "CDP TILE 01 GLISTEN - CLICK OPENS FOUR-CONTROL TRANSFORM");
     } else if (argc > 2 && strcmp(argv[2], "tuning") == 0) {
         if (!ts_instrument_set_tuning(&instrument, 57, -14.2f,
                                       error, sizeof(error))) {
