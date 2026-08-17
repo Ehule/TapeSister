@@ -85,5 +85,7 @@ int ts_transform_mix_samples(const TsSample *dry, const TsSample *wet,
                              float mix, TsCdpMixPolicy policy,
                              TsSample *output,
                              char *error, size_t error_size);
+void ts_transform_boundary_splice(TsSample *replacement, const TsSample *tile,
+                                  size_t first, size_t last);
 
 #endif

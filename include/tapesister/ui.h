@@ -133,8 +133,14 @@ typedef enum {
     TS_UI_TRANSFORM_ACTION_RENDER,
     TS_UI_TRANSFORM_ACTION_APPLY,
     TS_UI_TRANSFORM_ACTION_AUDITION,
+    TS_UI_TRANSFORM_ACTION_SAVE,
     TS_UI_TRANSFORM_ACTION_BACK
 } TsUiTransformAction;
+
+typedef enum {
+    TS_TRANSFORM_BACKEND_CDP = 0,
+    TS_TRANSFORM_BACKEND_DSP
+} TsTransformBackend;
 
 typedef enum {
     TS_UI_WAVE_ACTION_NONE = 0,
@@ -217,7 +223,9 @@ typedef struct {
     int transform_preview_available;
     int transform_preview_active;
     int transform_runtime_available;
+    TsTransformBackend transform_backend;
     int transform_recipe_index;
+    int transform_dsp_slot;
     int transform_selection_dragging;
     int transform_selection_drag_mode;
     size_t transform_selection_anchor;
@@ -225,7 +233,10 @@ typedef struct {
     size_t transform_selection_grab;
     TsTransformScope transform_scope;
     TsCdpRecipeValues transform_values;
+    TsPortableRecipe transform_dsp_working;
     const TsSample *transform_preview_sample;
+    size_t transform_preview_first;
+    size_t transform_preview_last;
     TsCdpSafetyStatus transform_safety;
     char transform_message[96];
     int exit_confirm_open;

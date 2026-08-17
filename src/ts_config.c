@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -89,6 +90,27 @@ static int parse_clamped_integer(const char *value, int minimum, int maximum,
     if (parsed < minimum) parsed = minimum;
     if (parsed > maximum) parsed = maximum;
     *destination = (int)parsed;
+    return 1;
+}
+
+static int parse_dsp_preset(const char *key, const char *value,
+                            TsConfig *config)
+{
+    int slot;
+    float controls[TS_DSP_CONTROL_COUNT];
+    char trailing;
+    if (sscanf(key, "DspPreset%2d%c", &slot, &trailing) != 1 ||
+        slot < 1 || slot > TS_FACTORY_RECIPE_COUNT)
+        return 0;
+    if (sscanf(value, "%f,%f,%f,%f%c", &controls[0], &controls[1],
+               &controls[2], &controls[3], &trailing) != TS_DSP_CONTROL_COUNT)
+        return -1;
+    for (int index = 0; index < TS_DSP_CONTROL_COUNT; ++index)
+        if (!isfinite(controls[index]) || controls[index] < 0.0f ||
+            controls[index] > 1.0f) return -1;
+    --slot;
+    memcpy(config->dsp_factory_controls[slot], controls, sizeof(controls));
+    config->dsp_factory_overridden[slot] = 1;
     return 1;
 }
 
@@ -187,6 +209,13 @@ int ts_config_load(TsConfig *config, const char *path,
                 snprintf(error, error_size, "Invalid integer on config line %d", line_number);
                 fclose(file); return 0;
             }
+        } else {
+            int dsp = parse_dsp_preset(key, value, &loaded);
+            if (dsp < 0 || (dsp == 0 && strncmp(key, "DspPreset", 9u) == 0)) {
+                snprintf(error, error_size,
+                         "Invalid DSP preset on config line %d", line_number);
+                fclose(file); return 0;
+            }
         }
     }
     if (ferror(file)) {
@@ -229,7 +258,9 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "playhead_zero_snap=%d\n"
                 "rotate_wheel_fine=%d\n"
                 "rotate_wheel_coarse=%d\n"
-                "drone_crossfade_ms=%d\n",
+                "drone_crossfade_ms=%d\n"
+                "\n[DSP Presets]\n"
+                "; SAVE/UPDATE writes normalized macro values here.\n",
                 config->sample_path, config->fasttracker_path,
                 config->exchange_path, config->cdp_bin_path,
                 config->startup_welcome_sample,
@@ -237,6 +268,15 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->rotate_wheel_fine,
                 config->rotate_wheel_coarse,
                 config->drone_crossfade_ms) < 0;
+    for (int slot = 0; slot < TS_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
+        if (!config->dsp_factory_overridden[slot]) continue;
+        write_failed = fprintf(file, "DspPreset%02d=%.9g,%.9g,%.9g,%.9g\n",
+                               slot + 1,
+                               config->dsp_factory_controls[slot][0],
+                               config->dsp_factory_controls[slot][1],
+                               config->dsp_factory_controls[slot][2],
+                               config->dsp_factory_controls[slot][3]) < 0;
+    }
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {
         set_error(error, error_size, "Could not finish writing config");

@@ -1126,7 +1126,16 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
         float input = sample_linear(parent, (double)(first + i) + offset, first, last);
         low += (input - low) * 0.018f;
         fast += (input - fast) * 0.22f;
-        float shaped = input + (body - 0.5f) * 1.5f * low;
+        float body_amount = (body - 0.5f) * 2.0f;
+        float shaped;
+        /* BODY is a broad spectral-weight macro, not a gain control. Positive
+           values reinforce the slow/low component; negative values remove it
+           and retain more of the fast component. Center remains bit-neutral. */
+        if (body_amount >= 0.0f)
+            shaped = input + body_amount * (1.60f * low - 0.18f * (input - fast));
+        else
+            shaped = input + body_amount * 1.20f * low +
+                     (-body_amount) * 0.35f * (input - fast);
         shaped += edge * 1.45f * (input - fast);
         if (edge > 0.001f) {
             float drive = 1.0f + edge * 3.5f;

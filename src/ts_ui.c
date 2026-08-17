@@ -608,8 +608,18 @@ static void transform_waveform(TsFramebuffer *fb, const TsUiState *ui,
         int y1;
         if (end <= begin) end = begin + 1u;
         for (size_t at = begin; at < end && at < sample->frames; ++at) {
-            if (sample->data[at] < low) low = sample->data[at];
-            if (sample->data[at] > high) high = sample->data[at];
+            float value = sample->data[at];
+            if (ui->transform_backend == TS_TRANSFORM_BACKEND_DSP &&
+                ui->transform_preview_sample != NULL &&
+                ui->transform_preview_sample->data != NULL &&
+                ui->transform_preview_last > ui->transform_preview_first &&
+                ui->transform_preview_sample->frames ==
+                    ui->transform_preview_last - ui->transform_preview_first &&
+                at >= ui->transform_preview_first && at < ui->transform_preview_last)
+                value = ui->transform_preview_sample->data[
+                    at - ui->transform_preview_first];
+            if (value < low) low = value;
+            if (value > high) high = value;
         }
         y0 = middle - (int)lrintf(high * (TS_TRANSFORM_WAVE_H / 2 - 4));
         y1 = middle - (int)lrintf(low * (TS_TRANSFORM_WAVE_H / 2 - 4));
@@ -619,6 +629,10 @@ static void transform_waveform(TsFramebuffer *fb, const TsUiState *ui,
             y1 = TS_TRANSFORM_WAVE_Y + TS_TRANSFORM_WAVE_H - 1;
         rect(fb, TS_TRANSFORM_WAVE_X + column, y0, 1,
              y1 > y0 ? y1 - y0 + 1 : 1,
+             ui->transform_backend == TS_TRANSFORM_BACKEND_DSP &&
+             ui->transform_preview_available &&
+             end > ui->transform_preview_first &&
+             begin < ui->transform_preview_last ? PAL_EFFECT :
              instrument->has_selection && end > instrument->selection_first &&
              begin < instrument->selection_last ? PAL_BLOCK_TEXT : PAL_NOTE);
     }
@@ -654,30 +668,67 @@ static void transform_control(TsFramebuffer *fb, const TsCdpRecipe *recipe,
     rect(fb, x + 3, 169, (int)lrintf(amount * 134.0f), 12, PAL_BLOCK);
 }
 
+static void dsp_transform_control(TsFramebuffer *fb,
+                                  const TsDspPresetSpec *spec,
+                                  const TsPortableRecipe *working,
+                                  size_t index)
+{
+    const TsDspControlSpec *control;
+    float amount;
+    int x;
+    char shown[48];
+    if (spec == NULL || working == NULL || index >= spec->control_count) return;
+    control = &spec->controls[index];
+    amount = working->dsp_controls[index];
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    x = 20 + (int)index * 150;
+    ts_dsp_control_format(control, amount, shown, sizeof(shown));
+    text(fb, x, 155, control->label, PAL_TUNING, 1);
+    text(fb, x + 62, 155, shown, PAL_EFFECT, 1);
+    frame(fb, x, 166, 140, 18, RGB(12, 12, 12), PAL_BUTTON);
+    rect(fb, x + 3, 169, (int)lrintf(amount * 134.0f), 12, PAL_BLOCK);
+}
+
 static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
                              const TsInstrument *instrument)
 {
-    const TsCdpRecipe *recipe =
+    const int dsp = ui->transform_backend == TS_TRANSFORM_BACKEND_DSP;
+    const TsCdpRecipe *recipe = dsp ? NULL :
         ts_cdp_factory_recipe_at((size_t)ui->transform_recipe_index);
+    const TsPortableRecipe *working = dsp ? &ui->transform_dsp_working : NULL;
+    const TsDspPresetSpec *dsp_spec = dsp ?
+        ts_dsp_preset_spec(working->dsp_profile) : NULL;
+    const char *name;
+    const char *description;
     char mix[32];
     char selection[48];
-    if (recipe == NULL) recipe = ts_cdp_factory_recipe_at(0u);
-    if (recipe == NULL) return;
+    if (!dsp && recipe == NULL) recipe = ts_cdp_factory_recipe_at(0u);
+    if (!dsp && recipe == NULL) return;
+    name = dsp ? working->name : recipe->display_name;
+    description = dsp ? dsp_spec->description : recipe->description;
     frame(fb, 10, 40, 620, 264, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 46, "TRANSFORM", PAL_NOTE, 1);
-    text(fb, 452, 46, "OFFLINE CDP8", PAL_EFFECT, 1);
+    text(fb, dsp ? 476 : 452, 46, dsp ? "NATIVE DSP" : "OFFLINE CDP8",
+         PAL_EFFECT, 1);
     transform_waveform(fb, ui, instrument);
-    button(fb, 20, 126, 94, recipe->display_name, 1);
-    text(fb, 124, 134, recipe->description, PAL_INSTRUMENT, 1);
-    for (size_t i = 0; i < TS_CDP_CONTROL_COUNT; ++i)
-        transform_control(fb, recipe, &ui->transform_values, i,
-                          instrument->current.sample_rate);
-    if (recipe->mix_policy == TS_CDP_MIX_UNSUPPORTED)
-        snprintf(mix, sizeof(mix), "MIX N/A");
-    else
-        snprintf(mix, sizeof(mix), "MIX %d%%",
-                 (int)lrintf(ui->transform_values.mix * 100.0f));
-    button(fb, 20, 190, 112, mix, 0);
+    button(fb, 20, 126, 94, name, 1);
+    text(fb, 124, 134, description, PAL_INSTRUMENT, 1);
+    if (dsp) {
+        for (size_t i = 0; i < dsp_spec->control_count; ++i)
+            dsp_transform_control(fb, dsp_spec, working, i);
+        button(fb, 20, 190, 112, "AUTO PREVIEW", ui->transform_rendering);
+    } else {
+        for (size_t i = 0; i < TS_CDP_CONTROL_COUNT; ++i)
+            transform_control(fb, recipe, &ui->transform_values, i,
+                              instrument->current.sample_rate);
+        if (recipe->mix_policy == TS_CDP_MIX_UNSUPPORTED)
+            snprintf(mix, sizeof(mix), "MIX N/A");
+        else
+            snprintf(mix, sizeof(mix), "MIX %d%%",
+                     (int)lrintf(ui->transform_values.mix * 100.0f));
+        button(fb, 20, 190, 112, mix, 0);
+    }
     button(fb, 142, 190, 110, "SELECTION",
            ui->transform_scope == TS_TRANSFORM_SELECTION &&
            instrument->has_selection);
@@ -688,23 +739,25 @@ static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
              instrument->selection_first, instrument->selection_last);
     text(fb, 350, 198, selection,
          instrument->has_selection ? PAL_TUNING : RGB(150, 145, 150), 1);
-    button(fb, 20, 220, 88, ui->transform_rendering ? "WORKING" : "RENDER",
+    button(fb, 20, 220, 80, ui->transform_rendering ? "WORKING" : "RENDER",
            ui->transform_rendering);
-    button(fb, 116, 220, 78, "APPLY", ui->transform_preview_available);
-    button(fb, 202, 220, 102,
+    button(fb, 106, 220, 74, "APPLY", ui->transform_preview_available);
+    button(fb, 186, 220, 92,
            ui->transform_preview_active ? "STOP" : "AUDITION",
            ui->transform_preview_active);
-    button(fb, 312, 220, 78, ui->transform_rendering ? "CANCEL" : "BACK", 0);
-    text(fb, 408, 228,
+    button(fb, 284, 220, 110, dsp ? "SAVE/UPDATE" : "SAVE N/A", 0);
+    button(fb, 400, 220, 70, ui->transform_rendering ? "CANCEL" : "BACK", 0);
+    text(fb, 480, 228,
          ui->transform_preview_available ? ts_cdp_safety_name(ui->transform_safety) :
-         ui->transform_runtime_available ? "READY" : "NO RUNTIME",
+         dsp || ui->transform_runtime_available ? "READY" : "NO RUNTIME",
          ui->transform_safety == TS_CDP_SAFETY_HOT ? PAL_VOLUME : PAL_EFFECT, 1);
     text(fb, 20, 254, ui->transform_message, PAL_MOUSE, 1);
     text(fb, 20, 273,
+         dsp ? "SPACE AUDITIONS  U SAVES PRESET  ESC CANCELS OR RETURNS" :
          ui->transform_runtime_available ?
          "SPACE AUDITIONS  ENTER RENDERS  ESC CANCELS OR RETURNS" :
          "SET CDP BIN PATH IN CONFIG - PVOC AND GLISTEN REQUIRED",
-         ui->transform_runtime_available ? PAL_TUNING : PAL_VOLUME, 1);
+         dsp || ui->transform_runtime_available ? PAL_TUNING : PAL_VOLUME, 1);
 }
 
 static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
@@ -823,7 +876,9 @@ void ts_ui_init(TsUiState *ui)
     ui->palette_channel = 0;
     ts_recipe_bank_init(&ui->recipes);
     ui->transform_scope = TS_TRANSFORM_WHOLE;
+    ui->transform_backend = TS_TRANSFORM_BACKEND_CDP;
     ui->transform_recipe_index = -1;
+    ui->transform_dsp_slot = -1;
     ui->transform_safety = TS_CDP_SAFETY_INVALID;
     ts_cdp_recipe_values_default(ts_cdp_factory_recipe_at(0u),
                                  &ui->transform_values);
@@ -965,10 +1020,11 @@ TsUiTransformAction ts_ui_transform_action_from_point(int x, int y)
     if (x >= 258 && x < 336 && y >= 190 && y < 213)
         return TS_UI_TRANSFORM_ACTION_WHOLE;
     if (y >= 220 && y < 243) {
-        if (x >= 20 && x < 108) return TS_UI_TRANSFORM_ACTION_RENDER;
-        if (x >= 116 && x < 194) return TS_UI_TRANSFORM_ACTION_APPLY;
-        if (x >= 202 && x < 304) return TS_UI_TRANSFORM_ACTION_AUDITION;
-        if (x >= 312 && x < 390) return TS_UI_TRANSFORM_ACTION_BACK;
+        if (x >= 20 && x < 100) return TS_UI_TRANSFORM_ACTION_RENDER;
+        if (x >= 106 && x < 180) return TS_UI_TRANSFORM_ACTION_APPLY;
+        if (x >= 186 && x < 278) return TS_UI_TRANSFORM_ACTION_AUDITION;
+        if (x >= 284 && x < 394) return TS_UI_TRANSFORM_ACTION_SAVE;
+        if (x >= 400 && x < 470) return TS_UI_TRANSFORM_ACTION_BACK;
     }
     return TS_UI_TRANSFORM_ACTION_NONE;
 }
@@ -1835,7 +1891,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         }
     } else if (ui->show_ingredients) {
         text(fb, 11, 318,
-             "DSP  CLICK APPLY  SHIFT CAPTURE  RMB RENAME  SHIFT+RMB CLEAR  SAVE TSP",
+             "DSP  CLICK APPLY  MIDDLE EDIT  SHIFT CAPTURE  RMB RENAME  SAVE TSP",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
             const TsPortableRecipe *slot = &ui->recipes.slots[i];

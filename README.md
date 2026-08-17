@@ -202,12 +202,17 @@ number keys select them directly: `1` Sample Tiles, `2` Keyboard, `3` CDP, and `
 CDP is a 16-tile curated offline-transform bank; tile 01 contains GLISTEN and the other
 tiles remain visibly empty until functional transforms are added. Its future recipes may
 use validated CDP8 pipelines or native C implementations behind the same compact
-Transform workspace. DSP contains the original eight immutable factory process recipes
-and eight user slots. Click a filled DSP slot to apply its processing to the selected
-tile as one undoable render. Shift-click an empty user slot to capture the live processing
-shelf, right-click a filled user slot to rename it, and Shift-right-click to clear it.
-Factory recipes and their names remain immutable. Manual shelf changes remove the
-active-slot highlight without altering the stored recipe.
+Transform workspace. DSP contains eight factory transformations and eight user slots.
+Left-click a filled DSP tile for the fast path: its saved settings transform the current
+selection, or the whole tile when no selection exists, as one Undo step. Middle-click a
+filled DSP tile to shape it in the shared Transform workspace. Its two to four musical
+macros update an owned temporary preview without changing tile audio; Space auditions,
+Apply commits, Back/Escape discards, and Save/Update stores the tile's macro settings.
+Factory updates persist in `tapesister.ini`. A user tile keeps the update in its portable
+recipe and the normal top Save writes it as a TSP. Shift-click an empty user slot still
+captures the live processing shelf, right-click renames, and Shift-right-click clears.
+Factory names remain immutable. See `docs/DSP_TRANSFORM.md` for the processing and
+transaction contract.
 
 The compact **LOOP** audition button repeats a fixed selection when one exists, otherwise it follows the visible tile view as that view is zoomed or panned. A short boundary crossfade uses the existing audition engine. While LOOP is active it remains the audition owner, so WARP, SMEAR, and TEAR continue publishing spring-loaded previews without their usual timed playback retriggers. Ordinary LOOP remains temporary. Shift-click **LOOP** to engage LOOP LOCK across every editing and tile operation; Shift-click it again to release.
 
@@ -247,6 +252,12 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - mono 16-bit selected-tile export with sampler-compatible root/fine-tune and loop metadata.
 
 Sample edits are deterministic and tile-owned. With no selection they affect the whole selected tile; with a selection they affect only that range.
+
+All ordinary sample audition uses the tile's current audible tuning without rewriting
+its waveform. This includes Space for the whole tile or persistent selection, playhead
+and tile audition, Loop/Loop Lock, Drone and Transform previews. Changing ROOT/PITCH
+updates an audition that is already playing and every subsequent audition. Keyboard
+notes continue to transpose against the paired keyboard-mapping tuning.
 
 The audio clipboard survives tile changes for the lifetime of the app, while every tile keeps and immediately restores its own selection. **Paste** replaces the destination selection with the copied sound at its exact duration: a shorter destination makes the tile grow and a longer destination makes it shrink. With no destination selection, Paste overwrites at the source selection's original time position, preserves the target duration when the material fits, and extends the tile only when necessary; a target shorter than that time position is padded with silence. **Fit** stretches or compresses the copied sound into the destination selection, keeping the tile length fixed and deliberately changing playback speed and pitch. Cut ripple-removes the selected range; cutting the whole tile is refused in favor of the explicit Clear command. All mutations participate in the destination tile's Undo/Redo history.
 

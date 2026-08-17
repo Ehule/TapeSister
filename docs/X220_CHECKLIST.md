@@ -41,6 +41,20 @@ This is a musical and interaction checkpoint. Passing automated tests alone is n
 - [ ] Crop and tape gestures keep loop coordinates valid; Undo restores the previous loop exactly.
 - [ ] Root note, fine tuning, and pitch suggestion belong to the selected tile and survive tile switching.
 - [ ] Held notes respond safely to tuning and render changes without becoming stuck.
+- [ ] Space plays the persistent selection when present and otherwise preserves the established whole/playhead behavior, all at the displayed audible tuning.
+- [ ] Down, Up, and Trim retune an already-running ordinary audition without changing the waveform hash.
+- [ ] Occupied Bank tile, Loop/Loop Lock, Drone, and Transform preview audition use the same audible tuning as Space.
+- [ ] Keyboard notes remain correctly transposed relative to the accepted mapping root.
+
+## Native DSP transformations
+
+- [ ] Left-clicking a filled DSP tile transforms only the persistent selection, or the whole tile when there is no selection, in one Undo step.
+- [ ] Middle-click opens its native DSP Transform workspace and preserves the exact selection and viewport.
+- [ ] Wheel and pointer changes to every displayed macro publish a new temporary waveform preview while source audio and history remain unchanged.
+- [ ] Space auditions the temporary preview; Apply commits it once; Back/Escape discards it without mutation.
+- [ ] SAVE/UPDATE survives closing the workspace and relaunching TapeSister, and the next left click uses the saved macro positions.
+- [ ] Starting several previews quickly publishes only the newest result; closing or switching tiles prevents stale publication.
+- [ ] BODY is clearly audible at both extremes, EDGE retains its established detail, and DRIFT reads as bounded organic timing motion.
 
 ## Files, export, and compatibility
 

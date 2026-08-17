@@ -225,8 +225,8 @@ int ts_transform_mix_samples(const TsSample *dry, const TsSample *wet,
     return 1;
 }
 
-static void boundary_splice(TsSample *replacement, const TsSample *tile,
-                            size_t first, size_t last)
+void ts_transform_boundary_splice(TsSample *replacement, const TsSample *tile,
+                                  size_t first, size_t last)
 {
     size_t fade;
     if (replacement == NULL || tile == NULL || replacement->data == NULL ||
@@ -293,7 +293,7 @@ int ts_transform_prepare_preview(const TsInstrument *instrument,
     last = identity->scope == TS_TRANSFORM_SELECTION ?
            identity->selection_last : instrument->current.frames;
     if (identity->scope == TS_TRANSFORM_SELECTION && identity->values.mix > 0.0f)
-        boundary_splice(&mixed, &instrument->current, first, last);
+        ts_transform_boundary_splice(&mixed, &instrument->current, first, last);
     ts_transform_preview_free(preview);
     preview->identity = *identity;
     preview->sample = mixed;

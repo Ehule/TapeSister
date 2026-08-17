@@ -935,14 +935,36 @@ int main(void)
         CHECK(generated.tuning.root_note == 64);
         {
             double before_pitch = ts_tuning_note_pitch(&generated.tuning, 0);
+            uint64_t before_tuning_hash = ts_sample_hash(&generated.current);
             CHECK(ts_instrument_set_audible_tuning(&generated, 65, 17.5f,
                                                     error, sizeof(error)));
             CHECK(generated.audible_tuning.root_note == 65);
             CHECK(ts_tuning_note_pitch(&generated.tuning, 0) > before_pitch);
+            CHECK(ts_sample_hash(&generated.current) == before_tuning_hash);
+            CHECK(fabs(ts_instrument_audition_pitch(&generated) -
+                       pow(2.0, 1.0 / 12.0)) < 0.000001);
+            {
+                TsAuditionPlan whole_plan;
+                TsAuditionPlan selection_plan;
+                ts_instrument_set_selection(&generated, 100u, 1000u);
+                CHECK(ts_audition_plan(&generated, TS_AUDITION_CURRENT,
+                                       TS_AUDITION_ALL, &whole_plan));
+                CHECK(ts_audition_plan(&generated, TS_AUDITION_CURRENT,
+                                       TS_AUDITION_SELECTION, &selection_plan));
+                CHECK(whole_plan.first == 0u &&
+                      whole_plan.last == generated.current.frames);
+                CHECK(selection_plan.first == 100u &&
+                      selection_plan.last == 1000u);
+                CHECK(ts_instrument_audition_pitch(&generated) ==
+                      ts_tuning_pair_audition_pitch(
+                          &generated.tuning, &generated.audible_tuning));
+            }
             CHECK(ts_instrument_undo(&generated, error, sizeof(error)));
             CHECK(generated.audible_tuning.root_note == 64);
+            CHECK(ts_sample_hash(&generated.current) == before_tuning_hash);
             CHECK(ts_instrument_redo(&generated, error, sizeof(error)));
             CHECK(generated.audible_tuning.root_note == 65);
+            CHECK(ts_sample_hash(&generated.current) == before_tuning_hash);
         }
     }
 
@@ -2098,6 +2120,11 @@ int main(void)
                  "/opt/ft2 tapehead/ft2-clone");
         snprintf(config.exchange_path, sizeof(config.exchange_path), "/samples/handoff");
         snprintf(config.cdp_bin_path, sizeof(config.cdp_bin_path), "/opt/cdp/bin");
+        config.dsp_factory_overridden[4] = 1;
+        config.dsp_factory_controls[4][0] = 0.11f;
+        config.dsp_factory_controls[4][1] = 0.22f;
+        config.dsp_factory_controls[4][2] = 0.33f;
+        config.dsp_factory_controls[4][3] = 0.44f;
         CHECK(ts_config_save(&config, "test-tapesister.ini", error, sizeof(error)));
         ts_config_init(&reopened);
         CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
@@ -2109,6 +2136,11 @@ int main(void)
               reopened.startup_welcome_autoplay == 1);
         CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
         CHECK(reopened.playhead_zero_snap == 0);
+        CHECK(reopened.dsp_factory_overridden[4]);
+        CHECK(fabsf(reopened.dsp_factory_controls[4][0] - 0.11f) < 0.000001f &&
+              fabsf(reopened.dsp_factory_controls[4][1] - 0.22f) < 0.000001f &&
+              fabsf(reopened.dsp_factory_controls[4][2] - 0.33f) < 0.000001f &&
+              fabsf(reopened.dsp_factory_controls[4][3] - 0.44f) < 0.000001f);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
                      "FASTTRACKER EXECUTABLE") == 0);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_CDP_BIN_PATH),
@@ -2159,6 +2191,15 @@ int main(void)
                 fclose(config_file);
             }
             CHECK(!ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            remove("test-tapesister.ini");
+            config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("DspPreset05=0.1,0.2,1.5,0.4\n", config_file);
+                fclose(config_file);
+            }
+            CHECK(!ts_config_load(&reopened, "test-tapesister.ini",
+                                  error, sizeof(error)));
             remove("test-tapesister.ini");
         }
         {

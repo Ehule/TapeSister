@@ -297,6 +297,37 @@ int main(int argc, char **argv)
         ui.show_recipes = 1;
         snprintf(ui.status, sizeof(ui.status),
                  "CDP TILE 01 GLISTEN - CLICK OPENS FOUR-CONTROL TRANSFORM");
+    } else if (argc > 2 && strcmp(argv[2], "dsp-transform") == 0) {
+        TsPortableRecipe *working = &ui.transform_dsp_working;
+        *working = ui.recipes.slots[4];
+        if (!ts_dsp_preset_set_control(working, 0u, 0.42f) ||
+            !ts_dsp_preset_set_control(working, 1u, 0.72f) ||
+            !ts_dsp_preset_set_control(working, 2u, 0.61f) ||
+            !ts_dsp_preset_set_control(working, 3u, 0.54f) ||
+            !ts_sample_process(&drone_preview, &instrument.current,
+                               instrument.selection_first,
+                               instrument.selection_last,
+                               &working->process, error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ts_transform_boundary_splice(&drone_preview, &instrument.current,
+                                     instrument.selection_first,
+                                     instrument.selection_last);
+        ui.transform_open = 1;
+        ui.transform_backend = TS_TRANSFORM_BACKEND_DSP;
+        ui.transform_dsp_slot = 4;
+        ui.transform_scope = TS_TRANSFORM_SELECTION;
+        ui.transform_preview_sample = &drone_preview;
+        ui.transform_preview_first = instrument.selection_first;
+        ui.transform_preview_last = instrument.selection_last;
+        ui.transform_preview_available = 1;
+        ui.transform_safety = TS_CDP_SAFETY_SAFE;
+        snprintf(ui.transform_message, sizeof(ui.transform_message),
+                 "PREVIEW READY - SOURCE AUDIO AND HISTORY ARE UNCHANGED");
+        snprintf(ui.status, sizeof(ui.status),
+                 "DUB ECHO DSP - SAVE ONCE, LEFT CLICK TO PERFORM IT LATER");
     } else if (argc > 2 && strcmp(argv[2], "tuning") == 0) {
         if (!ts_instrument_set_tuning(&instrument, 57, -14.2f,
                                       error, sizeof(error))) {
