@@ -1131,6 +1131,116 @@ static void curated_dsp_direct_scope_and_tile_tests(void)
     ts_instrument_free(&instrument);
 }
 
+static void curated_dsp_apply_keeps_native_shelf_live_tests(void)
+{
+    char error[160];
+    TsInstrument instrument;
+    TsDspRecipeValues values;
+    TsProcessRecipe neutral;
+    TsProcessRecipe process;
+    const TsDspRecipe *drive = ts_dsp_recipe_find("drive");
+    const TsDspRecipe *echo = ts_dsp_recipe_find("echo");
+    uint64_t accepted_hash;
+
+    /* Exercise the exact left-click DSP-bank Apply path. The accepted recipe
+       must become stable editable material below BODY/EDGE/DRIFT and the
+       NOISE/SHAPE/DELAY/SPACE shelf, never a patch that masks that shelf. */
+    setup(&instrument, 8192u);
+    ts_instrument_clear_selection(&instrument);
+    ts_dsp_recipe_values_default(drive, &values);
+    values.controls[0] = 0.78f;
+    values.controls[3] = 0.86f;
+    CHECK(ts_dsp_transform_apply_direct_recipe(
+        &instrument, drive, &values, TS_TRANSFORM_WHOLE,
+        error, sizeof(error)));
+    accepted_hash = ts_sample_hash(&instrument.current);
+    ts_process_recipe_reset(&neutral);
+    neutral.seed = instrument.process.seed;
+    CHECK(ts_process_recipe_equal(&instrument.process, &neutral));
+
+    process = neutral;
+    process.body = 0.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+
+    process = neutral;
+    process.edge = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+
+    process = neutral;
+    process.drift = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+
+    process = neutral;
+    process.noise_enabled = 1;
+    process.noise_amount = 1.0f;
+    process.noise_color = TS_NOISE_METALLIC;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+
+    process = neutral;
+    process.shaper_enabled = 1;
+    process.shaper_mode = TS_SHAPER_FOLD;
+    process.shaper_drive = 14.0f;
+    process.shaper_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+
+    process = neutral;
+    process.delay_enabled = 1;
+    process.delay_seconds = 0.005f;
+    process.delay_feedback = 0.8f;
+    process.delay_damping = 0.1f;
+    process.delay_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+
+    process = neutral;
+    process.reverb_enabled = 1;
+    process.reverb_decay = 0.9f;
+    process.reverb_damping = 0.1f;
+    process.reverb_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+    ts_instrument_free(&instrument);
+
+    /* The same guarantee applies when the bank recipe replaces a selection. */
+    setup(&instrument, 8192u);
+    ts_dsp_recipe_values_default(echo, &values);
+    CHECK(ts_dsp_transform_apply_direct_recipe(
+        &instrument, echo, &values, TS_TRANSFORM_SELECTION,
+        error, sizeof(error)));
+    accepted_hash = ts_sample_hash(&instrument.current);
+    ts_process_recipe_reset(&neutral);
+    neutral.seed = instrument.process.seed;
+    process = neutral;
+    process.shaper_enabled = 1;
+    process.shaper_mode = TS_SHAPER_CLIP;
+    process.shaper_drive = 12.0f;
+    process.shaper_mix = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+    ts_instrument_free(&instrument);
+}
+
 static void transform_ui_contract_tests(void)
 {
     TsInstrument instrument;
@@ -1449,6 +1559,7 @@ int main(void)
     curated_dsp_bank_and_render_tests();
     curated_dsp_preview_apply_tests();
     curated_dsp_direct_scope_and_tile_tests();
+    curated_dsp_apply_keeps_native_shelf_live_tests();
     transform_ui_contract_tests();
     runtime_missing_test();
 #ifndef _WIN32
