@@ -2,6 +2,7 @@
 
 #include "tapesister/cdp_adapter.h"
 #include "tapesister/cdp_recipe.h"
+#include "tapesister/dsp_transform.h"
 #include "tapesister/transform.h"
 #include "tapesister/ui.h"
 
@@ -319,6 +320,194 @@ static void replacement_lengths_and_selection_persistence_tests(void)
     ts_instrument_free(&instrument);
 }
 
+static void native_dsp_recipe_and_preview_tests(void)
+{
+    char error[160];
+    TsRecipeBank bank;
+    TsInstrument instrument;
+    TsDspTransformIdentity identity;
+    TsDspTransformPreview preview;
+    TsSample before;
+    TsSample input;
+    TsSample rendered;
+    TsCdpSafetyStatus safety = TS_CDP_SAFETY_INVALID;
+    float peak = 0.0f;
+    double dc = 0.0;
+    int clipped = 0;
+    size_t first;
+    size_t last;
+    ts_recipe_bank_init(&bank);
+    for (int slot = 0; slot < TS_FACTORY_RECIPE_COUNT; ++slot) {
+        const TsPortableRecipe *preset = &bank.slots[slot];
+        const TsDspPresetSpec *spec = ts_dsp_preset_spec(preset->dsp_profile);
+        CHECK(preset->has_dsp_controls && spec != NULL);
+        CHECK(spec->control_count >= 2u &&
+              spec->control_count <= TS_DSP_CONTROL_COUNT);
+        for (size_t index = 0; index < spec->control_count; ++index) {
+            CHECK(spec->controls[index].label != NULL &&
+                  spec->controls[index].label[0] != '\0');
+            CHECK(preset->dsp_controls[index] >= 0.0f &&
+                  preset->dsp_controls[index] <= 1.0f);
+        }
+    }
+    {
+        TsPortableRecipe edited = bank.slots[4];
+        CHECK(ts_dsp_preset_set_control(&edited, 0u, -1.0f));
+        CHECK(edited.dsp_controls[0] == 0.0f);
+        CHECK(ts_dsp_preset_set_control(&edited, 0u, 2.0f));
+        CHECK(edited.dsp_controls[0] == 1.0f);
+        CHECK(!ts_dsp_preset_set_control(&edited, 0u, NAN));
+        CHECK(!ts_process_recipe_equal(&edited.process,
+                                       &bank.slots[4].process));
+    }
+
+    setup(&instrument, 8192u);
+    first = instrument.selection_first;
+    last = instrument.selection_last;
+    instrument.view_first = 900u;
+    instrument.view_last = 6100u;
+    ts_sample_init(&before);
+    ts_sample_init(&input);
+    ts_sample_init(&rendered);
+    ts_dsp_transform_preview_init(&preview);
+    CHECK(ts_sample_clone(&before, &instrument.current, error, sizeof(error)));
+    CHECK(ts_dsp_transform_identity_capture(
+        &identity, &instrument, TS_TRANSFORM_SELECTION, 1,
+        &bank.slots[1].process, 77u, 9u, error, sizeof(error)));
+    CHECK(ts_dsp_transform_identity_matches(
+        &identity, &instrument, TS_TRANSFORM_SELECTION, 1,
+        &bank.slots[1].process, 9u, error, sizeof(error)));
+    CHECK(ts_dsp_transform_extract_input(&instrument, &identity, &input,
+                                         error, sizeof(error)));
+    CHECK(input.frames == last - first &&
+          input.data != instrument.current.data + first);
+    CHECK(ts_dsp_transform_render(&input, &bank.slots[1].process, &rendered,
+                                  &safety, &peak, &dc, &clipped,
+                                  error, sizeof(error)));
+    CHECK(rendered.frames == input.frames && isfinite(peak) && isfinite(dc));
+    CHECK(ts_sample_hash(&instrument.current) == ts_sample_hash(&before) &&
+          instrument.undo_count == 0);
+    CHECK(ts_dsp_transform_prepare_preview(
+        &instrument, &identity, &rendered, safety, peak, dc, clipped,
+        &preview, error, sizeof(error)));
+    CHECK(preview.valid && preview.sample.data != rendered.data &&
+          preview.replacement_first == first &&
+          preview.replacement_last == last);
+    CHECK(ts_sample_hash(&instrument.current) == ts_sample_hash(&before) &&
+          instrument.undo_count == 0);
+    ts_dsp_transform_preview_free(&preview);
+    CHECK(!preview.valid && preview.sample.data == NULL &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&before) &&
+          instrument.undo_count == 0);
+    CHECK(ts_dsp_transform_prepare_preview(
+        &instrument, &identity, &rendered, safety, peak, dc, clipped,
+        &preview, error, sizeof(error)));
+    ts_instrument_set_selection(&instrument, first + 1u, last);
+    CHECK(!ts_dsp_transform_identity_matches(
+        &identity, &instrument, TS_TRANSFORM_SELECTION, 1,
+        &bank.slots[1].process, 9u, error, sizeof(error)));
+    ts_instrument_set_selection(&instrument, first, last);
+    {
+        TsProcessRecipe changed = bank.slots[1].process;
+        changed.body = changed.body > 0.5f ? changed.body - 0.1f : changed.body + 0.1f;
+        CHECK(!ts_dsp_transform_identity_matches(
+            &identity, &instrument, TS_TRANSFORM_SELECTION, 1,
+            &changed, 9u, error, sizeof(error)));
+    }
+    CHECK(ts_dsp_transform_apply_preview(
+        &instrument, &preview, TS_TRANSFORM_SELECTION, 1,
+        &bank.slots[1].process, 9u, error, sizeof(error)));
+    CHECK(instrument.undo_count == 1 && instrument.current.frames == before.frames);
+    CHECK(instrument.selection_first == first && instrument.selection_last == last);
+    CHECK(memcmp(instrument.current.data, before.data,
+                 first * sizeof(*before.data)) == 0);
+    CHECK(memcmp(instrument.current.data + last, before.data + last,
+                 (before.frames - last) * sizeof(*before.data)) == 0);
+    CHECK(instrument.view_first == 900u && instrument.view_last == 6100u);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) == ts_sample_hash(&before) &&
+          instrument.selection_first == first && instrument.selection_last == last &&
+          instrument.view_first == 900u && instrument.view_last == 6100u);
+    CHECK(ts_instrument_redo(&instrument, error, sizeof(error)));
+    CHECK(instrument.selection_first == first && instrument.selection_last == last);
+    ts_dsp_transform_preview_free(&preview);
+    ts_sample_free(&rendered);
+    ts_sample_free(&input);
+    ts_sample_free(&before);
+    ts_instrument_free(&instrument);
+}
+
+static void native_dsp_direct_and_body_range_tests(void)
+{
+    char error[160];
+    TsRecipeBank bank;
+    TsInstrument instrument;
+    TsSample before;
+    TsSample center;
+    TsSample light;
+    TsSample heavy;
+    TsProcessRecipe process;
+    double light_difference = 0.0;
+    double heavy_difference = 0.0;
+    size_t first;
+    size_t last;
+    ts_recipe_bank_init(&bank);
+    setup(&instrument, 8192u);
+    first = instrument.selection_first;
+    last = instrument.selection_last;
+    ts_sample_init(&before);
+    CHECK(ts_sample_clone(&before, &instrument.current, error, sizeof(error)));
+    CHECK(ts_dsp_transform_apply_direct(
+        &instrument, 4, &bank.slots[4].process,
+        TS_TRANSFORM_SELECTION, error, sizeof(error)));
+    CHECK(instrument.undo_count == 1 && instrument.current.frames == before.frames);
+    CHECK(memcmp(instrument.current.data, before.data,
+                 first * sizeof(*before.data)) == 0);
+    CHECK(memcmp(instrument.current.data + last, before.data + last,
+                 (before.frames - last) * sizeof(*before.data)) == 0);
+    CHECK(ts_sample_hash(&instrument.current) != ts_sample_hash(&before));
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) == ts_sample_hash(&before));
+    ts_instrument_clear_selection(&instrument);
+    CHECK(ts_dsp_transform_apply_direct(
+        &instrument, 1, &bank.slots[1].process,
+        TS_TRANSFORM_WHOLE, error, sizeof(error)));
+    CHECK(instrument.undo_count == 1 &&
+          ts_sample_hash(&instrument.current) != ts_sample_hash(&before) &&
+          instrument.selection_first == 0u &&
+          instrument.selection_last == instrument.current.frames);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&before) &&
+          !instrument.has_selection);
+
+    ts_sample_init(&center);
+    ts_sample_init(&light);
+    ts_sample_init(&heavy);
+    ts_process_recipe_reset(&process);
+    process.body = 0.5f;
+    CHECK(ts_sample_process(&center, &before, 0u, before.frames,
+                            &process, error, sizeof(error)));
+    CHECK(ts_sample_hash(&center) == ts_sample_hash(&before));
+    process.body = 0.0f;
+    CHECK(ts_sample_process(&light, &before, 0u, before.frames,
+                            &process, error, sizeof(error)));
+    process.body = 1.0f;
+    CHECK(ts_sample_process(&heavy, &before, 0u, before.frames,
+                            &process, error, sizeof(error)));
+    for (size_t frame = 0; frame < before.frames; ++frame) {
+        light_difference += fabs((double)light.data[frame] - before.data[frame]);
+        heavy_difference += fabs((double)heavy.data[frame] - before.data[frame]);
+    }
+    CHECK(light_difference / before.frames > 0.02);
+    CHECK(heavy_difference / before.frames > 0.02);
+    CHECK(ts_sample_hash(&light) != ts_sample_hash(&heavy));
+    ts_sample_free(&heavy);
+    ts_sample_free(&light);
+    ts_sample_free(&center);
+    ts_sample_free(&before);
+    ts_instrument_free(&instrument);
+}
+
 static void transform_ui_contract_tests(void)
 {
     TsInstrument instrument;
@@ -350,6 +539,8 @@ static void transform_ui_contract_tests(void)
     CHECK(ts_ui_transform_action_from_point(130, 230) ==
           TS_UI_TRANSFORM_ACTION_APPLY);
     CHECK(ts_ui_transform_action_from_point(320, 230) ==
+          TS_UI_TRANSFORM_ACTION_SAVE);
+    CHECK(ts_ui_transform_action_from_point(430, 230) ==
           TS_UI_TRANSFORM_ACTION_BACK);
     ts_instrument_set_selection(&instrument, 4000u, instrument.current.frames);
     ts_ui_render(&framebuffer, &ui, &instrument);
@@ -540,6 +731,8 @@ int main(void)
     identity_and_apply_tests();
     tile_isolation_and_whole_tests();
     replacement_lengths_and_selection_persistence_tests();
+    native_dsp_recipe_and_preview_tests();
+    native_dsp_direct_and_body_range_tests();
     transform_ui_contract_tests();
     runtime_missing_test();
 #ifndef _WIN32

@@ -82,6 +82,33 @@ int ts_bank_audition_plan(const TsInstrument *instrument, int slot,
     return 1;
 }
 
+double ts_tuning_pair_audition_pitch(const TsTuning *mapping,
+                                     const TsTuning *audible)
+{
+    double mapped;
+    double heard;
+    double shift;
+    if (mapping == NULL || audible == NULL ||
+        mapping->root_note < 0 || mapping->root_note > 127 ||
+        audible->root_note < 0 || audible->root_note > 127 ||
+        !isfinite(mapping->fine_tune_cents) ||
+        !isfinite(audible->fine_tune_cents)) return 1.0;
+    mapped = mapping->root_note + mapping->fine_tune_cents / 100.0;
+    heard = audible->root_note + audible->fine_tune_cents / 100.0;
+    /* set_audible_tuning moves the keyboard mapping equally in the opposite
+       direction. Half of the pair's separation is therefore the requested
+       non-destructive playback shift from the stored waveform. */
+    shift = (heard - mapped) * 0.5;
+    return pow(2.0, shift / 12.0);
+}
+
+double ts_instrument_audition_pitch(const TsInstrument *instrument)
+{
+    return instrument != NULL ?
+        ts_tuning_pair_audition_pitch(&instrument->tuning,
+                                      &instrument->audible_tuning) : 1.0;
+}
+
 size_t ts_audition_crossfade_frames(const TsAuditionPlan *plan, float milliseconds)
 {
     size_t frames;

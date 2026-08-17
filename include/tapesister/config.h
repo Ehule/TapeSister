@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 
+#include "tapesister/recipe.h"
+
 enum {
     TS_CONFIG_PATH_MAX = 1024,
     TS_CONFIG_FIELD_COUNT = 4,
@@ -35,6 +37,8 @@ typedef struct {
     int rotate_wheel_fine;
     int rotate_wheel_coarse;
     int drone_crossfade_ms;
+    int dsp_factory_overridden[TS_FACTORY_RECIPE_COUNT];
+    float dsp_factory_controls[TS_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
 } TsConfig;
 
 void ts_config_init(TsConfig *config);

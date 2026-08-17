@@ -70,6 +70,251 @@ int ts_recipe_process_valid(const TsProcessRecipe *p)
            isfinite(p->shaper_mix) && p->shaper_mix >= 0.0f && p->shaper_mix <= 1.0f;
 }
 
+int ts_process_recipe_equal(const TsProcessRecipe *a, const TsProcessRecipe *b)
+{
+    return a != NULL && b != NULL &&
+           a->seed == b->seed && a->body == b->body && a->edge == b->edge &&
+           a->drift == b->drift && a->noise_enabled == b->noise_enabled &&
+           a->noise_amount == b->noise_amount && a->noise_color == b->noise_color &&
+           a->delay_enabled == b->delay_enabled &&
+           a->delay_seconds == b->delay_seconds &&
+           a->delay_feedback == b->delay_feedback &&
+           a->delay_damping == b->delay_damping && a->delay_mix == b->delay_mix &&
+           a->reverb_enabled == b->reverb_enabled &&
+           a->reverb_decay == b->reverb_decay &&
+           a->reverb_damping == b->reverb_damping && a->reverb_mix == b->reverb_mix &&
+           a->filter_enabled == b->filter_enabled && a->filter_mode == b->filter_mode &&
+           a->filter_cutoff_hz == b->filter_cutoff_hz &&
+           a->filter_resonance == b->filter_resonance &&
+           a->shaper_enabled == b->shaper_enabled && a->shaper_mode == b->shaper_mode &&
+           a->shaper_drive == b->shaper_drive && a->shaper_mix == b->shaper_mix;
+}
+
+#define DSP_PERCENT(label_) {label_, 0.0f, 1.0f, 0.01f, 0, TS_DSP_VALUE_PERCENT}
+#define DSP_SECONDS(label_, lo_, hi_) {label_, lo_, hi_, 0.01f, 0, TS_DSP_VALUE_SECONDS}
+#define DSP_HERTZ(label_, lo_, hi_) {label_, lo_, hi_, 0.01f, 1, TS_DSP_VALUE_HERTZ}
+#define DSP_DRIVE(label_, lo_, hi_) {label_, lo_, hi_, 0.01f, 0, TS_DSP_VALUE_DRIVE}
+
+static const TsDspPresetSpec dsp_specs[TS_DSP_PROFILE_COUNT] = {
+    {TS_DSP_PROFILE_NEUTRAL, "CLEAN BODY, EDGE AND ORGANIC MOTION", 3,
+     {DSP_PERCENT("BODY"), DSP_PERCENT("EDGE"), DSP_PERCENT("DRIFT"), DSP_PERCENT("")}},
+    {TS_DSP_PROFILE_WARM, "TAPE WEIGHT AND SATURATED EDGES", 4,
+     {DSP_PERCENT("BODY"), DSP_DRIVE("DRIVE", 1.0f, 12.0f),
+      DSP_PERCENT("EDGE"), DSP_PERCENT("MIX")}},
+    {TS_DSP_PROFILE_DARK, "LOW-PASSED MASS WITH SLOW MOTION", 4,
+     {DSP_PERCENT("BODY"), DSP_HERTZ("CUTOFF", 80.0f, 6000.0f),
+      DSP_PERCENT("RES"), DSP_PERCENT("DRIFT")}},
+    {TS_DSP_PROFILE_BRIGHT, "HIGH-PASSED DUST AND SHARP DETAIL", 4,
+     {DSP_HERTZ("CUTOFF", 200.0f, 9000.0f),
+      {"DUST", 0.0f, 0.4f, 0.01f, 0, TS_DSP_VALUE_PERCENT},
+      DSP_PERCENT("EDGE"), DSP_PERCENT("DRIFT")}},
+    {TS_DSP_PROFILE_DUB, "DAMPED REPEATS WITH DIRECT MUSICAL TIMING", 4,
+     {DSP_SECONDS("TIME", 0.02f, 1.0f),
+      {"FEEDBACK", 0.0f, 0.85f, 0.01f, 0, TS_DSP_VALUE_PERCENT},
+      DSP_PERCENT("TONE"), DSP_PERCENT("MIX")}},
+    {TS_DSP_PROFILE_HOLLOW, "RESONANT FOCUS INSIDE A SHORT SPACE", 4,
+     {DSP_HERTZ("FOCUS", 100.0f, 7000.0f), DSP_PERCENT("RES"),
+      {"SPACE", 0.0f, 0.9f, 0.01f, 0, TS_DSP_VALUE_PERCENT},
+      DSP_PERCENT("MIX")}},
+    {TS_DSP_PROFILE_HARD, "CLIPPED PRESSURE WITH CONTROLLED WEIGHT", 4,
+     {DSP_DRIVE("DRIVE", 1.0f, 16.0f), DSP_PERCENT("EDGE"),
+      DSP_PERCENT("BODY"), DSP_PERCENT("MIX")}},
+    {TS_DSP_PROFILE_BROKEN, "FOLDED METAL, DUST AND UNSTABLE MOTION", 4,
+     {DSP_DRIVE("FOLD", 1.0f, 16.0f),
+      {"DUST", 0.0f, 0.4f, 0.01f, 0, TS_DSP_VALUE_PERCENT},
+      DSP_PERCENT("DRIFT"), DSP_PERCENT("MIX")}},
+    {TS_DSP_PROFILE_GENERIC, "BODY, EDGE AND ORGANIC MOTION", 3,
+     {DSP_PERCENT("BODY"), DSP_PERCENT("EDGE"), DSP_PERCENT("DRIFT"), DSP_PERCENT("")}}
+};
+
+#undef DSP_PERCENT
+#undef DSP_SECONDS
+#undef DSP_HERTZ
+#undef DSP_DRIVE
+
+static float clamp_unit(float value)
+{
+    if (value < 0.0f) return 0.0f;
+    if (value > 1.0f) return 1.0f;
+    return value;
+}
+
+const TsDspPresetSpec *ts_dsp_preset_spec(TsDspProfile profile)
+{
+    if (profile < 0 || profile >= TS_DSP_PROFILE_COUNT)
+        profile = TS_DSP_PROFILE_GENERIC;
+    return &dsp_specs[profile];
+}
+
+float ts_dsp_control_value(const TsDspControlSpec *control, float normalized)
+{
+    normalized = clamp_unit(normalized);
+    if (control == NULL) return normalized;
+    if (control->logarithmic && control->minimum > 0.0f &&
+        control->maximum > control->minimum)
+        return expf(logf(control->minimum) + normalized *
+                    logf(control->maximum / control->minimum));
+    return control->minimum + normalized * (control->maximum - control->minimum);
+}
+
+static float dsp_normalized(const TsDspControlSpec *control, float value)
+{
+    if (control == NULL || control->maximum <= control->minimum) return 0.0f;
+    if (control->logarithmic && control->minimum > 0.0f && value > 0.0f)
+        return clamp_unit(logf(value / control->minimum) /
+                          logf(control->maximum / control->minimum));
+    return clamp_unit((value - control->minimum) /
+                      (control->maximum - control->minimum));
+}
+
+void ts_dsp_control_format(const TsDspControlSpec *control, float normalized,
+                           char *text, size_t text_size)
+{
+    float value = ts_dsp_control_value(control, normalized);
+    if (text == NULL || text_size == 0u) return;
+    if (control == NULL) snprintf(text, text_size, "---");
+    else if (control->format == TS_DSP_VALUE_SECONDS) {
+        if (value < 1.0f) snprintf(text, text_size, "%dMS", (int)lrintf(value * 1000.0f));
+        else snprintf(text, text_size, "%.2FS", value);
+    } else if (control->format == TS_DSP_VALUE_HERTZ) {
+        if (value >= 1000.0f) snprintf(text, text_size, "%.1FK", value / 1000.0f);
+        else snprintf(text, text_size, "%dHZ", (int)lrintf(value));
+    }
+    else if (control->format == TS_DSP_VALUE_DRIVE)
+        snprintf(text, text_size, "X%.1F", value);
+    else
+        snprintf(text, text_size, "%d%%",
+                 (int)lrintf(value / (control->maximum > 0.0f ?
+                                      control->maximum : 1.0f) * 100.0f));
+}
+
+static void apply_dsp_controls(TsPortableRecipe *recipe)
+{
+    TsProcessRecipe *p;
+    const TsDspPresetSpec *spec;
+    float a, b, c, d;
+    if (recipe == NULL) return;
+    p = &recipe->process;
+    spec = ts_dsp_preset_spec(recipe->dsp_profile);
+    a = ts_dsp_control_value(&spec->controls[0], recipe->dsp_controls[0]);
+    b = ts_dsp_control_value(&spec->controls[1], recipe->dsp_controls[1]);
+    c = ts_dsp_control_value(&spec->controls[2], recipe->dsp_controls[2]);
+    d = ts_dsp_control_value(&spec->controls[3], recipe->dsp_controls[3]);
+    switch (recipe->dsp_profile) {
+    case TS_DSP_PROFILE_WARM:
+        p->body = a; p->shaper_enabled = 1; p->shaper_mode = TS_SHAPER_TAPE;
+        p->shaper_drive = b; p->edge = c; p->shaper_mix = d; break;
+    case TS_DSP_PROFILE_DARK:
+        p->body = a; p->filter_enabled = 1; p->filter_mode = TS_FILTER_LOWPASS;
+        p->filter_cutoff_hz = b; p->filter_resonance = c; p->drift = d; break;
+    case TS_DSP_PROFILE_BRIGHT:
+        p->filter_enabled = 1; p->filter_mode = TS_FILTER_HIGHPASS;
+        p->filter_cutoff_hz = a; p->noise_enabled = b > 0.0001f;
+        p->noise_amount = b; p->edge = c; p->drift = d; break;
+    case TS_DSP_PROFILE_DUB:
+        p->delay_enabled = 1; p->delay_seconds = a; p->delay_feedback = b;
+        p->delay_damping = 1.0f - c; p->delay_mix = d; break;
+    case TS_DSP_PROFILE_HOLLOW:
+        p->filter_enabled = 1; p->filter_mode = TS_FILTER_BANDPASS;
+        p->filter_cutoff_hz = a; p->filter_resonance = b;
+        p->reverb_enabled = 1; p->reverb_decay = c; p->reverb_mix = d; break;
+    case TS_DSP_PROFILE_HARD:
+        p->shaper_enabled = 1; p->shaper_mode = TS_SHAPER_CLIP;
+        p->shaper_drive = a; p->edge = b; p->body = c; p->shaper_mix = d; break;
+    case TS_DSP_PROFILE_BROKEN:
+        p->shaper_enabled = 1; p->shaper_mode = TS_SHAPER_FOLD;
+        p->shaper_drive = a; p->noise_enabled = b > 0.0001f;
+        p->noise_color = TS_NOISE_METALLIC; p->noise_amount = b;
+        p->drift = c; p->shaper_mix = d; break;
+    case TS_DSP_PROFILE_NEUTRAL:
+    case TS_DSP_PROFILE_GENERIC:
+    default:
+        p->body = a; p->edge = b; p->drift = c; break;
+    }
+}
+
+void ts_dsp_preset_bind(TsPortableRecipe *recipe, TsDspProfile profile)
+{
+    const TsDspPresetSpec *spec;
+    TsProcessRecipe *p;
+    if (recipe == NULL) return;
+    if (profile < 0 || profile >= TS_DSP_PROFILE_COUNT)
+        profile = TS_DSP_PROFILE_GENERIC;
+    recipe->dsp_profile = profile;
+    recipe->has_dsp_controls = 1;
+    p = &recipe->process;
+    spec = ts_dsp_preset_spec(profile);
+    switch (profile) {
+    case TS_DSP_PROFILE_WARM:
+        recipe->dsp_controls[0] = p->body;
+        recipe->dsp_controls[1] = dsp_normalized(&spec->controls[1], p->shaper_drive);
+        recipe->dsp_controls[2] = p->edge; recipe->dsp_controls[3] = p->shaper_mix; break;
+    case TS_DSP_PROFILE_DARK:
+        recipe->dsp_controls[0] = p->body;
+        recipe->dsp_controls[1] = dsp_normalized(&spec->controls[1], p->filter_cutoff_hz);
+        recipe->dsp_controls[2] = p->filter_resonance; recipe->dsp_controls[3] = p->drift; break;
+    case TS_DSP_PROFILE_BRIGHT:
+        recipe->dsp_controls[0] = dsp_normalized(&spec->controls[0], p->filter_cutoff_hz);
+        recipe->dsp_controls[1] = dsp_normalized(&spec->controls[1], p->noise_amount);
+        recipe->dsp_controls[2] = p->edge; recipe->dsp_controls[3] = p->drift; break;
+    case TS_DSP_PROFILE_DUB:
+        recipe->dsp_controls[0] = dsp_normalized(&spec->controls[0], p->delay_seconds);
+        recipe->dsp_controls[1] = dsp_normalized(&spec->controls[1], p->delay_feedback);
+        recipe->dsp_controls[2] = 1.0f - p->delay_damping;
+        recipe->dsp_controls[3] = p->delay_mix; break;
+    case TS_DSP_PROFILE_HOLLOW:
+        recipe->dsp_controls[0] = dsp_normalized(&spec->controls[0], p->filter_cutoff_hz);
+        recipe->dsp_controls[1] = p->filter_resonance;
+        recipe->dsp_controls[2] = dsp_normalized(&spec->controls[2], p->reverb_decay);
+        recipe->dsp_controls[3] = p->reverb_mix; break;
+    case TS_DSP_PROFILE_HARD:
+        recipe->dsp_controls[0] = dsp_normalized(&spec->controls[0], p->shaper_drive);
+        recipe->dsp_controls[1] = p->edge; recipe->dsp_controls[2] = p->body;
+        recipe->dsp_controls[3] = p->shaper_mix; break;
+    case TS_DSP_PROFILE_BROKEN:
+        recipe->dsp_controls[0] = dsp_normalized(&spec->controls[0], p->shaper_drive);
+        recipe->dsp_controls[1] = dsp_normalized(&spec->controls[1], p->noise_amount);
+        recipe->dsp_controls[2] = p->drift; recipe->dsp_controls[3] = p->shaper_mix; break;
+    case TS_DSP_PROFILE_NEUTRAL:
+    case TS_DSP_PROFILE_GENERIC:
+    default:
+        recipe->dsp_controls[0] = p->body; recipe->dsp_controls[1] = p->edge;
+        recipe->dsp_controls[2] = p->drift; recipe->dsp_controls[3] = 0.0f; break;
+    }
+    for (size_t i = 0; i < TS_DSP_CONTROL_COUNT; ++i)
+        recipe->dsp_controls[i] = clamp_unit(recipe->dsp_controls[i]);
+}
+
+int ts_dsp_preset_set_control(TsPortableRecipe *recipe, size_t index,
+                              float normalized)
+{
+    const TsDspPresetSpec *spec;
+    if (recipe == NULL || index >= TS_DSP_CONTROL_COUNT || !isfinite(normalized))
+        return 0;
+    spec = ts_dsp_preset_spec(recipe->dsp_profile);
+    if (index >= spec->control_count) return 0;
+    recipe->dsp_controls[index] = clamp_unit(normalized);
+    recipe->has_dsp_controls = 1;
+    apply_dsp_controls(recipe);
+    return ts_recipe_process_valid(&recipe->process);
+}
+
+int ts_dsp_preset_set_controls(TsPortableRecipe *recipe,
+                               const float controls[TS_DSP_CONTROL_COUNT])
+{
+    const TsDspPresetSpec *spec;
+    if (recipe == NULL || controls == NULL) return 0;
+    spec = ts_dsp_preset_spec(recipe->dsp_profile);
+    for (size_t i = 0; i < TS_DSP_CONTROL_COUNT; ++i) {
+        if (!isfinite(controls[i])) return 0;
+        recipe->dsp_controls[i] = i < spec->control_count ?
+                                  clamp_unit(controls[i]) : 0.0f;
+    }
+    recipe->has_dsp_controls = 1;
+    apply_dsp_controls(recipe);
+    return ts_recipe_process_valid(&recipe->process);
+}
+
 int ts_recipe_from_process(TsPortableRecipe *recipe, const TsProcessRecipe *process,
                            const char *name)
 {
@@ -79,6 +324,7 @@ int ts_recipe_from_process(TsPortableRecipe *recipe, const TsProcessRecipe *proc
     recipe->occupied = 1;
     snprintf(recipe->name, sizeof(recipe->name), "%s",
              name != NULL && name[0] != '\0' ? name : "UNTITLED");
+    ts_dsp_preset_bind(recipe, TS_DSP_PROFILE_GENERIC);
     return 1;
 }
 
@@ -171,6 +417,8 @@ void ts_recipe_bank_init(TsRecipeBank *bank)
     bank->slots[7].process.noise_enabled = 1;
     bank->slots[7].process.noise_color = TS_NOISE_METALLIC;
     bank->slots[7].process.noise_amount = 0.10f;
+    for (int slot = 0; slot < TS_FACTORY_RECIPE_COUNT; ++slot)
+        ts_dsp_preset_bind(&bank->slots[slot], (TsDspProfile)slot);
 }
 
 int ts_recipe_bank_capture(TsRecipeBank *bank, int slot, const TsProcessRecipe *process,

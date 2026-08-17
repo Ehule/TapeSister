@@ -22,3 +22,8 @@ rotate_wheel_fine=5
 rotate_wheel_coarse=50
 ; Drone Maker internal-junction crossfade in milliseconds (1-1000, default 50).
 drone_crossfade_ms=50
+
+[DSP Presets]
+; SAVE/UPDATE in a factory DSP Transform writes four normalized macro positions.
+; Missing rows keep the factory defaults. Example for DSP tile 05 (DUB ECHO):
+; DspPreset05=0.30,0.75,0.55,0.45
