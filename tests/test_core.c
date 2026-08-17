@@ -244,8 +244,8 @@ int main(void)
         CHECK(ts_ui_palette_cycle_channel(0, -1) == 4);
         CHECK(ts_ui_palette_cycle_channel(4, 1) == 0);
         CHECK(ts_ui_config_cycle_field(TS_CONFIG_SAMPLE_PATH, -1) ==
-              TS_CONFIG_EXCHANGE_PATH);
-        CHECK(ts_ui_config_cycle_field(TS_CONFIG_EXCHANGE_PATH, 1) ==
+              TS_CONFIG_CDP_BIN_PATH);
+        CHECK(ts_ui_config_cycle_field(TS_CONFIG_CDP_BIN_PATH, 1) ==
               TS_CONFIG_SAMPLE_PATH);
         for (int field = 0; field < TS_CONFIG_FIELD_COUNT; ++field) {
             int y = TS_CONFIG_FIELD_Y + field * TS_CONFIG_FIELD_STEP_Y +
@@ -2102,6 +2102,10 @@ int main(void)
         CHECK(reopened.playhead_zero_snap == 0);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
                      "FASTTRACKER EXECUTABLE") == 0);
+        CHECK(strcmp(ts_config_field_name(TS_CONFIG_CDP_BIN_PATH),
+                     "CDP BIN PATH") == 0);
+        CHECK(ts_config_field(&reopened, TS_CONFIG_CDP_BIN_PATH) ==
+              reopened.cdp_bin_path);
         remove("test-tapesister.ini");
         {
             FILE *config_file = fopen("test-tapesister.ini", "wb");
@@ -2255,10 +2259,14 @@ int main(void)
         CHECK(ts_browser_mode_edits_filename(TS_BROWSER_EXPORT_WAV));
         CHECK(ts_browser_mode_selects_config(TS_BROWSER_SELECT_SAMPLE_DIRECTORY));
         CHECK(ts_browser_mode_selects_directory(TS_BROWSER_SELECT_EXCHANGE_DIRECTORY));
+        CHECK(ts_browser_mode_selects_config(TS_BROWSER_SELECT_CDP_BIN_DIRECTORY));
+        CHECK(ts_browser_mode_selects_directory(TS_BROWSER_SELECT_CDP_BIN_DIRECTORY));
         CHECK(!ts_browser_mode_selects_directory(
                   TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE));
         CHECK(strcmp(ts_browser_mode_title(TS_BROWSER_SELECT_SAMPLE_DIRECTORY),
                      "SELECT SAMPLE FOLDER") == 0);
+        CHECK(strcmp(ts_browser_mode_title(TS_BROWSER_SELECT_CDP_BIN_DIRECTORY),
+                     "SELECT CDP BIN FOLDER") == 0);
         CHECK(ts_browser_open(&browser, TS_BROWSER_SELECT_SAMPLE_DIRECTORY, NULL));
         CHECK(browser_find(&browser, "test-browser-dir") >= 0);
         CHECK(browser_find(&browser, "test-browser-load.wav") < 0);

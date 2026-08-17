@@ -63,7 +63,8 @@ specific CDP build they ship.
 
 No CDP source or binary is vendored by PR-29. Runtime discovery checks, in order:
 
-1. `[Paths] CdpBinPath` in `tapesister.ini`;
+1. **CDP BIN PATH** in TapeSister's Configuration screen (`[Paths] CdpBinPath` in
+   `tapesister.ini`);
 2. `cdp/bin` beside the TapeSister executable;
 3. `cdp` beside the executable; and
 4. `./cdp/bin` for development.

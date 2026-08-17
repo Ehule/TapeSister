@@ -3411,7 +3411,9 @@ static TsBrowserMode config_browser_mode(TsConfigField field)
     if (field == TS_CONFIG_SAMPLE_PATH) return TS_BROWSER_SELECT_SAMPLE_DIRECTORY;
     if (field == TS_CONFIG_FASTTRACKER_PATH)
         return TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE;
-    return TS_BROWSER_SELECT_EXCHANGE_DIRECTORY;
+    if (field == TS_CONFIG_EXCHANGE_PATH)
+        return TS_BROWSER_SELECT_EXCHANGE_DIRECTORY;
+    return TS_BROWSER_SELECT_CDP_BIN_DIRECTORY;
 }
 
 static TsConfigField browser_config_field(TsBrowserMode mode)
@@ -3419,7 +3421,9 @@ static TsConfigField browser_config_field(TsBrowserMode mode)
     if (mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY) return TS_CONFIG_SAMPLE_PATH;
     if (mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE)
         return TS_CONFIG_FASTTRACKER_PATH;
-    return TS_CONFIG_EXCHANGE_PATH;
+    if (mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY)
+        return TS_CONFIG_EXCHANGE_PATH;
+    return TS_CONFIG_CDP_BIN_PATH;
 }
 
 static void browser_open_config_path(TsUiState *ui, TsConfigField field)

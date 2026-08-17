@@ -31,6 +31,7 @@ char *ts_config_field(TsConfig *config, TsConfigField field)
     if (field == TS_CONFIG_SAMPLE_PATH) return config->sample_path;
     if (field == TS_CONFIG_FASTTRACKER_PATH) return config->fasttracker_path;
     if (field == TS_CONFIG_EXCHANGE_PATH) return config->exchange_path;
+    if (field == TS_CONFIG_CDP_BIN_PATH) return config->cdp_bin_path;
     return NULL;
 }
 
@@ -44,6 +45,7 @@ const char *ts_config_field_name(TsConfigField field)
     if (field == TS_CONFIG_SAMPLE_PATH) return "SAMPLE PATH";
     if (field == TS_CONFIG_FASTTRACKER_PATH) return "FASTTRACKER EXECUTABLE";
     if (field == TS_CONFIG_EXCHANGE_PATH) return "FT2 EXCHANGE PATH";
+    if (field == TS_CONFIG_CDP_BIN_PATH) return "CDP BIN PATH";
     return "PATH";
 }
 

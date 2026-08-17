@@ -400,7 +400,7 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
     frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
           TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 45, "CONFIGURATION", PAL_NOTE, 1);
-    text(fb, 472, 45, "PATHS MAY BE BLANK", PAL_EFFECT, 1);
+    text(fb, 442, 45, "BLANK OK / DBL-CLICK BROWSE", PAL_EFFECT, 1);
     for (int i = 0; i < TS_CONFIG_FIELD_COUNT; ++i) {
         const char *value = ts_config_field_const(&ui->config, (TsConfigField)i);
         size_t length = strlen(value);
@@ -426,7 +426,6 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
     for (size_t i = 0; i < sizeof(config_buttons) / sizeof(config_buttons[0]); ++i)
         button(fb, config_buttons[i].x, TS_PALETTE_ACTION_Y,
                config_buttons[i].width, config_buttons[i].label, 0);
-    text(fb, 20, 157, "DOUBLE CLICK A PATH TO BROWSE", PAL_EFFECT, 1);
     text(fb, 364, 182, "TAB FIELD  CTRL BACKSPACE CLEAR", PAL_TUNING, 1);
 }
 
@@ -701,7 +700,7 @@ static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
     text(fb, 20, 273,
          ui->transform_runtime_available ?
          "SPACE AUDITIONS  ENTER RENDERS  ESC CANCELS OR RETURNS" :
-         "SET CDP BIN PATH IN TAPESISTER.INI - PVOC AND GLISTEN REQUIRED",
+         "SET CDP BIN PATH IN CONFIG - PVOC AND GLISTEN REQUIRED",
          ui->transform_runtime_available ? PAL_TUNING : PAL_VOLUME, 1);
 }
 

@@ -85,9 +85,10 @@ analysis/resynthesis adds padding, so GLISTEN is declared duration-changing and 
 disabled rather than silently truncating, stretching, or approximately aligning audio.
 
 TapeSister does not bundle CDP in this slice. Put compatible `pvoc` and `glisten`
-executables in `cdp/bin` beside TapeSister, or set `CdpBinPath` under `[Paths]` in
-`tapesister.ini` to their folder. A missing runtime leaves Transform available for
-selection work but disables rendering with a clear status. See
+executables in `cdp/bin` beside TapeSister, or set the **CDP BIN PATH** folder in the
+Configuration screen (stored as `CdpBinPath` under `[Paths]` in `tapesister.ini`). A
+missing runtime leaves Transform available for selection work but disables rendering
+with a clear status. See
 [`docs/CDP_TRANSFORM.md`](docs/CDP_TRANSFORM.md) for the verified command pipeline,
 runtime closure, safety model, platform notes, and licensing obligations.
 
