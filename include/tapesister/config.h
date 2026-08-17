@@ -18,7 +18,10 @@ enum {
     TS_ROTATE_WHEEL_COARSE_DEFAULT = 50,
     TS_DRONE_CROSSFADE_MS_MIN = 1,
     TS_DRONE_CROSSFADE_MS_MAX = 1000,
-    TS_DRONE_CROSSFADE_MS_DEFAULT = 50
+    TS_DRONE_CROSSFADE_MS_DEFAULT = 50,
+    TS_CHAIN_STAMP_CROSSFADE_MS_MIN = 0,
+    TS_CHAIN_STAMP_CROSSFADE_MS_MAX = 50,
+    TS_CHAIN_STAMP_CROSSFADE_MS_DEFAULT = 3
 };
 
 typedef enum {
@@ -39,6 +42,7 @@ typedef struct {
     int rotate_wheel_fine;
     int rotate_wheel_coarse;
     int drone_crossfade_ms;
+    int chain_stamp_crossfade_ms;
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];
     float dsp_factory_controls[TS_DSP_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
     int cdp_factory_overridden[TS_CDP_FACTORY_RECIPE_COUNT];

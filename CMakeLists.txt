@@ -74,5 +74,9 @@ add_executable(tapesister_transform_tests tests/test_transform.c)
 target_link_libraries(tapesister_transform_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_transform_tests COMMAND tapesister_transform_tests)
 
+add_executable(tapesister_chain_stamp_tests tests/test_chain_stamp.c)
+target_link_libraries(tapesister_chain_stamp_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_chain_stamp_tests COMMAND tapesister_chain_stamp_tests)
+
 add_executable(tapesister_render_demo tests/render_demo.c)
 target_link_libraries(tapesister_render_demo PRIVATE tapesister_core)

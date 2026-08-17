@@ -23,6 +23,9 @@ rotate_wheel_fine=5
 rotate_wheel_coarse=50
 ; Drone Maker internal-junction crossfade in milliseconds (1-1000, default 50).
 drone_crossfade_ms=50
+; Selection CHAIN stamp overlap in milliseconds (0-50, default 3).
+; It is capped at one quarter of the current selection length.
+chain_stamp_crossfade_ms=3
 
 [DSP Presets]
 ; SAVE/UPDATE in a DSP Transform writes four normalized macro positions.

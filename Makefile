@@ -19,7 +19,7 @@ tapesister_core_tests: $(CORE) tests/test_core.c
 tapesister_render_demo: $(CORE) tests/render_demo.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
-test: tapesister_core_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_transform_tests
+test: tapesister_core_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_transform_tests tapesister_chain_stamp_tests
 	./tapesister_core_tests
 	./tapesister_smear_tests
 	./tapesister_tear_tests
@@ -29,6 +29,7 @@ test: tapesister_core_tests tapesister_smear_tests tapesister_tear_tests tapesis
 	./tapesister_canvas_tests
 	./tapesister_capture_tests
 	./tapesister_transform_tests
+	./tapesister_chain_stamp_tests
 
 tapesister_smear_tests: $(CORE) tests/test_smear.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
@@ -54,8 +55,11 @@ tapesister_capture_tests: $(CORE) tests/test_capture.c
 tapesister_transform_tests: $(CORE) tests/test_transform.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
+tapesister_chain_stamp_tests: $(CORE) tests/test_chain_stamp.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
 screenshot: tapesister_render_demo
 	./tapesister_render_demo artifacts/tapesister-independent-tiles.ppm
 
 clean:
-	rm -f tapesister tapesister_core_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_transform_tests tapesister_render_demo test-roundtrip.wav test-tear.tsr test-bank-independent.tsr test-drone.ini test-drone.tsr test-canvas.tsr test-transform.tsr artifacts/*.ppm
+	rm -f tapesister tapesister_core_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_transform_tests tapesister_chain_stamp_tests tapesister_render_demo test-roundtrip.wav test-tear.tsr test-bank-independent.tsr test-drone.ini test-drone.tsr test-canvas.tsr test-transform.tsr artifacts/*.ppm

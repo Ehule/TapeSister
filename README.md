@@ -8,7 +8,7 @@ Each of the 16 Bank tiles is a complete editable sound object. A tile owns its a
 
 Clicking an occupied tile selects it, immediately restores its own editor state for waveform selection, and auditions it. Clicking an empty tile selects that exact Create/Load destination without playing anything; double-clicking it activates a silent editable canvas. When the audio clipboard has a source timeline, the canvas adopts that full duration and sample rate so Paste-in-place lands at the same time. With no clipboard it defaults to one second at 44.1 kHz. A thick Active Tile-color outline always marks the active editing tile; a separate cyan mark identifies a bank tile being previewed. Clearing the active tile leaves the same empty destination selected. Bank 01 has no special protection or authority.
 
-With no waveform selection, Create and Load replace only the selected tile. With a selection on an occupied sound or silent canvas, choosing a WAV from Load asks for exact Paste, duration-preserving Fit, or Cancel; Paste and Fit are both Undo/Redo edits. TSR and TSP loading retain their existing behavior. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. With a waveform selection, Create and Vary instead stamp a fitted FM sound into exactly that range on the active tile; audio outside the range and the tile duration stay unchanged, and Chain does not move the stamp to another tile.
+With no waveform selection, Create and Load replace only the selected tile. With a selection on an occupied sound or silent canvas, choosing a WAV from Load asks for exact Paste, duration-preserving Fit, or Cancel; Paste and Fit are both Undo/Redo edits. TSR and TSP loading retain their existing behavior. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. With a waveform selection, Create and Chain-off Vary stamp a fitted FM sound into exactly that range on the active tile. Chain-on Vary stamps there, advances the same-width selection to the right with a tiny overlap, and uses the new variation as the source of the next stamp.
 
 ## Capture a performance to a new tile
 
@@ -43,6 +43,10 @@ starting audio without history.
 Set `rotate_wheel_fine` (1–20, default 5), `rotate_wheel_coarse` (20–100,
 default 50), and `playhead_zero_snap` (0/1, default 1) in the `[Waveform]`
 section of `tapesister.ini`.
+
+Selection CHAIN stamping uses `chain_stamp_crossfade_ms` (0–50, default 3)
+from the same section. The overlap is capped at one quarter of the selection so
+short stamps still advance decisively.
 
 **DRONE** turns the current selection into a purpose-built seamless loop. It
 zero-snaps a split near the selection midpoint, rotates the two halves, and uses a
@@ -179,7 +183,7 @@ All 16 slots are peers. A newly created or imported sound fills the currently se
 
 Click an occupied slot to select its independent editable state and audition it; its saved selection is immediately active in the waveform. Click an empty slot to select that exact CREATE/LOAD destination without auditioning, or double-click it to activate silence for editing and paste. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. Right-click any occupied slot to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click and empties all 16 peer slots.
 
-The **Variation** page exposes one continuous Range and the **Chain** switch. Vary requires a selected FM tile. With Chain off, Vary replaces only that tile. With Chain on, Vary writes to the next empty tile, selects it, and uses it as the basis for the next chained result. If the bank is full, chained Vary refuses instead of overwriting another tile.
+The **Variation** page exposes one continuous Range and the **Chain** switch. Vary requires a selected FM tile. Without a waveform selection, Chain off replaces the active tile and Chain on writes to the next empty tile, selects it, and continues from that result. With a selection, Chain off repeatedly stamps that range. Chain on instead behaves like an unrolling strip of paper: each Vary stamps the current range, crossfades its edges, moves the unchanged-width selection right by `width - overlap`, and extends the canvas with silence when the next destination reaches EOF. Each click is one tile-local Undo step containing the stamp, any extension, and the ready-next selection. A full bank blocks only the no-selection tile-chain path; selection chains stay inside their current tile.
 
 The top **Export** button and `Ctrl+E` ask whether to export the selected tile or the complete Collection. Collection export writes every occupied slot as a numbered, loop-aware WAV into a new folder. Existing folders are never silently replaced. A failed export removes the partial files and folder.
 

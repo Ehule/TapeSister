@@ -1734,6 +1734,55 @@ static int patch_range(TsSample *sample, const TsSample *patch,
     return 1;
 }
 
+static int fit_patch_range_crossfaded(TsSample *sample, const TsSample *patch,
+                                      size_t first, size_t last, size_t fade,
+                                      char *error, size_t error_size)
+{
+    float *edges;
+    size_t length;
+    if (fade == 0u)
+        return patch_range(sample, patch, first, last, 1, error, error_size);
+    if (sample == NULL || sample->data == NULL || first >= last ||
+        last > sample->frames) {
+        set_error(error, error_size, "Invalid crossfaded stamp range");
+        return 0;
+    }
+    length = last - first;
+    if (fade > length / 4u) fade = length / 4u;
+    if (fade == 0u)
+        return patch_range(sample, patch, first, last, 1, error, error_size);
+    if (fade > SIZE_MAX / (2u * sizeof(*edges))) {
+        set_error(error, error_size, "Crossfaded stamp is too large");
+        return 0;
+    }
+    edges = malloc(fade * 2u * sizeof(*edges));
+    if (edges == NULL) {
+        set_error(error, error_size, "Out of memory crossfading audio stamp");
+        return 0;
+    }
+    memcpy(edges, sample->data + first, fade * sizeof(*edges));
+    memcpy(edges + fade, sample->data + last - fade,
+           fade * sizeof(*edges));
+    if (!patch_range(sample, patch, first, last, 1, error, error_size)) {
+        free(edges);
+        return 0;
+    }
+    for (size_t frame = 0u; frame < fade; ++frame) {
+        float wet = (float)(frame + 1u) / (float)(fade + 1u);
+        size_t at = first + frame;
+        sample->data[at] = edges[frame] * (1.0f - wet) +
+                           sample->data[at] * wet;
+    }
+    for (size_t frame = 0u; frame < fade; ++frame) {
+        float wet = (float)(fade - frame) / (float)(fade + 1u);
+        size_t at = last - fade + frame;
+        sample->data[at] = edges[fade + frame] * (1.0f - wet) +
+                           sample->data[at] * wet;
+    }
+    free(edges);
+    return 1;
+}
+
 static const TsAudioPatch *audio_patch_for_operation(const TsInstrument *instrument,
                                                       const TsPostEdit *operation)
 {
@@ -1890,9 +1939,14 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                 set_error(error, error_size, "Paste source is missing from this tile");
                 return 0;
             }
-            if (!patch_range(destination, &patch->sample, first, last,
-                             operation->kind == TS_POST_PATCH_FIT,
-                             error, error_size)) return 0;
+            if (operation->kind == TS_POST_PATCH_FIT &&
+                operation->crossfade_frames > 0u) {
+                if (!fit_patch_range_crossfaded(
+                        destination, &patch->sample, first, last,
+                        operation->crossfade_frames, error, error_size)) return 0;
+            } else if (!patch_range(destination, &patch->sample, first, last,
+                                    operation->kind == TS_POST_PATCH_FIT,
+                                    error, error_size)) return 0;
             continue;
         }
         if (operation->kind == TS_POST_PATCH_STRETCH_EXPAND ||
@@ -3938,6 +3992,34 @@ static int ensure_edit_graph_capacity(TsInstrument *instrument, int needs_patch,
     return 1;
 }
 
+static int ensure_edit_graph_capacity_for(TsInstrument *instrument,
+                                          int post_edit_slots,
+                                          int needs_patch,
+                                          char *error, size_t error_size)
+{
+    TsBankSlot *slot;
+    int full;
+    if (instrument == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT ||
+        post_edit_slots < 1 || post_edit_slots > TS_POST_EDIT_DEPTH) {
+        set_error(error, error_size, "Invalid edit capacity request");
+        return 0;
+    }
+    slot = &instrument->bank[instrument->selected_slot];
+    full = instrument->post_edit_count > TS_POST_EDIT_DEPTH - post_edit_slots ||
+           instrument->sample_edit_count >= TS_SAMPLE_EDIT_DEPTH ||
+           (needs_patch && slot->patch_count >= TS_AUDIO_PATCH_DEPTH);
+    if (full && !compact_edit_graph(instrument, error, error_size)) return 0;
+    slot = &instrument->bank[instrument->selected_slot];
+    if (instrument->post_edit_count > TS_POST_EDIT_DEPTH - post_edit_slots ||
+        instrument->sample_edit_count >= TS_SAMPLE_EDIT_DEPTH ||
+        (needs_patch && slot->patch_count >= TS_AUDIO_PATCH_DEPTH)) {
+        set_error(error, error_size, "Tile history could not free edit capacity");
+        return 0;
+    }
+    return 1;
+}
+
 static int append_audio_patch(TsInstrument *instrument, const TsSample *sample,
                               const TsGeneratorRecipe *generator,
                               uint32_t *patch_index,
@@ -5172,8 +5254,60 @@ failed:
     return 0;
 }
 
+static void keep_stamp_destination_visible(TsEditSnapshot *target,
+                                           size_t first, size_t last,
+                                           size_t old_frames, size_t new_frames)
+{
+    size_t span;
+    if (target->view_last <= target->view_first || old_frames == 0u) {
+        target->view_first = 0u;
+        target->view_last = new_frames;
+        return;
+    }
+    if (target->view_first == 0u && target->view_last >= old_frames) {
+        target->view_first = 0u;
+        target->view_last = new_frames;
+        return;
+    }
+    span = target->view_last - target->view_first;
+    if (span < last - first) span = last - first;
+    if (span > new_frames) span = new_frames;
+    if (first < target->view_first) {
+        target->view_first = first;
+        target->view_last = first + span;
+    } else if (last > target->view_last) {
+        target->view_last = last;
+        target->view_first = last > span ? last - span : 0u;
+    }
+    if (target->view_last > new_frames) {
+        target->view_last = new_frames;
+        target->view_first = new_frames > span ? new_frames - span : 0u;
+    }
+}
+
+static size_t chain_stamp_crossfade_frames(const TsInstrument *instrument,
+                                           int crossfade_ms)
+{
+    uint64_t requested;
+    size_t maximum;
+    size_t length;
+    if (instrument == NULL || crossfade_ms <= 0 ||
+        instrument->current.sample_rate == 0u || !instrument->has_selection ||
+        instrument->selection_last <= instrument->selection_first)
+        return 0u;
+    length = instrument->selection_last - instrument->selection_first;
+    maximum = length / 4u;
+    if (maximum > 65536u) maximum = 65536u;
+    requested = ((uint64_t)instrument->current.sample_rate *
+                 (uint64_t)crossfade_ms + 500u) / 1000u;
+    if (requested > maximum) requested = maximum;
+    return (size_t)requested;
+}
+
 static int stamp_generated_patch(TsInstrument *instrument,
                                  const TsGeneratorRecipe *recipe,
+                                 size_t crossfade_frames,
+                                 int advance_selection,
                                  char *error, size_t error_size)
 {
     TsSample generated;
@@ -5183,15 +5317,37 @@ static int stamp_generated_patch(TsInstrument *instrument,
     uint32_t patch_index;
     size_t first;
     size_t last;
+    size_t length;
+    size_t next_first;
+    size_t next_last;
+    size_t output_frames;
+    size_t extension;
     if (instrument == NULL || recipe == NULL || instrument->current.data == NULL ||
         !instrument->has_selection ||
         instrument->selection_last <= instrument->selection_first) {
         set_error(error, error_size, "Select a range on an occupied tile before stamping");
         return 0;
     }
-    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     first = instrument->selection_first;
     last = instrument->selection_last;
+    length = last - first;
+    if (crossfade_frames > length / 4u) crossfade_frames = length / 4u;
+    if (crossfade_frames > 65536u) crossfade_frames = 65536u;
+    next_first = advance_selection ? last - crossfade_frames : first;
+    if (length > SIZE_MAX - next_first) {
+        set_error(error, error_size, "Chain stamp destination is too large");
+        return 0;
+    }
+    next_last = advance_selection ? next_first + length : last;
+    output_frames = next_last > instrument->current.frames ?
+                    next_last : instrument->current.frames;
+    if (output_frames > TS_CANVAS_MAX_FRAMES) {
+        set_error(error, error_size, "Chain stamp reached the maximum canvas length");
+        return 0;
+    }
+    extension = output_frames - instrument->current.frames;
+    if (!ensure_edit_graph_capacity_for(instrument, extension > 0u ? 2 : 1,
+                                        1, error, error_size)) return 0;
     ts_sample_init(&generated);
     ts_sample_init(&current);
     if (!ts_sample_generate(&generated, recipe, error, error_size)) return 0;
@@ -5206,10 +5362,24 @@ static int stamp_generated_patch(TsInstrument *instrument,
     operation.kind = TS_POST_PATCH_FIT;
     operation.first = first;
     operation.last = last;
+    operation.crossfade_frames = (uint32_t)crossfade_frames;
     operation.patch_index = patch_index;
     target.post_edits[target.post_edit_count++] = operation;
     update_snapshot_after_replace(&target, first, last, last - first,
                                   instrument->current.frames, 1);
+    if (extension > 0u) {
+        memset(&operation, 0, sizeof(operation));
+        operation.kind = TS_POST_CANVAS_RIGHT_RESIZE;
+        operation.destination = (int64_t)extension;
+        target.post_edits[target.post_edit_count++] = operation;
+    }
+    if (advance_selection) {
+        target.has_selection = 1;
+        target.selection_first = next_first;
+        target.selection_last = next_last;
+        keep_stamp_destination_visible(&target, next_first, next_last,
+                                       instrument->current.frames, output_frames);
+    }
     if (!render_snapshot(&current, instrument, &target, error, error_size)) {
         discard_last_audio_patch(instrument, patch_index);
         return 0;
@@ -5239,13 +5409,14 @@ int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
         (float)(instrument->selection_last - instrument->selection_first) /
         (float)instrument->current.sample_rate, 0.1f, 8.0f);
     recipe.frequency = 30.0f * powf(2000.0f / 30.0f, rng_unit(&rng));
-    if (!stamp_generated_patch(instrument, &recipe, error, error_size)) return 0;
+    if (!stamp_generated_patch(instrument, &recipe, 0u, 0,
+                               error, error_size)) return 0;
     ++instrument->family_sequence;
     return 1;
 }
 
-int ts_instrument_stamp_vary(TsInstrument *instrument,
-                             char *error, size_t error_size)
+static int stamp_vary(TsInstrument *instrument, int chained,
+                      int crossfade_ms, char *error, size_t error_size)
 {
     const TsBankSlot *slot;
     const TsGeneratorRecipe *source_recipe = NULL;
@@ -5282,9 +5453,25 @@ int ts_instrument_stamp_vary(TsInstrument *instrument,
     recipe.seconds = clampf(
         (float)(instrument->selection_last - instrument->selection_first) /
         (float)instrument->current.sample_rate, 0.1f, 8.0f);
-    if (!stamp_generated_patch(instrument, &recipe, error, error_size)) return 0;
+    if (!stamp_generated_patch(
+            instrument, &recipe,
+            chained ? chain_stamp_crossfade_frames(instrument, crossfade_ms) : 0u,
+            chained, error, error_size)) return 0;
     ++instrument->family_sequence;
     return 1;
+}
+
+int ts_instrument_stamp_vary(TsInstrument *instrument,
+                             char *error, size_t error_size)
+{
+    return stamp_vary(instrument, 0, 0, error, error_size);
+}
+
+int ts_instrument_stamp_vary_chained(TsInstrument *instrument,
+                                     int crossfade_ms,
+                                     char *error, size_t error_size)
+{
+    return stamp_vary(instrument, 1, crossfade_ms, error, error_size);
 }
 
 int ts_instrument_vary_selected(TsInstrument *instrument, int chain,

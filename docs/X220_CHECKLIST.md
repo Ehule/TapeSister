@@ -19,7 +19,11 @@ This is a musical and interaction checkpoint. Passing automated tests alone is n
 - [ ] Vary derives a result from the selected occupied tile when Chain is off.
 - [ ] With Chain on, each newly created result becomes the source for the next Vary operation.
 - [ ] With Chain off, repeated variations continue from the explicitly selected source tile.
-- [ ] Chain is the only feature that intentionally carries source choice across tiles.
+- [ ] With a selection and Chain off, Vary stamps only that fixed range and does not move it.
+- [ ] With a selection and Chain on, Vary stamps an evolving result, advances the same-width selection to the right, and does not occupy another tile.
+- [ ] Repeated selection-chain stamps overlap without audible boundary clicks and extend the right canvas exactly when needed.
+- [ ] Undo/Redo walks selection-chain stamps one at a time, restoring exact audio, canvas length, viewport, and ready-next selection.
+- [ ] Chain is the only feature that intentionally carries source choice across tiles or successive selection stamps.
 - [ ] Variation Range cycles Close, Wide, and Radical and the Amount control changes variation strength.
 - [ ] Loop, Duration, Pitch, Envelope, and Spectral locks protect their labeled traits.
 - [ ] A full bank refuses Create/Vary without replacing any tile.
