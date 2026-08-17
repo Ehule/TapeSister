@@ -100,7 +100,7 @@ static int parse_dsp_preset(const char *key, const char *value,
     float controls[TS_DSP_CONTROL_COUNT];
     char trailing;
     if (sscanf(key, "DspPreset%2d%c", &slot, &trailing) != 1 ||
-        slot < 1 || slot > TS_FACTORY_RECIPE_COUNT)
+        slot < 1 || slot > TS_DSP_FACTORY_RECIPE_COUNT)
         return 0;
     if (sscanf(value, "%f,%f,%f,%f%c", &controls[0], &controls[1],
                &controls[2], &controls[3], &trailing) != TS_DSP_CONTROL_COUNT)
@@ -296,7 +296,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->rotate_wheel_fine,
                 config->rotate_wheel_coarse,
                 config->drone_crossfade_ms) < 0;
-    for (int slot = 0; slot < TS_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
+    for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
         if (!config->dsp_factory_overridden[slot]) continue;
         write_failed = fprintf(file, "DspPreset%02d=%.9g,%.9g,%.9g,%.9g\n",
                                slot + 1,

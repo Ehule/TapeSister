@@ -10,6 +10,7 @@
 #include "tapesister/recipe.h"
 #include "tapesister/sample.h"
 #include "tapesister/transform.h"
+#include "tapesister/dsp_recipe.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
@@ -199,7 +200,9 @@ typedef struct {
     int show_recipes;
     int show_ingredients;
     int cdp_page;
+    int dsp_page;
     TsCdpRecipeValues cdp_presets[TS_CDP_FACTORY_RECIPE_COUNT];
+    TsDspRecipeValues dsp_presets[TS_DSP_FACTORY_RECIPE_COUNT];
     TsCaptureState capture_state;
     int capture_destination_slot;
     int capture_source_slot;
@@ -235,7 +238,7 @@ typedef struct {
     size_t transform_selection_grab;
     TsTransformScope transform_scope;
     TsCdpRecipeValues transform_values;
-    TsPortableRecipe transform_dsp_working;
+    TsDspRecipeValues transform_dsp_values;
     const TsSample *transform_preview_sample;
     size_t transform_preview_first;
     size_t transform_preview_last;
@@ -372,6 +375,7 @@ int ts_ui_bank_slot_from_point(int x, int y);
 int ts_ui_recipe_slot_from_point(int x, int y);
 int ts_ui_cdp_slot_from_point(int x, int y);
 int ts_ui_cdp_page_from_point(int x, int y);
+int ts_ui_dsp_page_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
 int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
                               TsUiBankAction action,

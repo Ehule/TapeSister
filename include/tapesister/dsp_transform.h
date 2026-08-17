@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "tapesister/dsp_recipe.h"
 #include "tapesister/recipe.h"
 #include "tapesister/transform.h"
 
@@ -19,6 +20,9 @@ typedef struct {
     TsTransformScope scope;
     int preset_slot;
     TsProcessRecipe process;
+    int curated;
+    int recipe_index;
+    TsDspRecipeValues values;
 } TsDspTransformIdentity;
 
 typedef struct {
@@ -77,5 +81,29 @@ int ts_dsp_transform_apply_direct(TsInstrument *instrument, int preset_slot,
                                   const TsProcessRecipe *process,
                                   TsTransformScope scope,
                                   char *error, size_t error_size);
+int ts_dsp_transform_identity_capture_recipe(
+    TsDspTransformIdentity *identity, const TsInstrument *instrument,
+    TsTransformScope scope, const TsDspRecipe *recipe,
+    const TsDspRecipeValues *values, uint64_t job_id,
+    uint64_t render_generation, char *error, size_t error_size);
+int ts_dsp_transform_identity_matches_recipe(
+    const TsDspTransformIdentity *identity, const TsInstrument *instrument,
+    TsTransformScope scope, const TsDspRecipe *recipe,
+    const TsDspRecipeValues *values, uint64_t render_generation,
+    char *error, size_t error_size);
+int ts_dsp_transform_render_recipe(
+    const TsSample *input, const TsDspRecipe *recipe,
+    const TsDspRecipeValues *values, TsSample *output,
+    TsCdpSafetyStatus *safety, float *peak, double *dc_offset,
+    int *clipped_samples, char *error, size_t error_size);
+int ts_dsp_transform_apply_preview_recipe(
+    TsInstrument *instrument, const TsDspTransformPreview *preview,
+    TsTransformScope scope, const TsDspRecipe *recipe,
+    const TsDspRecipeValues *values, uint64_t render_generation,
+    char *error, size_t error_size);
+int ts_dsp_transform_apply_direct_recipe(
+    TsInstrument *instrument, const TsDspRecipe *recipe,
+    const TsDspRecipeValues *values, TsTransformScope scope,
+    char *error, size_t error_size);
 
 #endif

@@ -25,9 +25,12 @@ rotate_wheel_coarse=50
 drone_crossfade_ms=50
 
 [DSP Presets]
-; SAVE/UPDATE in a factory DSP Transform writes four normalized macro positions.
-; Missing rows keep the factory defaults. Example for DSP tile 05 (DUB ECHO):
-; DspPreset05=0.30,0.75,0.55,0.45
+; SAVE/UPDATE in a DSP Transform writes four normalized macro positions.
+; Rows 01-16 are DSP1 PROCESS; rows 17-32 are DSP2 PRIMITIVES.
+; Missing rows keep the factory defaults. Example for DSP1 tile 06 (DUB):
+; DspPreset06=0.30,0.75,0.55,0.45
+; Example for DSP2 tile 05 (METAL, global seat 21; final value is SOURCE):
+; DspPreset21=0.40,0.54,0.62,0.12
 
 [CDP Presets]
 ; SAVE/UPDATE writes the four fixed musical positions, MIX, and variation seed.

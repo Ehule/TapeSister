@@ -826,6 +826,311 @@ static void native_dsp_direct_and_body_range_tests(void)
     ts_instrument_free(&instrument);
 }
 
+static size_t rising_zero_crossings(const TsSample *sample)
+{
+    size_t crossings = 0u;
+    if (sample == NULL || sample->data == NULL) return 0u;
+    for (size_t frame = 1u; frame < sample->frames; ++frame)
+        if (sample->data[frame - 1u] <= 0.0f && sample->data[frame] > 0.0f)
+            ++crossings;
+    return crossings;
+}
+
+static void curated_dsp_bank_and_render_tests(void)
+{
+    char error[160];
+    TsSample input;
+    TsSample output;
+    TsSample low;
+    TsSample high;
+    TsCdpSafetyStatus safety;
+    float peak;
+    double dc;
+    int clipped;
+    ts_sample_init(&input);
+    ts_sample_init(&output);
+    ts_sample_init(&low);
+    ts_sample_init(&high);
+    input.frames = 12000u;
+    input.sample_rate = 48000u;
+    input.data = malloc(input.frames * sizeof(*input.data));
+    CHECK(input.data != NULL);
+    if (input.data == NULL) return;
+    snprintf(input.name, sizeof(input.name), "curated dsp source");
+    for (size_t frame = 0; frame < input.frames; ++frame) {
+        float time = (float)frame / (float)input.sample_rate;
+        input.data[frame] = sinf(time * 6.28318530718f * 113.0f) * 0.32f +
+                            sinf(time * 6.28318530718f * 941.0f) * 0.13f +
+                            ((frame % 997u) == 0u ? 0.38f : 0.0f);
+    }
+    CHECK(ts_dsp_factory_recipe_count() == TS_DSP_FACTORY_RECIPE_COUNT);
+    for (size_t index = 0; index < ts_dsp_factory_recipe_count(); ++index) {
+        const TsDspRecipe *recipe = ts_dsp_factory_recipe_at(index);
+        TsDspRecipeValues defaults;
+        TsDspRecipeValues minimums;
+        TsDspRecipeValues maximums;
+        CHECK(recipe != NULL && recipe->kind == (TsDspRecipeKind)index);
+        CHECK(recipe != NULL && recipe->bank == index / TS_DSP_BANK_SLOT_COUNT &&
+              recipe->slot == index % TS_DSP_BANK_SLOT_COUNT);
+        CHECK(recipe == ts_dsp_factory_recipe_for_slot(
+                            index / TS_DSP_BANK_SLOT_COUNT,
+                            index % TS_DSP_BANK_SLOT_COUNT));
+        CHECK(recipe != NULL && recipe == ts_dsp_recipe_find(recipe->id));
+        CHECK(ts_dsp_recipe_validate(recipe, error, sizeof(error)));
+        CHECK(recipe->control_count == TS_DSP_CONTROL_COUNT);
+        CHECK(recipe->primitive == (index >= TS_DSP_BANK_SLOT_COUNT));
+        for (size_t other = index + 1u;
+             other < ts_dsp_factory_recipe_count(); ++other) {
+            CHECK(strcmp(recipe->id, ts_dsp_factory_recipe_at(other)->id) != 0);
+            CHECK(strcmp(recipe->display_name,
+                         ts_dsp_factory_recipe_at(other)->display_name) != 0);
+        }
+        ts_dsp_recipe_values_default(recipe, &defaults);
+        minimums = defaults;
+        maximums = defaults;
+        for (size_t control = 0; control < recipe->control_count; ++control) {
+            char formatted[32];
+            CHECK(recipe->controls[control].label != NULL &&
+                  recipe->controls[control].label[0] != '\0');
+            CHECK(defaults.controls[control] >= 0.0f &&
+                  defaults.controls[control] <= 1.0f);
+            minimums.controls[control] = 0.0f;
+            maximums.controls[control] = 1.0f;
+            ts_dsp_recipe_control_format(&recipe->controls[control],
+                                         defaults.controls[control],
+                                         formatted, sizeof(formatted));
+            CHECK(formatted[0] != '\0');
+        }
+        safety = TS_CDP_SAFETY_INVALID;
+        CHECK(ts_dsp_transform_render_recipe(
+            &input, recipe, &defaults, &output, &safety, &peak, &dc, &clipped,
+            error, sizeof(error)));
+        CHECK(output.data != NULL && output.data != input.data &&
+              output.frames == input.frames &&
+              output.sample_rate == input.sample_rate &&
+              safety != TS_CDP_SAFETY_INVALID && isfinite(peak) && isfinite(dc) &&
+              peak > 0.00001f);
+        for (size_t frame = 0; frame < output.frames; ++frame)
+            CHECK(isfinite(output.data[frame]) && fabsf(output.data[frame]) <= 1.00001f);
+        ts_sample_free(&output);
+        CHECK(ts_dsp_transform_render_recipe(
+            &input, recipe, &minimums, &low, &safety, &peak, &dc, &clipped,
+            error, sizeof(error)));
+        CHECK(ts_dsp_transform_render_recipe(
+            &input, recipe, &maximums, &high, &safety, &peak, &dc, &clipped,
+            error, sizeof(error)));
+        CHECK(low.frames == input.frames && high.frames == input.frames);
+        for (size_t frame = 0; frame < input.frames; ++frame)
+            CHECK(isfinite(low.data[frame]) && isfinite(high.data[frame]) &&
+                  fabsf(low.data[frame]) <= 1.00001f &&
+                  fabsf(high.data[frame]) <= 1.00001f);
+        ts_sample_free(&high);
+        ts_sample_free(&low);
+    }
+    CHECK(ts_dsp_factory_recipe_at(TS_DSP_FACTORY_RECIPE_COUNT) == NULL);
+    CHECK(ts_dsp_factory_recipe_for_slot(TS_DSP_BANK_COUNT, 0u) == NULL);
+    CHECK(ts_dsp_recipe_find("missing") == NULL);
+    {
+        TsDspRecipe invalid = *ts_dsp_recipe_find("space");
+        invalid.control_count = 0u;
+        CHECK(!ts_dsp_recipe_validate(&invalid, error, sizeof(error)));
+        invalid = *ts_dsp_recipe_find("space");
+        invalid.controls[0].maximum = invalid.controls[0].minimum;
+        CHECK(!ts_dsp_recipe_validate(&invalid, error, sizeof(error)));
+    }
+    {
+        const TsDspRecipe *sine = ts_dsp_recipe_find("sine");
+        TsDspRecipeValues values;
+        TsSample generated;
+        TsSample dry;
+        TsSample mixed;
+        ts_sample_init(&generated);
+        ts_sample_init(&dry);
+        ts_sample_init(&mixed);
+        ts_dsp_recipe_values_default(sine, &values);
+        values.controls[3] = 0.0f;
+        CHECK(ts_dsp_transform_render_recipe(
+            &input, sine, &values, &generated, &safety, &peak, &dc, &clipped,
+            error, sizeof(error)));
+        values.controls[3] = 1.0f;
+        CHECK(ts_dsp_transform_render_recipe(
+            &input, sine, &values, &dry, &safety, &peak, &dc, &clipped,
+            error, sizeof(error)));
+        CHECK(memcmp(dry.data, input.data,
+                     input.frames * sizeof(*input.data)) == 0);
+        values.controls[3] = 0.5f;
+        CHECK(ts_dsp_transform_render_recipe(
+            &input, sine, &values, &mixed, &safety, &peak, &dc, &clipped,
+            error, sizeof(error)));
+        for (size_t frame = 0; frame < input.frames; ++frame)
+            CHECK(fabsf(mixed.data[frame] -
+                        (generated.data[frame] + input.data[frame]) * 0.5f) <
+                  0.00001f);
+        ts_sample_free(&mixed);
+        ts_sample_free(&dry);
+        ts_sample_free(&generated);
+    }
+    {
+        const TsDspRecipe *sine = ts_dsp_recipe_find("sine");
+        TsDspRecipeValues values;
+        TsSample bass;
+        TsSample treble;
+        ts_sample_init(&bass);
+        ts_sample_init(&treble);
+        ts_dsp_recipe_values_default(sine, &values);
+        values.controls[1] = 0.0f;
+        values.controls[2] = 0.0f;
+        values.controls[3] = 0.0f;
+        values.controls[0] = 0.15f;
+        CHECK(ts_dsp_transform_render_recipe(
+            &input, sine, &values, &bass, &safety, &peak, &dc, &clipped,
+            error, sizeof(error)));
+        values.controls[0] = 0.65f;
+        CHECK(ts_dsp_transform_render_recipe(
+            &input, sine, &values, &treble, &safety, &peak, &dc, &clipped,
+            error, sizeof(error)));
+        CHECK(rising_zero_crossings(&treble) >
+              rising_zero_crossings(&bass) * 3u);
+        ts_sample_free(&treble);
+        ts_sample_free(&bass);
+    }
+    ts_sample_free(&input);
+}
+
+static void curated_dsp_preview_apply_tests(void)
+{
+    char error[160];
+    TsInstrument instrument;
+    TsSample before;
+    TsSample input;
+    TsSample rendered;
+    TsDspTransformIdentity identity;
+    TsDspTransformPreview preview;
+    TsDspRecipeValues values;
+    const TsDspRecipe *recipe = ts_dsp_recipe_find("metal");
+    TsCdpSafetyStatus safety = TS_CDP_SAFETY_INVALID;
+    float peak = 0.0f;
+    double dc = 0.0;
+    int clipped = 0;
+    size_t first;
+    size_t last;
+    setup(&instrument, 8192u);
+    first = instrument.selection_first;
+    last = instrument.selection_last;
+    instrument.view_first = 700u;
+    instrument.view_last = 6500u;
+    ts_sample_init(&before);
+    ts_sample_init(&input);
+    ts_sample_init(&rendered);
+    ts_dsp_transform_preview_init(&preview);
+    CHECK(ts_sample_clone(&before, &instrument.current, error, sizeof(error)));
+    ts_dsp_recipe_values_default(recipe, &values);
+    CHECK(ts_dsp_transform_identity_capture_recipe(
+        &identity, &instrument, TS_TRANSFORM_SELECTION, recipe, &values,
+        101u, 19u, error, sizeof(error)));
+    CHECK(ts_dsp_transform_identity_matches_recipe(
+        &identity, &instrument, TS_TRANSFORM_SELECTION, recipe, &values,
+        19u, error, sizeof(error)));
+    {
+        TsDspRecipeValues changed = values;
+        changed.controls[1] += 0.01f;
+        CHECK(!ts_dsp_transform_identity_matches_recipe(
+            &identity, &instrument, TS_TRANSFORM_SELECTION, recipe, &changed,
+            19u, error, sizeof(error)));
+    }
+    CHECK(ts_dsp_transform_extract_input(&instrument, &identity, &input,
+                                         error, sizeof(error)));
+    CHECK(ts_dsp_transform_render_recipe(
+        &input, recipe, &values, &rendered, &safety, &peak, &dc, &clipped,
+        error, sizeof(error)));
+    CHECK(ts_dsp_transform_prepare_preview(
+        &instrument, &identity, &rendered, safety, peak, dc, clipped,
+        &preview, error, sizeof(error)));
+    CHECK(preview.valid && instrument.undo_count == 0 &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&before));
+    CHECK(ts_dsp_transform_apply_preview_recipe(
+        &instrument, &preview, TS_TRANSFORM_SELECTION, recipe, &values,
+        19u, error, sizeof(error)));
+    CHECK(instrument.undo_count == 1 && instrument.current.frames == before.frames &&
+          instrument.selection_first == first && instrument.selection_last == last &&
+          instrument.view_first == 700u && instrument.view_last == 6500u);
+    CHECK(memcmp(instrument.current.data, before.data,
+                 first * sizeof(*before.data)) == 0);
+    CHECK(memcmp(instrument.current.data + last, before.data + last,
+                 (before.frames - last) * sizeof(*before.data)) == 0);
+    CHECK(memcmp(instrument.current.data + first, preview.sample.data,
+                 preview.sample.frames * sizeof(*preview.sample.data)) == 0);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&before) &&
+          instrument.view_first == 700u && instrument.view_last == 6500u);
+    CHECK(ts_instrument_redo(&instrument, error, sizeof(error)) &&
+          memcmp(instrument.current.data + first, preview.sample.data,
+                 preview.sample.frames * sizeof(*preview.sample.data)) == 0);
+    ts_dsp_transform_preview_free(&preview);
+    ts_sample_free(&rendered);
+    ts_sample_free(&input);
+    ts_sample_free(&before);
+    ts_instrument_free(&instrument);
+}
+
+static void curated_dsp_direct_scope_and_tile_tests(void)
+{
+    char error[160];
+    TsInstrument instrument;
+    TsSample before;
+    TsDspRecipeValues values;
+    const TsDspRecipe *echo = ts_dsp_recipe_find("echo");
+    const TsDspRecipe *drone = ts_dsp_recipe_find("drone");
+    size_t first;
+    size_t last;
+    setup(&instrument, 8192u);
+    first = instrument.selection_first;
+    last = instrument.selection_last;
+    ts_sample_init(&before);
+    CHECK(ts_sample_clone(&before, &instrument.current, error, sizeof(error)));
+    ts_dsp_recipe_values_default(echo, &values);
+    CHECK(ts_dsp_transform_apply_direct_recipe(
+        &instrument, echo, &values, TS_TRANSFORM_SELECTION,
+        error, sizeof(error)));
+    CHECK(instrument.undo_count == 1 &&
+          ts_sample_hash(&instrument.current) != ts_sample_hash(&before) &&
+          memcmp(instrument.current.data, before.data,
+                 first * sizeof(*before.data)) == 0 &&
+          memcmp(instrument.current.data + last, before.data + last,
+                 (before.frames - last) * sizeof(*before.data)) == 0);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&before));
+    ts_instrument_clear_selection(&instrument);
+    ts_dsp_recipe_values_default(drone, &values);
+    values.controls[3] = 0.0f;
+    CHECK(ts_dsp_transform_apply_direct_recipe(
+        &instrument, drone, &values, TS_TRANSFORM_WHOLE,
+        error, sizeof(error)));
+    CHECK(instrument.undo_count == 1 && instrument.current.frames == before.frames &&
+          ts_sample_hash(&instrument.current) != ts_sample_hash(&before) &&
+          instrument.selection_first == 0u &&
+          instrument.selection_last == instrument.current.frames);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&before));
+    CHECK(ts_instrument_copy_selected(&instrument, 1, error, sizeof(error)));
+    {
+        uint64_t other_hash = ts_sample_hash(&instrument.current);
+        const TsDspRecipe *sine = ts_dsp_recipe_find("sine");
+        CHECK(ts_instrument_select_bank(&instrument, 0, error, sizeof(error)));
+        ts_dsp_recipe_values_default(sine, &values);
+        values.controls[3] = 0.0f;
+        ts_instrument_clear_selection(&instrument);
+        CHECK(ts_dsp_transform_apply_direct_recipe(
+            &instrument, sine, &values, TS_TRANSFORM_WHOLE,
+            error, sizeof(error)));
+        CHECK(ts_sample_hash(&instrument.bank[1].sample) == other_hash);
+        CHECK(ts_instrument_select_bank(&instrument, 1, error, sizeof(error)) &&
+              ts_sample_hash(&instrument.current) == other_hash);
+    }
+    ts_sample_free(&before);
+    ts_instrument_free(&instrument);
+}
+
 static void transform_ui_contract_tests(void)
 {
     TsInstrument instrument;
@@ -837,6 +1142,18 @@ static void transform_ui_contract_tests(void)
     size_t view_last;
     setup(&instrument, 8192u);
     ts_ui_init(&ui);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_KEYBOARD && ui.dsp_page == 0);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_DSP);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_DSP && ui.dsp_page == 0);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_DSP);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_DSP && ui.dsp_page == 1);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_SAMPLE_TILES);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_DSP);
+    CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_DSP && ui.dsp_page == 1);
+    ts_ui_select_panel(&ui, TS_UI_PANEL_DSP);
+    CHECK(ui.dsp_page == 0 && ts_ui_cdp_page_from_point(15, 313) == 0 &&
+          ts_ui_dsp_page_from_point(70, 313) == 1 &&
+          ts_ui_dsp_page_from_point(120, 313) == -1);
     CHECK(ts_ui_space_plays_selection(&instrument));
     CHECK(!ts_ui_space_plays_selection(NULL));
     CHECK(ui.transform_recipe_index == -1);
@@ -1129,6 +1446,9 @@ int main(void)
     rendered_replacement_native_process_regression_tests();
     native_dsp_recipe_and_preview_tests();
     native_dsp_direct_and_body_range_tests();
+    curated_dsp_bank_and_render_tests();
+    curated_dsp_preview_apply_tests();
+    curated_dsp_direct_scope_and_tile_tests();
     transform_ui_contract_tests();
     runtime_missing_test();
 #ifndef _WIN32

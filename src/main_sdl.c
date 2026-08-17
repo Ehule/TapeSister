@@ -358,7 +358,8 @@ typedef struct {
     TsCdpRunOptions options;
     TsCdpRunResult result;
     TsDspTransformIdentity dsp_identity;
-    TsProcessRecipe dsp_process;
+    const TsDspRecipe *dsp_recipe;
+    TsDspRecipeValues dsp_values;
     TsSample dsp_output;
     TsCdpSafetyStatus dsp_safety;
     float dsp_peak;
@@ -1314,8 +1315,9 @@ static int transform_worker_main(void *userdata)
 {
     TransformWorker *worker = userdata;
     if (worker->backend == TS_TRANSFORM_BACKEND_DSP) {
-        worker->dsp_ok = ts_dsp_transform_render(
-            &worker->input, &worker->dsp_process, &worker->dsp_output,
+        worker->dsp_ok = ts_dsp_transform_render_recipe(
+            &worker->input, worker->dsp_recipe, &worker->dsp_values,
+            &worker->dsp_output,
             &worker->dsp_safety, &worker->dsp_peak, &worker->dsp_dc_offset,
             &worker->dsp_clipped_samples, worker->error, sizeof(worker->error));
         if (SDL_AtomicGet(&worker->cancel) != 0) {
@@ -1464,18 +1466,17 @@ static int begin_dsp_transform_workspace(TsUiState *ui,
                                          TransformController *controller,
                                          int slot)
 {
-    const TsPortableRecipe *preset;
-    if (ui == NULL || slot < 0 || slot >= TS_RECIPE_SLOT_COUNT ||
-        !ui->recipes.slots[slot].occupied) {
+    const TsDspRecipe *preset = slot >= 0 ?
+        ts_dsp_factory_recipe_at((size_t)slot) : NULL;
+    if (ui == NULL || preset == NULL) {
         if (ui != NULL) snprintf(ui->status, sizeof(ui->status),
                                 "THAT DSP PRESET IS EMPTY");
         return 0;
     }
-    preset = &ui->recipes.slots[slot];
     if (instrument == NULL || instrument->current.data == NULL ||
         instrument->current.frames == 0u) {
         snprintf(ui->status, sizeof(ui->status),
-                 "%s NEEDS AN OCCUPIED ACTIVE TILE", preset->name);
+                 "%s NEEDS AN OCCUPIED ACTIVE TILE", preset->display_name);
         return 0;
     }
     if (controller->quick_apply && controller->worker != NULL) {
@@ -1485,10 +1486,9 @@ static int begin_dsp_transform_workspace(TsUiState *ui,
     controller->quick_apply = 0;
     ui->transform_backend = TS_TRANSFORM_BACKEND_DSP;
     ui->transform_dsp_slot = slot;
-    ui->transform_dsp_working = *preset;
-    if (!ui->transform_dsp_working.has_dsp_controls)
-        ts_dsp_preset_bind(&ui->transform_dsp_working,
-                           TS_DSP_PROFILE_GENERIC);
+    ui->transform_dsp_values = ui->dsp_presets[slot];
+    ui->transform_dsp_values.tuning_hz =
+        (float)ts_tuning_frequency(&instrument->audible_tuning);
     ui->transform_recipe_index = -1;
     ui->transform_open = 1;
     ui->transform_runtime_available = 1;
@@ -1497,10 +1497,10 @@ static int begin_dsp_transform_workspace(TsUiState *ui,
                           TS_TRANSFORM_SELECTION : TS_TRANSFORM_WHOLE;
     ui->transform_selection_dragging = 0;
     snprintf(ui->transform_message, sizeof(ui->transform_message),
-             "%s PREVIEW QUEUED - SOURCE IS UNCHANGED", preset->name);
+             "%s PREVIEW QUEUED - SOURCE IS UNCHANGED", preset->display_name);
     snprintf(ui->status, sizeof(ui->status),
              "%s DSP TRANSFORM OPEN - MIDDLE CLICK EDITS THE PRESET",
-             preset->name);
+             preset->display_name);
     return 1;
 }
 
@@ -1525,12 +1525,13 @@ static int launch_transform_worker(TsUiState *ui, TsInstrument *instrument,
     TransformWorker *worker;
     const int dsp = ui->transform_backend == TS_TRANSFORM_BACKEND_DSP;
     const TsCdpRecipe *recipe = dsp ? NULL : active_transform_recipe(ui);
-    const char *name = dsp ? ui->transform_dsp_working.name :
+    const TsDspRecipe *dsp_recipe = dsp && ui->transform_dsp_slot >= 0 ?
+        ts_dsp_factory_recipe_at((size_t)ui->transform_dsp_slot) : NULL;
+    const char *name = dsp && dsp_recipe != NULL ? dsp_recipe->display_name :
                        recipe != NULL ? recipe->display_name : "TRANSFORM";
     char error[160];
     if ((!dsp && recipe == NULL) ||
-        (dsp && (ui->transform_dsp_slot < 0 ||
-                 !ts_recipe_process_valid(&ui->transform_dsp_working.process)))) {
+        (dsp && dsp_recipe == NULL)) {
         snprintf(ui->transform_message, sizeof(ui->transform_message),
                  "TRANSFORM RECIPE IS NOT AVAILABLE");
         return 0;
@@ -1558,19 +1559,23 @@ static int launch_transform_worker(TsUiState *ui, TsInstrument *instrument,
     worker->backend = ui->transform_backend;
     worker->runtime = controller->runtime;
     worker->recipe = recipe;
+    worker->dsp_recipe = dsp_recipe;
     if (!dsp)
         ui->transform_values.tuning_hz =
             (float)ts_tuning_frequency(&instrument->audible_tuning);
+    else
+        ui->transform_dsp_values.tuning_hz =
+            (float)ts_tuning_frequency(&instrument->audible_tuning);
     worker->values = ui->transform_values;
-    worker->dsp_process = ui->transform_dsp_working.process;
+    worker->dsp_values = ui->transform_dsp_values;
     worker->options.job_id = controller->next_job_id++;
     worker->options.cancel_check = transform_cancel_check;
     worker->options.cancel_userdata = worker;
     ++controller->render_generation;
     if ((dsp &&
-         (!ts_dsp_transform_identity_capture(
+         (!ts_dsp_transform_identity_capture_recipe(
               &worker->dsp_identity, instrument, ui->transform_scope,
-              ui->transform_dsp_slot, &worker->dsp_process,
+              dsp_recipe, &worker->dsp_values,
               worker->options.job_id, controller->render_generation,
               error, sizeof(error)) ||
           !ts_dsp_transform_extract_input(instrument, &worker->dsp_identity,
@@ -1675,6 +1680,52 @@ static void request_cdp_quick_apply(SDL_AudioDeviceID device, AudioState *audio,
     else controller->quick_apply = 0;
 }
 
+static void request_dsp_quick_apply(SDL_AudioDeviceID device, AudioState *audio,
+                                    TsUiState *ui, TsInstrument *instrument,
+                                    TransformController *controller,
+                                    int recipe_index)
+{
+    const TsDspRecipe *recipe = recipe_index >= 0 ?
+        ts_dsp_factory_recipe_at((size_t)recipe_index) : NULL;
+    if (recipe == NULL || instrument == NULL || instrument->current.data == NULL ||
+        instrument->current.frames == 0u) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "DSP QUICK APPLY NEEDS AN OCCUPIED TILE OR SILENT CANVAS");
+        return;
+    }
+    if (audio != NULL && audio->capture.state != TS_CAPTURE_IDLE) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISH OR CANCEL CAPTURE BEFORE DSP QUICK APPLY");
+        return;
+    }
+    discard_transform_preview(device, audio, ui, controller);
+    ui->transform_backend = TS_TRANSFORM_BACKEND_DSP;
+    ui->transform_recipe_index = -1;
+    ui->transform_dsp_slot = recipe_index;
+    ui->transform_dsp_values = ui->dsp_presets[recipe_index];
+    ui->transform_dsp_values.tuning_hz =
+        (float)ts_tuning_frequency(&instrument->audible_tuning);
+    ui->transform_scope = instrument->has_selection &&
+                          instrument->selection_last > instrument->selection_first ?
+                          TS_TRANSFORM_SELECTION : TS_TRANSFORM_WHOLE;
+    ui->transform_open = 0;
+    controller->quick_apply = 1;
+    if (controller->worker != NULL) {
+        ++controller->render_generation;
+        controller->rerender_requested = 1;
+        SDL_AtomicSet(&controller->worker->cancel, 1);
+        snprintf(ui->status, sizeof(ui->status),
+                 "%s QUEUED - CANCELING OLDER TRANSFORM JOB",
+                 recipe->display_name);
+        return;
+    }
+    if (launch_transform_worker(ui, instrument, controller))
+        snprintf(ui->status, sizeof(ui->status),
+                 "%s RENDERING OFFLINE - TILE UNCHANGED UNTIL READY",
+                 recipe->display_name);
+    else controller->quick_apply = 0;
+}
+
 static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
                                   TsUiState *ui, TsInstrument *instrument,
                                   TransformController *controller)
@@ -1698,11 +1749,13 @@ static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
     ui->transform_rendering = 0;
     if (!rerender &&
         ((ui->transform_open && worker->backend == ui->transform_backend) ||
-         (controller->quick_apply && worker->backend == TS_TRANSFORM_BACKEND_CDP))) {
+         controller->quick_apply)) {
         if (worker->backend == TS_TRANSFORM_BACKEND_DSP && worker->dsp_ok &&
-            ts_dsp_transform_identity_matches(
+            ts_dsp_transform_identity_matches_recipe(
                 &worker->dsp_identity, instrument, ui->transform_scope,
-                ui->transform_dsp_slot, &ui->transform_dsp_working.process,
+                worker->dsp_recipe,
+                controller->quick_apply ? &worker->dsp_values :
+                                          &ui->transform_dsp_values,
                 controller->render_generation, error, sizeof(error)) &&
             ts_dsp_transform_prepare_preview(
                 instrument, &worker->dsp_identity, &worker->dsp_output,
@@ -1734,7 +1787,7 @@ static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
         }
     }
     if (published) {
-        if (controller->quick_apply && worker->backend == TS_TRANSFORM_BACKEND_CDP) {
+        if (controller->quick_apply) {
             int applied;
             if (audio != NULL && audio->capture.state != TS_CAPTURE_IDLE) {
                 applied = 0;
@@ -1742,19 +1795,31 @@ static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
                          "CAPTURE STARTED - QUICK APPLY DISCARDED");
             } else {
                 lock_edit(device, audio);
-                applied = ts_transform_apply_preview(
-                    instrument, &controller->preview, worker->identity.scope,
-                    worker->recipe, &worker->values, controller->render_generation,
-                    error, sizeof(error));
+                if (worker->backend == TS_TRANSFORM_BACKEND_DSP)
+                    applied = ts_dsp_transform_apply_preview_recipe(
+                        instrument, &controller->dsp_preview,
+                        worker->dsp_identity.scope, worker->dsp_recipe,
+                        &worker->dsp_values, controller->render_generation,
+                        error, sizeof(error));
+                else
+                    applied = ts_transform_apply_preview(
+                        instrument, &controller->preview, worker->identity.scope,
+                        worker->recipe, &worker->values,
+                        controller->render_generation, error, sizeof(error));
                 unlock_edit(device, audio, ui, instrument);
             }
             if (applied) {
                 snprintf(ui->status, sizeof(ui->status),
                          "%s APPLIED TO %s - ONE STEP UNDO",
+                         worker->backend == TS_TRANSFORM_BACKEND_DSP ?
+                         worker->dsp_recipe->display_name :
                          worker->recipe->display_name,
-                         worker->identity.scope == TS_TRANSFORM_SELECTION ?
+                         (worker->backend == TS_TRANSFORM_BACKEND_DSP ?
+                          worker->dsp_identity.scope : worker->identity.scope) ==
+                         TS_TRANSFORM_SELECTION ?
                          "SELECTION" : "WHOLE TILE");
                 ts_transform_preview_free(&controller->preview);
+                ts_dsp_transform_preview_free(&controller->dsp_preview);
                 ui->transform_preview_sample = NULL;
                 ui->transform_preview_available = 0;
                 ui->transform_safety = TS_CDP_SAFETY_INVALID;
@@ -1762,8 +1827,11 @@ static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
             } else {
                 snprintf(ui->status, sizeof(ui->status),
                          "%s QUICK APPLY REJECTED: %.100s",
+                         worker->backend == TS_TRANSFORM_BACKEND_DSP ?
+                         worker->dsp_recipe->display_name :
                          worker->recipe->display_name, error);
                 ts_transform_preview_free(&controller->preview);
+                ts_dsp_transform_preview_free(&controller->dsp_preview);
                 ui->transform_preview_sample = NULL;
                 ui->transform_preview_available = 0;
                 ui->transform_safety = TS_CDP_SAFETY_INVALID;
@@ -1789,7 +1857,7 @@ static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
                               "RENDER FAILED - TILE UNCHANGED";
         snprintf(ui->transform_message, sizeof(ui->transform_message), "%.92s", message);
         if (controller->quick_apply) {
-            snprintf(ui->status, sizeof(ui->status), "CDP QUICK APPLY FAILED: %.120s",
+            snprintf(ui->status, sizeof(ui->status), "DSP/CDP QUICK APPLY FAILED: %.116s",
                      message);
             controller->quick_apply = 0;
         }
@@ -1852,7 +1920,9 @@ static void apply_transform_preview(SDL_AudioDeviceID device, AudioState *audio,
 {
     const int dsp = ui->transform_backend == TS_TRANSFORM_BACKEND_DSP;
     const TsCdpRecipe *recipe = dsp ? NULL : active_transform_recipe(ui);
-    const char *name = dsp ? ui->transform_dsp_working.name :
+    const TsDspRecipe *dsp_recipe = dsp && ui->transform_dsp_slot >= 0 ?
+        ts_dsp_factory_recipe_at((size_t)ui->transform_dsp_slot) : NULL;
+    const char *name = dsp && dsp_recipe != NULL ? dsp_recipe->display_name :
                        recipe != NULL ? recipe->display_name : "TRANSFORM";
     char error[160];
     int ok;
@@ -1863,9 +1933,9 @@ static void apply_transform_preview(SDL_AudioDeviceID device, AudioState *audio,
     }
     stop_transform_preview(device, audio, ui, controller);
     lock_edit(device, audio);
-    ok = dsp ? ts_dsp_transform_apply_preview(
+    ok = dsp ? ts_dsp_transform_apply_preview_recipe(
                    instrument, &controller->dsp_preview, ui->transform_scope,
-                   ui->transform_dsp_slot, &ui->transform_dsp_working.process,
+                   dsp_recipe, &ui->transform_dsp_values,
                    controller->render_generation, error, sizeof(error)) :
                ts_transform_apply_preview(instrument, &controller->preview,
                                           ui->transform_scope, recipe,
@@ -1898,16 +1968,17 @@ static void adjust_transform_control(SDL_AudioDeviceID device, AudioState *audio
                                      int index, int direction, int coarse)
 {
     if (ui->transform_backend == TS_TRANSFORM_BACKEND_DSP) {
-        const TsDspPresetSpec *spec = ts_dsp_preset_spec(
-            ui->transform_dsp_working.dsp_profile);
+        const TsDspRecipe *recipe = ui->transform_dsp_slot >= 0 ?
+            ts_dsp_factory_recipe_at((size_t)ui->transform_dsp_slot) : NULL;
         float value;
         float amount;
-        if (index < 0 || (size_t)index >= spec->control_count || direction == 0)
+        if (recipe == NULL || index < 0 ||
+            (size_t)index >= recipe->control_count || direction == 0)
             return;
-        value = ui->transform_dsp_working.dsp_controls[index];
+        value = ui->transform_dsp_values.controls[index];
         amount = coarse ? 0.05f : 0.01f;
         value += direction > 0 ? amount : -amount;
-        if (!ts_dsp_preset_set_control(&ui->transform_dsp_working,
+        if (!ts_dsp_recipe_set_control(recipe, &ui->transform_dsp_values,
                                        (size_t)index, value)) return;
         mark_transform_stale(device, audio, ui, controller,
                              "DSP CONTROL CHANGED - PREVIEW QUEUED");
@@ -1946,13 +2017,14 @@ static void set_transform_control_from_x(SDL_AudioDeviceID device, AudioState *a
                                          int index, int x)
 {
     if (ui->transform_backend == TS_TRANSFORM_BACKEND_DSP) {
-        const TsDspPresetSpec *spec = ts_dsp_preset_spec(
-            ui->transform_dsp_working.dsp_profile);
+        const TsDspRecipe *recipe = ui->transform_dsp_slot >= 0 ?
+            ts_dsp_factory_recipe_at((size_t)ui->transform_dsp_slot) : NULL;
         int left = 20 + index * 150;
         float normalized;
-        if (index < 0 || (size_t)index >= spec->control_count) return;
+        if (recipe == NULL || index < 0 ||
+            (size_t)index >= recipe->control_count) return;
         normalized = (float)(x - left) / 140.0f;
-        if (!ts_dsp_preset_set_control(&ui->transform_dsp_working,
+        if (!ts_dsp_recipe_set_control(recipe, &ui->transform_dsp_values,
                                        (size_t)index, normalized)) return;
         mark_transform_stale(device, audio, ui, controller,
                              "DSP CONTROL CHANGED - PREVIEW QUEUED");
@@ -2064,37 +2136,31 @@ static void update_transform_selection_drag(TsUiState *ui,
 static void save_dsp_transform_preset(TsUiState *ui)
 {
     int slot;
+    const TsDspRecipe *recipe;
+    TsConfig previous;
     char error[160];
     if (ui == NULL || ui->transform_backend != TS_TRANSFORM_BACKEND_DSP) return;
     slot = ui->transform_dsp_slot;
-    if (slot < 0 || slot >= TS_RECIPE_SLOT_COUNT ||
-        !ui->recipes.slots[slot].occupied ||
-        !ts_recipe_process_valid(&ui->transform_dsp_working.process)) {
+    recipe = slot >= 0 ? ts_dsp_factory_recipe_at((size_t)slot) : NULL;
+    if (recipe == NULL) {
         snprintf(ui->transform_message, sizeof(ui->transform_message),
                  "DSP PRESET CANNOT BE UPDATED");
         return;
     }
-    if (slot < TS_FACTORY_RECIPE_COUNT) {
-        TsConfig previous = ui->config;
-        ui->config.dsp_factory_overridden[slot] = 1;
-        memcpy(ui->config.dsp_factory_controls[slot],
-               ui->transform_dsp_working.dsp_controls,
-               sizeof(ui->config.dsp_factory_controls[slot]));
-        if (!ts_config_save(&ui->config, config_file_path(), error, sizeof(error))) {
-            ui->config = previous;
-            snprintf(ui->transform_message, sizeof(ui->transform_message),
-                     "PRESET UPDATE FAILED: %.69s", error);
-            return;
-        }
+    previous = ui->config;
+    ui->config.dsp_factory_overridden[slot] = 1;
+    memcpy(ui->config.dsp_factory_controls[slot],
+           ui->transform_dsp_values.controls,
+           sizeof(ui->config.dsp_factory_controls[slot]));
+    if (!ts_config_save(&ui->config, config_file_path(), error, sizeof(error))) {
+        ui->config = previous;
         snprintf(ui->transform_message, sizeof(ui->transform_message),
-                 "%s UPDATED IN TAPESISTER.INI", ui->transform_dsp_working.name);
-    } else {
-        snprintf(ui->transform_message, sizeof(ui->transform_message),
-                 "%s UPDATED - TOP SAVE WRITES ITS TSP",
-                 ui->transform_dsp_working.name);
+                 "PRESET UPDATE FAILED: %.69s", error);
+        return;
     }
-    ui->recipes.slots[slot] = ui->transform_dsp_working;
-    ui->recipes.active_slot = slot;
+    ui->dsp_presets[slot] = ui->transform_dsp_values;
+    snprintf(ui->transform_message, sizeof(ui->transform_message),
+             "%s UPDATED IN TAPESISTER.INI", recipe->display_name);
     snprintf(ui->status, sizeof(ui->status),
              "DSP TILE %02d NOW USES THE EDITED SETTINGS", slot + 1);
 }
@@ -2503,75 +2569,6 @@ static void select_current_tile(SDL_AudioDeviceID device, AudioState *audio,
                  wave_only ? "NO NON-SILENT WAVE IN TILE" :
                              "SELECT ALL NEEDS AN ACTIVE TILE");
     }
-}
-
-static void apply_recipe_slot(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                              TsInstrument *instrument, int slot)
-{
-    char error[160];
-    int ok;
-    TsTransformScope scope;
-    TsDspTransformIdentity identity;
-    TsDspTransformPreview preview;
-    TsSample input;
-    TsSample rendered;
-    TsCdpSafetyStatus safety = TS_CDP_SAFETY_INVALID;
-    float peak = 0.0f;
-    double dc_offset = 0.0;
-    int clipped_samples = 0;
-    const TsPortableRecipe *recipe;
-    if (slot < 0 || slot >= TS_RECIPE_SLOT_COUNT ||
-        !ui->recipes.slots[slot].occupied) {
-        snprintf(ui->status, sizeof(ui->status), "EMPTY USER RECIPE - SHIFT+CLICK CAPTURES");
-        return;
-    }
-    recipe = &ui->recipes.slots[slot];
-    scope = instrument->has_selection &&
-            instrument->selection_last > instrument->selection_first ?
-            TS_TRANSFORM_SELECTION : TS_TRANSFORM_WHOLE;
-    ts_sample_init(&input);
-    ts_sample_init(&rendered);
-    ts_dsp_transform_preview_init(&preview);
-    ok = ts_dsp_transform_identity_capture(
-             &identity, instrument, scope, slot, &recipe->process,
-             1u, 1u, error, sizeof(error)) &&
-         ts_dsp_transform_extract_input(instrument, &identity, &input,
-                                        error, sizeof(error)) &&
-         ts_dsp_transform_render(&input, &recipe->process, &rendered,
-                                 &safety, &peak, &dc_offset, &clipped_samples,
-                                 error, sizeof(error)) &&
-         ts_dsp_transform_prepare_preview(
-             instrument, &identity, &rendered, safety, peak, dc_offset,
-             clipped_samples, &preview, error, sizeof(error));
-    if (ok) {
-        lock_edit(device, audio);
-        ok = ts_dsp_transform_apply_preview(
-            instrument, &preview, scope, slot, &recipe->process,
-            1u, error, sizeof(error));
-        unlock_edit(device, audio, ui, instrument);
-    }
-    ts_dsp_transform_preview_free(&preview);
-    ts_sample_free(&rendered);
-    ts_sample_free(&input);
-    if (ok) {
-        ui->recipes.active_slot = slot;
-        ui->has_pitch_suggestion = 0;
-        snprintf(ui->status, sizeof(ui->status), "APPLIED %.31s TO %s - ONE UNDO",
-                 recipe->name,
-                 scope == TS_TRANSFORM_SELECTION ? "SELECTION" : "WHOLE TILE");
-    } else snprintf(ui->status, sizeof(ui->status), "RECIPE FAILED: %.135s", error);
-}
-
-static void capture_recipe_slot(TsUiState *ui, const TsInstrument *instrument, int slot)
-{
-    char error[160];
-    char name[32];
-    snprintf(name, sizeof(name), "USER %02d", slot - TS_FACTORY_RECIPE_COUNT + 1);
-    if (ts_recipe_bank_capture(&ui->recipes, slot, &instrument->process,
-                               &instrument->tuning, &instrument->audible_tuning,
-                               name, error, sizeof(error)))
-        snprintf(ui->status, sizeof(ui->status), "CAPTURED %.31s - TOP SAVE WRITES TSP", name);
-    else snprintf(ui->status, sizeof(ui->status), "RECIPE CAPTURE FAILED: %.126s", error);
 }
 
 static void crop_selection(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -3813,24 +3810,6 @@ static void finish_bank_rename(TsUiState *ui, TsInstrument *instrument)
     snprintf(ui->status, sizeof(ui->status), "RENAMED BANK %02d", slot + 1);
 }
 
-static void begin_recipe_rename(TsUiState *ui, int slot)
-{
-    if (slot < TS_FACTORY_RECIPE_COUNT) {
-        snprintf(ui->status, sizeof(ui->status), "FACTORY RECIPE NAMES ARE FIXED");
-        return;
-    }
-    if (slot >= TS_RECIPE_SLOT_COUNT || !ui->recipes.slots[slot].occupied) {
-        snprintf(ui->status, sizeof(ui->status), "CAPTURE OR LOAD A USER RECIPE FIRST");
-        return;
-    }
-    ui->renaming_recipe_slot = slot;
-    snprintf(ui->recipe_rename, sizeof(ui->recipe_rename), "%s",
-             ui->recipes.slots[slot].name);
-    ui->recipe_rename_cursor = strlen(ui->recipe_rename);
-    SDL_StartTextInput();
-    snprintf(ui->status, sizeof(ui->status), "RENAMING USER RECIPE %02d", slot + 1);
-}
-
 static void cancel_recipe_rename(TsUiState *ui)
 {
     int slot = ui->renaming_recipe_slot;
@@ -4535,13 +4514,16 @@ int main(int argc, char **argv)
         else if (path_is_directory(ui.config.sample_path))
             snprintf(ui.browser.directory, sizeof(ui.browser.directory), "%s",
                      ui.config.sample_path);
-        for (int slot = 0; slot < TS_FACTORY_RECIPE_COUNT; ++slot) {
-            if (ui.config.dsp_factory_overridden[slot] &&
-                !ts_dsp_preset_set_controls(
-                    &ui.recipes.slots[slot],
-                    ui.config.dsp_factory_controls[slot]))
-                fprintf(stderr, "TapeSister config: invalid DSP preset %02d\n",
-                        slot + 1);
+        for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT; ++slot) {
+            const TsDspRecipe *recipe = ts_dsp_factory_recipe_at((size_t)slot);
+            if (!ui.config.dsp_factory_overridden[slot] || recipe == NULL) continue;
+            for (size_t control = 0; control < recipe->control_count; ++control) {
+                float value = ui.config.dsp_factory_controls[slot][control];
+                if (!ts_dsp_recipe_set_control(recipe, &ui.dsp_presets[slot],
+                                               control, value))
+                    fprintf(stderr, "TapeSister config: invalid DSP preset %02d\n",
+                            slot + 1);
+            }
         }
         for (int slot = 0; slot < TS_CDP_FACTORY_RECIPE_COUNT; ++slot) {
             const TsCdpRecipe *recipe = ts_cdp_factory_recipe_at((size_t)slot);
@@ -5071,6 +5053,12 @@ int main(int argc, char **argv)
                                  "CDP %d PAGE%s - KEYS 1 2 3 4",
                                  ui.cdp_page + 1,
                                  before == TS_UI_PANEL_CDP ? " TOGGLED" : " RESTORED");
+                    else if (panel == TS_UI_PANEL_DSP)
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "DSP %d %s%s - KEYS 1 2 3 4",
+                                 ui.dsp_page + 1,
+                                 ui.dsp_page == 0 ? "PROCESS" : "PRIMITIVES",
+                                 before == TS_UI_PANEL_DSP ? " TOGGLED" : " RESTORED");
                     else
                         snprintf(ui.status, sizeof(ui.status),
                                  "%s PANEL - KEYS 1 2 3 4", names[panel]);
@@ -5655,8 +5643,10 @@ int main(int argc, char **argv)
                     snprintf(ui.status, sizeof(ui.status),
                              "FINISH OR CANCEL THE OPEN DIALOG FIRST");
                 } else if (recipe_slot >= 0) {
+                    int recipe_index = ui.dsp_page * TS_DSP_BANK_SLOT_COUNT +
+                                       recipe_slot;
                     if (begin_dsp_transform_workspace(
-                            &ui, &instrument, &transform, recipe_slot))
+                            &ui, &instrument, &transform, recipe_index))
                         request_transform_render(device, &audio, &ui,
                                                  &instrument, &transform);
                 } else if (cdp_slot >= 0) {
@@ -6300,10 +6290,18 @@ int main(int argc, char **argv)
                         ts_ui_cdp_slot_from_point(x, y) : -1;
                     int cdp_page = ui.show_recipes ?
                         ts_ui_cdp_page_from_point(x, y) : -1;
+                    int dsp_page = ui.show_ingredients ?
+                        ts_ui_dsp_page_from_point(x, y) : -1;
                     int capture_control = !ui.show_keyboard && !ui.show_recipes &&
                                           !ui.show_ingredients &&
                                           ts_ui_capture_button_from_point(x, y);
-                    if (cdp_page >= 0) {
+                    if (dsp_page >= 0) {
+                        ui.dsp_page = dsp_page;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "DSP %d %s PAGE - SAMPLE AND SELECTION PRESERVED",
+                                 ui.dsp_page + 1,
+                                 ui.dsp_page == 0 ? "PROCESS" : "PRIMITIVES");
+                    } else if (cdp_page >= 0) {
                         ui.cdp_page = cdp_page;
                         snprintf(ui.status, sizeof(ui.status),
                                  "CDP %d PAGE - SAMPLE AND SELECTION PRESERVED",
@@ -6315,13 +6313,14 @@ int main(int argc, char **argv)
                         request_cdp_quick_apply(device, &audio, &ui, &instrument,
                                                 &transform, recipe_index);
                     } else if (recipe_slot >= 0) {
-                        unsigned modifiers = bank_modifiers(mod);
-                        if (modifiers == 0)
-                            apply_recipe_slot(device, &audio, &ui, &instrument, recipe_slot);
-                        else if (modifiers == TS_UI_BANK_MOD_SHIFT)
-                            capture_recipe_slot(&ui, &instrument, recipe_slot);
+                        int recipe_index = ui.dsp_page * TS_DSP_BANK_SLOT_COUNT +
+                                           recipe_slot;
+                        if (bank_modifiers(mod) == 0)
+                            request_dsp_quick_apply(
+                                device, &audio, &ui, &instrument, &transform,
+                                recipe_index);
                         else snprintf(ui.status, sizeof(ui.status),
-                                      "CLICK APPLY  SHIFT+CLICK CAPTURE USER");
+                                      "LEFT APPLY  MIDDLE EDIT  4 TOGGLES DSP PAGE");
                     } else if (bank_slot >= 0) {
                         TsUiBankAction action = ts_ui_bank_action(
                             0, bank_modifiers(mod));
@@ -6527,21 +6526,9 @@ int main(int argc, char **argv)
                     apply_tuning(device, &audio, &ui, &instrument,
                                  ts_ui_keyboard_base_note(&ui) + note,
                                  instrument.audible_tuning.fine_tune_cents);
-                } else if (ui.show_ingredients && recipe_slot >= 0 &&
-                           (mod & KMOD_SHIFT)) {
-                    char error[160];
-                    if (ts_recipe_bank_clear(&ui.recipes, recipe_slot,
-                                             error, sizeof(error)))
-                        snprintf(ui.status, sizeof(ui.status), "CLEARED USER RECIPE %02d",
-                                 recipe_slot + 1);
-                    else snprintf(ui.status, sizeof(ui.status),
-                                  "RECIPE CLEAR FAILED: %.126s", error);
-                } else if (ui.show_ingredients && recipe_slot >= 0 &&
-                           bank_modifiers(mod) == 0) {
-                    begin_recipe_rename(&ui, recipe_slot);
                 } else if (ui.show_ingredients && recipe_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
-                             "RMB RENAME  SHIFT+RMB CLEAR");
+                             "DSP TILES ARE CURATED - MIDDLE EDITS AND SAVE/UPDATE STORES");
                 } else if (!ui.show_keyboard && !ui.show_recipes &&
                            !ui.show_ingredients && bank_slot >= 0 &&
                            action == TS_UI_BANK_ACTION_CLEAR) {
