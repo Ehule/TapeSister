@@ -11,6 +11,7 @@
 #include "tapesister/sample.h"
 #include "tapesister/transform.h"
 #include "tapesister/dsp_recipe.h"
+#include "tapesister/exchange.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
@@ -118,6 +119,21 @@ typedef enum {
 } TsUiLoadSelectionAction;
 
 typedef enum {
+    TS_UI_EXCHANGE_NONE = 0,
+    TS_UI_EXCHANGE_SEND,
+    TS_UI_EXCHANGE_RECEIVE
+} TsUiExchangeDialog;
+
+typedef enum {
+    TS_UI_EXCHANGE_ACTION_NONE = 0,
+    TS_UI_EXCHANGE_ACTION_SEND_ONE_INSTRUMENT,
+    TS_UI_EXCHANGE_ACTION_SEND_SEPARATE_INSTRUMENTS,
+    TS_UI_EXCHANGE_ACTION_CHECK_INBOX,
+    TS_UI_EXCHANGE_ACTION_IMPORT,
+    TS_UI_EXCHANGE_ACTION_LATER
+} TsUiExchangeAction;
+
+typedef enum {
     TS_UI_DRONE_ACTION_NONE = 0,
     TS_UI_DRONE_ACTION_PREVIEW,
     TS_UI_DRONE_ACTION_STOP,
@@ -218,6 +234,9 @@ typedef struct {
     int renaming_bank_slot;
     int renaming_recipe_slot;
     int export_choice_open;
+    TsUiExchangeDialog exchange_dialog;
+    TsExchangeLayout exchange_layout;
+    int exchange_item_count;
     int load_selection_choice_open;
     int drone_open;
     int drone_preview_active;
@@ -324,6 +343,7 @@ typedef struct {
     char recipe_rename[TS_RECIPE_NAME_MAX + 1];
     size_t recipe_rename_cursor;
     char load_selection_name[128];
+    char exchange_name[96];
     char overlay[80];
     char status[160];
 } TsUiState;
@@ -354,6 +374,8 @@ int ts_ui_palette_entry_from_point(int x, int y);
 int ts_ui_palette_channel_from_point(int x, int y, int *value);
 TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y);
 TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y);
+TsUiExchangeAction ts_ui_exchange_action_from_point(TsUiExchangeDialog dialog,
+                                                     int x, int y);
 TsUiDroneAction ts_ui_drone_action_from_point(int x, int y);
 TsUiTransformAction ts_ui_transform_action_from_point(int x, int y);
 int ts_ui_transform_control_from_point(int x, int y);

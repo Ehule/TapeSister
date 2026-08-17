@@ -3934,10 +3934,74 @@ static void browser_open_bank(TsUiState *ui, const TsInstrument *instrument)
     }
 }
 
-static void send_to_fasttracker(TsUiState *ui, const TsInstrument *instrument)
+static const char *exchange_directory(const TsUiState *ui)
 {
-    const char *directory = ui->config.exchange_path[0] != '\0' ?
-                            ui->config.exchange_path : ui->config.sample_path;
+    return ui->config.exchange_path[0] != '\0' ?
+           ui->config.exchange_path : ui->config.sample_path;
+}
+
+static const char *path_basename(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    const char *backslash = strrchr(path, '\\');
+    if (backslash != NULL && (slash == NULL || backslash > slash)) slash = backslash;
+    return slash != NULL ? slash + 1 : path;
+}
+
+static int ui_dialog_open(const TsUiState *ui)
+{
+    return ui->exit_confirm_open || ui->transform_open || ui->drone_open ||
+           ui->load_selection_choice_open || ui->palette_open || ui->config_open ||
+           ui->renaming_bank_slot >= 0 || ui->renaming_recipe_slot >= 0 ||
+           ui->export_choice_open ||
+           ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
+           ui->browser.mode != TS_BROWSER_CLOSED;
+}
+
+static int stage_incoming_exchange(TsUiState *ui, TsExchangeOffer *offer,
+                                   const char *ignored_folder, int force)
+{
+    char error[160];
+    if (!ts_exchange_find_pending(exchange_directory(ui), offer,
+                                  error, sizeof(error))) {
+        if (force) snprintf(ui->status, sizeof(ui->status), "FT2 INBOX: %.138s", error);
+        return 0;
+    }
+    if (!force && ignored_folder != NULL && ignored_folder[0] != '\0' &&
+        strcmp(offer->folder, ignored_folder) == 0) return 0;
+    ui->exchange_dialog = TS_UI_EXCHANGE_RECEIVE;
+    ui->exchange_layout = offer->layout;
+    ui->exchange_item_count = offer->item_count;
+    snprintf(ui->exchange_name, sizeof(ui->exchange_name), "%.90s",
+             path_basename(offer->folder));
+    snprintf(ui->status, sizeof(ui->status),
+             "TAPEHEAD TRANSFER STAGED - REVIEW BEFORE REPLACING BANK");
+    return 1;
+}
+
+static void begin_exchange_send(TsUiState *ui, const TsInstrument *instrument)
+{
+    int count = ts_instrument_bank_count(instrument);
+    if (count <= 0) {
+        snprintf(ui->status, sizeof(ui->status), "NO OCCUPIED TILES TO SEND");
+        return;
+    }
+    if (!path_is_directory(exchange_directory(ui))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "CONFIGURE AN EXISTING FT2 EXCHANGE OR SAMPLE PATH FIRST");
+        return;
+    }
+    ui->exchange_dialog = TS_UI_EXCHANGE_SEND;
+    ui->exchange_item_count = count;
+    ui->exchange_name[0] = '\0';
+    snprintf(ui->status, sizeof(ui->status),
+             "CHOOSE HOW TAPESISTER TILES SHOULD ARRIVE IN TAPEHEAD");
+}
+
+static void send_to_fasttracker(TsUiState *ui, const TsInstrument *instrument,
+                                TsExchangeLayout layout)
+{
+    const char *directory = exchange_directory(ui);
     char destination[TS_BROWSER_PATH_MAX];
     char error[160];
     if (!path_is_directory(directory)) {
@@ -3945,13 +4009,9 @@ static void send_to_fasttracker(TsUiState *ui, const TsInstrument *instrument)
                  "CONFIGURE AN EXISTING FT2 EXCHANGE OR SAMPLE PATH FIRST");
         return;
     }
-    if (!ts_instrument_next_family_path(instrument, directory,
-                                        destination, sizeof(destination),
-                                        error, sizeof(error))) {
-        snprintf(ui->status, sizeof(ui->status), "FT2 PATH FAILED: %.134s", error);
-        return;
-    }
-    if (!ts_instrument_export_bank(instrument, destination, error, sizeof(error))) {
+    if (!ts_exchange_publish_bank(instrument, directory, layout,
+                                  destination, sizeof(destination),
+                                  error, sizeof(error))) {
         snprintf(ui->status, sizeof(ui->status), "FT2 EXPORT FAILED: %.132s", error);
         return;
     }
@@ -3967,8 +4027,34 @@ static void send_to_fasttracker(TsUiState *ui, const TsInstrument *instrument)
         return;
     }
     snprintf(ui->status, sizeof(ui->status),
-             "SENT %d LOOP AWARE SAMPLES TO %.83s - FASTTRACKER LAUNCHED",
-             ts_instrument_bank_count(instrument), destination);
+             "SENT %d SAMPLES AS %s - FASTTRACKER LAUNCHED",
+             ts_instrument_bank_count(instrument),
+             layout == TS_EXCHANGE_LAYOUT_SEPARATE_INSTRUMENTS ?
+             "SEPARATE INSTRUMENTS" : "ONE INSTRUMENT");
+}
+
+static int import_incoming_exchange(SDL_AudioDeviceID device, AudioState *audio,
+                                    TsUiState *ui, TsInstrument *instrument,
+                                    TsExchangeOffer *offer)
+{
+    char error[160];
+    int count = offer->item_count;
+    stop_all(device, audio, ui);
+    if (!ts_exchange_import_offer(instrument, offer, error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "FT2 IMPORT FAILED: %.132s", error);
+        return 0;
+    }
+    ui->exchange_dialog = TS_UI_EXCHANGE_NONE;
+    ui->exchange_item_count = 0;
+    ui->exchange_name[0] = '\0';
+    ui->bank_view_slot = -1;
+    ui->load_bank_slot = instrument->selected_slot;
+    ui->audition_source = TS_AUDITION_CURRENT;
+    ui->has_pitch_suggestion = 0;
+    snprintf(ui->status, sizeof(ui->status),
+             "IMPORTED %d TAPEHEAD SAMPLES INTO TILES - BANK REPLACED", count);
+    ts_exchange_offer_init(offer);
+    return 1;
 }
 
 static void browser_cancel(TsUiState *ui)
@@ -4502,17 +4588,21 @@ int main(int argc, char **argv)
     TsSample clipboard;
     TsSample pending_selection_load;
     TsSample drone_preview;
+    TsExchangeOffer exchange_offer;
     TransformController transform;
     size_t clipboard_origin_first = 0;
     size_t clipboard_source_frames = 0;
     uint32_t clipboard_source_rate = 0;
     AudioState audio = {0};
+    char ignored_exchange[TS_EXCHANGE_PATH_MAX] = {0};
+    uint32_t last_exchange_poll = 0;
     int running = 1;
 
     ts_instrument_init(&instrument);
     ts_sample_init(&clipboard);
     ts_sample_init(&pending_selection_load);
     ts_sample_init(&drone_preview);
+    ts_exchange_offer_init(&exchange_offer);
     transform_controller_init(&transform);
     ts_ui_init(&ui);
     {
@@ -4627,6 +4717,8 @@ int main(int argc, char **argv)
                        TS_AUDITION_ALL, 1.0, obtained.freq);
     }
     ui.saved_state_hash = instrument_state_hash(&instrument);
+    last_exchange_poll = SDL_GetTicks();
+    (void)stage_incoming_exchange(&ui, &exchange_offer, ignored_exchange, 0);
 
     while (running) {
         SDL_Event event;
@@ -4661,6 +4753,7 @@ int main(int argc, char **argv)
             else if (event.type == SDL_DROPFILE &&
                      (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                       ui.config_open || ui.palette_open || ui.export_choice_open ||
+                      ui.exchange_dialog != TS_UI_EXCHANGE_NONE ||
                       ui.load_selection_choice_open ||
                       ui.transform_open ||
                       ui.drone_open ||
@@ -4833,6 +4926,39 @@ int main(int argc, char **argv)
                     } else if (key == SDLK_r) {
                         commit_drone(device, &audio, &ui, &instrument,
                                      &drone_preview, 0);
+                    }
+                } else if (ui.exchange_dialog != TS_UI_EXCHANGE_NONE) {
+                    if (ui.exchange_dialog == TS_UI_EXCHANGE_SEND) {
+                        if (key == SDLK_ESCAPE || key == SDLK_l) {
+                            ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
+                            snprintf(ui.status, sizeof(ui.status), "FT2 LINK CANCELLED");
+                        } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
+                                   key == SDLK_o || key == SDLK_1) {
+                            ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
+                            send_to_fasttracker(
+                                &ui, &instrument,
+                                TS_EXCHANGE_LAYOUT_INSTRUMENT_SAMPLES);
+                        } else if (key == SDLK_s || key == SDLK_2) {
+                            ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
+                            send_to_fasttracker(
+                                &ui, &instrument,
+                                TS_EXCHANGE_LAYOUT_SEPARATE_INSTRUMENTS);
+                        } else if (key == SDLK_i || key == SDLK_c) {
+                            ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
+                            (void)stage_incoming_exchange(
+                                &ui, &exchange_offer, ignored_exchange, 1);
+                        }
+                    } else if (key == SDLK_ESCAPE || key == SDLK_l) {
+                        snprintf(ignored_exchange, sizeof(ignored_exchange), "%s",
+                                 exchange_offer.folder);
+                        ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "TAPEHEAD TRANSFER LEFT IN INBOX FOR LATER");
+                    } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
+                               key == SDLK_i) {
+                        ignored_exchange[0] = '\0';
+                        (void)import_incoming_exchange(
+                            device, &audio, &ui, &instrument, &exchange_offer);
                     }
                 } else if (ui.load_selection_choice_open) {
                     if (key == SDLK_ESCAPE || key == SDLK_c)
@@ -5232,6 +5358,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_KEYUP && !ui.config_open && !ui.palette_open &&
                        ui.renaming_bank_slot < 0 &&
                        ui.renaming_recipe_slot < 0 && !ui.export_choice_open &&
+                       ui.exchange_dialog == TS_UI_EXCHANGE_NONE &&
                        !ui.load_selection_choice_open &&
                        !ui.transform_open &&
                        !ui.drone_open &&
@@ -5331,6 +5458,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.export_choice_open ||
+                        ui.exchange_dialog != TS_UI_EXCHANGE_NONE ||
                         ui.load_selection_choice_open ||
                         ui.transform_open ||
                         ui.exit_confirm_open)) {
@@ -5520,6 +5648,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.palette_open || ui.export_choice_open ||
+                        ui.exchange_dialog != TS_UI_EXCHANGE_NONE ||
                         ui.load_selection_choice_open ||
                         ui.transform_open ||
                         ui.drone_open ||
@@ -5635,6 +5764,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONDOWN &&
                        event.button.button == SDL_BUTTON_MIDDLE &&
                        !ui.config_open && !ui.palette_open &&
+                       ui.exchange_dialog == TS_UI_EXCHANGE_NONE &&
                        !ui.load_selection_choice_open &&
                        !ui.transform_open &&
                        !ui.drone_open &&
@@ -5648,7 +5778,8 @@ int main(int argc, char **argv)
                 cdp_slot = ui.show_recipes ? ts_ui_cdp_slot_from_point(x, y) : -1;
                 ui.bank_clear_armed = 0;
                 if (ui.exit_confirm_open || ui.renaming_bank_slot >= 0 ||
-                    ui.renaming_recipe_slot >= 0 || ui.export_choice_open) {
+                    ui.renaming_recipe_slot >= 0 || ui.export_choice_open ||
+                    ui.exchange_dialog != TS_UI_EXCHANGE_NONE) {
                     snprintf(ui.status, sizeof(ui.status),
                              "FINISH OR CANCEL THE OPEN DIALOG FIRST");
                 } else if (recipe_slot >= 0) {
@@ -5787,6 +5918,39 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status),
                                  "DRONE CANCELLED - SOURCE UNCHANGED");
                     }
+                } else if (ui.exchange_dialog != TS_UI_EXCHANGE_NONE) {
+                    TsUiExchangeDialog dialog = ui.exchange_dialog;
+                    TsUiExchangeAction action =
+                        ts_ui_exchange_action_from_point(dialog, x, y);
+                    if (action == TS_UI_EXCHANGE_ACTION_SEND_ONE_INSTRUMENT) {
+                        ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
+                        send_to_fasttracker(
+                            &ui, &instrument,
+                            TS_EXCHANGE_LAYOUT_INSTRUMENT_SAMPLES);
+                    } else if (action ==
+                               TS_UI_EXCHANGE_ACTION_SEND_SEPARATE_INSTRUMENTS) {
+                        ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
+                        send_to_fasttracker(
+                            &ui, &instrument,
+                            TS_EXCHANGE_LAYOUT_SEPARATE_INSTRUMENTS);
+                    } else if (action == TS_UI_EXCHANGE_ACTION_CHECK_INBOX) {
+                        ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
+                        (void)stage_incoming_exchange(
+                            &ui, &exchange_offer, ignored_exchange, 1);
+                    } else if (action == TS_UI_EXCHANGE_ACTION_IMPORT) {
+                        ignored_exchange[0] = '\0';
+                        (void)import_incoming_exchange(
+                            device, &audio, &ui, &instrument, &exchange_offer);
+                    } else if (action == TS_UI_EXCHANGE_ACTION_LATER) {
+                        if (dialog == TS_UI_EXCHANGE_RECEIVE)
+                            snprintf(ignored_exchange, sizeof(ignored_exchange), "%s",
+                                     exchange_offer.folder);
+                        ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 dialog == TS_UI_EXCHANGE_RECEIVE ?
+                                 "TAPEHEAD TRANSFER LEFT IN INBOX FOR LATER" :
+                                 "FT2 LINK CANCELLED");
+                    }
                 } else if (ui.load_selection_choice_open) {
                     TsUiLoadSelectionAction action =
                         ts_ui_load_selection_action_from_point(x, y);
@@ -5919,7 +6083,7 @@ int main(int argc, char **argv)
                 } else if (y >= 4 && y < 28 && x >= 350 && x < 426) {
                     begin_config(&ui);
                 } else if (y >= 4 && y < 28 && x >= 431 && x < 511) {
-                    send_to_fasttracker(&ui, &instrument);
+                    begin_exchange_send(&ui, &instrument);
                 } else if (y >= 4 && y < 28 && x >= 516 && x < 568) {
                     browser_open(&ui, ui.show_ingredients ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
@@ -6485,6 +6649,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONDOWN &&
                        event.button.button == SDL_BUTTON_RIGHT &&
                        !ui.config_open && !ui.palette_open &&
+                       ui.exchange_dialog == TS_UI_EXCHANGE_NONE &&
                        !ui.load_selection_choice_open &&
                        !ui.transform_open &&
                        !ui.drone_open &&
@@ -6637,6 +6802,14 @@ int main(int argc, char **argv)
             }
         }
 
+        if (SDL_GetTicks() - last_exchange_poll >= 1000u) {
+            last_exchange_poll = SDL_GetTicks();
+            if (!ui_dialog_open(&ui) && !ui.canvas_gesture.active &&
+                !ui.stretch_gesture.active && !ui.warp_gesture.active &&
+                !ui.smear_gesture.active && !ui.tear_gesture.active)
+                (void)stage_incoming_exchange(
+                    &ui, &exchange_offer, ignored_exchange, 0);
+        }
         if (audio.capture.state == TS_CAPTURE_COMPLETED)
             finalize_capture(device, &audio, &ui, &instrument);
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);

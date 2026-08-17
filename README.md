@@ -147,7 +147,22 @@ Root and fine tuning participate in the selected tile's state and Undo/Redo hist
 
 Fresh launches also use two boolean startup settings (both default to `1` when absent): `startup_welcome_sample` installs `assets/tapesister_welcome.wav` as the ordinary imported working sound in bank 01, and `startup_welcome_autoplay` auditions it once after the splash closes. Set autoplay to `0` to keep the waveform without the greeting, or sample to `0` to start with an empty selected bank 01. Command-line WAV/TSR loading takes precedence and is never overwritten by the welcome artifact. See `tapesister.ini.example`.
 
-**Send FT2** exports every occupied collection slot into an automatically numbered folder under the exchange path (falling back to the sample path), then launches the configured FastTracker executable without shell interpolation. No existing handoff folder is replaced. The handoff remains deliberately file-based: TapeSister does not link against tracker state, and FT2's existing folder importer decides whether the collection replaces the current instrument, fills another instrument, or becomes a launcher bank.
+**FT2 Link** is the bidirectional handoff control. For sending, choose whether every
+occupied TapeSister tile should become sample slots inside **One Instrument** or become
+**Separate Instruments** in Tapehead. TapeSister atomically publishes a new numbered
+folder containing the WAVs and a versioned `exchange.tsexchange` manifest under the
+exchange path (falling back to the sample path), then launches the configured
+FastTracker executable without shell interpolation. No existing handoff folder is
+replaced.
+
+TapeSister also watches the exchange path for complete Tapehead-to-TapeSister manifests.
+It stages the newest transfer and shows its sample count and source layout before doing
+anything. **Import** validates every WAV in temporary memory and then replaces the
+16-tile bank as one accepted batch; **Later** leaves both the transfer and the current
+bank untouched. Imported WAVs retain their standard tuning and supported loop metadata.
+The handoff remains deliberately file-based: TapeSister does not link against tracker
+state. See [`docs/FT2_EXCHANGE.md`](docs/FT2_EXCHANGE.md) for the exact reciprocal
+protocol and Tapehead-side requirements.
 
 Every handoff WAV includes root/fine-tune metadata plus loop start, inclusive end, and standard Forward/Ping-Pong/Backward type. FT2 already reads the loop record, so forward and ping-pong collection members arrive with looping enabled instead of requiring manual flags. Its current WAV loader treats the standard backward type as ping-pong; exact reverse-loop interpretation and `smpl` root-note adoption belong to the reciprocal FT2-side handoff slice.
 
@@ -352,6 +367,6 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Create FM tile / vary selected FM tile, or stamp the selected range: **Create** / **Vary**
 - Config paths: top **Config** button
 - Tapehead-compatible colors: **Config -> Palette**
-- Export collection to exchange folder and launch FT2: top **Send FT2** button
+- Send/receive through the exchange folder and launch FT2: top **FT2 Link** button
 
 Multiple loops, automatic loop candidates, the zero-crossing loop-maker transformation, deeper synthesis and modulation stages, and multi-source variation remain separate, visually verified slices.

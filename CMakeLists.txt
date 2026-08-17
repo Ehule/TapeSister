@@ -10,7 +10,7 @@ add_library(tapesister_core src/ts_sample.c src/ts_audition.c src/ts_note_bank.c
              src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_dsp_recipe.c
              src/ts_palette.c
              src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c
-             src/ts_dsp_transform.c src/ts_ui.c)
+             src/ts_dsp_transform.c src/ts_exchange.c src/ts_ui.c)
 target_include_directories(tapesister_core PUBLIC include)
 target_link_libraries(tapesister_core PUBLIC m)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -77,6 +77,10 @@ add_test(NAME tapesister_transform_tests COMMAND tapesister_transform_tests)
 add_executable(tapesister_chain_stamp_tests tests/test_chain_stamp.c)
 target_link_libraries(tapesister_chain_stamp_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_chain_stamp_tests COMMAND tapesister_chain_stamp_tests)
+
+add_executable(tapesister_exchange_tests tests/test_exchange.c)
+target_link_libraries(tapesister_exchange_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_exchange_tests COMMAND tapesister_exchange_tests)
 
 add_executable(tapesister_render_demo tests/render_demo.c)
 target_link_libraries(tapesister_render_demo PRIVATE tapesister_core)

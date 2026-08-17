@@ -1010,6 +1010,27 @@ TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y)
     return TS_UI_LOAD_SELECTION_NONE;
 }
 
+TsUiExchangeAction ts_ui_exchange_action_from_point(TsUiExchangeDialog dialog,
+                                                     int x, int y)
+{
+    if (dialog == TS_UI_EXCHANGE_SEND) {
+        if (y >= 112 && y < 135) {
+            if (x >= 126 && x < 310)
+                return TS_UI_EXCHANGE_ACTION_SEND_ONE_INSTRUMENT;
+            if (x >= 330 && x < 514)
+                return TS_UI_EXCHANGE_ACTION_SEND_SEPARATE_INSTRUMENTS;
+        }
+        if (y >= 158 && y < 181) {
+            if (x >= 184 && x < 316) return TS_UI_EXCHANGE_ACTION_CHECK_INBOX;
+            if (x >= 330 && x < 456) return TS_UI_EXCHANGE_ACTION_LATER;
+        }
+    } else if (dialog == TS_UI_EXCHANGE_RECEIVE && y >= 158 && y < 181) {
+        if (x >= 184 && x < 316) return TS_UI_EXCHANGE_ACTION_IMPORT;
+        if (x >= 330 && x < 456) return TS_UI_EXCHANGE_ACTION_LATER;
+    }
+    return TS_UI_EXCHANGE_ACTION_NONE;
+}
+
 TsUiDroneAction ts_ui_drone_action_from_point(int x, int y)
 {
     if (y < 161 || y >= 184) return TS_UI_DRONE_ACTION_NONE;
@@ -1435,7 +1456,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 280, 13, history, PAL_EFFECT, 1);
     }
     button(fb, 350, 4, 76, "CONFIG", ui->config_open);
-    button(fb, 431, 4, 80, "SEND FT2", 0);
+    button(fb, 431, 4, 80, "FT2 LINK", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
     button(fb, 516, 4, 52, "SAVE", 0);
     button(fb, 573, 4, 57, "EXPORT", 0);
 
@@ -2003,6 +2024,36 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         transform_render(fb, ui, instrument);
     else if (ui->drone_open)
         drone_render(fb, ui);
+    else if (ui->exchange_dialog != TS_UI_EXCHANGE_NONE) {
+        char count[80];
+        frame(fb, 110, 54, 420, 140, RGB(36, 33, 37), PAL_MOUSE);
+        if (ui->exchange_dialog == TS_UI_EXCHANGE_SEND) {
+            text(fb, 128, 68, "SEND TAPESISTER BANK TO TAPEHEAD", PAL_NOTE, 1);
+            snprintf(count, sizeof(count), "%d OCCUPIED TILES - CHOOSE FT2 LAYOUT",
+                     ui->exchange_item_count);
+            text(fb, 128, 88, count, PAL_EFFECT, 1);
+            button(fb, 126, 112, 184, "ONE INSTRUMENT", 0);
+            button(fb, 330, 112, 184, "SEPARATE INSTR", 0);
+            text(fb, 128, 140, "WAVS + MANIFEST PUBLISH ATOMICALLY", PAL_INSTRUMENT, 1);
+            button(fb, 184, 158, 132, "CHECK INBOX", 0);
+            button(fb, 330, 158, 126, "CANCEL", 0);
+        } else {
+            text(fb, 128, 68, "TAPEHEAD TRANSFER FOUND", PAL_NOTE, 1);
+            snprintf(count, sizeof(count), "%d SAMPLES -> TILES 01-16",
+                     ui->exchange_item_count);
+            text(fb, 128, 88, count, PAL_EFFECT, 1);
+            text(fb, 128, 106,
+                 ui->exchange_layout == TS_EXCHANGE_LAYOUT_SEPARATE_INSTRUMENTS ?
+                 "SOURCE: SEPARATE FT2 INSTRUMENTS" :
+                 "SOURCE: SAMPLES FROM ONE FT2 INSTRUMENT",
+                 PAL_INSTRUMENT, 1);
+            text(fb, 128, 124,
+                 "IMPORT REPLACES THE CURRENT TAPESISTER BANK", PAL_VOLUME, 1);
+            text(fb, 128, 140, ui->exchange_name, PAL_EFFECT, 1);
+            button(fb, 184, 158, 132, "IMPORT", 0);
+            button(fb, 330, 158, 126, "LATER", 0);
+        }
+    }
     else if (ui->load_selection_choice_open) {
         char source[58];
         snprintf(source, sizeof(source), "%.52s", ui->load_selection_name);

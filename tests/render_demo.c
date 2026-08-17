@@ -67,6 +67,19 @@ int main(int argc, char **argv)
                  "glass-harmonic-source.wav");
         snprintf(ui.status, sizeof(ui.status),
                  "CHOOSE PASTE, FIT, OR CANCEL FOR THE SELECTED RANGE");
+    } else if (argc > 2 && strcmp(argv[2], "exchange-send") == 0) {
+        ui.exchange_dialog = TS_UI_EXCHANGE_SEND;
+        ui.exchange_item_count = 12;
+        snprintf(ui.status, sizeof(ui.status),
+                 "CHOOSE HOW TAPESISTER TILES SHOULD ARRIVE IN TAPEHEAD");
+    } else if (argc > 2 && strcmp(argv[2], "exchange-receive") == 0) {
+        ui.exchange_dialog = TS_UI_EXCHANGE_RECEIVE;
+        ui.exchange_item_count = 16;
+        ui.exchange_layout = TS_EXCHANGE_LAYOUT_INSTRUMENT_SAMPLES;
+        snprintf(ui.exchange_name, sizeof(ui.exchange_name),
+                 "tapehead_to_tapesister_0042");
+        snprintf(ui.status, sizeof(ui.status),
+                 "TAPEHEAD TRANSFER STAGED - REVIEW BEFORE REPLACING BANK");
     } else if (argc > 2 && strcmp(argv[2], "drone") == 0) {
         size_t split = 0;
         size_t overlap = 0;
