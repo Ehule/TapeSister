@@ -1,0 +1,1 @@
+Trigger PR35 architectural repair and Linux/Windows UCRT64 validation.
