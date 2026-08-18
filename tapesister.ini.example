@@ -27,8 +27,14 @@ drone_crossfade_ms=50
 ; It is capped at one quarter of the current selection length.
 chain_stamp_crossfade_ms=3
 
+[Audio]
+; Blank uses the machine's default stereo playback device.
+; Config can select SYSTEM DEFAULT or any SDL playback device.
+audio_output_device=
+
 [External Recording]
-; Blank uses the machine's default recording device. To force an interface, copy its exact SDL device name here.
+; Blank uses the machine's default recording device. Config can select
+; SYSTEM DEFAULT or any SDL capture device without typing its name.
 record_input_device=
 ; 0 = mix all channels to mono, 1 = first/left input, 2 = second/right input.
 record_input_channel=1

@@ -7,7 +7,8 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_audition.c src/ts_note_bank.c
              src/ts_capture.c
-             src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_dsp_recipe.c
+             src/ts_browser.c src/ts_config.c src/ts_audio_config.c
+             src/ts_recipe.c src/ts_dsp_recipe.c
              src/ts_palette.c
              src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c
              src/ts_dsp_transform.c src/ts_exchange.c src/ts_ui.c)
@@ -20,14 +21,13 @@ endif()
 option(TAPESISTER_BUILD_SDL "Build the playable SDL2 instrument" ON)
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
-  add_executable(tapesister src/main_sdl.c src/ts_startup_diag.c)
+  # main_sdl_audio.c wraps the established app entry point with SDL device
+  # selection/routing while leaving main_sdl.c itself unchanged.
+  add_executable(tapesister src/main_sdl_audio.c src/ts_startup_diag.c)
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
-  # PR35 temporarily pushed the Windows main-thread stack close to/exceeding the
-  # MinGW default by adding another very large TsInstrument plus a full-size swap
-  # temporary. Keep a generous reserve as defense-in-depth while the REC-bank
-  # storage is moved off the stack. Reserve is virtual address space, not committed
-  # physical memory.
+  # Keep the enlarged Windows stack reserve as defense-in-depth after PR35's
+  # REC-bank storage was moved off the main-thread stack.
   if(MINGW)
     target_link_options(tapesister PRIVATE "-Wl,--stack,16777216")
   endif()
@@ -81,6 +81,10 @@ add_test(NAME tapesister_capture_tests COMMAND tapesister_capture_tests)
 add_executable(tapesister_external_record_tests tests/test_external_record.c)
 target_link_libraries(tapesister_external_record_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_external_record_tests COMMAND tapesister_external_record_tests)
+
+add_executable(tapesister_audio_config_tests tests/test_audio_config.c)
+target_link_libraries(tapesister_audio_config_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_audio_config_tests COMMAND tapesister_audio_config_tests)
 
 add_executable(tapesister_transform_tests tests/test_transform.c)
 target_link_libraries(tapesister_transform_tests PRIVATE tapesister_core)
