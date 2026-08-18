@@ -52,11 +52,11 @@ In function ‘snprintf’,
       |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
    56 |                                    __va_arg_pack ());
       |                                    ~~~~~~~~~~~~~~~~~
-/usr/bin/ld: /tmp/cc4qCmsB.o: in function `main':
+/usr/bin/ld: /tmp/ccsWh9Bb.o: in function `main':
 main_sdl.c:(.text.startup+0x196b): undefined reference to `ts_ui_drone_waveform_contains'
 /usr/bin/ld: main_sdl.c:(.text.startup+0x25ba): undefined reference to `ts_ui_drone_crossfade_handle_from_point'
 /usr/bin/ld: main_sdl.c:(.text.startup+0x7766): undefined reference to `ts_ui_drone_crossfade_handle_from_point'
-/usr/bin/ld: /tmp/ccwM6reC.o: in function `ts_ui_render':
+/usr/bin/ld: /tmp/cc37ifCf.o: in function `ts_ui_render':
 ts_ui.c:(.text+0x95a6): undefined reference to `drone_render'
 /usr/bin/ld: ts_ui.c:(.text+0x98cd): undefined reference to `transform_render'
 collect2: error: ld returned 1 exit status
@@ -79,7 +79,7 @@ src/ts_ui.c:1760:9: warning: implicit declaration of function ‘drone_render’
  1760 |         drone_render(fb, ui);
       |         ^~~~~~~~~~~~
       |         browser_render
-/usr/bin/ld: /tmp/ccKXWyCO.o: in function `ts_ui_render':
+/usr/bin/ld: /tmp/ccCinfsj.o: in function `ts_ui_render':
 ts_ui.c:(.text+0x95a6): undefined reference to `drone_render'
 /usr/bin/ld: ts_ui.c:(.text+0x98cd): undefined reference to `transform_render'
 collect2: error: ld returned 1 exit status
@@ -91,8 +91,8 @@ make: *** [Makefile:22: tapesister_core_tests] Error 1
 -- Check for working C compiler: /usr/bin/cc - skipped
 -- Detecting C compile features
 -- Detecting C compile features - done
--- Configuring done (0.6s)
--- Generating done (0.0s)
+-- Configuring done (0.9s)
+-- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/TapeSister/TapeSister/build-pr35-audio-linux
 [1/43] Building C object CMakeFiles/tapesister_core.dir/src/ts_audition.c.o
 [2/43] Building C object CMakeFiles/tapesister_core.dir/src/ts_note_bank.c.o
@@ -149,7 +149,9 @@ In function ‘snprintf’,
 [21/43] Building C object CMakeFiles/tapesister_bank_tests.dir/tests/test_bank.c.o
 [22/43] Building C object CMakeFiles/tapesister_editor_contract_tests.dir/tests/test_editor_contract.c.o
 [23/43] Building C object CMakeFiles/tapesister_canvas_tests.dir/tests/test_canvas.c.o
-[24/43] Building C object CMakeFiles/tapesister.dir/src/main_sdl.c.o
+[24/43] Building C object CMakeFiles/tapesister_capture_tests.dir/tests/test_capture.c.o
+[25/43] Building C object CMakeFiles/tapesister_external_record_tests.dir/tests/test_external_record.c.o
+[26/43] Building C object CMakeFiles/tapesister.dir/src/main_sdl.c.o
 /home/runner/work/TapeSister/TapeSister/src/main_sdl.c: In function ‘main’:
 /home/runner/work/TapeSister/TapeSister/src/main_sdl.c:5404:44: warning: null character(s) preserved in literal
  5404 |         if (device == 0 && requested[0] != ' ') {
@@ -176,11 +178,9 @@ In function ‘snprintf’,
       |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
    56 |                                    __va_arg_pack ());
       |                                    ~~~~~~~~~~~~~~~~~
-[25/43] Building C object CMakeFiles/tapesister_capture_tests.dir/tests/test_capture.c.o
-[26/43] Building C object CMakeFiles/tapesister_external_record_tests.dir/tests/test_external_record.c.o
 [27/43] Building C object CMakeFiles/tapesister_chain_stamp_tests.dir/tests/test_chain_stamp.c.o
 [28/43] Building C object CMakeFiles/tapesister_exchange_tests.dir/tests/test_exchange.c.o
-[29/43] Building C object CMakeFiles/tapesister_render_demo.dir/tests/render_demo.c.o
+[29/43] Building C object CMakeFiles/tapesister_transform_tests.dir/tests/test_transform.c.o
 [30/43] Linking C executable tapesister
 FAILED: [code=1] tapesister 
 : && /usr/bin/cc -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/tapesister.dir/link.d CMakeFiles/tapesister.dir/src/main_sdl.c.o CMakeFiles/tapesister.dir/src/ts_startup_diag.c.o -o tapesister  libtapesister_core.a  /usr/lib/x86_64-linux-gnu/libSDL2.so  -lm && cd /home/runner/work/TapeSister/TapeSister/build-pr35-audio-linux && /usr/local/bin/cmake -E make_directory /home/runner/work/TapeSister/TapeSister/build-pr35-audio-linux/assets && /usr/local/bin/cmake -E copy_if_different /home/runner/work/TapeSister/TapeSister/assets/tapesister_splash.png /home/runner/work/TapeSister/TapeSister/build-pr35-audio-linux/assets/tapesister_splash.png && /usr/local/bin/cmake -E copy_if_different /home/runner/work/TapeSister/TapeSister/assets/tapehead.pal /home/runner/work/TapeSister/TapeSister/build-pr35-audio-linux/assets/tapehead.pal && cd /home/runner/work/TapeSister/TapeSister/build-pr35-audio-linux && /usr/local/bin/cmake -E copy_if_different /home/runner/work/TapeSister/TapeSister/assets/tapesister_welcome.wav /home/runner/work/TapeSister/TapeSister/build-pr35-audio-linux/assets/tapesister_welcome.wav
@@ -192,7 +192,7 @@ main_sdl.c:(.text.startup+0x1d3a): undefined reference to `ts_ui_drone_waveform_
 ts_ui.c:(.text+0xb347): undefined reference to `drone_render'
 /usr/bin/ld: ts_ui.c:(.text+0xb360): undefined reference to `transform_render'
 collect2: error: ld returned 1 exit status
-[31/43] Building C object CMakeFiles/tapesister_transform_tests.dir/tests/test_transform.c.o
+[31/43] Building C object CMakeFiles/tapesister_render_demo.dir/tests/render_demo.c.o
 ninja: build stopped: subcommand failed.
 Internal ctest changing into directory: /home/runner/work/TapeSister/TapeSister/build-pr35-audio-linux
 Test project /home/runner/work/TapeSister/TapeSister/build-pr35-audio-linux
@@ -562,7 +562,7 @@ Unable to find executable: /home/runner/work/TapeSister/TapeSister/build-pr35-au
 
 0% tests passed, 11 tests failed out of 11
 
-Total Test time (real) =   0.05 sec
+Total Test time (real) =   0.04 sec
 
 The following tests FAILED:
 	  1 - tapesister_core_tests (Not Run)
@@ -578,4 +578,4 @@ The following tests FAILED:
 	 11 - tapesister_exchange_tests (Not Run)
 Errors while running CTest
 === REC BANK STRESS ===
-/home/runner/work/_temp/f91db45c-5315-465d-baf5-15edba66a16f.sh: line 14: ./build-pr35-audio-linux/tapesister: No such file or directory
+/home/runner/work/_temp/685c64f8-9e4d-44fa-9528-861fd6d399d2.sh: line 14: ./build-pr35-audio-linux/tapesister: No such file or directory
