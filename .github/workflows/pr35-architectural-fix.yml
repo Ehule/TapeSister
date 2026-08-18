@@ -1,0 +1,101 @@
+name: PR35 architectural repair validation
+
+on:
+  push:
+    branches:
+      - agent/external-input-rec-bank
+
+permissions:
+  contents: write
+
+jobs:
+  repair-linux:
+    if: ${{ !contains(github.event.head_commit.message, '[pr35-architectural-fix]') && !contains(github.event.head_commit.message, '[pr35-windows-validated]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/external-input-rec-bank
+          fetch-depth: 0
+      - name: Apply architectural repair
+        run: python3 tools/pr35_architectural_fix.py
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev ninja-build
+      - name: Linux Make build
+        run: make -j2
+      - name: Linux CMake build and tests
+        run: |
+          cmake -S . -B build-pr35-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-pr35-linux -j2
+          ctest --test-dir build-pr35-linux --output-on-failure
+      - name: Linux bank-toggle stress
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: ./build-pr35-linux/tapesister --diagnostic-bank-toggle-stress
+      - name: Remove temporary repair machinery
+        run: |
+          rm -f tools/pr35_architectural_fix.py
+          rm -f .github/workflows/pr35-architectural-fix.yml
+          rm -f tools/pr35_architectural_trigger.txt
+      - name: Commit architectural repair
+        run: |
+          git config user.name "TapeSister PR35 repair"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: move REC bank storage off Windows stack and harden capture lifecycle [pr35-architectural-fix]"
+          git push origin HEAD:agent/external-input-rec-bank
+
+  windows-ucrt64:
+    needs: repair-linux
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/external-input-rec-bank
+          fetch-depth: 0
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            make
+            ninja
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-SDL2
+      - name: UCRT64 Release build
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build-ucrt-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
+          cmake --build build-ucrt-release -j2
+          ctest --test-dir build-ucrt-release --output-on-failure
+          objdump -x build-ucrt-release/tapesister.exe | grep -i -E "SizeOfStackReserve|SizeOfStackCommit" || true
+      - name: UCRT64 Release 1/1 stress and missing-capture test
+        shell: msys2 {0}
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: ./build-ucrt-release/tapesister.exe --diagnostic-bank-toggle-stress
+      - name: UCRT64 Debug build
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build-ucrt-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
+          cmake --build build-ucrt-debug -j2
+          ctest --test-dir build-ucrt-debug -R "external_record|capture|bank" --output-on-failure -V
+      - name: UCRT64 Debug 1/1 stress and missing-capture test
+        shell: msys2 {0}
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: ./build-ucrt-debug/tapesister.exe --diagnostic-bank-toggle-stress
+      - name: Mark Windows validation success
+        shell: msys2 {0}
+        run: |
+          git config user.name "TapeSister UCRT64 validation"
+          git config user.email "actions@users.noreply.github.com"
+          git commit --allow-empty -m "test: UCRT64 Release and Debug validate PR35 repair [pr35-windows-validated]"
+          git push origin HEAD:agent/external-input-rec-bank
