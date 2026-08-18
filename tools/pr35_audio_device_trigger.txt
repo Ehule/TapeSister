@@ -1,1 +1,1 @@
-Trigger PR35 SDL input/output device selectors, Linux validation, and Windows UCRT64 validation.
+Retrigger PR35 SDL input/output device selectors with self-diagnosing Linux and Windows UCRT64 validation.
