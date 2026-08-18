@@ -25,6 +25,33 @@ typedef struct {
     _Atomic TsCaptureState state;
 } TsCaptureRecorder;
 
+typedef enum {
+    TS_EXTERNAL_CAPTURE_IDLE = 0,
+    TS_EXTERNAL_CAPTURE_ARMED,
+    TS_EXTERNAL_CAPTURE_RECORDING,
+    TS_EXTERNAL_CAPTURE_COMPLETED,
+    TS_EXTERNAL_CAPTURE_CANCELED
+} TsExternalCaptureState;
+
+typedef struct {
+    float *buffer;
+    size_t capacity_frames;
+    size_t recorded_frames;
+    float *pre_roll;
+    size_t pre_roll_capacity;
+    size_t pre_roll_count;
+    size_t pre_roll_write;
+    size_t silence_frames;
+    size_t tail_frames;
+    size_t quiet_frames;
+    uint32_t sample_rate;
+    float threshold_amplitude;
+    int threshold_db;
+    int destination_slot;
+    int stopped_early;
+    _Atomic TsExternalCaptureState state;
+} TsExternalRecorder;
+
 void ts_capture_init(TsCaptureRecorder *recorder);
 void ts_capture_free(TsCaptureRecorder *recorder);
 int ts_capture_arm(TsCaptureRecorder *recorder, int destination_slot,
@@ -43,5 +70,24 @@ int ts_capture_stop(TsCaptureRecorder *recorder,
 int ts_capture_cancel(TsCaptureRecorder *recorder);
 float ts_capture_progress(const TsCaptureRecorder *recorder);
 const char *ts_capture_state_name(TsCaptureState state);
+
+void ts_external_recorder_init(TsExternalRecorder *recorder);
+void ts_external_recorder_free(TsExternalRecorder *recorder);
+int ts_external_recorder_arm(TsExternalRecorder *recorder,
+                             int destination_slot,
+                             uint32_t sample_rate,
+                             int threshold_db,
+                             int pre_roll_ms,
+                             int silence_ms,
+                             int tail_ms,
+                             int max_seconds,
+                             char *error, size_t error_size);
+int ts_external_recorder_write_sample(TsExternalRecorder *recorder, float sample);
+int ts_external_recorder_stop(TsExternalRecorder *recorder,
+                              char *error, size_t error_size);
+int ts_external_recorder_cancel(TsExternalRecorder *recorder);
+float ts_external_recorder_progress(const TsExternalRecorder *recorder);
+const char *ts_external_capture_state_name(TsExternalCaptureState state);
+int ts_external_next_chain_slot(int destination_slot);
 
 #endif
