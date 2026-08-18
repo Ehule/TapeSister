@@ -2607,6 +2607,29 @@ int main(void)
     ts_ui_render(&fb, &ui, &restored);
     CHECK(fb.pixels[180 * TS_UI_WIDTH + 175] == 0xff5d555du);
     ui.export_choice_open = 0;
+    ui.exchange_dialog = TS_UI_EXCHANGE_SEND;
+    ui.exchange_item_count = 3;
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 160, 120) ==
+          TS_UI_EXCHANGE_ACTION_SEND_ONE_INSTRUMENT);
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 360, 120) ==
+          TS_UI_EXCHANGE_ACTION_SEND_SEPARATE_INSTRUMENTS);
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 180, 166) ==
+          TS_UI_EXCHANGE_ACTION_CHECK_INBOX);
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 300, 166) ==
+          TS_UI_EXCHANGE_ACTION_TOGGLE_NEW_INSTANCE);
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 440, 166) ==
+          TS_UI_EXCHANGE_ACTION_LATER);
+    CHECK(fb.pixels[116 * TS_UI_WIDTH + 130] == 0xff5d555du);
+    ui.exchange_dialog = TS_UI_EXCHANGE_RECEIVE;
+    ui.exchange_layout = TS_EXCHANGE_LAYOUT_SEPARATE_INSTRUMENTS;
+    snprintf(ui.exchange_name, sizeof(ui.exchange_name), "tapehead_to_tapesister_01");
+    ts_ui_render(&fb, &ui, &restored);
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_RECEIVE, 210, 166) ==
+          TS_UI_EXCHANGE_ACTION_IMPORT);
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_RECEIVE, 360, 166) ==
+          TS_UI_EXCHANGE_ACTION_LATER);
+    ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
     ui.load_selection_choice_open = 1;
     snprintf(ui.load_selection_name, sizeof(ui.load_selection_name),
              "selection-source.wav");
