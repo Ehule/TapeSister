@@ -21,7 +21,22 @@ enum {
     TS_DRONE_CROSSFADE_MS_DEFAULT = 50,
     TS_CHAIN_STAMP_CROSSFADE_MS_MIN = 0,
     TS_CHAIN_STAMP_CROSSFADE_MS_MAX = 50,
-    TS_CHAIN_STAMP_CROSSFADE_MS_DEFAULT = 3
+    TS_CHAIN_STAMP_CROSSFADE_MS_DEFAULT = 3,
+    TS_RECORD_THRESHOLD_DB_MIN = -90,
+    TS_RECORD_THRESHOLD_DB_MAX = 0,
+    TS_RECORD_THRESHOLD_DB_DEFAULT = -30,
+    TS_RECORD_PREROLL_MS_MIN = 0,
+    TS_RECORD_PREROLL_MS_MAX = 1000,
+    TS_RECORD_PREROLL_MS_DEFAULT = 180,
+    TS_RECORD_SILENCE_MS_MIN = 50,
+    TS_RECORD_SILENCE_MS_MAX = 5000,
+    TS_RECORD_SILENCE_MS_DEFAULT = 650,
+    TS_RECORD_TAIL_MS_MIN = 0,
+    TS_RECORD_TAIL_MS_MAX = 3000,
+    TS_RECORD_TAIL_MS_DEFAULT = 180,
+    TS_RECORD_MAX_SECONDS_MIN = 1,
+    TS_RECORD_MAX_SECONDS_MAX = 600,
+    TS_RECORD_MAX_SECONDS_DEFAULT = 20
 };
 
 typedef enum {
@@ -43,6 +58,11 @@ typedef struct {
     int rotate_wheel_coarse;
     int drone_crossfade_ms;
     int chain_stamp_crossfade_ms;
+    int record_threshold_db;
+    int record_preroll_ms;
+    int record_silence_ms;
+    int record_tail_ms;
+    int record_max_seconds;
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];
     float dsp_factory_controls[TS_DSP_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
     int cdp_factory_overridden[TS_CDP_FACTORY_RECIPE_COUNT];
