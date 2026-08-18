@@ -1,0 +1,69 @@
+name: PR35 Windows release blocker repair
+
+on:
+  push:
+    branches:
+      - agent/external-input-rec-bank
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ !contains(github.event.head_commit.message, '[pr35-windows-fix]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/external-input-rec-bank
+          fetch-depth: 0
+      - name: Apply focused release-blocker repair
+        run: python3 tools/pr35_release_blocker_fix.py
+      - name: Linux compile and tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev ninja-build
+          make -j2
+          cmake -S . -B build-ci -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-ci -j2
+          ctest --test-dir build-ci --output-on-failure
+      - name: Remove temporary repair machinery
+        run: |
+          rm -f tools/pr35_release_blocker_fix.py
+          rm -f .github/workflows/pr35-windows-release-blocker.yml
+          rm -f tools/pr35_windows_trigger.txt
+      - name: Commit repair
+        run: |
+          git config user.name "TapeSister CI repair"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: remove PR35 Windows stack overflow and harden input callback lifecycle [pr35-windows-fix]"
+          git push origin HEAD:agent/external-input-rec-bank
+
+  windows-ucrt64:
+    needs: repair
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/external-input-rec-bank
+          fetch-depth: 0
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            make
+            ninja
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-SDL2
+      - name: UCRT64 Debug build and regression tests
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build-windows -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
+          cmake --build build-windows --target tapesister tapesister_external_record_tests -j2
+          ctest --test-dir build-windows -R "external_record|capture|bank" --output-on-failure -V
+          echo "PE stack reservation:"
+          objdump -x build-windows/tapesister.exe | grep -i -E "SizeOfStackReserve|SizeOfStackCommit" || true
