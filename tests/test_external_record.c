@@ -73,6 +73,8 @@ static void test_config_defaults(void)
 {
     TsConfig config;
     ts_config_init(&config);
+    CHECK(config.record_input_device[0] == '\0');
+    CHECK(config.record_input_channel == TS_RECORD_INPUT_CHANNEL_DEFAULT);
     CHECK(config.record_threshold_db == TS_RECORD_THRESHOLD_DB_DEFAULT);
     CHECK(config.record_preroll_ms == TS_RECORD_PREROLL_MS_DEFAULT);
     CHECK(config.record_silence_ms == TS_RECORD_SILENCE_MS_DEFAULT);

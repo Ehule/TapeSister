@@ -4594,14 +4594,391 @@ static size_t bank_frame_from_x(const TsBankSlot *slot, int x)
     return (size_t)x * slot->sample.frames / (size_t)TS_WAVE_W;
 }
 
+
+typedef struct {
+    TsExternalRecorder recorder;
+    int channels;
+    int input_channel;
+    uint32_t sample_rate;
+    char device_label[128];
+} ExternalInputState;
+
+static int external_capture_busy(const ExternalInputState *input)
+{
+    return input != NULL &&
+           (input->recorder.state == TS_EXTERNAL_CAPTURE_ARMED ||
+            input->recorder.state == TS_EXTERNAL_CAPTURE_RECORDING);
+}
+
+static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
+{
+    ExternalInputState *input = (ExternalInputState *)userdata;
+    const float *samples = (const float *)stream;
+    int values = bytes / (int)sizeof(float);
+    int channels = input != NULL && input->channels > 0 ? input->channels : 1;
+    if (input == NULL) return;
+    for (int frame = 0; frame + channels <= values; frame += channels) {
+        float value = 0.0f;
+        if (input->input_channel == 0) {
+            for (int channel = 0; channel < channels; ++channel)
+                value += samples[frame + channel];
+            value /= (float)channels;
+        } else {
+            int channel = input->input_channel - 1;
+            if (channel >= channels) channel = 0;
+            value = samples[frame + channel];
+        }
+        (void)ts_external_recorder_write_sample(&input->recorder, value);
+    }
+}
+
+static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
+                                      ExternalInputState *input,
+                                      const TsConfig *config,
+                                      char *error, size_t error_size)
+{
+    SDL_AudioSpec desired;
+    SDL_AudioSpec obtained;
+    const char *device_name;
+    if (input_device == NULL || input == NULL || config == NULL) return 0;
+    if (*input_device != 0) return 1;
+    SDL_zero(desired);
+    SDL_zero(obtained);
+    desired.freq = 48000;
+    desired.format = AUDIO_F32SYS;
+    desired.channels = 2;
+    desired.samples = 256;
+    desired.callback = external_input_callback;
+    desired.userdata = input;
+    device_name = config->record_input_device[0] != '\0' ?
+                  config->record_input_device : NULL;
+    *input_device = SDL_OpenAudioDevice(
+        device_name, 1, &desired, &obtained,
+        SDL_AUDIO_ALLOW_FREQUENCY_CHANGE |
+        SDL_AUDIO_ALLOW_CHANNELS_CHANGE |
+        SDL_AUDIO_ALLOW_SAMPLES_CHANGE);
+    if (*input_device == 0) {
+        snprintf(error, error_size, "Could not open recording input: %.110s", SDL_GetError());
+        return 0;
+    }
+    if (obtained.format != AUDIO_F32SYS || obtained.freq <= 0 || obtained.channels == 0) {
+        snprintf(error, error_size, "Recording input returned an unsupported audio format");
+        SDL_CloseAudioDevice(*input_device);
+        *input_device = 0;
+        return 0;
+    }
+    if (config->record_input_channel > (int)obtained.channels) {
+        snprintf(error, error_size, "Input channel %d is unavailable; device has %d channel%s",
+                 config->record_input_channel, (int)obtained.channels,
+                 obtained.channels == 1 ? "" : "s");
+        SDL_CloseAudioDevice(*input_device);
+        *input_device = 0;
+        return 0;
+    }
+    input->channels = obtained.channels;
+    input->input_channel = config->record_input_channel;
+    input->sample_rate = (uint32_t)obtained.freq;
+    snprintf(input->device_label, sizeof(input->device_label), "%s",
+             device_name != NULL ? device_name : "SYSTEM DEFAULT");
+    SDL_PauseAudioDevice(*input_device, 0);
+    error[0] = '\0';
+    return 1;
+}
+
+static TsCaptureState external_ui_state(TsExternalCaptureState state)
+{
+    if (state == TS_EXTERNAL_CAPTURE_ARMED)
+        return TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER;
+    if (state == TS_EXTERNAL_CAPTURE_RECORDING)
+        return TS_CAPTURE_RECORDING;
+    return TS_CAPTURE_IDLE;
+}
+
+static void sync_external_capture_ui(SDL_AudioDeviceID input_device,
+                                     ExternalInputState *input,
+                                     TsUiState *ui)
+{
+    if (input_device) SDL_LockAudioDevice(input_device);
+    ui->capture_state = external_ui_state(input->recorder.state);
+    ui->capture_destination_slot = input->recorder.destination_slot;
+    ui->capture_source_slot = -1;
+    ui->capture_recorded_frames = input->recorder.recorded_frames;
+    ui->capture_capacity_frames = input->recorder.capacity_frames;
+    ui->staged_notes = 0u;
+    if (input_device) SDL_UnlockAudioDevice(input_device);
+}
+
+static int arm_external_capture(SDL_AudioDeviceID output_device,
+                                SDL_AudioDeviceID *input_device,
+                                AudioState *audio, ExternalInputState *input,
+                                TsUiState *ui, TsInstrument *instrument)
+{
+    char error[160];
+    int slot = instrument->selected_slot;
+    int ok;
+    if (slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        snprintf(ui->status, sizeof(ui->status), "SELECT AN EMPTY REC TILE FIRST");
+        return 0;
+    }
+    if (instrument->bank[slot].occupied) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "REC TILE %02d IS OCCUPIED - SELECT AN EMPTY TILE", slot + 1);
+        return 0;
+    }
+    if (!ensure_external_input_open(input_device, input, &ui->config,
+                                    error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "REC INPUT FAILED: %.140s", error);
+        return 0;
+    }
+    stop_all_force(output_device, audio, ui);
+    SDL_LockAudioDevice(*input_device);
+    ok = ts_external_recorder_arm(
+        &input->recorder, slot, input->sample_rate,
+        ui->config.record_threshold_db,
+        ui->config.record_preroll_ms,
+        ui->config.record_silence_ms,
+        ui->config.record_tail_ms,
+        ui->config.record_max_seconds,
+        error, sizeof(error));
+    SDL_UnlockAudioDevice(*input_device);
+    if (!ok) {
+        snprintf(ui->status, sizeof(ui->status), "REC ARM FAILED: %.142s", error);
+        return 0;
+    }
+    sync_external_capture_ui(*input_device, input, ui);
+    show_overlay(ui, "REC ARMED", 850u);
+    snprintf(ui->status, sizeof(ui->status),
+             "REC %02d ARMED  %s  CH %d  THRESH %d DB",
+             slot + 1, input->device_label, ui->config.record_input_channel,
+             ui->config.record_threshold_db);
+    return 1;
+}
+
+static void cancel_external_capture(SDL_AudioDeviceID input_device,
+                                    ExternalInputState *input, TsUiState *ui)
+{
+    if (input_device) SDL_LockAudioDevice(input_device);
+    (void)ts_external_recorder_cancel(&input->recorder);
+    ts_external_recorder_free(&input->recorder);
+    if (input_device) SDL_UnlockAudioDevice(input_device);
+    sync_external_capture_ui(input_device, input, ui);
+    show_overlay(ui, "REC CANCELLED", 700u);
+    snprintf(ui->status, sizeof(ui->status), "EXTERNAL RECORDING CANCELLED - TILE UNCHANGED");
+}
+
+static void stop_external_capture_early(SDL_AudioDeviceID input_device,
+                                        ExternalInputState *input,
+                                        TsUiState *ui)
+{
+    char error[160];
+    int ok;
+    if (input_device) SDL_LockAudioDevice(input_device);
+    ok = ts_external_recorder_stop(&input->recorder, error, sizeof(error));
+    if (input_device) SDL_UnlockAudioDevice(input_device);
+    if (!ok)
+        snprintf(ui->status, sizeof(ui->status), "REC STOP FAILED: %.140s", error);
+    else
+        snprintf(ui->status, sizeof(ui->status), "STOPPING REC - KEEPING SHORT TAKE");
+}
+
+static void external_capture_button(SDL_AudioDeviceID output_device,
+                                    SDL_AudioDeviceID *input_device,
+                                    AudioState *audio, ExternalInputState *input,
+                                    TsUiState *ui, TsInstrument *instrument)
+{
+    if (input->recorder.state == TS_EXTERNAL_CAPTURE_RECORDING) {
+        stop_external_capture_early(*input_device, input, ui);
+        return;
+    }
+    if (input->recorder.state == TS_EXTERNAL_CAPTURE_ARMED) {
+        cancel_external_capture(*input_device, input, ui);
+        return;
+    }
+    (void)arm_external_capture(output_device, input_device, audio, input, ui, instrument);
+}
+
+static int install_external_take(SDL_AudioDeviceID output_device,
+                                 AudioState *audio, TsUiState *ui,
+                                 TsInstrument *instrument, int slot,
+                                 const float *captured, size_t frames,
+                                 uint32_t sample_rate,
+                                 char *error, size_t error_size)
+{
+    int ok;
+    char name[32];
+    if (slot < 0 || slot >= TS_BANK_SLOT_COUNT || captured == NULL ||
+        frames == 0u || sample_rate == 0u) {
+        snprintf(error, error_size, "Invalid external take");
+        return 0;
+    }
+    lock_edit(output_device, audio);
+    ok = ts_instrument_select_bank(instrument, slot, error, error_size);
+    if (ok && instrument->bank[slot].occupied) {
+        snprintf(error, error_size, "REC destination is no longer empty");
+        ok = 0;
+    }
+    if (ok)
+        ok = ts_instrument_activate_silence(instrument, frames, sample_rate,
+                                            error, error_size);
+    if (ok) {
+        TsBankSlot *bank = &instrument->bank[slot];
+        if (instrument->current.frames != frames || instrument->parent.frames != frames ||
+            bank->sample.frames != frames || bank->edit_parent.frames != frames ||
+            instrument->current.data == NULL || instrument->parent.data == NULL ||
+            bank->sample.data == NULL || bank->edit_parent.data == NULL) {
+            snprintf(error, error_size, "REC tile buffers did not match the captured take");
+            ok = 0;
+        } else {
+            size_t bytes = frames * sizeof(*captured);
+            memcpy(instrument->current.data, captured, bytes);
+            memcpy(instrument->parent.data, captured, bytes);
+            memcpy(bank->sample.data, captured, bytes);
+            memcpy(bank->edit_parent.data, captured, bytes);
+            snprintf(name, sizeof(name), "REC %02d", slot + 1);
+            snprintf(instrument->current.name, sizeof(instrument->current.name), "%s", name);
+            snprintf(instrument->parent.name, sizeof(instrument->parent.name), "%s", name);
+            snprintf(bank->sample.name, sizeof(bank->sample.name), "%s", name);
+            snprintf(bank->edit_parent.name, sizeof(bank->edit_parent.name), "%s", name);
+            bank->capture_kind = TS_BANK_CAPTURE_CURRENT;
+            bank->relation = TS_FAMILY_CAPTURED;
+            bank->parent_slot = -1;
+            instrument->source_kind = TS_SOURCE_IMPORTED;
+            instrument->has_selection = 1;
+            instrument->selection_first = 0u;
+            instrument->selection_last = frames;
+            instrument->has_playhead = 1;
+            instrument->playhead_frame = 0u;
+            ts_instrument_show_all(instrument);
+        }
+    }
+    unlock_edit(output_device, audio, ui, instrument);
+    return ok;
+}
+
+static void finalize_external_recording(SDL_AudioDeviceID output_device,
+                                        SDL_AudioDeviceID *input_device,
+                                        AudioState *audio,
+                                        ExternalInputState *input,
+                                        TsUiState *ui,
+                                        TsInstrument *instrument)
+{
+    char error[160];
+    float *captured = NULL;
+    size_t frames;
+    uint32_t sample_rate;
+    int slot;
+    int chain;
+    int ok;
+    if (input->recorder.state != TS_EXTERNAL_CAPTURE_COMPLETED) return;
+    if (*input_device) SDL_LockAudioDevice(*input_device);
+    frames = input->recorder.recorded_frames;
+    sample_rate = input->recorder.sample_rate;
+    slot = input->recorder.destination_slot;
+    if (frames > 0u && frames <= SIZE_MAX / sizeof(*captured)) {
+        captured = (float *)malloc(frames * sizeof(*captured));
+        if (captured != NULL)
+            memcpy(captured, input->recorder.buffer, frames * sizeof(*captured));
+    }
+    if (*input_device) SDL_UnlockAudioDevice(*input_device);
+    if (captured == NULL) {
+        if (*input_device) SDL_LockAudioDevice(*input_device);
+        ts_external_recorder_free(&input->recorder);
+        if (*input_device) SDL_UnlockAudioDevice(*input_device);
+        sync_external_capture_ui(*input_device, input, ui);
+        snprintf(ui->status, sizeof(ui->status), "REC TAKE FAILED - OUT OF MEMORY");
+        return;
+    }
+    chain = instrument->family_trajectory;
+    ok = install_external_take(output_device, audio, ui, instrument, slot,
+                               captured, frames, sample_rate,
+                               error, sizeof(error));
+    free(captured);
+    if (*input_device) SDL_LockAudioDevice(*input_device);
+    ts_external_recorder_free(&input->recorder);
+    if (*input_device) SDL_UnlockAudioDevice(*input_device);
+    if (!ok) {
+        sync_external_capture_ui(*input_device, input, ui);
+        snprintf(ui->status, sizeof(ui->status), "REC COMMIT FAILED: %.138s", error);
+        return;
+    }
+    show_overlay(ui, "REC TAKE KEPT", 850u);
+    if (chain) {
+        int next = ts_external_next_chain_slot(slot);
+        if (next >= 0 && !instrument->bank[next].occupied) {
+            lock_edit(output_device, audio);
+            ok = ts_instrument_select_bank(instrument, next, error, sizeof(error));
+            unlock_edit(output_device, audio, ui, instrument);
+            if (ok && arm_external_capture(output_device, input_device, audio, input,
+                                           ui, instrument)) {
+                snprintf(ui->status, sizeof(ui->status),
+                         "REC %02d KEPT - CHAIN ARMED %02d", slot + 1, next + 1);
+                return;
+            }
+        }
+        snprintf(ui->status, sizeof(ui->status),
+                 "REC %02d KEPT - CHAIN STOPPED AT NEXT OCCUPIED/END TILE", slot + 1);
+    } else {
+        sync_external_capture_ui(*input_device, input, ui);
+        snprintf(ui->status, sizeof(ui->status),
+                 "REC %02d KEPT - %zu FRAMES AT %u HZ", slot + 1, frames, sample_rate);
+    }
+}
+
+static int toggle_record_bank(SDL_Window *window,
+                              SDL_AudioDeviceID output_device,
+                              ExternalInputState *input,
+                              AudioState *audio, TsUiState *ui,
+                              TsInstrument *instrument,
+                              TsInstrument *parked,
+                              uint64_t *parked_saved_hash,
+                              int *record_bank_active)
+{
+    TsInstrument temp;
+    uint64_t saved;
+    if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
+        audio->capture.state == TS_CAPTURE_RECORDING || external_capture_busy(input)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISH OR CANCEL RECORDING BEFORE SWITCHING BANKS");
+        return 0;
+    }
+    stop_all_force(output_device, audio, ui);
+    temp = *instrument;
+    *instrument = *parked;
+    *parked = temp;
+    saved = ui->saved_state_hash;
+    ui->saved_state_hash = *parked_saved_hash;
+    *parked_saved_hash = saved;
+    *record_bank_active = !*record_bank_active;
+    ui->external_record_bank = *record_bank_active;
+    ui->capture_state = TS_CAPTURE_IDLE;
+    ui->capture_destination_slot = -1;
+    ui->capture_source_slot = -1;
+    ui->capture_recorded_frames = 0u;
+    ui->capture_capacity_frames = 0u;
+    ui->bank_view_slot = -1;
+    ui->audition_source = TS_AUDITION_CURRENT;
+    ts_ui_select_panel(ui, TS_UI_PANEL_SAMPLE_TILES);
+    if (window != NULL)
+        SDL_SetWindowTitle(window, *record_bank_active ?
+                          "TapeSister - REC BANK" : "TapeSister");
+    show_overlay(ui, *record_bank_active ? "REC BANK" : "SAMPLE BANK", 800u);
+    snprintf(ui->status, sizeof(ui->status),
+             *record_bank_active ?
+             "REC BANK - SELECT EMPTY TILE AND REC ARM  PRESS 1 AGAIN FOR SAMPLE BANK" :
+             "SAMPLE BANK - PRESS 1 AGAIN TO RETURN TO REC BANK");
+    return 1;
+}
+
 int main(int argc, char **argv)
 {
     SDL_Window *window = NULL;
     SDL_Renderer *renderer = NULL;
     SDL_Texture *texture = NULL;
     SDL_AudioDeviceID device = 0;
+    SDL_AudioDeviceID input_device = 0;
     SDL_AudioSpec desired, obtained;
     TsInstrument instrument;
+    TsInstrument parked_instrument;
     TsUiState ui;
     TsFramebuffer framebuffer;
     TsSample clipboard;
@@ -4613,11 +4990,16 @@ int main(int argc, char **argv)
     size_t clipboard_source_frames = 0;
     uint32_t clipboard_source_rate = 0;
     AudioState audio = {0};
+    ExternalInputState external_input = {0};
     char ignored_exchange[TS_EXCHANGE_PATH_MAX] = {0};
     uint32_t last_exchange_poll = 0;
+    uint64_t parked_saved_hash = 0;
+    int record_bank_active = 0;
     int running = 1;
 
     ts_instrument_init(&instrument);
+    ts_instrument_init(&parked_instrument);
+    ts_external_recorder_init(&external_input.recorder);
     ts_sample_init(&clipboard);
     ts_sample_init(&pending_selection_load);
     ts_sample_init(&drone_preview);
@@ -4736,6 +5118,7 @@ int main(int argc, char **argv)
                        TS_AUDITION_ALL, 1.0, obtained.freq);
     }
     ui.saved_state_hash = instrument_state_hash(&instrument);
+    parked_saved_hash = instrument_state_hash(&parked_instrument);
     last_exchange_poll = SDL_GetTicks();
     (void)ts_exchange_presence_touch(exchange_directory(&ui), "tapesister");
     (void)stage_incoming_exchange(&ui, &exchange_offer, ignored_exchange, 0);
@@ -5208,22 +5591,31 @@ int main(int argc, char **argv)
                     static const char *const names[] = {
                         "SAMPLE TILES", "KEYBOARD", "CDP", "DSP"
                     };
-                    ts_ui_select_panel(&ui, panel);
-                    ui.bank_view_slot = -1;
-                    if (panel == TS_UI_PANEL_CDP)
-                        snprintf(ui.status, sizeof(ui.status),
-                                 "CDP %d PAGE%s - KEYS 1 2 3 4",
-                                 ui.cdp_page + 1,
-                                 before == TS_UI_PANEL_CDP ? " TOGGLED" : " RESTORED");
-                    else if (panel == TS_UI_PANEL_DSP)
-                        snprintf(ui.status, sizeof(ui.status),
-                                 "DSP %d %s%s - KEYS 1 2 3 4",
-                                 ui.dsp_page + 1,
-                                 ui.dsp_page == 0 ? "PROCESS" : "PRIMITIVES",
-                                 before == TS_UI_PANEL_DSP ? " TOGGLED" : " RESTORED");
-                    else
-                        snprintf(ui.status, sizeof(ui.status),
-                                 "%s PANEL - KEYS 1 2 3 4", names[panel]);
+                    if (panel == TS_UI_PANEL_SAMPLE_TILES &&
+                        before == TS_UI_PANEL_SAMPLE_TILES) {
+                        (void)toggle_record_bank(window, device, &external_input,
+                                                 &audio, &ui, &instrument,
+                                                 &parked_instrument,
+                                                 &parked_saved_hash,
+                                                 &record_bank_active);
+                    } else {
+                        ts_ui_select_panel(&ui, panel);
+                        ui.bank_view_slot = -1;
+                        if (panel == TS_UI_PANEL_CDP)
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "CDP %d PAGE%s - KEYS 1 2 3 4",
+                                     ui.cdp_page + 1,
+                                     before == TS_UI_PANEL_CDP ? " TOGGLED" : " RESTORED");
+                        else if (panel == TS_UI_PANEL_DSP)
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "DSP %d %s%s - KEYS 1 2 3 4",
+                                     ui.dsp_page + 1,
+                                     ui.dsp_page == 0 ? "PROCESS" : "PRIMITIVES",
+                                     before == TS_UI_PANEL_DSP ? " TOGGLED" : " RESTORED");
+                        else
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "%s PANEL - KEYS 1 2 3 4", names[panel]);
+                    }
                 } else if (key == SDLK_EQUALS || key == SDLK_PLUS || key == SDLK_KP_PLUS) {
                     ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT) {
@@ -5290,7 +5682,9 @@ int main(int argc, char **argv)
                              "PANNED WAVEFORM VIEW" : "PAN LIMIT");
                 } else if (key == SDLK_ESCAPE) {
                     ui.bank_clear_armed = 0;
-                    if (audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
+                    if (record_bank_active && external_capture_busy(&external_input)) {
+                        cancel_external_capture(input_device, &external_input, &ui);
+                    } else if (audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
                         audio.capture.state == TS_CAPTURE_RECORDING) {
                         cancel_capture(device, &audio, &ui);
                     } else if (ui.has_pitch_suggestion) {
@@ -5330,7 +5724,14 @@ int main(int argc, char **argv)
                     }
                 } else if (key == SDLK_SPACE) {
                     ui.bank_clear_armed = 0;
-                    if (audio.capture.state == TS_CAPTURE_RECORDING)
+                    if (record_bank_active &&
+                        external_input.recorder.state == TS_EXTERNAL_CAPTURE_RECORDING)
+                        stop_external_capture_early(input_device, &external_input, &ui);
+                    else if (record_bank_active &&
+                             external_input.recorder.state == TS_EXTERNAL_CAPTURE_ARMED)
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "REC ARMED - MAKE SOUND OR ESC/CAPTURE TO CANCEL");
+                    else if (audio.capture.state == TS_CAPTURE_RECORDING)
                         stop_capture_early(device, &audio, &ui);
                     else if (audio.playing || ts_note_bank_count(&audio.notes) > 0 ||
                         ui.workbench_loop_active)
@@ -6479,7 +6880,11 @@ int main(int argc, char **argv)
                 } else if (wave_action == TS_UI_WAVE_ACTION_CLEAR_ALL &&
                            !ui.show_keyboard && !ui.show_recipes &&
                            !ui.show_ingredients) {
-                    clear_all_bank_slots(device, &audio, &ui, &instrument);
+                    if (record_bank_active && external_capture_busy(&external_input))
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "CANCEL REC BEFORE CLEAR ALL");
+                    else
+                        clear_all_bank_slots(device, &audio, &ui, &instrument);
                 } else if (wave_action == TS_UI_WAVE_ACTION_CYCLE_PANEL) {
                     ts_ui_cycle_panel(&ui);
                     ui.bank_view_slot = -1;
@@ -6515,7 +6920,11 @@ int main(int argc, char **argv)
                                  "CDP %d PAGE - SAMPLE AND SELECTION PRESERVED",
                                  ui.cdp_page + 1);
                     } else if (capture_control) {
-                        capture_button(device, &audio, &ui, &instrument, obtained.freq);
+                        if (record_bank_active)
+                            external_capture_button(device, &input_device, &audio,
+                                                    &external_input, &ui, &instrument);
+                        else
+                            capture_button(device, &audio, &ui, &instrument, obtained.freq);
                     } else if (cdp_slot >= 0) {
                         int recipe_index = ui.cdp_page * TS_CDP_BANK_SLOT_COUNT + cdp_slot;
                         request_cdp_quick_apply(device, &audio, &ui, &instrument,
@@ -6532,6 +6941,12 @@ int main(int argc, char **argv)
                     } else if (bank_slot >= 0) {
                         TsUiBankAction action = ts_ui_bank_action(
                             0, bank_modifiers(mod));
+                        if (record_bank_active && external_capture_busy(&external_input)) {
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "REC TILE %02d LOCKED - STOP OR ESC FIRST",
+                                     external_input.recorder.destination_slot + 1);
+                            continue;
+                        }
                         if (action == TS_UI_BANK_ACTION_AUDITION) {
                             char select_error[160];
                             int occupied = instrument.bank[bank_slot].occupied;
@@ -6701,7 +7116,12 @@ int main(int argc, char **argv)
                 recipe_slot = ts_ui_recipe_slot_from_point(x, y);
                 note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
                 action = ts_ui_bank_action(1, bank_modifiers(mod));
-                if (ui.exit_confirm_open) {
+                if (record_bank_active && bank_slot >= 0 &&
+                    external_capture_busy(&external_input)) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "REC TILE %02d LOCKED - STOP OR ESC FIRST",
+                             external_input.recorder.destination_slot + 1);
+                } else if (ui.exit_confirm_open) {
                     snprintf(ui.status, sizeof(ui.status),
                              "CHOOSE EXIT OR CANCEL - ESC CANCELS");
                 } else if (ui.renaming_bank_slot >= 0) {
@@ -6847,10 +7267,25 @@ int main(int argc, char **argv)
                 (void)stage_incoming_exchange(
                     &ui, &exchange_offer, ignored_exchange, 0);
         }
+        if (record_bank_active &&
+            external_input.recorder.state == TS_EXTERNAL_CAPTURE_RECORDING &&
+            ui.capture_state != TS_CAPTURE_RECORDING) {
+            show_overlay(&ui, "REC STARTED", 650u);
+            snprintf(ui.status, sizeof(ui.status),
+                     "REC %02d RECORDING - SILENCE WILL AUTO STOP",
+                     external_input.recorder.destination_slot + 1);
+        }
+        if (record_bank_active &&
+            external_input.recorder.state == TS_EXTERNAL_CAPTURE_COMPLETED)
+            finalize_external_recording(device, &input_device, &audio,
+                                        &external_input, &ui, &instrument);
         if (audio.capture.state == TS_CAPTURE_COMPLETED)
             finalize_capture(device, &audio, &ui, &instrument);
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
-        sync_capture_ui(device, &audio, &ui);
+        if (record_bank_active)
+            sync_external_capture_ui(input_device, &external_input, &ui);
+        else
+            sync_capture_ui(device, &audio, &ui);
         if (ui.overlay[0] != '\0' &&
             (Sint32)(SDL_GetTicks() - ui.overlay_until_ms) >= 0)
             ui.overlay[0] = '\0';
@@ -6902,11 +7337,14 @@ int main(int argc, char **argv)
         transform.worker = NULL;
     }
     discard_transform_preview(device, &audio, &ui, &transform);
+    if (input_device) SDL_CloseAudioDevice(input_device);
     if (device) SDL_CloseAudioDevice(device);
+    ts_external_recorder_free(&external_input.recorder);
     ts_capture_free(&audio.capture);
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);
     ts_sample_free(&clipboard);
+    ts_instrument_free(&parked_instrument);
     ts_instrument_free(&instrument);
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);

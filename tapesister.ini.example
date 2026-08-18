@@ -28,6 +28,10 @@ drone_crossfade_ms=50
 chain_stamp_crossfade_ms=3
 
 [External Recording]
+; Blank uses the machine's default recording device. To force an interface, copy its exact SDL device name here.
+record_input_device=
+; 0 = mix all channels to mono, 1 = first/left input, 2 = second/right input.
+record_input_channel=1
 ; Threshold in dBFS. Lower values trigger on quieter sounds (-90 to 0).
 record_threshold_db=-30
 ; Keep this much audio from before threshold crossing so attacks are not clipped.
