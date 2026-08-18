@@ -13,6 +13,7 @@
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -116,6 +117,20 @@ static int runtime_asset_path(const char *relative_path, char *path, size_t path
     if (snprintf(path, path_size, "%s", relative_path) > 0 &&
         stat(path, &info) == 0) return 1;
     return 0;
+}
+
+static void diagnostic_log(const char *format, ...)
+{
+    FILE *file = fopen("tapesister-diagnostic.log", "ab");
+    va_list arguments;
+    if (file == NULL) return;
+    fprintf(file, "[runtime] ");
+    va_start(arguments, format);
+    vfprintf(file, format, arguments);
+    va_end(arguments);
+    fputc('\n', file);
+    fflush(file);
+    fclose(file);
 }
 
 static const char *config_file_path(void)
@@ -4659,6 +4674,7 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
         SDL_AUDIO_ALLOW_SAMPLES_CHANGE);
     if (*input_device == 0) {
         snprintf(error, error_size, "Could not open recording input: %.110s", SDL_GetError());
+        diagnostic_log("capture device open failed (nonfatal): %s", error);
         return 0;
     }
     if (obtained.format != AUDIO_F32SYS || obtained.freq <= 0 || obtained.channels == 0) {
@@ -4678,9 +4694,10 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
     input->channels = obtained.channels;
     input->input_channel = config->record_input_channel;
     input->sample_rate = (uint32_t)obtained.freq;
-    snprintf(input->device_label, sizeof(input->device_label), "%s",
+    snprintf(input->device_label, sizeof(input->device_label), "%.127s",
              device_name != NULL ? device_name : "SYSTEM DEFAULT");
-    SDL_PauseAudioDevice(*input_device, 0);
+    diagnostic_log("capture device opened paused: %s rate=%u channels=%d",
+                   input->device_label, input->sample_rate, input->channels);
     error[0] = '\0';
     return 1;
 }
@@ -4731,6 +4748,9 @@ static int arm_external_capture(SDL_AudioDeviceID output_device,
         return 0;
     }
     stop_all_force(output_device, audio, ui);
+    /* SDL starts capture devices paused. Re-pause explicitly before replacing
+       recorder buffers so no callback can observe freed or half-initialized tape. */
+    SDL_PauseAudioDevice(*input_device, 1);
     SDL_LockAudioDevice(*input_device);
     ok = ts_external_recorder_arm(
         &input->recorder, slot, input->sample_rate,
@@ -4743,12 +4763,16 @@ static int arm_external_capture(SDL_AudioDeviceID output_device,
     SDL_UnlockAudioDevice(*input_device);
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status), "REC ARM FAILED: %.142s", error);
+        diagnostic_log("REC arm failed (nonfatal): %s", error);
         return 0;
     }
+    SDL_PauseAudioDevice(*input_device, 0);
+    diagnostic_log("REC armed: slot=%d threshold=%d dB", slot + 1,
+                   ui->config.record_threshold_db);
     sync_external_capture_ui(*input_device, input, ui);
     show_overlay(ui, "REC ARMED", 850u);
     snprintf(ui->status, sizeof(ui->status),
-             "REC %02d ARMED  %s  CH %d  THRESH %d DB",
+             "REC %02d ARMED  %.96s  CH %d  THRESH %d DB",
              slot + 1, input->device_label, ui->config.record_input_channel,
              ui->config.record_threshold_db);
     return 1;
@@ -4757,6 +4781,7 @@ static int arm_external_capture(SDL_AudioDeviceID output_device,
 static void cancel_external_capture(SDL_AudioDeviceID input_device,
                                     ExternalInputState *input, TsUiState *ui)
 {
+    if (input_device) SDL_PauseAudioDevice(input_device, 1);
     if (input_device) SDL_LockAudioDevice(input_device);
     (void)ts_external_recorder_cancel(&input->recorder);
     ts_external_recorder_free(&input->recorder);
@@ -4772,6 +4797,7 @@ static void stop_external_capture_early(SDL_AudioDeviceID input_device,
 {
     char error[160];
     int ok;
+    if (input_device) SDL_PauseAudioDevice(input_device, 1);
     if (input_device) SDL_LockAudioDevice(input_device);
     ok = ts_external_recorder_stop(&input->recorder, error, sizeof(error));
     if (input_device) SDL_UnlockAudioDevice(input_device);
@@ -4870,6 +4896,7 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
     int chain;
     int ok;
     if (input->recorder.state != TS_EXTERNAL_CAPTURE_COMPLETED) return;
+    if (*input_device) SDL_PauseAudioDevice(*input_device, 1);
     if (*input_device) SDL_LockAudioDevice(*input_device);
     frames = input->recorder.recorded_frames;
     sample_rate = input->recorder.sample_rate;
@@ -4924,27 +4951,81 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
     }
 }
 
+static void swap_instrument_storage(TsInstrument *first, TsInstrument *second)
+{
+    unsigned char scratch[4096];
+    unsigned char *left = (unsigned char *)first;
+    unsigned char *right = (unsigned char *)second;
+    size_t remaining = sizeof(*first);
+    while (remaining > 0u) {
+        size_t amount = remaining < sizeof(scratch) ? remaining : sizeof(scratch);
+        memcpy(scratch, left, amount);
+        memcpy(left, right, amount);
+        memcpy(right, scratch, amount);
+        left += amount;
+        right += amount;
+        remaining -= amount;
+    }
+}
+
 static int toggle_record_bank(SDL_Window *window,
                               SDL_AudioDeviceID output_device,
                               ExternalInputState *input,
                               AudioState *audio, TsUiState *ui,
                               TsInstrument *instrument,
-                              TsInstrument *parked,
+                              TsInstrument **parked,
                               uint64_t *parked_saved_hash,
-                              int *record_bank_active)
+                              int *record_bank_active,
+                              TransformController *controller)
 {
-    TsInstrument temp;
     uint64_t saved;
+    diagnostic_log("bank toggle requested active=%d parked=%p", *record_bank_active,
+                   (void *)(parked != NULL ? *parked : NULL));
     if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
         audio->capture.state == TS_CAPTURE_RECORDING || external_capture_busy(input)) {
         snprintf(ui->status, sizeof(ui->status),
                  "FINISH OR CANCEL RECORDING BEFORE SWITCHING BANKS");
+        diagnostic_log("bank toggle deferred: recorder busy");
         return 0;
     }
+    if (controller != NULL && controller->worker != NULL) {
+        SDL_AtomicSet(&controller->worker->cancel, 1);
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANCELING TRANSFORM - PRESS 1 AGAIN WHEN IT STOPS");
+        diagnostic_log("bank toggle deferred: canceling transform worker");
+        return 0;
+    }
+    if (parked == NULL || parked_saved_hash == NULL) {
+        snprintf(ui->status, sizeof(ui->status), "REC BANK STORAGE ERROR");
+        return 0;
+    }
+    if (*parked == NULL) {
+        *parked = (TsInstrument *)malloc(sizeof(**parked));
+        if (*parked == NULL) {
+            snprintf(ui->status, sizeof(ui->status),
+                     "REC BANK UNAVAILABLE - OUT OF MEMORY");
+            diagnostic_log("bank toggle failed: heap allocation of %zu bytes", sizeof(**parked));
+            return 0;
+        }
+        ts_instrument_init(*parked);
+        *parked_saved_hash = instrument_state_hash(*parked);
+        diagnostic_log("allocated parked REC collection on heap: %zu bytes", sizeof(**parked));
+    }
+
+    /* A transform preview may retain pointers into the active collection. Clear all
+       preview/controller identity before the collection storage changes. */
+    if (controller != NULL) {
+        ++controller->render_generation;
+        controller->rerender_requested = 0;
+        controller->quick_apply = 0;
+        discard_transform_preview(output_device, audio, ui, controller);
+        ui->transform_open = 0;
+        ui->transform_rendering = 0;
+    }
     stop_all_force(output_device, audio, ui);
-    temp = *instrument;
-    *instrument = *parked;
-    *parked = temp;
+    diagnostic_log("bank swap begin");
+    swap_instrument_storage(instrument, *parked);
+    diagnostic_log("bank swap complete");
     saved = ui->saved_state_hash;
     ui->saved_state_hash = *parked_saved_hash;
     *parked_saved_hash = saved;
@@ -4966,6 +5047,7 @@ static int toggle_record_bank(SDL_Window *window,
              *record_bank_active ?
              "REC BANK - SELECT EMPTY TILE AND REC ARM  PRESS 1 AGAIN FOR SAMPLE BANK" :
              "SAMPLE BANK - PRESS 1 AGAIN TO RETURN TO REC BANK");
+    diagnostic_log("bank toggle complete active=%d", *record_bank_active);
     return 1;
 }
 
@@ -4978,7 +5060,7 @@ int main(int argc, char **argv)
     SDL_AudioDeviceID input_device = 0;
     SDL_AudioSpec desired, obtained;
     TsInstrument instrument;
-    TsInstrument parked_instrument;
+    TsInstrument *parked_instrument = NULL;
     TsUiState ui;
     TsFramebuffer framebuffer;
     TsSample clipboard;
@@ -4995,10 +5077,15 @@ int main(int argc, char **argv)
     uint32_t last_exchange_poll = 0;
     uint64_t parked_saved_hash = 0;
     int record_bank_active = 0;
+    int diagnostic_bank_stress = argc > 1 &&
+                                 strcmp(argv[1], "--diagnostic-bank-toggle-stress") == 0;
+    int diagnostic_failed = 0;
     int running = 1;
 
+    diagnostic_log("entered main: TsInstrument=%zu framebuffer=%zu UI=%zu stress=%d",
+                   sizeof(TsInstrument), sizeof(TsFramebuffer), sizeof(TsUiState),
+                   diagnostic_bank_stress);
     ts_instrument_init(&instrument);
-    ts_instrument_init(&parked_instrument);
     ts_external_recorder_init(&external_input.recorder);
     ts_sample_init(&clipboard);
     ts_sample_init(&pending_selection_load);
@@ -5070,7 +5157,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "Video setup failed: %s\n", SDL_GetError());
         running = 0;
     }
-    if (running && !show_splash(renderer)) {
+    if (running && !diagnostic_bank_stress && !show_splash(renderer)) {
         SDL_DestroyTexture(texture);
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
@@ -5096,9 +5183,9 @@ int main(int argc, char **argv)
     else SDL_PauseAudioDevice(device, 0);
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
-    if (argc > 1) {
+    if (argc > 1 && !diagnostic_bank_stress) {
         load_instrument(device, &audio, &ui, &instrument, argv[1]);
-    } else if (ui.config.startup_welcome_sample) {
+    } else if (!diagnostic_bank_stress && ui.config.startup_welcome_sample) {
         char welcome_path[1024];
         if (runtime_asset_path("assets/tapesister_welcome.wav",
                                welcome_path, sizeof(welcome_path))) {
@@ -5118,10 +5205,54 @@ int main(int argc, char **argv)
                        TS_AUDITION_ALL, 1.0, obtained.freq);
     }
     ui.saved_state_hash = instrument_state_hash(&instrument);
-    parked_saved_hash = instrument_state_hash(&parked_instrument);
+    parked_saved_hash = 0u;
     last_exchange_poll = SDL_GetTicks();
     (void)ts_exchange_presence_touch(exchange_directory(&ui), "tapesister");
     (void)stage_incoming_exchange(&ui, &exchange_offer, ignored_exchange, 0);
+
+    if (diagnostic_bank_stress && running) {
+        char original_device[TS_CONFIG_PATH_MAX];
+        snprintf(original_device, sizeof(original_device), "%s",
+                 ui.config.record_input_device);
+        diagnostic_log("starting 2000 bank-toggle stress passes");
+        for (int pass = 0; pass < 2000; ++pass) {
+            if (!toggle_record_bank(window, device, &external_input, &audio, &ui,
+                                    &instrument, &parked_instrument,
+                                    &parked_saved_hash, &record_bank_active,
+                                    &transform)) {
+                diagnostic_log("stress toggle failed at pass %d: %s", pass, ui.status);
+                diagnostic_failed = 1;
+                break;
+            }
+        }
+        if (!diagnostic_failed && !record_bank_active &&
+            !toggle_record_bank(window, device, &external_input, &audio, &ui,
+                                &instrument, &parked_instrument,
+                                &parked_saved_hash, &record_bank_active, &transform))
+            diagnostic_failed = 1;
+        if (!diagnostic_failed) {
+            snprintf(ui.config.record_input_device, sizeof(ui.config.record_input_device),
+                     "__TAPESISTER_INTENTIONALLY_MISSING_CAPTURE_DEVICE__");
+            if (arm_external_capture(device, &input_device, &audio, &external_input,
+                                     &ui, &instrument)) {
+                diagnostic_log("ERROR: intentionally missing capture device opened unexpectedly");
+                cancel_external_capture(input_device, &external_input, &ui);
+                diagnostic_failed = 1;
+            } else {
+                diagnostic_log("missing capture device remained nonfatal: %s", ui.status);
+            }
+            snprintf(ui.config.record_input_device, sizeof(ui.config.record_input_device),
+                     "%s", original_device);
+        }
+        if (!diagnostic_failed && record_bank_active &&
+            !toggle_record_bank(window, device, &external_input, &audio, &ui,
+                                &instrument, &parked_instrument,
+                                &parked_saved_hash, &record_bank_active, &transform))
+            diagnostic_failed = 1;
+        diagnostic_log("bank-toggle stress complete result=%s",
+                       diagnostic_failed ? "FAIL" : "PASS");
+        running = 0;
+    }
 
     while (running) {
         SDL_Event event;
@@ -5597,7 +5728,7 @@ int main(int argc, char **argv)
                                                  &audio, &ui, &instrument,
                                                  &parked_instrument,
                                                  &parked_saved_hash,
-                                                 &record_bank_active);
+                                                 &record_bank_active, &transform);
                     } else {
                         ts_ui_select_panel(&ui, panel);
                         ui.bank_view_slot = -1;
@@ -7337,6 +7468,7 @@ int main(int argc, char **argv)
         transform.worker = NULL;
     }
     discard_transform_preview(device, &audio, &ui, &transform);
+    if (input_device) SDL_PauseAudioDevice(input_device, 1);
     if (input_device) SDL_CloseAudioDevice(input_device);
     if (device) SDL_CloseAudioDevice(device);
     ts_external_recorder_free(&external_input.recorder);
@@ -7344,11 +7476,16 @@ int main(int argc, char **argv)
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);
     ts_sample_free(&clipboard);
-    ts_instrument_free(&parked_instrument);
+    if (parked_instrument != NULL) {
+        ts_instrument_free(parked_instrument);
+        free(parked_instrument);
+        parked_instrument = NULL;
+    }
     ts_instrument_free(&instrument);
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);
     if (window) SDL_DestroyWindow(window);
     SDL_Quit();
-    return 0;
+    diagnostic_log("shutdown complete diagnostic_failed=%d", diagnostic_failed);
+    return diagnostic_failed ? 2 : 0;
 }
