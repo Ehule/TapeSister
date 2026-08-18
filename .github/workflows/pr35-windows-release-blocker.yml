@@ -4,13 +4,16 @@ on:
   push:
     branches:
       - agent/external-input-rec-bank
+  pull_request:
+    types: [edited]
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   repair:
-    if: ${{ !contains(github.event.head_commit.message, '[pr35-windows-fix]') }}
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[pr35-windows-fix]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
