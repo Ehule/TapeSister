@@ -29,20 +29,22 @@ jobs:
         shell: bash
         run: |
           set +e
-          {
-            echo '=== APPLY PATCH ==='
-            python3 tools/pr35_audio_device_config.py
-            echo '=== MAKE BUILD ==='
-            make -j2
-            echo '=== MAKE TEST ==='
-            make test
-            echo '=== CMAKE RELEASE ==='
-            cmake -S . -B build-pr35-audio-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
-            cmake --build build-pr35-audio-linux -j2
-            ctest --test-dir build-pr35-audio-linux --output-on-failure
-            echo '=== REC BANK STRESS ==='
+          (
+            echo '=== APPLY PATCH ===' &&
+            python3 tools/pr35_audio_device_config.py &&
+            echo '=== PRESERVE UI HELPERS / FIX C LITERALS ===' &&
+            python3 tools/pr35_audio_device_fixup.py &&
+            echo '=== MAKE BUILD ===' &&
+            make -j2 &&
+            echo '=== MAKE TEST ===' &&
+            make test &&
+            echo '=== CMAKE RELEASE ===' &&
+            cmake -S . -B build-pr35-audio-linux -G Ninja -DCMAKE_BUILD_TYPE=Release &&
+            cmake --build build-pr35-audio-linux -j2 &&
+            ctest --test-dir build-pr35-audio-linux --output-on-failure &&
+            echo '=== REC BANK STRESS ===' &&
             SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./build-pr35-audio-linux/tapesister --diagnostic-bank-toggle-stress
-          } > pr35-audio-device-validation.log 2>&1
+          ) > pr35-audio-device-validation.log 2>&1
           status=$?
           cat pr35-audio-device-validation.log
           echo "status=$status" >> "$GITHUB_OUTPUT"
@@ -53,13 +55,14 @@ jobs:
           git config user.name "TapeSister PR35 audio Config"
           git config user.email "actions@users.noreply.github.com"
           git add pr35-audio-device-validation.log
-          git commit -m "test: capture PR35 audio device Config failure [pr35-audio-device-diagnostic]"
+          git commit -m "test: capture PR35 audio device Config failure [pr35-audio-device-diagnostic]" || true
           git push origin HEAD:agent/external-input-rec-bank
           exit 1
       - name: Remove temporary implementation machinery
         if: steps.validate.outputs.status == '0'
         run: |
           rm -f tools/pr35_audio_device_config.py
+          rm -f tools/pr35_audio_device_fixup.py
           rm -f .github/workflows/pr35-audio-device-config.yml
           rm -f tools/pr35_audio_device_trigger.txt
           rm -f pr35-audio-device-validation.log
