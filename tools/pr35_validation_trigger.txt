@@ -1,1 +1,0 @@
-Trigger repaired-head Linux and Windows UCRT64 validation for PR35.
