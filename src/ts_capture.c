@@ -2,6 +2,7 @@
 
 #include "tapesister/note_bank.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -200,4 +201,201 @@ const char *ts_capture_state_name(TsCaptureState state)
     if (state == TS_CAPTURE_COMPLETED) return "COMPLETE";
     if (state == TS_CAPTURE_CANCELED) return "CANCELED";
     return "IDLE";
+}
+
+static size_t frames_from_ms(uint32_t sample_rate, int milliseconds)
+{
+    if (milliseconds <= 0) return 0u;
+    return (size_t)(((uint64_t)sample_rate * (uint64_t)milliseconds + 999u) / 1000u);
+}
+
+static void external_push_pre_roll(TsExternalRecorder *recorder, float sample)
+{
+    if (recorder->pre_roll_capacity == 0u || recorder->pre_roll == NULL) return;
+    recorder->pre_roll[recorder->pre_roll_write] = sample;
+    recorder->pre_roll_write = (recorder->pre_roll_write + 1u) % recorder->pre_roll_capacity;
+    if (recorder->pre_roll_count < recorder->pre_roll_capacity)
+        ++recorder->pre_roll_count;
+}
+
+static void external_commit_pre_roll(TsExternalRecorder *recorder)
+{
+    size_t first;
+    size_t count;
+    if (recorder->pre_roll_count == 0u || recorder->pre_roll == NULL) return;
+    count = recorder->pre_roll_count;
+    if (count > recorder->capacity_frames) count = recorder->capacity_frames;
+    first = recorder->pre_roll_count == recorder->pre_roll_capacity ?
+            recorder->pre_roll_write : 0u;
+    for (size_t index = 0; index < count; ++index) {
+        size_t source = (first + index) % recorder->pre_roll_capacity;
+        recorder->buffer[recorder->recorded_frames++] = recorder->pre_roll[source];
+    }
+}
+
+void ts_external_recorder_init(TsExternalRecorder *recorder)
+{
+    if (recorder == NULL) return;
+    recorder->buffer = NULL;
+    recorder->capacity_frames = 0u;
+    recorder->recorded_frames = 0u;
+    recorder->pre_roll = NULL;
+    recorder->pre_roll_capacity = 0u;
+    recorder->pre_roll_count = 0u;
+    recorder->pre_roll_write = 0u;
+    recorder->silence_frames = 0u;
+    recorder->tail_frames = 0u;
+    recorder->quiet_frames = 0u;
+    recorder->sample_rate = 0u;
+    recorder->threshold_amplitude = 0.0f;
+    recorder->threshold_db = 0;
+    recorder->destination_slot = -1;
+    recorder->stopped_early = 0;
+    atomic_init(&recorder->state, TS_EXTERNAL_CAPTURE_IDLE);
+}
+
+void ts_external_recorder_free(TsExternalRecorder *recorder)
+{
+    if (recorder == NULL) return;
+    free(recorder->buffer);
+    free(recorder->pre_roll);
+    ts_external_recorder_init(recorder);
+}
+
+int ts_external_recorder_arm(TsExternalRecorder *recorder,
+                             int destination_slot,
+                             uint32_t sample_rate,
+                             int threshold_db,
+                             int pre_roll_ms,
+                             int silence_ms,
+                             int tail_ms,
+                             int max_seconds,
+                             char *error, size_t error_size)
+{
+    float *buffer;
+    float *pre_roll = NULL;
+    size_t capacity_frames;
+    size_t pre_roll_frames;
+    if (recorder == NULL || destination_slot < 0 || destination_slot >= 16 ||
+        sample_rate == 0u || threshold_db < -90 || threshold_db > 0 ||
+        pre_roll_ms < 0 || silence_ms < 1 || tail_ms < 0 ||
+        max_seconds < 1 || max_seconds > 600) {
+        set_error(error, error_size, "Invalid external recording settings");
+        return 0;
+    }
+    if ((uint64_t)sample_rate * (uint64_t)max_seconds > SIZE_MAX / sizeof(*buffer)) {
+        set_error(error, error_size, "External recording duration is too large");
+        return 0;
+    }
+    capacity_frames = (size_t)sample_rate * (size_t)max_seconds;
+    pre_roll_frames = frames_from_ms(sample_rate, pre_roll_ms);
+    if (pre_roll_frames > capacity_frames) pre_roll_frames = capacity_frames;
+    buffer = (float *)calloc(capacity_frames, sizeof(*buffer));
+    if (buffer == NULL) {
+        set_error(error, error_size, "Out of memory preparing external recording tape");
+        return 0;
+    }
+    if (pre_roll_frames > 0u) {
+        pre_roll = (float *)calloc(pre_roll_frames, sizeof(*pre_roll));
+        if (pre_roll == NULL) {
+            free(buffer);
+            set_error(error, error_size, "Out of memory preparing recording pre-roll");
+            return 0;
+        }
+    }
+    free(recorder->buffer);
+    free(recorder->pre_roll);
+    ts_external_recorder_init(recorder);
+    recorder->buffer = buffer;
+    recorder->capacity_frames = capacity_frames;
+    recorder->pre_roll = pre_roll;
+    recorder->pre_roll_capacity = pre_roll_frames;
+    recorder->silence_frames = frames_from_ms(sample_rate, silence_ms);
+    recorder->tail_frames = frames_from_ms(sample_rate, tail_ms);
+    recorder->sample_rate = sample_rate;
+    recorder->threshold_db = threshold_db;
+    recorder->threshold_amplitude = powf(10.0f, (float)threshold_db / 20.0f);
+    recorder->destination_slot = destination_slot;
+    recorder->state = TS_EXTERNAL_CAPTURE_ARMED;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_external_recorder_write_sample(TsExternalRecorder *recorder, float sample)
+{
+    float level;
+    if (recorder == NULL || recorder->buffer == NULL) return 0;
+    if (!isfinite(sample)) sample = 0.0f;
+    level = fabsf(sample);
+    if (recorder->state == TS_EXTERNAL_CAPTURE_ARMED) {
+        external_push_pre_roll(recorder, sample);
+        if (level < recorder->threshold_amplitude) return 0;
+        external_commit_pre_roll(recorder);
+        recorder->quiet_frames = 0u;
+        recorder->state = TS_EXTERNAL_CAPTURE_RECORDING;
+        if (recorder->recorded_frames >= recorder->capacity_frames) {
+            recorder->state = TS_EXTERNAL_CAPTURE_COMPLETED;
+            return 1;
+        }
+        return 2;
+    }
+    if (recorder->state != TS_EXTERNAL_CAPTURE_RECORDING) return 0;
+    recorder->buffer[recorder->recorded_frames++] = sample;
+    if (level >= recorder->threshold_amplitude) recorder->quiet_frames = 0u;
+    else ++recorder->quiet_frames;
+    if (recorder->recorded_frames >= recorder->capacity_frames ||
+        recorder->quiet_frames >= recorder->silence_frames + recorder->tail_frames) {
+        recorder->state = TS_EXTERNAL_CAPTURE_COMPLETED;
+        recorder->stopped_early = recorder->recorded_frames < recorder->capacity_frames;
+        return 1;
+    }
+    return 0;
+}
+
+int ts_external_recorder_stop(TsExternalRecorder *recorder,
+                              char *error, size_t error_size)
+{
+    if (recorder == NULL || recorder->state != TS_EXTERNAL_CAPTURE_RECORDING) {
+        set_error(error, error_size, "External input is not recording");
+        return 0;
+    }
+    if (recorder->recorded_frames == 0u) {
+        set_error(error, error_size, "External input has not recorded a frame yet");
+        return 0;
+    }
+    recorder->stopped_early = recorder->recorded_frames < recorder->capacity_frames;
+    recorder->state = TS_EXTERNAL_CAPTURE_COMPLETED;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_external_recorder_cancel(TsExternalRecorder *recorder)
+{
+    if (recorder == NULL ||
+        (recorder->state != TS_EXTERNAL_CAPTURE_ARMED &&
+         recorder->state != TS_EXTERNAL_CAPTURE_RECORDING)) return 0;
+    recorder->state = TS_EXTERNAL_CAPTURE_CANCELED;
+    return 1;
+}
+
+float ts_external_recorder_progress(const TsExternalRecorder *recorder)
+{
+    if (recorder == NULL || recorder->capacity_frames == 0u) return 0.0f;
+    if (recorder->recorded_frames >= recorder->capacity_frames) return 1.0f;
+    return (float)((double)recorder->recorded_frames /
+                   (double)recorder->capacity_frames);
+}
+
+const char *ts_external_capture_state_name(TsExternalCaptureState state)
+{
+    if (state == TS_EXTERNAL_CAPTURE_ARMED) return "ARMED";
+    if (state == TS_EXTERNAL_CAPTURE_RECORDING) return "RECORDING";
+    if (state == TS_EXTERNAL_CAPTURE_COMPLETED) return "COMPLETE";
+    if (state == TS_EXTERNAL_CAPTURE_CANCELED) return "CANCELED";
+    return "IDLE";
+}
+
+int ts_external_next_chain_slot(int destination_slot)
+{
+    return destination_slot >= 0 && destination_slot < 15 ? destination_slot + 1 : -1;
 }
