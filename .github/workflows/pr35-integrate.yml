@@ -1,0 +1,38 @@
+name: PR35 REC bank integration
+
+on:
+  push:
+    branches:
+      - agent/external-input-rec-bank
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/external-input-rec-bank
+      - name: Install SDL2 development package
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Apply REC bank integration
+        run: python3 tools/pr35_integrate.py
+      - name: Configure
+        run: cmake -S . -B build -DTAPESISTER_BUILD_SDL=ON
+      - name: Build
+        run: cmake --build build -j2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Commit integrated implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md include/tapesister/config.h include/tapesister/ui.h src/main_sdl.c src/ts_config.c src/ts_ui.c tapesister.ini.example tests/test_external_record.c
+          if git diff --cached --quiet; then
+            echo "No integration changes to commit"
+          else
+            git commit -m "Wire external REC bank into SDL"
+            git push origin HEAD:agent/external-input-rec-bank
+          fi
