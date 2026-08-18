@@ -1,0 +1,96 @@
+name: PR35 audio device Config integration
+
+on:
+  push:
+    branches:
+      - agent/external-input-rec-bank
+
+permissions:
+  contents: write
+
+jobs:
+  implement-linux:
+    if: ${{ !contains(github.event.head_commit.message, '[pr35-audio-device-config]') && !contains(github.event.head_commit.message, '[pr35-audio-device-windows-validated]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/external-input-rec-bank
+          fetch-depth: 0
+      - name: Apply audio-device Config implementation
+        run: python3 tools/pr35_audio_device_config.py
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev ninja-build
+      - name: Make build and tests
+        run: |
+          make -j2
+          make test
+      - name: CMake Release build and tests
+        run: |
+          cmake -S . -B build-pr35-audio-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-pr35-audio-linux -j2
+          ctest --test-dir build-pr35-audio-linux --output-on-failure
+      - name: REC bank regression stress
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: ./build-pr35-audio-linux/tapesister --diagnostic-bank-toggle-stress
+      - name: Remove temporary implementation machinery
+        run: |
+          rm -f tools/pr35_audio_device_config.py
+          rm -f .github/workflows/pr35-audio-device-config.yml
+          rm -f tools/pr35_audio_device_trigger.txt
+      - name: Commit implementation
+        run: |
+          git config user.name "TapeSister PR35 audio Config"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: add SDL input and output device selectors to Config [pr35-audio-device-config]"
+          git push origin HEAD:agent/external-input-rec-bank
+
+  windows-ucrt64:
+    needs: implement-linux
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/external-input-rec-bank
+          fetch-depth: 0
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            ninja
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-SDL2
+      - name: UCRT64 Release build and tests
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build-ucrt-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
+          cmake --build build-ucrt-release -j2
+          ctest --test-dir build-ucrt-release --output-on-failure
+          objdump -x build-ucrt-release/tapesister.exe | grep -i -E "SizeOfStackReserve|SizeOfStackCommit" || true
+      - name: UCRT64 Release REC-bank stress
+        shell: msys2 {0}
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: ./build-ucrt-release/tapesister.exe --diagnostic-bank-toggle-stress
+      - name: UCRT64 Debug build and focused tests
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build-ucrt-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
+          cmake --build build-ucrt-debug -j2
+          ctest --test-dir build-ucrt-debug -R "external_record|capture|bank|core" --output-on-failure -V
+      - name: Mark Windows validation success
+        shell: msys2 {0}
+        run: |
+          git config user.name "TapeSister UCRT64 validation"
+          git config user.email "actions@users.noreply.github.com"
+          git commit --allow-empty -m "test: UCRT64 validates PR35 audio device Config [pr35-audio-device-windows-validated]"
+          git push origin HEAD:agent/external-input-rec-bank
