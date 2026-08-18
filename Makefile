@@ -2,13 +2,18 @@ CC ?= cc
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
 CPPFLAGS ?= -Iinclude -Ithird_party
 CORE = src/ts_sample.c src/ts_audition.c src/ts_note_bank.c src/ts_capture.c src/ts_browser.c src/ts_config.c src/ts_recipe.c src/ts_dsp_recipe.c src/ts_palette.c src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c src/ts_dsp_transform.c src/ts_exchange.c src/ts_ui.c
+DIAG = src/ts_startup_diag.c
+TAPESISTER_LDFLAGS =
+ifeq ($(OS),Windows_NT)
+TAPESISTER_LDFLAGS += -Wl,--stack,16777216
+endif
 
 .PHONY: all test screenshot runtime-assets clean
 
 all: tapesister runtime-assets
 
-tapesister: $(CORE) src/main_sdl.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $^ -o $@ $(shell sdl2-config --libs) -lm
+tapesister: $(CORE) src/main_sdl.c $(DIAG)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $^ -o $@ $(shell sdl2-config --libs) -lm $(TAPESISTER_LDFLAGS)
 
 runtime-assets:
 	@test ! -f assets/tapesister_welcome.wav || test -s assets/tapesister_welcome.wav
