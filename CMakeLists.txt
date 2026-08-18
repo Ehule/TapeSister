@@ -20,9 +20,17 @@ endif()
 option(TAPESISTER_BUILD_SDL "Build the playable SDL2 instrument" ON)
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
-  add_executable(tapesister src/main_sdl.c)
+  add_executable(tapesister src/main_sdl.c src/ts_startup_diag.c)
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
+  # PR35 temporarily pushed the Windows main-thread stack close to/exceeding the
+  # MinGW default by adding another very large TsInstrument plus a full-size swap
+  # temporary. Keep a generous reserve as defense-in-depth while the REC-bank
+  # storage is moved off the stack. Reserve is virtual address space, not committed
+  # physical memory.
+  if(MINGW)
+    target_link_options(tapesister PRIVATE "-Wl,--stack,16777216")
+  endif()
   add_custom_command(TARGET tapesister POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/assets"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
