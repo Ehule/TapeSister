@@ -10,39 +10,58 @@ permissions:
 
 jobs:
   implement-linux:
-    if: ${{ !contains(github.event.head_commit.message, '[pr35-audio-device-config]') && !contains(github.event.head_commit.message, '[pr35-audio-device-windows-validated]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[pr35-audio-device-config]') && !contains(github.event.head_commit.message, '[pr35-audio-device-windows-validated]') && !contains(github.event.head_commit.message, '[pr35-audio-device-diagnostic]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/external-input-rec-bank
           fetch-depth: 0
-      - name: Apply audio-device Config implementation
-        run: python3 tools/pr35_audio_device_config.py
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libsdl2-dev ninja-build
-      - name: Make build and tests
+      - name: Apply and validate implementation
+        id: validate
+        shell: bash
         run: |
-          make -j2
-          make test
-      - name: CMake Release build and tests
+          set +e
+          {
+            echo '=== APPLY PATCH ==='
+            python3 tools/pr35_audio_device_config.py
+            echo '=== MAKE BUILD ==='
+            make -j2
+            echo '=== MAKE TEST ==='
+            make test
+            echo '=== CMAKE RELEASE ==='
+            cmake -S . -B build-pr35-audio-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-pr35-audio-linux -j2
+            ctest --test-dir build-pr35-audio-linux --output-on-failure
+            echo '=== REC BANK STRESS ==='
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./build-pr35-audio-linux/tapesister --diagnostic-bank-toggle-stress
+          } > pr35-audio-device-validation.log 2>&1
+          status=$?
+          cat pr35-audio-device-validation.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Commit diagnostic on failure
+        if: steps.validate.outputs.status != '0'
         run: |
-          cmake -S . -B build-pr35-audio-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-pr35-audio-linux -j2
-          ctest --test-dir build-pr35-audio-linux --output-on-failure
-      - name: REC bank regression stress
-        env:
-          SDL_VIDEODRIVER: dummy
-          SDL_AUDIODRIVER: dummy
-        run: ./build-pr35-audio-linux/tapesister --diagnostic-bank-toggle-stress
+          git config user.name "TapeSister PR35 audio Config"
+          git config user.email "actions@users.noreply.github.com"
+          git add pr35-audio-device-validation.log
+          git commit -m "test: capture PR35 audio device Config failure [pr35-audio-device-diagnostic]"
+          git push origin HEAD:agent/external-input-rec-bank
+          exit 1
       - name: Remove temporary implementation machinery
+        if: steps.validate.outputs.status == '0'
         run: |
           rm -f tools/pr35_audio_device_config.py
           rm -f .github/workflows/pr35-audio-device-config.yml
           rm -f tools/pr35_audio_device_trigger.txt
+          rm -f pr35-audio-device-validation.log
       - name: Commit implementation
+        if: steps.validate.outputs.status == '0'
         run: |
           git config user.name "TapeSister PR35 audio Config"
           git config user.email "actions@users.noreply.github.com"
