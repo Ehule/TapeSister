@@ -70,6 +70,10 @@ add_executable(tapesister_capture_tests tests/test_capture.c)
 target_link_libraries(tapesister_capture_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_capture_tests COMMAND tapesister_capture_tests)
 
+add_executable(tapesister_external_record_tests tests/test_external_record.c)
+target_link_libraries(tapesister_external_record_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_external_record_tests COMMAND tapesister_external_record_tests)
+
 add_executable(tapesister_transform_tests tests/test_transform.c)
 target_link_libraries(tapesister_transform_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_transform_tests COMMAND tapesister_transform_tests)
