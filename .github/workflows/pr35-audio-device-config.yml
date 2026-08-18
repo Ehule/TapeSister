@@ -1,6 +1,9 @@
 name: PR35 audio device Config integration
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - agent/external-input-rec-bank
@@ -10,7 +13,7 @@ permissions:
 
 jobs:
   implement-linux:
-    if: ${{ !contains(github.event.head_commit.message, '[pr35-audio-device-config]') && !contains(github.event.head_commit.message, '[pr35-audio-device-windows-validated]') && !contains(github.event.head_commit.message, '[pr35-audio-device-diagnostic]') }}
+    if: ${{ github.event_name == 'pull_request' || (!contains(github.event.head_commit.message, '[pr35-audio-device-config]') && !contains(github.event.head_commit.message, '[pr35-audio-device-windows-validated]') && !contains(github.event.head_commit.message, '[pr35-audio-device-diagnostic]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -107,6 +110,7 @@ jobs:
           cmake --build build-ucrt-debug -j2
           ctest --test-dir build-ucrt-debug -R "external_record|capture|bank|core" --output-on-failure -V
       - name: Mark Windows validation success
+        if: github.event_name == 'push'
         shell: msys2 {0}
         run: |
           git config user.name "TapeSister UCRT64 validation"
