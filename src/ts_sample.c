@@ -631,6 +631,48 @@ int ts_sample_save_wav16(const TsSample *sample, const char *path,
     return ts_sample_save_wav16_tuned(sample, &tuning, path, error, error_size);
 }
 
+int ts_sample_save_wav32f(const TsSample *sample, const char *path,
+                          char *error, size_t error_size)
+{
+    FILE *f;
+    uint32_t data_bytes;
+    if (sample == NULL || sample->data == NULL || sample->frames == 0u ||
+        sample->sample_rate == 0u) {
+        set_error(error, error_size, "No sample to archive");
+        return 0;
+    }
+    if (sample->frames > (UINT32_MAX - 36u) / sizeof(float)) {
+        set_error(error, error_size, "Capture is too long for a RIFF WAV");
+        return 0;
+    }
+    f = fopen(path, "wb");
+    if (f == NULL) {
+        set_error(error, error_size, "Could not create capture WAV");
+        return 0;
+    }
+    data_bytes = (uint32_t)(sample->frames * sizeof(float));
+    fwrite("RIFF", 1, 4, f); put32(f, 36u + data_bytes); fwrite("WAVE", 1, 4, f);
+    fwrite("fmt ", 1, 4, f); put32(f, 16u); put16(f, 3u); put16(f, 1u);
+    put32(f, sample->sample_rate);
+    put32(f, sample->sample_rate * (uint32_t)sizeof(float));
+    put16(f, (uint16_t)sizeof(float)); put16(f, 32u);
+    fwrite("data", 1, 4, f); put32(f, data_bytes);
+    for (size_t frame = 0; frame < sample->frames; ++frame) {
+        float value = isfinite(sample->data[frame]) ? sample->data[frame] : 0.0f;
+        put_float(f, value);
+    }
+    {
+        int write_failed = ferror(f);
+        int close_failed = fclose(f) != 0;
+        if (write_failed || close_failed) {
+            set_error(error, error_size, "Could not finish capture WAV");
+            return 0;
+        }
+    }
+    set_error(error, error_size, "");
+    return 1;
+}
+
 const char *ts_generator_name(TsGeneratorKind kind)
 {
     static const char *names[] = {"TONAL", "METALLIC", "NOISE", "PULSE", "FM"};
@@ -3801,6 +3843,32 @@ int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
                               error, error_size)) return 0;
     instrument->bank[destination_slot].parent_slot = source;
     return ts_instrument_select_bank(instrument, destination_slot, error, error_size);
+}
+
+int ts_instrument_copy_bank_slot_from(TsInstrument *destination,
+                                      int destination_slot,
+                                      TsInstrument *source, int source_slot,
+                                      char *error, size_t error_size)
+{
+    TsBankSlot *copied;
+    if (destination == NULL || source == NULL ||
+        destination_slot < 0 || destination_slot >= TS_BANK_SLOT_COUNT ||
+        source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT ||
+        destination->bank[destination_slot].occupied ||
+        !source->bank[source_slot].occupied) {
+        set_error(error, error_size,
+                  "Copy needs an occupied source and empty destination tile");
+        return 0;
+    }
+    if (!ts_instrument_select_bank(source, source_slot, error, error_size) ||
+        !bank_sync_selected(source, error, error_size) ||
+        !bank_slot_deep_clone(&destination->bank[destination_slot],
+                              &source->bank[source_slot], error, error_size))
+        return 0;
+    copied = &destination->bank[destination_slot];
+    if (destination != source) copied->parent_slot = -1;
+    return ts_instrument_select_bank(destination, destination_slot,
+                                     error, error_size);
 }
 
 static size_t replace_point(size_t point, size_t first, size_t last,

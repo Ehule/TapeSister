@@ -1,9 +1,8 @@
 /*
  * TapeSister SDL audio-device Config integration.
  *
- * This translation unit intentionally wraps the established main_sdl.c rather
- * than editing its large event/audio implementation in-place. PR35's repaired
- * REC-bank and Transform behavior therefore remains unchanged.
+ * This translation unit wraps main_sdl.c with the Config-driven SDL device
+ * selection layer. Runtime recording behavior remains in main_sdl.c.
  */
 #include "tapesister/audio_config.h"
 #include "tapesister/ui.h"

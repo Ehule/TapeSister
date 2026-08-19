@@ -2,9 +2,9 @@
 
 TapeSister is a standalone sample-making laboratory for FT2 Tapehead Edition. Its compact loop is **Create or Load -> Edit -> Transform -> Vary -> Keep -> Repeat**.
 
-## Independent Bank tiles
+## Paged independent Bank tiles
 
-Each of the 16 Bank tiles is a complete editable sound object. A tile owns its audio, tuning, loop, selection, viewport, processing and edit state, and Undo/Redo history. There is no separate Source, Parent, Current, promotion, or commit workflow in the interface.
+Each Sample page contains 16 complete editable sound objects. A tile owns its audio, tuning, loop, selection, viewport, processing and edit state, and Undo/Redo history. There is no separate Source, Parent, Current, promotion, or commit workflow in the interface. Press `1` while Sample Tiles is already visible to cycle `SAMPLE 1/N -> SAMPLE 2/N -> ...`; only available Sample pages participate, and the compact bank hint shows the current page. `Shift+1` opens the external recorder directly without putting the REC BANK into that cycle.
 
 Clicking an occupied tile selects it, immediately restores its own editor state for waveform selection, and auditions it. Clicking an empty tile selects that exact Create/Load destination without playing anything; double-clicking it activates a silent editable canvas. When the audio clipboard has a source timeline, the canvas adopts that full duration and sample rate so Paste-in-place lands at the same time. With no clipboard it defaults to one second at 44.1 kHz. A thick Active Tile-color outline always marks the active editing tile; a separate cyan mark identifies a bank tile being previewed. Clearing the active tile leaves the same empty destination selected. Bank 01 has no special protection or authority.
 
@@ -13,11 +13,11 @@ With no waveform selection, Create and Load replace only the selected tile. With
 
 ## External REC bank
 
-Press `1` to reach **Sample Tiles**, then press `1` again to toggle the complete
-16-tile **REC BANK**. The window title and bank hint identify the alternate collection.
-The normal collection is parked intact while REC is active; pressing `1` again swaps it
-back. Recorded tiles are ordinary TapeSister tiles, so the same selection, loop, DSP,
-CDP, export, and FT2 Link tools work immediately after capture.
+Press `Shift+1` to open the complete 16-tile **REC BANK** directly. The window title
+and bank hint identify the temporary recording workspace. Every Sample page is parked
+intact while REC is active; pressing plain `1` returns to the current Sample page.
+Recorded tiles are ordinary TapeSister tiles, so the same selection, loop, DSP, CDP,
+export, and FT2 Link tools work immediately after capture.
 
 Select an empty REC tile and click **REC ARM**. TapeSister opens the configured capture
 device (or the machine default when `record_input_device` is blank), keeps a circular
@@ -25,6 +25,20 @@ pre-roll, and waits without writing a take until the signal crosses
 `record_threshold_db`. Silence plus the configured tail ends the take automatically;
 **STOP REC** or Space keeps a shorter take, while Escape or clicking the armed button
 cancels it without changing the tile.
+
+While armed, the main waveform area becomes a live input display with current and
+held-peak dBFS, clipping feedback, and a threshold line driven by the recorder's exact
+trigger amplitude. Once triggered, a bounded min/max envelope grows across the display
+without drawing or rescanning the take in the audio callback. **MONITOR** adds the dry
+input to TapeSister's output after the internal performance/CAPTURE path, so it cannot
+enter TapeSister effects or internal CAPTURE and never controls whether metering or
+recording works. Monitoring defaults off, remains visibly latched while enabled, and is
+turned off when leaving the REC BANK; use headphones to avoid microphone feedback.
+
+**KEEP** copies every occupied REC tile, in tile order, into the first empty Sample
+slots across the existing pages, creating another page when required. Existing Sample
+tiles are never overwritten. Only after every copy succeeds is the REC BANK cleared,
+making it a reusable capture buffer without using save/reload as a migration step.
 
 When **CHAIN** is on in the Family page, a completed take advances to the next sequential
 empty REC tile and immediately rearms. This makes it possible to arm once, walk to an
@@ -36,6 +50,14 @@ wrapping past tile 16.
 threshold, pre-roll, silence, tail, and maximum take length. `record_input_channel=0`
 mixes the device inputs to mono; `1` records the first/left channel and `2` the
 second/right channel. These settings are intentionally editable without recompiling.
+
+Every completed external take is also written immediately as a float WAV under the
+human-readable `Captures/` folder, with an `INPUT_YYYY-MM-DD_HHMMSS_mmm_...wav`
+name. TapeSister never purges this folder and ordinary edits, Clear, KEEP, project
+loading, and project saving never rewrite or delete those originals. Set the optional
+`TAPESISTER_CAPTURES` environment variable to place the archive somewhere else.
+See [`docs/CAPTURE_WORKFLOW.md`](docs/CAPTURE_WORKFLOW.md) for archive, threading,
+project-bundle, and hardware-validation details.
 
 ## Capture a performance to a new tile
 
@@ -55,6 +77,10 @@ The red frame and tape-capacity bar remain visible until the destination fills. 
 **STOP** or press Space to keep a shorter take and shrink the tile to it; Escape
 cancels and leaves the blank destination unchanged. A completed take becomes the
 active tile and one tile-local Undo removes the whole capture while Redo restores it.
+The unedited realtime performance is first archived in `Captures/` with a
+`CAPTURE_YYYY-MM-DD_HHMMSS_mmm_...wav` name. This archive boundary applies only to
+completed realtime input and internal CAPTURE performances—not to edits, generated
+sounds, DSP/CDP renders, previews, or Undo states.
 
 Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
@@ -287,7 +313,7 @@ engine, and SOURCE alignment contract.
 
 The compact **LOOP** audition button repeats a fixed selection when one exists, otherwise it follows the visible tile view as that view is zoomed or panned. A short boundary crossfade uses the existing audition engine. While LOOP is active it remains the audition owner, so WARP, SMEAR, and TEAR continue publishing spring-loaded previews without their usual timed playback retriggers. Ordinary LOOP remains temporary. Shift-click **LOOP** to engage LOOP LOCK across every editing and tile operation; Shift-click it again to release.
 
-Portable `.tsp` files contain named processing settings and, for user captures, optional tuning metadata—never tile audio, crop, selection, loop, tape edits, or bank members—so the same treatment can be applied to unrelated material. Factory recipes omit tuning. While DSP is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the selected tile. Full `.tsr` projects remain the self-contained way to save a complete bank.
+Portable `.tsp` files contain named processing settings and, for user captures, optional tuning metadata—never tile audio, crop, selection, loop, tape edits, or bank members—so the same treatment can be applied to unrelated material. Factory recipes omit tuning. While DSP is visible, Save or `Ctrl+S` writes a TSP instead of a full project. Load, drag-and-drop, and command-line opening accept TSP files, add them to the next free user slot, and apply them without replacing the selected tile. A `.tsr` project bundle saves the complete paged Sample library and the temporary REC BANK.
 
 The **Shape** page combines a bypassable resonant Lowpass, Highpass, or Bandpass filter with a bypassable Tape, Clip, or Fold shaper. Cutoff uses logarithmic travel, while resonance, drive, and wet/dry mix expose the musically useful range. These deterministic stages live in the processing recipe and render before Delay and Space; existing ordered tape placements remain downstream. Held and latched notes are remapped across recipe application just like other Current rerenders.
 
@@ -319,7 +345,7 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition with semitone Shift+wheel movement and F1–F8 octave selection;
 - mono PCM/float WAV loading, including multichannel fold-down;
-- self-contained project saving with all bank slots, tuning, editor state, selection, loop metadata, edit timelines, and DSP parameters; and
+- project-bundle saving with every Sample page and REC tile, tuning, editor state, selection, loop metadata, edit timelines, and DSP parameters; and
 - mono 16-bit selected-tile export with sampler-compatible root/fine-tune and loop metadata.
 
 Sample edits are deterministic and tile-owned. With no selection they affect the whole selected tile; with a selection they affect only that range.
@@ -338,7 +364,7 @@ Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the
 
 Load, Save, and Export now open one shared FT2-informed browser rather than writing fixed filenames or requiring a typed path:
 
-- Load lists WAV source files, self-contained `.tsr` projects, and portable `.tsp` processing recipes and preserves the existing instrument if any is invalid;
+- Load lists WAV source files, `.tsr` projects, and portable `.tsp` processing recipes and preserves the existing instrument if any is invalid;
 - Save lists directories and `.tsr` projects, or `.tsp` processing recipes while DSP is visible;
 - Export lists directories and WAV files;
 - mouse wheel, draggable scrollbar, Up/Down, Page Up/Down, Home/End, and row clicking navigate long directories;
@@ -348,6 +374,13 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
 TSR21 stores every occupied tile as a complete independent object: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR20 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+
+For backward compatibility, the chosen `.tsr` remains an ordinary first-page TSR21.
+Additional pages, the REC BANK, and a tiny manifest live beside it in
+`<project>.tsr.samples/`. Move, copy, or back up the `.tsr` and that companion folder
+together. A legacy project with no companion folder opens as one Sample page with an
+empty REC BANK. Saving uses temporary files plus replacement for each member; the
+long-lived `Captures/` archive is deliberately outside this project bundle.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 
@@ -378,7 +411,8 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Lower octave: `Z S X D C V G B H N J M`
 - Upper octave: `Q 2 W 3 E R 5 T 6 Y 7 U`
 - Play selection, otherwise play from the edit playhead / Stop all: `Space`; `Escape` cancels the active gesture/dialog first, otherwise opens exit confirmation
-- Select lower panel directly: top-row `1` Sample Tiles, `2` Keyboard, `3` CDP, `4` DSP
+- Select lower panel directly: top-row `1` Sample Tiles, `2` Keyboard, `3` CDP, `4` DSP; press `1` again to cycle Sample pages
+- Open external REC BANK directly: `Shift+1`; plain `1` returns to Samples
 - Load browser: `Ctrl+O`
 - Save browser / choose Export Selected Tile or Collection: `Ctrl+S` / `Ctrl+E`
 - Undo / Redo: `Ctrl+Z` / `Ctrl+Y`

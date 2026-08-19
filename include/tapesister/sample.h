@@ -374,6 +374,8 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
                                 size_t *loop_last, TsLoopMode *loop_mode,
                                 const char *path, char *error, size_t error_size);
 int ts_sample_save_wav16(const TsSample *sample, const char *path, char *error, size_t error_size);
+int ts_sample_save_wav32f(const TsSample *sample, const char *path,
+                          char *error, size_t error_size);
 int ts_sample_save_wav16_tuned(const TsSample *sample, const TsTuning *tuning,
                                const char *path, char *error, size_t error_size);
 int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
@@ -617,6 +619,10 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
                                 char *error, size_t error_size);
 int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
                                 char *error, size_t error_size);
+int ts_instrument_copy_bank_slot_from(TsInstrument *destination,
+                                      int destination_slot,
+                                      TsInstrument *source, int source_slot,
+                                      char *error, size_t error_size);
 int ts_instrument_copy_selection(const TsInstrument *instrument,
                                  TsSample *clipboard, size_t *origin_first,
                                  char *error, size_t error_size);

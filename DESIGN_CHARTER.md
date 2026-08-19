@@ -30,16 +30,21 @@ TapeSister should be:
 - **Tactile.** Keyboard and mouse actions should feel like operating an instrument, not completing a form.
 - **Visually restrained.** A fixed-pixel, FT2-informed visual language is welcome, but copied FT2 chrome is not the goal.
 - **Deterministic when saved.** Randomness may be lively during exploration, but a seed and recipe must reproduce the chosen result.
+- **Performance-preserving.** Generated and edited states may stay ephemeral, but a completed realtime performance is precious and keeps an immutable original.
 - **Productively unstable.** Drift, interaction, feedback, stepped randomness, and mutation should create controlled surprise rather than arbitrary noise.
 - **Musically bounded.** Extreme behavior is welcome; NaNs, runaway levels, accidental silence, corrupt files, and irrecoverable edits are not.
 
 ## The core object
 
-A TapeSister **Bank tile** is the sound object. It owns its audio, generator or import provenance, tuning, loop, selection, viewport, processing and edit state, and Undo/Redo history. All 16 tiles are peers; there is no privileged Source slot and no separate Parent/Current promotion workflow.
+A TapeSister **Bank tile** is the sound object. It owns its audio, generator or import provenance, tuning, loop, selection, viewport, processing and edit state, and Undo/Redo history. Sample pages retain the compact 16-tile physical layout while allowing the library to grow; all tiles are peers, with no privileged Source slot or separate Parent/Current promotion workflow.
 
 Create and Load operate on the selected tile. Clone creates an independent copy. Editing and transforms affect only the selected tile. Vary with Chain enabled is the one intentional cross-tile continuation mechanism.
 
 A processing Recipe is a reusable procedure applied to material. It is not the identity or owner of a tile.
+
+## The performance boundary
+
+Anything TapeSister records from realtime activity—external input or an internal CAPTURE performance—gets a human-readable immutable original in `Captures/`. Working tiles remain freely destructive, and ordinary edits, renders, previews, generators, and history states do not create archive files. The REC BANK is a reusable capture buffer; KEEP explicitly graduates its current tiles into available Sample-page slots without overwriting existing sounds.
 
 ## Raw material, not inherited architecture
 

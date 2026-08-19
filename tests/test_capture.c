@@ -300,8 +300,10 @@ static void test_capture_feedback_rendering(void)
     char error[160];
     CHECK(prepare_source_and_blank(&instrument, 16, 12, error, sizeof(error)));
     ts_ui_init(&ui);
-    CHECK(ts_ui_capture_button_from_point(525, 315));
-    CHECK(!ts_ui_capture_button_from_point(521, 315));
+    CHECK(ts_ui_capture_button_from_point(540, 315));
+    CHECK(!ts_ui_capture_button_from_point(531, 315));
+    CHECK(ts_ui_record_keep_button_from_point(410, 315));
+    CHECK(ts_ui_monitor_button_from_point(470, 315));
     ts_ui_render(&idle, &ui, &instrument);
     ui.capture_state = TS_CAPTURE_RECORDING;
     ui.capture_recorded_frames = 6;
@@ -335,6 +337,31 @@ static void test_capture_feedback_rendering(void)
           bank_idle.pixels[328 * TS_UI_WIDTH + 90]);
     CHECK(bank_armed.pixels[338 * TS_UI_WIDTH + 15] !=
           bank_idle.pixels[338 * TS_UI_WIDTH + 15]);
+
+    ui.external_record_bank = 1;
+    ui.input_meter_active = 1;
+    ui.input_sample_rate = 48000u;
+    ui.input_level = 0.001f;
+    ui.input_peak = 0.01f;
+    ui.input_threshold = powf(10.0f, -30.0f / 20.0f);
+    ts_ui_render(&recording, &ui, &instrument);
+    ui.input_threshold = powf(10.0f, -60.0f / 20.0f);
+    ts_ui_render(&staged, &ui, &instrument);
+    CHECK(recording.pixels[110 * TS_UI_WIDTH + 602] !=
+          staged.pixels[110 * TS_UI_WIDTH + 602]);
+
+    ui.capture_state = TS_CAPTURE_RECORDING;
+    ui.capture_recorded_frames = 24000u;
+    ui.input_wave_columns = 2u;
+    ui.input_wave_minimum[0] = -0.8f;
+    ui.input_wave_maximum[0] = 0.7f;
+    ui.input_wave_minimum[1] = -0.2f;
+    ui.input_wave_maximum[1] = 0.4f;
+    ts_ui_render(&recording, &ui, &instrument);
+    CHECK(recording.pixels[(TS_WAVE_Y + TS_WAVE_H / 2) * TS_UI_WIDTH +
+                           TS_WAVE_X] !=
+          staged.pixels[(TS_WAVE_Y + TS_WAVE_H / 2) * TS_UI_WIDTH +
+                        TS_WAVE_X]);
     ts_instrument_free(&instrument);
 }
 

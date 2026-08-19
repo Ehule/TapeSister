@@ -1111,7 +1111,17 @@ TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y)
 
 int ts_ui_capture_button_from_point(int x, int y)
 {
-    return x >= 522 && x < 630 && y >= 313 && y < 330;
+    return x >= 536 && x < 630 && y >= 313 && y < 330;
+}
+
+int ts_ui_record_keep_button_from_point(int x, int y)
+{
+    return x >= 400 && x < 456 && y >= 313 && y < 330;
+}
+
+int ts_ui_monitor_button_from_point(int x, int y)
+{
+    return x >= 461 && x < 531 && y >= 313 && y < 330;
 }
 
 int ts_ui_canvas_edge_from_point(int x, int y)
@@ -1410,6 +1420,88 @@ const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
 {
     if (ui != NULL && ui->has_pitch_suggestion) return &ui->pitch_suggestion;
     return instrument != NULL ? &instrument->audible_tuning : NULL;
+}
+
+static float input_dbfs(float level)
+{
+    if (!isfinite(level) || level <= 0.000001f) return -120.0f;
+    return 20.0f * log10f(level);
+}
+
+static int input_meter_y(float level)
+{
+    float db = input_dbfs(level);
+    /* The recorder accepts thresholds down to -90 dBFS.  Use the same
+       complete range so the threshold line remains spatially truthful. */
+    if (db < -90.0f) db = -90.0f;
+    if (db > 0.0f) db = 0.0f;
+    return TS_WAVE_Y + TS_WAVE_H - 4 -
+           (int)lrintf((db + 90.0f) / 90.0f * (TS_WAVE_H - 8));
+}
+
+static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
+{
+    const int waveform_width = TS_WAVE_W - 28;
+    const int meter_x = TS_WAVE_X + TS_WAVE_W - 18;
+    const int meter_y = TS_WAVE_Y + 4;
+    const int meter_h = TS_WAVE_H - 8;
+    char title[112];
+    char threshold[24];
+    float level_db = input_dbfs(ui->input_level);
+    float peak_db = input_dbfs(ui->input_peak);
+    int level_y = input_meter_y(ui->input_level);
+    int peak_y = input_meter_y(ui->input_peak);
+    int threshold_y = input_meter_y(ui->input_threshold);
+    uint32_t meter_color = ui->input_clipping ? RGB(255, 74, 58) : PAL_VOLUME;
+    frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
+    if (ui->capture_state == TS_CAPTURE_RECORDING && ui->input_sample_rate > 0u)
+        snprintf(title, sizeof(title),
+                 "INPUT  %+.1F DBFS   PEAK %+.1F DBFS   REC %.2F S",
+                 level_db, peak_db,
+                 (double)ui->capture_recorded_frames / ui->input_sample_rate);
+    else
+        snprintf(title, sizeof(title),
+                 "INPUT  %+.1F DBFS   PEAK %+.1F DBFS   ARMED",
+                 level_db, peak_db);
+    text(fb, 20, 49, title, ui->input_clipping ? RGB(255, 96, 72) : PAL_INSTRUMENT, 1);
+    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
+    for (int y = TS_WAVE_Y + 20; y < TS_WAVE_Y + TS_WAVE_H; y += 20)
+        wave_rect(fb, TS_WAVE_X, y, waveform_width, 1,
+                  contrast_color(PAL_DESKTOP,
+                                 active_palette()->desktop_contrast, 0.72f));
+    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2,
+              waveform_width, 1, PAL_BUTTON);
+    if (ui->capture_state == TS_CAPTURE_RECORDING && ui->input_wave_columns > 0u) {
+        size_t visible = ui->input_wave_columns;
+        if (visible > (size_t)waveform_width) visible = (size_t)waveform_width;
+        for (size_t column = 0; column < visible; ++column) {
+            float low = ui->input_wave_minimum[column];
+            float high = ui->input_wave_maximum[column];
+            int middle = TS_WAVE_Y + TS_WAVE_H / 2;
+            int y0 = middle - (int)lrintf(high * (TS_WAVE_H / 2 - 6));
+            int y1 = middle - (int)lrintf(low * (TS_WAVE_H / 2 - 6));
+            if (y0 < TS_WAVE_Y + 2) y0 = TS_WAVE_Y + 2;
+            if (y1 > TS_WAVE_Y + TS_WAVE_H - 2) y1 = TS_WAVE_Y + TS_WAVE_H - 2;
+            wave_line(fb, TS_WAVE_X + (int)column, y0,
+                      TS_WAVE_X + (int)column, y1, PAL_NOTE);
+        }
+    } else {
+        text(fb, 202, 126, "WAITING FOR THRESHOLD", RGB(120, 113, 121), 2);
+    }
+    wave_rect(fb, meter_x, meter_y, 12, meter_h, RGB(24, 24, 24));
+    if (level_y < meter_y) level_y = meter_y;
+    if (level_y > meter_y + meter_h) level_y = meter_y + meter_h;
+    wave_rect(fb, meter_x + 2, level_y, 8,
+              meter_y + meter_h - level_y, meter_color);
+    wave_rect(fb, meter_x - 2, peak_y, 16, 2,
+              ui->input_clipping ? RGB(255, 74, 58) : PAL_EFFECT);
+    wave_rect(fb, meter_x - 4, threshold_y, 20, 2, PAL_TUNING);
+    snprintf(threshold, sizeof(threshold), "TH %.0F", input_dbfs(ui->input_threshold));
+    wave_text(fb, meter_x - 48,
+              threshold_y > TS_WAVE_Y + 10 ? threshold_y - 9 : threshold_y + 3,
+              threshold, PAL_TUNING, 1);
+    if (ui->input_clipping)
+        wave_text(fb, meter_x - 34, TS_WAVE_Y + 5, "CLIP", RGB(255, 74, 58), 1);
 }
 
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
@@ -1737,6 +1829,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                     grid_snap != TS_GRID_SNAP_OFF);
     }
 
+    if (ui->input_meter_active) live_input_render(fb, ui);
+
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
     button(fb, 85, 205, 82, "CREATE", 0);
     button(fb, 172, 205, 70, "VARY", 0);
@@ -1965,6 +2059,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                                     (ui->capture_state == TS_CAPTURE_RECORDING ? "STOP" :
                                      ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
                                      "ARMED" : "CAPTURE");
+        char page_hint[112];
         const char *bank_hint =
             ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
             "CLICK OCCUPIED SOURCE  TARGET STAYS ARMED" :
@@ -1984,10 +2079,23 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                         "REC BANK RECORDING INPUT  STOP KEEPS TAKE" :
                         instrument->family_trajectory ?
                         "REC BANK  CHAIN ON  TAKES ADVANCE AND REARM" :
-                        "REC BANK  SELECT EMPTY TILE  REC ARM  1 TOGGLE";
+                        "REC BANK  SELECT EMPTY TILE  REC ARM  SHIFT+1";
+        else {
+            snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %s",
+                     ui->sample_page + 1,
+                     ui->sample_page_count > 0 ? ui->sample_page_count : 1,
+                     bank_hint);
+            bank_hint = page_hint;
+        }
         text(fb, 11, 318, bank_hint,
              ui->external_record_bank ? PAL_VOLUME : RGB(184, 180, 184), 1);
-        mini_button(fb, 522, 313, 108, capture_label,
+        if (ui->external_record_bank) {
+            mini_button(fb, 400, 313, 56, "KEEP", 0);
+            mini_button(fb, 461, 313, 70,
+                        ui->monitor_enabled ? "MON ON" : "MONITOR",
+                        ui->monitor_enabled);
+        }
+        mini_button(fb, 536, 313, 94, capture_label,
                     ui->capture_state != TS_CAPTURE_IDLE);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
             const TsBankSlot *slot = &instrument->bank[i];
