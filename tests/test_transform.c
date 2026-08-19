@@ -188,8 +188,8 @@ static void mix_tests(void)
     char error[160];
     float dry_data[] = {-0.5f, 0.0f, 0.5f};
     float wet_data[] = {0.5f, 0.5f, -0.5f};
-    TsSample dry = {dry_data, 3u, 48000u, "dry"};
-    TsSample wet = {wet_data, 3u, 48000u, "wet"};
+    TsSample dry = {dry_data, 3u, 48000u, "dry", 0u};
+    TsSample wet = {wet_data, 3u, 48000u, "wet", 0u};
     TsSample output;
     ts_sample_init(&output);
     CHECK(ts_transform_mix_samples(&dry, &wet, 0.0f, TS_CDP_MIX_EXACT_FRAMES,

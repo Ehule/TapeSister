@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -21,6 +22,17 @@
 #endif
 
 static int is_zero_crossing(const TsSample *sample, size_t frame);
+static atomic_uint next_visual_revision = ATOMIC_VAR_INIT(1u);
+
+static uint32_t sample_visual_revision(void)
+{
+    uint32_t revision = (uint32_t)atomic_fetch_add_explicit(
+        &next_visual_revision, 1u, memory_order_relaxed);
+    if (revision == 0u)
+        revision = (uint32_t)atomic_fetch_add_explicit(
+            &next_visual_revision, 1u, memory_order_relaxed);
+    return revision;
+}
 
 static void set_error(char *dst, size_t size, const char *message)
 {
@@ -155,12 +167,18 @@ static float rng_bipolar(uint32_t *state)
 void ts_sample_init(TsSample *sample)
 {
     memset(sample, 0, sizeof(*sample));
+    sample->visual_revision = sample_visual_revision();
 }
 
 void ts_sample_free(TsSample *sample)
 {
     free(sample->data);
     ts_sample_init(sample);
+}
+
+void ts_sample_touch(TsSample *sample)
+{
+    if (sample != NULL) sample->visual_revision = sample_visual_revision();
 }
 
 static TsTuning default_tuning(void)

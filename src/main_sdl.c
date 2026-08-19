@@ -2,6 +2,7 @@
 #include "tapesister/capture.h"
 #include "tapesister/note_bank.h"
 #include "tapesister/dsp_transform.h"
+#include "tapesister/render_damage.h"
 #include "tapesister/ui.h"
 
 #include <SDL2/SDL.h>
@@ -131,6 +132,52 @@ static void diagnostic_log(const char *format, ...)
     fputc('\n', file);
     fflush(file);
     fclose(file);
+}
+
+static int update_texture_damage(SDL_Texture *texture,
+                                 const TsFramebuffer *framebuffer,
+                                 uint32_t *snapshot,
+                                 int *snapshot_valid)
+{
+    TsRenderDamagePlan damage;
+    const uint32_t *previous;
+    if (texture == NULL || framebuffer == NULL || snapshot == NULL ||
+        snapshot_valid == NULL)
+        return 0;
+    previous = *snapshot_valid ? snapshot : NULL;
+    if (!ts_render_damage_plan(framebuffer->pixels, previous,
+                               TS_UI_WIDTH, TS_UI_HEIGHT, &damage))
+        return 1;
+
+    for (int i = 0; i < damage.count; ++i) {
+        const TsRenderDamageRect *rect = &damage.rects[i];
+        SDL_Rect target = {rect->x, rect->y, rect->w, rect->h};
+        const uint32_t *pixels = framebuffer->pixels +
+            (size_t)rect->y * TS_UI_WIDTH + (size_t)rect->x;
+        if (SDL_UpdateTexture(texture, &target, pixels,
+                              TS_UI_WIDTH * (int)sizeof(*pixels)) != 0) {
+            *snapshot_valid = 0;
+            return 0;
+        }
+    }
+    ts_render_damage_snapshot_commit(snapshot, framebuffer->pixels,
+                                     TS_UI_WIDTH, &damage);
+    *snapshot_valid = 1;
+    return 1;
+}
+
+static void pace_frame_60hz(Uint64 started)
+{
+    Uint64 frequency = SDL_GetPerformanceFrequency();
+    Uint64 elapsed = SDL_GetPerformanceCounter() - started;
+    Uint64 target = frequency / 60u;
+    if (frequency == 0u || elapsed >= target) return;
+    {
+        Uint64 remaining = target - elapsed;
+        Uint32 delay = (Uint32)((remaining * 1000u + frequency - 1u) /
+                                frequency);
+        if (delay > 0u) SDL_Delay(delay);
+    }
 }
 
 static const char *config_file_path(void)
@@ -400,7 +447,8 @@ static const TsSample loop_lock_silence = {
     loop_lock_silence_data,
     TS_DEFAULT_CANVAS_FRAMES,
     TS_DEFAULT_CANVAS_RATE,
-    "LOOP LOCK SILENCE"
+    "LOOP LOCK SILENCE",
+    0u
 };
 
 static int path_is_tsr(const char *path)
@@ -1102,6 +1150,7 @@ static void close_drone_dialog(SDL_AudioDeviceID device, AudioState *audio,
     stop_drone_preview(device, audio, ui, drone);
     ui->drone_preview_sample = NULL;
     ts_sample_free(drone);
+    ts_ui_waveform_cache_invalidate(ui, TS_UI_WAVEFORM_DRONE);
     ui->drone_open = 0;
     ui->drone_crossfade_dragging = 0;
     ui->drone_crossfade_drag_start_x = 0;
@@ -1225,6 +1274,7 @@ static void begin_drone_dialog(SDL_AudioDeviceID device, AudioState *audio,
     ui->drone_output_frames = drone->frames;
     ui->drone_overlap_frames = overlap;
     ui->drone_preview_sample = drone;
+    ts_ui_waveform_cache_invalidate(ui, TS_UI_WAVEFORM_DRONE);
     ui->drone_source_hash = ts_sample_hash(&instrument->current);
     ui->drone_effective_crossfade_ms =
         (float)((double)overlap * 1000.0 / (double)drone->sample_rate);
@@ -1307,6 +1357,7 @@ static int adjust_drone_crossfade(SDL_AudioDeviceID device, AudioState *audio,
         return 0;
     }
     ui->drone_preview_sample = drone;
+    ts_ui_waveform_cache_invalidate(ui, TS_UI_WAVEFORM_DRONE);
     ui->drone_overlap_frames = effective;
     ui->drone_output_frames = drone->frames;
     ui->drone_effective_crossfade_ms =
@@ -1388,6 +1439,7 @@ static void discard_transform_preview(SDL_AudioDeviceID device, AudioState *audi
     ui->transform_preview_last = 0u;
     ui->transform_preview_available = 0;
     ui->transform_safety = TS_CDP_SAFETY_INVALID;
+    ts_ui_waveform_cache_invalidate(ui, TS_UI_WAVEFORM_TRANSFORM);
 }
 
 static void mark_transform_stale(SDL_AudioDeviceID device, AudioState *audio,
@@ -1802,6 +1854,9 @@ static void poll_transform_worker(SDL_AudioDeviceID device, AudioState *audio,
         }
     }
     if (published) {
+        /* Worker output becomes visible only after the thread has joined and
+           the newest-render identity checks above have accepted it. */
+        ts_ui_waveform_cache_invalidate(ui, TS_UI_WAVEFORM_TRANSFORM);
         if (controller->quick_apply) {
             int applied;
             if (audio != NULL && audio->capture.state != TS_CAPTURE_IDLE) {
@@ -5063,6 +5118,7 @@ int main(int argc, char **argv)
     TsInstrument *parked_instrument = NULL;
     TsUiState ui;
     TsFramebuffer framebuffer;
+    uint32_t *frame_snapshot = NULL;
     TsSample clipboard;
     TsSample pending_selection_load;
     TsSample drone_preview;
@@ -5080,6 +5136,9 @@ int main(int argc, char **argv)
     int diagnostic_bank_stress = argc > 1 &&
                                  strcmp(argv[1], "--diagnostic-bank-toggle-stress") == 0;
     int diagnostic_failed = 0;
+    int frame_snapshot_valid = 0;
+    int window_minimized = 0;
+    int renderer_vsync = 0;
     int running = 1;
 
     diagnostic_log("entered main: TsInstrument=%zu framebuffer=%zu UI=%zu stress=%d",
@@ -5153,6 +5212,19 @@ int main(int argc, char **argv)
     if (!renderer && window) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     texture = renderer ? SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
                                             TS_UI_WIDTH, TS_UI_HEIGHT) : NULL;
+    if (renderer != NULL) {
+        SDL_RendererInfo info;
+        SDL_zero(info);
+        if (SDL_GetRendererInfo(renderer, &info) == 0) {
+            renderer_vsync = (info.flags & SDL_RENDERER_PRESENTVSYNC) != 0u;
+            diagnostic_log("renderer=%s flags=0x%x pacing=%s",
+                           info.name != NULL ? info.name : "unknown",
+                           (unsigned)info.flags,
+                           renderer_vsync ? "vsync" : "explicit-60hz");
+        } else {
+            diagnostic_log("renderer info unavailable pacing=explicit-60hz");
+        }
+    }
     if (!window || !renderer || !texture) {
         fprintf(stderr, "Video setup failed: %s\n", SDL_GetError());
         running = 0;
@@ -5167,6 +5239,14 @@ int main(int argc, char **argv)
         ts_sample_free(&clipboard);
         ts_instrument_free(&instrument);
         return 0;
+    }
+    if (running) {
+        frame_snapshot = (uint32_t *)malloc(
+            (size_t)TS_UI_WIDTH * TS_UI_HEIGHT * sizeof(*frame_snapshot));
+        if (frame_snapshot == NULL) {
+            fprintf(stderr, "Video damage snapshot allocation failed\n");
+            running = 0;
+        }
     }
 
     SDL_zero(desired);
@@ -5256,6 +5336,7 @@ int main(int argc, char **argv)
 
     while (running) {
         SDL_Event event;
+        Uint64 frame_started = SDL_GetPerformanceCounter();
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_DROPFILE && ui.canvas_gesture.active)
                 end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
@@ -5369,10 +5450,11 @@ int main(int argc, char **argv)
                     Uint32 flags = SDL_GetWindowFlags(window);
                     int fullscreen = (flags & SDL_WINDOW_FULLSCREEN) != 0;
                     if (SDL_SetWindowFullscreen(
-                            window, fullscreen ? 0u : SDL_WINDOW_FULLSCREEN_DESKTOP) == 0)
+                            window, fullscreen ? 0u : SDL_WINDOW_FULLSCREEN_DESKTOP) == 0) {
+                        frame_snapshot_valid = 0;
                         snprintf(ui.status, sizeof(ui.status), "%s - ALT+ENTER TO TOGGLE",
                                  fullscreen ? "WINDOWED" : "FULLSCREEN");
-                    else
+                    } else
                         snprintf(ui.status, sizeof(ui.status),
                                  "FULLSCREEN TOGGLE FAILED: %.119s", SDL_GetError());
                 } else if (ui.stretch_gesture.active && key == SDLK_ESCAPE) {
@@ -7388,6 +7470,14 @@ int main(int argc, char **argv)
             }
         }
 
+        {
+            int minimized_now =
+                (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0u;
+            if (window_minimized && !minimized_now)
+                frame_snapshot_valid = 0;
+            window_minimized = minimized_now;
+        }
+
         if (SDL_GetTicks() - last_exchange_poll >= 1000u) {
             last_exchange_poll = SDL_GetTicks();
             (void)ts_exchange_presence_touch(
@@ -7449,11 +7539,18 @@ int main(int argc, char **argv)
         }
         if (device) SDL_UnlockAudioDevice(device);
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
-        ts_ui_render(&framebuffer, &ui, &instrument);
-        SDL_UpdateTexture(texture, NULL, framebuffer.pixels, TS_UI_WIDTH * (int)sizeof(uint32_t));
-        SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
-        SDL_RenderPresent(renderer);
+        if (!window_minimized) {
+            ts_ui_render(&framebuffer, &ui, &instrument);
+            if (update_texture_damage(texture, &framebuffer, frame_snapshot,
+                                      &frame_snapshot_valid)) {
+                /* The texture copy covers the complete destination. A clear
+                   would only write the same output a second time. */
+                SDL_RenderCopy(renderer, texture, NULL, NULL);
+                SDL_RenderPresent(renderer);
+            }
+        }
+        if (window_minimized || !renderer_vsync || !frame_snapshot_valid)
+            pace_frame_60hz(frame_started);
     }
 
     if (ui.canvas_gesture.active)
@@ -7482,6 +7579,7 @@ int main(int argc, char **argv)
         parked_instrument = NULL;
     }
     ts_instrument_free(&instrument);
+    free(frame_snapshot);
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);
     if (window) SDL_DestroyWindow(window);

@@ -10,6 +10,7 @@ add_library(tapesister_core src/ts_sample.c src/ts_audition.c src/ts_note_bank.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
              src/ts_recipe.c src/ts_dsp_recipe.c
              src/ts_palette.c
+             src/ts_render_damage.c src/ts_waveform_cache.c
              src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c
              src/ts_dsp_transform.c src/ts_exchange.c src/ts_ui.c)
 target_include_directories(tapesister_core PUBLIC include)
@@ -100,3 +101,15 @@ add_test(NAME tapesister_exchange_tests COMMAND tapesister_exchange_tests)
 
 add_executable(tapesister_render_demo tests/render_demo.c)
 target_link_libraries(tapesister_render_demo PRIVATE tapesister_core)
+
+add_executable(tapesister_render_damage_tests tests/test_render_damage.c)
+target_link_libraries(tapesister_render_damage_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_render_damage_tests COMMAND tapesister_render_damage_tests)
+
+add_executable(tapesister_waveform_cache_tests tests/test_waveform_cache.c)
+target_link_libraries(tapesister_waveform_cache_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_waveform_cache_tests COMMAND tapesister_waveform_cache_tests)
+
+add_executable(tapesister_render_efficiency_tests tests/test_render_efficiency.c)
+target_link_libraries(tapesister_render_efficiency_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_render_efficiency_tests COMMAND tapesister_render_efficiency_tests)
