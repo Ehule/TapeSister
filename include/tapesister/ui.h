@@ -221,6 +221,7 @@ typedef struct {
     TsCdpRecipeValues cdp_presets[TS_CDP_FACTORY_RECIPE_COUNT];
     TsDspRecipeValues dsp_presets[TS_DSP_FACTORY_RECIPE_COUNT];
     TsCaptureState capture_state;
+    int external_record_bank;
     int capture_destination_slot;
     int capture_source_slot;
     size_t capture_recorded_frames;

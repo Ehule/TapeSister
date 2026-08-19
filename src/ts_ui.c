@@ -865,6 +865,7 @@ void ts_ui_init(TsUiState *ui)
     ui->capture_destination_slot = -1;
     ui->capture_source_slot = -1;
     ui->capture_state = TS_CAPTURE_IDLE;
+    ui->external_record_bank = 0;
     ui->renaming_bank_slot = -1;
     ui->renaming_recipe_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
@@ -1957,9 +1958,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                      ui->dsp_page == 0 ? PAL_INSTRUMENT : PAL_EFFECT);
         }
     } else {
-        const char *capture_label = ui->capture_state == TS_CAPTURE_RECORDING ? "STOP" :
-                                    ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
-                                    "ARMED" : "CAPTURE";
+        const char *capture_label = ui->external_record_bank ?
+                                    (ui->capture_state == TS_CAPTURE_RECORDING ? "STOP REC" :
+                                     ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
+                                     "REC ARMED" : "REC ARM") :
+                                    (ui->capture_state == TS_CAPTURE_RECORDING ? "STOP" :
+                                     ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
+                                     "ARMED" : "CAPTURE");
         const char *bank_hint =
             ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
             "CLICK OCCUPIED SOURCE  TARGET STAYS ARMED" :
@@ -1972,7 +1977,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             ui->fx_page == TS_FX_FAMILY ?
             "CREATE FILLS TILE  VARY REPLACES OR CHAINS NEXT EMPTY" :
             "CLICK PLAY  DOUBLE EMPTY BLANK TAPE  RESIZE THEN ARM";
-        text(fb, 11, 318, bank_hint, RGB(184, 180, 184), 1);
+        if (ui->external_record_bank)
+            bank_hint = ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
+                        "REC BANK ARMED  MAKE SOUND  THRESHOLD STARTS TAPE" :
+                        ui->capture_state == TS_CAPTURE_RECORDING ?
+                        "REC BANK RECORDING INPUT  STOP KEEPS TAKE" :
+                        instrument->family_trajectory ?
+                        "REC BANK  CHAIN ON  TAKES ADVANCE AND REARM" :
+                        "REC BANK  SELECT EMPTY TILE  REC ARM  1 TOGGLE";
+        text(fb, 11, 318, bank_hint,
+             ui->external_record_bank ? PAL_VOLUME : RGB(184, 180, 184), 1);
         mini_button(fb, 522, 313, 108, capture_label,
                     ui->capture_state != TS_CAPTURE_IDLE);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {

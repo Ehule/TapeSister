@@ -27,6 +27,28 @@ drone_crossfade_ms=50
 ; It is capped at one quarter of the current selection length.
 chain_stamp_crossfade_ms=3
 
+[Audio]
+; Blank uses the machine's default stereo playback device.
+; Config can select SYSTEM DEFAULT or any SDL playback device.
+audio_output_device=
+
+[External Recording]
+; Blank uses the machine's default recording device. Config can select
+; SYSTEM DEFAULT or any SDL capture device without typing its name.
+record_input_device=
+; 0 = mix all channels to mono, 1 = first/left input, 2 = second/right input.
+record_input_channel=1
+; Threshold in dBFS. Lower values trigger on quieter sounds (-90 to 0).
+record_threshold_db=-30
+; Keep this much audio from before threshold crossing so attacks are not clipped.
+record_preroll_ms=180
+; Quiet time required before automatic stop logic considers the take finished.
+record_silence_ms=650
+; Extra quiet tape retained after silence detection for natural decays.
+record_tail_ms=180
+; Hard safety limit for a single recorded tile.
+record_max_seconds=20
+
 [DSP Presets]
 ; SAVE/UPDATE in a DSP Transform writes four normalized macro positions.
 ; Rows 01-16 are DSP1 PROCESS; rows 17-32 are DSP2 PRIMITIVES.

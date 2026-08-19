@@ -21,7 +21,25 @@ enum {
     TS_DRONE_CROSSFADE_MS_DEFAULT = 50,
     TS_CHAIN_STAMP_CROSSFADE_MS_MIN = 0,
     TS_CHAIN_STAMP_CROSSFADE_MS_MAX = 50,
-    TS_CHAIN_STAMP_CROSSFADE_MS_DEFAULT = 3
+    TS_CHAIN_STAMP_CROSSFADE_MS_DEFAULT = 3,
+    TS_RECORD_THRESHOLD_DB_MIN = -90,
+    TS_RECORD_THRESHOLD_DB_MAX = 0,
+    TS_RECORD_THRESHOLD_DB_DEFAULT = -30,
+    TS_RECORD_PREROLL_MS_MIN = 0,
+    TS_RECORD_PREROLL_MS_MAX = 1000,
+    TS_RECORD_PREROLL_MS_DEFAULT = 180,
+    TS_RECORD_SILENCE_MS_MIN = 50,
+    TS_RECORD_SILENCE_MS_MAX = 5000,
+    TS_RECORD_SILENCE_MS_DEFAULT = 650,
+    TS_RECORD_TAIL_MS_MIN = 0,
+    TS_RECORD_TAIL_MS_MAX = 3000,
+    TS_RECORD_TAIL_MS_DEFAULT = 180,
+    TS_RECORD_MAX_SECONDS_MIN = 1,
+    TS_RECORD_MAX_SECONDS_MAX = 600,
+    TS_RECORD_MAX_SECONDS_DEFAULT = 20,
+    TS_RECORD_INPUT_CHANNEL_MIN = 0,
+    TS_RECORD_INPUT_CHANNEL_MAX = 2,
+    TS_RECORD_INPUT_CHANNEL_DEFAULT = 1
 };
 
 typedef enum {
@@ -36,6 +54,8 @@ typedef struct {
     char fasttracker_path[TS_CONFIG_PATH_MAX];
     char exchange_path[TS_CONFIG_PATH_MAX];
     char cdp_bin_path[TS_CONFIG_PATH_MAX];
+    char record_input_device[TS_CONFIG_PATH_MAX];
+    char audio_output_device[TS_CONFIG_PATH_MAX];
     int startup_welcome_sample;
     int startup_welcome_autoplay;
     int playhead_zero_snap;
@@ -43,6 +63,12 @@ typedef struct {
     int rotate_wheel_coarse;
     int drone_crossfade_ms;
     int chain_stamp_crossfade_ms;
+    int record_input_channel;
+    int record_threshold_db;
+    int record_preroll_ms;
+    int record_silence_ms;
+    int record_tail_ms;
+    int record_max_seconds;
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];
     float dsp_factory_controls[TS_DSP_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
     int cdp_factory_overridden[TS_CDP_FACTORY_RECIPE_COUNT];

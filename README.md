@@ -10,6 +10,33 @@ Clicking an occupied tile selects it, immediately restores its own editor state 
 
 With no waveform selection, Create and Load replace only the selected tile. With a selection on an occupied sound or silent canvas, choosing a WAV from Load asks for exact Paste, duration-preserving Fit, or Cancel; Paste and Fit are both Undo/Redo edits. TSR and TSP loading retain their existing behavior. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. With a waveform selection, Create and Chain-off Vary stamp a fitted FM sound into exactly that range on the active tile. Chain-on Vary stamps there, advances the same-width selection to the right with a tiny overlap, and uses the new variation as the source of the next stamp.
 
+
+## External REC bank
+
+Press `1` to reach **Sample Tiles**, then press `1` again to toggle the complete
+16-tile **REC BANK**. The window title and bank hint identify the alternate collection.
+The normal collection is parked intact while REC is active; pressing `1` again swaps it
+back. Recorded tiles are ordinary TapeSister tiles, so the same selection, loop, DSP,
+CDP, export, and FT2 Link tools work immediately after capture.
+
+Select an empty REC tile and click **REC ARM**. TapeSister opens the configured capture
+device (or the machine default when `record_input_device` is blank), keeps a circular
+pre-roll, and waits without writing a take until the signal crosses
+`record_threshold_db`. Silence plus the configured tail ends the take automatically;
+**STOP REC** or Space keeps a shorter take, while Escape or clicking the armed button
+cancels it without changing the tile.
+
+When **CHAIN** is on in the Family page, a completed take advances to the next sequential
+empty REC tile and immediately rearms. This makes it possible to arm once, walk to an
+external synth or microphone, make a sound, wait for silence, change the source, and
+continue until the bank is full. CHAIN stops rather than overwriting an occupied tile or
+wrapping past tile 16.
+
+`[External Recording]` in `tapesister.ini` controls the input device and channel plus
+threshold, pre-roll, silence, tail, and maximum take length. `record_input_channel=0`
+mixes the device inputs to mono; `1` records the first/left channel and `2` the
+second/right channel. These settings are intentionally editable without recompiling.
+
 ## Capture a performance to a new tile
 
 Capture prints TapeSister's final live audition mix into an independent Bank tile. In

@@ -24,6 +24,12 @@ void ts_config_init(TsConfig *config)
         config->rotate_wheel_coarse = TS_ROTATE_WHEEL_COARSE_DEFAULT;
         config->drone_crossfade_ms = TS_DRONE_CROSSFADE_MS_DEFAULT;
         config->chain_stamp_crossfade_ms = TS_CHAIN_STAMP_CROSSFADE_MS_DEFAULT;
+        config->record_input_channel = TS_RECORD_INPUT_CHANNEL_DEFAULT;
+        config->record_threshold_db = TS_RECORD_THRESHOLD_DB_DEFAULT;
+        config->record_preroll_ms = TS_RECORD_PREROLL_MS_DEFAULT;
+        config->record_silence_ms = TS_RECORD_SILENCE_MS_DEFAULT;
+        config->record_tail_ms = TS_RECORD_TAIL_MS_DEFAULT;
+        config->record_max_seconds = TS_RECORD_MAX_SECONDS_DEFAULT;
     }
 }
 
@@ -180,76 +186,48 @@ int ts_config_load(TsConfig *config, const char *path,
         value = trim(equals + 1);
         key = trim(key);
         if (strcmp(key, "SamplePath") == 0) {
-            if (!copy_value(loaded.sample_path, value, error, error_size)) {
-                fclose(file);
-                return 0;
-            }
+            if (!copy_value(loaded.sample_path, value, error, error_size)) { fclose(file); return 0; }
         } else if (strcmp(key, "FastTrackerPath") == 0) {
-            if (!copy_value(loaded.fasttracker_path, value, error, error_size)) {
-                fclose(file);
-                return 0;
-            }
+            if (!copy_value(loaded.fasttracker_path, value, error, error_size)) { fclose(file); return 0; }
         } else if (strcmp(key, "ExchangePath") == 0) {
-            if (!copy_value(loaded.exchange_path, value, error, error_size)) {
-                fclose(file);
-                return 0;
-            }
+            if (!copy_value(loaded.exchange_path, value, error, error_size)) { fclose(file); return 0; }
         } else if (strcmp(key, "CdpBinPath") == 0) {
-            if (!copy_value(loaded.cdp_bin_path, value, error, error_size)) {
-                fclose(file);
-                return 0;
-            }
+            if (!copy_value(loaded.cdp_bin_path, value, error, error_size)) { fclose(file); return 0; }
+        } else if (strcmp(key, "record_input_device") == 0) {
+            if (!copy_value(loaded.record_input_device, value, error, error_size)) { fclose(file); return 0; }
         } else if (strcmp(key, "startup_welcome_sample") == 0) {
-            if (!parse_boolean(value, &loaded.startup_welcome_sample)) {
-                snprintf(error, error_size, "Invalid boolean on config line %d", line_number);
-                fclose(file); return 0;
-            }
+            if (!parse_boolean(value, &loaded.startup_welcome_sample)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "startup_welcome_autoplay") == 0) {
-            if (!parse_boolean(value, &loaded.startup_welcome_autoplay)) {
-                snprintf(error, error_size, "Invalid boolean on config line %d", line_number);
-                fclose(file); return 0;
-            }
+            if (!parse_boolean(value, &loaded.startup_welcome_autoplay)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "playhead_zero_snap") == 0) {
-            if (!parse_boolean(value, &loaded.playhead_zero_snap)) {
-                snprintf(error, error_size, "Invalid boolean on config line %d", line_number);
-                fclose(file); return 0;
-            }
+            if (!parse_boolean(value, &loaded.playhead_zero_snap)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "rotate_wheel_fine") == 0) {
-            if (!parse_clamped_integer(value, TS_ROTATE_WHEEL_FINE_MIN,
-                                       TS_ROTATE_WHEEL_FINE_MAX,
-                                       &loaded.rotate_wheel_fine)) {
-                snprintf(error, error_size, "Invalid integer on config line %d", line_number);
-                fclose(file); return 0;
-            }
+            if (!parse_clamped_integer(value, TS_ROTATE_WHEEL_FINE_MIN, TS_ROTATE_WHEEL_FINE_MAX, &loaded.rotate_wheel_fine)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "rotate_wheel_coarse") == 0) {
-            if (!parse_clamped_integer(value, TS_ROTATE_WHEEL_COARSE_MIN,
-                                       TS_ROTATE_WHEEL_COARSE_MAX,
-                                       &loaded.rotate_wheel_coarse)) {
-                snprintf(error, error_size, "Invalid integer on config line %d", line_number);
-                fclose(file); return 0;
-            }
+            if (!parse_clamped_integer(value, TS_ROTATE_WHEEL_COARSE_MIN, TS_ROTATE_WHEEL_COARSE_MAX, &loaded.rotate_wheel_coarse)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "drone_crossfade_ms") == 0) {
-            if (!parse_clamped_integer(value, TS_DRONE_CROSSFADE_MS_MIN,
-                                       TS_DRONE_CROSSFADE_MS_MAX,
-                                       &loaded.drone_crossfade_ms)) {
-                snprintf(error, error_size, "Invalid integer on config line %d", line_number);
-                fclose(file); return 0;
-            }
+            if (!parse_clamped_integer(value, TS_DRONE_CROSSFADE_MS_MIN, TS_DRONE_CROSSFADE_MS_MAX, &loaded.drone_crossfade_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "chain_stamp_crossfade_ms") == 0) {
-            if (!parse_clamped_integer(value, TS_CHAIN_STAMP_CROSSFADE_MS_MIN,
-                                       TS_CHAIN_STAMP_CROSSFADE_MS_MAX,
-                                       &loaded.chain_stamp_crossfade_ms)) {
-                snprintf(error, error_size, "Invalid integer on config line %d", line_number);
-                fclose(file); return 0;
-            }
+            if (!parse_clamped_integer(value, TS_CHAIN_STAMP_CROSSFADE_MS_MIN, TS_CHAIN_STAMP_CROSSFADE_MS_MAX, &loaded.chain_stamp_crossfade_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "record_input_channel") == 0) {
+            if (!parse_clamped_integer(value, TS_RECORD_INPUT_CHANNEL_MIN, TS_RECORD_INPUT_CHANNEL_MAX, &loaded.record_input_channel)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "record_threshold_db") == 0) {
+            if (!parse_clamped_integer(value, TS_RECORD_THRESHOLD_DB_MIN, TS_RECORD_THRESHOLD_DB_MAX, &loaded.record_threshold_db)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "record_preroll_ms") == 0) {
+            if (!parse_clamped_integer(value, TS_RECORD_PREROLL_MS_MIN, TS_RECORD_PREROLL_MS_MAX, &loaded.record_preroll_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "record_silence_ms") == 0) {
+            if (!parse_clamped_integer(value, TS_RECORD_SILENCE_MS_MIN, TS_RECORD_SILENCE_MS_MAX, &loaded.record_silence_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "record_tail_ms") == 0) {
+            if (!parse_clamped_integer(value, TS_RECORD_TAIL_MS_MIN, TS_RECORD_TAIL_MS_MAX, &loaded.record_tail_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "record_max_seconds") == 0) {
+            if (!parse_clamped_integer(value, TS_RECORD_MAX_SECONDS_MIN, TS_RECORD_MAX_SECONDS_MAX, &loaded.record_max_seconds)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else {
             int dsp = parse_dsp_preset(key, value, &loaded);
             int cdp = dsp == 0 ? parse_cdp_preset(key, value, &loaded) : 0;
             if (dsp < 0 || cdp < 0 ||
                 (dsp == 0 && strncmp(key, "DspPreset", 9u) == 0) ||
                 (cdp == 0 && strncmp(key, "CdpPreset", 9u) == 0)) {
-                snprintf(error, error_size,
-                         "Invalid transform preset on config line %d", line_number);
+                snprintf(error, error_size, "Invalid transform preset on config line %d", line_number);
                 fclose(file); return 0;
             }
         }
@@ -296,6 +274,21 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "rotate_wheel_coarse=%d\n"
                 "drone_crossfade_ms=%d\n"
                 "chain_stamp_crossfade_ms=%d\n"
+                "\n[External Recording]\n"
+                "; Blank uses the operating system default capture device. Otherwise use the exact SDL device name.\n"
+                "record_input_device=%s\n"
+                "; 0 mixes all input channels to mono, 1 records the first/left channel, 2 the second/right.\n"
+                "record_input_channel=%d\n"
+                "; Threshold in dBFS; lower values trigger on quieter sounds.\n"
+                "record_threshold_db=%d\n"
+                "; Audio retained before threshold crossing so attacks are not clipped.\n"
+                "record_preroll_ms=%d\n"
+                "; Quiet time required before automatic stop begins.\n"
+                "record_silence_ms=%d\n"
+                "; Extra quiet tape kept after silence detection.\n"
+                "record_tail_ms=%d\n"
+                "; Safety limit for one captured tile.\n"
+                "record_max_seconds=%d\n"
                 "\n[DSP Presets]\n"
                 "; SAVE/UPDATE writes normalized macro values here.\n",
                 config->sample_path, config->fasttracker_path,
@@ -305,7 +298,14 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->rotate_wheel_fine,
                 config->rotate_wheel_coarse,
                 config->drone_crossfade_ms,
-                config->chain_stamp_crossfade_ms) < 0;
+                config->chain_stamp_crossfade_ms,
+                config->record_input_device,
+                config->record_input_channel,
+                config->record_threshold_db,
+                config->record_preroll_ms,
+                config->record_silence_ms,
+                config->record_tail_ms,
+                config->record_max_seconds) < 0;
     for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
         if (!config->dsp_factory_overridden[slot]) continue;
         write_failed = fprintf(file, "DspPreset%02d=%.9g,%.9g,%.9g,%.9g\n",
