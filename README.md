@@ -102,7 +102,8 @@ from the same section. The overlap is capped at one quarter of the selection so
 short stamps still advance decisively.
 
 **DRONE** turns the current selection into a purpose-built seamless loop. It
-zero-snaps a split near the selection midpoint, rotates the two halves, and uses a
+chooses the quietest overlap-safe crossing near the selection midpoint, rotates the
+two halves, and uses a
 constant-sum raised-cosine crossfade where the old selection end meets its beginning.
 The dialog draws that actual temporary waveform and highlights the internal crossfade.
 Hover it and use the wheel for coarse zero-snapped crossfade changes or Shift+wheel for
@@ -111,8 +112,10 @@ Preview Loop repeats the temporary result without changing audio, history, or pr
 state, including these dialog-only adjustments. Copy New Tile places only the loop in
 the first available independent tile,
 preserves the source tuning, and marks the whole result as a zero-crossfade forward loop;
-Replace Selection splices the shorter result in place and selects it exactly. Both
-commit modes support Undo/Redo. The internal crossfade defaults to 50 ms, clamps to at
+Replace Selection splices the shorter result in place, smooths the two surrounding
+joins without altering the loop itself, and selects it exactly. Zero-crossfade Drone
+loops retain cyclic interpolation through their outer boundary at every playback
+rate. Both commit modes support Undo/Redo. The internal crossfade defaults to 50 ms, clamps to at
 most one quarter of the selection, and can be changed with
 `drone_crossfade_ms=50` in `[Waveform]`.
 
