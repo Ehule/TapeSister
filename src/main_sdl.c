@@ -2874,17 +2874,21 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
                           TsInstrument *instrument, TsProcessRecipe process, const char *label)
 {
     char error[160];
+    const char *scope = instrument->has_selection ? "SELECTION" : "SELECTED TILE";
     int ok;
     lock_edit(device, audio);
     ok = ts_instrument_set_process(instrument, &process, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (ok) ui->recipes.active_slot = -1;
     if (ok && strcmp(label, "BODY") == 0)
-        snprintf(ui->status, sizeof(ui->status), "BODY %.2F - SELECTED TILE UPDATED", process.body);
+        snprintf(ui->status, sizeof(ui->status), "BODY %.2F - %s UPDATED",
+                 process.body, scope);
     else if (ok && strcmp(label, "EDGE") == 0)
-        snprintf(ui->status, sizeof(ui->status), "EDGE %.2F - SELECTED TILE UPDATED", process.edge);
+        snprintf(ui->status, sizeof(ui->status), "EDGE %.2F - %s UPDATED",
+                 process.edge, scope);
     else if (ok && strcmp(label, "DRIFT") == 0)
-        snprintf(ui->status, sizeof(ui->status), "DRIFT %.2F - SELECTED TILE UPDATED", process.drift);
+        snprintf(ui->status, sizeof(ui->status), "DRIFT %.2F - %s UPDATED",
+                 process.drift, scope);
     else if (ok) snprintf(ui->status, sizeof(ui->status), "%s UPDATED ON SELECTED TILE", label);
     else snprintf(ui->status, sizeof(ui->status), "PROCESS FAILED: %.130s", error);
 }

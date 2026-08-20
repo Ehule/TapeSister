@@ -325,6 +325,9 @@ typedef struct {
     TsTuning tuning;
     TsTuning audible_tuning;
     TsProcessRecipe process;
+    size_t process_first;
+    size_t process_last;
+    int has_process_range;
     TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
     int sample_edit_count;
     TsPostEdit post_edits[TS_POST_EDIT_DEPTH];
@@ -380,6 +383,9 @@ typedef struct {
     uint64_t ancestor_hash;
     TsTuning tuning;
     TsTuning audible_tuning;
+    size_t process_first;
+    size_t process_last;
+    int has_process_range;
     size_t crop_first;
     size_t crop_last;
     size_t selection_first;

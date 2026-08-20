@@ -239,7 +239,7 @@ neutral values: the accepted preview is reproduced exactly once rather than proc
 those baked settings twice. Later native-control changes always rebuild from the stable
 checkpoint, so the transformed region cannot mask BODY, EDGE, DRIFT, NOISE, SHAPE,
 DELAY, or SPACE and A→B→A changes remain deterministic. Undo retains the prior full
-edit/process graph; Redo restores the checkpoint and neutral live stage. TSR23 stores
+edit/process graph; Redo restores the checkpoint and neutral live stage. TSR24 stores
 this ordering explicitly while TSR6–TSR20 remain loadable.
 
 Left-click quick Apply uses the identical render → validate → immutable preview → Apply

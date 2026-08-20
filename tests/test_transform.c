@@ -1292,6 +1292,89 @@ static void tape_gestures_keep_native_shelf_live_tests(void)
     ts_instrument_free(&instrument);
 }
 
+static void native_shelf_selection_scope_tests(void)
+{
+    char error[160];
+    TsInstrument instrument;
+    TsInstrument restored;
+    TsSample accepted;
+    TsProcessRecipe neutral;
+    TsProcessRecipe process;
+    uint64_t selected_hash;
+    size_t first;
+    size_t last;
+
+    setup(&instrument, 8192u);
+    ts_sample_init(&accepted);
+    ts_instrument_init(&restored);
+    first = instrument.selection_first;
+    last = instrument.selection_last;
+    CHECK(ts_instrument_apply_warp(&instrument, 0.72f, error, sizeof(error)));
+    CHECK(ts_instrument_apply_smear(&instrument, 0.64f, error, sizeof(error)));
+    CHECK(ts_instrument_apply_tear(&instrument, 0.81f, error, sizeof(error)));
+    CHECK(instrument.has_selection && instrument.selection_first == first &&
+          instrument.selection_last == last);
+    CHECK(ts_sample_clone(&accepted, &instrument.current, error, sizeof(error)));
+    ts_process_recipe_reset(&neutral);
+    neutral.seed = instrument.process.seed;
+
+    process = neutral;
+    process.body = 0.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)));
+    CHECK(instrument.has_process_range && instrument.process_first == first &&
+          instrument.process_last == last);
+    CHECK(memcmp(instrument.current.data, accepted.data,
+                 first * sizeof(*accepted.data)) == 0);
+    CHECK(memcmp(instrument.current.data + last, accepted.data + last,
+                 (accepted.frames - last) * sizeof(*accepted.data)) == 0);
+    CHECK(memcmp(instrument.current.data + first, accepted.data + first,
+                 (last - first) * sizeof(*accepted.data)) != 0);
+    selected_hash = ts_sample_hash(&instrument.current);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&accepted));
+    CHECK(ts_instrument_redo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == selected_hash &&
+          instrument.has_process_range && instrument.process_first == first &&
+          instrument.process_last == last);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&accepted));
+
+    process = neutral;
+    process.edge = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          memcmp(instrument.current.data, accepted.data,
+                 first * sizeof(*accepted.data)) == 0 &&
+          memcmp(instrument.current.data + last, accepted.data + last,
+                 (accepted.frames - last) * sizeof(*accepted.data)) == 0 &&
+          memcmp(instrument.current.data + first, accepted.data + first,
+                 (last - first) * sizeof(*accepted.data)) != 0);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&accepted));
+
+    process = neutral;
+    process.drift = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          memcmp(instrument.current.data, accepted.data,
+                 first * sizeof(*accepted.data)) == 0 &&
+          memcmp(instrument.current.data + last, accepted.data + last,
+                 (accepted.frames - last) * sizeof(*accepted.data)) == 0 &&
+          memcmp(instrument.current.data + first, accepted.data + first,
+                 (last - first) * sizeof(*accepted.data)) != 0);
+    selected_hash = ts_sample_hash(&instrument.current);
+
+    CHECK(ts_instrument_save_recipe(&instrument, "test-process-scope.tsr",
+                                    error, sizeof(error)));
+    CHECK(ts_instrument_load_recipe(&restored, "test-process-scope.tsr",
+                                    error, sizeof(error)));
+    CHECK(restored.has_process_range && restored.process_first == first &&
+          restored.process_last == last &&
+          ts_sample_hash(&restored.current) == selected_hash);
+    remove("test-process-scope.tsr");
+    ts_sample_free(&accepted);
+    ts_instrument_free(&restored);
+    ts_instrument_free(&instrument);
+}
+
 static void transform_ui_contract_tests(void)
 {
     TsInstrument instrument;
@@ -1618,6 +1701,7 @@ int main(void)
     curated_dsp_direct_scope_and_tile_tests();
     curated_dsp_apply_keeps_native_shelf_live_tests();
     tape_gestures_keep_native_shelf_live_tests();
+    native_shelf_selection_scope_tests();
     transform_ui_contract_tests();
     runtime_missing_test();
 #ifndef _WIN32

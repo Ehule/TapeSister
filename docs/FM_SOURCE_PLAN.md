@@ -19,7 +19,7 @@ Each stored patch contains:
 
 The renderer bounds feedback, applies a DC blocker and output saturation, and replaces
 non-finite samples with silence. A seed plus complete genome always produces the same
-audio. TSR23 stores the complete genome; TSR6 through TSR22 remain loadable and derive
+audio. TSR24 stores the complete genome; TSR6 through TSR23 remain loadable and derive
 safe defaults for fields that did not exist in those formats.
 
 ## FM LOGIC workspace

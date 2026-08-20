@@ -1279,6 +1279,9 @@ static TsEditSnapshot snapshot(const TsInstrument *instrument)
     result.tuning = instrument->tuning;
     result.audible_tuning = instrument->audible_tuning;
     result.process = instrument->process;
+    result.process_first = instrument->process_first;
+    result.process_last = instrument->process_last;
+    result.has_process_range = instrument->has_process_range;
     memcpy(result.sample_edits, instrument->sample_edits, sizeof(result.sample_edits));
     result.sample_edit_count = instrument->sample_edit_count;
     memcpy(result.post_edits, instrument->post_edits, sizeof(result.post_edits));
@@ -1322,6 +1325,9 @@ static void reset_editor(TsInstrument *instrument)
     instrument->has_loop = 0;
     instrument->grid_divisions = TS_GRID_DIVISION_DEFAULT;
     instrument->grid_snap = 0;
+    instrument->process_first = 0u;
+    instrument->process_last = 0u;
+    instrument->has_process_range = 0;
     instrument->sample_edit_count = 0;
     instrument->post_edit_count = 0;
     instrument->undo_count = 0;
@@ -1939,8 +1945,10 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                            const TsEditSnapshot *state, char *error, size_t error_size)
 {
     TsSample edited;
+    TsSample processed;
     int ok;
     ts_sample_init(&edited);
+    ts_sample_init(&processed);
     if (!render_edit_source(&edited, &instrument->parent, state->crop_first,
                             state->crop_last, state->sample_edits,
                             state->sample_edit_count, error, error_size)) return 0;
@@ -1965,8 +1973,35 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
             return 0;
         }
     }
-    ok = ts_sample_process(destination, &edited, 0, edited.frames,
-                           &state->process, error, error_size);
+    if (state->has_process_range) {
+        size_t first = state->process_first;
+        size_t last = state->process_last;
+        if (last > edited.frames) last = edited.frames;
+        if (first >= last) {
+            ts_sample_free(&edited);
+            set_error(error, error_size,
+                      "Native shelf selection is outside the material");
+            return 0;
+        }
+        if (!ts_sample_clone(destination, &edited, error, error_size)) {
+            ts_sample_free(&edited);
+            return 0;
+        }
+        if (!ts_sample_process(&processed, &edited, first, last,
+                               &state->process, error, error_size)) {
+            ts_sample_free(destination);
+            ts_sample_free(&edited);
+            ts_sample_free(&processed);
+            return 0;
+        }
+        memcpy(destination->data + first, processed.data,
+               processed.frames * sizeof(*destination->data));
+        ts_sample_free(&processed);
+        ok = 1;
+    } else {
+        ok = ts_sample_process(destination, &edited, 0, edited.frames,
+                               &state->process, error, error_size);
+    }
     ts_sample_free(&edited);
     if (!ok) return 0;
     for (int index = 0; index < state->post_edit_count; ++index) {
@@ -2540,6 +2575,7 @@ int ts_instrument_set_process_and_tunings(TsInstrument *instrument,
 {
     TsSample current;
     TsEditSnapshot target;
+    int process_changed;
     if (instrument == NULL || process == NULL || !tuning_valid(tuning) ||
         !tuning_valid(audible_tuning)) {
         set_error(error, error_size, "Invalid process or tuning settings");
@@ -2547,14 +2583,32 @@ int ts_instrument_set_process_and_tunings(TsInstrument *instrument,
     }
     target = snapshot(instrument);
     ts_sample_init(&current);
+    process_changed = memcmp(process, &instrument->process,
+                             sizeof(*process)) != 0;
     target.process = *process;
     target.tuning = *tuning;
     target.audible_tuning = *audible_tuning;
+    if (process_changed) {
+        if (instrument->has_selection &&
+            instrument->selection_first < instrument->selection_last &&
+            instrument->selection_last <= instrument->current.frames) {
+            target.process_first = instrument->selection_first;
+            target.process_last = instrument->selection_last;
+            target.has_process_range = 1;
+        } else {
+            target.process_first = 0u;
+            target.process_last = 0u;
+            target.has_process_range = 0;
+        }
+    }
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
     begin_edit(instrument);
     ts_sample_free(&instrument->current);
     instrument->current = current;
     instrument->process = *process;
+    instrument->process_first = target.process_first;
+    instrument->process_last = target.process_last;
+    instrument->has_process_range = target.has_process_range;
     instrument->tuning = *tuning;
     instrument->audible_tuning = *audible_tuning;
     return 1;
@@ -2639,6 +2693,9 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
     target.post_edit_count = 0;
     ts_process_recipe_reset(&target.process);
     target.process.seed = instrument->process.seed;
+    target.process_first = 0u;
+    target.process_last = 0u;
+    target.has_process_range = 0;
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
     begin_edit(instrument);
@@ -2657,6 +2714,9 @@ int ts_instrument_reset_current(TsInstrument *instrument, char *error, size_t er
     instrument->has_selection = 0;
     instrument->has_loop = 0;
     instrument->process = target.process;
+    instrument->process_first = 0u;
+    instrument->process_last = 0u;
+    instrument->has_process_range = 0;
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
     instrument->post_edit_count = 0;
@@ -3813,6 +3873,9 @@ int ts_instrument_select_bank(TsInstrument *instrument, int slot,
         instrument->grid_divisions = state.grid_divisions;
         instrument->grid_snap = state.grid_snap;
         instrument->process = state.process;
+        instrument->process_first = state.process_first;
+        instrument->process_last = state.process_last;
+        instrument->has_process_range = state.has_process_range;
         memcpy(instrument->sample_edits, state.sample_edits, sizeof(instrument->sample_edits));
         instrument->sample_edit_count = state.sample_edit_count;
         memcpy(instrument->post_edits, state.post_edits, sizeof(instrument->post_edits));
@@ -4071,6 +4134,9 @@ static void checkpoint_snapshot(TsEditSnapshot *state, size_t baseline_frames,
     state->crop_first = 0;
     state->crop_last = baseline_frames;
     ts_process_recipe_reset(&state->process);
+    state->process_first = 0u;
+    state->process_last = 0u;
+    state->has_process_range = 0;
     memset(state->sample_edits, 0, sizeof(state->sample_edits));
     state->sample_edit_count = 0;
     memset(state->post_edits, 0, sizeof(state->post_edits));
@@ -4296,6 +4362,9 @@ static int commit_post_snapshot(TsInstrument *instrument, TsEditSnapshot *target
     instrument->tuning = target->tuning;
     instrument->audible_tuning = target->audible_tuning;
     instrument->process = target->process;
+    instrument->process_first = target->process_first;
+    instrument->process_last = target->process_last;
+    instrument->has_process_range = target->has_process_range;
     memcpy(instrument->sample_edits, target->sample_edits,
            sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target->sample_edit_count;
@@ -4324,6 +4393,9 @@ static int commit_material_checkpoint(TsInstrument *instrument,
     target->sample_edit_count = 0;
     ts_process_recipe_reset(&target->process);
     target->process.seed = process_seed;
+    target->process_first = 0u;
+    target->process_last = 0u;
+    target->has_process_range = 0;
     memset(target->post_edits, 0, sizeof(target->post_edits));
     target->post_edit_count = 0;
     memset(&operation, 0, sizeof(operation));
@@ -4583,6 +4655,9 @@ static void restore_stretch_snapshot(TsInstrument *instrument,
     instrument->tuning = state->tuning;
     instrument->audible_tuning = state->audible_tuning;
     instrument->process = state->process;
+    instrument->process_first = state->process_first;
+    instrument->process_last = state->process_last;
+    instrument->has_process_range = state->has_process_range;
     memcpy(instrument->sample_edits, state->sample_edits,
            sizeof(instrument->sample_edits));
     instrument->sample_edit_count = state->sample_edit_count;
@@ -5427,6 +5502,9 @@ int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
     target.sample_edit_count = 0;
     ts_process_recipe_reset(&target.process);
     target.process.seed = process_seed;
+    target.process_first = 0u;
+    target.process_last = 0u;
+    target.has_process_range = 0;
     memset(target.post_edits, 0, sizeof(target.post_edits));
     target.post_edit_count = 0;
     memset(&operation, 0, sizeof(operation));
@@ -7338,6 +7416,9 @@ static int restore_history(TsInstrument *instrument, TsEditSnapshot target,
     instrument->tuning = target.tuning;
     instrument->audible_tuning = target.audible_tuning;
     instrument->process = target.process;
+    instrument->process_first = target.process_first;
+    instrument->process_last = target.process_last;
+    instrument->has_process_range = target.has_process_range;
     memcpy(instrument->sample_edits, target.sample_edits, sizeof(instrument->sample_edits));
     instrument->sample_edit_count = target.sample_edit_count;
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
@@ -7496,6 +7577,9 @@ static void put_edit_snapshot(FILE *f, const TsEditSnapshot *state)
     put32(f, (uint32_t)state->audible_tuning.root_note);
     put_float(f, state->audible_tuning.fine_tune_cents);
     put_process_recipe(f, &state->process);
+    put64(f, state->process_first);
+    put64(f, state->process_last);
+    put32(f, (uint32_t)state->has_process_range);
     put32(f, (uint32_t)state->sample_edit_count);
     for (int i = 0; i < state->sample_edit_count; ++i) {
         const TsSampleEdit *edit = &state->sample_edits[i];
@@ -7541,6 +7625,11 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
     GET_STATE_U32(state->audible_tuning.root_note);
     if (!get_float(f, &state->audible_tuning.fine_tune_cents) ||
         !get_process_recipe(f, &state->process)) return 0;
+    if (version >= 24) {
+        GET_STATE_SIZE(state->process_first);
+        GET_STATE_SIZE(state->process_last);
+        GET_STATE_U32(state->has_process_range);
+    }
     GET_STATE_U32(state->sample_edit_count);
     if (state->sample_edit_count < 0 || state->sample_edit_count > TS_SAMPLE_EDIT_DEPTH) return 0;
     for (int i = 0; i < state->sample_edit_count; ++i) {
@@ -7580,6 +7669,10 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
            state->loop_crossfade_ms >= 0.0f && state->loop_crossfade_ms <= 50.0f &&
            state->loop_mode < TS_LOOP_MODE_COUNT &&
            (state->has_selection == 0 || state->has_selection == 1) &&
+           (state->has_process_range == 0 ||
+            (state->has_process_range == 1 &&
+             state->process_first < state->process_last &&
+             state->process_last <= frame_limit)) &&
            (state->has_playhead == 0 || state->has_playhead == 1) &&
            (state->has_loop == 0 || state->has_loop == 1) &&
            valid_grid_divisions(state->grid_divisions) &&
@@ -7625,15 +7718,18 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->loop_last <= slot->sample.frames &&
            (!state->has_playhead || state->playhead_frame < slot->sample.frames) &&
            (!state->has_selection || state->selection_first < state->selection_last) &&
+           (!state->has_process_range ||
+            (state->process_first < state->process_last &&
+             state->process_last <= slot->sample.frames)) &&
            (!state->has_loop || state->loop_first < state->loop_last) &&
            valid_grid_divisions(state->grid_divisions) &&
            state->grid_snap >= TS_GRID_SNAP_OFF &&
            state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr23(const TsInstrument *instrument, FILE *f)
+static int save_tsr24(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR23\r\n\032", 1, 8, f);
+    fwrite("TSR24\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -7892,10 +7988,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR23 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR24 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR23 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR24 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -7914,13 +8010,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr23(instrument, f)) {
+    if (!save_tsr24(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR23 project");
+        set_error(error, error_size, "Could not write TSR24 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR23 project");
+        set_error(error, error_size, "Could not finish TSR24 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -7955,7 +8051,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR23\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR24\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR23\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR22\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR21\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR20\r\n\032", 8) == 0 ||
@@ -7964,7 +8061,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = memcmp(magic, "TSR23\r\n\032", 8) == 0 ? 23 :
+        int self_contained_version = memcmp(magic, "TSR24\r\n\032", 8) == 0 ? 24 :
+                                     memcmp(magic, "TSR23\r\n\032", 8) == 0 ? 23 :
                                      memcmp(magic, "TSR22\r\n\032", 8) == 0 ? 22 :
                                      magic[4] == '1' ? 21 :
                                      magic[4] == '0' ? 20 :
@@ -7991,7 +8089,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR23 project");
+                  "Not a self-contained TSR6-TSR24 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -8270,7 +8368,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR23 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR24 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);
