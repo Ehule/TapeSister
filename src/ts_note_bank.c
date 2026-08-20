@@ -404,6 +404,22 @@ uint32_t ts_note_bank_mask(const TsNoteBank *bank)
     return mask;
 }
 
+uint32_t ts_note_bank_visible_mask(const TsNoteBank *bank,
+                                   int keyboard_base_note)
+{
+    uint32_t mask = 0;
+    if (bank == NULL) return 0;
+    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
+        const TsNoteVoice *voice = &bank->voices[i];
+        int visible_note;
+        if (!voice->active) continue;
+        visible_note = voice->midi_note - keyboard_base_note;
+        if (visible_note >= 0 && visible_note < 24)
+            mask |= 1u << visible_note;
+    }
+    return mask;
+}
+
 const TsNoteVoice *ts_note_bank_display_voice(const TsNoteBank *bank)
 {
     const TsNoteVoice *result = NULL;

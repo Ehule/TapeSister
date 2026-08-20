@@ -2112,10 +2112,31 @@ int main(void)
     CHECK(notes.voices[1].active && notes.voices[1].midi_note == 60 &&
           fabs(notes.voices[1].pitch - 2.0) < 0.0001);
     CHECK(ts_note_bank_mask(&notes) == 1u);
+    CHECK(ts_note_bank_visible_mask(&notes, 48) == ((1u << 0) | (1u << 12)));
+    CHECK(ts_note_bank_visible_mask(&notes, 60) == 1u);
+    CHECK(ts_note_bank_visible_mask(&notes, 84) == 0u);
     ts_note_bank_sync(&notes, &restored, 48000);
     CHECK(notes.voices[0].midi_note == 48 && notes.voices[1].midi_note == 60 &&
           fabs(notes.voices[0].pitch - 1.0) < 0.0001 &&
           fabs(notes.voices[1].pitch - 2.0) < 0.0001);
+    ts_note_bank_clear(&notes);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              5, 48, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              9, 48, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_visible_mask(&notes, 48) == ((1u << 5) | (1u << 9)));
+    CHECK(ts_note_bank_visible_mask(&notes, 84) == 0u);
+    CHECK(ts_note_bank_count(&notes) == 2);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              5, 84, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              9, 84, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_visible_mask(&notes, 84) == ((1u << 5) | (1u << 9)));
+    CHECK(ts_note_bank_count(&notes) == 4);
     ts_note_bank_clear(&notes);
     CHECK(ts_note_bank_start_sample(
               &notes, &restored.current, &restored.tuning,

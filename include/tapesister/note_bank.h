@@ -90,6 +90,8 @@ int ts_note_bank_count(const TsNoteBank *bank);
 int ts_note_bank_synth_count(const TsNoteBank *bank);
 int ts_note_bank_latched_synth_count(const TsNoteBank *bank);
 uint32_t ts_note_bank_mask(const TsNoteBank *bank);
+uint32_t ts_note_bank_visible_mask(const TsNoteBank *bank,
+                                   int keyboard_base_note);
 const TsNoteVoice *ts_note_bank_display_voice(const TsNoteBank *bank);
 
 #endif

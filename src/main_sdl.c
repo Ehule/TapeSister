@@ -2767,7 +2767,8 @@ static void begin_fm_note(SDL_AudioDeviceID device, AudioState *audio,
         capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
     }
     SDL_UnlockAudioDevice(device);
-    ui->active_notes = ts_note_bank_mask(&audio->notes);
+    ui->active_notes = ts_note_bank_visible_mask(
+        &audio->notes, ts_ui_keyboard_base_note(ui));
     if (capture_started)
         snprintf(ui->fm_message, sizeof(ui->fm_message),
                  "SYNTH CAPTURE STARTED - PERFORMANCE IS PRINTING TO TILE %02d",
@@ -2796,7 +2797,8 @@ static void toggle_fm_hold(SDL_AudioDeviceID device, AudioState *audio,
         changed = -ts_note_bank_release_latched_synth(&audio->notes);
     else
         changed = ts_note_bank_latch_active_synth(&audio->notes);
-    ui->active_notes = ts_note_bank_mask(&audio->notes);
+    ui->active_notes = ts_note_bank_visible_mask(
+        &audio->notes, ts_ui_keyboard_base_note(ui));
     ui->fm_held_notes = ts_note_bank_latched_synth_count(&audio->notes);
     if (device) SDL_UnlockAudioDevice(device);
     if (changed > 0)
@@ -8424,7 +8426,8 @@ int main(int argc, char **argv)
                  audio.sample == &transform.dsp_preview.sample) &&
                 !audio.playing)
                 ui.transform_preview_active = 0;
-            ui.active_notes = ts_note_bank_mask(&audio.notes);
+            ui.active_notes = ts_note_bank_visible_mask(
+                &audio.notes, ts_ui_keyboard_base_note(&ui));
             ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
             ui.playback_active = audio.playing || voice != NULL;
             if (audio.playing) {
