@@ -84,6 +84,18 @@ static void test_page_cycle_and_keep(void)
     CHECK(active.bank[0].sample.data[0] == 0.7f);
     CHECK(ts_sample_pages_switch(&pages, &active, 0u, error, sizeof(error)));
     CHECK(active.bank[0].occupied);
+    {
+        size_t appended = 0u;
+        CHECK(ts_sample_pages_append_and_switch(&pages, &active, &appended,
+                                                error, sizeof(error)));
+        CHECK(appended == 2u && ts_sample_pages_count(&pages) == 3u);
+        CHECK(ts_sample_pages_active(&pages) == 2u);
+        CHECK(ts_instrument_bank_count(&active) == 0);
+        CHECK(active.selected_slot == 0);
+        CHECK(ts_sample_pages_switch(&pages, &active, 1u,
+                                     error, sizeof(error)));
+        CHECK(active.bank[0].occupied && active.bank[0].sample.data[0] == 0.7f);
+    }
     ts_sample_pages_free(&pages);
     ts_instrument_free(&record);
     ts_instrument_free(&active);

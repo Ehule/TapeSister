@@ -163,6 +163,10 @@ typedef enum {
     TS_UI_FM_ACTION_HOLD,
     TS_UI_FM_ACTION_DRONE,
     TS_UI_FM_ACTION_EXTREME,
+    TS_UI_FM_ACTION_CHAIN,
+    TS_UI_FM_ACTION_OVERWRITE,
+    TS_UI_FM_ACTION_NEW_PAGE,
+    TS_UI_FM_ACTION_CANCEL_FULL,
     TS_UI_FM_ACTION_BACK
 } TsUiFmAction;
 
@@ -283,7 +287,7 @@ typedef struct {
     TsFmPatch fm_patch;
     const TsSample *fm_preview_sample;
     int fm_held_notes;
-    uint32_t fm_replace_armed_until_ms;
+    int fm_full_choice_open;
     char fm_message[96];
     int transform_rendering;
     int transform_preview_available;
@@ -333,7 +337,9 @@ typedef struct {
     TsPalette palette_before_edit;
     TsRecipeBank recipes;
     TsTuning pitch_suggestion;
+    TsTuning tune_reference;
     float pitch_confidence;
+    int tune_reference_active;
     float warp_amount;
     TsWarpGesture warp_gesture;
     uint32_t warp_last_audition_ms;
@@ -430,6 +436,7 @@ int ts_ui_fm_control_from_point(int x, int y);
 int ts_ui_fm_voice_from_point(int x, int y);
 uint32_t ts_ui_fm_mutation_from_point(int x, int y);
 TsUiFmAction ts_ui_fm_action_from_point(int x, int y);
+TsUiFmAction ts_ui_fm_full_action_from_point(int x, int y);
 int ts_ui_fm_range_contains(int x, int y);
 int ts_ui_transform_control_from_point(int x, int y);
 int ts_ui_transform_mix_contains(int x, int y);

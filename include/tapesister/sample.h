@@ -11,7 +11,7 @@ enum {
     TS_POST_EDIT_DEPTH = 64,
     TS_AUDIO_PATCH_DEPTH = 64,
     TS_BANK_SLOT_COUNT = 16,
-    TS_KEYBOARD_BASE_NOTE = 48,
+    TS_KEYBOARD_BASE_NOTE = 60,
     TS_CANVAS_MIN_FRAMES = 2,
     TS_CANVAS_MAX_FRAMES = 100000000,
     TS_DEFAULT_CANVAS_FRAMES = 44100,
@@ -747,6 +747,9 @@ int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
                                              const TsSample *rendered,
                                              size_t first, size_t last,
                                              char *error, size_t error_size);
+int ts_instrument_apply_pitch_shift(TsInstrument *instrument,
+                                    float semitones,
+                                    char *error, size_t error_size);
 int ts_instrument_replace_selection_with_drone(TsInstrument *instrument,
                                                 const TsSample *drone,
                                                 char *error, size_t error_size);

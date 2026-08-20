@@ -39,9 +39,11 @@ Range so it stays reachable while the modal is open, and wheel input advances ev
 categorical control by exactly one item per detent.
 
 Control clicks and mouse-wheel changes immediately rebuild the internal preview and
-retarget active synth voices without altering the selected tile. **Apply** renders the
-shown genome into the selected tile through the existing Create/edit history path.
-**Back** discards only the workspace preview.
+retarget active synth voices without altering the selected tile. Apply obeys the visible
+Chain switch: off overwrites the selected tile; on selects the next empty tile. A full
+page opens explicit Overwrite, New Sample Page, and Cancel choices. **Back** discards
+only the workspace preview. New FM audio is rendered from middle C (261.63 Hz) and uses
+MIDI 60 as its unity key.
 
 ## Performance and capture
 

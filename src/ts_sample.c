@@ -814,8 +814,6 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
     float seed_c = rng_unit(&rng);
     float seed_d = rng_unit(&rng);
     unsigned variation = rng & 3u;
-    static const float pitch_ratios[] = {0.5f, 0.75f, 1.0f, 1.5f, 2.0f};
-    frequency = clampf(frequency * pitch_ratios[(rng >> 2) % 5u], 30.0f, 2000.0f);
     ts_fm_patch_from_recipe(recipe, &fm_patch);
     if (data == NULL) {
         set_error(error, error_size, "Out of memory while generating sample");
@@ -825,6 +823,11 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
         free(data);
         return ts_fm_render_sample(sample, &fm_patch, seconds, frequency, rate,
                                    recipe->seed, error, error_size);
+    }
+    {
+        static const float pitch_ratios[] = {0.5f, 0.75f, 1.0f, 1.5f, 2.0f};
+        frequency = clampf(frequency * pitch_ratios[(rng >> 2) % 5u],
+                           30.0f, 2000.0f);
     }
     for (size_t i = 0; i < frames; ++i) {
         float t = (float)i / (float)rate;
@@ -2373,7 +2376,7 @@ void ts_instrument_init(TsInstrument *instrument)
     instrument->generator.seed = 0x54415045u;
     instrument->generator.kind = TS_GENERATOR_TONAL;
     instrument->generator.seconds = 2.0f;
-    instrument->generator.frequency = 130.8128f;
+    instrument->generator.frequency = 261.625565f;
     instrument->family_relation = TS_FAMILY_CHILD;
     instrument->family_mutation = 0.35f;
     instrument->family_locks = TS_FAMILY_LOCK_LOOP |
@@ -2414,8 +2417,8 @@ static float generator_pitch_ratio(uint32_t seed)
 
 static TsTuning generator_tuning(const TsGeneratorRecipe *generator)
 {
-    return tuning_from_frequency(generator->frequency *
-                                 generator_pitch_ratio(generator->seed));
+    (void)generator;
+    return default_tuning();
 }
 
 void ts_instrument_free(TsInstrument *instrument)
@@ -2499,6 +2502,10 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
         bank_slot_free(&imported);
         return 0;
     }
+    /* Audio stays exactly as imported. MIDI 60 is TapeSister's portable unity
+       key; imported sampler metadata must not silently transpose that native
+       playback contract. Loop metadata remains intact. */
+    tuning = default_tuning();
     imported.occupied = 1;
     imported.capture_kind = TS_BANK_CAPTURE_CURRENT;
     imported.relation = TS_FAMILY_CAPTURED;
@@ -3922,8 +3929,9 @@ int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
     }
     if (seed != instrument->generator.seed || !instrument->generator.has_fm_patch) {
         recipe.seconds = 0.1f + rng_unit(&rng) * 7.9f;
-        recipe.frequency = 30.0f * powf(2000.0f / 30.0f, rng_unit(&rng));
+        (void)rng_unit(&rng);
     }
+    recipe.frequency = 261.625565f;
     if (!ts_sample_generate(&made.sample, &recipe, error, error_size) ||
         !ts_sample_clone(&made.edit_parent, &made.sample, error, error_size)) {
         bank_slot_free(&made); return 0;
@@ -3961,6 +3969,7 @@ int ts_instrument_apply_fm_patch(TsInstrument *instrument,
     recipe.seed = seed;
     recipe.has_fm_patch = 1;
     recipe.fm_patch = *patch;
+    recipe.frequency = 261.625565f;
     ts_fm_patch_sanitize(&recipe.fm_patch);
     instrument->generator = recipe;
     return ts_instrument_create_selected(instrument, seed, error, error_size);
@@ -5527,6 +5536,71 @@ int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
     return 1;
 }
 
+int ts_instrument_apply_pitch_shift(TsInstrument *instrument,
+                                    float semitones,
+                                    char *error, size_t error_size)
+{
+    TsSample rendered;
+    TsTuning unity = default_tuning();
+    size_t first;
+    size_t last;
+    size_t source_frames;
+    size_t target_frames;
+    long double wanted;
+    double pitch_ratio;
+    int ok;
+    if (instrument == NULL || instrument->current.data == NULL ||
+        instrument->current.frames < 2u || !isfinite(semitones)) {
+        set_error(error, error_size, "Select an occupied tile before tuning");
+        return 0;
+    }
+    if (fabsf(semitones) < 0.0001f) {
+        set_error(error, error_size, "Audio is already at the reference pitch");
+        return 0;
+    }
+    first = instrument->has_selection &&
+            instrument->selection_last > instrument->selection_first ?
+            instrument->selection_first : 0u;
+    last = instrument->has_selection &&
+           instrument->selection_last > instrument->selection_first ?
+           instrument->selection_last : instrument->current.frames;
+    source_frames = last - first;
+    pitch_ratio = pow(2.0, (double)semitones / 12.0);
+    wanted = (long double)source_frames / (long double)pitch_ratio;
+    if (!isfinite(pitch_ratio) || pitch_ratio <= 0.0 || wanted < 1.0L ||
+        wanted > (long double)TS_CANVAS_MAX_FRAMES) {
+        set_error(error, error_size, "Tune amount exceeds the canvas limits");
+        return 0;
+    }
+    target_frames = (size_t)llroundl(wanted);
+    if (target_frames < 2u) target_frames = 2u;
+    if (instrument->current.frames - source_frames >
+        TS_CANVAS_MAX_FRAMES - target_frames) {
+        set_error(error, error_size, "Tuned audio would exceed the canvas limit");
+        return 0;
+    }
+    ts_sample_init(&rendered);
+    if (!resample_selection_patch(&rendered, &instrument->current,
+                                  first, last, target_frames,
+                                  source_frames / 2u, target_frames / 2u,
+                                  error, error_size))
+        return 0;
+    snprintf(rendered.name, sizeof(rendered.name), "TUNED %.114s",
+             instrument->current.name);
+    ok = ts_instrument_apply_rendered_replacement(
+        instrument, &rendered, first, last, error, error_size);
+    ts_sample_free(&rendered);
+    if (!ok) return 0;
+    /* apply_rendered_replacement already opened the single Undo transaction.
+       Store unity in that resulting state so Undo restores both waveform and
+       prior mapping, while Redo restores the tuned waveform at MIDI 60. */
+    instrument->tuning = unity;
+    instrument->audible_tuning = unity;
+    if (!bank_sync_selected(instrument, error, error_size)) return 0;
+    set_error(error, error_size, "");
+    return 1;
+}
+
 int ts_instrument_replace_selection_with_drone(TsInstrument *instrument,
                                                 const TsSample *drone,
                                                 char *error, size_t error_size)
@@ -5552,8 +5626,7 @@ int ts_instrument_copy_drone_to_new_tile(TsInstrument *instrument,
                                           char *error, size_t error_size)
 {
     char name[sizeof(drone->name)];
-    TsTuning source_tuning;
-    TsTuning source_audible_tuning;
+    TsTuning unity = default_tuning();
     int source;
     int destination;
     if (destination_slot != NULL) *destination_slot = -1;
@@ -5574,8 +5647,6 @@ int ts_instrument_copy_drone_to_new_tile(TsInstrument *instrument,
         return 0;
     }
     snprintf(name, sizeof(name), "%.127s", drone->name);
-    source_tuning = instrument->tuning;
-    source_audible_tuning = instrument->audible_tuning;
     if (!bank_sync_selected(instrument, error, error_size) ||
         !ts_instrument_select_bank(instrument, destination, error, error_size) ||
         !ts_instrument_activate_silence(instrument, drone->frames,
@@ -5590,8 +5661,8 @@ int ts_instrument_copy_drone_to_new_tile(TsInstrument *instrument,
              sizeof(instrument->bank[destination].sample.name), "%s", name);
     snprintf(instrument->bank[destination].edit_parent.name,
              sizeof(instrument->bank[destination].edit_parent.name), "%s", name);
-    instrument->tuning = source_tuning;
-    instrument->audible_tuning = source_audible_tuning;
+    instrument->tuning = unity;
+    instrument->audible_tuning = unity;
     instrument->has_loop = 1;
     instrument->loop_first = 0;
     instrument->loop_last = drone->frames;
@@ -6027,6 +6098,8 @@ int ts_instrument_generate_family_candidate(TsInstrument *instrument,
         snprintf(candidate.sample.name, sizeof(candidate.sample.name), "%s %02u %08X",
                  ts_family_relation_name(relation), candidate.trajectory_step, seed);
     }
+    candidate.tuning = default_tuning();
+    candidate.audible_tuning = candidate.tuning;
     family_copy_or_vary_loop(&candidate, anchor, seed);
     candidate.occupied = 1;
     instrument->bank[slot] = candidate;
@@ -6094,8 +6167,8 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
         captured.generator = instrument->bank[captured.parent_slot].generator;
         captured.has_generator = 1;
     }
-    captured.tuning = instrument->tuning;
-    captured.audible_tuning = instrument->audible_tuning;
+    captured.tuning = default_tuning();
+    captured.audible_tuning = captured.tuning;
     captured.loop_mode = instrument->loop_mode;
     captured.occupied = 1;
     captured.loop_crossfade_ms = instrument->loop_crossfade_ms;
@@ -6187,10 +6260,8 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
         set_error(error, error_size, "Invalid Capture source, destination, or audio");
         return 0;
     }
-    source_tuning = synth_source ? instrument->tuning :
-                                  instrument->bank[source_slot].tuning;
-    source_audible_tuning = synth_source ? instrument->audible_tuning :
-                                          instrument->bank[source_slot].audible_tuning;
+    source_tuning = default_tuning();
+    source_audible_tuning = default_tuning();
     if (!ts_instrument_select_bank(instrument, destination_slot,
                                    error, error_size)) return 0;
     target_frames = instrument->current.frames;
@@ -6627,6 +6698,7 @@ int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder
                               char *error, size_t error_size)
 {
     char created[TS_BANK_SLOT_COUNT][1152];
+    const TsTuning unity = {TS_KEYBOARD_BASE_NOTE, 0.0f};
     int created_count = 0;
     if (instrument == NULL || folder == NULL || folder[0] == '\0' ||
         ts_instrument_bank_count(instrument) == 0) {
@@ -6652,7 +6724,7 @@ int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder
             goto failed;
         }
         if (!ts_sample_save_wav16_tuned_looped(
-                &slot->sample, &slot->tuning,
+                &slot->sample, &unity,
                 slot->has_loop, slot->loop_first, slot->loop_last,
                 slot->loop_mode, created[created_count], error, error_size)) {
             remove(created[created_count]);

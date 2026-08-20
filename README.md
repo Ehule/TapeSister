@@ -196,11 +196,13 @@ TapeSister starts in FT2-style borderless desktop fullscreen. **Alt+Enter** togg
 
 ## Pitch and tuning
 
-The **Tune** page gives the selected tile its own pitch readout and ±100-cent audible Trim. The two-octave keyboard pitches audio relative to that tile's accepted root instead of assuming the first C is always unity. The default root is C3 (MIDI 48). **Down** lowers both the held sound and displayed note/frequency; **Up** raises all three; moving Trim right sharpens them. Shift-right-clicking an onscreen key assigns the tile's root; held and latched notes retune in place without restarting.
+Every new, imported, recorded, captured, or FM-generated tile uses **middle C / MIDI 60** as its portable unity key: clicking the tile and pressing C4 play the stored waveform unchanged. The octave label may differ in another sampler, but the exported WAV `smpl` metadata always communicates the unambiguous MIDI note number. FM generation starts at the corresponding 261.63 Hz reference before its stored ratios and modulation shape the sound.
 
-**Suggest Pitch** analyzes the snapped Selection first, then the Loop, then the whole selected tile. It temporarily places the suggested mapping on the keyboard so new, held, and latched notes can audition it immediately; the Tune readout follows that preview, while saved tuning and Undo history remain untouched. A second explicit click accepts it. Escape cancels the preview and still performs Stop All; Space stops audition without discarding the preview. Quiet, noisy, or unstable material is rejected rather than forced into a misleading note. Manual tuning remains authoritative.
+The **Tune** page contains an independent reference pitch, defaulting to C4 / MIDI 60 / 261.63 Hz. **Down**, **Up**, and the ±100-cent Trim change that target without altering audio. Clicking the Hz button plays a short sine reference that is never routed into Capture or export; Shift-right-clicking an onscreen key sets the same reference note.
 
-Root and fine tuning participate in the selected tile's state and Undo/Redo history. Selected-tile and Collection WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. The same chunk carries loop start/end/type; importing the WAV restores that loop in TapeSister. User-captured TSP2 recipes optionally carry tuning; legacy factory TSP processing recipes remain processing-only and never retune a sound unexpectedly.
+**Detect Pitch** analyzes the snapped Selection first, then the Loop, then the whole selected tile. A successful reading shows its note and confidence; **Tune to Reference** then performs a destructive tape-speed resample on that selection or whole tile. The waveform and duration change together, the result is reset to MIDI-60 unity, and the complete audio-plus-mapping change is one Undo/Redo step. Quiet, noisy, or unstable material is rejected rather than forced into a misleading pitch.
+
+Selected-tile and Collection WAV exports write the standard `smpl` unity-note/pitch-fraction chunk at MIDI 60. WAV import preserves the audio and loop metadata while normalizing TapeSister playback to the same portable unity convention. User-captured TSP2 recipes can still carry legacy tuning data; legacy factory TSP processing recipes remain processing-only.
 
 ## FastTracker handoff and configuration
 
@@ -281,15 +283,17 @@ and Structure, plus per-voice enables and mutation permissions. Ten waveforms, t
 routing structures, eight ratio families, eight interaction modes, per-voice LFOs,
 bounded feedback, a transient layer, and an envelope-driven multimode filter form the
 stored genome. Click or wheel a control for immediate non-destructive preview; Randomize
-protects the visible page and obeys the permission switches; Apply prints the genome
-into the selected tile.
+protects the visible page and obeys the permission switches. With **Chain off**, Apply
+prints the genome over the selected tile. With **Chain on**, it preserves occupied work
+and fills the next empty tile. A full page asks whether to overwrite the current tile,
+continue on a new Sample page, or cancel.
 
 **Drone** removes the amplitude and filter attack/release envelopes, suppresses the
 transient, and trims the render to exact zero-valued boundary crossings. The disabled
 envelope controls gray out while the other controls remain live. **Extreme** opens
 substantially wider ratios, modulation, feedback, resonance, and LFO ranges while the
 DC blocker and output limiter remain active. Range is duplicated inside the workspace,
-and categorical controls such as Wave step exactly one choice per wheel detent.
+Chain is duplicated there too, so Apply routing is always visible.
 
 QWERTY notes are genuinely five-voice polyphonic regardless of tile loop state: key-up
 releases only that note, and **Hold** latches the currently sounding chord. F1-F8 and

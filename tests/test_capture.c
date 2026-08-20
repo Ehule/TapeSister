@@ -229,6 +229,8 @@ static void test_target_commit_history_and_independence(void)
     uint64_t captured_hash;
     size_t capacity = 0;
     CHECK(prepare_source_and_blank(&instrument, 32, 8, error, sizeof(error)));
+    CHECK(ts_instrument_set_tuning(&instrument, 45, 17.0f,
+                                   error, sizeof(error)));
     target_before = ts_sample_hash(&instrument.bank[1].sample);
     CHECK(ts_instrument_capture_target_frames(&instrument, 1, 48000,
                                                &capacity, error, sizeof(error)));
@@ -241,6 +243,9 @@ static void test_target_commit_history_and_independence(void)
     CHECK(instrument.selected_slot == 1);
     CHECK(instrument.bank[1].capture_kind == TS_BANK_CAPTURE_PERFORMANCE);
     CHECK(instrument.bank[1].parent_slot == 0);
+    CHECK(instrument.tuning.root_note == TS_KEYBOARD_BASE_NOTE &&
+          instrument.audible_tuning.root_note == TS_KEYBOARD_BASE_NOTE &&
+          instrument.tuning.fine_tune_cents == 0.0f);
     CHECK(instrument.current.frames == 8u && instrument.undo_count == 1);
     CHECK(fabsf(instrument.current.data[0] - 0.8f) < 0.0001f);
     captured_hash = ts_sample_hash(&instrument.current);

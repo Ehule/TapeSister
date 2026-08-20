@@ -367,8 +367,6 @@ static void test_copy_and_history(void)
     TsSample drone;
     uint64_t source_hash;
     uint64_t drone_hash;
-    TsTuning source_tuning;
-    TsTuning source_audible_tuning;
     size_t source_first;
     size_t source_last;
     size_t split;
@@ -387,8 +385,6 @@ static void test_copy_and_history(void)
                                    error, sizeof(error)));
     CHECK(ts_instrument_set_audible_tuning(&instrument, 53, -9.0f,
                                            error, sizeof(error)));
-    source_tuning = instrument.tuning;
-    source_audible_tuning = instrument.audible_tuning;
     source_hash = ts_sample_hash(&instrument.current);
     CHECK(ts_sample_make_drone(&drone, &instrument.current,
                                source_first, source_last, 50,
@@ -411,13 +407,10 @@ static void test_copy_and_history(void)
                     0, drone.frames, 0, TS_LOOP_FORWARD) -
                 (drone.data[drone.frames - 1u] + drone.data[0]) * 0.5f) <
           0.000001f);
-    CHECK(instrument.tuning.root_note == source_tuning.root_note &&
-          fabsf(instrument.tuning.fine_tune_cents -
-                source_tuning.fine_tune_cents) < 0.0001f);
-    CHECK(instrument.audible_tuning.root_note ==
-          source_audible_tuning.root_note &&
-          fabsf(instrument.audible_tuning.fine_tune_cents -
-                source_audible_tuning.fine_tune_cents) < 0.0001f);
+    CHECK(instrument.tuning.root_note == TS_KEYBOARD_BASE_NOTE &&
+          instrument.tuning.fine_tune_cents == 0.0f);
+    CHECK(instrument.audible_tuning.root_note == TS_KEYBOARD_BASE_NOTE &&
+          instrument.audible_tuning.fine_tune_cents == 0.0f);
     CHECK(ts_instrument_undo(&instrument, error, sizeof(error)));
     CHECK(instrument.current.frames == drone.frames);
     CHECK(ts_sample_peak(&instrument.current) == 0.0f);

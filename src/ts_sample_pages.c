@@ -163,6 +163,32 @@ int ts_sample_pages_switch(TsSamplePages *pages, TsInstrument *active,
     return 1;
 }
 
+int ts_sample_pages_append_and_switch(TsSamplePages *pages,
+                                      TsInstrument *active,
+                                      size_t *new_page,
+                                      char *error, size_t error_size)
+{
+    size_t page;
+    if (new_page != NULL) *new_page = 0u;
+    if (pages == NULL || active == NULL || !pages->active_live) {
+        pages_error(error, error_size, "Sample page storage is unavailable");
+        return 0;
+    }
+    page = pages->page_count;
+    if (!append_page(pages, error, error_size)) return 0;
+    if (!ts_sample_pages_switch(pages, active, page, error, error_size)) {
+        TsInstrument *discard = pages->pages[page];
+        ts_instrument_free(discard);
+        free(discard);
+        pages->pages[page] = NULL;
+        --pages->page_count;
+        return 0;
+    }
+    if (new_page != NULL) *new_page = page;
+    pages_error(error, error_size, "");
+    return 1;
+}
+
 int ts_sample_pages_park(TsSamplePages *pages, TsInstrument *active,
                          char *error, size_t error_size)
 {

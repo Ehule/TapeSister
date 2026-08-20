@@ -944,6 +944,7 @@ static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     ui->workbench_loop_active = 0;
     ui->workbench_loop_persistent = 0;
     ui->drone_preview_active = 0;
+    ui->tune_reference_active = 0;
     snprintf(ui->status, sizeof(ui->status), "STOPPED");
 }
 
@@ -964,6 +965,7 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
         ui->dragging_loop_endpoint = 0;
         ui->loop_drag_started = 0;
         ui->drone_preview_active = 0;
+        ui->tune_reference_active = 0;
         snprintf(ui->status, sizeof(ui->status),
                  "LOOP LOCKED - SHIFT+LOOP TO RELEASE");
         return;
@@ -2642,8 +2644,8 @@ static int render_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
 {
     TsSample rendered;
     char error[160];
-    double root_frequency = ts_tuning_frequency(
-        ts_ui_audition_tuning(ui, instrument));
+    const TsTuning unity = {TS_KEYBOARD_BASE_NOTE, 0.0f};
+    double root_frequency = ts_tuning_frequency(&unity);
     uint32_t seed = instrument->generator.seed ^ 0x50524556u;
     ts_sample_init(&rendered);
     if (!ts_fm_render_sample(&rendered, &ui->fm_patch, 8.0f,
@@ -2689,7 +2691,7 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     recipe.kind = TS_GENERATOR_FM;
     ts_fm_patch_from_recipe(&recipe, &ui->fm_patch);
     ui->fm_open = 1;
-    ui->fm_replace_armed_until_ms = 0u;
+    ui->fm_full_choice_open = 0;
     ui->fm_page = TS_FM_PAGE_PITCH;
     ui->fm_preview_sample = preview;
     (void)render_fm_workspace(device, audio, ui, instrument, preview);
@@ -2703,7 +2705,7 @@ static void close_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     if (device) SDL_UnlockAudioDevice(device);
     ui->active_notes = 0u;
     ui->fm_held_notes = 0;
-    ui->fm_replace_armed_until_ms = 0u;
+    ui->fm_full_choice_open = 0;
     ui->fm_open = 0;
     ui->fm_preview_sample = NULL;
     ts_sample_free(preview);
@@ -2754,11 +2756,13 @@ static void begin_fm_note(SDL_AudioDeviceID device, AudioState *audio,
                           int output_rate, int latched)
 {
     TsNoteStartResult result;
+    const TsTuning unity = {TS_KEYBOARD_BASE_NOTE, 0.0f};
     int capture_started = 0;
+    (void)instrument;
     if (!device || preview == NULL || preview->data == NULL) return;
     SDL_LockAudioDevice(device);
     result = ts_note_bank_start_sample(
-        &audio->notes, preview, ts_ui_audition_tuning(ui, instrument),
+        &audio->notes, preview, &unity,
         note, ts_ui_keyboard_base_note(ui), latched, output_rate);
     if (result == TS_NOTE_STARTED &&
         audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
@@ -2815,31 +2819,56 @@ static void toggle_fm_hold(SDL_AudioDeviceID device, AudioState *audio,
 }
 
 static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
-                               TsUiState *ui, TsInstrument *instrument)
+                               TsUiState *ui, TsInstrument *instrument,
+                               TsSamplePages *sample_pages, int full_choice)
 {
     char error[160];
-    Uint32 now = SDL_GetTicks();
     int original_slot = instrument->selected_slot;
     int destination = original_slot;
     int routed = 0;
+    int new_page = 0;
+    int chain = instrument->family_trajectory;
+    float mutation = instrument->family_mutation;
     int ok;
     if (original_slot < 0 || original_slot >= TS_BANK_SLOT_COUNT) {
         snprintf(ui->fm_message, sizeof(ui->fm_message),
                  "SELECT A BANK TILE BEFORE APPLY");
         return;
     }
-    if (instrument->bank[original_slot].occupied) {
+    if (full_choice == 2) {
+        size_t page = 0u;
+        if (sample_pages == NULL || !sample_pages->active_live) {
+            snprintf(ui->fm_message, sizeof(ui->fm_message),
+                     "NEW PAGE IS ONLY AVAILABLE IN THE SAMPLE BANK");
+            return;
+        }
+        lock_edit(device, audio);
+        ts_note_bank_clear(&audio->notes);
+        ok = ts_sample_pages_append_and_switch(
+            sample_pages, instrument, &page, error, sizeof(error));
+        if (ok) {
+            instrument->family_trajectory = chain;
+            instrument->family_mutation = mutation;
+            destination = instrument->selected_slot;
+            ui->sample_page = (int)page;
+            ui->sample_page_count = (int)ts_sample_pages_count(sample_pages);
+            new_page = 1;
+        }
+        unlock_edit(device, audio, ui, instrument);
+        if (!ok) {
+            snprintf(ui->fm_message, sizeof(ui->fm_message),
+                     "NEW PAGE FAILED: %.76s", error);
+            return;
+        }
+    } else if (full_choice == 1) {
+        destination = original_slot;
+    } else if (chain && instrument->bank[original_slot].occupied) {
         destination = ts_instrument_bank_next_empty(instrument);
         if (destination < 0) {
-            if (ui->fm_replace_armed_until_ms == 0u ||
-                SDL_TICKS_PASSED(now, ui->fm_replace_armed_until_ms)) {
-                ui->fm_replace_armed_until_ms = now + 2500u;
-                snprintf(ui->fm_message, sizeof(ui->fm_message),
-                         "BANK FULL - APPLY AGAIN TO REPLACE TILE %02d",
-                         original_slot + 1);
-                return;
-            }
-            destination = original_slot;
+            ui->fm_full_choice_open = 1;
+            snprintf(ui->fm_message, sizeof(ui->fm_message),
+                     "PAGE FULL - CHOOSE OVERWRITE OR NEW SAMPLE PAGE");
+            return;
         } else routed = 1;
     }
     lock_edit(device, audio);
@@ -2856,9 +2885,13 @@ static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ui->active_notes = 0u;
     ui->fm_held_notes = 0;
     if (ok) {
-        ui->fm_replace_armed_until_ms = 0u;
+        ui->fm_full_choice_open = 0;
         ts_ui_reset_parent_view(ui, instrument->current.frames);
-        if (routed)
+        if (new_page)
+            snprintf(ui->fm_message, sizeof(ui->fm_message),
+                     "CHAIN CONTINUED ON SAMPLE %d TILE %02d",
+                     ui->sample_page + 1, instrument->selected_slot + 1);
+        else if (routed)
             snprintf(ui->fm_message, sizeof(ui->fm_message),
                      "TILE %02d PRESERVED - FM APPLIED TO EMPTY TILE %02d",
                      original_slot + 1, instrument->selected_slot + 1);
@@ -2893,69 +2926,136 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     else snprintf(ui->status, sizeof(ui->status), "PROCESS FAILED: %.130s", error);
 }
 
-static void apply_tuning(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                         TsInstrument *instrument, int root_note, float cents)
+static void set_tune_reference(TsUiState *ui, int root_note, float cents)
 {
-    char error[160];
     char note[12];
-    int ok;
-    lock_edit(device, audio);
-    ok = ts_instrument_set_tuning(instrument, root_note, cents, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
-    if (ok) {
-        ui->has_pitch_suggestion = 0;
-        snprintf(ui->status, sizeof(ui->status), "ROOT %s  TRIM %+.1F CENTS  %.2F HZ",
-                 ts_midi_note_name(instrument->audible_tuning.root_note,
-                                   note, sizeof(note)),
-                 instrument->audible_tuning.fine_tune_cents,
-                 ts_tuning_frequency(&instrument->audible_tuning));
-    } else snprintf(ui->status, sizeof(ui->status), "TUNING: %.145s", error);
+    if (ui == NULL) return;
+    if (root_note < 0) root_note = 0;
+    if (root_note > 127) root_note = 127;
+    if (cents < -100.0f) cents = -100.0f;
+    if (cents > 100.0f) cents = 100.0f;
+    ui->tune_reference.root_note = root_note;
+    ui->tune_reference.fine_tune_cents = cents;
+    snprintf(ui->status, sizeof(ui->status),
+             "REFERENCE %s (MIDI %d) %+.1F C  %.2F HZ",
+             ts_midi_note_name(root_note, note, sizeof(note)), root_note, cents,
+             ts_tuning_frequency(&ui->tune_reference));
 }
 
-static void apply_audible_tuning(SDL_AudioDeviceID device, AudioState *audio,
-                                 TsUiState *ui, TsInstrument *instrument,
-                                 int root_note, float cents)
+static void play_tune_reference(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, TsSample *reference,
+                                int output_rate)
 {
-    char error[160];
-    char note[12];
-    int ok;
-    lock_edit(device, audio);
-    ok = ts_instrument_set_audible_tuning(instrument, root_note, cents,
-                                          error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
-    if (ok)
-        snprintf(ui->status, sizeof(ui->status), "PITCH %s  TRIM %+.1F C  %.2F HZ",
-                 ts_midi_note_name(instrument->audible_tuning.root_note,
-                                   note, sizeof(note)),
-                 instrument->audible_tuning.fine_tune_cents,
-                 ts_tuning_frequency(&instrument->audible_tuning));
-    else snprintf(ui->status, sizeof(ui->status), "TUNING: %.145s", error);
+    size_t frames;
+    size_t fade;
+    double frequency;
+    if (ui->tune_reference_active && audio->sample == reference) {
+        stop_all_force(device, audio, ui);
+        ui->tune_reference_active = 0;
+        snprintf(ui->status, sizeof(ui->status), "REFERENCE TONE STOPPED");
+        return;
+    }
+    if (!device || output_rate <= 0) {
+        snprintf(ui->status, sizeof(ui->status), "AUDIO UNAVAILABLE");
+        return;
+    }
+    if (audio->capture.state != TS_CAPTURE_IDLE ||
+        ui->capture_state != TS_CAPTURE_IDLE) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISH CAPTURE BEFORE PLAYING THE REFERENCE TONE");
+        return;
+    }
+    frames = (size_t)output_rate * 2u;
+    ts_sample_free(reference);
+    reference->data = (float *)malloc(frames * sizeof(*reference->data));
+    if (reference->data == NULL) {
+        ts_sample_init(reference);
+        snprintf(ui->status, sizeof(ui->status),
+                 "OUT OF MEMORY CREATING REFERENCE TONE");
+        return;
+    }
+    reference->frames = frames;
+    reference->sample_rate = (uint32_t)output_rate;
+    snprintf(reference->name, sizeof(reference->name), "TUNE REFERENCE");
+    frequency = ts_tuning_frequency(&ui->tune_reference);
+    fade = (size_t)output_rate / 100u;
+    if (fade < 1u) fade = 1u;
+    for (size_t frame = 0; frame < frames; ++frame) {
+        float gain = 0.22f;
+        if (frame < fade) gain *= (float)frame / (float)fade;
+        if (frames - 1u - frame < fade)
+            gain *= (float)(frames - 1u - frame) / (float)fade;
+        reference->data[frame] = gain * sinf(
+            (float)(2.0 * M_PI * frequency * (double)frame /
+                    (double)output_rate));
+    }
+    ts_sample_touch(reference);
+    SDL_LockAudioDevice(device);
+    ts_note_bank_clear(&audio->notes);
+    audio->sample = reference;
+    audio->position = 0.0;
+    audio->pitch = 1.0;
+    audio->range_start = 0u;
+    audio->range_end = frames;
+    audio->source = TS_AUDITION_CURRENT;
+    audio->range = TS_AUDITION_ALL;
+    audio->looping = 0;
+    audio->loop_mode = TS_LOOP_FORWARD;
+    audio->loop_direction = 1;
+    audio->crossfade_frames = 0u;
+    audio->bank_slot = -1;
+    audio->step = 1.0;
+    audio->playing = 1;
+    SDL_UnlockAudioDevice(device);
+    ui->tune_reference_active = 1;
+    snprintf(ui->status, sizeof(ui->status),
+             "PLAYING %.2F HZ REFERENCE - NOT INCLUDED IN CAPTURE OR EXPORT",
+             frequency);
 }
 
 static void suggest_or_accept_pitch(SDL_AudioDeviceID device, AudioState *audio,
                                     TsUiState *ui, TsInstrument *instrument)
 {
     char error[160];
-    char note[12];
+    char detected_note[12];
+    char reference_note[12];
     if (ui->has_pitch_suggestion) {
-        TsTuning suggestion = ui->pitch_suggestion;
-        apply_tuning(device, audio, ui, instrument, suggestion.root_note,
-                     suggestion.fine_tune_cents);
+        float detected = (float)ui->pitch_suggestion.root_note +
+                         ui->pitch_suggestion.fine_tune_cents / 100.0f;
+        float reference = (float)ui->tune_reference.root_note +
+                          ui->tune_reference.fine_tune_cents / 100.0f;
+        float shift = reference - detected;
+        const char *scope = instrument->has_selection ? "SELECTION" : "TILE";
+        stop_all_force(device, audio, ui);
+        lock_edit(device, audio);
+        if (ts_instrument_apply_pitch_shift(instrument, shift,
+                                            error, sizeof(error))) {
+            unlock_edit(device, audio, ui, instrument);
+            ts_ui_reset_parent_view(ui, instrument->current.frames);
+            snprintf(ui->status, sizeof(ui->status),
+                     "%s TUNED %+.2F SEMITONES TO %s - C4/MIDI 60 IS UNITY",
+                     scope, shift,
+                     ts_midi_note_name(ui->tune_reference.root_note,
+                                       reference_note, sizeof(reference_note)));
+        } else {
+            unlock_edit(device, audio, ui, instrument);
+            snprintf(ui->status, sizeof(ui->status),
+                     "DESTRUCTIVE TUNE FAILED: %.132s", error);
+        }
         return;
     }
     if (ts_instrument_suggest_pitch(instrument, &ui->pitch_suggestion,
                                     &ui->pitch_confidence, error, sizeof(error))) {
         ui->has_pitch_suggestion = 1;
-        if (device) SDL_LockAudioDevice(device);
-        ts_note_bank_sync_tuned(&audio->notes, instrument, &ui->pitch_suggestion,
-                                audio->output_rate);
-        if (device) SDL_UnlockAudioDevice(device);
         snprintf(ui->status, sizeof(ui->status),
-                 "PREVIEW %s %+.1F C  CONF %.0F%% - ACCEPT OR ESC CANCEL",
-                 ts_midi_note_name(ui->pitch_suggestion.root_note, note, sizeof(note)),
+                 "DETECTED %s %+.1F C (%.0F%%) - TUNE TO REF %s OR ESC",
+                 ts_midi_note_name(ui->pitch_suggestion.root_note,
+                                   detected_note, sizeof(detected_note)),
                  ui->pitch_suggestion.fine_tune_cents,
-                 ui->pitch_confidence * 100.0f);
-    } else snprintf(ui->status, sizeof(ui->status), "PITCH SUGGESTION: %.137s", error);
+                 ui->pitch_confidence * 100.0f,
+                 ts_midi_note_name(ui->tune_reference.root_note,
+                                   reference_note, sizeof(reference_note)));
+    } else snprintf(ui->status, sizeof(ui->status), "PITCH DETECTION: %.142s", error);
 }
 
 static void cancel_pitch_preview(SDL_AudioDeviceID device, AudioState *audio,
@@ -4553,12 +4653,14 @@ static int export_wav_atomic(const TsSample *sample, const TsTuning *tuning,
                              char *error, size_t error_size)
 {
     char temporary[TS_BROWSER_PATH_MAX + 32];
+    const TsTuning unity = {TS_KEYBOARD_BASE_NOTE, 0.0f};
+    (void)tuning;
     int written = snprintf(temporary, sizeof(temporary), "%s.tapesister-tmp", destination);
     if (written < 0 || (size_t)written >= sizeof(temporary)) {
         snprintf(error, error_size, "Destination path is too long");
         return 0;
     }
-    if (!ts_sample_save_wav16_tuned_looped(sample, tuning, has_loop,
+    if (!ts_sample_save_wav16_tuned_looped(sample, &unity, has_loop,
                                            loop_first, loop_last, loop_mode,
                                            temporary, error, error_size)) {
         remove(temporary);
@@ -4799,15 +4901,11 @@ static int adjust_hovered_slider(SDL_AudioDeviceID device, AudioState *audio,
     case TS_UI_SLIDER_DRIFT:
         process.drift = clamp_unit(process.drift + step); label = "DRIFT"; break;
     case TS_UI_SLIDER_TUNE_FINE:
-        if (ui->has_pitch_suggestion) {
-            snprintf(ui->status, sizeof(ui->status),
-                     "ACCEPT OR CANCEL THE PITCH SUGGESTION FIRST");
-            return 1;
-        }
-        apply_audible_tuning(device, audio, ui, instrument,
-                             instrument->audible_tuning.root_note,
-                             instrument->audible_tuning.fine_tune_cents +
-                             (float)amount * (coarse ? 5.0f : 1.0f));
+        (void)device;
+        (void)audio;
+        set_tune_reference(ui, ui->tune_reference.root_note,
+                           ui->tune_reference.fine_tune_cents +
+                           (float)amount * (coarse ? 5.0f : 1.0f));
         return 1;
     case TS_UI_SLIDER_NOISE_AMOUNT:
         process.noise_amount = clamp_unit(process.noise_amount + step);
@@ -5800,6 +5898,7 @@ int main(int argc, char **argv)
     TsSample pending_selection_load;
     TsSample drone_preview;
     TsSample fm_preview;
+    TsSample tune_reference;
     TsExchangeOffer exchange_offer;
     TransformController transform;
     size_t clipboard_origin_first = 0;
@@ -5846,6 +5945,7 @@ int main(int argc, char **argv)
     ts_sample_init(&pending_selection_load);
     ts_sample_init(&drone_preview);
     ts_sample_init(&fm_preview);
+    ts_sample_init(&tune_reference);
     ts_exchange_offer_init(&exchange_offer);
     transform_controller_init(&transform);
     ts_ui_init(&ui);
@@ -5890,6 +5990,7 @@ int main(int argc, char **argv)
     audio.bank_slot = -1;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
+        ts_sample_free(&tune_reference);
         ts_sample_free(&fm_preview);
         ts_sample_free(&drone_preview);
         ts_sample_free(&pending_selection_load);
@@ -5940,6 +6041,8 @@ int main(int argc, char **argv)
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         SDL_Quit();
+        ts_sample_free(&tune_reference);
+        ts_sample_free(&fm_preview);
         ts_sample_free(&drone_preview);
         ts_sample_free(&pending_selection_load);
         ts_sample_free(&clipboard);
@@ -6212,7 +6315,22 @@ int main(int argc, char **argv)
                     }
                 } else if (ui.fm_open) {
                     int fm_note = note_for_key(key);
-                    if (key == SDLK_ESCAPE) {
+                    if (ui.fm_full_choice_open) {
+                        if (key == SDLK_ESCAPE || key == SDLK_c) {
+                            ui.fm_full_choice_open = 0;
+                            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                     "FM APPLY CANCELLED - TILES UNCHANGED");
+                        } else if (key == SDLK_o) {
+                            apply_fm_workspace(device, &audio, &ui, &instrument,
+                                               &sample_pages, 1);
+                        } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
+                                   key == SDLK_n) {
+                            apply_fm_workspace(device, &audio, &ui, &instrument,
+                                               &sample_pages, 2);
+                        } else
+                            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                     "O OVERWRITES  N/ENTER MAKES PAGE  ESC CANCELS");
+                    } else if (key == SDLK_ESCAPE) {
                         close_fm_workspace(device, &audio, &ui, &fm_preview);
                     } else if (key >= SDLK_F1 && key <= SDLK_F8) {
                         int octave = ts_ui_keyboard_set_octave(
@@ -6230,7 +6348,8 @@ int main(int argc, char **argv)
                                            &fm_preview, 0, obtained.freq, 0);
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
                                key == SDLK_a) {
-                        apply_fm_workspace(device, &audio, &ui, &instrument);
+                        apply_fm_workspace(device, &audio, &ui, &instrument,
+                                           &sample_pages, 0);
                     } else if (key == SDLK_r) {
                         randomize_fm_workspace(device, &audio, &ui, &instrument,
                                                &fm_preview);
@@ -6808,6 +6927,11 @@ int main(int argc, char **argv)
                 int control;
                 SDL_GetMouseState(&raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
+                if (ui.fm_full_choice_open) {
+                    snprintf(ui.fm_message, sizeof(ui.fm_message),
+                             "CHOOSE OVERWRITE, NEW SAMPLE PAGE, OR CANCEL");
+                    continue;
+                }
                 control = ts_ui_fm_control_from_point(x, y);
                 if (wheel_y != 0 && control >= 0 &&
                     fm_control_disabled(&ui.fm_patch, ui.fm_page, control)) {
@@ -7295,6 +7419,24 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
                     }
                 } else if (ui.fm_open) {
+                    if (ui.fm_full_choice_open) {
+                        TsUiFmAction full_action =
+                            ts_ui_fm_full_action_from_point(x, y);
+                        if (full_action == TS_UI_FM_ACTION_OVERWRITE)
+                            apply_fm_workspace(device, &audio, &ui, &instrument,
+                                               &sample_pages, 1);
+                        else if (full_action == TS_UI_FM_ACTION_NEW_PAGE)
+                            apply_fm_workspace(device, &audio, &ui, &instrument,
+                                               &sample_pages, 2);
+                        else if (full_action == TS_UI_FM_ACTION_CANCEL_FULL) {
+                            ui.fm_full_choice_open = 0;
+                            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                     "FM APPLY CANCELLED - TILES UNCHANGED");
+                        } else
+                            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                     "CHOOSE OVERWRITE, NEW SAMPLE PAGE, OR CANCEL");
+                        continue;
+                    }
                     TsFmPage page = ts_ui_fm_page_from_point(x, y);
                     int control = ts_ui_fm_control_from_point(x, y);
                     int voice = ts_ui_fm_voice_from_point(x, y);
@@ -7327,7 +7469,8 @@ int main(int argc, char **argv)
                         randomize_fm_workspace(device, &audio, &ui,
                                                &instrument, &fm_preview);
                     } else if (fm_action == TS_UI_FM_ACTION_APPLY) {
-                        apply_fm_workspace(device, &audio, &ui, &instrument);
+                        apply_fm_workspace(device, &audio, &ui, &instrument,
+                                           &sample_pages, 0);
                     } else if (fm_action == TS_UI_FM_ACTION_AUDITION) {
                         begin_fm_note(device, &audio, &ui, &instrument,
                                       &fm_preview, 0, obtained.freq, 0);
@@ -7351,8 +7494,15 @@ int main(int argc, char **argv)
                                  ui.fm_patch.extreme_mode ?
                                  "EXTREME ON - FULL SYNTH RANGE, LIMITER ACTIVE" :
                                  "EXTREME OFF - VALUES RETURNED TO MUSICAL RANGE");
+                    } else if (fm_action == TS_UI_FM_ACTION_CHAIN) {
+                        instrument.family_trajectory =
+                            !instrument.family_trajectory;
+                        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                 instrument.family_trajectory ?
+                                 "CHAIN ON - APPLY USES THE NEXT EMPTY TILE" :
+                                 "CHAIN OFF - APPLY OVERWRITES THE CURRENT TILE");
                     } else if (ts_ui_fm_range_contains(x, y)) {
-                        instrument.family_mutation = (float)(x - 310) / 310.0f;
+                        instrument.family_mutation = (float)(x - 386) / 234.0f;
                         if (instrument.family_mutation < 0.0f)
                             instrument.family_mutation = 0.0f;
                         if (instrument.family_mutation > 1.0f)
@@ -7832,23 +7982,23 @@ int main(int argc, char **argv)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_FADE_OUT, 1.0f);
                     } else if (ui.fx_page == TS_FX_TUNE) {
-                        if (ui.has_pitch_suggestion && x < 470)
-                            snprintf(ui.status, sizeof(ui.status),
-                                     "PITCH PREVIEW ACTIVE - ACCEPT OR ESC CANCEL");
-                        else if (x >= 10 && x < 58 &&
-                                 instrument.audible_tuning.root_note > 0)
-                            apply_audible_tuning(device, &audio, &ui, &instrument,
-                                                 instrument.audible_tuning.root_note - 1,
-                                                 instrument.audible_tuning.fine_tune_cents);
+                        if (x >= 10 && x < 58 &&
+                            ui.tune_reference.root_note > 0)
+                            set_tune_reference(
+                                &ui, ui.tune_reference.root_note - 1,
+                                ui.tune_reference.fine_tune_cents);
                         else if (x >= 156 && x < 204 &&
-                                 instrument.audible_tuning.root_note < 127)
-                            apply_audible_tuning(device, &audio, &ui, &instrument,
-                                                 instrument.audible_tuning.root_note + 1,
-                                                 instrument.audible_tuning.fine_tune_cents);
+                                 ui.tune_reference.root_note < 127)
+                            set_tune_reference(
+                                &ui, ui.tune_reference.root_note + 1,
+                                ui.tune_reference.fine_tune_cents);
                         else if (x >= 214 && x < 360)
-                            apply_audible_tuning(device, &audio, &ui, &instrument,
-                                                 instrument.audible_tuning.root_note,
-                                                 (float)(x - 214) / 146.0f * 200.0f - 100.0f);
+                            set_tune_reference(
+                                &ui, ui.tune_reference.root_note,
+                                (float)(x - 214) / 146.0f * 200.0f - 100.0f);
+                        else if (x >= 370 && x < 460)
+                            play_tune_reference(device, &audio, &ui,
+                                                &tune_reference, obtained.freq);
                         else if (x >= 470 && x < 630)
                             suggest_or_accept_pitch(device, &audio, &ui, &instrument);
                     } else if (ui.fx_page == TS_FX_NOISE) {
@@ -8315,9 +8465,9 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status),
                                  "SHIFT+RMB COPY OVERWRITE  CTRL+RMB MOVE OVERWRITE");
                 } else if (note >= 0 && (mod & KMOD_SHIFT)) {
-                    apply_tuning(device, &audio, &ui, &instrument,
-                                 ts_ui_keyboard_base_note(&ui) + note,
-                                 instrument.audible_tuning.fine_tune_cents);
+                    set_tune_reference(&ui,
+                                       ts_ui_keyboard_base_note(&ui) + note,
+                                       ui.tune_reference.fine_tune_cents);
                 } else if (ui.show_ingredients && recipe_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "DSP TILES ARE CURATED - MIDDLE EDITS AND SAVE/UPDATE STORES");
@@ -8476,6 +8626,8 @@ int main(int argc, char **argv)
                  audio.sample == &transform.dsp_preview.sample) &&
                 !audio.playing)
                 ui.transform_preview_active = 0;
+            ui.tune_reference_active =
+                audio.playing && audio.sample == &tune_reference;
             ui.active_notes = ts_note_bank_visible_mask(
                 &audio.notes, ts_ui_keyboard_base_note(&ui));
             ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
@@ -8532,6 +8684,7 @@ int main(int argc, char **argv)
     if (device) SDL_CloseAudioDevice(device);
     ts_external_recorder_free(&external_input.recorder);
     ts_capture_free(&audio.capture);
+    ts_sample_free(&tune_reference);
     ts_sample_free(&fm_preview);
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);

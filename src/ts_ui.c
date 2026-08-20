@@ -908,17 +908,21 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
     button(fb, 308, 252, 76, ui->fm_held_notes > 0 ? "HELD" : "HOLD",
            ui->fm_held_notes > 0);
     button(fb, 390, 252, 72, "BACK", 0);
-    button(fb, 20, 278, 96, "DRONE", ui->fm_patch.drone_mode);
-    button(fb, 122, 278, 106, "EXTREME", ui->fm_patch.extreme_mode);
+    button(fb, 20, 278, 86, "DRONE", ui->fm_patch.drone_mode);
+    button(fb, 112, 278, 100, "EXTREME", ui->fm_patch.extreme_mode);
+    button(fb, 218, 278, 86,
+           instrument != NULL && instrument->family_trajectory ?
+           "CHAIN ON" : "CHAIN OFF",
+           instrument != NULL && instrument->family_trajectory);
     {
         char range[32];
         float amount = instrument != NULL ? instrument->family_mutation : 0.0f;
         if (amount < 0.0f) amount = 0.0f;
         if (amount > 1.0f) amount = 1.0f;
         snprintf(range, sizeof(range), "RANGE %d", (int)lrintf(amount * 100.0f));
-        text(fb, 238, 286, range, PAL_TUNING, 1);
-        frame(fb, 310, 279, 310, 20, RGB(12, 12, 12), PAL_BUTTON);
-        rect(fb, 313, 282, (int)lrintf(amount * 304.0f), 14, PAL_BLOCK);
+        text(fb, 314, 286, range, PAL_TUNING, 1);
+        frame(fb, 386, 279, 234, 20, RGB(12, 12, 12), PAL_BUTTON);
+        rect(fb, 389, 282, (int)lrintf(amount * 228.0f), 14, PAL_BLOCK);
     }
     text(fb, 20, 306, ui->fm_message, PAL_MOUSE, 1);
     text(fb, 20, 322,
@@ -927,6 +931,16 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
     text(fb, 20, 338,
          "DRONE REMOVES ENVELOPES  EXTREME OPENS RANGE  LIMITER STAYS ON",
          PAL_INSTRUMENT, 1);
+    if (ui->fm_full_choice_open) {
+        frame(fb, 72, 238, 496, 94, RGB(28, 25, 30), PAL_VOLUME);
+        text(fb, 92, 247, "THIS SAMPLE PAGE IS FULL", PAL_NOTE, 1);
+        text(fb, 92, 263,
+             "OVERWRITE THIS TILE OR CONTINUE THE CHAIN ON A NEW PAGE?",
+             PAL_MOUSE, 1);
+        button(fb, 92, 286, 126, "OVERWRITE", 0);
+        button(fb, 224, 286, 150, "NEW SAMPLE PAGE", 1);
+        button(fb, 380, 286, 94, "CANCEL", 0);
+    }
 }
 
 static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
@@ -1039,8 +1053,10 @@ void ts_ui_init(TsUiState *ui)
     ui->renaming_recipe_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->show_keyboard = 1;
-    ui->keyboard_octave = 3;
-    ui->keyboard_base_note = 48;
+    ui->keyboard_octave = 4;
+    ui->keyboard_base_note = TS_KEYBOARD_BASE_NOTE;
+    ui->tune_reference.root_note = TS_KEYBOARD_BASE_NOTE;
+    ui->tune_reference.fine_tune_cents = 0.0f;
     ui->show_recipes = 0;
     ui->cdp_page = 0;
     ui->dsp_page = 0;
@@ -1309,15 +1325,25 @@ TsUiFmAction ts_ui_fm_action_from_point(int x, int y)
         if (x >= 390 && x < 462) return TS_UI_FM_ACTION_BACK;
     }
     if (y >= 278 && y < 302) {
-        if (x >= 20 && x < 116) return TS_UI_FM_ACTION_DRONE;
-        if (x >= 122 && x < 228) return TS_UI_FM_ACTION_EXTREME;
+        if (x >= 20 && x < 106) return TS_UI_FM_ACTION_DRONE;
+        if (x >= 112 && x < 212) return TS_UI_FM_ACTION_EXTREME;
+        if (x >= 218 && x < 304) return TS_UI_FM_ACTION_CHAIN;
     }
+    return TS_UI_FM_ACTION_NONE;
+}
+
+TsUiFmAction ts_ui_fm_full_action_from_point(int x, int y)
+{
+    if (y < 286 || y >= 310) return TS_UI_FM_ACTION_NONE;
+    if (x >= 92 && x < 218) return TS_UI_FM_ACTION_OVERWRITE;
+    if (x >= 224 && x < 374) return TS_UI_FM_ACTION_NEW_PAGE;
+    if (x >= 380 && x < 474) return TS_UI_FM_ACTION_CANCEL_FULL;
     return TS_UI_FM_ACTION_NONE;
 }
 
 int ts_ui_fm_range_contains(int x, int y)
 {
-    return x >= 310 && x < 620 && y >= 278 && y < 302;
+    return x >= 386 && x < 620 && y >= 278 && y < 302;
 }
 
 TsUiWaveAction ts_ui_wave_action_from_point(int x, int y)
@@ -1431,7 +1457,7 @@ static int cycle_index(int value, int amount, int count)
 
 int ts_ui_keyboard_base_note(const TsUiState *ui)
 {
-    int note = ui != NULL ? ui->keyboard_base_note : 48;
+    int note = ui != NULL ? ui->keyboard_base_note : TS_KEYBOARD_BASE_NOTE;
     if (note < 0) note = 0;
     if (note > 104) note = 104;
     return note;
@@ -1439,7 +1465,7 @@ int ts_ui_keyboard_base_note(const TsUiState *ui)
 
 int ts_ui_keyboard_set_octave(TsUiState *ui, int octave)
 {
-    if (ui == NULL) return 3;
+    if (ui == NULL) return 4;
     if (octave < 0) octave = 0;
     if (octave > 7) octave = 7;
     ui->keyboard_octave = octave;
@@ -1449,7 +1475,7 @@ int ts_ui_keyboard_set_octave(TsUiState *ui, int octave)
 
 int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount)
 {
-    if (ui == NULL) return 3;
+    if (ui == NULL) return 4;
     ui->keyboard_octave = cycle_index(ui->keyboard_octave, amount, 8);
     ui->keyboard_base_note = (ui->keyboard_octave + 1) * 12;
     return ui->keyboard_octave;
@@ -1458,7 +1484,7 @@ int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount)
 int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount)
 {
     int note;
-    if (ui == NULL) return 48;
+    if (ui == NULL) return TS_KEYBOARD_BASE_NOTE;
     note = ui->keyboard_base_note + amount;
     if (note < 0) note = 0;
     if (note > 104) note = 104;
@@ -1650,14 +1676,14 @@ static int frame_x(size_t frame_index, size_t view_first, size_t view_last)
 const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
                                       const TsInstrument *instrument)
 {
-    if (ui != NULL && ui->has_pitch_suggestion) return &ui->pitch_suggestion;
+    (void)ui;
     return instrument != NULL ? &instrument->tuning : NULL;
 }
 
 const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
                                      const TsInstrument *instrument)
 {
-    if (ui != NULL && ui->has_pitch_suggestion) return &ui->pitch_suggestion;
+    (void)ui;
     return instrument != NULL ? &instrument->audible_tuning : NULL;
 }
 
@@ -1746,7 +1772,7 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
     render_palette = &ui->palette;
-    const TsTuning *display_tuning = ts_ui_display_tuning(ui, instrument);
+    const TsTuning *display_tuning = &ui->tune_reference;
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
     int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
     const TsBankSlot *shown_slot = showing_bank ? &instrument->bank[ui->bank_view_slot] : NULL;
@@ -2110,7 +2136,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char note[12];
         char frequency[32];
         char fine[32];
-        snprintf(root, sizeof(root), "ROOT %s",
+        snprintf(root, sizeof(root), "REF %s",
                  ts_midi_note_name(display_tuning->root_note, note, sizeof(note)));
         snprintf(fine, sizeof(fine), "TRIM %+.1F C",
                  display_tuning->fine_tune_cents);
@@ -2121,9 +2147,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 156, 261, 48, "UP", 0);
         slider(fb, 214, 261, 146, fine,
                (display_tuning->fine_tune_cents + 100.0f) / 200.0f, PAL_TUNING);
-        button(fb, 370, 261, 90, frequency, 0);
+        button(fb, 370, 261, 90, frequency, ui->tune_reference_active);
         button(fb, 470, 261, 160,
-               ui->has_pitch_suggestion ? "ACCEPT SUGGESTION" : "SUGGEST PITCH",
+               ui->has_pitch_suggestion ? "TUNE TO REFERENCE" : "DETECT PITCH",
                ui->has_pitch_suggestion);
     } else if (ui->fx_page == TS_FX_NOISE) {
         char color[32];
