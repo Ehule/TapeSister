@@ -328,7 +328,7 @@ static void test_tile_independence_and_roundtrip(void)
     file = fopen("test-canvas.tsr", "rb");
     CHECK(file != NULL);
     if (file != NULL) {
-        CHECK(fread(magic, 1, 5, file) == 5 && memcmp(magic, "TSR21", 5) == 0);
+        CHECK(fread(magic, 1, 5, file) == 5 && memcmp(magic, "TSR22", 5) == 0);
         fclose(file);
     }
     ts_instrument_init(&restored);

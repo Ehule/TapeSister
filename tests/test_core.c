@@ -1933,7 +1933,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR21", 5) == 0);
+        CHECK(memcmp(magic, "TSR22", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -2870,11 +2870,13 @@ int main(void)
         ts_fm_patch_vary(&base, 0x13579bdu, 1.0f, &high);
         ts_fm_patch_vary(&base, 0x13579bdu, 0.50f, &repeat);
         CHECK(memcmp(&base, &zero, sizeof(base)) == 0);
-        CHECK(base.structure == low.structure && base.structure == medium.structure &&
-              base.structure == high.structure);
-        CHECK(base.ratio_family == low.ratio_family &&
-              base.ratio_family == medium.ratio_family &&
-              base.ratio_family == high.ratio_family);
+        CHECK(low.structure >= 0 && low.structure < TS_FM_STRUCTURE_COUNT);
+        CHECK(medium.structure >= 0 && medium.structure < TS_FM_STRUCTURE_COUNT);
+        CHECK(high.structure >= 0 && high.structure < TS_FM_STRUCTURE_COUNT);
+        CHECK(low.ratio_family >= 0 && low.ratio_family < TS_FM_RATIO_FAMILY_COUNT);
+        CHECK(medium.ratio_family >= 0 &&
+              medium.ratio_family < TS_FM_RATIO_FAMILY_COUNT);
+        CHECK(high.ratio_family >= 0 && high.ratio_family < TS_FM_RATIO_FAMILY_COUNT);
         CHECK(memcmp(&medium, &repeat, sizeof(medium)) == 0);
         low_distance = ts_fm_patch_distance(&base, &low);
         medium_distance = ts_fm_patch_distance(&base, &medium);
@@ -2896,6 +2898,55 @@ int main(void)
             for (size_t frame = 0; frame < rendered_high.frames; ++frame)
                 CHECK(isfinite(rendered_high.data[frame]));
             ts_sample_free(&rendered_high);
+        }
+    }
+
+    {
+        TsGeneratorRecipe recipe = generator(0xabcdefu, TS_GENERATOR_FM);
+        TsFmPatch patch, varied;
+        char label[32], value[32];
+        ts_fm_patch_from_recipe(&recipe, &patch);
+        for (int page = 0; page < TS_FM_PAGE_COUNT; ++page) {
+            CHECK(strcmp(ts_fm_page_name((TsFmPage)page), "UNKNOWN") != 0);
+            for (int control = 0; control < TS_FM_OPERATOR_COUNT; ++control) {
+                CHECK(ts_fm_set_control_normalized(
+                    &patch, (TsFmPage)page, control, 0.73f));
+                CHECK(ts_fm_control_normalized(
+                    &patch, (TsFmPage)page, control) >= 0.0f);
+                CHECK(ts_fm_control_normalized(
+                    &patch, (TsFmPage)page, control) <= 1.0f);
+                ts_fm_control_format(&patch, (TsFmPage)page, control,
+                                     label, sizeof(label), value, sizeof(value));
+                CHECK(label[0] != '\0' && value[0] != '\0');
+            }
+        }
+        patch.mutation_mask = TS_FM_MUTATE_PITCH;
+        ts_fm_patch_vary(&patch, 0x2468aceu, 1.0f, &varied);
+        CHECK(memcmp(patch.waveforms, varied.waveforms,
+                     sizeof(patch.waveforms)) == 0);
+        CHECK(memcmp(patch.lfo_rates, varied.lfo_rates,
+                     sizeof(patch.lfo_rates)) == 0);
+        CHECK(patch.filter_mode == varied.filter_mode &&
+              patch.filter_cutoff_hz == varied.filter_cutoff_hz &&
+              patch.structure == varied.structure &&
+              patch.interaction == varied.interaction);
+        for (int waveform = 0; waveform < TS_FM_WAVEFORM_COUNT; ++waveform) {
+            TsSample first_render, second_render;
+            ts_sample_init(&first_render);
+            ts_sample_init(&second_render);
+            patch.waveforms[0] = waveform;
+            patch.active_mask = 1u;
+            CHECK(ts_fm_render_sample(&first_render, &patch, 0.1f, 110.0f,
+                                      8000u, 1234u, error, sizeof(error)));
+            CHECK(ts_fm_render_sample(&second_render, &patch, 0.1f, 110.0f,
+                                      8000u, 1234u, error, sizeof(error)));
+            CHECK(ts_sample_hash(&first_render) == ts_sample_hash(&second_render));
+            CHECK(strcmp(ts_fm_waveform_name(waveform), "UNKNOWN") != 0);
+            for (size_t frame = 0; frame < first_render.frames; ++frame)
+                CHECK(isfinite(first_render.data[frame]) &&
+                      fabsf(first_render.data[frame]) <= 1.0f);
+            ts_sample_free(&first_render);
+            ts_sample_free(&second_render);
         }
     }
 

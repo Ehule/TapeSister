@@ -23,6 +23,7 @@ typedef struct {
     int looping;
     int direction;
     int latched;
+    int synth;
     int active;
 } TsNoteVoice;
 
@@ -55,6 +56,15 @@ TsNoteStartResult ts_note_bank_start_tuned_at(TsNoteBank *bank,
                                               TsAuditionSource source, int note,
                                               int keyboard_base_note,
                                               int latched, int output_rate);
+TsNoteStartResult ts_note_bank_start_sample(TsNoteBank *bank,
+                                            const TsSample *sample,
+                                            const TsTuning *tuning,
+                                            int note, int keyboard_base_note,
+                                            int latched, int output_rate);
+void ts_note_bank_replace_sample(TsNoteBank *bank,
+                                 const TsSample *old_sample,
+                                 const TsSample *new_sample,
+                                 int output_rate);
 int ts_note_bank_start_staged_chord(TsNoteBank *bank,
                                     const TsInstrument *instrument,
                                     const TsTuning *tuning,
@@ -73,6 +83,7 @@ void ts_note_bank_set_source_tuned(TsNoteBank *bank,
                                    const TsTuning *tuning,
                                    TsAuditionSource source, int output_rate);
 float ts_note_bank_read(TsNoteBank *bank);
+float ts_note_bank_read_split(TsNoteBank *bank, float *synth_output);
 int ts_note_bank_count(const TsNoteBank *bank);
 uint32_t ts_note_bank_mask(const TsNoteBank *bank);
 const TsNoteVoice *ts_note_bank_display_voice(const TsNoteBank *bank);

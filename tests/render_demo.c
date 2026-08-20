@@ -24,7 +24,18 @@ int main(int argc, char **argv)
     ts_instrument_set_selection(&instrument, instrument.current.frames / 5,
                                 instrument.current.frames * 3 / 5);
     snprintf(ui.status, sizeof(ui.status), "PARENT PRESERVED - CURRENT READY TO SHAPE");
-    if (argc > 2 && strcmp(argv[2], "palette") == 0) {
+    if (argc > 2 && strcmp(argv[2], "fm") == 0) {
+        TsGeneratorRecipe recipe = instrument.generator;
+        recipe.kind = TS_GENERATOR_FM;
+        ts_fm_patch_from_recipe(&recipe, &ui.fm_patch);
+        ui.fm_open = 1;
+        ui.fm_page = TS_FM_PAGE_FILTER;
+        ui.fm_preview_sample = &instrument.current;
+        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                 "INTERNAL PREVIEW - QWERTY AND SHIFT LATCH SHARE TILE TUNING");
+        snprintf(ui.status, sizeof(ui.status),
+                 "FM LOGIC PREVIEW - APPLY PRINTS THE GENOME TO THE ACTIVE TILE");
+    } else if (argc > 2 && strcmp(argv[2], "palette") == 0) {
         ui.palette_open = 1;
         ui.palette_entry = TS_PALETTE_WAVE_SELECTION;
         ui.palette_channel = 1;

@@ -102,16 +102,38 @@ static int get_float(FILE *f, float *value)
 
 static void put_fm_patch(FILE *f, const TsFmPatch *patch)
 {
-    put32(f, (uint32_t)patch->structure);
-    put32(f, (uint32_t)patch->ratio_family);
-    put_float(f, patch->depth); put_float(f, patch->shape);
-    put_float(f, patch->feedback); put_float(f, patch->transient_mix);
-    for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op) put_float(f, patch->ratios[op]);
+    TsFmPatch safe = *patch;
+    ts_fm_patch_sanitize(&safe);
+    put32(f, (uint32_t)safe.structure);
+    put32(f, (uint32_t)safe.ratio_family);
+    put_float(f, safe.depth); put_float(f, safe.shape);
+    put_float(f, safe.feedback); put_float(f, safe.transient_mix);
+    for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op) put_float(f, safe.ratios[op]);
+    put32(f, safe.genome_version);
+    put32(f, safe.active_mask);
+    put32(f, safe.mutation_mask);
+    for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
+        put32(f, (uint32_t)safe.waveforms[voice]);
+    for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
+        put_float(f, safe.lfo_rates[voice]);
+    for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
+        put_float(f, safe.lfo_depths[voice]);
+    for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
+        put32(f, (uint32_t)safe.lfo_types[voice]);
+    put32(f, (uint32_t)safe.filter_mode);
+    put_float(f, safe.filter_cutoff_hz);
+    put_float(f, safe.filter_resonance);
+    put_float(f, safe.filter_attack_seconds);
+    put_float(f, safe.filter_release_seconds);
+    put_float(f, safe.filter_envelope_amount);
+    put32(f, (uint32_t)safe.interaction);
+    put_float(f, safe.interaction_mix);
 }
 
-static int get_fm_patch(FILE *f, TsFmPatch *patch)
+static int get_fm_patch(FILE *f, TsFmPatch *patch, int version)
 {
     uint32_t value;
+    memset(patch, 0, sizeof(*patch));
     if (!get32(f, &value)) return 0;
     patch->structure = (int)value;
     if (!get32(f, &value)) return 0;
@@ -121,6 +143,49 @@ static int get_fm_patch(FILE *f, TsFmPatch *patch)
     for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op)
         if (!get_float(f, &patch->ratios[op]) || patch->ratios[op] < 0.05f ||
             patch->ratios[op] > 16.0f) return 0;
+    if (version >= 22) {
+        if (!get32(f, &patch->genome_version) || patch->genome_version != 2u ||
+            !get32(f, &patch->active_mask) || !get32(f, &patch->mutation_mask)) return 0;
+        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+            if (!get32(f, &value)) return 0;
+            patch->waveforms[voice] = (int)value;
+        }
+        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
+            if (!get_float(f, &patch->lfo_rates[voice])) return 0;
+        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
+            if (!get_float(f, &patch->lfo_depths[voice])) return 0;
+        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+            if (!get32(f, &value)) return 0;
+            patch->lfo_types[voice] = (int)value;
+        }
+        if (!get32(f, &value)) return 0;
+        patch->filter_mode = (int)value;
+        if (!get_float(f, &patch->filter_cutoff_hz) ||
+            !get_float(f, &patch->filter_resonance) ||
+            !get_float(f, &patch->filter_attack_seconds) ||
+            !get_float(f, &patch->filter_release_seconds) ||
+            !get_float(f, &patch->filter_envelope_amount) ||
+            !get32(f, &value)) return 0;
+        patch->interaction = (int)value;
+        if (!get_float(f, &patch->interaction_mix)) return 0;
+        if ((patch->active_mask & ~((1u << TS_FM_OPERATOR_COUNT) - 1u)) != 0u ||
+            (patch->mutation_mask & ~TS_FM_MUTATE_ALL) != 0u ||
+            patch->filter_mode < 0 || patch->filter_mode >= TS_FILTER_MODE_COUNT ||
+            patch->interaction < 0 || patch->interaction >= TS_FM_INTERACTION_COUNT ||
+            patch->filter_cutoff_hz < 20.0f || patch->filter_cutoff_hz > 20000.0f ||
+            patch->filter_resonance < 0.0f || patch->filter_resonance > 0.95f ||
+            patch->filter_attack_seconds < 0.001f || patch->filter_attack_seconds > 4.0f ||
+            patch->filter_release_seconds < 0.01f || patch->filter_release_seconds > 8.0f ||
+            patch->filter_envelope_amount < -1.0f || patch->filter_envelope_amount > 1.0f ||
+            patch->interaction_mix < 0.0f || patch->interaction_mix > 1.0f) return 0;
+        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
+            if (patch->waveforms[voice] < 0 ||
+                patch->waveforms[voice] >= TS_FM_WAVEFORM_COUNT ||
+                patch->lfo_rates[voice] < 0.03f || patch->lfo_rates[voice] > 160.0f ||
+                patch->lfo_depths[voice] < 0.0f || patch->lfo_depths[voice] > 1.0f ||
+                patch->lfo_types[voice] < 0 ||
+                patch->lfo_types[voice] >= TS_FM_LFO_TYPE_COUNT) return 0;
+    } else ts_fm_patch_sanitize(patch);
     return patch->structure >= 0 && patch->structure < TS_FM_STRUCTURE_COUNT &&
            patch->ratio_family >= 0 && patch->ratio_family < TS_FM_RATIO_FAMILY_COUNT &&
            patch->depth >= 0.15f && patch->depth <= 12.0f &&
@@ -697,103 +762,6 @@ const char *ts_generator_name(TsGeneratorKind kind)
     return kind >= 0 && kind < TS_GENERATOR_COUNT ? names[kind] : "UNKNOWN";
 }
 
-const char *ts_fm_structure_name(int structure)
-{
-    static const char *names[] = {
-        "CHAIN", "BRANCH", "TWIN", "PARALLEL", "STRIKE", "CLUSTER"
-    };
-    return structure >= 0 && structure < TS_FM_STRUCTURE_COUNT ?
-           names[structure] : "UNKNOWN";
-}
-
-const char *ts_fm_ratio_family_name(int family)
-{
-    static const char *names[] = {
-        "HARMONIC", "FIFTHS", "SUBHARMONIC", "CLUSTERED", "METALLIC", "MIXED"
-    };
-    return family >= 0 && family < TS_FM_RATIO_FAMILY_COUNT ?
-           names[family] : "UNKNOWN";
-}
-
-void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch)
-{
-    static const float ratio_families[TS_FM_RATIO_FAMILY_COUNT][TS_FM_OPERATOR_COUNT] = {
-        {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f},
-        {1.0f, 1.5f, 2.25f, 3.0f, 4.5f, 6.75f},
-        {1.0f, 0.5f, 0.333333f, 0.25f, 0.2f, 1.5f},
-        {1.0f, 1.006f, 0.994f, 2.01f, 1.99f, 3.03f},
-        {1.0f, 1.414214f, 2.718282f, 3.141593f, 4.236068f, 0.618034f},
-        {1.0f, 2.5f, 1.333333f, 3.75f, 0.75f, 5.125f}
-    };
-    uint32_t rng;
-    if (patch == NULL) return;
-    memset(patch, 0, sizeof(*patch));
-    if (recipe == NULL) return;
-    if (recipe->kind == TS_GENERATOR_FM && recipe->has_fm_patch) {
-        *patch = recipe->fm_patch;
-        return;
-    }
-    rng = recipe->seed ^ 0x464d3655u;
-    patch->structure = (int)(rng_next(&rng) % TS_FM_STRUCTURE_COUNT);
-    patch->ratio_family = (int)(rng_next(&rng) % TS_FM_RATIO_FAMILY_COUNT);
-    patch->depth = 0.8f + rng_unit(&rng) * 7.2f;
-    patch->shape = rng_unit(&rng);
-    patch->feedback = rng_unit(&rng) * 0.82f;
-    patch->transient_mix = 0.08f + rng_unit(&rng) * 0.42f;
-    for (int i = 0; i < TS_FM_OPERATOR_COUNT; ++i) {
-        float spread = 1.0f + rng_bipolar(&rng) *
-                       (patch->ratio_family == 3 ? 0.004f : 0.018f);
-        patch->ratios[i] = ratio_families[patch->ratio_family][i] * spread;
-    }
-}
-
-void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
-                      TsFmPatch *varied)
-{
-    uint32_t rng = seed ^ 0x56415259u;
-    float amount = clampf(range, 0.0f, 1.0f);
-    if (varied == NULL) return;
-    memset(varied, 0, sizeof(*varied));
-    if (source == NULL) return;
-    *varied = *source;
-    if (amount <= 0.0f) return;
-    /* Structure and ratio family are the retained FM architecture. Range controls
-       both the number of synthesis decisions rolled and their maximum distance. */
-    varied->depth = clampf(source->depth * exp2f(rng_bipolar(&rng) * amount * 1.35f),
-                           0.15f, 12.0f);
-    if (amount >= 0.08f)
-        varied->shape = clampf(source->shape + rng_bipolar(&rng) * amount * 0.55f, 0.0f, 1.0f);
-    if (amount >= 0.16f)
-        varied->feedback = clampf(source->feedback + rng_bipolar(&rng) * amount * 0.42f,
-                                  0.0f, 0.82f);
-    if (amount >= 0.24f)
-        varied->transient_mix = clampf(source->transient_mix +
-                                       rng_bipolar(&rng) * amount * 0.28f,
-                                       0.0f, 0.60f);
-    for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op) {
-        float threshold = 0.12f + (float)op * 0.11f;
-        if (amount >= threshold) {
-            float distance = rng_bipolar(&rng) * amount * 0.42f;
-            varied->ratios[op] = clampf(source->ratios[op] * exp2f(distance),
-                                        0.05f, 16.0f);
-        }
-    }
-}
-
-float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied)
-{
-    float distance;
-    if (source == NULL || varied == NULL || source->structure != varied->structure ||
-        source->ratio_family != varied->ratio_family) return INFINITY;
-    distance = fabsf(varied->depth - source->depth) / 11.85f +
-               fabsf(varied->shape - source->shape) +
-               fabsf(varied->feedback - source->feedback) / 0.82f +
-               fabsf(varied->transient_mix - source->transient_mix) / 0.60f;
-    for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op)
-        distance += fabsf(log2f(varied->ratios[op] / source->ratios[op])) / 4.0f;
-    return distance;
-}
-
 const char *ts_noise_color_name(TsNoiseColor color)
 {
     static const char *names[] = {"WHITE", "PINK", "BROWN", "METALLIC"};
@@ -817,8 +785,6 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
     uint32_t rng = recipe->seed;
     float frequency = clampf(recipe->frequency, 30.0f, 2000.0f);
     float phase = 0.0f, mod_phase = 0.0f, aux_phase = 0.0f;
-    float fm_phase[TS_FM_OPERATOR_COUNT] = {0.0f};
-    float fm_previous[TS_FM_OPERATOR_COUNT] = {0.0f};
     TsFmPatch fm_patch;
     float noise_lp = 0.0f, noise_slow = 0.0f;
     float seed_a = rng_unit(&rng);
@@ -833,6 +799,11 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
         set_error(error, error_size, "Out of memory while generating sample");
         return 0;
     }
+    if (recipe->kind == TS_GENERATOR_FM) {
+        free(data);
+        return ts_fm_render_sample(sample, &fm_patch, seconds, frequency, rate,
+                                   recipe->seed, error, error_size);
+    }
     for (size_t i = 0; i < frames; ++i) {
         float t = (float)i / (float)rate;
         float attack = fminf(1.0f, t * (35.0f + seed_a * 420.0f));
@@ -843,66 +814,9 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
         noise_lp += (random - noise_lp) * (0.015f + seed_a * 0.08f);
         noise_slow += (random - noise_slow) * 0.00015f;
         switch (recipe->kind) {
-        case TS_GENERATOR_FM: {
-            float operators[TS_FM_OPERATOR_COUNT] = {0.0f};
-            float carriers = 0.0f;
-            float carrier_count = 1.0f;
-            for (int op = TS_FM_OPERATOR_COUNT - 1; op >= 0; --op) {
-                float modulation = 0.0f;
-                float op_attack = fminf(1.0f, t * (45.0f + fm_patch.shape * 720.0f));
-                float op_decay = 0.35f + fm_patch.shape * 3.8f;
-                int carrier = 0;
-                if (fm_patch.structure == 0) {
-                    if (op < 5) modulation = operators[op + 1];
-                    carrier = op == 0;
-                } else if (fm_patch.structure == 1) {
-                    if (op == 4 || op == 3) modulation = operators[5];
-                    else if (op == 2) modulation = operators[3];
-                    else if (op == 1) modulation = operators[4];
-                    else if (op == 0) modulation = operators[1] + operators[2];
-                    carrier = op == 0;
-                } else if (fm_patch.structure == 2) {
-                    if (op == 4) modulation = operators[5];
-                    else if (op == 2) modulation = operators[3];
-                    else if (op == 1) modulation = operators[2];
-                    else if (op == 0) modulation = operators[4];
-                    carrier = op <= 1;
-                } else if (fm_patch.structure == 3) {
-                    if (op <= 2) modulation = operators[op + 3];
-                    carrier = op <= 2;
-                } else if (fm_patch.structure == 4) {
-                    if (op == 4) modulation = operators[5];
-                    else if (op == 3) modulation = operators[4];
-                    else if (op <= 2) modulation = operators[3] * (1.0f - op * 0.18f);
-                    carrier = op <= 2;
-                } else {
-                    if (op == 2) modulation = operators[5] + operators[4] * 0.3f;
-                    else if (op == 1) modulation = operators[4] + operators[3] * 0.3f;
-                    else if (op == 0) modulation = operators[3] + operators[5] * 0.3f;
-                    carrier = op <= 2;
-                }
-                if (op == 5)
-                    modulation += fm_previous[5] * fm_patch.feedback;
-                if (!carrier)
-                    op_decay += 0.9f + (float)op * 0.38f + fm_patch.shape * 8.0f;
-                fm_phase[op] += (float)(2.0 * M_PI) * frequency *
-                                fm_patch.ratios[op] / (float)rate;
-                if (fm_phase[op] > (float)(2.0 * M_PI))
-                    fm_phase[op] -= (float)(2.0 * M_PI);
-                operators[op] = sinf(fm_phase[op] +
-                                     modulation * fm_patch.depth) *
-                                op_attack * tail * expf(-t * op_decay);
-                fm_previous[op] = operators[op];
-                if (carrier) carriers += operators[op];
-            }
-            if (fm_patch.structure == 2) carrier_count = 2.0f;
-            else if (fm_patch.structure >= 3) carrier_count = 3.0f;
-            value = carriers / sqrtf(carrier_count);
-            value += (random - noise_lp) *
-                     expf(-t * (24.0f + fm_patch.shape * 92.0f)) *
-                     fm_patch.transient_mix;
+        case TS_GENERATOR_FM:
+            value = 0.0f;
             break;
-        }
         case TS_GENERATOR_METALLIC: {
             float ratio = 1.37f + seed_a * 6.1f;
             float sweep = 1.0f + expf(-t * (4.0f + seed_c * 15.0f)) *
@@ -3881,8 +3795,18 @@ int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
     bank_slot_init(&made);
     recipe = instrument->generator;
     recipe.kind = TS_GENERATOR_FM; recipe.seed = seed;
-    recipe.seconds = 0.1f + rng_unit(&rng) * 7.9f;
-    recipe.frequency = 30.0f * powf(2000.0f / 30.0f, rng_unit(&rng));
+    if (instrument->generator.kind == TS_GENERATOR_FM &&
+        instrument->generator.has_fm_patch &&
+        seed != instrument->generator.seed) {
+        TsFmPatch source_patch;
+        ts_fm_patch_from_recipe(&instrument->generator, &source_patch);
+        recipe.has_fm_patch = 1;
+        ts_fm_patch_vary(&source_patch, seed, 1.0f, &recipe.fm_patch);
+    }
+    if (seed != instrument->generator.seed || !instrument->generator.has_fm_patch) {
+        recipe.seconds = 0.1f + rng_unit(&rng) * 7.9f;
+        recipe.frequency = 30.0f * powf(2000.0f / 30.0f, rng_unit(&rng));
+    }
     if (!ts_sample_generate(&made.sample, &recipe, error, error_size) ||
         !ts_sample_clone(&made.edit_parent, &made.sample, error, error_size)) {
         bank_slot_free(&made); return 0;
@@ -3896,6 +3820,33 @@ int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
     instrument->generator = recipe; instrument->source_kind = TS_SOURCE_GENERATED;
     ++instrument->family_sequence;
     return ts_instrument_select_bank(instrument, slot, error, error_size);
+}
+
+int ts_instrument_apply_fm_patch(TsInstrument *instrument,
+                                 const TsFmPatch *patch,
+                                 char *error, size_t error_size)
+{
+    TsGeneratorRecipe recipe;
+    uint32_t seed;
+    if (instrument == NULL || patch == NULL || instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Select a tile before applying FM logic");
+        return 0;
+    }
+    recipe = instrument->generator;
+    if (instrument->bank[instrument->selected_slot].occupied &&
+        instrument->bank[instrument->selected_slot].has_generator &&
+        instrument->bank[instrument->selected_slot].generator.kind == TS_GENERATOR_FM)
+        recipe = instrument->bank[instrument->selected_slot].generator;
+    seed = recipe.seed != 0u ? recipe.seed :
+           advance_seed(instrument->family_sequence ^ 0x464d4c47u);
+    recipe.kind = TS_GENERATOR_FM;
+    recipe.seed = seed;
+    recipe.has_fm_patch = 1;
+    recipe.fm_patch = *patch;
+    ts_fm_patch_sanitize(&recipe.fm_patch);
+    instrument->generator = recipe;
+    return ts_instrument_create_selected(instrument, seed, error, error_size);
 }
 
 int ts_instrument_activate_silence(TsInstrument *instrument, size_t frames,
@@ -6019,18 +5970,24 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
     uint32_t patch_index;
     size_t target_frames;
     int operation_count;
+    int synth_source;
     char name[128];
+    synth_source = source_slot == TS_CAPTURE_SOURCE_SYNTH;
     if (instrument == NULL || captured == NULL || recorded_frames == 0u ||
         capture_rate == 0u || destination_slot < 0 ||
-        destination_slot >= TS_BANK_SLOT_COUNT || source_slot < 0 ||
-        source_slot >= TS_BANK_SLOT_COUNT || source_slot == destination_slot ||
-        !instrument->bank[source_slot].occupied ||
+        destination_slot >= TS_BANK_SLOT_COUNT ||
+        (!synth_source && (source_slot < 0 ||
+                           source_slot >= TS_BANK_SLOT_COUNT ||
+                           source_slot == destination_slot ||
+                           !instrument->bank[source_slot].occupied)) ||
         !ts_instrument_bank_is_blank_canvas(instrument, destination_slot)) {
         set_error(error, error_size, "Invalid Capture source, destination, or audio");
         return 0;
     }
-    source_tuning = instrument->bank[source_slot].tuning;
-    source_audible_tuning = instrument->bank[source_slot].audible_tuning;
+    source_tuning = synth_source ? instrument->tuning :
+                                  instrument->bank[source_slot].tuning;
+    source_audible_tuning = synth_source ? instrument->audible_tuning :
+                                          instrument->bank[source_slot].audible_tuning;
     if (!ts_instrument_select_bank(instrument, destination_slot,
                                    error, error_size)) return 0;
     target_frames = instrument->current.frames;
@@ -6055,8 +6012,12 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
     patch.data = (float *)captured;
     patch.frames = recorded_frames;
     patch.sample_rate = capture_rate;
-    snprintf(name, sizeof(name), "CAPTURE %02d FROM %02d",
-             destination_slot + 1, source_slot + 1);
+    if (synth_source)
+        snprintf(name, sizeof(name), "CAPTURE %02d FROM SYNTH",
+                 destination_slot + 1);
+    else
+        snprintf(name, sizeof(name), "CAPTURE %02d FROM %02d",
+                 destination_slot + 1, source_slot + 1);
     snprintf(patch.name, sizeof(patch.name), "%s", name);
     if (!append_audio_patch(instrument, &patch, NULL, &patch_index,
                             error, error_size)) return 0;
@@ -7313,7 +7274,7 @@ static void put_generator_recipe(FILE *f, const TsGeneratorRecipe *recipe)
     if (recipe->has_fm_patch) put_fm_patch(f, &recipe->fm_patch);
 }
 
-static int get_generator_recipe(FILE *f, TsGeneratorRecipe *recipe)
+static int get_generator_recipe(FILE *f, TsGeneratorRecipe *recipe, int version)
 {
     uint32_t value;
     if (!get32(f, &recipe->seed) || !get32(f, &value)) return 0;
@@ -7325,7 +7286,7 @@ static int get_generator_recipe(FILE *f, TsGeneratorRecipe *recipe)
         recipe->seconds > 8.0f || recipe->frequency < 30.0f ||
         recipe->frequency > 2000.0f ||
         (recipe->has_fm_patch != 0 && recipe->has_fm_patch != 1)) return 0;
-    return !recipe->has_fm_patch || get_fm_patch(f, &recipe->fm_patch);
+    return !recipe->has_fm_patch || get_fm_patch(f, &recipe->fm_patch, version);
 }
 
 static void put_process_recipe(FILE *f, const TsProcessRecipe *process)
@@ -7551,9 +7512,9 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr21(const TsInstrument *instrument, FILE *f)
+static int save_tsr22(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR21\r\n\032", 1, 8, f);
+    fwrite("TSR22\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -7709,7 +7670,7 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
             !get32(f, &slot->trajectory_step) || !get_float(f, &slot->lineage_mutation) ||
             !get32(f, &value)) goto malformed;
         slot->has_generator = (int)value;
-        if (slot->has_generator && !get_generator_recipe(f, &slot->generator)) goto malformed;
+        if (slot->has_generator && !get_generator_recipe(f, &slot->generator, version)) goto malformed;
         if (!get32(f, &value)) goto malformed;
         slot->tuning.root_note = (int)value;
         if (!get_float(f, &slot->tuning.fine_tune_cents) || !get32(f, &value)) goto malformed;
@@ -7742,7 +7703,7 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
                 if (!get32(f, &value) || value > 1u) goto malformed;
                 slot->patches[patch].has_generator = (int)value;
                 if (slot->patches[patch].has_generator &&
-                    !get_generator_recipe(f, &slot->patches[patch].generator)) goto malformed;
+                    !get_generator_recipe(f, &slot->patches[patch].generator, version)) goto malformed;
                 sample_result = get_sample_block(f, &slot->patches[patch].sample);
                 if (sample_result < 0) goto out_of_memory;
                 if (!sample_result) goto malformed;
@@ -7812,10 +7773,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR21 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR22 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR21 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR22 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -7834,13 +7795,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr21(instrument, f)) {
+    if (!save_tsr22(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR21 project");
+        set_error(error, error_size, "Could not write TSR22 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR21 project");
+        set_error(error, error_size, "Could not finish TSR22 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -7875,14 +7836,16 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR21\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR22\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR21\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR20\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR19\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR18\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = magic[4] == '1' ? 21 :
+        int self_contained_version = memcmp(magic, "TSR22\r\n\032", 8) == 0 ? 22 :
+                                     magic[4] == '1' ? 21 :
                                      magic[4] == '0' ? 20 :
                                      magic[4] == '9' ? 19 :
                                      magic[4] == '8' ? 18 :
@@ -7907,7 +7870,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR21 project");
+                  "Not a self-contained TSR6-TSR22 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -7919,7 +7882,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     GET_FLOAT(loaded.generator.seconds); GET_FLOAT(loaded.generator.frequency);
     if (version >= 13) {
         GET_U32(loaded.generator.has_fm_patch);
-        if (loaded.generator.has_fm_patch && !get_fm_patch(f, &loaded.generator.fm_patch)) goto malformed;
+        if (loaded.generator.has_fm_patch && !get_fm_patch(f, &loaded.generator.fm_patch, version)) goto malformed;
     }
     if (version >= 11) {
         GET_U32(loaded.family_relation);
@@ -8077,7 +8040,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
                     if (version >= 13) {
                         GET_U32(slot->generator.has_fm_patch);
                         if (slot->generator.has_fm_patch &&
-                            !get_fm_patch(f, &slot->generator.fm_patch)) goto malformed;
+                            !get_fm_patch(f, &slot->generator.fm_patch, version)) goto malformed;
                     }
                 }
             }
@@ -8186,7 +8149,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR21 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR22 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);
