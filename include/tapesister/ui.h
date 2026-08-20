@@ -197,11 +197,19 @@ typedef enum {
     TS_UI_PANEL_DSP
 } TsUiPanel;
 
+typedef enum {
+    TS_UI_WAVEFORM_MAIN = 0,
+    TS_UI_WAVEFORM_TRANSFORM,
+    TS_UI_WAVEFORM_DRONE,
+    TS_UI_WAVEFORM_COUNT
+} TsUiWaveformKind;
+
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
 
 typedef struct {
+    uint64_t waveform_revisions[TS_UI_WAVEFORM_COUNT];
     uint32_t active_notes;
     int mouse_note;
     int selecting;
@@ -352,6 +360,9 @@ typedef struct {
 } TsUiState;
 
 void ts_ui_init(TsUiState *ui);
+void ts_ui_waveform_cache_invalidate(TsUiState *ui, TsUiWaveformKind kind);
+void ts_ui_waveform_cache_reset_counters(void);
+uint64_t ts_ui_waveform_cache_rebuild_count(TsUiWaveformKind kind);
 int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
                                   int audio_ready);
 const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,

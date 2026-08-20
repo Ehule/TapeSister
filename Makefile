@@ -1,7 +1,7 @@
 CC ?= cc
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
 CPPFLAGS ?= -Iinclude -Ithird_party
-CORE = src/ts_sample.c src/ts_audition.c src/ts_note_bank.c src/ts_capture.c src/ts_browser.c src/ts_config.c src/ts_audio_config.c src/ts_recipe.c src/ts_dsp_recipe.c src/ts_palette.c src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c src/ts_dsp_transform.c src/ts_exchange.c src/ts_ui.c
+CORE = src/ts_sample.c src/ts_audition.c src/ts_note_bank.c src/ts_capture.c src/ts_browser.c src/ts_config.c src/ts_audio_config.c src/ts_recipe.c src/ts_dsp_recipe.c src/ts_palette.c src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c src/ts_dsp_transform.c src/ts_exchange.c src/ts_render_damage.c src/ts_waveform_cache.c src/ts_ui.c
 SDL_MAIN = src/main_sdl_audio.c
 DIAG = src/ts_startup_diag.c
 TAPESISTER_LDFLAGS =
@@ -25,7 +25,7 @@ tapesister_core_tests: $(CORE) tests/test_core.c
 tapesister_render_demo: $(CORE) tests/render_demo.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
-test: tapesister_core_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_external_record_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_chain_stamp_tests tapesister_exchange_tests
+test: tapesister_core_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_external_record_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_chain_stamp_tests tapesister_exchange_tests tapesister_render_damage_tests tapesister_waveform_cache_tests tapesister_render_efficiency_tests
 	./tapesister_core_tests
 	./tapesister_smear_tests
 	./tapesister_tear_tests
@@ -39,6 +39,9 @@ test: tapesister_core_tests tapesister_smear_tests tapesister_tear_tests tapesis
 	./tapesister_transform_tests
 	./tapesister_chain_stamp_tests
 	./tapesister_exchange_tests
+	./tapesister_render_damage_tests
+	./tapesister_waveform_cache_tests
+	./tapesister_render_efficiency_tests
 
 tapesister_smear_tests: $(CORE) tests/test_smear.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
@@ -76,8 +79,17 @@ tapesister_chain_stamp_tests: $(CORE) tests/test_chain_stamp.c
 tapesister_exchange_tests: $(CORE) tests/test_exchange.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
+tapesister_render_damage_tests: $(CORE) tests/test_render_damage.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
+tapesister_waveform_cache_tests: $(CORE) tests/test_waveform_cache.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
+tapesister_render_efficiency_tests: $(CORE) tests/test_render_efficiency.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
 screenshot: tapesister_render_demo
 	./tapesister_render_demo artifacts/tapesister-independent-tiles.ppm
 
 clean:
-	rm -f tapesister tapesister_core_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_external_record_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_chain_stamp_tests tapesister_exchange_tests tapesister_render_demo test-roundtrip.wav test-tear.tsr test-bank-independent.tsr test-drone.ini test-drone.tsr test-canvas.tsr test-transform.tsr test-audio-config.ini test-audio-config-blank.ini test-audio-config-legacy.ini artifacts/*.ppm
+	rm -f tapesister tapesister_core_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_external_record_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_chain_stamp_tests tapesister_exchange_tests tapesister_render_damage_tests tapesister_waveform_cache_tests tapesister_render_efficiency_tests tapesister_render_demo test-roundtrip.wav test-tear.tsr test-bank-independent.tsr test-drone.ini test-drone.tsr test-canvas.tsr test-transform.tsr test-audio-config.ini test-audio-config-blank.ini test-audio-config-legacy.ini artifacts/*.ppm

@@ -1,4 +1,5 @@
 #include "tapesister/ui.h"
+#include "tapesister/waveform_cache.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -8,6 +9,41 @@
 #define RGB(r,g,b) (0xff000000u | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
 
 static const TsPalette *render_palette;
+static TsWaveformCache waveform_caches[TS_UI_WAVEFORM_COUNT];
+static int waveform_caches_initialized;
+
+static TsWaveformCache *waveform_cache(TsUiWaveformKind kind)
+{
+    if (!waveform_caches_initialized) {
+        for (int i = 0; i < TS_UI_WAVEFORM_COUNT; ++i)
+            ts_waveform_cache_init(&waveform_caches[i]);
+        waveform_caches_initialized = 1;
+    }
+    return kind >= 0 && kind < TS_UI_WAVEFORM_COUNT ?
+           &waveform_caches[kind] : NULL;
+}
+
+void ts_ui_waveform_cache_invalidate(TsUiState *ui, TsUiWaveformKind kind)
+{
+    if (ui == NULL || kind < 0 || kind >= TS_UI_WAVEFORM_COUNT) return;
+    ++ui->waveform_revisions[kind];
+    if (ui->waveform_revisions[kind] == 0u)
+        ui->waveform_revisions[kind] = 1u;
+}
+
+void ts_ui_waveform_cache_reset_counters(void)
+{
+    for (int i = 0; i < TS_UI_WAVEFORM_COUNT; ++i) {
+        TsWaveformCache *cache = waveform_cache((TsUiWaveformKind)i);
+        ts_waveform_cache_init(cache);
+    }
+}
+
+uint64_t ts_ui_waveform_cache_rebuild_count(TsUiWaveformKind kind)
+{
+    TsWaveformCache *cache = waveform_cache(kind);
+    return cache != NULL ? cache->rebuild_count : 0u;
+}
 
 static const TsPalette *active_palette(void)
 {
@@ -499,21 +535,23 @@ static void drone_waveform(TsFramebuffer *fb, const TsUiState *ui)
     }
     rect(fb, TS_DRONE_WAVE_X, center, TS_DRONE_WAVE_W, 1, RGB(80, 73, 81));
     if (sample != NULL && sample->data != NULL && sample->frames > 0) {
+        TsWaveformRequest request;
+        TsWaveformCache *cache = waveform_cache(TS_UI_WAVEFORM_DRONE);
+        memset(&request, 0, sizeof(request));
+        request.sample = sample;
+        request.last = sample->frames;
+        request.width = TS_DRONE_WAVE_W;
+        request.revision = ui->waveform_revisions[TS_UI_WAVEFORM_DRONE];
+        (void)ts_waveform_cache_prepare(cache, &request);
         for (int column = 0; column < TS_DRONE_WAVE_W; ++column) {
-            size_t first = (size_t)column * sample->frames / TS_DRONE_WAVE_W;
-            size_t last = (size_t)(column + 1) * sample->frames / TS_DRONE_WAVE_W;
-            float minimum;
-            float maximum;
+            const TsWaveformColumn *analysis = &cache->columns[column];
+            size_t first = analysis->first;
+            size_t last = analysis->last;
+            float minimum = analysis->minimum;
+            float maximum = analysis->maximum;
             int y0;
             int y1;
             uint32_t color;
-            if (last <= first) last = first + 1u;
-            if (last > sample->frames) last = sample->frames;
-            minimum = maximum = sample->data[first];
-            for (size_t frame = first + 1u; frame < last; ++frame) {
-                if (sample->data[frame] < minimum) minimum = sample->data[frame];
-                if (sample->data[frame] > maximum) maximum = sample->data[frame];
-            }
             if (minimum < -1.0f) minimum = -1.0f;
             if (minimum > 1.0f) minimum = 1.0f;
             if (maximum < -1.0f) maximum = -1.0f;
@@ -598,34 +636,26 @@ static void transform_waveform(TsFramebuffer *fb, const TsUiState *ui,
              TS_TRANSFORM_WAVE_H, PAL_WAVE_SELECTION);
     }
     rect(fb, TS_TRANSFORM_WAVE_X, middle, TS_TRANSFORM_WAVE_W, 1, PAL_BUTTON);
+    TsWaveformRequest request;
+    TsWaveformCache *cache = waveform_cache(TS_UI_WAVEFORM_TRANSFORM);
+    memset(&request, 0, sizeof(request));
+    request.sample = sample;
+    request.first = first;
+    request.last = last;
+    request.width = TS_TRANSFORM_WAVE_W;
+    request.replacement = ui->transform_preview_sample;
+    request.replacement_first = ui->transform_preview_first;
+    request.replacement_last = ui->transform_preview_last;
+    request.revision = ui->waveform_revisions[TS_UI_WAVEFORM_TRANSFORM];
+    (void)ts_waveform_cache_prepare(cache, &request);
     for (int column = 0; column < TS_TRANSFORM_WAVE_W; ++column) {
-        size_t begin = first + (size_t)column * (last - first) / TS_TRANSFORM_WAVE_W;
-        size_t end = first + (size_t)(column + 1) * (last - first) /
-                     TS_TRANSFORM_WAVE_W;
-        float low = 1.0f;
-        float high = -1.0f;
+        const TsWaveformColumn *analysis = &cache->columns[column];
+        size_t begin = analysis->first;
+        size_t end = analysis->last;
+        float low = analysis->minimum;
+        float high = analysis->maximum;
         int y0;
         int y1;
-        if (end <= begin) end = begin + 1u;
-        for (size_t at = begin; at < end && at < sample->frames; ++at) {
-            float value = sample->data[at];
-            if (ui->transform_preview_sample != NULL &&
-                ui->transform_preview_sample->data != NULL &&
-                ui->transform_preview_last > ui->transform_preview_first &&
-                ui->transform_preview_sample->frames > 0u &&
-                at >= ui->transform_preview_first && at < ui->transform_preview_last) {
-                size_t source_span = ui->transform_preview_last -
-                                     ui->transform_preview_first;
-                size_t preview_at = (at - ui->transform_preview_first) *
-                                    ui->transform_preview_sample->frames /
-                                    source_span;
-                if (preview_at >= ui->transform_preview_sample->frames)
-                    preview_at = ui->transform_preview_sample->frames - 1u;
-                value = ui->transform_preview_sample->data[preview_at];
-            }
-            if (value < low) low = value;
-            if (value > high) high = value;
-        }
         y0 = middle - (int)lrintf(high * (TS_TRANSFORM_WAVE_H / 2 - 4));
         y1 = middle - (int)lrintf(low * (TS_TRANSFORM_WAVE_H / 2 - 4));
         if (y0 > y1) { int swap = y0; y0 = y1; y1 = swap; }
@@ -852,6 +882,8 @@ int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
+    for (int i = 0; i < TS_UI_WAVEFORM_COUNT; ++i)
+        ui->waveform_revisions[i] = 1u;
     ts_warp_gesture_init(&ui->warp_gesture);
     ts_smear_gesture_init(&ui->smear_gesture);
     ts_tear_gesture_init(&ui->tear_gesture);
@@ -1530,30 +1562,31 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                   PAL_WAVE_SELECTION);
     }
     if (sample->frames && view_last > view_first) {
+        TsWaveformRequest request;
+        TsWaveformCache *cache = waveform_cache(TS_UI_WAVEFORM_MAIN);
         if (view_last > sample->frames) view_last = sample->frames;
+        memset(&request, 0, sizeof(request));
+        request.sample = sample;
+        request.first = view_first;
+        request.last = view_last;
+        request.width = TS_WAVE_W;
+        request.detect_zero_crossings = 1;
+        request.revision = ui->waveform_revisions[TS_UI_WAVEFORM_MAIN];
+        (void)ts_waveform_cache_prepare(cache, &request);
         for (int x = 0; x < TS_WAVE_W; ++x) {
-            size_t begin = view_first + (size_t)x * (view_last - view_first) / TS_WAVE_W;
-            size_t end = view_first + (size_t)(x + 1) * (view_last - view_first) / TS_WAVE_W;
-            if (end <= begin) end = begin + 1;
-            float low = 1.0f, high = -1.0f;
-            for (size_t i = begin; i < end && i < sample->frames; ++i) {
-                if (sample->data[i] < low) low = sample->data[i];
-                if (sample->data[i] > high) high = sample->data[i];
-            }
+            const TsWaveformColumn *analysis = &cache->columns[x];
+            size_t begin = analysis->first;
+            size_t end = analysis->last;
+            float low = analysis->minimum;
+            float high = analysis->maximum;
             int middle = TS_WAVE_Y + TS_WAVE_H / 2;
             int y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
             int y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
             uint32_t color = has_selection && end > selection_first &&
                              begin < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
             wave_line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
-            for (size_t i = begin; i < end && i < sample->frames; ++i) {
-                if (sample->data[i] == 0.0f ||
-                    (i > 0 && ((sample->data[i - 1u] < 0.0f && sample->data[i] > 0.0f) ||
-                               (sample->data[i - 1u] > 0.0f && sample->data[i] < 0.0f)))) {
-                    wave_rect(fb, TS_WAVE_X + x, middle - 1, 1, 3, PAL_VOLUME);
-                    break;
-                }
-            }
+            if (analysis->has_zero_crossing)
+                wave_rect(fb, TS_WAVE_X + x, middle - 1, 1, 3, PAL_VOLUME);
         }
     } else {
         text(fb, showing_bank ? 199 : 211, 135,
