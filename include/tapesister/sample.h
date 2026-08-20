@@ -38,6 +38,7 @@ typedef struct {
     size_t frames;
     uint32_t sample_rate;
     char name[128];
+    uint32_t visual_revision;
 } TsSample;
 
 typedef enum {
@@ -365,6 +366,7 @@ typedef struct {
 
 void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
+void ts_sample_touch(TsSample *sample);
 int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, size_t error_size);
 int ts_sample_load_wav(TsSample *sample, const char *path, char *error, size_t error_size);
 int ts_sample_load_wav_tuned(TsSample *sample, TsTuning *tuning, const char *path,

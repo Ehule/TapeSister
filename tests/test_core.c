@@ -644,8 +644,8 @@ int main(void)
     {
         float crossings[] = {0.8f, 0.5f, -0.2f, -0.4f, 0.1f};
         float no_crossings[] = {0.8f, 0.2f, 0.5f};
-        TsSample crossing_sample = {crossings, 5, 44100, "crossings"};
-        TsSample fallback_sample = {no_crossings, 3, 44100, "fallback"};
+        TsSample crossing_sample = {crossings, 5, 44100, "crossings", 0u};
+        TsSample fallback_sample = {no_crossings, 3, 44100, "fallback", 0u};
         TsInstrument snap_instrument = {0};
         CHECK(ts_sample_nearest_zero_crossing(&crossing_sample, 3) == 2);
         CHECK(ts_sample_nearest_zero_crossing(&crossing_sample, 4) == 4);
@@ -1594,7 +1594,7 @@ int main(void)
 
     {
         float loop_data[] = {1.0f, 1.0f, 0.5f, 0.0f, -0.5f, -1.0f, -1.0f, -1.0f};
-        TsSample loop_sample = {loop_data, 8, 1000, "loop"};
+        TsSample loop_sample = {loop_data, 8, 1000, "loop", 0u};
         float blended = ts_audition_read_looped(&loop_sample, 7.0, 0, 8, 2);
         CHECK(fabsf(blended) < 0.0001f);
         /* A zero-crossfade loop still needs cyclic interpolation. Holding the
