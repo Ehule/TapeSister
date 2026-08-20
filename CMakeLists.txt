@@ -6,7 +6,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_audition.c src/ts_note_bank.c
-             src/ts_capture.c
+             src/ts_capture.c src/ts_capture_archive.c src/ts_input_monitor.c
+             src/ts_sample_pages.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
              src/ts_recipe.c src/ts_dsp_recipe.c
              src/ts_palette.c
@@ -22,8 +23,8 @@ endif()
 option(TAPESISTER_BUILD_SDL "Build the playable SDL2 instrument" ON)
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
-  # main_sdl_audio.c wraps the established app entry point with SDL device
-  # selection/routing while leaving main_sdl.c itself unchanged.
+  # main_sdl_audio.c wraps the app entry point with SDL device selection and
+  # routing; the runtime implementation remains in main_sdl.c.
   add_executable(tapesister src/main_sdl_audio.c src/ts_startup_diag.c)
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
@@ -82,6 +83,18 @@ add_test(NAME tapesister_capture_tests COMMAND tapesister_capture_tests)
 add_executable(tapesister_external_record_tests tests/test_external_record.c)
 target_link_libraries(tapesister_external_record_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_external_record_tests COMMAND tapesister_external_record_tests)
+
+add_executable(tapesister_input_monitor_tests tests/test_input_monitor.c)
+target_link_libraries(tapesister_input_monitor_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_input_monitor_tests COMMAND tapesister_input_monitor_tests)
+
+add_executable(tapesister_capture_archive_tests tests/test_capture_archive.c)
+target_link_libraries(tapesister_capture_archive_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_capture_archive_tests COMMAND tapesister_capture_archive_tests)
+
+add_executable(tapesister_sample_pages_tests tests/test_sample_pages.c)
+target_link_libraries(tapesister_sample_pages_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_sample_pages_tests COMMAND tapesister_sample_pages_tests)
 
 add_executable(tapesister_audio_config_tests tests/test_audio_config.c)
 target_link_libraries(tapesister_audio_config_tests PRIVATE tapesister_core)

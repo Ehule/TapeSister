@@ -1597,6 +1597,11 @@ int main(void)
         TsSample loop_sample = {loop_data, 8, 1000, "loop", 0u};
         float blended = ts_audition_read_looped(&loop_sample, 7.0, 0, 8, 2);
         CHECK(fabsf(blended) < 0.0001f);
+        /* A zero-crossfade loop still needs cyclic interpolation. Holding the
+           final frame until wrap adds a small discontinuity whenever playback
+           pitch or the device rate makes the position fractional. */
+        CHECK(fabsf(ts_audition_read_looped(&loop_sample, 7.5, 0, 8, 0)) <
+              0.0001f);
         CHECK(fabs(ts_audition_wrap_position(8.0, 0, 8, 2) - 2.0) < 0.000001);
         CHECK(fabs(ts_audition_wrap_position(14.0, 0, 8, 2) - 2.0) < 0.000001);
         {

@@ -649,6 +649,48 @@ int ts_sample_save_wav16(const TsSample *sample, const char *path,
     return ts_sample_save_wav16_tuned(sample, &tuning, path, error, error_size);
 }
 
+int ts_sample_save_wav32f(const TsSample *sample, const char *path,
+                          char *error, size_t error_size)
+{
+    FILE *f;
+    uint32_t data_bytes;
+    if (sample == NULL || sample->data == NULL || sample->frames == 0u ||
+        sample->sample_rate == 0u) {
+        set_error(error, error_size, "No sample to archive");
+        return 0;
+    }
+    if (sample->frames > (UINT32_MAX - 36u) / sizeof(float)) {
+        set_error(error, error_size, "Capture is too long for a RIFF WAV");
+        return 0;
+    }
+    f = fopen(path, "wb");
+    if (f == NULL) {
+        set_error(error, error_size, "Could not create capture WAV");
+        return 0;
+    }
+    data_bytes = (uint32_t)(sample->frames * sizeof(float));
+    fwrite("RIFF", 1, 4, f); put32(f, 36u + data_bytes); fwrite("WAVE", 1, 4, f);
+    fwrite("fmt ", 1, 4, f); put32(f, 16u); put16(f, 3u); put16(f, 1u);
+    put32(f, sample->sample_rate);
+    put32(f, sample->sample_rate * (uint32_t)sizeof(float));
+    put16(f, (uint16_t)sizeof(float)); put16(f, 32u);
+    fwrite("data", 1, 4, f); put32(f, data_bytes);
+    for (size_t frame = 0; frame < sample->frames; ++frame) {
+        float value = isfinite(sample->data[frame]) ? sample->data[frame] : 0.0f;
+        put_float(f, value);
+    }
+    {
+        int write_failed = ferror(f);
+        int close_failed = fclose(f) != 0;
+        if (write_failed || close_failed) {
+            set_error(error, error_size, "Could not finish capture WAV");
+            return 0;
+        }
+    }
+    set_error(error, error_size, "");
+    return 1;
+}
+
 const char *ts_generator_name(TsGeneratorKind kind)
 {
     static const char *names[] = {"TONAL", "METALLIC", "NOISE", "PULSE", "FM"};
@@ -1752,6 +1794,66 @@ static int patch_range(TsSample *sample, const TsSample *patch,
     return 1;
 }
 
+static int replace_patch_range_joined(TsSample *sample, const TsSample *patch,
+                                      size_t first, size_t last, size_t fade,
+                                      char *error, size_t error_size)
+{
+    float *edges;
+    size_t original_frames;
+    size_t left_fade;
+    size_t right_fade;
+    size_t right_frames;
+    size_t inserted_last;
+    if (fade == 0u)
+        return patch_range(sample, patch, first, last, 0, error, error_size);
+    if (sample == NULL || sample->data == NULL || patch == NULL ||
+        patch->data == NULL || first >= last || last > sample->frames) {
+        set_error(error, error_size, "Invalid joined Paste range");
+        return 0;
+    }
+    original_frames = sample->frames;
+    left_fade = fade < first ? fade : first;
+    right_frames = original_frames - last;
+    right_fade = fade < right_frames ? fade : right_frames;
+    if (left_fade > SIZE_MAX - right_fade ||
+        left_fade + right_fade > SIZE_MAX / sizeof(*edges)) {
+        set_error(error, error_size, "Joined Paste crossfade is too large");
+        return 0;
+    }
+    edges = malloc((left_fade + right_fade) * sizeof(*edges));
+    if (edges == NULL && left_fade + right_fade > 0u) {
+        set_error(error, error_size, "Out of memory smoothing Paste joins");
+        return 0;
+    }
+    if (left_fade > 0u)
+        memcpy(edges, sample->data + first - left_fade,
+               left_fade * sizeof(*edges));
+    if (right_fade > 0u)
+        memcpy(edges + left_fade, sample->data + last,
+               right_fade * sizeof(*edges));
+    if (!patch_range(sample, patch, first, last, 0, error, error_size)) {
+        free(edges);
+        return 0;
+    }
+    inserted_last = sample->frames - right_frames;
+    for (size_t frame = 0u; frame < left_fade; ++frame) {
+        double phase = (double)(frame + 1u) / (double)(left_fade + 1u);
+        float wet = (float)(0.5 - 0.5 * cos(M_PI * phase));
+        size_t at = first - left_fade + frame;
+        sample->data[at] = edges[frame] * (1.0f - wet) +
+                           sample->data[first] * wet;
+    }
+    for (size_t frame = 0u; frame < right_fade; ++frame) {
+        double phase = (double)(frame + 1u) / (double)(right_fade + 1u);
+        float dry = (float)(0.5 - 0.5 * cos(M_PI * phase));
+        size_t at = inserted_last + frame;
+        sample->data[at] = sample->data[inserted_last - 1u] * (1.0f - dry) +
+                           edges[left_fade + frame] * dry;
+    }
+    free(edges);
+    return 1;
+}
+
 static int fit_patch_range_crossfaded(TsSample *sample, const TsSample *patch,
                                       size_t first, size_t last, size_t fade,
                                       char *error, size_t error_size)
@@ -1957,7 +2059,12 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
                 set_error(error, error_size, "Paste source is missing from this tile");
                 return 0;
             }
-            if (operation->kind == TS_POST_PATCH_FIT &&
+            if (operation->kind == TS_POST_PATCH_REPLACE &&
+                operation->crossfade_frames > 0u) {
+                if (!replace_patch_range_joined(
+                        destination, &patch->sample, first, last,
+                        operation->crossfade_frames, error, error_size)) return 0;
+            } else if (operation->kind == TS_POST_PATCH_FIT &&
                 operation->crossfade_frames > 0u) {
                 if (!fit_patch_range_crossfaded(
                         destination, &patch->sample, first, last,
@@ -2844,6 +2951,43 @@ static int make_drone_from_split(TsSample *destination, const TsSample *source,
     return 1;
 }
 
+static size_t quiet_drone_split(const TsSample *source, size_t target,
+                                size_t first, size_t last, size_t radius)
+{
+    size_t best = target;
+    size_t best_distance = SIZE_MAX;
+    size_t search_first;
+    size_t search_last;
+    double best_level = HUGE_VAL;
+    int found = 0;
+    /* The outer Drone seam is an untouched adjacent source pair. Choose the
+       lowest-energy crossing in a narrow center neighborhood, using distance
+       from center as the tiebreaker, so committed loops start and stop quietly
+       without moving the established midpoint split to an unrelated passage. */
+    search_first = target > radius ? target - radius : 0u;
+    if (search_first < first) search_first = first;
+    search_last = radius > SIZE_MAX - target ? SIZE_MAX : target + radius;
+    if (search_last > last) search_last = last;
+    for (size_t frame = search_first; frame <= search_last; ++frame) {
+        size_t distance;
+        double level;
+        if (!is_zero_crossing(source, frame)) continue;
+        level = fabs((double)source->data[frame]) +
+                fabs((double)source->data[frame - 1u]);
+        if (!isfinite(level)) continue;
+        distance = frame > target ? frame - target : target - frame;
+        if (!found || level < best_level ||
+            (level == best_level && distance < best_distance)) {
+            best = frame;
+            best_level = level;
+            best_distance = distance;
+            found = 1;
+        }
+    }
+    if (found) return best;
+    return ts_sample_nearest_zero_crossing_in_range(source, target, first, last);
+}
+
 int ts_sample_make_drone_at_split(TsSample *destination, const TsSample *source,
                                   size_t first, size_t last, size_t split_frame,
                                   size_t requested_overlap_frames,
@@ -2923,9 +3067,10 @@ int ts_sample_make_drone(TsSample *destination, const TsSample *source,
         set_error(error, error_size, "Drone selection cannot support a crossfade");
         return 0;
     }
-    split = ts_sample_nearest_zero_crossing_in_range(
-        source, first + selection_frames / 2u,
-        first + overlap + 1u, last - overlap - 1u);
+    split = quiet_drone_split(source, first + selection_frames / 2u,
+                              first + overlap + 1u,
+                              last - overlap - 1u,
+                              selection_frames / 8u);
     if (!ts_sample_make_drone_at_split(destination, source, first, last, split,
                                        overlap, &overlap, error, error_size))
         return 0;
@@ -3819,6 +3964,32 @@ int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
                               error, error_size)) return 0;
     instrument->bank[destination_slot].parent_slot = source;
     return ts_instrument_select_bank(instrument, destination_slot, error, error_size);
+}
+
+int ts_instrument_copy_bank_slot_from(TsInstrument *destination,
+                                      int destination_slot,
+                                      TsInstrument *source, int source_slot,
+                                      char *error, size_t error_size)
+{
+    TsBankSlot *copied;
+    if (destination == NULL || source == NULL ||
+        destination_slot < 0 || destination_slot >= TS_BANK_SLOT_COUNT ||
+        source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT ||
+        destination->bank[destination_slot].occupied ||
+        !source->bank[source_slot].occupied) {
+        set_error(error, error_size,
+                  "Copy needs an occupied source and empty destination tile");
+        return 0;
+    }
+    if (!ts_instrument_select_bank(source, source_slot, error, error_size) ||
+        !bank_sync_selected(source, error, error_size) ||
+        !bank_slot_deep_clone(&destination->bank[destination_slot],
+                              &source->bank[source_slot], error, error_size))
+        return 0;
+    copied = &destination->bank[destination_slot];
+    if (destination != source) copied->parent_slot = -1;
+    return ts_instrument_select_bank(destination, destination_slot,
+                                     error, error_size);
 }
 
 static size_t replace_point(size_t point, size_t first, size_t last,
@@ -4996,9 +5167,10 @@ int ts_instrument_cut_selection(TsInstrument *instrument,
     return 1;
 }
 
-int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
-                        size_t origin_first, int fit_selection,
-                        char *error, size_t error_size)
+static int instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
+                            size_t origin_first, int fit_selection,
+                            size_t join_crossfade_frames,
+                            char *error, size_t error_size)
 {
     TsEditSnapshot target;
     TsPostEdit operation;
@@ -5066,6 +5238,8 @@ int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
     operation.first = first;
     operation.last = last;
     operation.patch_index = patch_index;
+    operation.crossfade_frames = join_crossfade_frames > 65536u ?
+                                 65536u : (uint32_t)join_crossfade_frames;
     target.post_edits[target.post_edit_count++] = operation;
     update_snapshot_after_replace(&target, first, last, inserted, output_frames, 1);
     ts_sample_init(&current);
@@ -5080,6 +5254,14 @@ int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
     }
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
+                        size_t origin_first, int fit_selection,
+                        char *error, size_t error_size)
+{
+    return instrument_paste(instrument, clipboard, origin_first, fit_selection,
+                            0u, error, error_size);
 }
 
 int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
@@ -5196,6 +5378,7 @@ int ts_instrument_replace_selection_with_drone(TsInstrument *instrument,
                                                 char *error, size_t error_size)
 {
     size_t first;
+    size_t join_crossfade_frames;
     if (instrument == NULL || instrument->current.data == NULL ||
         !instrument->has_selection ||
         instrument->selection_last <= instrument->selection_first) {
@@ -5203,7 +5386,10 @@ int ts_instrument_replace_selection_with_drone(TsInstrument *instrument,
         return 0;
     }
     first = instrument->selection_first;
-    return ts_instrument_paste(instrument, drone, first, 0, error, error_size);
+    join_crossfade_frames = instrument->current.sample_rate / 500u;
+    if (join_crossfade_frames < 1u) join_crossfade_frames = 1u;
+    return instrument_paste(instrument, drone, first, 0,
+                            join_crossfade_frames, error, error_size);
 }
 
 int ts_instrument_copy_drone_to_new_tile(TsInstrument *instrument,

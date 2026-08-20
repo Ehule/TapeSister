@@ -148,6 +148,25 @@ static float interpolated(const TsSample *sample, double position, size_t last)
     return sample->data[at] + (sample->data[at + 1u] - sample->data[at]) * fraction;
 }
 
+static float interpolated_cyclic(const TsSample *sample, double position,
+                                 size_t first, size_t last)
+{
+    size_t at;
+    size_t next;
+    float fraction;
+    if (sample == NULL || sample->data == NULL || first >= last ||
+        last > sample->frames) return 0.0f;
+    if (position < (double)first) position = (double)first;
+    if (position >= (double)last) position = (double)first;
+    at = (size_t)position;
+    if (at < first) at = first;
+    if (at >= last) at = last - 1u;
+    next = at + 1u < last ? at + 1u : first;
+    fraction = (float)(position - (double)at);
+    return sample->data[at] +
+           (sample->data[next] - sample->data[at]) * fraction;
+}
+
 float ts_audition_read_looped(const TsSample *sample, double position,
                               size_t first, size_t last, size_t crossfade_frames)
 {
@@ -155,6 +174,12 @@ float ts_audition_read_looped(const TsSample *sample, double position,
     if (sample == NULL || sample->data == NULL || last <= first || last > sample->frames)
         return 0.0f;
     position = ts_audition_wrap_position(position, first, last, crossfade_frames);
+    /* With no overlap, interpolate through the wrap just like every other
+       adjacent sample pair. Clamping interpolation at last - 1 briefly held
+       that frame whenever rate conversion or tuning crossed the boundary at a
+       fractional position, making otherwise continuous zero-snapped loops tick. */
+    if (crossfade_frames == 0u)
+        return interpolated_cyclic(sample, position, first, last);
     tail = interpolated(sample, position, last);
     if (crossfade_frames > 0 && position >= (double)(last - crossfade_frames)) {
         double offset = position - (double)(last - crossfade_frames);
@@ -222,6 +247,8 @@ float ts_audition_read_looped_mode(const TsSample *sample, double position,
         tail = interpolated(sample, (double)(last - crossfade_frames) + offset, last);
         return head * (1.0f - blend) + tail * blend;
     }
+    if (mode == TS_LOOP_REVERSE && crossfade_frames == 0u)
+        return interpolated_cyclic(sample, position, first, last);
     return interpolated(sample, position, last);
 }
 

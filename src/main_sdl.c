@@ -1,6 +1,9 @@
 #include "tapesister/sample.h"
 #include "tapesister/capture.h"
+#include "tapesister/capture_archive.h"
+#include "tapesister/input_monitor.h"
 #include "tapesister/note_bank.h"
+#include "tapesister/sample_pages.h"
 #include "tapesister/dsp_transform.h"
 #include "tapesister/render_damage.h"
 #include "tapesister/ui.h"
@@ -197,6 +200,12 @@ static const char *tapehead_palette_path(void)
     return "tapehead.pal";
 }
 
+static const char *capture_archive_directory(void)
+{
+    const char *override = getenv("TAPESISTER_CAPTURES");
+    return override != NULL && override[0] != '\0' ? override : "Captures";
+}
+
 static int path_is_directory(const char *path)
 {
 #ifdef _WIN32
@@ -321,6 +330,40 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
     return hash;
 }
 
+static uint64_t paged_project_state_hash(const TsSamplePages *pages,
+                                         const TsInstrument *active_sample,
+                                         const TsInstrument *record_bank)
+{
+    uint64_t hash = 1469598103934665603ull;
+    size_t count = ts_sample_pages_count(pages);
+    size_t active = ts_sample_pages_active(pages);
+    state_hash_bytes(&hash, &count, sizeof(count));
+    state_hash_bytes(&hash, &active, sizeof(active));
+    for (size_t page = 0; page < count; ++page) {
+        const TsInstrument *instrument = ts_sample_pages_page(
+            pages, active_sample, page);
+        uint64_t page_hash = instrument != NULL ?
+                             instrument_state_hash(instrument) : 0u;
+        state_hash_bytes(&hash, &page_hash, sizeof(page_hash));
+    }
+    {
+        uint64_t record_hash = record_bank != NULL ?
+                               instrument_state_hash(record_bank) : 0u;
+        state_hash_bytes(&hash, &record_hash, sizeof(record_hash));
+    }
+    return hash;
+}
+
+static uint64_t runtime_project_state_hash(const TsSamplePages *pages,
+                                           const TsInstrument *instrument,
+                                           const TsInstrument *parked_record,
+                                           int record_bank_active)
+{
+    return paged_project_state_hash(
+        pages, record_bank_active ? NULL : instrument,
+        record_bank_active ? instrument : parked_record);
+}
+
 static int launch_program(const char *path, char *error, size_t error_size)
 {
     if (path == NULL || path[0] == '\0') {
@@ -405,6 +448,7 @@ typedef struct {
     int bank_slot;
     TsNoteBank notes;
     TsCaptureRecorder capture;
+    TsInputMonitor *input_monitor;
 } AudioState;
 
 typedef struct {
@@ -506,8 +550,16 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             audio->bank_slot = -1;
             ts_note_bank_clear(&audio->notes);
         }
-        out[i] = value * 0.8f;
-        if (i + 1 < values) out[i + 1] = value * 0.8f;
+        {
+            float monitored = audio->input_monitor != NULL ?
+                              ts_input_monitor_read(audio->input_monitor,
+                                                    (uint32_t)audio->output_rate) : 0.0f;
+            float output = value * 0.8f + monitored;
+            if (output > 1.0f) output = 1.0f;
+            if (output < -1.0f) output = -1.0f;
+            out[i] = output;
+            if (i + 1 < values) out[i + 1] = output;
+        }
     }
 }
 
@@ -1011,6 +1063,8 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
                              TsInstrument *instrument)
 {
     char error[160];
+    char archive_error[160];
+    char archive_path[1200];
     char overlay[80];
     int destination;
     int source;
@@ -1018,12 +1072,17 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
     size_t frames;
     uint32_t rate;
     int ok;
+    int archived;
     if (audio->capture.state != TS_CAPTURE_COMPLETED) return;
     destination = audio->capture.destination_slot;
     source = audio->capture.source_slot;
     stopped_early = audio->capture.stopped_early;
     frames = audio->capture.recorded_frames;
     rate = audio->capture.sample_rate;
+    archived = ts_capture_archive_write(
+        capture_archive_directory(), TS_CAPTURE_ARCHIVE_INTERNAL,
+        audio->capture.buffer, frames, rate,
+        archive_path, sizeof(archive_path), archive_error, sizeof(archive_error));
     ok = ts_instrument_commit_capture(instrument, destination, source,
                                       audio->capture.buffer, frames, rate,
                                       stopped_early, error, sizeof(error));
@@ -1041,7 +1100,11 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
                  stopped_early ? "CAPTURE STOPPED" : "CAPTURE COMPLETE",
                  destination + 1, (double)frames / rate);
         show_overlay(ui, overlay, 1400u);
-        if (stopped_early)
+        if (!archived)
+            snprintf(ui->status, sizeof(ui->status),
+                     "CAPTURE KEPT IN TILE %02d - ARCHIVE FAILED: %.92s",
+                     destination + 1, archive_error);
+        else if (stopped_early)
             snprintf(ui->status, sizeof(ui->status),
                      "CAPTURE STOPPED - %.3F S KEPT IN TILE %02d",
                      (double)frames / rate, destination + 1);
@@ -1050,21 +1113,31 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
                      "CAPTURE COMPLETE - TILE %02d %.3F S",
                      destination + 1, (double)frames / rate);
     } else {
-        show_overlay(ui, "CAPTURE FAILED", 1200u);
-        snprintf(ui->status, sizeof(ui->status), "CAPTURE COMMIT FAILED: %.126s", error);
+        show_overlay(ui, archived ? "CAPTURE ARCHIVED" : "CAPTURE FAILED", 1200u);
+        snprintf(ui->status, sizeof(ui->status),
+                 archived ? "CAPTURE ARCHIVED - TILE COMMIT FAILED: %.104s" :
+                            "CAPTURE COMMIT AND ARCHIVE FAILED: %.102s",
+                 archived ? error : archive_error);
     }
 }
 
 static void begin_exit_confirmation(SDL_AudioDeviceID device, AudioState *audio,
-                                    TsUiState *ui, const TsInstrument *instrument)
+                                    TsUiState *ui, TsInstrument *instrument,
+                                    const TsSamplePages *sample_pages,
+                                    const TsInstrument *parked_record,
+                                    int record_bank_active)
 {
     stop_all_force(device, audio, ui);
+    if (audio->capture.state == TS_CAPTURE_COMPLETED)
+        finalize_capture(device, audio, ui, instrument);
     if (device) SDL_LockAudioDevice(device);
     if (audio->capture.state != TS_CAPTURE_IDLE)
         ts_capture_free(&audio->capture);
     if (device) SDL_UnlockAudioDevice(device);
     sync_capture_ui(device, audio, ui);
-    ui->exit_has_unsaved = instrument_state_hash(instrument) != ui->saved_state_hash;
+    ui->exit_has_unsaved = runtime_project_state_hash(
+        sample_pages, instrument, parked_record,
+        record_bank_active) != ui->saved_state_hash;
     ui->exit_confirm_open = 1;
     snprintf(ui->status, sizeof(ui->status), "%s",
              ui->exit_has_unsaved ?
@@ -2389,12 +2462,23 @@ static void commit_drone(SDL_AudioDeviceID device, AudioState *audio,
 }
 
 static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                           TsInstrument *instrument, const char *path)
+                           TsInstrument *instrument,
+                           TsSamplePages *sample_pages,
+                           TsInstrument *record_bank,
+                           int record_bank_active,
+                           const char *path)
 {
     char error[160];
     int recipe = path_is_tsr(path);
     int preset = path_is_tsp(path);
     int ok;
+    if (audio->capture.state == TS_CAPTURE_COMPLETED)
+        finalize_capture(device, audio, ui, instrument);
+    if (audio->capture.state != TS_CAPTURE_IDLE) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISH OR CANCEL CAPTURE BEFORE LOADING");
+        return 0;
+    }
     if (preset) {
         TsPortableRecipe loaded;
         int slot = 0;
@@ -2430,6 +2514,11 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         } else snprintf(ui->status, sizeof(ui->status), "TSP LOAD FAILED: %.131s", error);
         return ok;
     }
+    if (recipe && record_bank_active) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "PRESS 1 TO RETURN TO SAMPLE BANK BEFORE OPENING A PROJECT");
+        return 0;
+    }
     if (ui->workbench_loop_active) stop_all(device, audio, ui);
     lock_edit(device, audio);
     ui->bank_view_slot = -1;
@@ -2438,7 +2527,8 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         audio->bank_slot = -1;
     }
     if (recipe)
-        ok = ts_instrument_load_recipe(instrument, path, error, sizeof(error));
+        ok = ts_sample_pages_load_project(sample_pages, instrument, record_bank,
+                                          path, error, sizeof(error));
     else {
         int destination = ui->load_bank_slot;
         if (destination < 0 || destination >= TS_BANK_SLOT_COUNT)
@@ -2448,17 +2538,21 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     }
     unlock_edit(device, audio, ui, instrument);
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
-    if (ok && recipe)
+    if (ok && recipe) {
+        ui->sample_page = (int)ts_sample_pages_active(sample_pages);
+        ui->sample_page_count = (int)ts_sample_pages_count(sample_pages);
         snprintf(ui->status, sizeof(ui->status), "OPENED TSR PROJECT %.112s",
                  instrument->parent.name);
-    else if (ok) {
+    } else if (ok) {
         ui->audition_source = TS_AUDITION_CURRENT;
         ui->load_bank_slot = -1;
         snprintf(ui->status, sizeof(ui->status), "IMPORTED WAV INTO BANK %02d %.91s",
                  instrument->selected_slot + 1, instrument->parent.name);
     }
     else snprintf(ui->status, sizeof(ui->status), "LOAD FAILED: %.135s", error);
-    if (ok && recipe) ui->saved_state_hash = instrument_state_hash(instrument);
+    if (ok && recipe)
+        ui->saved_state_hash = paged_project_state_hash(
+            sample_pages, instrument, record_bank);
     return ok;
 }
 
@@ -4175,22 +4269,6 @@ static int finish_atomic_file(const char *temporary, const char *destination,
     return 0;
 }
 
-static int save_recipe_atomic(const TsInstrument *instrument, const char *destination,
-                              char *error, size_t error_size)
-{
-    char temporary[TS_BROWSER_PATH_MAX + 32];
-    int written = snprintf(temporary, sizeof(temporary), "%s.tapesister-tmp", destination);
-    if (written < 0 || (size_t)written >= sizeof(temporary)) {
-        snprintf(error, error_size, "Destination path is too long");
-        return 0;
-    }
-    if (!ts_instrument_save_recipe(instrument, temporary, error, error_size)) {
-        remove(temporary);
-        return 0;
-    }
-    return finish_atomic_file(temporary, destination, error, error_size);
-}
-
 static int save_preset_atomic(const TsProcessRecipe *process, const TsTuning *tuning,
                               const TsTuning *audible_tuning,
                               const char *name,
@@ -4273,7 +4351,10 @@ static void apply_selection_load(SDL_AudioDeviceID device, AudioState *audio,
 }
 
 static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                           TsInstrument *instrument, TsSample *pending_selection_load)
+                           TsInstrument *instrument, TsSample *pending_selection_load,
+                           TsSamplePages *sample_pages,
+                           TsInstrument *parked_record,
+                           int record_bank_active)
 {
     TsBrowser *browser = &ui->browser;
     char path[TS_BROWSER_PATH_MAX];
@@ -4344,7 +4425,9 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                      "CHOOSE PASTE, FIT, OR CANCEL FOR THE SELECTED RANGE");
             return;
         }
-        ok = load_instrument(device, audio, ui, instrument, path);
+        ok = load_instrument(device, audio, ui, instrument,
+                             sample_pages, parked_record,
+                             record_bank_active, path);
     } else {
         if (!ts_browser_destination_path(browser, path, sizeof(path))) {
             snprintf(browser->message, sizeof(browser->message), "ENTER A VALID FILENAME");
@@ -4361,8 +4444,15 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             return;
         }
         if (browser->mode == TS_BROWSER_SAVE_RECIPE) {
-            ok = save_recipe_atomic(instrument, path, error, sizeof(error));
-            if (ok) ui->saved_state_hash = instrument_state_hash(instrument);
+            const TsInstrument *active_sample = record_bank_active ? NULL : instrument;
+            const TsInstrument *record_bank = record_bank_active ?
+                                              instrument : parked_record;
+            ok = ts_sample_pages_save_project(
+                sample_pages, active_sample, record_bank,
+                path, error, sizeof(error));
+            if (ok)
+                ui->saved_state_hash = paged_project_state_hash(
+                    sample_pages, active_sample, record_bank);
             snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
                      "SAVE FAILED: %.135s", ok ? path : error);
         } else if (browser->mode == TS_BROWSER_SAVE_PRESET) {
@@ -4404,7 +4494,10 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
 
 static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *audio,
                                        TsUiState *ui, TsInstrument *instrument,
-                                       TsSample *pending_selection_load)
+                                       TsSample *pending_selection_load,
+                                       TsSamplePages *sample_pages,
+                                       TsInstrument *parked_record,
+                                       int record_bank_active)
 {
     TsBrowser *browser = &ui->browser;
     if (browser->selected >= 0 && browser->selected < browser->entry_count &&
@@ -4413,7 +4506,8 @@ static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *aud
             snprintf(browser->message, sizeof(browser->message), "COULD NOT ENTER DIRECTORY");
         return;
     }
-    browser_action(device, audio, ui, instrument, pending_selection_load);
+    browser_action(device, audio, ui, instrument, pending_selection_load,
+                   sample_pages, parked_record, record_bank_active);
 }
 
 static void logical_mouse(SDL_Window *window, int raw_x, int raw_y, int *x, int *y)
@@ -4667,6 +4761,11 @@ static size_t bank_frame_from_x(const TsBankSlot *slot, int x)
 
 typedef struct {
     TsExternalRecorder recorder;
+    TsInputMonitor monitor;
+    TsLiveWaveform live_waveform;
+    size_t waveform_consumed_frames;
+    uint32_t peak_hold_until_ms;
+    uint32_t clip_hold_until_ms;
     int channels;
     int input_channel;
     uint32_t sample_rate;
@@ -4677,7 +4776,8 @@ static int external_capture_busy(const ExternalInputState *input)
 {
     return input != NULL &&
            (input->recorder.state == TS_EXTERNAL_CAPTURE_ARMED ||
-            input->recorder.state == TS_EXTERNAL_CAPTURE_RECORDING);
+            input->recorder.state == TS_EXTERNAL_CAPTURE_RECORDING ||
+            input->recorder.state == TS_EXTERNAL_CAPTURE_COMPLETED);
 }
 
 static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
@@ -4686,6 +4786,7 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
     const float *samples = (const float *)stream;
     int values = bytes / (int)sizeof(float);
     int channels = input != NULL && input->channels > 0 ? input->channels : 1;
+    float block_peak = 0.0f;
     if (input == NULL) return;
     for (int frame = 0; frame + channels <= values; frame += channels) {
         float value = 0.0f;
@@ -4698,8 +4799,11 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
             if (channel >= channels) channel = 0;
             value = samples[frame + channel];
         }
+        if (fabsf(value) > block_peak) block_peak = fabsf(value);
+        ts_input_monitor_push(&input->monitor, value);
         (void)ts_external_recorder_write_sample(&input->recorder, value);
     }
+    ts_input_monitor_publish_level(&input->monitor, block_peak);
 }
 
 static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
@@ -4770,14 +4874,55 @@ static void sync_external_capture_ui(SDL_AudioDeviceID input_device,
                                      ExternalInputState *input,
                                      TsUiState *ui)
 {
+    float callback_peak;
+    uint32_t now = SDL_GetTicks();
     if (input_device) SDL_LockAudioDevice(input_device);
     ui->capture_state = external_ui_state(input->recorder.state);
     ui->capture_destination_slot = input->recorder.destination_slot;
     ui->capture_source_slot = -1;
     ui->capture_recorded_frames = input->recorder.recorded_frames;
     ui->capture_capacity_frames = input->recorder.capacity_frames;
+    ui->input_sample_rate = input->recorder.sample_rate;
+    ui->input_threshold = input->recorder.threshold_amplitude;
+    ui->input_meter_active = input->recorder.state == TS_EXTERNAL_CAPTURE_ARMED ||
+                             input->recorder.state == TS_EXTERNAL_CAPTURE_RECORDING;
+    if (input->recorder.recorded_frames > input->waveform_consumed_frames &&
+        input->recorder.buffer != NULL) {
+        size_t available = input->recorder.recorded_frames -
+                           input->waveform_consumed_frames;
+        if (available > 65536u) available = 65536u;
+        ts_live_waveform_push(
+            &input->live_waveform,
+            input->recorder.buffer + input->waveform_consumed_frames,
+            available);
+        input->waveform_consumed_frames += available;
+    }
+    ui->input_wave_columns = ts_live_waveform_snapshot(
+        &input->live_waveform, ui->input_wave_minimum,
+        ui->input_wave_maximum, TS_WAVE_W);
     ui->staged_notes = 0u;
     if (input_device) SDL_UnlockAudioDevice(input_device);
+    ui->input_level = ts_input_monitor_level(&input->monitor);
+    callback_peak = ts_input_monitor_take_peak(&input->monitor);
+    if (callback_peak >= ui->input_peak) {
+        ui->input_peak = callback_peak;
+        input->peak_hold_until_ms = now + 1200u;
+    } else if ((Sint32)(now - input->peak_hold_until_ms) >= 0) {
+        ui->input_peak *= 0.92f;
+        if (ui->input_peak < ui->input_level) ui->input_peak = ui->input_level;
+    }
+    if (ts_input_monitor_take_clip(&input->monitor)) {
+        ui->input_clipping = 1;
+        input->clip_hold_until_ms = now + 1200u;
+    } else if ((Sint32)(now - input->clip_hold_until_ms) >= 0) {
+        ui->input_clipping = 0;
+    }
+    if (!ui->input_meter_active) {
+        ui->input_level = 0.0f;
+        ui->input_peak = 0.0f;
+        ui->input_clipping = 0;
+        ui->input_wave_columns = 0u;
+    }
 }
 
 static int arm_external_capture(SDL_AudioDeviceID output_device,
@@ -4821,6 +4966,13 @@ static int arm_external_capture(SDL_AudioDeviceID output_device,
         diagnostic_log("REC arm failed (nonfatal): %s", error);
         return 0;
     }
+    ts_live_waveform_init(&input->live_waveform, input->sample_rate);
+    input->waveform_consumed_frames = 0u;
+    input->peak_hold_until_ms = 0u;
+    input->clip_hold_until_ms = 0u;
+    ts_input_monitor_reset_meter(&input->monitor);
+    ui->input_peak = 0.0f;
+    ui->input_clipping = 0;
     SDL_PauseAudioDevice(*input_device, 0);
     diagnostic_log("REC armed: slot=%d threshold=%d dB", slot + 1,
                    ui->config.record_threshold_db);
@@ -4841,6 +4993,7 @@ static void cancel_external_capture(SDL_AudioDeviceID input_device,
     (void)ts_external_recorder_cancel(&input->recorder);
     ts_external_recorder_free(&input->recorder);
     if (input_device) SDL_UnlockAudioDevice(input_device);
+    if (input_device && ui->monitor_enabled) SDL_PauseAudioDevice(input_device, 0);
     sync_external_capture_ui(input_device, input, ui);
     show_overlay(ui, "REC CANCELLED", 700u);
     snprintf(ui->status, sizeof(ui->status), "EXTERNAL RECORDING CANCELLED - TILE UNCHANGED");
@@ -4867,6 +5020,11 @@ static void external_capture_button(SDL_AudioDeviceID output_device,
                                     AudioState *audio, ExternalInputState *input,
                                     TsUiState *ui, TsInstrument *instrument)
 {
+    if (input->recorder.state == TS_EXTERNAL_CAPTURE_COMPLETED) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISHING COMPLETED REC TAKE");
+        return;
+    }
     if (input->recorder.state == TS_EXTERNAL_CAPTURE_RECORDING) {
         stop_external_capture_early(*input_device, input, ui);
         return;
@@ -4944,12 +5102,15 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
                                         TsInstrument *instrument)
 {
     char error[160];
+    char archive_error[160];
+    char archive_path[1200];
     float *captured = NULL;
     size_t frames;
     uint32_t sample_rate;
     int slot;
     int chain;
     int ok;
+    int archived;
     if (input->recorder.state != TS_EXTERNAL_CAPTURE_COMPLETED) return;
     if (*input_device) SDL_PauseAudioDevice(*input_device, 1);
     if (*input_device) SDL_LockAudioDevice(*input_device);
@@ -4967,9 +5128,15 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
         ts_external_recorder_free(&input->recorder);
         if (*input_device) SDL_UnlockAudioDevice(*input_device);
         sync_external_capture_ui(*input_device, input, ui);
+        if (*input_device && ui->monitor_enabled) SDL_PauseAudioDevice(*input_device, 0);
         snprintf(ui->status, sizeof(ui->status), "REC TAKE FAILED - OUT OF MEMORY");
         return;
     }
+    archived = ts_capture_archive_write(
+        capture_archive_directory(), TS_CAPTURE_ARCHIVE_INPUT,
+        captured, frames, sample_rate,
+        archive_path, sizeof(archive_path),
+        archive_error, sizeof(archive_error));
     chain = instrument->family_trajectory;
     ok = install_external_take(output_device, audio, ui, instrument, slot,
                                captured, frames, sample_rate,
@@ -4978,9 +5145,13 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
     if (*input_device) SDL_LockAudioDevice(*input_device);
     ts_external_recorder_free(&input->recorder);
     if (*input_device) SDL_UnlockAudioDevice(*input_device);
+    if (*input_device && ui->monitor_enabled) SDL_PauseAudioDevice(*input_device, 0);
     if (!ok) {
         sync_external_capture_ui(*input_device, input, ui);
-        snprintf(ui->status, sizeof(ui->status), "REC COMMIT FAILED: %.138s", error);
+        snprintf(ui->status, sizeof(ui->status),
+                 archived ? "INPUT ARCHIVED - REC TILE COMMIT FAILED: %.104s" :
+                            "REC COMMIT AND ARCHIVE FAILED: %.102s",
+                 archived ? error : archive_error);
         return;
     }
     show_overlay(ui, "REC TAKE KEPT", 850u);
@@ -4992,8 +5163,10 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
             unlock_edit(output_device, audio, ui, instrument);
             if (ok && arm_external_capture(output_device, input_device, audio, input,
                                            ui, instrument)) {
-                snprintf(ui->status, sizeof(ui->status),
-                         "REC %02d KEPT - CHAIN ARMED %02d", slot + 1, next + 1);
+                snprintf(ui->status, sizeof(ui->status), archived ?
+                         "REC %02d ARCHIVED - CHAIN ARMED %02d" :
+                         "REC %02d KEPT, ARCHIVE FAILED - CHAIN ARMED %02d",
+                         slot + 1, next + 1);
                 return;
             }
         }
@@ -5001,9 +5174,51 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
                  "REC %02d KEPT - CHAIN STOPPED AT NEXT OCCUPIED/END TILE", slot + 1);
     } else {
         sync_external_capture_ui(*input_device, input, ui);
-        snprintf(ui->status, sizeof(ui->status),
-                 "REC %02d KEPT - %zu FRAMES AT %u HZ", slot + 1, frames, sample_rate);
+        if (archived)
+            snprintf(ui->status, sizeof(ui->status),
+                     "REC %02d ARCHIVED - %zu FRAMES AT %u HZ",
+                     slot + 1, frames, sample_rate);
+        else
+            snprintf(ui->status, sizeof(ui->status),
+                     "REC %02d KEPT - ARCHIVE FAILED: %.82s",
+                     slot + 1, archive_error);
     }
+}
+
+static void toggle_external_monitor(SDL_AudioDeviceID output_device,
+                                    SDL_AudioDeviceID *input_device,
+                                    AudioState *audio,
+                                    ExternalInputState *input,
+                                    TsUiState *ui)
+{
+    char error[160];
+    if (ui->monitor_enabled) {
+        ts_input_monitor_set_enabled(&input->monitor, 0, input->sample_rate);
+        ui->monitor_enabled = 0;
+        if (*input_device && !external_capture_busy(input))
+            SDL_PauseAudioDevice(*input_device, 1);
+        show_overlay(ui, "MONITOR OFF", 650u);
+        snprintf(ui->status, sizeof(ui->status),
+                 "DRY INPUT MONITOR OFF - RECORDING AND METERING ARE UNAFFECTED");
+        return;
+    }
+    if (output_device == 0 || audio->output_rate <= 0) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "MONITOR NEEDS AN AVAILABLE AUDIO OUTPUT");
+        return;
+    }
+    if (!ensure_external_input_open(input_device, input, &ui->config,
+                                    error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "MONITOR INPUT FAILED: %.138s", error);
+        return;
+    }
+    ts_input_monitor_set_enabled(&input->monitor, 1, input->sample_rate);
+    ui->monitor_enabled = 1;
+    SDL_PauseAudioDevice(*input_device, 0);
+    show_overlay(ui, "MONITOR ON", 750u);
+    snprintf(ui->status, sizeof(ui->status),
+             "DRY MONITOR ON - USE HEADPHONES OR KEEP MICROPHONES AWAY FROM SPEAKERS");
 }
 
 static void swap_instrument_storage(TsInstrument *first, TsInstrument *second)
@@ -5023,19 +5238,23 @@ static void swap_instrument_storage(TsInstrument *first, TsInstrument *second)
     }
 }
 
-static int toggle_record_bank(SDL_Window *window,
-                              SDL_AudioDeviceID output_device,
-                              ExternalInputState *input,
-                              AudioState *audio, TsUiState *ui,
-                              TsInstrument *instrument,
-                              TsInstrument **parked,
-                              uint64_t *parked_saved_hash,
-                              int *record_bank_active,
-                              TransformController *controller)
+static int set_record_bank(SDL_Window *window,
+                           SDL_AudioDeviceID output_device,
+                           SDL_AudioDeviceID input_device,
+                           ExternalInputState *input,
+                           AudioState *audio, TsUiState *ui,
+                           TsInstrument *instrument,
+                           TsSamplePages *sample_pages,
+                           TsInstrument **parked,
+                           int *record_bank_active,
+                           int activate,
+                           TransformController *controller)
 {
-    uint64_t saved;
-    diagnostic_log("bank toggle requested active=%d parked=%p", *record_bank_active,
+    char error[160];
+    diagnostic_log("bank switch requested active=%d target=%d parked=%p",
+                   *record_bank_active, activate,
                    (void *)(parked != NULL ? *parked : NULL));
+    if (*record_bank_active == activate) return 1;
     if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
         audio->capture.state == TS_CAPTURE_RECORDING || external_capture_busy(input)) {
         snprintf(ui->status, sizeof(ui->status),
@@ -5050,7 +5269,7 @@ static int toggle_record_bank(SDL_Window *window,
         diagnostic_log("bank toggle deferred: canceling transform worker");
         return 0;
     }
-    if (parked == NULL || parked_saved_hash == NULL) {
+    if (parked == NULL || sample_pages == NULL) {
         snprintf(ui->status, sizeof(ui->status), "REC BANK STORAGE ERROR");
         return 0;
     }
@@ -5063,7 +5282,6 @@ static int toggle_record_bank(SDL_Window *window,
             return 0;
         }
         ts_instrument_init(*parked);
-        *parked_saved_hash = instrument_state_hash(*parked);
         diagnostic_log("allocated parked REC collection on heap: %zu bytes", sizeof(**parked));
     }
 
@@ -5078,14 +5296,40 @@ static int toggle_record_bank(SDL_Window *window,
         ui->transform_rendering = 0;
     }
     stop_all_force(output_device, audio, ui);
+    if (audio->capture.state != TS_CAPTURE_IDLE || external_capture_busy(input)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISHING CAPTURE - SWITCH BANKS AGAIN IN A MOMENT");
+        return 0;
+    }
     diagnostic_log("bank swap begin");
-    swap_instrument_storage(instrument, *parked);
+    if (activate) {
+        if (!ts_sample_pages_park(sample_pages, instrument,
+                                  error, sizeof(error))) {
+            snprintf(ui->status, sizeof(ui->status),
+                     "SAMPLE PAGE PARK FAILED: %.130s", error);
+            return 0;
+        }
+        swap_instrument_storage(instrument, *parked);
+    } else {
+        if (ui->monitor_enabled) {
+            ts_input_monitor_set_enabled(&input->monitor, 0, input->sample_rate);
+            ui->monitor_enabled = 0;
+            if (input_device) SDL_PauseAudioDevice(input_device, 1);
+        }
+        swap_instrument_storage(instrument, *parked);
+        if (!ts_sample_pages_unpark(sample_pages, instrument,
+                                    error, sizeof(error))) {
+            swap_instrument_storage(instrument, *parked);
+            snprintf(ui->status, sizeof(ui->status),
+                     "SAMPLE PAGE RESTORE FAILED: %.126s", error);
+            return 0;
+        }
+    }
     diagnostic_log("bank swap complete");
-    saved = ui->saved_state_hash;
-    ui->saved_state_hash = *parked_saved_hash;
-    *parked_saved_hash = saved;
-    *record_bank_active = !*record_bank_active;
+    *record_bank_active = activate;
     ui->external_record_bank = *record_bank_active;
+    ui->sample_page = (int)ts_sample_pages_active(sample_pages);
+    ui->sample_page_count = (int)ts_sample_pages_count(sample_pages);
     ui->capture_state = TS_CAPTURE_IDLE;
     ui->capture_destination_slot = -1;
     ui->capture_source_slot = -1;
@@ -5098,12 +5342,136 @@ static int toggle_record_bank(SDL_Window *window,
         SDL_SetWindowTitle(window, *record_bank_active ?
                           "TapeSister - REC BANK" : "TapeSister");
     show_overlay(ui, *record_bank_active ? "REC BANK" : "SAMPLE BANK", 800u);
-    snprintf(ui->status, sizeof(ui->status),
-             *record_bank_active ?
-             "REC BANK - SELECT EMPTY TILE AND REC ARM  PRESS 1 AGAIN FOR SAMPLE BANK" :
-             "SAMPLE BANK - PRESS 1 AGAIN TO RETURN TO REC BANK");
+    if (*record_bank_active)
+        snprintf(ui->status, sizeof(ui->status),
+                 "REC BANK - SELECT EMPTY TILE AND REC ARM  1 RETURNS TO SAMPLES");
+    else
+        snprintf(ui->status, sizeof(ui->status),
+                 "SAMPLE %d/%d - PRESS 1 TO CYCLE PAGES  SHIFT+1 FOR REC BANK",
+                 ui->sample_page + 1, ui->sample_page_count);
     diagnostic_log("bank toggle complete active=%d", *record_bank_active);
     return 1;
+}
+
+static int switch_sample_page(SDL_AudioDeviceID output_device,
+                              ExternalInputState *input,
+                              AudioState *audio, TsUiState *ui,
+                              TsInstrument *instrument,
+                              TsSamplePages *pages, size_t target,
+                              TransformController *controller)
+{
+    char error[160];
+    if (pages != NULL && target == ts_sample_pages_active(pages)) {
+        ui->sample_page = (int)target;
+        ui->sample_page_count = (int)ts_sample_pages_count(pages);
+        snprintf(ui->status, sizeof(ui->status),
+                 "SAMPLE %d/%d - SHIFT+1 FOR REC BANK",
+                 ui->sample_page + 1, ui->sample_page_count);
+        return 1;
+    }
+    if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
+        audio->capture.state == TS_CAPTURE_RECORDING || external_capture_busy(input)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISH OR CANCEL CAPTURE BEFORE SWITCHING SAMPLE PAGES");
+        return 0;
+    }
+    if (controller != NULL && controller->worker != NULL) {
+        SDL_AtomicSet(&controller->worker->cancel, 1);
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANCELING TRANSFORM - PRESS 1 AGAIN WHEN IT STOPS");
+        return 0;
+    }
+    if (controller != NULL) {
+        ++controller->render_generation;
+        controller->rerender_requested = 0;
+        controller->quick_apply = 0;
+        discard_transform_preview(output_device, audio, ui, controller);
+        ui->transform_open = 0;
+        ui->transform_rendering = 0;
+    }
+    stop_all_force(output_device, audio, ui);
+    if (audio->capture.state != TS_CAPTURE_IDLE || external_capture_busy(input)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISHING CAPTURE - SWITCH PAGES AGAIN IN A MOMENT");
+        return 0;
+    }
+    if (!ts_sample_pages_switch(pages, instrument, target,
+                                error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "SAMPLE PAGE SWITCH FAILED: %.126s", error);
+        return 0;
+    }
+    ui->sample_page = (int)ts_sample_pages_active(pages);
+    ui->sample_page_count = (int)ts_sample_pages_count(pages);
+    ui->bank_view_slot = -1;
+    ui->audition_source = TS_AUDITION_CURRENT;
+    ui->capture_destination_slot = -1;
+    ui->capture_source_slot = -1;
+    show_overlay(ui, "SAMPLE PAGE", 650u);
+    snprintf(ui->status, sizeof(ui->status),
+             "SAMPLE %d/%d - PRESS 1 TO CYCLE  SHIFT+1 FOR REC BANK",
+             ui->sample_page + 1, ui->sample_page_count);
+    return 1;
+}
+
+static void keep_record_bank(SDL_AudioDeviceID output_device,
+                             ExternalInputState *input,
+                             AudioState *audio,
+                             TsInstrument *record_bank,
+                             TsSamplePages *sample_pages,
+                             TsUiState *ui,
+                             TransformController *controller)
+{
+    char error[160];
+    size_t copied = 0u;
+    size_t first_page = 0u;
+    size_t last_page = 0u;
+    if (ui->capture_state != TS_CAPTURE_IDLE || external_capture_busy(input)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISH OR CANCEL RECORDING BEFORE KEEP");
+        return;
+    }
+    if (controller != NULL && controller->worker != NULL) {
+        SDL_AtomicSet(&controller->worker->cancel, 1);
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANCELING TRANSFORM - PRESS KEEP AGAIN WHEN IT STOPS");
+        return;
+    }
+    if (controller != NULL) {
+        ++controller->render_generation;
+        controller->rerender_requested = 0;
+        controller->quick_apply = 0;
+        discard_transform_preview(output_device, audio, ui, controller);
+        ui->transform_open = 0;
+        ui->transform_rendering = 0;
+    }
+    /* KEEP frees REC-tile buffers after copying them. Stop every audition
+       owner first so the output callback cannot retain one of those buffers. */
+    stop_all_force(output_device, audio, ui);
+    if (!ts_sample_pages_keep_record_bank(
+            sample_pages, NULL, record_bank,
+            &copied, &first_page, &last_page,
+            error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "KEEP FAILED: %.145s", error);
+        return;
+    }
+    ui->sample_page_count = (int)ts_sample_pages_count(sample_pages);
+    ui->bank_view_slot = -1;
+    ui->capture_destination_slot = -1;
+    if (copied == 0u) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "REC BANK IS EMPTY - NOTHING TO KEEP");
+        return;
+    }
+    show_overlay(ui, "RECORDINGS KEPT", 900u);
+    if (first_page == last_page)
+        snprintf(ui->status, sizeof(ui->status),
+                 "KEPT %zu RECORDING%s IN SAMPLE %zu - REC BANK CLEARED",
+                 copied, copied == 1u ? "" : "S", first_page);
+    else
+        snprintf(ui->status, sizeof(ui->status),
+                 "KEPT %zu RECORDINGS IN SAMPLE %zu-%zu - REC BANK CLEARED",
+                 copied, first_page, last_page);
 }
 
 int main(int argc, char **argv)
@@ -5115,6 +5483,7 @@ int main(int argc, char **argv)
     SDL_AudioDeviceID input_device = 0;
     SDL_AudioSpec desired, obtained;
     TsInstrument instrument;
+    TsSamplePages sample_pages;
     TsInstrument *parked_instrument = NULL;
     TsUiState ui;
     TsFramebuffer framebuffer;
@@ -5131,7 +5500,6 @@ int main(int argc, char **argv)
     ExternalInputState external_input = {0};
     char ignored_exchange[TS_EXCHANGE_PATH_MAX] = {0};
     uint32_t last_exchange_poll = 0;
-    uint64_t parked_saved_hash = 0;
     int record_bank_active = 0;
     int diagnostic_bank_stress = argc > 1 &&
                                  strcmp(argv[1], "--diagnostic-bank-toggle-stress") == 0;
@@ -5145,13 +5513,33 @@ int main(int argc, char **argv)
                    sizeof(TsInstrument), sizeof(TsFramebuffer), sizeof(TsUiState),
                    diagnostic_bank_stress);
     ts_instrument_init(&instrument);
+    {
+        char page_error[160];
+        if (!ts_sample_pages_init(&sample_pages, page_error, sizeof(page_error))) {
+            fprintf(stderr, "TapeSister Sample pages: %s\n", page_error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        parked_instrument = (TsInstrument *)malloc(sizeof(*parked_instrument));
+        if (parked_instrument == NULL) {
+            fprintf(stderr, "TapeSister Record Bank: out of memory\n");
+            ts_sample_pages_free(&sample_pages);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ts_instrument_init(parked_instrument);
+    }
     ts_external_recorder_init(&external_input.recorder);
+    ts_input_monitor_init(&external_input.monitor);
+    ts_live_waveform_init(&external_input.live_waveform, 48000u);
     ts_sample_init(&clipboard);
     ts_sample_init(&pending_selection_load);
     ts_sample_init(&drone_preview);
     ts_exchange_offer_init(&exchange_offer);
     transform_controller_init(&transform);
     ts_ui_init(&ui);
+    ui.sample_page = 0;
+    ui.sample_page_count = 1;
     {
         char config_error[160];
         if (!ts_config_load(&ui.config, config_file_path(),
@@ -5185,12 +5573,16 @@ int main(int argc, char **argv)
     }
     ts_note_bank_init(&audio.notes);
     ts_capture_init(&audio.capture);
+    audio.input_monitor = &external_input.monitor;
     audio.bank_slot = -1;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
         ts_sample_free(&drone_preview);
         ts_sample_free(&pending_selection_load);
         ts_sample_free(&clipboard);
+        ts_instrument_free(parked_instrument);
+        free(parked_instrument);
+        ts_sample_pages_free(&sample_pages);
         ts_instrument_free(&instrument);
         return 1;
     }
@@ -5237,6 +5629,9 @@ int main(int argc, char **argv)
         ts_sample_free(&drone_preview);
         ts_sample_free(&pending_selection_load);
         ts_sample_free(&clipboard);
+        ts_instrument_free(parked_instrument);
+        free(parked_instrument);
+        ts_sample_pages_free(&sample_pages);
         ts_instrument_free(&instrument);
         return 0;
     }
@@ -5254,7 +5649,7 @@ int main(int argc, char **argv)
     desired.freq = 48000;
     desired.format = AUDIO_F32SYS;
     desired.channels = 2;
-    desired.samples = 512;
+    desired.samples = 256;
     desired.callback = audio_callback;
     desired.userdata = &audio;
     device = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
@@ -5264,13 +5659,17 @@ int main(int argc, char **argv)
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
     if (argc > 1 && !diagnostic_bank_stress) {
-        load_instrument(device, &audio, &ui, &instrument, argv[1]);
+        load_instrument(device, &audio, &ui, &instrument,
+                        &sample_pages, parked_instrument,
+                        record_bank_active, argv[1]);
     } else if (!diagnostic_bank_stress && ui.config.startup_welcome_sample) {
         char welcome_path[1024];
         if (runtime_asset_path("assets/tapesister_welcome.wav",
                                welcome_path, sizeof(welcome_path))) {
             ui.load_bank_slot = 0;
-            if (load_instrument(device, &audio, &ui, &instrument, welcome_path)) {
+            if (load_instrument(device, &audio, &ui, &instrument,
+                                &sample_pages, parked_instrument,
+                                record_bank_active, welcome_path)) {
                 ui.startup_welcome_installed = 1;
                 ui.startup_welcome_autoplay = ui.config.startup_welcome_autoplay;
             }
@@ -5284,8 +5683,8 @@ int main(int argc, char **argv)
         begin_audition(device, &audio, &ui, &instrument,
                        TS_AUDITION_ALL, 1.0, obtained.freq);
     }
-    ui.saved_state_hash = instrument_state_hash(&instrument);
-    parked_saved_hash = 0u;
+    ui.saved_state_hash = runtime_project_state_hash(
+        &sample_pages, &instrument, parked_instrument, record_bank_active);
     last_exchange_poll = SDL_GetTicks();
     (void)ts_exchange_presence_touch(exchange_directory(&ui), "tapesister");
     (void)stage_incoming_exchange(&ui, &exchange_offer, ignored_exchange, 0);
@@ -5296,19 +5695,21 @@ int main(int argc, char **argv)
                  ui.config.record_input_device);
         diagnostic_log("starting 2000 bank-toggle stress passes");
         for (int pass = 0; pass < 2000; ++pass) {
-            if (!toggle_record_bank(window, device, &external_input, &audio, &ui,
-                                    &instrument, &parked_instrument,
-                                    &parked_saved_hash, &record_bank_active,
-                                    &transform)) {
+            if (!set_record_bank(window, device, input_device,
+                                 &external_input, &audio, &ui,
+                                 &instrument, &sample_pages, &parked_instrument,
+                                 &record_bank_active, !record_bank_active,
+                                 &transform)) {
                 diagnostic_log("stress toggle failed at pass %d: %s", pass, ui.status);
                 diagnostic_failed = 1;
                 break;
             }
         }
         if (!diagnostic_failed && !record_bank_active &&
-            !toggle_record_bank(window, device, &external_input, &audio, &ui,
-                                &instrument, &parked_instrument,
-                                &parked_saved_hash, &record_bank_active, &transform))
+            !set_record_bank(window, device, input_device,
+                             &external_input, &audio, &ui,
+                             &instrument, &sample_pages, &parked_instrument,
+                             &record_bank_active, 1, &transform))
             diagnostic_failed = 1;
         if (!diagnostic_failed) {
             snprintf(ui.config.record_input_device, sizeof(ui.config.record_input_device),
@@ -5325,9 +5726,10 @@ int main(int argc, char **argv)
                      "%s", original_device);
         }
         if (!diagnostic_failed && record_bank_active &&
-            !toggle_record_bank(window, device, &external_input, &audio, &ui,
-                                &instrument, &parked_instrument,
-                                &parked_saved_hash, &record_bank_active, &transform))
+            !set_record_bank(window, device, input_device,
+                             &external_input, &audio, &ui,
+                             &instrument, &sample_pages, &parked_instrument,
+                             &record_bank_active, 0, &transform))
             diagnostic_failed = 1;
         diagnostic_log("bank-toggle stress complete result=%s",
                        diagnostic_failed ? "FAIL" : "PASS");
@@ -5363,7 +5765,9 @@ int main(int argc, char **argv)
                 if (ui.canvas_gesture.active)
                     end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
                 if (!ui.exit_confirm_open)
-                    begin_exit_confirmation(device, &audio, &ui, &instrument);
+                    begin_exit_confirmation(device, &audio, &ui, &instrument,
+                                            &sample_pages, parked_instrument,
+                                            record_bank_active);
             }
             else if (event.type == SDL_DROPFILE &&
                      (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
@@ -5379,7 +5783,9 @@ int main(int argc, char **argv)
                 SDL_free(event.drop.file);
             }
             else if (event.type == SDL_DROPFILE) {
-                load_instrument(device, &audio, &ui, &instrument, event.drop.file);
+                load_instrument(device, &audio, &ui, &instrument,
+                                &sample_pages, parked_instrument,
+                                record_bank_active, event.drop.file);
                 SDL_free(event.drop.file);
             } else if (event.type == SDL_TEXTINPUT && ui.config_open &&
                        !ui.exit_confirm_open) {
@@ -5740,7 +6146,9 @@ int main(int argc, char **argv)
                         else ts_browser_parent(&ui.browser);
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
                         browser_activate_selection(device, &audio, &ui, &instrument,
-                                                   &pending_selection_load);
+                                                   &pending_selection_load,
+                                                   &sample_pages, parked_instrument,
+                                                   record_bank_active);
                     }
                 } else if (key >= SDLK_F1 && key <= SDLK_F8) {
                     int octave = ts_ui_keyboard_set_octave(&ui, (int)(key - SDLK_F1));
@@ -5797,6 +6205,14 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_DOWN) {
                     apply_sample_edit(device, &audio, &ui, &instrument,
                                       TS_SAMPLE_EDIT_GAIN, 0.7079458f);
+                } else if (key == SDLK_1 && (mod & KMOD_SHIFT) != 0 &&
+                           (mod & (KMOD_CTRL | KMOD_ALT)) == 0) {
+                    (void)set_record_bank(window, device, input_device,
+                                          &external_input, &audio, &ui,
+                                          &instrument, &sample_pages,
+                                          &parked_instrument,
+                                          &record_bank_active, 1, &transform);
+                    ts_ui_select_panel(&ui, TS_UI_PANEL_SAMPLE_TILES);
                 } else if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0 &&
                            key >= SDLK_1 && key <= SDLK_4) {
                     TsUiPanel panel = (TsUiPanel)(key - SDLK_1);
@@ -5804,13 +6220,20 @@ int main(int argc, char **argv)
                     static const char *const names[] = {
                         "SAMPLE TILES", "KEYBOARD", "CDP", "DSP"
                     };
-                    if (panel == TS_UI_PANEL_SAMPLE_TILES &&
-                        before == TS_UI_PANEL_SAMPLE_TILES) {
-                        (void)toggle_record_bank(window, device, &external_input,
+                    if (panel == TS_UI_PANEL_SAMPLE_TILES && record_bank_active) {
+                        (void)set_record_bank(window, device, input_device,
+                                              &external_input, &audio, &ui,
+                                              &instrument, &sample_pages,
+                                              &parked_instrument,
+                                              &record_bank_active, 0, &transform);
+                    } else if (panel == TS_UI_PANEL_SAMPLE_TILES &&
+                               before == TS_UI_PANEL_SAMPLE_TILES) {
+                        size_t count = ts_sample_pages_count(&sample_pages);
+                        size_t target = count > 0u ?
+                            (ts_sample_pages_active(&sample_pages) + 1u) % count : 0u;
+                        (void)switch_sample_page(device, &external_input,
                                                  &audio, &ui, &instrument,
-                                                 &parked_instrument,
-                                                 &parked_saved_hash,
-                                                 &record_bank_active, &transform);
+                                                 &sample_pages, target, &transform);
                     } else {
                         ts_ui_select_panel(&ui, panel);
                         ui.bank_view_slot = -1;
@@ -5933,7 +6356,9 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status),
                                  "SELECTION CLEARED - PLAYHEAD AT START");
                     } else {
-                        begin_exit_confirmation(device, &audio, &ui, &instrument);
+                        begin_exit_confirmation(device, &audio, &ui, &instrument,
+                                                &sample_pages, parked_instrument,
+                                                record_bank_active);
                     }
                 } else if (key == SDLK_SPACE) {
                     ui.bank_clear_armed = 0;
@@ -6161,6 +6586,11 @@ int main(int argc, char **argv)
                                           ts_ui_slider_from_point(&ui, x, y),
                                           wheel_y,
                                           (mod & KMOD_SHIFT) != 0);
+                } else if (ui.input_meter_active &&
+                           x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
+                           y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "LIVE INPUT DISPLAY IS READ-ONLY WHILE REC IS ARMED");
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                     y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     ui.bank_view_slot = -1;
@@ -6434,6 +6864,11 @@ int main(int argc, char **argv)
                     int recipe_index = ui.cdp_page * TS_CDP_BANK_SLOT_COUNT + cdp_slot;
                     begin_transform_workspace(&ui, &instrument, &transform,
                                               recipe_index);
+                } else if (ui.input_meter_active &&
+                           x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
+                           y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "LIVE INPUT DISPLAY IS READ-ONLY WHILE REC IS ARMED");
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     cancel_pitch_preview(device, &audio, &ui, &instrument);
@@ -6682,7 +7117,9 @@ int main(int argc, char **argv)
                         ui.browser.filename_focus = 0;
                         if (event.button.clicks >= 2)
                             browser_activate_selection(device, &audio, &ui, &instrument,
-                                                       &pending_selection_load);
+                                                       &pending_selection_load,
+                                                       &sample_pages, parked_instrument,
+                                                       record_bank_active);
                     } else if (x >= TS_BROWSER_SCROLL_X &&
                                x < TS_BROWSER_SCROLL_X + TS_BROWSER_SCROLL_W &&
                                y >= TS_BROWSER_LIST_Y &&
@@ -6725,7 +7162,9 @@ int main(int argc, char **argv)
                         ts_browser_parent(&ui.browser);
                     } else if (x >= 135 && x < 255 && y >= 326 && y < 349) {
                         browser_action(device, &audio, &ui, &instrument,
-                                       &pending_selection_load);
+                                       &pending_selection_load,
+                                       &sample_pages, parked_instrument,
+                                       record_bank_active);
                     } else if (x >= 260 && x < 344 && y >= 326 && y < 349) {
                         browser_cancel(&ui);
                     }
@@ -6738,6 +7177,11 @@ int main(int argc, char **argv)
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 573 && x < 630) {
                     begin_export_choice(&ui);
+                } else if (ui.input_meter_active &&
+                           x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
+                           y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "LIVE INPUT DISPLAY IS READ-ONLY WHILE REC IS ARMED");
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     TsBankSlot *shown_bank = ui.bank_view_slot >= 0 &&
@@ -7121,6 +7565,14 @@ int main(int argc, char **argv)
                     int capture_control = !ui.show_keyboard && !ui.show_recipes &&
                                           !ui.show_ingredients &&
                                           ts_ui_capture_button_from_point(x, y);
+                    int keep_control = record_bank_active &&
+                                       !ui.show_keyboard && !ui.show_recipes &&
+                                       !ui.show_ingredients &&
+                                       ts_ui_record_keep_button_from_point(x, y);
+                    int monitor_control = record_bank_active &&
+                                          !ui.show_keyboard && !ui.show_recipes &&
+                                          !ui.show_ingredients &&
+                                          ts_ui_monitor_button_from_point(x, y);
                     if (dsp_page >= 0) {
                         ui.dsp_page = dsp_page;
                         snprintf(ui.status, sizeof(ui.status),
@@ -7132,6 +7584,13 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status),
                                  "CDP %d PAGE - SAMPLE AND SELECTION PRESERVED",
                                  ui.cdp_page + 1);
+                    } else if (keep_control) {
+                        keep_record_bank(device, &external_input, &audio,
+                                         &instrument, &sample_pages, &ui,
+                                         &transform);
+                    } else if (monitor_control) {
+                        toggle_external_monitor(device, &input_device, &audio,
+                                                &external_input, &ui);
                     } else if (capture_control) {
                         if (record_bank_active)
                             external_capture_button(device, &input_device, &audio,
@@ -7346,6 +7805,11 @@ int main(int argc, char **argv)
                 } else if (ui.export_choice_open) {
                     snprintf(ui.status, sizeof(ui.status),
                              "CHOOSE SELECTED TILE OR COLLECTION  ESC CANCELS");
+                } else if (ui.input_meter_active &&
+                           x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
+                           y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "LIVE INPUT DISPLAY IS READ-ONLY WHILE REC IS ARMED");
                 } else if (x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
                     if (begin_tape_drag(&ui, &instrument, SDL_BUTTON_RIGHT,
@@ -7573,6 +8037,7 @@ int main(int argc, char **argv)
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);
     ts_sample_free(&clipboard);
+    ts_sample_pages_free(&sample_pages);
     if (parked_instrument != NULL) {
         ts_instrument_free(parked_instrument);
         free(parked_instrument);

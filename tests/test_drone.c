@@ -133,6 +133,59 @@ static void test_rates_and_fallback(void)
                                &split, &overlap, error, sizeof(error)));
     CHECK(overlap == 250);
     CHECK(drone.frames == 750);
+    CHECK(fabsf(ts_audition_read_looped(
+                    &drone, (double)drone.frames - 0.5,
+                    0, drone.frames, 0) -
+                (drone.data[drone.frames - 1u] + drone.data[0]) * 0.5f) <
+          0.000001f);
+    ts_sample_free(&drone);
+    ts_sample_free(&source);
+}
+
+static void test_short_valid_drone(void)
+{
+    static const float data[4] = {-0.20f, -0.05f, 0.05f, 0.20f};
+    TsSample source;
+    TsSample drone;
+    size_t split = 0;
+    size_t overlap = 0;
+    char error[160];
+    make_sample(&source, data, 4, 1000, "SHORT");
+    ts_sample_init(&drone);
+    CHECK(ts_sample_make_drone(&drone, &source, 0, 4, 1,
+                               &split, &overlap, error, sizeof(error)));
+    CHECK(split == 2u && overlap == 1u && drone.frames == 3u);
+    for (size_t frame = 0u; frame < drone.frames; ++frame)
+        CHECK(isfinite(drone.data[frame]));
+    ts_sample_free(&drone);
+    ts_sample_free(&source);
+}
+
+static void test_quiet_outer_seam(void)
+{
+    float vocal_like[32];
+    TsSample source;
+    TsSample drone;
+    size_t split = 0;
+    size_t overlap = 0;
+    char error[160];
+    for (size_t i = 0; i < 32; ++i) vocal_like[i] = i < 12u ? 0.35f : -0.35f;
+    vocal_like[11] = 0.01f;
+    vocal_like[12] = -0.01f;
+    vocal_like[15] = -0.90f;
+    vocal_like[16] = 0.90f;
+    for (size_t i = 16; i < 32; ++i) vocal_like[i] = 0.35f;
+    vocal_like[16] = 0.90f;
+    make_sample(&source, vocal_like, 32, 1000, "VOCAL-LIKE");
+    ts_sample_init(&drone);
+    CHECK(ts_sample_make_drone(&drone, &source, 0, source.frames, 4,
+                               &split, &overlap, error, sizeof(error)));
+    /* The exact midpoint crossing is deliberately loud. Drone should choose
+       the quieter valid crossing so starting/stopping the committed tile is
+       intrinsically less click-prone while the wrap remains source-adjacent. */
+    CHECK(split == 12u);
+    CHECK(fabsf(drone.data[0]) <= 0.010001f);
+    CHECK(fabsf(drone.data[drone.frames - 1u]) <= 0.010001f);
     ts_sample_free(&drone);
     ts_sample_free(&source);
 }
@@ -181,6 +234,7 @@ static void test_preview_is_nondestructive(void)
 static void test_replace_and_history(void)
 {
     TsInstrument instrument;
+    TsInstrument restored;
     TsSample before;
     TsSample drone;
     uint64_t result_hash;
@@ -190,6 +244,7 @@ static void test_replace_and_history(void)
     size_t overlap;
     char error[160];
     ts_instrument_init(&instrument);
+    ts_instrument_init(&restored);
     ts_sample_init(&before);
     ts_sample_init(&drone);
     CHECK(ts_instrument_generate(&instrument, TS_GENERATOR_TONAL,
@@ -207,13 +262,29 @@ static void test_replace_and_history(void)
     CHECK(instrument.current.frames == before.frames - overlap);
     CHECK(instrument.has_selection && instrument.selection_first == first);
     CHECK(instrument.selection_last == first + drone.frames);
-    CHECK(memcmp(instrument.current.data, before.data,
-                 first * sizeof(*before.data)) == 0);
     CHECK(memcmp(instrument.current.data + first, drone.data,
                  drone.frames * sizeof(*drone.data)) == 0);
-    CHECK(memcmp(instrument.current.data + first + drone.frames,
-                 before.data + last,
-                 (before.frames - last) * sizeof(*before.data)) == 0);
+    {
+        size_t join_fade = before.sample_rate / 500u;
+        size_t new_last = first + drone.frames;
+        if (join_fade < 1u) join_fade = 1u;
+        if (join_fade > first) join_fade = first;
+        if (join_fade > before.frames - last)
+            join_fade = before.frames - last;
+        CHECK(join_fade > 0u);
+        CHECK(memcmp(instrument.current.data, before.data,
+                     (first - join_fade) * sizeof(*before.data)) == 0);
+        CHECK(fabsf(instrument.current.data[first] -
+                    instrument.current.data[first - 1u]) <
+              fabsf(drone.data[0] - before.data[first - 1u]));
+        CHECK(fabsf(instrument.current.data[new_last] -
+                    instrument.current.data[new_last - 1u]) <
+              fabsf(before.data[last] - drone.data[drone.frames - 1u]));
+        CHECK(memcmp(instrument.current.data + new_last + join_fade,
+                     before.data + last + join_fade,
+                     (before.frames - last - join_fade) *
+                     sizeof(*before.data)) == 0);
+    }
     CHECK(instrument.view_first <= first &&
           instrument.view_last >= first + drone.frames);
     result_hash = ts_sample_hash(&instrument.current);
@@ -224,6 +295,66 @@ static void test_replace_and_history(void)
     CHECK(ts_sample_hash(&instrument.current) == result_hash);
     CHECK(instrument.selection_first == first &&
           instrument.selection_last == first + drone.frames);
+    CHECK(ts_instrument_save_recipe(&instrument, "test-drone-replace.tsr",
+                                    error, sizeof(error)));
+    CHECK(ts_instrument_load_recipe(&restored, "test-drone-replace.tsr",
+                                    error, sizeof(error)));
+    CHECK(ts_sample_hash(&restored.current) == result_hash);
+    CHECK(restored.has_selection && restored.selection_first == first &&
+          restored.selection_last == first + drone.frames);
+    remove("test-drone-replace.tsr");
+    ts_sample_free(&drone);
+    ts_sample_free(&before);
+    ts_instrument_free(&restored);
+    ts_instrument_free(&instrument);
+}
+
+static void test_replace_at_tile_edges(void)
+{
+    TsInstrument instrument;
+    TsSample before;
+    TsSample drone;
+    size_t first;
+    size_t last;
+    size_t split;
+    size_t overlap;
+    char error[160];
+    ts_instrument_init(&instrument);
+    ts_sample_init(&before);
+    ts_sample_init(&drone);
+    CHECK(ts_instrument_generate(&instrument, TS_GENERATOR_TONAL,
+                                 0x45444745u, error, sizeof(error)));
+    CHECK(ts_sample_clone(&before, &instrument.current, error, sizeof(error)));
+
+    first = 0u;
+    last = before.frames / 3u;
+    ts_instrument_set_selection(&instrument, first, last);
+    CHECK(ts_sample_make_drone(&drone, &instrument.current, first, last, 50,
+                               &split, &overlap, error, sizeof(error)));
+    CHECK(ts_instrument_replace_selection_with_drone(
+              &instrument, &drone, error, sizeof(error)));
+    CHECK(memcmp(instrument.current.data, drone.data,
+                 drone.frames * sizeof(*drone.data)) == 0);
+    CHECK(fabsf(instrument.current.data[drone.frames] -
+                instrument.current.data[drone.frames - 1u]) <
+          fabsf(before.data[last] - drone.data[drone.frames - 1u]));
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)));
+    CHECK(samples_equal(&instrument.current, &before));
+
+    first = before.frames * 2u / 3u;
+    last = before.frames;
+    ts_instrument_set_selection(&instrument, first, last);
+    CHECK(ts_sample_make_drone(&drone, &instrument.current, first, last, 50,
+                               &split, &overlap, error, sizeof(error)));
+    CHECK(ts_instrument_replace_selection_with_drone(
+              &instrument, &drone, error, sizeof(error)));
+    CHECK(instrument.current.frames == first + drone.frames);
+    CHECK(memcmp(instrument.current.data + first, drone.data,
+                 drone.frames * sizeof(*drone.data)) == 0);
+    CHECK(fabsf(instrument.current.data[first] -
+                instrument.current.data[first - 1u]) <
+          fabsf(drone.data[0] - before.data[first - 1u]));
+
     ts_sample_free(&drone);
     ts_sample_free(&before);
     ts_instrument_free(&instrument);
@@ -275,6 +406,11 @@ static void test_copy_and_history(void)
           instrument.loop_last == drone.frames &&
           instrument.loop_mode == TS_LOOP_FORWARD &&
           instrument.loop_crossfade_ms == 0.0f);
+    CHECK(fabsf(ts_audition_read_looped_mode(
+                    &instrument.current, (double)drone.frames - 0.5,
+                    0, drone.frames, 0, TS_LOOP_FORWARD) -
+                (drone.data[drone.frames - 1u] + drone.data[0]) * 0.5f) <
+          0.000001f);
     CHECK(instrument.tuning.root_note == source_tuning.root_note &&
           fabsf(instrument.tuning.fine_tune_cents -
                 source_tuning.fine_tune_cents) < 0.0001f);
@@ -459,8 +595,11 @@ int main(void)
 {
     test_processing_core();
     test_rates_and_fallback();
+    test_short_valid_drone();
+    test_quiet_outer_seam();
     test_preview_is_nondestructive();
     test_replace_and_history();
+    test_replace_at_tile_edges();
     test_copy_and_history();
     test_no_destination();
     test_config();
