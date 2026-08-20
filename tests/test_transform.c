@@ -1273,9 +1273,15 @@ static void transform_ui_contract_tests(void)
     last = instrument.selection_last;
     view_first = instrument.view_first;
     view_last = instrument.view_last;
+    ui.playback_active = 1;
+    ui.playhead_sample = &instrument.current;
+    ui.playhead_frame = view_first + (view_last - view_first) / 2u;
+    ui.playhead_frames = instrument.current.frames;
     ts_ui_render(&framebuffer, &ui, &instrument);
     CHECK(instrument.selection_first == first && instrument.selection_last == last &&
           instrument.view_first == view_first && instrument.view_last == view_last);
+    CHECK(framebuffer.pixels[(TS_TRANSFORM_WAVE_Y + 5) * TS_UI_WIDTH +
+          TS_TRANSFORM_WAVE_X + TS_TRANSFORM_WAVE_W / 2] == 0xffff1ce7u);
     CHECK(ts_ui_transform_waveform_contains(20, 62));
     CHECK(ts_ui_transform_control_from_point(20, 166) == 0 &&
           ts_ui_transform_control_from_point(470, 166) == 3);

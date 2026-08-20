@@ -160,6 +160,9 @@ typedef enum {
     TS_UI_FM_ACTION_RANDOMIZE,
     TS_UI_FM_ACTION_APPLY,
     TS_UI_FM_ACTION_AUDITION,
+    TS_UI_FM_ACTION_HOLD,
+    TS_UI_FM_ACTION_DRONE,
+    TS_UI_FM_ACTION_EXTREME,
     TS_UI_FM_ACTION_BACK
 } TsUiFmAction;
 
@@ -279,6 +282,7 @@ typedef struct {
     TsFmPage fm_page;
     TsFmPatch fm_patch;
     const TsSample *fm_preview_sample;
+    int fm_held_notes;
     char fm_message[96];
     int transform_rendering;
     int transform_preview_available;
@@ -373,6 +377,7 @@ typedef struct {
     int64_t tape_destination;
     size_t playhead_frame;
     size_t playhead_frames;
+    const TsSample *playhead_sample;
     size_t parent_view_first;
     size_t parent_view_last;
     char bank_rename[128];
@@ -424,6 +429,7 @@ int ts_ui_fm_control_from_point(int x, int y);
 int ts_ui_fm_voice_from_point(int x, int y);
 uint32_t ts_ui_fm_mutation_from_point(int x, int y);
 TsUiFmAction ts_ui_fm_action_from_point(int x, int y);
+int ts_ui_fm_range_contains(int x, int y);
 int ts_ui_transform_control_from_point(int x, int y);
 int ts_ui_transform_mix_contains(int x, int y);
 int ts_ui_transform_waveform_contains(int x, int y);

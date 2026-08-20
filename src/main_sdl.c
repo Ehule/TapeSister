@@ -2701,6 +2701,7 @@ static void close_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ts_note_bank_clear(&audio->notes);
     if (device) SDL_UnlockAudioDevice(device);
     ui->active_notes = 0u;
+    ui->fm_held_notes = 0;
     ui->fm_open = 0;
     ui->fm_preview_sample = NULL;
     ts_sample_free(preview);
@@ -2716,6 +2717,13 @@ static uint32_t fm_page_mutation_bit(TsFmPage page)
         page == TS_FM_PAGE_LFO_TYPE) return TS_FM_MUTATE_LFO;
     if (page == TS_FM_PAGE_FILTER) return TS_FM_MUTATE_FILTER;
     return TS_FM_MUTATE_STRUCTURE;
+}
+
+static int fm_control_disabled(const TsFmPatch *patch, TsFmPage page, int control)
+{
+    return patch != NULL && patch->drone_mode &&
+           ((page == TS_FM_PAGE_FILTER && (control == 2 || control == 3)) ||
+            (page == TS_FM_PAGE_STRUCTURE && control == 5));
 }
 
 static void randomize_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
@@ -2747,7 +2755,6 @@ static void begin_fm_note(SDL_AudioDeviceID device, AudioState *audio,
     int capture_started = 0;
     if (!device || preview == NULL || preview->data == NULL) return;
     SDL_LockAudioDevice(device);
-    if (!latched) ts_note_bank_clear(&audio->notes);
     result = ts_note_bank_start_sample(
         &audio->notes, preview, ts_ui_audition_tuning(ui, instrument),
         note, ts_ui_keyboard_base_note(ui), latched, output_rate);
@@ -2775,6 +2782,34 @@ static void begin_fm_note(SDL_AudioDeviceID device, AudioState *audio,
                  latched ? "SYNTH NOTE LATCHED" : "SYNTH NOTE PLAYING");
 }
 
+static void toggle_fm_hold(SDL_AudioDeviceID device, AudioState *audio,
+                           TsUiState *ui)
+{
+    int synth_count;
+    int latched_count;
+    int changed;
+    if (audio == NULL || ui == NULL) return;
+    if (device) SDL_LockAudioDevice(device);
+    synth_count = ts_note_bank_synth_count(&audio->notes);
+    latched_count = ts_note_bank_latched_synth_count(&audio->notes);
+    if (synth_count > 0 && synth_count == latched_count)
+        changed = -ts_note_bank_release_latched_synth(&audio->notes);
+    else
+        changed = ts_note_bank_latch_active_synth(&audio->notes);
+    ui->active_notes = ts_note_bank_mask(&audio->notes);
+    ui->fm_held_notes = ts_note_bank_latched_synth_count(&audio->notes);
+    if (device) SDL_UnlockAudioDevice(device);
+    if (changed > 0)
+        snprintf(ui->fm_message, sizeof(ui->fm_message),
+                 "HELD %d-NOTE SYNTH CHORD", changed);
+    else if (changed < 0)
+        snprintf(ui->fm_message, sizeof(ui->fm_message),
+                 "RELEASED HELD SYNTH CHORD");
+    else
+        snprintf(ui->fm_message, sizeof(ui->fm_message),
+                 "PLAY NOTES, THEN CLICK HOLD");
+}
+
 static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
                                TsUiState *ui, TsInstrument *instrument)
 {
@@ -2786,6 +2821,7 @@ static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
                                       error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     ui->active_notes = 0u;
+    ui->fm_held_notes = 0;
     if (ok) {
         ts_ui_reset_parent_view(ui, instrument->current.frames);
         snprintf(ui->fm_message, sizeof(ui->fm_message),
@@ -6728,17 +6764,32 @@ int main(int argc, char **argv)
                 SDL_GetMouseState(&raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 control = ts_ui_fm_control_from_point(x, y);
-                if (wheel_y != 0 && control >= 0) {
-                    float normalized = ts_fm_control_normalized(
-                        &ui.fm_patch, ui.fm_page, control);
-                    float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
-                    normalized += wheel_y > 0 ? step : -step;
-                    if (ts_fm_set_control_normalized(&ui.fm_patch, ui.fm_page,
-                                                     control, normalized))
+                if (wheel_y != 0 && control >= 0 &&
+                    fm_control_disabled(&ui.fm_patch, ui.fm_page, control)) {
+                    snprintf(ui.fm_message, sizeof(ui.fm_message),
+                             "ENVELOPE CONTROL DISABLED IN DRONE MODE");
+                } else if (wheel_y != 0 && control >= 0) {
+                    int amount = wheel_y < 0 ? -wheel_y : wheel_y;
+                    int changed = 0;
+                    for (int step = 0; step < amount; ++step)
+                        changed |= ts_fm_step_control(
+                            &ui.fm_patch, ui.fm_page, control,
+                            wheel_y > 0 ? 1 : -1,
+                            (SDL_GetModState() & KMOD_SHIFT) != 0);
+                    if (changed)
                         (void)render_fm_workspace(device, &audio, &ui,
                                                   &instrument, &fm_preview);
+                } else if (wheel_y != 0 && ts_ui_fm_range_contains(x, y)) {
+                    float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
+                    instrument.family_mutation += wheel_y > 0 ? step : -step;
+                    if (instrument.family_mutation < 0.0f)
+                        instrument.family_mutation = 0.0f;
+                    if (instrument.family_mutation > 1.0f)
+                        instrument.family_mutation = 1.0f;
+                    snprintf(ui.fm_message, sizeof(ui.fm_message), "RANGE %d",
+                             (int)lrintf(instrument.family_mutation * 100.0f));
                 } else snprintf(ui.fm_message, sizeof(ui.fm_message),
-                                "HOVER ONE OF THE SIX FM CONTROLS TO USE THE WHEEL");
+                                "HOVER AN FM CONTROL OR RANGE TO USE THE WHEEL");
             } else if (event.type == SDL_MOUSEWHEEL && ui.transform_open) {
                 int raw_x, raw_y, x, y;
                 int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
@@ -7211,9 +7262,12 @@ int main(int argc, char **argv)
                                  ts_fm_page_name(page));
                     } else if (control >= 0) {
                         float amount = (float)(x - (20 + control * 100)) / 94.0f;
-                        if (ts_fm_set_control_normalized(&ui.fm_patch,
-                                                         ui.fm_page, control,
-                                                         amount))
+                        if (fm_control_disabled(&ui.fm_patch, ui.fm_page,
+                                                control))
+                            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                     "ENVELOPE CONTROL DISABLED IN DRONE MODE");
+                        else if (ts_fm_set_control_normalized(
+                                     &ui.fm_patch, ui.fm_page, control, amount))
                             (void)render_fm_workspace(device, &audio, &ui,
                                                       &instrument, &fm_preview);
                     } else if (voice >= 0) {
@@ -7232,6 +7286,34 @@ int main(int argc, char **argv)
                     } else if (fm_action == TS_UI_FM_ACTION_AUDITION) {
                         begin_fm_note(device, &audio, &ui, &instrument,
                                       &fm_preview, 0, obtained.freq, 0);
+                    } else if (fm_action == TS_UI_FM_ACTION_HOLD) {
+                        toggle_fm_hold(device, &audio, &ui);
+                    } else if (fm_action == TS_UI_FM_ACTION_DRONE) {
+                        ui.fm_patch.drone_mode = !ui.fm_patch.drone_mode;
+                        ts_fm_patch_sanitize(&ui.fm_patch);
+                        (void)render_fm_workspace(device, &audio, &ui,
+                                                  &instrument, &fm_preview);
+                        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                 ui.fm_patch.drone_mode ?
+                                 "DRONE ON - ENVELOPES BYPASSED, EDGES ZEROED" :
+                                 "DRONE OFF - ATTACK AND RELEASE RESTORED");
+                    } else if (fm_action == TS_UI_FM_ACTION_EXTREME) {
+                        ui.fm_patch.extreme_mode = !ui.fm_patch.extreme_mode;
+                        ts_fm_patch_sanitize(&ui.fm_patch);
+                        (void)render_fm_workspace(device, &audio, &ui,
+                                                  &instrument, &fm_preview);
+                        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                 ui.fm_patch.extreme_mode ?
+                                 "EXTREME ON - FULL SYNTH RANGE, LIMITER ACTIVE" :
+                                 "EXTREME OFF - VALUES RETURNED TO MUSICAL RANGE");
+                    } else if (ts_ui_fm_range_contains(x, y)) {
+                        instrument.family_mutation = (float)(x - 310) / 310.0f;
+                        if (instrument.family_mutation < 0.0f)
+                            instrument.family_mutation = 0.0f;
+                        if (instrument.family_mutation > 1.0f)
+                            instrument.family_mutation = 1.0f;
+                        snprintf(ui.fm_message, sizeof(ui.fm_message), "RANGE %d",
+                                 (int)lrintf(instrument.family_mutation * 100.0f));
                     } else if (fm_action == TS_UI_FM_ACTION_BACK) {
                         close_fm_workspace(device, &audio, &ui, &fm_preview);
                     }
@@ -8343,21 +8425,25 @@ int main(int argc, char **argv)
                 !audio.playing)
                 ui.transform_preview_active = 0;
             ui.active_notes = ts_note_bank_mask(&audio.notes);
+            ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
             ui.playback_active = audio.playing || voice != NULL;
             if (audio.playing) {
                 ui.playhead_source = audio.source;
                 ui.playhead_bank_slot = audio.bank_slot;
                 ui.playhead_frame = audio.position > 0.0 ? (size_t)audio.position : 0;
                 ui.playhead_frames = audio.sample ? audio.sample->frames : 0;
+                ui.playhead_sample = audio.sample;
             } else if (voice != NULL) {
                 ui.playhead_source = voice->source;
                 ui.playhead_bank_slot = -1;
                 ui.playhead_frame = voice->position > 0.0 ? (size_t)voice->position : 0;
                 ui.playhead_frames = voice->sample ? voice->sample->frames : 0;
+                ui.playhead_sample = voice->sample;
             } else {
                 ui.playhead_bank_slot = -1;
                 ui.playhead_frame = 0;
                 ui.playhead_frames = 0;
+                ui.playhead_sample = NULL;
             }
         }
         if (device) SDL_UnlockAudioDevice(device);

@@ -9,7 +9,47 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#define TS_FM_GENOME_VERSION 2u
+#define TS_FM_GENOME_VERSION 3u
+
+static float ratio_maximum(const TsFmPatch *patch)
+{
+    return patch != NULL && patch->extreme_mode ? 64.0f : 16.0f;
+}
+
+static float depth_maximum(const TsFmPatch *patch)
+{
+    return patch != NULL && patch->extreme_mode ? 48.0f : 12.0f;
+}
+
+static float feedback_maximum(const TsFmPatch *patch)
+{
+    return patch != NULL && patch->extreme_mode ? 0.99f : 0.82f;
+}
+
+static float transient_maximum(const TsFmPatch *patch)
+{
+    return patch != NULL && patch->extreme_mode ? 1.0f : 0.60f;
+}
+
+static float lfo_rate_maximum(const TsFmPatch *patch)
+{
+    return patch != NULL && patch->extreme_mode ? 1000.0f : 160.0f;
+}
+
+static float lfo_depth_maximum(const TsFmPatch *patch)
+{
+    return patch != NULL && patch->extreme_mode ? 2.0f : 1.0f;
+}
+
+static float resonance_maximum(const TsFmPatch *patch)
+{
+    return patch != NULL && patch->extreme_mode ? 0.995f : 0.95f;
+}
+
+static float filter_envelope_maximum(const TsFmPatch *patch)
+{
+    return patch != NULL && patch->extreme_mode ? 2.0f : 1.0f;
+}
 
 static float clampf(float value, float low, float high)
 {
@@ -131,21 +171,44 @@ const char *ts_fm_page_name(TsFmPage page)
 void ts_fm_patch_sanitize(TsFmPatch *patch)
 {
     int legacy;
+    float ratio_high;
+    float depth_high;
+    float feedback_high;
+    float transient_high;
+    float lfo_rate_high;
+    float lfo_depth_high;
+    float resonance_high;
+    float envelope_high;
     if (patch == NULL) return;
-    legacy = patch->genome_version != TS_FM_GENOME_VERSION;
+    legacy = patch->genome_version < 2u || patch->genome_version > TS_FM_GENOME_VERSION;
+    if (patch->genome_version < 3u || patch->genome_version > TS_FM_GENOME_VERSION) {
+        patch->drone_mode = 0;
+        patch->extreme_mode = 0;
+    }
+    patch->drone_mode = patch->drone_mode != 0;
+    patch->extreme_mode = patch->extreme_mode != 0;
     patch->genome_version = TS_FM_GENOME_VERSION;
+    ratio_high = ratio_maximum(patch);
+    depth_high = depth_maximum(patch);
+    feedback_high = feedback_maximum(patch);
+    transient_high = transient_maximum(patch);
+    lfo_rate_high = lfo_rate_maximum(patch);
+    lfo_depth_high = lfo_depth_maximum(patch);
+    resonance_high = resonance_maximum(patch);
+    envelope_high = filter_envelope_maximum(patch);
     patch->structure = patch->structure < 0 ? 0 :
                        patch->structure >= TS_FM_STRUCTURE_COUNT ?
                        TS_FM_STRUCTURE_COUNT - 1 : patch->structure;
     patch->ratio_family = patch->ratio_family < 0 ? 0 :
                           patch->ratio_family >= TS_FM_RATIO_FAMILY_COUNT ?
                           TS_FM_RATIO_FAMILY_COUNT - 1 : patch->ratio_family;
-    patch->depth = clampf(isfinite(patch->depth) ? patch->depth : 1.0f, 0.15f, 12.0f);
+    patch->depth = clampf(isfinite(patch->depth) ? patch->depth : 1.0f,
+                          0.15f, depth_high);
     patch->shape = clampf(isfinite(patch->shape) ? patch->shape : 0.5f, 0.0f, 1.0f);
     patch->feedback = clampf(isfinite(patch->feedback) ? patch->feedback : 0.0f,
-                             0.0f, 0.82f);
+                             0.0f, feedback_high);
     patch->transient_mix = clampf(isfinite(patch->transient_mix) ?
-                                  patch->transient_mix : 0.0f, 0.0f, 0.60f);
+                                  patch->transient_mix : 0.0f, 0.0f, transient_high);
     if (legacy) {
         patch->active_mask = (1u << TS_FM_OPERATOR_COUNT) - 1u;
         patch->mutation_mask = TS_FM_MUTATE_ALL;
@@ -170,16 +233,16 @@ void ts_fm_patch_sanitize(TsFmPatch *patch)
     patch->mutation_mask &= TS_FM_MUTATE_ALL;
     for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
         patch->ratios[voice] = clampf(isfinite(patch->ratios[voice]) ?
-                                      patch->ratios[voice] : 1.0f, 0.05f, 16.0f);
+                                      patch->ratios[voice] : 1.0f, 0.05f, ratio_high);
         if (patch->waveforms[voice] < 0 ||
             patch->waveforms[voice] >= TS_FM_WAVEFORM_COUNT)
             patch->waveforms[voice] = TS_FM_WAVE_SINE;
         patch->lfo_rates[voice] = clampf(isfinite(patch->lfo_rates[voice]) ?
                                          patch->lfo_rates[voice] : 0.1f,
-                                         0.03f, 160.0f);
+                                         0.03f, lfo_rate_high);
         patch->lfo_depths[voice] = clampf(isfinite(patch->lfo_depths[voice]) ?
                                           patch->lfo_depths[voice] : 0.0f,
-                                          0.0f, 1.0f);
+                                          0.0f, lfo_depth_high);
         if (patch->lfo_types[voice] < 0 ||
             patch->lfo_types[voice] >= TS_FM_LFO_TYPE_COUNT)
             patch->lfo_types[voice] = TS_FM_LFO_OFF;
@@ -192,7 +255,7 @@ void ts_fm_patch_sanitize(TsFmPatch *patch)
                                      20.0f, 20000.0f);
     patch->filter_resonance = clampf(isfinite(patch->filter_resonance) ?
                                      patch->filter_resonance : 0.08f,
-                                     0.0f, 0.95f);
+                                     0.0f, resonance_high);
     patch->filter_attack_seconds = clampf(isfinite(patch->filter_attack_seconds) ?
                                            patch->filter_attack_seconds : 0.012f,
                                            0.001f, 4.0f);
@@ -201,7 +264,7 @@ void ts_fm_patch_sanitize(TsFmPatch *patch)
                                             0.01f, 8.0f);
     patch->filter_envelope_amount = clampf(isfinite(patch->filter_envelope_amount) ?
                                             patch->filter_envelope_amount : 0.0f,
-                                            -1.0f, 1.0f);
+                                            -envelope_high, envelope_high);
     if (patch->interaction < 0 || patch->interaction >= TS_FM_INTERACTION_COUNT)
         patch->interaction = TS_FM_INTERACTION_PHASE;
     patch->interaction_mix = clampf(isfinite(patch->interaction_mix) ?
@@ -266,6 +329,14 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
     uint32_t rng = seed ^ 0x56415259u;
     float amount = clampf(range, 0.0f, 1.0f);
     TsFmPatch base;
+    float ratio_high;
+    float depth_high;
+    float feedback_high;
+    float transient_high;
+    float lfo_rate_high;
+    float lfo_depth_high;
+    float resonance_high;
+    float envelope_high;
     if (varied == NULL) return;
     memset(varied, 0, sizeof(*varied));
     if (source == NULL) return;
@@ -274,10 +345,21 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
     base = *source;
     ts_fm_patch_sanitize(&base);
     *varied = base;
+    ratio_high = ratio_maximum(&base);
+    depth_high = depth_maximum(&base);
+    feedback_high = feedback_maximum(&base);
+    transient_high = transient_maximum(&base);
+    lfo_rate_high = lfo_rate_maximum(&base);
+    lfo_depth_high = lfo_depth_maximum(&base);
+    resonance_high = resonance_maximum(&base);
+    envelope_high = filter_envelope_maximum(&base);
     if ((base.mutation_mask & TS_FM_MUTATE_PITCH) != 0u) {
         for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
-            float step = rng_bipolar(&rng) * amount * (amount < 0.35f ? 0.12f : 0.9f);
-            varied->ratios[voice] = clampf(base.ratios[voice] * exp2f(step), 0.05f, 16.0f);
+            float reach = base.extreme_mode ? 2.4f : 0.9f;
+            float step = rng_bipolar(&rng) * amount *
+                         (amount < 0.35f ? 0.12f : reach);
+            varied->ratios[voice] = clampf(base.ratios[voice] * exp2f(step),
+                                           0.05f, ratio_high);
         }
         if (amount > 0.66f && rng_unit(&rng) < amount) {
             varied->ratio_family = nearby_category(base.ratio_family,
@@ -300,9 +382,11 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
     if ((base.mutation_mask & TS_FM_MUTATE_LFO) != 0u) {
         for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
             varied->lfo_rates[voice] = clampf(base.lfo_rates[voice] *
-                exp2f(rng_bipolar(&rng) * amount * 3.0f), 0.03f, 160.0f);
+                exp2f(rng_bipolar(&rng) * amount *
+                      (base.extreme_mode ? 5.5f : 3.0f)), 0.03f, lfo_rate_high);
             varied->lfo_depths[voice] = clampf(base.lfo_depths[voice] +
-                rng_bipolar(&rng) * amount * 0.48f, 0.0f, 1.0f);
+                rng_bipolar(&rng) * amount *
+                (base.extreme_mode ? 1.25f : 0.48f), 0.0f, lfo_depth_high);
             if (amount > 0.42f && rng_unit(&rng) < amount * 0.45f)
                 varied->lfo_types[voice] = nearby_category(
                     base.lfo_types[voice], TS_FM_LFO_TYPE_COUNT,
@@ -313,13 +397,15 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
         varied->filter_cutoff_hz = clampf(base.filter_cutoff_hz *
             exp2f(rng_bipolar(&rng) * amount * 4.0f), 20.0f, 20000.0f);
         varied->filter_resonance = clampf(base.filter_resonance +
-            rng_bipolar(&rng) * amount * 0.55f, 0.0f, 0.95f);
+            rng_bipolar(&rng) * amount *
+            (base.extreme_mode ? 0.95f : 0.55f), 0.0f, resonance_high);
         varied->filter_attack_seconds = clampf(base.filter_attack_seconds *
             exp2f(rng_bipolar(&rng) * amount * 3.0f), 0.001f, 4.0f);
         varied->filter_release_seconds = clampf(base.filter_release_seconds *
             exp2f(rng_bipolar(&rng) * amount * 3.0f), 0.01f, 8.0f);
         varied->filter_envelope_amount = clampf(base.filter_envelope_amount +
-            rng_bipolar(&rng) * amount * 0.8f, -1.0f, 1.0f);
+            rng_bipolar(&rng) * amount *
+            (base.extreme_mode ? 1.8f : 0.8f), -envelope_high, envelope_high);
         if (amount > 0.72f && rng_unit(&rng) < amount * 0.5f)
             varied->filter_mode = nearby_category(base.filter_mode,
                                                    TS_FILTER_MODE_COUNT,
@@ -327,12 +413,13 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
     }
     if ((base.mutation_mask & TS_FM_MUTATE_STRUCTURE) != 0u) {
         varied->depth = clampf(base.depth * exp2f(rng_bipolar(&rng) * amount * 1.7f),
-                               0.15f, 12.0f);
+                               0.15f, depth_high);
         varied->shape = clampf(base.shape + rng_bipolar(&rng) * amount * 0.6f, 0.0f, 1.0f);
         varied->feedback = clampf(base.feedback + rng_bipolar(&rng) * amount * 0.5f,
-                                  0.0f, 0.82f);
+                                  0.0f, feedback_high);
         varied->transient_mix = clampf(base.transient_mix +
-            rng_bipolar(&rng) * amount * 0.35f, 0.0f, 0.60f);
+            rng_bipolar(&rng) * amount *
+            (base.extreme_mode ? 0.9f : 0.35f), 0.0f, transient_high);
         varied->interaction_mix = clampf(base.interaction_mix +
             rng_bipolar(&rng) * amount * 0.55f, 0.0f, 1.0f);
         if (amount > 0.62f && rng_unit(&rng) < amount * 0.62f)
@@ -391,25 +478,33 @@ float ts_fm_control_normalized(const TsFmPatch *patch, TsFmPage page, int contro
     safe = *patch;
     ts_fm_patch_sanitize(&safe);
     switch (page) {
-    case TS_FM_PAGE_PITCH: return log_normalized(safe.ratios[control], 0.05f, 16.0f);
+    case TS_FM_PAGE_PITCH:
+        return log_normalized(safe.ratios[control], 0.05f, ratio_maximum(&safe));
     case TS_FM_PAGE_WAVE: return categorical_normalized(safe.waveforms[control], TS_FM_WAVEFORM_COUNT);
-    case TS_FM_PAGE_LFO_RATE: return log_normalized(safe.lfo_rates[control], 0.03f, 160.0f);
-    case TS_FM_PAGE_LFO_DEPTH: return safe.lfo_depths[control];
+    case TS_FM_PAGE_LFO_RATE:
+        return log_normalized(safe.lfo_rates[control], 0.03f,
+                              lfo_rate_maximum(&safe));
+    case TS_FM_PAGE_LFO_DEPTH:
+        return safe.lfo_depths[control] / lfo_depth_maximum(&safe);
     case TS_FM_PAGE_LFO_TYPE: return categorical_normalized(safe.lfo_types[control], TS_FM_LFO_TYPE_COUNT);
     case TS_FM_PAGE_FILTER:
         if (control == 0) return log_normalized(safe.filter_cutoff_hz, 20.0f, 20000.0f);
-        if (control == 1) return safe.filter_resonance / 0.95f;
+        if (control == 1) return safe.filter_resonance / resonance_maximum(&safe);
         if (control == 2) return log_normalized(safe.filter_attack_seconds, 0.001f, 4.0f);
         if (control == 3) return log_normalized(safe.filter_release_seconds, 0.01f, 8.0f);
-        if (control == 4) return (safe.filter_envelope_amount + 1.0f) * 0.5f;
+        if (control == 4) {
+            float maximum = filter_envelope_maximum(&safe);
+            return (safe.filter_envelope_amount / maximum + 1.0f) * 0.5f;
+        }
         return categorical_normalized(safe.filter_mode, TS_FILTER_MODE_COUNT);
     case TS_FM_PAGE_STRUCTURE:
         if (control == 0) return categorical_normalized(safe.structure, TS_FM_STRUCTURE_COUNT);
         if (control == 1) return categorical_normalized(safe.interaction, TS_FM_INTERACTION_COUNT);
-        if (control == 2) return log_normalized(safe.depth, 0.15f, 12.0f);
-        if (control == 3) return safe.feedback / 0.82f;
+        if (control == 2)
+            return log_normalized(safe.depth, 0.15f, depth_maximum(&safe));
+        if (control == 3) return safe.feedback / feedback_maximum(&safe);
         if (control == 4) return safe.interaction_mix;
-        return safe.transient_mix / 0.60f;
+        return safe.transient_mix / transient_maximum(&safe);
     default: return 0.0f;
     }
 }
@@ -422,30 +517,85 @@ int ts_fm_set_control_normalized(TsFmPatch *patch, TsFmPage page, int control,
     ts_fm_patch_sanitize(patch);
     normalized = clampf(normalized, 0.0f, 1.0f);
     switch (page) {
-    case TS_FM_PAGE_PITCH: patch->ratios[control] = log_value(normalized, 0.05f, 16.0f); break;
+    case TS_FM_PAGE_PITCH:
+        patch->ratios[control] = log_value(normalized, 0.05f,
+                                           ratio_maximum(patch));
+        break;
     case TS_FM_PAGE_WAVE: patch->waveforms[control] = categorical(normalized, TS_FM_WAVEFORM_COUNT); break;
-    case TS_FM_PAGE_LFO_RATE: patch->lfo_rates[control] = log_value(normalized, 0.03f, 160.0f); break;
-    case TS_FM_PAGE_LFO_DEPTH: patch->lfo_depths[control] = normalized; break;
+    case TS_FM_PAGE_LFO_RATE:
+        patch->lfo_rates[control] = log_value(normalized, 0.03f,
+                                              lfo_rate_maximum(patch));
+        break;
+    case TS_FM_PAGE_LFO_DEPTH:
+        patch->lfo_depths[control] = normalized * lfo_depth_maximum(patch);
+        break;
     case TS_FM_PAGE_LFO_TYPE: patch->lfo_types[control] = categorical(normalized, TS_FM_LFO_TYPE_COUNT); break;
     case TS_FM_PAGE_FILTER:
         if (control == 0) patch->filter_cutoff_hz = log_value(normalized, 20.0f, 20000.0f);
-        else if (control == 1) patch->filter_resonance = normalized * 0.95f;
+        else if (control == 1)
+            patch->filter_resonance = normalized * resonance_maximum(patch);
         else if (control == 2) patch->filter_attack_seconds = log_value(normalized, 0.001f, 4.0f);
         else if (control == 3) patch->filter_release_seconds = log_value(normalized, 0.01f, 8.0f);
-        else if (control == 4) patch->filter_envelope_amount = normalized * 2.0f - 1.0f;
+        else if (control == 4) {
+            float maximum = filter_envelope_maximum(patch);
+            patch->filter_envelope_amount = (normalized * 2.0f - 1.0f) * maximum;
+        }
         else patch->filter_mode = categorical(normalized, TS_FILTER_MODE_COUNT);
         break;
     case TS_FM_PAGE_STRUCTURE:
         if (control == 0) patch->structure = categorical(normalized, TS_FM_STRUCTURE_COUNT);
         else if (control == 1) patch->interaction = categorical(normalized, TS_FM_INTERACTION_COUNT);
-        else if (control == 2) patch->depth = log_value(normalized, 0.15f, 12.0f);
-        else if (control == 3) patch->feedback = normalized * 0.82f;
+        else if (control == 2)
+            patch->depth = log_value(normalized, 0.15f, depth_maximum(patch));
+        else if (control == 3)
+            patch->feedback = normalized * feedback_maximum(patch);
         else if (control == 4) patch->interaction_mix = normalized;
-        else patch->transient_mix = normalized * 0.60f;
+        else patch->transient_mix = normalized * transient_maximum(patch);
         break;
     default: return 0;
     }
     return 1;
+}
+
+int ts_fm_step_control(TsFmPatch *patch, TsFmPage page, int control,
+                       int direction, int fine)
+{
+    int *category = NULL;
+    int count = 0;
+    float normalized;
+    float amount;
+    if (patch == NULL || direction == 0 || control < 0 ||
+        control >= TS_FM_OPERATOR_COUNT) return 0;
+    ts_fm_patch_sanitize(patch);
+    if (page == TS_FM_PAGE_WAVE) {
+        category = &patch->waveforms[control];
+        count = TS_FM_WAVEFORM_COUNT;
+    } else if (page == TS_FM_PAGE_LFO_TYPE) {
+        category = &patch->lfo_types[control];
+        count = TS_FM_LFO_TYPE_COUNT;
+    } else if (page == TS_FM_PAGE_FILTER && control == 5) {
+        category = &patch->filter_mode;
+        count = TS_FILTER_MODE_COUNT;
+    } else if (page == TS_FM_PAGE_STRUCTURE && control == 0) {
+        category = &patch->structure;
+        count = TS_FM_STRUCTURE_COUNT;
+    } else if (page == TS_FM_PAGE_STRUCTURE && control == 1) {
+        category = &patch->interaction;
+        count = TS_FM_INTERACTION_COUNT;
+    }
+    if (category != NULL) {
+        int next = *category + (direction > 0 ? 1 : -1);
+        if (next < 0) next = 0;
+        if (next >= count) next = count - 1;
+        if (next == *category) return 0;
+        *category = next;
+        return 1;
+    }
+    normalized = ts_fm_control_normalized(patch, page, control);
+    amount = fine ? 0.01f : 0.05f;
+    return ts_fm_set_control_normalized(
+        patch, page, control,
+        normalized + (direction > 0 ? amount : -amount));
 }
 
 void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
@@ -464,7 +614,9 @@ void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
         if (page == TS_FM_PAGE_PITCH) snprintf(value, value_size, "X%.3F", safe.ratios[control]);
         else if (page == TS_FM_PAGE_WAVE) snprintf(value, value_size, "%s", ts_fm_waveform_name(safe.waveforms[control]));
         else if (page == TS_FM_PAGE_LFO_RATE) snprintf(value, value_size, safe.lfo_rates[control] < 10.0f ? "%.2FHZ" : "%.1FHZ", safe.lfo_rates[control]);
-        else if (page == TS_FM_PAGE_LFO_DEPTH) snprintf(value, value_size, "%d%%", (int)lrintf(safe.lfo_depths[control] * 100.0f));
+        else if (page == TS_FM_PAGE_LFO_DEPTH)
+            snprintf(value, value_size, "%d%%",
+                     (int)lrintf(safe.lfo_depths[control] * 100.0f));
         else snprintf(value, value_size, "%s", ts_fm_lfo_type_name(safe.lfo_types[control]));
         return;
     }
@@ -473,7 +625,10 @@ void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
         if (label != NULL) snprintf(label, label_size, "%s", labels[control]);
         if (value == NULL) return;
         if (control == 0) snprintf(value, value_size, safe.filter_cutoff_hz >= 1000.0f ? "%.1FK" : "%.0FHZ", safe.filter_cutoff_hz >= 1000.0f ? safe.filter_cutoff_hz / 1000.0f : safe.filter_cutoff_hz);
-        else if (control == 1) snprintf(value, value_size, "%d%%", (int)lrintf(safe.filter_resonance / 0.95f * 100.0f));
+        else if (control == 1)
+            snprintf(value, value_size, "%d%%",
+                     (int)lrintf(safe.filter_resonance /
+                                 resonance_maximum(&safe) * 100.0f));
         else if (control == 2) snprintf(value, value_size, "%.3FS", safe.filter_attack_seconds);
         else if (control == 3) snprintf(value, value_size, "%.2FS", safe.filter_release_seconds);
         else if (control == 4) snprintf(value, value_size, "%+.0F%%", safe.filter_envelope_amount * 100.0f);
@@ -487,9 +642,14 @@ void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
         if (control == 0) snprintf(value, value_size, "%s", ts_fm_structure_name(safe.structure));
         else if (control == 1) snprintf(value, value_size, "%s", ts_fm_interaction_name(safe.interaction));
         else if (control == 2) snprintf(value, value_size, "X%.2F", safe.depth);
-        else if (control == 3) snprintf(value, value_size, "%d%%", (int)lrintf(safe.feedback / 0.82f * 100.0f));
+        else if (control == 3)
+            snprintf(value, value_size, "%d%%",
+                     (int)lrintf(safe.feedback /
+                                 feedback_maximum(&safe) * 100.0f));
         else if (control == 4) snprintf(value, value_size, "%d%%", (int)lrintf(safe.interaction_mix * 100.0f));
-        else snprintf(value, value_size, "%d%%", (int)lrintf(safe.transient_mix / 0.60f * 100.0f));
+        else snprintf(value, value_size, "%d%%",
+                      (int)lrintf(safe.transient_mix /
+                                  transient_maximum(&safe) * 100.0f));
     }
 }
 
@@ -635,6 +795,63 @@ static int topology_carrier(int structure, int voice)
     return voice <= 2;
 }
 
+static int crosses_zero(float first, float second)
+{
+    return first == 0.0f || second == 0.0f ||
+           (first < 0.0f && second > 0.0f) ||
+           (first > 0.0f && second < 0.0f);
+}
+
+static void trim_drone_to_zero_boundaries(float *data, size_t *frame_count,
+                                          uint32_t sample_rate)
+{
+    size_t frames;
+    size_t window;
+    size_t start = 0u;
+    size_t end;
+    if (data == NULL || frame_count == NULL || *frame_count < 4u) return;
+    frames = *frame_count;
+    window = sample_rate / 5u;
+    if (window < 2u) window = 2u;
+    if (window > frames / 4u) window = frames / 4u;
+    for (size_t at = 1u; at < window; ++at) {
+        if (crosses_zero(data[at - 1u], data[at])) {
+            start = fabsf(data[at - 1u]) <= fabsf(data[at]) ? at - 1u : at;
+            break;
+        }
+    }
+    if (start > 0u) {
+        memmove(data, data + start, (frames - start) * sizeof(*data));
+        frames -= start;
+    }
+    data[0] = 0.0f;
+    end = frames - 1u;
+    {
+        size_t minimum = frames > window ? frames - window : frames / 2u;
+        int found = 0;
+        for (size_t at = frames - 1u; at > minimum; --at) {
+            if (crosses_zero(data[at - 1u], data[at])) {
+                end = fabsf(data[at - 1u]) <= fabsf(data[at]) ? at - 1u : at;
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            float closest = fabsf(data[end]);
+            for (size_t at = minimum; at < frames; ++at) {
+                float magnitude = fabsf(data[at]);
+                if (magnitude < closest) {
+                    closest = magnitude;
+                    end = at;
+                }
+            }
+        }
+    }
+    if (end < 2u) end = frames - 1u;
+    data[end] = 0.0f;
+    *frame_count = end + 1u;
+}
+
 int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
                         float seconds, float frequency, uint32_t sample_rate,
                         uint32_t seed, char *error, size_t error_size)
@@ -678,9 +895,12 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
         float filter_lfo = 0.0f;
         float t = (float)frame / (float)sample_rate;
         float remaining = seconds - t;
-        float amplitude_attack = fminf(1.0f, t * (18.0f + safe.shape * 760.0f));
-        float amplitude_release = fminf(1.0f, remaining * (2.0f + safe.shape * 42.0f));
-        float amplitude_envelope = amplitude_attack * amplitude_release *
+        float amplitude_attack = safe.drone_mode ? 1.0f :
+            fminf(1.0f, t * (18.0f + safe.shape * 760.0f));
+        float amplitude_release = safe.drone_mode ? 1.0f :
+            fminf(1.0f, remaining * (2.0f + safe.shape * 42.0f));
+        float amplitude_envelope = safe.drone_mode ? 1.0f :
+            amplitude_attack * amplitude_release *
             expf(-t * (0.08f + safe.shape * 2.8f));
         int carrier_count = 0;
         int first_active = -1;
@@ -716,14 +936,16 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
             lfo *= safe.lfo_depths[voice];
             if (safe.lfo_types[voice] >= TS_FM_LFO_PITCH_SINE &&
                 safe.lfo_types[voice] <= TS_FM_LFO_PITCH_RAMP)
-                pitch_scale = exp2f(lfo * 2.0f);
+                pitch_scale = exp2f(lfo * (safe.extreme_mode ? 4.0f : 2.0f));
             else if (safe.lfo_types[voice] == TS_FM_LFO_AMP_SINE ||
                      safe.lfo_types[voice] == TS_FM_LFO_AMP_SQUARE ||
                      safe.lfo_types[voice] == TS_FM_LFO_STEP_AMP)
-                amp_scale = clampf(1.0f + lfo, 0.0f, 2.0f);
+                amp_scale = clampf(1.0f + lfo, 0.0f,
+                                   safe.extreme_mode ? 3.0f : 2.0f);
             else if (safe.lfo_types[voice] == TS_FM_LFO_INDEX_SINE ||
                      safe.lfo_types[voice] == TS_FM_LFO_INDEX_RANDOM)
-                index_scale = clampf(1.0f + lfo * 1.5f, 0.0f, 2.5f);
+                index_scale = clampf(1.0f + lfo * 1.5f, 0.0f,
+                                     safe.extreme_mode ? 5.0f : 2.5f);
             else if (safe.lfo_types[voice] == TS_FM_LFO_FILTER_SINE ||
                      safe.lfo_types[voice] == TS_FM_LFO_FILTER_RANDOM)
                 filter_lfo += lfo;
@@ -736,7 +958,7 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
             current[voice] = interaction_sample(&safe, voice, phases[voice],
                                                 increment, modulation, noise,
                                                 index_scale) * amp_scale;
-            if (!topology_carrier(safe.structure, voice))
+            if (!safe.drone_mode && !topology_carrier(safe.structure, voice))
                 current[voice] *= expf(-t * (0.25f + (float)voice * 0.16f +
                                              safe.shape * 3.2f));
             if (topology_carrier(safe.structure, voice)) {
@@ -753,25 +975,33 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
         {
             float value = carrier_count > 0 ? carriers / sqrtf((float)carrier_count) : 0.0f;
             float noise = rng_bipolar(&voice_rng[0]);
-            float filter_attack = fminf(1.0f, t / safe.filter_attack_seconds);
-            float filter_release = fminf(1.0f, remaining / safe.filter_release_seconds);
-            float filter_envelope = fminf(filter_attack, filter_release);
+            float filter_attack = safe.drone_mode ? 1.0f :
+                fminf(1.0f, t / safe.filter_attack_seconds);
+            float filter_release = safe.drone_mode ? 1.0f :
+                fminf(1.0f, remaining / safe.filter_release_seconds);
+            float filter_envelope = safe.drone_mode ? 1.0f :
+                fminf(filter_attack, filter_release);
             float cutoff = safe.filter_cutoff_hz * exp2f(
-                safe.filter_envelope_amount * filter_envelope * 6.0f +
-                filter_lfo * 1.5f);
+                safe.filter_envelope_amount * filter_envelope *
+                (safe.extreme_mode ? 9.0f : 6.0f) +
+                filter_lfo * (safe.extreme_mode ? 3.0f : 1.5f));
             float coefficient;
             float high;
             float damping;
             value *= amplitude_envelope;
-            value += noise * expf(-t * (22.0f + safe.shape * 90.0f)) *
-                     safe.transient_mix;
+            if (!safe.drone_mode)
+                value += noise * expf(-t * (22.0f + safe.shape * 90.0f)) *
+                         safe.transient_mix;
             cutoff = clampf(cutoff, 20.0f, (float)sample_rate * 0.45f);
             coefficient = 2.0f * sinf((float)M_PI * cutoff / (float)sample_rate);
             coefficient = clampf(coefficient, 0.001f, 0.99f);
             damping = 1.95f - safe.filter_resonance * 1.75f;
             low += coefficient * band;
+            low = isfinite(low) ? clampf(low, -16.0f, 16.0f) : 0.0f;
             high = value - low - damping * band;
+            high = isfinite(high) ? clampf(high, -16.0f, 16.0f) : 0.0f;
             band += coefficient * high;
+            band = isfinite(band) ? clampf(band, -16.0f, 16.0f) : 0.0f;
             if (safe.filter_mode == TS_FILTER_HIGHPASS) value = high;
             else if (safe.filter_mode == TS_FILTER_BANDPASS) value = band;
             else value = low;
@@ -784,6 +1014,8 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
             }
         }
     }
+    if (safe.drone_mode)
+        trim_drone_to_zero_boundaries(data, &frames, sample_rate);
     ts_sample_free(sample);
     sample->data = data;
     sample->frames = frames;

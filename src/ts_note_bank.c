@@ -61,6 +61,32 @@ void ts_note_bank_clear_latched(TsNoteBank *bank)
         if (bank->voices[i].latched) bank->voices[i].active = 0;
 }
 
+int ts_note_bank_latch_active_synth(TsNoteBank *bank)
+{
+    int count = 0;
+    if (bank == NULL) return 0;
+    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
+        TsNoteVoice *voice = &bank->voices[i];
+        if (!voice->active || !voice->synth) continue;
+        voice->latched = 1;
+        ++count;
+    }
+    return count;
+}
+
+int ts_note_bank_release_latched_synth(TsNoteBank *bank)
+{
+    int count = 0;
+    if (bank == NULL) return 0;
+    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
+        TsNoteVoice *voice = &bank->voices[i];
+        if (!voice->active || !voice->synth || !voice->latched) continue;
+        voice->active = 0;
+        ++count;
+    }
+    return count;
+}
+
 TsNoteStartResult ts_note_bank_start(TsNoteBank *bank, const TsInstrument *instrument,
                                      TsAuditionSource source, int note, int latched,
                                      int output_rate)
@@ -346,6 +372,25 @@ int ts_note_bank_count(const TsNoteBank *bank)
     if (bank == NULL) return 0;
     for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
         if (bank->voices[i].active) ++count;
+    return count;
+}
+
+int ts_note_bank_synth_count(const TsNoteBank *bank)
+{
+    int count = 0;
+    if (bank == NULL) return 0;
+    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
+        if (bank->voices[i].active && bank->voices[i].synth) ++count;
+    return count;
+}
+
+int ts_note_bank_latched_synth_count(const TsNoteBank *bank)
+{
+    int count = 0;
+    if (bank == NULL) return 0;
+    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
+        if (bank->voices[i].active && bank->voices[i].synth &&
+            bank->voices[i].latched) ++count;
     return count;
 }
 

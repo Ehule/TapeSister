@@ -123,6 +123,8 @@ enum {
 
 typedef struct {
     uint32_t genome_version;
+    int drone_mode;
+    int extreme_mode;
     int structure;
     int ratio_family;
     float depth;
@@ -654,6 +656,8 @@ void ts_fm_patch_sanitize(TsFmPatch *patch);
 float ts_fm_control_normalized(const TsFmPatch *patch, TsFmPage page, int control);
 int ts_fm_set_control_normalized(TsFmPatch *patch, TsFmPage page, int control,
                                  float normalized);
+int ts_fm_step_control(TsFmPatch *patch, TsFmPage page, int control,
+                       int direction, int fine);
 void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
                           char *label, size_t label_size,
                           char *value, size_t value_size);

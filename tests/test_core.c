@@ -1933,7 +1933,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR22", 5) == 0);
+        CHECK(memcmp(magic, "TSR23", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -2117,6 +2117,20 @@ int main(void)
           fabs(notes.voices[0].pitch - 1.0) < 0.0001 &&
           fabs(notes.voices[1].pitch - 2.0) < 0.0001);
     ts_note_bank_clear(&notes);
+    CHECK(ts_note_bank_start_sample(
+              &notes, &restored.current, &restored.tuning,
+              0, TS_KEYBOARD_BASE_NOTE, 0, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start_sample(
+              &notes, &restored.current, &restored.tuning,
+              4, TS_KEYBOARD_BASE_NOTE, 0, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_synth_count(&notes) == 2);
+    CHECK(ts_note_bank_latched_synth_count(&notes) == 0);
+    CHECK(ts_note_bank_latch_active_synth(&notes) == 2);
+    CHECK(ts_note_bank_latched_synth_count(&notes) == 2);
+    ts_note_bank_release(&notes, 0);
+    CHECK(ts_note_bank_synth_count(&notes) == 2);
+    CHECK(ts_note_bank_release_latched_synth(&notes) == 2);
+    CHECK(ts_note_bank_count(&notes) == 0);
     remove("test-recipe.tsr");
     remove("test-roundtrip.wav");
 
@@ -2801,6 +2815,32 @@ int main(void)
     ts_ui_render(&fb, &ui, &family);
     CHECK(fb.pixels[349 * TS_UI_WIDTH + 89] == 0xff18ff00u);
 
+    ts_fm_patch_from_recipe(&family.generator, &ui.fm_patch);
+    ui.fm_open = 1;
+    ui.fm_page = TS_FM_PAGE_LFO_DEPTH;
+    ui.fm_preview_sample = &family.current;
+    ui.fm_patch.active_mask = 0u;
+    CHECK(ts_fm_set_control_normalized(&ui.fm_patch, ui.fm_page, 0, 0.5f));
+    ui.playback_active = 1;
+    ui.playhead_sample = &family.current;
+    ui.playhead_frame = family.current.frames / 4u;
+    ui.playhead_frames = family.current.frames;
+    family.family_mutation = 0.64f;
+    ts_ui_render(&fb, &ui, &family);
+    CHECK(fb.pixels[70 * TS_UI_WIDTH + 22 + 596 / 4] == 0xffff1ce7u);
+    CHECK(fb.pixels[176 * TS_UI_WIDTH + 25] == 0xff2d0039u);
+    CHECK(ts_ui_fm_action_from_point(40, 260) == TS_UI_FM_ACTION_RANDOMIZE);
+    CHECK(ts_ui_fm_action_from_point(330, 260) == TS_UI_FM_ACTION_HOLD);
+    CHECK(ts_ui_fm_action_from_point(40, 286) == TS_UI_FM_ACTION_DRONE);
+    CHECK(ts_ui_fm_action_from_point(160, 286) == TS_UI_FM_ACTION_EXTREME);
+    CHECK(ts_ui_fm_action_from_point(420, 260) == TS_UI_FM_ACTION_BACK);
+    CHECK(ts_ui_fm_range_contains(500, 286));
+    CHECK(!ts_ui_fm_range_contains(250, 286));
+    ui.fm_open = 0;
+    ui.fm_preview_sample = NULL;
+    ui.playhead_sample = NULL;
+    ui.playback_active = 0;
+
     {
         TsInstrument workflow;
         TsFmPatch created_patch, varied_patch;
@@ -2833,6 +2873,9 @@ int main(void)
         CHECK(varied_patch.structure == created_patch.structure);
         CHECK(ts_sample_hash(&workflow.bank[9].sample) != exact_hash);
         CHECK(ts_sample_hash(&workflow.bank[6].sample) == exact_hash);
+        workflow.bank[9].generator.fm_patch.drone_mode = 1;
+        workflow.bank[9].generator.fm_patch.extreme_mode = 1;
+        ts_fm_patch_sanitize(&workflow.bank[9].generator.fm_patch);
         CHECK(ts_instrument_save_recipe(&workflow, "test-workflow.tsr", error, sizeof(error)));
         {
             TsInstrument workflow_loaded;
@@ -2920,6 +2963,11 @@ int main(void)
                 CHECK(label[0] != '\0' && value[0] != '\0');
             }
         }
+        patch.waveforms[0] = TS_FM_WAVE_SINE;
+        CHECK(ts_fm_step_control(&patch, TS_FM_PAGE_WAVE, 0, 1, 0));
+        CHECK(patch.waveforms[0] == TS_FM_WAVE_TRIANGLE);
+        CHECK(ts_fm_step_control(&patch, TS_FM_PAGE_WAVE, 0, -1, 0));
+        CHECK(patch.waveforms[0] == TS_FM_WAVE_SINE);
         patch.mutation_mask = TS_FM_MUTATE_PITCH;
         ts_fm_patch_vary(&patch, 0x2468aceu, 1.0f, &varied);
         CHECK(memcmp(patch.waveforms, varied.waveforms,
@@ -2947,6 +2995,56 @@ int main(void)
                       fabsf(first_render.data[frame]) <= 1.0f);
             ts_sample_free(&first_render);
             ts_sample_free(&second_render);
+        }
+        {
+            TsSample drone_render;
+            TsSample extreme_render;
+            double early_energy = 0.0;
+            double late_energy = 0.0;
+            size_t quarter;
+            ts_sample_init(&drone_render);
+            ts_sample_init(&extreme_render);
+            patch.drone_mode = 1;
+            patch.extreme_mode = 0;
+            patch.active_mask = 0x3fu;
+            ts_fm_patch_sanitize(&patch);
+            CHECK(ts_fm_render_sample(&drone_render, &patch, 1.0f, 110.0f,
+                                      12000u, 0x44524f4eu,
+                                      error, sizeof(error)));
+            CHECK(drone_render.frames > 8000u);
+            CHECK(drone_render.data[0] == 0.0f);
+            CHECK(drone_render.data[drone_render.frames - 1u] == 0.0f);
+            quarter = drone_render.frames / 4u;
+            for (size_t frame = quarter / 2u; frame < quarter; ++frame)
+                early_energy += (double)drone_render.data[frame] *
+                                drone_render.data[frame];
+            for (size_t frame = drone_render.frames - quarter;
+                 frame < drone_render.frames - quarter / 2u; ++frame)
+                late_energy += (double)drone_render.data[frame] *
+                               drone_render.data[frame];
+            CHECK(early_energy > 0.0001);
+            CHECK(late_energy > early_energy * 0.10);
+
+            patch.extreme_mode = 1;
+            ts_fm_patch_sanitize(&patch);
+            CHECK(ts_fm_set_control_normalized(
+                &patch, TS_FM_PAGE_PITCH, 0, 1.0f));
+            CHECK(ts_fm_set_control_normalized(
+                &patch, TS_FM_PAGE_LFO_RATE, 0, 1.0f));
+            CHECK(ts_fm_set_control_normalized(
+                &patch, TS_FM_PAGE_LFO_DEPTH, 0, 1.0f));
+            CHECK(ts_fm_set_control_normalized(
+                &patch, TS_FM_PAGE_STRUCTURE, 2, 1.0f));
+            CHECK(patch.ratios[0] > 16.0f && patch.depth > 12.0f &&
+                  patch.lfo_rates[0] > 160.0f && patch.lfo_depths[0] > 1.0f);
+            CHECK(ts_fm_render_sample(&extreme_render, &patch, 0.25f, 110.0f,
+                                      12000u, 0x45585452u,
+                                      error, sizeof(error)));
+            CHECK(ts_sample_peak(&extreme_render) <= 0.98f);
+            for (size_t frame = 0; frame < extreme_render.frames; ++frame)
+                CHECK(isfinite(extreme_render.data[frame]));
+            ts_sample_free(&drone_render);
+            ts_sample_free(&extreme_render);
         }
     }
 

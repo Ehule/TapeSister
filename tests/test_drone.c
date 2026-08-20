@@ -549,8 +549,14 @@ static void test_ui_contract(void)
     open.drone_split_frame = split;
     open.drone_output_frames = drone.frames;
     open.drone_overlap_frames = overlap;
+    open.playback_active = 1;
+    open.playhead_sample = &drone;
+    open.playhead_frame = drone.frames / 4u;
+    open.playhead_frames = drone.frames;
     ts_ui_render(&before, &closed, &instrument);
     ts_ui_render(&after, &open, &instrument);
+    CHECK(after.pixels[(TS_DRONE_WAVE_Y + 5) * TS_UI_WIDTH +
+          TS_DRONE_WAVE_X + TS_DRONE_WAVE_W / 4] == 0xffff1ce7u);
     open.drone_preview_sample = &muted;
     ts_ui_render(&muted_frame, &open, &instrument);
     CHECK(ts_ui_drone_action_from_point(60, 170) == TS_UI_DRONE_ACTION_PREVIEW);

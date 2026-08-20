@@ -284,9 +284,19 @@ stored genome. Click or wheel a control for immediate non-destructive preview; R
 protects the visible page and obeys the permission switches; Apply prints the genome
 into the selected tile.
 
-The workspace uses the same QWERTY mapping, F1-F8 octaves, tile tuning, five-voice
-limit, and Shift latch/chord rules as sample audition. An armed Capture-to-New-Tile can
-print this live performance, and REC BANK SRC SYNTH can record its synth-only bus.
+**Drone** removes the amplitude and filter attack/release envelopes, suppresses the
+transient, and trims the render to exact zero-valued boundary crossings. The disabled
+envelope controls gray out while the other controls remain live. **Extreme** opens
+substantially wider ratios, modulation, feedback, resonance, and LFO ranges while the
+DC blocker and output limiter remain active. Range is duplicated inside the workspace,
+and categorical controls such as Wave step exactly one choice per wheel detent.
+
+QWERTY notes are genuinely five-voice polyphonic regardless of tile loop state: key-up
+releases only that note, and **Hold** latches the currently sounding chord. F1-F8 and
+tile tuning still apply. Every miniature waveform in FM LOGIC, Transform, and Drone
+Maker carries a tiny playhead tied to the preview actually being heard. An armed
+Capture-to-New-Tile can print this live performance, and REC BANK SRC SYNTH can record
+its synth-only bus.
 
 ## Physical tape gestures
 
@@ -392,9 +402,9 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR22 stores every occupied tile as a complete independent object, including the full FM genome: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR21 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR23 stores every occupied tile as a complete independent object, including the full FM genome and its Drone/Extreme modes: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR22 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
-For backward compatibility, the chosen `.tsr` remains an ordinary first-page TSR22.
+The chosen `.tsr` remains an ordinary first-page TSR23.
 Additional pages, the REC BANK, and a tiny manifest live beside it in
 `<project>.tsr.samples/`. Move, copy, or back up the `.tsr` and that companion folder
 together. A legacy project with no companion folder opens as one Sample page with an

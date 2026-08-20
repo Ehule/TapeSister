@@ -42,6 +42,8 @@ typedef enum {
 void ts_note_bank_init(TsNoteBank *bank);
 void ts_note_bank_clear(TsNoteBank *bank);
 void ts_note_bank_clear_latched(TsNoteBank *bank);
+int ts_note_bank_latch_active_synth(TsNoteBank *bank);
+int ts_note_bank_release_latched_synth(TsNoteBank *bank);
 TsNoteStartResult ts_note_bank_start(TsNoteBank *bank, const TsInstrument *instrument,
                                      TsAuditionSource source, int note, int latched,
                                      int output_rate);
@@ -85,6 +87,8 @@ void ts_note_bank_set_source_tuned(TsNoteBank *bank,
 float ts_note_bank_read(TsNoteBank *bank);
 float ts_note_bank_read_split(TsNoteBank *bank, float *synth_output);
 int ts_note_bank_count(const TsNoteBank *bank);
+int ts_note_bank_synth_count(const TsNoteBank *bank);
+int ts_note_bank_latched_synth_count(const TsNoteBank *bank);
 uint32_t ts_note_bank_mask(const TsNoteBank *bank);
 const TsNoteVoice *ts_note_bank_display_voice(const TsNoteBank *bank);
 
