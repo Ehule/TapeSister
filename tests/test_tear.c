@@ -97,7 +97,8 @@ int main(void)
     if (!ts_instrument_load_recipe(&restored, "test-tear.tsr", error, sizeof(error))) {
         fprintf(stderr, "TEAR roundtrip load: %s\n", error); ++failures;
     } else {
-        CHECK(restored.post_edit_count == 1 && restored.post_edits[0].kind == TS_POST_TEAR);
+        CHECK(restored.post_edit_count == 1 &&
+              restored.post_edits[0].kind == TS_POST_MATERIAL_REPLACE);
         CHECK(ts_sample_hash(&restored.current) == serial_hash);
     }
     }

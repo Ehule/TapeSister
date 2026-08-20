@@ -3416,6 +3416,8 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
     size_t length;
     size_t prepend;
     size_t placed_first;
+    size_t old_frames;
+    size_t view_span;
     if (instrument == NULL || instrument->current.data == NULL) {
         set_error(error, error_size, "No Current sample for tape drag");
         return 0;
@@ -3430,6 +3432,9 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
     }
     if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     length = last - first;
+    old_frames = instrument->current.frames;
+    view_span = instrument->view_last > instrument->view_first ?
+                instrument->view_last - instrument->view_first : old_frames;
     if (ts_instrument_grid_moves_snap(instrument) && destination >= 0 &&
         (uint64_t)destination <= instrument->current.frames)
         destination = (int64_t)ts_instrument_grid_target(
@@ -3458,6 +3463,17 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
     if (prepend > 0u && target.has_playhead) target.playhead_frame += prepend;
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
+    if (current.frames > old_frames) {
+        size_t wanted = view_span > length ? view_span : length;
+        if (wanted > current.frames) wanted = current.frames;
+        if (prepend > 0u) {
+            target.view_first = 0u;
+            target.view_last = wanted;
+        } else {
+            target.view_last = current.frames;
+            target.view_first = current.frames - wanted;
+        }
+    }
     begin_edit(instrument);
     replace_current_preserving_view(instrument, &current);
     instrument->selection_first = target.selection_first;
@@ -3467,6 +3483,8 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
     instrument->has_playhead = target.has_playhead;
     instrument->loop_first = target.loop_first;
     instrument->loop_last = target.loop_last;
+    instrument->view_first = target.view_first;
+    instrument->view_last = target.view_last;
     memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target.post_edit_count;
     if (!bank_sync_selected(instrument, error, error_size)) return 0;
@@ -3488,6 +3506,20 @@ int ts_instrument_bank_first_empty(const TsInstrument *instrument)
     if (instrument == NULL) return -1;
     for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i)
         if (!instrument->bank[i].occupied) return i;
+    return -1;
+}
+
+int ts_instrument_bank_next_empty(const TsInstrument *instrument)
+{
+    int start;
+    if (instrument == NULL) return -1;
+    start = instrument->selected_slot >= 0 &&
+            instrument->selected_slot < TS_BANK_SLOT_COUNT ?
+            instrument->selected_slot : TS_BANK_SLOT_COUNT - 1;
+    for (int offset = 1; offset <= TS_BANK_SLOT_COUNT; ++offset) {
+        int slot = (start + offset) % TS_BANK_SLOT_COUNT;
+        if (!instrument->bank[slot].occupied) return slot;
+    }
     return -1;
 }
 
@@ -4190,9 +4222,8 @@ static int append_audio_patch(TsInstrument *instrument, const TsSample *sample,
     TsBankSlot *slot;
     TsAudioPatch *patch;
     if (instrument == NULL || sample == NULL || sample->data == NULL ||
-        instrument->selected_slot < 0 || instrument->selected_slot >= TS_BANK_SLOT_COUNT ||
-        !instrument->bank[instrument->selected_slot].occupied) {
-        set_error(error, error_size, "Paste needs an occupied selected tile");
+        instrument->selected_slot < 0 || instrument->selected_slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Audio checkpoint needs a selected tile");
         return 0;
     }
     if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
@@ -4271,6 +4302,48 @@ static int commit_post_snapshot(TsInstrument *instrument, TsEditSnapshot *target
     memcpy(instrument->post_edits, target->post_edits, sizeof(instrument->post_edits));
     instrument->post_edit_count = target->post_edit_count;
     return bank_sync_selected(instrument, error, error_size);
+}
+
+static int commit_material_checkpoint(TsInstrument *instrument,
+                                      const TsSample *material,
+                                      TsEditSnapshot *target,
+                                      char *error, size_t error_size)
+{
+    TsPostEdit operation;
+    TsSample current;
+    uint32_t patch_index;
+    uint32_t process_seed;
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size) ||
+        !append_audio_patch(instrument, material, NULL, &patch_index,
+                            error, error_size))
+        return 0;
+    process_seed = target->process.seed;
+    target->crop_first = 0u;
+    target->crop_last = instrument->parent.frames;
+    memset(target->sample_edits, 0, sizeof(target->sample_edits));
+    target->sample_edit_count = 0;
+    ts_process_recipe_reset(&target->process);
+    target->process.seed = process_seed;
+    memset(target->post_edits, 0, sizeof(target->post_edits));
+    target->post_edit_count = 0;
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_MATERIAL_REPLACE;
+    operation.first = 0u;
+    operation.last = instrument->parent.frames;
+    operation.patch_index = patch_index;
+    target->post_edits[target->post_edit_count++] = operation;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, target, error, error_size)) {
+        discard_last_audio_patch(instrument, patch_index);
+        return 0;
+    }
+    if (!commit_post_snapshot(instrument, target, &current, error, error_size)) {
+        ts_sample_free(&current);
+        discard_last_audio_patch(instrument, patch_index);
+        return 0;
+    }
+    set_error(error, error_size, "");
+    return 1;
 }
 
 static int resample_selection_patch(TsSample *patch, const TsSample *source,
@@ -4812,8 +4885,16 @@ static void canvas_adjust_view(TsInstrument *instrument, int edge, int64_t delta
     if (span > new_frames) span = new_frames;
     if (delta > 0 && edge == 1) {
         size_t amount = (size_t)delta;
-        first += amount;
-        last += amount;
+        if (first == 0u) {
+            first = 0u;
+            last = span;
+        } else {
+            first += amount;
+            last += amount;
+        }
+    } else if (delta > 0 && edge == 2 && last >= old_frames) {
+        last = new_frames;
+        first = last > span ? last - span : 0u;
     } else if (delta < 0 && edge == 1) {
         size_t amount = (size_t)((uint64_t)(-(delta + 1)) + 1u);
         if (first >= amount) {
@@ -4864,6 +4945,7 @@ int ts_instrument_canvas_gesture_begin(TsInstrument *instrument,
                                        TsCanvasGesture *gesture, int edge,
                                        char *error, size_t error_size)
 {
+    size_t span;
     if (instrument == NULL || gesture == NULL || gesture->active ||
         instrument->current.data == NULL ||
         instrument->current.frames < TS_CANVAS_MIN_FRAMES ||
@@ -4880,6 +4962,23 @@ int ts_instrument_canvas_gesture_begin(TsInstrument *instrument,
     gesture->owner_slot = instrument->selected_slot;
     gesture->edge = edge;
     gesture->delta_frames = 0;
+    span = gesture->start.view_last > gesture->start.view_first ?
+           gesture->start.view_last - gesture->start.view_first :
+           instrument->current.frames;
+    if (span > instrument->current.frames) span = instrument->current.frames;
+    if (gesture->start.view_first == 0u &&
+        gesture->start.view_last >= instrument->current.frames) {
+        gesture->focus_view_first = 0u;
+        gesture->focus_view_last = instrument->current.frames;
+    } else if (edge == 1) {
+        gesture->focus_view_first = 0u;
+        gesture->focus_view_last = span;
+    } else {
+        gesture->focus_view_last = instrument->current.frames;
+        gesture->focus_view_first = instrument->current.frames - span;
+    }
+    instrument->view_first = gesture->focus_view_first;
+    instrument->view_last = gesture->focus_view_last;
     gesture->active = 1;
     set_error(error, error_size, "");
     return 1;
@@ -4931,6 +5030,8 @@ int ts_instrument_canvas_gesture_preview(TsInstrument *instrument,
                              error, error_size)) return 0;
         replace_current_preserving_view(instrument, &preview);
         restore_stretch_snapshot(instrument, &gesture->start);
+        instrument->view_first = gesture->focus_view_first;
+        instrument->view_last = gesture->focus_view_last;
         gesture->delta_frames = 0;
         set_error(error, error_size, "");
         return 1;
@@ -4948,6 +5049,8 @@ int ts_instrument_canvas_gesture_preview(TsInstrument *instrument,
     if (!render_snapshot(&preview, instrument, &target, error, error_size)) return 0;
     replace_current_preserving_view(instrument, &preview);
     restore_stretch_snapshot(instrument, &gesture->start);
+    instrument->view_first = gesture->focus_view_first;
+    instrument->view_last = gesture->focus_view_last;
     memcpy(instrument->post_edits, target.post_edits,
            sizeof(instrument->post_edits));
     instrument->post_edit_count = target.post_edit_count;
@@ -6782,7 +6885,7 @@ int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
         set_error(error, error_size, "");
         return 1;
     }
-    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     target = snapshot(instrument);
     memset(&operation, 0, sizeof(operation));
     operation.kind = TS_POST_WARP;
@@ -6793,12 +6896,14 @@ int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
     target.post_edits[target.post_edit_count++] = operation;
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
-    begin_edit(instrument);
-    replace_current_preserving_view(instrument, &current);
-    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
-    instrument->post_edit_count = target.post_edit_count;
-    set_error(error, error_size, "");
-    return bank_sync_selected(instrument, error, error_size);
+    target = snapshot(instrument);
+    if (!commit_material_checkpoint(instrument, &current, &target,
+                                    error, error_size)) {
+        ts_sample_free(&current);
+        return 0;
+    }
+    ts_sample_free(&current);
+    return 1;
 }
 
 void ts_warp_gesture_init(TsWarpGesture *gesture)
@@ -6834,7 +6939,7 @@ int ts_instrument_warp_gesture_begin(TsInstrument *instrument,
         set_error(error, error_size, "Could not begin WARP gesture");
         return 0;
     }
-    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
     if (!ts_sample_clone(&gesture->original, &instrument->current,
                          error, error_size)) return 0;
@@ -6904,7 +7009,7 @@ int ts_instrument_warp_gesture_commit(TsInstrument *instrument,
                                       TsWarpGesture *gesture,
                                       char *error, size_t error_size)
 {
-    TsPostEdit operation;
+    TsEditSnapshot target;
     int ok;
     if (!warp_gesture_owns(instrument, gesture)) {
         warp_gesture_clear(gesture);
@@ -6914,22 +7019,13 @@ int ts_instrument_warp_gesture_commit(TsInstrument *instrument,
     if (gesture->amount == 0.0f)
         return ts_instrument_warp_gesture_cancel(instrument, gesture,
                                                  error, error_size);
-    stack_push(instrument->undo, &instrument->undo_count, gesture->start);
-    instrument->redo_count = 0;
-    memset(&operation, 0, sizeof(operation));
-    operation.kind = TS_POST_WARP;
-    operation.first = gesture->start.has_selection ?
-                      gesture->start.selection_first : 0u;
-    operation.last = gesture->start.has_selection ?
-                     gesture->start.selection_last : gesture->original.frames;
-    operation.amount = gesture->amount;
-    memcpy(instrument->post_edits, gesture->start.post_edits,
-           sizeof(instrument->post_edits));
-    instrument->post_edit_count = gesture->start.post_edit_count;
-    instrument->post_edits[instrument->post_edit_count++] = operation;
-    ok = bank_sync_selected(instrument, error, error_size);
-    warp_gesture_clear(gesture);
-    if (ok) set_error(error, error_size, "");
+    target = gesture->start;
+    ok = commit_material_checkpoint(instrument, &instrument->current, &target,
+                                    error, error_size);
+    if (ok) {
+        warp_gesture_clear(gesture);
+        set_error(error, error_size, "");
+    }
     return ok;
 }
 
@@ -6946,7 +7042,7 @@ int ts_instrument_apply_smear(TsInstrument *instrument, float amount,
         set_error(error, error_size, "SMEAR amount must be between zero and one"); return 0;
     }
     if (amount == 0.0f) { set_error(error, error_size, ""); return 1; }
-    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     target = snapshot(instrument);
     memset(&operation, 0, sizeof(operation));
     operation.kind = TS_POST_SMEAR;
@@ -6956,11 +7052,14 @@ int ts_instrument_apply_smear(TsInstrument *instrument, float amount,
     target.post_edits[target.post_edit_count++] = operation;
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
-    begin_edit(instrument);
-    replace_current_preserving_view(instrument, &current);
-    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
-    instrument->post_edit_count = target.post_edit_count;
-    return bank_sync_selected(instrument, error, error_size);
+    target = snapshot(instrument);
+    if (!commit_material_checkpoint(instrument, &current, &target,
+                                    error, error_size)) {
+        ts_sample_free(&current);
+        return 0;
+    }
+    ts_sample_free(&current);
+    return 1;
 }
 
 void ts_smear_gesture_init(TsSmearGesture *gesture) { ts_warp_gesture_init(gesture); }
@@ -6971,7 +7070,7 @@ int ts_instrument_smear_gesture_begin(TsInstrument *instrument, TsSmearGesture *
     if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
         set_error(error, error_size, "Could not begin SMEAR gesture"); return 0;
     }
-    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
     if (!ts_sample_clone(&gesture->original, &instrument->current, error, error_size)) return 0;
     gesture->owner_parent_data = instrument->parent.data;
@@ -7024,24 +7123,21 @@ int ts_instrument_smear_gesture_cancel(TsInstrument *instrument, TsSmearGesture 
 int ts_instrument_smear_gesture_commit(TsInstrument *instrument, TsSmearGesture *gesture,
                                        char *error, size_t error_size)
 {
-    TsPostEdit operation;
+    TsEditSnapshot target;
     int ok;
     if (!warp_gesture_owns(instrument, gesture)) {
         warp_gesture_clear(gesture); set_error(error, error_size, "SMEAR gesture no longer owns Current"); return 0;
     }
     if (gesture->amount == 0.0f)
         return ts_instrument_smear_gesture_cancel(instrument, gesture, error, error_size);
-    stack_push(instrument->undo, &instrument->undo_count, gesture->start);
-    instrument->redo_count = 0;
-    memset(&operation, 0, sizeof(operation)); operation.kind = TS_POST_SMEAR;
-    operation.first = gesture->start.has_selection ? gesture->start.selection_first : 0u;
-    operation.last = gesture->start.has_selection ? gesture->start.selection_last : gesture->original.frames;
-    operation.amount = gesture->amount;
-    memcpy(instrument->post_edits, gesture->start.post_edits, sizeof(instrument->post_edits));
-    instrument->post_edit_count = gesture->start.post_edit_count;
-    instrument->post_edits[instrument->post_edit_count++] = operation;
-    ok = bank_sync_selected(instrument, error, error_size);
-    warp_gesture_clear(gesture); if (ok) set_error(error, error_size, ""); return ok;
+    target = gesture->start;
+    ok = commit_material_checkpoint(instrument, &instrument->current, &target,
+                                    error, error_size);
+    if (ok) {
+        warp_gesture_clear(gesture);
+        set_error(error, error_size, "");
+    }
+    return ok;
 }
 
 int ts_instrument_apply_tear(TsInstrument *instrument, float amount,
@@ -7055,7 +7151,7 @@ int ts_instrument_apply_tear(TsInstrument *instrument, float amount,
         set_error(error, error_size, "TEAR amount must be between zero and one"); return 0;
     }
     if (amount == 0.0f) { set_error(error, error_size, ""); return 1; }
-    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     target = snapshot(instrument); memset(&operation, 0, sizeof(operation));
     operation.kind = TS_POST_TEAR;
     operation.first = instrument->has_selection ? instrument->selection_first : 0u;
@@ -7063,10 +7159,14 @@ int ts_instrument_apply_tear(TsInstrument *instrument, float amount,
     operation.amount = amount; target.post_edits[target.post_edit_count++] = operation;
     ts_sample_init(&current);
     if (!render_snapshot(&current, instrument, &target, error, error_size)) return 0;
-    begin_edit(instrument); replace_current_preserving_view(instrument, &current);
-    memcpy(instrument->post_edits, target.post_edits, sizeof(instrument->post_edits));
-    instrument->post_edit_count = target.post_edit_count;
-    return bank_sync_selected(instrument, error, error_size);
+    target = snapshot(instrument);
+    if (!commit_material_checkpoint(instrument, &current, &target,
+                                    error, error_size)) {
+        ts_sample_free(&current);
+        return 0;
+    }
+    ts_sample_free(&current);
+    return 1;
 }
 
 void ts_tear_gesture_init(TsTearGesture *gesture) { ts_warp_gesture_init(gesture); }
@@ -7077,7 +7177,7 @@ int ts_instrument_tear_gesture_begin(TsInstrument *instrument, TsTearGesture *ge
     if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
         set_error(error, error_size, "Could not begin TEAR gesture"); return 0;
     }
-    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
     if (!ts_sample_clone(&gesture->original, &instrument->current, error, error_size)) return 0;
     gesture->owner_parent_data = instrument->parent.data;
@@ -7128,23 +7228,20 @@ int ts_instrument_tear_gesture_cancel(TsInstrument *instrument, TsTearGesture *g
 int ts_instrument_tear_gesture_commit(TsInstrument *instrument, TsTearGesture *gesture,
                                       char *error, size_t error_size)
 {
-    TsPostEdit operation; int ok;
+    TsEditSnapshot target; int ok;
     if (!warp_gesture_owns(instrument, gesture)) {
         warp_gesture_clear(gesture); set_error(error, error_size, "TEAR gesture no longer owns Current"); return 0;
     }
     if (gesture->amount == 0.0f)
         return ts_instrument_tear_gesture_cancel(instrument, gesture, error, error_size);
-    stack_push(instrument->undo, &instrument->undo_count, gesture->start);
-    instrument->redo_count = 0; memset(&operation, 0, sizeof(operation));
-    operation.kind = TS_POST_TEAR;
-    operation.first = gesture->start.has_selection ? gesture->start.selection_first : 0u;
-    operation.last = gesture->start.has_selection ? gesture->start.selection_last : gesture->original.frames;
-    operation.amount = gesture->amount;
-    memcpy(instrument->post_edits, gesture->start.post_edits, sizeof(instrument->post_edits));
-    instrument->post_edit_count = gesture->start.post_edit_count;
-    instrument->post_edits[instrument->post_edit_count++] = operation;
-    ok = bank_sync_selected(instrument, error, error_size);
-    warp_gesture_clear(gesture); if (ok) set_error(error, error_size, ""); return ok;
+    target = gesture->start;
+    ok = commit_material_checkpoint(instrument, &instrument->current, &target,
+                                    error, error_size);
+    if (ok) {
+        warp_gesture_clear(gesture);
+        set_error(error, error_size, "");
+    }
+    return ok;
 }
 
 int ts_instrument_zoom_selection(TsInstrument *instrument)

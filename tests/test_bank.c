@@ -209,7 +209,7 @@ int main(void)
           clone_reset.selection_last == 650 && clone_reset.has_loop &&
           clone_reset.loop_first == 180 && clone_reset.loop_last == 620 &&
           clone_reset.loop_mode == TS_LOOP_PING_PONG &&
-          fabsf(clone_reset.process.edge - 0.64f) < 0.0001f &&
+          fabsf(clone_reset.process.edge) < 0.0001f &&
           clone_reset.post_edit_count == 1 && clone_reset.redo_count == 1);
     CHECK(ts_instrument_apply_tear(&clone_reset, 0.91f, error, sizeof(error)));
     slot5_hash = ts_sample_hash(&clone_reset.current);
@@ -231,7 +231,7 @@ int main(void)
               ts_sample_hash(&clone_reset.current) == slot5_hash &&
               clone_reset.view_first == 100 && clone_reset.view_last == 700 &&
               clone_reset.has_selection && clone_reset.selection_first == 150 &&
-              clone_reset.selection_last == 650 && clone_reset.post_edit_count == 2);
+              clone_reset.selection_last == 650 && clone_reset.post_edit_count == 1);
         CHECK(ts_instrument_redo(&clone_reset, error, sizeof(error)) &&
               ts_sample_hash(&clone_reset.current) ==
                   ts_sample_hash(&clone_reset.parent) &&

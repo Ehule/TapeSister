@@ -2689,6 +2689,7 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     recipe.kind = TS_GENERATOR_FM;
     ts_fm_patch_from_recipe(&recipe, &ui->fm_patch);
     ui->fm_open = 1;
+    ui->fm_replace_armed_until_ms = 0u;
     ui->fm_page = TS_FM_PAGE_PITCH;
     ui->fm_preview_sample = preview;
     (void)render_fm_workspace(device, audio, ui, instrument, preview);
@@ -2702,6 +2703,7 @@ static void close_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     if (device) SDL_UnlockAudioDevice(device);
     ui->active_notes = 0u;
     ui->fm_held_notes = 0;
+    ui->fm_replace_armed_until_ms = 0u;
     ui->fm_open = 0;
     ui->fm_preview_sample = NULL;
     ts_sample_free(preview);
@@ -2816,19 +2818,54 @@ static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
                                TsUiState *ui, TsInstrument *instrument)
 {
     char error[160];
+    Uint32 now = SDL_GetTicks();
+    int original_slot = instrument->selected_slot;
+    int destination = original_slot;
+    int routed = 0;
     int ok;
+    if (original_slot < 0 || original_slot >= TS_BANK_SLOT_COUNT) {
+        snprintf(ui->fm_message, sizeof(ui->fm_message),
+                 "SELECT A BANK TILE BEFORE APPLY");
+        return;
+    }
+    if (instrument->bank[original_slot].occupied) {
+        destination = ts_instrument_bank_next_empty(instrument);
+        if (destination < 0) {
+            if (ui->fm_replace_armed_until_ms == 0u ||
+                SDL_TICKS_PASSED(now, ui->fm_replace_armed_until_ms)) {
+                ui->fm_replace_armed_until_ms = now + 2500u;
+                snprintf(ui->fm_message, sizeof(ui->fm_message),
+                         "BANK FULL - APPLY AGAIN TO REPLACE TILE %02d",
+                         original_slot + 1);
+                return;
+            }
+            destination = original_slot;
+        } else routed = 1;
+    }
     lock_edit(device, audio);
     ts_note_bank_clear(&audio->notes);
-    ok = ts_instrument_apply_fm_patch(instrument, &ui->fm_patch,
-                                      error, sizeof(error));
+    ok = destination == original_slot ||
+         ts_instrument_select_bank(instrument, destination,
+                                   error, sizeof(error));
+    if (ok)
+        ok = ts_instrument_apply_fm_patch(instrument, &ui->fm_patch,
+                                          error, sizeof(error));
+    if (!ok && destination != original_slot)
+        (void)ts_instrument_select_bank(instrument, original_slot, NULL, 0u);
     unlock_edit(device, audio, ui, instrument);
     ui->active_notes = 0u;
     ui->fm_held_notes = 0;
     if (ok) {
+        ui->fm_replace_armed_until_ms = 0u;
         ts_ui_reset_parent_view(ui, instrument->current.frames);
-        snprintf(ui->fm_message, sizeof(ui->fm_message),
-                 "FM GENOME APPLIED TO TILE %02d - CREATE/VARY NOW USES IT",
-                 instrument->selected_slot + 1);
+        if (routed)
+            snprintf(ui->fm_message, sizeof(ui->fm_message),
+                     "TILE %02d PRESERVED - FM APPLIED TO EMPTY TILE %02d",
+                     original_slot + 1, instrument->selected_slot + 1);
+        else
+            snprintf(ui->fm_message, sizeof(ui->fm_message),
+                     "FM GENOME APPLIED TO TILE %02d - CREATE/VARY NOW USES IT",
+                     instrument->selected_slot + 1);
     } else snprintf(ui->fm_message, sizeof(ui->fm_message),
                     "FM APPLY FAILED: %.76s", error);
 }
@@ -3386,6 +3423,7 @@ static int begin_canvas_gesture(SDL_Window *window, SDL_AudioDeviceID device,
     char error[160];
     int ok;
     cancel_pitch_preview(device, audio, ui, instrument);
+    release_canvas_capture(ui);
     lock_edit(device, audio);
     ok = ts_instrument_canvas_gesture_begin(
         instrument, &ui->canvas_gesture, edge, error, sizeof(error));
@@ -3402,6 +3440,7 @@ static int begin_canvas_gesture(SDL_Window *window, SDL_AudioDeviceID device,
             instrument, &ui->canvas_gesture,
             restore_error, sizeof(restore_error));
         unlock_edit(device, audio, ui, instrument);
+        release_canvas_capture(ui);
         snprintf(ui->status, sizeof(ui->status),
                  "CANVAS MOUSE CAPTURE FAILED: %.113s", SDL_GetError());
         return 0;
@@ -8376,6 +8415,13 @@ int main(int argc, char **argv)
                 }
             }
         }
+
+        /* Some window managers can drop the button-up event after a captured,
+           warped drag. Never leave the resize gesture owning the pointer once
+           SDL reports that the physical button is no longer down. */
+        if (ui.canvas_gesture.active &&
+            (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(SDL_BUTTON_LEFT)) == 0u)
+            end_canvas_gesture(window, device, &audio, &ui, &instrument, 0);
 
         {
             int minimized_now =

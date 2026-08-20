@@ -282,7 +282,7 @@ int main(void)
              instrument.selection_last == 760 && instrument.has_loop &&
              instrument.loop_first == 200 && instrument.loop_last == 700 &&
              instrument.loop_mode == TS_LOOP_REVERSE &&
-             fabsf(instrument.process.edge - 0.57f) < 0.0001f &&
+             fabsf(instrument.process.edge) < 0.0001f &&
              instrument.post_edit_count == 1);
 
     CONTRACT("warp_is_scoped_to_active_tile",
@@ -324,8 +324,8 @@ int main(void)
              ts_sample_hash(&instrument.current) == tile_hash[2] &&
              instrument.view_first == 100 && instrument.view_last == 900 &&
              instrument.has_selection && instrument.has_loop &&
-             fabsf(instrument.process.edge - 0.57f) < 0.0001f &&
-             instrument.post_edit_count == 2);
+             fabsf(instrument.process.edge) < 0.0001f &&
+             instrument.post_edit_count == 1);
     CONTRACT("bank_occupied_click_produces_selected_tile_play_plan",
              ts_bank_audition_plan(&instrument, 2, &plan) &&
              plan.sample == &instrument.bank[2].sample &&

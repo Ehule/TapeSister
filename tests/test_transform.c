@@ -1241,6 +1241,57 @@ static void curated_dsp_apply_keeps_native_shelf_live_tests(void)
     ts_instrument_free(&instrument);
 }
 
+static void tape_gestures_keep_native_shelf_live_tests(void)
+{
+    char error[160];
+    TsInstrument instrument;
+    TsProcessRecipe neutral;
+    TsProcessRecipe process;
+    uint64_t accepted_hash;
+    uint64_t prior_hash;
+
+    setup(&instrument, 8192u);
+    ts_instrument_clear_selection(&instrument);
+    CHECK(ts_instrument_apply_warp(&instrument, 0.72f, error, sizeof(error)));
+    CHECK(ts_instrument_apply_smear(&instrument, 0.64f, error, sizeof(error)));
+    prior_hash = ts_sample_hash(&instrument.current);
+    CHECK(ts_instrument_apply_tear(&instrument, 0.81f, error, sizeof(error)));
+    accepted_hash = ts_sample_hash(&instrument.current);
+    CHECK(accepted_hash != prior_hash);
+    CHECK(instrument.post_edit_count == 1 &&
+          instrument.post_edits[0].kind == TS_POST_MATERIAL_REPLACE);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == prior_hash);
+    CHECK(ts_instrument_redo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+    ts_process_recipe_reset(&neutral);
+    neutral.seed = instrument.process.seed;
+    CHECK(ts_process_recipe_equal(&instrument.process, &neutral));
+
+    process = neutral;
+    process.body = 0.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+
+    process = neutral;
+    process.edge = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+
+    process = neutral;
+    process.drift = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) != accepted_hash);
+    CHECK(ts_instrument_set_process(&instrument, &neutral, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == accepted_hash);
+
+    ts_instrument_free(&instrument);
+}
+
 static void transform_ui_contract_tests(void)
 {
     TsInstrument instrument;
@@ -1566,6 +1617,7 @@ int main(void)
     curated_dsp_preview_apply_tests();
     curated_dsp_direct_scope_and_tile_tests();
     curated_dsp_apply_keeps_native_shelf_live_tests();
+    tape_gestures_keep_native_shelf_live_tests();
     transform_ui_contract_tests();
     runtime_missing_test();
 #ifndef _WIN32

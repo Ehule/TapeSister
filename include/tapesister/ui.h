@@ -283,6 +283,7 @@ typedef struct {
     TsFmPatch fm_patch;
     const TsSample *fm_preview_sample;
     int fm_held_notes;
+    uint32_t fm_replace_armed_until_ms;
     char fm_message[96];
     int transform_rendering;
     int transform_preview_available;

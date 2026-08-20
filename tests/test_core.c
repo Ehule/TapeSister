@@ -1343,6 +1343,7 @@ int main(void)
             uint32_t full_sequence = family.family_sequence;
             int refused_slot = -1;
             CHECK(ts_instrument_bank_count(&family) == TS_BANK_SLOT_COUNT);
+            CHECK(ts_instrument_bank_next_empty(&family) == -1);
             CHECK(!ts_instrument_generate_family_candidate(&family, 0, 0,
                                                             &refused_slot,
                                                             error, sizeof(error)));
@@ -1350,6 +1351,7 @@ int main(void)
                   ts_sample_hash(&family.parent) == full_parent &&
                   family.family_sequence == full_sequence);
             CHECK(ts_instrument_bank_clear(&family, 8, error, sizeof(error)));
+            CHECK(ts_instrument_bank_next_empty(&family) == 8);
             CHECK(ts_instrument_generate_family_candidate(&family, 0, 0,
                                                            &refused_slot,
                                                            error, sizeof(error)));
@@ -1710,7 +1712,7 @@ int main(void)
                                             2000, 2400, -100,
                                             error, sizeof(error)));
         CHECK(tape.current.frames == original_frames + 100u);
-        CHECK(tape.view_first == 200u && tape.view_last == 900u);
+        CHECK(tape.view_first == 0u && tape.view_last == 700u);
         CHECK(tape.selection_first == 0 && tape.selection_last == 400u);
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_MOVE_MIX,
                                             500, 800,
@@ -1718,10 +1720,12 @@ int main(void)
                                             error, sizeof(error)));
         CHECK(tape.current.frames == original_frames + 420u);
         CHECK(tape.post_edit_count == 4);
-        CHECK(tape.view_first == 200u && tape.view_last == 900u);
+        CHECK(tape.view_first == tape.current.frames - 700u &&
+              tape.view_last == tape.current.frames);
         CHECK(!ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_MIX,
                                              12u, 12u, 20, error, sizeof(error)));
-        CHECK(tape.view_first == 200u && tape.view_last == 900u);
+        CHECK(tape.view_first == tape.current.frames - 700u &&
+              tape.view_last == tape.current.frames);
         CHECK(fabsf(tape.current.data[550]) < 0.000001f);
         ts_instrument_set_selection(&tape, tape.selection_first, tape.selection_last);
         CHECK(ts_instrument_apply_sample_edit(&tape, TS_SAMPLE_EDIT_GAIN, 0.5f,
@@ -2918,6 +2922,29 @@ int main(void)
         CHECK(ts_instrument_create_selected(&workflow, 99u, error, sizeof(error)));
         CHECK(workflow.bank[0].occupied && workflow.bank[0].generator.kind == TS_GENERATOR_FM);
         ts_instrument_free(&workflow);
+    }
+    {
+        TsInstrument apply_route;
+        TsFmPatch patch;
+        uint64_t preserved_hash;
+        int destination;
+        ts_instrument_init(&apply_route);
+        CHECK(ts_instrument_bank_clear_all(&apply_route, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&apply_route, 5, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&apply_route, 0x464d4150u,
+                                            error, sizeof(error)));
+        preserved_hash = ts_sample_hash(&apply_route.bank[5].sample);
+        ts_fm_patch_from_recipe(&apply_route.bank[5].generator, &patch);
+        patch.structure = (patch.structure + 1) % TS_FM_STRUCTURE_COUNT;
+        destination = ts_instrument_bank_next_empty(&apply_route);
+        CHECK(destination == 6);
+        CHECK(ts_instrument_select_bank(&apply_route, destination,
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_apply_fm_patch(&apply_route, &patch,
+                                           error, sizeof(error)));
+        CHECK(apply_route.selected_slot == 6 && apply_route.bank[6].occupied);
+        CHECK(ts_sample_hash(&apply_route.bank[5].sample) == preserved_hash);
+        ts_instrument_free(&apply_route);
     }
 
     {

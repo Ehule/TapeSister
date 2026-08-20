@@ -443,6 +443,8 @@ typedef struct {
     int owner_slot;
     int edge;
     int64_t delta_frames;
+    size_t focus_view_first;
+    size_t focus_view_last;
     int active;
 } TsCanvasGesture;
 
@@ -764,6 +766,7 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
                                   char *error, size_t error_size);
 int ts_instrument_bank_count(const TsInstrument *instrument);
 int ts_instrument_bank_first_empty(const TsInstrument *instrument);
+int ts_instrument_bank_next_empty(const TsInstrument *instrument);
 int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder,
                               char *error, size_t error_size);
 int ts_instrument_family_folder_name(const TsInstrument *instrument,
