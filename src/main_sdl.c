@@ -21,6 +21,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #ifdef _WIN32
 #include <windows.h>
 #include <direct.h>
