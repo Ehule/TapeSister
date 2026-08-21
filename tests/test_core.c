@@ -3209,6 +3209,7 @@ int main(void)
         TsInstrument apply_route;
         TsFmPatch patch;
         uint64_t preserved_hash;
+        size_t preview_frames = (size_t)(TS_FM_LOGIC_SECONDS * 44100.0f);
         int destination;
         ts_instrument_init(&apply_route);
         CHECK(ts_instrument_bank_clear_all(&apply_route, error, sizeof(error)));
@@ -3222,9 +3223,19 @@ int main(void)
         CHECK(destination == 6);
         CHECK(ts_instrument_select_bank(&apply_route, destination,
                                         error, sizeof(error)));
+        apply_route.generator.seconds = 0.25f;
+        apply_route.bank[destination].generator.seconds = 0.25f;
         CHECK(ts_instrument_apply_fm_patch(&apply_route, &patch,
                                            error, sizeof(error)));
         CHECK(apply_route.selected_slot == 6 && apply_route.bank[6].occupied);
+        CHECK(apply_route.current.frames == preview_frames &&
+              apply_route.parent.frames == preview_frames &&
+              apply_route.bank[6].sample.frames == preview_frames &&
+              apply_route.bank[6].edit_parent.frames == preview_frames &&
+              apply_route.crop_first == 0u &&
+              apply_route.crop_last == preview_frames &&
+              apply_route.view_first == 0u &&
+              apply_route.view_last == preview_frames);
         CHECK(ts_sample_hash(&apply_route.bank[5].sample) == preserved_hash);
         ts_instrument_free(&apply_route);
     }
@@ -3486,7 +3497,11 @@ int main(void)
 
     {
         TsInstrument first, repeat;
+        TsGeneratorRecipe original_recipe;
         uint64_t first_final_hash, next_final_hash;
+        TsFmPatch first_patch, next_patch;
+        const TsAudioPatch *first_checkpoint;
+        const TsAudioPatch *next_checkpoint;
         int slot = -1;
         ts_instrument_init(&first); ts_instrument_init(&repeat);
         CHECK(ts_instrument_bank_clear_all(&first, error, sizeof(error)));
@@ -3495,6 +3510,7 @@ int main(void)
         CHECK(ts_instrument_select_bank(&repeat, 4, error, sizeof(error)));
         CHECK(ts_instrument_create_selected(&first, 0x2468aceu, error, sizeof(error)));
         CHECK(ts_instrument_create_selected(&repeat, 0x2468aceu, error, sizeof(error)));
+        original_recipe = first.bank[4].generator;
         first.family_mutation = repeat.family_mutation = 0.55f;
         CHECK(ts_instrument_vary_selected(&first, 0, &slot, error, sizeof(error)));
         CHECK(ts_instrument_vary_selected(&repeat, 0, &slot, error, sizeof(error)));
@@ -3503,10 +3519,47 @@ int main(void)
         CHECK(ts_instrument_vary_selected(&repeat, 0, &slot, error, sizeof(error)));
         next_final_hash = ts_sample_hash(&repeat.bank[4].sample);
         CHECK(next_final_hash != first_final_hash);
-        CHECK(memcmp(&first.bank[4].generator,
-                     &repeat.bank[4].generator,
-                     sizeof(first.bank[4].generator)) == 0);
+        CHECK(first.bank[4].edit.post_edit_count == 1 &&
+              repeat.bank[4].edit.post_edit_count == 1);
+        first_checkpoint = &first.bank[4].patches[
+            first.bank[4].edit.post_edits[0].patch_index];
+        next_checkpoint = &repeat.bank[4].patches[
+            repeat.bank[4].edit.post_edits[0].patch_index];
+        CHECK(first_checkpoint->has_generator &&
+              next_checkpoint->has_generator);
+        ts_fm_patch_from_recipe(&first_checkpoint->generator, &first_patch);
+        ts_fm_patch_from_recipe(&next_checkpoint->generator, &next_patch);
+        CHECK(first_checkpoint->generator.seed !=
+              next_checkpoint->generator.seed &&
+              ts_fm_patch_distance(&first_patch, &next_patch) > 0.0f);
+        CHECK(memcmp(&first.bank[4].generator, &original_recipe,
+                     sizeof(original_recipe)) == 0);
+        CHECK(ts_instrument_undo(&first, error, sizeof(error)));
+        CHECK(first.post_edit_count == 0 &&
+              memcmp(&first.bank[4].generator, &original_recipe,
+                     sizeof(original_recipe)) == 0);
+        CHECK(ts_instrument_redo(&first, error, sizeof(error)));
+        CHECK(ts_sample_hash(&first.current) == first_final_hash &&
+              first.post_edit_count == 1);
         ts_instrument_free(&first); ts_instrument_free(&repeat);
+    }
+
+    {
+        TsInstrument silence_vary;
+        int destination = -1;
+        ts_instrument_init(&silence_vary);
+        CHECK(ts_instrument_bank_clear_all(&silence_vary,
+                                           error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&silence_vary, 0,
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_activate_silence(&silence_vary, 4096u, 44100u,
+                                             error, sizeof(error)));
+        silence_vary.family_mutation = 1.0f;
+        CHECK(ts_instrument_vary_selected(
+            &silence_vary, 0, &destination, error, sizeof(error)));
+        CHECK(destination == 0 &&
+              ts_sample_peak(&silence_vary.current) == 0.0f);
+        ts_instrument_free(&silence_vary);
     }
 
     {

@@ -2776,7 +2776,7 @@ static int render_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     double root_frequency = ts_tuning_frequency(&unity);
     uint32_t seed = instrument->generator.seed ^ 0x50524556u;
     ts_sample_init(&rendered);
-    if (!ts_fm_render_sample(&rendered, &ui->fm_patch, 8.0f,
+    if (!ts_fm_render_sample(&rendered, &ui->fm_patch, TS_FM_LOGIC_SECONDS,
                              (float)root_frequency, 44100u, seed,
                              error, sizeof(error))) {
         snprintf(ui->fm_message, sizeof(ui->fm_message),
@@ -2804,9 +2804,8 @@ static int render_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     return 1;
 }
 
-static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
-                               TsUiState *ui, const TsInstrument *instrument,
-                               TsSample *preview)
+static TsGeneratorRecipe current_fm_workspace_recipe(
+    const TsInstrument *instrument)
 {
     TsGeneratorRecipe recipe = instrument->generator;
     if (instrument->selected_slot >= 0 &&
@@ -2815,6 +2814,31 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
         instrument->bank[instrument->selected_slot].has_generator &&
         instrument->bank[instrument->selected_slot].generator.kind == TS_GENERATOR_FM)
         recipe = instrument->bank[instrument->selected_slot].generator;
+    if (instrument->selected_slot >= 0 &&
+        instrument->selected_slot < TS_BANK_SLOT_COUNT) {
+        const TsBankSlot *slot = &instrument->bank[instrument->selected_slot];
+        for (int index = instrument->post_edit_count - 1; index >= 0; --index) {
+            const TsPostEdit *operation = &instrument->post_edits[index];
+            const TsAudioPatch *patch;
+            if (operation->kind != TS_POST_MATERIAL_REPLACE ||
+                operation->patch_index >= (uint32_t)slot->patch_count)
+                continue;
+            patch = &slot->patches[operation->patch_index];
+            if (patch->has_generator &&
+                patch->generator.kind == TS_GENERATOR_FM) {
+                recipe = patch->generator;
+                break;
+            }
+        }
+    }
+    return recipe;
+}
+
+static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
+                               TsUiState *ui, const TsInstrument *instrument,
+                               TsSample *preview)
+{
+    TsGeneratorRecipe recipe = current_fm_workspace_recipe(instrument);
     stop_all_force(device, audio, ui);
     recipe.kind = TS_GENERATOR_FM;
     ts_fm_patch_from_recipe(&recipe, &ui->fm_patch);

@@ -3687,9 +3687,18 @@ static int family_mutate_sample(TsSample *destination, const TsSample *source,
     size_t frames = source->frames;
     float *data;
     float envelope = 0.0f;
-    float prior_noise = 0.0f;
+    float smooth = 0.0f;
     double phase = rng_unit(&rng) * 2.0 * M_PI;
     double modulation_hz = 0.4 + rng_unit(&rng) * (9.0 + strength * 31.0);
+    float spectral_direction = rng_bipolar(&rng);
+    float comb_polarity = rng_bipolar(&rng) < 0.0f ? -1.0f : 1.0f;
+    float comb_mix = strength * (0.18f + rng_unit(&rng) * 0.32f);
+    size_t maximum_delay = source->sample_rate / 80u;
+    size_t delay_frames;
+    if (maximum_delay < 1u) maximum_delay = 1u;
+    if (source->frames > 1u && maximum_delay >= source->frames)
+        maximum_delay = source->frames - 1u;
+    delay_frames = 1u + (size_t)(rng_unit(&rng) * (float)maximum_delay);
     if ((locks & TS_FAMILY_LOCK_DURATION) == 0u) {
         float maximum = relation == TS_FAMILY_CHILD ? 0.18f : 0.42f;
         float scale = 1.0f + rng_bipolar(&rng) * maximum * mutation;
@@ -3708,8 +3717,8 @@ static int family_mutate_sample(TsSample *destination, const TsSample *source,
     for (size_t i = 0; i < frames; ++i) {
         size_t source_at;
         float base;
-        float random = rng_bipolar(&rng);
-        float colored;
+        float delayed;
+        float tone;
         float wet;
         float value;
         if (i < source->frames) source_at = i;
@@ -3721,15 +3730,26 @@ static int family_mutate_sample(TsSample *destination, const TsSample *source,
         }
         base = source->data[source_at];
         envelope += (fabsf(base) - envelope) * 0.0125f;
-        colored = random - prior_noise * 0.82f;
-        prior_noise = random;
+        smooth += (base - smooth) * (0.025f + strength * 0.055f);
+        delayed = source->data[source_at >= delay_frames ?
+                               source_at - delay_frames : source_at];
         phase += 2.0 * M_PI * modulation_hz / (double)source->sample_rate;
         if ((locks & TS_FAMILY_LOCK_SPECTRAL) != 0u) {
             value = base * (1.0f + sinf((float)phase) * strength * 0.16f);
         } else {
             float drive = 1.0f + strength * 6.0f;
             float shaped = tanhf(base * drive) / tanhf(drive);
-            wet = shaped * 0.82f + colored * strength * 0.28f;
+            if (spectral_direction >= 0.0f)
+                tone = clampf(shaped + (shaped - smooth) *
+                              spectral_direction * (0.45f + strength),
+                              -1.0f, 1.0f);
+            else
+                tone = shaped * (1.0f + spectral_direction) +
+                       smooth * -spectral_direction;
+            wet = tone * (1.0f - comb_mix) +
+                  clampf(tone + delayed * comb_polarity * 0.62f,
+                         -1.0f, 1.0f) * comb_mix;
+            wet *= 1.0f + sinf((float)phase) * strength * 0.22f;
             value = base * (1.0f - strength) + wet * strength;
         }
         if ((locks & TS_FAMILY_LOCK_PITCH) == 0u)
@@ -4079,6 +4099,7 @@ int ts_instrument_apply_fm_patch(TsInstrument *instrument,
            advance_seed(instrument->family_sequence ^ 0x464d4c47u);
     recipe.kind = TS_GENERATOR_FM;
     recipe.seed = seed;
+    recipe.seconds = TS_FM_LOGIC_SECONDS;
     recipe.has_fm_patch = 1;
     recipe.fm_patch = *patch;
     recipe.frequency = 261.625565f;
@@ -4571,6 +4592,7 @@ static int commit_post_snapshot(TsInstrument *instrument, TsEditSnapshot *target
 static int commit_material_checkpoint_mode(TsInstrument *instrument,
                                            const TsSample *material,
                                            TsEditSnapshot *target,
+                                           const TsGeneratorRecipe *generator,
                                            int preserve_process,
                                            char *error, size_t error_size)
 {
@@ -4583,7 +4605,7 @@ static int commit_material_checkpoint_mode(TsInstrument *instrument,
     size_t process_last;
     int has_process_range;
     if (!ensure_edit_graph_capacity(instrument, 1, error, error_size) ||
-        !append_audio_patch(instrument, material, NULL, &patch_index,
+        !append_audio_patch(instrument, material, generator, &patch_index,
                             error, error_size))
         return 0;
     process = target->process;
@@ -4633,15 +4655,24 @@ static int commit_material_checkpoint(TsInstrument *instrument,
                                       TsEditSnapshot *target,
                                       char *error, size_t error_size)
 {
-    return commit_material_checkpoint_mode(instrument, material, target, 0,
+    return commit_material_checkpoint_mode(instrument, material, target, NULL, 0,
                                            error, error_size);
+}
+
+static int commit_generated_material_checkpoint(
+    TsInstrument *instrument, const TsSample *material,
+    const TsGeneratorRecipe *generator, TsEditSnapshot *target,
+    char *error, size_t error_size)
+{
+    return commit_material_checkpoint_mode(
+        instrument, material, target, generator, 0, error, error_size);
 }
 
 static int commit_material_checkpoint_preserving_process(
     TsInstrument *instrument, const TsSample *material,
     TsEditSnapshot *target, char *error, size_t error_size)
 {
-    return commit_material_checkpoint_mode(instrument, material, target, 1,
+    return commit_material_checkpoint_mode(instrument, material, target, NULL, 1,
                                            error, error_size);
 }
 
@@ -6126,6 +6157,53 @@ static uint32_t material_variation_seed(const TsInstrument *instrument,
                         advance_seed(instrument->family_sequence + 1u));
 }
 
+static int process_is_audibly_neutral(const TsProcessRecipe *process)
+{
+    return process != NULL &&
+           fabsf(process->body - 0.5f) < 0.000001f &&
+           fabsf(process->edge) < 0.000001f &&
+           fabsf(process->drift) < 0.000001f &&
+           !process->noise_enabled && !process->delay_enabled &&
+           !process->reverb_enabled && !process->filter_enabled &&
+           !process->shaper_enabled;
+}
+
+/* A freshly created FM tile, or the direct result of an earlier structural
+   FM Vary, still has a trustworthy FM genome. Once the user prints other
+   material into it, Vary deliberately falls back to the waveform-domain
+   handoff so those destructive decisions remain the source. */
+static int direct_fm_material_recipe(const TsInstrument *instrument,
+                                     int source,
+                                     TsGeneratorRecipe *recipe)
+{
+    const TsBankSlot *slot;
+    const TsPostEdit *operation;
+    const TsAudioPatch *patch;
+    if (instrument == NULL || recipe == NULL || source < 0 ||
+        source >= TS_BANK_SLOT_COUNT)
+        return 0;
+    slot = &instrument->bank[source];
+    if (!slot->has_generator || slot->generator.kind != TS_GENERATOR_FM ||
+        instrument->sample_edit_count != 0 ||
+        !process_is_audibly_neutral(&instrument->process))
+        return 0;
+    if (instrument->post_edit_count == 0) {
+        *recipe = slot->generator;
+        return 1;
+    }
+    if (instrument->post_edit_count != 1) return 0;
+    operation = &instrument->post_edits[0];
+    if (operation->kind != TS_POST_MATERIAL_REPLACE || operation->first != 0u ||
+        operation->last != instrument->parent.frames)
+        return 0;
+    patch = audio_patch_for_operation(instrument, operation);
+    if (patch == NULL || !patch->has_generator ||
+        patch->generator.kind != TS_GENERATOR_FM)
+        return 0;
+    *recipe = patch->generator;
+    return 1;
+}
+
 static const TsSample *previous_chain_stamp_source(
     const TsInstrument *instrument)
 {
@@ -6230,10 +6308,13 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
     TsBankSlot made;
     TsSample varied;
     TsEditSnapshot target;
+    TsGeneratorRecipe fm_recipe;
+    TsFmPatch source_patch;
     uint32_t seed;
     uint32_t locks;
     int source;
     int destination;
+    int structural_fm = 0;
     int ok;
     if (destination_slot != NULL) *destination_slot = -1;
     if (instrument == NULL || (source = instrument->selected_slot) < 0 ||
@@ -6258,6 +6339,8 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
     if (!bank_sync_selected(instrument, error, error_size)) return 0;
     seed = material_variation_seed(instrument, &instrument->current);
     locks = instrument->family_locks | TS_FAMILY_LOCK_DURATION;
+    structural_fm = direct_fm_material_recipe(
+        instrument, source, &fm_recipe);
     ts_sample_init(&varied);
     if (instrument->family_mutation <= 0.0f) {
         if (!chain) {
@@ -6268,10 +6351,31 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
         ok = ts_sample_clone(&varied, &instrument->current,
                              error, error_size);
     } else {
-        ok = family_mutate_sample(
-            &varied, &instrument->current, TS_FAMILY_CHILD,
-            seed, instrument->family_mutation, locks,
-            error, error_size);
+        if (structural_fm) {
+            ts_fm_patch_from_recipe(&fm_recipe, &source_patch);
+            fm_recipe.kind = TS_GENERATOR_FM;
+            fm_recipe.seed = seed;
+            fm_recipe.seconds = clampf(
+                (float)instrument->current.frames /
+                (float)instrument->current.sample_rate, 0.1f, 8.0f);
+            fm_recipe.has_fm_patch = 1;
+            ts_fm_patch_vary(&source_patch, seed,
+                             instrument->family_mutation,
+                             &fm_recipe.fm_patch);
+            ok = ts_sample_generate(&varied, &fm_recipe,
+                                    error, error_size);
+            if (ok && varied.frames != instrument->current.frames) {
+                int64_t delta = (int64_t)instrument->current.frames -
+                                (int64_t)varied.frames;
+                ok = resize_canvas_sample(&varied, 2, delta,
+                                          error, error_size);
+            }
+        } else {
+            ok = family_mutate_sample(
+                &varied, &instrument->current, TS_FAMILY_CHILD,
+                seed, instrument->family_mutation, locks,
+                error, error_size);
+        }
     }
     if (!ok) return 0;
     snprintf(varied.name, sizeof(varied.name),
@@ -6279,7 +6383,11 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
 
     if (!chain) {
         target = snapshot(instrument);
-        ok = commit_material_checkpoint(instrument, &varied, &target,
+        ok = structural_fm ?
+             commit_generated_material_checkpoint(
+                 instrument, &varied, &fm_recipe, &target,
+                 error, error_size) :
+             commit_material_checkpoint(instrument, &varied, &target,
                                         error, error_size);
         ts_sample_free(&varied);
         if (!ok) return 0;
@@ -6308,8 +6416,8 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
         made.lineage_locks = instrument->family_locks;
         made.lineage_mutation = instrument->family_mutation;
         made.trajectory_step = anchor->trajectory_step + 1u;
-        made.generator = anchor->generator;
-        made.has_generator = anchor->has_generator;
+        made.generator = structural_fm ? fm_recipe : anchor->generator;
+        made.has_generator = structural_fm;
         made.tuning = instrument->tuning;
         made.audible_tuning = instrument->audible_tuning;
         made.occupied = 1;

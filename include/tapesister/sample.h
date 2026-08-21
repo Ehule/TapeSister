@@ -64,6 +64,10 @@ enum {
     TS_FM_PAGE_COUNT = 7
 };
 
+/* The FM Logic mini-waveform is an eight-second render. Apply must commit
+   that same complete render instead of inheriting a shorter target tile. */
+#define TS_FM_LOGIC_SECONDS 8.0f
+
 typedef enum {
     TS_FM_PAGE_PITCH = 0,
     TS_FM_PAGE_WAVE,
