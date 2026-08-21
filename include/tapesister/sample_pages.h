@@ -29,6 +29,10 @@ int ts_sample_pages_append_and_switch(TsSamplePages *pages,
                                       TsInstrument *active,
                                       size_t *new_page,
                                       char *error, size_t error_size);
+int ts_sample_pages_remove_last_and_switch(TsSamplePages *pages,
+                                           TsInstrument *active,
+                                           size_t destination_page,
+                                           char *error, size_t error_size);
 int ts_sample_pages_park(TsSamplePages *pages, TsInstrument *active,
                          char *error, size_t error_size);
 int ts_sample_pages_unpark(TsSamplePages *pages, TsInstrument *active,

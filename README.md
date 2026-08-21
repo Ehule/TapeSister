@@ -290,10 +290,20 @@ and Structure, plus per-voice enables and mutation permissions. Ten waveforms, t
 routing structures, eight ratio families, eight interaction modes, per-voice LFOs,
 bounded feedback, a transient layer, and an envelope-driven multimode filter form the
 stored genome. Click or wheel a control for immediate non-destructive preview; Randomize
-protects the visible page and obeys the permission switches. With **Chain off**, Apply
+protects the visible page and obeys the permission switches. The Pitch page can keep
+randomized ratios locked, or quantize them to a selectable root and chromatic, major,
+minor, pentatonic, or whole-tone scale while C4 remains the universal unity note.
+**Apply Pitches** explicitly snaps every enabled voice to that tonal set and immediately
+refreshes its displayed note; disabled voices stay untouched, even with Pitch Lock on.
+**Make Bank** treats the current patch as tile 01 and generates 15 Range-controlled
+relatives. Chain off derives every tile from that anchor; Chain on walks forward from
+each result. One confirmation can replace an unlocked page or create a new Sample page,
+and the complete 16-tile action is one Undo/Redo transaction. With **Chain off**, Apply
 prints the genome over the selected tile. With **Chain on**, it preserves occupied work
 and fills the next empty tile. A full page asks whether to overwrite the current tile,
 continue on a new Sample page, or cancel.
+Inside FM Logic, `Shift+R` invokes Randomize and `Shift+B` opens Make Bank. Plain `R`
+and `B` remain playable notes on the computer keyboard.
 
 **Drone** removes the amplitude and filter attack/release envelopes, suppresses the
 transient, and trims the render to exact zero-valued boundary crossings. The disabled
@@ -414,9 +424,9 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR25 stores every occupied tile as a complete independent object, including its persistent protection flag and the full FM genome and Drone/Extreme modes: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, persistent native-shelf selection scope, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR24 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR26 stores every occupied tile as a complete independent object, including its persistent protection flag and the full FM genome, Drone/Extreme modes, and random-pitch lock/root/scale: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, persistent native-shelf selection scope, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR25 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
-The chosen `.tsr` remains an ordinary first-page TSR25.
+The chosen `.tsr` remains an ordinary first-page TSR26.
 Additional pages, the REC BANK, and a tiny manifest live beside it in
 `<project>.tsr.samples/`. Move, copy, or back up the `.tsr` and that companion folder
 together. A legacy project with no companion folder opens as one Sample page with an

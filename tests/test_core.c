@@ -1997,7 +1997,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR25", 5) == 0);
+        CHECK(memcmp(magic, "TSR26", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -2952,11 +2952,14 @@ int main(void)
         CHECK(fb.pixels[176 * TS_UI_WIDTH + 25] == 0xff2d0039u);
         CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] == visible_bank_pixel);
         CHECK(ts_ui_fm_action_from_point(40, 260) == TS_UI_FM_ACTION_RANDOMIZE);
-        CHECK(ts_ui_fm_action_from_point(330, 260) == TS_UI_FM_ACTION_HOLD);
+        CHECK(ts_ui_fm_action_from_point(130, 260) == TS_UI_FM_ACTION_BANK_MAKER);
+        CHECK(ts_ui_fm_action_from_point(220, 260) == TS_UI_FM_ACTION_APPLY);
+        CHECK(ts_ui_fm_action_from_point(300, 260) == TS_UI_FM_ACTION_AUDITION);
+        CHECK(ts_ui_fm_action_from_point(400, 260) == TS_UI_FM_ACTION_HOLD);
         CHECK(ts_ui_fm_action_from_point(40, 286) == TS_UI_FM_ACTION_DRONE);
         CHECK(ts_ui_fm_action_from_point(160, 286) == TS_UI_FM_ACTION_EXTREME);
         CHECK(ts_ui_fm_action_from_point(250, 286) == TS_UI_FM_ACTION_CHAIN);
-        CHECK(ts_ui_fm_action_from_point(420, 260) == TS_UI_FM_ACTION_BACK);
+        CHECK(ts_ui_fm_action_from_point(470, 260) == TS_UI_FM_ACTION_BACK);
         CHECK(ts_ui_fm_range_contains(500, 286));
         CHECK(!ts_ui_fm_range_contains(250, 286));
         CHECK(ts_ui_fm_full_action_from_point(120, 284) ==
@@ -2965,6 +2968,19 @@ int main(void)
               TS_UI_FM_ACTION_NEW_PAGE);
         CHECK(ts_ui_fm_full_action_from_point(420, 284) ==
               TS_UI_FM_ACTION_CANCEL_FULL);
+        CHECK(ts_ui_fm_bank_action_from_point(120, 284) ==
+              TS_UI_FM_ACTION_BANK_REPLACE);
+        CHECK(ts_ui_fm_bank_action_from_point(250, 284) ==
+              TS_UI_FM_ACTION_BANK_NEW_PAGE);
+        CHECK(ts_ui_fm_bank_action_from_point(420, 284) ==
+              TS_UI_FM_ACTION_BANK_CANCEL);
+        ui.fm_page = TS_FM_PAGE_PITCH;
+        CHECK(ts_ui_fm_action_from_point(120, 230) ==
+              TS_UI_FM_ACTION_PITCH_LOCK);
+        CHECK(ts_ui_fm_pitch_root_contains(250, 230));
+        CHECK(ts_ui_fm_pitch_scale_contains(350, 230));
+        CHECK(ts_ui_fm_action_from_point(500, 230) ==
+              TS_UI_FM_ACTION_APPLY_PITCHES);
         ui.fm_open = 0;
         ui.fm_preview_sample = NULL;
         ui.playhead_sample = NULL;
@@ -3005,6 +3021,9 @@ int main(void)
         CHECK(ts_sample_hash(&workflow.bank[6].sample) == exact_hash);
         workflow.bank[9].generator.fm_patch.drone_mode = 1;
         workflow.bank[9].generator.fm_patch.extreme_mode = 1;
+        workflow.bank[9].generator.fm_patch.pitch_lock = 0;
+        workflow.bank[9].generator.fm_patch.pitch_root = 8;
+        workflow.bank[9].generator.fm_patch.pitch_scale = TS_FM_PITCH_SCALE_MINOR;
         ts_fm_patch_sanitize(&workflow.bank[9].generator.fm_patch);
         CHECK(ts_instrument_save_recipe(&workflow, "test-workflow.tsr", error, sizeof(error)));
         {
@@ -3050,6 +3069,112 @@ int main(void)
         CHECK(apply_route.selected_slot == 6 && apply_route.bank[6].occupied);
         CHECK(ts_sample_hash(&apply_route.bank[5].sample) == preserved_hash);
         ts_instrument_free(&apply_route);
+    }
+    {
+        TsGeneratorRecipe recipe = generator(0x50495443u, TS_GENERATOR_FM);
+        TsFmPatch patch, locked, tonal, applied;
+        static const int d_major[12] = {
+            0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1
+        };
+        ts_fm_patch_from_recipe(&recipe, &patch);
+        CHECK(patch.pitch_lock == 1 && patch.pitch_root == 0 &&
+              patch.pitch_scale == TS_FM_PITCH_SCALE_MAJOR);
+        patch.mutation_mask = TS_FM_MUTATE_PITCH;
+        ts_fm_patch_vary(&patch, 0x11112222u, 1.0f, &locked);
+        CHECK(memcmp(patch.ratios, locked.ratios,
+                     sizeof(patch.ratios)) == 0);
+        patch.pitch_lock = 0;
+        patch.pitch_root = 2;
+        patch.pitch_scale = TS_FM_PITCH_SCALE_MAJOR;
+        ts_fm_patch_vary(&patch, 0x11112222u, 1.0f, &tonal);
+        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+            int semitone = (int)lrintf(12.0f * log2f(tonal.ratios[voice]));
+            int pitch_class = (TS_KEYBOARD_BASE_NOTE + semitone) % 12;
+            if (pitch_class < 0) pitch_class += 12;
+            CHECK(d_major[pitch_class]);
+        }
+        patch.pitch_root = 11;
+        CHECK(ts_fm_step_pitch_root(&patch, 1) && patch.pitch_root == 0);
+        patch.pitch_scale = TS_FM_PITCH_SCALE_WHOLE_TONE;
+        CHECK(ts_fm_step_pitch_scale(&patch, 1) &&
+              patch.pitch_scale == TS_FM_PITCH_SCALE_CHROMATIC);
+        CHECK(strcmp(ts_fm_pitch_scale_name(TS_FM_PITCH_SCALE_PENTATONIC),
+                     "PENTA") == 0);
+        applied = patch;
+        applied.pitch_lock = 1;
+        applied.pitch_root = 2;
+        applied.pitch_scale = TS_FM_PITCH_SCALE_MAJOR;
+        applied.active_mask = (1u << 0) | (1u << 2);
+        applied.ratios[0] = powf(2.0f, 3.0f / 12.0f);
+        applied.ratios[1] = powf(2.0f, 10.0f / 12.0f);
+        applied.ratios[2] = powf(2.0f, 5.0f / 12.0f);
+        CHECK(ts_fm_apply_pitch_scale(&applied) == 2);
+        CHECK(fabsf(applied.ratios[0] - powf(2.0f, 2.0f / 12.0f)) < 0.0001f);
+        CHECK(fabsf(applied.ratios[1] - powf(2.0f, 10.0f / 12.0f)) < 0.0001f);
+        CHECK(fabsf(applied.ratios[2] - powf(2.0f, 4.0f / 12.0f)) < 0.0001f);
+        CHECK(ts_fm_apply_pitch_scale(&applied) == 0);
+    }
+    {
+        TsInstrument bank;
+        TsInstrument chained;
+        TsInstrument cloned;
+        TsFmPatch anchor;
+        TsFmPatch tile_patch;
+        uint64_t original_hashes[TS_BANK_SLOT_COUNT];
+        int any_variation = 0;
+        ts_instrument_init(&bank);
+        ts_instrument_init(&chained);
+        ts_instrument_init(&cloned);
+        CHECK(ts_instrument_bank_clear_all(&bank, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&bank, 0, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&bank, 0x42414e4bu,
+                                            error, sizeof(error)));
+        ts_fm_patch_from_recipe(&bank.bank[0].generator, &anchor);
+        anchor.pitch_lock = 0;
+        anchor.pitch_root = 0;
+        anchor.pitch_scale = TS_FM_PITCH_SCALE_MAJOR;
+        bank.family_mutation = 0.72f;
+        bank.family_trajectory = 0;
+        CHECK(ts_instrument_make_fm_bank(&bank, &anchor,
+                                         error, sizeof(error)));
+        CHECK(ts_instrument_bank_count(&bank) == TS_BANK_SLOT_COUNT);
+        CHECK(bank.selected_slot == 0 && bank.family_anchor_slot == 0 &&
+              bank.family_last_slot == TS_BANK_SLOT_COUNT - 1);
+        ts_fm_patch_sanitize(&anchor);
+        for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+            CHECK(bank.bank[slot].occupied && !bank.bank[slot].locked);
+            CHECK(bank.bank[slot].has_generator &&
+                  bank.bank[slot].generator.kind == TS_GENERATOR_FM);
+            CHECK(bank.bank[slot].tuning.root_note == TS_KEYBOARD_BASE_NOTE);
+            CHECK(bank.bank[slot].parent_slot == (slot == 0 ? -1 : 0));
+            ts_fm_patch_from_recipe(&bank.bank[slot].generator, &tile_patch);
+            if (slot == 0)
+                CHECK(memcmp(&tile_patch, &anchor, sizeof(anchor)) == 0);
+            else if (memcmp(&tile_patch, &anchor, sizeof(anchor)) != 0)
+                any_variation = 1;
+            original_hashes[slot] = ts_sample_hash(&bank.bank[slot].sample);
+        }
+        CHECK(any_variation);
+        CHECK(ts_instrument_clone(&cloned, &bank, error, sizeof(error)));
+        CHECK(ts_sample_hash(&cloned.bank[7].sample) == original_hashes[7]);
+        cloned.bank[7].sample.data[0] += 0.25f;
+        CHECK(cloned.bank[7].sample.data[0] != bank.bank[7].sample.data[0]);
+        bank.bank[5].locked = 1;
+        CHECK(!ts_instrument_make_fm_bank(&bank, &anchor,
+                                          error, sizeof(error)));
+        for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
+            CHECK(ts_sample_hash(&bank.bank[slot].sample) == original_hashes[slot]);
+
+        CHECK(ts_instrument_clone(&chained, &bank, error, sizeof(error)));
+        chained.bank[5].locked = 0;
+        chained.family_trajectory = 1;
+        CHECK(ts_instrument_make_fm_bank(&chained, &anchor,
+                                         error, sizeof(error)));
+        for (int slot = 1; slot < TS_BANK_SLOT_COUNT; ++slot)
+            CHECK(chained.bank[slot].parent_slot == slot - 1);
+        ts_instrument_free(&cloned);
+        ts_instrument_free(&chained);
+        ts_instrument_free(&bank);
     }
 
     {

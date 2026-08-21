@@ -130,6 +130,9 @@ static void put_fm_patch(FILE *f, const TsFmPatch *patch)
     put_float(f, safe.interaction_mix);
     put32(f, (uint32_t)safe.drone_mode);
     put32(f, (uint32_t)safe.extreme_mode);
+    put32(f, (uint32_t)safe.pitch_lock);
+    put32(f, (uint32_t)safe.pitch_root);
+    put32(f, (uint32_t)safe.pitch_scale);
 }
 
 static int get_fm_patch(FILE *f, TsFmPatch *patch, int version)
@@ -145,7 +148,7 @@ static int get_fm_patch(FILE *f, TsFmPatch *patch, int version)
     for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op)
         if (!get_float(f, &patch->ratios[op])) return 0;
     if (version >= 22) {
-        uint32_t expected_genome = version >= 23 ? 3u : 2u;
+        uint32_t expected_genome = version >= 26 ? 4u : version >= 23 ? 3u : 2u;
         if (!get32(f, &patch->genome_version) ||
             patch->genome_version != expected_genome ||
             !get32(f, &patch->active_mask) || !get32(f, &patch->mutation_mask)) return 0;
@@ -181,10 +184,27 @@ static int get_fm_patch(FILE *f, TsFmPatch *patch, int version)
             patch->extreme_mode = 0;
             patch->genome_version = 3u;
         }
+        if (version >= 26) {
+            if (!get32(f, &value) || value > 1u) return 0;
+            patch->pitch_lock = (int)value;
+            if (!get32(f, &value) || value > 11u) return 0;
+            patch->pitch_root = (int)value;
+            if (!get32(f, &value) || value >= TS_FM_PITCH_SCALE_COUNT) return 0;
+            patch->pitch_scale = (int)value;
+        } else {
+            patch->pitch_lock = 1;
+            patch->pitch_root = 0;
+            patch->pitch_scale = TS_FM_PITCH_SCALE_MAJOR;
+            patch->genome_version = 4u;
+        }
         if ((patch->active_mask & ~((1u << TS_FM_OPERATOR_COUNT) - 1u)) != 0u ||
             (patch->mutation_mask & ~TS_FM_MUTATE_ALL) != 0u ||
             patch->filter_mode < 0 || patch->filter_mode >= TS_FILTER_MODE_COUNT ||
             patch->interaction < 0 || patch->interaction >= TS_FM_INTERACTION_COUNT ||
+            (patch->pitch_lock != 0 && patch->pitch_lock != 1) ||
+            patch->pitch_root < 0 || patch->pitch_root > 11 ||
+            patch->pitch_scale < 0 ||
+            patch->pitch_scale >= TS_FM_PITCH_SCALE_COUNT ||
             patch->filter_cutoff_hz < 20.0f || patch->filter_cutoff_hz > 20000.0f ||
             patch->filter_resonance < 0.0f ||
             patch->filter_resonance > (patch->extreme_mode ? 0.995f : 0.95f) ||
@@ -437,8 +457,20 @@ int ts_instrument_suggest_pitch(const TsInstrument *instrument, TsTuning *sugges
 int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, size_t error_size)
 {
     float *copy;
-    if (source == NULL || source->data == NULL || source->frames == 0) {
+    if (source == NULL) {
         set_error(error, error_size, "No sample to copy");
+        return 0;
+    }
+    if (source->data == NULL && source->frames == 0u) {
+        ts_sample_free(destination);
+        destination->sample_rate = source->sample_rate;
+        destination->visual_revision = source->visual_revision;
+        snprintf(destination->name, sizeof(destination->name), "%s", source->name);
+        set_error(error, error_size, "");
+        return 1;
+    }
+    if (source->data == NULL || source->frames == 0u) {
+        set_error(error, error_size, "Invalid sample storage");
         return 0;
     }
     if (source->frames > SIZE_MAX / sizeof(float)) {
@@ -3828,6 +3860,42 @@ failed:
     set_error(error, error_size, "Out of memory deep-copying tile state"); return 0;
 }
 
+int ts_instrument_clone(TsInstrument *destination,
+                        const TsInstrument *source,
+                        char *error, size_t error_size)
+{
+    TsInstrument copy;
+    if (destination == NULL || source == NULL) {
+        set_error(error, error_size, "Instrument clone storage is unavailable");
+        return 0;
+    }
+    if (destination == source) {
+        set_error(error, error_size, "");
+        return 1;
+    }
+    copy = *source;
+    ts_sample_init(&copy.parent);
+    ts_sample_init(&copy.current);
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
+        bank_slot_init(&copy.bank[slot]);
+    if (!ts_sample_clone(&copy.parent, &source->parent, error, error_size) ||
+        !ts_sample_clone(&copy.current, &source->current, error, error_size))
+        goto failed;
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        if (!source->bank[slot].occupied) continue;
+        if (!bank_slot_deep_clone(&copy.bank[slot], &source->bank[slot],
+                                  error, error_size)) goto failed;
+    }
+    ts_instrument_free(destination);
+    *destination = copy;
+    set_error(error, error_size, "");
+    return 1;
+
+failed:
+    ts_instrument_free(&copy);
+    return 0;
+}
+
 int ts_instrument_select_bank(TsInstrument *instrument, int slot,
                               char *error, size_t error_size)
 {
@@ -3981,6 +4049,79 @@ int ts_instrument_apply_fm_patch(TsInstrument *instrument,
     ts_fm_patch_sanitize(&recipe.fm_patch);
     instrument->generator = recipe;
     return ts_instrument_create_selected(instrument, seed, error, error_size);
+}
+
+int ts_instrument_make_fm_bank(TsInstrument *instrument,
+                               const TsFmPatch *patch,
+                               char *error, size_t error_size)
+{
+    TsInstrument made;
+    TsFmPatch anchor;
+    TsFmPatch previous;
+    uint32_t seed;
+    float mutation;
+    int chain;
+    if (instrument == NULL || patch == NULL) {
+        set_error(error, error_size, "FM Bank Maker input is unavailable");
+        return 0;
+    }
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        if (instrument->bank[slot].locked) {
+            set_error(error, error_size,
+                      "Unlock protected tiles or make the bank on a new page");
+            return 0;
+        }
+    }
+    anchor = *patch;
+    ts_fm_patch_sanitize(&anchor);
+    previous = anchor;
+    mutation = clampf(instrument->family_mutation, 0.0f, 1.0f);
+    chain = instrument->family_trajectory != 0;
+    seed = instrument->generator.seed != 0u ? instrument->generator.seed :
+           advance_seed(instrument->family_sequence ^ 0x42414e4bu);
+    ts_instrument_init(&made);
+    made.family_mutation = mutation;
+    made.family_trajectory = chain;
+    made.family_relation = instrument->family_relation;
+    made.family_locks = instrument->family_locks;
+    made.generator.seconds = instrument->generator.seconds >= 0.1f &&
+                             instrument->generator.seconds <= 8.0f ?
+                             instrument->generator.seconds : 2.0f;
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        TsFmPatch next = anchor;
+        if (slot > 0) {
+            seed = advance_seed(seed ^ (uint32_t)(slot * 0x9e3779b9u));
+            ts_fm_patch_vary(chain ? &previous : &anchor,
+                             seed, mutation, &next);
+        }
+        made.selected_slot = slot;
+        made.generator.kind = TS_GENERATOR_FM;
+        made.generator.seed = seed;
+        made.generator.frequency = 261.625565f;
+        made.generator.has_fm_patch = 1;
+        made.generator.fm_patch = next;
+        if (!ts_instrument_apply_fm_patch(&made, &next, error, error_size)) {
+            ts_instrument_free(&made);
+            return 0;
+        }
+        made.bank[slot].relation = slot == 0 ? TS_FAMILY_ROOT :
+                                   chain ? TS_FAMILY_CHILD : TS_FAMILY_COUSIN;
+        made.bank[slot].parent_slot = slot == 0 ? -1 : chain ? slot - 1 : 0;
+        made.bank[slot].trajectory_step = (uint32_t)slot;
+        made.bank[slot].lineage_mutation = mutation;
+        made.bank[slot].locked = 0;
+        previous = next;
+    }
+    if (!ts_instrument_select_bank(&made, 0, error, error_size)) {
+        ts_instrument_free(&made);
+        return 0;
+    }
+    made.family_anchor_slot = 0;
+    made.family_last_slot = TS_BANK_SLOT_COUNT - 1;
+    ts_instrument_free(instrument);
+    *instrument = made;
+    set_error(error, error_size, "");
+    return 1;
 }
 
 int ts_instrument_activate_silence(TsInstrument *instrument, size_t frames,
@@ -7870,9 +8011,9 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr25(const TsInstrument *instrument, FILE *f)
+static int save_tsr26(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR25\r\n\032", 1, 8, f);
+    fwrite("TSR26\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -8137,10 +8278,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR25 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR26 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR25 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR26 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -8159,13 +8300,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr25(instrument, f)) {
+    if (!save_tsr26(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR25 project");
+        set_error(error, error_size, "Could not write TSR26 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR25 project");
+        set_error(error, error_size, "Could not finish TSR26 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -8200,7 +8341,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR25\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR26\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR25\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR24\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR23\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR22\r\n\032", 8) == 0 ||
@@ -8211,7 +8353,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = memcmp(magic, "TSR25\r\n\032", 8) == 0 ? 25 :
+        int self_contained_version = memcmp(magic, "TSR26\r\n\032", 8) == 0 ? 26 :
+                                     memcmp(magic, "TSR25\r\n\032", 8) == 0 ? 25 :
                                      memcmp(magic, "TSR24\r\n\032", 8) == 0 ? 24 :
                                      memcmp(magic, "TSR23\r\n\032", 8) == 0 ? 23 :
                                      memcmp(magic, "TSR22\r\n\032", 8) == 0 ? 22 :
@@ -8240,7 +8383,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR25 project");
+                  "Not a self-contained TSR6-TSR26 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -8519,7 +8662,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR25 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR26 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

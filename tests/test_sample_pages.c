@@ -95,6 +95,14 @@ static void test_page_cycle_and_keep(void)
         CHECK(ts_sample_pages_switch(&pages, &active, 1u,
                                      error, sizeof(error)));
         CHECK(active.bank[0].occupied && active.bank[0].sample.data[0] == 0.7f);
+        CHECK(ts_sample_pages_switch(&pages, &active, 2u,
+                                     error, sizeof(error)));
+        CHECK(add_sound(&active, 2, 0.9f));
+        CHECK(ts_sample_pages_remove_last_and_switch(
+            &pages, &active, 0u, error, sizeof(error)));
+        CHECK(ts_sample_pages_count(&pages) == 2u &&
+              ts_sample_pages_active(&pages) == 0u);
+        CHECK(active.bank[0].occupied && active.bank[0].sample.data[0] == 0.1f);
     }
     ts_sample_pages_free(&pages);
     ts_instrument_free(&record);
