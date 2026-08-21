@@ -111,10 +111,6 @@ static void scroll_transaction_tests(void)
     TsSample before;
     TsSample after_first;
     TsSample after_second;
-    TsGeneratorRecipe first_recipe;
-    TsGeneratorRecipe second_recipe;
-    TsFmPatch first_patch;
-    TsFmPatch expected_second_patch;
     size_t original_frames;
     size_t stamp_frames = 1024u;
     size_t fade_frames;
@@ -123,7 +119,7 @@ static void scroll_transaction_tests(void)
     size_t second_next;
     size_t view_span;
     uint64_t other_hash;
-    uint32_t expected_second_seed;
+    uint64_t first_patch_hash;
     int undo_before;
     int occupied_before;
     ts_instrument_init(&scroll);
@@ -183,19 +179,14 @@ static void scroll_transaction_tests(void)
     }
     for (size_t frame = 0u; frame < scroll.current.frames; ++frame)
         CHECK(isfinite(scroll.current.data[frame]));
-    first_recipe =
-        scroll.bank[0].patches[scroll.bank[0].patch_count - 1].generator;
+    CHECK(!scroll.bank[0].patches[scroll.bank[0].patch_count - 1].has_generator);
+    first_patch_hash = ts_sample_hash(
+        &scroll.bank[0].patches[scroll.bank[0].patch_count - 1].sample);
     CHECK(ts_sample_hash(&scroll.bank[1].sample) == other_hash &&
           occupied_count(&scroll) == occupied_before);
     CHECK(ts_sample_clone(&after_first, &scroll.current,
                           error, sizeof(error)));
 
-    expected_second_seed = (first_recipe.seed ^
-        ((scroll.family_sequence + 1u) * 1664525u + 1013904223u)) *
-        1664525u + 1013904223u;
-    ts_fm_patch_from_recipe(&first_recipe, &first_patch);
-    ts_fm_patch_vary(&first_patch, expected_second_seed,
-                     scroll.family_mutation, &expected_second_patch);
     CHECK(ts_instrument_stamp_vary_chained(&scroll, 3,
                                            error, sizeof(error)));
     second_next = first_next + stamp_frames - fade_frames;
@@ -210,12 +201,10 @@ static void scroll_transaction_tests(void)
           scroll.post_edits[2].last == first_next + stamp_frames &&
           scroll.post_edits[2].crossfade_frames == fade_frames &&
           scroll.post_edits[3].kind == TS_POST_CANVAS_RIGHT_RESIZE);
-    second_recipe =
-        scroll.bank[0].patches[scroll.bank[0].patch_count - 1].generator;
-    CHECK(second_recipe.seed == expected_second_seed &&
-          second_recipe.has_fm_patch &&
-          memcmp(&second_recipe.fm_patch, &expected_second_patch,
-                 sizeof(expected_second_patch)) == 0);
+    CHECK(!scroll.bank[0].patches[scroll.bank[0].patch_count - 1].has_generator &&
+          ts_sample_hash(
+              &scroll.bank[0].patches[scroll.bank[0].patch_count - 1].sample) !=
+          first_patch_hash);
     CHECK(ts_sample_hash(&scroll.current) != ts_sample_hash(&after_first) &&
           ts_sample_hash(&scroll.bank[1].sample) == other_hash);
     if (fade_frames > 0u) {
@@ -303,8 +292,9 @@ static void zero_overlap_and_stress_tests(void)
                                      error, sizeof(error)));
     instrument.family_mutation = 0.64f;
     for (int stamp = 0; stamp < 50; ++stamp) {
-        uint32_t previous_seed = instrument.bank[0]
-            .patches[instrument.bank[0].patch_count - 1].generator.seed;
+        uint64_t previous_hash = ts_sample_hash(
+            &instrument.bank[0]
+                 .patches[instrument.bank[0].patch_count - 1].sample);
         const TsAudioPatch *latest;
         CHECK(ts_instrument_stamp_vary_chained(&instrument, 3,
                                                error, sizeof(error)));
@@ -314,7 +304,8 @@ static void zero_overlap_and_stress_tests(void)
               instrument.bank[0].patch_count <= TS_AUDIO_PATCH_DEPTH);
         latest = &instrument.bank[0]
                      .patches[instrument.bank[0].patch_count - 1];
-        CHECK(latest->has_generator && latest->generator.seed != previous_seed);
+        CHECK(!latest->has_generator &&
+              ts_sample_hash(&latest->sample) != previous_hash);
     }
     CHECK(instrument.current.frames > 4096u &&
           instrument.post_edit_count < TS_POST_EDIT_DEPTH);
@@ -330,12 +321,126 @@ static void zero_overlap_and_stress_tests(void)
     ts_instrument_free(&instrument);
 }
 
+static void sculpted_handoff_tests(void)
+{
+    char error[160];
+    TsInstrument plain;
+    TsInstrument sculpted;
+    TsInstrument chain_a;
+    TsInstrument chain_b;
+    TsInstrument imported;
+    TsSample sculpted_before;
+    TsSample selection_before;
+    uint64_t plain_varied_hash;
+    uint64_t sculpted_varied_hash;
+    size_t first;
+    size_t last;
+    int destination = -1;
+
+    ts_instrument_init(&plain);
+    ts_instrument_init(&sculpted);
+    ts_instrument_init(&chain_a);
+    ts_instrument_init(&chain_b);
+    ts_instrument_init(&imported);
+    ts_sample_init(&sculpted_before);
+    ts_sample_init(&selection_before);
+
+    CHECK(ts_instrument_bank_clear_all(&plain, error, sizeof(error)) &&
+          ts_instrument_bank_clear_all(&sculpted, error, sizeof(error)));
+    CHECK(ts_instrument_select_bank(&plain, 0, error, sizeof(error)) &&
+          ts_instrument_select_bank(&sculpted, 0, error, sizeof(error)));
+    CHECK(ts_instrument_create_selected(&plain, 0x48414e44u,
+                                        error, sizeof(error)) &&
+          ts_instrument_create_selected(&sculpted, 0x48414e44u,
+                                        error, sizeof(error)));
+    CHECK(ts_instrument_apply_warp(&sculpted, 0.83f,
+                                   error, sizeof(error)));
+    CHECK(ts_sample_clone(&sculpted_before, &sculpted.current,
+                          error, sizeof(error)));
+    plain.family_mutation = sculpted.family_mutation = 0.67f;
+    CHECK(ts_instrument_vary_selected(&plain, 0, &destination,
+                                      error, sizeof(error)));
+    plain_varied_hash = ts_sample_hash(&plain.current);
+    CHECK(ts_instrument_vary_selected(&sculpted, 0, &destination,
+                                      error, sizeof(error)));
+    sculpted_varied_hash = ts_sample_hash(&sculpted.current);
+    CHECK(plain_varied_hash != sculpted_varied_hash &&
+          sculpted_varied_hash != ts_sample_hash(&sculpted_before));
+    CHECK(ts_instrument_undo(&sculpted, error, sizeof(error)) &&
+          ts_sample_hash(&sculpted.current) ==
+          ts_sample_hash(&sculpted_before));
+
+    /* Vary also understands non-FM material and respects selection scope. */
+    CHECK(ts_instrument_bank_clear_all(&imported, error, sizeof(error)));
+    CHECK(ts_instrument_select_bank(&imported, 0, error, sizeof(error)));
+    CHECK(ts_instrument_activate_silence(&imported, 4096u, 48000u,
+                                         error, sizeof(error)));
+    for (size_t frame = 0u; frame < imported.current.frames; ++frame) {
+        float value = 0.45f * sinf((float)frame * 0.071f) +
+                      0.18f * sinf((float)frame * 0.013f);
+        imported.current.data[frame] = value;
+        imported.parent.data[frame] = value;
+        imported.bank[0].sample.data[frame] = value;
+        imported.bank[0].edit_parent.data[frame] = value;
+    }
+    first = 1024u;
+    last = 2048u;
+    ts_instrument_set_selection(&imported, first, last);
+    CHECK(ts_sample_clone(&selection_before, &imported.current,
+                          error, sizeof(error)));
+    imported.family_mutation = 0.75f;
+    CHECK(ts_instrument_stamp_vary(&imported, error, sizeof(error)));
+    CHECK(memcmp(imported.current.data, selection_before.data,
+                 first * sizeof(*selection_before.data)) == 0 &&
+          memcmp(imported.current.data + first,
+                 selection_before.data + first,
+                 (last - first) * sizeof(*selection_before.data)) != 0 &&
+          memcmp(imported.current.data + last,
+                 selection_before.data + last,
+                 (selection_before.frames - last) *
+                 sizeof(*selection_before.data)) == 0);
+    imported.bank[0].locked = 1;
+    CHECK(!ts_instrument_stamp_vary(&imported, error, sizeof(error)));
+
+    /* A chained scroll inherits the preceding varied stamp. Altering the new
+       empty destination cannot change the next handoff result. */
+    CHECK(ts_instrument_clone(&chain_a, &plain, error, sizeof(error)) &&
+          ts_instrument_clone(&chain_b, &plain, error, sizeof(error)));
+    first = chain_a.current.frames - 512u;
+    last = chain_a.current.frames;
+    ts_instrument_set_selection(&chain_a, first, last);
+    ts_instrument_set_selection(&chain_b, first, last);
+    chain_a.family_mutation = chain_b.family_mutation = 0.61f;
+    CHECK(ts_instrument_stamp_vary_chained(&chain_a, 3,
+                                           error, sizeof(error)) &&
+          ts_instrument_stamp_vary_chained(&chain_b, 3,
+                                           error, sizeof(error)));
+    CHECK(ts_sample_hash(&chain_a.current) == ts_sample_hash(&chain_b.current));
+    for (size_t frame = chain_b.selection_first;
+         frame < chain_b.selection_last; ++frame)
+        chain_b.current.data[frame] = frame & 1u ? 0.99f : -0.99f;
+    CHECK(ts_instrument_stamp_vary_chained(&chain_a, 3,
+                                           error, sizeof(error)) &&
+          ts_instrument_stamp_vary_chained(&chain_b, 3,
+                                           error, sizeof(error)));
+    CHECK(ts_sample_hash(&chain_a.current) == ts_sample_hash(&chain_b.current));
+
+    ts_sample_free(&selection_before);
+    ts_sample_free(&sculpted_before);
+    ts_instrument_free(&imported);
+    ts_instrument_free(&chain_b);
+    ts_instrument_free(&chain_a);
+    ts_instrument_free(&sculpted);
+    ts_instrument_free(&plain);
+}
+
 int main(void)
 {
     config_tests();
     four_mode_matrix_tests();
     scroll_transaction_tests();
     zero_overlap_and_stress_tests();
+    sculpted_handoff_tests();
     if (failures != 0) {
         fprintf(stderr, "%d chain stamp test(s) failed\n", failures);
         return 1;

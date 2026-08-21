@@ -2741,19 +2741,28 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
     ui->audition_source = TS_AUDITION_CURRENT;
     if (stamp && vary && instrument->family_trajectory)
         snprintf(ui->status, sizeof(ui->status),
-                 "BANK %02d CHAIN STAMPED %zu FRAMES - NEXT %zu:%zu",
-                 slot + 1, stamp_frames, instrument->selection_first,
+                 "BANK %02d CHAIN VARIED SCULPTED MATERIAL - NEXT %zu:%zu",
+                 slot + 1, instrument->selection_first,
                  instrument->selection_last);
+    else if (stamp && vary)
+        snprintf(ui->status, sizeof(ui->status),
+                 "BANK %02d VARIED SCULPTED MATERIAL IN %zu-FRAME SELECTION",
+                 slot + 1, stamp_frames);
     else if (stamp)
         snprintf(ui->status, sizeof(ui->status),
-                 "BANK %02d %s FM STAMP IN %zu-FRAME SELECTION",
-                 slot + 1, vary ? "VARIED" : "CREATED", stamp_frames);
+                 "BANK %02d CREATED FM STAMP IN %zu-FRAME SELECTION",
+                 slot + 1, stamp_frames);
     else {
         ts_ui_reset_parent_view(ui, instrument->current.frames);
-        snprintf(ui->status, sizeof(ui->status), "BANK %02d %s FM - RANGE %d%s",
-                 slot + 1, vary ? "VARIED" : "CREATED",
-                 (int)lrintf(instrument->family_mutation * 100.0f),
-                 vary && instrument->family_trajectory ? " CHAIN" : "");
+        if (vary)
+            snprintf(ui->status, sizeof(ui->status),
+                     "BANK %02d VARIED CURRENT MATERIAL - RANGE %d%s",
+                     slot + 1,
+                     (int)lrintf(instrument->family_mutation * 100.0f),
+                     instrument->family_trajectory ? " CHAIN" : "");
+        else
+            snprintf(ui->status, sizeof(ui->status),
+                     "BANK %02d CREATED FRESH FM SOURCE", slot + 1);
     }
 }
 
@@ -2767,7 +2776,7 @@ static int render_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     double root_frequency = ts_tuning_frequency(&unity);
     uint32_t seed = instrument->generator.seed ^ 0x50524556u;
     ts_sample_init(&rendered);
-    if (!ts_fm_render_sample(&rendered, &ui->fm_patch, 8.0f,
+    if (!ts_fm_render_sample(&rendered, &ui->fm_patch, TS_FM_LOGIC_SECONDS,
                              (float)root_frequency, 44100u, seed,
                              error, sizeof(error))) {
         snprintf(ui->fm_message, sizeof(ui->fm_message),
@@ -2795,9 +2804,8 @@ static int render_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     return 1;
 }
 
-static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
-                               TsUiState *ui, const TsInstrument *instrument,
-                               TsSample *preview)
+static TsGeneratorRecipe current_fm_workspace_recipe(
+    const TsInstrument *instrument)
 {
     TsGeneratorRecipe recipe = instrument->generator;
     if (instrument->selected_slot >= 0 &&
@@ -2806,6 +2814,31 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
         instrument->bank[instrument->selected_slot].has_generator &&
         instrument->bank[instrument->selected_slot].generator.kind == TS_GENERATOR_FM)
         recipe = instrument->bank[instrument->selected_slot].generator;
+    if (instrument->selected_slot >= 0 &&
+        instrument->selected_slot < TS_BANK_SLOT_COUNT) {
+        const TsBankSlot *slot = &instrument->bank[instrument->selected_slot];
+        for (int index = instrument->post_edit_count - 1; index >= 0; --index) {
+            const TsPostEdit *operation = &instrument->post_edits[index];
+            const TsAudioPatch *patch;
+            if (operation->kind != TS_POST_MATERIAL_REPLACE ||
+                operation->patch_index >= (uint32_t)slot->patch_count)
+                continue;
+            patch = &slot->patches[operation->patch_index];
+            if (patch->has_generator &&
+                patch->generator.kind == TS_GENERATOR_FM) {
+                recipe = patch->generator;
+                break;
+            }
+        }
+    }
+    return recipe;
+}
+
+static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
+                               TsUiState *ui, const TsInstrument *instrument,
+                               TsSample *preview)
+{
+    TsGeneratorRecipe recipe = current_fm_workspace_recipe(instrument);
     stop_all_force(device, audio, ui);
     recipe.kind = TS_GENERATOR_FM;
     ts_fm_patch_from_recipe(&recipe, &ui->fm_patch);
@@ -3140,6 +3173,179 @@ static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState
     else snprintf(ui->status, sizeof(ui->status), "PROCESS FAILED: %.130s", error);
 }
 
+static const char *material_macro_name(TsMaterialMacro macro)
+{
+    if (macro == TS_MATERIAL_MACRO_EDGE) return "EDGE";
+    if (macro == TS_MATERIAL_MACRO_DRIFT) return "DRIFT";
+    return "BODY";
+}
+
+static float material_macro_neutral_value(TsMaterialMacro macro)
+{
+    (void)macro;
+    return 0.0f;
+}
+
+static int begin_material_macro_gesture(
+    SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+    TsInstrument *instrument, TsMaterialMacro macro, int wheel)
+{
+    char error[160];
+    int ok;
+    lock_edit(device, audio);
+    ok = ts_instrument_material_macro_gesture_begin(
+        instrument, &ui->material_macro_gesture, macro,
+        error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok) {
+        ui->material_macro_dragging = !wheel;
+        ui->material_macro_wheel_active = wheel;
+        ui->material_macro_amount = material_macro_neutral_value(macro);
+        ui->material_macro_last_audition_ms = 0u;
+    } else snprintf(ui->status, sizeof(ui->status),
+                    "%s BEGIN FAILED: %.130s",
+                    material_macro_name(macro), error);
+    return ok;
+}
+
+static int preview_material_macro_gesture(
+    SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+    TsInstrument *instrument, float amount, int output_rate)
+{
+    char error[160];
+    const char *name = material_macro_name(ui->material_macro_gesture.macro);
+    uint32_t now;
+    int ok;
+    if (amount < -1.0f) amount = -1.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    lock_edit(device, audio);
+    ok = ts_instrument_material_macro_gesture_preview(
+        instrument, &ui->material_macro_gesture, amount,
+        error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (!ok) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "%s PREVIEW FAILED: %.128s", name, error);
+        return 0;
+    }
+    ui->material_macro_amount = amount;
+    now = SDL_GetTicks();
+    if (!ts_ui_transform_auto_audition_allowed(ui)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "%s PREVIEW %.2F - LOOP OWNS AUDITION", name, amount);
+    } else if (ui->material_macro_last_audition_ms == 0u ||
+               now - ui->material_macro_last_audition_ms >= 100u) {
+        TsAuditionRange range = ui->material_macro_gesture.start.has_selection ?
+                                TS_AUDITION_SELECTION : TS_AUDITION_ALL;
+        ui->audition_source = TS_AUDITION_CURRENT;
+        begin_audition(device, audio, ui, instrument, range,
+                       1.0, output_rate);
+        ui->material_macro_last_audition_ms = now;
+    } else snprintf(ui->status, sizeof(ui->status),
+                    "%s PREVIEW %.2F", name, amount);
+    return 1;
+}
+
+static void end_material_macro_gesture(
+    SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+    TsInstrument *instrument, int cancel)
+{
+    char error[160];
+    TsMaterialMacro macro = ui->material_macro_gesture.macro;
+    float amount = ui->material_macro_gesture.amount;
+    float neutral = material_macro_neutral_value(macro);
+    const char *name = material_macro_name(macro);
+    int ok;
+    lock_edit(device, audio);
+    ok = cancel ? ts_instrument_material_macro_gesture_cancel(
+                      instrument, &ui->material_macro_gesture,
+                      error, sizeof(error)) :
+                  ts_instrument_material_macro_gesture_commit(
+                      instrument, &ui->material_macro_gesture,
+                      error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    ui->material_macro_dragging = 0;
+    ui->material_macro_wheel_active = 0;
+    ui->material_macro_amount = 0.0f;
+    ui->material_macro_last_audition_ms = 0u;
+    if (cancel && !ui->workbench_loop_active) stop_all(device, audio, ui);
+    if (ok && cancel)
+        snprintf(ui->status, sizeof(ui->status),
+                 "%s CANCELLED - ORIGINAL RESTORED", name);
+    else if (ok && fabsf(amount - neutral) > 0.000001f)
+        snprintf(ui->status, sizeof(ui->status),
+                 "%s %.2F COMMITTED TO MATERIAL - ONE UNDO", name, amount);
+    else if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 "%s RETURNED TO NEUTRAL - NO EDIT", name);
+    else snprintf(ui->status, sizeof(ui->status),
+                  "%s END FAILED: %.130s", name, error);
+}
+
+static int apply_material_macro_once(
+    SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+    TsInstrument *instrument, TsMaterialMacro macro, float amount)
+{
+    char error[160];
+    const char *name = material_macro_name(macro);
+    int ok;
+    if (amount < -1.0f) amount = -1.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    if (fabsf(amount - material_macro_neutral_value(macro)) < 0.000001f) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "%s IS AT NEUTRAL - NO MATERIAL EDIT", name);
+        return 1;
+    }
+    lock_edit(device, audio);
+    ok = ts_instrument_apply_material_macro(
+        instrument, macro, amount, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 "%s %.2F PRINTED TO %s - ONE UNDO",
+                 name, amount,
+                 instrument->has_selection ? "SELECTION" : "TILE");
+    else snprintf(ui->status, sizeof(ui->status),
+                  "%s FAILED: %.136s", name, error);
+    return ok;
+}
+
+static void apply_material_pitch_shift(SDL_AudioDeviceID device,
+                                       AudioState *audio, TsUiState *ui,
+                                       TsInstrument *instrument,
+                                       float semitones)
+{
+    char error[160];
+    int selected = instrument->has_selection &&
+                   instrument->selection_last > instrument->selection_first;
+    size_t before = selected ?
+                    instrument->selection_last - instrument->selection_first :
+                    instrument->current.frames;
+    size_t canvas_before = instrument->current.frames;
+    int ok;
+    lock_edit(device, audio);
+    ok = ts_instrument_apply_pitch_shift(instrument, semitones,
+                                         error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (ok) {
+        size_t after = selected && instrument->has_selection ?
+                       instrument->selection_last - instrument->selection_first :
+                       instrument->current.frames;
+        if (selected)
+            snprintf(ui->status, sizeof(ui->status),
+                     "MAT SEL %+.2F ST  %zu>%zu  CANVAS %zu>%zu - ONE UNDO",
+                     semitones, before, after, canvas_before,
+                     instrument->current.frames);
+        else
+            snprintf(ui->status, sizeof(ui->status),
+                     "MAT TILE %+.2F ST  %zu>%zu FRAMES - ONE UNDO",
+                     semitones, before, after);
+    } else {
+        snprintf(ui->status, sizeof(ui->status),
+                 "MATERIAL TUNE FAILED: %.135s", error);
+    }
+}
+
 static void set_tune_reference(TsUiState *ui, int root_note, float cents)
 {
     char note[12];
@@ -3352,15 +3558,18 @@ static void cut_selection_to_clipboard(SDL_AudioDeviceID device, AudioState *aud
     size_t copied_source_frames = instrument->current.frames;
     uint32_t copied_source_rate = instrument->current.sample_rate;
     lock_edit(device, audio);
-    ok = ts_instrument_cut_selection(instrument, clipboard, origin_first,
-                                     error, sizeof(error));
+    ok = ts_instrument_cut_selection_mode(
+        instrument, clipboard, origin_first,
+        ui->config.ripple_cut_crop_canvas, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (ok) {
         if (source_frames != NULL) *source_frames = copied_source_frames;
         if (source_rate != NULL) *source_rate = copied_source_rate;
         snprintf(ui->status, sizeof(ui->status),
-                 "CUT %zu FRAMES FROM TILE %02d - UNDO AVAILABLE",
-                 clipboard->frames, instrument->selected_slot + 1);
+                 ui->config.ripple_cut_crop_canvas ?
+                 "RIPPLE CUT %zu FRAMES - CANVAS CROPPED" :
+                 "RIPPLE CUT %zu FRAMES - CANVAS PRESERVED",
+                 clipboard->frames);
     } else snprintf(ui->status, sizeof(ui->status), "CUT FAILED: %.138s", error);
 }
 
@@ -3387,6 +3596,253 @@ static void paste_from_clipboard(SDL_AudioDeviceID device, AudioState *audio,
                  clipboard->frames, instrument->selected_slot + 1);
     else snprintf(ui->status, sizeof(ui->status), "%s FAILED: %.132s",
                   fit_selection ? "FIT PASTE" : "PASTE", error);
+}
+
+static float amplitude_gain_from_y(int y)
+{
+    int middle = TS_WAVE_Y + TS_WAVE_H / 2;
+    int radius = TS_WAVE_H / 2 - 8;
+    float gain = 2.0f * fabsf((float)(y - middle)) / (float)radius;
+    if (gain < 0.0f) gain = 0.0f;
+    if (gain > 2.0f) gain = 2.0f;
+    return gain;
+}
+
+static void amplitude_profile_segment(TsUiState *ui, int first_x,
+                                      float first_gain, int last_x,
+                                      float last_gain)
+{
+    if (last_x < first_x) {
+        int swap_x = first_x;
+        float swap_gain = first_gain;
+        first_x = last_x;
+        last_x = swap_x;
+        first_gain = last_gain;
+        last_gain = swap_gain;
+    }
+    if (first_x < 0) first_x = 0;
+    if (last_x >= TS_WAVE_W) last_x = TS_WAVE_W - 1;
+    for (int x = first_x; x <= last_x; ++x) {
+        float phase = last_x > first_x ?
+            (float)(x - first_x) / (float)(last_x - first_x) : 1.0f;
+        ui->amplitude_profile[x] =
+            first_gain + (last_gain - first_gain) * phase;
+        ui->amplitude_profile_set[x] = 1u;
+    }
+    if (first_x < ui->amplitude_profile_first_x)
+        ui->amplitude_profile_first_x = first_x;
+    if (last_x > ui->amplitude_profile_last_x)
+        ui->amplitude_profile_last_x = last_x;
+}
+
+static void amplitude_profile_recalculate_bounds(TsUiState *ui)
+{
+    ui->amplitude_profile_first_x = TS_WAVE_W;
+    ui->amplitude_profile_last_x = -1;
+    for (int x = 0; x < TS_WAVE_W; ++x) {
+        if (!ui->amplitude_profile_set[x]) continue;
+        if (x < ui->amplitude_profile_first_x)
+            ui->amplitude_profile_first_x = x;
+        if (x > ui->amplitude_profile_last_x)
+            ui->amplitude_profile_last_x = x;
+    }
+}
+
+static void snapshot_amplitude_polyline_base(TsUiState *ui)
+{
+    memcpy(ui->amplitude_polyline_base, ui->amplitude_profile,
+           sizeof(ui->amplitude_polyline_base));
+    memcpy(ui->amplitude_polyline_base_set, ui->amplitude_profile_set,
+           sizeof(ui->amplitude_polyline_base_set));
+}
+
+static int rebuild_amplitude_draw_preview(
+    SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+    TsInstrument *instrument, char *error, size_t error_size)
+{
+    int previous_x = -1;
+    size_t previous_frame = 0u;
+    float previous_gain = 0.0f;
+    int ok = 1;
+    lock_edit(device, audio);
+    ok = ts_instrument_amplitude_gesture_reset_preview(
+        instrument, &ui->amplitude_gesture, error, error_size);
+    for (int x = 0; ok && x < TS_WAVE_W; ++x) {
+        size_t frame;
+        float gain;
+        if (!ui->amplitude_profile_set[x]) {
+            previous_x = -1;
+            continue;
+        }
+        frame = ts_instrument_frame_from_view_x(instrument, x, TS_WAVE_W);
+        gain = ui->amplitude_profile[x];
+        if (previous_x == x - 1)
+            ok = ts_instrument_amplitude_gesture_preview(
+                instrument, &ui->amplitude_gesture,
+                previous_frame, previous_gain, frame, gain,
+                error, error_size);
+        else
+            ok = ts_instrument_amplitude_gesture_preview(
+                instrument, &ui->amplitude_gesture,
+                frame, gain, frame, gain, error, error_size);
+        previous_x = x;
+        previous_frame = frame;
+        previous_gain = gain;
+    }
+    unlock_edit(device, audio, ui, instrument);
+    return ok;
+}
+
+static void advance_amplitude_polyline(TsUiState *ui)
+{
+    if (!ui->amplitude_polyline_mode) {
+        ui->amplitude_polyline_mode = 1;
+        ui->amplitude_polyline_anchor_x = ui->amplitude_last_x;
+        ui->amplitude_polyline_anchor_frame = ui->amplitude_last_frame;
+        ui->amplitude_polyline_anchor_gain = ui->amplitude_last_gain;
+        ui->amplitude_polyline_cursor_x = ui->amplitude_last_x;
+        ui->amplitude_polyline_cursor_frame = ui->amplitude_last_frame;
+        ui->amplitude_polyline_cursor_gain = ui->amplitude_last_gain;
+    } else {
+        ui->amplitude_polyline_anchor_x = ui->amplitude_polyline_cursor_x;
+        ui->amplitude_polyline_anchor_frame =
+            ui->amplitude_polyline_cursor_frame;
+        ui->amplitude_polyline_anchor_gain =
+            ui->amplitude_polyline_cursor_gain;
+    }
+    snapshot_amplitude_polyline_base(ui);
+}
+
+static int begin_amplitude_draw(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, TsInstrument *instrument,
+                                int x, int y)
+{
+    char error[160];
+    size_t frame;
+    float gain;
+    int local_x = ts_ui_amplitude_draw_local_x(x);
+    int ok;
+    frame = ts_instrument_frame_from_view_x(instrument, local_x, TS_WAVE_W);
+    gain = amplitude_gain_from_y(y);
+    lock_edit(device, audio);
+    ok = ts_instrument_amplitude_gesture_begin(
+             instrument, &ui->amplitude_gesture, error, sizeof(error)) &&
+         ts_instrument_amplitude_gesture_preview(
+             instrument, &ui->amplitude_gesture,
+             frame, gain, frame, gain, error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (!ok) {
+        if (ui->amplitude_gesture.active) {
+            lock_edit(device, audio);
+            (void)ts_instrument_amplitude_gesture_cancel(
+                instrument, &ui->amplitude_gesture, NULL, 0);
+            unlock_edit(device, audio, ui, instrument);
+        }
+        snprintf(ui->status, sizeof(ui->status),
+                 "DRAW BEGIN FAILED: %.139s", error);
+        return 0;
+    }
+    memset(ui->amplitude_profile_set, 0,
+           sizeof(ui->amplitude_profile_set));
+    memset(ui->amplitude_polyline_base_set, 0,
+           sizeof(ui->amplitude_polyline_base_set));
+    ui->amplitude_profile_first_x = TS_WAVE_W;
+    ui->amplitude_profile_last_x = -1;
+    amplitude_profile_segment(ui, local_x, gain, local_x, gain);
+    ui->amplitude_last_x = local_x;
+    ui->amplitude_last_frame = frame;
+    ui->amplitude_last_gain = gain;
+    ui->amplitude_polyline_mode = 0;
+    ui->amplitude_polyline_cursor_x = local_x;
+    ui->amplitude_polyline_cursor_frame = frame;
+    ui->amplitude_polyline_cursor_gain = gain;
+    ui->amplitude_draw_dragging = 1;
+    (void)SDL_CaptureMouse(SDL_TRUE);
+    snprintf(ui->status, sizeof(ui->status),
+             "DRAW 0-2X AMPLITUDE - SHIFT STARTS POLYLINE");
+    return 1;
+}
+
+static int preview_amplitude_draw(SDL_AudioDeviceID device, AudioState *audio,
+                                  TsUiState *ui, TsInstrument *instrument,
+                                  int x, int y)
+{
+    char error[160];
+    int local_x = ts_ui_amplitude_draw_local_x(x);
+    size_t frame;
+    float gain;
+    int ok;
+    if (!ui->amplitude_draw_dragging) return 0;
+    frame = ts_instrument_frame_from_view_x(instrument, local_x, TS_WAVE_W);
+    gain = amplitude_gain_from_y(y);
+    if (ui->amplitude_polyline_mode) {
+        memcpy(ui->amplitude_profile, ui->amplitude_polyline_base,
+               sizeof(ui->amplitude_profile));
+        memcpy(ui->amplitude_profile_set,
+               ui->amplitude_polyline_base_set,
+               sizeof(ui->amplitude_profile_set));
+        amplitude_profile_recalculate_bounds(ui);
+        amplitude_profile_segment(
+            ui, ui->amplitude_polyline_anchor_x,
+            ui->amplitude_polyline_anchor_gain, local_x, gain);
+        ui->amplitude_polyline_cursor_x = local_x;
+        ui->amplitude_polyline_cursor_frame = frame;
+        ui->amplitude_polyline_cursor_gain = gain;
+        ok = rebuild_amplitude_draw_preview(
+            device, audio, ui, instrument, error, sizeof(error));
+    } else {
+        lock_edit(device, audio);
+        ok = ts_instrument_amplitude_gesture_preview(
+            instrument, &ui->amplitude_gesture,
+            ui->amplitude_last_frame, ui->amplitude_last_gain,
+            frame, gain, error, sizeof(error));
+        unlock_edit(device, audio, ui, instrument);
+    }
+    if (!ok) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "DRAW PREVIEW FAILED: %.137s", error);
+        return 0;
+    }
+    if (!ui->amplitude_polyline_mode) {
+        amplitude_profile_segment(ui, ui->amplitude_last_x,
+                                  ui->amplitude_last_gain, local_x, gain);
+        ui->amplitude_last_x = local_x;
+        ui->amplitude_last_frame = frame;
+        ui->amplitude_last_gain = gain;
+    }
+    return 1;
+}
+
+static void end_amplitude_draw(SDL_AudioDeviceID device, AudioState *audio,
+                               TsUiState *ui, TsInstrument *instrument,
+                               int cancel)
+{
+    char error[160];
+    int ok;
+    lock_edit(device, audio);
+    ok = cancel ? ts_instrument_amplitude_gesture_cancel(
+                      instrument, &ui->amplitude_gesture,
+                      error, sizeof(error)) :
+                  ts_instrument_amplitude_gesture_commit(
+                      instrument, &ui->amplitude_gesture,
+                      error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    ui->amplitude_draw_dragging = 0;
+    ui->amplitude_profile_first_x = TS_WAVE_W;
+    ui->amplitude_profile_last_x = -1;
+    memset(ui->amplitude_profile_set, 0,
+           sizeof(ui->amplitude_profile_set));
+    memset(ui->amplitude_polyline_base_set, 0,
+           sizeof(ui->amplitude_polyline_base_set));
+    ui->amplitude_polyline_mode = 0;
+    (void)SDL_CaptureMouse(SDL_FALSE);
+    if (ok)
+        snprintf(ui->status, sizeof(ui->status),
+                 cancel ? "AMPLITUDE DRAW CANCELLED - ORIGINAL RESTORED" :
+                          "AMPLITUDE PROFILE COMMITTED - UNDO AVAILABLE");
+    else
+        snprintf(ui->status, sizeof(ui->status),
+                 "DRAW END FAILED: %.140s", error);
 }
 
 static int begin_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
@@ -3626,7 +4082,7 @@ static int begin_stretch_gesture(SDL_AudioDeviceID device, AudioState *audio,
     unlock_edit(device, audio, ui, instrument);
     if (ok) {
         ui->stretch_wheel_active = 1;
-        ui->stretch_wheel_steps = 0;
+        ui->stretch_wheel_semitones = 0.0f;
     } else snprintf(ui->status, sizeof(ui->status),
                     "TAPE LENGTH BEGIN FAILED: %.120s", error);
     return ok;
@@ -3634,34 +4090,37 @@ static int begin_stretch_gesture(SDL_AudioDeviceID device, AudioState *audio,
 
 static void stretch_waveform(SDL_AudioDeviceID device, AudioState *audio,
                              TsUiState *ui, TsInstrument *instrument,
-                             int wheel_y)
+                             int wheel_y, int fine)
 {
     char error[160];
     float pitch = 0.0f;
     float requested_ratio;
     size_t before_frames, after_frames;
-    int requested_steps;
+    float requested_semitones;
     int ok;
     if (wheel_y == 0) return;
     if (!ui->stretch_gesture.active &&
         !begin_stretch_gesture(device, audio, ui, instrument)) return;
     before_frames = ui->stretch_gesture.start.selection_last -
                     ui->stretch_gesture.start.selection_first;
-    requested_steps = ui->stretch_wheel_steps + wheel_y;
-    requested_ratio = powf(2.0f, (float)requested_steps / 12.0f);
+    requested_semitones = ui->stretch_wheel_semitones +
+                          (float)wheel_y * (fine ? 0.01f : 1.0f);
+    requested_ratio = powf(2.0f, requested_semitones / 12.0f);
     lock_edit(device, audio);
     ok = ts_instrument_stretch_gesture_preview(
         instrument, &ui->stretch_gesture, requested_ratio,
         &pitch, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (ok) {
-        ui->stretch_wheel_steps = requested_steps;
+        ui->stretch_wheel_semitones = requested_semitones;
         after_frames = instrument->selection_last - instrument->selection_first;
         ui->has_stretch_readout = 1;
         ui->stretch_pitch_semitones = pitch;
         ui->stretch_duration_ratio = before_frames > 0 ?
             (float)after_frames / (float)before_frames : 1.0f;
         snprintf(ui->status, sizeof(ui->status),
+                 fine ?
+                 "FINE TAPE PREVIEW %zu -> %zu  PITCH %+.2F ST - RELEASE MODIFIER" :
                  "TAPE PREVIEW %zu -> %zu  PITCH %+.2F ST - RELEASE MODIFIER",
                  before_frames, after_frames, pitch);
     } else snprintf(ui->status, sizeof(ui->status),
@@ -3675,7 +4134,7 @@ static void end_stretch_gesture(SDL_AudioDeviceID device, AudioState *audio,
     char error[160];
     float pitch = ui->stretch_gesture.pitch_semitones;
     float ratio = ui->stretch_gesture.actual_ratio;
-    int changed = ui->stretch_wheel_steps != 0;
+    int changed = fabsf(ui->stretch_wheel_semitones) >= 0.0001f;
     int ok;
     lock_edit(device, audio);
     ok = cancel ? ts_instrument_stretch_gesture_cancel(
@@ -3692,7 +4151,7 @@ static void end_stretch_gesture(SDL_AudioDeviceID device, AudioState *audio,
         unlock_edit(device, audio, ui, instrument);
     }
     ui->stretch_wheel_active = 0;
-    ui->stretch_wheel_steps = 0;
+    ui->stretch_wheel_semitones = 0.0f;
     if (cancel || !changed) ui->has_stretch_readout = 0;
     if (ok && cancel)
         snprintf(ui->status, sizeof(ui->status),
@@ -5167,11 +5626,17 @@ static int adjust_hovered_slider(SDL_AudioDeviceID device, AudioState *audio,
     process = instrument->process;
     switch (slider) {
     case TS_UI_SLIDER_BODY:
-        process.body = clamp_unit(process.body + step); label = "BODY"; break;
+        return apply_material_macro_once(
+            device, audio, ui, instrument, TS_MATERIAL_MACRO_BODY,
+            step < -1.0f ? -1.0f : step > 1.0f ? 1.0f : step);
     case TS_UI_SLIDER_EDGE:
-        process.edge = clamp_unit(process.edge + step); label = "EDGE"; break;
+        return apply_material_macro_once(
+            device, audio, ui, instrument, TS_MATERIAL_MACRO_EDGE,
+            step < -1.0f ? -1.0f : step > 1.0f ? 1.0f : step);
     case TS_UI_SLIDER_DRIFT:
-        process.drift = clamp_unit(process.drift + step); label = "DRIFT"; break;
+        return apply_material_macro_once(
+            device, audio, ui, instrument, TS_MATERIAL_MACRO_DRIFT,
+            step < -1.0f ? -1.0f : step > 1.0f ? 1.0f : step);
     case TS_UI_SLIDER_TUNE_FINE:
         (void)device;
         (void)audio;
@@ -6492,6 +6957,11 @@ int main(int argc, char **argv)
         SDL_Event event;
         Uint64 frame_started = SDL_GetPerformanceCounter();
         while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_DROPFILE && ui.amplitude_gesture.active)
+                end_amplitude_draw(device, &audio, &ui, &instrument, 1);
+            if (event.type == SDL_DROPFILE && ui.material_macro_gesture.active)
+                end_material_macro_gesture(
+                    device, &audio, &ui, &instrument, 1);
             if (event.type == SDL_DROPFILE && ui.canvas_gesture.active)
                 end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
             if (event.type == SDL_DROPFILE && ui.stretch_gesture.active)
@@ -6506,6 +6976,11 @@ int main(int argc, char **argv)
                 SDL_free(event.drop.file);
                 continue;
             } else if (event.type == SDL_QUIT) {
+                if (ui.amplitude_gesture.active)
+                    end_amplitude_draw(device, &audio, &ui, &instrument, 1);
+                if (ui.material_macro_gesture.active)
+                    end_material_macro_gesture(
+                        device, &audio, &ui, &instrument, 1);
                 if (ui.smear_gesture.active)
                     end_smear_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.warp_gesture.active)
@@ -6585,7 +7060,14 @@ int main(int argc, char **argv)
                        event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
                        (ui.warp_gesture.active || ui.smear_gesture.active ||
                         ui.tear_gesture.active || ui.stretch_gesture.active ||
-                        ui.canvas_gesture.active)) {
+                        ui.canvas_gesture.active ||
+                        ui.material_macro_gesture.active ||
+                        ui.amplitude_gesture.active)) {
+                if (ui.amplitude_gesture.active)
+                    end_amplitude_draw(device, &audio, &ui, &instrument, 1);
+                if (ui.material_macro_gesture.active)
+                    end_material_macro_gesture(
+                        device, &audio, &ui, &instrument, 1);
                 if (ui.warp_gesture.active) end_warp_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.smear_gesture.active) end_smear_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.tear_gesture.active) end_tear_gesture(device, &audio, &ui, &instrument, 1);
@@ -6605,11 +7087,33 @@ int main(int argc, char **argv)
                     hovered_slider = ts_ui_slider_from_point(&ui, mouse_x, mouse_y);
                 }
                 ui.bank_clear_armed = 0;
-                if (ui.canvas_gesture.active && key == SDLK_ESCAPE) {
+                if (ui.amplitude_gesture.active && key == SDLK_ESCAPE) {
+                    end_amplitude_draw(device, &audio, &ui, &instrument, 1);
+                } else if (ui.amplitude_gesture.active &&
+                           (key == SDLK_LSHIFT || key == SDLK_RSHIFT)) {
+                    int confirming = ui.amplitude_polyline_mode;
+                    advance_amplitude_polyline(&ui);
+                    snprintf(ui.status, sizeof(ui.status),
+                             confirming ?
+                             "POLYLINE POINT LOCKED - SHIFT ADDS NEXT POINT" :
+                             "POLYLINE ON - SHIFT LOCKS EACH POINT");
+                } else if (ui.amplitude_gesture.active) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "RELEASE MOUSE TO COMMIT DRAW - ESC CANCELS");
+                } else if (ui.canvas_gesture.active && key == SDLK_ESCAPE) {
                     end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
                 } else if (ui.canvas_gesture.active) {
                     snprintf(ui.status, sizeof(ui.status),
                              "RELEASE MOUSE TO COMMIT CANVAS - ESC CANCELS");
+                } else if (ui.material_macro_gesture.active &&
+                           key == SDLK_ESCAPE) {
+                    end_material_macro_gesture(
+                        device, &audio, &ui, &instrument, 1);
+                } else if (ui.material_macro_gesture.active) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             ui.material_macro_wheel_active ?
+                             "RELEASE CTRL TO COMMIT MATERIAL - ESC CANCELS" :
+                             "RELEASE MOUSE TO COMMIT MATERIAL - ESC CANCELS");
                 } else if ((mod & KMOD_ALT) &&
                     (key == SDLK_RETURN || key == SDLK_KP_ENTER)) {
                     Uint32 flags = SDL_GetWindowFlags(window);
@@ -6640,6 +7144,10 @@ int main(int argc, char **argv)
                 } else if (ui.warp_gesture.active) {
                     snprintf(ui.status, sizeof(ui.status),
                              "FINISH OR CANCEL THE WARP GESTURE FIRST");
+                } else if (ui.amplitude_draw_mode && key == SDLK_ESCAPE) {
+                    ui.amplitude_draw_mode = 0;
+                    snprintf(ui.status, sizeof(ui.status),
+                             "AMPLITUDE DRAW TOOL OFF");
                 } else if (ui.exit_confirm_open) {
                     if (key == SDLK_ESCAPE || key == SDLK_n) {
                         ui.exit_confirm_open = 0;
@@ -7259,6 +7767,12 @@ int main(int argc, char **argv)
                         event.key.keysym.sym == SDLK_LALT ||
                         event.key.keysym.sym == SDLK_RALT)) {
                 end_stretch_gesture(device, &audio, &ui, &instrument, 0);
+            } else if (event.type == SDL_KEYUP &&
+                       ui.material_macro_wheel_active &&
+                       (event.key.keysym.sym == SDLK_LCTRL ||
+                        event.key.keysym.sym == SDLK_RCTRL)) {
+                end_material_macro_gesture(
+                    device, &audio, &ui, &instrument, 0);
             } else if (event.type == SDL_KEYUP && ui.warp_wheel_active &&
                        (event.key.keysym.sym == SDLK_LCTRL ||
                         event.key.keysym.sym == SDLK_RCTRL)) {
@@ -7280,6 +7794,24 @@ int main(int argc, char **argv)
                        ui.browser.mode == TS_BROWSER_CLOSED &&
                        note_for_key(event.key.keysym.sym) >= 0) {
                 release_note(device, &audio, &ui, note_for_key(event.key.keysym.sym));
+            } else if (event.type == SDL_MOUSEWHEEL &&
+                       ui.amplitude_gesture.active) {
+                snprintf(ui.status, sizeof(ui.status),
+                         "RELEASE MOUSE TO COMMIT DRAW - ESC CANCELS");
+            } else if (event.type == SDL_MOUSEWHEEL &&
+                       ui.material_macro_gesture.active) {
+                int wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
+                              -event.wheel.y : event.wheel.y;
+                if (ui.material_macro_wheel_active &&
+                    (SDL_GetModState() & KMOD_CTRL) && wheel_y != 0) {
+                    (void)preview_material_macro_gesture(
+                        device, &audio, &ui, &instrument,
+                        ui.material_macro_amount + (float)wheel_y * 0.02f,
+                        obtained.freq);
+                } else snprintf(ui.status, sizeof(ui.status),
+                                ui.material_macro_wheel_active ?
+                                "HOLD CTRL TO CONTINUE - RELEASE COMMITS" :
+                                "RELEASE MOUSE TO COMMIT MATERIAL - ESC CANCELS");
             } else if (event.type == SDL_MOUSEWHEEL && ui.canvas_gesture.active) {
                 snprintf(ui.status, sizeof(ui.status),
                          "RELEASE MOUSE TO COMMIT CANVAS - ESC CANCELS");
@@ -7491,6 +8023,29 @@ int main(int argc, char **argv)
                                              amount, obtained.freq);
                     }
                 } else if (wheel_y != 0 &&
+                           ts_ui_slider_from_point(&ui, x, y) >=
+                           TS_UI_SLIDER_BODY &&
+                           ts_ui_slider_from_point(&ui, x, y) <=
+                           TS_UI_SLIDER_DRIFT) {
+                    TsUiSlider slider = ts_ui_slider_from_point(&ui, x, y);
+                    TsMaterialMacro macro =
+                        slider == TS_UI_SLIDER_BODY ? TS_MATERIAL_MACRO_BODY :
+                        slider == TS_UI_SLIDER_EDGE ? TS_MATERIAL_MACRO_EDGE :
+                                                      TS_MATERIAL_MACRO_DRIFT;
+                    if ((mod & KMOD_CTRL) == 0) {
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "CTRL+WHEEL FINE PREVIEW - RELEASE CTRL COMMITS");
+                    } else if ((!ui.material_macro_gesture.active &&
+                                begin_material_macro_gesture(
+                                    device, &audio, &ui, &instrument,
+                                    macro, 1)) ||
+                               ui.material_macro_wheel_active) {
+                        (void)preview_material_macro_gesture(
+                            device, &audio, &ui, &instrument,
+                            ui.material_macro_amount +
+                            (float)wheel_y * 0.02f, obtained.freq);
+                    }
+                } else if (wheel_y != 0 &&
                            ts_ui_slider_from_point(&ui, x, y) != TS_UI_SLIDER_NONE) {
                     adjust_hovered_slider(device, &audio, &ui, &instrument,
                                           ts_ui_slider_from_point(&ui, x, y),
@@ -7512,7 +8067,9 @@ int main(int argc, char **argv)
                             at > instrument.selection_last)
                             snprintf(ui.status, sizeof(ui.status),
                                      "HOVER THE SELECTED AUDIO TO CHANGE TAPE LENGTH");
-                        else stretch_waveform(device, &audio, &ui, &instrument, wheel_y);
+                        else stretch_waveform(
+                            device, &audio, &ui, &instrument, wheel_y,
+                            (mod & KMOD_CTRL) != 0);
                     } else if ((mod & KMOD_ALT) && wheel_y != 0) {
                         size_t at = selection_frame_from_x(
                             &instrument, &ui, x - TS_WAVE_X);
@@ -7533,7 +8090,8 @@ int main(int argc, char **argv)
                                 (instrument.selection_last - instrument.selection_first) / 2u;
                             endpoint = at < center ? 1 : 2;
                             if (ts_instrument_resize_selection(
-                                    &instrument, endpoint, wheel_y > 0, crossings))
+                                    &instrument, endpoint, wheel_y > 0,
+                                    crossings))
                                 snprintf(ui.status, sizeof(ui.status),
                                          "SELECTION %s %s TO ZERO CROSSING",
                                          wheel_y > 0 ? "EXPANDED" : "CONTRACTED",
@@ -7577,9 +8135,34 @@ int main(int argc, char **argv)
                                  "MOUSE ZOOM - POINTER ANCHORED" : "ZOOM LIMIT");
                     }
                 }
+            } else if (event.type == SDL_MOUSEMOTION &&
+                       ui.amplitude_gesture.active) {
+                int x, y;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
+                (void)preview_amplitude_draw(device, &audio, &ui,
+                                             &instrument, x, y);
             } else if (event.type == SDL_MOUSEMOTION && ui.canvas_gesture.active) {
                 preview_canvas_capture(window, device, &audio, &ui, &instrument,
                                        event.motion.x);
+            } else if (event.type == SDL_MOUSEMOTION &&
+                       ui.material_macro_dragging) {
+                int x, y;
+                int start;
+                int width;
+                float amount;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
+                (void)y;
+                if (ui.material_macro_gesture.macro == TS_MATERIAL_MACRO_BODY) {
+                    start = 10; width = 72;
+                } else if (ui.material_macro_gesture.macro ==
+                           TS_MATERIAL_MACRO_EDGE) {
+                    start = 88; width = 72;
+                } else {
+                    start = 166; width = 72;
+                }
+                amount = 2.0f * (float)(x - start) / (float)width - 1.0f;
+                (void)preview_material_macro_gesture(
+                    device, &audio, &ui, &instrument, amount, obtained.freq);
             } else if (event.type == SDL_MOUSEMOTION && ui.warp_dragging) {
                 int x, y;
                 float amount;
@@ -7727,6 +8310,18 @@ int main(int argc, char **argv)
                             instrument.selection_first,
                             instrument.selection_last,
                             instrument.current.frames));
+            } else if (event.type == SDL_MOUSEBUTTONDOWN &&
+                       ui.amplitude_gesture.active) {
+                snprintf(ui.status, sizeof(ui.status),
+                         "RELEASE MOUSE TO COMMIT DRAW - ESC CANCELS");
+                continue;
+            } else if (event.type == SDL_MOUSEBUTTONDOWN &&
+                       ui.material_macro_gesture.active) {
+                snprintf(ui.status, sizeof(ui.status),
+                         ui.material_macro_wheel_active ?
+                         "RELEASE CTRL TO COMMIT MATERIAL - ESC CANCELS" :
+                         "RELEASE MOUSE TO COMMIT MATERIAL - ESC CANCELS");
+                continue;
             } else if (event.type == SDL_MOUSEBUTTONDOWN && ui.canvas_gesture.active) {
                 snprintf(ui.status, sizeof(ui.status),
                          "RELEASE MOUSE TO COMMIT CANVAS - ESC CANCELS");
@@ -8252,6 +8847,19 @@ int main(int argc, char **argv)
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 573 && x < 630) {
                     begin_export_choice(&ui);
+                } else if (!ui.input_meter_active &&
+                           ui.amplitude_draw_mode &&
+                           ui.bank_view_slot < 0 &&
+                           ui.audition_source == TS_AUDITION_CURRENT &&
+                           instrument.current.data != NULL &&
+                           instrument.current.frames >= TS_CANVAS_MIN_FRAMES &&
+                           bank_modifiers(mod) == 0 &&
+                           (x < TS_WAVE_X ||
+                            x >= TS_WAVE_X + TS_WAVE_W) &&
+                           ts_ui_amplitude_draw_start_contains(x, y)) {
+                    cancel_pitch_preview(device, &audio, &ui, &instrument);
+                    (void)begin_amplitude_draw(device, &audio, &ui,
+                                               &instrument, x, y);
                 } else if (ui.input_meter_active &&
                            x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
@@ -8274,7 +8882,14 @@ int main(int argc, char **argv)
                                          instrument.current.data != NULL &&
                                          instrument.current.frames >= TS_CANVAS_MIN_FRAMES;
                     if (editing_canvas &&
-                        canvas_action != TS_UI_CANVAS_ACTION_NONE) {
+                        ts_ui_amplitude_draw_toggle_contains(x, y)) {
+                        ui.amplitude_draw_mode = !ui.amplitude_draw_mode;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 ui.amplitude_draw_mode ?
+                                 "DRAW ON - 0-2X PROFILE, SHIFT POLYLINE" :
+                                 "AMPLITUDE DRAW TOOL OFF");
+                    } else if (editing_canvas &&
+                               canvas_action != TS_UI_CANVAS_ACTION_NONE) {
                         apply_canvas_action(device, &audio, &ui, &instrument,
                                             canvas_action);
                     } else if (editing_canvas && canvas_edge != 0 &&
@@ -8282,6 +8897,11 @@ int main(int argc, char **argv)
                         (void)begin_canvas_gesture(
                             window, device, &audio, &ui, &instrument,
                             canvas_edge, event.button.x, event.button.y);
+                    } else if (editing_canvas && ui.amplitude_draw_mode &&
+                               bank_modifiers(mod) == 0) {
+                        cancel_pitch_preview(device, &audio, &ui, &instrument);
+                        (void)begin_amplitude_draw(device, &audio, &ui,
+                                                   &instrument, x, y);
                     } else if (event.button.clicks >= 2 &&
                                bank_modifiers(mod) == 0) {
                         select_current_tile(device, &audio, &ui, &instrument, 0);
@@ -8362,11 +8982,10 @@ int main(int argc, char **argv)
                         preview_tear_gesture(device, &audio, &ui, &instrument, amount, obtained.freq);
                     continue;
                 } else if (y >= 233 && y < 257 && x >= 10 && x < 330) {
-                    TsProcessRecipe process = instrument.process;
-                    const char *label;
+                    TsMaterialMacro macro;
                     int start;
                     int width;
-                    float *control;
+                    float amount;
                     if (x >= 244) {
                         float amount = (float)(x - 244) / 86.0f;
                         if (amount > 1.0f) amount = 1.0f;
@@ -8375,22 +8994,26 @@ int main(int argc, char **argv)
                                                  amount, obtained.freq);
                         continue;
                     } else if (x < 82) {
-                        control = &process.body; start = 10; width = 72; label = "BODY";
+                        macro = TS_MATERIAL_MACRO_BODY; start = 10; width = 72;
                     } else if (x >= 88 && x < 160) {
-                        control = &process.edge; start = 88; width = 72; label = "EDGE";
+                        macro = TS_MATERIAL_MACRO_EDGE; start = 88; width = 72;
                     } else if (x >= 166 && x < 238) {
-                        control = &process.drift; start = 166; width = 72; label = "DRIFT";
+                        macro = TS_MATERIAL_MACRO_DRIFT; start = 166; width = 72;
                     } else continue;
-                    *control = (float)(x - start) / (float)width;
-                    if (*control < 0.0f) *control = 0.0f;
-                    if (*control > 1.0f) *control = 1.0f;
-                    apply_process(device, &audio, &ui, &instrument, process, label);
+                    amount = 2.0f * (float)(x - start) / (float)width - 1.0f;
+                    if (begin_material_macro_gesture(
+                            device, &audio, &ui, &instrument, macro, 0))
+                        (void)preview_material_macro_gesture(
+                            device, &audio, &ui, &instrument,
+                            amount, obtained.freq);
+                    continue;
                 } else if (y >= 233 && y < 256 && x >= 335 && x < 369) {
                     ui.fx_page = TS_FX_EDIT;
                     snprintf(ui.status, sizeof(ui.status), "SAMPLE EDITING PAGE");
                 } else if (y >= 233 && y < 256 && x >= 372 && x < 406) {
                     ui.fx_page = TS_FX_TUNE;
-                    snprintf(ui.status, sizeof(ui.status), "ROOT NOTE AND FINE TUNING");
+                    snprintf(ui.status, sizeof(ui.status),
+                             "MATERIAL -ST/+ST/-1C/+1C  |  REFERENCE R-/R+/TRIM");
                 } else if (y >= 233 && y < 256 && x >= 409 && x < 445) {
                     ui.fx_page = TS_FX_NOISE;
                     snprintf(ui.status, sizeof(ui.status), "NOISE PROCESSING PAGE");
@@ -8450,27 +9073,49 @@ int main(int argc, char **argv)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_FADE_OUT, 1.0f);
                     } else if (ui.fx_page == TS_FX_TUNE) {
-                        if (x >= 10 && x < 50 &&
-                            ui.tune_reference.root_note > 0)
+                        TsUiTuneAction tune_action =
+                            ts_ui_tune_action_from_point(x, y);
+                        if (tune_action ==
+                            TS_UI_TUNE_ACTION_MATERIAL_SEMITONE_DOWN)
+                            apply_material_pitch_shift(
+                                device, &audio, &ui, &instrument, -1.0f);
+                        else if (tune_action ==
+                                 TS_UI_TUNE_ACTION_MATERIAL_SEMITONE_UP)
+                            apply_material_pitch_shift(
+                                device, &audio, &ui, &instrument, 1.0f);
+                        else if (tune_action ==
+                                 TS_UI_TUNE_ACTION_MATERIAL_CENT_DOWN)
+                            apply_material_pitch_shift(
+                                device, &audio, &ui, &instrument, -0.01f);
+                        else if (tune_action ==
+                                 TS_UI_TUNE_ACTION_MATERIAL_CENT_UP)
+                            apply_material_pitch_shift(
+                                device, &audio, &ui, &instrument, 0.01f);
+                        else if (tune_action ==
+                                 TS_UI_TUNE_ACTION_REFERENCE_DOWN &&
+                                 ui.tune_reference.root_note > 0)
                             set_tune_reference(
                                 &ui, ui.tune_reference.root_note - 1,
                                 ui.tune_reference.fine_tune_cents);
-                        else if (x >= 134 && x < 174 &&
+                        else if (tune_action ==
+                                 TS_UI_TUNE_ACTION_REFERENCE_UP &&
                                  ui.tune_reference.root_note < 127)
                             set_tune_reference(
                                 &ui, ui.tune_reference.root_note + 1,
                                 ui.tune_reference.fine_tune_cents);
-                        else if (x >= 180 && x < 292)
+                        else if (x >= 358 && x < 434)
                             set_tune_reference(
                                 &ui, ui.tune_reference.root_note,
-                                (float)(x - 180) / 112.0f * 200.0f - 100.0f);
-                        else if (x >= 298 && x < 380)
+                                (float)(x - 358) / 76.0f * 200.0f - 100.0f);
+                        else if (tune_action ==
+                                 TS_UI_TUNE_ACTION_REFERENCE_TONE)
                             toggle_tune_reference(device, &audio, &ui,
                                                   obtained.freq);
-                        else if (x >= 386 && x < 466)
+                        else if (x >= 514 && x < 568)
                             set_tune_reference_volume(
-                                &ui, (float)(x - 386) / 80.0f);
-                        else if (x >= 472 && x < 630)
+                                &ui, (float)(x - 514) / 54.0f);
+                        else if (tune_action ==
+                                 TS_UI_TUNE_ACTION_DETECT_OR_MATCH)
                             suggest_or_accept_pitch(device, &audio, &ui, &instrument);
                     } else if (ui.fx_page == TS_FX_NOISE) {
                         label = "NOISE";
@@ -8996,6 +9641,11 @@ int main(int argc, char **argv)
                                                  &instrument, &transform);
                     continue;
                 }
+                if (ui.amplitude_gesture.active &&
+                    event.button.button == SDL_BUTTON_LEFT) {
+                    end_amplitude_draw(device, &audio, &ui, &instrument, 0);
+                    continue;
+                }
                 if (ui.canvas_gesture.active &&
                     event.button.button == SDL_BUTTON_LEFT) {
                     end_canvas_gesture(window, device, &audio, &ui, &instrument, 0);
@@ -9009,6 +9659,12 @@ int main(int argc, char **argv)
                     snprintf(ui.status, sizeof(ui.status),
                              "DRONE CROSSFADE %.2F MS - ZERO SNAPPED",
                              ui.drone_effective_crossfade_ms);
+                    continue;
+                }
+                if (ui.material_macro_dragging &&
+                    event.button.button == SDL_BUTTON_LEFT) {
+                    end_material_macro_gesture(
+                        device, &audio, &ui, &instrument, 0);
                     continue;
                 }
                 if (ui.warp_dragging && event.button.button == SDL_BUTTON_LEFT) {
@@ -9065,6 +9721,13 @@ int main(int argc, char **argv)
         /* Some window managers can drop the button-up event after a captured,
            warped drag. Never leave the resize gesture owning the pointer once
            SDL reports that the physical button is no longer down. */
+        if (ui.amplitude_gesture.active &&
+            (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(SDL_BUTTON_LEFT)) == 0u)
+            end_amplitude_draw(device, &audio, &ui, &instrument, 0);
+        if (ui.material_macro_dragging &&
+            (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(SDL_BUTTON_LEFT)) == 0u)
+            end_material_macro_gesture(
+                device, &audio, &ui, &instrument, 0);
         if (ui.canvas_gesture.active &&
             (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(SDL_BUTTON_LEFT)) == 0u)
             end_canvas_gesture(window, device, &audio, &ui, &instrument, 0);
@@ -9083,7 +9746,9 @@ int main(int argc, char **argv)
                 exchange_directory(&ui), "tapesister");
             if (!ui_dialog_open(&ui) && !ui.canvas_gesture.active &&
                 !ui.stretch_gesture.active && !ui.warp_gesture.active &&
-                !ui.smear_gesture.active && !ui.tear_gesture.active)
+                !ui.smear_gesture.active && !ui.tear_gesture.active &&
+                !ui.material_macro_gesture.active &&
+                !ui.amplitude_gesture.active)
                 (void)stage_incoming_exchange(
                     &ui, &exchange_offer, ignored_exchange, 0);
         }
@@ -9162,6 +9827,10 @@ int main(int argc, char **argv)
             pace_frame_60hz(frame_started);
     }
 
+    if (ui.amplitude_gesture.active)
+        end_amplitude_draw(device, &audio, &ui, &instrument, 1);
+    if (ui.material_macro_gesture.active)
+        end_material_macro_gesture(device, &audio, &ui, &instrument, 1);
     if (ui.canvas_gesture.active)
         end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
     if (transform.worker != NULL) {

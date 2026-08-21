@@ -77,6 +77,18 @@ typedef enum {
     TS_UI_SLIDER_LOOP_CROSSFADE
 } TsUiSlider;
 
+typedef enum {
+    TS_UI_TUNE_ACTION_NONE = 0,
+    TS_UI_TUNE_ACTION_MATERIAL_SEMITONE_DOWN,
+    TS_UI_TUNE_ACTION_MATERIAL_SEMITONE_UP,
+    TS_UI_TUNE_ACTION_MATERIAL_CENT_DOWN,
+    TS_UI_TUNE_ACTION_MATERIAL_CENT_UP,
+    TS_UI_TUNE_ACTION_REFERENCE_DOWN,
+    TS_UI_TUNE_ACTION_REFERENCE_UP,
+    TS_UI_TUNE_ACTION_REFERENCE_TONE,
+    TS_UI_TUNE_ACTION_DETECT_OR_MATCH
+} TsUiTuneAction;
+
 enum {
     TS_UI_BANK_MOD_SHIFT = 1u << 0,
     TS_UI_BANK_MOD_CTRL = 1u << 1,
@@ -338,6 +350,30 @@ typedef struct {
     int wave_pointer_button;
     int wave_pointer_start_x;
     int selecting_button;
+    int amplitude_draw_mode;
+    int amplitude_draw_dragging;
+    int amplitude_last_x;
+    size_t amplitude_last_frame;
+    float amplitude_last_gain;
+    int amplitude_profile_first_x;
+    int amplitude_profile_last_x;
+    float amplitude_profile[TS_WAVE_W];
+    uint8_t amplitude_profile_set[TS_WAVE_W];
+    float amplitude_polyline_base[TS_WAVE_W];
+    uint8_t amplitude_polyline_base_set[TS_WAVE_W];
+    int amplitude_polyline_mode;
+    int amplitude_polyline_anchor_x;
+    size_t amplitude_polyline_anchor_frame;
+    float amplitude_polyline_anchor_gain;
+    int amplitude_polyline_cursor_x;
+    size_t amplitude_polyline_cursor_frame;
+    float amplitude_polyline_cursor_gain;
+    TsAmplitudeGesture amplitude_gesture;
+    TsMaterialMacroGesture material_macro_gesture;
+    float material_macro_amount;
+    uint32_t material_macro_last_audition_ms;
+    int material_macro_dragging;
+    int material_macro_wheel_active;
     TsPostEditKind tape_drag_kind;
     TsFxPage fx_page;
     TsAuditionSource audition_source;
@@ -369,7 +405,7 @@ typedef struct {
     int tear_wheel_active;
     TsStretchGesture stretch_gesture;
     int stretch_wheel_active;
-    int stretch_wheel_steps;
+    float stretch_wheel_semitones;
     int has_stretch_readout;
     float stretch_pitch_semitones;
     float stretch_duration_ratio;
@@ -456,6 +492,10 @@ int ts_ui_fm_pitch_scale_contains(int x, int y);
 int ts_ui_transform_control_from_point(int x, int y);
 int ts_ui_transform_mix_contains(int x, int y);
 int ts_ui_transform_waveform_contains(int x, int y);
+int ts_ui_amplitude_draw_toggle_contains(int x, int y);
+int ts_ui_amplitude_draw_start_contains(int x, int y);
+int ts_ui_amplitude_draw_local_x(int x);
+TsUiTuneAction ts_ui_tune_action_from_point(int x, int y);
 TsUiWaveAction ts_ui_wave_action_from_point(int x, int y);
 TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y);
 int ts_ui_capture_button_from_point(int x, int y);

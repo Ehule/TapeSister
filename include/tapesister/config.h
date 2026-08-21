@@ -66,6 +66,7 @@ typedef struct {
     int rotate_wheel_coarse;
     int drone_crossfade_ms;
     int chain_stamp_crossfade_ms;
+    int ripple_cut_crop_canvas;
     int reference_tone_volume;
     int record_input_channel;
     int record_threshold_db;

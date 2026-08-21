@@ -1375,6 +1375,254 @@ static void native_shelf_selection_scope_tests(void)
     ts_instrument_free(&instrument);
 }
 
+static void post_patch_native_shelf_scope_tests(void)
+{
+    char error[160];
+    TsInstrument instrument;
+    TsSample clipboard;
+    TsSample accepted;
+    TsProcessRecipe neutral;
+    TsProcessRecipe process;
+    size_t origin = 0u;
+    size_t first;
+    size_t last;
+    size_t original_first;
+    size_t original_last;
+    float pitch = 0.0f;
+
+    /* Copying into a new tile used to place the paste patch after the native
+       shelf, making every pasted frame immune to BODY/EDGE/DRIFT. */
+    setup(&instrument, 8192u);
+    ts_sample_init(&clipboard);
+    ts_sample_init(&accepted);
+    CHECK(ts_instrument_copy_selection(&instrument, &clipboard, &origin,
+                                       error, sizeof(error)));
+    instrument.selected_slot = 1;
+    CHECK(ts_instrument_activate_silence(&instrument, 8192u, 48000u,
+                                         error, sizeof(error)));
+    CHECK(ts_instrument_paste(&instrument, &clipboard, origin, 0,
+                              error, sizeof(error)));
+    CHECK(instrument.has_selection);
+    first = instrument.selection_first;
+    last = instrument.selection_last;
+    CHECK(first == origin && last - first == clipboard.frames);
+    CHECK(ts_sample_clone(&accepted, &instrument.current,
+                          error, sizeof(error)));
+    ts_process_recipe_reset(&neutral);
+    neutral.seed = instrument.process.seed;
+
+    process = neutral;
+    process.body = 0.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          memcmp(instrument.current.data, accepted.data,
+                 first * sizeof(*accepted.data)) == 0 &&
+          memcmp(instrument.current.data + first, accepted.data + first,
+                 (last - first) * sizeof(*accepted.data)) != 0 &&
+          memcmp(instrument.current.data + last, accepted.data + last,
+                 (accepted.frames - last) * sizeof(*accepted.data)) == 0);
+    CHECK(ts_instrument_set_process(&instrument, &neutral,
+                                    error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&accepted));
+
+    process = neutral;
+    process.edge = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          memcmp(instrument.current.data + first, accepted.data + first,
+                 (last - first) * sizeof(*accepted.data)) != 0);
+    CHECK(ts_instrument_set_process(&instrument, &neutral,
+                                    error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&accepted));
+
+    process = neutral;
+    process.drift = 1.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          memcmp(instrument.current.data + first, accepted.data + first,
+                 (last - first) * sizeof(*accepted.data)) != 0);
+    CHECK(ts_instrument_set_process(&instrument, &neutral,
+                                    error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&accepted));
+
+    /* No selection means the final current waveform, including the paste, is
+       the processing domain. */
+    ts_instrument_clear_selection(&instrument);
+    process = neutral;
+    process.body = 0.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          !instrument.has_process_range &&
+          memcmp(instrument.current.data + first, accepted.data + first,
+                 (last - first) * sizeof(*accepted.data)) != 0);
+    ts_sample_free(&accepted);
+
+    /* Shift+Alt tape-length patches had the same ordering defect: the newly
+       resampled core was overlaid after the shelf. Its complete selected result
+       must now remain live to the shelf as one current-domain range. */
+    CHECK(ts_instrument_select_bank(&instrument, 0, error, sizeof(error)));
+    ts_instrument_set_selection(&instrument, 2048u, 4096u);
+    original_first = instrument.selection_first;
+    original_last = instrument.selection_last;
+    CHECK(ts_instrument_stretch_selection(
+        &instrument, (original_first + original_last) / 2u, 1.5f, &pitch,
+        error, sizeof(error)));
+    CHECK(instrument.has_selection && pitch < -0.01f);
+    first = instrument.selection_first;
+    last = instrument.selection_last;
+    CHECK(first < original_first && last > original_last);
+    CHECK(ts_sample_clone(&accepted, &instrument.current,
+                          error, sizeof(error)));
+    ts_process_recipe_reset(&neutral);
+    neutral.seed = instrument.process.seed;
+    process = neutral;
+    process.body = 0.0f;
+    CHECK(ts_instrument_set_process(&instrument, &process, error, sizeof(error)) &&
+          instrument.has_process_range &&
+          instrument.process_first == first && instrument.process_last == last &&
+          memcmp(instrument.current.data + original_first,
+                 accepted.data + original_first,
+                 (original_last - original_first) *
+                 sizeof(*accepted.data)) != 0 &&
+          memcmp(instrument.current.data, accepted.data,
+                 first * sizeof(*accepted.data)) == 0 &&
+          memcmp(instrument.current.data + last, accepted.data + last,
+                 (accepted.frames - last) * sizeof(*accepted.data)) == 0);
+
+    ts_sample_free(&accepted);
+    ts_sample_free(&clipboard);
+    ts_instrument_free(&instrument);
+}
+
+static void destructive_material_macro_tests(void)
+{
+    char error[160];
+    TsInstrument instrument;
+    TsMaterialMacroGesture gesture;
+    TsSample original;
+    TsSample committed;
+    TsSample clipboard;
+    TsProcessRecipe live;
+    size_t origin = 0u;
+    size_t first;
+    size_t last;
+    uint64_t negative_edge_hash;
+    uint64_t positive_edge_hash;
+    uint64_t negative_drift_hash;
+    uint64_t positive_drift_hash;
+    int undo_before;
+
+    setup(&instrument, 8192u);
+    ts_material_macro_gesture_init(&gesture);
+    ts_sample_init(&original);
+    ts_sample_init(&committed);
+    ts_sample_init(&clipboard);
+    first = instrument.selection_first;
+    last = instrument.selection_last;
+    CHECK(ts_sample_clone(&original, &instrument.current,
+                          error, sizeof(error)));
+    undo_before = instrument.undo_count;
+    CHECK(ts_instrument_material_macro_gesture_begin(
+        &instrument, &gesture, TS_MATERIAL_MACRO_BODY,
+        error, sizeof(error)));
+    CHECK(ts_instrument_material_macro_gesture_preview(
+        &instrument, &gesture, -1.0f, error, sizeof(error)));
+    CHECK(memcmp(instrument.current.data, original.data,
+                 first * sizeof(*original.data)) == 0);
+    CHECK(memcmp(instrument.current.data + first, original.data + first,
+                 (last - first) * sizeof(*original.data)) != 0);
+    CHECK(memcmp(instrument.current.data + last, original.data + last,
+                 (original.frames - last) * sizeof(*original.data)) == 0);
+    CHECK(ts_instrument_material_macro_gesture_commit(
+        &instrument, &gesture, error, sizeof(error)));
+    CHECK(instrument.undo_count == undo_before + 1 &&
+          fabsf(instrument.process.body - 0.5f) < 0.000001f &&
+          instrument.process.edge == 0.0f && instrument.process.drift == 0.0f &&
+          instrument.post_edit_count == 1 &&
+          instrument.post_edits[0].kind == TS_POST_MATERIAL_REPLACE);
+    CHECK(ts_sample_clone(&committed, &instrument.current,
+                          error, sizeof(error)));
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&original));
+    CHECK(ts_instrument_redo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&committed));
+
+    CHECK(ts_instrument_material_macro_gesture_begin(
+        &instrument, &gesture, TS_MATERIAL_MACRO_EDGE,
+        error, sizeof(error)));
+    CHECK(ts_instrument_material_macro_gesture_preview(
+        &instrument, &gesture, -1.0f, error, sizeof(error)));
+    negative_edge_hash = ts_sample_hash(&instrument.current);
+    CHECK(ts_sample_hash(&instrument.current) != ts_sample_hash(&committed));
+    CHECK(ts_instrument_material_macro_gesture_preview(
+        &instrument, &gesture, 1.0f, error, sizeof(error)));
+    positive_edge_hash = ts_sample_hash(&instrument.current);
+    CHECK(positive_edge_hash != negative_edge_hash &&
+          positive_edge_hash != ts_sample_hash(&committed));
+    CHECK(ts_instrument_material_macro_gesture_cancel(
+        &instrument, &gesture, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&committed));
+
+    CHECK(ts_instrument_material_macro_gesture_begin(
+        &instrument, &gesture, TS_MATERIAL_MACRO_DRIFT,
+        error, sizeof(error)));
+    CHECK(ts_instrument_material_macro_gesture_preview(
+        &instrument, &gesture, -0.8f, error, sizeof(error)));
+    negative_drift_hash = ts_sample_hash(&instrument.current);
+    CHECK(negative_drift_hash != ts_sample_hash(&committed));
+    CHECK(ts_instrument_material_macro_gesture_preview(
+        &instrument, &gesture, 0.8f, error, sizeof(error)));
+    positive_drift_hash = ts_sample_hash(&instrument.current);
+    CHECK(positive_drift_hash != negative_drift_hash &&
+          positive_drift_hash != ts_sample_hash(&committed));
+    CHECK(ts_instrument_material_macro_gesture_cancel(
+        &instrument, &gesture, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&committed));
+
+    /* The remaining shelf stays live while the material macro prints and
+       resets. It is not silently baked or applied a second time. */
+    live = instrument.process;
+    live.noise_enabled = 1;
+    live.noise_amount = 0.4f;
+    CHECK(ts_instrument_set_process(&instrument, &live,
+                                    error, sizeof(error)));
+    CHECK(ts_instrument_apply_material_macro(
+        &instrument, TS_MATERIAL_MACRO_DRIFT, 0.8f,
+        error, sizeof(error)));
+    CHECK(instrument.process.noise_enabled &&
+          fabsf(instrument.process.noise_amount - 0.4f) < 0.000001f &&
+          fabsf(instrument.process.body - 0.5f) < 0.000001f &&
+          instrument.process.edge == 0.0f && instrument.process.drift == 0.0f);
+
+    /* A pasted tile is ordinary material: selection-scoped EDGE reaches every
+       pasted frame and Undo restores the exact pasted waveform. */
+    CHECK(ts_instrument_select_bank(&instrument, 0, error, sizeof(error)));
+    CHECK(ts_instrument_copy_selection(&instrument, &clipboard, &origin,
+                                       error, sizeof(error)));
+    CHECK(ts_instrument_select_bank(&instrument, 1, error, sizeof(error)));
+    CHECK(ts_instrument_activate_silence(&instrument, 8192u, 48000u,
+                                         error, sizeof(error)));
+    CHECK(ts_instrument_paste(&instrument, &clipboard, origin, 0,
+                              error, sizeof(error)));
+    first = instrument.selection_first;
+    last = instrument.selection_last;
+    ts_sample_free(&original);
+    CHECK(ts_sample_clone(&original, &instrument.current,
+                          error, sizeof(error)));
+    CHECK(ts_instrument_apply_material_macro(
+        &instrument, TS_MATERIAL_MACRO_EDGE, 1.0f,
+        error, sizeof(error)));
+    CHECK(memcmp(instrument.current.data, original.data,
+                 first * sizeof(*original.data)) == 0 &&
+          memcmp(instrument.current.data + first, original.data + first,
+                 (last - first) * sizeof(*original.data)) != 0 &&
+          memcmp(instrument.current.data + last, original.data + last,
+                 (original.frames - last) * sizeof(*original.data)) == 0);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&original));
+
+    ts_sample_free(&clipboard);
+    ts_sample_free(&committed);
+    ts_sample_free(&original);
+    ts_instrument_free(&instrument);
+}
+
 static void transform_ui_contract_tests(void)
 {
     TsInstrument instrument;
@@ -1702,6 +1950,8 @@ int main(void)
     curated_dsp_apply_keeps_native_shelf_live_tests();
     tape_gestures_keep_native_shelf_live_tests();
     native_shelf_selection_scope_tests();
+    post_patch_native_shelf_scope_tests();
+    destructive_material_macro_tests();
     transform_ui_contract_tests();
     runtime_missing_test();
 #ifndef _WIN32

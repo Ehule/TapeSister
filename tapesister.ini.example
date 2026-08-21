@@ -26,6 +26,8 @@ drone_crossfade_ms=50
 ; Selection CHAIN stamp overlap in milliseconds (0-50, default 3).
 ; It is capped at one quarter of the current selection length.
 chain_stamp_crossfade_ms=3
+; Keep the canvas duration after Ripple Cut. Set to 1 for legacy crop/shrink.
+ripple_cut_crop_canvas=0
 
 [Audio]
 ; Blank uses the machine's default stereo playback device.

@@ -64,6 +64,10 @@ enum {
     TS_FM_PAGE_COUNT = 7
 };
 
+/* The FM Logic mini-waveform is an eight-second render. Apply must commit
+   that same complete render instead of inheriting a shorter target tile. */
+#define TS_FM_LOGIC_SECONDS 8.0f
+
 typedef enum {
     TS_FM_PAGE_PITCH = 0,
     TS_FM_PAGE_WAVE,
@@ -224,6 +228,13 @@ typedef struct {
     float shaper_drive;
     float shaper_mix;
 } TsProcessRecipe;
+
+typedef enum {
+    TS_MATERIAL_MACRO_BODY = 0,
+    TS_MATERIAL_MACRO_EDGE,
+    TS_MATERIAL_MACRO_DRIFT,
+    TS_MATERIAL_MACRO_COUNT
+} TsMaterialMacro;
 
 typedef enum {
     TS_SAMPLE_EDIT_REVERSE = 0,
@@ -467,6 +478,31 @@ typedef struct {
     int active;
 } TsCanvasGesture;
 
+typedef struct {
+    TsEditSnapshot start;
+    TsSample original;
+    const float *owner_parent_data;
+    uint32_t owner_generation;
+    int owner_slot;
+    size_t first_frame;
+    size_t last_frame;
+    int has_profile;
+    int active;
+} TsAmplitudeGesture;
+
+typedef struct {
+    TsEditSnapshot start;
+    TsSample original;
+    TsSample material;
+    TsSample preview_material;
+    const float *owner_parent_data;
+    uint32_t owner_generation;
+    int owner_slot;
+    TsMaterialMacro macro;
+    float amount;
+    int active;
+} TsMaterialMacroGesture;
+
 void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
 void ts_sample_touch(TsSample *sample);
@@ -581,6 +617,24 @@ int ts_instrument_canvas_gesture_commit(TsInstrument *instrument,
 int ts_instrument_canvas_gesture_cancel(TsInstrument *instrument,
                                         TsCanvasGesture *gesture,
                                         char *error, size_t error_size);
+void ts_amplitude_gesture_init(TsAmplitudeGesture *gesture);
+int ts_instrument_amplitude_gesture_begin(TsInstrument *instrument,
+                                          TsAmplitudeGesture *gesture,
+                                          char *error, size_t error_size);
+int ts_instrument_amplitude_gesture_preview(TsInstrument *instrument,
+                                            TsAmplitudeGesture *gesture,
+                                            size_t first, float first_gain,
+                                            size_t last, float last_gain,
+                                            char *error, size_t error_size);
+int ts_instrument_amplitude_gesture_reset_preview(
+    TsInstrument *instrument, TsAmplitudeGesture *gesture,
+    char *error, size_t error_size);
+int ts_instrument_amplitude_gesture_commit(TsInstrument *instrument,
+                                           TsAmplitudeGesture *gesture,
+                                           char *error, size_t error_size);
+int ts_instrument_amplitude_gesture_cancel(TsInstrument *instrument,
+                                           TsAmplitudeGesture *gesture,
+                                           char *error, size_t error_size);
 size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame);
 size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
                                                 size_t frame,
@@ -608,6 +662,22 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
                                     float amount, char *error, size_t error_size);
 int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
                                        size_t crossing_count,
+                                       char *error, size_t error_size);
+void ts_material_macro_gesture_init(TsMaterialMacroGesture *gesture);
+int ts_instrument_material_macro_gesture_begin(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    TsMaterialMacro macro, char *error, size_t error_size);
+int ts_instrument_material_macro_gesture_preview(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    float amount, char *error, size_t error_size);
+int ts_instrument_material_macro_gesture_commit(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    char *error, size_t error_size);
+int ts_instrument_material_macro_gesture_cancel(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    char *error, size_t error_size);
+int ts_instrument_apply_material_macro(TsInstrument *instrument,
+                                       TsMaterialMacro macro, float amount,
                                        char *error, size_t error_size);
 int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
                              char *error, size_t error_size);
@@ -768,6 +838,10 @@ int ts_instrument_copy_selection(const TsInstrument *instrument,
 int ts_instrument_cut_selection(TsInstrument *instrument,
                                 TsSample *clipboard, size_t *origin_first,
                                 char *error, size_t error_size);
+int ts_instrument_cut_selection_mode(TsInstrument *instrument,
+                                     TsSample *clipboard, size_t *origin_first,
+                                     int crop_canvas,
+                                     char *error, size_t error_size);
 int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
                         size_t origin_first, int fit_selection,
                         char *error, size_t error_size);

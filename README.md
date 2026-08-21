@@ -1,6 +1,6 @@
 # TapeSister
 
-TapeSister is a standalone sample-making laboratory for FT2 Tapehead Edition. Its compact loop is **Create or Load -> Edit -> Transform -> Vary -> Keep -> Repeat**.
+TapeSister is a standalone sample-making laboratory for FT2 Tapehead Edition. Its compact exchange is **Source -> Variation -> Transform -> Keep -> Repeat**: TapeSister proposes material, the user sculpts it, and Vary answers the material that was actually handed back.
 
 ## Paged independent Bank tiles
 
@@ -8,7 +8,7 @@ Each Sample page contains 16 complete editable sound objects. A tile owns its au
 
 Clicking an occupied tile selects it, immediately restores its own editor state for waveform selection, and auditions it. Clicking an empty tile selects that exact Create/Load destination without playing anything; double-clicking it activates a silent editable canvas. When the audio clipboard has a source timeline, the canvas adopts that full duration and sample rate so Paste-in-place lands at the same time. With no clipboard it defaults to one second at 44.1 kHz. A thick Active Tile-color outline always marks the active editing tile; a separate cyan mark identifies a bank tile being previewed. Clearing the active tile leaves the same empty destination selected. Bank 01 has no special protection or authority.
 
-With no waveform selection, Create and Load replace only the selected tile. With a selection on an occupied sound or silent canvas, choosing a WAV from Load asks for exact Paste, duration-preserving Fit, or Cancel; Paste and Fit are both Undo/Redo edits. TSR and TSP loading retain their existing behavior. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Vary with Chain off replaces the selected FM tile; Vary with Chain on places the result in the next empty tile and makes that result the next link in the chain. With a waveform selection, Create and Chain-off Vary stamp a fitted FM sound into exactly that range on the active tile. Chain-on Vary stamps there, advances the same-width selection to the right with a tiny overlap, and uses the new variation as the source of the next stamp.
+With no waveform selection, Create and Load replace only the selected tile. With a selection on an occupied sound or silent canvas, choosing a WAV from Load asks for exact Paste, duration-preserving Fit, or Cancel; Paste and Fit are both Undo/Redo edits. TSR and TSP loading retain their existing behavior. Clone makes an independent editable copy. Ordinary edits and WARP, SMEAR, and TEAR mutate only the selected tile. Create always proposes a fresh FM source. Vary changes that stored FM structure while it still describes the tile exactly; after Draw, Tune, Warp, Smear, Tear, Body, Edge, Drift, Paste, or other destructive shaping, Vary instead derives its answer from the current audible material and never adds an unrelated noise layer. With no selection, Chain-off Vary prints the response back into the selected tile as one Undo step; Chain-on Vary places it in the next empty tile and makes that result the next handoff. With a selection, Create stamps a fitted fresh FM sound, while Vary derives a fitted response from the sculpted selection. Chain-on Vary advances the same-width selection to the right with a tiny overlap and carries the preceding varied stamp forward as the next source.
 
 
 ## External REC bank
@@ -90,14 +90,30 @@ sounds, DSP/CDP renders, previews, or Undo states.
 Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
 number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead.
-Alt+wheel coarsely expands or contracts the selection endpoint on the pointer's side
-of its center, using the configured coarse zero-crossing count per detent.
+Alt+wheel expands or contracts the selection endpoint on the pointer's side of its
+center, using the configured coarse zero-crossing count per detent.
 Shift+Alt+wheel previews the selected audio by one tape-speed semitone per
-detent around the visible playhead (or the selection center when it lies outside):
+detent; Ctrl+Shift+Alt+wheel changes it by one cent per detent for fine tuning.
+Both gestures work around the visible playhead (or the selection center when it lies outside):
 expansion blends into neighboring audio, contraction severs at zero crossings, and
 the waveform reports the resulting pitch and time ratio. Releasing either modifier
 commits the complete gesture as one Undo/post-edit; Escape restores the untouched
 starting audio without history.
+
+The tiny **DRAW** switch at the waveform's upper-right changes left-drag into a
+mirrored amplitude-profile pencil. The center line means zero gain, half-height is
+the original 1x amplitude, and either outer edge is 2x, so a stroke can attenuate or
+amplify. The cyan upper and lower boundaries show the profile being applied while
+the sound changes live. While holding the mouse, tap Shift to enter sticky polyline
+mode; each later Shift tap locks the current point and begins the next straight
+segment. Release commits the complete freehand/polyline stroke as one destructive
+material edit and one Undo step. Escape during a stroke restores the exact starting
+audio; Escape while idle turns Draw off. Canvas resize handles and the small waveform
+controls continue to take precedence, and ordinary selection gestures return unchanged
+when Draw is off. The narrow frame gutter just beyond either side of the waveform is
+also a Draw start target: it clamps to the exact first or last visible sample, so a
+stroke can shape cleanly from either absolute edge without changing the canvas.
+
 Set `rotate_wheel_fine` (1–20, default 5), `rotate_wheel_coarse` (20–100,
 default 50), and `playhead_zero_snap` (0/1, default 1) in the `[Waveform]`
 section of `tapesister.ini`.
@@ -198,9 +214,11 @@ TapeSister starts in FT2-style borderless desktop fullscreen. **Alt+Enter** togg
 
 Every new, imported, recorded, captured, or FM-generated tile uses **middle C / MIDI 60** as its portable unity key: clicking the tile and pressing C4 play the stored waveform unchanged. The octave label may differ in another sampler, but the exported WAV `smpl` metadata always communicates the unambiguous MIDI note number. FM generation starts at the corresponding 261.63 Hz reference before its stored ratios and modulation shape the sound.
 
-The **Tune** page contains an independent reference pitch, defaulting to C4 / MIDI 60 / 261.63 Hz. **Down**, **Up**, and the ±100-cent Trim change that target without altering audio. Clicking the Hz button latches a sine reference on its own audition layer, so WAV, tile, and keyboard playback can sound alongside it; click the Hz button again to stop it. **REF VOL** adjusts that layer from 0–100 and persists in `tapesister.ini`. The reference layer is mixed only after both capture routes and is never saved or exported. Shift-right-clicking an onscreen key sets the same reference note.
+The **Tune** page keeps material and reference controls explicitly separate. **MAT -ST/+ST** destructively shift the selected audio—or the whole tile when no selection exists—by one tape-speed semitone; **-1 C/+1 C** provide one-cent material steps. A length-changing selection is spliced back into the tile: the surrounding material shifts intact and the canvas grows or shrinks with the result instead of discarding the tail. Each click is one Undo step, and current playback retargets to the edited material. The independent reference defaults to C4 / MIDI 60 / 261.63 Hz: **R-/R+** and the ±100-cent **R** Trim change only that oscillator. Clicking the Hz button latches the sine reference on its own audition layer, so WAV, tile, and keyboard playback can sound alongside it; click the Hz button again to stop it. **V** adjusts the reference layer from 0–100 and persists in `tapesister.ini`. The reference layer is mixed only after both capture routes and is never saved or exported. Shift-right-clicking an onscreen key sets the same reference note.
 
-**Detect Pitch** analyzes the snapped Selection first, then the Loop, then the whole selected tile. A successful reading shows its note and confidence; **Tune to Reference** then performs a destructive tape-speed resample on that selection or whole tile. The waveform and duration change together, the result is reset to MIDI-60 unity, and the complete audio-plus-mapping change is one Undo/Redo step. Quiet, noisy, or unstable material is rejected rather than forced into a misleading pitch.
+**Detect** analyzes the snapped Selection first, then the Loop, then the whole selected tile. A successful reading changes that button to **Match**; Match then performs a destructive tape-speed resample on that selection or whole tile to reach the reference. The waveform and duration change together, the result is reset to MIDI-60 unity, and the complete audio-plus-mapping change is one Undo/Redo step. Quiet, noisy, or unstable material is rejected rather than forced into a misleading pitch.
+
+**Body**, **Edge**, and **Drift** are centered bipolar destructive material gestures, like Warp, Smear, Tear, and Draw. The middle of every slider is zero. Drag right for added body, sharpened edge, or forward drift displacement; drag left for thinning, softened edge, or inverted drift displacement. Press-drag previews the frozen starting waveform; release prints the selected range, or the whole tile when no selection exists, as exactly one Undo step. Ctrl+wheel over any of the three performs fine accumulated previewing, and releasing Ctrl commits the complete wheel gesture as one Undo step; an unmodified wheel does not accidentally print the material. Escape restores the exact starting audio. After a successful print the macro returns to center so another adjustment is a new sculpting pass. Noise, Shape, Delay, and Space remain live shelf effects and are preserved across the material print.
 
 Selected-tile and Collection WAV exports write the standard `smpl` unity-note/pitch-fraction chunk at MIDI 60. WAV import preserves the audio and loop metadata while normalizing TapeSister playback to the same portable unity convention. User-captured TSP2 recipes can still carry legacy tuning data; legacy factory TSP processing recipes remain processing-only.
 
@@ -272,15 +290,15 @@ Tapehead import until explicitly unlocked. A bright `L` rail marks protected til
 
 Click an occupied slot to select its independent editable state and audition it; its saved selection is immediately active in the waveform. Click an empty slot to select that exact CREATE/LOAD destination without auditioning, or double-click it to activate silence for editing and paste. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. Right-click any occupied slot to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click and empties every unlocked peer slot while protected tiles remain intact. **+ Page** creates and switches to a deliberately empty Sample page; key `1` continues to cycle existing pages.
 
-The **Variation** page exposes one continuous Range and the **Chain** switch. Vary requires a selected FM tile. Without a waveform selection, Chain off replaces the active tile and Chain on writes to the next empty tile, selects it, and continues from that result. With a selection, Chain off repeatedly stamps that range. Chain on instead behaves like an unrolling strip of paper: each Vary stamps the current range, crossfades its edges, moves the unchanged-width selection right by `width - overlap`, and extends the canvas with silence when the next destination reaches EOF. Each click is one tile-local Undo step containing the stamp, any extension, and the ready-next selection. A full bank blocks only the no-selection tile-chain path; selection chains stay inside their current tile.
+The **Variation** page exposes one continuous Range and the **Chain** switch. Vary requires an occupied selected tile. Without a waveform selection, Chain off replaces the active tile and Chain on writes to the next empty tile, selects it, and continues from that result. A direct Create/FM result varies its stored FM structure; destructively shaped or imported material varies from the waveform itself. With a selection, Chain off repeatedly stamps that range. Chain on instead behaves like an unrolling strip of paper: each Vary stamps the current range, crossfades its edges, moves the unchanged-width selection right by `width - overlap`, and extends the canvas with silence when the next destination reaches EOF. Each click is one tile-local Undo step containing the stamp, any extension, and the ready-next selection. A full bank blocks only the no-selection tile-chain path; selection chains stay inside their current tile.
 
 The top **Export** button and `Ctrl+E` ask whether to export the selected tile or the complete Collection. Collection export writes every occupied slot as a numbered, loop-aware WAV into a new folder. Existing folders are never silently replaced. A failed export removes the partial files and folder.
 
 ## Audio canvas and grid
 
-Every occupied tile is an explicit audio canvas whose sample count is independent of the visible viewport. **X2** appends exact digital silence and **/2** removes the right half at the nearest safe zero crossing. The small open handles just inside the waveform edges resize either side: outward motion adds silence, inward motion removes audio at a safe boundary, left-side changes shift selection/playhead/loop coordinates with the sound, and right-side changes keep existing coordinates fixed. The pointer is captured and returned to the handle during the drag, so it behaves like an endless relative control. Release commits one tile-local Undo step; Escape or focus loss restores the frozen pre-drag state exactly. A one-second, 44.1 kHz silent canvas remains the named default when an empty tile is double-clicked without clipboard timing.
+Every occupied tile is an explicit audio canvas whose sample count is independent of the visible viewport. **X2** appends exact digital silence and **/2** removes the right half at the nearest safe zero crossing. The small open handles just inside the waveform edges resize either side: outward motion adds silence; inward motion is frame-smooth when snap is OFF and uses a safe grid/zero-crossing boundary in SNAP or MOVE. Left-side changes shift selection/playhead/loop coordinates with the sound, and right-side changes keep existing coordinates fixed. The pointer is captured and returned to the handle during the drag, so it behaves like an endless relative control. Release commits one tile-local Undo step; Escape or focus loss restores the frozen pre-drag state exactly. A one-second, 44.1 kHz silent canvas remains the named default when an empty tile is double-clicked without clipboard timing.
 
-The restrained waveform grid is anchored to the complete canvas rather than the zoomed view. **<** and **>** choose 2, 4, 8, 16, 32, or 64 divisions. The snap button cycles **OFF**, **SNAP**, and **MOVE**. SNAP quantizes both newly drawn boundaries and movement gestures; MOVE leaves selections and loop flags tightly zero-snapped while quantizing tape placement and destructive canvas movement; OFF uses zero-crossing safety without macro-grid quantization. If no crossing exists in the valid search range, the existing deterministic lowest-amplitude fallback is used. Continuous WARP/SMEAR amounts, rotation, Drone seams, zoom, and navigation are not quantized. Grid division and snap mode are stored independently with each tile but are not added to audio Undo history.
+The restrained waveform grid is anchored to the complete canvas rather than the zoomed view. **<** and **>** choose 2, 4, 8, 16, 32, or 64 divisions. The snap button cycles **OFF**, **SNAP**, and **MOVE**. SNAP quantizes both newly drawn boundaries and movement gestures; MOVE leaves selections and loop flags tightly zero-snapped while quantizing tape placement and destructive canvas movement. OFF keeps ordinary selection/loop zero-crossing safety while making inward canvas-handle movement frame-smooth. If no crossing exists in a snapped valid search range, the existing deterministic lowest-amplitude fallback is used. Continuous WARP/SMEAR amounts, rotation, Drone seams, zoom, and navigation are not quantized. Grid division and snap mode are stored independently with each tile but are not added to audio Undo history.
 
 ## Generative FM sound logic
 
@@ -299,9 +317,11 @@ refreshes its displayed note; disabled voices stay untouched, even with Pitch Lo
 relatives. Chain off derives every tile from that anchor; Chain on walks forward from
 each result. One confirmation can replace an unlocked page or create a new Sample page,
 and the complete 16-tile action is one Undo/Redo transaction. With **Chain off**, Apply
-prints the genome over the selected tile. With **Chain on**, it preserves occupied work
-and fills the next empty tile. A full page asks whether to overwrite the current tile,
-continue on a new Sample page, or cancel.
+prints the complete eight-second workspace render over the selected tile and resets that
+tile's canvas to the same duration, regardless of its previous edits or canvas length.
+With **Chain on**, it preserves occupied work and fills the next empty tile with that full
+render. A full page asks whether to overwrite the current tile, continue on a new Sample
+page, or cancel.
 Inside FM Logic, `Shift+R` invokes Randomize and `Shift+B` opens Make Bank. Plain `R`
 and `B` remain playable notes on the computer keyboard.
 
@@ -391,7 +411,7 @@ Every stage is equally available to created and imported Sources. Bypass is expl
 - nondestructive Crop with Source preservation;
 - selection-aware Reverse, Normalize, 3 dB Amplify Up/Down, Fade In, and Fade Out;
 - cross-tile Copy, ripple Cut, exact Paste, and duration-preserving Fit Paste;
-- selection-scoped Create and Vary FM stamping;
+- selection-scoped fresh-FM Create stamping and current-material Vary stamping;
 - Undo and Redo for processing, crop, and sample-edit operations;
 - two-octave computer and onscreen keyboard audition with semitone Shift+wheel movement and F1–F8 octave selection;
 - mono PCM/float WAV loading, including multichannel fold-down;
@@ -406,7 +426,7 @@ and tile audition, Loop/Loop Lock, Drone and Transform previews. Changing ROOT/P
 updates an audition that is already playing and every subsequent audition. Keyboard
 notes continue to transpose against the paired keyboard-mapping tuning.
 
-The audio clipboard survives tile changes for the lifetime of the app, while every tile keeps and immediately restores its own selection. **Paste** replaces the destination selection with the copied sound at its exact duration: a shorter destination makes the tile grow and a longer destination makes it shrink. With no destination selection, Paste overwrites at the source selection's original time position, preserves the target duration when the material fits, and extends the tile only when necessary; a target shorter than that time position is padded with silence. **Fit** stretches or compresses the copied sound into the destination selection, keeping the tile length fixed and deliberately changing playback speed and pitch. Cut ripple-removes the selected range; cutting the whole tile is refused in favor of the explicit Clear command. All mutations participate in the destination tile's Undo/Redo history.
+The audio clipboard survives tile changes for the lifetime of the app, while every tile keeps and immediately restores its own selection. **Paste** replaces the destination selection with the copied sound at its exact duration: a shorter destination makes the tile grow and a longer destination makes it shrink. With no destination selection, Paste overwrites at the source selection's original time position, preserves the target duration when the material fits, and extends the tile only when necessary; a target shorter than that time position is padded with silence. **Fit** stretches or compresses the copied sound into the destination selection, keeping the tile length fixed and deliberately changing playback speed and pitch. Cut copies the exact selection, ripple-removes it, closes the join with deterministic 3 ms sine/cosine fades, and adds equal silence at the right so the audio canvas keeps its duration. Set `ripple_cut_crop_canvas=1` in `[Waveform]` to use the older shrinking behavior instead. Cutting the whole tile is refused in favor of the explicit Clear command. Paste, Fit, tape-length changes, Tune, Ripple Cut, Draw, Warp, Smear, Tear, Body, Edge, and Drift all become current material that subsequent Vary operations can inherit. Noise, Shape, Delay, and Space remain the live shelf above that material. The complete cut is one Undo/Redo action.
 
 Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the result without reconstructing clipped peaks, preserving that flattened distortion as a repeatable sculpting operation.
 
@@ -480,7 +500,7 @@ Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or ch
 - Browser parent directory: `Backspace` while the file list is focused
 - Browser confirm/cancel: `Enter` / `Escape`
 - Build/toggle a five-note chord: `Shift` + onscreen-key click
-- Create FM tile / vary selected FM tile, or stamp the selected range: **Create** / **Vary**
+- Create a fresh FM source / vary the current sculpted tile, or stamp the selected range: **Create** / **Vary**
 - Config paths: top **Config** button
 - Tapehead-compatible colors: **Config -> Palette**
 - Send/receive through the exchange folder and launch FT2: top **FT2 Link** button

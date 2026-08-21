@@ -1077,8 +1077,8 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
     float filter_b0 = 1.0f, filter_b1 = 0.0f, filter_b2 = 0.0f;
     float filter_a1 = 0.0f, filter_a2 = 0.0f;
     float body = clampf(recipe->body, 0.0f, 1.0f);
-    float edge = clampf(recipe->edge, 0.0f, 1.0f);
-    float drift = clampf(recipe->drift, 0.0f, 1.0f);
+    float edge = clampf(recipe->edge, -1.0f, 1.0f);
+    float drift = clampf(recipe->drift, -1.0f, 1.0f);
     float noise_amount = clampf(recipe->noise_amount, 0.0f, 1.0f);
     float delay_feedback = clampf(recipe->delay_feedback, 0.0f, 0.85f);
     float delay_damping = clampf(recipe->delay_damping, 0.0f, 1.0f);
@@ -1153,7 +1153,9 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
         wander += (random - wander) * 0.00008f;
         double lfo = sin(phase + (double)i * (2.0 * M_PI * drift_rate) /
                          (double)parent->sample_rate);
-        double offset = drift * (4.0 + drift * 120.0) * (lfo + wander * 0.7);
+        float drift_depth = fabsf(drift);
+        double offset = drift * (4.0 + drift_depth * 120.0) *
+                        (lfo + wander * 0.7);
         float input = sample_linear(parent, (double)(first + i) + offset, first, last);
         low += (input - low) * 0.018f;
         fast += (input - fast) * 0.22f;
@@ -1171,6 +1173,12 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
         if (edge > 0.001f) {
             float drive = 1.0f + edge * 3.5f;
             shaped = tanhf(shaped * drive) / tanhf(drive);
+        } else if (edge < -0.001f) {
+            /* The negative side is a real softening operation: remove the
+               fast component, then lean toward the local smooth signal. */
+            float soften = -edge;
+            shaped = shaped * (1.0f - soften * 0.35f) +
+                     fast * (soften * 0.35f);
         }
         shaped += random * drift * 0.006f;
 
@@ -1616,6 +1624,7 @@ static int tear_range(TsSample *sample, size_t first, size_t last, float amount,
 }
 
 static int delete_range(TsSample *sample, size_t first, size_t last,
+                        size_t crossfade_frames,
                         char *error, size_t error_size)
 {
     float *data;
@@ -1640,6 +1649,22 @@ static int delete_range(TsSample *sample, size_t first, size_t last,
     if (last < sample->frames)
         memcpy(data + first, sample->data + last,
                (sample->frames - last) * sizeof(*data));
+    if (crossfade_frames > 0u) {
+        size_t fade_out = crossfade_frames < first ? crossfade_frames : first;
+        size_t right = frames > first ? frames - first : 0u;
+        size_t fade_in = crossfade_frames < right ? crossfade_frames : right;
+        for (size_t frame = 0; frame < fade_out; ++frame) {
+            float phase = fade_out > 1u ?
+                (float)frame / (float)(fade_out - 1u) : 1.0f;
+            data[first - fade_out + frame] *=
+                cosf(phase * (float)(M_PI * 0.5));
+        }
+        for (size_t frame = 0; frame < fade_in; ++frame) {
+            float phase = fade_in > 1u ?
+                (float)frame / (float)(fade_in - 1u) : 0.0f;
+            data[first + frame] *= sinf(phase * (float)(M_PI * 0.5));
+        }
+    }
     free(sample->data);
     sample->data = data;
     sample->frames = frames;
@@ -1976,75 +2001,38 @@ static int stretch_patch_range(TsSample *sample, const TsSample *patch,
     return 1;
 }
 
-static int render_snapshot(TsSample *destination, const TsInstrument *instrument,
-                           const TsEditSnapshot *state, char *error, size_t error_size)
+static int render_material_snapshot(TsSample *destination,
+                                    const TsInstrument *instrument,
+                                    const TsEditSnapshot *state,
+                                    char *error, size_t error_size)
 {
     TsSample edited;
-    TsSample processed;
-    int ok;
     ts_sample_init(&edited);
-    ts_sample_init(&processed);
     if (!render_edit_source(&edited, &instrument->parent, state->crop_first,
                             state->crop_last, state->sample_edits,
                             state->sample_edit_count, error, error_size)) return 0;
-    /* Rendered Transforms are canonical editable material, not an effect placed
-       after the native process. Replay their checkpoint before BODY/EDGE/DRIFT
-       and the native effect sections so later parameter changes always rebuild
-       deterministically from the accepted audio. */
-    for (int index = 0; index < state->post_edit_count; ++index) {
-        const TsPostEdit *operation = &state->post_edits[index];
-        const TsAudioPatch *patch;
-        if (operation->kind != TS_POST_MATERIAL_REPLACE) continue;
-        patch = audio_patch_for_operation(instrument, operation);
-        if (patch == NULL) {
-            ts_sample_free(&edited);
-            set_error(error, error_size,
-                      "Transform material is missing from this tile");
-            return 0;
-        }
-        if (!patch_range(&edited, &patch->sample, operation->first,
-                         operation->last, 0, error, error_size)) {
-            ts_sample_free(&edited);
-            return 0;
-        }
-    }
-    if (state->has_process_range) {
-        size_t first = state->process_first;
-        size_t last = state->process_last;
-        if (last > edited.frames) last = edited.frames;
-        if (first >= last) {
-            ts_sample_free(&edited);
-            set_error(error, error_size,
-                      "Native shelf selection is outside the material");
-            return 0;
-        }
-        if (!ts_sample_clone(destination, &edited, error, error_size)) {
-            ts_sample_free(&edited);
-            return 0;
-        }
-        if (!ts_sample_process(&processed, &edited, first, last,
-                               &state->process, error, error_size)) {
-            ts_sample_free(destination);
-            ts_sample_free(&edited);
-            ts_sample_free(&processed);
-            return 0;
-        }
-        memcpy(destination->data + first, processed.data,
-               processed.frames * sizeof(*destination->data));
-        ts_sample_free(&processed);
-        ok = 1;
-    } else {
-        ok = ts_sample_process(destination, &edited, 0, edited.frames,
-                               &state->process, error, error_size);
-    }
-    ts_sample_free(&edited);
-    if (!ok) return 0;
+    /* Every destructive edit resolves into the current waveform domain before
+       the optional live shelf is rendered by render_snapshot(). */
+    ts_sample_free(destination);
+    *destination = edited;
+    ts_sample_init(&edited);
     for (int index = 0; index < state->post_edit_count; ++index) {
         const TsPostEdit *operation = &state->post_edits[index];
         size_t first = operation->first;
         size_t last = operation->last;
         size_t length;
-        if (operation->kind == TS_POST_MATERIAL_REPLACE) continue;
+        if (operation->kind == TS_POST_MATERIAL_REPLACE) {
+            const TsAudioPatch *patch =
+                audio_patch_for_operation(instrument, operation);
+            if (patch == NULL) {
+                set_error(error, error_size,
+                          "Transform material is missing from this tile");
+                return 0;
+            }
+            if (!patch_range(destination, &patch->sample, first, last, 0,
+                             error, error_size)) return 0;
+            continue;
+        }
         if (operation->kind == TS_POST_CANVAS_LEFT_RESIZE ||
             operation->kind == TS_POST_CANVAS_RIGHT_RESIZE) {
             if (!resize_canvas_sample(
@@ -2055,7 +2043,9 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
             continue;
         }
         if (operation->kind == TS_POST_DELETE) {
-            if (!delete_range(destination, first, last, error, error_size)) return 0;
+            if (!delete_range(destination, first, last,
+                              operation->crossfade_frames,
+                              error, error_size)) return 0;
             continue;
         }
         if (operation->kind == TS_POST_PATCH_REPLACE ||
@@ -2269,6 +2259,52 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
         }
     }
     return 1;
+}
+
+static int apply_snapshot_process(TsSample *destination,
+                                  const TsSample *material,
+                                  const TsEditSnapshot *state,
+                                  char *error, size_t error_size)
+{
+    TsSample processed;
+    ts_sample_init(&processed);
+    if (!ts_sample_clone(destination, material, error, error_size)) return 0;
+    if (state->has_process_range) {
+        size_t first = state->process_first;
+        size_t last = state->process_last;
+        if (last > destination->frames) last = destination->frames;
+        if (first >= last) {
+            set_error(error, error_size,
+                      "Native shelf selection is outside the material");
+            return 0;
+        }
+        if (!ts_sample_process(&processed, destination, first, last,
+                               &state->process, error, error_size)) return 0;
+        memcpy(destination->data + first, processed.data,
+               processed.frames * sizeof(*destination->data));
+        ts_sample_free(&processed);
+    } else {
+        if (!ts_sample_process(&processed, destination, 0, destination->frames,
+                               &state->process, error, error_size)) return 0;
+        ts_sample_free(destination);
+        *destination = processed;
+        ts_sample_init(&processed);
+    }
+    return 1;
+}
+
+static int render_snapshot(TsSample *destination, const TsInstrument *instrument,
+                           const TsEditSnapshot *state, char *error, size_t error_size)
+{
+    TsSample material;
+    int ok;
+    ts_sample_init(&material);
+    if (!render_material_snapshot(&material, instrument, state,
+                                  error, error_size)) return 0;
+    ok = apply_snapshot_process(destination, &material, state,
+                                error, error_size);
+    ts_sample_free(&material);
+    return ok;
 }
 
 void ts_process_recipe_reset(TsProcessRecipe *process)
@@ -3651,9 +3687,18 @@ static int family_mutate_sample(TsSample *destination, const TsSample *source,
     size_t frames = source->frames;
     float *data;
     float envelope = 0.0f;
-    float prior_noise = 0.0f;
+    float smooth = 0.0f;
     double phase = rng_unit(&rng) * 2.0 * M_PI;
     double modulation_hz = 0.4 + rng_unit(&rng) * (9.0 + strength * 31.0);
+    float spectral_direction = rng_bipolar(&rng);
+    float comb_polarity = rng_bipolar(&rng) < 0.0f ? -1.0f : 1.0f;
+    float comb_mix = strength * (0.18f + rng_unit(&rng) * 0.32f);
+    size_t maximum_delay = source->sample_rate / 80u;
+    size_t delay_frames;
+    if (maximum_delay < 1u) maximum_delay = 1u;
+    if (source->frames > 1u && maximum_delay >= source->frames)
+        maximum_delay = source->frames - 1u;
+    delay_frames = 1u + (size_t)(rng_unit(&rng) * (float)maximum_delay);
     if ((locks & TS_FAMILY_LOCK_DURATION) == 0u) {
         float maximum = relation == TS_FAMILY_CHILD ? 0.18f : 0.42f;
         float scale = 1.0f + rng_bipolar(&rng) * maximum * mutation;
@@ -3672,8 +3717,8 @@ static int family_mutate_sample(TsSample *destination, const TsSample *source,
     for (size_t i = 0; i < frames; ++i) {
         size_t source_at;
         float base;
-        float random = rng_bipolar(&rng);
-        float colored;
+        float delayed;
+        float tone;
         float wet;
         float value;
         if (i < source->frames) source_at = i;
@@ -3685,15 +3730,26 @@ static int family_mutate_sample(TsSample *destination, const TsSample *source,
         }
         base = source->data[source_at];
         envelope += (fabsf(base) - envelope) * 0.0125f;
-        colored = random - prior_noise * 0.82f;
-        prior_noise = random;
+        smooth += (base - smooth) * (0.025f + strength * 0.055f);
+        delayed = source->data[source_at >= delay_frames ?
+                               source_at - delay_frames : source_at];
         phase += 2.0 * M_PI * modulation_hz / (double)source->sample_rate;
         if ((locks & TS_FAMILY_LOCK_SPECTRAL) != 0u) {
             value = base * (1.0f + sinf((float)phase) * strength * 0.16f);
         } else {
             float drive = 1.0f + strength * 6.0f;
             float shaped = tanhf(base * drive) / tanhf(drive);
-            wet = shaped * 0.82f + colored * strength * 0.28f;
+            if (spectral_direction >= 0.0f)
+                tone = clampf(shaped + (shaped - smooth) *
+                              spectral_direction * (0.45f + strength),
+                              -1.0f, 1.0f);
+            else
+                tone = shaped * (1.0f + spectral_direction) +
+                       smooth * -spectral_direction;
+            wet = tone * (1.0f - comb_mix) +
+                  clampf(tone + delayed * comb_polarity * 0.62f,
+                         -1.0f, 1.0f) * comb_mix;
+            wet *= 1.0f + sinf((float)phase) * strength * 0.22f;
             value = base * (1.0f - strength) + wet * strength;
         }
         if ((locks & TS_FAMILY_LOCK_PITCH) == 0u)
@@ -4043,6 +4099,7 @@ int ts_instrument_apply_fm_patch(TsInstrument *instrument,
            advance_seed(instrument->family_sequence ^ 0x464d4c47u);
     recipe.kind = TS_GENERATOR_FM;
     recipe.seed = seed;
+    recipe.seconds = TS_FM_LOGIC_SECONDS;
     recipe.has_fm_patch = 1;
     recipe.fm_patch = *patch;
     recipe.frequency = 261.625565f;
@@ -4532,20 +4589,30 @@ static int commit_post_snapshot(TsInstrument *instrument, TsEditSnapshot *target
     return bank_sync_selected(instrument, error, error_size);
 }
 
-static int commit_material_checkpoint(TsInstrument *instrument,
-                                      const TsSample *material,
-                                      TsEditSnapshot *target,
-                                      char *error, size_t error_size)
+static int commit_material_checkpoint_mode(TsInstrument *instrument,
+                                           const TsSample *material,
+                                           TsEditSnapshot *target,
+                                           const TsGeneratorRecipe *generator,
+                                           int preserve_process,
+                                           char *error, size_t error_size)
 {
     TsPostEdit operation;
     TsSample current;
     uint32_t patch_index;
     uint32_t process_seed;
+    TsProcessRecipe process;
+    size_t process_first;
+    size_t process_last;
+    int has_process_range;
     if (!ensure_edit_graph_capacity(instrument, 1, error, error_size) ||
-        !append_audio_patch(instrument, material, NULL, &patch_index,
+        !append_audio_patch(instrument, material, generator, &patch_index,
                             error, error_size))
         return 0;
-    process_seed = target->process.seed;
+    process = target->process;
+    process_seed = process.seed;
+    process_first = target->process_first;
+    process_last = target->process_last;
+    has_process_range = target->has_process_range;
     target->crop_first = 0u;
     target->crop_last = instrument->parent.frames;
     memset(target->sample_edits, 0, sizeof(target->sample_edits));
@@ -4555,6 +4622,12 @@ static int commit_material_checkpoint(TsInstrument *instrument,
     target->process_first = 0u;
     target->process_last = 0u;
     target->has_process_range = 0;
+    if (preserve_process) {
+        target->process = process;
+        target->process_first = process_first;
+        target->process_last = process_last;
+        target->has_process_range = has_process_range;
+    }
     memset(target->post_edits, 0, sizeof(target->post_edits));
     target->post_edit_count = 0;
     memset(&operation, 0, sizeof(operation));
@@ -4575,6 +4648,32 @@ static int commit_material_checkpoint(TsInstrument *instrument,
     }
     set_error(error, error_size, "");
     return 1;
+}
+
+static int commit_material_checkpoint(TsInstrument *instrument,
+                                      const TsSample *material,
+                                      TsEditSnapshot *target,
+                                      char *error, size_t error_size)
+{
+    return commit_material_checkpoint_mode(instrument, material, target, NULL, 0,
+                                           error, error_size);
+}
+
+static int commit_generated_material_checkpoint(
+    TsInstrument *instrument, const TsSample *material,
+    const TsGeneratorRecipe *generator, TsEditSnapshot *target,
+    char *error, size_t error_size)
+{
+    return commit_material_checkpoint_mode(
+        instrument, material, target, generator, 0, error, error_size);
+}
+
+static int commit_material_checkpoint_preserving_process(
+    TsInstrument *instrument, const TsSample *material,
+    TsEditSnapshot *target, char *error, size_t error_size)
+{
+    return commit_material_checkpoint_mode(instrument, material, target, NULL, 1,
+                                           error, error_size);
 }
 
 static int resample_selection_patch(TsSample *patch, const TsSample *source,
@@ -5056,10 +5155,10 @@ static void canvas_gesture_clear(TsCanvasGesture *gesture)
 static size_t canvas_contraction_boundary(const TsCanvasGesture *gesture,
                                           size_t target, size_t first, size_t last)
 {
-    size_t macro = gesture->start.grid_snap != TS_GRID_SNAP_OFF ?
-                   grid_target_for_frames(gesture->original.frames,
-                                          gesture->start.grid_divisions,
-                                          target) : target;
+    size_t macro;
+    if (gesture->start.grid_snap == TS_GRID_SNAP_OFF) return target;
+    macro = grid_target_for_frames(gesture->original.frames,
+                                   gesture->start.grid_divisions, target);
     return ts_sample_nearest_zero_crossing_in_range(
         &gesture->original, macro, first, last);
 }
@@ -5391,6 +5490,12 @@ int ts_instrument_half_canvas(TsInstrument *instrument,
     frames = instrument->current.frames;
     wanted = frames / 2u;
     if (wanted < TS_CANVAS_MIN_FRAMES) wanted = TS_CANVAS_MIN_FRAMES;
+    if (instrument->grid_snap == TS_GRID_SNAP_OFF) {
+        wanted = ts_sample_nearest_zero_crossing_in_range(
+            &instrument->current, wanted, TS_CANVAS_MIN_FRAMES,
+            frames - 1u);
+        if (wanted < TS_CANVAS_MIN_FRAMES) wanted = TS_CANVAS_MIN_FRAMES;
+    }
     divisions = instrument->grid_divisions;
     if (!ts_instrument_resize_canvas(
             instrument, 2, -(int64_t)(frames - wanted),
@@ -5429,12 +5534,24 @@ int ts_instrument_cut_selection(TsInstrument *instrument,
                                 TsSample *clipboard, size_t *origin_first,
                                 char *error, size_t error_size)
 {
+    return ts_instrument_cut_selection_mode(instrument, clipboard, origin_first,
+                                            0, error, error_size);
+}
+
+int ts_instrument_cut_selection_mode(TsInstrument *instrument,
+                                     TsSample *clipboard, size_t *origin_first,
+                                     int crop_canvas,
+                                     char *error, size_t error_size)
+{
     TsSample copied;
     TsSample current;
     TsEditSnapshot target;
     TsPostEdit operation;
     size_t first;
     size_t last;
+    size_t removed;
+    size_t original_view_first;
+    size_t original_view_last;
     if (instrument == NULL || clipboard == NULL || instrument->current.data == NULL ||
         !instrument->has_selection ||
         instrument->selection_last <= instrument->selection_first) {
@@ -5443,11 +5560,13 @@ int ts_instrument_cut_selection(TsInstrument *instrument,
     }
     first = instrument->selection_first;
     last = instrument->selection_last;
+    removed = last - first;
     if (first == 0 && last == instrument->current.frames) {
         set_error(error, error_size, "Cut cannot remove the entire tile - Clear the tile instead");
         return 0;
     }
-    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
+    if (!ensure_edit_graph_capacity_for(instrument, crop_canvas ? 1 : 2, 0,
+                                        error, error_size)) return 0;
     ts_sample_init(&copied);
     ts_sample_init(&current);
     if (!sample_clone_range(&copied, &instrument->current, first, last,
@@ -5458,9 +5577,28 @@ int ts_instrument_cut_selection(TsInstrument *instrument,
     operation.kind = TS_POST_DELETE;
     operation.first = first;
     operation.last = last;
+    {
+        uint64_t join_frames =
+            (uint64_t)instrument->current.sample_rate * 3u / 1000u;
+        if (join_frames == 0u) join_frames = 1u;
+        if (join_frames > 65536u) join_frames = 65536u;
+        operation.crossfade_frames = (uint32_t)join_frames;
+    }
     target.post_edits[target.post_edit_count++] = operation;
+    original_view_first = target.view_first;
+    original_view_last = target.view_last;
     update_snapshot_after_replace(&target, first, last, 0,
-                                  instrument->current.frames - (last - first), 0);
+                                  crop_canvas ? instrument->current.frames - removed :
+                                                instrument->current.frames,
+                                  0);
+    if (!crop_canvas) {
+        memset(&operation, 0, sizeof(operation));
+        operation.kind = TS_POST_CANVAS_RIGHT_RESIZE;
+        operation.destination = (int64_t)removed;
+        target.post_edits[target.post_edit_count++] = operation;
+        target.view_first = original_view_first;
+        target.view_last = original_view_last;
+    }
     if (!render_snapshot(&current, instrument, &target, error, error_size)) {
         ts_sample_free(&copied);
         return 0;
@@ -5883,13 +6021,13 @@ static size_t chain_stamp_crossfade_frames(const TsInstrument *instrument,
     return (size_t)requested;
 }
 
-static int stamp_generated_patch(TsInstrument *instrument,
-                                 const TsGeneratorRecipe *recipe,
-                                 size_t crossfade_frames,
-                                 int advance_selection,
-                                 char *error, size_t error_size)
+static int stamp_audio_patch(TsInstrument *instrument,
+                             const TsSample *patch,
+                             const TsGeneratorRecipe *generator,
+                             size_t crossfade_frames,
+                             int advance_selection,
+                             char *error, size_t error_size)
 {
-    TsSample generated;
     TsSample current;
     TsEditSnapshot target;
     TsPostEdit operation;
@@ -5901,7 +6039,8 @@ static int stamp_generated_patch(TsInstrument *instrument,
     size_t next_last;
     size_t output_frames;
     size_t extension;
-    if (instrument == NULL || recipe == NULL || instrument->current.data == NULL ||
+    if (instrument == NULL || patch == NULL || patch->data == NULL ||
+        patch->frames == 0u || instrument->current.data == NULL ||
         !instrument->has_selection ||
         instrument->selection_last <= instrument->selection_first) {
         set_error(error, error_size, "Select a range on an occupied tile before stamping");
@@ -5927,15 +6066,9 @@ static int stamp_generated_patch(TsInstrument *instrument,
     extension = output_frames - instrument->current.frames;
     if (!ensure_edit_graph_capacity_for(instrument, extension > 0u ? 2 : 1,
                                         1, error, error_size)) return 0;
-    ts_sample_init(&generated);
     ts_sample_init(&current);
-    if (!ts_sample_generate(&generated, recipe, error, error_size)) return 0;
-    if (!append_audio_patch(instrument, &generated, recipe, &patch_index,
-                            error, error_size)) {
-        ts_sample_free(&generated);
-        return 0;
-    }
-    ts_sample_free(&generated);
+    if (!append_audio_patch(instrument, patch, generator, &patch_index,
+                            error, error_size)) return 0;
     target = snapshot(instrument);
     memset(&operation, 0, sizeof(operation));
     operation.kind = TS_POST_PATCH_FIT;
@@ -5971,6 +6104,27 @@ static int stamp_generated_patch(TsInstrument *instrument,
     return 1;
 }
 
+static int stamp_generated_patch(TsInstrument *instrument,
+                                 const TsGeneratorRecipe *recipe,
+                                 size_t crossfade_frames,
+                                 int advance_selection,
+                                 char *error, size_t error_size)
+{
+    TsSample generated;
+    int ok;
+    if (recipe == NULL) {
+        set_error(error, error_size, "Create stamp recipe is unavailable");
+        return 0;
+    }
+    ts_sample_init(&generated);
+    if (!ts_sample_generate(&generated, recipe, error, error_size)) return 0;
+    ok = stamp_audio_patch(instrument, &generated, recipe,
+                           crossfade_frames, advance_selection,
+                           error, error_size);
+    ts_sample_free(&generated);
+    return ok;
+}
+
 int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
                                char *error, size_t error_size)
 {
@@ -5994,48 +6148,143 @@ int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
     return 1;
 }
 
+static uint32_t material_variation_seed(const TsInstrument *instrument,
+                                        const TsSample *source)
+{
+    uint64_t hash = ts_sample_hash(source);
+    uint32_t folded = (uint32_t)hash ^ (uint32_t)(hash >> 32u);
+    return advance_seed(folded ^
+                        advance_seed(instrument->family_sequence + 1u));
+}
+
+static int process_is_audibly_neutral(const TsProcessRecipe *process)
+{
+    return process != NULL &&
+           fabsf(process->body - 0.5f) < 0.000001f &&
+           fabsf(process->edge) < 0.000001f &&
+           fabsf(process->drift) < 0.000001f &&
+           !process->noise_enabled && !process->delay_enabled &&
+           !process->reverb_enabled && !process->filter_enabled &&
+           !process->shaper_enabled;
+}
+
+/* A freshly created FM tile, or the direct result of an earlier structural
+   FM Vary, still has a trustworthy FM genome. Once the user prints other
+   material into it, Vary deliberately falls back to the waveform-domain
+   handoff so those destructive decisions remain the source. */
+static int direct_fm_material_recipe(const TsInstrument *instrument,
+                                     int source,
+                                     TsGeneratorRecipe *recipe)
+{
+    const TsBankSlot *slot;
+    const TsPostEdit *operation;
+    const TsAudioPatch *patch;
+    if (instrument == NULL || recipe == NULL || source < 0 ||
+        source >= TS_BANK_SLOT_COUNT)
+        return 0;
+    slot = &instrument->bank[source];
+    if (!slot->has_generator || slot->generator.kind != TS_GENERATOR_FM ||
+        instrument->sample_edit_count != 0 ||
+        !process_is_audibly_neutral(&instrument->process))
+        return 0;
+    if (instrument->post_edit_count == 0) {
+        *recipe = slot->generator;
+        return 1;
+    }
+    if (instrument->post_edit_count != 1) return 0;
+    operation = &instrument->post_edits[0];
+    if (operation->kind != TS_POST_MATERIAL_REPLACE || operation->first != 0u ||
+        operation->last != instrument->parent.frames)
+        return 0;
+    patch = audio_patch_for_operation(instrument, operation);
+    if (patch == NULL || !patch->has_generator ||
+        patch->generator.kind != TS_GENERATOR_FM)
+        return 0;
+    *recipe = patch->generator;
+    return 1;
+}
+
+static const TsSample *previous_chain_stamp_source(
+    const TsInstrument *instrument)
+{
+    size_t selection_frames;
+    if (instrument == NULL || !instrument->has_selection ||
+        instrument->selection_last <= instrument->selection_first ||
+        instrument->selected_slot < 0 ||
+        instrument->selected_slot >= TS_BANK_SLOT_COUNT)
+        return NULL;
+    selection_frames = instrument->selection_last -
+                       instrument->selection_first;
+    for (int index = instrument->post_edit_count - 1; index >= 0; --index) {
+        const TsPostEdit *operation = &instrument->post_edits[index];
+        const TsAudioPatch *patch;
+        size_t operation_frames;
+        size_t expected_first;
+        if (operation->kind != TS_POST_PATCH_FIT) continue;
+        if (operation->last <= operation->first) return NULL;
+        operation_frames = operation->last - operation->first;
+        expected_first = operation->last >= operation->crossfade_frames ?
+                         operation->last - operation->crossfade_frames : 0u;
+        if (selection_frames != operation_frames ||
+            instrument->selection_first != expected_first)
+            return NULL;
+        patch = audio_patch_for_operation(instrument, operation);
+        return patch != NULL ? &patch->sample : NULL;
+    }
+    return NULL;
+}
+
 static int stamp_vary(TsInstrument *instrument, int chained,
                       int crossfade_ms, char *error, size_t error_size)
 {
-    const TsBankSlot *slot;
-    const TsGeneratorRecipe *source_recipe = NULL;
-    TsGeneratorRecipe recipe;
-    TsFmPatch source_patch;
+    TsSample source;
+    TsSample varied;
+    const TsSample *chain_source;
     uint32_t seed;
+    uint32_t locks;
+    int ok;
     if (instrument == NULL || instrument->selected_slot < 0 ||
         instrument->selected_slot >= TS_BANK_SLOT_COUNT ||
         !instrument->has_selection || instrument->selection_last <= instrument->selection_first) {
         set_error(error, error_size, "Select a range before Vary stamping");
         return 0;
     }
-    slot = &instrument->bank[instrument->selected_slot];
-    for (int i = slot->patch_count - 1; i >= 0; --i) {
-        if (slot->patches[i].has_generator &&
-            slot->patches[i].generator.kind == TS_GENERATOR_FM) {
-            source_recipe = &slot->patches[i].generator;
-            break;
-        }
-    }
-    if (source_recipe == NULL && slot->has_generator &&
-        slot->generator.kind == TS_GENERATOR_FM) source_recipe = &slot->generator;
-    if (source_recipe == NULL) {
-        set_error(error, error_size, "Use Create once before Varying a selection");
+    if (instrument->bank[instrument->selected_slot].locked) {
+        set_error(error, error_size,
+                  "Tile is locked - unlock it before Vary stamping");
         return 0;
     }
-    recipe = *source_recipe;
-    seed = advance_seed(source_recipe->seed ^ advance_seed(instrument->family_sequence + 1u));
-    recipe.seed = seed;
-    recipe.has_fm_patch = 1;
-    ts_fm_patch_from_recipe(source_recipe, &source_patch);
-    ts_fm_patch_vary(&source_patch, seed, instrument->family_mutation,
-                     &recipe.fm_patch);
-    recipe.seconds = clampf(
-        (float)(instrument->selection_last - instrument->selection_first) /
-        (float)instrument->current.sample_rate, 0.1f, 8.0f);
-    if (!stamp_generated_patch(
-            instrument, &recipe,
-            chained ? chain_stamp_crossfade_frames(instrument, crossfade_ms) : 0u,
-            chained, error, error_size)) return 0;
+    ts_sample_init(&source);
+    ts_sample_init(&varied);
+    chain_source = chained ? previous_chain_stamp_source(instrument) : NULL;
+    if (chain_source != NULL) {
+        if (!ts_sample_clone(&source, chain_source, error, error_size)) return 0;
+    } else if (!sample_clone_range(&source, &instrument->current,
+                                   instrument->selection_first,
+                                   instrument->selection_last,
+                                   error, error_size)) {
+        return 0;
+    }
+    seed = material_variation_seed(instrument, &source);
+    locks = instrument->family_locks | TS_FAMILY_LOCK_DURATION;
+    if (instrument->family_mutation <= 0.0f)
+        ok = ts_sample_clone(&varied, &source, error, error_size);
+    else
+        ok = family_mutate_sample(&varied, &source, TS_FAMILY_CHILD,
+                                  seed, instrument->family_mutation, locks,
+                                  error, error_size);
+    if (ok) {
+        snprintf(varied.name, sizeof(varied.name),
+                 "VARY SEL %08X", seed);
+        ok = stamp_audio_patch(
+            instrument, &varied, NULL,
+            chained ? chain_stamp_crossfade_frames(instrument,
+                                                    crossfade_ms) : 0u,
+            chained, error, error_size);
+    }
+    ts_sample_free(&source);
+    ts_sample_free(&varied);
+    if (!ok) return 0;
     ++instrument->family_sequence;
     return 1;
 }
@@ -6057,16 +6306,22 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
                                 int *destination_slot, char *error, size_t error_size)
 {
     TsBankSlot made;
+    TsSample varied;
+    TsEditSnapshot target;
+    TsGeneratorRecipe fm_recipe;
     TsFmPatch source_patch;
-    TsGeneratorRecipe recipe;
     uint32_t seed;
-    int source, destination, steps;
+    uint32_t locks;
+    int source;
+    int destination;
+    int structural_fm = 0;
+    int ok;
     if (destination_slot != NULL) *destination_slot = -1;
     if (instrument == NULL || (source = instrument->selected_slot) < 0 ||
         source >= TS_BANK_SLOT_COUNT || !instrument->bank[source].occupied ||
-        !instrument->bank[source].has_generator ||
-        instrument->bank[source].generator.kind != TS_GENERATOR_FM) {
-        set_error(error, error_size, "Vary needs a selected FM tile"); return 0;
+        instrument->current.data == NULL || instrument->current.frames == 0u) {
+        set_error(error, error_size, "Vary needs an occupied selected tile");
+        return 0;
     }
     destination = source;
     if (!chain && instrument->bank[source].locked) {
@@ -6081,44 +6336,109 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
         }
         if (destination < 0) { set_error(error, error_size, "Bank is full - Chain cannot vary"); return 0; }
     }
-    if (!ts_instrument_select_bank(instrument, source, error, error_size) ||
-        !bank_sync_selected(instrument, error, error_size)) return 0;
+    if (!bank_sync_selected(instrument, error, error_size)) return 0;
+    seed = material_variation_seed(instrument, &instrument->current);
+    locks = instrument->family_locks | TS_FAMILY_LOCK_DURATION;
+    structural_fm = direct_fm_material_recipe(
+        instrument, source, &fm_recipe);
+    ts_sample_init(&varied);
     if (instrument->family_mutation <= 0.0f) {
-        if (!chain) { if (destination_slot) *destination_slot = source; return 1; }
-        if (!bank_slot_deep_clone(&instrument->bank[destination], &instrument->bank[source], error, error_size)) return 0;
-        instrument->bank[destination].locked = 0;
+        if (!chain) {
+            if (destination_slot != NULL) *destination_slot = source;
+            set_error(error, error_size, "");
+            return 1;
+        }
+        ok = ts_sample_clone(&varied, &instrument->current,
+                             error, error_size);
     } else {
-        TsSample fm_source, rebuilt;
-        TsInstrument replay;
-        recipe = instrument->bank[source].generator;
-        ts_fm_patch_from_recipe(&recipe, &source_patch);
-        seed = advance_seed(instrument->bank[source].lineage_seed ^
-                            advance_seed(instrument->family_sequence + 1u));
-        steps = 1 + (int)lrintf(instrument->family_mutation * 31.0f);
-        for (int step = 1; step < steps; ++step) seed = advance_seed(seed);
-        recipe.kind = TS_GENERATOR_FM;
-        recipe.has_fm_patch = 1;
-        ts_fm_patch_vary(&source_patch, seed, instrument->family_mutation,
-                         &recipe.fm_patch);
-        ts_sample_init(&fm_source); ts_sample_init(&rebuilt);
-        if (!ts_sample_generate(&fm_source, &recipe, error, error_size)) return 0;
-        replay = *instrument;
-        replay.parent = fm_source;
-        if (!render_snapshot(&rebuilt, &replay, &instrument->bank[source].edit,
-                             error, error_size)) {
-            ts_sample_free(&fm_source); return 0;
+        if (structural_fm) {
+            ts_fm_patch_from_recipe(&fm_recipe, &source_patch);
+            fm_recipe.kind = TS_GENERATOR_FM;
+            fm_recipe.seed = seed;
+            fm_recipe.seconds = clampf(
+                (float)instrument->current.frames /
+                (float)instrument->current.sample_rate, 0.1f, 8.0f);
+            fm_recipe.has_fm_patch = 1;
+            ts_fm_patch_vary(&source_patch, seed,
+                             instrument->family_mutation,
+                             &fm_recipe.fm_patch);
+            ok = ts_sample_generate(&varied, &fm_recipe,
+                                    error, error_size);
+            if (ok && varied.frames != instrument->current.frames) {
+                int64_t delta = (int64_t)instrument->current.frames -
+                                (int64_t)varied.frames;
+                ok = resize_canvas_sample(&varied, 2, delta,
+                                          error, error_size);
+            }
+        } else {
+            ok = family_mutate_sample(
+                &varied, &instrument->current, TS_FAMILY_CHILD,
+                seed, instrument->family_mutation, locks,
+                error, error_size);
         }
+    }
+    if (!ok) return 0;
+    snprintf(varied.name, sizeof(varied.name),
+             "VARY TILE %08X", seed);
+
+    if (!chain) {
+        target = snapshot(instrument);
+        ok = structural_fm ?
+             commit_generated_material_checkpoint(
+                 instrument, &varied, &fm_recipe, &target,
+                 error, error_size) :
+             commit_material_checkpoint(instrument, &varied, &target,
+                                        error, error_size);
+        ts_sample_free(&varied);
+        if (!ok) return 0;
+        instrument->bank[source].relation = TS_FAMILY_CHILD;
+        instrument->bank[source].parent_slot = source;
+        instrument->bank[source].lineage_seed = seed;
+        instrument->bank[source].lineage_mutation =
+            instrument->family_mutation;
+        ++instrument->bank[source].trajectory_step;
+        instrument->family_last_slot = source;
+        if (!bank_sync_selected(instrument, error, error_size)) return 0;
+    } else {
+        const TsBankSlot *anchor = &instrument->bank[source];
         bank_slot_init(&made);
-        if (!bank_slot_deep_clone(&made, &instrument->bank[source], error, error_size)) {
-            ts_sample_free(&fm_source); ts_sample_free(&rebuilt); return 0;
+        made.sample = varied;
+        ts_sample_init(&varied);
+        if (!ts_sample_clone(&made.edit_parent, &made.sample,
+                             error, error_size)) {
+            bank_slot_free(&made);
+            return 0;
         }
-        ts_sample_free(&made.sample); ts_sample_free(&made.edit_parent);
-        made.sample = rebuilt; made.edit_parent = fm_source;
-        made.generator = recipe; made.lineage_seed = seed; made.parent_slot = source;
-        made.lineage_mutation = instrument->family_mutation; made.trajectory_step++;
-        if (destination != source) made.locked = 0;
-        if (destination == source) bank_slot_free(&instrument->bank[source]);
+        made.capture_kind = TS_BANK_CAPTURE_CURRENT;
+        made.relation = TS_FAMILY_CHILD;
+        made.parent_slot = source;
+        made.lineage_seed = seed;
+        made.lineage_locks = instrument->family_locks;
+        made.lineage_mutation = instrument->family_mutation;
+        made.trajectory_step = anchor->trajectory_step + 1u;
+        made.generator = structural_fm ? fm_recipe : anchor->generator;
+        made.has_generator = structural_fm;
+        made.tuning = instrument->tuning;
+        made.audible_tuning = instrument->audible_tuning;
+        made.occupied = 1;
+        family_copy_or_vary_loop(&made, anchor, seed);
+        made.edit.crop_first = 0u;
+        made.edit.crop_last = made.sample.frames;
+        made.edit.view_first = 0u;
+        made.edit.view_last = made.sample.frames;
+        made.edit.loop_first = made.loop_first;
+        made.edit.loop_last = made.loop_last;
+        made.edit.loop_crossfade_ms = made.loop_crossfade_ms;
+        made.edit.loop_mode = made.loop_mode;
+        made.edit.has_loop = made.has_loop;
+        made.edit.grid_divisions = instrument->grid_divisions;
+        made.edit.grid_snap = instrument->grid_snap;
+        made.edit.tuning = made.tuning;
+        made.edit.audible_tuning = made.audible_tuning;
+        ts_process_recipe_reset(&made.edit.process);
+        bank_slot_free(&instrument->bank[destination]);
         instrument->bank[destination] = made;
+        instrument->family_last_slot = destination;
     }
     ++instrument->family_sequence;
     if (destination_slot) *destination_slot = destination;
@@ -7268,6 +7588,244 @@ int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
     return 1;
 }
 
+static float material_macro_neutral(TsMaterialMacro macro)
+{
+    (void)macro;
+    return 0.0f;
+}
+
+static void neutralize_material_macros(TsProcessRecipe *process)
+{
+    process->body = 0.5f;
+    process->edge = 0.0f;
+    process->drift = 0.0f;
+}
+
+static int process_has_live_shelf(const TsProcessRecipe *process)
+{
+    return process->noise_enabled || process->delay_enabled ||
+           process->reverb_enabled || process->filter_enabled ||
+           process->shaper_enabled;
+}
+
+static int apply_process_range_in_place(TsSample *material,
+                                        size_t first, size_t last,
+                                        const TsProcessRecipe *process,
+                                        char *error, size_t error_size)
+{
+    TsSample rendered;
+    ts_sample_init(&rendered);
+    if (material == NULL || material->data == NULL || first >= last ||
+        last > material->frames ||
+        !ts_sample_process(&rendered, material, first, last, process,
+                           error, error_size))
+        return 0;
+    memcpy(material->data + first, rendered.data,
+           rendered.frames * sizeof(*material->data));
+    ts_sample_free(&rendered);
+    return 1;
+}
+
+void ts_material_macro_gesture_init(TsMaterialMacroGesture *gesture)
+{
+    if (gesture == NULL) return;
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+    ts_sample_init(&gesture->material);
+    ts_sample_init(&gesture->preview_material);
+    gesture->macro = TS_MATERIAL_MACRO_BODY;
+    gesture->amount = 0.0f;
+}
+
+static int material_macro_gesture_owns(
+    const TsInstrument *instrument, const TsMaterialMacroGesture *gesture)
+{
+    return instrument != NULL && gesture != NULL && gesture->active &&
+           instrument->selected_slot == gesture->owner_slot &&
+           instrument->generation == gesture->owner_generation &&
+           instrument->parent.data == gesture->owner_parent_data &&
+           instrument->current.frames == gesture->original.frames;
+}
+
+static void material_macro_gesture_clear(TsMaterialMacroGesture *gesture)
+{
+    ts_sample_free(&gesture->original);
+    ts_sample_free(&gesture->material);
+    ts_sample_free(&gesture->preview_material);
+    ts_material_macro_gesture_init(gesture);
+}
+
+int ts_instrument_material_macro_gesture_begin(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    TsMaterialMacro macro, char *error, size_t error_size)
+{
+    TsProcessRecipe legacy;
+    size_t first;
+    size_t last;
+    if (instrument == NULL || gesture == NULL || gesture->active ||
+        instrument->current.data == NULL || instrument->current.frames == 0u ||
+        macro < TS_MATERIAL_MACRO_BODY || macro >= TS_MATERIAL_MACRO_COUNT) {
+        set_error(error, error_size, "Could not begin material macro gesture");
+        return 0;
+    }
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
+    gesture->start = snapshot(instrument);
+    if (!ts_sample_clone(&gesture->original, &instrument->current,
+                         error, error_size) ||
+        !render_material_snapshot(&gesture->material, instrument,
+                                  &gesture->start, error, error_size)) {
+        material_macro_gesture_clear(gesture);
+        return 0;
+    }
+
+    /* Old projects may still contain live BODY/EDGE/DRIFT values. Fold those
+       into the material once, then leave NOISE/SHAPE/DELAY/SPACE live. */
+    ts_process_recipe_reset(&legacy);
+    legacy.seed = gesture->start.process.seed;
+    legacy.body = gesture->start.process.body;
+    legacy.edge = gesture->start.process.edge;
+    legacy.drift = gesture->start.process.drift;
+    first = gesture->start.has_process_range ?
+            gesture->start.process_first : 0u;
+    last = gesture->start.has_process_range ?
+           gesture->start.process_last : gesture->material.frames;
+    if (last > gesture->material.frames) last = gesture->material.frames;
+    if (first >= last) {
+        first = 0u;
+        last = gesture->material.frames;
+    }
+    if ((fabsf(legacy.body - 0.5f) > 0.000001f ||
+         fabsf(legacy.edge) > 0.000001f ||
+         fabsf(legacy.drift) > 0.000001f) &&
+        !apply_process_range_in_place(&gesture->material, first, last,
+                                      &legacy, error, error_size)) {
+        material_macro_gesture_clear(gesture);
+        return 0;
+    }
+    neutralize_material_macros(&gesture->start.process);
+    if (!process_has_live_shelf(&gesture->start.process)) {
+        gesture->start.process_first = 0u;
+        gesture->start.process_last = 0u;
+        gesture->start.has_process_range = 0;
+    }
+    gesture->owner_parent_data = instrument->parent.data;
+    gesture->owner_generation = instrument->generation;
+    gesture->owner_slot = instrument->selected_slot;
+    gesture->macro = macro;
+    gesture->amount = material_macro_neutral(macro);
+    gesture->active = 1;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_material_macro_gesture_preview(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    float amount, char *error, size_t error_size)
+{
+    TsProcessRecipe process;
+    TsSample preview;
+    size_t first;
+    size_t last;
+    if (!material_macro_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size,
+                  "Material macro gesture no longer owns Current");
+        return 0;
+    }
+    if (!isfinite(amount) || amount < -1.0f || amount > 1.0f) {
+        set_error(error, error_size,
+                  "Material macro amount must be between minus one and one");
+        return 0;
+    }
+    if (!ts_sample_clone(&gesture->preview_material, &gesture->material,
+                         error, error_size)) return 0;
+    ts_process_recipe_reset(&process);
+    process.seed = gesture->start.process.seed;
+    if (gesture->macro == TS_MATERIAL_MACRO_BODY)
+        process.body = 0.5f + amount * 0.5f;
+    else if (gesture->macro == TS_MATERIAL_MACRO_EDGE) process.edge = amount;
+    else process.drift = amount;
+    first = gesture->start.has_selection ?
+            gesture->start.selection_first : 0u;
+    last = gesture->start.has_selection ?
+           gesture->start.selection_last : gesture->material.frames;
+    if (!apply_process_range_in_place(&gesture->preview_material, first, last,
+                                      &process, error, error_size)) return 0;
+    ts_sample_init(&preview);
+    if (!apply_snapshot_process(&preview, &gesture->preview_material,
+                                &gesture->start, error, error_size)) return 0;
+    replace_current_preserving_view(instrument, &preview);
+    gesture->amount = amount;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_material_macro_gesture_cancel(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    char *error, size_t error_size)
+{
+    TsSample restored;
+    if (!material_macro_gesture_owns(instrument, gesture)) {
+        material_macro_gesture_clear(gesture);
+        set_error(error, error_size,
+                  "Material macro gesture no longer owns Current");
+        return 0;
+    }
+    ts_sample_init(&restored);
+    if (!ts_sample_clone(&restored, &gesture->original,
+                         error, error_size)) return 0;
+    replace_current_preserving_view(instrument, &restored);
+    material_macro_gesture_clear(gesture);
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_material_macro_gesture_commit(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    int ok;
+    if (!material_macro_gesture_owns(instrument, gesture)) {
+        material_macro_gesture_clear(gesture);
+        set_error(error, error_size,
+                  "Material macro gesture no longer owns Current");
+        return 0;
+    }
+    if (fabsf(gesture->amount - material_macro_neutral(gesture->macro)) <
+        0.000001f)
+        return ts_instrument_material_macro_gesture_cancel(
+            instrument, gesture, error, error_size);
+    target = gesture->start;
+    ok = commit_material_checkpoint_preserving_process(
+        instrument, &gesture->preview_material, &target,
+        error, error_size);
+    if (ok) {
+        material_macro_gesture_clear(gesture);
+        set_error(error, error_size, "");
+    }
+    return ok;
+}
+
+int ts_instrument_apply_material_macro(TsInstrument *instrument,
+                                       TsMaterialMacro macro, float amount,
+                                       char *error, size_t error_size)
+{
+    TsMaterialMacroGesture gesture;
+    int ok;
+    ts_material_macro_gesture_init(&gesture);
+    if (!ts_instrument_material_macro_gesture_begin(
+            instrument, &gesture, macro, error, error_size)) return 0;
+    ok = ts_instrument_material_macro_gesture_preview(
+        instrument, &gesture, amount, error, error_size);
+    if (ok)
+        ok = ts_instrument_material_macro_gesture_commit(
+            instrument, &gesture, error, error_size);
+    else
+        (void)ts_instrument_material_macro_gesture_cancel(
+            instrument, &gesture, NULL, 0u);
+    return ok;
+}
+
 void ts_warp_gesture_init(TsWarpGesture *gesture)
 {
     if (gesture == NULL) return;
@@ -7386,6 +7944,163 @@ int ts_instrument_warp_gesture_commit(TsInstrument *instrument,
                                     error, error_size);
     if (ok) {
         warp_gesture_clear(gesture);
+        set_error(error, error_size, "");
+    }
+    return ok;
+}
+
+void ts_amplitude_gesture_init(TsAmplitudeGesture *gesture)
+{
+    if (gesture == NULL) return;
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+static int amplitude_gesture_owns(const TsInstrument *instrument,
+                                  const TsAmplitudeGesture *gesture)
+{
+    return instrument != NULL && gesture != NULL && gesture->active &&
+           instrument->selected_slot == gesture->owner_slot &&
+           instrument->generation == gesture->owner_generation &&
+           instrument->parent.data == gesture->owner_parent_data &&
+           instrument->current.data != NULL &&
+           instrument->current.frames == gesture->original.frames;
+}
+
+static void amplitude_gesture_clear(TsAmplitudeGesture *gesture)
+{
+    ts_sample_free(&gesture->original);
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+int ts_instrument_amplitude_gesture_begin(TsInstrument *instrument,
+                                          TsAmplitudeGesture *gesture,
+                                          char *error, size_t error_size)
+{
+    if (instrument == NULL || gesture == NULL || gesture->active ||
+        instrument->current.data == NULL || instrument->current.frames == 0u) {
+        set_error(error, error_size, "Could not begin amplitude drawing");
+        return 0;
+    }
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
+    gesture->start = snapshot(instrument);
+    if (!ts_sample_clone(&gesture->original, &instrument->current,
+                         error, error_size)) return 0;
+    gesture->owner_parent_data = instrument->parent.data;
+    gesture->owner_generation = instrument->generation;
+    gesture->owner_slot = instrument->selected_slot;
+    gesture->active = 1;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_amplitude_gesture_preview(TsInstrument *instrument,
+                                            TsAmplitudeGesture *gesture,
+                                            size_t first, float first_gain,
+                                            size_t last, float last_gain,
+                                            char *error, size_t error_size)
+{
+    if (!amplitude_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size,
+                  "Amplitude gesture no longer owns Current");
+        return 0;
+    }
+    if (!isfinite(first_gain) || !isfinite(last_gain) ||
+        first_gain < 0.0f || first_gain > 2.0f ||
+        last_gain < 0.0f || last_gain > 2.0f) {
+        set_error(error, error_size,
+                  "Amplitude drawing gain must be between zero and two");
+        return 0;
+    }
+    if (first >= gesture->original.frames) first = gesture->original.frames - 1u;
+    if (last >= gesture->original.frames) last = gesture->original.frames - 1u;
+    if (last < first) {
+        size_t swap_frame = first;
+        float swap_gain = first_gain;
+        first = last;
+        last = swap_frame;
+        first_gain = last_gain;
+        last_gain = swap_gain;
+    }
+    for (size_t frame = first; frame <= last; ++frame) {
+        float phase = last > first ?
+            (float)(frame - first) / (float)(last - first) : 1.0f;
+        float gain = first_gain + (last_gain - first_gain) * phase;
+        instrument->current.data[frame] = gesture->original.data[frame] * gain;
+    }
+    ts_sample_touch(&instrument->current);
+    if (!gesture->has_profile) {
+        gesture->first_frame = first;
+        gesture->last_frame = last;
+        gesture->has_profile = 1;
+    } else {
+        if (first < gesture->first_frame) gesture->first_frame = first;
+        if (last > gesture->last_frame) gesture->last_frame = last;
+    }
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_amplitude_gesture_reset_preview(
+    TsInstrument *instrument, TsAmplitudeGesture *gesture,
+    char *error, size_t error_size)
+{
+    if (!amplitude_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size,
+                  "Amplitude gesture no longer owns Current");
+        return 0;
+    }
+    memcpy(instrument->current.data, gesture->original.data,
+           gesture->original.frames * sizeof(*instrument->current.data));
+    ts_sample_touch(&instrument->current);
+    gesture->first_frame = 0u;
+    gesture->last_frame = 0u;
+    gesture->has_profile = 0;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_amplitude_gesture_cancel(TsInstrument *instrument,
+                                           TsAmplitudeGesture *gesture,
+                                           char *error, size_t error_size)
+{
+    TsSample restored;
+    if (!amplitude_gesture_owns(instrument, gesture)) {
+        amplitude_gesture_clear(gesture);
+        set_error(error, error_size,
+                  "Amplitude gesture no longer owns Current");
+        return 0;
+    }
+    ts_sample_init(&restored);
+    if (!ts_sample_clone(&restored, &gesture->original,
+                         error, error_size)) return 0;
+    replace_current_preserving_view(instrument, &restored);
+    amplitude_gesture_clear(gesture);
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_amplitude_gesture_commit(TsInstrument *instrument,
+                                           TsAmplitudeGesture *gesture,
+                                           char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    int ok;
+    if (!amplitude_gesture_owns(instrument, gesture)) {
+        amplitude_gesture_clear(gesture);
+        set_error(error, error_size,
+                  "Amplitude gesture no longer owns Current");
+        return 0;
+    }
+    if (!gesture->has_profile)
+        return ts_instrument_amplitude_gesture_cancel(
+            instrument, gesture, error, error_size);
+    target = gesture->start;
+    ok = commit_material_checkpoint(instrument, &instrument->current, &target,
+                                    error, error_size);
+    if (ok) {
+        amplitude_gesture_clear(gesture);
         set_error(error, error_size, "");
     }
     return ok;
@@ -7822,8 +8537,8 @@ static int get_process_recipe(FILE *f, TsProcessRecipe *process)
         !get_float(f, &process->shaper_mix)) return 0;
 #undef GET_PROCESS_U32
     return process->body >= 0.0f && process->body <= 1.0f &&
-           process->edge >= 0.0f && process->edge <= 1.0f &&
-           process->drift >= 0.0f && process->drift <= 1.0f &&
+           process->edge >= -1.0f && process->edge <= 1.0f &&
+           process->drift >= -1.0f && process->drift <= 1.0f &&
            (process->noise_enabled == 0 || process->noise_enabled == 1) &&
            process->noise_amount >= 0.0f && process->noise_amount <= 1.0f &&
            process->noise_color < TS_NOISE_COLOR_COUNT &&

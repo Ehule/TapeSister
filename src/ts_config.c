@@ -24,6 +24,7 @@ void ts_config_init(TsConfig *config)
         config->rotate_wheel_coarse = TS_ROTATE_WHEEL_COARSE_DEFAULT;
         config->drone_crossfade_ms = TS_DRONE_CROSSFADE_MS_DEFAULT;
         config->chain_stamp_crossfade_ms = TS_CHAIN_STAMP_CROSSFADE_MS_DEFAULT;
+        config->ripple_cut_crop_canvas = 0;
         config->reference_tone_volume = TS_REFERENCE_TONE_VOLUME_DEFAULT;
         config->record_input_channel = TS_RECORD_INPUT_CHANNEL_DEFAULT;
         config->record_threshold_db = TS_RECORD_THRESHOLD_DB_DEFAULT;
@@ -210,6 +211,8 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, TS_DRONE_CROSSFADE_MS_MIN, TS_DRONE_CROSSFADE_MS_MAX, &loaded.drone_crossfade_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "chain_stamp_crossfade_ms") == 0) {
             if (!parse_clamped_integer(value, TS_CHAIN_STAMP_CROSSFADE_MS_MIN, TS_CHAIN_STAMP_CROSSFADE_MS_MAX, &loaded.chain_stamp_crossfade_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "ripple_cut_crop_canvas") == 0) {
+            if (!parse_boolean(value, &loaded.ripple_cut_crop_canvas)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "reference_tone_volume") == 0) {
             if (!parse_clamped_integer(value, TS_REFERENCE_TONE_VOLUME_MIN, TS_REFERENCE_TONE_VOLUME_MAX, &loaded.reference_tone_volume)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "record_input_channel") == 0) {
@@ -277,6 +280,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "rotate_wheel_coarse=%d\n"
                 "drone_crossfade_ms=%d\n"
                 "chain_stamp_crossfade_ms=%d\n"
+                "ripple_cut_crop_canvas=%d\n"
                 "reference_tone_volume=%d\n"
                 "\n[External Recording]\n"
                 "; Blank uses the operating system default capture device. Otherwise use the exact SDL device name.\n"
@@ -303,6 +307,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->rotate_wheel_coarse,
                 config->drone_crossfade_ms,
                 config->chain_stamp_crossfade_ms,
+                config->ripple_cut_crop_canvas ? 1 : 0,
                 config->reference_tone_volume,
                 config->record_input_device,
                 config->record_input_channel,
