@@ -844,7 +844,7 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         TS_FM_MUTATE_FILTER, TS_FM_MUTATE_STRUCTURE
     };
     const TsSample *preview = ui->fm_preview_sample;
-    frame(fb, 10, 40, 620, 310, RGB(36, 33, 37), PAL_MOUSE);
+    frame(fb, 10, 40, 620, 274, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 46, "FM SOUND LOGIC", PAL_NOTE, 1);
     text(fb, 474, 46, "SIX-VOICE SOURCE", PAL_EFFECT, 1);
     frame(fb, 20, 62, 600, 48, RGB(8, 8, 8), PAL_BUTTON);
@@ -925,21 +925,15 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         rect(fb, 389, 282, (int)lrintf(amount * 228.0f), 14, PAL_BLOCK);
     }
     text(fb, 20, 306, ui->fm_message, PAL_MOUSE, 1);
-    text(fb, 20, 322,
-         "QWERTY NOTES ARE POLYPHONIC  HOLD LATCHES THE CURRENT CHORD",
-         PAL_TUNING, 1);
-    text(fb, 20, 338,
-         "DRONE REMOVES ENVELOPES  EXTREME OPENS RANGE  LIMITER STAYS ON",
-         PAL_INSTRUMENT, 1);
     if (ui->fm_full_choice_open) {
-        frame(fb, 72, 238, 496, 94, RGB(28, 25, 30), PAL_VOLUME);
-        text(fb, 92, 247, "THIS SAMPLE PAGE IS FULL", PAL_NOTE, 1);
-        text(fb, 92, 263,
+        frame(fb, 72, 226, 496, 80, RGB(28, 25, 30), PAL_VOLUME);
+        text(fb, 92, 234, "THIS SAMPLE PAGE IS FULL", PAL_NOTE, 1);
+        text(fb, 92, 250,
              "OVERWRITE THIS TILE OR CONTINUE THE CHAIN ON A NEW PAGE?",
              PAL_MOUSE, 1);
-        button(fb, 92, 286, 126, "OVERWRITE", 0);
-        button(fb, 224, 286, 150, "NEW SAMPLE PAGE", 1);
-        button(fb, 380, 286, 94, "CANCEL", 0);
+        button(fb, 92, 274, 126, "OVERWRITE", 0);
+        button(fb, 224, 274, 150, "NEW SAMPLE PAGE", 1);
+        button(fb, 380, 274, 94, "CANCEL", 0);
     }
 }
 
@@ -1334,7 +1328,7 @@ TsUiFmAction ts_ui_fm_action_from_point(int x, int y)
 
 TsUiFmAction ts_ui_fm_full_action_from_point(int x, int y)
 {
-    if (y < 286 || y >= 310) return TS_UI_FM_ACTION_NONE;
+    if (y < 274 || y >= 298) return TS_UI_FM_ACTION_NONE;
     if (x >= 92 && x < 218) return TS_UI_FM_ACTION_OVERWRITE;
     if (x >= 224 && x < 374) return TS_UI_FM_ACTION_NEW_PAGE;
     if (x >= 380 && x < 474) return TS_UI_FM_ACTION_CANCEL_FULL;
@@ -1413,7 +1407,9 @@ TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y)
     if (ui == NULL) return TS_UI_SLIDER_NONE;
     switch (ui->fx_page) {
     case TS_FX_TUNE:
-        if (point_in_slider(x, y, 214, 261, 146)) return TS_UI_SLIDER_TUNE_FINE;
+        if (point_in_slider(x, y, 180, 261, 112)) return TS_UI_SLIDER_TUNE_FINE;
+        if (point_in_slider(x, y, 386, 261, 80))
+            return TS_UI_SLIDER_TUNE_REFERENCE_VOLUME;
         break;
     case TS_FX_NOISE:
         if (point_in_slider(x, y, 118, 261, 180)) return TS_UI_SLIDER_NOISE_AMOUNT;
@@ -2142,13 +2138,18 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                  display_tuning->fine_tune_cents);
         snprintf(frequency, sizeof(frequency), "%.2F HZ",
                  ts_tuning_frequency(display_tuning));
-        button(fb, 10, 261, 48, "DOWN", 0);
-        button(fb, 62, 261, 90, root, 1);
-        button(fb, 156, 261, 48, "UP", 0);
-        slider(fb, 214, 261, 146, fine,
+        char reference_volume[24];
+        snprintf(reference_volume, sizeof(reference_volume), "REF VOL %d",
+                 ui->config.reference_tone_volume);
+        button(fb, 10, 261, 40, "DOWN", 0);
+        button(fb, 54, 261, 76, root, 1);
+        button(fb, 134, 261, 40, "UP", 0);
+        slider(fb, 180, 261, 112, fine,
                (display_tuning->fine_tune_cents + 100.0f) / 200.0f, PAL_TUNING);
-        button(fb, 370, 261, 90, frequency, ui->tune_reference_active);
-        button(fb, 470, 261, 160,
+        button(fb, 298, 261, 82, frequency, ui->tune_reference_active);
+        slider(fb, 386, 261, 80, reference_volume,
+               (float)ui->config.reference_tone_volume / 100.0f, PAL_VOLUME);
+        button(fb, 472, 261, 158,
                ui->has_pitch_suggestion ? "TUNE TO REFERENCE" : "DETECT PITCH",
                ui->has_pitch_suggestion);
     } else if (ui->fx_page == TS_FX_NOISE) {

@@ -44,7 +44,7 @@ This is a musical and interaction checkpoint. Passing automated tests alone is n
 - [ ] Forward, Reverse, and Ping-Pong playback match the displayed direction.
 - [ ] Crop and tape gestures keep loop coordinates valid; Undo restores the previous loop exactly.
 - [ ] Every created, imported, recorded, and captured tile plays unchanged at MIDI 60 and exports that portable unity metadata.
-- [ ] The Tune reference defaults to C4/MIDI 60/261.63 Hz and Down, Up, Trim, and the reference-tone button change only the target.
+- [ ] The Tune reference defaults to C4/MIDI 60/261.63 Hz; its latched tone plays alongside WAV/QWERTY audition, REF VOL is audible and persistent, and neither capture path records the tone.
 - [ ] Space plays the persistent selection when present and otherwise preserves the established whole/playhead behavior, all at the displayed audible tuning.
 - [ ] Detect Pitch rejects unsuitable material and Tune to Reference destructively resamples the selection or tile in one Undo step.
 - [ ] Undo restores the exact prior waveform, duration, and mapping; Redo restores the tuned waveform at MIDI-60 unity.
