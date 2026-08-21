@@ -363,6 +363,7 @@ typedef struct {
     TsAudioPatch *patches;
     int patch_count;
     int patch_capacity;
+    int locked;
 } TsBankSlot;
 
 typedef struct {
@@ -702,6 +703,11 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size);
 int ts_instrument_bank_clear_all(TsInstrument *instrument,
                                  char *error, size_t error_size);
+int ts_instrument_bank_is_locked(const TsInstrument *instrument, int slot);
+int ts_instrument_bank_set_locked(TsInstrument *instrument, int slot, int locked,
+                                  char *error, size_t error_size);
+int ts_instrument_bank_toggle_locked(TsInstrument *instrument, int slot,
+                                     char *error, size_t error_size);
 int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *name,
                               char *error, size_t error_size);
 int ts_instrument_bank_set_loop_full(TsInstrument *instrument, int slot,

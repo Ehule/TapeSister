@@ -10,9 +10,11 @@
 #include <direct.h>
 #include <windows.h>
 #define getcwd _getcwd
+#define ts_browser_mkdir(path) _mkdir(path)
 #else
 #include <dirent.h>
 #include <unistd.h>
+#define ts_browser_mkdir(path) mkdir(path, 0775)
 #endif
 
 static int case_compare(const char *a, const char *b)
@@ -83,6 +85,12 @@ int ts_browser_mode_selects_directory(TsBrowserMode mode)
     return mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
            mode == TS_BROWSER_SELECT_EXCHANGE_DIRECTORY ||
            mode == TS_BROWSER_SELECT_CDP_BIN_DIRECTORY;
+}
+
+int ts_browser_mode_allows_create_directory(TsBrowserMode mode)
+{
+    return mode == TS_BROWSER_SAVE_RECIPE || mode == TS_BROWSER_SAVE_PRESET ||
+           mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
 }
 
 static int join_path(const char *directory, const char *name, char *path, size_t path_size)
@@ -186,7 +194,12 @@ int ts_browser_refresh(TsBrowser *browser)
             is_directory = (item.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
             if (!is_directory && !mode_accepts(browser, item.cFileName)) continue;
             entry = &browser->entries[browser->entry_count++];
-            snprintf(entry->name, sizeof(entry->name), "%s", item.cFileName);
+            {
+                size_t length = strlen(item.cFileName);
+                if (length > TS_BROWSER_NAME_MAX) length = TS_BROWSER_NAME_MAX;
+                memcpy(entry->name, item.cFileName, length);
+                entry->name[length] = '\0';
+            }
             entry->is_directory = is_directory;
         } while (browser->entry_count < TS_BROWSER_MAX_ENTRIES && FindNextFileA(search, &item));
         FindClose(search);
@@ -232,6 +245,8 @@ int ts_browser_open(TsBrowser *browser, TsBrowserMode mode, const char *default_
     browser->mode = mode;
     browser->filename_focus = ts_browser_mode_edits_filename(mode);
     browser->dragging_scrollbar = 0;
+    browser->creating_directory = 0;
+    browser->saved_filename[0] = '\0';
     browser->overwrite_armed = 0;
     snprintf(browser->filename, sizeof(browser->filename), "%s",
              default_filename != NULL ? default_filename : "");
@@ -243,7 +258,91 @@ void ts_browser_close(TsBrowser *browser)
 {
     browser->mode = TS_BROWSER_CLOSED;
     browser->dragging_scrollbar = 0;
+    browser->creating_directory = 0;
+    browser->saved_filename[0] = '\0';
     browser->overwrite_armed = 0;
+}
+
+static int valid_directory_name(const char *name)
+{
+    const unsigned char *at = (const unsigned char *)name;
+    size_t length;
+    if (name == NULL || name[0] == '\0' || strcmp(name, ".") == 0 ||
+        strcmp(name, "..") == 0) return 0;
+    length = strlen(name);
+    if (length > TS_BROWSER_NAME_MAX || name[length - 1u] == ' ' ||
+        name[length - 1u] == '.') return 0;
+    while (*at != '\0') {
+        if (*at < 32u || strchr("\\/:*?\"<>|", *at) != NULL) return 0;
+        ++at;
+    }
+    return 1;
+}
+
+int ts_browser_begin_create_directory(TsBrowser *browser)
+{
+    if (browser == NULL || browser->creating_directory ||
+        !ts_browser_mode_allows_create_directory(browser->mode)) return 0;
+    snprintf(browser->saved_filename, sizeof(browser->saved_filename), "%s",
+             browser->filename);
+    browser->filename[0] = '\0';
+    browser->filename_cursor = 0u;
+    browser->filename_focus = 1;
+    browser->creating_directory = 1;
+    browser->overwrite_armed = 0;
+    snprintf(browser->message, sizeof(browser->message),
+             "TYPE A NEW FOLDER NAME, THEN CREATE");
+    return 1;
+}
+
+void ts_browser_cancel_create_directory(TsBrowser *browser)
+{
+    if (browser == NULL || !browser->creating_directory) return;
+    snprintf(browser->filename, sizeof(browser->filename), "%s",
+             browser->saved_filename);
+    browser->filename_cursor = strlen(browser->filename);
+    browser->saved_filename[0] = '\0';
+    browser->creating_directory = 0;
+    browser->filename_focus = 1;
+    browser->overwrite_armed = 0;
+    snprintf(browser->message, sizeof(browser->message), "NEW FOLDER CANCELLED");
+}
+
+int ts_browser_create_directory(TsBrowser *browser)
+{
+    char path[TS_BROWSER_PATH_MAX];
+    char saved[TS_BROWSER_NAME_MAX + 1];
+    if (browser == NULL || !browser->creating_directory) return 0;
+    if (!valid_directory_name(browser->filename)) {
+        snprintf(browser->message, sizeof(browser->message),
+                 "ENTER A VALID FOLDER NAME");
+        return 0;
+    }
+    if (!join_path(browser->directory, browser->filename, path, sizeof(path))) {
+        snprintf(browser->message, sizeof(browser->message),
+                 "NEW FOLDER PATH IS TOO LONG");
+        return 0;
+    }
+    if (ts_browser_path_exists(path)) {
+        snprintf(browser->message, sizeof(browser->message),
+                 "A FILE OR FOLDER ALREADY USES THAT NAME");
+        return 0;
+    }
+    if (ts_browser_mkdir(path) != 0) {
+        snprintf(browser->message, sizeof(browser->message),
+                 "COULD NOT CREATE FOLDER: %.117s", strerror(errno));
+        return 0;
+    }
+    snprintf(saved, sizeof(saved), "%s", browser->saved_filename);
+    snprintf(browser->directory, sizeof(browser->directory), "%s", path);
+    browser->creating_directory = 0;
+    browser->saved_filename[0] = '\0';
+    if (!ts_browser_refresh(browser)) return 0;
+    snprintf(browser->filename, sizeof(browser->filename), "%s", saved);
+    browser->filename_cursor = strlen(browser->filename);
+    browser->filename_focus = 1;
+    snprintf(browser->message, sizeof(browser->message), "FOLDER CREATED - READY TO SAVE");
+    return 1;
 }
 
 void ts_browser_move_selection(TsBrowser *browser, int amount)

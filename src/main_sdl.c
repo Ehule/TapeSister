@@ -9,9 +9,16 @@
 #include "tapesister/ui.h"
 
 #include <SDL2/SDL.h>
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #include "stb_image.h"
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -308,6 +315,7 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
         const TsBankSlot *bank = &instrument->bank[slot];
         state_hash_bytes(&hash, &bank->occupied, sizeof(bank->occupied));
         if (!bank->occupied) continue;
+        state_hash_bytes(&hash, &bank->locked, sizeof(bank->locked));
         state_hash_sample(&hash, &bank->sample);
         state_hash_bytes(&hash, &bank->tuning, sizeof(bank->tuning));
         state_hash_bytes(&hash, &bank->audible_tuning, sizeof(bank->audible_tuning));
@@ -4124,7 +4132,7 @@ static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
     if (!ui->bank_clear_armed) {
         ui->bank_clear_armed = 1;
         snprintf(ui->status, sizeof(ui->status),
-                 "CLICK CLEAR ALL AGAIN - ALL 16 BANK SLOTS WILL BE EMPTIED");
+                 "CLICK CLEAR ALL AGAIN - PROTECTED TILES WILL BE KEPT");
         return;
     }
     if (device) SDL_LockAudioDevice(device);
@@ -4137,7 +4145,7 @@ static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
     ui->bank_view_slot = -1;
     if (ok)
         snprintf(ui->status, sizeof(ui->status),
-                 "CLEARED ALL 16 BANK SLOTS");
+                 "CLEARED ALL UNPROTECTED BANK TILES");
     else
         snprintf(ui->status, sizeof(ui->status),
                  "CLEAR ALL FAILED: %.137s", error);
@@ -4516,7 +4524,8 @@ static int stage_incoming_exchange(TsUiState *ui, TsExchangeOffer *offer,
     return 1;
 }
 
-static void begin_exchange_send(TsUiState *ui, const TsInstrument *instrument)
+static void begin_exchange_send(TsUiState *ui, const TsInstrument *instrument,
+                                const TsSamplePages *pages)
 {
     int count = ts_instrument_bank_count(instrument);
     if (count <= 0) {
@@ -4530,6 +4539,8 @@ static void begin_exchange_send(TsUiState *ui, const TsInstrument *instrument)
     }
     ui->exchange_dialog = TS_UI_EXCHANGE_SEND;
     ui->exchange_item_count = count;
+    ui->sample_page_count = pages != NULL ?
+                            (int)ts_sample_pages_count(pages) : 1;
     ui->exchange_force_new_instance = 0;
     ui->exchange_name[0] = '\0';
     snprintf(ui->status, sizeof(ui->status),
@@ -4587,6 +4598,60 @@ static void send_to_fasttracker(TsUiState *ui, const TsInstrument *instrument,
     ui->exchange_force_new_instance = 0;
 }
 
+static void send_pages_to_fasttracker(TsUiState *ui,
+                                      const TsSamplePages *pages,
+                                      const TsInstrument *active_instrument)
+{
+    const char *directory = exchange_directory(ui);
+    char destination[TS_BROWSER_PATH_MAX];
+    char error[160];
+    int count = 0;
+    if (ui->external_record_bank || pages == NULL || !pages->active_live ||
+        ts_sample_pages_count(pages) < 2u) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "ALL PAGES NEEDS TWO OR MORE SAMPLE PAGES");
+        return;
+    }
+    for (size_t page = 0u; page < ts_sample_pages_count(pages); ++page) {
+        const TsInstrument *instrument = ts_sample_pages_page(
+            pages, active_instrument, page);
+        if (instrument != NULL) count += ts_instrument_bank_count(instrument);
+    }
+    if (!ts_exchange_publish_pages(pages, active_instrument, directory,
+                                   destination, sizeof(destination),
+                                   error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FT2 ALL-PAGES EXPORT FAILED: %.121s", error);
+        return;
+    }
+    if (!ui->exchange_force_new_instance &&
+        ts_exchange_presence_active(directory, "tapehead",
+                                    EXCHANGE_PRESENCE_MAX_AGE_SECONDS)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "SENT %d SAMPLES FROM %zu PAGES - ONE INSTRUMENT PER PAGE",
+                 count, ts_sample_pages_count(pages));
+        ui->exchange_force_new_instance = 0;
+        return;
+    }
+    if (ui->config.fasttracker_path[0] == '\0') {
+        snprintf(ui->status, sizeof(ui->status),
+                 "ALL-PAGES COLLECTION READY %.96s - SET EXECUTABLE TO LAUNCH",
+                 destination);
+        ui->exchange_force_new_instance = 0;
+        return;
+    }
+    if (!launch_program(ui->config.fasttracker_path, error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "COLLECTION READY %.60s  LAUNCH FAILED %.48s", destination, error);
+        ui->exchange_force_new_instance = 0;
+        return;
+    }
+    snprintf(ui->status, sizeof(ui->status),
+             "SENT %d SAMPLES FROM %zu PAGES - FASTTRACKER LAUNCHED",
+             count, ts_sample_pages_count(pages));
+    ui->exchange_force_new_instance = 0;
+}
+
 static int import_incoming_exchange(SDL_AudioDeviceID device, AudioState *audio,
                                     TsUiState *ui, TsInstrument *instrument,
                                     TsExchangeOffer *offer)
@@ -4613,6 +4678,10 @@ static int import_incoming_exchange(SDL_AudioDeviceID device, AudioState *audio,
 
 static void browser_cancel(TsUiState *ui)
 {
+    if (ui->browser.creating_directory) {
+        ts_browser_cancel_create_directory(&ui->browser);
+        return;
+    }
     int returning_to_config = ts_browser_mode_selects_config(ui->browser.mode);
     SDL_StopTextInput();
     ts_browser_close(&ui->browser);
@@ -4733,6 +4802,10 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     char path[TS_BROWSER_PATH_MAX];
     char error[160];
     int ok = 0;
+    if (browser->creating_directory) {
+        (void)ts_browser_create_directory(browser);
+        return;
+    }
     if (ts_browser_mode_selects_config(browser->mode)) {
         TsBrowserMode mode = browser->mode;
         TsConfigField field = browser_config_field(mode);
@@ -5638,7 +5711,7 @@ static void toggle_external_monitor(SDL_AudioDeviceID output_device,
     if (!ensure_external_input_open(input_device, input, &ui->config,
                                     error, sizeof(error))) {
         snprintf(ui->status, sizeof(ui->status),
-                 "MONITOR INPUT FAILED: %.138s", error);
+                 "MONITOR INPUT FAILED: %.136s", error);
         return;
     }
     ts_input_monitor_set_enabled(&input->monitor, 1, input->sample_rate);
@@ -5838,6 +5911,60 @@ static int switch_sample_page(SDL_AudioDeviceID output_device,
     show_overlay(ui, "SAMPLE PAGE", 650u);
     snprintf(ui->status, sizeof(ui->status),
              "SAMPLE %d/%d - PRESS 1 TO CYCLE  SHIFT+1 FOR REC BANK",
+             ui->sample_page + 1, ui->sample_page_count);
+    return 1;
+}
+
+static int append_sample_page(SDL_AudioDeviceID output_device,
+                              ExternalInputState *input,
+                              AudioState *audio, TsUiState *ui,
+                              TsInstrument *instrument,
+                              TsSamplePages *pages,
+                              TransformController *controller)
+{
+    char error[160];
+    size_t page = 0u;
+    if (pages == NULL || !pages->active_live) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "NEW PAGE IS ONLY AVAILABLE IN THE SAMPLE BANK");
+        return 0;
+    }
+    if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
+        audio->capture.state == TS_CAPTURE_RECORDING || external_capture_busy(input)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISH OR CANCEL CAPTURE BEFORE CREATING A PAGE");
+        return 0;
+    }
+    if (controller != NULL && controller->worker != NULL) {
+        SDL_AtomicSet(&controller->worker->cancel, 1);
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANCELING TRANSFORM - CREATE THE PAGE AGAIN WHEN IT STOPS");
+        return 0;
+    }
+    if (controller != NULL) {
+        ++controller->render_generation;
+        controller->rerender_requested = 0;
+        controller->quick_apply = 0;
+        discard_transform_preview(output_device, audio, ui, controller);
+        ui->transform_open = 0;
+        ui->transform_rendering = 0;
+    }
+    stop_all_force(output_device, audio, ui);
+    if (!ts_sample_pages_append_and_switch(pages, instrument, &page,
+                                           error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "NEW SAMPLE PAGE FAILED: %.123s", error);
+        return 0;
+    }
+    ui->sample_page = (int)page;
+    ui->sample_page_count = (int)ts_sample_pages_count(pages);
+    ui->bank_view_slot = -1;
+    ui->audition_source = TS_AUDITION_CURRENT;
+    ui->capture_destination_slot = -1;
+    ui->capture_source_slot = -1;
+    show_overlay(ui, "NEW SAMPLE PAGE", 750u);
+    snprintf(ui->status, sizeof(ui->status),
+             "CREATED SAMPLE %d/%d - TILE 01 IS EMPTY",
              ui->sample_page + 1, ui->sample_page_count);
     return 1;
 }
@@ -6452,6 +6579,10 @@ int main(int argc, char **argv)
                             send_to_fasttracker(
                                 &ui, &instrument,
                                 TS_EXCHANGE_LAYOUT_SEPARATE_INSTRUMENTS);
+                        } else if (key == SDLK_a || key == SDLK_3) {
+                            ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
+                            send_pages_to_fasttracker(
+                                &ui, &sample_pages, &instrument);
                         } else if (key == SDLK_i || key == SDLK_c) {
                             ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
                             (void)stage_incoming_exchange(
@@ -6588,6 +6719,9 @@ int main(int argc, char **argv)
                     }
                 } else if (ui.browser.mode != TS_BROWSER_CLOSED) {
                     if (key == SDLK_ESCAPE) browser_cancel(&ui);
+                    else if ((mod & KMOD_CTRL) && key == SDLK_n &&
+                             ts_browser_mode_allows_create_directory(ui.browser.mode))
+                        (void)ts_browser_begin_create_directory(&ui.browser);
                     else if (ui.browser.filename_focus && key == SDLK_LEFT)
                         ts_browser_move_filename_cursor(&ui.browser, -1);
                     else if (ui.browser.filename_focus && key == SDLK_RIGHT)
@@ -7634,6 +7768,11 @@ int main(int argc, char **argv)
                         send_to_fasttracker(
                             &ui, &instrument,
                             TS_EXCHANGE_LAYOUT_SEPARATE_INSTRUMENTS);
+                    } else if (action ==
+                               TS_UI_EXCHANGE_ACTION_SEND_ALL_PAGES) {
+                        ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
+                        send_pages_to_fasttracker(
+                            &ui, &sample_pages, &instrument);
                     } else if (action == TS_UI_EXCHANGE_ACTION_CHECK_INBOX) {
                         ui.exchange_dialog = TS_UI_EXCHANGE_NONE;
                         (void)stage_incoming_exchange(
@@ -7785,18 +7924,23 @@ int main(int argc, char **argv)
                         SDL_StartTextInput();
                     } else if (x >= 58 && x < 130 && y >= 326 && y < 349) {
                         ts_browser_parent(&ui.browser);
-                    } else if (x >= 135 && x < 255 && y >= 326 && y < 349) {
+                    } else if (x >= 135 && x < 219 && y >= 326 && y < 349 &&
+                               ts_browser_mode_allows_create_directory(ui.browser.mode)) {
+                        if (ui.browser.creating_directory)
+                            ts_browser_cancel_create_directory(&ui.browser);
+                        else (void)ts_browser_begin_create_directory(&ui.browser);
+                    } else if (x >= 224 && x < 344 && y >= 326 && y < 349) {
                         browser_action(device, &audio, &ui, &instrument,
                                        &pending_selection_load,
                                        &sample_pages, parked_instrument,
                                        record_bank_active);
-                    } else if (x >= 260 && x < 344 && y >= 326 && y < 349) {
+                    } else if (x >= 349 && x < 433 && y >= 326 && y < 349) {
                         browser_cancel(&ui);
                     }
                 } else if (y >= 4 && y < 28 && x >= 350 && x < 426) {
                     begin_config(&ui);
                 } else if (y >= 4 && y < 28 && x >= 431 && x < 511) {
-                    begin_exchange_send(&ui, &instrument);
+                    begin_exchange_send(&ui, &instrument, &sample_pages);
                 } else if (y >= 4 && y < 28 && x >= 516 && x < 568) {
                     browser_open(&ui, ui.show_ingredients ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
@@ -8196,6 +8340,10 @@ int main(int argc, char **argv)
                     int capture_control = !ui.show_keyboard && !ui.show_recipes &&
                                           !ui.show_ingredients &&
                                           ts_ui_capture_button_from_point(x, y);
+                    int new_page_control = !record_bank_active &&
+                                           !ui.show_keyboard && !ui.show_recipes &&
+                                           !ui.show_ingredients &&
+                                           ts_ui_new_page_button_from_point(x, y);
                     int keep_control = record_bank_active &&
                                        !ui.show_keyboard && !ui.show_recipes &&
                                        !ui.show_ingredients &&
@@ -8248,6 +8396,10 @@ int main(int argc, char **argv)
                     } else if (monitor_control) {
                         toggle_external_monitor(device, &input_device, &audio,
                                                 &external_input, &ui);
+                    } else if (new_page_control) {
+                        (void)append_sample_page(device, &external_input,
+                                                 &audio, &ui, &instrument,
+                                                 &sample_pages, &transform);
                     } else if (capture_control) {
                         if (record_bank_active)
                             external_capture_button(device, &input_device, &audio,
@@ -8394,6 +8546,19 @@ int main(int argc, char **argv)
                                               action);
                         } else if (action == TS_UI_BANK_ACTION_CLONE) {
                             clone_bank_slot(device, &audio, &ui, &instrument, bank_slot);
+                        } else if (action == TS_UI_BANK_ACTION_TOGGLE_LOCK) {
+                            char lock_error[160];
+                            int ok = ts_ui_execute_bank_action(
+                                &instrument, bank_slot, action,
+                                lock_error, sizeof(lock_error));
+                            if (ok)
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "TILE %02d %s - CTRL+ALT CLICK TO TOGGLE",
+                                         bank_slot + 1,
+                                         instrument.bank[bank_slot].locked ?
+                                         "PROTECTED" : "UNLOCKED");
+                            else snprintf(ui.status, sizeof(ui.status),
+                                          "TILE LOCK FAILED: %.132s", lock_error);
                         } else {
                             snprintf(ui.status, sizeof(ui.status),
                                      "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL");

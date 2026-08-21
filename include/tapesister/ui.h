@@ -91,6 +91,7 @@ typedef enum {
     TS_UI_BANK_ACTION_CLONE,
     TS_UI_BANK_ACTION_RENAME,
     TS_UI_BANK_ACTION_CLEAR,
+    TS_UI_BANK_ACTION_TOGGLE_LOCK,
     TS_UI_BANK_ACTION_INVALID
 } TsUiBankAction;
 
@@ -129,6 +130,7 @@ typedef enum {
     TS_UI_EXCHANGE_ACTION_NONE = 0,
     TS_UI_EXCHANGE_ACTION_SEND_ONE_INSTRUMENT,
     TS_UI_EXCHANGE_ACTION_SEND_SEPARATE_INSTRUMENTS,
+    TS_UI_EXCHANGE_ACTION_SEND_ALL_PAGES,
     TS_UI_EXCHANGE_ACTION_CHECK_INBOX,
     TS_UI_EXCHANGE_ACTION_TOGGLE_NEW_INSTANCE,
     TS_UI_EXCHANGE_ACTION_IMPORT,
@@ -445,6 +447,7 @@ int ts_ui_transform_waveform_contains(int x, int y);
 TsUiWaveAction ts_ui_wave_action_from_point(int x, int y);
 TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y);
 int ts_ui_capture_button_from_point(int x, int y);
+int ts_ui_new_page_button_from_point(int x, int y);
 int ts_ui_record_keep_button_from_point(int x, int y);
 int ts_ui_monitor_button_from_point(int x, int y);
 int ts_ui_record_source_button_from_point(int x, int y);

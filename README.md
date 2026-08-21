@@ -211,8 +211,10 @@ Selected-tile and Collection WAV exports write the standard `smpl` unity-note/pi
 Fresh launches also use two boolean startup settings (both default to `1` when absent): `startup_welcome_sample` installs `assets/tapesister_welcome.wav` as the ordinary imported working sound in bank 01, and `startup_welcome_autoplay` auditions it once after the splash closes. Set autoplay to `0` to keep the waveform without the greeting, or sample to `0` to start with an empty selected bank 01. Command-line WAV/TSR loading takes precedence and is never overwritten by the welcome artifact. See `tapesister.ini.example`.
 
 **FT2 Link** is the bidirectional handoff control. For sending, choose whether every
-occupied TapeSister tile should become sample slots inside **One Instrument** or become
-**Separate Instruments** in Tapehead. TapeSister atomically publishes a new numbered
+occupied tile on the current page should become sample slots inside **Page -> One** or
+become **Page -> Split** instruments in Tapehead. When two or more Sample pages exist,
+**All Pages** maps each page to one Tapehead instrument and preserves each tile number
+as that instrument's sample number. TapeSister atomically publishes a new numbered
 folder containing the WAVs and a versioned `exchange.tsexchange` manifest under the
 exchange path (falling back to the sample path), then launches the configured
 FastTracker executable without shell interpolation. No existing handoff folder is
@@ -263,7 +265,12 @@ All 16 slots are peers. A newly created or imported sound fills the currently se
 - Ctrl-click an empty slot to capture the snapped Selection; or
 - Ctrl+Shift-click an empty slot to Clone the active tile's complete editable state and history.
 
-Click an occupied slot to select its independent editable state and audition it; its saved selection is immediately active in the waveform. Click an empty slot to select that exact CREATE/LOAD destination without auditioning, or double-click it to activate silence for editing and paste. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. Right-click any occupied slot to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click and empties all 16 peer slots.
+Ctrl+Alt-click an occupied slot to protect or unprotect it. Protected tiles retain full
+audition, keyboard, rename, Save, and Export behavior, but reject replacement, Clear,
+Clear All, non-Chain Vary, FM Apply/Create, WAV load, performance capture, and whole-bank
+Tapehead import until explicitly unlocked. A bright `L` rail marks protected tiles.
+
+Click an occupied slot to select its independent editable state and audition it; its saved selection is immediately active in the waveform. Click an empty slot to select that exact CREATE/LOAD destination without auditioning, or double-click it to activate silence for editing and paste. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. Right-click any occupied slot to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click and empties every unlocked peer slot while protected tiles remain intact. **+ Page** creates and switches to a deliberately empty Sample page; key `1` continues to cycle existing pages.
 
 The **Variation** page exposes one continuous Range and the **Chain** switch. Vary requires a selected FM tile. Without a waveform selection, Chain off replaces the active tile and Chain on writes to the next empty tile, selects it, and continues from that result. With a selection, Chain off repeatedly stamps that range. Chain on instead behaves like an unrolling strip of paper: each Vary stamps the current range, crossfades its edges, moves the unchanged-width selection right by `width - overlap`, and extends the canvas with silence when the next destination reaches EOF. Each click is one tile-local Undo step containing the stamp, any extension, and the ready-next selection. A full bank blocks only the no-selection tile-chain path; selection chains stay inside their current tile.
 
@@ -403,12 +410,13 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - mouse wheel, draggable scrollbar, Up/Down, Page Up/Down, Home/End, and row clicking navigate long directories;
 - double-click or Enter opens a directory, WAV, TSR project, or TSP recipe;
 - Save and Export remember the current directory, provide filename entry with a focus-aware blinking caret, support Left/Right/Home/End navigation plus insertion, Backspace, and Delete at the caret, and append the proper extension;
+- **New Dir** temporarily turns the filename field into a validated folder-name field, creates and enters the folder, then restores the pending Save/Export filename; Escape or **Back** cancels only folder creation;
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR24 stores every occupied tile as a complete independent object, including the full FM genome and its Drone/Extreme modes: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, persistent native-shelf selection scope, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR23 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR25 stores every occupied tile as a complete independent object, including its persistent protection flag and the full FM genome and Drone/Extreme modes: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, persistent native-shelf selection scope, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR24 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
-The chosen `.tsr` remains an ordinary first-page TSR24.
+The chosen `.tsr` remains an ordinary first-page TSR25.
 Additional pages, the REC BANK, and a tiny manifest live beside it in
 `<project>.tsr.samples/`. Move, copy, or back up the `.tsr` and that companion folder
 together. A legacy project with no companion folder opens as one Sample page with an

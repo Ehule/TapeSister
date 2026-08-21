@@ -156,7 +156,7 @@ static int ts_audio_main_config_save(const TsConfig *config, const char *path,
     if (output_changed) {
         if (ts_switch_output_for_config(switch_error, sizeof(switch_error))) {
             snprintf(ts_pending_notice, sizeof(ts_pending_notice),
-                     "CONFIG SAVED - OUTPUT %s",
+                     "CONFIG SAVED - OUTPUT %.136s",
                      config->audio_output_device[0] != '\0' ?
                      config->audio_output_device : "SYSTEM DEFAULT");
         } else {
