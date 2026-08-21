@@ -46,6 +46,10 @@ const char *ts_palette_color_key(TsPaletteColor color);
 const char *ts_palette_color_name(TsPaletteColor color);
 int ts_palette_load(TsPalette *palette, const char *path,
                     char *error, size_t error_size);
+int ts_palette_load_first(TsPalette *palette,
+                          const char *const *paths, size_t path_count,
+                          char *loaded_path, size_t loaded_path_size,
+                          char *error, size_t error_size);
 int ts_palette_save(const TsPalette *palette, const char *path,
                     char *error, size_t error_size);
 /* Kept for source compatibility. Universal saves now retain both apps' keys. */

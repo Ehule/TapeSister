@@ -189,6 +189,34 @@ int main(void)
                                  "TrackLengthPlayhead=#112233"));
         CHECK(file_contains_text("test-palette.pal",
                                  "FastTracksLengthPlayhead=#445566"));
+        {
+            static const char *const paths[] = {
+                "missing-shared-palette.pal", "test-palette.pal",
+                "missing-legacy-tapehead.pal"
+            };
+            char loaded_path[80];
+            ts_palette_default(&reopened);
+            CHECK(ts_palette_load_first(&reopened, paths,
+                                         sizeof(paths) / sizeof(paths[0]),
+                                         loaded_path, sizeof(loaded_path),
+                                         error, sizeof(error)));
+            CHECK(strcmp(loaded_path, "test-palette.pal") == 0);
+            CHECK(reopened.colors[TS_PALETTE_PATTERN_TEXT] ==
+                  palette.colors[TS_PALETTE_PATTERN_TEXT]);
+        }
+        {
+            static const char *const missing_paths[] = {
+                "missing-canonical-palette.pal", "missing-tapehead.pal"
+            };
+            char loaded_path[80] = "not empty";
+            CHECK(!ts_palette_load_first(
+                       &reopened, missing_paths,
+                       sizeof(missing_paths) / sizeof(missing_paths[0]),
+                       loaded_path, sizeof(loaded_path), error, sizeof(error)));
+            CHECK(loaded_path[0] == '\0');
+            CHECK(strstr(error, "missing-canonical-palette.pal") != NULL);
+            CHECK(strstr(error, "missing-tapehead.pal") == NULL);
+        }
         ts_palette_default(&reopened);
         CHECK(ts_palette_load(&reopened, "test-palette.pal", error, sizeof(error)));
         CHECK(memcmp(&palette, &reopened, sizeof(palette)) == 0);

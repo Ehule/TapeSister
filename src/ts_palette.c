@@ -230,6 +230,41 @@ malformed:
     return 0;
 }
 
+int ts_palette_load_first(TsPalette *palette,
+                          const char *const *paths, size_t path_count,
+                          char *loaded_path, size_t loaded_path_size,
+                          char *error, size_t error_size)
+{
+    char attempt_error[256];
+    char first_error[256] = "No palette paths were available";
+    int attempted = 0;
+    if (loaded_path != NULL && loaded_path_size > 0u) loaded_path[0] = '\0';
+    if (palette == NULL || paths == NULL || path_count == 0u) {
+        set_error(error, error_size, "Invalid palette path list");
+        return 0;
+    }
+    for (size_t candidate = 0; candidate < path_count; ++candidate) {
+        int duplicate = 0;
+        if (paths[candidate] == NULL || paths[candidate][0] == '\0') continue;
+        for (size_t earlier = 0; earlier < candidate && !duplicate; ++earlier)
+            duplicate = paths[earlier] != NULL &&
+                        strcmp(paths[earlier], paths[candidate]) == 0;
+        if (duplicate) continue;
+        if (ts_palette_load(palette, paths[candidate], attempt_error,
+                            sizeof(attempt_error))) {
+            if (loaded_path != NULL && loaded_path_size > 0u)
+                snprintf(loaded_path, loaded_path_size, "%s", paths[candidate]);
+            set_error(error, error_size, "");
+            return 1;
+        }
+        if (!attempted)
+            snprintf(first_error, sizeof(first_error), "%s", attempt_error);
+        attempted = 1;
+    }
+    set_error(error, error_size, first_error);
+    return 0;
+}
+
 static int save_palette(const TsPalette *palette, const char *path,
                         char *error, size_t error_size)
 {

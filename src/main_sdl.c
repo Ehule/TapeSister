@@ -205,19 +205,109 @@ static void pace_frame_60hz(Uint64 started)
     }
 }
 
-static const char *config_file_path(void)
+enum { TS_RUNTIME_PATH_MAX = TS_CONFIG_PATH_MAX + 32 };
+
+static char runtime_config_path[TS_RUNTIME_PATH_MAX] = "tapesister.ini";
+static char runtime_executable_directory[TS_CONFIG_PATH_MAX];
+
+static int runtime_path_parent(const char *path, char *parent, size_t parent_size)
 {
-    const char *override = getenv("TAPESISTER_CONFIG");
-    return override != NULL && override[0] != '\0' ? override : "tapesister.ini";
+    char *slash;
+    char *backslash;
+    int written;
+    if (path == NULL || path[0] == '\0' || parent == NULL || parent_size == 0u)
+        return 0;
+    written = snprintf(parent, parent_size, "%s", path);
+    if (written < 0 || (size_t)written >= parent_size) return 0;
+    slash = strrchr(parent, '/');
+    backslash = strrchr(parent, '\\');
+    if (backslash != NULL && (slash == NULL || backslash > slash)) slash = backslash;
+    if (slash == NULL) return 0;
+    if (slash == parent) slash[1] = '\0';
+    else if (slash == parent + 2 && parent[1] == ':') slash[1] = '\0';
+    else *slash = '\0';
+    return 1;
 }
 
-enum { TS_SHARED_PALETTE_PATH_MAX = TS_CONFIG_PATH_MAX + 32 };
+static int runtime_join_path(char *path, size_t path_size,
+                             const char *directory, const char *filename)
+{
+    const char *separator;
+    int written;
+    if (path == NULL || path_size == 0u || directory == NULL ||
+        directory[0] == '\0' || filename == NULL || filename[0] == '\0') return 0;
+    separator = directory[strlen(directory) - 1u] == '/' ||
+                directory[strlen(directory) - 1u] == '\\' ? "" : "/";
+    written = snprintf(path, path_size, "%s%s%s", directory, separator, filename);
+    return written >= 0 && (size_t)written < path_size;
+}
+
+static int runtime_regular_file(const char *path)
+{
+#ifdef _WIN32
+    struct _stat info;
+    return path != NULL && path[0] != '\0' && _stat(path, &info) == 0 &&
+           (info.st_mode & _S_IFREG) != 0;
+#else
+    struct stat info;
+    return path != NULL && path[0] != '\0' && stat(path, &info) == 0 &&
+           S_ISREG(info.st_mode);
+#endif
+}
+
+static void initialize_runtime_paths(const char *argv0)
+{
+    const char *override = getenv("TAPESISTER_CONFIG");
+    char executable[TS_RUNTIME_PATH_MAX];
+    char candidate[TS_RUNTIME_PATH_MAX];
+    char parent[TS_RUNTIME_PATH_MAX];
+    runtime_executable_directory[0] = '\0';
+    if (override != NULL && override[0] != '\0') {
+        snprintf(runtime_config_path, sizeof(runtime_config_path), "%s", override);
+        return;
+    }
+#ifdef _WIN32
+    {
+        DWORD length = GetModuleFileNameA(NULL, executable,
+                                          (DWORD)sizeof(executable));
+        (void)argv0;
+        if (length == 0u || length >= (DWORD)sizeof(executable)) executable[0] = '\0';
+        else executable[length] = '\0';
+    }
+#else
+    if (argv0 == NULL || argv0[0] == '\0' ||
+        snprintf(executable, sizeof(executable), "%s", argv0) < 0 ||
+        strlen(argv0) >= sizeof(executable)) executable[0] = '\0';
+#endif
+    if (executable[0] != '\0')
+        (void)runtime_path_parent(executable, runtime_executable_directory,
+                                  sizeof(runtime_executable_directory));
+    if (runtime_regular_file(runtime_config_path)) return;
+    if (runtime_executable_directory[0] != '\0' &&
+        runtime_join_path(candidate, sizeof(candidate),
+                          runtime_executable_directory, "tapesister.ini") &&
+        runtime_regular_file(candidate)) {
+        snprintf(runtime_config_path, sizeof(runtime_config_path), "%s", candidate);
+        return;
+    }
+    if (runtime_executable_directory[0] != '\0' &&
+        runtime_path_parent(runtime_executable_directory, parent, sizeof(parent)) &&
+        runtime_join_path(candidate, sizeof(candidate), parent, "tapesister.ini") &&
+        runtime_regular_file(candidate))
+        snprintf(runtime_config_path, sizeof(runtime_config_path), "%s", candidate);
+}
+
+static const char *config_file_path(void)
+{
+    return runtime_config_path;
+}
+
+enum { TS_SHARED_PALETTE_PATH_MAX = TS_RUNTIME_PATH_MAX };
 
 static int shared_palette_path(const TsUiState *ui, char *path, size_t path_size)
 {
     const char *override = getenv("TAPESISTER_PALETTE");
     const char *directory;
-    const char *separator;
     int written;
     if (path == NULL || path_size == 0u) return 0;
     if (override != NULL && override[0] != '\0') {
@@ -226,44 +316,58 @@ static int shared_palette_path(const TsUiState *ui, char *path, size_t path_size
     }
     directory = ui != NULL ? ui->config.exchange_path : NULL;
     if (directory == NULL || directory[0] == '\0') {
+        char config_directory[TS_RUNTIME_PATH_MAX];
+        if (runtime_path_parent(config_file_path(), config_directory,
+                                sizeof(config_directory)) &&
+            runtime_join_path(path, path_size, config_directory, "palette.pal"))
+            return 1;
         written = snprintf(path, path_size, "palette.pal");
         return written >= 0 && (size_t)written < path_size;
     }
-    separator = directory[strlen(directory) - 1u] == '/' ||
-                directory[strlen(directory) - 1u] == '\\' ? "" : "/";
-    written = snprintf(path, path_size, "%s%spalette.pal", directory, separator);
-    return written >= 0 && (size_t)written < path_size;
+    return runtime_join_path(path, path_size, directory, "palette.pal");
 }
 
 static int load_user_palette(const TsUiState *ui, TsPalette *palette,
                              char *loaded_path, size_t loaded_path_size,
                              char *error, size_t error_size)
 {
-    static const char *const legacy_paths[] = {
-        "tapesister.pal", "tapehead.pal"
-    };
     char canonical[TS_SHARED_PALETTE_PATH_MAX];
+    char config_directory[TS_RUNTIME_PATH_MAX];
+    char config_palette[TS_RUNTIME_PATH_MAX];
+    char executable_palette[TS_RUNTIME_PATH_MAX];
+    char config_tapesister[TS_RUNTIME_PATH_MAX];
+    char config_tapehead[TS_RUNTIME_PATH_MAX];
+    const char *candidates[8];
+    size_t candidate_count = 0u;
     if (loaded_path != NULL && loaded_path_size > 0u) loaded_path[0] = '\0';
     if (!shared_palette_path(ui, canonical, sizeof(canonical))) {
         if (error != NULL && error_size > 0u)
             snprintf(error, error_size, "Shared palette path is too long");
         return 0;
     }
-    if (ts_palette_load(palette, canonical, error, error_size)) {
-        if (loaded_path != NULL && loaded_path_size > 0u)
-            snprintf(loaded_path, loaded_path_size, "%s", canonical);
-        return 1;
+    candidates[candidate_count++] = canonical;
+    candidates[candidate_count++] = "palette.pal";
+    if (runtime_path_parent(config_file_path(), config_directory,
+                            sizeof(config_directory))) {
+        if (runtime_join_path(config_palette, sizeof(config_palette),
+                              config_directory, "palette.pal"))
+            candidates[candidate_count++] = config_palette;
+        if (runtime_join_path(config_tapesister, sizeof(config_tapesister),
+                              config_directory, "tapesister.pal"))
+            candidates[candidate_count++] = config_tapesister;
+        if (runtime_join_path(config_tapehead, sizeof(config_tapehead),
+                              config_directory, "tapehead.pal"))
+            candidates[candidate_count++] = config_tapehead;
     }
-    for (size_t candidate = 0;
-         candidate < sizeof(legacy_paths) / sizeof(legacy_paths[0]); ++candidate) {
-        if (strcmp(canonical, legacy_paths[candidate]) == 0) continue;
-        if (ts_palette_load(palette, legacy_paths[candidate], error, error_size)) {
-            if (loaded_path != NULL && loaded_path_size > 0u)
-                snprintf(loaded_path, loaded_path_size, "%s", legacy_paths[candidate]);
-            return 1;
-        }
-    }
-    return 0;
+    if (runtime_executable_directory[0] != '\0' &&
+        runtime_join_path(executable_palette, sizeof(executable_palette),
+                          runtime_executable_directory, "palette.pal"))
+        candidates[candidate_count++] = executable_palette;
+    candidates[candidate_count++] = "tapesister.pal";
+    candidates[candidate_count++] = "tapehead.pal";
+    return ts_palette_load_first(palette, candidates, candidate_count,
+                                 loaded_path, loaded_path_size,
+                                 error, error_size);
 }
 
 static const char *capture_archive_directory(void)
@@ -6766,6 +6870,7 @@ int main(int argc, char **argv)
     int renderer_vsync = 0;
     int running = 1;
 
+    initialize_runtime_paths(argc > 0 ? argv[0] : NULL);
     diagnostic_log("entered main: TsInstrument=%zu framebuffer=%zu UI=%zu stress=%d",
                    sizeof(TsInstrument), sizeof(TsFramebuffer), sizeof(TsUiState),
                    diagnostic_bank_stress);
