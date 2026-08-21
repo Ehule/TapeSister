@@ -226,6 +226,13 @@ typedef struct {
 } TsProcessRecipe;
 
 typedef enum {
+    TS_MATERIAL_MACRO_BODY = 0,
+    TS_MATERIAL_MACRO_EDGE,
+    TS_MATERIAL_MACRO_DRIFT,
+    TS_MATERIAL_MACRO_COUNT
+} TsMaterialMacro;
+
+typedef enum {
     TS_SAMPLE_EDIT_REVERSE = 0,
     TS_SAMPLE_EDIT_NORMALIZE,
     TS_SAMPLE_EDIT_GAIN,
@@ -479,6 +486,19 @@ typedef struct {
     int active;
 } TsAmplitudeGesture;
 
+typedef struct {
+    TsEditSnapshot start;
+    TsSample original;
+    TsSample material;
+    TsSample preview_material;
+    const float *owner_parent_data;
+    uint32_t owner_generation;
+    int owner_slot;
+    TsMaterialMacro macro;
+    float amount;
+    int active;
+} TsMaterialMacroGesture;
+
 void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
 void ts_sample_touch(TsSample *sample);
@@ -635,6 +655,22 @@ int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind k
                                     float amount, char *error, size_t error_size);
 int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
                                        size_t crossing_count,
+                                       char *error, size_t error_size);
+void ts_material_macro_gesture_init(TsMaterialMacroGesture *gesture);
+int ts_instrument_material_macro_gesture_begin(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    TsMaterialMacro macro, char *error, size_t error_size);
+int ts_instrument_material_macro_gesture_preview(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    float amount, char *error, size_t error_size);
+int ts_instrument_material_macro_gesture_commit(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    char *error, size_t error_size);
+int ts_instrument_material_macro_gesture_cancel(
+    TsInstrument *instrument, TsMaterialMacroGesture *gesture,
+    char *error, size_t error_size);
+int ts_instrument_apply_material_macro(TsInstrument *instrument,
+                                       TsMaterialMacro macro, float amount,
                                        char *error, size_t error_size);
 int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
                              char *error, size_t error_size);

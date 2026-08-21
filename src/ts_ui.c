@@ -117,6 +117,20 @@ enum {
     TS_CANVAS_HANDLE_H = 36
 };
 
+enum {
+    TS_TUNE_MATERIAL_SEMI_DOWN_X = 10,
+    TS_TUNE_MATERIAL_SEMI_UP_X = 66,
+    TS_TUNE_MATERIAL_CENT_DOWN_X = 122,
+    TS_TUNE_MATERIAL_CENT_UP_X = 168,
+    TS_TUNE_REFERENCE_DOWN_X = 214,
+    TS_TUNE_REFERENCE_NOTE_X = 252,
+    TS_TUNE_REFERENCE_UP_X = 320,
+    TS_TUNE_REFERENCE_FINE_X = 358,
+    TS_TUNE_REFERENCE_TONE_X = 438,
+    TS_TUNE_REFERENCE_VOLUME_X = 514,
+    TS_TUNE_DETECT_X = 572
+};
+
 static void clear(TsFramebuffer *fb, uint32_t color)
 {
     for (int i = 0; i < TS_UI_WIDTH * TS_UI_HEIGHT; ++i) fb->pixels[i] = color;
@@ -1073,6 +1087,7 @@ void ts_ui_init(TsUiState *ui)
     ts_stretch_gesture_init(&ui->stretch_gesture);
     ts_canvas_gesture_init(&ui->canvas_gesture);
     ts_amplitude_gesture_init(&ui->amplitude_gesture);
+    ts_material_macro_gesture_init(&ui->material_macro_gesture);
     ui->amplitude_profile_first_x = TS_WAVE_W;
     ui->amplitude_profile_last_x = -1;
     ui->mouse_note = -1;
@@ -1319,6 +1334,44 @@ int ts_ui_amplitude_draw_toggle_contains(int x, int y)
            y >= TS_WAVE_Y + 4 && y < TS_WAVE_Y + 21;
 }
 
+int ts_ui_amplitude_draw_start_contains(int x, int y)
+{
+    return x >= TS_WAVE_X - 6 && x < TS_WAVE_X + TS_WAVE_W + 6 &&
+           y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H;
+}
+
+int ts_ui_amplitude_draw_local_x(int x)
+{
+    if (x <= TS_WAVE_X + 3) return 0;
+    if (x >= TS_WAVE_X + TS_WAVE_W - 4) return TS_WAVE_W - 1;
+    x -= TS_WAVE_X;
+    if (x < 0) return 0;
+    if (x >= TS_WAVE_W) return TS_WAVE_W - 1;
+    return x;
+}
+
+TsUiTuneAction ts_ui_tune_action_from_point(int x, int y)
+{
+    if (y < 261 || y >= 285) return TS_UI_TUNE_ACTION_NONE;
+    if (x >= TS_TUNE_MATERIAL_SEMI_DOWN_X && x < 62)
+        return TS_UI_TUNE_ACTION_MATERIAL_SEMITONE_DOWN;
+    if (x >= TS_TUNE_MATERIAL_SEMI_UP_X && x < 118)
+        return TS_UI_TUNE_ACTION_MATERIAL_SEMITONE_UP;
+    if (x >= TS_TUNE_MATERIAL_CENT_DOWN_X && x < 164)
+        return TS_UI_TUNE_ACTION_MATERIAL_CENT_DOWN;
+    if (x >= TS_TUNE_MATERIAL_CENT_UP_X && x < 210)
+        return TS_UI_TUNE_ACTION_MATERIAL_CENT_UP;
+    if (x >= TS_TUNE_REFERENCE_DOWN_X && x < 248)
+        return TS_UI_TUNE_ACTION_REFERENCE_DOWN;
+    if (x >= TS_TUNE_REFERENCE_UP_X && x < 354)
+        return TS_UI_TUNE_ACTION_REFERENCE_UP;
+    if (x >= TS_TUNE_REFERENCE_TONE_X && x < 510)
+        return TS_UI_TUNE_ACTION_REFERENCE_TONE;
+    if (x >= TS_TUNE_DETECT_X && x < 630)
+        return TS_UI_TUNE_ACTION_DETECT_OR_MATCH;
+    return TS_UI_TUNE_ACTION_NONE;
+}
+
 int ts_ui_fm_button_from_point(int x, int y)
 {
     return x >= 506 && x < 630 && y >= 261 && y < 285;
@@ -1489,8 +1542,9 @@ TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y)
     if (ui == NULL) return TS_UI_SLIDER_NONE;
     switch (ui->fx_page) {
     case TS_FX_TUNE:
-        if (point_in_slider(x, y, 180, 261, 112)) return TS_UI_SLIDER_TUNE_FINE;
-        if (point_in_slider(x, y, 386, 261, 80))
+        if (point_in_slider(x, y, TS_TUNE_REFERENCE_FINE_X, 261, 76))
+            return TS_UI_SLIDER_TUNE_FINE;
+        if (point_in_slider(x, y, TS_TUNE_REFERENCE_VOLUME_X, 261, 54))
             return TS_UI_SLIDER_TUNE_REFERENCE_VOLUME;
         break;
     case TS_FX_NOISE:
@@ -2236,9 +2290,18 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
            ui->workbench_loop_active);
     button(fb, 330, 205, 72, "DRONE", ui->drone_open);
 
-    slider(fb, 10, 233, 72, "BODY", instrument->process.body, PAL_INSTRUMENT);
-    slider(fb, 88, 233, 72, "EDGE", instrument->process.edge, PAL_VOLUME);
-    slider(fb, 166, 233, 72, "DRIFT", instrument->process.drift, PAL_TUNING);
+    slider(fb, 10, 233, 72, "BODY",
+           ui->material_macro_gesture.active &&
+           ui->material_macro_gesture.macro == TS_MATERIAL_MACRO_BODY ?
+           ui->material_macro_amount : 0.5f, PAL_INSTRUMENT);
+    slider(fb, 88, 233, 72, "EDGE",
+           ui->material_macro_gesture.active &&
+           ui->material_macro_gesture.macro == TS_MATERIAL_MACRO_EDGE ?
+           ui->material_macro_amount : 0.0f, PAL_VOLUME);
+    slider(fb, 166, 233, 72, "DRIFT",
+           ui->material_macro_gesture.active &&
+           ui->material_macro_gesture.macro == TS_MATERIAL_MACRO_DRIFT ?
+           ui->material_macro_amount : 0.0f, PAL_TUNING);
     slider(fb, 244, 233, 86, "WARP", ui->warp_amount, PAL_MOUSE);
     slider(fb, 505, 205, 125, "SMEAR", ui->smear_amount, PAL_MOUSE);
     slider(fb, 407, 205, 93, "TEAR", ui->tear_amount, PAL_EFFECT);
@@ -2269,23 +2332,28 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char fine[32];
         snprintf(root, sizeof(root), "REF %s",
                  ts_midi_note_name(display_tuning->root_note, note, sizeof(note)));
-        snprintf(fine, sizeof(fine), "TRIM %+.1F C",
+        snprintf(fine, sizeof(fine), "R %+.0F C",
                  display_tuning->fine_tune_cents);
         snprintf(frequency, sizeof(frequency), "%.2F HZ",
                  ts_tuning_frequency(display_tuning));
-        char reference_volume[24];
-        snprintf(reference_volume, sizeof(reference_volume), "REF VOL %d",
+        char reference_volume[16];
+        snprintf(reference_volume, sizeof(reference_volume), "V%d",
                  ui->config.reference_tone_volume);
-        button(fb, 10, 261, 40, "DOWN", 0);
-        button(fb, 54, 261, 76, root, 1);
-        button(fb, 134, 261, 40, "UP", 0);
-        slider(fb, 180, 261, 112, fine,
+        button(fb, TS_TUNE_MATERIAL_SEMI_DOWN_X, 261, 52, "MAT -ST", 0);
+        button(fb, TS_TUNE_MATERIAL_SEMI_UP_X, 261, 52, "MAT +ST", 0);
+        button(fb, TS_TUNE_MATERIAL_CENT_DOWN_X, 261, 42, "-1 C", 0);
+        button(fb, TS_TUNE_MATERIAL_CENT_UP_X, 261, 42, "+1 C", 0);
+        button(fb, TS_TUNE_REFERENCE_DOWN_X, 261, 34, "R-", 0);
+        button(fb, TS_TUNE_REFERENCE_NOTE_X, 261, 64, root, 1);
+        button(fb, TS_TUNE_REFERENCE_UP_X, 261, 34, "R+", 0);
+        slider(fb, TS_TUNE_REFERENCE_FINE_X, 261, 76, fine,
                (display_tuning->fine_tune_cents + 100.0f) / 200.0f, PAL_TUNING);
-        button(fb, 298, 261, 82, frequency, ui->tune_reference_active);
-        slider(fb, 386, 261, 80, reference_volume,
+        button(fb, TS_TUNE_REFERENCE_TONE_X, 261, 72, frequency,
+               ui->tune_reference_active);
+        slider(fb, TS_TUNE_REFERENCE_VOLUME_X, 261, 54, reference_volume,
                (float)ui->config.reference_tone_volume / 100.0f, PAL_VOLUME);
-        button(fb, 472, 261, 158,
-               ui->has_pitch_suggestion ? "TUNE TO REFERENCE" : "DETECT PITCH",
+        button(fb, TS_TUNE_DETECT_X, 261, 58,
+               ui->has_pitch_suggestion ? "MATCH" : "DETECT",
                ui->has_pitch_suggestion);
     } else if (ui->fx_page == TS_FX_NOISE) {
         char color[32];
@@ -2471,9 +2539,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             ui->fx_page == TS_FX_EDIT ?
             "PASTE REPLACES RANGE  NO RANGE PASTES IN PLACE  FIT STRETCHES" :
             ui->fx_page == TS_FX_FAMILY && instrument->has_selection ?
-            "CREATE/VARY STAMPS SELECTION  OUTSIDE STAYS UNCHANGED" :
+            "CREATE FRESH STAMP  VARY ANSWERS SCULPTED SELECTION" :
             ui->fx_page == TS_FX_FAMILY ?
-            "CREATE FILLS TILE  VARY REPLACES OR CHAINS NEXT EMPTY" :
+            "CREATE FRESH SOURCE  VARY ANSWERS CURRENT MATERIAL" :
             "CLICK PLAY  DOUBLE EMPTY BLANK TAPE  RESIZE THEN ARM";
         if (ui->external_record_bank)
             bank_hint = ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?

@@ -189,6 +189,22 @@ int main(void)
              ts_ui_amplitude_draw_toggle_contains(580, 75));
     CONTRACT("amplitude_draw_toggle_rejects_waveform_body",
              !ts_ui_amplitude_draw_toggle_contains(320, 120));
+    CONTRACT("amplitude_draw_accepts_left_frame_gutter",
+             ts_ui_amplitude_draw_start_contains(TS_WAVE_X - 4, 120) &&
+             ts_ui_amplitude_draw_local_x(TS_WAVE_X - 4) == 0);
+    CONTRACT("amplitude_draw_left_frame_snaps_to_exact_edge",
+             ts_ui_amplitude_draw_local_x(TS_WAVE_X + 3) == 0);
+    CONTRACT("amplitude_draw_accepts_right_frame_gutter",
+             ts_ui_amplitude_draw_start_contains(
+                 TS_WAVE_X + TS_WAVE_W + 4, 120) &&
+             ts_ui_amplitude_draw_local_x(
+                 TS_WAVE_X + TS_WAVE_W + 4) == TS_WAVE_W - 1);
+    CONTRACT("amplitude_draw_right_frame_snaps_to_exact_edge",
+             ts_ui_amplitude_draw_local_x(
+                 TS_WAVE_X + TS_WAVE_W - 4) == TS_WAVE_W - 1);
+    CONTRACT("amplitude_draw_gutter_does_not_extend_canvas_hit_area",
+             !ts_ui_amplitude_draw_start_contains(
+                 TS_WAVE_X - 7, 120));
 
     {
         TsInstrument visual;

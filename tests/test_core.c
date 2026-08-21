@@ -304,8 +304,8 @@ int main(void)
             int x;
             TsUiSlider slider;
         } sliders[] = {
-            {TS_FX_TUNE, 250, TS_UI_SLIDER_TUNE_FINE},
-            {TS_FX_TUNE, 420, TS_UI_SLIDER_TUNE_REFERENCE_VOLUME},
+            {TS_FX_TUNE, 380, TS_UI_SLIDER_TUNE_FINE},
+            {TS_FX_TUNE, 530, TS_UI_SLIDER_TUNE_REFERENCE_VOLUME},
             {TS_FX_NOISE, 180, TS_UI_SLIDER_NOISE_AMOUNT},
             {TS_FX_SHAPE, 120, TS_UI_SLIDER_FILTER_CUTOFF},
             {TS_FX_SHAPE, 230, TS_UI_SLIDER_FILTER_RESONANCE},
@@ -335,6 +335,24 @@ int main(void)
         }
         ui.fx_page = TS_FX_EDIT;
         CHECK(ts_ui_slider_from_point(&ui, 300, 272) == TS_UI_SLIDER_NONE);
+        CHECK(ts_ui_tune_action_from_point(20, 272) ==
+              TS_UI_TUNE_ACTION_MATERIAL_SEMITONE_DOWN);
+        CHECK(ts_ui_tune_action_from_point(80, 272) ==
+              TS_UI_TUNE_ACTION_MATERIAL_SEMITONE_UP);
+        CHECK(ts_ui_tune_action_from_point(130, 272) ==
+              TS_UI_TUNE_ACTION_MATERIAL_CENT_DOWN);
+        CHECK(ts_ui_tune_action_from_point(180, 272) ==
+              TS_UI_TUNE_ACTION_MATERIAL_CENT_UP);
+        CHECK(ts_ui_tune_action_from_point(220, 272) ==
+              TS_UI_TUNE_ACTION_REFERENCE_DOWN);
+        CHECK(ts_ui_tune_action_from_point(330, 272) ==
+              TS_UI_TUNE_ACTION_REFERENCE_UP);
+        CHECK(ts_ui_tune_action_from_point(470, 272) ==
+              TS_UI_TUNE_ACTION_REFERENCE_TONE);
+        CHECK(ts_ui_tune_action_from_point(600, 272) ==
+              TS_UI_TUNE_ACTION_DETECT_OR_MATCH);
+        CHECK(ts_ui_tune_action_from_point(380, 272) ==
+              TS_UI_TUNE_ACTION_NONE);
     }
 
     TsGeneratorRecipe first = generator(0x54415045u, TS_GENERATOR_TONAL);
@@ -1043,6 +1061,15 @@ int main(void)
                                        error, sizeof(error)));
         before_frames = tuned.current.frames;
         before_hash = ts_sample_hash(&tuned.current);
+        CHECK(ts_instrument_apply_pitch_shift(&tuned, 0.01f,
+                                              error, sizeof(error)));
+        CHECK(tuned.current.frames < before_frames &&
+              ts_sample_hash(&tuned.current) != before_hash);
+        CHECK(ts_instrument_undo(&tuned, error, sizeof(error)) &&
+              tuned.current.frames == before_frames &&
+              ts_sample_hash(&tuned.current) == before_hash &&
+              tuned.tuning.root_note == 64 &&
+              fabsf(tuned.tuning.fine_tune_cents - 12.0f) < 0.001f);
         CHECK(ts_instrument_apply_pitch_shift(&tuned, 12.0f,
                                               error, sizeof(error)));
         tuned_frames = tuned.current.frames;
@@ -3111,7 +3138,6 @@ int main(void)
 
     {
         TsInstrument workflow;
-        TsFmPatch created_patch, varied_patch;
         uint64_t original_hash, exact_hash;
         int destination = -1;
         ts_instrument_init(&workflow);
@@ -3123,7 +3149,6 @@ int main(void)
               workflow.bank[5].generator.kind == TS_GENERATOR_FM);
         CHECK(ts_sample_hash(&workflow.current) == ts_sample_hash(&workflow.bank[5].sample));
         original_hash = ts_sample_hash(&workflow.bank[5].sample);
-        ts_fm_patch_from_recipe(&workflow.bank[5].generator, &created_patch);
         workflow.family_mutation = 0.0f;
         CHECK(ts_instrument_vary_selected(&workflow, 0, &destination, error, sizeof(error)));
         CHECK(destination == 5 && ts_sample_hash(&workflow.bank[5].sample) == original_hash);
@@ -3137,16 +3162,8 @@ int main(void)
         CHECK(workflow.selected_slot == 9 && ts_sample_hash(&workflow.bank[9].sample) == exact_hash);
         workflow.family_mutation = 0.75f;
         CHECK(ts_instrument_vary_selected(&workflow, 0, &destination, error, sizeof(error)));
-        ts_fm_patch_from_recipe(&workflow.bank[9].generator, &varied_patch);
-        CHECK(varied_patch.structure == created_patch.structure);
         CHECK(ts_sample_hash(&workflow.bank[9].sample) != exact_hash);
         CHECK(ts_sample_hash(&workflow.bank[6].sample) == exact_hash);
-        workflow.bank[9].generator.fm_patch.drone_mode = 1;
-        workflow.bank[9].generator.fm_patch.extreme_mode = 1;
-        workflow.bank[9].generator.fm_patch.pitch_lock = 0;
-        workflow.bank[9].generator.fm_patch.pitch_root = 8;
-        workflow.bank[9].generator.fm_patch.pitch_scale = TS_FM_PITCH_SCALE_MINOR;
-        ts_fm_patch_sanitize(&workflow.bank[9].generator.fm_patch);
         CHECK(ts_instrument_save_recipe(&workflow, "test-workflow.tsr", error, sizeof(error)));
         {
             TsInstrument workflow_loaded;
@@ -3155,10 +3172,8 @@ int main(void)
             CHECK(workflow_loaded.selected_slot == 9);
             CHECK(workflow_loaded.bank[9].occupied &&
                   workflow_loaded.bank[9].generator.kind == TS_GENERATOR_FM);
-            CHECK(workflow_loaded.bank[9].generator.has_fm_patch);
-            CHECK(memcmp(&workflow_loaded.bank[9].generator.fm_patch,
-                         &workflow.bank[9].generator.fm_patch,
-                         sizeof(TsFmPatch)) == 0);
+            CHECK(ts_sample_hash(&workflow_loaded.bank[9].sample) ==
+                  ts_sample_hash(&workflow.bank[9].sample));
             CHECK(ts_sample_hash(&workflow_loaded.bank[6].sample) == exact_hash);
             ts_instrument_free(&workflow_loaded);
         }
@@ -3450,8 +3465,7 @@ int main(void)
 
     {
         TsInstrument first, repeat;
-        TsFmPatch first_patch, repeat_patch, next_patch;
-        uint64_t first_source_hash, first_final_hash;
+        uint64_t first_final_hash, next_final_hash;
         int slot = -1;
         ts_instrument_init(&first); ts_instrument_init(&repeat);
         CHECK(ts_instrument_bank_clear_all(&first, error, sizeof(error)));
@@ -3463,17 +3477,14 @@ int main(void)
         first.family_mutation = repeat.family_mutation = 0.55f;
         CHECK(ts_instrument_vary_selected(&first, 0, &slot, error, sizeof(error)));
         CHECK(ts_instrument_vary_selected(&repeat, 0, &slot, error, sizeof(error)));
-        ts_fm_patch_from_recipe(&first.bank[4].generator, &first_patch);
-        ts_fm_patch_from_recipe(&repeat.bank[4].generator, &repeat_patch);
-        first_source_hash = ts_sample_hash(&first.bank[4].edit_parent);
         first_final_hash = ts_sample_hash(&first.bank[4].sample);
-        CHECK(memcmp(&first_patch, &repeat_patch, sizeof(first_patch)) == 0);
-        CHECK(first_source_hash == ts_sample_hash(&repeat.bank[4].edit_parent));
         CHECK(first_final_hash == ts_sample_hash(&repeat.bank[4].sample));
         CHECK(ts_instrument_vary_selected(&repeat, 0, &slot, error, sizeof(error)));
-        ts_fm_patch_from_recipe(&repeat.bank[4].generator, &next_patch);
-        CHECK(memcmp(&first_patch, &next_patch, sizeof(first_patch)) != 0);
-        CHECK(first_source_hash != ts_sample_hash(&repeat.bank[4].edit_parent));
+        next_final_hash = ts_sample_hash(&repeat.bank[4].sample);
+        CHECK(next_final_hash != first_final_hash);
+        CHECK(memcmp(&first.bank[4].generator,
+                     &repeat.bank[4].generator,
+                     sizeof(first.bank[4].generator)) == 0);
         ts_instrument_free(&first); ts_instrument_free(&repeat);
     }
 
@@ -3516,9 +3527,12 @@ int main(void)
         gesture.family_mutation = 0.5f;
         CHECK(ts_instrument_vary_selected(&gesture, 0, &destination, error, sizeof(error)));
         varied_from_a = ts_sample_hash(&gesture.current);
-        CHECK(gesture.bank[3].generator.has_fm_patch);
         CHECK(gesture.bank[3].edit.post_edit_count == 1);
-        CHECK(ts_sample_hash(&gesture.bank[3].edit_parent) != before);
+        CHECK(varied_from_a != edited);
+        CHECK(ts_instrument_undo(&gesture, error, sizeof(error)) &&
+              ts_sample_hash(&gesture.current) == edited);
+        CHECK(ts_instrument_redo(&gesture, error, sizeof(error)) &&
+              ts_sample_hash(&gesture.current) == varied_from_a);
         CHECK(ts_instrument_select_bank(&gesture, 1, error, sizeof(error)));
         CHECK(ts_instrument_copy_selected(&gesture, 5, error, sizeof(error)));
         gesture.family_mutation = 0.5f;
