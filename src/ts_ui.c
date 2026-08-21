@@ -329,6 +329,27 @@ static void slider(TsFramebuffer *fb, int x, int y, int w, const char *label, fl
     rect(fb, knob, y + 10, 6, 12, PAL_MOUSE);
 }
 
+static void bipolar_slider(TsFramebuffer *fb, int x, int y, int w,
+                           const char *label, float value, uint32_t color)
+{
+    int center;
+    int knob;
+    int fill_first;
+    int fill_last;
+    if (value < -1.0f) value = -1.0f;
+    if (value > 1.0f) value = 1.0f;
+    text(fb, x, y, label, RGB(222, 218, 214), 1);
+    rect(fb, x, y + 13, w, 6, RGB(12, 12, 12));
+    center = x + (w - 6) / 2;
+    knob = x + (int)lrintf((float)(w - 6) * (value + 1.0f) * 0.5f);
+    fill_first = knob < center ? knob + 3 : center + 3;
+    fill_last = knob < center ? center + 3 : knob + 3;
+    if (fill_last > fill_first)
+        rect(fb, fill_first, y + 14, fill_last - fill_first, 4, color);
+    rect(fb, center + 2, y + 12, 2, 8, color);
+    rect(fb, knob, y + 10, 6, 12, PAL_MOUSE);
+}
+
 static void compact_slider(TsFramebuffer *fb, int x, int y, int w,
                            const char *label, float value, int numeric,
                            uint32_t color, int active)
@@ -2064,7 +2085,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int amount;
             if (x < 0 || x >= TS_WAVE_W || !ui->amplitude_profile_set[x])
                 continue;
-            amount = (int)lrintf(ui->amplitude_profile[x] *
+            amount = (int)lrintf(ui->amplitude_profile[x] * 0.5f *
                                  (float)(TS_WAVE_H / 2 - 8));
             top = middle - amount;
             bottom = middle + amount;
@@ -2082,7 +2103,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             ui->amplitude_profile_first_x < TS_WAVE_W &&
             ui->amplitude_profile_set[ui->amplitude_profile_first_x]) {
             int amount = (int)lrintf(
-                ui->amplitude_profile[ui->amplitude_profile_first_x] *
+                ui->amplitude_profile[ui->amplitude_profile_first_x] * 0.5f *
                 (float)(TS_WAVE_H / 2 - 8));
             wave_line(fb, TS_WAVE_X + ui->amplitude_profile_first_x,
                       middle - amount,
@@ -2093,7 +2114,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             ui->amplitude_profile_last_x < TS_WAVE_W &&
             ui->amplitude_profile_set[ui->amplitude_profile_last_x]) {
             int amount = (int)lrintf(
-                ui->amplitude_profile[ui->amplitude_profile_last_x] *
+                ui->amplitude_profile[ui->amplitude_profile_last_x] * 0.5f *
                 (float)(TS_WAVE_H / 2 - 8));
             wave_line(fb, TS_WAVE_X + ui->amplitude_profile_last_x,
                       middle - amount,
@@ -2290,18 +2311,21 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
            ui->workbench_loop_active);
     button(fb, 330, 205, 72, "DRONE", ui->drone_open);
 
-    slider(fb, 10, 233, 72, "BODY",
-           ui->material_macro_gesture.active &&
-           ui->material_macro_gesture.macro == TS_MATERIAL_MACRO_BODY ?
-           ui->material_macro_amount : 0.5f, PAL_INSTRUMENT);
-    slider(fb, 88, 233, 72, "EDGE",
-           ui->material_macro_gesture.active &&
-           ui->material_macro_gesture.macro == TS_MATERIAL_MACRO_EDGE ?
-           ui->material_macro_amount : 0.0f, PAL_VOLUME);
-    slider(fb, 166, 233, 72, "DRIFT",
-           ui->material_macro_gesture.active &&
-           ui->material_macro_gesture.macro == TS_MATERIAL_MACRO_DRIFT ?
-           ui->material_macro_amount : 0.0f, PAL_TUNING);
+    bipolar_slider(fb, 10, 233, 72, "BODY",
+                   ui->material_macro_gesture.active &&
+                   ui->material_macro_gesture.macro ==
+                       TS_MATERIAL_MACRO_BODY ?
+                   ui->material_macro_amount : 0.0f, PAL_INSTRUMENT);
+    bipolar_slider(fb, 88, 233, 72, "EDGE",
+                   ui->material_macro_gesture.active &&
+                   ui->material_macro_gesture.macro ==
+                       TS_MATERIAL_MACRO_EDGE ?
+                   ui->material_macro_amount : 0.0f, PAL_VOLUME);
+    bipolar_slider(fb, 166, 233, 72, "DRIFT",
+                   ui->material_macro_gesture.active &&
+                   ui->material_macro_gesture.macro ==
+                       TS_MATERIAL_MACRO_DRIFT ?
+                   ui->material_macro_amount : 0.0f, PAL_TUNING);
     slider(fb, 244, 233, 86, "WARP", ui->warp_amount, PAL_MOUSE);
     slider(fb, 505, 205, 125, "SMEAR", ui->smear_amount, PAL_MOUSE);
     slider(fb, 407, 205, 93, "TEAR", ui->tear_amount, PAL_EFFECT);

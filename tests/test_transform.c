@@ -1502,6 +1502,10 @@ static void destructive_material_macro_tests(void)
     size_t origin = 0u;
     size_t first;
     size_t last;
+    uint64_t negative_edge_hash;
+    uint64_t positive_edge_hash;
+    uint64_t negative_drift_hash;
+    uint64_t positive_drift_hash;
     int undo_before;
 
     setup(&instrument, 8192u);
@@ -1518,7 +1522,7 @@ static void destructive_material_macro_tests(void)
         &instrument, &gesture, TS_MATERIAL_MACRO_BODY,
         error, sizeof(error)));
     CHECK(ts_instrument_material_macro_gesture_preview(
-        &instrument, &gesture, 0.0f, error, sizeof(error)));
+        &instrument, &gesture, -1.0f, error, sizeof(error)));
     CHECK(memcmp(instrument.current.data, original.data,
                  first * sizeof(*original.data)) == 0);
     CHECK(memcmp(instrument.current.data + first, original.data + first,
@@ -1543,8 +1547,30 @@ static void destructive_material_macro_tests(void)
         &instrument, &gesture, TS_MATERIAL_MACRO_EDGE,
         error, sizeof(error)));
     CHECK(ts_instrument_material_macro_gesture_preview(
-        &instrument, &gesture, 1.0f, error, sizeof(error)));
+        &instrument, &gesture, -1.0f, error, sizeof(error)));
+    negative_edge_hash = ts_sample_hash(&instrument.current);
     CHECK(ts_sample_hash(&instrument.current) != ts_sample_hash(&committed));
+    CHECK(ts_instrument_material_macro_gesture_preview(
+        &instrument, &gesture, 1.0f, error, sizeof(error)));
+    positive_edge_hash = ts_sample_hash(&instrument.current);
+    CHECK(positive_edge_hash != negative_edge_hash &&
+          positive_edge_hash != ts_sample_hash(&committed));
+    CHECK(ts_instrument_material_macro_gesture_cancel(
+        &instrument, &gesture, error, sizeof(error)) &&
+          ts_sample_hash(&instrument.current) == ts_sample_hash(&committed));
+
+    CHECK(ts_instrument_material_macro_gesture_begin(
+        &instrument, &gesture, TS_MATERIAL_MACRO_DRIFT,
+        error, sizeof(error)));
+    CHECK(ts_instrument_material_macro_gesture_preview(
+        &instrument, &gesture, -0.8f, error, sizeof(error)));
+    negative_drift_hash = ts_sample_hash(&instrument.current);
+    CHECK(negative_drift_hash != ts_sample_hash(&committed));
+    CHECK(ts_instrument_material_macro_gesture_preview(
+        &instrument, &gesture, 0.8f, error, sizeof(error)));
+    positive_drift_hash = ts_sample_hash(&instrument.current);
+    CHECK(positive_drift_hash != negative_drift_hash &&
+          positive_drift_hash != ts_sample_hash(&committed));
     CHECK(ts_instrument_material_macro_gesture_cancel(
         &instrument, &gesture, error, sizeof(error)) &&
           ts_sample_hash(&instrument.current) == ts_sample_hash(&committed));

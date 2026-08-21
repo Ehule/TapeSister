@@ -1097,6 +1097,8 @@ int main(void)
             float prefix = tuned.current.data[500u];
             float suffix = tuned.current.data[2500u];
             ts_instrument_set_selection(&tuned, selection_first, selection_last);
+            tuned.view_first = 0u;
+            tuned.view_last = selection_total;
             CHECK(ts_instrument_apply_pitch_shift(&tuned, -12.0f,
                                                   error, sizeof(error)));
             CHECK(tuned.current.frames == selection_total + selection_frames);
@@ -1105,6 +1107,11 @@ int main(void)
                   tuned.selection_last == selection_first + 2u * selection_frames);
             CHECK(tuned.current.data[500u] == prefix);
             CHECK(tuned.current.data[3500u] == suffix);
+            CHECK(tuned.view_first == 0u &&
+                  tuned.view_last == tuned.current.frames);
+            CHECK(tuned.bank[tuned.selected_slot].sample.frames ==
+                  tuned.current.frames &&
+                  tuned.bank[tuned.selected_slot].sample.data[3500u] == suffix);
             CHECK(ts_instrument_undo(&tuned, error, sizeof(error)));
             CHECK(tuned.current.frames == selection_total &&
                   ts_sample_hash(&tuned.current) == tuned_hash);
@@ -1365,8 +1372,22 @@ int main(void)
                 error, sizeof(error)));
             CHECK(fabsf(shaped.current.data[96] - original[96] * 0.75f) <
                   0.00001f);
+            CHECK(ts_instrument_amplitude_gesture_preview(
+                &shaped, &gesture, 120, 2.0f, 120, 2.0f,
+                error, sizeof(error)));
+            CHECK(fabsf(shaped.current.data[120] - original[120] * 2.0f) <
+                  0.00001f);
             CHECK(memcmp(shaped.current.data + 97, original + 97,
-                         (256 - 97) * sizeof(float)) == 0);
+                         (120 - 97) * sizeof(float)) == 0);
+            CHECK(ts_instrument_amplitude_gesture_reset_preview(
+                &shaped, &gesture, error, sizeof(error)));
+            CHECK(memcmp(shaped.current.data, original, sizeof(original)) == 0);
+            CHECK(ts_instrument_amplitude_gesture_preview(
+                &shaped, &gesture, 32, 1.0f, 96, 0.0f,
+                error, sizeof(error)));
+            CHECK(ts_instrument_amplitude_gesture_preview(
+                &shaped, &gesture, 96, 0.75f, 120, 2.0f,
+                error, sizeof(error)));
             CHECK(shaped.undo_count == 0);
             CHECK(ts_instrument_amplitude_gesture_commit(
                 &shaped, &gesture, error, sizeof(error)));

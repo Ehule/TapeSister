@@ -172,7 +172,7 @@ int main(int argc, char **argv)
         const int last = 518;
         size_t previous_frame = (size_t)((uint64_t)first *
                                 instrument.current.frames / TS_WAVE_W);
-        float previous_profile = 0.12f;
+        float previous_profile = 0.24f;
         ui.amplitude_draw_mode = 1;
         ui.amplitude_draw_dragging = 1;
         ui.amplitude_profile_first_x = first;
@@ -186,8 +186,8 @@ int main(int argc, char **argv)
         for (int x = first; x <= last; ++x) {
             float phase = (float)(x - first) / (float)(last - first);
             float profile = phase < 0.5f ?
-                            0.12f + phase * 1.76f :
-                            1.0f - (phase - 0.5f) * 1.42f;
+                            0.24f + phase * 3.12f :
+                            1.80f - (phase - 0.5f) * 2.80f;
             size_t frame = (size_t)((uint64_t)x * instrument.current.frames /
                            TS_WAVE_W);
             ui.amplitude_profile[x] = profile;
@@ -204,7 +204,7 @@ int main(int argc, char **argv)
             previous_profile = profile;
         }
         snprintf(ui.status, sizeof(ui.status),
-                 "DRAWING MIRRORED AMPLITUDE - RELEASE COMMITS ONCE  ESC RESTORES");
+                 "DRAWING 0-2X AMPLITUDE - SHIFT ADDS POLYLINE POINTS");
     } else if (argc > 2 && strcmp(argv[2], "stretch") == 0) {
         float pitch = 0.0f;
         size_t before;

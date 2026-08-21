@@ -622,6 +622,9 @@ int ts_instrument_amplitude_gesture_preview(TsInstrument *instrument,
                                             size_t first, float first_gain,
                                             size_t last, float last_gain,
                                             char *error, size_t error_size);
+int ts_instrument_amplitude_gesture_reset_preview(
+    TsInstrument *instrument, TsAmplitudeGesture *gesture,
+    char *error, size_t error_size);
 int ts_instrument_amplitude_gesture_commit(TsInstrument *instrument,
                                            TsAmplitudeGesture *gesture,
                                            char *error, size_t error_size);

@@ -307,6 +307,30 @@ static void test_frozen_gesture_commit_cancel(void)
     ts_instrument_free(&instrument);
 }
 
+static void test_unsnapped_canvas_contraction_with_selection(void)
+{
+    TsInstrument instrument;
+    TsCanvasGesture gesture;
+    char error[160];
+    make_canvas(&instrument, 64u, 44100u, 0);
+    ts_canvas_gesture_init(&gesture);
+    ts_instrument_set_selection(&instrument, 9u, 51u);
+    CHECK(instrument.grid_snap == TS_GRID_SNAP_OFF);
+    CHECK(ts_instrument_canvas_gesture_begin(
+        &instrument, &gesture, 2, error, sizeof(error)));
+    CHECK(ts_instrument_canvas_gesture_preview(
+        &instrument, &gesture, -3, error, sizeof(error)));
+    CHECK(instrument.current.frames == 61u &&
+          instrument.selection_first == 9u &&
+          instrument.selection_last == 51u);
+    CHECK(ts_instrument_canvas_gesture_cancel(
+        &instrument, &gesture, error, sizeof(error)));
+    CHECK(instrument.current.frames == 64u &&
+          instrument.selection_first == 9u &&
+          instrument.selection_last == 51u);
+    ts_instrument_free(&instrument);
+}
+
 static void test_tile_independence_and_roundtrip(void)
 {
     TsInstrument instrument;
@@ -362,6 +386,7 @@ int main(void)
     test_half_zero_snap_and_minimum();
     test_grid_and_hierarchical_snap();
     test_frozen_gesture_commit_cancel();
+    test_unsnapped_canvas_contraction_with_selection();
     test_rolling_history_and_checkpoint();
     test_tile_independence_and_roundtrip();
     if (failures != 0) {

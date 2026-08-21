@@ -45,8 +45,8 @@ static int get_float(FILE *file, float *value)
 int ts_recipe_process_valid(const TsProcessRecipe *p)
 {
     return p != NULL && isfinite(p->body) && p->body >= 0.0f && p->body <= 1.0f &&
-           isfinite(p->edge) && p->edge >= 0.0f && p->edge <= 1.0f &&
-           isfinite(p->drift) && p->drift >= 0.0f && p->drift <= 1.0f &&
+           isfinite(p->edge) && p->edge >= -1.0f && p->edge <= 1.0f &&
+           isfinite(p->drift) && p->drift >= -1.0f && p->drift <= 1.0f &&
            (p->noise_enabled == 0 || p->noise_enabled == 1) &&
            p->noise_color >= TS_NOISE_WHITE && p->noise_color < TS_NOISE_COLOR_COUNT &&
            isfinite(p->noise_amount) && p->noise_amount >= 0.0f && p->noise_amount <= 1.0f &&

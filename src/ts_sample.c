@@ -1077,8 +1077,8 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
     float filter_b0 = 1.0f, filter_b1 = 0.0f, filter_b2 = 0.0f;
     float filter_a1 = 0.0f, filter_a2 = 0.0f;
     float body = clampf(recipe->body, 0.0f, 1.0f);
-    float edge = clampf(recipe->edge, 0.0f, 1.0f);
-    float drift = clampf(recipe->drift, 0.0f, 1.0f);
+    float edge = clampf(recipe->edge, -1.0f, 1.0f);
+    float drift = clampf(recipe->drift, -1.0f, 1.0f);
     float noise_amount = clampf(recipe->noise_amount, 0.0f, 1.0f);
     float delay_feedback = clampf(recipe->delay_feedback, 0.0f, 0.85f);
     float delay_damping = clampf(recipe->delay_damping, 0.0f, 1.0f);
@@ -1153,7 +1153,9 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
         wander += (random - wander) * 0.00008f;
         double lfo = sin(phase + (double)i * (2.0 * M_PI * drift_rate) /
                          (double)parent->sample_rate);
-        double offset = drift * (4.0 + drift * 120.0) * (lfo + wander * 0.7);
+        float drift_depth = fabsf(drift);
+        double offset = drift * (4.0 + drift_depth * 120.0) *
+                        (lfo + wander * 0.7);
         float input = sample_linear(parent, (double)(first + i) + offset, first, last);
         low += (input - low) * 0.018f;
         fast += (input - fast) * 0.22f;
@@ -1171,6 +1173,12 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
         if (edge > 0.001f) {
             float drive = 1.0f + edge * 3.5f;
             shaped = tanhf(shaped * drive) / tanhf(drive);
+        } else if (edge < -0.001f) {
+            /* The negative side is a real softening operation: remove the
+               fast component, then lean toward the local smooth signal. */
+            float soften = -edge;
+            shaped = shaped * (1.0f - soften * 0.35f) +
+                     fast * (soften * 0.35f);
         }
         shaped += random * drift * 0.006f;
 
@@ -5116,10 +5124,10 @@ static void canvas_gesture_clear(TsCanvasGesture *gesture)
 static size_t canvas_contraction_boundary(const TsCanvasGesture *gesture,
                                           size_t target, size_t first, size_t last)
 {
-    size_t macro = gesture->start.grid_snap != TS_GRID_SNAP_OFF ?
-                   grid_target_for_frames(gesture->original.frames,
-                                          gesture->start.grid_divisions,
-                                          target) : target;
+    size_t macro;
+    if (gesture->start.grid_snap == TS_GRID_SNAP_OFF) return target;
+    macro = grid_target_for_frames(gesture->original.frames,
+                                   gesture->start.grid_divisions, target);
     return ts_sample_nearest_zero_crossing_in_range(
         &gesture->original, macro, first, last);
 }
@@ -5451,6 +5459,12 @@ int ts_instrument_half_canvas(TsInstrument *instrument,
     frames = instrument->current.frames;
     wanted = frames / 2u;
     if (wanted < TS_CANVAS_MIN_FRAMES) wanted = TS_CANVAS_MIN_FRAMES;
+    if (instrument->grid_snap == TS_GRID_SNAP_OFF) {
+        wanted = ts_sample_nearest_zero_crossing_in_range(
+            &instrument->current, wanted, TS_CANVAS_MIN_FRAMES,
+            frames - 1u);
+        if (wanted < TS_CANVAS_MIN_FRAMES) wanted = TS_CANVAS_MIN_FRAMES;
+    }
     divisions = instrument->grid_divisions;
     if (!ts_instrument_resize_canvas(
             instrument, 2, -(int64_t)(frames - wanted),
@@ -7468,7 +7482,8 @@ int ts_instrument_apply_warp(TsInstrument *instrument, float amount,
 
 static float material_macro_neutral(TsMaterialMacro macro)
 {
-    return macro == TS_MATERIAL_MACRO_BODY ? 0.5f : 0.0f;
+    (void)macro;
+    return 0.0f;
 }
 
 static void neutralize_material_macros(TsProcessRecipe *process)
@@ -7511,7 +7526,7 @@ void ts_material_macro_gesture_init(TsMaterialMacroGesture *gesture)
     ts_sample_init(&gesture->material);
     ts_sample_init(&gesture->preview_material);
     gesture->macro = TS_MATERIAL_MACRO_BODY;
-    gesture->amount = 0.5f;
+    gesture->amount = 0.0f;
 }
 
 static int material_macro_gesture_owns(
@@ -7572,7 +7587,8 @@ int ts_instrument_material_macro_gesture_begin(
         last = gesture->material.frames;
     }
     if ((fabsf(legacy.body - 0.5f) > 0.000001f ||
-         legacy.edge > 0.000001f || legacy.drift > 0.000001f) &&
+         fabsf(legacy.edge) > 0.000001f ||
+         fabsf(legacy.drift) > 0.000001f) &&
         !apply_process_range_in_place(&gesture->material, first, last,
                                       &legacy, error, error_size)) {
         material_macro_gesture_clear(gesture);
@@ -7607,16 +7623,17 @@ int ts_instrument_material_macro_gesture_preview(
                   "Material macro gesture no longer owns Current");
         return 0;
     }
-    if (!isfinite(amount) || amount < 0.0f || amount > 1.0f) {
+    if (!isfinite(amount) || amount < -1.0f || amount > 1.0f) {
         set_error(error, error_size,
-                  "Material macro amount must be between zero and one");
+                  "Material macro amount must be between minus one and one");
         return 0;
     }
     if (!ts_sample_clone(&gesture->preview_material, &gesture->material,
                          error, error_size)) return 0;
     ts_process_recipe_reset(&process);
     process.seed = gesture->start.process.seed;
-    if (gesture->macro == TS_MATERIAL_MACRO_BODY) process.body = amount;
+    if (gesture->macro == TS_MATERIAL_MACRO_BODY)
+        process.body = 0.5f + amount * 0.5f;
     else if (gesture->macro == TS_MATERIAL_MACRO_EDGE) process.edge = amount;
     else process.drift = amount;
     first = gesture->start.has_selection ?
@@ -7882,10 +7899,10 @@ int ts_instrument_amplitude_gesture_preview(TsInstrument *instrument,
         return 0;
     }
     if (!isfinite(first_gain) || !isfinite(last_gain) ||
-        first_gain < 0.0f || first_gain > 1.0f ||
-        last_gain < 0.0f || last_gain > 1.0f) {
+        first_gain < 0.0f || first_gain > 2.0f ||
+        last_gain < 0.0f || last_gain > 2.0f) {
         set_error(error, error_size,
-                  "Amplitude drawing gain must be between zero and one");
+                  "Amplitude drawing gain must be between zero and two");
         return 0;
     }
     if (first >= gesture->original.frames) first = gesture->original.frames - 1u;
@@ -7913,6 +7930,25 @@ int ts_instrument_amplitude_gesture_preview(TsInstrument *instrument,
         if (first < gesture->first_frame) gesture->first_frame = first;
         if (last > gesture->last_frame) gesture->last_frame = last;
     }
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_amplitude_gesture_reset_preview(
+    TsInstrument *instrument, TsAmplitudeGesture *gesture,
+    char *error, size_t error_size)
+{
+    if (!amplitude_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size,
+                  "Amplitude gesture no longer owns Current");
+        return 0;
+    }
+    memcpy(instrument->current.data, gesture->original.data,
+           gesture->original.frames * sizeof(*instrument->current.data));
+    ts_sample_touch(&instrument->current);
+    gesture->first_frame = 0u;
+    gesture->last_frame = 0u;
+    gesture->has_profile = 0;
     set_error(error, error_size, "");
     return 1;
 }
@@ -8393,8 +8429,8 @@ static int get_process_recipe(FILE *f, TsProcessRecipe *process)
         !get_float(f, &process->shaper_mix)) return 0;
 #undef GET_PROCESS_U32
     return process->body >= 0.0f && process->body <= 1.0f &&
-           process->edge >= 0.0f && process->edge <= 1.0f &&
-           process->drift >= 0.0f && process->drift <= 1.0f &&
+           process->edge >= -1.0f && process->edge <= 1.0f &&
+           process->drift >= -1.0f && process->drift <= 1.0f &&
            (process->noise_enabled == 0 || process->noise_enabled == 1) &&
            process->noise_amount >= 0.0f && process->noise_amount <= 1.0f &&
            process->noise_color < TS_NOISE_COLOR_COUNT &&
