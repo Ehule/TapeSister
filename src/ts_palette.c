@@ -12,13 +12,50 @@
 static const char *const color_keys[TS_PALETTE_COLOR_COUNT] = {
     "PatternText", "BlockMark", "TextOnBlock", "Mouse", "Desktop", "Buttons",
     "PatternNote", "PatternInstrument", "PatternVolume", "PatternTuning",
-    "PatternEffect", "PatternEmpty", "WaveSelection", "ActiveTile"
+    "PatternEffect", "PatternEmpty", "WaveSelection", "ActiveTile",
+    "TrackLengthPlayhead", "FastTracksPlayhead", "ControlPlayhead",
+    "FastTracksSync", "FastTracksPhase", "FastTracksSong",
+    "FastTracksLengthPlayhead"
 };
 
 static const char *const color_names[TS_PALETTE_COLOR_COUNT] = {
     "TITLE / TEXT", "ACTIVE CONTROL", "ACTIVE TEXT", "POINTER", "DESKTOP",
     "CONTROLS", "WAVEFORM", "PRIMARY", "EDGE / ZERO", "LOOP / DRIFT",
-    "EFFECT", "SPARE", "WAVE SELECTION", "ACTIVE TILE"
+    "EFFECT", "SPARE", "WAVE SELECTION", "ACTIVE TILE", "LEN HEAD",
+    "FASTTRACKS HEAD", "CONTROL HEAD", "FASTTRACKS SYNC",
+    "FASTTRACKS PHASE", "FASTTRACKS SONG", "FASTTRACKS + LEN HEAD"
+};
+
+static const TsPaletteColor tapehead_swatch_colors[TS_PALETTE_TAPEHEAD_COLOR_COUNT] = {
+    TS_PALETTE_PATTERN_TEXT, TS_PALETTE_BLOCK_MARK, TS_PALETTE_TEXT_ON_BLOCK,
+    TS_PALETTE_MOUSE, TS_PALETTE_DESKTOP, TS_PALETTE_BUTTONS,
+    TS_PALETTE_PATTERN_NOTE, TS_PALETTE_PATTERN_INSTRUMENT,
+    TS_PALETTE_PATTERN_VOLUME, TS_PALETTE_PATTERN_TUNING,
+    TS_PALETTE_PATTERN_EFFECT, TS_PALETTE_PATTERN_EMPTY,
+    TS_PALETTE_TRACK_LENGTH_PLAYHEAD, TS_PALETTE_FASTTRACKS_PLAYHEAD,
+    TS_PALETTE_CONTROL_PLAYHEAD, TS_PALETTE_FASTTRACKS_SYNC,
+    TS_PALETTE_FASTTRACKS_PHASE, TS_PALETTE_FASTTRACKS_SONG,
+    TS_PALETTE_FASTTRACKS_LENGTH_PLAYHEAD
+};
+
+static const char *const tapehead_swatch_names[TS_PALETTE_TAPEHEAD_COLOR_COUNT] = {
+    "PAT TEXT", "BLOCK MARK", "BLOCK TEXT", "MOUSE", "DESKTOP", "BUTTONS",
+    "PAT NOTE", "PAT INST", "PAT VOLUME", "PAT TUNING", "PAT EFFECT",
+    "PAT EMPTY", "LEN HEAD", "FT HEAD", "CONTROL HEAD", "FT SYNC",
+    "FT PHASE", "FT SONG", "FT + LEN"
+};
+
+static const TsPaletteColor universal_save_order[TS_PALETTE_COLOR_COUNT] = {
+    TS_PALETTE_PATTERN_TEXT, TS_PALETTE_BLOCK_MARK, TS_PALETTE_TEXT_ON_BLOCK,
+    TS_PALETTE_MOUSE, TS_PALETTE_DESKTOP, TS_PALETTE_BUTTONS,
+    TS_PALETTE_PATTERN_NOTE, TS_PALETTE_PATTERN_INSTRUMENT,
+    TS_PALETTE_PATTERN_VOLUME, TS_PALETTE_PATTERN_TUNING,
+    TS_PALETTE_PATTERN_EFFECT, TS_PALETTE_PATTERN_EMPTY,
+    TS_PALETTE_TRACK_LENGTH_PLAYHEAD, TS_PALETTE_FASTTRACKS_PLAYHEAD,
+    TS_PALETTE_CONTROL_PLAYHEAD, TS_PALETTE_FASTTRACKS_SYNC,
+    TS_PALETTE_FASTTRACKS_PHASE, TS_PALETTE_FASTTRACKS_SONG,
+    TS_PALETTE_FASTTRACKS_LENGTH_PLAYHEAD, TS_PALETTE_WAVE_SELECTION,
+    TS_PALETTE_ACTIVE_TILE
 };
 
 static void set_error(char *error, size_t error_size, const char *message)
@@ -82,10 +119,13 @@ void ts_palette_default(TsPalette *palette)
         RGB(255, 28, 0), RGB(45, 0, 57), RGB(0, 158, 227), RGB(255, 210, 101),
         RGB(28, 28, 28), RGB(93, 85, 93), RGB(255, 231, 0), RGB(24, 255, 0),
         RGB(255, 28, 231), RGB(20, 125, 255), RGB(53, 255, 255), RGB(89, 0, 255),
-        RGB(45, 0, 57), RGB(255, 210, 101)
+        RGB(45, 0, 57), RGB(255, 210, 101), RGB(65, 215, 255),
+        RGB(255, 174, 32), RGB(255, 49, 49), RGB(0, 206, 65),
+        RGB(255, 49, 49), RGB(255, 174, 32), RGB(208, 97, 255)
     };
     if (palette == NULL) return;
     memcpy(palette->colors, defaults, sizeof(defaults));
+    palette->defined_colors = (1u << TS_PALETTE_COLOR_COUNT) - 1u;
     palette->desktop_contrast = 52;
     palette->buttons_contrast = 57;
 }
@@ -120,6 +160,7 @@ int ts_palette_load(TsPalette *palette, const char *path,
         return 0;
     }
     ts_palette_default(&loaded);
+    loaded.defined_colors = 0u;
     while (fgets(line, sizeof(line), file) != NULL) {
         char *text = trim(line);
         char *equals;
@@ -147,6 +188,7 @@ int ts_palette_load(TsPalette *palette, const char *path,
                 recognized = 1;
                 if (!parse_color(value, &loaded.colors[color])) goto malformed;
                 found[color] = 1;
+                loaded.defined_colors |= 1u << color;
                 break;
             }
         }
@@ -189,7 +231,6 @@ malformed:
 }
 
 static int save_palette(const TsPalette *palette, const char *path,
-                        int include_tapesister_colors,
                         char *error, size_t error_size)
 {
     FILE *file;
@@ -204,16 +245,12 @@ static int save_palette(const TsPalette *palette, const char *path,
             snprintf(error, error_size, "Could not create palette: %s", path);
         return 0;
     }
-    failed |= fprintf(file, include_tapesister_colors ?
-                      "; TapeSister palette; Tapehead-compatible entries are unchanged.\n"
-                      "; WaveSelection and ActiveTile are TapeSister-only and omitted by Export TH.\n\n"
-                      "[TapeheadPalette]\n" :
-                      "; Tapehead Edition compatible palette\n"
-                      "; Exported by TapeSister without TapeSister-only entries.\n\n"
-                      "[TapeheadPalette]\n") < 0;
-    for (int color = 0; color < (include_tapesister_colors ?
-                                TS_PALETTE_COLOR_COUNT : TS_PALETTE_WAVE_SELECTION);
-         ++color) {
+    failed |= fprintf(file,
+                      "; Shared TapeSister / Tapehead palette\n"
+                      "; Both applications preserve every key in this file.\n\n"
+                      "[Palette]\n") < 0;
+    for (int index = 0; index < TS_PALETTE_COLOR_COUNT; ++index) {
+        TsPaletteColor color = universal_save_order[index];
         uint32_t value = palette->colors[color];
         failed |= fprintf(file, "%s=#%02X%02X%02X\n", color_keys[color],
                           (unsigned)((value >> 16) & 0xffu),
@@ -234,13 +271,49 @@ static int save_palette(const TsPalette *palette, const char *path,
 int ts_palette_save(const TsPalette *palette, const char *path,
                     char *error, size_t error_size)
 {
-    return save_palette(palette, path, 1, error, error_size);
+    return save_palette(palette, path, error, error_size);
 }
 
 int ts_palette_save_tapehead(const TsPalette *palette, const char *path,
                              char *error, size_t error_size)
 {
-    return save_palette(palette, path, 0, error, error_size);
+    return save_palette(palette, path, error, error_size);
+}
+
+int ts_palette_color_is_defined(const TsPalette *palette, TsPaletteColor color)
+{
+    return palette != NULL && color >= 0 && color < TS_PALETTE_COLOR_COUNT &&
+           (palette->defined_colors & (1u << color)) != 0u;
+}
+
+int ts_palette_tapehead_swatch_count(void)
+{
+    return TS_PALETTE_TAPEHEAD_COLOR_COUNT;
+}
+
+TsPaletteColor ts_palette_tapehead_swatch_color(int swatch)
+{
+    return swatch >= 0 && swatch < TS_PALETTE_TAPEHEAD_COLOR_COUNT ?
+           tapehead_swatch_colors[swatch] : TS_PALETTE_COLOR_COUNT;
+}
+
+const char *ts_palette_tapehead_swatch_name(int swatch)
+{
+    return swatch >= 0 && swatch < TS_PALETTE_TAPEHEAD_COLOR_COUNT ?
+           tapehead_swatch_names[swatch] : "TAPEHEAD COLOR";
+}
+
+int ts_palette_sample_tapehead(TsPalette *palette, TsPaletteColor destination,
+                               int swatch)
+{
+    TsPaletteColor source = ts_palette_tapehead_swatch_color(swatch);
+    if (palette == NULL || destination < 0 ||
+        (int)destination >= TS_PALETTE_TAPESISTER_COLOR_COUNT ||
+        source < 0 || source >= TS_PALETTE_COLOR_COUNT ||
+        !ts_palette_color_is_defined(palette, source)) return 0;
+    palette->colors[destination] = palette->colors[source];
+    palette->defined_colors |= 1u << destination;
+    return 1;
 }
 
 uint8_t ts_palette_component(const TsPalette *palette, TsPaletteColor color,
@@ -264,4 +337,5 @@ void ts_palette_set_component(TsPalette *palette, TsPaletteColor color,
     mask = 0xffu << shift;
     palette->colors[color] = (palette->colors[color] & ~mask) |
                              ((uint32_t)value << shift) | 0xff000000u;
+    palette->defined_colors |= 1u << color;
 }

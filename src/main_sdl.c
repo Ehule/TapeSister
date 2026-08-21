@@ -211,15 +211,59 @@ static const char *config_file_path(void)
     return override != NULL && override[0] != '\0' ? override : "tapesister.ini";
 }
 
-static const char *tapesister_palette_path(void)
+enum { TS_SHARED_PALETTE_PATH_MAX = TS_CONFIG_PATH_MAX + 32 };
+
+static int shared_palette_path(const TsUiState *ui, char *path, size_t path_size)
 {
     const char *override = getenv("TAPESISTER_PALETTE");
-    return override != NULL && override[0] != '\0' ? override : "tapesister.pal";
+    const char *directory;
+    const char *separator;
+    int written;
+    if (path == NULL || path_size == 0u) return 0;
+    if (override != NULL && override[0] != '\0') {
+        written = snprintf(path, path_size, "%s", override);
+        return written >= 0 && (size_t)written < path_size;
+    }
+    directory = ui != NULL ? ui->config.exchange_path : NULL;
+    if (directory == NULL || directory[0] == '\0') {
+        written = snprintf(path, path_size, "palette.pal");
+        return written >= 0 && (size_t)written < path_size;
+    }
+    separator = directory[strlen(directory) - 1u] == '/' ||
+                directory[strlen(directory) - 1u] == '\\' ? "" : "/";
+    written = snprintf(path, path_size, "%s%spalette.pal", directory, separator);
+    return written >= 0 && (size_t)written < path_size;
 }
 
-static const char *tapehead_palette_path(void)
+static int load_user_palette(const TsUiState *ui, TsPalette *palette,
+                             char *loaded_path, size_t loaded_path_size,
+                             char *error, size_t error_size)
 {
-    return "tapehead.pal";
+    static const char *const legacy_paths[] = {
+        "tapesister.pal", "tapehead.pal"
+    };
+    char canonical[TS_SHARED_PALETTE_PATH_MAX];
+    if (loaded_path != NULL && loaded_path_size > 0u) loaded_path[0] = '\0';
+    if (!shared_palette_path(ui, canonical, sizeof(canonical))) {
+        if (error != NULL && error_size > 0u)
+            snprintf(error, error_size, "Shared palette path is too long");
+        return 0;
+    }
+    if (ts_palette_load(palette, canonical, error, error_size)) {
+        if (loaded_path != NULL && loaded_path_size > 0u)
+            snprintf(loaded_path, loaded_path_size, "%s", canonical);
+        return 1;
+    }
+    for (size_t candidate = 0;
+         candidate < sizeof(legacy_paths) / sizeof(legacy_paths[0]); ++candidate) {
+        if (strcmp(canonical, legacy_paths[candidate]) == 0) continue;
+        if (ts_palette_load(palette, legacy_paths[candidate], error, error_size)) {
+            if (loaded_path != NULL && loaded_path_size > 0u)
+                snprintf(loaded_path, loaded_path_size, "%s", legacy_paths[candidate]);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static const char *capture_archive_directory(void)
@@ -4889,29 +4933,36 @@ static void finish_palette(TsUiState *ui, int cancel)
     select_config_field(ui, ui->config_field);
     SDL_StartTextInput();
     snprintf(ui->status, sizeof(ui->status), cancel ?
-             "PALETTE CHANGES CANCELLED" : "PALETTE APPLIED - SAVE TS TO KEEP IT");
+             "PALETTE CHANGES CANCELLED" :
+             "PALETTE APPLIED - SAVE SHARED TO KEEP IT");
 }
 
-static void palette_import(TsUiState *ui)
+static void palette_load_shared(TsUiState *ui)
 {
     char error[160];
+    char loaded_path[TS_SHARED_PALETTE_PATH_MAX];
     TsPalette loaded = ui->palette;
-    if (ts_palette_load(&loaded, tapehead_palette_path(), error, sizeof(error))) {
+    if (load_user_palette(ui, &loaded, loaded_path, sizeof(loaded_path),
+                          error, sizeof(error))) {
         ui->palette = loaded;
-        snprintf(ui->status, sizeof(ui->status), "IMPORTED TAPEHEAD.PAL");
-    } else snprintf(ui->status, sizeof(ui->status), "PALETTE IMPORT FAILED: %.130s", error);
+        snprintf(ui->status, sizeof(ui->status), "LOADED PALETTE %.119s", loaded_path);
+    } else snprintf(ui->status, sizeof(ui->status),
+                    "PALETTE LOAD FAILED: %.132s", error);
 }
 
-static void palette_save(TsUiState *ui, int tapehead)
+static void palette_save_shared(TsUiState *ui)
 {
     char error[160];
-    const char *path = tapehead ? tapehead_palette_path() : tapesister_palette_path();
-    if ((tapehead ? ts_palette_save_tapehead(&ui->palette, path,
-                                             error, sizeof(error)) :
-                    ts_palette_save(&ui->palette, path,
-                                    error, sizeof(error))))
-        snprintf(ui->status, sizeof(ui->status), "%s %.112s",
-                 tapehead ? "EXPORTED" : "SAVED", path);
+    char path[TS_SHARED_PALETTE_PATH_MAX];
+    if (!shared_palette_path(ui, path, sizeof(path))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "PALETTE SAVE FAILED: SHARED PATH IS TOO LONG");
+        return;
+    }
+    if (ts_palette_save(&ui->palette, path, error, sizeof(error))) {
+        ui->palette.defined_colors = (1u << TS_PALETTE_COLOR_COUNT) - 1u;
+        snprintf(ui->status, sizeof(ui->status), "SAVED SHARED PALETTE %.105s", path);
+    }
     else snprintf(ui->status, sizeof(ui->status), "PALETTE SAVE FAILED: %.132s", error);
 }
 
@@ -6804,9 +6855,11 @@ int main(int argc, char **argv)
     {
         char palette_error[160];
         char bundled_palette[1024];
-        if (!ts_palette_load(&ui.palette, tapesister_palette_path(),
-                             palette_error, sizeof(palette_error)) &&
-            runtime_asset_path("assets/tapehead.pal", bundled_palette,
+        char loaded_palette[TS_SHARED_PALETTE_PATH_MAX];
+        if (!load_user_palette(&ui, &ui.palette, loaded_palette,
+                               sizeof(loaded_palette), palette_error,
+                               sizeof(palette_error)) &&
+            runtime_asset_path("assets/palette.pal", bundled_palette,
                                sizeof(bundled_palette)) &&
             !ts_palette_load(&ui.palette, bundled_palette,
                              palette_error, sizeof(palette_error)))
@@ -7375,9 +7428,9 @@ int main(int argc, char **argv)
                     else if (key == SDLK_PAGEDOWN)
                         ui.palette_entry = ts_ui_palette_cycle_entry(
                                                ui.palette_entry, 1);
-                    else if (key == SDLK_i) palette_import(&ui);
-                    else if (key == SDLK_s) palette_save(&ui, 0);
-                    else if (key == SDLK_e) palette_save(&ui, 1);
+                    else if (key == SDLK_i || key == SDLK_l)
+                        palette_load_shared(&ui);
+                    else if (key == SDLK_s) palette_save_shared(&ui);
                     else if (key == SDLK_r) {
                         ts_palette_default(&ui.palette);
                         snprintf(ui.status, sizeof(ui.status),
@@ -8714,6 +8767,8 @@ int main(int argc, char **argv)
                 } else if (ui.palette_open) {
                     int value = -1;
                     int selected = ts_ui_palette_entry_from_point(x, y);
+                    int tapehead_swatch =
+                        ts_ui_palette_tapehead_swatch_from_point(x, y);
                     int channel = ts_ui_palette_channel_from_point(x, y, &value);
                     TsUiPaletteAction action = ts_ui_palette_action_from_point(x, y);
                     if (selected >= 0) ui.palette_entry = selected;
@@ -8727,12 +8782,23 @@ int main(int argc, char **argv)
                             ui.palette.desktop_contrast = value;
                         else if (value >= 0)
                             ui.palette.buttons_contrast = value;
-                    } else if (action == TS_UI_PALETTE_ACTION_IMPORT_TAPEHEAD)
-                        palette_import(&ui);
-                    else if (action == TS_UI_PALETTE_ACTION_SAVE_TAPESISTER)
-                        palette_save(&ui, 0);
-                    else if (action == TS_UI_PALETTE_ACTION_EXPORT_TAPEHEAD)
-                        palette_save(&ui, 1);
+                    } else if (tapehead_swatch >= 0) {
+                        const char *name =
+                            ts_palette_tapehead_swatch_name(tapehead_swatch);
+                        if (ts_palette_sample_tapehead(
+                                &ui.palette,
+                                (TsPaletteColor)ui.palette_entry,
+                                tapehead_swatch))
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "SAMPLED TAPEHEAD %s INTO %s", name,
+                                     ts_palette_color_name(
+                                         (TsPaletteColor)ui.palette_entry));
+                        else snprintf(ui.status, sizeof(ui.status),
+                                      "TAPEHEAD %s IS UNSET", name);
+                    } else if (action == TS_UI_PALETTE_ACTION_LOAD_SHARED)
+                        palette_load_shared(&ui);
+                    else if (action == TS_UI_PALETTE_ACTION_SAVE_SHARED)
+                        palette_save_shared(&ui);
                     else if (action == TS_UI_PALETTE_ACTION_RESET) {
                         ts_palette_default(&ui.palette);
                         snprintf(ui.status, sizeof(ui.status),

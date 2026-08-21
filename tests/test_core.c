@@ -176,30 +176,32 @@ int main(void)
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 2, 0x56);
         palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xffabcdefu;
         palette.colors[TS_PALETTE_ACTIVE_TILE] = 0xff654321u;
+        palette.colors[TS_PALETTE_TRACK_LENGTH_PLAYHEAD] = 0xff112233u;
+        palette.colors[TS_PALETTE_FASTTRACKS_LENGTH_PLAYHEAD] = 0xff445566u;
         palette.desktop_contrast = 17;
         palette.buttons_contrast = 83;
         CHECK(palette.colors[TS_PALETTE_MOUSE] == 0xff123456u);
-        CHECK(ts_palette_save(&palette, "test-tapesister.pal", error, sizeof(error)));
-        CHECK(file_contains_text("test-tapesister.pal", "WaveSelection=#ABCDEF"));
-        CHECK(file_contains_text("test-tapesister.pal", "ActiveTile=#654321"));
+        CHECK(ts_palette_save(&palette, "test-palette.pal", error, sizeof(error)));
+        CHECK(file_contains_text("test-palette.pal", "[Palette]"));
+        CHECK(file_contains_text("test-palette.pal", "WaveSelection=#ABCDEF"));
+        CHECK(file_contains_text("test-palette.pal", "ActiveTile=#654321"));
+        CHECK(file_contains_text("test-palette.pal",
+                                 "TrackLengthPlayhead=#112233"));
+        CHECK(file_contains_text("test-palette.pal",
+                                 "FastTracksLengthPlayhead=#445566"));
         ts_palette_default(&reopened);
-        CHECK(ts_palette_load(&reopened, "test-tapesister.pal", error, sizeof(error)));
+        CHECK(ts_palette_load(&reopened, "test-palette.pal", error, sizeof(error)));
         CHECK(memcmp(&palette, &reopened, sizeof(palette)) == 0);
-        CHECK(ts_palette_save_tapehead(&palette, "test-tapehead.pal",
+        CHECK(ts_palette_save_tapehead(&palette, "test-compatible.pal",
                                        error, sizeof(error)));
-        CHECK(!file_contains_text("test-tapehead.pal", "WaveSelection"));
-        CHECK(!file_contains_text("test-tapehead.pal", "ActiveTile"));
+        CHECK(file_contains_text("test-compatible.pal", "WaveSelection=#ABCDEF"));
+        CHECK(file_contains_text("test-compatible.pal", "ActiveTile=#654321"));
+        CHECK(file_contains_text("test-compatible.pal",
+                                 "FastTracksLengthPlayhead=#445566"));
         ts_palette_default(&tapehead_reopened);
-        CHECK(ts_palette_load(&tapehead_reopened, "test-tapehead.pal",
+        CHECK(ts_palette_load(&tapehead_reopened, "test-compatible.pal",
                               error, sizeof(error)));
-        CHECK(tapehead_reopened.colors[TS_PALETTE_WAVE_SELECTION] ==
-              palette.colors[TS_PALETTE_BLOCK_MARK]);
-        CHECK(tapehead_reopened.colors[TS_PALETTE_ACTIVE_TILE] ==
-              palette.colors[TS_PALETTE_MOUSE]);
-        for (int color = 0; color < TS_PALETTE_WAVE_SELECTION; ++color)
-            CHECK(tapehead_reopened.colors[color] == palette.colors[color]);
-        CHECK(tapehead_reopened.desktop_contrast == palette.desktop_contrast);
-        CHECK(tapehead_reopened.buttons_contrast == palette.buttons_contrast);
+        CHECK(memcmp(&palette, &tapehead_reopened, sizeof(palette)) == 0);
         legacy = fopen("test-tapehead-legacy.pal", "wb");
         CHECK(legacy != NULL);
         if (legacy != NULL) {
@@ -216,19 +218,41 @@ int main(void)
         CHECK(reopened.colors[TS_PALETTE_PATTERN_EMPTY] == 0xff102030u);
         CHECK(reopened.colors[TS_PALETTE_WAVE_SELECTION] == 0xff203040u);
         CHECK(reopened.colors[TS_PALETTE_ACTIVE_TILE] == 0xff405060u);
+        CHECK(ts_palette_color_is_defined(&reopened, TS_PALETTE_PATTERN_TEXT));
+        CHECK(!ts_palette_color_is_defined(&reopened, TS_PALETTE_PATTERN_NOTE));
+        CHECK(!ts_palette_color_is_defined(&reopened, TS_PALETTE_WAVE_SELECTION));
+        CHECK(!ts_palette_color_is_defined(
+                  &reopened, TS_PALETTE_TRACK_LENGTH_PLAYHEAD));
+        CHECK(ts_palette_tapehead_swatch_count() == 19);
+        CHECK(ts_palette_tapehead_swatch_color(0) == TS_PALETTE_PATTERN_TEXT);
+        CHECK(ts_palette_tapehead_swatch_color(11) == TS_PALETTE_PATTERN_EMPTY);
+        CHECK(ts_palette_tapehead_swatch_color(12) ==
+              TS_PALETTE_TRACK_LENGTH_PLAYHEAD);
+        CHECK(ts_palette_tapehead_swatch_color(18) ==
+              TS_PALETTE_FASTTRACKS_LENGTH_PLAYHEAD);
+        CHECK(strcmp(ts_palette_tapehead_swatch_name(18), "FT + LEN") == 0);
+        CHECK(ts_palette_sample_tapehead(&reopened, TS_PALETTE_ACTIVE_TILE, 0));
+        CHECK(reopened.colors[TS_PALETTE_ACTIVE_TILE] == 0xff102030u);
+        CHECK(ts_palette_color_is_defined(&reopened, TS_PALETTE_ACTIVE_TILE));
+        {
+            uint32_t destination = reopened.colors[TS_PALETTE_WAVE_SELECTION];
+            CHECK(!ts_palette_sample_tapehead(
+                       &reopened, TS_PALETTE_WAVE_SELECTION, 12));
+            CHECK(reopened.colors[TS_PALETTE_WAVE_SELECTION] == destination);
+        }
         CHECK(strcmp(ts_palette_color_name(TS_PALETTE_PATTERN_INSTRUMENT),
                      "PRIMARY") == 0);
         CHECK(strcmp(ts_palette_color_name(TS_PALETTE_ACTIVE_TILE),
                      "ACTIVE TILE") == 0);
-        remove("test-tapesister.pal");
-        remove("test-tapehead.pal");
+        remove("test-palette.pal");
+        remove("test-compatible.pal");
         remove("test-tapehead-legacy.pal");
     }
 
     {
         TsPalette before;
         int value = -1;
-        for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
+        for (int color = 0; color < TS_PALETTE_TAPESISTER_COLOR_COUNT; ++color) {
             int column = color % TS_PALETTE_SWATCH_COLUMNS;
             int row = color / TS_PALETTE_SWATCH_COLUMNS;
             int x = TS_PALETTE_SWATCH_X + column * TS_PALETTE_SWATCH_STEP_X +
@@ -238,26 +262,36 @@ int main(void)
             CHECK(ts_ui_palette_entry_from_point(x, y) == color);
         }
         CHECK(ts_ui_palette_entry_from_point(610, 90) == -1);
+        for (int swatch = 0; swatch < TS_PALETTE_TAPEHEAD_COLOR_COUNT; ++swatch) {
+            int x = TS_PALETTE_TAPEHEAD_X +
+                    swatch * TS_PALETTE_TAPEHEAD_STEP_X +
+                    TS_PALETTE_TAPEHEAD_W / 2;
+            int y = TS_PALETTE_TAPEHEAD_Y + TS_PALETTE_TAPEHEAD_H / 2;
+            CHECK(ts_ui_palette_tapehead_swatch_from_point(x, y) == swatch);
+        }
+        CHECK(ts_ui_palette_tapehead_swatch_from_point(
+                  TS_PALETTE_TAPEHEAD_X + TS_PALETTE_TAPEHEAD_W,
+                  TS_PALETTE_TAPEHEAD_Y + 2) == -1);
         CHECK(ts_ui_palette_channel_from_point(74, 108, &value) == 0 && value == 0);
         CHECK(ts_ui_palette_channel_from_point(215, 108, &value) == 0 && value == 255);
         CHECK(ts_ui_palette_channel_from_point(304, 124, &value) == 4 && value == 1);
         CHECK(ts_ui_palette_channel_from_point(395, 124, &value) == 4 && value == 100);
         CHECK(ts_ui_palette_channel_from_point(50, 210, &value) == -1);
-        CHECK(ts_ui_palette_action_from_point(59, 185) ==
-              TS_UI_PALETTE_ACTION_IMPORT_TAPEHEAD);
-        CHECK(ts_ui_palette_action_from_point(137, 185) ==
-              TS_UI_PALETTE_ACTION_SAVE_TAPESISTER);
-        CHECK(ts_ui_palette_action_from_point(215, 185) ==
-              TS_UI_PALETTE_ACTION_EXPORT_TAPEHEAD);
-        CHECK(ts_ui_palette_action_from_point(289, 185) ==
+        CHECK(ts_ui_palette_action_from_point(68, 185) ==
+              TS_UI_PALETTE_ACTION_LOAD_SHARED);
+        CHECK(ts_ui_palette_action_from_point(169, 185) ==
+              TS_UI_PALETTE_ACTION_SAVE_SHARED);
+        CHECK(ts_ui_palette_action_from_point(250, 185) ==
               TS_UI_PALETTE_ACTION_RESET);
-        CHECK(ts_ui_palette_action_from_point(352, 185) ==
+        CHECK(ts_ui_palette_action_from_point(315, 185) ==
               TS_UI_PALETTE_ACTION_DONE);
-        CHECK(ts_ui_palette_action_from_point(417, 185) ==
+        CHECK(ts_ui_palette_action_from_point(380, 185) ==
               TS_UI_PALETTE_ACTION_CANCEL);
         CHECK(ts_ui_palette_action_from_point(50, 205) == TS_UI_PALETTE_ACTION_NONE);
-        CHECK(ts_ui_palette_cycle_entry(0, -1) == TS_PALETTE_COLOR_COUNT - 1);
-        CHECK(ts_ui_palette_cycle_entry(TS_PALETTE_COLOR_COUNT - 1, 1) == 0);
+        CHECK(ts_ui_palette_cycle_entry(0, -1) ==
+              TS_PALETTE_TAPESISTER_COLOR_COUNT - 1);
+        CHECK(ts_ui_palette_cycle_entry(
+                  TS_PALETTE_TAPESISTER_COLOR_COUNT - 1, 1) == 0);
         CHECK(ts_ui_palette_cycle_channel(0, -1) == 4);
         CHECK(ts_ui_palette_cycle_channel(4, 1) == 0);
         CHECK(ts_ui_config_cycle_field(TS_CONFIG_SAMPLE_PATH, -1) ==
@@ -2994,6 +3028,21 @@ int main(void)
                                      TS_MODAL_PANEL_H) > 1000);
         CHECK(framebuffer_diff_count(&normal, &fb, 0, 204,
                                      TS_UI_WIDTH, 1) == 0);
+        CHECK(fb.pixels[(TS_PALETTE_TAPEHEAD_Y +
+                         TS_PALETTE_TAPEHEAD_H / 2) * TS_UI_WIDTH +
+                        TS_PALETTE_TAPEHEAD_X +
+                        12 * TS_PALETTE_TAPEHEAD_STEP_X +
+                        TS_PALETTE_TAPEHEAD_W / 2] == 0xff41d7ffu);
+        ui.palette.defined_colors &=
+            ~(1u << TS_PALETTE_TRACK_LENGTH_PLAYHEAD);
+        ts_ui_render(&fb, &ui, &restored);
+        CHECK(fb.pixels[(TS_PALETTE_TAPEHEAD_Y +
+                         TS_PALETTE_TAPEHEAD_H / 2) * TS_UI_WIDTH +
+                        TS_PALETTE_TAPEHEAD_X +
+                        12 * TS_PALETTE_TAPEHEAD_STEP_X +
+                        TS_PALETTE_TAPEHEAD_W / 2] == 0xff5c585cu);
+        ui.palette.defined_colors |=
+            1u << TS_PALETTE_TRACK_LENGTH_PLAYHEAD;
         ui.palette_open = 0;
         ts_ui_render(&normal, &ui, &restored);
         ui.load_selection_choice_open = 1;
