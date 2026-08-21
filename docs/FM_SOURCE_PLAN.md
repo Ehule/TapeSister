@@ -19,7 +19,7 @@ Each stored patch contains:
 
 The renderer bounds feedback, applies a DC blocker and output saturation, and replaces
 non-finite samples with silence. A seed plus complete genome always produces the same
-audio. TSR25 stores the complete genome and tile protection; TSR6 through TSR24 remain loadable and derive
+audio. TSR26 stores the complete genome, pitch-randomization rules, and tile protection; TSR6 through TSR25 remain loadable and derive
 safe defaults for fields that did not exist in those formats.
 
 ## FM LOGIC workspace
@@ -29,6 +29,10 @@ controls: Pitch, Wave, LFO Rate, LFO Depth, LFO Type, Filter, and Structure. Six
 buttons set the active mask. Five permission buttons decide which mutation domains
 Randomize and later Vary operations may change. Randomize also protects the currently
 visible page, so a performer can hold the part being shaped while exploring the rest.
+The Pitch page replaces those permission buttons with a pitch-randomization lock,
+selectable pitch-class root, and chromatic, major, minor, pentatonic, or whole-tone
+scale. Pitch lock preserves all six ratios; Pitch open snaps varied ratios into that
+tonal set without changing the universal MIDI-60/C4 unity key.
 The workspace ends above the Sample Bank header on the 640×400 logical canvas, keeping
 both rows of all 16 destination tiles visible at 1366×768 while Apply and Chain run.
 
@@ -46,6 +50,13 @@ Chain switch: off overwrites the selected tile; on selects the next empty tile. 
 page opens explicit Overwrite, New Sample Page, and Cancel choices. **Back** discards
 only the workspace preview. New FM audio is rendered from middle C (261.63 Hz) and uses
 MIDI 60 as its unity key.
+
+**Make Bank** places the exact current patch in tile 01 and generates 15 relatives at
+the visible Range. Chain off mutates every relative from tile 01; Chain on makes each
+new tile the next source. Confirmation offers Replace Page, New Sample Page, and
+Cancel. Replacement refuses any protected tile, while New Sample Page leaves the
+current page untouched. Either successful path is committed atomically as one
+Undo/Redo transaction.
 
 ## Performance and capture
 

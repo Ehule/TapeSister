@@ -60,6 +60,7 @@ enum {
     TS_FM_WAVEFORM_COUNT = 10,
     TS_FM_LFO_TYPE_COUNT = 12,
     TS_FM_INTERACTION_COUNT = 8,
+    TS_FM_PITCH_SCALE_COUNT = 5,
     TS_FM_PAGE_COUNT = 7
 };
 
@@ -112,6 +113,14 @@ typedef enum {
     TS_FM_INTERACTION_CROSS
 } TsFmInteraction;
 
+typedef enum {
+    TS_FM_PITCH_SCALE_CHROMATIC = 0,
+    TS_FM_PITCH_SCALE_MAJOR,
+    TS_FM_PITCH_SCALE_MINOR,
+    TS_FM_PITCH_SCALE_PENTATONIC,
+    TS_FM_PITCH_SCALE_WHOLE_TONE
+} TsFmPitchScale;
+
 enum {
     TS_FM_MUTATE_PITCH = 1u << 0,
     TS_FM_MUTATE_WAVE = 1u << 1,
@@ -125,6 +134,9 @@ typedef struct {
     uint32_t genome_version;
     int drone_mode;
     int extreme_mode;
+    int pitch_lock;
+    int pitch_root;
+    int pitch_scale;
     int structure;
     int ratio_family;
     float depth;
@@ -656,6 +668,7 @@ const char *ts_fm_ratio_family_name(int family);
 const char *ts_fm_waveform_name(int waveform);
 const char *ts_fm_lfo_type_name(int type);
 const char *ts_fm_interaction_name(int interaction);
+const char *ts_fm_pitch_scale_name(int scale);
 const char *ts_fm_page_name(TsFmPage page);
 void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch);
 void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
@@ -667,6 +680,8 @@ int ts_fm_set_control_normalized(TsFmPatch *patch, TsFmPage page, int control,
                                  float normalized);
 int ts_fm_step_control(TsFmPatch *patch, TsFmPage page, int control,
                        int direction, int fine);
+int ts_fm_step_pitch_root(TsFmPatch *patch, int direction);
+int ts_fm_step_pitch_scale(TsFmPatch *patch, int direction);
 void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
                           char *label, size_t label_size,
                           char *value, size_t value_size);
@@ -676,6 +691,12 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
 int ts_instrument_apply_fm_patch(TsInstrument *instrument,
                                  const TsFmPatch *patch,
                                  char *error, size_t error_size);
+int ts_instrument_make_fm_bank(TsInstrument *instrument,
+                               const TsFmPatch *patch,
+                               char *error, size_t error_size);
+int ts_instrument_clone(TsInstrument *destination,
+                        const TsInstrument *source,
+                        char *error, size_t error_size);
 const char *ts_noise_color_name(TsNoiseColor color);
 const char *ts_filter_mode_name(TsFilterMode mode);
 const char *ts_shaper_mode_name(TsShaperMode mode);

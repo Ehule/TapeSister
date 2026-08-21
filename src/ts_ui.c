@@ -904,16 +904,37 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
                "VOICE ON" : "VOICE OFF",
                (ui->fm_patch.active_mask & (1u << control)) != 0u);
     }
-    text(fb, 20, 225, "MUTATE", PAL_NOTE, 1);
-    for (int lock = 0; lock < 5; ++lock)
-        button(fb, 76 + lock * 108, 218, 102, lock_names[lock],
-               (ui->fm_patch.mutation_mask & lock_bits[lock]) != 0u);
-    button(fb, 20, 252, 96, "RANDOMIZE", 0);
-    button(fb, 122, 252, 80, "APPLY", 0);
-    button(fb, 208, 252, 94, "AUDITION", 0);
-    button(fb, 308, 252, 76, ui->fm_held_notes > 0 ? "HELD" : "HOLD",
+    if (ui->fm_page == TS_FM_PAGE_PITCH) {
+        static const char *pitch_classes[12] = {
+            "C", "C#", "D", "D#", "E", "F",
+            "F#", "G", "G#", "A", "A#", "B"
+        };
+        char root[24];
+        char scale[32];
+        text(fb, 20, 225, "RANDOM PITCH", PAL_NOTE, 1);
+        button(fb, 96, 218, 112,
+               ui->fm_patch.pitch_lock ? "PITCH LOCK" : "PITCH OPEN",
+               ui->fm_patch.pitch_lock);
+        snprintf(root, sizeof(root), "ROOT %s",
+                 pitch_classes[ui->fm_patch.pitch_root]);
+        button(fb, 214, 218, 96, root, 0);
+        snprintf(scale, sizeof(scale), "SCALE %s",
+                 ts_fm_pitch_scale_name(ui->fm_patch.pitch_scale));
+        button(fb, 316, 218, 132, scale, 0);
+        text(fb, 462, 225, "C4 UNITY", PAL_TUNING, 1);
+    } else {
+        text(fb, 20, 225, "MUTATE", PAL_NOTE, 1);
+        for (int lock = 0; lock < 5; ++lock)
+            button(fb, 76 + lock * 108, 218, 102, lock_names[lock],
+                   (ui->fm_patch.mutation_mask & lock_bits[lock]) != 0u);
+    }
+    button(fb, 20, 252, 88, "RANDOMIZE", 0);
+    button(fb, 114, 252, 90, "MAKE BANK", 0);
+    button(fb, 210, 252, 66, "APPLY", 0);
+    button(fb, 282, 252, 84, "AUDITION", 0);
+    button(fb, 372, 252, 70, ui->fm_held_notes > 0 ? "HELD" : "HOLD",
            ui->fm_held_notes > 0);
-    button(fb, 390, 252, 72, "BACK", 0);
+    button(fb, 448, 252, 64, "BACK", 0);
     button(fb, 20, 278, 86, "DRONE", ui->fm_patch.drone_mode);
     button(fb, 112, 278, 100, "EXTREME", ui->fm_patch.extreme_mode);
     button(fb, 218, 278, 86,
@@ -931,7 +952,19 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         rect(fb, 389, 282, (int)lrintf(amount * 228.0f), 14, PAL_BLOCK);
     }
     text(fb, 20, 306, ui->fm_message, PAL_MOUSE, 1);
-    if (ui->fm_full_choice_open) {
+    if (ui->fm_bank_choice_open) {
+        frame(fb, 62, 218, 516, 92, RGB(28, 25, 30), PAL_VOLUME);
+        text(fb, 82, 226, "MAKE A 16-SOUND FM BANK?", PAL_NOTE, 1);
+        text(fb, 82, 242,
+             "CURRENT PATCH IS TILE 01; RANGE + CHAIN BUILD 15 VARIATIONS",
+             PAL_MOUSE, 1);
+        text(fb, 82, 257,
+             "REPLACE NEEDS EVERY CURRENT TILE UNLOCKED",
+             PAL_TUNING, 1);
+        button(fb, 82, 278, 132, "REPLACE PAGE", 0);
+        button(fb, 220, 278, 150, "NEW SAMPLE PAGE", 1);
+        button(fb, 376, 278, 94, "CANCEL", 0);
+    } else if (ui->fm_full_choice_open) {
         frame(fb, 72, 226, 496, 80, RGB(28, 25, 30), PAL_VOLUME);
         text(fb, 92, 234, "THIS SAMPLE PAGE IS FULL", PAL_NOTE, 1);
         text(fb, 92, 250,
@@ -1319,18 +1352,33 @@ uint32_t ts_ui_fm_mutation_from_point(int x, int y)
 
 TsUiFmAction ts_ui_fm_action_from_point(int x, int y)
 {
+    if (y >= 218 && y < 242) {
+        if (x >= 96 && x < 208) return TS_UI_FM_ACTION_PITCH_LOCK;
+        if (x >= 214 && x < 310) return TS_UI_FM_ACTION_PITCH_ROOT;
+        if (x >= 316 && x < 448) return TS_UI_FM_ACTION_PITCH_SCALE;
+    }
     if (y >= 252 && y < 276) {
-        if (x >= 20 && x < 116) return TS_UI_FM_ACTION_RANDOMIZE;
-        if (x >= 122 && x < 202) return TS_UI_FM_ACTION_APPLY;
-        if (x >= 208 && x < 302) return TS_UI_FM_ACTION_AUDITION;
-        if (x >= 308 && x < 384) return TS_UI_FM_ACTION_HOLD;
-        if (x >= 390 && x < 462) return TS_UI_FM_ACTION_BACK;
+        if (x >= 20 && x < 108) return TS_UI_FM_ACTION_RANDOMIZE;
+        if (x >= 114 && x < 204) return TS_UI_FM_ACTION_BANK_MAKER;
+        if (x >= 210 && x < 276) return TS_UI_FM_ACTION_APPLY;
+        if (x >= 282 && x < 366) return TS_UI_FM_ACTION_AUDITION;
+        if (x >= 372 && x < 442) return TS_UI_FM_ACTION_HOLD;
+        if (x >= 448 && x < 512) return TS_UI_FM_ACTION_BACK;
     }
     if (y >= 278 && y < 302) {
         if (x >= 20 && x < 106) return TS_UI_FM_ACTION_DRONE;
         if (x >= 112 && x < 212) return TS_UI_FM_ACTION_EXTREME;
         if (x >= 218 && x < 304) return TS_UI_FM_ACTION_CHAIN;
     }
+    return TS_UI_FM_ACTION_NONE;
+}
+
+TsUiFmAction ts_ui_fm_bank_action_from_point(int x, int y)
+{
+    if (y < 278 || y >= 302) return TS_UI_FM_ACTION_NONE;
+    if (x >= 82 && x < 214) return TS_UI_FM_ACTION_BANK_REPLACE;
+    if (x >= 220 && x < 370) return TS_UI_FM_ACTION_BANK_NEW_PAGE;
+    if (x >= 376 && x < 470) return TS_UI_FM_ACTION_BANK_CANCEL;
     return TS_UI_FM_ACTION_NONE;
 }
 
@@ -1346,6 +1394,16 @@ TsUiFmAction ts_ui_fm_full_action_from_point(int x, int y)
 int ts_ui_fm_range_contains(int x, int y)
 {
     return x >= 386 && x < 620 && y >= 278 && y < 302;
+}
+
+int ts_ui_fm_pitch_root_contains(int x, int y)
+{
+    return x >= 214 && x < 310 && y >= 218 && y < 242;
+}
+
+int ts_ui_fm_pitch_scale_contains(int x, int y)
+{
+    return x >= 316 && x < 448 && y >= 218 && y < 242;
 }
 
 TsUiWaveAction ts_ui_wave_action_from_point(int x, int y)

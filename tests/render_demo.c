@@ -24,7 +24,9 @@ int main(int argc, char **argv)
     ts_instrument_set_selection(&instrument, instrument.current.frames / 5,
                                 instrument.current.frames * 3 / 5);
     snprintf(ui.status, sizeof(ui.status), "PARENT PRESERVED - CURRENT READY TO SHAPE");
-    if (argc > 2 && strcmp(argv[2], "fm") == 0) {
+    if (argc > 2 && (strcmp(argv[2], "fm") == 0 ||
+                     strcmp(argv[2], "fm-pitch") == 0 ||
+                     strcmp(argv[2], "fm-bank") == 0)) {
         TsGeneratorRecipe recipe = instrument.generator;
         recipe.kind = TS_GENERATOR_FM;
         ts_fm_patch_from_recipe(&recipe, &ui.fm_patch);
@@ -39,7 +41,9 @@ int main(int argc, char **argv)
             return 1;
         }
         ui.fm_open = 1;
-        ui.fm_page = TS_FM_PAGE_FILTER;
+        ui.show_keyboard = 0;
+        ui.fm_page = strcmp(argv[2], "fm") == 0 ?
+                     TS_FM_PAGE_FILTER : TS_FM_PAGE_PITCH;
         ui.fm_preview_sample = &drone_preview;
         ui.fm_held_notes = 3;
         ui.playback_active = 1;
@@ -47,8 +51,19 @@ int main(int argc, char **argv)
         ui.playhead_frame = drone_preview.frames * 2u / 5u;
         ui.playhead_frames = drone_preview.frames;
         instrument.family_mutation = 0.78f;
-        snprintf(ui.fm_message, sizeof(ui.fm_message),
-                 "DRONE EDGES ZEROED - HELD CHORD CONTINUES UNDER THE WINDOW");
+        if (strcmp(argv[2], "fm-bank") == 0) {
+            ui.fm_bank_choice_open = 1;
+            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                     "CONFIRM 16-SOUND BANK DESTINATION");
+        } else if (strcmp(argv[2], "fm-pitch") == 0) {
+            ui.fm_patch.pitch_lock = 0;
+            ui.fm_patch.pitch_root = 7;
+            ui.fm_patch.pitch_scale = TS_FM_PITCH_SCALE_MINOR;
+            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                     "PITCH OPEN - RANDOMIZE USES ROOT AND SCALE");
+        } else
+            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                     "DRONE EDGES ZEROED - HELD CHORD CONTINUES UNDER THE WINDOW");
         snprintf(ui.status, sizeof(ui.status),
                  "FM LOGIC PREVIEW - APPLY PRINTS THE GENOME TO THE ACTIVE TILE");
     } else if (argc > 2 && strcmp(argv[2], "palette") == 0) {

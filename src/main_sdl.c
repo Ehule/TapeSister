@@ -42,6 +42,18 @@
 
 enum { TS_SPLASH_MILLISECONDS = 5000 };
 
+typedef struct {
+    TsInstrument before;
+    TsInstrument after;
+    uint64_t before_hash;
+    uint64_t after_hash;
+    size_t page_before;
+    size_t page_count_before;
+    int valid;
+    int applied;
+    int added_page;
+} FmBankHistory;
+
 static SDL_Texture *load_splash_texture(SDL_Renderer *renderer, int *width, int *height)
 {
     static const char relative_path[] = "assets/tapesister_splash.png";
@@ -339,6 +351,74 @@ static uint64_t instrument_state_hash(const TsInstrument *instrument)
                          sizeof(bank->edit.grid_snap));
     }
     return hash;
+}
+
+static void fm_bank_history_init(FmBankHistory *history)
+{
+    if (history == NULL) return;
+    memset(history, 0, sizeof(*history));
+    ts_instrument_init(&history->before);
+    ts_instrument_init(&history->after);
+}
+
+static void fm_bank_history_free(FmBankHistory *history)
+{
+    if (history == NULL) return;
+    ts_instrument_free(&history->before);
+    ts_instrument_free(&history->after);
+    memset(history, 0, sizeof(*history));
+}
+
+/* Returns 1 when the bank transaction moved, 0 on a matching failure, and -1
+   when ordinary tile history should handle the request. */
+static int fm_bank_history_move(FmBankHistory *history,
+                                TsSamplePages *pages,
+                                TsInstrument *instrument,
+                                int redo,
+                                char *error, size_t error_size)
+{
+    size_t made_page = 0u;
+    if (history == NULL || pages == NULL || instrument == NULL ||
+        !history->valid) return -1;
+    if (!redo) {
+        if (!history->applied ||
+            ts_sample_pages_active(pages) !=
+                (history->added_page ? history->page_count_before :
+                                       history->page_before) ||
+            instrument_state_hash(instrument) != history->after_hash)
+            return -1;
+        if (history->added_page) {
+            if (!ts_sample_pages_remove_last_and_switch(
+                    pages, instrument, history->page_before,
+                    error, error_size)) return 0;
+        } else if (!ts_instrument_clone(instrument, &history->before,
+                                        error, error_size)) return 0;
+        history->applied = 0;
+        return 1;
+    }
+    if (history->applied ||
+        ts_sample_pages_active(pages) != history->page_before ||
+        ts_sample_pages_count(pages) != history->page_count_before ||
+        instrument_state_hash(instrument) != history->before_hash)
+        return -1;
+    if (history->added_page) {
+        if (!ts_sample_pages_append_and_switch(
+                pages, instrument, &made_page, error, error_size)) return 0;
+        if (made_page != history->page_count_before ||
+            !ts_instrument_clone(instrument, &history->after,
+                                 error, error_size)) {
+            char ignored[80];
+            (void)ts_sample_pages_remove_last_and_switch(
+                pages, instrument, history->page_before,
+                ignored, sizeof(ignored));
+            if (made_page != history->page_count_before)
+                snprintf(error, error_size, "Could not restore FM Bank Maker page");
+            return 0;
+        }
+    } else if (!ts_instrument_clone(instrument, &history->after,
+                                    error, error_size)) return 0;
+    history->applied = 1;
+    return 1;
 }
 
 static uint64_t paged_project_state_hash(const TsSamplePages *pages,
@@ -2731,6 +2811,7 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ts_fm_patch_from_recipe(&recipe, &ui->fm_patch);
     ui->fm_open = 1;
     ui->fm_full_choice_open = 0;
+    ui->fm_bank_choice_open = 0;
     ui->fm_page = TS_FM_PAGE_PITCH;
     ui->fm_preview_sample = preview;
     (void)render_fm_workspace(device, audio, ui, instrument, preview);
@@ -2745,6 +2826,7 @@ static void close_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ui->active_notes = 0u;
     ui->fm_held_notes = 0;
     ui->fm_full_choice_open = 0;
+    ui->fm_bank_choice_open = 0;
     ui->fm_open = 0;
     ui->fm_preview_sample = NULL;
     ts_sample_free(preview);
@@ -2940,6 +3022,99 @@ static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
                      instrument->selected_slot + 1);
     } else snprintf(ui->fm_message, sizeof(ui->fm_message),
                     "FM APPLY FAILED: %.76s", error);
+}
+
+static void make_fm_bank_workspace(SDL_AudioDeviceID device, AudioState *audio,
+                                   TsUiState *ui, TsInstrument *instrument,
+                                   TsSamplePages *sample_pages,
+                                   FmBankHistory *history, int new_page)
+{
+    TsInstrument before;
+    TsInstrument made;
+    TsInstrument after;
+    size_t page_before;
+    size_t page_count_before;
+    size_t made_page = 0u;
+    char error[160];
+    int ok = 0;
+    ts_instrument_init(&before);
+    ts_instrument_init(&made);
+    ts_instrument_init(&after);
+    if (history == NULL || sample_pages == NULL ||
+        !sample_pages->active_live) {
+        snprintf(ui->fm_message, sizeof(ui->fm_message),
+                 "BANK MAKER NEEDS THE SAMPLE BANK");
+        goto finished;
+    }
+    page_before = ts_sample_pages_active(sample_pages);
+    page_count_before = ts_sample_pages_count(sample_pages);
+    if (!ts_instrument_clone(&before, instrument, error, sizeof(error))) {
+        snprintf(ui->fm_message, sizeof(ui->fm_message),
+                 "BANK SNAPSHOT FAILED: %.70s", error);
+        goto finished;
+    }
+    if (new_page) {
+        made.family_mutation = instrument->family_mutation;
+        made.family_trajectory = instrument->family_trajectory;
+        made.family_relation = instrument->family_relation;
+        made.family_locks = instrument->family_locks;
+        made.generator = instrument->generator;
+    } else if (!ts_instrument_clone(&made, instrument, error, sizeof(error))) {
+        snprintf(ui->fm_message, sizeof(ui->fm_message),
+                 "BANK STAGING FAILED: %.72s", error);
+        goto finished;
+    }
+    if (!ts_instrument_make_fm_bank(&made, &ui->fm_patch,
+                                    error, sizeof(error)) ||
+        !ts_instrument_clone(&after, &made, error, sizeof(error))) {
+        snprintf(ui->fm_message, sizeof(ui->fm_message),
+                 "BANK MAKER FAILED: %.74s", error);
+        goto finished;
+    }
+    lock_edit(device, audio);
+    ts_note_bank_clear(&audio->notes);
+    if (new_page && !ts_sample_pages_append_and_switch(
+            sample_pages, instrument, &made_page,
+            error, sizeof(error))) {
+        unlock_edit(device, audio, ui, instrument);
+        snprintf(ui->fm_message, sizeof(ui->fm_message),
+                 "NEW PAGE FAILED: %.76s", error);
+        goto finished;
+    }
+    ts_instrument_free(instrument);
+    *instrument = made;
+    ts_instrument_init(&made);
+    unlock_edit(device, audio, ui, instrument);
+    ts_instrument_free(&history->before);
+    ts_instrument_free(&history->after);
+    history->before = before;
+    history->after = after;
+    ts_instrument_init(&before);
+    ts_instrument_init(&after);
+    history->before_hash = instrument_state_hash(&history->before);
+    history->after_hash = instrument_state_hash(&history->after);
+    history->page_before = page_before;
+    history->page_count_before = page_count_before;
+    history->valid = 1;
+    history->applied = 1;
+    history->added_page = new_page != 0;
+    ui->sample_page = (int)ts_sample_pages_active(sample_pages);
+    ui->sample_page_count = (int)ts_sample_pages_count(sample_pages);
+    ui->fm_bank_choice_open = 0;
+    ui->fm_full_choice_open = 0;
+    ui->active_notes = 0u;
+    ui->fm_held_notes = 0;
+    ts_ui_reset_parent_view(ui, instrument->current.frames);
+    snprintf(ui->fm_message, sizeof(ui->fm_message),
+             "16-SOUND BANK MADE ON SAMPLE PAGE %d - ONE UNDO",
+             ui->sample_page + 1);
+    ok = 1;
+
+finished:
+    ts_instrument_free(&before);
+    ts_instrument_free(&made);
+    ts_instrument_free(&after);
+    if (!ok && ui != NULL) ui->fm_bank_choice_open = 0;
 }
 
 static void apply_process(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -3775,15 +3950,24 @@ static void apply_canvas_action(SDL_AudioDeviceID device, AudioState *audio,
 }
 
 static void history_move(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                         TsInstrument *instrument, int redo)
+                         TsInstrument *instrument, TsSamplePages *sample_pages,
+                         FmBankHistory *fm_bank_history, int redo)
 {
     char error[160];
     int ok;
     lock_edit(device, audio);
-    ok = redo ? ts_instrument_redo(instrument, error, sizeof(error)) :
-                ts_instrument_undo(instrument, error, sizeof(error));
+    ok = fm_bank_history_move(fm_bank_history, sample_pages, instrument,
+                              redo, error, sizeof(error));
+    if (ok >= 0) ts_note_bank_clear(&audio->notes);
+    if (ok < 0)
+        ok = redo ? ts_instrument_redo(instrument, error, sizeof(error)) :
+                    ts_instrument_undo(instrument, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
-    if (ok) ui->has_stretch_readout = 0;
+    if (ok) {
+        ui->has_stretch_readout = 0;
+        ui->sample_page = (int)ts_sample_pages_active(sample_pages);
+        ui->sample_page_count = (int)ts_sample_pages_count(sample_pages);
+    }
     if (ok) snprintf(ui->status, sizeof(ui->status), "%s", redo ? "REDO" : "UNDO");
     else snprintf(ui->status, sizeof(ui->status), "%.150s", error);
 }
@@ -6047,6 +6231,7 @@ int main(int argc, char **argv)
     TsSample pending_selection_load;
     TsSample drone_preview;
     TsSample fm_preview;
+    FmBankHistory fm_bank_history;
     TsExchangeOffer exchange_offer;
     TransformController transform;
     size_t clipboard_origin_first = 0;
@@ -6069,10 +6254,12 @@ int main(int argc, char **argv)
                    sizeof(TsInstrument), sizeof(TsFramebuffer), sizeof(TsUiState),
                    diagnostic_bank_stress);
     ts_instrument_init(&instrument);
+    fm_bank_history_init(&fm_bank_history);
     {
         char page_error[160];
         if (!ts_sample_pages_init(&sample_pages, page_error, sizeof(page_error))) {
             fprintf(stderr, "TapeSister Sample pages: %s\n", page_error);
+            fm_bank_history_free(&fm_bank_history);
             ts_instrument_free(&instrument);
             return 1;
         }
@@ -6080,6 +6267,7 @@ int main(int argc, char **argv)
         if (parked_instrument == NULL) {
             fprintf(stderr, "TapeSister Record Bank: out of memory\n");
             ts_sample_pages_free(&sample_pages);
+            fm_bank_history_free(&fm_bank_history);
             ts_instrument_free(&instrument);
             return 1;
         }
@@ -6144,6 +6332,7 @@ int main(int argc, char **argv)
         ts_instrument_free(parked_instrument);
         free(parked_instrument);
         ts_sample_pages_free(&sample_pages);
+        fm_bank_history_free(&fm_bank_history);
         ts_instrument_free(&instrument);
         return 1;
     }
@@ -6194,6 +6383,7 @@ int main(int argc, char **argv)
         ts_instrument_free(parked_instrument);
         free(parked_instrument);
         ts_sample_pages_free(&sample_pages);
+        fm_bank_history_free(&fm_bank_history);
         ts_instrument_free(&instrument);
         return 0;
     }
@@ -6460,7 +6650,24 @@ int main(int argc, char **argv)
                     }
                 } else if (ui.fm_open) {
                     int fm_note = note_for_key(key);
-                    if (ui.fm_full_choice_open) {
+                    if (ui.fm_bank_choice_open) {
+                        if (key == SDLK_ESCAPE || key == SDLK_c) {
+                            ui.fm_bank_choice_open = 0;
+                            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                     "FM BANK MAKER CANCELLED");
+                        } else if (key == SDLK_r) {
+                            make_fm_bank_workspace(
+                                device, &audio, &ui, &instrument,
+                                &sample_pages, &fm_bank_history, 0);
+                        } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
+                                   key == SDLK_n) {
+                            make_fm_bank_workspace(
+                                device, &audio, &ui, &instrument,
+                                &sample_pages, &fm_bank_history, 1);
+                        } else
+                            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                     "R REPLACES  N/ENTER MAKES PAGE  ESC CANCELS");
+                    } else if (ui.fm_full_choice_open) {
                         if (key == SDLK_ESCAPE || key == SDLK_c) {
                             ui.fm_full_choice_open = 0;
                             snprintf(ui.fm_message, sizeof(ui.fm_message),
@@ -6486,6 +6693,16 @@ int main(int argc, char **argv)
                         ui.fm_page = (TsFmPage)(((int)ui.fm_page +
                                                 ((mod & KMOD_SHIFT) ? 6 : 1)) %
                                                TS_FM_PAGE_COUNT);
+                    } else if ((mod & KMOD_CTRL) && key == SDLK_z) {
+                        history_move(device, &audio, &ui, &instrument,
+                                     &sample_pages, &fm_bank_history, 0);
+                        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                 "%.95s", ui.status);
+                    } else if ((mod & KMOD_CTRL) && key == SDLK_y) {
+                        history_move(device, &audio, &ui, &instrument,
+                                     &sample_pages, &fm_bank_history, 1);
+                        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                 "%.95s", ui.status);
                     } else if (key == SDLK_SPACE) {
                         if (ts_note_bank_count(&audio.notes) > 0)
                             stop_all_force(device, &audio, &ui);
@@ -6498,6 +6715,10 @@ int main(int argc, char **argv)
                     } else if (key == SDLK_r) {
                         randomize_fm_workspace(device, &audio, &ui, &instrument,
                                                &fm_preview);
+                    } else if (key == SDLK_b) {
+                        ui.fm_bank_choice_open = 1;
+                        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                 "CONFIRM 16-SOUND BANK DESTINATION");
                     } else if (fm_note >= 0 && device) {
                         begin_fm_note(device, &audio, &ui, &instrument,
                                       &fm_preview, fm_note, obtained.freq,
@@ -6505,11 +6726,13 @@ int main(int argc, char **argv)
                     }
                 } else if (ui.transform_open) {
                     if ((mod & KMOD_CTRL) && key == SDLK_z) {
-                        history_move(device, &audio, &ui, &instrument, 0);
+                        history_move(device, &audio, &ui, &instrument,
+                                     &sample_pages, &fm_bank_history, 0);
                         mark_transform_stale(device, &audio, &ui, &transform,
                                              "UNDO CHANGED TILE - RENDER AGAIN");
                     } else if ((mod & KMOD_CTRL) && key == SDLK_y) {
-                        history_move(device, &audio, &ui, &instrument, 1);
+                        history_move(device, &audio, &ui, &instrument,
+                                     &sample_pages, &fm_bank_history, 1);
                         mark_transform_stale(device, &audio, &ui, &transform,
                                              "REDO CHANGED TILE - RENDER AGAIN");
                     } else if (key == SDLK_ESCAPE) {
@@ -6803,9 +7026,11 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_e) {
                     begin_export_choice(&ui);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_z) {
-                    history_move(device, &audio, &ui, &instrument, 0);
+                    history_move(device, &audio, &ui, &instrument,
+                                 &sample_pages, &fm_bank_history, 0);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_y) {
-                    history_move(device, &audio, &ui, &instrument, 1);
+                    history_move(device, &audio, &ui, &instrument,
+                                 &sample_pages, &fm_bank_history, 1);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_a) {
                     select_current_tile(device, &audio, &ui, &instrument, 0);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_r) {
@@ -7079,13 +7304,35 @@ int main(int argc, char **argv)
                 int control;
                 SDL_GetMouseState(&raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
+                if (ui.fm_bank_choice_open) {
+                    snprintf(ui.fm_message, sizeof(ui.fm_message),
+                             "CHOOSE REPLACE PAGE, NEW SAMPLE PAGE, OR CANCEL");
+                    continue;
+                }
                 if (ui.fm_full_choice_open) {
                     snprintf(ui.fm_message, sizeof(ui.fm_message),
                              "CHOOSE OVERWRITE, NEW SAMPLE PAGE, OR CANCEL");
                     continue;
                 }
                 control = ts_ui_fm_control_from_point(x, y);
-                if (wheel_y != 0 && control >= 0 &&
+                if (wheel_y != 0 && ui.fm_page == TS_FM_PAGE_PITCH &&
+                    ts_ui_fm_pitch_root_contains(x, y)) {
+                    int amount = wheel_y < 0 ? -wheel_y : wheel_y;
+                    for (int step = 0; step < amount; ++step)
+                        ts_fm_step_pitch_root(&ui.fm_patch,
+                                              wheel_y > 0 ? 1 : -1);
+                    snprintf(ui.fm_message, sizeof(ui.fm_message),
+                             "RANDOM PITCH ROOT UPDATED");
+                } else if (wheel_y != 0 && ui.fm_page == TS_FM_PAGE_PITCH &&
+                           ts_ui_fm_pitch_scale_contains(x, y)) {
+                    int amount = wheel_y < 0 ? -wheel_y : wheel_y;
+                    for (int step = 0; step < amount; ++step)
+                        ts_fm_step_pitch_scale(&ui.fm_patch,
+                                               wheel_y > 0 ? 1 : -1);
+                    snprintf(ui.fm_message, sizeof(ui.fm_message),
+                             "RANDOM PITCH SCALE %s",
+                             ts_fm_pitch_scale_name(ui.fm_patch.pitch_scale));
+                } else if (wheel_y != 0 && control >= 0 &&
                     fm_control_disabled(&ui.fm_patch, ui.fm_page, control)) {
                     snprintf(ui.fm_message, sizeof(ui.fm_message),
                              "ENVELOPE CONTROL DISABLED IN DRONE MODE");
@@ -7571,6 +7818,26 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
                     }
                 } else if (ui.fm_open) {
+                    if (ui.fm_bank_choice_open) {
+                        TsUiFmAction bank_action =
+                            ts_ui_fm_bank_action_from_point(x, y);
+                        if (bank_action == TS_UI_FM_ACTION_BANK_REPLACE)
+                            make_fm_bank_workspace(
+                                device, &audio, &ui, &instrument,
+                                &sample_pages, &fm_bank_history, 0);
+                        else if (bank_action == TS_UI_FM_ACTION_BANK_NEW_PAGE)
+                            make_fm_bank_workspace(
+                                device, &audio, &ui, &instrument,
+                                &sample_pages, &fm_bank_history, 1);
+                        else if (bank_action == TS_UI_FM_ACTION_BANK_CANCEL) {
+                            ui.fm_bank_choice_open = 0;
+                            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                     "FM BANK MAKER CANCELLED");
+                        } else
+                            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                     "CHOOSE REPLACE PAGE, NEW SAMPLE PAGE, OR CANCEL");
+                        continue;
+                    }
                     if (ui.fm_full_choice_open) {
                         TsUiFmAction full_action =
                             ts_ui_fm_full_action_from_point(x, y);
@@ -7592,7 +7859,8 @@ int main(int argc, char **argv)
                     TsFmPage page = ts_ui_fm_page_from_point(x, y);
                     int control = ts_ui_fm_control_from_point(x, y);
                     int voice = ts_ui_fm_voice_from_point(x, y);
-                    uint32_t mutation = ts_ui_fm_mutation_from_point(x, y);
+                    uint32_t mutation = ui.fm_page == TS_FM_PAGE_PITCH ? 0u :
+                                        ts_ui_fm_mutation_from_point(x, y);
                     TsUiFmAction fm_action = ts_ui_fm_action_from_point(x, y);
                     if ((int)page >= 0) {
                         ui.fm_page = page;
@@ -7620,6 +7888,28 @@ int main(int argc, char **argv)
                     } else if (fm_action == TS_UI_FM_ACTION_RANDOMIZE) {
                         randomize_fm_workspace(device, &audio, &ui,
                                                &instrument, &fm_preview);
+                    } else if (fm_action == TS_UI_FM_ACTION_BANK_MAKER) {
+                        ui.fm_bank_choice_open = 1;
+                        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                 "CONFIRM 16-SOUND BANK DESTINATION");
+                    } else if (ui.fm_page == TS_FM_PAGE_PITCH &&
+                               fm_action == TS_UI_FM_ACTION_PITCH_LOCK) {
+                        ui.fm_patch.pitch_lock = !ui.fm_patch.pitch_lock;
+                        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                 ui.fm_patch.pitch_lock ?
+                                 "PITCH LOCKED - RANDOMIZE AND BANK KEEP RATIOS" :
+                                 "PITCH OPEN - RANDOMIZE USES ROOT AND SCALE");
+                    } else if (ui.fm_page == TS_FM_PAGE_PITCH &&
+                               fm_action == TS_UI_FM_ACTION_PITCH_ROOT) {
+                        ts_fm_step_pitch_root(&ui.fm_patch, 1);
+                        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                 "RANDOM PITCH ROOT UPDATED");
+                    } else if (ui.fm_page == TS_FM_PAGE_PITCH &&
+                               fm_action == TS_UI_FM_ACTION_PITCH_SCALE) {
+                        ts_fm_step_pitch_scale(&ui.fm_patch, 1);
+                        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                 "RANDOM PITCH SCALE %s",
+                                 ts_fm_pitch_scale_name(ui.fm_patch.pitch_scale));
                     } else if (fm_action == TS_UI_FM_ACTION_APPLY) {
                         apply_fm_workspace(device, &audio, &ui, &instrument,
                                            &sample_pages, 0);
@@ -8878,6 +9168,7 @@ int main(int argc, char **argv)
     ts_sample_free(&pending_selection_load);
     ts_sample_free(&clipboard);
     ts_sample_pages_free(&sample_pages);
+    fm_bank_history_free(&fm_bank_history);
     if (parked_instrument != NULL) {
         ts_instrument_free(parked_instrument);
         free(parked_instrument);

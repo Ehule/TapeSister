@@ -167,6 +167,13 @@ typedef enum {
     TS_UI_FM_ACTION_DRONE,
     TS_UI_FM_ACTION_EXTREME,
     TS_UI_FM_ACTION_CHAIN,
+    TS_UI_FM_ACTION_BANK_MAKER,
+    TS_UI_FM_ACTION_PITCH_LOCK,
+    TS_UI_FM_ACTION_PITCH_ROOT,
+    TS_UI_FM_ACTION_PITCH_SCALE,
+    TS_UI_FM_ACTION_BANK_REPLACE,
+    TS_UI_FM_ACTION_BANK_NEW_PAGE,
+    TS_UI_FM_ACTION_BANK_CANCEL,
     TS_UI_FM_ACTION_OVERWRITE,
     TS_UI_FM_ACTION_NEW_PAGE,
     TS_UI_FM_ACTION_CANCEL_FULL,
@@ -291,6 +298,7 @@ typedef struct {
     const TsSample *fm_preview_sample;
     int fm_held_notes;
     int fm_full_choice_open;
+    int fm_bank_choice_open;
     char fm_message[96];
     int transform_rendering;
     int transform_preview_available;
@@ -439,8 +447,11 @@ int ts_ui_fm_control_from_point(int x, int y);
 int ts_ui_fm_voice_from_point(int x, int y);
 uint32_t ts_ui_fm_mutation_from_point(int x, int y);
 TsUiFmAction ts_ui_fm_action_from_point(int x, int y);
+TsUiFmAction ts_ui_fm_bank_action_from_point(int x, int y);
 TsUiFmAction ts_ui_fm_full_action_from_point(int x, int y);
 int ts_ui_fm_range_contains(int x, int y);
+int ts_ui_fm_pitch_root_contains(int x, int y);
+int ts_ui_fm_pitch_scale_contains(int x, int y);
 int ts_ui_transform_control_from_point(int x, int y);
 int ts_ui_transform_mix_contains(int x, int y);
 int ts_ui_transform_waveform_contains(int x, int y);

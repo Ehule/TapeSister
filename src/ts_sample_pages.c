@@ -189,6 +189,34 @@ int ts_sample_pages_append_and_switch(TsSamplePages *pages,
     return 1;
 }
 
+int ts_sample_pages_remove_last_and_switch(TsSamplePages *pages,
+                                           TsInstrument *active,
+                                           size_t destination_page,
+                                           char *error, size_t error_size)
+{
+    size_t last;
+    TsInstrument *discard;
+    if (pages == NULL || active == NULL || !pages->active_live ||
+        pages->page_count < 2u || destination_page >= pages->page_count - 1u) {
+        pages_error(error, error_size, "Invalid Sample page removal");
+        return 0;
+    }
+    last = pages->page_count - 1u;
+    if (pages->active_page != last) {
+        pages_error(error, error_size, "Only the active last Sample page can be removed");
+        return 0;
+    }
+    if (!ts_sample_pages_switch(pages, active, destination_page,
+                                error, error_size)) return 0;
+    discard = pages->pages[last];
+    ts_instrument_free(discard);
+    free(discard);
+    pages->pages[last] = NULL;
+    --pages->page_count;
+    pages_error(error, error_size, "");
+    return 1;
+}
+
 int ts_sample_pages_park(TsSamplePages *pages, TsInstrument *active,
                          char *error, size_t error_size)
 {

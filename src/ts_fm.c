@@ -9,7 +9,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#define TS_FM_GENOME_VERSION 3u
+#define TS_FM_GENOME_VERSION 4u
 
 static float ratio_maximum(const TsFmPatch *patch)
 {
@@ -160,6 +160,15 @@ const char *ts_fm_interaction_name(int interaction)
            names[interaction] : "UNKNOWN";
 }
 
+const char *ts_fm_pitch_scale_name(int scale)
+{
+    static const char *names[TS_FM_PITCH_SCALE_COUNT] = {
+        "CHROM", "MAJOR", "MINOR", "PENTA", "WHOLE"
+    };
+    return scale >= 0 && scale < TS_FM_PITCH_SCALE_COUNT ?
+           names[scale] : "UNKNOWN";
+}
+
 const char *ts_fm_page_name(TsFmPage page)
 {
     static const char *names[TS_FM_PAGE_COUNT] = {
@@ -185,8 +194,17 @@ void ts_fm_patch_sanitize(TsFmPatch *patch)
         patch->drone_mode = 0;
         patch->extreme_mode = 0;
     }
+    if (patch->genome_version < 4u || patch->genome_version > TS_FM_GENOME_VERSION) {
+        patch->pitch_lock = 1;
+        patch->pitch_root = 0;
+        patch->pitch_scale = TS_FM_PITCH_SCALE_MAJOR;
+    }
     patch->drone_mode = patch->drone_mode != 0;
     patch->extreme_mode = patch->extreme_mode != 0;
+    patch->pitch_lock = patch->pitch_lock != 0;
+    patch->pitch_root = patch->pitch_root < 0 ? 0 : patch->pitch_root % 12;
+    if (patch->pitch_scale < 0 || patch->pitch_scale >= TS_FM_PITCH_SCALE_COUNT)
+        patch->pitch_scale = TS_FM_PITCH_SCALE_MAJOR;
     patch->genome_version = TS_FM_GENOME_VERSION;
     ratio_high = ratio_maximum(patch);
     depth_high = depth_maximum(patch);
@@ -284,6 +302,9 @@ void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch)
     }
     rng = recipe->seed ^ 0x464d3655u;
     patch->genome_version = TS_FM_GENOME_VERSION;
+    patch->pitch_lock = 1;
+    patch->pitch_root = 0;
+    patch->pitch_scale = TS_FM_PITCH_SCALE_MAJOR;
     patch->structure = (int)(rng_next(&rng) % TS_FM_STRUCTURE_COUNT);
     patch->ratio_family = (int)(rng_next(&rng) % TS_FM_RATIO_FAMILY_COUNT);
     patch->depth = 0.8f + rng_unit(&rng) * 7.2f;
@@ -323,6 +344,47 @@ static int nearby_category(int current, int count, float amount, uint32_t *rng)
     return result % count;
 }
 
+static int pitch_class_in_scale(int pitch_class, int root, int scale)
+{
+    static const uint16_t masks[TS_FM_PITCH_SCALE_COUNT] = {
+        0x0fffu, /* chromatic */
+        (1u << 0) | (1u << 2) | (1u << 4) | (1u << 5) |
+        (1u << 7) | (1u << 9) | (1u << 11),
+        (1u << 0) | (1u << 2) | (1u << 3) | (1u << 5) |
+        (1u << 7) | (1u << 8) | (1u << 10),
+        (1u << 0) | (1u << 2) | (1u << 4) | (1u << 7) | (1u << 9),
+        (1u << 0) | (1u << 2) | (1u << 4) |
+        (1u << 6) | (1u << 8) | (1u << 10)
+    };
+    int relative = (pitch_class - root) % 12;
+    if (relative < 0) relative += 12;
+    if (scale < 0 || scale >= TS_FM_PITCH_SCALE_COUNT)
+        scale = TS_FM_PITCH_SCALE_MAJOR;
+    return (masks[scale] & (1u << relative)) != 0u;
+}
+
+static float quantize_ratio_to_scale(float ratio, int root, int scale,
+                                     float high)
+{
+    float semitones = 12.0f * log2f(clampf(ratio, 0.05f, high));
+    int center = (int)lrintf(semitones);
+    int best = center;
+    float best_distance = INFINITY;
+    for (int candidate = center - 12; candidate <= center + 12; ++candidate) {
+        int midi = TS_KEYBOARD_BASE_NOTE + candidate;
+        int pitch_class = midi % 12;
+        float distance;
+        if (pitch_class < 0) pitch_class += 12;
+        if (!pitch_class_in_scale(pitch_class, root, scale)) continue;
+        distance = fabsf((float)candidate - semitones);
+        if (distance < best_distance) {
+            best = candidate;
+            best_distance = distance;
+        }
+    }
+    return clampf(powf(2.0f, (float)best / 12.0f), 0.05f, high);
+}
+
 void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
                       TsFmPatch *varied)
 {
@@ -353,7 +415,8 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
     lfo_depth_high = lfo_depth_maximum(&base);
     resonance_high = resonance_maximum(&base);
     envelope_high = filter_envelope_maximum(&base);
-    if ((base.mutation_mask & TS_FM_MUTATE_PITCH) != 0u) {
+    if (!base.pitch_lock &&
+        (base.mutation_mask & TS_FM_MUTATE_PITCH) != 0u) {
         for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
             float reach = base.extreme_mode ? 2.4f : 0.9f;
             float step = rng_bipolar(&rng) * amount *
@@ -369,6 +432,10 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
                 varied->ratios[voice] = ratio_families[varied->ratio_family][voice] *
                     (1.0f + rng_bipolar(&rng) * 0.025f * amount);
         }
+        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
+            varied->ratios[voice] = quantize_ratio_to_scale(
+                varied->ratios[voice], base.pitch_root,
+                base.pitch_scale, ratio_high);
     }
     if ((base.mutation_mask & TS_FM_MUTATE_WAVE) != 0u) {
         for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
@@ -598,6 +665,29 @@ int ts_fm_step_control(TsFmPatch *patch, TsFmPage page, int control,
         normalized + (direction > 0 ? amount : -amount));
 }
 
+int ts_fm_step_pitch_root(TsFmPatch *patch, int direction)
+{
+    int root;
+    if (patch == NULL || direction == 0) return 0;
+    ts_fm_patch_sanitize(patch);
+    root = (patch->pitch_root + (direction > 0 ? 1 : -1)) % 12;
+    if (root < 0) root += 12;
+    patch->pitch_root = root;
+    return 1;
+}
+
+int ts_fm_step_pitch_scale(TsFmPatch *patch, int direction)
+{
+    int scale;
+    if (patch == NULL || direction == 0) return 0;
+    ts_fm_patch_sanitize(patch);
+    scale = (patch->pitch_scale + (direction > 0 ? 1 : -1)) %
+            TS_FM_PITCH_SCALE_COUNT;
+    if (scale < 0) scale += TS_FM_PITCH_SCALE_COUNT;
+    patch->pitch_scale = scale;
+    return 1;
+}
+
 void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
                           char *label, size_t label_size,
                           char *value, size_t value_size)
@@ -609,7 +699,16 @@ void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
     safe = *patch;
     ts_fm_patch_sanitize(&safe);
     if (page <= TS_FM_PAGE_LFO_TYPE) {
-        if (label != NULL) snprintf(label, label_size, "VOICE %d", control + 1);
+        if (label != NULL && page == TS_FM_PAGE_PITCH) {
+            char note[12];
+            int midi = TS_KEYBOARD_BASE_NOTE +
+                       (int)lrintf(12.0f * log2f(safe.ratios[control]));
+            if (midi < 0) midi = 0;
+            if (midi > 127) midi = 127;
+            snprintf(label, label_size, "V%d %s", control + 1,
+                     ts_midi_note_name(midi, note, sizeof(note)));
+        } else if (label != NULL)
+            snprintf(label, label_size, "VOICE %d", control + 1);
         if (value == NULL) return;
         if (page == TS_FM_PAGE_PITCH) snprintf(value, value_size, "X%.3F", safe.ratios[control]);
         else if (page == TS_FM_PAGE_WAVE) snprintf(value, value_size, "%s", ts_fm_waveform_name(safe.waveforms[control]));
