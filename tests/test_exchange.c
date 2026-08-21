@@ -76,8 +76,11 @@ int main(void)
 {
     TsInstrument source;
     TsInstrument received;
+    TsInstrument paged_active;
+    TsSamplePages pages;
     TsExchangeOffer offer;
-    char destination[TS_EXCHANGE_PATH_MAX];
+    char destination[TS_EXCHANGE_PATH_MAX] = "";
+    char pages_destination[TS_EXCHANGE_PATH_MAX] = "";
     char error[256];
     int created_slot = -1;
 
@@ -96,6 +99,8 @@ int main(void)
 
     ts_instrument_init(&source);
     ts_instrument_init(&received);
+    ts_instrument_init(&paged_active);
+    CHECK(ts_sample_pages_init(&pages, error, sizeof(error)));
     ts_exchange_offer_init(&offer);
     CHECK(ts_instrument_generate(&source, TS_GENERATOR_FM, 0x12345678u,
                                  error, sizeof(error)));
@@ -121,6 +126,41 @@ int main(void)
         snprintf(manifest, sizeof(manifest), "%s/%s", destination,
                  TS_EXCHANGE_MANIFEST_NAME);
         CHECK(regular_file(manifest));
+    }
+
+    CHECK(ts_sample_pages_switch(&pages, &paged_active, 0u,
+                                 error, sizeof(error)));
+    CHECK(ts_instrument_generate(&paged_active, TS_GENERATOR_TONAL, 0x50414731u,
+                                 error, sizeof(error)));
+    {
+        size_t second_page = 0u;
+        CHECK(ts_sample_pages_append_and_switch(&pages, &paged_active,
+                                                &second_page,
+                                                error, sizeof(error)));
+        CHECK(second_page == 1u);
+    }
+    CHECK(ts_instrument_generate(&paged_active, TS_GENERATOR_PULSE, 0x50414732u,
+                                 error, sizeof(error)));
+    CHECK(ts_exchange_publish_pages(
+        &pages, &paged_active, "test-exchange-root",
+        pages_destination, sizeof(pages_destination), error, sizeof(error)));
+    {
+        char manifest_path[1200];
+        char contents[2048];
+        FILE *manifest;
+        size_t used;
+        snprintf(manifest_path, sizeof(manifest_path), "%s/%s",
+                 pages_destination, TS_EXCHANGE_MANIFEST_NAME);
+        manifest = fopen(manifest_path, "rb");
+        CHECK(manifest != NULL);
+        used = manifest != NULL ? fread(contents, 1, sizeof(contents) - 1u, manifest) : 0u;
+        if (manifest != NULL) fclose(manifest);
+        contents[used] = '\0';
+        CHECK(strstr(contents, "TAPESISTER_EXCHANGE 2\n") != NULL);
+        CHECK(strstr(contents, "layout=page_instruments\n") != NULL);
+        CHECK(strstr(contents, "count=2\n") != NULL);
+        CHECK(strstr(contents, "item=1,1,1,P001_01_") != NULL);
+        CHECK(strstr(contents, "item=1,2,1,P002_01_") != NULL);
     }
 
     CHECK(ts_instrument_generate(&received, TS_GENERATOR_NOISE, 33u,
@@ -188,7 +228,10 @@ int main(void)
 
     ts_instrument_free(&received);
     ts_instrument_free(&source);
+    ts_sample_pages_free(&pages);
+    ts_instrument_free(&paged_active);
     remove_test_folder(destination);
+    remove_test_folder(pages_destination);
     remove_test_folder("test-exchange-root/incoming_0001");
     remove_test_folder("test-exchange-root/incoming_0002.partial");
     remove_test_folder("test-exchange-root/incoming_corrupt");

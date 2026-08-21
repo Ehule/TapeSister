@@ -1997,7 +1997,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR24", 5) == 0);
+        CHECK(memcmp(magic, "TSR25", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -2448,6 +2448,23 @@ int main(void)
         CHECK(ts_browser_destination_path(&browser, path, sizeof(path)));
         CHECK(strstr(path, "metallic_family") != NULL);
         CHECK(strstr(path, "metallic_family.wav") == NULL);
+        CHECK(ts_browser_mode_allows_create_directory(TS_BROWSER_SAVE_RECIPE));
+        CHECK(ts_browser_mode_allows_create_directory(TS_BROWSER_EXPORT_WAV));
+        CHECK(!ts_browser_mode_allows_create_directory(TS_BROWSER_LOAD_WAV));
+        CHECK(ts_browser_begin_create_directory(&browser));
+        CHECK(browser.creating_directory && browser.filename[0] == '\0');
+        ts_browser_set_filename(&browser, "test-browser-created");
+        CHECK(ts_browser_create_directory(&browser));
+        CHECK(!browser.creating_directory);
+        CHECK(strstr(browser.directory, "test-browser-created") != NULL);
+        CHECK(strcmp(browser.filename, "metallic_family") == 0);
+        CHECK(ts_browser_parent(&browser));
+        CHECK(rmdir("test-browser-created") == 0);
+        CHECK(ts_browser_begin_create_directory(&browser));
+        ts_browser_set_filename(&browser, "bad:name");
+        CHECK(!ts_browser_create_directory(&browser));
+        ts_browser_cancel_create_directory(&browser);
+        CHECK(strcmp(browser.filename, "metallic_family") == 0);
         CHECK(!ts_browser_mode_edits_filename(TS_BROWSER_LOAD_WAV));
         CHECK(ts_browser_mode_edits_filename(TS_BROWSER_EXPORT_WAV));
         CHECK(ts_browser_mode_selects_config(TS_BROWSER_SELECT_SAMPLE_DIRECTORY));
@@ -2657,6 +2674,10 @@ int main(void)
           TS_UI_BANK_ACTION_CAPTURE_SELECTION);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL) ==
           TS_UI_BANK_ACTION_CLONE);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_ALT) ==
+          TS_UI_BANK_ACTION_TOGGLE_LOCK);
+    CHECK(ts_ui_new_page_button_from_point(480, 320));
+    CHECK(!ts_ui_new_page_button_from_point(535, 320));
     CHECK(ts_ui_bank_action(1, 0) == TS_UI_BANK_ACTION_RENAME);
     CHECK(ts_ui_bank_action(1, TS_UI_BANK_MOD_SHIFT) == TS_UI_BANK_ACTION_CLEAR);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_ALT) ==
@@ -2727,8 +2748,10 @@ int main(void)
     ts_ui_render(&fb, &ui, &restored);
     CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 160, 120) ==
           TS_UI_EXCHANGE_ACTION_SEND_ONE_INSTRUMENT);
-    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 360, 120) ==
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 300, 120) ==
           TS_UI_EXCHANGE_ACTION_SEND_SEPARATE_INSTRUMENTS);
+    CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 430, 120) ==
+          TS_UI_EXCHANGE_ACTION_SEND_ALL_PAGES);
     CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 180, 166) ==
           TS_UI_EXCHANGE_ACTION_CHECK_INBOX);
     CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 300, 166) ==

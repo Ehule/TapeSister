@@ -11,10 +11,12 @@
 #include <direct.h>
 #include <io.h>
 #define ts_rmdir(path) _rmdir(path)
+#define ts_mkdir(path) _mkdir(path)
 #else
 #include <dirent.h>
 #include <unistd.h>
 #define ts_rmdir(path) rmdir(path)
+#define ts_mkdir(path) mkdir(path, 0775)
 #endif
 
 static void set_error(char *error, size_t error_size, const char *message)
@@ -483,6 +485,126 @@ int ts_exchange_publish_bank(const TsInstrument *instrument,
     return 1;
 }
 
+int ts_exchange_publish_pages(const TsSamplePages *pages,
+                              const TsInstrument *active_instrument,
+                              const char *exchange_root,
+                              char *destination, size_t destination_size,
+                              char *error, size_t error_size)
+{
+    const TsTuning unity = {TS_KEYBOARD_BASE_NOTE, 0.0f};
+    const TsInstrument *naming;
+    char final_path[TS_EXCHANGE_PATH_MAX];
+    char partial_path[TS_EXCHANGE_PATH_MAX];
+    char manifest_path[TS_EXCHANGE_PATH_MAX];
+    FILE *manifest = NULL;
+    size_t page_count;
+    int item_count = 0;
+    if (pages == NULL || active_instrument == NULL ||
+        !pages->active_live || !path_is_directory(exchange_root)) {
+        set_error(error, error_size, "Configure an existing FT2 exchange path first");
+        return 0;
+    }
+    page_count = ts_sample_pages_count(pages);
+    if (page_count < 2u || page_count > 255u) {
+        set_error(error, error_size,
+                  "All-pages export needs between 2 and 255 sample pages");
+        return 0;
+    }
+    naming = ts_sample_pages_page(pages, active_instrument,
+                                  ts_sample_pages_active(pages));
+    if (naming == NULL ||
+        !ts_instrument_next_family_path(naming, exchange_root,
+                                        final_path, sizeof(final_path),
+                                        error, error_size)) return 0;
+    if (destination != NULL &&
+        (destination_size == 0u || strlen(final_path) >= destination_size)) {
+        set_error(error, error_size, "Exchange destination buffer is too small");
+        return 0;
+    }
+    if (snprintf(partial_path, sizeof(partial_path), "%s.partial", final_path) < 0 ||
+        strlen(final_path) + 8u >= sizeof(partial_path)) {
+        set_error(error, error_size, "Exchange staging path is too long");
+        return 0;
+    }
+    remove_partial_folder(partial_path);
+    if (ts_mkdir(partial_path) != 0) {
+        snprintf(error, error_size, "Could not create exchange staging folder: %s",
+                 strerror(errno));
+        return 0;
+    }
+    if (!path_join(manifest_path, sizeof(manifest_path), partial_path,
+                   TS_EXCHANGE_MANIFEST_NAME)) {
+        set_error(error, error_size, "Exchange manifest path is too long");
+        goto failed;
+    }
+    manifest = fopen(manifest_path, "wb");
+    if (manifest == NULL) {
+        snprintf(error, error_size, "Could not create exchange manifest: %s",
+                 strerror(errno));
+        goto failed;
+    }
+    fprintf(manifest, "TAPESISTER_EXCHANGE 2\n");
+    fprintf(manifest,
+            "sender=tapesister\nrecipient=tapehead\nlayout=page_instruments\n");
+    for (size_t page = 0u; page < page_count; ++page) {
+        const TsInstrument *instrument = ts_sample_pages_page(
+            pages, active_instrument, page);
+        if (instrument == NULL) {
+            set_error(error, error_size, "A sample page is unavailable for export");
+            goto failed;
+        }
+        item_count += ts_instrument_bank_count(instrument);
+    }
+    if (item_count <= 0) {
+        set_error(error, error_size, "No occupied sample pages to export");
+        goto failed;
+    }
+    fprintf(manifest, "count=%d\n", item_count);
+    for (size_t page = 0u; page < page_count; ++page) {
+        const TsInstrument *instrument = ts_sample_pages_page(
+            pages, active_instrument, page);
+        for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+            const TsBankSlot *bank = &instrument->bank[slot];
+            char safe[96];
+            char filename[TS_EXCHANGE_FILENAME_MAX];
+            char wav_path[TS_EXCHANGE_PATH_MAX];
+            if (!bank->occupied) continue;
+            bank_safe_name(bank->sample.name, safe, sizeof(safe));
+            if (snprintf(filename, sizeof(filename), "P%03zu_%02d_%s.wav",
+                         page + 1u, slot + 1, safe) < 0 ||
+                !path_join(wav_path, sizeof(wav_path), partial_path, filename)) {
+                set_error(error, error_size, "Exchange WAV path is too long");
+                goto failed;
+            }
+            if (!ts_sample_save_wav16_tuned_looped(
+                    &bank->sample, &unity,
+                    bank->has_loop, bank->loop_first, bank->loop_last,
+                    bank->loop_mode, wav_path, error, error_size)) goto failed;
+            fprintf(manifest, "item=%d,%zu,%d,%s\n", slot + 1,
+                    page + 1u, slot + 1, filename);
+        }
+    }
+    if (fclose(manifest) != 0) {
+        manifest = NULL;
+        set_error(error, error_size, "Could not finish exchange manifest");
+        goto failed;
+    }
+    manifest = NULL;
+    if (rename(partial_path, final_path) != 0) {
+        set_error(error, error_size, "Could not atomically publish exchange folder");
+        goto failed;
+    }
+    if (destination != NULL)
+        (void)copy_field(destination, destination_size, final_path);
+    set_error(error, error_size, "");
+    return 1;
+
+failed:
+    if (manifest != NULL) fclose(manifest);
+    remove_partial_folder(partial_path);
+    return 0;
+}
+
 static int acknowledge_offer(const TsExchangeOffer *offer,
                              char *error, size_t error_size)
 {
@@ -532,6 +654,13 @@ int ts_exchange_import_offer(TsInstrument *instrument,
         strcmp(offer->recipient, "tapesister") != 0) {
         set_error(error, error_size, "Transfer is not addressed from Tapehead to TapeSister");
         return 0;
+    }
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        if (ts_instrument_bank_is_locked(instrument, slot)) {
+            set_error(error, error_size,
+                      "Unlock protected tiles before replacing this bank");
+            return 0;
+        }
     }
     ts_instrument_init(&staged);
     for (int item = 0; item < offer->item_count; ++item) {

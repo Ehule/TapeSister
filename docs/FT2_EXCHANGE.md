@@ -12,6 +12,25 @@ The sender writes WAV files and the manifest into a folder whose name ends in
 name. Receivers ignore partial folders and folders without a valid manifest. Existing
 transfer folders are never overwritten.
 
+Version 1 remains the single-page reciprocal format. Version 2 is used only for a
+TapeSister **All Pages** send and adds the `page_instruments` layout:
+
+```text
+TAPESISTER_EXCHANGE 2
+sender=tapesister
+recipient=tapehead
+layout=page_instruments
+count=2
+item=1,1,1,P001_01_Kick.wav
+item=1,2,1,P002_01_Bass.wav
+```
+
+Each page maps to one relative FT2 instrument and each TapeSister tile maps to the
+same-numbered sample within that instrument. The repeated tile field is valid across
+different relative instruments. Version 2 allows 1–255 pages and up to 16 items per
+page. TapeSister does not accept version-2 manifests on import because its receiving
+destination remains one 16-tile page.
+
 The manifest file is named `exchange.tsexchange`. It is UTF-8-compatible ASCII with
 this versioned line format:
 
@@ -48,9 +67,11 @@ tile targets, missing WAVs, unsupported versions/layouts, and more than 16 items
 
 The top **FT2 Link** button opens a choice instead of immediately launching FT2:
 
-- **One Instrument**: occupied tiles retain their tile numbers as FT2 sample slots in
+- **Page -> One**: occupied tiles retain their tile numbers as FT2 sample slots in
   one destination instrument.
-- **Separate Instr**: each occupied tile becomes sample 1 of a relative FT2 instrument.
+- **Page -> Split**: each occupied tile becomes sample 1 of a relative FT2 instrument.
+- **All Pages**: each Sample page becomes one relative FT2 instrument and each occupied
+  tile keeps its number as that instrument's sample slot; this publishes version 2.
 - **Check Inbox**: immediately scans for a Tapehead-to-TapeSister transfer.
 - **Cancel**: closes the dialog without writing files or launching FT2.
 
@@ -84,7 +105,8 @@ TapeSister bank unchanged and does not acknowledge the transfer.
 
 ## FT2 Tapehead receiver requirements
 
-The reciprocal implementation must use this exact version-1 format and safety model.
+The reciprocal implementation must use the version-1 format and safety model for
+single-page transfers and version 2 for `page_instruments`.
 It should poll or scan only the configured exchange folder, ignore its own outgoing
 transfers, stage the newest complete unacknowledged TapeSister transfer, and show a
 confirmation dialog before changing tracker state.
@@ -96,6 +118,10 @@ clear tracker memory or instruments, must reject out-of-range/conflicting destin
 and should commit the accepted batch as one undoable transaction. On success it writes
 `tapehead.received` beside the manifest.
 
+For version-2 `page_instruments`, the dialog chooses a starting instrument, validates
+that the complete page range and every sample slot fit, previews the page-to-instrument
+mapping, and imports the whole offer as one undoable transaction. A Tapehead build that
+does not implement version 2 must reject it explicitly without importing a partial page.
+
 When sending to TapeSister, FT2 writes the same manifest with `sender=tapehead`,
-`recipient=tapesister`, maps each exported WAV to a unique TapeSister tile 1 through 16,
 publishes the folder atomically, and launches/focuses TapeSister only after publication.

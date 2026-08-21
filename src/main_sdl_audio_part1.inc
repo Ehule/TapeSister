@@ -112,8 +112,13 @@ static char ts_capture_reconfigure_error[160];
 
 static void ts_copy_name(char *destination, size_t size, const char *source)
 {
+    size_t length;
     if (destination == NULL || size == 0) return;
-    snprintf(destination, size, "%s", source != NULL ? source : "");
+    if (source == NULL) source = "";
+    length = strlen(source);
+    if (length >= size) length = size - 1u;
+    memcpy(destination, source, length);
+    destination[length] = '\0';
 }
 
 static const char *ts_configured_output_name(void)

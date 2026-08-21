@@ -395,6 +395,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
                         browser->filename_cursor;
         size_t first = length > 78 ? length - 78 : 0;
         text(fb, 58, 282,
+             browser->creating_directory ? "NEW FOLDER NAME" :
              browser->mode == TS_BROWSER_EXPORT_BANK ? "COLLECTION FOLDER" : "FILENAME",
              PAL_EFFECT, 1);
         rect(fb, 58, 294, 518, 24, RGB(8, 8, 8));
@@ -417,17 +418,22 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
     }
 
     button(fb, 58, 326, 72, "UP DIR", 0);
-    button(fb, 135, 326, 120,
+    if (ts_browser_mode_allows_create_directory(browser->mode))
+        button(fb, 135, 326, 84,
+               browser->creating_directory ? "BACK" : "NEW DIR",
+               browser->creating_directory);
+    button(fb, 224, 326, 120,
+           browser->creating_directory ? "CREATE" :
            ts_browser_mode_selects_directory(browser->mode) ? "USE FOLDER" :
            browser->mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE ? "USE FILE" :
            browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
            (browser->mode == TS_BROWSER_SAVE_RECIPE ||
             browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVE" : "EXPORT",
-           browser->overwrite_armed);
-    button(fb, 260, 326, 84, "CANCEL", 0);
-    snprintf(footer, sizeof(footer), "%.38s", browser->overwrite_armed ?
+           browser->overwrite_armed || browser->creating_directory);
+    button(fb, 349, 326, 84, "CANCEL", 0);
+    snprintf(footer, sizeof(footer), "%.24s", browser->overwrite_armed ?
              "PRESS AGAIN TO OVERWRITE" : browser->message);
-    text(fb, 354, 334, footer,
+    text(fb, 441, 334, footer,
          browser->overwrite_armed ? PAL_VOLUME : RGB(190, 185, 190), 1);
 }
 
@@ -1198,10 +1204,12 @@ TsUiExchangeAction ts_ui_exchange_action_from_point(TsUiExchangeDialog dialog,
 {
     if (dialog == TS_UI_EXCHANGE_SEND) {
         if (y >= 112 && y < 135) {
-            if (x >= 126 && x < 310)
+            if (x >= 126 && x < 246)
                 return TS_UI_EXCHANGE_ACTION_SEND_ONE_INSTRUMENT;
-            if (x >= 330 && x < 514)
+            if (x >= 254 && x < 374)
                 return TS_UI_EXCHANGE_ACTION_SEND_SEPARATE_INSTRUMENTS;
+            if (x >= 382 && x < 514)
+                return TS_UI_EXCHANGE_ACTION_SEND_ALL_PAGES;
         }
         if (y >= 158 && y < 181) {
             if (x >= 128 && x < 240) return TS_UI_EXCHANGE_ACTION_CHECK_INBOX;
@@ -1366,6 +1374,11 @@ TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y)
 int ts_ui_capture_button_from_point(int x, int y)
 {
     return x >= 536 && x < 630 && y >= 313 && y < 330;
+}
+
+int ts_ui_new_page_button_from_point(int x, int y)
+{
+    return x >= 461 && x < 531 && y >= 313 && y < 330;
 }
 
 int ts_ui_record_keep_button_from_point(int x, int y)
@@ -2367,7 +2380,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 mini_button(fb, 461, 313, 70,
                             ui->monitor_enabled ? "MON ON" : "MONITOR",
                             ui->monitor_enabled);
-        }
+        } else mini_button(fb, 461, 313, 70, "+ PAGE", 0);
         mini_button(fb, 536, 313, 94, capture_label,
                     ui->capture_state != TS_CAPTURE_IDLE);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
@@ -2380,6 +2393,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             else
                 snprintf(label, sizeof(label), "%02d ---", i + 1);
             button(fb, x, y, 72, label, slot->occupied);
+            if (slot->occupied && slot->locked) {
+                rect(fb, x + 2, y + 2, 68, 2, PAL_VOLUME);
+                rect(fb, x + 2, y + 19, 68, 2, PAL_VOLUME);
+                text(fb, x + 62, y + 8, "L", PAL_VOLUME, 1);
+            }
             if (slot->occupied && slot->has_loop)
                 rect(fb, x + 66, y + 4, 3, 15, PAL_TUNING);
             if (slot->occupied)
@@ -2428,12 +2446,18 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         frame(fb, 110, 54, 420, 140, RGB(36, 33, 37), PAL_MOUSE);
         if (ui->exchange_dialog == TS_UI_EXCHANGE_SEND) {
             text(fb, 128, 68, "SEND TAPESISTER BANK TO TAPEHEAD", PAL_NOTE, 1);
-            snprintf(count, sizeof(count), "%d OCCUPIED TILES - CHOOSE FT2 LAYOUT",
-                     ui->exchange_item_count);
+            snprintf(count, sizeof(count), "%d TILES  %d SAMPLE PAGE%s",
+                     ui->exchange_item_count,
+                     ui->sample_page_count > 0 ? ui->sample_page_count : 1,
+                     ui->sample_page_count == 1 ? "" : "S");
             text(fb, 128, 88, count, PAL_EFFECT, 1);
-            button(fb, 126, 112, 184, "ONE INSTRUMENT", 0);
-            button(fb, 330, 112, 184, "SEPARATE INSTR", 0);
-            text(fb, 128, 140, "WAVS + MANIFEST PUBLISH ATOMICALLY", PAL_INSTRUMENT, 1);
+            button(fb, 126, 112, 120, "PAGE -> ONE", 0);
+            button(fb, 254, 112, 120, "PAGE -> SPLIT", 0);
+            button(fb, 382, 112, 132, "ALL PAGES",
+                   ui->sample_page_count > 1 && !ui->external_record_bank);
+            text(fb, 128, 140,
+                 "ALL PAGES MAPS EACH PAGE TO ONE TAPEHEAD INSTRUMENT",
+                 PAL_INSTRUMENT, 1);
             button(fb, 128, 158, 112, "CHECK INBOX", 0);
             button(fb, 250, 158, 140, "NEW INSTANCE",
                    ui->exchange_force_new_instance);
@@ -2626,6 +2650,8 @@ TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers)
     if (relevant == TS_UI_BANK_MOD_CTRL) return TS_UI_BANK_ACTION_CAPTURE_SELECTION;
     if (relevant == (TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_SHIFT))
         return TS_UI_BANK_ACTION_CLONE;
+    if (relevant == (TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_ALT))
+        return TS_UI_BANK_ACTION_TOGGLE_LOCK;
     return TS_UI_BANK_ACTION_INVALID;
 }
 
@@ -2654,6 +2680,8 @@ int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
         return ts_instrument_copy_selected(instrument, slot, error, error_size);
     if (action == TS_UI_BANK_ACTION_CLEAR)
         return ts_instrument_bank_clear(instrument, slot, error, error_size);
+    if (action == TS_UI_BANK_ACTION_TOGGLE_LOCK)
+        return ts_instrument_bank_toggle_locked(instrument, slot, error, error_size);
     if (action == TS_UI_BANK_ACTION_AUDITION)
         return ts_instrument_select_bank(instrument, slot, error, error_size);
     if (action == TS_UI_BANK_ACTION_RENAME) {

@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "tapesister/sample.h"
+#include "tapesister/sample_pages.h"
 
 enum {
     TS_EXCHANGE_PATH_MAX = 1024,
@@ -53,6 +54,11 @@ int ts_exchange_publish_bank(const TsInstrument *instrument,
                              TsExchangeLayout layout,
                              char *destination, size_t destination_size,
                              char *error, size_t error_size);
+int ts_exchange_publish_pages(const TsSamplePages *pages,
+                              const TsInstrument *active_instrument,
+                              const char *exchange_root,
+                              char *destination, size_t destination_size,
+                              char *error, size_t error_size);
 int ts_exchange_import_offer(TsInstrument *instrument,
                              const TsExchangeOffer *offer,
                              char *error, size_t error_size);

@@ -2493,6 +2493,10 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
         return 0;
     }
     slot = instrument->selected_slot;
+    if (instrument->bank[slot].locked) {
+        set_error(error, error_size, "Tile is locked - unlock it before loading a WAV");
+        return 0;
+    }
     bank_slot_init(&imported);
     if (!ts_sample_load_wav_metadata(&imported.sample, &tuning, &has_loop,
                                      &loop_first, &loop_last, &loop_mode,
@@ -3916,6 +3920,10 @@ int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
         set_error(error, error_size, "Select a bank tile before Create"); return 0;
     }
     slot = instrument->selected_slot;
+    if (instrument->bank[slot].locked) {
+        set_error(error, error_size, "Tile is locked - unlock it before Create");
+        return 0;
+    }
     bank_slot_init(&made);
     recipe = instrument->generator;
     recipe.kind = TS_GENERATOR_FM; recipe.seed = seed;
@@ -4039,6 +4047,7 @@ int ts_instrument_copy_selected(TsInstrument *instrument, int destination_slot,
         !bank_sync_selected(instrument, error, error_size)) return 0;
     if (!bank_slot_deep_clone(&instrument->bank[destination_slot], &instrument->bank[source],
                               error, error_size)) return 0;
+    instrument->bank[destination_slot].locked = 0;
     instrument->bank[destination_slot].parent_slot = source;
     return ts_instrument_select_bank(instrument, destination_slot, error, error_size);
 }
@@ -5919,6 +5928,10 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
         set_error(error, error_size, "Vary needs a selected FM tile"); return 0;
     }
     destination = source;
+    if (!chain && instrument->bank[source].locked) {
+        set_error(error, error_size, "Tile is locked - enable Chain or unlock it before Vary");
+        return 0;
+    }
     if (chain) {
         destination = -1;
         for (int n = 1; n < TS_BANK_SLOT_COUNT; ++n) {
@@ -5932,6 +5945,7 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
     if (instrument->family_mutation <= 0.0f) {
         if (!chain) { if (destination_slot) *destination_slot = source; return 1; }
         if (!bank_slot_deep_clone(&instrument->bank[destination], &instrument->bank[source], error, error_size)) return 0;
+        instrument->bank[destination].locked = 0;
     } else {
         TsSample fm_source, rebuilt;
         TsInstrument replay;
@@ -5961,6 +5975,7 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
         made.sample = rebuilt; made.edit_parent = fm_source;
         made.generator = recipe; made.lineage_seed = seed; made.parent_slot = source;
         made.lineage_mutation = instrument->family_mutation; made.trajectory_step++;
+        if (destination != source) made.locked = 0;
         if (destination == source) bank_slot_free(&instrument->bank[source]);
         instrument->bank[destination] = made;
     }
@@ -6207,6 +6222,11 @@ int ts_instrument_capture_target_frames(const TsInstrument *instrument, int slot
     const TsSample *canvas;
     long double converted;
     if (capacity_frames != NULL) *capacity_frames = 0u;
+    if (ts_instrument_bank_is_locked(instrument, slot)) {
+        set_error(error, error_size,
+                  "Capture destination is protected - unlock it first");
+        return 0;
+    }
     if (!ts_instrument_bank_is_blank_canvas(instrument, slot)) {
         set_error(error, error_size,
                   "Capture needs a blank silent canvas - it will not overwrite audio");
@@ -6256,7 +6276,8 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
                            source_slot >= TS_BANK_SLOT_COUNT ||
                            source_slot == destination_slot ||
                            !instrument->bank[source_slot].occupied)) ||
-        !ts_instrument_bank_is_blank_canvas(instrument, destination_slot)) {
+        !ts_instrument_bank_is_blank_canvas(instrument, destination_slot) ||
+        instrument->bank[destination_slot].locked) {
         set_error(error, error_size, "Invalid Capture source, destination, or audio");
         return 0;
     }
@@ -6368,6 +6389,10 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
         set_error(error, error_size, "Bank slot is already empty");
         return 0;
     }
+    if (instrument->bank[slot].locked) {
+        set_error(error, error_size, "Tile is locked - unlock it before clearing");
+        return 0;
+    }
     was_selected = instrument->selected_slot == slot;
     bank_slot_free(&instrument->bank[slot]);
     if (instrument->family_last_slot == slot) instrument->family_last_slot = -1;
@@ -6392,16 +6417,62 @@ int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
 int ts_instrument_bank_clear_all(TsInstrument *instrument,
                                  char *error, size_t error_size)
 {
+    int first_locked = -1;
     if (instrument == NULL) { set_error(error, error_size, "No collection to clear"); return 0; }
-    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
-        bank_slot_free(&instrument->bank[slot]);
-    ts_sample_free(&instrument->parent); ts_sample_init(&instrument->parent);
-    ts_sample_free(&instrument->current); ts_sample_init(&instrument->current);
-    instrument->selected_slot = 0;
-    instrument->family_anchor_slot = 0;
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        if (instrument->bank[slot].occupied && instrument->bank[slot].locked) {
+            if (first_locked < 0) first_locked = slot;
+        } else bank_slot_free(&instrument->bank[slot]);
+    }
+    if (first_locked >= 0) {
+        instrument->selected_slot = first_locked;
+        instrument->family_anchor_slot = first_locked;
+        if (!ts_instrument_select_bank(instrument, first_locked,
+                                       error, error_size)) return 0;
+    } else {
+        ts_sample_free(&instrument->parent); ts_sample_init(&instrument->parent);
+        ts_sample_free(&instrument->current); ts_sample_init(&instrument->current);
+        instrument->selected_slot = 0;
+        instrument->family_anchor_slot = 0;
+    }
     instrument->family_last_slot = -1;
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_instrument_bank_is_locked(const TsInstrument *instrument, int slot)
+{
+    return instrument != NULL && slot >= 0 && slot < TS_BANK_SLOT_COUNT &&
+           instrument->bank[slot].occupied && instrument->bank[slot].locked;
+}
+
+int ts_instrument_bank_set_locked(TsInstrument *instrument, int slot, int locked,
+                                  char *error, size_t error_size)
+{
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
+        set_error(error, error_size, "Invalid bank slot");
+        return 0;
+    }
+    if (!instrument->bank[slot].occupied) {
+        set_error(error, error_size, "Capture audio before locking a tile");
+        return 0;
+    }
+    instrument->bank[slot].locked = locked != 0;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_bank_toggle_locked(TsInstrument *instrument, int slot,
+                                     char *error, size_t error_size)
+{
+    if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[slot].occupied) {
+        set_error(error, error_size, "Capture audio before locking a tile");
+        return 0;
+    }
+    return ts_instrument_bank_set_locked(instrument, slot,
+                                         !instrument->bank[slot].locked,
+                                         error, error_size);
 }
 
 int ts_instrument_bank_rename(TsInstrument *instrument, int slot, const char *name,
@@ -7799,9 +7870,9 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr24(const TsInstrument *instrument, FILE *f)
+static int save_tsr25(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR24\r\n\032", 1, 8, f);
+    fwrite("TSR25\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -7827,6 +7898,7 @@ static int save_tsr24(const TsInstrument *instrument, FILE *f)
         int redo_count;
         put32(f, (uint32_t)slot->occupied);
         if (!slot->occupied) continue;
+        put32(f, (uint32_t)slot->locked);
         audio = &slot->sample;
         baseline = slot->edit_parent.data != NULL ? &slot->edit_parent : &slot->sample;
         edit = &slot->edit;
@@ -7947,6 +8019,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
         if (!get32(f, &value) || value > 1u) goto malformed;
         slot->occupied = (int)value;
         if (!slot->occupied) continue;
+        if (version >= 25) {
+            if (!get32(f, &value) || value > 1u) goto malformed;
+            slot->locked = (int)value;
+        }
         if (!get32(f, &value)) goto malformed;
         slot->capture_kind = (TsBankCaptureKind)value;
         if (!get32(f, &value)) goto malformed;
@@ -8039,6 +8115,7 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
             (slot->lineage_locks & ~TS_FAMILY_LOCK_ALL) != 0u ||
             slot->lineage_mutation < 0.0f || slot->lineage_mutation > 1.0f ||
             (slot->has_generator != 0 && slot->has_generator != 1) ||
+            (slot->locked != 0 && slot->locked != 1) ||
             !tuning_valid(&slot->tuning) || !tuning_valid(&slot->audible_tuning) ||
             slot->loop_mode >= TS_LOOP_MODE_COUNT ||
             (slot->has_loop != 0 && slot->has_loop != 1) ||
@@ -8060,10 +8137,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR24 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR25 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR24 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR25 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -8082,13 +8159,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr24(instrument, f)) {
+    if (!save_tsr25(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR24 project");
+        set_error(error, error_size, "Could not write TSR25 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR24 project");
+        set_error(error, error_size, "Could not finish TSR25 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -8123,7 +8200,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR24\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR25\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR24\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR23\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR22\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR21\r\n\032", 8) == 0 ||
@@ -8133,7 +8211,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = memcmp(magic, "TSR24\r\n\032", 8) == 0 ? 24 :
+        int self_contained_version = memcmp(magic, "TSR25\r\n\032", 8) == 0 ? 25 :
+                                     memcmp(magic, "TSR24\r\n\032", 8) == 0 ? 24 :
                                      memcmp(magic, "TSR23\r\n\032", 8) == 0 ? 23 :
                                      memcmp(magic, "TSR22\r\n\032", 8) == 0 ? 22 :
                                      magic[4] == '1' ? 21 :
@@ -8161,7 +8240,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR24 project");
+                  "Not a self-contained TSR6-TSR25 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -8440,7 +8519,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR24 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR25 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

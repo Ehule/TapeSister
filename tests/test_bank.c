@@ -45,6 +45,8 @@ int main(void)
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_CTRL) == TS_UI_BANK_ACTION_CAPTURE_SELECTION);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_CTRL) ==
           TS_UI_BANK_ACTION_CLONE);
+    CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_ALT) ==
+          TS_UI_BANK_ACTION_TOGGLE_LOCK);
     CHECK(ts_ui_bank_action(1, 0) == TS_UI_BANK_ACTION_RENAME);
     CHECK(ts_ui_bank_action(1, TS_UI_BANK_MOD_SHIFT) == TS_UI_BANK_ACTION_CLEAR);
     CHECK(ts_ui_bank_action(0, TS_UI_BANK_MOD_SHIFT | TS_UI_BANK_MOD_ALT) ==
@@ -92,6 +94,15 @@ int main(void)
     CHECK(plan.sample == &bank.bank[0].sample && bank.selected_slot == 0 &&
           ts_sample_hash(&bank.current) == slot0_hash);
     CHECK(ts_sample_hash(&bank.bank[5].sample) == slot5_hash);
+    CHECK(ts_ui_execute_bank_action(&bank, 0, TS_UI_BANK_ACTION_TOGGLE_LOCK,
+                                    error, sizeof(error)));
+    CHECK(ts_instrument_bank_is_locked(&bank, 0));
+    CHECK(!ts_ui_execute_bank_action(&bank, 0, TS_UI_BANK_ACTION_CLEAR,
+                                     error, sizeof(error)));
+    CHECK(bank.bank[0].occupied);
+    CHECK(ts_ui_execute_bank_action(&bank, 0, TS_UI_BANK_ACTION_TOGGLE_LOCK,
+                                    error, sizeof(error)));
+    CHECK(!ts_instrument_bank_is_locked(&bank, 0));
     CHECK(ts_ui_execute_bank_action(&bank, 2, TS_UI_BANK_ACTION_AUDITION,
                                     error, sizeof(error)));
     CHECK(bank.selected_slot == 2 && !bank.bank[2].occupied &&
@@ -118,10 +129,13 @@ int main(void)
         CHECK(all.bank[slot].occupied);
     }
     CHECK(ts_instrument_bank_count(&all) == TS_BANK_SLOT_COUNT);
+    CHECK(ts_instrument_bank_set_locked(&all, 3, 1, error, sizeof(error)));
+    CHECK(ts_instrument_bank_clear_all(&all, error, sizeof(error)));
+    CHECK(ts_instrument_bank_count(&all) == 1);
+    CHECK(all.bank[3].occupied && all.bank[3].locked && all.selected_slot == 3);
+    CHECK(ts_instrument_bank_set_locked(&all, 3, 0, error, sizeof(error)));
     CHECK(ts_instrument_bank_clear_all(&all, error, sizeof(error)));
     CHECK(ts_instrument_bank_count(&all) == 0);
-    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
-        CHECK(!all.bank[slot].occupied);
     CHECK(ts_instrument_create_selected(&all, 0x434c4541u, error, sizeof(error)));
     CHECK(all.bank[0].occupied && all.current.data != NULL);
 
@@ -260,6 +274,7 @@ int main(void)
                                     error, sizeof(error)));
     CHECK(ts_instrument_bank_rename(&serial, 7, "INDEPENDENT EIGHT",
                                     error, sizeof(error)));
+    CHECK(ts_instrument_bank_set_locked(&serial, 7, 1, error, sizeof(error)));
     serial.view_first = 20; serial.view_last = 300;
     ts_instrument_set_selection(&serial, 40, 280);
     serial.has_loop = 1; serial.loop_first = 60; serial.loop_last = 240;
@@ -335,6 +350,7 @@ int main(void)
                                     error, sizeof(error)));
     CHECK(restored.selected_slot == 7 && restored.bank[0].occupied &&
           restored.bank[7].occupied &&
+          restored.bank[7].locked && !restored.bank[0].locked &&
           strcmp(restored.bank[0].sample.name, "INDEPENDENT ONE") == 0 &&
           strcmp(restored.bank[7].sample.name, "INDEPENDENT EIGHT") == 0 &&
           ts_sample_hash(&restored.bank[0].sample) == slot0_hash &&

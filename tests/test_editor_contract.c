@@ -117,6 +117,9 @@ int main(void)
     CONTRACT("bank_ctrl_shift_click_routes_to_clone",
              ts_ui_bank_action(0, TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_SHIFT) ==
              TS_UI_BANK_ACTION_CLONE);
+    CONTRACT("bank_ctrl_alt_click_routes_to_protection_toggle",
+             ts_ui_bank_action(0, TS_UI_BANK_MOD_CTRL | TS_UI_BANK_MOD_ALT) ==
+             TS_UI_BANK_ACTION_TOGGLE_LOCK);
     CONTRACT("bank_right_click_routes_to_rename",
              ts_ui_bank_action(1, 0) == TS_UI_BANK_ACTION_RENAME);
     CONTRACT("bank_shift_right_click_routes_to_clear",
