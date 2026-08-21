@@ -385,6 +385,29 @@ static float quantize_ratio_to_scale(float ratio, int root, int scale,
     return clampf(powf(2.0f, (float)best / 12.0f), 0.05f, high);
 }
 
+int ts_fm_apply_pitch_scale(TsFmPatch *patch)
+{
+    TsFmPatch safe;
+    float high;
+    int changed = 0;
+    if (patch == NULL) return 0;
+    safe = *patch;
+    ts_fm_patch_sanitize(&safe);
+    high = ratio_maximum(&safe);
+    for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+        float quantized;
+        if ((safe.active_mask & (1u << voice)) == 0u) continue;
+        quantized = quantize_ratio_to_scale(safe.ratios[voice],
+                                            safe.pitch_root,
+                                            safe.pitch_scale, high);
+        if (fabsf(patch->ratios[voice] - quantized) > 0.000001f) {
+            patch->ratios[voice] = quantized;
+            ++changed;
+        }
+    }
+    return changed;
+}
+
 void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
                       TsFmPatch *varied)
 {

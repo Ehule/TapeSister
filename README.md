@@ -293,6 +293,8 @@ stored genome. Click or wheel a control for immediate non-destructive preview; R
 protects the visible page and obeys the permission switches. The Pitch page can keep
 randomized ratios locked, or quantize them to a selectable root and chromatic, major,
 minor, pentatonic, or whole-tone scale while C4 remains the universal unity note.
+**Apply Pitches** explicitly snaps every enabled voice to that tonal set and immediately
+refreshes its displayed note; disabled voices stay untouched, even with Pitch Lock on.
 **Make Bank** treats the current patch as tile 01 and generates 15 Range-controlled
 relatives. Chain off derives every tile from that anchor; Chain on walks forward from
 each result. One confirmation can replace an unlocked page or create a new Sample page,
@@ -300,6 +302,8 @@ and the complete 16-tile action is one Undo/Redo transaction. With **Chain off**
 prints the genome over the selected tile. With **Chain on**, it preserves occupied work
 and fills the next empty tile. A full page asks whether to overwrite the current tile,
 continue on a new Sample page, or cancel.
+Inside FM Logic, `Shift+R` invokes Randomize and `Shift+B` opens Make Bank. Plain `R`
+and `B` remain playable notes on the computer keyboard.
 
 **Drone** removes the amplitude and filter attack/release envelopes, suppresses the
 transient, and trims the render to exact zero-valued boundary crossings. The disabled

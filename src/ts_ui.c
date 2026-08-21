@@ -921,7 +921,7 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         snprintf(scale, sizeof(scale), "SCALE %s",
                  ts_fm_pitch_scale_name(ui->fm_patch.pitch_scale));
         button(fb, 316, 218, 132, scale, 0);
-        text(fb, 462, 225, "C4 UNITY", PAL_TUNING, 1);
+        button(fb, 454, 218, 166, "APPLY PITCHES", 0);
     } else {
         text(fb, 20, 225, "MUTATE", PAL_NOTE, 1);
         for (int lock = 0; lock < 5; ++lock)
@@ -1356,6 +1356,7 @@ TsUiFmAction ts_ui_fm_action_from_point(int x, int y)
         if (x >= 96 && x < 208) return TS_UI_FM_ACTION_PITCH_LOCK;
         if (x >= 214 && x < 310) return TS_UI_FM_ACTION_PITCH_ROOT;
         if (x >= 316 && x < 448) return TS_UI_FM_ACTION_PITCH_SCALE;
+        if (x >= 454 && x < 620) return TS_UI_FM_ACTION_APPLY_PITCHES;
     }
     if (y >= 252 && y < 276) {
         if (x >= 20 && x < 108) return TS_UI_FM_ACTION_RANDOMIZE;

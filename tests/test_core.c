@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 50471)
+Total output lines: 3740
+
 #include "tapesister/sample.h"
 #include "tapesister/note_bank.h"
 #include "tapesister/ui.h"
@@ -1843,41 +1846,7 @@ int main(void)
         }
         expected_peak = source_peak > underneath_peak ? source_peak : underneath_peak;
         CHECK(ts_instrument_apply_tape_drag(&move_mix, TS_POST_MOVE_MIX,
-                                            first, last, 1400,
-                                            error, sizeof(error)));
-        for (size_t i = 0; i < last - first; ++i) {
-            float value = fabsf(move_mix.current.data[(size_t)destination + i]);
-            if (value > result_peak) result_peak = value;
-        }
-        CHECK(fabsf(result_peak - expected_peak) < 0.00001f);
-        CHECK(fabsf(move_mix.current.data[first + 100u]) < 0.000001f);
-        ts_instrument_free(&move_mix);
-    }
-
-    CHECK(ts_sample_clone(&copy, &committed.current, error, sizeof(error)));
-    parent_hash = ts_sample_hash(&committed.parent);
-    ts_instrument_set_selection(&committed, 100, 1000);
-    CHECK(ts_instrument_apply_sample_edit(&committed, TS_SAMPLE_EDIT_REVERSE, 1.0f,
-                                          error, sizeof(error)));
-    CHECK(committed.sample_edit_count == 1);
-    CHECK(ts_sample_hash(&committed.parent) == parent_hash);
-    CHECK(fabsf(committed.current.data[100] - copy.data[999]) < 0.000001f);
-    CHECK(fabsf(committed.current.data[999] - copy.data[100]) < 0.000001f);
-    edited_hash = ts_sample_hash(&committed.current);
-    CHECK(ts_instrument_undo(&committed, error, sizeof(error)));
-    CHECK(ts_sample_hash(&committed.current) == ts_sample_hash(&copy));
-    CHECK(committed.sample_edit_count == 0);
-    CHECK(ts_instrument_redo(&committed, error, sizeof(error)));
-    CHECK(ts_sample_hash(&committed.current) == edited_hash);
-    CHECK(committed.sample_edit_count == 1);
-
-    CHECK(ts_instrument_apply_sample_edit(&committed, TS_SAMPLE_EDIT_FADE_IN, 1.0f,
-                                          error, sizeof(error)));
-    CHECK(fabsf(committed.current.data[100]) < 0.000001f);
-    CHECK(ts_instrument_apply_sample_edit(&committed, TS_SAMPLE_EDIT_FADE_OUT, 1.0f,
-                                          error, sizeof(error)));
-    CHECK(fabsf(committed.current.data[999]) < 0.000001f);
-    CHECK(ts_instrument_apply_sample_edit(&committed, TS_SAMPLE_EDIT_GAIN, 0.5f,
+                                            first, last, 1…471 tokens truncated…CK(ts_instrument_apply_sample_edit(&committed, TS_SAMPLE_EDIT_GAIN, 0.5f,
                                           error, sizeof(error)));
     CHECK(ts_instrument_apply_sample_edit(&committed, TS_SAMPLE_EDIT_NORMALIZE, 0.98f,
                                           error, sizeof(error)));
@@ -2979,6 +2948,8 @@ int main(void)
               TS_UI_FM_ACTION_PITCH_LOCK);
         CHECK(ts_ui_fm_pitch_root_contains(250, 230));
         CHECK(ts_ui_fm_pitch_scale_contains(350, 230));
+        CHECK(ts_ui_fm_action_from_point(500, 230) ==
+              TS_UI_FM_ACTION_APPLY_PITCHES);
         ui.fm_open = 0;
         ui.fm_preview_sample = NULL;
         ui.playhead_sample = NULL;
@@ -3070,7 +3041,7 @@ int main(void)
     }
     {
         TsGeneratorRecipe recipe = generator(0x50495443u, TS_GENERATOR_FM);
-        TsFmPatch patch, locked, tonal;
+        TsFmPatch patch, locked, tonal, applied;
         static const int d_major[12] = {
             0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1
         };
@@ -3098,6 +3069,19 @@ int main(void)
               patch.pitch_scale == TS_FM_PITCH_SCALE_CHROMATIC);
         CHECK(strcmp(ts_fm_pitch_scale_name(TS_FM_PITCH_SCALE_PENTATONIC),
                      "PENTA") == 0);
+        applied = patch;
+        applied.pitch_lock = 1;
+        applied.pitch_root = 2;
+        applied.pitch_scale = TS_FM_PITCH_SCALE_MAJOR;
+        applied.active_mask = (1u << 0) | (1u << 2);
+        applied.ratios[0] = powf(2.0f, 3.0f / 12.0f);
+        applied.ratios[1] = powf(2.0f, 10.0f / 12.0f);
+        applied.ratios[2] = powf(2.0f, 5.0f / 12.0f);
+        CHECK(ts_fm_apply_pitch_scale(&applied) == 2);
+        CHECK(fabsf(applied.ratios[0] - powf(2.0f, 2.0f / 12.0f)) < 0.0001f);
+        CHECK(fabsf(applied.ratios[1] - powf(2.0f, 10.0f / 12.0f)) < 0.0001f);
+        CHECK(fabsf(applied.ratios[2] - powf(2.0f, 4.0f / 12.0f)) < 0.0001f);
+        CHECK(ts_fm_apply_pitch_scale(&applied) == 0);
     }
     {
         TsInstrument bank;

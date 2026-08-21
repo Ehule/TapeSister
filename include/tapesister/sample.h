@@ -682,6 +682,7 @@ int ts_fm_step_control(TsFmPatch *patch, TsFmPage page, int control,
                        int direction, int fine);
 int ts_fm_step_pitch_root(TsFmPatch *patch, int direction);
 int ts_fm_step_pitch_scale(TsFmPatch *patch, int direction);
+int ts_fm_apply_pitch_scale(TsFmPatch *patch);
 void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
                           char *label, size_t label_size,
                           char *value, size_t value_size);

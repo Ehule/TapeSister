@@ -33,6 +33,11 @@ The Pitch page replaces those permission buttons with a pitch-randomization lock
 selectable pitch-class root, and chromatic, major, minor, pentatonic, or whole-tone
 scale. Pitch lock preserves all six ratios; Pitch open snaps varied ratios into that
 tonal set without changing the universal MIDI-60/C4 unity key.
+Apply Pitches explicitly snaps enabled voices to the selected tonal set, refreshes
+their note labels and live preview, and leaves disabled voices untouched. Because it is
+deliberate, this action remains available while Pitch Lock is on.
+Randomize and Make Bank use Shift+R and Shift+B so plain R and B remain available to
+the QWERTY note keyboard.
 The workspace ends above the Sample Bank header on the 640×400 logical canvas, keeping
 both rows of all 16 destination tiles visible at 1366×768 while Apply and Chain run.
 
