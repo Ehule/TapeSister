@@ -1072,6 +1072,9 @@ void ts_ui_init(TsUiState *ui)
     ts_tear_gesture_init(&ui->tear_gesture);
     ts_stretch_gesture_init(&ui->stretch_gesture);
     ts_canvas_gesture_init(&ui->canvas_gesture);
+    ts_amplitude_gesture_init(&ui->amplitude_gesture);
+    ui->amplitude_profile_first_x = TS_WAVE_W;
+    ui->amplitude_profile_last_x = -1;
     ui->mouse_note = -1;
     ui->bank_view_slot = -1;
     ui->load_bank_slot = -1;
@@ -1307,6 +1310,13 @@ int ts_ui_transform_waveform_contains(int x, int y)
            x < TS_TRANSFORM_WAVE_X + TS_TRANSFORM_WAVE_W &&
            y >= TS_TRANSFORM_WAVE_Y &&
            y < TS_TRANSFORM_WAVE_Y + TS_TRANSFORM_WAVE_H;
+}
+
+int ts_ui_amplitude_draw_toggle_contains(int x, int y)
+{
+    return x >= TS_WAVE_X + TS_WAVE_W - 54 &&
+           x < TS_WAVE_X + TS_WAVE_W - 4 &&
+           y >= TS_WAVE_Y + 4 && y < TS_WAVE_Y + 21;
 }
 
 int ts_ui_fm_button_from_point(int x, int y)
@@ -1987,6 +1997,57 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
              RGB(120, 113, 121), 2);
     }
 
+    if (!showing_bank && !showing_parent && ui->amplitude_draw_dragging &&
+        ui->amplitude_profile_last_x >= ui->amplitude_profile_first_x) {
+        int middle = TS_WAVE_Y + TS_WAVE_H / 2;
+        int previous_x = -1;
+        int previous_top = middle;
+        int previous_bottom = middle;
+        for (int x = ui->amplitude_profile_first_x;
+             x <= ui->amplitude_profile_last_x; ++x) {
+            int top;
+            int bottom;
+            int amount;
+            if (x < 0 || x >= TS_WAVE_W || !ui->amplitude_profile_set[x])
+                continue;
+            amount = (int)lrintf(ui->amplitude_profile[x] *
+                                 (float)(TS_WAVE_H / 2 - 8));
+            top = middle - amount;
+            bottom = middle + amount;
+            if (previous_x >= 0) {
+                wave_line(fb, TS_WAVE_X + previous_x, previous_top,
+                          TS_WAVE_X + x, top, PAL_EFFECT);
+                wave_line(fb, TS_WAVE_X + previous_x, previous_bottom,
+                          TS_WAVE_X + x, bottom, PAL_EFFECT);
+            }
+            previous_x = x;
+            previous_top = top;
+            previous_bottom = bottom;
+        }
+        if (ui->amplitude_profile_first_x >= 0 &&
+            ui->amplitude_profile_first_x < TS_WAVE_W &&
+            ui->amplitude_profile_set[ui->amplitude_profile_first_x]) {
+            int amount = (int)lrintf(
+                ui->amplitude_profile[ui->amplitude_profile_first_x] *
+                (float)(TS_WAVE_H / 2 - 8));
+            wave_line(fb, TS_WAVE_X + ui->amplitude_profile_first_x,
+                      middle - amount,
+                      TS_WAVE_X + ui->amplitude_profile_first_x,
+                      middle + amount, PAL_EFFECT);
+        }
+        if (ui->amplitude_profile_last_x >= 0 &&
+            ui->amplitude_profile_last_x < TS_WAVE_W &&
+            ui->amplitude_profile_set[ui->amplitude_profile_last_x]) {
+            int amount = (int)lrintf(
+                ui->amplitude_profile[ui->amplitude_profile_last_x] *
+                (float)(TS_WAVE_H / 2 - 8));
+            wave_line(fb, TS_WAVE_X + ui->amplitude_profile_last_x,
+                      middle - amount,
+                      TS_WAVE_X + ui->amplitude_profile_last_x,
+                      middle + amount, PAL_EFFECT);
+        }
+    }
+
     if (ui->tape_dragging && !showing_bank && !showing_parent &&
         ui->tape_source_last > ui->tape_source_first &&
         ui->tape_source_last <= instrument->current.frames) {
@@ -2161,6 +2222,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                     grid_snap == TS_GRID_SNAP_ALL ? "SNAP" :
                     grid_snap == TS_GRID_SNAP_MOVE_ONLY ? "MOVE" : "OFF",
                     grid_snap != TS_GRID_SNAP_OFF);
+        mini_button(fb, TS_WAVE_X + TS_WAVE_W - 54, TS_WAVE_Y + 4,
+                    50, "DRAW", ui->amplitude_draw_mode);
     }
 
     if (ui->input_meter_active) live_input_render(fb, ui);

@@ -1616,6 +1616,7 @@ static int tear_range(TsSample *sample, size_t first, size_t last, float amount,
 }
 
 static int delete_range(TsSample *sample, size_t first, size_t last,
+                        size_t crossfade_frames,
                         char *error, size_t error_size)
 {
     float *data;
@@ -1640,6 +1641,22 @@ static int delete_range(TsSample *sample, size_t first, size_t last,
     if (last < sample->frames)
         memcpy(data + first, sample->data + last,
                (sample->frames - last) * sizeof(*data));
+    if (crossfade_frames > 0u) {
+        size_t fade_out = crossfade_frames < first ? crossfade_frames : first;
+        size_t right = frames > first ? frames - first : 0u;
+        size_t fade_in = crossfade_frames < right ? crossfade_frames : right;
+        for (size_t frame = 0; frame < fade_out; ++frame) {
+            float phase = fade_out > 1u ?
+                (float)frame / (float)(fade_out - 1u) : 1.0f;
+            data[first - fade_out + frame] *=
+                cosf(phase * (float)(M_PI * 0.5));
+        }
+        for (size_t frame = 0; frame < fade_in; ++frame) {
+            float phase = fade_in > 1u ?
+                (float)frame / (float)(fade_in - 1u) : 0.0f;
+            data[first + frame] *= sinf(phase * (float)(M_PI * 0.5));
+        }
+    }
     free(sample->data);
     sample->data = data;
     sample->frames = frames;
@@ -2055,7 +2072,9 @@ static int render_snapshot(TsSample *destination, const TsInstrument *instrument
             continue;
         }
         if (operation->kind == TS_POST_DELETE) {
-            if (!delete_range(destination, first, last, error, error_size)) return 0;
+            if (!delete_range(destination, first, last,
+                              operation->crossfade_frames,
+                              error, error_size)) return 0;
             continue;
         }
         if (operation->kind == TS_POST_PATCH_REPLACE ||
@@ -5429,12 +5448,24 @@ int ts_instrument_cut_selection(TsInstrument *instrument,
                                 TsSample *clipboard, size_t *origin_first,
                                 char *error, size_t error_size)
 {
+    return ts_instrument_cut_selection_mode(instrument, clipboard, origin_first,
+                                            0, error, error_size);
+}
+
+int ts_instrument_cut_selection_mode(TsInstrument *instrument,
+                                     TsSample *clipboard, size_t *origin_first,
+                                     int crop_canvas,
+                                     char *error, size_t error_size)
+{
     TsSample copied;
     TsSample current;
     TsEditSnapshot target;
     TsPostEdit operation;
     size_t first;
     size_t last;
+    size_t removed;
+    size_t original_view_first;
+    size_t original_view_last;
     if (instrument == NULL || clipboard == NULL || instrument->current.data == NULL ||
         !instrument->has_selection ||
         instrument->selection_last <= instrument->selection_first) {
@@ -5443,11 +5474,13 @@ int ts_instrument_cut_selection(TsInstrument *instrument,
     }
     first = instrument->selection_first;
     last = instrument->selection_last;
+    removed = last - first;
     if (first == 0 && last == instrument->current.frames) {
         set_error(error, error_size, "Cut cannot remove the entire tile - Clear the tile instead");
         return 0;
     }
-    if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
+    if (!ensure_edit_graph_capacity_for(instrument, crop_canvas ? 1 : 2, 0,
+                                        error, error_size)) return 0;
     ts_sample_init(&copied);
     ts_sample_init(&current);
     if (!sample_clone_range(&copied, &instrument->current, first, last,
@@ -5458,9 +5491,28 @@ int ts_instrument_cut_selection(TsInstrument *instrument,
     operation.kind = TS_POST_DELETE;
     operation.first = first;
     operation.last = last;
+    {
+        uint64_t join_frames =
+            (uint64_t)instrument->current.sample_rate * 3u / 1000u;
+        if (join_frames == 0u) join_frames = 1u;
+        if (join_frames > 65536u) join_frames = 65536u;
+        operation.crossfade_frames = (uint32_t)join_frames;
+    }
     target.post_edits[target.post_edit_count++] = operation;
+    original_view_first = target.view_first;
+    original_view_last = target.view_last;
     update_snapshot_after_replace(&target, first, last, 0,
-                                  instrument->current.frames - (last - first), 0);
+                                  crop_canvas ? instrument->current.frames - removed :
+                                                instrument->current.frames,
+                                  0);
+    if (!crop_canvas) {
+        memset(&operation, 0, sizeof(operation));
+        operation.kind = TS_POST_CANVAS_RIGHT_RESIZE;
+        operation.destination = (int64_t)removed;
+        target.post_edits[target.post_edit_count++] = operation;
+        target.view_first = original_view_first;
+        target.view_last = original_view_last;
+    }
     if (!render_snapshot(&current, instrument, &target, error, error_size)) {
         ts_sample_free(&copied);
         return 0;
@@ -7386,6 +7438,144 @@ int ts_instrument_warp_gesture_commit(TsInstrument *instrument,
                                     error, error_size);
     if (ok) {
         warp_gesture_clear(gesture);
+        set_error(error, error_size, "");
+    }
+    return ok;
+}
+
+void ts_amplitude_gesture_init(TsAmplitudeGesture *gesture)
+{
+    if (gesture == NULL) return;
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+static int amplitude_gesture_owns(const TsInstrument *instrument,
+                                  const TsAmplitudeGesture *gesture)
+{
+    return instrument != NULL && gesture != NULL && gesture->active &&
+           instrument->selected_slot == gesture->owner_slot &&
+           instrument->generation == gesture->owner_generation &&
+           instrument->parent.data == gesture->owner_parent_data &&
+           instrument->current.data != NULL &&
+           instrument->current.frames == gesture->original.frames;
+}
+
+static void amplitude_gesture_clear(TsAmplitudeGesture *gesture)
+{
+    ts_sample_free(&gesture->original);
+    memset(gesture, 0, sizeof(*gesture));
+    ts_sample_init(&gesture->original);
+}
+
+int ts_instrument_amplitude_gesture_begin(TsInstrument *instrument,
+                                          TsAmplitudeGesture *gesture,
+                                          char *error, size_t error_size)
+{
+    if (instrument == NULL || gesture == NULL || gesture->active ||
+        instrument->current.data == NULL || instrument->current.frames == 0u) {
+        set_error(error, error_size, "Could not begin amplitude drawing");
+        return 0;
+    }
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
+    gesture->start = snapshot(instrument);
+    if (!ts_sample_clone(&gesture->original, &instrument->current,
+                         error, error_size)) return 0;
+    gesture->owner_parent_data = instrument->parent.data;
+    gesture->owner_generation = instrument->generation;
+    gesture->owner_slot = instrument->selected_slot;
+    gesture->active = 1;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_amplitude_gesture_preview(TsInstrument *instrument,
+                                            TsAmplitudeGesture *gesture,
+                                            size_t first, float first_gain,
+                                            size_t last, float last_gain,
+                                            char *error, size_t error_size)
+{
+    if (!amplitude_gesture_owns(instrument, gesture)) {
+        set_error(error, error_size,
+                  "Amplitude gesture no longer owns Current");
+        return 0;
+    }
+    if (!isfinite(first_gain) || !isfinite(last_gain) ||
+        first_gain < 0.0f || first_gain > 1.0f ||
+        last_gain < 0.0f || last_gain > 1.0f) {
+        set_error(error, error_size,
+                  "Amplitude drawing gain must be between zero and one");
+        return 0;
+    }
+    if (first >= gesture->original.frames) first = gesture->original.frames - 1u;
+    if (last >= gesture->original.frames) last = gesture->original.frames - 1u;
+    if (last < first) {
+        size_t swap_frame = first;
+        float swap_gain = first_gain;
+        first = last;
+        last = swap_frame;
+        first_gain = last_gain;
+        last_gain = swap_gain;
+    }
+    for (size_t frame = first; frame <= last; ++frame) {
+        float phase = last > first ?
+            (float)(frame - first) / (float)(last - first) : 1.0f;
+        float gain = first_gain + (last_gain - first_gain) * phase;
+        instrument->current.data[frame] = gesture->original.data[frame] * gain;
+    }
+    ts_sample_touch(&instrument->current);
+    if (!gesture->has_profile) {
+        gesture->first_frame = first;
+        gesture->last_frame = last;
+        gesture->has_profile = 1;
+    } else {
+        if (first < gesture->first_frame) gesture->first_frame = first;
+        if (last > gesture->last_frame) gesture->last_frame = last;
+    }
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_amplitude_gesture_cancel(TsInstrument *instrument,
+                                           TsAmplitudeGesture *gesture,
+                                           char *error, size_t error_size)
+{
+    TsSample restored;
+    if (!amplitude_gesture_owns(instrument, gesture)) {
+        amplitude_gesture_clear(gesture);
+        set_error(error, error_size,
+                  "Amplitude gesture no longer owns Current");
+        return 0;
+    }
+    ts_sample_init(&restored);
+    if (!ts_sample_clone(&restored, &gesture->original,
+                         error, error_size)) return 0;
+    replace_current_preserving_view(instrument, &restored);
+    amplitude_gesture_clear(gesture);
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_instrument_amplitude_gesture_commit(TsInstrument *instrument,
+                                           TsAmplitudeGesture *gesture,
+                                           char *error, size_t error_size)
+{
+    TsEditSnapshot target;
+    int ok;
+    if (!amplitude_gesture_owns(instrument, gesture)) {
+        amplitude_gesture_clear(gesture);
+        set_error(error, error_size,
+                  "Amplitude gesture no longer owns Current");
+        return 0;
+    }
+    if (!gesture->has_profile)
+        return ts_instrument_amplitude_gesture_cancel(
+            instrument, gesture, error, error_size);
+    target = gesture->start;
+    ok = commit_material_checkpoint(instrument, &instrument->current, &target,
+                                    error, error_size);
+    if (ok) {
+        amplitude_gesture_clear(gesture);
         set_error(error, error_size, "");
     }
     return ok;

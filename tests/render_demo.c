@@ -167,6 +167,44 @@ int main(int argc, char **argv)
         ui.canvas_drag_start_frames = before;
         snprintf(ui.status, sizeof(ui.status),
                  "CAPTURED LEFT EDGE - RELEASE COMMITS ONCE  ESC RESTORES");
+    } else if (argc > 2 && strcmp(argv[2], "amplitude-draw") == 0) {
+        const int first = 92;
+        const int last = 518;
+        size_t previous_frame = (size_t)((uint64_t)first *
+                                instrument.current.frames / TS_WAVE_W);
+        float previous_profile = 0.12f;
+        ui.amplitude_draw_mode = 1;
+        ui.amplitude_draw_dragging = 1;
+        ui.amplitude_profile_first_x = first;
+        ui.amplitude_profile_last_x = last;
+        if (!ts_instrument_amplitude_gesture_begin(
+                &instrument, &ui.amplitude_gesture, error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        for (int x = first; x <= last; ++x) {
+            float phase = (float)(x - first) / (float)(last - first);
+            float profile = phase < 0.5f ?
+                            0.12f + phase * 1.76f :
+                            1.0f - (phase - 0.5f) * 1.42f;
+            size_t frame = (size_t)((uint64_t)x * instrument.current.frames /
+                           TS_WAVE_W);
+            ui.amplitude_profile[x] = profile;
+            ui.amplitude_profile_set[x] = 1u;
+            if (!ts_instrument_amplitude_gesture_preview(
+                    &instrument, &ui.amplitude_gesture,
+                    previous_frame, previous_profile, frame, profile,
+                    error, sizeof(error))) {
+                fprintf(stderr, "%s\n", error);
+                ts_instrument_free(&instrument);
+                return 1;
+            }
+            previous_frame = frame;
+            previous_profile = profile;
+        }
+        snprintf(ui.status, sizeof(ui.status),
+                 "DRAWING MIRRORED AMPLITUDE - RELEASE COMMITS ONCE  ESC RESTORES");
     } else if (argc > 2 && strcmp(argv[2], "stretch") == 0) {
         float pitch = 0.0f;
         size_t before;
@@ -450,6 +488,9 @@ int main(int argc, char **argv)
     if (ui.canvas_gesture.active)
         (void)ts_instrument_canvas_gesture_cancel(
             &instrument, &ui.canvas_gesture, error, sizeof(error));
+    if (ui.amplitude_gesture.active)
+        (void)ts_instrument_amplitude_gesture_cancel(
+            &instrument, &ui.amplitude_gesture, error, sizeof(error));
     ts_sample_free(&drone_preview);
     ts_instrument_free(&instrument);
     printf("Wrote %s\n", path);

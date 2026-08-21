@@ -98,6 +98,16 @@ expansion blends into neighboring audio, contraction severs at zero crossings, a
 the waveform reports the resulting pitch and time ratio. Releasing either modifier
 commits the complete gesture as one Undo/post-edit; Escape restores the untouched
 starting audio without history.
+
+The tiny **DRAW** switch at the waveform's upper-right changes left-drag into a
+mirrored amplitude-profile pencil. The center line means zero gain and either outer
+edge means the waveform's original amplitude; the cyan upper and lower boundaries
+show the profile being applied while the sound changes live. Release commits the
+complete stroke as one destructive material edit and one Undo step. Escape during a
+stroke restores the exact starting audio; Escape while idle turns Draw off. Canvas
+resize handles and the small waveform controls continue to take precedence, and
+ordinary selection gestures return unchanged when Draw is off.
+
 Set `rotate_wheel_fine` (1–20, default 5), `rotate_wheel_coarse` (20–100,
 default 50), and `playhead_zero_snap` (0/1, default 1) in the `[Waveform]`
 section of `tapesister.ini`.
@@ -406,7 +416,7 @@ and tile audition, Loop/Loop Lock, Drone and Transform previews. Changing ROOT/P
 updates an audition that is already playing and every subsequent audition. Keyboard
 notes continue to transpose against the paired keyboard-mapping tuning.
 
-The audio clipboard survives tile changes for the lifetime of the app, while every tile keeps and immediately restores its own selection. **Paste** replaces the destination selection with the copied sound at its exact duration: a shorter destination makes the tile grow and a longer destination makes it shrink. With no destination selection, Paste overwrites at the source selection's original time position, preserves the target duration when the material fits, and extends the tile only when necessary; a target shorter than that time position is padded with silence. **Fit** stretches or compresses the copied sound into the destination selection, keeping the tile length fixed and deliberately changing playback speed and pitch. Cut ripple-removes the selected range; cutting the whole tile is refused in favor of the explicit Clear command. All mutations participate in the destination tile's Undo/Redo history.
+The audio clipboard survives tile changes for the lifetime of the app, while every tile keeps and immediately restores its own selection. **Paste** replaces the destination selection with the copied sound at its exact duration: a shorter destination makes the tile grow and a longer destination makes it shrink. With no destination selection, Paste overwrites at the source selection's original time position, preserves the target duration when the material fits, and extends the tile only when necessary; a target shorter than that time position is padded with silence. **Fit** stretches or compresses the copied sound into the destination selection, keeping the tile length fixed and deliberately changing playback speed and pitch. Cut copies the exact selection, ripple-removes it, closes the join with deterministic 3 ms sine/cosine fades, and adds equal silence at the right so the audio canvas keeps its duration. Set `ripple_cut_crop_canvas=1` in `[Waveform]` to use the older shrinking behavior instead. Cutting the whole tile is refused in favor of the explicit Clear command. Ripple Cut remains in the replayable post-edit graph, so Body, Edge, and Drift continue to render live; the complete cut is one Undo/Redo action.
 
 Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the result without reconstructing clipped peaks, preserving that flattened distortion as a repeatable sculpting operation.
 

@@ -185,6 +185,10 @@ int main(void)
              ts_ui_canvas_edge_from_point(320, 100) == 0);
     CONTRACT("canvas_handles_stop_before_control_strip",
              ts_ui_canvas_edge_from_point(25, 190) == 0);
+    CONTRACT("amplitude_draw_toggle_is_top_right_of_waveform",
+             ts_ui_amplitude_draw_toggle_contains(580, 75));
+    CONTRACT("amplitude_draw_toggle_rejects_waveform_body",
+             !ts_ui_amplitude_draw_toggle_contains(320, 120));
 
     {
         TsInstrument visual;

@@ -509,7 +509,7 @@ int main(void)
         CHECK(ts_sample_hash(&reopened.current) == ts_sample_hash(&editor.current));
         remove("test-clipboard.tsr");
 
-        /* Each tile remembers its own selection; Cut ripples and is reversible. */
+        /* Each tile remembers its own selection; Ripple Cut preserves the canvas. */
         CHECK(ts_instrument_select_bank(&editor, 0, error, sizeof(error)));
         CHECK(editor.selection_first == 100 && editor.selection_last == 400);
         original_frames = editor.current.frames;
@@ -517,13 +517,61 @@ int main(void)
         CHECK(ts_instrument_cut_selection(&editor, &clipboard, &origin,
                                            error, sizeof(error)));
         CHECK(origin == 100 && clipboard.frames == 300);
-        CHECK(editor.current.frames == original_frames - 300 && !editor.has_selection);
+        CHECK(editor.current.frames == original_frames && !editor.has_selection);
+        for (size_t frame = original_frames - 300; frame < original_frames; ++frame)
+            CHECK(editor.current.data[frame] == 0.0f);
         CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
         CHECK(editor.current.frames == original_frames &&
               ts_sample_hash(&editor.current) == original_hash);
         CHECK(ts_instrument_redo(&editor, error, sizeof(error)));
-        CHECK(editor.current.frames == original_frames - 300);
+        CHECK(editor.current.frames == original_frames);
+        edited_hash = ts_sample_hash(&editor.current);
+        CHECK(editor.post_edit_count >= 2 &&
+              editor.post_edits[editor.post_edit_count - 2].kind ==
+                  TS_POST_DELETE &&
+              editor.post_edits[editor.post_edit_count - 1].kind ==
+                  TS_POST_CANVAS_RIGHT_RESIZE);
+        CHECK(fabsf(editor.current.data[origin - 1u]) < 0.000001f &&
+              fabsf(editor.current.data[origin]) < 0.000001f);
+        {
+            TsProcessRecipe ripple_process = editor.process;
+            ripple_process.body = 0.83f;
+            ripple_process.edge = 0.71f;
+            ripple_process.drift = 0.61f;
+            CHECK(ts_instrument_set_process(&editor, &ripple_process,
+                                            error, sizeof(error)));
+            CHECK(editor.current.frames == original_frames &&
+                  ts_sample_hash(&editor.current) != edited_hash &&
+                  editor.post_edit_count >= 2 &&
+                  editor.post_edits[editor.post_edit_count - 2].kind ==
+                      TS_POST_DELETE);
+            CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+            CHECK(ts_sample_hash(&editor.current) == edited_hash);
+        }
+        CHECK(ts_instrument_save_recipe(&editor, "test-ripple-cut.tsr",
+                                        error, sizeof(error)));
+        ts_instrument_free(&reopened);
+        ts_instrument_init(&reopened);
+        CHECK(ts_instrument_load_recipe(&reopened, "test-ripple-cut.tsr",
+                                        error, sizeof(error)));
+        CHECK(reopened.current.frames == original_frames &&
+              ts_sample_hash(&reopened.current) == edited_hash);
+        CHECK(ts_instrument_undo(&reopened, error, sizeof(error)));
+        CHECK(reopened.current.frames == original_frames &&
+              ts_sample_hash(&reopened.current) == original_hash);
+        CHECK(ts_instrument_redo(&reopened, error, sizeof(error)));
+        CHECK(ts_sample_hash(&reopened.current) == edited_hash);
+        remove("test-ripple-cut.tsr");
         CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+
+        /* The INI-controlled compatibility mode crops the canvas to the ripple. */
+        CHECK(ts_instrument_cut_selection_mode(&editor, &clipboard, &origin, 1,
+                                                error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames - 300 &&
+              !editor.has_selection);
+        CHECK(ts_instrument_undo(&editor, error, sizeof(error)));
+        CHECK(editor.current.frames == original_frames &&
+              ts_sample_hash(&editor.current) == original_hash);
 
         /* With no target range, Paste overwrites at the original position. */
         CHECK(ts_sample_clone(&stamp_before, &editor.current, error, sizeof(error)));
@@ -1253,6 +1301,68 @@ int main(void)
                                                      error, sizeof(error)));
         }
         ts_instrument_free(&warp);
+    }
+    {
+        TsInstrument shaped;
+        TsAmplitudeGesture gesture;
+        float original[256];
+        uint64_t original_hash;
+        uint64_t shaped_hash;
+        ts_instrument_init(&shaped);
+        ts_amplitude_gesture_init(&gesture);
+        for (size_t frame = 0; frame < 256; ++frame)
+            original[frame] = 0.75f * sinf((float)frame * 0.071f);
+        shaped.parent.frames = 256;
+        shaped.parent.sample_rate = 44100;
+        shaped.parent.data = (float *)malloc(sizeof(original));
+        CHECK(shaped.parent.data != NULL);
+        if (shaped.parent.data != NULL) {
+            memcpy(shaped.parent.data, original, sizeof(original));
+            CHECK(ts_sample_clone(&shaped.current, &shaped.parent,
+                                  error, sizeof(error)));
+            shaped.crop_last = shaped.parent.frames;
+            shaped.view_last = shaped.current.frames;
+            original_hash = ts_sample_hash(&shaped.current);
+            CHECK(ts_instrument_amplitude_gesture_begin(
+                &shaped, &gesture, error, sizeof(error)));
+            CHECK(ts_instrument_amplitude_gesture_preview(
+                &shaped, &gesture, 32, 1.0f, 96, 0.0f,
+                error, sizeof(error)));
+            CHECK(memcmp(shaped.current.data, original,
+                         32 * sizeof(float)) == 0);
+            CHECK(fabsf(shaped.current.data[64] - original[64] * 0.5f) <
+                  0.00001f);
+            CHECK(shaped.current.data[96] == 0.0f);
+            CHECK(ts_instrument_amplitude_gesture_preview(
+                &shaped, &gesture, 96, 0.0f, 96, 0.75f,
+                error, sizeof(error)));
+            CHECK(fabsf(shaped.current.data[96] - original[96] * 0.75f) <
+                  0.00001f);
+            CHECK(memcmp(shaped.current.data + 97, original + 97,
+                         (256 - 97) * sizeof(float)) == 0);
+            CHECK(shaped.undo_count == 0);
+            CHECK(ts_instrument_amplitude_gesture_commit(
+                &shaped, &gesture, error, sizeof(error)));
+            CHECK(shaped.undo_count == 1);
+            shaped_hash = ts_sample_hash(&shaped.current);
+            CHECK(shaped_hash != original_hash);
+            CHECK(ts_instrument_undo(&shaped, error, sizeof(error)));
+            CHECK(ts_sample_hash(&shaped.current) == original_hash);
+            CHECK(ts_instrument_redo(&shaped, error, sizeof(error)));
+            CHECK(ts_sample_hash(&shaped.current) == shaped_hash);
+            CHECK(ts_instrument_undo(&shaped, error, sizeof(error)));
+
+            CHECK(ts_instrument_amplitude_gesture_begin(
+                &shaped, &gesture, error, sizeof(error)));
+            CHECK(ts_instrument_amplitude_gesture_preview(
+                &shaped, &gesture, 140, 0.15f, 180, 0.85f,
+                error, sizeof(error)));
+            CHECK(ts_instrument_amplitude_gesture_cancel(
+                &shaped, &gesture, error, sizeof(error)));
+            CHECK(ts_sample_hash(&shaped.current) == original_hash &&
+                  shaped.undo_count == 0);
+        }
+        ts_instrument_free(&shaped);
     }
     {
         TsInstrument rotation;
@@ -2230,7 +2340,9 @@ int main(void)
         CHECK(config.rotate_wheel_coarse == 50);
         CHECK(config.reference_tone_volume == 50);
         CHECK(config.playhead_zero_snap == 1);
+        CHECK(config.ripple_cut_crop_canvas == 0);
         config.playhead_zero_snap = 0;
+        config.ripple_cut_crop_canvas = 1;
         config.reference_tone_volume = 73;
         snprintf(config.sample_path, sizeof(config.sample_path), "/samples/drums");
         snprintf(config.fasttracker_path, sizeof(config.fasttracker_path),
@@ -2266,6 +2378,7 @@ int main(void)
         CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
         CHECK(reopened.reference_tone_volume == 73);
         CHECK(reopened.playhead_zero_snap == 0);
+        CHECK(reopened.ripple_cut_crop_canvas == 1);
         CHECK(reopened.dsp_factory_overridden[4]);
         CHECK(fabsf(reopened.dsp_factory_controls[4][0] - 0.11f) < 0.000001f &&
               fabsf(reopened.dsp_factory_controls[4][1] - 0.22f) < 0.000001f &&
@@ -2301,6 +2414,7 @@ int main(void)
             CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
             CHECK(reopened.reference_tone_volume == 50);
             CHECK(reopened.playhead_zero_snap == 1);
+            CHECK(reopened.ripple_cut_crop_canvas == 0);
             config_file = fopen("test-tapesister.ini", "wb");
             CHECK(config_file != NULL);
             if (config_file != NULL) {
@@ -2327,6 +2441,14 @@ int main(void)
             CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
             CHECK(reopened.rotate_wheel_fine == 1 && reopened.rotate_wheel_coarse == 100);
             CHECK(reopened.reference_tone_volume == 100);
+            config_file = fopen("test-tapesister.ini", "wb");
+            CHECK(config_file != NULL);
+            if (config_file != NULL) {
+                fputs("ripple_cut_crop_canvas=2\n", config_file);
+                fclose(config_file);
+            }
+            CHECK(!ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
+            remove("test-tapesister.ini");
             config_file = fopen("test-tapesister.ini", "wb");
             CHECK(config_file != NULL);
             if (config_file != NULL) {

@@ -467,6 +467,18 @@ typedef struct {
     int active;
 } TsCanvasGesture;
 
+typedef struct {
+    TsEditSnapshot start;
+    TsSample original;
+    const float *owner_parent_data;
+    uint32_t owner_generation;
+    int owner_slot;
+    size_t first_frame;
+    size_t last_frame;
+    int has_profile;
+    int active;
+} TsAmplitudeGesture;
+
 void ts_sample_init(TsSample *sample);
 void ts_sample_free(TsSample *sample);
 void ts_sample_touch(TsSample *sample);
@@ -581,6 +593,21 @@ int ts_instrument_canvas_gesture_commit(TsInstrument *instrument,
 int ts_instrument_canvas_gesture_cancel(TsInstrument *instrument,
                                         TsCanvasGesture *gesture,
                                         char *error, size_t error_size);
+void ts_amplitude_gesture_init(TsAmplitudeGesture *gesture);
+int ts_instrument_amplitude_gesture_begin(TsInstrument *instrument,
+                                          TsAmplitudeGesture *gesture,
+                                          char *error, size_t error_size);
+int ts_instrument_amplitude_gesture_preview(TsInstrument *instrument,
+                                            TsAmplitudeGesture *gesture,
+                                            size_t first, float first_gain,
+                                            size_t last, float last_gain,
+                                            char *error, size_t error_size);
+int ts_instrument_amplitude_gesture_commit(TsInstrument *instrument,
+                                           TsAmplitudeGesture *gesture,
+                                           char *error, size_t error_size);
+int ts_instrument_amplitude_gesture_cancel(TsInstrument *instrument,
+                                           TsAmplitudeGesture *gesture,
+                                           char *error, size_t error_size);
 size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame);
 size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
                                                 size_t frame,
@@ -768,6 +795,10 @@ int ts_instrument_copy_selection(const TsInstrument *instrument,
 int ts_instrument_cut_selection(TsInstrument *instrument,
                                 TsSample *clipboard, size_t *origin_first,
                                 char *error, size_t error_size);
+int ts_instrument_cut_selection_mode(TsInstrument *instrument,
+                                     TsSample *clipboard, size_t *origin_first,
+                                     int crop_canvas,
+                                     char *error, size_t error_size);
 int ts_instrument_paste(TsInstrument *instrument, const TsSample *clipboard,
                         size_t origin_first, int fit_selection,
                         char *error, size_t error_size);
