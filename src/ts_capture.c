@@ -78,7 +78,8 @@ int ts_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
         set_error(error, error_size, "Capture is not waiting for a source");
         return 0;
     }
-    if (source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT) {
+    if (source_slot != TS_CAPTURE_SOURCE_SYNTH &&
+        (source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT)) {
         set_error(error, error_size, "Invalid Capture source tile");
         return 0;
     }
@@ -130,7 +131,8 @@ int ts_capture_trigger(TsCaptureRecorder *recorder,
         set_error(error, error_size, "Capture is not armed");
         return 0;
     }
-    if (recorder->source_slot < 0 ||
+    if ((recorder->source_slot < 0 &&
+         recorder->source_slot != TS_CAPTURE_SOURCE_SYNTH) ||
         recorder->source_slot == recorder->destination_slot) {
         set_error(error, error_size, "Select an occupied source tile first");
         return 0;

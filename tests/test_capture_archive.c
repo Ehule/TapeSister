@@ -29,6 +29,7 @@ int main(void)
     char first[1200] = {0};
     char second[1200] = {0};
     char same_second[1200] = {0};
+    char synth[1200] = {0};
     char error[160];
     TsSample loaded;
     ts_sample_init(&loaded);
@@ -51,6 +52,10 @@ int main(void)
                                    error, sizeof(error)));
     CHECK(strstr(same_second, "INPUT_") != NULL);
     CHECK(strcmp(first, same_second) != 0);
+    CHECK(ts_capture_archive_write(directory, TS_CAPTURE_ARCHIVE_SYNTH,
+                                   performance, 4u, 48000,
+                                   synth, sizeof(synth), error, sizeof(error)));
+    CHECK(strstr(synth, "SYNTH_") != NULL);
     /* Clearing or replacing working audio has no relationship to the archive. */
     memset(performance, 0, sizeof(performance));
     ts_sample_free(&loaded);
@@ -61,6 +66,7 @@ int main(void)
     if (first[0] != '\0') CHECK(remove(first) == 0);
     if (second[0] != '\0') CHECK(remove(second) == 0);
     if (same_second[0] != '\0') CHECK(remove(same_second) == 0);
+    if (synth[0] != '\0') CHECK(remove(synth) == 0);
     CHECK(TS_RMDIR(directory) == 0);
     if (failures != 0) {
         fprintf(stderr, "%d capture archive test(s) failed\n", failures);

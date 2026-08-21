@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-add_library(tapesister_core src/ts_sample.c src/ts_audition.c src/ts_note_bank.c
+add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
              src/ts_capture.c src/ts_capture_archive.c src/ts_input_monitor.c
              src/ts_sample_pages.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c

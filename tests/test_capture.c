@@ -229,6 +229,8 @@ static void test_target_commit_history_and_independence(void)
     uint64_t captured_hash;
     size_t capacity = 0;
     CHECK(prepare_source_and_blank(&instrument, 32, 8, error, sizeof(error)));
+    CHECK(ts_instrument_set_tuning(&instrument, 45, 17.0f,
+                                   error, sizeof(error)));
     target_before = ts_sample_hash(&instrument.bank[1].sample);
     CHECK(ts_instrument_capture_target_frames(&instrument, 1, 48000,
                                                &capacity, error, sizeof(error)));
@@ -241,6 +243,9 @@ static void test_target_commit_history_and_independence(void)
     CHECK(instrument.selected_slot == 1);
     CHECK(instrument.bank[1].capture_kind == TS_BANK_CAPTURE_PERFORMANCE);
     CHECK(instrument.bank[1].parent_slot == 0);
+    CHECK(instrument.tuning.root_note == TS_KEYBOARD_BASE_NOTE &&
+          instrument.audible_tuning.root_note == TS_KEYBOARD_BASE_NOTE &&
+          instrument.tuning.fine_tune_cents == 0.0f);
     CHECK(instrument.current.frames == 8u && instrument.undo_count == 1);
     CHECK(fabsf(instrument.current.data[0] - 0.8f) < 0.0001f);
     captured_hash = ts_sample_hash(&instrument.current);
@@ -285,6 +290,53 @@ static void test_early_stop_and_cancel_leave_expected_target(void)
     CHECK(instrument.has_loop == 0);
     CHECK(instrument.has_selection && instrument.selection_first == 0u &&
           instrument.selection_last == 4u);
+    ts_instrument_free(&instrument);
+}
+
+static void test_internal_synth_source_and_split_mix(void)
+{
+    TsInstrument instrument;
+    TsCaptureRecorder recorder;
+    TsNoteBank notes;
+    TsSample preview;
+    TsSample replacement;
+    char error[160];
+    float captured[8] = {0.6f, -0.4f, 0.3f, -0.2f, 0.1f, 0.2f, -0.1f, 0.4f};
+    float synth = 0.0f;
+    CHECK(prepare_source_and_blank(&instrument, 32, 8, error, sizeof(error)));
+    ts_capture_init(&recorder);
+    CHECK(ts_capture_arm(&recorder, 1, 8, 48000, error, sizeof(error)));
+    CHECK(ts_capture_set_source(&recorder, TS_CAPTURE_SOURCE_SYNTH,
+                                error, sizeof(error)));
+    CHECK(ts_capture_trigger(&recorder, error, sizeof(error)));
+    ts_capture_free(&recorder);
+    CHECK(ts_instrument_commit_capture(&instrument, 1, TS_CAPTURE_SOURCE_SYNTH,
+                                       captured, 8, 48000, 0,
+                                       error, sizeof(error)));
+    CHECK(instrument.bank[1].parent_slot == TS_CAPTURE_SOURCE_SYNTH);
+    CHECK(strstr(instrument.current.name, "SYNTH") != NULL);
+    CHECK(!instrument.bank[1].has_generator);
+
+    ts_sample_init(&preview);
+    ts_sample_init(&replacement);
+    preview.data = captured;
+    preview.frames = 8u;
+    preview.sample_rate = 48000u;
+    replacement.data = captured;
+    replacement.frames = 8u;
+    replacement.sample_rate = 48000u;
+    ts_note_bank_init(&notes);
+    CHECK(ts_note_bank_start_sample(&notes, &preview, &instrument.audible_tuning,
+                                    0, TS_KEYBOARD_BASE_NOTE, 1, 48000) ==
+          TS_NOTE_STARTED);
+    CHECK(ts_note_bank_read_split(&notes, &synth) == synth);
+    CHECK(fabsf(synth) > 0.0f);
+    ts_note_bank_replace_sample(&notes, &preview, &replacement, 48000);
+    CHECK(notes.voices[0].sample == &replacement && notes.voices[0].synth);
+    CHECK(ts_note_bank_start_sample(&notes, &replacement,
+                                    &instrument.audible_tuning, 0,
+                                    TS_KEYBOARD_BASE_NOTE, 1, 48000) ==
+          TS_NOTE_TOGGLED_OFF);
     ts_instrument_free(&instrument);
 }
 
@@ -373,6 +425,7 @@ int main(void)
     test_pitch_change_and_multiple_playheads_reach_capture();
     test_target_commit_history_and_independence();
     test_early_stop_and_cancel_leave_expected_target();
+    test_internal_synth_source_and_split_mix();
     test_capture_feedback_rendering();
     if (failures != 0) {
         fprintf(stderr, "%d Capture checks failed\n", failures);

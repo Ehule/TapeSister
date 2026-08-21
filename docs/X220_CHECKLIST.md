@@ -43,12 +43,13 @@ This is a musical and interaction checkpoint. Passing automated tests alone is n
 - [ ] Loop Set, Clear, mode, crossfade, and flag dragging affect only the selected tile and are undoable.
 - [ ] Forward, Reverse, and Ping-Pong playback match the displayed direction.
 - [ ] Crop and tape gestures keep loop coordinates valid; Undo restores the previous loop exactly.
-- [ ] Root note, fine tuning, and pitch suggestion belong to the selected tile and survive tile switching.
-- [ ] Held notes respond safely to tuning and render changes without becoming stuck.
+- [ ] Every created, imported, recorded, and captured tile plays unchanged at MIDI 60 and exports that portable unity metadata.
+- [ ] The Tune reference defaults to C4/MIDI 60/261.63 Hz and Down, Up, Trim, and the reference-tone button change only the target.
 - [ ] Space plays the persistent selection when present and otherwise preserves the established whole/playhead behavior, all at the displayed audible tuning.
-- [ ] Down, Up, and Trim retune an already-running ordinary audition without changing the waveform hash.
+- [ ] Detect Pitch rejects unsuitable material and Tune to Reference destructively resamples the selection or tile in one Undo step.
+- [ ] Undo restores the exact prior waveform, duration, and mapping; Redo restores the tuned waveform at MIDI-60 unity.
 - [ ] Occupied Bank tile, Loop/Loop Lock, Drone, and Transform preview audition use the same audible tuning as Space.
-- [ ] Keyboard notes remain correctly transposed relative to the accepted mapping root.
+- [ ] Clicking a tile and pressing MIDI 60 produce the same native playback rate; other keyboard notes transpose from there.
 
 ## Native DSP transformations
 

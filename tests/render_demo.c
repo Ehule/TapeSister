@@ -24,7 +24,34 @@ int main(int argc, char **argv)
     ts_instrument_set_selection(&instrument, instrument.current.frames / 5,
                                 instrument.current.frames * 3 / 5);
     snprintf(ui.status, sizeof(ui.status), "PARENT PRESERVED - CURRENT READY TO SHAPE");
-    if (argc > 2 && strcmp(argv[2], "palette") == 0) {
+    if (argc > 2 && strcmp(argv[2], "fm") == 0) {
+        TsGeneratorRecipe recipe = instrument.generator;
+        recipe.kind = TS_GENERATOR_FM;
+        ts_fm_patch_from_recipe(&recipe, &ui.fm_patch);
+        ui.fm_patch.drone_mode = 1;
+        ui.fm_patch.extreme_mode = 1;
+        ts_fm_patch_sanitize(&ui.fm_patch);
+        if (!ts_fm_render_sample(&drone_preview, &ui.fm_patch, 2.0f, 130.8128f,
+                                 44100u, 0x50524556u,
+                                 error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ui.fm_open = 1;
+        ui.fm_page = TS_FM_PAGE_FILTER;
+        ui.fm_preview_sample = &drone_preview;
+        ui.fm_held_notes = 3;
+        ui.playback_active = 1;
+        ui.playhead_sample = &drone_preview;
+        ui.playhead_frame = drone_preview.frames * 2u / 5u;
+        ui.playhead_frames = drone_preview.frames;
+        instrument.family_mutation = 0.78f;
+        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                 "DRONE EDGES ZEROED - HELD CHORD CONTINUES UNDER THE WINDOW");
+        snprintf(ui.status, sizeof(ui.status),
+                 "FM LOGIC PREVIEW - APPLY PRINTS THE GENOME TO THE ACTIVE TILE");
+    } else if (argc > 2 && strcmp(argv[2], "palette") == 0) {
         ui.palette_open = 1;
         ui.palette_entry = TS_PALETTE_WAVE_SELECTION;
         ui.palette_channel = 1;
@@ -102,6 +129,10 @@ int main(int argc, char **argv)
         ui.drone_split_frame = split;
         ui.drone_output_frames = drone_preview.frames;
         ui.drone_overlap_frames = overlap;
+        ui.playback_active = 1;
+        ui.playhead_sample = &drone_preview;
+        ui.playhead_frame = drone_preview.frames * 2u / 5u;
+        ui.playhead_frames = drone_preview.frames;
         snprintf(ui.status, sizeof(ui.status),
                  "DRONE PREVIEW IS TEMPORARY - SOURCE AND HISTORY UNCHANGED");
     } else if (argc > 2 && strcmp(argv[2], "canvas") == 0) {
@@ -370,6 +401,10 @@ int main(int argc, char **argv)
         ui.transform_preview_last = instrument.selection_last;
         ui.transform_preview_available = 1;
         ui.transform_safety = TS_CDP_SAFETY_SAFE;
+        ui.playback_active = 1;
+        ui.playhead_sample = &drone_preview;
+        ui.playhead_frame = drone_preview.frames * 2u / 5u;
+        ui.playhead_frames = drone_preview.frames;
         snprintf(ui.transform_message, sizeof(ui.transform_message),
                  "PREVIEW READY - SOURCE AUDIO AND HISTORY ARE UNCHANGED");
         snprintf(ui.status, sizeof(ui.status),

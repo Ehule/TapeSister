@@ -2,8 +2,9 @@
 
 TapeSister treats a completed realtime performance differently from an editor or
 generator state: it preserves the original performance before installing an editable
-working copy. External input uses `INPUT_...wav`; the internal tile-to-tile CAPTURE
-recorder uses `CAPTURE_...wav`. Both are mono 32-bit float WAV files in `Captures/`
+working copy. External input uses `INPUT_...wav`; FM performances recorded directly
+to the REC BANK use `SYNTH_...wav`; and Capture-to-New-Tile uses `CAPTURE_...wav`.
+All are mono 32-bit float WAV files in `Captures/`
 (or `TAPESISTER_CAPTURES`) and use local time, milliseconds, process identity, and a
 collision counter. Files are written to a temporary name and renamed only after the
 WAV closes successfully. TapeSister never scans this folder for cleanup and no tile or
@@ -26,20 +27,24 @@ KEEP deep-copies occupied REC tiles in ascending order into ascending empty Samp
 slots, then clears the REC BANK only after every copy succeeds. Allocation/copy failure
 rolls back all new destinations and any pages created by that KEEP operation.
 
-The primary `.tsr` is page 1 and therefore remains readable by older TapeSister builds.
+The primary `.tsr` is page 1 and remains a normal single-page project; TSR24-aware
+builds can open it without the companion folder.
 `<project>.tsr.samples/manifest.txt` declares the page count, active page, and optional
-REC BANK; later pages and REC state use ordinary TSR21 members. Opening a project is
+REC BANK; later pages and REC state use ordinary TSR24 members. Opening a project is
 transactional: all members load into temporary instruments before current state is
 replaced. The bundle is intentionally simpler and safer than widening the fixed
 16-tile serializer, but users must keep the `.tsr` and companion folder together.
 
 ## Audio and rendering boundaries
 
-The input callback performs only channel selection/fold-down, recorder writes, one
+The input callback performs only channel selection/fold-down, external-source recorder writes, one
 block peak publication, and an optional lock-free SPSC monitor-ring write. It does no
 drawing, file I/O, allocation, or project mutation. The output callback consumes the
 dry monitor ring after producing and feeding the internal CAPTURE performance mix, so
 monitored input cannot be printed into internal CAPTURE or routed through tile effects.
+When REC BANK source is SYNTH, the output callback feeds the synth-only `TsNoteBank`
+submix to the same recorder before dry monitoring. This path does not open or round-trip
+through a physical input device.
 
 The UI periodically consumes only newly recorded external frames into a fixed 576
 column min/max envelope representing roughly the latest ten seconds. Work and memory

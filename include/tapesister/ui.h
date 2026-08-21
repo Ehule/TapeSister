@@ -156,6 +156,21 @@ typedef enum {
 } TsUiTransformAction;
 
 typedef enum {
+    TS_UI_FM_ACTION_NONE = 0,
+    TS_UI_FM_ACTION_RANDOMIZE,
+    TS_UI_FM_ACTION_APPLY,
+    TS_UI_FM_ACTION_AUDITION,
+    TS_UI_FM_ACTION_HOLD,
+    TS_UI_FM_ACTION_DRONE,
+    TS_UI_FM_ACTION_EXTREME,
+    TS_UI_FM_ACTION_CHAIN,
+    TS_UI_FM_ACTION_OVERWRITE,
+    TS_UI_FM_ACTION_NEW_PAGE,
+    TS_UI_FM_ACTION_CANCEL_FULL,
+    TS_UI_FM_ACTION_BACK
+} TsUiFmAction;
+
+typedef enum {
     TS_TRANSFORM_BACKEND_CDP = 0,
     TS_TRANSFORM_BACKEND_DSP
 } TsTransformBackend;
@@ -233,6 +248,7 @@ typedef struct {
     int sample_page;
     int sample_page_count;
     int monitor_enabled;
+    TsRecordSource record_source;
     int input_meter_active;
     int input_clipping;
     float input_level;
@@ -266,6 +282,13 @@ typedef struct {
     int drone_crossfade_dragging;
     int drone_crossfade_drag_start_x;
     int transform_open;
+    int fm_open;
+    TsFmPage fm_page;
+    TsFmPatch fm_patch;
+    const TsSample *fm_preview_sample;
+    int fm_held_notes;
+    int fm_full_choice_open;
+    char fm_message[96];
     int transform_rendering;
     int transform_preview_available;
     int transform_preview_active;
@@ -314,7 +337,9 @@ typedef struct {
     TsPalette palette_before_edit;
     TsRecipeBank recipes;
     TsTuning pitch_suggestion;
+    TsTuning tune_reference;
     float pitch_confidence;
+    int tune_reference_active;
     float warp_amount;
     TsWarpGesture warp_gesture;
     uint32_t warp_last_audition_ms;
@@ -359,6 +384,7 @@ typedef struct {
     int64_t tape_destination;
     size_t playhead_frame;
     size_t playhead_frames;
+    const TsSample *playhead_sample;
     size_t parent_view_first;
     size_t parent_view_last;
     char bank_rename[128];
@@ -404,6 +430,14 @@ TsUiExchangeAction ts_ui_exchange_action_from_point(TsUiExchangeDialog dialog,
                                                      int x, int y);
 TsUiDroneAction ts_ui_drone_action_from_point(int x, int y);
 TsUiTransformAction ts_ui_transform_action_from_point(int x, int y);
+int ts_ui_fm_button_from_point(int x, int y);
+TsFmPage ts_ui_fm_page_from_point(int x, int y);
+int ts_ui_fm_control_from_point(int x, int y);
+int ts_ui_fm_voice_from_point(int x, int y);
+uint32_t ts_ui_fm_mutation_from_point(int x, int y);
+TsUiFmAction ts_ui_fm_action_from_point(int x, int y);
+TsUiFmAction ts_ui_fm_full_action_from_point(int x, int y);
+int ts_ui_fm_range_contains(int x, int y);
 int ts_ui_transform_control_from_point(int x, int y);
 int ts_ui_transform_mix_contains(int x, int y);
 int ts_ui_transform_waveform_contains(int x, int y);
@@ -412,6 +446,7 @@ TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y);
 int ts_ui_capture_button_from_point(int x, int y);
 int ts_ui_record_keep_button_from_point(int x, int y);
 int ts_ui_monitor_button_from_point(int x, int y);
+int ts_ui_record_source_button_from_point(int x, int y);
 int ts_ui_canvas_edge_from_point(int x, int y);
 int ts_ui_drone_waveform_contains(int x, int y);
 int ts_ui_drone_crossfade_handle_from_point(const TsUiState *ui, int x, int y);

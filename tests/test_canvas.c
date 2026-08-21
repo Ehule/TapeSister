@@ -46,7 +46,7 @@ static void test_double_and_history(void)
     CHECK(memcmp(instrument.current.data, before, sizeof(before)) == 0);
     for (size_t i = 16; i < 32; ++i) CHECK(instrument.current.data[i] == 0.0f);
     CHECK(instrument.selection_first == 3 && instrument.selection_last == 11);
-    CHECK(instrument.view_first == 2 && instrument.view_last == 14);
+    CHECK(instrument.view_first == 20 && instrument.view_last == 32);
     CHECK(instrument.playhead_frame == 6);
     CHECK(instrument.loop_first == 4 && instrument.loop_last == 12);
     CHECK(instrument.grid_divisions == 32);
@@ -84,7 +84,7 @@ static void test_left_and_right_edges(void)
     for (size_t i = 0; i < 5; ++i) CHECK(left.current.data[i] == 0.0f);
     CHECK(memcmp(left.current.data + 5, before, sizeof(before)) == 0);
     CHECK(left.selection_first == 7 && left.selection_last == 14);
-    CHECK(left.view_first == 6 && left.view_last == 16);
+    CHECK(left.view_first == 0 && left.view_last == 10);
     CHECK(left.playhead_frame == 9);
     CHECK(left.loop_first == 8 && left.loop_last == 15);
     CHECK(ts_instrument_resize_canvas(&left, 1, -5, error, sizeof(error)));
@@ -272,29 +272,38 @@ static void test_frozen_gesture_commit_cancel(void)
     char error[160];
     make_canvas(&instrument, 20, 22050, 1);
     before_hash = ts_sample_hash(&instrument.current);
+    instrument.view_first = 3u;
+    instrument.view_last = 13u;
     ts_canvas_gesture_init(&gesture);
     CHECK(ts_instrument_canvas_gesture_begin(&instrument, &gesture, 2,
                                              error, sizeof(error)));
+    CHECK(instrument.view_first == 10u && instrument.view_last == 20u);
     CHECK(ts_instrument_canvas_gesture_preview(&instrument, &gesture, 4,
                                                error, sizeof(error)));
     CHECK(instrument.current.frames == 24 && instrument.undo_count == 0);
+    CHECK(instrument.view_first == 14u && instrument.view_last == 24u);
     CHECK(ts_instrument_canvas_gesture_preview(&instrument, &gesture, 8,
                                                error, sizeof(error)));
     CHECK(instrument.current.frames == 28 && instrument.undo_count == 0);
+    CHECK(instrument.view_first == 18u && instrument.view_last == 28u);
     CHECK(ts_instrument_canvas_gesture_cancel(&instrument, &gesture,
                                               error, sizeof(error)));
     CHECK(instrument.current.frames == 20 &&
           ts_sample_hash(&instrument.current) == before_hash &&
           instrument.undo_count == 0);
+    CHECK(instrument.view_first == 3u && instrument.view_last == 13u);
     CHECK(ts_instrument_canvas_gesture_begin(&instrument, &gesture, 1,
                                              error, sizeof(error)));
+    CHECK(instrument.view_first == 0u && instrument.view_last == 10u);
     CHECK(ts_instrument_canvas_gesture_preview(&instrument, &gesture, 6,
                                                error, sizeof(error)));
     CHECK(ts_instrument_canvas_gesture_commit(&instrument, &gesture,
                                               error, sizeof(error)));
     CHECK(instrument.current.frames == 26 && instrument.undo_count == 1);
+    CHECK(instrument.view_first == 0u && instrument.view_last == 10u);
     CHECK(ts_instrument_undo(&instrument, error, sizeof(error)) &&
           instrument.current.frames == 20);
+    CHECK(instrument.view_first == 3u && instrument.view_last == 13u);
     ts_instrument_free(&instrument);
 }
 
@@ -328,7 +337,7 @@ static void test_tile_independence_and_roundtrip(void)
     file = fopen("test-canvas.tsr", "rb");
     CHECK(file != NULL);
     if (file != NULL) {
-        CHECK(fread(magic, 1, 5, file) == 5 && memcmp(magic, "TSR21", 5) == 0);
+        CHECK(fread(magic, 1, 5, file) == 5 && memcmp(magic, "TSR24", 5) == 0);
         fclose(file);
     }
     ts_instrument_init(&restored);

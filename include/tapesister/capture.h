@@ -33,6 +33,11 @@ typedef enum {
     TS_EXTERNAL_CAPTURE_CANCELED
 } TsExternalCaptureState;
 
+typedef enum {
+    TS_RECORD_SOURCE_EXT = 0,
+    TS_RECORD_SOURCE_SYNTH
+} TsRecordSource;
+
 typedef struct {
     float *buffer;
     size_t capacity_frames;

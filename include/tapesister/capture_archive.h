@@ -6,7 +6,8 @@
 
 typedef enum {
     TS_CAPTURE_ARCHIVE_INPUT = 0,
-    TS_CAPTURE_ARCHIVE_INTERNAL
+    TS_CAPTURE_ARCHIVE_INTERNAL,
+    TS_CAPTURE_ARCHIVE_SYNTH
 } TsCaptureArchiveKind;
 
 int ts_capture_archive_write(const char *directory,

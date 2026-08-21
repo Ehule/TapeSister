@@ -848,7 +848,7 @@ int main(void)
         CHECK(reopened.root_note == written.root_note);
         CHECK(fabsf(reopened.fine_tune_cents - written.fine_tune_cents) < 0.001f);
         CHECK(fabs(ts_tuning_frequency(&(TsTuning){69, 0.0f}) - 440.0) < 0.0001);
-        CHECK(fabs(ts_tuning_note_pitch(&(TsTuning){60, 0.0f}, 12) - 1.0) < 0.0001);
+        CHECK(fabs(ts_tuning_note_pitch(&(TsTuning){60, 0.0f}, 0) - 1.0) < 0.0001);
         CHECK(strcmp(ts_midi_note_name(60, note_name, sizeof(note_name)), "C4") == 0);
         remove("test-tuned.wav");
     }
@@ -876,6 +876,8 @@ int main(void)
               imported.loop_last == 4321 &&
               imported.loop_mode == TS_LOOP_PING_PONG);
         CHECK(imported.bank[0].has_loop && imported.bank[0].loop_first == 123);
+        CHECK(imported.tuning.root_note == 60 &&
+              imported.audible_tuning.root_note == 60);
         remove("test-looped.wav");
     }
     {
@@ -974,6 +976,64 @@ int main(void)
             CHECK(generated.audible_tuning.root_note == 65);
             CHECK(ts_sample_hash(&generated.current) == before_tuning_hash);
         }
+    }
+
+    {
+        TsInstrument tuned;
+        size_t before_frames;
+        size_t tuned_frames;
+        uint64_t before_hash;
+        uint64_t tuned_hash;
+        ts_instrument_init(&tuned);
+        CHECK(ts_instrument_generate(&tuned, TS_GENERATOR_FM, 0x4354554eu,
+                                     error, sizeof(error)));
+        CHECK(tuned.tuning.root_note == 60 &&
+              tuned.audible_tuning.root_note == 60);
+        CHECK(fabsf(tuned.generator.frequency - 261.625565f) < 0.001f);
+        CHECK(ts_instrument_set_tuning(&tuned, 64, 12.0f,
+                                       error, sizeof(error)));
+        before_frames = tuned.current.frames;
+        before_hash = ts_sample_hash(&tuned.current);
+        CHECK(ts_instrument_apply_pitch_shift(&tuned, 12.0f,
+                                              error, sizeof(error)));
+        tuned_frames = tuned.current.frames;
+        tuned_hash = ts_sample_hash(&tuned.current);
+        CHECK(tuned_frames == (before_frames + 1u) / 2u);
+        CHECK(tuned_hash != before_hash);
+        CHECK(tuned.tuning.root_note == 60 &&
+              tuned.audible_tuning.root_note == 60 &&
+              tuned.tuning.fine_tune_cents == 0.0f);
+        CHECK(ts_instrument_undo(&tuned, error, sizeof(error)));
+        CHECK(tuned.current.frames == before_frames &&
+              ts_sample_hash(&tuned.current) == before_hash);
+        CHECK(tuned.tuning.root_note == 64 &&
+              fabsf(tuned.tuning.fine_tune_cents - 12.0f) < 0.001f);
+        CHECK(ts_instrument_redo(&tuned, error, sizeof(error)));
+        CHECK(tuned.current.frames == tuned_frames &&
+              ts_sample_hash(&tuned.current) == tuned_hash);
+        CHECK(tuned.tuning.root_note == 60 &&
+              tuned.audible_tuning.root_note == 60);
+        {
+            size_t selection_first = 1000u;
+            size_t selection_last = 2000u;
+            size_t selection_frames = selection_last - selection_first;
+            size_t selection_total = tuned.current.frames;
+            float prefix = tuned.current.data[500u];
+            float suffix = tuned.current.data[2500u];
+            ts_instrument_set_selection(&tuned, selection_first, selection_last);
+            CHECK(ts_instrument_apply_pitch_shift(&tuned, -12.0f,
+                                                  error, sizeof(error)));
+            CHECK(tuned.current.frames == selection_total + selection_frames);
+            CHECK(tuned.has_selection &&
+                  tuned.selection_first == selection_first &&
+                  tuned.selection_last == selection_first + 2u * selection_frames);
+            CHECK(tuned.current.data[500u] == prefix);
+            CHECK(tuned.current.data[3500u] == suffix);
+            CHECK(ts_instrument_undo(&tuned, error, sizeof(error)));
+            CHECK(tuned.current.frames == selection_total &&
+                  ts_sample_hash(&tuned.current) == tuned_hash);
+        }
+        ts_instrument_free(&tuned);
     }
 
     size_t original_frames = generated.current.frames;
@@ -1343,6 +1403,7 @@ int main(void)
             uint32_t full_sequence = family.family_sequence;
             int refused_slot = -1;
             CHECK(ts_instrument_bank_count(&family) == TS_BANK_SLOT_COUNT);
+            CHECK(ts_instrument_bank_next_empty(&family) == -1);
             CHECK(!ts_instrument_generate_family_candidate(&family, 0, 0,
                                                             &refused_slot,
                                                             error, sizeof(error)));
@@ -1350,6 +1411,7 @@ int main(void)
                   ts_sample_hash(&family.parent) == full_parent &&
                   family.family_sequence == full_sequence);
             CHECK(ts_instrument_bank_clear(&family, 8, error, sizeof(error)));
+            CHECK(ts_instrument_bank_next_empty(&family) == 8);
             CHECK(ts_instrument_generate_family_candidate(&family, 0, 0,
                                                            &refused_slot,
                                                            error, sizeof(error)));
@@ -1454,8 +1516,8 @@ int main(void)
                                          error, sizeof(error)));
         CHECK(ts_instrument_bank_rename(&bank_edit, 1, "Drone Core",
                                         error, sizeof(error)));
-        CHECK(bank_edit.bank[1].tuning.root_note == 53 &&
-              fabsf(bank_edit.bank[1].tuning.fine_tune_cents - 14.0f) < 0.001f);
+        CHECK(bank_edit.bank[1].tuning.root_note == TS_KEYBOARD_BASE_NOTE &&
+              bank_edit.bank[1].tuning.fine_tune_cents == 0.0f);
         selected_hash = ts_sample_hash(&bank_edit.bank[1].sample);
         process = bank_edit.process;
         process.edge = 0.71f;
@@ -1467,8 +1529,8 @@ int main(void)
         CHECK(bank_edit.generation == prior_generation + 1u);
         CHECK(bank_edit.ancestor_hash == prior_parent);
         CHECK(bank_edit.source_kind == TS_SOURCE_COMMITTED);
-        CHECK(bank_edit.tuning.root_note == 53 &&
-              fabsf(bank_edit.tuning.fine_tune_cents - 14.0f) < 0.001f);
+        CHECK(bank_edit.tuning.root_note == TS_KEYBOARD_BASE_NOTE &&
+              bank_edit.tuning.fine_tune_cents == 0.0f);
         CHECK(ts_sample_hash(&bank_edit.parent) == selected_hash);
         CHECK(ts_sample_hash(&bank_edit.current) == selected_hash);
         CHECK(strcmp(bank_edit.parent.name, "Drone Core") == 0);
@@ -1710,7 +1772,7 @@ int main(void)
                                             2000, 2400, -100,
                                             error, sizeof(error)));
         CHECK(tape.current.frames == original_frames + 100u);
-        CHECK(tape.view_first == 200u && tape.view_last == 900u);
+        CHECK(tape.view_first == 0u && tape.view_last == 700u);
         CHECK(tape.selection_first == 0 && tape.selection_last == 400u);
         CHECK(ts_instrument_apply_tape_drag(&tape, TS_POST_MOVE_MIX,
                                             500, 800,
@@ -1718,10 +1780,12 @@ int main(void)
                                             error, sizeof(error)));
         CHECK(tape.current.frames == original_frames + 420u);
         CHECK(tape.post_edit_count == 4);
-        CHECK(tape.view_first == 200u && tape.view_last == 900u);
+        CHECK(tape.view_first == tape.current.frames - 700u &&
+              tape.view_last == tape.current.frames);
         CHECK(!ts_instrument_apply_tape_drag(&tape, TS_POST_COPY_MIX,
                                              12u, 12u, 20, error, sizeof(error)));
-        CHECK(tape.view_first == 200u && tape.view_last == 900u);
+        CHECK(tape.view_first == tape.current.frames - 700u &&
+              tape.view_last == tape.current.frames);
         CHECK(fabsf(tape.current.data[550]) < 0.000001f);
         ts_instrument_set_selection(&tape, tape.selection_first, tape.selection_last);
         CHECK(ts_instrument_apply_sample_edit(&tape, TS_SAMPLE_EDIT_GAIN, 0.5f,
@@ -1862,9 +1926,8 @@ int main(void)
     CHECK(ts_instrument_bank_count(&committed) == 4);
     CHECK(ts_instrument_bank_first_empty(&committed) == 4);
     CHECK(committed.bank[1].sample.frames == committed.current.frames);
-    CHECK(committed.bank[1].tuning.root_note == committed.tuning.root_note);
-    CHECK(committed.bank[1].audible_tuning.root_note ==
-          committed.audible_tuning.root_note);
+    CHECK(committed.bank[1].tuning.root_note == TS_KEYBOARD_BASE_NOTE);
+    CHECK(committed.bank[1].audible_tuning.root_note == TS_KEYBOARD_BASE_NOTE);
     CHECK(committed.bank[2].sample.frames ==
           committed.selection_last - committed.selection_first);
     CHECK(committed.bank[3].has_loop && committed.bank[3].loop_first == 0 &&
@@ -1933,7 +1996,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR21", 5) == 0);
+        CHECK(memcmp(magic, "TSR24", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));
@@ -1991,14 +2054,17 @@ int main(void)
                 if (length > 4 && strcmp(entry->d_name + length - 4, ".wav") == 0) {
                     char exported[512];
                     TsSample bank_wav;
+                    TsTuning bank_tuning = {0, 0.0f};
                     int has_loop = 0;
                     size_t loop_first = 0, loop_last = 0;
                     TsLoopMode loop_mode = TS_LOOP_FORWARD;
                     snprintf(exported, sizeof(exported), "test-bank-family/%s", entry->d_name);
                     ts_sample_init(&bank_wav);
                     CHECK(ts_sample_load_wav_metadata(
-                        &bank_wav, NULL, &has_loop, &loop_first, &loop_last,
+                        &bank_wav, &bank_tuning, &has_loop, &loop_first, &loop_last,
                         &loop_mode, exported, error, sizeof(error)));
+                    CHECK(bank_tuning.root_note == TS_KEYBOARD_BASE_NOTE &&
+                          fabsf(bank_tuning.fine_tune_cents) < 0.001f);
                     if (has_loop) {
                         CHECK(loop_last > loop_first);
                         ++looped_wav_count;
@@ -2051,7 +2117,7 @@ int main(void)
         int accepted_root = restored.tuning.root_note;
         ts_note_bank_sync_tuned(&notes, &restored, &preview, 48000);
         voice = ts_note_bank_display_voice(&notes);
-        CHECK(voice != NULL && fabs(voice->pitch - 0.5) < 0.0001);
+        CHECK(voice != NULL && fabs(voice->pitch - 1.0) < 0.0001);
         CHECK(restored.tuning.root_note == accepted_root);
         CHECK(ts_instrument_set_tuning(&restored, TS_KEYBOARD_BASE_NOTE, 0.0f,
                                        error, sizeof(error)));
@@ -2108,15 +2174,50 @@ int main(void)
               0, 60, 1, 48000) == TS_NOTE_STARTED);
     CHECK(ts_note_bank_count(&notes) == 2);
     CHECK(notes.voices[0].active && notes.voices[0].midi_note == 48 &&
-          fabs(notes.voices[0].pitch - 1.0) < 0.0001);
+          fabs(notes.voices[0].pitch - 0.5) < 0.0001);
     CHECK(notes.voices[1].active && notes.voices[1].midi_note == 60 &&
-          fabs(notes.voices[1].pitch - 2.0) < 0.0001);
+          fabs(notes.voices[1].pitch - 1.0) < 0.0001);
     CHECK(ts_note_bank_mask(&notes) == 1u);
+    CHECK(ts_note_bank_visible_mask(&notes, 48) == ((1u << 0) | (1u << 12)));
+    CHECK(ts_note_bank_visible_mask(&notes, 60) == 1u);
+    CHECK(ts_note_bank_visible_mask(&notes, 84) == 0u);
     ts_note_bank_sync(&notes, &restored, 48000);
     CHECK(notes.voices[0].midi_note == 48 && notes.voices[1].midi_note == 60 &&
-          fabs(notes.voices[0].pitch - 1.0) < 0.0001 &&
-          fabs(notes.voices[1].pitch - 2.0) < 0.0001);
+          fabs(notes.voices[0].pitch - 0.5) < 0.0001 &&
+          fabs(notes.voices[1].pitch - 1.0) < 0.0001);
     ts_note_bank_clear(&notes);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              5, 48, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              9, 48, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_visible_mask(&notes, 48) == ((1u << 5) | (1u << 9)));
+    CHECK(ts_note_bank_visible_mask(&notes, 84) == 0u);
+    CHECK(ts_note_bank_count(&notes) == 2);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              5, 84, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &restored, &restored.tuning, TS_AUDITION_CURRENT,
+              9, 84, 1, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_visible_mask(&notes, 84) == ((1u << 5) | (1u << 9)));
+    CHECK(ts_note_bank_count(&notes) == 4);
+    ts_note_bank_clear(&notes);
+    CHECK(ts_note_bank_start_sample(
+              &notes, &restored.current, &restored.tuning,
+              0, TS_KEYBOARD_BASE_NOTE, 0, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_start_sample(
+              &notes, &restored.current, &restored.tuning,
+              4, TS_KEYBOARD_BASE_NOTE, 0, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_synth_count(&notes) == 2);
+    CHECK(ts_note_bank_latched_synth_count(&notes) == 0);
+    CHECK(ts_note_bank_latch_active_synth(&notes) == 2);
+    CHECK(ts_note_bank_latched_synth_count(&notes) == 2);
+    ts_note_bank_release(&notes, 0);
+    CHECK(ts_note_bank_synth_count(&notes) == 2);
+    CHECK(ts_note_bank_release_latched_synth(&notes) == 2);
+    CHECK(ts_note_bank_count(&notes) == 0);
     remove("test-recipe.tsr");
     remove("test-roundtrip.wav");
 
@@ -2396,19 +2497,21 @@ int main(void)
     ui.pitch_suggestion.root_note = 71;
     ui.pitch_suggestion.fine_tune_cents = 8.0f;
     ui.has_pitch_suggestion = 1;
-    CHECK(ts_ui_audition_tuning(&ui, &committed) == &ui.pitch_suggestion);
-    CHECK(ts_ui_display_tuning(&ui, &committed) == &ui.pitch_suggestion);
+    CHECK(ts_ui_audition_tuning(&ui, &committed) == &committed.tuning);
+    CHECK(ts_ui_display_tuning(&ui, &committed) == &committed.audible_tuning);
     CHECK(committed.tuning.root_note != ui.pitch_suggestion.root_note);
     ts_ui_render(&fb, &ui, &committed);
     CHECK(framebuffer_contains(&fb, 0xff147dffu));
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     ts_ui_init(&ui);
-    CHECK(ui.keyboard_octave == 3 && ts_ui_keyboard_base_note(&ui) == 48);
-    CHECK(ts_ui_keyboard_shift_semitone(&ui, 1) == 49 &&
-          ts_ui_keyboard_base_note(&ui) == 49);
-    CHECK(ts_ui_keyboard_shift_semitone(&ui, -1) == 48);
-    CHECK(ts_ui_keyboard_cycle_octave(&ui, 1) == 4 &&
-          ts_ui_keyboard_base_note(&ui) == 60);
+    CHECK(ui.keyboard_octave == 4 && ts_ui_keyboard_base_note(&ui) == 60);
+    CHECK(ui.tune_reference.root_note == 60 &&
+          ui.tune_reference.fine_tune_cents == 0.0f);
+    CHECK(ts_ui_keyboard_shift_semitone(&ui, 1) == 61 &&
+          ts_ui_keyboard_base_note(&ui) == 61);
+    CHECK(ts_ui_keyboard_shift_semitone(&ui, -1) == 60);
+    CHECK(ts_ui_keyboard_cycle_octave(&ui, 1) == 5 &&
+          ts_ui_keyboard_base_note(&ui) == 72);
     CHECK(ts_ui_keyboard_set_octave(&ui, 7) == 7 &&
           ts_ui_keyboard_cycle_octave(&ui, 1) == 0 &&
           ts_ui_keyboard_base_note(&ui) == 12);
@@ -2801,6 +2904,39 @@ int main(void)
     ts_ui_render(&fb, &ui, &family);
     CHECK(fb.pixels[349 * TS_UI_WIDTH + 89] == 0xff18ff00u);
 
+    ts_fm_patch_from_recipe(&family.generator, &ui.fm_patch);
+    ui.fm_open = 1;
+    ui.fm_page = TS_FM_PAGE_LFO_DEPTH;
+    ui.fm_preview_sample = &family.current;
+    ui.fm_patch.active_mask = 0u;
+    CHECK(ts_fm_set_control_normalized(&ui.fm_patch, ui.fm_page, 0, 0.5f));
+    ui.playback_active = 1;
+    ui.playhead_sample = &family.current;
+    ui.playhead_frame = family.current.frames / 4u;
+    ui.playhead_frames = family.current.frames;
+    family.family_mutation = 0.64f;
+    ts_ui_render(&fb, &ui, &family);
+    CHECK(fb.pixels[70 * TS_UI_WIDTH + 22 + 596 / 4] == 0xffff1ce7u);
+    CHECK(fb.pixels[176 * TS_UI_WIDTH + 25] == 0xff2d0039u);
+    CHECK(ts_ui_fm_action_from_point(40, 260) == TS_UI_FM_ACTION_RANDOMIZE);
+    CHECK(ts_ui_fm_action_from_point(330, 260) == TS_UI_FM_ACTION_HOLD);
+    CHECK(ts_ui_fm_action_from_point(40, 286) == TS_UI_FM_ACTION_DRONE);
+    CHECK(ts_ui_fm_action_from_point(160, 286) == TS_UI_FM_ACTION_EXTREME);
+    CHECK(ts_ui_fm_action_from_point(250, 286) == TS_UI_FM_ACTION_CHAIN);
+    CHECK(ts_ui_fm_action_from_point(420, 260) == TS_UI_FM_ACTION_BACK);
+    CHECK(ts_ui_fm_range_contains(500, 286));
+    CHECK(!ts_ui_fm_range_contains(250, 286));
+    CHECK(ts_ui_fm_full_action_from_point(120, 296) ==
+          TS_UI_FM_ACTION_OVERWRITE);
+    CHECK(ts_ui_fm_full_action_from_point(250, 296) ==
+          TS_UI_FM_ACTION_NEW_PAGE);
+    CHECK(ts_ui_fm_full_action_from_point(420, 296) ==
+          TS_UI_FM_ACTION_CANCEL_FULL);
+    ui.fm_open = 0;
+    ui.fm_preview_sample = NULL;
+    ui.playhead_sample = NULL;
+    ui.playback_active = 0;
+
     {
         TsInstrument workflow;
         TsFmPatch created_patch, varied_patch;
@@ -2833,6 +2969,9 @@ int main(void)
         CHECK(varied_patch.structure == created_patch.structure);
         CHECK(ts_sample_hash(&workflow.bank[9].sample) != exact_hash);
         CHECK(ts_sample_hash(&workflow.bank[6].sample) == exact_hash);
+        workflow.bank[9].generator.fm_patch.drone_mode = 1;
+        workflow.bank[9].generator.fm_patch.extreme_mode = 1;
+        ts_fm_patch_sanitize(&workflow.bank[9].generator.fm_patch);
         CHECK(ts_instrument_save_recipe(&workflow, "test-workflow.tsr", error, sizeof(error)));
         {
             TsInstrument workflow_loaded;
@@ -2855,6 +2994,29 @@ int main(void)
         CHECK(workflow.bank[0].occupied && workflow.bank[0].generator.kind == TS_GENERATOR_FM);
         ts_instrument_free(&workflow);
     }
+    {
+        TsInstrument apply_route;
+        TsFmPatch patch;
+        uint64_t preserved_hash;
+        int destination;
+        ts_instrument_init(&apply_route);
+        CHECK(ts_instrument_bank_clear_all(&apply_route, error, sizeof(error)));
+        CHECK(ts_instrument_select_bank(&apply_route, 5, error, sizeof(error)));
+        CHECK(ts_instrument_create_selected(&apply_route, 0x464d4150u,
+                                            error, sizeof(error)));
+        preserved_hash = ts_sample_hash(&apply_route.bank[5].sample);
+        ts_fm_patch_from_recipe(&apply_route.bank[5].generator, &patch);
+        patch.structure = (patch.structure + 1) % TS_FM_STRUCTURE_COUNT;
+        destination = ts_instrument_bank_next_empty(&apply_route);
+        CHECK(destination == 6);
+        CHECK(ts_instrument_select_bank(&apply_route, destination,
+                                        error, sizeof(error)));
+        CHECK(ts_instrument_apply_fm_patch(&apply_route, &patch,
+                                           error, sizeof(error)));
+        CHECK(apply_route.selected_slot == 6 && apply_route.bank[6].occupied);
+        CHECK(ts_sample_hash(&apply_route.bank[5].sample) == preserved_hash);
+        ts_instrument_free(&apply_route);
+    }
 
     {
         TsFmPatch base = {0}, zero, low, medium, high, repeat;
@@ -2870,11 +3032,13 @@ int main(void)
         ts_fm_patch_vary(&base, 0x13579bdu, 1.0f, &high);
         ts_fm_patch_vary(&base, 0x13579bdu, 0.50f, &repeat);
         CHECK(memcmp(&base, &zero, sizeof(base)) == 0);
-        CHECK(base.structure == low.structure && base.structure == medium.structure &&
-              base.structure == high.structure);
-        CHECK(base.ratio_family == low.ratio_family &&
-              base.ratio_family == medium.ratio_family &&
-              base.ratio_family == high.ratio_family);
+        CHECK(low.structure >= 0 && low.structure < TS_FM_STRUCTURE_COUNT);
+        CHECK(medium.structure >= 0 && medium.structure < TS_FM_STRUCTURE_COUNT);
+        CHECK(high.structure >= 0 && high.structure < TS_FM_STRUCTURE_COUNT);
+        CHECK(low.ratio_family >= 0 && low.ratio_family < TS_FM_RATIO_FAMILY_COUNT);
+        CHECK(medium.ratio_family >= 0 &&
+              medium.ratio_family < TS_FM_RATIO_FAMILY_COUNT);
+        CHECK(high.ratio_family >= 0 && high.ratio_family < TS_FM_RATIO_FAMILY_COUNT);
         CHECK(memcmp(&medium, &repeat, sizeof(medium)) == 0);
         low_distance = ts_fm_patch_distance(&base, &low);
         medium_distance = ts_fm_patch_distance(&base, &medium);
@@ -2896,6 +3060,110 @@ int main(void)
             for (size_t frame = 0; frame < rendered_high.frames; ++frame)
                 CHECK(isfinite(rendered_high.data[frame]));
             ts_sample_free(&rendered_high);
+        }
+    }
+
+    {
+        TsGeneratorRecipe recipe = generator(0xabcdefu, TS_GENERATOR_FM);
+        TsFmPatch patch, varied;
+        char label[32], value[32];
+        ts_fm_patch_from_recipe(&recipe, &patch);
+        for (int page = 0; page < TS_FM_PAGE_COUNT; ++page) {
+            CHECK(strcmp(ts_fm_page_name((TsFmPage)page), "UNKNOWN") != 0);
+            for (int control = 0; control < TS_FM_OPERATOR_COUNT; ++control) {
+                CHECK(ts_fm_set_control_normalized(
+                    &patch, (TsFmPage)page, control, 0.73f));
+                CHECK(ts_fm_control_normalized(
+                    &patch, (TsFmPage)page, control) >= 0.0f);
+                CHECK(ts_fm_control_normalized(
+                    &patch, (TsFmPage)page, control) <= 1.0f);
+                ts_fm_control_format(&patch, (TsFmPage)page, control,
+                                     label, sizeof(label), value, sizeof(value));
+                CHECK(label[0] != '\0' && value[0] != '\0');
+            }
+        }
+        patch.waveforms[0] = TS_FM_WAVE_SINE;
+        CHECK(ts_fm_step_control(&patch, TS_FM_PAGE_WAVE, 0, 1, 0));
+        CHECK(patch.waveforms[0] == TS_FM_WAVE_TRIANGLE);
+        CHECK(ts_fm_step_control(&patch, TS_FM_PAGE_WAVE, 0, -1, 0));
+        CHECK(patch.waveforms[0] == TS_FM_WAVE_SINE);
+        patch.mutation_mask = TS_FM_MUTATE_PITCH;
+        ts_fm_patch_vary(&patch, 0x2468aceu, 1.0f, &varied);
+        CHECK(memcmp(patch.waveforms, varied.waveforms,
+                     sizeof(patch.waveforms)) == 0);
+        CHECK(memcmp(patch.lfo_rates, varied.lfo_rates,
+                     sizeof(patch.lfo_rates)) == 0);
+        CHECK(patch.filter_mode == varied.filter_mode &&
+              patch.filter_cutoff_hz == varied.filter_cutoff_hz &&
+              patch.structure == varied.structure &&
+              patch.interaction == varied.interaction);
+        for (int waveform = 0; waveform < TS_FM_WAVEFORM_COUNT; ++waveform) {
+            TsSample first_render, second_render;
+            ts_sample_init(&first_render);
+            ts_sample_init(&second_render);
+            patch.waveforms[0] = waveform;
+            patch.active_mask = 1u;
+            CHECK(ts_fm_render_sample(&first_render, &patch, 0.1f, 110.0f,
+                                      8000u, 1234u, error, sizeof(error)));
+            CHECK(ts_fm_render_sample(&second_render, &patch, 0.1f, 110.0f,
+                                      8000u, 1234u, error, sizeof(error)));
+            CHECK(ts_sample_hash(&first_render) == ts_sample_hash(&second_render));
+            CHECK(strcmp(ts_fm_waveform_name(waveform), "UNKNOWN") != 0);
+            for (size_t frame = 0; frame < first_render.frames; ++frame)
+                CHECK(isfinite(first_render.data[frame]) &&
+                      fabsf(first_render.data[frame]) <= 1.0f);
+            ts_sample_free(&first_render);
+            ts_sample_free(&second_render);
+        }
+        {
+            TsSample drone_render;
+            TsSample extreme_render;
+            double early_energy = 0.0;
+            double late_energy = 0.0;
+            size_t quarter;
+            ts_sample_init(&drone_render);
+            ts_sample_init(&extreme_render);
+            patch.drone_mode = 1;
+            patch.extreme_mode = 0;
+            patch.active_mask = 0x3fu;
+            ts_fm_patch_sanitize(&patch);
+            CHECK(ts_fm_render_sample(&drone_render, &patch, 1.0f, 110.0f,
+                                      12000u, 0x44524f4eu,
+                                      error, sizeof(error)));
+            CHECK(drone_render.frames > 8000u);
+            CHECK(drone_render.data[0] == 0.0f);
+            CHECK(drone_render.data[drone_render.frames - 1u] == 0.0f);
+            quarter = drone_render.frames / 4u;
+            for (size_t frame = quarter / 2u; frame < quarter; ++frame)
+                early_energy += (double)drone_render.data[frame] *
+                                drone_render.data[frame];
+            for (size_t frame = drone_render.frames - quarter;
+                 frame < drone_render.frames - quarter / 2u; ++frame)
+                late_energy += (double)drone_render.data[frame] *
+                               drone_render.data[frame];
+            CHECK(early_energy > 0.0001);
+            CHECK(late_energy > early_energy * 0.10);
+
+            patch.extreme_mode = 1;
+            ts_fm_patch_sanitize(&patch);
+            CHECK(ts_fm_set_control_normalized(
+                &patch, TS_FM_PAGE_PITCH, 0, 1.0f));
+            CHECK(ts_fm_set_control_normalized(
+                &patch, TS_FM_PAGE_LFO_RATE, 0, 1.0f));
+            CHECK(ts_fm_set_control_normalized(
+                &patch, TS_FM_PAGE_LFO_DEPTH, 0, 1.0f));
+            CHECK(ts_fm_set_control_normalized(
+                &patch, TS_FM_PAGE_STRUCTURE, 2, 1.0f));
+            CHECK(patch.ratios[0] > 16.0f && patch.depth > 12.0f &&
+                  patch.lfo_rates[0] > 160.0f && patch.lfo_depths[0] > 1.0f);
+            CHECK(ts_fm_render_sample(&extreme_render, &patch, 0.25f, 110.0f,
+                                      12000u, 0x45585452u,
+                                      error, sizeof(error)));
+            CHECK(ts_sample_peak(&extreme_render) <= 0.98f);
+            for (size_t frame = 0; frame < extreme_render.frames; ++frame)
+                CHECK(isfinite(extreme_render.data[frame]));
+            ts_sample_free(&drone_render);
+            ts_sample_free(&extreme_render);
         }
     }
 

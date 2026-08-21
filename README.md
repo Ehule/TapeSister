@@ -19,12 +19,17 @@ intact while REC is active; pressing plain `1` returns to the current Sample pag
 Recorded tiles are ordinary TapeSister tiles, so the same selection, loop, DSP, CDP,
 export, and FT2 Link tools work immediately after capture.
 
-Select an empty REC tile and click **REC ARM**. TapeSister opens the configured capture
-device (or the machine default when `record_input_device` is blank), keeps a circular
+Choose **SRC EXT** for the configured capture device or **SRC SYNTH** for the internal
+FM performance bus, then select an empty REC tile and click **REC ARM**. Both sources keep a circular
 pre-roll, and waits without writing a take until the signal crosses
 `record_threshold_db`. Silence plus the configured tail ends the take automatically;
 **STOP REC** or Space keeps a shorter take, while Escape or clicking the armed button
 cancels it without changing the tile.
+
+SRC SYNTH records the FM LOGIC QWERTY/latch performance directly, without opening an
+input device or using operating-system loopback. It records only synth voices, not
+other tile playback. SRC EXT retains hardware input and the optional dry MONITOR;
+monitoring is unnecessary and disabled for SRC SYNTH.
 
 While armed, the main waveform area becomes a live input display with current and
 held-peak dBFS, clipping feedback, and a threshold line driven by the recorder's exact
@@ -51,9 +56,9 @@ threshold, pre-roll, silence, tail, and maximum take length. `record_input_chann
 mixes the device inputs to mono; `1` records the first/left channel and `2` the
 second/right channel. These settings are intentionally editable without recompiling.
 
-Every completed external take is also written immediately as a float WAV under the
+Every completed take is also written immediately as a float WAV under the
 human-readable `Captures/` folder, with an `INPUT_YYYY-MM-DD_HHMMSS_mmm_...wav`
-name. TapeSister never purges this folder and ordinary edits, Clear, KEEP, project
+or `SYNTH_YYYY-MM-DD_HHMMSS_mmm_...wav` name. TapeSister never purges this folder and ordinary edits, Clear, KEEP, project
 loading, and project saving never rewrite or delete those originals. Set the optional
 `TAPESISTER_CAPTURES` environment variable to place the archive somewhere else.
 See [`docs/CAPTURE_WORKFLOW.md`](docs/CAPTURE_WORKFLOW.md) for archive, threading,
@@ -191,11 +196,13 @@ TapeSister starts in FT2-style borderless desktop fullscreen. **Alt+Enter** togg
 
 ## Pitch and tuning
 
-The **Tune** page gives the selected tile its own pitch readout and ±100-cent audible Trim. The two-octave keyboard pitches audio relative to that tile's accepted root instead of assuming the first C is always unity. The default root is C3 (MIDI 48). **Down** lowers both the held sound and displayed note/frequency; **Up** raises all three; moving Trim right sharpens them. Shift-right-clicking an onscreen key assigns the tile's root; held and latched notes retune in place without restarting.
+Every new, imported, recorded, captured, or FM-generated tile uses **middle C / MIDI 60** as its portable unity key: clicking the tile and pressing C4 play the stored waveform unchanged. The octave label may differ in another sampler, but the exported WAV `smpl` metadata always communicates the unambiguous MIDI note number. FM generation starts at the corresponding 261.63 Hz reference before its stored ratios and modulation shape the sound.
 
-**Suggest Pitch** analyzes the snapped Selection first, then the Loop, then the whole selected tile. It temporarily places the suggested mapping on the keyboard so new, held, and latched notes can audition it immediately; the Tune readout follows that preview, while saved tuning and Undo history remain untouched. A second explicit click accepts it. Escape cancels the preview and still performs Stop All; Space stops audition without discarding the preview. Quiet, noisy, or unstable material is rejected rather than forced into a misleading note. Manual tuning remains authoritative.
+The **Tune** page contains an independent reference pitch, defaulting to C4 / MIDI 60 / 261.63 Hz. **Down**, **Up**, and the ±100-cent Trim change that target without altering audio. Clicking the Hz button plays a short sine reference that is never routed into Capture or export; Shift-right-clicking an onscreen key sets the same reference note.
 
-Root and fine tuning participate in the selected tile's state and Undo/Redo history. Selected-tile and Collection WAV exports write a standard `smpl` unity-note/pitch-fraction chunk, and WAV import reads it when present. The same chunk carries loop start/end/type; importing the WAV restores that loop in TapeSister. User-captured TSP2 recipes optionally carry tuning; legacy factory TSP processing recipes remain processing-only and never retune a sound unexpectedly.
+**Detect Pitch** analyzes the snapped Selection first, then the Loop, then the whole selected tile. A successful reading shows its note and confidence; **Tune to Reference** then performs a destructive tape-speed resample on that selection or whole tile. The waveform and duration change together, the result is reset to MIDI-60 unity, and the complete audio-plus-mapping change is one Undo/Redo step. Quiet, noisy, or unstable material is rejected rather than forced into a misleading pitch.
+
+Selected-tile and Collection WAV exports write the standard `smpl` unity-note/pitch-fraction chunk at MIDI 60. WAV import preserves the audio and loop metadata while normalizing TapeSister playback to the same portable unity convention. User-captured TSP2 recipes can still carry legacy tuning data; legacy factory TSP processing recipes remain processing-only.
 
 ## FastTracker handoff and configuration
 
@@ -268,9 +275,32 @@ Every occupied tile is an explicit audio canvas whose sample count is independen
 
 The restrained waveform grid is anchored to the complete canvas rather than the zoomed view. **<** and **>** choose 2, 4, 8, 16, 32, or 64 divisions. The snap button cycles **OFF**, **SNAP**, and **MOVE**. SNAP quantizes both newly drawn boundaries and movement gestures; MOVE leaves selections and loop flags tightly zero-snapped while quantizing tape placement and destructive canvas movement; OFF uses zero-crossing safety without macro-grid quantization. If no crossing exists in the valid search range, the existing deterministic lowest-amplitude fallback is used. Continuous WARP/SMEAR amounts, rotation, Drone seams, zoom, and navigation are not quantized. Grid division and snap mode are stored independently with each tile but are not added to audio Undo history.
 
-## Six-operator FM source proof
+## Generative FM sound logic
 
-Create produces a deterministic six-operator FM tile. Each seed selects a complete hidden patch from curated Structure and Ratio sets, plus Depth, Shape, feedback, and a short transient layer. Vary changes that stored FM recipe according to Range. A later focused slice can expose a small set of musically useful macros without adding an operator table to the primary interface.
+Create produces a deterministic six-voice FM tile. **FM LOGIC** on the Variation page
+opens seven six-control pages for Pitch, Wave, LFO Rate, LFO Depth, LFO Type, Filter,
+and Structure, plus per-voice enables and mutation permissions. Ten waveforms, ten
+routing structures, eight ratio families, eight interaction modes, per-voice LFOs,
+bounded feedback, a transient layer, and an envelope-driven multimode filter form the
+stored genome. Click or wheel a control for immediate non-destructive preview; Randomize
+protects the visible page and obeys the permission switches. With **Chain off**, Apply
+prints the genome over the selected tile. With **Chain on**, it preserves occupied work
+and fills the next empty tile. A full page asks whether to overwrite the current tile,
+continue on a new Sample page, or cancel.
+
+**Drone** removes the amplitude and filter attack/release envelopes, suppresses the
+transient, and trims the render to exact zero-valued boundary crossings. The disabled
+envelope controls gray out while the other controls remain live. **Extreme** opens
+substantially wider ratios, modulation, feedback, resonance, and LFO ranges while the
+DC blocker and output limiter remain active. Range is duplicated inside the workspace,
+Chain is duplicated there too, so Apply routing is always visible.
+
+QWERTY notes are genuinely five-voice polyphonic regardless of tile loop state: key-up
+releases only that note, and **Hold** latches the currently sounding chord. F1-F8 and
+tile tuning still apply. Every miniature waveform in FM LOGIC, Transform, and Drone
+Maker carries a tiny playhead tied to the preview actually being heard. An armed
+Capture-to-New-Tile can print this live performance, and REC BANK SRC SYNTH can record
+its synth-only bus.
 
 ## Physical tape gestures
 
@@ -376,9 +406,9 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR21 stores every occupied tile as a complete independent object: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR20 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR24 stores every occupied tile as a complete independent object, including the full FM genome and its Drone/Extreme modes: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, persistent native-shelf selection scope, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR23 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
-For backward compatibility, the chosen `.tsr` remains an ordinary first-page TSR21.
+The chosen `.tsr` remains an ordinary first-page TSR24.
 Additional pages, the REC BANK, and a tiny manifest live beside it in
 `<project>.tsr.samples/`. Move, copy, or back up the `.tsr` and that companion folder
 together. A legacy project with no companion folder opens as one Sample page with an

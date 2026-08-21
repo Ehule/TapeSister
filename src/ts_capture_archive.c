@@ -81,7 +81,8 @@ int ts_capture_archive_write(const char *directory,
     char timestamp[40];
     char destination[1200];
     char temporary[1240];
-    const char *prefix = kind == TS_CAPTURE_ARCHIVE_INTERNAL ? "CAPTURE" : "INPUT";
+    const char *prefix = kind == TS_CAPTURE_ARCHIVE_INTERNAL ? "CAPTURE" :
+                         kind == TS_CAPTURE_ARCHIVE_SYNTH ? "SYNTH" : "INPUT";
     TsSample sample;
     long milliseconds;
     int found = 0;

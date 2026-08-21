@@ -11,7 +11,7 @@ enum {
     TS_POST_EDIT_DEPTH = 64,
     TS_AUDIO_PATCH_DEPTH = 64,
     TS_BANK_SLOT_COUNT = 16,
-    TS_KEYBOARD_BASE_NOTE = 48,
+    TS_KEYBOARD_BASE_NOTE = 60,
     TS_CANVAS_MIN_FRAMES = 2,
     TS_CANVAS_MAX_FRAMES = 100000000,
     TS_DEFAULT_CANVAS_FRAMES = 44100,
@@ -20,6 +20,9 @@ enum {
     TS_GRID_DIVISION_MAX = 64,
     TS_GRID_DIVISION_DEFAULT = 16
 };
+
+/* A non-bank performance source used by Capture-to-New-Tile. */
+enum { TS_CAPTURE_SOURCE_SYNTH = -2 };
 
 typedef enum {
     TS_GRID_SNAP_OFF = 0,
@@ -52,11 +55,76 @@ typedef enum {
 
 enum {
     TS_FM_OPERATOR_COUNT = 6,
-    TS_FM_STRUCTURE_COUNT = 6,
-    TS_FM_RATIO_FAMILY_COUNT = 6
+    TS_FM_STRUCTURE_COUNT = 10,
+    TS_FM_RATIO_FAMILY_COUNT = 8,
+    TS_FM_WAVEFORM_COUNT = 10,
+    TS_FM_LFO_TYPE_COUNT = 12,
+    TS_FM_INTERACTION_COUNT = 8,
+    TS_FM_PAGE_COUNT = 7
+};
+
+typedef enum {
+    TS_FM_PAGE_PITCH = 0,
+    TS_FM_PAGE_WAVE,
+    TS_FM_PAGE_LFO_RATE,
+    TS_FM_PAGE_LFO_DEPTH,
+    TS_FM_PAGE_LFO_TYPE,
+    TS_FM_PAGE_FILTER,
+    TS_FM_PAGE_STRUCTURE
+} TsFmPage;
+
+typedef enum {
+    TS_FM_WAVE_SINE = 0,
+    TS_FM_WAVE_TRIANGLE,
+    TS_FM_WAVE_SAW,
+    TS_FM_WAVE_SQUARE,
+    TS_FM_WAVE_PULSE,
+    TS_FM_WAVE_RECTIFIED,
+    TS_FM_WAVE_FOLDED,
+    TS_FM_WAVE_STEPPED,
+    TS_FM_WAVE_DIGITAL,
+    TS_FM_WAVE_NOISE
+} TsFmWaveform;
+
+typedef enum {
+    TS_FM_LFO_OFF = 0,
+    TS_FM_LFO_PITCH_SINE,
+    TS_FM_LFO_PITCH_TRIANGLE,
+    TS_FM_LFO_PITCH_SQUARE,
+    TS_FM_LFO_PITCH_RAMP,
+    TS_FM_LFO_AMP_SINE,
+    TS_FM_LFO_AMP_SQUARE,
+    TS_FM_LFO_INDEX_SINE,
+    TS_FM_LFO_INDEX_RANDOM,
+    TS_FM_LFO_FILTER_SINE,
+    TS_FM_LFO_FILTER_RANDOM,
+    TS_FM_LFO_STEP_AMP
+} TsFmLfoType;
+
+typedef enum {
+    TS_FM_INTERACTION_PHASE = 0,
+    TS_FM_INTERACTION_ADD,
+    TS_FM_INTERACTION_RING,
+    TS_FM_INTERACTION_MULTIPLY,
+    TS_FM_INTERACTION_SUBTRACT,
+    TS_FM_INTERACTION_FOLD,
+    TS_FM_INTERACTION_DIGITAL,
+    TS_FM_INTERACTION_CROSS
+} TsFmInteraction;
+
+enum {
+    TS_FM_MUTATE_PITCH = 1u << 0,
+    TS_FM_MUTATE_WAVE = 1u << 1,
+    TS_FM_MUTATE_LFO = 1u << 2,
+    TS_FM_MUTATE_FILTER = 1u << 3,
+    TS_FM_MUTATE_STRUCTURE = 1u << 4,
+    TS_FM_MUTATE_ALL = (1u << 5) - 1u
 };
 
 typedef struct {
+    uint32_t genome_version;
+    int drone_mode;
+    int extreme_mode;
     int structure;
     int ratio_family;
     float depth;
@@ -64,6 +132,20 @@ typedef struct {
     float feedback;
     float transient_mix;
     float ratios[TS_FM_OPERATOR_COUNT];
+    uint32_t active_mask;
+    uint32_t mutation_mask;
+    int waveforms[TS_FM_OPERATOR_COUNT];
+    float lfo_rates[TS_FM_OPERATOR_COUNT];
+    float lfo_depths[TS_FM_OPERATOR_COUNT];
+    int lfo_types[TS_FM_OPERATOR_COUNT];
+    int filter_mode;
+    float filter_cutoff_hz;
+    float filter_resonance;
+    float filter_attack_seconds;
+    float filter_release_seconds;
+    float filter_envelope_amount;
+    int interaction;
+    float interaction_mix;
 } TsFmPatch;
 
 typedef enum {
@@ -243,6 +325,9 @@ typedef struct {
     TsTuning tuning;
     TsTuning audible_tuning;
     TsProcessRecipe process;
+    size_t process_first;
+    size_t process_last;
+    int has_process_range;
     TsSampleEdit sample_edits[TS_SAMPLE_EDIT_DEPTH];
     int sample_edit_count;
     TsPostEdit post_edits[TS_POST_EDIT_DEPTH];
@@ -298,6 +383,9 @@ typedef struct {
     uint64_t ancestor_hash;
     TsTuning tuning;
     TsTuning audible_tuning;
+    size_t process_first;
+    size_t process_last;
+    int has_process_range;
     size_t crop_first;
     size_t crop_last;
     size_t selection_first;
@@ -361,6 +449,8 @@ typedef struct {
     int owner_slot;
     int edge;
     int64_t delta_frames;
+    size_t focus_view_first;
+    size_t focus_view_last;
     int active;
 } TsCanvasGesture;
 
@@ -562,10 +652,29 @@ size_t ts_instrument_frame_from_view_x(const TsInstrument *instrument, int x, in
 const char *ts_generator_name(TsGeneratorKind kind);
 const char *ts_fm_structure_name(int structure);
 const char *ts_fm_ratio_family_name(int family);
+const char *ts_fm_waveform_name(int waveform);
+const char *ts_fm_lfo_type_name(int type);
+const char *ts_fm_interaction_name(int interaction);
+const char *ts_fm_page_name(TsFmPage page);
 void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch);
 void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
                       TsFmPatch *varied);
 float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied);
+void ts_fm_patch_sanitize(TsFmPatch *patch);
+float ts_fm_control_normalized(const TsFmPatch *patch, TsFmPage page, int control);
+int ts_fm_set_control_normalized(TsFmPatch *patch, TsFmPage page, int control,
+                                 float normalized);
+int ts_fm_step_control(TsFmPatch *patch, TsFmPage page, int control,
+                       int direction, int fine);
+void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
+                          char *label, size_t label_size,
+                          char *value, size_t value_size);
+int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
+                        float seconds, float frequency, uint32_t sample_rate,
+                        uint32_t seed, char *error, size_t error_size);
+int ts_instrument_apply_fm_patch(TsInstrument *instrument,
+                                 const TsFmPatch *patch,
+                                 char *error, size_t error_size);
 const char *ts_noise_color_name(TsNoiseColor color);
 const char *ts_filter_mode_name(TsFilterMode mode);
 const char *ts_shaper_mode_name(TsShaperMode mode);
@@ -638,6 +747,9 @@ int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
                                              const TsSample *rendered,
                                              size_t first, size_t last,
                                              char *error, size_t error_size);
+int ts_instrument_apply_pitch_shift(TsInstrument *instrument,
+                                    float semitones,
+                                    char *error, size_t error_size);
 int ts_instrument_replace_selection_with_drone(TsInstrument *instrument,
                                                 const TsSample *drone,
                                                 char *error, size_t error_size);
@@ -663,6 +775,7 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
                                   char *error, size_t error_size);
 int ts_instrument_bank_count(const TsInstrument *instrument);
 int ts_instrument_bank_first_empty(const TsInstrument *instrument);
+int ts_instrument_bank_next_empty(const TsInstrument *instrument);
 int ts_instrument_export_bank(const TsInstrument *instrument, const char *folder,
                               char *error, size_t error_size);
 int ts_instrument_family_folder_name(const TsInstrument *instrument,
