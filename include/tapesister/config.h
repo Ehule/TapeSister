@@ -22,6 +22,9 @@ enum {
     TS_CHAIN_STAMP_CROSSFADE_MS_MIN = 0,
     TS_CHAIN_STAMP_CROSSFADE_MS_MAX = 50,
     TS_CHAIN_STAMP_CROSSFADE_MS_DEFAULT = 3,
+    TS_REFERENCE_TONE_VOLUME_MIN = 0,
+    TS_REFERENCE_TONE_VOLUME_MAX = 100,
+    TS_REFERENCE_TONE_VOLUME_DEFAULT = 50,
     TS_RECORD_THRESHOLD_DB_MIN = -90,
     TS_RECORD_THRESHOLD_DB_MAX = 0,
     TS_RECORD_THRESHOLD_DB_DEFAULT = -30,
@@ -63,6 +66,7 @@ typedef struct {
     int rotate_wheel_coarse;
     int drone_crossfade_ms;
     int chain_stamp_crossfade_ms;
+    int reference_tone_volume;
     int record_input_channel;
     int record_threshold_db;
     int record_preroll_ms;

@@ -454,6 +454,11 @@ typedef struct {
     TsInputMonitor *input_monitor;
     TsExternalRecorder *record_bank_recorder;
     _Atomic int *record_source;
+    double tune_reference_phase;
+    double tune_reference_frequency;
+    float tune_reference_level;
+    float tune_reference_target;
+    int tune_reference_enabled;
 } AudioState;
 
 typedef struct {
@@ -527,6 +532,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     for (int i = 0; i < values; i += 2) {
         float value = 0.0f;
         float synth_value = 0.0f;
+        float reference_value = 0.0f;
         if (audio->playing && audio->sample && audio->sample->data && audio->sample->frames > 1) {
             if (audio->looping) {
                 audio->position = ts_audition_loop_position(
@@ -566,10 +572,32 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 synth_block_peak = fabsf(synth_value);
         }
         {
+            float ramp = audio->output_rate > 0 ?
+                         1.0f / ((float)audio->output_rate * 0.01f) : 1.0f;
+            if (audio->tune_reference_level < audio->tune_reference_target) {
+                audio->tune_reference_level += ramp;
+                if (audio->tune_reference_level > audio->tune_reference_target)
+                    audio->tune_reference_level = audio->tune_reference_target;
+            } else if (audio->tune_reference_level > audio->tune_reference_target) {
+                audio->tune_reference_level -= ramp;
+                if (audio->tune_reference_level < audio->tune_reference_target)
+                    audio->tune_reference_level = audio->tune_reference_target;
+            }
+            if (audio->tune_reference_level > 0.0f && audio->output_rate > 0) {
+                reference_value = audio->tune_reference_level *
+                                  sinf((float)audio->tune_reference_phase);
+                audio->tune_reference_phase +=
+                    2.0 * M_PI * audio->tune_reference_frequency /
+                    (double)audio->output_rate;
+                while (audio->tune_reference_phase >= 2.0 * M_PI)
+                    audio->tune_reference_phase -= 2.0 * M_PI;
+            }
+        }
+        {
             float monitored = audio->input_monitor != NULL ?
                               ts_input_monitor_read(audio->input_monitor,
                                                     (uint32_t)audio->output_rate) : 0.0f;
-            float output = value * 0.8f + monitored;
+            float output = value * 0.8f + monitored + reference_value;
             if (output > 1.0f) output = 1.0f;
             if (output < -1.0f) output = -1.0f;
             out[i] = output;
@@ -947,8 +975,9 @@ static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     ui->workbench_loop_active = 0;
     ui->workbench_loop_persistent = 0;
     ui->drone_preview_active = 0;
-    ui->tune_reference_active = 0;
-    snprintf(ui->status, sizeof(ui->status), "STOPPED");
+    snprintf(ui->status, sizeof(ui->status),
+             ui->tune_reference_active ?
+             "AUDITION STOPPED - REFERENCE TONE CONTINUES" : "STOPPED");
 }
 
 static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
@@ -968,7 +997,6 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
         ui->dragging_loop_endpoint = 0;
         ui->loop_drag_started = 0;
         ui->drone_preview_active = 0;
-        ui->tune_reference_active = 0;
         snprintf(ui->status, sizeof(ui->status),
                  "LOOP LOCKED - SHIFT+LOOP TO RELEASE");
         return;
@@ -2945,15 +2973,33 @@ static void set_tune_reference(TsUiState *ui, int root_note, float cents)
              ts_tuning_frequency(&ui->tune_reference));
 }
 
-static void play_tune_reference(SDL_AudioDeviceID device, AudioState *audio,
-                                TsUiState *ui, TsSample *reference,
-                                int output_rate)
+static void set_tune_reference_volume(TsUiState *ui, float amount)
 {
-    size_t frames;
-    size_t fade;
+    char error[160];
+    int volume;
+    if (ui == NULL) return;
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    volume = (int)lrintf(amount * 100.0f);
+    ui->config.reference_tone_volume = volume;
+    if (!ts_config_save(&ui->config, config_file_path(), error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "REFERENCE VOLUME %d - CONFIG SAVE FAILED: %.91s",
+                 volume, error);
+        return;
+    }
+    snprintf(ui->status, sizeof(ui->status), "REFERENCE VOLUME %d", volume);
+}
+
+static void toggle_tune_reference(SDL_AudioDeviceID device, AudioState *audio,
+                                  TsUiState *ui, int output_rate)
+{
     double frequency;
-    if (ui->tune_reference_active && audio->sample == reference) {
-        stop_all_force(device, audio, ui);
+    if (ui->tune_reference_active || audio->tune_reference_enabled) {
+        if (device) SDL_LockAudioDevice(device);
+        audio->tune_reference_enabled = 0;
+        audio->tune_reference_target = 0.0f;
+        if (device) SDL_UnlockAudioDevice(device);
         ui->tune_reference_active = 0;
         snprintf(ui->status, sizeof(ui->status), "REFERENCE TONE STOPPED");
         return;
@@ -2968,52 +3014,18 @@ static void play_tune_reference(SDL_AudioDeviceID device, AudioState *audio,
                  "FINISH CAPTURE BEFORE PLAYING THE REFERENCE TONE");
         return;
     }
-    frames = (size_t)output_rate * 2u;
-    ts_sample_free(reference);
-    reference->data = (float *)malloc(frames * sizeof(*reference->data));
-    if (reference->data == NULL) {
-        ts_sample_init(reference);
-        snprintf(ui->status, sizeof(ui->status),
-                 "OUT OF MEMORY CREATING REFERENCE TONE");
-        return;
-    }
-    reference->frames = frames;
-    reference->sample_rate = (uint32_t)output_rate;
-    snprintf(reference->name, sizeof(reference->name), "TUNE REFERENCE");
     frequency = ts_tuning_frequency(&ui->tune_reference);
-    fade = (size_t)output_rate / 100u;
-    if (fade < 1u) fade = 1u;
-    for (size_t frame = 0; frame < frames; ++frame) {
-        float gain = 0.22f;
-        if (frame < fade) gain *= (float)frame / (float)fade;
-        if (frames - 1u - frame < fade)
-            gain *= (float)(frames - 1u - frame) / (float)fade;
-        reference->data[frame] = gain * sinf(
-            (float)(2.0 * M_PI * frequency * (double)frame /
-                    (double)output_rate));
-    }
-    ts_sample_touch(reference);
     SDL_LockAudioDevice(device);
-    ts_note_bank_clear(&audio->notes);
-    audio->sample = reference;
-    audio->position = 0.0;
-    audio->pitch = 1.0;
-    audio->range_start = 0u;
-    audio->range_end = frames;
-    audio->source = TS_AUDITION_CURRENT;
-    audio->range = TS_AUDITION_ALL;
-    audio->looping = 0;
-    audio->loop_mode = TS_LOOP_FORWARD;
-    audio->loop_direction = 1;
-    audio->crossfade_frames = 0u;
-    audio->bank_slot = -1;
-    audio->step = 1.0;
-    audio->playing = 1;
+    audio->tune_reference_phase = 0.0;
+    audio->tune_reference_frequency = frequency;
+    audio->tune_reference_enabled = 1;
+    audio->tune_reference_target =
+        (float)ui->config.reference_tone_volume / 100.0f;
     SDL_UnlockAudioDevice(device);
     ui->tune_reference_active = 1;
     snprintf(ui->status, sizeof(ui->status),
-             "PLAYING %.2F HZ REFERENCE - NOT INCLUDED IN CAPTURE OR EXPORT",
-             frequency);
+             "REFERENCE %.2F HZ VOL %d - PLAY WAV OR KEYS ALONGSIDE",
+             frequency, ui->config.reference_tone_volume);
 }
 
 static void suggest_or_accept_pitch(SDL_AudioDeviceID device, AudioState *audio,
@@ -4910,6 +4922,13 @@ static int adjust_hovered_slider(SDL_AudioDeviceID device, AudioState *audio,
                            ui->tune_reference.fine_tune_cents +
                            (float)amount * (coarse ? 5.0f : 1.0f));
         return 1;
+    case TS_UI_SLIDER_TUNE_REFERENCE_VOLUME:
+        (void)device;
+        (void)audio;
+        set_tune_reference_volume(
+            ui, ((float)ui->config.reference_tone_volume +
+                 (float)amount * (coarse ? 5.0f : 1.0f)) / 100.0f);
+        return 1;
     case TS_UI_SLIDER_NOISE_AMOUNT:
         process.noise_amount = clamp_unit(process.noise_amount + step);
         label = "NOISE"; break;
@@ -5901,7 +5920,6 @@ int main(int argc, char **argv)
     TsSample pending_selection_load;
     TsSample drone_preview;
     TsSample fm_preview;
-    TsSample tune_reference;
     TsExchangeOffer exchange_offer;
     TransformController transform;
     size_t clipboard_origin_first = 0;
@@ -5948,7 +5966,6 @@ int main(int argc, char **argv)
     ts_sample_init(&pending_selection_load);
     ts_sample_init(&drone_preview);
     ts_sample_init(&fm_preview);
-    ts_sample_init(&tune_reference);
     ts_exchange_offer_init(&exchange_offer);
     transform_controller_init(&transform);
     ts_ui_init(&ui);
@@ -5993,7 +6010,6 @@ int main(int argc, char **argv)
     audio.bank_slot = -1;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
-        ts_sample_free(&tune_reference);
         ts_sample_free(&fm_preview);
         ts_sample_free(&drone_preview);
         ts_sample_free(&pending_selection_load);
@@ -6044,7 +6060,6 @@ int main(int argc, char **argv)
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         SDL_Quit();
-        ts_sample_free(&tune_reference);
         ts_sample_free(&fm_preview);
         ts_sample_free(&drone_preview);
         ts_sample_free(&pending_selection_load);
@@ -7985,24 +8000,27 @@ int main(int argc, char **argv)
                             apply_sample_edit(device, &audio, &ui, &instrument,
                                               TS_SAMPLE_EDIT_FADE_OUT, 1.0f);
                     } else if (ui.fx_page == TS_FX_TUNE) {
-                        if (x >= 10 && x < 58 &&
+                        if (x >= 10 && x < 50 &&
                             ui.tune_reference.root_note > 0)
                             set_tune_reference(
                                 &ui, ui.tune_reference.root_note - 1,
                                 ui.tune_reference.fine_tune_cents);
-                        else if (x >= 156 && x < 204 &&
+                        else if (x >= 134 && x < 174 &&
                                  ui.tune_reference.root_note < 127)
                             set_tune_reference(
                                 &ui, ui.tune_reference.root_note + 1,
                                 ui.tune_reference.fine_tune_cents);
-                        else if (x >= 214 && x < 360)
+                        else if (x >= 180 && x < 292)
                             set_tune_reference(
                                 &ui, ui.tune_reference.root_note,
-                                (float)(x - 214) / 146.0f * 200.0f - 100.0f);
-                        else if (x >= 370 && x < 460)
-                            play_tune_reference(device, &audio, &ui,
-                                                &tune_reference, obtained.freq);
-                        else if (x >= 470 && x < 630)
+                                (float)(x - 180) / 112.0f * 200.0f - 100.0f);
+                        else if (x >= 298 && x < 380)
+                            toggle_tune_reference(device, &audio, &ui,
+                                                  obtained.freq);
+                        else if (x >= 386 && x < 466)
+                            set_tune_reference_volume(
+                                &ui, (float)(x - 386) / 80.0f);
+                        else if (x >= 472 && x < 630)
                             suggest_or_accept_pitch(device, &audio, &ui, &instrument);
                     } else if (ui.fx_page == TS_FX_NOISE) {
                         label = "NOISE";
@@ -8629,8 +8647,11 @@ int main(int argc, char **argv)
                  audio.sample == &transform.dsp_preview.sample) &&
                 !audio.playing)
                 ui.transform_preview_active = 0;
-            ui.tune_reference_active =
-                audio.playing && audio.sample == &tune_reference;
+            audio.tune_reference_frequency =
+                ts_tuning_frequency(&ui.tune_reference);
+            audio.tune_reference_target = audio.tune_reference_enabled ?
+                (float)ui.config.reference_tone_volume / 100.0f : 0.0f;
+            ui.tune_reference_active = audio.tune_reference_enabled;
             ui.active_notes = ts_note_bank_visible_mask(
                 &audio.notes, ts_ui_keyboard_base_note(&ui));
             ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
@@ -8687,7 +8708,6 @@ int main(int argc, char **argv)
     if (device) SDL_CloseAudioDevice(device);
     ts_external_recorder_free(&external_input.recorder);
     ts_capture_free(&audio.capture);
-    ts_sample_free(&tune_reference);
     ts_sample_free(&fm_preview);
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);

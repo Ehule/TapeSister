@@ -29,6 +29,8 @@ controls: Pitch, Wave, LFO Rate, LFO Depth, LFO Type, Filter, and Structure. Six
 buttons set the active mask. Five permission buttons decide which mutation domains
 Randomize and later Vary operations may change. Randomize also protects the currently
 visible page, so a performer can hold the part being shaped while exploring the rest.
+The workspace ends above the Sample Bank header on the 640×400 logical canvas, keeping
+both rows of all 16 destination tiles visible at 1366×768 while Apply and Chain run.
 
 Drone bypasses amplitude decay, filter attack/release, modulator decay, and the transient
 layer, then trims the rendered block to exact zero-valued start and end boundaries.

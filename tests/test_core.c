@@ -305,6 +305,7 @@ int main(void)
             TsUiSlider slider;
         } sliders[] = {
             {TS_FX_TUNE, 250, TS_UI_SLIDER_TUNE_FINE},
+            {TS_FX_TUNE, 420, TS_UI_SLIDER_TUNE_REFERENCE_VOLUME},
             {TS_FX_NOISE, 180, TS_UI_SLIDER_NOISE_AMOUNT},
             {TS_FX_SHAPE, 120, TS_UI_SLIDER_FILTER_CUTOFF},
             {TS_FX_SHAPE, 230, TS_UI_SLIDER_FILTER_RESONANCE},
@@ -2227,8 +2228,10 @@ int main(void)
         ts_config_init(&config);
         CHECK(config.rotate_wheel_fine == 5);
         CHECK(config.rotate_wheel_coarse == 50);
+        CHECK(config.reference_tone_volume == 50);
         CHECK(config.playhead_zero_snap == 1);
         config.playhead_zero_snap = 0;
+        config.reference_tone_volume = 73;
         snprintf(config.sample_path, sizeof(config.sample_path), "/samples/drums");
         snprintf(config.fasttracker_path, sizeof(config.fasttracker_path),
                  "/opt/ft2 tapehead/ft2-clone");
@@ -2261,6 +2264,7 @@ int main(void)
         CHECK(reopened.startup_welcome_sample == 1 &&
               reopened.startup_welcome_autoplay == 1);
         CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
+        CHECK(reopened.reference_tone_volume == 73);
         CHECK(reopened.playhead_zero_snap == 0);
         CHECK(reopened.dsp_factory_overridden[4]);
         CHECK(fabsf(reopened.dsp_factory_controls[4][0] - 0.11f) < 0.000001f &&
@@ -2295,6 +2299,7 @@ int main(void)
             CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
             CHECK(!reopened.startup_welcome_sample && !reopened.startup_welcome_autoplay);
             CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
+            CHECK(reopened.reference_tone_volume == 50);
             CHECK(reopened.playhead_zero_snap == 1);
             config_file = fopen("test-tapesister.ini", "wb");
             CHECK(config_file != NULL);
@@ -2315,11 +2320,13 @@ int main(void)
             config_file = fopen("test-tapesister.ini", "wb");
             CHECK(config_file != NULL);
             if (config_file != NULL) {
-                fputs("rotate_wheel_fine=-99\nrotate_wheel_coarse=999\n", config_file);
+                fputs("rotate_wheel_fine=-99\nrotate_wheel_coarse=999\n"
+                      "reference_tone_volume=999\n", config_file);
                 fclose(config_file);
             }
             CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
             CHECK(reopened.rotate_wheel_fine == 1 && reopened.rotate_wheel_coarse == 100);
+            CHECK(reopened.reference_tone_volume == 100);
             config_file = fopen("test-tapesister.ini", "wb");
             CHECK(config_file != NULL);
             if (config_file != NULL) {
@@ -2903,39 +2910,43 @@ int main(void)
     ui.bank_view_slot = 1;
     ts_ui_render(&fb, &ui, &family);
     CHECK(fb.pixels[349 * TS_UI_WIDTH + 89] == 0xff18ff00u);
+    {
+        uint32_t visible_bank_pixel = fb.pixels[340 * TS_UI_WIDTH + 20];
 
-    ts_fm_patch_from_recipe(&family.generator, &ui.fm_patch);
-    ui.fm_open = 1;
-    ui.fm_page = TS_FM_PAGE_LFO_DEPTH;
-    ui.fm_preview_sample = &family.current;
-    ui.fm_patch.active_mask = 0u;
-    CHECK(ts_fm_set_control_normalized(&ui.fm_patch, ui.fm_page, 0, 0.5f));
-    ui.playback_active = 1;
-    ui.playhead_sample = &family.current;
-    ui.playhead_frame = family.current.frames / 4u;
-    ui.playhead_frames = family.current.frames;
-    family.family_mutation = 0.64f;
-    ts_ui_render(&fb, &ui, &family);
-    CHECK(fb.pixels[70 * TS_UI_WIDTH + 22 + 596 / 4] == 0xffff1ce7u);
-    CHECK(fb.pixels[176 * TS_UI_WIDTH + 25] == 0xff2d0039u);
-    CHECK(ts_ui_fm_action_from_point(40, 260) == TS_UI_FM_ACTION_RANDOMIZE);
-    CHECK(ts_ui_fm_action_from_point(330, 260) == TS_UI_FM_ACTION_HOLD);
-    CHECK(ts_ui_fm_action_from_point(40, 286) == TS_UI_FM_ACTION_DRONE);
-    CHECK(ts_ui_fm_action_from_point(160, 286) == TS_UI_FM_ACTION_EXTREME);
-    CHECK(ts_ui_fm_action_from_point(250, 286) == TS_UI_FM_ACTION_CHAIN);
-    CHECK(ts_ui_fm_action_from_point(420, 260) == TS_UI_FM_ACTION_BACK);
-    CHECK(ts_ui_fm_range_contains(500, 286));
-    CHECK(!ts_ui_fm_range_contains(250, 286));
-    CHECK(ts_ui_fm_full_action_from_point(120, 296) ==
-          TS_UI_FM_ACTION_OVERWRITE);
-    CHECK(ts_ui_fm_full_action_from_point(250, 296) ==
-          TS_UI_FM_ACTION_NEW_PAGE);
-    CHECK(ts_ui_fm_full_action_from_point(420, 296) ==
-          TS_UI_FM_ACTION_CANCEL_FULL);
-    ui.fm_open = 0;
-    ui.fm_preview_sample = NULL;
-    ui.playhead_sample = NULL;
-    ui.playback_active = 0;
+        ts_fm_patch_from_recipe(&family.generator, &ui.fm_patch);
+        ui.fm_open = 1;
+        ui.fm_page = TS_FM_PAGE_LFO_DEPTH;
+        ui.fm_preview_sample = &family.current;
+        ui.fm_patch.active_mask = 0u;
+        CHECK(ts_fm_set_control_normalized(&ui.fm_patch, ui.fm_page, 0, 0.5f));
+        ui.playback_active = 1;
+        ui.playhead_sample = &family.current;
+        ui.playhead_frame = family.current.frames / 4u;
+        ui.playhead_frames = family.current.frames;
+        family.family_mutation = 0.64f;
+        ts_ui_render(&fb, &ui, &family);
+        CHECK(fb.pixels[70 * TS_UI_WIDTH + 22 + 596 / 4] == 0xffff1ce7u);
+        CHECK(fb.pixels[176 * TS_UI_WIDTH + 25] == 0xff2d0039u);
+        CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] == visible_bank_pixel);
+        CHECK(ts_ui_fm_action_from_point(40, 260) == TS_UI_FM_ACTION_RANDOMIZE);
+        CHECK(ts_ui_fm_action_from_point(330, 260) == TS_UI_FM_ACTION_HOLD);
+        CHECK(ts_ui_fm_action_from_point(40, 286) == TS_UI_FM_ACTION_DRONE);
+        CHECK(ts_ui_fm_action_from_point(160, 286) == TS_UI_FM_ACTION_EXTREME);
+        CHECK(ts_ui_fm_action_from_point(250, 286) == TS_UI_FM_ACTION_CHAIN);
+        CHECK(ts_ui_fm_action_from_point(420, 260) == TS_UI_FM_ACTION_BACK);
+        CHECK(ts_ui_fm_range_contains(500, 286));
+        CHECK(!ts_ui_fm_range_contains(250, 286));
+        CHECK(ts_ui_fm_full_action_from_point(120, 284) ==
+              TS_UI_FM_ACTION_OVERWRITE);
+        CHECK(ts_ui_fm_full_action_from_point(250, 284) ==
+              TS_UI_FM_ACTION_NEW_PAGE);
+        CHECK(ts_ui_fm_full_action_from_point(420, 284) ==
+              TS_UI_FM_ACTION_CANCEL_FULL);
+        ui.fm_open = 0;
+        ui.fm_preview_sample = NULL;
+        ui.playhead_sample = NULL;
+        ui.playback_active = 0;
+    }
 
     {
         TsInstrument workflow;
