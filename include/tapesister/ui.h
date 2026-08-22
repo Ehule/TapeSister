@@ -33,6 +33,9 @@ enum { TS_PALETTE_SLIDER_X = 20, TS_PALETTE_SLIDER_Y = 102,
        TS_PALETTE_SLIDER_STEP_Y = 16,
        TS_PALETTE_CONTRAST_X = 250, TS_PALETTE_CONTRAST_W = 170,
        TS_PALETTE_ACTION_Y = 174 };
+enum { TS_PALETTE_TAPEHEAD_X = 432, TS_PALETTE_TAPEHEAD_Y = 159,
+       TS_PALETTE_TAPEHEAD_W = 7, TS_PALETTE_TAPEHEAD_H = 8,
+       TS_PALETTE_TAPEHEAD_STEP_X = 9 };
 enum {
     TS_BROWSER_LIST_X = 58,
     TS_BROWSER_LIST_Y = 87,
@@ -117,9 +120,8 @@ typedef enum {
 
 typedef enum {
     TS_UI_PALETTE_ACTION_NONE = 0,
-    TS_UI_PALETTE_ACTION_IMPORT_TAPEHEAD,
-    TS_UI_PALETTE_ACTION_SAVE_TAPESISTER,
-    TS_UI_PALETTE_ACTION_EXPORT_TAPEHEAD,
+    TS_UI_PALETTE_ACTION_LOAD_SHARED,
+    TS_UI_PALETTE_ACTION_SAVE_SHARED,
     TS_UI_PALETTE_ACTION_RESET,
     TS_UI_PALETTE_ACTION_DONE,
     TS_UI_PALETTE_ACTION_CANCEL
@@ -471,6 +473,7 @@ size_t ts_ui_config_cursor_from_point(const TsUiState *ui,
                                       TsConfigField field, int x);
 TsUiConfigAction ts_ui_config_action_from_point(int x, int y);
 int ts_ui_palette_entry_from_point(int x, int y);
+int ts_ui_palette_tapehead_swatch_from_point(int x, int y);
 int ts_ui_palette_channel_from_point(int x, int y, int *value);
 TsUiPaletteAction ts_ui_palette_action_from_point(int x, int y);
 TsUiLoadSelectionAction ts_ui_load_selection_action_from_point(int x, int y);
