@@ -210,7 +210,7 @@ void ts_performance_sync(TsPerformanceBank *bank,
         voice->range_last = last;
         voice->position = (double)first + progress * (double)(last - first);
         if (voice->position >= (double)last)
-            voice->position = voice->loop_mode == TS_LOOP_REVERSE ?
+            voice->position = slot->loop_mode == TS_LOOP_REVERSE ?
                               (double)(last - 1u) : (double)first;
         voice->looping = slot->has_loop;
         voice->loop_mode = slot->loop_mode;
@@ -229,6 +229,22 @@ int ts_performance_count(const TsPerformanceBank *bank)
     for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i)
         if (bank->voices[i].active) ++count;
     return count;
+}
+
+uint32_t ts_performance_visible_mask(const TsPerformanceBank *bank,
+                                     int keyboard_base_note)
+{
+    uint32_t mask = 0u;
+    if (bank == NULL) return 0u;
+    for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
+        const TsPerformanceVoice *voice = &bank->voices[i];
+        int visible_note;
+        if (!voice->active) continue;
+        visible_note = voice->midi_note - keyboard_base_note;
+        if (visible_note >= 0 && visible_note < 24)
+            mask |= 1u << visible_note;
+    }
+    return mask;
 }
 
 int ts_performance_source_count(uint16_t source_mask)
