@@ -51,6 +51,8 @@ void ts_performance_sync(TsPerformanceBank *bank,
                          const TsInstrument *instrument,
                          int output_rate);
 int ts_performance_count(const TsPerformanceBank *bank);
+uint32_t ts_performance_visible_mask(const TsPerformanceBank *bank,
+                                     int keyboard_base_note);
 int ts_performance_source_count(uint16_t source_mask);
 float ts_performance_peak_scale(float *samples, size_t frames, float safe_peak);
 
