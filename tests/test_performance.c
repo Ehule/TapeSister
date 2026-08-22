@@ -49,7 +49,7 @@ int main(void)
     assert(ts_performance_count(&performance) == 3);
     monitored = ts_performance_read(&performance, &raw);
     assert(fabsf(raw - 1.5f) < 0.0001f);
-    assert(fabsf(monitored - 0.5f) < 0.0001f);
+    assert(fabsf(monitored - (1.5f / sqrtf(3.0f))) < 0.0001f);
 
     assert(ts_performance_trigger_group(
                &performance, &instrument,
@@ -68,6 +68,18 @@ int main(void)
     assert(ts_performance_count(&performance) == 9);
     ts_performance_clear(&performance);
 
+    /* Different source lengths end independently; the longest source survives. */
+    assert(ts_performance_trigger_group(
+               &performance, &instrument,
+               (uint16_t)((1u << 0) | (1u << 3) | (1u << 7)),
+               0, 60, 0, 44100) == 3);
+    for (int i = 0; i < 18; ++i) (void)ts_performance_read(&performance, &raw);
+    assert(ts_performance_count(&performance) == 2);
+    for (int i = 0; i < 8; ++i) (void)ts_performance_read(&performance, &raw);
+    assert(ts_performance_count(&performance) == 1);
+    for (int i = 0; i < 8; ++i) (void)ts_performance_read(&performance, &raw);
+    assert(ts_performance_count(&performance) == 0);
+
     gain = ts_performance_peak_scale(quiet, 3u, 0.98f);
     assert(fabsf(gain - 1.0f) < 0.0001f);
     assert(fabsf(quiet[1] + 0.3f) < 0.0001f);
@@ -77,9 +89,19 @@ int main(void)
     assert(fabsf(loud[2] + 0.98f) < 0.0001f);
     assert(fabsf(loud[0] / loud[1] - 1.0f) < 0.0001f);
 
-    free_slot(&instrument.bank[0]);
-    free_slot(&instrument.bank[3]);
-    free_slot(&instrument.bank[7]);
+    /* All 16 tile sources can fan out from one note without a low arbitrary cap. */
+    ts_performance_clear(&performance);
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        if (!instrument.bank[slot].occupied)
+            fill_slot(&instrument.bank[slot], 0.01f * (float)(slot + 1), 8u, 44100u);
+    }
+    assert(ts_performance_trigger_group(&performance, &instrument, 0xffffu,
+                                        0, 60, 0, 44100) == TS_BANK_SLOT_COUNT);
+    assert(ts_performance_count(&performance) == TS_BANK_SLOT_COUNT);
+    ts_performance_release(&performance, 0);
+    assert(ts_performance_count(&performance) == 0);
+
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) free_slot(&instrument.bank[slot]);
     puts("performance tests passed");
     return 0;
 }
