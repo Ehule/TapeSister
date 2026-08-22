@@ -1,14 +1,17 @@
 static void ts_audio_catalog_refresh(void)
 {
+    char midi_error[160];
     int input_ok = ts_audio_name_list_refresh(
         1, &ts_device_catalog.input_names, &ts_device_catalog.input_count);
     int output_ok = ts_audio_name_list_refresh(
         0, &ts_device_catalog.output_names, &ts_device_catalog.output_count);
+    int midi_ok = ts_midi_input != NULL &&
+        ts_midi_input_rescan(ts_midi_input, midi_error, sizeof(midi_error));
     if (ts_live_ui != NULL) {
         snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
-                 input_ok && output_ok ?
-                 "AUDIO DEVICES REFRESHED - CLICK < OR > TO SELECT" :
-                 "AUDIO DEVICE LIST PARTIAL - SYSTEM DEFAULT REMAINS AVAILABLE");
+                 input_ok && output_ok && midi_ok ?
+                 "AUDIO/MIDI DEVICES REFRESHED - CLICK < OR > TO SELECT" :
+                 "DEVICE LIST PARTIAL - AUDIO DEFAULTS AND MIDI OFF REMAIN AVAILABLE");
     }
 }
 

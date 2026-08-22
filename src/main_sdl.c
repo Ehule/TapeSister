@@ -1100,10 +1100,13 @@ static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
     if (device) SDL_UnlockAudioDevice(device);
 }
 
-static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
-                       const TsInstrument *instrument, int note, int output_rate, int latched)
+static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
+                             TsUiState *ui, const TsInstrument *instrument,
+                             const TsNoteEvent *event, int output_rate,
+                             int latched)
 {
     TsNoteStartResult result;
+    char note_name[8];
     int voice_count;
     int capture_started = 0;
     ui->bank_view_slot = -1;
@@ -1115,10 +1118,10 @@ static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
     if (audio->capture.state != TS_CAPTURE_RECORDING)
         audio->playing = 0;
     audio->bank_slot = -1;
-    result = ts_note_bank_start_tuned_at(
+    if (event == NULL) return;
+    result = ts_note_bank_start_tuned_event(
         &audio->notes, instrument, ts_ui_audition_tuning(ui, instrument),
-        ui->audition_source, note, ts_ui_keyboard_base_note(ui),
-        latched, output_rate);
+        ui->audition_source, event, latched, output_rate);
     if (result == TS_NOTE_STARTED &&
         audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
         TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot))
@@ -1128,21 +1131,48 @@ static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
     if (result == TS_NOTE_LIMIT_REACHED)
         snprintf(ui->status, sizeof(ui->status), "CHORD LIMIT %d NOTES", TS_NOTE_VOICE_LIMIT);
     else if (result == TS_NOTE_TOGGLED_OFF)
-        snprintf(ui->status, sizeof(ui->status), "CHORD NOTE REMOVED");
+        snprintf(ui->status, sizeof(ui->status), "CHORD %s REMOVED",
+                 ts_midi_note_name(event->midi_note, note_name, sizeof(note_name)));
     else if (result == TS_NOTE_STARTED && latched)
-        snprintf(ui->status, sizeof(ui->status), "CHORD %d/%d - SHIFT+CLICK TO TOGGLE",
-                 voice_count, TS_NOTE_VOICE_LIMIT);
+        snprintf(ui->status, sizeof(ui->status),
+                 "CHORD %s (MIDI %d) %d/%d - SHIFT+CLICK TO TOGGLE",
+                 ts_midi_note_name(event->midi_note, note_name, sizeof(note_name)),
+                 event->midi_note, voice_count, TS_NOTE_VOICE_LIMIT);
     else if (capture_started) {
         show_overlay(ui, audio->capture.overdub ?
                      "OVERDUB STARTED" : "CAPTURE STARTED", 650u);
         snprintf(ui->status, sizeof(ui->status),
                  audio->capture.overdub ?
-                 "OVERDUB RECORDING LIVE NOTES TO TILE %02d" :
-                 "CAPTURE RECORDING LIVE NOTES TO TILE %02d",
+                 "OVERDUB RECORDING %s %s (MIDI %d) TO TILE %02d" :
+                 "CAPTURE RECORDING %s %s (MIDI %d) TO TILE %02d",
+                 event->origin == TS_NOTE_ORIGIN_MIDI ? "MIDI" : "QWERTY",
+                 ts_midi_note_name(event->midi_note, note_name, sizeof(note_name)),
+                 event->midi_note,
                  audio->capture.destination_slot + 1);
-    } else if (result == TS_NOTE_STARTED)
-        snprintf(ui->status, sizeof(ui->status), "PLAYING %s NOTE",
-                 ts_audition_source_name(ui->audition_source));
+    } else if (result == TS_NOTE_STARTED) {
+        if (event->origin == TS_NOTE_ORIGIN_MIDI)
+            snprintf(ui->status, sizeof(ui->status),
+                     "MIDI ON %s (MIDI %d)  VELOCITY %d",
+                     ts_midi_note_name(event->midi_note, note_name,
+                                       sizeof(note_name)),
+                     event->midi_note, event->velocity);
+        else
+            snprintf(ui->status, sizeof(ui->status),
+                     "QWERTY ON %s (MIDI %d)  %s",
+                     ts_midi_note_name(event->midi_note, note_name,
+                                       sizeof(note_name)),
+                     event->midi_note,
+                     ts_audition_source_name(ui->audition_source));
+    }
+}
+
+static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+                       const TsInstrument *instrument, int note, int output_rate,
+                       int latched)
+{
+    TsNoteEvent event;
+    if (!ts_note_event_qwerty(&event, note, ts_ui_keyboard_base_note(ui))) return;
+    begin_note_event(device, audio, ui, instrument, &event, output_rate, latched);
 }
 
 static void stage_capture_note(SDL_AudioDeviceID device, AudioState *audio,
@@ -1202,12 +1232,26 @@ static void launch_staged_capture(SDL_AudioDeviceID device, AudioState *audio,
                  "CLICK ONE OF THE STAGED KEYS TO LAUNCH THE CHORD");
 }
 
-static void release_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui, int note)
+static void release_note_event(SDL_AudioDeviceID device, AudioState *audio,
+                               TsUiState *ui, const TsNoteEvent *event)
 {
+    char note_name[8];
+    if (event == NULL) return;
     if (device) SDL_LockAudioDevice(device);
-    ts_note_bank_release(&audio->notes, note);
+    ts_note_bank_release_event(&audio->notes, event);
     if (device) SDL_UnlockAudioDevice(device);
-    snprintf(ui->status, sizeof(ui->status), "NOTE RELEASED");
+    snprintf(ui->status, sizeof(ui->status), "%s OFF %s (MIDI %d)",
+             event->origin == TS_NOTE_ORIGIN_MIDI ? "MIDI" : "QWERTY",
+             ts_midi_note_name(event->midi_note, note_name, sizeof(note_name)),
+             event->midi_note);
+}
+
+static void release_note(SDL_AudioDeviceID device, AudioState *audio,
+                         TsUiState *ui, int note)
+{
+    TsNoteEvent event;
+    if (!ts_note_event_qwerty(&event, note, ts_ui_keyboard_base_note(ui))) return;
+    release_note_event(device, audio, ui, &event);
 }
 
 static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
@@ -3230,20 +3274,21 @@ static void randomize_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
              ts_fm_page_name(ui->fm_page));
 }
 
-static void begin_fm_note(SDL_AudioDeviceID device, AudioState *audio,
-                          TsUiState *ui, const TsInstrument *instrument,
-                          const TsSample *preview, int note,
-                          int output_rate, int latched)
+static void begin_fm_note_event(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, const TsInstrument *instrument,
+                                const TsSample *preview,
+                                const TsNoteEvent *event,
+                                int output_rate, int latched)
 {
     TsNoteStartResult result;
     const TsTuning unity = {TS_KEYBOARD_BASE_NOTE, 0.0f};
+    char note_name[8];
     int capture_started = 0;
     (void)instrument;
-    if (!device || preview == NULL || preview->data == NULL) return;
+    if (!device || preview == NULL || preview->data == NULL || event == NULL) return;
     SDL_LockAudioDevice(device);
-    result = ts_note_bank_start_sample(
-        &audio->notes, preview, &unity,
-        note, ts_ui_keyboard_base_note(ui), latched, output_rate);
+    result = ts_note_bank_start_sample_event(
+        &audio->notes, preview, &unity, event, latched, output_rate);
     if (result == TS_NOTE_STARTED &&
         audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
         char ignored[2];
@@ -3263,10 +3308,31 @@ static void begin_fm_note(SDL_AudioDeviceID device, AudioState *audio,
         snprintf(ui->fm_message, sizeof(ui->fm_message),
                  "CHORD LIMIT %d NOTES", TS_NOTE_VOICE_LIMIT);
     else if (result == TS_NOTE_TOGGLED_OFF)
-        snprintf(ui->fm_message, sizeof(ui->fm_message), "LATCHED SYNTH NOTE REMOVED");
+        snprintf(ui->fm_message, sizeof(ui->fm_message),
+                 "LATCHED SYNTH %s REMOVED",
+                 ts_midi_note_name(event->midi_note, note_name, sizeof(note_name)));
     else
         snprintf(ui->fm_message, sizeof(ui->fm_message),
-                 latched ? "SYNTH NOTE LATCHED" : "SYNTH NOTE PLAYING");
+                 latched ? "SYNTH %s (MIDI %d) LATCHED" :
+                           "SYNTH %s (MIDI %d) PLAYING",
+                 ts_midi_note_name(event->midi_note, note_name, sizeof(note_name)),
+                 event->midi_note);
+    if (result == TS_NOTE_STARTED && event->origin == TS_NOTE_ORIGIN_MIDI)
+        snprintf(ui->status, sizeof(ui->status),
+                 "MIDI ON %s (MIDI %d)  VELOCITY %d",
+                 ts_midi_note_name(event->midi_note, note_name, sizeof(note_name)),
+                 event->midi_note, event->velocity);
+}
+
+static void begin_fm_note(SDL_AudioDeviceID device, AudioState *audio,
+                          TsUiState *ui, const TsInstrument *instrument,
+                          const TsSample *preview, int note,
+                          int output_rate, int latched)
+{
+    TsNoteEvent event;
+    if (!ts_note_event_qwerty(&event, note, ts_ui_keyboard_base_note(ui))) return;
+    begin_fm_note_event(device, audio, ui, instrument, preview, &event,
+                        output_rate, latched);
 }
 
 static void toggle_fm_hold(SDL_AudioDeviceID device, AudioState *audio,
@@ -5482,6 +5548,55 @@ static int ui_dialog_open(const TsUiState *ui)
            ui->browser.mode != TS_BROWSER_CLOSED;
 }
 
+static void handle_midi_event(SDL_AudioDeviceID device, AudioState *audio,
+                              TsUiState *ui, const TsInstrument *instrument,
+                              const TsSample *fm_preview,
+                              const TsMidiEvent *midi, int output_rate)
+{
+    if (audio == NULL || ui == NULL || instrument == NULL || midi == NULL) return;
+    if (midi->action == TS_MIDI_ACTION_PANIC) {
+        if (device) SDL_LockAudioDevice(device);
+        if (midi->channel >= 0)
+            ts_note_bank_release_midi_channel(&audio->notes, midi->channel);
+        else
+            for (int channel = 0; channel < 16; ++channel)
+                ts_note_bank_release_midi_channel(&audio->notes, channel);
+        if (device) SDL_UnlockAudioDevice(device);
+        if (midi->channel >= 0)
+            snprintf(ui->status, sizeof(ui->status),
+                     "MIDI CHANNEL %d ALL NOTES OFF", midi->channel + 1);
+        else
+            snprintf(ui->status, sizeof(ui->status),
+                     "MIDI QUEUE RESET - ALL NOTES OFF");
+        return;
+    }
+    if (midi->action == TS_MIDI_ACTION_NOTE_OFF) {
+        release_note_event(device, audio, ui, &midi->note);
+        if (ui->fm_open) {
+            char note_name[8];
+            snprintf(ui->fm_message, sizeof(ui->fm_message),
+                     "MIDI OFF %s (MIDI %d)",
+                     ts_midi_note_name(midi->note.midi_note, note_name,
+                                       sizeof(note_name)),
+                     midi->note.midi_note);
+        }
+        return;
+    }
+    if (midi->action != TS_MIDI_ACTION_NOTE_ON) return;
+    if (ui->fm_open && !ui->fm_bank_choice_open && !ui->fm_full_choice_open) {
+        begin_fm_note_event(device, audio, ui, instrument, fm_preview,
+                            &midi->note, output_rate, 0);
+        return;
+    }
+    if (ui_dialog_open(ui) || ui->canvas_gesture.active ||
+        ui->stretch_gesture.active || ui->warp_gesture.active ||
+        ui->smear_gesture.active || ui->tear_gesture.active ||
+        ui->material_macro_gesture.active || ui->amplitude_gesture.active)
+        return;
+    begin_note_event(device, audio, ui, instrument, &midi->note,
+                     output_rate, 0);
+}
+
 static int stage_incoming_exchange(TsUiState *ui, TsExchangeOffer *offer,
                                    const char *ignored_folder, int force)
 {
@@ -7193,6 +7308,25 @@ int main(int argc, char **argv)
         fm_bank_history_free(&fm_bank_history);
         ts_instrument_free(&instrument);
         return 1;
+    }
+    {
+        char midi_error[160];
+        ts_midi_input = ts_midi_input_create();
+        if (ts_midi_input == NULL)
+            fprintf(stderr, "TapeSister MIDI: out of memory\n");
+        else if (!ts_midi_input_configure(
+                     ts_midi_input, ui.config.midi_input_device,
+                     ui.config.midi_input_channel,
+                     midi_error, sizeof(midi_error))) {
+            fprintf(stderr, "TapeSister MIDI: %s\n", midi_error);
+            if (ui.config.midi_input_device[0] != '\0' &&
+                strcmp(ui.config.midi_input_device, "OFF") != 0)
+                snprintf(ui.status, sizeof(ui.status),
+                         "MIDI INPUT UNAVAILABLE: %.126s", midi_error);
+        } else if (ts_midi_input_is_active(ts_midi_input)) {
+            snprintf(ui.status, sizeof(ui.status), "MIDI READY: %.140s",
+                     ts_midi_input_active_name(ts_midi_input));
+        }
     }
     {
         char palette_error[160];
@@ -10173,6 +10307,13 @@ int main(int argc, char **argv)
                     ui.mouse_note = -1;
                 }
             }
+        }
+
+        if (ts_midi_input != NULL) {
+            TsMidiEvent midi;
+            while (ts_midi_input_poll(ts_midi_input, &midi))
+                handle_midi_event(device, &audio, &ui, &instrument,
+                                  &fm_preview, &midi, obtained.freq);
         }
 
         /* Some window managers can drop the button-up event after a captured,

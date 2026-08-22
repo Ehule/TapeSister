@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "tapesister/audition.h"
+#include "tapesister/note_event.h"
 #include "tapesister/sample.h"
 
 #define TS_PERFORMANCE_VOICE_LIMIT (TS_BANK_SLOT_COUNT * 24)
@@ -17,9 +18,12 @@ typedef struct {
     size_t range_last;
     size_t crossfade_frames;
     TsLoopMode loop_mode;
+    TsNoteOrigin origin;
     int note;
     int midi_note;
+    int channel;
     int source_slot;
+    float gain;
     int looping;
     int direction;
     int latched;
@@ -37,6 +41,9 @@ void ts_performance_release_sources_after_pass(TsPerformanceBank *bank,
                                                uint16_t source_mask);
 void ts_performance_release_after_pass(TsPerformanceBank *bank);
 void ts_performance_release(TsPerformanceBank *bank, int note);
+void ts_performance_release_event(TsPerformanceBank *bank,
+                                  const TsNoteEvent *event);
+void ts_performance_release_midi_channel(TsPerformanceBank *bank, int channel);
 int ts_performance_trigger_group(TsPerformanceBank *bank,
                                  const TsInstrument *instrument,
                                  uint16_t source_mask,
@@ -44,6 +51,12 @@ int ts_performance_trigger_group(TsPerformanceBank *bank,
                                  int keyboard_base_note,
                                  int latched,
                                  int output_rate);
+int ts_performance_trigger_group_event(TsPerformanceBank *bank,
+                                       const TsInstrument *instrument,
+                                       uint16_t source_mask,
+                                       const TsNoteEvent *event,
+                                       int latched,
+                                       int output_rate);
 int ts_performance_trigger_staged(TsPerformanceBank *bank,
                                   const TsInstrument *instrument,
                                   uint16_t source_mask,

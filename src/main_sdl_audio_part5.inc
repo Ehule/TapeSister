@@ -15,6 +15,8 @@
                             ui->config.record_input_device : "SYSTEM DEFAULT";
         const char *output = ui->config.audio_output_device[0] != '\0' ?
                              ui->config.audio_output_device : "SYSTEM DEFAULT";
+        const char *midi = ui->config.midi_input_device[0] != '\0' ?
+                           ui->config.midi_input_device : "AUTO FIRST";
         char shown[96];
         char channel[24];
 
@@ -48,6 +50,28 @@
         snprintf(shown, sizeof(shown), "%.78s", output);
         cfg_text(fb, 94, TS_AUDIO_CONFIG_OUTPUT_Y + 5, shown, text_color);
         cfg_text(fb, 608, TS_AUDIO_CONFIG_OUTPUT_Y + 5, ">", text_color);
+
+        cfg_frame(fb, 20, TS_MIDI_CONFIG_INPUT_Y,
+                  TS_AUDIO_CONFIG_INPUT_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
+        cfg_text(fb, 28, TS_MIDI_CONFIG_INPUT_Y + 5, "<", text_color);
+        cfg_text(fb, 44, TS_MIDI_CONFIG_INPUT_Y + 5, "MIDI", text_color);
+        snprintf(shown, sizeof(shown), "%.54s", midi);
+        cfg_text(fb, 82, TS_MIDI_CONFIG_INPUT_Y + 5, shown, text_color);
+        cfg_text(fb, 432, TS_MIDI_CONFIG_INPUT_Y + 5, ">", text_color);
+
+        cfg_frame(fb, TS_AUDIO_CONFIG_CHANNEL_X, TS_MIDI_CONFIG_INPUT_Y,
+                  TS_AUDIO_CONFIG_CHANNEL_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
+        cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 5,
+                 TS_MIDI_CONFIG_INPUT_Y + 5, "<", text_color);
+        cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 22,
+                 TS_MIDI_CONFIG_INPUT_Y + 5, "CH", text_color);
+        if (ui->config.midi_input_channel == 0)
+            snprintf(channel, sizeof(channel), "OMNI");
+        else
+            snprintf(channel, sizeof(channel), "%d", ui->config.midi_input_channel);
+        cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 52,
+                 TS_MIDI_CONFIG_INPUT_Y + 5, channel, text_color);
+        cfg_text(fb, 608, TS_MIDI_CONFIG_INPUT_Y + 5, ">", text_color);
     }
 }
 
@@ -269,6 +293,30 @@ static int ts_audio_config_field_from_point(int x, int y)
                  ts_live_ui->config.audio_output_device[0] != '\0' ?
                  ts_live_ui->config.audio_output_device : "SYSTEM DEFAULT");
         return -1;
+    }
+
+    if (y >= TS_MIDI_CONFIG_INPUT_Y &&
+        y < TS_MIDI_CONFIG_INPUT_Y + TS_AUDIO_CONFIG_ROW_H) {
+        if (x >= 20 && x < 20 + TS_AUDIO_CONFIG_INPUT_W) {
+            if (x < 48) ts_cycle_midi_device(-1);
+            else if (x >= 420) ts_cycle_midi_device(1);
+            snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
+                     "MIDI INPUT: %.120s",
+                     ts_live_ui->config.midi_input_device[0] != '\0' ?
+                     ts_live_ui->config.midi_input_device : "AUTO FIRST");
+            return -1;
+        }
+        if (x >= TS_AUDIO_CONFIG_CHANNEL_X && x < 620) {
+            if (x < TS_AUDIO_CONFIG_CHANNEL_X + 28)
+                ts_cycle_midi_channel(-1);
+            else if (x >= 594)
+                ts_cycle_midi_channel(1);
+            snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
+                     ts_live_ui->config.midi_input_channel == 0 ?
+                     "MIDI CHANNEL: OMNI" : "MIDI CHANNEL: %d",
+                     ts_live_ui->config.midi_input_channel);
+            return -1;
+        }
     }
 
     return -1;

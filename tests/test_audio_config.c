@@ -20,6 +20,10 @@ static int test_defaults(void)
                   "default input device should be system default") &&
            expect(config.audio_output_device[0] == '\0',
                   "default output device should be system default") &&
+           expect(config.midi_input_device[0] == '\0',
+                  "default MIDI device should use automatic first input") &&
+           expect(config.midi_input_channel == TS_MIDI_INPUT_CHANNEL_DEFAULT,
+                  "default MIDI channel should be omni") &&
            expect(config.record_input_channel == TS_RECORD_INPUT_CHANNEL_DEFAULT,
                   "default input channel should remain channel 1") &&
            expect(config.capture_auto_resize == 1,
@@ -41,7 +45,10 @@ static int test_roundtrip(void)
              "Test Capture Device");
     snprintf(saved.audio_output_device, sizeof(saved.audio_output_device),
              "Test Playback Device");
+    snprintf(saved.midi_input_device, sizeof(saved.midi_input_device),
+             "Test MIDI Keyboard");
     saved.record_input_channel = 2;
+    saved.midi_input_channel = 7;
     saved.capture_auto_resize = 0;
     saved.capture_max_seconds = 47;
 
@@ -57,6 +64,10 @@ static int test_roundtrip(void)
                 "named input device should roundtrip") &&
          expect(strcmp(loaded.audio_output_device, "Test Playback Device") == 0,
                 "named output device should roundtrip") &&
+         expect(strcmp(loaded.midi_input_device, "Test MIDI Keyboard") == 0,
+                "named MIDI input should roundtrip") &&
+         expect(loaded.midi_input_channel == 7,
+                "MIDI input channel should roundtrip") &&
          expect(loaded.record_input_channel == 2,
                 "input channel should roundtrip") &&
          expect(loaded.capture_auto_resize == 0,
@@ -78,6 +89,7 @@ static int test_blank_roundtrip(void)
     ts_config_init(&saved);
     saved.record_input_device[0] = '\0';
     saved.audio_output_device[0] = '\0';
+    saved.midi_input_device[0] = '\0';
     saved.record_input_channel = 1;
     ok = ts_audio_config_save(&saved, path, error, sizeof(error)) &&
          ts_audio_config_load(&loaded, path, error, sizeof(error));
@@ -89,7 +101,11 @@ static int test_blank_roundtrip(void)
     ok = expect(loaded.record_input_device[0] == '\0',
                 "blank input device should survive roundtrip") &&
          expect(loaded.audio_output_device[0] == '\0',
-                "blank output device should survive roundtrip");
+                "blank output device should survive roundtrip") &&
+         expect(loaded.midi_input_device[0] == '\0',
+                "blank MIDI input should survive roundtrip") &&
+         expect(loaded.midi_input_channel == 0,
+                "omni MIDI channel should survive roundtrip");
     remove(path);
     return ok;
 }
@@ -123,7 +139,11 @@ static int test_legacy_config(void)
          expect(loaded.record_input_channel == 2,
                 "legacy input channel should load") &&
          expect(loaded.audio_output_device[0] == '\0',
-                "legacy config should default output to system default");
+                "legacy config should default output to system default") &&
+         expect(loaded.midi_input_device[0] == '\0',
+                "legacy config should default MIDI to auto") &&
+         expect(loaded.midi_input_channel == 0,
+                "legacy config should default MIDI to omni");
     remove(path);
     return ok;
 }

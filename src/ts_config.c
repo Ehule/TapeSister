@@ -27,6 +27,7 @@ void ts_config_init(TsConfig *config)
         config->ripple_cut_crop_canvas = 0;
         config->reference_tone_volume = TS_REFERENCE_TONE_VOLUME_DEFAULT;
         config->record_input_channel = TS_RECORD_INPUT_CHANNEL_DEFAULT;
+        config->midi_input_channel = TS_MIDI_INPUT_CHANNEL_DEFAULT;
         config->record_threshold_db = TS_RECORD_THRESHOLD_DB_DEFAULT;
         config->record_preroll_ms = TS_RECORD_PREROLL_MS_DEFAULT;
         config->record_silence_ms = TS_RECORD_SILENCE_MS_DEFAULT;

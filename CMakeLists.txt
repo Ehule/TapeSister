@@ -6,7 +6,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
-             src/ts_performance.c src/ts_capture.c src/ts_capture_archive.c src/ts_input_monitor.c
+             src/ts_note_event.c src/ts_performance.c src/ts_capture.c
+             src/ts_capture_archive.c src/ts_input_monitor.c
              src/ts_sample_pages.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
              src/ts_recipe.c src/ts_dsp_recipe.c
@@ -21,13 +22,51 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 option(TAPESISTER_BUILD_SDL "Build the playable SDL2 instrument" ON)
+option(TAPESISTER_ENABLE_MIDI "Enable RtMidi note input" ON)
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
   # main_sdl_audio.c wraps the app entry point with SDL device selection and
   # routing; the runtime implementation remains in main_sdl.c.
-  add_executable(tapesister src/main_sdl_audio.c src/ts_startup_diag.c)
+  add_executable(tapesister src/main_sdl_audio.c src/ts_startup_diag.c
+                            src/ts_midi_input.c)
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
+  set(TAPESISTER_MIDI_AVAILABLE OFF)
+  if(TAPESISTER_ENABLE_MIDI)
+    if(WIN32 OR APPLE)
+      set(TAPESISTER_MIDI_AVAILABLE ON)
+    elseif(UNIX)
+      find_package(ALSA QUIET)
+      if(ALSA_FOUND)
+        set(TAPESISTER_MIDI_AVAILABLE ON)
+      else()
+        message(WARNING "ALSA development files not found; building without MIDI input")
+      endif()
+    endif()
+  endif()
+  if(TAPESISTER_MIDI_AVAILABLE)
+    enable_language(CXX)
+    set(CMAKE_CXX_STANDARD 11)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+    target_sources(tapesister PRIVATE
+      third_party/rtmidi/RtMidi.cpp
+      third_party/rtmidi/rtmidi_c.cpp)
+    target_compile_definitions(tapesister PRIVATE TAPESISTER_HAS_MIDI)
+    if(WIN32)
+      target_compile_definitions(tapesister PRIVATE __WINDOWS_MM__)
+      target_link_libraries(tapesister PRIVATE winmm)
+    elseif(APPLE)
+      find_library(COREMIDI CoreMIDI REQUIRED)
+      find_library(COREFOUNDATION CoreFoundation REQUIRED)
+      target_compile_definitions(tapesister PRIVATE __MACOSX_CORE__)
+      target_link_libraries(tapesister PRIVATE ${COREMIDI} ${COREFOUNDATION})
+    else()
+      find_package(Threads REQUIRED)
+      target_compile_definitions(tapesister PRIVATE __LINUX_ALSA__)
+      target_link_libraries(tapesister PRIVATE ALSA::ALSA Threads::Threads dl)
+    endif()
+  endif()
   # Keep the enlarged Windows stack reserve as defense-in-depth after PR35's
   # REC-bank storage was moved off the main-thread stack.
   if(MINGW)
@@ -83,6 +122,10 @@ add_test(NAME tapesister_capture_tests COMMAND tapesister_capture_tests)
 add_executable(tapesister_performance_tests tests/test_performance.c)
 target_link_libraries(tapesister_performance_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_performance_tests COMMAND tapesister_performance_tests)
+
+add_executable(tapesister_midi_tests tests/test_midi.c src/ts_midi_input.c)
+target_link_libraries(tapesister_midi_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_midi_tests COMMAND tapesister_midi_tests)
 
 add_executable(tapesister_external_record_tests tests/test_external_record.c)
 target_link_libraries(tapesister_external_record_tests PRIVATE tapesister_core)

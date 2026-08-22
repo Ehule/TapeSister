@@ -127,6 +127,8 @@ static void ts_audio_pause_device(SDL_AudioDeviceID device, int pause_on)
 static void ts_audio_quit(void)
 {
     ts_audio_catalog_free();
+    ts_midi_input_destroy(ts_midi_input);
+    ts_midi_input = NULL;
     ts_live_ui = NULL;
     ts_live_config = NULL;
     SDL_Quit();
@@ -146,6 +148,7 @@ static int ts_audio_main_config_load(TsConfig *config, const char *path,
 static int ts_audio_main_config_save(const TsConfig *config, const char *path,
                                      char *error, size_t error_size)
 {
+    char midi_error[160];
     char switch_error[160];
     int output_changed;
     if (!ts_audio_config_save(config, path, error, error_size)) return 0;
@@ -182,3 +185,18 @@ static int ts_audio_main_config_save(const TsConfig *config, const char *path,
         snprintf(ts_pending_notice, sizeof(ts_pending_notice),
                  "CONFIG SAVED - AUDIO DEVICE SETTINGS READY");
     }
+    if (ts_midi_input != NULL &&
+        !ts_midi_input_configure(ts_midi_input, config->midi_input_device,
+                                 config->midi_input_channel,
+                                 midi_error, sizeof(midi_error)))
+        snprintf(ts_pending_notice, sizeof(ts_pending_notice),
+                 "CONFIG SAVED - MIDI INPUT UNAVAILABLE: %.104s", midi_error);
+    else if (ts_midi_input != NULL && ts_midi_input_is_active(ts_midi_input))
+        snprintf(ts_pending_notice, sizeof(ts_pending_notice),
+                 "CONFIG SAVED - MIDI READY: %.112s",
+                 ts_midi_input_active_name(ts_midi_input));
+    else if (ts_midi_input != NULL)
+        snprintf(ts_pending_notice, sizeof(ts_pending_notice),
+                 "CONFIG SAVED - MIDI %s",
+                 strcmp(config->midi_input_device, "OFF") == 0 ?
+                 "OFF" : "WAITING FOR AN INPUT");

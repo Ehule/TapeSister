@@ -19,3 +19,8 @@ SOMA Laboratory WARP is an interaction reference only. TapeSister contains no SO
 branding, artwork, panel graphics, source code, proprietary algorithms, or trade dress.
 SoundThread was inspected as a technical reference; none of its Godot UI, graph model,
 or archive is included.
+
+TapeSister includes RtMidi 6.0.0 for portable MIDI input on Windows, macOS, and
+Linux. RtMidi is copyright 2003–2023 Gary P. Scavone and is distributed under
+its permissive license in `third_party/rtmidi/LICENSE.txt`. The vendored source
+matches the Tapehead Edition copy, including its WinMM callback-lock fix.

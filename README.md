@@ -82,6 +82,14 @@ it without truncating its current pass, and a plain tile click clears the group 
 immediately restarts the clicked tile through the normal audition path while Capture
 continues. The armed destination never joins or moves with the source group.
 
+MIDI Note On/Off uses the same voice and Capture path as QWERTY, so a physical
+keyboard plays either the normal active tile or every latched source tile. MIDI 60
+(C4) is unity, the full 0-127 note range is accepted, velocity controls voice level,
+and channel All Notes Off is honored. Config offers **AUTO FIRST**, an exact input
+device, or **OFF**, plus **OMNI** or MIDI channels 1-16. Saving Config applies a new
+MIDI choice immediately. No MIDI CC mapping or device-specific control framework is
+part of this note-input feature.
+
 With Capture armed, Shift-click up to five onscreen keys to assemble a silent staged
 chord; click any staged key normally to launch every voice sample-synchronously. With
 no staged chord, ordinary notes start and join recording at the time they are played.

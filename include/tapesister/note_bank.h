@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "tapesister/audition.h"
+#include "tapesister/note_event.h"
 
 #define TS_NOTE_VOICE_LIMIT 5
 
@@ -18,8 +19,11 @@ typedef struct {
     TsAuditionSource source;
     TsLoopMode loop_mode;
     uint64_t serial;
+    TsNoteOrigin origin;
     int note;
     int midi_note;
+    int channel;
+    float gain;
     int looping;
     int direction;
     int latched;
@@ -58,11 +62,18 @@ TsNoteStartResult ts_note_bank_start_tuned_at(TsNoteBank *bank,
                                               TsAuditionSource source, int note,
                                               int keyboard_base_note,
                                               int latched, int output_rate);
+TsNoteStartResult ts_note_bank_start_tuned_event(
+    TsNoteBank *bank, const TsInstrument *instrument, const TsTuning *tuning,
+    TsAuditionSource source, const TsNoteEvent *event, int latched,
+    int output_rate);
 TsNoteStartResult ts_note_bank_start_sample(TsNoteBank *bank,
                                             const TsSample *sample,
                                             const TsTuning *tuning,
                                             int note, int keyboard_base_note,
                                             int latched, int output_rate);
+TsNoteStartResult ts_note_bank_start_sample_event(
+    TsNoteBank *bank, const TsSample *sample, const TsTuning *tuning,
+    const TsNoteEvent *event, int latched, int output_rate);
 void ts_note_bank_replace_sample(TsNoteBank *bank,
                                  const TsSample *old_sample,
                                  const TsSample *new_sample,
@@ -75,6 +86,8 @@ int ts_note_bank_start_staged_chord(TsNoteBank *bank,
                                     int keyboard_base_note,
                                     int output_rate);
 void ts_note_bank_release(TsNoteBank *bank, int note);
+void ts_note_bank_release_event(TsNoteBank *bank, const TsNoteEvent *event);
+void ts_note_bank_release_midi_channel(TsNoteBank *bank, int channel);
 void ts_note_bank_sync(TsNoteBank *bank, const TsInstrument *instrument, int output_rate);
 void ts_note_bank_sync_tuned(TsNoteBank *bank, const TsInstrument *instrument,
                              const TsTuning *tuning, int output_rate);
