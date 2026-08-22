@@ -59,6 +59,9 @@ int ts_palette_color_is_defined(const TsPalette *palette, TsPaletteColor color);
 int ts_palette_tapehead_swatch_count(void);
 TsPaletteColor ts_palette_tapehead_swatch_color(int swatch);
 const char *ts_palette_tapehead_swatch_name(int swatch);
+int ts_palette_sample_tapehead_from(TsPalette *destination_palette,
+                                    const TsPalette *source_palette,
+                                    TsPaletteColor destination, int swatch);
 int ts_palette_sample_tapehead(TsPalette *palette, TsPaletteColor destination,
                                int swatch);
 uint8_t ts_palette_component(const TsPalette *palette, TsPaletteColor color,

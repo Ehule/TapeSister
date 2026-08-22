@@ -5049,6 +5049,7 @@ static void palette_load_shared(TsUiState *ui)
     if (load_user_palette(ui, &loaded, loaded_path, sizeof(loaded_path),
                           error, sizeof(error))) {
         ui->palette = loaded;
+        ui->palette_suggestions = loaded;
         snprintf(ui->status, sizeof(ui->status), "LOADED PALETTE %.119s", loaded_path);
     } else snprintf(ui->status, sizeof(ui->status),
                     "PALETTE LOAD FAILED: %.132s", error);
@@ -5065,6 +5066,7 @@ static void palette_save_shared(TsUiState *ui)
     }
     if (ts_palette_save(&ui->palette, path, error, sizeof(error))) {
         ui->palette.defined_colors = (1u << TS_PALETTE_COLOR_COUNT) - 1u;
+        ui->palette_suggestions = ui->palette;
         snprintf(ui->status, sizeof(ui->status), "SAVED SHARED PALETTE %.105s", path);
     }
     else snprintf(ui->status, sizeof(ui->status), "PALETTE SAVE FAILED: %.132s", error);
@@ -8890,8 +8892,8 @@ int main(int argc, char **argv)
                     } else if (tapehead_swatch >= 0) {
                         const char *name =
                             ts_palette_tapehead_swatch_name(tapehead_swatch);
-                        if (ts_palette_sample_tapehead(
-                                &ui.palette,
+                        if (ts_palette_sample_tapehead_from(
+                                &ui.palette, &ui.palette_suggestions,
                                 (TsPaletteColor)ui.palette_entry,
                                 tapehead_swatch))
                             snprintf(ui.status, sizeof(ui.status),

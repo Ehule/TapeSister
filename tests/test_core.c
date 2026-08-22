@@ -263,6 +263,16 @@ int main(void)
         CHECK(reopened.colors[TS_PALETTE_ACTIVE_TILE] == 0xff102030u);
         CHECK(ts_palette_color_is_defined(&reopened, TS_PALETTE_ACTIVE_TILE));
         {
+            TsPalette suggestions = reopened;
+            TsPalette edited = reopened;
+            suggestions.colors[TS_PALETTE_PATTERN_TEXT] = 0xffa1b2c3u;
+            edited.colors[TS_PALETTE_PATTERN_TEXT] = 0xff010203u;
+            CHECK(ts_palette_sample_tapehead_from(
+                      &edited, &suggestions, TS_PALETTE_ACTIVE_TILE, 0));
+            CHECK(edited.colors[TS_PALETTE_ACTIVE_TILE] == 0xffa1b2c3u);
+            CHECK(suggestions.colors[TS_PALETTE_PATTERN_TEXT] == 0xffa1b2c3u);
+        }
+        {
             uint32_t destination = reopened.colors[TS_PALETTE_WAVE_SELECTION];
             CHECK(!ts_palette_sample_tapehead(
                        &reopened, TS_PALETTE_WAVE_SELECTION, 12));
@@ -347,8 +357,11 @@ int main(void)
         before = ui.palette;
         ts_ui_begin_palette_edit(&ui);
         CHECK(ui.palette_open && !ui.config_open);
+        CHECK(memcmp(&ui.palette_suggestions, &before, sizeof(before)) == 0);
         ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff010203u;
         ui.palette.colors[TS_PALETTE_ACTIVE_TILE] = 0xff101112u;
+        CHECK(ui.palette_suggestions.colors[TS_PALETTE_WAVE_SELECTION] ==
+              before.colors[TS_PALETTE_WAVE_SELECTION]);
         ts_ui_finish_palette_edit(&ui, 1);
         CHECK(!ui.palette_open && ui.config_open);
         CHECK(memcmp(&ui.palette, &before, sizeof(before)) == 0);
@@ -3045,6 +3058,7 @@ int main(void)
         ui.config_open = 0;
         ts_ui_render(&normal, &ui, &restored);
         ui.palette_open = 1;
+        ui.palette_suggestions = ui.palette;
         ui.palette_entry = TS_PALETTE_WAVE_SELECTION;
         ui.palette_channel = 2;
         ts_ui_render(&fb, &ui, &restored);
@@ -3062,6 +3076,14 @@ int main(void)
                         12 * TS_PALETTE_TAPEHEAD_STEP_X +
                         TS_PALETTE_TAPEHEAD_W / 2] == 0xff41d7ffu);
         ui.palette.defined_colors &=
+            ~(1u << TS_PALETTE_TRACK_LENGTH_PLAYHEAD);
+        ts_ui_render(&fb, &ui, &restored);
+        CHECK(fb.pixels[(TS_PALETTE_TAPEHEAD_Y +
+                         TS_PALETTE_TAPEHEAD_H / 2) * TS_UI_WIDTH +
+                        TS_PALETTE_TAPEHEAD_X +
+                        12 * TS_PALETTE_TAPEHEAD_STEP_X +
+                        TS_PALETTE_TAPEHEAD_W / 2] == 0xff41d7ffu);
+        ui.palette_suggestions.defined_colors &=
             ~(1u << TS_PALETTE_TRACK_LENGTH_PLAYHEAD);
         ts_ui_render(&fb, &ui, &restored);
         CHECK(fb.pixels[(TS_PALETTE_TAPEHEAD_Y +

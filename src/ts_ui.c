@@ -1084,8 +1084,9 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
     for (int swatch = 0; swatch < ts_palette_tapehead_swatch_count(); ++swatch) {
         TsPaletteColor source = ts_palette_tapehead_swatch_color(swatch);
         int x = TS_PALETTE_TAPEHEAD_X + swatch * TS_PALETTE_TAPEHEAD_STEP_X;
-        int defined = ts_palette_color_is_defined(&ui->palette, source);
-        uint32_t color = defined ? ui->palette.colors[source] : RGB(92, 88, 92);
+        int defined = ts_palette_color_is_defined(&ui->palette_suggestions, source);
+        uint32_t color = defined ? ui->palette_suggestions.colors[source] :
+                                   RGB(92, 88, 92);
         rect(fb, x, TS_PALETTE_TAPEHEAD_Y, TS_PALETTE_TAPEHEAD_W,
              TS_PALETTE_TAPEHEAD_H, color);
         if (!defined) {
@@ -1694,6 +1695,7 @@ void ts_ui_begin_palette_edit(TsUiState *ui)
 {
     if (ui == NULL) return;
     ui->palette_before_edit = ui->palette;
+    ui->palette_suggestions = ui->palette;
     ui->palette_open = 1;
     ui->config_open = 0;
 }
