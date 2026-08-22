@@ -33,7 +33,9 @@ void ts_capture_init(TsCaptureRecorder *recorder)
     recorder->staged_notes = 0u;
     recorder->destination_slot = -1;
     recorder->source_slot = -1;
+    recorder->provenance_slot = -1;
     recorder->stopped_early = 0;
+    recorder->auto_resize = 0;
     atomic_init(&recorder->state, TS_CAPTURE_IDLE);
 }
 
@@ -74,8 +76,10 @@ int ts_capture_arm(TsCaptureRecorder *recorder, int destination_slot,
 int ts_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
                           char *error, size_t error_size)
 {
-    if (recorder == NULL || recorder->state != TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
-        set_error(error, error_size, "Capture is not waiting for a source");
+    if (recorder == NULL ||
+        (recorder->state != TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+         recorder->state != TS_CAPTURE_RECORDING)) {
+        set_error(error, error_size, "Capture is not accepting a source");
         return 0;
     }
     if (source_slot != TS_CAPTURE_SOURCE_SYNTH &&
@@ -88,6 +92,7 @@ int ts_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
         return 0;
     }
     recorder->source_slot = source_slot;
+    recorder->provenance_slot = source_slot;
     set_error(error, error_size, "");
     return 1;
 }

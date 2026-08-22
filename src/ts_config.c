@@ -32,6 +32,8 @@ void ts_config_init(TsConfig *config)
         config->record_silence_ms = TS_RECORD_SILENCE_MS_DEFAULT;
         config->record_tail_ms = TS_RECORD_TAIL_MS_DEFAULT;
         config->record_max_seconds = TS_RECORD_MAX_SECONDS_DEFAULT;
+        config->capture_auto_resize = 1;
+        config->capture_max_seconds = TS_CAPTURE_MAX_SECONDS_DEFAULT;
     }
 }
 
@@ -227,6 +229,10 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, TS_RECORD_TAIL_MS_MIN, TS_RECORD_TAIL_MS_MAX, &loaded.record_tail_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "record_max_seconds") == 0) {
             if (!parse_clamped_integer(value, TS_RECORD_MAX_SECONDS_MIN, TS_RECORD_MAX_SECONDS_MAX, &loaded.record_max_seconds)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "capture_auto_resize") == 0) {
+            if (!parse_boolean(value, &loaded.capture_auto_resize)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "capture_max_seconds") == 0) {
+            if (!parse_clamped_integer(value, TS_CAPTURE_MAX_SECONDS_MIN, TS_CAPTURE_MAX_SECONDS_MAX, &loaded.capture_max_seconds)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else {
             int dsp = parse_dsp_preset(key, value, &loaded);
             int cdp = dsp == 0 ? parse_cdp_preset(key, value, &loaded) : 0;
@@ -297,6 +303,11 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "record_tail_ms=%d\n"
                 "; Safety limit for one captured tile.\n"
                 "record_max_seconds=%d\n"
+                "\n[Internal Capture]\n"
+                "; Resize the armed blank tile to the completed Capture duration.\n"
+                "capture_auto_resize=%d\n"
+                "; Hard safety limit when automatic Capture resizing is enabled.\n"
+                "capture_max_seconds=%d\n"
                 "\n[DSP Presets]\n"
                 "; SAVE/UPDATE writes normalized macro values here.\n",
                 config->sample_path, config->fasttracker_path,
@@ -315,7 +326,9 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->record_preroll_ms,
                 config->record_silence_ms,
                 config->record_tail_ms,
-                config->record_max_seconds) < 0;
+                config->record_max_seconds,
+                config->capture_auto_resize ? 1 : 0,
+                config->capture_max_seconds) < 0;
     for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
         if (!config->dsp_factory_overridden[slot]) continue;
         write_failed = fprintf(file, "DspPreset%02d=%.9g,%.9g,%.9g,%.9g\n",

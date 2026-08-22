@@ -143,6 +143,7 @@ static float ts_multi_last_raw_mix;
 static int ts_multi_shift_pending;
 static int ts_multi_group_latched;
 static int ts_multi_capture_scaled;
+static int ts_multi_capture_requires_scaling;
 static int ts_multi_capture_trigger_ready;
 static int ts_multi_preserve_release_tails;
 static int ts_locked_tile_dim_percent = 38;
@@ -186,7 +187,8 @@ static int ts_multi_capture_source_matches(const TsCaptureRecorder *recorder,
 static TsUiBankAction ts_multi_bank_action(int right_button, unsigned modifiers)
 {
     if (!right_button && ts_multi_capture_recorder != NULL &&
-        ts_multi_capture_recorder->state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+        (ts_multi_capture_recorder->state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
+         ts_multi_capture_recorder->state == TS_CAPTURE_RECORDING) &&
         modifiers == TS_UI_BANK_MOD_SHIFT) {
         ts_multi_shift_pending = 1;
         return TS_UI_BANK_ACTION_AUDITION;
@@ -203,6 +205,7 @@ static int ts_multi_capture_arm(TsCaptureRecorder *recorder, int destination_slo
     ts_multi_capture_recorder = recorder;
     ts_multi_clear_group();
     ts_multi_capture_scaled = 0;
+    ts_multi_capture_requires_scaling = 0;
     ok = ts_capture_arm(recorder, destination_slot, capacity_frames, sample_rate,
                         error, error_size);
     if (!ok) ts_multi_capture_recorder = NULL;
@@ -224,8 +227,9 @@ static int ts_multi_capture_set_source(TsCaptureRecorder *recorder, int source_s
         uint16_t bit;
         int removing;
         ts_multi_shift_pending = 0;
-        if (recorder->state != TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
-            snprintf(error, error_size, "Capture is not waiting for source tiles");
+        if (recorder->state != TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+            recorder->state != TS_CAPTURE_RECORDING) {
+            snprintf(error, error_size, "Capture is not accepting source tiles");
             return 0;
         }
         if (source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT) {
@@ -243,9 +247,12 @@ static int ts_multi_capture_set_source(TsCaptureRecorder *recorder, int source_s
         else
             ts_multi_source_mask |= bit;
         ts_multi_group_latched = ts_multi_source_mask != 0u;
-        /* Keep one valid legacy token for Capture commit metadata and tuning;
-           note-trigger eligibility comes from the authoritative source mask. */
+        /* The mask is authoritative for note fan-out. source_slot mirrors its
+           first member for existing UI state; provenance survives an empty
+           live group so the completed take still has a valid parent tile. */
         recorder->source_slot = ts_first_source(ts_multi_source_mask);
+        if (recorder->source_slot >= 0)
+            recorder->provenance_slot = recorder->source_slot;
         if (removing)
             ts_performance_release_sources_after_pass(&ts_multi_performance, bit);
         if (error != NULL && error_size > 0u) error[0] = '\0';
@@ -273,13 +280,11 @@ static int ts_multi_capture_set_source(TsCaptureRecorder *recorder, int source_s
         ts_performance_clear(&ts_multi_performance);
         ts_multi_preserve_release_tails = 0;
     }
-    if (source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT)
-        recorder->source_slot = -1;
     if (!ts_capture_set_source(recorder, source_slot, error, error_size)) return 0;
     /* A plain click after a latched multi-source group intentionally falls
        through to main_sdl.c's established audition branch. That sounds the
        clicked tile at unity and, if Capture is armed, starts recording. */
-    return had_group ? 0 : 1;
+    return had_group || recorder->state == TS_CAPTURE_RECORDING ? 0 : 1;
 }
 
 static int ts_multi_capture_trigger(TsCaptureRecorder *recorder,
@@ -301,7 +306,7 @@ static int ts_multi_capture_trigger(TsCaptureRecorder *recorder,
 static void ts_multi_scale_capture_if_needed(TsCaptureRecorder *recorder)
 {
     if (recorder == NULL || ts_multi_capture_scaled ||
-        !ts_multi_group_latched || recorder->recorded_frames == 0u) return;
+        !ts_multi_capture_requires_scaling || recorder->recorded_frames == 0u) return;
     (void)ts_performance_peak_scale(recorder->buffer,
                                     recorder->recorded_frames, 0.98f);
     ts_multi_capture_scaled = 1;
@@ -326,8 +331,10 @@ static int ts_multi_capture_write_sample(TsCaptureRecorder *recorder, float samp
 {
     int completed;
     if (ts_multi_group_latched && recorder == ts_multi_capture_recorder &&
-        recorder != NULL && recorder->state == TS_CAPTURE_RECORDING)
+        recorder != NULL && recorder->state == TS_CAPTURE_RECORDING) {
         sample = ts_multi_last_raw_mix;
+        ts_multi_capture_requires_scaling = 1;
+    }
     completed = ts_capture_write_sample(recorder, sample);
     if (completed) ts_multi_scale_capture_if_needed(recorder);
     return completed;

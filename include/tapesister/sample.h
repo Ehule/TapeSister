@@ -789,7 +789,7 @@ int ts_instrument_capture_target_frames(const TsInstrument *instrument, int slot
 int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
                                  int source_slot, const float *captured,
                                  size_t recorded_frames, uint32_t capture_rate,
-                                 int stopped_early,
+                                 int stopped_early, int auto_resize,
                                  char *error, size_t error_size);
 int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size);

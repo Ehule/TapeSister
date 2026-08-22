@@ -1263,6 +1263,7 @@ static void arm_capture(SDL_AudioDeviceID device, AudioState *audio,
 {
     char error[160];
     size_t capacity = 0u;
+    uint64_t automatic_capacity;
     int destination = instrument->selected_slot;
     int ok;
     if (audio->capture.state != TS_CAPTURE_IDLE) {
@@ -1278,10 +1279,18 @@ static void arm_capture(SDL_AudioDeviceID device, AudioState *audio,
         snprintf(ui->status, sizeof(ui->status), "CAPTURE ARM FAILED: %.126s", error);
         return;
     }
+    if (ui->config.capture_auto_resize) {
+        automatic_capacity = (uint64_t)(uint32_t)output_rate *
+                             (uint64_t)ui->config.capture_max_seconds;
+        if (automatic_capacity > TS_CANVAS_MAX_FRAMES)
+            automatic_capacity = TS_CANVAS_MAX_FRAMES;
+        capacity = (size_t)automatic_capacity;
+    }
     stop_all_force(device, audio, ui);
     if (device) SDL_LockAudioDevice(device);
     ok = ts_capture_arm(&audio->capture, destination, capacity,
                         (uint32_t)output_rate, error, sizeof(error));
+    if (ok) audio->capture.auto_resize = ui->config.capture_auto_resize;
     if (device) SDL_UnlockAudioDevice(device);
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status), "CAPTURE ARM FAILED: %.126s", error);
@@ -1289,9 +1298,14 @@ static void arm_capture(SDL_AudioDeviceID device, AudioState *audio,
     }
     sync_capture_ui(device, audio, ui);
     show_overlay(ui, "CAPTURE ARMED", 850u);
-    snprintf(ui->status, sizeof(ui->status),
-             "TILE %02d ARMED %.3F S - SELECT SOURCE  PLAY/LOOP/NOTE STARTS",
-             destination + 1, (double)capacity / output_rate);
+    if (ui->config.capture_auto_resize)
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d ARMED AUTO UP TO %.3F S - SELECT SOURCE AND PERFORM",
+                 destination + 1, (double)capacity / output_rate);
+    else
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d ARMED %.3F S - SELECT SOURCE  PLAY/LOOP/NOTE STARTS",
+                 destination + 1, (double)capacity / output_rate);
 }
 
 static void cancel_capture(SDL_AudioDeviceID device, AudioState *audio,
@@ -1358,14 +1372,16 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
     int destination;
     int source;
     int stopped_early;
+    int auto_resize;
     size_t frames;
     uint32_t rate;
     int ok;
     int archived;
     if (audio->capture.state != TS_CAPTURE_COMPLETED) return;
     destination = audio->capture.destination_slot;
-    source = audio->capture.source_slot;
+    source = audio->capture.provenance_slot;
     stopped_early = audio->capture.stopped_early;
+    auto_resize = audio->capture.auto_resize;
     frames = audio->capture.recorded_frames;
     rate = audio->capture.sample_rate;
     archived = ts_capture_archive_write(
@@ -1374,7 +1390,8 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
         archive_path, sizeof(archive_path), archive_error, sizeof(archive_error));
     ok = ts_instrument_commit_capture(instrument, destination, source,
                                       audio->capture.buffer, frames, rate,
-                                      stopped_early, error, sizeof(error));
+                                      stopped_early, auto_resize,
+                                      error, sizeof(error));
     if (device) SDL_LockAudioDevice(device);
     ts_capture_free(&audio->capture);
     if (device) SDL_UnlockAudioDevice(device);
@@ -9561,13 +9578,9 @@ int main(int argc, char **argv)
                             int activated_silence = 0;
                             int attempted_silence = 0;
                             int capture_source_selected = 0;
-                            if (audio.capture.state == TS_CAPTURE_RECORDING) {
-                                snprintf(ui.status, sizeof(ui.status),
-                                         "CAPTURE RECORDING - SOURCE TILE %02d IS LOCKED",
-                                         audio.capture.source_slot + 1);
-                                continue;
-                            }
-                            if (audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+                            if ((audio.capture.state ==
+                                     TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
+                                 audio.capture.state == TS_CAPTURE_RECORDING) &&
                                 bank_slot == audio.capture.destination_slot) {
                                 snprintf(ui.status, sizeof(ui.status),
                                          "TILE %02d IS THE ARMED DESTINATION - SELECT ANOTHER SOURCE",
@@ -9579,7 +9592,9 @@ int main(int argc, char **argv)
                                 &instrument, bank_slot, action,
                                 select_error, sizeof(select_error));
                             if (selected &&
-                                audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER)
+                                (audio.capture.state ==
+                                     TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
+                                 audio.capture.state == TS_CAPTURE_RECORDING))
                                 capture_source_selected = ts_capture_set_source(
                                     &audio.capture, occupied ? bank_slot : -1,
                                     select_error, sizeof(select_error));
@@ -9601,9 +9616,13 @@ int main(int argc, char **argv)
                             if (capture_source_selected) {
                                 ui.audition_source = TS_AUDITION_CURRENT;
                                 ui.bank_view_slot = -1;
-                                snprintf(ui.status, sizeof(ui.status),
-                                         "SOURCE TILE %02d READY - STAGE OR PLAY TO START CAPTURE",
-                                         bank_slot + 1);
+                                if (audio.capture.state == TS_CAPTURE_RECORDING)
+                                    snprintf(ui.status, sizeof(ui.status),
+                                             "CAPTURE SOURCE GROUP UPDATED - RECORDING CONTINUES");
+                                else
+                                    snprintf(ui.status, sizeof(ui.status),
+                                             "SOURCE TILE %02d READY - STAGE OR PLAY TO START CAPTURE",
+                                             bank_slot + 1);
                             }
                             else if (activated_silence) {
                                 if (ui.workbench_loop_active &&
@@ -9652,8 +9671,9 @@ int main(int argc, char **argv)
                                          "SILENT TILE FAILED: %.132s", select_error);
                             }
                             else if (selected && !occupied &&
-                                    audio.capture.state ==
-                                        TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+                                    (audio.capture.state ==
+                                         TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
+                                     audio.capture.state == TS_CAPTURE_RECORDING) &&
                                     bank_modifiers(mod) == TS_UI_BANK_MOD_SHIFT) {
                                 /* Empty tiles cannot join a source group, but a
                                    rejected Shift-click must not stop its current

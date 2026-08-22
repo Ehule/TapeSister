@@ -55,6 +55,13 @@ record_tail_ms=180
 ; Hard safety limit for a single recorded tile.
 record_max_seconds=20
 
+[Internal Capture]
+; Resize the armed blank tile to the completed Capture duration. Set to 0 to
+; retain the blank canvas duration used when Capture is armed.
+capture_auto_resize=1
+; Hard safety limit for an automatically resized Capture tile (1-600 seconds).
+capture_max_seconds=20
+
 [DSP Presets]
 ; SAVE/UPDATE in a DSP Transform writes four normalized macro positions.
 ; Rows 01-16 are DSP1 PROCESS; rows 17-32 are DSP2 PRIMITIVES.

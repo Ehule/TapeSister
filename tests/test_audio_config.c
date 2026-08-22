@@ -21,7 +21,11 @@ static int test_defaults(void)
            expect(config.audio_output_device[0] == '\0',
                   "default output device should be system default") &&
            expect(config.record_input_channel == TS_RECORD_INPUT_CHANNEL_DEFAULT,
-                  "default input channel should remain channel 1");
+                  "default input channel should remain channel 1") &&
+           expect(config.capture_auto_resize == 1,
+                  "internal Capture auto resize should default on") &&
+           expect(config.capture_max_seconds == TS_CAPTURE_MAX_SECONDS_DEFAULT,
+                  "internal Capture should have a bounded default duration");
 }
 
 static int test_roundtrip(void)
@@ -38,6 +42,8 @@ static int test_roundtrip(void)
     snprintf(saved.audio_output_device, sizeof(saved.audio_output_device),
              "Test Playback Device");
     saved.record_input_channel = 2;
+    saved.capture_auto_resize = 0;
+    saved.capture_max_seconds = 47;
 
     ok = ts_audio_config_save(&saved, path, error, sizeof(error)) &&
          ts_audio_config_load(&loaded, path, error, sizeof(error));
@@ -52,7 +58,11 @@ static int test_roundtrip(void)
          expect(strcmp(loaded.audio_output_device, "Test Playback Device") == 0,
                 "named output device should roundtrip") &&
          expect(loaded.record_input_channel == 2,
-                "input channel should roundtrip");
+                "input channel should roundtrip") &&
+         expect(loaded.capture_auto_resize == 0,
+                "Capture auto resize should roundtrip") &&
+         expect(loaded.capture_max_seconds == 47,
+                "Capture duration limit should roundtrip");
     remove(path);
     return ok;
 }
