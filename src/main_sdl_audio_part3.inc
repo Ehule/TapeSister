@@ -136,7 +136,10 @@ static int ts_audio_main_config_load(TsConfig *config, const char *path,
                                      char *error, size_t error_size)
 {
     int ok = ts_audio_config_load(config, path, error, error_size);
-    if (ok) ts_live_config = config;
+    if (ok) {
+        ts_live_config = config;
+        ts_locked_tile_dim_percent = ts_parse_locked_tile_dim(path);
+    }
     return ok;
 }
 
@@ -146,6 +149,17 @@ static int ts_audio_main_config_save(const TsConfig *config, const char *path,
     char switch_error[160];
     int output_changed;
     if (!ts_audio_config_save(config, path, error, error_size)) return 0;
+    {
+        FILE *display = fopen(path, "ab");
+        if (display != NULL) {
+            fprintf(display,
+                    "\n[Display]\n"
+                    "; 0 leaves protected tiles unchanged; 90 is the darkest supported dim.\n"
+                    "locked_tile_dim_percent=%d\n",
+                    ts_locked_tile_dim_percent);
+            fclose(display);
+        }
+    }
     ts_live_config = (TsConfig *)config;
 
     output_changed = ts_real_output == 0 ||
