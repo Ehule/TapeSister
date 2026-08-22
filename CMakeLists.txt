@@ -6,7 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
-             src/ts_capture.c src/ts_capture_archive.c src/ts_input_monitor.c
+             src/ts_performance.c src/ts_capture.c src/ts_capture_archive.c src/ts_input_monitor.c
              src/ts_sample_pages.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
              src/ts_recipe.c src/ts_dsp_recipe.c
@@ -79,6 +79,10 @@ add_test(NAME tapesister_canvas_tests COMMAND tapesister_canvas_tests)
 add_executable(tapesister_capture_tests tests/test_capture.c)
 target_link_libraries(tapesister_capture_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_capture_tests COMMAND tapesister_capture_tests)
+
+add_executable(tapesister_performance_tests tests/test_performance.c)
+target_link_libraries(tapesister_performance_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_performance_tests COMMAND tapesister_performance_tests)
 
 add_executable(tapesister_external_record_tests tests/test_external_record.c)
 target_link_libraries(tapesister_external_record_tests PRIVATE tapesister_core)
