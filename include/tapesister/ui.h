@@ -269,6 +269,7 @@ typedef struct {
     TsCdpRecipeValues cdp_presets[TS_CDP_FACTORY_RECIPE_COUNT];
     TsDspRecipeValues dsp_presets[TS_DSP_FACTORY_RECIPE_COUNT];
     TsCaptureState capture_state;
+    int capture_overdub;
     int external_record_bank;
     int sample_page;
     int sample_page_count;
@@ -297,6 +298,11 @@ typedef struct {
     int renaming_bank_slot;
     int renaming_recipe_slot;
     int export_choice_open;
+    int overdub_confirm_open;
+    int overdub_confirm_slot;
+    int file_busy;
+    int file_busy_phase;
+    char file_busy_label[24];
     TsUiExchangeDialog exchange_dialog;
     TsExchangeLayout exchange_layout;
     int exchange_item_count;
@@ -503,6 +509,7 @@ TsUiTuneAction ts_ui_tune_action_from_point(int x, int y);
 TsUiWaveAction ts_ui_wave_action_from_point(int x, int y);
 TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y);
 int ts_ui_capture_button_from_point(int x, int y);
+int ts_ui_overdub_button_from_point(int x, int y);
 int ts_ui_new_page_button_from_point(int x, int y);
 int ts_ui_record_keep_button_from_point(int x, int y);
 int ts_ui_monitor_button_from_point(int x, int y);

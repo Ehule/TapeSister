@@ -50,6 +50,13 @@ static TsUiBankAction ts_multi_bank_action(int right_button, unsigned modifiers)
 static int ts_multi_capture_arm(TsCaptureRecorder *recorder, int destination_slot,
                                 size_t capacity_frames, uint32_t sample_rate,
                                 char *error, size_t error_size);
+static int ts_multi_capture_arm_overdub(TsCaptureRecorder *recorder,
+                                        int destination_slot,
+                                        size_t capacity_frames,
+                                        uint32_t sample_rate,
+                                        const float *base, size_t base_frames,
+                                        uint32_t base_rate,
+                                        char *error, size_t error_size);
 static int ts_multi_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
                                        char *error, size_t error_size);
 static int ts_multi_capture_trigger(TsCaptureRecorder *recorder,
@@ -93,6 +100,7 @@ static void ts_multi_note_sync(TsNoteBank *bank, const TsInstrument *instrument,
 #define ts_external_recorder_arm ts_audio_external_recorder_arm
 #define ts_ui_bank_action ts_multi_bank_action
 #define ts_capture_arm ts_multi_capture_arm
+#define ts_capture_arm_overdub ts_multi_capture_arm_overdub
 #define ts_capture_set_source ts_multi_capture_set_source
 #define ts_capture_trigger ts_multi_capture_trigger
 #define ts_capture_cancel ts_multi_capture_cancel
@@ -123,6 +131,7 @@ static void ts_multi_note_sync(TsNoteBank *bank, const TsInstrument *instrument,
 #undef ts_external_recorder_arm
 #undef ts_ui_bank_action
 #undef ts_capture_arm
+#undef ts_capture_arm_overdub
 #undef ts_capture_set_source
 #undef ts_capture_trigger
 #undef ts_capture_cancel
@@ -212,6 +221,26 @@ static int ts_multi_capture_arm(TsCaptureRecorder *recorder, int destination_slo
     return ok;
 }
 
+static int ts_multi_capture_arm_overdub(TsCaptureRecorder *recorder,
+                                        int destination_slot,
+                                        size_t capacity_frames,
+                                        uint32_t sample_rate,
+                                        const float *base, size_t base_frames,
+                                        uint32_t base_rate,
+                                        char *error, size_t error_size)
+{
+    int ok;
+    ts_multi_capture_recorder = recorder;
+    ts_multi_clear_group();
+    ts_multi_capture_scaled = 0;
+    ts_multi_capture_requires_scaling = 0;
+    ok = ts_capture_arm_overdub(recorder, destination_slot, capacity_frames,
+                                sample_rate, base, base_frames, base_rate,
+                                error, error_size);
+    if (!ok) ts_multi_capture_recorder = NULL;
+    return ok;
+}
+
 static int ts_multi_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
                                        char *error, size_t error_size)
 {
@@ -236,7 +265,7 @@ static int ts_multi_capture_set_source(TsCaptureRecorder *recorder, int source_s
             snprintf(error, error_size, "Invalid Capture source tile");
             return 0;
         }
-        if (source_slot == recorder->destination_slot) {
+        if (source_slot == recorder->destination_slot && !recorder->overdub) {
             snprintf(error, error_size, "Capture target cannot join its source group");
             return 0;
         }
@@ -305,7 +334,7 @@ static int ts_multi_capture_trigger(TsCaptureRecorder *recorder,
 
 static void ts_multi_scale_capture_if_needed(TsCaptureRecorder *recorder)
 {
-    if (recorder == NULL || ts_multi_capture_scaled ||
+    if (recorder == NULL || recorder->overdub || ts_multi_capture_scaled ||
         !ts_multi_capture_requires_scaling || recorder->recorded_frames == 0u) return;
     (void)ts_performance_peak_scale(recorder->buffer,
                                     recorder->recorded_frames, 0.98f);
