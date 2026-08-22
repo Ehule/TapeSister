@@ -218,7 +218,10 @@ static int ts_multi_capture_set_source(TsCaptureRecorder *recorder, int source_s
         else
             ts_multi_source_mask |= bit;
         ts_multi_group_latched = ts_multi_source_mask != 0u;
-        recorder->source_slot = ts_first_source(ts_multi_source_mask);
+        /* main_sdl.c starts Capture when its active tile matches source_slot.
+           Keep that legacy trigger token aligned with the tile just clicked;
+           the real source membership lives in ts_multi_source_mask. */
+        recorder->source_slot = ts_multi_source_mask != 0u ? source_slot : -1;
         ts_performance_clear(&ts_multi_performance);
         if (error != NULL && error_size > 0u) error[0] = '\0';
         return 1;
