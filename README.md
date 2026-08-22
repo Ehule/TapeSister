@@ -67,13 +67,20 @@ project-bundle, and hardware-validation details.
 ## Capture a performance to a new tile
 
 Capture prints TapeSister's final live audition mix into an independent Bank tile. In
-**BANK**, double-click an empty tile to make blank tape, set its capacity with the
-normal canvas controls, then click **CAPTURE**. Select a different occupied source
-tile and deliberately start its Play, Loop, playhead, or first keyboard note. Arming
+**BANK**, double-click an empty tile to make blank tape, then click **CAPTURE**. Select
+a different occupied source tile and deliberately start its Play, Loop, playhead, or
+first keyboard note. Arming
 stops any audition that was already sounding, so this new trigger starts both the
 performance and recording on frame zero without clipping its onset. The armed tile
 stays fixed while the source waveform, selection, loop, pitch, and other live
 performance gestures remain available.
+
+Shift-click occupied tiles to toggle any number of them into a temporary source
+group. QWERTY notes fan out across the complete group, including chords. Source-group
+editing stays live after recording begins: Shift-clicking a selected source unlatches
+it without truncating its current pass, and a plain tile click clears the group and
+immediately restarts the clicked tile through the normal audition path while Capture
+continues. The armed destination never joins or moves with the source group.
 
 With Capture armed, Shift-click up to five onscreen keys to assemble a silent staged
 chord; click any staged key normally to launch every voice sample-synchronously. With
@@ -86,6 +93,11 @@ The unedited realtime performance is first archived in `Captures/` with a
 `CAPTURE_YYYY-MM-DD_HHMMSS_mmm_...wav` name. This archive boundary applies only to
 completed realtime input and internal CAPTURE performances—not to edits, generated
 sounds, DSP/CDP renders, previews, or Undo states.
+
+`[Internal Capture]` in `tapesister.ini` controls duration handling. With
+`capture_auto_resize=1`, Capture records up to `capture_max_seconds` and resizes the
+destination to the completed performance length; set it to `0` to retain the blank
+canvas duration established before arming.
 
 Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse

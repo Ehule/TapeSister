@@ -21,7 +21,9 @@ typedef struct {
     uint32_t staged_notes;
     int destination_slot;
     int source_slot;
+    int provenance_slot;
     int stopped_early;
+    int auto_resize;
     _Atomic TsCaptureState state;
 } TsCaptureRecorder;
 

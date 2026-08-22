@@ -51,6 +51,9 @@ static void test_recorder_boundaries_and_states(void)
     CHECK(recorder.staged_notes == ((1u << 0) | (1u << 4)));
     CHECK(ts_capture_trigger(&recorder, error, sizeof(error)));
     CHECK(recorder.state == TS_CAPTURE_RECORDING && recorder.staged_notes == 0u);
+    CHECK(ts_capture_set_source(&recorder, 2, error, sizeof(error)));
+    CHECK(recorder.source_slot == 2 && recorder.provenance_slot == 2);
+    CHECK(!ts_capture_set_source(&recorder, 3, error, sizeof(error)));
     for (int frame = 0; frame < 3; ++frame) {
         CHECK(!ts_capture_write_sample(&recorder, samples[frame]));
         CHECK(recorder.recorded_frames == (size_t)frame + 1u);
@@ -239,7 +242,7 @@ static void test_target_commit_history_and_independence(void)
                                                &capacity, error, sizeof(error)));
     CHECK(capacity == 4u);
     CHECK(ts_instrument_commit_capture(&instrument, 1, 0, captured, 8, 48000,
-                                       0, error, sizeof(error)));
+                                       0, 0, error, sizeof(error)));
     CHECK(instrument.selected_slot == 1);
     CHECK(instrument.bank[1].capture_kind == TS_BANK_CAPTURE_PERFORMANCE);
     CHECK(instrument.bank[1].parent_slot == 0);
@@ -285,11 +288,38 @@ static void test_early_stop_and_cancel_leave_expected_target(void)
     CHECK(ts_sample_hash(&instrument.bank[1].sample) == before);
     ts_capture_free(&recorder);
     CHECK(ts_instrument_commit_capture(&instrument, 1, 0, captured, 4, 48000,
-                                       1, error, sizeof(error)));
+                                       1, 0, error, sizeof(error)));
     CHECK(instrument.current.frames == 4u);
     CHECK(instrument.has_loop == 0);
     CHECK(instrument.has_selection && instrument.selection_first == 0u &&
           instrument.selection_last == 4u);
+    ts_instrument_free(&instrument);
+}
+
+static void test_auto_resize_capture_expands_blank_target(void)
+{
+    TsInstrument instrument;
+    char error[160];
+    float captured[16];
+    uint64_t expanded_hash;
+    CHECK(prepare_source_and_blank(&instrument, 32, 8,
+                                   error, sizeof(error)));
+    for (size_t frame = 0; frame < 16u; ++frame)
+        captured[frame] = (float)frame / 20.0f;
+    CHECK(ts_instrument_commit_capture(&instrument, 1, 0,
+                                       captured, 16, 48000,
+                                       0, 1, error, sizeof(error)));
+    CHECK(instrument.current.frames == 16u);
+    CHECK(instrument.has_selection && instrument.selection_first == 0u &&
+          instrument.selection_last == 16u);
+    CHECK(fabsf(instrument.current.data[15] - captured[15]) < 0.0001f);
+    expanded_hash = ts_sample_hash(&instrument.current);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)));
+    CHECK(instrument.current.frames == 8u);
+    CHECK(ts_sample_peak(&instrument.current) == 0.0f);
+    CHECK(ts_instrument_redo(&instrument, error, sizeof(error)));
+    CHECK(instrument.current.frames == 16u);
+    CHECK(ts_sample_hash(&instrument.current) == expanded_hash);
     ts_instrument_free(&instrument);
 }
 
@@ -311,7 +341,7 @@ static void test_internal_synth_source_and_split_mix(void)
     CHECK(ts_capture_trigger(&recorder, error, sizeof(error)));
     ts_capture_free(&recorder);
     CHECK(ts_instrument_commit_capture(&instrument, 1, TS_CAPTURE_SOURCE_SYNTH,
-                                       captured, 8, 48000, 0,
+                                       captured, 8, 48000, 0, 0,
                                        error, sizeof(error)));
     CHECK(instrument.bank[1].parent_slot == TS_CAPTURE_SOURCE_SYNTH);
     CHECK(strstr(instrument.current.name, "SYNTH") != NULL);
@@ -425,6 +455,7 @@ int main(void)
     test_pitch_change_and_multiple_playheads_reach_capture();
     test_target_commit_history_and_independence();
     test_early_stop_and_cancel_leave_expected_target();
+    test_auto_resize_capture_expands_blank_target();
     test_internal_synth_source_and_split_mix();
     test_capture_feedback_rendering();
     if (failures != 0) {

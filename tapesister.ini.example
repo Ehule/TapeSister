@@ -14,6 +14,10 @@ startup_welcome_sample=1
 ; Audition the welcome tile once after the splash closes and audio is ready.
 startup_welcome_autoplay=1
 
+[Display]
+; Dim applied to protected tiles: 0 leaves them unchanged, 90 is darkest.
+locked_tile_dim_percent=38
+
 [Waveform]
 ; Snap clicked playheads to the nearest zero crossing. Set to 0 for exact clicks.
 playhead_zero_snap=1
@@ -50,6 +54,13 @@ record_silence_ms=650
 record_tail_ms=180
 ; Hard safety limit for a single recorded tile.
 record_max_seconds=20
+
+[Internal Capture]
+; Resize the armed blank tile to the completed Capture duration. Set to 0 to
+; retain the blank canvas duration used when Capture is armed.
+capture_auto_resize=1
+; Hard safety limit for an automatically resized Capture tile (1-600 seconds).
+capture_max_seconds=20
 
 [DSP Presets]
 ; SAVE/UPDATE in a DSP Transform writes four normalized macro positions.

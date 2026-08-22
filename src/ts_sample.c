@@ -6714,7 +6714,7 @@ int ts_instrument_capture_target_frames(const TsInstrument *instrument, int slot
 int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
                                  int source_slot, const float *captured,
                                  size_t recorded_frames, uint32_t capture_rate,
-                                 int stopped_early,
+                                 int stopped_early, int auto_resize,
                                  char *error, size_t error_size)
 {
     TsSample patch;
@@ -6730,13 +6730,14 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
     int synth_source;
     char name[128];
     synth_source = source_slot == TS_CAPTURE_SOURCE_SYNTH;
+    /* captured owns the rendered performance. Keep source_slot as provenance,
+       but do not require that tile to remain occupied after live source edits. */
     if (instrument == NULL || captured == NULL || recorded_frames == 0u ||
         capture_rate == 0u || destination_slot < 0 ||
         destination_slot >= TS_BANK_SLOT_COUNT ||
         (!synth_source && (source_slot < 0 ||
                            source_slot >= TS_BANK_SLOT_COUNT ||
-                           source_slot == destination_slot ||
-                           !instrument->bank[source_slot].occupied)) ||
+                           source_slot == destination_slot)) ||
         !ts_instrument_bank_is_blank_canvas(instrument, destination_slot) ||
         instrument->bank[destination_slot].locked) {
         set_error(error, error_size, "Invalid Capture source, destination, or audio");
@@ -6747,20 +6748,22 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
     if (!ts_instrument_select_bank(instrument, destination_slot,
                                    error, error_size)) return 0;
     target_frames = instrument->current.frames;
-    if (stopped_early) {
+    if (auto_resize || stopped_early) {
         long double converted = (long double)recorded_frames *
                                 (long double)instrument->current.sample_rate /
                                 (long double)capture_rate;
         if (converted < (long double)TS_CANVAS_MIN_FRAMES)
             target_frames = TS_CANVAS_MIN_FRAMES;
-        else if (converted < (long double)target_frames)
+        else if (converted > (long double)TS_CANVAS_MAX_FRAMES)
+            target_frames = TS_CANVAS_MAX_FRAMES;
+        else if (auto_resize || converted < (long double)target_frames)
             target_frames = (size_t)llroundl(converted);
         if (target_frames < TS_CANVAS_MIN_FRAMES)
             target_frames = TS_CANVAS_MIN_FRAMES;
-        if (target_frames > instrument->current.frames)
+        if (!auto_resize && target_frames > instrument->current.frames)
             target_frames = instrument->current.frames;
     }
-    operation_count = target_frames < instrument->current.frames ? 2 : 1;
+    operation_count = target_frames != instrument->current.frames ? 2 : 1;
     if (instrument->post_edit_count > TS_POST_EDIT_DEPTH - operation_count &&
         !compact_edit_graph(instrument, error, error_size)) return 0;
     if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
@@ -6778,10 +6781,12 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
     if (!append_audio_patch(instrument, &patch, NULL, &patch_index,
                             error, error_size)) return 0;
     target = snapshot(instrument);
-    if (target_frames < instrument->current.frames) {
+    if (target_frames != instrument->current.frames) {
         memset(&operation, 0, sizeof(operation));
         operation.kind = TS_POST_CANVAS_RIGHT_RESIZE;
-        operation.destination = -(int64_t)(instrument->current.frames - target_frames);
+        operation.destination = target_frames > instrument->current.frames ?
+            (int64_t)(target_frames - instrument->current.frames) :
+            -(int64_t)(instrument->current.frames - target_frames);
         target.post_edits[target.post_edit_count++] = operation;
     }
     memset(&operation, 0, sizeof(operation));

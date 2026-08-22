@@ -1,19 +1,3 @@
-            if (name == NULL || name[0] == '\0') continue;
-            made[kept] = ts_audio_name_copy(name);
-            if (made[kept] == NULL) {
-                for (int j = 0; j < kept; ++j) free(made[j]);
-                free(made);
-                return 0;
-            }
-            ++kept;
-        }
-    }
-    ts_audio_name_list_free(names, count);
-    *names = made;
-    *count = kept;
-    return 1;
-}
-
 static void ts_audio_catalog_refresh(void)
 {
     int input_ok = ts_audio_name_list_refresh(
