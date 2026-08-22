@@ -791,6 +791,13 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
                                  size_t recorded_frames, uint32_t capture_rate,
                                  int stopped_early, int auto_resize,
                                  char *error, size_t error_size);
+int ts_instrument_commit_overdub(TsInstrument *instrument, int destination_slot,
+                                 int source_slot,
+                                 const float *base, size_t base_frames,
+                                 uint32_t base_rate,
+                                 const float *captured, size_t recorded_frames,
+                                 uint32_t capture_rate, int auto_resize,
+                                 char *error, size_t error_size);
 int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size);
 int ts_instrument_bank_clear_all(TsInstrument *instrument,

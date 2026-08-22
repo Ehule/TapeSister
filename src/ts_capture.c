@@ -27,15 +27,19 @@ void ts_capture_init(TsCaptureRecorder *recorder)
 {
     if (recorder == NULL) return;
     recorder->buffer = NULL;
+    recorder->overdub_base = NULL;
     recorder->capacity_frames = 0u;
     recorder->recorded_frames = 0u;
+    recorder->overdub_base_frames = 0u;
     recorder->sample_rate = 0u;
+    recorder->overdub_base_rate = 0u;
     recorder->staged_notes = 0u;
     recorder->destination_slot = -1;
     recorder->source_slot = -1;
     recorder->provenance_slot = -1;
     recorder->stopped_early = 0;
     recorder->auto_resize = 0;
+    recorder->overdub = 0;
     atomic_init(&recorder->state, TS_CAPTURE_IDLE);
 }
 
@@ -43,6 +47,7 @@ void ts_capture_free(TsCaptureRecorder *recorder)
 {
     if (recorder == NULL) return;
     free(recorder->buffer);
+    free(recorder->overdub_base);
     ts_capture_init(recorder);
 }
 
@@ -63,12 +68,44 @@ int ts_capture_arm(TsCaptureRecorder *recorder, int destination_slot,
         return 0;
     }
     free(recorder->buffer);
+    free(recorder->overdub_base);
     ts_capture_init(recorder);
     recorder->buffer = buffer;
     recorder->capacity_frames = capacity_frames;
     recorder->sample_rate = sample_rate;
     recorder->destination_slot = destination_slot;
     recorder->state = TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_capture_arm_overdub(TsCaptureRecorder *recorder, int destination_slot,
+                           size_t capacity_frames, uint32_t sample_rate,
+                           const float *base, size_t base_frames,
+                           uint32_t base_rate,
+                           char *error, size_t error_size)
+{
+    float *copy;
+    if (base == NULL || base_frames == 0u || base_rate == 0u ||
+        base_frames > SIZE_MAX / sizeof(*copy)) {
+        set_error(error, error_size, "Invalid Overdub target audio");
+        return 0;
+    }
+    copy = (float *)malloc(base_frames * sizeof(*copy));
+    if (copy == NULL) {
+        set_error(error, error_size, "Out of memory snapshotting Overdub target");
+        return 0;
+    }
+    memcpy(copy, base, base_frames * sizeof(*copy));
+    if (!ts_capture_arm(recorder, destination_slot, capacity_frames, sample_rate,
+                        error, error_size)) {
+        free(copy);
+        return 0;
+    }
+    recorder->overdub_base = copy;
+    recorder->overdub_base_frames = base_frames;
+    recorder->overdub_base_rate = base_rate;
+    recorder->overdub = 1;
     set_error(error, error_size, "");
     return 1;
 }
@@ -87,7 +124,7 @@ int ts_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
         set_error(error, error_size, "Invalid Capture source tile");
         return 0;
     }
-    if (source_slot == recorder->destination_slot) {
+    if (source_slot == recorder->destination_slot && !recorder->overdub) {
         set_error(error, error_size, "Capture source cannot be its destination");
         return 0;
     }
@@ -138,7 +175,8 @@ int ts_capture_trigger(TsCaptureRecorder *recorder,
     }
     if ((recorder->source_slot < 0 &&
          recorder->source_slot != TS_CAPTURE_SOURCE_SYNTH) ||
-        recorder->source_slot == recorder->destination_slot) {
+        (recorder->source_slot == recorder->destination_slot &&
+         !recorder->overdub)) {
         set_error(error, error_size, "Select an occupied source tile first");
         return 0;
     }

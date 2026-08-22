@@ -5,6 +5,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int failures;
@@ -83,6 +84,125 @@ static void test_recorder_boundaries_and_states(void)
     CHECK(ts_capture_cancel(&recorder));
     CHECK(recorder.state == TS_CAPTURE_CANCELED);
     ts_capture_free(&recorder);
+
+    {
+        float base[4] = {0.1f, 0.2f, 0.3f, 0.4f};
+        ts_capture_init(&recorder);
+        CHECK(ts_capture_arm_overdub(&recorder, 2, 8, 48000,
+                                     base, 4, 48000,
+                                     error, sizeof(error)));
+        base[0] = -0.9f;
+        CHECK(recorder.overdub && recorder.overdub_base_frames == 4u);
+        CHECK(fabsf(recorder.overdub_base[0] - 0.1f) < 0.0001f);
+        CHECK(ts_capture_set_source(&recorder, 2, error, sizeof(error)));
+        CHECK(ts_capture_trigger(&recorder, error, sizeof(error)));
+        ts_capture_free(&recorder);
+    }
+}
+
+static int prepare_overdub_target(TsInstrument *instrument, size_t frames,
+                                  float value, char *error, size_t error_size)
+{
+    float *base;
+    int ok;
+    if (!prepare_source_and_blank(instrument, 32u, frames,
+                                  error, error_size)) return 0;
+    base = (float *)malloc(frames * sizeof(*base));
+    if (base == NULL) return 0;
+    for (size_t frame = 0; frame < frames; ++frame) base[frame] = value;
+    ok = ts_instrument_commit_capture(instrument, 1, 0, base, frames, 48000,
+                                      0, 0, error, error_size);
+    free(base);
+    if (!ok) return 0;
+    snprintf(instrument->current.name, sizeof(instrument->current.name),
+             "VOCAL BED");
+    instrument->tuning.root_note = 52;
+    instrument->tuning.fine_tune_cents = 11.0f;
+    instrument->audible_tuning = instrument->tuning;
+    instrument->has_loop = 1;
+    instrument->loop_first = 1u;
+    instrument->loop_last = frames - 1u;
+    return ts_instrument_select_bank(instrument, 0, error, error_size) &&
+           ts_instrument_select_bank(instrument, 1, error, error_size);
+}
+
+static void test_overdub_mix_growth_and_atomic_history(void)
+{
+    TsInstrument instrument;
+    char error[160];
+    float base[8];
+    float quiet[8];
+    float loud[8];
+    float longer[16];
+    uint64_t before_hash;
+    uint64_t overdub_hash;
+    int undo_before;
+
+    CHECK(prepare_overdub_target(&instrument, 8u, 0.2f,
+                                 error, sizeof(error)));
+    memcpy(base, instrument.current.data, sizeof(base));
+    for (size_t frame = 0; frame < 8u; ++frame) quiet[frame] = 0.3f;
+    before_hash = ts_sample_hash(&instrument.current);
+    undo_before = instrument.undo_count;
+    CHECK(ts_instrument_commit_overdub(&instrument, 1, 1,
+                                       base, 8u, 48000,
+                                       quiet, 8u, 48000, 0,
+                                       error, sizeof(error)));
+    CHECK(instrument.undo_count == undo_before + 1);
+    CHECK(instrument.current.frames == 8u);
+    CHECK(fabsf(instrument.current.data[0] - 0.5f) < 0.0001f);
+    CHECK(instrument.tuning.root_note == 52);
+    CHECK(fabsf(instrument.tuning.fine_tune_cents - 11.0f) < 0.0001f);
+    CHECK(instrument.has_loop && instrument.loop_first == 1u &&
+          instrument.loop_last == 7u);
+    overdub_hash = ts_sample_hash(&instrument.current);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) == before_hash);
+    CHECK(fabsf(instrument.current.data[0] - 0.2f) < 0.0001f);
+    CHECK(ts_instrument_redo(&instrument, error, sizeof(error)));
+    CHECK(ts_sample_hash(&instrument.current) == overdub_hash);
+    ts_instrument_free(&instrument);
+
+    CHECK(prepare_overdub_target(&instrument, 8u, 0.8f,
+                                 error, sizeof(error)));
+    memcpy(base, instrument.current.data, sizeof(base));
+    for (size_t frame = 0; frame < 8u; ++frame)
+        loud[frame] = (frame & 1u) == 0u ? 0.8f : 0.0f;
+    CHECK(ts_instrument_commit_overdub(&instrument, 1, 0,
+                                       base, 8u, 48000,
+                                       loud, 8u, 48000, 0,
+                                       error, sizeof(error)));
+    CHECK(fabsf(ts_sample_peak(&instrument.current) - 0.98f) < 0.0001f);
+    CHECK(fabsf(instrument.current.data[1] - 0.49f) < 0.0001f);
+    ts_instrument_free(&instrument);
+
+    CHECK(prepare_overdub_target(&instrument, 8u, 0.1f,
+                                 error, sizeof(error)));
+    memcpy(base, instrument.current.data, sizeof(base));
+    for (size_t frame = 0; frame < 16u; ++frame) longer[frame] = 0.2f;
+    CHECK(ts_instrument_commit_overdub(&instrument, 1, 0,
+                                       base, 8u, 48000,
+                                       longer, 16u, 48000, 1,
+                                       error, sizeof(error)));
+    CHECK(instrument.current.frames == 16u);
+    CHECK(fabsf(instrument.current.data[4] - 0.3f) < 0.0001f);
+    CHECK(fabsf(instrument.current.data[12] - 0.2f) < 0.0001f);
+    CHECK(ts_instrument_undo(&instrument, error, sizeof(error)));
+    CHECK(instrument.current.frames == 8u);
+    ts_instrument_free(&instrument);
+
+    CHECK(prepare_overdub_target(&instrument, 8u, 0.2f,
+                                 error, sizeof(error)));
+    memcpy(base, instrument.current.data, sizeof(base));
+    instrument.current.data[0] = 0.21f;
+    CHECK(ts_instrument_select_bank(&instrument, 0, error, sizeof(error)));
+    CHECK(ts_instrument_select_bank(&instrument, 1, error, sizeof(error)));
+    CHECK(!ts_instrument_commit_overdub(&instrument, 1, 0,
+                                        base, 8u, 48000,
+                                        quiet, 8u, 48000, 0,
+                                        error, sizeof(error)));
+    CHECK(strstr(error, "changed while armed") != NULL);
+    ts_instrument_free(&instrument);
 }
 
 static void test_staging_and_live_note_timing(void)
@@ -384,6 +504,7 @@ static void test_capture_feedback_rendering(void)
     ts_ui_init(&ui);
     CHECK(ts_ui_capture_button_from_point(540, 315));
     CHECK(!ts_ui_capture_button_from_point(531, 315));
+    CHECK(ts_ui_overdub_button_from_point(390, 315));
     CHECK(ts_ui_record_keep_button_from_point(410, 315));
     CHECK(ts_ui_monitor_button_from_point(470, 315));
     ts_ui_render(&idle, &ui, &instrument);
@@ -420,6 +541,23 @@ static void test_capture_feedback_rendering(void)
     CHECK(bank_armed.pixels[338 * TS_UI_WIDTH + 15] !=
           bank_idle.pixels[338 * TS_UI_WIDTH + 15]);
 
+    ui.overdub_confirm_open = 1;
+    ui.overdub_confirm_slot = 1;
+    ts_ui_render(&recording, &ui, &instrument);
+    ui.overdub_confirm_open = 0;
+    ts_ui_render(&staged, &ui, &instrument);
+    CHECK(recording.pixels[122 * TS_UI_WIDTH + 146] !=
+          staged.pixels[122 * TS_UI_WIDTH + 146]);
+
+    ui.file_busy = 1;
+    ui.file_busy_phase = 2;
+    snprintf(ui.file_busy_label, sizeof(ui.file_busy_label), "SAVING");
+    ts_ui_render(&recording, &ui, &instrument);
+    ui.file_busy = 0;
+    ts_ui_render(&staged, &ui, &instrument);
+    CHECK(recording.pixels[142 * TS_UI_WIDTH + 154] !=
+          staged.pixels[142 * TS_UI_WIDTH + 154]);
+
     ui.external_record_bank = 1;
     ui.input_meter_active = 1;
     ui.input_sample_rate = 48000u;
@@ -450,6 +588,7 @@ static void test_capture_feedback_rendering(void)
 int main(void)
 {
     test_recorder_boundaries_and_states();
+    test_overdub_mix_growth_and_atomic_history();
     test_staging_and_live_note_timing();
     test_live_selection_sync_reaches_capture();
     test_pitch_change_and_multiple_playheads_reach_capture();

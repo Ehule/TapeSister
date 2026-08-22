@@ -117,7 +117,8 @@ static void ts_multi_prune_sources(const TsInstrument *instrument)
         if ((ts_multi_source_mask & bit) == 0u) continue;
         if (instrument->bank[slot].occupied &&
             (ts_multi_capture_recorder == NULL ||
-             slot != ts_multi_capture_recorder->destination_slot))
+             slot != ts_multi_capture_recorder->destination_slot ||
+             ts_multi_capture_recorder->overdub))
             valid |= bit;
     }
     if (valid == ts_multi_source_mask) return;
