@@ -933,8 +933,11 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
     SDL_UnlockAudioDevice(device);
     if (capture_started) {
-        show_overlay(ui, "CAPTURE STARTED", 650u);
+        show_overlay(ui, audio->capture.overdub ?
+                     "OVERDUB STARTED" : "CAPTURE STARTED", 650u);
         snprintf(ui->status, sizeof(ui->status),
+                 audio->capture.overdub ?
+                 "OVERDUB RECORDING TILE %02d FROM %02d" :
                  "CAPTURE RECORDING TILE %02d FROM %02d",
                  audio->capture.destination_slot + 1,
                  audio->capture.source_slot + 1);
@@ -983,8 +986,11 @@ static void begin_playhead_audition(SDL_AudioDeviceID device, AudioState *audio,
         capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
     SDL_UnlockAudioDevice(device);
     if (capture_started) {
-        show_overlay(ui, "CAPTURE STARTED", 650u);
+        show_overlay(ui, audio->capture.overdub ?
+                     "OVERDUB STARTED" : "CAPTURE STARTED", 650u);
         snprintf(ui->status, sizeof(ui->status),
+                 audio->capture.overdub ?
+                 "OVERDUB RECORDING FROM PLAYHEAD %zu" :
                  "CAPTURE RECORDING FROM PLAYHEAD %zu", instrument->playhead_frame);
     } else
         snprintf(ui->status, sizeof(ui->status), "PLAYING FROM PLAYHEAD %zu",
@@ -1054,6 +1060,8 @@ static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
         } else ui->workbench_loop_active = 0;
     } else if (audio->capture.state == TS_CAPTURE_RECORDING)
         snprintf(ui->status, sizeof(ui->status),
+                 audio->capture.overdub ?
+                 "OVERDUB RECORDING %s LOOP TO TILE %02d" :
                  "CAPTURE RECORDING %s LOOP TO TILE %02d",
                  instrument->has_selection ? "SELECTION" : "VIEW",
                  audio->capture.destination_slot + 1);
@@ -1125,8 +1133,11 @@ static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
         snprintf(ui->status, sizeof(ui->status), "CHORD %d/%d - SHIFT+CLICK TO TOGGLE",
                  voice_count, TS_NOTE_VOICE_LIMIT);
     else if (capture_started) {
-        show_overlay(ui, "CAPTURE STARTED", 650u);
+        show_overlay(ui, audio->capture.overdub ?
+                     "OVERDUB STARTED" : "CAPTURE STARTED", 650u);
         snprintf(ui->status, sizeof(ui->status),
+                 audio->capture.overdub ?
+                 "OVERDUB RECORDING LIVE NOTES TO TILE %02d" :
                  "CAPTURE RECORDING LIVE NOTES TO TILE %02d",
                  audio->capture.destination_slot + 1);
     } else if (result == TS_NOTE_STARTED)
@@ -1180,8 +1191,11 @@ static void launch_staged_capture(SDL_AudioDeviceID device, AudioState *audio,
     }
     SDL_UnlockAudioDevice(device);
     if (started > 0) {
-        show_overlay(ui, "CAPTURE STARTED", 650u);
+        show_overlay(ui, audio->capture.overdub ?
+                     "OVERDUB STARTED" : "CAPTURE STARTED", 650u);
         snprintf(ui->status, sizeof(ui->status),
+                 audio->capture.overdub ?
+                 "OVERDUB RECORDING SYNCHRONIZED %d-NOTE CHORD" :
                  "CAPTURE RECORDING SYNCHRONIZED %d-NOTE CHORD", started);
     } else
         snprintf(ui->status, sizeof(ui->status),
@@ -1249,6 +1263,7 @@ static void sync_capture_ui(SDL_AudioDeviceID device, AudioState *audio,
 {
     if (device) SDL_LockAudioDevice(device);
     ui->capture_state = audio->capture.state;
+    ui->capture_overdub = audio->capture.overdub;
     ui->capture_destination_slot = audio->capture.destination_slot;
     ui->capture_source_slot = audio->capture.source_slot;
     ui->capture_recorded_frames = audio->capture.recorded_frames;
@@ -1308,11 +1323,122 @@ static void arm_capture(SDL_AudioDeviceID device, AudioState *audio,
                  destination + 1, (double)capacity / output_rate);
 }
 
+static void arm_overdub(SDL_AudioDeviceID device, AudioState *audio,
+                        TsUiState *ui, TsInstrument *instrument,
+                        int output_rate)
+{
+    const TsSample *target;
+    char error[160];
+    size_t capacity;
+    uint64_t automatic_capacity;
+    long double converted;
+    int destination = ui->overdub_confirm_slot;
+    int ok;
+    ui->overdub_confirm_open = 0;
+    ui->overdub_confirm_slot = -1;
+    if (audio->capture.state != TS_CAPTURE_IDLE) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "CANCEL OR FINISH THE CURRENT CAPTURE FIRST");
+        return;
+    }
+    if (destination < 0 || destination >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[destination].occupied ||
+        instrument->bank[destination].sample.data == NULL ||
+        instrument->bank[destination].sample.frames == 0u ||
+        instrument->bank[destination].sample.sample_rate == 0u) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "OVERDUB NEEDS AN OCCUPIED TARGET TILE");
+        return;
+    }
+    if (instrument->bank[destination].locked) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "OVERDUB TARGET IS LOCKED - UNLOCK TILE %02d FIRST",
+                 destination + 1);
+        return;
+    }
+    if (!ts_instrument_select_bank(instrument, destination,
+                                   error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "OVERDUB ARM FAILED: %.126s", error);
+        return;
+    }
+    target = &instrument->current;
+    converted = (long double)target->frames * (long double)output_rate /
+                (long double)target->sample_rate;
+    if (output_rate <= 0 || converted < 1.0L ||
+        converted > (long double)TS_CANVAS_MAX_FRAMES ||
+        converted > (long double)SIZE_MAX) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "OVERDUB TARGET DURATION IS UNAVAILABLE");
+        return;
+    }
+    capacity = (size_t)llroundl(converted);
+    if (capacity == 0u) capacity = 1u;
+    if (ui->config.capture_auto_resize) {
+        automatic_capacity = (uint64_t)(uint32_t)output_rate *
+                             (uint64_t)ui->config.capture_max_seconds;
+        if (automatic_capacity > TS_CANVAS_MAX_FRAMES)
+            automatic_capacity = TS_CANVAS_MAX_FRAMES;
+        if (automatic_capacity < capacity)
+            automatic_capacity = capacity;
+        capacity = (size_t)automatic_capacity;
+    }
+    stop_all_force(device, audio, ui);
+    if (device) SDL_LockAudioDevice(device);
+    ok = ts_capture_arm_overdub(&audio->capture, destination, capacity,
+                                (uint32_t)output_rate,
+                                target->data, target->frames,
+                                target->sample_rate,
+                                error, sizeof(error));
+    if (ok) audio->capture.auto_resize = ui->config.capture_auto_resize;
+    if (device) SDL_UnlockAudioDevice(device);
+    if (!ok) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "OVERDUB ARM FAILED: %.126s", error);
+        return;
+    }
+    sync_capture_ui(device, audio, ui);
+    show_overlay(ui, "OVERDUB ARMED", 850u);
+    if (ui->config.capture_auto_resize)
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d OVERDUB ARMED AUTO UP TO %.3F S - SELECT SOURCES",
+                 destination + 1, (double)capacity / output_rate);
+    else
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d OVERDUB ARMED %.3F S - SELECT SOURCES AND PERFORM",
+                 destination + 1, (double)capacity / output_rate);
+}
+
+static void begin_overdub_confirmation(TsUiState *ui,
+                                       const TsInstrument *instrument)
+{
+    int destination = instrument != NULL ? instrument->selected_slot : -1;
+    if (destination < 0 || destination >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[destination].occupied) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "SELECT AN OCCUPIED TILE TO OVERDUB");
+        return;
+    }
+    if (instrument->bank[destination].locked) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "OVERDUB TARGET IS LOCKED - UNLOCK TILE %02d FIRST",
+                 destination + 1);
+        return;
+    }
+    ui->overdub_confirm_open = 1;
+    ui->overdub_confirm_slot = destination;
+    snprintf(ui->status, sizeof(ui->status),
+             "CONFIRM OVERDUB INTO TILE %02d - ONE UNDO/REDO OPERATION",
+             destination + 1);
+}
+
 static void cancel_capture(SDL_AudioDeviceID device, AudioState *audio,
                            TsUiState *ui)
 {
     int canceled;
+    int overdub;
     if (device) SDL_LockAudioDevice(device);
+    overdub = audio->capture.overdub;
     canceled = ts_capture_cancel(&audio->capture);
     audio->playing = 0;
     audio->bank_slot = -1;
@@ -1324,8 +1450,10 @@ static void cancel_capture(SDL_AudioDeviceID device, AudioState *audio,
     ui->workbench_loop_persistent = 0;
     ui->active_notes = 0u;
     sync_capture_ui(device, audio, ui);
-    show_overlay(ui, "CAPTURE CANCELED", 950u);
-    snprintf(ui->status, sizeof(ui->status),
+    show_overlay(ui, overdub ? "OVERDUB CANCELED" : "CAPTURE CANCELED", 950u);
+    snprintf(ui->status, sizeof(ui->status), "%s",
+             overdub ?
+             "OVERDUB CANCELED - TARGET UNCHANGED" :
              "CAPTURE CANCELED - BLANK DESTINATION UNCHANGED");
 }
 
@@ -1345,7 +1473,8 @@ static void stop_capture_early(SDL_AudioDeviceID device, AudioState *audio,
     if (ok) {
         ui->workbench_loop_active = 0;
         ui->workbench_loop_persistent = 0;
-        snprintf(ui->status, sizeof(ui->status), "CAPTURE STOPPING - KEEPING AUDIO");
+        snprintf(ui->status, sizeof(ui->status), "%s STOPPING - KEEPING AUDIO",
+                 audio->capture.overdub ? "OVERDUB" : "CAPTURE");
     } else snprintf(ui->status, sizeof(ui->status), "CAPTURE STOP FAILED: %.126s", error);
 }
 
@@ -1359,6 +1488,8 @@ static void capture_button(SDL_AudioDeviceID device, AudioState *audio,
         stop_capture_early(device, audio, ui);
     else if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER)
         snprintf(ui->status, sizeof(ui->status),
+                 audio->capture.overdub ?
+                 "OVERDUB ARMED - SELECT SOURCES  STAGE OR PLAY  ESC CANCELS" :
                  "CAPTURE ARMED - SELECT SOURCE  STAGE OR PLAY  ESC CANCELS");
 }
 
@@ -1373,6 +1504,7 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
     int source;
     int stopped_early;
     int auto_resize;
+    int overdub;
     size_t frames;
     uint32_t rate;
     int ok;
@@ -1382,16 +1514,26 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
     source = audio->capture.provenance_slot;
     stopped_early = audio->capture.stopped_early;
     auto_resize = audio->capture.auto_resize;
+    overdub = audio->capture.overdub;
     frames = audio->capture.recorded_frames;
     rate = audio->capture.sample_rate;
     archived = ts_capture_archive_write(
         capture_archive_directory(), TS_CAPTURE_ARCHIVE_INTERNAL,
         audio->capture.buffer, frames, rate,
         archive_path, sizeof(archive_path), archive_error, sizeof(archive_error));
-    ok = ts_instrument_commit_capture(instrument, destination, source,
-                                      audio->capture.buffer, frames, rate,
-                                      stopped_early, auto_resize,
-                                      error, sizeof(error));
+    if (overdub)
+        ok = ts_instrument_commit_overdub(
+            instrument, destination, source,
+            audio->capture.overdub_base,
+            audio->capture.overdub_base_frames,
+            audio->capture.overdub_base_rate,
+            audio->capture.buffer, frames, rate, auto_resize,
+            error, sizeof(error));
+    else
+        ok = ts_instrument_commit_capture(instrument, destination, source,
+                                          audio->capture.buffer, frames, rate,
+                                          stopped_early, auto_resize,
+                                          error, sizeof(error));
     if (device) SDL_LockAudioDevice(device);
     ts_capture_free(&audio->capture);
     if (device) SDL_UnlockAudioDevice(device);
@@ -1403,13 +1545,20 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
         ui->bank_view_slot = -1;
         ui->audition_source = TS_AUDITION_CURRENT;
         snprintf(overlay, sizeof(overlay), "%s TILE %02d  %.3F S",
+                 overdub ? "OVERDUB COMPLETE" :
                  stopped_early ? "CAPTURE STOPPED" : "CAPTURE COMPLETE",
                  destination + 1, (double)frames / rate);
         show_overlay(ui, overlay, 1400u);
         if (!archived)
             snprintf(ui->status, sizeof(ui->status),
+                     overdub ?
+                     "OVERDUB KEPT IN TILE %02d - LAYER ARCHIVE FAILED: %.85s" :
                      "CAPTURE KEPT IN TILE %02d - ARCHIVE FAILED: %.92s",
                      destination + 1, archive_error);
+        else if (overdub)
+            snprintf(ui->status, sizeof(ui->status),
+                     "OVERDUB COMPLETE - TILE %02d  UNDO RESTORES ORIGINAL",
+                     destination + 1);
         else if (stopped_early)
             snprintf(ui->status, sizeof(ui->status),
                      "CAPTURE STOPPED - %.3F S KEPT IN TILE %02d",
@@ -1419,11 +1568,19 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
                      "CAPTURE COMPLETE - TILE %02d %.3F S",
                      destination + 1, (double)frames / rate);
     } else {
-        show_overlay(ui, archived ? "CAPTURE ARCHIVED" : "CAPTURE FAILED", 1200u);
-        snprintf(ui->status, sizeof(ui->status),
-                 archived ? "CAPTURE ARCHIVED - TILE COMMIT FAILED: %.104s" :
-                            "CAPTURE COMMIT AND ARCHIVE FAILED: %.102s",
-                 archived ? error : archive_error);
+        show_overlay(ui, archived ?
+                     (overdub ? "LAYER ARCHIVED" : "CAPTURE ARCHIVED") :
+                     (overdub ? "OVERDUB FAILED" : "CAPTURE FAILED"), 1200u);
+        if (overdub)
+            snprintf(ui->status, sizeof(ui->status),
+                     archived ? "OVERDUB LAYER ARCHIVED - COMMIT FAILED: %.101s" :
+                                "OVERDUB COMMIT AND ARCHIVE FAILED: %.102s",
+                     archived ? error : archive_error);
+        else
+            snprintf(ui->status, sizeof(ui->status),
+                     archived ? "CAPTURE ARCHIVED - TILE COMMIT FAILED: %.104s" :
+                                "CAPTURE COMMIT AND ARCHIVE FAILED: %.102s",
+                     archived ? error : archive_error);
     }
 }
 
@@ -5316,7 +5473,8 @@ static const char *path_basename(const char *path)
 
 static int ui_dialog_open(const TsUiState *ui)
 {
-    return ui->exit_confirm_open || ui->fm_open || ui->transform_open || ui->drone_open ||
+    return ui->exit_confirm_open || ui->overdub_confirm_open ||
+           ui->file_busy || ui->fm_open || ui->transform_open || ui->drone_open ||
            ui->load_selection_choice_open || ui->palette_open || ui->config_open ||
            ui->renaming_bank_slot >= 0 || ui->renaming_recipe_slot >= 0 ||
            ui->export_choice_open ||
@@ -5613,16 +5771,31 @@ static void apply_selection_load(SDL_AudioDeviceID device, AudioState *audio,
                  source_frames);
 }
 
+typedef struct {
+    TsBrowserMode mode;
+    char path[TS_BROWSER_PATH_MAX];
+    char filename[TS_BROWSER_NAME_MAX + 1];
+    int selection_load;
+    int active;
+    int presented;
+} PendingFileOperation;
+
 static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            TsInstrument *instrument, TsSample *pending_selection_load,
                            TsSamplePages *sample_pages,
                            TsInstrument *parked_record,
-                           int record_bank_active)
+                           int record_bank_active,
+                           PendingFileOperation *pending)
 {
     TsBrowser *browser = &ui->browser;
     char path[TS_BROWSER_PATH_MAX];
-    char error[160];
-    int ok = 0;
+    (void)device;
+    (void)audio;
+    (void)pending_selection_load;
+    (void)sample_pages;
+    (void)parked_record;
+    (void)record_bank_active;
+    if (pending == NULL || pending->active || ui->file_busy) return;
     if (browser->creating_directory) {
         (void)ts_browser_create_directory(browser);
         return;
@@ -5672,29 +5845,10 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             snprintf(browser->message, sizeof(browser->message), "SELECT A WAV OR TSR FILE");
             return;
         }
-        if (!path_is_tsr(path) && !path_is_tsp(path) &&
+        pending->selection_load =
+            !path_is_tsr(path) && !path_is_tsp(path) &&
             instrument->current.data != NULL && instrument->has_selection &&
-            instrument->selection_last > instrument->selection_first) {
-            ts_sample_free(pending_selection_load);
-            if (!ts_sample_load_wav(pending_selection_load, path,
-                                    error, sizeof(error))) {
-                snprintf(browser->message, sizeof(browser->message),
-                         "WAV LOAD FAILED: %.132s", error);
-                return;
-            }
-            snprintf(ui->load_selection_name, sizeof(ui->load_selection_name),
-                     "%s", pending_selection_load->name);
-            ui->load_selection_choice_open = 1;
-            ui->load_bank_slot = -1;
-            SDL_StopTextInput();
-            ts_browser_close(browser);
-            snprintf(ui->status, sizeof(ui->status),
-                     "CHOOSE PASTE, FIT, OR CANCEL FOR THE SELECTED RANGE");
-            return;
-        }
-        ok = load_instrument(device, audio, ui, instrument,
-                             sample_pages, parked_record,
-                             record_bank_active, path);
+            instrument->selection_last > instrument->selection_first;
     } else {
         if (!ts_browser_destination_path(browser, path, sizeof(path))) {
             snprintf(browser->message, sizeof(browser->message), "ENTER A VALID FILENAME");
@@ -5707,49 +5861,107 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         }
         if (ts_browser_path_exists(path) && !browser->overwrite_armed) {
             browser->overwrite_armed = 1;
-            snprintf(browser->message, sizeof(browser->message), "PRESS AGAIN TO OVERWRITE");
+            snprintf(browser->message, sizeof(browser->message),
+                     "CONFIRM OVERWRITE WITH THE HIGHLIGHTED BUTTON");
             return;
         }
-        if (browser->mode == TS_BROWSER_SAVE_RECIPE) {
-            const TsInstrument *active_sample = record_bank_active ? NULL : instrument;
-            const TsInstrument *record_bank = record_bank_active ?
-                                              instrument : parked_record;
-            ok = ts_sample_pages_save_project(
-                sample_pages, active_sample, record_bank,
-                path, error, sizeof(error));
-            if (ok)
-                ui->saved_state_hash = paged_project_state_hash(
-                    sample_pages, active_sample, record_bank);
-            snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
-                     "SAVE FAILED: %.135s", ok ? path : error);
-        } else if (browser->mode == TS_BROWSER_SAVE_PRESET) {
-            char name[TS_RECIPE_NAME_MAX + 1];
-            size_t length;
-            snprintf(name, sizeof(name), "%.31s", browser->filename);
-            length = strlen(name);
-            if (length > 4u && name[length - 4u] == '.') name[length - 4u] = '\0';
-            ok = save_preset_atomic(&instrument->process, &instrument->tuning,
-                                    &instrument->audible_tuning, name, path,
-                                    error, sizeof(error));
-            snprintf(ui->status, sizeof(ui->status), ok ? "SAVED PROCESS RECIPE %.99s" :
-                     "TSP SAVE FAILED: %.131s", ok ? path : error);
-        } else if (browser->mode == TS_BROWSER_EXPORT_WAV) {
-            ok = export_wav_atomic(&instrument->current, &instrument->tuning,
-                                   instrument->has_loop,
-                                   instrument->loop_first, instrument->loop_last,
-                                   instrument->loop_mode,
-                                   path, error, sizeof(error));
-            snprintf(ui->status, sizeof(ui->status), ok ? "EXPORTED SELECTED TILE %.101s" :
-                     "EXPORT FAILED: %.133s", ok ? path : error);
-        } else {
-            ok = ts_instrument_export_bank(instrument, path, error, sizeof(error));
-            if (ok) snprintf(ui->status, sizeof(ui->status),
-                             "EXPORTED %d-SAMPLE COLLECTION %.84s",
-                             ts_instrument_bank_count(instrument), path);
-            else snprintf(ui->status, sizeof(ui->status),
-                          "BANK EXPORT FAILED: %.128s", error);
-        }
     }
+    pending->mode = browser->mode;
+    snprintf(pending->path, sizeof(pending->path), "%s", path);
+    snprintf(pending->filename, sizeof(pending->filename), "%s",
+             browser->filename);
+    pending->active = 1;
+    pending->presented = 0;
+    ui->file_busy = 1;
+    ui->file_busy_phase = 2;
+    snprintf(ui->file_busy_label, sizeof(ui->file_busy_label), "%s",
+             browser->mode == TS_BROWSER_LOAD_WAV ? "OPENING" :
+             (browser->mode == TS_BROWSER_SAVE_RECIPE ||
+              browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVING" : "EXPORTING");
+    snprintf(browser->message, sizeof(browser->message), "%s - PLEASE WAIT",
+             ui->file_busy_label);
+    snprintf(ui->status, sizeof(ui->status), "%s %.124s",
+             ui->file_busy_label, path_basename(path));
+}
+
+static void run_pending_file_operation(SDL_AudioDeviceID device,
+                                       AudioState *audio, TsUiState *ui,
+                                       TsInstrument *instrument,
+                                       TsSample *pending_selection_load,
+                                       TsSamplePages *sample_pages,
+                                       TsInstrument *parked_record,
+                                       int record_bank_active,
+                                       PendingFileOperation *pending)
+{
+    TsBrowser *browser = &ui->browser;
+    char error[160];
+    int ok = 0;
+    if (pending == NULL || !pending->active) return;
+    if (pending->mode == TS_BROWSER_LOAD_WAV && pending->selection_load) {
+        ts_sample_free(pending_selection_load);
+        ok = ts_sample_load_wav(pending_selection_load, pending->path,
+                                error, sizeof(error));
+        if (ok) {
+            snprintf(ui->load_selection_name, sizeof(ui->load_selection_name),
+                     "%s", pending_selection_load->name);
+            ui->load_selection_choice_open = 1;
+            ui->load_bank_slot = -1;
+            snprintf(ui->status, sizeof(ui->status),
+                     "CHOOSE PASTE, FIT, OR CANCEL FOR THE SELECTED RANGE");
+        } else
+            snprintf(ui->status, sizeof(ui->status),
+                     "WAV LOAD FAILED: %.132s", error);
+    } else if (pending->mode == TS_BROWSER_LOAD_WAV) {
+        ok = load_instrument(device, audio, ui, instrument,
+                             sample_pages, parked_record,
+                             record_bank_active, pending->path);
+    } else if (pending->mode == TS_BROWSER_SAVE_RECIPE) {
+        const TsInstrument *active_sample = record_bank_active ? NULL : instrument;
+        const TsInstrument *record_bank = record_bank_active ?
+                                          instrument : parked_record;
+        ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
+                                          pending->path, error, sizeof(error));
+        if (ok)
+            ui->saved_state_hash = paged_project_state_hash(
+                sample_pages, active_sample, record_bank);
+        snprintf(ui->status, sizeof(ui->status), ok ? "SAVED TSR PROJECT %.104s" :
+                 "SAVE FAILED: %.135s", ok ? pending->path : error);
+    } else if (pending->mode == TS_BROWSER_SAVE_PRESET) {
+        char name[TS_RECIPE_NAME_MAX + 1];
+        size_t length;
+        snprintf(name, sizeof(name), "%.31s", pending->filename);
+        length = strlen(name);
+        if (length > 4u && name[length - 4u] == '.') name[length - 4u] = '\0';
+        ok = save_preset_atomic(&instrument->process, &instrument->tuning,
+                                &instrument->audible_tuning, name, pending->path,
+                                error, sizeof(error));
+        snprintf(ui->status, sizeof(ui->status), ok ?
+                 "SAVED PROCESS RECIPE %.99s" : "TSP SAVE FAILED: %.131s",
+                 ok ? pending->path : error);
+    } else if (pending->mode == TS_BROWSER_EXPORT_WAV) {
+        ok = export_wav_atomic(&instrument->current, &instrument->tuning,
+                               instrument->has_loop,
+                               instrument->loop_first, instrument->loop_last,
+                               instrument->loop_mode,
+                               pending->path, error, sizeof(error));
+        snprintf(ui->status, sizeof(ui->status), ok ?
+                 "EXPORTED SELECTED TILE %.101s" : "EXPORT FAILED: %.133s",
+                 ok ? pending->path : error);
+    } else if (pending->mode == TS_BROWSER_EXPORT_BANK) {
+        ok = ts_instrument_export_bank(instrument, pending->path,
+                                       error, sizeof(error));
+        if (ok)
+            snprintf(ui->status, sizeof(ui->status),
+                     "EXPORTED %d-SAMPLE COLLECTION %.84s",
+                     ts_instrument_bank_count(instrument), pending->path);
+        else
+            snprintf(ui->status, sizeof(ui->status),
+                     "BANK EXPORT FAILED: %.128s", error);
+    }
+    pending->active = 0;
+    pending->presented = 0;
+    ui->file_busy = 0;
+    ui->file_busy_label[0] = '\0';
     if (ok) {
         SDL_StopTextInput();
         ts_browser_close(browser);
@@ -5764,7 +5976,8 @@ static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *aud
                                        TsSample *pending_selection_load,
                                        TsSamplePages *sample_pages,
                                        TsInstrument *parked_record,
-                                       int record_bank_active)
+                                       int record_bank_active,
+                                       PendingFileOperation *pending)
 {
     TsBrowser *browser = &ui->browser;
     if (browser->selected >= 0 && browser->selected < browser->entry_count &&
@@ -5774,7 +5987,7 @@ static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *aud
         return;
     }
     browser_action(device, audio, ui, instrument, pending_selection_load,
-                   sample_pages, parked_record, record_bank_active);
+                   sample_pages, parked_record, record_bank_active, pending);
 }
 
 static void logical_mouse(SDL_Window *window, int raw_x, int raw_y, int *x, int *y)
@@ -6877,6 +7090,7 @@ int main(int argc, char **argv)
     FmBankHistory fm_bank_history;
     TsExchangeOffer exchange_offer;
     TransformController transform;
+    PendingFileOperation pending_file = {0};
     size_t clipboard_origin_first = 0;
     size_t clipboard_source_frames = 0;
     uint32_t clipboard_source_rate = 0;
@@ -7137,6 +7351,11 @@ int main(int argc, char **argv)
     while (running) {
         SDL_Event event;
         Uint64 frame_started = SDL_GetPerformanceCounter();
+        if (pending_file.active && pending_file.presented)
+            run_pending_file_operation(device, &audio, &ui, &instrument,
+                                       &pending_selection_load, &sample_pages,
+                                       parked_instrument, record_bank_active,
+                                       &pending_file);
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_DROPFILE && ui.amplitude_gesture.active)
                 end_amplitude_draw(device, &audio, &ui, &instrument, 1);
@@ -7185,7 +7404,7 @@ int main(int argc, char **argv)
                       ui.fm_open ||
                       ui.transform_open ||
                       ui.drone_open ||
-                      ui.exit_confirm_open ||
+                      ui.exit_confirm_open || ui.overdub_confirm_open ||
                       ui.browser.mode != TS_BROWSER_CLOSED)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
@@ -7336,6 +7555,15 @@ int main(int argc, char **argv)
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
                                key == SDLK_y) {
                         running = 0;
+                    }
+                } else if (ui.overdub_confirm_open) {
+                    if (key == SDLK_ESCAPE || key == SDLK_n) {
+                        ui.overdub_confirm_open = 0;
+                        ui.overdub_confirm_slot = -1;
+                        snprintf(ui.status, sizeof(ui.status), "OVERDUB CANCELLED");
+                    } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
+                               key == SDLK_y) {
+                        arm_overdub(device, &audio, &ui, &instrument, obtained.freq);
                     }
                 } else if (ui.fm_open) {
                     int fm_note = note_for_key(key);
@@ -7681,7 +7909,7 @@ int main(int argc, char **argv)
                         browser_activate_selection(device, &audio, &ui, &instrument,
                                                    &pending_selection_load,
                                                    &sample_pages, parked_instrument,
-                                                   record_bank_active);
+                                                   record_bank_active, &pending_file);
                     }
                 } else if (key >= SDLK_F1 && key <= SDLK_F8) {
                     int octave = ts_ui_keyboard_set_octave(&ui, (int)(key - SDLK_F1));
@@ -8146,6 +8374,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.export_choice_open ||
+                        ui.overdub_confirm_open || ui.file_busy ||
                         ui.exchange_dialog != TS_UI_EXCHANGE_NONE ||
                         ui.load_selection_choice_open ||
                         ui.fm_open ||
@@ -8527,6 +8756,7 @@ int main(int argc, char **argv)
                        !ui.fm_open &&
                        !ui.transform_open &&
                        !ui.drone_open &&
+                       !ui.overdub_confirm_open && !ui.file_busy &&
                        ui.browser.mode == TS_BROWSER_CLOSED) {
                 int x, y;
                 int recipe_slot;
@@ -8592,6 +8822,14 @@ int main(int argc, char **argv)
                     } else if (x >= 324 && x < 468 && y >= 188 && y < 211) {
                         ui.exit_confirm_open = 0;
                         snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
+                    }
+                } else if (ui.overdub_confirm_open) {
+                    if (x >= 166 && x < 302 && y >= 200 && y < 223)
+                        arm_overdub(device, &audio, &ui, &instrument, obtained.freq);
+                    else if (x >= 318 && x < 474 && y >= 200 && y < 223) {
+                        ui.overdub_confirm_open = 0;
+                        ui.overdub_confirm_slot = -1;
+                        snprintf(ui.status, sizeof(ui.status), "OVERDUB CANCELLED");
                     }
                 } else if (ui.fm_open) {
                     if (ui.fm_bank_choice_open) {
@@ -8978,7 +9216,7 @@ int main(int argc, char **argv)
                             browser_activate_selection(device, &audio, &ui, &instrument,
                                                        &pending_selection_load,
                                                        &sample_pages, parked_instrument,
-                                                       record_bank_active);
+                                                       record_bank_active, &pending_file);
                     } else if (x >= TS_BROWSER_SCROLL_X &&
                                x < TS_BROWSER_SCROLL_X + TS_BROWSER_SCROLL_W &&
                                y >= TS_BROWSER_LIST_Y &&
@@ -9028,7 +9266,7 @@ int main(int argc, char **argv)
                         browser_action(device, &audio, &ui, &instrument,
                                        &pending_selection_load,
                                        &sample_pages, parked_instrument,
-                                       record_bank_active);
+                                       record_bank_active, &pending_file);
                     } else if (x >= 349 && x < 433 && y >= 326 && y < 349) {
                         browser_cancel(&ui);
                     }
@@ -9485,6 +9723,10 @@ int main(int argc, char **argv)
                     int capture_control = !ui.show_keyboard && !ui.show_recipes &&
                                           !ui.show_ingredients &&
                                           ts_ui_capture_button_from_point(x, y);
+                    int overdub_control = !record_bank_active &&
+                                          !ui.show_keyboard && !ui.show_recipes &&
+                                          !ui.show_ingredients &&
+                                          ts_ui_overdub_button_from_point(x, y);
                     int new_page_control = !record_bank_active &&
                                            !ui.show_keyboard && !ui.show_recipes &&
                                            !ui.show_ingredients &&
@@ -9545,6 +9787,12 @@ int main(int argc, char **argv)
                         (void)append_sample_page(device, &external_input,
                                                  &audio, &ui, &instrument,
                                                  &sample_pages, &transform);
+                    } else if (overdub_control) {
+                        if (audio.capture.state != TS_CAPTURE_IDLE)
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "FINISH OR CANCEL THE CURRENT CAPTURE FIRST");
+                        else
+                            begin_overdub_confirmation(&ui, &instrument);
                     } else if (capture_control) {
                         if (record_bank_active)
                             external_capture_button(device, &input_device, &audio,
@@ -9583,7 +9831,8 @@ int main(int argc, char **argv)
                             if ((audio.capture.state ==
                                      TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
                                  audio.capture.state == TS_CAPTURE_RECORDING) &&
-                                bank_slot == audio.capture.destination_slot) {
+                                bank_slot == audio.capture.destination_slot &&
+                                !audio.capture.overdub) {
                                 snprintf(ui.status, sizeof(ui.status),
                                          "TILE %02d IS THE ARMED DESTINATION - SELECT ANOTHER SOURCE",
                                          bank_slot + 1);
@@ -9755,6 +10004,7 @@ int main(int argc, char **argv)
                        !ui.load_selection_choice_open &&
                        !ui.transform_open &&
                        !ui.drone_open &&
+                       !ui.overdub_confirm_open && !ui.file_busy &&
                        ui.browser.mode == TS_BROWSER_CLOSED) {
                 int x, y;
                 int bank_slot;
@@ -10020,6 +10270,8 @@ int main(int argc, char **argv)
         }
         if (device) SDL_UnlockAudioDevice(device);
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
+        if (ui.file_busy)
+            ui.file_busy_phase = (int)((SDL_GetTicks() / 180u) % 4u);
         if (!window_minimized) {
             ts_ui_render(&framebuffer, &ui, &instrument);
             if (update_texture_damage(texture, &framebuffer, frame_snapshot,
@@ -10030,6 +10282,8 @@ int main(int argc, char **argv)
                 SDL_RenderPresent(renderer);
             }
         }
+        if (pending_file.active && !pending_file.presented)
+            pending_file.presented = 1;
         if (window_minimized || !renderer_vsync || !frame_snapshot_valid)
             pace_frame_60hz(frame_started);
     }

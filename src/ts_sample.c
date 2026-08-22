@@ -6843,6 +6843,163 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
     return 1;
 }
 
+int ts_instrument_commit_overdub(TsInstrument *instrument, int destination_slot,
+                                 int source_slot,
+                                 const float *base, size_t base_frames,
+                                 uint32_t base_rate,
+                                 const float *captured, size_t recorded_frames,
+                                 uint32_t capture_rate, int auto_resize,
+                                 char *error, size_t error_size)
+{
+    TsSample patch;
+    TsSample current;
+    TsEditSnapshot target;
+    TsPostEdit operation;
+    TsBankSlot *destination;
+    float *mixed = NULL;
+    float peak = 0.0f;
+    float gain = 1.0f;
+    uint32_t patch_index;
+    size_t layer_frames;
+    size_t target_frames;
+    int operation_count;
+    char name[128];
+
+    if (instrument == NULL || base == NULL || captured == NULL ||
+        base_frames == 0u || recorded_frames == 0u || base_rate == 0u ||
+        capture_rate == 0u || destination_slot < 0 ||
+        destination_slot >= TS_BANK_SLOT_COUNT ||
+        (source_slot != TS_CAPTURE_SOURCE_SYNTH &&
+         (source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT)) ||
+        !instrument->bank[destination_slot].occupied ||
+        instrument->bank[destination_slot].locked) {
+        set_error(error, error_size, "Invalid Overdub target, source, or audio");
+        return 0;
+    }
+    if (!ts_instrument_select_bank(instrument, destination_slot,
+                                   error, error_size)) return 0;
+    if (instrument->current.data == NULL ||
+        instrument->current.frames != base_frames ||
+        instrument->current.sample_rate != base_rate ||
+        memcmp(instrument->current.data, base,
+               base_frames * sizeof(*base)) != 0) {
+        set_error(error, error_size,
+                  "Overdub target changed while armed - target left unchanged");
+        return 0;
+    }
+
+    {
+        long double converted = (long double)recorded_frames *
+                                (long double)base_rate /
+                                (long double)capture_rate;
+        if (converted > (long double)TS_CANVAS_MAX_FRAMES)
+            layer_frames = TS_CANVAS_MAX_FRAMES;
+        else {
+            layer_frames = (size_t)llroundl(converted);
+            if (layer_frames == 0u) layer_frames = 1u;
+        }
+    }
+    target_frames = base_frames;
+    if (auto_resize && layer_frames > target_frames)
+        target_frames = layer_frames;
+    if (target_frames > TS_CANVAS_MAX_FRAMES)
+        target_frames = TS_CANVAS_MAX_FRAMES;
+    if (target_frames > SIZE_MAX / sizeof(*mixed)) {
+        set_error(error, error_size, "Overdub result is too large");
+        return 0;
+    }
+    mixed = (float *)calloc(target_frames, sizeof(*mixed));
+    if (mixed == NULL) {
+        set_error(error, error_size, "Out of memory mixing Overdub");
+        return 0;
+    }
+    for (size_t frame = 0; frame < target_frames; ++frame) {
+        float value = frame < base_frames && isfinite(base[frame]) ?
+                      base[frame] : 0.0f;
+        if (frame < layer_frames) {
+            double position = (double)frame * (double)capture_rate /
+                              (double)base_rate;
+            size_t at = (size_t)position;
+            double fraction = position - (double)at;
+            float a;
+            float b;
+            if (at >= recorded_frames) at = recorded_frames - 1u;
+            a = isfinite(captured[at]) ? captured[at] : 0.0f;
+            b = at + 1u < recorded_frames && isfinite(captured[at + 1u]) ?
+                captured[at + 1u] : a;
+            value += a + (b - a) * (float)fraction;
+        }
+        mixed[frame] = value;
+        if (fabsf(value) > peak) peak = fabsf(value);
+    }
+    if (peak > 0.98f) {
+        gain = 0.98f / peak;
+        for (size_t frame = 0; frame < target_frames; ++frame)
+            mixed[frame] *= gain;
+    }
+
+    operation_count = target_frames != instrument->current.frames ? 2 : 1;
+    if (instrument->post_edit_count > TS_POST_EDIT_DEPTH - operation_count &&
+        !compact_edit_graph(instrument, error, error_size)) {
+        free(mixed);
+        return 0;
+    }
+    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) {
+        free(mixed);
+        return 0;
+    }
+    ts_sample_init(&patch);
+    patch.data = mixed;
+    patch.frames = target_frames;
+    patch.sample_rate = base_rate;
+    snprintf(name, sizeof(name), "%s", instrument->current.name);
+    snprintf(patch.name, sizeof(patch.name), "%s", name);
+    if (!append_audio_patch(instrument, &patch, NULL, &patch_index,
+                            error, error_size)) {
+        free(mixed);
+        return 0;
+    }
+    free(mixed);
+    target = snapshot(instrument);
+    if (target_frames != instrument->current.frames) {
+        memset(&operation, 0, sizeof(operation));
+        operation.kind = TS_POST_CANVAS_RIGHT_RESIZE;
+        operation.destination = (int64_t)(target_frames - instrument->current.frames);
+        target.post_edits[target.post_edit_count++] = operation;
+    }
+    memset(&operation, 0, sizeof(operation));
+    operation.kind = TS_POST_PATCH_FIT;
+    operation.first = 0u;
+    operation.last = target_frames;
+    operation.patch_index = patch_index;
+    target.post_edits[target.post_edit_count++] = operation;
+    target.selection_first = 0u;
+    target.selection_last = target_frames;
+    target.has_selection = 1;
+    target.playhead_frame = 0u;
+    target.has_playhead = 0;
+    target.view_first = 0u;
+    target.view_last = target_frames;
+    ts_sample_init(&current);
+    if (!render_snapshot(&current, instrument, &target, error, error_size)) {
+        discard_last_audio_patch(instrument, patch_index);
+        return 0;
+    }
+    snprintf(current.name, sizeof(current.name), "%s", name);
+    if (!commit_post_snapshot(instrument, &target, &current,
+                              error, error_size)) {
+        ts_sample_free(&current);
+        return 0;
+    }
+    instrument->source_kind = TS_SOURCE_COMMITTED;
+    destination = &instrument->bank[destination_slot];
+    destination->capture_kind = TS_BANK_CAPTURE_PERFORMANCE;
+    destination->lineage_seed = (uint32_t)ts_sample_hash(&destination->sample);
+    if (!bank_sync_selected(instrument, error, error_size)) return 0;
+    set_error(error, error_size, "");
+    return 1;
+}
+
 int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size)
 {

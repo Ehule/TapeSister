@@ -411,7 +411,8 @@ static uint32_t family_relation_color(TsFamilyRelation relation)
     return PAL_NOTE;
 }
 
-static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int cursor_visible)
+static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
+                           int cursor_visible, int file_busy)
 {
     char shown[96];
     char footer[40];
@@ -490,16 +491,18 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser, int curs
                browser->creating_directory ? "BACK" : "NEW DIR",
                browser->creating_directory);
     button(fb, 224, 326, 120,
+           file_busy ? "PLEASE WAIT" :
+           browser->overwrite_armed ? "OVERWRITE?" :
            browser->creating_directory ? "CREATE" :
            ts_browser_mode_selects_directory(browser->mode) ? "USE FOLDER" :
            browser->mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE ? "USE FILE" :
            browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
            (browser->mode == TS_BROWSER_SAVE_RECIPE ||
             browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVE" : "EXPORT",
-           browser->overwrite_armed || browser->creating_directory);
+           file_busy || browser->overwrite_armed || browser->creating_directory);
     button(fb, 349, 326, 84, "CANCEL", 0);
     snprintf(footer, sizeof(footer), "%.24s", browser->overwrite_armed ?
-             "PRESS AGAIN TO OVERWRITE" : browser->message);
+             "CONFIRM FILE OVERWRITE" : browser->message);
     text(fb, 441, 334, footer,
          browser->overwrite_armed ? PAL_VOLUME : RGB(190, 185, 190), 1);
 }
@@ -1167,6 +1170,7 @@ void ts_ui_init(TsUiState *ui)
     ui->drone_source_slot = -1;
     ui->capture_destination_slot = -1;
     ui->capture_source_slot = -1;
+    ui->overdub_confirm_slot = -1;
     ui->capture_state = TS_CAPTURE_IDLE;
     ui->external_record_bank = 0;
     ui->record_source = TS_RECORD_SOURCE_EXT;
@@ -1578,6 +1582,11 @@ TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y)
 int ts_ui_capture_button_from_point(int x, int y)
 {
     return x >= 536 && x < 630 && y >= 313 && y < 330;
+}
+
+int ts_ui_overdub_button_from_point(int x, int y)
+{
+    return x >= 382 && x < 456 && y >= 313 && y < 330;
 }
 
 int ts_ui_new_page_button_from_point(int x, int y)
@@ -2659,7 +2668,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 mini_button(fb, 461, 313, 70,
                             ui->monitor_enabled ? "MON ON" : "MONITOR",
                             ui->monitor_enabled);
-        } else mini_button(fb, 461, 313, 70, "+ PAGE", 0);
+        } else {
+            mini_button(fb, 382, 313, 74, "OVERDUB", ui->capture_overdub);
+            mini_button(fb, 461, 313, 70, "+ PAGE", 0);
+        }
         mini_button(fb, 536, 313, 94, capture_label,
                     ui->capture_state != TS_CAPTURE_IDLE);
         for (int i = 0; i < TS_BANK_SLOT_COUNT; ++i) {
@@ -2709,6 +2721,18 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, 172, 188, 136, "EXIT", 0);
         button(fb, 324, 188, 144, "CANCEL", 1);
         text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
+    } else if (ui->overdub_confirm_open) {
+        char target[80];
+        frame(fb, 146, 122, 348, 132, RGB(36, 33, 37), PAL_MOUSE);
+        text(fb, 166, 137, "OVERDUB TARGET?", PAL_NOTE, 1);
+        snprintf(target, sizeof(target),
+                 "MIX A NEW PERFORMANCE INTO TILE %02d",
+                 ui->overdub_confirm_slot + 1);
+        text(fb, 166, 158, target, PAL_EFFECT, 1);
+        text(fb, 166, 176, "THIS IS ONE UNDO/REDO OPERATION", PAL_VOLUME, 1);
+        button(fb, 166, 200, 136, "OVERDUB", 1);
+        button(fb, 318, 200, 156, "CANCEL", 0);
+        text(fb, 166, 238, "ENTER/Y CONFIRM   ESC/N CANCEL", RGB(190, 185, 190), 1);
     } else if (ui->fm_open)
         fm_render(fb, ui, instrument);
     else if (ui->transform_open)
@@ -2768,7 +2792,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     else if (ui->config_open)
         config_render(fb, ui);
     else if (ui->browser.mode != TS_BROWSER_CLOSED)
-        browser_render(fb, &ui->browser, ui->text_cursor_visible);
+        browser_render(fb, &ui->browser, ui->text_cursor_visible, ui->file_busy);
     else if (ui->renaming_bank_slot >= 0) {
         size_t length = strlen(ui->bank_rename);
         size_t cursor = ui->bank_rename_cursor > length ? length : ui->bank_rename_cursor;
@@ -2828,6 +2852,17 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         frame(fb, 24, 126, 592, 76, RGB(12, 12, 12), PAL_VOLUME);
         if (x < 34) x = 34;
         text(fb, x, 153, ui->overlay, PAL_VOLUME, scale);
+    }
+    if (ui->file_busy) {
+        char busy[64];
+        int dots = ui->file_busy_phase % 4 + 1;
+        snprintf(busy, sizeof(busy), "%s%.*s",
+                 ui->file_busy_label[0] != '\0' ? ui->file_busy_label : "WORKING",
+                 dots, "....");
+        frame(fb, 154, 142, 332, 94, RGB(12, 12, 12), PAL_VOLUME);
+        text(fb, 174, 158, busy, PAL_VOLUME, 2);
+        text(fb, 174, 207, "PLEASE WAIT - FILE OPERATION IN PROGRESS",
+             RGB(190, 185, 190), 1);
     }
 }
 

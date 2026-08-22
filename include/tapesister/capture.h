@@ -15,15 +15,19 @@ typedef enum {
 
 typedef struct {
     float *buffer;
+    float *overdub_base;
     size_t capacity_frames;
     size_t recorded_frames;
+    size_t overdub_base_frames;
     uint32_t sample_rate;
+    uint32_t overdub_base_rate;
     uint32_t staged_notes;
     int destination_slot;
     int source_slot;
     int provenance_slot;
     int stopped_early;
     int auto_resize;
+    int overdub;
     _Atomic TsCaptureState state;
 } TsCaptureRecorder;
 
@@ -64,6 +68,11 @@ void ts_capture_free(TsCaptureRecorder *recorder);
 int ts_capture_arm(TsCaptureRecorder *recorder, int destination_slot,
                    size_t capacity_frames, uint32_t sample_rate,
                    char *error, size_t error_size);
+int ts_capture_arm_overdub(TsCaptureRecorder *recorder, int destination_slot,
+                           size_t capacity_frames, uint32_t sample_rate,
+                           const float *base, size_t base_frames,
+                           uint32_t base_rate,
+                           char *error, size_t error_size);
 int ts_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
                           char *error, size_t error_size);
 int ts_capture_toggle_staged_note(TsCaptureRecorder *recorder, int note,
