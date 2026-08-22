@@ -178,9 +178,10 @@ float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
         ++count;
     }
     if (raw_mix != NULL) *raw_mix = mixed;
-    /* Monitoring gets deterministic headroom. Capture receives raw_mix and
-       applies one peak-safe gain pass only when the committed mix needs it. */
-    return count > 0 ? mixed / (float)count : 0.0f;
+    /* Monitoring follows TapeSister's established polyphonic headroom curve.
+       Capture receives raw_mix unchanged and only gets one peak-safe gain pass
+       if the completed performance actually exceeds the safe output range. */
+    return count > 0 ? mixed / sqrtf((float)count) : 0.0f;
 }
 
 void ts_performance_sync(TsPerformanceBank *bank,
