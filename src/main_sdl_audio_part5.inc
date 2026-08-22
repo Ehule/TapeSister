@@ -122,7 +122,6 @@ static void ts_multi_prune_sources(const TsInstrument *instrument)
     }
     if (valid == ts_multi_source_mask) return;
     ts_multi_source_mask = valid;
-    ts_performance_clear(&ts_multi_performance);
     if (valid == 0u) {
         ts_multi_group_latched = 0;
         if (ts_multi_capture_recorder != NULL &&
@@ -162,28 +161,6 @@ static void ts_overlay_tile_states(TsFramebuffer *fb, const TsUiState *ui,
             ts_draw_tile_border(fb, &ts_tile_bounds[slot], source_color);
 }
 
-static void ts_overlay_selection_grid(TsFramebuffer *fb, const TsUiState *ui,
-                                      const TsInstrument *instrument)
-{
-    uint32_t selection;
-    uint32_t grid;
-    uint32_t divisions;
-    if (fb == NULL || ui == NULL || instrument == NULL || !instrument->has_selection)
-        return;
-    divisions = instrument->grid_divisions;
-    if (divisions < 2u) return;
-    selection = ui->palette.colors[TS_PALETTE_WAVE_SELECTION];
-    grid = ui->palette.colors[TS_PALETTE_PATTERN_EMPTY];
-    for (uint32_t division = 1u; division < divisions; ++division) {
-        int x = TS_WAVE_X + (int)(((uint64_t)TS_WAVE_W * division) / divisions);
-        if (x < TS_WAVE_X || x >= TS_WAVE_X + TS_WAVE_W) continue;
-        for (int y = TS_WAVE_Y; y < TS_WAVE_Y + TS_WAVE_H; ++y) {
-            size_t at = (size_t)y * TS_UI_WIDTH + (size_t)x;
-            if (fb->pixels[at] == selection) fb->pixels[at] = grid;
-        }
-    }
-}
-
 static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
                                const TsInstrument *instrument)
 {
@@ -201,6 +178,7 @@ static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
         ts_multi_capture_recorder->state == TS_CAPTURE_IDLE &&
         ts_multi_group_latched)
         ts_multi_clear_group();
+    ts_audio_lock_device(TS_AUDIO_LOGICAL_OUTPUT);
     ts_multi_prune_sources(instrument);
 
     if (mutable_ui != NULL && !mutable_ui->config_open &&
@@ -209,12 +187,14 @@ static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
                  "%s", ts_pending_notice);
         ts_pending_notice[0] = '\0';
     }
-    if (mutable_ui != NULL && ts_multi_group_latched)
+    if (mutable_ui != NULL && ts_multi_group_latched) {
+        mutable_ui->capture_source_slot = -1;
         mutable_ui->active_notes |= ts_performance_visible_mask(
             &ts_multi_performance, ts_ui_keyboard_base_note(mutable_ui));
+    }
+    ts_audio_unlock_device(TS_AUDIO_LOGICAL_OUTPUT);
 
     ts_ui_render(fb, ui, instrument);
-    ts_overlay_selection_grid(fb, ui, instrument);
     ts_overlay_tile_states(fb, ui, instrument);
 
     if (ui != NULL && ui->config_open) {

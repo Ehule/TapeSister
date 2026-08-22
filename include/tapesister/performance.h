@@ -23,6 +23,7 @@ typedef struct {
     int looping;
     int direction;
     int latched;
+    int releasing;
     int active;
 } TsPerformanceVoice;
 
@@ -32,6 +33,9 @@ typedef struct {
 
 void ts_performance_init(TsPerformanceBank *bank);
 void ts_performance_clear(TsPerformanceBank *bank);
+void ts_performance_release_sources_after_pass(TsPerformanceBank *bank,
+                                               uint16_t source_mask);
+void ts_performance_release_after_pass(TsPerformanceBank *bank);
 void ts_performance_release(TsPerformanceBank *bank, int note);
 int ts_performance_trigger_group(TsPerformanceBank *bank,
                                  const TsInstrument *instrument,

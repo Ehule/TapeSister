@@ -101,6 +101,40 @@ int main(void)
     ts_performance_release(&performance, 0);
     assert(ts_performance_count(&performance) == 0);
 
+    /* The full 16-tile, 24-note fan-out fits exactly in the dedicated bank. */
+    for (int note = 0; note < 24; ++note)
+        assert(ts_performance_trigger_group(&performance, &instrument, 0xffffu,
+                                            note, 60, 0, 44100) ==
+               TS_BANK_SLOT_COUNT);
+    assert(ts_performance_count(&performance) == TS_PERFORMANCE_VOICE_LIMIT);
+    ts_performance_clear(&performance);
+
+    /* Plain-click group release is a graceful unlatch, not a hard Note Off.
+       Forward and reverse loops finish their current traversal once. */
+    instrument.bank[0].has_loop = 1;
+    instrument.bank[0].loop_first = 2u;
+    instrument.bank[0].loop_last = 7u;
+    instrument.bank[0].loop_mode = TS_LOOP_FORWARD;
+    instrument.bank[3].has_loop = 1;
+    instrument.bank[3].loop_first = 2u;
+    instrument.bank[3].loop_last = 9u;
+    instrument.bank[3].loop_mode = TS_LOOP_REVERSE;
+    ts_performance_clear(&performance);
+    assert(ts_performance_trigger_group(
+               &performance, &instrument,
+               (uint16_t)((1u << 0) | (1u << 3)),
+               0, 60, 1, 44100) == 2);
+    for (int i = 0; i < 3; ++i) (void)ts_performance_read(&performance, &raw);
+    ts_performance_release_sources_after_pass(&performance,
+                                               (uint16_t)(1u << 0));
+    ts_performance_sync(&performance, &instrument, 44100);
+    for (int i = 0; i < 8; ++i) (void)ts_performance_read(&performance, &raw);
+    assert(ts_performance_count(&performance) == 1);
+    ts_performance_release_after_pass(&performance);
+    assert(ts_performance_count(&performance) == 1);
+    for (int i = 0; i < 8; ++i) (void)ts_performance_read(&performance, &raw);
+    assert(ts_performance_count(&performance) == 0);
+
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) free_slot(&instrument.bank[slot]);
     puts("performance tests passed");
     return 0;

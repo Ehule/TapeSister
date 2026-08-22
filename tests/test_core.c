@@ -2727,12 +2727,36 @@ int main(void)
         int selection_last_x = TS_WAVE_X +
             (int)((imported.selection_last - imported.view_first) * TS_WAVE_W /
                   (imported.view_last - imported.view_first));
+        uint32_t division = imported.grid_divisions / 4u + 1u;
+        size_t quotient = imported.current.frames / imported.grid_divisions;
+        size_t remainder = imported.current.frames % imported.grid_divisions;
+        size_t division_frame = quotient * division +
+                                remainder * division / imported.grid_divisions;
+        int division_x = TS_WAVE_X +
+            (int)((division_frame - imported.view_first) * TS_WAVE_W /
+                  (imported.view_last - imported.view_first));
+        int probe_y = TS_WAVE_Y + 1;
+        uint32_t unselected_grid;
+        uint32_t unselected_background;
+        uint32_t selected_grid;
+        uint32_t selected_background;
         ui.palette.colors[TS_PALETTE_BLOCK_MARK] = 0xff102132u;
         ui.palette.colors[TS_PALETTE_WAVE_SELECTION] = 0xff405162u;
+        imported.has_selection = 0;
         ts_ui_render(&fb, &ui, &imported);
+        unselected_grid = fb.pixels[probe_y * TS_UI_WIDTH + division_x];
+        unselected_background = fb.pixels[probe_y * TS_UI_WIDTH + division_x + 1];
+        imported.has_selection = 1;
+        ts_ui_render(&fb, &ui, &imported);
+        selected_grid = fb.pixels[probe_y * TS_UI_WIDTH + division_x];
+        selected_background = fb.pixels[probe_y * TS_UI_WIDTH + division_x + 1];
+        CHECK(unselected_grid != unselected_background);
+        CHECK(selected_grid != selected_background);
+        CHECK(selected_grid != unselected_grid &&
+              selected_background != unselected_background);
         CHECK(framebuffer_color_count(&fb, 0xff405162u, selection_x, TS_WAVE_Y,
                                       selection_last_x - selection_x,
-                                      TS_WAVE_H) > 100);
+                                      TS_WAVE_H) == 0);
         CHECK(framebuffer_color_count(&fb, 0xff102132u, selection_x, TS_WAVE_Y,
                                       selection_last_x - selection_x,
                                       TS_WAVE_H) == 0);

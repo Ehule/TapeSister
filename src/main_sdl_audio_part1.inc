@@ -52,10 +52,14 @@ static int ts_multi_capture_arm(TsCaptureRecorder *recorder, int destination_slo
                                 char *error, size_t error_size);
 static int ts_multi_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
                                        char *error, size_t error_size);
+static int ts_multi_capture_trigger(TsCaptureRecorder *recorder,
+                                    char *error, size_t error_size);
 static int ts_multi_capture_cancel(TsCaptureRecorder *recorder);
 static int ts_multi_capture_stop(TsCaptureRecorder *recorder,
                                  char *error, size_t error_size);
 static int ts_multi_capture_write_sample(TsCaptureRecorder *recorder, float sample);
+static int ts_multi_capture_source_matches(const TsCaptureRecorder *recorder,
+                                           int selected_slot);
 static TsNoteStartResult ts_multi_note_start(TsNoteBank *bank,
                                              const TsInstrument *instrument,
                                              const TsTuning *tuning,
@@ -73,7 +77,7 @@ static void ts_multi_note_release(TsNoteBank *bank, int note);
 static void ts_multi_note_clear(TsNoteBank *bank);
 static float ts_multi_note_read_split(TsNoteBank *bank, float *synth_output);
 static void ts_multi_note_sync(TsNoteBank *bank, const TsInstrument *instrument,
-                               const TsTuning *tuning, int output_rate);
+                               int output_rate);
 
 #define SDL_OpenAudioDevice ts_audio_open_device
 #define SDL_CloseAudioDevice ts_audio_close_device
@@ -90,15 +94,18 @@ static void ts_multi_note_sync(TsNoteBank *bank, const TsInstrument *instrument,
 #define ts_ui_bank_action ts_multi_bank_action
 #define ts_capture_arm ts_multi_capture_arm
 #define ts_capture_set_source ts_multi_capture_set_source
+#define ts_capture_trigger ts_multi_capture_trigger
 #define ts_capture_cancel ts_multi_capture_cancel
 #define ts_capture_stop ts_multi_capture_stop
 #define ts_capture_write_sample ts_multi_capture_write_sample
+#define TS_CAPTURE_SOURCE_MATCHES(recorder, selected_slot) \
+    ts_multi_capture_source_matches((recorder), (selected_slot))
 #define ts_note_bank_start_tuned_at ts_multi_note_start
 #define ts_note_bank_start_staged_chord ts_multi_staged_start
 #define ts_note_bank_release ts_multi_note_release
 #define ts_note_bank_clear ts_multi_note_clear
 #define ts_note_bank_read_split ts_multi_note_read_split
-#define ts_note_bank_sync_tuned ts_multi_note_sync
+#define ts_note_bank_sync ts_multi_note_sync
 
 #include "main_sdl.c"
 
@@ -117,15 +124,17 @@ static void ts_multi_note_sync(TsNoteBank *bank, const TsInstrument *instrument,
 #undef ts_ui_bank_action
 #undef ts_capture_arm
 #undef ts_capture_set_source
+#undef ts_capture_trigger
 #undef ts_capture_cancel
 #undef ts_capture_stop
 #undef ts_capture_write_sample
+#undef TS_CAPTURE_SOURCE_MATCHES
 #undef ts_note_bank_start_tuned_at
 #undef ts_note_bank_start_staged_chord
 #undef ts_note_bank_release
 #undef ts_note_bank_clear
 #undef ts_note_bank_read_split
-#undef ts_note_bank_sync_tuned
+#undef ts_note_bank_sync
 
 static TsCaptureRecorder *ts_multi_capture_recorder;
 static TsPerformanceBank ts_multi_performance;
@@ -134,8 +143,11 @@ static float ts_multi_last_raw_mix;
 static int ts_multi_shift_pending;
 static int ts_multi_group_latched;
 static int ts_multi_capture_scaled;
+static int ts_multi_capture_trigger_ready;
+static int ts_multi_preserve_release_tails;
 static int ts_locked_tile_dim_percent = 38;
 static int ts_last_sample_page = -1;
+static TsUiState *ts_live_ui;
 
 typedef struct {
     int x0, y0, x1, y1;
@@ -157,7 +169,18 @@ static void ts_multi_clear_group(void)
     ts_multi_shift_pending = 0;
     ts_multi_group_latched = 0;
     ts_multi_last_raw_mix = 0.0f;
+    ts_multi_capture_trigger_ready = 0;
+    ts_multi_preserve_release_tails = 0;
     ts_performance_clear(&ts_multi_performance);
+}
+
+static int ts_multi_capture_source_matches(const TsCaptureRecorder *recorder,
+                                           int selected_slot)
+{
+    if (recorder == NULL) return 0;
+    if (ts_multi_group_latched && ts_multi_source_mask != 0u)
+        return 1;
+    return recorder->source_slot == selected_slot;
 }
 
 static TsUiBankAction ts_multi_bank_action(int right_button, unsigned modifiers)
@@ -189,16 +212,17 @@ static int ts_multi_capture_arm(TsCaptureRecorder *recorder, int destination_slo
 static int ts_multi_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
                                        char *error, size_t error_size)
 {
-    int had_multi;
+    int had_group;
     if (recorder == NULL || source_slot == TS_CAPTURE_SOURCE_SYNTH) {
         ts_multi_clear_group();
         return ts_capture_set_source(recorder, source_slot, error, error_size);
     }
     ts_multi_capture_recorder = recorder;
-    had_multi = ts_multi_group_latched &&
-                ts_performance_source_count(ts_multi_source_mask) > 1;
+    ts_multi_capture_trigger_ready = 0;
+    had_group = ts_multi_group_latched && ts_multi_source_mask != 0u;
     if (ts_multi_shift_pending) {
         uint16_t bit;
+        int removing;
         ts_multi_shift_pending = 0;
         if (recorder->state != TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
             snprintf(error, error_size, "Capture is not waiting for source tiles");
@@ -213,16 +237,17 @@ static int ts_multi_capture_set_source(TsCaptureRecorder *recorder, int source_s
             return 0;
         }
         bit = (uint16_t)(1u << source_slot);
-        if ((ts_multi_source_mask & bit) != 0u)
+        removing = (ts_multi_source_mask & bit) != 0u;
+        if (removing)
             ts_multi_source_mask &= (uint16_t)~bit;
         else
             ts_multi_source_mask |= bit;
         ts_multi_group_latched = ts_multi_source_mask != 0u;
-        /* main_sdl.c starts Capture when its active tile matches source_slot.
-           Keep that legacy trigger token aligned with the tile just clicked;
-           the real source membership lives in ts_multi_source_mask. */
-        recorder->source_slot = ts_multi_source_mask != 0u ? source_slot : -1;
-        ts_performance_clear(&ts_multi_performance);
+        /* Keep one valid legacy token for Capture commit metadata and tuning;
+           note-trigger eligibility comes from the authoritative source mask. */
+        recorder->source_slot = ts_first_source(ts_multi_source_mask);
+        if (removing)
+            ts_performance_release_sources_after_pass(&ts_multi_performance, bit);
         if (error != NULL && error_size > 0u) error[0] = '\0';
         return 1;
     }
@@ -230,12 +255,47 @@ static int ts_multi_capture_set_source(TsCaptureRecorder *recorder, int source_s
     ts_multi_source_mask = (source_slot >= 0 && source_slot < TS_BANK_SLOT_COUNT) ?
                            (uint16_t)(1u << source_slot) : 0u;
     ts_multi_group_latched = 0;
-    ts_performance_clear(&ts_multi_performance);
+    if (had_group) {
+        ts_performance_release_after_pass(&ts_multi_performance);
+        /* Normal audition clears the shared note bank before restarting the
+           clicked tile; a nonpersistent workbench loop clears once more while
+           standing down. Preserve the released tails through those transition
+           clears. Persistent Loop Lock refreshes in place and clears neither. */
+        if (source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT)
+            ts_multi_preserve_release_tails = 1;
+        else if (ts_live_ui != NULL && ts_live_ui->workbench_loop_persistent)
+            ts_multi_preserve_release_tails = 0;
+        else if (ts_live_ui != NULL && ts_live_ui->workbench_loop_active)
+            ts_multi_preserve_release_tails = 2;
+        else
+            ts_multi_preserve_release_tails = 1;
+    } else {
+        ts_performance_clear(&ts_multi_performance);
+        ts_multi_preserve_release_tails = 0;
+    }
+    if (source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT)
+        recorder->source_slot = -1;
     if (!ts_capture_set_source(recorder, source_slot, error, error_size)) return 0;
     /* A plain click after a latched multi-source group intentionally falls
        through to main_sdl.c's established audition branch. That sounds the
        clicked tile at unity and, if Capture is armed, starts recording. */
-    return had_multi ? 0 : 1;
+    return had_group ? 0 : 1;
+}
+
+static int ts_multi_capture_trigger(TsCaptureRecorder *recorder,
+                                    char *error, size_t error_size)
+{
+    int ready = ts_multi_capture_trigger_ready;
+    int result;
+    ts_multi_capture_trigger_ready = 0;
+    if (ts_multi_group_latched && ts_multi_source_mask != 0u && !ready) {
+        if (error != NULL && error_size > 0u)
+            snprintf(error, error_size,
+                     "Play a QWERTY note or staged chord to start the source group");
+        return 0;
+    }
+    result = ts_capture_trigger(recorder, error, error_size);
+    return result;
 }
 
 static void ts_multi_scale_capture_if_needed(TsCaptureRecorder *recorder)
@@ -288,6 +348,8 @@ static TsNoteStartResult ts_multi_note_start(TsNoteBank *bank,
                                            ts_multi_source_mask, note,
                                            keyboard_base_note, latched,
                                            output_rate);
+    ts_multi_capture_trigger_ready =
+        started > 0 && ts_performance_count(&ts_multi_performance) > 0;
     return started > 0 ? TS_NOTE_STARTED : TS_NOTE_START_FAILED;
 }
 
@@ -304,9 +366,13 @@ static int ts_multi_staged_start(TsNoteBank *bank,
                                                staged_notes, keyboard_base_note,
                                                output_rate);
     ts_note_bank_clear(bank);
-    return ts_performance_trigger_staged(&ts_multi_performance, instrument,
-                                         ts_multi_source_mask, staged_notes,
-                                         keyboard_base_note, output_rate);
+    {
+        int started = ts_performance_trigger_staged(
+            &ts_multi_performance, instrument, ts_multi_source_mask,
+            staged_notes, keyboard_base_note, output_rate);
+        ts_multi_capture_trigger_ready = started > 0;
+        return started;
+    }
 }
 
 static void ts_multi_note_release(TsNoteBank *bank, int note)
@@ -318,8 +384,13 @@ static void ts_multi_note_release(TsNoteBank *bank, int note)
 static void ts_multi_note_clear(TsNoteBank *bank)
 {
     ts_note_bank_clear(bank);
-    ts_performance_clear(&ts_multi_performance);
-    ts_multi_last_raw_mix = 0.0f;
+    ts_multi_capture_trigger_ready = 0;
+    if (ts_multi_preserve_release_tails > 0)
+        --ts_multi_preserve_release_tails;
+    else {
+        ts_performance_clear(&ts_multi_performance);
+        ts_multi_last_raw_mix = 0.0f;
+    }
 }
 
 static float ts_multi_note_read_split(TsNoteBank *bank, float *synth_output)
@@ -333,10 +404,10 @@ static float ts_multi_note_read_split(TsNoteBank *bank, float *synth_output)
 }
 
 static void ts_multi_note_sync(TsNoteBank *bank, const TsInstrument *instrument,
-                               const TsTuning *tuning, int output_rate)
+                               int output_rate)
 {
-    ts_note_bank_sync_tuned(bank, instrument, tuning, output_rate);
-    if (ts_multi_group_latched)
+    ts_note_bank_sync(bank, instrument, output_rate);
+    if (ts_performance_count(&ts_multi_performance) > 0)
         ts_performance_sync(&ts_multi_performance, instrument, output_rate);
 }
 
@@ -372,7 +443,6 @@ static int ts_capture_allowed_changes;
 static void *ts_output_userdata;
 static void *ts_capture_userdata;
 static TsConfig *ts_live_config;
-static TsUiState *ts_live_ui;
 static TsAudioDeviceCatalog ts_device_catalog;
 static int ts_config_was_open;
 static int ts_capture_reconfigure_pending;
@@ -420,6 +490,43 @@ static char *ts_audio_name_copy(const char *name)
     copy = (char *)malloc(length + 1u);
     if (copy != NULL) memcpy(copy, name, length + 1u);
     return copy;
+}
+
+static void ts_audio_name_list_free(char ***names, int *count)
+{
+    if (names != NULL && *names != NULL) {
+        for (int i = 0; i < *count; ++i) free((*names)[i]);
+        free(*names);
+        *names = NULL;
+    }
+    if (count != NULL) *count = 0;
+}
+
+static int ts_audio_name_list_refresh(int capture, char ***names, int *count)
+{
+    int available = SDL_GetNumAudioDevices(capture);
+    char **made = NULL;
+    int kept = 0;
+    if (available < 0) available = 0;
+    if (available > 0) {
+        made = (char **)calloc((size_t)available, sizeof(*made));
+        if (made == NULL) return 0;
+        for (int i = 0; i < available; ++i) {
+            const char *name = SDL_GetAudioDeviceName(i, capture);
+            if (name == NULL || name[0] == '\0') continue;
+            made[kept] = ts_audio_name_copy(name);
+            if (made[kept] == NULL) {
+                for (int j = 0; j < kept; ++j) free(made[j]);
+                free(made);
+                return 0;
+            }
+            ++kept;
+        }
+    }
+    ts_audio_name_list_free(names, count);
+    *names = made;
+    *count = kept;
+    return 1;
 }
 
 static int ts_parse_locked_tile_dim(const char *path)

@@ -31,6 +31,10 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+#ifndef TS_CAPTURE_SOURCE_MATCHES
+#define TS_CAPTURE_SOURCE_MATCHES(recorder, selected_slot) \
+    ((recorder)->source_slot == (selected_slot))
+#endif
 #ifdef _WIN32
 #include <windows.h>
 #include <direct.h>
@@ -777,7 +781,7 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     audio->step = ((double)plan.sample->sample_rate / output_rate) * pitch;
     audio->playing = 1;
     if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
-        audio->capture.source_slot == instrument->selected_slot)
+        TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot))
         capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
     SDL_UnlockAudioDevice(device);
     if (capture_started) {
@@ -827,7 +831,7 @@ static void begin_playhead_audition(SDL_AudioDeviceID device, AudioState *audio,
                   audio->pitch;
     audio->playing = 1;
     if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
-        audio->capture.source_slot == instrument->selected_slot)
+        TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot))
         capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
     SDL_UnlockAudioDevice(device);
     if (capture_started) {
@@ -961,7 +965,7 @@ static void begin_note(SDL_AudioDeviceID device, AudioState *audio, TsUiState *u
         latched, output_rate);
     if (result == TS_NOTE_STARTED &&
         audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
-        audio->capture.source_slot == instrument->selected_slot)
+        TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot))
         capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
     voice_count = ts_note_bank_count(&audio->notes);
     SDL_UnlockAudioDevice(device);
@@ -1014,7 +1018,7 @@ static void launch_staged_capture(SDL_AudioDeviceID device, AudioState *audio,
     staged = audio->capture.staged_notes;
     if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
         (staged & (1u << note)) != 0u &&
-        audio->capture.source_slot == instrument->selected_slot) {
+        TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot)) {
         audio->playing = 0;
         audio->bank_slot = -1;
         started = ts_note_bank_start_staged_chord(
@@ -9403,10 +9407,10 @@ int main(int argc, char **argv)
                             selected = ts_ui_execute_bank_action(
                                 &instrument, bank_slot, action,
                                 select_error, sizeof(select_error));
-                            if (selected && occupied &&
+                            if (selected &&
                                 audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER)
                                 capture_source_selected = ts_capture_set_source(
-                                    &audio.capture, bank_slot,
+                                    &audio.capture, occupied ? bank_slot : -1,
                                     select_error, sizeof(select_error));
                             if (selected && !occupied && event.button.clicks >= 2 &&
                                 audio.capture.state == TS_CAPTURE_IDLE) {
@@ -9475,6 +9479,16 @@ int main(int argc, char **argv)
                                 stop_all(device, &audio, &ui);
                                 snprintf(ui.status, sizeof(ui.status),
                                          "SILENT TILE FAILED: %.132s", select_error);
+                            }
+                            else if (selected && !occupied &&
+                                    audio.capture.state ==
+                                        TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+                                    bank_modifiers(mod) == TS_UI_BANK_MOD_SHIFT) {
+                                /* Empty tiles cannot join a source group, but a
+                                   rejected Shift-click must not stop its current
+                                   performance voices or clear the existing mask. */
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "SOURCE GROUP UNCHANGED: %.112s", select_error);
                             }
                             else if (selected) {
                                 stop_all(device, &audio, &ui);

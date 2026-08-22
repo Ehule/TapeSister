@@ -156,6 +156,39 @@ static void wave_rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t co
     if (w > 0 && h > 0) rect(fb, x, y, w, h, color);
 }
 
+static uint32_t blend_color(uint32_t background, uint32_t foreground,
+                            unsigned foreground_percent)
+{
+    unsigned background_percent;
+    unsigned red;
+    unsigned green;
+    unsigned blue;
+    if (foreground_percent > 100u) foreground_percent = 100u;
+    background_percent = 100u - foreground_percent;
+    red = (((background >> 16) & 0xffu) * background_percent +
+           ((foreground >> 16) & 0xffu) * foreground_percent) / 100u;
+    green = (((background >> 8) & 0xffu) * background_percent +
+             ((foreground >> 8) & 0xffu) * foreground_percent) / 100u;
+    blue = ((background & 0xffu) * background_percent +
+            (foreground & 0xffu) * foreground_percent) / 100u;
+    return RGB(red, green, blue);
+}
+
+static void wave_blend_rect(TsFramebuffer *fb, int x, int y, int w, int h,
+                            uint32_t color, unsigned opacity_percent)
+{
+    if (x < TS_WAVE_X) { w -= TS_WAVE_X - x; x = TS_WAVE_X; }
+    if (y < TS_WAVE_Y) { h -= TS_WAVE_Y - y; y = TS_WAVE_Y; }
+    if (x + w > TS_WAVE_X + TS_WAVE_W) w = TS_WAVE_X + TS_WAVE_W - x;
+    if (y + h > TS_WAVE_Y + TS_WAVE_H) h = TS_WAVE_Y + TS_WAVE_H - y;
+    if (w <= 0 || h <= 0) return;
+    for (int py = y; py < y + h; ++py)
+        for (int px = x; px < x + w; ++px) {
+            size_t at = (size_t)py * TS_UI_WIDTH + (size_t)px;
+            fb->pixels[at] = blend_color(fb->pixels[at], color, opacity_percent);
+        }
+}
+
 static void wave_line(TsFramebuffer *fb, int x0, int y0, int x1, int y1, uint32_t color)
 {
     int dx = x1 > x0 ? x1 - x0 : x0 - x1;
@@ -2036,8 +2069,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         selection_first < view_last) {
         int sx0 = frame_x(selection_first, view_first, view_last);
         int sx1 = frame_x(selection_last, view_first, view_last);
-        wave_rect(fb, sx0, TS_WAVE_Y, sx1 - sx0, TS_WAVE_H,
-                  PAL_WAVE_SELECTION);
+        /* Blend over the already-rendered grid instead of painting an opaque
+           block. This preserves both vertical snap divisions and horizontal
+           amplitude guides through the selection. */
+        wave_blend_rect(fb, sx0, TS_WAVE_Y, sx1 - sx0, TS_WAVE_H,
+                        PAL_WAVE_SELECTION, 45u);
     }
     if (sample->frames && view_last > view_first) {
         TsWaveformRequest request;
@@ -2607,11 +2643,6 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             else
                 snprintf(label, sizeof(label), "%02d ---", i + 1);
             button(fb, x, y, 72, label, slot->occupied);
-            if (slot->occupied && slot->locked) {
-                rect(fb, x + 2, y + 2, 68, 2, PAL_VOLUME);
-                rect(fb, x + 2, y + 19, 68, 2, PAL_VOLUME);
-                text(fb, x + 62, y + 8, "L", PAL_VOLUME, 1);
-            }
             if (slot->occupied && slot->has_loop)
                 rect(fb, x + 66, y + 4, 3, 15, PAL_TUNING);
             if (slot->occupied)

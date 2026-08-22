@@ -93,12 +93,38 @@ void ts_performance_clear(TsPerformanceBank *bank)
     ts_performance_init(bank);
 }
 
+void ts_performance_release_sources_after_pass(TsPerformanceBank *bank,
+                                               uint16_t source_mask)
+{
+    if (bank == NULL || source_mask == 0u) return;
+    for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
+        TsPerformanceVoice *voice = &bank->voices[i];
+        if (!voice->active || voice->source_slot < 0 ||
+            voice->source_slot >= TS_BANK_SLOT_COUNT ||
+            (source_mask & (uint16_t)(1u << voice->source_slot)) == 0u)
+            continue;
+        /* A plain tile click unlatches the temporary instrument without
+           chopping off its sound. One-shots keep running; looped voices finish
+           the traversal already in progress, then stop at that boundary. */
+        voice->latched = 0;
+        voice->releasing = 1;
+        voice->looping = 0;
+        voice->crossfade_frames = 0u;
+    }
+}
+
+void ts_performance_release_after_pass(TsPerformanceBank *bank)
+{
+    ts_performance_release_sources_after_pass(bank, UINT16_MAX);
+}
+
 void ts_performance_release(TsPerformanceBank *bank, int note)
 {
     if (bank == NULL) return;
     for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
-        if (voice->active && !voice->latched && voice->note == note)
+        if (voice->active && !voice->latched && !voice->releasing &&
+            voice->note == note)
             voice->active = 0;
     }
 }
@@ -151,8 +177,12 @@ float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
     for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
         float value;
-        if (!voice->active || voice->sample == NULL || voice->sample->data == NULL)
+        if (!voice->active) continue;
+        if (voice->sample == NULL || voice->sample->data == NULL ||
+            voice->sample->frames < 2u) {
+            voice->active = 0;
             continue;
+        }
         if (voice->looping) {
             voice->position = ts_audition_loop_position(
                 voice->position, voice->range_first, voice->range_last,
@@ -161,8 +191,16 @@ float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
                 voice->sample, voice->position, voice->range_first,
                 voice->range_last, voice->crossfade_frames, voice->loop_mode);
         } else {
-            size_t at = voice->position > 0.0 ? (size_t)voice->position : 0u;
-            if (at + 1u >= voice->range_last || at + 1u >= voice->sample->frames) {
+            size_t at;
+            if ((voice->direction >= 0 &&
+                 voice->position + 1.0 >= (double)voice->range_last) ||
+                (voice->direction < 0 &&
+                 voice->position <= (double)voice->range_first)) {
+                voice->active = 0;
+                continue;
+            }
+            at = voice->position > 0.0 ? (size_t)voice->position : 0u;
+            if (at + 1u >= voice->sample->frames) {
                 voice->active = 0;
                 continue;
             }
@@ -213,10 +251,11 @@ void ts_performance_sync(TsPerformanceBank *bank,
         if (voice->position >= (double)last)
             voice->position = slot->loop_mode == TS_LOOP_REVERSE ?
                               (double)(last - 1u) : (double)first;
-        voice->looping = slot->has_loop;
+        voice->looping = voice->releasing ? 0 : slot->has_loop;
         voice->loop_mode = slot->loop_mode;
-        voice->direction = voice->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
-        voice->crossfade_frames = crossfade;
+        if (!voice->releasing)
+            voice->direction = voice->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
+        voice->crossfade_frames = voice->releasing ? 0u : crossfade;
         voice->step = (double)slot->sample.sample_rate / (double)output_rate *
                       ts_tuning_note_pitch(&slot->audible_tuning,
                                            voice->midi_note - TS_KEYBOARD_BASE_NOTE);

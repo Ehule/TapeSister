@@ -14,6 +14,10 @@ startup_welcome_sample=1
 ; Audition the welcome tile once after the splash closes and audio is ready.
 startup_welcome_autoplay=1
 
+[Display]
+; Dim applied to protected tiles: 0 leaves them unchanged, 90 is darkest.
+locked_tile_dim_percent=38
+
 [Waveform]
 ; Snap clicked playheads to the nearest zero crossing. Set to 0 for exact clicks.
 playhead_zero_snap=1
