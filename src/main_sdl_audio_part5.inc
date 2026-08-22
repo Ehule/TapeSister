@@ -108,6 +108,34 @@ static void ts_draw_tile_border(TsFramebuffer *fb, const TsTileBounds *bounds,
     }
 }
 
+static void ts_multi_prune_sources(const TsInstrument *instrument)
+{
+    uint16_t valid = 0u;
+    if (!ts_multi_group_latched || instrument == NULL) return;
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        uint16_t bit = (uint16_t)(1u << slot);
+        if ((ts_multi_source_mask & bit) == 0u) continue;
+        if (instrument->bank[slot].occupied &&
+            (ts_multi_capture_recorder == NULL ||
+             slot != ts_multi_capture_recorder->destination_slot))
+            valid |= bit;
+    }
+    if (valid == ts_multi_source_mask) return;
+    ts_multi_source_mask = valid;
+    ts_performance_clear(&ts_multi_performance);
+    if (valid == 0u) {
+        ts_multi_group_latched = 0;
+        if (ts_multi_capture_recorder != NULL &&
+            ts_multi_capture_recorder->state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER)
+            ts_multi_capture_recorder->source_slot = -1;
+    } else if (ts_multi_capture_recorder != NULL &&
+               ts_multi_capture_recorder->state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+               (ts_multi_capture_recorder->source_slot < 0 ||
+                (valid & (uint16_t)(1u << ts_multi_capture_recorder->source_slot)) == 0u)) {
+        ts_multi_capture_recorder->source_slot = ts_first_source(valid);
+    }
+}
+
 static void ts_overlay_tile_states(TsFramebuffer *fb, const TsUiState *ui,
                                    const TsInstrument *instrument)
 {
@@ -173,6 +201,7 @@ static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
         ts_multi_capture_recorder->state == TS_CAPTURE_IDLE &&
         ts_multi_group_latched)
         ts_multi_clear_group();
+    ts_multi_prune_sources(instrument);
 
     if (mutable_ui != NULL && !mutable_ui->config_open &&
         ts_pending_notice[0] != '\0') {
@@ -180,6 +209,9 @@ static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
                  "%s", ts_pending_notice);
         ts_pending_notice[0] = '\0';
     }
+    if (mutable_ui != NULL && ts_multi_group_latched)
+        mutable_ui->active_notes |= ts_performance_visible_mask(
+            &ts_multi_performance, ts_ui_keyboard_base_note(mutable_ui));
 
     ts_ui_render(fb, ui, instrument);
     ts_overlay_selection_grid(fb, ui, instrument);
