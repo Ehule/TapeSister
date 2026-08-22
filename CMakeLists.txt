@@ -39,8 +39,8 @@ if(TAPESISTER_BUILD_SDL)
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_splash.png"
             "$<TARGET_FILE_DIR:tapesister>/assets/tapesister_splash.png"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapehead.pal"
-            "$<TARGET_FILE_DIR:tapesister>/assets/tapehead.pal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/palette.pal"
+            "$<TARGET_FILE_DIR:tapesister>/assets/palette.pal"
     COMMENT "Copying TapeSister runtime artwork and palette")
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_welcome.wav")
     add_custom_command(TARGET tapesister POST_BUILD

@@ -82,9 +82,8 @@ static const TsPanelButton config_buttons[] = {
 };
 
 static const TsPanelButton palette_buttons[] = {
-    {20, 78, "IMPORT TH"}, {103, 68, "SAVE TS"},
-    {176, 78, "EXPORT TH"}, {259, 61, "RESET"},
-    {325, 54, "DONE"}, {384, 66, "CANCEL"}
+    {20, 96, "LOAD SHARED"}, {121, 96, "SAVE SHARED"},
+    {222, 61, "RESET"}, {288, 54, "DONE"}, {347, 66, "CANCEL"}
 };
 
 typedef struct {
@@ -1046,7 +1045,7 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
 
 static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
 {
-    static const char *const short_names[TS_PALETTE_COLOR_COUNT] = {
+    static const char *const short_names[TS_PALETTE_TAPESISTER_COLOR_COUNT] = {
         "TITLE", "ACTIVE", "ACT TEXT", "POINTER", "DESKTOP", "CONTROLS", "WAVE",
         "PRIMARY", "EDGE/ZERO", "LOOP", "EFFECT", "SPARE", "WAVE SEL", "ACT TILE"
     };
@@ -1057,7 +1056,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
           TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 45, "PALETTE EDITOR", PAL_NOTE, 1);
     text(fb, 438, 45, "LIVE TAPESISTER COLORS", PAL_EFFECT, 1);
-    for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
+    for (int color = 0; color < TS_PALETTE_TAPESISTER_COLOR_COUNT; ++color) {
         int column = color % TS_PALETTE_SWATCH_COLUMNS;
         int row = color / TS_PALETTE_SWATCH_COLUMNS;
         int x = TS_PALETTE_SWATCH_X + column * TS_PALETTE_SWATCH_STEP_X;
@@ -1114,6 +1113,22 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
              x >= 538 && x < 578 ? PAL_BLOCK_TEXT : PAL_NOTE);
     }
     text(fb, 541, 104, "0.25S", PAL_EFFECT, 1);
+    text(fb, TS_PALETTE_TAPEHEAD_X, 149, "TAPEHEAD EYEDROPPER", PAL_TUNING, 1);
+    for (int swatch = 0; swatch < ts_palette_tapehead_swatch_count(); ++swatch) {
+        TsPaletteColor source = ts_palette_tapehead_swatch_color(swatch);
+        int x = TS_PALETTE_TAPEHEAD_X + swatch * TS_PALETTE_TAPEHEAD_STEP_X;
+        int defined = ts_palette_color_is_defined(&ui->palette, source);
+        uint32_t color = defined ? ui->palette.colors[source] : RGB(92, 88, 92);
+        rect(fb, x, TS_PALETTE_TAPEHEAD_Y, TS_PALETTE_TAPEHEAD_W,
+             TS_PALETTE_TAPEHEAD_H, color);
+        if (!defined) {
+            rect(fb, x + 1, TS_PALETTE_TAPEHEAD_Y + 1, 1,
+                 TS_PALETTE_TAPEHEAD_H - 2, RGB(42, 40, 42));
+            rect(fb, x + TS_PALETTE_TAPEHEAD_W - 2,
+                 TS_PALETTE_TAPEHEAD_Y + 1, 1,
+                 TS_PALETTE_TAPEHEAD_H - 2, RGB(42, 40, 42));
+        }
+    }
     for (size_t i = 0; i < sizeof(palette_buttons) / sizeof(palette_buttons[0]); ++i)
         button(fb, palette_buttons[i].x, TS_PALETTE_ACTION_Y,
                palette_buttons[i].width, palette_buttons[i].label,
@@ -1237,13 +1252,25 @@ TsUiConfigAction ts_ui_config_action_from_point(int x, int y)
 
 int ts_ui_palette_entry_from_point(int x, int y)
 {
-    for (int color = 0; color < TS_PALETTE_COLOR_COUNT; ++color) {
+    for (int color = 0; color < TS_PALETTE_TAPESISTER_COLOR_COUNT; ++color) {
         int column = color % TS_PALETTE_SWATCH_COLUMNS;
         int row = color / TS_PALETTE_SWATCH_COLUMNS;
         int left = TS_PALETTE_SWATCH_X + column * TS_PALETTE_SWATCH_STEP_X;
         int top = TS_PALETTE_SWATCH_Y + row * TS_PALETTE_SWATCH_STEP_Y;
         if (x >= left && x < left + TS_PALETTE_SWATCH_W &&
             y >= top && y < top + TS_PALETTE_SWATCH_H) return color;
+    }
+    return -1;
+}
+
+int ts_ui_palette_tapehead_swatch_from_point(int x, int y)
+{
+    if (y < TS_PALETTE_TAPEHEAD_Y ||
+        y >= TS_PALETTE_TAPEHEAD_Y + TS_PALETTE_TAPEHEAD_H ||
+        x < TS_PALETTE_TAPEHEAD_X) return -1;
+    for (int swatch = 0; swatch < ts_palette_tapehead_swatch_count(); ++swatch) {
+        int left = TS_PALETTE_TAPEHEAD_X + swatch * TS_PALETTE_TAPEHEAD_STEP_X;
+        if (x >= left && x < left + TS_PALETTE_TAPEHEAD_W) return swatch;
     }
     return -1;
 }
@@ -1683,7 +1710,7 @@ int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount)
 
 int ts_ui_palette_cycle_entry(int entry, int amount)
 {
-    return cycle_index(entry, amount, TS_PALETTE_COLOR_COUNT);
+    return cycle_index(entry, amount, TS_PALETTE_TAPESISTER_COLOR_COUNT);
 }
 
 int ts_ui_palette_cycle_channel(int channel, int amount)
