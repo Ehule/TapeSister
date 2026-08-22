@@ -51,12 +51,128 @@
     }
 }
 
+static void ts_discover_tile_bounds(void)
+{
+    if (ts_tile_bounds_ready) return;
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        ts_tile_bounds[slot].x0 = TS_UI_WIDTH;
+        ts_tile_bounds[slot].y0 = TS_UI_HEIGHT;
+        ts_tile_bounds[slot].x1 = -1;
+        ts_tile_bounds[slot].y1 = -1;
+        ts_tile_bounds[slot].valid = 0;
+    }
+    for (int y = 0; y < TS_UI_HEIGHT; ++y) {
+        for (int x = 0; x < TS_UI_WIDTH; ++x) {
+            int slot = ts_ui_bank_slot_from_point(x, y);
+            TsTileBounds *bounds;
+            if (slot < 0 || slot >= TS_BANK_SLOT_COUNT) continue;
+            bounds = &ts_tile_bounds[slot];
+            if (x < bounds->x0) bounds->x0 = x;
+            if (x > bounds->x1) bounds->x1 = x;
+            if (y < bounds->y0) bounds->y0 = y;
+            if (y > bounds->y1) bounds->y1 = y;
+            bounds->valid = 1;
+        }
+    }
+    ts_tile_bounds_ready = 1;
+}
+
+static uint32_t ts_dim_color(uint32_t color, int percent)
+{
+    unsigned factor = (unsigned)(100 - percent);
+    unsigned a = color & 0xff000000u;
+    unsigned r = ((color >> 16) & 0xffu) * factor / 100u;
+    unsigned g = ((color >> 8) & 0xffu) * factor / 100u;
+    unsigned b = (color & 0xffu) * factor / 100u;
+    return a | (r << 16) | (g << 8) | b;
+}
+
+static void ts_draw_tile_border(TsFramebuffer *fb, const TsTileBounds *bounds,
+                                uint32_t color)
+{
+    if (fb == NULL || bounds == NULL || !bounds->valid) return;
+    for (int thickness = 0; thickness < 2; ++thickness) {
+        int x0 = bounds->x0 + thickness;
+        int y0 = bounds->y0 + thickness;
+        int x1 = bounds->x1 - thickness;
+        int y1 = bounds->y1 - thickness;
+        if (x1 <= x0 || y1 <= y0) continue;
+        for (int x = x0; x <= x1; ++x) {
+            fb->pixels[y0 * TS_UI_WIDTH + x] = color;
+            fb->pixels[y1 * TS_UI_WIDTH + x] = color;
+        }
+        for (int y = y0; y <= y1; ++y) {
+            fb->pixels[y * TS_UI_WIDTH + x0] = color;
+            fb->pixels[y * TS_UI_WIDTH + x1] = color;
+        }
+    }
+}
+
+static void ts_overlay_tile_states(TsFramebuffer *fb, const TsUiState *ui,
+                                   const TsInstrument *instrument)
+{
+    uint32_t source_color;
+    if (fb == NULL || ui == NULL || instrument == NULL || ui->show_keyboard ||
+        ui->show_recipes || ui->show_ingredients) return;
+    ts_discover_tile_bounds();
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        const TsTileBounds *bounds = &ts_tile_bounds[slot];
+        if (!bounds->valid || !instrument->bank[slot].occupied ||
+            !instrument->bank[slot].locked || ts_locked_tile_dim_percent <= 0)
+            continue;
+        for (int y = bounds->y0; y <= bounds->y1; ++y)
+            for (int x = bounds->x0; x <= bounds->x1; ++x) {
+                size_t at = (size_t)y * TS_UI_WIDTH + (size_t)x;
+                fb->pixels[at] = ts_dim_color(fb->pixels[at],
+                                              ts_locked_tile_dim_percent);
+            }
+    }
+    if (!ts_multi_group_latched || ts_multi_source_mask == 0u) return;
+    source_color = ui->palette.colors[TS_PALETTE_PATTERN_EFFECT];
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
+        if ((ts_multi_source_mask & (uint16_t)(1u << slot)) != 0u)
+            ts_draw_tile_border(fb, &ts_tile_bounds[slot], source_color);
+}
+
+static void ts_overlay_selection_grid(TsFramebuffer *fb, const TsUiState *ui,
+                                      const TsInstrument *instrument)
+{
+    uint32_t selection;
+    uint32_t grid;
+    uint32_t divisions;
+    if (fb == NULL || ui == NULL || instrument == NULL || !instrument->has_selection)
+        return;
+    divisions = instrument->grid_divisions;
+    if (divisions < 2u) return;
+    selection = ui->palette.colors[TS_PALETTE_WAVE_SELECTION];
+    grid = ui->palette.colors[TS_PALETTE_PATTERN_EMPTY];
+    for (uint32_t division = 1u; division < divisions; ++division) {
+        int x = TS_WAVE_X + (int)(((uint64_t)TS_WAVE_W * division) / divisions);
+        if (x < TS_WAVE_X || x >= TS_WAVE_X + TS_WAVE_W) continue;
+        for (int y = TS_WAVE_Y; y < TS_WAVE_Y + TS_WAVE_H; ++y) {
+            size_t at = (size_t)y * TS_UI_WIDTH + (size_t)x;
+            if (fb->pixels[at] == selection) fb->pixels[at] = grid;
+        }
+    }
+}
+
 static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
                                const TsInstrument *instrument)
 {
     TsUiState *mutable_ui = (TsUiState *)ui;
     ts_live_ui = mutable_ui;
     ts_live_config = mutable_ui != NULL ? &mutable_ui->config : ts_live_config;
+
+    if (mutable_ui != NULL && ts_last_sample_page != mutable_ui->sample_page) {
+        if (ts_last_sample_page >= 0 && ts_multi_capture_recorder != NULL &&
+            ts_multi_capture_recorder->state == TS_CAPTURE_IDLE)
+            ts_multi_clear_group();
+        ts_last_sample_page = mutable_ui->sample_page;
+    }
+    if (ts_multi_capture_recorder != NULL &&
+        ts_multi_capture_recorder->state == TS_CAPTURE_IDLE &&
+        ts_multi_group_latched)
+        ts_multi_clear_group();
 
     if (mutable_ui != NULL && !mutable_ui->config_open &&
         ts_pending_notice[0] != '\0') {
@@ -66,6 +182,8 @@ static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
     }
 
     ts_ui_render(fb, ui, instrument);
+    ts_overlay_selection_grid(fb, ui, instrument);
+    ts_overlay_tile_states(fb, ui, instrument);
 
     if (ui != NULL && ui->config_open) {
         if (!ts_config_was_open) ts_audio_catalog_refresh();
