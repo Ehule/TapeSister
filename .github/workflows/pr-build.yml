@@ -1,6 +1,8 @@
 name: TapeSister PR build
 
 on:
+  push:
+    branches: [agent/multisource-capture-performance]
   pull_request:
     branches: [main]
   workflow_dispatch:
