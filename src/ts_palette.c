@@ -338,17 +338,25 @@ const char *ts_palette_tapehead_swatch_name(int swatch)
            tapehead_swatch_names[swatch] : "TAPEHEAD COLOR";
 }
 
+int ts_palette_sample_tapehead_from(TsPalette *destination_palette,
+                                    const TsPalette *source_palette,
+                                    TsPaletteColor destination, int swatch)
+{
+    TsPaletteColor source = ts_palette_tapehead_swatch_color(swatch);
+    if (destination_palette == NULL || source_palette == NULL ||
+        destination < 0 ||
+        (int)destination >= TS_PALETTE_TAPESISTER_COLOR_COUNT ||
+        source < 0 || source >= TS_PALETTE_COLOR_COUNT ||
+        !ts_palette_color_is_defined(source_palette, source)) return 0;
+    destination_palette->colors[destination] = source_palette->colors[source];
+    destination_palette->defined_colors |= 1u << destination;
+    return 1;
+}
+
 int ts_palette_sample_tapehead(TsPalette *palette, TsPaletteColor destination,
                                int swatch)
 {
-    TsPaletteColor source = ts_palette_tapehead_swatch_color(swatch);
-    if (palette == NULL || destination < 0 ||
-        (int)destination >= TS_PALETTE_TAPESISTER_COLOR_COUNT ||
-        source < 0 || source >= TS_PALETTE_COLOR_COUNT ||
-        !ts_palette_color_is_defined(palette, source)) return 0;
-    palette->colors[destination] = palette->colors[source];
-    palette->defined_colors |= 1u << destination;
-    return 1;
+    return ts_palette_sample_tapehead_from(palette, palette, destination, swatch);
 }
 
 uint8_t ts_palette_component(const TsPalette *palette, TsPaletteColor color,

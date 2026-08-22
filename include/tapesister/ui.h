@@ -385,6 +385,7 @@ typedef struct {
     TsConfig config_before_edit;
     TsPalette palette;
     TsPalette palette_before_edit;
+    TsPalette palette_suggestions;
     TsRecipeBank recipes;
     TsTuning pitch_suggestion;
     TsTuning tune_reference;
