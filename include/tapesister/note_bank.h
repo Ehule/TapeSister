@@ -6,7 +6,13 @@
 #include "tapesister/audition.h"
 #include "tapesister/note_event.h"
 
+/* Preserve the established five-voice QWERTY/FM bank while giving sample MIDI
+   its own realtime pool. When all MIDI voices are occupied, the oldest voice
+   is replaced instead of rejecting the next played note. */
 #define TS_NOTE_VOICE_LIMIT 5
+#define TS_MIDI_NOTE_VOICE_LIMIT 64
+#define TS_NOTE_BANK_VOICE_CAPACITY \
+    (TS_NOTE_VOICE_LIMIT + TS_MIDI_NOTE_VOICE_LIMIT)
 
 typedef struct {
     const TsSample *sample;
@@ -32,7 +38,7 @@ typedef struct {
 } TsNoteVoice;
 
 typedef struct {
-    TsNoteVoice voices[TS_NOTE_VOICE_LIMIT];
+    TsNoteVoice voices[TS_NOTE_BANK_VOICE_CAPACITY];
     uint64_t next_serial;
 } TsNoteBank;
 

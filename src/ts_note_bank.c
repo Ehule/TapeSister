@@ -57,7 +57,7 @@ void ts_note_bank_clear(TsNoteBank *bank)
 void ts_note_bank_clear_latched(TsNoteBank *bank)
 {
     if (bank == NULL) return;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].latched) bank->voices[i].active = 0;
 }
 
@@ -65,7 +65,7 @@ int ts_note_bank_latch_active_synth(TsNoteBank *bank)
 {
     int count = 0;
     if (bank == NULL) return 0;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
         if (!voice->active || !voice->synth) continue;
         voice->latched = 1;
@@ -78,7 +78,7 @@ int ts_note_bank_release_latched_synth(TsNoteBank *bank)
 {
     int count = 0;
     if (bank == NULL) return 0;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
         if (!voice->active || !voice->synth || !voice->latched) continue;
         voice->active = 0;
@@ -127,13 +127,20 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
 {
     TsAuditionPlan plan;
     int free_voice = -1;
+    int oldest_voice = -1;
+    int first_voice;
+    int voice_limit;
     if (bank == NULL || instrument == NULL || event == NULL ||
         event->key < 0 || event->midi_note < 0 || event->midi_note > 127 ||
         event->velocity <= 0 || event->velocity > 127 ||
         tuning == NULL || output_rate <= 0 ||
         !voice_plan(instrument, source, instrument->has_loop, &plan))
         return TS_NOTE_START_FAILED;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
+    first_voice = event->origin == TS_NOTE_ORIGIN_MIDI ?
+                  TS_NOTE_VOICE_LIMIT : 0;
+    voice_limit = event->origin == TS_NOTE_ORIGIN_MIDI ?
+                  TS_NOTE_BANK_VOICE_CAPACITY : TS_NOTE_VOICE_LIMIT;
+    for (int i = first_voice; i < voice_limit; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
         if (voice->active && voice->midi_note == event->midi_note &&
             ts_note_event_same_trigger(event, voice->origin, voice->note,
@@ -147,7 +154,13 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
             break;
         }
         if (!voice->active && free_voice < 0) free_voice = i;
+        else if (voice->active && event->origin == TS_NOTE_ORIGIN_MIDI &&
+                 (oldest_voice < 0 ||
+                  voice->serial < bank->voices[oldest_voice].serial))
+            oldest_voice = i;
     }
+    if (free_voice < 0 && event->origin == TS_NOTE_ORIGIN_MIDI)
+        free_voice = oldest_voice;
     if (free_voice < 0) return TS_NOTE_LIMIT_REACHED;
     {
         TsNoteVoice *voice = &bank->voices[free_voice];
@@ -203,6 +216,8 @@ TsNoteStartResult ts_note_bank_start_sample_event(
         event->key < 0 || event->midi_note < 0 || event->midi_note > 127 ||
         event->velocity <= 0 || event->velocity > 127 || output_rate <= 0)
         return TS_NOTE_START_FAILED;
+    /* FM/QWERTY synth preview intentionally keeps the established five-voice
+       pool; expanded MIDI sample polyphony lives in the separate upper pool. */
     for (int index = 0; index < TS_NOTE_VOICE_LIMIT; ++index) {
         TsNoteVoice *voice = &bank->voices[index];
         if (voice->active && voice->synth &&
@@ -312,7 +327,7 @@ void ts_note_bank_release(TsNoteBank *bank, int note)
     /* QWERTY release follows the physical key even after the octave changes,
        so only its origin and key identity are used below. */
     if (bank == NULL) return;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
         if (voice->active && !voice->latched &&
             voice->origin == TS_NOTE_ORIGIN_QWERTY && voice->note == note &&
@@ -324,7 +339,7 @@ void ts_note_bank_release(TsNoteBank *bank, int note)
 void ts_note_bank_release_event(TsNoteBank *bank, const TsNoteEvent *event)
 {
     if (bank == NULL) return;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
         if (voice->active && !voice->latched && event != NULL &&
             ts_note_event_same_trigger(event, voice->origin, voice->note,
@@ -336,7 +351,7 @@ void ts_note_bank_release_event(TsNoteBank *bank, const TsNoteEvent *event)
 void ts_note_bank_release_midi_channel(TsNoteBank *bank, int channel)
 {
     if (bank == NULL || channel < 0 || channel > 15) return;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
         if (voice->active && voice->origin == TS_NOTE_ORIGIN_MIDI &&
             voice->channel == channel)
@@ -355,7 +370,7 @@ void ts_note_bank_sync_tuned(TsNoteBank *bank, const TsInstrument *instrument,
                              const TsTuning *tuning, int output_rate)
 {
     if (bank == NULL || instrument == NULL || tuning == NULL) return;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active)
             update_voice(&bank->voices[i], instrument, tuning,
                          bank->voices[i].source, output_rate);
@@ -375,7 +390,7 @@ void ts_note_bank_set_source_tuned(TsNoteBank *bank,
                                    TsAuditionSource source, int output_rate)
 {
     if (bank == NULL || instrument == NULL || tuning == NULL) return;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active)
             update_voice(&bank->voices[i], instrument, tuning, source, output_rate);
 }
@@ -388,7 +403,7 @@ float ts_note_bank_read_split(TsNoteBank *bank, float *synth_output)
     int synth_count = 0;
     if (synth_output != NULL) *synth_output = 0.0f;
     if (bank == NULL) return 0.0f;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
         float value;
         if (!voice->active || voice->sample == NULL || voice->sample->data == NULL) continue;
@@ -434,7 +449,7 @@ int ts_note_bank_count(const TsNoteBank *bank)
 {
     int count = 0;
     if (bank == NULL) return 0;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active) ++count;
     return count;
 }
@@ -443,7 +458,7 @@ int ts_note_bank_synth_count(const TsNoteBank *bank)
 {
     int count = 0;
     if (bank == NULL) return 0;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active && bank->voices[i].synth) ++count;
     return count;
 }
@@ -452,7 +467,7 @@ int ts_note_bank_latched_synth_count(const TsNoteBank *bank)
 {
     int count = 0;
     if (bank == NULL) return 0;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active && bank->voices[i].synth &&
             bank->voices[i].latched) ++count;
     return count;
@@ -462,7 +477,7 @@ uint32_t ts_note_bank_mask(const TsNoteBank *bank)
 {
     uint32_t mask = 0;
     if (bank == NULL) return 0;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active &&
             bank->voices[i].origin == TS_NOTE_ORIGIN_QWERTY &&
             bank->voices[i].note >= 0 && bank->voices[i].note < 24)
@@ -475,7 +490,7 @@ uint32_t ts_note_bank_visible_mask(const TsNoteBank *bank,
 {
     uint32_t mask = 0;
     if (bank == NULL) return 0;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i) {
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         const TsNoteVoice *voice = &bank->voices[i];
         int visible_note;
         if (!voice->active) continue;
@@ -490,7 +505,7 @@ const TsNoteVoice *ts_note_bank_display_voice(const TsNoteBank *bank)
 {
     const TsNoteVoice *result = NULL;
     if (bank == NULL) return NULL;
-    for (int i = 0; i < TS_NOTE_VOICE_LIMIT; ++i)
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active &&
             (result == NULL || bank->voices[i].serial > result->serial))
             result = &bank->voices[i];

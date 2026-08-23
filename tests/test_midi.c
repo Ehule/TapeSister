@@ -90,6 +90,79 @@ int main(void)
     ts_note_bank_release_event(&notes, &qwerty);
     CHECK(ts_note_bank_count(&notes) == 0);
 
+    /* A TERRA-style twelve-note sweep must not stall on the legacy fifth
+       voice. Sample MIDI has an independent 64-voice pool; when that pool is
+       full, a new pitch replaces the oldest voice instead of being rejected. */
+    for (int note = 36; note < 48; ++note) {
+        TsNoteEvent played;
+        CHECK(ts_note_event_midi(&played, note, 127, 0));
+        CHECK(ts_note_bank_start_tuned_event(
+                  &notes, &instrument, &unity, TS_AUDITION_CURRENT,
+                  &played, 0, 48000) == TS_NOTE_STARTED);
+    }
+    CHECK(ts_note_bank_count(&notes) == 12);
+    for (int note = 48; note < 100; ++note) {
+        TsNoteEvent played;
+        CHECK(ts_note_event_midi(&played, note, 127, 0));
+        CHECK(ts_note_bank_start_tuned_event(
+                  &notes, &instrument, &unity, TS_AUDITION_CURRENT,
+                  &played, 0, 48000) == TS_NOTE_STARTED);
+    }
+    CHECK(ts_note_bank_count(&notes) == TS_MIDI_NOTE_VOICE_LIMIT);
+    {
+        TsNoteEvent replacement;
+        int found_oldest = 0;
+        int found_replacement = 0;
+        CHECK(ts_note_event_midi(&replacement, 100, 127, 0));
+        CHECK(ts_note_bank_start_tuned_event(
+                  &notes, &instrument, &unity, TS_AUDITION_CURRENT,
+                  &replacement, 0, 48000) == TS_NOTE_STARTED);
+        CHECK(ts_note_bank_count(&notes) == TS_MIDI_NOTE_VOICE_LIMIT);
+        for (int voice = 0; voice < TS_NOTE_BANK_VOICE_CAPACITY; ++voice) {
+            if (!notes.voices[voice].active ||
+                notes.voices[voice].origin != TS_NOTE_ORIGIN_MIDI) continue;
+            if (notes.voices[voice].midi_note == 36) found_oldest = 1;
+            if (notes.voices[voice].midi_note == 100) found_replacement = 1;
+        }
+        CHECK(!found_oldest && found_replacement);
+    }
+
+    /* MIDI sample voices cannot crowd the legacy five-voice QWERTY pool. */
+    for (int key = 0; key < TS_NOTE_VOICE_LIMIT; ++key) {
+        TsNoteEvent played;
+        CHECK(ts_note_event_qwerty(&played, key, 60));
+        CHECK(ts_note_bank_start_tuned_event(
+                  &notes, &instrument, &unity, TS_AUDITION_CURRENT,
+                  &played, 0, 48000) == TS_NOTE_STARTED);
+    }
+    CHECK(ts_note_bank_count(&notes) == TS_NOTE_BANK_VOICE_CAPACITY);
+    {
+        TsNoteEvent sixth_qwerty;
+        CHECK(ts_note_event_qwerty(&sixth_qwerty, TS_NOTE_VOICE_LIMIT, 60));
+        CHECK(ts_note_bank_start_tuned_event(
+                  &notes, &instrument, &unity, TS_AUDITION_CURRENT,
+                  &sixth_qwerty, 0, 48000) == TS_NOTE_LIMIT_REACHED);
+    }
+    ts_note_bank_clear(&notes);
+
+    /* FM preview remains deliberately capped at the established five voices. */
+    for (int note = 60; note < 60 + TS_NOTE_VOICE_LIMIT; ++note) {
+        TsNoteEvent played;
+        CHECK(ts_note_event_midi(&played, note, 127, 0));
+        CHECK(ts_note_bank_start_sample_event(
+                  &notes, &instrument.current, &unity, &played,
+                  0, 48000) == TS_NOTE_STARTED);
+    }
+    {
+        TsNoteEvent sixth_fm;
+        CHECK(ts_note_event_midi(&sixth_fm, 72, 127, 0));
+        CHECK(ts_note_bank_start_sample_event(
+                  &notes, &instrument.current, &unity, &sixth_fm,
+                  0, 48000) == TS_NOTE_LIMIT_REACHED);
+    }
+    CHECK(ts_note_bank_count(&notes) == TS_NOTE_VOICE_LIMIT);
+    ts_note_bank_clear(&notes);
+
     ts_performance_init(&performance);
     CHECK(ts_performance_trigger_group_event(
               &performance, &instrument, 0x0003u, &c4_channel_1,
