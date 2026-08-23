@@ -51,6 +51,12 @@ enum {
     TS_CAPTURE_CHANNELS_MIN = 1,
     TS_CAPTURE_CHANNELS_MAX = 2,
     TS_CAPTURE_CHANNELS_DEFAULT = 1,
+    TS_SISTER_MONITOR_PERCENT_MIN = 0,
+    TS_SISTER_MONITOR_PERCENT_MAX = 100,
+    TS_SISTER_MONITOR_PERCENT_DEFAULT = 100,
+    TS_SISTER_ERASE_PERCENT_MIN = 0,
+    TS_SISTER_ERASE_PERCENT_MAX = 100,
+    TS_SISTER_ERASE_PERCENT_DEFAULT = 100,
     TS_MIDI_INPUT_CHANNEL_MIN = 0,
     TS_MIDI_INPUT_CHANNEL_MAX = 16,
     TS_MIDI_INPUT_CHANNEL_DEFAULT = 0
@@ -98,6 +104,9 @@ typedef struct {
     int sister_clear_ms;
     int sister_capture_channels;
     int sister_restart_clear;
+    int sister_dry_percent;
+    int sister_wet_percent;
+    int sister_erase_percent;
     int sister_window_x;
     int sister_window_y;
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];

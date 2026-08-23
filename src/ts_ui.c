@@ -3159,6 +3159,21 @@ static void sister_parameter(TsFramebuffer *fb, int x, int y, int width,
     text(fb, x + 3, y + 3, value, color, 1);
 }
 
+static void sister_percent_parameter(TsFramebuffer *fb, int x, int y,
+                                     int width, const char *label,
+                                     float amount, uint32_t color)
+{
+    char value[32];
+    if (!isfinite(amount)) amount = 0.0f;
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
+    snprintf(value, sizeof(value), "%s %03d", label,
+             (int)lrintf(amount * 100.0f));
+    text(fb, x + 3, y + 3, value, color, 1);
+}
+
 void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          const TsPalette *palette)
 {
@@ -3204,12 +3219,12 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 86, 190, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
     button(fb, 162, 190, 70, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);
     button(fb, 238, 190, 70, "PREVIEW", model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
-    snprintf(line, sizeof(line), "MASK %04X  VOICES %02d  IN %.2F  MIX %.2F",
+    snprintf(line, sizeof(line), "MASK %04X  V %02d  IN %.2F  MIX %.2F",
              model->routing.source_mask, model->routing.active_source_voices,
              model->routing.source_input_peak,
              model->routing.tap_peak[TS_SISTER_TAP_MIX]);
     text(fb, 322, 197, line, model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
-    snprintf(line, sizeof(line), "H1 %.2F H2 %.2F H3 %.2F  OV %llu",
+    snprintf(line, sizeof(line), "H1 %.2F  H2 %.2F  H3 %.2F  OV %llu",
              model->routing.tap_peak[TS_SISTER_TAP_H1],
              model->routing.tap_peak[TS_SISTER_TAP_H2],
              model->routing.tap_peak[TS_SISTER_TAP_H3],
@@ -3247,14 +3262,24 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                      (model->parameters.filter_gain_db + 24.0f) / 48.0f,
                      PAL_INSTRUMENT);
 
-    button(fb, 10, 330, 58, tap_names[model->selected_tap], 1);
-    button(fb, 74, 330, 44, model->capture_channels == 2 ? "S" : "M", model->capture_channels == 2);
-    button(fb, 124, 330, 100,
-           model->destination_mode == TS_SISTER_UI_DEST_NEXT_EMPTY ? "NEXT EMPTY" : "CURRENT", 0);
-    snprintf(line, sizeof(line), "TARGET %s  %s",
+    sister_percent_parameter(fb, 10, 330, 196, "DRY",
+                             model->parameters.monitor_dry, PAL_WAVE_LEFT);
+    sister_percent_parameter(fb, 212, 330, 196, "WET",
+                             model->parameters.monitor_wet, PAL_WAVE_RIGHT);
+    sister_percent_parameter(fb, 414, 330, 196, "ERASE",
+                             model->parameters.write_erase, PAL_VOLUME);
+
+    snprintf(line, sizeof(line), "TARGET %s  %.88s",
              model->destination_slot >= 0 ? "READY" : "--",
-             model->routing.capture_state == TS_CAPTURE_RECORDING ? "RECORDING" : model->status);
-    text(fb, 234, 337, line, model->routing.source_target_conflict ? PAL_VOLUME : PAL_MOUSE, 1);
-    button(fb, 450, 330, 82, "CAPTURE", model->routing.capture_state != TS_CAPTURE_IDLE && !model->capture_overdub);
-    button(fb, 538, 330, 92, "OVERDUB", model->routing.capture_state != TS_CAPTURE_IDLE && model->capture_overdub);
+             model->routing.capture_state == TS_CAPTURE_RECORDING ?
+             "RECORDING - MONITOR LEVELS DO NOT CHANGE CAPTURE" : model->status);
+    text(fb, 10, 355, line,
+         model->routing.source_target_conflict ? PAL_VOLUME : PAL_MOUSE, 1);
+
+    button(fb, 10, 370, 58, tap_names[model->selected_tap], 1);
+    button(fb, 74, 370, 44, model->capture_channels == 2 ? "S" : "M", model->capture_channels == 2);
+    button(fb, 124, 370, 100,
+           model->destination_mode == TS_SISTER_UI_DEST_NEXT_EMPTY ? "NEXT EMPTY" : "CURRENT", 0);
+    button(fb, 450, 370, 82, "CAPTURE", model->routing.capture_state != TS_CAPTURE_IDLE && !model->capture_overdub);
+    button(fb, 538, 370, 92, "OVERDUB", model->routing.capture_state != TS_CAPTURE_IDLE && model->capture_overdub);
 }

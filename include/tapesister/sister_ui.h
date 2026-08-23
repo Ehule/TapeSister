@@ -6,7 +6,7 @@
 #include "tapesister/sister_runtime.h"
 #include "tapesister/ui.h"
 
-enum { TS_SISTER_UI_WIDTH = 640, TS_SISTER_UI_HEIGHT = 360 };
+enum { TS_SISTER_UI_WIDTH = 640, TS_SISTER_UI_HEIGHT = 400 };
 
 typedef enum {
     TS_SISTER_UI_ACTION_NONE = 0,
@@ -53,6 +53,9 @@ typedef enum {
     TS_SISTER_UI_PARAM_FILTER_CUTOFF,
     TS_SISTER_UI_PARAM_FILTER_Q,
     TS_SISTER_UI_PARAM_FILTER_GAIN,
+    TS_SISTER_UI_PARAM_MONITOR_DRY,
+    TS_SISTER_UI_PARAM_MONITOR_WET,
+    TS_SISTER_UI_PARAM_WRITE_ERASE,
     TS_SISTER_UI_PARAM_COUNT
 } TsSisterUiParameter;
 

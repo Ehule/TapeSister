@@ -9,7 +9,7 @@ the rolling memory. POWER is the explicit engine allocation/free boundary.
 ## Launcher and window lifecycle
 
 The `TAPESISTER` wordmark has a logical hit target of `x=0..159`, `y=0..31`. Clicking it
-creates/restores the independent 640 by 360 Sister window and enables the engine when it
+creates/restores the independent 640 by 400 Sister window and enables the engine when it
 is off. The ordinary application remains usable if window or engine allocation fails.
 The main logo shows engine state with both color and shape: a live underline/run marker,
 a two-bar Hold marker, and a warning color. The engine remains disabled at startup.
@@ -58,6 +58,24 @@ H2 and H3 use the engine's exact ordered Rate choices:
 Continuous controls accept absolute left/right click, either-button drag, and wheel
 adjustment (Shift+wheel is fine). Both mouse buttons address the same visible parameter.
 
+The dedicated monitor/memory row separates three independent laws:
+
+- `DRY` scales the existing preview/tile/FM program bus only while Sister is enabled.
+- `WET` scales the Sister MIX return when MONITOR is enabled.
+- `ERASE` sets how much of the previous rolling-memory cell the moving write head removes.
+
+DRY and WET are smoothed over 20 ms and affect audibility only. The Sister input, Duck
+sidechain, H1/H2/H3/MIX Capture taps, ordinary Capture source and external recording all
+remain pre-monitor. Defaults are DRY 100 and WET 100, preserving the original PR5 sound.
+
+ERASE 100 is the original full-overwrite law. Lower values retain old material at the
+write position before adding new input and H1/H2 feedback: `retained = old * (1-erase)`.
+For example, ERASE 20 retains 80 percent of the previous cell on each complete pass.
+The retained stereo pair uses one linked amount, then enters the existing DC blocker,
+soft saturation and bounded-write safety. ERASE is distinct from H1/H2 feedback and from
+output Duck. A later COSMOS-inspired suppressor may make erase input-sensitive, but this
+version deliberately keeps ERASE predictable and independent of instantaneous loudness.
+
 Hold has precedence over Roll for writes. Monitor affects only the processed return.
 Capture taps, feedback and head motion remain active with the window hidden or Monitor
 off. CLEAR uses the PR3 fade/wait/off-thread-clear/fade-in transaction.
@@ -83,7 +101,8 @@ source-mask action.
 ## Preferences and restart policy
 
 Configuration now preserves buffer duration/channel shape, clear fade, Sister Capture
-format, both waveform display modes, restart-clear policy and Sister window position.
+format, both waveform display modes, restart-clear policy, DRY/WET monitor levels,
+ERASE strength and Sister window position.
 Musical source masks and parameter state are intentionally runtime-only. Output restart
 retains the PR4 policy: rolling memory and published waveform are cleared; failure leaves
 Sister disabled while ordinary TapeSister audio remains available.
@@ -116,12 +135,18 @@ notes, performance, Capture, routing, the callback, or either window renderer.
 6. Trigger the mask from QWERTY in both windows and from MIDI; verify note-off and panic.
 7. Exercise TILES/FM/EXT/PREVIEW independently and in combinations.
 8. Confirm HOLD prevents writes while heads move; MONITOR off does not stop Capture.
-9. Capture each tap as M and S, then test mono/stereo Overdub and undo/redo.
-10. Capture to another tile, add it explicitly to the source mask and replay it as a
+   Set DRY below 100 and verify only audible dry playback changes; set WET below 100 and
+   verify only the processed return changes. Confirm Capture levels remain unchanged.
+9. Compare ERASE 100 with ERASE 20 over multiple buffer passes. Full erase should replace
+   old material; ERASE 20 should leave progressively aging stereo ghosts beneath new input.
+10. Capture each tap as M and S, then test mono/stereo Overdub and undo/redo.
+11. Capture to another tile, add it explicitly to the source mask and replay it as a
     second generation.
-11. Switch audio/input devices and sample rates; confirm safe clear/restart and no stuck
+12. Switch audio/input devices and sample rates; confirm safe clear/restart and no stuck
     notes or stale input.
-12. Confirm POWER off leaves ordinary TapeSister playback and recording functional.
+13. Maximize and freely resize the Sister window. Visible controls must retain exact mouse
+    targets, and clicks in any letterbox margin must do nothing.
+14. Confirm POWER off leaves ordinary TapeSister playback and recording functional.
 
 No hardware validation is claimed by this document.
 

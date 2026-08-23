@@ -896,6 +896,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         buses.capture = audio->performance_group_latched &&
                         audio->performance_source_mask != 0u ?
                         audio->performance_raw_mix : buses.program;
+        /* DRY/WET affect audibility only. Ordinary Capture keeps the exact
+           pre-monitor frame selected above. */
+        buses.program.l *= sister_frame.dry_monitor_gain;
+        buses.program.r *= sister_frame.dry_monitor_gain;
+        buses.program = ts_stereo_frame_sanitize(buses.program);
         if (runtime_capture_write_frame(audio, buses.capture)) {
             audio->playing = 0;
             audio->bank_slot = -1;
@@ -6372,6 +6377,9 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FILTER_GAIN:
         parameters->filter_gain_db = -24.0f + amount * 48.0f;
         break;
+    case TS_SISTER_UI_PARAM_MONITOR_DRY: parameters->monitor_dry = amount; break;
+    case TS_SISTER_UI_PARAM_MONITOR_WET: parameters->monitor_wet = amount; break;
+    case TS_SISTER_UI_PARAM_WRITE_ERASE: parameters->write_erase = amount; break;
     default: break;
     }
 }
@@ -6401,6 +6409,9 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FILTER_CUTOFF: value = log10f(parameters->filter_cutoff_hz / 20.0f) / 3.0f; break;
     case TS_SISTER_UI_PARAM_FILTER_Q: value = (parameters->filter_q - 0.1f) / 19.9f; break;
     case TS_SISTER_UI_PARAM_FILTER_GAIN: value = (parameters->filter_gain_db + 24.0f) / 48.0f; break;
+    case TS_SISTER_UI_PARAM_MONITOR_DRY: value = parameters->monitor_dry; break;
+    case TS_SISTER_UI_PARAM_MONITOR_WET: value = parameters->monitor_wet; break;
+    case TS_SISTER_UI_PARAM_WRITE_ERASE: value = parameters->write_erase; break;
     default: break;
     }
     if (!isfinite(value) || value < 0.0f) return 0.0f;
@@ -6517,6 +6528,15 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     case TS_SISTER_UI_ACTION_PARAMETER:
         sister_set_parameter(&sister->model.parameters, hit.index, hit.normalized);
         ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
+        if (hit.index == TS_SISTER_UI_PARAM_MONITOR_DRY)
+            ui->config.sister_dry_percent =
+                (int)lrintf(sister->model.parameters.monitor_dry * 100.0f);
+        else if (hit.index == TS_SISTER_UI_PARAM_MONITOR_WET)
+            ui->config.sister_wet_percent =
+                (int)lrintf(sister->model.parameters.monitor_wet * 100.0f);
+        else if (hit.index == TS_SISTER_UI_PARAM_WRITE_ERASE)
+            ui->config.sister_erase_percent =
+                (int)lrintf(sister->model.parameters.write_erase * 100.0f);
         break;
     default: break;
     }
@@ -7748,6 +7768,13 @@ int main(int argc, char **argv)
     ts_performance_init(&audio.performance);
     ts_audio_mixer_init(&audio.mixer);
     ts_sister_runtime_init(&audio.sister);
+    {
+        TsSisterParameters parameters = audio.sister.parameters;
+        parameters.monitor_dry = (float)ui.config.sister_dry_percent / 100.0f;
+        parameters.monitor_wet = (float)ui.config.sister_wet_percent / 100.0f;
+        parameters.write_erase = (float)ui.config.sister_erase_percent / 100.0f;
+        ts_sister_runtime_set_parameters(&audio.sister, &parameters);
+    }
     ts_sister_runtime_input_available(&audio.sister, 0);
     ts_capture_init(&audio.capture);
     audio.input_monitor = &external_input.monitor;

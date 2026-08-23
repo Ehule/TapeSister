@@ -22,6 +22,9 @@ int main(void)
     CHECK(config.sister_waveform_display_mode == TS_WAVEFORM_DISPLAY_STEREO);
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
+    CHECK(model.parameters.monitor_dry == 1.0f &&
+          model.parameters.monitor_wet == 1.0f &&
+          model.parameters.write_erase == 1.0f);
     ts_sister_ui_model_show(&model);
     CHECK(model.visible);
     ts_sister_ui_model_hide(&model);
@@ -45,35 +48,44 @@ int main(void)
     hit = ts_sister_ui_hit_test(550, 308);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FILTER_GAIN);
-    CHECK(ts_sister_ui_hit_test(455, 334).action == TS_SISTER_UI_ACTION_CAPTURE);
-    CHECK(ts_sister_ui_hit_test(540, 334).action == TS_SISTER_UI_ACTION_OVERDUB);
+    hit = ts_sister_ui_hit_test(20, 334);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_MONITOR_DRY);
+    hit = ts_sister_ui_hit_test(220, 334);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_MONITOR_WET);
+    hit = ts_sister_ui_hit_test(420, 334);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_WRITE_ERASE);
+    CHECK(ts_sister_ui_hit_test(455, 374).action == TS_SISTER_UI_ACTION_CAPTURE);
+    CHECK(ts_sister_ui_hit_test(540, 374).action == TS_SISTER_UI_ACTION_OVERDUB);
 
     {
         int x = -1;
         int y = -1;
         /* Native and 2x high-DPI output map to the same logical point. */
-        CHECK(ts_sister_ui_window_point(320, 180, 640, 360,
-                                        640, 360, &x, &y));
-        CHECK(x == 320 && y == 180);
-        CHECK(ts_sister_ui_window_point(320, 180, 640, 360,
-                                        1280, 720, &x, &y));
-        CHECK(x == 320 && y == 180);
+        CHECK(ts_sister_ui_window_point(320, 200, 640, 400,
+                                        640, 400, &x, &y));
+        CHECK(x == 320 && y == 200);
+        CHECK(ts_sister_ui_window_point(320, 200, 640, 400,
+                                        1280, 800, &x, &y));
+        CHECK(x == 320 && y == 200);
 
         /* A tall window letterboxes vertically: the bars are not controls. */
         CHECK(!ts_sister_ui_window_point(12, 20, 640, 480,
                                          640, 480, &x, &y));
-        CHECK(ts_sister_ui_window_point(12, 68, 640, 480,
+        CHECK(ts_sister_ui_window_point(12, 48, 640, 480,
                                         640, 480, &x, &y));
         CHECK(x == 12 && y == 8);
 
         /* A wide window letterboxes horizontally and rejects either bar. */
-        CHECK(!ts_sister_ui_window_point(20, 10, 800, 360,
-                                         800, 360, &x, &y));
-        CHECK(ts_sister_ui_window_point(90, 10, 800, 360,
-                                        800, 360, &x, &y));
+        CHECK(!ts_sister_ui_window_point(20, 10, 800, 400,
+                                         800, 400, &x, &y));
+        CHECK(ts_sister_ui_window_point(90, 10, 800, 400,
+                                        800, 400, &x, &y));
         CHECK(x == 10 && y == 10);
-        CHECK(!ts_sister_ui_window_point(790, 10, 800, 360,
-                                         800, 360, &x, &y));
+        CHECK(!ts_sister_ui_window_point(790, 10, 800, 400,
+                                         800, 400, &x, &y));
     }
     ts_palette_default(&palette);
     ts_sister_ui_render(&framebuffer, &model, &palette);

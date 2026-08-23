@@ -41,6 +41,10 @@ static int test_defaults(void)
                   "Sister storage should retain the Kafka foundation defaults") &&
            expect(config.sister_capture_channels == 1,
                   "Sister Capture should remain deliberately mono by default") &&
+           expect(config.sister_dry_percent == 100 &&
+                  config.sister_wet_percent == 100 &&
+                  config.sister_erase_percent == 100,
+                  "Sister monitor and full-overwrite defaults should preserve PR5") &&
            expect(config.voice_attack_ms == TS_AUDITION_ATTACK_MS_DEFAULT,
                   "sample voices should default to a short de-click attack");
 }
@@ -72,6 +76,9 @@ static int test_roundtrip(void)
     saved.sister_clear_ms = 33;
     saved.sister_capture_channels = 2;
     saved.sister_restart_clear = 0;
+    saved.sister_dry_percent = 35;
+    saved.sister_wet_percent = 80;
+    saved.sister_erase_percent = 20;
     saved.sister_window_x = 123;
     saved.sister_window_y = 456;
     saved.voice_attack_ms = 7;
@@ -106,6 +113,10 @@ static int test_roundtrip(void)
          expect(loaded.sister_capture_channels == 2 &&
                 loaded.sister_restart_clear == 0,
                 "Sister capture/restart preferences should roundtrip") &&
+         expect(loaded.sister_dry_percent == 35 &&
+                loaded.sister_wet_percent == 80 &&
+                loaded.sister_erase_percent == 20,
+                "Sister monitor/erase preferences should roundtrip") &&
          expect(loaded.sister_window_x == 123 && loaded.sister_window_y == 456,
                 "Sister window position should roundtrip") &&
          expect(loaded.capture_max_seconds == 47,

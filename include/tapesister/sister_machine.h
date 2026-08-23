@@ -118,6 +118,11 @@ typedef struct {
     float filter_q;
     float filter_gain_db;
     float headroom;
+    /* Fraction of the previous rolling-memory cell erased on each write pass.
+       1.0 is full replacement; 0.0 retains the complete previous cell. */
+    float write_erase;
+    float monitor_dry;
+    float monitor_wet;
     float clear_ms;
 } TsSisterParameters;
 
@@ -189,6 +194,7 @@ typedef struct {
     int held;
     TsSisterClearState clear_state;
     TsSisterRamp clear_gain;
+    TsSisterRamp write_erase;
     uint32_t wow_prng;
     uint64_t wow_next_event_clock;
     float wow_target;

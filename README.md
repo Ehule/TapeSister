@@ -486,7 +486,10 @@ per-page Sister source mask and supports protected capture-then-replay recursion
 Sister remains disabled by default. Clicking the `TAPESISTER` logo opens its independent
 performance window and enables the engine; closing that window hides it without stopping
 audio. The window exposes transport, fixed sources, three heads, modulation/filter,
-stereo rolling overview and protected tap Capture/Overdub controls. The main bank's
+stereo rolling overview, independent DRY/WET monitoring, recording-head ERASE strength,
+and protected tap Capture/Overdub controls. ERASE 100 fully replaces each rolling-buffer
+cell; lower values retain old stereo material before new input and controlled head
+feedback are written. Monitor levels never alter Sister input or Capture taps. The main bank's
 `SISTER SRC` mode edits the independent per-page source mask. See
 [`docs/SISTER_MACHINE_HEADLESS_ENGINE.md`](docs/SISTER_MACHINE_HEADLESS_ENGINE.md) and
 [`docs/SISTER_MACHINE_LIVE_ROUTING.md`](docs/SISTER_MACHINE_LIVE_ROUTING.md), plus the

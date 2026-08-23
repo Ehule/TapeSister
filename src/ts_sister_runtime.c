@@ -33,6 +33,19 @@ static float frame_peak(TsStereoFrame value)
     return left > right ? left : right;
 }
 
+static float monitor_approach(float current, float target, uint32_t sample_rate)
+{
+    float coefficient;
+    if (!isfinite(current)) current = target;
+    if (!isfinite(target)) target = 0.0f;
+    if (target < 0.0f) target = 0.0f;
+    if (target > 1.0f) target = 1.0f;
+    if (sample_rate == 0u) return target;
+    coefficient = 1.0f - expf(-1.0f / (0.020f * (float)sample_rate));
+    current += (target - current) * coefficient;
+    return fabsf(target - current) < 0.000001f ? target : current;
+}
+
 static uint32_t float_bits(float value)
 {
     uint32_t bits;
@@ -172,6 +185,8 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_capture_init(&runtime->capture);
     runtime->rolling = 1;
     runtime->input_available = 1;
+    runtime->monitor_dry_current = 1.0f;
+    runtime->monitor_wet_current = 1.0f;
     runtime->selected_tap = TS_SISTER_TAP_MIX;
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     snapshot_atomic_init(&runtime->snapshot);
@@ -557,6 +572,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsStereoFrame input = {0.0f, 0.0f};
     TsSisterOutput output;
     int armed;
+    frame.dry_monitor_gain = 1.0f;
     if (runtime == NULL) return frame;
     if (sources != NULL) source = *sources;
     source.fm = ts_stereo_frame_sanitize(source.fm);
@@ -569,6 +585,13 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         publish_snapshot(runtime);
         return frame;
     }
+    runtime->monitor_dry_current = monitor_approach(
+        runtime->monitor_dry_current, runtime->parameters.monitor_dry,
+        runtime->machine.buffer.sample_rate);
+    runtime->monitor_wet_current = monitor_approach(
+        runtime->monitor_wet_current, runtime->parameters.monitor_wet,
+        runtime->machine.buffer.sample_rate);
+    frame.dry_monitor_gain = runtime->monitor_dry_current;
     if ((runtime->source_switches & TS_SISTER_SOURCE_TILES) != 0u)
         input = frame_add(input, tile_bus);
     if ((runtime->source_switches & TS_SISTER_SOURCE_FM) != 0u)
@@ -597,7 +620,9 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         (void)ts_capture_write_frame(
             &runtime->capture, selected_tap(&frame, runtime->selected_tap));
     frame.monitor_return = runtime->monitor_enabled ?
-        frame.tap[TS_SISTER_TAP_MIX] : (TsStereoFrame){0.0f, 0.0f};
+        frame_scale(frame.tap[TS_SISTER_TAP_MIX],
+                    runtime->monitor_wet_current) :
+        (TsStereoFrame){0.0f, 0.0f};
     runtime->last_frame = frame;
     ++runtime->processed_frames;
     publish_snapshot(runtime);

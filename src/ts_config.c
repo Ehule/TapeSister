@@ -44,6 +44,9 @@ void ts_config_init(TsConfig *config)
         config->sister_clear_ms = 20;
         config->sister_capture_channels = 1;
         config->sister_restart_clear = 1;
+        config->sister_dry_percent = TS_SISTER_MONITOR_PERCENT_DEFAULT;
+        config->sister_wet_percent = TS_SISTER_MONITOR_PERCENT_DEFAULT;
+        config->sister_erase_percent = TS_SISTER_ERASE_PERCENT_DEFAULT;
         config->sister_window_x = -1;
         config->sister_window_y = -1;
     }
@@ -263,6 +266,12 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, 1, 2, &loaded.sister_capture_channels)) { snprintf(error, error_size, "Invalid Sister capture format on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_restart_clear") == 0) {
             if (!parse_boolean(value, &loaded.sister_restart_clear)) { snprintf(error, error_size, "Invalid Sister restart policy on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_dry_percent") == 0) {
+            if (!parse_clamped_integer(value, TS_SISTER_MONITOR_PERCENT_MIN, TS_SISTER_MONITOR_PERCENT_MAX, &loaded.sister_dry_percent)) { snprintf(error, error_size, "Invalid Sister dry level on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_wet_percent") == 0) {
+            if (!parse_clamped_integer(value, TS_SISTER_MONITOR_PERCENT_MIN, TS_SISTER_MONITOR_PERCENT_MAX, &loaded.sister_wet_percent)) { snprintf(error, error_size, "Invalid Sister wet level on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_erase_percent") == 0) {
+            if (!parse_clamped_integer(value, TS_SISTER_ERASE_PERCENT_MIN, TS_SISTER_ERASE_PERCENT_MAX, &loaded.sister_erase_percent)) { snprintf(error, error_size, "Invalid Sister erase strength on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_window_x") == 0) {
             if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_x)) { snprintf(error, error_size, "Invalid Sister window X on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_window_y") == 0) {
@@ -356,6 +365,11 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "sister_clear_ms=%d\n"
                 "sister_capture_channels=%d\n"
                 "sister_restart_clear=%d\n"
+                "; Dry and wet affect monitoring only; Capture taps remain unscaled.\n"
+                "sister_dry_percent=%d\n"
+                "sister_wet_percent=%d\n"
+                "; Per-pass write erase: 100=full replacement, 20=retain 80%%.\n"
+                "sister_erase_percent=%d\n"
                 "sister_window_x=%d\n"
                 "sister_window_y=%d\n"
                 "\n[DSP Presets]\n"
@@ -388,6 +402,9 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_clear_ms,
                 config->sister_capture_channels,
                 config->sister_restart_clear ? 1 : 0,
+                config->sister_dry_percent,
+                config->sister_wet_percent,
+                config->sister_erase_percent,
                 config->sister_window_x,
                 config->sister_window_y) < 0;
     for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {

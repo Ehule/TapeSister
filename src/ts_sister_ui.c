@@ -66,6 +66,14 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
     model->selected_tap = TS_SISTER_TAP_MIX;
     model->destination_slot = -1;
     ts_sister_parameters_default(&model->parameters, 48000u);
+    if (config != NULL) {
+        model->parameters.monitor_dry =
+            (float)config->sister_dry_percent / 100.0f;
+        model->parameters.monitor_wet =
+            (float)config->sister_wet_percent / 100.0f;
+        model->parameters.write_erase =
+            (float)config->sister_erase_percent / 100.0f;
+    }
     snprintf(model->status, sizeof(model->status),
              "CLICK POWER TO ENABLE - WINDOW CLOSE HIDES ONLY");
 }
@@ -157,10 +165,24 @@ TsSisterUiHit ts_sister_ui_hit_test(int x, int y)
             return hit;
         }
     }
-    if (contains(x, y, 10, 330, 58, 22)) hit.action = TS_SISTER_UI_ACTION_TAP;
-    else if (contains(x, y, 74, 330, 44, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE_FORMAT;
-    else if (contains(x, y, 124, 330, 100, 22)) hit.action = TS_SISTER_UI_ACTION_DESTINATION;
-    else if (contains(x, y, 450, 330, 82, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE;
-    else if (contains(x, y, 538, 330, 92, 22)) hit.action = TS_SISTER_UI_ACTION_OVERDUB;
+    for (int control = 0; control < 3; ++control) {
+        static const int parameters[3] = {
+            TS_SISTER_UI_PARAM_MONITOR_DRY,
+            TS_SISTER_UI_PARAM_MONITOR_WET,
+            TS_SISTER_UI_PARAM_WRITE_ERASE
+        };
+        int left = 10 + control * 202;
+        if (contains(x, y, left, 330, 196, 18)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = parameters[control];
+            hit.normalized = (float)(x - left) / 195.0f;
+            return hit;
+        }
+    }
+    if (contains(x, y, 10, 370, 58, 22)) hit.action = TS_SISTER_UI_ACTION_TAP;
+    else if (contains(x, y, 74, 370, 44, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE_FORMAT;
+    else if (contains(x, y, 124, 370, 100, 22)) hit.action = TS_SISTER_UI_ACTION_DESTINATION;
+    else if (contains(x, y, 450, 370, 82, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE;
+    else if (contains(x, y, 538, 370, 92, 22)) hit.action = TS_SISTER_UI_ACTION_OVERDUB;
     return hit;
 }

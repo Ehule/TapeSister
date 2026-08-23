@@ -57,6 +57,8 @@ typedef struct {
     TsStereoFrame duck_sidechain;
     TsStereoFrame tap[TS_SISTER_TAP_COUNT];
     TsStereoFrame monitor_return;
+    /* Gain for the existing dry program bus. Capture remains pre-monitor. */
+    float dry_monitor_gain;
 } TsSisterRuntimeFrame;
 
 typedef struct {
@@ -125,6 +127,8 @@ typedef struct {
     int input_available;
     int source_target_conflict;
     int callback_failed;
+    float monitor_dry_current;
+    float monitor_wet_current;
     TsSisterRoutingSnapshotAtomic snapshot;
     TsSisterWavePublisher waveform;
 } TsSisterRuntime;
