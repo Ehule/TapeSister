@@ -121,6 +121,28 @@ size_t ts_audition_crossfade_frames(const TsAuditionPlan *plan, float millisecon
     return frames;
 }
 
+size_t ts_audition_attack_frames(int output_rate, int milliseconds)
+{
+    size_t frames;
+    if (output_rate <= 0 || milliseconds <= 0) return 0u;
+    if (milliseconds > TS_AUDITION_ATTACK_MS_MAX)
+        milliseconds = TS_AUDITION_ATTACK_MS_MAX;
+    frames = (size_t)lrint((double)output_rate *
+                           (double)milliseconds / 1000.0);
+    if (frames < 2u) frames = 2u;
+    return frames;
+}
+
+float ts_audition_attack_gain(size_t rendered_frame, size_t attack_frames)
+{
+    double phase;
+    if (attack_frames < 2u || rendered_frame >= attack_frames) return 1.0f;
+    phase = (double)rendered_frame / (double)(attack_frames - 1u);
+    /* Smoothstep has the zero-slope ends of a raised-cosine ramp without a
+       transcendental call in the realtime mixer. */
+    return (float)(phase * phase * (3.0 - 2.0 * phase));
+}
+
 double ts_audition_wrap_position(double position, size_t first, size_t last,
                                  size_t crossfade_frames)
 {

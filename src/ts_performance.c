@@ -77,6 +77,8 @@ static int start_slot_event(TsPerformanceBank *bank, const TsBankSlot *slot,
                   ts_tuning_note_pitch(&slot->audible_tuning,
                                        event->midi_note - TS_KEYBOARD_BASE_NOTE);
     voice->crossfade_frames = crossfade;
+    voice->attack_frames = ts_audition_attack_frames(
+        output_rate, bank->attack_ms);
     voice->origin = event->origin;
     voice->note = event->key;
     voice->midi_note = event->midi_note;
@@ -90,12 +92,29 @@ static int start_slot_event(TsPerformanceBank *bank, const TsBankSlot *slot,
 
 void ts_performance_init(TsPerformanceBank *bank)
 {
-    if (bank != NULL) memset(bank, 0, sizeof(*bank));
+    if (bank != NULL) {
+        memset(bank, 0, sizeof(*bank));
+        bank->attack_ms = TS_AUDITION_ATTACK_MS_DEFAULT;
+    }
 }
 
 void ts_performance_clear(TsPerformanceBank *bank)
 {
-    ts_performance_init(bank);
+    int attack_ms;
+    if (bank == NULL) return;
+    attack_ms = bank->attack_ms;
+    memset(bank, 0, sizeof(*bank));
+    ts_performance_set_attack_ms(bank, attack_ms);
+}
+
+void ts_performance_set_attack_ms(TsPerformanceBank *bank, int milliseconds)
+{
+    if (bank == NULL) return;
+    if (milliseconds < TS_AUDITION_ATTACK_MS_MIN)
+        milliseconds = TS_AUDITION_ATTACK_MS_MIN;
+    if (milliseconds > TS_AUDITION_ATTACK_MS_MAX)
+        milliseconds = TS_AUDITION_ATTACK_MS_MAX;
+    bank->attack_ms = milliseconds;
 }
 
 void ts_performance_release_sources_after_pass(TsPerformanceBank *bank,
@@ -251,7 +270,10 @@ float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
                         fraction;
             }
         }
-        value *= voice->gain;
+        value *= voice->gain * ts_audition_attack_gain(
+            voice->attack_frame, voice->attack_frames);
+        if (voice->attack_frame < voice->attack_frames)
+            ++voice->attack_frame;
         voice->position += voice->step * voice->direction;
         mixed += value;
         ++count;

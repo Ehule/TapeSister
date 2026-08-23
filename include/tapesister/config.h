@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 
+#include "tapesister/audition.h"
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/recipe.h"
 #include "tapesister/cdp_recipe.h"
@@ -73,6 +74,7 @@ typedef struct {
     int rotate_wheel_coarse;
     int drone_crossfade_ms;
     int chain_stamp_crossfade_ms;
+    int voice_attack_ms;
     int ripple_cut_crop_canvas;
     int reference_tone_volume;
     int record_input_channel;

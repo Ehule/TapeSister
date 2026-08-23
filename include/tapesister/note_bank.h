@@ -22,6 +22,8 @@ typedef struct {
     size_t range_first;
     size_t range_last;
     size_t crossfade_frames;
+    size_t attack_frame;
+    size_t attack_frames;
     TsAuditionSource source;
     TsLoopMode loop_mode;
     uint64_t serial;
@@ -40,6 +42,7 @@ typedef struct {
 typedef struct {
     TsNoteVoice voices[TS_NOTE_BANK_VOICE_CAPACITY];
     uint64_t next_serial;
+    int attack_ms;
 } TsNoteBank;
 
 typedef enum {
@@ -51,6 +54,7 @@ typedef enum {
 
 void ts_note_bank_init(TsNoteBank *bank);
 void ts_note_bank_clear(TsNoteBank *bank);
+void ts_note_bank_set_attack_ms(TsNoteBank *bank, int milliseconds);
 void ts_note_bank_clear_latched(TsNoteBank *bank);
 int ts_note_bank_latch_active_synth(TsNoteBank *bank);
 int ts_note_bank_release_latched_synth(TsNoteBank *bank);

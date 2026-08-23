@@ -92,6 +92,13 @@ or **OFF**, plus **OMNI** or MIDI channels 1-16. Saving Config applies a new MID
 immediately. No MIDI CC mapping or device-specific control framework is part of this
 note-input feature.
 
+Every newly triggered sample voice uses the same nondestructive de-click attack before
+the signal reaches monitoring, Capture, Overdub, or REC BANK SRC SYNTH. Set
+`voice_attack_ms` in the `[Audition]` section of `tapesister.ini` from 0–20 ms; the
+default is 2 ms, and 0 disables the ramp. The smooth output-rate envelope changes
+neither stored source audio nor note timing, and reaches full gain at the configured
+duration.
+
 With Capture armed, Shift-click up to five onscreen keys to assemble a silent staged
 chord; click any staged key normally to launch every voice sample-synchronously. With
 no staged chord, ordinary notes start and join recording at the time they are played.

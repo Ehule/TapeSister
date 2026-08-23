@@ -46,12 +46,29 @@ static void update_voice(TsNoteVoice *voice, const TsInstrument *instrument,
 
 void ts_note_bank_init(TsNoteBank *bank)
 {
-    if (bank != NULL) memset(bank, 0, sizeof(*bank));
+    if (bank != NULL) {
+        memset(bank, 0, sizeof(*bank));
+        bank->attack_ms = TS_AUDITION_ATTACK_MS_DEFAULT;
+    }
 }
 
 void ts_note_bank_clear(TsNoteBank *bank)
 {
-    ts_note_bank_init(bank);
+    int attack_ms;
+    if (bank == NULL) return;
+    attack_ms = bank->attack_ms;
+    memset(bank, 0, sizeof(*bank));
+    ts_note_bank_set_attack_ms(bank, attack_ms);
+}
+
+void ts_note_bank_set_attack_ms(TsNoteBank *bank, int milliseconds)
+{
+    if (bank == NULL) return;
+    if (milliseconds < TS_AUDITION_ATTACK_MS_MIN)
+        milliseconds = TS_AUDITION_ATTACK_MS_MIN;
+    if (milliseconds > TS_AUDITION_ATTACK_MS_MAX)
+        milliseconds = TS_AUDITION_ATTACK_MS_MAX;
+    bank->attack_ms = milliseconds;
 }
 
 void ts_note_bank_clear_latched(TsNoteBank *bank)
@@ -174,6 +191,8 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
         voice->step = (double)plan.sample->sample_rate / output_rate * voice->pitch;
         voice->range_first = plan.first;
         voice->range_last = plan.last;
+        voice->attack_frames = ts_audition_attack_frames(
+            output_rate, bank->attack_ms);
         voice->source = source;
         voice->serial = ++bank->next_serial;
         voice->origin = event->origin;
@@ -248,6 +267,8 @@ TsNoteStartResult ts_note_bank_start_sample_event(
         voice->crossfade_frames = sample->sample_rate / 100u;
         if (voice->crossfade_frames > sample->frames / 4u)
             voice->crossfade_frames = sample->frames / 4u;
+        voice->attack_frames = ts_audition_attack_frames(
+            output_rate, bank->attack_ms);
         voice->source = TS_AUDITION_CURRENT;
         voice->loop_mode = TS_LOOP_FORWARD;
         voice->direction = 1;
@@ -426,7 +447,10 @@ float ts_note_bank_read_split(TsNoteBank *bank, float *synth_output)
                         (voice->sample->data[at + 1u] - voice->sample->data[at]) * fraction;
             }
         }
-        value *= voice->gain;
+        value *= voice->gain * ts_audition_attack_gain(
+            voice->attack_frame, voice->attack_frames);
+        if (voice->attack_frame < voice->attack_frames)
+            ++voice->attack_frame;
         voice->position += voice->step * voice->direction;
         mixed += value;
         if (voice->synth) {

@@ -90,6 +90,34 @@ int main(void)
     ts_note_bank_release_event(&notes, &qwerty);
     CHECK(ts_note_bank_count(&notes) == 0);
 
+    /* The shared sample-note path begins at digital silence, reaches unity at
+       the configured duration, and can be disabled without editing audio. */
+    ts_note_bank_set_attack_ms(&notes, TS_AUDITION_ATTACK_MS_DEFAULT);
+    CHECK(ts_note_bank_start_tuned_event(
+              &notes, &instrument, &unity, TS_AUDITION_CURRENT,
+              &c4_channel_1, 0, 48000) == TS_NOTE_STARTED);
+    CHECK(ts_note_bank_read(&notes) == 0.0f);
+    {
+        size_t attack_frames = ts_audition_attack_frames(
+            48000, TS_AUDITION_ATTACK_MS_DEFAULT);
+        float heard = 0.0f;
+        CHECK(attack_frames == 96u);
+        for (size_t frame = 1u; frame < attack_frames; ++frame)
+            heard = ts_note_bank_read(&notes);
+        CHECK(fabsf(heard - 0.5f * 96.0f / 127.0f) < 0.0001f);
+    }
+    ts_note_bank_release_event(&notes, &c4_channel_1);
+    CHECK(ts_note_bank_count(&notes) == 0);
+    ts_note_bank_set_attack_ms(&notes, 0);
+    CHECK(ts_note_bank_start_tuned_event(
+              &notes, &instrument, &unity, TS_AUDITION_CURRENT,
+              &c4_channel_1, 0, 48000) == TS_NOTE_STARTED);
+    CHECK(fabsf(ts_note_bank_read(&notes) - 0.5f * 96.0f / 127.0f) < 0.0001f);
+    ts_note_bank_release_event(&notes, &c4_channel_1);
+    ts_note_bank_clear(&notes);
+    CHECK(notes.attack_ms == 0);
+    ts_note_bank_set_attack_ms(&notes, TS_AUDITION_ATTACK_MS_DEFAULT);
+
     /* A TERRA-style twelve-note sweep must not stall on the legacy fifth
        voice. Sample MIDI has an independent 64-voice pool; when that pool is
        full, a new pitch replaces the oldest voice instead of being rejected. */
@@ -170,7 +198,14 @@ int main(void)
     CHECK(ts_performance_count(&performance) == 2);
     CHECK(fabsf(performance.voices[0].gain - 96.0f / 127.0f) < 0.0001f);
     (void)ts_performance_read(&performance, &raw);
-    CHECK(fabsf(raw - 2.0f * 0.5f * 96.0f / 127.0f) < 0.0001f);
+    CHECK(raw == 0.0f);
+    {
+        size_t attack_frames = ts_audition_attack_frames(
+            48000, TS_AUDITION_ATTACK_MS_DEFAULT);
+        for (size_t frame = 1u; frame < attack_frames; ++frame)
+            (void)ts_performance_read(&performance, &raw);
+        CHECK(fabsf(raw - 2.0f * 0.5f * 96.0f / 127.0f) < 0.0001f);
+    }
     ts_performance_release_event(&performance, &c4_channel_1);
     CHECK(ts_performance_count(&performance) == 0);
 

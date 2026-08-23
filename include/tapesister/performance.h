@@ -17,6 +17,8 @@ typedef struct {
     size_t range_first;
     size_t range_last;
     size_t crossfade_frames;
+    size_t attack_frame;
+    size_t attack_frames;
     TsLoopMode loop_mode;
     TsNoteOrigin origin;
     int note;
@@ -33,10 +35,12 @@ typedef struct {
 
 typedef struct {
     TsPerformanceVoice voices[TS_PERFORMANCE_VOICE_LIMIT];
+    int attack_ms;
 } TsPerformanceBank;
 
 void ts_performance_init(TsPerformanceBank *bank);
 void ts_performance_clear(TsPerformanceBank *bank);
+void ts_performance_set_attack_ms(TsPerformanceBank *bank, int milliseconds);
 void ts_performance_release_sources_after_pass(TsPerformanceBank *bank,
                                                uint16_t source_mask);
 void ts_performance_release_after_pass(TsPerformanceBank *bank);

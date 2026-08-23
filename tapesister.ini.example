@@ -38,6 +38,11 @@ ripple_cut_crop_canvas=0
 ; Config can select SYSTEM DEFAULT or any SDL playback device.
 audio_output_device=
 
+[Audition]
+; Per-voice note-on de-click ramp in milliseconds (0-20, default 2).
+; Set to 0 to preserve the waveform's exact hard start.
+voice_attack_ms=2
+
 [MIDI]
 ; Blank automatically opens the first available MIDI input. Use OFF to disable
 ; MIDI, or select an exact device name in Config with the < and > controls.

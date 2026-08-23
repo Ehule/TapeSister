@@ -689,6 +689,8 @@ typedef struct {
     int playing;
     int output_rate;
     int bank_slot;
+    size_t attack_frame;
+    size_t attack_frames;
     TsNoteBank notes;
     TsCaptureRecorder capture;
     TsInputMonitor *input_monitor;
@@ -700,6 +702,14 @@ typedef struct {
     float tune_reference_target;
     int tune_reference_enabled;
 } AudioState;
+
+static void restart_audio_attack(AudioState *audio, int output_rate,
+                                 int milliseconds)
+{
+    if (audio == NULL) return;
+    audio->attack_frame = 0u;
+    audio->attack_frames = ts_audition_attack_frames(output_rate, milliseconds);
+}
 
 typedef struct {
     SDL_Thread *thread;
@@ -795,6 +805,12 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 }
             }
         }
+        if (audio->playing) {
+            value *= ts_audition_attack_gain(
+                audio->attack_frame, audio->attack_frames);
+        }
+        if (audio->playing && audio->attack_frame < audio->attack_frames)
+            ++audio->attack_frame;
         value += ts_note_bank_read_split(&audio->notes, &synth_value);
         if (value > 1.0f) value = 1.0f;
         if (value < -1.0f) value = -1.0f;
@@ -927,6 +943,7 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                                   &plan, range == TS_AUDITION_WORKBENCH_LOOP ?
                                   2.0f : instrument->loop_crossfade_ms) : 0;
     audio->step = ((double)plan.sample->sample_rate / output_rate) * pitch;
+    restart_audio_attack(audio, output_rate, ui->config.voice_attack_ms);
     audio->playing = 1;
     if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
         TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot))
@@ -980,6 +997,7 @@ static void begin_playhead_audition(SDL_AudioDeviceID device, AudioState *audio,
     audio->bank_slot = -1;
     audio->step = (double)instrument->current.sample_rate / (double)output_rate *
                   audio->pitch;
+    restart_audio_attack(audio, output_rate, ui->config.voice_attack_ms);
     audio->playing = 1;
     if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
         TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot))
@@ -1119,6 +1137,7 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
         audio->playing = 0;
     audio->bank_slot = -1;
     if (event == NULL) return;
+    ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
     result = ts_note_bank_start_tuned_event(
         &audio->notes, instrument, ts_ui_audition_tuning(ui, instrument),
         ui->audition_source, event, latched, output_rate);
@@ -1210,6 +1229,7 @@ static void launch_staged_capture(SDL_AudioDeviceID device, AudioState *audio,
         TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot)) {
         audio->playing = 0;
         audio->bank_slot = -1;
+        ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
         started = ts_note_bank_start_staged_chord(
             &audio->notes, instrument, ts_ui_audition_tuning(ui, instrument),
             ui->audition_source, staged, ts_ui_keyboard_base_note(ui),
@@ -3287,6 +3307,7 @@ static void begin_fm_note_event(SDL_AudioDeviceID device, AudioState *audio,
     (void)instrument;
     if (!device || preview == NULL || preview->data == NULL || event == NULL) return;
     SDL_LockAudioDevice(device);
+    ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
     result = ts_note_bank_start_sample_event(
         &audio->notes, preview, &unity, event, latched, output_rate);
     if (result == TS_NOTE_STARTED &&
@@ -5074,6 +5095,7 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
                               ts_audition_crossfade_frames(
                                   &plan, slot->loop_crossfade_ms) : 0;
     audio->bank_slot = slot_index;
+    restart_audio_attack(audio, output_rate, ui->config.voice_attack_ms);
     audio->playing = 1;
     SDL_UnlockAudioDevice(device);
     snprintf(ui->status, sizeof(ui->status), "PLAYING BANK %02d %s %s",

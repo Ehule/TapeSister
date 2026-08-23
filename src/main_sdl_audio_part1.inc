@@ -380,6 +380,9 @@ static TsNoteStartResult ts_multi_note_start_event(
     int output_rate)
 {
     int started;
+    ts_performance_set_attack_ms(
+        &ts_multi_performance,
+        bank != NULL ? bank->attack_ms : TS_AUDITION_ATTACK_MS_DEFAULT);
     if (!ts_multi_group_latched || ts_multi_source_mask == 0u)
         return ts_note_bank_start_tuned_event(bank, instrument, tuning, source,
                                               event, latched, output_rate);
@@ -399,6 +402,9 @@ static int ts_multi_staged_start(TsNoteBank *bank,
                                  int keyboard_base_note,
                                  int output_rate)
 {
+    ts_performance_set_attack_ms(
+        &ts_multi_performance,
+        bank != NULL ? bank->attack_ms : TS_AUDITION_ATTACK_MS_DEFAULT);
     if (!ts_multi_group_latched || ts_multi_source_mask == 0u)
         return ts_note_bank_start_staged_chord(bank, instrument, tuning, source,
                                                staged_notes, keyboard_base_note,

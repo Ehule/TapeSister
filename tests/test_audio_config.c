@@ -29,7 +29,9 @@ static int test_defaults(void)
            expect(config.capture_auto_resize == 1,
                   "internal Capture auto resize should default on") &&
            expect(config.capture_max_seconds == TS_CAPTURE_MAX_SECONDS_DEFAULT,
-                  "internal Capture should have a bounded default duration");
+                  "internal Capture should have a bounded default duration") &&
+           expect(config.voice_attack_ms == TS_AUDITION_ATTACK_MS_DEFAULT,
+                  "sample voices should default to a short de-click attack");
 }
 
 static int test_roundtrip(void)
@@ -51,6 +53,7 @@ static int test_roundtrip(void)
     saved.midi_input_channel = 7;
     saved.capture_auto_resize = 0;
     saved.capture_max_seconds = 47;
+    saved.voice_attack_ms = 7;
 
     ok = ts_audio_config_save(&saved, path, error, sizeof(error)) &&
          ts_audio_config_load(&loaded, path, error, sizeof(error));
@@ -73,7 +76,9 @@ static int test_roundtrip(void)
          expect(loaded.capture_auto_resize == 0,
                 "Capture auto resize should roundtrip") &&
          expect(loaded.capture_max_seconds == 47,
-                "Capture duration limit should roundtrip");
+                "Capture duration limit should roundtrip") &&
+         expect(loaded.voice_attack_ms == 7,
+                "voice de-click attack should roundtrip");
     remove(path);
     return ok;
 }
@@ -143,7 +148,31 @@ static int test_legacy_config(void)
          expect(loaded.midi_input_device[0] == '\0',
                 "legacy config should default MIDI to auto") &&
          expect(loaded.midi_input_channel == 0,
-                "legacy config should default MIDI to omni");
+                "legacy config should default MIDI to omni") &&
+         expect(loaded.voice_attack_ms == TS_AUDITION_ATTACK_MS_DEFAULT,
+                "legacy config should receive the de-click default");
+    remove(path);
+    return ok;
+}
+
+static int test_attack_clamp(void)
+{
+    static const char path[] = "test-audio-config-attack.ini";
+    TsConfig loaded;
+    char error[160];
+    FILE *file = fopen(path, "wb");
+    int ok;
+    if (file == NULL) return 0;
+    fputs("[Audition]\nvoice_attack_ms=200\n", file);
+    fclose(file);
+    ok = ts_audio_config_load(&loaded, path, error, sizeof(error));
+    if (!ok) {
+        fprintf(stderr, "FAIL: attack clamp: %s\n", error);
+        remove(path);
+        return 0;
+    }
+    ok = expect(loaded.voice_attack_ms == TS_AUDITION_ATTACK_MS_MAX,
+                "voice attack should clamp to the documented maximum");
     remove(path);
     return ok;
 }
@@ -154,6 +183,7 @@ int main(void)
     if (!test_roundtrip()) return 1;
     if (!test_blank_roundtrip()) return 1;
     if (!test_legacy_config()) return 1;
+    if (!test_attack_clamp()) return 1;
     puts("audio config tests passed");
     return 0;
 }
