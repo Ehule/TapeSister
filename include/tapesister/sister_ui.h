@@ -86,6 +86,10 @@ void ts_sister_ui_model_update(TsSisterUiModel *model,
                                const TsSisterWaveSnapshot *waveform,
                                const TsSisterParameters *parameters);
 TsSisterUiHit ts_sister_ui_hit_test(int x, int y);
+int ts_sister_ui_window_point(int raw_x, int raw_y,
+                              int window_width, int window_height,
+                              int output_width, int output_height,
+                              int *logical_x, int *logical_y);
 void ts_sister_ui_render(TsFramebuffer *framebuffer,
                          const TsSisterUiModel *model,
                          const TsPalette *palette);

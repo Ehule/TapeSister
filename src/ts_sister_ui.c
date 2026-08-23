@@ -8,6 +8,54 @@ static int contains(int x, int y, int left, int top, int width, int height)
     return x >= left && x < left + width && y >= top && y < top + height;
 }
 
+int ts_sister_ui_window_point(int raw_x, int raw_y,
+                              int window_width, int window_height,
+                              int output_width, int output_height,
+                              int *logical_x, int *logical_y)
+{
+    double output_x;
+    double output_y;
+    double scale_x;
+    double scale_y;
+    double scale;
+    double viewport_width;
+    double viewport_height;
+    double viewport_x;
+    double viewport_y;
+    double x;
+    double y;
+
+    if (logical_x == NULL || logical_y == NULL || window_width <= 0 ||
+        window_height <= 0 || output_width <= 0 || output_height <= 0)
+        return 0;
+
+    /* SDL_RenderSetLogicalSize preserves the logical aspect ratio and centers
+       the result in a letterboxed renderer viewport. Mouse events use window
+       coordinates, while that viewport is expressed in renderer-output pixels.
+       Convert through both spaces so high-DPI and non-16:9 windows agree with
+       the pixels that were actually presented. */
+    output_x = (double)raw_x * (double)output_width / (double)window_width;
+    output_y = (double)raw_y * (double)output_height / (double)window_height;
+    scale_x = (double)output_width / (double)TS_SISTER_UI_WIDTH;
+    scale_y = (double)output_height / (double)TS_SISTER_UI_HEIGHT;
+    scale = scale_x < scale_y ? scale_x : scale_y;
+    if (scale <= 0.0) return 0;
+
+    viewport_width = (double)TS_SISTER_UI_WIDTH * scale;
+    viewport_height = (double)TS_SISTER_UI_HEIGHT * scale;
+    viewport_x = ((double)output_width - viewport_width) * 0.5;
+    viewport_y = ((double)output_height - viewport_height) * 0.5;
+    x = (output_x - viewport_x) / scale;
+    y = (output_y - viewport_y) / scale;
+    if (x < 0.0 || x >= (double)TS_SISTER_UI_WIDTH ||
+        y < 0.0 || y >= (double)TS_SISTER_UI_HEIGHT)
+        return 0;
+
+    *logical_x = (int)x;
+    *logical_y = (int)y;
+    return 1;
+}
+
 void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
 {
     if (model == NULL) return;

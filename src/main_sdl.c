@@ -6307,16 +6307,20 @@ static void sister_window_hide(SisterWindow *sister)
     if (sister->window != NULL) SDL_HideWindow(sister->window);
 }
 
-static void sister_logical_mouse(SDL_Window *window, int raw_x, int raw_y,
-                                 int *x, int *y)
+static int sister_logical_mouse(SDL_Window *window, SDL_Renderer *renderer,
+                                int raw_x, int raw_y, int *x, int *y)
 {
-    int width = TS_SISTER_UI_WIDTH;
-    int height = TS_SISTER_UI_HEIGHT;
-    if (window != NULL) SDL_GetWindowSize(window, &width, &height);
-    if (width < 1) width = 1;
-    if (height < 1) height = 1;
-    *x = raw_x * TS_SISTER_UI_WIDTH / width;
-    *y = raw_y * TS_SISTER_UI_HEIGHT / height;
+    int window_width = 0;
+    int window_height = 0;
+    int output_width = 0;
+    int output_height = 0;
+    if (window == NULL || renderer == NULL) return 0;
+    SDL_GetWindowSize(window, &window_width, &window_height);
+    if (SDL_GetRendererOutputSize(renderer, &output_width, &output_height) != 0)
+        return 0;
+    return ts_sister_ui_window_point(raw_x, raw_y,
+                                     window_width, window_height,
+                                     output_width, output_height, x, y);
 }
 
 static void sister_window_show(SisterWindow *sister)
@@ -7994,19 +7998,24 @@ int main(int argc, char **argv)
                            (event.button.button == SDL_BUTTON_LEFT ||
                             event.button.button == SDL_BUTTON_RIGHT)) {
                     int x, y;
-                    sister_logical_mouse(sister_window.window,
-                                         event.button.x, event.button.y, &x, &y);
-                    sister_apply_action(
-                        device, &audio, &ui, &instrument, &sister_window,
-                        ts_sister_ui_hit_test(x, y), (uint32_t)obtained.freq,
-                        obtained.channels);
+                    if (sister_logical_mouse(sister_window.window,
+                                             sister_window.renderer,
+                                             event.button.x, event.button.y,
+                                             &x, &y))
+                        sister_apply_action(
+                            device, &audio, &ui, &instrument, &sister_window,
+                            ts_sister_ui_hit_test(x, y),
+                            (uint32_t)obtained.freq, obtained.channels);
                 } else if (event.type == SDL_MOUSEMOTION &&
                            (event.motion.state &
                             (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK)) != 0u) {
                     int x, y;
                     TsSisterUiHit hit;
-                    sister_logical_mouse(sister_window.window,
-                                         event.motion.x, event.motion.y, &x, &y);
+                    if (!sister_logical_mouse(sister_window.window,
+                                              sister_window.renderer,
+                                              event.motion.x, event.motion.y,
+                                              &x, &y))
+                        continue;
                     hit = ts_sister_ui_hit_test(x, y);
                     if (hit.action == TS_SISTER_UI_ACTION_PARAMETER)
                         sister_apply_action(device, &audio, &ui, &instrument,
@@ -8019,8 +8028,10 @@ int main(int argc, char **argv)
                                 -event.wheel.y : event.wheel.y;
                     TsSisterUiHit hit;
                     SDL_GetMouseState(&raw_x, &raw_y);
-                    sister_logical_mouse(sister_window.window,
-                                         raw_x, raw_y, &x, &y);
+                    if (!sister_logical_mouse(sister_window.window,
+                                              sister_window.renderer,
+                                              raw_x, raw_y, &x, &y))
+                        continue;
                     hit = ts_sister_ui_hit_test(x, y);
                     if (hit.action == TS_SISTER_UI_ACTION_PARAMETER && wheel != 0) {
                         float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;

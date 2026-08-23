@@ -47,6 +47,34 @@ int main(void)
           hit.index == TS_SISTER_UI_PARAM_FILTER_GAIN);
     CHECK(ts_sister_ui_hit_test(455, 334).action == TS_SISTER_UI_ACTION_CAPTURE);
     CHECK(ts_sister_ui_hit_test(540, 334).action == TS_SISTER_UI_ACTION_OVERDUB);
+
+    {
+        int x = -1;
+        int y = -1;
+        /* Native and 2x high-DPI output map to the same logical point. */
+        CHECK(ts_sister_ui_window_point(320, 180, 640, 360,
+                                        640, 360, &x, &y));
+        CHECK(x == 320 && y == 180);
+        CHECK(ts_sister_ui_window_point(320, 180, 640, 360,
+                                        1280, 720, &x, &y));
+        CHECK(x == 320 && y == 180);
+
+        /* A tall window letterboxes vertically: the bars are not controls. */
+        CHECK(!ts_sister_ui_window_point(12, 20, 640, 480,
+                                         640, 480, &x, &y));
+        CHECK(ts_sister_ui_window_point(12, 68, 640, 480,
+                                        640, 480, &x, &y));
+        CHECK(x == 12 && y == 8);
+
+        /* A wide window letterboxes horizontally and rejects either bar. */
+        CHECK(!ts_sister_ui_window_point(20, 10, 800, 360,
+                                         800, 360, &x, &y));
+        CHECK(ts_sister_ui_window_point(90, 10, 800, 360,
+                                        800, 360, &x, &y));
+        CHECK(x == 10 && y == 10);
+        CHECK(!ts_sister_ui_window_point(790, 10, 800, 360,
+                                         800, 360, &x, &y));
+    }
     ts_palette_default(&palette);
     ts_sister_ui_render(&framebuffer, &model, &palette);
     for (size_t pixel = 0u; pixel < TS_UI_WIDTH * TS_UI_HEIGHT; ++pixel) {
