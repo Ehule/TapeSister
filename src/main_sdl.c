@@ -5,6 +5,7 @@
 #include "tapesister/note_bank.h"
 #include "tapesister/sample_pages.h"
 #include "tapesister/sister_runtime.h"
+#include "tapesister/sister_ui.h"
 #include "tapesister/dsp_transform.h"
 #include "tapesister/render_damage.h"
 #include "tapesister/ui.h"
@@ -6235,6 +6236,315 @@ static void logical_mouse(SDL_Window *window, int raw_x, int raw_y, int *x, int 
     *y = raw_y * TS_UI_HEIGHT / wh;
 }
 
+typedef struct {
+    SDL_Window *window;
+    SDL_Renderer *renderer;
+    SDL_Texture *texture;
+    TsSisterUiModel model;
+    TsSisterUiModel rendered_model;
+    TsFramebuffer framebuffer;
+    uint32_t window_id;
+    uint32_t last_present_ms;
+    int rendered_model_valid;
+    int minimized;
+} SisterWindow;
+
+static uint32_t event_window_id(const SDL_Event *event)
+{
+    if (event == NULL) return 0u;
+    switch (event->type) {
+    case SDL_WINDOWEVENT: return event->window.windowID;
+    case SDL_KEYDOWN:
+    case SDL_KEYUP: return event->key.windowID;
+    case SDL_TEXTINPUT: return event->text.windowID;
+    case SDL_MOUSEMOTION: return event->motion.windowID;
+    case SDL_MOUSEBUTTONDOWN:
+    case SDL_MOUSEBUTTONUP: return event->button.windowID;
+    case SDL_MOUSEWHEEL: return event->wheel.windowID;
+    default: return 0u;
+    }
+}
+
+static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
+{
+    int x = SDL_WINDOWPOS_CENTERED;
+    int y = SDL_WINDOWPOS_CENTERED;
+    if (sister == NULL) return 0;
+    if (sister->window != NULL) return 1;
+    if (config != NULL && config->sister_window_x >= 0) x = config->sister_window_x;
+    if (config != NULL && config->sister_window_y >= 0) y = config->sister_window_y;
+    sister->window = SDL_CreateWindow(
+        "TapeSister - Sister Machine", x, y,
+        TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT,
+        SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    sister->renderer = sister->window ? SDL_CreateRenderer(
+        sister->window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : NULL;
+    if (sister->renderer == NULL && sister->window != NULL)
+        sister->renderer = SDL_CreateRenderer(sister->window, -1, SDL_RENDERER_SOFTWARE);
+    sister->texture = sister->renderer ? SDL_CreateTexture(
+        sister->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+        TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT) : NULL;
+    if (sister->window == NULL || sister->renderer == NULL || sister->texture == NULL) {
+        if (sister->texture != NULL) SDL_DestroyTexture(sister->texture);
+        if (sister->renderer != NULL) SDL_DestroyRenderer(sister->renderer);
+        if (sister->window != NULL) SDL_DestroyWindow(sister->window);
+        sister->window = NULL;
+        sister->renderer = NULL;
+        sister->texture = NULL;
+        sister->window_id = 0u;
+        return 0;
+    }
+    SDL_RenderSetLogicalSize(sister->renderer, TS_SISTER_UI_WIDTH,
+                             TS_SISTER_UI_HEIGHT);
+    sister->window_id = SDL_GetWindowID(sister->window);
+    return 1;
+}
+
+static void sister_window_hide(SisterWindow *sister)
+{
+    if (sister == NULL) return;
+    ts_sister_ui_model_hide(&sister->model);
+    if (sister->window != NULL) SDL_HideWindow(sister->window);
+}
+
+static void sister_logical_mouse(SDL_Window *window, int raw_x, int raw_y,
+                                 int *x, int *y)
+{
+    int width = TS_SISTER_UI_WIDTH;
+    int height = TS_SISTER_UI_HEIGHT;
+    if (window != NULL) SDL_GetWindowSize(window, &width, &height);
+    if (width < 1) width = 1;
+    if (height < 1) height = 1;
+    *x = raw_x * TS_SISTER_UI_WIDTH / width;
+    *y = raw_y * TS_SISTER_UI_HEIGHT / height;
+}
+
+static void sister_window_show(SisterWindow *sister)
+{
+    if (sister == NULL || sister->window == NULL) return;
+    ts_sister_ui_model_show(&sister->model);
+    sister->rendered_model_valid = 0;
+    SDL_ShowWindow(sister->window);
+    SDL_RaiseWindow(sister->window);
+}
+
+static void sister_set_parameter(TsSisterParameters *parameters,
+                                 int parameter, float amount)
+{
+    if (parameters == NULL) return;
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    switch ((TsSisterUiParameter)parameter) {
+    case TS_SISTER_UI_PARAM_H1_LEVEL: parameters->head1_level = amount; break;
+    case TS_SISTER_UI_PARAM_H1_TIME: parameters->head1_time_ms = amount * 4000.0f; break;
+    case TS_SISTER_UI_PARAM_H1_FEEDBACK: parameters->head1_feedback = amount; break;
+    case TS_SISTER_UI_PARAM_H2_LEVEL: parameters->head2_level = amount; break;
+    case TS_SISTER_UI_PARAM_H2_SCRUB: parameters->head2_scrub = amount; break;
+    case TS_SISTER_UI_PARAM_H2_RATE: parameters->head2_rate_index = (int)lrintf(amount * 9.0f); break;
+    case TS_SISTER_UI_PARAM_H2_FEEDBACK: parameters->head2_feedback = amount; break;
+    case TS_SISTER_UI_PARAM_H3_LEVEL: parameters->head3_level = amount; break;
+    case TS_SISTER_UI_PARAM_H3_SPAN: parameters->head3_span = amount; break;
+    case TS_SISTER_UI_PARAM_H3_RATE: parameters->head3_rate_index = (int)lrintf(amount * 9.0f); break;
+    case TS_SISTER_UI_PARAM_WOW: parameters->wow = amount * 10.0f; break;
+    case TS_SISTER_UI_PARAM_DROP: parameters->drop = amount * 100.0f; break;
+    case TS_SISTER_UI_PARAM_DUCK:
+        parameters->duck_enabled = amount > 0.01f;
+        parameters->duck_sensitivity = amount;
+        break;
+    case TS_SISTER_UI_PARAM_DECORRELATE:
+        parameters->decorrelation_enabled = amount >= 0.5f;
+        break;
+    case TS_SISTER_UI_PARAM_WIDTH: parameters->width = amount; break;
+    case TS_SISTER_UI_PARAM_FILTER_TYPE:
+        parameters->filter_type = (TsSisterFilterType)lrintf(
+            amount * (TS_SISTER_FILTER_TYPE_COUNT - 1));
+        break;
+    case TS_SISTER_UI_PARAM_FILTER_CUTOFF:
+        parameters->filter_cutoff_hz = 20.0f * powf(1000.0f, amount);
+        break;
+    case TS_SISTER_UI_PARAM_FILTER_Q:
+        parameters->filter_q = 0.1f + amount * 19.9f;
+        break;
+    case TS_SISTER_UI_PARAM_FILTER_GAIN:
+        parameters->filter_gain_db = -24.0f + amount * 48.0f;
+        break;
+    default: break;
+    }
+}
+
+static float sister_parameter_normalized(const TsSisterParameters *parameters,
+                                         int parameter)
+{
+    float value = 0.0f;
+    if (parameters == NULL) return 0.0f;
+    switch ((TsSisterUiParameter)parameter) {
+    case TS_SISTER_UI_PARAM_H1_LEVEL: value = parameters->head1_level; break;
+    case TS_SISTER_UI_PARAM_H1_TIME: value = parameters->head1_time_ms / 4000.0f; break;
+    case TS_SISTER_UI_PARAM_H1_FEEDBACK: value = parameters->head1_feedback; break;
+    case TS_SISTER_UI_PARAM_H2_LEVEL: value = parameters->head2_level; break;
+    case TS_SISTER_UI_PARAM_H2_SCRUB: value = parameters->head2_scrub; break;
+    case TS_SISTER_UI_PARAM_H2_RATE: value = parameters->head2_rate_index / 9.0f; break;
+    case TS_SISTER_UI_PARAM_H2_FEEDBACK: value = parameters->head2_feedback; break;
+    case TS_SISTER_UI_PARAM_H3_LEVEL: value = parameters->head3_level; break;
+    case TS_SISTER_UI_PARAM_H3_SPAN: value = parameters->head3_span; break;
+    case TS_SISTER_UI_PARAM_H3_RATE: value = parameters->head3_rate_index / 9.0f; break;
+    case TS_SISTER_UI_PARAM_WOW: value = parameters->wow / 10.0f; break;
+    case TS_SISTER_UI_PARAM_DROP: value = parameters->drop / 100.0f; break;
+    case TS_SISTER_UI_PARAM_DUCK: value = parameters->duck_sensitivity; break;
+    case TS_SISTER_UI_PARAM_DECORRELATE: value = parameters->decorrelation_enabled ? 1.0f : 0.0f; break;
+    case TS_SISTER_UI_PARAM_WIDTH: value = parameters->width; break;
+    case TS_SISTER_UI_PARAM_FILTER_TYPE: value = parameters->filter_type / (float)(TS_SISTER_FILTER_TYPE_COUNT - 1); break;
+    case TS_SISTER_UI_PARAM_FILTER_CUTOFF: value = log10f(parameters->filter_cutoff_hz / 20.0f) / 3.0f; break;
+    case TS_SISTER_UI_PARAM_FILTER_Q: value = (parameters->filter_q - 0.1f) / 19.9f; break;
+    case TS_SISTER_UI_PARAM_FILTER_GAIN: value = (parameters->filter_gain_db + 24.0f) / 48.0f; break;
+    default: break;
+    }
+    if (!isfinite(value) || value < 0.0f) return 0.0f;
+    return value > 1.0f ? 1.0f : value;
+}
+
+static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, TsInstrument *instrument,
+                                SisterWindow *sister, int overdub,
+                                uint32_t sample_rate)
+{
+    char error[160];
+    int destination;
+    size_t capacity;
+    int ok;
+    if (audio == NULL || ui == NULL || instrument == NULL || sister == NULL ||
+        sample_rate == 0u) return 0;
+    destination = instrument->selected_slot;
+    if (sister->model.destination_mode == TS_SISTER_UI_DEST_NEXT_EMPTY)
+        destination = ts_sister_runtime_find_destination(
+            &audio->sister, instrument, destination);
+    if (destination < 0) {
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "NO EMPTY UNLOCKED TARGET ON THIS PAGE");
+        return 0;
+    }
+    capacity = (size_t)sample_rate * (size_t)ui->config.capture_max_seconds;
+    if (device) SDL_LockAudioDevice(device);
+    if (overdub)
+        ok = ts_sister_runtime_arm_overdub(
+            &audio->sister, instrument, destination, capacity, sample_rate,
+            sister->model.selected_tap, 0u, error, sizeof(error));
+    else
+        ok = ts_sister_runtime_arm_capture(
+            &audio->sister, instrument, destination, capacity, sample_rate,
+            (uint8_t)sister->model.capture_channels,
+            sister->model.selected_tap, 0u, error, sizeof(error));
+    if (ok) ok = ts_sister_runtime_trigger_capture(
+        &audio->sister, error, sizeof(error));
+    if (device) SDL_UnlockAudioDevice(device);
+    sister->model.capture_overdub = overdub != 0;
+    snprintf(sister->model.status, sizeof(sister->model.status), "%s",
+             ok ? (overdub ? "OVERDUB RECORDING - PRESS AGAIN TO STOP" :
+                            "CAPTURE RECORDING - PRESS AGAIN TO STOP") : error);
+    return ok;
+}
+
+static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, TsInstrument *instrument,
+                                SisterWindow *sister, TsSisterUiHit hit,
+                                uint32_t sample_rate, uint8_t output_channels)
+{
+    char error[160];
+    uint8_t sources;
+    int capture_state;
+    if (audio == NULL || ui == NULL || sister == NULL) return;
+    capture_state = atomic_load_explicit(&audio->sister.capture.state,
+                                         memory_order_acquire);
+    if (hit.action == TS_SISTER_UI_ACTION_POWER) {
+        if (device) SDL_LockAudioDevice(device);
+        if (audio->sister.enabled) {
+            ts_sister_runtime_disable(&audio->sister);
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "POWER OFF - ORDINARY TAPESISTER AUDIO CONTINUES");
+        } else if (ts_sister_runtime_enable(
+                       &audio->sister, sample_rate, output_channels,
+                       (uint8_t)ui->config.sister_buffer_channels,
+                       (double)ui->config.sister_buffer_seconds,
+                       error, sizeof(error))) {
+            TsSisterParameters parameters = audio->sister.parameters;
+            parameters.clear_ms = (float)ui->config.sister_clear_ms;
+            ts_sister_runtime_set_parameters(&audio->sister, &parameters);
+            (void)ts_sister_runtime_set_page(&audio->sister,
+                                             (size_t)ui->sample_page,
+                                             instrument);
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "ENABLED - SELECT SOURCES AND MONITOR WHEN READY");
+        } else {
+            snprintf(sister->model.status, sizeof(sister->model.status), "%s", error);
+        }
+        if (device) SDL_UnlockAudioDevice(device);
+        return;
+    }
+    if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
+        hit.action != TS_SISTER_UI_ACTION_CAPTURE_FORMAT &&
+        hit.action != TS_SISTER_UI_ACTION_DESTINATION &&
+        hit.action != TS_SISTER_UI_ACTION_TAP) {
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "POWER IS OFF");
+        return;
+    }
+    if (device) SDL_LockAudioDevice(device);
+    switch (hit.action) {
+    case TS_SISTER_UI_ACTION_ROLL:
+        ts_sister_runtime_set_rolling(&audio->sister, !audio->sister.rolling); break;
+    case TS_SISTER_UI_ACTION_HOLD:
+        ts_sister_runtime_set_hold(&audio->sister, !audio->sister.held); break;
+    case TS_SISTER_UI_ACTION_CLEAR:
+        if (!ts_sister_runtime_request_clear(&audio->sister))
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "CLEAR ALREADY IN PROGRESS");
+        break;
+    case TS_SISTER_UI_ACTION_MONITOR:
+        ts_sister_runtime_set_monitor(&audio->sister,
+                                      !audio->sister.monitor_enabled); break;
+    case TS_SISTER_UI_ACTION_SOURCE_TILES:
+    case TS_SISTER_UI_ACTION_SOURCE_FM:
+    case TS_SISTER_UI_ACTION_SOURCE_EXT:
+    case TS_SISTER_UI_ACTION_SOURCE_PREVIEW:
+        sources = ts_sister_runtime_sources(&audio->sister);
+        sources ^= (uint8_t)(1u << hit.index);
+        ts_sister_runtime_set_sources(&audio->sister, sources);
+        break;
+    case TS_SISTER_UI_ACTION_PARAMETER:
+        sister_set_parameter(&sister->model.parameters, hit.index, hit.normalized);
+        ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
+        break;
+    default: break;
+    }
+    if (device) SDL_UnlockAudioDevice(device);
+    if (hit.action == TS_SISTER_UI_ACTION_WAVE_MODE) {
+        sister->model.waveform_mode = ts_waveform_display_cycle(
+            sister->model.waveform_mode, 1);
+        ui->config.sister_waveform_display_mode = sister->model.waveform_mode;
+    } else if (hit.action == TS_SISTER_UI_ACTION_TAP) {
+        sister->model.selected_tap = (TsSisterTap)(
+            (sister->model.selected_tap + 1) % TS_SISTER_TAP_COUNT);
+    } else if (hit.action == TS_SISTER_UI_ACTION_CAPTURE_FORMAT) {
+        sister->model.capture_channels = sister->model.capture_channels == 2 ? 1 : 2;
+        ui->config.sister_capture_channels = sister->model.capture_channels;
+    } else if (hit.action == TS_SISTER_UI_ACTION_DESTINATION) {
+        sister->model.destination_mode = sister->model.destination_mode ==
+            TS_SISTER_UI_DEST_CURRENT ? TS_SISTER_UI_DEST_NEXT_EMPTY :
+            TS_SISTER_UI_DEST_CURRENT;
+    } else if (hit.action == TS_SISTER_UI_ACTION_CAPTURE ||
+               hit.action == TS_SISTER_UI_ACTION_OVERDUB) {
+        if (capture_state == TS_CAPTURE_RECORDING) {
+            if (device) SDL_LockAudioDevice(device);
+            (void)ts_sister_runtime_stop_capture(&audio->sister,
+                                                 error, sizeof(error));
+            if (device) SDL_UnlockAudioDevice(device);
+        } else if (capture_state == TS_CAPTURE_IDLE) {
+            (void)sister_begin_capture(device, audio, ui, instrument, sister,
+                hit.action == TS_SISTER_UI_ACTION_OVERDUB, sample_rate);
+        }
+    }
+}
+
 static float clamp_unit(float value)
 {
     if (value < 0.0f) return 0.0f;
@@ -7334,6 +7644,7 @@ int main(int argc, char **argv)
     TsSamplePages sample_pages;
     TsInstrument *parked_instrument = NULL;
     TsUiState ui;
+    SisterWindow sister_window = {0};
     TsFramebuffer framebuffer;
     uint32_t *frame_snapshot = NULL;
     TsSample clipboard;
@@ -7428,6 +7739,7 @@ int main(int argc, char **argv)
             ui.cdp_presets[slot].seed = ui.config.cdp_factory_seed[slot];
         }
     }
+    ts_sister_ui_model_init(&sister_window.model, &ui.config);
     ts_note_bank_init(&audio.notes);
     ts_performance_init(&audio.performance);
     ts_audio_mixer_init(&audio.mixer);
@@ -7637,6 +7949,147 @@ int main(int argc, char **argv)
                                        parked_instrument, record_bank_active,
                                        &pending_file);
         while (SDL_PollEvent(&event)) {
+            uint32_t event_id = event_window_id(&event);
+            if (sister_window.window != NULL &&
+                event_id == sister_window.window_id) {
+                if (event.type == SDL_WINDOWEVENT &&
+                    event.window.event == SDL_WINDOWEVENT_CLOSE) {
+                    SDL_GetWindowPosition(sister_window.window,
+                                          &ui.config.sister_window_x,
+                                          &ui.config.sister_window_y);
+                    sister_window_hide(&sister_window);
+                } else if (event.type == SDL_WINDOWEVENT &&
+                           event.window.event == SDL_WINDOWEVENT_MINIMIZED) {
+                    sister_window.minimized = 1;
+                } else if (event.type == SDL_WINDOWEVENT &&
+                           (event.window.event == SDL_WINDOWEVENT_RESTORED ||
+                            event.window.event == SDL_WINDOWEVENT_SHOWN)) {
+                    sister_window.minimized = 0;
+                } else if (event.type == SDL_WINDOWEVENT &&
+                           event.window.event == SDL_WINDOWEVENT_MOVED) {
+                    ui.config.sister_window_x = event.window.data1;
+                    ui.config.sister_window_y = event.window.data2;
+                } else if (event.type == SDL_KEYDOWN &&
+                           event.key.keysym.sym == SDLK_ESCAPE) {
+                    sister_window_hide(&sister_window);
+                } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
+                           !ui_dialog_open(&ui)) {
+                    int note = note_for_key(event.key.keysym.sym);
+                    SDL_Keymod mod = SDL_GetModState();
+                    if (note >= 0 && device) {
+                        if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0) {
+                            SDL_LockAudioDevice(device);
+                            runtime_note_clear(&audio);
+                            SDL_UnlockAudioDevice(device);
+                        }
+                        begin_note(device, &audio, &ui, &instrument,
+                                   note, obtained.freq,
+                                   (mod & KMOD_SHIFT) != 0);
+                    }
+                } else if (event.type == SDL_KEYUP && !ui_dialog_open(&ui) &&
+                           note_for_key(event.key.keysym.sym) >= 0) {
+                    release_note(device, &audio, &ui,
+                                 note_for_key(event.key.keysym.sym));
+                } else if (event.type == SDL_MOUSEBUTTONDOWN &&
+                           (event.button.button == SDL_BUTTON_LEFT ||
+                            event.button.button == SDL_BUTTON_RIGHT)) {
+                    int x, y;
+                    sister_logical_mouse(sister_window.window,
+                                         event.button.x, event.button.y, &x, &y);
+                    sister_apply_action(
+                        device, &audio, &ui, &instrument, &sister_window,
+                        ts_sister_ui_hit_test(x, y), (uint32_t)obtained.freq,
+                        obtained.channels);
+                } else if (event.type == SDL_MOUSEMOTION &&
+                           (event.motion.state &
+                            (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK)) != 0u) {
+                    int x, y;
+                    TsSisterUiHit hit;
+                    sister_logical_mouse(sister_window.window,
+                                         event.motion.x, event.motion.y, &x, &y);
+                    hit = ts_sister_ui_hit_test(x, y);
+                    if (hit.action == TS_SISTER_UI_ACTION_PARAMETER)
+                        sister_apply_action(device, &audio, &ui, &instrument,
+                                            &sister_window, hit,
+                                            (uint32_t)obtained.freq,
+                                            obtained.channels);
+                } else if (event.type == SDL_MOUSEWHEEL) {
+                    int raw_x, raw_y, x, y;
+                    int wheel = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
+                                -event.wheel.y : event.wheel.y;
+                    TsSisterUiHit hit;
+                    SDL_GetMouseState(&raw_x, &raw_y);
+                    sister_logical_mouse(sister_window.window,
+                                         raw_x, raw_y, &x, &y);
+                    hit = ts_sister_ui_hit_test(x, y);
+                    if (hit.action == TS_SISTER_UI_ACTION_PARAMETER && wheel != 0) {
+                        float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
+                        hit.normalized = sister_parameter_normalized(
+                            &sister_window.model.parameters, hit.index) +
+                            step * (float)wheel;
+                        sister_apply_action(device, &audio, &ui, &instrument,
+                                            &sister_window, hit,
+                                            (uint32_t)obtained.freq,
+                                            obtained.channels);
+                    }
+                }
+                continue;
+            }
+            if (event.type == SDL_MOUSEBUTTONDOWN &&
+                event.button.button == SDL_BUTTON_LEFT &&
+                event.button.windowID == SDL_GetWindowID(window) &&
+                !ui_dialog_open(&ui)) {
+                int x, y;
+                logical_mouse(window, event.button.x, event.button.y, &x, &y);
+                if (ts_ui_logo_contains(x, y)) {
+                    if (!sister_window_ensure(&sister_window, &ui.config)) {
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "SISTER WINDOW UNAVAILABLE: %.112s", SDL_GetError());
+                    } else {
+                        sister_window_show(&sister_window);
+                        if (!audio.sister.enabled)
+                            sister_apply_action(
+                                device, &audio, &ui, &instrument, &sister_window,
+                                (TsSisterUiHit){TS_SISTER_UI_ACTION_POWER, 0, 0.0f},
+                                (uint32_t)obtained.freq, obtained.channels);
+                    }
+                    continue;
+                }
+                if (ts_ui_waveform_mode_contains(x, y)) {
+                    ui.config.waveform_display_mode = ts_waveform_display_cycle(
+                        (TsWaveformDisplayMode)ui.config.waveform_display_mode, 1);
+                    continue;
+                }
+                if (!record_bank_active &&
+                    ts_ui_sister_source_mode_contains(x, y)) {
+                    if (audio.capture.state != TS_CAPTURE_IDLE) {
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "FINISH ORDINARY CAPTURE BEFORE SISTER SOURCE EDIT");
+                    } else {
+                        ui.sister_source_select_mode = !ui.sister_source_select_mode;
+                        snprintf(ui.status, sizeof(ui.status), "%s",
+                                 ui.sister_source_select_mode ?
+                                 "SISTER SOURCE SELECT: CLICK TILES - BUTTON EXITS" :
+                                 "SISTER SOURCE SELECT OFF");
+                    }
+                    continue;
+                }
+                if (ui.sister_source_select_mode && !record_bank_active) {
+                    int slot = ts_ui_bank_slot_from_point(x, y);
+                    if (slot >= 0) {
+                        int selected;
+                        if (device) SDL_LockAudioDevice(device);
+                        selected = ts_sister_runtime_toggle_source_slot(
+                            &audio.sister, &instrument, slot);
+                        if (device) SDL_UnlockAudioDevice(device);
+                        snprintf(ui.status, sizeof(ui.status),
+                                 selected ? "TILE %02d ADDED TO SISTER SOURCES" :
+                                            "TILE %02d REMOVED/UNAVAILABLE",
+                                 slot + 1);
+                        continue;
+                    }
+                }
+            }
             if (event.type == SDL_DROPFILE && ui.amplitude_gesture.active)
                 end_amplitude_draw(device, &audio, &ui, &instrument, 1);
             if (event.type == SDL_DROPFILE && ui.material_macro_gesture.active)
@@ -10528,6 +10981,42 @@ int main(int argc, char **argv)
                                         &external_input, &ui, &instrument);
         if (audio.capture.state == TS_CAPTURE_COMPLETED)
             finalize_capture(device, &audio, &ui, &instrument);
+        if (audio.capture.state != TS_CAPTURE_IDLE &&
+            ui.sister_source_select_mode) {
+            ui.sister_source_select_mode = 0;
+            snprintf(ui.status, sizeof(ui.status),
+                     "SISTER SOURCE SELECT CLOSED FOR ORDINARY CAPTURE");
+        }
+        if (audio.sister.capture.state == TS_CAPTURE_COMPLETED) {
+            char sister_error[160];
+            int committed;
+            if (device) SDL_LockAudioDevice(device);
+            committed = ts_sister_runtime_commit_capture(
+                &audio.sister, &instrument, ui.config.capture_auto_resize,
+                sister_error, sizeof(sister_error));
+            if (device) SDL_UnlockAudioDevice(device);
+            if (committed) {
+                ts_ui_waveform_cache_invalidate(&ui, TS_UI_WAVEFORM_MAIN);
+                snprintf(sister_window.model.status,
+                         sizeof(sister_window.model.status),
+                         "CAPTURE COMMITTED - ADD THE NEW TILE AS A SOURCE WHEN READY");
+                snprintf(ui.status, sizeof(ui.status),
+                         "SISTER %s CAPTURED TO TILE %02d",
+                         ts_sister_tap_name(sister_window.model.selected_tap),
+                         instrument.selected_slot + 1);
+            } else {
+                snprintf(sister_window.model.status,
+                         sizeof(sister_window.model.status),
+                         "CAPTURE COMMIT FAILED: %.100s", sister_error);
+            }
+        }
+        if (ts_sister_runtime_can_clear(&audio.sister)) {
+            if (device) SDL_LockAudioDevice(device);
+            (void)ts_sister_runtime_perform_clear(&audio.sister);
+            if (device) SDL_UnlockAudioDevice(device);
+            snprintf(sister_window.model.status,
+                     sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
+        }
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
         if (record_bank_active)
             sync_external_capture_ui(device, input_device, &external_input, &ui);
@@ -10574,6 +11063,25 @@ int main(int argc, char **argv)
             }
         }
         if (device) SDL_UnlockAudioDevice(device);
+        {
+            TsSisterRoutingSnapshot routing = {0};
+            TsSisterSnapshot engine = {0};
+            TsSisterWaveSnapshot wave = {0};
+            (void)ts_sister_runtime_get_snapshot(&audio.sister, &routing);
+            if (routing.enabled)
+                (void)ts_sister_machine_get_snapshot(&audio.sister.machine,
+                                                      &engine);
+            (void)ts_sister_runtime_get_wave_snapshot(&audio.sister, &wave);
+            ts_sister_ui_model_update(&sister_window.model, &routing, &engine,
+                                      &wave, &audio.sister.parameters);
+            ui.sister_enabled = routing.enabled;
+            ui.sister_rolling = routing.rolling;
+            ui.sister_held = routing.held;
+            ui.sister_monitor_enabled = routing.monitor_enabled;
+            ui.sister_capture_active = routing.capture_state != TS_CAPTURE_IDLE;
+            ui.sister_warning = routing.warnings != 0u;
+            ui.sister_source_mask = routing.source_mask;
+        }
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         if (ui.file_busy)
             ui.file_busy_phase = (int)((SDL_GetTicks() / 180u) % 4u);
@@ -10585,6 +11093,27 @@ int main(int argc, char **argv)
                    would only write the same output a second time. */
                 SDL_RenderCopy(renderer, texture, NULL, NULL);
                 SDL_RenderPresent(renderer);
+            }
+        }
+        if (sister_window.model.visible && !sister_window.minimized &&
+            sister_window.renderer != NULL && sister_window.texture != NULL &&
+            (!sister_window.rendered_model_valid ||
+             memcmp(&sister_window.model, &sister_window.rendered_model,
+                    sizeof(sister_window.model)) != 0) &&
+            SDL_GetTicks() - sister_window.last_present_ms >= 33u) {
+            ts_sister_ui_render(&sister_window.framebuffer,
+                                &sister_window.model, &ui.palette);
+            if (SDL_UpdateTexture(sister_window.texture, NULL,
+                                  sister_window.framebuffer.pixels,
+                                  TS_SISTER_UI_WIDTH *
+                                      (int)sizeof(uint32_t)) == 0) {
+                SDL_RenderClear(sister_window.renderer);
+                SDL_RenderCopy(sister_window.renderer,
+                               sister_window.texture, NULL, NULL);
+                SDL_RenderPresent(sister_window.renderer);
+                sister_window.rendered_model = sister_window.model;
+                sister_window.rendered_model_valid = 1;
+                sister_window.last_present_ms = SDL_GetTicks();
             }
         }
         if (pending_file.active && !pending_file.presented)
@@ -10627,7 +11156,20 @@ int main(int argc, char **argv)
         parked_instrument = NULL;
     }
     ts_instrument_free(&instrument);
+    if (sister_window.window != NULL)
+        SDL_GetWindowPosition(sister_window.window,
+                              &ui.config.sister_window_x,
+                              &ui.config.sister_window_y);
+    {
+        char config_error[160];
+        if (!ts_config_save(&ui.config, config_file_path(),
+                            config_error, sizeof(config_error)))
+            fprintf(stderr, "TapeSister config save: %s\n", config_error);
+    }
     free(frame_snapshot);
+    if (sister_window.texture) SDL_DestroyTexture(sister_window.texture);
+    if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
+    if (sister_window.window) SDL_DestroyWindow(sister_window.window);
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);
     if (window) SDL_DestroyWindow(window);

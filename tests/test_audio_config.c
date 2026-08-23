@@ -32,6 +32,15 @@ static int test_defaults(void)
                   "internal Capture should have a bounded default duration") &&
            expect(config.capture_channels == 1,
                   "legacy internal Capture should default to mono") &&
+           expect(config.waveform_display_mode == TS_WAVEFORM_DISPLAY_STEREO,
+                  "ordinary waveform should default to stereo display") &&
+           expect(config.sister_waveform_display_mode == TS_WAVEFORM_DISPLAY_STEREO,
+                  "Sister waveform should default to stereo display") &&
+           expect(config.sister_buffer_seconds == 40 &&
+                  config.sister_buffer_channels == 2,
+                  "Sister storage should retain the Kafka foundation defaults") &&
+           expect(config.sister_capture_channels == 1,
+                  "Sister Capture should remain deliberately mono by default") &&
            expect(config.voice_attack_ms == TS_AUDITION_ATTACK_MS_DEFAULT,
                   "sample voices should default to a short de-click attack");
 }
@@ -56,6 +65,15 @@ static int test_roundtrip(void)
     saved.capture_auto_resize = 0;
     saved.capture_max_seconds = 47;
     saved.capture_channels = 2;
+    saved.waveform_display_mode = TS_WAVEFORM_DISPLAY_RIGHT;
+    saved.sister_waveform_display_mode = TS_WAVEFORM_DISPLAY_MONO_SUM;
+    saved.sister_buffer_seconds = 55;
+    saved.sister_buffer_channels = 1;
+    saved.sister_clear_ms = 33;
+    saved.sister_capture_channels = 2;
+    saved.sister_restart_clear = 0;
+    saved.sister_window_x = 123;
+    saved.sister_window_y = 456;
     saved.voice_attack_ms = 7;
 
     ok = ts_audio_config_save(&saved, path, error, sizeof(error)) &&
@@ -78,6 +96,18 @@ static int test_roundtrip(void)
                 "stereo input mode should roundtrip") &&
          expect(loaded.capture_auto_resize == 0,
                 "Capture auto resize should roundtrip") &&
+         expect(loaded.waveform_display_mode == TS_WAVEFORM_DISPLAY_RIGHT &&
+                loaded.sister_waveform_display_mode == TS_WAVEFORM_DISPLAY_MONO_SUM,
+                "waveform display modes should roundtrip") &&
+         expect(loaded.sister_buffer_seconds == 55 &&
+                loaded.sister_buffer_channels == 1 &&
+                loaded.sister_clear_ms == 33,
+                "Sister storage preferences should roundtrip") &&
+         expect(loaded.sister_capture_channels == 2 &&
+                loaded.sister_restart_clear == 0,
+                "Sister capture/restart preferences should roundtrip") &&
+         expect(loaded.sister_window_x == 123 && loaded.sister_window_y == 456,
+                "Sister window position should roundtrip") &&
          expect(loaded.capture_max_seconds == 47,
                 "Capture duration limit should roundtrip") &&
          expect(loaded.capture_channels == 2,

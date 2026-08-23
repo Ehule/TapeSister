@@ -175,6 +175,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     runtime->selected_tap = TS_SISTER_TAP_MIX;
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     snapshot_atomic_init(&runtime->snapshot);
+    ts_sister_wave_publisher_init(&runtime->waveform);
     publish_snapshot(runtime);
 }
 
@@ -242,6 +243,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     ts_capture_free(&runtime->capture);
     ts_performance_clear(&runtime->performance);
+    ts_sister_wave_publisher_clear(&runtime->waveform, buffer_channels);
     publish_snapshot(runtime);
     runtime_error(error, error_size, "");
     return 1;
@@ -256,6 +258,7 @@ void ts_sister_runtime_disable(TsSisterRuntime *runtime)
     ts_performance_clear(&runtime->performance);
     ts_capture_free(&runtime->capture);
     ts_sister_machine_free(&runtime->machine);
+    ts_sister_wave_publisher_clear(&runtime->waveform, 2u);
     runtime->output_channels = 0u;
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     runtime->source_target_conflict = 0;
@@ -302,6 +305,8 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     runtime->last_frame = (TsSisterRuntimeFrame){0};
     ts_capture_free(&runtime->capture);
     ts_performance_clear(&runtime->performance);
+    ts_sister_wave_publisher_clear(&runtime->waveform,
+                                   runtime->machine.buffer.channels);
     runtime->warnings &= ~(uint32_t)(TS_SISTER_WARNING_DEVICE_CONTRACT |
                                      TS_SISTER_WARNING_ALLOCATION);
     publish_snapshot(runtime);
@@ -366,7 +371,11 @@ int ts_sister_runtime_perform_clear(TsSisterRuntime *runtime)
     int result;
     if (runtime == NULL || !runtime->enabled) return 0;
     result = ts_sister_machine_perform_clear(&runtime->machine);
-    if (result) runtime->last_frame = (TsSisterRuntimeFrame){0};
+    if (result) {
+        runtime->last_frame = (TsSisterRuntimeFrame){0};
+        ts_sister_wave_publisher_clear(&runtime->waveform,
+                                       runtime->machine.buffer.channels);
+    }
     publish_snapshot(runtime);
     return result;
 }
@@ -574,6 +583,11 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     frame.input = input;
     frame.duck_sidechain = input;
     output = ts_sister_machine_process_frame(&runtime->machine, input, input);
+    ts_sister_wave_publisher_push(&runtime->waveform, output.write,
+                                  output.write_position,
+                                  runtime->machine.buffer.capacity_frames,
+                                  runtime->machine.buffer.channels,
+                                  output.wrote);
     frame.tap[TS_SISTER_TAP_MIX] = ts_stereo_frame_sanitize(output.mix);
     frame.tap[TS_SISTER_TAP_H1] = ts_stereo_frame_sanitize(output.head[0]);
     frame.tap[TS_SISTER_TAP_H2] = ts_stereo_frame_sanitize(output.head[1]);
@@ -599,6 +613,13 @@ void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
     for (size_t frame = 0u; frame < frames; ++frame)
         output[frame] = ts_sister_runtime_process_frame(
             runtime, sources != NULL ? &sources[frame] : NULL);
+}
+
+int ts_sister_runtime_get_wave_snapshot(const TsSisterRuntime *runtime,
+                                        TsSisterWaveSnapshot *snapshot)
+{
+    return runtime != NULL &&
+           ts_sister_wave_snapshot_get(&runtime->waveform, snapshot);
 }
 
 int ts_sister_runtime_find_destination(const TsSisterRuntime *runtime,
@@ -852,6 +873,9 @@ void ts_sister_runtime_project_close(TsSisterRuntime *runtime)
     ts_capture_free(&runtime->capture);
     if (runtime->enabled)
         (void)ts_sister_machine_clear_offline(&runtime->machine);
+    ts_sister_wave_publisher_clear(&runtime->waveform,
+                                   runtime->enabled ?
+                                   runtime->machine.buffer.channels : 2u);
     publish_snapshot(runtime);
 }
 

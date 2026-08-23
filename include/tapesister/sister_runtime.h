@@ -4,6 +4,7 @@
 #include "tapesister/capture.h"
 #include "tapesister/performance.h"
 #include "tapesister/sister_machine.h"
+#include "tapesister/sister_wave_snapshot.h"
 
 #include <stdatomic.h>
 #include <stddef.h>
@@ -125,6 +126,7 @@ typedef struct {
     int source_target_conflict;
     int callback_failed;
     TsSisterRoutingSnapshotAtomic snapshot;
+    TsSisterWavePublisher waveform;
 } TsSisterRuntime;
 
 void ts_sister_runtime_init(TsSisterRuntime *runtime);
@@ -221,6 +223,8 @@ void ts_sister_runtime_fail_silent(TsSisterRuntime *runtime,
                                    uint32_t warning);
 int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
                                    TsSisterRoutingSnapshot *snapshot);
+int ts_sister_runtime_get_wave_snapshot(const TsSisterRuntime *runtime,
+                                        TsSisterWaveSnapshot *snapshot);
 const char *ts_sister_tap_name(TsSisterTap tap);
 
 #endif

@@ -124,6 +124,10 @@ typedef struct {
 typedef struct {
     TsStereoFrame head[TS_SISTER_HEAD_COUNT];
     TsStereoFrame mix;
+    /* Exact bounded frame offered to rolling memory this callback. */
+    TsStereoFrame write;
+    size_t write_position;
+    int wrote;
 } TsSisterOutput;
 
 typedef struct {

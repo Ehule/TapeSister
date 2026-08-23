@@ -7,7 +7,8 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
              src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c
-             src/ts_sister_machine.c src/ts_sister_runtime.c
+             src/ts_sister_machine.c src/ts_sister_wave_snapshot.c
+             src/ts_sister_runtime.c src/ts_sister_ui.c
              src/ts_capture.c
              src/ts_capture_archive.c src/ts_input_monitor.c
              src/ts_sample_pages.c
@@ -16,7 +17,8 @@ add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts
              src/ts_palette.c
              src/ts_render_damage.c src/ts_waveform_cache.c
              src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c
-             src/ts_dsp_transform.c src/ts_exchange.c src/ts_ui.c)
+             src/ts_dsp_transform.c src/ts_exchange.c src/ts_waveform_display.c
+             src/ts_ui.c)
 target_include_directories(tapesister_core PUBLIC include)
 target_link_libraries(tapesister_core PUBLIC m)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -188,7 +190,9 @@ foreach(sister_test IN ITEMS sister_buffer sister_heads sister_transport
                              sister_modulation sister_feedback sister_stereo
                              sister_duck_filter sister_snapshot sister_routes
                              sister_runtime sister_source_mask sister_capture
-                             sister_recursion sister_lifecycle)
+                             sister_recursion sister_lifecycle sister_ui_model
+                             sister_wave_snapshot waveform_display_modes
+                             sister_source_ui sister_capture_ui sister_palette)
   add_executable(test_${sister_test} tests/test_${sister_test}.c)
   target_link_libraries(test_${sister_test} PRIVATE tapesister_core)
   add_test(NAME test_${sister_test} COMMAND test_${sister_test})

@@ -7,6 +7,7 @@
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/recipe.h"
 #include "tapesister/cdp_recipe.h"
+#include "tapesister/waveform_display.h"
 
 enum {
     TS_CONFIG_PATH_MAX = 1024,
@@ -90,6 +91,15 @@ typedef struct {
     int capture_auto_resize;
     int capture_max_seconds;
     int capture_channels;
+    int waveform_display_mode;
+    int sister_waveform_display_mode;
+    int sister_buffer_seconds;
+    int sister_buffer_channels;
+    int sister_clear_ms;
+    int sister_capture_channels;
+    int sister_restart_clear;
+    int sister_window_x;
+    int sister_window_y;
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];
     float dsp_factory_controls[TS_DSP_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
     int cdp_factory_overridden[TS_CDP_FACTORY_RECIPE_COUNT];

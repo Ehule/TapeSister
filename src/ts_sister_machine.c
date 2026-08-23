@@ -1336,9 +1336,13 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
         ++machine->overload_count;
     write.l = soft_saturate(dc_block(machine, 0u, write.l));
     write.r = soft_saturate(dc_block(machine, 1u, write.r));
+    output.write = write;
+    output.write_position = write_position;
     if (machine->rolling && !machine->held &&
-        machine->clear_state != TS_SISTER_CLEAR_WAITING)
-        ts_sister_buffer_write(&machine->buffer, write_position, write);
+        machine->clear_state != TS_SISTER_CLEAR_WAITING) {
+        output.wrote = ts_sister_buffer_write(&machine->buffer,
+                                               write_position, write);
+    }
 
     sum = frame_add(output.head[0], frame_add(output.head[1], output.head[2]));
     sum = frame_scale(sum, machine->parameters.headroom);
