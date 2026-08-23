@@ -4,6 +4,12 @@
 #include <stddef.h>
 #include "tapesister/sample.h"
 
+enum {
+    TS_AUDITION_ATTACK_MS_MIN = 0,
+    TS_AUDITION_ATTACK_MS_MAX = 20,
+    TS_AUDITION_ATTACK_MS_DEFAULT = 2
+};
+
 typedef enum {
     TS_AUDITION_CURRENT = 0,
     TS_AUDITION_PARENT
@@ -34,6 +40,10 @@ double ts_instrument_audition_pitch(const TsInstrument *instrument);
 double ts_audition_map_progress(double position, size_t first, size_t last,
                                 size_t target_first, size_t target_last);
 size_t ts_audition_crossfade_frames(const TsAuditionPlan *plan, float milliseconds);
+/* A short output-rate envelope removes the discontinuity when a voice begins
+   on a nonzero sample. The gain reaches unity without altering stored audio. */
+size_t ts_audition_attack_frames(int output_rate, int milliseconds);
+float ts_audition_attack_gain(size_t rendered_frame, size_t attack_frames);
 double ts_audition_wrap_position(double position, size_t first, size_t last,
                                  size_t crossfade_frames);
 float ts_audition_read_looped(const TsSample *sample, double position,

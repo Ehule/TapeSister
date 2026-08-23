@@ -236,6 +236,9 @@ static void test_staging_and_live_note_timing(void)
     }
 
     ts_note_bank_clear(&notes);
+    /* This timing test predates the configurable onset envelope and exercises
+       exact voice-join arithmetic with that envelope explicitly disabled. */
+    ts_note_bank_set_attack_ms(&notes, 0);
     ts_capture_init(&recorder);
     CHECK(ts_capture_arm(&recorder, 1, 8, 48000, error, sizeof(error)));
     CHECK(ts_capture_set_source(&recorder, 0, error, sizeof(error)));
@@ -271,6 +274,7 @@ static void test_live_selection_sync_reaches_capture(void)
     instrument.loop_first = 0;
     instrument.loop_last = 8;
     ts_note_bank_init(&notes);
+    ts_note_bank_set_attack_ms(&notes, 0);
     ts_capture_init(&recorder);
     CHECK(ts_capture_arm(&recorder, 1, 4, 48000, error, sizeof(error)));
     CHECK(ts_capture_set_source(&recorder, 0, error, sizeof(error)));
@@ -476,6 +480,7 @@ static void test_internal_synth_source_and_split_mix(void)
     replacement.frames = 8u;
     replacement.sample_rate = 48000u;
     ts_note_bank_init(&notes);
+    ts_note_bank_set_attack_ms(&notes, 0);
     CHECK(ts_note_bank_start_sample(&notes, &preview, &instrument.audible_tuning,
                                     0, TS_KEYBOARD_BASE_NOTE, 1, 48000) ==
           TS_NOTE_STARTED);
@@ -487,6 +492,43 @@ static void test_internal_synth_source_and_split_mix(void)
                                     &instrument.audible_tuning, 0,
                                     TS_KEYBOARD_BASE_NOTE, 1, 48000) ==
           TS_NOTE_TOGGLED_OFF);
+    ts_instrument_free(&instrument);
+}
+
+static void test_declick_attack_reaches_capture(void)
+{
+    TsInstrument instrument;
+    TsNoteBank notes;
+    TsCaptureRecorder recorder;
+    char error[160];
+    const size_t attack_frames = ts_audition_attack_frames(
+        48000, TS_AUDITION_ATTACK_MS_DEFAULT);
+    CHECK(attack_frames == 96u);
+    CHECK(prepare_source_and_blank(&instrument, 256u, attack_frames,
+                                   error, sizeof(error)));
+    for (size_t frame = 0u; frame < instrument.current.frames; ++frame)
+        instrument.current.data[frame] = 0.5f;
+    instrument.has_loop = 1;
+    instrument.loop_first = 0u;
+    instrument.loop_last = instrument.current.frames;
+    ts_note_bank_init(&notes);
+    ts_capture_init(&recorder);
+    CHECK(ts_capture_arm(&recorder, 1, attack_frames, 48000,
+                         error, sizeof(error)));
+    CHECK(ts_capture_set_source(&recorder, 0, error, sizeof(error)));
+    CHECK(ts_note_bank_start_tuned_at(
+              &notes, &instrument, &instrument.audible_tuning,
+              TS_AUDITION_CURRENT, 0, TS_KEYBOARD_BASE_NOTE, 1,
+              48000) == TS_NOTE_STARTED);
+    CHECK(ts_capture_trigger(&recorder, error, sizeof(error)));
+    for (size_t frame = 0u; frame < attack_frames; ++frame)
+        (void)ts_capture_write_sample(&recorder, ts_note_bank_read(&notes));
+    CHECK(recorder.state == TS_CAPTURE_COMPLETED);
+    CHECK(recorder.buffer[0] == 0.0f);
+    CHECK(recorder.buffer[attack_frames / 2u] > 0.2f &&
+          recorder.buffer[attack_frames / 2u] < 0.3f);
+    CHECK(fabsf(recorder.buffer[attack_frames - 1u] - 0.5f) < 0.0001f);
+    ts_capture_free(&recorder);
     ts_instrument_free(&instrument);
 }
 
@@ -596,6 +638,7 @@ int main(void)
     test_early_stop_and_cancel_leave_expected_target();
     test_auto_resize_capture_expands_blank_target();
     test_internal_synth_source_and_split_mix();
+    test_declick_attack_reaches_capture();
     test_capture_feedback_rendering();
     if (failures != 0) {
         fprintf(stderr, "%d Capture checks failed\n", failures);

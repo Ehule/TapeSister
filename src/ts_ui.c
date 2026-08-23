@@ -402,15 +402,6 @@ static void compact_slider(TsFramebuffer *fb, int x, int y, int w,
     text(fb, x + w - 20, y + 3, shown, active ? PAL_MOUSE : PAL_EFFECT, 1);
 }
 
-static uint32_t family_relation_color(TsFamilyRelation relation)
-{
-    if (relation == TS_FAMILY_CHILD) return PAL_INSTRUMENT;
-    if (relation == TS_FAMILY_COUSIN) return PAL_TUNING;
-    if (relation == TS_FAMILY_STRANGER) return PAL_VOLUME;
-    if (relation == TS_FAMILY_CAPTURED) return PAL_EFFECT;
-    return PAL_NOTE;
-}
-
 static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
                            int cursor_visible, int file_busy)
 {
@@ -510,7 +501,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
 static void config_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     frame(fb, TS_MODAL_PANEL_X, TS_MODAL_PANEL_Y,
-          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H, RGB(36, 33, 37), PAL_MOUSE);
+          TS_MODAL_PANEL_W, TS_MODAL_PANEL_H + 24, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 45, "CONFIGURATION", PAL_NOTE, 1);
     text(fb, 442, 45, "BLANK OK / DBL-CLICK BROWSE", PAL_EFFECT, 1);
     for (int i = 0; i < TS_CONFIG_FIELD_COUNT; ++i) {
@@ -536,9 +527,9 @@ static void config_render(TsFramebuffer *fb, const TsUiState *ui)
                  y + 3, 2, 13, PAL_MOUSE);
     }
     for (size_t i = 0; i < sizeof(config_buttons) / sizeof(config_buttons[0]); ++i)
-        button(fb, config_buttons[i].x, TS_PALETTE_ACTION_Y,
+        button(fb, config_buttons[i].x, TS_CONFIG_ACTION_Y,
                config_buttons[i].width, config_buttons[i].label, 0);
-    text(fb, 364, 182, "TAB FIELD  CTRL BACKSPACE CLEAR", PAL_TUNING, 1);
+    text(fb, 364, 220, "TAB FIELD  CTRL BACKSPACE CLEAR", PAL_TUNING, 1);
 }
 
 static int drone_crossfade_range(const TsUiState *ui, size_t *first, size_t *last)
@@ -1246,7 +1237,7 @@ size_t ts_ui_config_cursor_from_point(const TsUiState *ui,
 
 TsUiConfigAction ts_ui_config_action_from_point(int x, int y)
 {
-    if (y < TS_PALETTE_ACTION_Y || y >= TS_PALETTE_ACTION_Y + 23)
+    if (y < TS_CONFIG_ACTION_Y || y >= TS_CONFIG_ACTION_Y + 23)
         return TS_UI_CONFIG_ACTION_NONE;
     for (size_t i = 0; i < sizeof(config_buttons) / sizeof(config_buttons[0]); ++i)
         if (x >= config_buttons[i].x &&
@@ -2640,7 +2631,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             "CREATE FRESH STAMP  VARY ANSWERS SCULPTED SELECTION" :
             ui->fx_page == TS_FX_FAMILY ?
             "CREATE FRESH SOURCE  VARY ANSWERS CURRENT MATERIAL" :
-            "CLICK PLAY  DOUBLE EMPTY BLANK TAPE  RESIZE THEN ARM";
+            "CLICK PLAY  DOUBLE EMPTY  RESIZE";
         if (ui->external_record_bank)
             bank_hint = ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
                         "REC BANK ARMED  MAKE SOUND  THRESHOLD STARTS TAPE" :
@@ -2650,7 +2641,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                         "REC BANK  CHAIN ON  TAKES ADVANCE AND REARM" :
                         "REC BANK  SELECT EMPTY TILE  REC ARM  SHIFT+1";
         else {
-            snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %s",
+            snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %.32s",
                      ui->sample_page + 1,
                      ui->sample_page_count > 0 ? ui->sample_page_count : 1,
                      bank_hint);
@@ -2686,9 +2677,6 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             button(fb, x, y, 72, label, slot->occupied);
             if (slot->occupied && slot->has_loop)
                 rect(fb, x + 66, y + 4, 3, 15, PAL_TUNING);
-            if (slot->occupied)
-                rect(fb, x + 2, y + 19, 61, 2,
-                     family_relation_color(slot->relation));
             if (i == ui->bank_view_slot) rect(fb, x + 4, y + 4, 64, 2, PAL_EFFECT);
             if (i == ui->capture_source_slot) {
                 rect(fb, x + 4, y + 4, 3, 15, PAL_NOTE);

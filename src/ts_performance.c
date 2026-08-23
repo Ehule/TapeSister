@@ -30,32 +30,34 @@ static int voice_range_from_slot(const TsBankSlot *slot,
 }
 
 static int find_voice(TsPerformanceBank *bank, int source_slot,
-                      int note, int midi_note)
+                      const TsNoteEvent *event)
 {
     int free_voice = -1;
     for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
         if (voice->active && voice->source_slot == source_slot &&
-            voice->note == note && voice->midi_note == midi_note)
+            event != NULL && voice->midi_note == event->midi_note &&
+            ts_note_event_same_trigger(event, voice->origin, voice->note,
+                                       voice->channel))
             return i;
         if (!voice->active && free_voice < 0) free_voice = i;
     }
     return free_voice;
 }
 
-static int start_slot(TsPerformanceBank *bank, const TsBankSlot *slot,
-                      int source_slot, int note, int keyboard_base_note,
-                      int latched, int output_rate)
+static int start_slot_event(TsPerformanceBank *bank, const TsBankSlot *slot,
+                            int source_slot, const TsNoteEvent *event,
+                            int latched, int output_rate)
 {
     TsPerformanceVoice *voice;
     size_t first, last, crossfade;
     int index;
-    int midi_note = keyboard_base_note + note;
-    if (bank == NULL || slot == NULL || output_rate <= 0 || note < 0 || note >= 24 ||
-        keyboard_base_note < 0 || midi_note > 127 ||
+    if (bank == NULL || slot == NULL || event == NULL || output_rate <= 0 ||
+        event->key < 0 || event->midi_note < 0 || event->midi_note > 127 ||
+        event->velocity <= 0 || event->velocity > 127 ||
         !voice_range_from_slot(slot, &first, &last, &crossfade))
         return 0;
-    index = find_voice(bank, source_slot, note, midi_note);
+    index = find_voice(bank, source_slot, event);
     if (index < 0) return 0;
     voice = &bank->voices[index];
     if (voice->active && latched && voice->latched) {
@@ -73,11 +75,16 @@ static int start_slot(TsPerformanceBank *bank, const TsBankSlot *slot,
                       (double)(last - 1u) : (double)first;
     voice->step = (double)slot->sample.sample_rate / (double)output_rate *
                   ts_tuning_note_pitch(&slot->audible_tuning,
-                                       midi_note - TS_KEYBOARD_BASE_NOTE);
+                                       event->midi_note - TS_KEYBOARD_BASE_NOTE);
     voice->crossfade_frames = crossfade;
-    voice->note = note;
-    voice->midi_note = midi_note;
+    voice->attack_frames = ts_audition_attack_frames(
+        output_rate, bank->attack_ms);
+    voice->origin = event->origin;
+    voice->note = event->key;
+    voice->midi_note = event->midi_note;
+    voice->channel = event->channel;
     voice->source_slot = source_slot;
+    voice->gain = ts_note_event_gain(event);
     voice->latched = latched != 0;
     voice->active = 1;
     return 1;
@@ -85,12 +92,29 @@ static int start_slot(TsPerformanceBank *bank, const TsBankSlot *slot,
 
 void ts_performance_init(TsPerformanceBank *bank)
 {
-    if (bank != NULL) memset(bank, 0, sizeof(*bank));
+    if (bank != NULL) {
+        memset(bank, 0, sizeof(*bank));
+        bank->attack_ms = TS_AUDITION_ATTACK_MS_DEFAULT;
+    }
 }
 
 void ts_performance_clear(TsPerformanceBank *bank)
 {
-    ts_performance_init(bank);
+    int attack_ms;
+    if (bank == NULL) return;
+    attack_ms = bank->attack_ms;
+    memset(bank, 0, sizeof(*bank));
+    ts_performance_set_attack_ms(bank, attack_ms);
+}
+
+void ts_performance_set_attack_ms(TsPerformanceBank *bank, int milliseconds)
+{
+    if (bank == NULL) return;
+    if (milliseconds < TS_AUDITION_ATTACK_MS_MIN)
+        milliseconds = TS_AUDITION_ATTACK_MS_MIN;
+    if (milliseconds > TS_AUDITION_ATTACK_MS_MAX)
+        milliseconds = TS_AUDITION_ATTACK_MS_MAX;
+    bank->attack_ms = milliseconds;
 }
 
 void ts_performance_release_sources_after_pass(TsPerformanceBank *bank,
@@ -120,11 +144,32 @@ void ts_performance_release_after_pass(TsPerformanceBank *bank)
 
 void ts_performance_release(TsPerformanceBank *bank, int note)
 {
+    TsNoteEvent event;
+    if (!ts_note_event_qwerty(&event, note, TS_KEYBOARD_BASE_NOTE)) return;
+    ts_performance_release_event(bank, &event);
+}
+
+void ts_performance_release_event(TsPerformanceBank *bank,
+                                  const TsNoteEvent *event)
+{
     if (bank == NULL) return;
     for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
         if (voice->active && !voice->latched && !voice->releasing &&
-            voice->note == note)
+            event != NULL &&
+            ts_note_event_same_trigger(event, voice->origin, voice->note,
+                                       voice->channel))
+            voice->active = 0;
+    }
+}
+
+void ts_performance_release_midi_channel(TsPerformanceBank *bank, int channel)
+{
+    if (bank == NULL || channel < 0 || channel > 15) return;
+    for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
+        TsPerformanceVoice *voice = &bank->voices[i];
+        if (voice->active && voice->origin == TS_NOTE_ORIGIN_MIDI &&
+            voice->channel == channel)
             voice->active = 0;
     }
 }
@@ -137,12 +182,26 @@ int ts_performance_trigger_group(TsPerformanceBank *bank,
                                  int latched,
                                  int output_rate)
 {
+    TsNoteEvent event;
+    if (!ts_note_event_qwerty(&event, note, keyboard_base_note)) return 0;
+    return ts_performance_trigger_group_event(bank, instrument, source_mask,
+                                              &event, latched, output_rate);
+}
+
+int ts_performance_trigger_group_event(TsPerformanceBank *bank,
+                                       const TsInstrument *instrument,
+                                       uint16_t source_mask,
+                                       const TsNoteEvent *event,
+                                       int latched,
+                                       int output_rate)
+{
     int started = 0;
-    if (bank == NULL || instrument == NULL || source_mask == 0u) return 0;
+    if (bank == NULL || instrument == NULL || source_mask == 0u || event == NULL)
+        return 0;
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
         if ((source_mask & (uint16_t)(1u << slot)) == 0u) continue;
-        if (start_slot(bank, &instrument->bank[slot], slot, note,
-                       keyboard_base_note, latched, output_rate))
+        if (start_slot_event(bank, &instrument->bank[slot], slot, event,
+                             latched, output_rate))
             ++started;
     }
     return started;
@@ -211,6 +270,10 @@ float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
                         fraction;
             }
         }
+        value *= voice->gain * ts_audition_attack_gain(
+            voice->attack_frame, voice->attack_frames);
+        if (voice->attack_frame < voice->attack_frames)
+            ++voice->attack_frame;
         voice->position += voice->step * voice->direction;
         mixed += value;
         ++count;

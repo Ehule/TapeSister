@@ -31,6 +31,7 @@ int main(void)
     TsPerformanceBank performance;
     float raw = 0.0f;
     float monitored;
+    float attack_gain;
     float loud[4] = {0.8f, 0.8f, -1.2f, 0.4f};
     float quiet[3] = {0.2f, -0.3f, 0.1f};
     float gain;
@@ -41,6 +42,10 @@ int main(void)
     fill_slot(&instrument.bank[7], 0.75f, 32u, 44100u);
 
     ts_performance_init(&performance);
+    ts_performance_set_attack_ms(&performance, 7);
+    ts_performance_clear(&performance);
+    assert(performance.attack_ms == 7);
+    ts_performance_set_attack_ms(&performance, TS_AUDITION_ATTACK_MS_DEFAULT);
     assert(ts_performance_source_count((uint16_t)((1u << 0) | (1u << 3) | (1u << 7))) == 3);
     assert(ts_performance_trigger_group(
                &performance, &instrument,
@@ -48,8 +53,13 @@ int main(void)
                0, 60, 0, 44100) == 3);
     assert(ts_performance_count(&performance) == 3);
     monitored = ts_performance_read(&performance, &raw);
-    assert(fabsf(raw - 1.5f) < 0.0001f);
-    assert(fabsf(monitored - (1.5f / sqrtf(3.0f))) < 0.0001f);
+    assert(raw == 0.0f && monitored == 0.0f);
+    for (int frame = 1; frame < 8; ++frame)
+        monitored = ts_performance_read(&performance, &raw);
+    attack_gain = ts_audition_attack_gain(
+        7u, ts_audition_attack_frames(44100, TS_AUDITION_ATTACK_MS_DEFAULT));
+    assert(fabsf(raw - 1.5f * attack_gain) < 0.0001f);
+    assert(fabsf(monitored - (raw / sqrtf(3.0f))) < 0.0001f);
 
     assert(ts_performance_trigger_group(
                &performance, &instrument,

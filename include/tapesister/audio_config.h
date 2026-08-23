@@ -7,7 +7,7 @@
 
 /*
  * Audio-aware wrappers preserve the existing TsConfig parser/writer and layer
- * the SDL playback-device name on top. Older INI files remain valid.
+ * SDL playback and MIDI input settings on top. Older INI files remain valid.
  */
 int ts_audio_config_load(TsConfig *config, const char *path,
                          char *error, size_t error_size);

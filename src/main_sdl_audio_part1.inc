@@ -7,6 +7,7 @@
 #include "tapesister/audio_config.h"
 #include "tapesister/ui.h"
 #include "tapesister/capture.h"
+#include "tapesister/midi_input.h"
 #include "tapesister/performance.h"
 
 #include <SDL2/SDL.h>
@@ -43,9 +44,11 @@ static int ts_audio_external_recorder_arm(TsExternalRecorder *recorder,
                                           int max_seconds,
                                           char *error, size_t error_size);
 
-/* Multi-source Capture is intentionally injected at the existing note-event
- * boundary. QWERTY still produces the same note events; a later MIDI PR can
- * feed this path without learning anything about keyboard scan codes. */
+static TsMidiInput *ts_midi_input;
+
+/* Multi-source Capture is injected at the shared note-event boundary. QWERTY
+ * and MIDI both reach this path without the performance engine knowing which
+ * keyboard or device produced the note. */
 static TsUiBankAction ts_multi_bank_action(int right_button, unsigned modifiers);
 static int ts_multi_capture_arm(TsCaptureRecorder *recorder, int destination_slot,
                                 size_t capacity_frames, uint32_t sample_rate,
@@ -67,12 +70,10 @@ static int ts_multi_capture_stop(TsCaptureRecorder *recorder,
 static int ts_multi_capture_write_sample(TsCaptureRecorder *recorder, float sample);
 static int ts_multi_capture_source_matches(const TsCaptureRecorder *recorder,
                                            int selected_slot);
-static TsNoteStartResult ts_multi_note_start(TsNoteBank *bank,
-                                             const TsInstrument *instrument,
-                                             const TsTuning *tuning,
-                                             TsAuditionSource source, int note,
-                                             int keyboard_base_note,
-                                             int latched, int output_rate);
+static TsNoteStartResult ts_multi_note_start_event(
+    TsNoteBank *bank, const TsInstrument *instrument, const TsTuning *tuning,
+    TsAuditionSource source, const TsNoteEvent *event, int latched,
+    int output_rate);
 static int ts_multi_staged_start(TsNoteBank *bank,
                                  const TsInstrument *instrument,
                                  const TsTuning *tuning,
@@ -80,7 +81,9 @@ static int ts_multi_staged_start(TsNoteBank *bank,
                                  uint32_t staged_notes,
                                  int keyboard_base_note,
                                  int output_rate);
-static void ts_multi_note_release(TsNoteBank *bank, int note);
+static void ts_multi_note_release_event(TsNoteBank *bank,
+                                        const TsNoteEvent *event);
+static void ts_multi_note_release_midi_channel(TsNoteBank *bank, int channel);
 static void ts_multi_note_clear(TsNoteBank *bank);
 static float ts_multi_note_read_split(TsNoteBank *bank, float *synth_output);
 static void ts_multi_note_sync(TsNoteBank *bank, const TsInstrument *instrument,
@@ -108,9 +111,10 @@ static void ts_multi_note_sync(TsNoteBank *bank, const TsInstrument *instrument,
 #define ts_capture_write_sample ts_multi_capture_write_sample
 #define TS_CAPTURE_SOURCE_MATCHES(recorder, selected_slot) \
     ts_multi_capture_source_matches((recorder), (selected_slot))
-#define ts_note_bank_start_tuned_at ts_multi_note_start
+#define ts_note_bank_start_tuned_event ts_multi_note_start_event
 #define ts_note_bank_start_staged_chord ts_multi_staged_start
-#define ts_note_bank_release ts_multi_note_release
+#define ts_note_bank_release_event ts_multi_note_release_event
+#define ts_note_bank_release_midi_channel ts_multi_note_release_midi_channel
 #define ts_note_bank_clear ts_multi_note_clear
 #define ts_note_bank_read_split ts_multi_note_read_split
 #define ts_note_bank_sync ts_multi_note_sync
@@ -138,9 +142,10 @@ static void ts_multi_note_sync(TsNoteBank *bank, const TsInstrument *instrument,
 #undef ts_capture_stop
 #undef ts_capture_write_sample
 #undef TS_CAPTURE_SOURCE_MATCHES
-#undef ts_note_bank_start_tuned_at
+#undef ts_note_bank_start_tuned_event
 #undef ts_note_bank_start_staged_chord
-#undef ts_note_bank_release
+#undef ts_note_bank_release_event
+#undef ts_note_bank_release_midi_channel
 #undef ts_note_bank_clear
 #undef ts_note_bank_read_split
 #undef ts_note_bank_sync
@@ -325,7 +330,7 @@ static int ts_multi_capture_trigger(TsCaptureRecorder *recorder,
     if (ts_multi_group_latched && ts_multi_source_mask != 0u && !ready) {
         if (error != NULL && error_size > 0u)
             snprintf(error, error_size,
-                     "Play a QWERTY note or staged chord to start the source group");
+                     "Play a QWERTY/MIDI note or staged chord to start the source group");
         return 0;
     }
     result = ts_capture_trigger(recorder, error, error_size);
@@ -369,21 +374,21 @@ static int ts_multi_capture_write_sample(TsCaptureRecorder *recorder, float samp
     return completed;
 }
 
-static TsNoteStartResult ts_multi_note_start(TsNoteBank *bank,
-                                             const TsInstrument *instrument,
-                                             const TsTuning *tuning,
-                                             TsAuditionSource source, int note,
-                                             int keyboard_base_note,
-                                             int latched, int output_rate)
+static TsNoteStartResult ts_multi_note_start_event(
+    TsNoteBank *bank, const TsInstrument *instrument, const TsTuning *tuning,
+    TsAuditionSource source, const TsNoteEvent *event, int latched,
+    int output_rate)
 {
     int started;
+    ts_performance_set_attack_ms(
+        &ts_multi_performance,
+        bank != NULL ? bank->attack_ms : TS_AUDITION_ATTACK_MS_DEFAULT);
     if (!ts_multi_group_latched || ts_multi_source_mask == 0u)
-        return ts_note_bank_start_tuned_at(bank, instrument, tuning, source, note,
-                                           keyboard_base_note, latched, output_rate);
-    started = ts_performance_trigger_group(&ts_multi_performance, instrument,
-                                           ts_multi_source_mask, note,
-                                           keyboard_base_note, latched,
-                                           output_rate);
+        return ts_note_bank_start_tuned_event(bank, instrument, tuning, source,
+                                              event, latched, output_rate);
+    started = ts_performance_trigger_group_event(
+        &ts_multi_performance, instrument, ts_multi_source_mask, event,
+        latched, output_rate);
     ts_multi_capture_trigger_ready =
         started > 0 && ts_performance_count(&ts_multi_performance) > 0;
     return started > 0 ? TS_NOTE_STARTED : TS_NOTE_START_FAILED;
@@ -397,6 +402,9 @@ static int ts_multi_staged_start(TsNoteBank *bank,
                                  int keyboard_base_note,
                                  int output_rate)
 {
+    ts_performance_set_attack_ms(
+        &ts_multi_performance,
+        bank != NULL ? bank->attack_ms : TS_AUDITION_ATTACK_MS_DEFAULT);
     if (!ts_multi_group_latched || ts_multi_source_mask == 0u)
         return ts_note_bank_start_staged_chord(bank, instrument, tuning, source,
                                                staged_notes, keyboard_base_note,
@@ -411,10 +419,17 @@ static int ts_multi_staged_start(TsNoteBank *bank,
     }
 }
 
-static void ts_multi_note_release(TsNoteBank *bank, int note)
+static void ts_multi_note_release_event(TsNoteBank *bank,
+                                        const TsNoteEvent *event)
 {
-    ts_note_bank_release(bank, note);
-    ts_performance_release(&ts_multi_performance, note);
+    ts_note_bank_release_event(bank, event);
+    ts_performance_release_event(&ts_multi_performance, event);
+}
+
+static void ts_multi_note_release_midi_channel(TsNoteBank *bank, int channel)
+{
+    ts_note_bank_release_midi_channel(bank, channel);
+    ts_performance_release_midi_channel(&ts_multi_performance, channel);
 }
 
 static void ts_multi_note_clear(TsNoteBank *bank)
@@ -454,6 +469,7 @@ enum {
     TS_AUDIO_CONFIG_VALUE_X = 188,
     TS_AUDIO_CONFIG_INPUT_Y = 136,
     TS_AUDIO_CONFIG_OUTPUT_Y = 155,
+    TS_MIDI_CONFIG_INPUT_Y = 174,
     TS_AUDIO_CONFIG_INPUT_W = 430,
     TS_AUDIO_CONFIG_CHANNEL_X = 455,
     TS_AUDIO_CONFIG_CHANNEL_W = 165
@@ -486,6 +502,53 @@ static char ts_active_output[TS_CONFIG_PATH_MAX];
 static char ts_active_capture[TS_CONFIG_PATH_MAX];
 static char ts_pending_notice[160];
 static char ts_capture_reconfigure_error[160];
+
+static void ts_copy_name(char *destination, size_t size, const char *source);
+
+static void ts_cycle_midi_device(int direction)
+{
+    int count;
+    int total;
+    int current = 0;
+    const char *configured;
+    if (ts_live_config == NULL || ts_midi_input == NULL) return;
+    configured = ts_live_config->midi_input_device;
+    count = ts_midi_input_port_count(ts_midi_input);
+    total = count + 2;
+    if (strcmp(configured, "OFF") == 0) current = 1;
+    else if (configured[0] != '\0') {
+        for (int i = 0; i < count; ++i) {
+            const char *name = ts_midi_input_port_name(ts_midi_input, i);
+            if (name != NULL && strcmp(configured, name) == 0) {
+                current = i + 2;
+                break;
+            }
+        }
+    }
+    current = (current + (direction >= 0 ? 1 : total - 1)) % total;
+    if (current == 0) ts_live_config->midi_input_device[0] = '\0';
+    else if (current == 1)
+        ts_copy_name(ts_live_config->midi_input_device,
+                     sizeof(ts_live_config->midi_input_device), "OFF");
+    else
+        ts_copy_name(ts_live_config->midi_input_device,
+                     sizeof(ts_live_config->midi_input_device),
+                     ts_midi_input_port_name(ts_midi_input, current - 2));
+}
+
+static void ts_cycle_midi_channel(int direction)
+{
+    int channel;
+    if (ts_live_config == NULL) return;
+    channel = ts_live_config->midi_input_channel;
+    if (direction >= 0)
+        channel = channel >= TS_MIDI_INPUT_CHANNEL_MAX ?
+                  TS_MIDI_INPUT_CHANNEL_MIN : channel + 1;
+    else
+        channel = channel <= TS_MIDI_INPUT_CHANNEL_MIN ?
+                  TS_MIDI_INPUT_CHANNEL_MAX : channel - 1;
+    ts_live_config->midi_input_channel = channel;
+}
 
 static void ts_copy_name(char *destination, size_t size, const char *source)
 {

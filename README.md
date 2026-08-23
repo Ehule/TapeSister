@@ -82,6 +82,23 @@ it without truncating its current pass, and a plain tile click clears the group 
 immediately restarts the clicked tile through the normal audition path while Capture
 continues. The armed destination never joins or moves with the source group.
 
+MIDI Note On/Off uses the same voice and Capture path as QWERTY, so a physical
+keyboard plays either the normal active tile or every latched source tile. MIDI 60
+(C4) is unity, the full 0-127 note range is accepted, velocity controls voice level,
+and channel All Notes Off is honored. Ordinary single-tile MIDI playback has a
+64-voice sample pool with oldest-voice stealing, while the established five-voice
+QWERTY/FM pool remains unchanged. Config offers **AUTO FIRST**, an exact input device,
+or **OFF**, plus **OMNI** or MIDI channels 1-16. Saving Config applies a new MIDI choice
+immediately. No MIDI CC mapping or device-specific control framework is part of this
+note-input feature.
+
+Every newly triggered sample voice uses the same nondestructive de-click attack before
+the signal reaches monitoring, Capture, Overdub, or REC BANK SRC SYNTH. Set
+`voice_attack_ms` in the `[Audition]` section of `tapesister.ini` from 0–20 ms; the
+default is 2 ms, and 0 disables the ramp. The smooth output-rate envelope changes
+neither stored source audio nor note timing, and reaches full gain at the configured
+duration.
+
 With Capture armed, Shift-click up to five onscreen keys to assemble a silent staged
 chord; click any staged key normally to launch every voice sample-synchronously. With
 no staged chord, ordinary notes start and join recording at the time they are played.
@@ -490,6 +507,22 @@ make
 ```
 
 Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or choose it through **Load**.
+
+## Build on Windows
+
+From an MSYS2 **UCRT64** terminal with CMake, Ninja, SDL2, and the UCRT64
+toolchain installed:
+
+```bash
+cmake -S . -B build-windows -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
+cmake --build build-windows
+```
+
+The build copies the matching 64-bit `SDL2.dll` and MinGW runtime DLLs beside
+`build-windows/tapesister.exe`. That directory is therefore directly launchable
+from Explorer without depending on the UCRT64 terminal's `PATH`; keep the EXE,
+DLLs, and `assets` folder together when moving it.
 
 ## Keys and files
 

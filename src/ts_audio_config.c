@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void set_error(char *error, size_t error_size, const char *message)
@@ -21,8 +22,8 @@ static char *trim(char *text)
     return text;
 }
 
-static int load_output_device(TsConfig *config, const char *path,
-                              char *error, size_t error_size)
+static int load_device_settings(TsConfig *config, const char *path,
+                                char *error, size_t error_size)
 {
     FILE *file;
     char line[TS_CONFIG_PATH_MAX + 80];
@@ -47,14 +48,40 @@ static int load_output_device(TsConfig *config, const char *path,
         *equals = '\0';
         value = trim(equals + 1);
         key = trim(key);
-        if (strcmp(key, "audio_output_device") != 0) continue;
-        length = strlen(value);
-        if (length >= sizeof(config->audio_output_device)) {
-            fclose(file);
-            set_error(error, error_size, "Configured audio output device name is too long");
-            return 0;
+        if (strcmp(key, "midi_input_channel") == 0) {
+            char *end;
+            long channel = strtol(value, &end, 10);
+            if (end == value || *end != '\0') {
+                fclose(file);
+                set_error(error, error_size, "Configured MIDI channel is invalid");
+                return 0;
+            }
+            if (channel < TS_MIDI_INPUT_CHANNEL_MIN)
+                channel = TS_MIDI_INPUT_CHANNEL_MIN;
+            if (channel > TS_MIDI_INPUT_CHANNEL_MAX)
+                channel = TS_MIDI_INPUT_CHANNEL_MAX;
+            config->midi_input_channel = (int)channel;
+            continue;
         }
-        memcpy(config->audio_output_device, value, length + 1u);
+        if (strcmp(key, "audio_output_device") == 0) {
+            length = strlen(value);
+            if (length >= sizeof(config->audio_output_device)) {
+                fclose(file);
+                set_error(error, error_size,
+                          "Configured audio output device name is too long");
+                return 0;
+            }
+            memcpy(config->audio_output_device, value, length + 1u);
+        } else if (strcmp(key, "midi_input_device") == 0) {
+            length = strlen(value);
+            if (length >= sizeof(config->midi_input_device)) {
+                fclose(file);
+                set_error(error, error_size,
+                          "Configured MIDI input device name is too long");
+                return 0;
+            }
+            memcpy(config->midi_input_device, value, length + 1u);
+        }
     }
 
     if (ferror(file)) {
@@ -70,7 +97,7 @@ int ts_audio_config_load(TsConfig *config, const char *path,
                          char *error, size_t error_size)
 {
     if (!ts_config_load(config, path, error, error_size)) return 0;
-    if (!load_output_device(config, path, error, error_size)) return 0;
+    if (!load_device_settings(config, path, error, error_size)) return 0;
     set_error(error, error_size, "");
     return 1;
 }
@@ -90,8 +117,14 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
     if (fprintf(file,
                 "\n[Audio]\n"
                 "; Blank uses the operating system default stereo playback device.\n"
-                "audio_output_device=%s\n",
-                config->audio_output_device) < 0) {
+                "audio_output_device=%s\n"
+                "\n[MIDI]\n"
+                "; Blank automatically opens the first input; OFF disables MIDI.\n"
+                "midi_input_device=%s\n"
+                "; 0 listens on all channels; 1-16 selects one channel.\n"
+                "midi_input_channel=%d\n",
+                config->audio_output_device, config->midi_input_device,
+                config->midi_input_channel) < 0) {
         fclose(file);
         set_error(error, error_size, "Could not write audio config");
         return 0;

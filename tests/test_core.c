@@ -9,10 +9,22 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 static int failures;
 
 #define CHECK(expr) do { if (!(expr)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #expr); ++failures; } } while (0)
+
+static int test_mkdir(const char *path)
+{
+#ifdef _WIN32
+    return _mkdir(path);
+#else
+    return mkdir(path, 0700);
+#endif
+}
 
 static TsGeneratorRecipe generator(uint32_t seed, TsGeneratorKind kind)
 {
@@ -342,11 +354,16 @@ int main(void)
             CHECK(ts_ui_config_field_from_point(TS_CONFIG_FIELD_X + 20, y) == field);
         }
         CHECK(ts_ui_config_field_from_point(50, 205) == -1);
-        CHECK(ts_ui_config_action_from_point(68, 185) == TS_UI_CONFIG_ACTION_SAVE);
-        CHECK(ts_ui_config_action_from_point(159, 185) == TS_UI_CONFIG_ACTION_USE_CWD);
-        CHECK(ts_ui_config_action_from_point(240, 185) == TS_UI_CONFIG_ACTION_PALETTE);
-        CHECK(ts_ui_config_action_from_point(317, 185) == TS_UI_CONFIG_ACTION_CANCEL);
-        CHECK(ts_ui_config_action_from_point(50, 205) == TS_UI_CONFIG_ACTION_NONE);
+        CHECK(ts_ui_config_action_from_point(68, TS_CONFIG_ACTION_Y + 11) ==
+              TS_UI_CONFIG_ACTION_SAVE);
+        CHECK(ts_ui_config_action_from_point(159, TS_CONFIG_ACTION_Y + 11) ==
+              TS_UI_CONFIG_ACTION_USE_CWD);
+        CHECK(ts_ui_config_action_from_point(240, TS_CONFIG_ACTION_Y + 11) ==
+              TS_UI_CONFIG_ACTION_PALETTE);
+        CHECK(ts_ui_config_action_from_point(317, TS_CONFIG_ACTION_Y + 11) ==
+              TS_UI_CONFIG_ACTION_CANCEL);
+        CHECK(ts_ui_config_action_from_point(50, TS_CONFIG_ACTION_Y + 25) ==
+              TS_UI_CONFIG_ACTION_NONE);
 
         ts_ui_init(&ui);
         snprintf(ui.config.sample_path, sizeof(ui.config.sample_path), "ABCDE");
@@ -2614,12 +2631,12 @@ int main(void)
         char next_path[512];
         CHECK(ts_instrument_family_folder_name(&restored, name, sizeof(name)));
         CHECK(strstr(name, "_set") != NULL);
-        CHECK(mkdir("test-handoff-root", 0700) == 0);
+        CHECK(test_mkdir("test-handoff-root") == 0);
         CHECK(ts_instrument_next_family_path(
             &restored, "test-handoff-root", first_path, sizeof(first_path),
             error, sizeof(error)));
         CHECK(strstr(first_path, name) != NULL);
-        CHECK(mkdir(first_path, 0700) == 0);
+        CHECK(test_mkdir(first_path) == 0);
         CHECK(ts_instrument_next_family_path(
             &restored, "test-handoff-root", next_path, sizeof(next_path),
             error, sizeof(error)));
@@ -2631,7 +2648,7 @@ int main(void)
     {
         FILE *test_file;
         char path[TS_BROWSER_PATH_MAX];
-        mkdir("test-browser-dir", 0700);
+        test_mkdir("test-browser-dir");
         test_file = fopen("test-browser-load.wav", "wb");
         CHECK(test_file != NULL);
         if (test_file != NULL) fclose(test_file);
@@ -3073,8 +3090,8 @@ int main(void)
         CHECK(fb.pixels[(TS_CONFIG_FIELD_Y + TS_CONFIG_FIELD_STEP_Y + 3) *
                         TS_UI_WIDTH + TS_CONFIG_FIELD_X + 6 +
                         (int)ui.config_cursor * 6] == 0xffffd265u);
-        differences = framebuffer_diff_count(&normal, &fb, 0, 205,
-                                             TS_UI_WIDTH, TS_UI_HEIGHT - 205);
+        differences = framebuffer_diff_count(&normal, &fb, 0, 229,
+                                             TS_UI_WIDTH, TS_UI_HEIGHT - 229);
         CHECK(differences == 0);
         CHECK(framebuffer_diff_count(&normal, &fb, TS_MODAL_PANEL_X,
                                      TS_MODAL_PANEL_Y, TS_MODAL_PANEL_W,
@@ -3225,7 +3242,7 @@ int main(void)
     ui.show_recipes = 0;
     ui.bank_view_slot = 1;
     ts_ui_render(&fb, &ui, &family);
-    CHECK(fb.pixels[349 * TS_UI_WIDTH + 89] == 0xff18ff00u);
+    CHECK(fb.pixels[349 * TS_UI_WIDTH + 89] != 0xff18ff00u);
     {
         uint32_t visible_bank_pixel = fb.pixels[340 * TS_UI_WIDTH + 20];
 

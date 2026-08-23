@@ -6,7 +6,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
-             src/ts_performance.c src/ts_capture.c src/ts_capture_archive.c src/ts_input_monitor.c
+             src/ts_note_event.c src/ts_performance.c src/ts_capture.c
+             src/ts_capture_archive.c src/ts_input_monitor.c
              src/ts_sample_pages.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
              src/ts_recipe.c src/ts_dsp_recipe.c
@@ -21,17 +22,132 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 option(TAPESISTER_BUILD_SDL "Build the playable SDL2 instrument" ON)
+option(TAPESISTER_ENABLE_MIDI "Enable RtMidi note input" ON)
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
   # main_sdl_audio.c wraps the app entry point with SDL device selection and
   # routing; the runtime implementation remains in main_sdl.c.
-  add_executable(tapesister src/main_sdl_audio.c src/ts_startup_diag.c)
+  add_executable(tapesister src/main_sdl_audio.c src/ts_startup_diag.c
+                            src/ts_midi_input.c)
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
+  set(TAPESISTER_MIDI_AVAILABLE OFF)
+  if(TAPESISTER_ENABLE_MIDI)
+    if(WIN32 OR APPLE)
+      set(TAPESISTER_MIDI_AVAILABLE ON)
+    elseif(UNIX)
+      find_package(ALSA QUIET)
+      if(ALSA_FOUND)
+        set(TAPESISTER_MIDI_AVAILABLE ON)
+      else()
+        message(WARNING "ALSA development files not found; building without MIDI input")
+      endif()
+    endif()
+  endif()
+  if(TAPESISTER_MIDI_AVAILABLE)
+    enable_language(CXX)
+    set(CMAKE_CXX_STANDARD 11)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+    target_sources(tapesister PRIVATE
+      third_party/rtmidi/RtMidi.cpp
+      third_party/rtmidi/rtmidi_c.cpp)
+    target_compile_definitions(tapesister PRIVATE TAPESISTER_HAS_MIDI)
+    if(WIN32)
+      target_compile_definitions(tapesister PRIVATE __WINDOWS_MM__)
+      target_link_libraries(tapesister PRIVATE winmm)
+    elseif(APPLE)
+      find_library(COREMIDI CoreMIDI REQUIRED)
+      find_library(COREFOUNDATION CoreFoundation REQUIRED)
+      target_compile_definitions(tapesister PRIVATE __MACOSX_CORE__)
+      target_link_libraries(tapesister PRIVATE ${COREMIDI} ${COREFOUNDATION})
+    else()
+      find_package(Threads REQUIRED)
+      target_compile_definitions(tapesister PRIVATE __LINUX_ALSA__)
+      target_link_libraries(tapesister PRIVATE ALSA::ALSA Threads::Threads dl)
+    endif()
+  endif()
   # Keep the enlarged Windows stack reserve as defense-in-depth after PR35's
   # REC-bank storage was moved off the main-thread stack.
   if(MINGW)
     target_link_options(tapesister PRIVATE "-Wl,--stack,16777216")
+
+    # Explorer does not inherit MSYS2's /ucrt64/bin PATH.  Keep the build-tree
+    # executable portable by placing the matching SDL and MinGW runtime DLLs
+    # beside it after every link.  In particular, RtMidi enables C++ and adds
+    # libstdc++ to an application that was previously C-only.
+    set(TAPESISTER_MINGW_RUNTIME_COMPILER "${CMAKE_C_COMPILER}")
+    if(TAPESISTER_MIDI_AVAILABLE)
+      set(TAPESISTER_MINGW_RUNTIME_COMPILER "${CMAKE_CXX_COMPILER}")
+    endif()
+    get_filename_component(TAPESISTER_MINGW_BIN_DIR
+                           "${TAPESISTER_MINGW_RUNTIME_COMPILER}" DIRECTORY)
+
+    function(tapesister_resolve_mingw_dll output_variable dll_name)
+      execute_process(
+        COMMAND "${TAPESISTER_MINGW_RUNTIME_COMPILER}"
+                "-print-file-name=${dll_name}"
+        OUTPUT_VARIABLE resolved_dll
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+      if(NOT IS_ABSOLUTE "${resolved_dll}" OR
+         NOT EXISTS "${resolved_dll}")
+        unset(resolved_dll)
+        unset(resolved_dll CACHE)
+        find_file(resolved_dll
+          NAMES "${dll_name}"
+          HINTS
+            "${TAPESISTER_MINGW_BIN_DIR}"
+            "$ENV{MINGW_PREFIX}/bin"
+            "$ENV{MSYSTEM_PREFIX}/bin"
+          NO_DEFAULT_PATH)
+      endif()
+      if(EXISTS "${resolved_dll}")
+        set(${output_variable} "${resolved_dll}" PARENT_SCOPE)
+      else()
+        set(${output_variable} "" PARENT_SCOPE)
+      endif()
+    endfunction()
+
+    set(TAPESISTER_WINDOWS_RUNTIME_DLL_NAMES SDL2.dll)
+    if(TAPESISTER_MIDI_AVAILABLE)
+      list(APPEND TAPESISTER_WINDOWS_RUNTIME_DLL_NAMES
+        libstdc++-6.dll
+        libwinpthread-1.dll)
+    endif()
+    list(APPEND TAPESISTER_WINDOWS_RUNTIME_DLL_NAMES
+      libgcc_s_seh-1.dll
+      libgcc_s_sjlj-1.dll
+      libgcc_s_dw2-1.dll)
+    set(TAPESISTER_WINDOWS_RUNTIME_DLLS "")
+    set(TAPESISTER_MINGW_GCC_RUNTIME_FOUND OFF)
+    foreach(runtime_name IN LISTS TAPESISTER_WINDOWS_RUNTIME_DLL_NAMES)
+      tapesister_resolve_mingw_dll(runtime_path "${runtime_name}")
+      if(runtime_path)
+        list(APPEND TAPESISTER_WINDOWS_RUNTIME_DLLS "${runtime_path}")
+        if(runtime_name MATCHES "^libgcc_s_.*\\.dll$")
+          set(TAPESISTER_MINGW_GCC_RUNTIME_FOUND ON)
+        endif()
+      elseif(runtime_name STREQUAL "SDL2.dll" OR
+             (TAPESISTER_MIDI_AVAILABLE AND
+              (runtime_name STREQUAL "libstdc++-6.dll" OR
+               runtime_name STREQUAL "libwinpthread-1.dll")))
+        message(FATAL_ERROR
+          "Required Windows runtime ${runtime_name} was not found beside "
+          "the MinGW compiler (${TAPESISTER_MINGW_BIN_DIR})")
+      endif()
+    endforeach()
+    if(NOT TAPESISTER_MINGW_GCC_RUNTIME_FOUND)
+      message(FATAL_ERROR
+        "No supported MinGW libgcc runtime DLL was found beside the compiler")
+    endif()
+    list(REMOVE_DUPLICATES TAPESISTER_WINDOWS_RUNTIME_DLLS)
+    foreach(runtime_dll IN LISTS TAPESISTER_WINDOWS_RUNTIME_DLLS)
+      add_custom_command(TARGET tapesister POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${runtime_dll}" "$<TARGET_FILE_DIR:tapesister>"
+        VERBATIM)
+    endforeach()
   endif()
   add_custom_command(TARGET tapesister POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/assets"
@@ -83,6 +199,10 @@ add_test(NAME tapesister_capture_tests COMMAND tapesister_capture_tests)
 add_executable(tapesister_performance_tests tests/test_performance.c)
 target_link_libraries(tapesister_performance_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_performance_tests COMMAND tapesister_performance_tests)
+
+add_executable(tapesister_midi_tests tests/test_midi.c src/ts_midi_input.c)
+target_link_libraries(tapesister_midi_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_midi_tests COMMAND tapesister_midi_tests)
 
 add_executable(tapesister_external_record_tests tests/test_external_record.c)
 target_link_libraries(tapesister_external_record_tests PRIVATE tapesister_core)
