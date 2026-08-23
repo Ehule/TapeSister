@@ -6,6 +6,9 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 static int failures = 0;
 
@@ -15,6 +18,15 @@ static int failures = 0;
         ++failures; \
     } \
 } while (0)
+
+static int test_mkdir(const char *path)
+{
+#ifdef _WIN32
+    return _mkdir(path);
+#else
+    return mkdir(path, 0700);
+#endif
+}
 
 static int regular_file(const char *path)
 {
@@ -44,7 +56,7 @@ static int write_incoming_offer(const TsInstrument *source, const char *folder,
 {
     FILE *manifest;
     char path[1200];
-    if (mkdir(folder, 0700) != 0) return 0;
+    if (test_mkdir(folder) != 0) return 0;
     snprintf(path, sizeof(path), "%s/01_alpha.wav", folder);
     if (!ts_sample_save_wav16_tuned_looped(
             &source->bank[0].sample, &source->bank[0].tuning,
@@ -90,7 +102,7 @@ int main(void)
     remove_test_folder("test-exchange-root/incoming_corrupt");
     remove_test_folder("test-exchange-root/incoming_bad");
     remove_test_folder("test-exchange-root");
-    CHECK(mkdir("test-exchange-root", 0700) == 0);
+    CHECK(test_mkdir("test-exchange-root") == 0);
     CHECK(ts_exchange_presence_touch("test-exchange-root", "tapesister"));
     CHECK(ts_exchange_presence_active(
         "test-exchange-root", "tapesister", 5));
@@ -168,7 +180,7 @@ int main(void)
     {
         FILE *file;
         uint64_t before_hash = ts_sample_hash(&received.current);
-        CHECK(mkdir("test-exchange-root/incoming_corrupt", 0700) == 0);
+        CHECK(test_mkdir("test-exchange-root/incoming_corrupt") == 0);
         CHECK(ts_sample_save_wav16(
             &source.bank[0].sample,
             "test-exchange-root/incoming_corrupt/01_alpha.wav",

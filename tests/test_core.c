@@ -9,10 +9,22 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 static int failures;
 
 #define CHECK(expr) do { if (!(expr)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #expr); ++failures; } } while (0)
+
+static int test_mkdir(const char *path)
+{
+#ifdef _WIN32
+    return _mkdir(path);
+#else
+    return mkdir(path, 0700);
+#endif
+}
 
 static TsGeneratorRecipe generator(uint32_t seed, TsGeneratorKind kind)
 {
@@ -2619,12 +2631,12 @@ int main(void)
         char next_path[512];
         CHECK(ts_instrument_family_folder_name(&restored, name, sizeof(name)));
         CHECK(strstr(name, "_set") != NULL);
-        CHECK(mkdir("test-handoff-root", 0700) == 0);
+        CHECK(test_mkdir("test-handoff-root") == 0);
         CHECK(ts_instrument_next_family_path(
             &restored, "test-handoff-root", first_path, sizeof(first_path),
             error, sizeof(error)));
         CHECK(strstr(first_path, name) != NULL);
-        CHECK(mkdir(first_path, 0700) == 0);
+        CHECK(test_mkdir(first_path) == 0);
         CHECK(ts_instrument_next_family_path(
             &restored, "test-handoff-root", next_path, sizeof(next_path),
             error, sizeof(error)));
@@ -2636,7 +2648,7 @@ int main(void)
     {
         FILE *test_file;
         char path[TS_BROWSER_PATH_MAX];
-        mkdir("test-browser-dir", 0700);
+        test_mkdir("test-browser-dir");
         test_file = fopen("test-browser-load.wav", "wb");
         CHECK(test_file != NULL);
         if (test_file != NULL) fclose(test_file);

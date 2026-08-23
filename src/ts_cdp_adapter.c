@@ -131,15 +131,15 @@ static uint64_t now_ms(void)
 #endif
 }
 
+/* The Windows runner waits with WaitForSingleObject; only the POSIX polling
+   loop needs this short cooperative delay. */
+#ifndef _WIN32
 static void pause_10ms(void)
 {
-#ifdef _WIN32
-    Sleep(10);
-#else
     struct timespec delay = {0, 10000000L};
     (void)nanosleep(&delay, NULL);
-#endif
 }
+#endif
 
 void ts_cdp_runtime_init(TsCdpRuntime *runtime)
 {
@@ -187,11 +187,16 @@ static int runtime_executable(const TsCdpRuntime *runtime, const char *executabl
                               char *path, size_t path_size)
 {
     char name[TS_CDP_TEXT_MAX + 8];
+    size_t executable_length;
+    size_t suffix_length = strlen(TS_EXE_SUFFIX);
     if (runtime == NULL || !runtime->available || runtime->bin_directory[0] == '\0' ||
         executable == NULL || executable[0] == '\0' || strchr(executable, '/') != NULL ||
         strchr(executable, '\\') != NULL || strstr(executable, "..") != NULL)
         return 0;
-    snprintf(name, sizeof(name), "%s%s", executable, TS_EXE_SUFFIX);
+    executable_length = strlen(executable);
+    if (executable_length + suffix_length >= sizeof(name)) return 0;
+    memcpy(name, executable, executable_length);
+    memcpy(name + executable_length, TS_EXE_SUFFIX, suffix_length + 1u);
     return path_join(path, path_size, runtime->bin_directory, name) && file_exists(path);
 }
 
