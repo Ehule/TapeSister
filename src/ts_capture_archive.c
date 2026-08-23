@@ -143,6 +143,7 @@ int ts_capture_archive_write(const char *directory,
     sample.data = (float *)samples;
     sample.frames = frames;
     sample.sample_rate = sample_rate;
+    sample.channels = 1u;
     snprintf(sample.name, sizeof(sample.name), "%s", prefix);
     if (!ts_sample_save_wav32f(&sample, temporary, error, error_size)) {
         remove(temporary);

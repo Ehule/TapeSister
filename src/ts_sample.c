@@ -274,6 +274,7 @@ static float rng_bipolar(uint32_t *state)
 void ts_sample_init(TsSample *sample)
 {
     memset(sample, 0, sizeof(*sample));
+    sample->channels = 1u;
     sample->visual_revision = sample_visual_revision();
 }
 
@@ -286,6 +287,104 @@ void ts_sample_free(TsSample *sample)
 void ts_sample_touch(TsSample *sample)
 {
     if (sample != NULL) sample->visual_revision = sample_visual_revision();
+}
+
+int ts_sample_valid_channels(uint8_t channels)
+{
+    return channels == 1u || channels == 2u;
+}
+
+int ts_sample_dimensions(size_t frames, uint8_t channels,
+                         size_t *scalar_count, size_t *byte_count)
+{
+    size_t scalars;
+    if (!ts_sample_valid_channels(channels) ||
+        frames > SIZE_MAX / (size_t)channels)
+        return 0;
+    scalars = frames * (size_t)channels;
+    if (scalars > SIZE_MAX / sizeof(float)) return 0;
+    if (scalar_count != NULL) *scalar_count = scalars;
+    if (byte_count != NULL) *byte_count = scalars * sizeof(float);
+    return 1;
+}
+
+int ts_sample_scalar_count(const TsSample *sample, size_t *scalar_count)
+{
+    if (sample == NULL) return 0;
+    return ts_sample_dimensions(sample->frames, sample->channels,
+                                scalar_count, NULL);
+}
+
+static float finite_sample(float value)
+{
+    return isfinite(value) ? value : 0.0f;
+}
+
+TsStereoFrame ts_stereo_frame_from_mono(float value)
+{
+    TsStereoFrame frame;
+    value = finite_sample(value);
+    frame.l = value;
+    frame.r = value;
+    return frame;
+}
+
+TsStereoFrame ts_stereo_frame_sanitize(TsStereoFrame frame)
+{
+    frame.l = finite_sample(frame.l);
+    frame.r = finite_sample(frame.r);
+    return frame;
+}
+
+float ts_stereo_frame_fold_mono(TsStereoFrame frame)
+{
+    frame = ts_stereo_frame_sanitize(frame);
+    return 0.5f * (frame.l + frame.r);
+}
+
+float ts_sample_read_channel(const TsSample *sample, size_t frame,
+                             uint8_t channel)
+{
+    size_t at;
+    if (sample == NULL || sample->data == NULL || frame >= sample->frames ||
+        !ts_sample_valid_channels(sample->channels) || channel >= sample->channels)
+        return 0.0f;
+    at = frame * (size_t)sample->channels + channel;
+    return finite_sample(sample->data[at]);
+}
+
+TsStereoFrame ts_sample_read_frame(const TsSample *sample, size_t frame)
+{
+    TsStereoFrame result = {0.0f, 0.0f};
+    if (sample == NULL || sample->data == NULL || frame >= sample->frames ||
+        !ts_sample_valid_channels(sample->channels))
+        return result;
+    result.l = ts_sample_read_channel(sample, frame, 0u);
+    result.r = sample->channels == 2u ?
+               ts_sample_read_channel(sample, frame, 1u) : result.l;
+    return result;
+}
+
+float ts_sample_read_mono(const TsSample *sample, size_t frame)
+{
+    return ts_stereo_frame_fold_mono(ts_sample_read_frame(sample, frame));
+}
+
+int ts_sample_write_frame(TsSample *sample, size_t frame, TsStereoFrame value)
+{
+    size_t at;
+    if (sample == NULL || sample->data == NULL || frame >= sample->frames ||
+        !ts_sample_valid_channels(sample->channels))
+        return 0;
+    value = ts_stereo_frame_sanitize(value);
+    at = frame * (size_t)sample->channels;
+    if (sample->channels == 1u)
+        sample->data[at] = ts_stereo_frame_fold_mono(value);
+    else {
+        sample->data[at] = value.l;
+        sample->data[at + 1u] = value.r;
+    }
+    return 1;
 }
 
 static TsTuning default_tuning(void)
@@ -393,10 +492,11 @@ int ts_instrument_suggest_pitch(const TsInstrument *instrument, TsTuning *sugges
         set_error(error, error_size, "Out of memory while suggesting pitch");
         return 0;
     }
-    for (size_t i = 0; i < frames; ++i) mean += sample->data[first + i];
+    for (size_t i = 0; i < frames; ++i)
+        mean += ts_sample_read_mono(sample, first + i);
     mean /= (double)frames;
     for (size_t i = 0; i < frames; ++i) {
-        double value = sample->data[first + i] - mean;
+        double value = ts_sample_read_mono(sample, first + i) - mean;
         energy += value * value;
     }
     if (energy < 0.00000001) {
@@ -409,8 +509,8 @@ int ts_instrument_suggest_pitch(const TsInstrument *instrument, TsTuning *sugges
         double left_energy = 0.0;
         double right_energy = 0.0;
         for (size_t i = 0; i + lag < frames; ++i) {
-            double left_value = sample->data[first + i] - mean;
-            double right_value = sample->data[first + i + lag] - mean;
+            double left_value = ts_sample_read_mono(sample, first + i) - mean;
+            double right_value = ts_sample_read_mono(sample, first + i + lag) - mean;
             numerator += left_value * right_value;
             left_energy += left_value * left_value;
             right_energy += right_value * right_value;
@@ -457,6 +557,7 @@ int ts_instrument_suggest_pitch(const TsInstrument *instrument, TsTuning *sugges
 int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, size_t error_size)
 {
     float *copy;
+    size_t byte_count;
     if (source == NULL) {
         set_error(error, error_size, "No sample to copy");
         return 0;
@@ -464,29 +565,30 @@ int ts_sample_clone(TsSample *destination, const TsSample *source, char *error, 
     if (source->data == NULL && source->frames == 0u) {
         ts_sample_free(destination);
         destination->sample_rate = source->sample_rate;
+        destination->channels = ts_sample_valid_channels(source->channels) ?
+                                source->channels : 1u;
         destination->visual_revision = source->visual_revision;
         snprintf(destination->name, sizeof(destination->name), "%s", source->name);
         set_error(error, error_size, "");
         return 1;
     }
-    if (source->data == NULL || source->frames == 0u) {
+    if (source->data == NULL || source->frames == 0u ||
+        !ts_sample_dimensions(source->frames, source->channels,
+                              NULL, &byte_count)) {
         set_error(error, error_size, "Invalid sample storage");
         return 0;
     }
-    if (source->frames > SIZE_MAX / sizeof(float)) {
-        set_error(error, error_size, "Sample is too large to copy");
-        return 0;
-    }
-    copy = (float *)malloc(source->frames * sizeof(float));
+    copy = (float *)malloc(byte_count);
     if (copy == NULL) {
         set_error(error, error_size, "Out of memory while copying sample");
         return 0;
     }
-    memcpy(copy, source->data, source->frames * sizeof(float));
+    memcpy(copy, source->data, byte_count);
     ts_sample_free(destination);
     destination->data = copy;
     destination->frames = source->frames;
     destination->sample_rate = source->sample_rate;
+    destination->channels = source->channels;
     snprintf(destination->name, sizeof(destination->name), "%s", source->name);
     set_error(error, error_size, "");
     return 1;
@@ -520,9 +622,11 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
     unsigned char header[12];
     unsigned char fmt[40];
     uint16_t format = 0, channels = 0, bits = 0, block_align = 0;
-    uint32_t rate = 0, data_size = 0;
+    uint32_t rate = 0, byte_rate = 0, data_size = 0;
     long data_offset = -1;
     float *decoded = NULL;
+    uint8_t stored_channels = 1u;
+    size_t decoded_scalars = 0u;
     TsTuning loaded_tuning = default_tuning();
     uint32_t loaded_loop_start = 0;
     uint32_t loaded_loop_end = 0;
@@ -553,6 +657,7 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
             format = le16(fmt);
             channels = le16(fmt + 2);
             rate = le32(fmt + 4);
+            byte_rate = le32(fmt + 8);
             block_align = le16(fmt + 12);
             bits = le16(fmt + 14);
             if (size > keep) fseek(f, (long)(size - keep), SEEK_CUR);
@@ -593,22 +698,35 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
         if (size & 1u) fseek(f, 1, SEEK_CUR);
     }
 
-    if ((format != 1 && format != 3) || channels == 0 || channels > 32 || rate < 1000 ||
+    if ((format != 1 && format != 3) || channels == 0 || channels > 2 || rate < 1000 ||
         block_align == 0 || data_offset < 0 || data_size < block_align ||
+        data_size % block_align != 0u ||
         !((format == 3 && bits == 32) ||
           (format == 1 && (bits == 8 || bits == 16 || bits == 24 || bits == 32)))) {
-        set_error(error, error_size, "Unsupported or incomplete WAV (PCM/float required)");
+        set_error(error, error_size,
+                  "Unsupported WAV: mono/stereo PCM or float audio is required");
+        fclose(f);
+        return 0;
+    }
+
+    if ((uint32_t)block_align != (uint32_t)channels * (uint32_t)(bits / 8u) ||
+        rate > UINT32_MAX / (uint32_t)block_align ||
+        byte_rate != rate * (uint32_t)block_align) {
+        set_error(error, error_size, "Malformed WAV frame or byte-rate layout");
         fclose(f);
         return 0;
     }
 
     size_t frames = data_size / block_align;
-    if (frames > 100000000u || frames > SIZE_MAX / sizeof(float)) {
+    stored_channels = (uint8_t)channels;
+    if (frames > 100000000u ||
+        !ts_sample_dimensions(frames, stored_channels,
+                              &decoded_scalars, NULL)) {
         set_error(error, error_size, "WAV is too large");
         fclose(f);
         return 0;
     }
-    decoded = (float *)malloc(frames * sizeof(float));
+    decoded = (float *)malloc(decoded_scalars * sizeof(float));
     if (decoded == NULL) {
         set_error(error, error_size, "Out of memory while loading WAV");
         fclose(f);
@@ -630,7 +748,6 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
         return 0;
     }
     for (size_t i = 0; i < frames; ++i) {
-        float sum = 0.0f;
         if (fread(frame, 1, block_align, f) != block_align) {
             set_error(error, error_size, "WAV ended before its declared data size");
             free(decoded);
@@ -638,8 +755,8 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
             return 0;
         }
         for (uint16_t ch = 0; ch < channels; ++ch)
-            sum += decode_pcm(frame + ch * bytes, format, bits);
-        decoded[i] = clampf(sum / (float)channels, -1.0f, 1.0f);
+            decoded[i * stored_channels + ch] = clampf(
+                decode_pcm(frame + ch * bytes, format, bits), -1.0f, 1.0f);
     }
     fclose(f);
 
@@ -647,6 +764,7 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
     sample->data = decoded;
     sample->frames = frames;
     sample->sample_rate = rate;
+    sample->channels = stored_channels;
     const char *slash = strrchr(path, '/');
     const char *backslash = strrchr(path, '\\');
     const char *base = slash && (!backslash || slash > backslash) ? slash + 1 :
@@ -692,12 +810,17 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
                                       char *error, size_t error_size)
 {
     TsTuning actual = tuning_valid(tuning) ? *tuning : default_tuning();
-    if (sample == NULL || sample->data == NULL || sample->frames == 0 || sample->sample_rate == 0) {
+    size_t scalar_count;
+    uint32_t bytes_per_frame;
+    if (sample == NULL || sample->data == NULL || sample->frames == 0 ||
+        sample->sample_rate == 0 ||
+        !ts_sample_scalar_count(sample, &scalar_count)) {
         set_error(error, error_size, "No sample to export");
         return 0;
     }
     has_loop = has_loop && loop_first < loop_last && loop_last <= sample->frames;
-    if (sample->frames > (UINT32_MAX - 104u) / 2u) {
+    bytes_per_frame = (uint32_t)sample->channels * 2u;
+    if (sample->frames > (UINT32_MAX - 104u) / bytes_per_frame) {
         set_error(error, error_size, "Sample is too long for a RIFF WAV");
         return 0;
     }
@@ -706,11 +829,13 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
         set_error(error, error_size, "Could not create WAV");
         return 0;
     }
-    uint32_t data_bytes = (uint32_t)(sample->frames * 2u);
+    uint32_t data_bytes = (uint32_t)(sample->frames * bytes_per_frame);
     uint32_t loop_bytes = has_loop ? 24u : 0u;
     fwrite("RIFF", 1, 4, f); put32(f, 80u + loop_bytes + data_bytes); fwrite("WAVE", 1, 4, f);
-    fwrite("fmt ", 1, 4, f); put32(f, 16); put16(f, 1); put16(f, 1);
-    put32(f, sample->sample_rate); put32(f, sample->sample_rate * 2u); put16(f, 2); put16(f, 16);
+    fwrite("fmt ", 1, 4, f); put32(f, 16); put16(f, 1); put16(f, sample->channels);
+    put32(f, sample->sample_rate);
+    put32(f, sample->sample_rate * bytes_per_frame);
+    put16(f, (uint16_t)bytes_per_frame); put16(f, 16);
     {
         double midi = (double)actual.root_note + (double)actual.fine_tune_cents / 100.0;
         int unity = (int)floor(midi);
@@ -740,8 +865,8 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
         }
     }
     fwrite("data", 1, 4, f); put32(f, data_bytes);
-    for (size_t i = 0; i < sample->frames; ++i) {
-        float value = clampf(sample->data[i], -1.0f, 1.0f);
+    for (size_t i = 0; i < scalar_count; ++i) {
+        float value = clampf(finite_sample(sample->data[i]), -1.0f, 1.0f);
         int32_t quantized = (int32_t)lrintf(value * 32767.0f);
         put16(f, (uint16_t)(int16_t)quantized);
     }
@@ -773,12 +898,16 @@ int ts_sample_save_wav32f(const TsSample *sample, const char *path,
 {
     FILE *f;
     uint32_t data_bytes;
+    size_t scalar_count;
+    uint32_t bytes_per_frame;
     if (sample == NULL || sample->data == NULL || sample->frames == 0u ||
-        sample->sample_rate == 0u) {
+        sample->sample_rate == 0u ||
+        !ts_sample_scalar_count(sample, &scalar_count)) {
         set_error(error, error_size, "No sample to archive");
         return 0;
     }
-    if (sample->frames > (UINT32_MAX - 36u) / sizeof(float)) {
+    bytes_per_frame = (uint32_t)sample->channels * (uint32_t)sizeof(float);
+    if (sample->frames > (UINT32_MAX - 36u) / bytes_per_frame) {
         set_error(error, error_size, "Capture is too long for a RIFF WAV");
         return 0;
     }
@@ -787,15 +916,15 @@ int ts_sample_save_wav32f(const TsSample *sample, const char *path,
         set_error(error, error_size, "Could not create capture WAV");
         return 0;
     }
-    data_bytes = (uint32_t)(sample->frames * sizeof(float));
+    data_bytes = (uint32_t)(sample->frames * bytes_per_frame);
     fwrite("RIFF", 1, 4, f); put32(f, 36u + data_bytes); fwrite("WAVE", 1, 4, f);
-    fwrite("fmt ", 1, 4, f); put32(f, 16u); put16(f, 3u); put16(f, 1u);
+    fwrite("fmt ", 1, 4, f); put32(f, 16u); put16(f, 3u); put16(f, sample->channels);
     put32(f, sample->sample_rate);
-    put32(f, sample->sample_rate * (uint32_t)sizeof(float));
-    put16(f, (uint16_t)sizeof(float)); put16(f, 32u);
+    put32(f, sample->sample_rate * bytes_per_frame);
+    put16(f, (uint16_t)bytes_per_frame); put16(f, 32u);
     fwrite("data", 1, 4, f); put32(f, data_bytes);
-    for (size_t frame = 0; frame < sample->frames; ++frame) {
-        float value = isfinite(sample->data[frame]) ? sample->data[frame] : 0.0f;
+    for (size_t scalar = 0; scalar < scalar_count; ++scalar) {
+        float value = finite_sample(sample->data[scalar]);
         put_float(f, value);
     }
     {
@@ -973,6 +1102,7 @@ int ts_sample_generate(TsSample *sample, const TsGeneratorRecipe *recipe,
     sample->data = data;
     sample->frames = frames;
     sample->sample_rate = rate;
+    sample->channels = 1u;
     if (recipe->kind == TS_GENERATOR_FM)
         snprintf(sample->name, sizeof(sample->name), "FM %.8s %.8s %08X",
                  ts_fm_structure_name(fm_patch.structure),
@@ -1021,6 +1151,11 @@ static int warp_range(TsSample *sample, size_t first, size_t last, float amount,
     double phase = 0.0;
     double rate;
     double depth;
+    if (sample == NULL || sample->channels != 1u) {
+        set_error(error, error_size,
+                  "Stereo WARP arrives in a later channel-linked editing PR");
+        return 0;
+    }
     if (amount <= 0.0f || length < 2u) return 1;
     source = (float *)malloc(length * sizeof(float));
     if (source == NULL) {
@@ -1058,8 +1193,10 @@ static int warp_range(TsSample *sample, size_t first, size_t last, float amount,
     return 1;
 }
 
-int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, size_t last,
-                      const TsProcessRecipe *recipe, char *error, size_t error_size)
+static int sample_process_mono(TsSample *sample, const TsSample *parent,
+                               size_t first, size_t last,
+                               const TsProcessRecipe *recipe,
+                               char *error, size_t error_size)
 {
     float *data;
     float *delay = NULL;
@@ -1262,6 +1399,7 @@ int ts_sample_process(TsSample *sample, const TsSample *parent, size_t first, si
     sample->data = data;
     sample->frames = frames;
     sample->sample_rate = parent->sample_rate;
+    sample->channels = 1u;
     snprintf(sample->name, sizeof(sample->name), "%s", parent->name);
     set_error(error, error_size, "");
     return 1;
@@ -1275,29 +1413,125 @@ out_of_memory:
     return 0;
 }
 
+int ts_sample_process(TsSample *sample, const TsSample *parent,
+                      size_t first, size_t last,
+                      const TsProcessRecipe *recipe,
+                      char *error, size_t error_size)
+{
+    TsSample mono_parent;
+    TsSample left;
+    TsSample right;
+    float *interleaved;
+    size_t frames;
+    size_t scalar_count;
+    if (parent == NULL || !ts_sample_valid_channels(parent->channels)) {
+        set_error(error, error_size, "Invalid Parent channel shape");
+        return 0;
+    }
+    if (parent->channels == 1u)
+        return sample_process_mono(sample, parent, first, last,
+                                   recipe, error, error_size);
+
+    ts_sample_init(&mono_parent);
+    ts_sample_init(&left);
+    ts_sample_init(&right);
+    if (!ts_sample_dimensions(parent->frames, 1u, NULL, NULL) ||
+        parent->frames > SIZE_MAX / sizeof(*mono_parent.data)) {
+        set_error(error, error_size, "Stereo Parent is too large to process");
+        return 0;
+    }
+    mono_parent.data = malloc(parent->frames * sizeof(*mono_parent.data));
+    if (mono_parent.data == NULL) {
+        set_error(error, error_size, "Out of memory splitting stereo Parent");
+        return 0;
+    }
+    mono_parent.frames = parent->frames;
+    mono_parent.sample_rate = parent->sample_rate;
+    snprintf(mono_parent.name, sizeof(mono_parent.name), "%s", parent->name);
+    for (size_t frame = 0; frame < parent->frames; ++frame)
+        mono_parent.data[frame] = ts_sample_read_channel(parent, frame, 0u);
+    if (!sample_process_mono(&left, &mono_parent, first, last,
+                             recipe, error, error_size)) {
+        ts_sample_free(&mono_parent);
+        return 0;
+    }
+    for (size_t frame = 0; frame < parent->frames; ++frame)
+        mono_parent.data[frame] = ts_sample_read_channel(parent, frame, 1u);
+    if (!sample_process_mono(&right, &mono_parent, first, last,
+                             recipe, error, error_size)) {
+        ts_sample_free(&mono_parent);
+        ts_sample_free(&left);
+        return 0;
+    }
+    ts_sample_free(&mono_parent);
+    frames = left.frames;
+    if (right.frames != frames ||
+        !ts_sample_dimensions(frames, 2u, &scalar_count, NULL)) {
+        ts_sample_free(&left);
+        ts_sample_free(&right);
+        set_error(error, error_size, "Stereo processing returned mismatched channels");
+        return 0;
+    }
+    interleaved = malloc(scalar_count * sizeof(*interleaved));
+    if (interleaved == NULL) {
+        ts_sample_free(&left);
+        ts_sample_free(&right);
+        set_error(error, error_size, "Out of memory joining stereo Current");
+        return 0;
+    }
+    for (size_t frame = 0; frame < frames; ++frame) {
+        interleaved[frame * 2u] = left.data[frame];
+        interleaved[frame * 2u + 1u] = right.data[frame];
+    }
+    ts_sample_free(sample);
+    sample->data = interleaved;
+    sample->frames = frames;
+    sample->sample_rate = parent->sample_rate;
+    sample->channels = 2u;
+    snprintf(sample->name, sizeof(sample->name), "%s", parent->name);
+    ts_sample_free(&left);
+    ts_sample_free(&right);
+    set_error(error, error_size, "");
+    return 1;
+}
+
 float ts_sample_peak(const TsSample *sample)
 {
     float peak = 0.0f;
-    if (sample == NULL || sample->data == NULL) return 0.0f;
-    for (size_t i = 0; i < sample->frames; ++i) {
-        float value = fabsf(sample->data[i]);
+    size_t scalar_count;
+    if (sample == NULL || sample->data == NULL ||
+        !ts_sample_scalar_count(sample, &scalar_count)) return 0.0f;
+    for (size_t i = 0; i < scalar_count; ++i) {
+        float value = fabsf(finite_sample(sample->data[i]));
         if (value > peak) peak = value;
     }
     return peak;
 }
 
-uint64_t ts_sample_hash(const TsSample *sample)
+static uint64_t sample_hash_version(const TsSample *sample, int include_channels)
 {
     uint64_t hash = 1469598103934665603ull;
+    size_t scalar_count;
     if (sample == NULL) return hash;
     hash ^= sample->sample_rate; hash *= 1099511628211ull;
     hash ^= sample->frames; hash *= 1099511628211ull;
-    for (size_t i = 0; i < sample->frames; ++i) {
-        int32_t q = (int32_t)lrintf(clampf(sample->data[i], -1.0f, 1.0f) * 8388607.0f);
+    if (include_channels) {
+        hash ^= sample->channels; hash *= 1099511628211ull;
+    }
+    if (sample->data == NULL || !ts_sample_scalar_count(sample, &scalar_count))
+        return hash;
+    for (size_t i = 0; i < scalar_count; ++i) {
+        int32_t q = (int32_t)lrintf(clampf(finite_sample(sample->data[i]),
+                                           -1.0f, 1.0f) * 8388607.0f);
         hash ^= (uint32_t)q;
         hash *= 1099511628211ull;
     }
     return hash;
+}
+
+uint64_t ts_sample_hash(const TsSample *sample)
+{
+    return sample_hash_version(sample, 1);
 }
 
 static TsEditSnapshot snapshot(const TsInstrument *instrument)
@@ -1403,21 +1637,25 @@ static int render_edit_source(TsSample *destination, const TsSample *parent,
 {
     float *data;
     size_t frames;
+    size_t byte_count;
+    size_t channels;
     if (parent == NULL || parent->data == NULL || first >= last || last > parent->frames) {
         set_error(error, error_size, "Invalid Parent edit range");
         return 0;
     }
     frames = last - first;
-    if (frames > SIZE_MAX / sizeof(float)) {
+    channels = parent->channels;
+    if (!ts_sample_dimensions(frames, parent->channels,
+                              NULL, &byte_count)) {
         set_error(error, error_size, "Edited sample is too large");
         return 0;
     }
-    data = (float *)malloc(frames * sizeof(float));
+    data = (float *)malloc(byte_count);
     if (data == NULL) {
         set_error(error, error_size, "Out of memory while applying sample edits");
         return 0;
     }
-    memcpy(data, parent->data + first, frames * sizeof(float));
+    memcpy(data, parent->data + first * channels, byte_count);
     for (int edit_index = 0; edit_index < edit_count; ++edit_index) {
         const TsSampleEdit *edit = &edits[edit_index];
         size_t edit_first = clamps(edit->first, frames);
@@ -1427,33 +1665,45 @@ static int render_edit_source(TsSample *destination, const TsSample *parent,
         length = edit_last - edit_first;
         if (edit->kind == TS_SAMPLE_EDIT_REVERSE) {
             for (size_t i = 0; i < length / 2; ++i) {
-                float swap = data[edit_first + i];
-                data[edit_first + i] = data[edit_last - 1u - i];
-                data[edit_last - 1u - i] = swap;
+                size_t a = (edit_first + i) * channels;
+                size_t b = (edit_last - 1u - i) * channels;
+                for (size_t channel = 0; channel < channels; ++channel) {
+                    float swap = data[a + channel];
+                    data[a + channel] = data[b + channel];
+                    data[b + channel] = swap;
+                }
             }
         } else if (edit->kind == TS_SAMPLE_EDIT_NORMALIZE) {
             float peak = 0.0f;
             float target = clampf(edit->amount, 0.0f, 1.0f);
-            for (size_t i = edit_first; i < edit_last; ++i)
+            size_t scalar_first = edit_first * channels;
+            size_t scalar_last = edit_last * channels;
+            for (size_t i = scalar_first; i < scalar_last; ++i)
                 if (fabsf(data[i]) > peak) peak = fabsf(data[i]);
             if (peak > 0.0000001f) {
                 float gain = target / peak;
-                for (size_t i = edit_first; i < edit_last; ++i)
+                for (size_t i = scalar_first; i < scalar_last; ++i)
                     data[i] = clampf(data[i] * gain, -1.0f, 1.0f);
             }
         } else if (edit->kind == TS_SAMPLE_EDIT_GAIN) {
-            for (size_t i = edit_first; i < edit_last; ++i)
+            size_t scalar_first = edit_first * channels;
+            size_t scalar_last = edit_last * channels;
+            for (size_t i = scalar_first; i < scalar_last; ++i)
                 data[i] = clampf(data[i] * edit->amount, -1.0f, 1.0f);
         } else if (edit->kind == TS_SAMPLE_EDIT_FADE_IN) {
             for (size_t i = 0; i < length; ++i) {
                 float gain = length > 1 ? (float)i / (float)(length - 1u) : 1.0f;
-                data[edit_first + i] *= gain;
+                size_t scalar = (edit_first + i) * channels;
+                for (size_t channel = 0; channel < channels; ++channel)
+                    data[scalar + channel] *= gain;
             }
         } else if (edit->kind == TS_SAMPLE_EDIT_FADE_OUT) {
             for (size_t i = 0; i < length; ++i) {
                 float gain = length > 1 ? (float)(length - 1u - i) /
                                           (float)(length - 1u) : 1.0f;
-                data[edit_first + i] *= gain;
+                size_t scalar = (edit_first + i) * channels;
+                for (size_t channel = 0; channel < channels; ++channel)
+                    data[scalar + channel] *= gain;
             }
         }
     }
@@ -1461,6 +1711,7 @@ static int render_edit_source(TsSample *destination, const TsSample *parent,
     destination->data = data;
     destination->frames = frames;
     destination->sample_rate = parent->sample_rate;
+    destination->channels = parent->channels;
     snprintf(destination->name, sizeof(destination->name), "%s", parent->name);
     return 1;
 }
@@ -1509,6 +1760,11 @@ static int smear_range(TsSample *sample, size_t first, size_t last, float amount
     double *memory, *phase, *wet, *weight;
     float *source;
     double shaped, seconds, decay, mix;
+    if (sample == NULL || sample->channels != 1u) {
+        set_error(error, error_size,
+                  "Stereo SMEAR arrives in a later channel-linked editing PR");
+        return 0;
+    }
     if (amount == 0.0f || length == 0u) return 1;
     spectrum = (TsComplex *)calloc(WINDOW, sizeof(*spectrum));
     memory = (double *)calloc(BINS, sizeof(*memory));
@@ -1581,6 +1837,11 @@ static int tear_range(TsSample *sample, size_t first, size_t last, float amount,
     float *source;
     float *output;
     size_t count = 1;
+    if (sample == NULL || sample->channels != 1u) {
+        set_error(error, error_size,
+                  "Stereo TEAR arrives in a later channel-linked editing PR");
+        return 0;
+    }
     if (amount <= 0.0f || length < 8u) return 1;
     minimum = sample->sample_rate / 1000u;
     if (minimum < 24u) minimum = 24u;
@@ -1630,25 +1891,33 @@ static int delete_range(TsSample *sample, size_t first, size_t last,
     float *data;
     size_t removed;
     size_t frames;
+    size_t byte_count;
+    size_t channels;
     if (sample == NULL || sample->data == NULL || first >= last || last > sample->frames) {
         set_error(error, error_size, "Invalid Cut range");
         return 0;
     }
     removed = last - first;
     frames = sample->frames - removed;
+    channels = sample->channels;
     if (frames == 0) {
         set_error(error, error_size, "Cut cannot remove the entire tile");
         return 0;
     }
-    data = (float *)malloc(frames * sizeof(*data));
+    if (!ts_sample_dimensions(frames, sample->channels, NULL, &byte_count)) {
+        set_error(error, error_size, "Cut result is too large");
+        return 0;
+    }
+    data = (float *)malloc(byte_count);
     if (data == NULL) {
         set_error(error, error_size, "Out of memory while cutting selection");
         return 0;
     }
-    if (first > 0) memcpy(data, sample->data, first * sizeof(*data));
+    if (first > 0)
+        memcpy(data, sample->data, first * channels * sizeof(*data));
     if (last < sample->frames)
-        memcpy(data + first, sample->data + last,
-               (sample->frames - last) * sizeof(*data));
+        memcpy(data + first * channels, sample->data + last * channels,
+               (sample->frames - last) * channels * sizeof(*data));
     if (crossfade_frames > 0u) {
         size_t fade_out = crossfade_frames < first ? crossfade_frames : first;
         size_t right = frames > first ? frames - first : 0u;
@@ -1656,13 +1925,18 @@ static int delete_range(TsSample *sample, size_t first, size_t last,
         for (size_t frame = 0; frame < fade_out; ++frame) {
             float phase = fade_out > 1u ?
                 (float)frame / (float)(fade_out - 1u) : 1.0f;
-            data[first - fade_out + frame] *=
-                cosf(phase * (float)(M_PI * 0.5));
+            size_t scalar = (first - fade_out + frame) * channels;
+            float gain = cosf(phase * (float)(M_PI * 0.5));
+            for (size_t channel = 0; channel < channels; ++channel)
+                data[scalar + channel] *= gain;
         }
         for (size_t frame = 0; frame < fade_in; ++frame) {
             float phase = fade_in > 1u ?
                 (float)frame / (float)(fade_in - 1u) : 0.0f;
-            data[first + frame] *= sinf(phase * (float)(M_PI * 0.5));
+            size_t scalar = (first + frame) * channels;
+            float gain = sinf(phase * (float)(M_PI * 0.5));
+            for (size_t channel = 0; channel < channels; ++channel)
+                data[scalar + channel] *= gain;
         }
     }
     free(sample->data);
@@ -1677,17 +1951,19 @@ static int resize_canvas_sample(TsSample *sample, int edge, int64_t delta,
     float *data;
     size_t amount;
     size_t frames;
+    size_t scalar_count;
+    size_t channels;
     if (sample == NULL || sample->data == NULL || sample->frames < TS_CANVAS_MIN_FRAMES ||
         (edge != 1 && edge != 2)) {
         set_error(error, error_size, "Invalid audio canvas");
         return 0;
     }
+    channels = sample->channels;
     if (delta == 0) return 1;
     if (delta > 0) {
         amount = (uint64_t)delta > SIZE_MAX ? SIZE_MAX : (size_t)delta;
         if (amount > SIZE_MAX - sample->frames ||
-            sample->frames + amount > TS_CANVAS_MAX_FRAMES ||
-            sample->frames + amount > SIZE_MAX / sizeof(*data)) {
+            sample->frames + amount > TS_CANVAS_MAX_FRAMES) {
             set_error(error, error_size, "Audio canvas is too large");
             return 0;
         }
@@ -1705,18 +1981,24 @@ static int resize_canvas_sample(TsSample *sample, int edge, int64_t delta,
         }
         frames = sample->frames - amount;
     }
-    data = (float *)calloc(frames, sizeof(*data));
+    if (!ts_sample_dimensions(frames, sample->channels, &scalar_count, NULL)) {
+        set_error(error, error_size, "Audio canvas is too large");
+        return 0;
+    }
+    data = (float *)calloc(scalar_count, sizeof(*data));
     if (data == NULL) {
         set_error(error, error_size, "Out of memory resizing audio canvas");
         return 0;
     }
     if (delta > 0) {
         size_t offset = edge == 1 ? amount : 0u;
-        memcpy(data + offset, sample->data, sample->frames * sizeof(*data));
+        memcpy(data + offset * channels, sample->data,
+               sample->frames * channels * sizeof(*data));
     } else if (edge == 1) {
-        memcpy(data, sample->data + amount, frames * sizeof(*data));
+        memcpy(data, sample->data + amount * channels,
+               frames * channels * sizeof(*data));
     } else {
-        memcpy(data, sample->data, frames * sizeof(*data));
+        memcpy(data, sample->data, frames * channels * sizeof(*data));
     }
     free(sample->data);
     sample->data = data;
@@ -1734,6 +2016,9 @@ static int patch_range(TsSample *sample, const TsSample *patch,
     size_t patch_frames;
     size_t output_frames;
     size_t gap_frames = 0;
+    size_t channels;
+    size_t resampled_scalars;
+    size_t output_scalars;
     if (sample == NULL || sample->data == NULL || patch == NULL || patch->data == NULL ||
         patch->frames == 0 || patch->sample_rate == 0 || sample->sample_rate == 0 ||
         first > last ||
@@ -1742,6 +2027,13 @@ static int patch_range(TsSample *sample, const TsSample *patch,
         set_error(error, error_size, "Invalid Paste range");
         return 0;
     }
+    if (sample->channels != patch->channels ||
+        !ts_sample_valid_channels(sample->channels)) {
+        set_error(error, error_size,
+                  "Paste requires matching mono/stereo channel shape");
+        return 0;
+    }
+    channels = sample->channels;
     if (first > sample->frames) gap_frames = first - sample->frames;
     target_frames = last - first;
     if (fit) patch_frames = target_frames;
@@ -1757,14 +2049,20 @@ static int patch_range(TsSample *sample, const TsSample *patch,
     }
     if (sample->frames > SIZE_MAX - gap_frames ||
         sample->frames + gap_frames > SIZE_MAX - patch_frames ||
-        sample->frames + gap_frames - target_frames + patch_frames >
-        SIZE_MAX / sizeof(float)) {
+        sample->frames + gap_frames < target_frames) {
         set_error(error, error_size, "Pasted tile would be too large");
         return 0;
     }
     output_frames = sample->frames + gap_frames - target_frames + patch_frames;
-    resampled = (float *)malloc(patch_frames * sizeof(*resampled));
-    output = (float *)malloc(output_frames * sizeof(*output));
+    if (!ts_sample_dimensions(patch_frames, sample->channels,
+                              &resampled_scalars, NULL) ||
+        !ts_sample_dimensions(output_frames, sample->channels,
+                              &output_scalars, NULL)) {
+        set_error(error, error_size, "Pasted tile would be too large");
+        return 0;
+    }
+    resampled = (float *)malloc(resampled_scalars * sizeof(*resampled));
+    output = (float *)malloc(output_scalars * sizeof(*output));
     if (resampled == NULL || output == NULL) {
         free(resampled); free(output);
         set_error(error, error_size, "Out of memory while pasting selection");
@@ -1776,19 +2074,27 @@ static int patch_range(TsSample *sample, const TsSample *patch,
                           (double)(patch_frames - 1u) : 0.0;
         size_t at = (size_t)position;
         double fraction = position - (double)at;
-        float a = patch->data[at];
-        float b = at + 1u < patch->frames ? patch->data[at + 1u] : a;
-        resampled[frame] = a + (b - a) * (float)fraction;
+        for (size_t channel = 0; channel < channels; ++channel) {
+            float a = patch->data[at * channels + channel];
+            float b = at + 1u < patch->frames ?
+                      patch->data[(at + 1u) * channels + channel] : a;
+            resampled[frame * channels + channel] =
+                a + (b - a) * (float)fraction;
+        }
     }
     if (sample->frames > 0)
         memcpy(output, sample->data,
-               (first < sample->frames ? first : sample->frames) * sizeof(*output));
+               (first < sample->frames ? first : sample->frames) *
+               channels * sizeof(*output));
     if (gap_frames > 0)
-        memset(output + sample->frames, 0, gap_frames * sizeof(*output));
-    memcpy(output + first, resampled, patch_frames * sizeof(*output));
+        memset(output + sample->frames * channels, 0,
+               gap_frames * channels * sizeof(*output));
+    memcpy(output + first * channels, resampled,
+           patch_frames * channels * sizeof(*output));
     if (last < sample->frames)
-        memcpy(output + first + patch_frames, sample->data + last,
-               (sample->frames - last) * sizeof(*output));
+        memcpy(output + (first + patch_frames) * channels,
+               sample->data + last * channels,
+               (sample->frames - last) * channels * sizeof(*output));
     free(resampled);
     free(sample->data);
     sample->data = output;
@@ -1806,6 +2112,7 @@ static int replace_patch_range_joined(TsSample *sample, const TsSample *patch,
     size_t right_fade;
     size_t right_frames;
     size_t inserted_last;
+    size_t channels;
     if (fade == 0u)
         return patch_range(sample, patch, first, last, 0, error, error_size);
     if (sample == NULL || sample->data == NULL || patch == NULL ||
@@ -1813,26 +2120,34 @@ static int replace_patch_range_joined(TsSample *sample, const TsSample *patch,
         set_error(error, error_size, "Invalid joined Paste range");
         return 0;
     }
+    if (!ts_sample_valid_channels(sample->channels) ||
+        sample->channels != patch->channels) {
+        set_error(error, error_size,
+                  "Joined Paste requires matching mono/stereo channel shape");
+        return 0;
+    }
+    channels = sample->channels;
     original_frames = sample->frames;
     left_fade = fade < first ? fade : first;
     right_frames = original_frames - last;
     right_fade = fade < right_frames ? fade : right_frames;
     if (left_fade > SIZE_MAX - right_fade ||
-        left_fade + right_fade > SIZE_MAX / sizeof(*edges)) {
+        left_fade + right_fade > SIZE_MAX / channels ||
+        (left_fade + right_fade) * channels > SIZE_MAX / sizeof(*edges)) {
         set_error(error, error_size, "Joined Paste crossfade is too large");
         return 0;
     }
-    edges = malloc((left_fade + right_fade) * sizeof(*edges));
+    edges = malloc((left_fade + right_fade) * channels * sizeof(*edges));
     if (edges == NULL && left_fade + right_fade > 0u) {
         set_error(error, error_size, "Out of memory smoothing Paste joins");
         return 0;
     }
     if (left_fade > 0u)
-        memcpy(edges, sample->data + first - left_fade,
-               left_fade * sizeof(*edges));
+        memcpy(edges, sample->data + (first - left_fade) * channels,
+               left_fade * channels * sizeof(*edges));
     if (right_fade > 0u)
-        memcpy(edges + left_fade, sample->data + last,
-               right_fade * sizeof(*edges));
+        memcpy(edges + left_fade * channels, sample->data + last * channels,
+               right_fade * channels * sizeof(*edges));
     if (!patch_range(sample, patch, first, last, 0, error, error_size)) {
         free(edges);
         return 0;
@@ -1842,15 +2157,20 @@ static int replace_patch_range_joined(TsSample *sample, const TsSample *patch,
         double phase = (double)(frame + 1u) / (double)(left_fade + 1u);
         float wet = (float)(0.5 - 0.5 * cos(M_PI * phase));
         size_t at = first - left_fade + frame;
-        sample->data[at] = edges[frame] * (1.0f - wet) +
-                           sample->data[first] * wet;
+        for (size_t channel = 0; channel < channels; ++channel)
+            sample->data[at * channels + channel] =
+                edges[frame * channels + channel] * (1.0f - wet) +
+                sample->data[first * channels + channel] * wet;
     }
     for (size_t frame = 0u; frame < right_fade; ++frame) {
         double phase = (double)(frame + 1u) / (double)(right_fade + 1u);
         float dry = (float)(0.5 - 0.5 * cos(M_PI * phase));
         size_t at = inserted_last + frame;
-        sample->data[at] = sample->data[inserted_last - 1u] * (1.0f - dry) +
-                           edges[left_fade + frame] * dry;
+        for (size_t channel = 0; channel < channels; ++channel)
+            sample->data[at * channels + channel] =
+                sample->data[(inserted_last - 1u) * channels + channel] *
+                (1.0f - dry) +
+                edges[(left_fade + frame) * channels + channel] * dry;
     }
     free(edges);
     return 1;
@@ -1862,6 +2182,7 @@ static int fit_patch_range_crossfaded(TsSample *sample, const TsSample *patch,
 {
     float *edges;
     size_t length;
+    size_t channels;
     if (fade == 0u)
         return patch_range(sample, patch, first, last, 1, error, error_size);
     if (sample == NULL || sample->data == NULL || first >= last ||
@@ -1869,22 +2190,32 @@ static int fit_patch_range_crossfaded(TsSample *sample, const TsSample *patch,
         set_error(error, error_size, "Invalid crossfaded stamp range");
         return 0;
     }
+    if (patch == NULL || !ts_sample_valid_channels(sample->channels) ||
+        sample->channels != patch->channels) {
+        set_error(error, error_size,
+                  "Crossfaded stamp requires matching mono/stereo channel shape");
+        return 0;
+    }
+    channels = sample->channels;
     length = last - first;
     if (fade > length / 4u) fade = length / 4u;
     if (fade == 0u)
         return patch_range(sample, patch, first, last, 1, error, error_size);
-    if (fade > SIZE_MAX / (2u * sizeof(*edges))) {
+    if (fade > SIZE_MAX / (2u * channels) ||
+        fade * 2u * channels > SIZE_MAX / sizeof(*edges)) {
         set_error(error, error_size, "Crossfaded stamp is too large");
         return 0;
     }
-    edges = malloc(fade * 2u * sizeof(*edges));
+    edges = malloc(fade * 2u * channels * sizeof(*edges));
     if (edges == NULL) {
         set_error(error, error_size, "Out of memory crossfading audio stamp");
         return 0;
     }
-    memcpy(edges, sample->data + first, fade * sizeof(*edges));
-    memcpy(edges + fade, sample->data + last - fade,
-           fade * sizeof(*edges));
+    memcpy(edges, sample->data + first * channels,
+           fade * channels * sizeof(*edges));
+    memcpy(edges + fade * channels,
+           sample->data + (last - fade) * channels,
+           fade * channels * sizeof(*edges));
     if (!patch_range(sample, patch, first, last, 1, error, error_size)) {
         free(edges);
         return 0;
@@ -1892,14 +2223,18 @@ static int fit_patch_range_crossfaded(TsSample *sample, const TsSample *patch,
     for (size_t frame = 0u; frame < fade; ++frame) {
         float wet = (float)(frame + 1u) / (float)(fade + 1u);
         size_t at = first + frame;
-        sample->data[at] = edges[frame] * (1.0f - wet) +
-                           sample->data[at] * wet;
+        for (size_t channel = 0; channel < channels; ++channel)
+            sample->data[at * channels + channel] =
+                edges[frame * channels + channel] * (1.0f - wet) +
+                sample->data[at * channels + channel] * wet;
     }
     for (size_t frame = 0u; frame < fade; ++frame) {
         float wet = (float)(fade - frame) / (float)(fade + 1u);
         size_t at = last - fade + frame;
-        sample->data[at] = edges[fade + frame] * (1.0f - wet) +
-                           sample->data[at] * wet;
+        for (size_t channel = 0; channel < channels; ++channel)
+            sample->data[at * channels + channel] =
+                edges[(fade + frame) * channels + channel] * (1.0f - wet) +
+                sample->data[at * channels + channel] * wet;
     }
     free(edges);
     return 1;
@@ -1921,6 +2256,7 @@ static int stretch_patch_range(TsSample *sample, const TsSample *patch,
                                size_t target_first, int contracting,
                                size_t fade, char *error, size_t error_size)
 {
+    size_t channels;
     if (sample == NULL || sample->data == NULL || patch == NULL || patch->data == NULL ||
         original_first >= original_last || original_last > sample->frames ||
         patch->frames == 0 || target_first > sample->frames ||
@@ -1928,16 +2264,26 @@ static int stretch_patch_range(TsSample *sample, const TsSample *patch,
         set_error(error, error_size, "Invalid tape stretch range");
         return 0;
     }
+    if (sample->channels != patch->channels ||
+        !ts_sample_valid_channels(sample->channels)) {
+        set_error(error, error_size,
+                  "Tape Stretch requires matching mono/stereo channel shape");
+        return 0;
+    }
+    channels = sample->channels;
     if (fade > patch->frames / 2u) fade = patch->frames / 2u;
     if (contracting) {
         for (size_t frame = original_first; frame < original_last; ++frame)
-            sample->data[frame] = 0.0f;
+            for (size_t channel = 0; channel < channels; ++channel)
+                sample->data[frame * channels + channel] = 0.0f;
         for (size_t i = 0; i < fade; ++i) {
             float gain = (float)(i + 1u) / (float)(fade + 1u);
             if (original_first > i)
-                sample->data[original_first - 1u - i] *= gain;
+                for (size_t channel = 0; channel < channels; ++channel)
+                    sample->data[(original_first - 1u - i) * channels + channel] *= gain;
             if (original_last + i < sample->frames)
-                sample->data[original_last + i] *= gain;
+                for (size_t channel = 0; channel < channels; ++channel)
+                    sample->data[(original_last + i) * channels + channel] *= gain;
         }
         for (size_t i = 0; i < patch->frames; ++i) {
             float gain = 1.0f;
@@ -1948,7 +2294,9 @@ static int stretch_patch_range(TsSample *sample, const TsSample *patch,
                     if (tail < gain) gain = tail;
                 }
             }
-            sample->data[target_first + i] = patch->data[i] * gain;
+            for (size_t channel = 0; channel < channels; ++channel)
+                sample->data[(target_first + i) * channels + channel] =
+                    patch->data[i * channels + channel] * gain;
         }
     } else {
         float source_peak = 0.0f;
@@ -1958,8 +2306,6 @@ static int stretch_patch_range(TsSample *sample, const TsSample *patch,
         for (size_t i = 0; i < patch->frames; ++i) {
             size_t at = target_first + i;
             float edge_gain = 1.0f;
-            float source;
-            float summed;
             if (at >= original_first && at < original_last) continue;
             if (fade > 0u) {
                 if (i < fade) edge_gain = (float)(i + 1u) / (float)(fade + 1u);
@@ -1968,12 +2314,15 @@ static int stretch_patch_range(TsSample *sample, const TsSample *patch,
                     if (tail < edge_gain) edge_gain = tail;
                 }
             }
-            source = patch->data[i] * edge_gain;
-            summed = sample->data[at] + source;
-            if (fabsf(source) > source_peak) source_peak = fabsf(source);
-            if (fabsf(sample->data[at]) > destination_peak)
-                destination_peak = fabsf(sample->data[at]);
-            if (fabsf(summed) > summed_peak) summed_peak = fabsf(summed);
+            for (size_t channel = 0; channel < channels; ++channel) {
+                float source = patch->data[i * channels + channel] * edge_gain;
+                float destination = sample->data[at * channels + channel];
+                float summed = destination + source;
+                if (fabsf(source) > source_peak) source_peak = fabsf(source);
+                if (fabsf(destination) > destination_peak)
+                    destination_peak = fabsf(destination);
+                if (fabsf(summed) > summed_peak) summed_peak = fabsf(summed);
+            }
         }
         if (summed_peak > 0.0000001f) {
             float wanted = source_peak > destination_peak ? source_peak : destination_peak;
@@ -1982,7 +2331,9 @@ static int stretch_patch_range(TsSample *sample, const TsSample *patch,
         for (size_t i = 0; i < patch->frames; ++i) {
             size_t at = target_first + i;
             if (at >= original_first && at < original_last) {
-                sample->data[at] = patch->data[i];
+                for (size_t channel = 0; channel < channels; ++channel)
+                    sample->data[at * channels + channel] =
+                        patch->data[i * channels + channel];
             } else {
                 float edge_gain = 1.0f;
                 if (fade > 0u) {
@@ -1992,9 +2343,13 @@ static int stretch_patch_range(TsSample *sample, const TsSample *patch,
                         if (tail < edge_gain) edge_gain = tail;
                     }
                 }
-                sample->data[at] = clampf(sample->data[at] +
-                                          patch->data[i] * edge_gain * mix_scale,
-                                          -1.0f, 1.0f);
+                for (size_t channel = 0; channel < channels; ++channel) {
+                    size_t scalar = at * channels + channel;
+                    sample->data[scalar] = clampf(
+                        sample->data[scalar] +
+                        patch->data[i * channels + channel] *
+                        edge_gain * mix_scale, -1.0f, 1.0f);
+                }
             }
         }
     }
@@ -2090,38 +2445,60 @@ static int render_material_snapshot(TsSample *destination,
         length = last - first;
         if (operation->kind >= TS_POST_REVERSE) {
             if (operation->kind == TS_POST_CROP) {
-                float *cropped = (float *)malloc(length * sizeof(float));
+                size_t byte_count;
+                size_t channels = destination->channels;
+                float *cropped;
+                if (!ts_sample_dimensions(length, destination->channels,
+                                          NULL, &byte_count)) {
+                    set_error(error, error_size, "Cropped tape is too large");
+                    return 0;
+                }
+                cropped = (float *)malloc(byte_count);
                 if (cropped == NULL) {
                     set_error(error, error_size, "Out of memory while cropping tape");
                     return 0;
                 }
-                memcpy(cropped, destination->data + first, length * sizeof(float));
+                memcpy(cropped, destination->data + first * channels, byte_count);
                 ts_sample_free(destination);
                 destination->data = cropped;
                 destination->frames = length;
                 destination->sample_rate = instrument->parent.sample_rate;
+                destination->channels = (uint8_t)channels;
                 snprintf(destination->name, sizeof(destination->name), "%s",
                          instrument->parent.name);
             } else if (operation->kind == TS_POST_REVERSE) {
                 for (size_t i = 0; i < length / 2u; ++i) {
-                    float swap = destination->data[first + i];
-                    destination->data[first + i] = destination->data[last - 1u - i];
-                    destination->data[last - 1u - i] = swap;
+                    size_t a = (first + i) * destination->channels;
+                    size_t b = (last - 1u - i) * destination->channels;
+                    for (size_t channel = 0; channel < destination->channels; ++channel) {
+                        float swap = destination->data[a + channel];
+                        destination->data[a + channel] = destination->data[b + channel];
+                        destination->data[b + channel] = swap;
+                    }
                 }
             } else if (operation->kind == TS_POST_ROTATE) {
                 size_t offset = (size_t)operation->destination;
+                size_t channels = destination->channels;
+                size_t scalar_count;
                 float *rotated;
                 if (offset == 0 || offset >= length) continue;
-                rotated = (float *)malloc(length * sizeof(float));
+                if (!ts_sample_dimensions(length, destination->channels,
+                                          &scalar_count, NULL)) {
+                    set_error(error, error_size, "Rotated waveform is too large");
+                    return 0;
+                }
+                rotated = (float *)malloc(scalar_count * sizeof(float));
                 if (rotated == NULL) {
                     set_error(error, error_size, "Out of memory while rotating waveform");
                     return 0;
                 }
-                memcpy(rotated, destination->data + first + offset,
-                       (length - offset) * sizeof(float));
-                memcpy(rotated + length - offset, destination->data + first,
-                       offset * sizeof(float));
-                memcpy(destination->data + first, rotated, length * sizeof(float));
+                memcpy(rotated, destination->data + (first + offset) * channels,
+                       (length - offset) * channels * sizeof(float));
+                memcpy(rotated + (length - offset) * channels,
+                       destination->data + first * channels,
+                       offset * channels * sizeof(float));
+                memcpy(destination->data + first * channels, rotated,
+                       scalar_count * sizeof(float));
                 free(rotated);
             } else if (operation->kind == TS_POST_WARP) {
                 if (!warp_range(destination, first, last, operation->amount,
@@ -2135,15 +2512,19 @@ static int render_material_snapshot(TsSample *destination,
             } else if (operation->kind == TS_POST_NORMALIZE) {
                 float peak = 0.0f;
                 float target = clampf(operation->amount, 0.0f, 1.0f);
-                for (size_t i = first; i < last; ++i)
+                size_t scalar_first = first * destination->channels;
+                size_t scalar_last = last * destination->channels;
+                for (size_t i = scalar_first; i < scalar_last; ++i)
                     if (fabsf(destination->data[i]) > peak) peak = fabsf(destination->data[i]);
                 if (peak > 0.0000001f) {
                     float gain = target / peak;
-                    for (size_t i = first; i < last; ++i)
+                    for (size_t i = scalar_first; i < scalar_last; ++i)
                         destination->data[i] = clampf(destination->data[i] * gain, -1.0f, 1.0f);
                 }
             } else if (operation->kind == TS_POST_GAIN) {
-                for (size_t i = first; i < last; ++i)
+                size_t scalar_first = first * destination->channels;
+                size_t scalar_last = last * destination->channels;
+                for (size_t i = scalar_first; i < scalar_last; ++i)
                     destination->data[i] = clampf(destination->data[i] * operation->amount,
                                                   -1.0f, 1.0f);
             } else if (operation->kind == TS_POST_FADE_IN ||
@@ -2153,7 +2534,9 @@ static int render_material_snapshot(TsSample *destination,
                         (operation->kind == TS_POST_FADE_IN ?
                          (float)i / (float)(length - 1u) :
                          (float)(length - 1u - i) / (float)(length - 1u)) : 1.0f;
-                    destination->data[first + i] *= gain;
+                    size_t scalar = (first + i) * destination->channels;
+                    for (size_t channel = 0; channel < destination->channels; ++channel)
+                        destination->data[scalar + channel] *= gain;
                 }
             }
         } else {
@@ -2170,6 +2553,11 @@ static int render_material_snapshot(TsSample *destination,
                          operation->kind == TS_POST_MOVE_OVERWRITE;
             int overwrite = operation->kind == TS_POST_COPY_OVERWRITE ||
                             operation->kind == TS_POST_MOVE_OVERWRITE;
+            if (destination->channels == 2u) {
+                set_error(error, error_size,
+                          "Stereo tape Move/Copy placement arrives in a later PR");
+                return 0;
+            }
             if (right < (int64_t)destination->frames) right = (int64_t)destination->frames;
             if (right < left || (uint64_t)(right - left) > SIZE_MAX / sizeof(float)) {
                 set_error(error, error_size, "Tape placement is too large");
@@ -2280,8 +2668,10 @@ static int apply_snapshot_process(TsSample *destination,
         }
         if (!ts_sample_process(&processed, destination, first, last,
                                &state->process, error, error_size)) return 0;
-        memcpy(destination->data + first, processed.data,
-               processed.frames * sizeof(*destination->data));
+        memcpy(destination->data + first * destination->channels,
+               processed.data,
+               processed.frames * destination->channels *
+               sizeof(*destination->data));
         ts_sample_free(&processed);
     } else {
         if (!ts_sample_process(&processed, destination, 0, destination->frames,
@@ -2419,19 +2809,27 @@ static int sample_clone_range(TsSample *destination, const TsSample *source,
                               size_t first, size_t last, char *error, size_t error_size)
 {
     size_t frames;
+    size_t byte_count;
+    size_t source_scalar;
     if (source == NULL || source->data == NULL || first >= last || last > source->frames) {
         set_error(error, error_size, "Invalid bank capture range");
         return 0;
     }
     frames = last - first;
-    destination->data = (float *)malloc(frames * sizeof(float));
+    if (!ts_sample_dimensions(frames, source->channels, NULL, &byte_count)) {
+        set_error(error, error_size, "Bank capture range is too large");
+        return 0;
+    }
+    destination->data = (float *)malloc(byte_count);
     if (destination->data == NULL) {
         set_error(error, error_size, "Out of memory while capturing bank slot");
         return 0;
     }
-    memcpy(destination->data, source->data + first, frames * sizeof(float));
+    source_scalar = first * (size_t)source->channels;
+    memcpy(destination->data, source->data + source_scalar, byte_count);
     destination->frames = frames;
     destination->sample_rate = source->sample_rate;
+    destination->channels = source->channels;
     return 1;
 }
 
@@ -2892,11 +3290,12 @@ int ts_instrument_select_wave(TsInstrument *instrument)
         return 0;
     first = 0;
     while (first < instrument->current.frames &&
-           instrument->current.data[first] == 0.0f)
+           ts_sample_read_mono(&instrument->current, first) == 0.0f)
         ++first;
     if (first == instrument->current.frames) return 0;
     last = instrument->current.frames;
-    while (last > first && instrument->current.data[last - 1u] == 0.0f)
+    while (last > first &&
+           ts_sample_read_mono(&instrument->current, last - 1u) == 0.0f)
         --last;
     ts_instrument_set_selection(instrument, first, last);
     return instrument->has_selection && instrument->selection_first == first &&
@@ -2908,10 +3307,10 @@ static int is_zero_crossing(const TsSample *sample, size_t frame)
     float before;
     float after;
     if (sample == NULL || sample->data == NULL || frame >= sample->frames) return 0;
-    after = sample->data[frame];
+    after = ts_sample_read_mono(sample, frame);
     if (after == 0.0f) return 1;
     if (frame == 0) return 0;
-    before = sample->data[frame - 1u];
+    before = ts_sample_read_mono(sample, frame - 1u);
     return before == 0.0f || (before < 0.0f && after > 0.0f) ||
            (before > 0.0f && after < 0.0f);
 }
@@ -2934,9 +3333,9 @@ size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
         if (distance > 0 && target + distance < sample->frames &&
             is_zero_crossing(sample, target + distance)) return target + distance;
     }
-    closest_level = fabsf(sample->data[0]);
+    closest_level = fabsf(ts_sample_read_mono(sample, 0u));
     for (size_t i = 1; i < sample->frames; ++i) {
-        float level = fabsf(sample->data[i]);
+        float level = fabsf(ts_sample_read_mono(sample, i));
         if (level < closest_level) {
             closest = i;
             closest_level = level;
@@ -2976,9 +3375,9 @@ size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
         }
     }
     closest = first;
-    closest_level = fabsf(sample->data[first]);
+    closest_level = fabsf(ts_sample_read_mono(sample, first));
     for (size_t frame = first + 1u; frame <= last; ++frame) {
-        float level = fabsf(sample->data[frame]);
+        float level = fabsf(ts_sample_read_mono(sample, frame));
         if (level < closest_level) {
             closest = frame;
             closest_level = level;
@@ -3076,6 +3475,11 @@ int ts_sample_make_drone_at_split(TsSample *destination, const TsSample *source,
     if (destination == NULL || source == NULL || source->data == NULL ||
         source->sample_rate == 0 || first >= last || last > source->frames) {
         set_error(error, error_size, "Drone needs a valid nonempty selection");
+        return 0;
+    }
+    if (source->channels != 1u) {
+        set_error(error, error_size,
+                  "Stereo Drone creation arrives in a later linked-channel PR");
         return 0;
     }
     selection_frames = last - first;
@@ -3528,8 +3932,9 @@ int64_t ts_sample_snap_tape_destination(const TsSample *sample, int64_t target,
             size_t end = candidate + source_frames;
             int crossings = is_zero_crossing(sample, candidate) +
                             (end < sample->frames && is_zero_crossing(sample, end));
-            float level = fabsf(sample->data[candidate]) +
-                          (end < sample->frames ? fabsf(sample->data[end]) : 0.0f);
+            float level = fabsf(ts_sample_read_mono(sample, candidate)) +
+                          (end < sample->frames ?
+                           fabsf(ts_sample_read_mono(sample, end)) : 0.0f);
             if (crossings > best_crossings ||
                 (crossings == best_crossings &&
                  (level < best_level ||
@@ -3563,6 +3968,11 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
     }
     if (kind < TS_POST_COPY_MIX || kind > TS_POST_MOVE_OVERWRITE) {
         set_error(error, error_size, "Invalid tape drag gesture");
+        return 0;
+    }
+    if (instrument->current.channels == 2u) {
+        set_error(error, error_size,
+                  "Stereo tape Move/Copy placement arrives in a later PR");
         return 0;
     }
     if (first >= last || last > instrument->current.frames) {
@@ -3684,7 +4094,7 @@ static int family_mutate_sample(TsSample *destination, const TsSample *source,
     uint32_t rng = seed;
     float relation_scale = relation == TS_FAMILY_CHILD ? 0.34f : 0.72f;
     float strength = clampf(0.06f + mutation * relation_scale, 0.02f, 0.92f);
-    size_t frames = source->frames;
+    size_t frames;
     float *data;
     float envelope = 0.0f;
     float smooth = 0.0f;
@@ -3693,8 +4103,15 @@ static int family_mutate_sample(TsSample *destination, const TsSample *source,
     float spectral_direction = rng_bipolar(&rng);
     float comb_polarity = rng_bipolar(&rng) < 0.0f ? -1.0f : 1.0f;
     float comb_mix = strength * (0.18f + rng_unit(&rng) * 0.32f);
-    size_t maximum_delay = source->sample_rate / 80u;
+    size_t maximum_delay;
     size_t delay_frames;
+    if (source == NULL || source->channels != 1u) {
+        set_error(error, error_size,
+                  "Stereo Vary/Create arrives in a later linked-channel PR");
+        return 0;
+    }
+    frames = source->frames;
+    maximum_delay = source->sample_rate / 80u;
     if (maximum_delay < 1u) maximum_delay = 1u;
     if (source->frames > 1u && maximum_delay >= source->frames)
         maximum_delay = source->frames - 1u;
@@ -3780,6 +4197,7 @@ static int family_mutate_sample(TsSample *destination, const TsSample *source,
     destination->data = data;
     destination->frames = frames;
     destination->sample_rate = source->sample_rate;
+    destination->channels = 1u;
     set_error(error, error_size, "");
     return 1;
 }
@@ -4046,6 +4464,12 @@ int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
     slot = instrument->selected_slot;
     if (instrument->bank[slot].locked) {
         set_error(error, error_size, "Tile is locked - unlock it before Create");
+        return 0;
+    }
+    if (instrument->bank[slot].occupied &&
+        instrument->bank[slot].sample.channels == 2u) {
+        set_error(error, error_size,
+                  "FM Create/Apply cannot replace a stereo tile in this PR");
         return 0;
     }
     bank_slot_init(&made);
@@ -4683,16 +5107,20 @@ static int resample_selection_patch(TsSample *patch, const TsSample *source,
 {
     float *data;
     size_t source_frames;
+    size_t scalar_count;
+    size_t channels;
     if (patch == NULL || source == NULL || source->data == NULL ||
         first >= last || last > source->frames || frames == 0) {
         set_error(error, error_size, "Invalid selection for tape stretch");
         return 0;
     }
-    if (frames > SIZE_MAX / sizeof(*data)) {
+    channels = source->channels;
+    if (!ts_sample_dimensions(frames, source->channels,
+                              &scalar_count, NULL)) {
         set_error(error, error_size, "Stretched selection is too large");
         return 0;
     }
-    data = malloc(frames * sizeof(*data));
+    data = malloc(scalar_count * sizeof(*data));
     if (data == NULL) {
         set_error(error, error_size, "Out of memory stretching selection");
         return 0;
@@ -4715,14 +5143,18 @@ static int resample_selection_patch(TsSample *patch, const TsSample *source,
         }
         size_t at = (size_t)position;
         double fraction = position - (double)at;
-        float a = source->data[first + at];
-        float b = at + 1u < source_frames ? source->data[first + at + 1u] : a;
-        data[i] = a + (b - a) * (float)fraction;
+        for (size_t channel = 0; channel < channels; ++channel) {
+            float a = source->data[(first + at) * channels + channel];
+            float b = at + 1u < source_frames ?
+                      source->data[(first + at + 1u) * channels + channel] : a;
+            data[i * channels + channel] = a + (b - a) * (float)fraction;
+        }
     }
     ts_sample_free(patch);
     patch->data = data;
     patch->frames = frames;
     patch->sample_rate = source->sample_rate;
+    patch->channels = source->channels;
     snprintf(patch->name, sizeof(patch->name), "STRETCH %.112s", source->name);
     return 1;
 }
@@ -5731,7 +6163,8 @@ int ts_instrument_apply_rendered_replacement(TsInstrument *instrument,
         rendered->frames == 0u || rendered->sample_rate == 0u ||
         instrument->current.data == NULL || first > last ||
         last > instrument->current.frames ||
-        rendered->sample_rate != instrument->current.sample_rate) {
+        rendered->sample_rate != instrument->current.sample_rate ||
+        rendered->channels != instrument->current.channels) {
         set_error(error, error_size, "Invalid rendered replacement");
         return 0;
     }
@@ -6135,6 +6568,11 @@ int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
         set_error(error, error_size, "Select a range before Create stamping");
         return 0;
     }
+    if (instrument->current.channels == 2u) {
+        set_error(error, error_size,
+                  "FM Create stamp cannot replace stereo material in this PR");
+        return 0;
+    }
     memset(&recipe, 0, sizeof(recipe));
     recipe.kind = TS_GENERATOR_FM;
     recipe.seed = seed;
@@ -6321,6 +6759,11 @@ int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
         source >= TS_BANK_SLOT_COUNT || !instrument->bank[source].occupied ||
         instrument->current.data == NULL || instrument->current.frames == 0u) {
         set_error(error, error_size, "Vary needs an occupied selected tile");
+        return 0;
+    }
+    if (instrument->current.channels == 2u) {
+        set_error(error, error_size,
+                  "Stereo Vary/Create arrives in a later linked-channel PR");
         return 0;
     }
     destination = source;
@@ -6665,13 +7108,15 @@ int ts_instrument_bank_capture(TsInstrument *instrument, int slot,
 int ts_instrument_bank_is_blank_canvas(const TsInstrument *instrument, int slot)
 {
     const TsBankSlot *target;
+    size_t scalar_count;
     if (instrument == NULL || slot < 0 || slot >= TS_BANK_SLOT_COUNT) return 0;
     target = &instrument->bank[slot];
     if (!target->occupied || target->sample.data == NULL ||
         target->sample.frames < TS_CANVAS_MIN_FRAMES ||
-        target->sample.sample_rate == 0u) return 0;
-    for (size_t frame = 0; frame < target->sample.frames; ++frame)
-        if (target->sample.data[frame] != 0.0f) return 0;
+        target->sample.sample_rate == 0u ||
+        !ts_sample_scalar_count(&target->sample, &scalar_count)) return 0;
+    for (size_t scalar = 0; scalar < scalar_count; ++scalar)
+        if (target->sample.data[scalar] != 0.0f) return 0;
     return 1;
 }
 
@@ -6745,6 +7190,11 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
     }
     source_tuning = default_tuning();
     source_audible_tuning = default_tuning();
+    if (instrument->bank[destination_slot].sample.channels != 1u) {
+        set_error(error, error_size,
+                  "Stereo Capture targets arrive with the PR2 audio buses");
+        return 0;
+    }
     if (!ts_instrument_select_bank(instrument, destination_slot,
                                    error, error_size)) return 0;
     target_frames = instrument->current.frames;
@@ -6771,6 +7221,7 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
     patch.data = (float *)captured;
     patch.frames = recorded_frames;
     patch.sample_rate = capture_rate;
+    patch.channels = 1u;
     if (synth_source)
         snprintf(name, sizeof(name), "CAPTURE %02d FROM SYNTH",
                  destination_slot + 1);
@@ -6876,6 +7327,11 @@ int ts_instrument_commit_overdub(TsInstrument *instrument, int destination_slot,
         set_error(error, error_size, "Invalid Overdub target, source, or audio");
         return 0;
     }
+    if (instrument->bank[destination_slot].sample.channels != 1u) {
+        set_error(error, error_size,
+                  "Stereo Overdub targets arrive with the PR2 audio buses");
+        return 0;
+    }
     if (!ts_instrument_select_bank(instrument, destination_slot,
                                    error, error_size)) return 0;
     if (instrument->current.data == NULL ||
@@ -6952,6 +7408,7 @@ int ts_instrument_commit_overdub(TsInstrument *instrument, int destination_slot,
     patch.data = mixed;
     patch.frames = target_frames;
     patch.sample_rate = base_rate;
+    patch.channels = 1u;
     snprintf(name, sizeof(name), "%s", instrument->current.name);
     snprintf(patch.name, sizeof(patch.name), "%s", name);
     if (!append_audio_patch(instrument, &patch, NULL, &patch_index,
@@ -7782,8 +8239,8 @@ static int apply_process_range_in_place(TsSample *material,
         !ts_sample_process(&rendered, material, first, last, process,
                            error, error_size))
         return 0;
-    memcpy(material->data + first, rendered.data,
-           rendered.frames * sizeof(*material->data));
+    memcpy(material->data + first * material->channels, rendered.data,
+           rendered.frames * material->channels * sizeof(*material->data));
     ts_sample_free(&rendered);
     return 1;
 }
@@ -8021,6 +8478,11 @@ int ts_instrument_warp_gesture_begin(TsInstrument *instrument,
         set_error(error, error_size, "Could not begin WARP gesture");
         return 0;
     }
+    if (instrument->current.channels == 2u) {
+        set_error(error, error_size,
+                  "Stereo WARP arrives in a later channel-linked editing PR");
+        return 0;
+    }
     if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
     if (!ts_sample_clone(&gesture->original, &instrument->current,
@@ -8189,7 +8651,10 @@ int ts_instrument_amplitude_gesture_preview(TsInstrument *instrument,
         float phase = last > first ?
             (float)(frame - first) / (float)(last - first) : 1.0f;
         float gain = first_gain + (last_gain - first_gain) * phase;
-        instrument->current.data[frame] = gesture->original.data[frame] * gain;
+        for (size_t channel = 0; channel < instrument->current.channels; ++channel) {
+            size_t scalar = frame * instrument->current.channels + channel;
+            instrument->current.data[scalar] = gesture->original.data[scalar] * gain;
+        }
     }
     ts_sample_touch(&instrument->current);
     if (!gesture->has_profile) {
@@ -8213,8 +8678,17 @@ int ts_instrument_amplitude_gesture_reset_preview(
                   "Amplitude gesture no longer owns Current");
         return 0;
     }
-    memcpy(instrument->current.data, gesture->original.data,
-           gesture->original.frames * sizeof(*instrument->current.data));
+    {
+        size_t byte_count;
+        if (!ts_sample_dimensions(gesture->original.frames,
+                                  gesture->original.channels,
+                                  NULL, &byte_count)) {
+            set_error(error, error_size,
+                      "Amplitude preview has invalid channel storage");
+            return 0;
+        }
+        memcpy(instrument->current.data, gesture->original.data, byte_count);
+    }
     ts_sample_touch(&instrument->current);
     gesture->first_frame = 0u;
     gesture->last_frame = 0u;
@@ -8308,6 +8782,11 @@ int ts_instrument_smear_gesture_begin(TsInstrument *instrument, TsSmearGesture *
 {
     if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
         set_error(error, error_size, "Could not begin SMEAR gesture"); return 0;
+    }
+    if (instrument->current.channels == 2u) {
+        set_error(error, error_size,
+                  "Stereo SMEAR arrives in a later channel-linked editing PR");
+        return 0;
     }
     if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
@@ -8415,6 +8894,11 @@ int ts_instrument_tear_gesture_begin(TsInstrument *instrument, TsTearGesture *ge
 {
     if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
         set_error(error, error_size, "Could not begin TEAR gesture"); return 0;
+    }
+    if (instrument->current.channels == 2u) {
+        set_error(error, error_size,
+                  "Stereo TEAR arrives in a later channel-linked editing PR");
+        return 0;
     }
     if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
@@ -8843,32 +9327,52 @@ static int get_edit_snapshot(FILE *f, TsEditSnapshot *state, int version)
            tuning_valid(&state->tuning) && tuning_valid(&state->audible_tuning);
 }
 
-static void put_sample_block(FILE *f, const TsSample *sample)
+static int put_sample_block(FILE *f, const TsSample *sample)
 {
-    size_t name_length = strlen(sample->name);
+    const char *name_end;
+    size_t name_length;
+    size_t scalar_count;
+    if (f == NULL || sample == NULL || sample->data == NULL ||
+        sample->frames == 0u || sample->sample_rate < 1000u ||
+        !ts_sample_scalar_count(sample, &scalar_count)) return 0;
+    name_end = memchr(sample->name, '\0', sizeof(sample->name));
+    if (name_end == NULL) return 0;
+    name_length = (size_t)(name_end - sample->name);
     put32(f, sample->sample_rate); put64(f, sample->frames);
+    put32(f, sample->channels);
     put32(f, (uint32_t)name_length); fwrite(sample->name, 1, name_length, f);
-    for (size_t frame = 0; frame < sample->frames; ++frame) put_float(f, sample->data[frame]);
+    for (size_t scalar = 0; scalar < scalar_count; ++scalar)
+        put_float(f, finite_sample(sample->data[scalar]));
     put64(f, ts_sample_hash(sample));
+    return !ferror(f);
 }
 
-static int get_sample_block(FILE *f, TsSample *sample)
+static int get_sample_block(FILE *f, TsSample *sample, int version)
 {
     uint32_t name_length;
+    uint32_t channels = 1u;
     uint64_t frames;
     uint64_t stored_hash;
+    size_t scalar_count;
+    size_t byte_count;
     if (!get32(f, &sample->sample_rate) || !get64(f, &frames) ||
+        (version >= 27 && !get32(f, &channels)) ||
         !get32(f, &name_length) || sample->sample_rate < 1000u ||
-        frames == 0 || frames > 100000000u || frames > SIZE_MAX / sizeof(float) ||
+        frames == 0 || frames > 100000000u || frames > SIZE_MAX ||
+        (channels != 1u && channels != 2u) ||
+        !ts_sample_dimensions((size_t)frames, (uint8_t)channels,
+                              &scalar_count, &byte_count) ||
         name_length >= sizeof(sample->name)) return 0;
     sample->frames = (size_t)frames;
+    sample->channels = (uint8_t)channels;
     if (fread(sample->name, 1, name_length, f) != name_length) return 0;
     sample->name[name_length] = '\0';
-    sample->data = (float *)malloc(sample->frames * sizeof(float));
+    sample->data = (float *)malloc(byte_count);
     if (sample->data == NULL) return -1;
-    for (size_t frame = 0; frame < sample->frames; ++frame)
-        if (!get_float(f, &sample->data[frame])) return 0;
-    return get64(f, &stored_hash) && stored_hash == ts_sample_hash(sample);
+    for (size_t scalar = 0; scalar < scalar_count; ++scalar)
+        if (!get_float(f, &sample->data[scalar])) return 0;
+    return get64(f, &stored_hash) &&
+           stored_hash == sample_hash_version(sample, version >= 27);
 }
 
 static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slot)
@@ -8888,9 +9392,9 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr26(const TsInstrument *instrument, FILE *f)
+static int save_tsr27(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR26\r\n\032", 1, 8, f);
+    fwrite("TSR27\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -8968,14 +9472,14 @@ static int save_tsr26(const TsInstrument *instrument, FILE *f)
         put32(f, (uint32_t)slot->loop_mode); put32(f, (uint32_t)slot->has_loop);
         put64(f, slot->loop_first); put64(f, slot->loop_last);
         put_float(f, slot->loop_crossfade_ms);
-        put_sample_block(f, audio);
-        put_sample_block(f, baseline);
+        if (!put_sample_block(f, audio) || !put_sample_block(f, baseline))
+            return 0;
         put32(f, (uint32_t)slot->patch_count);
         for (int patch = 0; patch < slot->patch_count; ++patch) {
             put32(f, (uint32_t)slot->patches[patch].has_generator);
             if (slot->patches[patch].has_generator)
                 put_generator_recipe(f, &slot->patches[patch].generator);
-            put_sample_block(f, &slot->patches[patch].sample);
+            if (!put_sample_block(f, &slot->patches[patch].sample)) return 0;
         }
         put_edit_snapshot(f, edit);
         put32(f, (uint32_t)undo_count);
@@ -9066,10 +9570,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
         if (!get64(f, &wide) || wide > SIZE_MAX) goto malformed;
         slot->loop_last = (size_t)wide;
         if (!get_float(f, &slot->loop_crossfade_ms)) goto malformed;
-        sample_result = get_sample_block(f, &slot->sample);
+        sample_result = get_sample_block(f, &slot->sample, version);
         if (sample_result < 0) goto out_of_memory;
         if (!sample_result) goto malformed;
-        sample_result = get_sample_block(f, &slot->edit_parent);
+        sample_result = get_sample_block(f, &slot->edit_parent, version);
         if (sample_result < 0) goto out_of_memory;
         if (!sample_result) goto malformed;
         if (version >= 16) {
@@ -9085,7 +9589,8 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
                 slot->patches[patch].has_generator = (int)value;
                 if (slot->patches[patch].has_generator &&
                     !get_generator_recipe(f, &slot->patches[patch].generator, version)) goto malformed;
-                sample_result = get_sample_block(f, &slot->patches[patch].sample);
+                sample_result = get_sample_block(f, &slot->patches[patch].sample,
+                                                 version);
                 if (sample_result < 0) goto out_of_memory;
                 if (!sample_result) goto malformed;
             }
@@ -9155,10 +9660,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR26 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR27 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR26 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR27 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -9177,13 +9682,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr26(instrument, f)) {
+    if (!save_tsr27(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR26 project");
+        set_error(error, error_size, "Could not write TSR27 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR26 project");
+        set_error(error, error_size, "Could not finish TSR27 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -9218,7 +9723,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR26\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR27\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR26\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR25\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR24\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR23\r\n\032", 8) == 0 ||
@@ -9230,7 +9736,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = memcmp(magic, "TSR26\r\n\032", 8) == 0 ? 26 :
+        int self_contained_version = memcmp(magic, "TSR27\r\n\032", 8) == 0 ? 27 :
+                                     memcmp(magic, "TSR26\r\n\032", 8) == 0 ? 26 :
                                      memcmp(magic, "TSR25\r\n\032", 8) == 0 ? 25 :
                                      memcmp(magic, "TSR24\r\n\032", 8) == 0 ? 24 :
                                      memcmp(magic, "TSR23\r\n\032", 8) == 0 ? 23 :
@@ -9260,7 +9767,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR26 project");
+                  "Not a self-contained TSR6-TSR27 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -9397,7 +9904,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
     for (size_t i = 0; i < frames; ++i)
         if (!get_float(f, &loaded.parent.data[i])) goto malformed;
     if (!get64(f, &stored_hash) ||
-        stored_hash != ts_sample_hash(&loaded.parent)) goto malformed;
+        stored_hash != sample_hash_version(&loaded.parent, 0)) goto malformed;
     if (version == 6) {
         if (fgetc(f) != EOF ||
             !bank_root_clone(&loaded.bank[0], &loaded.parent, &loaded.tuning,
@@ -9478,7 +9985,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             if (slot->sample.data == NULL) goto out_of_memory;
             for (size_t frame = 0; frame < slot->sample.frames; ++frame)
                 if (!get_float(f, &slot->sample.data[frame])) goto malformed;
-            if (!get64(f, &slot_hash) || slot_hash != ts_sample_hash(&slot->sample) ||
+            if (!get64(f, &slot_hash) ||
+                slot_hash != sample_hash_version(&slot->sample, 0) ||
                 (slot->has_loop && (slot->loop_last <= slot->loop_first ||
                                     slot->loop_last > slot->sample.frames)) ||
                 (!slot->has_loop && (slot->loop_first != 0 || slot->loop_last != 0)))
@@ -9539,7 +10047,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR26 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR27 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

@@ -19,7 +19,7 @@ Each stored patch contains:
 
 The renderer bounds feedback, applies a DC blocker and output saturation, and replaces
 non-finite samples with silence. A seed plus complete genome always produces the same
-audio. TSR26 stores the complete genome, pitch-randomization rules, and tile protection; TSR6 through TSR25 remain loadable and derive
+audio. TSR27 stores the complete genome, pitch-randomization rules, and tile protection; TSR6 through TSR26 remain loadable as mono and derive
 safe defaults for fields that did not exist in those formats.
 
 ## FM LOGIC workspace

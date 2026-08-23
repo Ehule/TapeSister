@@ -172,6 +172,22 @@ add_executable(tapesister_core_tests tests/test_core.c)
 target_link_libraries(tapesister_core_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_core_tests COMMAND tapesister_core_tests)
 
+add_executable(tapesister_audio_frame_tests tests/test_audio_frame.c)
+target_link_libraries(tapesister_audio_frame_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_audio_frame_tests COMMAND tapesister_audio_frame_tests)
+
+add_executable(tapesister_sample_channels_tests tests/test_sample_channels.c)
+target_link_libraries(tapesister_sample_channels_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_sample_channels_tests COMMAND tapesister_sample_channels_tests)
+
+add_executable(tapesister_tsr27_tests tests/test_tsr27.c)
+target_link_libraries(tapesister_tsr27_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_tsr27_tests COMMAND tapesister_tsr27_tests)
+
+add_executable(tapesister_wav_channels_tests tests/test_wav_channels.c)
+target_link_libraries(tapesister_wav_channels_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_wav_channels_tests COMMAND tapesister_wav_channels_tests)
+
 add_executable(tapesister_smear_tests tests/test_smear.c)
 target_link_libraries(tapesister_smear_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_smear_tests COMMAND tapesister_smear_tests)

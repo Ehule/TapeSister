@@ -60,6 +60,12 @@ int ts_transform_identity_capture(TsTransformIdentity *identity,
         set_error(error, error_size, "SELECTION SCOPE NEEDS A NONEMPTY SELECTION");
         return 0;
     }
+    if (instrument->current.channels != 1u ||
+        recipe->required_input_channels != 1u) {
+        set_error(error, error_size,
+                  "STEREO CDP NEEDS LINKED CHANNEL PROCESSING IN A LATER PR");
+        return 0;
+    }
     memset(identity, 0, sizeof(*identity));
     identity->job_id = job_id;
     identity->render_generation = render_generation;
@@ -84,7 +90,7 @@ int ts_transform_identity_capture(TsTransformIdentity *identity,
     identity->seed = recipe->seed_supported ? values->seed : 0u;
     identity->has_seed = recipe->seed_supported;
     identity->input_sample_rate = instrument->current.sample_rate;
-    identity->input_channels = 1u;
+    identity->input_channels = instrument->current.channels;
     identity->expected_stage_count = recipe->stage_count;
     identity->expected_output_type = recipe->stages[recipe->stage_count - 1u].output_type;
     set_error(error, error_size, "");
@@ -113,6 +119,7 @@ int ts_transform_identity_matches(const TsTransformIdentity *identity,
         identity->recipe_version != recipe->recipe_version ||
         identity->has_seed != recipe->seed_supported ||
         identity->input_sample_rate != instrument->current.sample_rate ||
+        identity->input_channels != instrument->current.channels ||
         identity->input_channels != recipe->required_input_channels ||
         identity->expected_stage_count != recipe->stage_count ||
         identity->expected_output_type !=
@@ -151,6 +158,11 @@ int ts_transform_extract_input(const TsInstrument *instrument,
         set_error(error, error_size, "Transform source changed before export");
         return 0;
     }
+    if (instrument->current.channels != 1u || identity->input_channels != 1u) {
+        set_error(error, error_size,
+                  "STEREO CDP NEEDS LINKED CHANNEL PROCESSING IN A LATER PR");
+        return 0;
+    }
     first = identity->scope == TS_TRANSFORM_SELECTION ?
             identity->selection_first : 0u;
     last = identity->scope == TS_TRANSFORM_SELECTION ?
@@ -174,6 +186,7 @@ int ts_transform_extract_input(const TsInstrument *instrument,
     input->data = data;
     input->frames = frames;
     input->sample_rate = instrument->current.sample_rate;
+    input->channels = 1u;
     snprintf(input->name, sizeof(input->name), "TRANSFORM %.116s",
              instrument->current.name);
     set_error(error, error_size, "");
@@ -186,9 +199,11 @@ int ts_transform_mix_samples(const TsSample *dry, const TsSample *wet,
                              char *error, size_t error_size)
 {
     float *data;
+    size_t scalar_count;
     if (dry == NULL || wet == NULL || output == NULL || dry->data == NULL ||
         wet->data == NULL || dry->sample_rate == 0u ||
-        wet->sample_rate != dry->sample_rate || !isfinite(mix)) {
+        wet->sample_rate != dry->sample_rate ||
+        dry->channels != wet->channels || !isfinite(mix)) {
         set_error(error, error_size, "Invalid Transform MIX input");
         return 0;
     }
@@ -205,21 +220,22 @@ int ts_transform_mix_samples(const TsSample *dry, const TsSample *wet,
                   "MIX NEEDS EXACT DRY/WET LENGTH - USE 100% WET");
         return 0;
     }
-    if (dry->frames > SIZE_MAX / sizeof(*data)) {
+    if (!ts_sample_scalar_count(dry, &scalar_count)) {
         set_error(error, error_size, "Transform MIX is too large");
         return 0;
     }
-    data = malloc(dry->frames * sizeof(*data));
+    data = malloc(scalar_count * sizeof(*data));
     if (data == NULL) {
         set_error(error, error_size, "Out of memory mixing Transform preview");
         return 0;
     }
-    for (size_t i = 0; i < dry->frames; ++i)
+    for (size_t i = 0; i < scalar_count; ++i)
         data[i] = dry->data[i] * (1.0f - mix) + wet->data[i] * mix;
     ts_sample_free(output);
     output->data = data;
     output->frames = dry->frames;
     output->sample_rate = dry->sample_rate;
+    output->channels = dry->channels;
     snprintf(output->name, sizeof(output->name), "MIX %.122s", wet->name);
     set_error(error, error_size, "");
     return 1;
@@ -236,19 +252,30 @@ void ts_transform_boundary_splice(TsSample *replacement, const TsSample *tile,
     if (fade < 8u) fade = 8u;
     if (fade > 64u) fade = 64u;
     if (fade > replacement->frames / 2u) fade = replacement->frames / 2u;
+    if (replacement->channels != tile->channels ||
+        !ts_sample_valid_channels(tile->channels)) return;
     if (first > 0u) {
-        float edge = tile->data[first - 1u];
         for (size_t i = 0; i < fade; ++i) {
             float wet = (float)(i + 1u) / (float)(fade + 1u);
-            replacement->data[i] = edge * (1.0f - wet) + replacement->data[i] * wet;
+            for (size_t channel = 0; channel < tile->channels; ++channel) {
+                float edge = ts_sample_read_channel(tile, first - 1u,
+                                                    (uint8_t)channel);
+                size_t scalar = i * tile->channels + channel;
+                replacement->data[scalar] = edge * (1.0f - wet) +
+                                            replacement->data[scalar] * wet;
+            }
         }
     }
     if (last < tile->frames) {
-        float edge = tile->data[last];
         for (size_t i = 0; i < fade; ++i) {
             size_t at = replacement->frames - 1u - i;
             float wet = (float)(i + 1u) / (float)(fade + 1u);
-            replacement->data[at] = edge * (1.0f - wet) + replacement->data[at] * wet;
+            for (size_t channel = 0; channel < tile->channels; ++channel) {
+                float edge = ts_sample_read_channel(tile, last, (uint8_t)channel);
+                size_t scalar = at * tile->channels + channel;
+                replacement->data[scalar] = edge * (1.0f - wet) +
+                                            replacement->data[scalar] * wet;
+            }
         }
     }
 }

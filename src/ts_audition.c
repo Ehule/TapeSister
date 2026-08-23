@@ -165,9 +165,15 @@ static float interpolated(const TsSample *sample, double position, size_t last)
     if (sample == NULL || sample->data == NULL || sample->frames == 0) return 0.0f;
     at = position <= 0.0 ? 0u : (size_t)position;
     if (at >= sample->frames) at = sample->frames - 1u;
-    if (at + 1u >= last || at + 1u >= sample->frames) return sample->data[at];
+    /* Transitional PR1 fold; PR2 replaces this scalar audition bus. */
+    if (at + 1u >= last || at + 1u >= sample->frames)
+        return ts_sample_read_mono(sample, at);
     fraction = (float)(position - (double)at);
-    return sample->data[at] + (sample->data[at + 1u] - sample->data[at]) * fraction;
+    {
+        float a = ts_sample_read_mono(sample, at);
+        float b = ts_sample_read_mono(sample, at + 1u);
+        return a + (b - a) * fraction;
+    }
 }
 
 static float interpolated_cyclic(const TsSample *sample, double position,
@@ -185,8 +191,12 @@ static float interpolated_cyclic(const TsSample *sample, double position,
     if (at >= last) at = last - 1u;
     next = at + 1u < last ? at + 1u : first;
     fraction = (float)(position - (double)at);
-    return sample->data[at] +
-           (sample->data[next] - sample->data[at]) * fraction;
+    /* Transitional PR1 fold; PR2 replaces this scalar audition bus. */
+    {
+        float a = ts_sample_read_mono(sample, at);
+        float b = ts_sample_read_mono(sample, next);
+        return a + (b - a) * fraction;
+    }
 }
 
 float ts_audition_read_looped(const TsSample *sample, double position,
