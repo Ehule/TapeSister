@@ -6,7 +6,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
-             src/ts_note_event.c src/ts_performance.c src/ts_capture.c
+             src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c
+             src/ts_capture.c
              src/ts_capture_archive.c src/ts_input_monitor.c
              src/ts_sample_pages.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
@@ -25,9 +26,8 @@ option(TAPESISTER_BUILD_SDL "Build the playable SDL2 instrument" ON)
 option(TAPESISTER_ENABLE_MIDI "Enable RtMidi note input" ON)
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
-  # main_sdl_audio.c wraps the app entry point with SDL device selection and
-  # routing; the runtime implementation remains in main_sdl.c.
-  add_executable(tapesister src/main_sdl_audio.c src/ts_startup_diag.c
+  # main_sdl.c is the one canonical callback/application translation unit.
+  add_executable(tapesister src/main_sdl.c src/ts_startup_diag.c
                             src/ts_midi_input.c)
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
@@ -175,6 +175,13 @@ add_test(NAME tapesister_core_tests COMMAND tapesister_core_tests)
 add_executable(tapesister_audio_frame_tests tests/test_audio_frame.c)
 target_link_libraries(tapesister_audio_frame_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_audio_frame_tests COMMAND tapesister_audio_frame_tests)
+
+foreach(stereo_test IN ITEMS audio_mixer note_bank_stereo performance_stereo
+                             capture_stereo external_input_channels)
+  add_executable(test_${stereo_test} tests/test_${stereo_test}.c)
+  target_link_libraries(test_${stereo_test} PRIVATE tapesister_core)
+  add_test(NAME test_${stereo_test} COMMAND test_${stereo_test})
+endforeach()
 
 add_executable(tapesister_sample_channels_tests tests/test_sample_channels.c)
 target_link_libraries(tapesister_sample_channels_tests PRIVATE tapesister_core)

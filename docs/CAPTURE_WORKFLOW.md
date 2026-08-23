@@ -4,8 +4,11 @@ TapeSister treats a completed realtime performance differently from an editor or
 generator state: it preserves the original performance before installing an editable
 working copy. External input uses `INPUT_...wav`; FM performances recorded directly
 to the REC BANK use `SYNTH_...wav`; and Capture-to-New-Tile uses `CAPTURE_...wav`.
-All are mono 32-bit float WAV files in `Captures/`
-(or `TAPESISTER_CAPTURES`) and use local time, milliseconds, process identity, and a
+Archives are 32-bit float WAV files in `Captures/` and preserve the take's explicit
+channel shape. Internal Capture defaults to mono (**M**) and may deliberately preserve
+stereo (**S**); external MIX/LEFT/RIGHT takes are mono and STEREO takes are stereo.
+FM/SYNTH remains native mono. Files live in `TAPESISTER_CAPTURES` when set and use local
+time, milliseconds, process identity, and a
 collision counter. Files are written to a temporary name and renamed only after the
 WAV closes successfully. TapeSister never scans this folder for cleanup and no tile or
 project operation owns an archived file.
@@ -37,7 +40,8 @@ replaced. The bundle is intentionally simpler and safer than widening the fixed
 
 ## Audio and rendering boundaries
 
-The input callback performs only channel selection/fold-down, external-source recorder writes, one
+The input callback performs only explicit MIX/LEFT/RIGHT/STEREO conversion,
+channel-aware external-source recorder writes, one
 block peak publication, and an optional lock-free SPSC monitor-ring write. It does no
 drawing, file I/O, allocation, or project mutation. The output callback consumes the
 dry monitor ring after producing and feeding the internal CAPTURE performance mix, so
@@ -48,8 +52,8 @@ through a physical input device.
 
 The UI periodically consumes only newly recorded external frames into a fixed 576
 column min/max envelope representing roughly the latest ten seconds. Work and memory
-therefore stay bounded for long takes. The meter uses the same mono samples and the
-same `threshold_amplitude` used by the recorder; its display covers the recorder's
+therefore stay bounded for long takes. The meter uses the maximum magnitude of the
+selected frame pair and the same `threshold_amplitude` used by the recorder; its display covers the recorder's
 full -90 to 0 dBFS threshold range.
 
 Playback and capture request 256-frame SDL buffers. SDL may still add platform/device

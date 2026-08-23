@@ -287,6 +287,7 @@ typedef struct {
     float input_wave_maximum[TS_WAVE_W];
     int capture_destination_slot;
     int capture_source_slot;
+    int capture_channels;
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
     uint32_t staged_notes;
@@ -510,6 +511,7 @@ TsUiTuneAction ts_ui_tune_action_from_point(int x, int y);
 TsUiWaveAction ts_ui_wave_action_from_point(int x, int y);
 TsUiCanvasAction ts_ui_canvas_action_from_point(int x, int y);
 int ts_ui_capture_button_from_point(int x, int y);
+int ts_ui_capture_channels_button_from_point(int x, int y);
 int ts_ui_overdub_button_from_point(int x, int y);
 int ts_ui_new_page_button_from_point(int x, int y);
 int ts_ui_record_keep_button_from_point(int x, int y);

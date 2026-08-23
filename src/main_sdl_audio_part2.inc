@@ -49,8 +49,16 @@ static void ts_cycle_device_name(char *configured, size_t configured_size,
 
 static void ts_cycle_input_channel(int direction)
 {
+    ExternalInputState *input = (ExternalInputState *)ts_capture_userdata;
     int channel;
     if (ts_live_config == NULL) return;
+    if (input != NULL && input->recorder.state != TS_EXTERNAL_CAPTURE_IDLE &&
+        input->recorder.state != TS_EXTERNAL_CAPTURE_CANCELED) {
+        if (ts_live_ui != NULL)
+            snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
+                     "STOP OR CANCEL REC BEFORE CHANGING INPUT MODE");
+        return;
+    }
     channel = ts_live_config->record_input_channel;
     if (direction >= 0)
         channel = channel >= TS_RECORD_INPUT_CHANNEL_MAX ?
@@ -59,6 +67,16 @@ static void ts_cycle_input_channel(int direction)
         channel = channel <= TS_RECORD_INPUT_CHANNEL_MIN ?
                   TS_RECORD_INPUT_CHANNEL_MAX : channel - 1;
     ts_live_config->record_input_channel = channel;
+    if (input != NULL) {
+        int monitor_enabled = ts_input_monitor_enabled(&input->monitor);
+        ts_audio_lock_device(TS_AUDIO_LOGICAL_CAPTURE);
+        input->input_channel = channel;
+        ts_input_monitor_set_enabled(&input->monitor, 0, input->sample_rate);
+        if (monitor_enabled)
+            ts_input_monitor_set_enabled(&input->monitor, 1,
+                                         input->sample_rate);
+        ts_audio_unlock_device(TS_AUDIO_LOGICAL_CAPTURE);
+    }
 }
 
 static int ts_capture_name_matches_config(void)
@@ -75,8 +93,11 @@ static void ts_mark_capture_config_after_save(void)
     if (ts_real_capture != 0 && !ts_capture_name_matches_config())
         ts_capture_reconfigure_pending = 1;
     if (input != NULL && ts_live_config != NULL &&
-        ts_live_config->record_input_channel <= input->channels)
+        ts_input_channel_mode_valid(ts_live_config->record_input_channel)) {
+        ts_audio_lock_device(TS_AUDIO_LOGICAL_CAPTURE);
         input->input_channel = ts_live_config->record_input_channel;
+        ts_audio_unlock_device(TS_AUDIO_LOGICAL_CAPTURE);
+    }
 }
 
 static int ts_reopen_capture_for_config(void)
@@ -91,6 +112,13 @@ static int ts_reopen_capture_for_config(void)
         snprintf(ts_capture_reconfigure_error,
                  sizeof(ts_capture_reconfigure_error),
                  "Recording input has not been initialized");
+        return 0;
+    }
+    if (input->recorder.state == TS_EXTERNAL_CAPTURE_ARMED ||
+        input->recorder.state == TS_EXTERNAL_CAPTURE_RECORDING) {
+        snprintf(ts_capture_reconfigure_error,
+                 sizeof(ts_capture_reconfigure_error),
+                 "Stop or cancel REC before switching the input device");
         return 0;
     }
 
@@ -112,24 +140,19 @@ static int ts_reopen_capture_for_config(void)
                  "Configured recording input returned unsupported audio");
         return 0;
     }
-    if (ts_live_config != NULL &&
-        ts_live_config->record_input_channel > (int)obtained.channels) {
-        SDL_CloseAudioDevice(replacement);
-        snprintf(ts_capture_reconfigure_error,
-                 sizeof(ts_capture_reconfigure_error),
-                 "Input channel %d unavailable; device has %d channel%s",
-                 ts_live_config->record_input_channel,
-                 (int)obtained.channels,
-                 obtained.channels == 1 ? "" : "s");
-        return 0;
-    }
-
     if (old != 0) SDL_CloseAudioDevice(old);
     ts_real_capture = replacement;
     input->channels = obtained.channels;
     input->sample_rate = (uint32_t)obtained.freq;
     input->input_channel = ts_live_config != NULL ?
-                           ts_live_config->record_input_channel : 1;
+                           ts_live_config->record_input_channel :
+                           TS_INPUT_CHANNEL_MIX;
+    {
+        int monitor_enabled = ts_input_monitor_enabled(&input->monitor);
+        ts_input_monitor_set_enabled(&input->monitor, 0, input->sample_rate);
+        if (monitor_enabled)
+            ts_input_monitor_set_enabled(&input->monitor, 1, input->sample_rate);
+    }
     ts_copy_name(input->device_label, sizeof(input->device_label),
                  wanted != NULL ? wanted : "SYSTEM DEFAULT");
     ts_copy_name(ts_active_capture, sizeof(ts_active_capture),
@@ -146,6 +169,22 @@ static int ts_switch_output_for_config(char *error, size_t error_size)
     SDL_AudioDeviceID old = ts_real_output;
     const char *wanted = ts_configured_output_name();
     AudioState *audio = (AudioState *)ts_output_userdata;
+
+    if (audio != NULL && audio->capture.state != TS_CAPTURE_IDLE) {
+        snprintf(error, error_size,
+                 "Finish or cancel Capture before switching output");
+        return 0;
+    }
+    if (audio != NULL && audio->record_bank_recorder != NULL &&
+        audio->record_source != NULL &&
+        atomic_load_explicit(audio->record_source, memory_order_acquire) ==
+            TS_RECORD_SOURCE_SYNTH &&
+        (audio->record_bank_recorder->state == TS_EXTERNAL_CAPTURE_ARMED ||
+         audio->record_bank_recorder->state == TS_EXTERNAL_CAPTURE_RECORDING)) {
+        snprintf(error, error_size,
+                 "Stop or cancel SYNTH REC before switching output");
+        return 0;
+    }
 
     if (old != 0) {
         if ((wanted == NULL && ts_active_output[0] == '\0') ||

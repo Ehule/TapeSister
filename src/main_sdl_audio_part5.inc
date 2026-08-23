@@ -34,11 +34,9 @@
                  TS_AUDIO_CONFIG_INPUT_Y + 5, "<", text_color);
         cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 22,
                  TS_AUDIO_CONFIG_INPUT_Y + 5, "CH", text_color);
-        if (ui->config.record_input_channel == 0)
-            snprintf(channel, sizeof(channel), "MIX");
-        else
-            snprintf(channel, sizeof(channel), "%d",
-                     ui->config.record_input_channel);
+        snprintf(channel, sizeof(channel), "%s",
+                 ts_input_channel_mode_name(
+                     ui->config.record_input_channel));
         cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 58,
                  TS_AUDIO_CONFIG_INPUT_Y + 5, channel, text_color);
         cfg_text(fb, 608, TS_AUDIO_CONFIG_INPUT_Y + 5, ">", text_color);
@@ -132,37 +130,38 @@ static void ts_draw_tile_border(TsFramebuffer *fb, const TsTileBounds *bounds,
     }
 }
 
-static void ts_multi_prune_sources(const TsInstrument *instrument)
+static void runtime_prune_sources(AudioState *audio,
+                                  const TsInstrument *instrument)
 {
     uint16_t valid = 0u;
-    if (!ts_multi_group_latched || instrument == NULL) return;
+    TsCaptureRecorder *recorder;
+    if (audio == NULL || !audio->performance_group_latched ||
+        instrument == NULL) return;
+    recorder = &audio->capture;
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
         uint16_t bit = (uint16_t)(1u << slot);
-        if ((ts_multi_source_mask & bit) == 0u) continue;
+        if ((audio->performance_source_mask & bit) == 0u) continue;
         if (instrument->bank[slot].occupied &&
-            (ts_multi_capture_recorder == NULL ||
-             slot != ts_multi_capture_recorder->destination_slot ||
-             ts_multi_capture_recorder->overdub))
+            (slot != recorder->destination_slot || recorder->overdub))
             valid |= bit;
     }
-    if (valid == ts_multi_source_mask) return;
-    ts_multi_source_mask = valid;
+    if (valid == audio->performance_source_mask) return;
+    audio->performance_source_mask = valid;
     if (valid == 0u) {
-        ts_multi_group_latched = 0;
-        if (ts_multi_capture_recorder != NULL &&
-            ts_multi_capture_recorder->state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER)
-            ts_multi_capture_recorder->source_slot = -1;
-    } else if (ts_multi_capture_recorder != NULL &&
-               ts_multi_capture_recorder->state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
-               (ts_multi_capture_recorder->source_slot < 0 ||
-                (valid & (uint16_t)(1u << ts_multi_capture_recorder->source_slot)) == 0u)) {
-        ts_multi_capture_recorder->source_slot = ts_first_source(valid);
+        audio->performance_group_latched = 0;
+        if (recorder->state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER)
+            recorder->source_slot = -1;
+    } else if (recorder->state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
+               (recorder->source_slot < 0 ||
+                (valid & (uint16_t)(1u << recorder->source_slot)) == 0u)) {
+        recorder->source_slot = ts_first_source(valid);
     }
 }
 
 static void ts_overlay_tile_states(TsFramebuffer *fb, const TsUiState *ui,
                                    const TsInstrument *instrument)
 {
+    const AudioState *audio = (const AudioState *)ts_output_userdata;
     uint32_t source_color;
     if (fb == NULL || ui == NULL || instrument == NULL || ui->show_keyboard ||
         ui->show_recipes || ui->show_ingredients) return;
@@ -179,10 +178,11 @@ static void ts_overlay_tile_states(TsFramebuffer *fb, const TsUiState *ui,
                                               ts_locked_tile_dim_percent);
             }
     }
-    if (!ts_multi_group_latched || ts_multi_source_mask == 0u) return;
+    if (audio == NULL || !audio->performance_group_latched ||
+        audio->performance_source_mask == 0u) return;
     source_color = ui->palette.colors[TS_PALETTE_PATTERN_EFFECT];
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
-        if ((ts_multi_source_mask & (uint16_t)(1u << slot)) != 0u)
+        if ((audio->performance_source_mask & (uint16_t)(1u << slot)) != 0u)
             ts_draw_tile_border(fb, &ts_tile_bounds[slot], source_color);
 }
 
@@ -190,21 +190,21 @@ static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
                                const TsInstrument *instrument)
 {
     TsUiState *mutable_ui = (TsUiState *)ui;
+    AudioState *audio = (AudioState *)ts_output_userdata;
     ts_live_ui = mutable_ui;
     ts_live_config = mutable_ui != NULL ? &mutable_ui->config : ts_live_config;
 
     if (mutable_ui != NULL && ts_last_sample_page != mutable_ui->sample_page) {
-        if (ts_last_sample_page >= 0 && ts_multi_capture_recorder != NULL &&
-            ts_multi_capture_recorder->state == TS_CAPTURE_IDLE)
-            ts_multi_clear_group();
+        if (ts_last_sample_page >= 0 && audio != NULL &&
+            audio->capture.state == TS_CAPTURE_IDLE)
+            runtime_clear_group(audio);
         ts_last_sample_page = mutable_ui->sample_page;
     }
-    if (ts_multi_capture_recorder != NULL &&
-        ts_multi_capture_recorder->state == TS_CAPTURE_IDLE &&
-        ts_multi_group_latched)
-        ts_multi_clear_group();
+    if (audio != NULL && audio->capture.state == TS_CAPTURE_IDLE &&
+        audio->performance_group_latched)
+        runtime_clear_group(audio);
     ts_audio_lock_device(TS_AUDIO_LOGICAL_OUTPUT);
-    ts_multi_prune_sources(instrument);
+    runtime_prune_sources(audio, instrument);
 
     if (mutable_ui != NULL && !mutable_ui->config_open &&
         ts_pending_notice[0] != '\0') {
@@ -212,10 +212,11 @@ static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
                  "%s", ts_pending_notice);
         ts_pending_notice[0] = '\0';
     }
-    if (mutable_ui != NULL && ts_multi_group_latched) {
+    if (mutable_ui != NULL && audio != NULL &&
+        audio->performance_group_latched) {
         mutable_ui->capture_source_slot = -1;
         mutable_ui->active_notes |= ts_performance_visible_mask(
-            &ts_multi_performance, ts_ui_keyboard_base_note(mutable_ui));
+            &audio->performance, ts_ui_keyboard_base_note(mutable_ui));
     }
     ts_audio_unlock_device(TS_AUDIO_LOGICAL_OUTPUT);
 
@@ -268,9 +269,9 @@ static int ts_audio_config_field_from_point(int x, int y)
             else if (x >= 594)
                 ts_cycle_input_channel(1);
             snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
-                     ts_live_ui->config.record_input_channel == 0 ?
-                     "INPUT CHANNEL: MIX TO MONO" : "INPUT CHANNEL: %d",
-                     ts_live_ui->config.record_input_channel);
+                     "INPUT MODE: %s",
+                     ts_input_channel_mode_name(
+                         ts_live_ui->config.record_input_channel));
             return -1;
         }
     }

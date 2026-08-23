@@ -68,6 +68,8 @@ int ts_performance_trigger_staged(TsPerformanceBank *bank,
                                   int keyboard_base_note,
                                   int output_rate);
 float ts_performance_read(TsPerformanceBank *bank, float *raw_mix);
+TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
+                                         TsStereoFrame *raw_mix);
 void ts_performance_sync(TsPerformanceBank *bank,
                          const TsInstrument *instrument,
                          int output_rate);
@@ -76,5 +78,7 @@ uint32_t ts_performance_visible_mask(const TsPerformanceBank *bank,
                                      int keyboard_base_note);
 int ts_performance_source_count(uint16_t source_mask);
 float ts_performance_peak_scale(float *samples, size_t frames, float safe_peak);
+float ts_performance_peak_scale_channels(float *samples, size_t frames,
+                                         uint8_t channels, float safe_peak);
 
 #endif

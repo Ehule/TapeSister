@@ -9,6 +9,7 @@
 #include "tapesister/ui.h"
 
 #include <SDL2/SDL.h>
+#include "main_sdl_audio_preamble.inc"
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -30,10 +31,6 @@
 #include <sys/stat.h>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
-#endif
-#ifndef TS_CAPTURE_SOURCE_MATCHES
-#define TS_CAPTURE_SOURCE_MATCHES(recorder, selected_slot) \
-    ((recorder)->source_slot == (selected_slot))
 #endif
 #ifdef _WIN32
 #include <windows.h>
@@ -692,6 +689,8 @@ typedef struct {
     size_t attack_frame;
     size_t attack_frames;
     TsNoteBank notes;
+    TsPerformanceBank performance;
+    TsAudioMixer mixer;
     TsCaptureRecorder capture;
     TsInputMonitor *input_monitor;
     TsExternalRecorder *record_bank_recorder;
@@ -701,7 +700,58 @@ typedef struct {
     float tune_reference_level;
     float tune_reference_target;
     int tune_reference_enabled;
+    uint16_t performance_source_mask;
+    TsStereoFrame performance_raw_mix;
+    int performance_shift_pending;
+    int performance_group_latched;
+    int capture_scaled;
+    int capture_requires_scaling;
+    int capture_trigger_ready;
+    int preserve_release_tails;
 } AudioState;
+
+static void runtime_clear_group(AudioState *audio);
+static int runtime_capture_source_matches(const AudioState *audio,
+                                          int selected_slot);
+static TsUiBankAction runtime_bank_action(AudioState *audio, int right_button,
+                                          unsigned modifiers);
+static int runtime_capture_arm(AudioState *audio, int destination_slot,
+                               size_t capacity_frames, uint32_t sample_rate,
+                               uint8_t channels, char *error,
+                               size_t error_size);
+static int runtime_capture_arm_overdub(AudioState *audio, int destination_slot,
+                                       size_t capacity_frames,
+                                       uint32_t sample_rate, const float *base,
+                                       size_t base_frames, uint32_t base_rate,
+                                       uint8_t base_channels, char *error,
+                                       size_t error_size);
+static int runtime_capture_set_source(AudioState *audio, int source_slot,
+                                      char *error, size_t error_size);
+static int runtime_capture_trigger(AudioState *audio, char *error,
+                                   size_t error_size);
+static int runtime_capture_cancel(AudioState *audio);
+static int runtime_capture_stop(AudioState *audio, char *error,
+                                size_t error_size);
+static void runtime_scale_capture_if_needed(AudioState *audio);
+static int runtime_capture_write_frame(AudioState *audio, TsStereoFrame frame);
+static TsNoteStartResult runtime_note_start_event(
+    AudioState *audio, const TsInstrument *instrument, const TsTuning *tuning,
+    TsAuditionSource source, const TsNoteEvent *event, int latched,
+    int output_rate);
+static int runtime_staged_start(AudioState *audio,
+                                const TsInstrument *instrument,
+                                const TsTuning *tuning,
+                                TsAuditionSource source,
+                                uint32_t staged_notes,
+                                int keyboard_base_note, int output_rate);
+static void runtime_note_release_event(AudioState *audio,
+                                       const TsNoteEvent *event);
+static void runtime_note_release_midi_channel(AudioState *audio, int channel);
+static void runtime_note_clear(AudioState *audio);
+static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
+                                TsStereoFrame *synth_capture);
+static void runtime_note_sync(AudioState *audio,
+                              const TsInstrument *instrument, int output_rate);
 
 static void restart_audio_attack(AudioState *audio, int output_rate,
                                  int milliseconds)
@@ -781,29 +831,28 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     int values = bytes / (int)sizeof(float);
     float synth_block_peak = 0.0f;
     for (int i = 0; i < values; i += 2) {
-        float value = 0.0f;
-        float synth_value = 0.0f;
-        float reference_value = 0.0f;
-        if (audio->playing && audio->sample && audio->sample->data && audio->sample->frames > 1) {
+        TsAudioBuses buses;
+        TsStereoFrame synth_capture = {0.0f, 0.0f};
+        TsStereoFrame output;
+        ts_audio_buses_clear(&buses);
+        if (audio->playing && audio->sample && audio->sample->data &&
+            audio->sample->frames > 1u) {
             if (audio->looping) {
                 audio->position = ts_audition_loop_position(
                     audio->position, audio->range_start, audio->range_end,
                     audio->crossfade_frames, audio->loop_mode,
                     &audio->loop_direction);
-                value = ts_audition_read_looped_mode(
+                buses.legacy_preview = ts_audition_read_looped_mode_frame(
                     audio->sample, audio->position, audio->range_start,
                     audio->range_end, audio->crossfade_frames, audio->loop_mode);
                 audio->position += audio->step * audio->loop_direction;
             } else {
                 size_t at = (size_t)audio->position;
-                if (at + 1 < audio->range_end && at + 1 < audio->sample->frames) {
-                    float fraction = (float)(audio->position - (double)at);
-                    /* Transitional PR1 fold; PR2 replaces this scalar preview bus. */
-                    {
-                        float a = ts_sample_read_mono(audio->sample, at);
-                        float b = ts_sample_read_mono(audio->sample, at + 1u);
-                        value = a + (b - a) * fraction;
-                    }
+                if (at + 1u < audio->range_end &&
+                    at + 1u < audio->sample->frames) {
+                    buses.legacy_preview =
+                        ts_audition_read_frame(audio->sample, audio->position,
+                                               audio->range_end);
                     audio->position += audio->step;
                 } else {
                     audio->playing = 0;
@@ -811,28 +860,46 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             }
         }
         if (audio->playing) {
-            value *= ts_audition_attack_gain(
+            float attack = ts_audition_attack_gain(
                 audio->attack_frame, audio->attack_frames);
+            buses.legacy_preview.l *= attack;
+            buses.legacy_preview.r *= attack;
         }
         if (audio->playing && audio->attack_frame < audio->attack_frames)
             ++audio->attack_frame;
-        value += ts_note_bank_read_split(&audio->notes, &synth_value);
-        if (value > 1.0f) value = 1.0f;
-        if (value < -1.0f) value = -1.0f;
-        if (ts_capture_write_sample(&audio->capture, value)) {
+
+        runtime_note_render(audio, &buses, &synth_capture);
+        buses.program.l = buses.legacy_preview.l +
+                          buses.tile_performance.l + buses.fm.l;
+        buses.program.r = buses.legacy_preview.r +
+                          buses.tile_performance.r + buses.fm.r;
+        buses.program = ts_stereo_frame_sanitize(buses.program);
+        if (buses.program.l > 1.0f) buses.program.l = 1.0f;
+        if (buses.program.l < -1.0f) buses.program.l = -1.0f;
+        if (buses.program.r > 1.0f) buses.program.r = 1.0f;
+        if (buses.program.r < -1.0f) buses.program.r = -1.0f;
+        buses.capture = audio->performance_group_latched &&
+                        audio->performance_source_mask != 0u ?
+                        audio->performance_raw_mix : buses.program;
+        if (runtime_capture_write_frame(audio, buses.capture)) {
             audio->playing = 0;
             audio->bank_slot = -1;
-            ts_note_bank_clear(&audio->notes);
+            runtime_note_clear(audio);
         }
+
         if (audio->record_bank_recorder != NULL && audio->record_source != NULL &&
             atomic_load_explicit(audio->record_source, memory_order_acquire) ==
                 TS_RECORD_SOURCE_SYNTH) {
-            (void)ts_external_recorder_write_sample(audio->record_bank_recorder,
-                                                    synth_value);
-            if (fabsf(synth_value) > synth_block_peak)
-                synth_block_peak = fabsf(synth_value);
+            (void)ts_external_recorder_write_frame(audio->record_bank_recorder,
+                                                   synth_capture);
+            if (fabsf(synth_capture.l) > synth_block_peak)
+                synth_block_peak = fabsf(synth_capture.l);
+            if (fabsf(synth_capture.r) > synth_block_peak)
+                synth_block_peak = fabsf(synth_capture.r);
         }
+
         {
+            float reference_value = 0.0f;
             float ramp = audio->output_rate > 0 ?
                          1.0f / ((float)audio->output_rate * 0.01f) : 1.0f;
             if (audio->tune_reference_level < audio->tune_reference_target) {
@@ -853,17 +920,16 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 while (audio->tune_reference_phase >= 2.0 * M_PI)
                     audio->tune_reference_phase -= 2.0 * M_PI;
             }
+            buses.reference = ts_stereo_frame_from_mono(reference_value);
         }
-        {
-            float monitored = audio->input_monitor != NULL ?
-                              ts_input_monitor_read(audio->input_monitor,
-                                                    (uint32_t)audio->output_rate) : 0.0f;
-            float output = value * 0.8f + monitored + reference_value;
-            if (output > 1.0f) output = 1.0f;
-            if (output < -1.0f) output = -1.0f;
-            out[i] = output;
-            if (i + 1 < values) out[i + 1] = output;
-        }
+        buses.external = audio->input_monitor != NULL ?
+            ts_input_monitor_read_frame(audio->input_monitor,
+                                        (uint32_t)audio->output_rate) :
+            (TsStereoFrame){0.0f, 0.0f};
+        buses.monitor = buses.external;
+        output = ts_audio_mixer_render(&audio->mixer, &buses);
+        out[i] = output.l;
+        if (i + 1 < values) out[i + 1] = output.r;
     }
     if (audio->input_monitor != NULL && audio->record_source != NULL &&
         atomic_load_explicit(audio->record_source, memory_order_acquire) ==
@@ -929,7 +995,7 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     }
     pitch *= ts_instrument_audition_pitch(instrument);
     SDL_LockAudioDevice(device);
-    ts_note_bank_clear(&audio->notes);
+    runtime_note_clear(audio);
     audio->bank_slot = -1;
     audio->sample = plan.sample;
     audio->loop_mode = instrument->loop_mode;
@@ -951,8 +1017,8 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     restart_audio_attack(audio, output_rate, ui->config.voice_attack_ms);
     audio->playing = 1;
     if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
-        TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot))
-        capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
+        runtime_capture_source_matches(audio, instrument->selected_slot))
+        capture_started = runtime_capture_trigger(audio, NULL, 0);
     SDL_UnlockAudioDevice(device);
     if (capture_started) {
         show_overlay(ui, audio->capture.overdub ?
@@ -987,7 +1053,7 @@ static void begin_playhead_audition(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     SDL_LockAudioDevice(device);
-    ts_note_bank_clear(&audio->notes);
+    runtime_note_clear(audio);
     audio->sample = &instrument->current;
     audio->position = (double)instrument->playhead_frame;
     audio->pitch = ts_instrument_audition_pitch(instrument);
@@ -1005,8 +1071,8 @@ static void begin_playhead_audition(SDL_AudioDeviceID device, AudioState *audio,
     restart_audio_attack(audio, output_rate, ui->config.voice_attack_ms);
     audio->playing = 1;
     if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
-        TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot))
-        capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
+        runtime_capture_source_matches(audio, instrument->selected_slot))
+        capture_started = runtime_capture_trigger(audio, NULL, 0);
     SDL_UnlockAudioDevice(device);
     if (capture_started) {
         show_overlay(ui, audio->capture.overdub ?
@@ -1143,13 +1209,13 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
     audio->bank_slot = -1;
     if (event == NULL) return;
     ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
-    result = ts_note_bank_start_tuned_event(
-        &audio->notes, instrument, ts_ui_audition_tuning(ui, instrument),
+    result = runtime_note_start_event(
+        audio, instrument, ts_ui_audition_tuning(ui, instrument),
         ui->audition_source, event, latched, output_rate);
     if (result == TS_NOTE_STARTED &&
         audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
-        TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot))
-        capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
+        runtime_capture_source_matches(audio, instrument->selected_slot))
+        capture_started = runtime_capture_trigger(audio, NULL, 0);
     voice_count = ts_note_bank_count(&audio->notes);
     SDL_UnlockAudioDevice(device);
     if (result == TS_NOTE_LIMIT_REACHED)
@@ -1231,16 +1297,16 @@ static void launch_staged_capture(SDL_AudioDeviceID device, AudioState *audio,
     staged = audio->capture.staged_notes;
     if (audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
         (staged & (1u << note)) != 0u &&
-        TS_CAPTURE_SOURCE_MATCHES(&audio->capture, instrument->selected_slot)) {
+        runtime_capture_source_matches(audio, instrument->selected_slot)) {
         audio->playing = 0;
         audio->bank_slot = -1;
         ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
-        started = ts_note_bank_start_staged_chord(
-            &audio->notes, instrument, ts_ui_audition_tuning(ui, instrument),
+        started = runtime_staged_start(
+            audio, instrument, ts_ui_audition_tuning(ui, instrument),
             ui->audition_source, staged, ts_ui_keyboard_base_note(ui),
             output_rate);
-        if (started > 0 && !ts_capture_trigger(&audio->capture, NULL, 0)) {
-            ts_note_bank_clear(&audio->notes);
+        if (started > 0 && !runtime_capture_trigger(audio, NULL, 0)) {
+            runtime_note_clear(audio);
             started = 0;
         }
     }
@@ -1263,7 +1329,7 @@ static void release_note_event(SDL_AudioDeviceID device, AudioState *audio,
     char note_name[8];
     if (event == NULL) return;
     if (device) SDL_LockAudioDevice(device);
-    ts_note_bank_release_event(&audio->notes, event);
+    runtime_note_release_event(audio, event);
     if (device) SDL_UnlockAudioDevice(device);
     snprintf(ui->status, sizeof(ui->status), "%s OFF %s (MIDI %d)",
              event->origin == TS_NOTE_ORIGIN_MIDI ? "MIDI" : "QWERTY",
@@ -1284,7 +1350,7 @@ static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     if (device) SDL_LockAudioDevice(device);
     audio->playing = 0;
     audio->bank_slot = -1;
-    ts_note_bank_clear(&audio->notes);
+    runtime_note_clear(audio);
     if (device) SDL_UnlockAudioDevice(device);
     ui->active_notes = 0;
     ui->mouse_note = -1;
@@ -1307,7 +1373,7 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
     if (!ts_ui_loop_transport_can_stop(ui, 0)) {
         if (device) SDL_LockAudioDevice(device);
-        ts_note_bank_clear(&audio->notes);
+        runtime_note_clear(audio);
         audio->bank_slot = -1;
         if (device) SDL_UnlockAudioDevice(device);
         ui->active_notes = 0;
@@ -1335,6 +1401,7 @@ static void sync_capture_ui(SDL_AudioDeviceID device, AudioState *audio,
     ui->capture_overdub = audio->capture.overdub;
     ui->capture_destination_slot = audio->capture.destination_slot;
     ui->capture_source_slot = audio->capture.source_slot;
+    ui->capture_channels = audio->capture.channels;
     ui->capture_recorded_frames = audio->capture.recorded_frames;
     ui->capture_capacity_frames = audio->capture.capacity_frames;
     ui->staged_notes = audio->capture.staged_notes;
@@ -1372,8 +1439,10 @@ static void arm_capture(SDL_AudioDeviceID device, AudioState *audio,
     }
     stop_all_force(device, audio, ui);
     if (device) SDL_LockAudioDevice(device);
-    ok = ts_capture_arm(&audio->capture, destination, capacity,
-                        (uint32_t)output_rate, error, sizeof(error));
+    ok = runtime_capture_arm(audio, destination, capacity,
+                             (uint32_t)output_rate,
+                             (uint8_t)ui->config.capture_channels,
+                             error, sizeof(error));
     if (ok) audio->capture.auto_resize = ui->config.capture_auto_resize;
     if (device) SDL_UnlockAudioDevice(device);
     if (!ok) {
@@ -1384,12 +1453,14 @@ static void arm_capture(SDL_AudioDeviceID device, AudioState *audio,
     show_overlay(ui, "CAPTURE ARMED", 850u);
     if (ui->config.capture_auto_resize)
         snprintf(ui->status, sizeof(ui->status),
-                 "TILE %02d ARMED AUTO UP TO %.3F S - SELECT SOURCE AND PERFORM",
-                 destination + 1, (double)capacity / output_rate);
+                 "TILE %02d ARMED %s AUTO UP TO %.3F S - SELECT SOURCE AND PERFORM",
+                 destination + 1, audio->capture.channels == 2u ? "S" : "M",
+                 (double)capacity / output_rate);
     else
         snprintf(ui->status, sizeof(ui->status),
-                 "TILE %02d ARMED %.3F S - SELECT SOURCE  PLAY/LOOP/NOTE STARTS",
-                 destination + 1, (double)capacity / output_rate);
+                 "TILE %02d ARMED %s %.3F S - SELECT SOURCE  PLAY/LOOP/NOTE STARTS",
+                 destination + 1, audio->capture.channels == 2u ? "S" : "M",
+                 (double)capacity / output_rate);
 }
 
 static void arm_overdub(SDL_AudioDeviceID device, AudioState *audio,
@@ -1454,11 +1525,11 @@ static void arm_overdub(SDL_AudioDeviceID device, AudioState *audio,
     }
     stop_all_force(device, audio, ui);
     if (device) SDL_LockAudioDevice(device);
-    ok = ts_capture_arm_overdub(&audio->capture, destination, capacity,
-                                (uint32_t)output_rate,
-                                target->data, target->frames,
-                                target->sample_rate,
-                                error, sizeof(error));
+    ok = runtime_capture_arm_overdub(audio, destination, capacity,
+                                     (uint32_t)output_rate,
+                                     target->data, target->frames,
+                                     target->sample_rate, target->channels,
+                                     error, sizeof(error));
     if (ok) audio->capture.auto_resize = ui->config.capture_auto_resize;
     if (device) SDL_UnlockAudioDevice(device);
     if (!ok) {
@@ -1470,12 +1541,14 @@ static void arm_overdub(SDL_AudioDeviceID device, AudioState *audio,
     show_overlay(ui, "OVERDUB ARMED", 850u);
     if (ui->config.capture_auto_resize)
         snprintf(ui->status, sizeof(ui->status),
-                 "TILE %02d OVERDUB ARMED AUTO UP TO %.3F S - SELECT SOURCES",
-                 destination + 1, (double)capacity / output_rate);
+                 "TILE %02d OVERDUB %s AUTO UP TO %.3F S - SELECT SOURCES",
+                 destination + 1, audio->capture.channels == 2u ? "S" : "M",
+                 (double)capacity / output_rate);
     else
         snprintf(ui->status, sizeof(ui->status),
-                 "TILE %02d OVERDUB ARMED %.3F S - SELECT SOURCES AND PERFORM",
-                 destination + 1, (double)capacity / output_rate);
+                 "TILE %02d OVERDUB %s %.3F S - SELECT SOURCES AND PERFORM",
+                 destination + 1, audio->capture.channels == 2u ? "S" : "M",
+                 (double)capacity / output_rate);
 }
 
 static void begin_overdub_confirmation(TsUiState *ui,
@@ -1508,10 +1581,10 @@ static void cancel_capture(SDL_AudioDeviceID device, AudioState *audio,
     int overdub;
     if (device) SDL_LockAudioDevice(device);
     overdub = audio->capture.overdub;
-    canceled = ts_capture_cancel(&audio->capture);
+    canceled = runtime_capture_cancel(audio);
     audio->playing = 0;
     audio->bank_slot = -1;
-    ts_note_bank_clear(&audio->notes);
+    runtime_note_clear(audio);
     if (canceled) ts_capture_free(&audio->capture);
     if (device) SDL_UnlockAudioDevice(device);
     if (!canceled) return;
@@ -1532,11 +1605,11 @@ static void stop_capture_early(SDL_AudioDeviceID device, AudioState *audio,
     char error[160];
     int ok;
     if (device) SDL_LockAudioDevice(device);
-    ok = ts_capture_stop(&audio->capture, error, sizeof(error));
+    ok = runtime_capture_stop(audio, error, sizeof(error));
     if (ok) {
         audio->playing = 0;
         audio->bank_slot = -1;
-        ts_note_bank_clear(&audio->notes);
+        runtime_note_clear(audio);
     }
     if (device) SDL_UnlockAudioDevice(device);
     if (ok) {
@@ -1576,9 +1649,13 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
     int overdub;
     size_t frames;
     uint32_t rate;
+    uint8_t channels;
     int ok;
     int archived;
     if (audio->capture.state != TS_CAPTURE_COMPLETED) return;
+    /* The callback only writes frames and marks completion. Potentially long
+       linked peak analysis belongs on the UI thread after writes have stopped. */
+    runtime_scale_capture_if_needed(audio);
     destination = audio->capture.destination_slot;
     source = audio->capture.provenance_slot;
     stopped_early = audio->capture.stopped_early;
@@ -1586,23 +1663,25 @@ static void finalize_capture(SDL_AudioDeviceID device, AudioState *audio, TsUiSt
     overdub = audio->capture.overdub;
     frames = audio->capture.recorded_frames;
     rate = audio->capture.sample_rate;
-    archived = ts_capture_archive_write(
+    channels = audio->capture.channels;
+    archived = ts_capture_archive_write_channels(
         capture_archive_directory(), TS_CAPTURE_ARCHIVE_INTERNAL,
-        audio->capture.buffer, frames, rate,
+        audio->capture.buffer, frames, rate, channels,
         archive_path, sizeof(archive_path), archive_error, sizeof(archive_error));
     if (overdub)
-        ok = ts_instrument_commit_overdub(
+        ok = ts_instrument_commit_overdub_channels(
             instrument, destination, source,
             audio->capture.overdub_base,
             audio->capture.overdub_base_frames,
             audio->capture.overdub_base_rate,
-            audio->capture.buffer, frames, rate, auto_resize,
+            audio->capture.overdub_base_channels,
+            audio->capture.buffer, frames, rate, channels, auto_resize,
             error, sizeof(error));
     else
-        ok = ts_instrument_commit_capture(instrument, destination, source,
-                                          audio->capture.buffer, frames, rate,
-                                          stopped_early, auto_resize,
-                                          error, sizeof(error));
+        ok = ts_instrument_commit_capture_channels(
+            instrument, destination, source, audio->capture.buffer, frames,
+            rate, channels, stopped_early, auto_resize,
+            error, sizeof(error));
     if (device) SDL_LockAudioDevice(device);
     ts_capture_free(&audio->capture);
     if (device) SDL_UnlockAudioDevice(device);
@@ -1725,7 +1804,7 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
     } else if (audio->playing) {
         audio->playing = 0;
     }
-    ts_note_bank_sync(&audio->notes, instrument, audio->output_rate);
+    runtime_note_sync(audio, instrument, audio->output_rate);
     audio->sample = audio->playing ? audio->sample :
                     (ui->audition_source == TS_AUDITION_PARENT ?
                      &instrument->parent : &instrument->current);
@@ -1902,7 +1981,7 @@ static void preview_drone(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     SDL_LockAudioDevice(device);
-    ts_note_bank_clear(&audio->notes);
+    runtime_note_clear(audio);
     audio->sample = drone;
     audio->position = 0.0;
     audio->pitch = ts_instrument_audition_pitch(instrument);
@@ -2567,7 +2646,7 @@ static void audition_transform_preview(SDL_AudioDeviceID device, AudioState *aud
         return;
     }
     SDL_LockAudioDevice(device);
-    ts_note_bank_clear(&audio->notes);
+    runtime_note_clear(audio);
     audio->sample = preview;
     audio->position = 0.0;
     audio->pitch = ts_instrument_audition_pitch(instrument);
@@ -3249,7 +3328,7 @@ static void close_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
                                TsUiState *ui, TsSample *preview)
 {
     if (device) SDL_LockAudioDevice(device);
-    ts_note_bank_clear(&audio->notes);
+    runtime_note_clear(audio);
     if (device) SDL_UnlockAudioDevice(device);
     ui->active_notes = 0u;
     ui->fm_held_notes = 0;
@@ -3319,9 +3398,9 @@ static void begin_fm_note_event(SDL_AudioDeviceID device, AudioState *audio,
         audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER) {
         char ignored[2];
         if (audio->capture.source_slot != TS_CAPTURE_SOURCE_SYNTH)
-            (void)ts_capture_set_source(&audio->capture, TS_CAPTURE_SOURCE_SYNTH,
-                                        ignored, sizeof(ignored));
-        capture_started = ts_capture_trigger(&audio->capture, NULL, 0);
+            (void)runtime_capture_set_source(audio, TS_CAPTURE_SOURCE_SYNTH,
+                                             ignored, sizeof(ignored));
+        capture_started = runtime_capture_trigger(audio, NULL, 0);
     }
     SDL_UnlockAudioDevice(device);
     ui->active_notes = ts_note_bank_visible_mask(
@@ -3415,7 +3494,7 @@ static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
             return;
         }
         lock_edit(device, audio);
-        ts_note_bank_clear(&audio->notes);
+        runtime_note_clear(audio);
         ok = ts_sample_pages_append_and_switch(
             sample_pages, instrument, &page, error, sizeof(error));
         if (ok) {
@@ -3444,7 +3523,7 @@ static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
         } else routed = 1;
     }
     lock_edit(device, audio);
-    ts_note_bank_clear(&audio->notes);
+    runtime_note_clear(audio);
     ok = destination == original_slot ||
          ts_instrument_select_bank(instrument, destination,
                                    error, sizeof(error));
@@ -3523,7 +3602,7 @@ static void make_fm_bank_workspace(SDL_AudioDeviceID device, AudioState *audio,
         goto finished;
     }
     lock_edit(device, audio);
-    ts_note_bank_clear(&audio->notes);
+    runtime_note_clear(audio);
     if (new_page && !ts_sample_pages_append_and_switch(
             sample_pages, instrument, &made_page,
             error, sizeof(error))) {
@@ -3886,7 +3965,7 @@ static void cancel_pitch_preview(SDL_AudioDeviceID device, AudioState *audio,
     if (!ui->has_pitch_suggestion) return;
     ui->has_pitch_suggestion = 0;
     if (device) SDL_LockAudioDevice(device);
-    ts_note_bank_sync(&audio->notes, instrument, audio->output_rate);
+    runtime_note_sync(audio, instrument, audio->output_rate);
     if (device) SDL_UnlockAudioDevice(device);
 }
 
@@ -4835,7 +4914,7 @@ static void history_move(SDL_AudioDeviceID device, AudioState *audio, TsUiState 
     lock_edit(device, audio);
     ok = fm_bank_history_move(fm_bank_history, sample_pages, instrument,
                               redo, error, sizeof(error));
-    if (ok >= 0) ts_note_bank_clear(&audio->notes);
+    if (ok >= 0) runtime_note_clear(audio);
     if (ok < 0)
         ok = redo ? ts_instrument_redo(instrument, error, sizeof(error)) :
                     ts_instrument_undo(instrument, error, sizeof(error));
@@ -4940,7 +5019,7 @@ static void set_loop_crossfade(SDL_AudioDeviceID device, AudioState *audio, TsUi
         audio->crossfade_frames = ts_audition_crossfade_frames(
             &plan, instrument->loop_crossfade_ms);
     }
-    if (ok) ts_note_bank_sync(&audio->notes, instrument, audio->output_rate);
+    if (ok) runtime_note_sync(audio, instrument, audio->output_rate);
     if (device) SDL_UnlockAudioDevice(device);
     if (ok) snprintf(ui->status, sizeof(ui->status), "LOOP CROSSFADE %.1F MS",
                      instrument->loop_crossfade_ms);
@@ -4979,7 +5058,7 @@ static void cycle_loop_mode(SDL_AudioDeviceID device, AudioState *audio, TsUiSta
         audio->loop_direction = mode == TS_LOOP_REVERSE ? -1 : 1;
         if (mode == TS_LOOP_REVERSE) audio->position = (double)(audio->range_end - 1u);
     }
-    if (ok) ts_note_bank_sync(&audio->notes, instrument, audio->output_rate);
+    if (ok) runtime_note_sync(audio, instrument, audio->output_rate);
     if (device) SDL_UnlockAudioDevice(device);
     snprintf(ui->status, sizeof(ui->status), ok ? "LOOP MODE %s" : "LOOP MODE FAILED: %.128s",
              ok ? ts_loop_mode_name(mode) : error);
@@ -5039,7 +5118,7 @@ static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
             audio->position = audio->loop_mode == TS_LOOP_REVERSE ?
                               (double)(plan.last - 1u) : (double)plan.first;
     }
-    ts_note_bank_sync(&audio->notes, instrument, audio->output_rate);
+    runtime_note_sync(audio, instrument, audio->output_rate);
     if (device) SDL_UnlockAudioDevice(device);
 }
 
@@ -5059,7 +5138,7 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
     slot = &instrument->bank[slot_index];
     ui->bank_view_slot = slot_index;
     if (device) SDL_LockAudioDevice(device);
-    ts_note_bank_clear(&audio->notes);
+    runtime_note_clear(audio);
     audio->playing = 0;
     audio->bank_slot = -1;
     if (!slot->occupied) {
@@ -5166,7 +5245,7 @@ static void clear_bank_slot(SDL_AudioDeviceID device, AudioState *audio,
     if (audio->bank_slot == slot || clearing_active) {
         audio->playing = 0;
         audio->bank_slot = -1;
-        ts_note_bank_clear(&audio->notes);
+        runtime_note_clear(audio);
         if (clearing_active && !ui->workbench_loop_persistent) {
             ui->workbench_loop_active = 0;
         }
@@ -5200,7 +5279,7 @@ static void clear_all_bank_slots(SDL_AudioDeviceID device, AudioState *audio,
     if (device) SDL_LockAudioDevice(device);
     audio->playing = 0;
     audio->bank_slot = -1;
-    ts_note_bank_clear(&audio->notes);
+    runtime_note_clear(audio);
     ok = ts_instrument_bank_clear_all(instrument, error, sizeof(error));
     if (device) SDL_UnlockAudioDevice(device);
     ui->bank_clear_armed = 0;
@@ -5584,10 +5663,10 @@ static void handle_midi_event(SDL_AudioDeviceID device, AudioState *audio,
     if (midi->action == TS_MIDI_ACTION_PANIC) {
         if (device) SDL_LockAudioDevice(device);
         if (midi->channel >= 0)
-            ts_note_bank_release_midi_channel(&audio->notes, midi->channel);
+            runtime_note_release_midi_channel(audio, midi->channel);
         else
             for (int channel = 0; channel < 16; ++channel)
-                ts_note_bank_release_midi_channel(&audio->notes, channel);
+                runtime_note_release_midi_channel(audio, channel);
         if (device) SDL_UnlockAudioDevice(device);
         if (midi->channel >= 0)
             snprintf(ui->status, sizeof(ui->status),
@@ -6421,21 +6500,14 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
     float block_peak = 0.0f;
     if (input == NULL) return;
     for (int frame = 0; frame + channels <= values; frame += channels) {
-        float value = 0.0f;
-        if (input->input_channel == 0) {
-            for (int channel = 0; channel < channels; ++channel)
-                value += samples[frame + channel];
-            value /= (float)channels;
-        } else {
-            int channel = input->input_channel - 1;
-            if (channel >= channels) channel = 0;
-            value = samples[frame + channel];
-        }
-        if (fabsf(value) > block_peak) block_peak = fabsf(value);
-        ts_input_monitor_push(&input->monitor, value);
+        TsStereoFrame selected = ts_input_channel_select(
+            samples + frame, (size_t)channels, input->input_channel);
+        if (fabsf(selected.l) > block_peak) block_peak = fabsf(selected.l);
+        if (fabsf(selected.r) > block_peak) block_peak = fabsf(selected.r);
+        ts_input_monitor_push_frame(&input->monitor, selected);
         if (atomic_load_explicit(&input->record_source, memory_order_acquire) ==
             TS_RECORD_SOURCE_EXT)
-            (void)ts_external_recorder_write_sample(&input->recorder, value);
+            (void)ts_external_recorder_write_frame(&input->recorder, selected);
     }
     ts_input_monitor_publish_level(&input->monitor, block_peak);
 }
@@ -6476,10 +6548,8 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
         *input_device = 0;
         return 0;
     }
-    if (config->record_input_channel > (int)obtained.channels) {
-        snprintf(error, error_size, "Input channel %d is unavailable; device has %d channel%s",
-                 config->record_input_channel, (int)obtained.channels,
-                 obtained.channels == 1 ? "" : "s");
+    if (!ts_input_channel_mode_valid(config->record_input_channel)) {
+        snprintf(error, error_size, "Invalid recording input channel mode");
         SDL_CloseAudioDevice(*input_device);
         *input_device = 0;
         return 0;
@@ -6525,6 +6595,7 @@ static void sync_external_capture_ui(SDL_AudioDeviceID output_device,
     ui->capture_state = external_ui_state(input->recorder.state);
     ui->capture_destination_slot = input->recorder.destination_slot;
     ui->capture_source_slot = -1;
+    ui->capture_channels = input->recorder.channels;
     ui->capture_recorded_frames = input->recorder.recorded_frames;
     ui->capture_capacity_frames = input->recorder.capacity_frames;
     ui->input_sample_rate = input->recorder.sample_rate;
@@ -6536,10 +6607,11 @@ static void sync_external_capture_ui(SDL_AudioDeviceID output_device,
         size_t available = input->recorder.recorded_frames -
                            input->waveform_consumed_frames;
         if (available > 65536u) available = 65536u;
-        ts_live_waveform_push(
+        ts_live_waveform_push_channels(
             &input->live_waveform,
-            input->recorder.buffer + input->waveform_consumed_frames,
-            available);
+            input->recorder.buffer +
+                input->waveform_consumed_frames * input->recorder.channels,
+            available, input->recorder.channels);
         input->waveform_consumed_frames += available;
     }
     ui->input_wave_columns = ts_live_waveform_snapshot(
@@ -6580,6 +6652,7 @@ static int arm_external_capture(SDL_AudioDeviceID output_device,
     int ok;
     int synth_source = ui->record_source == TS_RECORD_SOURCE_SYNTH;
     uint32_t record_rate;
+    uint8_t record_channels;
     if (slot < 0 || slot >= TS_BANK_SLOT_COUNT) {
         snprintf(ui->status, sizeof(ui->status), "SELECT AN EMPTY REC TILE FIRST");
         return 0;
@@ -6605,12 +6678,14 @@ static int arm_external_capture(SDL_AudioDeviceID output_device,
        recorder buffers so no callback can observe freed or half-initialized tape. */
     if (!synth_source) SDL_PauseAudioDevice(*input_device, 1);
     record_rate = synth_source ? (uint32_t)audio->output_rate : input->sample_rate;
+    record_channels = synth_source ? 1u :
+        ts_input_channel_record_channels(ui->config.record_input_channel);
     atomic_store_explicit(&input->record_source, ui->record_source,
                           memory_order_release);
     if (synth_source) SDL_LockAudioDevice(output_device);
     else SDL_LockAudioDevice(*input_device);
-    ok = ts_external_recorder_arm(
-        &input->recorder, slot, record_rate,
+    ok = ts_external_recorder_arm_channels(
+        &input->recorder, slot, record_rate, record_channels,
         ui->config.record_threshold_db,
         ui->config.record_preroll_ms,
         ui->config.record_silence_ms,
@@ -6643,8 +6718,9 @@ static int arm_external_capture(SDL_AudioDeviceID output_device,
                  slot + 1, ui->config.record_threshold_db);
     else
         snprintf(ui->status, sizeof(ui->status),
-                 "REC %02d ARMED  %.96s  CH %d  THRESH %d DB",
-                 slot + 1, input->device_label, ui->config.record_input_channel,
+                 "REC %02d ARMED  %.86s  %s  THRESH %d DB",
+                 slot + 1, input->device_label,
+                 ts_input_channel_mode_name(ui->config.record_input_channel),
                  ui->config.record_threshold_db);
     return 1;
 }
@@ -6711,13 +6787,15 @@ static int install_external_take(SDL_AudioDeviceID output_device,
                                  AudioState *audio, TsUiState *ui,
                                  TsInstrument *instrument, int slot,
                                  const float *captured, size_t frames,
-                                 uint32_t sample_rate,
+                                 uint32_t sample_rate, uint8_t channels,
                                  char *error, size_t error_size)
 {
     int ok;
     char name[32];
+    size_t bytes;
     if (slot < 0 || slot >= TS_BANK_SLOT_COUNT || captured == NULL ||
-        frames == 0u || sample_rate == 0u) {
+        frames == 0u || sample_rate == 0u ||
+        !ts_sample_dimensions(frames, channels, NULL, &bytes)) {
         snprintf(error, error_size, "Invalid external take");
         return 0;
     }
@@ -6728,18 +6806,21 @@ static int install_external_take(SDL_AudioDeviceID output_device,
         ok = 0;
     }
     if (ok)
-        ok = ts_instrument_activate_silence(instrument, frames, sample_rate,
-                                            error, error_size);
+        ok = ts_instrument_activate_silence_channels(
+            instrument, frames, sample_rate, channels, error, error_size);
     if (ok) {
         TsBankSlot *bank = &instrument->bank[slot];
         if (instrument->current.frames != frames || instrument->parent.frames != frames ||
             bank->sample.frames != frames || bank->edit_parent.frames != frames ||
+            instrument->current.channels != channels ||
+            instrument->parent.channels != channels ||
+            bank->sample.channels != channels ||
+            bank->edit_parent.channels != channels ||
             instrument->current.data == NULL || instrument->parent.data == NULL ||
             bank->sample.data == NULL || bank->edit_parent.data == NULL) {
             snprintf(error, error_size, "REC tile buffers did not match the captured take");
             ok = 0;
         } else {
-            size_t bytes = frames * sizeof(*captured);
             memcpy(instrument->current.data, captured, bytes);
             memcpy(instrument->parent.data, captured, bytes);
             memcpy(bank->sample.data, captured, bytes);
@@ -6778,6 +6859,8 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
     float *captured = NULL;
     size_t frames;
     uint32_t sample_rate;
+    uint8_t channels;
+    size_t captured_bytes;
     int slot;
     int chain;
     int ok;
@@ -6793,11 +6876,12 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
     if (source_device) SDL_LockAudioDevice(source_device);
     frames = input->recorder.recorded_frames;
     sample_rate = input->recorder.sample_rate;
+    channels = input->recorder.channels;
     slot = input->recorder.destination_slot;
-    if (frames > 0u && frames <= SIZE_MAX / sizeof(*captured)) {
-        captured = (float *)malloc(frames * sizeof(*captured));
+    if (ts_sample_dimensions(frames, channels, NULL, &captured_bytes)) {
+        captured = (float *)malloc(captured_bytes);
         if (captured != NULL)
-            memcpy(captured, input->recorder.buffer, frames * sizeof(*captured));
+            memcpy(captured, input->recorder.buffer, captured_bytes);
     }
     if (source_device) SDL_UnlockAudioDevice(source_device);
     if (captured == NULL) {
@@ -6809,15 +6893,15 @@ static void finalize_external_recording(SDL_AudioDeviceID output_device,
         snprintf(ui->status, sizeof(ui->status), "REC TAKE FAILED - OUT OF MEMORY");
         return;
     }
-    archived = ts_capture_archive_write(
+    archived = ts_capture_archive_write_channels(
         capture_archive_directory(), synth_source ? TS_CAPTURE_ARCHIVE_SYNTH :
                                                     TS_CAPTURE_ARCHIVE_INPUT,
-        captured, frames, sample_rate,
+        captured, frames, sample_rate, channels,
         archive_path, sizeof(archive_path),
         archive_error, sizeof(archive_error));
     chain = instrument->family_trajectory;
     ok = install_external_take(output_device, audio, ui, instrument, slot,
-                               captured, frames, sample_rate,
+                               captured, frames, sample_rate, channels,
                                error, sizeof(error));
     free(captured);
     if (source_device) SDL_LockAudioDevice(source_device);
@@ -7318,6 +7402,8 @@ int main(int argc, char **argv)
         }
     }
     ts_note_bank_init(&audio.notes);
+    ts_performance_init(&audio.performance);
+    ts_audio_mixer_init(&audio.mixer);
     ts_capture_init(&audio.capture);
     audio.input_monitor = &external_input.monitor;
     audio.record_bank_recorder = &external_input.recorder;
@@ -8323,7 +8409,7 @@ int main(int argc, char **argv)
                         } else {
                             if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0) {
                                 SDL_LockAudioDevice(device);
-                                ts_note_bank_clear(&audio.notes);
+                                runtime_note_clear(&audio);
                                 SDL_UnlockAudioDevice(device);
                             }
                             begin_note(device, &audio, &ui, &instrument,
@@ -9884,6 +9970,10 @@ int main(int argc, char **argv)
                     int capture_control = !ui.show_keyboard && !ui.show_recipes &&
                                           !ui.show_ingredients &&
                                           ts_ui_capture_button_from_point(x, y);
+                    int capture_channels_control = !record_bank_active &&
+                                          !ui.show_keyboard && !ui.show_recipes &&
+                                          !ui.show_ingredients &&
+                                          ts_ui_capture_channels_button_from_point(x, y);
                     int overdub_control = !record_bank_active &&
                                           !ui.show_keyboard && !ui.show_recipes &&
                                           !ui.show_ingredients &&
@@ -9948,6 +10038,20 @@ int main(int argc, char **argv)
                         (void)append_sample_page(device, &external_input,
                                                  &audio, &ui, &instrument,
                                                  &sample_pages, &transform);
+                    } else if (capture_channels_control) {
+                        if (audio.capture.state != TS_CAPTURE_IDLE)
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "CAPTURE TARGET IS %s - FINISH OR CANCEL FIRST",
+                                     audio.capture.channels == 2u ? "STEREO" : "MONO");
+                        else {
+                            ui.config.capture_channels =
+                                ui.config.capture_channels == 2 ? 1 : 2;
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "CAPTURE CHANNELS %s (%s)",
+                                     ui.config.capture_channels == 2 ? "S" : "M",
+                                     ui.config.capture_channels == 2 ?
+                                     "PRESERVE LEFT/RIGHT" : "0.5 X (L + R)");
+                        }
                     } else if (overdub_control) {
                         if (audio.capture.state != TS_CAPTURE_IDLE)
                             snprintf(ui.status, sizeof(ui.status),
@@ -9974,8 +10078,8 @@ int main(int argc, char **argv)
                         else snprintf(ui.status, sizeof(ui.status),
                                       "LEFT APPLY  MIDDLE EDIT  4 TOGGLES DSP PAGE");
                     } else if (bank_slot >= 0) {
-                        TsUiBankAction action = ts_ui_bank_action(
-                            0, bank_modifiers(mod));
+                        TsUiBankAction action = runtime_bank_action(
+                            &audio, 0, bank_modifiers(mod));
                         if (record_bank_active && external_capture_busy(&external_input)) {
                             snprintf(ui.status, sizeof(ui.status),
                                      "REC TILE %02d LOCKED - STOP OR ESC FIRST",
@@ -10007,8 +10111,8 @@ int main(int argc, char **argv)
                                 (audio.capture.state ==
                                      TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
                                  audio.capture.state == TS_CAPTURE_RECORDING))
-                                capture_source_selected = ts_capture_set_source(
-                                    &audio.capture, occupied ? bank_slot : -1,
+                                capture_source_selected = runtime_capture_set_source(
+                                    &audio, occupied ? bank_slot : -1,
                                     select_error, sizeof(select_error));
                             if (selected && !occupied && event.button.clicks >= 2 &&
                                 audio.capture.state == TS_CAPTURE_IDLE) {
@@ -10149,7 +10253,7 @@ int main(int argc, char **argv)
                         } else {
                             if ((mod & (KMOD_CTRL | KMOD_ALT)) == 0) {
                                 SDL_LockAudioDevice(device);
-                                ts_note_bank_clear(&audio.notes);
+                                runtime_note_clear(&audio);
                                 SDL_UnlockAudioDevice(device);
                             }
                             ui.mouse_note = note;
@@ -10178,7 +10282,7 @@ int main(int argc, char **argv)
                 bank_slot = ts_ui_bank_slot_from_point(x, y);
                 recipe_slot = ts_ui_recipe_slot_from_point(x, y);
                 note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
-                action = ts_ui_bank_action(1, bank_modifiers(mod));
+                action = runtime_bank_action(&audio, 1, bank_modifiers(mod));
                 if (record_bank_active && bank_slot >= 0 &&
                     external_capture_busy(&external_input)) {
                     snprintf(ui.status, sizeof(ui.status),
@@ -10497,3 +10601,23 @@ int main(int argc, char **argv)
     diagnostic_log("shutdown complete diagnostic_failed=%d", diagnostic_failed);
     return diagnostic_failed ? 2 : 0;
 }
+
+/* End the deliberately retained device/config/UI shims before their ordinary
+ * implementations.  Runtime audio is never replaced through these macros. */
+#undef SDL_OpenAudioDevice
+#undef SDL_CloseAudioDevice
+#undef SDL_LockAudioDevice
+#undef SDL_UnlockAudioDevice
+#undef SDL_PauseAudioDevice
+#undef SDL_Quit
+#undef ts_config_load
+#undef ts_config_save
+#undef ts_ui_render
+#undef ts_ui_config_field_from_point
+#undef ts_ui_config_cursor_from_point
+
+#include "main_sdl_audio_part1.inc"
+#include "main_sdl_audio_part2.inc"
+#include "main_sdl_audio_part3.inc"
+#include "main_sdl_audio_part4.inc"
+#include "main_sdl_audio_part5.inc"

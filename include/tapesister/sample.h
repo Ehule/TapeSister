@@ -810,6 +810,11 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
                                  size_t recorded_frames, uint32_t capture_rate,
                                  int stopped_early, int auto_resize,
                                  char *error, size_t error_size);
+int ts_instrument_commit_capture_channels(
+    TsInstrument *instrument, int destination_slot, int source_slot,
+    const float *captured, size_t recorded_frames, uint32_t capture_rate,
+    uint8_t captured_channels, int stopped_early, int auto_resize,
+    char *error, size_t error_size);
 int ts_instrument_commit_overdub(TsInstrument *instrument, int destination_slot,
                                  int source_slot,
                                  const float *base, size_t base_frames,
@@ -817,6 +822,12 @@ int ts_instrument_commit_overdub(TsInstrument *instrument, int destination_slot,
                                  const float *captured, size_t recorded_frames,
                                  uint32_t capture_rate, int auto_resize,
                                  char *error, size_t error_size);
+int ts_instrument_commit_overdub_channels(
+    TsInstrument *instrument, int destination_slot, int source_slot,
+    const float *base, size_t base_frames, uint32_t base_rate,
+    uint8_t base_channels, const float *captured, size_t recorded_frames,
+    uint32_t capture_rate, uint8_t captured_channels, int auto_resize,
+    char *error, size_t error_size);
 int ts_instrument_bank_clear(TsInstrument *instrument, int slot,
                              char *error, size_t error_size);
 int ts_instrument_bank_clear_all(TsInstrument *instrument,
@@ -849,6 +860,11 @@ int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
 int ts_instrument_activate_silence(TsInstrument *instrument, size_t frames,
                                    uint32_t sample_rate,
                                    char *error, size_t error_size);
+int ts_instrument_activate_silence_channels(TsInstrument *instrument,
+                                            size_t frames,
+                                            uint32_t sample_rate,
+                                            uint8_t channels,
+                                            char *error, size_t error_size);
 int ts_instrument_vary_selected(TsInstrument *instrument, int chain,
                                 int *destination_slot,
                                 char *error, size_t error_size);

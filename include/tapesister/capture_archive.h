@@ -16,5 +16,10 @@ int ts_capture_archive_write(const char *directory,
                              uint32_t sample_rate,
                              char *written_path, size_t written_path_size,
                              char *error, size_t error_size);
+int ts_capture_archive_write_channels(
+    const char *directory, TsCaptureArchiveKind kind,
+    const float *samples, size_t frames, uint32_t sample_rate,
+    uint8_t channels, char *written_path, size_t written_path_size,
+    char *error, size_t error_size);
 
 #endif

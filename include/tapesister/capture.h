@@ -5,6 +5,8 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+#include "tapesister/sample.h"
+
 typedef enum {
     TS_CAPTURE_IDLE = 0,
     TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER,
@@ -21,6 +23,8 @@ typedef struct {
     size_t overdub_base_frames;
     uint32_t sample_rate;
     uint32_t overdub_base_rate;
+    uint8_t channels;
+    uint8_t overdub_base_channels;
     uint32_t staged_notes;
     int destination_slot;
     int source_slot;
@@ -56,6 +60,7 @@ typedef struct {
     size_t tail_frames;
     size_t quiet_frames;
     uint32_t sample_rate;
+    uint8_t channels;
     float threshold_amplitude;
     int threshold_db;
     int destination_slot;
@@ -68,11 +73,19 @@ void ts_capture_free(TsCaptureRecorder *recorder);
 int ts_capture_arm(TsCaptureRecorder *recorder, int destination_slot,
                    size_t capacity_frames, uint32_t sample_rate,
                    char *error, size_t error_size);
+int ts_capture_arm_channels(TsCaptureRecorder *recorder, int destination_slot,
+                            size_t capacity_frames, uint32_t sample_rate,
+                            uint8_t channels, char *error, size_t error_size);
 int ts_capture_arm_overdub(TsCaptureRecorder *recorder, int destination_slot,
                            size_t capacity_frames, uint32_t sample_rate,
                            const float *base, size_t base_frames,
                            uint32_t base_rate,
                            char *error, size_t error_size);
+int ts_capture_arm_overdub_channels(
+    TsCaptureRecorder *recorder, int destination_slot,
+    size_t capacity_frames, uint32_t sample_rate, uint8_t channels,
+    const float *base, size_t base_frames, uint32_t base_rate,
+    uint8_t base_channels, char *error, size_t error_size);
 int ts_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
                           char *error, size_t error_size);
 int ts_capture_toggle_staged_note(TsCaptureRecorder *recorder, int note,
@@ -81,6 +94,7 @@ void ts_capture_clear_staged_notes(TsCaptureRecorder *recorder);
 int ts_capture_trigger(TsCaptureRecorder *recorder,
                        char *error, size_t error_size);
 int ts_capture_write_sample(TsCaptureRecorder *recorder, float sample);
+int ts_capture_write_frame(TsCaptureRecorder *recorder, TsStereoFrame sample);
 int ts_capture_stop(TsCaptureRecorder *recorder,
                     char *error, size_t error_size);
 int ts_capture_cancel(TsCaptureRecorder *recorder);
@@ -98,7 +112,14 @@ int ts_external_recorder_arm(TsExternalRecorder *recorder,
                              int tail_ms,
                              int max_seconds,
                              char *error, size_t error_size);
+int ts_external_recorder_arm_channels(
+    TsExternalRecorder *recorder, int destination_slot,
+    uint32_t sample_rate, uint8_t channels, int threshold_db,
+    int pre_roll_ms, int silence_ms, int tail_ms, int max_seconds,
+    char *error, size_t error_size);
 int ts_external_recorder_write_sample(TsExternalRecorder *recorder, float sample);
+int ts_external_recorder_write_frame(TsExternalRecorder *recorder,
+                                     TsStereoFrame sample);
 int ts_external_recorder_stop(TsExternalRecorder *recorder,
                               char *error, size_t error_size);
 int ts_external_recorder_cancel(TsExternalRecorder *recorder);

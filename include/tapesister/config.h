@@ -45,8 +45,11 @@ enum {
     TS_CAPTURE_MAX_SECONDS_MAX = 600,
     TS_CAPTURE_MAX_SECONDS_DEFAULT = 20,
     TS_RECORD_INPUT_CHANNEL_MIN = 0,
-    TS_RECORD_INPUT_CHANNEL_MAX = 2,
+    TS_RECORD_INPUT_CHANNEL_MAX = 3,
     TS_RECORD_INPUT_CHANNEL_DEFAULT = 1,
+    TS_CAPTURE_CHANNELS_MIN = 1,
+    TS_CAPTURE_CHANNELS_MAX = 2,
+    TS_CAPTURE_CHANNELS_DEFAULT = 1,
     TS_MIDI_INPUT_CHANNEL_MIN = 0,
     TS_MIDI_INPUT_CHANNEL_MAX = 16,
     TS_MIDI_INPUT_CHANNEL_DEFAULT = 0
@@ -86,6 +89,7 @@ typedef struct {
     int record_max_seconds;
     int capture_auto_resize;
     int capture_max_seconds;
+    int capture_channels;
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];
     float dsp_factory_controls[TS_DSP_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
     int cdp_factory_overridden[TS_CDP_FACTORY_RECIPE_COUNT];

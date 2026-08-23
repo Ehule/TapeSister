@@ -416,23 +416,29 @@ void ts_note_bank_set_source_tuned(TsNoteBank *bank,
             update_voice(&bank->voices[i], instrument, tuning, source, output_rate);
 }
 
-float ts_note_bank_read_split(TsNoteBank *bank, float *synth_output)
+void ts_note_bank_read_buses(TsNoteBank *bank,
+                             TsStereoFrame *sample_output,
+                             TsStereoFrame *fm_output,
+                             TsStereoFrame *synth_capture)
 {
-    float mixed = 0.0f;
-    float synth = 0.0f;
+    TsStereoFrame sample = {0.0f, 0.0f};
+    TsStereoFrame synth = {0.0f, 0.0f};
     int count = 0;
     int synth_count = 0;
-    if (synth_output != NULL) *synth_output = 0.0f;
-    if (bank == NULL) return 0.0f;
+    if (sample_output != NULL) *sample_output = (TsStereoFrame){0.0f, 0.0f};
+    if (fm_output != NULL) *fm_output = (TsStereoFrame){0.0f, 0.0f};
+    if (synth_capture != NULL) *synth_capture = (TsStereoFrame){0.0f, 0.0f};
+    if (bank == NULL) return;
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
         TsNoteVoice *voice = &bank->voices[i];
-        float value;
+        TsStereoFrame value;
+        float gain;
         if (!voice->active || voice->sample == NULL || voice->sample->data == NULL) continue;
         if (voice->looping) {
             voice->position = ts_audition_loop_position(
                 voice->position, voice->range_first, voice->range_last,
                 voice->crossfade_frames, voice->loop_mode, &voice->direction);
-            value = ts_audition_read_looped_mode(
+            value = ts_audition_read_looped_mode_frame(
                 voice->sample, voice->position, voice->range_first,
                 voice->range_last, voice->crossfade_frames, voice->loop_mode);
         } else {
@@ -441,31 +447,63 @@ float ts_note_bank_read_split(TsNoteBank *bank, float *synth_output)
                 voice->active = 0;
                 continue;
             }
-            {
-                float fraction = (float)(voice->position - (double)at);
-                /* Transitional PR1 fold; PR2 replaces this scalar note bus. */
-                {
-                    float a = ts_sample_read_mono(voice->sample, at);
-                    float b = ts_sample_read_mono(voice->sample, at + 1u);
-                    value = a + (b - a) * fraction;
-                }
-            }
+            value = ts_audition_read_frame(
+                voice->sample, voice->position, voice->range_last);
         }
-        value *= voice->gain * ts_audition_attack_gain(
+        gain = voice->gain * ts_audition_attack_gain(
             voice->attack_frame, voice->attack_frames);
+        value.l *= gain;
+        value.r *= gain;
         if (voice->attack_frame < voice->attack_frames)
             ++voice->attack_frame;
         voice->position += voice->step * voice->direction;
-        mixed += value;
         if (voice->synth) {
-            synth += value;
+            synth.l += value.l;
+            synth.r += value.r;
             ++synth_count;
+        } else {
+            sample.l += value.l;
+            sample.r += value.r;
         }
         ++count;
     }
-    if (synth_output != NULL && synth_count > 0)
-        *synth_output = synth / sqrtf((float)synth_count);
-    return count > 0 ? mixed / sqrtf((float)count) : 0.0f;
+    if (count > 0) {
+        float gain = 1.0f / sqrtf((float)count);
+        sample.l *= gain; sample.r *= gain;
+        synth.l *= gain; synth.r *= gain;
+    }
+    if (sample_output != NULL) *sample_output = ts_stereo_frame_sanitize(sample);
+    if (fm_output != NULL) *fm_output = ts_stereo_frame_sanitize(synth);
+    if (synth_capture != NULL && synth_count > 0) {
+        float monitor_gain = count > 0 ? sqrtf((float)count) : 1.0f;
+        float capture_gain = monitor_gain / sqrtf((float)synth_count);
+        synth_capture->l = synth.l * capture_gain;
+        synth_capture->r = synth.r * capture_gain;
+        *synth_capture = ts_stereo_frame_sanitize(*synth_capture);
+    }
+}
+
+TsStereoFrame ts_note_bank_read_stereo(TsNoteBank *bank)
+{
+    TsStereoFrame sample;
+    TsStereoFrame fm;
+    ts_note_bank_read_buses(bank, &sample, &fm, NULL);
+    sample.l += fm.l;
+    sample.r += fm.r;
+    return ts_stereo_frame_sanitize(sample);
+}
+
+float ts_note_bank_read_split(TsNoteBank *bank, float *synth_output)
+{
+    TsStereoFrame sample;
+    TsStereoFrame fm;
+    TsStereoFrame synth;
+    ts_note_bank_read_buses(bank, &sample, &fm, &synth);
+    sample.l += fm.l;
+    sample.r += fm.r;
+    if (synth_output != NULL)
+        *synth_output = ts_stereo_frame_fold_mono(synth);
+    return ts_stereo_frame_fold_mono(sample);
 }
 
 float ts_note_bank_read(TsNoteBank *bank)

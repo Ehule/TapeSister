@@ -36,6 +36,7 @@ void ts_config_init(TsConfig *config)
         config->record_max_seconds = TS_RECORD_MAX_SECONDS_DEFAULT;
         config->capture_auto_resize = 1;
         config->capture_max_seconds = TS_CAPTURE_MAX_SECONDS_DEFAULT;
+        config->capture_channels = TS_CAPTURE_CHANNELS_DEFAULT;
     }
 }
 
@@ -237,6 +238,8 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_boolean(value, &loaded.capture_auto_resize)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "capture_max_seconds") == 0) {
             if (!parse_clamped_integer(value, TS_CAPTURE_MAX_SECONDS_MIN, TS_CAPTURE_MAX_SECONDS_MAX, &loaded.capture_max_seconds)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "capture_channels") == 0) {
+            if (!parse_clamped_integer(value, TS_CAPTURE_CHANNELS_MIN, TS_CAPTURE_CHANNELS_MAX, &loaded.capture_channels)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else {
             int dsp = parse_dsp_preset(key, value, &loaded);
             int cdp = dsp == 0 ? parse_cdp_preset(key, value, &loaded) : 0;
@@ -298,7 +301,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "\n[External Recording]\n"
                 "; Blank uses the operating system default capture device. Otherwise use the exact SDL device name.\n"
                 "record_input_device=%s\n"
-                "; 0 mixes all input channels to mono, 1 records the first/left channel, 2 the second/right.\n"
+                "; 0=MIX mono, 1=LEFT mono, 2=RIGHT mono, 3=STEREO L/R.\n"
                 "record_input_channel=%d\n"
                 "; Threshold in dBFS; lower values trigger on quieter sounds.\n"
                 "record_threshold_db=%d\n"
@@ -315,6 +318,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "capture_auto_resize=%d\n"
                 "; Hard safety limit when automatic Capture resizing is enabled.\n"
                 "capture_max_seconds=%d\n"
+                "; Internal Capture format: 1=M, 2=S. Overdub always follows its target shape.\n"
+                "capture_channels=%d\n"
                 "\n[DSP Presets]\n"
                 "; SAVE/UPDATE writes normalized macro values here.\n",
                 config->sample_path, config->fasttracker_path,
@@ -336,7 +341,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->record_tail_ms,
                 config->record_max_seconds,
                 config->capture_auto_resize ? 1 : 0,
-                config->capture_max_seconds) < 0;
+                config->capture_max_seconds,
+                config->capture_channels) < 0;
     for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
         if (!config->dsp_factory_overridden[slot]) continue;
         write_failed = fprintf(file, "DspPreset%02d=%.9g,%.9g,%.9g,%.9g\n",

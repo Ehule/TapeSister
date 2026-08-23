@@ -76,6 +76,17 @@ int ts_capture_archive_write(const char *directory,
                              char *written_path, size_t written_path_size,
                              char *error, size_t error_size)
 {
+    return ts_capture_archive_write_channels(
+        directory, kind, samples, frames, sample_rate, 1u,
+        written_path, written_path_size, error, error_size);
+}
+
+int ts_capture_archive_write_channels(
+    const char *directory, TsCaptureArchiveKind kind,
+    const float *samples, size_t frames, uint32_t sample_rate,
+    uint8_t channels, char *written_path, size_t written_path_size,
+    char *error, size_t error_size)
+{
     struct timespec now;
     struct tm clock_value;
     char timestamp[40];
@@ -87,7 +98,8 @@ int ts_capture_archive_write(const char *directory,
     long milliseconds;
     int found = 0;
     if (written_path != NULL && written_path_size > 0u) written_path[0] = '\0';
-    if (samples == NULL || frames == 0u || sample_rate == 0u) {
+    if (samples == NULL || frames == 0u || sample_rate == 0u ||
+        !ts_sample_valid_channels(channels)) {
         archive_error(error, error_size, "Capture archive received no audio");
         return 0;
     }
@@ -143,7 +155,8 @@ int ts_capture_archive_write(const char *directory,
     sample.data = (float *)samples;
     sample.frames = frames;
     sample.sample_rate = sample_rate;
-    sample.channels = 1u;
+    sample.visual_revision = 0u;
+    sample.channels = channels;
     snprintf(sample.name, sizeof(sample.name), "%s", prefix);
     if (!ts_sample_save_wav32f(&sample, temporary, error, error_size)) {
         remove(temporary);
