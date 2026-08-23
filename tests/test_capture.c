@@ -464,6 +464,11 @@ static void test_internal_synth_source_and_split_mix(void)
                                 error, sizeof(error)));
     CHECK(ts_capture_trigger(&recorder, error, sizeof(error)));
     ts_capture_free(&recorder);
+    CHECK(ts_capture_arm(&recorder, 1, 8, 48000, error, sizeof(error)));
+    CHECK(ts_capture_set_source(&recorder, TS_CAPTURE_SOURCE_SISTER,
+                                error, sizeof(error)));
+    CHECK(ts_capture_trigger(&recorder, error, sizeof(error)));
+    ts_capture_free(&recorder);
     CHECK(ts_instrument_commit_capture(&instrument, 1, TS_CAPTURE_SOURCE_SYNTH,
                                        captured, 8, 48000, 0, 0,
                                        error, sizeof(error)));

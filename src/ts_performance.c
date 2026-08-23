@@ -174,6 +174,19 @@ void ts_performance_release_midi_channel(TsPerformanceBank *bank, int channel)
     }
 }
 
+void ts_performance_stop_sources(TsPerformanceBank *bank,
+                                 uint16_t source_mask)
+{
+    if (bank == NULL || source_mask == 0u) return;
+    for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
+        TsPerformanceVoice *voice = &bank->voices[i];
+        if (voice->active && voice->source_slot >= 0 &&
+            voice->source_slot < TS_BANK_SLOT_COUNT &&
+            (source_mask & (uint16_t)(1u << voice->source_slot)) != 0u)
+            voice->active = 0;
+    }
+}
+
 int ts_performance_trigger_group(TsPerformanceBank *bank,
                                  const TsInstrument *instrument,
                                  uint16_t source_mask,

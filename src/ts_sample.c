@@ -2754,6 +2754,10 @@ const char *ts_bank_capture_name(TsBankCaptureKind kind)
     if (kind == TS_BANK_CAPTURE_SELECTION) return "SEL";
     if (kind == TS_BANK_CAPTURE_LOOP) return "LOOP";
     if (kind == TS_BANK_CAPTURE_PERFORMANCE) return "PERFORM";
+    if (kind == TS_BANK_CAPTURE_SISTER_MIX) return "SISTER MIX";
+    if (kind == TS_BANK_CAPTURE_SISTER_H1) return "SISTER H1";
+    if (kind == TS_BANK_CAPTURE_SISTER_H2) return "SISTER H2";
+    if (kind == TS_BANK_CAPTURE_SISTER_H3) return "SISTER H3";
     return "FULL";
 }
 
@@ -7278,15 +7282,16 @@ int ts_instrument_commit_capture_channels(
     TsTuning source_tuning;
     TsTuning source_audible_tuning;
     size_t target_frames;
-    int synth_source;
+    int non_tile_source;
     char name[128];
-    synth_source = source_slot == TS_CAPTURE_SOURCE_SYNTH;
+    non_tile_source = source_slot == TS_CAPTURE_SOURCE_SYNTH ||
+                      source_slot == TS_CAPTURE_SOURCE_SISTER;
     /* captured owns the rendered performance. Keep source_slot as provenance,
        but do not require that tile to remain occupied after live source edits. */
     if (instrument == NULL || captured == NULL || recorded_frames == 0u ||
         capture_rate == 0u || destination_slot < 0 ||
         destination_slot >= TS_BANK_SLOT_COUNT ||
-        (!synth_source && (source_slot < 0 ||
+        (!non_tile_source && (source_slot < 0 ||
                            source_slot >= TS_BANK_SLOT_COUNT ||
                            source_slot == destination_slot)) ||
         !ts_instrument_bank_is_blank_canvas(instrument, destination_slot) ||
@@ -7297,7 +7302,7 @@ int ts_instrument_commit_capture_channels(
     }
     source_tuning = default_tuning();
     source_audible_tuning = default_tuning();
-    if (!synth_source && instrument->bank[source_slot].occupied) {
+    if (!non_tile_source && instrument->bank[source_slot].occupied) {
         source_tuning = instrument->bank[source_slot].tuning;
         source_audible_tuning = instrument->bank[source_slot].audible_tuning;
     }
@@ -7319,8 +7324,11 @@ int ts_instrument_commit_capture_channels(
         if (!auto_resize && target_frames > instrument->current.frames)
             target_frames = instrument->current.frames;
     }
-    if (synth_source)
+    if (source_slot == TS_CAPTURE_SOURCE_SYNTH)
         snprintf(name, sizeof(name), "CAPTURE %02d FROM SYNTH",
+                 destination_slot + 1);
+    else if (source_slot == TS_CAPTURE_SOURCE_SISTER)
+        snprintf(name, sizeof(name), "CAPTURE %02d FROM SISTER",
                  destination_slot + 1);
     else
         snprintf(name, sizeof(name), "CAPTURE %02d FROM %02d",
@@ -7410,6 +7418,7 @@ int ts_instrument_commit_overdub_channels(
         capture_rate == 0u || destination_slot < 0 ||
         destination_slot >= TS_BANK_SLOT_COUNT ||
         (source_slot != TS_CAPTURE_SOURCE_SYNTH &&
+         source_slot != TS_CAPTURE_SOURCE_SISTER &&
          (source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT)) ||
         !instrument->bank[destination_slot].occupied ||
         instrument->bank[destination_slot].locked ||
@@ -9680,9 +9689,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
             }
         }
         slot->process = slot->edit.process;
-        if (slot->capture_kind > (version >= 20 ? TS_BANK_CAPTURE_PERFORMANCE :
+        if (slot->capture_kind > (version >= 20 ? TS_BANK_CAPTURE_SISTER_H3 :
                                                  TS_BANK_CAPTURE_LOOP) ||
-            slot->relation >= TS_FAMILY_RELATION_COUNT || slot->parent_slot < -1 ||
+            slot->relation >= TS_FAMILY_RELATION_COUNT ||
+            slot->parent_slot < TS_CAPTURE_SOURCE_SISTER ||
             slot->parent_slot >= TS_BANK_SLOT_COUNT ||
             (slot->lineage_locks & ~TS_FAMILY_LOCK_ALL) != 0u ||
             slot->lineage_mutation < 0.0f || slot->lineage_mutation > 1.0f ||
@@ -10005,7 +10015,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
             GET_U32(name_length);
             if (slot->capture_kind > TS_BANK_CAPTURE_LOOP ||
                 slot->relation >= TS_FAMILY_RELATION_COUNT ||
-                slot->parent_slot < -1 || slot->parent_slot >= TS_BANK_SLOT_COUNT ||
+                slot->parent_slot < TS_CAPTURE_SOURCE_SISTER ||
+                slot->parent_slot >= TS_BANK_SLOT_COUNT ||
                 (slot->lineage_locks & ~TS_FAMILY_LOCK_ALL) != 0u ||
                 !isfinite(slot->lineage_mutation) ||
                 slot->lineage_mutation < 0.0f || slot->lineage_mutation > 1.0f ||

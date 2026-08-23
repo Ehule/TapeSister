@@ -479,15 +479,14 @@ SMEAR, TEAR, Move/Copy placement, Drone, Vary/Create, FM stamping, curated DSP, 
 remain explicitly blocked where linked-channel implementation is pending. See
 [`docs/SISTER_MACHINE_AUDIO_BUSES.md`](docs/SISTER_MACHINE_AUDIO_BUSES.md).
 
-The headless Sister Machine core now implements Kafka's one moving write head and
-three distinct playback heads over one preallocated mono/stereo rolling buffer. H1 is
-a delay with feedback, H2 is a full-buffer signed-rate scrub head with feedback, and
-H3 is a signed-rate eight-second span head. Shared Wow, independent H2/H3 Drop,
-stereo-linked Duck, Kafka's asymmetrical decorrelation, Width, an explicit global
-filter, click-safe Clear, linked output safety and atomic UI-ready snapshots all run
-without SDL or callback allocation. The engine is intentionally not audible or routed
-to tiles yet; safe bus routing is the next integration phase. See
-[`docs/SISTER_MACHINE_HEADLESS_ENGINE.md`](docs/SISTER_MACHINE_HEADLESS_ENGINE.md).
+The headless Sister Machine core implements Kafka's moving write head and three
+playback heads over one preallocated mono/stereo rolling buffer. A fixed runtime route
+now accepts TILES, FM, EXT and PREVIEW, exposes H1/H2/H3/MIX Capture taps, owns a
+per-page Sister source mask and supports protected capture-then-replay recursion.
+Sister remains disabled by default and has no user controls in this phase, so ordinary
+TapeSister looks and behaves as before. See
+[`docs/SISTER_MACHINE_HEADLESS_ENGINE.md`](docs/SISTER_MACHINE_HEADLESS_ENGINE.md) and
+[`docs/SISTER_MACHINE_LIVE_ROUTING.md`](docs/SISTER_MACHINE_LIVE_ROUTING.md).
 
 ## File browser
 

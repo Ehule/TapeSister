@@ -22,6 +22,13 @@ int main(void)
     out = ts_audio_mixer_render(&mixer, &buses);
     CHECK(CLOSE(out.l, 0.2f) && CLOSE(out.r, 0.2f));
 
+    ts_audio_buses_clear(&buses);
+    buses.sister = (TsStereoFrame){0.1f, -0.2f};
+    out = ts_audio_mixer_render(&mixer, &buses);
+    CHECK(CLOSE(out.l, 0.1f) && CLOSE(out.r, -0.2f));
+    CHECK(CLOSE(mixer.buses.sister.l, 0.1f));
+    ts_audio_buses_clear(&buses);
+
     buses.legacy_preview = (TsStereoFrame){0.25f, -0.5f};
     buses.tile_performance = (TsStereoFrame){0.5f, 0.0f};
     buses.fm = (TsStereoFrame){0.25f, 0.25f};
