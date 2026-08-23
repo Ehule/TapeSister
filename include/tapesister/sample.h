@@ -37,12 +37,31 @@ typedef struct {
 } TsTuning;
 
 typedef struct {
-    float *data;
-    size_t frames;
+    float l;
+    float r;
+} TsStereoFrame;
+
+typedef struct {
+    float *data;              /* Interleaved: M or L,R. */
+    size_t frames;            /* Time frames per channel, never scalar count. */
     uint32_t sample_rate;
     char name[128];
     uint32_t visual_revision;
+    uint8_t channels;         /* Exactly one or two for an owned sample. */
 } TsSample;
+
+int ts_sample_valid_channels(uint8_t channels);
+int ts_sample_dimensions(size_t frames, uint8_t channels,
+                         size_t *scalar_count, size_t *byte_count);
+int ts_sample_scalar_count(const TsSample *sample, size_t *scalar_count);
+TsStereoFrame ts_stereo_frame_from_mono(float value);
+TsStereoFrame ts_stereo_frame_sanitize(TsStereoFrame frame);
+float ts_stereo_frame_fold_mono(TsStereoFrame frame);
+float ts_sample_read_channel(const TsSample *sample, size_t frame,
+                             uint8_t channel);
+TsStereoFrame ts_sample_read_frame(const TsSample *sample, size_t frame);
+float ts_sample_read_mono(const TsSample *sample, size_t frame);
+int ts_sample_write_frame(TsSample *sample, size_t frame, TsStereoFrame value);
 
 typedef enum {
     TS_GENERATOR_TONAL = 0,

@@ -803,8 +803,8 @@ int main(void)
     {
         float crossings[] = {0.8f, 0.5f, -0.2f, -0.4f, 0.1f};
         float no_crossings[] = {0.8f, 0.2f, 0.5f};
-        TsSample crossing_sample = {crossings, 5, 44100, "crossings", 0u};
-        TsSample fallback_sample = {no_crossings, 3, 44100, "fallback", 0u};
+        TsSample crossing_sample = {crossings, 5, 44100, "crossings", 0u, 1u};
+        TsSample fallback_sample = {no_crossings, 3, 44100, "fallback", 0u, 1u};
         TsInstrument snap_instrument = {0};
         CHECK(ts_sample_nearest_zero_crossing(&crossing_sample, 3) == 2);
         CHECK(ts_sample_nearest_zero_crossing(&crossing_sample, 4) == 4);
@@ -841,6 +841,7 @@ int main(void)
             wave.current.data = margins;
             wave.current.frames = 7;
             wave.current.sample_rate = 44100;
+            wave.current.channels = 1u;
             CHECK(ts_instrument_select_wave(&wave));
             CHECK(wave.selection_first == 2 && wave.selection_last == 5);
             CHECK(wave.selection_last - wave.selection_first == 3);
@@ -849,6 +850,7 @@ int main(void)
             empty_wave.current.data = silent;
             empty_wave.current.frames = 7;
             empty_wave.current.sample_rate = 44100;
+            empty_wave.current.channels = 1u;
             CHECK(!ts_instrument_select_wave(&empty_wave));
             CHECK(!empty_wave.has_selection);
         }
@@ -1907,7 +1909,7 @@ int main(void)
 
     {
         float loop_data[] = {1.0f, 1.0f, 0.5f, 0.0f, -0.5f, -1.0f, -1.0f, -1.0f};
-        TsSample loop_sample = {loop_data, 8, 1000, "loop", 0u};
+        TsSample loop_sample = {loop_data, 8, 1000, "loop", 0u, 1u};
         float blended = ts_audition_read_looped(&loop_sample, 7.0, 0, 8, 2);
         CHECK(fabsf(blended) < 0.0001f);
         /* A zero-crossfade loop still needs cyclic interpolation. Holding the
@@ -2247,7 +2249,7 @@ int main(void)
             CHECK(fread(magic, 1, sizeof(magic), recipe) == sizeof(magic));
             fclose(recipe);
         }
-        CHECK(memcmp(magic, "TSR26", 5) == 0);
+        CHECK(memcmp(magic, "TSR27", 5) == 0);
     }
     CHECK(ts_instrument_load_recipe(&restored, "test-recipe.tsr", error, sizeof(error)));
     CHECK(ts_sample_hash(&restored.parent) == ts_sample_hash(&committed.parent));

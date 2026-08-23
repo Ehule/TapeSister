@@ -1142,6 +1142,7 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
     sample->data = data;
     sample->frames = frames;
     sample->sample_rate = sample_rate;
+    sample->channels = 1u;
     snprintf(sample->name, sizeof(sample->name), "FM %.8s %.8s %08X",
              ts_fm_structure_name(safe.structure),
              ts_fm_interaction_name(safe.interaction), seed);

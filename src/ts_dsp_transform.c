@@ -97,6 +97,7 @@ int ts_dsp_transform_extract_input(const TsInstrument *instrument,
     size_t first;
     size_t last;
     size_t frames;
+    size_t byte_count;
     float *data;
     if (instrument == NULL || identity == NULL || input == NULL ||
         identity->tile_slot != instrument->selected_slot ||
@@ -113,20 +114,23 @@ int ts_dsp_transform_extract_input(const TsInstrument *instrument,
         return 0;
     }
     frames = last - first;
-    if (frames > SIZE_MAX / sizeof(*data)) {
+    if (!ts_sample_dimensions(frames, instrument->current.channels,
+                              NULL, &byte_count)) {
         set_error(error, error_size, "DSP Transform input is too large");
         return 0;
     }
-    data = malloc(frames * sizeof(*data));
+    data = malloc(byte_count);
     if (data == NULL) {
         set_error(error, error_size, "Out of memory snapshotting DSP input");
         return 0;
     }
-    memcpy(data, instrument->current.data + first, frames * sizeof(*data));
+    memcpy(data, instrument->current.data +
+                 first * instrument->current.channels, byte_count);
     ts_sample_free(input);
     input->data = data;
     input->frames = frames;
     input->sample_rate = instrument->current.sample_rate;
+    input->channels = instrument->current.channels;
     snprintf(input->name, sizeof(input->name), "DSP %.120s", instrument->current.name);
     set_error(error, error_size, "");
     return 1;
@@ -143,11 +147,17 @@ int ts_dsp_transform_render(const TsSample *input,
     double dc = 0.0;
     float maximum = 0.0f;
     int clipped = 0;
+    size_t scalar_count;
     if (input == NULL || input->data == NULL || input->frames == 0u ||
         output == NULL || !ts_recipe_process_valid(process) ||
         !ts_sample_process(output, input, 0u, input->frames, process,
                            error, error_size)) return 0;
-    for (size_t i = 0; i < output->frames; ++i) {
+    if (!ts_sample_scalar_count(output, &scalar_count)) {
+        ts_sample_free(output);
+        set_error(error, error_size, "DSP preview has invalid channel storage");
+        return 0;
+    }
+    for (size_t i = 0; i < scalar_count; ++i) {
         float value = output->data[i];
         float absolute;
         if (!isfinite(value)) {
@@ -161,7 +171,7 @@ int ts_dsp_transform_render(const TsSample *input,
         if (absolute >= 0.9999f) ++clipped;
         dc += value;
     }
-    dc /= (double)output->frames;
+    dc /= (double)scalar_count;
     if (peak != NULL) *peak = maximum;
     if (dc_offset != NULL) *dc_offset = dc;
     if (clipped_samples != NULL) *clipped_samples = clipped;
@@ -724,6 +734,11 @@ int ts_dsp_transform_render_recipe(
         set_error(error, error_size, "Invalid curated DSP render request");
         return 0;
     }
+    if (input->channels != 1u) {
+        set_error(error, error_size,
+                  "Stereo curated DSP needs linked channels in a later PR");
+        return 0;
+    }
     if (recipe->primitive)
         ok = dsp_render_primitive(input, recipe, values, output, error, error_size);
     else if (recipe->kind == TS_DSP_RECIPE_COMB)
@@ -833,8 +848,10 @@ int ts_dsp_transform_prepare_preview(const TsInstrument *instrument,
     last = identity->scope == TS_TRANSFORM_SELECTION ?
            identity->selection_last : instrument->current.frames;
     if (rendered->frames != last - first ||
-        rendered->sample_rate != instrument->current.sample_rate) {
-        set_error(error, error_size, "Native DSP preview has an invalid length or rate");
+        rendered->sample_rate != instrument->current.sample_rate ||
+        rendered->channels != instrument->current.channels) {
+        set_error(error, error_size,
+                  "Native DSP preview has an invalid length, rate, or channel shape");
         return 0;
     }
     ts_dsp_transform_preview_free(preview);

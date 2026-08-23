@@ -752,7 +752,8 @@ static const TsSample loop_lock_silence = {
     TS_DEFAULT_CANVAS_FRAMES,
     TS_DEFAULT_CANVAS_RATE,
     "LOOP LOCK SILENCE",
-    0u
+    0u,
+    1u
 };
 
 static int path_is_tsr(const char *path)
@@ -797,8 +798,12 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                 size_t at = (size_t)audio->position;
                 if (at + 1 < audio->range_end && at + 1 < audio->sample->frames) {
                     float fraction = (float)(audio->position - (double)at);
-                    value = audio->sample->data[at] +
-                            (audio->sample->data[at + 1] - audio->sample->data[at]) * fraction;
+                    /* Transitional PR1 fold; PR2 replaces this scalar preview bus. */
+                    {
+                        float a = ts_sample_read_mono(audio->sample, at);
+                        float b = ts_sample_read_mono(audio->sample, at + 1u);
+                        value = a + (b - a) * fraction;
+                    }
                     audio->position += audio->step;
                 } else {
                     audio->playing = 0;

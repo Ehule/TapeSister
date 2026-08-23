@@ -13,6 +13,10 @@ typedef struct {
     size_t last;
     float minimum;
     float maximum;
+    float left_minimum;
+    float left_maximum;
+    float right_minimum;
+    float right_maximum;
     int has_zero_crossing;
 } TsWaveformColumn;
 
@@ -33,10 +37,12 @@ typedef struct {
     uintptr_t sample_identity;
     uintptr_t sample_data_identity;
     size_t sample_frames;
+    uint8_t sample_channels;
     uint32_t sample_visual_revision;
     uintptr_t replacement_identity;
     uintptr_t replacement_data_identity;
     size_t replacement_frames;
+    uint8_t replacement_channels;
     uint32_t replacement_visual_revision;
     size_t first;
     size_t last;

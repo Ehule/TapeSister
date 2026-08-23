@@ -13,6 +13,7 @@ static void fill_slot(TsBankSlot *slot, float value, size_t frames, uint32_t rat
     assert(slot->sample.data != NULL);
     slot->sample.frames = frames;
     slot->sample.sample_rate = rate;
+    slot->sample.channels = 1u;
     slot->occupied = 1;
     slot->tuning.root_note = 60;
     slot->audible_tuning.root_note = 60;

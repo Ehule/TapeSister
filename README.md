@@ -461,6 +461,8 @@ The audio clipboard survives tile changes for the lifetime of the app, while eve
 
 Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the result without reconstructing clipped peaks, preserving that flattened distortion as a repeatable sculpting operation.
 
+The channel-aware foundation stores mono as one scalar per frame and stereo as interleaved left/right scalars while keeping every editor position frame-indexed. During the transition to the PR2 stereo buses, scalar audition, note, and performance paths use an explicit `0.5 * (L + R)` preview fold without changing stored audio. Stereo WARP, SMEAR, TEAR, Move/Copy placement, Drone, Vary/Create, curated DSP/CDP, Capture, and Overdub are intentionally blocked with a status message until their linked-channel implementations arrive; ordinary gain, normalize, fades, reverse, crop, cut, paste, canvas resize, Tune, Draw, Body, Edge, Drift, history, and WAV exchange preserve stereo.
+
 ## File browser
 
 Load, Save, and Export now open one shared FT2-informed browser rather than writing fixed filenames or requiring a typed path:
@@ -475,9 +477,9 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 - replacing an existing file requires a deliberate second Save/Export action; and
 - completed Save/Export files replace their destination atomically, so a failed write does not leave a partial result.
 
-TSR26 stores every occupied tile as a complete independent object, including its persistent protection flag and the full FM genome, Drone/Extreme modes, and random-pitch lock/root/scale: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, persistent native-shelf selection scope, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR25 remain loadable for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
+TSR27 stores every occupied tile as a complete independent object, including mono/stereo channel shape, its persistent protection flag and the full FM genome, Drone/Extreme modes, and random-pitch lock/root/scale: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, persistent native-shelf selection scope, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR26 remain loadable as mono for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
-The chosen `.tsr` remains an ordinary first-page TSR26.
+The chosen `.tsr` remains an ordinary first-page TSR27.
 Additional pages, the REC BANK, and a tiny manifest live beside it in
 `<project>.tsr.samples/`. Move, copy, or back up the `.tsr` and that companion folder
 together. A legacy project with no companion folder opens as one Sample page with an

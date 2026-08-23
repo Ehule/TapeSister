@@ -54,8 +54,8 @@ static void test_cache_keys_and_revisions(void)
 {
     float data[4096];
     float other_data[4096];
-    TsSample sample = {data, 4096u, 48000u, "sample", 1u};
-    TsSample other = {other_data, 4096u, 48000u, "other", 1u};
+    TsSample sample = {data, 4096u, 48000u, "sample", 1u, 1u};
+    TsSample other = {other_data, 4096u, 48000u, "other", 1u, 1u};
     TsWaveformCache cache;
     TsWaveformRequest request;
     for (size_t i = 0; i < sample.frames; ++i) {
@@ -97,8 +97,8 @@ static void test_preview_publication_and_removal(void)
 {
     float data[16];
     float preview_data[4] = {0.8f, 0.6f, -0.6f, -0.8f};
-    TsSample sample = {data, 16u, 48000u, "source", 1u};
-    TsSample preview = {preview_data, 4u, 48000u, "preview", 1u};
+    TsSample sample = {data, 16u, 48000u, "source", 1u, 1u};
+    TsSample preview = {preview_data, 4u, 48000u, "preview", 1u, 1u};
     TsWaveformCache cache;
     TsWaveformRequest request;
     for (size_t i = 0; i < 16u; ++i) data[i] = (float)i / 32.0f;
@@ -125,12 +125,12 @@ static void test_preview_publication_and_removal(void)
 static void test_empty_short_and_long_samples(void)
 {
     float one = 0.25f;
-    TsSample empty = {NULL, 0u, 48000u, "empty", 1u};
-    TsSample single = {&one, 1u, 48000u, "single", 1u};
+    TsSample empty = {NULL, 0u, 48000u, "empty", 1u, 1u};
+    TsSample single = {&one, 1u, 48000u, "single", 1u, 1u};
     TsWaveformCache cache;
     TsWaveformRequest request;
     float *long_data = malloc(200000u * sizeof(*long_data));
-    TsSample long_sample = {long_data, 200000u, 48000u, "long", 1u};
+    TsSample long_sample = {long_data, 200000u, 48000u, "long", 1u, 1u};
     assert(long_data != NULL);
     ts_waveform_cache_init(&cache);
     memset(&request, 0, sizeof(request));
@@ -152,11 +152,41 @@ static void test_empty_short_and_long_samples(void)
     free(long_data);
 }
 
+static void test_stereo_columns_and_shape_key(void)
+{
+    float data[] = {-0.8f, 0.2f, 0.4f, 0.9f,
+                    -0.1f, -0.7f, 0.6f, 0.3f};
+    TsSample sample = {data, 4u, 48000u, "stereo", 7u, 2u};
+    TsWaveformCache cache;
+    TsWaveformRequest request;
+    ts_waveform_cache_init(&cache);
+    memset(&request, 0, sizeof(request));
+    request.sample = &sample;
+    request.last = sample.frames;
+    request.width = 2;
+    request.detect_zero_crossings = 1;
+    assert(ts_waveform_cache_prepare(&cache, &request));
+    assert(cache.columns[0].left_minimum == -0.8f);
+    assert(cache.columns[0].left_maximum == 0.4f);
+    assert(cache.columns[0].right_minimum == 0.2f);
+    assert(cache.columns[0].right_maximum == 0.9f);
+    assert(cache.columns[0].minimum == -0.8f);
+    assert(cache.columns[0].maximum == 0.9f);
+    assert(cache.rebuild_count == 1u);
+    sample.channels = 1u;
+    assert(ts_waveform_cache_prepare(&cache, &request));
+    assert(cache.rebuild_count == 2u);
+    sample.channels = 2u;
+    assert(ts_waveform_cache_prepare(&cache, &request));
+    assert(cache.rebuild_count == 3u);
+}
+
 int main(void)
 {
     test_cache_keys_and_revisions();
     test_preview_publication_and_removal();
     test_empty_short_and_long_samples();
+    test_stereo_columns_and_shape_key();
     puts("Waveform cache tests passed.");
     return 0;
 }

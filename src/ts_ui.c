@@ -2040,7 +2040,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char tile[96], info[112];
         int tile_number = showing_bank ? ui->bank_view_slot + 1 :
                           instrument->selected_slot + 1;
-        snprintf(tile, sizeof(tile), "TILE %02d %.36s", tile_number, sample->name);
+        snprintf(tile, sizeof(tile), "TILE %02d %c %.34s", tile_number,
+                 sample->channels == 2u ? 'S' : 'M', sample->name);
         if (showing_bank && shown_slot->occupied) {
             snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
                      ui->bank_view_slot + 1,
@@ -2120,14 +2121,30 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             const TsWaveformColumn *analysis = &cache->columns[x];
             size_t begin = analysis->first;
             size_t end = analysis->last;
-            float low = analysis->minimum;
-            float high = analysis->maximum;
             int middle = TS_WAVE_Y + TS_WAVE_H / 2;
-            int y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
-            int y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
             uint32_t color = has_selection && end > selection_first &&
                              begin < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
-            wave_line(fb, TS_WAVE_X + x, y0, TS_WAVE_X + x, y1, color);
+            if (sample->channels == 2u) {
+                int left_y0 = middle - (int)(analysis->left_maximum *
+                                              (TS_WAVE_H / 2 - 6));
+                int left_y1 = middle - (int)(analysis->left_minimum *
+                                              (TS_WAVE_H / 2 - 6));
+                int right_y0 = middle - (int)(analysis->right_maximum *
+                                               (TS_WAVE_H / 2 - 6));
+                int right_y1 = middle - (int)(analysis->right_minimum *
+                                               (TS_WAVE_H / 2 - 6));
+                uint32_t right_color = has_selection && end > selection_first &&
+                                       begin < selection_last ? PAL_TUNING : PAL_EFFECT;
+                wave_line(fb, TS_WAVE_X + x, left_y0,
+                          TS_WAVE_X + x, left_y1, color);
+                wave_line(fb, TS_WAVE_X + x, right_y0,
+                          TS_WAVE_X + x, right_y1, right_color);
+            } else {
+                int y0 = middle - (int)(analysis->maximum * (TS_WAVE_H / 2 - 6));
+                int y1 = middle - (int)(analysis->minimum * (TS_WAVE_H / 2 - 6));
+                wave_line(fb, TS_WAVE_X + x, y0,
+                          TS_WAVE_X + x, y1, color);
+            }
             if (analysis->has_zero_crossing)
                 wave_rect(fb, TS_WAVE_X + x, middle - 1, 1, 3, PAL_VOLUME);
         }

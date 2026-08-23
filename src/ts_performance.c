@@ -265,9 +265,12 @@ float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
             }
             {
                 float fraction = (float)(voice->position - (double)at);
-                value = voice->sample->data[at] +
-                        (voice->sample->data[at + 1u] - voice->sample->data[at]) *
-                        fraction;
+                /* Transitional PR1 fold; PR2 replaces this scalar performance bus. */
+                {
+                    float a = ts_sample_read_mono(voice->sample, at);
+                    float b = ts_sample_read_mono(voice->sample, at + 1u);
+                    value = a + (b - a) * fraction;
+                }
             }
         }
         value *= voice->gain * ts_audition_attack_gain(
