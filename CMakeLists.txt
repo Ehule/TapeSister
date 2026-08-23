@@ -71,6 +71,83 @@ if(TAPESISTER_BUILD_SDL)
   # REC-bank storage was moved off the main-thread stack.
   if(MINGW)
     target_link_options(tapesister PRIVATE "-Wl,--stack,16777216")
+
+    # Explorer does not inherit MSYS2's /ucrt64/bin PATH.  Keep the build-tree
+    # executable portable by placing the matching SDL and MinGW runtime DLLs
+    # beside it after every link.  In particular, RtMidi enables C++ and adds
+    # libstdc++ to an application that was previously C-only.
+    set(TAPESISTER_MINGW_RUNTIME_COMPILER "${CMAKE_C_COMPILER}")
+    if(TAPESISTER_MIDI_AVAILABLE)
+      set(TAPESISTER_MINGW_RUNTIME_COMPILER "${CMAKE_CXX_COMPILER}")
+    endif()
+    get_filename_component(TAPESISTER_MINGW_BIN_DIR
+                           "${TAPESISTER_MINGW_RUNTIME_COMPILER}" DIRECTORY)
+
+    function(tapesister_resolve_mingw_dll output_variable dll_name)
+      execute_process(
+        COMMAND "${TAPESISTER_MINGW_RUNTIME_COMPILER}"
+                "-print-file-name=${dll_name}"
+        OUTPUT_VARIABLE resolved_dll
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+      if(NOT IS_ABSOLUTE "${resolved_dll}" OR
+         NOT EXISTS "${resolved_dll}")
+        unset(resolved_dll)
+        unset(resolved_dll CACHE)
+        find_file(resolved_dll
+          NAMES "${dll_name}"
+          HINTS
+            "${TAPESISTER_MINGW_BIN_DIR}"
+            "$ENV{MINGW_PREFIX}/bin"
+            "$ENV{MSYSTEM_PREFIX}/bin"
+          NO_DEFAULT_PATH)
+      endif()
+      if(EXISTS "${resolved_dll}")
+        set(${output_variable} "${resolved_dll}" PARENT_SCOPE)
+      else()
+        set(${output_variable} "" PARENT_SCOPE)
+      endif()
+    endfunction()
+
+    set(TAPESISTER_WINDOWS_RUNTIME_DLL_NAMES SDL2.dll)
+    if(TAPESISTER_MIDI_AVAILABLE)
+      list(APPEND TAPESISTER_WINDOWS_RUNTIME_DLL_NAMES
+        libstdc++-6.dll
+        libwinpthread-1.dll)
+    endif()
+    list(APPEND TAPESISTER_WINDOWS_RUNTIME_DLL_NAMES
+      libgcc_s_seh-1.dll
+      libgcc_s_sjlj-1.dll
+      libgcc_s_dw2-1.dll)
+    set(TAPESISTER_WINDOWS_RUNTIME_DLLS "")
+    set(TAPESISTER_MINGW_GCC_RUNTIME_FOUND OFF)
+    foreach(runtime_name IN LISTS TAPESISTER_WINDOWS_RUNTIME_DLL_NAMES)
+      tapesister_resolve_mingw_dll(runtime_path "${runtime_name}")
+      if(runtime_path)
+        list(APPEND TAPESISTER_WINDOWS_RUNTIME_DLLS "${runtime_path}")
+        if(runtime_name MATCHES "^libgcc_s_.*\\.dll$")
+          set(TAPESISTER_MINGW_GCC_RUNTIME_FOUND ON)
+        endif()
+      elseif(runtime_name STREQUAL "SDL2.dll" OR
+             (TAPESISTER_MIDI_AVAILABLE AND
+              (runtime_name STREQUAL "libstdc++-6.dll" OR
+               runtime_name STREQUAL "libwinpthread-1.dll")))
+        message(FATAL_ERROR
+          "Required Windows runtime ${runtime_name} was not found beside "
+          "the MinGW compiler (${TAPESISTER_MINGW_BIN_DIR})")
+      endif()
+    endforeach()
+    if(NOT TAPESISTER_MINGW_GCC_RUNTIME_FOUND)
+      message(FATAL_ERROR
+        "No supported MinGW libgcc runtime DLL was found beside the compiler")
+    endif()
+    list(REMOVE_DUPLICATES TAPESISTER_WINDOWS_RUNTIME_DLLS)
+    foreach(runtime_dll IN LISTS TAPESISTER_WINDOWS_RUNTIME_DLLS)
+      add_custom_command(TARGET tapesister POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${runtime_dll}" "$<TARGET_FILE_DIR:tapesister>"
+        VERBATIM)
+    endforeach()
   endif()
   add_custom_command(TARGET tapesister POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tapesister>/assets"

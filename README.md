@@ -508,6 +508,22 @@ make
 
 Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or choose it through **Load**.
 
+## Build on Windows
+
+From an MSYS2 **UCRT64** terminal with CMake, Ninja, SDL2, and the UCRT64
+toolchain installed:
+
+```bash
+cmake -S . -B build-windows -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
+cmake --build build-windows
+```
+
+The build copies the matching 64-bit `SDL2.dll` and MinGW runtime DLLs beside
+`build-windows/tapesister.exe`. That directory is therefore directly launchable
+from Explorer without depending on the UCRT64 terminal's `PATH`; keep the EXE,
+DLLs, and `assets` folder together when moving it.
+
 ## Keys and files
 
 - Lower octave: `Z S X D C V G B H N J M`
