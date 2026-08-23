@@ -1,11 +1,12 @@
 #ifndef TAPESISTER_SISTER_TEST_HELPERS_H
 #define TAPESISTER_SISTER_TEST_HELPERS_H
 
-#include "tapesister/sister_machine.h"
+#include "tapesister/sister_runtime.h"
 
 #include <assert.h>
 #include <math.h>
 #include <stddef.h>
+#include <string.h>
 
 static inline TsStereoFrame sister_silence(void)
 {
@@ -47,6 +48,43 @@ static inline void sister_fill_buffer(TsSisterMachine *machine, float left_scale
         TsStereoFrame frame = {value * left_scale, value * right_scale};
         assert(ts_sister_buffer_write(&machine->buffer, i, frame));
     }
+}
+
+static inline int sister_test_make_tiles(TsInstrument *instrument,
+                                         int source_count,
+                                         int blank_count,
+                                         uint32_t sample_rate,
+                                         size_t frames)
+{
+    char error[160];
+    int total = source_count + blank_count;
+    if (instrument == NULL || source_count < 0 || blank_count < 0 ||
+        total < 1 || total > TS_BANK_SLOT_COUNT) return 0;
+    ts_instrument_init(instrument);
+    for (int slot = 0; slot < total; ++slot) {
+        if (slot > 0 && !ts_instrument_select_bank(
+                instrument, slot, error, sizeof(error))) return 0;
+        if (!ts_instrument_activate_silence(instrument, frames, sample_rate,
+                                            error, sizeof(error))) return 0;
+        if (slot < source_count) {
+            for (size_t frame = 0u; frame < instrument->current.frames; ++frame)
+                instrument->current.data[frame] =
+                    (float)(slot + 1) * (frame & 1u ? -0.2f : 0.2f);
+        }
+    }
+    return ts_instrument_select_bank(instrument, 0, error, sizeof(error));
+}
+
+static inline int sister_test_enable(TsSisterRuntime *runtime,
+                                     uint32_t sample_rate,
+                                     uint8_t buffer_channels,
+                                     double seconds)
+{
+    char error[160];
+    ts_sister_runtime_init(runtime);
+    return ts_sister_runtime_enable(runtime, sample_rate, 2u,
+                                    buffer_channels, seconds,
+                                    error, sizeof(error));
 }
 
 #endif

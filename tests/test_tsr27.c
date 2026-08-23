@@ -127,6 +127,8 @@ static void check_project_roundtrip(const TsSample *source, const char *wav,
     ts_instrument_init(&restored);
     assert(ts_sample_save_wav32f(source, wav, error, sizeof(error)));
     assert(ts_instrument_load_wav(&instrument, wav, error, sizeof(error)));
+    instrument.bank[0].capture_kind = TS_BANK_CAPTURE_SISTER_MIX;
+    instrument.bank[0].parent_slot = TS_CAPTURE_SOURCE_SISTER;
     assert(ts_instrument_save_recipe(&instrument, project, error, sizeof(error)));
     f = fopen(project, "rb");
     assert(f != NULL && fread(magic, 1u, sizeof(magic), f) == sizeof(magic));
@@ -138,6 +140,8 @@ static void check_project_roundtrip(const TsSample *source, const char *wav,
     assert(ts_sample_hash(&restored.current) == ts_sample_hash(&instrument.current));
     assert(restored.parent.channels == source->channels);
     assert(restored.bank[0].sample.channels == source->channels);
+    assert(restored.bank[0].capture_kind == TS_BANK_CAPTURE_SISTER_MIX);
+    assert(restored.bank[0].parent_slot == TS_CAPTURE_SOURCE_SISTER);
     ts_instrument_free(&instrument);
     ts_instrument_free(&restored);
 }

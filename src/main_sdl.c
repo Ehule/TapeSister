@@ -4,6 +4,7 @@
 #include "tapesister/input_monitor.h"
 #include "tapesister/note_bank.h"
 #include "tapesister/sample_pages.h"
+#include "tapesister/sister_runtime.h"
 #include "tapesister/dsp_transform.h"
 #include "tapesister/render_damage.h"
 #include "tapesister/ui.h"
@@ -691,6 +692,7 @@ typedef struct {
     TsNoteBank notes;
     TsPerformanceBank performance;
     TsAudioMixer mixer;
+    TsSisterRuntime sister;
     TsCaptureRecorder capture;
     TsInputMonitor *input_monitor;
     TsExternalRecorder *record_bank_recorder;
@@ -832,6 +834,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     float synth_block_peak = 0.0f;
     for (int i = 0; i < values; i += 2) {
         TsAudioBuses buses;
+        TsSisterSourceFrames sister_sources = {0};
+        TsSisterRuntimeFrame sister_frame;
         TsStereoFrame synth_capture = {0.0f, 0.0f};
         TsStereoFrame output;
         ts_audio_buses_clear(&buses);
@@ -869,6 +873,16 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             ++audio->attack_frame;
 
         runtime_note_render(audio, &buses, &synth_capture);
+        buses.external = audio->input_monitor != NULL ?
+            ts_input_monitor_read_frame(audio->input_monitor,
+                                        (uint32_t)audio->output_rate) :
+            (TsStereoFrame){0.0f, 0.0f};
+        sister_sources.fm = buses.fm;
+        sister_sources.external = buses.external;
+        sister_sources.preview = buses.legacy_preview;
+        sister_frame = ts_sister_runtime_process_frame(&audio->sister,
+                                                        &sister_sources);
+        buses.sister = sister_frame.monitor_return;
         buses.program.l = buses.legacy_preview.l +
                           buses.tile_performance.l + buses.fm.l;
         buses.program.r = buses.legacy_preview.r +
@@ -922,10 +936,6 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             }
             buses.reference = ts_stereo_frame_from_mono(reference_value);
         }
-        buses.external = audio->input_monitor != NULL ?
-            ts_input_monitor_read_frame(audio->input_monitor,
-                                        (uint32_t)audio->output_rate) :
-            (TsStereoFrame){0.0f, 0.0f};
         buses.monitor = buses.external;
         output = ts_audio_mixer_render(&audio->mixer, &buses);
         out[i] = output.l;
@@ -3137,13 +3147,16 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
         audio->playing = 0;
         audio->bank_slot = -1;
     }
-    if (recipe)
+    if (recipe) {
+        ts_sister_runtime_project_close(&audio->sister);
         ok = ts_sample_pages_load_project(sample_pages, instrument, record_bank,
                                           path, error, sizeof(error));
-    else {
+    } else {
         int destination = ui->load_bank_slot;
         if (destination < 0 || destination >= TS_BANK_SLOT_COUNT)
             destination = instrument->selected_slot;
+        ts_sister_runtime_prepare_slot_replacement(&audio->sister,
+                                                   destination);
         ok = ts_instrument_select_bank(instrument, destination, error, sizeof(error)) &&
              ts_instrument_load_wav(instrument, path, error, sizeof(error));
     }
@@ -3152,6 +3165,9 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     if (ok && recipe) {
         ui->sample_page = (int)ts_sample_pages_active(sample_pages);
         ui->sample_page_count = (int)ts_sample_pages_count(sample_pages);
+        (void)ts_sister_runtime_set_page(&audio->sister,
+                                         ts_sample_pages_active(sample_pages),
+                                         instrument);
         snprintf(ui->status, sizeof(ui->status), "OPENED TSR PROJECT %.112s",
                  instrument->parent.name);
     } else if (ok) {
@@ -6513,6 +6529,7 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
 }
 
 static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
+                                      AudioState *audio,
                                       ExternalInputState *input,
                                       const TsConfig *config,
                                       char *error, size_t error_size)
@@ -6538,6 +6555,8 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
         SDL_AUDIO_ALLOW_CHANNELS_CHANGE |
         SDL_AUDIO_ALLOW_SAMPLES_CHANGE);
     if (*input_device == 0) {
+        if (audio != NULL)
+            ts_sister_runtime_input_available(&audio->sister, 0);
         snprintf(error, error_size, "Could not open recording input: %.110s", SDL_GetError());
         diagnostic_log("capture device open failed (nonfatal): %s", error);
         return 0;
@@ -6546,17 +6565,23 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
         snprintf(error, error_size, "Recording input returned an unsupported audio format");
         SDL_CloseAudioDevice(*input_device);
         *input_device = 0;
+        if (audio != NULL)
+            ts_sister_runtime_input_available(&audio->sister, 0);
         return 0;
     }
     if (!ts_input_channel_mode_valid(config->record_input_channel)) {
         snprintf(error, error_size, "Invalid recording input channel mode");
         SDL_CloseAudioDevice(*input_device);
         *input_device = 0;
+        if (audio != NULL)
+            ts_sister_runtime_input_available(&audio->sister, 0);
         return 0;
     }
     input->channels = obtained.channels;
     input->input_channel = config->record_input_channel;
     input->sample_rate = (uint32_t)obtained.freq;
+    if (audio != NULL)
+        ts_sister_runtime_input_available(&audio->sister, 1);
     snprintf(input->device_label, sizeof(input->device_label), "%.127s",
              device_name != NULL ? device_name : "SYSTEM DEFAULT");
     diagnostic_log("capture device opened paused: %s rate=%u channels=%d",
@@ -6668,7 +6693,7 @@ static int arm_external_capture(SDL_AudioDeviceID output_device,
         return 0;
     }
     if (!synth_source &&
-        !ensure_external_input_open(input_device, input, &ui->config,
+        !ensure_external_input_open(input_device, audio, input, &ui->config,
                                     error, sizeof(error))) {
         snprintf(ui->status, sizeof(ui->status), "REC INPUT FAILED: %.140s", error);
         return 0;
@@ -6974,7 +6999,7 @@ static void toggle_external_monitor(SDL_AudioDeviceID output_device,
                  "MONITOR NEEDS AN AVAILABLE AUDIO OUTPUT");
         return;
     }
-    if (!ensure_external_input_open(input_device, input, &ui->config,
+    if (!ensure_external_input_open(input_device, audio, input, &ui->config,
                                     error, sizeof(error))) {
         snprintf(ui->status, sizeof(ui->status),
                  "MONITOR INPUT FAILED: %.136s", error);
@@ -7168,6 +7193,7 @@ static int switch_sample_page(SDL_AudioDeviceID output_device,
                  "SAMPLE PAGE SWITCH FAILED: %.126s", error);
         return 0;
     }
+    (void)ts_sister_runtime_set_page(&audio->sister, target, instrument);
     ui->sample_page = (int)ts_sample_pages_active(pages);
     ui->sample_page_count = (int)ts_sample_pages_count(pages);
     ui->bank_view_slot = -1;
@@ -7222,6 +7248,7 @@ static int append_sample_page(SDL_AudioDeviceID output_device,
                  "NEW SAMPLE PAGE FAILED: %.123s", error);
         return 0;
     }
+    (void)ts_sister_runtime_set_page(&audio->sister, page, instrument);
     ui->sample_page = (int)page;
     ui->sample_page_count = (int)ts_sample_pages_count(pages);
     ui->bank_view_slot = -1;
@@ -7404,6 +7431,8 @@ int main(int argc, char **argv)
     ts_note_bank_init(&audio.notes);
     ts_performance_init(&audio.performance);
     ts_audio_mixer_init(&audio.mixer);
+    ts_sister_runtime_init(&audio.sister);
+    ts_sister_runtime_input_available(&audio.sister, 0);
     ts_capture_init(&audio.capture);
     audio.input_monitor = &external_input.monitor;
     audio.record_bank_recorder = &external_input.recorder;
@@ -7513,6 +7542,10 @@ int main(int argc, char **argv)
     desired.userdata = &audio;
     device = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
     audio.output_rate = obtained.freq;
+    if (device && obtained.freq > 0)
+        (void)ts_sister_runtime_reconfigure(
+            &audio.sister, (uint32_t)obtained.freq, obtained.channels,
+            NULL, 0u);
     if (!device) snprintf(ui.status, sizeof(ui.status), "AUDIO UNAVAILABLE: %.130s", SDL_GetError());
     else SDL_PauseAudioDevice(device, 0);
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
@@ -10579,6 +10612,7 @@ int main(int argc, char **argv)
     if (input_device) SDL_PauseAudioDevice(input_device, 1);
     if (input_device) SDL_CloseAudioDevice(input_device);
     if (device) SDL_CloseAudioDevice(device);
+    ts_sister_runtime_free(&audio.sister);
     ts_external_recorder_free(&external_input.recorder);
     ts_capture_free(&audio.capture);
     ts_sample_free(&fm_preview);

@@ -7,7 +7,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
              src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c
-             src/ts_sister_machine.c
+             src/ts_sister_machine.c src/ts_sister_runtime.c
              src/ts_capture.c
              src/ts_capture_archive.c src/ts_input_monitor.c
              src/ts_sample_pages.c
@@ -186,7 +186,9 @@ endforeach()
 
 foreach(sister_test IN ITEMS sister_buffer sister_heads sister_transport
                              sister_modulation sister_feedback sister_stereo
-                             sister_duck_filter sister_snapshot)
+                             sister_duck_filter sister_snapshot sister_routes
+                             sister_runtime sister_source_mask sister_capture
+                             sister_recursion sister_lifecycle)
   add_executable(test_${sister_test} tests/test_${sister_test}.c)
   target_link_libraries(test_${sister_test} PRIVATE tapesister_core)
   add_test(NAME test_${sister_test} COMMAND test_${sister_test})

@@ -229,19 +229,27 @@ static TsNoteStartResult runtime_note_start_event(
     int output_rate)
 {
     int started;
+    int sister_started;
+    TsNoteStartResult result;
     if (audio == NULL) return TS_NOTE_START_FAILED;
     ts_performance_set_attack_ms(&audio->performance, audio->notes.attack_ms);
     if (!audio->performance_group_latched ||
-        audio->performance_source_mask == 0u)
-        return ts_note_bank_start_tuned_event(
+        audio->performance_source_mask == 0u) {
+        result = ts_note_bank_start_tuned_event(
             &audio->notes, instrument, tuning, source, event, latched,
             output_rate);
-    started = ts_performance_trigger_group_event(
-        &audio->performance, instrument, audio->performance_source_mask,
-        event, latched, output_rate);
-    audio->capture_trigger_ready =
-        started > 0 && ts_performance_count(&audio->performance) > 0;
-    return started > 0 ? TS_NOTE_STARTED : TS_NOTE_START_FAILED;
+    } else {
+        started = ts_performance_trigger_group_event(
+            &audio->performance, instrument, audio->performance_source_mask,
+            event, latched, output_rate);
+        audio->capture_trigger_ready =
+            started > 0 && ts_performance_count(&audio->performance) > 0;
+        result = started > 0 ? TS_NOTE_STARTED : TS_NOTE_START_FAILED;
+    }
+    sister_started = ts_sister_runtime_note_on(
+        &audio->sister, instrument, event, latched, output_rate);
+    return result == TS_NOTE_STARTED || sister_started > 0 ?
+           TS_NOTE_STARTED : result;
 }
 
 static int runtime_staged_start(AudioState *audio,
@@ -274,6 +282,7 @@ static void runtime_note_release_event(AudioState *audio,
     if (audio == NULL) return;
     ts_note_bank_release_event(&audio->notes, event);
     ts_performance_release_event(&audio->performance, event);
+    ts_sister_runtime_note_off(&audio->sister, event);
 }
 
 static void runtime_note_release_midi_channel(AudioState *audio, int channel)
@@ -281,12 +290,14 @@ static void runtime_note_release_midi_channel(AudioState *audio, int channel)
     if (audio == NULL) return;
     ts_note_bank_release_midi_channel(&audio->notes, channel);
     ts_performance_release_midi_channel(&audio->performance, channel);
+    ts_sister_runtime_release_midi_channel(&audio->sister, channel);
 }
 
 static void runtime_note_clear(AudioState *audio)
 {
     if (audio == NULL) return;
     ts_note_bank_clear(&audio->notes);
+    ts_sister_runtime_panic(&audio->sister);
     audio->capture_trigger_ready = 0;
     if (audio->preserve_release_tails > 0)
         --audio->preserve_release_tails;
@@ -321,6 +332,7 @@ static void runtime_note_sync(AudioState *audio,
     ts_note_bank_sync(&audio->notes, instrument, output_rate);
     if (ts_performance_count(&audio->performance) > 0)
         ts_performance_sync(&audio->performance, instrument, output_rate);
+    ts_sister_runtime_sync_sources(&audio->sister, instrument, output_rate);
 }
 enum {
     TS_AUDIO_CONFIG_PATH_Y = 58,

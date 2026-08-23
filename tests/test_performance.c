@@ -109,6 +109,9 @@ int main(void)
     assert(ts_performance_trigger_group(&performance, &instrument, 0xffffu,
                                         0, 60, 0, 44100) == TS_BANK_SLOT_COUNT);
     assert(ts_performance_count(&performance) == TS_BANK_SLOT_COUNT);
+    ts_performance_stop_sources(&performance,
+                                (uint16_t)((1u << 0) | (1u << 3)));
+    assert(ts_performance_count(&performance) == TS_BANK_SLOT_COUNT - 2);
     ts_performance_release(&performance, 0);
     assert(ts_performance_count(&performance) == 0);
 

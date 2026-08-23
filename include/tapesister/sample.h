@@ -22,7 +22,10 @@ enum {
 };
 
 /* A non-bank performance source used by Capture-to-New-Tile. */
-enum { TS_CAPTURE_SOURCE_SYNTH = -2 };
+enum {
+    TS_CAPTURE_SOURCE_SYNTH = -2,
+    TS_CAPTURE_SOURCE_SISTER = -3
+};
 
 typedef enum {
     TS_GRID_SNAP_OFF = 0,
@@ -326,7 +329,11 @@ typedef enum {
     TS_BANK_CAPTURE_CURRENT,
     TS_BANK_CAPTURE_SELECTION,
     TS_BANK_CAPTURE_LOOP,
-    TS_BANK_CAPTURE_PERFORMANCE
+    TS_BANK_CAPTURE_PERFORMANCE,
+    TS_BANK_CAPTURE_SISTER_MIX,
+    TS_BANK_CAPTURE_SISTER_H1,
+    TS_BANK_CAPTURE_SISTER_H2,
+    TS_BANK_CAPTURE_SISTER_H3
 } TsBankCaptureKind;
 
 typedef enum {

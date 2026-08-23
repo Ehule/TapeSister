@@ -139,7 +139,7 @@ rate, duration and a monotonic revision. Every published field is atomic; an odd
 revision protocol prevents readers from accepting a mixed snapshot. UI code never
 needs the live buffer or mutable DSP state.
 
-## Defaults and PR4 boundary
+## Defaults and live-routing boundary
 
 Native defaults are: 40-second stereo buffer, Roll on, Hold off, H1 level `0.45`, time
 `500 ms`, feedback `0.25`; H2/H3 level `0`, rate `+1`; H2 scrub `0.5`; H3 span `0.5`
@@ -148,7 +148,8 @@ headroom `0.5`; and Clear `20 ms`. `ts_sister_parameters_kafka_start()` supplies
 verified Kafka rate/filter starting character without claiming absent ppooll preset
 values as cold-start defaults.
 
-PR4 must connect fixed TapeSister source buses and Capture taps without adding an
-arbitrary routing graph. This PR does not add source masks, live bus routing, tile
-Capture, monitoring, MIDI control, a second SDL window, logo behavior, presets,
-persistence, live recirculation, linked-channel CDP, or TapeHead changes.
+PR4 connects this engine to TapeSister through the fixed, disabled-by-default route
+documented in `SISTER_MACHINE_LIVE_ROUTING.md`. The engine remains independent of UI
+lifetime and still contains no arbitrary patch matrix or generic MIX-to-input route.
+PR5 owns the second SDL window, logo behavior, front-panel controls and saved musical
+state. Linked-channel CDP and TapeHead changes remain outside this boundary.

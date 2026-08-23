@@ -15,6 +15,10 @@
     if (ts_output_obtained_target != NULL)
         *ts_output_obtained_target = obtained;
     if (audio != NULL) audio->output_rate = obtained.freq;
+    if (audio != NULL)
+        (void)ts_sister_runtime_reconfigure(
+            &audio->sister, (uint32_t)obtained.freq, obtained.channels,
+            NULL, 0u);
     ts_copy_name(ts_active_output, sizeof(ts_active_output),
                  wanted != NULL ? wanted : "");
     if (old != 0) SDL_CloseAudioDevice(old);

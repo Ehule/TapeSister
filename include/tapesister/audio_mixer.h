@@ -13,6 +13,7 @@ typedef struct {
     TsStereoFrame external;
     TsStereoFrame reference;
     TsStereoFrame monitor;
+    TsStereoFrame sister;
     TsStereoFrame capture;
     TsStereoFrame program;
     TsStereoFrame output;
