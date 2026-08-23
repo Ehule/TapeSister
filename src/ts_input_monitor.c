@@ -15,6 +15,55 @@ static float q_to_level(uint32_t value)
     return (float)value / 1000000.0f;
 }
 
+int ts_input_channel_mode_valid(int mode)
+{
+    return mode >= TS_INPUT_CHANNEL_MIX && mode <= TS_INPUT_CHANNEL_STEREO;
+}
+
+const char *ts_input_channel_mode_name(int mode)
+{
+    if (mode == TS_INPUT_CHANNEL_LEFT) return "LEFT";
+    if (mode == TS_INPUT_CHANNEL_RIGHT) return "RIGHT";
+    if (mode == TS_INPUT_CHANNEL_STEREO) return "STEREO";
+    return "MIX";
+}
+
+uint8_t ts_input_channel_record_channels(int mode)
+{
+    return mode == TS_INPUT_CHANNEL_STEREO ? 2u : 1u;
+}
+
+TsStereoFrame ts_input_channel_select(const float *device_frame,
+                                       size_t device_channels, int mode)
+{
+    TsStereoFrame result = {0.0f, 0.0f};
+    float mono = 0.0f;
+    if (device_frame == NULL || device_channels == 0u ||
+        !ts_input_channel_mode_valid(mode)) return result;
+    /* SDL exposes the actual channel count. Bound pathological layouts so a
+       malformed device description cannot make the realtime loop unbounded. */
+    if (device_channels > 32u) device_channels = 32u;
+    if (mode == TS_INPUT_CHANNEL_STEREO) {
+        result.l = device_frame[0];
+        result.r = device_channels > 1u ? device_frame[1] : device_frame[0];
+        return ts_stereo_frame_sanitize(result);
+    }
+    if (mode == TS_INPUT_CHANNEL_MIX) {
+        for (size_t channel = 0u; channel < device_channels; ++channel) {
+            float value = isfinite(device_frame[channel]) ?
+                          device_frame[channel] : 0.0f;
+            mono += value;
+        }
+        mono /= (float)device_channels;
+    } else if (mode == TS_INPUT_CHANNEL_RIGHT) {
+        size_t channel = device_channels > 1u ? 1u : 0u;
+        mono = device_frame[channel];
+    } else {
+        mono = device_frame[0];
+    }
+    return ts_stereo_frame_from_mono(mono);
+}
+
 void ts_input_monitor_init(TsInputMonitor *monitor)
 {
     if (monitor == NULL) return;
@@ -29,7 +78,7 @@ void ts_input_monitor_init(TsInputMonitor *monitor)
     atomic_init(&monitor->enabled, 0);
     monitor->consumer_generation = 0u;
     monitor->consumer_phase = 0.0;
-    monitor->consumer_sample = 0.0f;
+    monitor->consumer_sample = (TsStereoFrame){0.0f, 0.0f};
     monitor->consumer_has_sample = 0;
     monitor->consumer_primed = 0;
 }
@@ -59,10 +108,15 @@ int ts_input_monitor_enabled(const TsInputMonitor *monitor)
 
 void ts_input_monitor_push(TsInputMonitor *monitor, float sample)
 {
+    ts_input_monitor_push_frame(monitor, ts_stereo_frame_from_mono(sample));
+}
+
+void ts_input_monitor_push_frame(TsInputMonitor *monitor, TsStereoFrame sample)
+{
     uint32_t read_at;
     uint32_t write_at;
     if (monitor == NULL || !ts_input_monitor_enabled(monitor)) return;
-    if (!isfinite(sample)) sample = 0.0f;
+    sample = ts_stereo_frame_sanitize(sample);
     write_at = atomic_load_explicit(&monitor->write_index, memory_order_relaxed);
     read_at = atomic_load_explicit(&monitor->read_index, memory_order_acquire);
     if (write_at - read_at >= TS_INPUT_MONITOR_RING_FRAMES) return;
@@ -71,7 +125,7 @@ void ts_input_monitor_push(TsInputMonitor *monitor, float sample)
                           memory_order_release);
 }
 
-static int monitor_pop(TsInputMonitor *monitor, float *sample)
+static int monitor_pop(TsInputMonitor *monitor, TsStereoFrame *sample)
 {
     uint32_t read_at = atomic_load_explicit(&monitor->read_index,
                                             memory_order_relaxed);
@@ -84,35 +138,36 @@ static int monitor_pop(TsInputMonitor *monitor, float *sample)
     return 1;
 }
 
-float ts_input_monitor_read(TsInputMonitor *monitor, uint32_t output_rate)
+TsStereoFrame ts_input_monitor_read_frame(TsInputMonitor *monitor,
+                                          uint32_t output_rate)
 {
     uint32_t generation;
     uint32_t read_at;
     uint32_t write_at;
     uint32_t input_rate;
     double ratio;
-    float output;
+    TsStereoFrame output = {0.0f, 0.0f};
     if (monitor == NULL || output_rate == 0u ||
-        !ts_input_monitor_enabled(monitor)) return 0.0f;
+        !ts_input_monitor_enabled(monitor)) return output;
     generation = atomic_load_explicit(&monitor->reset_generation,
                                       memory_order_acquire);
     if (monitor->consumer_generation != generation) {
         monitor->consumer_generation = generation;
         monitor->consumer_phase = 0.0;
-        monitor->consumer_sample = 0.0f;
+        monitor->consumer_sample = (TsStereoFrame){0.0f, 0.0f};
         monitor->consumer_has_sample = 0;
         monitor->consumer_primed = 0;
     }
     read_at = atomic_load_explicit(&monitor->read_index, memory_order_relaxed);
     write_at = atomic_load_explicit(&monitor->write_index, memory_order_acquire);
     if (!monitor->consumer_primed) {
-        if (write_at - read_at < TS_INPUT_MONITOR_PRIME_FRAMES) return 0.0f;
+        if (write_at - read_at < TS_INPUT_MONITOR_PRIME_FRAMES) return output;
         monitor->consumer_primed = 1;
     }
     if (!monitor->consumer_has_sample) {
         if (!monitor_pop(monitor, &monitor->consumer_sample)) {
             monitor->consumer_primed = 0;
-            return 0.0f;
+            return output;
         }
         monitor->consumer_has_sample = 1;
     }
@@ -121,7 +176,7 @@ float ts_input_monitor_read(TsInputMonitor *monitor, uint32_t output_rate)
     ratio = input_rate > 0u ? (double)input_rate / (double)output_rate : 1.0;
     monitor->consumer_phase += ratio;
     while (monitor->consumer_phase >= 1.0) {
-        float next;
+        TsStereoFrame next;
         monitor->consumer_phase -= 1.0;
         if (!monitor_pop(monitor, &next)) {
             monitor->consumer_has_sample = 0;
@@ -130,7 +185,13 @@ float ts_input_monitor_read(TsInputMonitor *monitor, uint32_t output_rate)
         }
         monitor->consumer_sample = next;
     }
-    return output;
+    return ts_stereo_frame_sanitize(output);
+}
+
+float ts_input_monitor_read(TsInputMonitor *monitor, uint32_t output_rate)
+{
+    return ts_stereo_frame_fold_mono(
+        ts_input_monitor_read_frame(monitor, output_rate));
 }
 
 void ts_input_monitor_publish_level(TsInputMonitor *monitor, float peak)
@@ -209,9 +270,21 @@ static void live_waveform_commit_column(TsLiveWaveform *waveform)
 void ts_live_waveform_push(TsLiveWaveform *waveform,
                            const float *samples, size_t frames)
 {
-    if (waveform == NULL || samples == NULL) return;
+    ts_live_waveform_push_channels(waveform, samples, frames, 1u);
+}
+
+void ts_live_waveform_push_channels(TsLiveWaveform *waveform,
+                                    const float *samples, size_t frames,
+                                    uint8_t channels)
+{
+    if (waveform == NULL || samples == NULL ||
+        (channels != 1u && channels != 2u)) return;
     for (size_t frame = 0; frame < frames; ++frame) {
-        float value = isfinite(samples[frame]) ? samples[frame] : 0.0f;
+        TsStereoFrame selected = channels == 2u ?
+            (TsStereoFrame){samples[frame * 2u], samples[frame * 2u + 1u]} :
+            ts_stereo_frame_from_mono(samples[frame]);
+        float value = ts_stereo_frame_fold_mono(
+            ts_stereo_frame_sanitize(selected));
         if (value < waveform->current_minimum) waveform->current_minimum = value;
         if (value > waveform->current_maximum) waveform->current_maximum = value;
         ++waveform->samples_in_column;

@@ -2384,8 +2384,17 @@ static int render_material_snapshot(TsSample *destination,
                           "Transform material is missing from this tile");
                 return 0;
             }
-            if (!patch_range(destination, &patch->sample, first, last, 0,
-                             error, error_size)) return 0;
+            /* A material checkpoint is the full-sample history seam. Unlike a
+               range patch it may deliberately change mono/stereo shape. */
+            if (first == 0u && last == destination->frames) {
+                TsSample replacement;
+                ts_sample_init(&replacement);
+                if (!ts_sample_clone(&replacement, &patch->sample,
+                                     error, error_size)) return 0;
+                ts_sample_free(destination);
+                *destination = replacement;
+            } else if (!patch_range(destination, &patch->sample, first, last, 0,
+                                    error, error_size)) return 0;
             continue;
         }
         if (operation->kind == TS_POST_CANVAS_LEFT_RESIZE ||
@@ -4609,8 +4618,19 @@ int ts_instrument_activate_silence(TsInstrument *instrument, size_t frames,
                                    uint32_t sample_rate,
                                    char *error, size_t error_size)
 {
+    return ts_instrument_activate_silence_channels(
+        instrument, frames, sample_rate, 1u, error, error_size);
+}
+
+int ts_instrument_activate_silence_channels(TsInstrument *instrument,
+                                            size_t frames,
+                                            uint32_t sample_rate,
+                                            uint8_t channels,
+                                            char *error, size_t error_size)
+{
     TsBankSlot made;
     int slot;
+    size_t scalars;
     if (instrument == NULL || instrument->selected_slot < 0 ||
         instrument->selected_slot >= TS_BANK_SLOT_COUNT) {
         set_error(error, error_size, "Select an empty bank tile first");
@@ -4621,18 +4641,20 @@ int ts_instrument_activate_silence(TsInstrument *instrument, size_t frames,
         set_error(error, error_size, "Silent activation needs an empty selected tile");
         return 0;
     }
-    if (frames == 0 || sample_rate == 0 || frames > SIZE_MAX / sizeof(float)) {
+    if (frames == 0 || sample_rate == 0 ||
+        !ts_sample_dimensions(frames, channels, &scalars, NULL)) {
         set_error(error, error_size, "Invalid silent tile duration");
         return 0;
     }
     bank_slot_init(&made);
-    made.sample.data = (float *)calloc(frames, sizeof(*made.sample.data));
+    made.sample.data = (float *)calloc(scalars, sizeof(*made.sample.data));
     if (made.sample.data == NULL) {
         set_error(error, error_size, "Out of memory creating silent tile");
         return 0;
     }
     made.sample.frames = frames;
     made.sample.sample_rate = sample_rate;
+    made.sample.channels = channels;
     snprintf(made.sample.name, sizeof(made.sample.name), "SILENCE");
     if (!ts_sample_clone(&made.edit_parent, &made.sample, error, error_size)) {
         bank_slot_free(&made);
@@ -7156,22 +7178,106 @@ int ts_instrument_capture_target_frames(const TsInstrument *instrument, int slot
     return 1;
 }
 
+static TsStereoFrame interleaved_capture_frame(const float *captured,
+                                               size_t frames,
+                                               uint8_t channels,
+                                               double position)
+{
+    size_t at;
+    size_t next;
+    float fraction;
+    TsStereoFrame a;
+    TsStereoFrame b;
+    TsStereoFrame result;
+    if (captured == NULL || frames == 0u ||
+        !ts_sample_valid_channels(channels))
+        return (TsStereoFrame){0.0f, 0.0f};
+    if (position < 0.0) position = 0.0;
+    at = (size_t)position;
+    if (at >= frames) at = frames - 1u;
+    next = at + 1u < frames ? at + 1u : at;
+    fraction = (float)(position - (double)at);
+    if (channels == 1u) {
+        a = ts_stereo_frame_from_mono(finite_sample(captured[at]));
+        b = ts_stereo_frame_from_mono(finite_sample(captured[next]));
+    } else {
+        a = (TsStereoFrame){finite_sample(captured[at * 2u]),
+                            finite_sample(captured[at * 2u + 1u])};
+        b = (TsStereoFrame){finite_sample(captured[next * 2u]),
+                            finite_sample(captured[next * 2u + 1u])};
+    }
+    result.l = a.l + (b.l - a.l) * fraction;
+    result.r = a.r + (b.r - a.r) * fraction;
+    return ts_stereo_frame_sanitize(result);
+}
+
+static int make_capture_material(TsSample *material, const float *captured,
+                                 size_t recorded_frames,
+                                 uint32_t output_rate, size_t output_frames,
+                                 uint8_t output_channels,
+                                 uint8_t captured_channels,
+                                 const char *name,
+                                 char *error, size_t error_size)
+{
+    size_t scalar_count;
+    if (material == NULL || captured == NULL || recorded_frames == 0u ||
+        output_rate == 0u || output_frames == 0u ||
+        !ts_sample_dimensions(output_frames, output_channels,
+                              &scalar_count, NULL) ||
+        !ts_sample_valid_channels(captured_channels)) {
+        set_error(error, error_size, "Invalid channel-aware Capture material");
+        return 0;
+    }
+    ts_sample_init(material);
+    material->data = calloc(scalar_count, sizeof(*material->data));
+    if (material->data == NULL) {
+        set_error(error, error_size, "Out of memory preparing Capture material");
+        return 0;
+    }
+    material->frames = output_frames;
+    material->sample_rate = output_rate;
+    material->channels = output_channels;
+    snprintf(material->name, sizeof(material->name), "%s",
+             name != NULL ? name : "CAPTURE");
+    for (size_t frame = 0u; frame < output_frames; ++frame) {
+        double position = output_frames > 1u && recorded_frames > 1u ?
+            (double)frame * (double)(recorded_frames - 1u) /
+            (double)(output_frames - 1u) : 0.0;
+        TsStereoFrame value = interleaved_capture_frame(
+            captured, recorded_frames, captured_channels, position);
+        if (output_channels == 1u)
+            material->data[frame] = ts_stereo_frame_fold_mono(value);
+        else {
+            material->data[frame * 2u] = value.l;
+            material->data[frame * 2u + 1u] = value.r;
+        }
+    }
+    return 1;
+}
+
 int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
                                  int source_slot, const float *captured,
                                  size_t recorded_frames, uint32_t capture_rate,
                                  int stopped_early, int auto_resize,
                                  char *error, size_t error_size)
 {
-    TsSample patch;
-    TsSample current;
+    return ts_instrument_commit_capture_channels(
+        instrument, destination_slot, source_slot, captured, recorded_frames,
+        capture_rate, 1u, stopped_early, auto_resize, error, error_size);
+}
+
+int ts_instrument_commit_capture_channels(
+    TsInstrument *instrument, int destination_slot, int source_slot,
+    const float *captured, size_t recorded_frames, uint32_t capture_rate,
+    uint8_t captured_channels, int stopped_early, int auto_resize,
+    char *error, size_t error_size)
+{
+    TsSample material;
     TsEditSnapshot target;
-    TsPostEdit operation;
     TsBankSlot *destination;
     TsTuning source_tuning;
     TsTuning source_audible_tuning;
-    uint32_t patch_index;
     size_t target_frames;
-    int operation_count;
     int synth_source;
     char name[128];
     synth_source = source_slot == TS_CAPTURE_SOURCE_SYNTH;
@@ -7184,16 +7290,16 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
                            source_slot >= TS_BANK_SLOT_COUNT ||
                            source_slot == destination_slot)) ||
         !ts_instrument_bank_is_blank_canvas(instrument, destination_slot) ||
-        instrument->bank[destination_slot].locked) {
+        instrument->bank[destination_slot].locked ||
+        !ts_sample_dimensions(recorded_frames, captured_channels, NULL, NULL)) {
         set_error(error, error_size, "Invalid Capture source, destination, or audio");
         return 0;
     }
     source_tuning = default_tuning();
     source_audible_tuning = default_tuning();
-    if (instrument->bank[destination_slot].sample.channels != 1u) {
-        set_error(error, error_size,
-                  "Stereo Capture targets arrive with the PR2 audio buses");
-        return 0;
+    if (!synth_source && instrument->bank[source_slot].occupied) {
+        source_tuning = instrument->bank[source_slot].tuning;
+        source_audible_tuning = instrument->bank[source_slot].audible_tuning;
     }
     if (!ts_instrument_select_bank(instrument, destination_slot,
                                    error, error_size)) return 0;
@@ -7213,41 +7319,17 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
         if (!auto_resize && target_frames > instrument->current.frames)
             target_frames = instrument->current.frames;
     }
-    operation_count = target_frames != instrument->current.frames ? 2 : 1;
-    if (instrument->post_edit_count > TS_POST_EDIT_DEPTH - operation_count &&
-        !compact_edit_graph(instrument, error, error_size)) return 0;
-    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
-    ts_sample_init(&patch);
-    patch.data = (float *)captured;
-    patch.frames = recorded_frames;
-    patch.sample_rate = capture_rate;
-    patch.channels = 1u;
     if (synth_source)
         snprintf(name, sizeof(name), "CAPTURE %02d FROM SYNTH",
                  destination_slot + 1);
     else
         snprintf(name, sizeof(name), "CAPTURE %02d FROM %02d",
                  destination_slot + 1, source_slot + 1);
-    snprintf(patch.name, sizeof(patch.name), "%s", name);
-    if (!append_audio_patch(instrument, &patch, NULL, &patch_index,
-                            error, error_size)) return 0;
+    if (!make_capture_material(&material, captured, recorded_frames,
+                               instrument->current.sample_rate, target_frames,
+                               captured_channels, captured_channels, name,
+                               error, error_size)) return 0;
     target = snapshot(instrument);
-    if (target_frames != instrument->current.frames) {
-        memset(&operation, 0, sizeof(operation));
-        operation.kind = TS_POST_CANVAS_RIGHT_RESIZE;
-        operation.destination = target_frames > instrument->current.frames ?
-            (int64_t)(target_frames - instrument->current.frames) :
-            -(int64_t)(instrument->current.frames - target_frames);
-        target.post_edits[target.post_edit_count++] = operation;
-    }
-    memset(&operation, 0, sizeof(operation));
-    operation.kind = TS_POST_PATCH_FIT;
-    operation.first = 0u;
-    operation.last = target_frames;
-    operation.patch_index = patch_index;
-    target.post_edits[target.post_edit_count++] = operation;
-    target.crop_first = 0u;
-    target.crop_last = instrument->parent.frames;
     target.selection_first = 0u;
     target.selection_last = target_frames;
     target.has_selection = 1;
@@ -7260,17 +7342,12 @@ int ts_instrument_commit_capture(TsInstrument *instrument, int destination_slot,
     target.has_loop = 0;
     target.tuning = source_tuning;
     target.audible_tuning = source_audible_tuning;
-    snprintf(instrument->parent.name, sizeof(instrument->parent.name), "%s", name);
-    ts_sample_init(&current);
-    if (!render_snapshot(&current, instrument, &target, error, error_size)) {
-        discard_last_audio_patch(instrument, patch_index);
+    if (!commit_material_checkpoint(instrument, &material, &target,
+                                    error, error_size)) {
+        ts_sample_free(&material);
         return 0;
     }
-    snprintf(current.name, sizeof(current.name), "%s", name);
-    if (!commit_post_snapshot(instrument, &target, &current, error, error_size)) {
-        ts_sample_free(&current);
-        return 0;
-    }
+    ts_sample_free(&material);
     instrument->source_kind = TS_SOURCE_COMMITTED;
     instrument->tuning = source_tuning;
     instrument->audible_tuning = source_audible_tuning;
@@ -7302,18 +7379,30 @@ int ts_instrument_commit_overdub(TsInstrument *instrument, int destination_slot,
                                  uint32_t capture_rate, int auto_resize,
                                  char *error, size_t error_size)
 {
-    TsSample patch;
-    TsSample current;
+    return ts_instrument_commit_overdub_channels(
+        instrument, destination_slot, source_slot,
+        base, base_frames, base_rate, 1u,
+        captured, recorded_frames, capture_rate, 1u,
+        auto_resize, error, error_size);
+}
+
+int ts_instrument_commit_overdub_channels(
+    TsInstrument *instrument, int destination_slot, int source_slot,
+    const float *base, size_t base_frames, uint32_t base_rate,
+    uint8_t base_channels, const float *captured, size_t recorded_frames,
+    uint32_t capture_rate, uint8_t captured_channels, int auto_resize,
+    char *error, size_t error_size)
+{
+    TsSample layer;
+    TsSample material;
     TsEditSnapshot target;
-    TsPostEdit operation;
     TsBankSlot *destination;
-    float *mixed = NULL;
     float peak = 0.0f;
     float gain = 1.0f;
-    uint32_t patch_index;
+    size_t base_bytes;
+    size_t material_scalars;
     size_t layer_frames;
     size_t target_frames;
-    int operation_count;
     char name[128];
 
     if (instrument == NULL || base == NULL || captured == NULL ||
@@ -7323,13 +7412,10 @@ int ts_instrument_commit_overdub(TsInstrument *instrument, int destination_slot,
         (source_slot != TS_CAPTURE_SOURCE_SYNTH &&
          (source_slot < 0 || source_slot >= TS_BANK_SLOT_COUNT)) ||
         !instrument->bank[destination_slot].occupied ||
-        instrument->bank[destination_slot].locked) {
+        instrument->bank[destination_slot].locked ||
+        !ts_sample_dimensions(base_frames, base_channels, NULL, &base_bytes) ||
+        !ts_sample_dimensions(recorded_frames, captured_channels, NULL, NULL)) {
         set_error(error, error_size, "Invalid Overdub target, source, or audio");
-        return 0;
-    }
-    if (instrument->bank[destination_slot].sample.channels != 1u) {
-        set_error(error, error_size,
-                  "Stereo Overdub targets arrive with the PR2 audio buses");
         return 0;
     }
     if (!ts_instrument_select_bank(instrument, destination_slot,
@@ -7337,8 +7423,8 @@ int ts_instrument_commit_overdub(TsInstrument *instrument, int destination_slot,
     if (instrument->current.data == NULL ||
         instrument->current.frames != base_frames ||
         instrument->current.sample_rate != base_rate ||
-        memcmp(instrument->current.data, base,
-               base_frames * sizeof(*base)) != 0) {
+        instrument->current.channels != base_channels ||
+        memcmp(instrument->current.data, base, base_bytes) != 0) {
         set_error(error, error_size,
                   "Overdub target changed while armed - target left unchanged");
         return 0;
@@ -7360,76 +7446,44 @@ int ts_instrument_commit_overdub(TsInstrument *instrument, int destination_slot,
         target_frames = layer_frames;
     if (target_frames > TS_CANVAS_MAX_FRAMES)
         target_frames = TS_CANVAS_MAX_FRAMES;
-    if (target_frames > SIZE_MAX / sizeof(*mixed)) {
+    if (!ts_sample_dimensions(target_frames, base_channels,
+                              &material_scalars, NULL)) {
         set_error(error, error_size, "Overdub result is too large");
         return 0;
     }
-    mixed = (float *)calloc(target_frames, sizeof(*mixed));
-    if (mixed == NULL) {
+    snprintf(name, sizeof(name), "%s", instrument->current.name);
+    if (!make_capture_material(&layer, captured, recorded_frames,
+                               base_rate, layer_frames, base_channels,
+                               captured_channels, "OVERDUB LAYER",
+                               error, error_size)) return 0;
+    ts_sample_init(&material);
+    material.data = calloc(material_scalars, sizeof(*material.data));
+    if (material.data == NULL) {
+        ts_sample_free(&layer);
         set_error(error, error_size, "Out of memory mixing Overdub");
         return 0;
     }
+    material.frames = target_frames;
+    material.sample_rate = base_rate;
+    material.channels = base_channels;
+    snprintf(material.name, sizeof(material.name), "%s", name);
     for (size_t frame = 0; frame < target_frames; ++frame) {
-        float value = frame < base_frames && isfinite(base[frame]) ?
-                      base[frame] : 0.0f;
-        if (frame < layer_frames) {
-            double position = (double)frame * (double)capture_rate /
-                              (double)base_rate;
-            size_t at = (size_t)position;
-            double fraction = position - (double)at;
-            float a;
-            float b;
-            if (at >= recorded_frames) at = recorded_frames - 1u;
-            a = isfinite(captured[at]) ? captured[at] : 0.0f;
-            b = at + 1u < recorded_frames && isfinite(captured[at + 1u]) ?
-                captured[at + 1u] : a;
-            value += a + (b - a) * (float)fraction;
+        for (size_t channel = 0u; channel < base_channels; ++channel) {
+            size_t scalar = frame * base_channels + channel;
+            float value = frame < base_frames ? finite_sample(base[scalar]) : 0.0f;
+            if (frame < layer_frames)
+                value += layer.data[scalar];
+            material.data[scalar] = value;
+            if (fabsf(value) > peak) peak = fabsf(value);
         }
-        mixed[frame] = value;
-        if (fabsf(value) > peak) peak = fabsf(value);
     }
+    ts_sample_free(&layer);
     if (peak > 0.98f) {
         gain = 0.98f / peak;
-        for (size_t frame = 0; frame < target_frames; ++frame)
-            mixed[frame] *= gain;
+        for (size_t scalar = 0u; scalar < material_scalars; ++scalar)
+            material.data[scalar] *= gain;
     }
-
-    operation_count = target_frames != instrument->current.frames ? 2 : 1;
-    if (instrument->post_edit_count > TS_POST_EDIT_DEPTH - operation_count &&
-        !compact_edit_graph(instrument, error, error_size)) {
-        free(mixed);
-        return 0;
-    }
-    if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) {
-        free(mixed);
-        return 0;
-    }
-    ts_sample_init(&patch);
-    patch.data = mixed;
-    patch.frames = target_frames;
-    patch.sample_rate = base_rate;
-    patch.channels = 1u;
-    snprintf(name, sizeof(name), "%s", instrument->current.name);
-    snprintf(patch.name, sizeof(patch.name), "%s", name);
-    if (!append_audio_patch(instrument, &patch, NULL, &patch_index,
-                            error, error_size)) {
-        free(mixed);
-        return 0;
-    }
-    free(mixed);
     target = snapshot(instrument);
-    if (target_frames != instrument->current.frames) {
-        memset(&operation, 0, sizeof(operation));
-        operation.kind = TS_POST_CANVAS_RIGHT_RESIZE;
-        operation.destination = (int64_t)(target_frames - instrument->current.frames);
-        target.post_edits[target.post_edit_count++] = operation;
-    }
-    memset(&operation, 0, sizeof(operation));
-    operation.kind = TS_POST_PATCH_FIT;
-    operation.first = 0u;
-    operation.last = target_frames;
-    operation.patch_index = patch_index;
-    target.post_edits[target.post_edit_count++] = operation;
     target.selection_first = 0u;
     target.selection_last = target_frames;
     target.has_selection = 1;
@@ -7437,17 +7491,12 @@ int ts_instrument_commit_overdub(TsInstrument *instrument, int destination_slot,
     target.has_playhead = 0;
     target.view_first = 0u;
     target.view_last = target_frames;
-    ts_sample_init(&current);
-    if (!render_snapshot(&current, instrument, &target, error, error_size)) {
-        discard_last_audio_patch(instrument, patch_index);
+    if (!commit_material_checkpoint(instrument, &material, &target,
+                                    error, error_size)) {
+        ts_sample_free(&material);
         return 0;
     }
-    snprintf(current.name, sizeof(current.name), "%s", name);
-    if (!commit_post_snapshot(instrument, &target, &current,
-                              error, error_size)) {
-        ts_sample_free(&current);
-        return 0;
-    }
+    ts_sample_free(&material);
     instrument->source_kind = TS_SOURCE_COMMITTED;
     destination = &instrument->bank[destination_slot];
     destination->capture_kind = TS_BANK_CAPTURE_PERFORMANCE;

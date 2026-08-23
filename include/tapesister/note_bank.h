@@ -109,6 +109,14 @@ void ts_note_bank_set_source_tuned(TsNoteBank *bank,
                                    TsAuditionSource source, int output_rate);
 float ts_note_bank_read(TsNoteBank *bank);
 float ts_note_bank_read_split(TsNoteBank *bank, float *synth_output);
+/* Render one shared-phase stereo frame. sample_output excludes FM voices;
+   fm_output contains their monitor contribution with the same total-voice
+   compensation, while synth_capture preserves the legacy synth-only tap. */
+void ts_note_bank_read_buses(TsNoteBank *bank,
+                             TsStereoFrame *sample_output,
+                             TsStereoFrame *fm_output,
+                             TsStereoFrame *synth_capture);
+TsStereoFrame ts_note_bank_read_stereo(TsNoteBank *bank);
 int ts_note_bank_count(const TsNoteBank *bank);
 int ts_note_bank_synth_count(const TsNoteBank *bank);
 int ts_note_bank_latched_synth_count(const TsNoteBank *bank);

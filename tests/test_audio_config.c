@@ -30,6 +30,8 @@ static int test_defaults(void)
                   "internal Capture auto resize should default on") &&
            expect(config.capture_max_seconds == TS_CAPTURE_MAX_SECONDS_DEFAULT,
                   "internal Capture should have a bounded default duration") &&
+           expect(config.capture_channels == 1,
+                  "legacy internal Capture should default to mono") &&
            expect(config.voice_attack_ms == TS_AUDITION_ATTACK_MS_DEFAULT,
                   "sample voices should default to a short de-click attack");
 }
@@ -49,10 +51,11 @@ static int test_roundtrip(void)
              "Test Playback Device");
     snprintf(saved.midi_input_device, sizeof(saved.midi_input_device),
              "Test MIDI Keyboard");
-    saved.record_input_channel = 2;
+    saved.record_input_channel = 3;
     saved.midi_input_channel = 7;
     saved.capture_auto_resize = 0;
     saved.capture_max_seconds = 47;
+    saved.capture_channels = 2;
     saved.voice_attack_ms = 7;
 
     ok = ts_audio_config_save(&saved, path, error, sizeof(error)) &&
@@ -71,12 +74,14 @@ static int test_roundtrip(void)
                 "named MIDI input should roundtrip") &&
          expect(loaded.midi_input_channel == 7,
                 "MIDI input channel should roundtrip") &&
-         expect(loaded.record_input_channel == 2,
-                "input channel should roundtrip") &&
+         expect(loaded.record_input_channel == 3,
+                "stereo input mode should roundtrip") &&
          expect(loaded.capture_auto_resize == 0,
                 "Capture auto resize should roundtrip") &&
          expect(loaded.capture_max_seconds == 47,
                 "Capture duration limit should roundtrip") &&
+         expect(loaded.capture_channels == 2,
+                "stereo Capture choice should roundtrip") &&
          expect(loaded.voice_attack_ms == 7,
                 "voice de-click attack should roundtrip");
     remove(path);
@@ -150,7 +155,9 @@ static int test_legacy_config(void)
          expect(loaded.midi_input_channel == 0,
                 "legacy config should default MIDI to omni") &&
          expect(loaded.voice_attack_ms == TS_AUDITION_ATTACK_MS_DEFAULT,
-                "legacy config should receive the de-click default");
+                "legacy config should receive the de-click default") &&
+         expect(loaded.capture_channels == 1,
+                "legacy config should receive mono Capture default");
     remove(path);
     return ok;
 }

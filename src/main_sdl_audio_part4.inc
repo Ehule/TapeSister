@@ -8,44 +8,6 @@
     return 1;
 }
 
-static int ts_audio_external_recorder_arm(TsExternalRecorder *recorder,
-                                          int destination_slot,
-                                          uint32_t sample_rate,
-                                          int threshold_db,
-                                          int pre_roll_ms,
-                                          int silence_ms,
-                                          int tail_ms,
-                                          int max_seconds,
-                                          char *error, size_t error_size)
-{
-    ExternalInputState *input = (ExternalInputState *)ts_capture_userdata;
-    if (ts_capture_reconfigure_pending) {
-        snprintf(error, error_size, "%s",
-                 ts_capture_reconfigure_error[0] != '\0' ?
-                 ts_capture_reconfigure_error :
-                 "Configured recording input is not ready");
-        return 0;
-    }
-    if (ts_real_capture == 0) {
-        snprintf(error, error_size, "Configured recording input is unavailable");
-        return 0;
-    }
-    if (input != NULL && ts_live_config != NULL) {
-        if (ts_live_config->record_input_channel > input->channels) {
-            snprintf(error, error_size,
-                     "Input channel %d unavailable; device has %d channel%s",
-                     ts_live_config->record_input_channel, input->channels,
-                     input->channels == 1 ? "" : "s");
-            return 0;
-        }
-        input->input_channel = ts_live_config->record_input_channel;
-        sample_rate = input->sample_rate;
-    }
-    return ts_external_recorder_arm(recorder, destination_slot, sample_rate,
-                                    threshold_db, pre_roll_ms, silence_ms,
-                                    tail_ms, max_seconds, error, error_size);
-}
-
 static void cfg_rect(TsFramebuffer *fb, int x, int y, int w, int h,
                      uint32_t color)
 {

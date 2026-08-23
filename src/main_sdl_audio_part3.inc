@@ -10,8 +10,7 @@
 
     if (old != 0 && audio != NULL && ts_live_ui != NULL)
         stop_all_force(TS_AUDIO_LOGICAL_OUTPUT, audio, ts_live_ui);
-
-    SDL_PauseAudioDevice(replacement, 0);
+    if (old != 0) SDL_PauseAudioDevice(old, 1);
     ts_real_output = replacement;
     if (ts_output_obtained_target != NULL)
         *ts_output_obtained_target = obtained;
@@ -19,6 +18,7 @@
     ts_copy_name(ts_active_output, sizeof(ts_active_output),
                  wanted != NULL ? wanted : "");
     if (old != 0) SDL_CloseAudioDevice(old);
+    SDL_PauseAudioDevice(replacement, 0);
     return 1;
 }
 

@@ -1575,6 +1575,11 @@ int ts_ui_capture_button_from_point(int x, int y)
     return x >= 536 && x < 630 && y >= 313 && y < 330;
 }
 
+int ts_ui_capture_channels_button_from_point(int x, int y)
+{
+    return x >= 350 && x < 378 && y >= 313 && y < 330;
+}
+
 int ts_ui_overdub_button_from_point(int x, int y)
 {
     return x >= 382 && x < 456 && y >= 313 && y < 330;
@@ -2677,6 +2682,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                             ui->monitor_enabled ? "MON ON" : "MONITOR",
                             ui->monitor_enabled);
         } else {
+            int capture_channels = ui->capture_state != TS_CAPTURE_IDLE ?
+                                   ui->capture_channels :
+                                   ui->config.capture_channels;
+            mini_button(fb, 350, 313, 28,
+                        capture_channels == 2 ? "S" : "M",
+                        capture_channels == 2);
             mini_button(fb, 382, 313, 74, "OVERDUB", ui->capture_overdub);
             mini_button(fb, 461, 313, 70, "+ PAGE", 0);
         }

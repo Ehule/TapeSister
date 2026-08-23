@@ -52,9 +52,11 @@ continue until the bank is full. CHAIN stops rather than overwriting an occupied
 wrapping past tile 16.
 
 `[External Recording]` in `tapesister.ini` controls the input device and channel plus
-threshold, pre-roll, silence, tail, and maximum take length. `record_input_channel=0`
-mixes the device inputs to mono; `1` records the first/left channel and `2` the
-second/right channel. These settings are intentionally editable without recompiling.
+threshold, pre-roll, silence, tail, and maximum take length. The input selector is
+explicit: `record_input_channel=0` is **MIX**, `1` is **LEFT**, `2` is **RIGHT**, and
+`3` is **STEREO**. MIX averages all bounded device channels; LEFT/RIGHT produce mono;
+STEREO preserves the first two channels and safely duplicates a one-channel device.
+Existing numeric settings retain their meaning.
 
 Every completed take is also written immediately as a float WAV under the
 human-readable `Captures/` folder, with an `INPUT_YYYY-MM-DD_HHMMSS_mmm_...wav`
@@ -67,7 +69,12 @@ project-bundle, and hardware-validation details.
 ## Capture a performance to a new tile
 
 Capture prints TapeSister's final live audition mix into an independent Bank tile. In
-**BANK**, double-click an empty tile to make blank tape, then click **CAPTURE**. Select
+**BANK**, double-click an empty tile to make blank tape, then use the visible **M/S**
+control beside Overdub to choose the armed take's channel shape: **M** stores exactly
+`0.5 * (L + R)` and remains the compatibility default; **S** preserves left and right.
+Overdub follows the target tile instead: a mono layer is duplicated into a stereo
+target, while a stereo layer entering a mono target uses the displayed mono fold.
+Click **CAPTURE**, then select
 a different occupied source tile and deliberately start its Play, Loop, playhead, or
 first keyboard note. Arming
 stops any audition that was already sounding, so this new trigger starts both the
@@ -461,7 +468,16 @@ The audio clipboard survives tile changes for the lifetime of the app, while eve
 
 Amplify Up is deliberately bounded by hard clipping. Amplify Down attenuates the result without reconstructing clipped peaks, preserving that flattened distortion as a repeatable sculpting operation.
 
-The channel-aware foundation stores mono as one scalar per frame and stereo as interleaved left/right scalars while keeping every editor position frame-indexed. During the transition to the PR2 stereo buses, scalar audition, note, and performance paths use an explicit `0.5 * (L + R)` preview fold without changing stored audio. Stereo WARP, SMEAR, TEAR, Move/Copy placement, Drone, Vary/Create, curated DSP/CDP, Capture, and Overdub are intentionally blocked with a status message until their linked-channel implementations arrive; ordinary gain, normalize, fades, reverse, crop, cut, paste, canvas resize, Tune, Draw, Body, Edge, Drift, history, and WAV exchange preserve stereo.
+The channel-aware foundation stores mono as one scalar per frame and stereo as
+interleaved left/right scalars while keeping every editor position frame-indexed.
+Audition, QWERTY/MIDI notes, the 64-voice MIDI pool, multi-tile performance, Loop Lock,
+Capture, Overdub, external monitoring, and REC playback now share one explicit stereo
+runtime-bus contract. Mono sources enter as exact dual mono; stereo sources interpolate
+both stored channels with one phase, loop state, pitch, and envelope. The linked
+`1/sqrt(N)` monitoring gain counts voices once and preserves L/R balance. Stereo WARP,
+SMEAR, TEAR, Move/Copy placement, Drone, Vary/Create, FM stamping, curated DSP, and CDP
+remain explicitly blocked where linked-channel implementation is pending. See
+[`docs/SISTER_MACHINE_AUDIO_BUSES.md`](docs/SISTER_MACHINE_AUDIO_BUSES.md).
 
 ## File browser
 

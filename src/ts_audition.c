@@ -158,32 +158,41 @@ double ts_audition_wrap_position(double position, size_t first, size_t last,
     return start + fmod(position - (double)last, cycle);
 }
 
-static float interpolated(const TsSample *sample, double position, size_t last)
+TsStereoFrame ts_audition_read_frame(const TsSample *sample, double position,
+                                     size_t last)
 {
     size_t at;
     float fraction;
-    if (sample == NULL || sample->data == NULL || sample->frames == 0) return 0.0f;
+    TsStereoFrame silence = {0.0f, 0.0f};
+    TsStereoFrame a;
+    TsStereoFrame b;
+    TsStereoFrame result;
+    if (sample == NULL || sample->data == NULL || sample->frames == 0)
+        return silence;
     at = position <= 0.0 ? 0u : (size_t)position;
     if (at >= sample->frames) at = sample->frames - 1u;
-    /* Transitional PR1 fold; PR2 replaces this scalar audition bus. */
     if (at + 1u >= last || at + 1u >= sample->frames)
-        return ts_sample_read_mono(sample, at);
+        return ts_sample_read_frame(sample, at);
     fraction = (float)(position - (double)at);
-    {
-        float a = ts_sample_read_mono(sample, at);
-        float b = ts_sample_read_mono(sample, at + 1u);
-        return a + (b - a) * fraction;
-    }
+    a = ts_sample_read_frame(sample, at);
+    b = ts_sample_read_frame(sample, at + 1u);
+    result.l = a.l + (b.l - a.l) * fraction;
+    result.r = a.r + (b.r - a.r) * fraction;
+    return ts_stereo_frame_sanitize(result);
 }
 
-static float interpolated_cyclic(const TsSample *sample, double position,
-                                 size_t first, size_t last)
+static TsStereoFrame interpolated_cyclic_frame(
+    const TsSample *sample, double position, size_t first, size_t last)
 {
     size_t at;
     size_t next;
     float fraction;
+    TsStereoFrame silence = {0.0f, 0.0f};
+    TsStereoFrame a;
+    TsStereoFrame b;
+    TsStereoFrame result;
     if (sample == NULL || sample->data == NULL || first >= last ||
-        last > sample->frames) return 0.0f;
+        last > sample->frames) return silence;
     if (position < (double)first) position = (double)first;
     if (position >= (double)last) position = (double)first;
     at = (size_t)position;
@@ -191,35 +200,45 @@ static float interpolated_cyclic(const TsSample *sample, double position,
     if (at >= last) at = last - 1u;
     next = at + 1u < last ? at + 1u : first;
     fraction = (float)(position - (double)at);
-    /* Transitional PR1 fold; PR2 replaces this scalar audition bus. */
-    {
-        float a = ts_sample_read_mono(sample, at);
-        float b = ts_sample_read_mono(sample, next);
-        return a + (b - a) * fraction;
-    }
+    a = ts_sample_read_frame(sample, at);
+    b = ts_sample_read_frame(sample, next);
+    result.l = a.l + (b.l - a.l) * fraction;
+    result.r = a.r + (b.r - a.r) * fraction;
+    return ts_stereo_frame_sanitize(result);
 }
 
-float ts_audition_read_looped(const TsSample *sample, double position,
-                              size_t first, size_t last, size_t crossfade_frames)
+TsStereoFrame ts_audition_read_looped_frame(
+    const TsSample *sample, double position, size_t first, size_t last,
+    size_t crossfade_frames)
 {
-    float tail;
+    TsStereoFrame silence = {0.0f, 0.0f};
+    TsStereoFrame tail;
     if (sample == NULL || sample->data == NULL || last <= first || last > sample->frames)
-        return 0.0f;
+        return silence;
     position = ts_audition_wrap_position(position, first, last, crossfade_frames);
     /* With no overlap, interpolate through the wrap just like every other
        adjacent sample pair. Clamping interpolation at last - 1 briefly held
        that frame whenever rate conversion or tuning crossed the boundary at a
        fractional position, making otherwise continuous zero-snapped loops tick. */
     if (crossfade_frames == 0u)
-        return interpolated_cyclic(sample, position, first, last);
-    tail = interpolated(sample, position, last);
+        return interpolated_cyclic_frame(sample, position, first, last);
+    tail = ts_audition_read_frame(sample, position, last);
     if (crossfade_frames > 0 && position >= (double)(last - crossfade_frames)) {
         double offset = position - (double)(last - crossfade_frames);
         float blend = (float)(offset / (double)crossfade_frames);
-        float head = interpolated(sample, (double)first + offset, last);
-        return tail * (1.0f - blend) + head * blend;
+        TsStereoFrame head = ts_audition_read_frame(
+            sample, (double)first + offset, last);
+        tail.l = tail.l * (1.0f - blend) + head.l * blend;
+        tail.r = tail.r * (1.0f - blend) + head.r * blend;
     }
-    return tail;
+    return ts_stereo_frame_sanitize(tail);
+}
+
+float ts_audition_read_looped(const TsSample *sample, double position,
+                              size_t first, size_t last, size_t crossfade_frames)
+{
+    return ts_stereo_frame_fold_mono(ts_audition_read_looped_frame(
+        sample, position, first, last, crossfade_frames));
 }
 
 double ts_audition_loop_position(double position, size_t first, size_t last,
@@ -259,29 +278,42 @@ double ts_audition_loop_position(double position, size_t first, size_t last,
     return position;
 }
 
-float ts_audition_read_looped_mode(const TsSample *sample, double position,
-                                   size_t first, size_t last, size_t crossfade_frames,
-                                   TsLoopMode mode)
+TsStereoFrame ts_audition_read_looped_mode_frame(
+    const TsSample *sample, double position, size_t first, size_t last,
+    size_t crossfade_frames, TsLoopMode mode)
 {
+    TsStereoFrame silence = {0.0f, 0.0f};
     if (mode == TS_LOOP_FORWARD)
-        return ts_audition_read_looped(sample, position, first, last, crossfade_frames);
+        return ts_audition_read_looped_frame(
+            sample, position, first, last, crossfade_frames);
     if (sample == NULL || sample->data == NULL || last <= first || last > sample->frames)
-        return 0.0f;
+        return silence;
     if (mode == TS_LOOP_REVERSE && crossfade_frames > 0u &&
         position < (double)(first + crossfade_frames)) {
         double offset = position - (double)first;
         float blend;
-        float head;
-        float tail;
+        TsStereoFrame head;
+        TsStereoFrame tail;
         if (offset < 0.0) offset = 0.0;
         blend = 1.0f - (float)(offset / (double)crossfade_frames);
-        head = interpolated(sample, position, last);
-        tail = interpolated(sample, (double)(last - crossfade_frames) + offset, last);
-        return head * (1.0f - blend) + tail * blend;
+        head = ts_audition_read_frame(sample, position, last);
+        tail = ts_audition_read_frame(
+            sample, (double)(last - crossfade_frames) + offset, last);
+        head.l = head.l * (1.0f - blend) + tail.l * blend;
+        head.r = head.r * (1.0f - blend) + tail.r * blend;
+        return ts_stereo_frame_sanitize(head);
     }
     if (mode == TS_LOOP_REVERSE && crossfade_frames == 0u)
-        return interpolated_cyclic(sample, position, first, last);
-    return interpolated(sample, position, last);
+        return interpolated_cyclic_frame(sample, position, first, last);
+    return ts_audition_read_frame(sample, position, last);
+}
+
+float ts_audition_read_looped_mode(const TsSample *sample, double position,
+                                   size_t first, size_t last, size_t crossfade_frames,
+                                   TsLoopMode mode)
+{
+    return ts_stereo_frame_fold_mono(ts_audition_read_looped_mode_frame(
+        sample, position, first, last, crossfade_frames, mode));
 }
 
 double ts_audition_map_progress(double position, size_t first, size_t last,

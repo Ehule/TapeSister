@@ -227,15 +227,17 @@ int ts_performance_trigger_staged(TsPerformanceBank *bank,
     return started;
 }
 
-float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
+TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
+                                         TsStereoFrame *raw_mix)
 {
-    float mixed = 0.0f;
+    TsStereoFrame mixed = {0.0f, 0.0f};
     int count = 0;
-    if (raw_mix != NULL) *raw_mix = 0.0f;
-    if (bank == NULL) return 0.0f;
+    if (raw_mix != NULL) *raw_mix = (TsStereoFrame){0.0f, 0.0f};
+    if (bank == NULL) return mixed;
     for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
-        float value;
+        TsStereoFrame value;
+        float gain;
         if (!voice->active) continue;
         if (voice->sample == NULL || voice->sample->data == NULL ||
             voice->sample->frames < 2u) {
@@ -246,7 +248,7 @@ float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
             voice->position = ts_audition_loop_position(
                 voice->position, voice->range_first, voice->range_last,
                 voice->crossfade_frames, voice->loop_mode, &voice->direction);
-            value = ts_audition_read_looped_mode(
+            value = ts_audition_read_looped_mode_frame(
                 voice->sample, voice->position, voice->range_first,
                 voice->range_last, voice->crossfade_frames, voice->loop_mode);
         } else {
@@ -263,29 +265,39 @@ float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
                 voice->active = 0;
                 continue;
             }
-            {
-                float fraction = (float)(voice->position - (double)at);
-                /* Transitional PR1 fold; PR2 replaces this scalar performance bus. */
-                {
-                    float a = ts_sample_read_mono(voice->sample, at);
-                    float b = ts_sample_read_mono(voice->sample, at + 1u);
-                    value = a + (b - a) * fraction;
-                }
-            }
+            value = ts_audition_read_frame(
+                voice->sample, voice->position, voice->range_last);
         }
-        value *= voice->gain * ts_audition_attack_gain(
+        gain = voice->gain * ts_audition_attack_gain(
             voice->attack_frame, voice->attack_frames);
+        value.l *= gain;
+        value.r *= gain;
         if (voice->attack_frame < voice->attack_frames)
             ++voice->attack_frame;
         voice->position += voice->step * voice->direction;
-        mixed += value;
+        mixed.l += value.l;
+        mixed.r += value.r;
         ++count;
     }
     if (raw_mix != NULL) *raw_mix = mixed;
     /* Monitoring follows TapeSister's established polyphonic headroom curve.
        Capture receives raw_mix unchanged and only gets one peak-safe gain pass
        if the completed performance actually exceeds the safe output range. */
-    return count > 0 ? mixed / sqrtf((float)count) : 0.0f;
+    if (count > 0) {
+        float gain = 1.0f / sqrtf((float)count);
+        mixed.l *= gain;
+        mixed.r *= gain;
+    }
+    return ts_stereo_frame_sanitize(mixed);
+}
+
+float ts_performance_read(TsPerformanceBank *bank, float *raw_mix)
+{
+    TsStereoFrame raw;
+    TsStereoFrame mixed = ts_performance_read_stereo(
+        bank, raw_mix != NULL ? &raw : NULL);
+    if (raw_mix != NULL) *raw_mix = ts_stereo_frame_fold_mono(raw);
+    return ts_stereo_frame_fold_mono(mixed);
 }
 
 void ts_performance_sync(TsPerformanceBank *bank,
@@ -363,13 +375,16 @@ int ts_performance_source_count(uint16_t source_mask)
     return count;
 }
 
-float ts_performance_peak_scale(float *samples, size_t frames, float safe_peak)
+float ts_performance_peak_scale_channels(float *samples, size_t frames,
+                                         uint8_t channels, float safe_peak)
 {
     float peak = 0.0f;
     float gain = 1.0f;
-    if (samples == NULL || frames == 0u) return 1.0f;
+    size_t scalar_count;
+    if (samples == NULL || frames == 0u ||
+        !ts_sample_dimensions(frames, channels, &scalar_count, NULL)) return 1.0f;
     if (!(safe_peak > 0.0f && safe_peak <= 1.0f)) safe_peak = 0.98f;
-    for (size_t i = 0; i < frames; ++i) {
+    for (size_t i = 0; i < scalar_count; ++i) {
         float value = isfinite(samples[i]) ? samples[i] : 0.0f;
         float level;
         samples[i] = value;
@@ -378,6 +393,11 @@ float ts_performance_peak_scale(float *samples, size_t frames, float safe_peak)
     }
     if (peak <= safe_peak || peak <= 0.0f) return 1.0f;
     gain = safe_peak / peak;
-    for (size_t i = 0; i < frames; ++i) samples[i] *= gain;
+    for (size_t i = 0; i < scalar_count; ++i) samples[i] *= gain;
     return gain;
+}
+
+float ts_performance_peak_scale(float *samples, size_t frames, float safe_peak)
+{
+    return ts_performance_peak_scale_channels(samples, frames, 1u, safe_peak);
 }
