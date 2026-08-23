@@ -63,7 +63,7 @@ These wrappers do not replace note, performance, Capture, Overdub, external-reco
 or mixer behavior. `main_sdl_audio.c` is an unused compatibility marker and does not
 include or duplicate the callback.
 
-## Remaining stereo blocks and PR3 boundary
+## Remaining stereo blocks and headless-engine boundary
 
 Linked-channel WARP, SMEAR, TEAR, tape Move/Copy placement, Drone, Vary/Create, FM
 application/stamping, curated DSP, and CDP remain assigned to later phases where PR1
@@ -71,10 +71,13 @@ already blocks them. This PR does not implement Kafka, any rolling/write/playbac
 feedback, Wow/Drop/Duck, decorrelation, Sister masks/taps/windows/presets/routing, live
 recirculation, linked-channel CDP, or TapeHead changes.
 
-PR3 may rely on independent L/R output, named program/capture/monitor routes,
-shared-phase stereo sample voices, linked normalization, and callback-safe state. It
-must still define Kafka buffer ownership, restart semantics, head interpolation and
-feedback limits without bypassing these buses.
+The PR3 headless engine now exists as an allocation-free core module with its own
+preallocated rolling buffer, three playback heads, H1/H2 feedback, Wow, Drop, Duck,
+decorrelation, filter, taps and atomic snapshots. It deliberately has no live route to
+these buses. PR4 may rely on independent L/R output, named program/capture/monitor
+routes, shared-phase stereo sample voices, linked normalization, and the engine contract
+documented in `SISTER_MACHINE_HEADLESS_ENGINE.md`; it must add only the fixed safe
+routing graph and must not bypass either contract.
 
 ## Manual Windows/Linux validation
 
