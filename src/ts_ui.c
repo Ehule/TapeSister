@@ -3249,6 +3249,18 @@ static void sister_choice_parameter(TsFramebuffer *fb, int x, int y,
     text(fb, x + 3, y + 3, value, color, 1);
 }
 
+static void sister_target_toggle(TsFramebuffer *fb, int x, int y, int width,
+                                 const char *label, int active,
+                                 uint32_t color)
+{
+    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    if (active) {
+        rect(fb, x + 1, y + 1, width - 2, 2, color);
+        rect(fb, x + 1, y + 14, width - 2, 3, color);
+    }
+    text(fb, x + 8, y + 5, label, active ? color : PAL_MOUSE, 1);
+}
+
 void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          const TsPalette *palette)
 {
@@ -3271,93 +3283,108 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 532, 8, 98, ts_waveform_display_name(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
 
-    rect(fb, 10, 40, 620, 140, RGB(7, 7, 8));
+    rect(fb, 10, 40, 620, 126, RGB(7, 7, 8));
     mode = ts_waveform_display_sanitize(model->waveform_mode);
     if (mode == TS_WAVEFORM_DISPLAY_STEREO && model->waveform.channels == 2u) {
         text(fb, 14, 45, "L", PAL_WAVE_LEFT, 1);
-        text(fb, 14, 115, "R", PAL_WAVE_RIGHT, 1);
-        sister_wave_lane(fb, &model->waveform, 26, 40, 600, 68, 0, PAL_WAVE_LEFT);
-        sister_wave_lane(fb, &model->waveform, 26, 110, 600, 70, 1, PAL_WAVE_RIGHT);
+        text(fb, 14, 108, "R", PAL_WAVE_RIGHT, 1);
+        sister_wave_lane(fb, &model->waveform, 26, 40, 600, 61, 0, PAL_WAVE_LEFT);
+        sister_wave_lane(fb, &model->waveform, 26, 103, 600, 63, 1, PAL_WAVE_RIGHT);
     } else {
         int channel = mode == TS_WAVEFORM_DISPLAY_RIGHT ? 1 :
                       mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? 2 : 0;
         uint32_t color = mode == TS_WAVEFORM_DISPLAY_RIGHT ? PAL_WAVE_RIGHT :
                          mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? PAL_WAVE_SUM :
                          PAL_WAVE_LEFT;
-        sister_wave_lane(fb, &model->waveform, 14, 40, 612, 140, channel, color);
+        sister_wave_lane(fb, &model->waveform, 14, 40, 612, 126, channel, color);
     }
-    sister_marker(fb, model->engine.write_normalized, 26, 600, 40, 140, PAL_VOLUME, 0);
-    sister_marker(fb, model->engine.head_normalized[0], 26, 600, 40, 140, PAL_NOTE, 1);
-    sister_marker(fb, model->engine.head_normalized[1], 26, 600, 40, 140, PAL_EFFECT, 2);
-    sister_marker(fb, model->engine.head_normalized[2], 26, 600, 40, 140, PAL_TUNING, 0);
+    sister_marker(fb, model->engine.write_normalized, 26, 600, 40, 126, PAL_VOLUME, 0);
+    sister_marker(fb, model->engine.head_normalized[0], 26, 600, 40, 126, PAL_NOTE, 1);
+    sister_marker(fb, model->engine.head_normalized[1], 26, 600, 40, 126, PAL_EFFECT, 2);
+    sister_marker(fb, model->engine.head_normalized[2], 26, 600, 40, 126, PAL_TUNING, 0);
 
-    button(fb, 10, 190, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
-    button(fb, 86, 190, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
-    button(fb, 162, 190, 70, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);
-    button(fb, 238, 190, 70, "AUDITION", model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
+    button(fb, 10, 172, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
+    button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
+    button(fb, 162, 172, 70, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);
+    button(fb, 238, 172, 70, "AUDITION", model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
     snprintf(line, sizeof(line), "MASK %04X  V %02d  IN %.2F  MIX %.2F",
              model->routing.source_mask, model->routing.active_source_voices,
              model->routing.source_input_peak,
              model->routing.tap_peak[TS_SISTER_TAP_MIX]);
-    text(fb, 322, 197, line, model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
+    text(fb, 322, 179, line, model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
     snprintf(line, sizeof(line), "H1 %.2F  H2 %.2F  H3 %.2F  OV %llu",
              model->routing.tap_peak[TS_SISTER_TAP_H1],
              model->routing.tap_peak[TS_SISTER_TAP_H2],
              model->routing.tap_peak[TS_SISTER_TAP_H3],
              (unsigned long long)model->routing.overload_count);
-    text(fb, 322, 208, line,
+    text(fb, 322, 190, line,
          model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING, 1);
 
-    text(fb, 10, 225, "H1", PAL_NOTE, 1);
-    sister_parameter(fb, 72, 220, 110, "LEVEL", model->parameters.head1_level, PAL_NOTE);
-    sister_parameter(fb, 192, 220, 110, "TIME", model->parameters.head1_time_ms / 4000.0f, PAL_NOTE);
-    sister_parameter(fb, 312, 220, 110, "FEED", model->parameters.head1_feedback, PAL_NOTE);
-    sister_parameter(fb, 432, 220, 110, "CUTOFF",
+    text(fb, 10, 207, "H1", PAL_NOTE, 1);
+    sister_parameter(fb, 72, 202, 110, "LEVEL", model->parameters.head1_level, PAL_NOTE);
+    sister_parameter(fb, 192, 202, 110, "TIME", model->parameters.head1_time_ms / 4000.0f, PAL_NOTE);
+    sister_parameter(fb, 312, 202, 110, "FEED", model->parameters.head1_feedback, PAL_NOTE);
+    sister_parameter(fb, 432, 202, 110, "CUTOFF",
                      log10f(model->parameters.filter_cutoff_hz / 20.0f) / 3.0f,
                      PAL_INSTRUMENT);
-    text(fb, 10, 253, "H2", PAL_EFFECT, 1);
-    sister_parameter(fb, 72, 248, 110, "LEVEL", model->parameters.head2_level, PAL_EFFECT);
-    sister_parameter(fb, 192, 248, 110, "SCRUB", model->parameters.head2_scrub, PAL_EFFECT);
-    sister_parameter(fb, 312, 248, 110, "RATE", model->parameters.head2_rate_index / 9.0f, PAL_EFFECT);
-    sister_parameter(fb, 432, 248, 110, "FEED", model->parameters.head2_feedback, PAL_EFFECT);
-    text(fb, 10, 281, "H3", PAL_TUNING, 1);
-    sister_parameter(fb, 72, 276, 110, "LEVEL", model->parameters.head3_level, PAL_TUNING);
-    sister_parameter(fb, 192, 276, 110, "SPAN", model->parameters.head3_span, PAL_TUNING);
-    sister_parameter(fb, 312, 276, 110, "RATE", model->parameters.head3_rate_index / 9.0f, PAL_TUNING);
-    sister_parameter(fb, 432, 276, 110, "FILTER Q",
+    text(fb, 10, 235, "H2", PAL_EFFECT, 1);
+    sister_parameter(fb, 72, 230, 110, "LEVEL", model->parameters.head2_level, PAL_EFFECT);
+    sister_parameter(fb, 192, 230, 110, "SCRUB", model->parameters.head2_scrub, PAL_EFFECT);
+    sister_parameter(fb, 312, 230, 110, "RATE", model->parameters.head2_rate_index / 9.0f, PAL_EFFECT);
+    sister_parameter(fb, 432, 230, 110, "FEED", model->parameters.head2_feedback, PAL_EFFECT);
+    text(fb, 10, 263, "H3", PAL_TUNING, 1);
+    sister_parameter(fb, 72, 258, 110, "LEVEL", model->parameters.head3_level, PAL_TUNING);
+    sister_parameter(fb, 192, 258, 110, "SPAN", model->parameters.head3_span, PAL_TUNING);
+    sister_parameter(fb, 312, 258, 110, "RATE", model->parameters.head3_rate_index / 9.0f, PAL_TUNING);
+    sister_parameter(fb, 432, 258, 110, "FILTER Q",
                      (model->parameters.filter_q - 0.1f) / 19.9f,
                      PAL_INSTRUMENT);
 
-    sister_parameter(fb, 10, 304, 82, "WOW", model->parameters.wow / 10.0f, PAL_TUNING);
-    sister_parameter(fb, 98, 304, 82, "DROP", model->parameters.drop / 100.0f, PAL_EFFECT);
-    sister_parameter(fb, 186, 304, 82, "DUCK", model->parameters.duck_enabled ? model->parameters.duck_sensitivity : 0.0f, PAL_VOLUME);
-    sister_choice_parameter(fb, 274, 304, 82, "DECOR",
+    sister_parameter(fb, 10, 286, 82, "WOW", model->parameters.wow / 10.0f, PAL_TUNING);
+    sister_parameter(fb, 98, 286, 82, "DROP", model->parameters.drop / 100.0f, PAL_EFFECT);
+    sister_parameter(fb, 186, 286, 82, "DUCK", model->parameters.duck_enabled ? model->parameters.duck_sensitivity : 0.0f, PAL_VOLUME);
+    sister_choice_parameter(fb, 274, 286, 82, "DECOR",
                             model->parameters.decorrelation_enabled ? "ON" : "OFF",
                             model->parameters.decorrelation_enabled,
                             PAL_WAVE_RIGHT);
-    sister_parameter(fb, 362, 304, 82, "WIDTH", model->parameters.width, PAL_WAVE_LEFT);
-    sister_choice_parameter(fb, 450, 304, 82, "FILTER",
+    sister_parameter(fb, 362, 286, 82, "WIDTH", model->parameters.width, PAL_WAVE_LEFT);
+    sister_choice_parameter(fb, 450, 286, 82, "FILTER",
                             ts_sister_filter_type_name(model->parameters.filter_type),
                             model->parameters.filter_type != TS_SISTER_FILTER_BYPASS,
                             PAL_INSTRUMENT);
-    sister_parameter(fb, 538, 304, 82, "GAIN",
+    sister_parameter(fb, 538, 286, 82, "GAIN",
                      (model->parameters.filter_gain_db + 24.0f) / 48.0f,
                      PAL_INSTRUMENT);
 
-    sister_percent_parameter(fb, 10, 330, 98, "INPUT",
+    sister_percent_parameter(fb, 10, 308, 98, "INPUT",
                              model->parameters.input_gain / 2.0f,
                              200, PAL_VOLUME);
-    sister_percent_parameter(fb, 113, 330, 98, "DRY",
+    sister_percent_parameter(fb, 113, 308, 98, "DRY",
                              model->parameters.monitor_dry, 100, PAL_WAVE_LEFT);
-    sister_percent_parameter(fb, 216, 330, 98, "WET",
+    sister_percent_parameter(fb, 216, 308, 98, "WET",
                              model->parameters.monitor_wet, 100, PAL_WAVE_RIGHT);
-    sister_percent_parameter(fb, 319, 330, 98, "OUT",
+    sister_percent_parameter(fb, 319, 308, 98, "OUT",
                              model->parameters.mix_output_gain / 4.0f,
                              400, PAL_INSTRUMENT);
-    sister_percent_parameter(fb, 422, 330, 98, "ERASE",
+    sister_percent_parameter(fb, 422, 308, 98, "ERASE",
                              model->parameters.write_erase, 100, PAL_VOLUME);
-    sister_percent_parameter(fb, 525, 330, 99, "GHOST",
+    sister_percent_parameter(fb, 525, 308, 99, "GHOST",
                              model->parameters.ghost_tone, 100, PAL_EFFECT);
+
+    sister_percent_parameter(fb, 10, 330, 124, "SOAK",
+                             model->parameters.soak, 100, PAL_WAVE_RIGHT);
+    sister_percent_parameter(fb, 140, 330, 124, "BLEED",
+                             model->parameters.bleed, 100, PAL_EFFECT);
+    sister_target_toggle(fb, 276, 330, 52, "H1",
+        model->parameters.soak_targets & TS_SISTER_EFFECT_TARGET_H1, PAL_NOTE);
+    sister_target_toggle(fb, 334, 330, 52, "H2",
+        model->parameters.soak_targets & TS_SISTER_EFFECT_TARGET_H2, PAL_EFFECT);
+    sister_target_toggle(fb, 392, 330, 52, "H3",
+        model->parameters.soak_targets & TS_SISTER_EFFECT_TARGET_H3, PAL_TUNING);
+    sister_target_toggle(fb, 450, 330, 52, "MIX",
+        model->parameters.soak_targets & TS_SISTER_EFFECT_TARGET_MIX,
+        PAL_WAVE_RIGHT);
+    text(fb, 510, 336, "STEREO WEAVE", PAL_MOUSE, 1);
 
     snprintf(line, sizeof(line), "TARGET %s  %.88s",
              model->destination_slot >= 0 ? "READY" : "--",

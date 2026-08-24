@@ -177,7 +177,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "wow=%.9g\ndrop=%.9g\nduck_enabled=%d\nduck_mode=%d\nduck_sensitivity=%.9g\n"
         "decor=%d\nwidth=%.9g\nfilter_type=%d\nfilter_cutoff=%.9g\n"
         "filter_q=%.9g\nfilter_gain=%.9g\ninput=%.9g\ndry=%.9g\nwet=%.9g\n"
-        "out=%.9g\nerase=%.9g\nghost_tone=%.9g\n",
+        "out=%.9g\nerase=%.9g\nghost_tone=%.9g\n"
+        "soak=%.9g\nbleed=%.9g\nsoak_targets=%u\n",
         p->head1_level, p->head1_time_ms, p->head1_feedback,
         p->head2_level, p->head2_scrub, p->head2_rate_index, p->head2_feedback,
         p->head3_level, p->head3_span, p->head3_rate_index,
@@ -185,7 +186,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->decorrelation_enabled, p->width, p->filter_type,
         p->filter_cutoff_hz, p->filter_q, p->filter_gain_db,
         p->input_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
-        p->write_erase, p->ghost_tone) >= 0;
+        p->write_erase, p->ghost_tone, p->soak, p->bleed,
+        (unsigned)p->soak_targets) >= 0;
 }
 
 static int replace_file(const char *temporary, const char *path)
@@ -294,6 +296,13 @@ static int assign_field(TsSisterParameters *p, const char *key,
     FLOAT_FIELD("dry", monitor_dry); FLOAT_FIELD("wet", monitor_wet);
     FLOAT_FIELD("out", mix_output_gain); FLOAT_FIELD("erase", write_erase);
     FLOAT_FIELD("ghost_tone", ghost_tone);
+    FLOAT_FIELD("soak", soak); FLOAT_FIELD("bleed", bleed);
+    if (strcmp(key, "soak_targets") == 0) {
+        if (!parse_int(value, &parsed_int) || parsed_int < 0 ||
+            parsed_int > 255) return 0;
+        p->soak_targets = (uint8_t)parsed_int;
+        return 1;
+    }
 #undef FLOAT_FIELD
 #undef INT_FIELD
     return 1; /* Unknown newer fields are intentionally ignored. */

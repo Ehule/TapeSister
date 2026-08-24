@@ -6553,6 +6553,8 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_MIX_OUTPUT: parameters->mix_output_gain = amount * 4.0f; break;
     case TS_SISTER_UI_PARAM_WRITE_ERASE: parameters->write_erase = amount; break;
     case TS_SISTER_UI_PARAM_GHOST_TONE: parameters->ghost_tone = amount; break;
+    case TS_SISTER_UI_PARAM_SOAK: parameters->soak = amount; break;
+    case TS_SISTER_UI_PARAM_BLEED: parameters->bleed = amount; break;
     default: break;
     }
 }
@@ -6588,6 +6590,8 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_MIX_OUTPUT: value = parameters->mix_output_gain / 4.0f; break;
     case TS_SISTER_UI_PARAM_WRITE_ERASE: value = parameters->write_erase; break;
     case TS_SISTER_UI_PARAM_GHOST_TONE: value = parameters->ghost_tone; break;
+    case TS_SISTER_UI_PARAM_SOAK: value = parameters->soak; break;
+    case TS_SISTER_UI_PARAM_BLEED: value = parameters->bleed; break;
     default: break;
     }
     if (!isfinite(value) || value < 0.0f) return 0.0f;
@@ -6970,6 +6974,15 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         else if (hit.index == TS_SISTER_UI_PARAM_GHOST_TONE)
             ui->config.sister_ghost_percent =
                 (int)lrintf(sister->model.parameters.ghost_tone * 100.0f);
+        break;
+    case TS_SISTER_UI_ACTION_EFFECT_TARGET:
+        sister->model.parameters.soak_targets =
+            ts_sister_effect_targets_toggle(
+                sister->model.parameters.soak_targets, (uint8_t)hit.index);
+        ts_sister_runtime_set_parameters(&audio->sister,
+                                         &sister->model.parameters);
+        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        sister_preset_model_sync(sister, &audio->sister);
         break;
     default: break;
     }

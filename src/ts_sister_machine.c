@@ -194,6 +194,9 @@ void ts_sister_parameters_default(TsSisterParameters *parameters,
     parameters->filter_type = TS_SISTER_FILTER_BYPASS;
     parameters->filter_cutoff_hz = sample_rate > 0u ? (float)sample_rate * 0.45f : 20000.0f;
     parameters->filter_q = 0.70710678f;
+    parameters->soak = 0.0f;
+    parameters->bleed = 0.25f;
+    parameters->soak_targets = TS_SISTER_EFFECT_TARGET_MIX;
     parameters->headroom = 0.5f;
     parameters->write_erase = 1.0f;
     parameters->ghost_tone = 0.0f;
@@ -513,6 +516,10 @@ static TsSisterParameters sanitize_parameters(const TsSisterMachine *machine,
                                       (float)sample_rate * 0.45f);
     result.filter_q = clampf(result.filter_q, 0.1f, 20.0f);
     result.filter_gain_db = clampf(result.filter_gain_db, -24.0f, 24.0f);
+    result.soak = clampf(result.soak, 0.0f, 1.0f);
+    result.bleed = clampf(result.bleed, 0.0f, 1.0f);
+    result.soak_targets = ts_sister_effect_targets_sanitize(
+        result.soak_targets);
     result.headroom = clampf(result.headroom, 0.05f, 1.0f);
     result.write_erase = clampf(result.write_erase, 0.0f, 1.0f);
     result.ghost_tone = clampf(result.ghost_tone, 0.0f, 1.0f);
@@ -607,6 +614,15 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
                    machine->parameters.decorrelation_enabled ? 1.0f : 0.0f);
         machine->last_head_position[i] = machine->head[i].phase;
     }
+    for (i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
+        uint8_t target = (uint8_t)(1u << i);
+        ts_sister_weave_set(&machine->soak_weave[i],
+                            machine->parameters.soak,
+                            machine->parameters.bleed,
+                            ts_sister_effect_target_enabled(
+                                machine->parameters.soak_targets, target));
+        ts_sister_weave_reset(&machine->soak_weave[i]);
+    }
     machine->wow_prng = UINT32_C(0x243f6a88);
     machine->wow_next_event_clock = 0u;
     machine->wow_target = 0.0f;
@@ -655,6 +671,18 @@ int ts_sister_machine_init(TsSisterMachine *machine, uint32_t sample_rate,
         ts_sister_buffer_free(&machine->buffer);
         return 0;
     }
+    for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
+        static const double phase[TS_SISTER_EFFECT_PROCESSOR_COUNT] = {
+            0.0, 1.0 / 3.0, 2.0 / 3.0, 0.5
+        };
+        if (!ts_sister_weave_init(&machine->soak_weave[i], sample_rate,
+                                  phase[i])) {
+            while (i > 0u) ts_sister_weave_free(&machine->soak_weave[--i]);
+            free_decorrelators(machine->decorrelator);
+            ts_sister_buffer_free(&machine->buffer);
+            return 0;
+        }
+    }
     ts_sister_parameters_default(&machine->parameters, sample_rate);
     machine->rolling = 1;
     machine->held = 0;
@@ -668,6 +696,8 @@ void ts_sister_machine_free(TsSisterMachine *machine)
     if (machine == NULL) return;
     ts_sister_buffer_free(&machine->buffer);
     free_decorrelators(machine->decorrelator);
+    for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i)
+        ts_sister_weave_free(&machine->soak_weave[i]);
     memset(machine, 0, sizeof(*machine));
 }
 
@@ -677,25 +707,42 @@ int ts_sister_machine_reconfigure(TsSisterMachine *machine,
 {
     TsSisterBuffer replacement;
     TsSisterDecorrelator replacement_decor[TS_SISTER_HEAD_COUNT];
+    TsSisterWeaveState replacement_weave[TS_SISTER_EFFECT_PROCESSOR_COUNT];
     TsSisterParameters parameters;
     int rolling;
     int held;
     if (machine == NULL) return 0;
     memset(&replacement, 0, sizeof(replacement));
     memset(replacement_decor, 0, sizeof(replacement_decor));
+    memset(replacement_weave, 0, sizeof(replacement_weave));
     if (!ts_sister_buffer_init(&replacement, sample_rate, channels,
                                duration_seconds)) return 0;
     if (!allocate_decorrelators(replacement_decor, sample_rate)) {
         ts_sister_buffer_free(&replacement);
         return 0;
     }
+    for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
+        static const double phase[TS_SISTER_EFFECT_PROCESSOR_COUNT] = {
+            0.0, 1.0 / 3.0, 2.0 / 3.0, 0.5
+        };
+        if (!ts_sister_weave_init(&replacement_weave[i], sample_rate,
+                                  phase[i])) {
+            while (i > 0u) ts_sister_weave_free(&replacement_weave[--i]);
+            free_decorrelators(replacement_decor);
+            ts_sister_buffer_free(&replacement);
+            return 0;
+        }
+    }
     parameters = machine->parameters;
     rolling = machine->rolling;
     held = machine->held;
     ts_sister_buffer_free(&machine->buffer);
     free_decorrelators(machine->decorrelator);
+    for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i)
+        ts_sister_weave_free(&machine->soak_weave[i]);
     machine->buffer = replacement;
     memcpy(machine->decorrelator, replacement_decor, sizeof(replacement_decor));
+    memcpy(machine->soak_weave, replacement_weave, sizeof(replacement_weave));
     machine->parameters = sanitize_parameters(machine, &parameters);
     machine->rolling = rolling;
     machine->held = held;
@@ -767,6 +814,12 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
         ramp_set(&machine->decorrelator[i].enabled_mix,
                  next.decorrelation_enabled ? 1.0f : 0.0f,
                  milliseconds_frames(machine->buffer.sample_rate, 20.0f));
+    for (i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
+        uint8_t target_bit = (uint8_t)(1u << i);
+        ts_sister_weave_set(&machine->soak_weave[i], next.soak, next.bleed,
+                            ts_sister_effect_target_enabled(
+                                next.soak_targets, target_bit));
+    }
     target = calculate_biquad(&next, machine->buffer.sample_rate);
     machine->filter_target = target;
 #define SET_FILTER_STEP(field) \
@@ -1445,6 +1498,14 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     machine->last_head_position[2] = guard_read_position(
         head3_position, write_position, machine->buffer.capacity_frames);
 
+    /* Head-target effects own independent histories. The insertion is after
+       the completed interpolated read and before both the established raw
+       feedback send and the later Drop/Decor/Width/Level audible path. */
+    for (size_t head = 0u; head < TS_SISTER_HEAD_COUNT; ++head)
+        raw[head] = ts_sister_weave_process(
+            &machine->soak_weave[head], raw[head],
+            machine->buffer.channels == 1u);
+
     drop2 = update_drop(machine, &machine->drop[0], drop_amount);
     drop3 = update_drop(machine, &machine->drop[1], drop_amount);
     level = ramp_advance(&machine->head[0].level);
@@ -1492,6 +1553,11 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     sum.l = filter_channel(machine, 0u, sum.l);
     sum.r = filter_channel(machine, 1u, sum.r);
     sum = frame_scale(sum, ramp_advance(&machine->mix_output_gain));
+    /* MIX is the completed post-filter, post-OUT wet object. It is never used
+       by either head feedback send; linked safety remains the final stage. */
+    sum = ts_sister_weave_process(
+        &machine->soak_weave[TS_SISTER_HEAD_COUNT], sum,
+        machine->buffer.channels == 1u);
     output.head[0] = frame_scale(output.head[0], clear_gain);
     output.head[1] = frame_scale(output.head[1], clear_gain);
     output.head[2] = frame_scale(output.head[2], clear_gain);

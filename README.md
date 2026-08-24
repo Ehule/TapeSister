@@ -519,6 +519,13 @@ current Sister sound, never live tape audio. See
 [`PR5 performance-window contract`](docs/SISTER_MACHINE_PERFORMANCE_WINDOW.md) and
 [`PR6 performance-state contract`](docs/SISTER_MACHINE_PERFORMANCE_STATE.md), and
 [`PR7 direct-ensemble contract`](docs/SISTER_MACHINE_DIRECT_TILE_ENSEMBLES.md).
+PR8's time-staggered stereo weave, head/MIX placement, Capture/feedback behavior and
+reusable effect targets are specified in
+[`docs/SISTER_MACHINE_SOAK_BLEED.md`](docs/SISTER_MACHINE_SOAK_BLEED.md); the remaining
+order is tracked in
+[`docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md`](docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md).
+The Windows/Linux listening pass is
+[`docs/SISTER_MACHINE_PR8_MANUAL_CHECKLIST.md`](docs/SISTER_MACHINE_PR8_MANUAL_CHECKLIST.md).
 
 ## File browser
 
