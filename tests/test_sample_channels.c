@@ -125,8 +125,24 @@ int main(void)
     assert(!ts_instrument_apply_rendered_replacement(
         &instrument, &mono_clip, 0u, 3u, error, sizeof(error)));
     assert(ts_sample_hash(&instrument.current) == original_hash);
-    assert(!ts_instrument_apply_warp(&instrument, 0.5f, error, sizeof(error)));
-    assert(strstr(error, "Stereo WARP") != NULL);
+    assert(ts_instrument_apply_warp(&instrument, 0.5f, error, sizeof(error)));
+    assert(instrument.current.channels == 2u);
+    assert(ts_sample_hash(&instrument.current) != original_hash);
+    assert(ts_sample_read_channel(&instrument.current, 777u, 0u) !=
+           ts_sample_read_channel(&instrument.current, 777u, 1u));
+    assert(ts_instrument_undo(&instrument, error, sizeof(error)));
+    assert(ts_instrument_apply_smear(&instrument, 0.45f, error, sizeof(error)));
+    assert(instrument.current.channels == 2u);
+    assert(ts_sample_read_channel(&instrument.current, 1200u, 0u) !=
+           ts_sample_read_channel(&instrument.current, 1200u, 1u));
+    assert(ts_instrument_undo(&instrument, error, sizeof(error)));
+    assert(ts_instrument_apply_tear(&instrument, 1.0f, error, sizeof(error)));
+    assert(instrument.current.channels == 2u);
+    assert(ts_sample_read_channel(&instrument.current, 900u, 0u) !=
+           ts_sample_read_channel(&instrument.current, 900u, 1u));
+    assert(ts_instrument_undo(&instrument, error, sizeof(error)));
+    assert(ts_instrument_redo(&instrument, error, sizeof(error)));
+    assert(instrument.current.channels == 2u);
 
     ts_sample_free(&processed);
     ts_sample_free(&clipboard);

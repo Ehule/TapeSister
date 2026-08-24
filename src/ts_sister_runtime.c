@@ -208,7 +208,7 @@ void ts_sister_runtime_free(TsSisterRuntime *runtime)
     runtime->active_page = 0u;
     runtime->processed_frames = 0u;
     runtime->last_frame = (TsSisterRuntimeFrame){0};
-    ts_performance_clear(&runtime->performance);
+    ts_performance_free(&runtime->performance);
     publish_snapshot(runtime);
 }
 
@@ -432,6 +432,51 @@ uint16_t ts_sister_runtime_source_mask(const TsSisterRuntime *runtime)
     if (runtime == NULL || runtime->active_page >= TS_SISTER_RUNTIME_PAGE_LIMIT)
         return 0u;
     return runtime->page_source_masks[runtime->active_page];
+}
+
+TsSisterTileShiftResult ts_sister_runtime_shift_sample_tile(
+    TsSisterRuntime *runtime, TsInstrument *instrument, int slot,
+    char *status, size_t status_size)
+{
+    uint16_t bit;
+    int was_source;
+    if (runtime == NULL || instrument == NULL || slot < 0 ||
+        slot >= TS_BANK_SLOT_COUNT) {
+        if (status != NULL && status_size > 0u)
+            snprintf(status, status_size, "Invalid Sample Bank tile");
+        return TS_SISTER_TILE_SHIFT_FAILED;
+    }
+    if (!instrument->bank[slot].occupied) {
+        if (!ts_instrument_bank_capture(instrument, slot,
+                                        TS_BANK_CAPTURE_CURRENT,
+                                        status, status_size))
+            return TS_SISTER_TILE_SHIFT_FAILED;
+        /* Copy and Capture results are deliberately ordinary tiles. */
+        (void)ts_sister_runtime_set_source_slot(runtime, instrument, slot, 0);
+        if (status != NULL && status_size > 0u)
+            snprintf(status, status_size,
+                     "TILE %02d COPIED - SHIFT-CLICK AGAIN TO ADD SOURCE",
+                     slot + 1);
+        return TS_SISTER_TILE_SHIFT_COPIED;
+    }
+    bit = (uint16_t)(1u << slot);
+    was_source = (ts_sister_runtime_source_mask(runtime) & bit) != 0u;
+    if (!ts_sister_runtime_toggle_source_slot(runtime, instrument, slot)) {
+        if (status != NULL && status_size > 0u)
+            snprintf(status, status_size, "TILE %02d SOURCE UNCHANGED", slot + 1);
+        return TS_SISTER_TILE_SHIFT_FAILED;
+    }
+    if (status != NULL && status_size > 0u)
+        snprintf(status, status_size, "TILE %02d SISTER SOURCE %s",
+                 slot + 1, was_source ? "REMOVED" : "ADDED");
+    return was_source ? TS_SISTER_TILE_SHIFT_SOURCE_REMOVED :
+                        TS_SISTER_TILE_SHIFT_SOURCE_ADDED;
+}
+
+int ts_sister_runtime_tiles_insert_active(const TsSisterRuntime *runtime)
+{
+    return runtime != NULL && runtime->enabled &&
+           (runtime->source_switches & TS_SISTER_SOURCE_TILES) != 0u;
 }
 
 int ts_sister_runtime_set_source_slot(TsSisterRuntime *runtime,

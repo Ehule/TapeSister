@@ -18,11 +18,15 @@ int main(void)
     saved.colors[TS_PALETTE_STEREO_WAVE_LEFT] = 0xff123456u;
     saved.colors[TS_PALETTE_STEREO_WAVE_RIGHT] = 0xffabcdefu;
     saved.colors[TS_PALETTE_STEREO_WAVE_SUM] = 0xff102030u;
+    saved.colors[TS_PALETTE_SISTER_SOURCE_HORIZONTAL] = 0xff506070u;
+    saved.colors[TS_PALETTE_SISTER_SOURCE_VERTICAL] = 0xff8090a0u;
     CHECK(ts_palette_save(&saved, path, error, sizeof(error)));
     CHECK(ts_palette_load(&loaded, path, error, sizeof(error)));
     CHECK(loaded.colors[TS_PALETTE_STEREO_WAVE_LEFT] == 0xff123456u);
     CHECK(loaded.colors[TS_PALETTE_STEREO_WAVE_RIGHT] == 0xffabcdefu);
     CHECK(loaded.colors[TS_PALETTE_STEREO_WAVE_SUM] == 0xff102030u);
+    CHECK(loaded.colors[TS_PALETTE_SISTER_SOURCE_HORIZONTAL] == 0xff506070u);
+    CHECK(loaded.colors[TS_PALETTE_SISTER_SOURCE_VERTICAL] == 0xff8090a0u);
     file = fopen(legacy, "wb");
     CHECK(file != NULL);
     if (file != NULL) {
@@ -35,6 +39,8 @@ int main(void)
         CHECK(loaded.colors[TS_PALETTE_STEREO_WAVE_LEFT] == 0xff202122u);
         CHECK(loaded.colors[TS_PALETTE_STEREO_WAVE_RIGHT] == 0xff404142u);
         CHECK(loaded.colors[TS_PALETTE_STEREO_WAVE_SUM] == 0xff303132u);
+        CHECK(loaded.colors[TS_PALETTE_SISTER_SOURCE_HORIZONTAL] == 0xff202122u);
+        CHECK(loaded.colors[TS_PALETTE_SISTER_SOURCE_VERTICAL] == 0xff404142u);
     }
     remove(path);
     remove(legacy);

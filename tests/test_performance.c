@@ -87,6 +87,10 @@ int main(void)
                0, 60, 0, 44100) == 3);
     for (int i = 0; i < 18; ++i) (void)ts_performance_read(&performance, &raw);
     assert(ts_performance_count(&performance) == 2);
+    for (int voice = 0; voice < TS_PERFORMANCE_VOICE_LIMIT; ++voice)
+        if (performance.voices[voice].active)
+            assert(fabsf(performance.voices[voice].group_gain -
+                         1.0f / sqrtf(3.0f)) < 0.0001f);
     for (int i = 0; i < 8; ++i) (void)ts_performance_read(&performance, &raw);
     assert(ts_performance_count(&performance) == 1);
     for (int i = 0; i < 8; ++i) (void)ts_performance_read(&performance, &raw);
@@ -123,6 +127,9 @@ int main(void)
                                             note, 60, 0, 44100) ==
                TS_BANK_SLOT_COUNT);
     assert(ts_performance_count(&performance) == TS_PERFORMANCE_VOICE_LIMIT);
+    assert(ts_performance_trigger_group(&performance, &instrument, 0xffffu,
+                                        0, 60, 0, 44100) == 0);
+    assert(ts_performance_count(&performance) == TS_PERFORMANCE_VOICE_LIMIT);
     ts_performance_clear(&performance);
 
     /* Plain-click group release is a graceful unlatch, not a hard Note Off.
@@ -151,6 +158,66 @@ int main(void)
     for (int i = 0; i < 8; ++i) (void)ts_performance_read(&performance, &raw);
     assert(ts_performance_count(&performance) == 0);
 
+    /* Active voices own immutable sample generations. One-shots finish the
+       old generation after source replacement; loops stage the replacement
+       and adopt it atomically at a boundary with a linked crossfade. */
+    instrument.bank[0].has_loop = 0;
+    ts_performance_clear(&performance);
+    assert(ts_performance_trigger_group(&performance, &instrument,
+                                        (uint16_t)(1u << 0),
+                                        0, 60, 0, 44100) == 1);
+    {
+        TsPerformanceGeneration *began = performance.voices[0].generation;
+        float *equivalent = malloc(16u * sizeof(*equivalent));
+        float *replacement = malloc(16u * sizeof(*replacement));
+        assert(equivalent != NULL && replacement != NULL);
+        for (int i = 0; i < 16; ++i) equivalent[i] = 0.25f;
+        free(instrument.bank[0].sample.data);
+        instrument.bank[0].sample.data = equivalent;
+        ++instrument.bank[0].sample.visual_revision;
+        ts_performance_sync(&performance, &instrument, 44100);
+        assert(performance.voices[0].generation == began);
+        for (int i = 0; i < 16; ++i) replacement[i] = -0.9f;
+        free(instrument.bank[0].sample.data);
+        instrument.bank[0].sample.data = replacement;
+        ++instrument.bank[0].sample.visual_revision;
+        ts_performance_sync(&performance, &instrument, 44100);
+        assert(performance.voices[0].generation == began);
+        assert(performance.voices[0].sample->data[0] == 0.25f);
+    }
+    ts_performance_clear(&performance);
+    instrument.bank[3].has_loop = 1;
+    instrument.bank[3].loop_first = 2u;
+    instrument.bank[3].loop_last = 9u;
+    instrument.bank[3].loop_mode = TS_LOOP_FORWARD;
+    assert(ts_performance_trigger_group(&performance, &instrument,
+                                        (uint16_t)(1u << 3),
+                                        0, 60, 1, 44100) == 1);
+    {
+        TsPerformanceGeneration *began = performance.voices[0].generation;
+        float *replacement = malloc(12u * sizeof(*replacement));
+        assert(replacement != NULL);
+        for (int i = 0; i < 12; ++i) replacement[i] = -0.4f;
+        free(instrument.bank[3].sample.data);
+        instrument.bank[3].sample.data = replacement;
+        instrument.bank[3].sample.frames = 12u;
+        instrument.bank[3].loop_last = 11u;
+        ++instrument.bank[3].sample.visual_revision;
+        assert(ts_performance_prepare_sync(&performance, &instrument));
+        assert(performance.voices[0].generation == began);
+        assert(performance.slot_generations[3] != began);
+        ts_performance_sync(&performance, &instrument, 44100);
+        assert(performance.voices[0].generation == began);
+        assert(performance.voices[0].pending_generation != NULL);
+        for (int i = 0; i < 12; ++i) {
+            monitored = ts_performance_read(&performance, &raw);
+            assert(isfinite(monitored));
+        }
+        assert(performance.voices[0].generation != began);
+    }
+    ts_performance_clear(&performance);
+
+    ts_performance_free(&performance);
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) free_slot(&instrument.bank[slot]);
     puts("performance tests passed");
     return 0;

@@ -1816,6 +1816,46 @@ static void lock_edit(SDL_AudioDeviceID device, AudioState *audio)
     (void)audio;
 }
 
+static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio,
+                        TsUiState *ui, TsInstrument *instrument);
+
+static int native_sister_edit_can_render_unlocked(const AudioState *audio)
+{
+    return audio != NULL &&
+           ts_sister_runtime_tiles_insert_active(&audio->sister) &&
+           !audio->playing && ts_note_bank_count(&audio->notes) == 0 &&
+           ts_performance_count(&audio->performance) == 0;
+}
+
+static int begin_native_sister_edit(SDL_AudioDeviceID device,
+                                    AudioState *audio)
+{
+    int render_unlocked;
+    /* Sample the voice owners while the callback is stopped.  When Sister is
+       the only active reader it owns immutable generations, so release the
+       device before doing the potentially expensive transform render. */
+    lock_edit(device, audio);
+    render_unlocked = native_sister_edit_can_render_unlocked(audio);
+    if (render_unlocked && device) SDL_UnlockAudioDevice(device);
+    return render_unlocked;
+}
+
+static void finish_native_sister_edit(SDL_AudioDeviceID device,
+                                      AudioState *audio, TsUiState *ui,
+                                      TsInstrument *instrument,
+                                      int rendered_unlocked)
+{
+    if (rendered_unlocked) {
+        /* Clone the completed source generation while the callback continues
+           reading its old immutable copy, then take the device lock only for
+           the bounded voice-metadata publication. */
+        (void)ts_performance_prepare_sync(&audio->sister.performance,
+                                          instrument);
+        lock_edit(device, audio);
+    }
+    unlock_edit(device, audio, ui, instrument);
+}
+
 static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                         TsInstrument *instrument)
 {
@@ -4454,12 +4494,14 @@ static int preview_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
     char error[160];
     uint32_t now;
     int ok;
+    int rendered_unlocked;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
-    lock_edit(device, audio);
+    rendered_unlocked = begin_native_sister_edit(device, audio);
     ok = ts_instrument_warp_gesture_preview(instrument, &ui->warp_gesture,
                                             amount, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sister_edit(device, audio, ui, instrument,
+                              rendered_unlocked);
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status),
                  "WARP PREVIEW FAILED: %.129s", error);
@@ -4485,12 +4527,13 @@ static void end_warp_gesture(SDL_AudioDeviceID device, AudioState *audio,
     char error[160];
     float amount = ui->warp_gesture.amount;
     int ok;
-    lock_edit(device, audio);
+    int rendered_unlocked = begin_native_sister_edit(device, audio);
     ok = cancel ? ts_instrument_warp_gesture_cancel(
                       instrument, &ui->warp_gesture, error, sizeof(error)) :
                   ts_instrument_warp_gesture_commit(
                       instrument, &ui->warp_gesture, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sister_edit(device, audio, ui, instrument,
+                              rendered_unlocked);
     ui->warp_dragging = 0;
     ui->warp_wheel_active = 0;
     ui->warp_amount = 0.0f;
@@ -4526,13 +4569,14 @@ static int preview_smear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                                  TsUiState *ui, TsInstrument *instrument,
                                  float amount, int output_rate)
 {
-    char error[160]; uint32_t now; int ok;
+    char error[160]; uint32_t now; int ok; int rendered_unlocked;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
-    lock_edit(device, audio);
+    rendered_unlocked = begin_native_sister_edit(device, audio);
     ok = ts_instrument_smear_gesture_preview(instrument, &ui->smear_gesture,
                                              amount, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sister_edit(device, audio, ui, instrument,
+                              rendered_unlocked);
     if (!ok) { snprintf(ui->status, sizeof(ui->status), "SMEAR PREVIEW FAILED: %.128s", error); return 0; }
     ui->smear_amount = amount; now = SDL_GetTicks();
     if (!ts_ui_transform_auto_audition_allowed(ui)) {
@@ -4550,10 +4594,11 @@ static void end_smear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                               TsUiState *ui, TsInstrument *instrument, int cancel)
 {
     char error[160]; float amount = ui->smear_gesture.amount; int ok;
-    lock_edit(device, audio);
+    int rendered_unlocked = begin_native_sister_edit(device, audio);
     ok = cancel ? ts_instrument_smear_gesture_cancel(instrument, &ui->smear_gesture, error, sizeof(error)) :
                   ts_instrument_smear_gesture_commit(instrument, &ui->smear_gesture, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sister_edit(device, audio, ui, instrument,
+                              rendered_unlocked);
     ui->smear_dragging = ui->smear_wheel_active = 0; ui->smear_amount = 0.0f;
     ui->smear_last_audition_ms = 0;
     if (cancel) stop_all(device, audio, ui);
@@ -4582,13 +4627,14 @@ static int preview_tear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, TsInstrument *instrument,
                                 float amount, int output_rate)
 {
-    char error[160]; uint32_t now; int ok;
+    char error[160]; uint32_t now; int ok; int rendered_unlocked;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
-    lock_edit(device, audio);
+    rendered_unlocked = begin_native_sister_edit(device, audio);
     ok = ts_instrument_tear_gesture_preview(instrument, &ui->tear_gesture,
                                             amount, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sister_edit(device, audio, ui, instrument,
+                              rendered_unlocked);
     if (!ok) { snprintf(ui->status, sizeof(ui->status), "TEAR PREVIEW FAILED: %.129s", error); return 0; }
     ui->tear_amount = amount; now = SDL_GetTicks();
     if (!ts_ui_transform_auto_audition_allowed(ui)) {
@@ -4606,10 +4652,11 @@ static void end_tear_gesture(SDL_AudioDeviceID device, AudioState *audio,
                              TsUiState *ui, TsInstrument *instrument, int cancel)
 {
     char error[160]; float amount = ui->tear_gesture.amount; int ok;
-    lock_edit(device, audio);
+    int rendered_unlocked = begin_native_sister_edit(device, audio);
     ok = cancel ? ts_instrument_tear_gesture_cancel(instrument, &ui->tear_gesture, error, sizeof(error)) :
                   ts_instrument_tear_gesture_commit(instrument, &ui->tear_gesture, error, sizeof(error));
-    unlock_edit(device, audio, ui, instrument);
+    finish_native_sister_edit(device, audio, ui, instrument,
+                              rendered_unlocked);
     ui->tear_dragging = ui->tear_wheel_active = 0; ui->tear_amount = 0.0f;
     ui->tear_last_audition_ms = 0;
     if (cancel && !ui->workbench_loop_active) stop_all(device, audio, ui);
@@ -8495,6 +8542,10 @@ int main(int argc, char **argv)
     while (running) {
         SDL_Event event;
         Uint64 frame_started = SDL_GetPerformanceCounter();
+        /* Reader counts are atomic; retired immutable generations are owned
+           and reclaimed by this controller thread, never by the callback. */
+        ts_performance_collect_retired(&audio.performance);
+        ts_performance_collect_retired(&audio.sister.performance);
         if (pending_file.active && pending_file.presented)
             run_pending_file_operation(device, &audio, &ui, &instrument,
                                        &pending_selection_load, &sample_pages,
@@ -8684,43 +8735,6 @@ int main(int argc, char **argv)
                     ui.config.waveform_display_mode = ts_waveform_display_cycle(
                         (TsWaveformDisplayMode)ui.config.waveform_display_mode, 1);
                     continue;
-                }
-                if ((!ui_dialog_open(&ui) || fm_background) &&
-                    !record_bank_active &&
-                    ts_ui_sister_source_mode_contains(x, y)) {
-                    if (audio.capture.state != TS_CAPTURE_IDLE) {
-                        snprintf(ui.status, sizeof(ui.status),
-                                 "FINISH ORDINARY CAPTURE BEFORE SISTER SOURCE EDIT");
-                    } else {
-                        ui.sister_source_select_mode = !ui.sister_source_select_mode;
-                        snprintf(ui.status, sizeof(ui.status), "%s",
-                                 ui.sister_source_select_mode ?
-                                 "SISTER SOURCE SELECT: CLICK TILES - BUTTON EXITS" :
-                                 "SISTER SOURCE SELECT OFF");
-                    }
-                    continue;
-                }
-                if ((!ui_dialog_open(&ui) || fm_background) &&
-                    ui.sister_source_select_mode && !record_bank_active) {
-                    int slot = ts_ui_bank_slot_from_point(x, y);
-                    if (slot >= 0) {
-                        int selected;
-                        if (device) SDL_LockAudioDevice(device);
-                        selected = (SDL_GetModState() & KMOD_SHIFT) != 0 ?
-                            ts_sister_runtime_toggle_source_slot(
-                                &audio.sister, &instrument, slot) :
-                            ts_sister_runtime_replace_source_slot(
-                                &audio.sister, &instrument, slot);
-                        if (device) SDL_UnlockAudioDevice(device);
-                        snprintf(ui.status, sizeof(ui.status),
-                                 selected ?
-                                 ((SDL_GetModState() & KMOD_SHIFT) != 0 ?
-                                  "TILE %02d TOGGLED IN SISTER GROUP" :
-                                  "TILE %02d IS THE SISTER GROUP") :
-                                 "TILE %02d REMOVED/UNAVAILABLE",
-                                 slot + 1);
-                        continue;
-                    }
                 }
             }
             if (event.type == SDL_DROPFILE && ui.amplitude_gesture.active)
@@ -11333,7 +11347,18 @@ int main(int argc, char **argv)
                                 }
                             }
                             else if (selected && occupied) {
-                                if (ui.workbench_loop_active &&
+                                if (ts_sister_runtime_tiles_insert_active(
+                                        &audio.sister)) {
+                                    /* TILES is an insert, not a click-preview
+                                       shortcut. Selection must not add a clean
+                                       legacy-preview voice or disturb a
+                                       sounding Sister ensemble. */
+                                    ui.audition_source = TS_AUDITION_CURRENT;
+                                    ui.bank_view_slot = -1;
+                                    snprintf(ui.status, sizeof(ui.status),
+                                             "BANK %02d ACTIVE - SISTER ENSEMBLE UNCHANGED",
+                                             bank_slot + 1);
+                                } else if (ui.workbench_loop_active &&
                                     ui.workbench_loop_persistent) {
                                     ui.audition_source = TS_AUDITION_CURRENT;
                                     ui.bank_view_slot = -1;
@@ -11383,8 +11408,19 @@ int main(int argc, char **argv)
                                          "BANK %02d: %.100s - ACTIVE TILE UNCHANGED",
                                          bank_slot + 1, select_error);
                         } else if (action == TS_UI_BANK_ACTION_CAPTURE_CURRENT) {
-                            capture_bank_slot(device, &ui, &instrument, bank_slot,
-                                              action);
+                            TsSisterTileShiftResult result;
+                            char shift_status[160];
+                            lock_edit(device, &audio);
+                            result = ts_sister_runtime_shift_sample_tile(
+                                &audio.sister, &instrument, bank_slot,
+                                shift_status, sizeof(shift_status));
+                            unlock_edit(device, &audio, &ui, &instrument);
+                            if (result == TS_SISTER_TILE_SHIFT_FAILED)
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "SHIFT TILE FAILED: %.130s", shift_status);
+                            else
+                                snprintf(ui.status, sizeof(ui.status), "%s",
+                                         shift_status);
                         } else if (action == TS_UI_BANK_ACTION_CAPTURE_LOOP) {
                             capture_bank_slot(device, &ui, &instrument, bank_slot,
                                               action);
@@ -11674,12 +11710,6 @@ int main(int argc, char **argv)
                                         &external_input, &ui, &instrument);
         if (audio.capture.state == TS_CAPTURE_COMPLETED)
             finalize_capture(device, &audio, &ui, &instrument);
-        if (audio.capture.state != TS_CAPTURE_IDLE &&
-            ui.sister_source_select_mode) {
-            ui.sister_source_select_mode = 0;
-            snprintf(ui.status, sizeof(ui.status),
-                     "SISTER SOURCE SELECT CLOSED FOR ORDINARY CAPTURE");
-        }
         if (audio.sister.capture.state == TS_CAPTURE_COMPLETED) {
             char sister_error[160];
             int committed;
@@ -11834,6 +11864,7 @@ int main(int argc, char **argv)
     if (input_device) SDL_PauseAudioDevice(input_device, 1);
     if (input_device) SDL_CloseAudioDevice(input_device);
     if (device) SDL_CloseAudioDevice(device);
+    ts_performance_free(&audio.performance);
     ts_sister_runtime_free(&audio.sister);
     ts_external_recorder_free(&external_input.recorder);
     ts_capture_free(&audio.capture);

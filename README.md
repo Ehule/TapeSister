@@ -289,9 +289,9 @@ FT2 Link dialog when a separate tracker process is intentionally wanted.
 
 Every handoff WAV includes root/fine-tune metadata plus loop start, inclusive end, and standard Forward/Ping-Pong/Backward type. FT2 already reads the loop record, so forward and ping-pong collection members arrive with looping enabled instead of requiring manual flags. Its current WAV loader treats the standard backward type as ping-pong; exact reverse-loop interpretation and `smpl` root-note adoption belong to the reciprocal FT2-side handoff slice.
 
-**Config -> Palette** replaces the same waveform panel with a live 14-color RGB editor: Tapehead's 12 shared interface fields plus TapeSister's independent **Wave Selection** fill and **Active Tile** outline. The editor keeps TapeSister-facing names while the stable file keys remain common to both applications. It also exposes the shared Desktop and Buttons contrast values: button and tile bevels derive from Controls/`Buttons` and Buttons Contrast, while Pointer/`Mouse` and Active Tile are independent. Nineteen tiny Tapehead swatches act as an eyedropper into the selected TapeSister color; a color absent from a legacy file is neutral and cannot be sampled until it is explicitly defined.
+**Config -> Palette** replaces the same waveform panel with a live 19-color RGB editor: Tapehead's 12 shared interface fields plus TapeSister's independent **Wave Selection**, **Active Tile**, **Sister H**, and **Sister V** colors. Sister H draws the yellow top/bottom source edges and Sister V draws the cyan left/right edges. The editor keeps TapeSister-facing names while the stable file keys remain common to both applications. It also exposes the shared Desktop and Buttons contrast values: button and tile bevels derive from Controls/`Buttons` and Buttons Contrast, while Pointer/`Mouse` and Active Tile are independent. Nineteen tiny Tapehead swatches act as an eyedropper into the selected TapeSister color; a color absent from a legacy file is neutral and cannot be sampled until it is explicitly defined.
 
-**Load Shared** and **Save Shared** use one complete `palette.pal` in the configured exchange directory, or the current working directory when no exchange path is set. Each save preserves all 21 TapeSister and Tapehead color fields, even when one application does not edit a field itself. TapeSister still opens legacy local `tapesister.pal`, `tapehead.pal`, and `[TapeheadPalette]` files without rewriting them. If an older palette omits Wave Selection it inherits `BlockMark`; if it omits Active Tile it inherits `Mouse`, preserving the former appearance. Older six-color Tapehead palettes still give the additional shared waveform colors `PatternText`. `TAPESISTER_PALETTE` remains a full-path override. See [`docs/UNIVERSAL_PALETTE.md`](docs/UNIVERSAL_PALETTE.md) for the reciprocal schema.
+**Load Shared** and **Save Shared** use one complete `palette.pal` in the configured exchange directory, or the current working directory when no exchange path is set. Each save preserves all 26 TapeSister and Tapehead color fields, even when one application does not edit a field itself. TapeSister still opens legacy local `tapesister.pal`, `tapehead.pal`, and `[TapeheadPalette]` files without rewriting them. If an older palette omits Wave Selection it inherits `BlockMark`; if it omits Active Tile it inherits `Mouse`; omitted Sister H/V entries inherit `PatternNote`/`PatternEffect`. Older six-color Tapehead palettes still give the additional shared waveform colors `PatternText`. `TAPESISTER_PALETTE` remains a full-path override. See [`docs/UNIVERSAL_PALETTE.md`](docs/UNIVERSAL_PALETTE.md) for the reciprocal schema.
 
 Tapehead compatibility mapping:
 
@@ -311,12 +311,16 @@ Tapehead compatibility mapping:
 | `PatternEmpty` | Spare | reserved compatible color |
 | `WaveSelection` (TapeSister only) | Wave Selection | waveform selection fill only |
 | `ActiveTile` (TapeSister only) | Active Tile | active Bank tile outline only |
+| `SisterSourceHorizontal` (TapeSister only) | Sister H | top/bottom Sister-source perimeter |
+| `SisterSourceVertical` (TapeSister only) | Sister V | left/right Sister-source perimeter |
 
 ## Sound collection and variation
 
 All 16 slots are peers. A newly created or imported sound fills the currently selected destination. Any empty slot can also capture useful zero-aligned material from the active tile:
 
-- Shift-click an empty slot to capture the full active tile;
+- Shift-click an empty slot to copy the full active tile. Shift-click an occupied slot
+  instead toggles that tile in the current page's Sister source ensemble without
+  selecting, auditioning, overwriting, or changing its protection state;
 - Alt-click an empty slot to capture the active Loop, including its crossfade setting; or
 - Ctrl-click an empty slot to capture the snapped Selection; or
 - Ctrl+Shift-click an empty slot to Clone the active tile's complete editable state and history.
@@ -326,7 +330,7 @@ audition, keyboard, rename, Save, and Export behavior, but reject replacement, C
 Clear All, non-Chain Vary, FM Apply/Create, WAV load, performance capture, and whole-bank
 Tapehead import until explicitly unlocked. A bright `L` rail marks protected tiles.
 
-Click an occupied slot to select its independent editable state and audition it; its saved selection is immediately active in the waveform. Click an empty slot to select that exact CREATE/LOAD destination without auditioning, or double-click it to activate silence for editing and paste. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. Right-click any occupied slot to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click and empties every unlocked peer slot while protected tiles remain intact. **+ Page** creates and switches to a deliberately empty Sample page; key `1` continues to cycle existing pages.
+Click an occupied slot to select its independent editable state; its saved selection is immediately active in the waveform. With Sister POWER and TILES both on this click is selection-only, so no clean click audition can bypass the insert and MIDI/QWERTY remain the ensemble performance gestures. AUDITION is the explicit canvas/waveform preview route through Sister. With POWER off or TILES off, ordinary click audition remains unchanged. Click an empty slot to select that exact CREATE/LOAD destination without auditioning, or double-click it to activate silence for editing and paste. A slot with saved loop metadata auditions continuously in its own Forward, Reverse, or Ping-Pong mode, while one without a loop remains a one-shot. A blue mark identifies looped slots. Right-click any occupied slot to rename it, or Shift-right-click to clear it. **Clear All** requires a confirming second click and empties every unlocked peer slot while protected tiles remain intact. **+ Page** creates and switches to a deliberately empty Sample page; key `1` continues to cycle existing pages.
 
 The **Variation** page exposes one continuous Range and the **Chain** switch. Vary requires an occupied selected tile. Without a waveform selection, Chain off replaces the active tile and Chain on writes to the next empty tile, selects it, and continues from that result. A direct Create/FM result varies its stored FM structure; destructively shaped or imported material varies from the waveform itself. With a selection, Chain off repeatedly stamps that range. Chain on instead behaves like an unrolling strip of paper: each Vary stamps the current range, crossfades its edges, moves the unchanged-width selection right by `width - overlap`, and extends the canvas with silence when the next destination reaches EOF. Each click is one tile-local Undo step containing the stamp, any extension, and the ready-next selection. A full bank blocks only the no-selection tile-chain path; selection chains stay inside their current tile.
 
@@ -474,9 +478,10 @@ Audition, QWERTY/MIDI notes, the 64-voice MIDI pool, multi-tile performance, Loo
 Capture, Overdub, external monitoring, and REC playback now share one explicit stereo
 runtime-bus contract. Mono sources enter as exact dual mono; stereo sources interpolate
 both stored channels with one phase, loop state, pitch, and envelope. The linked
-`1/sqrt(N)` monitoring gain counts voices once and preserves L/R balance. Stereo WARP,
-SMEAR, TEAR, Move/Copy placement, Drone, Vary/Create, FM stamping, curated DSP, and CDP
-remain explicitly blocked where linked-channel implementation is pending. See
+`1/sqrt(N)` monitoring gain counts logical tile voices once and preserves L/R balance.
+Stereo WARP, SMEAR, and TEAR use one frame mapping/packet decision set for L and R;
+Move/Copy placement, Drone, Vary/Create, FM stamping, curated DSP, and CDP remain
+explicitly blocked where linked-channel implementation is pending. See
 [`docs/SISTER_MACHINE_AUDIO_BUSES.md`](docs/SISTER_MACHINE_AUDIO_BUSES.md).
 
 The headless Sister Machine core implements Kafka's moving write head and three
@@ -494,16 +499,26 @@ cell; lower values retain old stereo material before new input and controlled he
 feedback are written. A routed source is removed from its ordinary audition bus and
 returns only through Sister when MONITOR is on; INPUT prevents hot internal buses from
 overdriving the write head. OUT affects MIX only and individual head taps remain
-unscaled. TILES performs the complete page-specific mask from MIDI/QWERTY, live FM no
-longer depends on an occupied tile or window focus, and EXT requests the shared physical
-input independently of the Record-bank monitor. Sister tile one-shots finish after
-key-up. The main bank's `SISTER SRC` mode uses click-to-replace and Shift-click-to-toggle.
+unscaled. TILES is the retained master insert/bypass for the complete page-specific
+mask; switching it off preserves the group. In the ordinary Sample Bank, Shift-click
+copies only to an empty tile and toggles any occupied tile directly into or out of that
+page's ensemble. Source membership is the split yellow/cyan outer perimeter; active
+canvas selection is the established hollow border, inset when both states coincide.
+MIDI/QWERTY fan one note out to all marked tiles. Live FM no longer depends on an
+occupied tile or window focus, and EXT requests the shared physical input independently
+of the Record-bank monitor. Sister tile one-shots finish after key-up and at their
+independent natural lengths; fixed group gain prevents a short layer ending from lifting
+the longer layers. Active voices own immutable sample generations: one-shots finish
+their starting generation, new triggers use the replacement, and locked loops adopt
+both channels at a loop boundary with a short linked crossfade. WARP/SMEAR/TEAR retain
+stereo channel shape.
 Named Sister presets store portable sonic state; TSR projects store routes, masks and the
 current Sister sound, never live tape audio. See
 [`docs/SISTER_MACHINE_HEADLESS_ENGINE.md`](docs/SISTER_MACHINE_HEADLESS_ENGINE.md) and
 [`docs/SISTER_MACHINE_LIVE_ROUTING.md`](docs/SISTER_MACHINE_LIVE_ROUTING.md), plus the
 [`PR5 performance-window contract`](docs/SISTER_MACHINE_PERFORMANCE_WINDOW.md) and
-[`PR6 performance-state contract`](docs/SISTER_MACHINE_PERFORMANCE_STATE.md).
+[`PR6 performance-state contract`](docs/SISTER_MACHINE_PERFORMANCE_STATE.md), and
+[`PR7 direct-ensemble contract`](docs/SISTER_MACHINE_DIRECT_TILE_ENSEMBLES.md).
 
 ## File browser
 

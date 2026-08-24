@@ -1,4 +1,5 @@
 #include "sister_test_helpers.h"
+#include "tapesister/audio_mixer.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -19,6 +20,8 @@ int main(void)
     float gain;
     float one_tile_peak;
     float two_tile_peak;
+    TsAudioMixer mixer;
+    TsAudioBuses buses;
 
     CHECK(sister_test_make_tiles(&instrument, 2, 0, 1000u, 32u));
     for (size_t sample = 0u; sample < instrument.bank[1].sample.frames;
@@ -90,6 +93,22 @@ int main(void)
     ts_sister_runtime_note_off(&runtime, &note);
     frame = ts_sister_runtime_process_frame(&runtime, NULL);
     CHECK(sister_peak(frame.input) > 0.0f);
+
+    /* A routed TILES performance bus is silent on the direct speaker path;
+       Sister returns it exactly once. AUDITION/preview remains an independent
+       named source and is not accidentally consumed by the TILES switch. */
+    ts_audio_mixer_init(&mixer);
+    ts_audio_buses_clear(&buses);
+    buses.tile_performance = (TsStereoFrame){0.5f, -0.5f};
+    buses.sister = (TsStereoFrame){0.25f, -0.25f};
+    ts_audio_buses_apply_source_dry(&buses, 0.0f, 0, 1, 0, 0);
+    frame.monitor_return = ts_audio_mixer_render(&mixer, &buses);
+    CHECK(CLOSE(frame.monitor_return.l, 0.25f));
+    CHECK(CLOSE(frame.monitor_return.r, -0.25f));
+    buses.legacy_preview = (TsStereoFrame){0.1f, 0.1f};
+    frame.monitor_return = ts_audio_mixer_render(&mixer, &buses);
+    CHECK(CLOSE(frame.monitor_return.l, 0.33f));
+    CHECK(CLOSE(frame.monitor_return.r, -0.17f));
 
     ts_sister_runtime_set_monitor(&runtime, 0);
     frame = ts_sister_runtime_process_frame(&runtime, &sources);

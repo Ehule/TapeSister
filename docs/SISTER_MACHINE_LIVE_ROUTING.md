@@ -39,8 +39,9 @@ taps, does not mute ordinary sources and does not allocate its rolling buffer.
 Every route is a `TsStereoFrame`. Mono FM and mono tiles enter as exact dual mono;
 stereo tiles, external STEREO and stereo previews preserve independent channels. Each
 source retains its existing internal voice normalization. The Sister-only performance
-bank therefore applies TapeSister's established linked `1/sqrt(voice_count)` once,
-and the router does not normalize it again by selected tile count.
+bank assigns each admitted note group a fixed linked `1/sqrt(marked tile count)` gain,
+and the router does not normalize it again by selected tile count. Stereo channels are
+not counted separately, and members ending naturally do not change their siblings' gain.
 
 When multiple source switches are armed, one additional `1/sqrt(armed_bus_count)` gain
 applies to the complete source sum. Armed switches, not instantaneous silence or zero
@@ -54,15 +55,16 @@ sidechain. It never contains H1/H2 feedback or a previous Sister MIX frame.
 ## Persistent tile source masks
 
 `TsSisterRuntime` owns one 16-bit mask per Sample page, up to the existing 1024-page
-project bound. Masks survive focus changes and page navigation for the lifetime of the
-open runtime, but are not saved in TSR projects or presets. Project close/load clears
-all masks. Record Bank visibility does not redefine a Sample-page mask.
+project bound. Masks survive focus changes and page navigation and are persisted by the
+PR6 project companion state; named presets deliberately omit them. Legacy projects load
+empty masks. Record Bank visibility does not redefine a Sample-page mask.
 
 Controller operations can set, toggle, clear, query and validate the current mask.
 Blank, deleted or invalid samples are removed. Locked/protected tiles remain valid
-sources. Before a source sample is replaced, its dedicated voices are stopped under
-the audio-device lock; the retained mask refers to the replacement only on a later
-note event. Page switching releases Sister voices before changing the active mask.
+sources. Source replacement publishes a new immutable generation outside the callback.
+Existing one-shots retain their starting generation, repeating voices stage the
+replacement for a safe loop-boundary crossfade, and the next note uses the new
+generation. Page switching releases Sister voices before changing the active mask.
 
 ## Sister performance voices
 

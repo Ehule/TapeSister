@@ -1124,8 +1124,9 @@ static float sample_linear(const TsSample *sample, double position, size_t first
     return sample->data[at] + (sample->data[next] - sample->data[at]) * fraction;
 }
 
-static float sample_cubic_range(const float *data, size_t first, size_t last,
-                                double position)
+static float sample_cubic_channel_range(const float *data, size_t first,
+                                        size_t last, size_t channels,
+                                        size_t channel, double position)
 {
     size_t i1, i0, i2, i3;
     float fraction, a, b, c, d;
@@ -1136,10 +1137,17 @@ static float sample_cubic_range(const float *data, size_t first, size_t last,
     i2 = i1 + 1u < last ? i1 + 1u : i1;
     i3 = i2 + 1u < last ? i2 + 1u : i2;
     fraction = (float)(position - (double)i1);
-    a = -0.5f * data[i0] + 1.5f * data[i1] - 1.5f * data[i2] + 0.5f * data[i3];
-    b = data[i0] - 2.5f * data[i1] + 2.0f * data[i2] - 0.5f * data[i3];
-    c = -0.5f * data[i0] + 0.5f * data[i2];
-    d = data[i1];
+    a = -0.5f * data[i0 * channels + channel] +
+         1.5f * data[i1 * channels + channel] -
+         1.5f * data[i2 * channels + channel] +
+         0.5f * data[i3 * channels + channel];
+    b = data[i0 * channels + channel] -
+        2.5f * data[i1 * channels + channel] +
+        2.0f * data[i2 * channels + channel] -
+        0.5f * data[i3 * channels + channel];
+    c = -0.5f * data[i0 * channels + channel] +
+         0.5f * data[i2 * channels + channel];
+    d = data[i1 * channels + channel];
     return ((a * fraction + b) * fraction + c) * fraction + d;
 }
 
@@ -1151,18 +1159,22 @@ static int warp_range(TsSample *sample, size_t first, size_t last, float amount,
     double phase = 0.0;
     double rate;
     double depth;
-    if (sample == NULL || sample->channels != 1u) {
-        set_error(error, error_size,
-                  "Stereo WARP arrives in a later channel-linked editing PR");
+    size_t channels;
+    size_t scalar_count;
+    if (sample == NULL || !ts_sample_dimensions(length, sample->channels,
+                                                 &scalar_count, NULL)) {
+        set_error(error, error_size, "WARP needs mono or stereo audio");
         return 0;
     }
     if (amount <= 0.0f || length < 2u) return 1;
-    source = (float *)malloc(length * sizeof(float));
+    channels = sample->channels;
+    source = (float *)malloc(scalar_count * sizeof(float));
     if (source == NULL) {
         set_error(error, error_size, "Out of memory while warping waveform");
         return 0;
     }
-    memcpy(source, sample->data + first, length * sizeof(float));
+    memcpy(source, sample->data + first * channels,
+           scalar_count * sizeof(float));
     amount = clampf(amount, 0.0f, 1.0f);
     rate = 31.0 + 1969.0 * (double)amount * (double)amount;
     depth = 0.15 + 191.85 * (double)amount * (double)amount;
@@ -1176,18 +1188,21 @@ static int warp_range(TsSample *sample, size_t first, size_t last, float amount,
         double high = clampf((amount - 0.68f) / 0.32f, 0.0f, 1.0f);
         double modulator = simple + (metallic - simple) * middle;
         double displacement;
-        float value;
         modulator += (unstable - modulator) * high;
         displacement = depth * modulator;
         if (displacement > edge) displacement = edge;
         if (displacement < -edge) displacement = -edge;
-        value = sample_cubic_range(source, 0u, length, (double)i + displacement);
-        if (!isfinite(value)) {
-            free(source);
-            set_error(error, error_size, "WARP produced non-finite audio");
-            return 0;
+        for (size_t channel = 0; channel < channels; ++channel) {
+            float value = sample_cubic_channel_range(
+                source, 0u, length, channels, channel,
+                (double)i + displacement);
+            if (!isfinite(value)) {
+                free(source);
+                set_error(error, error_size, "WARP produced non-finite audio");
+                return 0;
+            }
+            sample->data[(first + i) * channels + channel] = value;
         }
-        sample->data[first + i] = value;
     }
     free(source);
     return 1;
@@ -1756,16 +1771,17 @@ static int smear_range(TsSample *sample, size_t first, size_t last, float amount
 {
     enum { WINDOW = 512, HOP = 128, BINS = WINDOW / 2 + 1 };
     size_t length = last - first;
+    size_t channels;
     TsComplex *spectrum;
     double *memory, *phase, *wet, *weight;
     float *source;
     double shaped, seconds, decay, mix;
-    if (sample == NULL || sample->channels != 1u) {
-        set_error(error, error_size,
-                  "Stereo SMEAR arrives in a later channel-linked editing PR");
+    if (sample == NULL || !ts_sample_valid_channels(sample->channels)) {
+        set_error(error, error_size, "SMEAR needs mono or stereo audio");
         return 0;
     }
     if (amount == 0.0f || length == 0u) return 1;
+    channels = sample->channels;
     spectrum = (TsComplex *)calloc(WINDOW, sizeof(*spectrum));
     memory = (double *)calloc(BINS, sizeof(*memory));
     phase = (double *)calloc(BINS, sizeof(*phase));
@@ -1777,44 +1793,58 @@ static int smear_range(TsSample *sample, size_t first, size_t last, float amount
         set_error(error, error_size, "Out of memory while smearing spectrum");
         return 0;
     }
-    memcpy(source, sample->data + first, length * sizeof(*source));
     shaped = pow((double)amount, 0.72);
     seconds = 0.025 * pow(480.0, shaped);
     decay = exp(-(double)HOP / ((double)sample->sample_rate * seconds));
     mix = 0.10 + 0.78 * shaped;
-    for (size_t position = 0; position < length; position += HOP) {
-        for (size_t i = 0; i < WINDOW; ++i) {
-            double window = 0.5 - 0.5 * cos(2.0 * M_PI * (double)i / (WINDOW - 1));
-            spectrum[i].re = position + i < length ? source[position + i] * window : 0.0;
-            spectrum[i].im = 0.0;
-        }
-        smear_fft(spectrum, WINDOW, 0);
-        for (size_t bin = 0; bin < BINS; ++bin) {
-            double magnitude = hypot(spectrum[bin].re, spectrum[bin].im);
-            memory[bin] *= decay;
-            if (magnitude > memory[bin]) {
-                memory[bin] = magnitude;
-                phase[bin] = atan2(spectrum[bin].im, spectrum[bin].re);
-            } else phase[bin] += 2.0 * M_PI * (double)bin * HOP / WINDOW;
-            spectrum[bin].re = memory[bin] * cos(phase[bin]);
-            spectrum[bin].im = memory[bin] * sin(phase[bin]);
-            if (bin == 0 || bin == WINDOW / 2) spectrum[bin].im = 0.0;
-            if (bin > 0 && bin < WINDOW / 2) {
-                spectrum[WINDOW - bin].re = spectrum[bin].re;
-                spectrum[WINDOW - bin].im = -spectrum[bin].im;
+    for (size_t channel = 0; channel < channels; ++channel) {
+        memset(memory, 0, BINS * sizeof(*memory));
+        memset(phase, 0, BINS * sizeof(*phase));
+        memset(wet, 0, length * sizeof(*wet));
+        memset(weight, 0, length * sizeof(*weight));
+        for (size_t i = 0; i < length; ++i)
+            source[i] = sample->data[(first + i) * channels + channel];
+        for (size_t position = 0; position < length; position += HOP) {
+            for (size_t i = 0; i < WINDOW; ++i) {
+                double window = 0.5 - 0.5 * cos(
+                    2.0 * M_PI * (double)i / (WINDOW - 1));
+                spectrum[i].re = position + i < length ?
+                    source[position + i] * window : 0.0;
+                spectrum[i].im = 0.0;
+            }
+            smear_fft(spectrum, WINDOW, 0);
+            for (size_t bin = 0; bin < BINS; ++bin) {
+                double magnitude = hypot(spectrum[bin].re, spectrum[bin].im);
+                memory[bin] *= decay;
+                if (magnitude > memory[bin]) {
+                    memory[bin] = magnitude;
+                    phase[bin] = atan2(spectrum[bin].im, spectrum[bin].re);
+                } else phase[bin] +=
+                    2.0 * M_PI * (double)bin * HOP / WINDOW;
+                spectrum[bin].re = memory[bin] * cos(phase[bin]);
+                spectrum[bin].im = memory[bin] * sin(phase[bin]);
+                if (bin == 0 || bin == WINDOW / 2) spectrum[bin].im = 0.0;
+                if (bin > 0 && bin < WINDOW / 2) {
+                    spectrum[WINDOW - bin].re = spectrum[bin].re;
+                    spectrum[WINDOW - bin].im = -spectrum[bin].im;
+                }
+            }
+            smear_fft(spectrum, WINDOW, 1);
+            for (size_t i = 0;
+                 i < WINDOW && position + WINDOW + i < length; ++i) {
+                size_t output = position + WINDOW + i;
+                double window = 0.5 - 0.5 * cos(
+                    2.0 * M_PI * (double)i / (WINDOW - 1));
+                wet[output] += spectrum[i].re * window;
+                weight[output] += window * window;
             }
         }
-        smear_fft(spectrum, WINDOW, 1);
-        for (size_t i = 0; i < WINDOW && position + WINDOW + i < length; ++i) {
-            size_t output = position + WINDOW + i;
-            double window = 0.5 - 0.5 * cos(2.0 * M_PI * (double)i / (WINDOW - 1));
-            wet[output] += spectrum[i].re * window;
-            weight[output] += window * window;
+        for (size_t i = 0; i < length; ++i) {
+            double processed = weight[i] > 1e-12 ?
+                               wet[i] / weight[i] : source[i];
+            sample->data[(first + i) * channels + channel] =
+                (float)(source[i] * (1.0 - mix) + processed * mix);
         }
-    }
-    for (size_t i = 0; i < length; ++i) {
-        double processed = weight[i] > 1e-12 ? wet[i] / weight[i] : source[i];
-        sample->data[first + i] = (float)(source[i] * (1.0 - mix) + processed * mix);
     }
     free(spectrum); free(memory); free(phase); free(wet); free(weight); free(source);
     set_error(error, error_size, "");
@@ -1837,25 +1867,29 @@ static int tear_range(TsSample *sample, size_t first, size_t last, float amount,
     float *source;
     float *output;
     size_t count = 1;
-    if (sample == NULL || sample->channels != 1u) {
-        set_error(error, error_size,
-                  "Stereo TEAR arrives in a later channel-linked editing PR");
+    size_t channels;
+    size_t scalar_count;
+    if (sample == NULL || !ts_sample_dimensions(length, sample->channels,
+                                                 &scalar_count, NULL)) {
+        set_error(error, error_size, "TEAR needs mono or stereo audio");
         return 0;
     }
     if (amount <= 0.0f || length < 8u) return 1;
+    channels = sample->channels;
     minimum = sample->sample_rate / 1000u;
     if (minimum < 24u) minimum = 24u;
     if (minimum > 128u) minimum = 128u;
     boundary = malloc((length / minimum + 3u) * sizeof(*boundary));
-    source = malloc(length * sizeof(*source));
-    output = malloc(length * sizeof(*output));
+    source = malloc(scalar_count * sizeof(*source));
+    output = malloc(scalar_count * sizeof(*output));
     if (boundary == NULL || source == NULL || output == NULL) {
         free(boundary); free(source); free(output);
         set_error(error, error_size, "Out of memory while tearing waveform");
         return 0;
     }
-    memcpy(source, sample->data + first, length * sizeof(*source));
-    memcpy(output, source, length * sizeof(*output));
+    memcpy(source, sample->data + first * channels,
+           scalar_count * sizeof(*source));
+    memcpy(output, source, scalar_count * sizeof(*output));
     boundary[0] = 0;
     for (size_t frame = minimum; frame + minimum < length; ++frame) {
         size_t absolute = first + frame;
@@ -1871,14 +1905,24 @@ static int tear_range(TsSample *sample, size_t first, size_t last, float amount,
         float threshold = (float)(field & 0xffffu) / 65535.0f;
         if (threshold > amount) continue;
         if (field & 0x10000u) {
-            memcpy(output + a, source + b, (c - b) * sizeof(*output));
-            memcpy(output + a + c - b, source + a, (b - a) * sizeof(*output));
+            memcpy(output + a * channels, source + b * channels,
+                   (c - b) * channels * sizeof(*output));
+            memcpy(output + (a + c - b) * channels,
+                   source + a * channels,
+                   (b - a) * channels * sizeof(*output));
         } else {
-            for (size_t i = a; i < b; ++i) output[i] = source[b - 1u - (i - a)];
-            for (size_t i = b; i < c; ++i) output[i] = source[c - 1u - (i - b)];
+            for (size_t i = a; i < b; ++i)
+                for (size_t channel = 0; channel < channels; ++channel)
+                    output[i * channels + channel] =
+                        source[(b - 1u - (i - a)) * channels + channel];
+            for (size_t i = b; i < c; ++i)
+                for (size_t channel = 0; channel < channels; ++channel)
+                    output[i * channels + channel] =
+                        source[(c - 1u - (i - b)) * channels + channel];
         }
     }
-    memcpy(sample->data + first, output, length * sizeof(*output));
+    memcpy(sample->data + first * channels, output,
+           scalar_count * sizeof(*output));
     free(boundary); free(source); free(output);
     set_error(error, error_size, "");
     return 1;
@@ -8536,11 +8580,6 @@ int ts_instrument_warp_gesture_begin(TsInstrument *instrument,
         set_error(error, error_size, "Could not begin WARP gesture");
         return 0;
     }
-    if (instrument->current.channels == 2u) {
-        set_error(error, error_size,
-                  "Stereo WARP arrives in a later channel-linked editing PR");
-        return 0;
-    }
     if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
     if (!ts_sample_clone(&gesture->original, &instrument->current,
@@ -8841,11 +8880,6 @@ int ts_instrument_smear_gesture_begin(TsInstrument *instrument, TsSmearGesture *
     if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
         set_error(error, error_size, "Could not begin SMEAR gesture"); return 0;
     }
-    if (instrument->current.channels == 2u) {
-        set_error(error, error_size,
-                  "Stereo SMEAR arrives in a later channel-linked editing PR");
-        return 0;
-    }
     if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     gesture->start = snapshot(instrument);
     if (!ts_sample_clone(&gesture->original, &instrument->current, error, error_size)) return 0;
@@ -8952,11 +8986,6 @@ int ts_instrument_tear_gesture_begin(TsInstrument *instrument, TsTearGesture *ge
 {
     if (instrument == NULL || gesture == NULL || gesture->active || instrument->current.data == NULL) {
         set_error(error, error_size, "Could not begin TEAR gesture"); return 0;
-    }
-    if (instrument->current.channels == 2u) {
-        set_error(error, error_size,
-                  "Stereo TEAR arrives in a later channel-linked editing PR");
-        return 0;
     }
     if (!ensure_edit_graph_capacity(instrument, 1, error, error_size)) return 0;
     gesture->start = snapshot(instrument);

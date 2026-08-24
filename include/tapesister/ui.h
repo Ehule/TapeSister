@@ -305,7 +305,6 @@ typedef struct {
     int sister_monitor_enabled;
     int sister_capture_active;
     int sister_warning;
-    int sister_source_select_mode;
     uint16_t sister_source_mask;
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
@@ -486,6 +485,9 @@ const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
 const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
                                      const TsInstrument *instrument);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
+void ts_ui_draw_tile_state_borders(TsFramebuffer *fb, int slot,
+                                   int active, int sister_source,
+                                   const TsPalette *palette);
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
 int ts_ui_keyboard_base_note(const TsUiState *ui);
@@ -540,7 +542,6 @@ int ts_ui_fm_background_click_allowed(const TsUiState *ui, int x, int y);
 int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
                              uint32_t now_ms);
 int ts_ui_waveform_mode_contains(int x, int y);
-int ts_ui_sister_source_mode_contains(int x, int y);
 int ts_ui_record_source_button_from_point(int x, int y);
 int ts_ui_canvas_edge_from_point(int x, int y);
 int ts_ui_drone_waveform_contains(int x, int y);
