@@ -105,11 +105,13 @@ off. CLEAR uses the PR3 fade/wait/off-thread-clear/fade-in transaction.
 
 ## Persistent source selection
 
-The main sample bank has a deliberate `SISTER SRC` mode. While active, tile clicks edit
-the runtime's per-page 16-bit Sister mask and do not edit Capture's transient mask or the
-focused tile. Occupied protected/locked tiles may be sources. Empty tiles are rejected.
-Page switching selects that page's mask. PR6 project state saves every page mask while
-named sonic presets deliberately omit masks.
+The main sample bank has no source-selection mode. Shift-clicking an occupied tile
+toggles the runtime's per-page 16-bit Sister mask without changing the active canvas,
+auditioning, or touching Capture's transient mask. Occupied protected/locked tiles may
+be sources. Shift-clicking an empty tile retains the established Copy operation and the
+copy is not marked automatically. Page switching selects that page's mask. PR6 project
+state saves every page mask while named sonic presets deliberately omit masks. The
+Sister-window TILES button remains the non-destructive insert/bypass for that mask.
 
 ## Capture and Overdub
 

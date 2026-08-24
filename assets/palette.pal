@@ -26,5 +26,7 @@ ActiveTile=#FFD265
 StereoWaveLeft=#FFE700
 StereoWaveRight=#35FFFF
 StereoWaveSum=#18FF00
+SisterSourceHorizontal=#FFE700
+SisterSourceVertical=#35FFFF
 DesktopContrast=52
 ButtonsContrast=57

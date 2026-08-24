@@ -22,8 +22,9 @@ the requirement to keep another window or monitor path active.
 
 ## Complete performance sources
 
-`TILES` is the selected page's performance group. A plain click in `SISTER SRC` replaces
-the group; Shift-click toggles members. MIDI and QWERTY send one identical `TsNoteEvent`
+`TILES` is the selected page's performance group and remains its master insert/bypass.
+PR7 removes the modal `SISTER SRC` control: Shift-click toggles any occupied Sample Bank
+tile directly, while Shift-click on an empty tile preserves Copy. MIDI and QWERTY send one identical `TsNoteEvent`
 to every valid member. Each member keeps its own mono/stereo voice, tuning, velocity,
 loop and release behavior. Mono is exact dual mono and stereo shares phase/pitch while
 reading independent channels. The fixed pool preflights the complete group; if it cannot
@@ -47,6 +48,8 @@ All routed sources retain the PR5 insert law: the selected direct speaker bus is
 the source enters INPUT/write once, and audibility returns only through Sister's MONITOR,
 DRY and WET controls. MONITOR off never prevents rolling writes or Sister Capture.
 `AUDITION` remains the separate canvas/waveform preview bus and is not required for TILES.
+When POWER and TILES are on, ordinary occupied-tile clicks select the canvas without
+creating a legacy preview voice; explicit AUDITION remains independently switchable.
 
 ## Ghost Tone
 

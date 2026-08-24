@@ -178,6 +178,13 @@ static void ts_overlay_tile_states(TsFramebuffer *fb, const TsUiState *ui,
                                               ts_locked_tile_dim_percent);
             }
     }
+    /* State borders are redrawn after protected-tile dimming so lock state
+       never obscures routing or active-canvas identity. */
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
+        ts_ui_draw_tile_state_borders(
+            fb, slot, instrument->selected_slot == slot,
+            (ui->sister_source_mask & (uint16_t)(1u << slot)) != 0u,
+            &ui->palette);
     if (audio == NULL || !audio->performance_group_latched ||
         audio->performance_source_mask == 0u) return;
     source_color = ui->palette.colors[TS_PALETTE_PATTERN_EFFECT];

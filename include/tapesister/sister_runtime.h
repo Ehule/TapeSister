@@ -46,6 +46,13 @@ typedef enum {
     TS_SISTER_WARNING_ALLOCATION = 1u << 3
 } TsSisterWarning;
 
+typedef enum {
+    TS_SISTER_TILE_SHIFT_FAILED = 0,
+    TS_SISTER_TILE_SHIFT_COPIED,
+    TS_SISTER_TILE_SHIFT_SOURCE_ADDED,
+    TS_SISTER_TILE_SHIFT_SOURCE_REMOVED
+} TsSisterTileShiftResult;
+
 typedef struct {
     TsStereoFrame fm;
     TsStereoFrame external;
@@ -164,6 +171,10 @@ uint8_t ts_sister_runtime_sources(const TsSisterRuntime *runtime);
 int ts_sister_runtime_set_page(TsSisterRuntime *runtime, size_t page,
                                const TsInstrument *instrument);
 uint16_t ts_sister_runtime_source_mask(const TsSisterRuntime *runtime);
+TsSisterTileShiftResult ts_sister_runtime_shift_sample_tile(
+    TsSisterRuntime *runtime, TsInstrument *instrument, int slot,
+    char *status, size_t status_size);
+int ts_sister_runtime_tiles_insert_active(const TsSisterRuntime *runtime);
 int ts_sister_runtime_set_source_slot(TsSisterRuntime *runtime,
                                       const TsInstrument *instrument,
                                       int slot, int selected);

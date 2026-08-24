@@ -84,7 +84,7 @@ int ts_ui_fm_background_click_allowed(const TsUiState *ui, int x, int y)
     if (ui == NULL || !ui->fm_open || ui->fm_bank_choice_open ||
         ui->fm_full_choice_open)
         return 0;
-    return ts_ui_logo_contains(x, y) || ts_ui_sister_source_mode_contains(x, y) ||
+    return ts_ui_logo_contains(x, y) ||
            (!ui->show_keyboard && !ui->show_recipes &&
             !ui->show_ingredients && ts_ui_bank_slot_from_point(x, y) >= 0);
 }
@@ -114,11 +114,6 @@ int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
 int ts_ui_waveform_mode_contains(int x, int y)
 {
     return x >= 526 && x < 620 && y >= 43 && y < 60;
-}
-
-int ts_ui_sister_source_mode_contains(int x, int y)
-{
-    return x >= 250 && x < 345 && y >= 313 && y < 330;
 }
 
 typedef struct {
@@ -195,6 +190,41 @@ static void rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t color)
     if (w <= 0 || h <= 0) return;
     for (int py = y; py < y + h; ++py)
         for (int px = x; px < x + w; ++px) fb->pixels[py * TS_UI_WIDTH + px] = color;
+}
+
+void ts_ui_draw_tile_state_borders(TsFramebuffer *fb, int slot,
+                                   int active, int sister_source,
+                                   const TsPalette *palette)
+{
+    int x;
+    int y;
+    uint32_t active_color;
+    if (fb == NULL || palette == NULL || slot < 0 ||
+        slot >= TS_BANK_SLOT_COUNT || (!active && !sister_source)) return;
+    x = 10 + (slot % 8) * 77;
+    y = 330 + (slot / 8) * 25;
+    active_color = palette->colors[TS_PALETTE_ACTIVE_TILE];
+    if (sister_source) {
+        uint32_t horizontal =
+            palette->colors[TS_PALETTE_SISTER_SOURCE_HORIZONTAL];
+        uint32_t vertical =
+            palette->colors[TS_PALETTE_SISTER_SOURCE_VERTICAL];
+        rect(fb, x - 2, y - 2, 76, 2, horizontal);
+        rect(fb, x - 2, y + 23, 76, 2, horizontal);
+        rect(fb, x - 2, y, 2, 23, vertical);
+        rect(fb, x + 72, y, 2, 23, vertical);
+    }
+    if (active && sister_source) {
+        rect(fb, x + 1, y + 1, 70, 1, active_color);
+        rect(fb, x + 1, y + 21, 70, 1, active_color);
+        rect(fb, x + 1, y + 1, 1, 21, active_color);
+        rect(fb, x + 70, y + 1, 1, 21, active_color);
+    } else if (active) {
+        rect(fb, x - 2, y - 2, 76, 3, active_color);
+        rect(fb, x - 2, y + 22, 76, 3, active_color);
+        rect(fb, x - 2, y - 2, 3, 27, active_color);
+        rect(fb, x + 71, y - 2, 3, 27, active_color);
+    }
 }
 
 static void wave_rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t color)
@@ -1093,7 +1123,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
     static const char *const short_names[TS_PALETTE_TAPESISTER_COLOR_COUNT] = {
         "TITLE", "ACTIVE", "ACT TEXT", "POINTER", "DESKTOP", "CONTROLS", "WAVE",
         "PRIMARY", "EDGE/ZERO", "LOOP", "EFFECT", "SPARE", "WAVE SEL", "ACT TILE",
-        "WAVE LEFT", "WAVE RIGHT", "WAVE SUM"
+        "WAVE LEFT", "WAVE RIGHT", "WAVE SUM", "SISTER H", "SISTER V"
     };
     static const char *const channel_names[3] = {"RED", "GREEN", "BLUE"};
     char value[48];
@@ -2748,7 +2778,6 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                         "REC BANK  CHAIN ON  TAKES ADVANCE AND REARM" :
                         "REC BANK  SELECT EMPTY TILE  REC ARM  SHIFT+1";
         else {
-            /* Keep the bank hint clear of the fixed SISTER SRC control. */
             snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %.22s",
                      ui->sample_page + 1,
                      ui->sample_page_count > 0 ? ui->sample_page_count : 1,
@@ -2771,9 +2800,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int capture_channels = ui->capture_state != TS_CAPTURE_IDLE ?
                                    ui->capture_channels :
                                    ui->config.capture_channels;
-            mini_button(fb, 250, 313, 95,
-                        ui->sister_source_select_mode ? "SISTER SRC ON" : "SISTER SRC",
-                        ui->sister_source_select_mode);
+            char source_count[24];
+            snprintf(source_count, sizeof(source_count), "SRC %d  SHIFT+T",
+                     ts_performance_source_count(ui->sister_source_mask));
+            text(fb, 250, 318, source_count, PAL_NOTE, 1);
             mini_button(fb, 350, 313, 28,
                         capture_channels == 2 ? "S" : "M",
                         capture_channels == 2);
@@ -2799,10 +2829,6 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 rect(fb, x + 4, y + 4, 3, 15, PAL_NOTE);
                 text(fb, x + 10, y + 8, "SRC", PAL_NOTE, 1);
             }
-            if ((ui->sister_source_mask & (uint16_t)(1u << i)) != 0u) {
-                rect(fb, x + 64, y + 3, 5, 5, PAL_WAVE_LEFT);
-                rect(fb, x + 65, y + 11, 3, 8, PAL_WAVE_RIGHT);
-            }
             if (i == ui->capture_destination_slot) {
                 uint32_t record_color = ui->text_cursor_visible ? PAL_VOLUME : PAL_EFFECT;
                 rect(fb, x - 2, y - 2, 76, 3, record_color);
@@ -2810,12 +2836,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 rect(fb, x - 2, y - 2, 3, 27, record_color);
                 rect(fb, x + 71, y - 2, 3, 27, record_color);
             }
-            if (i == instrument->selected_slot) {
-                rect(fb, x - 2, y - 2, 76, 3, PAL_ACTIVE_TILE);
-                rect(fb, x - 2, y + 22, 76, 3, PAL_ACTIVE_TILE);
-                rect(fb, x - 2, y - 2, 3, 27, PAL_ACTIVE_TILE);
-                rect(fb, x + 71, y - 2, 3, 27, PAL_ACTIVE_TILE);
-            }
+            ts_ui_draw_tile_state_borders(
+                fb, i, i == instrument->selected_slot,
+                (ui->sister_source_mask & (uint16_t)(1u << i)) != 0u,
+                active_palette());
         }
     }
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));

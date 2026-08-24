@@ -153,7 +153,7 @@ int main(void)
           !ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
     ui.fm_open = 1;
     CHECK(ts_ui_fm_background_click_allowed(&ui, 20, 12));
-    CHECK(ts_ui_fm_background_click_allowed(&ui, 270, 320));
+    CHECK(!ts_ui_fm_background_click_allowed(&ui, 270, 320));
     CHECK(ts_ui_fm_background_click_allowed(&ui, 46, 341));
     CHECK(!ts_ui_fm_background_click_allowed(&ui, 220, 120));
     ui.fm_bank_choice_open = 1;
