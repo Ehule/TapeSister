@@ -35,6 +35,10 @@ int main(void)
     assert(ts_sister_runtime_set_page(&runtime, 1u, &instrument));
     assert(ts_sister_runtime_set_source_slot(&runtime, &instrument, 1, 1));
     runtime.parameters.ghost_tone = 0.61f;
+    runtime.parameters.soak = 0.68f;
+    runtime.parameters.bleed = 0.74f;
+    runtime.parameters.soak_targets = TS_SISTER_EFFECT_TARGET_H1 |
+                                      TS_SISTER_EFFECT_TARGET_H2;
     ts_sister_runtime_set_parameters(&runtime, &runtime.parameters);
     runtime.machine.buffer.data[0] = 0.75f;
     ts_sister_project_state_capture(&state, &runtime, 2u, "GHOST FIELD");
@@ -43,6 +47,10 @@ int main(void)
                                         error, sizeof(error)) && present);
     assert(loaded.page_masks[0] == 1u && loaded.page_masks[1] == 2u);
     assert(loaded.parameters.ghost_tone > 0.60f);
+    assert(loaded.parameters.soak > 0.67f && loaded.parameters.soak < 0.69f);
+    assert(loaded.parameters.bleed > 0.73f && loaded.parameters.bleed < 0.75f);
+    assert(loaded.parameters.soak_targets ==
+           (TS_SISTER_EFFECT_TARGET_H1 | TS_SISTER_EFFECT_TARGET_H2));
     assert(strcmp(loaded.selected_preset, "GHOST FIELD") == 0);
     ts_sister_runtime_init(&restored);
     assert(ts_sister_project_state_apply(&loaded, &restored, &instrument));
@@ -59,12 +67,16 @@ int main(void)
         assert(file != NULL);
         fputs("TapeSister Sister Project State\nVersion=9\nPageCount=1\n"
               "ActivePage=0\nRoutes=2\nSelectedPreset=FUTURE\n"
-              "Mask.0=0000\nGhostTone=0.25\nFutureField=17\n", file);
+              "Mask.0=0000\nGhostTone=0.25\nSoakTargets=255\n"
+              "FutureField=17\n", file);
         fclose(file);
         assert(ts_sister_project_state_load(&loaded, project, 48000u,
                                             &present, error, sizeof(error)));
         assert(present && loaded.source_switches == TS_SISTER_SOURCE_FM &&
                loaded.parameters.ghost_tone == 0.25f);
+        assert(loaded.parameters.soak == 0.0f &&
+               loaded.parameters.bleed == 0.25f &&
+               loaded.parameters.soak_targets == TS_SISTER_EFFECT_TARGET_MIX);
     }
     remove(state_path);
     {
@@ -81,7 +93,10 @@ int main(void)
     ts_sister_project_state_init(&loaded, 48000u);
     assert(ts_sister_project_state_load(&loaded, "missing-project.tsr", 48000u,
                                         &present, error, sizeof(error)));
-    assert(!present && loaded.source_switches == 0u);
+    assert(!present && loaded.source_switches == 0u &&
+           loaded.parameters.soak == 0.0f &&
+           loaded.parameters.bleed == 0.25f &&
+           loaded.parameters.soak_targets == TS_SISTER_EFFECT_TARGET_MIX);
     puts("sister project-state tests passed");
     return 0;
 }

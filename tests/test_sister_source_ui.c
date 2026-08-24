@@ -29,8 +29,8 @@ int main(void)
     ts_sister_ui_model_init(&model, &config);
     ts_sister_ui_model_update(&model, &routing, NULL, NULL, NULL);
     CHECK(model.routing.source_mask == 0x9u);
-    CHECK(ts_sister_ui_hit_test(12, 195).action == TS_SISTER_UI_ACTION_SOURCE_TILES);
-    CHECK(ts_sister_ui_hit_test(240, 195).action == TS_SISTER_UI_ACTION_SOURCE_PREVIEW);
+    CHECK(ts_sister_ui_hit_test(12, 177).action == TS_SISTER_UI_ACTION_SOURCE_TILES);
+    CHECK(ts_sister_ui_hit_test(240, 177).action == TS_SISTER_UI_ACTION_SOURCE_PREVIEW);
     CHECK(ts_sister_runtime_set_page(&runtime, 1u, &instrument));
     CHECK(ts_sister_runtime_source_mask(&runtime) == 0u);
     CHECK(ts_sister_runtime_set_page(&runtime, 0u, &instrument));

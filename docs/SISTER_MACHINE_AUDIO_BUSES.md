@@ -79,6 +79,13 @@ sample voices and linked normalization. Sister Capture reuses the existing prote
 transaction rather than bypassing it. See `SISTER_MACHINE_LIVE_ROUTING.md` for source
 switches, masks, tap definitions, lifecycle and PR5's controller boundary.
 
+PR8 adds the Soak/Bleed stereo weave and the reusable H1/H2/H3/MIX target seam.
+Head weaving is after the guarded interpolated read and before that head's established
+feedback source and audible Drop/Decor/Width/Level path. MIX weaving is post-filter and
+post-OUT, immediately before linked safety, and has no return to rolling memory. Capture
+continues to consume the published taps. See `SISTER_MACHINE_SOAK_BLEED.md` for the
+complete audited order, mappings and mono contract.
+
 ## Manual Windows/Linux validation
 
 - Confirm a mono project remains centered and unchanged.

@@ -28,7 +28,10 @@ int main(void)
           model.parameters.monitor_wet == 1.0f &&
           model.parameters.mix_output_gain == 4.0f &&
           model.parameters.write_erase == 1.0f &&
-          model.parameters.ghost_tone == 0.0f);
+          model.parameters.ghost_tone == 0.0f &&
+          model.parameters.soak == 0.0f &&
+          model.parameters.bleed == 0.25f &&
+          model.parameters.soak_targets == TS_SISTER_EFFECT_TARGET_MIX);
     ts_sister_ui_model_show(&model);
     CHECK(model.visible);
     ts_sister_ui_model_hide(&model);
@@ -42,37 +45,49 @@ int main(void)
     hit = ts_sister_ui_hit_test(12, 10);
     CHECK(hit.action == TS_SISTER_UI_ACTION_POWER);
     CHECK(ts_sister_ui_hit_test(540, 10).action == TS_SISTER_UI_ACTION_WAVE_MODE);
-    CHECK(ts_sister_ui_hit_test(90, 195).action == TS_SISTER_UI_ACTION_SOURCE_FM);
-    hit = ts_sister_ui_hit_test(100, 224);
+    CHECK(ts_sister_ui_hit_test(90, 177).action == TS_SISTER_UI_ACTION_SOURCE_FM);
+    hit = ts_sister_ui_hit_test(100, 206);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER);
     CHECK(hit.index == TS_SISTER_UI_PARAM_H1_LEVEL);
-    hit = ts_sister_ui_hit_test(440, 224);
+    hit = ts_sister_ui_hit_test(440, 206);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FILTER_CUTOFF);
-    hit = ts_sister_ui_hit_test(550, 308);
+    hit = ts_sister_ui_hit_test(550, 290);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FILTER_GAIN);
-    hit = ts_sister_ui_hit_test(440, 280);
+    hit = ts_sister_ui_hit_test(440, 262);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FILTER_Q);
-    hit = ts_sister_ui_hit_test(20, 334);
+    hit = ts_sister_ui_hit_test(20, 312);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_INPUT_GAIN);
-    hit = ts_sister_ui_hit_test(120, 334);
+    hit = ts_sister_ui_hit_test(120, 312);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MONITOR_DRY);
-    hit = ts_sister_ui_hit_test(220, 334);
+    hit = ts_sister_ui_hit_test(220, 312);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MONITOR_WET);
-    hit = ts_sister_ui_hit_test(325, 334);
+    hit = ts_sister_ui_hit_test(325, 312);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MIX_OUTPUT);
-    hit = ts_sister_ui_hit_test(430, 334);
+    hit = ts_sister_ui_hit_test(430, 312);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_WRITE_ERASE);
-    hit = ts_sister_ui_hit_test(530, 334);
+    hit = ts_sister_ui_hit_test(530, 312);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_GHOST_TONE);
+    hit = ts_sister_ui_hit_test(20, 334);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_SOAK);
+    hit = ts_sister_ui_hit_test(150, 334);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_BLEED);
+    hit = ts_sister_ui_hit_test(280, 334);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
+          hit.index == TS_SISTER_EFFECT_TARGET_H1);
+    hit = ts_sister_ui_hit_test(455, 334);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
+          hit.index == TS_SISTER_EFFECT_TARGET_MIX);
     CHECK(ts_sister_ui_hit_test(235, 374).action ==
           TS_SISTER_UI_ACTION_PRESET_PREVIOUS);
     CHECK(ts_sister_ui_hit_test(280, 374).action ==
@@ -142,8 +157,16 @@ int main(void)
           palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
     CHECK(framebuffer.pixels[43u * TS_UI_WIDTH + 625u] ==
           palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
-    CHECK(framebuffer.pixels[113u * TS_UI_WIDTH + 625u] ==
+    CHECK(framebuffer.pixels[106u * TS_UI_WIDTH + 625u] ==
           palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
+    /* PR8's default MIX target has its stereo-role top/under lines. H1 is
+       inactive, while the default 25-percent BLEED bar is visibly filled. */
+    CHECK(framebuffer.pixels[331u * TS_UI_WIDTH + 451u] ==
+          palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
+    CHECK(framebuffer.pixels[331u * TS_UI_WIDTH + 277u] !=
+          palette.colors[TS_PALETTE_PATTERN_NOTE]);
+    CHECK(framebuffer.pixels[344u * TS_UI_WIDTH + 145u] ==
+          palette.colors[TS_PALETTE_PATTERN_EFFECT]);
     for (size_t pixel = 0u; pixel < TS_UI_WIDTH * TS_UI_HEIGHT; ++pixel) {
         first_hash ^= framebuffer.pixels[pixel];
         first_hash *= 1099511628211ull;
@@ -154,6 +177,15 @@ int main(void)
         second_hash *= 1099511628211ull;
     }
     CHECK(first_hash == second_hash && first_hash != 1469598103934665603ull);
+    model.parameters.soak_targets = TS_SISTER_EFFECT_TARGET_H1 |
+                                    TS_SISTER_EFFECT_TARGET_H3;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[331u * TS_UI_WIDTH + 277u] ==
+          palette.colors[TS_PALETTE_PATTERN_NOTE]);
+    CHECK(framebuffer.pixels[331u * TS_UI_WIDTH + 393u] ==
+          palette.colors[TS_PALETTE_PATTERN_TUNING]);
+    CHECK(framebuffer.pixels[331u * TS_UI_WIDTH + 451u] !=
+          palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
     puts("Sister UI model tests passed");
     return failures != 0;
 }

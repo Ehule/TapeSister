@@ -1,5 +1,11 @@
 # Sister Machine PR5 performance window
 
+PR8 retains the 640x400 logical size while shortening the waveform viewport enough to
+add one compact `SOAK / BLEED / H1 / H2 / H3 / MIX` row above status and Capture. The
+two continuous fields use the existing guarded wheel and drag language. The four target
+boxes are binary, exclusive between the head group and MIX, and reuse current palette
+roles. No new focus mode or keyboard interception is introduced.
+
 PR5 exposes the PR3/PR4 Sister engine without moving audio ownership into UI code.
 The main `AudioState` still owns `TsSisterRuntime`; the second SDL window owns only a
 `TsSisterUiModel`, renderer, texture and copied snapshots. Closing the window or pressing

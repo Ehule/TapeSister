@@ -91,6 +91,11 @@ the active bank changes. Recall publishes sanitized parameters through the exist
 runtime setter; it never allocates in the callback, clears tape, restarts heads, stops
 voices or changes transport/routing.
 
+PR8 advances the preset schema to version 2 and adds `soak`, `bleed` and
+`soak_targets`. The target mask is part of the portable Soak/Bleed sound design, unlike
+source switches and per-page tile masks. Recall smooths the two values and insertion
+fades without serializing or restarting modulation phase.
+
 H3 has level, span and one exact discrete rate. The PR5 `Q` placement was a labeling
 ambiguity: it always controlled the shared post-head filter Q. PR6 labels it `FILTER Q`
 and the preset/project schemas contain only that shared filter field—there is no H3 Q.
@@ -110,6 +115,11 @@ state. Legacy projects without the companion load with routes off and empty mask
 Malformed state is rejected; unknown future fields are ignored. Loading an EXT route
 does not touch hardware while parsing. The shared device is requested only after the
 project is valid and only if Sister is already powered.
+
+PR8 advances the project companion to version 2 and round-trips the same Soak/Bleed
+values and sanitized target mask. Version-1 and missing-field state remains audibly
+identical: SOAK zero, BLEED 25 percent and MIX selected. Delay history and phase remain
+runtime-only.
 
 ## Realtime contract
 

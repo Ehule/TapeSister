@@ -90,7 +90,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "DuckEnabled=%d\nDuckMode=%d\nDuckSensitivity=%.9g\nDecor=%d\n"
         "Width=%.9g\nFilterType=%d\nFilterCutoff=%.9g\nFilterQ=%.9g\n"
         "FilterGain=%.9g\nInput=%.9g\nDry=%.9g\nWet=%.9g\nOut=%.9g\n"
-        "Erase=%.9g\nGhostTone=%.9g\n",
+        "Erase=%.9g\nGhostTone=%.9g\nSoak=%.9g\nBleed=%.9g\n"
+        "SoakTargets=%u\n",
         p->head1_level, p->head1_time_ms, p->head1_feedback,
         p->head2_level, p->head2_scrub, p->head2_rate_index, p->head2_feedback,
         p->head3_level, p->head3_span, p->head3_rate_index, p->wow, p->drop,
@@ -98,7 +99,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->decorrelation_enabled, p->width, p->filter_type,
         p->filter_cutoff_hz, p->filter_q, p->filter_gain_db,
         p->input_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
-        p->write_erase, p->ghost_tone) >= 0;
+        p->write_erase, p->ghost_tone, p->soak, p->bleed,
+        (unsigned)p->soak_targets) >= 0;
 }
 
 int ts_sister_project_state_save(const TsSisterProjectState *state,
@@ -213,6 +215,13 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     PF("FilterCutoff", filter_cutoff_hz); PF("FilterQ", filter_q); PF("FilterGain", filter_gain_db);
     PF("Input", input_gain); PF("Dry", monitor_dry); PF("Wet", monitor_wet);
     PF("Out", mix_output_gain); PF("Erase", write_erase); PF("GhostTone", ghost_tone);
+    PF("Soak", soak); PF("Bleed", bleed);
+    if (strcmp(key, "SoakTargets") == 0) {
+        if (!parse_int_value(value, &integer) || integer < 0 ||
+            integer > 255) return 0;
+        p->soak_targets = (uint8_t)integer;
+        return 1;
+    }
 #undef PF
 #undef PI
     return 1;

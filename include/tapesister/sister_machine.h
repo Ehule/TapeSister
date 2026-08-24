@@ -2,6 +2,7 @@
 #define TAPESISTER_SISTER_MACHINE_H
 
 #include "tapesister/sample.h"
+#include "tapesister/sister_effects.h"
 
 #include <stdatomic.h>
 #include <stddef.h>
@@ -117,6 +118,11 @@ typedef struct {
     float filter_cutoff_hz;
     float filter_q;
     float filter_gain_db;
+    /* Global stereo-weave controls. Target bits are mutually exclusive
+       between the head group and MIX; multiple head bits are valid. */
+    float soak;
+    float bleed;
+    uint8_t soak_targets;
     float headroom;
     /* Fraction of the previous rolling-memory cell erased on each write pass.
        1.0 is full replacement; 0.0 retains the complete previous cell. */
@@ -194,6 +200,7 @@ typedef struct {
     TsSisterHeadState head[TS_SISTER_HEAD_COUNT];
     TsSisterDropState drop[2];
     TsSisterDecorrelator decorrelator[TS_SISTER_HEAD_COUNT];
+    TsSisterWeaveState soak_weave[TS_SISTER_EFFECT_PROCESSOR_COUNT];
     TsSisterBiquadCoefficients filter_current;
     TsSisterBiquadCoefficients filter_target;
     TsSisterBiquadCoefficients filter_step;

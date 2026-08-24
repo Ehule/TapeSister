@@ -170,7 +170,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     for (int source = 0; source < 4; ++source) {
-        if (contains(x, y, 10 + source * 76, 190, 70, 20)) {
+        if (contains(x, y, 10 + source * 76, 172, 70, 20)) {
             hit.action = (TsSisterUiAction)(TS_SISTER_UI_ACTION_SOURCE_TILES + source);
             hit.index = source;
             return hit;
@@ -178,7 +178,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
     }
     /* Three compact head rows: three continuous fields plus H2 feedback. */
     for (int row = 0; row < 3; ++row) {
-        int top = 220 + row * 28;
+        int top = 202 + row * 28;
         for (int field = 0; field < 4; ++field) {
             int left = 72 + field * 120;
             if (contains(x, y, left, top, 110, 18)) {
@@ -205,7 +205,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             TS_SISTER_UI_PARAM_WIDTH, TS_SISTER_UI_PARAM_FILTER_TYPE,
             TS_SISTER_UI_PARAM_FILTER_GAIN
         };
-        if (contains(x, y, 10 + control * 88, 304, 82, 18)) {
+        if (contains(x, y, 10 + control * 88, 286, 82, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = parameters[control];
             hit.normalized = (float)(x - (10 + control * 88)) / 81.0f;
@@ -222,10 +222,29 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             TS_SISTER_UI_PARAM_GHOST_TONE
         };
         int left = 10 + control * 103;
-        if (contains(x, y, left, 330, 98, 18)) {
+        if (contains(x, y, left, 308, 98, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = parameters[control];
             hit.normalized = (float)(x - left) / 97.0f;
+            return hit;
+        }
+    }
+    if (contains(x, y, 10, 330, 124, 18)) {
+        hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+        hit.index = TS_SISTER_UI_PARAM_SOAK;
+        hit.normalized = (float)(x - 10) / 123.0f;
+        return hit;
+    }
+    if (contains(x, y, 140, 330, 124, 18)) {
+        hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+        hit.index = TS_SISTER_UI_PARAM_BLEED;
+        hit.normalized = (float)(x - 140) / 123.0f;
+        return hit;
+    }
+    for (int target = 0; target < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++target) {
+        if (contains(x, y, 276 + target * 58, 330, 52, 18)) {
+            hit.action = TS_SISTER_UI_ACTION_EFFECT_TARGET;
+            hit.index = 1u << target;
             return hit;
         }
     }
