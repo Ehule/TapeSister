@@ -130,6 +130,7 @@ typedef struct {
     int callback_failed;
     float monitor_dry_current;
     float monitor_wet_current;
+    char selected_preset[48];
     TsSisterRoutingSnapshotAtomic snapshot;
     TsSisterWavePublisher waveform;
 } TsSisterRuntime;
@@ -148,6 +149,8 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
                                   char *error, size_t error_size);
 void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
                                       const TsSisterParameters *parameters);
+void ts_sister_runtime_set_selected_preset(TsSisterRuntime *runtime,
+                                           const char *name);
 void ts_sister_runtime_set_rolling(TsSisterRuntime *runtime, int rolling);
 void ts_sister_runtime_set_hold(TsSisterRuntime *runtime, int held);
 void ts_sister_runtime_set_monitor(TsSisterRuntime *runtime, int enabled);
@@ -167,6 +170,9 @@ int ts_sister_runtime_set_source_slot(TsSisterRuntime *runtime,
 int ts_sister_runtime_toggle_source_slot(TsSisterRuntime *runtime,
                                          const TsInstrument *instrument,
                                          int slot);
+int ts_sister_runtime_replace_source_slot(TsSisterRuntime *runtime,
+                                          const TsInstrument *instrument,
+                                          int slot);
 void ts_sister_runtime_clear_source_mask(TsSisterRuntime *runtime);
 uint16_t ts_sister_runtime_validate_source_mask(
     TsSisterRuntime *runtime, const TsInstrument *instrument);

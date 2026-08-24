@@ -63,6 +63,9 @@ enum {
     TS_SISTER_ERASE_PERCENT_MIN = 0,
     TS_SISTER_ERASE_PERCENT_MAX = 100,
     TS_SISTER_ERASE_PERCENT_DEFAULT = 100,
+    TS_SISTER_GHOST_PERCENT_MIN = 0,
+    TS_SISTER_GHOST_PERCENT_MAX = 100,
+    TS_SISTER_GHOST_PERCENT_DEFAULT = 0,
     TS_MIDI_INPUT_CHANNEL_MIN = 0,
     TS_MIDI_INPUT_CHANNEL_MAX = 16,
     TS_MIDI_INPUT_CHANNEL_DEFAULT = 0
@@ -115,6 +118,7 @@ typedef struct {
     int sister_input_percent;
     int sister_output_percent;
     int sister_erase_percent;
+    int sister_ghost_percent;
     int sister_window_x;
     int sister_window_y;
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];

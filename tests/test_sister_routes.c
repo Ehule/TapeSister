@@ -75,6 +75,9 @@ int main(void)
         frame = ts_sister_runtime_process_frame(&runtime, NULL);
     one_tile_peak = sister_peak(frame.input);
     ts_sister_runtime_note_off(&runtime, &note);
+    /* One-shots intentionally survive Note Off.  Clear that first generation
+       before measuring the two-tile group's linked normalization. */
+    ts_sister_runtime_panic(&runtime);
     CHECK(ts_sister_runtime_set_source_slot(&runtime, &instrument, 1, 1));
     CHECK(ts_sister_runtime_note_on(&runtime, &instrument, &note, 0,
                                     1000) == 2);

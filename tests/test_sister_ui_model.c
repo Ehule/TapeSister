@@ -27,7 +27,8 @@ int main(void)
           model.parameters.monitor_dry == 1.0f &&
           model.parameters.monitor_wet == 1.0f &&
           model.parameters.mix_output_gain == 4.0f &&
-          model.parameters.write_erase == 1.0f);
+          model.parameters.write_erase == 1.0f &&
+          model.parameters.ghost_tone == 0.0f);
     ts_sister_ui_model_show(&model);
     CHECK(model.visible);
     ts_sister_ui_model_hide(&model);
@@ -51,21 +52,35 @@ int main(void)
     hit = ts_sister_ui_hit_test(550, 308);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FILTER_GAIN);
+    hit = ts_sister_ui_hit_test(440, 280);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FILTER_Q);
     hit = ts_sister_ui_hit_test(20, 334);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_INPUT_GAIN);
-    hit = ts_sister_ui_hit_test(150, 334);
+    hit = ts_sister_ui_hit_test(120, 334);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MONITOR_DRY);
-    hit = ts_sister_ui_hit_test(270, 334);
+    hit = ts_sister_ui_hit_test(220, 334);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MONITOR_WET);
-    hit = ts_sister_ui_hit_test(400, 334);
+    hit = ts_sister_ui_hit_test(325, 334);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MIX_OUTPUT);
-    hit = ts_sister_ui_hit_test(520, 334);
+    hit = ts_sister_ui_hit_test(430, 334);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_WRITE_ERASE);
+    hit = ts_sister_ui_hit_test(530, 334);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_GHOST_TONE);
+    CHECK(ts_sister_ui_hit_test(235, 374).action ==
+          TS_SISTER_UI_ACTION_PRESET_PREVIOUS);
+    CHECK(ts_sister_ui_hit_test(280, 374).action ==
+          TS_SISTER_UI_ACTION_PRESET_MANAGE);
+    model.preset_manage_open = 1;
+    CHECK(ts_sister_ui_hit_test_model(&model, 190, 205).action ==
+          TS_SISTER_UI_ACTION_PRESET_SAVE_AS);
+    model.preset_manage_open = 0;
     CHECK(strcmp(ts_sister_filter_type_name(TS_SISTER_FILTER_BYPASS), "OFF") == 0);
     CHECK(strcmp(ts_sister_filter_type_name(TS_SISTER_FILTER_LOWPASS), "LP") == 0);
     CHECK(ts_sister_ui_hit_test(455, 374).action == TS_SISTER_UI_ACTION_CAPTURE);

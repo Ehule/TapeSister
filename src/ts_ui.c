@@ -79,6 +79,38 @@ int ts_ui_logo_contains(int x, int y)
     return x >= 0 && x < 160 && y >= 0 && y < 32;
 }
 
+int ts_ui_fm_background_click_allowed(const TsUiState *ui, int x, int y)
+{
+    if (ui == NULL || !ui->fm_open || ui->fm_bank_choice_open ||
+        ui->fm_full_choice_open)
+        return 0;
+    return ts_ui_logo_contains(x, y) || ts_ui_sister_source_mode_contains(x, y) ||
+           (!ui->show_keyboard && !ui->show_recipes &&
+            !ui->show_ingredients && ts_ui_bank_slot_from_point(x, y) >= 0);
+}
+
+int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
+                             uint32_t now_ms)
+{
+    uint32_t elapsed;
+    if (guard == NULL || target < 0) return 0;
+    if (!guard->active) {
+        guard->target = target;
+        guard->last_event_ms = now_ms;
+        guard->active = 1;
+        return 1;
+    }
+    elapsed = now_ms - guard->last_event_ms;
+    if (target != guard->target && elapsed < TS_UI_WHEEL_HANDOFF_QUIET_MS) {
+        /* Ongoing inertial events keep extending the required quiet period. */
+        guard->last_event_ms = now_ms;
+        return 0;
+    }
+    guard->target = target;
+    guard->last_event_ms = now_ms;
+    return 1;
+}
+
 int ts_ui_waveform_mode_contains(int x, int y)
 {
     return x >= 526 && x < 620 && y >= 43 && y < 60;
@@ -3201,6 +3233,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     };
     TsWaveformDisplayMode mode;
     char line[160];
+    char preset_label[20];
     if (fb == NULL || model == NULL || palette == NULL) return;
     render_palette = palette;
     clear(fb, PAL_DESKTOP);
@@ -3267,7 +3300,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_parameter(fb, 72, 276, 110, "LEVEL", model->parameters.head3_level, PAL_TUNING);
     sister_parameter(fb, 192, 276, 110, "SPAN", model->parameters.head3_span, PAL_TUNING);
     sister_parameter(fb, 312, 276, 110, "RATE", model->parameters.head3_rate_index / 9.0f, PAL_TUNING);
-    sister_parameter(fb, 432, 276, 110, "Q",
+    sister_parameter(fb, 432, 276, 110, "FILTER Q",
                      (model->parameters.filter_q - 0.1f) / 19.9f,
                      PAL_INSTRUMENT);
 
@@ -3287,18 +3320,20 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                      (model->parameters.filter_gain_db + 24.0f) / 48.0f,
                      PAL_INSTRUMENT);
 
-    sister_percent_parameter(fb, 10, 330, 118, "INPUT",
+    sister_percent_parameter(fb, 10, 330, 98, "INPUT",
                              model->parameters.input_gain / 2.0f,
                              200, PAL_VOLUME);
-    sister_percent_parameter(fb, 134, 330, 118, "DRY",
+    sister_percent_parameter(fb, 113, 330, 98, "DRY",
                              model->parameters.monitor_dry, 100, PAL_WAVE_LEFT);
-    sister_percent_parameter(fb, 258, 330, 118, "WET",
+    sister_percent_parameter(fb, 216, 330, 98, "WET",
                              model->parameters.monitor_wet, 100, PAL_WAVE_RIGHT);
-    sister_percent_parameter(fb, 382, 330, 118, "OUT",
+    sister_percent_parameter(fb, 319, 330, 98, "OUT",
                              model->parameters.mix_output_gain / 4.0f,
                              400, PAL_INSTRUMENT);
-    sister_percent_parameter(fb, 506, 330, 118, "ERASE",
+    sister_percent_parameter(fb, 422, 330, 98, "ERASE",
                              model->parameters.write_erase, 100, PAL_VOLUME);
+    sister_percent_parameter(fb, 525, 330, 99, "GHOST",
+                             model->parameters.ghost_tone, 100, PAL_EFFECT);
 
     snprintf(line, sizeof(line), "TARGET %s  %.88s",
              model->destination_slot >= 0 ? "READY" : "--",
@@ -3311,6 +3346,31 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 74, 370, 44, model->capture_channels == 2 ? "S" : "M", model->capture_channels == 2);
     button(fb, 124, 370, 100,
            model->destination_mode == TS_SISTER_UI_DEST_NEXT_EMPTY ? "NEXT EMPTY" : "CURRENT", 0);
+    button(fb, 230, 370, 28, "<", 0);
+    snprintf(preset_label, sizeof(preset_label), "%.18s",
+             model->preset_name[0] != '\0' ? model->preset_name : "PRESET");
+    button(fb, 264, 370, 130, preset_label, 0);
+    button(fb, 400, 370, 28, ">", 0);
     button(fb, 450, 370, 82, "CAPTURE", model->routing.capture_state != TS_CAPTURE_IDLE && !model->capture_overdub);
     button(fb, 538, 370, 92, "OVERDUB", model->routing.capture_state != TS_CAPTURE_IDLE && model->capture_overdub);
+
+    if (model->preset_manage_open) {
+        rect(fb, 160, 130, 320, 170, RGB(8, 8, 9));
+        rect(fb, 160, 130, 320, 1, PAL_MOUSE);
+        rect(fb, 160, 299, 320, 1, PAL_MOUSE);
+        rect(fb, 160, 130, 1, 170, PAL_MOUSE);
+        rect(fb, 479, 130, 1, 170, PAL_MOUSE);
+        text(fb, 180, 145, "SISTER PRESET MANAGER", PAL_TEXT, 1);
+        text(fb, 180, 165,
+             model->preset_editing ? model->preset_edit_name : model->preset_name,
+             model->preset_editing ? PAL_NOTE : PAL_MOUSE, 1);
+        if (model->preset_factory)
+            text(fb, 180, 182, "FACTORY - RECALL ONLY", PAL_TUNING, 1);
+        button(fb, 180, 200, 128, "SAVE AS", model->preset_editing == 1);
+        button(fb, 332, 200, 128, "OVERWRITE", model->preset_confirmation == 1);
+        button(fb, 180, 230, 128, "RENAME", model->preset_editing == 2);
+        button(fb, 332, 230, 128, "DELETE", model->preset_confirmation == 2);
+        button(fb, 180, 260, 128, "CONFIRM", model->preset_editing || model->preset_confirmation);
+        button(fb, 332, 260, 128, "CANCEL", 0);
+    }
 }

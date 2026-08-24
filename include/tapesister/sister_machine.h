@@ -121,6 +121,8 @@ typedef struct {
     /* Fraction of the previous rolling-memory cell erased on each write pass.
        1.0 is full replacement; 0.0 retains the complete previous cell. */
     float write_erase;
+    /* Spectral aging applied only to retained old memory. Zero is exact bypass. */
+    float ghost_tone;
     /* Pre-tape input trim. Applied before rolling-memory write and Duck. */
     float input_gain;
     float monitor_dry;
@@ -203,7 +205,16 @@ typedef struct {
     TsSisterClearState clear_state;
     TsSisterRamp clear_gain;
     TsSisterRamp write_erase;
+    TsSisterRamp ghost_tone;
     TsSisterRamp input_gain;
+    TsSisterRamp mix_output_gain;
+    TsSisterRamp feedback[2];
+    TsSisterRamp wow_amount;
+    TsSisterRamp drop_amount;
+    TsSisterRamp duck_sensitivity;
+    TsSisterRamp width;
+    TsSisterRamp headroom;
+    float ghost_lowpass_state[2];
     uint32_t wow_prng;
     uint64_t wow_next_event_clock;
     float wow_target;
@@ -222,6 +233,9 @@ void ts_sister_parameters_default(TsSisterParameters *parameters,
                                   uint32_t sample_rate);
 void ts_sister_parameters_kafka_start(TsSisterParameters *parameters,
                                       uint32_t sample_rate);
+void ts_sister_parameters_sanitize(TsSisterParameters *parameters,
+                                   uint32_t sample_rate);
+float ts_sister_ghost_cutoff_hz(float amount, uint32_t sample_rate);
 double ts_sister_rate_value(int index);
 double ts_sister_positive_modulo(double value, size_t modulus);
 

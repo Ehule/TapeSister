@@ -30,12 +30,13 @@ static int voice_range_from_slot(const TsBankSlot *slot,
 }
 
 static int find_voice(TsPerformanceBank *bank, int source_slot,
-                      const TsNoteEvent *event)
+                      const TsNoteEvent *event, int latched)
 {
     int free_voice = -1;
     for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
-        if (voice->active && voice->source_slot == source_slot &&
+        if (latched && voice->latched && voice->active &&
+            voice->source_slot == source_slot &&
             event != NULL && voice->midi_note == event->midi_note &&
             ts_note_event_same_trigger(event, voice->origin, voice->note,
                                        voice->channel))
@@ -57,7 +58,7 @@ static int start_slot_event(TsPerformanceBank *bank, const TsBankSlot *slot,
         event->velocity <= 0 || event->velocity > 127 ||
         !voice_range_from_slot(slot, &first, &last, &crossfade))
         return 0;
-    index = find_voice(bank, source_slot, event);
+    index = find_voice(bank, source_slot, event, latched);
     if (index < 0) return 0;
     voice = &bank->voices[index];
     if (voice->active && latched && voice->latched) {
@@ -208,8 +209,39 @@ int ts_performance_trigger_group_event(TsPerformanceBank *bank,
                                        int output_rate)
 {
     int started = 0;
+    int needed = 0;
+    int free_voices = 0;
     if (bank == NULL || instrument == NULL || source_mask == 0u || event == NULL)
         return 0;
+    for (int voice = 0; voice < TS_PERFORMANCE_VOICE_LIMIT; ++voice)
+        if (!bank->voices[voice].active) ++free_voices;
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        size_t first, last, crossfade;
+        int already_latched = 0;
+        if ((source_mask & (uint16_t)(1u << slot)) == 0u) continue;
+        if (!voice_range_from_slot(&instrument->bank[slot], &first, &last,
+                                   &crossfade))
+            continue;
+        if (latched) {
+            for (int voice = 0; voice < TS_PERFORMANCE_VOICE_LIMIT; ++voice) {
+                const TsPerformanceVoice *candidate = &bank->voices[voice];
+                if (candidate->active && candidate->latched &&
+                    candidate->source_slot == slot &&
+                    candidate->midi_note == event->midi_note &&
+                    ts_note_event_same_trigger(event, candidate->origin,
+                                               candidate->note,
+                                               candidate->channel)) {
+                    already_latched = 1;
+                    break;
+                }
+            }
+        }
+        if (!already_latched) ++needed;
+    }
+    /* A performance group is indivisible. If the fixed callback-safe pool
+       cannot hold every valid member, reject the whole trigger rather than
+       producing an accidental partial chord. */
+    if (needed > free_voices) return 0;
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
         if ((source_mask & (uint16_t)(1u << slot)) == 0u) continue;
         if (start_slot_event(bank, &instrument->bank[slot], slot, event,

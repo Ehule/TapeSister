@@ -25,7 +25,16 @@ typedef enum {
     TS_SISTER_UI_ACTION_DESTINATION,
     TS_SISTER_UI_ACTION_CAPTURE,
     TS_SISTER_UI_ACTION_OVERDUB,
-    TS_SISTER_UI_ACTION_PARAMETER
+    TS_SISTER_UI_ACTION_PARAMETER,
+    TS_SISTER_UI_ACTION_PRESET_PREVIOUS,
+    TS_SISTER_UI_ACTION_PRESET_NEXT,
+    TS_SISTER_UI_ACTION_PRESET_MANAGE,
+    TS_SISTER_UI_ACTION_PRESET_SAVE_AS,
+    TS_SISTER_UI_ACTION_PRESET_OVERWRITE,
+    TS_SISTER_UI_ACTION_PRESET_RENAME,
+    TS_SISTER_UI_ACTION_PRESET_DELETE,
+    TS_SISTER_UI_ACTION_PRESET_CONFIRM,
+    TS_SISTER_UI_ACTION_PRESET_CANCEL
 } TsSisterUiAction;
 
 typedef enum {
@@ -58,6 +67,7 @@ typedef enum {
     TS_SISTER_UI_PARAM_MONITOR_WET,
     TS_SISTER_UI_PARAM_MIX_OUTPUT,
     TS_SISTER_UI_PARAM_WRITE_ERASE,
+    TS_SISTER_UI_PARAM_GHOST_TONE,
     TS_SISTER_UI_PARAM_COUNT
 } TsSisterUiParameter;
 
@@ -80,6 +90,12 @@ typedef struct {
     TsSisterParameters parameters;
     int destination_slot;
     char status[128];
+    char preset_name[48];
+    char preset_edit_name[48];
+    int preset_factory;
+    int preset_manage_open;
+    int preset_editing;
+    int preset_confirmation;
 } TsSisterUiModel;
 
 void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config);
@@ -91,6 +107,8 @@ void ts_sister_ui_model_update(TsSisterUiModel *model,
                                const TsSisterWaveSnapshot *waveform,
                                const TsSisterParameters *parameters);
 TsSisterUiHit ts_sister_ui_hit_test(int x, int y);
+TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
+                                          int x, int y);
 int ts_sister_ui_event_point(int event_x, int event_y,
                              int *logical_x, int *logical_y);
 int ts_sister_ui_window_point(int raw_x, int raw_y,
