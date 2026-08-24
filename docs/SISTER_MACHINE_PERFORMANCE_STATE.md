@@ -75,6 +75,12 @@ quickly the surviving spectrum darkens.
 
 ## Named presets
 
+PR9 preset schema 3 additionally stores Reverb type/MIX/DECAY/mask, Delay
+TIME/FEEDBACK/MIX/mask, Distortion DRIVE/TONE/MIX/mask, and Master FX Feedback.
+Tail samples, delay samples, processor pointers, and feedback audio are never
+stored. Recall publishes requested values into the existing smoothing and target
+ramps; it does not clear tape, stop notes, or reset effect memory.
+
 The compact bottom selector recalls previous/next presets; clicking its name opens a
 dedicated manager overlay. The overlay supports Save As, confirmed overwrite, rename,
 confirmed delete and cancel. Factory entries are immutable:
@@ -101,6 +107,12 @@ ambiguity: it always controlled the shared post-head filter Q. PR6 labels it `FI
 and the preset/project schemas contain only that shared filter field—there is no H3 Q.
 
 ## Project format
+
+PR9 project-state schema 3 stores the same musical PR9 fields. Older state loads
+with all three effect MIX values and Master FX Feedback exactly zero and each
+mask at MIX. Safe non-audible parameter defaults remain available for the first
+intentional raise. Unknown future fields are ignored and masks reuse PR8
+sanitization.
 
 Each TSR collection gains an atomically replaced companion file:
 

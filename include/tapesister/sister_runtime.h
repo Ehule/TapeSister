@@ -115,6 +115,7 @@ typedef struct {
 
 typedef struct {
     TsSisterMachine machine;
+    TsSisterPostFxEngine post_fx;
     TsSisterParameters parameters;
     TsPerformanceBank performance;
     TsCaptureRecorder capture;
@@ -137,6 +138,8 @@ typedef struct {
     int callback_failed;
     float monitor_dry_current;
     float monitor_wet_current;
+    float master_feedback_current;
+    TsStereoFrame master_feedback_previous;
     char selected_preset[48];
     TsSisterRoutingSnapshotAtomic snapshot;
     TsSisterWavePublisher waveform;
@@ -154,6 +157,8 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
                                   uint32_t sample_rate,
                                   uint8_t output_channels,
                                   char *error, size_t error_size);
+TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
+    TsSisterRuntime *runtime, TsStereoFrame input);
 void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
                                       const TsSisterParameters *parameters);
 void ts_sister_runtime_set_selected_preset(TsSisterRuntime *runtime,

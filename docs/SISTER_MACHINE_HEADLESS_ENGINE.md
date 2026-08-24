@@ -1,5 +1,9 @@
 # Sister Machine PR3 headless engine
 
+> PR9 keeps the PR3/PR8 head and MIX boundaries intact and supplies a stable
+> non-owning post-effect bank to frame processing. The machine never allocates
+> effect storage in its callback.
+
 PR3 implements Kafka's DSP identity as a standalone, deterministic C engine. It is
 compiled into `tapesister_core`, but it is not connected to `TsAudioBuses`, tiles,
 Capture, MIDI, external input, monitoring, configuration, or SDL UI. That routing is
@@ -140,6 +144,16 @@ revision protocol prevents readers from accepting a mixed snapshot. UI code neve
 needs the live buffer or mutable DSP state.
 
 ## Defaults and live-routing boundary
+
+## PR9 insertion and causal return
+
+After each completed interpolated read, PR8 head Soak and the fixed PR9 chain run
+before the raw H1/H2 feedback send. After sum/headroom/Duck/Filter/OUT, PR8 MIX
+Soak and the same fixed chain produce `post_fx`. A separately conditioned
+previous-sample return joins the rolling write after INPUT trim. Existing
+Ghost/Erase, DC blocking, soft saturation, Clear, Hold, and linked safety remain
+authoritative. Details and coefficient ranges are in
+`SISTER_MACHINE_POST_EFFECTS.md`.
 
 Native defaults are: 40-second stereo buffer, Roll on, Hold off, pre-tape input gain
 `1.0`, H1 level `0.45`, time

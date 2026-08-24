@@ -3,6 +3,7 @@
 
 #include "tapesister/sample.h"
 #include "tapesister/sister_effects.h"
+#include "tapesister/sister_post_fx.h"
 
 #include <stdatomic.h>
 #include <stddef.h>
@@ -123,6 +124,8 @@ typedef struct {
     float soak;
     float bleed;
     uint8_t soak_targets;
+    /* PR9 shares one visible control set across independent target histories. */
+    TsSisterFxControls fx;
     float headroom;
     /* Fraction of the previous rolling-memory cell erased on each write pass.
        1.0 is full replacement; 0.0 retains the complete previous cell. */
@@ -145,6 +148,9 @@ typedef struct {
     TsStereoFrame input;
     TsStereoFrame head[TS_SISTER_HEAD_COUNT];
     TsStereoFrame mix;
+    /* Completed DISTORTION -> DELAY -> REVERB result before linked hardware
+       safety. This is the owned Master FX Feedback tap. */
+    TsStereoFrame post_fx;
     /* Exact bounded frame offered to rolling memory this callback. */
     TsStereoFrame write;
     size_t write_position;
@@ -276,6 +282,10 @@ int ts_sister_machine_clear_offline(TsSisterMachine *machine);
 TsSisterOutput ts_sister_machine_process_frame(TsSisterMachine *machine,
                                                TsStereoFrame input,
                                                TsStereoFrame duck_sidechain);
+TsSisterOutput ts_sister_machine_process_frame_with_fx(
+    TsSisterMachine *machine, TsSisterPostFxEngine *post_fx,
+    TsStereoFrame input, TsStereoFrame duck_sidechain,
+    TsStereoFrame causal_fx_return);
 void ts_sister_machine_process_block(TsSisterMachine *machine,
                                      const TsStereoFrame *input,
                                      const TsStereoFrame *duck_sidechain,

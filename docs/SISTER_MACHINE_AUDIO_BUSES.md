@@ -1,5 +1,9 @@
 # Sister Machine PR2 audio-bus contract
 
+> PR9 extension: `post_fx` is now an explicit stereo contribution. With Sister
+> active it is owned inside the Sister MIX result; with POWER off it replaces
+> the once-only legacy program/EXT contribution before hardware output.
+
 `main_sdl.c` is the single application and callback translation unit. Its callback
 owns a `TsAudioMixer`, `TsNoteBank`, `TsPerformanceBank`, Capture recorder, external
 monitor reference, and the associated group state. Runtime playback or recording is
@@ -85,6 +89,13 @@ feedback source and audible Drop/Decor/Width/Level path. MIX weaving is post-fil
 post-OUT, immediately before linked safety, and has no return to rolling memory. Capture
 continues to consume the published taps. See `SISTER_MACHINE_SOAK_BLEED.md` for the
 complete audited order, mappings and mono contract.
+
+## PR9 post-effects bus
+
+`post_fx` is derived from a named musical branch, never by mutating the hardware
+buffer. Reference is outside it. Sister-active Master FX Feedback taps the
+pre-safety Sister post-effect frame only; it cannot recirculate unrelated direct
+sources. See `SISTER_MACHINE_POST_EFFECTS.md` for the complete diagrams.
 
 ## Manual Windows/Linux validation
 

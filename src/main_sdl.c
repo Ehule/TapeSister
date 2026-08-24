@@ -931,6 +931,25 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                         buses.external : (TsStereoFrame){0.0f, 0.0f};
         sister_routes = audio->sister.enabled && !audio->sister.callback_failed ?
             ts_sister_runtime_sources(&audio->sister) : 0u;
+        if (!audio->sister.enabled && !audio->sister.callback_failed &&
+            audio->sister.post_fx.ready) {
+            /* Recreate the legacy ordinary program contribution exactly,
+               then insert the shared MIX processor once. Reference remains
+               outside the musical FX branch. */
+            TsStereoFrame eligible = buses.program;
+            eligible.l *= audio->mixer.program_gain;
+            eligible.r *= audio->mixer.program_gain;
+            if (audio->mixer.monitor_enabled) {
+                eligible.l += buses.monitor.l;
+                eligible.r += buses.monitor.r;
+            }
+            buses.post_fx = ts_sister_runtime_process_ordinary_post_fx(
+                &audio->sister, eligible);
+            buses.legacy_preview = (TsStereoFrame){0.0f, 0.0f};
+            buses.tile_performance = (TsStereoFrame){0.0f, 0.0f};
+            buses.fm = (TsStereoFrame){0.0f, 0.0f};
+            buses.monitor = (TsStereoFrame){0.0f, 0.0f};
+        }
         /* Sister is an insert, not an extra parallel audition bus. Every
            selected source is removed from TapeSister's direct speaker path.
            Its dry and processed returns come back together through Sister's
@@ -6555,6 +6574,18 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_GHOST_TONE: parameters->ghost_tone = amount; break;
     case TS_SISTER_UI_PARAM_SOAK: parameters->soak = amount; break;
     case TS_SISTER_UI_PARAM_BLEED: parameters->bleed = amount; break;
+    case TS_SISTER_UI_PARAM_REVERB_TYPE:
+        parameters->fx.reverb_type = (TsSisterReverbType)lrintf(
+            amount * (TS_SISTER_REVERB_TYPE_COUNT - 1)); break;
+    case TS_SISTER_UI_PARAM_REVERB_MIX: parameters->fx.reverb_mix = amount; break;
+    case TS_SISTER_UI_PARAM_REVERB_DECAY: parameters->fx.reverb_decay = amount; break;
+    case TS_SISTER_UI_PARAM_DELAY_TIME: parameters->fx.delay_time = amount; break;
+    case TS_SISTER_UI_PARAM_DELAY_FEEDBACK: parameters->fx.delay_feedback = amount; break;
+    case TS_SISTER_UI_PARAM_DELAY_MIX: parameters->fx.delay_mix = amount; break;
+    case TS_SISTER_UI_PARAM_DISTORTION_DRIVE: parameters->fx.distortion_drive = amount; break;
+    case TS_SISTER_UI_PARAM_DISTORTION_TONE: parameters->fx.distortion_tone = amount; break;
+    case TS_SISTER_UI_PARAM_DISTORTION_MIX: parameters->fx.distortion_mix = amount; break;
+    case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: parameters->fx.master_feedback = amount; break;
     default: break;
     }
 }
@@ -6592,6 +6623,18 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_GHOST_TONE: value = parameters->ghost_tone; break;
     case TS_SISTER_UI_PARAM_SOAK: value = parameters->soak; break;
     case TS_SISTER_UI_PARAM_BLEED: value = parameters->bleed; break;
+    case TS_SISTER_UI_PARAM_REVERB_TYPE:
+        value = parameters->fx.reverb_type /
+            (float)(TS_SISTER_REVERB_TYPE_COUNT - 1); break;
+    case TS_SISTER_UI_PARAM_REVERB_MIX: value = parameters->fx.reverb_mix; break;
+    case TS_SISTER_UI_PARAM_REVERB_DECAY: value = parameters->fx.reverb_decay; break;
+    case TS_SISTER_UI_PARAM_DELAY_TIME: value = parameters->fx.delay_time; break;
+    case TS_SISTER_UI_PARAM_DELAY_FEEDBACK: value = parameters->fx.delay_feedback; break;
+    case TS_SISTER_UI_PARAM_DELAY_MIX: value = parameters->fx.delay_mix; break;
+    case TS_SISTER_UI_PARAM_DISTORTION_DRIVE: value = parameters->fx.distortion_drive; break;
+    case TS_SISTER_UI_PARAM_DISTORTION_TONE: value = parameters->fx.distortion_tone; break;
+    case TS_SISTER_UI_PARAM_DISTORTION_MIX: value = parameters->fx.distortion_mix; break;
+    case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: value = parameters->fx.master_feedback; break;
     default: break;
     }
     if (!isfinite(value) || value < 0.0f) return 0.0f;
@@ -6615,6 +6658,12 @@ static float sister_parameter_wheel_normalized(
         if (value >= TS_SISTER_FILTER_TYPE_COUNT)
             value = TS_SISTER_FILTER_TYPE_COUNT - 1;
         return value / (float)(TS_SISTER_FILTER_TYPE_COUNT - 1);
+    case TS_SISTER_UI_PARAM_REVERB_TYPE:
+        value = parameters->fx.reverb_type + direction * steps;
+        if (value < TS_SISTER_REVERB_HALL) value = TS_SISTER_REVERB_HALL;
+        if (value >= TS_SISTER_REVERB_TYPE_COUNT)
+            value = TS_SISTER_REVERB_TYPE_COUNT - 1;
+        return value / (float)(TS_SISTER_REVERB_TYPE_COUNT - 1);
     case TS_SISTER_UI_PARAM_H2_RATE:
         value = parameters->head2_rate_index + direction * steps;
         if (value < 0) value = 0;
@@ -6911,10 +6960,19 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                      "EXT - DEVICE UNAVAILABLE: %.91s", error);
         return;
     }
+    if (hit.action == TS_SISTER_UI_ACTION_PAGE) {
+        sister->model.fx_page = !sister->model.fx_page;
+        sister->rendered_model_valid = 0;
+        return;
+    }
     if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
         hit.action != TS_SISTER_UI_ACTION_CAPTURE_FORMAT &&
         hit.action != TS_SISTER_UI_ACTION_DESTINATION &&
-        hit.action != TS_SISTER_UI_ACTION_TAP) {
+        hit.action != TS_SISTER_UI_ACTION_TAP &&
+        !(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index >= TS_SISTER_UI_PARAM_REVERB_TYPE) &&
+        !(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
+          (hit.index >> 8) != 0)) {
         snprintf(sister->model.status, sizeof(sister->model.status),
                  "POWER IS OFF");
         return;
@@ -6976,14 +7034,21 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                 (int)lrintf(sister->model.parameters.ghost_tone * 100.0f);
         break;
     case TS_SISTER_UI_ACTION_EFFECT_TARGET:
-        sister->model.parameters.soak_targets =
-            ts_sister_effect_targets_toggle(
-                sister->model.parameters.soak_targets, (uint8_t)hit.index);
+    {
+        int effect = hit.index >> 8;
+        uint8_t target = (uint8_t)(hit.index & 0xff);
+        uint8_t *mask = effect == 1 ?
+            &sister->model.parameters.fx.reverb_targets : effect == 2 ?
+            &sister->model.parameters.fx.delay_targets : effect == 3 ?
+            &sister->model.parameters.fx.distortion_targets :
+            &sister->model.parameters.soak_targets;
+        *mask = ts_sister_effect_targets_toggle(*mask, target);
         ts_sister_runtime_set_parameters(&audio->sister,
                                          &sister->model.parameters);
         ts_sister_runtime_set_selected_preset(&audio->sister, "");
         sister_preset_model_sync(sister, &audio->sister);
         break;
+    }
     default: break;
     }
     if (device) SDL_UnlockAudioDevice(device);

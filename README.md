@@ -522,10 +522,12 @@ current Sister sound, never live tape audio. See
 PR8's time-staggered stereo weave, head/MIX placement, Capture/feedback behavior and
 reusable effect targets are specified in
 [`docs/SISTER_MACHINE_SOAK_BLEED.md`](docs/SISTER_MACHINE_SOAK_BLEED.md); the remaining
-order is tracked in
+PR9 fixed Distortion→Delay→Reverb chain, POWER-off MIX bus, and causal Master FX
+Feedback return are specified in
+[`docs/SISTER_MACHINE_POST_EFFECTS.md`](docs/SISTER_MACHINE_POST_EFFECTS.md). The remaining order is tracked in
 [`docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md`](docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md).
-The Windows/Linux listening pass is
-[`docs/SISTER_MACHINE_PR8_MANUAL_CHECKLIST.md`](docs/SISTER_MACHINE_PR8_MANUAL_CHECKLIST.md).
+The PR9 Windows/Linux listening pass is
+[`docs/SISTER_MACHINE_PR9_MANUAL_CHECKLIST.md`](docs/SISTER_MACHINE_PR9_MANUAL_CHECKLIST.md).
 
 ## File browser
 

@@ -157,6 +157,10 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         hit.action = TS_SISTER_UI_ACTION_WAVE_MODE;
         return hit;
     }
+    if (contains(x, y, 450, 8, 76, 22)) {
+        hit.action = TS_SISTER_UI_ACTION_PAGE;
+        return hit;
+    }
     if (contains(x, y, 230, 370, 28, 22)) {
         hit.action = TS_SISTER_UI_ACTION_PRESET_PREVIOUS;
         return hit;
@@ -167,6 +171,49 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
     }
     if (contains(x, y, 400, 370, 28, 22)) {
         hit.action = TS_SISTER_UI_ACTION_PRESET_NEXT;
+        return hit;
+    }
+    if (model != NULL && model->fx_page) {
+        static const int parameter[3][3] = {
+            {TS_SISTER_UI_PARAM_REVERB_TYPE, TS_SISTER_UI_PARAM_REVERB_MIX,
+             TS_SISTER_UI_PARAM_REVERB_DECAY},
+            {TS_SISTER_UI_PARAM_DELAY_TIME, TS_SISTER_UI_PARAM_DELAY_FEEDBACK,
+             TS_SISTER_UI_PARAM_DELAY_MIX},
+            {TS_SISTER_UI_PARAM_DISTORTION_DRIVE,
+             TS_SISTER_UI_PARAM_DISTORTION_TONE,
+             TS_SISTER_UI_PARAM_DISTORTION_MIX}
+        };
+        for (int row = 0; row < 3; ++row) {
+            int top = 72 + row * 78;
+            for (int field = 0; field < 3; ++field) {
+                int left = 110 + field * 140;
+                if (contains(x, y, left, top, 130, 18)) {
+                    hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+                    hit.index = parameter[row][field];
+                    hit.normalized = (float)(x - left) / 129.0f;
+                    return hit;
+                }
+            }
+            for (int target = 0; target < TS_SISTER_EFFECT_PROCESSOR_COUNT;
+                 ++target) {
+                if (contains(x, y, 110 + target * 62, top + 25, 56, 18)) {
+                    hit.action = TS_SISTER_UI_ACTION_EFFECT_TARGET;
+                    hit.index = ((row + 1) << 8) | (1 << target);
+                    return hit;
+                }
+            }
+        }
+        if (contains(x, y, 110, 306, 410, 18)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK;
+            hit.normalized = (float)(x - 110) / 409.0f;
+            return hit;
+        }
+        if (contains(x, y, 10, 370, 58, 22)) hit.action = TS_SISTER_UI_ACTION_TAP;
+        else if (contains(x, y, 74, 370, 44, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE_FORMAT;
+        else if (contains(x, y, 124, 370, 100, 22)) hit.action = TS_SISTER_UI_ACTION_DESTINATION;
+        else if (contains(x, y, 450, 370, 82, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE;
+        else if (contains(x, y, 538, 370, 92, 22)) hit.action = TS_SISTER_UI_ACTION_OVERDUB;
         return hit;
     }
     for (int source = 0; source < 4; ++source) {

@@ -14,6 +14,8 @@ typedef struct {
     TsStereoFrame reference;
     TsStereoFrame monitor;
     TsStereoFrame sister;
+    /* Explicit completed Sister/ordinary post-effects contribution. */
+    TsStereoFrame post_fx;
     TsStereoFrame capture;
     TsStereoFrame program;
     TsStereoFrame output;

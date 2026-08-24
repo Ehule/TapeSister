@@ -56,6 +56,14 @@ legacy `PatternNote`, `PatternEffect` and `PatternInstrument` colors.
 
 ## Controls and fixed routing
 
+PR9 adds a `FX PAGE`/`TAPE` page switch in the same 640×400 non-modal window.
+The FX page presents three readable panels—Reverb TYPE/MIX/DECAY, Delay
+TIME/FEEDBACK/MIX, Distortion DRIVE/TONE/MIX—each with H1/H2/H3/MIX toggles,
+plus one wide FX FEEDBACK control. It deliberately exposes no ordering, per-head
+amount, modulation matrix, or hidden advanced page. FX controls remain available
+with POWER off; transport-only actions retain their POWER contract. The existing
+high-DPI mapping and wheel target guard apply to every new field.
+
 The window exposes POWER, ROLL, HOLD, CLEAR and MONITOR; TILES/FM/EXT/PREVIEW source
 switches; H1/H2/H3 level/time/scrub/span/rate/feedback parameters; Wow, Drop, Duck,
 decorrelation, width and filter; and MIX/H1/H2/H3 Capture selection. The router remains

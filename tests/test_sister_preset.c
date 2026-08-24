@@ -20,6 +20,20 @@ int main(void)
     p.bleed = 0.81f;
     p.soak_targets = TS_SISTER_EFFECT_TARGET_H1 |
                      TS_SISTER_EFFECT_TARGET_H3;
+    p.fx.reverb_type = TS_SISTER_REVERB_CATHEDRAL;
+    p.fx.reverb_mix = 0.63f;
+    p.fx.reverb_decay = 0.91f;
+    p.fx.reverb_targets = TS_SISTER_EFFECT_TARGET_H2;
+    p.fx.delay_time = 0.77f;
+    p.fx.delay_feedback = 0.88f;
+    p.fx.delay_mix = 0.52f;
+    p.fx.delay_targets = TS_SISTER_EFFECT_TARGET_H1 |
+                         TS_SISTER_EFFECT_TARGET_H3;
+    p.fx.distortion_drive = 0.84f;
+    p.fx.distortion_tone = 0.19f;
+    p.fx.distortion_mix = 0.73f;
+    p.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
+    p.fx.master_feedback = 0.69f;
     assert(ts_sister_preset_save_new(&bank, "MY MEMORY", &p, 48000u,
                                      error, sizeof(error)));
     assert(!ts_sister_preset_overwrite(&bank, 0u, &p, 48000u,
@@ -34,6 +48,13 @@ int main(void)
     assert(recalled.bleed > 0.80f && recalled.bleed < 0.82f);
     assert(recalled.soak_targets == (TS_SISTER_EFFECT_TARGET_H1 |
                                      TS_SISTER_EFFECT_TARGET_H3));
+    assert(recalled.fx.reverb_type == TS_SISTER_REVERB_CATHEDRAL);
+    assert(recalled.fx.reverb_mix > 0.62f && recalled.fx.reverb_mix < 0.64f);
+    assert(recalled.fx.reverb_targets == TS_SISTER_EFFECT_TARGET_H2);
+    assert(recalled.fx.delay_targets == (TS_SISTER_EFFECT_TARGET_H1 |
+                                          TS_SISTER_EFFECT_TARGET_H3));
+    assert(recalled.fx.distortion_targets == TS_SISTER_EFFECT_TARGET_MIX);
+    assert(recalled.fx.master_feedback > 0.68f);
     assert(ts_sister_preset_rename(&loaded, 3u, "RENAMED", error, sizeof(error)));
     assert(ts_sister_preset_overwrite(&loaded, 3u, &p, 48000u,
                                       error, sizeof(error)));
@@ -54,6 +75,12 @@ int main(void)
         assert(loaded.entries[3].parameters.soak == 0.0f);
         assert(loaded.entries[3].parameters.bleed == 0.25f);
         assert(loaded.entries[3].parameters.soak_targets ==
+               TS_SISTER_EFFECT_TARGET_MIX);
+        assert(loaded.entries[3].parameters.fx.reverb_mix == 0.0f);
+        assert(loaded.entries[3].parameters.fx.delay_mix == 0.0f);
+        assert(loaded.entries[3].parameters.fx.distortion_mix == 0.0f);
+        assert(loaded.entries[3].parameters.fx.master_feedback == 0.0f);
+        assert(loaded.entries[3].parameters.fx.reverb_targets ==
                TS_SISTER_EFFECT_TARGET_MIX);
     }
     remove(path);
