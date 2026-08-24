@@ -13,6 +13,7 @@ static const char *const color_keys[TS_PALETTE_COLOR_COUNT] = {
     "PatternText", "BlockMark", "TextOnBlock", "Mouse", "Desktop", "Buttons",
     "PatternNote", "PatternInstrument", "PatternVolume", "PatternTuning",
     "PatternEffect", "PatternEmpty", "WaveSelection", "ActiveTile",
+    "StereoWaveLeft", "StereoWaveRight", "StereoWaveSum",
     "TrackLengthPlayhead", "FastTracksPlayhead", "ControlPlayhead",
     "FastTracksSync", "FastTracksPhase", "FastTracksSong",
     "FastTracksLengthPlayhead"
@@ -21,7 +22,8 @@ static const char *const color_keys[TS_PALETTE_COLOR_COUNT] = {
 static const char *const color_names[TS_PALETTE_COLOR_COUNT] = {
     "TITLE / TEXT", "ACTIVE CONTROL", "ACTIVE TEXT", "POINTER", "DESKTOP",
     "CONTROLS", "WAVEFORM", "PRIMARY", "EDGE / ZERO", "LOOP / DRIFT",
-    "EFFECT", "SPARE", "WAVE SELECTION", "ACTIVE TILE", "LEN HEAD",
+    "EFFECT", "SPARE", "WAVE SELECTION", "ACTIVE TILE", "STEREO WAVE LEFT",
+    "STEREO WAVE RIGHT", "STEREO WAVE SUM", "LEN HEAD",
     "FASTTRACKS HEAD", "CONTROL HEAD", "FASTTRACKS SYNC",
     "FASTTRACKS PHASE", "FASTTRACKS SONG", "FASTTRACKS + LEN HEAD"
 };
@@ -55,7 +57,8 @@ static const TsPaletteColor universal_save_order[TS_PALETTE_COLOR_COUNT] = {
     TS_PALETTE_CONTROL_PLAYHEAD, TS_PALETTE_FASTTRACKS_SYNC,
     TS_PALETTE_FASTTRACKS_PHASE, TS_PALETTE_FASTTRACKS_SONG,
     TS_PALETTE_FASTTRACKS_LENGTH_PLAYHEAD, TS_PALETTE_WAVE_SELECTION,
-    TS_PALETTE_ACTIVE_TILE
+    TS_PALETTE_ACTIVE_TILE, TS_PALETTE_STEREO_WAVE_LEFT,
+    TS_PALETTE_STEREO_WAVE_RIGHT, TS_PALETTE_STEREO_WAVE_SUM
 };
 
 static void set_error(char *error, size_t error_size, const char *message)
@@ -119,7 +122,8 @@ void ts_palette_default(TsPalette *palette)
         RGB(255, 28, 0), RGB(45, 0, 57), RGB(0, 158, 227), RGB(255, 210, 101),
         RGB(28, 28, 28), RGB(93, 85, 93), RGB(255, 231, 0), RGB(24, 255, 0),
         RGB(255, 28, 231), RGB(20, 125, 255), RGB(53, 255, 255), RGB(89, 0, 255),
-        RGB(45, 0, 57), RGB(255, 210, 101), RGB(65, 215, 255),
+        RGB(45, 0, 57), RGB(255, 210, 101), RGB(255, 231, 0),
+        RGB(53, 255, 255), RGB(24, 255, 0), RGB(65, 215, 255),
         RGB(255, 174, 32), RGB(255, 49, 49), RGB(0, 206, 65),
         RGB(255, 49, 49), RGB(255, 174, 32), RGB(208, 97, 255)
     };
@@ -219,6 +223,16 @@ int ts_palette_load(TsPalette *palette, const char *path,
         loaded.colors[TS_PALETTE_WAVE_SELECTION] = loaded.colors[TS_PALETTE_BLOCK_MARK];
     if (!found[TS_PALETTE_ACTIVE_TILE])
         loaded.colors[TS_PALETTE_ACTIVE_TILE] = loaded.colors[TS_PALETTE_MOUSE];
+    /* PR5 keys are optional so every existing palette remains valid. */
+    if (!found[TS_PALETTE_STEREO_WAVE_LEFT])
+        loaded.colors[TS_PALETTE_STEREO_WAVE_LEFT] =
+            loaded.colors[TS_PALETTE_PATTERN_NOTE];
+    if (!found[TS_PALETTE_STEREO_WAVE_RIGHT])
+        loaded.colors[TS_PALETTE_STEREO_WAVE_RIGHT] =
+            loaded.colors[TS_PALETTE_PATTERN_EFFECT];
+    if (!found[TS_PALETTE_STEREO_WAVE_SUM])
+        loaded.colors[TS_PALETTE_STEREO_WAVE_SUM] =
+            loaded.colors[TS_PALETTE_PATTERN_INSTRUMENT];
     *palette = loaded;
     set_error(error, error_size, "");
     return 1;

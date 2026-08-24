@@ -7,6 +7,7 @@
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/recipe.h"
 #include "tapesister/cdp_recipe.h"
+#include "tapesister/waveform_display.h"
 
 enum {
     TS_CONFIG_PATH_MAX = 1024,
@@ -50,6 +51,18 @@ enum {
     TS_CAPTURE_CHANNELS_MIN = 1,
     TS_CAPTURE_CHANNELS_MAX = 2,
     TS_CAPTURE_CHANNELS_DEFAULT = 1,
+    TS_SISTER_MONITOR_PERCENT_MIN = 0,
+    TS_SISTER_MONITOR_PERCENT_MAX = 100,
+    TS_SISTER_MONITOR_PERCENT_DEFAULT = 100,
+    TS_SISTER_INPUT_PERCENT_MIN = 0,
+    TS_SISTER_INPUT_PERCENT_MAX = 200,
+    TS_SISTER_INPUT_PERCENT_DEFAULT = 100,
+    TS_SISTER_OUTPUT_PERCENT_MIN = 0,
+    TS_SISTER_OUTPUT_PERCENT_MAX = 400,
+    TS_SISTER_OUTPUT_PERCENT_DEFAULT = 400,
+    TS_SISTER_ERASE_PERCENT_MIN = 0,
+    TS_SISTER_ERASE_PERCENT_MAX = 100,
+    TS_SISTER_ERASE_PERCENT_DEFAULT = 100,
     TS_MIDI_INPUT_CHANNEL_MIN = 0,
     TS_MIDI_INPUT_CHANNEL_MAX = 16,
     TS_MIDI_INPUT_CHANNEL_DEFAULT = 0
@@ -90,6 +103,20 @@ typedef struct {
     int capture_auto_resize;
     int capture_max_seconds;
     int capture_channels;
+    int waveform_display_mode;
+    int sister_waveform_display_mode;
+    int sister_buffer_seconds;
+    int sister_buffer_channels;
+    int sister_clear_ms;
+    int sister_capture_channels;
+    int sister_restart_clear;
+    int sister_dry_percent;
+    int sister_wet_percent;
+    int sister_input_percent;
+    int sister_output_percent;
+    int sister_erase_percent;
+    int sister_window_x;
+    int sister_window_y;
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];
     float dsp_factory_controls[TS_DSP_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
     int cdp_factory_overridden[TS_CDP_FACTORY_RECIPE_COUNT];

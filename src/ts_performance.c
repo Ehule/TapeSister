@@ -155,10 +155,9 @@ void ts_performance_release_event(TsPerformanceBank *bank,
     if (bank == NULL) return;
     for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
         TsPerformanceVoice *voice = &bank->voices[i];
-        if (voice->active && !voice->latched && !voice->releasing &&
-            event != NULL &&
+        if (voice->active && !voice->latched && event != NULL &&
             ts_note_event_same_trigger(event, voice->origin, voice->note,
-                                       voice->channel))
+                                       voice->channel) && voice->looping)
             voice->active = 0;
     }
 }

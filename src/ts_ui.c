@@ -1,4 +1,5 @@
 #include "tapesister/ui.h"
+#include "tapesister/sister_ui.h"
 #include "tapesister/waveform_cache.h"
 
 #include <math.h>
@@ -69,6 +70,24 @@ static const TsPalette *active_palette(void)
 #define PAL_EFFECT (active_palette()->colors[TS_PALETTE_PATTERN_EFFECT])
 #define PAL_WAVE_SELECTION (active_palette()->colors[TS_PALETTE_WAVE_SELECTION])
 #define PAL_ACTIVE_TILE (active_palette()->colors[TS_PALETTE_ACTIVE_TILE])
+#define PAL_WAVE_LEFT (active_palette()->colors[TS_PALETTE_STEREO_WAVE_LEFT])
+#define PAL_WAVE_RIGHT (active_palette()->colors[TS_PALETTE_STEREO_WAVE_RIGHT])
+#define PAL_WAVE_SUM (active_palette()->colors[TS_PALETTE_STEREO_WAVE_SUM])
+
+int ts_ui_logo_contains(int x, int y)
+{
+    return x >= 0 && x < 160 && y >= 0 && y < 32;
+}
+
+int ts_ui_waveform_mode_contains(int x, int y)
+{
+    return x >= 526 && x < 620 && y >= 43 && y < 60;
+}
+
+int ts_ui_sister_source_mode_contains(int x, int y)
+{
+    return x >= 250 && x < 345 && y >= 313 && y < 330;
+}
 
 typedef struct {
     int x;
@@ -1041,7 +1060,8 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     static const char *const short_names[TS_PALETTE_TAPESISTER_COLOR_COUNT] = {
         "TITLE", "ACTIVE", "ACT TEXT", "POINTER", "DESKTOP", "CONTROLS", "WAVE",
-        "PRIMARY", "EDGE/ZERO", "LOOP", "EFFECT", "SPARE", "WAVE SEL", "ACT TILE"
+        "PRIMARY", "EDGE/ZERO", "LOOP", "EFFECT", "SPARE", "WAVE SEL", "ACT TILE",
+        "WAVE LEFT", "WAVE RIGHT", "WAVE SUM"
     };
     static const char *const channel_names[3] = {"RED", "GREEN", "BLUE"};
     char value[48];
@@ -1071,7 +1091,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
     snprintf(value, sizeof(value), "%s  #%06X",
              ts_palette_color_name((TsPaletteColor)ui->palette_entry),
              (unsigned)(selected & 0xffffffu));
-    text(fb, 20, 88, value, PAL_INSTRUMENT, 1);
+    text(fb, 290, 89, value, PAL_INSTRUMENT, 1);
     for (int component = 0; component < 3; ++component) {
         float amount = ts_palette_component(&ui->palette,
                        (TsPaletteColor)ui->palette_entry, component) / 255.0f;
@@ -2028,7 +2048,30 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     clear(fb, PAL_DESKTOP);
 
     rect(fb, 0, 0, TS_UI_WIDTH, 32, RGB(12, 12, 12));
-    text(fb, 14, 9, "TAPESISTER", PAL_TEXT, 2);
+    text(fb, 14, 9, "TAPESISTER",
+         ui->sister_warning ? PAL_VOLUME :
+         ui->sister_enabled ? PAL_WAVE_RIGHT : PAL_TEXT, 2);
+    if (ui->sister_enabled) {
+        rect(fb, 13, 27, 112, 2,
+             ui->sister_rolling && !ui->sister_held ? PAL_WAVE_LEFT : PAL_BUTTON);
+        /* Shape as well as color communicates the live/held state. */
+        if (ui->sister_held) {
+            rect(fb, 130, 10, 3, 12, PAL_TUNING);
+            rect(fb, 136, 10, 3, 12, PAL_TUNING);
+        } else if (ui->sister_rolling) {
+            for (int row = 0; row < 6; ++row)
+                rect(fb, 130 + row, 12 + row, 1, 12 - row * 2, PAL_WAVE_LEFT);
+        }
+        if (ui->sister_monitor_enabled)
+            text(fb, 145, 9, "M", PAL_WAVE_SUM, 1);
+    }
+    if (ui->sister_capture_active) {
+        rect(fb, 4, 3, 150, 2, PAL_VOLUME);
+        rect(fb, 4, 28, 150, 2, PAL_VOLUME);
+        rect(fb, 4, 3, 2, 27, PAL_VOLUME);
+        rect(fb, 152, 3, 2, 27, PAL_VOLUME);
+        text(fb, 160, 13, "REC", PAL_VOLUME, 1);
+    }
     {
         char history[24];
         snprintf(history, sizeof(history), "UNDO %02d/%02d",
@@ -2067,6 +2110,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         snprintf(empty, sizeof(empty), "TILE %02d EMPTY", instrument->selected_slot + 1);
         text(fb, 20, 49, empty, PAL_INSTRUMENT, 1);
     }
+    mini_button(fb, 526, 43, 94,
+                ts_waveform_display_name((TsWaveformDisplayMode)
+                                         ui->config.waveform_display_mode),
+                ui->config.waveform_display_mode != TS_WAVEFORM_DISPLAY_STEREO);
     wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
     if (grid_divisions < TS_GRID_DIVISION_MIN ||
         grid_divisions > TS_GRID_DIVISION_MAX ||
@@ -2127,26 +2174,32 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             size_t begin = analysis->first;
             size_t end = analysis->last;
             int middle = TS_WAVE_Y + TS_WAVE_H / 2;
-            uint32_t color = has_selection && end > selection_first &&
-                             begin < selection_last ? PAL_BLOCK_TEXT : PAL_NOTE;
-            if (sample->channels == 2u) {
-                int left_y0 = middle - (int)(analysis->left_maximum *
+            int selected = has_selection && end > selection_first &&
+                           begin < selection_last;
+            TsWaveformDisplayColumn display = ts_waveform_display_column(
+                analysis, sample->channels,
+                (TsWaveformDisplayMode)ui->config.waveform_display_mode);
+            uint32_t color = selected ? PAL_BLOCK_TEXT :
+                             ui->config.waveform_display_mode ==
+                                 TS_WAVEFORM_DISPLAY_MONO_SUM ? PAL_WAVE_SUM :
+                             PAL_WAVE_LEFT;
+            if (display.stereo) {
+                int left_y0 = middle - (int)(display.left_maximum *
                                               (TS_WAVE_H / 2 - 6));
-                int left_y1 = middle - (int)(analysis->left_minimum *
+                int left_y1 = middle - (int)(display.left_minimum *
                                               (TS_WAVE_H / 2 - 6));
-                int right_y0 = middle - (int)(analysis->right_maximum *
+                int right_y0 = middle - (int)(display.right_maximum *
                                                (TS_WAVE_H / 2 - 6));
-                int right_y1 = middle - (int)(analysis->right_minimum *
+                int right_y1 = middle - (int)(display.right_minimum *
                                                (TS_WAVE_H / 2 - 6));
-                uint32_t right_color = has_selection && end > selection_first &&
-                                       begin < selection_last ? PAL_TUNING : PAL_EFFECT;
+                uint32_t right_color = selected ? PAL_TUNING : PAL_WAVE_RIGHT;
                 wave_line(fb, TS_WAVE_X + x, left_y0,
                           TS_WAVE_X + x, left_y1, color);
                 wave_line(fb, TS_WAVE_X + x, right_y0,
                           TS_WAVE_X + x, right_y1, right_color);
             } else {
-                int y0 = middle - (int)(analysis->maximum * (TS_WAVE_H / 2 - 6));
-                int y1 = middle - (int)(analysis->minimum * (TS_WAVE_H / 2 - 6));
+                int y0 = middle - (int)(display.left_maximum * (TS_WAVE_H / 2 - 6));
+                int y1 = middle - (int)(display.left_minimum * (TS_WAVE_H / 2 - 6));
                 wave_line(fb, TS_WAVE_X + x, y0,
                           TS_WAVE_X + x, y1, color);
             }
@@ -2663,7 +2716,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                         "REC BANK  CHAIN ON  TAKES ADVANCE AND REARM" :
                         "REC BANK  SELECT EMPTY TILE  REC ARM  SHIFT+1";
         else {
-            snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %.32s",
+            /* Keep the bank hint clear of the fixed SISTER SRC control. */
+            snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %.22s",
                      ui->sample_page + 1,
                      ui->sample_page_count > 0 ? ui->sample_page_count : 1,
                      bank_hint);
@@ -2685,6 +2739,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int capture_channels = ui->capture_state != TS_CAPTURE_IDLE ?
                                    ui->capture_channels :
                                    ui->config.capture_channels;
+            mini_button(fb, 250, 313, 95,
+                        ui->sister_source_select_mode ? "SISTER SRC ON" : "SISTER SRC",
+                        ui->sister_source_select_mode);
             mini_button(fb, 350, 313, 28,
                         capture_channels == 2 ? "S" : "M",
                         capture_channels == 2);
@@ -2709,6 +2766,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             if (i == ui->capture_source_slot) {
                 rect(fb, x + 4, y + 4, 3, 15, PAL_NOTE);
                 text(fb, x + 10, y + 8, "SRC", PAL_NOTE, 1);
+            }
+            if ((ui->sister_source_mask & (uint16_t)(1u << i)) != 0u) {
+                rect(fb, x + 64, y + 3, 5, 5, PAL_WAVE_LEFT);
+                rect(fb, x + 65, y + 11, 3, 8, PAL_WAVE_RIGHT);
             }
             if (i == ui->capture_destination_slot) {
                 uint32_t record_color = ui->text_cursor_visible ? PAL_VOLUME : PAL_EFFECT;
@@ -3036,4 +3097,220 @@ int ts_ui_tape_action(int right_button, unsigned modifiers, TsPostEditKind *kind
     else
         *kind = right_button ? TS_POST_MOVE_OVERWRITE : TS_POST_MOVE_MIX;
     return 1;
+}
+
+static float sister_clamp(float value)
+{
+    if (!isfinite(value)) return 0.0f;
+    if (value < -1.0f) return -1.0f;
+    if (value > 1.0f) return 1.0f;
+    return value;
+}
+
+static void sister_wave_lane(TsFramebuffer *fb,
+                             const TsSisterWaveSnapshot *wave,
+                             int x, int y, int width, int height,
+                             int channel, uint32_t color)
+{
+    int middle = y + height / 2;
+    rect(fb, x, middle, width, 1, RGB(55, 52, 57));
+    for (int px = 0; px < width; ++px) {
+        size_t bin = (size_t)px * TS_SISTER_WAVE_BIN_COUNT / (size_t)width;
+        const TsSisterWaveBin *source = &wave->bins[bin];
+        float low = channel == 0 ? source->left_minimum :
+                    channel == 1 ? source->right_minimum :
+                    0.5f * (source->left_minimum + source->right_minimum);
+        float high = channel == 0 ? source->left_maximum :
+                     channel == 1 ? source->right_maximum :
+                     0.5f * (source->left_maximum + source->right_maximum);
+        int y0 = middle - (int)lrintf(sister_clamp(high) * (height / 2 - 3));
+        int y1 = middle - (int)lrintf(sister_clamp(low) * (height / 2 - 3));
+        if (y0 > y1) { int swap = y0; y0 = y1; y1 = swap; }
+        /* Sister has its own waveform viewport.  wave_line() deliberately
+           clips to the ordinary TapeSister canvas, whose top edge is y=64
+           and right edge is x=620; using it here discarded the upper part
+           and final columns of this 640x400 window. */
+        rect(fb, x + px, y0, 1, y1 - y0 + 1, color);
+    }
+}
+
+static void sister_marker(TsFramebuffer *fb, float normalized,
+                          int x, int width, int y, int height,
+                          uint32_t color, int shape)
+{
+    int marker_x;
+    if (!isfinite(normalized)) return;
+    if (normalized < 0.0f) normalized = 0.0f;
+    if (normalized > 1.0f) normalized = 1.0f;
+    marker_x = x + (int)lrintf(normalized * (float)(width - 1));
+    rect(fb, marker_x, y, 2, height, color);
+    if (shape == 0) rect(fb, marker_x - 2, y, 6, 4, color);
+    else if (shape == 1) rect(fb, marker_x - 3, y + height - 4, 8, 4, color);
+    else {
+        rect(fb, marker_x - 3, y, 8, 2, color);
+        rect(fb, marker_x - 1, y + 2, 4, 2, color);
+    }
+}
+
+static void sister_parameter(TsFramebuffer *fb, int x, int y, int width,
+                             const char *label, float amount, uint32_t color)
+{
+    char value[32];
+    if (!isfinite(amount)) amount = 0.0f;
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
+    snprintf(value, sizeof(value), "%s %02d", label, (int)lrintf(amount * 99.0f));
+    text(fb, x + 3, y + 3, value, color, 1);
+}
+
+static void sister_percent_parameter(TsFramebuffer *fb, int x, int y,
+                                     int width, const char *label,
+                                     float amount, int maximum_percent,
+                                     uint32_t color)
+{
+    char value[32];
+    if (!isfinite(amount)) amount = 0.0f;
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
+    snprintf(value, sizeof(value), "%s %03d", label,
+             (int)lrintf(amount * (float)maximum_percent));
+    text(fb, x + 3, y + 3, value, color, 1);
+}
+
+static void sister_choice_parameter(TsFramebuffer *fb, int x, int y,
+                                    int width, const char *label,
+                                    const char *choice, int active,
+                                    uint32_t color)
+{
+    char value[32];
+    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    if (active) rect(fb, x + 1, y + 14, width - 2, 3, color);
+    snprintf(value, sizeof(value), "%s %s", label, choice);
+    text(fb, x + 3, y + 3, value, color, 1);
+}
+
+void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
+                         const TsPalette *palette)
+{
+    static const char *const tap_names[TS_SISTER_TAP_COUNT] = {
+        "MIX", "H1", "H2", "H3"
+    };
+    TsWaveformDisplayMode mode;
+    char line[160];
+    if (fb == NULL || model == NULL || palette == NULL) return;
+    render_palette = palette;
+    clear(fb, PAL_DESKTOP);
+    rect(fb, 0, 0, TS_SISTER_UI_WIDTH, 36, RGB(12, 12, 12));
+    button(fb, 10, 8, 62, model->routing.enabled ? "POWER ON" : "POWER", model->routing.enabled);
+    button(fb, 78, 8, 62, "ROLL", model->routing.rolling);
+    button(fb, 146, 8, 62, "HOLD", model->routing.held);
+    button(fb, 214, 8, 62, "CLEAR", model->engine.clear_state != TS_SISTER_CLEAR_IDLE);
+    button(fb, 282, 8, 62, "MONITOR", model->routing.monitor_enabled);
+    text(fb, 365, 13, "SISTER MACHINE", PAL_TEXT, 1);
+    button(fb, 532, 8, 98, ts_waveform_display_name(model->waveform_mode),
+           model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
+
+    rect(fb, 10, 40, 620, 140, RGB(7, 7, 8));
+    mode = ts_waveform_display_sanitize(model->waveform_mode);
+    if (mode == TS_WAVEFORM_DISPLAY_STEREO && model->waveform.channels == 2u) {
+        text(fb, 14, 45, "L", PAL_WAVE_LEFT, 1);
+        text(fb, 14, 115, "R", PAL_WAVE_RIGHT, 1);
+        sister_wave_lane(fb, &model->waveform, 26, 40, 600, 68, 0, PAL_WAVE_LEFT);
+        sister_wave_lane(fb, &model->waveform, 26, 110, 600, 70, 1, PAL_WAVE_RIGHT);
+    } else {
+        int channel = mode == TS_WAVEFORM_DISPLAY_RIGHT ? 1 :
+                      mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? 2 : 0;
+        uint32_t color = mode == TS_WAVEFORM_DISPLAY_RIGHT ? PAL_WAVE_RIGHT :
+                         mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? PAL_WAVE_SUM :
+                         PAL_WAVE_LEFT;
+        sister_wave_lane(fb, &model->waveform, 14, 40, 612, 140, channel, color);
+    }
+    sister_marker(fb, model->engine.write_normalized, 26, 600, 40, 140, PAL_VOLUME, 0);
+    sister_marker(fb, model->engine.head_normalized[0], 26, 600, 40, 140, PAL_NOTE, 1);
+    sister_marker(fb, model->engine.head_normalized[1], 26, 600, 40, 140, PAL_EFFECT, 2);
+    sister_marker(fb, model->engine.head_normalized[2], 26, 600, 40, 140, PAL_TUNING, 0);
+
+    button(fb, 10, 190, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
+    button(fb, 86, 190, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
+    button(fb, 162, 190, 70, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);
+    button(fb, 238, 190, 70, "AUDITION", model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
+    snprintf(line, sizeof(line), "MASK %04X  V %02d  IN %.2F  MIX %.2F",
+             model->routing.source_mask, model->routing.active_source_voices,
+             model->routing.source_input_peak,
+             model->routing.tap_peak[TS_SISTER_TAP_MIX]);
+    text(fb, 322, 197, line, model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
+    snprintf(line, sizeof(line), "H1 %.2F  H2 %.2F  H3 %.2F  OV %llu",
+             model->routing.tap_peak[TS_SISTER_TAP_H1],
+             model->routing.tap_peak[TS_SISTER_TAP_H2],
+             model->routing.tap_peak[TS_SISTER_TAP_H3],
+             (unsigned long long)model->routing.overload_count);
+    text(fb, 322, 208, line,
+         model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING, 1);
+
+    text(fb, 10, 225, "H1", PAL_NOTE, 1);
+    sister_parameter(fb, 72, 220, 110, "LEVEL", model->parameters.head1_level, PAL_NOTE);
+    sister_parameter(fb, 192, 220, 110, "TIME", model->parameters.head1_time_ms / 4000.0f, PAL_NOTE);
+    sister_parameter(fb, 312, 220, 110, "FEED", model->parameters.head1_feedback, PAL_NOTE);
+    sister_parameter(fb, 432, 220, 110, "CUTOFF",
+                     log10f(model->parameters.filter_cutoff_hz / 20.0f) / 3.0f,
+                     PAL_INSTRUMENT);
+    text(fb, 10, 253, "H2", PAL_EFFECT, 1);
+    sister_parameter(fb, 72, 248, 110, "LEVEL", model->parameters.head2_level, PAL_EFFECT);
+    sister_parameter(fb, 192, 248, 110, "SCRUB", model->parameters.head2_scrub, PAL_EFFECT);
+    sister_parameter(fb, 312, 248, 110, "RATE", model->parameters.head2_rate_index / 9.0f, PAL_EFFECT);
+    sister_parameter(fb, 432, 248, 110, "FEED", model->parameters.head2_feedback, PAL_EFFECT);
+    text(fb, 10, 281, "H3", PAL_TUNING, 1);
+    sister_parameter(fb, 72, 276, 110, "LEVEL", model->parameters.head3_level, PAL_TUNING);
+    sister_parameter(fb, 192, 276, 110, "SPAN", model->parameters.head3_span, PAL_TUNING);
+    sister_parameter(fb, 312, 276, 110, "RATE", model->parameters.head3_rate_index / 9.0f, PAL_TUNING);
+    sister_parameter(fb, 432, 276, 110, "Q",
+                     (model->parameters.filter_q - 0.1f) / 19.9f,
+                     PAL_INSTRUMENT);
+
+    sister_parameter(fb, 10, 304, 82, "WOW", model->parameters.wow / 10.0f, PAL_TUNING);
+    sister_parameter(fb, 98, 304, 82, "DROP", model->parameters.drop / 100.0f, PAL_EFFECT);
+    sister_parameter(fb, 186, 304, 82, "DUCK", model->parameters.duck_enabled ? model->parameters.duck_sensitivity : 0.0f, PAL_VOLUME);
+    sister_choice_parameter(fb, 274, 304, 82, "DECOR",
+                            model->parameters.decorrelation_enabled ? "ON" : "OFF",
+                            model->parameters.decorrelation_enabled,
+                            PAL_WAVE_RIGHT);
+    sister_parameter(fb, 362, 304, 82, "WIDTH", model->parameters.width, PAL_WAVE_LEFT);
+    sister_choice_parameter(fb, 450, 304, 82, "FILTER",
+                            ts_sister_filter_type_name(model->parameters.filter_type),
+                            model->parameters.filter_type != TS_SISTER_FILTER_BYPASS,
+                            PAL_INSTRUMENT);
+    sister_parameter(fb, 538, 304, 82, "GAIN",
+                     (model->parameters.filter_gain_db + 24.0f) / 48.0f,
+                     PAL_INSTRUMENT);
+
+    sister_percent_parameter(fb, 10, 330, 118, "INPUT",
+                             model->parameters.input_gain / 2.0f,
+                             200, PAL_VOLUME);
+    sister_percent_parameter(fb, 134, 330, 118, "DRY",
+                             model->parameters.monitor_dry, 100, PAL_WAVE_LEFT);
+    sister_percent_parameter(fb, 258, 330, 118, "WET",
+                             model->parameters.monitor_wet, 100, PAL_WAVE_RIGHT);
+    sister_percent_parameter(fb, 382, 330, 118, "OUT",
+                             model->parameters.mix_output_gain / 4.0f,
+                             400, PAL_INSTRUMENT);
+    sister_percent_parameter(fb, 506, 330, 118, "ERASE",
+                             model->parameters.write_erase, 100, PAL_VOLUME);
+
+    snprintf(line, sizeof(line), "TARGET %s  %.88s",
+             model->destination_slot >= 0 ? "READY" : "--",
+             model->routing.capture_state == TS_CAPTURE_RECORDING ?
+             "RECORDING - MONITOR LEVELS DO NOT CHANGE CAPTURE" : model->status);
+    text(fb, 10, 355, line,
+         model->routing.source_target_conflict ? PAL_VOLUME : PAL_MOUSE, 1);
+
+    button(fb, 10, 370, 58, tap_names[model->selected_tap], 1);
+    button(fb, 74, 370, 44, model->capture_channels == 2 ? "S" : "M", model->capture_channels == 2);
+    button(fb, 124, 370, 100,
+           model->destination_mode == TS_SISTER_UI_DEST_NEXT_EMPTY ? "NEXT EMPTY" : "CURRENT", 0);
+    button(fb, 450, 370, 82, "CAPTURE", model->routing.capture_state != TS_CAPTURE_IDLE && !model->capture_overdub);
+    button(fb, 538, 370, 92, "OVERDUB", model->routing.capture_state != TS_CAPTURE_IDLE && model->capture_overdub);
 }

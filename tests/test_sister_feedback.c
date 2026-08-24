@@ -110,12 +110,51 @@ static void unity_stability_and_nonfinite_recovery(void)
     ts_sister_machine_free(&machine);
 }
 
+static void write_erase_ghosting(void)
+{
+    TsSisterMachine machine;
+    TsSisterParameters parameters;
+    TsSisterOutput output;
+
+    assert(ts_sister_machine_init(&machine, 1000u, 2u, 0.020));
+    ts_sister_parameters_default(&parameters, 1000u);
+    parameters.head1_level = 0.0f;
+    parameters.head2_level = 0.0f;
+    parameters.head3_level = 0.0f;
+    parameters.head1_feedback = 0.0f;
+    parameters.head2_feedback = 0.0f;
+
+    parameters.write_erase = 1.0f;
+    sister_configure_immediate(&machine, &parameters);
+    assert(ts_sister_buffer_write(&machine.buffer, 0u,
+                                  (TsStereoFrame){0.5f, -0.25f}));
+    machine.master_clock = machine.buffer.capacity_frames;
+    output = ts_sister_machine_process_frame(
+        &machine, sister_silence(), sister_silence());
+    assert(fabsf(output.write.l) < 0.0001f);
+    assert(fabsf(output.write.r) < 0.0001f);
+
+    parameters.write_erase = 0.2f;
+    sister_configure_immediate(&machine, &parameters);
+    assert(ts_sister_buffer_write(&machine.buffer, 0u,
+                                  (TsStereoFrame){0.5f, -0.25f}));
+    machine.master_clock = machine.buffer.capacity_frames;
+    output = ts_sister_machine_process_frame(
+        &machine, sister_silence(), sister_silence());
+    assert(output.write.l > 0.30f);
+    assert(output.write.r < -0.15f);
+    assert(fabsf(output.write.l) > fabsf(output.write.r));
+    assert(sister_frame_finite(output.write));
+    ts_sister_machine_free(&machine);
+}
+
 int main(void)
 {
     impulse_decay(0);
     impulse_decay(1);
     clipping_saturation_and_dc();
     unity_stability_and_nonfinite_recovery();
+    write_erase_ghosting();
     puts("sister feedback tests passed");
     return 0;
 }

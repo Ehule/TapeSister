@@ -107,6 +107,12 @@ static void filter_types_bounds_and_state(void)
     output = ts_sister_machine_process_frame(&machine, sister_silence(), sister_silence());
     assert(sister_close(output.mix.l, 0.8f, 1e-6f));
     assert(output.mix.r == 0.0f);
+    parameters.mix_output_gain = 0.5f;
+    sister_configure_immediate(&machine, &parameters);
+    fill_constant(&machine, (TsStereoFrame){0.8f, 0.0f});
+    output = ts_sister_machine_process_frame(&machine, sister_silence(), sister_silence());
+    assert(sister_close(output.mix.l, 0.4f, 1e-6f));
+    parameters.mix_output_gain = 1.0f;
     for (type = TS_SISTER_FILTER_LOWPASS;
          type < TS_SISTER_FILTER_TYPE_COUNT; ++type) {
         parameters.filter_type = (TsSisterFilterType)type;

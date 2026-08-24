@@ -483,10 +483,23 @@ The headless Sister Machine core implements Kafka's moving write head and three
 playback heads over one preallocated mono/stereo rolling buffer. A fixed runtime route
 now accepts TILES, FM, EXT and PREVIEW, exposes H1/H2/H3/MIX Capture taps, owns a
 per-page Sister source mask and supports protected capture-then-replay recursion.
-Sister remains disabled by default and has no user controls in this phase, so ordinary
-TapeSister looks and behaves as before. See
+Sister remains disabled by default. Clicking the `TAPESISTER` logo opens its independent
+performance window and enables the engine; closing that window hides it without stopping
+audio. The window exposes transport, fixed sources, three heads, modulation/filter,
+stereo rolling overview, pre-tape INPUT trim, source-aware DRY/WET tape routing,
+protected MIX OUT gain,
+recording-head ERASE strength,
+and protected tap Capture/Overdub controls. ERASE 100 fully replaces each rolling-buffer
+cell; lower values retain old stereo material before new input and controlled head
+feedback are written. A routed source is removed from its ordinary audition bus and
+returns only through Sister when MONITOR is on; INPUT prevents hot internal buses from
+overdriving the write head. OUT affects MIX only and individual head taps remain
+unscaled. Sister tile one-shots finish after key-up, and an open FM workspace remains
+playable while the Sister window has focus. The main bank's
+`SISTER SRC` mode edits the independent per-page source mask. See
 [`docs/SISTER_MACHINE_HEADLESS_ENGINE.md`](docs/SISTER_MACHINE_HEADLESS_ENGINE.md) and
-[`docs/SISTER_MACHINE_LIVE_ROUTING.md`](docs/SISTER_MACHINE_LIVE_ROUTING.md).
+[`docs/SISTER_MACHINE_LIVE_ROUTING.md`](docs/SISTER_MACHINE_LIVE_ROUTING.md), plus the
+[`PR5 performance-window contract`](docs/SISTER_MACHINE_PERFORMANCE_WINDOW.md).
 
 ## File browser
 

@@ -17,6 +17,8 @@ static void default_contract(void)
     assert(!parameters.duck_enabled && !parameters.decorrelation_enabled);
     assert(parameters.width == 1.0f);
     assert(parameters.filter_type == TS_SISTER_FILTER_BYPASS);
+    assert(parameters.input_gain == 1.0f);
+    assert(parameters.mix_output_gain == 1.0f);
     assert(parameters.clear_ms == 20.0f);
     ts_sister_parameters_kafka_start(&parameters, 48000u);
     assert(parameters.filter_type == TS_SISTER_FILTER_LOWPASS);

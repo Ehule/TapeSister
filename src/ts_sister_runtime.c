@@ -33,6 +33,19 @@ static float frame_peak(TsStereoFrame value)
     return left > right ? left : right;
 }
 
+static float monitor_approach(float current, float target, uint32_t sample_rate)
+{
+    float coefficient;
+    if (!isfinite(current)) current = target;
+    if (!isfinite(target)) target = 0.0f;
+    if (target < 0.0f) target = 0.0f;
+    if (target > 1.0f) target = 1.0f;
+    if (sample_rate == 0u) return target;
+    coefficient = 1.0f - expf(-1.0f / (0.020f * (float)sample_rate));
+    current += (target - current) * coefficient;
+    return fabsf(target - current) < 0.000001f ? target : current;
+}
+
 static uint32_t float_bits(float value)
 {
     uint32_t bits;
@@ -172,9 +185,12 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_capture_init(&runtime->capture);
     runtime->rolling = 1;
     runtime->input_available = 1;
+    runtime->monitor_dry_current = 1.0f;
+    runtime->monitor_wet_current = 1.0f;
     runtime->selected_tap = TS_SISTER_TAP_MIX;
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     snapshot_atomic_init(&runtime->snapshot);
+    ts_sister_wave_publisher_init(&runtime->waveform);
     publish_snapshot(runtime);
 }
 
@@ -242,6 +258,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     ts_capture_free(&runtime->capture);
     ts_performance_clear(&runtime->performance);
+    ts_sister_wave_publisher_clear(&runtime->waveform, buffer_channels);
     publish_snapshot(runtime);
     runtime_error(error, error_size, "");
     return 1;
@@ -256,6 +273,7 @@ void ts_sister_runtime_disable(TsSisterRuntime *runtime)
     ts_performance_clear(&runtime->performance);
     ts_capture_free(&runtime->capture);
     ts_sister_machine_free(&runtime->machine);
+    ts_sister_wave_publisher_clear(&runtime->waveform, 2u);
     runtime->output_channels = 0u;
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     runtime->source_target_conflict = 0;
@@ -302,6 +320,8 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     runtime->last_frame = (TsSisterRuntimeFrame){0};
     ts_capture_free(&runtime->capture);
     ts_performance_clear(&runtime->performance);
+    ts_sister_wave_publisher_clear(&runtime->waveform,
+                                   runtime->machine.buffer.channels);
     runtime->warnings &= ~(uint32_t)(TS_SISTER_WARNING_DEVICE_CONTRACT |
                                      TS_SISTER_WARNING_ALLOCATION);
     publish_snapshot(runtime);
@@ -366,7 +386,11 @@ int ts_sister_runtime_perform_clear(TsSisterRuntime *runtime)
     int result;
     if (runtime == NULL || !runtime->enabled) return 0;
     result = ts_sister_machine_perform_clear(&runtime->machine);
-    if (result) runtime->last_frame = (TsSisterRuntimeFrame){0};
+    if (result) {
+        runtime->last_frame = (TsSisterRuntimeFrame){0};
+        ts_sister_wave_publisher_clear(&runtime->waveform,
+                                       runtime->machine.buffer.channels);
+    }
     publish_snapshot(runtime);
     return result;
 }
@@ -548,6 +572,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsStereoFrame input = {0.0f, 0.0f};
     TsSisterOutput output;
     int armed;
+    frame.dry_monitor_gain = 1.0f;
     if (runtime == NULL) return frame;
     if (sources != NULL) source = *sources;
     source.fm = ts_stereo_frame_sanitize(source.fm);
@@ -560,6 +585,13 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         publish_snapshot(runtime);
         return frame;
     }
+    runtime->monitor_dry_current = monitor_approach(
+        runtime->monitor_dry_current, runtime->parameters.monitor_dry,
+        runtime->machine.buffer.sample_rate);
+    runtime->monitor_wet_current = monitor_approach(
+        runtime->monitor_wet_current, runtime->parameters.monitor_wet,
+        runtime->machine.buffer.sample_rate);
+    frame.dry_monitor_gain = runtime->monitor_dry_current;
     if ((runtime->source_switches & TS_SISTER_SOURCE_TILES) != 0u)
         input = frame_add(input, tile_bus);
     if ((runtime->source_switches & TS_SISTER_SOURCE_FM) != 0u)
@@ -571,9 +603,14 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         input = frame_add(input, source.preview);
     armed = source_count(runtime->source_switches);
     if (armed > 1) input = frame_scale(input, 1.0f / sqrtf((float)armed));
-    frame.input = input;
-    frame.duck_sidechain = input;
     output = ts_sister_machine_process_frame(&runtime->machine, input, input);
+    frame.input = ts_stereo_frame_sanitize(output.input);
+    frame.duck_sidechain = frame.input;
+    ts_sister_wave_publisher_push(&runtime->waveform, output.write,
+                                  output.write_position,
+                                  runtime->machine.buffer.capacity_frames,
+                                  runtime->machine.buffer.channels,
+                                  output.wrote);
     frame.tap[TS_SISTER_TAP_MIX] = ts_stereo_frame_sanitize(output.mix);
     frame.tap[TS_SISTER_TAP_H1] = ts_stereo_frame_sanitize(output.head[0]);
     frame.tap[TS_SISTER_TAP_H2] = ts_stereo_frame_sanitize(output.head[1]);
@@ -582,8 +619,11 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         TS_CAPTURE_RECORDING)
         (void)ts_capture_write_frame(
             &runtime->capture, selected_tap(&frame, runtime->selected_tap));
-    frame.monitor_return = runtime->monitor_enabled ?
-        frame.tap[TS_SISTER_TAP_MIX] : (TsStereoFrame){0.0f, 0.0f};
+    frame.monitor_return = runtime->monitor_enabled ? frame_add(
+        frame_scale(frame.input, runtime->monitor_dry_current),
+        frame_scale(frame.tap[TS_SISTER_TAP_MIX],
+                    runtime->monitor_wet_current)) :
+        (TsStereoFrame){0.0f, 0.0f};
     runtime->last_frame = frame;
     ++runtime->processed_frames;
     publish_snapshot(runtime);
@@ -599,6 +639,13 @@ void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
     for (size_t frame = 0u; frame < frames; ++frame)
         output[frame] = ts_sister_runtime_process_frame(
             runtime, sources != NULL ? &sources[frame] : NULL);
+}
+
+int ts_sister_runtime_get_wave_snapshot(const TsSisterRuntime *runtime,
+                                        TsSisterWaveSnapshot *snapshot)
+{
+    return runtime != NULL &&
+           ts_sister_wave_snapshot_get(&runtime->waveform, snapshot);
 }
 
 int ts_sister_runtime_find_destination(const TsSisterRuntime *runtime,
@@ -852,6 +899,9 @@ void ts_sister_runtime_project_close(TsSisterRuntime *runtime)
     ts_capture_free(&runtime->capture);
     if (runtime->enabled)
         (void)ts_sister_machine_clear_offline(&runtime->machine);
+    ts_sister_wave_publisher_clear(&runtime->waveform,
+                                   runtime->enabled ?
+                                   runtime->machine.buffer.channels : 2u);
     publish_snapshot(runtime);
 }
 

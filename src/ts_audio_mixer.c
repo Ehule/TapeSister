@@ -48,6 +48,20 @@ TsStereoFrame ts_audio_normalize_linked(TsStereoFrame sum, int active_voices)
     return scale_frame(sum, 1.0f / sqrtf((float)active_voices));
 }
 
+void ts_audio_buses_apply_source_dry(TsAudioBuses *buses, float gain,
+                                     int preview_routed, int tiles_routed,
+                                     int fm_routed, int external_routed)
+{
+    if (buses == NULL) return;
+    if (!isfinite(gain)) gain = 0.0f;
+    if (gain < 0.0f) gain = 0.0f;
+    if (gain > 1.0f) gain = 1.0f;
+    if (preview_routed) buses->legacy_preview = scale_frame(buses->legacy_preview, gain);
+    if (tiles_routed) buses->tile_performance = scale_frame(buses->tile_performance, gain);
+    if (fm_routed) buses->fm = scale_frame(buses->fm, gain);
+    if (external_routed) buses->monitor = scale_frame(buses->monitor, gain);
+}
+
 TsStereoFrame ts_audio_mixer_render(TsAudioMixer *mixer,
                                     const TsAudioBuses *sources)
 {

@@ -111,9 +111,9 @@ mono, `1` preserves the complete stored/decorrelated field, and intermediate val
 use `mid + width * (channel - mid)`.
 
 H1/H2 feedback branches retain Kafka's independent hard clipping. The combined write
-adds finite sanitization, DC rejection and mild saturation. MIX uses fixed headroom and
-a single linked gain when either channel exceeds unity, so protection never changes
-stereo balance. An overload counter records invalid input, feedback/write overload,
+adds finite sanitization, DC rejection and mild saturation. MIX uses fixed headroom,
+then an optional post-filter output gain, and a single linked gain when either channel
+exceeds unity, so protection never changes stereo balance. An overload counter records invalid input, feedback/write overload,
 filter recovery and final limiting.
 
 ## Hold, Clear and snapshots
@@ -141,12 +141,17 @@ needs the live buffer or mutable DSP state.
 
 ## Defaults and live-routing boundary
 
-Native defaults are: 40-second stereo buffer, Roll on, Hold off, H1 level `0.45`, time
+Native defaults are: 40-second stereo buffer, Roll on, Hold off, pre-tape input gain
+`1.0`, H1 level `0.45`, time
 `500 ms`, feedback `0.25`; H2/H3 level `0`, rate `+1`; H2 scrub `0.5`; H3 span `0.5`
 (four seconds); Wow/Drop/Duck/decorrelation off; Width `1`; filter bypass; fixed
 headroom `0.5`; and Clear `20 ms`. `ts_sister_parameters_kafka_start()` supplies the
 verified Kafka rate/filter starting character without claiming absent ppooll preset
 values as cold-start defaults.
+
+The headless output-gain default is unity so PR3 behavior remains reproducible. The PR5
+application initializes that protected stage from its saved `sister_output_percent`
+preference, defaulting to 400 percent to compensate the conservative H1/headroom start.
 
 PR4 connects this engine to TapeSister through the fixed, disabled-by-default route
 documented in `SISTER_MACHINE_LIVE_ROUTING.md`. The engine remains independent of UI

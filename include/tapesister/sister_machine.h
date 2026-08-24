@@ -118,12 +118,29 @@ typedef struct {
     float filter_q;
     float filter_gain_db;
     float headroom;
+    /* Fraction of the previous rolling-memory cell erased on each write pass.
+       1.0 is full replacement; 0.0 retains the complete previous cell. */
+    float write_erase;
+    /* Pre-tape input trim. Applied before rolling-memory write and Duck. */
+    float input_gain;
+    float monitor_dry;
+    float monitor_wet;
+    /* Post-filter MIX gain. Final linked safety remains authoritative. */
+    float mix_output_gain;
     float clear_ms;
 } TsSisterParameters;
 
+const char *ts_sister_filter_type_name(TsSisterFilterType type);
+
 typedef struct {
+    /* Exact sanitized, input-trimmed frame presented to the tape engine. */
+    TsStereoFrame input;
     TsStereoFrame head[TS_SISTER_HEAD_COUNT];
     TsStereoFrame mix;
+    /* Exact bounded frame offered to rolling memory this callback. */
+    TsStereoFrame write;
+    size_t write_position;
+    int wrote;
 } TsSisterOutput;
 
 typedef struct {
@@ -185,6 +202,8 @@ typedef struct {
     int held;
     TsSisterClearState clear_state;
     TsSisterRamp clear_gain;
+    TsSisterRamp write_erase;
+    TsSisterRamp input_gain;
     uint32_t wow_prng;
     uint64_t wow_next_event_clock;
     float wow_target;

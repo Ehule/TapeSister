@@ -32,6 +32,9 @@ int main(void)
                                     1000) == 2);
     CHECK(ts_performance_count(&runtime.performance) == 2);
     ts_sister_runtime_note_off(&runtime, &qwerty);
+    CHECK(ts_performance_count(&runtime.performance) == 2);
+    for (int frame = 0; frame < 40; ++frame)
+        (void)ts_sister_runtime_process_frame(&runtime, NULL);
     CHECK(ts_performance_count(&runtime.performance) == 0);
 
     CHECK(ts_note_event_midi(&midi, 64, 63, 4));

@@ -52,7 +52,24 @@ int main(void)
     CHECK(CLOSE(frame.monitor_return.l, 0.0f));
     ts_sister_runtime_set_monitor(&runtime, 1);
     frame = ts_sister_runtime_process_frame(&runtime, &source);
-    CHECK(CLOSE(frame.monitor_return.l, frame.tap[TS_SISTER_TAP_MIX].l));
+    CHECK(CLOSE(frame.monitor_return.l,
+                frame.input.l + frame.tap[TS_SISTER_TAP_MIX].l));
+    CHECK(CLOSE(frame.monitor_return.r,
+                frame.input.r + frame.tap[TS_SISTER_TAP_MIX].r));
+
+    parameters = runtime.parameters;
+    parameters.monitor_dry = 0.25f;
+    parameters.monitor_wet = 0.50f;
+    ts_sister_runtime_set_parameters(&runtime, &parameters);
+    for (int i = 0; i < 300; ++i)
+        frame = ts_sister_runtime_process_frame(&runtime, &source);
+    CHECK(CLOSE(frame.dry_monitor_gain, 0.25f));
+    CHECK(CLOSE(frame.monitor_return.l,
+                frame.input.l * 0.25f +
+                frame.tap[TS_SISTER_TAP_MIX].l * 0.50f));
+    CHECK(CLOSE(frame.monitor_return.r,
+                frame.input.r * 0.25f +
+                frame.tap[TS_SISTER_TAP_MIX].r * 0.50f));
 
     write_position = (size_t)(runtime.machine.master_clock %
                               runtime.machine.buffer.capacity_frames);
@@ -79,6 +96,7 @@ int main(void)
     frame = ts_sister_runtime_process_frame(&runtime, &source);
     CHECK(runtime.machine.buffer.data == NULL);
     CHECK(CLOSE(frame.tap[TS_SISTER_TAP_H1].l, 0.0f));
+    CHECK(CLOSE(frame.dry_monitor_gain, 1.0f));
 
     {
         TsAudioMixer mixer;

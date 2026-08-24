@@ -37,6 +37,20 @@ void ts_config_init(TsConfig *config)
         config->capture_auto_resize = 1;
         config->capture_max_seconds = TS_CAPTURE_MAX_SECONDS_DEFAULT;
         config->capture_channels = TS_CAPTURE_CHANNELS_DEFAULT;
+        config->waveform_display_mode = TS_WAVEFORM_DISPLAY_STEREO;
+        config->sister_waveform_display_mode = TS_WAVEFORM_DISPLAY_STEREO;
+        config->sister_buffer_seconds = 40;
+        config->sister_buffer_channels = 2;
+        config->sister_clear_ms = 20;
+        config->sister_capture_channels = 1;
+        config->sister_restart_clear = 1;
+        config->sister_dry_percent = TS_SISTER_MONITOR_PERCENT_DEFAULT;
+        config->sister_wet_percent = TS_SISTER_MONITOR_PERCENT_DEFAULT;
+        config->sister_input_percent = TS_SISTER_INPUT_PERCENT_DEFAULT;
+        config->sister_output_percent = TS_SISTER_OUTPUT_PERCENT_DEFAULT;
+        config->sister_erase_percent = TS_SISTER_ERASE_PERCENT_DEFAULT;
+        config->sister_window_x = -1;
+        config->sister_window_y = -1;
     }
 }
 
@@ -240,6 +254,34 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, TS_CAPTURE_MAX_SECONDS_MIN, TS_CAPTURE_MAX_SECONDS_MAX, &loaded.capture_max_seconds)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "capture_channels") == 0) {
             if (!parse_clamped_integer(value, TS_CAPTURE_CHANNELS_MIN, TS_CAPTURE_CHANNELS_MAX, &loaded.capture_channels)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "waveform_display_mode") == 0) {
+            if (!parse_clamped_integer(value, 0, TS_WAVEFORM_DISPLAY_COUNT - 1, &loaded.waveform_display_mode)) { snprintf(error, error_size, "Invalid waveform mode on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_waveform_display_mode") == 0) {
+            if (!parse_clamped_integer(value, 0, TS_WAVEFORM_DISPLAY_COUNT - 1, &loaded.sister_waveform_display_mode)) { snprintf(error, error_size, "Invalid Sister waveform mode on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_buffer_seconds") == 0) {
+            if (!parse_clamped_integer(value, 1, 120, &loaded.sister_buffer_seconds)) { snprintf(error, error_size, "Invalid Sister duration on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_buffer_channels") == 0) {
+            if (!parse_clamped_integer(value, 1, 2, &loaded.sister_buffer_channels)) { snprintf(error, error_size, "Invalid Sister channels on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_clear_ms") == 0) {
+            if (!parse_clamped_integer(value, 1, 1000, &loaded.sister_clear_ms)) { snprintf(error, error_size, "Invalid Sister clear time on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_capture_channels") == 0) {
+            if (!parse_clamped_integer(value, 1, 2, &loaded.sister_capture_channels)) { snprintf(error, error_size, "Invalid Sister capture format on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_restart_clear") == 0) {
+            if (!parse_boolean(value, &loaded.sister_restart_clear)) { snprintf(error, error_size, "Invalid Sister restart policy on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_dry_percent") == 0) {
+            if (!parse_clamped_integer(value, TS_SISTER_MONITOR_PERCENT_MIN, TS_SISTER_MONITOR_PERCENT_MAX, &loaded.sister_dry_percent)) { snprintf(error, error_size, "Invalid Sister dry level on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_wet_percent") == 0) {
+            if (!parse_clamped_integer(value, TS_SISTER_MONITOR_PERCENT_MIN, TS_SISTER_MONITOR_PERCENT_MAX, &loaded.sister_wet_percent)) { snprintf(error, error_size, "Invalid Sister wet level on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_input_percent") == 0) {
+            if (!parse_clamped_integer(value, TS_SISTER_INPUT_PERCENT_MIN, TS_SISTER_INPUT_PERCENT_MAX, &loaded.sister_input_percent)) { snprintf(error, error_size, "Invalid Sister input level on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_output_percent") == 0) {
+            if (!parse_clamped_integer(value, TS_SISTER_OUTPUT_PERCENT_MIN, TS_SISTER_OUTPUT_PERCENT_MAX, &loaded.sister_output_percent)) { snprintf(error, error_size, "Invalid Sister output level on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_erase_percent") == 0) {
+            if (!parse_clamped_integer(value, TS_SISTER_ERASE_PERCENT_MIN, TS_SISTER_ERASE_PERCENT_MAX, &loaded.sister_erase_percent)) { snprintf(error, error_size, "Invalid Sister erase strength on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_window_x") == 0) {
+            if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_x)) { snprintf(error, error_size, "Invalid Sister window X on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_window_y") == 0) {
+            if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_y)) { snprintf(error, error_size, "Invalid Sister window Y on config line %d", line_number); fclose(file); return 0; }
         } else {
             int dsp = parse_dsp_preset(key, value, &loaded);
             int cdp = dsp == 0 ? parse_cdp_preset(key, value, &loaded) : 0;
@@ -320,6 +362,25 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "capture_max_seconds=%d\n"
                 "; Internal Capture format: 1=M, 2=S. Overdub always follows its target shape.\n"
                 "capture_channels=%d\n"
+                "\n[Sister Machine]\n"
+                "; Display modes: 0=STEREO, 1=LEFT, 2=RIGHT, 3=MONO SUM.\n"
+                "waveform_display_mode=%d\n"
+                "sister_waveform_display_mode=%d\n"
+                "sister_buffer_seconds=%d\n"
+                "sister_buffer_channels=%d\n"
+                "sister_clear_ms=%d\n"
+                "sister_capture_channels=%d\n"
+                "sister_restart_clear=%d\n"
+                "; Input is the pre-tape trim. Dry and wet affect monitoring only.\n"
+                "sister_input_percent=%d\n"
+                "sister_dry_percent=%d\n"
+                "sister_wet_percent=%d\n"
+                "; Post-filter MIX output gain; 400 compensates conservative internal headroom.\n"
+                "sister_output_percent=%d\n"
+                "; Per-pass write erase: 100=full replacement, 20=retain 80%%.\n"
+                "sister_erase_percent=%d\n"
+                "sister_window_x=%d\n"
+                "sister_window_y=%d\n"
                 "\n[DSP Presets]\n"
                 "; SAVE/UPDATE writes normalized macro values here.\n",
                 config->sample_path, config->fasttracker_path,
@@ -342,7 +403,21 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->record_max_seconds,
                 config->capture_auto_resize ? 1 : 0,
                 config->capture_max_seconds,
-                config->capture_channels) < 0;
+                config->capture_channels,
+                config->waveform_display_mode,
+                config->sister_waveform_display_mode,
+                config->sister_buffer_seconds,
+                config->sister_buffer_channels,
+                config->sister_clear_ms,
+                config->sister_capture_channels,
+                config->sister_restart_clear ? 1 : 0,
+                config->sister_input_percent,
+                config->sister_dry_percent,
+                config->sister_wet_percent,
+                config->sister_output_percent,
+                config->sister_erase_percent,
+                config->sister_window_x,
+                config->sister_window_y) < 0;
     for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {
         if (!config->dsp_factory_overridden[slot]) continue;
         write_failed = fprintf(file, "DspPreset%02d=%.9g,%.9g,%.9g,%.9g\n",
