@@ -30,12 +30,23 @@ int main(void)
     CHECK(ts_performance_count(&runtime.performance) == 2);
     CHECK(ts_sister_runtime_note_on(&runtime, &instrument, &qwerty, 0,
                                     1000) == 2);
-    CHECK(ts_performance_count(&runtime.performance) == 2);
+    CHECK(ts_performance_count(&runtime.performance) == 4);
     ts_sister_runtime_note_off(&runtime, &qwerty);
-    CHECK(ts_performance_count(&runtime.performance) == 2);
+    CHECK(ts_performance_count(&runtime.performance) == 4);
     for (int frame = 0; frame < 40; ++frame)
         (void)ts_sister_runtime_process_frame(&runtime, NULL);
     CHECK(ts_performance_count(&runtime.performance) == 0);
+
+    CHECK(ts_sister_runtime_replace_source_slot(
+        &runtime, &instrument, 0));
+    CHECK(ts_sister_runtime_source_mask(&runtime) == 0x1u);
+    CHECK(ts_sister_runtime_toggle_source_slot(
+        &runtime, &instrument, 1));
+    CHECK(ts_sister_runtime_source_mask(&runtime) == 0x3u);
+    CHECK(ts_sister_runtime_replace_source_slot(
+        &runtime, &instrument, 1));
+    CHECK(ts_sister_runtime_source_mask(&runtime) == 0x2u);
+    CHECK(ts_sister_runtime_set_source_slot(&runtime, &instrument, 0, 1));
 
     CHECK(ts_note_event_midi(&midi, 64, 63, 4));
     CHECK(ts_sister_runtime_note_on(&runtime, &instrument, &midi, 0,
@@ -44,6 +55,14 @@ int main(void)
           runtime.performance.voices[0].gain < 1.0f);
     ts_sister_runtime_release_midi_channel(&runtime, 4);
     CHECK(ts_performance_count(&runtime.performance) == 0);
+
+    for (int voice = 0; voice < TS_PERFORMANCE_VOICE_LIMIT - 1; ++voice)
+        runtime.performance.voices[voice].active = 1;
+    CHECK(ts_sister_runtime_note_on(&runtime, &instrument, &midi, 0,
+                                    1000) == 0);
+    CHECK(ts_performance_count(&runtime.performance) ==
+          TS_PERFORMANCE_VOICE_LIMIT - 1);
+    ts_performance_clear(&runtime.performance);
 
     CHECK(ts_sister_runtime_set_page(&runtime, 1u, &instrument));
     CHECK(ts_sister_runtime_source_mask(&runtime) == 0u);

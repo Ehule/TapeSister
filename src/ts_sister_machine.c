@@ -196,6 +196,7 @@ void ts_sister_parameters_default(TsSisterParameters *parameters,
     parameters->filter_q = 0.70710678f;
     parameters->headroom = 0.5f;
     parameters->write_erase = 1.0f;
+    parameters->ghost_tone = 0.0f;
     parameters->input_gain = 1.0f;
     parameters->monitor_dry = 1.0f;
     parameters->monitor_wet = 1.0f;
@@ -514,12 +515,34 @@ static TsSisterParameters sanitize_parameters(const TsSisterMachine *machine,
     result.filter_gain_db = clampf(result.filter_gain_db, -24.0f, 24.0f);
     result.headroom = clampf(result.headroom, 0.05f, 1.0f);
     result.write_erase = clampf(result.write_erase, 0.0f, 1.0f);
+    result.ghost_tone = clampf(result.ghost_tone, 0.0f, 1.0f);
     result.input_gain = clampf(result.input_gain, 0.0f, 2.0f);
     result.monitor_dry = clampf(result.monitor_dry, 0.0f, 1.0f);
     result.monitor_wet = clampf(result.monitor_wet, 0.0f, 1.0f);
     result.mix_output_gain = clampf(result.mix_output_gain, 0.0f, 4.0f);
     result.clear_ms = clampf(result.clear_ms, 1.0f, 200.0f);
     return result;
+}
+
+void ts_sister_parameters_sanitize(TsSisterParameters *parameters,
+                                   uint32_t sample_rate)
+{
+    TsSisterMachine machine;
+    if (parameters == NULL) return;
+    memset(&machine, 0, sizeof(machine));
+    machine.buffer.sample_rate = sample_rate > 0u ? sample_rate : 48000u;
+    *parameters = sanitize_parameters(&machine, parameters);
+}
+
+float ts_sister_ghost_cutoff_hz(float amount, uint32_t sample_rate)
+{
+    float maximum;
+    float minimum = 250.0f;
+    amount = clampf(amount, 0.0f, 1.0f);
+    maximum = sample_rate > 0u ? (float)sample_rate * 0.45f : 20000.0f;
+    if (maximum > 20000.0f) maximum = 20000.0f;
+    if (maximum < minimum) minimum = maximum;
+    return maximum * powf(minimum / maximum, amount);
 }
 
 static double head3_max_frames(const TsSisterMachine *machine)
@@ -593,6 +616,8 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     memset(machine->dc_input_x1, 0, sizeof(machine->dc_input_x1));
     memset(machine->dc_input_y1, 0, sizeof(machine->dc_input_y1));
     memset(machine->filter_state, 0, sizeof(machine->filter_state));
+    memset(machine->ghost_lowpass_state, 0,
+           sizeof(machine->ghost_lowpass_state));
     machine->filter_current = calculate_biquad(&machine->parameters,
                                                 machine->buffer.sample_rate);
     machine->filter_target = machine->filter_current;
@@ -601,7 +626,18 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     machine->clear_state = TS_SISTER_CLEAR_IDLE;
     ramp_reset(&machine->clear_gain, 1.0f);
     ramp_reset(&machine->write_erase, machine->parameters.write_erase);
+    ramp_reset(&machine->ghost_tone, machine->parameters.ghost_tone);
     ramp_reset(&machine->input_gain, machine->parameters.input_gain);
+    ramp_reset(&machine->mix_output_gain,
+               machine->parameters.mix_output_gain);
+    ramp_reset(&machine->feedback[0], machine->parameters.head1_feedback);
+    ramp_reset(&machine->feedback[1], machine->parameters.head2_feedback);
+    ramp_reset(&machine->wow_amount, machine->parameters.wow);
+    ramp_reset(&machine->drop_amount, machine->parameters.drop);
+    ramp_reset(&machine->duck_sensitivity,
+               machine->parameters.duck_sensitivity);
+    ramp_reset(&machine->width, machine->parameters.width);
+    ramp_reset(&machine->headroom, machine->parameters.headroom);
     memset(&machine->last_output, 0, sizeof(machine->last_output));
     machine->overload_count = 0u;
     machine->applied_parameters = machine->parameters;
@@ -699,8 +735,18 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
     ramp_set(&machine->head[1].level, next.head2_level, level_frames);
     ramp_set(&machine->head[2].level, next.head3_level, level_frames);
     ramp_set(&machine->write_erase, next.write_erase, level_frames);
+    ramp_set(&machine->ghost_tone, next.ghost_tone, level_frames);
     ramp_set(&machine->input_gain, next.input_gain,
              milliseconds_frames(machine->buffer.sample_rate, 20.0f));
+    ramp_set(&machine->mix_output_gain, next.mix_output_gain,
+             milliseconds_frames(machine->buffer.sample_rate, 20.0f));
+    ramp_set(&machine->feedback[0], next.head1_feedback, level_frames);
+    ramp_set(&machine->feedback[1], next.head2_feedback, level_frames);
+    ramp_set(&machine->wow_amount, next.wow, level_frames);
+    ramp_set(&machine->drop_amount, next.drop, level_frames);
+    ramp_set(&machine->duck_sensitivity, next.duck_sensitivity, level_frames);
+    ramp_set(&machine->width, next.width, level_frames);
+    ramp_set(&machine->headroom, next.headroom, level_frames);
     ramp_set(&machine->head[1].offset,
              next.head2_scrub * (float)(machine->buffer.capacity_frames - 1u),
              offset_frames);
@@ -783,6 +829,8 @@ int ts_sister_machine_perform_clear(TsSisterMachine *machine)
     memset(machine->dc_input_x1, 0, sizeof(machine->dc_input_x1));
     memset(machine->dc_input_y1, 0, sizeof(machine->dc_input_y1));
     memset(machine->filter_state, 0, sizeof(machine->filter_state));
+    memset(machine->ghost_lowpass_state, 0,
+           sizeof(machine->ghost_lowpass_state));
     machine->filter_current = machine->filter_target;
     machine->filter_ramp_remaining = 0u;
     machine->duck_energy = 0.0f;
@@ -899,12 +947,12 @@ static TsStereoFrame read_with_write_guard(TsSisterMachine *machine,
     return result;
 }
 
-static float update_wow(TsSisterMachine *machine)
+static float update_wow(TsSisterMachine *machine, float wow_amount)
 {
     uint64_t interval;
     float coefficient;
     float amount;
-    if (machine->parameters.wow <= 0.0f) {
+    if (wow_amount <= 0.0f) {
         machine->wow_state = 0.0f;
         machine->wow_target = 0.0f;
         machine->wow_next_event_clock = machine->master_clock;
@@ -919,14 +967,15 @@ static float update_wow(TsSisterMachine *machine)
     coefficient = 1.0f - expf((float)(-2.0 * M_PI * 2.0) /
                               (float)machine->buffer.sample_rate);
     machine->wow_state += (machine->wow_target - machine->wow_state) * coefficient;
-    amount = machine->parameters.wow / 10.0f;
+    amount = wow_amount / 10.0f;
     return machine->wow_state * amount * 0.004f;
 }
 
-static float update_drop(TsSisterMachine *machine, TsSisterDropState *drop)
+static float update_drop(TsSisterMachine *machine, TsSisterDropState *drop,
+                         float drop_amount)
 {
     uint64_t interval;
-    float amount = machine->parameters.drop / 100.0f;
+    float amount = drop_amount / 100.0f;
     float target;
     if (amount <= 0.0f) {
         drop->current = 1.0f;
@@ -952,7 +1001,7 @@ static float update_drop(TsSisterMachine *machine, TsSisterDropState *drop)
 }
 
 static TsStereoFrame apply_decorrelation(TsSisterMachine *machine, size_t head,
-                                         TsStereoFrame input)
+                                         TsStereoFrame input, float width)
 {
     TsSisterDecorrelator *decor = &machine->decorrelator[head];
     float coefficient;
@@ -972,8 +1021,8 @@ static TsStereoFrame apply_decorrelation(TsSisterMachine *machine, size_t head,
     mix = ramp_advance(&decor->enabled_mix);
     decorated = frame_lerp(input, decorated, clampf(mix, 0.0f, 1.0f));
     mid = 0.5f * (decorated.l + decorated.r);
-    decorated.l = mid + (decorated.l - mid) * machine->parameters.width;
-    decorated.r = mid + (decorated.r - mid) * machine->parameters.width;
+    decorated.l = mid + (decorated.l - mid) * width;
+    decorated.r = mid + (decorated.r - mid) * width;
     return ts_stereo_frame_sanitize(decorated);
 }
 
@@ -994,6 +1043,38 @@ static float hard_feedback(float value, float gain, uint64_t *overload_count)
         return -1.0f;
     }
     return result;
+}
+
+static TsStereoFrame ghost_filter_retained(TsSisterMachine *machine,
+                                           TsStereoFrame previous,
+                                           float amount)
+{
+    TsStereoFrame filtered;
+    float cutoff;
+    float coefficient;
+    if (machine == NULL || amount <= 0.0f) {
+        if (machine != NULL) {
+            machine->ghost_lowpass_state[0] = previous.l;
+            machine->ghost_lowpass_state[1] = previous.r;
+        }
+        return previous;
+    }
+    cutoff = ts_sister_ghost_cutoff_hz(amount,
+                                       machine->buffer.sample_rate);
+    coefficient = 1.0f - expf((float)(-2.0 * M_PI) * cutoff /
+                              (float)machine->buffer.sample_rate);
+    coefficient = clampf(coefficient, 0.0f, 1.0f);
+    machine->ghost_lowpass_state[0] +=
+        (previous.l - machine->ghost_lowpass_state[0]) * coefficient;
+    machine->ghost_lowpass_state[1] +=
+        (previous.r - machine->ghost_lowpass_state[1]) * coefficient;
+    if (!isfinite(machine->ghost_lowpass_state[0]))
+        machine->ghost_lowpass_state[0] = 0.0f;
+    if (!isfinite(machine->ghost_lowpass_state[1]))
+        machine->ghost_lowpass_state[1] = 0.0f;
+    filtered.l = machine->ghost_lowpass_state[0];
+    filtered.r = machine->ghost_lowpass_state[1];
+    return filtered;
 }
 
 static float soft_saturate(float value)
@@ -1017,7 +1098,8 @@ static float dc_block(TsSisterMachine *machine, size_t channel, float input)
     return machine->dc_input_y1[channel];
 }
 
-static float update_duck(TsSisterMachine *machine, TsStereoFrame sidechain)
+static float update_duck(TsSisterMachine *machine, TsStereoFrame sidechain,
+                         float sensitivity)
 {
     float instant;
     float energy_coefficient;
@@ -1031,7 +1113,7 @@ static float update_duck(TsSisterMachine *machine, TsStereoFrame sidechain)
         return 1.0f;
     }
     if (machine->parameters.duck_mode == TS_SISTER_DUCK_KAFKA_BIAS) {
-        float bias = machine->parameters.duck_sensitivity * 75.0f;
+        float bias = sensitivity * 75.0f;
         sidechain.l += bias;
         sidechain.r += bias;
     }
@@ -1047,7 +1129,7 @@ static float update_duck(TsSisterMachine *machine, TsStereoFrame sidechain)
         desired = clampf(1.0f - envelope, 0.0f, 1.0f);
     } else {
         float threshold = powf(10.0f,
-            (-6.0f - 54.0f * machine->parameters.duck_sensitivity) / 20.0f);
+            (-6.0f - 54.0f * sensitivity) / 20.0f);
         desired = envelope <= threshold || envelope <= FLT_EPSILON
                     ? 1.0f : clampf(threshold / envelope, 0.0f, 1.0f);
     }
@@ -1153,7 +1235,7 @@ static void publish_snapshot(TsSisterMachine *machine)
                           memory_order_relaxed);
     atomic_store_explicit(&snapshot->wow_seconds_bits,
                           float_bits(machine->wow_state *
-                                     (machine->parameters.wow / 10.0f) * 0.004f),
+                                     (machine->wow_amount.current / 10.0f) * 0.004f),
                           memory_order_relaxed);
     atomic_store_explicit(&snapshot->drop_gain_bits[0],
                           float_bits(machine->drop[0].current), memory_order_relaxed);
@@ -1255,9 +1337,17 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     float drop3;
     float clear_gain;
     float erase;
+    float ghost_tone;
     float duck_gain;
     float input_gain;
     float level;
+    float feedback1_gain;
+    float feedback2_gain;
+    float wow_amount;
+    float drop_amount;
+    float duck_sensitivity;
+    float stereo_width;
+    float headroom;
     float peak;
     memset(&output, 0, sizeof(output));
     if (machine == NULL || machine->buffer.data == NULL ||
@@ -1271,6 +1361,13 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     input = ts_stereo_frame_sanitize(input);
     duck_sidechain = ts_stereo_frame_sanitize(duck_sidechain);
     input_gain = ramp_advance(&machine->input_gain);
+    feedback1_gain = ramp_advance(&machine->feedback[0]);
+    feedback2_gain = ramp_advance(&machine->feedback[1]);
+    wow_amount = ramp_advance(&machine->wow_amount);
+    drop_amount = ramp_advance(&machine->drop_amount);
+    duck_sensitivity = ramp_advance(&machine->duck_sensitivity);
+    stereo_width = ramp_advance(&machine->width);
+    headroom = ramp_advance(&machine->headroom);
     input = frame_scale(input, input_gain);
     duck_sidechain = frame_scale(duck_sidechain, input_gain);
     output.input = input;
@@ -1333,7 +1430,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
         machine->head[2].phase - offset_delta, machine->buffer.capacity_frames);
     machine->head[2].previous_offset = current_offset;
 
-    wow_seconds = update_wow(machine);
+    wow_seconds = update_wow(machine, wow_amount);
     wow_frames = wow_seconds * (float)machine->buffer.sample_rate;
     head2_position = ts_sister_positive_modulo(machine->head[1].phase + wow_frames,
                                                machine->buffer.capacity_frames);
@@ -1348,28 +1445,31 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     machine->last_head_position[2] = guard_read_position(
         head3_position, write_position, machine->buffer.capacity_frames);
 
-    drop2 = update_drop(machine, &machine->drop[0]);
-    drop3 = update_drop(machine, &machine->drop[1]);
+    drop2 = update_drop(machine, &machine->drop[0], drop_amount);
+    drop3 = update_drop(machine, &machine->drop[1], drop_amount);
     level = ramp_advance(&machine->head[0].level);
-    output.head[0] = frame_scale(apply_decorrelation(machine, 0u, raw[0]), level);
+    output.head[0] = frame_scale(
+        apply_decorrelation(machine, 0u, raw[0], stereo_width), level);
     level = ramp_advance(&machine->head[1].level);
     output.head[1] = frame_scale(apply_decorrelation(
-        machine, 1u, frame_scale(raw[1], drop2)), level);
+        machine, 1u, frame_scale(raw[1], drop2), stereo_width), level);
     level = ramp_advance(&machine->head[2].level);
     output.head[2] = frame_scale(apply_decorrelation(
-        machine, 2u, frame_scale(raw[2], drop3)), level);
+        machine, 2u, frame_scale(raw[2], drop3), stereo_width), level);
 
-    feedback1.l = hard_feedback(raw[0].l, machine->parameters.head1_feedback,
+    feedback1.l = hard_feedback(raw[0].l, feedback1_gain,
                                 &machine->overload_count) * clear_gain;
-    feedback1.r = hard_feedback(raw[0].r, machine->parameters.head1_feedback,
+    feedback1.r = hard_feedback(raw[0].r, feedback1_gain,
                                 &machine->overload_count) * clear_gain;
-    feedback2.l = hard_feedback(raw[1].l, machine->parameters.head2_feedback,
+    feedback2.l = hard_feedback(raw[1].l, feedback2_gain,
                                 &machine->overload_count) * clear_gain;
-    feedback2.r = hard_feedback(raw[1].r, machine->parameters.head2_feedback,
+    feedback2.r = hard_feedback(raw[1].r, feedback2_gain,
                                 &machine->overload_count) * clear_gain;
     erase = ramp_advance(&machine->write_erase);
+    ghost_tone = ramp_advance(&machine->ghost_tone);
     previous = ts_sister_buffer_read(&machine->buffer, (double)write_position);
-    retained = frame_scale(previous, 1.0f - erase);
+    retained = frame_scale(
+        ghost_filter_retained(machine, previous, ghost_tone), 1.0f - erase);
     write = frame_add(retained, frame_add(input, frame_add(feedback1, feedback2)));
     peak = frame_peak(write);
     if (!isfinite(write.l) || !isfinite(write.r) || peak > 1.0f)
@@ -1385,13 +1485,13 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     }
 
     sum = frame_add(output.head[0], frame_add(output.head[1], output.head[2]));
-    sum = frame_scale(sum, machine->parameters.headroom);
-    duck_gain = update_duck(machine, duck_sidechain);
+    sum = frame_scale(sum, headroom);
+    duck_gain = update_duck(machine, duck_sidechain, duck_sensitivity);
     sum = frame_scale(sum, duck_gain);
     advance_filter_coefficients(machine);
     sum.l = filter_channel(machine, 0u, sum.l);
     sum.r = filter_channel(machine, 1u, sum.r);
-    sum = frame_scale(sum, machine->parameters.mix_output_gain);
+    sum = frame_scale(sum, ramp_advance(&machine->mix_output_gain));
     output.head[0] = frame_scale(output.head[0], clear_gain);
     output.head[1] = frame_scale(output.head[1], clear_gain);
     output.head[2] = frame_scale(output.head[2], clear_gain);

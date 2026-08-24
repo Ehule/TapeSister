@@ -9,8 +9,9 @@ the rolling memory. POWER is the explicit engine allocation/free boundary.
 ## Launcher and window lifecycle
 
 The `TAPESISTER` wordmark has a logical hit target of `x=0..159`, `y=0..31`. Clicking it
-creates/restores the independent 640 by 400 Sister window and enables the engine when it
-is off. The ordinary application remains usable if window or engine allocation fails.
+creates/restores the independent 640 by 400 Sister window. Since PR6 it never changes
+POWER: visibility is UI state and POWER is audio-engine state. The ordinary application
+remains usable if window or engine allocation fails.
 The main logo shows engine state with both color and shape: a live underline/run marker,
 a two-bar Hold marker, and a warning color. The engine remains disabled at startup.
 
@@ -58,7 +59,7 @@ H2 and H3 use the engine's exact ordered Rate choices:
 Continuous controls accept absolute left/right click, either-button drag, and wheel
 adjustment (Shift+wheel is fine). Both mouse buttons address the same visible parameter.
 
-The dedicated monitor/memory row separates five independent laws:
+The dedicated monitor/memory row separates six independent laws:
 
 - `INPUT` is a smoothed 0-200 percent pre-tape trim. It scales the compensated selected
   source before the rolling-memory write and Duck detector, so a hot tile/FM/input bus
@@ -70,6 +71,7 @@ The dedicated monitor/memory row separates five independent laws:
 - `OUT` is a post-filter 0-400 percent MIX stage before linked final safety. It affects
   the audible Sister return and MIX Capture, but not the individual H1/H2/H3 taps.
 - `ERASE` sets how much of the previous rolling-memory cell the moving write head removes.
+- `GHOST`/`GHOST TONE` spectrally ages only the retained old cell on repeated passes.
 
 INPUT, DRY and WET are smoothed over 20 ms. H1/H2/H3/MIX Capture taps,
 ordinary Capture source and external recording remain pre-monitor. OUT defaults to
@@ -106,8 +108,8 @@ off. CLEAR uses the PR3 fade/wait/off-thread-clear/fade-in transaction.
 The main sample bank has a deliberate `SISTER SRC` mode. While active, tile clicks edit
 the runtime's per-page 16-bit Sister mask and do not edit Capture's transient mask or the
 focused tile. Occupied protected/locked tiles may be sources. Empty tiles are rejected.
-Page switching selects that page's mask; project close clears all masks. Masks remain
-runtime-only in PR5 and are not saved in projects or Sister presets.
+Page switching selects that page's mask. PR6 project state saves every page mask while
+named sonic presets deliberately omit masks.
 
 ## Capture and Overdub
 
@@ -149,7 +151,7 @@ notes, performance, Capture, routing, the callback, or either window renderer.
 
 1. Start TapeSister and confirm no Sister window appears and ordinary mono/stereo audio
    is unchanged.
-2. Click the `TAPESISTER` logo; confirm the second window opens and POWER is on.
+2. Click the `TAPESISTER` logo; confirm the second window opens without changing POWER.
 3. Close and reopen it while ROLL runs; confirm memory/head motion continues.
 4. Verify STEREO/LEFT/RIGHT/MONO SUM in both waveform displays with a hard-panned file.
 5. Arm source tiles on two pages and confirm each page restores its own mask.
@@ -191,7 +193,7 @@ Open Sister
 -> repeat
 ```
 
-PR6 may add named Sister preset banks and project-level musical-state persistence. It
-must not serialize the live circular-buffer audio. Unrestricted routing, generic MIX
+PR6 adds named Sister preset banks and project-level musical-state persistence without
+serializing live circular-buffer audio. Unrestricted routing, generic MIX
 recirculation, same-tile live feedback, linked-channel CDP, TapeHead changes and
 master-bus effects remain outside this window contract.

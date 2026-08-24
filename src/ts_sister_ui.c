@@ -90,6 +90,8 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
             (float)config->sister_output_percent / 100.0f;
         model->parameters.write_erase =
             (float)config->sister_erase_percent / 100.0f;
+        model->parameters.ghost_tone =
+            (float)config->sister_ghost_percent / 100.0f;
     }
     snprintf(model->status, sizeof(model->status),
              "CLICK POWER TO ENABLE - WINDOW CLOSE HIDES ONLY");
@@ -121,7 +123,8 @@ void ts_sister_ui_model_update(TsSisterUiModel *model,
     if (parameters != NULL) model->parameters = *parameters;
 }
 
-TsSisterUiHit ts_sister_ui_hit_test(int x, int y)
+TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
+                                          int x, int y)
 {
     TsSisterUiHit hit = {TS_SISTER_UI_ACTION_NONE, 0, 0.0f};
     static const TsSisterUiAction transport[5] = {
@@ -129,6 +132,21 @@ TsSisterUiHit ts_sister_ui_hit_test(int x, int y)
         TS_SISTER_UI_ACTION_HOLD, TS_SISTER_UI_ACTION_CLEAR,
         TS_SISTER_UI_ACTION_MONITOR
     };
+    if (model != NULL && model->preset_manage_open) {
+        if (contains(x, y, 180, 200, 128, 22))
+            hit.action = TS_SISTER_UI_ACTION_PRESET_SAVE_AS;
+        else if (contains(x, y, 332, 200, 128, 22))
+            hit.action = TS_SISTER_UI_ACTION_PRESET_OVERWRITE;
+        else if (contains(x, y, 180, 230, 128, 22))
+            hit.action = TS_SISTER_UI_ACTION_PRESET_RENAME;
+        else if (contains(x, y, 332, 230, 128, 22))
+            hit.action = TS_SISTER_UI_ACTION_PRESET_DELETE;
+        else if (contains(x, y, 180, 260, 128, 22))
+            hit.action = TS_SISTER_UI_ACTION_PRESET_CONFIRM;
+        else if (contains(x, y, 332, 260, 128, 22))
+            hit.action = TS_SISTER_UI_ACTION_PRESET_CANCEL;
+        return hit;
+    }
     for (int control = 0; control < 5; ++control) {
         if (contains(x, y, 10 + control * 68, 8, 62, 22)) {
             hit.action = transport[control];
@@ -137,6 +155,18 @@ TsSisterUiHit ts_sister_ui_hit_test(int x, int y)
     }
     if (contains(x, y, 532, 8, 98, 22)) {
         hit.action = TS_SISTER_UI_ACTION_WAVE_MODE;
+        return hit;
+    }
+    if (contains(x, y, 230, 370, 28, 22)) {
+        hit.action = TS_SISTER_UI_ACTION_PRESET_PREVIOUS;
+        return hit;
+    }
+    if (contains(x, y, 264, 370, 130, 22)) {
+        hit.action = TS_SISTER_UI_ACTION_PRESET_MANAGE;
+        return hit;
+    }
+    if (contains(x, y, 400, 370, 28, 22)) {
+        hit.action = TS_SISTER_UI_ACTION_PRESET_NEXT;
         return hit;
     }
     for (int source = 0; source < 4; ++source) {
@@ -182,19 +212,20 @@ TsSisterUiHit ts_sister_ui_hit_test(int x, int y)
             return hit;
         }
     }
-    for (int control = 0; control < 5; ++control) {
-        static const int parameters[5] = {
+    for (int control = 0; control < 6; ++control) {
+        static const int parameters[6] = {
             TS_SISTER_UI_PARAM_INPUT_GAIN,
             TS_SISTER_UI_PARAM_MONITOR_DRY,
             TS_SISTER_UI_PARAM_MONITOR_WET,
             TS_SISTER_UI_PARAM_MIX_OUTPUT,
-            TS_SISTER_UI_PARAM_WRITE_ERASE
+            TS_SISTER_UI_PARAM_WRITE_ERASE,
+            TS_SISTER_UI_PARAM_GHOST_TONE
         };
-        int left = 10 + control * 124;
-        if (contains(x, y, left, 330, 118, 18)) {
+        int left = 10 + control * 103;
+        if (contains(x, y, left, 330, 98, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = parameters[control];
-            hit.normalized = (float)(x - left) / 117.0f;
+            hit.normalized = (float)(x - left) / 97.0f;
             return hit;
         }
     }
@@ -204,4 +235,9 @@ TsSisterUiHit ts_sister_ui_hit_test(int x, int y)
     else if (contains(x, y, 450, 370, 82, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE;
     else if (contains(x, y, 538, 370, 92, 22)) hit.action = TS_SISTER_UI_ACTION_OVERDUB;
     return hit;
+}
+
+TsSisterUiHit ts_sister_ui_hit_test(int x, int y)
+{
+    return ts_sister_ui_hit_test_model(NULL, x, y);
 }

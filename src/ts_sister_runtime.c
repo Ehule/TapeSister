@@ -268,7 +268,6 @@ void ts_sister_runtime_disable(TsSisterRuntime *runtime)
 {
     if (runtime == NULL) return;
     runtime->enabled = 0;
-    runtime->monitor_enabled = 0;
     runtime->last_frame = (TsSisterRuntimeFrame){0};
     ts_performance_clear(&runtime->performance);
     ts_capture_free(&runtime->capture);
@@ -338,6 +337,15 @@ void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
         ts_sister_machine_set_parameters(&runtime->machine, parameters);
         runtime->parameters = runtime->machine.parameters;
     }
+    publish_snapshot(runtime);
+}
+
+void ts_sister_runtime_set_selected_preset(TsSisterRuntime *runtime,
+                                           const char *name)
+{
+    if (runtime == NULL) return;
+    snprintf(runtime->selected_preset, sizeof(runtime->selected_preset),
+             "%.47s", name != NULL ? name : "");
     publish_snapshot(runtime);
 }
 
@@ -463,6 +471,27 @@ int ts_sister_runtime_toggle_source_slot(TsSisterRuntime *runtime,
     return ts_sister_runtime_set_source_slot(
         runtime, instrument, slot,
         (ts_sister_runtime_source_mask(runtime) & bit) == 0u);
+}
+
+int ts_sister_runtime_replace_source_slot(TsSisterRuntime *runtime,
+                                          const TsInstrument *instrument,
+                                          int slot)
+{
+    uint16_t previous;
+    uint16_t bit;
+    if (runtime == NULL || instrument == NULL ||
+        slot < 0 || slot >= TS_BANK_SLOT_COUNT ||
+        !instrument->bank[slot].occupied ||
+        instrument->bank[slot].sample.data == NULL ||
+        instrument->bank[slot].sample.frames < 2u)
+        return 0;
+    previous = runtime->page_source_masks[runtime->active_page];
+    bit = (uint16_t)(1u << slot);
+    ts_performance_stop_sources(&runtime->performance,
+                                (uint16_t)(previous & ~bit));
+    runtime->page_source_masks[runtime->active_page] = bit;
+    publish_snapshot(runtime);
+    return 1;
 }
 
 void ts_sister_runtime_clear_source_mask(TsSisterRuntime *runtime)

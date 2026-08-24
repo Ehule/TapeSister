@@ -9,8 +9,10 @@ add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts
              src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_sister_machine.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
+             src/ts_sister_preset.c src/ts_sister_project_state.c
              src/ts_capture.c
              src/ts_capture_archive.c src/ts_input_monitor.c
+             src/ts_input_ownership.c
              src/ts_sample_pages.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
              src/ts_recipe.c src/ts_dsp_recipe.c
@@ -180,7 +182,8 @@ target_link_libraries(tapesister_audio_frame_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_audio_frame_tests COMMAND tapesister_audio_frame_tests)
 
 foreach(stereo_test IN ITEMS audio_mixer note_bank_stereo performance_stereo
-                             capture_stereo external_input_channels)
+                             capture_stereo external_input_channels
+                             input_ownership)
   add_executable(test_${stereo_test} tests/test_${stereo_test}.c)
   target_link_libraries(test_${stereo_test} PRIVATE tapesister_core)
   add_test(NAME test_${stereo_test} COMMAND test_${stereo_test})
@@ -190,9 +193,12 @@ foreach(sister_test IN ITEMS sister_buffer sister_heads sister_transport
                              sister_modulation sister_feedback sister_stereo
                              sister_duck_filter sister_snapshot sister_routes
                              sister_runtime sister_source_mask sister_capture
-                             sister_recursion sister_lifecycle sister_ui_model
+                             sister_performance_sources sister_recursion
+                             sister_lifecycle sister_visibility sister_ui_model
                              sister_wave_snapshot waveform_display_modes
-                             sister_source_ui sister_capture_ui sister_palette)
+                             sister_source_ui sister_capture_ui sister_palette
+                             sister_ghost_tone sister_preset
+                             sister_project_state)
   add_executable(test_${sister_test} tests/test_${sister_test}.c)
   target_link_libraries(test_${sister_test} PRIVATE tapesister_core)
   add_test(NAME test_${sister_test} COMMAND test_${sister_test})
