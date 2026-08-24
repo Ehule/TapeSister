@@ -3126,7 +3126,11 @@ static void sister_wave_lane(TsFramebuffer *fb,
         int y0 = middle - (int)lrintf(sister_clamp(high) * (height / 2 - 3));
         int y1 = middle - (int)lrintf(sister_clamp(low) * (height / 2 - 3));
         if (y0 > y1) { int swap = y0; y0 = y1; y1 = swap; }
-        wave_line(fb, x + px, y0, x + px, y1, color);
+        /* Sister has its own waveform viewport.  wave_line() deliberately
+           clips to the ordinary TapeSister canvas, whose top edge is y=64
+           and right edge is x=620; using it here discarded the upper part
+           and final columns of this 640x400 window. */
+        rect(fb, x + px, y0, 1, y1 - y0 + 1, color);
     }
 }
 

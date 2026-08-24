@@ -111,7 +111,24 @@ int main(void)
                                          800, 400, &x, &y));
     }
     ts_palette_default(&palette);
+    model.waveform.channels = 2u;
+    for (size_t bin = 0u; bin < TS_SISTER_WAVE_BIN_COUNT; ++bin) {
+        model.waveform.bins[bin].left_minimum = -1.0f;
+        model.waveform.bins[bin].left_maximum = 1.0f;
+        model.waveform.bins[bin].right_minimum = -1.0f;
+        model.waveform.bins[bin].right_maximum = 1.0f;
+    }
     ts_sister_ui_render(&framebuffer, &model, &palette);
+    /* Full-scale Sister bins must reach the top half of the left lane and
+       the last plot column.  The ordinary-canvas line clip begins at y=64
+       and ends at x=619, so these pixels guard against accidentally reusing
+       that canvas-only helper here. */
+    CHECK(framebuffer.pixels[43u * TS_UI_WIDTH + 100u] ==
+          palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
+    CHECK(framebuffer.pixels[43u * TS_UI_WIDTH + 625u] ==
+          palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
+    CHECK(framebuffer.pixels[113u * TS_UI_WIDTH + 625u] ==
+          palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
     for (size_t pixel = 0u; pixel < TS_UI_WIDTH * TS_UI_HEIGHT; ++pixel) {
         first_hash ^= framebuffer.pixels[pixel];
         first_hash *= 1099511628211ull;
