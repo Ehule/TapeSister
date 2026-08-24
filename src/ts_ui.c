@@ -2716,7 +2716,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                         "REC BANK  CHAIN ON  TAKES ADVANCE AND REARM" :
                         "REC BANK  SELECT EMPTY TILE  REC ARM  SHIFT+1";
         else {
-            snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %.32s",
+            /* Keep the bank hint clear of the fixed SISTER SRC control. */
+            snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %.22s",
                      ui->sample_page + 1,
                      ui->sample_page_count > 0 ? ui->sample_page_count : 1,
                      bank_hint);
@@ -3130,19 +3131,20 @@ static void sister_wave_lane(TsFramebuffer *fb,
 }
 
 static void sister_marker(TsFramebuffer *fb, float normalized,
-                          int y, int height, uint32_t color, int shape)
+                          int x, int width, int y, int height,
+                          uint32_t color, int shape)
 {
-    int x;
+    int marker_x;
     if (!isfinite(normalized)) return;
     if (normalized < 0.0f) normalized = 0.0f;
     if (normalized > 1.0f) normalized = 1.0f;
-    x = 20 + (int)lrintf(normalized * 599.0f);
-    rect(fb, x, y, 2, height, color);
-    if (shape == 0) rect(fb, x - 2, y, 6, 4, color);
-    else if (shape == 1) rect(fb, x - 3, y + height - 4, 8, 4, color);
+    marker_x = x + (int)lrintf(normalized * (float)(width - 1));
+    rect(fb, marker_x, y, 2, height, color);
+    if (shape == 0) rect(fb, marker_x - 2, y, 6, 4, color);
+    else if (shape == 1) rect(fb, marker_x - 3, y + height - 4, 8, 4, color);
     else {
-        rect(fb, x - 3, y, 8, 2, color);
-        rect(fb, x - 1, y + 2, 4, 2, color);
+        rect(fb, marker_x - 3, y, 8, 2, color);
+        rect(fb, marker_x - 1, y + 2, 4, 2, color);
     }
 }
 
@@ -3208,30 +3210,30 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 532, 8, 98, ts_waveform_display_name(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
 
-    rect(fb, 20, 40, 600, 140, RGB(7, 7, 8));
+    rect(fb, 10, 40, 620, 140, RGB(7, 7, 8));
     mode = ts_waveform_display_sanitize(model->waveform_mode);
     if (mode == TS_WAVEFORM_DISPLAY_STEREO && model->waveform.channels == 2u) {
-        text(fb, 23, 45, "L", PAL_WAVE_LEFT, 1);
-        text(fb, 23, 113, "R", PAL_WAVE_RIGHT, 1);
-        sister_wave_lane(fb, &model->waveform, 20, 40, 600, 68, 0, PAL_WAVE_LEFT);
-        sister_wave_lane(fb, &model->waveform, 20, 110, 600, 70, 1, PAL_WAVE_RIGHT);
+        text(fb, 14, 45, "L", PAL_WAVE_LEFT, 1);
+        text(fb, 14, 115, "R", PAL_WAVE_RIGHT, 1);
+        sister_wave_lane(fb, &model->waveform, 26, 40, 600, 68, 0, PAL_WAVE_LEFT);
+        sister_wave_lane(fb, &model->waveform, 26, 110, 600, 70, 1, PAL_WAVE_RIGHT);
     } else {
         int channel = mode == TS_WAVEFORM_DISPLAY_RIGHT ? 1 :
                       mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? 2 : 0;
         uint32_t color = mode == TS_WAVEFORM_DISPLAY_RIGHT ? PAL_WAVE_RIGHT :
                          mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? PAL_WAVE_SUM :
                          PAL_WAVE_LEFT;
-        sister_wave_lane(fb, &model->waveform, 20, 40, 600, 140, channel, color);
+        sister_wave_lane(fb, &model->waveform, 14, 40, 612, 140, channel, color);
     }
-    sister_marker(fb, model->engine.write_normalized, 40, 140, PAL_VOLUME, 0);
-    sister_marker(fb, model->engine.head_normalized[0], 40, 140, PAL_NOTE, 1);
-    sister_marker(fb, model->engine.head_normalized[1], 40, 140, PAL_EFFECT, 2);
-    sister_marker(fb, model->engine.head_normalized[2], 40, 140, PAL_TUNING, 0);
+    sister_marker(fb, model->engine.write_normalized, 26, 600, 40, 140, PAL_VOLUME, 0);
+    sister_marker(fb, model->engine.head_normalized[0], 26, 600, 40, 140, PAL_NOTE, 1);
+    sister_marker(fb, model->engine.head_normalized[1], 26, 600, 40, 140, PAL_EFFECT, 2);
+    sister_marker(fb, model->engine.head_normalized[2], 26, 600, 40, 140, PAL_TUNING, 0);
 
     button(fb, 10, 190, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
     button(fb, 86, 190, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
     button(fb, 162, 190, 70, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);
-    button(fb, 238, 190, 70, "PREVIEW", model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
+    button(fb, 238, 190, 70, "AUDITION", model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
     snprintf(line, sizeof(line), "MASK %04X  V %02d  IN %.2F  MIX %.2F",
              model->routing.source_mask, model->routing.active_source_voices,
              model->routing.source_input_peak,
@@ -3281,14 +3283,17 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                      (model->parameters.filter_gain_db + 24.0f) / 48.0f,
                      PAL_INSTRUMENT);
 
-    sister_percent_parameter(fb, 10, 330, 149, "DRY",
+    sister_percent_parameter(fb, 10, 330, 118, "INPUT",
+                             model->parameters.input_gain / 2.0f,
+                             200, PAL_VOLUME);
+    sister_percent_parameter(fb, 134, 330, 118, "DRY",
                              model->parameters.monitor_dry, 100, PAL_WAVE_LEFT);
-    sister_percent_parameter(fb, 165, 330, 149, "WET",
+    sister_percent_parameter(fb, 258, 330, 118, "WET",
                              model->parameters.monitor_wet, 100, PAL_WAVE_RIGHT);
-    sister_percent_parameter(fb, 320, 330, 149, "OUT",
+    sister_percent_parameter(fb, 382, 330, 118, "OUT",
                              model->parameters.mix_output_gain / 4.0f,
                              400, PAL_INSTRUMENT);
-    sister_percent_parameter(fb, 475, 330, 149, "ERASE",
+    sister_percent_parameter(fb, 506, 330, 118, "ERASE",
                              model->parameters.write_erase, 100, PAL_VOLUME);
 
     snprintf(line, sizeof(line), "TARGET %s  %.88s",

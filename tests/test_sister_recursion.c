@@ -63,7 +63,9 @@ int main(void)
     CHECK(ts_note_event_midi(&midi, 67, 96, 2));
     CHECK(ts_sister_runtime_note_on(&runtime, &instrument, &midi, 0,
                                     1000) == 2);
-    CHECK(ts_performance_count(&runtime.performance) == 2);
+    /* The longer QWERTY one-shot survives key-up and overlaps both new MIDI
+       source voices; the shorter captured generation has already ended. */
+    CHECK(ts_performance_count(&runtime.performance) == 3);
     ts_sister_runtime_note_off(&runtime, &midi);
 
     ts_sister_runtime_set_sources(&runtime, 0u);

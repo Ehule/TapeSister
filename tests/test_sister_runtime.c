@@ -52,7 +52,10 @@ int main(void)
     CHECK(CLOSE(frame.monitor_return.l, 0.0f));
     ts_sister_runtime_set_monitor(&runtime, 1);
     frame = ts_sister_runtime_process_frame(&runtime, &source);
-    CHECK(CLOSE(frame.monitor_return.l, frame.tap[TS_SISTER_TAP_MIX].l));
+    CHECK(CLOSE(frame.monitor_return.l,
+                frame.input.l + frame.tap[TS_SISTER_TAP_MIX].l));
+    CHECK(CLOSE(frame.monitor_return.r,
+                frame.input.r + frame.tap[TS_SISTER_TAP_MIX].r));
 
     parameters = runtime.parameters;
     parameters.monitor_dry = 0.25f;
@@ -62,8 +65,10 @@ int main(void)
         frame = ts_sister_runtime_process_frame(&runtime, &source);
     CHECK(CLOSE(frame.dry_monitor_gain, 0.25f));
     CHECK(CLOSE(frame.monitor_return.l,
+                frame.input.l * 0.25f +
                 frame.tap[TS_SISTER_TAP_MIX].l * 0.50f));
     CHECK(CLOSE(frame.monitor_return.r,
+                frame.input.r * 0.25f +
                 frame.tap[TS_SISTER_TAP_MIX].r * 0.50f));
 
     write_position = (size_t)(runtime.machine.master_clock %

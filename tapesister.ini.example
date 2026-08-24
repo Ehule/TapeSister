@@ -75,7 +75,9 @@ capture_auto_resize=1
 capture_max_seconds=20
 
 [Sister Machine]
-; Independent monitor levels. These do not change rolling input or Capture taps.
+; Pre-tape input trim. Reduce this when internal sources overload the write head.
+sister_input_percent=100
+; Independent Sister-return monitor levels. Capture taps remain unscaled.
 sister_dry_percent=100
 sister_wet_percent=100
 ; Post-filter MIX output gain. 400 compensates Sister's conservative internal headroom.

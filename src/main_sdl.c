@@ -898,12 +898,14 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                         audio->performance_source_mask != 0u ?
                         audio->performance_raw_mix : buses.program;
         buses.monitor = buses.external;
-        sister_routes = ts_sister_runtime_sources(&audio->sister);
-        /* Tape-machine routing is source aware. A routed source obeys Sister
-           DRY on its direct audible path; an unrouted source retains ordinary
-           TapeSister monitoring. Sister input and Capture remain pre-monitor. */
+        sister_routes = audio->sister.enabled && !audio->sister.callback_failed ?
+            ts_sister_runtime_sources(&audio->sister) : 0u;
+        /* Sister is an insert, not an extra parallel audition bus. Every
+           selected source is removed from TapeSister's direct speaker path.
+           Its dry and processed returns come back together through Sister's
+           MONITOR bus; input construction and Capture stay pre-monitor. */
         ts_audio_buses_apply_source_dry(
-            &buses, sister_frame.dry_monitor_gain,
+            &buses, 0.0f,
             (sister_routes & TS_SISTER_SOURCE_PREVIEW) != 0u,
             (sister_routes & TS_SISTER_SOURCE_TILES) != 0u,
             (sister_routes & TS_SISTER_SOURCE_FM) != 0u,
@@ -6389,6 +6391,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FILTER_GAIN:
         parameters->filter_gain_db = -24.0f + amount * 48.0f;
         break;
+    case TS_SISTER_UI_PARAM_INPUT_GAIN: parameters->input_gain = amount * 2.0f; break;
     case TS_SISTER_UI_PARAM_MONITOR_DRY: parameters->monitor_dry = amount; break;
     case TS_SISTER_UI_PARAM_MONITOR_WET: parameters->monitor_wet = amount; break;
     case TS_SISTER_UI_PARAM_MIX_OUTPUT: parameters->mix_output_gain = amount * 4.0f; break;
@@ -6422,6 +6425,7 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FILTER_CUTOFF: value = log10f(parameters->filter_cutoff_hz / 20.0f) / 3.0f; break;
     case TS_SISTER_UI_PARAM_FILTER_Q: value = (parameters->filter_q - 0.1f) / 19.9f; break;
     case TS_SISTER_UI_PARAM_FILTER_GAIN: value = (parameters->filter_gain_db + 24.0f) / 48.0f; break;
+    case TS_SISTER_UI_PARAM_INPUT_GAIN: value = parameters->input_gain / 2.0f; break;
     case TS_SISTER_UI_PARAM_MONITOR_DRY: value = parameters->monitor_dry; break;
     case TS_SISTER_UI_PARAM_MONITOR_WET: value = parameters->monitor_wet; break;
     case TS_SISTER_UI_PARAM_MIX_OUTPUT: value = parameters->mix_output_gain / 4.0f; break;
@@ -6575,7 +6579,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     case TS_SISTER_UI_ACTION_PARAMETER:
         sister_set_parameter(&sister->model.parameters, hit.index, hit.normalized);
         ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
-        if (hit.index == TS_SISTER_UI_PARAM_MONITOR_DRY)
+        if (hit.index == TS_SISTER_UI_PARAM_INPUT_GAIN)
+            ui->config.sister_input_percent =
+                (int)lrintf(sister->model.parameters.input_gain * 100.0f);
+        else if (hit.index == TS_SISTER_UI_PARAM_MONITOR_DRY)
             ui->config.sister_dry_percent =
                 (int)lrintf(sister->model.parameters.monitor_dry * 100.0f);
         else if (hit.index == TS_SISTER_UI_PARAM_MONITOR_WET)
@@ -7820,6 +7827,8 @@ int main(int argc, char **argv)
     ts_sister_runtime_init(&audio.sister);
     {
         TsSisterParameters parameters = audio.sister.parameters;
+        parameters.input_gain =
+            (float)ui.config.sister_input_percent / 100.0f;
         parameters.monitor_dry = (float)ui.config.sister_dry_percent / 100.0f;
         parameters.monitor_wet = (float)ui.config.sister_wet_percent / 100.0f;
         parameters.mix_output_gain =
@@ -8064,14 +8073,25 @@ int main(int argc, char **argv)
                     int note = note_for_key(event.key.keysym.sym);
                     SDL_Keymod mod = SDL_GetModState();
                     if (note >= 0 && device) {
-                        if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0) {
-                            SDL_LockAudioDevice(device);
-                            runtime_note_clear(&audio);
-                            SDL_UnlockAudioDevice(device);
+                        /* The open FM workspace remains the keyboard's sound
+                           source even while Sister owns focus. Do not clear a
+                           held FM chord merely because a Sister control was
+                           used between notes. */
+                        if (ui.fm_open && !ui.fm_bank_choice_open &&
+                            !ui.fm_full_choice_open) {
+                            begin_fm_note(device, &audio, &ui, &instrument,
+                                          &fm_preview, note, obtained.freq,
+                                          (mod & KMOD_SHIFT) != 0);
+                        } else {
+                            if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0) {
+                                SDL_LockAudioDevice(device);
+                                runtime_note_clear(&audio);
+                                SDL_UnlockAudioDevice(device);
+                            }
+                            begin_note(device, &audio, &ui, &instrument,
+                                       note, obtained.freq,
+                                       (mod & KMOD_SHIFT) != 0);
                         }
-                        begin_note(device, &audio, &ui, &instrument,
-                                   note, obtained.freq,
-                                   (mod & KMOD_SHIFT) != 0);
                     }
                 } else if (event.type == SDL_KEYUP && !ui_dialog_open(&ui) &&
                            note_for_key(event.key.keysym.sym) >= 0) {

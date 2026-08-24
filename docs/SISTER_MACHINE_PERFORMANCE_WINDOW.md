@@ -58,23 +58,26 @@ H2 and H3 use the engine's exact ordered Rate choices:
 Continuous controls accept absolute left/right click, either-button drag, and wheel
 adjustment (Shift+wheel is fine). Both mouse buttons address the same visible parameter.
 
-The dedicated monitor/memory row separates three independent laws:
+The dedicated monitor/memory row separates five independent laws:
 
-- `DRY` scales only the direct audible path of each source currently routed to Sister.
-  TILES, FM, EXT and PREVIEW therefore behave like physical tape-machine inputs: at
-  DRY 0 they enter Sister and its Capture taps but do not also leak around the machine.
-  Sources not selected in Sister keep their ordinary TapeSister monitoring behavior.
+- `INPUT` is a smoothed 0-200 percent pre-tape trim. It scales the compensated selected
+  source before the rolling-memory write and Duck detector, so a hot tile/FM/input bus
+  can be controlled before saturation.
+- `DRY` scales Sister's post-INPUT source return. The selected TILES, FM, EXT or PREVIEW
+  bus is removed completely from its ordinary TapeSister speaker path and returns only
+  here, like a physical insert. Sources not selected in Sister keep ordinary monitoring.
 - `WET` scales the Sister MIX return when MONITOR is enabled.
 - `OUT` is a post-filter 0-400 percent MIX stage before linked final safety. It affects
   the audible Sister return and MIX Capture, but not the individual H1/H2/H3 taps.
 - `ERASE` sets how much of the previous rolling-memory cell the moving write head removes.
 
-DRY and WET are smoothed over 20 ms. The Sister input, Duck
-sidechain, H1/H2/H3/MIX Capture taps, ordinary Capture source and external recording all
-remain pre-monitor. OUT defaults to 400 percent in the application to compensate the
+INPUT, DRY and WET are smoothed over 20 ms. H1/H2/H3/MIX Capture taps,
+ordinary Capture source and external recording remain pre-monitor. OUT defaults to
+400 percent in the application to compensate the
 engine's deliberately conservative H1 and fixed-headroom defaults; final linked safety
-still bounds the result. With DRY and WET both at zero, routed sources are silent at the
-speakers while Sister continues rolling and Capture remains available.
+still bounds the result. MONITOR gates the complete Sister DRY+WET return. With MONITOR
+off—or DRY and WET both at zero—routed sources are silent at the speakers while Sister
+continues rolling and Capture remains available.
 
 Decor is deliberately an ON/OFF character switch. Filter is a discrete named type selector;
 cutoff, Q and filter gain remain continuous. One wheel detent changes one Decor/filter/rate
@@ -94,7 +97,7 @@ soft saturation and bounded-write safety. ERASE is distinct from H1/H2 feedback 
 output Duck. A later COSMOS-inspired suppressor may make erase input-sensitive, but this
 version deliberately keeps ERASE predictable and independent of instantaneous loudness.
 
-Hold has precedence over Roll for writes. Monitor affects only the processed return.
+Hold has precedence over Roll for writes. Monitor affects only the complete Sister return.
 Capture taps, feedback and head motion remain active with the window hidden or Monitor
 off. CLEAR uses the PR3 fade/wait/off-thread-clear/fade-in transaction.
 
@@ -119,7 +122,7 @@ source-mask action.
 ## Preferences and restart policy
 
 Configuration now preserves buffer duration/channel shape, clear fade, Sister Capture
-format, both waveform display modes, restart-clear policy, DRY/WET monitor levels,
+format, both waveform display modes, restart-clear policy, INPUT trim, DRY/WET monitor levels,
 MIX output gain, ERASE strength and Sister window position.
 Musical source masks and parameter state are intentionally runtime-only. Output restart
 retains the PR4 policy: rolling memory and published waveform are cleared; failure leaves
@@ -150,11 +153,15 @@ notes, performance, Capture, routing, the callback, or either window renderer.
 3. Close and reopen it while ROLL runs; confirm memory/head motion continues.
 4. Verify STEREO/LEFT/RIGHT/MONO SUM in both waveform displays with a hard-panned file.
 5. Arm source tiles on two pages and confirm each page restores its own mask.
-6. Trigger the mask from QWERTY in both windows and from MIDI; verify note-off and panic.
+6. Trigger the mask from QWERTY in both windows and from MIDI; verify one-shots finish
+   after key-up, looped notes stop, polyphony works and panic remains immediate. Leave
+   FM open, focus Sister and confirm its keyboard still plays/holds the FM synth.
 7. Exercise TILES/FM/EXT/PREVIEW independently and in combinations.
 8. Confirm HOLD prevents writes while heads move; MONITOR off does not stop Capture.
-   Route each source individually, set DRY and WET to zero and confirm silence without
-   stopping rolling or Capture. Confirm unrouted sources retain ordinary monitoring.
+   Route each source individually and confirm its ordinary audition/monitor bus becomes
+   silent. Set MONITOR off, or DRY and WET to zero, and confirm silence without stopping
+   rolling or Capture. Confirm unrouted sources retain ordinary monitoring. Lower INPUT
+   on a hot internal tile/FM source and confirm the write/input overload is reduced.
    Raise OUT and verify MIX return/Capture rise while H1/H2/H3 taps remain unchanged.
 9. Compare ERASE 100 with ERASE 20 over multiple buffer passes. Full erase should replace
    old material; ERASE 20 should leave progressively aging stereo ghosts beneath new input.

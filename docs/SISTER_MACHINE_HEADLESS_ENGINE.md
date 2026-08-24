@@ -141,7 +141,8 @@ needs the live buffer or mutable DSP state.
 
 ## Defaults and live-routing boundary
 
-Native defaults are: 40-second stereo buffer, Roll on, Hold off, H1 level `0.45`, time
+Native defaults are: 40-second stereo buffer, Roll on, Hold off, pre-tape input gain
+`1.0`, H1 level `0.45`, time
 `500 ms`, feedback `0.25`; H2/H3 level `0`, rate `+1`; H2 scrub `0.5`; H3 span `0.5`
 (four seconds); Wow/Drop/Duck/decorrelation off; Width `1`; filter bypass; fixed
 headroom `0.5`; and Clear `20 ms`. `ts_sister_parameters_kafka_start()` supplies the

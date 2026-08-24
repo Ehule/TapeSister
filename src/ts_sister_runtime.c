@@ -603,9 +603,9 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         input = frame_add(input, source.preview);
     armed = source_count(runtime->source_switches);
     if (armed > 1) input = frame_scale(input, 1.0f / sqrtf((float)armed));
-    frame.input = input;
-    frame.duck_sidechain = input;
     output = ts_sister_machine_process_frame(&runtime->machine, input, input);
+    frame.input = ts_stereo_frame_sanitize(output.input);
+    frame.duck_sidechain = frame.input;
     ts_sister_wave_publisher_push(&runtime->waveform, output.write,
                                   output.write_position,
                                   runtime->machine.buffer.capacity_frames,
@@ -619,9 +619,10 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         TS_CAPTURE_RECORDING)
         (void)ts_capture_write_frame(
             &runtime->capture, selected_tap(&frame, runtime->selected_tap));
-    frame.monitor_return = runtime->monitor_enabled ?
+    frame.monitor_return = runtime->monitor_enabled ? frame_add(
+        frame_scale(frame.input, runtime->monitor_dry_current),
         frame_scale(frame.tap[TS_SISTER_TAP_MIX],
-                    runtime->monitor_wet_current) :
+                    runtime->monitor_wet_current)) :
         (TsStereoFrame){0.0f, 0.0f};
     runtime->last_frame = frame;
     ++runtime->processed_frames;

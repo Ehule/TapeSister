@@ -196,6 +196,7 @@ void ts_sister_parameters_default(TsSisterParameters *parameters,
     parameters->filter_q = 0.70710678f;
     parameters->headroom = 0.5f;
     parameters->write_erase = 1.0f;
+    parameters->input_gain = 1.0f;
     parameters->monitor_dry = 1.0f;
     parameters->monitor_wet = 1.0f;
     parameters->mix_output_gain = 1.0f;
@@ -513,6 +514,7 @@ static TsSisterParameters sanitize_parameters(const TsSisterMachine *machine,
     result.filter_gain_db = clampf(result.filter_gain_db, -24.0f, 24.0f);
     result.headroom = clampf(result.headroom, 0.05f, 1.0f);
     result.write_erase = clampf(result.write_erase, 0.0f, 1.0f);
+    result.input_gain = clampf(result.input_gain, 0.0f, 2.0f);
     result.monitor_dry = clampf(result.monitor_dry, 0.0f, 1.0f);
     result.monitor_wet = clampf(result.monitor_wet, 0.0f, 1.0f);
     result.mix_output_gain = clampf(result.mix_output_gain, 0.0f, 4.0f);
@@ -599,6 +601,7 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     machine->clear_state = TS_SISTER_CLEAR_IDLE;
     ramp_reset(&machine->clear_gain, 1.0f);
     ramp_reset(&machine->write_erase, machine->parameters.write_erase);
+    ramp_reset(&machine->input_gain, machine->parameters.input_gain);
     memset(&machine->last_output, 0, sizeof(machine->last_output));
     machine->overload_count = 0u;
     machine->applied_parameters = machine->parameters;
@@ -696,6 +699,8 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
     ramp_set(&machine->head[1].level, next.head2_level, level_frames);
     ramp_set(&machine->head[2].level, next.head3_level, level_frames);
     ramp_set(&machine->write_erase, next.write_erase, level_frames);
+    ramp_set(&machine->input_gain, next.input_gain,
+             milliseconds_frames(machine->buffer.sample_rate, 20.0f));
     ramp_set(&machine->head[1].offset,
              next.head2_scrub * (float)(machine->buffer.capacity_frames - 1u),
              offset_frames);
@@ -1251,6 +1256,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     float clear_gain;
     float erase;
     float duck_gain;
+    float input_gain;
     float level;
     float peak;
     memset(&output, 0, sizeof(output));
@@ -1264,6 +1270,10 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
         ++machine->overload_count;
     input = ts_stereo_frame_sanitize(input);
     duck_sidechain = ts_stereo_frame_sanitize(duck_sidechain);
+    input_gain = ramp_advance(&machine->input_gain);
+    input = frame_scale(input, input_gain);
+    duck_sidechain = frame_scale(duck_sidechain, input_gain);
+    output.input = input;
     write_position = (size_t)(machine->master_clock % machine->buffer.capacity_frames);
 
     if (machine->clear_state == TS_SISTER_CLEAR_WAITING) {

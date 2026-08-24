@@ -23,7 +23,8 @@ int main(void)
     CHECK(config.sister_waveform_display_mode == TS_WAVEFORM_DISPLAY_STEREO);
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
-    CHECK(model.parameters.monitor_dry == 1.0f &&
+    CHECK(model.parameters.input_gain == 1.0f &&
+          model.parameters.monitor_dry == 1.0f &&
           model.parameters.monitor_wet == 1.0f &&
           model.parameters.mix_output_gain == 4.0f &&
           model.parameters.write_erase == 1.0f);
@@ -52,14 +53,17 @@ int main(void)
           hit.index == TS_SISTER_UI_PARAM_FILTER_GAIN);
     hit = ts_sister_ui_hit_test(20, 334);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_INPUT_GAIN);
+    hit = ts_sister_ui_hit_test(150, 334);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MONITOR_DRY);
-    hit = ts_sister_ui_hit_test(220, 334);
+    hit = ts_sister_ui_hit_test(270, 334);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MONITOR_WET);
-    hit = ts_sister_ui_hit_test(340, 334);
+    hit = ts_sister_ui_hit_test(400, 334);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MIX_OUTPUT);
-    hit = ts_sister_ui_hit_test(500, 334);
+    hit = ts_sister_ui_hit_test(520, 334);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_WRITE_ERASE);
     CHECK(strcmp(ts_sister_filter_type_name(TS_SISTER_FILTER_BYPASS), "OFF") == 0);

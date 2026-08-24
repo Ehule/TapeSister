@@ -80,6 +80,8 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
     model->destination_slot = -1;
     ts_sister_parameters_default(&model->parameters, 48000u);
     if (config != NULL) {
+        model->parameters.input_gain =
+            (float)config->sister_input_percent / 100.0f;
         model->parameters.monitor_dry =
             (float)config->sister_dry_percent / 100.0f;
         model->parameters.monitor_wet =
@@ -180,18 +182,19 @@ TsSisterUiHit ts_sister_ui_hit_test(int x, int y)
             return hit;
         }
     }
-    for (int control = 0; control < 4; ++control) {
-        static const int parameters[4] = {
+    for (int control = 0; control < 5; ++control) {
+        static const int parameters[5] = {
+            TS_SISTER_UI_PARAM_INPUT_GAIN,
             TS_SISTER_UI_PARAM_MONITOR_DRY,
             TS_SISTER_UI_PARAM_MONITOR_WET,
             TS_SISTER_UI_PARAM_MIX_OUTPUT,
             TS_SISTER_UI_PARAM_WRITE_ERASE
         };
-        int left = 10 + control * 155;
-        if (contains(x, y, left, 330, 149, 18)) {
+        int left = 10 + control * 124;
+        if (contains(x, y, left, 330, 118, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = parameters[control];
-            hit.normalized = (float)(x - left) / 148.0f;
+            hit.normalized = (float)(x - left) / 117.0f;
             return hit;
         }
     }

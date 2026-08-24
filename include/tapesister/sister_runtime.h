@@ -56,8 +56,9 @@ typedef struct {
     TsStereoFrame input;
     TsStereoFrame duck_sidechain;
     TsStereoFrame tap[TS_SISTER_TAP_COUNT];
+    /* Complete Sister output: monitored dry input plus processed head MIX. */
     TsStereoFrame monitor_return;
-    /* Gain for the existing dry program bus. Capture remains pre-monitor. */
+    /* Published for UI/backward compatibility; direct source buses are muted. */
     float dry_monitor_gain;
 } TsSisterRuntimeFrame;
 

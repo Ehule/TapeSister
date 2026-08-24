@@ -52,6 +52,20 @@ int main(void)
     CHECK(CLOSE(frame.input.r, 0.8f * gain));
     CHECK(CLOSE(frame.duck_sidechain.r, frame.input.r));
 
+    {
+        TsSisterParameters parameters = runtime.parameters;
+        parameters.input_gain = 0.5f;
+        ts_sister_runtime_set_parameters(&runtime, &parameters);
+        for (int sample = 0; sample < 25; ++sample)
+            frame = ts_sister_runtime_process_frame(&runtime, &sources);
+        CHECK(CLOSE(frame.input.l, 0.3f * gain));
+        CHECK(CLOSE(frame.input.r, 0.4f * gain));
+        parameters.input_gain = 1.0f;
+        ts_sister_runtime_set_parameters(&runtime, &parameters);
+        for (int sample = 0; sample < 25; ++sample)
+            frame = ts_sister_runtime_process_frame(&runtime, &sources);
+    }
+
     CHECK(ts_note_event_qwerty(&note, 0, TS_KEYBOARD_BASE_NOTE));
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TILES);
     CHECK(ts_sister_runtime_set_source_slot(&runtime, &instrument, 0, 1));
@@ -71,13 +85,16 @@ int main(void)
     CHECK(CLOSE(two_tile_peak / one_tile_peak, sqrtf(2.0f)));
     CHECK(CLOSE(frame.input.l, frame.input.r));
     ts_sister_runtime_note_off(&runtime, &note);
+    frame = ts_sister_runtime_process_frame(&runtime, NULL);
+    CHECK(sister_peak(frame.input) > 0.0f);
 
     ts_sister_runtime_set_monitor(&runtime, 0);
     frame = ts_sister_runtime_process_frame(&runtime, &sources);
     CHECK(CLOSE(frame.monitor_return.l, 0.0f));
     ts_sister_runtime_set_monitor(&runtime, 1);
     frame = ts_sister_runtime_process_frame(&runtime, &sources);
-    CHECK(CLOSE(frame.monitor_return.l, frame.tap[TS_SISTER_TAP_MIX].l));
+    CHECK(CLOSE(frame.monitor_return.l,
+                frame.input.l + frame.tap[TS_SISTER_TAP_MIX].l));
 
     sources.fm = (TsStereoFrame){NAN, INFINITY};
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_FM);

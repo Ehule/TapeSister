@@ -7,7 +7,8 @@ by default and has no user interface. PR5 owns the launcher, second window and c
 ## Fixed graph and callback order
 
 The router is deliberately not a patch matrix. Its only input switches are `TILES`,
-`FM`, `EXT` and `PREVIEW`; its only capture taps are `MIX`, `H1`, `H2` and `H3`.
+`FM`, `EXT` and `PREVIEW` (labeled `AUDITION` in the window); its only capture taps are
+`MIX`, `H1`, `H2` and `H3`.
 There is no `MIX -> input` switch.
 
 Each callback frame follows this order:
@@ -21,13 +22,17 @@ Each callback frame follows this order:
 7. Evaluate `TsSisterMachine` exactly once.
 8. Publish `H1`, `H2`, `H3` and `MIX`.
 9. Write the selected tap to the preallocated Sister recorder when recording.
-10. Put `MIX` on the named `sister` output bus only when Monitor is enabled.
-11. Let the existing mixer add dry program, optional Sister return, external monitor
+10. Remove each armed source from its ordinary direct speaker bus.
+11. Put `DRY * trimmed input + WET * MIX` on the named `sister` output bus only when
+    Monitor is enabled.
+12. Let the existing mixer add unrouted program, optional Sister return, external monitor
     and reference tone before its established final clamp.
 
 Capture, Roll, Hold and feedback do not depend on Monitor. Disabling one input switch
-removes only that bus. Ordinary dry playback remains independently audible. A disabled
-runtime returns exact zero taps and does not allocate its rolling buffer.
+removes only that bus. A routed source is removed from its ordinary audible bus and its
+post-INPUT dry plus processed MIX return together through Sister when Monitor is on.
+Unrouted sources remain independently audible. A disabled runtime returns exact zero
+taps, does not mute ordinary sources and does not allocate its rolling buffer.
 
 ## Source and gain contract
 
@@ -42,8 +47,9 @@ applies to the complete source sum. Armed switches, not instantaneous silence or
 crossings, determine the gain. Both channels receive the same gain. PR3's bounded write
 safety remains the only continuous rolling-buffer protection.
 
-The Duck sidechain is the selected compensated source input. It never contains H1/H2
-feedback or a previous Sister MIX frame.
+The compensated source sum passes through one smoothed 0-200 percent pre-tape INPUT
+trim. That trimmed frame is the rolling-memory input, the Sister DRY return and the Duck
+sidechain. It never contains H1/H2 feedback or a previous Sister MIX frame.
 
 ## Persistent tile source masks
 
@@ -64,14 +70,15 @@ Sister uses a dedicated `TsPerformanceBank`. It does not borrow Capture's transi
 group, the ordinary dry bank or UI focus state. QWERTY and MIDI both enter through
 `TsNoteEvent`; one event fans out once to every valid masked tile. Tuning, C4 unity,
 velocity gain, loops, channel shape, attack, release and deterministic capacity remain
-owned by the existing performance implementation. Note Off, channel panic, global
-panic, page changes and project close release these voices.
+owned by the existing performance implementation. One-shot Note Off follows ordinary
+TapeSister audition and lets the sample finish; looped Note Off stops the loop. Channel
+panic, global panic, page changes and project close stop voices immediately.
 
 This separation permits one gesture to feed Sister without accidentally adding the
-ordinary performance bus to rolling input a second time. PR5 applies its DRY control to
-the direct path of each routed source independently: DRY 0 is therefore a true
-tape-machine bypass for TILES/FM/EXT/PREVIEW, while unrouted sources keep their ordinary
-TapeSister monitoring.
+ordinary performance bus to rolling input a second time. PR5 removes the selected
+source from the ordinary speaker bus completely; Sister's DRY control rebuilds the
+trimmed input return inside the MONITOR-gated output. Unrouted sources keep their
+ordinary TapeSister monitoring.
 
 ## Taps and monitoring
 
@@ -81,9 +88,9 @@ TapeSister monitoring.
 - `MIX`: after head sum, Duck, global filter, protected output gain and linked final safety.
 
 All taps are finite stereo frames, are valid with Monitor off, and become zero when the
-runtime is disabled or failed silent. Monitor copies the WET-scaled `MIX` to
-`TsAudioBuses.sister`; it does not govern rolling or Capture. H1/H2/H3 remain before the
-MIX output stage.
+runtime is disabled or failed silent. Monitor copies `DRY * trimmed input + WET * MIX`
+to `TsAudioBuses.sister`; it does not govern rolling or Capture. H1/H2/H3 remain before
+the MIX output stage.
 
 ## Sister Capture and recursion
 
