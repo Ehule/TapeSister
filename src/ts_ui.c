@@ -3161,7 +3161,8 @@ static void sister_parameter(TsFramebuffer *fb, int x, int y, int width,
 
 static void sister_percent_parameter(TsFramebuffer *fb, int x, int y,
                                      int width, const char *label,
-                                     float amount, uint32_t color)
+                                     float amount, int maximum_percent,
+                                     uint32_t color)
 {
     char value[32];
     if (!isfinite(amount)) amount = 0.0f;
@@ -3170,7 +3171,19 @@ static void sister_percent_parameter(TsFramebuffer *fb, int x, int y,
     rect(fb, x, y, width, 18, RGB(24, 23, 25));
     rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
     snprintf(value, sizeof(value), "%s %03d", label,
-             (int)lrintf(amount * 100.0f));
+             (int)lrintf(amount * (float)maximum_percent));
+    text(fb, x + 3, y + 3, value, color, 1);
+}
+
+static void sister_choice_parameter(TsFramebuffer *fb, int x, int y,
+                                    int width, const char *label,
+                                    const char *choice, int active,
+                                    uint32_t color)
+{
+    char value[32];
+    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    if (active) rect(fb, x + 1, y + 14, width - 2, 3, color);
+    snprintf(value, sizeof(value), "%s %s", label, choice);
     text(fb, x + 3, y + 3, value, color, 1);
 }
 
@@ -3255,19 +3268,28 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_parameter(fb, 10, 304, 82, "WOW", model->parameters.wow / 10.0f, PAL_TUNING);
     sister_parameter(fb, 98, 304, 82, "DROP", model->parameters.drop / 100.0f, PAL_EFFECT);
     sister_parameter(fb, 186, 304, 82, "DUCK", model->parameters.duck_enabled ? model->parameters.duck_sensitivity : 0.0f, PAL_VOLUME);
-    sister_parameter(fb, 274, 304, 82, "DECOR", model->parameters.decorrelation_enabled ? 1.0f : 0.0f, PAL_WAVE_RIGHT);
+    sister_choice_parameter(fb, 274, 304, 82, "DECOR",
+                            model->parameters.decorrelation_enabled ? "ON" : "OFF",
+                            model->parameters.decorrelation_enabled,
+                            PAL_WAVE_RIGHT);
     sister_parameter(fb, 362, 304, 82, "WIDTH", model->parameters.width, PAL_WAVE_LEFT);
-    sister_parameter(fb, 450, 304, 82, "FILTER", model->parameters.filter_type / (float)(TS_SISTER_FILTER_TYPE_COUNT - 1), PAL_INSTRUMENT);
+    sister_choice_parameter(fb, 450, 304, 82, "FILTER",
+                            ts_sister_filter_type_name(model->parameters.filter_type),
+                            model->parameters.filter_type != TS_SISTER_FILTER_BYPASS,
+                            PAL_INSTRUMENT);
     sister_parameter(fb, 538, 304, 82, "GAIN",
                      (model->parameters.filter_gain_db + 24.0f) / 48.0f,
                      PAL_INSTRUMENT);
 
-    sister_percent_parameter(fb, 10, 330, 196, "DRY",
-                             model->parameters.monitor_dry, PAL_WAVE_LEFT);
-    sister_percent_parameter(fb, 212, 330, 196, "WET",
-                             model->parameters.monitor_wet, PAL_WAVE_RIGHT);
-    sister_percent_parameter(fb, 414, 330, 196, "ERASE",
-                             model->parameters.write_erase, PAL_VOLUME);
+    sister_percent_parameter(fb, 10, 330, 149, "DRY",
+                             model->parameters.monitor_dry, 100, PAL_WAVE_LEFT);
+    sister_percent_parameter(fb, 165, 330, 149, "WET",
+                             model->parameters.monitor_wet, 100, PAL_WAVE_RIGHT);
+    sister_percent_parameter(fb, 320, 330, 149, "OUT",
+                             model->parameters.mix_output_gain / 4.0f,
+                             400, PAL_INSTRUMENT);
+    sister_percent_parameter(fb, 475, 330, 149, "ERASE",
+                             model->parameters.write_erase, 100, PAL_VOLUME);
 
     snprintf(line, sizeof(line), "TARGET %s  %.88s",
              model->destination_slot >= 0 ? "READY" : "--",

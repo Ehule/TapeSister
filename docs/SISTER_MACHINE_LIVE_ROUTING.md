@@ -67,20 +67,23 @@ velocity gain, loops, channel shape, attack, release and deterministic capacity 
 owned by the existing performance implementation. Note Off, channel panic, global
 panic, page changes and project close release these voices.
 
-This separation permits the same physical gesture to retain ordinary dry playback and
-feed the Sister return without accidentally adding the ordinary performance bus to the
-rolling input a second time.
+This separation permits one gesture to feed Sister without accidentally adding the
+ordinary performance bus to rolling input a second time. PR5 applies its DRY control to
+the direct path of each routed source independently: DRY 0 is therefore a true
+tape-machine bypass for TILES/FM/EXT/PREVIEW, while unrouted sources keep their ordinary
+TapeSister monitoring.
 
 ## Taps and monitoring
 
 - `H1`: after H1 level and optional decorrelation, before global Duck/filter/safety.
 - `H2`: after H2 level, Drop and optional decorrelation, before global processing.
 - `H3`: after H3 level, Drop and optional decorrelation, before global processing.
-- `MIX`: after head sum, Duck, global filter and linked final safety.
+- `MIX`: after head sum, Duck, global filter, protected output gain and linked final safety.
 
 All taps are finite stereo frames, are valid with Monitor off, and become zero when the
-runtime is disabled or failed silent. Monitor merely copies `MIX` to `TsAudioBuses.sister`.
-The default dry-plus-optional-return policy does not automatically mute a source.
+runtime is disabled or failed silent. Monitor copies the WET-scaled `MIX` to
+`TsAudioBuses.sister`; it does not govern rolling or Capture. H1/H2/H3 remain before the
+MIX output stage.
 
 ## Sister Capture and recursion
 

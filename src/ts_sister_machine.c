@@ -198,7 +198,22 @@ void ts_sister_parameters_default(TsSisterParameters *parameters,
     parameters->write_erase = 1.0f;
     parameters->monitor_dry = 1.0f;
     parameters->monitor_wet = 1.0f;
+    parameters->mix_output_gain = 1.0f;
     parameters->clear_ms = 20.0f;
+}
+
+const char *ts_sister_filter_type_name(TsSisterFilterType type)
+{
+    switch (type) {
+    case TS_SISTER_FILTER_LOWPASS: return "LP";
+    case TS_SISTER_FILTER_HIGHPASS: return "HP";
+    case TS_SISTER_FILTER_BANDPASS: return "BP";
+    case TS_SISTER_FILTER_NOTCH: return "NOTCH";
+    case TS_SISTER_FILTER_PEAK: return "PEAK";
+    case TS_SISTER_FILTER_LOWSHELF: return "LOW SH";
+    case TS_SISTER_FILTER_HIGHSHELF: return "HIGH SH";
+    default: return "OFF";
+    }
 }
 
 void ts_sister_parameters_kafka_start(TsSisterParameters *parameters,
@@ -500,6 +515,7 @@ static TsSisterParameters sanitize_parameters(const TsSisterMachine *machine,
     result.write_erase = clampf(result.write_erase, 0.0f, 1.0f);
     result.monitor_dry = clampf(result.monitor_dry, 0.0f, 1.0f);
     result.monitor_wet = clampf(result.monitor_wet, 0.0f, 1.0f);
+    result.mix_output_gain = clampf(result.mix_output_gain, 0.0f, 4.0f);
     result.clear_ms = clampf(result.clear_ms, 1.0f, 200.0f);
     return result;
 }
@@ -1365,6 +1381,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     advance_filter_coefficients(machine);
     sum.l = filter_channel(machine, 0u, sum.l);
     sum.r = filter_channel(machine, 1u, sum.r);
+    sum = frame_scale(sum, machine->parameters.mix_output_gain);
     output.head[0] = frame_scale(output.head[0], clear_gain);
     output.head[1] = frame_scale(output.head[1], clear_gain);
     output.head[2] = frame_scale(output.head[2], clear_gain);

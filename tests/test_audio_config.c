@@ -43,8 +43,9 @@ static int test_defaults(void)
                   "Sister Capture should remain deliberately mono by default") &&
            expect(config.sister_dry_percent == 100 &&
                   config.sister_wet_percent == 100 &&
+                  config.sister_output_percent == 400 &&
                   config.sister_erase_percent == 100,
-                  "Sister monitor and full-overwrite defaults should preserve PR5") &&
+                  "Sister monitor/output/erase defaults should preserve PR5") &&
            expect(config.voice_attack_ms == TS_AUDITION_ATTACK_MS_DEFAULT,
                   "sample voices should default to a short de-click attack");
 }
@@ -78,6 +79,7 @@ static int test_roundtrip(void)
     saved.sister_restart_clear = 0;
     saved.sister_dry_percent = 35;
     saved.sister_wet_percent = 80;
+    saved.sister_output_percent = 275;
     saved.sister_erase_percent = 20;
     saved.sister_window_x = 123;
     saved.sister_window_y = 456;
@@ -115,8 +117,9 @@ static int test_roundtrip(void)
                 "Sister capture/restart preferences should roundtrip") &&
          expect(loaded.sister_dry_percent == 35 &&
                 loaded.sister_wet_percent == 80 &&
+                loaded.sister_output_percent == 275 &&
                 loaded.sister_erase_percent == 20,
-                "Sister monitor/erase preferences should roundtrip") &&
+                "Sister monitor/output/erase preferences should roundtrip") &&
          expect(loaded.sister_window_x == 123 && loaded.sister_window_y == 456,
                 "Sister window position should roundtrip") &&
          expect(loaded.capture_max_seconds == 47,

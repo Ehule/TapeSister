@@ -123,8 +123,12 @@ typedef struct {
     float write_erase;
     float monitor_dry;
     float monitor_wet;
+    /* Post-filter MIX gain. Final linked safety remains authoritative. */
+    float mix_output_gain;
     float clear_ms;
 } TsSisterParameters;
+
+const char *ts_sister_filter_type_name(TsSisterFilterType type);
 
 typedef struct {
     TsStereoFrame head[TS_SISTER_HEAD_COUNT];

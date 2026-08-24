@@ -29,6 +29,9 @@ typedef struct {
 void ts_audio_buses_clear(TsAudioBuses *buses);
 void ts_audio_mixer_init(TsAudioMixer *mixer);
 TsStereoFrame ts_audio_normalize_linked(TsStereoFrame sum, int active_voices);
+void ts_audio_buses_apply_source_dry(TsAudioBuses *buses, float gain,
+                                     int preview_routed, int tiles_routed,
+                                     int fm_routed, int external_routed);
 TsStereoFrame ts_audio_mixer_render(TsAudioMixer *mixer,
                                     const TsAudioBuses *sources);
 

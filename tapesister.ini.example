@@ -78,6 +78,8 @@ capture_max_seconds=20
 ; Independent monitor levels. These do not change rolling input or Capture taps.
 sister_dry_percent=100
 sister_wet_percent=100
+; Post-filter MIX output gain. 400 compensates Sister's conservative internal headroom.
+sister_output_percent=400
 ; Recording-head erase strength per complete buffer pass.
 ; 100 fully replaces the previous cell; 20 retains 80 percent as a ghost.
 sister_erase_percent=100

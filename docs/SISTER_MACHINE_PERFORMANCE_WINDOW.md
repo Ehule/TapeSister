@@ -60,13 +60,31 @@ adjustment (Shift+wheel is fine). Both mouse buttons address the same visible pa
 
 The dedicated monitor/memory row separates three independent laws:
 
-- `DRY` scales the existing preview/tile/FM program bus only while Sister is enabled.
+- `DRY` scales only the direct audible path of each source currently routed to Sister.
+  TILES, FM, EXT and PREVIEW therefore behave like physical tape-machine inputs: at
+  DRY 0 they enter Sister and its Capture taps but do not also leak around the machine.
+  Sources not selected in Sister keep their ordinary TapeSister monitoring behavior.
 - `WET` scales the Sister MIX return when MONITOR is enabled.
+- `OUT` is a post-filter 0-400 percent MIX stage before linked final safety. It affects
+  the audible Sister return and MIX Capture, but not the individual H1/H2/H3 taps.
 - `ERASE` sets how much of the previous rolling-memory cell the moving write head removes.
 
-DRY and WET are smoothed over 20 ms and affect audibility only. The Sister input, Duck
+DRY and WET are smoothed over 20 ms. The Sister input, Duck
 sidechain, H1/H2/H3/MIX Capture taps, ordinary Capture source and external recording all
-remain pre-monitor. Defaults are DRY 100 and WET 100, preserving the original PR5 sound.
+remain pre-monitor. OUT defaults to 400 percent in the application to compensate the
+engine's deliberately conservative H1 and fixed-headroom defaults; final linked safety
+still bounds the result. With DRY and WET both at zero, routed sources are silent at the
+speakers while Sister continues rolling and Capture remains available.
+
+Decor is deliberately an ON/OFF character switch. Filter is a discrete named type selector;
+cutoff, Q and filter gain remain continuous. One wheel detent changes one Decor/filter/rate
+choice, while continuous controls retain normal and Shift-fine wheel adjustment.
+
+Current TapeSister transforms are destructive or preview-domain operations rather than a
+live insert rack. Their rendered tile/preview audio reaches Sister exactly as heard. Future
+live source effects belong before the Sister input split when they are meant to print to
+tape; Sister's own character/filter remains inside the machine; future master-bus effects
+belong after the DRY/WET sum. This preserves an explicit pre-tape/post-tape distinction.
 
 ERASE 100 is the original full-overwrite law. Lower values retain old material at the
 write position before adding new input and H1/H2 feedback: `retained = old * (1-erase)`.
@@ -102,7 +120,7 @@ source-mask action.
 
 Configuration now preserves buffer duration/channel shape, clear fade, Sister Capture
 format, both waveform display modes, restart-clear policy, DRY/WET monitor levels,
-ERASE strength and Sister window position.
+MIX output gain, ERASE strength and Sister window position.
 Musical source masks and parameter state are intentionally runtime-only. Output restart
 retains the PR4 policy: rolling memory and published waveform are cleared; failure leaves
 Sister disabled while ordinary TapeSister audio remains available.
@@ -135,8 +153,9 @@ notes, performance, Capture, routing, the callback, or either window renderer.
 6. Trigger the mask from QWERTY in both windows and from MIDI; verify note-off and panic.
 7. Exercise TILES/FM/EXT/PREVIEW independently and in combinations.
 8. Confirm HOLD prevents writes while heads move; MONITOR off does not stop Capture.
-   Set DRY below 100 and verify only audible dry playback changes; set WET below 100 and
-   verify only the processed return changes. Confirm Capture levels remain unchanged.
+   Route each source individually, set DRY and WET to zero and confirm silence without
+   stopping rolling or Capture. Confirm unrouted sources retain ordinary monitoring.
+   Raise OUT and verify MIX return/Capture rise while H1/H2/H3 taps remain unchanged.
 9. Compare ERASE 100 with ERASE 20 over multiple buffer passes. Full erase should replace
    old material; ERASE 20 should leave progressively aging stereo ghosts beneath new input.
 10. Capture each tap as M and S, then test mono/stereo Overdub and undo/redo.

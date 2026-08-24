@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 
 static int failures;
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %d: %s\n", __LINE__, #c); ++failures; } } while (0)
@@ -24,6 +25,7 @@ int main(void)
     CHECK(!model.visible && model.capture_channels == 1);
     CHECK(model.parameters.monitor_dry == 1.0f &&
           model.parameters.monitor_wet == 1.0f &&
+          model.parameters.mix_output_gain == 4.0f &&
           model.parameters.write_erase == 1.0f);
     ts_sister_ui_model_show(&model);
     CHECK(model.visible);
@@ -54,9 +56,14 @@ int main(void)
     hit = ts_sister_ui_hit_test(220, 334);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MONITOR_WET);
-    hit = ts_sister_ui_hit_test(420, 334);
+    hit = ts_sister_ui_hit_test(340, 334);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_MIX_OUTPUT);
+    hit = ts_sister_ui_hit_test(500, 334);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_WRITE_ERASE);
+    CHECK(strcmp(ts_sister_filter_type_name(TS_SISTER_FILTER_BYPASS), "OFF") == 0);
+    CHECK(strcmp(ts_sister_filter_type_name(TS_SISTER_FILTER_LOWPASS), "LP") == 0);
     CHECK(ts_sister_ui_hit_test(455, 374).action == TS_SISTER_UI_ACTION_CAPTURE);
     CHECK(ts_sister_ui_hit_test(540, 374).action == TS_SISTER_UI_ACTION_OVERDUB);
 

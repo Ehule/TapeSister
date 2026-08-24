@@ -839,6 +839,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         TsSisterRuntimeFrame sister_frame;
         TsStereoFrame synth_capture = {0.0f, 0.0f};
         TsStereoFrame output;
+        uint8_t sister_routes;
         ts_audio_buses_clear(&buses);
         if (audio->playing && audio->sample && audio->sample->data &&
             audio->sample->frames > 1u) {
@@ -896,11 +897,17 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         buses.capture = audio->performance_group_latched &&
                         audio->performance_source_mask != 0u ?
                         audio->performance_raw_mix : buses.program;
-        /* DRY/WET affect audibility only. Ordinary Capture keeps the exact
-           pre-monitor frame selected above. */
-        buses.program.l *= sister_frame.dry_monitor_gain;
-        buses.program.r *= sister_frame.dry_monitor_gain;
-        buses.program = ts_stereo_frame_sanitize(buses.program);
+        buses.monitor = buses.external;
+        sister_routes = ts_sister_runtime_sources(&audio->sister);
+        /* Tape-machine routing is source aware. A routed source obeys Sister
+           DRY on its direct audible path; an unrouted source retains ordinary
+           TapeSister monitoring. Sister input and Capture remain pre-monitor. */
+        ts_audio_buses_apply_source_dry(
+            &buses, sister_frame.dry_monitor_gain,
+            (sister_routes & TS_SISTER_SOURCE_PREVIEW) != 0u,
+            (sister_routes & TS_SISTER_SOURCE_TILES) != 0u,
+            (sister_routes & TS_SISTER_SOURCE_FM) != 0u,
+            (sister_routes & TS_SISTER_SOURCE_EXT) != 0u);
         if (runtime_capture_write_frame(audio, buses.capture)) {
             audio->playing = 0;
             audio->bank_slot = -1;
@@ -942,7 +949,6 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             }
             buses.reference = ts_stereo_frame_from_mono(reference_value);
         }
-        buses.monitor = buses.external;
         output = ts_audio_mixer_render(&audio->mixer, &buses);
         out[i] = output.l;
         if (i + 1 < values) out[i + 1] = output.r;
@@ -6385,6 +6391,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
         break;
     case TS_SISTER_UI_PARAM_MONITOR_DRY: parameters->monitor_dry = amount; break;
     case TS_SISTER_UI_PARAM_MONITOR_WET: parameters->monitor_wet = amount; break;
+    case TS_SISTER_UI_PARAM_MIX_OUTPUT: parameters->mix_output_gain = amount * 4.0f; break;
     case TS_SISTER_UI_PARAM_WRITE_ERASE: parameters->write_erase = amount; break;
     default: break;
     }
@@ -6417,11 +6424,45 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FILTER_GAIN: value = (parameters->filter_gain_db + 24.0f) / 48.0f; break;
     case TS_SISTER_UI_PARAM_MONITOR_DRY: value = parameters->monitor_dry; break;
     case TS_SISTER_UI_PARAM_MONITOR_WET: value = parameters->monitor_wet; break;
+    case TS_SISTER_UI_PARAM_MIX_OUTPUT: value = parameters->mix_output_gain / 4.0f; break;
     case TS_SISTER_UI_PARAM_WRITE_ERASE: value = parameters->write_erase; break;
     default: break;
     }
     if (!isfinite(value) || value < 0.0f) return 0.0f;
     return value > 1.0f ? 1.0f : value;
+}
+
+static float sister_parameter_wheel_normalized(
+    const TsSisterParameters *parameters, int parameter, int wheel,
+    int fine_adjustment)
+{
+    int direction = wheel > 0 ? 1 : -1;
+    int steps = wheel > 0 ? wheel : -wheel;
+    int value;
+    if (parameters == NULL || wheel == 0) return 0.0f;
+    switch ((TsSisterUiParameter)parameter) {
+    case TS_SISTER_UI_PARAM_DECORRELATE:
+        return direction > 0 ? 1.0f : 0.0f;
+    case TS_SISTER_UI_PARAM_FILTER_TYPE:
+        value = parameters->filter_type + direction * steps;
+        if (value < TS_SISTER_FILTER_BYPASS) value = TS_SISTER_FILTER_BYPASS;
+        if (value >= TS_SISTER_FILTER_TYPE_COUNT)
+            value = TS_SISTER_FILTER_TYPE_COUNT - 1;
+        return value / (float)(TS_SISTER_FILTER_TYPE_COUNT - 1);
+    case TS_SISTER_UI_PARAM_H2_RATE:
+        value = parameters->head2_rate_index + direction * steps;
+        if (value < 0) value = 0;
+        if (value >= TS_SISTER_RATE_COUNT) value = TS_SISTER_RATE_COUNT - 1;
+        return value / (float)(TS_SISTER_RATE_COUNT - 1);
+    case TS_SISTER_UI_PARAM_H3_RATE:
+        value = parameters->head3_rate_index + direction * steps;
+        if (value < 0) value = 0;
+        if (value >= TS_SISTER_RATE_COUNT) value = TS_SISTER_RATE_COUNT - 1;
+        return value / (float)(TS_SISTER_RATE_COUNT - 1);
+    default:
+        return sister_parameter_normalized(parameters, parameter) +
+               (fine_adjustment ? 0.01f : 0.05f) * (float)wheel;
+    }
 }
 
 static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
@@ -6540,6 +6581,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         else if (hit.index == TS_SISTER_UI_PARAM_MONITOR_WET)
             ui->config.sister_wet_percent =
                 (int)lrintf(sister->model.parameters.monitor_wet * 100.0f);
+        else if (hit.index == TS_SISTER_UI_PARAM_MIX_OUTPUT)
+            ui->config.sister_output_percent =
+                (int)lrintf(sister->model.parameters.mix_output_gain * 100.0f);
         else if (hit.index == TS_SISTER_UI_PARAM_WRITE_ERASE)
             ui->config.sister_erase_percent =
                 (int)lrintf(sister->model.parameters.write_erase * 100.0f);
@@ -7778,6 +7822,8 @@ int main(int argc, char **argv)
         TsSisterParameters parameters = audio.sister.parameters;
         parameters.monitor_dry = (float)ui.config.sister_dry_percent / 100.0f;
         parameters.monitor_wet = (float)ui.config.sister_wet_percent / 100.0f;
+        parameters.mix_output_gain =
+            (float)ui.config.sister_output_percent / 100.0f;
         parameters.write_erase = (float)ui.config.sister_erase_percent / 100.0f;
         ts_sister_runtime_set_parameters(&audio.sister, &parameters);
     }
@@ -8067,10 +8113,9 @@ int main(int argc, char **argv)
                         continue;
                     hit = ts_sister_ui_hit_test(x, y);
                     if (hit.action == TS_SISTER_UI_ACTION_PARAMETER && wheel != 0) {
-                        float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
-                        hit.normalized = sister_parameter_normalized(
-                            &sister_window.model.parameters, hit.index) +
-                            step * (float)wheel;
+                        hit.normalized = sister_parameter_wheel_normalized(
+                            &sister_window.model.parameters, hit.index, wheel,
+                            (SDL_GetModState() & KMOD_SHIFT) != 0);
                         sister_apply_action(device, &audio, &ui, &instrument,
                                             &sister_window, hit,
                                             (uint32_t)obtained.freq,

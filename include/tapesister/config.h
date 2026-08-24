@@ -54,6 +54,9 @@ enum {
     TS_SISTER_MONITOR_PERCENT_MIN = 0,
     TS_SISTER_MONITOR_PERCENT_MAX = 100,
     TS_SISTER_MONITOR_PERCENT_DEFAULT = 100,
+    TS_SISTER_OUTPUT_PERCENT_MIN = 0,
+    TS_SISTER_OUTPUT_PERCENT_MAX = 400,
+    TS_SISTER_OUTPUT_PERCENT_DEFAULT = 400,
     TS_SISTER_ERASE_PERCENT_MIN = 0,
     TS_SISTER_ERASE_PERCENT_MAX = 100,
     TS_SISTER_ERASE_PERCENT_DEFAULT = 100,
@@ -106,6 +109,7 @@ typedef struct {
     int sister_restart_clear;
     int sister_dry_percent;
     int sister_wet_percent;
+    int sister_output_percent;
     int sister_erase_percent;
     int sister_window_x;
     int sister_window_y;
