@@ -249,8 +249,19 @@ typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
 
+/* High-resolution wheels and touchpads can keep emitting inertial events
+   after the pointer crosses into another parameter. */
+#define TS_UI_WHEEL_HANDOFF_QUIET_MS 120u
+
+typedef struct {
+    int target;
+    uint32_t last_event_ms;
+    int active;
+} TsUiWheelGuard;
+
 typedef struct {
     uint64_t waveform_revisions[TS_UI_WAVEFORM_COUNT];
+    TsUiWheelGuard wheel_guard;
     uint32_t active_notes;
     int mouse_note;
     int selecting;
@@ -525,6 +536,9 @@ int ts_ui_new_page_button_from_point(int x, int y);
 int ts_ui_record_keep_button_from_point(int x, int y);
 int ts_ui_monitor_button_from_point(int x, int y);
 int ts_ui_logo_contains(int x, int y);
+int ts_ui_fm_background_click_allowed(const TsUiState *ui, int x, int y);
+int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
+                             uint32_t now_ms);
 int ts_ui_waveform_mode_contains(int x, int y);
 int ts_ui_sister_source_mode_contains(int x, int y);
 int ts_ui_record_source_button_from_point(int x, int y);

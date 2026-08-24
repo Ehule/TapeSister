@@ -151,6 +151,24 @@ int main(void)
     ts_ui_select_panel(&ui, TS_UI_PANEL_SAMPLE_TILES);
     CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_SAMPLE_TILES &&
           !ui.show_keyboard && !ui.show_recipes && !ui.show_ingredients);
+    ui.fm_open = 1;
+    CHECK(ts_ui_fm_background_click_allowed(&ui, 20, 12));
+    CHECK(ts_ui_fm_background_click_allowed(&ui, 270, 320));
+    CHECK(ts_ui_fm_background_click_allowed(&ui, 46, 341));
+    CHECK(!ts_ui_fm_background_click_allowed(&ui, 220, 120));
+    ui.fm_bank_choice_open = 1;
+    CHECK(!ts_ui_fm_background_click_allowed(&ui, 20, 12));
+    CHECK(!ts_ui_fm_background_click_allowed(&ui, 46, 341));
+    ui.fm_bank_choice_open = 0;
+    ui.fm_open = 0;
+    CHECK(ts_ui_wheel_guard_accept(&ui.wheel_guard, 10, 1000u));
+    CHECK(ts_ui_wheel_guard_accept(&ui.wheel_guard, 10, 1010u));
+    CHECK(!ts_ui_wheel_guard_accept(&ui.wheel_guard, 11, 1050u));
+    CHECK(!ts_ui_wheel_guard_accept(&ui.wheel_guard, 11, 1100u));
+    CHECK(ts_ui_wheel_guard_accept(
+        &ui.wheel_guard, 11, 1100u + TS_UI_WHEEL_HANDOFF_QUIET_MS));
+    CHECK(ts_ui_wheel_guard_accept(&ui.wheel_guard, 11, 1101u +
+                                    TS_UI_WHEEL_HANDOFF_QUIET_MS));
     ts_ui_select_panel(&ui, TS_UI_PANEL_CDP);
     CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_CDP && ui.show_recipes && ui.cdp_page == 0);
     ts_ui_select_panel(&ui, TS_UI_PANEL_CDP);

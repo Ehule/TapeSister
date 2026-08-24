@@ -6326,7 +6326,17 @@ typedef struct {
     int minimized;
     TsSisterPresetBank presets;
     size_t preset_index;
+    TsUiWheelGuard wheel_guard;
 } SisterWindow;
+
+enum {
+    WHEEL_TARGET_SISTER = 0x1000,
+    WHEEL_TARGET_PALETTE = 0x2000,
+    WHEEL_TARGET_FM = 0x3000,
+    WHEEL_TARGET_TRANSFORM = 0x4000,
+    WHEEL_TARGET_DRONE = 0x5000,
+    WHEEL_TARGET_MAIN = 0x6000
+};
 
 typedef struct ExternalInputState ExternalInputState;
 static void external_input_request(ExternalInputState *input,
@@ -8633,7 +8643,10 @@ int main(int argc, char **argv)
                                              raw_x, raw_y, &x, &y))
                         continue;
                     hit = ts_sister_ui_hit_test_model(&sister_window.model, x, y);
-                    if (hit.action == TS_SISTER_UI_ACTION_PARAMETER && wheel != 0) {
+                    if (hit.action == TS_SISTER_UI_ACTION_PARAMETER && wheel != 0 &&
+                        ts_ui_wheel_guard_accept(
+                            &sister_window.wheel_guard,
+                            WHEEL_TARGET_SISTER + hit.index, SDL_GetTicks())) {
                         hit.normalized = sister_parameter_wheel_normalized(
                             &sister_window.model.parameters, hit.index, wheel,
                             (SDL_GetModState() & KMOD_SHIFT) != 0);
@@ -8649,10 +8662,15 @@ int main(int argc, char **argv)
             if (event.type == SDL_MOUSEBUTTONDOWN &&
                 event.button.button == SDL_BUTTON_LEFT &&
                 event.button.windowID == SDL_GetWindowID(window) &&
-                !ui_dialog_open(&ui)) {
+                (!ui_dialog_open(&ui) ||
+                 (ui.fm_open && !ui.fm_bank_choice_open &&
+                  !ui.fm_full_choice_open))) {
                 int x, y;
+                int fm_background;
                 logical_mouse(window, event.button.x, event.button.y, &x, &y);
-                if (ts_ui_logo_contains(x, y)) {
+                fm_background = ts_ui_fm_background_click_allowed(&ui, x, y);
+                if (ts_ui_logo_contains(x, y) &&
+                    (!ui_dialog_open(&ui) || fm_background)) {
                     if (!sister_window_ensure(&sister_window, &ui.config)) {
                         snprintf(ui.status, sizeof(ui.status),
                                  "SISTER WINDOW UNAVAILABLE: %.112s", SDL_GetError());
@@ -8661,12 +8679,14 @@ int main(int argc, char **argv)
                     }
                     continue;
                 }
-                if (ts_ui_waveform_mode_contains(x, y)) {
+                if (!ui_dialog_open(&ui) &&
+                    ts_ui_waveform_mode_contains(x, y)) {
                     ui.config.waveform_display_mode = ts_waveform_display_cycle(
                         (TsWaveformDisplayMode)ui.config.waveform_display_mode, 1);
                     continue;
                 }
-                if (!record_bank_active &&
+                if ((!ui_dialog_open(&ui) || fm_background) &&
+                    !record_bank_active &&
                     ts_ui_sister_source_mode_contains(x, y)) {
                     if (audio.capture.state != TS_CAPTURE_IDLE) {
                         snprintf(ui.status, sizeof(ui.status),
@@ -8680,7 +8700,8 @@ int main(int argc, char **argv)
                     }
                     continue;
                 }
-                if (ui.sister_source_select_mode && !record_bank_active) {
+                if ((!ui_dialog_open(&ui) || fm_background) &&
+                    ui.sister_source_select_mode && !record_bank_active) {
                     int slot = ts_ui_bank_slot_from_point(x, y);
                     if (slot >= 0) {
                         int selected;
@@ -9576,6 +9597,10 @@ int main(int argc, char **argv)
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 channel = ts_ui_palette_channel_from_point(x, y, &ignored);
                 if (channel >= 0 && wheel_y != 0) {
+                    if (!ts_ui_wheel_guard_accept(
+                            &ui.wheel_guard, WHEEL_TARGET_PALETTE + channel,
+                            SDL_GetTicks()))
+                        continue;
                     ui.palette_channel = channel;
                     palette_adjust(&ui, wheel_y *
                                    ((SDL_GetModState() & KMOD_SHIFT) ? 8 : 1));
@@ -9599,6 +9624,22 @@ int main(int argc, char **argv)
                     continue;
                 }
                 control = ts_ui_fm_control_from_point(x, y);
+                if (wheel_y != 0) {
+                    int target = -1;
+                    if (ui.fm_page == TS_FM_PAGE_PITCH &&
+                        ts_ui_fm_pitch_root_contains(x, y))
+                        target = WHEEL_TARGET_FM + 0x100;
+                    else if (ui.fm_page == TS_FM_PAGE_PITCH &&
+                             ts_ui_fm_pitch_scale_contains(x, y))
+                        target = WHEEL_TARGET_FM + 0x101;
+                    else if (control >= 0)
+                        target = WHEEL_TARGET_FM + (int)ui.fm_page * 16 + control;
+                    else if (ts_ui_fm_range_contains(x, y))
+                        target = WHEEL_TARGET_FM + 0x102;
+                    if (target >= 0 && !ts_ui_wheel_guard_accept(
+                            &ui.wheel_guard, target, SDL_GetTicks()))
+                        continue;
+                }
                 if (wheel_y != 0 && ui.fm_page == TS_FM_PAGE_PITCH &&
                     ts_ui_fm_pitch_root_contains(x, y)) {
                     int amount = wheel_y < 0 ? -wheel_y : wheel_y;
@@ -9650,6 +9691,14 @@ int main(int argc, char **argv)
                 SDL_GetMouseState(&raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 control = ts_ui_transform_control_from_point(x, y);
+                if (wheel_y != 0 &&
+                    (control >= 0 || ts_ui_transform_mix_contains(x, y))) {
+                    int target = WHEEL_TARGET_TRANSFORM +
+                                 (control >= 0 ? control : 0x100);
+                    if (!ts_ui_wheel_guard_accept(
+                            &ui.wheel_guard, target, SDL_GetTicks()))
+                        continue;
+                }
                 if (wheel_y != 0 && control >= 0) {
                     int amount = wheel_y < 0 ? -wheel_y : wheel_y;
                     for (int step = 0; step < amount; ++step)
@@ -9691,6 +9740,7 @@ int main(int argc, char **argv)
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 if (wheel_y != 0 && ts_ui_drone_waveform_contains(x, y)) {
                     int handle = ts_ui_drone_crossfade_handle_from_point(&ui, x, y);
+                    int target;
                     int fine = (SDL_GetModState() & KMOD_SHIFT) != 0;
                     size_t frames_per_step =
                         (size_t)instrument.current.sample_rate * (fine ? 1u : 10u) /
@@ -9702,6 +9752,10 @@ int main(int argc, char **argv)
                              (size_t)(wheel_y < 0 ? -(int64_t)wheel_y : wheel_y);
                     if (handle == 0)
                         handle = x < TS_DRONE_WAVE_X + TS_DRONE_WAVE_W / 2 ? 1 : 2;
+                    target = WHEEL_TARGET_DRONE + handle;
+                    if (!ts_ui_wheel_guard_accept(
+                            &ui.wheel_guard, target, SDL_GetTicks()))
+                        continue;
                     if (wheel_y > 0) {
                         requested = ui.drone_overlap_frames > SIZE_MAX - amount ?
                                     SIZE_MAX : ui.drone_overlap_frames + amount;
@@ -9734,8 +9788,10 @@ int main(int argc, char **argv)
                 int wheel_y = event.wheel.y;
                 int wheel_x = event.wheel.x;
                 SDL_Keymod mod = SDL_GetModState();
+                TsUiSlider hovered_slider;
                 SDL_GetMouseState(&raw_x, &raw_y);
                 logical_mouse(window, raw_x, raw_y, &x, &y);
+                hovered_slider = ts_ui_slider_from_point(&ui, x, y);
                 if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
                     wheel_y = -wheel_y;
                     wheel_x = -wheel_x;
@@ -9754,6 +9810,10 @@ int main(int argc, char **argv)
                              ts_midi_note_name(base_note, note_name, sizeof(note_name)));
                 } else if ((mod & KMOD_CTRL) && wheel_y != 0 &&
                     x >= 407 && x < 500 && y >= 205 && y < 229) {
+                    if (!ts_ui_wheel_guard_accept(
+                            &ui.wheel_guard, WHEEL_TARGET_MAIN + 0x100,
+                            SDL_GetTicks()))
+                        continue;
                     if ((!ui.tear_gesture.active && begin_tear_gesture(device, &audio, &ui, &instrument, 1)) ||
                         ui.tear_wheel_active) {
                         float amount = ui.tear_amount + (float)wheel_y * 0.015f;
@@ -9761,6 +9821,10 @@ int main(int argc, char **argv)
                     }
                 } else if ((mod & KMOD_CTRL) && wheel_y != 0 &&
                     x >= 505 && x < 630 && y >= 205 && y < 229) {
+                    if (!ts_ui_wheel_guard_accept(
+                            &ui.wheel_guard, WHEEL_TARGET_MAIN + 0x101,
+                            SDL_GetTicks()))
+                        continue;
                     if ((!ui.smear_gesture.active && begin_smear_gesture(device, &audio, &ui, &instrument, 1)) ||
                         ui.smear_wheel_active) {
                         float amount = ui.smear_amount + (float)wheel_y * 0.015f;
@@ -9768,6 +9832,10 @@ int main(int argc, char **argv)
                     }
                 } else if ((mod & KMOD_CTRL) && wheel_y != 0 &&
                     x >= 244 && x < 330 && y >= 233 && y < 257) {
+                    if (!ts_ui_wheel_guard_accept(
+                            &ui.wheel_guard, WHEEL_TARGET_MAIN + 0x102,
+                            SDL_GetTicks()))
+                        continue;
                     if ((!ui.warp_gesture.active &&
                          begin_warp_gesture(device, &audio, &ui, &instrument, 1)) ||
                         ui.warp_wheel_active) {
@@ -9776,11 +9844,11 @@ int main(int argc, char **argv)
                                              amount, obtained.freq);
                     }
                 } else if (wheel_y != 0 &&
-                           ts_ui_slider_from_point(&ui, x, y) >=
+                           hovered_slider >=
                            TS_UI_SLIDER_BODY &&
-                           ts_ui_slider_from_point(&ui, x, y) <=
+                           hovered_slider <=
                            TS_UI_SLIDER_DRIFT) {
-                    TsUiSlider slider = ts_ui_slider_from_point(&ui, x, y);
+                    TsUiSlider slider = hovered_slider;
                     TsMaterialMacro macro =
                         slider == TS_UI_SLIDER_BODY ? TS_MATERIAL_MACRO_BODY :
                         slider == TS_UI_SLIDER_EDGE ? TS_MATERIAL_MACRO_EDGE :
@@ -9788,6 +9856,11 @@ int main(int argc, char **argv)
                     if ((mod & KMOD_CTRL) == 0) {
                         snprintf(ui.status, sizeof(ui.status),
                                  "CTRL+WHEEL FINE PREVIEW - RELEASE CTRL COMMITS");
+                    } else if (!ts_ui_wheel_guard_accept(
+                                   &ui.wheel_guard,
+                                   WHEEL_TARGET_MAIN + (int)slider,
+                                   SDL_GetTicks())) {
+                        continue;
                     } else if ((!ui.material_macro_gesture.active &&
                                 begin_material_macro_gesture(
                                     device, &audio, &ui, &instrument,
@@ -9799,9 +9872,14 @@ int main(int argc, char **argv)
                             (float)wheel_y * 0.02f, obtained.freq);
                     }
                 } else if (wheel_y != 0 &&
-                           ts_ui_slider_from_point(&ui, x, y) != TS_UI_SLIDER_NONE) {
+                           hovered_slider != TS_UI_SLIDER_NONE) {
+                    if (!ts_ui_wheel_guard_accept(
+                            &ui.wheel_guard,
+                            WHEEL_TARGET_MAIN + (int)hovered_slider,
+                            SDL_GetTicks()))
+                        continue;
                     adjust_hovered_slider(device, &audio, &ui, &instrument,
-                                          ts_ui_slider_from_point(&ui, x, y),
+                                          hovered_slider,
                                           wheel_y,
                                           (mod & KMOD_SHIFT) != 0);
                 } else if (ui.input_meter_active &&
@@ -10174,7 +10252,8 @@ int main(int argc, char **argv)
                         ui.overdub_confirm_slot = -1;
                         snprintf(ui.status, sizeof(ui.status), "OVERDUB CANCELLED");
                     }
-                } else if (ui.fm_open) {
+                } else if (ui.fm_open &&
+                           !ts_ui_fm_background_click_allowed(&ui, x, y)) {
                     if (ui.fm_bank_choice_open) {
                         TsUiFmAction bank_action =
                             ts_ui_fm_bank_action_from_point(x, y);

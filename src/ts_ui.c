@@ -79,6 +79,38 @@ int ts_ui_logo_contains(int x, int y)
     return x >= 0 && x < 160 && y >= 0 && y < 32;
 }
 
+int ts_ui_fm_background_click_allowed(const TsUiState *ui, int x, int y)
+{
+    if (ui == NULL || !ui->fm_open || ui->fm_bank_choice_open ||
+        ui->fm_full_choice_open)
+        return 0;
+    return ts_ui_logo_contains(x, y) || ts_ui_sister_source_mode_contains(x, y) ||
+           (!ui->show_keyboard && !ui->show_recipes &&
+            !ui->show_ingredients && ts_ui_bank_slot_from_point(x, y) >= 0);
+}
+
+int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
+                             uint32_t now_ms)
+{
+    uint32_t elapsed;
+    if (guard == NULL || target < 0) return 0;
+    if (!guard->active) {
+        guard->target = target;
+        guard->last_event_ms = now_ms;
+        guard->active = 1;
+        return 1;
+    }
+    elapsed = now_ms - guard->last_event_ms;
+    if (target != guard->target && elapsed < TS_UI_WHEEL_HANDOFF_QUIET_MS) {
+        /* Ongoing inertial events keep extending the required quiet period. */
+        guard->last_event_ms = now_ms;
+        return 0;
+    }
+    guard->target = target;
+    guard->last_event_ms = now_ms;
+    return 1;
+}
+
 int ts_ui_waveform_mode_contains(int x, int y)
 {
     return x >= 526 && x < 620 && y >= 43 && y < 60;
