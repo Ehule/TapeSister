@@ -75,7 +75,9 @@ MIX and DECAY smooth over approximately 24 ms and 35 ms.
 | Cathedral | 43.1, 59.9, 78.7, 96.1 ms | 1.2–24 s | slow, dark, deep field |
 
 DECAY is exponential within each type's range. MIX 0 is exact dry identity and
-MIX 1 is fully wet. Long states flush below `1e-20` to zero.
+MIX 1 is fully wet. A bounded 2.25× return calibration prevents the complete
+MIX target from collapsing behind unaffected head paths. Long states flush
+below `1e-20` to zero.
 
 ## Delay
 
@@ -83,9 +85,10 @@ TIME maps logarithmically from **8 ms to 2000 ms**. L and R use the same time bu
 independent samples. Reads use linear fractional interpolation. A TIME change
 starts a 25 ms dual-tap crossfade, so it is pitch-preserving rather than a tape
 glide and is independent of callback block size. FEEDBACK maps to an internal
-0–1.08 coefficient through bounded soft saturation; the top can sustain and
-scream but cannot produce a non-finite line. MIX 0 is exact identity and feedback
-zero produces one event.
+0–1.08 coefficient through unity-preserving bounded conditioning: ordinary
+samples through 0.9 remain unchanged, while larger recursive values enter a
+smooth knee below unity. The top can sustain and scream but cannot produce a
+non-finite line. MIX 0 is exact identity and feedback zero produces one event.
 
 ## Distortion
 
@@ -100,6 +103,11 @@ linked controls → 1–60× drive → midpoint/current 2× nonlinear evaluation
 The midpoint/current pair is a low-cost 2× antialiasing policy rather than an
 exact analog emulation. L/R have independent filter and DC state. DRIVE, TONE,
 MIX, and routing smooth over about 20/20/20/12 ms. MIX zero is exact identity.
+
+All three effect MIX controls use equal-power dry/wet gains between their exact
+0% and 100% endpoints. This prevents a serial chain of moderate MIX settings
+from repeatedly halving the direct component, which is especially important
+when the whole summed MIX path is targeted.
 
 ## Master FX Feedback
 

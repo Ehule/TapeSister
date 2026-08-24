@@ -957,7 +957,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         ts_audio_buses_apply_source_dry(
             &buses, 0.0f,
             (sister_routes & TS_SISTER_SOURCE_PREVIEW) != 0u,
-            (sister_routes & TS_SISTER_SOURCE_TILES) != 0u,
+            (sister_routes & TS_SISTER_SOURCE_TILES) != 0u ||
+                ts_sister_runtime_owns_direct_tile_bus(&audio->sister),
             (sister_routes & TS_SISTER_SOURCE_FM) != 0u,
             (sister_routes & TS_SISTER_SOURCE_EXT) != 0u);
         if (runtime_capture_write_frame(audio, buses.capture)) {

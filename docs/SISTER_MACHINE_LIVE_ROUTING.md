@@ -157,6 +157,11 @@ the result is added once on `post_fx`; Reference remains direct. Head effects an
 Master FX Feedback are dormant. POWER transitions do not invent routes or
 allocate rolling storage. See `SISTER_MACHINE_POST_EFFECTS.md`.
 
+While POWER and ROLL are both active, Sister owns the tile performance speaker
+bus exclusively. If `TILES` is off, or no tiles are armed in the Sister source
+mask, QWERTY/MIDI tile voices are therefore silent instead of leaking through
+the ordinary direct route. Stopping ROLL restores ordinary direct tile audition.
+
 PR5 must call these ordinary controller operations while respecting the existing SDL
 device lock: enable/disable, Roll, Hold, Monitor, four source switches, per-page source
 mask operations, parameter updates, tap/M-S selection, safe destination search,

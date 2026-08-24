@@ -15,6 +15,8 @@ available, a MOTU stereo input.
 - [ ] Head effects enter established head feedback; MIX effects do not.
 - [ ] H1/H2/H3 and MIX Capture contain the documented taps in mono and stereo.
 - [ ] Ordinary tiles, FM, EXT monitor, and AUDITION use MIX effects with POWER off once only.
+- [ ] With POWER+ROLL active, TILES off/no armed Sister tiles produces no direct MIDI/QWERTY tile leak; stopping ROLL restores ordinary audition.
+- [ ] MIX-target effects retain practical loudness relative to head targets, including several effects near 50% MIX.
 - [ ] Reference remains outside post FX and EXT does not duplicate.
 - [ ] POWER off preserves ordinary tails but makes Master FX Feedback dormant.
 - [ ] POWER on with saved feedback ramps from silence without a stale burst.

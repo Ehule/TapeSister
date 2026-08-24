@@ -25,6 +25,7 @@ int main(void)
     CHECK(!ts_sister_runtime_enable(&runtime, 0u, 2u, 2u, 0.1,
                                     NULL, 0u));
     CHECK(sister_test_enable(&runtime, 1000u, 2u, 0.1));
+    CHECK(ts_sister_runtime_owns_direct_tile_bus(&runtime));
     parameters = runtime.parameters;
     parameters.head1_level = 1.0f;
     parameters.head1_time_ms = 1.0f;
@@ -82,6 +83,7 @@ int main(void)
     CHECK(CLOSE(runtime.machine.buffer.data[write_position * 2u], held_value));
     ts_sister_runtime_set_hold(&runtime, 0);
     ts_sister_runtime_set_rolling(&runtime, 0);
+    CHECK(!ts_sister_runtime_owns_direct_tile_bus(&runtime));
     write_position = (size_t)(runtime.machine.master_clock %
                               runtime.machine.buffer.capacity_frames);
     held_value = runtime.machine.buffer.data[write_position * 2u];
@@ -93,6 +95,7 @@ int main(void)
     CHECK(snapshot.monitor_enabled && !snapshot.rolling && !snapshot.held);
 
     ts_sister_runtime_disable(&runtime);
+    CHECK(!ts_sister_runtime_owns_direct_tile_bus(&runtime));
     frame = ts_sister_runtime_process_frame(&runtime, &source);
     CHECK(runtime.machine.buffer.data == NULL);
     CHECK(CLOSE(frame.tap[TS_SISTER_TAP_H1].l, 0.0f));

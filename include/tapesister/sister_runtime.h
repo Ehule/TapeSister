@@ -172,6 +172,7 @@ int ts_sister_runtime_perform_clear(TsSisterRuntime *runtime);
 void ts_sister_runtime_set_sources(TsSisterRuntime *runtime,
                                    uint8_t source_switches);
 uint8_t ts_sister_runtime_sources(const TsSisterRuntime *runtime);
+int ts_sister_runtime_owns_direct_tile_bus(const TsSisterRuntime *runtime);
 
 int ts_sister_runtime_set_page(TsSisterRuntime *runtime, size_t page,
                                const TsInstrument *instrument);

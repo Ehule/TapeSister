@@ -33,6 +33,22 @@ static TsStereoFrame lerp_frame(TsStereoFrame a, TsStereoFrame b, float t)
     return ts_stereo_frame_sanitize(result);
 }
 
+static TsStereoFrame effect_mix(TsStereoFrame dry, TsStereoFrame wet,
+                                float amount)
+{
+    TsStereoFrame result;
+    float dry_gain;
+    float wet_gain;
+    amount = clampf(amount, 0.0f, 1.0f);
+    if (amount <= 0.0f) return ts_stereo_frame_sanitize(dry);
+    if (amount >= 1.0f) return ts_stereo_frame_sanitize(wet);
+    dry_gain = cosf(amount * (float)(M_PI * 0.5));
+    wet_gain = sinf(amount * (float)(M_PI * 0.5));
+    result.l = dry.l * dry_gain + wet.l * wet_gain;
+    result.r = dry.r * dry_gain + wet.r * wet_gain;
+    return ts_stereo_frame_sanitize(result);
+}
+
 static float soft_clip(float value)
 {
     if (!isfinite(value)) return 0.0f;
@@ -44,6 +60,18 @@ static float flush_tiny(float value)
 {
     if (!isfinite(value) || fabsf(value) < 1.0e-20f) return 0.0f;
     return value;
+}
+
+static float feedback_condition(float value)
+{
+    float magnitude;
+    float conditioned;
+    if (!isfinite(value)) return 0.0f;
+    magnitude = fabsf(value);
+    if (magnitude <= 0.9f) return flush_tiny(value);
+    conditioned = 0.9f + 0.1f * (magnitude - 0.9f) /
+                              (0.1f + magnitude - 0.9f);
+    return value < 0.0f ? -conditioned : conditioned;
 }
 
 const char *ts_sister_reverb_type_name(TsSisterReverbType type)
@@ -361,7 +389,7 @@ static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
         *outputs[channel] = soft_clip(dc * (1.35f - 0.35f * state->drive_current));
     }
     wet = ts_stereo_frame_sanitize(wet);
-    return lerp_frame(input, wet,
+    return effect_mix(input, wet,
         clampf(state->mix_current * state->route_current, 0.0f, 1.0f));
 }
 
@@ -410,14 +438,14 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
         if (state->transition_remaining == 0u)
             state->delay_current = state->delay_target;
     }
-    state->data[state->write_index * 2u] = soft_clip(
+    state->data[state->write_index * 2u] = feedback_condition(
         input.l * state->route_current +
         wet.l * (state->feedback_current * 1.08f));
-    state->data[state->write_index * 2u + 1u] = soft_clip(
+    state->data[state->write_index * 2u + 1u] = feedback_condition(
         input.r * state->route_current +
         wet.r * (state->feedback_current * 1.08f));
     state->write_index = (state->write_index + 1u) % state->capacity_frames;
-    return lerp_frame(input, wet,
+    return effect_mix(input, wet,
         clampf(state->mix_current * state->route_current, 0.0f, 1.0f));
 }
 
@@ -541,8 +569,10 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
             inject_r + delay->damping[1] * gain);
         delay->write_index = (delay->write_index + 1u) % delay->capacity_frames;
     }
+    wet.l = feedback_condition(wet.l * 2.25f);
+    wet.r = feedback_condition(wet.r * 2.25f);
     wet = ts_stereo_frame_sanitize(wet);
-    return lerp_frame(input, wet,
+    return effect_mix(input, wet,
         clampf(state->mix_current * state->route_current, 0.0f, 1.0f));
 }
 

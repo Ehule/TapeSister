@@ -448,6 +448,12 @@ uint8_t ts_sister_runtime_sources(const TsSisterRuntime *runtime)
     return runtime != NULL ? runtime->source_switches : 0u;
 }
 
+int ts_sister_runtime_owns_direct_tile_bus(const TsSisterRuntime *runtime)
+{
+    return runtime != NULL && runtime->enabled && !runtime->callback_failed &&
+           runtime->machine.rolling;
+}
+
 int ts_sister_runtime_set_page(TsSisterRuntime *runtime, size_t page,
                                const TsInstrument *instrument)
 {

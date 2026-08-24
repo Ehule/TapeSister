@@ -57,7 +57,7 @@ static void test_delay_length_and_stereo(void)
         controls.reverb_targets = 0u;
         controls.distortion_targets = 0u;
         ts_sister_post_fx_set_controls(&engine, &controls);
-        for (size_t i = 0u; i < rate / 20u; ++i)
+        for (size_t i = 0u; i < rate / 10u; ++i)
             (void)ts_sister_post_fx_process(&engine, 3u,
                 (TsStereoFrame){0.0f, 0.0f}, 0);
         for (size_t i = 0u; i < expected + 8u; ++i) {
@@ -71,10 +71,33 @@ static void test_delay_length_and_stereo(void)
                 peak_at = i;
             }
         }
-        assert(peak > 0.35f);
+        /* Feedback safety must not halve an ordinary one-shot echo. */
+        assert(peak > 0.70f);
         assert(peak_at + 1u >= expected && peak_at <= expected + 1u);
         ts_sister_post_fx_free(&engine);
     }
+}
+
+static void test_equal_power_chain_makeup(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+    TsStereoFrame output;
+    assert(ts_sister_post_fx_init(&engine, 48000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.distortion_targets = 0u;
+    controls.delay_feedback = 0.0f;
+    controls.delay_mix = 0.5f;
+    controls.reverb_mix = 0.5f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int i = 0; i < 5000; ++i)
+        (void)ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.0f, 0.0f}, 0);
+    output = ts_sister_post_fx_process(&engine, 3u,
+        (TsStereoFrame){0.8f, -0.4f}, 0);
+    assert(output.l > 0.38f);
+    assert(output.r < -0.19f);
+    ts_sister_post_fx_free(&engine);
 }
 
 static double reverb_signature(TsSisterReverbType type)
@@ -272,6 +295,7 @@ int main(void)
 {
     test_defaults_and_identity();
     test_delay_length_and_stereo();
+    test_equal_power_chain_makeup();
     test_reverb_types_and_distortion();
     test_targets_mono_and_ordinary();
     test_exclusive_target_handoff();
