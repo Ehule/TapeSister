@@ -63,7 +63,19 @@ int main(void)
     {
         int x = -1;
         int y = -1;
-        /* Native and 2x high-DPI output map to the same logical point. */
+        /* SDL has already converted queued button/motion events to logical
+           coordinates, including after a maximize. They must not be scaled a
+           second time. Letterbox events arrive outside the logical bounds. */
+        CHECK(ts_sister_ui_event_point(320, 200, &x, &y));
+        CHECK(x == 320 && y == 200);
+        CHECK(ts_sister_ui_event_point(10, 8, &x, &y));
+        CHECK(x == 10 && y == 8);
+        CHECK(!ts_sister_ui_event_point(-1, 200, &x, &y));
+        CHECK(!ts_sister_ui_event_point(640, 200, &x, &y));
+        CHECK(!ts_sister_ui_event_point(320, 400, &x, &y));
+
+        /* SDL_GetMouseState remains in raw window coordinates. Native and 2x
+           high-DPI output map to the same logical point for wheel targeting. */
         CHECK(ts_sister_ui_window_point(320, 200, 640, 400,
                                         640, 400, &x, &y));
         CHECK(x == 320 && y == 200);

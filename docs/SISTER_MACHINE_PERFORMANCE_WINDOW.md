@@ -145,7 +145,9 @@ notes, performance, Capture, routing, the callback, or either window renderer.
 12. Switch audio/input devices and sample rates; confirm safe clear/restart and no stuck
     notes or stale input.
 13. Maximize and freely resize the Sister window. Visible controls must retain exact mouse
-    targets, and clicks in any letterbox margin must do nothing.
+    targets, and clicks in any letterbox margin must do nothing. Restore Sister to a smaller
+    window and confirm that it stays above TapeSister while visible tiles in the main window
+    remain independently clickable.
 14. Confirm POWER off leaves ordinary TapeSister playback and recording functional.
 
 No hardware validation is claimed by this document.

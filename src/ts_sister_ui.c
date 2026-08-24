@@ -8,6 +8,21 @@ static int contains(int x, int y, int left, int top, int width, int height)
     return x >= left && x < left + width && y >= top && y < top + height;
 }
 
+int ts_sister_ui_event_point(int event_x, int event_y,
+                             int *logical_x, int *logical_y)
+{
+    if (logical_x == NULL || logical_y == NULL || event_x < 0 || event_y < 0 ||
+        event_x >= TS_SISTER_UI_WIDTH || event_y >= TS_SISTER_UI_HEIGHT)
+        return 0;
+
+    /* SDL_RenderSetLogicalSize filters queued mouse events into the renderer's
+       logical coordinate space. Do not scale button or motion event positions
+       again when the window is resized or maximized. */
+    *logical_x = event_x;
+    *logical_y = event_y;
+    return 1;
+}
+
 int ts_sister_ui_window_point(int raw_x, int raw_y,
                               int window_width, int window_height,
                               int output_width, int output_height,
@@ -29,11 +44,9 @@ int ts_sister_ui_window_point(int raw_x, int raw_y,
         window_height <= 0 || output_width <= 0 || output_height <= 0)
         return 0;
 
-    /* SDL_RenderSetLogicalSize preserves the logical aspect ratio and centers
-       the result in a letterboxed renderer viewport. Mouse events use window
-       coordinates, while that viewport is expressed in renderer-output pixels.
-       Convert through both spaces so high-DPI and non-16:9 windows agree with
-       the pixels that were actually presented. */
+    /* SDL_GetMouseState returns unfiltered window coordinates, unlike queued
+       button and motion events. Convert that raw state through the letterboxed
+       high-DPI renderer for mouse-wheel targeting. */
     output_x = (double)raw_x * (double)output_width / (double)window_width;
     output_y = (double)raw_y * (double)output_height / (double)window_height;
     scale_x = (double)output_width / (double)TS_SISTER_UI_WIDTH;

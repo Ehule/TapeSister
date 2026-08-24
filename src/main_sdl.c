@@ -6281,7 +6281,8 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
     sister->window = SDL_CreateWindow(
         "TapeSister - Sister Machine", x, y,
         TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT,
-        SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
+        SDL_WINDOW_ALWAYS_ON_TOP);
     sister->renderer = sister->window ? SDL_CreateRenderer(
         sister->window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : NULL;
     if (sister->renderer == NULL && sister->window != NULL)
@@ -6312,8 +6313,13 @@ static void sister_window_hide(SisterWindow *sister)
     if (sister->window != NULL) SDL_HideWindow(sister->window);
 }
 
-static int sister_logical_mouse(SDL_Window *window, SDL_Renderer *renderer,
-                                int raw_x, int raw_y, int *x, int *y)
+static int sister_event_mouse(int event_x, int event_y, int *x, int *y)
+{
+    return ts_sister_ui_event_point(event_x, event_y, x, y);
+}
+
+static int sister_window_mouse(SDL_Window *window, SDL_Renderer *renderer,
+                               int raw_x, int raw_y, int *x, int *y)
 {
     int window_width = 0;
     int window_height = 0;
@@ -7994,8 +8000,12 @@ int main(int argc, char **argv)
                     sister_window.minimized = 1;
                 } else if (event.type == SDL_WINDOWEVENT &&
                            (event.window.event == SDL_WINDOWEVENT_RESTORED ||
-                            event.window.event == SDL_WINDOWEVENT_SHOWN)) {
+                            event.window.event == SDL_WINDOWEVENT_SHOWN ||
+                            event.window.event == SDL_WINDOWEVENT_MAXIMIZED ||
+                            event.window.event == SDL_WINDOWEVENT_RESIZED ||
+                            event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)) {
                     sister_window.minimized = 0;
+                    sister_window.rendered_model_valid = 0;
                 } else if (event.type == SDL_WINDOWEVENT &&
                            event.window.event == SDL_WINDOWEVENT_MOVED) {
                     ui.config.sister_window_x = event.window.data1;
@@ -8025,10 +8035,8 @@ int main(int argc, char **argv)
                            (event.button.button == SDL_BUTTON_LEFT ||
                             event.button.button == SDL_BUTTON_RIGHT)) {
                     int x, y;
-                    if (sister_logical_mouse(sister_window.window,
-                                             sister_window.renderer,
-                                             event.button.x, event.button.y,
-                                             &x, &y))
+                    if (sister_event_mouse(event.button.x, event.button.y,
+                                           &x, &y))
                         sister_apply_action(
                             device, &audio, &ui, &instrument, &sister_window,
                             ts_sister_ui_hit_test(x, y),
@@ -8038,10 +8046,8 @@ int main(int argc, char **argv)
                             (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK)) != 0u) {
                     int x, y;
                     TsSisterUiHit hit;
-                    if (!sister_logical_mouse(sister_window.window,
-                                              sister_window.renderer,
-                                              event.motion.x, event.motion.y,
-                                              &x, &y))
+                    if (!sister_event_mouse(event.motion.x, event.motion.y,
+                                            &x, &y))
                         continue;
                     hit = ts_sister_ui_hit_test(x, y);
                     if (hit.action == TS_SISTER_UI_ACTION_PARAMETER)
@@ -8055,9 +8061,9 @@ int main(int argc, char **argv)
                                 -event.wheel.y : event.wheel.y;
                     TsSisterUiHit hit;
                     SDL_GetMouseState(&raw_x, &raw_y);
-                    if (!sister_logical_mouse(sister_window.window,
-                                              sister_window.renderer,
-                                              raw_x, raw_y, &x, &y))
+                    if (!sister_window_mouse(sister_window.window,
+                                             sister_window.renderer,
+                                             raw_x, raw_y, &x, &y))
                         continue;
                     hit = ts_sister_ui_hit_test(x, y);
                     if (hit.action == TS_SISTER_UI_ACTION_PARAMETER && wheel != 0) {
