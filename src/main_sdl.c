@@ -6587,6 +6587,10 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: parameters->fx.distortion_tone = amount; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: parameters->fx.distortion_mix = amount; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: parameters->fx.master_feedback = amount; break;
+    case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
+        parameters->buffer_seconds = (float)TS_SISTER_MIN_SECONDS +
+            amount * (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
+        break;
     default: break;
     }
 }
@@ -6636,6 +6640,10 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: value = parameters->fx.distortion_tone; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: value = parameters->fx.distortion_mix; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: value = parameters->fx.master_feedback; break;
+    case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
+        value = (parameters->buffer_seconds - (float)TS_SISTER_MIN_SECONDS) /
+            (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
+        break;
     default: break;
     }
     if (!isfinite(value) || value < 0.0f) return 0.0f;
@@ -6675,6 +6683,13 @@ static float sister_parameter_wheel_normalized(
         if (value < 0) value = 0;
         if (value >= TS_SISTER_RATE_COUNT) value = TS_SISTER_RATE_COUNT - 1;
         return value / (float)(TS_SISTER_RATE_COUNT - 1);
+    case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
+        value = (int)lrintf(parameters->buffer_seconds) + direction * steps *
+            (fine_adjustment ? 1 : 5);
+        if (value < (int)TS_SISTER_MIN_SECONDS) value = (int)TS_SISTER_MIN_SECONDS;
+        if (value > (int)TS_SISTER_MAX_SECONDS) value = (int)TS_SISTER_MAX_SECONDS;
+        return (value - (float)TS_SISTER_MIN_SECONDS) /
+            (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
     default:
         return sister_parameter_normalized(parameters, parameter) +
                (fine_adjustment ? 0.01f : 0.05f) * (float)wheel;
@@ -6971,7 +6986,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         hit.action != TS_SISTER_UI_ACTION_DESTINATION &&
         hit.action != TS_SISTER_UI_ACTION_TAP &&
         !(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index >= TS_SISTER_UI_PARAM_REVERB_TYPE) &&
+          (hit.index >= TS_SISTER_UI_PARAM_REVERB_TYPE ||
+           hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS)) &&
         !(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
           (hit.index >> 8) != 0)) {
         snprintf(sister->model.status, sizeof(sister->model.status),
@@ -7033,6 +7049,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         else if (hit.index == TS_SISTER_UI_PARAM_GHOST_TONE)
             ui->config.sister_ghost_percent =
                 (int)lrintf(sister->model.parameters.ghost_tone * 100.0f);
+        else if (hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS)
+            ui->config.sister_buffer_seconds =
+                (int)lrintf(sister->model.parameters.buffer_seconds);
         break;
     case TS_SISTER_UI_ACTION_EFFECT_TARGET:
     {
@@ -8418,6 +8437,7 @@ int main(int argc, char **argv)
             (float)ui.config.sister_output_percent / 100.0f;
         parameters.write_erase = (float)ui.config.sister_erase_percent / 100.0f;
         parameters.ghost_tone = (float)ui.config.sister_ghost_percent / 100.0f;
+        parameters.buffer_seconds = (float)ui.config.sister_buffer_seconds;
         ts_sister_runtime_set_parameters(&audio.sister, &parameters);
     }
     ts_sister_runtime_input_available(&audio.sister, 0);

@@ -182,7 +182,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "reverb_type=%d\nreverb_mix=%.9g\nreverb_decay=%.9g\nreverb_targets=%u\n"
         "delay_time=%.9g\ndelay_feedback=%.9g\ndelay_mix=%.9g\ndelay_targets=%u\n"
         "distortion_drive=%.9g\ndistortion_tone=%.9g\ndistortion_mix=%.9g\n"
-        "distortion_targets=%u\nmaster_fx_feedback=%.9g\n",
+        "distortion_targets=%u\nmaster_fx_feedback=%.9g\nbuffer_seconds=%.9g\n",
         p->head1_level, p->head1_time_ms, p->head1_feedback,
         p->head2_level, p->head2_scrub, p->head2_rate_index, p->head2_feedback,
         p->head3_level, p->head3_span, p->head3_rate_index,
@@ -196,7 +196,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx.delay_time, p->fx.delay_feedback, p->fx.delay_mix,
         (unsigned)p->fx.delay_targets, p->fx.distortion_drive,
         p->fx.distortion_tone, p->fx.distortion_mix,
-        (unsigned)p->fx.distortion_targets, p->fx.master_feedback) >= 0;
+        (unsigned)p->fx.distortion_targets, p->fx.master_feedback,
+        p->buffer_seconds) >= 0;
 }
 
 static int replace_file(const char *temporary, const char *path)
@@ -325,6 +326,7 @@ static int assign_field(TsSisterParameters *p, const char *key,
     FLOAT_FIELD("distortion_tone", fx.distortion_tone);
     FLOAT_FIELD("distortion_mix", fx.distortion_mix);
     FLOAT_FIELD("master_fx_feedback", fx.master_feedback);
+    FLOAT_FIELD("buffer_seconds", buffer_seconds);
     if (strcmp(key, "reverb_targets") == 0 ||
         strcmp(key, "delay_targets") == 0 ||
         strcmp(key, "distortion_targets") == 0) {

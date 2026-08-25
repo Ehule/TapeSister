@@ -48,6 +48,7 @@ int main(void)
     runtime.parameters.fx.distortion_mix = 0.71f;
     runtime.parameters.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
     runtime.parameters.fx.master_feedback = 0.66f;
+    runtime.parameters.buffer_seconds = 23.0f;
     ts_sister_runtime_set_parameters(&runtime, &runtime.parameters);
     runtime.machine.buffer.data[0] = 0.75f;
     ts_sister_project_state_capture(&state, &runtime, 2u, "GHOST FIELD");
@@ -67,6 +68,7 @@ int main(void)
     assert(loaded.parameters.fx.distortion_targets ==
            TS_SISTER_EFFECT_TARGET_MIX);
     assert(loaded.parameters.fx.master_feedback > 0.65f);
+    assert(loaded.parameters.buffer_seconds == 23.0f);
     assert(strcmp(loaded.selected_preset, "GHOST FIELD") == 0);
     ts_sister_runtime_init(&restored);
     assert(ts_sister_project_state_apply(&loaded, &restored, &instrument));
@@ -98,6 +100,7 @@ int main(void)
                loaded.parameters.fx.distortion_mix == 0.0f &&
                loaded.parameters.fx.master_feedback == 0.0f &&
                loaded.parameters.fx.reverb_targets == TS_SISTER_EFFECT_TARGET_MIX);
+        assert(loaded.parameters.buffer_seconds == 40.0f);
     }
     remove(state_path);
     {
@@ -121,7 +124,8 @@ int main(void)
            loaded.parameters.fx.reverb_mix == 0.0f &&
            loaded.parameters.fx.delay_mix == 0.0f &&
            loaded.parameters.fx.distortion_mix == 0.0f &&
-           loaded.parameters.fx.master_feedback == 0.0f);
+           loaded.parameters.fx.master_feedback == 0.0f &&
+           loaded.parameters.buffer_seconds == 40.0f);
     puts("sister project-state tests passed");
     return 0;
 }

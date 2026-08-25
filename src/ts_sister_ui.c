@@ -80,6 +80,8 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
     model->destination_slot = -1;
     ts_sister_parameters_default(&model->parameters, 48000u);
     if (config != NULL) {
+        model->parameters.buffer_seconds =
+            (float)config->sister_buffer_seconds;
         model->parameters.input_gain =
             (float)config->sister_input_percent / 100.0f;
         model->parameters.monitor_dry =
@@ -155,6 +157,12 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
     }
     if (contains(x, y, 532, 8, 98, 22)) {
         hit.action = TS_SISTER_UI_ACTION_WAVE_MODE;
+        return hit;
+    }
+    if (contains(x, y, 350, 8, 94, 22)) {
+        hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+        hit.index = TS_SISTER_UI_PARAM_BUFFER_SECONDS;
+        hit.normalized = (float)(x - 350) / 93.0f;
         return hit;
     }
     if (contains(x, y, 450, 8, 76, 22)) {

@@ -220,6 +220,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
                              char *error, size_t error_size)
 {
     TsSisterMachine machine;
+    TsSisterParameters parameters;
     if (runtime == NULL || sample_rate == 0u || output_channels != 2u ||
         !ts_sample_valid_channels(buffer_channels) ||
         !isfinite(duration_seconds) || duration_seconds <= 0.0 ||
@@ -248,7 +249,10 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
                       "Could not allocate Sister rolling storage");
         return 0;
     }
-    ts_sister_machine_set_parameters(&machine, &runtime->parameters);
+    parameters = runtime->parameters;
+    if (!runtime->parameters_published)
+        parameters.buffer_seconds = (float)duration_seconds;
+    ts_sister_machine_set_parameters(&machine, &parameters);
     ts_sister_machine_set_rolling(&machine, runtime->rolling);
     ts_sister_machine_set_hold(&machine, runtime->held);
     ts_sister_machine_free(&runtime->machine);
@@ -270,6 +274,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     ts_capture_free(&runtime->capture);
     ts_performance_clear(&runtime->performance);
     ts_sister_wave_publisher_clear(&runtime->waveform, buffer_channels);
+    runtime->waveform_capacity_frames = runtime->machine.buffer.capacity_frames;
     publish_snapshot(runtime);
     runtime_error(error, error_size, "");
     return 1;
@@ -284,6 +289,7 @@ void ts_sister_runtime_disable(TsSisterRuntime *runtime)
     ts_capture_free(&runtime->capture);
     ts_sister_machine_free(&runtime->machine);
     ts_sister_wave_publisher_clear(&runtime->waveform, 2u);
+    runtime->waveform_capacity_frames = 0u;
     runtime->output_channels = 0u;
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     runtime->source_target_conflict = 0;
@@ -330,8 +336,7 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
         !ts_sister_post_fx_reconfigure(&runtime->post_fx, sample_rate) ||
         !ts_sister_machine_reconfigure(
             &runtime->machine, sample_rate, runtime->machine.buffer.channels,
-            (double)runtime->machine.buffer.capacity_frames /
-                (double)runtime->machine.buffer.sample_rate)) {
+            runtime->machine.parameters.buffer_seconds)) {
         runtime->warnings |= sample_rate == 0u || output_channels != 2u ?
             TS_SISTER_WARNING_DEVICE_CONTRACT : TS_SISTER_WARNING_ALLOCATION;
         ts_sister_runtime_disable(runtime);
@@ -349,6 +354,7 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     ts_performance_clear(&runtime->performance);
     ts_sister_wave_publisher_clear(&runtime->waveform,
                                    runtime->machine.buffer.channels);
+    runtime->waveform_capacity_frames = runtime->machine.buffer.capacity_frames;
     runtime->warnings &= ~(uint32_t)(TS_SISTER_WARNING_DEVICE_CONTRACT |
                                      TS_SISTER_WARNING_ALLOCATION);
     publish_snapshot(runtime);
@@ -361,6 +367,7 @@ void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
 {
     if (runtime == NULL || parameters == NULL) return;
     runtime->parameters = *parameters;
+    runtime->parameters_published = 1;
     ts_sister_parameters_sanitize(&runtime->parameters,
         runtime->post_fx.ready ? runtime->post_fx.sample_rate :
         runtime->enabled ? runtime->machine.buffer.sample_rate : 48000u);
@@ -718,6 +725,16 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     output = ts_sister_machine_process_frame_with_fx(
         &runtime->machine, &runtime->post_fx, input, input,
         runtime->master_feedback_previous);
+    if (runtime->waveform_capacity_frames !=
+        runtime->machine.buffer.capacity_frames) {
+        ts_sister_wave_publisher_resize(
+            &runtime->waveform, runtime->waveform_capacity_frames,
+            runtime->machine.buffer.capacity_frames,
+            runtime->machine.master_clock == 0u ? 0u :
+            runtime->machine.master_clock - 1u);
+        runtime->waveform_capacity_frames =
+            runtime->machine.buffer.capacity_frames;
+    }
     runtime->master_feedback_current = monitor_approach(
         runtime->master_feedback_current,
         runtime->parameters.fx.master_feedback * 1.35f,

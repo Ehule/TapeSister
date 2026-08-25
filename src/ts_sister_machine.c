@@ -198,6 +198,7 @@ void ts_sister_parameters_default(TsSisterParameters *parameters,
     parameters->bleed = 0.25f;
     parameters->soak_targets = TS_SISTER_EFFECT_TARGET_MIX;
     ts_sister_fx_controls_default(&parameters->fx);
+    parameters->buffer_seconds = (float)TS_SISTER_DEFAULT_SECONDS;
     parameters->headroom = 0.5f;
     parameters->write_erase = 1.0f;
     parameters->ghost_tone = 0.0f;
@@ -237,7 +238,9 @@ int ts_sister_buffer_init(TsSisterBuffer *buffer, uint32_t sample_rate,
                           uint8_t channels, double duration_seconds)
 {
     double frame_count;
+    double storage_count;
     size_t capacity;
+    size_t storage;
     size_t scalar_count;
     if (buffer == NULL || sample_rate == 0u ||
         !ts_sample_valid_channels(channels) ||
@@ -246,11 +249,16 @@ int ts_sister_buffer_init(TsSisterBuffer *buffer, uint32_t sample_rate,
     frame_count = ceil((double)sample_rate * duration_seconds);
     if (frame_count < 2.0 || frame_count > (double)SIZE_MAX) return 0;
     capacity = (size_t)frame_count;
-    if (!ts_sample_dimensions(capacity, channels, &scalar_count, NULL)) return 0;
+    storage_count = ceil((double)sample_rate * TS_SISTER_MAX_SECONDS) + 2.0;
+    if (storage_count > (double)SIZE_MAX) return 0;
+    storage = (size_t)storage_count;
+    if (!ts_sample_dimensions(storage, channels, &scalar_count, NULL)) return 0;
     memset(buffer, 0, sizeof(*buffer));
     buffer->data = calloc(scalar_count, sizeof(*buffer->data));
     if (buffer->data == NULL) return 0;
     buffer->capacity_frames = capacity;
+    buffer->storage_frames = storage;
+    buffer->valid_history_frames = capacity;
     buffer->sample_rate = sample_rate;
     buffer->channels = channels;
     return 1;
@@ -267,7 +275,7 @@ void ts_sister_buffer_clear(TsSisterBuffer *buffer)
 {
     size_t scalar_count;
     if (buffer == NULL || buffer->data == NULL ||
-        !ts_sample_dimensions(buffer->capacity_frames, buffer->channels,
+        !ts_sample_dimensions(buffer->storage_frames, buffer->channels,
                               &scalar_count, NULL)) return;
     memset(buffer->data, 0, scalar_count * sizeof(*buffer->data));
 }
@@ -304,6 +312,7 @@ TsStereoFrame ts_sister_buffer_read(const TsSisterBuffer *buffer,
 int ts_sister_buffer_write(TsSisterBuffer *buffer, size_t frame,
                            TsStereoFrame value)
 {
+    size_t mirror;
     if (buffer == NULL || buffer->data == NULL ||
         frame >= buffer->capacity_frames ||
         !ts_sample_valid_channels(buffer->channels)) return 0;
@@ -314,7 +323,109 @@ int ts_sister_buffer_write(TsSisterBuffer *buffer, size_t frame,
         buffer->data[frame * 2u] = value.l;
         buffer->data[frame * 2u + 1u] = value.r;
     }
+    /* Seed the pre-zero chronological side as well. This keeps offline/test
+       ring population useful without affecting callback writes. */
+    mirror = buffer->storage_frames >= buffer->capacity_frames
+        ? buffer->storage_frames - buffer->capacity_frames + frame : frame;
+    if (mirror < buffer->storage_frames && mirror != frame) {
+        if (buffer->channels == 1u) {
+            buffer->data[mirror] = ts_stereo_frame_fold_mono(value);
+        } else {
+            buffer->data[mirror * 2u] = value.l;
+            buffer->data[mirror * 2u + 1u] = value.r;
+        }
+    }
     return 1;
+}
+
+/* The live canvas is an age window over one fixed physical chronology.  These
+   helpers are callback-only: public buffer reads keep their small-ring test and
+   tooling contract, while the machine never copies rolling audio on resize. */
+static TsStereoFrame buffer_read_physical(const TsSisterBuffer *buffer,
+                                          double frame_position)
+{
+    TsStereoFrame silence = {0.0f, 0.0f};
+    TsStereoFrame first;
+    TsStereoFrame second;
+    size_t at;
+    size_t next;
+    float fraction;
+    double wrapped;
+    if (buffer == NULL || buffer->data == NULL || buffer->storage_frames < 2u)
+        return silence;
+    wrapped = ts_sister_positive_modulo(frame_position, buffer->storage_frames);
+    at = (size_t)floor(wrapped);
+    next = at + 1u < buffer->storage_frames ? at + 1u : 0u;
+    fraction = (float)(wrapped - (double)at);
+    if (buffer->channels == 1u) {
+        first = ts_stereo_frame_from_mono(buffer->data[at]);
+        second = ts_stereo_frame_from_mono(buffer->data[next]);
+    } else {
+        first = (TsStereoFrame){buffer->data[at * 2u],
+                                buffer->data[at * 2u + 1u]};
+        second = (TsStereoFrame){buffer->data[next * 2u],
+                                 buffer->data[next * 2u + 1u]};
+    }
+    return ts_stereo_frame_sanitize(frame_lerp(first, second, fraction));
+}
+
+static int buffer_write_physical(TsSisterBuffer *buffer, size_t frame,
+                                 TsStereoFrame value)
+{
+    if (buffer == NULL || buffer->data == NULL ||
+        frame >= buffer->storage_frames) return 0;
+    value = ts_stereo_frame_sanitize(value);
+    if (buffer->channels == 1u) {
+        buffer->data[frame] = ts_stereo_frame_fold_mono(value);
+    } else {
+        buffer->data[frame * 2u] = value.l;
+        buffer->data[frame * 2u + 1u] = value.r;
+    }
+    return 1;
+}
+
+static TsStereoFrame buffer_read_age(const TsSisterMachine *machine,
+                                     double age_frames)
+{
+    TsStereoFrame silence = {0.0f, 0.0f};
+    double write_position;
+    double age;
+    if (machine == NULL || machine->buffer.storage_frames < 2u ||
+        !isfinite(age_frames)) return silence;
+    age = age_frames;
+    if (age < 0.0) age = 0.0;
+    if (age > (double)machine->buffer.valid_history_frames) return silence;
+    write_position = (double)(machine->master_clock %
+                              machine->buffer.storage_frames);
+    return buffer_read_physical(&machine->buffer, write_position - age);
+}
+
+static double head_age(const TsSisterMachine *machine, double phase)
+{
+    double write_position;
+    if (machine == NULL || machine->buffer.storage_frames == 0u) return 0.0;
+    write_position = (double)(machine->master_clock %
+                              machine->buffer.storage_frames);
+    return ts_sister_positive_modulo(write_position - phase,
+                                     machine->buffer.storage_frames);
+}
+
+static double head_signed_age(const TsSisterMachine *machine, double phase)
+{
+    double age = head_age(machine, phase);
+    if (age > (double)machine->buffer.storage_frames * 0.5)
+        age -= (double)machine->buffer.storage_frames;
+    return age;
+}
+
+static double phase_for_age(const TsSisterMachine *machine, double age)
+{
+    double write_position;
+    if (machine == NULL || machine->buffer.storage_frames == 0u) return 0.0;
+    write_position = (double)(machine->master_clock %
+                              machine->buffer.storage_frames);
+    return ts_sister_positive_modulo(write_position - age,
+                                     machine->buffer.storage_frames);
 }
 
 static void snapshot_atomic_init(TsSisterSnapshotAtomic *snapshot)
@@ -341,6 +452,8 @@ static void snapshot_atomic_init(TsSisterSnapshotAtomic *snapshot)
     atomic_init(&snapshot->buffer_channels, 0u);
     atomic_init(&snapshot->sample_rate, 0u);
     atomic_init(&snapshot->duration_bits, double_bits(0.0));
+    atomic_init(&snapshot->target_duration_bits, double_bits(0.0));
+    atomic_init(&snapshot->resize_pending, 0);
 }
 
 static int allocate_decorrelators(TsSisterDecorrelator decorrelator[TS_SISTER_HEAD_COUNT],
@@ -522,6 +635,9 @@ static TsSisterParameters sanitize_parameters(const TsSisterMachine *machine,
     result.soak_targets = ts_sister_effect_targets_sanitize(
         result.soak_targets);
     ts_sister_fx_controls_sanitize(&result.fx);
+    result.buffer_seconds = clampf(result.buffer_seconds,
+                                   (float)TS_SISTER_MIN_SECONDS,
+                                   (float)TS_SISTER_MAX_SECONDS);
     result.headroom = clampf(result.headroom, 0.05f, 1.0f);
     result.write_erase = clampf(result.write_erase, 0.0f, 1.0f);
     result.ghost_tone = clampf(result.ghost_tone, 0.0f, 1.0f);
@@ -586,20 +702,20 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     ramp_reset(&machine->head[0].level, machine->parameters.head1_level);
     ramp_reset(&machine->head[0].offset, (float)h1_delay);
     machine->head[0].phase = ts_sister_positive_modulo(
-        (double)(machine->master_clock % machine->buffer.capacity_frames) - h1_delay,
-        machine->buffer.capacity_frames);
+        (double)(machine->master_clock % machine->buffer.storage_frames) - h1_delay,
+        machine->buffer.storage_frames);
     ramp_reset(&machine->head[1].level, machine->parameters.head2_level);
     ramp_reset(&machine->head[1].offset, (float)h2_offset);
     machine->head[1].previous_offset = h2_offset;
     machine->head[1].phase = ts_sister_positive_modulo(
-        (double)(machine->master_clock % machine->buffer.capacity_frames) - h2_offset,
-        machine->buffer.capacity_frames);
+        (double)(machine->master_clock % machine->buffer.storage_frames) - h2_offset,
+        machine->buffer.storage_frames);
     ramp_reset(&machine->head[2].level, machine->parameters.head3_level);
     ramp_reset(&machine->head[2].offset, (float)h3_offset);
     machine->head[2].previous_offset = h3_offset;
     machine->head[2].phase = ts_sister_positive_modulo(
-        (double)(machine->master_clock % machine->buffer.capacity_frames) - h3_offset,
-        machine->buffer.capacity_frames);
+        (double)(machine->master_clock % machine->buffer.storage_frames) - h3_offset,
+        machine->buffer.storage_frames);
     memset(machine->drop, 0, sizeof(machine->drop));
     for (i = 0u; i < 2u; ++i) {
         machine->drop[i].prng = UINT32_C(0xa341316c) ^ (uint32_t)(i * UINT32_C(0x9e3779b9));
@@ -658,6 +774,11 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     ramp_reset(&machine->headroom, machine->parameters.headroom);
     memset(&machine->last_output, 0, sizeof(machine->last_output));
     machine->overload_count = 0u;
+    machine->pending_capacity_frames = machine->buffer.capacity_frames;
+    machine->resize_debounce_remaining = 0u;
+    machine->retained_old_capacity_frames = machine->buffer.capacity_frames;
+    machine->retained_resize_remaining = 0u;
+    machine->retained_resize_total = 0u;
     machine->applied_parameters = machine->parameters;
 }
 
@@ -686,6 +807,7 @@ int ts_sister_machine_init(TsSisterMachine *machine, uint32_t sample_rate,
         }
     }
     ts_sister_parameters_default(&machine->parameters, sample_rate);
+    machine->parameters.buffer_seconds = (float)duration_seconds;
     machine->rolling = 1;
     machine->held = 0;
     reset_runtime_state(machine, 1, 1);
@@ -764,6 +886,85 @@ void ts_sister_machine_reset(TsSisterMachine *machine)
     publish_snapshot(machine);
 }
 
+int ts_sister_machine_request_duration(TsSisterMachine *machine,
+                                       double duration_seconds)
+{
+    double frames;
+    size_t requested;
+    if (machine == NULL || machine->buffer.data == NULL ||
+        !isfinite(duration_seconds)) return 0;
+    duration_seconds = clampd(duration_seconds, TS_SISTER_MIN_SECONDS,
+                              TS_SISTER_MAX_SECONDS);
+    frames = ceil(duration_seconds * (double)machine->buffer.sample_rate);
+    if (frames < 2.0 || frames > (double)machine->buffer.storage_frames - 2.0)
+        return 0;
+    requested = (size_t)frames;
+    machine->pending_capacity_frames = requested;
+    machine->parameters.buffer_seconds =
+        (float)((double)requested / machine->buffer.sample_rate);
+    machine->resize_debounce_remaining = milliseconds_frames(
+        machine->buffer.sample_rate, 25.0f);
+    return 1;
+}
+
+static void apply_pending_duration(TsSisterMachine *machine)
+{
+    size_t next;
+    size_t old;
+    size_t write_position;
+    double oldest;
+    if (machine == NULL || machine->pending_capacity_frames < 2u) return;
+    next = machine->pending_capacity_frames;
+    old = machine->buffer.capacity_frames;
+    if (next == old) return;
+    write_position = (size_t)(machine->master_clock %
+                              machine->buffer.storage_frames);
+    oldest = (double)next - 1.0;
+    /* Cropped heads hand off from the last audible stereo frame to the oldest
+       retained boundary. Surviving heads keep their exact physical phase. */
+    for (size_t i = 1u; i < TS_SISTER_HEAD_COUNT; ++i) {
+        double age = head_signed_age(machine, machine->head[i].phase);
+        if (age < 0.0)
+            age = ts_sister_positive_modulo(age, old);
+        if (age > oldest) {
+            machine->head[i].guard_from = machine->head[i].previous_read;
+            machine->head[i].guard_total = milliseconds_frames(
+                machine->buffer.sample_rate, 15.0f);
+            machine->head[i].guard_remaining = machine->head[i].guard_total;
+            machine->head[i].phase = ts_sister_positive_modulo(
+                (double)write_position - oldest,
+                machine->buffer.storage_frames);
+            machine->head[i].previous_read = machine->head[i].guard_from;
+            machine->head[i].guard_initialized = 1;
+        }
+    }
+    machine->buffer.capacity_frames = next;
+    if (machine->buffer.valid_history_frames > next)
+        machine->buffer.valid_history_frames = next;
+    machine->retained_old_capacity_frames = old;
+    machine->retained_resize_total = milliseconds_frames(
+        machine->buffer.sample_rate, 15.0f);
+    machine->retained_resize_remaining = machine->retained_resize_total;
+    if (machine->head[0].current_delay_frames > oldest) {
+        machine->head[0].old_delay_frames =
+            machine->head[0].current_delay_frames;
+        machine->head[0].current_delay_frames = oldest;
+        machine->head[0].target_delay_frames = oldest;
+        machine->head[0].jump_total = milliseconds_frames(
+            machine->buffer.sample_rate, 15.0f);
+        machine->head[0].jump_remaining = machine->head[0].jump_total;
+    }
+    for (size_t i = 1u; i < TS_SISTER_HEAD_COUNT; ++i) {
+        double maximum = i == 1u ? oldest : head3_max_frames(machine);
+        if (machine->head[i].offset.current > (float)maximum)
+            machine->head[i].offset.current = (float)maximum;
+        if (machine->head[i].offset.target > (float)maximum)
+            machine->head[i].offset.target = (float)maximum;
+        if (machine->head[i].previous_offset > maximum)
+            machine->head[i].previous_offset = maximum;
+    }
+}
+
 void ts_sister_machine_set_parameters(TsSisterMachine *machine,
                                       const TsSisterParameters *parameters)
 {
@@ -777,6 +978,13 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
     size_t i;
     if (machine == NULL || machine->buffer.data == NULL || parameters == NULL) return;
     next = sanitize_parameters(machine, parameters);
+    if ((double)machine->buffer.capacity_frames /
+            machine->buffer.sample_rate >= TS_SISTER_MIN_SECONDS &&
+        fabsf(next.buffer_seconds -
+              (float)((double)machine->pending_capacity_frames /
+                      machine->buffer.sample_rate)) > 0.0001f)
+        (void)ts_sister_machine_request_duration(machine,
+                                                 next.buffer_seconds);
     level_frames = milliseconds_frames(machine->buffer.sample_rate, 50.0f);
     offset_frames = milliseconds_frames(machine->buffer.sample_rate, 50.0f);
     filter_frames = milliseconds_frames(machine->buffer.sample_rate, 20.0f);
@@ -796,11 +1004,22 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
     ramp_set(&machine->duck_sensitivity, next.duck_sensitivity, level_frames);
     ramp_set(&machine->width, next.width, level_frames);
     ramp_set(&machine->headroom, next.headroom, level_frames);
-    ramp_set(&machine->head[1].offset,
-             next.head2_scrub * (float)(machine->buffer.capacity_frames - 1u),
-             offset_frames);
-    ramp_set(&machine->head[2].offset,
-             next.head3_span * (float)head3_max_frames(machine), offset_frames);
+    if (fabsf(next.head2_scrub - machine->applied_parameters.head2_scrub) >
+        FLT_EPSILON)
+        ramp_set(&machine->head[1].offset,
+                 next.head2_scrub *
+                 (float)(machine->pending_capacity_frames - 1u),
+                 offset_frames);
+    if (fabsf(next.head3_span - machine->applied_parameters.head3_span) >
+        FLT_EPSILON) {
+        double pending_h3_max = (double)machine->buffer.sample_rate *
+                                TS_SISTER_HEAD3_MAX_SECONDS;
+        if (pending_h3_max > (double)machine->pending_capacity_frames - 1.0)
+            pending_h3_max = (double)machine->pending_capacity_frames - 1.0;
+        if (pending_h3_max < 1.0) pending_h3_max = 1.0;
+        ramp_set(&machine->head[2].offset,
+                 next.head3_span * (float)pending_h3_max, offset_frames);
+    }
     target_delay = clampd((double)next.head1_time_ms *
                           (double)machine->buffer.sample_rate / 1000.0,
                           1.0, (double)machine->buffer.capacity_frames - 1.0);
@@ -911,12 +1130,12 @@ int ts_sister_machine_perform_clear(TsSisterMachine *machine)
     machine->head[0].current_delay_frames =
         machine->head[0].target_delay_frames;
     machine->head[1].phase = ts_sister_positive_modulo(
-        (double)(machine->master_clock % machine->buffer.capacity_frames) -
-        machine->head[1].offset.current, machine->buffer.capacity_frames);
+        (double)(machine->master_clock % machine->buffer.storage_frames) -
+        machine->head[1].offset.current, machine->buffer.storage_frames);
     machine->head[1].previous_offset = machine->head[1].offset.current;
     machine->head[2].phase = ts_sister_positive_modulo(
-        (double)(machine->master_clock % machine->buffer.capacity_frames) -
-        machine->head[2].offset.current, machine->buffer.capacity_frames);
+        (double)(machine->master_clock % machine->buffer.storage_frames) -
+        machine->head[2].offset.current, machine->buffer.storage_frames);
     machine->head[2].previous_offset = machine->head[2].offset.current;
     machine->clear_state = TS_SISTER_CLEAR_FADE_IN;
     ramp_reset(&machine->clear_gain, 0.0f);
@@ -952,38 +1171,24 @@ int ts_sister_machine_clear_offline(TsSisterMachine *machine)
     return machine->clear_state == TS_SISTER_CLEAR_IDLE;
 }
 
-static double guard_read_position(double position, size_t write_position,
-                                  size_t capacity)
+static double guard_read_age(double age, size_t capacity)
 {
-    double wrapped = ts_sister_positive_modulo(position, capacity);
-    double difference = wrapped - (double)write_position;
-    if (difference > (double)capacity * 0.5) difference -= (double)capacity;
-    if (difference < -(double)capacity * 0.5) difference += (double)capacity;
-    if (fabs(difference) < 1.0)
-        wrapped = ts_sister_positive_modulo((double)write_position - 1.0, capacity);
+    double wrapped;
+    if (fabs(age) < 1.0) return 1.0;
+    wrapped = ts_sister_positive_modulo(age, capacity);
+    if (wrapped < 1.0) wrapped = 1.0;
+    if (wrapped > (double)capacity - 1.0)
+        wrapped = (double)capacity - 1.0;
     return wrapped;
-}
-
-static double signed_write_distance(double position, size_t write_position,
-                                    size_t capacity)
-{
-    double wrapped = ts_sister_positive_modulo(position, capacity);
-    double difference = wrapped - (double)write_position;
-    if (difference > (double)capacity * 0.5) difference -= (double)capacity;
-    if (difference < -(double)capacity * 0.5) difference += (double)capacity;
-    return difference;
 }
 
 static TsStereoFrame read_with_write_guard(TsSisterMachine *machine,
                                            TsSisterHeadState *head,
-                                           double position,
-                                           size_t write_position)
+                                           double age)
 {
-    double difference = signed_write_distance(position, write_position,
-                                               machine->buffer.capacity_frames);
-    double guarded = guard_read_position(position, write_position,
-                                         machine->buffer.capacity_frames);
-    TsStereoFrame current = ts_sister_buffer_read(&machine->buffer, guarded);
+    double guarded = guard_read_age(age, machine->buffer.capacity_frames);
+    double difference = -age;
+    TsStereoFrame current = buffer_read_age(machine, guarded);
     TsStereoFrame result = current;
     if (head->guard_initialized &&
         difference * head->previous_guard_difference < 0.0 &&
@@ -1270,7 +1475,9 @@ static void publish_snapshot(TsSisterMachine *machine)
                           (float)(machine->master_clock % capacity) / (float)capacity),
                           memory_order_relaxed);
     for (i = 0u; i < TS_SISTER_HEAD_COUNT; ++i) {
-        double position = ts_sister_positive_modulo(machine->last_head_position[i], capacity);
+        double age = head_age(machine, machine->last_head_position[i]);
+        double position = ts_sister_positive_modulo(
+            (double)(machine->master_clock % capacity) - age, capacity);
         atomic_store_explicit(&snapshot->head_position_bits[i], double_bits(position),
                               memory_order_relaxed);
         atomic_store_explicit(&snapshot->head_normalized_bits[i],
@@ -1307,6 +1514,14 @@ static void publish_snapshot(TsSisterMachine *machine)
     atomic_store_explicit(&snapshot->duration_bits,
                           double_bits(capacity == 0u ? 0.0 :
                                       (double)capacity / machine->buffer.sample_rate),
+                          memory_order_relaxed);
+    atomic_store_explicit(&snapshot->target_duration_bits,
+                          double_bits(machine->pending_capacity_frames == 0u ? 0.0 :
+                                      (double)machine->pending_capacity_frames /
+                                      machine->buffer.sample_rate),
+                          memory_order_relaxed);
+    atomic_store_explicit(&snapshot->resize_pending,
+                          machine->pending_capacity_frames != capacity,
                           memory_order_relaxed);
     atomic_store_explicit(&snapshot->revision, sequence + 1u, memory_order_release);
 }
@@ -1360,6 +1575,10 @@ int ts_sister_machine_get_snapshot(const TsSisterMachine *machine,
             &snapshot->sample_rate, memory_order_relaxed);
         result->duration_seconds = bits_double(atomic_load_explicit(
             &snapshot->duration_bits, memory_order_relaxed));
+        result->target_duration_seconds = bits_double(atomic_load_explicit(
+            &snapshot->target_duration_bits, memory_order_relaxed));
+        result->resize_pending = atomic_load_explicit(
+            &snapshot->resize_pending, memory_order_relaxed);
         after = atomic_load_explicit(&snapshot->revision, memory_order_acquire);
         if (before == after && (after & 1u) == 0u) {
             result->revision = after;
@@ -1385,6 +1604,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     TsStereoFrame write;
     TsStereoFrame sum;
     size_t write_position;
+    size_t physical_write_position;
     double delay_position;
     double head2_position;
     double head3_position;
@@ -1420,6 +1640,14 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     input = ts_stereo_frame_sanitize(input);
     duck_sidechain = ts_stereo_frame_sanitize(duck_sidechain);
     causal_fx_return = ts_stereo_frame_sanitize(causal_fx_return);
+    if (machine->resize_debounce_remaining > 0u) {
+        --machine->resize_debounce_remaining;
+        if (machine->resize_debounce_remaining == 0u)
+            apply_pending_duration(machine);
+    } else if (machine->pending_capacity_frames !=
+               machine->buffer.capacity_frames) {
+        apply_pending_duration(machine);
+    }
     input_gain = ramp_advance(&machine->input_gain);
     feedback1_gain = ramp_advance(&machine->feedback[0]);
     feedback2_gain = ramp_advance(&machine->feedback[1]);
@@ -1432,6 +1660,8 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     duck_sidechain = frame_scale(duck_sidechain, input_gain);
     output.input = input;
     write_position = (size_t)(machine->master_clock % machine->buffer.capacity_frames);
+    physical_write_position = (size_t)(machine->master_clock %
+                                       machine->buffer.storage_frames);
 
     if (machine->clear_state == TS_SISTER_CLEAR_WAITING) {
         clear_gain = 0.0f;
@@ -1451,16 +1681,12 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     if (machine->head[0].jump_remaining > 0u) {
         float amount = 1.0f - (float)machine->head[0].jump_remaining /
                                   (float)machine->head[0].jump_total;
-        TsStereoFrame old_read = ts_sister_buffer_read(
-            &machine->buffer,
-            guard_read_position((double)write_position -
-                                machine->head[0].old_delay_frames,
-                                write_position, machine->buffer.capacity_frames));
-        TsStereoFrame new_read = ts_sister_buffer_read(
-            &machine->buffer,
-            guard_read_position((double)write_position -
-                                machine->head[0].current_delay_frames,
-                                write_position, machine->buffer.capacity_frames));
+        TsStereoFrame old_read = buffer_read_age(
+            machine, guard_read_age(machine->head[0].old_delay_frames,
+                                    machine->buffer.capacity_frames));
+        TsStereoFrame new_read = buffer_read_age(
+            machine, guard_read_age(machine->head[0].current_delay_frames,
+                                    machine->buffer.capacity_frames));
         raw[0] = frame_lerp(old_read, new_read, amount);
         --machine->head[0].jump_remaining;
     } else {
@@ -1469,41 +1695,41 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
         machine->head[0].current_delay_frames +=
             (machine->head[0].target_delay_frames -
              machine->head[0].current_delay_frames) * coefficient;
-        delay_position = guard_read_position((double)write_position -
-                         machine->head[0].current_delay_frames,
-                         write_position, machine->buffer.capacity_frames);
-        raw[0] = ts_sister_buffer_read(&machine->buffer, delay_position);
+        delay_position = guard_read_age(machine->head[0].current_delay_frames,
+                                        machine->buffer.capacity_frames);
+        raw[0] = buffer_read_age(machine, delay_position);
     }
-    delay_position = guard_read_position((double)write_position -
-                     machine->head[0].current_delay_frames,
-                     write_position, machine->buffer.capacity_frames);
-    machine->last_head_position[0] = delay_position;
+    delay_position = guard_read_age(machine->head[0].current_delay_frames,
+                                    machine->buffer.capacity_frames);
+    machine->last_head_position[0] = phase_for_age(machine, delay_position);
 
     current_offset = ramp_advance(&machine->head[1].offset);
     offset_delta = current_offset - machine->head[1].previous_offset;
     machine->head[1].phase = ts_sister_positive_modulo(
-        machine->head[1].phase - offset_delta, machine->buffer.capacity_frames);
+        machine->head[1].phase - offset_delta, machine->buffer.storage_frames);
     machine->head[1].previous_offset = current_offset;
     current_offset = ramp_advance(&machine->head[2].offset);
     offset_delta = current_offset - machine->head[2].previous_offset;
     machine->head[2].phase = ts_sister_positive_modulo(
-        machine->head[2].phase - offset_delta, machine->buffer.capacity_frames);
+        machine->head[2].phase - offset_delta, machine->buffer.storage_frames);
     machine->head[2].previous_offset = current_offset;
 
     wow_seconds = update_wow(machine, wow_amount);
     wow_frames = wow_seconds * (float)machine->buffer.sample_rate;
-    head2_position = ts_sister_positive_modulo(machine->head[1].phase + wow_frames,
-                                               machine->buffer.capacity_frames);
-    head3_position = ts_sister_positive_modulo(machine->head[2].phase + wow_frames,
-                                               machine->buffer.capacity_frames);
+    head2_position = head_signed_age(machine, machine->head[1].phase) -
+                     wow_frames;
+    head3_position = head_signed_age(machine, machine->head[2].phase) -
+                     wow_frames;
     raw[1] = read_with_write_guard(machine, &machine->head[1],
-                                   head2_position, write_position);
+                                   head2_position);
     raw[2] = read_with_write_guard(machine, &machine->head[2],
-                                   head3_position, write_position);
-    machine->last_head_position[1] = guard_read_position(
-        head2_position, write_position, machine->buffer.capacity_frames);
-    machine->last_head_position[2] = guard_read_position(
-        head3_position, write_position, machine->buffer.capacity_frames);
+                                   head3_position);
+    head2_position = guard_read_age(head2_position,
+        machine->buffer.capacity_frames);
+    head3_position = guard_read_age(head3_position,
+        machine->buffer.capacity_frames);
+    machine->last_head_position[1] = phase_for_age(machine, head2_position);
+    machine->last_head_position[2] = phase_for_age(machine, head3_position);
 
     /* Head-target effects own independent histories. The insertion is after
        the completed interpolated read and before both the established raw
@@ -1538,7 +1764,17 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
                                 &machine->overload_count) * clear_gain;
     erase = ramp_advance(&machine->write_erase);
     ghost_tone = ramp_advance(&machine->ghost_tone);
-    previous = ts_sister_buffer_read(&machine->buffer, (double)write_position);
+    previous = buffer_read_age(machine, (double)machine->buffer.capacity_frames);
+    if (machine->retained_resize_remaining > 0u &&
+        machine->retained_resize_total > 0u) {
+        TsStereoFrame old_previous = buffer_read_physical(
+            &machine->buffer, (double)physical_write_position -
+            (double)machine->retained_old_capacity_frames);
+        float amount = 1.0f - (float)machine->retained_resize_remaining /
+                                  (float)machine->retained_resize_total;
+        previous = frame_lerp(old_previous, previous, amount);
+        --machine->retained_resize_remaining;
+    }
     retained = frame_scale(
         ghost_filter_retained(machine, previous, ghost_tone), 1.0f - erase);
     /* The master return owns an explicit level in the runtime and joins after
@@ -1554,9 +1790,16 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     output.write_position = write_position;
     if (machine->rolling && !machine->held &&
         machine->clear_state != TS_SISTER_CLEAR_WAITING) {
-        output.wrote = ts_sister_buffer_write(&machine->buffer,
-                                               write_position, write);
+        output.wrote = buffer_write_physical(&machine->buffer,
+                                             physical_write_position, write);
+    } else {
+        /* A transport-only carry preserves the same logical tape cell without
+           accepting input. It is not an audible/program write or waveform event. */
+        (void)buffer_write_physical(&machine->buffer, physical_write_position,
+                                    previous);
     }
+    if (machine->buffer.valid_history_frames < machine->buffer.capacity_frames)
+        ++machine->buffer.valid_history_frames;
 
     sum = frame_add(output.head[0], frame_add(output.head[1], output.head[2]));
     sum = frame_scale(sum, headroom);
@@ -1582,12 +1825,19 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     machine->head[1].phase = ts_sister_positive_modulo(
         machine->head[1].phase +
         ts_sister_rate_value(machine->parameters.head2_rate_index),
-        machine->buffer.capacity_frames);
+        machine->buffer.storage_frames);
     machine->head[2].phase = ts_sister_positive_modulo(
         machine->head[2].phase +
         ts_sister_rate_value(machine->parameters.head3_rate_index),
-        machine->buffer.capacity_frames);
+        machine->buffer.storage_frames);
     ++machine->master_clock;
+    /* Keep free-running heads inside the logical age window while retaining
+       their fractional phase, rate, and direction. */
+    for (size_t i = 1u; i < TS_SISTER_HEAD_COUNT; ++i) {
+        double age = head_signed_age(machine, machine->head[i].phase);
+        age = guard_read_age(age, machine->buffer.capacity_frames);
+        machine->head[i].phase = phase_for_age(machine, age);
+    }
     machine->last_output = output;
     if (result != NULL) *result = output;
     return output.mix;

@@ -78,7 +78,7 @@ static void clipping_saturation_and_dc(void)
         output = ts_sister_machine_process_frame(&machine,
                                                  (TsStereoFrame){0.5f, 0.5f},
                                                  sister_silence());
-    written = (size_t)((machine.master_clock - 1u) % machine.buffer.capacity_frames);
+    written = (size_t)((machine.master_clock - 1u) % machine.buffer.storage_frames);
     assert(fabsf(machine.buffer.data[written * 2u]) < 0.001f);
     assert(sister_frame_finite(output.mix));
     ts_sister_machine_free(&machine);

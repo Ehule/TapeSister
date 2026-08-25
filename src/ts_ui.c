@@ -3279,7 +3279,21 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 146, 8, 62, "HOLD", model->routing.held);
     button(fb, 214, 8, 62, "CLEAR", model->engine.clear_state != TS_SISTER_CLEAR_IDLE);
     button(fb, 282, 8, 62, "MONITOR", model->routing.monitor_enabled);
-    text(fb, 352, 13, "SISTER", PAL_TEXT, 1);
+    {
+        float target = model->parameters.buffer_seconds;
+        float current = (float)model->engine.duration_seconds;
+        float amount = (target - (float)TS_SISTER_MIN_SECONDS) /
+            (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
+        char canvas[32];
+        if (model->engine.resize_pending)
+            snprintf(canvas, sizeof(canvas), "BUF %.0F>%.0F", current, target);
+        else
+            snprintf(canvas, sizeof(canvas), "BUFFER %.0FS", target);
+        sister_choice_parameter(fb, 350, 8, 94, "", canvas,
+                                model->engine.resize_pending, PAL_TUNING);
+        rect(fb, 351, 25, (int)lrintf(92.0f * sister_clamp(amount)), 3,
+             PAL_TUNING);
+    }
     button(fb, 450, 8, 76, model->fx_page ? "TAPE" : "FX PAGE",
            model->fx_page);
     button(fb, 532, 8, 98, ts_waveform_display_name(model->waveform_mode),

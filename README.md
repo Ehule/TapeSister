@@ -524,7 +524,13 @@ reusable effect targets are specified in
 [`docs/SISTER_MACHINE_SOAK_BLEED.md`](docs/SISTER_MACHINE_SOAK_BLEED.md); the remaining
 PR9 fixed Distortion→Delay→Reverb chain, POWER-off MIX bus, and causal Master FX
 Feedback return are specified in
-[`docs/SISTER_MACHINE_POST_EFFECTS.md`](docs/SISTER_MACHINE_POST_EFFECTS.md). The remaining order is tracked in
+[`docs/SISTER_MACHINE_POST_EFFECTS.md`](docs/SISTER_MACHINE_POST_EFFECTS.md).
+PR10's live 5–60-second age-anchored BUFFER canvas, crop/grow law, and realtime
+ownership are specified in
+[`docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md`](docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md).
+Its Windows/Linux listening pass is
+[`docs/SISTER_MACHINE_PR10_MANUAL_CHECKLIST.md`](docs/SISTER_MACHINE_PR10_MANUAL_CHECKLIST.md).
+The remaining order is tracked in
 [`docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md`](docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md).
 The PR9 Windows/Linux listening pass is
 [`docs/SISTER_MACHINE_PR9_MANUAL_CHECKLIST.md`](docs/SISTER_MACHINE_PR9_MANUAL_CHECKLIST.md).

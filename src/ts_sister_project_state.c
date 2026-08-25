@@ -95,7 +95,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "ReverbDecay=%.9g\nReverbTargets=%u\nDelayTime=%.9g\n"
         "DelayFeedback=%.9g\nDelayMix=%.9g\nDelayTargets=%u\n"
         "DistortionDrive=%.9g\nDistortionTone=%.9g\nDistortionMix=%.9g\n"
-        "DistortionTargets=%u\nMasterFxFeedback=%.9g\n",
+        "DistortionTargets=%u\nMasterFxFeedback=%.9g\nBufferSeconds=%.9g\n",
         p->head1_level, p->head1_time_ms, p->head1_feedback,
         p->head2_level, p->head2_scrub, p->head2_rate_index, p->head2_feedback,
         p->head3_level, p->head3_span, p->head3_rate_index, p->wow, p->drop,
@@ -109,7 +109,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx.delay_time, p->fx.delay_feedback, p->fx.delay_mix,
         (unsigned)p->fx.delay_targets, p->fx.distortion_drive,
         p->fx.distortion_tone, p->fx.distortion_mix,
-        (unsigned)p->fx.distortion_targets, p->fx.master_feedback) >= 0;
+        (unsigned)p->fx.distortion_targets, p->fx.master_feedback,
+        p->buffer_seconds) >= 0;
 }
 
 int ts_sister_project_state_save(const TsSisterProjectState *state,
@@ -240,6 +241,7 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     PF("DelayMix", fx.delay_mix); PF("DistortionDrive", fx.distortion_drive);
     PF("DistortionTone", fx.distortion_tone); PF("DistortionMix", fx.distortion_mix);
     PF("MasterFxFeedback", fx.master_feedback);
+    PF("BufferSeconds", buffer_seconds);
     if (strcmp(key, "ReverbTargets") == 0 ||
         strcmp(key, "DelayTargets") == 0 ||
         strcmp(key, "DistortionTargets") == 0) {

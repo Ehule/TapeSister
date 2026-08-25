@@ -138,11 +138,15 @@ static void scrub_span_rates_and_taps(void)
     parameters.head3_rate_index = 9;
     sister_configure_immediate(&machine, &parameters);
     machine.head[1].phase = 0.5;
-    machine.head[2].phase = (double)machine.buffer.capacity_frames - 0.5;
+    machine.head[2].phase = (double)machine.buffer.storage_frames - 0.5;
     ts_sister_machine_set_rolling(&machine, 0);
     output = ts_sister_machine_process_frame(&machine, sister_silence(), sister_silence());
-    assert(machine.head[1].phase > (double)machine.buffer.capacity_frames - 2.0);
-    assert(machine.head[2].phase < 2.0);
+    assert(ts_sister_positive_modulo(
+        (double)(machine.master_clock % machine.buffer.storage_frames) -
+        machine.head[1].phase, machine.buffer.storage_frames) < 3.0);
+    assert(ts_sister_positive_modulo(
+        (double)(machine.master_clock % machine.buffer.storage_frames) -
+        machine.head[2].phase, machine.buffer.storage_frames) < 3.0);
     assert(sister_frame_finite(output.mix));
     ts_sister_machine_free(&machine);
 }

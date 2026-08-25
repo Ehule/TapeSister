@@ -136,6 +136,7 @@ typedef struct {
     int input_available;
     int source_target_conflict;
     int callback_failed;
+    int parameters_published;
     float monitor_dry_current;
     float monitor_wet_current;
     float master_feedback_current;
@@ -143,6 +144,7 @@ typedef struct {
     char selected_preset[48];
     TsSisterRoutingSnapshotAtomic snapshot;
     TsSisterWavePublisher waveform;
+    size_t waveform_capacity_frames;
 } TsSisterRuntime;
 
 void ts_sister_runtime_init(TsSisterRuntime *runtime);

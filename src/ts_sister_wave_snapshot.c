@@ -105,6 +105,89 @@ void ts_sister_wave_publisher_push(TsSisterWavePublisher *publisher,
     }
 }
 
+void ts_sister_wave_publisher_resize(TsSisterWavePublisher *publisher,
+                                     size_t old_capacity_frames,
+                                     size_t new_capacity_frames,
+                                     uint64_t master_clock)
+{
+    TsSisterWaveBin mapped[TS_SISTER_WAVE_BIN_COUNT];
+    size_t old_write;
+    size_t new_write;
+    size_t valid = 0u;
+    if (publisher == NULL || old_capacity_frames == 0u ||
+        new_capacity_frames == 0u || old_capacity_frames == new_capacity_frames)
+        return;
+    if (publisher->initialized)
+        publish_bin(publisher, publisher->current_bin);
+    for (size_t i = 0u; i < TS_SISTER_WAVE_BIN_COUNT; ++i)
+        mapped[i] = empty_bin();
+    old_write = (size_t)(master_clock % old_capacity_frames);
+    new_write = (size_t)(master_clock % new_capacity_frames);
+    for (size_t bin = 0u; bin < TS_SISTER_WAVE_BIN_COUNT; ++bin) {
+        TsSisterWaveBin source;
+        size_t old_position;
+        size_t age;
+        size_t new_position;
+        size_t destination;
+        source.left_minimum = bits_float((uint32_t)atomic_load_explicit(
+            &publisher->values[bin][0], memory_order_relaxed));
+        source.left_maximum = bits_float((uint32_t)atomic_load_explicit(
+            &publisher->values[bin][1], memory_order_relaxed));
+        source.right_minimum = bits_float((uint32_t)atomic_load_explicit(
+            &publisher->values[bin][2], memory_order_relaxed));
+        source.right_maximum = bits_float((uint32_t)atomic_load_explicit(
+            &publisher->values[bin][3], memory_order_relaxed));
+        if (source.left_minimum == 0.0f && source.left_maximum == 0.0f &&
+            source.right_minimum == 0.0f && source.right_maximum == 0.0f)
+            continue;
+        old_position = bin * old_capacity_frames / TS_SISTER_WAVE_BIN_COUNT;
+        age = (old_write + old_capacity_frames - old_position) %
+              old_capacity_frames;
+        if (age >= new_capacity_frames) continue;
+        new_position = (new_write + new_capacity_frames - age) %
+                       new_capacity_frames;
+        destination = new_position * TS_SISTER_WAVE_BIN_COUNT /
+                      new_capacity_frames;
+        if (destination >= TS_SISTER_WAVE_BIN_COUNT)
+            destination = TS_SISTER_WAVE_BIN_COUNT - 1u;
+        if (mapped[destination].left_minimum == FLT_MAX) {
+            mapped[destination] = source;
+        } else {
+            if (source.left_minimum < mapped[destination].left_minimum)
+                mapped[destination].left_minimum = source.left_minimum;
+            if (source.left_maximum > mapped[destination].left_maximum)
+                mapped[destination].left_maximum = source.left_maximum;
+            if (source.right_minimum < mapped[destination].right_minimum)
+                mapped[destination].right_minimum = source.right_minimum;
+            if (source.right_maximum > mapped[destination].right_maximum)
+                mapped[destination].right_maximum = source.right_maximum;
+        }
+    }
+    atomic_fetch_add_explicit(&publisher->revision, 1u, memory_order_acq_rel);
+    for (size_t bin = 0u; bin < TS_SISTER_WAVE_BIN_COUNT; ++bin) {
+        TsSisterWaveBin value = mapped[bin];
+        if (value.left_minimum == FLT_MAX) value = (TsSisterWaveBin){0};
+        else ++valid;
+        {
+            const float parts[4] = {value.left_minimum, value.left_maximum,
+                                    value.right_minimum, value.right_maximum};
+            for (size_t component = 0u; component < 4u; ++component)
+            atomic_store_explicit(&publisher->values[bin][component],
+                                  float_bits(parts[component]),
+                                  memory_order_relaxed);
+        }
+    }
+    publisher->current = empty_bin();
+    publisher->current_bin = new_write * TS_SISTER_WAVE_BIN_COUNT /
+                             new_capacity_frames;
+    publisher->valid_bins_writer = valid;
+    publisher->initialized = 0;
+    atomic_store_explicit(&publisher->write_bin, publisher->current_bin,
+                          memory_order_relaxed);
+    atomic_store_explicit(&publisher->valid_bins, valid, memory_order_relaxed);
+    atomic_fetch_add_explicit(&publisher->revision, 1u, memory_order_release);
+}
+
 int ts_sister_wave_snapshot_get(const TsSisterWavePublisher *publisher,
                                 TsSisterWaveSnapshot *snapshot)
 {

@@ -139,7 +139,8 @@ source-mask action.
 
 ## Preferences and restart policy
 
-Configuration now preserves buffer duration/channel shape, clear fade, Sister Capture
+Configuration supplies the startup buffer duration/channel shape; PR10 promotes
+duration to a live preset/project musical parameter as well. Configuration preserves clear fade, Sister Capture
 format, both waveform display modes, restart-clear policy, INPUT trim, DRY/WET monitor levels,
 MIX output gain, ERASE strength and Sister window position.
 Musical source masks and parameter state are intentionally runtime-only. Output restart
@@ -153,7 +154,8 @@ the Sister engine off; it does not compromise ordinary output setup.
 The Sister renderer compares its copied model with the last presented model and skips
 unchanged frames. Active motion is capped at one software-texture update every 33 ms
 (about 30 Hz). Circular-memory reduction is incremental in the callback and the UI's
-fixed 256-bin copy has constant cost regardless of a 1- or 120-second buffer. No render
+fixed 256-bin copy has constant cost regardless of a 5- or 60-second buffer. A live
+resize remaps that summary by age while the UI displays current→target seconds. No render
 operation or framebuffer allocation occurs on the audio thread.
 
 ## Retained wrappers

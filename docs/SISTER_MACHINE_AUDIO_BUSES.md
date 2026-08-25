@@ -97,6 +97,13 @@ buffer. Reference is outside it. Sister-active Master FX Feedback taps the
 pre-safety Sister post-effect frame only; it cannot recirculate unrelated direct
 sources. See `SISTER_MACHINE_POST_EFFECTS.md` for the complete diagrams.
 
+## PR10 logical rolling canvas
+
+PR10 changes no named-bus owner or tap. The Sister write/read branch uses a 5–60-second
+logical age window over its preallocated maximum store; `post_fx`, Master FX Feedback,
+DRY/WET, H1/H2/H3/MIX Capture, ordinary POWER-off effects, and hardware output remain
+at their PR9 positions. See `SISTER_MACHINE_LIVE_BUFFER_CANVAS.md`.
+
 ## Manual Windows/Linux validation
 
 - Confirm a mono project remains centered and unchanged.

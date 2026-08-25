@@ -261,6 +261,8 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, 0, TS_WAVEFORM_DISPLAY_COUNT - 1, &loaded.sister_waveform_display_mode)) { snprintf(error, error_size, "Invalid Sister waveform mode on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_buffer_seconds") == 0) {
             if (!parse_clamped_integer(value, 1, 120, &loaded.sister_buffer_seconds)) { snprintf(error, error_size, "Invalid Sister duration on config line %d", line_number); fclose(file); return 0; }
+            if (loaded.sister_buffer_seconds < 5) loaded.sister_buffer_seconds = 5;
+            if (loaded.sister_buffer_seconds > 60) loaded.sister_buffer_seconds = 60;
         } else if (strcmp(key, "sister_buffer_channels") == 0) {
             if (!parse_clamped_integer(value, 1, 2, &loaded.sister_buffer_channels)) { snprintf(error, error_size, "Invalid Sister channels on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_clear_ms") == 0) {

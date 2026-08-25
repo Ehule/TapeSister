@@ -27,6 +27,13 @@ int main(void)
         (TsStereoFrame){1.0f, 1.0f}, 0u, 512u, 2u, 0);
     CHECK(ts_sister_wave_snapshot_get(&publisher, &snapshot));
     CHECK(snapshot.revision == revision);
+    ts_sister_wave_publisher_resize(&publisher, 512u, 1024u, 511u);
+    CHECK(ts_sister_wave_snapshot_get(&publisher, &snapshot));
+    CHECK(snapshot.valid_bins > 0u &&
+          snapshot.valid_bins < TS_SISTER_WAVE_BIN_COUNT);
+    ts_sister_wave_publisher_resize(&publisher, 1024u, 256u, 511u);
+    CHECK(ts_sister_wave_snapshot_get(&publisher, &snapshot));
+    CHECK(snapshot.write_bin < TS_SISTER_WAVE_BIN_COUNT);
     ts_sister_wave_publisher_clear(&publisher, 1u);
     CHECK(ts_sister_wave_snapshot_get(&publisher, &snapshot));
     CHECK(snapshot.channels == 1u && snapshot.valid_bins == 0u);

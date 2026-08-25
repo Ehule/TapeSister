@@ -148,7 +148,8 @@ real history so tails can drain safely.
 
 ## Persistence and compatibility
 
-Sister preset and project schemas are version 3. They store every visible PR9
+PR9 introduced preset/project schema version 3. PR10 version 4 adds only the live
+buffer duration; it changes no post-effect field or history rule. They store every visible PR9
 parameter and mask. Legacy state receives Hall, safe midrange DECAY/TIME/FEEDBACK,
 MIX targets, and exact-zero Reverb/Delay/Distortion MIX and Master FX Feedback.
 Opening a legacy file does not rewrite it. Invalid enums and values are clamped;

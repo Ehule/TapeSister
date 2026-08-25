@@ -133,12 +133,18 @@ values and sanitized target mask. Version-1 and missing-field state remains audi
 identical: SOAK zero, BLEED 25 percent and MIX selected. Delay history and phase remain
 runtime-only.
 
+PR9 advances the schema to version 3 for post-effect controls and masks. PR10
+advances it to version 4 and stores the requested 5–60-second `BufferSeconds` value.
+Missing fields retain the 40-second identity default. Logical/valid frame counts,
+discarded cells, head phase, resize ramps, and live audio remain runtime-only.
+
 ## Realtime contract
 
 The callback remains allocation-, file-I/O-, logging- and blocking-lock-free. Input-device
-opening, preset/project file operations, Capture allocation and rolling-buffer allocation
+opening, preset/project file operations, Capture allocation and maximum rolling-buffer allocation
 remain on the controller/UI side. Callback loops are fixed by the existing voice, source,
-head and channel limits. UI waveform rendering continues to consume only lock-free fixed
+head and channel limits. PR10 logical resize commits perform no allocation, free, lock,
+or rolling-audio copy. UI waveform rendering continues to consume only lock-free fixed
 snapshots and never mutable circular audio.
 
 SUPPRESS, generic routing matrices, program-output recirculation, same-tile feedback,
