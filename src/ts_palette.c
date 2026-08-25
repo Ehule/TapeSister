@@ -123,20 +123,20 @@ static int parse_contrast(const char *text, int *contrast)
 void ts_palette_default(TsPalette *palette)
 {
     static const uint32_t defaults[TS_PALETTE_COLOR_COUNT] = {
-        RGB(255, 28, 0), RGB(45, 0, 57), RGB(0, 158, 227), RGB(255, 210, 101),
-        RGB(28, 28, 28), RGB(93, 85, 93), RGB(255, 231, 0), RGB(24, 255, 0),
-        RGB(255, 28, 231), RGB(20, 125, 255), RGB(53, 255, 255), RGB(89, 0, 255),
-        RGB(45, 0, 57), RGB(255, 210, 101), RGB(255, 231, 0),
+        RGB(255, 49, 49), RGB(45, 0, 57), RGB(0, 158, 227), RGB(204, 131, 11),
+        RGB(32, 32, 31), RGB(74, 60, 74), RGB(255, 174, 32), RGB(24, 255, 0),
+        RGB(255, 71, 231), RGB(20, 125, 255), RGB(53, 255, 255), RGB(89, 0, 255),
+        RGB(45, 0, 57), RGB(255, 49, 49), RGB(255, 174, 32),
         RGB(53, 255, 255), RGB(24, 255, 0),
-        RGB(255, 231, 0), RGB(53, 255, 255), RGB(65, 215, 255),
+        RGB(255, 174, 32), RGB(53, 255, 255), RGB(65, 215, 255),
         RGB(255, 174, 32), RGB(255, 49, 49), RGB(0, 206, 65),
-        RGB(255, 49, 49), RGB(255, 174, 32), RGB(208, 97, 255)
+        RGB(255, 49, 49), RGB(255, 174, 32), RGB(206, 97, 255)
     };
     if (palette == NULL) return;
     memcpy(palette->colors, defaults, sizeof(defaults));
     palette->defined_colors = (1u << TS_PALETTE_COLOR_COUNT) - 1u;
-    palette->desktop_contrast = 52;
-    palette->buttons_contrast = 57;
+    palette->desktop_contrast = 18;
+    palette->buttons_contrast = 18;
 }
 
 const char *ts_palette_color_key(TsPaletteColor color)

@@ -1151,9 +1151,11 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
              color == ui->palette_entry ? PAL_BLOCK_TEXT : RGB(222, 218, 214), 1);
     }
     snprintf(value, sizeof(value), "%s  #%06X",
-             ts_palette_color_name((TsPaletteColor)ui->palette_entry),
+             short_names[ui->palette_entry],
              (unsigned)(selected & 0xffffffu));
-    text(fb, 290, 89, value, PAL_INSTRUMENT, 1);
+    /* The palette now has three swatch rows. Keep the selected-color readout
+       in the free lower-middle lane rather than painting across row three. */
+    text(fb, 250, 139, value, PAL_INSTRUMENT, 1);
     for (int component = 0; component < 3; ++component) {
         float amount = ts_palette_component(&ui->palette,
                        (TsPaletteColor)ui->palette_entry, component) / 255.0f;

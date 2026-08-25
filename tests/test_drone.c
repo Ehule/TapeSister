@@ -549,7 +549,7 @@ static void test_ui_contract(void)
     ts_ui_render(&before, &closed, &instrument);
     ts_ui_render(&after, &open, &instrument);
     CHECK(after.pixels[(TS_DRONE_WAVE_Y + 5) * TS_UI_WIDTH +
-          TS_DRONE_WAVE_X + TS_DRONE_WAVE_W / 4] == 0xffff1ce7u);
+          TS_DRONE_WAVE_X + TS_DRONE_WAVE_W / 4] == 0xffff47e7u);
     open.drone_preview_sample = &muted;
     ts_ui_render(&muted_frame, &open, &instrument);
     CHECK(ts_ui_drone_action_from_point(60, 170) == TS_UI_DRONE_ACTION_PREVIEW);

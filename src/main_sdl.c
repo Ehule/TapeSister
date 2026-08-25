@@ -5796,15 +5796,31 @@ static const char *path_basename(const char *path)
     return slash != NULL ? slash + 1 : path;
 }
 
-static int ui_dialog_open(const TsUiState *ui)
+static int ui_blocking_dialog_open_except_fm(const TsUiState *ui)
 {
     return ui->exit_confirm_open || ui->overdub_confirm_open ||
-           ui->file_busy || ui->fm_open || ui->transform_open || ui->drone_open ||
+           ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->load_selection_choice_open || ui->palette_open || ui->config_open ||
            ui->renaming_bank_slot >= 0 || ui->renaming_recipe_slot >= 0 ||
            ui->export_choice_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
            ui->browser.mode != TS_BROWSER_CLOSED;
+}
+
+static int ui_dialog_open(const TsUiState *ui)
+{
+    return ui->fm_open || ui_blocking_dialog_open_except_fm(ui);
+}
+
+static int sister_performance_keys_allowed(const TsUiState *ui)
+{
+    if (ui == NULL) return 0;
+    /* FM is a non-modal performance workspace. Its explicit destination
+       confirmations remain modal, but ordinary FM notes must follow Sister
+       focus just as MIDI notes already do. */
+    return !ui_blocking_dialog_open_except_fm(ui) &&
+           (!ui->fm_open || (!ui->fm_bank_choice_open &&
+                             !ui->fm_full_choice_open));
 }
 
 static void handle_midi_event(SDL_AudioDeviceID device, AudioState *audio,
@@ -6465,8 +6481,7 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
     sister->window = SDL_CreateWindow(
         "TapeSister - Sister Machine", x, y,
         TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT,
-        SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
-        SDL_WINDOW_ALWAYS_ON_TOP);
+        SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     sister->renderer = sister->window ? SDL_CreateRenderer(
         sister->window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : NULL;
     if (sister->renderer == NULL && sister->window != NULL)
@@ -8723,7 +8738,7 @@ int main(int argc, char **argv)
                         (TsSisterUiHit){TS_SISTER_UI_ACTION_PRESET_CONFIRM, 0, 0.0f},
                         (uint32_t)obtained.freq, obtained.channels);
                 } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
-                           !ui_dialog_open(&ui) &&
+                           sister_performance_keys_allowed(&ui) &&
                            !sister_window.model.preset_manage_open) {
                     int note = note_for_key(event.key.keysym.sym);
                     SDL_Keymod mod = SDL_GetModState();
@@ -8752,7 +8767,9 @@ int main(int argc, char **argv)
                                        (mod & KMOD_SHIFT) != 0);
                         }
                     }
-                } else if (event.type == SDL_KEYUP && !ui_dialog_open(&ui) &&
+                } else if (event.type == SDL_KEYUP &&
+                           sister_performance_keys_allowed(&ui) &&
+                           !sister_window.model.preset_manage_open &&
                            note_for_key(event.key.keysym.sym) >= 0) {
                     release_note(device, &audio, &ui,
                                  note_for_key(event.key.keysym.sym));
