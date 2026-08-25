@@ -140,10 +140,19 @@ typedef struct {
     float ghost_tone;
     /* Pre-tape input trim. Applied before rolling-memory write and Duck. */
     float input_gain;
+    /* Per-source trims are applied by the runtime before its established
+       multi-source headroom normalization and the master INPUT trim. */
+    float tiles_gain;
+    float fm_gain;
+    float external_gain;
+    float preview_gain;
     float monitor_dry;
     float monitor_wet;
     /* Post-filter MIX gain. Final linked safety remains authoritative. */
     float mix_output_gain;
+    /* Completed post-effects return trim. Applied before linked safety and
+       therefore also owns the explicit Master FX Feedback send level. */
+    float fx_return_gain;
     float clear_ms;
 } TsSisterParameters;
 
@@ -236,6 +245,7 @@ typedef struct {
     TsSisterRamp ghost_tone;
     TsSisterRamp input_gain;
     TsSisterRamp mix_output_gain;
+    TsSisterRamp fx_return_gain;
     TsSisterRamp feedback[2];
     TsSisterRamp wow_amount;
     TsSisterRamp drop_amount;

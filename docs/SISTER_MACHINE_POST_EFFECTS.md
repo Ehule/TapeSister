@@ -32,7 +32,7 @@ control.
 
 ```text
 head sum → headroom → Duck → Filter → OUT → PR8 MIX Soak/Bleed
-         → Distortion → Delay → Reverb → post_fx → linked safety → MIX Capture
+         → Distortion → Delay → Reverb → FX RET → post_fx → linked safety → MIX Capture
 ```
 
 MIX effects never enter a head send. H1/H2/H3 Capture remains pre-MIX-effects;
@@ -54,6 +54,11 @@ AUDITION + TILES + FM --legacy clamp/0.8--+
 enabled EXT monitor ----------------------+→ MIX FX instance → post_fx → output
 reference ----------------------------------------------------------→ output
 ```
+
+`FX RET` is one smoothed 0–200% linked-stereo gain after the completed chain.
+It applies to this ordinary POWER-off branch and the Sister-active MIX branch.
+Its unity default is exact PR9 identity; zero silences the complete effected branch
+without changing effect tail state.
 
 Head masks remain stored but dormant while POWER is off. Effects do not allocate
 or start the rolling buffer. Master FX Feedback has no destination and its causal
@@ -115,6 +120,7 @@ The return is owned by the completed Sister `post_fx` tap, before final hardware
 safety and after the full fixed chain:
 
 ```text
+post_fx_chain[n] → FX RET → post_fx[n]
 post_fx[n] → smoothed 0–1.35 gain → linked ±1.5 conditioner → tanh
            → one-sample state z⁻¹ → write sum[n+1]
 
@@ -148,8 +154,9 @@ real history so tails can drain safely.
 
 ## Persistence and compatibility
 
-PR9 introduced preset/project schema version 3. PR10 version 4 adds only the live
-buffer duration; it changes no post-effect field or history rule. They store every visible PR9
+PR9 introduced preset/project schema version 3. PR10 version 4 added the live
+buffer duration; version 5 adds the four source trims and FX return gain without
+changing effect history. They store every visible PR9
 parameter and mask. Legacy state receives Hall, safe midrange DECAY/TIME/FEEDBACK,
 MIX targets, and exact-zero Reverb/Delay/Distortion MIX and Master FX Feedback.
 Opening a legacy file does not rewrite it. Invalid enums and values are clamped;

@@ -135,7 +135,9 @@ runtime-only.
 
 PR9 advances the schema to version 3 for post-effect controls and masks. PR10
 advances it to version 4 and stores the requested 5–60-second `BufferSeconds` value.
-Missing fields retain the 40-second identity default. Logical/valid frame counts,
+The gain-staging follow-up advances it to version 5 and stores `TilesGain`, `FmGain`,
+`ExternalGain`, `PreviewGain`, and `FxReturnGain`. Missing fields retain the 40-second
+and exact-unity identity defaults. Logical/valid frame counts,
 discarded cells, head phase, resize ramps, and live audio remain runtime-only.
 
 ## Realtime contract

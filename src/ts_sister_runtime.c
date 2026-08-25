@@ -1,5 +1,6 @@
 #include "tapesister/sister_runtime.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -44,6 +45,42 @@ static float monitor_approach(float current, float target, uint32_t sample_rate)
     coefficient = 1.0f - expf(-1.0f / (0.020f * (float)sample_rate));
     current += (target - current) * coefficient;
     return fabsf(target - current) < 0.000001f ? target : current;
+}
+
+static void runtime_ramp_reset(TsSisterRamp *ramp, float value)
+{
+    if (ramp == NULL) return;
+    ramp->current = value;
+    ramp->target = value;
+    ramp->step = 0.0f;
+    ramp->remaining = 0u;
+}
+
+static void runtime_ramp_set(TsSisterRamp *ramp, float target,
+                             uint32_t sample_rate)
+{
+    uint32_t frames;
+    if (ramp == NULL) return;
+    if (!isfinite(target)) target = 0.0f;
+    frames = sample_rate > 0u ? (uint32_t)ceilf(sample_rate * 0.020f) : 0u;
+    ramp->target = target;
+    if (frames == 0u || fabsf(target - ramp->current) <= FLT_EPSILON) {
+        runtime_ramp_reset(ramp, target);
+        return;
+    }
+    ramp->step = (target - ramp->current) / (float)frames;
+    ramp->remaining = frames;
+}
+
+static float runtime_ramp_advance(TsSisterRamp *ramp)
+{
+    if (ramp == NULL) return 0.0f;
+    if (ramp->remaining > 0u) {
+        ramp->current += ramp->step;
+        --ramp->remaining;
+        if (ramp->remaining == 0u) ramp->current = ramp->target;
+    }
+    return ramp->current;
 }
 
 static uint32_t float_bits(float value)
@@ -187,6 +224,16 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     runtime->input_available = 1;
     runtime->monitor_dry_current = 1.0f;
     runtime->monitor_wet_current = 1.0f;
+    runtime_ramp_reset(&runtime->source_gain[0],
+                       runtime->parameters.tiles_gain);
+    runtime_ramp_reset(&runtime->source_gain[1],
+                       runtime->parameters.fm_gain);
+    runtime_ramp_reset(&runtime->source_gain[2],
+                       runtime->parameters.external_gain);
+    runtime_ramp_reset(&runtime->source_gain[3],
+                       runtime->parameters.preview_gain);
+    runtime_ramp_reset(&runtime->ordinary_fx_return_gain,
+                       runtime->parameters.fx_return_gain);
     runtime->selected_tap = TS_SISTER_TAP_MIX;
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     snapshot_atomic_init(&runtime->snapshot);
@@ -253,6 +300,10 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     if (!runtime->parameters_published)
         parameters.buffer_seconds = (float)duration_seconds;
     ts_sister_machine_set_parameters(&machine, &parameters);
+    machine.fx_return_gain.current =
+        runtime->ordinary_fx_return_gain.current;
+    runtime_ramp_set(&machine.fx_return_gain, parameters.fx_return_gain,
+                     sample_rate);
     ts_sister_machine_set_rolling(&machine, runtime->rolling);
     ts_sister_machine_set_hold(&machine, runtime->held);
     ts_sister_machine_free(&runtime->machine);
@@ -282,7 +333,17 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
 
 void ts_sister_runtime_disable(TsSisterRuntime *runtime)
 {
+    uint32_t sample_rate;
     if (runtime == NULL) return;
+    sample_rate = runtime->machine.buffer.sample_rate != 0u ?
+        runtime->machine.buffer.sample_rate :
+        runtime->post_fx.ready ? runtime->post_fx.sample_rate : 48000u;
+    if (runtime->enabled) {
+        runtime->ordinary_fx_return_gain.current =
+            runtime->machine.fx_return_gain.current;
+        runtime_ramp_set(&runtime->ordinary_fx_return_gain,
+                         runtime->parameters.fx_return_gain, sample_rate);
+    }
     runtime->enabled = 0;
     runtime->last_frame = (TsSisterRuntimeFrame){0};
     ts_performance_clear(&runtime->performance);
@@ -365,12 +426,26 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
 void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
                                       const TsSisterParameters *parameters)
 {
+    uint32_t sample_rate;
     if (runtime == NULL || parameters == NULL) return;
     runtime->parameters = *parameters;
     runtime->parameters_published = 1;
     ts_sister_parameters_sanitize(&runtime->parameters,
         runtime->post_fx.ready ? runtime->post_fx.sample_rate :
         runtime->enabled ? runtime->machine.buffer.sample_rate : 48000u);
+    sample_rate = runtime->post_fx.ready ? runtime->post_fx.sample_rate :
+                  runtime->enabled ? runtime->machine.buffer.sample_rate :
+                  48000u;
+    runtime_ramp_set(&runtime->source_gain[0],
+                     runtime->parameters.tiles_gain, sample_rate);
+    runtime_ramp_set(&runtime->source_gain[1],
+                     runtime->parameters.fm_gain, sample_rate);
+    runtime_ramp_set(&runtime->source_gain[2],
+                     runtime->parameters.external_gain, sample_rate);
+    runtime_ramp_set(&runtime->source_gain[3],
+                     runtime->parameters.preview_gain, sample_rate);
+    runtime_ramp_set(&runtime->ordinary_fx_return_gain,
+                     runtime->parameters.fx_return_gain, sample_rate);
     if (runtime->enabled) {
         ts_sister_machine_set_parameters(&runtime->machine, &runtime->parameters);
         runtime->parameters = runtime->machine.parameters;
@@ -690,6 +765,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsStereoFrame tile_bus;
     TsStereoFrame input = {0.0f, 0.0f};
     TsSisterOutput output;
+    float source_gain[TS_SISTER_SOURCE_COUNT];
     int armed;
     frame.dry_monitor_gain = 1.0f;
     if (runtime == NULL) return frame;
@@ -711,15 +787,19 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         runtime->monitor_wet_current, runtime->parameters.monitor_wet,
         runtime->machine.buffer.sample_rate);
     frame.dry_monitor_gain = runtime->monitor_dry_current;
+    for (int source_index = 0; source_index < TS_SISTER_SOURCE_COUNT;
+         ++source_index)
+        source_gain[source_index] = runtime_ramp_advance(
+            &runtime->source_gain[source_index]);
     if ((runtime->source_switches & TS_SISTER_SOURCE_TILES) != 0u)
-        input = frame_add(input, tile_bus);
+        input = frame_add(input, frame_scale(tile_bus, source_gain[0]));
     if ((runtime->source_switches & TS_SISTER_SOURCE_FM) != 0u)
-        input = frame_add(input, source.fm);
+        input = frame_add(input, frame_scale(source.fm, source_gain[1]));
     if ((runtime->source_switches & TS_SISTER_SOURCE_EXT) != 0u &&
         runtime->input_available)
-        input = frame_add(input, source.external);
+        input = frame_add(input, frame_scale(source.external, source_gain[2]));
     if ((runtime->source_switches & TS_SISTER_SOURCE_PREVIEW) != 0u)
-        input = frame_add(input, source.preview);
+        input = frame_add(input, frame_scale(source.preview, source_gain[3]));
     armed = source_count(runtime->source_switches);
     if (armed > 1) input = frame_scale(input, 1.0f / sqrtf((float)armed));
     output = ts_sister_machine_process_frame_with_fx(
@@ -785,10 +865,13 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
 TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
     TsSisterRuntime *runtime, TsStereoFrame input)
 {
+    TsStereoFrame output;
     if (runtime == NULL || !runtime->post_fx.ready)
         return ts_stereo_frame_sanitize(input);
-    return ts_sister_post_fx_process(&runtime->post_fx,
+    output = ts_sister_post_fx_process(&runtime->post_fx,
         TS_SISTER_HEAD_COUNT, input, 0);
+    return frame_scale(output,
+        runtime_ramp_advance(&runtime->ordinary_fx_return_gain));
 }
 
 void ts_sister_runtime_process_block(TsSisterRuntime *runtime,

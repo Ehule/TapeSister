@@ -176,8 +176,10 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "h3_level=%.9g\nh3_span=%.9g\nh3_rate=%d\n"
         "wow=%.9g\ndrop=%.9g\nduck_enabled=%d\nduck_mode=%d\nduck_sensitivity=%.9g\n"
         "decor=%d\nwidth=%.9g\nfilter_type=%d\nfilter_cutoff=%.9g\n"
-        "filter_q=%.9g\nfilter_gain=%.9g\ninput=%.9g\ndry=%.9g\nwet=%.9g\n"
-        "out=%.9g\nerase=%.9g\nghost_tone=%.9g\n"
+        "filter_q=%.9g\nfilter_gain=%.9g\ninput=%.9g\n"
+        "tiles_gain=%.9g\nfm_gain=%.9g\nexternal_gain=%.9g\npreview_gain=%.9g\n"
+        "dry=%.9g\nwet=%.9g\nout=%.9g\nfx_return_gain=%.9g\n"
+        "erase=%.9g\nghost_tone=%.9g\n"
         "soak=%.9g\nbleed=%.9g\nsoak_targets=%u\n"
         "reverb_type=%d\nreverb_mix=%.9g\nreverb_decay=%.9g\nreverb_targets=%u\n"
         "delay_time=%.9g\ndelay_feedback=%.9g\ndelay_mix=%.9g\ndelay_targets=%u\n"
@@ -189,7 +191,9 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->wow, p->drop, p->duck_enabled, p->duck_mode, p->duck_sensitivity,
         p->decorrelation_enabled, p->width, p->filter_type,
         p->filter_cutoff_hz, p->filter_q, p->filter_gain_db,
-        p->input_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
+        p->input_gain, p->tiles_gain, p->fm_gain, p->external_gain,
+        p->preview_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
+        p->fx_return_gain,
         p->write_erase, p->ghost_tone, p->soak, p->bleed,
         (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_mix,
         p->fx.reverb_decay, (unsigned)p->fx.reverb_targets,
@@ -303,8 +307,13 @@ static int assign_field(TsSisterParameters *p, const char *key,
     }
     FLOAT_FIELD("filter_cutoff", filter_cutoff_hz); FLOAT_FIELD("filter_q", filter_q);
     FLOAT_FIELD("filter_gain", filter_gain_db); FLOAT_FIELD("input", input_gain);
+    FLOAT_FIELD("tiles_gain", tiles_gain); FLOAT_FIELD("fm_gain", fm_gain);
+    FLOAT_FIELD("external_gain", external_gain);
+    FLOAT_FIELD("preview_gain", preview_gain);
     FLOAT_FIELD("dry", monitor_dry); FLOAT_FIELD("wet", monitor_wet);
-    FLOAT_FIELD("out", mix_output_gain); FLOAT_FIELD("erase", write_erase);
+    FLOAT_FIELD("out", mix_output_gain);
+    FLOAT_FIELD("fx_return_gain", fx_return_gain);
+    FLOAT_FIELD("erase", write_erase);
     FLOAT_FIELD("ghost_tone", ghost_tone);
     FLOAT_FIELD("soak", soak); FLOAT_FIELD("bleed", bleed);
     if (strcmp(key, "soak_targets") == 0) {

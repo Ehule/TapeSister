@@ -104,6 +104,20 @@ logical age window over its preallocated maximum store; `post_fx`, Master FX Fee
 DRY/WET, H1/H2/H3/MIX Capture, ordinary POWER-off effects, and hardware output remain
 at their PR9 positions. See `SISTER_MACHINE_LIVE_BUFFER_CANVAS.md`.
 
+## Compact input and return mixer
+
+Sister-active eligible sources pass through independent smoothed `TILES`, `FM`,
+`EXT`, and `AUDITION` trims (0–400%) before the established multi-source
+`1/sqrt(source_count)` normalization. The existing `INPUT` control remains the
+0–200% master after that normalized sum and before the rolling write/Duck detector.
+Thus balancing a quiet interface against loud tiles does not alter source ownership,
+duplicate a bus, or change the normalization law.
+
+The 0–200% `FX RET` trim follows the complete fixed post-effect chain and precedes
+linked output safety. It is also the explicit level presented to Master FX Feedback.
+With POWER off it scales the ordinary `post_fx` contribution; it never allocates or
+opens rolling storage. All five controls default to exact unity and smooth over 20 ms.
+
 ## Manual Windows/Linux validation
 
 - Confirm a mono project remains centered and unchanged.

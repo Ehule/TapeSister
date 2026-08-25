@@ -19,6 +19,7 @@ int main(void)
     TsSisterRuntimeFrame frame;
     float gain;
     float one_tile_peak;
+    float trimmed_tile_peak;
     float two_tile_peak;
     TsAudioMixer mixer;
     TsAudioBuses buses;
@@ -46,6 +47,28 @@ int main(void)
     frame = ts_sister_runtime_process_frame(&runtime, &sources);
     CHECK(CLOSE(frame.input.l, 0.0f) && CLOSE(frame.input.r, 0.6f));
 
+    {
+        TsSisterParameters parameters = runtime.parameters;
+        parameters.fm_gain = 2.0f;
+        parameters.external_gain = 0.5f;
+        parameters.preview_gain = 1.5f;
+        ts_sister_runtime_set_parameters(&runtime, &parameters);
+        ts_sister_runtime_set_sources(
+            &runtime, TS_SISTER_SOURCE_FM | TS_SISTER_SOURCE_EXT |
+                      TS_SISTER_SOURCE_PREVIEW);
+        for (int sample = 0; sample < 25; ++sample)
+            frame = ts_sister_runtime_process_frame(&runtime, &sources);
+        gain = 1.0f / sqrtf(3.0f);
+        CHECK(CLOSE(frame.input.l, 0.9f * gain));
+        CHECK(CLOSE(frame.input.r, 1.6f * gain));
+        parameters.fm_gain = 1.0f;
+        parameters.external_gain = 1.0f;
+        parameters.preview_gain = 1.0f;
+        ts_sister_runtime_set_parameters(&runtime, &parameters);
+        for (int sample = 0; sample < 25; ++sample)
+            frame = ts_sister_runtime_process_frame(&runtime, &sources);
+    }
+
     ts_sister_runtime_set_sources(
         &runtime, TS_SISTER_SOURCE_FM | TS_SISTER_SOURCE_EXT |
                   TS_SISTER_SOURCE_PREVIEW);
@@ -70,13 +93,37 @@ int main(void)
     }
 
     CHECK(ts_note_event_qwerty(&note, 0, TS_KEYBOARD_BASE_NOTE));
+    {
+        TsSisterParameters parameters = runtime.parameters;
+        parameters.tiles_gain = 0.5f;
+        ts_sister_runtime_set_parameters(&runtime, &parameters);
+        ts_sister_runtime_set_sources(&runtime, 0u);
+        for (int sample = 0; sample < 25; ++sample)
+            (void)ts_sister_runtime_process_frame(&runtime, NULL);
+    }
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TILES);
     CHECK(ts_sister_runtime_set_source_slot(&runtime, &instrument, 0, 1));
     CHECK(ts_sister_runtime_note_on(&runtime, &instrument, &note, 0,
                                     1000) == 1);
     for (int sample = 0; sample < 5; ++sample)
         frame = ts_sister_runtime_process_frame(&runtime, NULL);
+    trimmed_tile_peak = sister_peak(frame.input);
+    ts_sister_runtime_panic(&runtime);
+    {
+        TsSisterParameters parameters = runtime.parameters;
+        parameters.tiles_gain = 1.0f;
+        ts_sister_runtime_set_parameters(&runtime, &parameters);
+        ts_sister_runtime_set_sources(&runtime, 0u);
+        for (int sample = 0; sample < 25; ++sample)
+            (void)ts_sister_runtime_process_frame(&runtime, NULL);
+    }
+    ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TILES);
+    CHECK(ts_sister_runtime_note_on(&runtime, &instrument, &note, 0,
+                                    1000) == 1);
+    for (int sample = 0; sample < 5; ++sample)
+        frame = ts_sister_runtime_process_frame(&runtime, NULL);
     one_tile_peak = sister_peak(frame.input);
+    CHECK(CLOSE(one_tile_peak / trimmed_tile_peak, 2.0f));
     ts_sister_runtime_note_off(&runtime, &note);
     /* One-shots intentionally survive Note Off.  Clear that first generation
        before measuring the two-tile group's linked normalization. */

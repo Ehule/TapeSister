@@ -40,3 +40,8 @@ Record OS, device/driver, sample rate, callback size, build, and CPU before test
 36. [ ] Device/sample-rate switching follows the established safe restart-clear policy and leaves no stale pointers.
 37. [ ] Memory and CPU remain practical at 44.1/48/96 kHz on X220/X230-class systems and the fanless Windows mini-PC.
 38. [ ] No new clicks, callback overruns, denormal slowdowns, crashes, stale frames, stuck notes, invalid heads, or callback stalls occur.
+39. [ ] With Sister focused, F1-F8 change the QWERTY octave exactly as in the main/FM windows.
+40. [ ] Balance TILES, FM, EXT, and AUDITION with the compact source trims; each control affects only its named source.
+41. [ ] INPUT remains the master write level after the four source trims.
+42. [ ] FX RET controls the complete post-effect branch with Sister both on and off, and zero does not destroy tails.
+43. [ ] Compare sustained PR10 playback before/after the bounded ring-wrap fix at the same device buffer; verify reduced crackle/overruns without a sound change.

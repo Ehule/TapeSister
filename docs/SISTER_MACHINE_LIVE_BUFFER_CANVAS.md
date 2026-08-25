@@ -53,6 +53,13 @@ The 256-bin overview is remapped by age on a committed resize. Retained bins mov
 their new normalized positions, cropped bins disappear, and a grown oldest region is
 blank. This is a fixed-size summary remap, not a rolling-audio copy.
 
+The callback's physical ring positions are provably within one turn during ordinary
+head/write processing. They therefore use bounded add/subtract wrapping and retain the
+general modulo function only as a defensive fallback. This changes no read position or
+interpolation result, but removes the repeated general `fmod` cost that the first PR10
+build added to every sample. The fixed 256-bin remap remains a one-time resize commit,
+not an ongoing audio cost.
+
 ## DSP graph and state ownership
 
 ```text
@@ -77,8 +84,9 @@ preserves musical parameters and transport state, and clears live audio/history.
 
 ## Persistence, mono, and resource cost
 
-Sister preset and project schemas are version 4 and store `buffer_seconds`. Missing
-legacy fields default to 40 seconds. Live tape cells, valid-age state, head phases,
+Sister preset and project schemas are version 5. Version 4 introduced
+`buffer_seconds`; version 5 adds only the source/FX gain-staging controls. Missing
+legacy fields default to 40 seconds and unity gain. Live tape cells, valid-age state, head phases,
 effect tails, and resize ramps are never serialized. Configuration remains the startup
 default; preset/project recall is the musical live parameter and uses the same
 coalesced transition.
@@ -98,3 +106,8 @@ Two guard frames are included. Per-frame PR10 overhead is constant: age arithmet
 three bounded head checks, and one physical frame store. A committed resize adds one
 fixed 256-bin overview remap; no work scales with the number of audio frames retained.
 
+On the managed Linux audit host, an identical deterministic 10-million-frame stress
+benchmark measured the initial PR10 implementation at 672 ns/frame and this bounded
+wrap path at 519 ns/frame (about 23% less callback time), with the same printed output
+checksum. This is a comparative regression measurement, not a promise of absolute CPU
+time on a particular Windows driver or older laptop.

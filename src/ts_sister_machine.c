@@ -178,6 +178,24 @@ double ts_sister_positive_modulo(double value, size_t modulus)
     return result;
 }
 
+/* Callback-owned ring positions are normally already within one turn of the
+   fixed physical store. Avoid the much more expensive general fmod path for
+   that proven bounded case while retaining the public/general fallback. */
+static double wrap_storage_position(double value, size_t modulus)
+{
+    double span;
+    if (modulus == 0u || !isfinite(value)) return 0.0;
+    span = (double)modulus;
+    if (value < 0.0) {
+        if (value >= -span) return value + span;
+    } else if (value < span) {
+        return value;
+    } else if (value < span * 2.0) {
+        return value - span;
+    }
+    return ts_sister_positive_modulo(value, modulus);
+}
+
 void ts_sister_parameters_default(TsSisterParameters *parameters,
                                   uint32_t sample_rate)
 {
@@ -203,9 +221,14 @@ void ts_sister_parameters_default(TsSisterParameters *parameters,
     parameters->write_erase = 1.0f;
     parameters->ghost_tone = 0.0f;
     parameters->input_gain = 1.0f;
+    parameters->tiles_gain = 1.0f;
+    parameters->fm_gain = 1.0f;
+    parameters->external_gain = 1.0f;
+    parameters->preview_gain = 1.0f;
     parameters->monitor_dry = 1.0f;
     parameters->monitor_wet = 1.0f;
     parameters->mix_output_gain = 1.0f;
+    parameters->fx_return_gain = 1.0f;
     parameters->clear_ms = 20.0f;
 }
 
@@ -353,7 +376,7 @@ static TsStereoFrame buffer_read_physical(const TsSisterBuffer *buffer,
     double wrapped;
     if (buffer == NULL || buffer->data == NULL || buffer->storage_frames < 2u)
         return silence;
-    wrapped = ts_sister_positive_modulo(frame_position, buffer->storage_frames);
+    wrapped = wrap_storage_position(frame_position, buffer->storage_frames);
     at = (size_t)floor(wrapped);
     next = at + 1u < buffer->storage_frames ? at + 1u : 0u;
     fraction = (float)(wrapped - (double)at);
@@ -406,8 +429,8 @@ static double head_age(const TsSisterMachine *machine, double phase)
     if (machine == NULL || machine->buffer.storage_frames == 0u) return 0.0;
     write_position = (double)(machine->master_clock %
                               machine->buffer.storage_frames);
-    return ts_sister_positive_modulo(write_position - phase,
-                                     machine->buffer.storage_frames);
+    return wrap_storage_position(write_position - phase,
+                                 machine->buffer.storage_frames);
 }
 
 static double head_signed_age(const TsSisterMachine *machine, double phase)
@@ -424,8 +447,8 @@ static double phase_for_age(const TsSisterMachine *machine, double age)
     if (machine == NULL || machine->buffer.storage_frames == 0u) return 0.0;
     write_position = (double)(machine->master_clock %
                               machine->buffer.storage_frames);
-    return ts_sister_positive_modulo(write_position - age,
-                                     machine->buffer.storage_frames);
+    return wrap_storage_position(write_position - age,
+                                 machine->buffer.storage_frames);
 }
 
 static void snapshot_atomic_init(TsSisterSnapshotAtomic *snapshot)
@@ -642,9 +665,14 @@ static TsSisterParameters sanitize_parameters(const TsSisterMachine *machine,
     result.write_erase = clampf(result.write_erase, 0.0f, 1.0f);
     result.ghost_tone = clampf(result.ghost_tone, 0.0f, 1.0f);
     result.input_gain = clampf(result.input_gain, 0.0f, 2.0f);
+    result.tiles_gain = clampf(result.tiles_gain, 0.0f, 4.0f);
+    result.fm_gain = clampf(result.fm_gain, 0.0f, 4.0f);
+    result.external_gain = clampf(result.external_gain, 0.0f, 4.0f);
+    result.preview_gain = clampf(result.preview_gain, 0.0f, 4.0f);
     result.monitor_dry = clampf(result.monitor_dry, 0.0f, 1.0f);
     result.monitor_wet = clampf(result.monitor_wet, 0.0f, 1.0f);
     result.mix_output_gain = clampf(result.mix_output_gain, 0.0f, 4.0f);
+    result.fx_return_gain = clampf(result.fx_return_gain, 0.0f, 2.0f);
     result.clear_ms = clampf(result.clear_ms, 1.0f, 200.0f);
     return result;
 }
@@ -764,6 +792,8 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     ramp_reset(&machine->input_gain, machine->parameters.input_gain);
     ramp_reset(&machine->mix_output_gain,
                machine->parameters.mix_output_gain);
+    ramp_reset(&machine->fx_return_gain,
+               machine->parameters.fx_return_gain);
     ramp_reset(&machine->feedback[0], machine->parameters.head1_feedback);
     ramp_reset(&machine->feedback[1], machine->parameters.head2_feedback);
     ramp_reset(&machine->wow_amount, machine->parameters.wow);
@@ -996,6 +1026,8 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
     ramp_set(&machine->input_gain, next.input_gain,
              milliseconds_frames(machine->buffer.sample_rate, 20.0f));
     ramp_set(&machine->mix_output_gain, next.mix_output_gain,
+             milliseconds_frames(machine->buffer.sample_rate, 20.0f));
+    ramp_set(&machine->fx_return_gain, next.fx_return_gain,
              milliseconds_frames(machine->buffer.sample_rate, 20.0f));
     ramp_set(&machine->feedback[0], next.head1_feedback, level_frames);
     ramp_set(&machine->feedback[1], next.head2_feedback, level_frames);
@@ -1705,12 +1737,12 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
 
     current_offset = ramp_advance(&machine->head[1].offset);
     offset_delta = current_offset - machine->head[1].previous_offset;
-    machine->head[1].phase = ts_sister_positive_modulo(
+    machine->head[1].phase = wrap_storage_position(
         machine->head[1].phase - offset_delta, machine->buffer.storage_frames);
     machine->head[1].previous_offset = current_offset;
     current_offset = ramp_advance(&machine->head[2].offset);
     offset_delta = current_offset - machine->head[2].previous_offset;
-    machine->head[2].phase = ts_sister_positive_modulo(
+    machine->head[2].phase = wrap_storage_position(
         machine->head[2].phase - offset_delta, machine->buffer.storage_frames);
     machine->head[2].previous_offset = current_offset;
 
@@ -1820,13 +1852,15 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     output.head[1] = frame_scale(output.head[1], clear_gain);
     output.head[2] = frame_scale(output.head[2], clear_gain);
     output.post_fx = frame_scale(sum, clear_gain);
+    output.post_fx = frame_scale(output.post_fx,
+                                 ramp_advance(&machine->fx_return_gain));
     output.mix = final_safety(machine, output.post_fx);
 
-    machine->head[1].phase = ts_sister_positive_modulo(
+    machine->head[1].phase = wrap_storage_position(
         machine->head[1].phase +
         ts_sister_rate_value(machine->parameters.head2_rate_index),
         machine->buffer.storage_frames);
-    machine->head[2].phase = ts_sister_positive_modulo(
+    machine->head[2].phase = wrap_storage_position(
         machine->head[2].phase +
         ts_sister_rate_value(machine->parameters.head3_rate_index),
         machine->buffer.storage_frames);

@@ -3382,18 +3382,21 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
     button(fb, 162, 172, 70, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);
     button(fb, 238, 172, 70, "AUDITION", model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
-    snprintf(line, sizeof(line), "MASK %04X  V %02d  IN %.2F  MIX %.2F",
-             model->routing.source_mask, model->routing.active_source_voices,
-             model->routing.source_input_peak,
-             model->routing.tap_peak[TS_SISTER_TAP_MIX]);
-    text(fb, 322, 179, line, model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
-    snprintf(line, sizeof(line), "H1 %.2F  H2 %.2F  H3 %.2F  OV %llu",
-             model->routing.tap_peak[TS_SISTER_TAP_H1],
-             model->routing.tap_peak[TS_SISTER_TAP_H2],
-             model->routing.tap_peak[TS_SISTER_TAP_H3],
-             (unsigned long long)model->routing.overload_count);
-    text(fb, 322, 190, line,
-         model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING, 1);
+    sister_percent_parameter(fb, 320, 172, 58, "T",
+                             model->parameters.tiles_gain / 4.0f,
+                             400, PAL_NOTE);
+    sister_percent_parameter(fb, 382, 172, 58, "F",
+                             model->parameters.fm_gain / 4.0f,
+                             400, PAL_EFFECT);
+    sister_percent_parameter(fb, 444, 172, 58, "E",
+                             model->parameters.external_gain / 4.0f,
+                             400, PAL_WAVE_RIGHT);
+    sister_percent_parameter(fb, 506, 172, 58, "A",
+                             model->parameters.preview_gain / 4.0f,
+                             400, PAL_MOUSE);
+    sister_percent_parameter(fb, 568, 172, 58, "FX",
+                             model->parameters.fx_return_gain / 2.0f,
+                             200, PAL_INSTRUMENT);
 
     text(fb, 10, 207, "H1", PAL_NOTE, 1);
     sister_parameter(fb, 72, 202, 110, "LEVEL", model->parameters.head1_level, PAL_NOTE);

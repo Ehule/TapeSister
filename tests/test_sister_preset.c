@@ -16,6 +16,11 @@ int main(void)
     p = bank.entries[0].parameters;
     p.ghost_tone = 0.43f;
     p.filter_q = 1.25f;
+    p.tiles_gain = 1.23f;
+    p.fm_gain = 2.34f;
+    p.external_gain = 3.45f;
+    p.preview_gain = 0.67f;
+    p.fx_return_gain = 1.54f;
     p.soak = 0.72f;
     p.bleed = 0.81f;
     p.soak_targets = TS_SISTER_EFFECT_TARGET_H1 |
@@ -45,6 +50,11 @@ int main(void)
     assert(ts_sister_preset_recall(&loaded, 3u, &recalled));
     assert(recalled.ghost_tone > 0.42f && recalled.ghost_tone < 0.44f);
     assert(recalled.filter_q > 1.24f && recalled.filter_q < 1.26f);
+    assert(recalled.tiles_gain > 1.22f && recalled.tiles_gain < 1.24f);
+    assert(recalled.fm_gain > 2.33f && recalled.fm_gain < 2.35f);
+    assert(recalled.external_gain > 3.44f && recalled.external_gain < 3.46f);
+    assert(recalled.preview_gain > 0.66f && recalled.preview_gain < 0.68f);
+    assert(recalled.fx_return_gain > 1.53f && recalled.fx_return_gain < 1.55f);
     assert(recalled.soak > 0.71f && recalled.soak < 0.73f);
     assert(recalled.bleed > 0.80f && recalled.bleed < 0.82f);
     assert(recalled.soak_targets == (TS_SISTER_EFFECT_TARGET_H1 |
@@ -82,6 +92,11 @@ int main(void)
         assert(loaded.entries[3].parameters.fx.delay_mix == 0.0f);
         assert(loaded.entries[3].parameters.fx.distortion_mix == 0.0f);
         assert(loaded.entries[3].parameters.fx.master_feedback == 0.0f);
+        assert(loaded.entries[3].parameters.tiles_gain == 1.0f);
+        assert(loaded.entries[3].parameters.fm_gain == 1.0f);
+        assert(loaded.entries[3].parameters.external_gain == 1.0f);
+        assert(loaded.entries[3].parameters.preview_gain == 1.0f);
+        assert(loaded.entries[3].parameters.fx_return_gain == 1.0f);
         assert(loaded.entries[3].parameters.fx.reverb_targets ==
                TS_SISTER_EFFECT_TARGET_MIX);
         assert(loaded.entries[3].parameters.buffer_seconds == 40.0f);

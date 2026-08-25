@@ -492,7 +492,7 @@ Sister remains disabled by default. Clicking the `TAPESISTER` logo opens its ind
 performance window without changing POWER; closing that window hides it without stopping
 or starting audio. The window exposes transport, fixed sources, three heads, modulation/filter,
 stereo rolling overview, pre-tape INPUT trim, source-aware DRY/WET tape routing,
-protected MIX OUT gain,
+protected MIX OUT gain, a compact `T/F/E/A` source mixer and `FX` return trim,
 recording-head ERASE strength, age-dependent GHOST TONE,
 and protected tap Capture/Overdub controls. ERASE 100 fully replaces each rolling-buffer
 cell; lower values retain old stereo material before new input and controlled head
@@ -505,7 +505,8 @@ copies only to an empty tile and toggles any occupied tile directly into or out 
 page's ensemble. Source membership is the split yellow/cyan outer perimeter; active
 canvas selection is the established hollow border, inset when both states coincide.
 MIDI/QWERTY fan one note out to all marked tiles. Live FM no longer depends on an
-occupied tile or window focus, and EXT requests the shared physical input independently
+occupied tile or window focus; Sister-window F1-F8 keys select the same keyboard octave
+as the main and FM windows. EXT requests the shared physical input independently
 of the Record-bank monitor. Sister tile one-shots finish after key-up and at their
 independent natural lengths; fixed group gain prevents a short layer ending from lifting
 the longer layers. Active voices own immutable sample generations: one-shots finish
