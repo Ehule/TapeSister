@@ -48,6 +48,8 @@ tapesister_core_tests: $(CORE) tests/test_core.c
 tapesister_render_demo: $(CORE) tests/render_demo.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
+test: test_sister_resize
+
 test: tapesister_core_tests tapesister_audio_frame_tests test_audio_mixer test_note_bank_stereo test_performance_stereo test_capture_stereo test_external_input_channels test_input_ownership test_sister_buffer test_sister_heads test_sister_transport test_sister_modulation test_sister_feedback test_sister_ghost_tone test_sister_stereo test_sister_weave test_sister_effect_routing test_sister_post_fx test_sister_duck_filter test_sister_snapshot test_sister_routes test_sister_runtime test_sister_source_mask test_sister_performance_sources test_sister_capture test_sister_recursion test_sister_lifecycle test_sister_visibility test_sister_ui_model test_sister_wave_snapshot test_waveform_display_modes test_sister_source_ui test_sister_capture_ui test_sister_palette test_sister_preset test_sister_project_state tapesister_sample_channels_tests tapesister_tsr27_tests tapesister_wav_channels_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_performance_tests tapesister_midi_tests tapesister_external_record_tests tapesister_input_monitor_tests tapesister_capture_archive_tests tapesister_sample_pages_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_chain_stamp_tests tapesister_exchange_tests tapesister_render_damage_tests tapesister_waveform_cache_tests tapesister_render_efficiency_tests
 	./tapesister_core_tests
 	./tapesister_audio_frame_tests
@@ -58,6 +60,7 @@ test: tapesister_core_tests tapesister_audio_frame_tests test_audio_mixer test_n
 	./test_external_input_channels
 	./test_input_ownership
 	./test_sister_buffer
+	./test_sister_resize
 	./test_sister_heads
 	./test_sister_transport
 	./test_sister_modulation
@@ -134,6 +137,9 @@ test_input_ownership: $(CORE) tests/test_input_ownership.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
 test_sister_buffer: $(CORE) tests/test_sister_buffer.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
+test_sister_resize: $(CORE) tests/test_sister_resize.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
 test_sister_heads: $(CORE) tests/test_sister_heads.c
@@ -289,3 +295,4 @@ screenshot: tapesister_render_demo
 clean:
 	rm -f tapesister tapesister_core_tests tapesister_audio_frame_tests test_audio_mixer test_note_bank_stereo test_performance_stereo test_capture_stereo test_external_input_channels test_input_ownership test_sister_buffer test_sister_heads test_sister_transport test_sister_modulation test_sister_feedback test_sister_ghost_tone test_sister_stereo test_sister_weave test_sister_effect_routing test_sister_post_fx test_sister_duck_filter test_sister_snapshot test_sister_routes test_sister_runtime test_sister_source_mask test_sister_performance_sources test_sister_capture test_sister_recursion test_sister_lifecycle test_sister_visibility test_sister_preset test_sister_project_state tapesister_sample_channels_tests tapesister_tsr27_tests tapesister_wav_channels_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_performance_tests tapesister_midi_tests tapesister_external_record_tests tapesister_input_monitor_tests tapesister_capture_archive_tests tapesister_sample_pages_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_chain_stamp_tests tapesister_exchange_tests tapesister_render_damage_tests tapesister_waveform_cache_tests tapesister_render_efficiency_tests tapesister_render_demo third_party/rtmidi/*.o test-roundtrip.wav test-external-stereo.wav test-tear.tsr test-bank-independent.tsr test-drone.ini test-drone.tsr test-canvas.tsr test-transform.tsr test-audio-config.ini test-audio-config-blank.ini test-audio-config-legacy.ini artifacts/*.ppm
 	rm -f test_sister_ui_model test_sister_wave_snapshot test_waveform_display_modes test_sister_source_ui test_sister_capture_ui test_sister_palette test-sister-palette.pal test-sister-palette-legacy.pal
+	rm -f test_sister_resize

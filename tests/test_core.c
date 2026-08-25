@@ -199,8 +199,10 @@ int main(void)
         ts_palette_default(&palette);
         CHECK(palette.colors[TS_PALETTE_WAVE_SELECTION] ==
               palette.colors[TS_PALETTE_BLOCK_MARK]);
-        CHECK(palette.colors[TS_PALETTE_ACTIVE_TILE] ==
-              palette.colors[TS_PALETTE_MOUSE]);
+        CHECK(palette.colors[TS_PALETTE_ACTIVE_TILE] == 0xffff3131u);
+        CHECK(palette.colors[TS_PALETTE_MOUSE] == 0xffcc830bu);
+        CHECK(palette.desktop_contrast == 18 &&
+              palette.buttons_contrast == 18);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 0, 0x12);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 1, 0x34);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 2, 0x56);
@@ -2828,8 +2830,8 @@ int main(void)
     ts_instrument_set_selection(&imported, imported.current.frames / 4, imported.current.frames / 2);
     ts_ui_render(&fb, &ui, &imported);
     CHECK(fb.pixels[0] != 0);
-    CHECK(framebuffer_contains(&fb, 0xff1c1c1cu));
-    CHECK(framebuffer_contains(&fb, 0xffffe700u));
+    CHECK(framebuffer_contains(&fb, 0xff20201fu));
+    CHECK(framebuffer_contains(&fb, 0xffffae20u));
     CHECK(framebuffer_contains(&fb, 0xff2d0039u));
     CHECK(framebuffer_contains(&fb, 0xff009ee3u));
     {
@@ -2898,7 +2900,7 @@ int main(void)
     CHECK(ui.warp_amount == 0.0f);
     ui.warp_amount = 0.75f;
     ts_ui_render(&fb, &ui, &imported);
-    CHECK(fb.pixels[247 * TS_UI_WIDTH + 295] == 0xffffd265u);
+    CHECK(fb.pixels[247 * TS_UI_WIDTH + 295] == 0xffcc830bu);
     CHECK(fb.pixels[247 * TS_UI_WIDTH + 325] == 0xff0c0c0cu);
     {
         float *saved = (float *)malloc(imported.current.frames * sizeof(float));
@@ -2910,9 +2912,9 @@ int main(void)
             ts_instrument_clear_selection(&imported);
             ts_ui_render(&fb, &ui, &imported);
             for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; ++x) {
-                CHECK(fb.pixels[(TS_WAVE_Y - 1) * TS_UI_WIDTH + x] != 0xffffe700u);
+                CHECK(fb.pixels[(TS_WAVE_Y - 1) * TS_UI_WIDTH + x] != 0xffffae20u);
                 CHECK(fb.pixels[(TS_WAVE_Y + TS_WAVE_H) * TS_UI_WIDTH + x] !=
-                      0xffffe700u);
+                      0xffffae20u);
             }
             memcpy(imported.current.data, saved, imported.current.frames * sizeof(float));
             free(saved);
@@ -2924,7 +2926,7 @@ int main(void)
         int zero_pixels = 0;
         int middle = TS_WAVE_Y + TS_WAVE_H / 2;
         for (int x = TS_WAVE_X; x < TS_WAVE_X + TS_WAVE_W; ++x)
-            if (fb.pixels[middle * TS_UI_WIDTH + x] == 0xffff1ce7u) ++zero_pixels;
+            if (fb.pixels[middle * TS_UI_WIDTH + x] == 0xffff47e7u) ++zero_pixels;
         CHECK(zero_pixels > 0);
     }
     {
@@ -2945,7 +2947,7 @@ int main(void)
                                      error, sizeof(error)));
     ts_ui_render(&fb, &ui, &imported);
     CHECK(ts_ui_bank_slot_from_point(46, 341) == 0);
-    CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] != 0xff1c1c1cu);
+    CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] != 0xff20201fu);
     {
         int selected = imported.selected_slot;
         int outline_x = 8 + (selected % 8) * 77;
@@ -3035,19 +3037,19 @@ int main(void)
     snprintf(ui.bank_rename, sizeof(ui.bank_rename), "TAIL");
     ui.bank_rename_cursor = strlen(ui.bank_rename);
     ts_ui_render(&fb, &ui, &restored);
-    CHECK(fb.pixels[338 * TS_UI_WIDTH + 146] == 0xffffd265u);
+    CHECK(fb.pixels[338 * TS_UI_WIDTH + 146] == 0xffcc830bu);
     ui.renaming_bank_slot = -1;
     ui.bank_rename[0] = '\0';
     ui.renaming_recipe_slot = 8;
     snprintf(ui.recipe_rename, sizeof(ui.recipe_rename), "DRONE BED");
     ui.recipe_rename_cursor = 5;
     ts_ui_render(&fb, &ui, &restored);
-    CHECK(fb.pixels[338 * TS_UI_WIDTH + 178 + 5 * 6] == 0xffffd265u);
+    CHECK(fb.pixels[338 * TS_UI_WIDTH + 178 + 5 * 6] == 0xffcc830bu);
     ui.renaming_recipe_slot = -1;
     ui.recipe_rename[0] = '\0';
     ui.export_choice_open = 1;
     ts_ui_render(&fb, &ui, &restored);
-    CHECK(fb.pixels[180 * TS_UI_WIDTH + 175] == 0xff5d555du);
+    CHECK(fb.pixels[180 * TS_UI_WIDTH + 175] == 0xff4a3c4au);
     ui.export_choice_open = 0;
     ui.exchange_dialog = TS_UI_EXCHANGE_SEND;
     ui.exchange_item_count = 3;
@@ -3064,7 +3066,7 @@ int main(void)
           TS_UI_EXCHANGE_ACTION_TOGGLE_NEW_INSTANCE);
     CHECK(ts_ui_exchange_action_from_point(TS_UI_EXCHANGE_SEND, 440, 166) ==
           TS_UI_EXCHANGE_ACTION_LATER);
-    CHECK(fb.pixels[116 * TS_UI_WIDTH + 130] == 0xff5d555du);
+    CHECK(fb.pixels[116 * TS_UI_WIDTH + 130] == 0xff4a3c4au);
     ui.exchange_dialog = TS_UI_EXCHANGE_RECEIVE;
     ui.exchange_layout = TS_EXCHANGE_LAYOUT_SEPARATE_INSTRUMENTS;
     snprintf(ui.exchange_name, sizeof(ui.exchange_name), "tapehead_to_tapesister_01");
@@ -3086,12 +3088,12 @@ int main(void)
           TS_UI_LOAD_SELECTION_CANCEL);
     CHECK(ts_ui_load_selection_action_from_point(260, 140) ==
           TS_UI_LOAD_SELECTION_NONE);
-    CHECK(fb.pixels[136 * TS_UI_WIDTH + 149] == 0xff5d555du);
+    CHECK(fb.pixels[136 * TS_UI_WIDTH + 149] == 0xff4a3c4au);
     ui.load_selection_choice_open = 0;
     ui.exit_confirm_open = 1;
     ui.exit_has_unsaved = 1;
     ts_ui_render(&fb, &ui, &restored);
-    CHECK(fb.pixels[192 * TS_UI_WIDTH + 175] == 0xff5d555du);
+    CHECK(fb.pixels[192 * TS_UI_WIDTH + 175] == 0xff4a3c4au);
     CHECK(fb.pixels[192 * TS_UI_WIDTH + 327] == 0xff2d0039u);
     ui.exit_confirm_open = 0;
     {
@@ -3109,7 +3111,7 @@ int main(void)
         ts_ui_render(&fb, &ui, &restored);
         CHECK(fb.pixels[(TS_CONFIG_FIELD_Y + TS_CONFIG_FIELD_STEP_Y + 3) *
                         TS_UI_WIDTH + TS_CONFIG_FIELD_X + 6 +
-                        (int)ui.config_cursor * 6] == 0xffffd265u);
+                        (int)ui.config_cursor * 6] == 0xffcc830bu);
         differences = framebuffer_diff_count(&normal, &fb, 0, 229,
                                              TS_UI_WIDTH, TS_UI_HEIGHT - 229);
         CHECK(differences == 0);
@@ -3131,6 +3133,12 @@ int main(void)
                                      TS_MODAL_PANEL_H) > 1000);
         CHECK(framebuffer_diff_count(&normal, &fb, 0, 204,
                                      TS_UI_WIDTH, 1) == 0);
+        CHECK(framebuffer_color_count(
+                  &fb, ui.palette.colors[TS_PALETTE_PATTERN_INSTRUMENT],
+                  290, 89, 130, 10) == 0);
+        CHECK(framebuffer_color_count(
+                  &fb, ui.palette.colors[TS_PALETTE_PATTERN_INSTRUMENT],
+                  250, 139, 130, 8) > 0);
         CHECK(fb.pixels[(TS_PALETTE_TAPEHEAD_Y +
                          TS_PALETTE_TAPEHEAD_H / 2) * TS_UI_WIDTH +
                         TS_PALETTE_TAPEHEAD_X +
@@ -3195,11 +3203,11 @@ int main(void)
     ui.audition_source = TS_AUDITION_CURRENT;
     ui.active_notes = (1u << 0) | (1u << 1);
     ts_ui_render(&fb, &ui, &imported);
-    CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] == 0xffffd265u);
-    CHECK(fb.pixels[340 * TS_UI_WIDTH + 50] == 0xffff1ce7u);
+    CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] == 0xffcc830bu);
+    CHECK(fb.pixels[340 * TS_UI_WIDTH + 50] == 0xffff47e7u);
     ui.active_notes = 1u << 4;
     ts_ui_render(&fb, &ui, &imported);
-    CHECK(fb.pixels[370 * TS_UI_WIDTH + 116] == 0xffffd265u);
+    CHECK(fb.pixels[370 * TS_UI_WIDTH + 116] == 0xffcc830bu);
     CHECK(fb.pixels[370 * TS_UI_WIDTH + 73] == 0xffdcd8cfu);
     ui.active_notes = 0;
     ui.playback_active = 0;
@@ -3207,7 +3215,7 @@ int main(void)
     ts_instrument_show_all(&imported);
     ts_instrument_set_playhead(&imported, imported.current.frames / 3u);
     ts_ui_render(&fb, &ui, &imported);
-    CHECK(framebuffer_color_count(&fb, 0xffffd265u,
+    CHECK(framebuffer_color_count(&fb, 0xffcc830bu,
                                   TS_WAVE_X + TS_WAVE_W / 3 - 2,
                                   TS_WAVE_Y, 5, 4) > 0);
     {
@@ -3226,7 +3234,7 @@ int main(void)
     ts_instrument_show_all(&imported);
     ts_ui_render(&fb, &ui, &imported);
     CHECK(fb.pixels[(TS_WAVE_Y + 1) * TS_UI_WIDTH + TS_WAVE_X + TS_WAVE_W / 2] ==
-          0xffffd265u);
+          0xffcc830bu);
     ui.playhead_source = TS_AUDITION_PARENT;
     ui.audition_source = TS_AUDITION_PARENT;
     ts_ui_reset_parent_view(&ui, imported.parent.frames);
@@ -3238,10 +3246,10 @@ int main(void)
     CHECK(ts_browser_open(&ui.browser, TS_BROWSER_EXPORT_WAV, "cursor.wav"));
     ui.text_cursor_visible = 1;
     ts_ui_render(&fb, &ui, &imported);
-    CHECK(fb.pixels[301 * TS_UI_WIDTH + 64 + 10 * 6] == 0xffffd265u);
+    CHECK(fb.pixels[301 * TS_UI_WIDTH + 64 + 10 * 6] == 0xffcc830bu);
     ui.browser.filename_focus = 0;
     ts_ui_render(&fb, &ui, &imported);
-    CHECK(fb.pixels[301 * TS_UI_WIDTH + 64 + 10 * 6] != 0xffffd265u);
+    CHECK(fb.pixels[301 * TS_UI_WIDTH + 64 + 10 * 6] != 0xffcc830bu);
     ts_browser_close(&ui.browser);
     CHECK(ts_ui_key_from_point(20, 370) == 0);
     CHECK(ts_ui_key_from_point(50, 340) == 1);
@@ -3278,7 +3286,7 @@ int main(void)
         ui.playhead_frames = family.current.frames;
         family.family_mutation = 0.64f;
         ts_ui_render(&fb, &ui, &family);
-        CHECK(fb.pixels[70 * TS_UI_WIDTH + 22 + 596 / 4] == 0xffff1ce7u);
+        CHECK(fb.pixels[70 * TS_UI_WIDTH + 22 + 596 / 4] == 0xffff47e7u);
         CHECK(fb.pixels[176 * TS_UI_WIDTH + 25] == 0xff2d0039u);
         CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] == visible_bank_pixel);
         CHECK(ts_ui_fm_action_from_point(40, 260) == TS_UI_FM_ACTION_RANDOMIZE);

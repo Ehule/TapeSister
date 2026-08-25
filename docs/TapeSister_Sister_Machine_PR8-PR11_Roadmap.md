@@ -9,7 +9,11 @@
    bounded master feedback return. This repository state implements PR9; see
    `SISTER_MACHINE_POST_EFFECTS.md`.
 3. **PR10 - Dynamic buffer canvas.** Make rolling storage expand and contract while
-   preserving realtime ownership, head validity and click safety.
+   preserving realtime ownership, head validity and click safety. This repository
+   state implements PR10 with a fixed 60-second allocation, live 5–60-second logical
+   age window, permanent crop invalidation, coalesced requests, linked handoffs,
+   bounded callback wrapping, compact source gain staging, and an FX return trim;
+   see `SISTER_MACHINE_LIVE_BUFFER_CANVAS.md`.
 4. **PR11 - Pathological completed-system stress.** Combine feedback, all post
    effects, target switching, TILES/FM/EXT/AUDITION changes, Capture and live buffer
    resizing under sanitizers and older-hardware listening tests.

@@ -89,27 +89,32 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "H3Level=%.9g\nH3Span=%.9g\nH3Rate=%d\nWow=%.9g\nDrop=%.9g\n"
         "DuckEnabled=%d\nDuckMode=%d\nDuckSensitivity=%.9g\nDecor=%d\n"
         "Width=%.9g\nFilterType=%d\nFilterCutoff=%.9g\nFilterQ=%.9g\n"
-        "FilterGain=%.9g\nInput=%.9g\nDry=%.9g\nWet=%.9g\nOut=%.9g\n"
+        "FilterGain=%.9g\nInput=%.9g\nTilesGain=%.9g\nFmGain=%.9g\n"
+        "ExternalGain=%.9g\nPreviewGain=%.9g\nDry=%.9g\nWet=%.9g\nOut=%.9g\n"
+        "FxReturnGain=%.9g\n"
         "Erase=%.9g\nGhostTone=%.9g\nSoak=%.9g\nBleed=%.9g\n"
         "SoakTargets=%u\nReverbType=%d\nReverbMix=%.9g\n"
         "ReverbDecay=%.9g\nReverbTargets=%u\nDelayTime=%.9g\n"
         "DelayFeedback=%.9g\nDelayMix=%.9g\nDelayTargets=%u\n"
         "DistortionDrive=%.9g\nDistortionTone=%.9g\nDistortionMix=%.9g\n"
-        "DistortionTargets=%u\nMasterFxFeedback=%.9g\n",
+        "DistortionTargets=%u\nMasterFxFeedback=%.9g\nBufferSeconds=%.9g\n",
         p->head1_level, p->head1_time_ms, p->head1_feedback,
         p->head2_level, p->head2_scrub, p->head2_rate_index, p->head2_feedback,
         p->head3_level, p->head3_span, p->head3_rate_index, p->wow, p->drop,
         p->duck_enabled, p->duck_mode, p->duck_sensitivity,
         p->decorrelation_enabled, p->width, p->filter_type,
         p->filter_cutoff_hz, p->filter_q, p->filter_gain_db,
-        p->input_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
+        p->input_gain, p->tiles_gain, p->fm_gain, p->external_gain,
+        p->preview_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
+        p->fx_return_gain,
         p->write_erase, p->ghost_tone, p->soak, p->bleed,
         (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_mix,
         p->fx.reverb_decay, (unsigned)p->fx.reverb_targets,
         p->fx.delay_time, p->fx.delay_feedback, p->fx.delay_mix,
         (unsigned)p->fx.delay_targets, p->fx.distortion_drive,
         p->fx.distortion_tone, p->fx.distortion_mix,
-        (unsigned)p->fx.distortion_targets, p->fx.master_feedback) >= 0;
+        (unsigned)p->fx.distortion_targets, p->fx.master_feedback,
+        p->buffer_seconds) >= 0;
 }
 
 int ts_sister_project_state_save(const TsSisterProjectState *state,
@@ -222,8 +227,11 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     PF("Width", width);
     if (strcmp(key, "FilterType") == 0) { if (!parse_int_value(value, &integer)) return 0; p->filter_type = (TsSisterFilterType)integer; return 1; }
     PF("FilterCutoff", filter_cutoff_hz); PF("FilterQ", filter_q); PF("FilterGain", filter_gain_db);
-    PF("Input", input_gain); PF("Dry", monitor_dry); PF("Wet", monitor_wet);
-    PF("Out", mix_output_gain); PF("Erase", write_erase); PF("GhostTone", ghost_tone);
+    PF("Input", input_gain); PF("TilesGain", tiles_gain); PF("FmGain", fm_gain);
+    PF("ExternalGain", external_gain); PF("PreviewGain", preview_gain);
+    PF("Dry", monitor_dry); PF("Wet", monitor_wet);
+    PF("Out", mix_output_gain); PF("FxReturnGain", fx_return_gain);
+    PF("Erase", write_erase); PF("GhostTone", ghost_tone);
     PF("Soak", soak); PF("Bleed", bleed);
     if (strcmp(key, "SoakTargets") == 0) {
         if (!parse_int_value(value, &integer) || integer < 0 ||
@@ -240,6 +248,7 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     PF("DelayMix", fx.delay_mix); PF("DistortionDrive", fx.distortion_drive);
     PF("DistortionTone", fx.distortion_tone); PF("DistortionMix", fx.distortion_mix);
     PF("MasterFxFeedback", fx.master_feedback);
+    PF("BufferSeconds", buffer_seconds);
     if (strcmp(key, "ReverbTargets") == 0 ||
         strcmp(key, "DelayTargets") == 0 ||
         strcmp(key, "DistortionTargets") == 0) {

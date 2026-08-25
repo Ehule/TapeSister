@@ -171,6 +171,23 @@ static void test_targets_mono_and_ordinary(void)
     assert(runtime.post_fx.ready);
     assert(ts_sister_runtime_process_ordinary_post_fx(
         &runtime, (TsStereoFrame){0.25f, -0.5f}).l == 0.25f);
+    {
+        TsSisterParameters parameters = runtime.parameters;
+        TsStereoFrame output = {0.0f, 0.0f};
+        parameters.fx_return_gain = 0.5f;
+        ts_sister_runtime_set_parameters(&runtime, &parameters);
+        for (int i = 0; i < 1000; ++i)
+            output = ts_sister_runtime_process_ordinary_post_fx(
+                &runtime, (TsStereoFrame){0.25f, -0.5f});
+        assert(fabsf(output.l - 0.125f) < 1.0e-6f);
+        assert(fabsf(output.r + 0.25f) < 1.0e-6f);
+        parameters.fx_return_gain = 0.0f;
+        ts_sister_runtime_set_parameters(&runtime, &parameters);
+        for (int i = 0; i < 1000; ++i)
+            output = ts_sister_runtime_process_ordinary_post_fx(
+                &runtime, (TsStereoFrame){0.25f, -0.5f});
+        assert(output.l == 0.0f && output.r == 0.0f);
+    }
     controls = runtime.parameters.fx;
     controls.delay_targets = ts_sister_effect_targets_toggle(
         controls.delay_targets, TS_SISTER_EFFECT_TARGET_H1);

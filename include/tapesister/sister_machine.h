@@ -15,7 +15,8 @@ enum {
 };
 
 #define TS_SISTER_DEFAULT_SECONDS 40.0
-#define TS_SISTER_MAX_SECONDS 120.0
+#define TS_SISTER_MIN_SECONDS 5.0
+#define TS_SISTER_MAX_SECONDS 60.0
 #define TS_SISTER_HEAD3_MAX_SECONDS 8.0
 
 typedef enum {
@@ -44,7 +45,10 @@ typedef enum {
 
 typedef struct {
     float *data;              /* Interleaved M or L,R. */
+    /* Logical musical canvas followed by the fixed physical allocation. */
     size_t capacity_frames;
+    size_t storage_frames;
+    size_t valid_history_frames;
     uint32_t sample_rate;
     uint8_t channels;
 } TsSisterBuffer;
@@ -126,6 +130,8 @@ typedef struct {
     uint8_t soak_targets;
     /* PR9 shares one visible control set across independent target histories. */
     TsSisterFxControls fx;
+    /* Requested logical rolling canvas. The fixed store is always 60 s. */
+    float buffer_seconds;
     float headroom;
     /* Fraction of the previous rolling-memory cell erased on each write pass.
        1.0 is full replacement; 0.0 retains the complete previous cell. */
@@ -134,10 +140,19 @@ typedef struct {
     float ghost_tone;
     /* Pre-tape input trim. Applied before rolling-memory write and Duck. */
     float input_gain;
+    /* Per-source trims are applied by the runtime before its established
+       multi-source headroom normalization and the master INPUT trim. */
+    float tiles_gain;
+    float fm_gain;
+    float external_gain;
+    float preview_gain;
     float monitor_dry;
     float monitor_wet;
     /* Post-filter MIX gain. Final linked safety remains authoritative. */
     float mix_output_gain;
+    /* Completed post-effects return trim. Applied before linked safety and
+       therefore also owns the explicit Master FX Feedback send level. */
+    float fx_return_gain;
     float clear_ms;
 } TsSisterParameters;
 
@@ -175,6 +190,8 @@ typedef struct {
     uint8_t buffer_channels;
     uint32_t sample_rate;
     double duration_seconds;
+    double target_duration_seconds;
+    int resize_pending;
     uint64_t revision;
 } TsSisterSnapshot;
 
@@ -197,6 +214,8 @@ typedef struct {
     atomic_uint_least32_t buffer_channels;
     atomic_uint_least32_t sample_rate;
     atomic_uint_least64_t duration_bits;
+    atomic_uint_least64_t target_duration_bits;
+    atomic_int resize_pending;
 } TsSisterSnapshotAtomic;
 
 typedef struct {
@@ -213,6 +232,11 @@ typedef struct {
     TsSisterBiquadState filter_state[2];
     uint32_t filter_ramp_remaining;
     uint64_t master_clock;
+    size_t pending_capacity_frames;
+    uint32_t resize_debounce_remaining;
+    size_t retained_old_capacity_frames;
+    uint32_t retained_resize_remaining;
+    uint32_t retained_resize_total;
     int rolling;
     int held;
     TsSisterClearState clear_state;
@@ -221,6 +245,7 @@ typedef struct {
     TsSisterRamp ghost_tone;
     TsSisterRamp input_gain;
     TsSisterRamp mix_output_gain;
+    TsSisterRamp fx_return_gain;
     TsSisterRamp feedback[2];
     TsSisterRamp wow_amount;
     TsSisterRamp drop_amount;
@@ -267,6 +292,8 @@ void ts_sister_machine_free(TsSisterMachine *machine);
 int ts_sister_machine_reconfigure(TsSisterMachine *machine,
                                   uint32_t sample_rate, uint8_t channels,
                                   double duration_seconds);
+int ts_sister_machine_request_duration(TsSisterMachine *machine,
+                                       double duration_seconds);
 void ts_sister_machine_reset(TsSisterMachine *machine);
 void ts_sister_machine_set_parameters(TsSisterMachine *machine,
                                       const TsSisterParameters *parameters);

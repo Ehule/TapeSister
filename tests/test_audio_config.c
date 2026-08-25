@@ -42,6 +42,11 @@ static int test_defaults(void)
            expect(config.sister_capture_channels == 1,
                   "Sister Capture should remain deliberately mono by default") &&
            expect(config.sister_input_percent == 100 &&
+                  config.sister_tiles_percent == 100 &&
+                  config.sister_fm_percent == 100 &&
+                  config.sister_ext_percent == 100 &&
+                  config.sister_audition_percent == 100 &&
+                  config.sister_fx_return_percent == 100 &&
                   config.sister_dry_percent == 100 &&
                   config.sister_wet_percent == 100 &&
                   config.sister_output_percent == 400 &&
@@ -80,6 +85,11 @@ static int test_roundtrip(void)
     saved.sister_capture_channels = 2;
     saved.sister_restart_clear = 0;
     saved.sister_input_percent = 65;
+    saved.sister_tiles_percent = 123;
+    saved.sister_fm_percent = 234;
+    saved.sister_ext_percent = 345;
+    saved.sister_audition_percent = 67;
+    saved.sister_fx_return_percent = 154;
     saved.sister_dry_percent = 35;
     saved.sister_wet_percent = 80;
     saved.sister_output_percent = 275;
@@ -120,6 +130,11 @@ static int test_roundtrip(void)
                 loaded.sister_restart_clear == 0,
                 "Sister capture/restart preferences should roundtrip") &&
          expect(loaded.sister_input_percent == 65 &&
+                loaded.sister_tiles_percent == 123 &&
+                loaded.sister_fm_percent == 234 &&
+                loaded.sister_ext_percent == 345 &&
+                loaded.sister_audition_percent == 67 &&
+                loaded.sister_fx_return_percent == 154 &&
                 loaded.sister_dry_percent == 35 &&
                 loaded.sister_wet_percent == 80 &&
                 loaded.sister_output_percent == 275 &&

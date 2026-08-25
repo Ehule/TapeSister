@@ -1,7 +1,8 @@
 # Sister Machine PR3 headless engine
 
-> PR9 keeps the PR3/PR8 head and MIX boundaries intact and supplies a stable
-> non-owning post-effect bank to frame processing. The machine never allocates
+> PR10 keeps the PR3/PR8/PR9 head, MIX, and effect boundaries intact while
+> separating live logical duration from fixed rolling allocation. PR9 supplies a
+> stable non-owning post-effect bank to frame processing. The machine never allocates
 > effect storage in its callback.
 
 PR3 implements Kafka's DSP identity as a standalone, deterministic C engine. It is
@@ -17,9 +18,10 @@ heads read the same preallocated circular buffer before the current frame is wri
 
 `TsSisterBuffer` stores either mono frames or interleaved stereo frames. Mono reads
 return exact dual mono; stereo reads interpolate L/R independently at one shared
-fractional position. The default duration is 40 seconds and the validated maximum is
-120 seconds. Capacity is `ceil(sample_rate * seconds)`, so 40-second stereo storage is
-about 13.5 MiB at 44.1 kHz, 14.6 MiB at 48 kHz, and 29.3 MiB at 96 kHz.
+fractional position. The default duration is 40 seconds and the live range is 5–60
+seconds. POWER preallocates the 60-second maximum; a separate logical capacity and
+valid-age horizon make later changes allocation- and copy-free. Stereo storage is
+about 20.2 MiB at 44.1 kHz, 22.0 MiB at 48 kHz, and 43.9 MiB at 96 kHz.
 
 Initialization, destruction and reconfiguration allocate off the audio thread.
 `ts_sister_machine_process_frame()` and `ts_sister_machine_process_block()` perform no
@@ -27,6 +29,8 @@ allocation, file access, logging, or locking. Reconfiguration allocates all repl
 storage before releasing the old storage; failure leaves the running engine untouched.
 The current restart policy preserves musical parameters and Roll/Hold state but clears
 rolling memory and resets all sample-rate-derived DSP state.
+Live duration changes instead use PR10's age-anchored contract in
+`SISTER_MACHINE_LIVE_BUFFER_CANVAS.md` and preserve DSP histories.
 
 ## Process order and taps
 
@@ -137,7 +141,8 @@ Clear never scans the buffer in the processing function:
 `ts_sister_machine_clear_offline()` executes the same handshake deterministically for
 headless tools and tests.
 
-Snapshots publish write/head positions, normalized markers, Roll/Hold/Clear state,
+Snapshots publish write/head positions, normalized markers, current/target duration
+and resize-pending state, Roll/Hold/Clear state,
 head and MIX peaks, Duck gain, Wow/Drop state, overload count, channel count, sample
 rate, duration and a monotonic revision. Every published field is atomic; an odd/even
 revision protocol prevents readers from accepting a mixed snapshot. UI code never

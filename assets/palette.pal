@@ -2,15 +2,15 @@
 ; Both applications preserve every key in this file.
 
 [Palette]
-PatternText=#FF1C00
+PatternText=#FF3131
 BlockMark=#2D0039
 TextOnBlock=#009EE3
-Mouse=#FFD265
-Desktop=#1C1C1C
-Buttons=#5D555D
-PatternNote=#FFE700
+Mouse=#CC830B
+Desktop=#20201F
+Buttons=#4A3C4A
+PatternNote=#FFAE20
 PatternInstrument=#18FF00
-PatternVolume=#FF1CE7
+PatternVolume=#FF47E7
 PatternTuning=#147DFF
 PatternEffect=#35FFFF
 PatternEmpty=#5900FF
@@ -20,13 +20,13 @@ ControlPlayhead=#FF3131
 FastTracksSync=#00CE41
 FastTracksPhase=#FF3131
 FastTracksSong=#FFAE20
-FastTracksLengthPlayhead=#D061FF
+FastTracksLengthPlayhead=#CE61FF
 WaveSelection=#2D0039
-ActiveTile=#FFD265
-StereoWaveLeft=#FFE700
+ActiveTile=#FF3131
+StereoWaveLeft=#FFAE20
 StereoWaveRight=#35FFFF
 StereoWaveSum=#18FF00
-SisterSourceHorizontal=#FFE700
+SisterSourceHorizontal=#FFAE20
 SisterSourceVertical=#35FFFF
-DesktopContrast=52
-ButtonsContrast=57
+DesktopContrast=18
+ButtonsContrast=18

@@ -77,20 +77,20 @@ static void zero_identity_and_shared_wow(void)
         output = ts_sister_machine_process_frame(&machine, sister_silence(), sister_silence());
     rate = ts_sister_rate_value(machine.parameters.head2_rate_index);
     phase_before_h2 = ts_sister_positive_modulo(machine.head[1].phase - rate,
-                                                machine.buffer.capacity_frames);
+                                                machine.buffer.storage_frames);
     rate = ts_sister_rate_value(machine.parameters.head3_rate_index);
     phase_before_h3 = ts_sister_positive_modulo(machine.head[2].phase - rate,
-                                                machine.buffer.capacity_frames);
+                                                machine.buffer.storage_frames);
     wow_h2 = machine.last_head_position[1] - phase_before_h2;
     wow_h3 = machine.last_head_position[2] - phase_before_h3;
-    if (wow_h2 > (double)machine.buffer.capacity_frames * 0.5)
-        wow_h2 -= (double)machine.buffer.capacity_frames;
-    if (wow_h2 < -(double)machine.buffer.capacity_frames * 0.5)
-        wow_h2 += (double)machine.buffer.capacity_frames;
-    if (wow_h3 > (double)machine.buffer.capacity_frames * 0.5)
-        wow_h3 -= (double)machine.buffer.capacity_frames;
-    if (wow_h3 < -(double)machine.buffer.capacity_frames * 0.5)
-        wow_h3 += (double)machine.buffer.capacity_frames;
+    if (wow_h2 > (double)machine.buffer.storage_frames * 0.5)
+        wow_h2 -= (double)machine.buffer.storage_frames;
+    if (wow_h2 < -(double)machine.buffer.storage_frames * 0.5)
+        wow_h2 += (double)machine.buffer.storage_frames;
+    if (wow_h3 > (double)machine.buffer.storage_frames * 0.5)
+        wow_h3 -= (double)machine.buffer.storage_frames;
+    if (wow_h3 < -(double)machine.buffer.storage_frames * 0.5)
+        wow_h3 += (double)machine.buffer.storage_frames;
     assert(fabs(wow_h2 - wow_h3) < 1e-6);
     ts_sister_machine_free(&machine);
 }

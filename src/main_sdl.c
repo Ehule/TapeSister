@@ -5796,15 +5796,31 @@ static const char *path_basename(const char *path)
     return slash != NULL ? slash + 1 : path;
 }
 
-static int ui_dialog_open(const TsUiState *ui)
+static int ui_blocking_dialog_open_except_fm(const TsUiState *ui)
 {
     return ui->exit_confirm_open || ui->overdub_confirm_open ||
-           ui->file_busy || ui->fm_open || ui->transform_open || ui->drone_open ||
+           ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->load_selection_choice_open || ui->palette_open || ui->config_open ||
            ui->renaming_bank_slot >= 0 || ui->renaming_recipe_slot >= 0 ||
            ui->export_choice_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
            ui->browser.mode != TS_BROWSER_CLOSED;
+}
+
+static int ui_dialog_open(const TsUiState *ui)
+{
+    return ui->fm_open || ui_blocking_dialog_open_except_fm(ui);
+}
+
+static int sister_performance_keys_allowed(const TsUiState *ui)
+{
+    if (ui == NULL) return 0;
+    /* FM is a non-modal performance workspace. Its explicit destination
+       confirmations remain modal, but ordinary FM notes must follow Sister
+       focus just as MIDI notes already do. */
+    return !ui_blocking_dialog_open_except_fm(ui) &&
+           (!ui->fm_open || (!ui->fm_bank_choice_open &&
+                             !ui->fm_full_choice_open));
 }
 
 static void handle_midi_event(SDL_AudioDeviceID device, AudioState *audio,
@@ -6465,8 +6481,7 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
     sister->window = SDL_CreateWindow(
         "TapeSister - Sister Machine", x, y,
         TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT,
-        SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
-        SDL_WINDOW_ALWAYS_ON_TOP);
+        SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     sister->renderer = sister->window ? SDL_CreateRenderer(
         sister->window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : NULL;
     if (sister->renderer == NULL && sister->window != NULL)
@@ -6568,6 +6583,11 @@ static void sister_set_parameter(TsSisterParameters *parameters,
         parameters->filter_gain_db = -24.0f + amount * 48.0f;
         break;
     case TS_SISTER_UI_PARAM_INPUT_GAIN: parameters->input_gain = amount * 2.0f; break;
+    case TS_SISTER_UI_PARAM_TILES_GAIN: parameters->tiles_gain = amount * 4.0f; break;
+    case TS_SISTER_UI_PARAM_FM_GAIN: parameters->fm_gain = amount * 4.0f; break;
+    case TS_SISTER_UI_PARAM_EXT_GAIN: parameters->external_gain = amount * 4.0f; break;
+    case TS_SISTER_UI_PARAM_PREVIEW_GAIN: parameters->preview_gain = amount * 4.0f; break;
+    case TS_SISTER_UI_PARAM_FX_RETURN_GAIN: parameters->fx_return_gain = amount * 2.0f; break;
     case TS_SISTER_UI_PARAM_MONITOR_DRY: parameters->monitor_dry = amount; break;
     case TS_SISTER_UI_PARAM_MONITOR_WET: parameters->monitor_wet = amount; break;
     case TS_SISTER_UI_PARAM_MIX_OUTPUT: parameters->mix_output_gain = amount * 4.0f; break;
@@ -6587,6 +6607,10 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: parameters->fx.distortion_tone = amount; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: parameters->fx.distortion_mix = amount; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: parameters->fx.master_feedback = amount; break;
+    case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
+        parameters->buffer_seconds = (float)TS_SISTER_MIN_SECONDS +
+            amount * (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
+        break;
     default: break;
     }
 }
@@ -6617,6 +6641,11 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FILTER_Q: value = (parameters->filter_q - 0.1f) / 19.9f; break;
     case TS_SISTER_UI_PARAM_FILTER_GAIN: value = (parameters->filter_gain_db + 24.0f) / 48.0f; break;
     case TS_SISTER_UI_PARAM_INPUT_GAIN: value = parameters->input_gain / 2.0f; break;
+    case TS_SISTER_UI_PARAM_TILES_GAIN: value = parameters->tiles_gain / 4.0f; break;
+    case TS_SISTER_UI_PARAM_FM_GAIN: value = parameters->fm_gain / 4.0f; break;
+    case TS_SISTER_UI_PARAM_EXT_GAIN: value = parameters->external_gain / 4.0f; break;
+    case TS_SISTER_UI_PARAM_PREVIEW_GAIN: value = parameters->preview_gain / 4.0f; break;
+    case TS_SISTER_UI_PARAM_FX_RETURN_GAIN: value = parameters->fx_return_gain / 2.0f; break;
     case TS_SISTER_UI_PARAM_MONITOR_DRY: value = parameters->monitor_dry; break;
     case TS_SISTER_UI_PARAM_MONITOR_WET: value = parameters->monitor_wet; break;
     case TS_SISTER_UI_PARAM_MIX_OUTPUT: value = parameters->mix_output_gain / 4.0f; break;
@@ -6636,6 +6665,10 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: value = parameters->fx.distortion_tone; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: value = parameters->fx.distortion_mix; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: value = parameters->fx.master_feedback; break;
+    case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
+        value = (parameters->buffer_seconds - (float)TS_SISTER_MIN_SECONDS) /
+            (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
+        break;
     default: break;
     }
     if (!isfinite(value) || value < 0.0f) return 0.0f;
@@ -6675,6 +6708,13 @@ static float sister_parameter_wheel_normalized(
         if (value < 0) value = 0;
         if (value >= TS_SISTER_RATE_COUNT) value = TS_SISTER_RATE_COUNT - 1;
         return value / (float)(TS_SISTER_RATE_COUNT - 1);
+    case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
+        value = (int)lrintf(parameters->buffer_seconds) + direction * steps *
+            (fine_adjustment ? 1 : 5);
+        if (value < (int)TS_SISTER_MIN_SECONDS) value = (int)TS_SISTER_MIN_SECONDS;
+        if (value > (int)TS_SISTER_MAX_SECONDS) value = (int)TS_SISTER_MAX_SECONDS;
+        return (value - (float)TS_SISTER_MIN_SECONDS) /
+            (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
     default:
         return sister_parameter_normalized(parameters, parameter) +
                (fine_adjustment ? 0.01f : 0.05f) * (float)wheel;
@@ -6971,7 +7011,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         hit.action != TS_SISTER_UI_ACTION_DESTINATION &&
         hit.action != TS_SISTER_UI_ACTION_TAP &&
         !(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index >= TS_SISTER_UI_PARAM_REVERB_TYPE) &&
+          ((hit.index >= TS_SISTER_UI_PARAM_TILES_GAIN &&
+            hit.index <= TS_SISTER_UI_PARAM_FX_RETURN_GAIN) ||
+           hit.index >= TS_SISTER_UI_PARAM_REVERB_TYPE ||
+           hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS)) &&
         !(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
           (hit.index >> 8) != 0)) {
         snprintf(sister->model.status, sizeof(sister->model.status),
@@ -7018,6 +7061,21 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         if (hit.index == TS_SISTER_UI_PARAM_INPUT_GAIN)
             ui->config.sister_input_percent =
                 (int)lrintf(sister->model.parameters.input_gain * 100.0f);
+        else if (hit.index == TS_SISTER_UI_PARAM_TILES_GAIN)
+            ui->config.sister_tiles_percent =
+                (int)lrintf(sister->model.parameters.tiles_gain * 100.0f);
+        else if (hit.index == TS_SISTER_UI_PARAM_FM_GAIN)
+            ui->config.sister_fm_percent =
+                (int)lrintf(sister->model.parameters.fm_gain * 100.0f);
+        else if (hit.index == TS_SISTER_UI_PARAM_EXT_GAIN)
+            ui->config.sister_ext_percent =
+                (int)lrintf(sister->model.parameters.external_gain * 100.0f);
+        else if (hit.index == TS_SISTER_UI_PARAM_PREVIEW_GAIN)
+            ui->config.sister_audition_percent =
+                (int)lrintf(sister->model.parameters.preview_gain * 100.0f);
+        else if (hit.index == TS_SISTER_UI_PARAM_FX_RETURN_GAIN)
+            ui->config.sister_fx_return_percent =
+                (int)lrintf(sister->model.parameters.fx_return_gain * 100.0f);
         else if (hit.index == TS_SISTER_UI_PARAM_MONITOR_DRY)
             ui->config.sister_dry_percent =
                 (int)lrintf(sister->model.parameters.monitor_dry * 100.0f);
@@ -7033,6 +7091,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         else if (hit.index == TS_SISTER_UI_PARAM_GHOST_TONE)
             ui->config.sister_ghost_percent =
                 (int)lrintf(sister->model.parameters.ghost_tone * 100.0f);
+        else if (hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS)
+            ui->config.sister_buffer_seconds =
+                (int)lrintf(sister->model.parameters.buffer_seconds);
         break;
     case TS_SISTER_UI_ACTION_EFFECT_TARGET:
     {
@@ -8412,12 +8473,23 @@ int main(int argc, char **argv)
         TsSisterParameters parameters = audio.sister.parameters;
         parameters.input_gain =
             (float)ui.config.sister_input_percent / 100.0f;
+        parameters.tiles_gain =
+            (float)ui.config.sister_tiles_percent / 100.0f;
+        parameters.fm_gain =
+            (float)ui.config.sister_fm_percent / 100.0f;
+        parameters.external_gain =
+            (float)ui.config.sister_ext_percent / 100.0f;
+        parameters.preview_gain =
+            (float)ui.config.sister_audition_percent / 100.0f;
+        parameters.fx_return_gain =
+            (float)ui.config.sister_fx_return_percent / 100.0f;
         parameters.monitor_dry = (float)ui.config.sister_dry_percent / 100.0f;
         parameters.monitor_wet = (float)ui.config.sister_wet_percent / 100.0f;
         parameters.mix_output_gain =
             (float)ui.config.sister_output_percent / 100.0f;
         parameters.write_erase = (float)ui.config.sister_erase_percent / 100.0f;
         parameters.ghost_tone = (float)ui.config.sister_ghost_percent / 100.0f;
+        parameters.buffer_seconds = (float)ui.config.sister_buffer_seconds;
         ts_sister_runtime_set_parameters(&audio.sister, &parameters);
     }
     ts_sister_runtime_input_available(&audio.sister, 0);
@@ -8703,11 +8775,21 @@ int main(int argc, char **argv)
                         (TsSisterUiHit){TS_SISTER_UI_ACTION_PRESET_CONFIRM, 0, 0.0f},
                         (uint32_t)obtained.freq, obtained.channels);
                 } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
-                           !ui_dialog_open(&ui) &&
+                           sister_performance_keys_allowed(&ui) &&
                            !sister_window.model.preset_manage_open) {
                     int note = note_for_key(event.key.keysym.sym);
                     SDL_Keymod mod = SDL_GetModState();
-                    if (note >= 0 && device) {
+                    if (event.key.keysym.sym >= SDLK_F1 &&
+                        event.key.keysym.sym <= SDLK_F8) {
+                        int octave = ts_ui_keyboard_set_octave(
+                            &ui, (int)(event.key.keysym.sym - SDLK_F1));
+                        snprintf(sister_window.model.status,
+                                 sizeof(sister_window.model.status),
+                                 "KEYBOARD OCTAVE %d", octave);
+                        if (ui.fm_open)
+                            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                     "KEYBOARD OCTAVE %d", octave);
+                    } else if (note >= 0 && device) {
                         /* The open FM workspace remains the keyboard's sound
                            source even while Sister owns focus. Do not clear a
                            held FM chord merely because a Sister control was
@@ -8732,7 +8814,9 @@ int main(int argc, char **argv)
                                        (mod & KMOD_SHIFT) != 0);
                         }
                     }
-                } else if (event.type == SDL_KEYUP && !ui_dialog_open(&ui) &&
+                } else if (event.type == SDL_KEYUP &&
+                           sister_performance_keys_allowed(&ui) &&
+                           !sister_window.model.preset_manage_open &&
                            note_for_key(event.key.keysym.sym) >= 0) {
                     release_note(device, &audio, &ui,
                                  note_for_key(event.key.keysym.sym));

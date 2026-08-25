@@ -24,6 +24,8 @@ a two-bar Hold marker, and a warning color. The engine remains disabled at start
 SDL events are dispatched by window ID before main-window hit testing. Sister QWERTY
 note events reuse the same `TsNoteEvent` path as the main window, so MIDI and QWERTY
 fan-out remain identical. Modal text/edit state suppresses Sister-window QWERTY input.
+F1-F8 also use the shared octave setter while Sister owns focus, including when the
+FM window is open but covered.
 Application quit stops callbacks before destroying either window or freeing Sister.
 
 ## Rolling display contract
@@ -73,6 +75,12 @@ H2 and H3 use the engine's exact ordered Rate choices:
 Continuous controls accept absolute left/right click, either-button drag, and wheel
 adjustment (Shift+wheel is fine). Both mouse buttons address the same visible parameter.
 
+The open right-hand lane beside the head/filter rows contains a compact vertical
+`T / F / E / A / X` mixer. T/F/E/A are independent 0–400% source trims before
+normalization; X is the 0–200% completed FX-return trim. Unity ticks are shown on
+every fader. The established source diagnostics remain beside the four source
+switches, and INPUT remains the pre-tape master.
+
 The dedicated monitor/memory row separates six independent laws:
 
 - `INPUT` is a smoothed 0-200 percent pre-tape trim. It scales the compensated selected
@@ -87,7 +95,7 @@ The dedicated monitor/memory row separates six independent laws:
 - `ERASE` sets how much of the previous rolling-memory cell the moving write head removes.
 - `GHOST`/`GHOST TONE` spectrally ages only the retained old cell on repeated passes.
 
-INPUT, DRY and WET are smoothed over 20 ms. H1/H2/H3/MIX Capture taps,
+INPUT, T/F/E/A, FX RET, DRY and WET are smoothed over 20 ms. H1/H2/H3/MIX Capture taps,
 ordinary Capture source and external recording remain pre-monitor. OUT defaults to
 400 percent in the application to compensate the
 engine's deliberately conservative H1 and fixed-headroom defaults; final linked safety
@@ -139,9 +147,10 @@ source-mask action.
 
 ## Preferences and restart policy
 
-Configuration now preserves buffer duration/channel shape, clear fade, Sister Capture
+Configuration supplies the startup buffer duration/channel shape; PR10 promotes
+duration to a live preset/project musical parameter as well. Configuration preserves clear fade, Sister Capture
 format, both waveform display modes, restart-clear policy, INPUT trim, DRY/WET monitor levels,
-MIX output gain, ERASE strength and Sister window position.
+the four source trims, FX return, MIX output gain, ERASE strength and Sister window position.
 Musical source masks and parameter state are intentionally runtime-only. Output restart
 retains the PR4 policy: rolling memory and published waveform are cleared; failure leaves
 Sister disabled while ordinary TapeSister audio remains available.
@@ -153,7 +162,8 @@ the Sister engine off; it does not compromise ordinary output setup.
 The Sister renderer compares its copied model with the last presented model and skips
 unchanged frames. Active motion is capped at one software-texture update every 33 ms
 (about 30 Hz). Circular-memory reduction is incremental in the callback and the UI's
-fixed 256-bin copy has constant cost regardless of a 1- or 120-second buffer. No render
+fixed 256-bin copy has constant cost regardless of a 5- or 60-second buffer. A live
+resize remaps that summary by age while the UI displays current→target seconds. No render
 operation or framebuffer allocation occurs on the audio thread.
 
 ## Retained wrappers

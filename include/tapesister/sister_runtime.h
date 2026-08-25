@@ -16,6 +16,7 @@ enum {
     TS_SISTER_SOURCE_FM = 1u << 1,
     TS_SISTER_SOURCE_EXT = 1u << 2,
     TS_SISTER_SOURCE_PREVIEW = 1u << 3,
+    TS_SISTER_SOURCE_COUNT = 4,
     TS_SISTER_SOURCE_ALL = TS_SISTER_SOURCE_TILES | TS_SISTER_SOURCE_FM |
                            TS_SISTER_SOURCE_EXT | TS_SISTER_SOURCE_PREVIEW
 };
@@ -136,13 +137,17 @@ typedef struct {
     int input_available;
     int source_target_conflict;
     int callback_failed;
+    int parameters_published;
     float monitor_dry_current;
     float monitor_wet_current;
+    TsSisterRamp source_gain[TS_SISTER_SOURCE_COUNT];
+    TsSisterRamp ordinary_fx_return_gain;
     float master_feedback_current;
     TsStereoFrame master_feedback_previous;
     char selected_preset[48];
     TsSisterRoutingSnapshotAtomic snapshot;
     TsSisterWavePublisher waveform;
+    size_t waveform_capacity_frames;
 } TsSisterRuntime;
 
 void ts_sister_runtime_init(TsSisterRuntime *runtime);

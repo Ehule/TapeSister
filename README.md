@@ -492,7 +492,7 @@ Sister remains disabled by default. Clicking the `TAPESISTER` logo opens its ind
 performance window without changing POWER; closing that window hides it without stopping
 or starting audio. The window exposes transport, fixed sources, three heads, modulation/filter,
 stereo rolling overview, pre-tape INPUT trim, source-aware DRY/WET tape routing,
-protected MIX OUT gain,
+protected MIX OUT gain, a compact `T/F/E/A` source mixer and `FX` return trim,
 recording-head ERASE strength, age-dependent GHOST TONE,
 and protected tap Capture/Overdub controls. ERASE 100 fully replaces each rolling-buffer
 cell; lower values retain old stereo material before new input and controlled head
@@ -505,7 +505,8 @@ copies only to an empty tile and toggles any occupied tile directly into or out 
 page's ensemble. Source membership is the split yellow/cyan outer perimeter; active
 canvas selection is the established hollow border, inset when both states coincide.
 MIDI/QWERTY fan one note out to all marked tiles. Live FM no longer depends on an
-occupied tile or window focus, and EXT requests the shared physical input independently
+occupied tile or window focus; Sister-window F1-F8 keys select the same keyboard octave
+as the main and FM windows. EXT requests the shared physical input independently
 of the Record-bank monitor. Sister tile one-shots finish after key-up and at their
 independent natural lengths; fixed group gain prevents a short layer ending from lifting
 the longer layers. Active voices own immutable sample generations: one-shots finish
@@ -524,7 +525,13 @@ reusable effect targets are specified in
 [`docs/SISTER_MACHINE_SOAK_BLEED.md`](docs/SISTER_MACHINE_SOAK_BLEED.md); the remaining
 PR9 fixed Distortion→Delay→Reverb chain, POWER-off MIX bus, and causal Master FX
 Feedback return are specified in
-[`docs/SISTER_MACHINE_POST_EFFECTS.md`](docs/SISTER_MACHINE_POST_EFFECTS.md). The remaining order is tracked in
+[`docs/SISTER_MACHINE_POST_EFFECTS.md`](docs/SISTER_MACHINE_POST_EFFECTS.md).
+PR10's live 5–60-second age-anchored BUFFER canvas, crop/grow law, and realtime
+ownership are specified in
+[`docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md`](docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md).
+Its Windows/Linux listening pass is
+[`docs/SISTER_MACHINE_PR10_MANUAL_CHECKLIST.md`](docs/SISTER_MACHINE_PR10_MANUAL_CHECKLIST.md).
+The remaining order is tracked in
 [`docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md`](docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md).
 The PR9 Windows/Linux listening pass is
 [`docs/SISTER_MACHINE_PR9_MANUAL_CHECKLIST.md`](docs/SISTER_MACHINE_PR9_MANUAL_CHECKLIST.md).
@@ -584,8 +591,13 @@ toolchain installed:
 ```bash
 cmake -S . -B build-windows -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
-cmake --build build-windows
+cmake --build build-windows --target tapesister
 ```
+
+Targeting `tapesister` builds only the application and its required dependencies;
+it does not generate the complete collection of test executables. Use
+`cmake --build build-windows` without `--target tapesister` only when you
+intentionally want every configured build target.
 
 The build copies the matching 64-bit `SDL2.dll` and MinGW runtime DLLs beside
 `build-windows/tapesister.exe`. That directory is therefore directly launchable

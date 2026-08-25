@@ -18,6 +18,11 @@ static void default_contract(void)
     assert(parameters.width == 1.0f);
     assert(parameters.filter_type == TS_SISTER_FILTER_BYPASS);
     assert(parameters.input_gain == 1.0f);
+    assert(parameters.tiles_gain == 1.0f);
+    assert(parameters.fm_gain == 1.0f);
+    assert(parameters.external_gain == 1.0f);
+    assert(parameters.preview_gain == 1.0f);
+    assert(parameters.fx_return_gain == 1.0f);
     assert(parameters.mix_output_gain == 1.0f);
     assert(parameters.clear_ms == 20.0f);
     ts_sister_parameters_kafka_start(&parameters, 48000u);
@@ -138,11 +143,15 @@ static void scrub_span_rates_and_taps(void)
     parameters.head3_rate_index = 9;
     sister_configure_immediate(&machine, &parameters);
     machine.head[1].phase = 0.5;
-    machine.head[2].phase = (double)machine.buffer.capacity_frames - 0.5;
+    machine.head[2].phase = (double)machine.buffer.storage_frames - 0.5;
     ts_sister_machine_set_rolling(&machine, 0);
     output = ts_sister_machine_process_frame(&machine, sister_silence(), sister_silence());
-    assert(machine.head[1].phase > (double)machine.buffer.capacity_frames - 2.0);
-    assert(machine.head[2].phase < 2.0);
+    assert(ts_sister_positive_modulo(
+        (double)(machine.master_clock % machine.buffer.storage_frames) -
+        machine.head[1].phase, machine.buffer.storage_frames) < 3.0);
+    assert(ts_sister_positive_modulo(
+        (double)(machine.master_clock % machine.buffer.storage_frames) -
+        machine.head[2].phase, machine.buffer.storage_frames) < 3.0);
     assert(sister_frame_finite(output.mix));
     ts_sister_machine_free(&machine);
 }

@@ -47,6 +47,10 @@ retains the existing linked safety and explicit mono `0.5 × (L + R)` fold. MIX
 effects never leak into raw head taps; ordinary main Capture remains at its
 established pre-monitor source point.
 
+PR10 duration changes never stop or re-arm Capture. The selected H1/H2/H3/MIX tap is
+published at the same stage while rolling history is resized by age; Capture recorder
+capacity and destination transaction remain independent of Sister buffer seconds.
+
 The input callback performs only explicit MIX/LEFT/RIGHT/STEREO conversion,
 channel-aware external-source recorder writes, one
 block peak publication, and an optional lock-free SPSC monitor-ring write. It does no

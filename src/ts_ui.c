@@ -1151,9 +1151,11 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
              color == ui->palette_entry ? PAL_BLOCK_TEXT : RGB(222, 218, 214), 1);
     }
     snprintf(value, sizeof(value), "%s  #%06X",
-             ts_palette_color_name((TsPaletteColor)ui->palette_entry),
+             short_names[ui->palette_entry],
              (unsigned)(selected & 0xffffffu));
-    text(fb, 290, 89, value, PAL_INSTRUMENT, 1);
+    /* The palette now has three swatch rows. Keep the selected-color readout
+       in the free lower-middle lane rather than painting across row three. */
+    text(fb, 250, 139, value, PAL_INSTRUMENT, 1);
     for (int component = 0; component < 3; ++component) {
         float amount = ts_palette_component(&ui->palette,
                        (TsPaletteColor)ui->palette_entry, component) / 255.0f;
@@ -3237,6 +3239,43 @@ static void sister_percent_parameter(TsFramebuffer *fb, int x, int y,
     text(fb, x + 3, y + 3, value, color, 1);
 }
 
+static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
+                                  const TsSisterUiModel *model)
+{
+    static const char *const labels[5] = {"T", "F", "E", "A", "X"};
+    const float amounts[5] = {
+        model->parameters.tiles_gain / 4.0f,
+        model->parameters.fm_gain / 4.0f,
+        model->parameters.external_gain / 4.0f,
+        model->parameters.preview_gain / 4.0f,
+        model->parameters.fx_return_gain / 2.0f
+    };
+    const uint32_t colors[5] = {
+        PAL_NOTE, PAL_EFFECT, PAL_WAVE_RIGHT, PAL_MOUSE, PAL_INSTRUMENT
+    };
+    const int track_y = y + 22;
+    const int track_height = 84;
+    rect(fb, x, y, 80, 110, RGB(24, 23, 25));
+    text(fb, x + 25, y + 3, "MIXER", PAL_MOUSE, 1);
+    for (int control = 0; control < 5; ++control) {
+        float amount = amounts[control];
+        int lane_x = x + 2 + control * 15;
+        int handle_y;
+        int unity_y;
+        if (!isfinite(amount)) amount = 0.0f;
+        if (amount < 0.0f) amount = 0.0f;
+        if (amount > 1.0f) amount = 1.0f;
+        text(fb, lane_x + 4, y + 12, labels[control], colors[control], 1);
+        rect(fb, lane_x + 5, track_y, 4, track_height, RGB(7, 7, 8));
+        unity_y = track_y + (int)lrintf(
+            (track_height - 1) * (control == 4 ? 0.5f : 0.75f));
+        rect(fb, lane_x + 2, unity_y, 10, 1, PAL_BUTTON);
+        handle_y = track_y + (int)lrintf(
+            (track_height - 1) * (1.0f - amount));
+        rect(fb, lane_x + 1, handle_y - 1, 12, 3, colors[control]);
+    }
+}
+
 static void sister_choice_parameter(TsFramebuffer *fb, int x, int y,
                                     int width, const char *label,
                                     const char *choice, int active,
@@ -3279,7 +3318,21 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 146, 8, 62, "HOLD", model->routing.held);
     button(fb, 214, 8, 62, "CLEAR", model->engine.clear_state != TS_SISTER_CLEAR_IDLE);
     button(fb, 282, 8, 62, "MONITOR", model->routing.monitor_enabled);
-    text(fb, 352, 13, "SISTER", PAL_TEXT, 1);
+    {
+        float target = model->parameters.buffer_seconds;
+        float current = (float)model->engine.duration_seconds;
+        float amount = (target - (float)TS_SISTER_MIN_SECONDS) /
+            (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
+        char canvas[32];
+        if (model->engine.resize_pending)
+            snprintf(canvas, sizeof(canvas), "BUF %.0F>%.0F", current, target);
+        else
+            snprintf(canvas, sizeof(canvas), "BUFFER %.0FS", target);
+        sister_choice_parameter(fb, 350, 8, 94, "", canvas,
+                                model->engine.resize_pending, PAL_TUNING);
+        rect(fb, 351, 25, (int)lrintf(92.0f * sister_clamp(amount)), 3,
+             PAL_TUNING);
+    }
     button(fb, 450, 8, 76, model->fx_page ? "TAPE" : "FX PAGE",
            model->fx_page);
     button(fb, 532, 8, 98, ts_waveform_display_name(model->waveform_mode),
@@ -3370,7 +3423,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
              model->routing.source_mask, model->routing.active_source_voices,
              model->routing.source_input_peak,
              model->routing.tap_peak[TS_SISTER_TAP_MIX]);
-    text(fb, 322, 179, line, model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
+    text(fb, 322, 179, line,
+         model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
     snprintf(line, sizeof(line), "H1 %.2F  H2 %.2F  H3 %.2F  OV %llu",
              model->routing.tap_peak[TS_SISTER_TAP_H1],
              model->routing.tap_peak[TS_SISTER_TAP_H2],
@@ -3378,6 +3432,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
              (unsigned long long)model->routing.overload_count);
     text(fb, 322, 190, line,
          model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING, 1);
+    sister_vertical_mixer(fb, 548, 172, model);
 
     text(fb, 10, 207, "H1", PAL_NOTE, 1);
     sister_parameter(fb, 72, 202, 110, "LEVEL", model->parameters.head1_level, PAL_NOTE);

@@ -190,7 +190,7 @@ foreach(stereo_test IN ITEMS audio_mixer note_bank_stereo performance_stereo
   add_test(NAME test_${stereo_test} COMMAND test_${stereo_test})
 endforeach()
 
-foreach(sister_test IN ITEMS sister_buffer sister_heads sister_transport
+foreach(sister_test IN ITEMS sister_buffer sister_resize sister_heads sister_transport
                              sister_modulation sister_feedback sister_stereo
                              sister_weave
                              sister_effect_routing

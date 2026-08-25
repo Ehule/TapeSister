@@ -42,6 +42,10 @@ void ts_sister_wave_publisher_push(TsSisterWavePublisher *publisher,
                                    TsStereoFrame frame, size_t frame_position,
                                    size_t capacity_frames, uint8_t channels,
                                    int written);
+void ts_sister_wave_publisher_resize(TsSisterWavePublisher *publisher,
+                                     size_t old_capacity_frames,
+                                     size_t new_capacity_frames,
+                                     uint64_t master_clock);
 int ts_sister_wave_snapshot_get(const TsSisterWavePublisher *publisher,
                                 TsSisterWaveSnapshot *snapshot);
 

@@ -35,6 +35,11 @@ int main(void)
     assert(ts_sister_runtime_set_page(&runtime, 1u, &instrument));
     assert(ts_sister_runtime_set_source_slot(&runtime, &instrument, 1, 1));
     runtime.parameters.ghost_tone = 0.61f;
+    runtime.parameters.tiles_gain = 1.23f;
+    runtime.parameters.fm_gain = 2.34f;
+    runtime.parameters.external_gain = 3.45f;
+    runtime.parameters.preview_gain = 0.67f;
+    runtime.parameters.fx_return_gain = 1.54f;
     runtime.parameters.soak = 0.68f;
     runtime.parameters.bleed = 0.74f;
     runtime.parameters.soak_targets = TS_SISTER_EFFECT_TARGET_H1 |
@@ -48,6 +53,7 @@ int main(void)
     runtime.parameters.fx.distortion_mix = 0.71f;
     runtime.parameters.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
     runtime.parameters.fx.master_feedback = 0.66f;
+    runtime.parameters.buffer_seconds = 23.0f;
     ts_sister_runtime_set_parameters(&runtime, &runtime.parameters);
     runtime.machine.buffer.data[0] = 0.75f;
     ts_sister_project_state_capture(&state, &runtime, 2u, "GHOST FIELD");
@@ -56,6 +62,11 @@ int main(void)
                                         error, sizeof(error)) && present);
     assert(loaded.page_masks[0] == 1u && loaded.page_masks[1] == 2u);
     assert(loaded.parameters.ghost_tone > 0.60f);
+    assert(loaded.parameters.tiles_gain > 1.22f && loaded.parameters.tiles_gain < 1.24f);
+    assert(loaded.parameters.fm_gain > 2.33f && loaded.parameters.fm_gain < 2.35f);
+    assert(loaded.parameters.external_gain > 3.44f && loaded.parameters.external_gain < 3.46f);
+    assert(loaded.parameters.preview_gain > 0.66f && loaded.parameters.preview_gain < 0.68f);
+    assert(loaded.parameters.fx_return_gain > 1.53f && loaded.parameters.fx_return_gain < 1.55f);
     assert(loaded.parameters.soak > 0.67f && loaded.parameters.soak < 0.69f);
     assert(loaded.parameters.bleed > 0.73f && loaded.parameters.bleed < 0.75f);
     assert(loaded.parameters.soak_targets ==
@@ -67,6 +78,7 @@ int main(void)
     assert(loaded.parameters.fx.distortion_targets ==
            TS_SISTER_EFFECT_TARGET_MIX);
     assert(loaded.parameters.fx.master_feedback > 0.65f);
+    assert(loaded.parameters.buffer_seconds == 23.0f);
     assert(strcmp(loaded.selected_preset, "GHOST FIELD") == 0);
     ts_sister_runtime_init(&restored);
     assert(ts_sister_project_state_apply(&loaded, &restored, &instrument));
@@ -97,7 +109,10 @@ int main(void)
                loaded.parameters.fx.delay_mix == 0.0f &&
                loaded.parameters.fx.distortion_mix == 0.0f &&
                loaded.parameters.fx.master_feedback == 0.0f &&
+               loaded.parameters.tiles_gain == 1.0f &&
+               loaded.parameters.fx_return_gain == 1.0f &&
                loaded.parameters.fx.reverb_targets == TS_SISTER_EFFECT_TARGET_MIX);
+        assert(loaded.parameters.buffer_seconds == 40.0f);
     }
     remove(state_path);
     {
@@ -121,7 +136,13 @@ int main(void)
            loaded.parameters.fx.reverb_mix == 0.0f &&
            loaded.parameters.fx.delay_mix == 0.0f &&
            loaded.parameters.fx.distortion_mix == 0.0f &&
-           loaded.parameters.fx.master_feedback == 0.0f);
+           loaded.parameters.fx.master_feedback == 0.0f &&
+           loaded.parameters.tiles_gain == 1.0f &&
+           loaded.parameters.fm_gain == 1.0f &&
+           loaded.parameters.external_gain == 1.0f &&
+           loaded.parameters.preview_gain == 1.0f &&
+           loaded.parameters.fx_return_gain == 1.0f &&
+           loaded.parameters.buffer_seconds == 40.0f);
     puts("sister project-state tests passed");
     return 0;
 }
