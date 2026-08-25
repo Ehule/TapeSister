@@ -590,8 +590,13 @@ toolchain installed:
 ```bash
 cmake -S . -B build-windows -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
-cmake --build build-windows
+cmake --build build-windows --target tapesister
 ```
+
+Targeting `tapesister` builds only the application and its required dependencies;
+it does not generate the complete collection of test executables. Use
+`cmake --build build-windows` without `--target tapesister` only when you
+intentionally want every configured build target.
 
 The build copies the matching 64-bit `SDL2.dll` and MinGW runtime DLLs beside
 `build-windows/tapesister.exe`. That directory is therefore directly launchable
