@@ -35,16 +35,19 @@ int main(void)
     sources.preview = (TsStereoFrame){0.0f, 0.6f};
 
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_FM);
-    frame = ts_sister_runtime_process_frame(&runtime, &sources);
+    for (int sample = 0; sample < 20; ++sample)
+        frame = ts_sister_runtime_process_frame(&runtime, &sources);
     CHECK(CLOSE(frame.input.l, 0.4f) && CLOSE(frame.input.r, 0.4f));
     CHECK(CLOSE(frame.duck_sidechain.l, frame.input.l));
 
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_EXT);
-    frame = ts_sister_runtime_process_frame(&runtime, &sources);
+    for (int sample = 0; sample < 20; ++sample)
+        frame = ts_sister_runtime_process_frame(&runtime, &sources);
     CHECK(CLOSE(frame.input.l, 0.2f) && CLOSE(frame.input.r, -0.2f));
 
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_PREVIEW);
-    frame = ts_sister_runtime_process_frame(&runtime, &sources);
+    for (int sample = 0; sample < 20; ++sample)
+        frame = ts_sister_runtime_process_frame(&runtime, &sources);
     CHECK(CLOSE(frame.input.l, 0.0f) && CLOSE(frame.input.r, 0.6f));
 
     {
@@ -105,7 +108,7 @@ int main(void)
     CHECK(ts_sister_runtime_set_source_slot(&runtime, &instrument, 0, 1));
     CHECK(ts_sister_runtime_note_on(&runtime, &instrument, &note, 0,
                                     1000) == 1);
-    for (int sample = 0; sample < 5; ++sample)
+    for (int sample = 0; sample < 20; ++sample)
         frame = ts_sister_runtime_process_frame(&runtime, NULL);
     trimmed_tile_peak = sister_peak(frame.input);
     ts_sister_runtime_panic(&runtime);
@@ -120,7 +123,7 @@ int main(void)
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TILES);
     CHECK(ts_sister_runtime_note_on(&runtime, &instrument, &note, 0,
                                     1000) == 1);
-    for (int sample = 0; sample < 5; ++sample)
+    for (int sample = 0; sample < 20; ++sample)
         frame = ts_sister_runtime_process_frame(&runtime, NULL);
     one_tile_peak = sister_peak(frame.input);
     CHECK(CLOSE(one_tile_peak / trimmed_tile_peak, 2.0f));
@@ -161,18 +164,41 @@ int main(void)
     frame = ts_sister_runtime_process_frame(&runtime, &sources);
     CHECK(CLOSE(frame.monitor_return.l, 0.0f));
     ts_sister_runtime_set_monitor(&runtime, 1);
-    frame = ts_sister_runtime_process_frame(&runtime, &sources);
+    for (int sample = 0; sample < 20; ++sample)
+        frame = ts_sister_runtime_process_frame(&runtime, &sources);
     CHECK(CLOSE(frame.monitor_return.l,
                 frame.input.l + frame.tap[TS_SISTER_TAP_MIX].l));
 
+    /* Route ownership hands off over 20 ms, so the inserted and direct paths
+       can be mixed as exact complements without an on/off discontinuity. */
+    sources.fm = (TsStereoFrame){0.4f, 0.4f};
+    ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_FM);
+    for (int sample = 0; sample < 20; ++sample)
+        frame = ts_sister_runtime_process_frame(&runtime, &sources);
+    CHECK(CLOSE(ts_sister_runtime_source_route(&runtime, 1), 1.0f));
+    ts_sister_runtime_set_sources(&runtime, 0u);
+    {
+        float previous = 1.0f;
+        for (int sample = 0; sample < 20; ++sample) {
+            float route;
+            frame = ts_sister_runtime_process_frame(&runtime, &sources);
+            route = ts_sister_runtime_source_route(&runtime, 1);
+            CHECK(route <= previous && route >= 0.0f);
+            previous = route;
+        }
+    }
+    CHECK(CLOSE(ts_sister_runtime_source_route(&runtime, 1), 0.0f));
+
     sources.fm = (TsStereoFrame){NAN, INFINITY};
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_FM);
-    frame = ts_sister_runtime_process_frame(&runtime, &sources);
+    for (int sample = 0; sample < 20; ++sample)
+        frame = ts_sister_runtime_process_frame(&runtime, &sources);
     CHECK(sister_frame_finite(frame.input));
     CHECK(sister_frame_finite(frame.tap[TS_SISTER_TAP_MIX]));
 
     ts_sister_runtime_set_sources(&runtime, 0u);
-    frame = ts_sister_runtime_process_frame(&runtime, NULL);
+    for (int sample = 0; sample < 20; ++sample)
+        frame = ts_sister_runtime_process_frame(&runtime, NULL);
     CHECK(CLOSE(frame.input.l, 0.0f) && CLOSE(frame.input.r, 0.0f));
 
     ts_sister_runtime_disable(&runtime);

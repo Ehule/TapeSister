@@ -70,7 +70,8 @@ int main(void)
     ts_sister_runtime_note_off(&runtime, &midi);
 
     ts_sister_runtime_set_sources(&runtime, 0u);
-    frame = ts_sister_runtime_process_frame(&runtime, NULL);
+    for (int sample = 0; sample < 20; ++sample)
+        frame = ts_sister_runtime_process_frame(&runtime, NULL);
     CHECK(CLOSE(frame.input.l, 0.0f) && CLOSE(frame.input.r, 0.0f));
     ts_sister_runtime_panic(&runtime);
     CHECK(ts_performance_count(&runtime.performance) == 0);

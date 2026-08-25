@@ -531,6 +531,12 @@ ownership are specified in
 [`docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md`](docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md).
 Its Windows/Linux listening pass is
 [`docs/SISTER_MACHINE_PR10_MANUAL_CHECKLIST.md`](docs/SISTER_MACHINE_PR10_MANUAL_CHECKLIST.md).
+PR11's complete transition/callback audit and H2/H1 investigation are in
+[`docs/SISTER_MACHINE_PR11_REALTIME_AUDIT.md`](docs/SISTER_MACHINE_PR11_REALTIME_AUDIT.md).
+The automated certification record and Windows/Linux listening checklist are in
+[`docs/SISTER_MACHINE_PR11_CERTIFICATION.md`](docs/SISTER_MACHINE_PR11_CERTIFICATION.md),
+and the next packaging PR starts from
+[`docs/PR12_WINDOWS_PACKAGING_HANDOFF.md`](docs/PR12_WINDOWS_PACKAGING_HANDOFF.md).
 The remaining order is tracked in
 [`docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md`](docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md).
 The PR9 Windows/Linux listening pass is
@@ -577,9 +583,16 @@ The small Makefile is also available:
 
 ```bash
 make test
+make stress-sister       # explicit deterministic 2+ hour offline certification
+make benchmark-sister    # optional callback-cost benchmark
 make
 ./tapesister
 ```
+
+Run `./tapesister --diagnostic-audio` for optional controller-thread reports of
+average/worst callback time, callback frames, near-deadlines, overruns, device rate,
+buffer size, and active Sister configuration. Normal operation does not collect these
+timings.
 
 Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or choose it through **Load**.
 

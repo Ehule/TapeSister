@@ -5,6 +5,7 @@
 #include "tapesister/input_ownership.h"
 #include "tapesister/note_bank.h"
 #include "tapesister/sample_pages.h"
+#include "tapesister/realtime_diagnostics.h"
 #include "tapesister/sister_runtime.h"
 #include "tapesister/sister_preset.h"
 #include "tapesister/sister_project_state.h"
@@ -739,11 +740,49 @@ typedef struct {
     int capture_requires_scaling;
     int capture_trigger_ready;
     int preserve_release_tails;
+    int realtime_diagnostics_enabled;
+    uint64_t realtime_counter_frequency;
+    TsRealtimeDiagnostics realtime_diagnostics;
+    TsStereoFrame last_output;
+    TsStereoFrame topology_crossfade_from;
+    uint32_t topology_crossfade_remaining;
+    uint32_t topology_crossfade_total;
 } AudioState;
 
 static void runtime_clear_group(AudioState *audio);
 static int runtime_capture_source_matches(const AudioState *audio,
                                           int selected_slot);
+
+static void audio_begin_topology_crossfade(AudioState *audio,
+                                           uint32_t sample_rate)
+{
+    if (audio == NULL) return;
+    audio->topology_crossfade_from = audio->last_output;
+    audio->topology_crossfade_total = sample_rate > 0u ?
+        (uint32_t)ceilf((float)sample_rate * 0.020f) : 1u;
+    if (audio->topology_crossfade_total == 0u)
+        audio->topology_crossfade_total = 1u;
+    audio->topology_crossfade_remaining = audio->topology_crossfade_total;
+}
+
+static TsStereoFrame audio_apply_topology_crossfade(AudioState *audio,
+                                                     TsStereoFrame output)
+{
+    if (audio == NULL) return output;
+    if (audio->topology_crossfade_remaining > 0u &&
+        audio->topology_crossfade_total > 0u) {
+        float amount = 1.0f -
+            (float)audio->topology_crossfade_remaining /
+            (float)audio->topology_crossfade_total;
+        output.l = audio->topology_crossfade_from.l +
+            (output.l - audio->topology_crossfade_from.l) * amount;
+        output.r = audio->topology_crossfade_from.r +
+            (output.r - audio->topology_crossfade_from.r) * amount;
+        --audio->topology_crossfade_remaining;
+    }
+    audio->last_output = ts_stereo_frame_sanitize(output);
+    return audio->last_output;
+}
 static TsUiBankAction runtime_bank_action(AudioState *audio, int right_button,
                                           unsigned modifiers);
 static int runtime_capture_arm(AudioState *audio, int destination_slot,
@@ -861,13 +900,15 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     float *out = (float *)stream;
     int values = bytes / (int)sizeof(float);
     float synth_block_peak = 0.0f;
+    Uint64 diagnostic_started = audio->realtime_diagnostics_enabled ?
+        SDL_GetPerformanceCounter() : 0u;
     for (int i = 0; i < values; i += 2) {
         TsAudioBuses buses;
         TsSisterSourceFrames sister_sources = {0};
         TsSisterRuntimeFrame sister_frame;
         TsStereoFrame synth_capture = {0.0f, 0.0f};
         TsStereoFrame output;
-        uint8_t sister_routes;
+        float sister_routes[TS_SISTER_SOURCE_COUNT] = {0};
         ts_audio_buses_clear(&buses);
         if (audio->playing && audio->sample && audio->sample->data &&
             audio->sample->frames > 1u) {
@@ -929,8 +970,13 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                         atomic_load_explicit(audio->external_monitor_enabled,
                                              memory_order_acquire) != 0 ?
                         buses.external : (TsStereoFrame){0.0f, 0.0f};
-        sister_routes = audio->sister.enabled && !audio->sister.callback_failed ?
-            ts_sister_runtime_sources(&audio->sister) : 0u;
+        if (audio->sister.enabled && !audio->sister.callback_failed) {
+            for (int source_index = 0;
+                 source_index < TS_SISTER_SOURCE_COUNT; ++source_index)
+                sister_routes[source_index] =
+                    ts_sister_runtime_source_route(&audio->sister,
+                                                   source_index);
+        }
         if (!audio->sister.enabled && !audio->sister.callback_failed &&
             audio->sister.post_fx.ready) {
             /* Recreate the legacy ordinary program contribution exactly,
@@ -954,13 +1000,12 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
            selected source is removed from TapeSister's direct speaker path.
            Its dry and processed returns come back together through Sister's
            MONITOR bus; input construction and Capture stay pre-monitor. */
-        ts_audio_buses_apply_source_dry(
-            &buses, 0.0f,
-            (sister_routes & TS_SISTER_SOURCE_PREVIEW) != 0u,
-            (sister_routes & TS_SISTER_SOURCE_TILES) != 0u ||
-                ts_sister_runtime_owns_direct_tile_bus(&audio->sister),
-            (sister_routes & TS_SISTER_SOURCE_FM) != 0u,
-            (sister_routes & TS_SISTER_SOURCE_EXT) != 0u);
+        ts_audio_buses_apply_source_insert(
+            &buses,
+            sister_routes[3],
+            fmaxf(ts_sister_runtime_direct_tile_route(&audio->sister),
+                  sister_routes[0]),
+            sister_routes[1], sister_routes[2]);
         if (runtime_capture_write_frame(audio, buses.capture)) {
             audio->playing = 0;
             audio->bank_slot = -1;
@@ -1003,6 +1048,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             buses.reference = ts_stereo_frame_from_mono(reference_value);
         }
         output = ts_audio_mixer_render(&audio->mixer, &buses);
+        output = audio_apply_topology_crossfade(audio, output);
         out[i] = output.l;
         if (i + 1 < values) out[i + 1] = output.r;
     }
@@ -1010,6 +1056,40 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         atomic_load_explicit(audio->record_source, memory_order_acquire) ==
             TS_RECORD_SOURCE_SYNTH)
         ts_input_monitor_publish_level(audio->input_monitor, synth_block_peak);
+    if (audio->realtime_diagnostics_enabled) {
+        uint32_t configuration = 0u;
+        const TsSisterParameters *p = &audio->sister.parameters;
+        uint8_t sources = ts_sister_runtime_sources(&audio->sister);
+        if (audio->sister.enabled) configuration |= TS_RT_CONFIG_SISTER;
+        if ((sources & TS_SISTER_SOURCE_TILES) != 0u)
+            configuration |= TS_RT_CONFIG_TILES;
+        if ((sources & TS_SISTER_SOURCE_FM) != 0u)
+            configuration |= TS_RT_CONFIG_FM;
+        if ((sources & TS_SISTER_SOURCE_EXT) != 0u)
+            configuration |= TS_RT_CONFIG_EXT;
+        if ((sources & TS_SISTER_SOURCE_PREVIEW) != 0u)
+            configuration |= TS_RT_CONFIG_PREVIEW;
+        if (p->head1_level > 0.0f) configuration |= TS_RT_CONFIG_H1;
+        if (p->head2_level > 0.0f) configuration |= TS_RT_CONFIG_H2;
+        if (p->head3_level > 0.0f) configuration |= TS_RT_CONFIG_H3;
+        if (p->soak > 0.0f && p->soak_targets != 0u)
+            configuration |= TS_RT_CONFIG_SOAK;
+        if (p->fx.reverb_mix > 0.0f && p->fx.reverb_targets != 0u)
+            configuration |= TS_RT_CONFIG_REVERB;
+        if (p->fx.delay_mix > 0.0f && p->fx.delay_targets != 0u)
+            configuration |= TS_RT_CONFIG_DELAY;
+        if (p->fx.distortion_mix > 0.0f && p->fx.distortion_targets != 0u)
+            configuration |= TS_RT_CONFIG_DISTORTION;
+        if (p->fx.master_feedback > 0.0f)
+            configuration |= TS_RT_CONFIG_FX_FEEDBACK;
+        ts_realtime_diagnostics_record(
+            &audio->realtime_diagnostics,
+            SDL_GetPerformanceCounter() - diagnostic_started,
+            audio->realtime_counter_frequency,
+            audio->output_rate > 0 ? (uint32_t)audio->output_rate : 0u,
+            values > 0 ? (uint32_t)((values + 1) / 2) : 0u,
+            configuration);
+    }
 }
 
 static int audition_plan_ui(const TsInstrument *instrument, const TsUiState *ui,
@@ -6960,6 +7040,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     if (hit.action == TS_SISTER_UI_ACTION_POWER) {
         if (device) SDL_LockAudioDevice(device);
+        audio_begin_topology_crossfade(audio, sample_rate);
         if (audio->sister.enabled) {
             if ((audio->sister.source_switches & TS_SISTER_SOURCE_EXT) != 0u &&
                 external_input != NULL) {
@@ -8375,11 +8456,14 @@ int main(int argc, char **argv)
     int record_bank_active = 0;
     int diagnostic_bank_stress = argc > 1 &&
                                  strcmp(argv[1], "--diagnostic-bank-toggle-stress") == 0;
+    int diagnostic_audio = argc > 1 &&
+                           strcmp(argv[1], "--diagnostic-audio") == 0;
     int diagnostic_failed = 0;
     int frame_snapshot_valid = 0;
     int window_minimized = 0;
     int renderer_vsync = 0;
     int running = 1;
+    uint32_t last_audio_diagnostic_log = 0u;
 
     initialize_runtime_paths(argc > 0 ? argv[0] : NULL);
     diagnostic_log("entered main: TsInstrument=%zu framebuffer=%zu UI=%zu stress=%d",
@@ -8469,6 +8553,11 @@ int main(int argc, char **argv)
     ts_performance_init(&audio.performance);
     ts_audio_mixer_init(&audio.mixer);
     ts_sister_runtime_init(&audio.sister);
+    ts_realtime_diagnostics_init(&audio.realtime_diagnostics);
+    audio.realtime_diagnostics_enabled = diagnostic_audio &&
+        ts_realtime_diagnostics_is_lock_free(&audio.realtime_diagnostics);
+    if (diagnostic_audio && !audio.realtime_diagnostics_enabled)
+        diagnostic_log("audio diagnostics disabled: atomics are not lock-free");
     {
         TsSisterParameters parameters = audio.sister.parameters;
         parameters.input_gain =
@@ -8512,6 +8601,7 @@ int main(int argc, char **argv)
         ts_instrument_free(&instrument);
         return 1;
     }
+    audio.realtime_counter_frequency = SDL_GetPerformanceFrequency();
     {
         char midi_error[160];
         ts_midi_input = ts_midi_input_create();
@@ -8611,11 +8701,12 @@ int main(int argc, char **argv)
     else SDL_PauseAudioDevice(device, 0);
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
-    if (argc > 1 && !diagnostic_bank_stress) {
+    if (argc > 1 && !diagnostic_bank_stress && !diagnostic_audio) {
         load_instrument(device, &audio, &ui, &instrument,
                         &sample_pages, parked_instrument,
                         record_bank_active, argv[1]);
-    } else if (!diagnostic_bank_stress && ui.config.startup_welcome_sample) {
+    } else if (!diagnostic_bank_stress && !diagnostic_audio &&
+               ui.config.startup_welcome_sample) {
         char welcome_path[1024];
         if (runtime_asset_path("assets/tapesister_welcome.wav",
                                welcome_path, sizeof(welcome_path))) {
@@ -8705,6 +8796,27 @@ int main(int argc, char **argv)
         sync_sister_ext_consumer(&input_device, &audio, &external_input,
                                  &ui, &sister_window);
         sister_preset_model_sync(&sister_window, &audio.sister);
+        if (diagnostic_audio &&
+            SDL_GetTicks() - last_audio_diagnostic_log >= 5000u) {
+            TsRealtimeDiagnosticsSnapshot snapshot;
+            if (ts_realtime_diagnostics_get(&audio.realtime_diagnostics,
+                                            &snapshot)) {
+                diagnostic_log(
+                    "audio callback avg_us=%.3f worst_us=%.3f "
+                    "deadline_us=%.3f callbacks=%llu frames=%llu "
+                    "near=%llu overrun=%llu rate=%u buffer=%u config=0x%04x",
+                    snapshot.average_microseconds,
+                    snapshot.worst_microseconds,
+                    snapshot.deadline_microseconds,
+                    (unsigned long long)snapshot.callback_count,
+                    (unsigned long long)snapshot.frame_count,
+                    (unsigned long long)snapshot.near_overruns,
+                    (unsigned long long)snapshot.deadline_overruns,
+                    snapshot.sample_rate, snapshot.device_buffer_frames,
+                    snapshot.active_configuration);
+            }
+            last_audio_diagnostic_log = SDL_GetTicks();
+        }
         while (SDL_PollEvent(&event)) {
             uint32_t event_id = event_window_id(&event);
             if (event.type == SDL_AUDIODEVICEREMOVED &&

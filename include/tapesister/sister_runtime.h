@@ -141,6 +141,9 @@ typedef struct {
     float monitor_dry_current;
     float monitor_wet_current;
     TsSisterRamp source_gain[TS_SISTER_SOURCE_COUNT];
+    TsSisterRamp source_route[TS_SISTER_SOURCE_COUNT];
+    TsSisterRamp monitor_route;
+    TsSisterRamp direct_tile_route;
     TsSisterRamp ordinary_fx_return_gain;
     float master_feedback_current;
     TsStereoFrame master_feedback_previous;
@@ -177,6 +180,9 @@ int ts_sister_runtime_perform_clear(TsSisterRuntime *runtime);
 void ts_sister_runtime_set_sources(TsSisterRuntime *runtime,
                                    uint8_t source_switches);
 uint8_t ts_sister_runtime_sources(const TsSisterRuntime *runtime);
+float ts_sister_runtime_source_route(const TsSisterRuntime *runtime,
+                                     int source_index);
+float ts_sister_runtime_direct_tile_route(const TsSisterRuntime *runtime);
 int ts_sister_runtime_owns_direct_tile_bus(const TsSisterRuntime *runtime);
 
 int ts_sister_runtime_set_page(TsSisterRuntime *runtime, size_t page,

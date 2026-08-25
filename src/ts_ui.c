@@ -3194,13 +3194,16 @@ static void sister_wave_lane(TsFramebuffer *fb,
 
 static void sister_marker(TsFramebuffer *fb, float normalized,
                           int x, int width, int y, int height,
-                          uint32_t color, int shape)
+                          uint32_t color, int shape, int pixel_offset)
 {
     int marker_x;
     if (!isfinite(normalized)) return;
     if (normalized < 0.0f) normalized = 0.0f;
     if (normalized > 1.0f) normalized = 1.0f;
-    marker_x = x + (int)lrintf(normalized * (float)(width - 1));
+    marker_x = x + (int)lrintf(normalized * (float)(width - 1)) +
+               pixel_offset;
+    if (marker_x < x) marker_x = x;
+    if (marker_x >= x + width) marker_x = x + width - 1;
     rect(fb, marker_x, y, 2, height, color);
     if (shape == 0) rect(fb, marker_x - 2, y, 6, 4, color);
     else if (shape == 1) rect(fb, marker_x - 3, y + height - 4, 8, 4, color);
@@ -3208,6 +3211,51 @@ static void sister_marker(TsFramebuffer *fb, float normalized,
         rect(fb, marker_x - 3, y, 8, 2, color);
         rect(fb, marker_x - 1, y + 2, 4, 2, color);
     }
+}
+
+static void sister_head_markers(TsFramebuffer *fb,
+                                const float normalized[TS_SISTER_HEAD_COUNT],
+                                int x, int width, int y, int height)
+{
+    const uint32_t colors[TS_SISTER_HEAD_COUNT] = {
+        PAL_NOTE, PAL_EFFECT, PAL_TUNING
+    };
+    static const int shapes[TS_SISTER_HEAD_COUNT] = {1, 2, 0};
+    int position[TS_SISTER_HEAD_COUNT];
+    int offset[TS_SISTER_HEAD_COUNT] = {0, 0, 0};
+    for (size_t i = 0u; i < TS_SISTER_HEAD_COUNT; ++i) {
+        float value = isfinite(normalized[i]) ? normalized[i] : 0.0f;
+        if (value < 0.0f) value = 0.0f;
+        if (value > 1.0f) value = 1.0f;
+        position[i] = (int)lrintf(value * (float)(width - 1));
+    }
+    /* Free-running heads legitimately cross. When two markers occupy the same
+       display column, separate only their rendering by two pixels so one
+       color cannot overwrite another and masquerade as a head-identity jump.
+       The published audio positions remain exact and unchanged. */
+    if (abs(position[0] - position[1]) <= 1 &&
+        abs(position[1] - position[2]) <= 1 &&
+        abs(position[0] - position[2]) <= 1) {
+        offset[0] = -3;
+        offset[1] = 0;
+        offset[2] = 3;
+    } else if (abs(position[0] - position[1]) <= 1) {
+        offset[0] = -2;
+        offset[1] = 2;
+    }
+    if (offset[0] == 0 && offset[1] == 0 && offset[2] == 0 &&
+        abs(position[1] - position[2]) <= 1) {
+        if (offset[1] == 0) offset[1] = -2;
+        offset[2] = 2;
+    }
+    if (offset[0] == 0 && offset[1] == 0 && offset[2] == 0 &&
+        abs(position[0] - position[2]) <= 1) {
+        if (offset[0] == 0) offset[0] = -2;
+        if (offset[2] == 0) offset[2] = 2;
+    }
+    for (size_t i = 0u; i < TS_SISTER_HEAD_COUNT; ++i)
+        sister_marker(fb, normalized[i], x, width, y, height,
+                      colors[i], shapes[i], offset[i]);
 }
 
 static void sister_parameter(TsFramebuffer *fb, int x, int y, int width,
@@ -3410,10 +3458,10 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          PAL_WAVE_LEFT;
         sister_wave_lane(fb, &model->waveform, 14, 40, 612, 126, channel, color);
     }
-    sister_marker(fb, model->engine.write_normalized, 26, 600, 40, 126, PAL_VOLUME, 0);
-    sister_marker(fb, model->engine.head_normalized[0], 26, 600, 40, 126, PAL_NOTE, 1);
-    sister_marker(fb, model->engine.head_normalized[1], 26, 600, 40, 126, PAL_EFFECT, 2);
-    sister_marker(fb, model->engine.head_normalized[2], 26, 600, 40, 126, PAL_TUNING, 0);
+    sister_marker(fb, model->engine.write_normalized, 26, 600, 40, 126,
+                  PAL_VOLUME, 0, 0);
+    sister_head_markers(fb, model->engine.head_normalized,
+                        26, 600, 40, 126);
 
     button(fb, 10, 172, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
     button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);

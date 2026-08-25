@@ -52,7 +52,8 @@ int main(void)
     frame = ts_sister_runtime_process_frame(&runtime, &source);
     CHECK(CLOSE(frame.monitor_return.l, 0.0f));
     ts_sister_runtime_set_monitor(&runtime, 1);
-    frame = ts_sister_runtime_process_frame(&runtime, &source);
+    for (int i = 0; i < 20; ++i)
+        frame = ts_sister_runtime_process_frame(&runtime, &source);
     CHECK(CLOSE(frame.monitor_return.l,
                 frame.input.l + frame.tap[TS_SISTER_TAP_MIX].l));
     CHECK(CLOSE(frame.monitor_return.r,
@@ -89,6 +90,11 @@ int main(void)
     held_value = runtime.machine.buffer.data[write_position * 2u];
     (void)ts_sister_runtime_process_frame(&runtime, &source);
     CHECK(CLOSE(runtime.machine.buffer.data[write_position * 2u], held_value));
+    CHECK(ts_sister_runtime_direct_tile_route(&runtime) > 0.0f &&
+          ts_sister_runtime_direct_tile_route(&runtime) < 1.0f);
+    for (int i = 1; i < 20; ++i)
+        (void)ts_sister_runtime_process_frame(&runtime, &source);
+    CHECK(CLOSE(ts_sister_runtime_direct_tile_route(&runtime), 0.0f));
 
     CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
     CHECK(snapshot.enabled && snapshot.processed_frames == runtime.processed_frames);
@@ -96,6 +102,7 @@ int main(void)
 
     ts_sister_runtime_disable(&runtime);
     CHECK(!ts_sister_runtime_owns_direct_tile_bus(&runtime));
+    CHECK(CLOSE(ts_sister_runtime_direct_tile_route(&runtime), 0.0f));
     frame = ts_sister_runtime_process_frame(&runtime, &source);
     CHECK(runtime.machine.buffer.data == NULL);
     CHECK(CLOSE(frame.tap[TS_SISTER_TAP_H1].l, 0.0f));
