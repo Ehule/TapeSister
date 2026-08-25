@@ -31,7 +31,10 @@ int main(void)
           model.parameters.ghost_tone == 0.0f &&
           model.parameters.soak == 0.0f &&
           model.parameters.bleed == 0.25f &&
-          model.parameters.soak_targets == TS_SISTER_EFFECT_TARGET_MIX);
+          model.parameters.soak_targets == TS_SISTER_EFFECT_TARGET_MIX &&
+          model.parameters.fx.reverb_targets == TS_SISTER_EFFECT_TARGET_MIX &&
+          model.parameters.fx.delay_targets == TS_SISTER_EFFECT_TARGET_MIX &&
+          model.parameters.fx.distortion_targets == TS_SISTER_EFFECT_TARGET_MIX);
     ts_sister_ui_model_show(&model);
     CHECK(model.visible);
     ts_sister_ui_model_hide(&model);
@@ -45,6 +48,7 @@ int main(void)
     hit = ts_sister_ui_hit_test(12, 10);
     CHECK(hit.action == TS_SISTER_UI_ACTION_POWER);
     CHECK(ts_sister_ui_hit_test(540, 10).action == TS_SISTER_UI_ACTION_WAVE_MODE);
+    CHECK(ts_sister_ui_hit_test(455, 10).action == TS_SISTER_UI_ACTION_PAGE);
     CHECK(ts_sister_ui_hit_test(90, 177).action == TS_SISTER_UI_ACTION_SOURCE_FM);
     hit = ts_sister_ui_hit_test(100, 206);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER);
@@ -100,6 +104,26 @@ int main(void)
     CHECK(strcmp(ts_sister_filter_type_name(TS_SISTER_FILTER_LOWPASS), "LP") == 0);
     CHECK(ts_sister_ui_hit_test(455, 374).action == TS_SISTER_UI_ACTION_CAPTURE);
     CHECK(ts_sister_ui_hit_test(540, 374).action == TS_SISTER_UI_ACTION_OVERDUB);
+    model.fx_page = 1;
+    hit = ts_sister_ui_hit_test_model(&model, 120, 76);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_REVERB_TYPE);
+    hit = ts_sister_ui_hit_test_model(&model, 260, 154);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_DELAY_FEEDBACK);
+    hit = ts_sister_ui_hit_test_model(&model, 400, 232);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_DISTORTION_MIX);
+    hit = ts_sister_ui_hit_test_model(&model, 115, 101);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
+          hit.index == ((1 << 8) | TS_SISTER_EFFECT_TARGET_H1));
+    hit = ts_sister_ui_hit_test_model(&model, 300, 257);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
+          hit.index == ((3 << 8) | TS_SISTER_EFFECT_TARGET_MIX));
+    hit = ts_sister_ui_hit_test_model(&model, 200, 310);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK);
+    model.fx_page = 0;
 
     {
         int x = -1;
@@ -186,6 +210,19 @@ int main(void)
           palette.colors[TS_PALETTE_PATTERN_TUNING]);
     CHECK(framebuffer.pixels[331u * TS_UI_WIDTH + 451u] !=
           palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
+    model.fx_page = 1;
+    model.parameters.fx.reverb_mix = 0.5f;
+    model.parameters.fx.delay_mix = 0.5f;
+    model.parameters.fx.distortion_mix = 0.5f;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[98u * TS_UI_WIDTH + 297u] ==
+          palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
+    CHECK(framebuffer.pixels[176u * TS_UI_WIDTH + 297u] ==
+          palette.colors[TS_PALETTE_PATTERN_EFFECT]);
+    CHECK(framebuffer.pixels[254u * TS_UI_WIDTH + 297u] ==
+          palette.colors[TS_PALETTE_PATTERN_VOLUME]);
+    CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 111u] !=
+          palette.colors[TS_PALETTE_PATTERN_TUNING]);
     puts("Sister UI model tests passed");
     return failures != 0;
 }

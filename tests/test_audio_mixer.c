@@ -28,6 +28,11 @@ int main(void)
     CHECK(CLOSE(out.l, 0.1f) && CLOSE(out.r, -0.2f));
     CHECK(CLOSE(mixer.buses.sister.l, 0.1f));
     ts_audio_buses_clear(&buses);
+    buses.post_fx = (TsStereoFrame){-0.3f, 0.4f};
+    out = ts_audio_mixer_render(&mixer, &buses);
+    CHECK(CLOSE(out.l, -0.3f) && CLOSE(out.r, 0.4f));
+    CHECK(CLOSE(mixer.buses.post_fx.r, 0.4f));
+    ts_audio_buses_clear(&buses);
 
     buses.legacy_preview = (TsStereoFrame){0.25f, -0.5f};
     buses.tile_performance = (TsStereoFrame){0.5f, 0.0f};

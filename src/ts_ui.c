@@ -3279,9 +3279,68 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 146, 8, 62, "HOLD", model->routing.held);
     button(fb, 214, 8, 62, "CLEAR", model->engine.clear_state != TS_SISTER_CLEAR_IDLE);
     button(fb, 282, 8, 62, "MONITOR", model->routing.monitor_enabled);
-    text(fb, 365, 13, "SISTER MACHINE", PAL_TEXT, 1);
+    text(fb, 352, 13, "SISTER", PAL_TEXT, 1);
+    button(fb, 450, 8, 76, model->fx_page ? "TAPE" : "FX PAGE",
+           model->fx_page);
     button(fb, 532, 8, 98, ts_waveform_display_name(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
+
+    if (model->fx_page) {
+        static const char *const names[3] = {"REVERB", "DELAY", "DISTORTION"};
+        const uint32_t colors[3] = {PAL_WAVE_RIGHT, PAL_EFFECT, PAL_VOLUME};
+        const uint8_t masks[3] = {
+            model->parameters.fx.reverb_targets,
+            model->parameters.fx.delay_targets,
+            model->parameters.fx.distortion_targets
+        };
+        for (int row = 0; row < 3; ++row) {
+            int top = 48 + row * 78;
+            rect(fb, 10, top, 620, 68, RGB(10, 10, 11));
+            text(fb, 18, top + 28, names[row], colors[row], 1);
+        }
+        sister_choice_parameter(fb, 110, 72, 130, "TYPE",
+            ts_sister_reverb_type_name(model->parameters.fx.reverb_type),
+            model->parameters.fx.reverb_mix > 0.0f, PAL_WAVE_RIGHT);
+        sister_percent_parameter(fb, 250, 72, 130, "MIX",
+            model->parameters.fx.reverb_mix, 100, PAL_WAVE_RIGHT);
+        sister_percent_parameter(fb, 390, 72, 130, "DECAY",
+            model->parameters.fx.reverb_decay, 100, PAL_WAVE_RIGHT);
+        sister_percent_parameter(fb, 110, 150, 130, "TIME",
+            model->parameters.fx.delay_time, 100, PAL_EFFECT);
+        sister_percent_parameter(fb, 250, 150, 130, "FEEDBACK",
+            model->parameters.fx.delay_feedback, 100, PAL_EFFECT);
+        sister_percent_parameter(fb, 390, 150, 130, "MIX",
+            model->parameters.fx.delay_mix, 100, PAL_EFFECT);
+        sister_percent_parameter(fb, 110, 228, 130, "DRIVE",
+            model->parameters.fx.distortion_drive, 100, PAL_VOLUME);
+        sister_percent_parameter(fb, 250, 228, 130, "TONE",
+            model->parameters.fx.distortion_tone, 100, PAL_VOLUME);
+        sister_percent_parameter(fb, 390, 228, 130, "MIX",
+            model->parameters.fx.distortion_mix, 100, PAL_VOLUME);
+        for (int row = 0; row < 3; ++row) {
+            int y = 97 + row * 78;
+            sister_target_toggle(fb, 110, y, 56, "H1",
+                masks[row] & TS_SISTER_EFFECT_TARGET_H1, PAL_NOTE);
+            sister_target_toggle(fb, 172, y, 56, "H2",
+                masks[row] & TS_SISTER_EFFECT_TARGET_H2, PAL_EFFECT);
+            sister_target_toggle(fb, 234, y, 56, "H3",
+                masks[row] & TS_SISTER_EFFECT_TARGET_H3, PAL_TUNING);
+            sister_target_toggle(fb, 296, y, 56, "MIX",
+                masks[row] & TS_SISTER_EFFECT_TARGET_MIX, colors[row]);
+            text(fb, 366, y + 5,
+                row == 0 ? "TAIL-SAFE TYPE MORPH" :
+                row == 1 ? "8-2000 MS / STEREO" :
+                           "RAT-INSPIRED / 2X", PAL_MOUSE, 1);
+        }
+        text(fb, 10, 311, "MASTER", PAL_TUNING, 1);
+        sister_percent_parameter(fb, 110, 306, 410, "FX FEEDBACK",
+            model->parameters.fx.master_feedback, 100, PAL_TUNING);
+        text(fb, 530, 311, "0-135%", PAL_MOUSE, 1);
+        text(fb, 10, 340,
+             "FIXED ORDER  DISTORTION > DELAY > REVERB   MIX FX WORK WITH POWER OFF",
+             PAL_MOUSE, 1);
+        goto sister_footer;
+    }
 
     rect(fb, 10, 40, 620, 126, RGB(7, 7, 8));
     mode = ts_waveform_display_sanitize(model->waveform_mode);
@@ -3386,6 +3445,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         PAL_WAVE_RIGHT);
     text(fb, 510, 336, "STEREO WEAVE", PAL_MOUSE, 1);
 
+sister_footer:
     snprintf(line, sizeof(line), "TARGET %s  %.88s",
              model->destination_slot >= 0 ? "READY" : "--",
              model->routing.capture_state == TS_CAPTURE_RECORDING ?

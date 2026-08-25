@@ -79,6 +79,7 @@ TsStereoFrame ts_audio_mixer_render(TsAudioMixer *mixer,
     program = clamp_frame(program);
     output = scale_frame(program, mixer->program_gain);
     output = add_frame(output, buses.sister);
+    output = add_frame(output, buses.post_fx);
     if (mixer->monitor_enabled)
         output = add_frame(output, buses.monitor);
     output = add_frame(output, buses.reference);
@@ -87,6 +88,7 @@ TsStereoFrame ts_audio_mixer_render(TsAudioMixer *mixer,
     buses.external = ts_stereo_frame_sanitize(buses.external);
     buses.monitor = ts_stereo_frame_sanitize(buses.monitor);
     buses.sister = ts_stereo_frame_sanitize(buses.sister);
+    buses.post_fx = ts_stereo_frame_sanitize(buses.post_fx);
     buses.capture = ts_stereo_frame_sanitize(buses.capture);
     buses.program = program;
     buses.output = output;

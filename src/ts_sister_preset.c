@@ -178,7 +178,11 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "decor=%d\nwidth=%.9g\nfilter_type=%d\nfilter_cutoff=%.9g\n"
         "filter_q=%.9g\nfilter_gain=%.9g\ninput=%.9g\ndry=%.9g\nwet=%.9g\n"
         "out=%.9g\nerase=%.9g\nghost_tone=%.9g\n"
-        "soak=%.9g\nbleed=%.9g\nsoak_targets=%u\n",
+        "soak=%.9g\nbleed=%.9g\nsoak_targets=%u\n"
+        "reverb_type=%d\nreverb_mix=%.9g\nreverb_decay=%.9g\nreverb_targets=%u\n"
+        "delay_time=%.9g\ndelay_feedback=%.9g\ndelay_mix=%.9g\ndelay_targets=%u\n"
+        "distortion_drive=%.9g\ndistortion_tone=%.9g\ndistortion_mix=%.9g\n"
+        "distortion_targets=%u\nmaster_fx_feedback=%.9g\n",
         p->head1_level, p->head1_time_ms, p->head1_feedback,
         p->head2_level, p->head2_scrub, p->head2_rate_index, p->head2_feedback,
         p->head3_level, p->head3_span, p->head3_rate_index,
@@ -187,7 +191,12 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->filter_cutoff_hz, p->filter_q, p->filter_gain_db,
         p->input_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
         p->write_erase, p->ghost_tone, p->soak, p->bleed,
-        (unsigned)p->soak_targets) >= 0;
+        (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_mix,
+        p->fx.reverb_decay, (unsigned)p->fx.reverb_targets,
+        p->fx.delay_time, p->fx.delay_feedback, p->fx.delay_mix,
+        (unsigned)p->fx.delay_targets, p->fx.distortion_drive,
+        p->fx.distortion_tone, p->fx.distortion_mix,
+        (unsigned)p->fx.distortion_targets, p->fx.master_feedback) >= 0;
 }
 
 static int replace_file(const char *temporary, const char *path)
@@ -302,6 +311,29 @@ static int assign_field(TsSisterParameters *p, const char *key,
             parsed_int > 255) return 0;
         p->soak_targets = (uint8_t)parsed_int;
         return 1;
+    }
+    if (strcmp(key, "reverb_type") == 0) {
+        if (!parse_int(value, &parsed_int)) return 0;
+        p->fx.reverb_type = (TsSisterReverbType)parsed_int; return 1;
+    }
+    FLOAT_FIELD("reverb_mix", fx.reverb_mix);
+    FLOAT_FIELD("reverb_decay", fx.reverb_decay);
+    FLOAT_FIELD("delay_time", fx.delay_time);
+    FLOAT_FIELD("delay_feedback", fx.delay_feedback);
+    FLOAT_FIELD("delay_mix", fx.delay_mix);
+    FLOAT_FIELD("distortion_drive", fx.distortion_drive);
+    FLOAT_FIELD("distortion_tone", fx.distortion_tone);
+    FLOAT_FIELD("distortion_mix", fx.distortion_mix);
+    FLOAT_FIELD("master_fx_feedback", fx.master_feedback);
+    if (strcmp(key, "reverb_targets") == 0 ||
+        strcmp(key, "delay_targets") == 0 ||
+        strcmp(key, "distortion_targets") == 0) {
+        uint8_t *target = strcmp(key, "reverb_targets") == 0 ?
+            &p->fx.reverb_targets : strcmp(key, "delay_targets") == 0 ?
+            &p->fx.delay_targets : &p->fx.distortion_targets;
+        if (!parse_int(value, &parsed_int) || parsed_int < 0 ||
+            parsed_int > 255) return 0;
+        *target = (uint8_t)parsed_int; return 1;
     }
 #undef FLOAT_FIELD
 #undef INT_FIELD

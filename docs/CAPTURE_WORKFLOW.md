@@ -40,6 +40,13 @@ replaced. The bundle is intentionally simpler and safer than widening the fixed
 
 ## Audio and rendering boundaries
 
+Sister PR9 head Capture includes that head's PR8 weave and targeted fixed-chain
+effects because the insertion precedes the established tap. Unselected head taps
+remain unchanged. MIX Capture includes MIX-target post effects after OUT and
+retains the existing linked safety and explicit mono `0.5 × (L + R)` fold. MIX
+effects never leak into raw head taps; ordinary main Capture remains at its
+established pre-monitor source point.
+
 The input callback performs only explicit MIX/LEFT/RIGHT/STEREO conversion,
 channel-aware external-source recorder writes, one
 block peak publication, and an optional lock-free SPSC monitor-ring write. It does no

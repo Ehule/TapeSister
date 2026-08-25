@@ -1,5 +1,8 @@
 # Sister Machine PR4 live-routing contract
 
+> PR9 adds post effects without changing source selection: only the eligible
+> Sister branch can feed Master FX Feedback while POWER is on.
+
 PR4 connects the headless three-head engine to TapeSister's named stereo buses through
 `TsSisterRuntime`. The route is compiled and callback-valid, but the runtime is disabled
 by default and has no user interface. PR5 owns the launcher, second window and controls.
@@ -145,6 +148,19 @@ warnings, source-target conflict, overload count and processed-frame revision. P
 draw this state without reading the rolling buffer, performance voices or recorder.
 
 ## PR5 controller requirements
+
+## PR9 POWER-off routing
+
+With POWER off, the stable MIX effect instance processes the ordinary legacy
+program plus enabled EXT monitor. Direct inputs are removed for that frame and
+the result is added once on `post_fx`; Reference remains direct. Head effects and
+Master FX Feedback are dormant. POWER transitions do not invent routes or
+allocate rolling storage. See `SISTER_MACHINE_POST_EFFECTS.md`.
+
+While POWER and ROLL are both active, Sister owns the tile performance speaker
+bus exclusively. If `TILES` is off, or no tiles are armed in the Sister source
+mask, QWERTY/MIDI tile voices are therefore silent instead of leaking through
+the ordinary direct route. Stopping ROLL restores ordinary direct tile audition.
 
 PR5 must call these ordinary controller operations while respecting the existing SDL
 device lock: enable/disable, Roll, Hold, Monitor, four source switches, per-page source
