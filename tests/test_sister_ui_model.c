@@ -59,19 +59,19 @@ int main(void)
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS);
     CHECK(ts_sister_ui_hit_test(90, 177).action == TS_SISTER_UI_ACTION_SOURCE_FM);
-    hit = ts_sister_ui_hit_test(325, 177);
+    hit = ts_sister_ui_hit_test(555, 235);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_TILES_GAIN);
-    hit = ts_sister_ui_hit_test(390, 177);
+    hit = ts_sister_ui_hit_test(570, 235);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FM_GAIN);
-    hit = ts_sister_ui_hit_test(450, 177);
+    hit = ts_sister_ui_hit_test(585, 235);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_EXT_GAIN);
-    hit = ts_sister_ui_hit_test(515, 177);
+    hit = ts_sister_ui_hit_test(600, 235);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_PREVIEW_GAIN);
-    hit = ts_sister_ui_hit_test(575, 177);
+    hit = ts_sister_ui_hit_test(615, 235);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FX_RETURN_GAIN);
     hit = ts_sister_ui_hit_test(100, 206);

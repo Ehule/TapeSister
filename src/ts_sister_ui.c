@@ -249,11 +249,11 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             TS_SISTER_UI_PARAM_PREVIEW_GAIN,
             TS_SISTER_UI_PARAM_FX_RETURN_GAIN
         };
-        int left = 320 + control * 62;
-        if (contains(x, y, left, 172, 58, 18)) {
+        int left = 550 + control * 15;
+        if (contains(x, y, left, 194, 14, 84)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = parameters[control];
-            hit.normalized = (float)(x - left) / 57.0f;
+            hit.normalized = 1.0f - (float)(y - 194) / 83.0f;
             return hit;
         }
     }

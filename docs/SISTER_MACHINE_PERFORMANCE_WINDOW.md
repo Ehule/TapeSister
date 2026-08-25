@@ -75,11 +75,11 @@ H2 and H3 use the engine's exact ordered Rate choices:
 Continuous controls accept absolute left/right click, either-button drag, and wheel
 adjustment (Shift+wheel is fine). Both mouse buttons address the same visible parameter.
 
-The diagnostic text beside the four source switches is replaced by a compact
-`T / F / E / A / FX` strip. T/F/E/A are independent 0–400% source trims before
-normalization; FX is the 0–200% completed effect-return trim. The existing INPUT
-control remains the pre-tape master, so the strip balances sources without changing
-the machine's overall driven level.
+The open right-hand lane beside the head/filter rows contains a compact vertical
+`T / F / E / A / X` mixer. T/F/E/A are independent 0–400% source trims before
+normalization; X is the 0–200% completed FX-return trim. Unity ticks are shown on
+every fader. The established source diagnostics remain beside the four source
+switches, and INPUT remains the pre-tape master.
 
 The dedicated monitor/memory row separates six independent laws:
 
