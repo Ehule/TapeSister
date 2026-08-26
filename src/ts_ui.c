@@ -3305,17 +3305,60 @@ static void sister_head_markers(TsFramebuffer *fb,
                       colors[i], shapes[i], offset[i]);
 }
 
-static void sister_parameter(TsFramebuffer *fb, int x, int y, int width,
-                             const char *label, float amount, uint32_t color)
+static uint32_t sister_dim_color(uint32_t color)
+{
+    unsigned red = (color >> 16) & 0xffu;
+    unsigned green = (color >> 8) & 0xffu;
+    unsigned blue = color & 0xffu;
+    return RGB(12u + red * 2u / 5u,
+               12u + green * 2u / 5u,
+               12u + blue * 2u / 5u);
+}
+
+static void sister_lock_marker(TsFramebuffer *fb, int x, int y, int width,
+                               uint32_t color, int locked)
+{
+    if (locked) text(fb, x + width - 9, y + 3, "L", color, 1);
+}
+
+static void sister_parameter_state(TsFramebuffer *fb, int x, int y, int width,
+                                   const char *label, float amount,
+                                   uint32_t color, int locked)
 {
     char value[32];
     if (!isfinite(amount)) amount = 0.0f;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
+    if (locked) color = sister_dim_color(color);
     rect(fb, x, y, width, 18, RGB(24, 23, 25));
     rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
     snprintf(value, sizeof(value), "%s %02d", label, (int)lrintf(amount * 99.0f));
     text(fb, x + 3, y + 3, value, color, 1);
+    sister_lock_marker(fb, x, y, width, color, locked);
+}
+
+static void sister_parameter(TsFramebuffer *fb, int x, int y, int width,
+                             const char *label, float amount, uint32_t color)
+{
+    sister_parameter_state(fb, x, y, width, label, amount, color, 0);
+}
+
+static void sister_percent_parameter_state(TsFramebuffer *fb, int x, int y,
+                                           int width, const char *label,
+                                           float amount, int maximum_percent,
+                                           uint32_t color, int locked)
+{
+    char value[32];
+    if (!isfinite(amount)) amount = 0.0f;
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    if (locked) color = sister_dim_color(color);
+    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
+    snprintf(value, sizeof(value), "%s %03d", label,
+             (int)lrintf(amount * (float)maximum_percent));
+    text(fb, x + 3, y + 3, value, color, 1);
+    sister_lock_marker(fb, x, y, width, color, locked);
 }
 
 static void sister_percent_parameter(TsFramebuffer *fb, int x, int y,
@@ -3323,15 +3366,8 @@ static void sister_percent_parameter(TsFramebuffer *fb, int x, int y,
                                      float amount, int maximum_percent,
                                      uint32_t color)
 {
-    char value[32];
-    if (!isfinite(amount)) amount = 0.0f;
-    if (amount < 0.0f) amount = 0.0f;
-    if (amount > 1.0f) amount = 1.0f;
-    rect(fb, x, y, width, 18, RGB(24, 23, 25));
-    rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
-    snprintf(value, sizeof(value), "%s %03d", label,
-             (int)lrintf(amount * (float)maximum_percent));
-    text(fb, x + 3, y + 3, value, color, 1);
+    sister_percent_parameter_state(fb, x, y, width, label, amount,
+                                   maximum_percent, color, 0);
 }
 
 static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
@@ -3348,6 +3384,11 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
     const uint32_t colors[5] = {
         PAL_NOTE, PAL_EFFECT, PAL_WAVE_RIGHT, PAL_MOUSE, PAL_INSTRUMENT
     };
+    const int parameters[5] = {
+        TS_SISTER_UI_PARAM_TILES_GAIN, TS_SISTER_UI_PARAM_FM_GAIN,
+        TS_SISTER_UI_PARAM_EXT_GAIN, TS_SISTER_UI_PARAM_PREVIEW_GAIN,
+        TS_SISTER_UI_PARAM_FX_RETURN_GAIN
+    };
     const int track_y = y + 22;
     const int track_height = 84;
     rect(fb, x, y, 80, 110, RGB(24, 23, 25));
@@ -3357,18 +3398,36 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
         int lane_x = x + 2 + control * 15;
         int handle_y;
         int unity_y;
+        int locked = ts_sister_ui_parameter_locked(model, parameters[control]);
+        uint32_t color = locked ? sister_dim_color(colors[control]) :
+                                 colors[control];
         if (!isfinite(amount)) amount = 0.0f;
         if (amount < 0.0f) amount = 0.0f;
         if (amount > 1.0f) amount = 1.0f;
-        text(fb, lane_x + 4, y + 12, labels[control], colors[control], 1);
+        text(fb, lane_x + 4, y + 12, labels[control], color, 1);
         rect(fb, lane_x + 5, track_y, 4, track_height, RGB(7, 7, 8));
         unity_y = track_y + (int)lrintf(
             (track_height - 1) * (control == 4 ? 0.5f : 0.75f));
         rect(fb, lane_x + 2, unity_y, 10, 1, PAL_BUTTON);
         handle_y = track_y + (int)lrintf(
             (track_height - 1) * (1.0f - amount));
-        rect(fb, lane_x + 1, handle_y - 1, 12, 3, colors[control]);
+        rect(fb, lane_x + 1, handle_y - 1, 12, 3, color);
+        if (locked) text(fb, lane_x + 4, y + 101, "L", color, 1);
     }
+}
+
+static void sister_choice_parameter_state(TsFramebuffer *fb, int x, int y,
+                                          int width, const char *label,
+                                          const char *choice, int active,
+                                          uint32_t color, int locked)
+{
+    char value[32];
+    if (locked) color = sister_dim_color(color);
+    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    if (active) rect(fb, x + 1, y + 14, width - 2, 3, color);
+    snprintf(value, sizeof(value), "%s %s", label, choice);
+    text(fb, x + 3, y + 3, value, color, 1);
+    sister_lock_marker(fb, x, y, width, color, locked);
 }
 
 static void sister_choice_parameter(TsFramebuffer *fb, int x, int y,
@@ -3376,11 +3435,8 @@ static void sister_choice_parameter(TsFramebuffer *fb, int x, int y,
                                     const char *choice, int active,
                                     uint32_t color)
 {
-    char value[32];
-    rect(fb, x, y, width, 18, RGB(24, 23, 25));
-    if (active) rect(fb, x + 1, y + 14, width - 2, 3, color);
-    snprintf(value, sizeof(value), "%s %s", label, choice);
-    text(fb, x + 3, y + 3, value, color, 1);
+    sister_choice_parameter_state(fb, x, y, width, label, choice, active,
+                                  color, 0);
 }
 
 static void sister_target_toggle(TsFramebuffer *fb, int x, int y, int width,
@@ -3530,21 +3586,42 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_vertical_mixer(fb, 548, 172, model);
 
     text(fb, 10, 207, "H1", PAL_NOTE, 1);
-    sister_parameter(fb, 72, 202, 110, "LEVEL", model->parameters.head1_level, PAL_NOTE);
-    sister_parameter(fb, 192, 202, 110, "TIME", model->parameters.head1_time_ms / 4000.0f, PAL_NOTE);
-    sister_parameter(fb, 312, 202, 110, "FEED", model->parameters.head1_feedback, PAL_NOTE);
-    sister_parameter(fb, 432, 202, 110, "CUTOFF",
-                     log10f(model->parameters.filter_cutoff_hz / 20.0f) / 3.0f,
-                     PAL_INSTRUMENT);
+    sister_parameter_state(fb, 72, 202, 110, "LEVEL",
+        model->parameters.head1_level, PAL_NOTE,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H1_LEVEL));
+    sister_parameter_state(fb, 192, 202, 110, "TIME",
+        model->parameters.head1_time_ms / 4000.0f, PAL_NOTE,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H1_TIME));
+    sister_parameter_state(fb, 312, 202, 110, "FEED",
+        model->parameters.head1_feedback, PAL_NOTE,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H1_FEEDBACK));
+    sister_parameter_state(fb, 432, 202, 110, "CUTOFF",
+        log10f(model->parameters.filter_cutoff_hz / 20.0f) / 3.0f,
+        PAL_INSTRUMENT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_CUTOFF));
     text(fb, 10, 235, "H2", PAL_EFFECT, 1);
-    sister_parameter(fb, 72, 230, 110, "LEVEL", model->parameters.head2_level, PAL_EFFECT);
-    sister_parameter(fb, 192, 230, 110, "SCRUB", model->parameters.head2_scrub, PAL_EFFECT);
-    sister_parameter(fb, 312, 230, 110, "RATE", model->parameters.head2_rate_index / 9.0f, PAL_EFFECT);
-    sister_parameter(fb, 432, 230, 110, "FEED", model->parameters.head2_feedback, PAL_EFFECT);
+    sister_parameter_state(fb, 72, 230, 110, "LEVEL",
+        model->parameters.head2_level, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_LEVEL));
+    sister_parameter_state(fb, 192, 230, 110, "SCRUB",
+        model->parameters.head2_scrub, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_SCRUB));
+    sister_parameter_state(fb, 312, 230, 110, "RATE",
+        model->parameters.head2_rate_index / 9.0f, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_RATE));
+    sister_parameter_state(fb, 432, 230, 110, "FEED",
+        model->parameters.head2_feedback, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_FEEDBACK));
     text(fb, 10, 263, "H3", PAL_TUNING, 1);
-    sister_parameter(fb, 72, 258, 110, "LEVEL", model->parameters.head3_level, PAL_TUNING);
-    sister_parameter(fb, 192, 258, 110, "SPAN", model->parameters.head3_span, PAL_TUNING);
-    sister_parameter(fb, 312, 258, 110, "RATE", model->parameters.head3_rate_index / 9.0f, PAL_TUNING);
+    sister_parameter_state(fb, 72, 258, 110, "LEVEL",
+        model->parameters.head3_level, PAL_TUNING,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H3_LEVEL));
+    sister_parameter_state(fb, 192, 258, 110, "SPAN",
+        model->parameters.head3_span, PAL_TUNING,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H3_SPAN));
+    sister_parameter_state(fb, 312, 258, 110, "RATE",
+        model->parameters.head3_rate_index / 9.0f, PAL_TUNING,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H3_RATE));
     sister_parameter(fb, 432, 258, 110, "FILTER Q",
                      (model->parameters.filter_q - 0.1f) / 19.9f,
                      PAL_INSTRUMENT);
@@ -3557,24 +3634,27 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                             model->parameters.decorrelation_enabled,
                             PAL_WAVE_RIGHT);
     sister_parameter(fb, 362, 286, 82, "WIDTH", model->parameters.width, PAL_WAVE_LEFT);
-    sister_choice_parameter(fb, 450, 286, 82, "FILTER",
-                            ts_sister_filter_type_name(model->parameters.filter_type),
-                            model->parameters.filter_type != TS_SISTER_FILTER_BYPASS,
-                            PAL_INSTRUMENT);
+    sister_choice_parameter_state(fb, 450, 286, 82, "FILTER",
+        ts_sister_filter_type_name(model->parameters.filter_type),
+        model->parameters.filter_type != TS_SISTER_FILTER_BYPASS,
+        PAL_INSTRUMENT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_TYPE));
     sister_parameter(fb, 538, 286, 82, "GAIN",
                      (model->parameters.filter_gain_db + 24.0f) / 48.0f,
                      PAL_INSTRUMENT);
 
-    sister_percent_parameter(fb, 10, 308, 98, "INPUT",
-                             model->parameters.input_gain / 2.0f,
-                             200, PAL_VOLUME);
-    sister_percent_parameter(fb, 113, 308, 98, "DRY",
-                             model->parameters.monitor_dry, 100, PAL_WAVE_LEFT);
-    sister_percent_parameter(fb, 216, 308, 98, "WET",
-                             model->parameters.monitor_wet, 100, PAL_WAVE_RIGHT);
-    sister_percent_parameter(fb, 319, 308, 98, "OUT",
-                             model->parameters.mix_output_gain / 4.0f,
-                             400, PAL_INSTRUMENT);
+    sister_percent_parameter_state(fb, 10, 308, 98, "INPUT",
+        model->parameters.input_gain / 2.0f, 200, PAL_VOLUME,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_INPUT_GAIN));
+    sister_percent_parameter_state(fb, 113, 308, 98, "DRY",
+        model->parameters.monitor_dry, 100, PAL_WAVE_LEFT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_MONITOR_DRY));
+    sister_percent_parameter_state(fb, 216, 308, 98, "WET",
+        model->parameters.monitor_wet, 100, PAL_WAVE_RIGHT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_MONITOR_WET));
+    sister_percent_parameter_state(fb, 319, 308, 98, "OUT",
+        model->parameters.mix_output_gain / 4.0f, 400, PAL_INSTRUMENT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_MIX_OUTPUT));
     sister_percent_parameter(fb, 422, 308, 98, "ERASE",
                              model->parameters.write_erase, 100, PAL_VOLUME);
     sister_percent_parameter(fb, 525, 308, 99, "GHOST",

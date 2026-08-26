@@ -1,4 +1,5 @@
 #include "tapesister/sister_preset.h"
+#include "tapesister/sister_ui.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -9,6 +10,10 @@ int main(void)
     static const char path[] = "test-sister-presets.ini";
     TsSisterPresetBank bank, loaded;
     TsSisterParameters p, recalled;
+    uint64_t recalled_locks = 0u;
+    const uint64_t locks =
+        TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FILTER_TYPE) |
+        TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_H2_RATE);
     char error[160];
     ts_sister_preset_bank_init(&bank, 48000u);
     assert(bank.count == 3u && bank.entries[0].factory);
@@ -40,14 +45,18 @@ int main(void)
     p.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
     p.fx.master_feedback = 0.69f;
     p.buffer_seconds = 23.0f;
-    assert(ts_sister_preset_save_new(&bank, "MY MEMORY", &p, 48000u,
-                                     error, sizeof(error)));
+    assert(ts_sister_preset_save_new_with_locks(
+        &bank, "MY MEMORY", &p, locks, 48000u, error, sizeof(error)));
     assert(!ts_sister_preset_overwrite(&bank, 0u, &p, 48000u,
                                        error, sizeof(error)));
     assert(ts_sister_preset_save(&bank, path, error, sizeof(error)));
     assert(ts_sister_preset_load(&loaded, path, 48000u, error, sizeof(error)));
     assert(loaded.count == 4u);
-    assert(ts_sister_preset_recall(&loaded, 3u, &recalled));
+    assert(ts_sister_preset_recall_with_locks(
+        &loaded, 3u, &recalled, &recalled_locks));
+    assert(recalled_locks == locks);
+    assert((recalled_locks &
+            TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FILTER_CUTOFF)) == 0u);
     assert(recalled.ghost_tone > 0.42f && recalled.ghost_tone < 0.44f);
     assert(recalled.filter_q > 1.24f && recalled.filter_q < 1.26f);
     assert(recalled.tiles_gain > 1.22f && recalled.tiles_gain < 1.24f);
@@ -84,6 +93,7 @@ int main(void)
         assert(ts_sister_preset_load(&loaded, path, 48000u,
                                      error, sizeof(error)));
         assert(loaded.count == 4u && loaded.entries[3].parameters.ghost_tone == 0.5f);
+        assert(loaded.entries[3].parameter_locks == 0u);
         assert(loaded.entries[3].parameters.soak == 0.0f);
         assert(loaded.entries[3].parameters.bleed == 0.25f);
         assert(loaded.entries[3].parameters.soak_targets ==

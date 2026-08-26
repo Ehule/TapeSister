@@ -23,6 +23,27 @@ int main(void)
     CHECK(config.sister_waveform_display_mode == TS_WAVEFORM_DISPLAY_STEREO);
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
+    CHECK(model.parameter_locks == 0u);
+    CHECK(ts_sister_ui_parameter_lockable(TS_SISTER_UI_PARAM_FILTER_TYPE));
+    CHECK(ts_sister_ui_parameter_lockable(TS_SISTER_UI_PARAM_FILTER_CUTOFF));
+    CHECK(!ts_sister_ui_parameter_lockable(TS_SISTER_UI_PARAM_FILTER_Q));
+    CHECK(ts_sister_ui_parameter_lock_toggle(
+              &model, TS_SISTER_UI_PARAM_FILTER_TYPE));
+    CHECK(ts_sister_ui_parameter_locked(
+              &model, TS_SISTER_UI_PARAM_FILTER_TYPE));
+    CHECK(!ts_sister_ui_parameter_locked(
+              &model, TS_SISTER_UI_PARAM_FILTER_CUTOFF));
+    CHECK(ts_sister_ui_parameter_lock_toggle(
+              &model, TS_SISTER_UI_PARAM_FILTER_CUTOFF));
+    CHECK(ts_sister_ui_parameter_locked(
+              &model, TS_SISTER_UI_PARAM_FILTER_TYPE));
+    CHECK(ts_sister_ui_parameter_locked(
+              &model, TS_SISTER_UI_PARAM_FILTER_CUTOFF));
+    CHECK(ts_sister_ui_parameter_lock_toggle(
+              &model, TS_SISTER_UI_PARAM_FILTER_TYPE));
+    CHECK(!ts_sister_ui_parameter_locked(
+              &model, TS_SISTER_UI_PARAM_FILTER_TYPE));
+    model.parameter_locks = 0u;
     CHECK(model.parameters.input_gain == 1.0f &&
           model.parameters.tiles_gain == 1.0f &&
           model.parameters.fm_gain == 1.0f &&
@@ -215,6 +236,19 @@ int main(void)
           palette.colors[TS_PALETTE_PATTERN_NOTE]);
     CHECK(framebuffer.pixels[344u * TS_UI_WIDTH + 145u] ==
           palette.colors[TS_PALETTE_PATTERN_EFFECT]);
+    model.parameter_locks =
+        TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_H1_LEVEL);
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    {
+        uint32_t color = palette.colors[TS_PALETTE_PATTERN_NOTE];
+        uint32_t dimmed = 0xff000000u |
+            (uint32_t)(12u + (((color >> 16) & 0xffu) * 2u / 5u)) << 16 |
+            (uint32_t)(12u + (((color >> 8) & 0xffu) * 2u / 5u)) << 8 |
+            (uint32_t)(12u + ((color & 0xffu) * 2u / 5u));
+        CHECK(framebuffer.pixels[216u * TS_UI_WIDTH + 73u] == dimmed);
+    }
+    model.parameter_locks = 0u;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
     for (size_t pixel = 0u; pixel < TS_UI_WIDTH * TS_UI_HEIGHT; ++pixel) {
         first_hash ^= framebuffer.pixels[pixel];
         first_hash *= 1099511628211ull;

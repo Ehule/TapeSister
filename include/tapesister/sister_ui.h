@@ -91,6 +91,12 @@ typedef enum {
     TS_SISTER_UI_PARAM_COUNT
 } TsSisterUiParameter;
 
+_Static_assert(TS_SISTER_UI_PARAM_COUNT <= 64,
+               "Sister parameter locks require a 64-bit mask");
+
+#define TS_SISTER_UI_PARAMETER_BIT(parameter) \
+    (UINT64_C(1) << (unsigned)(parameter))
+
 typedef struct {
     TsSisterUiAction action;
     int index;
@@ -108,6 +114,7 @@ typedef struct {
     TsSisterSnapshot engine;
     TsSisterWaveSnapshot waveform;
     TsSisterParameters parameters;
+    uint64_t parameter_locks;
     int destination_slot;
     char status[128];
     char preset_name[48];
@@ -118,6 +125,12 @@ typedef struct {
     int preset_confirmation;
     int fx_page;
 } TsSisterUiModel;
+
+int ts_sister_ui_parameter_lockable(int parameter);
+int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,
+                                  int parameter);
+int ts_sister_ui_parameter_lock_toggle(TsSisterUiModel *model,
+                                       int parameter);
 
 void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config);
 void ts_sister_ui_model_show(TsSisterUiModel *model);

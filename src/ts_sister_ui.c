@@ -8,6 +8,54 @@ static int contains(int x, int y, int left, int top, int width, int height)
     return x >= left && x < left + width && y >= top && y < top + height;
 }
 
+int ts_sister_ui_parameter_lockable(int parameter)
+{
+    switch ((TsSisterUiParameter)parameter) {
+    case TS_SISTER_UI_PARAM_H1_LEVEL:
+    case TS_SISTER_UI_PARAM_H1_TIME:
+    case TS_SISTER_UI_PARAM_H1_FEEDBACK:
+    case TS_SISTER_UI_PARAM_H2_LEVEL:
+    case TS_SISTER_UI_PARAM_H2_SCRUB:
+    case TS_SISTER_UI_PARAM_H2_RATE:
+    case TS_SISTER_UI_PARAM_H2_FEEDBACK:
+    case TS_SISTER_UI_PARAM_H3_LEVEL:
+    case TS_SISTER_UI_PARAM_H3_SPAN:
+    case TS_SISTER_UI_PARAM_H3_RATE:
+    case TS_SISTER_UI_PARAM_FILTER_TYPE:
+    case TS_SISTER_UI_PARAM_FILTER_CUTOFF:
+    case TS_SISTER_UI_PARAM_INPUT_GAIN:
+    case TS_SISTER_UI_PARAM_TILES_GAIN:
+    case TS_SISTER_UI_PARAM_FM_GAIN:
+    case TS_SISTER_UI_PARAM_EXT_GAIN:
+    case TS_SISTER_UI_PARAM_PREVIEW_GAIN:
+    case TS_SISTER_UI_PARAM_FX_RETURN_GAIN:
+    case TS_SISTER_UI_PARAM_MONITOR_DRY:
+    case TS_SISTER_UI_PARAM_MONITOR_WET:
+    case TS_SISTER_UI_PARAM_MIX_OUTPUT:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,
+                                  int parameter)
+{
+    return model != NULL && ts_sister_ui_parameter_lockable(parameter) &&
+           (model->parameter_locks &
+            TS_SISTER_UI_PARAMETER_BIT(parameter)) != 0u;
+}
+
+int ts_sister_ui_parameter_lock_toggle(TsSisterUiModel *model,
+                                       int parameter)
+{
+    uint64_t bit;
+    if (model == NULL || !ts_sister_ui_parameter_lockable(parameter)) return 0;
+    bit = TS_SISTER_UI_PARAMETER_BIT(parameter);
+    model->parameter_locks ^= bit;
+    return 1;
+}
+
 int ts_sister_ui_event_point(int event_x, int event_y,
                              int *logical_x, int *logical_y)
 {

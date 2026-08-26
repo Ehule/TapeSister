@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +52,7 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
     memcpy(state->page_masks, runtime->page_source_masks,
            state->page_count * sizeof(state->page_masks[0]));
     state->parameters = runtime->parameters;
+    state->parameter_locks = runtime->parameter_locks;
     ts_sister_parameters_sanitize(&state->parameters,
         runtime->enabled ? runtime->machine.buffer.sample_rate : 48000u);
     if (selected_preset == NULL) selected_preset = runtime->selected_preset;
@@ -72,6 +74,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
            state->page_count * sizeof(state->page_masks[0]));
     runtime->active_page = state->active_page;
     ts_sister_runtime_set_parameters(runtime, &state->parameters);
+    runtime->parameter_locks = state->parameter_locks;
     ts_sister_runtime_set_selected_preset(runtime, state->selected_preset);
     if (active_instrument != NULL)
         (void)ts_sister_runtime_validate_source_mask(runtime, active_instrument);
@@ -140,10 +143,10 @@ int ts_sister_project_state_save(const TsSisterProjectState *state,
     }
     failed = fprintf(file,
         "TapeSister Sister Project State\nVersion=%d\nPageCount=%zu\n"
-        "ActivePage=%zu\nRoutes=%u\nSelectedPreset=%s\n",
+        "ActivePage=%zu\nRoutes=%u\nSelectedPreset=%s\nParameterLocks=%016" PRIX64 "\n",
         TS_SISTER_PROJECT_STATE_VERSION, state->page_count, state->active_page,
         (unsigned)(state->source_switches & TS_SISTER_SOURCE_ALL),
-        state->selected_preset) < 0;
+        state->selected_preset, state->parameter_locks) < 0;
     for (size_t page = 0u; page < state->page_count && !failed; ++page)
         failed = fprintf(file, "Mask.%zu=%04X\n", page,
                          state->page_masks[page]) < 0;
@@ -208,6 +211,17 @@ static int parse_int_value(const char *text, int *value)
     if (errno != 0 || end == text || *trim(end) != '\0' ||
         parsed < -2147483647L - 1L || parsed > 2147483647L) return 0;
     *value = (int)parsed;
+    return 1;
+}
+
+static int parse_u64_hex_value(const char *text, uint64_t *value)
+{
+    char *end;
+    unsigned long long parsed;
+    errno = 0;
+    parsed = strtoull(text, &end, 16);
+    if (errno != 0 || end == text || *trim(end) != '\0') return 0;
+    *value = (uint64_t)parsed;
     return 1;
 }
 
@@ -316,6 +330,9 @@ int ts_sister_project_state_load(TsSisterProjectState *state,
         } else if (strcmp(key, "SelectedPreset") == 0) {
             if (strlen(value) > TS_SISTER_PROJECT_PRESET_NAME_MAX) goto malformed;
             snprintf(loaded.selected_preset, sizeof(loaded.selected_preset), "%s", value);
+        } else if (strcmp(key, "ParameterLocks") == 0) {
+            if (!parse_u64_hex_value(value, &loaded.parameter_locks))
+                goto malformed;
         } else if (strncmp(key, "Mask.", 5u) == 0) {
             size_t page;
             char *end;

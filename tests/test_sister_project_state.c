@@ -1,5 +1,6 @@
 #include "sister_test_helpers.h"
 #include "tapesister/sister_project_state.h"
+#include "tapesister/sister_ui.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -54,6 +55,9 @@ int main(void)
     runtime.parameters.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
     runtime.parameters.fx.master_feedback = 0.66f;
     runtime.parameters.buffer_seconds = 23.0f;
+    runtime.parameter_locks =
+        TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FILTER_TYPE) |
+        TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_EXT_GAIN);
     ts_sister_runtime_set_parameters(&runtime, &runtime.parameters);
     runtime.machine.buffer.data[0] = 0.75f;
     ts_sister_project_state_capture(&state, &runtime, 2u, "GHOST FIELD");
@@ -79,10 +83,12 @@ int main(void)
            TS_SISTER_EFFECT_TARGET_MIX);
     assert(loaded.parameters.fx.master_feedback > 0.65f);
     assert(loaded.parameters.buffer_seconds == 23.0f);
+    assert(loaded.parameter_locks == runtime.parameter_locks);
     assert(strcmp(loaded.selected_preset, "GHOST FIELD") == 0);
     ts_sister_runtime_init(&restored);
     assert(ts_sister_project_state_apply(&loaded, &restored, &instrument));
     assert(restored.source_switches == loaded.source_switches);
+    assert(restored.parameter_locks == loaded.parameter_locks);
     assert(restored.active_page == 1u && restored.page_source_masks[0] == 1u);
     assert(restored.machine.buffer.data == NULL); /* live tape was not serialized */
     ts_sister_runtime_free(&restored);
@@ -102,6 +108,7 @@ int main(void)
                                             &present, error, sizeof(error)));
         assert(present && loaded.source_switches == TS_SISTER_SOURCE_FM &&
                loaded.parameters.ghost_tone == 0.25f);
+        assert(loaded.parameter_locks == 0u);
         assert(loaded.parameters.soak == 0.0f &&
                loaded.parameters.bleed == 0.25f &&
                loaded.parameters.soak_targets == TS_SISTER_EFFECT_TARGET_MIX);

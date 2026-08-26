@@ -147,6 +147,8 @@ typedef struct {
     TsSisterRamp ordinary_fx_return_gain;
     float master_feedback_current;
     TsStereoFrame master_feedback_previous;
+    /* UI/controller performance-safety state; never read by the callback. */
+    uint64_t parameter_locks;
     char selected_preset[48];
     TsSisterRoutingSnapshotAtomic snapshot;
     TsSisterWavePublisher waveform;

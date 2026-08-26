@@ -632,6 +632,8 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
                          sizeof(sister->page_source_masks));
         state_hash_bytes(&hash, &sister->parameters,
                          sizeof(sister->parameters));
+        state_hash_bytes(&hash, &sister->parameter_locks,
+                         sizeof(sister->parameter_locks));
         state_hash_bytes(&hash, sister->selected_preset,
                          strlen(sister->selected_preset));
     }
@@ -6508,6 +6510,7 @@ typedef struct {
     TsSisterPresetBank presets;
     size_t preset_index;
     TsUiWheelGuard wheel_guard;
+    int parameter_lock_gesture;
 } SisterWindow;
 
 enum {
@@ -6820,6 +6823,56 @@ static float sister_parameter_wheel_normalized(
 }
 
 static void sister_preset_model_sync(SisterWindow *sister,
+                                     const TsSisterRuntime *runtime);
+
+static const char *sister_parameter_name(int parameter)
+{
+    switch ((TsSisterUiParameter)parameter) {
+    case TS_SISTER_UI_PARAM_H1_LEVEL: return "H1 LEVEL";
+    case TS_SISTER_UI_PARAM_H1_TIME: return "H1 TIME";
+    case TS_SISTER_UI_PARAM_H1_FEEDBACK: return "H1 FEED";
+    case TS_SISTER_UI_PARAM_H2_LEVEL: return "H2 LEVEL";
+    case TS_SISTER_UI_PARAM_H2_SCRUB: return "H2 SCRUB";
+    case TS_SISTER_UI_PARAM_H2_RATE: return "H2 RATE";
+    case TS_SISTER_UI_PARAM_H2_FEEDBACK: return "H2 FEED";
+    case TS_SISTER_UI_PARAM_H3_LEVEL: return "H3 LEVEL";
+    case TS_SISTER_UI_PARAM_H3_SPAN: return "H3 SPAN";
+    case TS_SISTER_UI_PARAM_H3_RATE: return "H3 RATE";
+    case TS_SISTER_UI_PARAM_FILTER_TYPE: return "FILTER TYPE";
+    case TS_SISTER_UI_PARAM_FILTER_CUTOFF: return "FILTER CUTOFF";
+    case TS_SISTER_UI_PARAM_INPUT_GAIN: return "INPUT LEVEL";
+    case TS_SISTER_UI_PARAM_TILES_GAIN: return "TILES MIX";
+    case TS_SISTER_UI_PARAM_FM_GAIN: return "FM MIX";
+    case TS_SISTER_UI_PARAM_EXT_GAIN: return "EXT MIX";
+    case TS_SISTER_UI_PARAM_PREVIEW_GAIN: return "AUDITION MIX";
+    case TS_SISTER_UI_PARAM_FX_RETURN_GAIN: return "FX MIX";
+    case TS_SISTER_UI_PARAM_MONITOR_DRY: return "DRY LEVEL";
+    case TS_SISTER_UI_PARAM_MONITOR_WET: return "WET LEVEL";
+    case TS_SISTER_UI_PARAM_MIX_OUTPUT: return "OUTPUT LEVEL";
+    default: return "PARAMETER";
+    }
+}
+
+static void sister_toggle_parameter_lock(AudioState *audio,
+                                         SisterWindow *sister,
+                                         int parameter)
+{
+    int result;
+    int locked;
+    if (audio == NULL || sister == NULL) return;
+    result = ts_sister_ui_parameter_lock_toggle(&sister->model, parameter);
+    if (result == 0) return;
+    locked = ts_sister_ui_parameter_locked(&sister->model, parameter);
+    audio->sister.parameter_locks = sister->model.parameter_locks;
+    ts_sister_runtime_set_selected_preset(&audio->sister, "");
+    sister_preset_model_sync(sister, &audio->sister);
+    snprintf(sister->model.status, sizeof(sister->model.status), "%s %s",
+             sister_parameter_name(parameter),
+             locked ? "LOCKED" : "UNLOCKED");
+    sister->rendered_model_valid = 0;
+}
+
+static void sister_preset_model_sync(SisterWindow *sister,
                                      const TsSisterRuntime *runtime)
 {
     const char *name = runtime != NULL ? runtime->selected_preset : NULL;
@@ -6862,14 +6915,18 @@ static void sister_recall_preset(SDL_AudioDeviceID device,
                                  size_t index)
 {
     TsSisterParameters parameters;
+    uint64_t parameter_locks;
     if (audio == NULL || sister == NULL ||
-        !ts_sister_preset_recall(&sister->presets, index, &parameters)) return;
+        !ts_sister_preset_recall_with_locks(
+            &sister->presets, index, &parameters, &parameter_locks)) return;
     if (device) SDL_LockAudioDevice(device);
     ts_sister_runtime_set_parameters(&audio->sister, &parameters);
+    audio->sister.parameter_locks = parameter_locks;
     ts_sister_runtime_set_selected_preset(
         &audio->sister, sister->presets.entries[index].name);
     if (device) SDL_UnlockAudioDevice(device);
     sister->model.parameters = audio->sister.parameters;
+    sister->model.parameter_locks = parameter_locks;
     sister_preset_model_sync(sister, &audio->sister);
     snprintf(sister->model.status, sizeof(sister->model.status),
              "PRESET RECALLED - ROLLING MEMORY CONTINUES");
@@ -7022,18 +7079,20 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         int ok = 0;
         size_t index = sister->preset_index;
         if (sister->model.preset_editing == 1) {
-            ok = ts_sister_preset_save_new(
+            ok = ts_sister_preset_save_new_with_locks(
                 &sister->presets, sister->model.preset_edit_name,
-                &audio->sister.parameters, sample_rate, error, sizeof(error));
+                &audio->sister.parameters, audio->sister.parameter_locks,
+                sample_rate, error, sizeof(error));
             if (ok) index = sister->presets.count - 1u;
         } else if (sister->model.preset_editing == 2) {
             ok = ts_sister_preset_rename(
                 &sister->presets, index, sister->model.preset_edit_name,
                 error, sizeof(error));
         } else if (sister->model.preset_confirmation == 1) {
-            ok = ts_sister_preset_overwrite(
+            ok = ts_sister_preset_overwrite_with_locks(
                 &sister->presets, index, &audio->sister.parameters,
-                sample_rate, error, sizeof(error));
+                audio->sister.parameter_locks, sample_rate,
+                error, sizeof(error));
         } else if (sister->model.preset_confirmation == 2) {
             ok = ts_sister_preset_delete(
                 &sister->presets, index, error, sizeof(error));
@@ -7153,6 +7212,12 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         }
         break;
     case TS_SISTER_UI_ACTION_PARAMETER:
+        if (ts_sister_ui_parameter_locked(&sister->model, hit.index)) {
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "%s LOCKED - SHIFT-CLICK TO UNLOCK",
+                     sister_parameter_name(hit.index));
+            break;
+        }
         sister_set_parameter(&sister->model.parameters, hit.index, hit.normalized);
         ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
         ts_sister_runtime_set_selected_preset(&audio->sister, "");
@@ -8901,6 +8966,10 @@ int main(int argc, char **argv)
                 } else if (event.type == SDL_WINDOWEVENT &&
                            event.window.event == SDL_WINDOWEVENT_MINIMIZED) {
                     sister_window.minimized = 1;
+                    sister_window.parameter_lock_gesture = 0;
+                } else if (event.type == SDL_WINDOWEVENT &&
+                           event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                    sister_window.parameter_lock_gesture = 0;
                 } else if (event.type == SDL_WINDOWEVENT &&
                            (event.window.event == SDL_WINDOWEVENT_RESTORED ||
                             event.window.event == SDL_WINDOWEVENT_SHOWN ||
@@ -8992,13 +9061,31 @@ int main(int argc, char **argv)
                             event.button.button == SDL_BUTTON_RIGHT)) {
                     int x, y;
                     if (sister_event_mouse(event.button.x, event.button.y,
-                                           &x, &y))
-                        sister_apply_action(
+                                           &x, &y)) {
+                        TsSisterUiHit hit = ts_sister_ui_hit_test_model(
+                            &sister_window.model, x, y);
+                        if (event.button.button == SDL_BUTTON_LEFT &&
+                            (SDL_GetModState() & KMOD_SHIFT) != 0 &&
+                            hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+                            ts_sister_ui_parameter_lockable(hit.index)) {
+                            sister_window.parameter_lock_gesture = 1;
+                            sister_toggle_parameter_lock(
+                                &audio, &sister_window, hit.index);
+                        } else {
+                            if (event.button.button == SDL_BUTTON_LEFT)
+                                sister_window.parameter_lock_gesture = 0;
+                            sister_apply_action(
                             device, &audio, &ui, &instrument, &sister_window,
                             &input_device, &external_input,
-                            ts_sister_ui_hit_test_model(&sister_window.model, x, y),
+                            hit,
                             (uint32_t)obtained.freq, obtained.channels);
+                        }
+                    }
+                } else if (event.type == SDL_MOUSEBUTTONUP &&
+                           event.button.button == SDL_BUTTON_LEFT) {
+                    sister_window.parameter_lock_gesture = 0;
                 } else if (event.type == SDL_MOUSEMOTION &&
+                           !sister_window.parameter_lock_gesture &&
                            (event.motion.state &
                             (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK)) != 0u) {
                     int x, y;
@@ -9025,6 +9112,9 @@ int main(int argc, char **argv)
                         continue;
                     hit = ts_sister_ui_hit_test_model(&sister_window.model, x, y);
                     if (hit.action == TS_SISTER_UI_ACTION_PARAMETER && wheel != 0 &&
+                        !sister_window.parameter_lock_gesture &&
+                        !ts_sister_ui_parameter_locked(
+                            &sister_window.model, hit.index) &&
                         ts_ui_wheel_guard_accept(
                             &sister_window.wheel_guard,
                             WHEEL_TARGET_SISTER + hit.index, SDL_GetTicks())) {
@@ -12145,6 +12235,8 @@ int main(int argc, char **argv)
             (void)ts_sister_runtime_get_wave_snapshot(&audio.sister, &wave);
             ts_sister_ui_model_update(&sister_window.model, &routing, &engine,
                                       &wave, &audio.sister.parameters);
+            sister_window.model.parameter_locks =
+                audio.sister.parameter_locks;
             ui.sister_enabled = routing.enabled;
             ui.sister_rolling = routing.rolling;
             ui.sister_held = routing.held;

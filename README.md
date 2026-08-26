@@ -507,7 +507,11 @@ cell; lower values retain old stereo material before new input and controlled he
 feedback are written. A routed source is removed from its ordinary audition bus and
 returns only through Sister when MONITOR is on; INPUT prevents hot internal buses from
 overdriving the write head. OUT affects MIX only and individual head taps remain
-unscaled. TILES is the retained master insert/bypass for the complete page-specific
+unscaled. Shift-click independently locks or unlocks the performance-sensitive head
+levels, Time/Scrub/Span, Feed/Rate, Filter Type/Cutoff, source-mixer trims, and
+input/dry/wet/output levels. Locked fields are dimmed and marked `L`, and ignore click,
+drag, and wheel edits until shift-clicked again. TILES is the retained master
+insert/bypass for the complete page-specific
 mask; switching it off preserves the group. In the ordinary Sample Bank, Shift-click
 copies only to an empty tile and toggles any occupied tile directly into or out of that
 page's ensemble. Source membership is the split yellow/cyan outer perimeter; active
@@ -521,8 +525,9 @@ the longer layers. Active voices own immutable sample generations: one-shots fin
 their starting generation, new triggers use the replacement, and locked loops adopt
 both channels at a loop boundary with a short linked crossfade. WARP/SMEAR/TEAR retain
 stereo channel shape.
-Named Sister presets store portable sonic state; TSR projects store routes, masks and the
-current Sister sound, never live tape audio. See
+Named Sister presets store portable sonic state and the independent parameter-lock mask;
+TSR projects store routes, masks, the current Sister sound, and active locks, never live
+tape audio. Older preset and project files load with all parameters unlocked. See
 [`docs/SISTER_MACHINE_HEADLESS_ENGINE.md`](docs/SISTER_MACHINE_HEADLESS_ENGINE.md) and
 [`docs/SISTER_MACHINE_LIVE_ROUTING.md`](docs/SISTER_MACHINE_LIVE_ROUTING.md), plus the
 [`PR5 performance-window contract`](docs/SISTER_MACHINE_PERFORMANCE_WINDOW.md) and

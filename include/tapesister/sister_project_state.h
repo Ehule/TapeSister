@@ -7,7 +7,7 @@
 #include "tapesister/sister_runtime.h"
 
 enum {
-    TS_SISTER_PROJECT_STATE_VERSION = 5,
+    TS_SISTER_PROJECT_STATE_VERSION = 6,
     TS_SISTER_PROJECT_PRESET_NAME_MAX = 47
 };
 
@@ -17,6 +17,7 @@ typedef struct {
     size_t active_page;
     uint16_t page_masks[TS_SISTER_RUNTIME_PAGE_LIMIT];
     TsSisterParameters parameters;
+    uint64_t parameter_locks;
     char selected_preset[TS_SISTER_PROJECT_PRESET_NAME_MAX + 1];
 } TsSisterProjectState;
 
