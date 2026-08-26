@@ -99,7 +99,12 @@ static void ts_audio_close_device(SDL_AudioDeviceID device)
     SDL_AudioDeviceID real = ts_audio_real_id(device);
     if (real != 0) SDL_CloseAudioDevice(real);
     if (device == TS_AUDIO_LOGICAL_OUTPUT) ts_real_output = 0;
-    else if (device == TS_AUDIO_LOGICAL_CAPTURE) ts_real_capture = 0;
+    else if (device == TS_AUDIO_LOGICAL_CAPTURE) {
+        ExternalInputState *input = (ExternalInputState *)ts_capture_userdata;
+        ts_real_capture = 0;
+        if (input != NULL)
+            ts_input_activity_set_available(&input->activity, 0u);
+    }
 }
 
 static void ts_audio_lock_device(SDL_AudioDeviceID device)

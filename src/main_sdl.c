@@ -7500,6 +7500,7 @@ static size_t bank_frame_from_x(const TsBankSlot *slot, int x)
 struct ExternalInputState {
     TsExternalRecorder recorder;
     TsInputMonitor monitor;
+    TsInputActivity activity;
     TsInputOwnership ownership;
     _Atomic int direct_monitor;
     _Atomic int record_source;
@@ -7507,6 +7508,7 @@ struct ExternalInputState {
     size_t waveform_consumed_frames;
     uint32_t peak_hold_until_ms;
     uint32_t clip_hold_until_ms;
+    uint32_t activity_hold_until_ms[TS_INPUT_DEVICE_CHANNEL_MAX];
     int channels;
     int input_channel;
     uint32_t sample_rate;
@@ -7545,8 +7547,11 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
     int values = bytes / (int)sizeof(float);
     int channels = input != NULL && input->channels > 0 ? input->channels : 1;
     float block_peak = 0.0f;
+    uint32_t block_activity = 0u;
     if (input == NULL) return;
     for (int frame = 0; frame + channels <= values; frame += channels) {
+        block_activity |= ts_input_activity_detect_frame(
+            samples + frame, (size_t)channels);
         TsStereoFrame selected = ts_input_channel_select(
             samples + frame, (size_t)channels, input->input_channel);
         if (fabsf(selected.l) > block_peak) block_peak = fabsf(selected.l);
@@ -7556,6 +7561,7 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
             TS_RECORD_SOURCE_EXT)
             (void)ts_external_recorder_write_frame(&input->recorder, selected);
     }
+    ts_input_activity_publish(&input->activity, block_activity);
     ts_input_monitor_publish_level(&input->monitor, block_peak);
 }
 
@@ -7574,7 +7580,7 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
     SDL_zero(obtained);
     desired.freq = 48000;
     desired.format = AUDIO_F32SYS;
-    desired.channels = 2;
+    desired.channels = TS_INPUT_DEVICE_CHANNEL_MAX;
     desired.samples = 256;
     desired.callback = external_input_callback;
     desired.userdata = input;
@@ -7586,16 +7592,21 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
         SDL_AUDIO_ALLOW_CHANNELS_CHANGE |
         SDL_AUDIO_ALLOW_SAMPLES_CHANGE);
     if (*input_device == 0) {
+        ts_input_activity_set_available(&input->activity, 0u);
         if (audio != NULL)
             ts_sister_runtime_input_available(&audio->sister, 0);
         snprintf(error, error_size, "Could not open recording input: %.110s", SDL_GetError());
         diagnostic_log("capture device open failed (nonfatal): %s", error);
         return 0;
     }
-    if (obtained.format != AUDIO_F32SYS || obtained.freq <= 0 || obtained.channels == 0) {
-        snprintf(error, error_size, "Recording input returned an unsupported audio format");
+    if (obtained.format != AUDIO_F32SYS || obtained.freq <= 0 ||
+        obtained.channels == 0 ||
+        obtained.channels > TS_INPUT_DEVICE_CHANNEL_MAX) {
+        snprintf(error, error_size,
+                 "Recording input must provide float audio with 1-8 channels");
         SDL_CloseAudioDevice(*input_device);
         *input_device = 0;
+        ts_input_activity_set_available(&input->activity, 0u);
         if (audio != NULL)
             ts_sister_runtime_input_available(&audio->sister, 0);
         return 0;
@@ -7604,17 +7615,7 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
         snprintf(error, error_size, "Invalid recording input channel mode");
         SDL_CloseAudioDevice(*input_device);
         *input_device = 0;
-        if (audio != NULL)
-            ts_sister_runtime_input_available(&audio->sister, 0);
-        return 0;
-    }
-    if ((config->record_input_channel == TS_INPUT_CHANNEL_RIGHT ||
-         config->record_input_channel == TS_INPUT_CHANNEL_STEREO) &&
-        obtained.channels < 2u) {
-        snprintf(error, error_size,
-                 "Selected input mode requires a two-channel capture device");
-        SDL_CloseAudioDevice(*input_device);
-        *input_device = 0;
+        ts_input_activity_set_available(&input->activity, 0u);
         if (audio != NULL)
             ts_sister_runtime_input_available(&audio->sister, 0);
         return 0;
@@ -7622,6 +7623,7 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
     input->channels = obtained.channels;
     input->input_channel = config->record_input_channel;
     input->sample_rate = (uint32_t)obtained.freq;
+    ts_input_activity_set_available(&input->activity, obtained.channels);
     if (audio != NULL)
         ts_sister_runtime_input_available(&audio->sister, 1);
     snprintf(input->device_label, sizeof(input->device_label), "%.127s",
@@ -7647,6 +7649,7 @@ static int sync_external_input_consumers(SDL_AudioDeviceID *input_device,
             *input_device = 0;
         }
         ts_input_ownership_set_device(&input->ownership, 0, 0);
+        ts_input_activity_set_available(&input->activity, 0u);
         if (audio != NULL) ts_sister_runtime_input_available(&audio->sister, 0);
         if (error != NULL && error_size > 0u) error[0] = '\0';
         return 1;
@@ -7658,8 +7661,15 @@ static int sync_external_input_consumers(SDL_AudioDeviceID *input_device,
         return 0;
     }
     ts_input_ownership_set_device(&input->ownership, 1, 1);
-    if (!ts_input_monitor_enabled(&input->monitor))
-        ts_input_monitor_set_enabled(&input->monitor, 1, input->sample_rate);
+    {
+        int needs_monitor =
+            (input->ownership.requests &
+             (TS_INPUT_CONSUMER_RECORD_MONITOR |
+              TS_INPUT_CONSUMER_SISTER_EXT)) != 0u;
+        if (ts_input_monitor_enabled(&input->monitor) != needs_monitor)
+            ts_input_monitor_set_enabled(&input->monitor, needs_monitor,
+                                         input->sample_rate);
+    }
     SDL_PauseAudioDevice(*input_device, 0);
     if (error != NULL && error_size > 0u) error[0] = '\0';
     return 1;
@@ -7740,6 +7750,18 @@ static void sync_external_capture_ui(SDL_AudioDeviceID output_device,
         ui->input_clipping = 0;
         ui->input_wave_columns = 0u;
     }
+}
+
+static void sync_external_activity_ui(ExternalInputState *input,
+                                      TsUiState *ui)
+{
+    uint32_t available;
+    uint32_t active;
+    if (input == NULL || ui == NULL) return;
+    available = ts_input_activity_available(&input->activity);
+    active = ts_input_activity_take(&input->activity);
+    ts_ui_update_input_activity(ui, input->activity_hold_until_ms,
+                                SDL_GetTicks(), available, active);
 }
 
 static int arm_external_capture(SDL_AudioDeviceID output_device,
@@ -8511,6 +8533,7 @@ int main(int argc, char **argv)
     }
     ts_external_recorder_init(&external_input.recorder);
     ts_input_monitor_init(&external_input.monitor);
+    ts_input_activity_init(&external_input.activity);
     ts_input_ownership_init(&external_input.ownership);
     atomic_init(&external_input.direct_monitor, 0);
     atomic_init(&external_input.record_source, TS_RECORD_SOURCE_EXT);
@@ -8722,6 +8745,15 @@ int main(int argc, char **argv)
     if (!device) snprintf(ui.status, sizeof(ui.status), "AUDIO UNAVAILABLE: %.130s", SDL_GetError());
     else SDL_PauseAudioDevice(device, 0);
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
+    {
+        char capture_error[160];
+        external_input_request(&external_input, TS_INPUT_CONSUMER_ACTIVITY, 1);
+        if (!sync_external_input_consumers(
+                &input_device, &audio, &external_input, &ui.config,
+                capture_error, sizeof(capture_error)))
+            diagnostic_log("input activity unavailable (nonfatal): %s",
+                           capture_error);
+    }
 
     if (argc > 1 && !diagnostic_bank_stress && !diagnostic_audio) {
         load_instrument(device, &audio, &ui, &instrument,
@@ -8849,6 +8881,7 @@ int main(int argc, char **argv)
                 ts_input_ownership_set_device(&external_input.ownership, 0, 0);
                 ts_input_monitor_set_enabled(&external_input.monitor, 0,
                                              external_input.sample_rate);
+                ts_input_activity_set_available(&external_input.activity, 0u);
                 ts_sister_runtime_input_available(&audio.sister, 0);
                 snprintf(sister_window.model.status,
                          sizeof(sister_window.model.status),
@@ -12059,6 +12092,7 @@ int main(int argc, char **argv)
             sync_external_capture_ui(device, input_device, &external_input, &ui);
         else
             sync_capture_ui(device, &audio, &ui);
+        sync_external_activity_ui(&external_input, &ui);
         if (ui.overlay[0] != '\0' &&
             (Sint32)(SDL_GetTicks() - ui.overlay_until_ms) >= 0)
             ui.overlay[0] = '\0';

@@ -5,6 +5,18 @@
         ts_capture_reconfigure_error[0] = '\0';
     }
     ts_mark_capture_config_after_save();
+    if (ts_capture_reconfigure_pending) {
+        ts_audio_pause_device(TS_AUDIO_LOGICAL_CAPTURE, 0);
+        if (ts_capture_reconfigure_error[0] != '\0')
+            snprintf(ts_pending_notice, sizeof(ts_pending_notice),
+                     "INPUT SWITCH FAILED - KEPT PREVIOUS: %.104s",
+                     ts_capture_reconfigure_error);
+        else
+            snprintf(ts_pending_notice, sizeof(ts_pending_notice),
+                     "CONFIG SAVED - INPUT %.132s",
+                     config->record_input_device[0] != '\0' ?
+                     config->record_input_device : "SYSTEM DEFAULT");
+    }
     return 1;
 }
 

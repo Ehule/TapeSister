@@ -10,8 +10,11 @@
 enum {
     TS_INPUT_MONITOR_RING_FRAMES = 16384,
     TS_INPUT_MONITOR_PRIME_FRAMES = 128,
-    TS_LIVE_WAVEFORM_COLUMNS = 576
+    TS_LIVE_WAVEFORM_COLUMNS = 576,
+    TS_INPUT_DEVICE_CHANNEL_MAX = 8
 };
+
+#define TS_INPUT_ACTIVITY_THRESHOLD 0.001f
 
 typedef enum {
     TS_INPUT_CHANNEL_MIX = 0,
@@ -36,6 +39,13 @@ typedef struct {
     int consumer_has_sample;
     int consumer_primed;
 } TsInputMonitor;
+
+/* The callback publishes only a bounded bit mask. The UI consumes and holds
+   those bits independently, so no timing or drawing work enters audio code. */
+typedef struct {
+    _Atomic uint32_t available_channels;
+    _Atomic uint32_t pending_activity_mask;
+} TsInputActivity;
 
 typedef struct {
     float minimum[TS_LIVE_WAVEFORM_COLUMNS];
@@ -68,6 +78,14 @@ const char *ts_input_channel_mode_name(int mode);
 uint8_t ts_input_channel_record_channels(int mode);
 TsStereoFrame ts_input_channel_select(const float *device_frame,
                                        size_t device_channels, int mode);
+uint32_t ts_input_activity_detect_frame(const float *device_frame,
+                                        size_t device_channels);
+void ts_input_activity_init(TsInputActivity *activity);
+void ts_input_activity_set_available(TsInputActivity *activity,
+                                     uint32_t channels);
+uint32_t ts_input_activity_available(const TsInputActivity *activity);
+void ts_input_activity_publish(TsInputActivity *activity, uint32_t mask);
+uint32_t ts_input_activity_take(TsInputActivity *activity);
 
 void ts_live_waveform_init(TsLiveWaveform *waveform, uint32_t sample_rate);
 void ts_live_waveform_push(TsLiveWaveform *waveform,

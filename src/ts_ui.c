@@ -1,4 +1,5 @@
 #include "tapesister/ui.h"
+#include "tapesister/input_monitor.h"
 #include "tapesister/sister_ui.h"
 #include "tapesister/version.h"
 #include "tapesister/waveform_cache.h"
@@ -17,6 +18,33 @@ _Static_assert(sizeof(TAPESISTER_BUILD_MARKER) <=
 static const TsPalette *render_palette;
 static TsWaveformCache waveform_caches[TS_UI_WAVEFORM_COUNT];
 static int waveform_caches_initialized;
+
+void ts_ui_update_input_activity(TsUiState *ui,
+                                 uint32_t hold_until_ms[8],
+                                 uint32_t now_ms,
+                                 uint32_t available_channels,
+                                 uint32_t detected_mask)
+{
+    uint8_t held = 0u;
+    if (ui == NULL || hold_until_ms == NULL) return;
+    if (available_channels > TS_INPUT_DEVICE_CHANNEL_MAX)
+        available_channels = 0u;
+    for (uint32_t channel = 0u; channel < TS_INPUT_DEVICE_CHANNEL_MAX;
+         ++channel) {
+        uint32_t bit = UINT32_C(1) << channel;
+        if (channel >= available_channels) {
+            hold_until_ms[channel] = 0u;
+        } else if ((detected_mask & bit) != 0u) {
+            hold_until_ms[channel] =
+                now_ms + TS_UI_INPUT_ACTIVITY_HOLD_MS;
+        }
+        if (channel < available_channels &&
+            (int32_t)(hold_until_ms[channel] - now_ms) > 0)
+            held |= (uint8_t)bit;
+    }
+    ui->input_available_channels = (uint8_t)available_channels;
+    ui->input_activity_mask = held;
+}
 
 static TsWaveformCache *waveform_cache(TsUiWaveformKind kind)
 {
@@ -2145,11 +2173,21 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     bevel_frame(fb, 190, 7, 48, 18, RGB(24, 24, 24), PAL_EFFECT,
                 RGB(7, 7, 7));
     text(fb, 196, 13, TAPESISTER_BUILD_MARKER, PAL_EFFECT, 1);
+    text(fb, 242, 13, "IN", PAL_TEXT, 1);
+    for (int channel = 0; channel < TS_INPUT_DEVICE_CHANNEL_MAX; ++channel) {
+        int x = TS_UI_INPUT_LED_X + channel * TS_UI_INPUT_LED_STEP_X;
+        uint32_t color = channel >= ui->input_available_channels ?
+                         RGB(22, 22, 22) :
+                         (ui->input_activity_mask & (uint8_t)(1u << channel)) != 0u ?
+                         PAL_WAVE_LEFT : PAL_BUTTON;
+        rect(fb, x, TS_UI_INPUT_LED_Y,
+             TS_UI_INPUT_LED_W, TS_UI_INPUT_LED_H, color);
+    }
     {
         char history[24];
         snprintf(history, sizeof(history), "UNDO %02d/%02d",
                  instrument->undo_count, TS_HISTORY_DEPTH);
-        text(fb, 280, 13, history, PAL_EFFECT, 1);
+        text(fb, 289, 13, history, PAL_EFFECT, 1);
     }
     button(fb, 350, 4, 76, "CONFIG", ui->config_open);
     button(fb, 431, 4, 80, "FT2 LINK", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);

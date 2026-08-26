@@ -1,4 +1,5 @@
 #include "sister_test_helpers.h"
+#include "tapesister/input_monitor.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -78,11 +79,20 @@ static void process_frames(TsSisterRuntime *runtime,
 {
     for (size_t i = 0u; i < frames; ++i) {
         TsSisterRuntimeFrame frame;
+        float hardware[TS_INPUT_DEVICE_CHANNEL_MAX];
         float noise = ((float)(int32_t)random_next(random) /
                        (float)INT32_MAX) * 0.08f;
         float phase = (float)(result->frames % 1000u) / 1000.0f;
-        source->external.l = 0.11f * sinf(phase * 6.28318530718f) + noise;
-        source->external.r = 0.07f * cosf(phase * 6.28318530718f) - noise;
+        hardware[0] = 0.11f * sinf(phase * 6.28318530718f) + noise;
+        hardware[1] = 0.07f * cosf(phase * 6.28318530718f) - noise;
+        hardware[2] = hardware[0] * 0.73f;
+        hardware[3] = hardware[1] * 0.61f;
+        hardware[4] = -hardware[0] * 0.37f;
+        hardware[5] = -hardware[1] * 0.29f;
+        hardware[6] = noise * 0.5f;
+        hardware[7] = -noise * 0.5f;
+        source->external = ts_input_channel_select(
+            hardware, TS_INPUT_DEVICE_CHANNEL_MAX, TS_INPUT_CHANNEL_STEREO);
         source->fm.l = 0.05f * sinf(phase * 12.56637061436f);
         source->fm.r = -source->fm.l * 0.73f;
         source->preview.l = (result->frames % 997u) == 0u ? 0.14f : 0.0f;

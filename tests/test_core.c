@@ -2846,6 +2846,50 @@ int main(void)
     ts_ui_init(&ui);
     ui.fx_page = TS_FX_LOOP;
     ts_instrument_show_all(&committed);
+    {
+        uint32_t activity_hold[8] = {0u};
+        uint32_t unavailable;
+        uint32_t silent;
+        uint32_t active;
+        int first_x = TS_UI_INPUT_LED_X + TS_UI_INPUT_LED_W / 2;
+        int third_x = TS_UI_INPUT_LED_X + 2 * TS_UI_INPUT_LED_STEP_X +
+                      TS_UI_INPUT_LED_W / 2;
+        int fifth_x = TS_UI_INPUT_LED_X + 4 * TS_UI_INPUT_LED_STEP_X +
+                      TS_UI_INPUT_LED_W / 2;
+        int y = TS_UI_INPUT_LED_Y + TS_UI_INPUT_LED_H / 2;
+        ts_ui_update_input_activity(&ui, activity_hold, 100u, 8u, 1u << 2);
+        CHECK(ui.input_available_channels == 8u);
+        CHECK(ui.input_activity_mask == (1u << 2));
+        ts_ui_update_input_activity(&ui, activity_hold, 239u, 8u, 0u);
+        CHECK(ui.input_activity_mask == (1u << 2));
+        ts_ui_update_input_activity(&ui, activity_hold, 240u, 8u, 0u);
+        CHECK(ui.input_activity_mask == 0u);
+        ts_ui_update_input_activity(&ui, activity_hold, 300u, 4u, 1u << 5);
+        CHECK(ui.input_available_channels == 4u);
+        CHECK(ui.input_activity_mask == 0u);
+        CHECK(activity_hold[5] == 0u);
+        ui.input_available_channels = 0u;
+        ui.input_activity_mask = 0u;
+        ts_ui_render(&fb, &ui, &committed);
+        unavailable = fb.pixels[y * TS_UI_WIDTH + first_x];
+        ui.input_available_channels = 4u;
+        ts_ui_render(&fb, &ui, &committed);
+        silent = fb.pixels[y * TS_UI_WIDTH + first_x];
+        CHECK(fb.pixels[y * TS_UI_WIDTH + fifth_x] == unavailable);
+        ui.input_activity_mask = 1u;
+        ts_ui_render(&fb, &ui, &committed);
+        active = fb.pixels[y * TS_UI_WIDTH + first_x];
+        CHECK(unavailable != silent);
+        CHECK(silent != active);
+        CHECK(unavailable != active);
+        ui.input_available_channels = 8u;
+        ui.input_activity_mask = (uint8_t)(1u << 2);
+        ts_ui_render(&fb, &ui, &committed);
+        CHECK(fb.pixels[y * TS_UI_WIDTH + first_x] == silent);
+        CHECK(fb.pixels[y * TS_UI_WIDTH + third_x] == active);
+    }
+    ui.input_available_channels = 0u;
+    ui.input_activity_mask = 0u;
     ts_ui_render(&fb, &ui, &committed);
     {
         int loop_x = TS_WAVE_X + (int)(committed.loop_first * TS_WAVE_W /

@@ -40,12 +40,32 @@ TsStereoFrame ts_input_channel_select(const float *device_frame,
     float mono = 0.0f;
     if (device_frame == NULL || device_channels == 0u ||
         !ts_input_channel_mode_valid(mode)) return result;
-    /* SDL exposes the actual channel count. Bound pathological layouts so a
-       malformed device description cannot make the realtime loop unbounded. */
-    if (device_channels > 32u) device_channels = 32u;
+    /* SDL exposes the negotiated count. Common capture code rejects layouts
+       above eight; retain a defensive bound for direct callers and tests. */
+    if (device_channels > TS_INPUT_DEVICE_CHANNEL_MAX)
+        device_channels = TS_INPUT_DEVICE_CHANNEL_MAX;
     if (mode == TS_INPUT_CHANNEL_STEREO) {
-        result.l = device_frame[0];
-        result.r = device_channels > 1u ? device_frame[1] : device_frame[0];
+        size_t left_count = 0u;
+        size_t right_count = 0u;
+        if (device_channels == 1u)
+            return ts_stereo_frame_from_mono(
+                isfinite(device_frame[0]) ? device_frame[0] : 0.0f);
+        /* Preserve hardware stereo pairs: 1/2, 3/4, ... . Averaging each
+           side gives deterministic headroom and leaves ordinary stereo at
+           unity gain. */
+        for (size_t channel = 0u; channel < device_channels; ++channel) {
+            float value = isfinite(device_frame[channel]) ?
+                          device_frame[channel] : 0.0f;
+            if ((channel & 1u) == 0u) {
+                result.l += value;
+                ++left_count;
+            } else {
+                result.r += value;
+                ++right_count;
+            }
+        }
+        if (left_count > 0u) result.l /= (float)left_count;
+        if (right_count > 0u) result.r /= (float)right_count;
         return ts_stereo_frame_sanitize(result);
     }
     if (mode == TS_INPUT_CHANNEL_MIX) {
@@ -62,6 +82,66 @@ TsStereoFrame ts_input_channel_select(const float *device_frame,
         mono = device_frame[0];
     }
     return ts_stereo_frame_from_mono(mono);
+}
+
+uint32_t ts_input_activity_detect_frame(const float *device_frame,
+                                        size_t device_channels)
+{
+    uint32_t mask = 0u;
+    if (device_frame == NULL || device_channels == 0u) return 0u;
+    if (device_channels > TS_INPUT_DEVICE_CHANNEL_MAX)
+        device_channels = TS_INPUT_DEVICE_CHANNEL_MAX;
+    for (size_t channel = 0u; channel < device_channels; ++channel) {
+        float value = device_frame[channel];
+        if (isfinite(value) && fabsf(value) >= TS_INPUT_ACTIVITY_THRESHOLD)
+            mask |= UINT32_C(1) << channel;
+    }
+    return mask;
+}
+
+void ts_input_activity_init(TsInputActivity *activity)
+{
+    if (activity == NULL) return;
+    atomic_init(&activity->available_channels, 0u);
+    atomic_init(&activity->pending_activity_mask, 0u);
+}
+
+void ts_input_activity_set_available(TsInputActivity *activity,
+                                     uint32_t channels)
+{
+    if (activity == NULL) return;
+    if (channels > TS_INPUT_DEVICE_CHANNEL_MAX) channels = 0u;
+    atomic_store_explicit(&activity->pending_activity_mask, 0u,
+                          memory_order_release);
+    atomic_store_explicit(&activity->available_channels, channels,
+                          memory_order_release);
+}
+
+uint32_t ts_input_activity_available(const TsInputActivity *activity)
+{
+    if (activity == NULL) return 0u;
+    return atomic_load_explicit(&activity->available_channels,
+                                memory_order_acquire);
+}
+
+void ts_input_activity_publish(TsInputActivity *activity, uint32_t mask)
+{
+    uint32_t channels;
+    uint32_t valid;
+    if (activity == NULL || mask == 0u) return;
+    channels = ts_input_activity_available(activity);
+    valid = channels == 0u ? 0u : (UINT32_C(1) << channels) - 1u;
+    mask &= valid;
+    if (mask != 0u)
+        (void)atomic_fetch_or_explicit(&activity->pending_activity_mask, mask,
+                                       memory_order_release);
+}
+
+uint32_t ts_input_activity_take(TsInputActivity *activity)
+{
+    if (activity == NULL) return 0u;
+    return atomic_exchange_explicit(&activity->pending_activity_mask, 0u,
+                                    memory_order_acq_rel);
 }
 
 void ts_input_monitor_init(TsInputMonitor *monitor)

@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 
 static int failures;
 
@@ -70,10 +71,61 @@ static void test_rate_conversion_and_bounded_waveform(void)
     free(block);
 }
 
+static void test_multichannel_activity_state(void)
+{
+    TsInputActivity activity;
+    float frame[TS_INPUT_DEVICE_CHANNEL_MAX] = {0.0f};
+    uint32_t mask = 0u;
+
+    ts_input_activity_init(&activity);
+    CHECK(atomic_is_lock_free(&activity.available_channels));
+    CHECK(atomic_is_lock_free(&activity.pending_activity_mask));
+    CHECK(ts_input_activity_available(&activity) == 0u);
+    CHECK(ts_input_activity_detect_frame(frame, 8u) == 0u);
+
+    for (size_t channel = 0u; channel < TS_INPUT_DEVICE_CHANNEL_MAX;
+         ++channel) {
+        frame[channel] = channel & 1u ? -0.01f : 0.01f;
+        mask |= UINT32_C(1) << channel;
+    }
+    CHECK(ts_input_activity_detect_frame(frame, 8u) == mask);
+    frame[3] = TS_INPUT_ACTIVITY_THRESHOLD * 0.5f;
+    CHECK((ts_input_activity_detect_frame(frame, 8u) & (1u << 3)) == 0u);
+    frame[3] = NAN;
+    CHECK((ts_input_activity_detect_frame(frame, 8u) & (1u << 3)) == 0u);
+
+    ts_input_activity_set_available(&activity, 4u);
+    ts_input_activity_publish(&activity, mask);
+    CHECK(ts_input_activity_take(&activity) == 0x0fu);
+    CHECK(ts_input_activity_take(&activity) == 0u);
+    ts_input_activity_publish(&activity, 1u);
+    ts_input_activity_publish(&activity, 4u);
+    CHECK(ts_input_activity_take(&activity) == 5u);
+    ts_input_activity_publish(&activity, 1u);
+    ts_input_activity_set_available(&activity, 6u);
+    CHECK(ts_input_activity_available(&activity) == 6u);
+    CHECK(ts_input_activity_take(&activity) == 0u);
+    ts_input_activity_set_available(&activity, 8u);
+    CHECK(ts_input_activity_available(&activity) == 8u);
+    ts_input_activity_publish(&activity, 0xffu);
+    CHECK(ts_input_activity_take(&activity) == 0xffu);
+    /* The published bits are physical channels, independent of downstream
+       MIX/STEREO selection. */
+    ts_input_activity_publish(&activity, 1u << 2);
+    CHECK(ts_input_activity_take(&activity) == (1u << 2));
+    ts_input_activity_publish(&activity, 1u << 5);
+    CHECK(ts_input_activity_take(&activity) == (1u << 5));
+    ts_input_activity_set_available(&activity, 0u);
+    CHECK(ts_input_activity_take(&activity) == 0u);
+    ts_input_activity_set_available(&activity, 9u);
+    CHECK(ts_input_activity_available(&activity) == 0u);
+}
+
 int main(void)
 {
     test_monitor_enable_meter_and_dry_ring();
     test_rate_conversion_and_bounded_waveform();
+    test_multichannel_activity_state();
     if (failures != 0) {
         fprintf(stderr, "%d input monitor test(s) failed\n", failures);
         return 1;

@@ -14,6 +14,10 @@
 #include "tapesister/exchange.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
+enum { TS_UI_INPUT_LED_X = 256, TS_UI_INPUT_LED_Y = 12,
+       TS_UI_INPUT_LED_W = 3, TS_UI_INPUT_LED_H = 9,
+       TS_UI_INPUT_LED_STEP_X = 4 };
+#define TS_UI_INPUT_ACTIVITY_HOLD_MS 140u
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
 enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,
        TS_MODAL_PANEL_W = 620, TS_MODAL_PANEL_H = 164 };
@@ -293,6 +297,8 @@ typedef struct {
     float input_peak;
     float input_threshold;
     uint32_t input_sample_rate;
+    uint8_t input_available_channels;
+    uint8_t input_activity_mask;
     size_t input_wave_columns;
     float input_wave_minimum[TS_WAVE_W];
     float input_wave_maximum[TS_WAVE_W];
@@ -475,6 +481,11 @@ typedef struct {
 } TsUiState;
 
 void ts_ui_init(TsUiState *ui);
+void ts_ui_update_input_activity(TsUiState *ui,
+                                 uint32_t hold_until_ms[8],
+                                 uint32_t now_ms,
+                                 uint32_t available_channels,
+                                 uint32_t detected_mask);
 void ts_ui_waveform_cache_invalidate(TsUiState *ui, TsUiWaveformKind kind);
 void ts_ui_waveform_cache_reset_counters(void);
 uint64_t ts_ui_waveform_cache_rebuild_count(TsUiWaveformKind kind);

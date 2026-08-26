@@ -51,9 +51,14 @@ PR10 duration changes never stop or re-arm Capture. The selected H1/H2/H3/MIX ta
 published at the same stage while rolling history is resized by age; Capture recorder
 capacity and destination transaction remain independent of Sister buffer seconds.
 
-The input callback performs only explicit MIX/LEFT/RIGHT/STEREO conversion,
-channel-aware external-source recorder writes, one
-block peak publication, and an optional lock-free SPSC monitor-ring write. It does no
+The input callback accepts the negotiated float capture layout from one through eight
+channels. MIX (Mono Sum) averages every channel to mono and sends it equally to EXT L/R;
+LEFT/RIGHT select hardware channel 1/2 as dual mono (RIGHT uses 1 on a mono device);
+STEREO averages hardware channels 1/3/5/7 to left and 2/4/6/8 to right, preserving
+ordinary stereo at unity gain and paired multichannel layouts with deterministic
+headroom. It performs only that conversion, channel-aware external-source recorder
+writes, one block peak publication, one atomic activity-mask publication, and an
+optional lock-free SPSC monitor-ring write. It does no
 drawing, file I/O, allocation, or project mutation. The output callback consumes the
 dry monitor ring after producing and feeding the internal CAPTURE performance mix, so
 monitored input cannot be printed into internal CAPTURE or routed through tile effects.
@@ -66,6 +71,22 @@ column min/max envelope representing roughly the latest ten seconds. Work and me
 therefore stay bounded for long takes. The meter uses the maximum magnitude of the
 selected frame pair and the same `threshold_amplitude` used by the recorder; its display covers the recorder's
 full -90 to 0 dBFS threshold range.
+
+The main header always shows eight compact `IN` positions. Positions beyond the
+negotiated channel count are dim, available-but-silent positions use the inactive
+button color, and channels crossing 0.001 linear amplitude (-60 dBFS) light in the
+waveform color. Detection happens during the existing capture scan; the UI provides a
+140 ms visual hold without locks or callback-side timing work.
+
+For a MOTU M6 performance setup, connect Terra L/R to hardware inputs 1/2 and the
+second computer's L/R to 3/4 with phantom power off and hardware gains set first. In
+the Linux audio control, select the M6 multichannel or Pro Audio capture profile rather
+than a stereo-only profile, then start TapeSister. Select the M6 as INPUT, select
+STEREO (`record_input_channel=3`), and save the configuration. At least `IN` positions
+1-4 must appear available; the exact additional available positions depend on the
+profile/backend's M6 channel exposure. Play each source separately and confirm only
+1/2 or 3/4 lights, then play both and confirm 1-4. If only two positions are available,
+fix the Linux device profile before troubleshooting Sister. No JACK graph is required.
 
 Playback and capture request 256-frame SDL buffers. SDL may still add platform/device
 latency, and the monitor ring primes 128 input frames to tolerate callback scheduling.

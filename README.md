@@ -54,8 +54,16 @@ wrapping past tile 16.
 `[External Recording]` in `tapesister.ini` controls the input device and channel plus
 threshold, pre-roll, silence, tail, and maximum take length. The input selector is
 explicit: `record_input_channel=0` is **MIX**, `1` is **LEFT**, `2` is **RIGHT**, and
-`3` is **STEREO**. MIX averages all bounded device channels; LEFT/RIGHT produce mono;
-STEREO preserves the first two channels and safely duplicates a one-channel device.
+`3` is **STEREO**. MIX is the Mono Sum mode: it averages every available hardware
+channel and sends that result equally to EXT L and R. LEFT selects hardware input 1 as
+dual mono; RIGHT selects hardware input 2 as dual mono (and falls back to input 1 on a
+mono device). These retain their established behavior for multichannel devices.
+STEREO accepts one to eight negotiated hardware channels, averages odd-numbered inputs
+(1/3/5/7) into EXT left and even-numbered inputs (2/4/6/8) into EXT right, and safely
+duplicates a one-channel device. A normal two-channel device therefore remains exact
+unity stereo, while larger paired layouts retain pair orientation without multiplying
+gain. The eight tiny `IN` indicators in the top header distinguish unavailable channels
+from available silent channels and briefly light when signal crosses -60 dBFS.
 Existing numeric settings retain their meaning.
 
 Every completed take is also written immediately as a float WAV under the

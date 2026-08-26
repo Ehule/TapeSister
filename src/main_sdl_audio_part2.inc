@@ -127,7 +127,7 @@ static int ts_reopen_capture_for_config(void)
     replacement = SDL_OpenAudioDevice(
         wanted, 1, &ts_capture_desired, &obtained, ts_capture_allowed_changes);
     if (replacement == 0) {
-        if (audio != NULL)
+        if (audio != NULL && old == 0)
             ts_sister_runtime_input_available(&audio->sister, 0);
         snprintf(ts_capture_reconfigure_error,
                  sizeof(ts_capture_reconfigure_error),
@@ -136,19 +136,21 @@ static int ts_reopen_capture_for_config(void)
         return 0;
     }
     if (obtained.format != AUDIO_F32SYS || obtained.freq <= 0 ||
-        obtained.channels == 0) {
+        obtained.channels == 0 ||
+        obtained.channels > TS_INPUT_DEVICE_CHANNEL_MAX) {
         SDL_CloseAudioDevice(replacement);
-        if (audio != NULL)
+        if (audio != NULL && old == 0)
             ts_sister_runtime_input_available(&audio->sister, 0);
         snprintf(ts_capture_reconfigure_error,
                  sizeof(ts_capture_reconfigure_error),
-                 "Configured recording input returned unsupported audio");
+                 "Configured recording input must provide float audio with 1-8 channels");
         return 0;
     }
     if (old != 0) SDL_CloseAudioDevice(old);
     ts_real_capture = replacement;
     input->channels = obtained.channels;
     input->sample_rate = (uint32_t)obtained.freq;
+    ts_input_activity_set_available(&input->activity, obtained.channels);
     if (audio != NULL)
         ts_sister_runtime_input_available(&audio->sister, 1);
     input->input_channel = ts_live_config != NULL ?
@@ -166,6 +168,8 @@ static int ts_reopen_capture_for_config(void)
                  wanted != NULL ? wanted : "");
     ts_capture_reconfigure_pending = 0;
     ts_capture_reconfigure_error[0] = '\0';
+    diagnostic_log("capture device reopened: %s rate=%u channels=%d",
+                   input->device_label, input->sample_rate, input->channels);
     return 1;
 }
 
