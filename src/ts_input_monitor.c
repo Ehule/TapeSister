@@ -33,6 +33,19 @@ uint8_t ts_input_channel_record_channels(int mode)
     return mode == TS_INPUT_CHANNEL_STEREO ? 2u : 1u;
 }
 
+uint8_t ts_input_capture_probe_request(uint8_t maximum, uint8_t attempt)
+{
+    if (maximum == 0u || maximum > TS_INPUT_DEVICE_CHANNEL_MAX)
+        maximum = TS_INPUT_DEVICE_CHANNEL_MAX;
+    return attempt < maximum ? (uint8_t)(maximum - attempt) : 0u;
+}
+
+int ts_input_capture_probe_accepts(uint8_t requested, uint8_t obtained)
+{
+    return requested >= 1u && requested <= TS_INPUT_DEVICE_CHANNEL_MAX &&
+           obtained == requested;
+}
+
 TsStereoFrame ts_input_channel_select(const float *device_frame,
                                        size_t device_channels, int mode)
 {

@@ -2173,7 +2173,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     bevel_frame(fb, 190, 7, 48, 18, RGB(24, 24, 24), PAL_EFFECT,
                 RGB(7, 7, 7));
     text(fb, 196, 13, TAPESISTER_BUILD_MARKER, PAL_EFFECT, 1);
-    text(fb, 242, 13, "IN", PAL_TEXT, 1);
+    {
+        uint8_t channels = ui->input_available_channels <=
+                           TS_INPUT_DEVICE_CHANNEL_MAX ?
+                           ui->input_available_channels : 0u;
+        char input_label[4] = {'I', 'N', (char)('0' + channels), '\0'};
+        text(fb, 242, 13, input_label, PAL_TEXT, 1);
+    }
     for (int channel = 0; channel < TS_INPUT_DEVICE_CHANNEL_MAX; ++channel) {
         int x = TS_UI_INPUT_LED_X + channel * TS_UI_INPUT_LED_STEP_X;
         uint32_t color = channel >= ui->input_available_channels ?

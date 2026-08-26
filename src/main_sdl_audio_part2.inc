@@ -103,8 +103,8 @@ static void ts_mark_capture_config_after_save(void)
 static int ts_reopen_capture_for_config(void)
 {
     SDL_AudioSpec obtained;
+    SDL_AudioSpec desired;
     SDL_AudioDeviceID replacement;
-    SDL_AudioDeviceID old = ts_real_capture;
     ExternalInputState *input = (ExternalInputState *)ts_capture_userdata;
     AudioState *audio = (AudioState *)ts_output_userdata;
     const char *wanted = ts_configured_input_name();
@@ -124,10 +124,12 @@ static int ts_reopen_capture_for_config(void)
     }
 
     SDL_zero(obtained);
-    replacement = SDL_OpenAudioDevice(
-        wanted, 1, &ts_capture_desired, &obtained, ts_capture_allowed_changes);
+    desired = ts_capture_desired;
+    desired.channels = TS_INPUT_DEVICE_CHANNEL_MAX;
+    replacement = ts_audio_open_capture_widest(
+        wanted, &desired, &obtained, ts_capture_allowed_changes);
     if (replacement == 0) {
-        if (audio != NULL && old == 0)
+        if (audio != NULL && ts_real_capture == 0)
             ts_sister_runtime_input_available(&audio->sister, 0);
         snprintf(ts_capture_reconfigure_error,
                  sizeof(ts_capture_reconfigure_error),
@@ -138,16 +140,14 @@ static int ts_reopen_capture_for_config(void)
     if (obtained.format != AUDIO_F32SYS || obtained.freq <= 0 ||
         obtained.channels == 0 ||
         obtained.channels > TS_INPUT_DEVICE_CHANNEL_MAX) {
-        SDL_CloseAudioDevice(replacement);
-        if (audio != NULL && old == 0)
+        ts_audio_close_device(replacement);
+        if (audio != NULL && ts_real_capture == 0)
             ts_sister_runtime_input_available(&audio->sister, 0);
         snprintf(ts_capture_reconfigure_error,
                  sizeof(ts_capture_reconfigure_error),
                  "Configured recording input must provide float audio with 1-8 channels");
         return 0;
     }
-    if (old != 0) SDL_CloseAudioDevice(old);
-    ts_real_capture = replacement;
     input->channels = obtained.channels;
     input->sample_rate = (uint32_t)obtained.freq;
     ts_input_activity_set_available(&input->activity, obtained.channels);

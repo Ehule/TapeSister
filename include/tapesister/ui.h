@@ -14,9 +14,9 @@
 #include "tapesister/exchange.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
-enum { TS_UI_INPUT_LED_X = 256, TS_UI_INPUT_LED_Y = 12,
-       TS_UI_INPUT_LED_W = 3, TS_UI_INPUT_LED_H = 9,
-       TS_UI_INPUT_LED_STEP_X = 4 };
+enum { TS_UI_INPUT_LED_X = 263, TS_UI_INPUT_LED_Y = 12,
+       TS_UI_INPUT_LED_W = 2, TS_UI_INPUT_LED_H = 9,
+       TS_UI_INPUT_LED_STEP_X = 3 };
 #define TS_UI_INPUT_ACTIVITY_HOLD_MS 140u
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
 enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,

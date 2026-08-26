@@ -26,26 +26,116 @@
     return 1;
 }
 
+static uint8_t ts_audio_capture_preferred_channels(const char *device)
+{
+    SDL_AudioSpec spec;
+    int count;
+
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+    if (device == NULL) {
+        SDL_zero(spec);
+        if (SDL_GetDefaultAudioInfo(NULL, &spec, 1) == 0 &&
+            spec.channels >= 1u) {
+            return spec.channels > TS_INPUT_DEVICE_CHANNEL_MAX ?
+                   TS_INPUT_DEVICE_CHANNEL_MAX : spec.channels;
+        }
+    }
+#endif
+
+#if SDL_VERSION_ATLEAST(2, 0, 16)
+    count = SDL_GetNumAudioDevices(1);
+    for (int index = 0; index < count; ++index) {
+        const char *name = SDL_GetAudioDeviceName(index, 1);
+        if (device != NULL && (name == NULL || strcmp(name, device) != 0))
+            continue;
+        SDL_zero(spec);
+        if (SDL_GetAudioDeviceSpec(index, 1, &spec) == 0 &&
+            spec.channels >= 1u) {
+            return spec.channels > TS_INPUT_DEVICE_CHANNEL_MAX ?
+                   TS_INPUT_DEVICE_CHANNEL_MAX : spec.channels;
+        }
+        if (device == NULL) break;
+    }
+#else
+    (void)device;
+    (void)spec;
+    count = 0;
+#endif
+    (void)count;
+    return 0u;
+}
+
+static SDL_AudioDeviceID ts_audio_open_capture_widest(
+    const char *device, const SDL_AudioSpec *desired, SDL_AudioSpec *obtained,
+    int allowed_changes)
+{
+    SDL_AudioSpec attempt;
+    SDL_AudioSpec candidate_spec;
+    SDL_AudioDeviceID candidate = 0;
+    SDL_AudioDeviceID old = ts_real_capture;
+    uint8_t preferred;
+    uint8_t maximum;
+
+    if (desired == NULL) {
+        SDL_SetError("Capture format is missing");
+        return 0;
+    }
+    maximum = desired->channels;
+    if (maximum == 0u || maximum > TS_INPUT_DEVICE_CHANNEL_MAX)
+        maximum = TS_INPUT_DEVICE_CHANNEL_MAX;
+    preferred = ts_audio_capture_preferred_channels(device);
+    if (preferred != 0u) maximum = preferred;
+    if (obtained != NULL) SDL_zero(*obtained);
+
+    /*
+     * Start with the selected device's advertised layout. This matters on
+     * PipeWire/PulseAudio, where asking for eight channels can create an
+     * artificial remixed stream instead of exposing the node's physical
+     * channel count. Older/opaque backends fall back to a descending exact
+     * probe. Rate and buffer-size negotiation remain enabled. This is a
+     * control-thread device-open path; no probing reaches either callback.
+     */
+    for (uint8_t probe = 0u; ; ++probe) {
+        uint8_t channels = ts_input_capture_probe_request(maximum, probe);
+        if (channels == 0u) break;
+        attempt = *desired;
+        attempt.channels = channels;
+        SDL_zero(candidate_spec);
+        candidate = SDL_OpenAudioDevice(
+            device, 1, &attempt, &candidate_spec, allowed_changes);
+        if (candidate == 0) continue;
+        if (candidate_spec.format == attempt.format &&
+            candidate_spec.freq > 0 && candidate_spec.samples > 0 &&
+            ts_input_capture_probe_accepts(attempt.channels,
+                                           candidate_spec.channels)) {
+            if (old != 0) SDL_CloseAudioDevice(old);
+            ts_real_capture = candidate;
+            ts_capture_desired = attempt;
+            ts_capture_allowed_changes = allowed_changes;
+            ts_capture_userdata = desired->userdata;
+            ts_copy_name(ts_active_capture, sizeof(ts_active_capture),
+                         device != NULL ? device : "");
+            ts_capture_reconfigure_pending = 0;
+            ts_capture_reconfigure_error[0] = '\0';
+            if (obtained != NULL) *obtained = candidate_spec;
+            return TS_AUDIO_LOGICAL_CAPTURE;
+        }
+        SDL_CloseAudioDevice(candidate);
+        candidate = 0;
+    }
+    SDL_SetError("No exact float capture layout available with 1-8 channels");
+    return 0;
+}
+
 static SDL_AudioDeviceID ts_audio_open_device(const char *device, int iscapture,
                                                const SDL_AudioSpec *desired,
                                                SDL_AudioSpec *obtained,
                                                int allowed_changes)
 {
     SDL_AudioDeviceID real;
-    if (iscapture) {
-        real = SDL_OpenAudioDevice(device, 1, desired, obtained, allowed_changes);
-        if (real == 0) return 0;
-        if (ts_real_capture != 0) SDL_CloseAudioDevice(ts_real_capture);
-        ts_real_capture = real;
-        if (desired != NULL) ts_capture_desired = *desired;
-        ts_capture_allowed_changes = allowed_changes;
-        ts_capture_userdata = desired != NULL ? desired->userdata : NULL;
-        ts_copy_name(ts_active_capture, sizeof(ts_active_capture),
-                     device != NULL ? device : "");
-        ts_capture_reconfigure_pending = 0;
-        ts_capture_reconfigure_error[0] = '\0';
-        return TS_AUDIO_LOGICAL_CAPTURE;
-    }
+    if (iscapture)
+        return ts_audio_open_capture_widest(
+            device, desired, obtained, allowed_changes);
 
     if (desired != NULL) ts_output_desired = *desired;
     ts_output_allowed_changes = allowed_changes;

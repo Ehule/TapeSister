@@ -121,11 +121,29 @@ static void test_multichannel_activity_state(void)
     CHECK(ts_input_activity_available(&activity) == 0u);
 }
 
+static void test_capture_channel_probe_policy(void)
+{
+    CHECK(ts_input_capture_probe_request(8u, 0u) == 8u);
+    CHECK(ts_input_capture_probe_request(8u, 2u) == 6u);
+    CHECK(ts_input_capture_probe_request(8u, 7u) == 1u);
+    CHECK(ts_input_capture_probe_request(8u, 8u) == 0u);
+    CHECK(ts_input_capture_probe_request(6u, 0u) == 6u);
+    CHECK(ts_input_capture_probe_request(6u, 5u) == 1u);
+    CHECK(ts_input_capture_probe_request(6u, 6u) == 0u);
+    CHECK(ts_input_capture_probe_accepts(8u, 2u) == 0);
+    CHECK(ts_input_capture_probe_accepts(7u, 6u) == 0);
+    CHECK(ts_input_capture_probe_accepts(6u, 6u) == 1);
+    CHECK(ts_input_capture_probe_accepts(2u, 2u) == 1);
+    CHECK(ts_input_capture_probe_accepts(0u, 0u) == 0);
+    CHECK(ts_input_capture_probe_accepts(9u, 9u) == 0);
+}
+
 int main(void)
 {
     test_monitor_enable_meter_and_dry_ring();
     test_rate_conversion_and_bounded_waveform();
     test_multichannel_activity_state();
+    test_capture_channel_probe_policy();
     if (failures != 0) {
         fprintf(stderr, "%d input monitor test(s) failed\n", failures);
         return 1;

@@ -76,6 +76,8 @@ void ts_input_monitor_reset_meter(TsInputMonitor *monitor);
 int ts_input_channel_mode_valid(int mode);
 const char *ts_input_channel_mode_name(int mode);
 uint8_t ts_input_channel_record_channels(int mode);
+uint8_t ts_input_capture_probe_request(uint8_t maximum, uint8_t attempt);
+int ts_input_capture_probe_accepts(uint8_t requested, uint8_t obtained);
 TsStereoFrame ts_input_channel_select(const float *device_frame,
                                        size_t device_channels, int mode);
 uint32_t ts_input_activity_detect_frame(const float *device_frame,

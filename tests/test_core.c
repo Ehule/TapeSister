@@ -2851,6 +2851,8 @@ int main(void)
         uint32_t unavailable;
         uint32_t silent;
         uint32_t active;
+        uint64_t label_two = 0u;
+        uint64_t label_six = 0u;
         int first_x = TS_UI_INPUT_LED_X + TS_UI_INPUT_LED_W / 2;
         int third_x = TS_UI_INPUT_LED_X + 2 * TS_UI_INPUT_LED_STEP_X +
                       TS_UI_INPUT_LED_W / 2;
@@ -2887,6 +2889,19 @@ int main(void)
         ts_ui_render(&fb, &ui, &committed);
         CHECK(fb.pixels[y * TS_UI_WIDTH + first_x] == silent);
         CHECK(fb.pixels[y * TS_UI_WIDTH + third_x] == active);
+        ui.input_available_channels = 2u;
+        ts_ui_render(&fb, &ui, &committed);
+        for (int label_y = 10; label_y < 22; ++label_y)
+            for (int label_x = 242; label_x < TS_UI_INPUT_LED_X; ++label_x)
+                label_two = label_two * UINT64_C(33) ^
+                    fb.pixels[label_y * TS_UI_WIDTH + label_x];
+        ui.input_available_channels = 6u;
+        ts_ui_render(&fb, &ui, &committed);
+        for (int label_y = 10; label_y < 22; ++label_y)
+            for (int label_x = 242; label_x < TS_UI_INPUT_LED_X; ++label_x)
+                label_six = label_six * UINT64_C(33) ^
+                    fb.pixels[label_y * TS_UI_WIDTH + label_x];
+        CHECK(label_two != label_six);
     }
     ui.input_available_channels = 0u;
     ui.input_activity_mask = 0u;
