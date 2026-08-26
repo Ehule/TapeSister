@@ -253,14 +253,15 @@ typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
 
-/* High-resolution wheels and touchpads can keep emitting inertial events
-   after the pointer crosses into another parameter. */
+/* High-resolution wheels, touchpads, and queued SDL wheel events can keep
+   emitting after the pointer crosses a parameter or application window. */
 #define TS_UI_WHEEL_HANDOFF_QUIET_MS 120u
 
 typedef struct {
     int target;
     uint32_t last_event_ms;
     int active;
+    int suppress_until_quiet;
 } TsUiWheelGuard;
 
 typedef struct {
@@ -552,6 +553,7 @@ int ts_ui_logo_contains(int x, int y);
 int ts_ui_fm_background_click_allowed(const TsUiState *ui, int x, int y);
 int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
                              uint32_t now_ms);
+void ts_ui_wheel_guard_interrupt(TsUiWheelGuard *guard, uint32_t now_ms);
 int ts_ui_waveform_mode_contains(int x, int y);
 int ts_ui_record_source_button_from_point(int x, int y);
 int ts_ui_canvas_edge_from_point(int x, int y);

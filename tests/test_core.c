@@ -210,6 +210,13 @@ int main(void)
         &ui.wheel_guard, 11, 1100u + TS_UI_WHEEL_HANDOFF_QUIET_MS));
     CHECK(ts_ui_wheel_guard_accept(&ui.wheel_guard, 11, 1101u +
                                     TS_UI_WHEEL_HANDOFF_QUIET_MS));
+    ts_ui_wheel_guard_interrupt(&ui.wheel_guard, 1300u);
+    CHECK(!ts_ui_wheel_guard_accept(&ui.wheel_guard, 11, 1310u));
+    CHECK(!ts_ui_wheel_guard_accept(&ui.wheel_guard, 12, 1400u));
+    CHECK(ts_ui_wheel_guard_accept(
+        &ui.wheel_guard, 12, 1400u + TS_UI_WHEEL_HANDOFF_QUIET_MS));
+    CHECK(ts_ui_wheel_guard_accept(&ui.wheel_guard, 12, 1401u +
+                                    TS_UI_WHEEL_HANDOFF_QUIET_MS));
     ts_ui_select_panel(&ui, TS_UI_PANEL_CDP);
     CHECK(ts_ui_panel(&ui) == TS_UI_PANEL_CDP && ui.show_recipes && ui.cdp_page == 0);
     ts_ui_select_panel(&ui, TS_UI_PANEL_CDP);

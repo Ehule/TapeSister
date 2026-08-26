@@ -135,6 +135,14 @@ int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
         return 1;
     }
     elapsed = now_ms - guard->last_event_ms;
+    if (guard->suppress_until_quiet) {
+        if (elapsed < TS_UI_WHEEL_HANDOFF_QUIET_MS) {
+            /* Residual events extend the block until the stream really ends. */
+            guard->last_event_ms = now_ms;
+            return 0;
+        }
+        guard->suppress_until_quiet = 0;
+    }
     if (target != guard->target && elapsed < TS_UI_WHEEL_HANDOFF_QUIET_MS) {
         /* Ongoing inertial events keep extending the required quiet period. */
         guard->last_event_ms = now_ms;
@@ -143,6 +151,14 @@ int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
     guard->target = target;
     guard->last_event_ms = now_ms;
     return 1;
+}
+
+void ts_ui_wheel_guard_interrupt(TsUiWheelGuard *guard, uint32_t now_ms)
+{
+    if (guard == NULL) return;
+    guard->last_event_ms = now_ms;
+    guard->active = 1;
+    guard->suppress_until_quiet = 1;
 }
 
 int ts_ui_waveform_mode_contains(int x, int y)

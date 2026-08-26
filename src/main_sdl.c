@@ -6512,7 +6512,6 @@ typedef struct {
     int minimized;
     TsSisterPresetBank presets;
     size_t preset_index;
-    TsUiWheelGuard wheel_guard;
     int parameter_lock_gesture;
 } SisterWindow;
 
@@ -8997,6 +8996,15 @@ int main(int argc, char **argv)
         }
         while (SDL_PollEvent(&event)) {
             uint32_t event_id = event_window_id(&event);
+            if (event.type == SDL_WINDOWEVENT &&
+                (event.window.event == SDL_WINDOWEVENT_LEAVE ||
+                 event.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+                 event.window.event == SDL_WINDOWEVENT_HIDDEN)) {
+                /* A wheel stream has one owner across the whole application.
+                   Do not let queued/inertial events acquire a control in the
+                   next window until the stream has gone quiet. */
+                ts_ui_wheel_guard_interrupt(&ui.wheel_guard, SDL_GetTicks());
+            }
             if (event.type == SDL_AUDIODEVICEREMOVED &&
                 event.adevice.iscapture && input_device != 0 &&
                 event.adevice.which == input_device) {
@@ -9175,7 +9183,7 @@ int main(int argc, char **argv)
                         !ts_sister_ui_parameter_locked(
                             &sister_window.model, hit.index) &&
                         ts_ui_wheel_guard_accept(
-                            &sister_window.wheel_guard,
+                            &ui.wheel_guard,
                             WHEEL_TARGET_SISTER + hit.index, SDL_GetTicks())) {
                         hit.normalized = sister_parameter_wheel_normalized(
                             &sister_window.model.parameters, hit.index, wheel,
