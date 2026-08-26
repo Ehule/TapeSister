@@ -62,7 +62,7 @@ still a hardware check.
 - [ ] Repeat core checks at 44.1 and 96 kHz.
 - [ ] Verify mono interface input is exact dual mono; verify stereo L/R order, then left-, right-, and mix-mode selection.
 - [ ] On MOTU hardware, identify channel numbers and confirm no swap or collapse.
-- [ ] Run a long EXT session and a long stereo-instrument session; listen for stale input, crackles, and channel disagreement.
+- [ ] Run a long EXT session and a long stereo-instrument session; listen for stale input, crackles, and channel disagreement. EXT occupancy must remain bounded with no growing underrun/drop count; record generation, capture callback/frame counts, maximum block, and correction ppm.
 - [ ] Trigger one and several marked Sister tiles from QWERTY and MIDI; every marked tile starts from the same event and the ensemble does not double-feed the direct bus.
 - [ ] Feed FM into Sister with every tile empty.
 - [ ] Use QWERTY/MIDI in both windows, change F1–F8 octaves in each, change focus, release notes, and panic; confirm no stuck notes.
@@ -73,12 +73,13 @@ still a hardware check.
 - [ ] Start/stop Capture M and S and Overdub; verify Capture is inaudible and committed stereo ordering is correct.
 - [ ] Sweep Soak/Bleed, every H1/H2/H3/MIX target mask, reverb types/decay, delay time/feedback, distortion, and Master FX Feedback.
 - [ ] Compare front `T/F/E/A/FX` controls with the deep mixer in both directions; confirm one value and a click-free linked-stereo response.
+- [ ] Shift-click every adjustable field on both Sister pages, including BUFFER and all FX values; each lock must be independent, dim without an `L`, reject click/drag/wheel changes, survive preset/project reload, and unlock without moving its value.
 - [ ] Toggle every source, MONITOR, ROLL, HOLD, CLEAR, and POWER over a sustained tone and tail; listen for unintended clicks or double feeds.
 - [ ] Close/hide/reopen the Sister window during playback; machine, heads, notes, octave, and parameters must persist.
 - [ ] Replace a playing source through edit, Undo/Redo, Warp, Smear, and Tear; old one-shots finish safely and new triggers use the replacement.
 - [ ] Save/reload schema-v5 projects and presets; open an older project and confirm deterministic unity mixer defaults.
 - [ ] Switch/restart the audio device and sample rate; confirm clean recovery and no stale audio.
-- [ ] Run `./tapesister --diagnostic-audio`; record average/worst callback time, near-overruns, overruns, actual rate, and device frames during the torture chain.
+- [ ] Run `./tapesister --diagnostic-audio`; record average/worst callback time, near-overruns, overruns, actual rate/device frames, and the complete EXT ring line during the torture chain.
 
 Pass means no new click/crackle, deadline overrun, hang, stuck note, stale audio,
 channel swap/collapse, level surprise, or UI/audio disagreement.

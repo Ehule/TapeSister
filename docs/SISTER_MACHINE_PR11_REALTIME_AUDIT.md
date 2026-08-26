@@ -55,12 +55,19 @@ callback and updates fixed atomics after confirming they are lock-free on the ta
 otherwise the optional mode disables itself. Formatting and five-second reporting
 happen on the controller thread. It records callback count, frames, average/worst time,
 near-deadlines, overruns, sample rate, device frames, and an active configuration
-bitset. Normal mode avoids the clock reads and atomic writes.
+bitset. EXT diagnostics additionally expose the monitor generation, capture callback
+and frame counts, largest delivered block, ring faults, occupancy, and adaptive clock
+correction. Normal mode avoids callback clocks and realtime timing diagnostics; the
+EXT bridge retains only its bounded lock-free SPSC and control atomics.
 
 Finite sanitization and bounded feedback remain at external buses, tape write,
 head/mix taps, and final output. Delay/reverb tails flush below their tiny-state
 thresholds. Frame capacities and sample-rate-derived allocations are validated before
-publication. No new blanket clamp or latency increase was introduced.
+publication. No new blanket amplitude clamp was introduced. EXT deliberately holds
+four negotiated capture blocks so delayed PipeWire/PulseAudio deliveries cannot force
+repeated silence/re-prime gaps. Its bounded adaptive ratio uses linked-stereo linear
+interpolation, so correction does not introduce raw sample skips or holds; the selected
+256/512/1024 device size makes the reserve explicit and testable.
 
 ## H2/H1 investigation
 

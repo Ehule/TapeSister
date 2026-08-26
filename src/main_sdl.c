@@ -6851,8 +6851,15 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_H3_LEVEL: return "H3 LEVEL";
     case TS_SISTER_UI_PARAM_H3_SPAN: return "H3 SPAN";
     case TS_SISTER_UI_PARAM_H3_RATE: return "H3 RATE";
+    case TS_SISTER_UI_PARAM_WOW: return "WOW";
+    case TS_SISTER_UI_PARAM_DROP: return "DROP";
+    case TS_SISTER_UI_PARAM_DUCK: return "DUCK";
+    case TS_SISTER_UI_PARAM_DECORRELATE: return "DECORRELATION";
+    case TS_SISTER_UI_PARAM_WIDTH: return "WIDTH";
     case TS_SISTER_UI_PARAM_FILTER_TYPE: return "FILTER TYPE";
     case TS_SISTER_UI_PARAM_FILTER_CUTOFF: return "FILTER CUTOFF";
+    case TS_SISTER_UI_PARAM_FILTER_Q: return "FILTER Q";
+    case TS_SISTER_UI_PARAM_FILTER_GAIN: return "FILTER GAIN";
     case TS_SISTER_UI_PARAM_INPUT_GAIN: return "INPUT LEVEL";
     case TS_SISTER_UI_PARAM_TILES_GAIN: return "TILES MIX";
     case TS_SISTER_UI_PARAM_FM_GAIN: return "FM MIX";
@@ -6862,6 +6869,21 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_MONITOR_DRY: return "DRY LEVEL";
     case TS_SISTER_UI_PARAM_MONITOR_WET: return "WET LEVEL";
     case TS_SISTER_UI_PARAM_MIX_OUTPUT: return "OUTPUT LEVEL";
+    case TS_SISTER_UI_PARAM_WRITE_ERASE: return "ERASE";
+    case TS_SISTER_UI_PARAM_GHOST_TONE: return "GHOST TONE";
+    case TS_SISTER_UI_PARAM_SOAK: return "SOAK";
+    case TS_SISTER_UI_PARAM_BLEED: return "BLEED";
+    case TS_SISTER_UI_PARAM_REVERB_TYPE: return "REVERB TYPE";
+    case TS_SISTER_UI_PARAM_REVERB_MIX: return "REVERB MIX";
+    case TS_SISTER_UI_PARAM_REVERB_DECAY: return "REVERB DECAY";
+    case TS_SISTER_UI_PARAM_DELAY_TIME: return "DELAY TIME";
+    case TS_SISTER_UI_PARAM_DELAY_FEEDBACK: return "DELAY FEEDBACK";
+    case TS_SISTER_UI_PARAM_DELAY_MIX: return "DELAY MIX";
+    case TS_SISTER_UI_PARAM_DISTORTION_DRIVE: return "DISTORTION DRIVE";
+    case TS_SISTER_UI_PARAM_DISTORTION_TONE: return "DISTORTION TONE";
+    case TS_SISTER_UI_PARAM_DISTORTION_MIX: return "DISTORTION MIX";
+    case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: return "MASTER FX FEEDBACK";
+    case TS_SISTER_UI_PARAM_BUFFER_SECONDS: return "BUFFER DURATION";
     default: return "PARAMETER";
     }
 }
@@ -7627,6 +7649,8 @@ static void external_input_callback(void *userdata, Uint8 *stream, int bytes)
     float block_peak = 0.0f;
     uint32_t block_activity = 0u;
     if (input == NULL) return;
+    ts_input_monitor_note_capture_block(
+        &input->monitor, (uint32_t)(values / channels));
     for (int frame = 0; frame + channels <= values; frame += channels) {
         block_activity |= ts_input_activity_detect_frame(
             samples + frame, (size_t)channels);
@@ -8957,11 +8981,18 @@ int main(int argc, char **argv)
             if (ts_input_monitor_get_diagnostics(
                     &external_input.monitor, &input_snapshot))
                 diagnostic_log(
-                    "ext ring occupancy=%u prime=%u underruns=%u dropped=%u",
+                    "ext ring occupancy=%u prime=%u underruns=%u dropped=%u "
+                    "generation=%u capture_callbacks=%u capture_frames=%u "
+                    "max_block=%u correction_ppm=%d",
                     input_snapshot.occupancy_frames,
                     input_snapshot.prime_frames,
                     input_snapshot.underrun_count,
-                    input_snapshot.dropped_frame_count);
+                    input_snapshot.dropped_frame_count,
+                    input_snapshot.reset_generation,
+                    input_snapshot.capture_callback_count,
+                    input_snapshot.captured_frame_count,
+                    input_snapshot.largest_capture_block_frames,
+                    input_snapshot.correction_ppm);
             last_audio_diagnostic_log = SDL_GetTicks();
         }
         while (SDL_PollEvent(&event)) {

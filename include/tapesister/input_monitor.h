@@ -11,6 +11,7 @@ enum {
     TS_INPUT_MONITOR_RING_FRAMES = 16384,
     TS_INPUT_MONITOR_PRIME_FRAMES = 128,
     TS_INPUT_MONITOR_MAX_PRIME_FRAMES = 4096,
+    TS_INPUT_MONITOR_PRIME_DEVICE_BUFFERS = 4,
     TS_INPUT_MONITOR_FADE_FRAMES = 32,
     TS_INPUT_MONITOR_SERVO_INTERVAL_FRAMES = 64,
     TS_LIVE_WAVEFORM_COLUMNS = 576,
@@ -35,6 +36,10 @@ typedef struct {
     _Atomic uint32_t reset_generation;
     _Atomic uint32_t underrun_count;
     _Atomic uint32_t dropped_frame_count;
+    _Atomic uint32_t capture_callback_count;
+    _Atomic uint32_t captured_frame_count;
+    _Atomic uint32_t largest_capture_block_frames;
+    _Atomic int32_t correction_ppm;
     _Atomic uint32_t level_q;
     _Atomic uint32_t peak_q;
     _Atomic int clipped;
@@ -43,10 +48,14 @@ typedef struct {
     double consumer_phase;
     double consumer_ratio;
     TsStereoFrame consumer_sample;
+    TsStereoFrame consumer_next_sample;
     TsStereoFrame consumer_last_sample;
     uint32_t consumer_servo_countdown;
+    double consumer_occupancy_average;
+    double consumer_servo_integral;
     float consumer_gain;
     int consumer_has_sample;
+    int consumer_has_next_sample;
     int consumer_primed;
 } TsInputMonitor;
 
@@ -55,6 +64,11 @@ typedef struct {
     uint32_t prime_frames;
     uint32_t underrun_count;
     uint32_t dropped_frame_count;
+    uint32_t reset_generation;
+    uint32_t capture_callback_count;
+    uint32_t captured_frame_count;
+    uint32_t largest_capture_block_frames;
+    int32_t correction_ppm;
 } TsInputMonitorDiagnostics;
 
 /* The callback publishes only a bounded bit mask. The UI consumes and holds
@@ -87,6 +101,8 @@ int ts_input_monitor_get_diagnostics(const TsInputMonitor *monitor,
                                      TsInputMonitorDiagnostics *diagnostics);
 int ts_input_monitor_enabled(const TsInputMonitor *monitor);
 void ts_input_monitor_push(TsInputMonitor *monitor, float sample);
+void ts_input_monitor_note_capture_block(TsInputMonitor *monitor,
+                                         uint32_t frame_count);
 float ts_input_monitor_read(TsInputMonitor *monitor, uint32_t output_rate);
 void ts_input_monitor_push_frame(TsInputMonitor *monitor, TsStereoFrame sample);
 TsStereoFrame ts_input_monitor_read_frame(TsInputMonitor *monitor,

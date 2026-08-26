@@ -507,10 +507,11 @@ cell; lower values retain old stereo material before new input and controlled he
 feedback are written. A routed source is removed from its ordinary audition bus and
 returns only through Sister when MONITOR is on; INPUT prevents hot internal buses from
 overdriving the write head. OUT affects MIX only and individual head taps remain
-unscaled. Shift-click independently locks or unlocks the performance-sensitive head
-levels, Time/Scrub/Span, Feed/Rate, Filter Type/Cutoff, source-mixer trims, and
-input/dry/wet/output levels. Locked fields are dimmed and marked `L`, and ignore click,
-drag, and wheel edits until shift-clicked again. TILES is the retained master
+unscaled. Shift-click independently locks or unlocks every adjustable parameter field
+on the Tape and FX pages, including the live buffer duration, head/tape/filter values,
+source-mixer trims, Soak/Bleed, and all post-FX values. Locked fields are dimmed and
+ignore click, drag, and wheel edits until shift-clicked again; transport, source,
+target, page, and Capture buttons remain ordinary buttons. TILES is the retained master
 insert/bypass for the complete page-specific
 mask; switching it off preserves the group. In the ordinary Sample Bank, Shift-click
 copies only to an empty tile and toggles any occupied tile directly into or out of that

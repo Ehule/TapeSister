@@ -3321,12 +3321,6 @@ static uint32_t sister_dim_color(uint32_t color)
                12u + blue * 2u / 5u);
 }
 
-static void sister_lock_marker(TsFramebuffer *fb, int x, int y, int width,
-                               uint32_t color, int locked)
-{
-    if (locked) text(fb, x + width - 9, y + 3, "L", color, 1);
-}
-
 static void sister_parameter_state(TsFramebuffer *fb, int x, int y, int width,
                                    const char *label, float amount,
                                    uint32_t color, int locked)
@@ -3340,13 +3334,6 @@ static void sister_parameter_state(TsFramebuffer *fb, int x, int y, int width,
     rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
     snprintf(value, sizeof(value), "%s %02d", label, (int)lrintf(amount * 99.0f));
     text(fb, x + 3, y + 3, value, color, 1);
-    sister_lock_marker(fb, x, y, width, color, locked);
-}
-
-static void sister_parameter(TsFramebuffer *fb, int x, int y, int width,
-                             const char *label, float amount, uint32_t color)
-{
-    sister_parameter_state(fb, x, y, width, label, amount, color, 0);
 }
 
 static void sister_percent_parameter_state(TsFramebuffer *fb, int x, int y,
@@ -3364,16 +3351,6 @@ static void sister_percent_parameter_state(TsFramebuffer *fb, int x, int y,
     snprintf(value, sizeof(value), "%s %03d", label,
              (int)lrintf(amount * (float)maximum_percent));
     text(fb, x + 3, y + 3, value, color, 1);
-    sister_lock_marker(fb, x, y, width, color, locked);
-}
-
-static void sister_percent_parameter(TsFramebuffer *fb, int x, int y,
-                                     int width, const char *label,
-                                     float amount, int maximum_percent,
-                                     uint32_t color)
-{
-    sister_percent_parameter_state(fb, x, y, width, label, amount,
-                                   maximum_percent, color, 0);
 }
 
 static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
@@ -3418,7 +3395,6 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
         handle_y = track_y + (int)lrintf(
             (track_height - 1) * (1.0f - amount));
         rect(fb, lane_x + 1, handle_y - 1, 12, 3, color);
-        if (locked) text(fb, lane_x + 4, y + 101, "L", color, 1);
     }
 }
 
@@ -3433,16 +3409,6 @@ static void sister_choice_parameter_state(TsFramebuffer *fb, int x, int y,
     if (active) rect(fb, x + 1, y + 14, width - 2, 3, color);
     snprintf(value, sizeof(value), "%s %s", label, choice);
     text(fb, x + 3, y + 3, value, color, 1);
-    sister_lock_marker(fb, x, y, width, color, locked);
-}
-
-static void sister_choice_parameter(TsFramebuffer *fb, int x, int y,
-                                    int width, const char *label,
-                                    const char *choice, int active,
-                                    uint32_t color)
-{
-    sister_choice_parameter_state(fb, x, y, width, label, choice, active,
-                                  color, 0);
 }
 
 static void sister_target_toggle(TsFramebuffer *fb, int x, int y, int width,
@@ -3480,15 +3446,18 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         float current = (float)model->engine.duration_seconds;
         float amount = (target - (float)TS_SISTER_MIN_SECONDS) /
             (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
+        int locked = ts_sister_ui_parameter_locked(
+            model, TS_SISTER_UI_PARAM_BUFFER_SECONDS);
+        uint32_t color = locked ? sister_dim_color(PAL_TUNING) : PAL_TUNING;
         char canvas[32];
         if (model->engine.resize_pending)
             snprintf(canvas, sizeof(canvas), "BUF %.0F>%.0F", current, target);
         else
             snprintf(canvas, sizeof(canvas), "BUFFER %.0FS", target);
-        sister_choice_parameter(fb, 350, 8, 94, "", canvas,
-                                model->engine.resize_pending, PAL_TUNING);
+        sister_choice_parameter_state(fb, 350, 8, 94, "", canvas,
+            model->engine.resize_pending, PAL_TUNING, locked);
         rect(fb, 351, 25, (int)lrintf(92.0f * sister_clamp(amount)), 3,
-             PAL_TUNING);
+             color);
     }
     button(fb, 450, 8, 76, model->fx_page ? "TAPE" : "FX PAGE",
            model->fx_page);
@@ -3508,25 +3477,43 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             rect(fb, 10, top, 620, 68, RGB(10, 10, 11));
             text(fb, 18, top + 28, names[row], colors[row], 1);
         }
-        sister_choice_parameter(fb, 110, 72, 130, "TYPE",
+        sister_choice_parameter_state(fb, 110, 72, 130, "TYPE",
             ts_sister_reverb_type_name(model->parameters.fx.reverb_type),
-            model->parameters.fx.reverb_mix > 0.0f, PAL_WAVE_RIGHT);
-        sister_percent_parameter(fb, 250, 72, 130, "MIX",
-            model->parameters.fx.reverb_mix, 100, PAL_WAVE_RIGHT);
-        sister_percent_parameter(fb, 390, 72, 130, "DECAY",
-            model->parameters.fx.reverb_decay, 100, PAL_WAVE_RIGHT);
-        sister_percent_parameter(fb, 110, 150, 130, "TIME",
-            model->parameters.fx.delay_time, 100, PAL_EFFECT);
-        sister_percent_parameter(fb, 250, 150, 130, "FEEDBACK",
-            model->parameters.fx.delay_feedback, 100, PAL_EFFECT);
-        sister_percent_parameter(fb, 390, 150, 130, "MIX",
-            model->parameters.fx.delay_mix, 100, PAL_EFFECT);
-        sister_percent_parameter(fb, 110, 228, 130, "DRIVE",
-            model->parameters.fx.distortion_drive, 100, PAL_VOLUME);
-        sister_percent_parameter(fb, 250, 228, 130, "TONE",
-            model->parameters.fx.distortion_tone, 100, PAL_VOLUME);
-        sister_percent_parameter(fb, 390, 228, 130, "MIX",
-            model->parameters.fx.distortion_mix, 100, PAL_VOLUME);
+            model->parameters.fx.reverb_mix > 0.0f, PAL_WAVE_RIGHT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_REVERB_TYPE));
+        sister_percent_parameter_state(fb, 250, 72, 130, "MIX",
+            model->parameters.fx.reverb_mix, 100, PAL_WAVE_RIGHT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_REVERB_MIX));
+        sister_percent_parameter_state(fb, 390, 72, 130, "DECAY",
+            model->parameters.fx.reverb_decay, 100, PAL_WAVE_RIGHT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_REVERB_DECAY));
+        sister_percent_parameter_state(fb, 110, 150, 130, "TIME",
+            model->parameters.fx.delay_time, 100, PAL_EFFECT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DELAY_TIME));
+        sister_percent_parameter_state(fb, 250, 150, 130, "FEEDBACK",
+            model->parameters.fx.delay_feedback, 100, PAL_EFFECT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DELAY_FEEDBACK));
+        sister_percent_parameter_state(fb, 390, 150, 130, "MIX",
+            model->parameters.fx.delay_mix, 100, PAL_EFFECT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DELAY_MIX));
+        sister_percent_parameter_state(fb, 110, 228, 130, "DRIVE",
+            model->parameters.fx.distortion_drive, 100, PAL_VOLUME,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DISTORTION_DRIVE));
+        sister_percent_parameter_state(fb, 250, 228, 130, "TONE",
+            model->parameters.fx.distortion_tone, 100, PAL_VOLUME,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DISTORTION_TONE));
+        sister_percent_parameter_state(fb, 390, 228, 130, "MIX",
+            model->parameters.fx.distortion_mix, 100, PAL_VOLUME,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DISTORTION_MIX));
         for (int row = 0; row < 3; ++row) {
             int y = 97 + row * 78;
             sister_target_toggle(fb, 110, y, 56, "H1",
@@ -3543,8 +3530,10 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                            "RAT-INSPIRED / 2X", PAL_MOUSE, 1);
         }
         text(fb, 10, 311, "MASTER", PAL_TUNING, 1);
-        sister_percent_parameter(fb, 110, 306, 410, "FX FEEDBACK",
-            model->parameters.fx.master_feedback, 100, PAL_TUNING);
+        sister_percent_parameter_state(fb, 110, 306, 410, "FX FEEDBACK",
+            model->parameters.fx.master_feedback, 100, PAL_TUNING,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK));
         text(fb, 530, 311, "0-135%", PAL_MOUSE, 1);
         text(fb, 10, 340,
              "FIXED ORDER  DISTORTION > DELAY > REVERB   MIX FX WORK WITH POWER OFF",
@@ -3628,26 +3617,36 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_parameter_state(fb, 312, 258, 110, "RATE",
         model->parameters.head3_rate_index / 9.0f, PAL_TUNING,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H3_RATE));
-    sister_parameter(fb, 432, 258, 110, "FILTER Q",
-                     (model->parameters.filter_q - 0.1f) / 19.9f,
-                     PAL_INSTRUMENT);
+    sister_parameter_state(fb, 432, 258, 110, "FILTER Q",
+        (model->parameters.filter_q - 0.1f) / 19.9f, PAL_INSTRUMENT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_Q));
 
-    sister_parameter(fb, 10, 286, 82, "WOW", model->parameters.wow / 10.0f, PAL_TUNING);
-    sister_parameter(fb, 98, 286, 82, "DROP", model->parameters.drop / 100.0f, PAL_EFFECT);
-    sister_parameter(fb, 186, 286, 82, "DUCK", model->parameters.duck_enabled ? model->parameters.duck_sensitivity : 0.0f, PAL_VOLUME);
-    sister_choice_parameter(fb, 274, 286, 82, "DECOR",
-                            model->parameters.decorrelation_enabled ? "ON" : "OFF",
-                            model->parameters.decorrelation_enabled,
-                            PAL_WAVE_RIGHT);
-    sister_parameter(fb, 362, 286, 82, "WIDTH", model->parameters.width, PAL_WAVE_LEFT);
+    sister_parameter_state(fb, 10, 286, 82, "WOW",
+        model->parameters.wow / 10.0f, PAL_TUNING,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_WOW));
+    sister_parameter_state(fb, 98, 286, 82, "DROP",
+        model->parameters.drop / 100.0f, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_DROP));
+    sister_parameter_state(fb, 186, 286, 82, "DUCK",
+        model->parameters.duck_enabled ?
+            model->parameters.duck_sensitivity : 0.0f,
+        PAL_VOLUME,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_DUCK));
+    sister_choice_parameter_state(fb, 274, 286, 82, "DECOR",
+        model->parameters.decorrelation_enabled ? "ON" : "OFF",
+        model->parameters.decorrelation_enabled, PAL_WAVE_RIGHT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_DECORRELATE));
+    sister_parameter_state(fb, 362, 286, 82, "WIDTH",
+        model->parameters.width, PAL_WAVE_LEFT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_WIDTH));
     sister_choice_parameter_state(fb, 450, 286, 82, "FILTER",
         ts_sister_filter_type_name(model->parameters.filter_type),
         model->parameters.filter_type != TS_SISTER_FILTER_BYPASS,
         PAL_INSTRUMENT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_TYPE));
-    sister_parameter(fb, 538, 286, 82, "GAIN",
-                     (model->parameters.filter_gain_db + 24.0f) / 48.0f,
-                     PAL_INSTRUMENT);
+    sister_parameter_state(fb, 538, 286, 82, "GAIN",
+        (model->parameters.filter_gain_db + 24.0f) / 48.0f, PAL_INSTRUMENT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_GAIN));
 
     sister_percent_parameter_state(fb, 10, 308, 98, "INPUT",
         model->parameters.input_gain / 2.0f, 200, PAL_VOLUME,
@@ -3661,15 +3660,19 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_percent_parameter_state(fb, 319, 308, 98, "OUT",
         model->parameters.mix_output_gain / 4.0f, 400, PAL_INSTRUMENT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_MIX_OUTPUT));
-    sister_percent_parameter(fb, 422, 308, 98, "ERASE",
-                             model->parameters.write_erase, 100, PAL_VOLUME);
-    sister_percent_parameter(fb, 525, 308, 99, "GHOST",
-                             model->parameters.ghost_tone, 100, PAL_EFFECT);
+    sister_percent_parameter_state(fb, 422, 308, 98, "ERASE",
+        model->parameters.write_erase, 100, PAL_VOLUME,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_WRITE_ERASE));
+    sister_percent_parameter_state(fb, 525, 308, 99, "GHOST",
+        model->parameters.ghost_tone, 100, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_GHOST_TONE));
 
-    sister_percent_parameter(fb, 10, 330, 124, "SOAK",
-                             model->parameters.soak, 100, PAL_WAVE_RIGHT);
-    sister_percent_parameter(fb, 140, 330, 124, "BLEED",
-                             model->parameters.bleed, 100, PAL_EFFECT);
+    sister_percent_parameter_state(fb, 10, 330, 124, "SOAK",
+        model->parameters.soak, 100, PAL_WAVE_RIGHT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_SOAK));
+    sister_percent_parameter_state(fb, 140, 330, 124, "BLEED",
+        model->parameters.bleed, 100, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_BLEED));
     sister_target_toggle(fb, 276, 330, 52, "H1",
         model->parameters.soak_targets & TS_SISTER_EFFECT_TARGET_H1, PAL_NOTE);
     sister_target_toggle(fb, 334, 330, 52, "H2",

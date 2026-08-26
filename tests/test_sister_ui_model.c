@@ -24,9 +24,11 @@ int main(void)
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
     CHECK(model.parameter_locks == 0u);
-    CHECK(ts_sister_ui_parameter_lockable(TS_SISTER_UI_PARAM_FILTER_TYPE));
-    CHECK(ts_sister_ui_parameter_lockable(TS_SISTER_UI_PARAM_FILTER_CUTOFF));
-    CHECK(!ts_sister_ui_parameter_lockable(TS_SISTER_UI_PARAM_FILTER_Q));
+    for (int parameter = 0; parameter < TS_SISTER_UI_PARAM_COUNT;
+         ++parameter)
+        CHECK(ts_sister_ui_parameter_lockable(parameter));
+    CHECK(!ts_sister_ui_parameter_lockable(-1));
+    CHECK(!ts_sister_ui_parameter_lockable(TS_SISTER_UI_PARAM_COUNT));
     CHECK(ts_sister_ui_parameter_lock_toggle(
               &model, TS_SISTER_UI_PARAM_FILTER_TYPE));
     CHECK(ts_sister_ui_parameter_locked(
@@ -43,6 +45,18 @@ int main(void)
               &model, TS_SISTER_UI_PARAM_FILTER_TYPE));
     CHECK(!ts_sister_ui_parameter_locked(
               &model, TS_SISTER_UI_PARAM_FILTER_TYPE));
+    CHECK(ts_sister_ui_parameter_lock_toggle(
+              &model, TS_SISTER_UI_PARAM_FILTER_Q));
+    CHECK(ts_sister_ui_parameter_locked(
+              &model, TS_SISTER_UI_PARAM_FILTER_Q));
+    CHECK(ts_sister_ui_parameter_lock_toggle(
+              &model, TS_SISTER_UI_PARAM_BUFFER_SECONDS));
+    CHECK(ts_sister_ui_parameter_locked(
+              &model, TS_SISTER_UI_PARAM_BUFFER_SECONDS));
+    CHECK(ts_sister_ui_parameter_lock_toggle(
+              &model, TS_SISTER_UI_PARAM_REVERB_MIX));
+    CHECK(ts_sister_ui_parameter_locked(
+              &model, TS_SISTER_UI_PARAM_REVERB_MIX));
     model.parameter_locks = 0u;
     CHECK(model.parameters.input_gain == 1.0f &&
           model.parameters.tiles_gain == 1.0f &&
@@ -246,6 +260,9 @@ int main(void)
             (uint32_t)(12u + (((color >> 8) & 0xffu) * 2u / 5u)) << 8 |
             (uint32_t)(12u + ((color & 0xffu) * 2u / 5u));
         CHECK(framebuffer.pixels[216u * TS_UI_WIDTH + 73u] == dimmed);
+        /* Dimming alone communicates the lock. The former trailing L began
+           at this otherwise-empty pixel. */
+        CHECK(framebuffer.pixels[205u * TS_UI_WIDTH + 173u] == 0xff181719u);
     }
     model.parameter_locks = 0u;
     ts_sister_ui_render(&framebuffer, &model, &palette);
