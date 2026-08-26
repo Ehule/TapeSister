@@ -193,9 +193,13 @@ int main(void)
     CHECK(!ts_ui_fm_background_click_allowed(&ui, 270, 320));
     CHECK(ts_ui_fm_background_click_allowed(&ui, 46, 341));
     CHECK(!ts_ui_fm_background_click_allowed(&ui, 220, 120));
+    ts_ui_select_panel(&ui, TS_UI_PANEL_KEYBOARD);
+    CHECK(ts_ui_fm_background_click_allowed(&ui, 20, 370));
+    CHECK(!ts_ui_fm_background_click_allowed(&ui, 220, 120));
     ui.fm_bank_choice_open = 1;
     CHECK(!ts_ui_fm_background_click_allowed(&ui, 20, 12));
     CHECK(!ts_ui_fm_background_click_allowed(&ui, 46, 341));
+    CHECK(!ts_ui_fm_background_click_allowed(&ui, 20, 370));
     ui.fm_bank_choice_open = 0;
     ui.fm_open = 0;
     CHECK(ts_ui_wheel_guard_accept(&ui.wheel_guard, 10, 1000u));

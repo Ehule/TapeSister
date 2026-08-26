@@ -11763,21 +11763,31 @@ int main(int argc, char **argv)
                                                   note, obtained.freq);
                         } else if (mod & KMOD_SHIFT) {
                             ui.mouse_note = -1;
-                            begin_note(device, &audio, &ui, &instrument,
-                                       note, obtained.freq, 1);
+                            if (ui.fm_open)
+                                begin_fm_note(device, &audio, &ui, &instrument,
+                                              &fm_preview, note, obtained.freq, 1);
+                            else
+                                begin_note(device, &audio, &ui, &instrument,
+                                           note, obtained.freq, 1);
                         } else {
-                            if ((mod & (KMOD_CTRL | KMOD_ALT)) == 0 &&
-                                !(audio.sister.enabled &&
-                                  (audio.sister.source_switches &
-                                   TS_SISTER_SOURCE_TILES) != 0u &&
-                                  ts_sister_runtime_source_mask(&audio.sister) != 0u)) {
-                                SDL_LockAudioDevice(device);
-                                runtime_note_clear(&audio);
-                                SDL_UnlockAudioDevice(device);
-                            }
                             ui.mouse_note = note;
-                            begin_note(device, &audio, &ui, &instrument,
-                                       note, obtained.freq, 0);
+                            if (ui.fm_open) {
+                                begin_fm_note(device, &audio, &ui, &instrument,
+                                              &fm_preview, note, obtained.freq, 0);
+                            } else {
+                                if ((mod & (KMOD_CTRL | KMOD_ALT)) == 0 &&
+                                    !(audio.sister.enabled &&
+                                      (audio.sister.source_switches &
+                                       TS_SISTER_SOURCE_TILES) != 0u &&
+                                      ts_sister_runtime_source_mask(
+                                          &audio.sister) != 0u)) {
+                                    SDL_LockAudioDevice(device);
+                                    runtime_note_clear(&audio);
+                                    SDL_UnlockAudioDevice(device);
+                                }
+                                begin_note(device, &audio, &ui, &instrument,
+                                           note, obtained.freq, 0);
+                            }
                         }
                     }
                 }

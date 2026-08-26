@@ -90,6 +90,7 @@ int ts_ui_fm_background_click_allowed(const TsUiState *ui, int x, int y)
         ui->fm_full_choice_open)
         return 0;
     return ts_ui_logo_contains(x, y) ||
+           (ui->show_keyboard && ts_ui_key_from_point(x, y) >= 0) ||
            (!ui->show_keyboard && !ui->show_recipes &&
             !ui->show_ingredients && ts_ui_bank_slot_from_point(x, y) >= 0);
 }
