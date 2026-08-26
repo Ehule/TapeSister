@@ -33,6 +33,17 @@ static TsGeneratorRecipe generator(uint32_t seed, TsGeneratorKind kind)
     return result;
 }
 
+static TsFmPatch silent_fm_patch(uint32_t mutation_mask)
+{
+    TsGeneratorRecipe recipe = generator(0x51554945u, TS_GENERATOR_FM);
+    TsFmPatch patch;
+    ts_fm_patch_from_recipe(&recipe, &patch);
+    patch.active_mask = 0u;
+    patch.transient_mix = 0.0f;
+    patch.mutation_mask = mutation_mask;
+    return patch;
+}
+
 static int framebuffer_contains(const TsFramebuffer *fb, uint32_t color)
 {
     for (int i = 0; i < TS_UI_WIDTH * TS_UI_HEIGHT; ++i)
@@ -134,6 +145,32 @@ int main(void)
     ts_note_bank_init(&notes);
     ts_recipe_bank_init(&recipe_bank);
     ts_ui_init(&ui);
+    {
+        static const uint32_t expected[] = {
+            0xb1f5929au, 0xe1d28208u, 0xb6fd7b90u,
+            0xee927edfu, 0x15d3cce1u
+        };
+        TsFmSeedSequence sequence;
+        TsFmSeedSequence repeated_sequence;
+        TsFmSeedSequence other;
+        ts_fm_seed_sequence_init(&sequence,
+                                 UINT64_C(0x0123456789abcdef));
+        ts_fm_seed_sequence_init(&repeated_sequence,
+                                 UINT64_C(0x0123456789abcdef));
+        for (size_t index = 0u;
+             index < sizeof(expected) / sizeof(expected[0]); ++index) {
+            CHECK(ts_fm_seed_sequence_next(&sequence) == expected[index]);
+            CHECK(ts_fm_seed_sequence_next(&repeated_sequence) ==
+                  expected[index]);
+        }
+        ts_fm_seed_sequence_init(&sequence, 1u);
+        ts_fm_seed_sequence_init(&other, 2u);
+        CHECK(ts_fm_seed_sequence_next(&sequence) !=
+              ts_fm_seed_sequence_next(&other));
+        ts_fm_seed_sequence_init(&sequence, 0u);
+        CHECK(sequence.state != 0u &&
+              ts_fm_seed_sequence_next(&sequence) != 0u);
+    }
     CHECK(ts_ui_transform_auto_audition_allowed(&ui));
     CHECK(ts_ui_loop_command(&ui, 0) == TS_UI_LOOP_START);
     CHECK(ts_ui_loop_command(&ui, 1) == TS_UI_LOOP_LOCK_START);
@@ -764,8 +801,21 @@ int main(void)
         /* Create and Vary sculpt only the active selection and survive TSR16. */
         ts_instrument_set_selection(&editor, 1000, 1500);
         CHECK(ts_sample_clone(&stamp_before, &editor.current, error, sizeof(error)));
-        CHECK(ts_instrument_stamp_create(&editor, 0x5354414du,
-                                         error, sizeof(error)));
+        {
+            TsFmSeedSequence stamp_sequence;
+            uint32_t stamp_seed = 0u;
+            int patch_count_before = editor.bank[0].patch_count;
+            ts_fm_seed_sequence_init(
+                &stamp_sequence, UINT64_C(0x0123456789abcdef));
+            CHECK(ts_instrument_stamp_create_fresh(
+                &editor, &stamp_sequence, &stamp_seed,
+                error, sizeof(error)));
+            CHECK(stamp_seed == 0xb1f5929au &&
+                  editor.bank[0].patch_count == patch_count_before + 1 &&
+                  editor.bank[0].patches[patch_count_before].has_generator &&
+                  editor.bank[0].patches[patch_count_before].generator.seed ==
+                      stamp_seed);
+        }
         CHECK(editor.current.frames == stamp_before.frames);
         CHECK(samples_equal_outside(&editor.current, &stamp_before, 1000, 1500));
         create_hash = ts_sample_hash(&editor.current);
@@ -3374,6 +3424,159 @@ int main(void)
         ts_instrument_free(&workflow);
     }
     {
+        TsSample silent_render;
+        TsFmPatch silent = silent_fm_patch(0u);
+        float non_finite_data[4] = {0.0f, 0.001f, NAN, 0.0f};
+        float negligible_data[4] = {1.0e-8f, -1.0e-8f, 1.0e-8f, -1.0e-8f};
+        TsSample non_finite = {non_finite_data, 4u, 44100u, "", 1u, 1u};
+        TsSample negligible = {negligible_data, 4u, 44100u, "", 1u, 1u};
+        ts_sample_init(&silent_render);
+        CHECK(!ts_fm_render_sample(&silent_render, &silent, 0.1f, 110.0f,
+                                   8000u, 0x53494c45u,
+                                   error, sizeof(error)));
+        CHECK(strstr(error, "no usable signal") != NULL &&
+              silent_render.data == NULL && silent_render.frames == 0u);
+        CHECK(!ts_fm_sample_is_usable(&non_finite));
+        CHECK(!ts_fm_sample_is_usable(&negligible));
+        ts_sample_free(&silent_render);
+    }
+    {
+        TsInstrument first_attempt;
+        TsInstrument retried;
+        TsInstrument repeated_retry;
+        TsFmSeedSequence sequence;
+        TsFmSeedSequence repeated_sequence;
+        TsFmPatch source = silent_fm_patch(TS_FM_MUTATE_STRUCTURE);
+        TsSample reproduced;
+        uint32_t successful_seed = 0u;
+        uint32_t repeated_seed = 0u;
+        int destination = -1;
+        ts_instrument_init(&first_attempt);
+        ts_instrument_init(&retried);
+        ts_instrument_init(&repeated_retry);
+        ts_sample_init(&reproduced);
+        first_attempt.generator.kind = TS_GENERATOR_FM;
+        first_attempt.generator.seed = 0x51554945u;
+        first_attempt.generator.seconds = 0.25f;
+        first_attempt.generator.frequency = 130.8128f;
+        first_attempt.generator.has_fm_patch = 1;
+        first_attempt.generator.fm_patch = source;
+        retried.generator = first_attempt.generator;
+        repeated_retry.generator = first_attempt.generator;
+        CHECK(!ts_instrument_create_selected(
+            &first_attempt, 0xc08af856u, error, sizeof(error)));
+        CHECK(strstr(error, "no usable signal") != NULL &&
+              !first_attempt.bank[0].occupied);
+        ts_fm_seed_sequence_init(&sequence, 5u);
+        ts_fm_seed_sequence_init(&repeated_sequence, 5u);
+        CHECK(ts_instrument_create_selected_fresh(
+            &retried, &sequence, &successful_seed,
+            error, sizeof(error)));
+        CHECK(ts_instrument_create_selected_fresh(
+            &repeated_retry, &repeated_sequence, &repeated_seed,
+            error, sizeof(error)));
+        CHECK(successful_seed == 0x530007b5u &&
+              repeated_seed == successful_seed);
+        CHECK(retried.bank[0].occupied &&
+              retried.bank[0].lineage_seed == successful_seed &&
+              retried.bank[0].generator.seed == successful_seed &&
+              retried.generator.seed == successful_seed &&
+              retried.bank[0].generator.has_fm_patch &&
+              ts_fm_sample_is_usable(&retried.bank[0].sample));
+        CHECK(ts_sample_hash(&retried.bank[0].sample) ==
+              ts_sample_hash(&repeated_retry.bank[0].sample));
+        CHECK(ts_sample_generate(&reproduced, &retried.bank[0].generator,
+                                 error, sizeof(error)));
+        CHECK(ts_sample_hash(&reproduced) ==
+              ts_sample_hash(&retried.bank[0].sample));
+        retried.family_mutation = repeated_retry.family_mutation = 0.55f;
+        CHECK(ts_instrument_vary_selected(&retried, 0, &destination,
+                                          error, sizeof(error)));
+        CHECK(ts_instrument_vary_selected(&repeated_retry, 0, &destination,
+                                          error, sizeof(error)));
+        CHECK(ts_sample_hash(&retried.current) ==
+              ts_sample_hash(&repeated_retry.current));
+        ts_sample_free(&reproduced);
+        ts_instrument_free(&first_attempt);
+        ts_instrument_free(&retried);
+        ts_instrument_free(&repeated_retry);
+    }
+    {
+        TsInstrument exhausted;
+        TsFmSeedSequence sequence;
+        TsFmPatch silent = silent_fm_patch(0u);
+        TsGeneratorRecipe generator_before;
+        TsGeneratorRecipe tile_generator_before;
+        uint64_t sample_before;
+        uint64_t parent_before;
+        uint32_t family_sequence_before;
+        int patch_count_before;
+        uint32_t successful_seed = 123u;
+        ts_instrument_init(&exhausted);
+        CHECK(ts_instrument_create_selected(&exhausted, 0x12345678u,
+                                            error, sizeof(error)));
+        sample_before = ts_sample_hash(&exhausted.current);
+        parent_before = ts_sample_hash(&exhausted.parent);
+        tile_generator_before = exhausted.bank[0].generator;
+        patch_count_before = exhausted.bank[0].patch_count;
+        family_sequence_before = exhausted.family_sequence;
+        exhausted.generator.kind = TS_GENERATOR_FM;
+        exhausted.generator.seed = 0x51554945u;
+        exhausted.generator.seconds = 0.25f;
+        exhausted.generator.frequency = 130.8128f;
+        exhausted.generator.has_fm_patch = 1;
+        exhausted.generator.fm_patch = silent;
+        generator_before = exhausted.generator;
+        ts_fm_seed_sequence_init(&sequence, 5u);
+        CHECK(!ts_instrument_create_selected_fresh(
+            &exhausted, &sequence, &successful_seed,
+            error, sizeof(error)));
+        CHECK(strstr(error, "12 Create attempts") != NULL &&
+              successful_seed == 0u);
+        CHECK(ts_sample_hash(&exhausted.current) == sample_before &&
+              ts_sample_hash(&exhausted.parent) == parent_before &&
+              exhausted.family_sequence == family_sequence_before &&
+              exhausted.bank[0].patch_count == patch_count_before &&
+              memcmp(&exhausted.generator, &generator_before,
+                     sizeof(generator_before)) == 0 &&
+              memcmp(&exhausted.bank[0].generator,
+                     &tile_generator_before,
+                     sizeof(tile_generator_before)) == 0);
+        ts_instrument_free(&exhausted);
+    }
+    {
+        TsInstrument exact_apply;
+        TsFmPatch silent = silent_fm_patch(0u);
+        TsGeneratorRecipe generator_before;
+        TsGeneratorRecipe tile_generator_before;
+        uint64_t current_before;
+        uint64_t parent_before;
+        uint32_t family_sequence_before;
+        int patch_count_before;
+        ts_instrument_init(&exact_apply);
+        CHECK(ts_instrument_create_selected(&exact_apply, 0x464d4150u,
+                                            error, sizeof(error)));
+        current_before = ts_sample_hash(&exact_apply.current);
+        parent_before = ts_sample_hash(&exact_apply.parent);
+        generator_before = exact_apply.generator;
+        tile_generator_before = exact_apply.bank[0].generator;
+        family_sequence_before = exact_apply.family_sequence;
+        patch_count_before = exact_apply.bank[0].patch_count;
+        CHECK(!ts_instrument_apply_fm_patch(&exact_apply, &silent,
+                                            error, sizeof(error)));
+        CHECK(strstr(error, "no usable signal") != NULL);
+        CHECK(ts_sample_hash(&exact_apply.current) == current_before &&
+              ts_sample_hash(&exact_apply.parent) == parent_before &&
+              exact_apply.family_sequence == family_sequence_before &&
+              exact_apply.bank[0].patch_count == patch_count_before &&
+              memcmp(&exact_apply.generator, &generator_before,
+                     sizeof(generator_before)) == 0 &&
+              memcmp(&exact_apply.bank[0].generator,
+                     &tile_generator_before,
+                     sizeof(tile_generator_before)) == 0);
+        ts_instrument_free(&exact_apply);
+    }
+    {
         TsInstrument apply_route;
         TsFmPatch patch;
         uint64_t preserved_hash;
@@ -3480,6 +3683,7 @@ int main(void)
         ts_fm_patch_sanitize(&anchor);
         for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
             CHECK(bank.bank[slot].occupied && !bank.bank[slot].locked);
+            CHECK(ts_fm_sample_is_usable(&bank.bank[slot].sample));
             CHECK(bank.bank[slot].has_generator &&
                   bank.bank[slot].generator.kind == TS_GENERATOR_FM);
             CHECK(bank.bank[slot].tuning.root_note == TS_KEYBOARD_BASE_NOTE);
@@ -3501,9 +3705,18 @@ int main(void)
                                           error, sizeof(error)));
         for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
             CHECK(ts_sample_hash(&bank.bank[slot].sample) == original_hashes[slot]);
+        bank.bank[5].locked = 0;
+        {
+            TsFmPatch silent = silent_fm_patch(0u);
+            CHECK(!ts_instrument_make_fm_bank_seeded(
+                &bank, &silent, 0x53494c45u, error, sizeof(error)));
+            CHECK(strstr(error, "no usable signal") != NULL);
+            for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot)
+                CHECK(ts_sample_hash(&bank.bank[slot].sample) ==
+                      original_hashes[slot]);
+        }
 
         CHECK(ts_instrument_clone(&chained, &bank, error, sizeof(error)));
-        chained.bank[5].locked = 0;
         chained.family_trajectory = 1;
         CHECK(ts_instrument_make_fm_bank(&chained, &anchor,
                                          error, sizeof(error)));

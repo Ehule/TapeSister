@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -49,6 +50,19 @@
 #endif
 
 enum { TS_SPLASH_MILLISECONDS = 5000 };
+
+static uint64_t fm_session_seed_root(void)
+{
+    uint64_t wall = (uint64_t)time(NULL);
+    uint64_t counter = SDL_GetPerformanceCounter();
+    uint64_t frequency = SDL_GetPerformanceFrequency();
+    uint64_t mixed = counter ^ (wall << 32u) ^ (wall >> 7u) ^
+                     (frequency * UINT64_C(0x9e3779b97f4a7c15));
+    mixed = (mixed ^ (mixed >> 30u)) * UINT64_C(0xbf58476d1ce4e5b9);
+    mixed = (mixed ^ (mixed >> 27u)) * UINT64_C(0x94d049bb133111eb);
+    mixed ^= mixed >> 31u;
+    return mixed != 0u ? mixed : UINT64_C(0x6d2b79f5a4c3e217);
+}
 
 typedef struct {
     TsInstrument before;
@@ -3401,6 +3415,7 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
 
 static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio,
                                       TsUiState *ui, TsInstrument *instrument,
+                                      TsFmSeedSequence *seed_sequence,
                                       int vary, int unused_promote, int unused_radical)
 {
     char error[160];
@@ -3421,17 +3436,14 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
     else if (stamp && vary)
         ok = ts_instrument_stamp_vary(instrument, error, sizeof(error));
     else if (stamp)
-        ok = ts_instrument_stamp_create(instrument,
-                instrument->generator.seed * 1664525u + 1013904223u +
-                instrument->family_sequence * 2246822519u,
-                error, sizeof(error));
+        ok = ts_instrument_stamp_create_fresh(
+            instrument, seed_sequence, NULL, error, sizeof(error));
     else if (vary)
         ok = ts_instrument_vary_selected(instrument, instrument->family_trajectory,
                                          &slot, error, sizeof(error));
     else
-        ok = ts_instrument_create_selected(instrument,
-                instrument->generator.seed * 1664525u + 1013904223u,
-                error, sizeof(error));
+        ok = ts_instrument_create_selected_fresh(
+            instrument, seed_sequence, NULL, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status), "%s FAILED: %.132s",
@@ -3587,12 +3599,13 @@ static int fm_control_disabled(const TsFmPatch *patch, TsFmPage page, int contro
 
 static void randomize_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
                                    TsUiState *ui, const TsInstrument *instrument,
+                                   TsFmSeedSequence *seed_sequence,
                                    TsSample *preview)
 {
     TsFmPatch source = ui->fm_patch;
     TsFmPatch varied;
     uint32_t original_mask = source.mutation_mask;
-    uint32_t seed = instrument->generator.seed ^ SDL_GetTicks() ^ 0x524f4154u;
+    uint32_t seed = ts_fm_seed_sequence_next(seed_sequence);
     float distance = instrument->family_mutation;
     if (distance < 0.15f) distance = 0.15f;
     source.mutation_mask &= ~fm_page_mutation_bit(ui->fm_page);
@@ -3784,7 +3797,9 @@ static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
 static void make_fm_bank_workspace(SDL_AudioDeviceID device, AudioState *audio,
                                    TsUiState *ui, TsInstrument *instrument,
                                    TsSamplePages *sample_pages,
-                                   FmBankHistory *history, int new_page)
+                                   FmBankHistory *history,
+                                   TsFmSeedSequence *seed_sequence,
+                                   int new_page)
 {
     TsInstrument before;
     TsInstrument made;
@@ -3821,8 +3836,10 @@ static void make_fm_bank_workspace(SDL_AudioDeviceID device, AudioState *audio,
                  "BANK STAGING FAILED: %.72s", error);
         goto finished;
     }
-    if (!ts_instrument_make_fm_bank(&made, &ui->fm_patch,
-                                    error, sizeof(error)) ||
+    if (!ts_instrument_make_fm_bank_seeded(
+            &made, &ui->fm_patch,
+            ts_fm_seed_sequence_next(seed_sequence),
+            error, sizeof(error)) ||
         !ts_instrument_clone(&after, &made, error, sizeof(error))) {
         snprintf(ui->fm_message, sizeof(ui->fm_message),
                  "BANK MAKER FAILED: %.74s", error);
@@ -8444,6 +8461,7 @@ int main(int argc, char **argv)
     TsSample pending_selection_load;
     TsSample drone_preview;
     TsSample fm_preview;
+    TsFmSeedSequence fm_seed_sequence = {0};
     FmBankHistory fm_bank_history;
     TsExchangeOffer exchange_offer;
     TransformController transform;
@@ -8603,6 +8621,7 @@ int main(int argc, char **argv)
         ts_instrument_free(&instrument);
         return 1;
     }
+    ts_fm_seed_sequence_init(&fm_seed_sequence, fm_session_seed_root());
     audio.realtime_counter_frequency = SDL_GetPerformanceFrequency();
     {
         char midi_error[160];
@@ -9227,12 +9246,14 @@ int main(int argc, char **argv)
                         } else if (key == SDLK_r) {
                             make_fm_bank_workspace(
                                 device, &audio, &ui, &instrument,
-                                &sample_pages, &fm_bank_history, 0);
+                                &sample_pages, &fm_bank_history,
+                                &fm_seed_sequence, 0);
                         } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
                                    key == SDLK_n) {
                             make_fm_bank_workspace(
                                 device, &audio, &ui, &instrument,
-                                &sample_pages, &fm_bank_history, 1);
+                                &sample_pages, &fm_bank_history,
+                                &fm_seed_sequence, 1);
                         } else
                             snprintf(ui.fm_message, sizeof(ui.fm_message),
                                      "R REPLACES  N/ENTER MAKES PAGE  ESC CANCELS");
@@ -9283,7 +9304,7 @@ int main(int argc, char **argv)
                                            &sample_pages, 0);
                     } else if ((mod & KMOD_SHIFT) && key == SDLK_r) {
                         randomize_fm_workspace(device, &audio, &ui, &instrument,
-                                               &fm_preview);
+                                               &fm_seed_sequence, &fm_preview);
                     } else if ((mod & KMOD_SHIFT) && key == SDLK_b) {
                         ui.fm_bank_choice_open = 1;
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
@@ -10552,11 +10573,13 @@ int main(int argc, char **argv)
                         if (bank_action == TS_UI_FM_ACTION_BANK_REPLACE)
                             make_fm_bank_workspace(
                                 device, &audio, &ui, &instrument,
-                                &sample_pages, &fm_bank_history, 0);
+                                &sample_pages, &fm_bank_history,
+                                &fm_seed_sequence, 0);
                         else if (bank_action == TS_UI_FM_ACTION_BANK_NEW_PAGE)
                             make_fm_bank_workspace(
                                 device, &audio, &ui, &instrument,
-                                &sample_pages, &fm_bank_history, 1);
+                                &sample_pages, &fm_bank_history,
+                                &fm_seed_sequence, 1);
                         else if (bank_action == TS_UI_FM_ACTION_BANK_CANCEL) {
                             ui.fm_bank_choice_open = 0;
                             snprintf(ui.fm_message, sizeof(ui.fm_message),
@@ -10615,7 +10638,8 @@ int main(int argc, char **argv)
                                  "MUTATION PERMISSIONS UPDATED");
                     } else if (fm_action == TS_UI_FM_ACTION_RANDOMIZE) {
                         randomize_fm_workspace(device, &audio, &ui,
-                                               &instrument, &fm_preview);
+                                               &instrument, &fm_seed_sequence,
+                                               &fm_preview);
                     } else if (fm_action == TS_UI_FM_ACTION_BANK_MAKER) {
                         ui.fm_bank_choice_open = 1;
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
@@ -11106,11 +11130,13 @@ int main(int argc, char **argv)
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
                 } else if (y >= 205 && y < 228 && x >= 85 && x < 167) {
                     generate_family_candidate(device, &audio, &ui, &instrument,
-                                              0, (mod & KMOD_SHIFT) != 0,
+                                              &fm_seed_sequence, 0,
+                                              (mod & KMOD_SHIFT) != 0,
                                               (mod & KMOD_CTRL) != 0);
                 } else if (y >= 205 && y < 228 && x >= 172 && x < 242) {
                     generate_family_candidate(device, &audio, &ui, &instrument,
-                                              1, (mod & KMOD_SHIFT) != 0, 0);
+                                              &fm_seed_sequence, 1,
+                                              (mod & KMOD_SHIFT) != 0, 0);
                 } else if (y >= 205 && y < 228 && x >= 247 && x < 325) {
                     toggle_workbench_loop(device, &audio, &ui, &instrument,
                                           obtained.freq, (mod & KMOD_SHIFT) != 0);
