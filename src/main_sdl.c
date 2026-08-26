@@ -13,6 +13,7 @@
 #include "tapesister/dsp_transform.h"
 #include "tapesister/render_damage.h"
 #include "tapesister/ui.h"
+#include "tapesister/version.h"
 
 #include <SDL2/SDL.h>
 #include "main_sdl_audio_preamble.inc"
@@ -6559,7 +6560,7 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
     if (config != NULL && config->sister_window_x >= 0) x = config->sister_window_x;
     if (config != NULL && config->sister_window_y >= 0) y = config->sister_window_y;
     sister->window = SDL_CreateWindow(
-        "TapeSister - Sister Machine", x, y,
+        TAPESISTER_SISTER_WINDOW_TITLE, x, y,
         TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT,
         SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     sister->renderer = sister->window ? SDL_CreateRenderer(
@@ -8233,7 +8234,8 @@ static int set_record_bank(SDL_Window *window,
     ts_ui_select_panel(ui, TS_UI_PANEL_SAMPLE_TILES);
     if (window != NULL)
         SDL_SetWindowTitle(window, *record_bank_active ?
-                          "TapeSister - REC BANK" : "TapeSister");
+                          TAPESISTER_REC_BANK_WINDOW_TITLE :
+                          TAPESISTER_WINDOW_TITLE);
     show_overlay(ui, *record_bank_active ? "REC BANK" : "SAMPLE BANK", 800u);
     if (*record_bank_active)
         snprintf(ui->status, sizeof(ui->status),
@@ -8634,7 +8636,8 @@ int main(int argc, char **argv)
                              palette_error, sizeof(palette_error)))
             fprintf(stderr, "TapeSister palette: %s\n", palette_error);
     }
-    window = SDL_CreateWindow("TapeSister", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+    window = SDL_CreateWindow(TAPESISTER_WINDOW_TITLE,
+                              SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                               TS_UI_WIDTH * 2, TS_UI_HEIGHT * 2,
                               SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN_DESKTOP);
     renderer = window ? SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : NULL;

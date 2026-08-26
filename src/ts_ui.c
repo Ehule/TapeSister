@@ -1,11 +1,16 @@
 #include "tapesister/ui.h"
 #include "tapesister/sister_ui.h"
+#include "tapesister/version.h"
 #include "tapesister/waveform_cache.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+_Static_assert(sizeof(TAPESISTER_BUILD_MARKER) <=
+                   TAPESISTER_BUILD_MARKER_MAX_CHARS + 1,
+               "TAPESISTER_BUILD_MARKER must fit the six-character UI badge");
 
 #define RGB(r,g,b) (0xff000000u | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
 
@@ -2136,6 +2141,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, 152, 3, 2, 27, PAL_VOLUME);
         text(fb, 160, 13, "REC", PAL_VOLUME, 1);
     }
+    bevel_frame(fb, 190, 7, 48, 18, RGB(24, 24, 24), PAL_EFFECT,
+                RGB(7, 7, 7));
+    text(fb, 196, 13, TAPESISTER_BUILD_MARKER, PAL_EFFECT, 1);
     {
         char history[24];
         snprintf(history, sizeof(history), "UNDO %02d/%02d",
