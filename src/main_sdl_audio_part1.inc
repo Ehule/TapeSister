@@ -426,6 +426,20 @@ static void ts_cycle_midi_channel(int direction)
     ts_live_config->midi_input_channel = channel;
 }
 
+static void ts_cycle_audio_buffer(int direction)
+{
+    static const int frames[] = {256, 512, 1024};
+    int current = 1;
+    if (ts_live_config == NULL) return;
+    for (int index = 0; index < 3; ++index)
+        if (ts_live_config->audio_buffer_frames == frames[index]) {
+            current = index;
+            break;
+        }
+    current = (current + (direction >= 0 ? 1 : 2)) % 3;
+    ts_live_config->audio_buffer_frames = frames[current];
+}
+
 static void ts_copy_name(char *destination, size_t size, const char *source)
 {
     size_t length;

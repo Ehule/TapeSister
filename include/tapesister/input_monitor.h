@@ -10,6 +10,9 @@
 enum {
     TS_INPUT_MONITOR_RING_FRAMES = 16384,
     TS_INPUT_MONITOR_PRIME_FRAMES = 128,
+    TS_INPUT_MONITOR_MAX_PRIME_FRAMES = 4096,
+    TS_INPUT_MONITOR_FADE_FRAMES = 32,
+    TS_INPUT_MONITOR_SERVO_INTERVAL_FRAMES = 64,
     TS_LIVE_WAVEFORM_COLUMNS = 576,
     TS_INPUT_DEVICE_CHANNEL_MAX = 8
 };
@@ -28,17 +31,31 @@ typedef struct {
     _Atomic uint32_t read_index;
     _Atomic uint32_t write_index;
     _Atomic uint32_t input_rate;
+    _Atomic uint32_t prime_frames;
     _Atomic uint32_t reset_generation;
+    _Atomic uint32_t underrun_count;
+    _Atomic uint32_t dropped_frame_count;
     _Atomic uint32_t level_q;
     _Atomic uint32_t peak_q;
     _Atomic int clipped;
     _Atomic int enabled;
     uint32_t consumer_generation;
     double consumer_phase;
+    double consumer_ratio;
     TsStereoFrame consumer_sample;
+    TsStereoFrame consumer_last_sample;
+    uint32_t consumer_servo_countdown;
+    float consumer_gain;
     int consumer_has_sample;
     int consumer_primed;
 } TsInputMonitor;
+
+typedef struct {
+    uint32_t occupancy_frames;
+    uint32_t prime_frames;
+    uint32_t underrun_count;
+    uint32_t dropped_frame_count;
+} TsInputMonitorDiagnostics;
 
 /* The callback publishes only a bounded bit mask. The UI consumes and holds
    those bits independently, so no timing or drawing work enters audio code. */
@@ -62,6 +79,12 @@ typedef struct {
 void ts_input_monitor_init(TsInputMonitor *monitor);
 void ts_input_monitor_set_enabled(TsInputMonitor *monitor, int enabled,
                                   uint32_t input_rate);
+uint32_t ts_input_monitor_recommended_prime_frames(
+    uint32_t device_buffer_frames);
+void ts_input_monitor_set_prime_frames(TsInputMonitor *monitor,
+                                       uint32_t prime_frames);
+int ts_input_monitor_get_diagnostics(const TsInputMonitor *monitor,
+                                     TsInputMonitorDiagnostics *diagnostics);
 int ts_input_monitor_enabled(const TsInputMonitor *monitor);
 void ts_input_monitor_push(TsInputMonitor *monitor, float sample);
 float ts_input_monitor_read(TsInputMonitor *monitor, uint32_t output_rate);

@@ -186,6 +186,35 @@ static void publish_snapshot(TsSisterRuntime *runtime)
                           memory_order_release);
 }
 
+static void publish_frame_snapshot(TsSisterRuntime *runtime)
+{
+    if (runtime == NULL) return;
+    if (runtime->snapshot_batch_depth != 0u) {
+        runtime->snapshot_pending = 1;
+        return;
+    }
+    publish_snapshot(runtime);
+}
+
+void ts_sister_runtime_begin_audio_block(TsSisterRuntime *runtime)
+{
+    if (runtime == NULL) return;
+    if (runtime->snapshot_batch_depth != UINT32_MAX)
+        ++runtime->snapshot_batch_depth;
+    ts_sister_machine_begin_audio_block(&runtime->machine);
+}
+
+void ts_sister_runtime_end_audio_block(TsSisterRuntime *runtime)
+{
+    if (runtime == NULL || runtime->snapshot_batch_depth == 0u) return;
+    ts_sister_machine_end_audio_block(&runtime->machine);
+    --runtime->snapshot_batch_depth;
+    if (runtime->snapshot_batch_depth == 0u && runtime->snapshot_pending) {
+        runtime->snapshot_pending = 0;
+        publish_snapshot(runtime);
+    }
+}
+
 static uint8_t source_bit(int source_index)
 {
     static const uint8_t bits[TS_SISTER_SOURCE_COUNT] = {
@@ -940,7 +969,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
                     runtime->monitor_wet_current)), monitor_route);
     runtime->last_frame = frame;
     ++runtime->processed_frames;
-    publish_snapshot(runtime);
+    publish_frame_snapshot(runtime);
     return frame;
 }
 
@@ -962,9 +991,11 @@ void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
                                      size_t frames)
 {
     if (runtime == NULL || output == NULL) return;
+    ts_sister_runtime_begin_audio_block(runtime);
     for (size_t frame = 0u; frame < frames; ++frame)
         output[frame] = ts_sister_runtime_process_frame(
             runtime, sources != NULL ? &sources[frame] : NULL);
+    ts_sister_runtime_end_audio_block(runtime);
 }
 
 int ts_sister_runtime_get_wave_snapshot(const TsSisterRuntime *runtime,

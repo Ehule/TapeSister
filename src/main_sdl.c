@@ -919,6 +919,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     float synth_block_peak = 0.0f;
     Uint64 diagnostic_started = audio->realtime_diagnostics_enabled ?
         SDL_GetPerformanceCounter() : 0u;
+    ts_sister_runtime_begin_audio_block(&audio->sister);
     for (int i = 0; i < values; i += 2) {
         TsAudioBuses buses;
         TsSisterSourceFrames sister_sources = {0};
@@ -1069,6 +1070,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         out[i] = output.l;
         if (i + 1 < values) out[i + 1] = output.r;
     }
+    ts_sister_runtime_end_audio_block(&audio->sister);
     if (audio->input_monitor != NULL && audio->record_source != NULL &&
         atomic_load_explicit(audio->record_source, memory_order_acquire) ==
             TS_RECORD_SOURCE_SYNTH)
@@ -6505,6 +6507,7 @@ typedef struct {
     TsFramebuffer framebuffer;
     uint32_t window_id;
     uint32_t last_present_ms;
+    uint32_t last_model_sync_ms;
     int rendered_model_valid;
     int minimized;
     TsSisterPresetBank presets;
@@ -6599,6 +6602,16 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
         sister->texture = NULL;
         sister->window_id = 0u;
         return 0;
+    }
+    {
+        SDL_RendererInfo info;
+        SDL_zero(info);
+        if (SDL_GetRendererInfo(sister->renderer, &info) == 0)
+            diagnostic_log("sister renderer=%s flags=0x%x pacing=%s",
+                           info.name != NULL ? info.name : "unknown",
+                           (unsigned)info.flags,
+                           (info.flags & SDL_RENDERER_PRESENTVSYNC) != 0u ?
+                               "vsync" : "controller-30hz");
     }
     SDL_RenderSetLogicalSize(sister->renderer, TS_SISTER_UI_WIDTH,
                              TS_SISTER_UI_HEIGHT);
@@ -7646,7 +7659,7 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
     desired.freq = 48000;
     desired.format = AUDIO_F32SYS;
     desired.channels = TS_INPUT_DEVICE_CHANNEL_MAX;
-    desired.samples = 256;
+    desired.samples = (Uint16)config->audio_buffer_frames;
     desired.callback = external_input_callback;
     desired.userdata = input;
     device_name = config->record_input_device[0] != '\0' ?
@@ -7688,13 +7701,19 @@ static int ensure_external_input_open(SDL_AudioDeviceID *input_device,
     input->channels = obtained.channels;
     input->input_channel = config->record_input_channel;
     input->sample_rate = (uint32_t)obtained.freq;
+    ts_input_monitor_set_prime_frames(
+        &input->monitor,
+        ts_input_monitor_recommended_prime_frames(obtained.samples));
     ts_input_activity_set_available(&input->activity, obtained.channels);
     if (audio != NULL)
         ts_sister_runtime_input_available(&audio->sister, 1);
     snprintf(input->device_label, sizeof(input->device_label), "%.127s",
              device_name != NULL ? device_name : "SYSTEM DEFAULT");
-    diagnostic_log("capture device opened paused: %s rate=%u channels=%d",
-                   input->device_label, input->sample_rate, input->channels);
+    diagnostic_log(
+        "capture device opened paused: %s rate=%u channels=%d buffer=%u prime=%u",
+        input->device_label, input->sample_rate, input->channels,
+        (unsigned)obtained.samples,
+        ts_input_monitor_recommended_prime_frames(obtained.samples));
     error[0] = '\0';
     return 1;
 }
@@ -8798,7 +8817,7 @@ int main(int argc, char **argv)
     desired.freq = 48000;
     desired.format = AUDIO_F32SYS;
     desired.channels = 2;
-    desired.samples = 256;
+    desired.samples = (Uint16)ui.config.audio_buffer_frames;
     desired.callback = audio_callback;
     desired.userdata = &audio;
     device = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
@@ -8918,6 +8937,7 @@ int main(int argc, char **argv)
         if (diagnostic_audio &&
             SDL_GetTicks() - last_audio_diagnostic_log >= 5000u) {
             TsRealtimeDiagnosticsSnapshot snapshot;
+            TsInputMonitorDiagnostics input_snapshot;
             if (ts_realtime_diagnostics_get(&audio.realtime_diagnostics,
                                             &snapshot)) {
                 diagnostic_log(
@@ -8934,6 +8954,14 @@ int main(int argc, char **argv)
                     snapshot.sample_rate, snapshot.device_buffer_frames,
                     snapshot.active_configuration);
             }
+            if (ts_input_monitor_get_diagnostics(
+                    &external_input.monitor, &input_snapshot))
+                diagnostic_log(
+                    "ext ring occupancy=%u prime=%u underruns=%u dropped=%u",
+                    input_snapshot.occupancy_frames,
+                    input_snapshot.prime_frames,
+                    input_snapshot.underrun_count,
+                    input_snapshot.dropped_frame_count);
             last_audio_diagnostic_log = SDL_GetTicks();
         }
         while (SDL_PollEvent(&event)) {
@@ -12226,17 +12254,24 @@ int main(int argc, char **argv)
         if (device) SDL_UnlockAudioDevice(device);
         {
             TsSisterRoutingSnapshot routing = {0};
-            TsSisterSnapshot engine = {0};
-            TsSisterWaveSnapshot wave = {0};
+            uint32_t now = SDL_GetTicks();
             (void)ts_sister_runtime_get_snapshot(&audio.sister, &routing);
-            if (routing.enabled)
-                (void)ts_sister_machine_get_snapshot(&audio.sister.machine,
-                                                      &engine);
-            (void)ts_sister_runtime_get_wave_snapshot(&audio.sister, &wave);
-            ts_sister_ui_model_update(&sister_window.model, &routing, &engine,
-                                      &wave, &audio.sister.parameters);
-            sister_window.model.parameter_locks =
-                audio.sister.parameter_locks;
+            if (sister_window.model.visible &&
+                now - sister_window.last_model_sync_ms >= 33u) {
+                TsSisterSnapshot engine = {0};
+                TsSisterWaveSnapshot wave = {0};
+                if (routing.enabled)
+                    (void)ts_sister_machine_get_snapshot(
+                        &audio.sister.machine, &engine);
+                (void)ts_sister_runtime_get_wave_snapshot(
+                    &audio.sister, &wave);
+                ts_sister_ui_model_update(
+                    &sister_window.model, &routing, &engine,
+                    &wave, &audio.sister.parameters);
+                sister_window.model.parameter_locks =
+                    audio.sister.parameter_locks;
+                sister_window.last_model_sync_ms = now;
+            }
             ui.sister_enabled = routing.enabled;
             ui.sister_rolling = routing.rolling;
             ui.sister_held = routing.held;

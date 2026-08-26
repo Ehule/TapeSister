@@ -264,6 +264,8 @@ typedef struct {
     uint64_t overload_count;
     TsSisterOutput last_output;
     double last_head_position[TS_SISTER_HEAD_COUNT];
+    uint32_t snapshot_batch_depth;
+    int snapshot_pending;
     TsSisterSnapshotAtomic snapshot;
 } TsSisterMachine;
 
@@ -300,6 +302,8 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
 void ts_sister_machine_seed(TsSisterMachine *machine, uint32_t seed);
 void ts_sister_machine_set_rolling(TsSisterMachine *machine, int rolling);
 void ts_sister_machine_set_hold(TsSisterMachine *machine, int held);
+void ts_sister_machine_begin_audio_block(TsSisterMachine *machine);
+void ts_sister_machine_end_audio_block(TsSisterMachine *machine);
 
 int ts_sister_machine_request_clear(TsSisterMachine *machine);
 int ts_sister_machine_can_clear(const TsSisterMachine *machine);

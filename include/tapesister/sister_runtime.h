@@ -153,6 +153,8 @@ typedef struct {
     TsSisterRoutingSnapshotAtomic snapshot;
     TsSisterWavePublisher waveform;
     size_t waveform_capacity_frames;
+    uint32_t snapshot_batch_depth;
+    int snapshot_pending;
 } TsSisterRuntime;
 
 void ts_sister_runtime_init(TsSisterRuntime *runtime);
@@ -224,6 +226,8 @@ void ts_sister_runtime_panic(TsSisterRuntime *runtime);
 
 TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsSisterRuntime *runtime, const TsSisterSourceFrames *sources);
+void ts_sister_runtime_begin_audio_block(TsSisterRuntime *runtime);
+void ts_sister_runtime_end_audio_block(TsSisterRuntime *runtime);
 void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
                                      const TsSisterSourceFrames *sources,
                                      TsSisterRuntimeFrame *output,

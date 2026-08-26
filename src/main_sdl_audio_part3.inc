@@ -1,8 +1,10 @@
     }
 
     SDL_zero(obtained);
+    desired = ts_output_desired;
+    desired.samples = (Uint16)ts_live_config->audio_buffer_frames;
     replacement = SDL_OpenAudioDevice(
-        wanted, 0, &ts_output_desired, &obtained, ts_output_allowed_changes);
+        wanted, 0, &desired, &obtained, ts_output_allowed_changes);
     if (replacement == 0) {
         snprintf(error, error_size, "%.120s", SDL_GetError());
         return 0;
@@ -12,6 +14,7 @@
         stop_all_force(TS_AUDIO_LOGICAL_OUTPUT, audio, ts_live_ui);
     if (old != 0) SDL_PauseAudioDevice(old, 1);
     ts_real_output = replacement;
+    ts_output_desired = desired;
     if (ts_output_obtained_target != NULL)
         *ts_output_obtained_target = obtained;
     if (audio != NULL) audio->output_rate = obtained.freq;
@@ -265,6 +268,7 @@ static int ts_audio_main_config_save(const TsConfig *config, const char *path,
     ts_live_config = (TsConfig *)config;
 
     output_changed = ts_real_output == 0 ||
+        ts_output_desired.samples != (Uint16)config->audio_buffer_frames ||
         (config->audio_output_device[0] == '\0' ?
          ts_active_output[0] != '\0' :
          strcmp(config->audio_output_device, ts_active_output) != 0);

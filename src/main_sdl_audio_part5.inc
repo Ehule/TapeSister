@@ -19,6 +19,7 @@
                            ui->config.midi_input_device : "AUTO FIRST";
         char shown[96];
         char channel[24];
+        char buffer[24];
 
         cfg_frame(fb, 20, TS_AUDIO_CONFIG_INPUT_Y,
                   TS_AUDIO_CONFIG_INPUT_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
@@ -42,11 +43,22 @@
         cfg_text(fb, 608, TS_AUDIO_CONFIG_INPUT_Y + 5, ">", text_color);
 
         cfg_frame(fb, 20, TS_AUDIO_CONFIG_OUTPUT_Y,
-                  600, TS_AUDIO_CONFIG_ROW_H, row, edge);
+                  TS_AUDIO_CONFIG_INPUT_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
         cfg_text(fb, 28, TS_AUDIO_CONFIG_OUTPUT_Y + 5, "<", text_color);
         cfg_text(fb, 44, TS_AUDIO_CONFIG_OUTPUT_Y + 5, "OUTPUT", text_color);
-        snprintf(shown, sizeof(shown), "%.78s", output);
+        snprintf(shown, sizeof(shown), "%.52s", output);
         cfg_text(fb, 94, TS_AUDIO_CONFIG_OUTPUT_Y + 5, shown, text_color);
+        cfg_text(fb, 432, TS_AUDIO_CONFIG_OUTPUT_Y + 5, ">", text_color);
+
+        cfg_frame(fb, TS_AUDIO_CONFIG_CHANNEL_X, TS_AUDIO_CONFIG_OUTPUT_Y,
+                  TS_AUDIO_CONFIG_CHANNEL_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
+        cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 5,
+                 TS_AUDIO_CONFIG_OUTPUT_Y + 5, "<", text_color);
+        cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 22,
+                 TS_AUDIO_CONFIG_OUTPUT_Y + 5, "BUF", text_color);
+        snprintf(buffer, sizeof(buffer), "%d", ui->config.audio_buffer_frames);
+        cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 58,
+                 TS_AUDIO_CONFIG_OUTPUT_Y + 5, buffer, text_color);
         cfg_text(fb, 608, TS_AUDIO_CONFIG_OUTPUT_Y + 5, ">", text_color);
 
         cfg_frame(fb, 20, TS_MIDI_CONFIG_INPUT_Y,
@@ -284,23 +296,34 @@ static int ts_audio_config_field_from_point(int x, int y)
     }
 
     if (y >= TS_AUDIO_CONFIG_OUTPUT_Y &&
-        y < TS_AUDIO_CONFIG_OUTPUT_Y + TS_AUDIO_CONFIG_ROW_H &&
-        x >= 20 && x < 620) {
-        if (x < 48)
-            ts_cycle_device_name(ts_live_ui->config.audio_output_device,
-                                 sizeof(ts_live_ui->config.audio_output_device),
-                                 ts_device_catalog.output_names,
-                                 ts_device_catalog.output_count, -1);
-        else if (x >= 590)
-            ts_cycle_device_name(ts_live_ui->config.audio_output_device,
-                                 sizeof(ts_live_ui->config.audio_output_device),
-                                 ts_device_catalog.output_names,
-                                 ts_device_catalog.output_count, 1);
-        snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
-                 "OUTPUT DEVICE: %.120s",
-                 ts_live_ui->config.audio_output_device[0] != '\0' ?
-                 ts_live_ui->config.audio_output_device : "SYSTEM DEFAULT");
-        return -1;
+        y < TS_AUDIO_CONFIG_OUTPUT_Y + TS_AUDIO_CONFIG_ROW_H) {
+        if (x >= 20 && x < 20 + TS_AUDIO_CONFIG_INPUT_W) {
+            if (x < 48)
+                ts_cycle_device_name(ts_live_ui->config.audio_output_device,
+                                     sizeof(ts_live_ui->config.audio_output_device),
+                                     ts_device_catalog.output_names,
+                                     ts_device_catalog.output_count, -1);
+            else if (x >= 420)
+                ts_cycle_device_name(ts_live_ui->config.audio_output_device,
+                                     sizeof(ts_live_ui->config.audio_output_device),
+                                     ts_device_catalog.output_names,
+                                     ts_device_catalog.output_count, 1);
+            snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
+                     "OUTPUT DEVICE: %.120s",
+                     ts_live_ui->config.audio_output_device[0] != '\0' ?
+                     ts_live_ui->config.audio_output_device : "SYSTEM DEFAULT");
+            return -1;
+        }
+        if (x >= TS_AUDIO_CONFIG_CHANNEL_X && x < 620) {
+            if (x < TS_AUDIO_CONFIG_CHANNEL_X + 28)
+                ts_cycle_audio_buffer(-1);
+            else if (x >= 594)
+                ts_cycle_audio_buffer(1);
+            snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
+                     "AUDIO BUFFER: %d FRAMES - SAVE TO RESTART AUDIO",
+                     ts_live_ui->config.audio_buffer_frames);
+            return -1;
+        }
     }
 
     if (y >= TS_MIDI_CONFIG_INPUT_Y &&

@@ -604,8 +604,11 @@ make
 
 Run `./tapesister --diagnostic-audio` for optional controller-thread reports of
 average/worst callback time, callback frames, near-deadlines, overruns, device rate,
-buffer size, and active Sister configuration. Normal operation does not collect these
-timings.
+buffer size, active Sister configuration, and EXT ring occupancy/underrun/drop state.
+Normal operation does not collect callback timings. The Configuration screen offers
+shared 256/512/1024-frame playback/capture requests beside OUTPUT; 512 is the
+performance-safe default, while 256 remains available when lower live-input latency
+is more important and the machine passes the diagnostic run.
 
 Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or choose it through **Load**.
 

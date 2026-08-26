@@ -24,6 +24,8 @@ static int test_defaults(void)
                   "default MIDI device should use automatic first input") &&
            expect(config.midi_input_channel == TS_MIDI_INPUT_CHANNEL_DEFAULT,
                   "default MIDI channel should be omni") &&
+           expect(config.audio_buffer_frames == TS_AUDIO_BUFFER_FRAMES_DEFAULT,
+                  "audio buffer should default to the performance-safe size") &&
            expect(config.record_input_channel == TS_RECORD_INPUT_CHANNEL_DEFAULT,
                   "default input channel should remain channel 1") &&
            expect(config.capture_auto_resize == 1,
@@ -73,6 +75,7 @@ static int test_roundtrip(void)
     snprintf(saved.midi_input_device, sizeof(saved.midi_input_device),
              "Test MIDI Keyboard");
     saved.record_input_channel = 3;
+    saved.audio_buffer_frames = 1024;
     saved.midi_input_channel = 7;
     saved.capture_auto_resize = 0;
     saved.capture_max_seconds = 47;
@@ -117,6 +120,8 @@ static int test_roundtrip(void)
                 "MIDI input channel should roundtrip") &&
          expect(loaded.record_input_channel == 3,
                 "stereo input mode should roundtrip") &&
+         expect(loaded.audio_buffer_frames == 1024,
+                "audio buffer size should roundtrip") &&
          expect(loaded.capture_auto_resize == 0,
                 "Capture auto resize should roundtrip") &&
          expect(loaded.waveform_display_mode == TS_WAVEFORM_DISPLAY_RIGHT &&
@@ -219,6 +224,8 @@ static int test_legacy_config(void)
                 "legacy config should default MIDI to auto") &&
          expect(loaded.midi_input_channel == 0,
                 "legacy config should default MIDI to omni") &&
+         expect(loaded.audio_buffer_frames == TS_AUDIO_BUFFER_FRAMES_DEFAULT,
+                "legacy config should receive the safe audio buffer default") &&
          expect(loaded.voice_attack_ms == TS_AUDITION_ATTACK_MS_DEFAULT,
                 "legacy config should receive the de-click default") &&
          expect(loaded.capture_channels == 1,
@@ -249,6 +256,24 @@ static int test_attack_clamp(void)
     return ok;
 }
 
+static int test_invalid_audio_buffer(void)
+{
+    static const char path[] = "test-audio-config-buffer.ini";
+    TsConfig loaded;
+    char error[160];
+    FILE *file = fopen(path, "wb");
+    int ok;
+    if (file == NULL) return 0;
+    fputs("[Audio]\naudio_buffer_frames=384\n", file);
+    fclose(file);
+    ok = expect(!ts_audio_config_load(&loaded, path, error, sizeof(error)),
+                "unsupported audio buffer size should be rejected") &&
+         expect(strstr(error, "256, 512, or 1024") != NULL,
+                "invalid audio buffer should explain the supported values");
+    remove(path);
+    return ok;
+}
+
 int main(void)
 {
     if (!test_defaults()) return 1;
@@ -256,6 +281,7 @@ int main(void)
     if (!test_blank_roundtrip()) return 1;
     if (!test_legacy_config()) return 1;
     if (!test_attack_clamp()) return 1;
+    if (!test_invalid_audio_buffer()) return 1;
     puts("audio config tests passed");
     return 0;
 }

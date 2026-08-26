@@ -91,7 +91,8 @@ int main(void)
     for (int i = 0; i < TS_INPUT_MONITOR_PRIME_FRAMES; ++i)
         ts_input_monitor_push_frame(&monitor, (TsStereoFrame){0.75f, -0.25f});
     frame = ts_input_monitor_read_frame(&monitor, 48000u);
-    CHECK(CLOSE(frame.l, 0.75f) && CLOSE(frame.r, -0.25f));
+    CHECK(frame.l > 0.0f && frame.r < 0.0f);
+    CHECK(CLOSE(frame.r / frame.l, -1.0f / 3.0f));
 
     ts_external_recorder_init(&recorder);
     CHECK(ts_external_recorder_arm_channels(&recorder, 0, 1000u, 2u,

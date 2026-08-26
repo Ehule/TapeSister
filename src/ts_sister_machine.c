@@ -1558,6 +1558,33 @@ static void publish_snapshot(TsSisterMachine *machine)
     atomic_store_explicit(&snapshot->revision, sequence + 1u, memory_order_release);
 }
 
+static void publish_frame_snapshot(TsSisterMachine *machine)
+{
+    if (machine == NULL || machine->buffer.data == NULL) return;
+    if (machine->snapshot_batch_depth != 0u) {
+        machine->snapshot_pending = 1;
+        return;
+    }
+    publish_snapshot(machine);
+}
+
+void ts_sister_machine_begin_audio_block(TsSisterMachine *machine)
+{
+    if (machine == NULL) return;
+    if (machine->snapshot_batch_depth != UINT32_MAX)
+        ++machine->snapshot_batch_depth;
+}
+
+void ts_sister_machine_end_audio_block(TsSisterMachine *machine)
+{
+    if (machine == NULL || machine->snapshot_batch_depth == 0u) return;
+    --machine->snapshot_batch_depth;
+    if (machine->snapshot_batch_depth == 0u && machine->snapshot_pending) {
+        machine->snapshot_pending = 0;
+        if (machine->buffer.data != NULL) publish_snapshot(machine);
+    }
+}
+
 int ts_sister_machine_get_snapshot(const TsSisterMachine *machine,
                                    TsSisterSnapshot *result)
 {
@@ -1884,7 +1911,7 @@ TsSisterOutput ts_sister_machine_process_frame(TsSisterMachine *machine,
     TsSisterOutput result;
     process_internal(machine, input, duck_sidechain, NULL,
                      (TsStereoFrame){0.0f, 0.0f}, &result);
-    if (machine != NULL && machine->buffer.data != NULL) publish_snapshot(machine);
+    publish_frame_snapshot(machine);
     return result;
 }
 
@@ -1896,7 +1923,7 @@ TsSisterOutput ts_sister_machine_process_frame_with_fx(
     TsSisterOutput result;
     process_internal(machine, input, duck_sidechain, post_fx,
                      causal_fx_return, &result);
-    if (machine != NULL && machine->buffer.data != NULL) publish_snapshot(machine);
+    publish_frame_snapshot(machine);
     return result;
 }
 

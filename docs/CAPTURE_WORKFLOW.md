@@ -88,10 +88,14 @@ profile/backend's M6 channel exposure. Play each source separately and confirm o
 1/2 or 3/4 lights, then play both and confirm 1-4. If only two positions are available,
 fix the Linux device profile before troubleshooting Sister. No JACK graph is required.
 
-Playback and capture request 256-frame SDL buffers. SDL may still add platform/device
-latency, and the monitor ring primes 128 input frames to tolerate callback scheduling.
-Selectable 64/128/256/512-frame device buffers remain a follow-up: exposing them safely
-requires config migration and device-specific fallback/validation beyond this workflow.
+Playback and capture share the saved 256/512/1024-frame request selected beside
+OUTPUT in Configuration; 512 frames is the conservative default. SDL may still
+negotiate a different capture size when required by the device. The EXT monitor
+ring primes two actual capture buffers (bounded to 128–4096 frames), applies a
+gentle +/-0.1% occupancy correction for independent device-clock drift, and fades a
+starved return over 32 frames rather than dropping abruptly to silence. Optional
+audio diagnostics report the current ring occupancy, prime target, underrun count,
+and dropped incoming frames.
 
 ## Manual hardware checks
 

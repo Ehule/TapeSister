@@ -100,6 +100,21 @@ int main(void)
     CHECK(snapshot.enabled && snapshot.processed_frames == runtime.processed_frames);
     CHECK(snapshot.monitor_enabled && !snapshot.rolling && !snapshot.held);
 
+    {
+        uint64_t published_revision = snapshot.revision;
+        uint64_t published_frames = snapshot.processed_frames;
+        ts_sister_runtime_begin_audio_block(&runtime);
+        for (int i = 0; i < 64; ++i)
+            (void)ts_sister_runtime_process_frame(&runtime, &source);
+        CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+        CHECK(snapshot.revision == published_revision);
+        CHECK(snapshot.processed_frames == published_frames);
+        ts_sister_runtime_end_audio_block(&runtime);
+        CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+        CHECK(snapshot.revision == published_revision + 2u);
+        CHECK(snapshot.processed_frames == published_frames + 64u);
+    }
+
     ts_sister_runtime_disable(&runtime);
     CHECK(!ts_sister_runtime_owns_direct_tile_bus(&runtime));
     CHECK(CLOSE(ts_sister_runtime_direct_tile_route(&runtime), 0.0f));

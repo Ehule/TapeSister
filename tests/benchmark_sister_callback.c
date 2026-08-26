@@ -71,6 +71,7 @@ int main(int argc, char **argv)
         if ((uint64_t)frames > total_frames - completed)
             frames = (uint32_t)(total_frames - completed);
         started = monotonicish_ns();
+        ts_sister_runtime_begin_audio_block(&runtime);
         for (uint32_t i = 0u; i < frames; ++i) {
             TsSisterRuntimeFrame frame;
             random ^= random << 13;
@@ -86,6 +87,7 @@ int main(int argc, char **argv)
             checksum += frame.tap[TS_SISTER_TAP_MIX].l * 0.61803398875 +
                         frame.tap[TS_SISTER_TAP_MIX].r * 0.38196601125;
         }
+        ts_sister_runtime_end_audio_block(&runtime);
         elapsed = monotonicish_ns() - started;
         ts_realtime_diagnostics_record(
             &diagnostics, elapsed, UINT64_C(1000000000), 48000u, frames,
