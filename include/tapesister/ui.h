@@ -38,7 +38,7 @@ enum { TS_PALETTE_SLIDER_X = 20, TS_PALETTE_SLIDER_Y = 102,
        TS_PALETTE_CONTRAST_X = 250, TS_PALETTE_CONTRAST_W = 170,
        TS_PALETTE_ACTION_Y = 174 };
 enum { TS_CONFIG_ACTION_Y = 196 };
-enum { TS_PALETTE_TAPEHEAD_X = 432, TS_PALETTE_TAPEHEAD_Y = 159,
+enum { TS_PALETTE_TAPEHEAD_X = 432, TS_PALETTE_TAPEHEAD_Y = 171,
        TS_PALETTE_TAPEHEAD_W = 7, TS_PALETTE_TAPEHEAD_H = 8,
        TS_PALETTE_TAPEHEAD_STEP_X = 9 };
 enum {
@@ -197,6 +197,7 @@ typedef enum {
     TS_UI_FM_ACTION_OVERWRITE,
     TS_UI_FM_ACTION_NEW_PAGE,
     TS_UI_FM_ACTION_CANCEL_FULL,
+    TS_UI_FM_ACTION_OUTPUT_TRIM,
     TS_UI_FM_ACTION_BACK
 } TsUiFmAction;
 
@@ -356,6 +357,7 @@ typedef struct {
     int fm_held_notes;
     int fm_full_choice_open;
     int fm_bank_choice_open;
+    int fm_output_dragging;
     char fm_message[96];
     int transform_rendering;
     int transform_preview_available;
@@ -379,6 +381,8 @@ typedef struct {
     char transform_message[96];
     int exit_confirm_open;
     int exit_has_unsaved;
+    int exit_choice;
+    int exit_after_save;
     uint64_t saved_state_hash;
     int config_open;
     int palette_open;

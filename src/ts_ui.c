@@ -606,7 +606,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
               PAL_BUTTON, PAL_MOUSE);
     }
 
-    if (ts_browser_mode_edits_filename(browser->mode)) {
+    if (ts_browser_edits_text(browser)) {
         const char *filename = browser->filename;
         size_t length = strlen(filename);
         size_t cursor = browser->filename_cursor > length ? length :
@@ -635,11 +635,11 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
         text(fb, 58, 300, "SELECT AN EXECUTABLE FILE", PAL_EFFECT, 1);
     }
 
-    button(fb, 58, 326, 72, "UP DIR", 0);
+    button(fb, 58, 326, 72, "UP DIR", browser->action_focus == 0);
     if (ts_browser_mode_allows_create_directory(browser->mode))
         button(fb, 135, 326, 84,
                browser->creating_directory ? "BACK" : "NEW DIR",
-               browser->creating_directory);
+               browser->creating_directory || browser->action_focus == 1);
     button(fb, 224, 326, 120,
            file_busy ? "PLEASE WAIT" :
            browser->overwrite_armed ? "OVERWRITE?" :
@@ -649,8 +649,9 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
            browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
            (browser->mode == TS_BROWSER_SAVE_RECIPE ||
             browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVE" : "EXPORT",
-           file_busy || browser->overwrite_armed || browser->creating_directory);
-    button(fb, 349, 326, 84, "CANCEL", 0);
+           file_busy || browser->overwrite_armed || browser->creating_directory ||
+           browser->action_focus == 2);
+    button(fb, 349, 326, 84, "CANCEL", browser->action_focus == 3);
     snprintf(footer, sizeof(footer), "%.24s", browser->overwrite_armed ?
              "CONFIRM FILE OVERWRITE" : browser->message);
     text(fb, 441, 334, footer,
@@ -1155,6 +1156,12 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
     button(fb, 372, 252, 70, ui->fm_held_notes > 0 ? "HELD" : "HOLD",
            ui->fm_held_notes > 0);
     button(fb, 448, 252, 64, "BACK", 0);
+    {
+        char output[24];
+        snprintf(output, sizeof(output), "OUT %03d", ui->config.fm_output_percent);
+        slider(fb, 518, 252, 102, output,
+               (float)ui->config.fm_output_percent / 100.0f, PAL_EFFECT);
+    }
     button(fb, 20, 278, 86, "DRONE", ui->fm_patch.drone_mode);
     button(fb, 112, 278, 100, "EXTREME", ui->fm_patch.extreme_mode);
     button(fb, 218, 278, 86,
@@ -1257,19 +1264,19 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
                    (float)(ui->palette.buttons_contrast - 1) / 99.0f,
                    ui->palette.buttons_contrast, PAL_BUTTON,
                    ui->palette_channel == 4);
-    text(fb, 432, 89, "COLOR", PAL_TUNING, 1);
-    frame(fb, 432, 99, 70, 47, selected, PAL_MOUSE);
-    text(fb, 510, 89, "WAVE SEL", PAL_TUNING, 1);
-    frame(fb, 510, 99, 108, 47, RGB(8, 8, 8), PAL_MOUSE);
-    rect(fb, 538, 102, 40, 41, PAL_WAVE_SELECTION);
-    rect(fb, 513, 121, 102, 1, RGB(74, 67, 75));
+    text(fb, 432, 106, "COLOR", PAL_TUNING, 1);
+    frame(fb, 432, 116, 70, 38, selected, PAL_MOUSE);
+    text(fb, 510, 106, "WAVE SEL", PAL_TUNING, 1);
+    frame(fb, 510, 116, 108, 38, RGB(8, 8, 8), PAL_MOUSE);
+    rect(fb, 538, 119, 40, 32, PAL_WAVE_SELECTION);
+    rect(fb, 513, 135, 102, 1, RGB(74, 67, 75));
     for (int x = 516; x < 612; x += 8) {
         int height = 8 + ((x / 8) % 4) * 4;
-        rect(fb, x, 122 - height / 2, 1, height,
+        rect(fb, x, 136 - height / 2, 1, height,
              x >= 538 && x < 578 ? PAL_BLOCK_TEXT : PAL_NOTE);
     }
-    text(fb, 541, 104, "0.25S", PAL_EFFECT, 1);
-    text(fb, TS_PALETTE_TAPEHEAD_X, 149, "TAPEHEAD EYEDROPPER", PAL_TUNING, 1);
+    text(fb, 541, 121, "0.25S", PAL_EFFECT, 1);
+    text(fb, TS_PALETTE_TAPEHEAD_X, 159, "TAPEHEAD EYEDROPPER", PAL_TUNING, 1);
     for (int swatch = 0; swatch < ts_palette_tapehead_swatch_count(); ++swatch) {
         TsPaletteColor source = ts_palette_tapehead_swatch_color(swatch);
         int x = TS_PALETTE_TAPEHEAD_X + swatch * TS_PALETTE_TAPEHEAD_STEP_X;
@@ -1290,7 +1297,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
         button(fb, palette_buttons[i].x, TS_PALETTE_ACTION_Y,
                palette_buttons[i].width, palette_buttons[i].label,
                i + 1u == TS_UI_PALETTE_ACTION_DONE);
-    text(fb, 462, 182, "PGUP/DN COLOR  ARROWS", PAL_TUNING, 1);
+    text(fb, 462, 187, "PGUP/DN COLOR  ARROWS", PAL_TUNING, 1);
 }
 
 int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
@@ -1667,6 +1674,7 @@ TsUiFmAction ts_ui_fm_action_from_point(int x, int y)
         if (x >= 282 && x < 366) return TS_UI_FM_ACTION_AUDITION;
         if (x >= 372 && x < 442) return TS_UI_FM_ACTION_HOLD;
         if (x >= 448 && x < 512) return TS_UI_FM_ACTION_BACK;
+        if (x >= 518 && x < 620) return TS_UI_FM_ACTION_OUTPUT_TRIM;
     }
     if (y >= 278 && y < 302) {
         if (x >= 20 && x < 106) return TS_UI_FM_ACTION_DRONE;
@@ -2950,9 +2958,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 172, 164,
              ui->exit_has_unsaved ? "UNSAVED CHANGES WILL BE LOST" : "CLOSE TAPESISTER",
              ui->exit_has_unsaved ? PAL_VOLUME : RGB(190, 185, 190), 1);
-        button(fb, 172, 188, 136, "EXIT", 0);
-        button(fb, 324, 188, 144, "CANCEL", 1);
-        text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
+        if (ui->exit_has_unsaved) {
+            button(fb, 172, 188, 88, "SAVE", ui->exit_choice == 0);
+            button(fb, 266, 188, 88, "EXIT", ui->exit_choice == 1);
+            button(fb, 360, 188, 108, "CANCEL", ui->exit_choice == 2);
+        } else {
+            button(fb, 172, 188, 136, "EXIT", ui->exit_choice == 0);
+            button(fb, 324, 188, 144, "CANCEL", ui->exit_choice == 1);
+        }
+        text(fb, 172, 230, "TAB/ARROWS CHOOSE  ENTER CONFIRMS  ESC CANCELS",
+             RGB(190, 185, 190), 1);
     } else if (ui->overdub_confirm_open) {
         char target[80];
         frame(fb, 146, 122, 348, 132, RGB(36, 33, 37), PAL_MOUSE);
@@ -3526,14 +3541,14 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             model->parameters.fx.reverb_mix > 0.0f, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_TYPE));
-        sister_percent_parameter_state(fb, 250, 72, 130, "MIX",
-            model->parameters.fx.reverb_mix, 100, PAL_WAVE_RIGHT,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_REVERB_MIX));
-        sister_percent_parameter_state(fb, 390, 72, 130, "DECAY",
+        sister_percent_parameter_state(fb, 250, 72, 130, "DECAY",
             model->parameters.fx.reverb_decay, 100, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_DECAY));
+        sister_percent_parameter_state(fb, 390, 72, 130, "MIX",
+            model->parameters.fx.reverb_mix, 100, PAL_WAVE_RIGHT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_REVERB_MIX));
         sister_percent_parameter_state(fb, 110, 150, 130, "TIME",
             model->parameters.fx.delay_time, 100, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
@@ -3758,6 +3773,12 @@ sister_footer:
         text(fb, 180, 165,
              model->preset_editing ? model->preset_edit_name : model->preset_name,
              model->preset_editing ? PAL_NOTE : PAL_MOUSE, 1);
+        if (model->preset_editing && model->text_cursor_visible) {
+            size_t length = strlen(model->preset_edit_name);
+            size_t cursor = model->preset_edit_cursor > length ? length :
+                            model->preset_edit_cursor;
+            rect(fb, 180 + (int)cursor * 6, 163, 2, 11, PAL_NOTE);
+        }
         if (model->preset_factory)
             text(fb, 180, 182, "FACTORY - RECALL ONLY", PAL_TUNING, 1);
         button(fb, 180, 200, 128, "SAVE AS", model->preset_editing == 1);

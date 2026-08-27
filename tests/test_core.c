@@ -2574,11 +2574,13 @@ int main(void)
         CHECK(config.rotate_wheel_fine == 5);
         CHECK(config.rotate_wheel_coarse == 50);
         CHECK(config.reference_tone_volume == 50);
+        CHECK(config.fm_output_percent == 50);
         CHECK(config.playhead_zero_snap == 1);
         CHECK(config.ripple_cut_crop_canvas == 0);
         config.playhead_zero_snap = 0;
         config.ripple_cut_crop_canvas = 1;
         config.reference_tone_volume = 73;
+        config.fm_output_percent = 42;
         snprintf(config.sample_path, sizeof(config.sample_path), "/samples/drums");
         snprintf(config.fasttracker_path, sizeof(config.fasttracker_path),
                  "/opt/ft2 tapehead/ft2-clone");
@@ -2612,6 +2614,7 @@ int main(void)
               reopened.startup_welcome_autoplay == 1);
         CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
         CHECK(reopened.reference_tone_volume == 73);
+        CHECK(reopened.fm_output_percent == 42);
         CHECK(reopened.playhead_zero_snap == 0);
         CHECK(reopened.ripple_cut_crop_canvas == 1);
         CHECK(reopened.dsp_factory_overridden[4]);
@@ -2648,6 +2651,7 @@ int main(void)
             CHECK(!reopened.startup_welcome_sample && !reopened.startup_welcome_autoplay);
             CHECK(reopened.rotate_wheel_fine == 5 && reopened.rotate_wheel_coarse == 50);
             CHECK(reopened.reference_tone_volume == 50);
+            CHECK(reopened.fm_output_percent == 50);
             CHECK(reopened.playhead_zero_snap == 1);
             CHECK(reopened.ripple_cut_crop_canvas == 0);
             config_file = fopen("test-tapesister.ini", "wb");
@@ -2670,12 +2674,14 @@ int main(void)
             CHECK(config_file != NULL);
             if (config_file != NULL) {
                 fputs("rotate_wheel_fine=-99\nrotate_wheel_coarse=999\n"
-                      "reference_tone_volume=999\n", config_file);
+                      "reference_tone_volume=999\nfm_output_percent=999\n",
+                      config_file);
                 fclose(config_file);
             }
             CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
             CHECK(reopened.rotate_wheel_fine == 1 && reopened.rotate_wheel_coarse == 100);
             CHECK(reopened.reference_tone_volume == 100);
+            CHECK(reopened.fm_output_percent == 100);
             config_file = fopen("test-tapesister.ini", "wb");
             CHECK(config_file != NULL);
             if (config_file != NULL) {
@@ -2773,6 +2779,7 @@ int main(void)
         CHECK(ts_browser_parent(&browser));
 
         CHECK(ts_browser_open(&browser, TS_BROWSER_SAVE_RECIPE, "new-family"));
+        CHECK(browser.action_focus == -2 && browser.filename_focus);
         CHECK(browser_find(&browser, "test-browser-save.tsr") >= 0);
         CHECK(browser_find(&browser, "test-browser-load.wav") < 0);
         CHECK(ts_browser_destination_path(&browser, path, sizeof(path)));
@@ -3224,9 +3231,10 @@ int main(void)
     ui.load_selection_choice_open = 0;
     ui.exit_confirm_open = 1;
     ui.exit_has_unsaved = 1;
+    ui.exit_choice = 2;
     ts_ui_render(&fb, &ui, &restored);
     CHECK(fb.pixels[192 * TS_UI_WIDTH + 175] == 0xff4a3c4au);
-    CHECK(fb.pixels[192 * TS_UI_WIDTH + 327] == 0xff2d0039u);
+    CHECK(fb.pixels[192 * TS_UI_WIDTH + 363] == 0xff2d0039u);
     ui.exit_confirm_open = 0;
     {
         TsFramebuffer normal;
@@ -3430,6 +3438,8 @@ int main(void)
         CHECK(ts_ui_fm_action_from_point(160, 286) == TS_UI_FM_ACTION_EXTREME);
         CHECK(ts_ui_fm_action_from_point(250, 286) == TS_UI_FM_ACTION_CHAIN);
         CHECK(ts_ui_fm_action_from_point(470, 260) == TS_UI_FM_ACTION_BACK);
+        CHECK(ts_ui_fm_action_from_point(550, 260) ==
+              TS_UI_FM_ACTION_OUTPUT_TRIM);
         CHECK(ts_ui_fm_range_contains(500, 286));
         CHECK(!ts_ui_fm_range_contains(250, 286));
         CHECK(ts_ui_fm_full_action_from_point(120, 284) ==

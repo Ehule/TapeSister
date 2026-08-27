@@ -119,6 +119,8 @@ typedef struct {
     char status[128];
     char preset_name[48];
     char preset_edit_name[48];
+    size_t preset_edit_cursor;
+    int text_cursor_visible;
     int preset_factory;
     int preset_manage_open;
     int preset_editing;

@@ -374,6 +374,9 @@ render. A full page asks whether to overwrite the current tile, continue on a ne
 page, or cancel.
 Inside FM Logic, `Shift+R` invokes Randomize and `Shift+B` opens Make Bank. Plain `R`
 and `B` remain playable notes on the computer keyboard.
+The grave/backquote key opens FM Logic directly. Its compact **OUT** trim sits beside
+**Back**, defaults to 50 percent, and persists as `fm_output_percent` in
+`tapesister.ini`; it governs FM monitoring, the Sister FM source, and synth capture.
 
 **Drone** removes the amplitude and filter attack/release envelopes, suppresses the
 transient, and trims the render to exact zero-valued boundary crossings. The disabled
@@ -498,9 +501,10 @@ now accepts TILES, FM, EXT and PREVIEW, exposes H1/H2/H3/MIX Capture taps, owns 
 per-page Sister source mask and supports protected capture-then-replay recursion.
 Sister remains disabled by default. Clicking the `TAPESISTER` logo opens its independent
 performance window without changing POWER; closing that window hides it without stopping
-or starting audio. The window exposes transport, fixed sources, three heads, modulation/filter,
+or starting audio. Tab opens that window and then switches keyboard focus between Sister
+and whichever main workspace is open. The window exposes transport, fixed sources, three heads, modulation/filter,
 stereo rolling overview, pre-tape INPUT trim, source-aware DRY/WET tape routing,
-protected MIX OUT gain, a compact `T/F/E/A` source mixer and `FX` return trim,
+protected MIX OUT gain, a compact `T/F/E/A` source mixer and effects-only `FX` return trim,
 recording-head ERASE strength, age-dependent GHOST TONE,
 and protected tap Capture/Overdub controls. ERASE 100 fully replaces each rolling-buffer
 cell; lower values retain old stereo material before new input and controlled head

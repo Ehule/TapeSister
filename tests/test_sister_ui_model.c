@@ -167,6 +167,12 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 120, 76);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_REVERB_TYPE);
+    hit = ts_sister_ui_hit_test_model(&model, 260, 76);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_REVERB_DECAY);
+    hit = ts_sister_ui_hit_test_model(&model, 400, 76);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_REVERB_MIX);
     hit = ts_sister_ui_hit_test_model(&model, 260, 154);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_DELAY_FEEDBACK);

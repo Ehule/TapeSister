@@ -60,6 +60,17 @@ static TsStereoFrame frame_lerp(TsStereoFrame a, TsStereoFrame b, float amount)
     return result;
 }
 
+static TsStereoFrame frame_effect_return(TsStereoFrame dry,
+                                         TsStereoFrame processed,
+                                         float gain)
+{
+    TsStereoFrame result = {
+        dry.l + (processed.l - dry.l) * gain,
+        dry.r + (processed.r - dry.r) * gain
+    };
+    return ts_stereo_frame_sanitize(result);
+}
+
 static uint32_t milliseconds_frames(uint32_t sample_rate, float milliseconds)
 {
     double frames = (double)sample_rate * (double)milliseconds / 1000.0;
@@ -1679,6 +1690,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     float duck_sensitivity;
     float stereo_width;
     float headroom;
+    float fx_return;
     float peak;
     memset(&output, 0, sizeof(output));
     if (machine == NULL || machine->buffer.data == NULL ||
@@ -1708,6 +1720,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     duck_sensitivity = ramp_advance(&machine->duck_sensitivity);
     stereo_width = ramp_advance(&machine->width);
     headroom = ramp_advance(&machine->headroom);
+    fx_return = ramp_advance(&machine->fx_return_gain);
     input = frame_scale(input, input_gain);
     duck_sidechain = frame_scale(duck_sidechain, input_gain);
     output.input = input;
@@ -1790,9 +1803,12 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
         raw[head] = ts_sister_weave_process(
             &machine->soak_weave[head], raw[head],
             machine->buffer.channels == 1u);
-    for (size_t head = 0u; head < TS_SISTER_HEAD_COUNT; ++head)
-        raw[head] = ts_sister_post_fx_process(
-            post_fx, head, raw[head], machine->buffer.channels == 1u);
+    for (size_t head = 0u; head < TS_SISTER_HEAD_COUNT; ++head) {
+        TsStereoFrame dry = raw[head];
+        TsStereoFrame processed = ts_sister_post_fx_process(
+            post_fx, head, dry, machine->buffer.channels == 1u);
+        raw[head] = frame_effect_return(dry, processed, fx_return);
+    }
 
     drop2 = update_drop(machine, &machine->drop[0], drop_amount);
     drop3 = update_drop(machine, &machine->drop[1], drop_amount);
@@ -1866,14 +1882,17 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     sum = ts_sister_weave_process(
         &machine->soak_weave[TS_SISTER_HEAD_COUNT], sum,
         machine->buffer.channels == 1u);
-    sum = ts_sister_post_fx_process(post_fx, TS_SISTER_HEAD_COUNT, sum,
-                                    machine->buffer.channels == 1u);
+    {
+        TsStereoFrame dry = sum;
+        TsStereoFrame processed = ts_sister_post_fx_process(
+            post_fx, TS_SISTER_HEAD_COUNT, dry,
+            machine->buffer.channels == 1u);
+        sum = frame_effect_return(dry, processed, fx_return);
+    }
     output.head[0] = frame_scale(output.head[0], clear_gain);
     output.head[1] = frame_scale(output.head[1], clear_gain);
     output.head[2] = frame_scale(output.head[2], clear_gain);
     output.post_fx = frame_scale(sum, clear_gain);
-    output.post_fx = frame_scale(output.post_fx,
-                                 ramp_advance(&machine->fx_return_gain));
     output.mix = final_safety(machine, output.post_fx);
 
     ++machine->master_clock;

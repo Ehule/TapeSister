@@ -760,6 +760,7 @@ typedef struct {
     int realtime_diagnostics_enabled;
     uint64_t realtime_counter_frequency;
     TsRealtimeDiagnostics realtime_diagnostics;
+    float fm_output_gain;
     TsStereoFrame last_output;
     TsStereoFrame topology_crossfade_from;
     uint32_t topology_crossfade_remaining;
@@ -962,6 +963,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             ++audio->attack_frame;
 
         runtime_note_render(audio, &buses, &synth_capture);
+        buses.fm.l *= audio->fm_output_gain;
+        buses.fm.r *= audio->fm_output_gain;
+        synth_capture.l *= audio->fm_output_gain;
+        synth_capture.r *= audio->fm_output_gain;
         buses.external = audio->input_monitor != NULL ?
             ts_input_monitor_read_frame(audio->input_monitor,
                                         (uint32_t)audio->output_rate) :
@@ -1924,6 +1929,8 @@ static void begin_exit_confirmation(SDL_AudioDeviceID device, AudioState *audio,
         sample_pages, instrument, parked_record,
         record_bank_active, &audio->sister) != ui->saved_state_hash;
     ui->exit_confirm_open = 1;
+    ui->exit_choice = ui->exit_has_unsaved ? 2 : 1;
+    ui->exit_after_save = 0;
     snprintf(ui->status, sizeof(ui->status), "%s",
              ui->exit_has_unsaved ?
              "EXIT? UNSAVED CHANGES WILL BE LOST" : "EXIT TAPESISTER?");
@@ -3562,6 +3569,7 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ui->fm_open = 1;
     ui->fm_full_choice_open = 0;
     ui->fm_bank_choice_open = 0;
+    ui->fm_output_dragging = 0;
     ui->fm_page = TS_FM_PAGE_PITCH;
     ui->fm_preview_sample = preview;
     (void)render_fm_workspace(device, audio, ui, instrument, preview);
@@ -3577,6 +3585,7 @@ static void close_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ui->fm_held_notes = 0;
     ui->fm_full_choice_open = 0;
     ui->fm_bank_choice_open = 0;
+    ui->fm_output_dragging = 0;
     ui->fm_open = 0;
     ui->fm_preview_sample = NULL;
     ts_sample_free(preview);
@@ -4123,6 +4132,28 @@ static void set_tune_reference_volume(TsUiState *ui, float amount)
         return;
     }
     snprintf(ui->status, sizeof(ui->status), "REFERENCE VOLUME %d", volume);
+}
+
+static void set_fm_output_trim(SDL_AudioDeviceID device, AudioState *audio,
+                               TsUiState *ui, float amount, int persist)
+{
+    char error[160];
+    int percent;
+    if (audio == NULL || ui == NULL) return;
+    if (amount < 0.0f) amount = 0.0f;
+    if (amount > 1.0f) amount = 1.0f;
+    percent = (int)lrintf(amount * 100.0f);
+    ui->config.fm_output_percent = percent;
+    if (device) SDL_LockAudioDevice(device);
+    audio->fm_output_gain = (float)percent / 100.0f;
+    if (device) SDL_UnlockAudioDevice(device);
+    if (persist && !ts_config_save(&ui->config, config_file_path(),
+                                   error, sizeof(error))) {
+        snprintf(ui->fm_message, sizeof(ui->fm_message),
+                 "OUTPUT %d - CONFIG SAVE FAILED: %.54s", percent, error);
+        return;
+    }
+    snprintf(ui->fm_message, sizeof(ui->fm_message), "FM OUTPUT %d%%", percent);
 }
 
 static void toggle_tune_reference(SDL_AudioDeviceID device, AudioState *audio,
@@ -5824,6 +5855,62 @@ static void browser_open(TsUiState *ui, TsBrowserMode mode)
     }
 }
 
+static void browser_cycle_focus(TsBrowser *browser, int amount)
+{
+    int focus;
+    if (browser == NULL || browser->mode == TS_BROWSER_CLOSED) return;
+    /* Filename is -2, list is -1, and footer actions are 0..3. */
+    focus = browser->action_focus;
+    do {
+        focus += amount < 0 ? -1 : 1;
+        if (focus < -2) focus = 3;
+        if (focus > 3) focus = -2;
+    } while ((focus == -2 && !ts_browser_edits_text(browser)) ||
+             (focus == 1 &&
+              !ts_browser_mode_allows_create_directory(browser->mode)));
+    browser->action_focus = focus;
+    browser->filename_focus = focus == -2;
+    browser->overwrite_armed = 0;
+}
+
+static int exit_confirmation_activate(TsUiState *ui)
+{
+    if (ui == NULL || !ui->exit_confirm_open) return 0;
+    if (ui->exit_has_unsaved && ui->exit_choice == 0) {
+        ui->exit_confirm_open = 0;
+        ui->exit_after_save = 1;
+        browser_open(ui, TS_BROWSER_SAVE_RECIPE);
+        if (ui->browser.mode == TS_BROWSER_CLOSED) {
+            ui->exit_after_save = 0;
+            return 0;
+        }
+        snprintf(ui->status, sizeof(ui->status),
+                 "SAVE PROJECT BEFORE EXITING");
+        return 0;
+    }
+    if ((!ui->exit_has_unsaved && ui->exit_choice == 0) ||
+        (ui->exit_has_unsaved && ui->exit_choice == 1))
+        return 1;
+    ui->exit_confirm_open = 0;
+    ui->exit_after_save = 0;
+    snprintf(ui->status, sizeof(ui->status), "EXIT CANCELLED");
+    return 0;
+}
+
+static int main_text_key_repeat_allowed(const TsUiState *ui,
+                                        SDL_Keycode key)
+{
+    int edits_text;
+    if (ui == NULL) return 0;
+    edits_text = ui->config_open || ui->renaming_bank_slot >= 0 ||
+                 ui->renaming_recipe_slot >= 0 ||
+                 (ui->browser.mode != TS_BROWSER_CLOSED &&
+                  ui->browser.filename_focus &&
+                  ts_browser_edits_text(&ui->browser));
+    return edits_text && (key == SDLK_LEFT || key == SDLK_RIGHT ||
+                          key == SDLK_BACKSPACE || key == SDLK_DELETE);
+}
+
 static TsBrowserMode config_browser_mode(TsConfigField field)
 {
     if (field == TS_CONFIG_SAMPLE_PATH) return TS_BROWSER_SELECT_SAMPLE_DIRECTORY;
@@ -6151,9 +6238,11 @@ static void browser_cancel(TsUiState *ui)
 {
     if (ui->browser.creating_directory) {
         ts_browser_cancel_create_directory(&ui->browser);
+        if (!ts_browser_edits_text(&ui->browser)) SDL_StopTextInput();
         return;
     }
     int returning_to_config = ts_browser_mode_selects_config(ui->browser.mode);
+    ui->exit_after_save = 0;
     SDL_StopTextInput();
     ts_browser_close(&ui->browser);
     if (returning_to_config) {
@@ -6289,7 +6378,9 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     (void)record_bank_active;
     if (pending == NULL || pending->active || ui->file_busy) return;
     if (browser->creating_directory) {
-        (void)ts_browser_create_directory(browser);
+        if (ts_browser_create_directory(browser) &&
+            !ts_browser_edits_text(browser))
+            SDL_StopTextInput();
         return;
     }
     if (ts_browser_mode_selects_config(browser->mode)) {
@@ -6465,7 +6556,12 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
     if (ok) {
         SDL_StopTextInput();
         ts_browser_close(browser);
+        if (pending->mode == TS_BROWSER_SAVE_RECIPE &&
+            ui->exit_after_save == 1)
+            ui->exit_after_save = 2;
     } else if (browser->mode != TS_BROWSER_CLOSED) {
+        if (pending->mode == TS_BROWSER_SAVE_RECIPE)
+            ui->exit_after_save = 0;
         browser->overwrite_armed = 0;
         snprintf(browser->message, sizeof(browser->message), "%.150s", ui->status);
     }
@@ -6656,6 +6752,17 @@ static void sister_window_show(SisterWindow *sister)
     sister->rendered_model_valid = 0;
     SDL_ShowWindow(sister->window);
     SDL_RaiseWindow(sister->window);
+    (void)SDL_SetWindowInputFocus(sister->window);
+}
+
+static void application_window_focus(SDL_Window *window)
+{
+    if (window == NULL) return;
+    if ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0u)
+        SDL_RestoreWindow(window);
+    SDL_ShowWindow(window);
+    SDL_RaiseWindow(window);
+    (void)SDL_SetWindowInputFocus(window);
 }
 
 static void sister_set_parameter(TsSisterParameters *parameters,
@@ -6975,13 +7082,19 @@ static void sister_preset_edit_append(TsSisterUiModel *model,
     size_t length;
     if (model == NULL || !model->preset_editing || text_value == NULL) return;
     length = strlen(model->preset_edit_name);
+    if (model->preset_edit_cursor > length)
+        model->preset_edit_cursor = length;
     for (size_t i = 0u; text_value[i] != '\0' &&
          length < sizeof(model->preset_edit_name) - 1u; ++i) {
         unsigned char c = (unsigned char)text_value[i];
-        if (c >= 32u && c != '=' && c != '[' && c != ']')
-            model->preset_edit_name[length++] = (char)c;
+        if (c >= 32u && c != '=' && c != '[' && c != ']') {
+            memmove(model->preset_edit_name + model->preset_edit_cursor + 1u,
+                    model->preset_edit_name + model->preset_edit_cursor,
+                    length - model->preset_edit_cursor + 1u);
+            model->preset_edit_name[model->preset_edit_cursor++] = (char)c;
+            ++length;
+        }
     }
-    model->preset_edit_name[length] = '\0';
 }
 
 static void sister_preset_edit_backspace(TsSisterUiModel *model)
@@ -6989,7 +7102,40 @@ static void sister_preset_edit_backspace(TsSisterUiModel *model)
     size_t length;
     if (model == NULL || !model->preset_editing) return;
     length = strlen(model->preset_edit_name);
-    if (length > 0u) model->preset_edit_name[length - 1u] = '\0';
+    if (model->preset_edit_cursor > length)
+        model->preset_edit_cursor = length;
+    if (model->preset_edit_cursor > 0u) {
+        memmove(model->preset_edit_name + model->preset_edit_cursor - 1u,
+                model->preset_edit_name + model->preset_edit_cursor,
+                length - model->preset_edit_cursor + 1u);
+        --model->preset_edit_cursor;
+    }
+}
+
+static void sister_preset_edit_delete(TsSisterUiModel *model)
+{
+    size_t length;
+    if (model == NULL || !model->preset_editing) return;
+    length = strlen(model->preset_edit_name);
+    if (model->preset_edit_cursor > length)
+        model->preset_edit_cursor = length;
+    if (model->preset_edit_cursor < length)
+        memmove(model->preset_edit_name + model->preset_edit_cursor,
+                model->preset_edit_name + model->preset_edit_cursor + 1u,
+                length - model->preset_edit_cursor);
+}
+
+static void sister_preset_edit_move(TsSisterUiModel *model, int amount)
+{
+    ptrdiff_t cursor;
+    size_t length;
+    if (model == NULL || !model->preset_editing) return;
+    length = strlen(model->preset_edit_name);
+    cursor = (ptrdiff_t)(model->preset_edit_cursor > length ? length :
+                         model->preset_edit_cursor) + amount;
+    if (cursor < 0) cursor = 0;
+    if ((size_t)cursor > length) cursor = (ptrdiff_t)length;
+    model->preset_edit_cursor = (size_t)cursor;
 }
 
 static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
@@ -7083,6 +7229,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         sister->model.preset_confirmation = 0;
         snprintf(sister->model.preset_edit_name,
                  sizeof(sister->model.preset_edit_name), "NEW PRESET");
+        sister->model.preset_edit_cursor =
+            strlen(sister->model.preset_edit_name);
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_RENAME) {
@@ -7096,6 +7244,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             snprintf(sister->model.preset_edit_name,
                      sizeof(sister->model.preset_edit_name), "%s",
                      sister->presets.entries[sister->preset_index].name);
+            sister->model.preset_edit_cursor =
+                strlen(sister->model.preset_edit_name);
         }
         return;
     }
@@ -8705,6 +8855,7 @@ int main(int argc, char **argv)
     ts_note_bank_init(&audio.notes);
     ts_performance_init(&audio.performance);
     ts_audio_mixer_init(&audio.mixer);
+    audio.fm_output_gain = (float)ui.config.fm_output_percent / 100.0f;
     ts_sister_runtime_init(&audio.sister);
     ts_realtime_diagnostics_init(&audio.realtime_diagnostics);
     audio.realtime_diagnostics_enabled = diagnostic_audio &&
@@ -8957,6 +9108,10 @@ int main(int argc, char **argv)
                                        &pending_selection_load, &sample_pages,
                                        parked_instrument, record_bank_active,
                                        &pending_file);
+        if (ui.exit_after_save == 2) {
+            running = 0;
+            continue;
+        }
         sync_sister_ext_consumer(&input_device, &audio, &external_input,
                                  &ui, &sister_window);
         sister_preset_model_sync(&sister_window, &audio.sister);
@@ -9025,6 +9180,33 @@ int main(int argc, char **argv)
                          "EXTERNAL INPUT DEVICE WAS REMOVED");
                 continue;
             }
+            if (event.type == SDL_KEYDOWN && !event.key.repeat) {
+                SDL_Keycode global_key = event.key.keysym.sym;
+                int modal_key_owner = ui_blocking_dialog_open_except_fm(&ui) ||
+                    ui.fm_bank_choice_open || ui.fm_full_choice_open ||
+                    sister_window.model.preset_manage_open;
+                if (global_key == SDLK_TAB && !modal_key_owner) {
+                    if (sister_window.window != NULL &&
+                        event_id == sister_window.window_id) {
+                        application_window_focus(window);
+                    } else if (event_id == SDL_GetWindowID(window)) {
+                        if (!sister_window_ensure(&sister_window, &ui.config))
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "SISTER WINDOW UNAVAILABLE: %.112s",
+                                     SDL_GetError());
+                        else
+                            sister_window_show(&sister_window);
+                    }
+                    continue;
+                }
+                if (global_key == SDLK_BACKQUOTE && !modal_key_owner) {
+                    if (!ui.fm_open)
+                        begin_fm_workspace(device, &audio, &ui, &instrument,
+                                           &fm_preview);
+                    application_window_focus(window);
+                    continue;
+                }
+            }
             if (sister_window.window != NULL &&
                 event_id == sister_window.window_id) {
                 if (event.type == SDL_WINDOWEVENT &&
@@ -9071,10 +9253,34 @@ int main(int argc, char **argv)
                            sister_window.model.preset_editing) {
                     sister_preset_edit_append(&sister_window.model,
                                               event.text.text);
-                } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
+                } else if (event.type == SDL_KEYDOWN &&
                            sister_window.model.preset_manage_open &&
-                           event.key.keysym.sym == SDLK_BACKSPACE) {
-                    sister_preset_edit_backspace(&sister_window.model);
+                           sister_window.model.preset_editing &&
+                           (event.key.keysym.sym == SDLK_LEFT ||
+                            event.key.keysym.sym == SDLK_RIGHT ||
+                            event.key.keysym.sym == SDLK_BACKSPACE ||
+                            event.key.keysym.sym == SDLK_DELETE ||
+                            event.key.keysym.sym == SDLK_HOME ||
+                            event.key.keysym.sym == SDLK_END) &&
+                           (!event.key.repeat ||
+                            event.key.keysym.sym == SDLK_LEFT ||
+                            event.key.keysym.sym == SDLK_RIGHT ||
+                            event.key.keysym.sym == SDLK_BACKSPACE ||
+                            event.key.keysym.sym == SDLK_DELETE)) {
+                    SDL_Keycode key = event.key.keysym.sym;
+                    if (key == SDLK_BACKSPACE)
+                        sister_preset_edit_backspace(&sister_window.model);
+                    else if (key == SDLK_DELETE)
+                        sister_preset_edit_delete(&sister_window.model);
+                    else if (key == SDLK_LEFT)
+                        sister_preset_edit_move(&sister_window.model, -1);
+                    else if (key == SDLK_RIGHT)
+                        sister_preset_edit_move(&sister_window.model, 1);
+                    else if (key == SDLK_HOME)
+                        sister_window.model.preset_edit_cursor = 0u;
+                    else if (key == SDLK_END)
+                        sister_window.model.preset_edit_cursor = strlen(
+                            sister_window.model.preset_edit_name);
                 } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
                            sister_window.model.preset_manage_open &&
                            (event.key.keysym.sym == SDLK_RETURN ||
@@ -9325,7 +9531,7 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_TEXTINPUT &&
                        ui.browser.mode != TS_BROWSER_CLOSED && !ui.exit_confirm_open) {
                 if (ui.browser.filename_focus &&
-                    ts_browser_mode_edits_filename(ui.browser.mode))
+                    ts_browser_edits_text(&ui.browser))
                     ts_browser_append_filename(&ui.browser, event.text.text);
             } else if (event.type == SDL_WINDOWEVENT &&
                        event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
@@ -9362,7 +9568,9 @@ int main(int argc, char **argv)
                     end_stretch_gesture(device, &audio, &ui, &instrument, 1);
                 if (ui.canvas_gesture.active)
                     end_canvas_gesture(window, device, &audio, &ui, &instrument, 1);
-            } else if (event.type == SDL_KEYDOWN && !event.key.repeat) {
+            } else if (event.type == SDL_KEYDOWN &&
+                       (!event.key.repeat || main_text_key_repeat_allowed(
+                            &ui, event.key.keysym.sym))) {
                 SDL_Keycode key = event.key.keysym.sym;
                 SDL_Keymod mod = SDL_GetModState();
                 TsUiSlider hovered_slider = TS_UI_SLIDER_NONE;
@@ -9438,10 +9646,21 @@ int main(int argc, char **argv)
                 } else if (ui.exit_confirm_open) {
                     if (key == SDLK_ESCAPE || key == SDLK_n) {
                         ui.exit_confirm_open = 0;
+                        ui.exit_after_save = 0;
                         snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
-                    } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
-                               key == SDLK_y) {
-                        running = 0;
+                    } else if (key == SDLK_y) {
+                        ui.exit_choice = ui.exit_has_unsaved ? 1 : 0;
+                        if (exit_confirmation_activate(&ui)) running = 0;
+                    } else if (key == SDLK_TAB || key == SDLK_LEFT ||
+                               key == SDLK_RIGHT || key == SDLK_UP ||
+                               key == SDLK_DOWN) {
+                        int count = ui.exit_has_unsaved ? 3 : 2;
+                        int amount = key == SDLK_LEFT || key == SDLK_UP ||
+                                     (key == SDLK_TAB && (mod & KMOD_SHIFT)) ?
+                                     -1 : 1;
+                        ui.exit_choice = (ui.exit_choice + amount + count) % count;
+                    } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
+                        if (exit_confirmation_activate(&ui)) running = 0;
                     }
                 } else if (ui.overdub_confirm_open) {
                     if (key == SDLK_ESCAPE || key == SDLK_n) {
@@ -9495,10 +9714,6 @@ int main(int argc, char **argv)
                             &ui, (int)(key - SDLK_F1));
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  "SYNTH KEYBOARD OCTAVE %d", octave);
-                    } else if (key == SDLK_TAB) {
-                        ui.fm_page = (TsFmPage)(((int)ui.fm_page +
-                                                ((mod & KMOD_SHIFT) ? 6 : 1)) %
-                                               TS_FM_PAGE_COUNT);
                     } else if ((mod & KMOD_CTRL) && key == SDLK_z) {
                         history_move(device, &audio, &ui, &instrument,
                                      &sample_pages, &fm_bank_history, 0);
@@ -9749,8 +9964,37 @@ int main(int argc, char **argv)
                 } else if (ui.browser.mode != TS_BROWSER_CLOSED) {
                     if (key == SDLK_ESCAPE) browser_cancel(&ui);
                     else if ((mod & KMOD_CTRL) && key == SDLK_n &&
-                             ts_browser_mode_allows_create_directory(ui.browser.mode))
-                        (void)ts_browser_begin_create_directory(&ui.browser);
+                             ts_browser_mode_allows_create_directory(ui.browser.mode)) {
+                        if (ts_browser_begin_create_directory(&ui.browser))
+                            SDL_StartTextInput();
+                    }
+                    else if (key == SDLK_TAB)
+                        browser_cycle_focus(&ui.browser,
+                                            (mod & KMOD_SHIFT) ? -1 : 1);
+                    else if (ui.browser.action_focus >= 0 &&
+                             (key == SDLK_LEFT || key == SDLK_UP ||
+                              key == SDLK_RIGHT || key == SDLK_DOWN))
+                        browser_cycle_focus(&ui.browser,
+                            key == SDLK_LEFT || key == SDLK_UP ? -1 : 1);
+                    else if (ui.browser.action_focus >= 0 &&
+                             (key == SDLK_RETURN || key == SDLK_KP_ENTER)) {
+                        if (ui.browser.action_focus == 0)
+                            ts_browser_parent(&ui.browser);
+                        else if (ui.browser.action_focus == 1) {
+                            if (ui.browser.creating_directory) {
+                                ts_browser_cancel_create_directory(&ui.browser);
+                                if (!ts_browser_edits_text(&ui.browser))
+                                    SDL_StopTextInput();
+                            } else if (ts_browser_begin_create_directory(&ui.browser))
+                                SDL_StartTextInput();
+                        } else if (ui.browser.action_focus == 2)
+                            browser_action(device, &audio, &ui, &instrument,
+                                           &pending_selection_load,
+                                           &sample_pages, parked_instrument,
+                                           record_bank_active, &pending_file);
+                        else
+                            browser_cancel(&ui);
+                    }
                     else if (ui.browser.filename_focus && key == SDLK_LEFT)
                         ts_browser_move_filename_cursor(&ui.browser, -1);
                     else if (ui.browser.filename_focus && key == SDLK_RIGHT)
@@ -9764,9 +10008,11 @@ int main(int argc, char **argv)
                         ts_browser_delete_filename(&ui.browser);
                     else if (key == SDLK_UP) {
                         ui.browser.filename_focus = 0;
+                        ui.browser.action_focus = -1;
                         ts_browser_move_selection(&ui.browser, -1);
                     } else if (key == SDLK_DOWN) {
                         ui.browser.filename_focus = 0;
+                        ui.browser.action_focus = -1;
                         ts_browser_move_selection(&ui.browser, 1);
                     } else if (key == SDLK_PAGEUP) {
                         ui.browser.filename_focus = 0;
@@ -9785,13 +10031,9 @@ int main(int argc, char **argv)
                         ui.browser.selected = ui.browser.entry_count - 1;
                         ts_browser_set_scroll(&ui.browser, ui.browser.entry_count);
                         ui.browser.overwrite_armed = 0;
-                    } else if (key == SDLK_TAB &&
-                               ts_browser_mode_edits_filename(ui.browser.mode)) {
-                        ui.browser.filename_focus = !ui.browser.filename_focus;
-                        ui.browser.overwrite_armed = 0;
                     } else if (key == SDLK_BACKSPACE) {
                         if (ui.browser.filename_focus &&
-                            ts_browser_mode_edits_filename(ui.browser.mode))
+                            ts_browser_edits_text(&ui.browser))
                             ts_browser_backspace_filename(&ui.browser);
                         else ts_browser_parent(&ui.browser);
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
@@ -10165,6 +10407,9 @@ int main(int argc, char **argv)
                         target = WHEEL_TARGET_FM + (int)ui.fm_page * 16 + control;
                     else if (ts_ui_fm_range_contains(x, y))
                         target = WHEEL_TARGET_FM + 0x102;
+                    else if (ts_ui_fm_action_from_point(x, y) ==
+                             TS_UI_FM_ACTION_OUTPUT_TRIM)
+                        target = WHEEL_TARGET_FM + 0x103;
                     if (target >= 0 && !ts_ui_wheel_guard_accept(
                             &ui.wheel_guard, target, SDL_GetTicks()))
                         continue;
@@ -10210,6 +10455,15 @@ int main(int argc, char **argv)
                         instrument.family_mutation = 1.0f;
                     snprintf(ui.fm_message, sizeof(ui.fm_message), "RANGE %d",
                              (int)lrintf(instrument.family_mutation * 100.0f));
+                } else if (wheel_y != 0 &&
+                           ts_ui_fm_action_from_point(x, y) ==
+                               TS_UI_FM_ACTION_OUTPUT_TRIM) {
+                    float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
+                    set_fm_output_trim(
+                        device, &audio, &ui,
+                        (float)ui.config.fm_output_percent / 100.0f +
+                            (wheel_y > 0 ? step : -step),
+                        1);
                 } else snprintf(ui.fm_message, sizeof(ui.fm_message),
                                 "HOVER AN FM CONTROL OR RANGE TO USE THE WHEEL");
             } else if (event.type == SDL_MOUSEWHEEL && ui.transform_open) {
@@ -10570,6 +10824,13 @@ int main(int argc, char **argv)
                     requested < (int64_t)ui.drone_overlap_frames ? -1 : 0,
                     obtained.freq);
             } else if (event.type == SDL_MOUSEMOTION &&
+                       ui.fm_open && ui.fm_output_dragging) {
+                int x, y;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
+                (void)y;
+                set_fm_output_trim(device, &audio, &ui,
+                                   (float)(x - 518) / 102.0f, 0);
+            } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.palette_open || ui.export_choice_open ||
                         ui.exchange_dialog != TS_UI_EXCHANGE_NONE ||
@@ -10767,11 +11028,18 @@ int main(int argc, char **argv)
                       !ui.show_ingredients))
                     ui.bank_clear_armed = 0;
                 if (ui.exit_confirm_open) {
-                    if (x >= 172 && x < 308 && y >= 188 && y < 211) {
-                        running = 0;
-                    } else if (x >= 324 && x < 468 && y >= 188 && y < 211) {
-                        ui.exit_confirm_open = 0;
-                        snprintf(ui.status, sizeof(ui.status), "EXIT CANCELLED");
+                    if (ui.exit_has_unsaved && y >= 188 && y < 211) {
+                        if (x >= 172 && x < 260) ui.exit_choice = 0;
+                        else if (x >= 266 && x < 354) ui.exit_choice = 1;
+                        else if (x >= 360 && x < 468) ui.exit_choice = 2;
+                        else continue;
+                        if (exit_confirmation_activate(&ui)) running = 0;
+                    } else if (!ui.exit_has_unsaved &&
+                               y >= 188 && y < 211) {
+                        if (x >= 172 && x < 308) ui.exit_choice = 0;
+                        else if (x >= 324 && x < 468) ui.exit_choice = 1;
+                        else continue;
+                        if (exit_confirmation_activate(&ui)) running = 0;
                     }
                 } else if (ui.overdub_confirm_open) {
                     if (x >= 166 && x < 302 && y >= 200 && y < 223)
@@ -10935,6 +11203,10 @@ int main(int argc, char **argv)
                             instrument.family_mutation = 1.0f;
                         snprintf(ui.fm_message, sizeof(ui.fm_message), "RANGE %d",
                                  (int)lrintf(instrument.family_mutation * 100.0f));
+                    } else if (fm_action == TS_UI_FM_ACTION_OUTPUT_TRIM) {
+                        ui.fm_output_dragging = 1;
+                        set_fm_output_trim(device, &audio, &ui,
+                                           (float)(x - 518) / 102.0f, 0);
                     } else if (fm_action == TS_UI_FM_ACTION_BACK) {
                         close_fm_workspace(device, &audio, &ui, &fm_preview);
                     }
@@ -11166,6 +11438,7 @@ int main(int argc, char **argv)
                         int index = ui.browser.scroll + row;
                         ts_browser_select(&ui.browser, index);
                         ui.browser.filename_focus = 0;
+                        ui.browser.action_focus = -1;
                         if (event.button.clicks >= 2)
                             browser_activate_selection(device, &audio, &ui, &instrument,
                                                        &pending_selection_load,
@@ -11195,7 +11468,7 @@ int main(int argc, char **argv)
                             ts_browser_set_scroll(&ui.browser, travel > 0 ?
                                                   (top * maximum + travel / 2) / travel : 0);
                         }
-                    } else if (ts_browser_mode_edits_filename(ui.browser.mode) &&
+                    } else if (ts_browser_edits_text(&ui.browser) &&
                                x >= 58 && x < 576 && y >= 294 && y < 318) {
                         size_t length = strlen(ui.browser.filename);
                         size_t cursor = ui.browser.filename_cursor > length ? length :
@@ -11207,21 +11480,29 @@ int main(int argc, char **argv)
                         clicked = first + (size_t)((x - 64 + 3) / 6);
                         ts_browser_set_filename_cursor(&ui.browser, clicked);
                         ui.browser.filename_focus = 1;
+                        ui.browser.action_focus = -2;
                         ui.browser.overwrite_armed = 0;
                         SDL_StartTextInput();
                     } else if (x >= 58 && x < 130 && y >= 326 && y < 349) {
+                        ui.browser.action_focus = 0;
                         ts_browser_parent(&ui.browser);
                     } else if (x >= 135 && x < 219 && y >= 326 && y < 349 &&
                                ts_browser_mode_allows_create_directory(ui.browser.mode)) {
-                        if (ui.browser.creating_directory)
+                        ui.browser.action_focus = 1;
+                        if (ui.browser.creating_directory) {
                             ts_browser_cancel_create_directory(&ui.browser);
-                        else (void)ts_browser_begin_create_directory(&ui.browser);
+                            if (!ts_browser_edits_text(&ui.browser))
+                                SDL_StopTextInput();
+                        } else if (ts_browser_begin_create_directory(&ui.browser))
+                            SDL_StartTextInput();
                     } else if (x >= 224 && x < 344 && y >= 326 && y < 349) {
+                        ui.browser.action_focus = 2;
                         browser_action(device, &audio, &ui, &instrument,
                                        &pending_selection_load,
                                        &sample_pages, parked_instrument,
                                        record_bank_active, &pending_file);
                     } else if (x >= 349 && x < 433 && y >= 326 && y < 349) {
+                        ui.browser.action_focus = 3;
                         browser_cancel(&ui);
                     }
                 } else if (y >= 4 && y < 28 && x >= 350 && x < 426) {
@@ -12091,6 +12372,14 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONUP &&
                        (event.button.button == SDL_BUTTON_LEFT ||
                         event.button.button == SDL_BUTTON_RIGHT)) {
+                if (ui.fm_output_dragging &&
+                    event.button.button == SDL_BUTTON_LEFT) {
+                    ui.fm_output_dragging = 0;
+                    set_fm_output_trim(
+                        device, &audio, &ui,
+                        (float)ui.config.fm_output_percent / 100.0f, 1);
+                    continue;
+                }
                 if (ui.transform_selection_dragging &&
                     event.button.button == SDL_BUTTON_LEFT) {
                     ui.transform_selection_dragging = 0;
@@ -12346,6 +12635,7 @@ int main(int argc, char **argv)
             ui.sister_source_mask = routing.source_mask;
         }
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
+        sister_window.model.text_cursor_visible = ui.text_cursor_visible;
         if (ui.file_busy)
             ui.file_busy_phase = (int)((SDL_GetTicks() / 180u) % 4u);
         if (!window_minimized) {

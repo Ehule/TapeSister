@@ -24,6 +24,17 @@ static TsStereoFrame frame_scale(TsStereoFrame value, float gain)
         (TsStereoFrame){value.l * gain, value.r * gain});
 }
 
+static TsStereoFrame frame_effect_return(TsStereoFrame dry,
+                                         TsStereoFrame processed,
+                                         float gain)
+{
+    TsStereoFrame result = {
+        dry.l + (processed.l - dry.l) * gain,
+        dry.r + (processed.r - dry.r) * gain
+    };
+    return ts_stereo_frame_sanitize(result);
+}
+
 static float frame_peak(TsStereoFrame value)
 {
     float left;
@@ -977,12 +988,14 @@ TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
     TsSisterRuntime *runtime, TsStereoFrame input)
 {
     TsStereoFrame output;
+    float return_gain;
     if (runtime == NULL || !runtime->post_fx.ready)
         return ts_stereo_frame_sanitize(input);
+    input = ts_stereo_frame_sanitize(input);
     output = ts_sister_post_fx_process(&runtime->post_fx,
         TS_SISTER_HEAD_COUNT, input, 0);
-    return frame_scale(output,
-        runtime_ramp_advance(&runtime->ordinary_fx_return_gain));
+    return_gain = runtime_ramp_advance(&runtime->ordinary_fx_return_gain);
+    return frame_effect_return(input, output, return_gain);
 }
 
 void ts_sister_runtime_process_block(TsSisterRuntime *runtime,

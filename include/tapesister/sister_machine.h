@@ -151,8 +151,9 @@ typedef struct {
     float monitor_wet;
     /* Post-filter MIX gain. Final linked safety remains authoritative. */
     float mix_output_gain;
-    /* Completed post-effects return trim. Applied before linked safety and
-       therefore also owns the explicit Master FX Feedback send level. */
+    /* Parallel return for the audible contribution made by the selected
+       Reverb/Delay/Distortion inserts. Zero preserves dry Sister audio; one
+       preserves the processor's established output exactly. */
     float fx_return_gain;
     float clear_ms;
 } TsSisterParameters;
@@ -164,8 +165,8 @@ typedef struct {
     TsStereoFrame input;
     TsStereoFrame head[TS_SISTER_HEAD_COUNT];
     TsStereoFrame mix;
-    /* Completed DISTORTION -> DELAY -> REVERB result before linked hardware
-       safety. This is the owned Master FX Feedback tap. */
+    /* Dry plus the scaled DISTORTION -> DELAY -> REVERB return before linked
+       hardware safety. This is the owned Master FX Feedback tap. */
     TsStereoFrame post_fx;
     /* Exact bounded frame offered to rolling memory this callback. */
     TsStereoFrame write;

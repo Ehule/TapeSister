@@ -103,7 +103,7 @@ snapshot positions.
 | Tape input | Smoothed master `INPUT`; this feeds fresh tape input, Sister DRY, and Duck sidechain. |
 | Heads | Private read/FX/feedback path, then per-head level; H1/H2 feedback enters the next tape write once. |
 | MIX | One head sum → headroom → Duck/filter → OUT → MIX Soak/post-FX. No second head normalization. |
-| Return | Smoothed `FX RET`, then Sister `DRY × input + WET × MIX`; MONITOR insertion ramps. Capture stays outside this audible return. |
+| Return | Smoothed `FX RET` scales only each post-effect wet-minus-dry contribution; then Sister uses `DRY × input + WET × MIX`. MONITOR insertion ramps. Capture stays outside this audible return. |
 | Speaker | Unrouted ordinary program + complementary direct handoff + Sister/post-FX + explicit EXT monitor + reference, followed by established master gain and per-channel safety. |
 
 Unity defaults preserve the established route. Mono is dual mono, stereo never counts

@@ -32,7 +32,7 @@ control.
 
 ```text
 head sum → headroom → Duck → Filter → OUT → PR8 MIX Soak/Bleed
-         → Distortion → Delay → Reverb → FX RET → post_fx → linked safety → MIX Capture
+         → dry/effected-chain blend by FX RET → post_fx → linked safety → MIX Capture
 ```
 
 MIX effects never enter a head send. H1/H2/H3 Capture remains pre-MIX-effects;
@@ -55,10 +55,11 @@ enabled EXT monitor ----------------------+→ MIX FX instance → post_fx → o
 reference ----------------------------------------------------------→ output
 ```
 
-`FX RET` is one smoothed 0–200% linked-stereo gain after the completed chain.
-It applies to this ordinary POWER-off branch and the Sister-active MIX branch.
-Its unity default is exact PR9 identity; zero silences the complete effected branch
-without changing effect tail state.
+`FX RET` is one smoothed 0–200% linked-stereo effects-return gain. At every selected
+head or MIX insertion it scales only the difference between the dry input and the
+completed Distortion → Delay → Reverb output. It applies to ordinary POWER-off MIX
+processing and Sister-active head/MIX processing. Its unity default is exact PR9
+identity; zero is exact dry bypass while effect tail state continues advancing.
 
 Head masks remain stored but dormant while POWER is off. Effects do not allocate
 or start the rolling buffer. Master FX Feedback has no destination and its causal

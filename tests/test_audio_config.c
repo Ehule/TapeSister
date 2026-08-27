@@ -26,6 +26,8 @@ static int test_defaults(void)
                   "default MIDI channel should be omni") &&
            expect(config.audio_buffer_frames == TS_AUDIO_BUFFER_FRAMES_DEFAULT,
                   "audio buffer should default to the performance-safe size") &&
+           expect(config.fm_output_percent == TS_FM_OUTPUT_PERCENT_DEFAULT,
+                  "FM output trim should default to a conservative level") &&
            expect(config.record_input_channel == TS_RECORD_INPUT_CHANNEL_DEFAULT,
                   "default input channel should remain channel 1") &&
            expect(config.capture_auto_resize == 1,
@@ -76,6 +78,7 @@ static int test_roundtrip(void)
              "Test MIDI Keyboard");
     saved.record_input_channel = 3;
     saved.audio_buffer_frames = 1024;
+    saved.fm_output_percent = 37;
     saved.midi_input_channel = 7;
     saved.capture_auto_resize = 0;
     saved.capture_max_seconds = 47;
@@ -122,6 +125,8 @@ static int test_roundtrip(void)
                 "stereo input mode should roundtrip") &&
          expect(loaded.audio_buffer_frames == 1024,
                 "audio buffer size should roundtrip") &&
+         expect(loaded.fm_output_percent == 37,
+                "FM output trim should roundtrip") &&
          expect(loaded.capture_auto_resize == 0,
                 "Capture auto resize should roundtrip") &&
          expect(loaded.waveform_display_mode == TS_WAVEFORM_DISPLAY_RIGHT &&

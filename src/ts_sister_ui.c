@@ -216,8 +216,8 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
     }
     if (model != NULL && model->fx_page) {
         static const int parameter[3][3] = {
-            {TS_SISTER_UI_PARAM_REVERB_TYPE, TS_SISTER_UI_PARAM_REVERB_MIX,
-             TS_SISTER_UI_PARAM_REVERB_DECAY},
+            {TS_SISTER_UI_PARAM_REVERB_TYPE, TS_SISTER_UI_PARAM_REVERB_DECAY,
+             TS_SISTER_UI_PARAM_REVERB_MIX},
             {TS_SISTER_UI_PARAM_DELAY_TIME, TS_SISTER_UI_PARAM_DELAY_FEEDBACK,
              TS_SISTER_UI_PARAM_DELAY_MIX},
             {TS_SISTER_UI_PARAM_DISTORTION_DRIVE,

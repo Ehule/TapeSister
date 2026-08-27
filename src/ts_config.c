@@ -27,6 +27,7 @@ void ts_config_init(TsConfig *config)
         config->voice_attack_ms = TS_AUDITION_ATTACK_MS_DEFAULT;
         config->ripple_cut_crop_canvas = 0;
         config->reference_tone_volume = TS_REFERENCE_TONE_VOLUME_DEFAULT;
+        config->fm_output_percent = TS_FM_OUTPUT_PERCENT_DEFAULT;
         config->audio_buffer_frames = TS_AUDIO_BUFFER_FRAMES_DEFAULT;
         config->record_input_channel = TS_RECORD_INPUT_CHANNEL_DEFAULT;
         config->midi_input_channel = TS_MIDI_INPUT_CHANNEL_DEFAULT;
@@ -243,6 +244,8 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_boolean(value, &loaded.ripple_cut_crop_canvas)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "reference_tone_volume") == 0) {
             if (!parse_clamped_integer(value, TS_REFERENCE_TONE_VOLUME_MIN, TS_REFERENCE_TONE_VOLUME_MAX, &loaded.reference_tone_volume)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "fm_output_percent") == 0) {
+            if (!parse_clamped_integer(value, TS_FM_OUTPUT_PERCENT_MIN, TS_FM_OUTPUT_PERCENT_MAX, &loaded.fm_output_percent)) { snprintf(error, error_size, "Invalid FM output level on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "record_input_channel") == 0) {
             if (!parse_clamped_integer(value, TS_RECORD_INPUT_CHANNEL_MIN, TS_RECORD_INPUT_CHANNEL_MAX, &loaded.record_input_channel)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "record_threshold_db") == 0) {
@@ -359,6 +362,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "ripple_cut_crop_canvas=%d\n"
                 "reference_tone_volume=%d\n"
                 "\n[Audition]\n"
+                "; FM LOGIC output trim applied to monitoring, Sister FM, and synth capture.\n"
+                "fm_output_percent=%d\n"
                 "; Per-voice note-on de-click ramp in milliseconds; 0 disables it, 20 is the maximum.\n"
                 "voice_attack_ms=%d\n"
                 "\n[External Recording]\n"
@@ -423,6 +428,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->chain_stamp_crossfade_ms,
                 config->ripple_cut_crop_canvas ? 1 : 0,
                 config->reference_tone_volume,
+                config->fm_output_percent,
                 config->voice_attack_ms,
                 config->record_input_device,
                 config->record_input_channel,
