@@ -161,6 +161,34 @@ void ts_ui_wheel_guard_interrupt(TsUiWheelGuard *guard, uint32_t now_ms)
     guard->suppress_until_quiet = 1;
 }
 
+void ts_ui_pointer_drag_begin(TsUiPointerDrag *drag, int target,
+                              uint32_t button_mask)
+{
+    if (drag == NULL) return;
+    drag->target = target;
+    drag->button_mask = button_mask;
+    drag->active = target >= 0 && button_mask != 0u;
+}
+
+void ts_ui_pointer_drag_cancel(TsUiPointerDrag *drag)
+{
+    if (drag == NULL) return;
+    drag->target = -1;
+    drag->button_mask = 0u;
+    drag->active = 0;
+}
+
+int ts_ui_pointer_drag_accept_motion(TsUiPointerDrag *drag, int target,
+                                     uint32_t button_state)
+{
+    if (drag == NULL || !drag->active) return 0;
+    if ((button_state & drag->button_mask) == 0u) {
+        ts_ui_pointer_drag_cancel(drag);
+        return 0;
+    }
+    return target == drag->target;
+}
+
 int ts_ui_waveform_mode_contains(int x, int y)
 {
     return x >= 526 && x < 620 && y >= 43 && y < 60;

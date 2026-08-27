@@ -264,6 +264,15 @@ typedef struct {
     int suppress_until_quiet;
 } TsUiWheelGuard;
 
+/* SDL motion events report a button mask, but that mask can outlive the
+   window that received the corresponding button-down. Require an explicit
+   local press before motion is allowed to edit a value. */
+typedef struct {
+    int target;
+    uint32_t button_mask;
+    int active;
+} TsUiPointerDrag;
+
 typedef struct {
     uint64_t waveform_revisions[TS_UI_WAVEFORM_COUNT];
     TsUiWheelGuard wheel_guard;
@@ -554,6 +563,11 @@ int ts_ui_fm_background_click_allowed(const TsUiState *ui, int x, int y);
 int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
                              uint32_t now_ms);
 void ts_ui_wheel_guard_interrupt(TsUiWheelGuard *guard, uint32_t now_ms);
+void ts_ui_pointer_drag_begin(TsUiPointerDrag *drag, int target,
+                              uint32_t button_mask);
+void ts_ui_pointer_drag_cancel(TsUiPointerDrag *drag);
+int ts_ui_pointer_drag_accept_motion(TsUiPointerDrag *drag, int target,
+                                     uint32_t button_state);
 int ts_ui_waveform_mode_contains(int x, int y);
 int ts_ui_record_source_button_from_point(int x, int y);
 int ts_ui_canvas_edge_from_point(int x, int y);

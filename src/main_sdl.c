@@ -6513,6 +6513,7 @@ typedef struct {
     TsSisterPresetBank presets;
     size_t preset_index;
     int parameter_lock_gesture;
+    TsUiPointerDrag parameter_drag;
 } SisterWindow;
 
 enum {
@@ -6621,6 +6622,8 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
 static void sister_window_hide(SisterWindow *sister)
 {
     if (sister == NULL) return;
+    sister->parameter_lock_gesture = 0;
+    ts_ui_pointer_drag_cancel(&sister->parameter_drag);
     ts_sister_ui_model_hide(&sister->model);
     if (sister->window != NULL) SDL_HideWindow(sister->window);
 }
@@ -9034,9 +9037,13 @@ int main(int argc, char **argv)
                            event.window.event == SDL_WINDOWEVENT_MINIMIZED) {
                     sister_window.minimized = 1;
                     sister_window.parameter_lock_gesture = 0;
+                    ts_ui_pointer_drag_cancel(&sister_window.parameter_drag);
                 } else if (event.type == SDL_WINDOWEVENT &&
-                           event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                           (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+                            event.window.event == SDL_WINDOWEVENT_LEAVE ||
+                            event.window.event == SDL_WINDOWEVENT_HIDDEN)) {
                     sister_window.parameter_lock_gesture = 0;
+                    ts_ui_pointer_drag_cancel(&sister_window.parameter_drag);
                 } else if (event.type == SDL_WINDOWEVENT &&
                            (event.window.event == SDL_WINDOWEVENT_RESTORED ||
                             event.window.event == SDL_WINDOWEVENT_SHOWN ||
@@ -9131,6 +9138,7 @@ int main(int argc, char **argv)
                                            &x, &y)) {
                         TsSisterUiHit hit = ts_sister_ui_hit_test_model(
                             &sister_window.model, x, y);
+                        ts_ui_pointer_drag_cancel(&sister_window.parameter_drag);
                         if (event.button.button == SDL_BUTTON_LEFT &&
                             (SDL_GetModState() & KMOD_SHIFT) != 0 &&
                             hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
@@ -9141,6 +9149,16 @@ int main(int argc, char **argv)
                         } else {
                             if (event.button.button == SDL_BUTTON_LEFT)
                                 sister_window.parameter_lock_gesture = 0;
+                            if (hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+                                !ts_sister_ui_parameter_locked(
+                                    &sister_window.model, hit.index)) {
+                                uint32_t button_mask =
+                                    event.button.button == SDL_BUTTON_LEFT ?
+                                    SDL_BUTTON_LMASK : SDL_BUTTON_RMASK;
+                                ts_ui_pointer_drag_begin(
+                                    &sister_window.parameter_drag,
+                                    hit.index, button_mask);
+                            }
                             sister_apply_action(
                             device, &audio, &ui, &instrument, &sister_window,
                             &input_device, &external_input,
@@ -9149,19 +9167,27 @@ int main(int argc, char **argv)
                         }
                     }
                 } else if (event.type == SDL_MOUSEBUTTONUP &&
-                           event.button.button == SDL_BUTTON_LEFT) {
-                    sister_window.parameter_lock_gesture = 0;
+                           (event.button.button == SDL_BUTTON_LEFT ||
+                            event.button.button == SDL_BUTTON_RIGHT)) {
+                    if (event.button.button == SDL_BUTTON_LEFT)
+                        sister_window.parameter_lock_gesture = 0;
+                    ts_ui_pointer_drag_cancel(&sister_window.parameter_drag);
                 } else if (event.type == SDL_MOUSEMOTION &&
-                           !sister_window.parameter_lock_gesture &&
-                           (event.motion.state &
-                            (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK)) != 0u) {
+                           !sister_window.parameter_lock_gesture) {
                     int x, y;
                     TsSisterUiHit hit;
+                    int target;
                     if (!sister_event_mouse(event.motion.x, event.motion.y,
-                                            &x, &y))
+                                            &x, &y)) {
+                        ts_ui_pointer_drag_cancel(&sister_window.parameter_drag);
                         continue;
+                    }
                     hit = ts_sister_ui_hit_test_model(&sister_window.model, x, y);
-                    if (hit.action == TS_SISTER_UI_ACTION_PARAMETER)
+                    target = hit.action == TS_SISTER_UI_ACTION_PARAMETER ?
+                             hit.index : -1;
+                    if (ts_ui_pointer_drag_accept_motion(
+                            &sister_window.parameter_drag, target,
+                            event.motion.state))
                         sister_apply_action(device, &audio, &ui, &instrument,
                                             &sister_window, &input_device,
                                             &external_input, hit,
