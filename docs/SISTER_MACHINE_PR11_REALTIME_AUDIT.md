@@ -69,20 +69,30 @@ repeated silence/re-prime gaps. Its bounded adaptive ratio uses linked-stereo li
 interpolation, so correction does not introduce raw sample skips or holds; the selected
 256/512/1024 device size makes the reserve explicit and testable.
 
-## H2/H1 investigation
+## H2/H3 position investigation
 
-No audio or state alias was reproduced. A deterministic regression issues H2-only
-scrub/rate updates and proves H1 phase/current/target remain bit-for-bit unchanged;
-then it drives unequal rates through a deliberate crossing and verifies all head and
-per-target FX state addresses are independent and in range. Resize, wrap, HOLD, ROLL,
-source, Soak/Bleed, masks, post effects, and feedback are also randomized.
+The video-confirmed H2 jump was a real DSP read relocation also reported faithfully by
+the UI. H2 and H3 converted their fixed 60-second physical-store phase to a signed age
+at the store's 30-second midpoint, then wrapped that value by the independently selected
+5–60-second logical buffer. For a 46-second buffer, crossing 30 seconds therefore
+changed the equivalent physical age by 60 seconds and remapped it to a different
+interior position modulo 46 seconds. H3 shared the same conversion and was affected.
+H1 and the write marker do not use this free-head conversion.
 
-The intermittent report is consistent with a display collision: when exact H1 and H2
-positions mapped to the same narrow canvas column, the later marker overwrote the
-earlier marker and appeared to “jump onto” it. Rendering now gives coincident markers
-small symmetric pixel offsets. Audio positions and atomic snapshot values are not
-changed. Residual risk is a hardware-only audible report that was not reproduced; the
-manual checklist asks the user to listen while forcing repeated unequal-rate crossings.
+H2/H3 now own an authoritative logical age in the active musical buffer; their physical
+store phase is derived from it after each write-clock advance. Scrub/Span ramps alter
+that logical age, Rate advances it independently per head, and the existing guarded
+read/handoff remains unchanged. Atomic snapshots still derive their normalized values
+from the exact guarded audio read position, and the waveform marker remains a linear
+mapping of that normalized value. A deterministic 46-second regression records the old
+`16001 -> 30001` interior jump (14,000 frames at a -2-frame expected increment) and
+requires `16001 -> 15999` after the fix. Multi-duration tests cover two complete
+traversals, reverse/slow/unity/fast rates, mono/stereo, muted/audible heads, marker/audio
+identity, edge wraps, live Scrub/Span ramps, HOLD, and ROLL.
+
+The earlier display-collision correction remains valid for exact marker overlaps: it
+only gives coincident colors small symmetric pixel offsets and never changes DSP or
+snapshot positions.
 
 ## Certified gain order
 

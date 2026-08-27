@@ -58,8 +58,9 @@ decorrelation, Width or final safety, matching Kafka's topology.
   at least one frame. Small changes use a sample-rate-independent 20 ms smoothing law.
   Discontinuous changes use dual reads and a 15 ms crossfade rather than Doppler glide.
 - **H2 full-buffer scrub:** level, normalized scrub and feedback are `0..1`. Scrub
-  covers the complete buffer and ramps over 50 ms. Its signed phase preserves the
-  selected write-clock relationship at rate `+1`.
+  covers the complete buffer and ramps over 50 ms. Its logical age preserves the
+  selected write-clock relationship at rate `+1`; the fixed-store phase is derived
+  from that age and cannot rebase it at the physical ring midpoint.
 - **H3 short span:** level and normalized span are `0..1`; the span covers at most
   eight seconds regardless of sample rate or backing-buffer duration. H3 has no
   feedback.

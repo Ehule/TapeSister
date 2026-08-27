@@ -61,7 +61,8 @@ typedef struct {
 } TsSisterRamp;
 
 typedef struct {
-    double phase;
+    double phase;             /* Derived position in the fixed physical store. */
+    double logical_age;       /* H2/H3 age in the active musical buffer. */
     double previous_offset;
     double old_delay_frames;
     double current_delay_frames;

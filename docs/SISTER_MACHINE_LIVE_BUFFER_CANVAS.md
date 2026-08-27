@@ -71,7 +71,8 @@ source/feedback + retained logical cell → bounded write at now
 ```
 
 Callback-owned state includes the logical/current and pending frame counts, coalesce
-counter, valid-history horizon, head phases/handoff ramps, recurrence handoff, write
+counter, valid-history horizon, H2/H3 logical ages, derived physical head phases,
+handoff ramps, recurrence handoff, write
 clock, PR8 weave state, PR9 effect histories, and causal Master FX return. UI-owned
 state includes the visible requested seconds and pointer/wheel state. Atomic snapshots
 publish current seconds, target seconds, and pending status.
