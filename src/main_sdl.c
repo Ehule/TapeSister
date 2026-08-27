@@ -9200,7 +9200,9 @@ int main(int argc, char **argv)
                     continue;
                 }
                 if (global_key == SDLK_BACKQUOTE && !modal_key_owner) {
-                    if (!ui.fm_open)
+                    if (ui.fm_open)
+                        close_fm_workspace(device, &audio, &ui, &fm_preview);
+                    else
                         begin_fm_workspace(device, &audio, &ui, &instrument,
                                            &fm_preview);
                     application_window_focus(window);
