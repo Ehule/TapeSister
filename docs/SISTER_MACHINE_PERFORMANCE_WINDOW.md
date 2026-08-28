@@ -147,6 +147,10 @@ growth and undo/redo. Overdub follows the base tile's channel shape. A Sister so
 cannot also be a target; recursion remains capture-to-another-tile followed by an explicit
 source-mask action.
 
+While recording, the active CAPTURE or OVERDUB button reads STOP and carries the same
+blinking hollow active-tile frame used to identify a live destination. The blink is driven
+only by the UI clock and does not add callback work or alter capture timing.
+
 ## Preferences and restart policy
 
 Configuration supplies the startup buffer duration/channel shape; PR10 promotes

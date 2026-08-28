@@ -314,6 +314,18 @@ static void wave_rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t co
     if (w > 0 && h > 0) rect(fb, x, y, w, h, color);
 }
 
+static void recording_button_outline(TsFramebuffer *fb, int x, int y,
+                                     int w, int h, int visible)
+{
+    if (fb == NULL || !visible) return;
+    /* Match the hollow active-tile frame so a live print remains obvious
+       even when the operator is watching the waveform instead of status. */
+    rect(fb, x - 2, y - 2, w + 4, 3, PAL_ACTIVE_TILE);
+    rect(fb, x - 2, y + h, w + 4, 3, PAL_ACTIVE_TILE);
+    rect(fb, x - 2, y - 2, 3, h + 5, PAL_ACTIVE_TILE);
+    rect(fb, x + w - 1, y - 2, 3, h + 5, PAL_ACTIVE_TILE);
+}
+
 static uint32_t blend_color(uint32_t background, uint32_t foreground,
                             unsigned foreground_percent)
 {
@@ -3760,8 +3772,20 @@ sister_footer:
              model->preset_name[0] != '\0' ? model->preset_name : "PRESET");
     button(fb, 264, 370, 130, preset_label, 0);
     button(fb, 400, 370, 28, ">", 0);
-    button(fb, 450, 370, 82, "CAPTURE", model->routing.capture_state != TS_CAPTURE_IDLE && !model->capture_overdub);
-    button(fb, 538, 370, 92, "OVERDUB", model->routing.capture_state != TS_CAPTURE_IDLE && model->capture_overdub);
+    {
+        int recording = model->routing.capture_state == TS_CAPTURE_RECORDING;
+        int capturing = recording && !model->capture_overdub;
+        int overdubbing = recording && model->capture_overdub;
+        button(fb, 450, 370, 82, capturing ? "STOP" : "CAPTURE",
+               model->routing.capture_state != TS_CAPTURE_IDLE &&
+               !model->capture_overdub);
+        button(fb, 538, 370, 92, overdubbing ? "STOP" : "OVERDUB",
+               model->routing.capture_state != TS_CAPTURE_IDLE &&
+               model->capture_overdub);
+        recording_button_outline(
+            fb, capturing ? 450 : 538, 370, capturing ? 82 : 92, 22,
+            recording && model->text_cursor_visible);
+    }
 
     if (model->preset_manage_open) {
         rect(fb, 160, 130, 320, 170, RGB(8, 8, 9));

@@ -256,6 +256,24 @@ int main(void)
           palette.colors[TS_PALETTE_PATTERN_NOTE]);
     CHECK(framebuffer.pixels[344u * TS_UI_WIDTH + 145u] ==
           palette.colors[TS_PALETTE_PATTERN_EFFECT]);
+    model.routing.capture_state = TS_CAPTURE_RECORDING;
+    model.capture_overdub = 0;
+    model.text_cursor_visible = 1;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[368u * TS_UI_WIDTH + 448u] ==
+          palette.colors[TS_PALETTE_ACTIVE_TILE]);
+    model.text_cursor_visible = 0;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[368u * TS_UI_WIDTH + 448u] !=
+          palette.colors[TS_PALETTE_ACTIVE_TILE]);
+    model.capture_overdub = 1;
+    model.text_cursor_visible = 1;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[368u * TS_UI_WIDTH + 536u] ==
+          palette.colors[TS_PALETTE_ACTIVE_TILE]);
+    model.routing.capture_state = TS_CAPTURE_IDLE;
+    model.capture_overdub = 0;
+    model.text_cursor_visible = 0;
     model.parameter_locks =
         TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_H1_LEVEL);
     ts_sister_ui_render(&framebuffer, &model, &palette);
