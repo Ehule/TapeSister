@@ -6887,6 +6887,8 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: parameters->fx.fallout.transition = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: parameters->fx.fallout.lfo_rate = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: parameters->fx.fallout.lfo_intensity = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH: parameters->fx.fallout.rise_length = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY: parameters->fx.fallout.rise_intensity = amount; break;
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
         parameters->buffer_seconds = (float)TS_SISTER_MIN_SECONDS +
             amount * (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
@@ -6961,6 +6963,8 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: value = parameters->fx.fallout.transition; break;
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: value = parameters->fx.fallout.lfo_rate; break;
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: value = parameters->fx.fallout.lfo_intensity; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH: value = parameters->fx.fallout.rise_length; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY: value = parameters->fx.fallout.rise_intensity; break;
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
         value = (parameters->buffer_seconds - (float)TS_SISTER_MIN_SECONDS) /
             (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
@@ -7081,6 +7085,8 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: return "FALLOUT TRANSITION";
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: return "FALLOUT LFO RATE";
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: return "FALLOUT LFO DEPTH";
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH: return "FALLOUT RISE LENGTH";
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY: return "FALLOUT RISE DEPTH";
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS: return "BUFFER DURATION";
     default: return "PARAMETER";
     }
@@ -7471,6 +7477,32 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                  "FALLOUT LFO TARGETS UPDATED");
         return;
     }
+    if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET ||
+        hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE) {
+        TsSisterFalloutControls *fallout =
+            &sister->model.parameters.fx.fallout;
+        if (device) SDL_LockAudioDevice(device);
+        if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET) {
+            fallout->rise_targets ^= (uint32_t)hit.index;
+        } else {
+            fallout->rise_mode = (TsSisterFalloutRiseMode)hit.index;
+            if (fallout->rise_mode == TS_SISTER_FALLOUT_RISE_ONE_SHOT)
+                ++fallout->rise_retrigger;
+        }
+        ts_sister_runtime_set_parameters(&audio->sister,
+                                         &sister->model.parameters);
+        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        if (device) SDL_UnlockAudioDevice(device);
+        sister_preset_model_sync(sister, &audio->sister);
+        if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET)
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "FALLOUT RISE TARGETS UPDATED");
+        else
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "FALLOUT RISE %s",
+                     ts_sister_fallout_rise_mode_name(fallout->rise_mode));
+        return;
+    }
     if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
         hit.action != TS_SISTER_UI_ACTION_CAPTURE_FORMAT &&
         hit.action != TS_SISTER_UI_ACTION_DESTINATION &&
@@ -7569,6 +7601,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             ui->config.sister_fallout_transition_ms = (int)lrintf(
                 ts_sister_fallout_transition_ms(
                     sister->model.parameters.fx.fallout.transition));
+        else if (hit.index == TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH)
+            ui->config.sister_fallout_rise_seconds = (int)lrintf(
+                ts_sister_fallout_rise_seconds(
+                    sister->model.parameters.fx.fallout.rise_length));
         break;
     case TS_SISTER_UI_ACTION_FALLOUT_TOGGLE: {
         TsSisterFalloutControls *fallout =
@@ -9049,6 +9085,9 @@ int main(int argc, char **argv)
         parameters.fx.fallout.transition =
             ts_sister_fallout_transition_normalized(
                 (float)ui.config.sister_fallout_transition_ms);
+        parameters.fx.fallout.rise_length =
+            ts_sister_fallout_rise_normalized(
+                (float)ui.config.sister_fallout_rise_seconds);
         ts_sister_runtime_set_parameters(&audio.sister, &parameters);
     }
     ts_sister_runtime_input_available(&audio.sister, 0);

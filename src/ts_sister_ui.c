@@ -130,6 +130,9 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
         model->parameters.fx.fallout.transition =
             ts_sister_fallout_transition_normalized(
                 (float)config->sister_fallout_transition_ms);
+        model->parameters.fx.fallout.rise_length =
+            ts_sister_fallout_rise_normalized(
+                (float)config->sister_fallout_rise_seconds);
     }
     snprintf(model->status, sizeof(model->status),
              "CLICK POWER TO ENABLE - WINDOW CLOSE HIDES ONLY");
@@ -182,16 +185,29 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             TS_SISTER_FALLOUT_LFO_PITCH_RAMP,
             TS_SISTER_FALLOUT_LFO_PITCH_RATE
         };
-        if (contains(x, y, 434, 74, 80, 22)) {
+        if (contains(x, y, 474, 72, 76, 22)) {
             hit.action = TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG;
+            return hit;
+        }
+        if (contains(x, y, 300, 72, 72, 22) ||
+            contains(x, y, 378, 72, 88, 22)) {
+            hit.action = TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE;
+            hit.index = contains(x, y, 300, 72, 72, 22) ?
+                TS_SISTER_FALLOUT_RISE_SAW :
+                TS_SISTER_FALLOUT_RISE_ONE_SHOT;
             return hit;
         }
         for (int target = 0; target < 13; ++target) {
             int column = target / 7;
             int row = target % 7;
-            if (contains(x, y, 126 + column * 206, 108 + row * 25,
-                         180, 22)) {
+            int base_x = 90 + column * 240;
+            if (contains(x, y, base_x + 144, 112 + row * 25, 34, 22)) {
                 hit.action = TS_SISTER_UI_ACTION_FALLOUT_LFO_TARGET;
+                hit.index = (int)targets[target];
+                return hit;
+            }
+            if (contains(x, y, base_x + 184, 112 + row * 25, 34, 22)) {
+                hit.action = TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET;
                 hit.index = (int)targets[target];
                 return hit;
             }
@@ -293,16 +309,28 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             hit.action = TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG;
             return hit;
         }
-        if (contains(x, y, 548, 88, 36, 152)) {
+        if (contains(x, y, 546, 101, 20, 127)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE;
-            hit.normalized = 1.0f - (float)(y - 88) / 151.0f;
+            hit.normalized = 1.0f - (float)(y - 101) / 126.0f;
             return hit;
         }
-        if (contains(x, y, 590, 88, 36, 152)) {
+        if (contains(x, y, 567, 101, 20, 127)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY;
-            hit.normalized = 1.0f - (float)(y - 88) / 151.0f;
+            hit.normalized = 1.0f - (float)(y - 101) / 126.0f;
+            return hit;
+        }
+        if (contains(x, y, 588, 101, 20, 127)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH;
+            hit.normalized = 1.0f - (float)(y - 101) / 126.0f;
+            return hit;
+        }
+        if (contains(x, y, 609, 101, 20, 127)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY;
+            hit.normalized = 1.0f - (float)(y - 101) / 126.0f;
             return hit;
         }
         if (contains(x, y, 10, 370, 58, 22)) hit.action = TS_SISTER_UI_ACTION_TAP;

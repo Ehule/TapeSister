@@ -96,6 +96,8 @@ static void test_sanitize_and_memory(void)
     controls.pitch = 12.0f;
     controls.noise_type = (TsSisterFalloutNoiseType)99;
     controls.lfo_targets = UINT32_MAX;
+    controls.rise_mode = (TsSisterFalloutRiseMode)99;
+    controls.rise_targets = UINT32_MAX;
     ts_sister_fallout_controls_sanitize(&controls);
     assert(controls.mix == 0.0f);
     assert(controls.feedback == 0.0f);
@@ -103,6 +105,8 @@ static void test_sanitize_and_memory(void)
     assert(controls.pitch == 1.0f);
     assert(controls.noise_type == TS_SISTER_FALLOUT_NOISE_WHITE);
     assert(controls.lfo_targets == TS_SISTER_FALLOUT_LFO_ALL);
+    assert(controls.rise_mode == TS_SISTER_FALLOUT_RISE_ONE_SHOT);
+    assert(controls.rise_targets == TS_SISTER_FALLOUT_LFO_ALL);
     assert(ts_sister_fallout_init(&engine, 44100u));
     assert(ts_sister_fallout_memory_bytes(&engine) ==
            (size_t)44100u * 20u * 2u * sizeof(float));
@@ -123,6 +127,15 @@ static void test_transition_noise_and_centered_lfo(void)
     assert(fabsf(ts_sister_fallout_lfo_hz(0.0f) - 1.0f / 3600.0f) <
            0.000001f);
     assert(fabsf(ts_sister_fallout_lfo_hz(1.0f) - 10.0f) < 0.001f);
+    assert(fabsf(ts_sister_fallout_rise_seconds(0.0f) - 1.0f) < 0.001f);
+    assert(fabsf(ts_sister_fallout_rise_seconds(1.0f) - 14400.0f) < 0.1f);
+    assert(fabsf(ts_sister_fallout_rise_normalized(1.0f)) < 0.0001f);
+    assert(fabsf(ts_sister_fallout_rise_normalized(14400.0f) - 1.0f) <
+           0.0001f);
+    assert(fabsf(ts_sister_fallout_rise_modulate(0.0f, 1.0f, 0.5f) -
+                 0.5f) < 0.0001f);
+    assert(fabsf(ts_sister_fallout_rise_modulate(0.5f, 0.5f, 1.0f) -
+                 0.75f) < 0.0001f);
     /* A 0..10 control centered at 5 travels 4..6 at 20% and 0..10 at 100%. */
     assert(fabsf(ts_sister_fallout_lfo_modulate(0.5f, 0.2f, -1.0f) -
                  0.4f) < 0.0001f);
@@ -185,6 +198,36 @@ static void test_transition_noise_and_centered_lfo(void)
     (void)ts_sister_fallout_process(&engine, silence);
     assert(ts_sister_fallout_feedback_amount(&engine) < 0.001f);
     assert(engine.controls.feedback == 0.5f);
+    ts_sister_fallout_free(&engine);
+
+    /* RISE moves the center; the LFO then oscillates around that center. */
+    ts_sister_fallout_controls_default(&controls);
+    controls.enabled = 1;
+    controls.feedback = 0.25f;
+    controls.rise_length = 0.0f;
+    controls.rise_intensity = 1.0f;
+    controls.rise_targets = TS_SISTER_FALLOUT_LFO_FEEDBACK;
+    controls.lfo_intensity = 0.4f;
+    controls.lfo_targets = TS_SISTER_FALLOUT_LFO_FEEDBACK;
+    assert(ts_sister_fallout_init(&engine, 100u));
+    ts_sister_fallout_set_controls(&engine, &controls);
+    engine.rise_phase = 0.5;
+    engine.lfo_phase = 0.25;
+    (void)ts_sister_fallout_process(&engine, silence);
+    /* RISE center 0.625; LFO excursion is .4 * .375 = .15. */
+    assert(fabsf(ts_sister_fallout_feedback_amount(&engine) - 0.775f) <
+           0.001f);
+    engine.rise_phase = 0.999;
+    engine.lfo_phase = 0.0;
+    (void)ts_sister_fallout_process(&engine, silence);
+    assert(ts_sister_fallout_feedback_amount(&engine) > 0.999f);
+    (void)ts_sister_fallout_process(&engine, silence);
+    assert(ts_sister_fallout_feedback_amount(&engine) > 0.24f &&
+           ts_sister_fallout_feedback_amount(&engine) < 0.27f);
+    assert(engine.rise_one_shot_complete);
+    ++controls.rise_retrigger;
+    ts_sister_fallout_set_controls(&engine, &controls);
+    assert(!engine.rise_one_shot_complete && engine.rise_phase == 0.0);
     ts_sister_fallout_free(&engine);
 }
 

@@ -15,6 +15,12 @@ typedef enum {
 } TsSisterFalloutNoiseType;
 
 typedef enum {
+    TS_SISTER_FALLOUT_RISE_SAW = 0,
+    TS_SISTER_FALLOUT_RISE_ONE_SHOT,
+    TS_SISTER_FALLOUT_RISE_MODE_COUNT
+} TsSisterFalloutRiseMode;
+
+typedef enum {
     TS_SISTER_FALLOUT_LFO_MIX = 1u << 0,
     TS_SISTER_FALLOUT_LFO_FEEDBACK = 1u << 1,
     TS_SISTER_FALLOUT_LFO_NOISE = 1u << 2,
@@ -54,10 +60,17 @@ typedef struct {
     float pitch;
     float pitch_ramp;
     float pitch_rate;
-    /* Logarithmic 1 cycle/hour..10 Hz sine LFO. */
+    /* Logarithmic 1 cycle/hour..10 Hz sine rate. */
     float lfo_rate;
     float lfo_intensity;
     uint32_t lfo_targets;
+    TsSisterFalloutRiseMode rise_mode;
+    /* Logarithmic 1 second..4 hour rise length. */
+    float rise_length;
+    float rise_intensity;
+    uint32_t rise_targets;
+    /* UI edge counter: selecting 1-SHOT again re-arms it. */
+    uint32_t rise_retrigger;
 } TsSisterFalloutControls;
 
 typedef struct {
@@ -107,7 +120,10 @@ typedef struct {
     float previous_white[2];
     double lfo_phase;
     float lfo_value;
+    double rise_phase;
+    float rise_value;
     float feedback_modulated;
+    int rise_one_shot_complete;
     TsSisterFalloutControls controls;
     int active;
     int ready;
@@ -116,12 +132,17 @@ typedef struct {
 void ts_sister_fallout_controls_default(TsSisterFalloutControls *controls);
 void ts_sister_fallout_controls_sanitize(TsSisterFalloutControls *controls);
 const char *ts_sister_fallout_noise_type_name(TsSisterFalloutNoiseType type);
+const char *ts_sister_fallout_rise_mode_name(TsSisterFalloutRiseMode mode);
 float ts_sister_fallout_transition_ms(float normalized);
 float ts_sister_fallout_transition_normalized(float milliseconds);
 float ts_sister_fallout_lfo_hz(float normalized);
 float ts_sister_fallout_lfo_normalized(float hz);
+float ts_sister_fallout_rise_seconds(float normalized);
+float ts_sister_fallout_rise_normalized(float seconds);
 float ts_sister_fallout_lfo_modulate(float center, float intensity,
                                      float sine_value);
+float ts_sister_fallout_rise_modulate(float start, float intensity,
+                                      float ramp_value);
 int ts_sister_fallout_init(TsSisterFalloutEngine *engine,
                            uint32_t sample_rate);
 int ts_sister_fallout_reconfigure(TsSisterFalloutEngine *engine,

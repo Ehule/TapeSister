@@ -111,7 +111,9 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "FalloutPitchEnabled=%d\nFalloutPitch=%.9g\n"
         "FalloutPitchRamp=%.9g\nFalloutPitchRate=%.9g\n"
         "FalloutLfoRate=%.9g\nFalloutLfoIntensity=%.9g\n"
-        "FalloutLfoTargets=%u\n",
+        "FalloutLfoTargets=%u\nFalloutRiseMode=%d\n"
+        "FalloutRiseLength=%.9g\nFalloutRiseIntensity=%.9g\n"
+        "FalloutRiseTargets=%u\n",
         p->head1_level, p->head1_time_ms, p->head1_feedback,
         p->head2_level, p->head2_scrub, p->head2_rate_index, p->head2_feedback,
         p->head3_level, p->head3_span, p->head3_rate_index, p->wow, p->drop,
@@ -140,7 +142,9 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx.fallout.pitch, p->fx.fallout.pitch_ramp,
         p->fx.fallout.pitch_rate, p->fx.fallout.lfo_rate,
         p->fx.fallout.lfo_intensity,
-        (unsigned)p->fx.fallout.lfo_targets) >= 0;
+        (unsigned)p->fx.fallout.lfo_targets, p->fx.fallout.rise_mode,
+        p->fx.fallout.rise_length, p->fx.fallout.rise_intensity,
+        (unsigned)p->fx.fallout.rise_targets) >= 0;
 }
 
 int ts_sister_project_state_save(const TsSisterProjectState *state,
@@ -312,6 +316,18 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     if (strcmp(key, "FalloutLfoTargets") == 0) {
         if (!parse_int_value(value, &integer) || integer < 0) return 0;
         p->fx.fallout.lfo_targets = (uint32_t)integer;
+        return 1;
+    }
+    if (strcmp(key, "FalloutRiseMode") == 0) {
+        if (!parse_int_value(value, &integer)) return 0;
+        p->fx.fallout.rise_mode = (TsSisterFalloutRiseMode)integer;
+        return 1;
+    }
+    PF("FalloutRiseLength", fx.fallout.rise_length);
+    PF("FalloutRiseIntensity", fx.fallout.rise_intensity);
+    if (strcmp(key, "FalloutRiseTargets") == 0) {
+        if (!parse_int_value(value, &integer) || integer < 0) return 0;
+        p->fx.fallout.rise_targets = (uint32_t)integer;
         return 1;
     }
     if (strcmp(key, "ReverbTargets") == 0 ||

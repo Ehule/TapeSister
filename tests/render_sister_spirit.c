@@ -43,6 +43,15 @@ int main(int argc, char **argv)
             TS_SISTER_FALLOUT_LFO_NOISE |
             TS_SISTER_FALLOUT_LFO_FEEDBACK |
             TS_SISTER_FALLOUT_LFO_PITCH_RATE;
+        model.parameters.fx.fallout.rise_mode =
+            TS_SISTER_FALLOUT_RISE_ONE_SHOT;
+        model.parameters.fx.fallout.rise_length =
+            ts_sister_fallout_rise_normalized(3600.0f);
+        model.parameters.fx.fallout.rise_intensity = 0.82f;
+        model.parameters.fx.fallout.rise_targets =
+            TS_SISTER_FALLOUT_LFO_MIX |
+            TS_SISTER_FALLOUT_LFO_FEEDBACK |
+            TS_SISTER_FALLOUT_LFO_NOISE;
         model.fallout_lfo_open = strcmp(mode, "fallout-lfo") == 0;
         snprintf(model.status, sizeof(model.status),
                  "FALLOUT INSERT ENGAGED");

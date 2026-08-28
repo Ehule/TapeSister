@@ -3570,23 +3570,30 @@ static void sister_fallout_time_label(char *text_value, size_t size,
 static void sister_fallout_lfo_panel(TsFramebuffer *fb,
                                      const TsSisterFalloutControls *controls)
 {
-    const int track_y = 88;
-    const int track_height = 152;
-    const int lane_x[2] = {562, 604};
-    const float amount[2] = {controls->lfo_rate, controls->lfo_intensity};
-    const uint32_t color[2] = {PAL_TUNING, PAL_EFFECT};
+    const int track_y = 101;
+    const int track_height = 127;
+    const int lane_x[4] = {551, 572, 593, 614};
+    const float amount[4] = {controls->lfo_rate, controls->lfo_intensity,
+                             controls->rise_length, controls->rise_intensity};
+    const uint32_t color[4] = {PAL_TUNING, PAL_EFFECT, PAL_NOTE, PAL_EFFECT};
     char value[24];
     float hz = ts_sister_fallout_lfo_hz(controls->lfo_rate);
     float period = 1.0f / hz;
+    float rise = ts_sister_fallout_rise_seconds(controls->rise_length);
     rect(fb, 540, 48, 90, 256, RGB(15, 14, 16));
-    button(fb, 548, 55, 74, "LFO", controls->lfo_targets != 0u);
-    text(fb, 551, 79, "RATE", PAL_TUNING, 1);
-    text(fb, 593, 79, "DEPTH", PAL_EFFECT, 1);
-    for (int lane = 0; lane < 2; ++lane) {
+    button(fb, 548, 55, 74, "MOD", controls->lfo_targets != 0u ||
+           controls->rise_targets != 0u);
+    text(fb, 548, 79, "LFO", PAL_TUNING, 1);
+    text(fb, 591, 79, "RISE", PAL_NOTE, 1);
+    text(fb, 551, 90, "R", PAL_TUNING, 1);
+    text(fb, 573, 90, "D", PAL_EFFECT, 1);
+    text(fb, 594, 90, "T", PAL_NOTE, 1);
+    text(fb, 615, 90, "D", PAL_EFFECT, 1);
+    for (int lane = 0; lane < 4; ++lane) {
         int handle_y = track_y + (int)lrintf(
             (track_height - 1) * (1.0f - sister_clamp(amount[lane])));
-        rect(fb, lane_x[lane] + 3, track_y, 5, track_height, RGB(7, 7, 8));
-        rect(fb, lane_x[lane] - 2, handle_y - 1, 15, 3, color[lane]);
+        rect(fb, lane_x[lane] + 3, track_y, 4, track_height, RGB(7, 7, 8));
+        rect(fb, lane_x[lane] - 1, handle_y - 1, 13, 3, color[lane]);
     }
     if (period >= 3600.0f)
         snprintf(value, sizeof(value), "%.0FM", period / 60.0f);
@@ -3596,12 +3603,23 @@ static void sister_fallout_lfo_panel(TsFramebuffer *fb,
         snprintf(value, sizeof(value), "%.1FS", period);
     else
         snprintf(value, sizeof(value), "%.2FHZ", hz);
-    text(fb, 549, 247, value, PAL_TUNING, 1);
+    text(fb, 544, 235, value, PAL_TUNING, 1);
     snprintf(value, sizeof(value), "%d%%",
              (int)lrintf(controls->lfo_intensity * 100.0f));
-    text(fb, 594, 247, value, PAL_EFFECT, 1);
-    text(fb, 549, 267, "CLICK LFO", PAL_MOUSE, 1);
-    text(fb, 549, 278, "FOR TARGETS", PAL_MOUSE, 1);
+    text(fb, 568, 247, value, PAL_EFFECT, 1);
+    if (rise >= 3600.0f)
+        snprintf(value, sizeof(value), "%.0FH", rise / 3600.0f);
+    else if (rise >= 60.0f)
+        snprintf(value, sizeof(value), "%.0FM", rise / 60.0f);
+    else
+        snprintf(value, sizeof(value), "%.0FS", rise);
+    text(fb, 590, 235, value, PAL_NOTE, 1);
+    snprintf(value, sizeof(value), "%d%%",
+             (int)lrintf(controls->rise_intensity * 100.0f));
+    text(fb, 610, 247, value, PAL_EFFECT, 1);
+    text(fb, 548, 267, ts_sister_fallout_rise_mode_name(controls->rise_mode),
+         PAL_NOTE, 1);
+    text(fb, 548, 278, "CLICK MOD", PAL_MOUSE, 1);
 }
 
 static void sister_fallout_lfo_dialog(TsFramebuffer *fb,
@@ -3623,21 +3641,36 @@ static void sister_fallout_lfo_dialog(TsFramebuffer *fb,
         TS_SISTER_FALLOUT_LFO_PITCH_RAMP,
         TS_SISTER_FALLOUT_LFO_PITCH_RATE
     };
-    rect(fb, 106, 62, 428, 252, RGB(8, 8, 9));
-    rect(fb, 106, 62, 428, 1, PAL_EFFECT);
-    rect(fb, 106, 313, 428, 1, PAL_EFFECT);
-    rect(fb, 106, 62, 1, 252, PAL_EFFECT);
-    rect(fb, 533, 62, 1, 252, PAL_EFFECT);
-    text(fb, 126, 77, "FALLOUT LFO TARGETS", PAL_TEXT, 1);
-    button(fb, 434, 74, 80, "CLOSE", 0);
-    text(fb, 126, 94, "ONE SINE / CENTERED EXCURSION", PAL_MOUSE, 1);
+    rect(fb, 70, 52, 500, 292, RGB(8, 8, 9));
+    rect(fb, 70, 52, 500, 1, PAL_EFFECT);
+    rect(fb, 70, 343, 500, 1, PAL_EFFECT);
+    rect(fb, 70, 52, 1, 292, PAL_EFFECT);
+    rect(fb, 569, 52, 1, 292, PAL_EFFECT);
+    text(fb, 90, 62, "FALLOUT MODULATION", PAL_TEXT, 1);
+    text(fb, 90, 79, "RISE MODE", PAL_MOUSE, 1);
+    button(fb, 300, 72, 72, "SAW",
+           controls->rise_mode == TS_SISTER_FALLOUT_RISE_SAW);
+    button(fb, 378, 72, 88, "1-SHOT",
+           controls->rise_mode == TS_SISTER_FALLOUT_RISE_ONE_SHOT);
+    button(fb, 474, 72, 76, "CLOSE", 0);
+    text(fb, 234, 99, "LFO", PAL_TUNING, 1);
+    text(fb, 274, 99, "RISE", PAL_NOTE, 1);
+    text(fb, 474, 99, "LFO", PAL_TUNING, 1);
+    text(fb, 514, 99, "RISE", PAL_NOTE, 1);
     for (int target = 0; target < 13; ++target) {
         int column = target / 7;
         int row = target % 7;
-        button(fb, 126 + column * 206, 108 + row * 25, 180,
-               labels[target], (controls->lfo_targets & targets[target]) != 0u);
+        int base_x = 90 + column * 240;
+        int row_y = 112 + row * 25;
+        button(fb, base_x, row_y, 138, labels[target], 0);
+        button(fb, base_x + 144, row_y, 34, "L",
+               (controls->lfo_targets & targets[target]) != 0u);
+        button(fb, base_x + 184, row_y, 34, "R",
+               (controls->rise_targets & targets[target]) != 0u);
     }
-    text(fb, 126, 292, "DEPTH SHRINKS SYMMETRICALLY NEAR PARAMETER LIMITS",
+    text(fb, 90, 302, "RISE MOVES CENTER / LFO OSCILLATES AROUND IT",
+         PAL_MOUSE, 1);
+    text(fb, 90, 316, "CLICK ACTIVE 1-SHOT TO RETRIGGER",
          PAL_MOUSE, 1);
 }
 

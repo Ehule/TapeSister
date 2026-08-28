@@ -45,6 +45,7 @@ void ts_config_init(TsConfig *config)
         config->sister_buffer_channels = 2;
         config->sister_clear_ms = 20;
         config->sister_fallout_transition_ms = 10;
+        config->sister_fallout_rise_seconds = 3600;
         config->sister_capture_channels = 1;
         config->sister_restart_clear = 1;
         config->sister_dry_percent = TS_SISTER_MONITOR_PERCENT_DEFAULT;
@@ -279,6 +280,8 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, 1, 1000, &loaded.sister_clear_ms)) { snprintf(error, error_size, "Invalid Sister clear time on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_fallout_transition_ms") == 0) {
             if (!parse_clamped_integer(value, 10, 60000, &loaded.sister_fallout_transition_ms)) { snprintf(error, error_size, "Invalid Fallout transition time on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_fallout_rise_seconds") == 0) {
+            if (!parse_clamped_integer(value, 1, 14400, &loaded.sister_fallout_rise_seconds)) { snprintf(error, error_size, "Invalid Fallout rise time on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_capture_channels") == 0) {
             if (!parse_clamped_integer(value, 1, 2, &loaded.sister_capture_channels)) { snprintf(error, error_size, "Invalid Sister capture format on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_restart_clear") == 0) {
@@ -400,6 +403,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "sister_clear_ms=%d\n"
                 "; Default Fallout ON/OFF ramp: 10 ms to 60000 ms.\n"
                 "sister_fallout_transition_ms=%d\n"
+                "; Default Fallout RISE length: 1 second to 4 hours.\n"
+                "sister_fallout_rise_seconds=%d\n"
                 "sister_capture_channels=%d\n"
                 "sister_restart_clear=%d\n"
                 "; Source trims feed the normalized Sister input mixer; INPUT remains its master.\n"
@@ -451,6 +456,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_buffer_channels,
                 config->sister_clear_ms,
                 config->sister_fallout_transition_ms,
+                config->sister_fallout_rise_seconds,
                 config->sister_capture_channels,
                 config->sister_restart_clear ? 1 : 0,
                 config->sister_input_percent,

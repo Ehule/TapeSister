@@ -126,6 +126,7 @@ typedef struct {
     int sister_buffer_channels;
     int sister_clear_ms;
     int sister_fallout_transition_ms;
+    int sister_fallout_rise_seconds;
     int sister_capture_channels;
     int sister_restart_clear;
     int sister_dry_percent;

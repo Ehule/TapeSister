@@ -22,6 +22,7 @@ int main(void)
     CHECK(config.sister_capture_channels == 1);
     CHECK(config.sister_waveform_display_mode == TS_WAVEFORM_DISPLAY_STEREO);
     CHECK(config.sister_fallout_transition_ms == 10);
+    CHECK(config.sister_fallout_rise_seconds == 3600);
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
     CHECK(model.parameter_locks == 0u);
@@ -208,19 +209,34 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 200, 289);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FALLOUT_TRANSITION);
-    hit = ts_sister_ui_hit_test_model(&model, 560, 100);
+    hit = ts_sister_ui_hit_test_model(&model, 555, 110);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE);
-    hit = ts_sister_ui_hit_test_model(&model, 600, 200);
+    hit = ts_sister_ui_hit_test_model(&model, 575, 200);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY);
+    hit = ts_sister_ui_hit_test_model(&model, 596, 180);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH);
+    hit = ts_sister_ui_hit_test_model(&model, 617, 180);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY);
     hit = ts_sister_ui_hit_test_model(&model, 560, 60);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG);
     model.fallout_lfo_open = 1;
-    hit = ts_sister_ui_hit_test_model(&model, 140, 113);
+    hit = ts_sister_ui_hit_test_model(&model, 240, 113);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_TARGET &&
           hit.index == TS_SISTER_FALLOUT_LFO_MIX);
-    hit = ts_sister_ui_hit_test_model(&model, 450, 80);
+    hit = ts_sister_ui_hit_test_model(&model, 280, 113);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET &&
+          hit.index == TS_SISTER_FALLOUT_LFO_MIX);
+    hit = ts_sister_ui_hit_test_model(&model, 310, 80);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE &&
+          hit.index == TS_SISTER_FALLOUT_RISE_SAW);
+    hit = ts_sister_ui_hit_test_model(&model, 400, 80);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE &&
+          hit.index == TS_SISTER_FALLOUT_RISE_ONE_SHOT);
+    hit = ts_sister_ui_hit_test_model(&model, 490, 80);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG);
     model.fallout_lfo_open = 0;
     model.fx_page = 0;

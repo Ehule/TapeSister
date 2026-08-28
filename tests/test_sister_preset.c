@@ -52,6 +52,11 @@ int main(void)
     p.fx.fallout.lfo_intensity = 0.67f;
     p.fx.fallout.lfo_targets = TS_SISTER_FALLOUT_LFO_MIX |
                                TS_SISTER_FALLOUT_LFO_FEEDBACK;
+    p.fx.fallout.rise_mode = TS_SISTER_FALLOUT_RISE_SAW;
+    p.fx.fallout.rise_length = 0.91f;
+    p.fx.fallout.rise_intensity = 0.54f;
+    p.fx.fallout.rise_targets = TS_SISTER_FALLOUT_LFO_MIX |
+                                TS_SISTER_FALLOUT_LFO_NOISE;
     p.fx.fallout.skip_enabled = 1;
     p.fx.fallout.skip_span = 0.76f;
     p.fx.fallout.bit_enabled = 1;
@@ -95,6 +100,11 @@ int main(void)
     assert(recalled.fx.fallout.lfo_targets ==
            (TS_SISTER_FALLOUT_LFO_MIX |
             TS_SISTER_FALLOUT_LFO_FEEDBACK));
+    assert(recalled.fx.fallout.rise_mode == TS_SISTER_FALLOUT_RISE_SAW);
+    assert(recalled.fx.fallout.rise_length > 0.90f);
+    assert(recalled.fx.fallout.rise_intensity > 0.53f);
+    assert(recalled.fx.fallout.rise_targets ==
+           (TS_SISTER_FALLOUT_LFO_MIX | TS_SISTER_FALLOUT_LFO_NOISE));
     assert(recalled.fx.fallout.skip_enabled == 1);
     assert(recalled.fx.fallout.skip_span > 0.75f);
     assert(recalled.fx.fallout.bit_enabled == 1);

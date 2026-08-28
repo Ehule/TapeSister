@@ -13,6 +13,8 @@
 #define FALLOUT_TRANSITION_MAX_MS 60000.0f
 #define FALLOUT_LFO_MIN_HZ (1.0f / 3600.0f)
 #define FALLOUT_LFO_MAX_HZ 10.0f
+#define FALLOUT_RISE_MIN_SECONDS 1.0f
+#define FALLOUT_RISE_MAX_SECONDS 14400.0f
 
 static float clampf(float v, float lo, float hi)
 {
@@ -27,6 +29,15 @@ const char *ts_sister_fallout_noise_type_name(TsSisterFalloutNoiseType type)
     };
     return type >= 0 && type < TS_SISTER_FALLOUT_NOISE_COUNT ?
         names[type] : names[TS_SISTER_FALLOUT_NOISE_WHITE];
+}
+
+const char *ts_sister_fallout_rise_mode_name(TsSisterFalloutRiseMode mode)
+{
+    static const char *const names[TS_SISTER_FALLOUT_RISE_MODE_COUNT] = {
+        "SAW", "1-SHOT"
+    };
+    return mode >= 0 && mode < TS_SISTER_FALLOUT_RISE_MODE_COUNT ?
+        names[mode] : names[TS_SISTER_FALLOUT_RISE_SAW];
 }
 
 float ts_sister_fallout_transition_ms(float normalized)
@@ -58,6 +69,21 @@ float ts_sister_fallout_lfo_normalized(float hz)
            logf(FALLOUT_LFO_MAX_HZ / FALLOUT_LFO_MIN_HZ);
 }
 
+float ts_sister_fallout_rise_seconds(float normalized)
+{
+    return FALLOUT_RISE_MIN_SECONDS * powf(
+        FALLOUT_RISE_MAX_SECONDS / FALLOUT_RISE_MIN_SECONDS,
+        clampf(normalized, 0.0f, 1.0f));
+}
+
+float ts_sister_fallout_rise_normalized(float seconds)
+{
+    seconds = clampf(seconds, FALLOUT_RISE_MIN_SECONDS,
+                     FALLOUT_RISE_MAX_SECONDS);
+    return logf(seconds / FALLOUT_RISE_MIN_SECONDS) /
+           logf(FALLOUT_RISE_MAX_SECONDS / FALLOUT_RISE_MIN_SECONDS);
+}
+
 float ts_sister_fallout_lfo_modulate(float center, float intensity,
                                      float sine_value)
 {
@@ -67,6 +93,15 @@ float ts_sister_fallout_lfo_modulate(float center, float intensity,
     sine_value = clampf(sine_value, -1.0f, 1.0f);
     excursion = fminf(center, 1.0f - center) * intensity;
     return clampf(center + sine_value * excursion, 0.0f, 1.0f);
+}
+
+float ts_sister_fallout_rise_modulate(float start, float intensity,
+                                      float ramp_value)
+{
+    start = clampf(start, 0.0f, 1.0f);
+    intensity = clampf(intensity, 0.0f, 1.0f);
+    ramp_value = clampf(ramp_value, 0.0f, 1.0f);
+    return start + (1.0f - start) * intensity * ramp_value;
 }
 
 static uint32_t random_u32(TsSisterFalloutEngine *engine)
@@ -144,6 +179,10 @@ void ts_sister_fallout_controls_default(TsSisterFalloutControls *controls)
     controls->lfo_rate = ts_sister_fallout_lfo_normalized(0.01f);
     controls->lfo_intensity = 0.20f;
     controls->lfo_targets = 0u;
+    controls->rise_mode = TS_SISTER_FALLOUT_RISE_ONE_SHOT;
+    controls->rise_length = ts_sister_fallout_rise_normalized(3600.0f);
+    controls->rise_intensity = 1.0f;
+    controls->rise_targets = 0u;
 }
 
 void ts_sister_fallout_controls_sanitize(TsSisterFalloutControls *controls)
@@ -175,6 +214,12 @@ void ts_sister_fallout_controls_sanitize(TsSisterFalloutControls *controls)
     controls->lfo_rate = clampf(controls->lfo_rate, 0.0f, 1.0f);
     controls->lfo_intensity = clampf(controls->lfo_intensity, 0.0f, 1.0f);
     controls->lfo_targets &= TS_SISTER_FALLOUT_LFO_ALL;
+    if (controls->rise_mode < 0 ||
+        controls->rise_mode >= TS_SISTER_FALLOUT_RISE_MODE_COUNT)
+        controls->rise_mode = TS_SISTER_FALLOUT_RISE_ONE_SHOT;
+    controls->rise_length = clampf(controls->rise_length, 0.0f, 1.0f);
+    controls->rise_intensity = clampf(controls->rise_intensity, 0.0f, 1.0f);
+    controls->rise_targets &= TS_SISTER_FALLOUT_LFO_ALL;
 }
 
 void ts_sister_fallout_clear(TsSisterFalloutEngine *engine)
@@ -211,6 +256,9 @@ void ts_sister_fallout_clear(TsSisterFalloutEngine *engine)
     engine->previous_white[0] = engine->previous_white[1] = 0.0f;
     engine->lfo_phase = 0.0;
     engine->lfo_value = 0.0f;
+    engine->rise_phase = 0.0;
+    engine->rise_value = 0.0f;
+    engine->rise_one_shot_complete = 0;
     engine->feedback_modulated = engine->controls.feedback;
     engine->prng = seed;
 }
@@ -267,10 +315,13 @@ void ts_sister_fallout_set_controls(
     TsSisterFalloutEngine *engine, const TsSisterFalloutControls *controls)
 {
     TsSisterFalloutControls next;
+    int restart_rise;
     uint32_t fade;
     if (engine == NULL || controls == NULL) return;
     next = *controls;
     ts_sister_fallout_controls_sanitize(&next);
+    restart_rise = next.rise_mode != engine->controls.rise_mode ||
+                   next.rise_retrigger != engine->controls.rise_retrigger;
     fade = engine->sample_rate > 0u ? (uint32_t)fmaxf(1.0f,
         ts_sister_fallout_transition_ms(next.transition) *
         (float)engine->sample_rate / 1000.0f) : 1u;
@@ -285,6 +336,11 @@ void ts_sister_fallout_set_controls(
              &engine->engage_remaining, 0.0f, fade);
     }
     engine->controls = next;
+    if (restart_rise) {
+        engine->rise_phase = 0.0;
+        engine->rise_value = 0.0f;
+        engine->rise_one_shot_complete = 0;
+    }
 }
 
 static TsStereoFrame read_frame(const TsSisterFalloutEngine *engine,
@@ -352,12 +408,19 @@ static float choose_pitch(TsSisterFalloutEngine *engine,
     return ratios[index];
 }
 
-static float lfo_target(float center, const TsSisterFalloutControls *controls,
-                        uint32_t target, float sine_value)
+static float modulation_target(float start,
+                               const TsSisterFalloutControls *controls,
+                               uint32_t target, float sine_value,
+                               float rise_value)
 {
-    if ((controls->lfo_targets & target) == 0u) return center;
-    return ts_sister_fallout_lfo_modulate(
-        center, controls->lfo_intensity, sine_value);
+    float center = start;
+    if ((controls->rise_targets & target) != 0u)
+        center = ts_sister_fallout_rise_modulate(
+            start, controls->rise_intensity, rise_value);
+    if ((controls->lfo_targets & target) != 0u)
+        center = ts_sister_fallout_lfo_modulate(
+            center, controls->lfo_intensity, sine_value);
+    return center;
 }
 
 static TsSisterFalloutControls modulated_controls(
@@ -365,36 +428,44 @@ static TsSisterFalloutControls modulated_controls(
 {
     TsSisterFalloutControls out = engine->controls;
     float value = sinf((float)(engine->lfo_phase * 2.0 * M_PI));
+    float rise = 0.0f;
     double increment = (double)ts_sister_fallout_lfo_hz(out.lfo_rate) /
                        (double)engine->sample_rate;
+    double rise_increment = 1.0 /
+        ((double)ts_sister_fallout_rise_seconds(out.rise_length) *
+         (double)engine->sample_rate);
     engine->lfo_phase += increment;
     if (engine->lfo_phase >= 1.0) engine->lfo_phase -= floor(engine->lfo_phase);
     engine->lfo_value = value;
-    out.mix = lfo_target(out.mix, &out, TS_SISTER_FALLOUT_LFO_MIX, value);
-    out.feedback = lfo_target(out.feedback, &out,
-                              TS_SISTER_FALLOUT_LFO_FEEDBACK, value);
-    out.noise = lfo_target(out.noise, &out, TS_SISTER_FALLOUT_LFO_NOISE, value);
-    out.drop_rate = lfo_target(out.drop_rate, &out,
-                               TS_SISTER_FALLOUT_LFO_DROP_RATE, value);
-    out.pan_rate = lfo_target(out.pan_rate, &out,
-                              TS_SISTER_FALLOUT_LFO_PAN_RATE, value);
-    out.skip_span = lfo_target(out.skip_span, &out,
-                               TS_SISTER_FALLOUT_LFO_SKIP_SPAN, value);
-    out.skip_rate = lfo_target(out.skip_rate, &out,
-                               TS_SISTER_FALLOUT_LFO_SKIP_RATE, value);
-    out.bit_quality = lfo_target(out.bit_quality, &out,
-                                 TS_SISTER_FALLOUT_LFO_BIT_QUALITY, value);
-    out.bit_resolution = lfo_target(out.bit_resolution, &out,
-                                    TS_SISTER_FALLOUT_LFO_BIT_RESOLUTION,
-                                    value);
-    out.bit_rate = lfo_target(out.bit_rate, &out,
-                              TS_SISTER_FALLOUT_LFO_BIT_RATE, value);
-    out.pitch = lfo_target(out.pitch, &out,
-                           TS_SISTER_FALLOUT_LFO_PITCH, value);
-    out.pitch_ramp = lfo_target(out.pitch_ramp, &out,
-                                TS_SISTER_FALLOUT_LFO_PITCH_RAMP, value);
-    out.pitch_rate = lfo_target(out.pitch_rate, &out,
-                                TS_SISTER_FALLOUT_LFO_PITCH_RATE, value);
+    if (out.rise_mode == TS_SISTER_FALLOUT_RISE_SAW ||
+        !engine->rise_one_shot_complete) {
+        rise = (float)engine->rise_phase;
+        engine->rise_phase += rise_increment;
+        if (engine->rise_phase >= 1.0) {
+            rise = 1.0f;
+            engine->rise_phase = 0.0;
+            if (out.rise_mode == TS_SISTER_FALLOUT_RISE_ONE_SHOT)
+                engine->rise_one_shot_complete = 1;
+        }
+    }
+    engine->rise_value = rise;
+#define MODULATE(member, target) \
+    out.member = modulation_target(engine->controls.member, &out, target, \
+                                   value, rise)
+    MODULATE(mix, TS_SISTER_FALLOUT_LFO_MIX);
+    MODULATE(feedback, TS_SISTER_FALLOUT_LFO_FEEDBACK);
+    MODULATE(noise, TS_SISTER_FALLOUT_LFO_NOISE);
+    MODULATE(drop_rate, TS_SISTER_FALLOUT_LFO_DROP_RATE);
+    MODULATE(pan_rate, TS_SISTER_FALLOUT_LFO_PAN_RATE);
+    MODULATE(skip_span, TS_SISTER_FALLOUT_LFO_SKIP_SPAN);
+    MODULATE(skip_rate, TS_SISTER_FALLOUT_LFO_SKIP_RATE);
+    MODULATE(bit_quality, TS_SISTER_FALLOUT_LFO_BIT_QUALITY);
+    MODULATE(bit_resolution, TS_SISTER_FALLOUT_LFO_BIT_RESOLUTION);
+    MODULATE(bit_rate, TS_SISTER_FALLOUT_LFO_BIT_RATE);
+    MODULATE(pitch, TS_SISTER_FALLOUT_LFO_PITCH);
+    MODULATE(pitch_ramp, TS_SISTER_FALLOUT_LFO_PITCH_RAMP);
+    MODULATE(pitch_rate, TS_SISTER_FALLOUT_LFO_PITCH_RATE);
+#undef MODULATE
     engine->feedback_modulated = out.feedback;
     return out;
 }

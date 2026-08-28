@@ -226,7 +226,9 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "fallout_pitch_enabled=%d\nfallout_pitch=%.9g\n"
         "fallout_pitch_ramp=%.9g\nfallout_pitch_rate=%.9g\n"
         "fallout_lfo_rate=%.9g\nfallout_lfo_intensity=%.9g\n"
-        "fallout_lfo_targets=%u\n",
+        "fallout_lfo_targets=%u\nfallout_rise_mode=%d\n"
+        "fallout_rise_length=%.9g\nfallout_rise_intensity=%.9g\n"
+        "fallout_rise_targets=%u\n",
         p->head1_level, p->head1_time_ms, p->head1_feedback,
         p->head2_level, p->head2_scrub, p->head2_rate_index, p->head2_feedback,
         p->head3_level, p->head3_span, p->head3_rate_index,
@@ -255,7 +257,9 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx.fallout.pitch, p->fx.fallout.pitch_ramp,
         p->fx.fallout.pitch_rate, p->fx.fallout.lfo_rate,
         p->fx.fallout.lfo_intensity,
-        (unsigned)p->fx.fallout.lfo_targets) >= 0;
+        (unsigned)p->fx.fallout.lfo_targets, p->fx.fallout.rise_mode,
+        p->fx.fallout.rise_length, p->fx.fallout.rise_intensity,
+        (unsigned)p->fx.fallout.rise_targets) >= 0;
 }
 
 static int replace_file(const char *temporary, const char *path)
@@ -422,6 +426,18 @@ static int assign_field(TsSisterParameters *p, const char *key,
     if (strcmp(key, "fallout_lfo_targets") == 0) {
         if (!parse_int(value, &parsed_int) || parsed_int < 0) return 0;
         p->fx.fallout.lfo_targets = (uint32_t)parsed_int;
+        return 1;
+    }
+    if (strcmp(key, "fallout_rise_mode") == 0) {
+        if (!parse_int(value, &parsed_int)) return 0;
+        p->fx.fallout.rise_mode = (TsSisterFalloutRiseMode)parsed_int;
+        return 1;
+    }
+    FLOAT_FIELD("fallout_rise_length", fx.fallout.rise_length);
+    FLOAT_FIELD("fallout_rise_intensity", fx.fallout.rise_intensity);
+    if (strcmp(key, "fallout_rise_targets") == 0) {
+        if (!parse_int(value, &parsed_int) || parsed_int < 0) return 0;
+        p->fx.fallout.rise_targets = (uint32_t)parsed_int;
         return 1;
     }
     if (strcmp(key, "reverb_targets") == 0 ||
