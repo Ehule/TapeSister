@@ -61,6 +61,8 @@ screenshot-sister-spirit: tapesister_sister_spirit_demo tapesister_render_demo
 	./tapesister_sister_spirit_demo off artifacts/sister-spirit-off.ppm
 	./tapesister_sister_spirit_demo flash artifacts/sister-spirit-flash.ppm
 	./tapesister_sister_spirit_demo capture artifacts/sister-capture-progress.ppm
+	./tapesister_sister_spirit_demo capture-effects artifacts/sister-effects-capture-progress.ppm
+	./tapesister_sister_spirit_demo capture-fallout artifacts/sister-fallout-capture-progress.ppm
 	./tapesister_sister_spirit_demo fallout artifacts/sister-fallout.ppm
 
 test: test_sister_resize

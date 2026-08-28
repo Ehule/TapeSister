@@ -55,6 +55,7 @@ typedef enum {
 } TsSisterTileShiftResult;
 
 typedef struct {
+    TsStereoFrame tiles;
     TsStereoFrame fm;
     TsStereoFrame external;
     TsStereoFrame preview;

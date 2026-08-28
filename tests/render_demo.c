@@ -287,13 +287,15 @@ int main(int argc, char **argv)
             return 1;
         }
         ui.show_keyboard = 0;
+        ui.config.tile_fade_ms = 10000;
+        ui.tile_launcher_mask = (uint16_t)((1u << 1) | (1u << 3));
         ui.bank_view_slot = 2;
         ui.playback_active = 1;
         ui.playhead_bank_slot = 2;
         ui.playhead_frame = instrument.bank[2].sample.frames / 2u;
         ui.playhead_frames = instrument.bank[2].sample.frames;
         snprintf(ui.status, sizeof(ui.status),
-                 "BANK 03 AUDITION - WAVEFORM FOLLOWS SLOT  RMB RENAME  SHIFT+RMB CLEAR");
+                 "TILES 02 + 04 LAYERED - FADE ALL RELEASES THEM TOGETHER");
     } else if (argc > 2 && strcmp(argv[2], "family") == 0) {
         int child = -1;
         int cousin = -1;

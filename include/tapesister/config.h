@@ -106,6 +106,7 @@ typedef struct {
     int drone_crossfade_ms;
     int chain_stamp_crossfade_ms;
     int voice_attack_ms;
+    int tile_fade_ms;
     int ripple_cut_crop_canvas;
     int reference_tone_volume;
     int fm_output_percent;

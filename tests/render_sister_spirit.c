@@ -22,7 +22,8 @@ int main(int argc, char **argv)
     model.magnetic_phase = 3u;
     if (strcmp(mode, "fallout") == 0 ||
         strcmp(mode, "fallout-lfo") == 0 ||
-        strcmp(mode, "fallout-presets") == 0) {
+        strcmp(mode, "fallout-presets") == 0 ||
+        strcmp(mode, "capture-fallout") == 0) {
         model.routing.enabled = 1;
         model.routing.rolling = 1;
         model.fx_page = 2;
@@ -63,6 +64,12 @@ int main(int argc, char **argv)
                  "APPROACHING TRAIN");
         snprintf(model.status, sizeof(model.status),
                  "FALLOUT INSERT ENGAGED");
+    } else if (strcmp(mode, "capture-effects") == 0) {
+        model.routing.enabled = 1;
+        model.routing.rolling = 1;
+        model.fx_page = 1;
+        snprintf(model.status, sizeof(model.status),
+                 "CAPTURE CONTINUES WHILE MASTER EFFECTS ARE EDITED");
     } else if (strcmp(mode, "flash") == 0) {
         model.routing.enabled = 1;
         model.power_visual = TS_SISTER_UI_POWER_VISUAL_ON;
@@ -97,6 +104,14 @@ int main(int argc, char **argv)
         model.text_cursor_visible = 1;
         snprintf(model.status, sizeof(model.status),
                  "CAPTURE RECORDING - PRESS AGAIN TO STOP");
+    }
+    if (strcmp(mode, "capture-effects") == 0 ||
+        strcmp(mode, "capture-fallout") == 0) {
+        model.routing.monitor_enabled = 1;
+        model.routing.capture_state = TS_CAPTURE_RECORDING;
+        model.routing.capture_recorded_frames = 13u * 48000u;
+        model.routing.capture_capacity_frames = 20u * 48000u;
+        model.text_cursor_visible = 1;
     }
     ts_sister_ui_render(&framebuffer, &model, &palette);
     if (!ts_ui_write_ppm(&framebuffer, path)) {

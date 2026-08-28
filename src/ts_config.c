@@ -1,4 +1,5 @@
 #include "tapesister/config.h"
+#include "tapesister/performance.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -25,6 +26,7 @@ void ts_config_init(TsConfig *config)
         config->drone_crossfade_ms = TS_DRONE_CROSSFADE_MS_DEFAULT;
         config->chain_stamp_crossfade_ms = TS_CHAIN_STAMP_CROSSFADE_MS_DEFAULT;
         config->voice_attack_ms = TS_AUDITION_ATTACK_MS_DEFAULT;
+        config->tile_fade_ms = TS_TILE_FADE_MS_DEFAULT;
         config->ripple_cut_crop_canvas = 0;
         config->reference_tone_volume = TS_REFERENCE_TONE_VOLUME_DEFAULT;
         config->fm_output_percent = TS_FM_OUTPUT_PERCENT_DEFAULT;
@@ -242,6 +244,8 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, TS_CHAIN_STAMP_CROSSFADE_MS_MIN, TS_CHAIN_STAMP_CROSSFADE_MS_MAX, &loaded.chain_stamp_crossfade_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "voice_attack_ms") == 0) {
             if (!parse_clamped_integer(value, TS_AUDITION_ATTACK_MS_MIN, TS_AUDITION_ATTACK_MS_MAX, &loaded.voice_attack_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "tile_fade_ms") == 0) {
+            if (!parse_clamped_integer(value, TS_TILE_FADE_MS_MIN, TS_TILE_FADE_MS_MAX, &loaded.tile_fade_ms)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "ripple_cut_crop_canvas") == 0) {
             if (!parse_boolean(value, &loaded.ripple_cut_crop_canvas)) { snprintf(error, error_size, "Invalid boolean on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "reference_tone_volume") == 0) {
@@ -372,6 +376,9 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "fm_output_percent=%d\n"
                 "; Per-voice note-on de-click ramp in milliseconds; 0 disables it, 20 is the maximum.\n"
                 "voice_attack_ms=%d\n"
+                "; Mouse-launched tile fade in/out; 0 disables it, 30000 is the maximum.\n"
+                "; Each edge is capped at 20%% of the tile or loop duration.\n"
+                "tile_fade_ms=%d\n"
                 "\n[External Recording]\n"
                 "; Blank uses the operating system default capture device. Otherwise use the exact SDL device name.\n"
                 "record_input_device=%s\n"
@@ -440,6 +447,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->reference_tone_volume,
                 config->fm_output_percent,
                 config->voice_attack_ms,
+                config->tile_fade_ms,
                 config->record_input_device,
                 config->record_input_channel,
                 config->record_threshold_db,

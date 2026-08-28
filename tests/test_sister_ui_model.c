@@ -380,6 +380,16 @@ int main(void)
           palette.colors[TS_PALETTE_PATTERN_VOLUME]);
     CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 111u] !=
           palette.colors[TS_PALETTE_PATTERN_TUNING]);
+    model.routing.capture_state = TS_CAPTURE_RECORDING;
+    model.routing.capture_recorded_frames = 25u;
+    model.routing.capture_capacity_frames = 100u;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[40u * TS_UI_WIDTH + 100u] ==
+          palette.colors[TS_PALETTE_PATTERN_VOLUME]);
+    model.fx_page = 2;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[40u * TS_UI_WIDTH + 100u] ==
+          palette.colors[TS_PALETTE_PATTERN_VOLUME]);
     puts("Sister UI model tests passed");
     return failures != 0;
 }

@@ -11,6 +11,19 @@
 
 #define TS_PERFORMANCE_VOICE_LIMIT (TS_BANK_SLOT_COUNT * 24)
 
+enum {
+    TS_TILE_FADE_MS_MIN = 0,
+    TS_TILE_FADE_MS_MAX = 30000,
+    TS_TILE_FADE_MS_DEFAULT = 0
+};
+
+typedef enum {
+    TS_PERFORMANCE_TILE_FAILED = 0,
+    TS_PERFORMANCE_TILE_STARTED,
+    TS_PERFORMANCE_TILE_RELEASING,
+    TS_PERFORMANCE_TILE_RESUMED
+} TsPerformanceTileResult;
+
 typedef struct TsPerformanceGeneration {
     TsSample sample;
     const float *source_data;
@@ -45,6 +58,8 @@ typedef struct {
     size_t pending_transition_frames;
     size_t attack_frame;
     size_t attack_frames;
+    size_t tile_fade_frames;
+    size_t tile_ramp_remaining;
     TsLoopMode loop_mode;
     TsLoopMode transition_loop_mode;
     TsLoopMode pending_loop_mode;
@@ -56,6 +71,8 @@ typedef struct {
     int source_slot;
     float gain;
     float group_gain;
+    float tile_gain;
+    float tile_gain_step;
     double pending_step;
     int looping;
     int direction;
@@ -63,6 +80,7 @@ typedef struct {
     int pending_direction;
     int latched;
     int releasing;
+    int tile_launched;
     int active;
 } TsPerformanceVoice;
 
@@ -89,6 +107,11 @@ void ts_performance_release_event(TsPerformanceBank *bank,
 void ts_performance_release_midi_channel(TsPerformanceBank *bank, int channel);
 void ts_performance_stop_sources(TsPerformanceBank *bank,
                                  uint16_t source_mask);
+TsPerformanceTileResult ts_performance_toggle_tile(
+    TsPerformanceBank *bank, const TsInstrument *instrument, int source_slot,
+    int fade_ms, int output_rate);
+void ts_performance_fade_all_tiles(TsPerformanceBank *bank);
+uint16_t ts_performance_tile_mask(const TsPerformanceBank *bank);
 int ts_performance_trigger_group(TsPerformanceBank *bank,
                                  const TsInstrument *instrument,
                                  uint16_t source_mask,

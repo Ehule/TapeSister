@@ -93,9 +93,12 @@ performance gestures remain available.
 Shift-click occupied tiles to toggle any number of them into a temporary source
 group. QWERTY notes fan out across the complete group, including chords. Source-group
 editing stays live after recording begins: Shift-clicking a selected source unlatches
-it without truncating its current pass, and a plain tile click clears the group and
-immediately restarts the clicked tile through the normal audition path while Capture
-continues. The armed destination never joins or moves with the source group.
+it without truncating its current pass. Plain clicks use a separate performance-layer
+bank: one-shots fade in and automatically fade at their natural end, while loops fade
+in, repeat, and fade out when clicked again. Multiple clicked tiles overlap without
+changing the QWERTY/MIDI source group; **FADE ALL** releases the clicked layers together,
+and Space remains the immediate panic stop. The armed destination never joins or moves
+with the source group.
 
 MIDI Note On/Off uses the same voice and Capture path as QWERTY, so a physical
 keyboard plays either the normal active tile or every latched source tile. MIDI 60
@@ -113,6 +116,13 @@ the signal reaches monitoring, Capture, Overdub, or REC BANK SRC SYNTH. Set
 default is 2 ms, and 0 disables the ramp. The smooth output-rate envelope changes
 neither stored source audio nor note timing, and reaches full gain at the configured
 duration.
+
+The compact header **FADE** control sets mouse-launched tile fades from 0–30 seconds;
+the curved slider gives short performance fades more travel. `tile_fade_ms` in the
+same `[Audition]` section sets its startup value. Each fade edge is capped at 20% of
+the playable tile or loop duration, leaving at least 60% of a one-shot at full level.
+Clicking a releasing loop reverses its envelope at its current gain and playhead rather
+than restarting it.
 
 With Capture armed, Shift-click up to five onscreen keys to assemble a silent staged
 chord; click any staged key normally to launch every voice sample-synchronously. With

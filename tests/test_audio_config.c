@@ -1,4 +1,5 @@
 #include "tapesister/audio_config.h"
+#include "tapesister/performance.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -62,7 +63,9 @@ static int test_defaults(void)
                   config.sister_ghost_percent == 0,
                   "Sister input/monitor/output/erase defaults should preserve PR5") &&
            expect(config.voice_attack_ms == TS_AUDITION_ATTACK_MS_DEFAULT,
-                  "sample voices should default to a short de-click attack");
+                  "sample voices should default to a short de-click attack") &&
+           expect(config.tile_fade_ms == TS_TILE_FADE_MS_DEFAULT,
+                  "mouse-launched tiles should preserve instant legacy behavior by default");
 }
 
 static int test_roundtrip(void)
@@ -110,6 +113,7 @@ static int test_roundtrip(void)
     saved.sister_window_x = 123;
     saved.sister_window_y = 456;
     saved.voice_attack_ms = 7;
+    saved.tile_fade_ms = 12345;
 
     ok = ts_audio_config_save(&saved, path, error, sizeof(error)) &&
          ts_audio_config_load(&loaded, path, error, sizeof(error));
@@ -166,7 +170,9 @@ static int test_roundtrip(void)
          expect(loaded.capture_channels == 2,
                 "stereo Capture choice should roundtrip") &&
          expect(loaded.voice_attack_ms == 7,
-                "voice de-click attack should roundtrip");
+                "voice de-click attack should roundtrip") &&
+         expect(loaded.tile_fade_ms == 12345,
+                "mouse-launched tile fade should roundtrip");
     remove(path);
     return ok;
 }
@@ -241,6 +247,8 @@ static int test_legacy_config(void)
                 "legacy config should receive the safe audio buffer default") &&
          expect(loaded.voice_attack_ms == TS_AUDITION_ATTACK_MS_DEFAULT,
                 "legacy config should receive the de-click default") &&
+         expect(loaded.tile_fade_ms == TS_TILE_FADE_MS_DEFAULT,
+                "legacy config should receive the tile fade default") &&
          expect(loaded.capture_channels == 1,
                 "legacy config should receive mono Capture default");
     remove(path);
@@ -255,7 +263,7 @@ static int test_attack_clamp(void)
     FILE *file = fopen(path, "wb");
     int ok;
     if (file == NULL) return 0;
-    fputs("[Audition]\nvoice_attack_ms=200\n", file);
+    fputs("[Audition]\nvoice_attack_ms=200\ntile_fade_ms=40000\n", file);
     fclose(file);
     ok = ts_audio_config_load(&loaded, path, error, sizeof(error));
     if (!ok) {
@@ -264,7 +272,9 @@ static int test_attack_clamp(void)
         return 0;
     }
     ok = expect(loaded.voice_attack_ms == TS_AUDITION_ATTACK_MS_MAX,
-                "voice attack should clamp to the documented maximum");
+                "voice attack should clamp to the documented maximum") &&
+         expect(loaded.tile_fade_ms == TS_TILE_FADE_MS_MAX,
+                "tile fade should clamp to the documented maximum");
     remove(path);
     return ok;
 }

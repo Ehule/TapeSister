@@ -747,6 +747,10 @@ typedef struct {
     size_t attack_frames;
     TsNoteBank notes;
     TsPerformanceBank performance;
+    TsPerformanceBank tile_launchers;
+    TsStereoFrame tile_launcher_mix;
+    int tile_launcher_active;
+    _Atomic uint_least16_t tile_launcher_mask;
     TsAudioMixer mixer;
     TsSisterRuntime sister;
     TsCaptureRecorder capture;
@@ -982,6 +986,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                         (uint32_t)audio->output_rate) :
             (TsStereoFrame){0.0f, 0.0f};
         sister_sources.fm = buses.fm;
+        sister_sources.tiles = audio->tile_launcher_mix;
         sister_sources.external = buses.external;
         sister_sources.preview = buses.legacy_preview;
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
@@ -1086,6 +1091,12 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         if (i + 1 < values) out[i + 1] = output.r;
     }
     ts_sister_runtime_end_audio_block(&audio->sister);
+    {
+        uint16_t mask = ts_performance_tile_mask(&audio->tile_launchers);
+        audio->tile_launcher_active = mask != 0u;
+        atomic_store_explicit(&audio->tile_launcher_mask, mask,
+                              memory_order_release);
+    }
     if (audio->input_monitor != NULL && audio->record_source != NULL &&
         atomic_load_explicit(audio->record_source, memory_order_acquire) ==
             TS_RECORD_SOURCE_SYNTH)
@@ -1534,14 +1545,74 @@ static void release_note(SDL_AudioDeviceID device, AudioState *audio,
     release_note_event(device, audio, ui, &event);
 }
 
+static void toggle_tile_launcher(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui,
+                                 const TsInstrument *instrument, int slot,
+                                 int output_rate)
+{
+    TsPerformanceTileResult result;
+    if (device) SDL_LockAudioDevice(device);
+    result = ts_performance_toggle_tile(
+        &audio->tile_launchers, instrument, slot,
+        ui->config.tile_fade_ms, output_rate);
+    ui->tile_launcher_mask =
+        ts_performance_tile_mask(&audio->tile_launchers);
+    audio->tile_launcher_active = ui->tile_launcher_mask != 0u;
+    atomic_store_explicit(&audio->tile_launcher_mask,
+                          ui->tile_launcher_mask, memory_order_release);
+    if (device) SDL_UnlockAudioDevice(device);
+    if (result == TS_PERFORMANCE_TILE_STARTED)
+        snprintf(ui->status, sizeof(ui->status),
+                 ui->config.tile_fade_ms > 0 ?
+                 "TILE %02d FADING IN - CLICK AGAIN TO RELEASE" :
+                 "TILE %02d STARTED - CLICK AGAIN TO STOP", slot + 1);
+    else if (result == TS_PERFORMANCE_TILE_RELEASING)
+        snprintf(ui->status, sizeof(ui->status),
+                 ui->config.tile_fade_ms > 0 ?
+                 "TILE %02d FADING OUT" : "TILE %02d STOPPED", slot + 1);
+    else if (result == TS_PERFORMANCE_TILE_RESUMED)
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d FADE REVERSED - CONTINUING", slot + 1);
+    else
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d COULD NOT LAUNCH", slot + 1);
+}
+
+static void fade_all_tile_launchers(SDL_AudioDeviceID device,
+                                    AudioState *audio, TsUiState *ui)
+{
+    int had_tiles;
+    if (device) SDL_LockAudioDevice(device);
+    had_tiles = ts_performance_tile_mask(&audio->tile_launchers) != 0u;
+    ts_performance_fade_all_tiles(&audio->tile_launchers);
+    ui->tile_launcher_mask =
+        ts_performance_tile_mask(&audio->tile_launchers);
+    audio->tile_launcher_active = ui->tile_launcher_mask != 0u;
+    atomic_store_explicit(&audio->tile_launcher_mask,
+                          ui->tile_launcher_mask, memory_order_release);
+    if (device) SDL_UnlockAudioDevice(device);
+    snprintf(ui->status, sizeof(ui->status),
+             !had_tiles ?
+             "NO CLICK-LAUNCHED TILES TO FADE" :
+             ui->config.tile_fade_ms > 0 ?
+             "ALL CLICK-LAUNCHED TILES FADING OUT" :
+             "ALL CLICK-LAUNCHED TILES STOPPED");
+}
+
 static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
     if (device) SDL_LockAudioDevice(device);
     audio->playing = 0;
     audio->bank_slot = -1;
     runtime_note_clear(audio);
+    ts_performance_clear(&audio->tile_launchers);
+    audio->tile_launcher_mix = (TsStereoFrame){0.0f, 0.0f};
+    audio->tile_launcher_active = 0;
+    atomic_store_explicit(&audio->tile_launcher_mask, 0u,
+                          memory_order_release);
     if (device) SDL_UnlockAudioDevice(device);
     ui->active_notes = 0;
+    ui->tile_launcher_mask = 0u;
     ui->mouse_note = -1;
     ui->tape_dragging = 0;
     ui->tape_drag_button = 0;
@@ -1563,9 +1634,15 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
     if (!ts_ui_loop_transport_can_stop(ui, 0)) {
         if (device) SDL_LockAudioDevice(device);
         runtime_note_clear(audio);
+        ts_performance_clear(&audio->tile_launchers);
+        audio->tile_launcher_mix = (TsStereoFrame){0.0f, 0.0f};
+        audio->tile_launcher_active = 0;
+        atomic_store_explicit(&audio->tile_launcher_mask, 0u,
+                              memory_order_release);
         audio->bank_slot = -1;
         if (device) SDL_UnlockAudioDevice(device);
         ui->active_notes = 0;
+        ui->tile_launcher_mask = 0u;
         ui->mouse_note = -1;
         ui->tape_dragging = 0;
         ui->tape_drag_button = 0;
@@ -7968,6 +8045,17 @@ static int adjust_hovered_slider(SDL_AudioDeviceID device, AudioState *audio,
                            clamp_unit(current / 50.0f + step) * 50.0f);
         return 1;
     }
+    case TS_UI_SLIDER_TILE_FADE: {
+        int delta = amount * (coarse ? 1000 : 100);
+        int value = ui->config.tile_fade_ms + delta;
+        if (value < TS_TILE_FADE_MS_MIN) value = TS_TILE_FADE_MS_MIN;
+        if (value > TS_TILE_FADE_MS_MAX) value = TS_TILE_FADE_MS_MAX;
+        ui->config.tile_fade_ms = value;
+        snprintf(ui->status, sizeof(ui->status),
+                 "CLICK-LAUNCHED TILE FADE %.1F SEC (MAX 20%% EACH EDGE)",
+                 (double)value / 1000.0);
+        return 1;
+    }
     default:
         return 0;
     }
@@ -9227,6 +9315,8 @@ int main(int argc, char **argv)
     }
     ts_note_bank_init(&audio.notes);
     ts_performance_init(&audio.performance);
+    ts_performance_init(&audio.tile_launchers);
+    atomic_init(&audio.tile_launcher_mask, 0u);
     ts_audio_mixer_init(&audio.mixer);
     audio.fm_output_gain = (float)ui.config.fm_output_percent / 100.0f;
     ts_sister_runtime_init(&audio.sister);
@@ -9481,6 +9571,7 @@ int main(int argc, char **argv)
         /* Reader counts are atomic; retired immutable generations are owned
            and reclaimed by this controller thread, never by the callback. */
         ts_performance_collect_retired(&audio.performance);
+        ts_performance_collect_retired(&audio.tile_launchers);
         ts_performance_collect_retired(&audio.sister.performance);
         if (pending_file.active && pending_file.presented)
             run_pending_file_operation(device, &audio, &ui, &instrument,
@@ -10670,7 +10761,7 @@ int main(int argc, char **argv)
                     else if (audio.capture.state == TS_CAPTURE_RECORDING)
                         stop_capture_early(device, &audio, &ui);
                     else if (audio.playing || ts_note_bank_count(&audio.notes) > 0 ||
-                        ui.workbench_loop_active)
+                        ui.tile_launcher_mask != 0u || ui.workbench_loop_active)
                         stop_all(device, &audio, &ui);
                     else {
                         ui.audition_source = TS_AUDITION_CURRENT;
@@ -11928,6 +12019,16 @@ int main(int argc, char **argv)
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 573 && x < 630) {
                     begin_export_choice(&ui);
+                } else if (x >= 240 && x < 302 && y >= 42 && y < 64) {
+                    ui.config.tile_fade_ms = ts_ui_tile_fade_ms(
+                        (float)(x - 240) / 62.0f);
+                    snprintf(ui.status, sizeof(ui.status),
+                             "CLICK-LAUNCHED TILE FADE %.1F SEC (MAX 20%% EACH EDGE)",
+                             (double)ui.config.tile_fade_ms / 1000.0);
+                } else if (!record_bank_active && !ui.show_keyboard &&
+                           !ui.show_recipes && !ui.show_ingredients &&
+                           ts_ui_tile_fade_all_from_point(x, y)) {
+                    fade_all_tile_launchers(device, &audio, &ui);
                 } else if (!ui.input_meter_active &&
                            ui.amplitude_draw_mode &&
                            ui.bank_view_slot < 0 &&
@@ -12554,7 +12655,6 @@ int main(int argc, char **argv)
                                              "LOOP LOCKED TO SILENT BANK %02d VIEW",
                                              bank_slot + 1);
                                 } else {
-                                    stop_all(device, &audio, &ui);
                                     snprintf(ui.status, sizeof(ui.status),
                                              "BANK %02d SILENT CANVAS - %zu FRAMES AT %u HZ",
                                              bank_slot + 1, instrument.current.frames,
@@ -12562,18 +12662,7 @@ int main(int argc, char **argv)
                                 }
                             }
                             else if (selected && occupied) {
-                                if (ts_sister_runtime_tiles_insert_active(
-                                        &audio.sister)) {
-                                    /* TILES is an insert, not a click-preview
-                                       shortcut. Selection must not add a clean
-                                       legacy-preview voice or disturb a
-                                       sounding Sister ensemble. */
-                                    ui.audition_source = TS_AUDITION_CURRENT;
-                                    ui.bank_view_slot = -1;
-                                    snprintf(ui.status, sizeof(ui.status),
-                                             "BANK %02d ACTIVE - SISTER ENSEMBLE UNCHANGED",
-                                             bank_slot + 1);
-                                } else if (ui.workbench_loop_active &&
+                                if (ui.workbench_loop_active &&
                                     ui.workbench_loop_persistent) {
                                     ui.audition_source = TS_AUDITION_CURRENT;
                                     ui.bank_view_slot = -1;
@@ -12590,10 +12679,10 @@ int main(int argc, char **argv)
                                     /* Keep the selected tile in Current-edit mode. Bank-preview
                                        mode intentionally makes the waveform read-only. */
                                     ui.audition_source = TS_AUDITION_CURRENT;
-                                    begin_audition(device, &audio, &ui, &instrument,
-                                                   instrument.has_loop ? TS_AUDITION_LOOP :
-                                                   TS_AUDITION_ALL,
-                                                   1.0, obtained.freq);
+                                    ui.bank_view_slot = -1;
+                                    toggle_tile_launcher(
+                                        device, &audio, &ui, &instrument,
+                                        bank_slot, obtained.freq);
                                 }
                             }
                             else if (attempted_silence) {
@@ -12613,9 +12702,8 @@ int main(int argc, char **argv)
                                          "SOURCE GROUP UNCHANGED: %.112s", select_error);
                             }
                             else if (selected) {
-                                stop_all(device, &audio, &ui);
                                 snprintf(ui.status, sizeof(ui.status),
-                                         "BANK %02d EMPTY - DOUBLE CLICK FOR SILENCE",
+                                         "BANK %02d EMPTY - DOUBLE CLICK FOR SILENCE; LAYERS CONTINUE",
                                          bank_slot + 1);
                             }
                             else
@@ -13001,6 +13089,8 @@ int main(int argc, char **argv)
             ui.tune_reference_active = audio.tune_reference_enabled;
             ui.active_notes = ts_note_bank_visible_mask(
                 &audio.notes, ts_ui_keyboard_base_note(&ui));
+            ui.tile_launcher_mask = (uint16_t)atomic_load_explicit(
+                &audio.tile_launcher_mask, memory_order_acquire);
             ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
             ui.playback_active = audio.playing || voice != NULL;
             if (audio.playing) {
@@ -13141,6 +13231,7 @@ int main(int argc, char **argv)
     if (input_device) SDL_CloseAudioDevice(input_device);
     if (device) SDL_CloseAudioDevice(device);
     ts_performance_free(&audio.performance);
+    ts_performance_free(&audio.tile_launchers);
     ts_sister_runtime_free(&audio.sister);
     ts_external_recorder_free(&external_input.recorder);
     ts_capture_free(&audio.capture);

@@ -197,6 +197,135 @@ static int start_slot_event(TsPerformanceBank *bank, const TsBankSlot *slot,
     return 1;
 }
 
+static size_t tile_fade_frames(const TsPerformanceVoice *voice,
+                               int fade_ms, int output_rate)
+{
+    double traversal;
+    size_t requested;
+    size_t maximum;
+    if (voice == NULL || fade_ms <= 0 || output_rate <= 0 ||
+        voice->range_last <= voice->range_first ||
+        !isfinite(voice->step) || fabs(voice->step) < 0.0000001)
+        return 0u;
+    requested = (size_t)llround((double)output_rate *
+                                (double)fade_ms / 1000.0);
+    traversal = (double)(voice->range_last - voice->range_first) /
+                fabs(voice->step);
+    maximum = traversal > 0.0 ? (size_t)floor(traversal * 0.20) : 0u;
+    if (requested > maximum) requested = maximum;
+    return requested;
+}
+
+static void tile_ramp(TsPerformanceVoice *voice, float target)
+{
+    size_t frames;
+    float distance;
+    if (voice == NULL) return;
+    distance = fabsf(target - voice->tile_gain);
+    frames = (size_t)ceilf((float)voice->tile_fade_frames * distance);
+    if (frames == 0u || distance <= 0.000001f) {
+        voice->tile_gain = target;
+        voice->tile_gain_step = 0.0f;
+        voice->tile_ramp_remaining = 0u;
+        return;
+    }
+    voice->tile_gain_step = (target - voice->tile_gain) / (float)frames;
+    voice->tile_ramp_remaining = frames;
+}
+
+TsPerformanceTileResult ts_performance_toggle_tile(
+    TsPerformanceBank *bank, const TsInstrument *instrument, int source_slot,
+    int fade_ms, int output_rate)
+{
+    TsBankSlot view;
+    const TsBankSlot *slot;
+    TsPerformanceGeneration *generation;
+    TsPerformanceVoice *voice;
+    size_t first, last, crossfade;
+    int free_voice = -1;
+    if (bank == NULL || instrument == NULL || source_slot < 0 ||
+        source_slot >= TS_BANK_SLOT_COUNT || output_rate <= 0)
+        return TS_PERFORMANCE_TILE_FAILED;
+    if (fade_ms < TS_TILE_FADE_MS_MIN) fade_ms = TS_TILE_FADE_MS_MIN;
+    if (fade_ms > TS_TILE_FADE_MS_MAX) fade_ms = TS_TILE_FADE_MS_MAX;
+    for (int index = 0; index < TS_PERFORMANCE_VOICE_LIMIT; ++index) {
+        voice = &bank->voices[index];
+        if (!voice->active) {
+            if (free_voice < 0) free_voice = index;
+            continue;
+        }
+        if (!voice->tile_launched || voice->source_slot != source_slot)
+            continue;
+        voice->releasing = !voice->releasing;
+        tile_ramp(voice, voice->releasing ? 0.0f : 1.0f);
+        if (voice->releasing && voice->tile_fade_frames == 0u) {
+            voice_deactivate(voice);
+            return TS_PERFORMANCE_TILE_RELEASING;
+        }
+        return voice->releasing ? TS_PERFORMANCE_TILE_RELEASING :
+                                  TS_PERFORMANCE_TILE_RESUMED;
+    }
+    if (free_voice < 0) return TS_PERFORMANCE_TILE_FAILED;
+    slot = source_slot_view(instrument, source_slot, &view);
+    if (!voice_range_from_slot(slot, &first, &last, &crossfade))
+        return TS_PERFORMANCE_TILE_FAILED;
+    generation = publish_generation(bank, source_slot, &slot->sample);
+    if (generation == NULL) return TS_PERFORMANCE_TILE_FAILED;
+    voice = &bank->voices[free_voice];
+    voice_deactivate(voice);
+    generation_retain(generation);
+    voice->generation = generation;
+    voice->sample = &generation->sample;
+    voice->range_first = first;
+    voice->range_last = last;
+    voice->looping = slot->has_loop && last > first + 1u;
+    voice->loop_mode = slot->loop_mode;
+    voice->direction = voice->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
+    voice->position = voice->looping && voice->direction < 0 ?
+                      (double)(last - 1u) : (double)first;
+    voice->step = (double)generation->sample.sample_rate /
+                  (double)output_rate *
+                  ts_tuning_pair_audition_pitch(&slot->tuning,
+                                                 &slot->audible_tuning);
+    voice->crossfade_frames = crossfade;
+    voice->source_slot = source_slot;
+    voice->gain = 1.0f;
+    voice->group_gain = 1.0f;
+    voice->latched = 1;
+    voice->tile_launched = 1;
+    voice->tile_fade_frames = tile_fade_frames(voice, fade_ms, output_rate);
+    voice->tile_gain = voice->tile_fade_frames > 0u ? 0.0f : 1.0f;
+    tile_ramp(voice, 1.0f);
+    voice->active = 1;
+    return TS_PERFORMANCE_TILE_STARTED;
+}
+
+void ts_performance_fade_all_tiles(TsPerformanceBank *bank)
+{
+    if (bank == NULL) return;
+    for (int index = 0; index < TS_PERFORMANCE_VOICE_LIMIT; ++index) {
+        TsPerformanceVoice *voice = &bank->voices[index];
+        if (!voice->active || !voice->tile_launched) continue;
+        voice->releasing = 1;
+        tile_ramp(voice, 0.0f);
+        if (voice->tile_fade_frames == 0u) voice_deactivate(voice);
+    }
+}
+
+uint16_t ts_performance_tile_mask(const TsPerformanceBank *bank)
+{
+    uint16_t mask = 0u;
+    if (bank == NULL) return 0u;
+    for (int index = 0; index < TS_PERFORMANCE_VOICE_LIMIT; ++index) {
+        const TsPerformanceVoice *voice = &bank->voices[index];
+        if (voice->active && voice->tile_launched &&
+            voice->source_slot >= 0 &&
+            voice->source_slot < TS_BANK_SLOT_COUNT)
+            mask |= (uint16_t)(1u << voice->source_slot);
+    }
+    return mask;
+}
+
 void ts_performance_init(TsPerformanceBank *bank)
 {
     if (bank != NULL) {
@@ -563,8 +692,30 @@ TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
             value = ts_audition_read_frame(
                 voice->sample, voice->position, voice->range_last);
         }
-        gain = voice->gain * ts_audition_attack_gain(
-            voice->attack_frame, voice->attack_frames);
+        if (voice->tile_launched) {
+            if (voice->tile_ramp_remaining > 0u) {
+                voice->tile_gain += voice->tile_gain_step;
+                if (--voice->tile_ramp_remaining == 0u)
+                    voice->tile_gain = voice->releasing ? 0.0f : 1.0f;
+            }
+            if (voice->releasing && voice->tile_gain <= 0.000001f) {
+                voice_deactivate(voice);
+                continue;
+            }
+            gain = voice->gain * voice->tile_gain;
+            if (!voice->looping && voice->tile_fade_frames > 0u) {
+                double remaining = voice->direction >= 0 ?
+                    (double)voice->range_last - voice->position :
+                    voice->position - (double)voice->range_first;
+                float tail = (float)(remaining / fabs(voice->step) /
+                                     (double)voice->tile_fade_frames);
+                if (tail < 0.0f) tail = 0.0f;
+                if (tail < 1.0f) gain *= tail;
+            }
+        } else {
+            gain = voice->gain * ts_audition_attack_gain(
+                voice->attack_frame, voice->attack_frames);
+        }
         value.l *= gain;
         value.r *= gain;
         if (voice->transition_generation != NULL) {
@@ -584,7 +735,8 @@ TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
                 voice->transition_frame = voice->transition_frames = 0u;
             }
         }
-        if (voice->attack_frame < voice->attack_frames)
+        if (!voice->tile_launched &&
+            voice->attack_frame < voice->attack_frames)
             ++voice->attack_frame;
         voice->position += voice->step * voice->direction;
         if (raw_mix != NULL) {
@@ -669,8 +821,11 @@ void ts_performance_sync(TsPerformanceBank *bank,
                 voice->pending_step =
                     (double)generation->sample.sample_rate /
                     (double)output_rate *
-                    ts_tuning_note_pitch(&slot->audible_tuning,
-                        voice->midi_note - TS_KEYBOARD_BASE_NOTE);
+                    (voice->tile_launched ?
+                     ts_tuning_pair_audition_pitch(&slot->tuning,
+                                                   &slot->audible_tuning) :
+                     ts_tuning_note_pitch(&slot->audible_tuning,
+                         voice->midi_note - TS_KEYBOARD_BASE_NOTE));
                 voice->pending_transition_frames = (size_t)llround(
                     (double)output_rate *
                     TS_PERFORMANCE_REPLACEMENT_CROSSFADE_MS / 1000.0);
@@ -689,8 +844,12 @@ void ts_performance_sync(TsPerformanceBank *bank,
             voice->direction = voice->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
         voice->crossfade_frames = voice->releasing ? 0u : crossfade;
         voice->step = (double)slot->sample.sample_rate / (double)output_rate *
-                      ts_tuning_note_pitch(&slot->audible_tuning,
-                                           voice->midi_note - TS_KEYBOARD_BASE_NOTE);
+                      (voice->tile_launched ?
+                       ts_tuning_pair_audition_pitch(&slot->tuning,
+                                                     &slot->audible_tuning) :
+                       ts_tuning_note_pitch(&slot->audible_tuning,
+                                           voice->midi_note -
+                                           TS_KEYBOARD_BASE_NOTE));
     }
     ts_performance_collect_retired(bank);
 }

@@ -1897,6 +1897,8 @@ static int point_in_slider(int x, int y, int left, int top, int width)
 
 TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y)
 {
+    if (x >= 240 && x < 302 && y >= 42 && y < 64)
+        return TS_UI_SLIDER_TILE_FADE;
     if (point_in_slider(x, y, 10, 233, 72)) return TS_UI_SLIDER_BODY;
     if (point_in_slider(x, y, 88, 233, 72)) return TS_UI_SLIDER_EDGE;
     if (point_in_slider(x, y, 166, 233, 72)) return TS_UI_SLIDER_DRIFT;
@@ -1938,6 +1940,28 @@ TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y)
         break;
     }
     return TS_UI_SLIDER_NONE;
+}
+
+float ts_ui_tile_fade_normalized(int milliseconds)
+{
+    float amount;
+    if (milliseconds <= TS_TILE_FADE_MS_MIN) return 0.0f;
+    if (milliseconds >= TS_TILE_FADE_MS_MAX) return 1.0f;
+    amount = (float)milliseconds / (float)TS_TILE_FADE_MS_MAX;
+    return sqrtf(amount);
+}
+
+int ts_ui_tile_fade_ms(float normalized)
+{
+    if (normalized <= 0.0f) return TS_TILE_FADE_MS_MIN;
+    if (normalized >= 1.0f) return TS_TILE_FADE_MS_MAX;
+    return (int)lrintf(normalized * normalized *
+                       (float)TS_TILE_FADE_MS_MAX);
+}
+
+int ts_ui_tile_fade_all_from_point(int x, int y)
+{
+    return x >= 154 && x < 232 && y >= 313 && y < 330;
 }
 
 static int cycle_index(int value, int amount, int count)
@@ -2356,7 +2380,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char tile[96], info[112];
         int tile_number = showing_bank ? ui->bank_view_slot + 1 :
                           instrument->selected_slot + 1;
-        snprintf(tile, sizeof(tile), "TILE %02d %c %.34s", tile_number,
+        snprintf(tile, sizeof(tile), "TILE %02d %c %.24s", tile_number,
                  sample->channels == 2u ? 'S' : 'M', sample->name);
         if (showing_bank && shown_slot->occupied) {
             snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
@@ -2377,6 +2401,21 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char empty[40];
         snprintf(empty, sizeof(empty), "TILE %02d EMPTY", instrument->selected_slot + 1);
         text(fb, 20, 49, empty, PAL_INSTRUMENT, 1);
+    }
+    {
+        char fade[16];
+        float amount = ts_ui_tile_fade_normalized(ui->config.tile_fade_ms);
+        if (ui->config.tile_fade_ms <= 0)
+            snprintf(fade, sizeof(fade), "FADE 0");
+        else if (ui->config.tile_fade_ms < 1000)
+            snprintf(fade, sizeof(fade), "FADE %dMS", ui->config.tile_fade_ms);
+        else
+            snprintf(fade, sizeof(fade), "FADE %.1FS",
+                     (double)ui->config.tile_fade_ms / 1000.0);
+        text(fb, 240, 45, fade, PAL_VOLUME, 1);
+        rect(fb, 240, 58, 62, 3, RGB(18, 18, 18));
+        rect(fb, 240, 58, (int)lrintf(amount * 62.0f), 3, PAL_VOLUME);
+        rect(fb, 239 + (int)lrintf(amount * 62.0f), 56, 3, 7, PAL_MOUSE);
     }
     mini_button(fb, 526, 43, 94,
                 ts_waveform_display_name((TsWaveformDisplayMode)
@@ -2974,7 +3013,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             "CREATE FRESH STAMP  VARY ANSWERS SCULPTED SELECTION" :
             ui->fx_page == TS_FX_FAMILY ?
             "CREATE FRESH SOURCE  VARY ANSWERS CURRENT MATERIAL" :
-            "CLICK PLAY  DOUBLE EMPTY  RESIZE";
+            "CLICK LAUNCH  CLICK AGAIN RELEASE";
         if (ui->external_record_bank)
             bank_hint = ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
                         "REC BANK ARMED  MAKE SOUND  THRESHOLD STARTS TAPE" :
@@ -2984,7 +3023,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                         "REC BANK  CHAIN ON  TAKES ADVANCE AND REARM" :
                         "REC BANK  SELECT EMPTY TILE  REC ARM  SHIFT+1";
         else {
-            snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %.22s",
+            snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %.11s",
                      ui->sample_page + 1,
                      ui->sample_page_count > 0 ? ui->sample_page_count : 1,
                      bank_hint);
@@ -3007,6 +3046,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                                    ui->capture_channels :
                                    ui->config.capture_channels;
             char source_count[24];
+            mini_button(fb, 154, 313, 78, "FADE ALL",
+                        ui->tile_launcher_mask != 0u);
             snprintf(source_count, sizeof(source_count), "SRC %d  SHIFT+T",
                      ts_performance_source_count(ui->sister_source_mask));
             text(fb, 250, 318, source_count, PAL_NOTE, 1);
@@ -3041,6 +3082,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 rect(fb, x - 2, y + 22, 76, 3, record_color);
                 rect(fb, x - 2, y - 2, 3, 27, record_color);
                 rect(fb, x + 71, y - 2, 3, 27, record_color);
+            }
+            if ((ui->tile_launcher_mask & (uint16_t)(1u << i)) != 0u) {
+                rect(fb, x + 4, y + 18, 64, 2, PAL_VOLUME);
+                rect(fb, x + 4, y + 4, 2, 16, PAL_VOLUME);
             }
             ts_ui_draw_tile_state_borders(
                 fb, i, i == instrument->selected_slot,
@@ -4076,17 +4121,6 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     if (!model->routing.enabled ||
         model->power_visual != TS_SISTER_UI_POWER_VISUAL_NONE)
         sister_spirit_render(fb, model);
-    if (model->routing.capture_state == TS_CAPTURE_RECORDING) {
-        uint64_t capacity = model->routing.capture_capacity_frames;
-        uint64_t recorded = model->routing.capture_recorded_frames;
-        int progress = capacity > 0u ?
-            (int)((double)recorded * 620.0 / (double)capacity) : 0;
-        if (progress < 0) progress = 0;
-        if (progress > 620) progress = 620;
-        rect(fb, 10, 40, 620, 3, RGB(30, 8, 8));
-        rect(fb, 10, 40, progress, 3, PAL_VOLUME);
-    }
-
     button(fb, 10, 172, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
     button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
     button(fb, 162, 172, 70, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);
@@ -4211,6 +4245,16 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     text(fb, 510, 336, "STEREO WEAVE", PAL_MOUSE, 1);
 
 sister_footer:
+    if (model->routing.capture_state == TS_CAPTURE_RECORDING) {
+        uint64_t capacity = model->routing.capture_capacity_frames;
+        uint64_t recorded = model->routing.capture_recorded_frames;
+        int progress = capacity > 0u ?
+            (int)((double)recorded * 620.0 / (double)capacity) : 0;
+        if (progress < 0) progress = 0;
+        if (progress > 620) progress = 620;
+        rect(fb, 10, 40, 620, 3, RGB(30, 8, 8));
+        rect(fb, 10, 40, progress, 3, PAL_VOLUME);
+    }
     snprintf(line, sizeof(line), "TARGET %s  %.88s",
              model->destination_slot >= 0 ? "READY" : "--",
              model->routing.capture_state == TS_CAPTURE_RECORDING ?

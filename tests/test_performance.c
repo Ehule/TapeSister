@@ -217,6 +217,56 @@ int main(void)
     }
     ts_performance_clear(&performance);
 
+    /* Mouse-launched tiles are independent, capped to 20% fade edges, and
+       reverse an in-flight loop release without restarting its playhead. */
+    free_slot(&instrument.bank[5]);
+    fill_slot(&instrument.bank[5], 1.0f, 100u, 1000u);
+    instrument.selected_slot = -1;
+    assert(ts_performance_toggle_tile(&performance, &instrument, 5, 50, 1000) ==
+           TS_PERFORMANCE_TILE_STARTED);
+    assert(performance.voices[0].tile_fade_frames == 20u);
+    monitored = ts_performance_read(&performance, NULL);
+    assert(monitored > 0.04f && monitored < 0.06f);
+    for (int i = 0; i < 19; ++i) (void)ts_performance_read(&performance, NULL);
+    assert(fabsf(performance.voices[0].tile_gain - 1.0f) < 0.0001f);
+    for (int i = 0; i < 90; ++i) (void)ts_performance_read(&performance, NULL);
+    assert(ts_performance_count(&performance) == 0);
+
+    instrument.bank[5].has_loop = 1;
+    instrument.bank[5].loop_first = 10u;
+    instrument.bank[5].loop_last = 90u;
+    instrument.bank[5].loop_mode = TS_LOOP_FORWARD;
+    assert(ts_performance_toggle_tile(&performance, &instrument, 5, 50, 1000) ==
+           TS_PERFORMANCE_TILE_STARTED);
+    assert(performance.voices[0].tile_fade_frames == 16u);
+    for (int i = 0; i < 8; ++i) (void)ts_performance_read(&performance, NULL);
+    {
+        double continuing_position = performance.voices[0].position;
+        float before_release = performance.voices[0].tile_gain;
+        assert(ts_performance_toggle_tile(
+                   &performance, &instrument, 5, 50, 1000) ==
+               TS_PERFORMANCE_TILE_RELEASING);
+        for (int i = 0; i < 4; ++i) (void)ts_performance_read(&performance, NULL);
+        assert(performance.voices[0].tile_gain < before_release);
+        assert(ts_performance_toggle_tile(
+                   &performance, &instrument, 5, 50, 1000) ==
+               TS_PERFORMANCE_TILE_RESUMED);
+        assert(performance.voices[0].position > continuing_position);
+        assert(performance.voices[0].position !=
+               (double)instrument.bank[5].loop_first);
+    }
+    for (int i = 0; i < 16; ++i) (void)ts_performance_read(&performance, NULL);
+    assert(fabsf(performance.voices[0].tile_gain - 1.0f) < 0.0001f);
+    assert(ts_performance_toggle_tile(&performance, &instrument, 6, 50, 1000) ==
+           TS_PERFORMANCE_TILE_STARTED);
+    assert((ts_performance_tile_mask(&performance) &
+            (uint16_t)((1u << 5) | (1u << 6))) ==
+           (uint16_t)((1u << 5) | (1u << 6)));
+    ts_performance_fade_all_tiles(&performance);
+    for (int i = 0; i < 20; ++i) (void)ts_performance_read(&performance, NULL);
+    assert(ts_performance_tile_mask(&performance) == 0u);
+    assert(ts_performance_count(&performance) == 0);
+
     ts_performance_free(&performance);
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) free_slot(&instrument.bank[slot]);
     puts("performance tests passed");

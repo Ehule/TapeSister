@@ -48,6 +48,20 @@ int main(void)
     for (int tap = 0; tap < TS_SISTER_TAP_COUNT; ++tap)
         CHECK(sister_frame_finite(frame.tap[tap]));
 
+    /* The separate mouse-launch tile bus follows the TILES insert without
+       becoming a Sister keyboard-performance voice. */
+    ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TILES);
+    source.preview = (TsStereoFrame){0.0f, 0.0f};
+    source.tiles = (TsStereoFrame){0.4f, -0.2f};
+    for (int i = 0; i < 20; ++i)
+        frame = ts_sister_runtime_process_frame(&runtime, &source);
+    CHECK(frame.input.l > 0.1f && frame.input.r < -0.05f);
+    ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_PREVIEW);
+    source.tiles = (TsStereoFrame){0.0f, 0.0f};
+    source.preview = (TsStereoFrame){0.5f, -0.25f};
+    for (int i = 0; i < 20; ++i)
+        frame = ts_sister_runtime_process_frame(&runtime, &source);
+
     ts_sister_runtime_set_monitor(&runtime, 0);
     frame = ts_sister_runtime_process_frame(&runtime, &source);
     CHECK(CLOSE(frame.monitor_return.l, 0.0f));

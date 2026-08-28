@@ -964,10 +964,12 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     frame.dry_monitor_gain = 1.0f;
     if (runtime == NULL) return frame;
     if (sources != NULL) source = *sources;
+    source.tiles = ts_stereo_frame_sanitize(source.tiles);
     source.fm = ts_stereo_frame_sanitize(source.fm);
     source.external = ts_stereo_frame_sanitize(source.external);
     source.preview = ts_stereo_frame_sanitize(source.preview);
     tile_bus = ts_performance_read_stereo(&runtime->performance, &tile_raw);
+    tile_bus = frame_add(tile_bus, source.tiles);
     (void)tile_raw;
     if (!runtime->enabled || runtime->callback_failed) {
         runtime->last_frame = frame;
