@@ -20,7 +20,22 @@ int main(int argc, char **argv)
     ts_sister_ui_model_init(&model, &config);
     ts_sister_ui_model_show(&model);
     model.magnetic_phase = 3u;
-    if (strcmp(mode, "flash") == 0) {
+    if (strcmp(mode, "fallout") == 0) {
+        model.routing.enabled = 1;
+        model.routing.rolling = 1;
+        model.fx_page = 2;
+        model.parameters.fx.fallout.enabled = 1;
+        model.parameters.fx.fallout.mix = 0.72f;
+        model.parameters.fx.fallout.feedback = 0.28f;
+        model.parameters.fx.fallout.noise = 0.18f;
+        model.parameters.fx.fallout.drop_enabled = 1;
+        model.parameters.fx.fallout.pan_enabled = 1;
+        model.parameters.fx.fallout.skip_enabled = 1;
+        model.parameters.fx.fallout.bit_enabled = 1;
+        model.parameters.fx.fallout.pitch_enabled = 1;
+        snprintf(model.status, sizeof(model.status),
+                 "FALLOUT INSERT ENGAGED");
+    } else if (strcmp(mode, "flash") == 0) {
         model.routing.enabled = 1;
         model.power_visual = TS_SISTER_UI_POWER_VISUAL_ON;
         model.power_visual_elapsed_ms = 350u;

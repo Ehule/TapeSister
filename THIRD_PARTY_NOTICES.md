@@ -20,6 +20,12 @@ branding, artwork, panel graphics, source code, proprietary algorithms, or trade
 SoundThread was inspected as a technical reference; none of its Godot UI, graph model,
 or archive is included.
 
+Fallout is an original C reimplementation inspired by Bahiamansa's freely shared
+`failure_v2` ppooll act for Max. TapeSister does not include the Max patch, ppooll,
+Cycling '74 code, binaries, artwork, or UI assets. Credit for the source concept and
+the original patch belongs to Bahiamansa; the TapeSister implementation is released
+under the repository's MIT license.
+
 TapeSister includes RtMidi 6.0.0 for portable MIDI input on Windows, macOS, and
 Linux. RtMidi is copyright 2003–2023 Gary P. Scavone and is distributed under
 its permissive license in `third_party/rtmidi/LICENSE.txt`. The vendored source

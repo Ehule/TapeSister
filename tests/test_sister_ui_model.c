@@ -188,6 +188,19 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 200, 310);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK);
+    model.fx_page = 2;
+    hit = ts_sister_ui_hit_test_model(&model, 30, 55);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_TOGGLE &&
+          hit.index == TS_SISTER_UI_FALLOUT_POWER);
+    hit = ts_sister_ui_hit_test_model(&model, 200, 56);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_MIX);
+    hit = ts_sister_ui_hit_test_model(&model, 30, 190);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_TOGGLE &&
+          hit.index == TS_SISTER_UI_FALLOUT_SKIP);
+    hit = ts_sister_ui_hit_test_model(&model, 350, 190);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE);
     model.fx_page = 0;
 
     {

@@ -215,7 +215,15 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "reverb_type=%d\nreverb_mix=%.9g\nreverb_decay=%.9g\nreverb_targets=%u\n"
         "delay_time=%.9g\ndelay_feedback=%.9g\ndelay_mix=%.9g\ndelay_targets=%u\n"
         "distortion_drive=%.9g\ndistortion_tone=%.9g\ndistortion_mix=%.9g\n"
-        "distortion_targets=%u\nmaster_fx_feedback=%.9g\nbuffer_seconds=%.9g\n",
+        "distortion_targets=%u\nmaster_fx_feedback=%.9g\nbuffer_seconds=%.9g\n"
+        "fallout_enabled=%d\nfallout_mix=%.9g\nfallout_feedback=%.9g\n"
+        "fallout_noise=%.9g\nfallout_drop_enabled=%d\nfallout_drop_rate=%.9g\n"
+        "fallout_pan_enabled=%d\nfallout_pan_rate=%.9g\n"
+        "fallout_skip_enabled=%d\nfallout_skip_span=%.9g\nfallout_skip_rate=%.9g\n"
+        "fallout_bit_enabled=%d\nfallout_bit_quality=%.9g\n"
+        "fallout_bit_resolution=%.9g\nfallout_bit_rate=%.9g\n"
+        "fallout_pitch_enabled=%d\nfallout_pitch=%.9g\n"
+        "fallout_pitch_ramp=%.9g\nfallout_pitch_rate=%.9g\n",
         p->head1_level, p->head1_time_ms, p->head1_feedback,
         p->head2_level, p->head2_scrub, p->head2_rate_index, p->head2_feedback,
         p->head3_level, p->head3_span, p->head3_rate_index,
@@ -232,7 +240,16 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         (unsigned)p->fx.delay_targets, p->fx.distortion_drive,
         p->fx.distortion_tone, p->fx.distortion_mix,
         (unsigned)p->fx.distortion_targets, p->fx.master_feedback,
-        p->buffer_seconds) >= 0;
+        p->buffer_seconds, p->fx.fallout.enabled, p->fx.fallout.mix,
+        p->fx.fallout.feedback, p->fx.fallout.noise,
+        p->fx.fallout.drop_enabled, p->fx.fallout.drop_rate,
+        p->fx.fallout.pan_enabled, p->fx.fallout.pan_rate,
+        p->fx.fallout.skip_enabled, p->fx.fallout.skip_span,
+        p->fx.fallout.skip_rate, p->fx.fallout.bit_enabled,
+        p->fx.fallout.bit_quality, p->fx.fallout.bit_resolution,
+        p->fx.fallout.bit_rate, p->fx.fallout.pitch_enabled,
+        p->fx.fallout.pitch, p->fx.fallout.pitch_ramp,
+        p->fx.fallout.pitch_rate) >= 0;
 }
 
 static int replace_file(const char *temporary, const char *path)
@@ -369,6 +386,25 @@ static int assign_field(TsSisterParameters *p, const char *key,
     FLOAT_FIELD("distortion_mix", fx.distortion_mix);
     FLOAT_FIELD("master_fx_feedback", fx.master_feedback);
     FLOAT_FIELD("buffer_seconds", buffer_seconds);
+    INT_FIELD("fallout_enabled", fx.fallout.enabled);
+    FLOAT_FIELD("fallout_mix", fx.fallout.mix);
+    FLOAT_FIELD("fallout_feedback", fx.fallout.feedback);
+    FLOAT_FIELD("fallout_noise", fx.fallout.noise);
+    INT_FIELD("fallout_drop_enabled", fx.fallout.drop_enabled);
+    FLOAT_FIELD("fallout_drop_rate", fx.fallout.drop_rate);
+    INT_FIELD("fallout_pan_enabled", fx.fallout.pan_enabled);
+    FLOAT_FIELD("fallout_pan_rate", fx.fallout.pan_rate);
+    INT_FIELD("fallout_skip_enabled", fx.fallout.skip_enabled);
+    FLOAT_FIELD("fallout_skip_span", fx.fallout.skip_span);
+    FLOAT_FIELD("fallout_skip_rate", fx.fallout.skip_rate);
+    INT_FIELD("fallout_bit_enabled", fx.fallout.bit_enabled);
+    FLOAT_FIELD("fallout_bit_quality", fx.fallout.bit_quality);
+    FLOAT_FIELD("fallout_bit_resolution", fx.fallout.bit_resolution);
+    FLOAT_FIELD("fallout_bit_rate", fx.fallout.bit_rate);
+    INT_FIELD("fallout_pitch_enabled", fx.fallout.pitch_enabled);
+    FLOAT_FIELD("fallout_pitch", fx.fallout.pitch);
+    FLOAT_FIELD("fallout_pitch_ramp", fx.fallout.pitch_ramp);
+    FLOAT_FIELD("fallout_pitch_rate", fx.fallout.pitch_rate);
     if (strcmp(key, "reverb_targets") == 0 ||
         strcmp(key, "delay_targets") == 0 ||
         strcmp(key, "distortion_targets") == 0) {

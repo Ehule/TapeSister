@@ -120,6 +120,7 @@ typedef struct {
 
 typedef struct {
     TsSisterMachine machine;
+    TsSisterFalloutEngine fallout;
     TsSisterPostFxEngine post_fx;
     TsSisterParameters parameters;
     TsPerformanceBank performance;
@@ -151,6 +152,8 @@ typedef struct {
     TsSisterRamp ordinary_fx_return_gain;
     float master_feedback_current;
     TsStereoFrame master_feedback_previous;
+    float fallout_feedback_current;
+    TsStereoFrame fallout_feedback_previous;
     /* UI/controller performance-safety state; never read by the callback. */
     uint64_t parameter_locks;
     char selected_preset[48];

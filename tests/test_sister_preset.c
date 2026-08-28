@@ -44,6 +44,11 @@ int main(void)
     p.fx.distortion_mix = 0.73f;
     p.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
     p.fx.master_feedback = 0.69f;
+    p.fx.fallout.enabled = 1;
+    p.fx.fallout.feedback = 0.58f;
+    p.fx.fallout.skip_enabled = 1;
+    p.fx.fallout.skip_span = 0.76f;
+    p.fx.fallout.bit_enabled = 1;
     p.buffer_seconds = 23.0f;
     assert(ts_sister_preset_save_new_with_locks(
         &bank, "MY MEMORY", &p, locks, 48000u, error, sizeof(error)));
@@ -75,6 +80,11 @@ int main(void)
                                           TS_SISTER_EFFECT_TARGET_H3));
     assert(recalled.fx.distortion_targets == TS_SISTER_EFFECT_TARGET_MIX);
     assert(recalled.fx.master_feedback > 0.68f);
+    assert(recalled.fx.fallout.enabled == 1);
+    assert(recalled.fx.fallout.feedback > 0.57f);
+    assert(recalled.fx.fallout.skip_enabled == 1);
+    assert(recalled.fx.fallout.skip_span > 0.75f);
+    assert(recalled.fx.fallout.bit_enabled == 1);
     assert(recalled.buffer_seconds == 23.0f);
     assert(ts_sister_preset_rename(&loaded, 3u, "RENAMED", error, sizeof(error)));
     assert(ts_sister_preset_overwrite(&loaded, 3u, &p, 48000u,

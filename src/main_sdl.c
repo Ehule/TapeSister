@@ -6871,6 +6871,19 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: parameters->fx.distortion_tone = amount; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: parameters->fx.distortion_mix = amount; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: parameters->fx.master_feedback = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_MIX: parameters->fx.fallout.mix = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: parameters->fx.fallout.feedback = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_NOISE: parameters->fx.fallout.noise = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_DROP_RATE: parameters->fx.fallout.drop_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PAN_RATE: parameters->fx.fallout.pan_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_SPAN: parameters->fx.fallout.skip_span = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE: parameters->fx.fallout.skip_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_QUALITY: parameters->fx.fallout.bit_quality = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RESOLUTION: parameters->fx.fallout.bit_resolution = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RATE: parameters->fx.fallout.bit_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH: parameters->fx.fallout.pitch = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP: parameters->fx.fallout.pitch_ramp = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: parameters->fx.fallout.pitch_rate = amount; break;
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
         parameters->buffer_seconds = (float)TS_SISTER_MIN_SECONDS +
             amount * (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
@@ -6929,6 +6942,19 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: value = parameters->fx.distortion_tone; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: value = parameters->fx.distortion_mix; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: value = parameters->fx.master_feedback; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_MIX: value = parameters->fx.fallout.mix; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: value = parameters->fx.fallout.feedback; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_NOISE: value = parameters->fx.fallout.noise; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_DROP_RATE: value = parameters->fx.fallout.drop_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PAN_RATE: value = parameters->fx.fallout.pan_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_SPAN: value = parameters->fx.fallout.skip_span; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE: value = parameters->fx.fallout.skip_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_QUALITY: value = parameters->fx.fallout.bit_quality; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RESOLUTION: value = parameters->fx.fallout.bit_resolution; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RATE: value = parameters->fx.fallout.bit_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH: value = parameters->fx.fallout.pitch; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP: value = parameters->fx.fallout.pitch_ramp; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: value = parameters->fx.fallout.pitch_rate; break;
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
         value = (parameters->buffer_seconds - (float)TS_SISTER_MIN_SECONDS) /
             (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
@@ -7033,6 +7059,19 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: return "DISTORTION TONE";
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: return "DISTORTION MIX";
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: return "MASTER FX FEEDBACK";
+    case TS_SISTER_UI_PARAM_FALLOUT_MIX: return "FALLOUT MIX";
+    case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: return "FALLOUT FEEDBACK";
+    case TS_SISTER_UI_PARAM_FALLOUT_NOISE: return "FALLOUT NOISE";
+    case TS_SISTER_UI_PARAM_FALLOUT_DROP_RATE: return "FALLOUT DROP RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_PAN_RATE: return "FALLOUT PAN RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_SPAN: return "FALLOUT SKIP SPAN";
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE: return "FALLOUT SKIP RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_QUALITY: return "FALLOUT SAMPLE";
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RESOLUTION: return "FALLOUT BITS";
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RATE: return "FALLOUT BIT RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH: return "FALLOUT PITCH";
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP: return "FALLOUT PITCH RAMP";
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: return "FALLOUT PITCH RATE";
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS: return "BUFFER DURATION";
     default: return "PARAMETER";
     }
@@ -7397,7 +7436,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_PAGE) {
-        sister->model.fx_page = !sister->model.fx_page;
+        sister->model.fx_page = (sister->model.fx_page + 1) % 3;
         sister->rendered_model_valid = 0;
         return;
     }
@@ -7496,6 +7535,41 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             ui->config.sister_buffer_seconds =
                 (int)lrintf(sister->model.parameters.buffer_seconds);
         break;
+    case TS_SISTER_UI_ACTION_FALLOUT_TOGGLE: {
+        TsSisterFalloutControls *fallout =
+            &sister->model.parameters.fx.fallout;
+        switch ((TsSisterUiFalloutToggle)hit.index) {
+        case TS_SISTER_UI_FALLOUT_POWER:
+            fallout->enabled = !fallout->enabled;
+            break;
+        case TS_SISTER_UI_FALLOUT_DROP:
+            fallout->drop_enabled = !fallout->drop_enabled;
+            break;
+        case TS_SISTER_UI_FALLOUT_PAN:
+            fallout->pan_enabled = !fallout->pan_enabled;
+            break;
+        case TS_SISTER_UI_FALLOUT_SKIP:
+            fallout->skip_enabled = !fallout->skip_enabled;
+            break;
+        case TS_SISTER_UI_FALLOUT_BIT:
+            fallout->bit_enabled = !fallout->bit_enabled;
+            break;
+        case TS_SISTER_UI_FALLOUT_PITCH:
+            fallout->pitch_enabled = !fallout->pitch_enabled;
+            break;
+        default: break;
+        }
+        ts_sister_runtime_set_parameters(&audio->sister,
+                                         &sister->model.parameters);
+        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 hit.index == TS_SISTER_UI_FALLOUT_POWER ?
+                     (fallout->enabled ? "FALLOUT INSERT ENGAGED" :
+                                         "FALLOUT TRUE BYPASS") :
+                     "FALLOUT AUTOMATION UPDATED");
+        break;
+    }
     case TS_SISTER_UI_ACTION_EFFECT_TARGET:
     {
         int effect = hit.index >> 8;

@@ -54,6 +54,10 @@ int main(void)
     runtime.parameters.fx.distortion_mix = 0.71f;
     runtime.parameters.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
     runtime.parameters.fx.master_feedback = 0.66f;
+    runtime.parameters.fx.fallout.enabled = 1;
+    runtime.parameters.fx.fallout.feedback = 0.64f;
+    runtime.parameters.fx.fallout.pitch_enabled = 1;
+    runtime.parameters.fx.fallout.pitch_ramp = 0.37f;
     runtime.parameters.buffer_seconds = 23.0f;
     runtime.parameter_locks =
         TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FILTER_TYPE) |
@@ -82,6 +86,10 @@ int main(void)
     assert(loaded.parameters.fx.distortion_targets ==
            TS_SISTER_EFFECT_TARGET_MIX);
     assert(loaded.parameters.fx.master_feedback > 0.65f);
+    assert(loaded.parameters.fx.fallout.enabled == 1);
+    assert(loaded.parameters.fx.fallout.feedback > 0.63f);
+    assert(loaded.parameters.fx.fallout.pitch_enabled == 1);
+    assert(loaded.parameters.fx.fallout.pitch_ramp > 0.36f);
     assert(loaded.parameters.buffer_seconds == 23.0f);
     assert(loaded.parameter_locks == runtime.parameter_locks);
     assert(strcmp(loaded.selected_preset, "GHOST FIELD") == 0);

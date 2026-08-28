@@ -214,7 +214,52 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         hit.action = TS_SISTER_UI_ACTION_PRESET_NEXT;
         return hit;
     }
-    if (model != NULL && model->fx_page) {
+    if (model != NULL && model->fx_page == 2) {
+        static const int toggle[6][4] = {
+            {16, 50, 86, 22}, {16, 116, 76, 18}, {16, 150, 76, 18},
+            {16, 184, 76, 18}, {16, 218, 76, 18}, {16, 252, 76, 18}
+        };
+        static const int slider[][5] = {
+            {TS_SISTER_UI_PARAM_FALLOUT_MIX, 120, 52, 170, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK, 310, 52, 170, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_NOISE, 120, 84, 410, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_DROP_RATE, 120, 116, 410, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_PAN_RATE, 120, 150, 410, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_SKIP_SPAN, 120, 184, 195, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE, 335, 184, 195, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_BIT_QUALITY, 120, 218, 125, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_BIT_RESOLUTION, 265, 218, 125, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_BIT_RATE, 410, 218, 120, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_PITCH, 120, 252, 125, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP, 265, 252, 125, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE, 410, 252, 120, 18}
+        };
+        for (int i = 0; i < 6; ++i) {
+            if (contains(x, y, toggle[i][0], toggle[i][1],
+                         toggle[i][2], toggle[i][3])) {
+                hit.action = TS_SISTER_UI_ACTION_FALLOUT_TOGGLE;
+                hit.index = i;
+                return hit;
+            }
+        }
+        for (size_t i = 0u; i < sizeof(slider) / sizeof(slider[0]); ++i) {
+            if (contains(x, y, slider[i][1], slider[i][2],
+                         slider[i][3], slider[i][4])) {
+                hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+                hit.index = slider[i][0];
+                hit.normalized = (float)(x - slider[i][1]) /
+                                 (float)(slider[i][3] - 1);
+                return hit;
+            }
+        }
+        if (contains(x, y, 10, 370, 58, 22)) hit.action = TS_SISTER_UI_ACTION_TAP;
+        else if (contains(x, y, 74, 370, 44, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE_FORMAT;
+        else if (contains(x, y, 124, 370, 100, 22)) hit.action = TS_SISTER_UI_ACTION_DESTINATION;
+        else if (contains(x, y, 450, 370, 82, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE;
+        else if (contains(x, y, 538, 370, 92, 22)) hit.action = TS_SISTER_UI_ACTION_OVERDUB;
+        return hit;
+    }
+    if (model != NULL && model->fx_page == 1) {
         static const int parameter[3][3] = {
             {TS_SISTER_UI_PARAM_REVERB_TYPE, TS_SISTER_UI_PARAM_REVERB_DECAY,
              TS_SISTER_UI_PARAM_REVERB_MIX},

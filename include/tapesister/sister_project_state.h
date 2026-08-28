@@ -7,7 +7,7 @@
 #include "tapesister/sister_runtime.h"
 
 enum {
-    TS_SISTER_PROJECT_STATE_VERSION = 6,
+    TS_SISTER_PROJECT_STATE_VERSION = 7,
     TS_SISTER_PROJECT_PRESET_NAME_MAX = 47
 };
 

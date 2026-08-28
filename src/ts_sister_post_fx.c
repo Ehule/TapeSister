@@ -97,6 +97,7 @@ void ts_sister_fx_controls_default(TsSisterFxControls *controls)
     controls->distortion_drive = 0.25f;
     controls->distortion_tone = 0.55f;
     controls->distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
+    ts_sister_fallout_controls_default(&controls->fallout);
 }
 
 void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
@@ -120,6 +121,7 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
     controls->distortion_targets = ts_sister_effect_targets_sanitize(
         controls->distortion_targets);
     controls->master_feedback = clampf(controls->master_feedback, 0.0f, 1.0f);
+    ts_sister_fallout_controls_sanitize(&controls->fallout);
 }
 
 float ts_sister_delay_time_ms(float normalized)

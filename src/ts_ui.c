@@ -3721,12 +3721,75 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         rect(fb, 351, 25, (int)lrintf(92.0f * sister_clamp(amount)), 3,
              color);
     }
-    button(fb, 450, 8, 76, model->fx_page ? "TAPE" : "FX PAGE",
-           model->fx_page);
+    button(fb, 450, 8, 76,
+           model->fx_page == 0 ? "FX PAGE" :
+           model->fx_page == 1 ? "FALLOUT" : "TAPE",
+           model->fx_page != 0);
     button(fb, 532, 8, 98, ts_waveform_display_name(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
 
-    if (model->fx_page) {
+    if (model->fx_page == 2) {
+        const TsSisterFalloutControls *f = &model->parameters.fx.fallout;
+        rect(fb, 10, 42, 620, 268, RGB(9, 9, 10));
+        button(fb, 16, 50, 86, f->enabled ? "FALLOUT ON" : "FALLOUT",
+               f->enabled);
+        sister_percent_parameter_state(fb, 120, 52, 170, "MIX", f->mix,
+            100, PAL_EFFECT, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_MIX));
+        sister_percent_parameter_state(fb, 310, 52, 170, "FEEDBACK", f->feedback,
+            120, PAL_TUNING, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK));
+        text(fb, 492, 57, "WET > SISTER", PAL_MOUSE, 1);
+
+        text(fb, 18, 89, "NOISE", PAL_WAVE_SUM, 1);
+        sister_percent_parameter_state(fb, 120, 84, 410, "LEVEL", f->noise,
+            100, PAL_WAVE_SUM, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_NOISE));
+        button(fb, 16, 116, 76, "DROP", f->drop_enabled);
+        sister_percent_parameter_state(fb, 120, 116, 410, "RATE", f->drop_rate,
+            100, PAL_VOLUME, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_DROP_RATE));
+        button(fb, 16, 150, 76, "PAN", f->pan_enabled);
+        sister_percent_parameter_state(fb, 120, 150, 410, "RATE", f->pan_rate,
+            100, PAL_WAVE_RIGHT, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_PAN_RATE));
+        button(fb, 16, 184, 76, "SKIP", f->skip_enabled);
+        sister_percent_parameter_state(fb, 120, 184, 195, "SPAN", f->skip_span,
+            100, PAL_EFFECT, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_SKIP_SPAN));
+        sister_percent_parameter_state(fb, 335, 184, 195, "RATE", f->skip_rate,
+            100, PAL_EFFECT, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE));
+        button(fb, 16, 218, 76, "BIT", f->bit_enabled);
+        sister_percent_parameter_state(fb, 120, 218, 125, "SAMPLE", f->bit_quality,
+            100, PAL_TUNING, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_BIT_QUALITY));
+        sister_percent_parameter_state(fb, 265, 218, 125, "BITS", f->bit_resolution,
+            100, PAL_TUNING, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_BIT_RESOLUTION));
+        sister_percent_parameter_state(fb, 410, 218, 120, "RATE", f->bit_rate,
+            100, PAL_TUNING, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_BIT_RATE));
+        button(fb, 16, 252, 76, "PITCH", f->pitch_enabled);
+        sister_percent_parameter_state(fb, 120, 252, 125, "RATIO", f->pitch,
+            100, PAL_NOTE, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_PITCH));
+        sister_percent_parameter_state(fb, 265, 252, 125, "RAMP", f->pitch_ramp,
+            100, PAL_NOTE, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP));
+        sister_percent_parameter_state(fb, 410, 252, 120, "RATE", f->pitch_rate,
+            100, PAL_NOTE, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE));
+        text(fb, 10, 318,
+             "SISTER > FALLOUT > DISTORTION > DELAY > REVERB > OUTPUT",
+             PAL_MOUSE, 1);
+        text(fb, 10, 340,
+             "TRUE BYPASS / BUFFER-RELATIVE SKIPS / PROTECTED CAUSAL FEEDBACK",
+             PAL_MOUSE, 1);
+        goto sister_footer;
+    }
+
+    if (model->fx_page == 1) {
         static const char *const names[3] = {"REVERB", "DELAY", "DISTORTION"};
         const uint32_t colors[3] = {PAL_WAVE_RIGHT, PAL_EFFECT, PAL_VOLUME};
         const uint8_t masks[3] = {
