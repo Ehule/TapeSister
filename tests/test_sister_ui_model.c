@@ -223,6 +223,8 @@ int main(void)
           hit.index == TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY);
     hit = ts_sister_ui_hit_test_model(&model, 560, 60);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG);
+    hit = ts_sister_ui_hit_test_model(&model, 30, 320);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER);
     model.fallout_lfo_open = 1;
     hit = ts_sister_ui_hit_test_model(&model, 240, 113);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_TARGET &&

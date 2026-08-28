@@ -7478,17 +7478,17 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET ||
-        hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE) {
+        hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE ||
+        hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER) {
         TsSisterFalloutControls *fallout =
             &sister->model.parameters.fx.fallout;
         if (device) SDL_LockAudioDevice(device);
         if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET) {
             fallout->rise_targets ^= (uint32_t)hit.index;
-        } else {
+        } else if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE) {
             fallout->rise_mode = (TsSisterFalloutRiseMode)hit.index;
-            if (fallout->rise_mode == TS_SISTER_FALLOUT_RISE_ONE_SHOT)
-                ++fallout->rise_retrigger;
-        }
+        } else
+            ++fallout->rise_retrigger;
         ts_sister_runtime_set_parameters(&audio->sister,
                                          &sister->model.parameters);
         ts_sister_runtime_set_selected_preset(&audio->sister, "");
@@ -7497,6 +7497,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET)
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "FALLOUT RISE TARGETS UPDATED");
+        else if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER)
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "FALLOUT SHARED RISE RESTARTED");
         else
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "FALLOUT RISE %s",

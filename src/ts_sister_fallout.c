@@ -316,12 +316,15 @@ void ts_sister_fallout_set_controls(
 {
     TsSisterFalloutControls next;
     int restart_rise;
+    uint32_t removed_targets;
     uint32_t fade;
     if (engine == NULL || controls == NULL) return;
     next = *controls;
     ts_sister_fallout_controls_sanitize(&next);
     restart_rise = next.rise_mode != engine->controls.rise_mode ||
                    next.rise_retrigger != engine->controls.rise_retrigger;
+    removed_targets = (engine->controls.lfo_targets & ~next.lfo_targets) |
+                      (engine->controls.rise_targets & ~next.rise_targets);
     fade = engine->sample_rate > 0u ? (uint32_t)fmaxf(1.0f,
         ts_sister_fallout_transition_ms(next.transition) *
         (float)engine->sample_rate / 1000.0f) : 1u;
@@ -336,6 +339,24 @@ void ts_sister_fallout_set_controls(
              &engine->engage_remaining, 0.0f, fade);
     }
     engine->controls = next;
+    /* Event-rate parameters are sampled when their event fires.  Re-arm the
+       affected scheduler when modulation is disconnected so the saved panel
+       value resumes on the very next audio frame rather than one old interval
+       later. */
+    if ((removed_targets & (TS_SISTER_FALLOUT_LFO_SKIP_SPAN |
+                            TS_SISTER_FALLOUT_LFO_SKIP_RATE)) != 0u)
+        engine->next_skip = engine->write_clock;
+    if ((removed_targets & TS_SISTER_FALLOUT_LFO_DROP_RATE) != 0u)
+        engine->next_drop = engine->write_clock;
+    if ((removed_targets & TS_SISTER_FALLOUT_LFO_PAN_RATE) != 0u)
+        engine->next_pan = engine->write_clock;
+    if ((removed_targets & (TS_SISTER_FALLOUT_LFO_BIT_QUALITY |
+                            TS_SISTER_FALLOUT_LFO_BIT_RATE)) != 0u)
+        engine->next_bit = engine->write_clock;
+    if ((removed_targets & (TS_SISTER_FALLOUT_LFO_PITCH |
+                            TS_SISTER_FALLOUT_LFO_PITCH_RAMP |
+                            TS_SISTER_FALLOUT_LFO_PITCH_RATE)) != 0u)
+        engine->next_pitch = engine->write_clock;
     if (restart_rise) {
         engine->rise_phase = 0.0;
         engine->rise_value = 0.0f;
@@ -393,16 +414,12 @@ static void choose_loop(TsSisterFalloutEngine *engine,
     engine->read_clock = engine->loop_start;
 }
 
-static float choose_pitch(TsSisterFalloutEngine *engine,
-                          const TsSisterFalloutControls *controls)
+static float choose_pitch(const TsSisterFalloutControls *controls)
 {
     static const float ratios[8] = {-3.0f, -2.0f, -1.0f, -0.5f,
                                      0.5f,  1.0f,  2.0f,  3.0f};
     int index;
-    if (controls->pitch_enabled)
-        index = (int)(random_u32(engine) % 8u);
-    else
-        index = (int)lrintf(controls->pitch * 7.0f);
+    index = (int)lrintf(controls->pitch * 7.0f);
     if (index < 0) index = 0;
     if (index > 7) index = 7;
     return ratios[index];
@@ -533,6 +550,7 @@ TsSisterFalloutResult ts_sister_fallout_process(
         if (engine->read_clock < engine->loop_start ||
             engine->read_clock >= engine->loop_start + engine->loop_length)
             engine->read_clock = engine->loop_start;
+        engine->skip_fade_remaining = 0u;
     }
 
     if (controls.skip_enabled && engine->write_clock >= engine->next_skip) {
@@ -540,9 +558,15 @@ TsSisterFalloutResult ts_sister_fallout_process(
         engine->next_skip = engine->write_clock +
             interval_frames(controls.skip_rate, engine->sample_rate);
     }
-    if ((!controls.pitch_enabled && engine->playback_remaining == 0u) ||
-        (controls.pitch_enabled && engine->write_clock >= engine->next_pitch)) {
-        float target = choose_pitch(engine, &controls);
+    if (!controls.pitch_enabled) {
+        if (engine->playback_target != 1.0f) {
+            frames = engine->sample_rate / 100u; /* 10 ms de-click bypass. */
+            engine->playback_target = 1.0f;
+            ramp(&engine->playback_rate, &engine->playback_step,
+                 &engine->playback_remaining, 1.0f, frames);
+        }
+    } else if (engine->write_clock >= engine->next_pitch) {
+        float target = choose_pitch(&controls);
         frames = (uint32_t)(controls.pitch_ramp * 0.5f * engine->sample_rate);
         engine->playback_target = target;
         ramp(&engine->playback_rate, &engine->playback_step,

@@ -96,9 +96,17 @@ int main(void)
         (void)ts_sister_runtime_process_frame(&runtime, &source);
     CHECK(CLOSE(ts_sister_runtime_direct_tile_route(&runtime), 0.0f));
 
+    runtime.fallout.lfo_phase = 0.25;
+    runtime.fallout.rise_value = 0.50f;
+    runtime.fallout.rise_one_shot_complete = 1;
+    (void)ts_sister_runtime_process_frame(&runtime, &source);
+
     CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
     CHECK(snapshot.enabled && snapshot.processed_frames == runtime.processed_frames);
     CHECK(snapshot.monitor_enabled && !snapshot.rolling && !snapshot.held);
+    CHECK(CLOSE(snapshot.fallout_lfo_phase, 0.25f));
+    CHECK(CLOSE(snapshot.fallout_rise_phase, 0.50f));
+    CHECK(snapshot.fallout_rise_complete);
 
     {
         uint64_t published_revision = snapshot.revision;

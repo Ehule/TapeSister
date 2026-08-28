@@ -91,6 +91,9 @@ typedef struct {
     uint32_t warnings;
     int source_target_conflict;
     uint64_t processed_frames;
+    float fallout_lfo_phase;
+    float fallout_rise_phase;
+    int fallout_rise_complete;
     uint64_t revision;
 } TsSisterRoutingSnapshot;
 
@@ -116,6 +119,9 @@ typedef struct {
     atomic_uint_least32_t warnings;
     atomic_int source_target_conflict;
     atomic_uint_least64_t processed_frames;
+    atomic_uint_least32_t fallout_lfo_phase_bits;
+    atomic_uint_least32_t fallout_rise_phase_bits;
+    atomic_int fallout_rise_complete;
 } TsSisterRoutingSnapshotAtomic;
 
 typedef struct {

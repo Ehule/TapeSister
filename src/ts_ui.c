@@ -382,6 +382,33 @@ static void wave_line(TsFramebuffer *fb, int x0, int y0, int x1, int y1, uint32_
     }
 }
 
+static void ui_line(TsFramebuffer *fb, int x0, int y0, int x1, int y1,
+                    uint32_t color)
+{
+    int dx = x1 > x0 ? x1 - x0 : x0 - x1;
+    int sx = x0 < x1 ? 1 : -1;
+    int dy = -(y1 > y0 ? y1 - y0 : y0 - y1);
+    int sy = y0 < y1 ? 1 : -1;
+    int error = dx + dy;
+    if (fb == NULL) return;
+    for (;;) {
+        if (x0 >= 0 && x0 < TS_UI_WIDTH && y0 >= 0 && y0 < TS_UI_HEIGHT)
+            fb->pixels[y0 * TS_UI_WIDTH + x0] = color;
+        if (x0 == x1 && y0 == y1) break;
+        {
+            int twice = error * 2;
+            if (twice >= dy) { error += dy; x0 += sx; }
+            if (twice <= dx) { error += dx; y0 += sy; }
+        }
+    }
+}
+
+static void ui_marker(TsFramebuffer *fb, int x, int y, uint32_t color)
+{
+    rect(fb, x - 2, y - 1, 5, 3, color);
+    rect(fb, x - 1, y - 2, 3, 5, color);
+}
+
 static const char *glyph(char c)
 {
     switch (c) {
@@ -3670,8 +3697,44 @@ static void sister_fallout_lfo_dialog(TsFramebuffer *fb,
     }
     text(fb, 90, 302, "RISE MOVES CENTER / LFO OSCILLATES AROUND IT",
          PAL_MOUSE, 1);
-    text(fb, 90, 316, "CLICK ACTIVE 1-SHOT TO RETRIGGER",
+    text(fb, 90, 316, "ALL RISE TARGETS SHARE THE MAIN RETRIGGER",
          PAL_MOUSE, 1);
+}
+
+static void sister_fallout_modulation_status(TsFramebuffer *fb,
+                                             const TsSisterUiModel *model)
+{
+    float rise;
+    float lfo;
+    int rise_x;
+    int rise_y;
+    int lfo_x;
+    char label[32];
+    if (fb == NULL || model == NULL) return;
+    rise = sister_clamp(model->routing.fallout_rise_phase);
+    lfo = sister_clamp(model->routing.fallout_lfo_phase);
+
+    button(fb, 10, 316, 86, "RETRIGGER", 0);
+    snprintf(label, sizeof(label), model->routing.fallout_rise_complete ?
+             "RISE DONE" : "RISE %d%%", (int)lrintf(rise * 100.0f));
+    text(fb, 110, 316, label, PAL_NOTE, 1);
+    ui_line(fb, 110, 345, 285, 319, PAL_NOTE);
+    ui_line(fb, 285, 319, 285, 345, PAL_NOTE);
+    if (model->routing.fallout_rise_complete) {
+        rise_x = 285;
+        rise_y = 345;
+    } else {
+        rise_x = 110 + (int)lrintf(rise * 175.0f);
+        rise_y = 345 - (int)lrintf(rise * 26.0f);
+    }
+    ui_marker(fb, rise_x, rise_y, PAL_NOTE);
+
+    snprintf(label, sizeof(label), "LFO %d%%",
+             (int)lrintf(lfo * 100.0f));
+    text(fb, 340, 316, label, PAL_TUNING, 1);
+    ui_line(fb, 340, 332, 520, 332, PAL_TUNING);
+    lfo_x = 340 + (int)lrintf(lfo * 180.0f);
+    ui_marker(fb, lfo_x, 332, PAL_TUNING);
 }
 
 static void sister_choice_parameter_state(TsFramebuffer *fb, int x, int y,
@@ -3907,12 +3970,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_TRANSITION));
         sister_fallout_lfo_panel(fb, f);
-        text(fb, 10, 316,
-             "SISTER > FALLOUT > DISTORTION > DELAY > REVERB > OUTPUT",
-             PAL_MOUSE, 1);
-        text(fb, 10, 338,
-             "TRUE BYPASS / COLORED NOISE / CENTERED GENERATIVE LFO",
-             PAL_MOUSE, 1);
+        sister_fallout_modulation_status(fb, model);
         goto sister_footer;
     }
 

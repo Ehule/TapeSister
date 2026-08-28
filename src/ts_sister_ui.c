@@ -287,6 +287,10 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             {TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE, 400, 252, 120, 18},
             {TS_SISTER_UI_PARAM_FALLOUT_TRANSITION, 120, 284, 400, 18}
         };
+        if (contains(x, y, 10, 316, 86, 22)) {
+            hit.action = TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER;
+            return hit;
+        }
         for (int i = 0; i < 7; ++i) {
             if (contains(x, y, toggle[i][1], toggle[i][2],
                          toggle[i][3], toggle[i][4])) {

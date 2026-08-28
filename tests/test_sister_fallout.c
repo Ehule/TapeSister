@@ -225,6 +225,9 @@ static void test_transition_noise_and_centered_lfo(void)
     assert(ts_sister_fallout_feedback_amount(&engine) > 0.24f &&
            ts_sister_fallout_feedback_amount(&engine) < 0.27f);
     assert(engine.rise_one_shot_complete);
+    controls.rise_targets ^= TS_SISTER_FALLOUT_LFO_NOISE;
+    ts_sister_fallout_set_controls(&engine, &controls);
+    assert(engine.rise_one_shot_complete);
     ++controls.rise_retrigger;
     ts_sister_fallout_set_controls(&engine, &controls);
     assert(!engine.rise_one_shot_complete && engine.rise_phase == 0.0);
@@ -270,12 +273,62 @@ static void test_runtime_feedback_is_wet_only_and_causal(void)
     ts_sister_runtime_free(&runtime);
 }
 
+static void test_master_gates_and_modulation_disconnect(void)
+{
+    TsSisterFalloutEngine engine;
+    TsSisterFalloutControls controls;
+    TsStereoFrame silence = {0.0f, 0.0f};
+    ts_sister_fallout_controls_default(&controls);
+    controls.enabled = 1;
+    controls.pitch_enabled = 1;
+    controls.pitch = 0.5f;
+    controls.pitch_ramp = 0.0f;
+    controls.pitch_rate = 0.0f;
+    controls.lfo_intensity = 1.0f;
+    controls.lfo_targets = TS_SISTER_FALLOUT_LFO_PITCH;
+    assert(ts_sister_fallout_init(&engine, 1000u));
+    ts_sister_fallout_set_controls(&engine, &controls);
+    engine.lfo_phase = 0.25;
+    (void)ts_sister_fallout_process(&engine, silence);
+    assert(engine.playback_target == 3.0f);
+
+    /* Disconnecting PITCH modulation re-arms its event immediately and the
+       saved 0.5 center selects the 0.5x member of the ratio family. */
+    controls.lfo_targets = 0u;
+    engine.next_pitch = UINT64_MAX;
+    ts_sister_fallout_set_controls(&engine, &controls);
+    assert(engine.next_pitch == engine.write_clock);
+    (void)ts_sister_fallout_process(&engine, silence);
+    assert(engine.playback_target == 0.5f);
+
+    /* The panel switch is a true master gate. OFF cannot be defeated by a
+       remembered modulation assignment and returns to unity click-free. */
+    controls.pitch_enabled = 0;
+    controls.lfo_targets = TS_SISTER_FALLOUT_LFO_ALL;
+    controls.rise_targets = TS_SISTER_FALLOUT_LFO_ALL;
+    engine.drop_gain = engine.drop_target = 0.25f;
+    engine.pan = engine.pan_target = 0.9f;
+    engine.hold_remaining = 5u;
+    engine.skip_fade_remaining = 5u;
+    ts_sister_fallout_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 11; ++frame)
+        (void)ts_sister_fallout_process(&engine, silence);
+    assert(engine.playback_target == 1.0f &&
+           fabsf(engine.playback_rate - 1.0f) < 0.0001f);
+    assert(engine.drop_gain == 1.0f);
+    assert(engine.pan == 0.5f);
+    assert(engine.hold_remaining == 0u);
+    assert(engine.skip_fade_remaining == 0u);
+    ts_sister_fallout_free(&engine);
+}
+
 int main(void)
 {
     test_defaults_are_true_bypass();
     test_deterministic_effect_and_cold_reenable();
     test_sanitize_and_memory();
     test_transition_noise_and_centered_lfo();
+    test_master_gates_and_modulation_disconnect();
     test_runtime_feedback_is_wet_only_and_causal();
     puts("Sister Fallout tests passed");
     return 0;

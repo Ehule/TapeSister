@@ -52,6 +52,8 @@ int main(int argc, char **argv)
             TS_SISTER_FALLOUT_LFO_MIX |
             TS_SISTER_FALLOUT_LFO_FEEDBACK |
             TS_SISTER_FALLOUT_LFO_NOISE;
+        model.routing.fallout_rise_phase = 0.63f;
+        model.routing.fallout_lfo_phase = 0.28f;
         model.fallout_lfo_open = strcmp(mode, "fallout-lfo") == 0;
         snprintf(model.status, sizeof(model.status),
                  "FALLOUT INSERT ENGAGED");

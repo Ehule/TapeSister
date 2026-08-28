@@ -29,7 +29,7 @@ fragment from appearing after a later re-enable and keeps the callback allocatio
 - BIT applies sample hold and 8–24-bit quantization.
 - PITCH uses the discrete `-3, -2, -1, -0.5, 0.5, 1, 2, 3` ratio family.
 
-DROP, PAN, SKIP, BIT, and PITCH each have independent automation toggles. Their RATE
+DROP, PAN, SKIP, BIT, and PITCH each have an independent master switch. Their RATE
 controls range from approximately 20 to 2000 ms. PITCH RAMP reaches 500 ms.
 
 ## Generative modulation
@@ -38,8 +38,10 @@ Fallout has one sine LFO with RATE and DEPTH controls. RATE is logarithmic from 
 cycle per hour to 10 Hz. Its independent RISE layer has TIME and DEPTH controls;
 TIME is logarithmic from one second to four hours. RISE can repeat as a sawtooth or
 run once. In 1-SHOT mode it reaches the exact apex, drops immediately to the saved
-value, and remains there. Clicking the active 1-SHOT button retriggers it, as does
-re-engaging Fallout. `sister_fallout_rise_seconds` selects the startup time in
+value, and remains there. Every selected RISE target shares this one phase clock.
+The main-page RETRIGGER button restarts them together; assigning a target or opening
+MOD never restarts the clock. Re-engaging Fallout also restarts the one-shot.
+`sister_fallout_rise_seconds` selects the startup time in
 `tapesister.ini`; presets and projects preserve the live modulation settings.
 
 Clicking MOD opens a shared target matrix for MIX, FEEDBACK, NOISE and the applicable
@@ -58,6 +60,16 @@ value toward the upper limit while the sine continues oscillating symmetrically 
 that moving center. At the sawtooth edge or one-shot endpoint, the center returns to
 the saved value and the LFO continues around it. The saved slider never moves, so the
 performance can always return precisely to its authored state.
+
+The main page shows compact live position traces for both modulators. RISE uses a
+saw-line and marker, including its terminal drop; LFO uses a simple phase line. These
+indicators report the shared modulators without moving the authored parameter faders.
+
+DROP, PAN, SKIP, BIT, and PITCH are strict master gates. A disabled process ignores
+remembered LFO and RISE assignments. PITCH OFF returns playback to unity through a
+10 ms de-click ramp. PITCH ON samples the saved or modulated discrete RATIO at its
+RATE and reaches it over RAMP. Disconnecting an event-rate modulation target re-arms
+that event immediately so its saved panel value resumes without a stale interval.
 
 ## Feedback safety
 
