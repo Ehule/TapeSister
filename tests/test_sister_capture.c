@@ -87,6 +87,8 @@ int main(void)
     CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
     CHECK(!snapshot.monitor_enabled && snapshot.capture_state ==
           TS_CAPTURE_COMPLETED);
+    CHECK(snapshot.capture_recorded_frames == 16u &&
+          snapshot.capture_capacity_frames == 16u);
     {
         float before_l = runtime.capture.buffer[4];
         float before_r = runtime.capture.buffer[5];

@@ -103,6 +103,12 @@ typedef struct {
     float normalized;
 } TsSisterUiHit;
 
+typedef enum {
+    TS_SISTER_UI_POWER_VISUAL_NONE = 0,
+    TS_SISTER_UI_POWER_VISUAL_ON,
+    TS_SISTER_UI_POWER_VISUAL_OFF
+} TsSisterUiPowerVisual;
+
 typedef struct {
     int visible;
     int capture_channels;
@@ -121,6 +127,9 @@ typedef struct {
     char preset_edit_name[48];
     size_t preset_edit_cursor;
     int text_cursor_visible;
+    TsSisterUiPowerVisual power_visual;
+    uint32_t power_visual_elapsed_ms;
+    uint8_t magnetic_phase;
     int preset_factory;
     int preset_manage_open;
     int preset_editing;

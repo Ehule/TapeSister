@@ -323,6 +323,8 @@ typedef struct {
     int sister_capture_active;
     int sister_warning;
     uint16_t sister_source_mask;
+    int sister_portal_hovered;
+    int sister_portal_pressed;
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
     uint32_t staged_notes;
@@ -383,6 +385,8 @@ typedef struct {
     int exit_has_unsaved;
     int exit_choice;
     int exit_after_save;
+    int project_overwrite_confirm_open;
+    char project_path[TS_BROWSER_PATH_MAX];
     uint64_t saved_state_hash;
     int config_open;
     int palette_open;

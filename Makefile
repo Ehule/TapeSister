@@ -29,7 +29,7 @@ MIDI_LDFLAGS = -lstdc++ $(shell pkg-config --libs alsa) -ldl -pthread
 endif
 endif
 
-.PHONY: all test stress-sister benchmark-sister screenshot runtime-assets clean
+.PHONY: all test stress-sister benchmark-sister screenshot screenshot-sister-spirit runtime-assets clean
 
 all: tapesister runtime-assets
 
@@ -47,6 +47,20 @@ tapesister_core_tests: $(CORE) tests/test_core.c
 
 tapesister_render_demo: $(CORE) tests/render_demo.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
+tapesister_sister_spirit_demo: $(CORE) tests/render_sister_spirit.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
+screenshot-sister-spirit: tapesister_sister_spirit_demo tapesister_render_demo
+	@mkdir -p artifacts
+	./tapesister_render_demo artifacts/sister-portal-normal.ppm portal
+	./tapesister_render_demo artifacts/sister-portal-hover.ppm portal-hover
+	./tapesister_render_demo artifacts/sister-portal-pressed.ppm portal-pressed
+	./tapesister_render_demo artifacts/project-save-confirm.ppm save-confirm
+	./tapesister_render_demo artifacts/project-saving.ppm saving
+	./tapesister_sister_spirit_demo off artifacts/sister-spirit-off.ppm
+	./tapesister_sister_spirit_demo flash artifacts/sister-spirit-flash.ppm
+	./tapesister_sister_spirit_demo capture artifacts/sister-capture-progress.ppm
 
 test: test_sister_resize
 
@@ -310,6 +324,6 @@ screenshot: tapesister_render_demo
 	./tapesister_render_demo artifacts/tapesister-independent-tiles.ppm
 
 clean:
-	rm -f tapesister benchmark_sister_callback tapesister_core_tests tapesister_audio_frame_tests test_audio_mixer test_note_bank_stereo test_performance_stereo test_capture_stereo test_external_input_channels test_input_ownership test_realtime_diagnostics test_sister_buffer test_sister_heads test_sister_transport test_sister_modulation test_sister_feedback test_sister_ghost_tone test_sister_stereo test_sister_weave test_sister_effect_routing test_sister_post_fx test_sister_duck_filter test_sister_snapshot test_sister_routes test_sister_runtime test_sister_source_mask test_sister_performance_sources test_sister_capture test_sister_recursion test_sister_lifecycle test_sister_visibility test_sister_preset test_sister_project_state test_sister_pathological tapesister_sample_channels_tests tapesister_tsr27_tests tapesister_wav_channels_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_performance_tests tapesister_midi_tests tapesister_external_record_tests tapesister_input_monitor_tests tapesister_capture_archive_tests tapesister_sample_pages_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_chain_stamp_tests tapesister_exchange_tests tapesister_render_damage_tests tapesister_waveform_cache_tests tapesister_render_efficiency_tests tapesister_render_demo third_party/rtmidi/*.o test-family.tsr test-roundtrip.wav test-external-stereo.wav test-tear.tsr test-bank-independent.tsr test-drone.ini test-drone.tsr test-canvas.tsr test-transform.tsr test-audio-config.ini test-audio-config-blank.ini test-audio-config-legacy.ini artifacts/*.ppm
+	rm -f tapesister benchmark_sister_callback tapesister_core_tests tapesister_audio_frame_tests test_audio_mixer test_note_bank_stereo test_performance_stereo test_capture_stereo test_external_input_channels test_input_ownership test_realtime_diagnostics test_sister_buffer test_sister_heads test_sister_transport test_sister_modulation test_sister_feedback test_sister_ghost_tone test_sister_stereo test_sister_weave test_sister_effect_routing test_sister_post_fx test_sister_duck_filter test_sister_snapshot test_sister_routes test_sister_runtime test_sister_source_mask test_sister_performance_sources test_sister_capture test_sister_recursion test_sister_lifecycle test_sister_visibility test_sister_preset test_sister_project_state test_sister_pathological tapesister_sample_channels_tests tapesister_tsr27_tests tapesister_wav_channels_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_performance_tests tapesister_midi_tests tapesister_external_record_tests tapesister_input_monitor_tests tapesister_capture_archive_tests tapesister_sample_pages_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_chain_stamp_tests tapesister_exchange_tests tapesister_render_damage_tests tapesister_waveform_cache_tests tapesister_render_efficiency_tests tapesister_render_demo tapesister_sister_spirit_demo third_party/rtmidi/*.o test-family.tsr test-roundtrip.wav test-external-stereo.wav test-tear.tsr test-bank-independent.tsr test-drone.ini test-drone.tsr test-canvas.tsr test-transform.tsr test-audio-config.ini test-audio-config-blank.ini test-audio-config-legacy.ini artifacts/*.ppm
 	rm -f test_sister_ui_model test_sister_wave_snapshot test_waveform_display_modes test_sister_source_ui test_sister_capture_ui test_sister_palette test-sister-palette.pal test-sister-palette-legacy.pal
 	rm -f test_sister_resize

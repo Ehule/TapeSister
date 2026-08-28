@@ -478,6 +478,26 @@ int main(int argc, char **argv)
         snprintf(ui.status, sizeof(ui.status),
                  "PREVIEW A#3 +3.7 C  CONF 91%% - ACCEPT OR ESC CANCEL");
     }
+    if (argc > 2 && strncmp(argv[2], "portal", 6) == 0) {
+        ui.sister_portal_hovered = strcmp(argv[2], "portal-hover") == 0 ||
+                                   strcmp(argv[2], "portal-pressed") == 0;
+        ui.sister_portal_pressed = strcmp(argv[2], "portal-pressed") == 0;
+        snprintf(ui.status, sizeof(ui.status),
+                 "TAPESISTER EMBLEM OPENS SISTER MACHINE");
+    }
+    if (argc > 2 && strcmp(argv[2], "save-confirm") == 0) {
+        ui.project_overwrite_confirm_open = 1;
+        snprintf(ui.project_path, sizeof(ui.project_path),
+                 "/home/user/Music/TapeSister/Terra-Loops01.tsr");
+        snprintf(ui.status, sizeof(ui.status),
+                 "CONFIRM OVERWRITE OF ACTIVE TSR PROJECT");
+    }
+    if (argc > 2 && strcmp(argv[2], "saving") == 0) {
+        ui.file_busy = 1;
+        snprintf(ui.file_busy_label, sizeof(ui.file_busy_label), "SAVING");
+        snprintf(ui.status, sizeof(ui.status),
+                 "SAVING Terra-Loops01.tsr");
+    }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {
         fprintf(stderr, "Could not write %s\n", path);

@@ -257,9 +257,14 @@ int main(void)
     CHECK(framebuffer.pixels[344u * TS_UI_WIDTH + 145u] ==
           palette.colors[TS_PALETTE_PATTERN_EFFECT]);
     model.routing.capture_state = TS_CAPTURE_RECORDING;
+    model.routing.capture_recorded_frames = 25u;
+    model.routing.capture_capacity_frames = 100u;
     model.capture_overdub = 0;
     model.text_cursor_visible = 1;
     ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[40u * TS_UI_WIDTH + 164u] ==
+          palette.colors[TS_PALETTE_PATTERN_VOLUME]);
+    CHECK(framebuffer.pixels[40u * TS_UI_WIDTH + 165u] == 0xff1e0808u);
     CHECK(framebuffer.pixels[368u * TS_UI_WIDTH + 448u] ==
           palette.colors[TS_PALETTE_ACTIVE_TILE]);
     model.text_cursor_visible = 0;

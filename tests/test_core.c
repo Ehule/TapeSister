@@ -2878,6 +2878,10 @@ int main(void)
     CHECK(ts_ui_foreground_panel_open(&ui));
     ui.renaming_bank_slot = -1;
     CHECK(!ts_ui_foreground_panel_open(&ui));
+    ui.project_overwrite_confirm_open = 1;
+    CHECK(ts_ui_foreground_panel_open(&ui));
+    ui.project_overwrite_confirm_open = 0;
+    CHECK(!ts_ui_foreground_panel_open(&ui));
     ui.fx_page = TS_FX_LOOP;
     ts_instrument_show_all(&committed);
     {

@@ -4,7 +4,7 @@
 /*
  * Short, user-visible identity for comparison builds.  Bump this value for
  * every build handed out for testing.  Keep it to six visible characters so
- * it remains inside the reserved badge.  Build systems may override it with
+ * it remains inside the reserved header area.  Build systems may override it with
  * -DTAPESISTER_BUILD_MARKER=\"...\" for one-off variants.
  */
 #ifndef TAPESISTER_BUILD_MARKER

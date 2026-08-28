@@ -123,6 +123,8 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     atomic_init(&snapshot->selected_tap, TS_SISTER_TAP_MIX);
     atomic_init(&snapshot->capture_state, TS_CAPTURE_IDLE);
     atomic_init(&snapshot->capture_destination, -1);
+    atomic_init(&snapshot->capture_recorded_frames, 0u);
+    atomic_init(&snapshot->capture_capacity_frames, 0u);
     atomic_init(&snapshot->destination_status, TS_SISTER_DESTINATION_NONE);
     atomic_init(&snapshot->source_input_peak_bits, float_bits(0.0f));
     for (int tap = 0; tap < TS_SISTER_TAP_COUNT; ++tap)
@@ -172,6 +174,12 @@ static void publish_snapshot(TsSisterRuntime *runtime)
                           memory_order_relaxed);
     atomic_store_explicit(&snapshot->capture_destination,
                           runtime->capture.destination_slot,
+                          memory_order_relaxed);
+    atomic_store_explicit(&snapshot->capture_recorded_frames,
+                          runtime->capture.recorded_frames,
+                          memory_order_relaxed);
+    atomic_store_explicit(&snapshot->capture_capacity_frames,
+                          runtime->capture.capacity_frames,
                           memory_order_relaxed);
     atomic_store_explicit(&snapshot->destination_status,
                           runtime->destination_status,
@@ -1331,6 +1339,10 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
             &source->capture_state, memory_order_relaxed);
         snapshot->capture_destination = atomic_load_explicit(
             &source->capture_destination, memory_order_relaxed);
+        snapshot->capture_recorded_frames = atomic_load_explicit(
+            &source->capture_recorded_frames, memory_order_relaxed);
+        snapshot->capture_capacity_frames = atomic_load_explicit(
+            &source->capture_capacity_frames, memory_order_relaxed);
         snapshot->destination_status =
             (TsSisterDestinationStatus)atomic_load_explicit(
                 &source->destination_status, memory_order_relaxed);
