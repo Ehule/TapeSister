@@ -270,6 +270,13 @@ void ts_sister_fallout_clear(TsSisterFalloutEngine *engine)
     engine->rise_smoothed = 0.0f;
     engine->rise_one_shot_complete = 0;
     engine->feedback_modulated = engine->controls.feedback;
+    engine->preset_target = engine->controls;
+    engine->preset_gain = 1.0f;
+    engine->preset_gain_step = 0.0f;
+    engine->preset_gain_remaining = 0u;
+    engine->preset_second_frames = 0u;
+    engine->preset_transition_stage = 0;
+    engine->preset_applying = 0;
     engine->prng = seed;
 }
 
@@ -329,6 +336,14 @@ void ts_sister_fallout_set_controls(
     uint32_t removed_targets;
     uint32_t fade;
     if (engine == NULL || controls == NULL) return;
+    if (engine->preset_transition_stage != 0 && !engine->preset_applying) {
+        uint32_t cancel_frames = engine->sample_rate > 0u ?
+            engine->sample_rate / 100u : 1u;
+        if (cancel_frames == 0u) cancel_frames = 1u;
+        ramp(&engine->preset_gain, &engine->preset_gain_step,
+             &engine->preset_gain_remaining, 1.0f, cancel_frames);
+        engine->preset_transition_stage = 3;
+    }
     next = *controls;
     ts_sister_fallout_controls_sanitize(&next);
     restart_rise = next.rise_mode != engine->controls.rise_mode ||
@@ -371,6 +386,70 @@ void ts_sister_fallout_set_controls(
         engine->rise_phase = 0.0;
         engine->rise_value = 0.0f;
         engine->rise_one_shot_complete = 0;
+    }
+}
+
+void ts_sister_fallout_recall_preset(
+    TsSisterFalloutEngine *engine, const TsSisterFalloutControls *controls)
+{
+    TsSisterFalloutControls target;
+    uint32_t total_frames;
+    uint32_t first_frames;
+    if (engine == NULL || controls == NULL) return;
+    target = *controls;
+    ts_sister_fallout_controls_sanitize(&target);
+    /* Presets describe the instrument, never its master bypass state. The
+       transition already visible before recall governs the whole changeover. */
+    target.enabled = engine->controls.enabled;
+    target.rise_retrigger = engine->controls.rise_retrigger + 1u;
+    if (!engine->ready || !engine->active || !engine->controls.enabled) {
+        engine->preset_applying = 1;
+        ts_sister_fallout_set_controls(engine, &target);
+        engine->preset_applying = 0;
+        engine->preset_gain = 1.0f;
+        engine->preset_transition_stage = 0;
+        return;
+    }
+    total_frames = (uint32_t)fmaxf(2.0f,
+        ts_sister_fallout_transition_ms(engine->controls.transition) *
+        (float)engine->sample_rate / 1000.0f);
+    first_frames = total_frames / 2u;
+    if (first_frames == 0u) first_frames = 1u;
+    engine->preset_target = target;
+    engine->preset_second_frames = total_frames - first_frames;
+    if (engine->preset_second_frames == 0u)
+        engine->preset_second_frames = 1u;
+    engine->preset_transition_stage = 1;
+    ramp(&engine->preset_gain, &engine->preset_gain_step,
+         &engine->preset_gain_remaining, 0.0f, first_frames);
+}
+
+static void preset_transition_advance(TsSisterFalloutEngine *engine)
+{
+    if (engine->preset_transition_stage == 0) return;
+    engine->preset_gain = advance(
+        &engine->preset_gain,
+        engine->preset_transition_stage == 1 ? 0.0f : 1.0f,
+        engine->preset_gain_step, &engine->preset_gain_remaining);
+    if (engine->preset_gain_remaining != 0u) return;
+    if (engine->preset_transition_stage == 1) {
+        TsSisterFalloutControls target = engine->preset_target;
+        engine->preset_applying = 1;
+        ts_sister_fallout_set_controls(engine, &target);
+        engine->preset_applying = 0;
+        engine->rise_phase = 0.0;
+        engine->rise_value = 0.0f;
+        engine->rise_smoothed = 0.0f;
+        engine->rise_one_shot_complete = 0;
+        engine->preset_gain = 0.0f;
+        engine->preset_transition_stage = 2;
+        ramp(&engine->preset_gain, &engine->preset_gain_step,
+             &engine->preset_gain_remaining, 1.0f,
+             engine->preset_second_frames);
+    } else {
+        engine->preset_gain = 1.0f;
+        engine->preset_gain_step = 0.0f;
+        engine->preset_transition_stage = 0;
     }
 }
 
@@ -552,6 +631,7 @@ TsSisterFalloutResult ts_sister_fallout_process(
     input = ts_stereo_frame_sanitize(input);
     result.output = input;
     if (engine == NULL || !engine->ready || !engine->active) return result;
+    preset_transition_advance(engine);
     controls = modulated_controls(engine);
 
     write_index = (size_t)(engine->write_clock % engine->capacity_frames);
@@ -683,6 +763,8 @@ TsSisterFalloutResult ts_sister_fallout_process(
                              engine->engage_step, &engine->engage_remaining);
     result.output.l = input.l + (result.output.l - input.l) * engine->engage;
     result.output.r = input.r + (result.output.r - input.r) * engine->engage;
+    result.output.l = input.l + (result.output.l - input.l) * engine->preset_gain;
+    result.output.r = input.r + (result.output.r - input.r) * engine->preset_gain;
     result.output = ts_stereo_frame_sanitize(result.output);
     if (!engine->controls.enabled && engine->engage_remaining == 0u &&
         engine->engage <= 0.0f) {
@@ -701,7 +783,8 @@ size_t ts_sister_fallout_memory_bytes(const TsSisterFalloutEngine *engine)
 
 float ts_sister_fallout_engage(const TsSisterFalloutEngine *engine)
 {
-    return engine != NULL ? clampf(engine->engage, 0.0f, 1.0f) : 0.0f;
+    return engine != NULL ? clampf(
+        engine->engage * engine->preset_gain, 0.0f, 1.0f) : 0.0f;
 }
 
 float ts_sister_fallout_feedback_amount(const TsSisterFalloutEngine *engine)

@@ -123,6 +123,30 @@ int main(void)
         CHECK(snapshot.processed_frames == published_frames + 64u);
     }
 
+    {
+        TsSisterFalloutControls target;
+        parameters = runtime.parameters;
+        parameters.fx.fallout.enabled = 1;
+        parameters.fx.fallout.transition =
+            ts_sister_fallout_transition_normalized(10.0f);
+        parameters.fx.fallout.mix = 0.8f;
+        ts_sister_runtime_set_parameters(&runtime, &parameters);
+        for (int frame_index = 0; frame_index < 10; ++frame_index)
+            (void)ts_sister_runtime_process_frame(&runtime, &source);
+        target = runtime.parameters.fx.fallout;
+        target.enabled = 0;
+        target.mix = 0.2f;
+        target.noise_type = TS_SISTER_FALLOUT_NOISE_BROWN;
+        ts_sister_runtime_recall_fallout_preset(&runtime, &target);
+        CHECK(runtime.parameters.fx.fallout.enabled == 1);
+        CHECK(CLOSE(runtime.parameters.fx.fallout.mix, 0.2f));
+        CHECK(CLOSE(runtime.fallout.controls.mix, 0.8f));
+        for (int frame_index = 0; frame_index < 5; ++frame_index)
+            (void)ts_sister_runtime_process_frame(&runtime, &source);
+        CHECK(CLOSE(runtime.fallout.controls.mix, 0.2f));
+        CHECK(runtime.fallout.controls.enabled == 1);
+    }
+
     ts_sister_runtime_disable(&runtime);
     CHECK(!ts_sister_runtime_owns_direct_tile_bus(&runtime));
     CHECK(CLOSE(ts_sister_runtime_direct_tile_route(&runtime), 0.0f));

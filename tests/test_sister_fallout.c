@@ -355,6 +355,59 @@ static void test_rise_reset_declicks_both_modes(void)
     }
 }
 
+static void test_preset_transition_uses_current_transition(void)
+{
+    TsSisterFalloutEngine engine;
+    TsSisterFalloutControls current;
+    TsSisterFalloutControls target;
+    TsStereoFrame silence = {0.0f, 0.0f};
+    ts_sister_fallout_controls_default(&current);
+    current.enabled = 1;
+    current.transition = ts_sister_fallout_transition_normalized(10.0f);
+    assert(ts_sister_fallout_init(&engine, 1000u));
+    ts_sister_fallout_set_controls(&engine, &current);
+    for (int frame = 0; frame < 10; ++frame)
+        (void)ts_sister_fallout_process(&engine, silence);
+    assert(ts_sister_fallout_engage(&engine) > 0.999f);
+
+    target = current;
+    target.transition = ts_sister_fallout_transition_normalized(5000.0f);
+    target.mix = 0.2f;
+    target.noise_type = TS_SISTER_FALLOUT_NOISE_BROWN;
+    target.rise_mode = TS_SISTER_FALLOUT_RISE_SAW;
+    target.rise_targets = TS_SISTER_FALLOUT_LFO_MIX;
+    ts_sister_fallout_recall_preset(&engine, &target);
+    assert(engine.preset_transition_stage == 1);
+    for (int frame = 0; frame < 4; ++frame)
+        (void)ts_sister_fallout_process(&engine, silence);
+    assert(engine.controls.mix == current.mix);
+    (void)ts_sister_fallout_process(&engine, silence);
+    assert(engine.preset_transition_stage == 2);
+    assert(ts_sister_fallout_engage(&engine) < 0.0001f);
+    assert(engine.controls.enabled == 1);
+    assert(fabsf(engine.controls.mix - 0.2f) < 0.0001f);
+    assert(engine.controls.noise_type == TS_SISTER_FALLOUT_NOISE_BROWN);
+    assert(engine.controls.rise_mode == TS_SISTER_FALLOUT_RISE_SAW);
+    assert(engine.rise_phase < 0.002);
+    for (int frame = 0; frame < 5; ++frame)
+        (void)ts_sister_fallout_process(&engine, silence);
+    assert(engine.preset_transition_stage == 0);
+    assert(ts_sister_fallout_engage(&engine) > 0.999f);
+    ts_sister_fallout_free(&engine);
+
+    ts_sister_fallout_controls_default(&current);
+    assert(ts_sister_fallout_init(&engine, 1000u));
+    ts_sister_fallout_set_controls(&engine, &current);
+    target = current;
+    target.enabled = 1;
+    target.noise = 0.75f;
+    ts_sister_fallout_recall_preset(&engine, &target);
+    assert(engine.controls.enabled == 0);
+    assert(fabsf(engine.controls.noise - 0.75f) < 0.0001f);
+    assert(engine.preset_transition_stage == 0);
+    ts_sister_fallout_free(&engine);
+}
+
 int main(void)
 {
     test_defaults_are_true_bypass();
@@ -363,6 +416,7 @@ int main(void)
     test_transition_noise_and_centered_lfo();
     test_master_gates_and_modulation_disconnect();
     test_rise_reset_declicks_both_modes();
+    test_preset_transition_uses_current_transition();
     test_runtime_feedback_is_wet_only_and_causal();
     puts("Sister Fallout tests passed");
     return 0;

@@ -69,6 +69,22 @@ the modulation signal crosses the reset through a fixed 10 ms de-click ramp. Man
 retriggers use the same protection, preventing abrupt MIX or FEEDBACK changes from
 becoming audible clicks without perceptibly changing the rise timing.
 
+## Fallout presets
+
+On the Fallout page, the footer preset controls address an independent Fallout bank;
+the same controls on the Tape and Master FX pages continue to address the complete
+Sister Machine bank. Fallout user presets persist in `fallout-presets.ini` and support
+the established Save As, Overwrite, Rename, Delete, previous, and next workflow.
+Factory starting points are APPROACHING TRAIN, DUST WEATHER, and DEAD TRANSMISSION.
+
+Presets store every Fallout sound and modulation setting except master power and live
+phase. Recall therefore never engages or bypasses the insert unexpectedly. When Fallout
+is active, the TRANSITION value visible before recall governs the complete changeover:
+the current sound fades to dry over the first half, the destination is installed at the
+silent midpoint, and the new sound fades in over the second half. The destination's
+shared RISE restarts at that midpoint. When Fallout is bypassed, recall quietly prepares
+the destination and the next power-on begins it from a clean phase.
+
 DROP, PAN, SKIP, BIT, and PITCH are strict master gates. A disabled process ignores
 remembered LFO and RISE assignments. PITCH OFF returns playback to unity through a
 10 ms de-click ramp. PITCH ON samples the saved or modulated discrete RATIO at its

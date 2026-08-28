@@ -126,6 +126,13 @@ typedef struct {
     float feedback_modulated;
     int rise_one_shot_complete;
     TsSisterFalloutControls controls;
+    TsSisterFalloutControls preset_target;
+    float preset_gain;
+    float preset_gain_step;
+    uint32_t preset_gain_remaining;
+    uint32_t preset_second_frames;
+    int preset_transition_stage;
+    int preset_applying;
     int active;
     int ready;
 } TsSisterFalloutEngine;
@@ -152,6 +159,8 @@ void ts_sister_fallout_free(TsSisterFalloutEngine *engine);
 void ts_sister_fallout_clear(TsSisterFalloutEngine *engine);
 void ts_sister_fallout_seed(TsSisterFalloutEngine *engine, uint32_t seed);
 void ts_sister_fallout_set_controls(
+    TsSisterFalloutEngine *engine, const TsSisterFalloutControls *controls);
+void ts_sister_fallout_recall_preset(
     TsSisterFalloutEngine *engine, const TsSisterFalloutControls *controls);
 TsSisterFalloutResult ts_sister_fallout_process(
     TsSisterFalloutEngine *engine, TsStereoFrame input);

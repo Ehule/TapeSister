@@ -570,6 +570,29 @@ void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
     publish_snapshot(runtime);
 }
 
+void ts_sister_runtime_recall_fallout_preset(
+    TsSisterRuntime *runtime, const TsSisterFalloutControls *controls)
+{
+    TsSisterFalloutControls target;
+    uint32_t sample_rate;
+    if (runtime == NULL || controls == NULL) return;
+    target = *controls;
+    sample_rate = runtime->post_fx.ready ? runtime->post_fx.sample_rate :
+                  runtime->enabled ? runtime->machine.buffer.sample_rate :
+                  48000u;
+    target.enabled = runtime->parameters.fx.fallout.enabled;
+    target.rise_retrigger = runtime->parameters.fx.fallout.rise_retrigger + 1u;
+    ts_sister_fallout_controls_sanitize(&target);
+    runtime->parameters.fx.fallout = target;
+    runtime->parameters_published = 1;
+    ts_sister_parameters_sanitize(&runtime->parameters, sample_rate);
+    if (runtime->enabled)
+        runtime->machine.parameters.fx.fallout = runtime->parameters.fx.fallout;
+    ts_sister_fallout_recall_preset(
+        &runtime->fallout, &runtime->parameters.fx.fallout);
+    publish_snapshot(runtime);
+}
+
 void ts_sister_runtime_set_selected_preset(TsSisterRuntime *runtime,
                                            const char *name)
 {

@@ -4250,7 +4250,10 @@ sister_footer:
         rect(fb, 160, 299, 320, 1, PAL_MOUSE);
         rect(fb, 160, 130, 1, 170, PAL_MOUSE);
         rect(fb, 479, 130, 1, 170, PAL_MOUSE);
-        text(fb, 180, 145, "SISTER PRESET MANAGER", PAL_TEXT, 1);
+        text(fb, 180, 145,
+             model->fx_page == 2 ? "FALLOUT PRESET MANAGER" :
+                                   "SISTER PRESET MANAGER",
+             PAL_TEXT, 1);
         text(fb, 180, 165,
              model->preset_editing ? model->preset_edit_name : model->preset_name,
              model->preset_editing ? PAL_NOTE : PAL_MOUSE, 1);

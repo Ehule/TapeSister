@@ -186,6 +186,8 @@ TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
     TsSisterRuntime *runtime, TsStereoFrame input);
 void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
                                       const TsSisterParameters *parameters);
+void ts_sister_runtime_recall_fallout_preset(
+    TsSisterRuntime *runtime, const TsSisterFalloutControls *controls);
 void ts_sister_runtime_set_selected_preset(TsSisterRuntime *runtime,
                                            const char *name);
 void ts_sister_runtime_set_rolling(TsSisterRuntime *runtime, int rolling);

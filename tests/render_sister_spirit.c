@@ -20,7 +20,9 @@ int main(int argc, char **argv)
     ts_sister_ui_model_init(&model, &config);
     ts_sister_ui_model_show(&model);
     model.magnetic_phase = 3u;
-    if (strcmp(mode, "fallout") == 0 || strcmp(mode, "fallout-lfo") == 0) {
+    if (strcmp(mode, "fallout") == 0 ||
+        strcmp(mode, "fallout-lfo") == 0 ||
+        strcmp(mode, "fallout-presets") == 0) {
         model.routing.enabled = 1;
         model.routing.rolling = 1;
         model.fx_page = 2;
@@ -55,6 +57,10 @@ int main(int argc, char **argv)
         model.routing.fallout_rise_phase = 0.63f;
         model.routing.fallout_lfo_phase = 0.28f;
         model.fallout_lfo_open = strcmp(mode, "fallout-lfo") == 0;
+        model.preset_manage_open = strcmp(mode, "fallout-presets") == 0;
+        model.preset_factory = 1;
+        snprintf(model.preset_name, sizeof(model.preset_name),
+                 "APPROACHING TRAIN");
         snprintf(model.status, sizeof(model.status),
                  "FALLOUT INSERT ENGAGED");
     } else if (strcmp(mode, "flash") == 0) {
