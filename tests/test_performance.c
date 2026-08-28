@@ -239,6 +239,9 @@ int main(void)
     assert(ts_performance_toggle_tile(&performance, &instrument, 5, 50, 1000) ==
            TS_PERFORMANCE_TILE_STARTED);
     assert(performance.voices[0].tile_fade_frames == 16u);
+    assert(ts_performance_tile_display_voice(&performance, 5) ==
+           &performance.voices[0]);
+    assert(ts_performance_tile_display_voice(&performance, 4) == NULL);
     for (int i = 0; i < 8; ++i) (void)ts_performance_read(&performance, NULL);
     {
         double continuing_position = performance.voices[0].position;
@@ -259,6 +262,7 @@ int main(void)
     assert(fabsf(performance.voices[0].tile_gain - 1.0f) < 0.0001f);
     assert(ts_performance_toggle_tile(&performance, &instrument, 6, 50, 1000) ==
            TS_PERFORMANCE_TILE_STARTED);
+    assert(ts_performance_tile_display_voice(&performance, 6) != NULL);
     assert((ts_performance_tile_mask(&performance) &
             (uint16_t)((1u << 5) | (1u << 6))) ==
            (uint16_t)((1u << 5) | (1u << 6)));

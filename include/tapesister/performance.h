@@ -112,6 +112,8 @@ TsPerformanceTileResult ts_performance_toggle_tile(
     int fade_ms, int output_rate);
 void ts_performance_fade_all_tiles(TsPerformanceBank *bank);
 uint16_t ts_performance_tile_mask(const TsPerformanceBank *bank);
+const TsPerformanceVoice *ts_performance_tile_display_voice(
+    const TsPerformanceBank *bank, int source_slot);
 int ts_performance_trigger_group(TsPerformanceBank *bank,
                                  const TsInstrument *instrument,
                                  uint16_t source_mask,

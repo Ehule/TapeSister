@@ -13077,6 +13077,9 @@ int main(int argc, char **argv)
         if (device) SDL_LockAudioDevice(device);
         {
             const TsNoteVoice *voice = ts_note_bank_display_voice(&audio.notes);
+            const TsPerformanceVoice *tile_voice =
+                ts_performance_tile_display_voice(
+                    &audio.tile_launchers, instrument.selected_slot);
             if (ui.transform_preview_active &&
                 (audio.sample == &transform.preview.sample ||
                  audio.sample == &transform.dsp_preview.sample) &&
@@ -13092,7 +13095,8 @@ int main(int argc, char **argv)
             ui.tile_launcher_mask = (uint16_t)atomic_load_explicit(
                 &audio.tile_launcher_mask, memory_order_acquire);
             ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
-            ui.playback_active = audio.playing || voice != NULL;
+            ui.playback_active = audio.playing || voice != NULL ||
+                                 tile_voice != NULL;
             if (audio.playing) {
                 ui.playhead_source = audio.source;
                 ui.playhead_bank_slot = audio.bank_slot;
@@ -13105,6 +13109,18 @@ int main(int argc, char **argv)
                 ui.playhead_frame = voice->position > 0.0 ? (size_t)voice->position : 0;
                 ui.playhead_frames = voice->sample ? voice->sample->frames : 0;
                 ui.playhead_sample = voice->sample;
+            } else if (tile_voice != NULL) {
+                /* Click-launched tiles use immutable audio generations, but
+                   the waveform displays the selected tile's Current view.
+                   Their frame coordinates remain identical while the
+                   generation protects the audio thread from live edits. */
+                ui.playhead_source = TS_AUDITION_CURRENT;
+                ui.playhead_bank_slot = -1;
+                ui.playhead_frame = tile_voice->position > 0.0 ?
+                                    (size_t)tile_voice->position : 0;
+                ui.playhead_frames = tile_voice->sample ?
+                                     tile_voice->sample->frames : 0;
+                ui.playhead_sample = &instrument.current;
             } else {
                 ui.playhead_bank_slot = -1;
                 ui.playhead_frame = 0;
