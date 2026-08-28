@@ -20,12 +20,13 @@ Each callback frame follows this order:
 2. Render FM and obtain one selected external-input frame.
 3. Render the dedicated Sister tile-performance bank.
 4. Add only armed `TILES`, `FM`, `EXT` and `PREVIEW` frames.
-5. Apply one stereo-linked `1/sqrt(N)` gain for the number of armed source buses.
+5. Apply one stereo-linked normalization for the active source-route energy.
 6. Copy that compensated non-feedback input to the Duck sidechain.
 7. Evaluate `TsSisterMachine` exactly once.
 8. Publish `H1`, `H2`, `H3` and `MIX`.
 9. Write the selected tap to the preallocated Sister recorder when recording.
-10. Remove each armed source from its ordinary direct speaker bus.
+10. Hand each armed source from its ordinary direct speaker bus to Sister with
+    complementary 20 ms route gains.
 11. Put `DRY * trimmed input + WET * MIX` on the named `sister` output bus only when
     Monitor is enabled.
 12. Let the existing mixer add unrouted program, optional Sister return, external monitor
@@ -46,10 +47,13 @@ bank assigns each admitted note group a fixed linked `1/sqrt(marked tile count)`
 and the router does not normalize it again by selected tile count. Stereo channels are
 not counted separately, and members ending naturally do not change their siblings' gain.
 
-When multiple source switches are armed, one additional `1/sqrt(armed_bus_count)` gain
-applies to the complete source sum. Armed switches, not instantaneous silence or zero
-crossings, determine the gain. Both channels receive the same gain. PR3's bounded write
-safety remains the only continuous rolling-buffer protection.
+When multiple source switches are settled, one additional
+`1/sqrt(armed_bus_count)` gain applies to the complete source sum. During a 20 ms route
+handoff it is the equivalent continuous `1/sqrt(sum(route_gain^2))`, applied only when
+the sum exceeds one. Audio amplitude and zero crossings do not change this gain. Both
+channels receive the same factor. The ordinary direct bus receives the exact
+`1 - route_gain` complement, avoiding both a hard switch and a parallel double feed.
+PR3's bounded write safety remains the only continuous rolling-buffer protection.
 
 The compensated source sum passes through one smoothed 0-200 percent pre-tape INPUT
 trim. That trimmed frame is the rolling-memory input, the Sister DRY return and the Duck

@@ -13,5 +13,6 @@ int ts_audio_config_load(TsConfig *config, const char *path,
                          char *error, size_t error_size);
 int ts_audio_config_save(const TsConfig *config, const char *path,
                          char *error, size_t error_size);
+int ts_audio_buffer_frames_valid(int frames);
 
 #endif

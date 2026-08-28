@@ -33,6 +33,19 @@ uint8_t ts_input_channel_record_channels(int mode)
     return mode == TS_INPUT_CHANNEL_STEREO ? 2u : 1u;
 }
 
+uint8_t ts_input_capture_probe_request(uint8_t maximum, uint8_t attempt)
+{
+    if (maximum == 0u || maximum > TS_INPUT_DEVICE_CHANNEL_MAX)
+        maximum = TS_INPUT_DEVICE_CHANNEL_MAX;
+    return attempt < maximum ? (uint8_t)(maximum - attempt) : 0u;
+}
+
+int ts_input_capture_probe_accepts(uint8_t requested, uint8_t obtained)
+{
+    return requested >= 1u && requested <= TS_INPUT_DEVICE_CHANNEL_MAX &&
+           obtained == requested;
+}
+
 TsStereoFrame ts_input_channel_select(const float *device_frame,
                                        size_t device_channels, int mode)
 {
@@ -40,12 +53,32 @@ TsStereoFrame ts_input_channel_select(const float *device_frame,
     float mono = 0.0f;
     if (device_frame == NULL || device_channels == 0u ||
         !ts_input_channel_mode_valid(mode)) return result;
-    /* SDL exposes the actual channel count. Bound pathological layouts so a
-       malformed device description cannot make the realtime loop unbounded. */
-    if (device_channels > 32u) device_channels = 32u;
+    /* SDL exposes the negotiated count. Common capture code rejects layouts
+       above eight; retain a defensive bound for direct callers and tests. */
+    if (device_channels > TS_INPUT_DEVICE_CHANNEL_MAX)
+        device_channels = TS_INPUT_DEVICE_CHANNEL_MAX;
     if (mode == TS_INPUT_CHANNEL_STEREO) {
-        result.l = device_frame[0];
-        result.r = device_channels > 1u ? device_frame[1] : device_frame[0];
+        size_t left_count = 0u;
+        size_t right_count = 0u;
+        if (device_channels == 1u)
+            return ts_stereo_frame_from_mono(
+                isfinite(device_frame[0]) ? device_frame[0] : 0.0f);
+        /* Preserve hardware stereo pairs: 1/2, 3/4, ... . Averaging each
+           side gives deterministic headroom and leaves ordinary stereo at
+           unity gain. */
+        for (size_t channel = 0u; channel < device_channels; ++channel) {
+            float value = isfinite(device_frame[channel]) ?
+                          device_frame[channel] : 0.0f;
+            if ((channel & 1u) == 0u) {
+                result.l += value;
+                ++left_count;
+            } else {
+                result.r += value;
+                ++right_count;
+            }
+        }
+        if (left_count > 0u) result.l /= (float)left_count;
+        if (right_count > 0u) result.r /= (float)right_count;
         return ts_stereo_frame_sanitize(result);
     }
     if (mode == TS_INPUT_CHANNEL_MIX) {
@@ -64,6 +97,66 @@ TsStereoFrame ts_input_channel_select(const float *device_frame,
     return ts_stereo_frame_from_mono(mono);
 }
 
+uint32_t ts_input_activity_detect_frame(const float *device_frame,
+                                        size_t device_channels)
+{
+    uint32_t mask = 0u;
+    if (device_frame == NULL || device_channels == 0u) return 0u;
+    if (device_channels > TS_INPUT_DEVICE_CHANNEL_MAX)
+        device_channels = TS_INPUT_DEVICE_CHANNEL_MAX;
+    for (size_t channel = 0u; channel < device_channels; ++channel) {
+        float value = device_frame[channel];
+        if (isfinite(value) && fabsf(value) >= TS_INPUT_ACTIVITY_THRESHOLD)
+            mask |= UINT32_C(1) << channel;
+    }
+    return mask;
+}
+
+void ts_input_activity_init(TsInputActivity *activity)
+{
+    if (activity == NULL) return;
+    atomic_init(&activity->available_channels, 0u);
+    atomic_init(&activity->pending_activity_mask, 0u);
+}
+
+void ts_input_activity_set_available(TsInputActivity *activity,
+                                     uint32_t channels)
+{
+    if (activity == NULL) return;
+    if (channels > TS_INPUT_DEVICE_CHANNEL_MAX) channels = 0u;
+    atomic_store_explicit(&activity->pending_activity_mask, 0u,
+                          memory_order_release);
+    atomic_store_explicit(&activity->available_channels, channels,
+                          memory_order_release);
+}
+
+uint32_t ts_input_activity_available(const TsInputActivity *activity)
+{
+    if (activity == NULL) return 0u;
+    return atomic_load_explicit(&activity->available_channels,
+                                memory_order_acquire);
+}
+
+void ts_input_activity_publish(TsInputActivity *activity, uint32_t mask)
+{
+    uint32_t channels;
+    uint32_t valid;
+    if (activity == NULL || mask == 0u) return;
+    channels = ts_input_activity_available(activity);
+    valid = channels == 0u ? 0u : (UINT32_C(1) << channels) - 1u;
+    mask &= valid;
+    if (mask != 0u)
+        (void)atomic_fetch_or_explicit(&activity->pending_activity_mask, mask,
+                                       memory_order_release);
+}
+
+uint32_t ts_input_activity_take(TsInputActivity *activity)
+{
+    if (activity == NULL) return 0u;
+    return atomic_exchange_explicit(&activity->pending_activity_mask, 0u,
+                                    memory_order_acq_rel);
+}
+
 void ts_input_monitor_init(TsInputMonitor *monitor)
 {
     if (monitor == NULL) return;
@@ -71,16 +164,97 @@ void ts_input_monitor_init(TsInputMonitor *monitor)
     atomic_init(&monitor->read_index, 0u);
     atomic_init(&monitor->write_index, 0u);
     atomic_init(&monitor->input_rate, 0u);
+    atomic_init(&monitor->prime_frames, TS_INPUT_MONITOR_PRIME_FRAMES);
     atomic_init(&monitor->reset_generation, 1u);
+    atomic_init(&monitor->underrun_count, 0u);
+    atomic_init(&monitor->dropped_frame_count, 0u);
+    atomic_init(&monitor->capture_callback_count, 0u);
+    atomic_init(&monitor->captured_frame_count, 0u);
+    atomic_init(&monitor->largest_capture_block_frames, 0u);
+    atomic_init(&monitor->correction_ppm, 0);
     atomic_init(&monitor->level_q, 0u);
     atomic_init(&monitor->peak_q, 0u);
     atomic_init(&monitor->clipped, 0);
     atomic_init(&monitor->enabled, 0);
     monitor->consumer_generation = 0u;
     monitor->consumer_phase = 0.0;
+    monitor->consumer_ratio = 1.0;
     monitor->consumer_sample = (TsStereoFrame){0.0f, 0.0f};
+    monitor->consumer_next_sample = (TsStereoFrame){0.0f, 0.0f};
+    monitor->consumer_last_sample = (TsStereoFrame){0.0f, 0.0f};
+    monitor->consumer_servo_countdown = 0u;
+    monitor->consumer_occupancy_average = 0.0;
+    monitor->consumer_servo_integral = 0.0;
+    monitor->consumer_gain = 0.0f;
     monitor->consumer_has_sample = 0;
+    monitor->consumer_has_next_sample = 0;
     monitor->consumer_primed = 0;
+}
+
+uint32_t ts_input_monitor_recommended_prime_frames(
+    uint32_t device_buffer_frames)
+{
+    uint32_t prime;
+    if (device_buffer_frames == 0u)
+        return TS_INPUT_MONITOR_PRIME_FRAMES;
+    if (device_buffer_frames > TS_INPUT_MONITOR_MAX_PRIME_FRAMES /
+                                   TS_INPUT_MONITOR_PRIME_DEVICE_BUFFERS)
+        return TS_INPUT_MONITOR_MAX_PRIME_FRAMES;
+    prime = device_buffer_frames * TS_INPUT_MONITOR_PRIME_DEVICE_BUFFERS;
+    if (prime < TS_INPUT_MONITOR_PRIME_FRAMES)
+        prime = TS_INPUT_MONITOR_PRIME_FRAMES;
+    if (prime > TS_INPUT_MONITOR_MAX_PRIME_FRAMES)
+        prime = TS_INPUT_MONITOR_MAX_PRIME_FRAMES;
+    return prime;
+}
+
+void ts_input_monitor_set_prime_frames(TsInputMonitor *monitor,
+                                       uint32_t prime_frames)
+{
+    if (monitor == NULL) return;
+    if (prime_frames < TS_INPUT_MONITOR_PRIME_FRAMES)
+        prime_frames = TS_INPUT_MONITOR_PRIME_FRAMES;
+    if (prime_frames > TS_INPUT_MONITOR_MAX_PRIME_FRAMES)
+        prime_frames = TS_INPUT_MONITOR_MAX_PRIME_FRAMES;
+    atomic_store_explicit(&monitor->prime_frames, prime_frames,
+                          memory_order_release);
+}
+
+int ts_input_monitor_get_diagnostics(const TsInputMonitor *monitor,
+                                     TsInputMonitorDiagnostics *diagnostics)
+{
+    uint32_t read_at;
+    uint32_t write_at;
+    uint32_t generation_before;
+    uint32_t generation_after;
+    if (monitor == NULL || diagnostics == NULL) return 0;
+    do {
+        generation_before = atomic_load_explicit(
+            &monitor->reset_generation, memory_order_acquire);
+        read_at = atomic_load_explicit(&monitor->read_index,
+                                       memory_order_acquire);
+        write_at = atomic_load_explicit(&monitor->write_index,
+                                        memory_order_acquire);
+        diagnostics->prime_frames = atomic_load_explicit(
+            &monitor->prime_frames, memory_order_acquire);
+        diagnostics->underrun_count = atomic_load_explicit(
+            &monitor->underrun_count, memory_order_acquire);
+        diagnostics->dropped_frame_count = atomic_load_explicit(
+            &monitor->dropped_frame_count, memory_order_acquire);
+        diagnostics->capture_callback_count = atomic_load_explicit(
+            &monitor->capture_callback_count, memory_order_acquire);
+        diagnostics->captured_frame_count = atomic_load_explicit(
+            &monitor->captured_frame_count, memory_order_acquire);
+        diagnostics->largest_capture_block_frames = atomic_load_explicit(
+            &monitor->largest_capture_block_frames, memory_order_acquire);
+        diagnostics->correction_ppm = atomic_load_explicit(
+            &monitor->correction_ppm, memory_order_acquire);
+        generation_after = atomic_load_explicit(
+            &monitor->reset_generation, memory_order_acquire);
+    } while (generation_before != generation_after);
+    diagnostics->occupancy_frames = write_at - read_at;
+    diagnostics->reset_generation = generation_after;
+    return 1;
 }
 
 void ts_input_monitor_set_enabled(TsInputMonitor *monitor, int enabled,
@@ -92,6 +266,17 @@ void ts_input_monitor_set_enabled(TsInputMonitor *monitor, int enabled,
     atomic_store_explicit(&monitor->read_index, 0u, memory_order_release);
     atomic_store_explicit(&monitor->write_index, 0u, memory_order_release);
     atomic_store_explicit(&monitor->input_rate, input_rate, memory_order_release);
+    atomic_store_explicit(&monitor->underrun_count, 0u, memory_order_release);
+    atomic_store_explicit(&monitor->dropped_frame_count, 0u,
+                          memory_order_release);
+    atomic_store_explicit(&monitor->capture_callback_count, 0u,
+                          memory_order_release);
+    atomic_store_explicit(&monitor->captured_frame_count, 0u,
+                          memory_order_release);
+    atomic_store_explicit(&monitor->largest_capture_block_frames, 0u,
+                          memory_order_release);
+    atomic_store_explicit(&monitor->correction_ppm, 0,
+                          memory_order_release);
     generation = atomic_load_explicit(&monitor->reset_generation,
                                       memory_order_relaxed) + 1u;
     atomic_store_explicit(&monitor->reset_generation, generation,
@@ -111,6 +296,25 @@ void ts_input_monitor_push(TsInputMonitor *monitor, float sample)
     ts_input_monitor_push_frame(monitor, ts_stereo_frame_from_mono(sample));
 }
 
+void ts_input_monitor_note_capture_block(TsInputMonitor *monitor,
+                                         uint32_t frame_count)
+{
+    uint32_t observed;
+    if (monitor == NULL || frame_count == 0u ||
+        !ts_input_monitor_enabled(monitor)) return;
+    atomic_fetch_add_explicit(&monitor->capture_callback_count, 1u,
+                              memory_order_relaxed);
+    atomic_fetch_add_explicit(&monitor->captured_frame_count, frame_count,
+                              memory_order_relaxed);
+    observed = atomic_load_explicit(&monitor->largest_capture_block_frames,
+                                    memory_order_relaxed);
+    while (frame_count > observed &&
+           !atomic_compare_exchange_weak_explicit(
+               &monitor->largest_capture_block_frames, &observed, frame_count,
+               memory_order_relaxed, memory_order_relaxed)) {
+    }
+}
+
 void ts_input_monitor_push_frame(TsInputMonitor *monitor, TsStereoFrame sample)
 {
     uint32_t read_at;
@@ -119,7 +323,11 @@ void ts_input_monitor_push_frame(TsInputMonitor *monitor, TsStereoFrame sample)
     sample = ts_stereo_frame_sanitize(sample);
     write_at = atomic_load_explicit(&monitor->write_index, memory_order_relaxed);
     read_at = atomic_load_explicit(&monitor->read_index, memory_order_acquire);
-    if (write_at - read_at >= TS_INPUT_MONITOR_RING_FRAMES) return;
+    if (write_at - read_at >= TS_INPUT_MONITOR_RING_FRAMES) {
+        atomic_fetch_add_explicit(&monitor->dropped_frame_count, 1u,
+                                  memory_order_relaxed);
+        return;
+    }
     monitor->ring[write_at & (TS_INPUT_MONITOR_RING_FRAMES - 1u)] = sample;
     atomic_store_explicit(&monitor->write_index, write_at + 1u,
                           memory_order_release);
@@ -145,6 +353,7 @@ TsStereoFrame ts_input_monitor_read_frame(TsInputMonitor *monitor,
     uint32_t read_at;
     uint32_t write_at;
     uint32_t input_rate;
+    uint32_t prime_frames;
     double ratio;
     TsStereoFrame output = {0.0f, 0.0f};
     if (monitor == NULL || output_rate == 0u ||
@@ -154,15 +363,41 @@ TsStereoFrame ts_input_monitor_read_frame(TsInputMonitor *monitor,
     if (monitor->consumer_generation != generation) {
         monitor->consumer_generation = generation;
         monitor->consumer_phase = 0.0;
+        monitor->consumer_ratio = 1.0;
         monitor->consumer_sample = (TsStereoFrame){0.0f, 0.0f};
+        monitor->consumer_next_sample = (TsStereoFrame){0.0f, 0.0f};
+        monitor->consumer_last_sample = (TsStereoFrame){0.0f, 0.0f};
+        monitor->consumer_servo_countdown = 0u;
+        monitor->consumer_occupancy_average = 0.0;
+        monitor->consumer_servo_integral = 0.0;
+        monitor->consumer_gain = 0.0f;
         monitor->consumer_has_sample = 0;
+        monitor->consumer_has_next_sample = 0;
         monitor->consumer_primed = 0;
+        atomic_store_explicit(&monitor->correction_ppm, 0,
+                              memory_order_relaxed);
     }
     read_at = atomic_load_explicit(&monitor->read_index, memory_order_relaxed);
     write_at = atomic_load_explicit(&monitor->write_index, memory_order_acquire);
+    prime_frames = atomic_load_explicit(&monitor->prime_frames,
+                                        memory_order_acquire);
     if (!monitor->consumer_primed) {
-        if (write_at - read_at < TS_INPUT_MONITOR_PRIME_FRAMES) return output;
+        if (write_at - read_at < prime_frames) {
+            if (monitor->consumer_gain > 0.0f) {
+                monitor->consumer_gain -=
+                    1.0f / (float)TS_INPUT_MONITOR_FADE_FRAMES;
+                if (monitor->consumer_gain < 0.0f)
+                    monitor->consumer_gain = 0.0f;
+                return ts_stereo_frame_sanitize((TsStereoFrame){
+                    monitor->consumer_last_sample.l * monitor->consumer_gain,
+                    monitor->consumer_last_sample.r * monitor->consumer_gain
+                });
+            }
+            return output;
+        }
         monitor->consumer_primed = 1;
+        monitor->consumer_servo_countdown = 0u;
+        monitor->consumer_occupancy_average = (double)(write_at - read_at);
     }
     if (!monitor->consumer_has_sample) {
         if (!monitor_pop(monitor, &monitor->consumer_sample)) {
@@ -171,19 +406,79 @@ TsStereoFrame ts_input_monitor_read_frame(TsInputMonitor *monitor,
         }
         monitor->consumer_has_sample = 1;
     }
-    output = monitor->consumer_sample;
-    input_rate = atomic_load_explicit(&monitor->input_rate, memory_order_acquire);
-    ratio = input_rate > 0u ? (double)input_rate / (double)output_rate : 1.0;
-    monitor->consumer_phase += ratio;
-    while (monitor->consumer_phase >= 1.0) {
-        TsStereoFrame next;
-        monitor->consumer_phase -= 1.0;
-        if (!monitor_pop(monitor, &next)) {
+    if (!monitor->consumer_has_next_sample) {
+        if (!monitor_pop(monitor, &monitor->consumer_next_sample)) {
             monitor->consumer_has_sample = 0;
             monitor->consumer_primed = 0;
+            return output;
+        }
+        monitor->consumer_has_next_sample = 1;
+    }
+    monitor->consumer_last_sample.l = monitor->consumer_sample.l +
+        (monitor->consumer_next_sample.l - monitor->consumer_sample.l) *
+        (float)monitor->consumer_phase;
+    monitor->consumer_last_sample.r = monitor->consumer_sample.r +
+        (monitor->consumer_next_sample.r - monitor->consumer_sample.r) *
+        (float)monitor->consumer_phase;
+    if (monitor->consumer_gain < 1.0f) {
+        monitor->consumer_gain +=
+            1.0f / (float)TS_INPUT_MONITOR_FADE_FRAMES;
+        if (monitor->consumer_gain > 1.0f) monitor->consumer_gain = 1.0f;
+    }
+    output.l = monitor->consumer_last_sample.l * monitor->consumer_gain;
+    output.r = monitor->consumer_last_sample.r * monitor->consumer_gain;
+    input_rate = atomic_load_explicit(&monitor->input_rate, memory_order_acquire);
+    ratio = input_rate > 0u ? (double)input_rate / (double)output_rate : 1.0;
+    if (monitor->consumer_servo_countdown == 0u) {
+        uint32_t occupancy = write_at - read_at;
+        uint32_t target = prime_frames;
+        double correction = 0.0;
+        /* Capture arrives in device-sized bursts, so drive the clock servo
+           from a low-passed occupancy rather than the instantaneous ring
+           phase. The integral learns persistent device-clock mismatch; the
+           proportional term responds to delayed/catch-up PipeWire blocks.
+           The bounded ratio is the only correction mechanism: the producer
+           never overwrites and the consumer never jumps the read index. */
+        if (monitor->consumer_occupancy_average <= 0.0)
+            monitor->consumer_occupancy_average = (double)occupancy;
+        else
+            monitor->consumer_occupancy_average +=
+                ((double)occupancy - monitor->consumer_occupancy_average) /
+                32.0;
+        if (target > 0u) {
+            double error =
+                (monitor->consumer_occupancy_average - (double)target) /
+                (double)target;
+            monitor->consumer_servo_integral += error * 0.00001;
+            if (monitor->consumer_servo_integral > 0.01)
+                monitor->consumer_servo_integral = 0.01;
+            if (monitor->consumer_servo_integral < -0.01)
+                monitor->consumer_servo_integral = -0.01;
+            correction = monitor->consumer_servo_integral + error * 0.01;
+        }
+        if (correction > 0.0125) correction = 0.0125;
+        if (correction < -0.0125) correction = -0.0125;
+        monitor->consumer_ratio = ratio * (1.0 + correction);
+        atomic_store_explicit(
+            &monitor->correction_ppm,
+            (int32_t)(correction * 1000000.0), memory_order_relaxed);
+        monitor->consumer_servo_countdown =
+            TS_INPUT_MONITOR_SERVO_INTERVAL_FRAMES;
+    }
+    --monitor->consumer_servo_countdown;
+    ratio = monitor->consumer_ratio;
+    monitor->consumer_phase += ratio;
+    while (monitor->consumer_phase >= 1.0) {
+        monitor->consumer_phase -= 1.0;
+        monitor->consumer_sample = monitor->consumer_next_sample;
+        if (!monitor_pop(monitor, &monitor->consumer_next_sample)) {
+            monitor->consumer_has_sample = 0;
+            monitor->consumer_has_next_sample = 0;
+            monitor->consumer_primed = 0;
+            atomic_fetch_add_explicit(&monitor->underrun_count, 1u,
+                                      memory_order_relaxed);
             break;
         }
-        monitor->consumer_sample = next;
     }
     return ts_stereo_frame_sanitize(output);
 }

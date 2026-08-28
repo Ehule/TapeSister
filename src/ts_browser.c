@@ -72,6 +72,12 @@ int ts_browser_mode_edits_filename(TsBrowserMode mode)
            mode == TS_BROWSER_EXPORT_WAV || mode == TS_BROWSER_EXPORT_BANK;
 }
 
+int ts_browser_edits_text(const TsBrowser *browser)
+{
+    return browser != NULL && (browser->creating_directory ||
+                               ts_browser_mode_edits_filename(browser->mode));
+}
+
 int ts_browser_mode_selects_config(TsBrowserMode mode)
 {
     return mode == TS_BROWSER_SELECT_SAMPLE_DIRECTORY ||
@@ -161,6 +167,7 @@ void ts_browser_init(TsBrowser *browser)
 {
     memset(browser, 0, sizeof(*browser));
     browser->selected = -1;
+    browser->action_focus = -1;
     if (getcwd(browser->directory, sizeof(browser->directory)) == NULL)
         snprintf(browser->directory, sizeof(browser->directory), ".");
 }
@@ -244,6 +251,7 @@ int ts_browser_open(TsBrowser *browser, TsBrowserMode mode, const char *default_
 {
     browser->mode = mode;
     browser->filename_focus = ts_browser_mode_edits_filename(mode);
+    browser->action_focus = browser->filename_focus ? -2 : -1;
     browser->dragging_scrollbar = 0;
     browser->creating_directory = 0;
     browser->saved_filename[0] = '\0';
@@ -257,6 +265,7 @@ int ts_browser_open(TsBrowser *browser, TsBrowserMode mode, const char *default_
 void ts_browser_close(TsBrowser *browser)
 {
     browser->mode = TS_BROWSER_CLOSED;
+    browser->action_focus = -1;
     browser->dragging_scrollbar = 0;
     browser->creating_directory = 0;
     browser->saved_filename[0] = '\0';
@@ -288,6 +297,7 @@ int ts_browser_begin_create_directory(TsBrowser *browser)
     browser->filename[0] = '\0';
     browser->filename_cursor = 0u;
     browser->filename_focus = 1;
+    browser->action_focus = -2;
     browser->creating_directory = 1;
     browser->overwrite_armed = 0;
     snprintf(browser->message, sizeof(browser->message),
@@ -303,7 +313,8 @@ void ts_browser_cancel_create_directory(TsBrowser *browser)
     browser->filename_cursor = strlen(browser->filename);
     browser->saved_filename[0] = '\0';
     browser->creating_directory = 0;
-    browser->filename_focus = 1;
+    browser->filename_focus = ts_browser_mode_edits_filename(browser->mode);
+    browser->action_focus = browser->filename_focus ? -2 : -1;
     browser->overwrite_armed = 0;
     snprintf(browser->message, sizeof(browser->message), "NEW FOLDER CANCELLED");
 }
@@ -340,7 +351,8 @@ int ts_browser_create_directory(TsBrowser *browser)
     if (!ts_browser_refresh(browser)) return 0;
     snprintf(browser->filename, sizeof(browser->filename), "%s", saved);
     browser->filename_cursor = strlen(browser->filename);
-    browser->filename_focus = 1;
+    browser->filename_focus = ts_browser_mode_edits_filename(browser->mode);
+    browser->action_focus = browser->filename_focus ? -2 : -1;
     snprintf(browser->message, sizeof(browser->message), "FOLDER CREATED - READY TO SAVE");
     return 1;
 }

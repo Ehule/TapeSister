@@ -261,6 +261,36 @@ static uint32_t advance_seed(uint32_t seed)
     return seed * 1664525u + 1013904223u;
 }
 
+void ts_fm_seed_sequence_init(TsFmSeedSequence *sequence,
+                              uint64_t session_root)
+{
+    if (sequence == NULL) return;
+    sequence->state = session_root != 0u ? session_root :
+                      UINT64_C(0x6d2b79f5a4c3e217);
+}
+
+uint32_t ts_fm_seed_sequence_next(TsFmSeedSequence *sequence)
+{
+    uint64_t mixed;
+    uint32_t seed;
+    if (sequence == NULL) return UINT32_C(0x6d2b79f5);
+    sequence->state += UINT64_C(0x9e3779b97f4a7c15);
+    if (sequence->state == 0u)
+        sequence->state = UINT64_C(0x6d2b79f5a4c3e217);
+    mixed = sequence->state;
+    mixed = (mixed ^ (mixed >> 30u)) * UINT64_C(0xbf58476d1ce4e5b9);
+    mixed = (mixed ^ (mixed >> 27u)) * UINT64_C(0x94d049bb133111eb);
+    mixed ^= mixed >> 31u;
+    seed = (uint32_t)mixed ^ (uint32_t)(mixed >> 32u);
+    return seed != 0u ? seed : UINT32_C(0x6d2b79f5);
+}
+
+static int fm_candidate_was_unusable(const char *error)
+{
+    return error != NULL &&
+           strcmp(error, "FM render produced no usable signal") == 0;
+}
+
 static float rng_unit(uint32_t *state)
 {
     return (float)(rng_next(state) & 0x00ffffffu) / 16777215.0f;
@@ -4560,12 +4590,44 @@ int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
     return ts_instrument_select_bank(instrument, slot, error, error_size);
 }
 
+int ts_instrument_create_selected_fresh(TsInstrument *instrument,
+                                        TsFmSeedSequence *sequence,
+                                        uint32_t *successful_seed,
+                                        char *error, size_t error_size)
+{
+    char attempt_error[160];
+    if (successful_seed != NULL) *successful_seed = 0u;
+    if (sequence == NULL) {
+        set_error(error, error_size, "FM Create session seed is unavailable");
+        return 0;
+    }
+    for (int attempt = 0; attempt < TS_FM_CREATE_RETRY_LIMIT; ++attempt) {
+        uint32_t seed = ts_fm_seed_sequence_next(sequence);
+        if (ts_instrument_create_selected(instrument, seed,
+                                          attempt_error,
+                                          sizeof(attempt_error))) {
+            if (successful_seed != NULL) *successful_seed = seed;
+            set_error(error, error_size, "");
+            return 1;
+        }
+        if (!fm_candidate_was_unusable(attempt_error)) {
+            set_error(error, error_size, attempt_error);
+            return 0;
+        }
+    }
+    set_error(error, error_size,
+              "No usable FM signal after 12 Create attempts");
+    return 0;
+}
+
 int ts_instrument_apply_fm_patch(TsInstrument *instrument,
                                  const TsFmPatch *patch,
                                  char *error, size_t error_size)
 {
     TsGeneratorRecipe recipe;
+    TsGeneratorRecipe previous_generator;
     uint32_t seed;
+    int ok;
     if (instrument == NULL || patch == NULL || instrument->selected_slot < 0 ||
         instrument->selected_slot >= TS_BANK_SLOT_COUNT) {
         set_error(error, error_size, "Select a tile before applying FM logic");
@@ -4585,13 +4647,17 @@ int ts_instrument_apply_fm_patch(TsInstrument *instrument,
     recipe.fm_patch = *patch;
     recipe.frequency = 261.625565f;
     ts_fm_patch_sanitize(&recipe.fm_patch);
+    previous_generator = instrument->generator;
     instrument->generator = recipe;
-    return ts_instrument_create_selected(instrument, seed, error, error_size);
+    ok = ts_instrument_create_selected(instrument, seed, error, error_size);
+    if (!ok) instrument->generator = previous_generator;
+    return ok;
 }
 
-int ts_instrument_make_fm_bank(TsInstrument *instrument,
-                               const TsFmPatch *patch,
-                               char *error, size_t error_size)
+int ts_instrument_make_fm_bank_seeded(TsInstrument *instrument,
+                                      const TsFmPatch *patch,
+                                      uint32_t root_seed,
+                                      char *error, size_t error_size)
 {
     TsInstrument made;
     TsFmPatch anchor;
@@ -4615,7 +4681,7 @@ int ts_instrument_make_fm_bank(TsInstrument *instrument,
     previous = anchor;
     mutation = clampf(instrument->family_mutation, 0.0f, 1.0f);
     chain = instrument->family_trajectory != 0;
-    seed = instrument->generator.seed != 0u ? instrument->generator.seed :
+    seed = root_seed != 0u ? root_seed :
            advance_seed(instrument->family_sequence ^ 0x42414e4bu);
     ts_instrument_init(&made);
     made.family_mutation = mutation;
@@ -4627,18 +4693,33 @@ int ts_instrument_make_fm_bank(TsInstrument *instrument,
                              instrument->generator.seconds : 2.0f;
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
         TsFmPatch next = anchor;
-        if (slot > 0) {
-            seed = advance_seed(seed ^ (uint32_t)(slot * 0x9e3779b9u));
-            ts_fm_patch_vary(chain ? &previous : &anchor,
-                             seed, mutation, &next);
+        int applied = 0;
+        int attempt_count = slot == 0 ? 1 : TS_FM_CREATE_RETRY_LIMIT;
+        for (int attempt = 0; attempt < attempt_count; ++attempt) {
+            if (slot > 0) {
+                seed = attempt == 0 ?
+                    advance_seed(seed ^ (uint32_t)(slot * 0x9e3779b9u)) :
+                    advance_seed(seed);
+                ts_fm_patch_vary(chain ? &previous : &anchor,
+                                 seed, mutation, &next);
+            }
+            made.selected_slot = slot;
+            made.generator.kind = TS_GENERATOR_FM;
+            made.generator.seed = seed;
+            made.generator.frequency = 261.625565f;
+            made.generator.has_fm_patch = 1;
+            made.generator.fm_patch = next;
+            if (ts_instrument_apply_fm_patch(&made, &next,
+                                             error, error_size)) {
+                applied = 1;
+                break;
+            }
+            if (!fm_candidate_was_unusable(error)) break;
         }
-        made.selected_slot = slot;
-        made.generator.kind = TS_GENERATOR_FM;
-        made.generator.seed = seed;
-        made.generator.frequency = 261.625565f;
-        made.generator.has_fm_patch = 1;
-        made.generator.fm_patch = next;
-        if (!ts_instrument_apply_fm_patch(&made, &next, error, error_size)) {
+        if (!applied) {
+            if (slot > 0 && fm_candidate_was_unusable(error))
+                set_error(error, error_size,
+                          "FM Bank relative produced no usable signal after 12 attempts");
             ts_instrument_free(&made);
             return 0;
         }
@@ -4660,6 +4741,21 @@ int ts_instrument_make_fm_bank(TsInstrument *instrument,
     *instrument = made;
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_instrument_make_fm_bank(TsInstrument *instrument,
+                               const TsFmPatch *patch,
+                               char *error, size_t error_size)
+{
+    uint32_t seed;
+    if (instrument == NULL) {
+        set_error(error, error_size, "FM Bank Maker input is unavailable");
+        return 0;
+    }
+    seed = instrument->generator.seed != 0u ? instrument->generator.seed :
+           advance_seed(instrument->family_sequence ^ 0x42414e4bu);
+    return ts_instrument_make_fm_bank_seeded(instrument, patch, seed,
+                                             error, error_size);
 }
 
 int ts_instrument_activate_silence(TsInstrument *instrument, size_t frames,
@@ -6654,6 +6750,37 @@ int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
                                error, error_size)) return 0;
     ++instrument->family_sequence;
     return 1;
+}
+
+int ts_instrument_stamp_create_fresh(TsInstrument *instrument,
+                                     TsFmSeedSequence *sequence,
+                                     uint32_t *successful_seed,
+                                     char *error, size_t error_size)
+{
+    char attempt_error[160];
+    if (successful_seed != NULL) *successful_seed = 0u;
+    if (sequence == NULL) {
+        set_error(error, error_size,
+                  "FM Create stamp session seed is unavailable");
+        return 0;
+    }
+    for (int attempt = 0; attempt < TS_FM_CREATE_RETRY_LIMIT; ++attempt) {
+        uint32_t seed = ts_fm_seed_sequence_next(sequence);
+        if (ts_instrument_stamp_create(instrument, seed,
+                                       attempt_error,
+                                       sizeof(attempt_error))) {
+            if (successful_seed != NULL) *successful_seed = seed;
+            set_error(error, error_size, "");
+            return 1;
+        }
+        if (!fm_candidate_was_unusable(attempt_error)) {
+            set_error(error, error_size, attempt_error);
+            return 0;
+        }
+    }
+    set_error(error, error_size,
+              "No usable FM signal after 12 Create stamp attempts");
+    return 0;
 }
 
 static uint32_t material_variation_seed(const TsInstrument *instrument,

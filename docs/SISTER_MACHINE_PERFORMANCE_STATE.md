@@ -37,12 +37,14 @@ FM speaker path is removed and the bus enters Sister exactly once. A silent synt
 contributes an exact zero frame.
 
 `EXT` is an independent consumer of the configured capture device. A central ownership
-bitmask represents Record monitoring, active external Record/Overdub and Sister EXT. The
-device opens once for the first consumer and remains available until the last releases it.
-Sister does not change the Record monitor toggle. MIX/LEFT/RIGHT/STEREO selection remains
-the single authoritative channel mapping; RIGHT and STEREO reject a mono-only device
-instead of pretending it has a second input. Device loss publishes `EXT - DEVICE
-UNAVAILABLE` and silences only that route.
+bitmask represents header activity diagnostics, Record monitoring, active external
+Record/Overdub and Sister EXT. The lightweight diagnostic request keeps the selected
+device available during the application session, while the stereo monitor ring remains
+disabled until Record or Sister needs it. Sister does not change the Record monitor
+toggle. MIX/LEFT/RIGHT/STEREO remains the single authoritative mapping at the hardware
+boundary. STEREO folds up to four hardware pairs into the existing stereo EXT bus;
+mono devices are safely duplicated. Device loss publishes `EXT - DEVICE UNAVAILABLE`,
+dims the channel indicators and silences only that route.
 
 All routed sources retain the PR5 insert law: the selected direct speaker bus is removed,
 the source enters INPUT/write once, and audibility returns only through Sister's MONITOR,

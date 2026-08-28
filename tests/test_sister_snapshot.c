@@ -58,6 +58,18 @@ static void snapshot_metadata_and_revision(void)
     assert(ts_sister_machine_get_snapshot(&machine, &next));
     assert(next.revision > snapshot.revision);
     assert(next.master_clock == snapshot.master_clock + 1u);
+    snapshot = next;
+    ts_sister_machine_begin_audio_block(&machine);
+    for (i = 0u; i < 64u; ++i)
+        (void)ts_sister_machine_process_frame(
+            &machine, sister_silence(), sister_silence());
+    assert(ts_sister_machine_get_snapshot(&machine, &next));
+    assert(next.revision == snapshot.revision);
+    assert(next.master_clock == snapshot.master_clock);
+    ts_sister_machine_end_audio_block(&machine);
+    assert(ts_sister_machine_get_snapshot(&machine, &next));
+    assert(next.revision == snapshot.revision + 2u);
+    assert(next.master_clock == snapshot.master_clock + 64u);
     ts_sister_machine_free(&machine);
 }
 

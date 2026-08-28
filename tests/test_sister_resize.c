@@ -50,10 +50,12 @@ static void grow_shrink_and_coalescing(void)
     parameters.soak = 0.4f;
     sister_configure_immediate(&machine, &parameters);
     ts_sister_machine_set_rolling(&machine, 0);
-    machine.head[1].phase = ts_sister_positive_modulo(-3000.25,
-                                                       machine.buffer.storage_frames);
-    machine.head[2].phase = ts_sister_positive_modulo(-8000.5,
-                                                       machine.buffer.storage_frames);
+    machine.head[1].logical_age = 3000.25;
+    machine.head[1].phase = ts_sister_positive_modulo(
+        -machine.head[1].logical_age, machine.buffer.storage_frames);
+    machine.head[2].logical_age = 8000.5;
+    machine.head[2].phase = ts_sister_positive_modulo(
+        -machine.head[2].logical_age, machine.buffer.storage_frames);
     process_silence(&machine, 1u);
     h2_age = machine_head_age(&machine, 1u);
     weave_phase = machine.soak_weave[0].phase;

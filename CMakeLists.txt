@@ -7,6 +7,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
              src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c
+             src/ts_realtime_diagnostics.c
              src/ts_sister_effects.c src/ts_sister_post_fx.c
              src/ts_sister_machine.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
@@ -184,7 +185,7 @@ add_test(NAME tapesister_audio_frame_tests COMMAND tapesister_audio_frame_tests)
 
 foreach(stereo_test IN ITEMS audio_mixer note_bank_stereo performance_stereo
                              capture_stereo external_input_channels
-                             input_ownership)
+                             input_ownership realtime_diagnostics)
   add_executable(test_${stereo_test} tests/test_${stereo_test}.c)
   target_link_libraries(test_${stereo_test} PRIVATE tapesister_core)
   add_test(NAME test_${stereo_test} COMMAND test_${stereo_test})
@@ -194,18 +195,34 @@ foreach(sister_test IN ITEMS sister_buffer sister_resize sister_heads sister_tra
                              sister_modulation sister_feedback sister_stereo
                              sister_weave
                              sister_effect_routing
-                             sister_duck_filter sister_snapshot sister_routes
+                             sister_post_fx sister_duck_filter sister_snapshot
+                             sister_routes
                              sister_runtime sister_source_mask sister_capture
                              sister_performance_sources sister_recursion
                              sister_lifecycle sister_visibility sister_ui_model
                              sister_wave_snapshot waveform_display_modes
                              sister_source_ui sister_capture_ui sister_palette
                              sister_ghost_tone sister_preset
-                             sister_project_state)
+                             sister_project_state sister_pathological)
   add_executable(test_${sister_test} tests/test_${sister_test}.c)
   target_link_libraries(test_${sister_test} PRIVATE tapesister_core)
   add_test(NAME test_${sister_test} COMMAND test_${sister_test})
 endforeach()
+
+add_custom_target(stress-sister
+  COMMAND test_sister_pathological --certify
+  DEPENDS test_sister_pathological
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  COMMENT "Running deterministic two-hour Sister certification soak")
+
+add_executable(benchmark_sister_callback EXCLUDE_FROM_ALL
+               tests/benchmark_sister_callback.c)
+target_link_libraries(benchmark_sister_callback PRIVATE tapesister_core)
+add_custom_target(benchmark-sister
+  COMMAND benchmark_sister_callback 2000000 256
+  DEPENDS benchmark_sister_callback
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  COMMENT "Running optional Sister callback benchmark")
 
 add_executable(tapesister_sample_channels_tests tests/test_sample_channels.c)
 target_link_libraries(tapesister_sample_channels_tests PRIVATE tapesister_core)

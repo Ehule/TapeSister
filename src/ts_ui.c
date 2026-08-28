@@ -1,5 +1,7 @@
 #include "tapesister/ui.h"
+#include "tapesister/input_monitor.h"
 #include "tapesister/sister_ui.h"
+#include "tapesister/version.h"
 #include "tapesister/waveform_cache.h"
 
 #include <math.h>
@@ -7,11 +9,42 @@
 #include <stdlib.h>
 #include <string.h>
 
+_Static_assert(sizeof(TAPESISTER_BUILD_MARKER) <=
+                   TAPESISTER_BUILD_MARKER_MAX_CHARS + 1,
+               "TAPESISTER_BUILD_MARKER must fit the six-character UI badge");
+
 #define RGB(r,g,b) (0xff000000u | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
 
 static const TsPalette *render_palette;
 static TsWaveformCache waveform_caches[TS_UI_WAVEFORM_COUNT];
 static int waveform_caches_initialized;
+
+void ts_ui_update_input_activity(TsUiState *ui,
+                                 uint32_t hold_until_ms[8],
+                                 uint32_t now_ms,
+                                 uint32_t available_channels,
+                                 uint32_t detected_mask)
+{
+    uint8_t held = 0u;
+    if (ui == NULL || hold_until_ms == NULL) return;
+    if (available_channels > TS_INPUT_DEVICE_CHANNEL_MAX)
+        available_channels = 0u;
+    for (uint32_t channel = 0u; channel < TS_INPUT_DEVICE_CHANNEL_MAX;
+         ++channel) {
+        uint32_t bit = UINT32_C(1) << channel;
+        if (channel >= available_channels) {
+            hold_until_ms[channel] = 0u;
+        } else if ((detected_mask & bit) != 0u) {
+            hold_until_ms[channel] =
+                now_ms + TS_UI_INPUT_ACTIVITY_HOLD_MS;
+        }
+        if (channel < available_channels &&
+            (int32_t)(hold_until_ms[channel] - now_ms) > 0)
+            held |= (uint8_t)bit;
+    }
+    ui->input_available_channels = (uint8_t)available_channels;
+    ui->input_activity_mask = held;
+}
 
 static TsWaveformCache *waveform_cache(TsUiWaveformKind kind)
 {
@@ -85,6 +118,7 @@ int ts_ui_fm_background_click_allowed(const TsUiState *ui, int x, int y)
         ui->fm_full_choice_open)
         return 0;
     return ts_ui_logo_contains(x, y) ||
+           (ui->show_keyboard && ts_ui_key_from_point(x, y) >= 0) ||
            (!ui->show_keyboard && !ui->show_recipes &&
             !ui->show_ingredients && ts_ui_bank_slot_from_point(x, y) >= 0);
 }
@@ -101,6 +135,14 @@ int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
         return 1;
     }
     elapsed = now_ms - guard->last_event_ms;
+    if (guard->suppress_until_quiet) {
+        if (elapsed < TS_UI_WHEEL_HANDOFF_QUIET_MS) {
+            /* Residual events extend the block until the stream really ends. */
+            guard->last_event_ms = now_ms;
+            return 0;
+        }
+        guard->suppress_until_quiet = 0;
+    }
     if (target != guard->target && elapsed < TS_UI_WHEEL_HANDOFF_QUIET_MS) {
         /* Ongoing inertial events keep extending the required quiet period. */
         guard->last_event_ms = now_ms;
@@ -109,6 +151,42 @@ int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
     guard->target = target;
     guard->last_event_ms = now_ms;
     return 1;
+}
+
+void ts_ui_wheel_guard_interrupt(TsUiWheelGuard *guard, uint32_t now_ms)
+{
+    if (guard == NULL) return;
+    guard->last_event_ms = now_ms;
+    guard->active = 1;
+    guard->suppress_until_quiet = 1;
+}
+
+void ts_ui_pointer_drag_begin(TsUiPointerDrag *drag, int target,
+                              uint32_t button_mask)
+{
+    if (drag == NULL) return;
+    drag->target = target;
+    drag->button_mask = button_mask;
+    drag->active = target >= 0 && button_mask != 0u;
+}
+
+void ts_ui_pointer_drag_cancel(TsUiPointerDrag *drag)
+{
+    if (drag == NULL) return;
+    drag->target = -1;
+    drag->button_mask = 0u;
+    drag->active = 0;
+}
+
+int ts_ui_pointer_drag_accept_motion(TsUiPointerDrag *drag, int target,
+                                     uint32_t button_state)
+{
+    if (drag == NULL || !drag->active) return 0;
+    if ((button_state & drag->button_mask) == 0u) {
+        ts_ui_pointer_drag_cancel(drag);
+        return 0;
+    }
+    return target == drag->target;
 }
 
 int ts_ui_waveform_mode_contains(int x, int y)
@@ -234,6 +312,18 @@ static void wave_rect(TsFramebuffer *fb, int x, int y, int w, int h, uint32_t co
     if (x + w > TS_WAVE_X + TS_WAVE_W) w = TS_WAVE_X + TS_WAVE_W - x;
     if (y + h > TS_WAVE_Y + TS_WAVE_H) h = TS_WAVE_Y + TS_WAVE_H - y;
     if (w > 0 && h > 0) rect(fb, x, y, w, h, color);
+}
+
+static void recording_button_outline(TsFramebuffer *fb, int x, int y,
+                                     int w, int h, int visible)
+{
+    if (fb == NULL || !visible) return;
+    /* Match the hollow active-tile frame so a live print remains obvious
+       even when the operator is watching the waveform instead of status. */
+    rect(fb, x - 2, y - 2, w + 4, 3, PAL_ACTIVE_TILE);
+    rect(fb, x - 2, y + h, w + 4, 3, PAL_ACTIVE_TILE);
+    rect(fb, x - 2, y - 2, 3, h + 5, PAL_ACTIVE_TILE);
+    rect(fb, x + w - 1, y - 2, 3, h + 5, PAL_ACTIVE_TILE);
 }
 
 static uint32_t blend_color(uint32_t background, uint32_t foreground,
@@ -528,7 +618,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
               PAL_BUTTON, PAL_MOUSE);
     }
 
-    if (ts_browser_mode_edits_filename(browser->mode)) {
+    if (ts_browser_edits_text(browser)) {
         const char *filename = browser->filename;
         size_t length = strlen(filename);
         size_t cursor = browser->filename_cursor > length ? length :
@@ -557,11 +647,11 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
         text(fb, 58, 300, "SELECT AN EXECUTABLE FILE", PAL_EFFECT, 1);
     }
 
-    button(fb, 58, 326, 72, "UP DIR", 0);
+    button(fb, 58, 326, 72, "UP DIR", browser->action_focus == 0);
     if (ts_browser_mode_allows_create_directory(browser->mode))
         button(fb, 135, 326, 84,
                browser->creating_directory ? "BACK" : "NEW DIR",
-               browser->creating_directory);
+               browser->creating_directory || browser->action_focus == 1);
     button(fb, 224, 326, 120,
            file_busy ? "PLEASE WAIT" :
            browser->overwrite_armed ? "OVERWRITE?" :
@@ -571,8 +661,9 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
            browser->mode == TS_BROWSER_LOAD_WAV ? "OPEN" :
            (browser->mode == TS_BROWSER_SAVE_RECIPE ||
             browser->mode == TS_BROWSER_SAVE_PRESET) ? "SAVE" : "EXPORT",
-           file_busy || browser->overwrite_armed || browser->creating_directory);
-    button(fb, 349, 326, 84, "CANCEL", 0);
+           file_busy || browser->overwrite_armed || browser->creating_directory ||
+           browser->action_focus == 2);
+    button(fb, 349, 326, 84, "CANCEL", browser->action_focus == 3);
     snprintf(footer, sizeof(footer), "%.24s", browser->overwrite_armed ?
              "CONFIRM FILE OVERWRITE" : browser->message);
     text(fb, 441, 334, footer,
@@ -1077,6 +1168,12 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
     button(fb, 372, 252, 70, ui->fm_held_notes > 0 ? "HELD" : "HOLD",
            ui->fm_held_notes > 0);
     button(fb, 448, 252, 64, "BACK", 0);
+    {
+        char output[24];
+        snprintf(output, sizeof(output), "OUT %03d", ui->config.fm_output_percent);
+        slider(fb, 518, 252, 102, output,
+               (float)ui->config.fm_output_percent / 100.0f, PAL_EFFECT);
+    }
     button(fb, 20, 278, 86, "DRONE", ui->fm_patch.drone_mode);
     button(fb, 112, 278, 100, "EXTREME", ui->fm_patch.extreme_mode);
     button(fb, 218, 278, 86,
@@ -1179,19 +1276,19 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
                    (float)(ui->palette.buttons_contrast - 1) / 99.0f,
                    ui->palette.buttons_contrast, PAL_BUTTON,
                    ui->palette_channel == 4);
-    text(fb, 432, 89, "COLOR", PAL_TUNING, 1);
-    frame(fb, 432, 99, 70, 47, selected, PAL_MOUSE);
-    text(fb, 510, 89, "WAVE SEL", PAL_TUNING, 1);
-    frame(fb, 510, 99, 108, 47, RGB(8, 8, 8), PAL_MOUSE);
-    rect(fb, 538, 102, 40, 41, PAL_WAVE_SELECTION);
-    rect(fb, 513, 121, 102, 1, RGB(74, 67, 75));
+    text(fb, 432, 106, "COLOR", PAL_TUNING, 1);
+    frame(fb, 432, 116, 70, 38, selected, PAL_MOUSE);
+    text(fb, 510, 106, "WAVE SEL", PAL_TUNING, 1);
+    frame(fb, 510, 116, 108, 38, RGB(8, 8, 8), PAL_MOUSE);
+    rect(fb, 538, 119, 40, 32, PAL_WAVE_SELECTION);
+    rect(fb, 513, 135, 102, 1, RGB(74, 67, 75));
     for (int x = 516; x < 612; x += 8) {
         int height = 8 + ((x / 8) % 4) * 4;
-        rect(fb, x, 122 - height / 2, 1, height,
+        rect(fb, x, 136 - height / 2, 1, height,
              x >= 538 && x < 578 ? PAL_BLOCK_TEXT : PAL_NOTE);
     }
-    text(fb, 541, 104, "0.25S", PAL_EFFECT, 1);
-    text(fb, TS_PALETTE_TAPEHEAD_X, 149, "TAPEHEAD EYEDROPPER", PAL_TUNING, 1);
+    text(fb, 541, 121, "0.25S", PAL_EFFECT, 1);
+    text(fb, TS_PALETTE_TAPEHEAD_X, 159, "TAPEHEAD EYEDROPPER", PAL_TUNING, 1);
     for (int swatch = 0; swatch < ts_palette_tapehead_swatch_count(); ++swatch) {
         TsPaletteColor source = ts_palette_tapehead_swatch_color(swatch);
         int x = TS_PALETTE_TAPEHEAD_X + swatch * TS_PALETTE_TAPEHEAD_STEP_X;
@@ -1212,7 +1309,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
         button(fb, palette_buttons[i].x, TS_PALETTE_ACTION_Y,
                palette_buttons[i].width, palette_buttons[i].label,
                i + 1u == TS_UI_PALETTE_ACTION_DONE);
-    text(fb, 462, 182, "PGUP/DN COLOR  ARROWS", PAL_TUNING, 1);
+    text(fb, 462, 187, "PGUP/DN COLOR  ARROWS", PAL_TUNING, 1);
 }
 
 int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
@@ -1589,6 +1686,7 @@ TsUiFmAction ts_ui_fm_action_from_point(int x, int y)
         if (x >= 282 && x < 366) return TS_UI_FM_ACTION_AUDITION;
         if (x >= 372 && x < 442) return TS_UI_FM_ACTION_HOLD;
         if (x >= 448 && x < 512) return TS_UI_FM_ACTION_BACK;
+        if (x >= 518 && x < 620) return TS_UI_FM_ACTION_OUTPUT_TRIM;
     }
     if (y >= 278 && y < 302) {
         if (x >= 20 && x < 106) return TS_UI_FM_ACTION_DRONE;
@@ -2073,6 +2171,18 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
         wave_text(fb, meter_x - 34, TS_WAVE_Y + 5, "CLIP", RGB(255, 74, 58), 1);
 }
 
+int ts_ui_foreground_panel_open(const TsUiState *ui)
+{
+    if (ui == NULL) return 0;
+    return ui->exit_confirm_open || ui->overdub_confirm_open || ui->fm_open ||
+           ui->transform_open || ui->drone_open ||
+           ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
+           ui->load_selection_choice_open || ui->palette_open ||
+           ui->config_open || ui->browser.mode != TS_BROWSER_CLOSED ||
+           ui->renaming_bank_slot >= 0 || ui->renaming_recipe_slot >= 0 ||
+           ui->export_choice_open;
+}
+
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
     render_palette = &ui->palette;
@@ -2136,11 +2246,30 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, 152, 3, 2, 27, PAL_VOLUME);
         text(fb, 160, 13, "REC", PAL_VOLUME, 1);
     }
+    bevel_frame(fb, 190, 7, 48, 18, RGB(24, 24, 24), PAL_EFFECT,
+                RGB(7, 7, 7));
+    text(fb, 196, 13, TAPESISTER_BUILD_MARKER, PAL_EFFECT, 1);
+    {
+        uint8_t channels = ui->input_available_channels <=
+                           TS_INPUT_DEVICE_CHANNEL_MAX ?
+                           ui->input_available_channels : 0u;
+        char input_label[4] = {'I', 'N', (char)('0' + channels), '\0'};
+        text(fb, 242, 13, input_label, PAL_TEXT, 1);
+    }
+    for (int channel = 0; channel < TS_INPUT_DEVICE_CHANNEL_MAX; ++channel) {
+        int x = TS_UI_INPUT_LED_X + channel * TS_UI_INPUT_LED_STEP_X;
+        uint32_t color = channel >= ui->input_available_channels ?
+                         RGB(22, 22, 22) :
+                         (ui->input_activity_mask & (uint8_t)(1u << channel)) != 0u ?
+                         PAL_WAVE_LEFT : PAL_BUTTON;
+        rect(fb, x, TS_UI_INPUT_LED_Y,
+             TS_UI_INPUT_LED_W, TS_UI_INPUT_LED_H, color);
+    }
     {
         char history[24];
         snprintf(history, sizeof(history), "UNDO %02d/%02d",
                  instrument->undo_count, TS_HISTORY_DEPTH);
-        text(fb, 280, 13, history, PAL_EFFECT, 1);
+        text(fb, 289, 13, history, PAL_EFFECT, 1);
     }
     button(fb, 350, 4, 76, "CONFIG", ui->config_open);
     button(fb, 431, 4, 80, "FT2 LINK", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
@@ -2853,9 +2982,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 172, 164,
              ui->exit_has_unsaved ? "UNSAVED CHANGES WILL BE LOST" : "CLOSE TAPESISTER",
              ui->exit_has_unsaved ? PAL_VOLUME : RGB(190, 185, 190), 1);
-        button(fb, 172, 188, 136, "EXIT", 0);
-        button(fb, 324, 188, 144, "CANCEL", 1);
-        text(fb, 172, 230, "ENTER/Y EXIT   ESC/N CANCEL", RGB(190, 185, 190), 1);
+        if (ui->exit_has_unsaved) {
+            button(fb, 172, 188, 88, "SAVE", ui->exit_choice == 0);
+            button(fb, 266, 188, 88, "EXIT", ui->exit_choice == 1);
+            button(fb, 360, 188, 108, "CANCEL", ui->exit_choice == 2);
+        } else {
+            button(fb, 172, 188, 136, "EXIT", ui->exit_choice == 0);
+            button(fb, 324, 188, 144, "CANCEL", ui->exit_choice == 1);
+        }
+        text(fb, 172, 230, "TAB/ARROWS CHOOSE  ENTER CONFIRMS  ESC CANCELS",
+             RGB(190, 185, 190), 1);
     } else if (ui->overdub_confirm_open) {
         char target[80];
         frame(fb, 146, 122, 348, 132, RGB(36, 33, 37), PAL_MOUSE);
@@ -3194,13 +3330,16 @@ static void sister_wave_lane(TsFramebuffer *fb,
 
 static void sister_marker(TsFramebuffer *fb, float normalized,
                           int x, int width, int y, int height,
-                          uint32_t color, int shape)
+                          uint32_t color, int shape, int pixel_offset)
 {
     int marker_x;
     if (!isfinite(normalized)) return;
     if (normalized < 0.0f) normalized = 0.0f;
     if (normalized > 1.0f) normalized = 1.0f;
-    marker_x = x + (int)lrintf(normalized * (float)(width - 1));
+    marker_x = x + (int)lrintf(normalized * (float)(width - 1)) +
+               pixel_offset;
+    if (marker_x < x) marker_x = x;
+    if (marker_x >= x + width) marker_x = x + width - 1;
     rect(fb, marker_x, y, 2, height, color);
     if (shape == 0) rect(fb, marker_x - 2, y, 6, 4, color);
     else if (shape == 1) rect(fb, marker_x - 3, y + height - 4, 8, 4, color);
@@ -3210,28 +3349,86 @@ static void sister_marker(TsFramebuffer *fb, float normalized,
     }
 }
 
-static void sister_parameter(TsFramebuffer *fb, int x, int y, int width,
-                             const char *label, float amount, uint32_t color)
+static void sister_head_markers(TsFramebuffer *fb,
+                                const float normalized[TS_SISTER_HEAD_COUNT],
+                                int x, int width, int y, int height)
+{
+    const uint32_t colors[TS_SISTER_HEAD_COUNT] = {
+        PAL_NOTE, PAL_EFFECT, PAL_TUNING
+    };
+    static const int shapes[TS_SISTER_HEAD_COUNT] = {1, 2, 0};
+    int position[TS_SISTER_HEAD_COUNT];
+    int offset[TS_SISTER_HEAD_COUNT] = {0, 0, 0};
+    for (size_t i = 0u; i < TS_SISTER_HEAD_COUNT; ++i) {
+        float value = isfinite(normalized[i]) ? normalized[i] : 0.0f;
+        if (value < 0.0f) value = 0.0f;
+        if (value > 1.0f) value = 1.0f;
+        position[i] = (int)lrintf(value * (float)(width - 1));
+    }
+    /* Free-running heads legitimately cross. When two markers occupy the same
+       display column, separate only their rendering by two pixels so one
+       color cannot overwrite another and masquerade as a head-identity jump.
+       The published audio positions remain exact and unchanged. */
+    if (abs(position[0] - position[1]) <= 1 &&
+        abs(position[1] - position[2]) <= 1 &&
+        abs(position[0] - position[2]) <= 1) {
+        offset[0] = -3;
+        offset[1] = 0;
+        offset[2] = 3;
+    } else if (abs(position[0] - position[1]) <= 1) {
+        offset[0] = -2;
+        offset[1] = 2;
+    }
+    if (offset[0] == 0 && offset[1] == 0 && offset[2] == 0 &&
+        abs(position[1] - position[2]) <= 1) {
+        if (offset[1] == 0) offset[1] = -2;
+        offset[2] = 2;
+    }
+    if (offset[0] == 0 && offset[1] == 0 && offset[2] == 0 &&
+        abs(position[0] - position[2]) <= 1) {
+        if (offset[0] == 0) offset[0] = -2;
+        if (offset[2] == 0) offset[2] = 2;
+    }
+    for (size_t i = 0u; i < TS_SISTER_HEAD_COUNT; ++i)
+        sister_marker(fb, normalized[i], x, width, y, height,
+                      colors[i], shapes[i], offset[i]);
+}
+
+static uint32_t sister_dim_color(uint32_t color)
+{
+    unsigned red = (color >> 16) & 0xffu;
+    unsigned green = (color >> 8) & 0xffu;
+    unsigned blue = color & 0xffu;
+    return RGB(12u + red * 2u / 5u,
+               12u + green * 2u / 5u,
+               12u + blue * 2u / 5u);
+}
+
+static void sister_parameter_state(TsFramebuffer *fb, int x, int y, int width,
+                                   const char *label, float amount,
+                                   uint32_t color, int locked)
 {
     char value[32];
     if (!isfinite(amount)) amount = 0.0f;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
+    if (locked) color = sister_dim_color(color);
     rect(fb, x, y, width, 18, RGB(24, 23, 25));
     rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
     snprintf(value, sizeof(value), "%s %02d", label, (int)lrintf(amount * 99.0f));
     text(fb, x + 3, y + 3, value, color, 1);
 }
 
-static void sister_percent_parameter(TsFramebuffer *fb, int x, int y,
-                                     int width, const char *label,
-                                     float amount, int maximum_percent,
-                                     uint32_t color)
+static void sister_percent_parameter_state(TsFramebuffer *fb, int x, int y,
+                                           int width, const char *label,
+                                           float amount, int maximum_percent,
+                                           uint32_t color, int locked)
 {
     char value[32];
     if (!isfinite(amount)) amount = 0.0f;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
+    if (locked) color = sister_dim_color(color);
     rect(fb, x, y, width, 18, RGB(24, 23, 25));
     rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
     snprintf(value, sizeof(value), "%s %03d", label,
@@ -3253,6 +3450,11 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
     const uint32_t colors[5] = {
         PAL_NOTE, PAL_EFFECT, PAL_WAVE_RIGHT, PAL_MOUSE, PAL_INSTRUMENT
     };
+    const int parameters[5] = {
+        TS_SISTER_UI_PARAM_TILES_GAIN, TS_SISTER_UI_PARAM_FM_GAIN,
+        TS_SISTER_UI_PARAM_EXT_GAIN, TS_SISTER_UI_PARAM_PREVIEW_GAIN,
+        TS_SISTER_UI_PARAM_FX_RETURN_GAIN
+    };
     const int track_y = y + 22;
     const int track_height = 84;
     rect(fb, x, y, 80, 110, RGB(24, 23, 25));
@@ -3262,26 +3464,30 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
         int lane_x = x + 2 + control * 15;
         int handle_y;
         int unity_y;
+        int locked = ts_sister_ui_parameter_locked(model, parameters[control]);
+        uint32_t color = locked ? sister_dim_color(colors[control]) :
+                                 colors[control];
         if (!isfinite(amount)) amount = 0.0f;
         if (amount < 0.0f) amount = 0.0f;
         if (amount > 1.0f) amount = 1.0f;
-        text(fb, lane_x + 4, y + 12, labels[control], colors[control], 1);
+        text(fb, lane_x + 4, y + 12, labels[control], color, 1);
         rect(fb, lane_x + 5, track_y, 4, track_height, RGB(7, 7, 8));
         unity_y = track_y + (int)lrintf(
             (track_height - 1) * (control == 4 ? 0.5f : 0.75f));
         rect(fb, lane_x + 2, unity_y, 10, 1, PAL_BUTTON);
         handle_y = track_y + (int)lrintf(
             (track_height - 1) * (1.0f - amount));
-        rect(fb, lane_x + 1, handle_y - 1, 12, 3, colors[control]);
+        rect(fb, lane_x + 1, handle_y - 1, 12, 3, color);
     }
 }
 
-static void sister_choice_parameter(TsFramebuffer *fb, int x, int y,
-                                    int width, const char *label,
-                                    const char *choice, int active,
-                                    uint32_t color)
+static void sister_choice_parameter_state(TsFramebuffer *fb, int x, int y,
+                                          int width, const char *label,
+                                          const char *choice, int active,
+                                          uint32_t color, int locked)
 {
     char value[32];
+    if (locked) color = sister_dim_color(color);
     rect(fb, x, y, width, 18, RGB(24, 23, 25));
     if (active) rect(fb, x + 1, y + 14, width - 2, 3, color);
     snprintf(value, sizeof(value), "%s %s", label, choice);
@@ -3323,15 +3529,18 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         float current = (float)model->engine.duration_seconds;
         float amount = (target - (float)TS_SISTER_MIN_SECONDS) /
             (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
+        int locked = ts_sister_ui_parameter_locked(
+            model, TS_SISTER_UI_PARAM_BUFFER_SECONDS);
+        uint32_t color = locked ? sister_dim_color(PAL_TUNING) : PAL_TUNING;
         char canvas[32];
         if (model->engine.resize_pending)
             snprintf(canvas, sizeof(canvas), "BUF %.0F>%.0F", current, target);
         else
             snprintf(canvas, sizeof(canvas), "BUFFER %.0FS", target);
-        sister_choice_parameter(fb, 350, 8, 94, "", canvas,
-                                model->engine.resize_pending, PAL_TUNING);
+        sister_choice_parameter_state(fb, 350, 8, 94, "", canvas,
+            model->engine.resize_pending, PAL_TUNING, locked);
         rect(fb, 351, 25, (int)lrintf(92.0f * sister_clamp(amount)), 3,
-             PAL_TUNING);
+             color);
     }
     button(fb, 450, 8, 76, model->fx_page ? "TAPE" : "FX PAGE",
            model->fx_page);
@@ -3351,25 +3560,43 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             rect(fb, 10, top, 620, 68, RGB(10, 10, 11));
             text(fb, 18, top + 28, names[row], colors[row], 1);
         }
-        sister_choice_parameter(fb, 110, 72, 130, "TYPE",
+        sister_choice_parameter_state(fb, 110, 72, 130, "TYPE",
             ts_sister_reverb_type_name(model->parameters.fx.reverb_type),
-            model->parameters.fx.reverb_mix > 0.0f, PAL_WAVE_RIGHT);
-        sister_percent_parameter(fb, 250, 72, 130, "MIX",
-            model->parameters.fx.reverb_mix, 100, PAL_WAVE_RIGHT);
-        sister_percent_parameter(fb, 390, 72, 130, "DECAY",
-            model->parameters.fx.reverb_decay, 100, PAL_WAVE_RIGHT);
-        sister_percent_parameter(fb, 110, 150, 130, "TIME",
-            model->parameters.fx.delay_time, 100, PAL_EFFECT);
-        sister_percent_parameter(fb, 250, 150, 130, "FEEDBACK",
-            model->parameters.fx.delay_feedback, 100, PAL_EFFECT);
-        sister_percent_parameter(fb, 390, 150, 130, "MIX",
-            model->parameters.fx.delay_mix, 100, PAL_EFFECT);
-        sister_percent_parameter(fb, 110, 228, 130, "DRIVE",
-            model->parameters.fx.distortion_drive, 100, PAL_VOLUME);
-        sister_percent_parameter(fb, 250, 228, 130, "TONE",
-            model->parameters.fx.distortion_tone, 100, PAL_VOLUME);
-        sister_percent_parameter(fb, 390, 228, 130, "MIX",
-            model->parameters.fx.distortion_mix, 100, PAL_VOLUME);
+            model->parameters.fx.reverb_mix > 0.0f, PAL_WAVE_RIGHT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_REVERB_TYPE));
+        sister_percent_parameter_state(fb, 250, 72, 130, "DECAY",
+            model->parameters.fx.reverb_decay, 100, PAL_WAVE_RIGHT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_REVERB_DECAY));
+        sister_percent_parameter_state(fb, 390, 72, 130, "MIX",
+            model->parameters.fx.reverb_mix, 100, PAL_WAVE_RIGHT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_REVERB_MIX));
+        sister_percent_parameter_state(fb, 110, 150, 130, "TIME",
+            model->parameters.fx.delay_time, 100, PAL_EFFECT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DELAY_TIME));
+        sister_percent_parameter_state(fb, 250, 150, 130, "FEEDBACK",
+            model->parameters.fx.delay_feedback, 100, PAL_EFFECT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DELAY_FEEDBACK));
+        sister_percent_parameter_state(fb, 390, 150, 130, "MIX",
+            model->parameters.fx.delay_mix, 100, PAL_EFFECT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DELAY_MIX));
+        sister_percent_parameter_state(fb, 110, 228, 130, "DRIVE",
+            model->parameters.fx.distortion_drive, 100, PAL_VOLUME,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DISTORTION_DRIVE));
+        sister_percent_parameter_state(fb, 250, 228, 130, "TONE",
+            model->parameters.fx.distortion_tone, 100, PAL_VOLUME,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DISTORTION_TONE));
+        sister_percent_parameter_state(fb, 390, 228, 130, "MIX",
+            model->parameters.fx.distortion_mix, 100, PAL_VOLUME,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DISTORTION_MIX));
         for (int row = 0; row < 3; ++row) {
             int y = 97 + row * 78;
             sister_target_toggle(fb, 110, y, 56, "H1",
@@ -3386,8 +3613,10 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                            "RAT-INSPIRED / 2X", PAL_MOUSE, 1);
         }
         text(fb, 10, 311, "MASTER", PAL_TUNING, 1);
-        sister_percent_parameter(fb, 110, 306, 410, "FX FEEDBACK",
-            model->parameters.fx.master_feedback, 100, PAL_TUNING);
+        sister_percent_parameter_state(fb, 110, 306, 410, "FX FEEDBACK",
+            model->parameters.fx.master_feedback, 100, PAL_TUNING,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK));
         text(fb, 530, 311, "0-135%", PAL_MOUSE, 1);
         text(fb, 10, 340,
              "FIXED ORDER  DISTORTION > DELAY > REVERB   MIX FX WORK WITH POWER OFF",
@@ -3410,10 +3639,10 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          PAL_WAVE_LEFT;
         sister_wave_lane(fb, &model->waveform, 14, 40, 612, 126, channel, color);
     }
-    sister_marker(fb, model->engine.write_normalized, 26, 600, 40, 126, PAL_VOLUME, 0);
-    sister_marker(fb, model->engine.head_normalized[0], 26, 600, 40, 126, PAL_NOTE, 1);
-    sister_marker(fb, model->engine.head_normalized[1], 26, 600, 40, 126, PAL_EFFECT, 2);
-    sister_marker(fb, model->engine.head_normalized[2], 26, 600, 40, 126, PAL_TUNING, 0);
+    sister_marker(fb, model->engine.write_normalized, 26, 600, 40, 126,
+                  PAL_VOLUME, 0, 0);
+    sister_head_markers(fb, model->engine.head_normalized,
+                        26, 600, 40, 126);
 
     button(fb, 10, 172, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
     button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
@@ -3435,60 +3664,98 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_vertical_mixer(fb, 548, 172, model);
 
     text(fb, 10, 207, "H1", PAL_NOTE, 1);
-    sister_parameter(fb, 72, 202, 110, "LEVEL", model->parameters.head1_level, PAL_NOTE);
-    sister_parameter(fb, 192, 202, 110, "TIME", model->parameters.head1_time_ms / 4000.0f, PAL_NOTE);
-    sister_parameter(fb, 312, 202, 110, "FEED", model->parameters.head1_feedback, PAL_NOTE);
-    sister_parameter(fb, 432, 202, 110, "CUTOFF",
-                     log10f(model->parameters.filter_cutoff_hz / 20.0f) / 3.0f,
-                     PAL_INSTRUMENT);
+    sister_parameter_state(fb, 72, 202, 110, "LEVEL",
+        model->parameters.head1_level, PAL_NOTE,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H1_LEVEL));
+    sister_parameter_state(fb, 192, 202, 110, "TIME",
+        model->parameters.head1_time_ms / 4000.0f, PAL_NOTE,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H1_TIME));
+    sister_parameter_state(fb, 312, 202, 110, "FEED",
+        model->parameters.head1_feedback, PAL_NOTE,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H1_FEEDBACK));
+    sister_parameter_state(fb, 432, 202, 110, "CUTOFF",
+        log10f(model->parameters.filter_cutoff_hz / 20.0f) / 3.0f,
+        PAL_INSTRUMENT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_CUTOFF));
     text(fb, 10, 235, "H2", PAL_EFFECT, 1);
-    sister_parameter(fb, 72, 230, 110, "LEVEL", model->parameters.head2_level, PAL_EFFECT);
-    sister_parameter(fb, 192, 230, 110, "SCRUB", model->parameters.head2_scrub, PAL_EFFECT);
-    sister_parameter(fb, 312, 230, 110, "RATE", model->parameters.head2_rate_index / 9.0f, PAL_EFFECT);
-    sister_parameter(fb, 432, 230, 110, "FEED", model->parameters.head2_feedback, PAL_EFFECT);
+    sister_parameter_state(fb, 72, 230, 110, "LEVEL",
+        model->parameters.head2_level, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_LEVEL));
+    sister_parameter_state(fb, 192, 230, 110, "SCRUB",
+        model->parameters.head2_scrub, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_SCRUB));
+    sister_parameter_state(fb, 312, 230, 110, "RATE",
+        model->parameters.head2_rate_index / 9.0f, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_RATE));
+    sister_parameter_state(fb, 432, 230, 110, "FEED",
+        model->parameters.head2_feedback, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_FEEDBACK));
     text(fb, 10, 263, "H3", PAL_TUNING, 1);
-    sister_parameter(fb, 72, 258, 110, "LEVEL", model->parameters.head3_level, PAL_TUNING);
-    sister_parameter(fb, 192, 258, 110, "SPAN", model->parameters.head3_span, PAL_TUNING);
-    sister_parameter(fb, 312, 258, 110, "RATE", model->parameters.head3_rate_index / 9.0f, PAL_TUNING);
-    sister_parameter(fb, 432, 258, 110, "FILTER Q",
-                     (model->parameters.filter_q - 0.1f) / 19.9f,
-                     PAL_INSTRUMENT);
+    sister_parameter_state(fb, 72, 258, 110, "LEVEL",
+        model->parameters.head3_level, PAL_TUNING,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H3_LEVEL));
+    sister_parameter_state(fb, 192, 258, 110, "SPAN",
+        model->parameters.head3_span, PAL_TUNING,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H3_SPAN));
+    sister_parameter_state(fb, 312, 258, 110, "RATE",
+        model->parameters.head3_rate_index / 9.0f, PAL_TUNING,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H3_RATE));
+    sister_parameter_state(fb, 432, 258, 110, "FILTER Q",
+        (model->parameters.filter_q - 0.1f) / 19.9f, PAL_INSTRUMENT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_Q));
 
-    sister_parameter(fb, 10, 286, 82, "WOW", model->parameters.wow / 10.0f, PAL_TUNING);
-    sister_parameter(fb, 98, 286, 82, "DROP", model->parameters.drop / 100.0f, PAL_EFFECT);
-    sister_parameter(fb, 186, 286, 82, "DUCK", model->parameters.duck_enabled ? model->parameters.duck_sensitivity : 0.0f, PAL_VOLUME);
-    sister_choice_parameter(fb, 274, 286, 82, "DECOR",
-                            model->parameters.decorrelation_enabled ? "ON" : "OFF",
-                            model->parameters.decorrelation_enabled,
-                            PAL_WAVE_RIGHT);
-    sister_parameter(fb, 362, 286, 82, "WIDTH", model->parameters.width, PAL_WAVE_LEFT);
-    sister_choice_parameter(fb, 450, 286, 82, "FILTER",
-                            ts_sister_filter_type_name(model->parameters.filter_type),
-                            model->parameters.filter_type != TS_SISTER_FILTER_BYPASS,
-                            PAL_INSTRUMENT);
-    sister_parameter(fb, 538, 286, 82, "GAIN",
-                     (model->parameters.filter_gain_db + 24.0f) / 48.0f,
-                     PAL_INSTRUMENT);
+    sister_parameter_state(fb, 10, 286, 82, "WOW",
+        model->parameters.wow / 10.0f, PAL_TUNING,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_WOW));
+    sister_parameter_state(fb, 98, 286, 82, "DROP",
+        model->parameters.drop / 100.0f, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_DROP));
+    sister_parameter_state(fb, 186, 286, 82, "DUCK",
+        model->parameters.duck_enabled ?
+            model->parameters.duck_sensitivity : 0.0f,
+        PAL_VOLUME,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_DUCK));
+    sister_choice_parameter_state(fb, 274, 286, 82, "DECOR",
+        model->parameters.decorrelation_enabled ? "ON" : "OFF",
+        model->parameters.decorrelation_enabled, PAL_WAVE_RIGHT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_DECORRELATE));
+    sister_parameter_state(fb, 362, 286, 82, "WIDTH",
+        model->parameters.width, PAL_WAVE_LEFT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_WIDTH));
+    sister_choice_parameter_state(fb, 450, 286, 82, "FILTER",
+        ts_sister_filter_type_name(model->parameters.filter_type),
+        model->parameters.filter_type != TS_SISTER_FILTER_BYPASS,
+        PAL_INSTRUMENT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_TYPE));
+    sister_parameter_state(fb, 538, 286, 82, "GAIN",
+        (model->parameters.filter_gain_db + 24.0f) / 48.0f, PAL_INSTRUMENT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_GAIN));
 
-    sister_percent_parameter(fb, 10, 308, 98, "INPUT",
-                             model->parameters.input_gain / 2.0f,
-                             200, PAL_VOLUME);
-    sister_percent_parameter(fb, 113, 308, 98, "DRY",
-                             model->parameters.monitor_dry, 100, PAL_WAVE_LEFT);
-    sister_percent_parameter(fb, 216, 308, 98, "WET",
-                             model->parameters.monitor_wet, 100, PAL_WAVE_RIGHT);
-    sister_percent_parameter(fb, 319, 308, 98, "OUT",
-                             model->parameters.mix_output_gain / 4.0f,
-                             400, PAL_INSTRUMENT);
-    sister_percent_parameter(fb, 422, 308, 98, "ERASE",
-                             model->parameters.write_erase, 100, PAL_VOLUME);
-    sister_percent_parameter(fb, 525, 308, 99, "GHOST",
-                             model->parameters.ghost_tone, 100, PAL_EFFECT);
+    sister_percent_parameter_state(fb, 10, 308, 98, "INPUT",
+        model->parameters.input_gain / 2.0f, 200, PAL_VOLUME,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_INPUT_GAIN));
+    sister_percent_parameter_state(fb, 113, 308, 98, "DRY",
+        model->parameters.monitor_dry, 100, PAL_WAVE_LEFT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_MONITOR_DRY));
+    sister_percent_parameter_state(fb, 216, 308, 98, "WET",
+        model->parameters.monitor_wet, 100, PAL_WAVE_RIGHT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_MONITOR_WET));
+    sister_percent_parameter_state(fb, 319, 308, 98, "OUT",
+        model->parameters.mix_output_gain / 4.0f, 400, PAL_INSTRUMENT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_MIX_OUTPUT));
+    sister_percent_parameter_state(fb, 422, 308, 98, "ERASE",
+        model->parameters.write_erase, 100, PAL_VOLUME,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_WRITE_ERASE));
+    sister_percent_parameter_state(fb, 525, 308, 99, "GHOST",
+        model->parameters.ghost_tone, 100, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_GHOST_TONE));
 
-    sister_percent_parameter(fb, 10, 330, 124, "SOAK",
-                             model->parameters.soak, 100, PAL_WAVE_RIGHT);
-    sister_percent_parameter(fb, 140, 330, 124, "BLEED",
-                             model->parameters.bleed, 100, PAL_EFFECT);
+    sister_percent_parameter_state(fb, 10, 330, 124, "SOAK",
+        model->parameters.soak, 100, PAL_WAVE_RIGHT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_SOAK));
+    sister_percent_parameter_state(fb, 140, 330, 124, "BLEED",
+        model->parameters.bleed, 100, PAL_EFFECT,
+        ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_BLEED));
     sister_target_toggle(fb, 276, 330, 52, "H1",
         model->parameters.soak_targets & TS_SISTER_EFFECT_TARGET_H1, PAL_NOTE);
     sister_target_toggle(fb, 334, 330, 52, "H2",
@@ -3517,8 +3784,20 @@ sister_footer:
              model->preset_name[0] != '\0' ? model->preset_name : "PRESET");
     button(fb, 264, 370, 130, preset_label, 0);
     button(fb, 400, 370, 28, ">", 0);
-    button(fb, 450, 370, 82, "CAPTURE", model->routing.capture_state != TS_CAPTURE_IDLE && !model->capture_overdub);
-    button(fb, 538, 370, 92, "OVERDUB", model->routing.capture_state != TS_CAPTURE_IDLE && model->capture_overdub);
+    {
+        int recording = model->routing.capture_state == TS_CAPTURE_RECORDING;
+        int capturing = recording && !model->capture_overdub;
+        int overdubbing = recording && model->capture_overdub;
+        button(fb, 450, 370, 82, capturing ? "STOP" : "CAPTURE",
+               model->routing.capture_state != TS_CAPTURE_IDLE &&
+               !model->capture_overdub);
+        button(fb, 538, 370, 92, overdubbing ? "STOP" : "OVERDUB",
+               model->routing.capture_state != TS_CAPTURE_IDLE &&
+               model->capture_overdub);
+        recording_button_outline(
+            fb, capturing ? 450 : 538, 370, capturing ? 82 : 92, 22,
+            recording && model->text_cursor_visible);
+    }
 
     if (model->preset_manage_open) {
         rect(fb, 160, 130, 320, 170, RGB(8, 8, 9));
@@ -3530,6 +3809,12 @@ sister_footer:
         text(fb, 180, 165,
              model->preset_editing ? model->preset_edit_name : model->preset_name,
              model->preset_editing ? PAL_NOTE : PAL_MOUSE, 1);
+        if (model->preset_editing && model->text_cursor_visible) {
+            size_t length = strlen(model->preset_edit_name);
+            size_t cursor = model->preset_edit_cursor > length ? length :
+                            model->preset_edit_cursor;
+            rect(fb, 180 + (int)cursor * 6, 163, 2, 11, PAL_NOTE);
+        }
         if (model->preset_factory)
             text(fb, 180, 182, "FACTORY - RECALL ONLY", PAL_TUNING, 1);
         button(fb, 180, 200, 128, "SAVE AS", model->preset_editing == 1);

@@ -62,6 +62,30 @@ void ts_audio_buses_apply_source_dry(TsAudioBuses *buses, float gain,
     if (external_routed) buses->monitor = scale_frame(buses->monitor, gain);
 }
 
+static float direct_gain_for_insert(float insert)
+{
+    if (!isfinite(insert)) insert = 0.0f;
+    if (insert < 0.0f) insert = 0.0f;
+    if (insert > 1.0f) insert = 1.0f;
+    return 1.0f - insert;
+}
+
+void ts_audio_buses_apply_source_insert(TsAudioBuses *buses,
+                                        float preview_insert,
+                                        float tiles_insert,
+                                        float fm_insert,
+                                        float external_insert)
+{
+    if (buses == NULL) return;
+    buses->legacy_preview = scale_frame(
+        buses->legacy_preview, direct_gain_for_insert(preview_insert));
+    buses->tile_performance = scale_frame(
+        buses->tile_performance, direct_gain_for_insert(tiles_insert));
+    buses->fm = scale_frame(buses->fm, direct_gain_for_insert(fm_insert));
+    buses->monitor = scale_frame(
+        buses->monitor, direct_gain_for_insert(external_insert));
+}
+
 TsStereoFrame ts_audio_mixer_render(TsAudioMixer *mixer,
                                     const TsAudioBuses *sources)
 {

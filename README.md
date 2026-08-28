@@ -54,8 +54,16 @@ wrapping past tile 16.
 `[External Recording]` in `tapesister.ini` controls the input device and channel plus
 threshold, pre-roll, silence, tail, and maximum take length. The input selector is
 explicit: `record_input_channel=0` is **MIX**, `1` is **LEFT**, `2` is **RIGHT**, and
-`3` is **STEREO**. MIX averages all bounded device channels; LEFT/RIGHT produce mono;
-STEREO preserves the first two channels and safely duplicates a one-channel device.
+`3` is **STEREO**. MIX is the Mono Sum mode: it averages every available hardware
+channel and sends that result equally to EXT L and R. LEFT selects hardware input 1 as
+dual mono; RIGHT selects hardware input 2 as dual mono (and falls back to input 1 on a
+mono device). These retain their established behavior for multichannel devices.
+STEREO accepts one to eight negotiated hardware channels, averages odd-numbered inputs
+(1/3/5/7) into EXT left and even-numbered inputs (2/4/6/8) into EXT right, and safely
+duplicates a one-channel device. A normal two-channel device therefore remains exact
+unity stereo, while larger paired layouts retain pair orientation without multiplying
+gain. The eight tiny `IN` indicators in the top header distinguish unavailable channels
+from available silent channels and briefly light when signal crosses -60 dBFS.
 Existing numeric settings retain their meaning.
 
 Every completed take is also written immediately as a float WAV under the
@@ -366,6 +374,9 @@ render. A full page asks whether to overwrite the current tile, continue on a ne
 page, or cancel.
 Inside FM Logic, `Shift+R` invokes Randomize and `Shift+B` opens Make Bank. Plain `R`
 and `B` remain playable notes on the computer keyboard.
+The grave/backquote key opens FM Logic directly. Its compact **OUT** trim sits beside
+**Back**, defaults to 50 percent, and persists as `fm_output_percent` in
+`tapesister.ini`; it governs FM monitoring, the Sister FM source, and synth capture.
 
 **Drone** removes the amplitude and filter attack/release envelopes, suppresses the
 transient, and trims the render to exact zero-valued boundary crossings. The disabled
@@ -490,16 +501,22 @@ now accepts TILES, FM, EXT and PREVIEW, exposes H1/H2/H3/MIX Capture taps, owns 
 per-page Sister source mask and supports protected capture-then-replay recursion.
 Sister remains disabled by default. Clicking the `TAPESISTER` logo opens its independent
 performance window without changing POWER; closing that window hides it without stopping
-or starting audio. The window exposes transport, fixed sources, three heads, modulation/filter,
+or starting audio. Tab opens that window and then switches keyboard focus between Sister
+and whichever main workspace is open. The window exposes transport, fixed sources, three heads, modulation/filter,
 stereo rolling overview, pre-tape INPUT trim, source-aware DRY/WET tape routing,
-protected MIX OUT gain, a compact `T/F/E/A` source mixer and `FX` return trim,
+protected MIX OUT gain, a compact `T/F/E/A` source mixer and effects-only `FX` return trim,
 recording-head ERASE strength, age-dependent GHOST TONE,
 and protected tap Capture/Overdub controls. ERASE 100 fully replaces each rolling-buffer
 cell; lower values retain old stereo material before new input and controlled head
 feedback are written. A routed source is removed from its ordinary audition bus and
 returns only through Sister when MONITOR is on; INPUT prevents hot internal buses from
 overdriving the write head. OUT affects MIX only and individual head taps remain
-unscaled. TILES is the retained master insert/bypass for the complete page-specific
+unscaled. Shift-click independently locks or unlocks every adjustable parameter field
+on the Tape and FX pages, including the live buffer duration, head/tape/filter values,
+source-mixer trims, Soak/Bleed, and all post-FX values. Locked fields are dimmed and
+ignore click, drag, and wheel edits until shift-clicked again; transport, source,
+target, page, and Capture buttons remain ordinary buttons. TILES is the retained master
+insert/bypass for the complete page-specific
 mask; switching it off preserves the group. In the ordinary Sample Bank, Shift-click
 copies only to an empty tile and toggles any occupied tile directly into or out of that
 page's ensemble. Source membership is the split yellow/cyan outer perimeter; active
@@ -513,8 +530,9 @@ the longer layers. Active voices own immutable sample generations: one-shots fin
 their starting generation, new triggers use the replacement, and locked loops adopt
 both channels at a loop boundary with a short linked crossfade. WARP/SMEAR/TEAR retain
 stereo channel shape.
-Named Sister presets store portable sonic state; TSR projects store routes, masks and the
-current Sister sound, never live tape audio. See
+Named Sister presets store portable sonic state and the independent parameter-lock mask;
+TSR projects store routes, masks, the current Sister sound, and active locks, never live
+tape audio. Older preset and project files load with all parameters unlocked. See
 [`docs/SISTER_MACHINE_HEADLESS_ENGINE.md`](docs/SISTER_MACHINE_HEADLESS_ENGINE.md) and
 [`docs/SISTER_MACHINE_LIVE_ROUTING.md`](docs/SISTER_MACHINE_LIVE_ROUTING.md), plus the
 [`PR5 performance-window contract`](docs/SISTER_MACHINE_PERFORMANCE_WINDOW.md) and
@@ -531,6 +549,12 @@ ownership are specified in
 [`docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md`](docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md).
 Its Windows/Linux listening pass is
 [`docs/SISTER_MACHINE_PR10_MANUAL_CHECKLIST.md`](docs/SISTER_MACHINE_PR10_MANUAL_CHECKLIST.md).
+PR11's complete transition/callback audit and H2/H1 investigation are in
+[`docs/SISTER_MACHINE_PR11_REALTIME_AUDIT.md`](docs/SISTER_MACHINE_PR11_REALTIME_AUDIT.md).
+The automated certification record and Windows/Linux listening checklist are in
+[`docs/SISTER_MACHINE_PR11_CERTIFICATION.md`](docs/SISTER_MACHINE_PR11_CERTIFICATION.md),
+and the next packaging PR starts from
+[`docs/PR12_WINDOWS_PACKAGING_HANDOFF.md`](docs/PR12_WINDOWS_PACKAGING_HANDOFF.md).
 The remaining order is tracked in
 [`docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md`](docs/TapeSister_Sister_Machine_PR8-PR11_Roadmap.md).
 The PR9 Windows/Linux listening pass is
@@ -577,9 +601,19 @@ The small Makefile is also available:
 
 ```bash
 make test
+make stress-sister       # explicit deterministic 2+ hour offline certification
+make benchmark-sister    # optional callback-cost benchmark
 make
 ./tapesister
 ```
+
+Run `./tapesister --diagnostic-audio` for optional controller-thread reports of
+average/worst callback time, callback frames, near-deadlines, overruns, device rate,
+buffer size, active Sister configuration, and EXT ring occupancy/underrun/drop state.
+Normal operation does not collect callback timings. The Configuration screen offers
+shared 256/512/1024-frame playback/capture requests beside OUTPUT; 512 is the
+performance-safe default, while 256 remains available when lower live-input latency
+is more important and the machine passes the diagnostic run.
 
 Pass a WAV, TSR, or TSP path on the command line, drag it onto the window, or choose it through **Load**.
 

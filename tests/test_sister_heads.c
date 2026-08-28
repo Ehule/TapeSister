@@ -32,6 +32,15 @@ static void default_contract(void)
     assert(sister_close(parameters.filter_q, 0.90030003f, 1e-6f));
 }
 
+static void set_free_head_age(TsSisterMachine *machine, size_t head,
+                              double age)
+{
+    machine->head[head].logical_age = age;
+    machine->head[head].phase = ts_sister_positive_modulo(
+        (double)(machine->master_clock % machine->buffer.storage_frames) - age,
+        machine->buffer.storage_frames);
+}
+
 static void h1_delay_for_rate(uint32_t sample_rate)
 {
     TsSisterMachine machine;
@@ -124,34 +133,23 @@ static void scrub_span_rates_and_taps(void)
     output = ts_sister_machine_process_frame(&machine, sister_silence(), sister_silence());
     assert(output.head[0].l == 0.0f && output.head[0].r == 0.0f);
     assert(sister_frame_finite(output.head[1]) && sister_frame_finite(output.head[2]));
-    h2_distance = ts_sister_positive_modulo(
-        (double)(machine.master_clock % machine.buffer.capacity_frames) -
-        machine.head[1].phase, machine.buffer.capacity_frames);
-    h3_distance = ts_sister_positive_modulo(
-        (double)(machine.master_clock % machine.buffer.capacity_frames) -
-        machine.head[2].phase, machine.buffer.capacity_frames);
+    h2_distance = machine.head[1].logical_age;
+    h3_distance = machine.head[2].logical_age;
     for (i = 0u; i < 100u; ++i)
         output = ts_sister_machine_process_frame(&machine, sister_silence(), sister_silence());
-    assert(fabs(ts_sister_positive_modulo(
-        (double)(machine.master_clock % machine.buffer.capacity_frames) -
-        machine.head[1].phase, machine.buffer.capacity_frames) - h2_distance) < 1e-6);
-    assert(fabs(ts_sister_positive_modulo(
-        (double)(machine.master_clock % machine.buffer.capacity_frames) -
-        machine.head[2].phase, machine.buffer.capacity_frames) - h3_distance) < 1e-6);
+    assert(fabs(machine.head[1].logical_age - h2_distance) < 1e-6);
+    assert(fabs(machine.head[2].logical_age - h3_distance) < 1e-6);
 
     parameters.head2_rate_index = 0;
     parameters.head3_rate_index = 9;
     sister_configure_immediate(&machine, &parameters);
-    machine.head[1].phase = 0.5;
-    machine.head[2].phase = (double)machine.buffer.storage_frames - 0.5;
+    set_free_head_age(&machine, 1u, -0.5);
+    set_free_head_age(&machine, 2u, 0.5);
     ts_sister_machine_set_rolling(&machine, 0);
     output = ts_sister_machine_process_frame(&machine, sister_silence(), sister_silence());
-    assert(ts_sister_positive_modulo(
-        (double)(machine.master_clock % machine.buffer.storage_frames) -
-        machine.head[1].phase, machine.buffer.storage_frames) < 3.0);
-    assert(ts_sister_positive_modulo(
-        (double)(machine.master_clock % machine.buffer.storage_frames) -
-        machine.head[2].phase, machine.buffer.storage_frames) < 3.0);
+    assert(machine.head[1].logical_age < 3.0);
+    assert(machine.head[2].logical_age >
+           (double)machine.buffer.capacity_frames - 3.0);
     assert(sister_frame_finite(output.mix));
     ts_sister_machine_free(&machine);
 }
@@ -172,7 +170,7 @@ static void shared_position_and_write_guard(void)
     sister_fill_buffer(&machine, 0.5f, 1.0f);
     ts_sister_machine_set_rolling(&machine, 0);
     machine.master_clock = 50u;
-    machine.head[1].phase = 50.0;
+    set_free_head_age(&machine, 1u, 0.0);
     previous = 49u;
     output = ts_sister_machine_process_frame(&machine, sister_silence(), sister_silence());
     assert(sister_close(output.head[1].l,
@@ -181,7 +179,7 @@ static void shared_position_and_write_guard(void)
                         machine.buffer.data[previous * 2u + 1u], 1e-5f));
     assert(sister_close(output.head[1].r, output.head[1].l * 2.0f, 1e-4f));
     machine.master_clock = 60u;
-    machine.head[1].phase = 60.5;
+    set_free_head_age(&machine, 1u, -0.5);
     machine.head[1].guard_initialized = 1;
     machine.head[1].previous_guard_difference = -0.5;
     machine.head[1].previous_read = (TsStereoFrame){0.125f, 0.25f};
@@ -190,6 +188,223 @@ static void shared_position_and_write_guard(void)
     assert(machine.head[1].guard_remaining == 9u);
     assert(sister_close(output.head[1].l, 0.125f, 1e-6f));
     assert(sister_close(output.head[1].r, 0.25f, 1e-6f));
+    ts_sister_machine_free(&machine);
+}
+
+static double circular_position_delta(double current, double previous,
+                                      size_t capacity)
+{
+    double delta = ts_sister_positive_modulo(
+        current - previous + (double)capacity * 0.5, capacity) -
+        (double)capacity * 0.5;
+    return delta;
+}
+
+static void assert_snapshot_matches_audio_read(
+    const TsSisterMachine *machine, const TsSisterSnapshot *snapshot,
+    size_t head)
+{
+    double write = (double)(machine->master_clock %
+                            machine->buffer.storage_frames);
+    double age = ts_sister_positive_modulo(
+        write - machine->last_head_position[head],
+        machine->buffer.storage_frames);
+    double expected = ts_sister_positive_modulo(
+        (double)(machine->master_clock % machine->buffer.capacity_frames) - age,
+        machine->buffer.capacity_frames);
+    assert(fabs(snapshot->head_position[head] - expected) < 1e-6);
+    assert(fabs((double)snapshot->head_normalized[head] -
+                expected / (double)machine->buffer.capacity_frames) < 2e-7);
+}
+
+static void stationary_free_head_case(double seconds, uint8_t channels,
+                                      int rate_index, float scrub, float span,
+                                      float h2_level, float h3_level)
+{
+    TsSisterMachine machine;
+    TsSisterParameters parameters;
+    TsSisterSnapshot previous;
+    TsSisterSnapshot current;
+    double rate = ts_sister_rate_value(rate_index);
+    size_t frames;
+
+    assert(ts_sister_machine_init(&machine, 1000u, channels, seconds));
+    ts_sister_parameters_default(&parameters, 1000u);
+    parameters.buffer_seconds = (float)seconds;
+    parameters.head1_level = 0.0f;
+    parameters.head2_level = h2_level;
+    parameters.head2_scrub = scrub;
+    parameters.head2_rate_index = rate_index;
+    parameters.head3_level = h3_level;
+    parameters.head3_span = span;
+    parameters.head3_rate_index = rate_index;
+    parameters.wow = 0.0f;
+    parameters.drop = 0.0f;
+    parameters.decorrelation_enabled = channels == 2u;
+    sister_configure_immediate(&machine, &parameters);
+    sister_fill_buffer(&machine, 0.5f, 0.25f);
+    ts_sister_machine_set_rolling(&machine, 0);
+    (void)ts_sister_machine_process_frame(
+        &machine, sister_silence(), sister_silence());
+    assert(ts_sister_machine_get_snapshot(&machine, &previous));
+    frames = (size_t)ceil(2.0 * (double)machine.buffer.capacity_frames /
+                          fabs(rate)) + 4u;
+    for (size_t frame = 0u; frame < frames; ++frame) {
+        (void)ts_sister_machine_process_frame(
+            &machine, sister_silence(), sister_silence());
+        assert(ts_sister_machine_get_snapshot(&machine, &current));
+        for (size_t head = 1u; head < TS_SISTER_HEAD_COUNT; ++head) {
+            double raw_delta = current.head_position[head] -
+                               previous.head_position[head];
+            double delta = circular_position_delta(
+                current.head_position[head], previous.head_position[head],
+                machine.buffer.capacity_frames);
+            if (fabs(delta - rate) >= 1e-6) {
+                double capacity = (double)machine.buffer.capacity_frames;
+                double previous_edge = fmin(previous.head_position[head],
+                    capacity - previous.head_position[head]);
+                double current_edge = fmin(current.head_position[head],
+                    capacity - current.head_position[head]);
+                double write_distance = fabs(circular_position_delta(
+                    current.head_position[head],
+                    (double)current.write_position,
+                    machine.buffer.capacity_frames));
+                /* The established one-frame write guard may briefly alter the
+                   exact increment at the true circular edge or write cell,
+                   but never by more than its bounded guard distance. */
+                assert((previous_edge < 3.0 || current_edge < 3.0 ||
+                        write_distance <= 8.0) &&
+                       fabs(delta) <= 3.0);
+            }
+            if (fabs(raw_delta) >
+                (double)machine.buffer.capacity_frames * 0.5) {
+                if (rate > 0.0) {
+                    assert(previous.head_position[head] >
+                           (double)machine.buffer.capacity_frames - 3.0);
+                    assert(current.head_position[head] < 3.0);
+                } else {
+                    assert(previous.head_position[head] < 3.0);
+                    assert(current.head_position[head] >
+                           (double)machine.buffer.capacity_frames - 3.0);
+                }
+            }
+            assert_snapshot_matches_audio_read(&machine, &current, head);
+        }
+        previous = current;
+    }
+    ts_sister_machine_free(&machine);
+}
+
+static void stationary_free_head_matrix(void)
+{
+    stationary_free_head_case(5.0, 1u, 4, 0.0f, 0.0f, 0.0f, 1.0f);
+    stationary_free_head_case(17.0, 2u, 5, 0.5f, 0.5f, 1.0f, 0.0f);
+    stationary_free_head_case(31.0, 2u, 7, 1.0f, 1.0f, 1.0f, 1.0f);
+    stationary_free_head_case(46.0, 2u, 0, 0.5f, 0.5f, 0.0f, 0.0f);
+    stationary_free_head_case(60.0, 1u, 9, 1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+static void live_gestures_and_transport_remain_continuous(void)
+{
+    TsSisterMachine machine;
+    TsSisterParameters parameters;
+    TsSisterSnapshot previous;
+    TsSisterSnapshot current;
+
+    assert(ts_sister_machine_init(&machine, 1000u, 2u, 46.0));
+    ts_sister_parameters_default(&parameters, 1000u);
+    parameters.buffer_seconds = 46.0f;
+    parameters.head1_level = 0.0f;
+    parameters.head2_level = 1.0f;
+    parameters.head2_scrub = 0.25f;
+    parameters.head2_rate_index = 6;
+    parameters.head3_level = 1.0f;
+    parameters.head3_span = 0.25f;
+    parameters.head3_rate_index = 8;
+    parameters.wow = 0.0f;
+    parameters.drop = 0.0f;
+    parameters.decorrelation_enabled = 1;
+    sister_configure_immediate(&machine, &parameters);
+    sister_fill_buffer(&machine, 0.5f, 0.25f);
+    (void)ts_sister_machine_process_frame(
+        &machine, sister_silence(), sister_silence());
+    assert(ts_sister_machine_get_snapshot(&machine, &previous));
+
+    parameters.head2_scrub = 0.75f;
+    parameters.head3_span = 0.75f;
+    ts_sister_machine_set_parameters(&machine, &parameters);
+    for (size_t frame = 0u; frame < 80u; ++frame) {
+        double old_h2_offset = machine.head[1].previous_offset;
+        double old_h3_offset = machine.head[2].previous_offset;
+        double expected_h2;
+        double expected_h3;
+        TsSisterOutput output;
+        if (frame == 10u) ts_sister_machine_set_hold(&machine, 1);
+        if (frame == 20u) ts_sister_machine_set_rolling(&machine, 0);
+        if (frame == 30u) ts_sister_machine_set_hold(&machine, 0);
+        if (frame == 40u) ts_sister_machine_set_rolling(&machine, 1);
+        output = ts_sister_machine_process_frame(
+            &machine, sister_silence(), sister_silence());
+        assert(sister_frame_finite(output.head[1]));
+        assert(sister_frame_finite(output.head[2]));
+        assert(ts_sister_machine_get_snapshot(&machine, &current));
+        expected_h2 = ts_sister_rate_value(parameters.head2_rate_index) -
+            (machine.head[1].previous_offset - old_h2_offset);
+        expected_h3 = ts_sister_rate_value(parameters.head3_rate_index) -
+            (machine.head[2].previous_offset - old_h3_offset);
+        assert(fabs(circular_position_delta(
+            current.head_position[1], previous.head_position[1],
+            machine.buffer.capacity_frames) - expected_h2) < 1e-5);
+        assert(fabs(circular_position_delta(
+            current.head_position[2], previous.head_position[2],
+            machine.buffer.capacity_frames) - expected_h3) < 1e-5);
+        assert_snapshot_matches_audio_read(&machine, &current, 1u);
+        assert_snapshot_matches_audio_read(&machine, &current, 2u);
+        previous = current;
+    }
+    ts_sister_machine_free(&machine);
+}
+
+static void free_head_crosses_physical_store_midpoint_continuously(void)
+{
+    TsSisterMachine machine;
+    TsSisterParameters parameters;
+    TsSisterSnapshot before;
+    TsSisterSnapshot after;
+    const double initial_age = 29999.0;
+
+    assert(ts_sister_machine_init(&machine, 1000u, 2u, 46.0));
+    ts_sister_parameters_default(&parameters, 1000u);
+    parameters.buffer_seconds = 46.0f;
+    parameters.head1_level = 0.0f;
+    parameters.head2_level = 0.0f;
+    parameters.head3_level = 0.0f;
+    parameters.head2_rate_index = 0;
+    parameters.head3_rate_index = 0;
+    parameters.wow = 0.0f;
+    sister_configure_immediate(&machine, &parameters);
+    sister_fill_buffer(&machine, 0.5f, 0.25f);
+    ts_sister_machine_set_rolling(&machine, 0);
+
+    for (size_t head = 1u; head < TS_SISTER_HEAD_COUNT; ++head) {
+        machine.master_clock = 0u;
+        set_free_head_age(&machine, head, initial_age);
+        machine.head[head].guard_initialized = 0;
+        machine.head[head].guard_remaining = 0u;
+
+        (void)ts_sister_machine_process_frame(
+            &machine, sister_silence(), sister_silence());
+        assert(ts_sister_machine_get_snapshot(&machine, &before));
+        (void)ts_sister_machine_process_frame(
+            &machine, sister_silence(), sister_silence());
+        assert(ts_sister_machine_get_snapshot(&machine, &after));
+
+        assert(fabs(circular_position_delta(
+            after.head_position[head], before.head_position[head],
+            machine.buffer.capacity_frames) -
+            ts_sister_rate_value(0)) < 1e-6);
+        assert_snapshot_matches_audio_read(&machine, &after, head);
+    }
     ts_sister_machine_free(&machine);
 }
 
@@ -202,6 +417,9 @@ int main(void)
     minimum_delay_and_jump_crossfade();
     scrub_span_rates_and_taps();
     shared_position_and_write_guard();
+    free_head_crosses_physical_store_midpoint_continuously();
+    stationary_free_head_matrix();
+    live_gestures_and_transport_remain_continuous();
     puts("sister head tests passed");
     return 0;
 }

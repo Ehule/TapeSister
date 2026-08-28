@@ -10,6 +10,8 @@
 #endif
 
 #define TS_FM_GENOME_VERSION 4u
+#define TS_FM_MIN_USABLE_PEAK 1.0e-5f
+#define TS_FM_MIN_USABLE_MEAN_SQUARE 1.0e-12
 
 static float ratio_maximum(const TsFmPatch *patch)
 {
@@ -974,6 +976,26 @@ static void trim_drone_to_zero_boundaries(float *data, size_t *frame_count,
     *frame_count = end + 1u;
 }
 
+int ts_fm_sample_is_usable(const TsSample *sample)
+{
+    size_t scalar_count;
+    float peak = 0.0f;
+    double energy = 0.0;
+    if (sample == NULL || sample->data == NULL || sample->frames == 0u ||
+        !ts_sample_scalar_count(sample, &scalar_count) || scalar_count == 0u)
+        return 0;
+    for (size_t scalar = 0u; scalar < scalar_count; ++scalar) {
+        float value = sample->data[scalar];
+        float magnitude;
+        if (!isfinite(value)) return 0;
+        magnitude = fabsf(value);
+        if (magnitude > peak) peak = magnitude;
+        energy += (double)value * (double)value;
+    }
+    return peak >= TS_FM_MIN_USABLE_PEAK &&
+           energy / (double)scalar_count >= TS_FM_MIN_USABLE_MEAN_SQUARE;
+}
+
 int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
                         float seconds, float frequency, uint32_t sample_rate,
                         uint32_t seed, char *error, size_t error_size)
@@ -1138,6 +1160,20 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
     }
     if (safe.drone_mode)
         trim_drone_to_zero_boundaries(data, &frames, sample_rate);
+    {
+        TsSample candidate = {0};
+        candidate.data = data;
+        candidate.frames = frames;
+        candidate.sample_rate = sample_rate;
+        candidate.channels = 1u;
+        if (!ts_fm_sample_is_usable(&candidate)) {
+            free(data);
+            if (error != NULL && error_size > 0u)
+                snprintf(error, error_size,
+                         "FM render produced no usable signal");
+            return 0;
+        }
+    }
     ts_sample_free(sample);
     sample->data = data;
     sample->frames = frames;

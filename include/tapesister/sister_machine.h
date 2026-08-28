@@ -61,7 +61,8 @@ typedef struct {
 } TsSisterRamp;
 
 typedef struct {
-    double phase;
+    double phase;             /* Derived position in the fixed physical store. */
+    double logical_age;       /* H2/H3 age in the active musical buffer. */
     double previous_offset;
     double old_delay_frames;
     double current_delay_frames;
@@ -150,8 +151,9 @@ typedef struct {
     float monitor_wet;
     /* Post-filter MIX gain. Final linked safety remains authoritative. */
     float mix_output_gain;
-    /* Completed post-effects return trim. Applied before linked safety and
-       therefore also owns the explicit Master FX Feedback send level. */
+    /* Parallel return for the audible contribution made by the selected
+       Reverb/Delay/Distortion inserts. Zero preserves dry Sister audio; one
+       preserves the processor's established output exactly. */
     float fx_return_gain;
     float clear_ms;
 } TsSisterParameters;
@@ -163,8 +165,8 @@ typedef struct {
     TsStereoFrame input;
     TsStereoFrame head[TS_SISTER_HEAD_COUNT];
     TsStereoFrame mix;
-    /* Completed DISTORTION -> DELAY -> REVERB result before linked hardware
-       safety. This is the owned Master FX Feedback tap. */
+    /* Dry plus the scaled DISTORTION -> DELAY -> REVERB return before linked
+       hardware safety. This is the owned Master FX Feedback tap. */
     TsStereoFrame post_fx;
     /* Exact bounded frame offered to rolling memory this callback. */
     TsStereoFrame write;
@@ -264,6 +266,8 @@ typedef struct {
     uint64_t overload_count;
     TsSisterOutput last_output;
     double last_head_position[TS_SISTER_HEAD_COUNT];
+    uint32_t snapshot_batch_depth;
+    int snapshot_pending;
     TsSisterSnapshotAtomic snapshot;
 } TsSisterMachine;
 
@@ -300,6 +304,8 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
 void ts_sister_machine_seed(TsSisterMachine *machine, uint32_t seed);
 void ts_sister_machine_set_rolling(TsSisterMachine *machine, int rolling);
 void ts_sister_machine_set_hold(TsSisterMachine *machine, int held);
+void ts_sister_machine_begin_audio_block(TsSisterMachine *machine);
+void ts_sister_machine_end_audio_block(TsSisterMachine *machine);
 
 int ts_sister_machine_request_clear(TsSisterMachine *machine);
 int ts_sister_machine_can_clear(const TsSisterMachine *machine);

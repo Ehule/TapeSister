@@ -14,6 +14,10 @@
 #include "tapesister/exchange.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
+enum { TS_UI_INPUT_LED_X = 263, TS_UI_INPUT_LED_Y = 12,
+       TS_UI_INPUT_LED_W = 2, TS_UI_INPUT_LED_H = 9,
+       TS_UI_INPUT_LED_STEP_X = 3 };
+#define TS_UI_INPUT_ACTIVITY_HOLD_MS 140u
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
 enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,
        TS_MODAL_PANEL_W = 620, TS_MODAL_PANEL_H = 164 };
@@ -34,7 +38,7 @@ enum { TS_PALETTE_SLIDER_X = 20, TS_PALETTE_SLIDER_Y = 102,
        TS_PALETTE_CONTRAST_X = 250, TS_PALETTE_CONTRAST_W = 170,
        TS_PALETTE_ACTION_Y = 174 };
 enum { TS_CONFIG_ACTION_Y = 196 };
-enum { TS_PALETTE_TAPEHEAD_X = 432, TS_PALETTE_TAPEHEAD_Y = 159,
+enum { TS_PALETTE_TAPEHEAD_X = 432, TS_PALETTE_TAPEHEAD_Y = 171,
        TS_PALETTE_TAPEHEAD_W = 7, TS_PALETTE_TAPEHEAD_H = 8,
        TS_PALETTE_TAPEHEAD_STEP_X = 9 };
 enum {
@@ -193,6 +197,7 @@ typedef enum {
     TS_UI_FM_ACTION_OVERWRITE,
     TS_UI_FM_ACTION_NEW_PAGE,
     TS_UI_FM_ACTION_CANCEL_FULL,
+    TS_UI_FM_ACTION_OUTPUT_TRIM,
     TS_UI_FM_ACTION_BACK
 } TsUiFmAction;
 
@@ -249,15 +254,25 @@ typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
 
-/* High-resolution wheels and touchpads can keep emitting inertial events
-   after the pointer crosses into another parameter. */
+/* High-resolution wheels, touchpads, and queued SDL wheel events can keep
+   emitting after the pointer crosses a parameter or application window. */
 #define TS_UI_WHEEL_HANDOFF_QUIET_MS 120u
 
 typedef struct {
     int target;
     uint32_t last_event_ms;
     int active;
+    int suppress_until_quiet;
 } TsUiWheelGuard;
+
+/* SDL motion events report a button mask, but that mask can outlive the
+   window that received the corresponding button-down. Require an explicit
+   local press before motion is allowed to edit a value. */
+typedef struct {
+    int target;
+    uint32_t button_mask;
+    int active;
+} TsUiPointerDrag;
 
 typedef struct {
     uint64_t waveform_revisions[TS_UI_WAVEFORM_COUNT];
@@ -293,6 +308,8 @@ typedef struct {
     float input_peak;
     float input_threshold;
     uint32_t input_sample_rate;
+    uint8_t input_available_channels;
+    uint8_t input_activity_mask;
     size_t input_wave_columns;
     float input_wave_minimum[TS_WAVE_W];
     float input_wave_maximum[TS_WAVE_W];
@@ -340,6 +357,7 @@ typedef struct {
     int fm_held_notes;
     int fm_full_choice_open;
     int fm_bank_choice_open;
+    int fm_output_dragging;
     char fm_message[96];
     int transform_rendering;
     int transform_preview_available;
@@ -363,6 +381,8 @@ typedef struct {
     char transform_message[96];
     int exit_confirm_open;
     int exit_has_unsaved;
+    int exit_choice;
+    int exit_after_save;
     uint64_t saved_state_hash;
     int config_open;
     int palette_open;
@@ -475,6 +495,11 @@ typedef struct {
 } TsUiState;
 
 void ts_ui_init(TsUiState *ui);
+void ts_ui_update_input_activity(TsUiState *ui,
+                                 uint32_t hold_until_ms[8],
+                                 uint32_t now_ms,
+                                 uint32_t available_channels,
+                                 uint32_t detected_mask);
 void ts_ui_waveform_cache_invalidate(TsUiState *ui, TsUiWaveformKind kind);
 void ts_ui_waveform_cache_reset_counters(void);
 uint64_t ts_ui_waveform_cache_rebuild_count(TsUiWaveformKind kind);
@@ -485,6 +510,7 @@ const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
 const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
                                      const TsInstrument *instrument);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
+int ts_ui_foreground_panel_open(const TsUiState *ui);
 void ts_ui_draw_tile_state_borders(TsFramebuffer *fb, int slot,
                                    int active, int sister_source,
                                    const TsPalette *palette);
@@ -541,6 +567,12 @@ int ts_ui_logo_contains(int x, int y);
 int ts_ui_fm_background_click_allowed(const TsUiState *ui, int x, int y);
 int ts_ui_wheel_guard_accept(TsUiWheelGuard *guard, int target,
                              uint32_t now_ms);
+void ts_ui_wheel_guard_interrupt(TsUiWheelGuard *guard, uint32_t now_ms);
+void ts_ui_pointer_drag_begin(TsUiPointerDrag *drag, int target,
+                              uint32_t button_mask);
+void ts_ui_pointer_drag_cancel(TsUiPointerDrag *drag);
+int ts_ui_pointer_drag_accept_motion(TsUiPointerDrag *drag, int target,
+                                     uint32_t button_state);
 int ts_ui_waveform_mode_contains(int x, int y);
 int ts_ui_record_source_button_from_point(int x, int y);
 int ts_ui_canvas_edge_from_point(int x, int y);

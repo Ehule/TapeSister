@@ -27,6 +27,12 @@ enum {
     TS_REFERENCE_TONE_VOLUME_MIN = 0,
     TS_REFERENCE_TONE_VOLUME_MAX = 100,
     TS_REFERENCE_TONE_VOLUME_DEFAULT = 50,
+    TS_FM_OUTPUT_PERCENT_MIN = 0,
+    TS_FM_OUTPUT_PERCENT_MAX = 100,
+    TS_FM_OUTPUT_PERCENT_DEFAULT = 50,
+    TS_AUDIO_BUFFER_FRAMES_MIN = 256,
+    TS_AUDIO_BUFFER_FRAMES_MAX = 1024,
+    TS_AUDIO_BUFFER_FRAMES_DEFAULT = 512,
     TS_RECORD_THRESHOLD_DB_MIN = -90,
     TS_RECORD_THRESHOLD_DB_MAX = 0,
     TS_RECORD_THRESHOLD_DB_DEFAULT = -30,
@@ -102,6 +108,8 @@ typedef struct {
     int voice_attack_ms;
     int ripple_cut_crop_canvas;
     int reference_tone_volume;
+    int fm_output_percent;
+    int audio_buffer_frames;
     int record_input_channel;
     int midi_input_channel;
     int record_threshold_db;

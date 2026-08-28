@@ -8,6 +8,29 @@ static int contains(int x, int y, int left, int top, int width, int height)
     return x >= left && x < left + width && y >= top && y < top + height;
 }
 
+int ts_sister_ui_parameter_lockable(int parameter)
+{
+    return parameter >= 0 && parameter < TS_SISTER_UI_PARAM_COUNT;
+}
+
+int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,
+                                  int parameter)
+{
+    return model != NULL && ts_sister_ui_parameter_lockable(parameter) &&
+           (model->parameter_locks &
+            TS_SISTER_UI_PARAMETER_BIT(parameter)) != 0u;
+}
+
+int ts_sister_ui_parameter_lock_toggle(TsSisterUiModel *model,
+                                       int parameter)
+{
+    uint64_t bit;
+    if (model == NULL || !ts_sister_ui_parameter_lockable(parameter)) return 0;
+    bit = TS_SISTER_UI_PARAMETER_BIT(parameter);
+    model->parameter_locks ^= bit;
+    return 1;
+}
+
 int ts_sister_ui_event_point(int event_x, int event_y,
                              int *logical_x, int *logical_y)
 {
@@ -193,8 +216,8 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
     }
     if (model != NULL && model->fx_page) {
         static const int parameter[3][3] = {
-            {TS_SISTER_UI_PARAM_REVERB_TYPE, TS_SISTER_UI_PARAM_REVERB_MIX,
-             TS_SISTER_UI_PARAM_REVERB_DECAY},
+            {TS_SISTER_UI_PARAM_REVERB_TYPE, TS_SISTER_UI_PARAM_REVERB_DECAY,
+             TS_SISTER_UI_PARAM_REVERB_MIX},
             {TS_SISTER_UI_PARAM_DELAY_TIME, TS_SISTER_UI_PARAM_DELAY_FEEDBACK,
              TS_SISTER_UI_PARAM_DELAY_MIX},
             {TS_SISTER_UI_PARAM_DISTORTION_DRIVE,

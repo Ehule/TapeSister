@@ -117,6 +117,40 @@ static void feedback_contract(void)
     ts_sister_machine_free(&machine);
 }
 
+static void fx_return_is_wet_return_not_master(void)
+{
+    TsSisterMachine machine;
+    TsSisterPostFxEngine post_fx = {0};
+    TsSisterParameters p = routing_parameters(1000u);
+    TsSisterOutput output = {0};
+    assert(ts_sister_machine_init(&machine, 1000u, 2u, 0.1));
+    assert(ts_sister_post_fx_init(&post_fx, 1000u));
+    p.head2_level = 0.0f;
+    p.head3_level = 0.0f;
+    p.soak_targets = 0u;
+    p.fx.reverb_targets = 0u;
+    p.fx.delay_targets = 0u;
+    p.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
+    p.fx.distortion_drive = 1.0f;
+    p.fx.distortion_tone = 0.5f;
+    p.fx.distortion_mix = 1.0f;
+    p.fx_return_gain = 0.0f;
+    sister_configure_immediate(&machine, &p);
+    ts_sister_post_fx_set_controls(&post_fx, &p.fx);
+    fill_stereo(&machine, (TsStereoFrame){0.25f, -0.25f});
+    ts_sister_machine_set_rolling(&machine, 0);
+    for (int i = 0; i < 200; ++i)
+        output = ts_sister_machine_process_frame_with_fx(
+            &machine, &post_fx, sister_silence(), sister_silence(),
+            sister_silence());
+    /* FX RETURN at zero bypasses the insert; it is not the master output. */
+    assert(sister_peak(output.mix) > 0.1f);
+    assert(sister_close(output.post_fx.l, output.head[0].l, 0.00001f));
+    assert(sister_close(output.post_fx.r, output.head[0].r, 0.00001f));
+    ts_sister_post_fx_free(&post_fx);
+    ts_sister_machine_free(&machine);
+}
+
 static TsSisterRuntimeFrame run_runtime(TsSisterRuntime *runtime, int frames,
                                         TsStereoFrame value)
 {
@@ -252,6 +286,7 @@ int main(void)
 {
     head_and_mix_placement();
     feedback_contract();
+    fx_return_is_wet_return_not_master();
     capture_dry_and_mono_contract();
     transport_and_reconfigure();
     extreme_safety_and_cancellation();

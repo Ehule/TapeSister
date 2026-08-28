@@ -83,8 +83,16 @@ enum {
     TS_FM_LFO_TYPE_COUNT = 12,
     TS_FM_INTERACTION_COUNT = 8,
     TS_FM_PITCH_SCALE_COUNT = 5,
-    TS_FM_PAGE_COUNT = 7
+    TS_FM_PAGE_COUNT = 7,
+    TS_FM_CREATE_RETRY_LIMIT = 12
 };
+
+/* Application-owned ancestry for fresh FM creation.  It is deliberately not
+   part of TsInstrument or project persistence: stored recipes remain exact,
+   while each application session can inject a different root. */
+typedef struct {
+    uint64_t state;
+} TsFmSeedSequence;
 
 /* The FM Logic mini-waveform is an eight-second render. Apply must commit
    that same complete render instead of inheriting a shorter target tile. */
@@ -785,12 +793,20 @@ void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
 int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
                         float seconds, float frequency, uint32_t sample_rate,
                         uint32_t seed, char *error, size_t error_size);
+int ts_fm_sample_is_usable(const TsSample *sample);
+void ts_fm_seed_sequence_init(TsFmSeedSequence *sequence,
+                              uint64_t session_root);
+uint32_t ts_fm_seed_sequence_next(TsFmSeedSequence *sequence);
 int ts_instrument_apply_fm_patch(TsInstrument *instrument,
                                  const TsFmPatch *patch,
                                  char *error, size_t error_size);
 int ts_instrument_make_fm_bank(TsInstrument *instrument,
                                const TsFmPatch *patch,
                                char *error, size_t error_size);
+int ts_instrument_make_fm_bank_seeded(TsInstrument *instrument,
+                                      const TsFmPatch *patch,
+                                      uint32_t seed,
+                                      char *error, size_t error_size);
 int ts_instrument_clone(TsInstrument *destination,
                         const TsInstrument *source,
                         char *error, size_t error_size);
@@ -864,6 +880,10 @@ int ts_instrument_select_bank(TsInstrument *instrument, int slot,
                               char *error, size_t error_size);
 int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,
                                   char *error, size_t error_size);
+int ts_instrument_create_selected_fresh(TsInstrument *instrument,
+                                        TsFmSeedSequence *sequence,
+                                        uint32_t *successful_seed,
+                                        char *error, size_t error_size);
 int ts_instrument_activate_silence(TsInstrument *instrument, size_t frames,
                                    uint32_t sample_rate,
                                    char *error, size_t error_size);
@@ -910,6 +930,10 @@ int ts_instrument_copy_drone_to_new_tile(TsInstrument *instrument,
                                           char *error, size_t error_size);
 int ts_instrument_stamp_create(TsInstrument *instrument, uint32_t seed,
                                char *error, size_t error_size);
+int ts_instrument_stamp_create_fresh(TsInstrument *instrument,
+                                     TsFmSeedSequence *sequence,
+                                     uint32_t *successful_seed,
+                                     char *error, size_t error_size);
 int ts_instrument_stamp_vary(TsInstrument *instrument,
                              char *error, size_t error_size);
 int ts_instrument_stamp_vary_chained(TsInstrument *instrument,

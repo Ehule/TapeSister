@@ -141,13 +141,20 @@ typedef struct {
     float monitor_dry_current;
     float monitor_wet_current;
     TsSisterRamp source_gain[TS_SISTER_SOURCE_COUNT];
+    TsSisterRamp source_route[TS_SISTER_SOURCE_COUNT];
+    TsSisterRamp monitor_route;
+    TsSisterRamp direct_tile_route;
     TsSisterRamp ordinary_fx_return_gain;
     float master_feedback_current;
     TsStereoFrame master_feedback_previous;
+    /* UI/controller performance-safety state; never read by the callback. */
+    uint64_t parameter_locks;
     char selected_preset[48];
     TsSisterRoutingSnapshotAtomic snapshot;
     TsSisterWavePublisher waveform;
     size_t waveform_capacity_frames;
+    uint32_t snapshot_batch_depth;
+    int snapshot_pending;
 } TsSisterRuntime;
 
 void ts_sister_runtime_init(TsSisterRuntime *runtime);
@@ -177,6 +184,9 @@ int ts_sister_runtime_perform_clear(TsSisterRuntime *runtime);
 void ts_sister_runtime_set_sources(TsSisterRuntime *runtime,
                                    uint8_t source_switches);
 uint8_t ts_sister_runtime_sources(const TsSisterRuntime *runtime);
+float ts_sister_runtime_source_route(const TsSisterRuntime *runtime,
+                                     int source_index);
+float ts_sister_runtime_direct_tile_route(const TsSisterRuntime *runtime);
 int ts_sister_runtime_owns_direct_tile_bus(const TsSisterRuntime *runtime);
 
 int ts_sister_runtime_set_page(TsSisterRuntime *runtime, size_t page,
@@ -216,6 +226,8 @@ void ts_sister_runtime_panic(TsSisterRuntime *runtime);
 
 TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsSisterRuntime *runtime, const TsSisterSourceFrames *sources);
+void ts_sister_runtime_begin_audio_block(TsSisterRuntime *runtime);
+void ts_sister_runtime_end_audio_block(TsSisterRuntime *runtime);
 void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
                                      const TsSisterSourceFrames *sources,
                                      TsSisterRuntimeFrame *output,

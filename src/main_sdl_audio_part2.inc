@@ -90,7 +90,10 @@ static void ts_mark_capture_config_after_save(void)
 {
     ExternalInputState *input = (ExternalInputState *)ts_capture_userdata;
     ts_capture_reconfigure_error[0] = '\0';
-    if (ts_real_capture != 0 && !ts_capture_name_matches_config())
+    if (ts_real_capture != 0 &&
+        (!ts_capture_name_matches_config() ||
+         (ts_live_config != NULL && ts_capture_desired.samples !=
+             (Uint16)ts_live_config->audio_buffer_frames)))
         ts_capture_reconfigure_pending = 1;
     if (input != NULL && ts_live_config != NULL &&
         ts_input_channel_mode_valid(ts_live_config->record_input_channel)) {
@@ -103,8 +106,8 @@ static void ts_mark_capture_config_after_save(void)
 static int ts_reopen_capture_for_config(void)
 {
     SDL_AudioSpec obtained;
+    SDL_AudioSpec desired;
     SDL_AudioDeviceID replacement;
-    SDL_AudioDeviceID old = ts_real_capture;
     ExternalInputState *input = (ExternalInputState *)ts_capture_userdata;
     AudioState *audio = (AudioState *)ts_output_userdata;
     const char *wanted = ts_configured_input_name();
@@ -124,10 +127,14 @@ static int ts_reopen_capture_for_config(void)
     }
 
     SDL_zero(obtained);
-    replacement = SDL_OpenAudioDevice(
-        wanted, 1, &ts_capture_desired, &obtained, ts_capture_allowed_changes);
+    desired = ts_capture_desired;
+    desired.channels = TS_INPUT_DEVICE_CHANNEL_MAX;
+    if (ts_live_config != NULL)
+        desired.samples = (Uint16)ts_live_config->audio_buffer_frames;
+    replacement = ts_audio_open_capture_widest(
+        wanted, &desired, &obtained, ts_capture_allowed_changes);
     if (replacement == 0) {
-        if (audio != NULL)
+        if (audio != NULL && ts_real_capture == 0)
             ts_sister_runtime_input_available(&audio->sister, 0);
         snprintf(ts_capture_reconfigure_error,
                  sizeof(ts_capture_reconfigure_error),
@@ -136,19 +143,22 @@ static int ts_reopen_capture_for_config(void)
         return 0;
     }
     if (obtained.format != AUDIO_F32SYS || obtained.freq <= 0 ||
-        obtained.channels == 0) {
-        SDL_CloseAudioDevice(replacement);
-        if (audio != NULL)
+        obtained.channels == 0 ||
+        obtained.channels > TS_INPUT_DEVICE_CHANNEL_MAX) {
+        ts_audio_close_device(replacement);
+        if (audio != NULL && ts_real_capture == 0)
             ts_sister_runtime_input_available(&audio->sister, 0);
         snprintf(ts_capture_reconfigure_error,
                  sizeof(ts_capture_reconfigure_error),
-                 "Configured recording input returned unsupported audio");
+                 "Configured recording input must provide float audio with 1-8 channels");
         return 0;
     }
-    if (old != 0) SDL_CloseAudioDevice(old);
-    ts_real_capture = replacement;
     input->channels = obtained.channels;
     input->sample_rate = (uint32_t)obtained.freq;
+    ts_input_monitor_set_prime_frames(
+        &input->monitor,
+        ts_input_monitor_recommended_prime_frames(obtained.samples));
+    ts_input_activity_set_available(&input->activity, obtained.channels);
     if (audio != NULL)
         ts_sister_runtime_input_available(&audio->sister, 1);
     input->input_channel = ts_live_config != NULL ?
@@ -166,11 +176,17 @@ static int ts_reopen_capture_for_config(void)
                  wanted != NULL ? wanted : "");
     ts_capture_reconfigure_pending = 0;
     ts_capture_reconfigure_error[0] = '\0';
+    diagnostic_log(
+        "capture device reopened: %s rate=%u channels=%d buffer=%u prime=%u",
+        input->device_label, input->sample_rate, input->channels,
+        (unsigned)obtained.samples,
+        ts_input_monitor_recommended_prime_frames(obtained.samples));
     return 1;
 }
 
 static int ts_switch_output_for_config(char *error, size_t error_size)
 {
+    SDL_AudioSpec desired;
     SDL_AudioSpec obtained;
     SDL_AudioDeviceID replacement;
     SDL_AudioDeviceID old = ts_real_output;
@@ -193,7 +209,9 @@ static int ts_switch_output_for_config(char *error, size_t error_size)
         return 0;
     }
 
-    if (old != 0) {
+    if (old != 0 && ts_live_config != NULL &&
+        ts_output_desired.samples ==
+            (Uint16)ts_live_config->audio_buffer_frames) {
         if ((wanted == NULL && ts_active_output[0] == '\0') ||
             (wanted != NULL && strcmp(wanted, ts_active_output) == 0))
             return 1;

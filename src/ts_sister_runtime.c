@@ -24,6 +24,17 @@ static TsStereoFrame frame_scale(TsStereoFrame value, float gain)
         (TsStereoFrame){value.l * gain, value.r * gain});
 }
 
+static TsStereoFrame frame_effect_return(TsStereoFrame dry,
+                                         TsStereoFrame processed,
+                                         float gain)
+{
+    TsStereoFrame result = {
+        dry.l + (processed.l - dry.l) * gain,
+        dry.r + (processed.r - dry.r) * gain
+    };
+    return ts_stereo_frame_sanitize(result);
+}
+
 static float frame_peak(TsStereoFrame value)
 {
     float left;
@@ -186,15 +197,54 @@ static void publish_snapshot(TsSisterRuntime *runtime)
                           memory_order_release);
 }
 
-static int source_count(uint8_t switches)
+static void publish_frame_snapshot(TsSisterRuntime *runtime)
 {
-    int count = 0;
-    switches &= TS_SISTER_SOURCE_ALL;
-    while (switches != 0u) {
-        count += switches & 1u;
-        switches >>= 1u;
+    if (runtime == NULL) return;
+    if (runtime->snapshot_batch_depth != 0u) {
+        runtime->snapshot_pending = 1;
+        return;
     }
-    return count;
+    publish_snapshot(runtime);
+}
+
+void ts_sister_runtime_begin_audio_block(TsSisterRuntime *runtime)
+{
+    if (runtime == NULL) return;
+    if (runtime->snapshot_batch_depth != UINT32_MAX)
+        ++runtime->snapshot_batch_depth;
+    ts_sister_machine_begin_audio_block(&runtime->machine);
+}
+
+void ts_sister_runtime_end_audio_block(TsSisterRuntime *runtime)
+{
+    if (runtime == NULL || runtime->snapshot_batch_depth == 0u) return;
+    ts_sister_machine_end_audio_block(&runtime->machine);
+    --runtime->snapshot_batch_depth;
+    if (runtime->snapshot_batch_depth == 0u && runtime->snapshot_pending) {
+        runtime->snapshot_pending = 0;
+        publish_snapshot(runtime);
+    }
+}
+
+static uint8_t source_bit(int source_index)
+{
+    static const uint8_t bits[TS_SISTER_SOURCE_COUNT] = {
+        TS_SISTER_SOURCE_TILES, TS_SISTER_SOURCE_FM,
+        TS_SISTER_SOURCE_EXT, TS_SISTER_SOURCE_PREVIEW
+    };
+    return source_index >= 0 && source_index < TS_SISTER_SOURCE_COUNT ?
+           bits[source_index] : 0u;
+}
+
+static float source_route_target(const TsSisterRuntime *runtime,
+                                 int source_index)
+{
+    uint8_t bit;
+    if (runtime == NULL) return 0.0f;
+    bit = source_bit(source_index);
+    if ((runtime->source_switches & bit) == 0u) return 0.0f;
+    if (bit == TS_SISTER_SOURCE_EXT && !runtime->input_available) return 0.0f;
+    return 1.0f;
 }
 
 static TsStereoFrame selected_tap(const TsSisterRuntimeFrame *frame,
@@ -232,6 +282,11 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
                        runtime->parameters.external_gain);
     runtime_ramp_reset(&runtime->source_gain[3],
                        runtime->parameters.preview_gain);
+    for (int source_index = 0; source_index < TS_SISTER_SOURCE_COUNT;
+         ++source_index)
+        runtime_ramp_reset(&runtime->source_route[source_index], 0.0f);
+    runtime_ramp_reset(&runtime->monitor_route, 0.0f);
+    runtime_ramp_reset(&runtime->direct_tile_route, 0.0f);
     runtime_ramp_reset(&runtime->ordinary_fx_return_gain,
                        runtime->parameters.fx_return_gain);
     runtime->selected_tap = TS_SISTER_TAP_MIX;
@@ -322,6 +377,14 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
     runtime->source_target_conflict = 0;
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
+    for (int source_index = 0; source_index < TS_SISTER_SOURCE_COUNT;
+         ++source_index)
+        runtime_ramp_reset(&runtime->source_route[source_index],
+                           source_route_target(runtime, source_index));
+    runtime_ramp_reset(&runtime->monitor_route,
+                       runtime->monitor_enabled ? 1.0f : 0.0f);
+    runtime_ramp_reset(&runtime->direct_tile_route,
+                       runtime->rolling ? 1.0f : 0.0f);
     ts_capture_free(&runtime->capture);
     ts_performance_clear(&runtime->performance);
     ts_sister_wave_publisher_clear(&runtime->waveform, buffer_channels);
@@ -465,8 +528,16 @@ void ts_sister_runtime_set_selected_preset(TsSisterRuntime *runtime,
 
 void ts_sister_runtime_set_rolling(TsSisterRuntime *runtime, int rolling)
 {
+    uint32_t sample_rate;
     if (runtime == NULL) return;
     runtime->rolling = rolling != 0;
+    sample_rate = runtime->enabled ? runtime->machine.buffer.sample_rate :
+                  48000u;
+    if (runtime->enabled)
+        runtime_ramp_set(&runtime->direct_tile_route,
+                         runtime->rolling ? 1.0f : 0.0f, sample_rate);
+    else
+        runtime_ramp_reset(&runtime->direct_tile_route, 0.0f);
     if (runtime->enabled)
         ts_sister_machine_set_rolling(&runtime->machine, runtime->rolling);
     publish_snapshot(runtime);
@@ -483,8 +554,18 @@ void ts_sister_runtime_set_hold(TsSisterRuntime *runtime, int held)
 
 void ts_sister_runtime_set_monitor(TsSisterRuntime *runtime, int enabled)
 {
+    uint32_t sample_rate;
     if (runtime == NULL) return;
     runtime->monitor_enabled = enabled != 0;
+    sample_rate = runtime->enabled ? runtime->machine.buffer.sample_rate :
+                  runtime->post_fx.ready ? runtime->post_fx.sample_rate :
+                  48000u;
+    if (runtime->enabled)
+        runtime_ramp_set(&runtime->monitor_route,
+                         runtime->monitor_enabled ? 1.0f : 0.0f,
+                         sample_rate);
+    else
+        runtime_ramp_reset(&runtime->monitor_route, 0.0f);
     publish_snapshot(runtime);
 }
 
@@ -520,14 +601,48 @@ int ts_sister_runtime_perform_clear(TsSisterRuntime *runtime)
 void ts_sister_runtime_set_sources(TsSisterRuntime *runtime,
                                    uint8_t source_switches)
 {
+    uint32_t sample_rate;
     if (runtime == NULL) return;
     runtime->source_switches = source_switches & TS_SISTER_SOURCE_ALL;
+    sample_rate = runtime->enabled ? runtime->machine.buffer.sample_rate :
+                  runtime->post_fx.ready ? runtime->post_fx.sample_rate :
+                  48000u;
+    for (int source_index = 0; source_index < TS_SISTER_SOURCE_COUNT;
+         ++source_index) {
+        float target = source_route_target(runtime, source_index);
+        if (runtime->enabled)
+            runtime_ramp_set(&runtime->source_route[source_index], target,
+                             sample_rate);
+        else
+            runtime_ramp_reset(&runtime->source_route[source_index], target);
+    }
     publish_snapshot(runtime);
 }
 
 uint8_t ts_sister_runtime_sources(const TsSisterRuntime *runtime)
 {
     return runtime != NULL ? runtime->source_switches : 0u;
+}
+
+float ts_sister_runtime_source_route(const TsSisterRuntime *runtime,
+                                     int source_index)
+{
+    float route;
+    if (runtime == NULL || source_index < 0 ||
+        source_index >= TS_SISTER_SOURCE_COUNT) return 0.0f;
+    route = runtime->source_route[source_index].current;
+    if (!isfinite(route) || route < 0.0f) return 0.0f;
+    return route > 1.0f ? 1.0f : route;
+}
+
+float ts_sister_runtime_direct_tile_route(const TsSisterRuntime *runtime)
+{
+    float route;
+    if (runtime == NULL || !runtime->enabled || runtime->callback_failed)
+        return 0.0f;
+    route = runtime->direct_tile_route.current;
+    if (!isfinite(route) || route < 0.0f) return 0.0f;
+    return route > 1.0f ? 1.0f : route;
 }
 
 int ts_sister_runtime_owns_direct_tile_bus(const TsSisterRuntime *runtime)
@@ -766,7 +881,9 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsStereoFrame input = {0.0f, 0.0f};
     TsSisterOutput output;
     float source_gain[TS_SISTER_SOURCE_COUNT];
-    int armed;
+    float source_route[TS_SISTER_SOURCE_COUNT];
+    float route_energy = 0.0f;
+    float monitor_route;
     frame.dry_monitor_gain = 1.0f;
     if (runtime == NULL) return frame;
     if (sources != NULL) source = *sources;
@@ -788,20 +905,26 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         runtime->machine.buffer.sample_rate);
     frame.dry_monitor_gain = runtime->monitor_dry_current;
     for (int source_index = 0; source_index < TS_SISTER_SOURCE_COUNT;
-         ++source_index)
+         ++source_index) {
         source_gain[source_index] = runtime_ramp_advance(
             &runtime->source_gain[source_index]);
-    if ((runtime->source_switches & TS_SISTER_SOURCE_TILES) != 0u)
-        input = frame_add(input, frame_scale(tile_bus, source_gain[0]));
-    if ((runtime->source_switches & TS_SISTER_SOURCE_FM) != 0u)
-        input = frame_add(input, frame_scale(source.fm, source_gain[1]));
-    if ((runtime->source_switches & TS_SISTER_SOURCE_EXT) != 0u &&
-        runtime->input_available)
-        input = frame_add(input, frame_scale(source.external, source_gain[2]));
-    if ((runtime->source_switches & TS_SISTER_SOURCE_PREVIEW) != 0u)
-        input = frame_add(input, frame_scale(source.preview, source_gain[3]));
-    armed = source_count(runtime->source_switches);
-    if (armed > 1) input = frame_scale(input, 1.0f / sqrtf((float)armed));
+        source_route[source_index] = runtime_ramp_advance(
+            &runtime->source_route[source_index]);
+        route_energy += source_route[source_index] *
+                        source_route[source_index];
+    }
+    input = frame_add(input, frame_scale(
+        tile_bus, source_gain[0] * source_route[0]));
+    input = frame_add(input, frame_scale(
+        source.fm, source_gain[1] * source_route[1]));
+    input = frame_add(input, frame_scale(
+        source.external, source_gain[2] * source_route[2]));
+    input = frame_add(input, frame_scale(
+        source.preview, source_gain[3] * source_route[3]));
+    if (route_energy > 1.0f)
+        input = frame_scale(input, 1.0f / sqrtf(route_energy));
+    monitor_route = runtime_ramp_advance(&runtime->monitor_route);
+    (void)runtime_ramp_advance(&runtime->direct_tile_route);
     output = ts_sister_machine_process_frame_with_fx(
         &runtime->machine, &runtime->post_fx, input, input,
         runtime->master_feedback_previous);
@@ -851,14 +974,13 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         TS_CAPTURE_RECORDING)
         (void)ts_capture_write_frame(
             &runtime->capture, selected_tap(&frame, runtime->selected_tap));
-    frame.monitor_return = runtime->monitor_enabled ? frame_add(
+    frame.monitor_return = frame_scale(frame_add(
         frame_scale(frame.input, runtime->monitor_dry_current),
         frame_scale(frame.tap[TS_SISTER_TAP_MIX],
-                    runtime->monitor_wet_current)) :
-        (TsStereoFrame){0.0f, 0.0f};
+                    runtime->monitor_wet_current)), monitor_route);
     runtime->last_frame = frame;
     ++runtime->processed_frames;
-    publish_snapshot(runtime);
+    publish_frame_snapshot(runtime);
     return frame;
 }
 
@@ -866,12 +988,14 @@ TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
     TsSisterRuntime *runtime, TsStereoFrame input)
 {
     TsStereoFrame output;
+    float return_gain;
     if (runtime == NULL || !runtime->post_fx.ready)
         return ts_stereo_frame_sanitize(input);
+    input = ts_stereo_frame_sanitize(input);
     output = ts_sister_post_fx_process(&runtime->post_fx,
         TS_SISTER_HEAD_COUNT, input, 0);
-    return frame_scale(output,
-        runtime_ramp_advance(&runtime->ordinary_fx_return_gain));
+    return_gain = runtime_ramp_advance(&runtime->ordinary_fx_return_gain);
+    return frame_effect_return(input, output, return_gain);
 }
 
 void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
@@ -880,9 +1004,11 @@ void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
                                      size_t frames)
 {
     if (runtime == NULL || output == NULL) return;
+    ts_sister_runtime_begin_audio_block(runtime);
     for (size_t frame = 0u; frame < frames; ++frame)
         output[frame] = ts_sister_runtime_process_frame(
             runtime, sources != NULL ? &sources[frame] : NULL);
+    ts_sister_runtime_end_audio_block(runtime);
 }
 
 int ts_sister_runtime_get_wave_snapshot(const TsSisterRuntime *runtime,
@@ -1122,8 +1248,18 @@ int ts_sister_runtime_commit_capture(TsSisterRuntime *runtime,
 void ts_sister_runtime_input_available(TsSisterRuntime *runtime,
                                        int available)
 {
+    uint32_t sample_rate;
     if (runtime == NULL) return;
     runtime->input_available = available != 0;
+    sample_rate = runtime->enabled ? runtime->machine.buffer.sample_rate :
+                  runtime->post_fx.ready ? runtime->post_fx.sample_rate :
+                  48000u;
+    if (runtime->enabled)
+        runtime_ramp_set(&runtime->source_route[2],
+                         source_route_target(runtime, 2), sample_rate);
+    else
+        runtime_ramp_reset(&runtime->source_route[2],
+                           source_route_target(runtime, 2));
     if (runtime->input_available)
         runtime->warnings &= ~(uint32_t)TS_SISTER_WARNING_INPUT_UNAVAILABLE;
     else

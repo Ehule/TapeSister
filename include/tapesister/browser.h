@@ -37,6 +37,8 @@ typedef struct {
     int selected;
     int scroll;
     int filename_focus;
+    /* -2 filename, -1 file list; 0..3 select UP, NEW, PRIMARY, CANCEL. */
+    int action_focus;
     size_t filename_cursor;
     int creating_directory;
     char saved_filename[TS_BROWSER_NAME_MAX + 1];
@@ -72,6 +74,7 @@ int ts_browser_create_directory(TsBrowser *browser);
 const char *ts_browser_mode_title(TsBrowserMode mode);
 const char *ts_browser_mode_extension(TsBrowserMode mode);
 int ts_browser_mode_edits_filename(TsBrowserMode mode);
+int ts_browser_edits_text(const TsBrowser *browser);
 int ts_browser_mode_selects_config(TsBrowserMode mode);
 int ts_browser_mode_selects_directory(TsBrowserMode mode);
 

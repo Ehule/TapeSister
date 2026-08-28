@@ -89,6 +89,19 @@ int main(void)
     out = ts_audio_mixer_render(&mixer, &buses);
     CHECK(CLOSE(out.l, 0.0f) && CLOSE(out.r, 0.0f));
 
+    ts_audio_buses_clear(&buses);
+    buses.legacy_preview = (TsStereoFrame){0.4f, -0.4f};
+    buses.tile_performance = (TsStereoFrame){0.4f, -0.4f};
+    buses.fm = (TsStereoFrame){0.4f, -0.4f};
+    buses.monitor = (TsStereoFrame){0.4f, -0.4f};
+    buses.capture = (TsStereoFrame){0.75f, -0.75f};
+    ts_audio_buses_apply_source_insert(&buses, 0.25f, 0.5f, 0.75f, 1.0f);
+    CHECK(CLOSE(buses.legacy_preview.l, 0.3f));
+    CHECK(CLOSE(buses.tile_performance.l, 0.2f));
+    CHECK(CLOSE(buses.fm.l, 0.1f));
+    CHECK(CLOSE(buses.monitor.l, 0.0f));
+    CHECK(CLOSE(buses.capture.l, 0.75f));
+
     if (failures) return 1;
     puts("audio mixer tests passed");
     return 0;

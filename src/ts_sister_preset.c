@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -87,8 +88,18 @@ void ts_sister_preset_bank_init(TsSisterPresetBank *bank,
 int ts_sister_preset_recall(const TsSisterPresetBank *bank, size_t index,
                             TsSisterParameters *parameters)
 {
+    return ts_sister_preset_recall_with_locks(bank, index, parameters, NULL);
+}
+
+int ts_sister_preset_recall_with_locks(const TsSisterPresetBank *bank,
+                                       size_t index,
+                                       TsSisterParameters *parameters,
+                                       uint64_t *parameter_locks)
+{
     if (bank == NULL || parameters == NULL || index >= bank->count) return 0;
     *parameters = bank->entries[index].parameters;
+    if (parameter_locks != NULL)
+        *parameter_locks = bank->entries[index].parameter_locks;
     return 1;
 }
 
@@ -96,6 +107,15 @@ int ts_sister_preset_save_new(TsSisterPresetBank *bank, const char *name,
                               const TsSisterParameters *parameters,
                               uint32_t sample_rate,
                               char *error, size_t error_size)
+{
+    return ts_sister_preset_save_new_with_locks(
+        bank, name, parameters, 0u, sample_rate, error, error_size);
+}
+
+int ts_sister_preset_save_new_with_locks(
+    TsSisterPresetBank *bank, const char *name,
+    const TsSisterParameters *parameters, uint64_t parameter_locks,
+    uint32_t sample_rate, char *error, size_t error_size)
 {
     TsSisterPreset *preset;
     if (bank == NULL || parameters == NULL || !valid_name(name)) {
@@ -114,6 +134,7 @@ int ts_sister_preset_save_new(TsSisterPresetBank *bank, const char *name,
     memset(preset, 0, sizeof(*preset));
     snprintf(preset->name, sizeof(preset->name), "%s", name);
     preset->parameters = *parameters;
+    preset->parameter_locks = parameter_locks;
     ts_sister_parameters_sanitize(&preset->parameters, sample_rate);
     set_error(error, error_size, "");
     return 1;
@@ -124,12 +145,22 @@ int ts_sister_preset_overwrite(TsSisterPresetBank *bank, size_t index,
                                uint32_t sample_rate,
                                char *error, size_t error_size)
 {
+    return ts_sister_preset_overwrite_with_locks(
+        bank, index, parameters, 0u, sample_rate, error, error_size);
+}
+
+int ts_sister_preset_overwrite_with_locks(
+    TsSisterPresetBank *bank, size_t index,
+    const TsSisterParameters *parameters, uint64_t parameter_locks,
+    uint32_t sample_rate, char *error, size_t error_size)
+{
     if (bank == NULL || parameters == NULL || index >= bank->count ||
         bank->entries[index].factory) {
         set_error(error, error_size, "Factory presets cannot be overwritten");
         return 0;
     }
     bank->entries[index].parameters = *parameters;
+    bank->entries[index].parameter_locks = parameter_locks;
     ts_sister_parameters_sanitize(&bank->entries[index].parameters, sample_rate);
     set_error(error, error_size, "");
     return 1;
@@ -235,7 +266,9 @@ int ts_sister_preset_save(const TsSisterPresetBank *bank, const char *path,
                      TS_SISTER_PRESET_VERSION) < 0;
     for (size_t i = TS_SISTER_FACTORY_PRESET_COUNT;
          i < bank->count && !failed; ++i) {
-        failed = fprintf(file, "\n[Preset]\nName=%s\n", bank->entries[i].name) < 0 ||
+        failed = fprintf(file, "\n[Preset]\nName=%s\nlocks=%016" PRIX64 "\n",
+                         bank->entries[i].name,
+                         bank->entries[i].parameter_locks) < 0 ||
                  !write_parameters(file, &bank->entries[i].parameters);
     }
     if (fclose(file) != 0) failed = 1;
@@ -357,6 +390,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
 {
     TsSisterPresetBank loaded;
     TsSisterParameters current;
+    uint64_t current_locks = 0u;
     char current_name[TS_SISTER_PRESET_NAME_MAX + 1] = "";
     char line[512];
     FILE *file;
@@ -390,13 +424,15 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
         if (strcmp(text, "[Preset]") == 0) {
             if (in_preset) {
                 if (!valid_name(current_name) ||
-                    !ts_sister_preset_save_new(&loaded, current_name, &current,
-                                               sample_rate, error, error_size))
+                    !ts_sister_preset_save_new_with_locks(
+                        &loaded, current_name, &current, current_locks,
+                        sample_rate, error, error_size))
                     goto fail;
             }
             in_preset = 1;
             current_name[0] = '\0';
             ts_sister_parameters_default(&current, sample_rate);
+            current_locks = 0u;
             continue;
         }
         equals = strchr(text, '=');
@@ -411,6 +447,14 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
         } else if (in_preset && strcmp(text, "Name") == 0) {
             if (!valid_name(equals)) goto malformed;
             snprintf(current_name, sizeof(current_name), "%s", equals);
+        } else if (in_preset && strcmp(text, "locks") == 0) {
+            char *end;
+            unsigned long long parsed;
+            errno = 0;
+            parsed = strtoull(equals, &end, 16);
+            if (errno != 0 || end == equals || *trim(end) != '\0')
+                goto malformed;
+            current_locks = (uint64_t)parsed;
         } else if (in_preset && !assign_field(&current, text, equals)) {
             goto malformed;
         }
@@ -419,8 +463,9 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
     if (!saw_header || !saw_version) goto malformed;
     if (in_preset) {
         if (!valid_name(current_name) ||
-            !ts_sister_preset_save_new(&loaded, current_name, &current,
-                                       sample_rate, error, error_size))
+            !ts_sister_preset_save_new_with_locks(
+                &loaded, current_name, &current, current_locks,
+                sample_rate, error, error_size))
             goto fail;
     }
     fclose(file);

@@ -59,7 +59,7 @@ legacy `PatternNote`, `PatternEffect` and `PatternInstrument` colors.
 ## Controls and fixed routing
 
 PR9 adds a `FX PAGE`/`TAPE` page switch in the same 640×400 non-modal window.
-The FX page presents three readable panels—Reverb TYPE/MIX/DECAY, Delay
+The FX page presents three readable panels—Reverb TYPE/DECAY/MIX, Delay
 TIME/FEEDBACK/MIX, Distortion DRIVE/TONE/MIX—each with H1/H2/H3/MIX toggles,
 plus one wide FX FEEDBACK control. It deliberately exposes no ordering, per-head
 amount, modulation matrix, or hidden advanced page. FX controls remain available
@@ -77,7 +77,9 @@ adjustment (Shift+wheel is fine). Both mouse buttons address the same visible pa
 
 The open right-hand lane beside the head/filter rows contains a compact vertical
 `T / F / E / A / X` mixer. T/F/E/A are independent 0–400% source trims before
-normalization; X is the 0–200% completed FX-return trim. Unity ticks are shown on
+normalization; X is the 0–200% effects-only return trim. Zero preserves the dry
+signal, unity reproduces the complete processed chain, and values above unity add
+extra effect contribution. Unity ticks are shown on
 every fader. The established source diagnostics remain beside the four source
 switches, and INPUT remains the pre-tape master.
 
@@ -144,6 +146,10 @@ including linked stereo peak protection, channel-shape identity, provenance, can
 growth and undo/redo. Overdub follows the base tile's channel shape. A Sister source tile
 cannot also be a target; recursion remains capture-to-another-tile followed by an explicit
 source-mask action.
+
+While recording, the active CAPTURE or OVERDUB button reads STOP and carries the same
+blinking hollow active-tile frame used to identify a live destination. The blink is driven
+only by the UI clock and does not add callback work or alter capture timing.
 
 ## Preferences and restart policy
 

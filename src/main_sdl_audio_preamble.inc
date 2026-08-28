@@ -15,6 +15,9 @@ static SDL_AudioDeviceID ts_audio_open_device(const char *device, int iscapture,
                                                const SDL_AudioSpec *desired,
                                                SDL_AudioSpec *obtained,
                                                int allowed_changes);
+static SDL_AudioDeviceID ts_audio_open_capture_widest(
+    const char *device, const SDL_AudioSpec *desired, SDL_AudioSpec *obtained,
+    int allowed_changes);
 static void ts_audio_close_device(SDL_AudioDeviceID device);
 static void ts_audio_lock_device(SDL_AudioDeviceID device);
 static void ts_audio_unlock_device(SDL_AudioDeviceID device);

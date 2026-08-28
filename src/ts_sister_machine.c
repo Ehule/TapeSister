@@ -60,6 +60,17 @@ static TsStereoFrame frame_lerp(TsStereoFrame a, TsStereoFrame b, float amount)
     return result;
 }
 
+static TsStereoFrame frame_effect_return(TsStereoFrame dry,
+                                         TsStereoFrame processed,
+                                         float gain)
+{
+    TsStereoFrame result = {
+        dry.l + (processed.l - dry.l) * gain,
+        dry.r + (processed.r - dry.r) * gain
+    };
+    return ts_stereo_frame_sanitize(result);
+}
+
 static uint32_t milliseconds_frames(uint32_t sample_rate, float milliseconds)
 {
     double frames = (double)sample_rate * (double)milliseconds / 1000.0;
@@ -433,14 +444,6 @@ static double head_age(const TsSisterMachine *machine, double phase)
                                  machine->buffer.storage_frames);
 }
 
-static double head_signed_age(const TsSisterMachine *machine, double phase)
-{
-    double age = head_age(machine, phase);
-    if (age > (double)machine->buffer.storage_frames * 0.5)
-        age -= (double)machine->buffer.storage_frames;
-    return age;
-}
-
 static double phase_for_age(const TsSisterMachine *machine, double age)
 {
     double write_position;
@@ -735,15 +738,13 @@ static void reset_runtime_state(TsSisterMachine *machine, int clear_buffer,
     ramp_reset(&machine->head[1].level, machine->parameters.head2_level);
     ramp_reset(&machine->head[1].offset, (float)h2_offset);
     machine->head[1].previous_offset = h2_offset;
-    machine->head[1].phase = ts_sister_positive_modulo(
-        (double)(machine->master_clock % machine->buffer.storage_frames) - h2_offset,
-        machine->buffer.storage_frames);
+    machine->head[1].logical_age = h2_offset;
+    machine->head[1].phase = phase_for_age(machine, h2_offset);
     ramp_reset(&machine->head[2].level, machine->parameters.head3_level);
     ramp_reset(&machine->head[2].offset, (float)h3_offset);
     machine->head[2].previous_offset = h3_offset;
-    machine->head[2].phase = ts_sister_positive_modulo(
-        (double)(machine->master_clock % machine->buffer.storage_frames) - h3_offset,
-        machine->buffer.storage_frames);
+    machine->head[2].logical_age = h3_offset;
+    machine->head[2].phase = phase_for_age(machine, h3_offset);
     memset(machine->drop, 0, sizeof(machine->drop));
     for (i = 0u; i < 2u; ++i) {
         machine->drop[i].prng = UINT32_C(0xa341316c) ^ (uint32_t)(i * UINT32_C(0x9e3779b9));
@@ -941,32 +942,27 @@ static void apply_pending_duration(TsSisterMachine *machine)
 {
     size_t next;
     size_t old;
-    size_t write_position;
     double oldest;
     if (machine == NULL || machine->pending_capacity_frames < 2u) return;
     next = machine->pending_capacity_frames;
     old = machine->buffer.capacity_frames;
     if (next == old) return;
-    write_position = (size_t)(machine->master_clock %
-                              machine->buffer.storage_frames);
     oldest = (double)next - 1.0;
     /* Cropped heads hand off from the last audible stereo frame to the oldest
-       retained boundary. Surviving heads keep their exact physical phase. */
+       retained boundary. Surviving heads keep their exact logical age. */
     for (size_t i = 1u; i < TS_SISTER_HEAD_COUNT; ++i) {
-        double age = head_signed_age(machine, machine->head[i].phase);
-        if (age < 0.0)
-            age = ts_sister_positive_modulo(age, old);
+        double age = ts_sister_positive_modulo(
+            machine->head[i].logical_age, old);
         if (age > oldest) {
             machine->head[i].guard_from = machine->head[i].previous_read;
             machine->head[i].guard_total = milliseconds_frames(
                 machine->buffer.sample_rate, 15.0f);
             machine->head[i].guard_remaining = machine->head[i].guard_total;
-            machine->head[i].phase = ts_sister_positive_modulo(
-                (double)write_position - oldest,
-                machine->buffer.storage_frames);
+            age = oldest;
             machine->head[i].previous_read = machine->head[i].guard_from;
             machine->head[i].guard_initialized = 1;
         }
+        machine->head[i].logical_age = age;
     }
     machine->buffer.capacity_frames = next;
     if (machine->buffer.valid_history_frames > next)
@@ -986,6 +982,10 @@ static void apply_pending_duration(TsSisterMachine *machine)
     }
     for (size_t i = 1u; i < TS_SISTER_HEAD_COUNT; ++i) {
         double maximum = i == 1u ? oldest : head3_max_frames(machine);
+        machine->head[i].logical_age = ts_sister_positive_modulo(
+            machine->head[i].logical_age, next);
+        machine->head[i].phase = phase_for_age(
+            machine, machine->head[i].logical_age);
         if (machine->head[i].offset.current > (float)maximum)
             machine->head[i].offset.current = (float)maximum;
         if (machine->head[i].offset.target > (float)maximum)
@@ -1161,13 +1161,15 @@ int ts_sister_machine_perform_clear(TsSisterMachine *machine)
     machine->head[0].jump_remaining = 0u;
     machine->head[0].current_delay_frames =
         machine->head[0].target_delay_frames;
-    machine->head[1].phase = ts_sister_positive_modulo(
-        (double)(machine->master_clock % machine->buffer.storage_frames) -
-        machine->head[1].offset.current, machine->buffer.storage_frames);
+    machine->head[1].logical_age = ts_sister_positive_modulo(
+        machine->head[1].offset.current, machine->buffer.capacity_frames);
+    machine->head[1].phase = phase_for_age(
+        machine, machine->head[1].logical_age);
     machine->head[1].previous_offset = machine->head[1].offset.current;
-    machine->head[2].phase = ts_sister_positive_modulo(
-        (double)(machine->master_clock % machine->buffer.storage_frames) -
-        machine->head[2].offset.current, machine->buffer.storage_frames);
+    machine->head[2].logical_age = ts_sister_positive_modulo(
+        machine->head[2].offset.current, machine->buffer.capacity_frames);
+    machine->head[2].phase = phase_for_age(
+        machine, machine->head[2].logical_age);
     machine->head[2].previous_offset = machine->head[2].offset.current;
     machine->clear_state = TS_SISTER_CLEAR_FADE_IN;
     ramp_reset(&machine->clear_gain, 0.0f);
@@ -1558,6 +1560,33 @@ static void publish_snapshot(TsSisterMachine *machine)
     atomic_store_explicit(&snapshot->revision, sequence + 1u, memory_order_release);
 }
 
+static void publish_frame_snapshot(TsSisterMachine *machine)
+{
+    if (machine == NULL || machine->buffer.data == NULL) return;
+    if (machine->snapshot_batch_depth != 0u) {
+        machine->snapshot_pending = 1;
+        return;
+    }
+    publish_snapshot(machine);
+}
+
+void ts_sister_machine_begin_audio_block(TsSisterMachine *machine)
+{
+    if (machine == NULL) return;
+    if (machine->snapshot_batch_depth != UINT32_MAX)
+        ++machine->snapshot_batch_depth;
+}
+
+void ts_sister_machine_end_audio_block(TsSisterMachine *machine)
+{
+    if (machine == NULL || machine->snapshot_batch_depth == 0u) return;
+    --machine->snapshot_batch_depth;
+    if (machine->snapshot_batch_depth == 0u && machine->snapshot_pending) {
+        machine->snapshot_pending = 0;
+        if (machine->buffer.data != NULL) publish_snapshot(machine);
+    }
+}
+
 int ts_sister_machine_get_snapshot(const TsSisterMachine *machine,
                                    TsSisterSnapshot *result)
 {
@@ -1638,6 +1667,8 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     size_t write_position;
     size_t physical_write_position;
     double delay_position;
+    double head2_age;
+    double head3_age;
     double head2_position;
     double head3_position;
     double current_offset;
@@ -1659,6 +1690,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     float duck_sensitivity;
     float stereo_width;
     float headroom;
+    float fx_return;
     float peak;
     memset(&output, 0, sizeof(output));
     if (machine == NULL || machine->buffer.data == NULL ||
@@ -1688,6 +1720,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     duck_sensitivity = ramp_advance(&machine->duck_sensitivity);
     stereo_width = ramp_advance(&machine->width);
     headroom = ramp_advance(&machine->headroom);
+    fx_return = ramp_advance(&machine->fx_return_gain);
     input = frame_scale(input, input_gain);
     duck_sidechain = frame_scale(duck_sidechain, input_gain);
     output.input = input;
@@ -1737,21 +1770,17 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
 
     current_offset = ramp_advance(&machine->head[1].offset);
     offset_delta = current_offset - machine->head[1].previous_offset;
-    machine->head[1].phase = wrap_storage_position(
-        machine->head[1].phase - offset_delta, machine->buffer.storage_frames);
+    head2_age = machine->head[1].logical_age + offset_delta;
     machine->head[1].previous_offset = current_offset;
     current_offset = ramp_advance(&machine->head[2].offset);
     offset_delta = current_offset - machine->head[2].previous_offset;
-    machine->head[2].phase = wrap_storage_position(
-        machine->head[2].phase - offset_delta, machine->buffer.storage_frames);
+    head3_age = machine->head[2].logical_age + offset_delta;
     machine->head[2].previous_offset = current_offset;
 
     wow_seconds = update_wow(machine, wow_amount);
     wow_frames = wow_seconds * (float)machine->buffer.sample_rate;
-    head2_position = head_signed_age(machine, machine->head[1].phase) -
-                     wow_frames;
-    head3_position = head_signed_age(machine, machine->head[2].phase) -
-                     wow_frames;
+    head2_position = head2_age - wow_frames;
+    head3_position = head3_age - wow_frames;
     raw[1] = read_with_write_guard(machine, &machine->head[1],
                                    head2_position);
     raw[2] = read_with_write_guard(machine, &machine->head[2],
@@ -1762,6 +1791,10 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
         machine->buffer.capacity_frames);
     machine->last_head_position[1] = phase_for_age(machine, head2_position);
     machine->last_head_position[2] = phase_for_age(machine, head3_position);
+    machine->head[1].logical_age = ts_sister_positive_modulo(
+        head2_age, machine->buffer.capacity_frames);
+    machine->head[2].logical_age = ts_sister_positive_modulo(
+        head3_age, machine->buffer.capacity_frames);
 
     /* Head-target effects own independent histories. The insertion is after
        the completed interpolated read and before both the established raw
@@ -1770,9 +1803,12 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
         raw[head] = ts_sister_weave_process(
             &machine->soak_weave[head], raw[head],
             machine->buffer.channels == 1u);
-    for (size_t head = 0u; head < TS_SISTER_HEAD_COUNT; ++head)
-        raw[head] = ts_sister_post_fx_process(
-            post_fx, head, raw[head], machine->buffer.channels == 1u);
+    for (size_t head = 0u; head < TS_SISTER_HEAD_COUNT; ++head) {
+        TsStereoFrame dry = raw[head];
+        TsStereoFrame processed = ts_sister_post_fx_process(
+            post_fx, head, dry, machine->buffer.channels == 1u);
+        raw[head] = frame_effect_return(dry, processed, fx_return);
+    }
 
     drop2 = update_drop(machine, &machine->drop[0], drop_amount);
     drop3 = update_drop(machine, &machine->drop[1], drop_amount);
@@ -1846,31 +1882,32 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     sum = ts_sister_weave_process(
         &machine->soak_weave[TS_SISTER_HEAD_COUNT], sum,
         machine->buffer.channels == 1u);
-    sum = ts_sister_post_fx_process(post_fx, TS_SISTER_HEAD_COUNT, sum,
-                                    machine->buffer.channels == 1u);
+    {
+        TsStereoFrame dry = sum;
+        TsStereoFrame processed = ts_sister_post_fx_process(
+            post_fx, TS_SISTER_HEAD_COUNT, dry,
+            machine->buffer.channels == 1u);
+        sum = frame_effect_return(dry, processed, fx_return);
+    }
     output.head[0] = frame_scale(output.head[0], clear_gain);
     output.head[1] = frame_scale(output.head[1], clear_gain);
     output.head[2] = frame_scale(output.head[2], clear_gain);
     output.post_fx = frame_scale(sum, clear_gain);
-    output.post_fx = frame_scale(output.post_fx,
-                                 ramp_advance(&machine->fx_return_gain));
     output.mix = final_safety(machine, output.post_fx);
 
-    machine->head[1].phase = wrap_storage_position(
-        machine->head[1].phase +
-        ts_sister_rate_value(machine->parameters.head2_rate_index),
-        machine->buffer.storage_frames);
-    machine->head[2].phase = wrap_storage_position(
-        machine->head[2].phase +
-        ts_sister_rate_value(machine->parameters.head3_rate_index),
-        machine->buffer.storage_frames);
     ++machine->master_clock;
-    /* Keep free-running heads inside the logical age window while retaining
-       their fractional phase, rate, and direction. */
+    /* The logical age is authoritative. The physical phase is derived only
+       after advancing the write clock, so fixed-store rebasing cannot change
+       a free head's position within the active musical buffer. */
     for (size_t i = 1u; i < TS_SISTER_HEAD_COUNT; ++i) {
-        double age = head_signed_age(machine, machine->head[i].phase);
-        age = guard_read_age(age, machine->buffer.capacity_frames);
-        machine->head[i].phase = phase_for_age(machine, age);
+        int rate_index = i == 1u ? machine->parameters.head2_rate_index :
+                                  machine->parameters.head3_rate_index;
+        machine->head[i].logical_age = ts_sister_positive_modulo(
+            machine->head[i].logical_age + 1.0 -
+            ts_sister_rate_value(rate_index),
+            machine->buffer.capacity_frames);
+        machine->head[i].phase = phase_for_age(
+            machine, machine->head[i].logical_age);
     }
     machine->last_output = output;
     if (result != NULL) *result = output;
@@ -1884,7 +1921,7 @@ TsSisterOutput ts_sister_machine_process_frame(TsSisterMachine *machine,
     TsSisterOutput result;
     process_internal(machine, input, duck_sidechain, NULL,
                      (TsStereoFrame){0.0f, 0.0f}, &result);
-    if (machine != NULL && machine->buffer.data != NULL) publish_snapshot(machine);
+    publish_frame_snapshot(machine);
     return result;
 }
 
@@ -1896,7 +1933,7 @@ TsSisterOutput ts_sister_machine_process_frame_with_fx(
     TsSisterOutput result;
     process_internal(machine, input, duck_sidechain, post_fx,
                      causal_fx_return, &result);
-    if (machine != NULL && machine->buffer.data != NULL) publish_snapshot(machine);
+    publish_frame_snapshot(machine);
     return result;
 }
 

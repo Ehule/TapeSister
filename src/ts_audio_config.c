@@ -22,6 +22,11 @@ static char *trim(char *text)
     return text;
 }
 
+int ts_audio_buffer_frames_valid(int frames)
+{
+    return frames == 256 || frames == 512 || frames == 1024;
+}
+
 static int load_device_settings(TsConfig *config, const char *path,
                                 char *error, size_t error_size)
 {
@@ -48,6 +53,19 @@ static int load_device_settings(TsConfig *config, const char *path,
         *equals = '\0';
         value = trim(equals + 1);
         key = trim(key);
+        if (strcmp(key, "audio_buffer_frames") == 0) {
+            char *end;
+            long frames = strtol(value, &end, 10);
+            if (end == value || *end != '\0' ||
+                !ts_audio_buffer_frames_valid((int)frames)) {
+                fclose(file);
+                set_error(error, error_size,
+                          "Configured audio buffer must be 256, 512, or 1024 frames");
+                return 0;
+            }
+            config->audio_buffer_frames = (int)frames;
+            continue;
+        }
         if (strcmp(key, "midi_input_channel") == 0) {
             char *end;
             long channel = strtol(value, &end, 10);
@@ -118,12 +136,15 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
                 "\n[Audio]\n"
                 "; Blank uses the operating system default stereo playback device.\n"
                 "audio_output_device=%s\n"
+                "; Shared playback/capture callback size: 256, 512, or 1024 frames.\n"
+                "audio_buffer_frames=%d\n"
                 "\n[MIDI]\n"
                 "; Blank automatically opens the first input; OFF disables MIDI.\n"
                 "midi_input_device=%s\n"
                 "; 0 listens on all channels; 1-16 selects one channel.\n"
                 "midi_input_channel=%d\n",
-                config->audio_output_device, config->midi_input_device,
+                config->audio_output_device, config->audio_buffer_frames,
+                config->midi_input_device,
                 config->midi_input_channel) < 0) {
         fclose(file);
         set_error(error, error_size, "Could not write audio config");

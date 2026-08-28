@@ -161,10 +161,18 @@ static void test_reverb_types_and_distortion(void)
 static void test_targets_mono_and_ordinary(void)
 {
     TsSisterRuntime runtime;
+    TsSisterRuntime full_runtime;
+    TsSisterRuntime half_runtime;
     TsSisterFxControls controls;
     char error[128];
     ts_sister_runtime_init(&runtime);
+    ts_sister_runtime_init(&full_runtime);
+    ts_sister_runtime_init(&half_runtime);
     assert(ts_sister_runtime_reconfigure(&runtime, 48000u, 2u,
+                                         error, sizeof(error)));
+    assert(ts_sister_runtime_reconfigure(&full_runtime, 48000u, 2u,
+                                         error, sizeof(error)));
+    assert(ts_sister_runtime_reconfigure(&half_runtime, 48000u, 2u,
                                          error, sizeof(error)));
     assert(!runtime.enabled);
     assert(!runtime.machine.buffer.data);
@@ -173,20 +181,32 @@ static void test_targets_mono_and_ordinary(void)
         &runtime, (TsStereoFrame){0.25f, -0.5f}).l == 0.25f);
     {
         TsSisterParameters parameters = runtime.parameters;
+        TsStereoFrame full = {0.0f, 0.0f};
+        TsStereoFrame half = {0.0f, 0.0f};
         TsStereoFrame output = {0.0f, 0.0f};
-        parameters.fx_return_gain = 0.5f;
-        ts_sister_runtime_set_parameters(&runtime, &parameters);
-        for (int i = 0; i < 1000; ++i)
-            output = ts_sister_runtime_process_ordinary_post_fx(
-                &runtime, (TsStereoFrame){0.25f, -0.5f});
-        assert(fabsf(output.l - 0.125f) < 1.0e-6f);
-        assert(fabsf(output.r + 0.25f) < 1.0e-6f);
+        parameters.fx.distortion_drive = 0.9f;
+        parameters.fx.distortion_tone = 0.5f;
+        parameters.fx.distortion_mix = 1.0f;
+        parameters.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
         parameters.fx_return_gain = 0.0f;
         ts_sister_runtime_set_parameters(&runtime, &parameters);
-        for (int i = 0; i < 1000; ++i)
+        parameters.fx_return_gain = 1.0f;
+        ts_sister_runtime_set_parameters(&full_runtime, &parameters);
+        parameters.fx_return_gain = 0.5f;
+        ts_sister_runtime_set_parameters(&half_runtime, &parameters);
+        for (int i = 0; i < 4000; ++i) {
             output = ts_sister_runtime_process_ordinary_post_fx(
                 &runtime, (TsStereoFrame){0.25f, -0.5f});
-        assert(output.l == 0.0f && output.r == 0.0f);
+            full = ts_sister_runtime_process_ordinary_post_fx(
+                &full_runtime, (TsStereoFrame){0.25f, -0.5f});
+            half = ts_sister_runtime_process_ordinary_post_fx(
+                &half_runtime, (TsStereoFrame){0.25f, -0.5f});
+        }
+        assert(output.l == 0.25f && output.r == -0.5f);
+        assert(fabsf(full.l - 0.25f) > 0.01f ||
+               fabsf(full.r + 0.5f) > 0.01f);
+        assert(fabsf(half.l - (0.25f + (full.l - 0.25f) * 0.5f)) < 0.001f);
+        assert(fabsf(half.r - (-0.5f + (full.r + 0.5f) * 0.5f)) < 0.001f);
     }
     controls = runtime.parameters.fx;
     controls.delay_targets = ts_sister_effect_targets_toggle(
@@ -205,6 +225,8 @@ static void test_targets_mono_and_ordinary(void)
         assert(mono.l == 0.3f && mono.r == 0.3f);
     }
     ts_sister_runtime_free(&runtime);
+    ts_sister_runtime_free(&full_runtime);
+    ts_sister_runtime_free(&half_runtime);
 }
 
 static void test_exclusive_target_handoff(void)
