@@ -15,6 +15,7 @@
 #define FALLOUT_LFO_MAX_HZ 10.0f
 #define FALLOUT_RISE_MIN_SECONDS 1.0f
 #define FALLOUT_RISE_MAX_SECONDS 14400.0f
+#define FALLOUT_RISE_DECLICK_MS 10.0f
 
 static float clampf(float v, float lo, float hi)
 {
@@ -159,6 +160,14 @@ static float advance(float *current, float target, float step,
     return *current;
 }
 
+static float slew_toward(float current, float target, float maximum_step)
+{
+    float difference = target - current;
+    if (difference > maximum_step) return current + maximum_step;
+    if (difference < -maximum_step) return current - maximum_step;
+    return target;
+}
+
 void ts_sister_fallout_controls_default(TsSisterFalloutControls *controls)
 {
     if (controls == NULL) return;
@@ -258,6 +267,7 @@ void ts_sister_fallout_clear(TsSisterFalloutEngine *engine)
     engine->lfo_value = 0.0f;
     engine->rise_phase = 0.0;
     engine->rise_value = 0.0f;
+    engine->rise_smoothed = 0.0f;
     engine->rise_one_shot_complete = 0;
     engine->feedback_modulated = engine->controls.feedback;
     engine->prng = seed;
@@ -446,6 +456,7 @@ static TsSisterFalloutControls modulated_controls(
     TsSisterFalloutControls out = engine->controls;
     float value = sinf((float)(engine->lfo_phase * 2.0 * M_PI));
     float rise = 0.0f;
+    float rise_step;
     double increment = (double)ts_sister_fallout_lfo_hz(out.lfo_rate) /
                        (double)engine->sample_rate;
     double rise_increment = 1.0 /
@@ -466,9 +477,16 @@ static TsSisterFalloutControls modulated_controls(
         }
     }
     engine->rise_value = rise;
+    /* The mathematical saw/one-shot edge remains instantaneous for timing and
+       display, but modulation targets cross it over 10 ms. This prevents MIX,
+       FEEDBACK, and NOISE discontinuities from becoming audible clicks while
+       remaining imperceptible beside even the shortest one-second RISE. */
+    rise_step = 1000.0f /
+        (FALLOUT_RISE_DECLICK_MS * (float)engine->sample_rate);
+    engine->rise_smoothed = slew_toward(engine->rise_smoothed, rise, rise_step);
 #define MODULATE(member, target) \
     out.member = modulation_target(engine->controls.member, &out, target, \
-                                   value, rise)
+                                   value, engine->rise_smoothed)
     MODULATE(mix, TS_SISTER_FALLOUT_LFO_MIX);
     MODULATE(feedback, TS_SISTER_FALLOUT_LFO_FEEDBACK);
     MODULATE(noise, TS_SISTER_FALLOUT_LFO_NOISE);

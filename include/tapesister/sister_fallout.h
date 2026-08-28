@@ -122,6 +122,7 @@ typedef struct {
     float lfo_value;
     double rise_phase;
     float rise_value;
+    float rise_smoothed;
     float feedback_modulated;
     int rise_one_shot_complete;
     TsSisterFalloutControls controls;

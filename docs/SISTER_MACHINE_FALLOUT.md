@@ -64,6 +64,10 @@ performance can always return precisely to its authored state.
 The main page shows compact live position traces for both modulators. RISE uses a
 saw-line and marker, including its terminal drop; LFO uses a simple phase line. These
 indicators report the shared modulators without moving the authored parameter faders.
+At the end of either SAW or 1-SHOT, the displayed phase still drops immediately while
+the modulation signal crosses the reset through a fixed 10 ms de-click ramp. Manual
+retriggers use the same protection, preventing abrupt MIX or FEEDBACK changes from
+becoming audible clicks without perceptibly changing the rise timing.
 
 DROP, PAN, SKIP, BIT, and PITCH are strict master gates. A disabled process ignores
 remembered LFO and RISE assignments. PITCH OFF returns playback to unity through a
