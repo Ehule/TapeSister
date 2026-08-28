@@ -385,6 +385,8 @@ typedef struct {
     int exit_has_unsaved;
     int exit_choice;
     int exit_after_save;
+    int project_overwrite_confirm_open;
+    char project_path[TS_BROWSER_PATH_MAX];
     uint64_t saved_state_hash;
     int config_open;
     int palette_open;

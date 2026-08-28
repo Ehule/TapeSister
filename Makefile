@@ -56,8 +56,11 @@ screenshot-sister-spirit: tapesister_sister_spirit_demo tapesister_render_demo
 	./tapesister_render_demo artifacts/sister-portal-normal.ppm portal
 	./tapesister_render_demo artifacts/sister-portal-hover.ppm portal-hover
 	./tapesister_render_demo artifacts/sister-portal-pressed.ppm portal-pressed
+	./tapesister_render_demo artifacts/project-save-confirm.ppm save-confirm
+	./tapesister_render_demo artifacts/project-saving.ppm saving
 	./tapesister_sister_spirit_demo off artifacts/sister-spirit-off.ppm
 	./tapesister_sister_spirit_demo flash artifacts/sister-spirit-flash.ppm
+	./tapesister_sister_spirit_demo capture artifacts/sister-capture-progress.ppm
 
 test: test_sister_resize
 

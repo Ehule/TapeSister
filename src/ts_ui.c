@@ -2239,7 +2239,8 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
 int ts_ui_foreground_panel_open(const TsUiState *ui)
 {
     if (ui == NULL) return 0;
-    return ui->exit_confirm_open || ui->overdub_confirm_open || ui->fm_open ||
+    return ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+           ui->overdub_confirm_open || ui->fm_open ||
            ui->transform_open || ui->drone_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
            ui->load_selection_choice_open || ui->palette_open ||
@@ -2295,8 +2296,6 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, 152, 3, 2, 27, PAL_VOLUME);
         text(fb, 160, 13, "REC", PAL_VOLUME, 1);
     }
-    bevel_frame(fb, 190, 7, 48, 18, RGB(24, 24, 24), PAL_EFFECT,
-                RGB(7, 7, 7));
     text(fb, 196, 13, TAPESISTER_BUILD_MARKER, PAL_EFFECT, 1);
     {
         uint8_t channels = ui->input_available_channels <=
@@ -3041,6 +3040,23 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         }
         text(fb, 172, 230, "TAB/ARROWS CHOOSE  ENTER CONFIRMS  ESC CANCELS",
              RGB(190, 185, 190), 1);
+    } else if (ui->project_overwrite_confirm_open) {
+        const char *name = ui->project_path;
+        char shown_name[49];
+        const char *slash = strrchr(name, '/');
+        const char *backslash = strrchr(name, '\\');
+        if (backslash != NULL && (slash == NULL || backslash > slash))
+            slash = backslash;
+        if (slash != NULL) name = slash + 1;
+        snprintf(shown_name, sizeof(shown_name), "%.48s", name);
+        frame(fb, 146, 122, 348, 132, RGB(36, 33, 37), PAL_MOUSE);
+        text(fb, 166, 137, "OVERWRITE ACTIVE PROJECT?", PAL_NOTE, 1);
+        text(fb, 166, 158, shown_name, PAL_EFFECT, 1);
+        text(fb, 166, 176, "THIS REPLACES THE CURRENT TSR FILE", PAL_VOLUME, 1);
+        button(fb, 166, 200, 136, "OVERWRITE", 1);
+        button(fb, 318, 200, 156, "CANCEL", 0);
+        text(fb, 166, 238, "ENTER/Y/CTRL+S CONFIRM   ESC/N CANCEL",
+             RGB(190, 185, 190), 1);
     } else if (ui->overdub_confirm_open) {
         char target[80];
         frame(fb, 146, 122, 348, 132, RGB(36, 33, 37), PAL_MOUSE);
@@ -3166,16 +3182,26 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, 0, 32, progress, 4, PAL_VOLUME);
     }
     if (ui->overlay[0] != '\0') {
-        int scale = strlen(ui->overlay) <= 46u ? 2 : 1;
-        int width = (int)strlen(ui->overlay) * 6 * scale;
-        int x = (TS_UI_WIDTH - width) / 2;
-        frame(fb, 24, 126, 592, 76, RGB(12, 12, 12), PAL_VOLUME);
-        if (x < 34) x = 34;
-        text(fb, x, 153, ui->overlay, PAL_VOLUME, scale);
+        if (strcmp(ui->overlay, "SAVING") == 0) {
+            frame(fb, 210, 146, 220, 84, RGB(12, 12, 12), PAL_VOLUME);
+            text(fb, 272, 181, "SAVING", PAL_VOLUME, 2);
+        } else {
+            int scale = strlen(ui->overlay) <= 46u ? 2 : 1;
+            int width = (int)strlen(ui->overlay) * 6 * scale;
+            int x = (TS_UI_WIDTH - width) / 2;
+            frame(fb, 24, 126, 592, 76, RGB(12, 12, 12), PAL_VOLUME);
+            if (x < 34) x = 34;
+            text(fb, x, 153, ui->overlay, PAL_VOLUME, scale);
+        }
     }
     if (ui->file_busy) {
         char busy[64];
         int dots = ui->file_busy_phase % 4 + 1;
+        if (strcmp(ui->file_busy_label, "SAVING") == 0) {
+            frame(fb, 210, 146, 220, 84, RGB(12, 12, 12), PAL_VOLUME);
+            text(fb, 272, 181, "SAVING", PAL_VOLUME, 2);
+            return;
+        }
         snprintf(busy, sizeof(busy), "%s%.*s",
                  ui->file_busy_label[0] != '\0' ? ui->file_busy_label : "WORKING",
                  dots, "....");
@@ -3802,6 +3828,16 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     if (!model->routing.enabled ||
         model->power_visual != TS_SISTER_UI_POWER_VISUAL_NONE)
         sister_spirit_render(fb, model);
+    if (model->routing.capture_state == TS_CAPTURE_RECORDING) {
+        uint64_t capacity = model->routing.capture_capacity_frames;
+        uint64_t recorded = model->routing.capture_recorded_frames;
+        int progress = capacity > 0u ?
+            (int)((double)recorded * 620.0 / (double)capacity) : 0;
+        if (progress < 0) progress = 0;
+        if (progress > 620) progress = 620;
+        rect(fb, 10, 40, 620, 3, RGB(30, 8, 8));
+        rect(fb, 10, 40, progress, 3, PAL_VOLUME);
+    }
 
     button(fb, 10, 172, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
     button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);

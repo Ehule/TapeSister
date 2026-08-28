@@ -3404,6 +3404,7 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     unlock_edit(device, audio, ui, instrument);
     if (ok) ts_ui_reset_parent_view(ui, instrument->parent.frames);
     if (ok && recipe) {
+        snprintf(ui->project_path, sizeof(ui->project_path), "%s", path);
         snprintf(ui->status, sizeof(ui->status), "OPENED TSR PROJECT %.112s",
                  instrument->parent.name);
     } else if (ok) {
@@ -5987,7 +5988,8 @@ static const char *path_basename(const char *path)
 
 static int ui_blocking_dialog_open_except_fm(const TsUiState *ui)
 {
-    return ui->exit_confirm_open || ui->overdub_confirm_open ||
+    return ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+           ui->overdub_confirm_open ||
            ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->load_selection_choice_open || ui->palette_open || ui->config_open ||
            ui->renaming_bank_slot >= 0 || ui->renaming_recipe_slot >= 0 ||
@@ -6361,6 +6363,38 @@ typedef struct {
     int presented;
 } PendingFileOperation;
 
+static void queue_active_project_save(TsUiState *ui,
+                                      PendingFileOperation *pending)
+{
+    if (ui == NULL || pending == NULL || pending->active || ui->file_busy ||
+        ui->project_path[0] == '\0') return;
+    pending->mode = TS_BROWSER_SAVE_RECIPE;
+    snprintf(pending->path, sizeof(pending->path), "%s", ui->project_path);
+    snprintf(pending->filename, sizeof(pending->filename), "%s",
+             path_basename(ui->project_path));
+    pending->selection_load = 0;
+    pending->active = 1;
+    pending->presented = 0;
+    ui->project_overwrite_confirm_open = 0;
+    ui->file_busy = 1;
+    ui->file_busy_phase = 0;
+    snprintf(ui->file_busy_label, sizeof(ui->file_busy_label), "SAVING");
+    snprintf(ui->status, sizeof(ui->status), "SAVING %.124s",
+             path_basename(ui->project_path));
+}
+
+static void begin_active_project_save(TsUiState *ui)
+{
+    if (ui == NULL || ui->file_busy) return;
+    if (ui->project_path[0] == '\0') {
+        browser_open(ui, TS_BROWSER_SAVE_RECIPE);
+        return;
+    }
+    ui->project_overwrite_confirm_open = 1;
+    snprintf(ui->status, sizeof(ui->status),
+             "CONFIRM OVERWRITE OF ACTIVE TSR PROJECT");
+}
+
 static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                            TsInstrument *instrument, TsSample *pending_selection_load,
                            TsSamplePages *sample_pages,
@@ -6554,6 +6588,11 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
     ui->file_busy = 0;
     ui->file_busy_label[0] = '\0';
     if (ok) {
+        if (pending->mode == TS_BROWSER_SAVE_RECIPE) {
+            snprintf(ui->project_path, sizeof(ui->project_path), "%s",
+                     pending->path);
+            show_overlay(ui, "SAVING", 550u);
+        }
         SDL_StopTextInput();
         ts_browser_close(browser);
         if (pending->mode == TS_BROWSER_SAVE_RECIPE &&
@@ -9193,6 +9232,7 @@ int main(int argc, char **argv)
             }
             if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode global_key = event.key.keysym.sym;
+                SDL_Keymod global_mod = SDL_GetModState();
                 int modal_key_owner = ui_blocking_dialog_open_except_fm(&ui) ||
                     ui.fm_bank_choice_open || ui.fm_full_choice_open ||
                     sister_window.model.preset_manage_open;
@@ -9216,6 +9256,12 @@ int main(int argc, char **argv)
                     else
                         begin_fm_workspace(device, &audio, &ui, &instrument,
                                            &fm_preview);
+                    application_window_focus(window);
+                    continue;
+                }
+                if (global_key == SDLK_s && (global_mod & KMOD_CTRL) != 0 &&
+                    !modal_key_owner) {
+                    begin_active_project_save(&ui);
                     application_window_focus(window);
                     continue;
                 }
@@ -9516,7 +9562,8 @@ int main(int argc, char **argv)
                       ui.fm_open ||
                       ui.transform_open ||
                       ui.drone_open ||
-                      ui.exit_confirm_open || ui.overdub_confirm_open ||
+                      ui.exit_confirm_open || ui.project_overwrite_confirm_open ||
+                      ui.overdub_confirm_open ||
                       ui.browser.mode != TS_BROWSER_CLOSED)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
@@ -9528,21 +9575,25 @@ int main(int argc, char **argv)
                                 record_bank_active, event.drop.file);
                 SDL_free(event.drop.file);
             } else if (event.type == SDL_TEXTINPUT && ui.config_open &&
-                       !ui.exit_confirm_open) {
+                       !ui.exit_confirm_open &&
+                       !ui.project_overwrite_confirm_open) {
                 char *field = ts_config_field(&ui.config, ui.config_field);
                 if (field != NULL)
                     text_insert_ascii(field, TS_CONFIG_PATH_MAX,
                                       &ui.config_cursor, event.text.text);
             } else if (event.type == SDL_TEXTINPUT && ui.renaming_bank_slot >= 0 &&
-                       !ui.exit_confirm_open) {
+                       !ui.exit_confirm_open &&
+                       !ui.project_overwrite_confirm_open) {
                 text_insert_ascii(ui.bank_rename, sizeof(ui.bank_rename),
                                   &ui.bank_rename_cursor, event.text.text);
             } else if (event.type == SDL_TEXTINPUT && ui.renaming_recipe_slot >= 0 &&
-                       !ui.exit_confirm_open) {
+                       !ui.exit_confirm_open &&
+                       !ui.project_overwrite_confirm_open) {
                 text_insert_ascii(ui.recipe_rename, sizeof(ui.recipe_rename),
                                   &ui.recipe_rename_cursor, event.text.text);
             } else if (event.type == SDL_TEXTINPUT &&
-                       ui.browser.mode != TS_BROWSER_CLOSED && !ui.exit_confirm_open) {
+                       ui.browser.mode != TS_BROWSER_CLOSED && !ui.exit_confirm_open &&
+                       !ui.project_overwrite_confirm_open) {
                 if (ui.browser.filename_focus &&
                     ts_browser_edits_text(&ui.browser))
                     ts_browser_append_filename(&ui.browser, event.text.text);
@@ -9674,6 +9725,16 @@ int main(int argc, char **argv)
                         ui.exit_choice = (ui.exit_choice + amount + count) % count;
                     } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
                         if (exit_confirmation_activate(&ui)) running = 0;
+                    }
+                } else if (ui.project_overwrite_confirm_open) {
+                    if (key == SDLK_ESCAPE || key == SDLK_n) {
+                        ui.project_overwrite_confirm_open = 0;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "PROJECT SAVE CANCELLED");
+                    } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
+                               key == SDLK_y ||
+                               (key == SDLK_s && (mod & KMOD_CTRL) != 0)) {
+                        queue_active_project_save(&ui, &pending_file);
                     }
                 } else if (ui.overdub_confirm_open) {
                     if (key == SDLK_ESCAPE || key == SDLK_n) {
@@ -10081,9 +10142,6 @@ int main(int argc, char **argv)
                 } else if ((mod & KMOD_CTRL) && key == SDLK_o) {
                     ui.load_bank_slot = instrument.selected_slot;
                     browser_open(&ui, TS_BROWSER_LOAD_WAV);
-                } else if ((mod & KMOD_CTRL) && key == SDLK_s) {
-                    browser_open(&ui, ui.show_ingredients ?
-                                 TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_e) {
                     begin_export_choice(&ui);
                 } else if ((mod & KMOD_CTRL) && key == SDLK_z) {
@@ -10348,6 +10406,7 @@ int main(int argc, char **argv)
                        !ui.transform_open &&
                        !ui.drone_open &&
                        !ui.exit_confirm_open &&
+                       !ui.project_overwrite_confirm_open &&
                        ui.browser.mode == TS_BROWSER_CLOSED &&
                        note_for_key(event.key.keysym.sym) >= 0) {
                 release_note(device, &audio, &ui, note_for_key(event.key.keysym.sym));
@@ -10572,7 +10631,8 @@ int main(int argc, char **argv)
                         ui.load_selection_choice_open ||
                         ui.fm_open ||
                         ui.transform_open ||
-                        ui.exit_confirm_open)) {
+                        ui.exit_confirm_open ||
+                        ui.project_overwrite_confirm_open)) {
                 snprintf(ui.status, sizeof(ui.status),
                          "FINISH OR CANCEL THE OPEN DIALOG FIRST");
             } else if (event.type == SDL_MOUSEWHEEL && ui.browser.mode != TS_BROWSER_CLOSED) {
@@ -10851,7 +10911,8 @@ int main(int argc, char **argv)
                         ui.fm_open ||
                         ui.transform_open ||
                         ui.drone_open ||
-                        ui.exit_confirm_open)) {
+                        ui.exit_confirm_open ||
+                        ui.project_overwrite_confirm_open)) {
                 /* Modal dialogs own pointer input. */
             } else if (event.type == SDL_MOUSEMOTION && ui.browser.dragging_scrollbar) {
                 int x, y;
@@ -10990,7 +11051,8 @@ int main(int argc, char **argv)
                               ts_ui_recipe_slot_from_point(x, y) : -1;
                 cdp_slot = ui.show_recipes ? ts_ui_cdp_slot_from_point(x, y) : -1;
                 ui.bank_clear_armed = 0;
-                if (ui.exit_confirm_open || ui.renaming_bank_slot >= 0 ||
+                if (ui.exit_confirm_open || ui.project_overwrite_confirm_open ||
+                    ui.renaming_bank_slot >= 0 ||
                     ui.renaming_recipe_slot >= 0 || ui.export_choice_open ||
                     ui.exchange_dialog != TS_UI_EXCHANGE_NONE) {
                     snprintf(ui.status, sizeof(ui.status),
@@ -11053,6 +11115,14 @@ int main(int argc, char **argv)
                         else if (x >= 324 && x < 468) ui.exit_choice = 1;
                         else continue;
                         if (exit_confirmation_activate(&ui)) running = 0;
+                    }
+                } else if (ui.project_overwrite_confirm_open) {
+                    if (x >= 166 && x < 302 && y >= 200 && y < 223)
+                        queue_active_project_save(&ui, &pending_file);
+                    else if (x >= 318 && x < 474 && y >= 200 && y < 223) {
+                        ui.project_overwrite_confirm_open = 0;
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "PROJECT SAVE CANCELLED");
                     }
                 } else if (ui.overdub_confirm_open) {
                     if (x >= 166 && x < 302 && y >= 200 && y < 223)
@@ -12330,6 +12400,9 @@ int main(int argc, char **argv)
                 } else if (ui.exit_confirm_open) {
                     snprintf(ui.status, sizeof(ui.status),
                              "CHOOSE EXIT OR CANCEL - ESC CANCELS");
+                } else if (ui.project_overwrite_confirm_open) {
+                    snprintf(ui.status, sizeof(ui.status),
+                             "CONFIRM PROJECT OVERWRITE OR CANCEL");
                 } else if (ui.renaming_bank_slot >= 0) {
                     snprintf(ui.status, sizeof(ui.status),
                              "FINISH BANK NAME WITH ENTER OR CANCEL WITH ESC");

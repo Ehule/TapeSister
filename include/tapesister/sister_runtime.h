@@ -82,6 +82,8 @@ typedef struct {
     TsSisterTap selected_tap;
     TsCaptureState capture_state;
     int capture_destination;
+    uint64_t capture_recorded_frames;
+    uint64_t capture_capacity_frames;
     TsSisterDestinationStatus destination_status;
     float source_input_peak;
     float tap_peak[TS_SISTER_TAP_COUNT];
@@ -105,6 +107,8 @@ typedef struct {
     atomic_int selected_tap;
     atomic_int capture_state;
     atomic_int capture_destination;
+    atomic_uint_least64_t capture_recorded_frames;
+    atomic_uint_least64_t capture_capacity_frames;
     atomic_int destination_status;
     atomic_uint_least32_t source_input_peak_bits;
     atomic_uint_least32_t tap_peak_bits[TS_SISTER_TAP_COUNT];

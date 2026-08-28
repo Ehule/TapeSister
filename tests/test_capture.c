@@ -602,8 +602,8 @@ static void test_capture_feedback_rendering(void)
     ts_ui_render(&recording, &ui, &instrument);
     ui.file_busy = 0;
     ts_ui_render(&staged, &ui, &instrument);
-    CHECK(recording.pixels[142 * TS_UI_WIDTH + 154] !=
-          staged.pixels[142 * TS_UI_WIDTH + 154]);
+    CHECK(recording.pixels[146 * TS_UI_WIDTH + 210] !=
+          staged.pixels[146 * TS_UI_WIDTH + 210]);
 
     ui.external_record_bank = 1;
     ui.input_meter_active = 1;
