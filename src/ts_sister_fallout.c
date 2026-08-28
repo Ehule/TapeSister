@@ -9,11 +9,64 @@
 #endif
 
 #define FALLOUT_SECONDS 20u
+#define FALLOUT_TRANSITION_MIN_MS 10.0f
+#define FALLOUT_TRANSITION_MAX_MS 60000.0f
+#define FALLOUT_LFO_MIN_HZ (1.0f / 3600.0f)
+#define FALLOUT_LFO_MAX_HZ 10.0f
 
 static float clampf(float v, float lo, float hi)
 {
     if (!isfinite(v)) return lo;
     return v < lo ? lo : v > hi ? hi : v;
+}
+
+const char *ts_sister_fallout_noise_type_name(TsSisterFalloutNoiseType type)
+{
+    static const char *const names[TS_SISTER_FALLOUT_NOISE_COUNT] = {
+        "WHITE", "PINK", "BROWN", "BLUE"
+    };
+    return type >= 0 && type < TS_SISTER_FALLOUT_NOISE_COUNT ?
+        names[type] : names[TS_SISTER_FALLOUT_NOISE_WHITE];
+}
+
+float ts_sister_fallout_transition_ms(float normalized)
+{
+    return FALLOUT_TRANSITION_MIN_MS * powf(
+        FALLOUT_TRANSITION_MAX_MS / FALLOUT_TRANSITION_MIN_MS,
+        clampf(normalized, 0.0f, 1.0f));
+}
+
+float ts_sister_fallout_transition_normalized(float milliseconds)
+{
+    milliseconds = clampf(milliseconds, FALLOUT_TRANSITION_MIN_MS,
+                          FALLOUT_TRANSITION_MAX_MS);
+    return logf(milliseconds / FALLOUT_TRANSITION_MIN_MS) /
+           logf(FALLOUT_TRANSITION_MAX_MS / FALLOUT_TRANSITION_MIN_MS);
+}
+
+float ts_sister_fallout_lfo_hz(float normalized)
+{
+    return FALLOUT_LFO_MIN_HZ * powf(
+        FALLOUT_LFO_MAX_HZ / FALLOUT_LFO_MIN_HZ,
+        clampf(normalized, 0.0f, 1.0f));
+}
+
+float ts_sister_fallout_lfo_normalized(float hz)
+{
+    hz = clampf(hz, FALLOUT_LFO_MIN_HZ, FALLOUT_LFO_MAX_HZ);
+    return logf(hz / FALLOUT_LFO_MIN_HZ) /
+           logf(FALLOUT_LFO_MAX_HZ / FALLOUT_LFO_MIN_HZ);
+}
+
+float ts_sister_fallout_lfo_modulate(float center, float intensity,
+                                     float sine_value)
+{
+    float excursion;
+    center = clampf(center, 0.0f, 1.0f);
+    intensity = clampf(intensity, 0.0f, 1.0f);
+    sine_value = clampf(sine_value, -1.0f, 1.0f);
+    excursion = fminf(center, 1.0f - center) * intensity;
+    return clampf(center + sine_value * excursion, 0.0f, 1.0f);
 }
 
 static uint32_t random_u32(TsSisterFalloutEngine *engine)
@@ -76,6 +129,8 @@ void ts_sister_fallout_controls_default(TsSisterFalloutControls *controls)
     if (controls == NULL) return;
     memset(controls, 0, sizeof(*controls));
     controls->mix = 0.65f;
+    controls->noise_type = TS_SISTER_FALLOUT_NOISE_WHITE;
+    controls->transition = 0.0f;
     controls->drop_rate = 0.45f;
     controls->pan_rate = 0.50f;
     controls->skip_span = 0.35f;
@@ -86,6 +141,9 @@ void ts_sister_fallout_controls_default(TsSisterFalloutControls *controls)
     controls->pitch = 5.0f / 7.0f;
     controls->pitch_ramp = 0.20f;
     controls->pitch_rate = 0.55f;
+    controls->lfo_rate = ts_sister_fallout_lfo_normalized(0.01f);
+    controls->lfo_intensity = 0.20f;
+    controls->lfo_targets = 0u;
 }
 
 void ts_sister_fallout_controls_sanitize(TsSisterFalloutControls *controls)
@@ -95,6 +153,10 @@ void ts_sister_fallout_controls_sanitize(TsSisterFalloutControls *controls)
     controls->mix = clampf(controls->mix, 0.0f, 1.0f);
     controls->feedback = clampf(controls->feedback, 0.0f, 1.0f);
     controls->noise = clampf(controls->noise, 0.0f, 1.0f);
+    if (controls->noise_type < 0 ||
+        controls->noise_type >= TS_SISTER_FALLOUT_NOISE_COUNT)
+        controls->noise_type = TS_SISTER_FALLOUT_NOISE_WHITE;
+    controls->transition = clampf(controls->transition, 0.0f, 1.0f);
     controls->drop_enabled = controls->drop_enabled != 0;
     controls->drop_rate = clampf(controls->drop_rate, 0.0f, 1.0f);
     controls->pan_enabled = controls->pan_enabled != 0;
@@ -110,6 +172,9 @@ void ts_sister_fallout_controls_sanitize(TsSisterFalloutControls *controls)
     controls->pitch = clampf(controls->pitch, 0.0f, 1.0f);
     controls->pitch_ramp = clampf(controls->pitch_ramp, 0.0f, 1.0f);
     controls->pitch_rate = clampf(controls->pitch_rate, 0.0f, 1.0f);
+    controls->lfo_rate = clampf(controls->lfo_rate, 0.0f, 1.0f);
+    controls->lfo_intensity = clampf(controls->lfo_intensity, 0.0f, 1.0f);
+    controls->lfo_targets &= TS_SISTER_FALLOUT_LFO_ALL;
 }
 
 void ts_sister_fallout_clear(TsSisterFalloutEngine *engine)
@@ -141,8 +206,12 @@ void ts_sister_fallout_clear(TsSisterFalloutEngine *engine)
     engine->bit_quality_current = engine->controls.bit_quality > 0.0f ?
         engine->controls.bit_quality : 0.72f;
     engine->hold_remaining = 0u;
-    engine->noise_state[0] = engine->noise_state[1] = 0.0f;
-    engine->noise_cutoff = 700.0f;
+    memset(engine->pink_state, 0, sizeof(engine->pink_state));
+    engine->brown_state[0] = engine->brown_state[1] = 0.0f;
+    engine->previous_white[0] = engine->previous_white[1] = 0.0f;
+    engine->lfo_phase = 0.0;
+    engine->lfo_value = 0.0f;
+    engine->feedback_modulated = engine->controls.feedback;
     engine->prng = seed;
 }
 
@@ -202,7 +271,9 @@ void ts_sister_fallout_set_controls(
     if (engine == NULL || controls == NULL) return;
     next = *controls;
     ts_sister_fallout_controls_sanitize(&next);
-    fade = engine->sample_rate > 0u ? engine->sample_rate * 12u / 1000u : 1u;
+    fade = engine->sample_rate > 0u ? (uint32_t)fmaxf(1.0f,
+        ts_sister_fallout_transition_ms(next.transition) *
+        (float)engine->sample_rate / 1000.0f) : 1u;
     if (fade == 0u) fade = 1u;
     if (next.enabled && !engine->controls.enabled) {
         ts_sister_fallout_clear(engine);
@@ -237,7 +308,8 @@ static TsStereoFrame read_frame(const TsSisterFalloutEngine *engine,
     return ts_stereo_frame_sanitize(out);
 }
 
-static void choose_loop(TsSisterFalloutEngine *engine)
+static void choose_loop(TsSisterFalloutEngine *engine,
+                        const TsSisterFalloutControls *controls)
 {
     double earliest;
     double latest;
@@ -254,7 +326,7 @@ static void choose_loop(TsSisterFalloutEngine *engine)
     latest = (double)engine->write_clock - 2.0;
     maximum_length = fmin((double)engine->valid_frames - 2.0,
                           0.004 * engine->sample_rate +
-                          engine->controls.skip_span * 0.996 * engine->sample_rate);
+                          controls->skip_span * 0.996 * engine->sample_rate);
     length = fmax(2.0, maximum_length);
     if (latest - earliest > length)
         engine->loop_start = earliest + random_unit(engine) *
@@ -265,41 +337,125 @@ static void choose_loop(TsSisterFalloutEngine *engine)
     engine->read_clock = engine->loop_start;
 }
 
-static float choose_pitch(TsSisterFalloutEngine *engine)
+static float choose_pitch(TsSisterFalloutEngine *engine,
+                          const TsSisterFalloutControls *controls)
 {
     static const float ratios[8] = {-3.0f, -2.0f, -1.0f, -0.5f,
                                      0.5f,  1.0f,  2.0f,  3.0f};
     int index;
-    if (engine->controls.pitch_enabled)
+    if (controls->pitch_enabled)
         index = (int)(random_u32(engine) % 8u);
     else
-        index = (int)lrintf(engine->controls.pitch * 7.0f);
+        index = (int)lrintf(controls->pitch * 7.0f);
     if (index < 0) index = 0;
     if (index > 7) index = 7;
     return ratios[index];
+}
+
+static float lfo_target(float center, const TsSisterFalloutControls *controls,
+                        uint32_t target, float sine_value)
+{
+    if ((controls->lfo_targets & target) == 0u) return center;
+    return ts_sister_fallout_lfo_modulate(
+        center, controls->lfo_intensity, sine_value);
+}
+
+static TsSisterFalloutControls modulated_controls(
+    TsSisterFalloutEngine *engine)
+{
+    TsSisterFalloutControls out = engine->controls;
+    float value = sinf((float)(engine->lfo_phase * 2.0 * M_PI));
+    double increment = (double)ts_sister_fallout_lfo_hz(out.lfo_rate) /
+                       (double)engine->sample_rate;
+    engine->lfo_phase += increment;
+    if (engine->lfo_phase >= 1.0) engine->lfo_phase -= floor(engine->lfo_phase);
+    engine->lfo_value = value;
+    out.mix = lfo_target(out.mix, &out, TS_SISTER_FALLOUT_LFO_MIX, value);
+    out.feedback = lfo_target(out.feedback, &out,
+                              TS_SISTER_FALLOUT_LFO_FEEDBACK, value);
+    out.noise = lfo_target(out.noise, &out, TS_SISTER_FALLOUT_LFO_NOISE, value);
+    out.drop_rate = lfo_target(out.drop_rate, &out,
+                               TS_SISTER_FALLOUT_LFO_DROP_RATE, value);
+    out.pan_rate = lfo_target(out.pan_rate, &out,
+                              TS_SISTER_FALLOUT_LFO_PAN_RATE, value);
+    out.skip_span = lfo_target(out.skip_span, &out,
+                               TS_SISTER_FALLOUT_LFO_SKIP_SPAN, value);
+    out.skip_rate = lfo_target(out.skip_rate, &out,
+                               TS_SISTER_FALLOUT_LFO_SKIP_RATE, value);
+    out.bit_quality = lfo_target(out.bit_quality, &out,
+                                 TS_SISTER_FALLOUT_LFO_BIT_QUALITY, value);
+    out.bit_resolution = lfo_target(out.bit_resolution, &out,
+                                    TS_SISTER_FALLOUT_LFO_BIT_RESOLUTION,
+                                    value);
+    out.bit_rate = lfo_target(out.bit_rate, &out,
+                              TS_SISTER_FALLOUT_LFO_BIT_RATE, value);
+    out.pitch = lfo_target(out.pitch, &out,
+                           TS_SISTER_FALLOUT_LFO_PITCH, value);
+    out.pitch_ramp = lfo_target(out.pitch_ramp, &out,
+                                TS_SISTER_FALLOUT_LFO_PITCH_RAMP, value);
+    out.pitch_rate = lfo_target(out.pitch_rate, &out,
+                                TS_SISTER_FALLOUT_LFO_PITCH_RATE, value);
+    engine->feedback_modulated = out.feedback;
+    return out;
+}
+
+static float colored_noise(TsSisterFalloutEngine *engine, int channel,
+                           TsSisterFalloutNoiseType type)
+{
+    float white = random_unit(engine) * 2.0f - 1.0f;
+    float output;
+    switch (type) {
+    case TS_SISTER_FALLOUT_NOISE_PINK:
+        engine->pink_state[channel][0] =
+            0.99765f * engine->pink_state[channel][0] + white * 0.0990460f;
+        engine->pink_state[channel][1] =
+            0.96300f * engine->pink_state[channel][1] + white * 0.2965164f;
+        engine->pink_state[channel][2] =
+            0.57000f * engine->pink_state[channel][2] + white * 1.0526913f;
+        output = (engine->pink_state[channel][0] +
+                  engine->pink_state[channel][1] +
+                  engine->pink_state[channel][2] + white * 0.1848f) * 0.10f;
+        break;
+    case TS_SISTER_FALLOUT_NOISE_BROWN:
+        engine->brown_state[channel] =
+            engine->brown_state[channel] * 0.995f + white * 0.020f;
+        output = engine->brown_state[channel] * 1.25f;
+        break;
+    case TS_SISTER_FALLOUT_NOISE_BLUE:
+        output = (white - engine->previous_white[channel]) * 0.306f;
+        break;
+    case TS_SISTER_FALLOUT_NOISE_WHITE:
+    default:
+        output = white * 0.433f;
+        break;
+    }
+    engine->previous_white[channel] = white;
+    return output;
 }
 
 TsSisterFalloutResult ts_sister_fallout_process(
     TsSisterFalloutEngine *engine, TsStereoFrame input)
 {
     TsSisterFalloutResult result = {input, {0.0f, 0.0f}};
+    TsSisterFalloutControls controls;
     TsStereoFrame wet;
-    float rate, gain, pan, left, right, coefficient, bits, levels, mix;
+    float rate, gain, pan, left, right, bits, levels, mix;
     uint32_t frames;
     size_t write_index;
     double loop_end;
     input = ts_stereo_frame_sanitize(input);
     result.output = input;
     if (engine == NULL || !engine->ready || !engine->active) return result;
+    controls = modulated_controls(engine);
 
     write_index = (size_t)(engine->write_clock % engine->capacity_frames);
     engine->buffer[write_index * 2u] = input.l;
     engine->buffer[write_index * 2u + 1u] = input.r;
     ++engine->write_clock;
     if (engine->valid_frames < engine->capacity_frames) ++engine->valid_frames;
-    if (engine->valid_frames == 2u) choose_loop(engine);
+    if (engine->valid_frames == 2u) choose_loop(engine, &controls);
 
-    if (!engine->controls.skip_enabled && engine->valid_frames >= 4u) {
+    if (!controls.skip_enabled && engine->valid_frames >= 4u) {
         double earliest = (double)(engine->write_clock - engine->valid_frames);
         engine->loop_start = earliest;
         engine->loop_length = fmax(2.0, (double)engine->valid_frames - 2.0);
@@ -308,20 +464,20 @@ TsSisterFalloutResult ts_sister_fallout_process(
             engine->read_clock = engine->loop_start;
     }
 
-    if (engine->controls.skip_enabled && engine->write_clock >= engine->next_skip) {
-        choose_loop(engine);
+    if (controls.skip_enabled && engine->write_clock >= engine->next_skip) {
+        choose_loop(engine, &controls);
         engine->next_skip = engine->write_clock +
-            interval_frames(engine->controls.skip_rate, engine->sample_rate);
+            interval_frames(controls.skip_rate, engine->sample_rate);
     }
-    if ((!engine->controls.pitch_enabled && engine->playback_remaining == 0u) ||
-        (engine->controls.pitch_enabled && engine->write_clock >= engine->next_pitch)) {
-        float target = choose_pitch(engine);
-        frames = (uint32_t)(engine->controls.pitch_ramp * 0.5f * engine->sample_rate);
+    if ((!controls.pitch_enabled && engine->playback_remaining == 0u) ||
+        (controls.pitch_enabled && engine->write_clock >= engine->next_pitch)) {
+        float target = choose_pitch(engine, &controls);
+        frames = (uint32_t)(controls.pitch_ramp * 0.5f * engine->sample_rate);
         engine->playback_target = target;
         ramp(&engine->playback_rate, &engine->playback_step,
              &engine->playback_remaining, target, frames);
         engine->next_pitch = engine->write_clock +
-            interval_frames(engine->controls.pitch_rate, engine->sample_rate);
+            interval_frames(controls.pitch_rate, engine->sample_rate);
     }
     rate = advance(&engine->playback_rate, engine->playback_target,
                    engine->playback_step, &engine->playback_remaining);
@@ -340,13 +496,13 @@ TsSisterFalloutResult ts_sister_fallout_process(
     while (engine->read_clock >= loop_end) engine->read_clock -= engine->loop_length;
     while (engine->read_clock < engine->loop_start) engine->read_clock += engine->loop_length;
 
-    if (engine->controls.drop_enabled && engine->write_clock >= engine->next_drop) {
+    if (controls.drop_enabled && engine->write_clock >= engine->next_drop) {
         engine->drop_target = clampf(0.70f + 0.25f * random_gaussian(engine), 0.0f, 1.2f);
         ramp(&engine->drop_gain, &engine->drop_step, &engine->drop_remaining,
              engine->drop_target, engine->sample_rate * 5u / 1000u);
         engine->next_drop = engine->write_clock +
-            interval_frames(engine->controls.drop_rate, engine->sample_rate);
-    } else if (!engine->controls.drop_enabled) {
+            interval_frames(controls.drop_rate, engine->sample_rate);
+    } else if (!controls.drop_enabled) {
         engine->drop_gain = engine->drop_target = 1.0f;
         engine->drop_remaining = 0u;
     }
@@ -355,13 +511,13 @@ TsSisterFalloutResult ts_sister_fallout_process(
     wet.l *= gain;
     wet.r *= gain;
 
-    if (engine->controls.pan_enabled && engine->write_clock >= engine->next_pan) {
+    if (controls.pan_enabled && engine->write_clock >= engine->next_pan) {
         engine->pan_target = clampf(0.5f + 0.25f * random_gaussian(engine), 0.0f, 1.0f);
         ramp(&engine->pan, &engine->pan_step, &engine->pan_remaining,
              engine->pan_target, engine->sample_rate * 50u / 1000u);
         engine->next_pan = engine->write_clock +
-            interval_frames(engine->controls.pan_rate, engine->sample_rate);
-    } else if (!engine->controls.pan_enabled) {
+            interval_frames(controls.pan_rate, engine->sample_rate);
+    } else if (!controls.pan_enabled) {
         engine->pan = engine->pan_target = 0.5f;
         engine->pan_remaining = 0u;
     }
@@ -372,14 +528,14 @@ TsSisterFalloutResult ts_sister_fallout_process(
     wet.l *= left * 1.41421356f;
     wet.r *= right * 1.41421356f;
 
-    if (engine->controls.bit_enabled) {
+    if (controls.bit_enabled) {
         uint32_t hold;
         if (engine->write_clock >= engine->next_bit) {
             engine->bit_quality_current = clampf(
-                engine->controls.bit_quality + 0.15f * random_gaussian(engine),
+                controls.bit_quality + 0.15f * random_gaussian(engine),
                 0.01f, 1.0f);
             engine->next_bit = engine->write_clock +
-                interval_frames(engine->controls.bit_rate, engine->sample_rate);
+                interval_frames(controls.bit_rate, engine->sample_rate);
         }
         hold = 1u + (uint32_t)lrintf(
             (1.0f - engine->bit_quality_current) * 127.0f);
@@ -389,7 +545,7 @@ TsSisterFalloutResult ts_sister_fallout_process(
             engine->hold_remaining = hold;
         }
         --engine->hold_remaining;
-        bits = 8.0f + 16.0f * engine->controls.bit_resolution;
+        bits = 8.0f + 16.0f * controls.bit_resolution;
         levels = powf(2.0f, bits - 1.0f);
         wet.l = roundf(engine->held[0] * levels) / levels;
         wet.r = roundf(engine->held[1] * levels) / levels;
@@ -397,26 +553,16 @@ TsSisterFalloutResult ts_sister_fallout_process(
         engine->hold_remaining = 0u;
     }
 
-    if (engine->controls.noise > 0.0f) {
-        if ((engine->write_clock & 255u) == 0u)
-            engine->noise_cutoff = clampf(engine->noise_cutoff +
-                random_gaussian(engine) * 45.0f, 400.0f, 1100.0f);
-        coefficient = 1.0f - expf((float)(-2.0 * M_PI) *
-                                  engine->noise_cutoff / engine->sample_rate);
-        for (int channel = 0; channel < 2; ++channel) {
-            float white = random_unit(engine) * 2.0f - 1.0f;
-            engine->noise_state[channel] +=
-                (white - engine->noise_state[channel]) * coefficient;
-        }
-        gain = engine->controls.noise * 0.18f * fminf(fabsf(rate), 3.0f);
-        wet.l += engine->noise_state[0] * gain;
-        wet.r += engine->noise_state[1] * gain;
+    if (controls.noise > 0.0f) {
+        gain = controls.noise * 0.42f * fminf(fabsf(rate), 3.0f);
+        wet.l += colored_noise(engine, 0, controls.noise_type) * gain;
+        wet.r += colored_noise(engine, 1, controls.noise_type) * gain;
     }
     wet = ts_stereo_frame_sanitize(wet);
     wet.l = tanhf(wet.l);
     wet.r = tanhf(wet.r);
     result.wet = wet;
-    mix = engine->controls.mix;
+    mix = controls.mix;
     result.output.l = input.l * (1.0f - mix) + wet.l * mix;
     result.output.r = input.r * (1.0f - mix) + wet.r * mix;
     engine->engage = advance(&engine->engage,
@@ -438,4 +584,15 @@ TsSisterFalloutResult ts_sister_fallout_process(
 size_t ts_sister_fallout_memory_bytes(const TsSisterFalloutEngine *engine)
 {
     return engine != NULL ? engine->capacity_frames * 2u * sizeof(float) : 0u;
+}
+
+float ts_sister_fallout_engage(const TsSisterFalloutEngine *engine)
+{
+    return engine != NULL ? clampf(engine->engage, 0.0f, 1.0f) : 0.0f;
+}
+
+float ts_sister_fallout_feedback_amount(const TsSisterFalloutEngine *engine)
+{
+    return engine != NULL ? clampf(engine->feedback_modulated, 0.0f, 1.0f) :
+                            0.0f;
 }

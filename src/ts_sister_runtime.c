@@ -1011,8 +1011,8 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     }
     runtime->fallout_feedback_current = monitor_approach(
         runtime->fallout_feedback_current,
-        runtime->parameters.fx.fallout.enabled ?
-            runtime->parameters.fx.fallout.feedback * 1.20f : 0.0f,
+        ts_sister_fallout_feedback_amount(&runtime->fallout) * 1.20f *
+            ts_sister_fallout_engage(&runtime->fallout),
         runtime->machine.buffer.sample_rate);
     if (!runtime->parameters.fx.fallout.enabled &&
         runtime->fallout_feedback_current < 0.000001f) {

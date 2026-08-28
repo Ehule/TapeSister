@@ -20,7 +20,7 @@ int main(int argc, char **argv)
     ts_sister_ui_model_init(&model, &config);
     ts_sister_ui_model_show(&model);
     model.magnetic_phase = 3u;
-    if (strcmp(mode, "fallout") == 0) {
+    if (strcmp(mode, "fallout") == 0 || strcmp(mode, "fallout-lfo") == 0) {
         model.routing.enabled = 1;
         model.routing.rolling = 1;
         model.fx_page = 2;
@@ -28,11 +28,22 @@ int main(int argc, char **argv)
         model.parameters.fx.fallout.mix = 0.72f;
         model.parameters.fx.fallout.feedback = 0.28f;
         model.parameters.fx.fallout.noise = 0.18f;
+        model.parameters.fx.fallout.noise_type = TS_SISTER_FALLOUT_NOISE_PINK;
+        model.parameters.fx.fallout.transition =
+            ts_sister_fallout_transition_normalized(2500.0f);
         model.parameters.fx.fallout.drop_enabled = 1;
         model.parameters.fx.fallout.pan_enabled = 1;
         model.parameters.fx.fallout.skip_enabled = 1;
         model.parameters.fx.fallout.bit_enabled = 1;
         model.parameters.fx.fallout.pitch_enabled = 1;
+        model.parameters.fx.fallout.lfo_rate =
+            ts_sister_fallout_lfo_normalized(1.0f / 600.0f);
+        model.parameters.fx.fallout.lfo_intensity = 0.24f;
+        model.parameters.fx.fallout.lfo_targets =
+            TS_SISTER_FALLOUT_LFO_NOISE |
+            TS_SISTER_FALLOUT_LFO_FEEDBACK |
+            TS_SISTER_FALLOUT_LFO_PITCH_RATE;
+        model.fallout_lfo_open = strcmp(mode, "fallout-lfo") == 0;
         snprintf(model.status, sizeof(model.status),
                  "FALLOUT INSERT ENGAGED");
     } else if (strcmp(mode, "flash") == 0) {

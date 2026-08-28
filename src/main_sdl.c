@@ -6884,6 +6884,9 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH: parameters->fx.fallout.pitch = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP: parameters->fx.fallout.pitch_ramp = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: parameters->fx.fallout.pitch_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: parameters->fx.fallout.transition = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: parameters->fx.fallout.lfo_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: parameters->fx.fallout.lfo_intensity = amount; break;
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
         parameters->buffer_seconds = (float)TS_SISTER_MIN_SECONDS +
             amount * (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
@@ -6955,6 +6958,9 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH: value = parameters->fx.fallout.pitch; break;
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP: value = parameters->fx.fallout.pitch_ramp; break;
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: value = parameters->fx.fallout.pitch_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: value = parameters->fx.fallout.transition; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: value = parameters->fx.fallout.lfo_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: value = parameters->fx.fallout.lfo_intensity; break;
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
         value = (parameters->buffer_seconds - (float)TS_SISTER_MIN_SECONDS) /
             (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
@@ -7072,6 +7078,9 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH: return "FALLOUT PITCH";
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP: return "FALLOUT PITCH RAMP";
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: return "FALLOUT PITCH RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: return "FALLOUT TRANSITION";
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: return "FALLOUT LFO RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: return "FALLOUT LFO DEPTH";
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS: return "BUFFER DURATION";
     default: return "PARAMETER";
     }
@@ -7291,6 +7300,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_MANAGE) {
+        sister->model.fallout_lfo_open = 0;
         sister->model.preset_manage_open = 1;
         sister->model.preset_editing = 0;
         sister->model.preset_confirmation = 0;
@@ -7436,8 +7446,29 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_PAGE) {
+        sister->model.fallout_lfo_open = 0;
         sister->model.fx_page = (sister->model.fx_page + 1) % 3;
         sister->rendered_model_valid = 0;
+        return;
+    }
+    if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG) {
+        sister->model.fallout_lfo_open =
+            !sister->model.fallout_lfo_open;
+        sister->model.preset_manage_open = 0;
+        sister->rendered_model_valid = 0;
+        return;
+    }
+    if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_TARGET) {
+        if (device) SDL_LockAudioDevice(device);
+        sister->model.parameters.fx.fallout.lfo_targets ^=
+            (uint32_t)hit.index;
+        ts_sister_runtime_set_parameters(&audio->sister,
+                                         &sister->model.parameters);
+        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        if (device) SDL_UnlockAudioDevice(device);
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "FALLOUT LFO TARGETS UPDATED");
         return;
     }
     if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
@@ -7534,6 +7565,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         else if (hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS)
             ui->config.sister_buffer_seconds =
                 (int)lrintf(sister->model.parameters.buffer_seconds);
+        else if (hit.index == TS_SISTER_UI_PARAM_FALLOUT_TRANSITION)
+            ui->config.sister_fallout_transition_ms = (int)lrintf(
+                ts_sister_fallout_transition_ms(
+                    sister->model.parameters.fx.fallout.transition));
         break;
     case TS_SISTER_UI_ACTION_FALLOUT_TOGGLE: {
         TsSisterFalloutControls *fallout =
@@ -7541,6 +7576,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         switch ((TsSisterUiFalloutToggle)hit.index) {
         case TS_SISTER_UI_FALLOUT_POWER:
             fallout->enabled = !fallout->enabled;
+            break;
+        case TS_SISTER_UI_FALLOUT_NOISE_TYPE:
+            fallout->noise_type = (TsSisterFalloutNoiseType)(
+                (fallout->noise_type + 1) % TS_SISTER_FALLOUT_NOISE_COUNT);
             break;
         case TS_SISTER_UI_FALLOUT_DROP:
             fallout->drop_enabled = !fallout->drop_enabled;
@@ -9007,6 +9046,9 @@ int main(int argc, char **argv)
         parameters.write_erase = (float)ui.config.sister_erase_percent / 100.0f;
         parameters.ghost_tone = (float)ui.config.sister_ghost_percent / 100.0f;
         parameters.buffer_seconds = (float)ui.config.sister_buffer_seconds;
+        parameters.fx.fallout.transition =
+            ts_sister_fallout_transition_normalized(
+                (float)ui.config.sister_fallout_transition_ms);
         ts_sister_runtime_set_parameters(&audio.sister, &parameters);
     }
     ts_sister_runtime_input_available(&audio.sister, 0);
@@ -9373,7 +9415,9 @@ int main(int argc, char **argv)
                     ui.config.sister_window_y = event.window.data2;
                 } else if (event.type == SDL_KEYDOWN &&
                            event.key.keysym.sym == SDLK_ESCAPE) {
-                    if (sister_window.model.preset_manage_open) {
+                    if (sister_window.model.fallout_lfo_open) {
+                        sister_window.model.fallout_lfo_open = 0;
+                    } else if (sister_window.model.preset_manage_open) {
                         sister_window.model.preset_manage_open = 0;
                         sister_window.model.preset_editing = 0;
                         sister_window.model.preset_confirmation = 0;

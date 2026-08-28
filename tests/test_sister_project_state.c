@@ -56,6 +56,12 @@ int main(void)
     runtime.parameters.fx.master_feedback = 0.66f;
     runtime.parameters.fx.fallout.enabled = 1;
     runtime.parameters.fx.fallout.feedback = 0.64f;
+    runtime.parameters.fx.fallout.noise_type = TS_SISTER_FALLOUT_NOISE_PINK;
+    runtime.parameters.fx.fallout.transition = 0.71f;
+    runtime.parameters.fx.fallout.lfo_rate = 0.18f;
+    runtime.parameters.fx.fallout.lfo_intensity = 0.42f;
+    runtime.parameters.fx.fallout.lfo_targets =
+        TS_SISTER_FALLOUT_LFO_NOISE | TS_SISTER_FALLOUT_LFO_PITCH_RATE;
     runtime.parameters.fx.fallout.pitch_enabled = 1;
     runtime.parameters.fx.fallout.pitch_ramp = 0.37f;
     runtime.parameters.buffer_seconds = 23.0f;
@@ -88,6 +94,14 @@ int main(void)
     assert(loaded.parameters.fx.master_feedback > 0.65f);
     assert(loaded.parameters.fx.fallout.enabled == 1);
     assert(loaded.parameters.fx.fallout.feedback > 0.63f);
+    assert(loaded.parameters.fx.fallout.noise_type ==
+           TS_SISTER_FALLOUT_NOISE_PINK);
+    assert(loaded.parameters.fx.fallout.transition > 0.70f);
+    assert(loaded.parameters.fx.fallout.lfo_rate > 0.17f);
+    assert(loaded.parameters.fx.fallout.lfo_intensity > 0.41f);
+    assert(loaded.parameters.fx.fallout.lfo_targets ==
+           (TS_SISTER_FALLOUT_LFO_NOISE |
+            TS_SISTER_FALLOUT_LFO_PITCH_RATE));
     assert(loaded.parameters.fx.fallout.pitch_enabled == 1);
     assert(loaded.parameters.fx.fallout.pitch_ramp > 0.36f);
     assert(loaded.parameters.buffer_seconds == 23.0f);

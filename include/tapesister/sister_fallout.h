@@ -6,11 +6,39 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef enum {
+    TS_SISTER_FALLOUT_NOISE_WHITE = 0,
+    TS_SISTER_FALLOUT_NOISE_PINK,
+    TS_SISTER_FALLOUT_NOISE_BROWN,
+    TS_SISTER_FALLOUT_NOISE_BLUE,
+    TS_SISTER_FALLOUT_NOISE_COUNT
+} TsSisterFalloutNoiseType;
+
+typedef enum {
+    TS_SISTER_FALLOUT_LFO_MIX = 1u << 0,
+    TS_SISTER_FALLOUT_LFO_FEEDBACK = 1u << 1,
+    TS_SISTER_FALLOUT_LFO_NOISE = 1u << 2,
+    TS_SISTER_FALLOUT_LFO_DROP_RATE = 1u << 3,
+    TS_SISTER_FALLOUT_LFO_PAN_RATE = 1u << 4,
+    TS_SISTER_FALLOUT_LFO_SKIP_SPAN = 1u << 5,
+    TS_SISTER_FALLOUT_LFO_SKIP_RATE = 1u << 6,
+    TS_SISTER_FALLOUT_LFO_BIT_QUALITY = 1u << 7,
+    TS_SISTER_FALLOUT_LFO_BIT_RESOLUTION = 1u << 8,
+    TS_SISTER_FALLOUT_LFO_BIT_RATE = 1u << 9,
+    TS_SISTER_FALLOUT_LFO_PITCH = 1u << 10,
+    TS_SISTER_FALLOUT_LFO_PITCH_RAMP = 1u << 11,
+    TS_SISTER_FALLOUT_LFO_PITCH_RATE = 1u << 12,
+    TS_SISTER_FALLOUT_LFO_ALL = (1u << 13) - 1u
+} TsSisterFalloutLfoTarget;
+
 typedef struct {
     int enabled;
     float mix;
     float feedback;
     float noise;
+    TsSisterFalloutNoiseType noise_type;
+    /* Logarithmic 10 ms..60 s engage/disengage ramp. */
+    float transition;
     int drop_enabled;
     float drop_rate;
     int pan_enabled;
@@ -26,6 +54,10 @@ typedef struct {
     float pitch;
     float pitch_ramp;
     float pitch_rate;
+    /* Logarithmic 1 cycle/hour..10 Hz sine LFO. */
+    float lfo_rate;
+    float lfo_intensity;
+    uint32_t lfo_targets;
 } TsSisterFalloutControls;
 
 typedef struct {
@@ -70,8 +102,12 @@ typedef struct {
     float held[2];
     float bit_quality_current;
     uint32_t hold_remaining;
-    float noise_state[2];
-    float noise_cutoff;
+    float pink_state[2][3];
+    float brown_state[2];
+    float previous_white[2];
+    double lfo_phase;
+    float lfo_value;
+    float feedback_modulated;
     TsSisterFalloutControls controls;
     int active;
     int ready;
@@ -79,6 +115,13 @@ typedef struct {
 
 void ts_sister_fallout_controls_default(TsSisterFalloutControls *controls);
 void ts_sister_fallout_controls_sanitize(TsSisterFalloutControls *controls);
+const char *ts_sister_fallout_noise_type_name(TsSisterFalloutNoiseType type);
+float ts_sister_fallout_transition_ms(float normalized);
+float ts_sister_fallout_transition_normalized(float milliseconds);
+float ts_sister_fallout_lfo_hz(float normalized);
+float ts_sister_fallout_lfo_normalized(float hz);
+float ts_sister_fallout_lfo_modulate(float center, float intensity,
+                                     float sine_value);
 int ts_sister_fallout_init(TsSisterFalloutEngine *engine,
                            uint32_t sample_rate);
 int ts_sister_fallout_reconfigure(TsSisterFalloutEngine *engine,
@@ -91,5 +134,7 @@ void ts_sister_fallout_set_controls(
 TsSisterFalloutResult ts_sister_fallout_process(
     TsSisterFalloutEngine *engine, TsStereoFrame input);
 size_t ts_sister_fallout_memory_bytes(const TsSisterFalloutEngine *engine);
+float ts_sister_fallout_engage(const TsSisterFalloutEngine *engine);
+float ts_sister_fallout_feedback_amount(const TsSisterFalloutEngine *engine);
 
 #endif

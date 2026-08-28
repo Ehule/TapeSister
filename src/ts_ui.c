@@ -3556,6 +3556,91 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
     }
 }
 
+static void sister_fallout_time_label(char *text_value, size_t size,
+                                      float milliseconds)
+{
+    if (milliseconds < 1000.0f)
+        snprintf(text_value, size, "%.0FMS", milliseconds);
+    else if (milliseconds < 10000.0f)
+        snprintf(text_value, size, "%.1FS", milliseconds / 1000.0f);
+    else
+        snprintf(text_value, size, "%.0FS", milliseconds / 1000.0f);
+}
+
+static void sister_fallout_lfo_panel(TsFramebuffer *fb,
+                                     const TsSisterFalloutControls *controls)
+{
+    const int track_y = 88;
+    const int track_height = 152;
+    const int lane_x[2] = {562, 604};
+    const float amount[2] = {controls->lfo_rate, controls->lfo_intensity};
+    const uint32_t color[2] = {PAL_TUNING, PAL_EFFECT};
+    char value[24];
+    float hz = ts_sister_fallout_lfo_hz(controls->lfo_rate);
+    float period = 1.0f / hz;
+    rect(fb, 540, 48, 90, 256, RGB(15, 14, 16));
+    button(fb, 548, 55, 74, "LFO", controls->lfo_targets != 0u);
+    text(fb, 551, 79, "RATE", PAL_TUNING, 1);
+    text(fb, 593, 79, "DEPTH", PAL_EFFECT, 1);
+    for (int lane = 0; lane < 2; ++lane) {
+        int handle_y = track_y + (int)lrintf(
+            (track_height - 1) * (1.0f - sister_clamp(amount[lane])));
+        rect(fb, lane_x[lane] + 3, track_y, 5, track_height, RGB(7, 7, 8));
+        rect(fb, lane_x[lane] - 2, handle_y - 1, 15, 3, color[lane]);
+    }
+    if (period >= 3600.0f)
+        snprintf(value, sizeof(value), "%.0FM", period / 60.0f);
+    else if (period >= 60.0f)
+        snprintf(value, sizeof(value), "%.1FM", period / 60.0f);
+    else if (period >= 1.0f)
+        snprintf(value, sizeof(value), "%.1FS", period);
+    else
+        snprintf(value, sizeof(value), "%.2FHZ", hz);
+    text(fb, 549, 247, value, PAL_TUNING, 1);
+    snprintf(value, sizeof(value), "%d%%",
+             (int)lrintf(controls->lfo_intensity * 100.0f));
+    text(fb, 594, 247, value, PAL_EFFECT, 1);
+    text(fb, 549, 267, "CLICK LFO", PAL_MOUSE, 1);
+    text(fb, 549, 278, "FOR TARGETS", PAL_MOUSE, 1);
+}
+
+static void sister_fallout_lfo_dialog(TsFramebuffer *fb,
+                                      const TsSisterFalloutControls *controls)
+{
+    static const char *const labels[13] = {
+        "MIX", "FEEDBACK", "NOISE", "DROP RATE", "PAN RATE",
+        "SKIP SPAN", "SKIP RATE", "BIT SAMPLE", "BIT DEPTH",
+        "BIT RATE", "PITCH RATIO", "PITCH RAMP", "PITCH RATE"
+    };
+    static const uint32_t targets[13] = {
+        TS_SISTER_FALLOUT_LFO_MIX, TS_SISTER_FALLOUT_LFO_FEEDBACK,
+        TS_SISTER_FALLOUT_LFO_NOISE, TS_SISTER_FALLOUT_LFO_DROP_RATE,
+        TS_SISTER_FALLOUT_LFO_PAN_RATE, TS_SISTER_FALLOUT_LFO_SKIP_SPAN,
+        TS_SISTER_FALLOUT_LFO_SKIP_RATE,
+        TS_SISTER_FALLOUT_LFO_BIT_QUALITY,
+        TS_SISTER_FALLOUT_LFO_BIT_RESOLUTION,
+        TS_SISTER_FALLOUT_LFO_BIT_RATE, TS_SISTER_FALLOUT_LFO_PITCH,
+        TS_SISTER_FALLOUT_LFO_PITCH_RAMP,
+        TS_SISTER_FALLOUT_LFO_PITCH_RATE
+    };
+    rect(fb, 106, 62, 428, 252, RGB(8, 8, 9));
+    rect(fb, 106, 62, 428, 1, PAL_EFFECT);
+    rect(fb, 106, 313, 428, 1, PAL_EFFECT);
+    rect(fb, 106, 62, 1, 252, PAL_EFFECT);
+    rect(fb, 533, 62, 1, 252, PAL_EFFECT);
+    text(fb, 126, 77, "FALLOUT LFO TARGETS", PAL_TEXT, 1);
+    button(fb, 434, 74, 80, "CLOSE", 0);
+    text(fb, 126, 94, "ONE SINE / CENTERED EXCURSION", PAL_MOUSE, 1);
+    for (int target = 0; target < 13; ++target) {
+        int column = target / 7;
+        int row = target % 7;
+        button(fb, 126 + column * 206, 108 + row * 25, 180,
+               labels[target], (controls->lfo_targets & targets[target]) != 0u);
+    }
+    text(fb, 126, 292, "DEPTH SHRINKS SYMMETRICALLY NEAR PARAMETER LIMITS",
+         PAL_MOUSE, 1);
+}
+
 static void sister_choice_parameter_state(TsFramebuffer *fb, int x, int y,
                                           int width, const char *label,
                                           const char *choice, int active,
@@ -3730,61 +3815,70 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
 
     if (model->fx_page == 2) {
         const TsSisterFalloutControls *f = &model->parameters.fx.fallout;
+        char transition[24];
+        sister_fallout_time_label(transition, sizeof(transition),
+            ts_sister_fallout_transition_ms(f->transition));
         rect(fb, 10, 42, 620, 268, RGB(9, 9, 10));
         button(fb, 16, 50, 86, f->enabled ? "FALLOUT ON" : "FALLOUT",
                f->enabled);
-        sister_percent_parameter_state(fb, 120, 52, 170, "MIX", f->mix,
+        sister_percent_parameter_state(fb, 120, 52, 165, "MIX", f->mix,
             100, PAL_EFFECT, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_MIX));
-        sister_percent_parameter_state(fb, 310, 52, 170, "FEEDBACK", f->feedback,
+        sister_percent_parameter_state(fb, 300, 52, 220, "FEEDBACK", f->feedback,
             120, PAL_TUNING, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK));
-        text(fb, 492, 57, "WET > SISTER", PAL_MOUSE, 1);
 
-        text(fb, 18, 89, "NOISE", PAL_WAVE_SUM, 1);
-        sister_percent_parameter_state(fb, 120, 84, 410, "LEVEL", f->noise,
+        button(fb, 16, 84, 76,
+               ts_sister_fallout_noise_type_name(f->noise_type),
+               f->noise > 0.0f);
+        sister_percent_parameter_state(fb, 120, 84, 400, "NOISE", f->noise,
             100, PAL_WAVE_SUM, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_NOISE));
         button(fb, 16, 116, 76, "DROP", f->drop_enabled);
-        sister_percent_parameter_state(fb, 120, 116, 410, "RATE", f->drop_rate,
+        sister_percent_parameter_state(fb, 120, 116, 400, "RATE", f->drop_rate,
             100, PAL_VOLUME, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_DROP_RATE));
         button(fb, 16, 150, 76, "PAN", f->pan_enabled);
-        sister_percent_parameter_state(fb, 120, 150, 410, "RATE", f->pan_rate,
+        sister_percent_parameter_state(fb, 120, 150, 400, "RATE", f->pan_rate,
             100, PAL_WAVE_RIGHT, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_PAN_RATE));
         button(fb, 16, 184, 76, "SKIP", f->skip_enabled);
-        sister_percent_parameter_state(fb, 120, 184, 195, "SPAN", f->skip_span,
+        sister_percent_parameter_state(fb, 120, 184, 190, "SPAN", f->skip_span,
             100, PAL_EFFECT, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_SKIP_SPAN));
-        sister_percent_parameter_state(fb, 335, 184, 195, "RATE", f->skip_rate,
+        sister_percent_parameter_state(fb, 330, 184, 190, "RATE", f->skip_rate,
             100, PAL_EFFECT, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE));
         button(fb, 16, 218, 76, "BIT", f->bit_enabled);
         sister_percent_parameter_state(fb, 120, 218, 125, "SAMPLE", f->bit_quality,
             100, PAL_TUNING, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_BIT_QUALITY));
-        sister_percent_parameter_state(fb, 265, 218, 125, "BITS", f->bit_resolution,
+        sister_percent_parameter_state(fb, 260, 218, 125, "BITS", f->bit_resolution,
             100, PAL_TUNING, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_BIT_RESOLUTION));
-        sister_percent_parameter_state(fb, 410, 218, 120, "RATE", f->bit_rate,
+        sister_percent_parameter_state(fb, 400, 218, 120, "RATE", f->bit_rate,
             100, PAL_TUNING, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_BIT_RATE));
         button(fb, 16, 252, 76, "PITCH", f->pitch_enabled);
         sister_percent_parameter_state(fb, 120, 252, 125, "RATIO", f->pitch,
             100, PAL_NOTE, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_PITCH));
-        sister_percent_parameter_state(fb, 265, 252, 125, "RAMP", f->pitch_ramp,
+        sister_percent_parameter_state(fb, 260, 252, 125, "RAMP", f->pitch_ramp,
             100, PAL_NOTE, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP));
-        sister_percent_parameter_state(fb, 410, 252, 120, "RATE", f->pitch_rate,
+        sister_percent_parameter_state(fb, 400, 252, 120, "RATE", f->pitch_rate,
             100, PAL_NOTE, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE));
-        text(fb, 10, 318,
+        sister_choice_parameter_state(fb, 120, 284, 400, "TRANSITION",
+            transition, f->transition > 0.0f, PAL_MOUSE,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_TRANSITION));
+        sister_fallout_lfo_panel(fb, f);
+        text(fb, 10, 316,
              "SISTER > FALLOUT > DISTORTION > DELAY > REVERB > OUTPUT",
              PAL_MOUSE, 1);
-        text(fb, 10, 340,
-             "TRUE BYPASS / BUFFER-RELATIVE SKIPS / PROTECTED CAUSAL FEEDBACK",
+        text(fb, 10, 338,
+             "TRUE BYPASS / COLORED NOISE / CENTERED GENERATIVE LFO",
              PAL_MOUSE, 1);
         goto sister_footer;
     }
@@ -4057,7 +4151,9 @@ sister_footer:
             recording && model->text_cursor_visible);
     }
 
-    if (model->preset_manage_open) {
+    if (model->fallout_lfo_open) {
+        sister_fallout_lfo_dialog(fb, &model->parameters.fx.fallout);
+    } else if (model->preset_manage_open) {
         rect(fb, 160, 130, 320, 170, RGB(8, 8, 9));
         rect(fb, 160, 130, 320, 1, PAL_MOUSE);
         rect(fb, 160, 299, 320, 1, PAL_MOUSE);

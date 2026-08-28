@@ -21,6 +21,7 @@ int main(void)
     CHECK(config.sister_buffer_seconds == 40);
     CHECK(config.sister_capture_channels == 1);
     CHECK(config.sister_waveform_display_mode == TS_WAVEFORM_DISPLAY_STEREO);
+    CHECK(config.sister_fallout_transition_ms == 10);
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
     CHECK(model.parameter_locks == 0u);
@@ -201,6 +202,27 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 350, 190);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE);
+    hit = ts_sister_ui_hit_test_model(&model, 30, 89);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_TOGGLE &&
+          hit.index == TS_SISTER_UI_FALLOUT_NOISE_TYPE);
+    hit = ts_sister_ui_hit_test_model(&model, 200, 289);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_TRANSITION);
+    hit = ts_sister_ui_hit_test_model(&model, 560, 100);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE);
+    hit = ts_sister_ui_hit_test_model(&model, 600, 200);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY);
+    hit = ts_sister_ui_hit_test_model(&model, 560, 60);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG);
+    model.fallout_lfo_open = 1;
+    hit = ts_sister_ui_hit_test_model(&model, 140, 113);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_TARGET &&
+          hit.index == TS_SISTER_FALLOUT_LFO_MIX);
+    hit = ts_sister_ui_hit_test_model(&model, 450, 80);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG);
+    model.fallout_lfo_open = 0;
     model.fx_page = 0;
 
     {

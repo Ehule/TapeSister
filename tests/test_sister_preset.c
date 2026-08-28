@@ -46,6 +46,12 @@ int main(void)
     p.fx.master_feedback = 0.69f;
     p.fx.fallout.enabled = 1;
     p.fx.fallout.feedback = 0.58f;
+    p.fx.fallout.noise_type = TS_SISTER_FALLOUT_NOISE_BLUE;
+    p.fx.fallout.transition = 0.82f;
+    p.fx.fallout.lfo_rate = 0.24f;
+    p.fx.fallout.lfo_intensity = 0.67f;
+    p.fx.fallout.lfo_targets = TS_SISTER_FALLOUT_LFO_MIX |
+                               TS_SISTER_FALLOUT_LFO_FEEDBACK;
     p.fx.fallout.skip_enabled = 1;
     p.fx.fallout.skip_span = 0.76f;
     p.fx.fallout.bit_enabled = 1;
@@ -82,6 +88,13 @@ int main(void)
     assert(recalled.fx.master_feedback > 0.68f);
     assert(recalled.fx.fallout.enabled == 1);
     assert(recalled.fx.fallout.feedback > 0.57f);
+    assert(recalled.fx.fallout.noise_type == TS_SISTER_FALLOUT_NOISE_BLUE);
+    assert(recalled.fx.fallout.transition > 0.81f);
+    assert(recalled.fx.fallout.lfo_rate > 0.23f);
+    assert(recalled.fx.fallout.lfo_intensity > 0.66f);
+    assert(recalled.fx.fallout.lfo_targets ==
+           (TS_SISTER_FALLOUT_LFO_MIX |
+            TS_SISTER_FALLOUT_LFO_FEEDBACK));
     assert(recalled.fx.fallout.skip_enabled == 1);
     assert(recalled.fx.fallout.skip_span > 0.75f);
     assert(recalled.fx.fallout.bit_enabled == 1);
