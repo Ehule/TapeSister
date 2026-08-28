@@ -176,7 +176,8 @@ static void ts_overlay_tile_states(TsFramebuffer *fb, const TsUiState *ui,
     const AudioState *audio = (const AudioState *)ts_output_userdata;
     uint32_t source_color;
     if (fb == NULL || ui == NULL || instrument == NULL || ui->show_keyboard ||
-        ui->show_recipes || ui->show_ingredients) return;
+        ui->show_recipes || ui->show_ingredients ||
+        ts_ui_foreground_panel_open(ui)) return;
     ts_discover_tile_bounds();
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
         const TsTileBounds *bounds = &ts_tile_bounds[slot];

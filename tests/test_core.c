@@ -2870,6 +2870,14 @@ int main(void)
     }
 
     ts_ui_init(&ui);
+    CHECK(!ts_ui_foreground_panel_open(&ui));
+    ui.browser.mode = TS_BROWSER_SAVE_RECIPE;
+    CHECK(ts_ui_foreground_panel_open(&ui));
+    ui.browser.mode = TS_BROWSER_CLOSED;
+    ui.renaming_bank_slot = 0;
+    CHECK(ts_ui_foreground_panel_open(&ui));
+    ui.renaming_bank_slot = -1;
+    CHECK(!ts_ui_foreground_panel_open(&ui));
     ui.fx_page = TS_FX_LOOP;
     ts_instrument_show_all(&committed);
     {

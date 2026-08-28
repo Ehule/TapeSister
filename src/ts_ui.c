@@ -2171,6 +2171,18 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
         wave_text(fb, meter_x - 34, TS_WAVE_Y + 5, "CLIP", RGB(255, 74, 58), 1);
 }
 
+int ts_ui_foreground_panel_open(const TsUiState *ui)
+{
+    if (ui == NULL) return 0;
+    return ui->exit_confirm_open || ui->overdub_confirm_open || ui->fm_open ||
+           ui->transform_open || ui->drone_open ||
+           ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
+           ui->load_selection_choice_open || ui->palette_open ||
+           ui->config_open || ui->browser.mode != TS_BROWSER_CLOSED ||
+           ui->renaming_bank_slot >= 0 || ui->renaming_recipe_slot >= 0 ||
+           ui->export_choice_open;
+}
+
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
     render_palette = &ui->palette;

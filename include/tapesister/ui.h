@@ -510,6 +510,7 @@ const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
 const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
                                      const TsInstrument *instrument);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
+int ts_ui_foreground_panel_open(const TsUiState *ui);
 void ts_ui_draw_tile_state_borders(TsFramebuffer *fb, int slot,
                                    int active, int sister_source,
                                    const TsPalette *palette);
