@@ -7466,6 +7466,7 @@ static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
                                 SisterWindow *sister, int overdub,
                                 uint32_t sample_rate)
 {
+    TsCaptureRecorder prepared;
     char error[160];
     int destination;
     size_t capacity;
@@ -7482,19 +7483,41 @@ static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
         return 0;
     }
     capacity = (size_t)sample_rate * (size_t)ui->config.capture_max_seconds;
+    ts_capture_init(&prepared);
+
+    /* Destination validation is quick and remains protected. The potentially
+       large zero-fill (and Overdub source copy) is prepared while the audio
+       callback continues, then ownership is published under a short lock. */
     if (device) SDL_LockAudioDevice(device);
-    if (overdub)
-        ok = ts_sister_runtime_arm_overdub(
-            &audio->sister, instrument, destination, capacity, sample_rate,
-            sister->model.selected_tap, 0u, error, sizeof(error));
-    else
-        ok = ts_sister_runtime_arm_capture(
-            &audio->sister, instrument, destination, capacity, sample_rate,
-            (uint8_t)sister->model.capture_channels,
-            sister->model.selected_tap, 0u, error, sizeof(error));
-    if (ok) ok = ts_sister_runtime_trigger_capture(
-        &audio->sister, error, sizeof(error));
+    ok = ts_sister_runtime_validate_capture_target(
+        &audio->sister, instrument, destination, 0u, overdub,
+        error, sizeof(error));
     if (device) SDL_UnlockAudioDevice(device);
+    if (ok && overdub) {
+        const TsSample *base = &instrument->bank[destination].sample;
+        ok = ts_capture_arm_overdub_channels(
+            &prepared, destination, capacity, sample_rate, base->channels,
+            base->data, base->frames, base->sample_rate, base->channels,
+            error, sizeof(error));
+    } else if (ok) {
+        ok = ts_capture_arm_channels(
+            &prepared, destination, capacity, sample_rate,
+            (uint8_t)sister->model.capture_channels, error, sizeof(error));
+    }
+    if (ok)
+        ok = ts_capture_set_source(&prepared, TS_CAPTURE_SOURCE_SISTER,
+                                   error, sizeof(error));
+    if (ok) {
+        if (device) SDL_LockAudioDevice(device);
+        ok = ts_sister_runtime_install_prepared_capture(
+            &audio->sister, instrument, &prepared,
+            sister->model.selected_tap, 0u, error, sizeof(error));
+        if (ok)
+            ok = ts_sister_runtime_trigger_capture(
+                &audio->sister, error, sizeof(error));
+        if (device) SDL_UnlockAudioDevice(device);
+    }
+    ts_capture_free(&prepared);
     sister->model.capture_overdub = overdub != 0;
     snprintf(sister->model.status, sizeof(sister->model.status), "%s",
              ok ? (overdub ? "OVERDUB RECORDING - PRESS AGAIN TO STOP" :

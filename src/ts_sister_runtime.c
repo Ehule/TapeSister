@@ -1203,6 +1203,86 @@ static int validate_destination(TsSisterRuntime *runtime,
     return 1;
 }
 
+int ts_sister_runtime_validate_capture_target(
+    TsSisterRuntime *runtime, const TsInstrument *instrument,
+    int destination_slot, uint16_t transient_capture_sources, int overdub,
+    char *error, size_t error_size)
+{
+    if (runtime == NULL || !runtime->enabled) {
+        runtime_error(error, error_size, "Enable Sister before Capture");
+        return 0;
+    }
+    if (atomic_load_explicit(&runtime->capture.state, memory_order_acquire) !=
+        TS_CAPTURE_IDLE) {
+        runtime_error(error, error_size, "Sister Capture is already active");
+        return 0;
+    }
+    return validate_destination(runtime, instrument, destination_slot,
+                                transient_capture_sources, overdub != 0,
+                                error, error_size);
+}
+
+static void install_capture_recorder(TsCaptureRecorder *destination,
+                                     TsCaptureRecorder *prepared)
+{
+    TsCaptureState state = atomic_load_explicit(&prepared->state,
+                                                 memory_order_acquire);
+    ts_capture_free(destination);
+    destination->buffer = prepared->buffer;
+    destination->overdub_base = prepared->overdub_base;
+    destination->capacity_frames = prepared->capacity_frames;
+    destination->recorded_frames = prepared->recorded_frames;
+    destination->overdub_base_frames = prepared->overdub_base_frames;
+    destination->sample_rate = prepared->sample_rate;
+    destination->overdub_base_rate = prepared->overdub_base_rate;
+    destination->channels = prepared->channels;
+    destination->overdub_base_channels = prepared->overdub_base_channels;
+    destination->staged_notes = prepared->staged_notes;
+    destination->destination_slot = prepared->destination_slot;
+    destination->source_slot = prepared->source_slot;
+    destination->provenance_slot = prepared->provenance_slot;
+    destination->stopped_early = prepared->stopped_early;
+    destination->auto_resize = prepared->auto_resize;
+    destination->overdub = prepared->overdub;
+    atomic_store_explicit(&destination->state, state, memory_order_release);
+    prepared->buffer = NULL;
+    prepared->overdub_base = NULL;
+    ts_capture_init(prepared);
+}
+
+int ts_sister_runtime_install_prepared_capture(
+    TsSisterRuntime *runtime, const TsInstrument *instrument,
+    TsCaptureRecorder *prepared, TsSisterTap tap,
+    uint16_t transient_capture_sources, char *error, size_t error_size)
+{
+    TsCaptureState prepared_state;
+    if (runtime == NULL || !runtime->enabled || prepared == NULL ||
+        tap < 0 || tap >= TS_SISTER_TAP_COUNT) {
+        runtime_error(error, error_size, "Enable Sister before Capture");
+        return 0;
+    }
+    prepared_state = atomic_load_explicit(&prepared->state,
+                                          memory_order_acquire);
+    if (prepared_state != TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
+        prepared->buffer == NULL ||
+        prepared->source_slot != TS_CAPTURE_SOURCE_SISTER) {
+        runtime_error(error, error_size,
+                      "Sister Capture buffer is not prepared");
+        return 0;
+    }
+    if (!ts_sister_runtime_validate_capture_target(
+            runtime, instrument, prepared->destination_slot,
+            transient_capture_sources, prepared->overdub,
+            error, error_size))
+        return 0;
+    install_capture_recorder(&runtime->capture, prepared);
+    runtime->selected_tap = tap;
+    runtime->capture_transient_source_mask = transient_capture_sources;
+    publish_snapshot(runtime);
+    runtime_error(error, error_size, "");
+    return 1;
+}
+
 int ts_sister_runtime_arm_capture(TsSisterRuntime *runtime,
                                   const TsInstrument *instrument,
                                   int destination_slot,

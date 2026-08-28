@@ -252,6 +252,14 @@ void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
 int ts_sister_runtime_find_destination(const TsSisterRuntime *runtime,
                                        const TsInstrument *instrument,
                                        int preferred_slot);
+int ts_sister_runtime_validate_capture_target(
+    TsSisterRuntime *runtime, const TsInstrument *instrument,
+    int destination_slot, uint16_t transient_capture_sources, int overdub,
+    char *error, size_t error_size);
+int ts_sister_runtime_install_prepared_capture(
+    TsSisterRuntime *runtime, const TsInstrument *instrument,
+    TsCaptureRecorder *prepared, TsSisterTap tap,
+    uint16_t transient_capture_sources, char *error, size_t error_size);
 int ts_sister_runtime_arm_capture(TsSisterRuntime *runtime,
                                   const TsInstrument *instrument,
                                   int destination_slot,
