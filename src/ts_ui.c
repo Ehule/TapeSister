@@ -9,6 +9,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ts_sister_portal_mask.inc"
+#include "ts_sister_spirit_mask.inc"
+
 _Static_assert(sizeof(TAPESISTER_BUILD_MARKER) <=
                    TAPESISTER_BUILD_MARKER_MAX_CHARS + 1,
                "TAPESISTER_BUILD_MARKER must fit the six-character UI badge");
@@ -479,6 +482,23 @@ static uint32_t contrast_color(uint32_t base, int contrast, float scale)
     return RGB(red, green, blue);
 }
 
+static uint32_t palette_blend(uint32_t background, uint32_t foreground,
+                              int percent)
+{
+    uint32_t red;
+    uint32_t green;
+    uint32_t blue;
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    red = (((background >> 16) & 0xffu) * (uint32_t)(100 - percent) +
+           ((foreground >> 16) & 0xffu) * (uint32_t)percent) / 100u;
+    green = (((background >> 8) & 0xffu) * (uint32_t)(100 - percent) +
+             ((foreground >> 8) & 0xffu) * (uint32_t)percent) / 100u;
+    blue = ((background & 0xffu) * (uint32_t)(100 - percent) +
+            (foreground & 0xffu) * (uint32_t)percent) / 100u;
+    return 0xff000000u | (red << 16) | (green << 8) | blue;
+}
+
 static void bevel_frame(TsFramebuffer *fb, int x, int y, int w, int h,
                         uint32_t fill, uint32_t light, uint32_t dark)
 {
@@ -508,6 +528,51 @@ static void button(TsFramebuffer *fb, int x, int y, int w, const char *label, in
         PAL_BUTTON, active_palette()->buttons_contrast, 0.5f);
     bevel_frame(fb, x, y, w, 23, fill, light, dark);
     text(fb, x + 6, y + 8, label, active ? PAL_BLOCK_TEXT : RGB(245, 242, 235), 1);
+}
+
+static void sister_portal_render(TsFramebuffer *fb, const TsUiState *ui)
+{
+    const uint32_t background = RGB(12, 12, 12);
+    uint32_t accent = ui->sister_warning ? PAL_VOLUME :
+                      ui->sister_enabled ? PAL_WAVE_RIGHT : PAL_EFFECT;
+    int state = ui->sister_portal_pressed ? 2 :
+                ui->sister_portal_hovered ? 1 : 0;
+    int accent_strength = 50 + state * 20;
+    int text_strength = 58 + state * 16;
+    int subtitle_strength = 34 + state * 16;
+    int border_strength = 14 + state * 15;
+    uint32_t border = palette_blend(background, accent, border_strength);
+    uint32_t emblem = palette_blend(background, accent, accent_strength);
+    uint32_t title = palette_blend(background, PAL_TEXT, text_strength);
+    uint32_t subtitle = palette_blend(background, accent, subtitle_strength);
+    rect(fb, 3, 3, 154, 1, border);
+    rect(fb, 3, 29, 154, 1, border);
+    rect(fb, 3, 3, 1, 27, border);
+    rect(fb, 156, 3, 1, 27, border);
+    for (int y = 0; y < TS_SISTER_PORTAL_MASK_HEIGHT; ++y)
+        for (int x = 0; x < TS_SISTER_PORTAL_MASK_WIDTH; ++x) {
+            size_t bit = (size_t)y * TS_SISTER_PORTAL_MASK_WIDTH + (size_t)x;
+            if ((ts_sister_portal_mask[bit >> 3] &
+                 (unsigned char)(0x80u >> (bit & 7u))) != 0u)
+                rect(fb, 7 + x, 2 + y, 1, 1, emblem);
+        }
+    text(fb, 55, 7, "TAPESISTER", title, 1);
+    text(fb, 55, 18, "SISTER MACHINE", subtitle, 1);
+    if (ui->sister_enabled)
+        rect(fb, 55, 27, 83, 2,
+             palette_blend(background,
+                           ui->sister_rolling && !ui->sister_held ?
+                           PAL_WAVE_LEFT : PAL_BUTTON,
+                           55 + state * 15));
+    if (ui->sister_held) {
+        rect(fb, 142, 8, 2, 10, PAL_TUNING);
+        rect(fb, 147, 8, 2, 10, PAL_TUNING);
+    } else if (ui->sister_rolling) {
+        for (int row = 0; row < 5; ++row)
+            rect(fb, 142 + row, 9 + row, 1, 10 - row * 2, PAL_WAVE_LEFT);
+    }
+    if (ui->sister_monitor_enabled)
+        text(fb, 148, 19, "M", PAL_WAVE_SUM, 1);
 }
 
 static void mini_button(TsFramebuffer *fb, int x, int y, int w,
@@ -2222,23 +2287,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     clear(fb, PAL_DESKTOP);
 
     rect(fb, 0, 0, TS_UI_WIDTH, 32, RGB(12, 12, 12));
-    text(fb, 14, 9, "TAPESISTER",
-         ui->sister_warning ? PAL_VOLUME :
-         ui->sister_enabled ? PAL_WAVE_RIGHT : PAL_TEXT, 2);
-    if (ui->sister_enabled) {
-        rect(fb, 13, 27, 112, 2,
-             ui->sister_rolling && !ui->sister_held ? PAL_WAVE_LEFT : PAL_BUTTON);
-        /* Shape as well as color communicates the live/held state. */
-        if (ui->sister_held) {
-            rect(fb, 130, 10, 3, 12, PAL_TUNING);
-            rect(fb, 136, 10, 3, 12, PAL_TUNING);
-        } else if (ui->sister_rolling) {
-            for (int row = 0; row < 6; ++row)
-                rect(fb, 130 + row, 12 + row, 1, 12 - row * 2, PAL_WAVE_LEFT);
-        }
-        if (ui->sister_monitor_enabled)
-            text(fb, 145, 9, "M", PAL_WAVE_SUM, 1);
-    }
+    sister_portal_render(fb, ui);
     if (ui->sister_capture_active) {
         rect(fb, 4, 3, 150, 2, PAL_VOLUME);
         rect(fb, 4, 28, 150, 2, PAL_VOLUME);
@@ -3506,6 +3555,110 @@ static void sister_target_toggle(TsFramebuffer *fb, int x, int y, int width,
     text(fb, x + 8, y + 5, label, active ? color : PAL_MOUSE, 1);
 }
 
+static uint32_t sister_spirit_hash(int x, int y)
+{
+    uint32_t value = (uint32_t)x * UINT32_C(0x45d9f3b) ^
+                     (uint32_t)y * UINT32_C(0x119de1f3);
+    value ^= value >> 16;
+    value *= UINT32_C(0x7feb352d);
+    value ^= value >> 15;
+    return value;
+}
+
+static int sister_spirit_level(const TsSisterUiModel *model)
+{
+    uint32_t elapsed;
+    if (model->power_visual == TS_SISTER_UI_POWER_VISUAL_ON) {
+        elapsed = model->power_visual_elapsed_ms;
+        if (elapsed < 100u) return 12;
+        if (elapsed < 250u) return 12 + (int)((elapsed - 100u) * 80u / 150u);
+        if (elapsed < 450u) return 92;
+        if (elapsed < 700u) return 92 - (int)((elapsed - 450u) * 92u / 250u);
+        return 0;
+    }
+    if (model->power_visual == TS_SISTER_UI_POWER_VISUAL_OFF) {
+        elapsed = model->power_visual_elapsed_ms;
+        if (elapsed < 3200u)
+            return 12 + (int)((3200u - elapsed) * 50u / 3200u);
+    }
+    return model->routing.enabled ? 0 : 12;
+}
+
+static void sister_spirit_glyph(TsFramebuffer *fb, int x, int y,
+                                const char *bits, uint32_t color)
+{
+    for (int gy = 0; gy < 7; ++gy)
+        for (int gx = 0; gx < 5; ++gx)
+            if (bits[gy * 5 + gx] == '1')
+                rect(fb, x + gx, y + gy, 1, 1, color);
+}
+
+static void sister_spirit_cyrillic_title(TsFramebuffer *fb, int x, int y,
+                                         uint32_t color)
+{
+    static const char cyrillic_i[] =
+        "10001100111010111001100011000110001";
+    static const char cyrillic_ya[] =
+        "01111100011000101111001010100110001";
+    static const char cyrillic_sha[] =
+        "10101101011010110101101011010111111";
+    const char *const letters[] = {
+        glyph('C'), glyph('E'), glyph('C'), glyph('T'), glyph('P'),
+        cyrillic_i, glyph('H'), glyph('C'), glyph('K'), glyph('A'),
+        cyrillic_ya, NULL, glyph('M'), glyph('A'), cyrillic_sha,
+        cyrillic_i, glyph('H'), glyph('A')
+    };
+    for (size_t letter = 0u; letter < sizeof(letters) / sizeof(letters[0]);
+         ++letter, x += 6)
+        if (letters[letter] != NULL)
+            sister_spirit_glyph(fb, x, y, letters[letter], color);
+}
+
+static void sister_spirit_render(TsFramebuffer *fb,
+                                 const TsSisterUiModel *model)
+{
+    const uint32_t background = RGB(7, 7, 8);
+    const int origin_x = (TS_SISTER_UI_WIDTH - TS_SISTER_SPIRIT_MASK_WIDTH) / 2;
+    const int origin_y = 43;
+    int level = sister_spirit_level(model);
+    uint32_t phase = model->magnetic_phase & 7u;
+    if (level <= 0) return;
+    for (int y = 0; y < TS_SISTER_SPIRIT_MASK_HEIGHT; ++y) {
+        for (int x = 0; x < TS_SISTER_SPIRIT_MASK_WIDTH; ++x) {
+            size_t bit = (size_t)y * TS_SISTER_SPIRIT_MASK_WIDTH + (size_t)x;
+            uint32_t hash;
+            int waveform;
+            int density;
+            int intensity;
+            int offset_x = 0;
+            int width = 1;
+            if ((ts_sister_spirit_mask[bit >> 3] &
+                 (unsigned char)(0x80u >> (bit & 7u))) == 0u)
+                continue;
+            hash = sister_spirit_hash(x, y);
+            waveform = y >= 52 && y <= 78;
+            density = level + (waveform ? 24 : 0);
+            if (density > 100) density = 100;
+            if ((int)(hash % 100u) >= density) continue;
+            intensity = level + (waveform ? 14 : 0);
+            if (intensity > 100) intensity = 100;
+            if (level <= 20 && ((hash >> 12) & 7u) == phase)
+                offset_x = ((hash >> 15) & 1u) != 0u ? 1 : -1;
+            if (((hash >> 17) % 13u) == 0u) width = 2;
+            rect(fb, origin_x + x + offset_x, origin_y + y, width, 1,
+                 palette_blend(
+                     background, PAL_EFFECT, intensity));
+        }
+    }
+    {
+        uint32_t title = palette_blend(background, PAL_MOUSE, 16);
+        uint32_t subtitle = palette_blend(background, PAL_MOUSE, 13);
+        sister_spirit_cyrillic_title(fb, 266, 128, title);
+        text(fb, 278, 140, "SISTER MACHINE", title, 1);
+        text(fb, 227, 152, "SIGNAL PROCESSING / TAPE SYSTEM", subtitle, 1);
+    }
+}
+
 void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          const TsPalette *palette)
 {
@@ -3625,24 +3778,30 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     }
 
     rect(fb, 10, 40, 620, 126, RGB(7, 7, 8));
-    mode = ts_waveform_display_sanitize(model->waveform_mode);
-    if (mode == TS_WAVEFORM_DISPLAY_STEREO && model->waveform.channels == 2u) {
-        text(fb, 14, 45, "L", PAL_WAVE_LEFT, 1);
-        text(fb, 14, 108, "R", PAL_WAVE_RIGHT, 1);
-        sister_wave_lane(fb, &model->waveform, 26, 40, 600, 61, 0, PAL_WAVE_LEFT);
-        sister_wave_lane(fb, &model->waveform, 26, 103, 600, 63, 1, PAL_WAVE_RIGHT);
-    } else {
-        int channel = mode == TS_WAVEFORM_DISPLAY_RIGHT ? 1 :
-                      mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? 2 : 0;
-        uint32_t color = mode == TS_WAVEFORM_DISPLAY_RIGHT ? PAL_WAVE_RIGHT :
-                         mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? PAL_WAVE_SUM :
-                         PAL_WAVE_LEFT;
-        sister_wave_lane(fb, &model->waveform, 14, 40, 612, 126, channel, color);
+    if (model->routing.enabled &&
+        model->power_visual == TS_SISTER_UI_POWER_VISUAL_NONE) {
+        mode = ts_waveform_display_sanitize(model->waveform_mode);
+        if (mode == TS_WAVEFORM_DISPLAY_STEREO && model->waveform.channels == 2u) {
+            text(fb, 14, 45, "L", PAL_WAVE_LEFT, 1);
+            text(fb, 14, 108, "R", PAL_WAVE_RIGHT, 1);
+            sister_wave_lane(fb, &model->waveform, 26, 40, 600, 61, 0, PAL_WAVE_LEFT);
+            sister_wave_lane(fb, &model->waveform, 26, 103, 600, 63, 1, PAL_WAVE_RIGHT);
+        } else {
+            int channel = mode == TS_WAVEFORM_DISPLAY_RIGHT ? 1 :
+                          mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? 2 : 0;
+            uint32_t color = mode == TS_WAVEFORM_DISPLAY_RIGHT ? PAL_WAVE_RIGHT :
+                             mode == TS_WAVEFORM_DISPLAY_MONO_SUM ? PAL_WAVE_SUM :
+                             PAL_WAVE_LEFT;
+            sister_wave_lane(fb, &model->waveform, 14, 40, 612, 126, channel, color);
+        }
+        sister_marker(fb, model->engine.write_normalized, 26, 600, 40, 126,
+                      PAL_VOLUME, 0, 0);
+        sister_head_markers(fb, model->engine.head_normalized,
+                            26, 600, 40, 126);
     }
-    sister_marker(fb, model->engine.write_normalized, 26, 600, 40, 126,
-                  PAL_VOLUME, 0, 0);
-    sister_head_markers(fb, model->engine.head_normalized,
-                        26, 600, 40, 126);
+    if (!model->routing.enabled ||
+        model->power_visual != TS_SISTER_UI_POWER_VISUAL_NONE)
+        sister_spirit_render(fb, model);
 
     button(fb, 10, 172, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
     button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);

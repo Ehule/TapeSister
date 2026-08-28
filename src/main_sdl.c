@@ -6604,6 +6604,8 @@ typedef struct {
     uint32_t window_id;
     uint32_t last_present_ms;
     uint32_t last_model_sync_ms;
+    uint32_t power_visual_started_ms;
+    TsSisterUiPowerVisual power_visual;
     int rendered_model_valid;
     int minimized;
     TsSisterPresetBank presets;
@@ -7303,6 +7305,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_POWER) {
+        uint32_t visual_now = SDL_GetTicks();
         if (device) SDL_LockAudioDevice(device);
         audio_begin_topology_crossfade(audio, sample_rate);
         if (audio->sister.enabled) {
@@ -7313,6 +7316,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                 sync_ext = 1;
             }
             ts_sister_runtime_disable(&audio->sister);
+            sister->power_visual = TS_SISTER_UI_POWER_VISUAL_OFF;
+            sister->power_visual_started_ms = visual_now;
+            sister->model.power_visual = sister->power_visual;
+            sister->model.power_visual_elapsed_ms = 0u;
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "POWER OFF - ORDINARY TAPESISTER AUDIO CONTINUES");
         } else if (ts_sister_runtime_enable(
@@ -7332,6 +7339,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                                        TS_INPUT_CONSUMER_SISTER_EXT, 1);
                 sync_ext = 1;
             }
+            sister->power_visual = TS_SISTER_UI_POWER_VISUAL_ON;
+            sister->power_visual_started_ms = visual_now;
+            sister->model.power_visual = sister->power_visual;
+            sister->model.power_visual_elapsed_ms = 0u;
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "ENABLED - SELECT SOURCES AND MONITOR WHEN READY");
         } else {
@@ -12628,6 +12639,20 @@ int main(int argc, char **argv)
                     audio.sister.parameter_locks;
                 sister_window.last_model_sync_ms = now;
             }
+            if (sister_window.power_visual != TS_SISTER_UI_POWER_VISUAL_NONE) {
+                uint32_t elapsed = now - sister_window.power_visual_started_ms;
+                uint32_t duration =
+                    sister_window.power_visual == TS_SISTER_UI_POWER_VISUAL_ON ?
+                    700u : 3200u;
+                if (elapsed >= duration) {
+                    elapsed = duration;
+                    sister_window.power_visual = TS_SISTER_UI_POWER_VISUAL_NONE;
+                }
+                sister_window.model.power_visual = sister_window.power_visual;
+                sister_window.model.power_visual_elapsed_ms = elapsed;
+            }
+            sister_window.model.magnetic_phase =
+                routing.enabled ? 0u : (uint8_t)((now / 650u) & 7u);
             ui.sister_enabled = routing.enabled;
             ui.sister_rolling = routing.rolling;
             ui.sister_held = routing.held;
@@ -12640,6 +12665,21 @@ int main(int argc, char **argv)
         sister_window.model.text_cursor_visible = ui.text_cursor_visible;
         if (ui.file_busy)
             ui.file_busy_phase = (int)((SDL_GetTicks() / 180u) % 4u);
+        {
+            int raw_x = 0;
+            int raw_y = 0;
+            int x = -1;
+            int y = -1;
+            uint32_t buttons = SDL_GetMouseState(&raw_x, &raw_y);
+            int hovered = 0;
+            if (SDL_GetMouseFocus() == window) {
+                logical_mouse(window, raw_x, raw_y, &x, &y);
+                hovered = ts_ui_logo_contains(x, y);
+            }
+            ui.sister_portal_hovered = hovered;
+            ui.sister_portal_pressed =
+                hovered && (buttons & SDL_BUTTON_LMASK) != 0u;
+        }
         if (!window_minimized) {
             ts_ui_render(&framebuffer, &ui, &instrument);
             if (update_texture_damage(texture, &framebuffer, frame_snapshot,

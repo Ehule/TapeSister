@@ -323,6 +323,8 @@ typedef struct {
     int sister_capture_active;
     int sister_warning;
     uint16_t sister_source_mask;
+    int sister_portal_hovered;
+    int sister_portal_pressed;
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
     uint32_t staged_notes;

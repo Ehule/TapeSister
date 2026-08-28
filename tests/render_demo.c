@@ -478,6 +478,13 @@ int main(int argc, char **argv)
         snprintf(ui.status, sizeof(ui.status),
                  "PREVIEW A#3 +3.7 C  CONF 91%% - ACCEPT OR ESC CANCEL");
     }
+    if (argc > 2 && strncmp(argv[2], "portal", 6) == 0) {
+        ui.sister_portal_hovered = strcmp(argv[2], "portal-hover") == 0 ||
+                                   strcmp(argv[2], "portal-pressed") == 0;
+        ui.sister_portal_pressed = strcmp(argv[2], "portal-pressed") == 0;
+        snprintf(ui.status, sizeof(ui.status),
+                 "TAPESISTER EMBLEM OPENS SISTER MACHINE");
+    }
     ts_ui_render(&fb, &ui, &instrument);
     if (!ts_ui_write_ppm(&fb, path)) {
         fprintf(stderr, "Could not write %s\n", path);
