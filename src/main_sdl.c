@@ -2053,6 +2053,23 @@ static int begin_native_sister_edit(SDL_AudioDeviceID device,
     return render_unlocked;
 }
 
+static int begin_capture_commit_edit(SDL_AudioDeviceID device,
+                                     AudioState *audio)
+{
+    int render_unlocked;
+    /* A completed Sister capture no longer writes its recorder buffer. EXT,
+       click-launched tiles, and Sister's routed performance bank are also
+       independent of the editable TsInstrument storage. Keep the callback
+       running while the potentially long capture render/history work is
+       prepared whenever no legacy voice owns Current/Parent directly. */
+    lock_edit(device, audio);
+    render_unlocked = audio != NULL && !audio->playing &&
+        ts_note_bank_count(&audio->notes) == 0 &&
+        ts_performance_count(&audio->performance) == 0;
+    if (render_unlocked && device) SDL_UnlockAudioDevice(device);
+    return render_unlocked;
+}
+
 static void finish_native_sister_edit(SDL_AudioDeviceID device,
                                       AudioState *audio, TsUiState *ui,
                                       TsInstrument *instrument,
@@ -2062,6 +2079,8 @@ static void finish_native_sister_edit(SDL_AudioDeviceID device,
         /* Clone the completed source generation while the callback continues
            reading its old immutable copy, then take the device lock only for
            the bounded voice-metadata publication. */
+        (void)ts_performance_prepare_sync(&audio->tile_launchers,
+                                          instrument);
         (void)ts_performance_prepare_sync(&audio->sister.performance,
                                           instrument);
         lock_edit(device, audio);
@@ -13037,11 +13056,12 @@ int main(int argc, char **argv)
         if (audio.sister.capture.state == TS_CAPTURE_COMPLETED) {
             char sister_error[160];
             int committed;
-            if (device) SDL_LockAudioDevice(device);
+            int rendered_unlocked = begin_capture_commit_edit(device, &audio);
             committed = ts_sister_runtime_commit_capture(
                 &audio.sister, &instrument, ui.config.capture_auto_resize,
                 sister_error, sizeof(sister_error));
-            if (device) SDL_UnlockAudioDevice(device);
+            finish_native_sister_edit(device, &audio, &ui, &instrument,
+                                      rendered_unlocked);
             if (committed) {
                 ts_ui_waveform_cache_invalidate(&ui, TS_UI_WAVEFORM_MAIN);
                 snprintf(sister_window.model.status,
