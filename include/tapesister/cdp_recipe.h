@@ -9,9 +9,16 @@ enum {
     TS_CDP_MAX_STAGES = 4,
     TS_CDP_MAX_COMMAND_ARGS = 32,
     TS_CDP_TEXT_MAX = 64,
-    TS_CDP_BANK_COUNT = 2,
-    TS_CDP_BANK_SLOT_COUNT = 16,
-    TS_CDP_FACTORY_RECIPE_COUNT = TS_CDP_BANK_COUNT * TS_CDP_BANK_SLOT_COUNT
+    TS_CDP_VISIBLE_BANK_COUNT = 2,
+    TS_CDP_VISIBLE_BANK_SLOT_COUNT = 16,
+    TS_CDP_VISIBLE_RECIPE_COUNT =
+        TS_CDP_VISIBLE_BANK_COUNT * TS_CDP_VISIBLE_BANK_SLOT_COUNT,
+    /* Keeps INI and preset storage stable while the compiled catalog grows. */
+    TS_CDP_CATALOG_CAPACITY = 128,
+    TS_CDP_FACTORY_RECIPE_COUNT = 32,
+    /* Compatibility names for the fixed two-page presentation. */
+    TS_CDP_BANK_COUNT = TS_CDP_VISIBLE_BANK_COUNT,
+    TS_CDP_BANK_SLOT_COUNT = TS_CDP_VISIBLE_BANK_SLOT_COUNT
 };
 
 typedef enum {
@@ -62,6 +69,8 @@ typedef struct {
     const char *category;
     uint32_t schema_version;
     uint32_t recipe_version;
+    int default_enabled;
+    /* Initial presentation coordinates only; stable identity is `id`. */
     uint8_t bank;
     uint8_t slot;
     uint8_t control_count;
@@ -91,6 +100,13 @@ typedef struct {
 } TsCdpRecipeValues;
 
 typedef struct {
+    uint16_t recipe_indices[TS_CDP_VISIBLE_RECIPE_COUNT];
+    size_t visible_count;
+    size_t enabled_count;
+    int truncated;
+} TsCdpCatalogView;
+
+typedef struct {
     int divide;
     int hold_windows;
     float shift_semitones;
@@ -110,6 +126,13 @@ size_t ts_cdp_factory_recipe_count(void);
 const TsCdpRecipe *ts_cdp_factory_recipe_at(size_t index);
 const TsCdpRecipe *ts_cdp_factory_recipe_for_slot(size_t bank, size_t slot);
 const TsCdpRecipe *ts_cdp_recipe_find(const char *id);
+int ts_cdp_recipe_index_for_id(const char *id);
+void ts_cdp_catalog_view_build(TsCdpCatalogView *view,
+                               const int *enabled, size_t enabled_count);
+int ts_cdp_catalog_index_for_slot(const TsCdpCatalogView *view,
+                                  size_t bank, size_t slot);
+const TsCdpRecipe *ts_cdp_catalog_recipe_for_slot(const TsCdpCatalogView *view,
+                                                  size_t bank, size_t slot);
 int ts_cdp_recipe_validate(const TsCdpRecipe *recipe,
                            char *error, size_t error_size);
 void ts_cdp_recipe_values_default(const TsCdpRecipe *recipe,

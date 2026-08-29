@@ -1,19 +1,18 @@
 # Third-party runtime notices
 
-TapeSister can optionally execute a curated subset of programs from the Composers
+TapeSister release builds execute a curated subset of programs from the Composers
 Desktop Project (CDP): `blur`, `distmore`, `distort`, `distshift`, `extend`, `filter`,
-`freeze`, `glisten`, `grain`, `hover`, `modify`, `motor`, `pvoc`, `scramble`, `sorter`,
-`splinter`, and `stutter`. CDP source identifies the work as copyright 1983–2023
+`glisten`, `grain`, `hover`, `modify`, `motor`, `pvoc`, `scramble`, `sorter`,
+`splinter`, `stretch`, and `stutter`. CDP source identifies the work as copyright 1983–2023
 Trevor Wishart and Composers Desktop Project Ltd and licenses it under the GNU Lesser
 General Public License, version 2.1 or (at the user's option) any later version.
 
-TapeSister does not copy or distribute CDP source, binaries, libraries, or the supplied CDP
-and SoundThread archives. A compatible runtime is discovered externally. A distributor
-who bundles CDP must independently satisfy the LGPL and all dependency licenses,
-including providing the applicable license notices, corresponding source or compliant
-source offer, reproducible relinking/build information where required, and a record of
-local modifications. The authoritative license for a bundled runtime is the `LICENSE`
-file from that exact CDP source release.
+The standard native bundle builds unmodified CDP8 source pinned at commit
+`28bc42c72c1a7cb0fab933acd1c433be958a787b`. CDP programs are shipped as separate
+executables under `cdp/bin`; they are not linked into TapeSister. Each generated bundle
+also includes the upstream LGPL text, exact corresponding source archive, build and
+relinking information, and this notice under `licenses/`. See `docs/CDP8_RUNTIME.md`.
+SoundThread source and binaries are not distributed.
 
 SOMA Laboratory WARP is an interaction reference only. TapeSister contains no SOMA
 branding, artwork, panel graphics, source code, proprietary algorithms, or trade dress.

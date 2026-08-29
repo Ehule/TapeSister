@@ -50,6 +50,27 @@ static void recipe_tests(void)
     CHECK(strcmp(ts_cdp_factory_recipe_for_slot(0, 15)->id, "iterate") == 0);
     CHECK(strcmp(ts_cdp_factory_recipe_for_slot(1, 15)->id, "granulate") == 0);
     CHECK(ts_cdp_recipe_find("missing") == NULL);
+    CHECK(ts_cdp_recipe_index_for_id("glisten") == 16);
+    CHECK(ts_cdp_recipe_index_for_id("missing") == -1);
+    {
+        int enabled[TS_CDP_CATALOG_CAPACITY] = {0};
+        TsCdpCatalogView view;
+        for (size_t i = 0; i < ts_cdp_factory_recipe_count(); ++i)
+            enabled[i] = 1;
+        enabled[0] = 0;
+        enabled[16] = 0;
+        ts_cdp_catalog_view_build(&view, enabled, TS_CDP_CATALOG_CAPACITY);
+        CHECK(view.enabled_count == TS_CDP_FACTORY_RECIPE_COUNT - 2u &&
+              view.visible_count == TS_CDP_FACTORY_RECIPE_COUNT - 2u &&
+              !view.truncated);
+        CHECK(ts_cdp_catalog_index_for_slot(&view, 0u, 0u) == 1 &&
+              strcmp(ts_cdp_catalog_recipe_for_slot(&view, 0u, 0u)->id,
+                     "shred") == 0);
+        CHECK(ts_cdp_catalog_index_for_slot(&view, 1u, 13u) == 31 &&
+              ts_cdp_catalog_recipe_for_slot(&view, 1u, 14u) == NULL &&
+              ts_cdp_catalog_recipe_for_slot(&view, 1u, 15u) == NULL);
+        CHECK(ts_cdp_catalog_index_for_slot(&view, 2u, 0u) == -1);
+    }
     CHECK(ts_cdp_recipe_validate(recipe, error, sizeof(error)));
     CHECK(recipe->stage_count == 3u);
     CHECK(strcmp(recipe->stages[0].executable, "pvoc") == 0 &&
@@ -128,7 +149,8 @@ static void recipe_tests(void)
         TsCdpRecipeValues defaults;
         TsCdpCommand built[TS_CDP_MAX_STAGES];
         size_t count = 0u;
-        CHECK(catalog != NULL && catalog->bank == index / TS_CDP_BANK_SLOT_COUNT &&
+        CHECK(catalog != NULL && catalog->default_enabled &&
+              catalog->bank == index / TS_CDP_BANK_SLOT_COUNT &&
               catalog->slot == index % TS_CDP_BANK_SLOT_COUNT);
         CHECK(ts_cdp_recipe_validate(catalog, error, sizeof(error)));
         CHECK(catalog->control_count >= 1u &&
@@ -173,6 +195,18 @@ static void recipe_tests(void)
                                            commands, &count, error, sizeof(error)));
         CHECK(count == 1u && strcmp(commands[0].arguments[0], "brassage") == 0 &&
               strcmp(commands[0].arguments[1], "6") == 0);
+        CHECK(strcmp(ts_cdp_recipe_find("freeze")->stages[0].executable,
+                     "extend") == 0);
+        ts_cdp_recipe_values_default(ts_cdp_recipe_find("timewarp"), &values);
+        CHECK(ts_cdp_recipe_build_commands(ts_cdp_recipe_find("timewarp"),
+                                           &values, 2400u, 48000u,
+                                           commands, &count, error, sizeof(error)) &&
+              count == 3u &&
+              strcmp(commands[0].executable, "pvoc") == 0 &&
+              strcmp(commands[1].executable, "stretch") == 0 &&
+              strcmp(commands[1].arguments[0], "time") == 0 &&
+              strcmp(commands[1].arguments[4], "1.5") == 0 &&
+              strcmp(commands[2].executable, "pvoc") == 0);
         CHECK(shred != NULL && !shred->duration_may_change &&
               shred->mix_policy == TS_CDP_MIX_EXACT_FRAMES);
         CHECK(stutter != NULL && stutter->seed_supported);
@@ -1728,8 +1762,8 @@ static void adapter_pipeline_and_fault_tests(void)
 {
     static const char *const required_executables[] = {
         "blur", "distmore", "distort", "distshift", "extend", "filter",
-        "freeze", "glisten", "grain", "hover", "modify", "motor", "pvoc",
-        "scramble", "sorter", "splinter", "stutter"
+        "glisten", "grain", "hover", "modify", "motor", "pvoc",
+        "scramble", "sorter", "splinter", "stretch", "stutter"
     };
     static const TsCdpFault faults[] = {
         TS_CDP_FAULT_LAUNCH,
@@ -1858,6 +1892,7 @@ static void adapter_pipeline_and_fault_tests(void)
                                 &result, error, sizeof(error)));
         CHECK(result.status == TS_CDP_RUN_OK && result.output.data != NULL &&
               result.output.frames > 0u && result.output.sample_rate == 48000u &&
+              result.output.channels == 1u &&
               result.job_directory[0] == '\0');
         ts_cdp_run_result_free(&result);
     }

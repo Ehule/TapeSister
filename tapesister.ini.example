@@ -97,8 +97,45 @@ sister_erase_percent=100
 ; Example for DSP2 tile 05 (METAL, global seat 21; final value is SOURCE):
 ; DspPreset21=0.40,0.54,0.62,0.12
 
+[CDP Processes]
+; Stable recipe IDs choose the two visible 16-tile pages. Set a process to 0
+; to hide it. If more than 32 are enabled, only the first 32 below are shown.
+CdpProcess.drunk=1
+CdpProcess.shred=1
+CdpProcess.hover=1
+CdpProcess.scrub=1
+CdpProcess.zigzag=1
+CdpProcess.stutter=1
+CdpProcess.sorter=1
+CdpProcess.splinter=1
+CdpProcess.scramble_ext=1
+CdpProcess.doublets=1
+CdpProcess.motor=1
+CdpProcess.grev=1
+CdpProcess.timewarp=1
+CdpProcess.telescope=1
+CdpProcess.freeze=1
+CdpProcess.iterate=1
+CdpProcess.glisten=1
+CdpProcess.spec_smear=1
+CdpProcess.wave_scramble=1
+CdpProcess.brassage=1
+CdpProcess.fractal=1
+CdpProcess.interpolate=1
+CdpProcess.omit=1
+CdpProcess.replace=1
+CdpProcess.pitch=1
+CdpProcess.shuffle=1
+CdpProcess.reform=1
+CdpProcess.distshift=1
+CdpProcess.segzig=1
+CdpProcess.overload=1
+CdpProcess.filter_bank=1
+CdpProcess.granulate=1
+
 [CDP Presets]
 ; SAVE/UPDATE writes the four fixed musical positions, MIX, and variation seed.
 ; Recipes exposing fewer controls leave the unused positions at zero.
-; Missing rows keep factory defaults. Example for CDP 2 tile 01 (global seat 17):
-; CdpPreset17=8,8,3,0.28,1,1
+; Missing rows keep factory defaults. Presets follow the recipe even when the
+; visible process selection changes. Example for GLISTEN:
+; CdpPreset.glisten=8,8,3,0.28,1,1

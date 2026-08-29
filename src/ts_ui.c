@@ -1451,6 +1451,7 @@ void ts_ui_init(TsUiState *ui)
     ui->dsp_page = 0;
     ts_browser_init(&ui->browser);
     ts_config_init(&ui->config);
+    ts_ui_refresh_cdp_catalog(ui);
     ts_palette_default(&ui->palette);
     ui->palette_entry = TS_PALETTE_PATTERN_TEXT;
     ui->palette_channel = 0;
@@ -1473,6 +1474,16 @@ void ts_ui_init(TsUiState *ui)
     snprintf(ui->transform_message, sizeof(ui->transform_message),
              "SELECT A SCOPE AND RENDER");
     snprintf(ui->status, sizeof(ui->status), "READY - SELECT A TILE, LOAD, OR CREATE");
+}
+
+void ts_ui_refresh_cdp_catalog(TsUiState *ui)
+{
+    if (ui == NULL) return;
+    ts_cdp_catalog_view_build(&ui->cdp_catalog,
+                              ui->config.cdp_process_enabled,
+                              TS_CDP_CATALOG_CAPACITY);
+    if (ui->cdp_page < 0 || ui->cdp_page >= TS_CDP_VISIBLE_BANK_COUNT)
+        ui->cdp_page = 0;
 }
 
 int ts_ui_config_field_from_point(int x, int y)
@@ -2074,7 +2085,7 @@ void ts_ui_select_panel(TsUiState *ui, TsUiPanel panel)
     if (ui == NULL || panel < TS_UI_PANEL_SAMPLE_TILES || panel > TS_UI_PANEL_DSP)
         return;
     if (panel == TS_UI_PANEL_CDP && ui->show_recipes) {
-        ui->cdp_page = (ui->cdp_page + 1) % TS_CDP_BANK_COUNT;
+        ui->cdp_page = (ui->cdp_page + 1) % TS_CDP_VISIBLE_BANK_COUNT;
         return;
     }
     if (panel == TS_UI_PANEL_DSP && ui->show_ingredients) {
@@ -2956,7 +2967,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
             const TsCdpRecipe *recipe =
-                ts_cdp_factory_recipe_for_slot((size_t)ui->cdp_page, (size_t)i);
+                ts_cdp_catalog_recipe_for_slot(&ui->cdp_catalog,
+                                               (size_t)ui->cdp_page,
+                                               (size_t)i);
+            int recipe_index = ts_cdp_catalog_index_for_slot(
+                &ui->cdp_catalog, (size_t)ui->cdp_page, (size_t)i);
             char label[24];
             int x = 10 + (i % 8) * 77;
             int y = 330 + (i / 8) * 25;
@@ -2966,8 +2981,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             else
                 snprintf(label, sizeof(label), "%02d EMPTY", i + 1);
             button(fb, x, y, 72, label,
-                   ui->transform_recipe_index ==
-                   ui->cdp_page * TS_CDP_BANK_SLOT_COUNT + i);
+                   ui->transform_recipe_index == recipe_index);
             if (recipe != NULL) rect(fb, x + 2, y + 2, 3, 19, PAL_EFFECT);
         }
     } else if (ui->show_ingredients) {

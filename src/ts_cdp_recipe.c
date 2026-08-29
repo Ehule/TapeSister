@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
+_Static_assert(TS_CDP_FACTORY_RECIPE_COUNT <= TS_CDP_CATALOG_CAPACITY,
+               "CDP catalog exceeds configured storage capacity");
+
 /* PR-31 factory recipes are compiled data, not user-provided command text.  The
    four control positions stay stable in the UI while control_count lets a
    recipe honestly expose fewer controls. */
@@ -20,7 +23,8 @@
      sizeof(VALUES) / sizeof((VALUES)[0]), NAMES, ""}
 #define DIRECT(ID, NAME, DESC, CATEGORY, BANK, SLOT, EXE, COUNT, CHANGE, SEED, OUTCH, ...) \
     {.id=ID, .display_name=NAME, .description=DESC, .category=CATEGORY, \
-     .schema_version=2u, .recipe_version=1u, .bank=BANK, .slot=SLOT, \
+     .schema_version=2u, .recipe_version=1u, .default_enabled=1, \
+     .bank=BANK, .slot=SLOT, \
      .control_count=COUNT, .stages={{EXE,TS_CDP_IO_WAV,TS_CDP_IO_WAV}}, \
      .stage_count=1u, .controls={__VA_ARGS__}, .mix_policy=(CHANGE) ? \
      TS_CDP_MIX_UNSUPPORTED : TS_CDP_MIX_EXACT_FRAMES, \
@@ -30,7 +34,8 @@
      .deterministic=(SEED)>=0, .minimum_input_ms=40u, .provenance_version=2u}
 #define SPECTRAL(ID, NAME, DESC, BANK, SLOT, EXE, COUNT, CHANGE, DET, ...) \
     {.id=ID, .display_name=NAME, .description=DESC, .category="SPECTRAL", \
-     .schema_version=2u, .recipe_version=1u, .bank=BANK, .slot=SLOT, \
+     .schema_version=2u, .recipe_version=1u, .default_enabled=1, \
+     .bank=BANK, .slot=SLOT, \
      .control_count=COUNT, .stages={{"pvoc",TS_CDP_IO_WAV,TS_CDP_IO_ANALYSIS}, \
      {EXE,TS_CDP_IO_ANALYSIS,TS_CDP_IO_ANALYSIS}, \
      {"pvoc",TS_CDP_IO_ANALYSIS,TS_CDP_IO_WAV}}, .stage_count=3u, \
@@ -111,18 +116,17 @@ static const TsCdpRecipe factory_recipes[TS_CDP_FACTORY_RECIPE_COUNT] = {
            CONT("size","INNER SIZE",.05f,1,.5f,.01f,"%"), CONT("variation","VARIATION",0,1,.15f,.01f,"%")),
     DIRECT("grev", "GREV", "Grain groups reverse repeat omit or stretch", "GRAIN", 0, 11,
            "grain", 4, 1, 0, 1,
-           ENUM("mode","MODE",grev_modes,grev_names,1), CONT("window","WINDOW",5,200,35,1,"MS"),
-           STEP("group","GROUP",1,32,4,1,""), CONT("trough","TROUGH",.05f,.95f,.5f,.01f,"%")),
-    DIRECT("timewarp", "TIMEWARP", "Granular time expands or contracts", "GRAIN", 0, 12,
-           "grain", 4, 1, 0, 1,
-           CONT("ratio","RATIO",.125f,8,1.5f,.025f,"X"), CONT("buffer","BUFFER",.005f,.25f,.04f,.005f,"SEC"),
-           CONT("gate","GATE",0,1,.05f,.01f,"%"), CONT("hole","HOLE",.001f,.2f,.005f,.001f,"SEC")),
+           ENUM("mode","MODE",grev_modes,grev_names,1), CONT("window","WINDOW",5,200,25,1,"MS"),
+           STEP("group","GROUP",1,32,1,1,""), CONT("trough","TROUGH",.05f,.95f,.9f,.01f,"%")),
+    SPECTRAL("timewarp", "TIMEWARP", "Pitch-stable spectral time expansion or contraction", 0, 12,
+             "stretch", 1, 1, 1,
+             CONT("ratio","RATIO",.25f,4,1.5f,.025f,"X")),
     DIRECT("telescope", "TELESCOPE", "Wavecycle groups collapse into one contour", "WAVESET", 0, 13,
            "distort", 3, 1, 0, 1,
            STEP("group","GROUP",2,128,16,1,""), STEP("skip","SKIP",0,256,0,1,"CYC"),
            ENUM("mode","SHAPE",telescope_modes,telescope_names,0)),
     DIRECT("freeze", "FREEZE", "A source window is held and scattered", "FRAGMENT", 0, 14,
-           "freeze", 4, 1, 1, 1,
+           "extend", 4, 1, 1, 1,
            CONT("position","POSITION",0,.95f,.4f,.01f,"%"), CONT("size","SIZE",.05f,.5f,.12f,.01f,"SEC"),
            STEP("repeats","REPEATS",2,64,12,1,""), CONT("drift","DRIFT",0,1,.1f,.01f,"%")),
     DIRECT("iterate", "ITERATE", "The whole gesture repeats with pitch and decay", "TIME", 0, 15,
@@ -220,13 +224,61 @@ const TsCdpRecipe *ts_cdp_recipe_find(const char *id)
     return NULL;
 }
 
+int ts_cdp_recipe_index_for_id(const char *id)
+{
+    if (id == NULL) return -1;
+    for (size_t i = 0; i < TS_CDP_FACTORY_RECIPE_COUNT; ++i)
+        if (strcmp(factory_recipes[i].id, id) == 0) return (int)i;
+    return -1;
+}
+
+void ts_cdp_catalog_view_build(TsCdpCatalogView *view,
+                               const int *enabled, size_t enabled_count)
+{
+    size_t count;
+    if (view == NULL) return;
+    memset(view, 0, sizeof(*view));
+    for (size_t i = 0; i < TS_CDP_VISIBLE_RECIPE_COUNT; ++i)
+        view->recipe_indices[i] = UINT16_MAX;
+    count = ts_cdp_factory_recipe_count();
+    if (count > TS_CDP_CATALOG_CAPACITY) count = TS_CDP_CATALOG_CAPACITY;
+    for (size_t i = 0; i < count; ++i) {
+        int selected = enabled != NULL && i < enabled_count ?
+                       enabled[i] : factory_recipes[i].default_enabled;
+        if (!selected) continue;
+        if (view->visible_count < TS_CDP_VISIBLE_RECIPE_COUNT)
+            view->recipe_indices[view->visible_count++] = (uint16_t)i;
+        ++view->enabled_count;
+    }
+    view->truncated = view->enabled_count > view->visible_count;
+}
+
+int ts_cdp_catalog_index_for_slot(const TsCdpCatalogView *view,
+                                  size_t bank, size_t slot)
+{
+    size_t visible_index;
+    uint16_t recipe_index;
+    if (view == NULL || bank >= TS_CDP_VISIBLE_BANK_COUNT ||
+        slot >= TS_CDP_VISIBLE_BANK_SLOT_COUNT) return -1;
+    visible_index = bank * TS_CDP_VISIBLE_BANK_SLOT_COUNT + slot;
+    recipe_index = view->recipe_indices[visible_index];
+    return recipe_index == UINT16_MAX ? -1 : (int)recipe_index;
+}
+
+const TsCdpRecipe *ts_cdp_catalog_recipe_for_slot(const TsCdpCatalogView *view,
+                                                  size_t bank, size_t slot)
+{
+    int index = ts_cdp_catalog_index_for_slot(view, bank, slot);
+    return index < 0 ? NULL : ts_cdp_factory_recipe_at((size_t)index);
+}
+
 int ts_cdp_recipe_validate(const TsCdpRecipe *recipe, char *error, size_t error_size)
 {
     if (recipe == NULL || recipe->id == NULL || recipe->id[0] == '\0' ||
         recipe->display_name == NULL || recipe->schema_version == 0u ||
         recipe->recipe_version == 0u || recipe->provenance_version == 0u ||
-        recipe->bank >= TS_CDP_BANK_COUNT || recipe->slot >= TS_CDP_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "Recipe identity, slot, or version is invalid");
+        (recipe->default_enabled != 0 && recipe->default_enabled != 1)) {
+        set_error(error, error_size, "Recipe identity, default, or version is invalid");
         return 0;
     }
     if (recipe->control_count == 0u || recipe->control_count > TS_CDP_CONTROL_COUNT ||
@@ -492,6 +544,15 @@ int ts_cdp_recipe_build_commands(const TsCdpRecipe *recipe,
         build_pvoc_synthesis(&commands[2],"effect.ana");
         set_error(error,error_size,""); return 1;
     }
+    if (id_is(recipe,"timewarp")) {
+        build_pvoc_analysis(recipe,&commands[0]);
+        command_begin(&commands[1],"stretch","effect.ana",TS_CDP_IO_ANALYSIS);
+        A(&commands[1],"time"); A(&commands[1],"1");
+        A(&commands[1],"input.ana"); A(&commands[1],"effect.ana");
+        A(&commands[1],"%.6g",v.controls[0]);
+        build_pvoc_synthesis(&commands[2],"effect.ana");
+        set_error(error,error_size,""); return 1;
+    }
     command_begin(&commands[0],recipe->stages[0].executable,"output.wav",TS_CDP_IO_WAV);
     if (id_is(recipe,"drunk")) {
         A(&commands[0],"drunk"); A(&commands[0],"1"); A(&commands[0],"input.wav"); A(&commands[0],"output.wav");
@@ -553,15 +614,13 @@ int ts_cdp_recipe_build_commands(const TsCdpRecipe *recipe,
         A(&commands[0],"-f%.6g",v.controls[3]); A(&commands[0],"-p%.6g",v.controls[3]);
         A(&commands[0],"-j%.6g",v.controls[3]); A(&commands[0],"-s%llu",mapped_seed(v.seed,256u));
     } else if (id_is(recipe,"grev")) {
+        double window=fmin(v.controls[1],duration*1000.0/3.0);
         mode=(int)lrintf(v.controls[0]);
         A(&commands[0],"grev"); A(&commands[0],"%d",mode); A(&commands[0],"input.wav"); A(&commands[0],"output.wav");
-        A(&commands[0],"%.6g",v.controls[1]); A(&commands[0],"%.6g",v.controls[3]); A(&commands[0],"%d",(int)lrintf(v.controls[2]));
+        A(&commands[0],"%.6g",window); A(&commands[0],"%.6g",v.controls[3]); A(&commands[0],"%d",(int)lrintf(v.controls[2]));
         if (mode==2) A(&commands[0],"2");
         else if (mode==3 || mode==4) { A(&commands[0],"1"); A(&commands[0],"3"); }
         else if (mode==5) A(&commands[0],"2");
-    } else if (id_is(recipe,"timewarp")) {
-        A(&commands[0],"timewarp"); A(&commands[0],"input.wav"); A(&commands[0],"output.wav"); A(&commands[0],"%.6g",v.controls[0]);
-        A(&commands[0],"-b%.6g",v.controls[1]); A(&commands[0],"-l%.6g",v.controls[2]); A(&commands[0],"-h%.6g",v.controls[3]);
     } else if (id_is(recipe,"telescope")) {
         A(&commands[0],"telescope"); A(&commands[0],"input.wav"); A(&commands[0],"output.wav");
         A(&commands[0],"%d",(int)lrintf(v.controls[0])); A(&commands[0],"-s%d",(int)lrintf(v.controls[1]));

@@ -2609,7 +2609,22 @@ int main(void)
         config.cdp_factory_controls[17][3] = 0.75f;
         config.cdp_factory_mix[17] = 0.9f;
         config.cdp_factory_seed[17] = UINT64_C(123456789);
+        config.cdp_process_enabled[0] = 0;
+        config.cdp_process_enabled[16] = 0;
         CHECK(ts_config_save(&config, "test-tapesister.ini", error, sizeof(error)));
+        {
+            FILE *saved = fopen("test-tapesister.ini", "rb");
+            char saved_text[16384];
+            size_t saved_size = saved != NULL ?
+                                fread(saved_text, 1u, sizeof(saved_text) - 1u,
+                                      saved) : 0u;
+            CHECK(saved != NULL);
+            if (saved != NULL) fclose(saved);
+            saved_text[saved_size] = '\0';
+            CHECK(strstr(saved_text, "CdpProcess.drunk=0") != NULL);
+            CHECK(strstr(saved_text, "CdpPreset.spec_smear=") != NULL);
+            CHECK(strstr(saved_text, "CdpPreset18=") == NULL);
+        }
         ts_config_init(&reopened);
         CHECK(ts_config_load(&reopened, "test-tapesister.ini", error, sizeof(error)));
         CHECK(strcmp(reopened.sample_path, config.sample_path) == 0);
@@ -2638,6 +2653,9 @@ int main(void)
               fabsf(reopened.cdp_factory_controls[17][2] + 3.0f) < 0.000001f &&
               fabsf(reopened.cdp_factory_mix[17] - 0.9f) < 0.000001f &&
               reopened.cdp_factory_seed[17] == UINT64_C(123456789));
+        CHECK(!reopened.cdp_process_enabled[0] &&
+              !reopened.cdp_process_enabled[16] &&
+              reopened.cdp_process_enabled[1]);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_FASTTRACKER_PATH),
                      "FASTTRACKER EXECUTABLE") == 0);
         CHECK(strcmp(ts_config_field_name(TS_CONFIG_CDP_BIN_PATH),

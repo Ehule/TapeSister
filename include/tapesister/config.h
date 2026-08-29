@@ -145,10 +145,11 @@ typedef struct {
     int sister_window_y;
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];
     float dsp_factory_controls[TS_DSP_FACTORY_RECIPE_COUNT][TS_DSP_CONTROL_COUNT];
-    int cdp_factory_overridden[TS_CDP_FACTORY_RECIPE_COUNT];
-    float cdp_factory_controls[TS_CDP_FACTORY_RECIPE_COUNT][TS_CDP_CONTROL_COUNT];
-    float cdp_factory_mix[TS_CDP_FACTORY_RECIPE_COUNT];
-    uint64_t cdp_factory_seed[TS_CDP_FACTORY_RECIPE_COUNT];
+    int cdp_process_enabled[TS_CDP_CATALOG_CAPACITY];
+    int cdp_factory_overridden[TS_CDP_CATALOG_CAPACITY];
+    float cdp_factory_controls[TS_CDP_CATALOG_CAPACITY][TS_CDP_CONTROL_COUNT];
+    float cdp_factory_mix[TS_CDP_CATALOG_CAPACITY];
+    uint64_t cdp_factory_seed[TS_CDP_CATALOG_CAPACITY];
 } TsConfig;
 
 void ts_config_init(TsConfig *config);
