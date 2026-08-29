@@ -11,7 +11,6 @@ set(TAPESISTER_CDP8_REQUIRED_PROGRAMS
     distshift
     extend
     filter
-    freeze
     glisten
     grain
     hover

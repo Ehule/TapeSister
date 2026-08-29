@@ -53,7 +53,7 @@ The placement is part of the compatibility contract:
 | 12 | GREV | `grain grev 1-5` |
 | 13 | TIMEWARP | `grain timewarp` |
 | 14 | TELESCOPE | `distort telescope` |
-| 15 | FREEZE | `freeze freeze 2` |
+| 15 | FREEZE | `extend freeze 2` |
 | 16 | ITERATE | `extend iterate 2` |
 
 | CDP 2 | Recipe | Executable/process |
@@ -167,7 +167,7 @@ environment variable.
 The current 32-recipe catalog requires this curated executable set:
 
 ```text
-blur distmore distort distshift extend filter freeze glisten grain hover
+blur distmore distort distshift extend filter glisten grain hover
 modify motor pvoc scramble sorter splinter stutter
 ```
 
@@ -177,11 +177,11 @@ license. The upstream build links the required programs to CDP's `cdp2k`,
 `sfsys/newsfsys`, and `pvxio2` support libraries plus the platform math/system
 dependencies selected by CDP.
 PortAudio playback/recording utilities are not required. Build the compatible upstream
-tree, then copy the 17 programs and their actual dynamic-library closure:
+tree, then copy the 16 programs and their actual dynamic-library closure:
 
 ```bash
 cmake -S CDP8-main -B cdp-build -DCMAKE_BUILD_TYPE=Release -DUSE_LOCAL_PORTAUDIO=OFF
-cmake --build cdp-build --target blur distmore distort distshift extend filter freeze \
+cmake --build cdp-build --target blur distmore distort distshift extend filter \
   glisten grain hover modify motor pvoc scramble sorter splinter stutter -j2
 ```
 
@@ -212,9 +212,9 @@ newest-request-wins; no two jobs share filenames or intermediates.
 
 The final WAV must be regular, nonempty PCM/float RIFF/WAVE at the input sample rate,
 with the recipe's expected mono or stereo channel count and a bounded frame count.
-BRASSAGE mode 6 declares stereo output, which the existing loader safely downmixes into
-TapeSister's owned mono sample memory. Float channels are scanned for NaN/Inf before
-import. Peak, DC, clipping, silence, channel, and length checks produce
+BRASSAGE mode 6 declares stereo output, which the adapter safely downmixes into
+TapeSister's owned mono sample memory before preview mixing. Float channels are
+scanned for NaN/Inf before import. Peak, DC, clipping, silence, channel, and length checks produce
 SAFE/HOT/SILENT/INVALID status. The adapter never blindly normalizes.
 
 ## Selection, preview, duration, tuning, and Undo

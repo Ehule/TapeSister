@@ -47,7 +47,10 @@ silently producing an incomplete release.
 
 The `Native release bundles` GitHub Actions workflow performs these native Linux and
 MSYS2 UCRT64 Windows builds on version tags or manual dispatch and uploads a complete
-platform archive. It never mixes executables from the two operating systems.
+platform archive. Before packaging, its CTest pass launches every curated recipe
+through the actual platform-native CDP executables against a deterministic audio
+fixture; merely compiling or finding the files is not considered sufficient. It never
+mixes executables from the two operating systems.
 
 ## Configurable process catalog
 

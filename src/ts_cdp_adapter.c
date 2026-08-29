@@ -4,6 +4,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -367,6 +368,43 @@ static int contains_text_error(const char *text)
     return 0;
 }
 
+static void set_cdp_execution_error(const TsCdpRunResult *result,
+                                    const char *fallback,
+                                    char *error, size_t error_size)
+{
+    const char *scan;
+    const char *last = NULL;
+    char message[192];
+    size_t used = 0u;
+    if (result == NULL || result->diagnostic[0] == '\0') {
+        set_error(error, error_size, fallback);
+        return;
+    }
+    scan = result->diagnostic;
+    while (strlen(scan) >= 6u) {
+        if (toupper((unsigned char)scan[0]) == 'E' &&
+            toupper((unsigned char)scan[1]) == 'R' &&
+            toupper((unsigned char)scan[2]) == 'R' &&
+            toupper((unsigned char)scan[3]) == 'O' &&
+            toupper((unsigned char)scan[4]) == 'R' && scan[5] == ':')
+            last = scan + 6;
+        ++scan;
+    }
+    if (last == NULL) {
+        set_error(error, error_size, fallback);
+        return;
+    }
+    while (*last == ' ' || *last == '\t') ++last;
+    while (*last != '\0' && *last != '\r' && *last != '\n' && *last != '|' &&
+           used + 1u < sizeof(message))
+        message[used++] = *last++;
+    while (used > 0u && (message[used - 1u] == ' ' || message[used - 1u] == '.'))
+        --used;
+    message[used] = '\0';
+    if (used == 0u) set_error(error, error_size, fallback);
+    else set_error(error, error_size, message);
+}
+
 #ifdef _WIN32
 static int quote_windows_argument(const char *argument, char *output,
                                   size_t output_size, size_t *used)
@@ -542,7 +580,9 @@ static int execute_command(const char *executable, const TsCdpCommand *command,
         if (exit_code != 0u) {
             read_log(stdout_path, result->diagnostic, sizeof(result->diagnostic));
             read_log(stderr_path, result->diagnostic, sizeof(result->diagnostic));
-            set_error(error, error_size, "CDP process returned a nonzero exit code");
+            set_cdp_execution_error(result,
+                                    "CDP process returned a nonzero exit code",
+                                    error, error_size);
             return 0;
         }
         goto windows_finished;
@@ -616,7 +656,9 @@ windows_finished:;
         if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
             read_log(stdout_path, result->diagnostic, sizeof(result->diagnostic));
             read_log(stderr_path, result->diagnostic, sizeof(result->diagnostic));
-            set_error(error, error_size, "CDP process returned a nonzero exit code");
+            set_cdp_execution_error(result,
+                                    "CDP process returned a nonzero exit code",
+                                    error, error_size);
             return 0;
         }
     }
@@ -624,7 +666,9 @@ windows_finished:;
     read_log(stdout_path, result->diagnostic, sizeof(result->diagnostic));
     read_log(stderr_path, result->diagnostic, sizeof(result->diagnostic));
     if (contains_text_error(result->diagnostic)) {
-        set_error(error, error_size, "CDP reported ERROR in its diagnostic output");
+        set_cdp_execution_error(result,
+                                "CDP reported ERROR in its diagnostic output",
+                                error, error_size);
         return 0;
     }
     return 1;
@@ -744,6 +788,32 @@ static void analyze_output(TsCdpRunResult *result, float raw_peak)
     else result->safety = TS_CDP_SAFETY_SAFE;
 }
 
+static int downmix_output_to_mono(TsSample *sample,
+                                  char *error, size_t error_size)
+{
+    float *mono;
+    if (sample == NULL || sample->data == NULL || sample->channels == 0u) {
+        set_error(error, error_size, "CDP output cannot be downmixed");
+        return 0;
+    }
+    if (sample->channels == 1u) return 1;
+    if (sample->channels != 2u || sample->frames > SIZE_MAX / sizeof(*mono)) {
+        set_error(error, error_size, "CDP output channel shape cannot be downmixed");
+        return 0;
+    }
+    mono = malloc(sample->frames * sizeof(*mono));
+    if (mono == NULL) {
+        set_error(error, error_size, "Out of memory downmixing CDP output");
+        return 0;
+    }
+    for (size_t frame = 0; frame < sample->frames; ++frame)
+        mono[frame] = ts_sample_read_mono(sample, frame);
+    free(sample->data);
+    sample->data = mono;
+    sample->channels = 1u;
+    return 1;
+}
+
 int ts_cdp_cleanup_job_directory(const char *directory,
                                  char *error, size_t error_size)
 {
@@ -831,6 +901,45 @@ static int create_stutter_data(const TsCdpRecipe *recipe,
     return 1;
 }
 
+static int prepare_content_safe_values(const TsCdpRecipe *recipe,
+                                       const TsCdpRecipeValues *requested,
+                                       const TsSample *input,
+                                       TsCdpRecipeValues *safe,
+                                       char *error, size_t error_size)
+{
+    int previous_sign = 0;
+    size_t reversals = 0u;
+    int requested_group;
+    int maximum_group;
+    if (recipe == NULL || requested == NULL || input == NULL || safe == NULL) {
+        set_error(error, error_size, "CDP content validation input is missing");
+        return 0;
+    }
+    *safe = *requested;
+    if (strcmp(recipe->id, "wave_scramble") != 0) return 1;
+    for (size_t frame = 0; frame < input->frames; ++frame) {
+        float value = ts_sample_read_mono(input, frame);
+        int sign = value > 0.000001f ? 1 : value < -0.000001f ? -1 : 0;
+        if (sign == 0) continue;
+        if (previous_sign != 0 && sign != previous_sign) ++reversals;
+        previous_sign = sign;
+    }
+    /* CDP groups two phase reversals per requested waveset.  Its random
+       modes do not safely handle a source with no complete group. */
+    maximum_group = reversals > (size_t)INT_MAX * 2u ? INT_MAX :
+                    (int)(reversals / 2u);
+    if (maximum_group < 1) {
+        set_error(error, error_size,
+                  "WAVE SCRAMBLE NEEDS MORE ZERO CROSSINGS OR A LONGER SOUND");
+        return 0;
+    }
+    requested_group = (int)lrintf(ts_cdp_control_quantize(
+        &recipe->controls[1], requested->controls[1]));
+    if (requested_group > maximum_group)
+        safe->controls[1] = (float)maximum_group;
+    return 1;
+}
+
 int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
                       const TsCdpRecipe *recipe,
                       const TsCdpRecipeValues *values,
@@ -847,6 +956,7 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
     char stage_output[TS_CDP_PATH_MAX];
     char executable[TS_CDP_PATH_MAX];
     char cleanup_error[160];
+    TsCdpRecipeValues safe_values;
     int ok = 0;
     if (result == NULL) { set_error(error, error_size, "CDP result destination is missing"); return 0; }
     ts_cdp_run_result_free(result);
@@ -858,7 +968,9 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
         !ts_cdp_recipe_validate(recipe, error, error_size) ||
         !ts_cdp_recipe_input_valid(recipe, input->frames, input->sample_rate,
                                    error, error_size) ||
-        !ts_cdp_recipe_build_commands(recipe, values, input->frames,
+        !prepare_content_safe_values(recipe, values, input, &safe_values,
+                                     error, error_size) ||
+        !ts_cdp_recipe_build_commands(recipe, &safe_values, input->frames,
                                       input->sample_rate, commands,
                                       &command_count, error, error_size)) {
         result->status = TS_CDP_RUN_FAILED;
@@ -872,7 +984,7 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
     if (!path_join(input_path, sizeof(input_path), result->job_directory, "input.wav") ||
         !path_join(output_path, sizeof(output_path), result->job_directory, "output.wav") ||
         !ts_sample_save_wav16(input, input_path, error, error_size) ||
-        !create_stutter_data(recipe, values, input, result->job_directory,
+        !create_stutter_data(recipe, &safe_values, input, result->job_directory,
                              error, error_size)) goto finished;
     for (unsigned stage = 0; stage < command_count; ++stage) {
         if (!runtime_executable(runtime, commands[stage].executable,
@@ -933,6 +1045,8 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
         goto finished;
     }
     if (!ts_sample_load_wav(&result->output, output_path, error, error_size)) goto finished;
+    if (input->channels == 1u && result->output.channels == 2u &&
+        !downmix_output_to_mono(&result->output, error, error_size)) goto finished;
     analyze_output(result, wav.raw_peak);
     if (!result->finite || result->output.frames == 0u ||
         result->output.frames > TS_CANVAS_MAX_FRAMES ||

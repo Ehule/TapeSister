@@ -117,17 +117,17 @@ static const TsCdpRecipe factory_recipes[TS_CDP_FACTORY_RECIPE_COUNT] = {
     DIRECT("grev", "GREV", "Grain groups reverse repeat omit or stretch", "GRAIN", 0, 11,
            "grain", 4, 1, 0, 1,
            ENUM("mode","MODE",grev_modes,grev_names,1), CONT("window","WINDOW",5,200,35,1,"MS"),
-           STEP("group","GROUP",1,32,4,1,""), CONT("trough","TROUGH",.05f,.95f,.5f,.01f,"%")),
+           STEP("group","GROUP",1,32,1,1,""), CONT("trough","TROUGH",.05f,.95f,.5f,.01f,"%")),
     DIRECT("timewarp", "TIMEWARP", "Granular time expands or contracts", "GRAIN", 0, 12,
            "grain", 4, 1, 0, 1,
-           CONT("ratio","RATIO",.125f,8,1.5f,.025f,"X"), CONT("buffer","BUFFER",.005f,.25f,.04f,.005f,"SEC"),
-           CONT("gate","GATE",0,1,.05f,.01f,"%"), CONT("hole","HOLE",.001f,.2f,.005f,.001f,"SEC")),
+           CONT("ratio","RATIO",.125f,8,1.5f,.025f,"X"), CONT("buffer","BUFFER",.1f,.25f,.1f,.005f,"SEC"),
+           CONT("gate","GATE",0,1,.05f,.01f,"%"), CONT("hole","HOLE",.032f,.2f,.032f,.001f,"SEC")),
     DIRECT("telescope", "TELESCOPE", "Wavecycle groups collapse into one contour", "WAVESET", 0, 13,
            "distort", 3, 1, 0, 1,
            STEP("group","GROUP",2,128,16,1,""), STEP("skip","SKIP",0,256,0,1,"CYC"),
            ENUM("mode","SHAPE",telescope_modes,telescope_names,0)),
     DIRECT("freeze", "FREEZE", "A source window is held and scattered", "FRAGMENT", 0, 14,
-           "freeze", 4, 1, 1, 1,
+           "extend", 4, 1, 1, 1,
            CONT("position","POSITION",0,.95f,.4f,.01f,"%"), CONT("size","SIZE",.05f,.5f,.12f,.01f,"SEC"),
            STEP("repeats","REPEATS",2,64,12,1,""), CONT("drift","DRIFT",0,1,.1f,.01f,"%")),
     DIRECT("iterate", "ITERATE", "The whole gesture repeats with pitch and decay", "TIME", 0, 15,
@@ -606,15 +606,21 @@ int ts_cdp_recipe_build_commands(const TsCdpRecipe *recipe,
         A(&commands[0],"-f%.6g",v.controls[3]); A(&commands[0],"-p%.6g",v.controls[3]);
         A(&commands[0],"-j%.6g",v.controls[3]); A(&commands[0],"-s%llu",mapped_seed(v.seed,256u));
     } else if (id_is(recipe,"grev")) {
+        double window=fmin(v.controls[1],duration*1000.0/3.0);
         mode=(int)lrintf(v.controls[0]);
         A(&commands[0],"grev"); A(&commands[0],"%d",mode); A(&commands[0],"input.wav"); A(&commands[0],"output.wav");
-        A(&commands[0],"%.6g",v.controls[1]); A(&commands[0],"%.6g",v.controls[3]); A(&commands[0],"%d",(int)lrintf(v.controls[2]));
+        A(&commands[0],"%.6g",window); A(&commands[0],"%.6g",v.controls[3]); A(&commands[0],"%d",(int)lrintf(v.controls[2]));
         if (mode==2) A(&commands[0],"2");
         else if (mode==3 || mode==4) { A(&commands[0],"1"); A(&commands[0],"3"); }
         else if (mode==5) A(&commands[0],"2");
     } else if (id_is(recipe,"timewarp")) {
+        /* CDP derives both upper bounds from the current input duration.
+           GR_BLEN is at least 100 ms unless the complete source is shorter;
+           GR_MINTIME is fixed at two 15 ms splices plus 2 ms safety. */
+        double buffer=fmin(duration,fmax(fmin(duration,.1),v.controls[1]));
+        double hole=fmin(duration,fmax(.032,v.controls[3]));
         A(&commands[0],"timewarp"); A(&commands[0],"input.wav"); A(&commands[0],"output.wav"); A(&commands[0],"%.6g",v.controls[0]);
-        A(&commands[0],"-b%.6g",v.controls[1]); A(&commands[0],"-l%.6g",v.controls[2]); A(&commands[0],"-h%.6g",v.controls[3]);
+        A(&commands[0],"-b%.6g",buffer); A(&commands[0],"-l%.6g",v.controls[2]); A(&commands[0],"-h%.6g",hole);
     } else if (id_is(recipe,"telescope")) {
         A(&commands[0],"telescope"); A(&commands[0],"input.wav"); A(&commands[0],"output.wav");
         A(&commands[0],"%d",(int)lrintf(v.controls[0])); A(&commands[0],"-s%d",(int)lrintf(v.controls[1]));

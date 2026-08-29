@@ -194,6 +194,16 @@ add_executable(tapesister_audio_frame_tests tests/test_audio_frame.c)
 target_link_libraries(tapesister_audio_frame_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_audio_frame_tests COMMAND tapesister_audio_frame_tests)
 
+if(TAPESISTER_BUILD_SDL AND TAPESISTER_BUNDLE_CDP8)
+  add_executable(tapesister_cdp_native_smoke tests/test_cdp_native_smoke.c)
+  target_link_libraries(tapesister_cdp_native_smoke PRIVATE tapesister_core)
+  add_dependencies(tapesister_cdp_native_smoke tapesister)
+  add_test(NAME tapesister_cdp_native_smoke
+    COMMAND tapesister_cdp_native_smoke
+            "$<TARGET_FILE_DIR:tapesister>/cdp/bin"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_welcome.wav")
+endif()
+
 foreach(stereo_test IN ITEMS audio_mixer note_bank_stereo performance_stereo
                              capture_stereo external_input_channels
                              input_ownership realtime_diagnostics)
