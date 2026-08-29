@@ -41,6 +41,36 @@ publication.
 | Preset/project/config load/save/legacy defaults | Controller/file path, never callback | Recall republishes normal parameter/resize transitions; live audio, phases and tails are never serialized. Schema-v5 canonical mixer values round-trip; old files get deterministic defaults. | Temporary-file replacement; loaded state copied into owned runtime structures. | Preset, project-state, config/audio-config, TSR and sample-pages tests. |
 | Sample rate/callback size/device loss | Controller device lifecycle | Restart occurs with callback stopped/locked, preserves requested musical state, rebuilds rate-sized storage, and clears incompatible live history. Diagnostics publish callback timing without callback logging. | Device owns callback lifetime; all rate-sized memory prepared outside it. | 44.1/48/96 kHz engine tests and optional 128/256/512/1024 benchmark. SDL/hardware switch remains manual. |
 
+## Post-PR11 head-motion and wheel follow-up
+
+The final listening pass on a ThinkPad X230 exposed transition restarts that
+the original finite-state and broad discontinuity tests did not measure tightly
+enough:
+
+- H2/H3 normal Rate traversal could cross the newest/oldest live-canvas seam
+  without arming the write-boundary handoff. Scrub gestures near zero were
+  guarded, but ordinary fractional and fast playback wraps were not. Both
+  directions now anticipate the seam and carry the last audible stereo frame
+  into the established 10 ms landing handoff.
+- A second H1 Time command received during its 15 ms dual-tap handoff restarted
+  from the prior target tap rather than the sample actually being heard. Rapid
+  drags and coarse wheel steps now restart from the last audible H1 frame.
+- Delay Time and Reverb Type had the same interrupted-transition shape under
+  fast wheel input. Their 25 ms and 60 ms read handoffs now retain the last
+  audible wet frame when a new target arrives before completion.
+- Sister wheel steps remain intentionally coarse at 5% (Shift: 1%), while rate,
+  filter type, reverb type, and buffer duration use their discrete domains.
+  Parameter transfer stays under the SDL audio-device lock, but preset-label
+  lookup, formatting, and config mirroring now happen after unlock so a burst of
+  wheel events cannot enlarge the callback exclusion window with UI work.
+
+The dedicated head regression now distinguishes a pure H1/H2 crossing from a
+canvas seam: an interior head-to-head crossing must remain continuous, while a
+deliberately discontinuous 0.98-amplitude loop seam must be distributed across
+the landing handoff. Separate hostile tests interrupt H1, Delay, and Reverb
+handoffs every few samples. These are continuity assertions rather than only
+finite/bounded-state checks.
+
 ## Callback and storage findings
 
 The active sample path contains no allocation, reallocation, free, filesystem,

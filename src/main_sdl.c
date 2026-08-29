@@ -7536,6 +7536,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     uint8_t sources;
     int capture_state;
     int sync_ext = 0;
+    int parameter_changed = -1;
     int fallout_preset_scope;
     TsSisterPresetBank *preset_bank;
     size_t *preset_index;
@@ -7841,51 +7842,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         if (hit.index >= TS_SISTER_UI_PARAM_FALLOUT_MIX &&
             hit.index <= TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY)
             sister->fallout_preset_index = SIZE_MAX;
-        sister_preset_model_sync(sister, &audio->sister);
-        if (hit.index == TS_SISTER_UI_PARAM_INPUT_GAIN)
-            ui->config.sister_input_percent =
-                (int)lrintf(sister->model.parameters.input_gain * 100.0f);
-        else if (hit.index == TS_SISTER_UI_PARAM_TILES_GAIN)
-            ui->config.sister_tiles_percent =
-                (int)lrintf(sister->model.parameters.tiles_gain * 100.0f);
-        else if (hit.index == TS_SISTER_UI_PARAM_FM_GAIN)
-            ui->config.sister_fm_percent =
-                (int)lrintf(sister->model.parameters.fm_gain * 100.0f);
-        else if (hit.index == TS_SISTER_UI_PARAM_EXT_GAIN)
-            ui->config.sister_ext_percent =
-                (int)lrintf(sister->model.parameters.external_gain * 100.0f);
-        else if (hit.index == TS_SISTER_UI_PARAM_PREVIEW_GAIN)
-            ui->config.sister_audition_percent =
-                (int)lrintf(sister->model.parameters.preview_gain * 100.0f);
-        else if (hit.index == TS_SISTER_UI_PARAM_FX_RETURN_GAIN)
-            ui->config.sister_fx_return_percent =
-                (int)lrintf(sister->model.parameters.fx_return_gain * 100.0f);
-        else if (hit.index == TS_SISTER_UI_PARAM_MONITOR_DRY)
-            ui->config.sister_dry_percent =
-                (int)lrintf(sister->model.parameters.monitor_dry * 100.0f);
-        else if (hit.index == TS_SISTER_UI_PARAM_MONITOR_WET)
-            ui->config.sister_wet_percent =
-                (int)lrintf(sister->model.parameters.monitor_wet * 100.0f);
-        else if (hit.index == TS_SISTER_UI_PARAM_MIX_OUTPUT)
-            ui->config.sister_output_percent =
-                (int)lrintf(sister->model.parameters.mix_output_gain * 100.0f);
-        else if (hit.index == TS_SISTER_UI_PARAM_WRITE_ERASE)
-            ui->config.sister_erase_percent =
-                (int)lrintf(sister->model.parameters.write_erase * 100.0f);
-        else if (hit.index == TS_SISTER_UI_PARAM_GHOST_TONE)
-            ui->config.sister_ghost_percent =
-                (int)lrintf(sister->model.parameters.ghost_tone * 100.0f);
-        else if (hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS)
-            ui->config.sister_buffer_seconds =
-                (int)lrintf(sister->model.parameters.buffer_seconds);
-        else if (hit.index == TS_SISTER_UI_PARAM_FALLOUT_TRANSITION)
-            ui->config.sister_fallout_transition_ms = (int)lrintf(
-                ts_sister_fallout_transition_ms(
-                    sister->model.parameters.fx.fallout.transition));
-        else if (hit.index == TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH)
-            ui->config.sister_fallout_rise_seconds = (int)lrintf(
-                ts_sister_fallout_rise_seconds(
-                    sister->model.parameters.fx.fallout.rise_length));
+        parameter_changed = hit.index;
         break;
     case TS_SISTER_UI_ACTION_FALLOUT_TOGGLE: {
         TsSisterFalloutControls *fallout =
@@ -7947,6 +7904,56 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     default: break;
     }
     if (device) SDL_UnlockAudioDevice(device);
+    if (parameter_changed >= 0) {
+        /* Mouse-wheel bursts can publish many bounded DSP targets. Keep the
+           audio-device critical section to the state transfer itself; preset
+           label work and UI/config bookkeeping do not belong on its clock. */
+        sister_preset_model_sync(sister, &audio->sister);
+        if (parameter_changed == TS_SISTER_UI_PARAM_INPUT_GAIN)
+            ui->config.sister_input_percent =
+                (int)lrintf(sister->model.parameters.input_gain * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_TILES_GAIN)
+            ui->config.sister_tiles_percent =
+                (int)lrintf(sister->model.parameters.tiles_gain * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_FM_GAIN)
+            ui->config.sister_fm_percent =
+                (int)lrintf(sister->model.parameters.fm_gain * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_EXT_GAIN)
+            ui->config.sister_ext_percent =
+                (int)lrintf(sister->model.parameters.external_gain * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_PREVIEW_GAIN)
+            ui->config.sister_audition_percent =
+                (int)lrintf(sister->model.parameters.preview_gain * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_FX_RETURN_GAIN)
+            ui->config.sister_fx_return_percent =
+                (int)lrintf(sister->model.parameters.fx_return_gain * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_MONITOR_DRY)
+            ui->config.sister_dry_percent =
+                (int)lrintf(sister->model.parameters.monitor_dry * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_MONITOR_WET)
+            ui->config.sister_wet_percent =
+                (int)lrintf(sister->model.parameters.monitor_wet * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_MIX_OUTPUT)
+            ui->config.sister_output_percent =
+                (int)lrintf(sister->model.parameters.mix_output_gain * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_WRITE_ERASE)
+            ui->config.sister_erase_percent =
+                (int)lrintf(sister->model.parameters.write_erase * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_GHOST_TONE)
+            ui->config.sister_ghost_percent =
+                (int)lrintf(sister->model.parameters.ghost_tone * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_BUFFER_SECONDS)
+            ui->config.sister_buffer_seconds =
+                (int)lrintf(sister->model.parameters.buffer_seconds);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_FALLOUT_TRANSITION)
+            ui->config.sister_fallout_transition_ms = (int)lrintf(
+                ts_sister_fallout_transition_ms(
+                    sister->model.parameters.fx.fallout.transition));
+        else if (parameter_changed == TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH)
+            ui->config.sister_fallout_rise_seconds = (int)lrintf(
+                ts_sister_fallout_rise_seconds(
+                    sister->model.parameters.fx.fallout.rise_length));
+    }
     if (sync_ext && input_device != NULL && external_input != NULL &&
         !sync_external_input_consumers(
             input_device, audio, external_input, &ui->config,

@@ -38,6 +38,14 @@ enum {
 };
 
 typedef struct {
+    TsStereoFrame previous;
+    TsStereoFrame from;
+    uint32_t remaining;
+    uint32_t total;
+    int initialized;
+} TsSisterFxReadHandoff;
+
+typedef struct {
     float *data;
     size_t capacity_frames;
     size_t write_index;
@@ -60,6 +68,7 @@ typedef struct {
     float route_current;
     float type_blend;
     int has_history;
+    TsSisterFxReadHandoff read_handoff;
 } TsSisterReverbState;
 
 typedef struct {
@@ -75,6 +84,7 @@ typedef struct {
     float mix_current;
     float route_current;
     int has_history;
+    TsSisterFxReadHandoff read_handoff;
 } TsSisterDelayState;
 
 typedef struct {

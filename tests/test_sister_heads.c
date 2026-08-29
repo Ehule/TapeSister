@@ -408,6 +408,135 @@ static void free_head_crosses_physical_store_midpoint_continuously(void)
     ts_sister_machine_free(&machine);
 }
 
+static void rate_seams_and_retargeted_h1_are_declicked(void)
+{
+    TsSisterMachine machine;
+    TsSisterParameters parameters;
+    TsSisterOutput output;
+    TsStereoFrame previous = {0.0f, 0.0f};
+    float worst_wrap = 0.0f;
+    float worst_h1 = 0.0f;
+
+    assert(ts_sister_machine_init(&machine, 1000u, 1u, 0.100));
+    ts_sister_parameters_default(&parameters, 1000u);
+    parameters.buffer_seconds = 0.100f;
+    parameters.head1_level = 0.0f;
+    parameters.head2_level = 1.0f;
+    parameters.head2_scrub = 0.02f;
+    parameters.head2_rate_index = 9;
+    parameters.head3_level = 0.0f;
+    parameters.wow = parameters.drop = 0.0f;
+    parameters.headroom = 1.0f;
+    sister_configure_immediate(&machine, &parameters);
+    sister_fill_buffer(&machine, 1.0f, 1.0f);
+    ts_sister_machine_set_rolling(&machine, 0);
+    set_free_head_age(&machine, 1u, 2.0);
+    for (size_t frame = 0u; frame < 30u; ++frame) {
+        output = ts_sister_machine_process_frame(
+            &machine, sister_silence(), sister_silence());
+        if (frame > 0u) {
+            float jump = fabsf(output.head[1].l - previous.l);
+            if (jump > worst_wrap) worst_wrap = jump;
+        }
+        previous = output.head[1];
+    }
+    ts_sister_machine_free(&machine);
+    /* The seeded ramp has a 0.98 seam. The 10 ms handoff must turn that
+       full-scale edge into a bounded series rather than one audible impulse. */
+    assert(worst_wrap < 0.11f);
+
+    assert(ts_sister_machine_init(&machine, 1000u, 1u, 0.100));
+    ts_sister_parameters_default(&parameters, 1000u);
+    parameters.buffer_seconds = 0.100f;
+    parameters.head1_level = 1.0f;
+    parameters.head1_time_ms = 5.0f;
+    parameters.head1_feedback = 0.0f;
+    parameters.head2_level = parameters.head3_level = 0.0f;
+    parameters.headroom = 1.0f;
+    sister_configure_immediate(&machine, &parameters);
+    sister_fill_buffer(&machine, 1.0f, 1.0f);
+    ts_sister_machine_set_rolling(&machine, 0);
+    machine.master_clock = 50u;
+    previous = ts_sister_machine_process_frame(
+        &machine, sister_silence(), sister_silence()).head[0];
+    for (size_t frame = 0u; frame < 60u; ++frame) {
+        if (frame % 3u == 0u) {
+            parameters.head1_time_ms = (frame & 4u) ? 80.0f : 20.0f;
+            ts_sister_machine_set_parameters(&machine, &parameters);
+        }
+        output = ts_sister_machine_process_frame(
+            &machine, sister_silence(), sister_silence());
+        {
+            float jump = fabsf(output.head[0].l - previous.l);
+            if (jump > worst_h1) worst_h1 = jump;
+        }
+        previous = output.head[0];
+    }
+    ts_sister_machine_free(&machine);
+    /* Retarget every three samples so each new TIME command interrupts the
+       previous 15 ms handoff. Continuity must survive that hostile gesture. */
+    assert(worst_h1 < 0.25f);
+}
+
+static void head_to_head_crossing_is_continuous(void)
+{
+    TsSisterMachine machine;
+    TsSisterParameters parameters;
+    TsSisterOutput previous;
+    TsSisterSnapshot snapshot;
+    float worst_mix_jump = 0.0f;
+    double previous_difference;
+    int crossed = 0;
+
+    assert(ts_sister_machine_init(&machine, 1000u, 1u, 1.0));
+    ts_sister_parameters_default(&parameters, 1000u);
+    parameters.buffer_seconds = 1.0f;
+    parameters.head1_level = 0.35f;
+    parameters.head1_time_ms = 200.0f;
+    parameters.head1_feedback = 0.0f;
+    parameters.head2_level = 0.35f;
+    parameters.head2_scrub = 0.22f;
+    parameters.head2_rate_index = 9;
+    parameters.head2_feedback = 0.0f;
+    parameters.head3_level = 0.0f;
+    parameters.wow = parameters.drop = 0.0f;
+    parameters.headroom = 1.0f;
+    sister_configure_immediate(&machine, &parameters);
+    for (size_t frame = 0u; frame < machine.buffer.capacity_frames; ++frame) {
+        float value = 0.6f * sinf(6.28318530718f *
+                                  (float)frame /
+                                  (float)machine.buffer.capacity_frames);
+        assert(ts_sister_buffer_write(
+            &machine.buffer, frame, (TsStereoFrame){value, value}));
+    }
+    ts_sister_machine_set_rolling(&machine, 0);
+    machine.master_clock = 500u;
+    set_free_head_age(&machine, 1u, 220.0);
+    previous = ts_sister_machine_process_frame(
+        &machine, sister_silence(), sister_silence());
+    assert(ts_sister_machine_get_snapshot(&machine, &snapshot));
+    previous_difference = circular_position_delta(
+        snapshot.head_position[1], snapshot.head_position[0],
+        machine.buffer.capacity_frames);
+    for (size_t frame = 0u; frame < 50u; ++frame) {
+        TsSisterOutput current = ts_sister_machine_process_frame(
+            &machine, sister_silence(), sister_silence());
+        double difference;
+        float jump = fabsf(current.mix.l - previous.mix.l);
+        if (jump > worst_mix_jump) worst_mix_jump = jump;
+        assert(ts_sister_machine_get_snapshot(&machine, &snapshot));
+        difference = circular_position_delta(
+            snapshot.head_position[1], snapshot.head_position[0],
+            machine.buffer.capacity_frames);
+        if (difference * previous_difference <= 0.0) crossed = 1;
+        previous_difference = difference;
+        previous = current;
+    }
+    assert(crossed);
+    assert(worst_mix_jump < 0.02f);
+    ts_sister_machine_free(&machine);
+}
+
 int main(void)
 {
     default_contract();
@@ -420,6 +549,8 @@ int main(void)
     free_head_crosses_physical_store_midpoint_continuously();
     stationary_free_head_matrix();
     live_gestures_and_transport_remain_continuous();
+    rate_seams_and_retargeted_h1_are_declicked();
+    head_to_head_crossing_is_continuous();
     puts("sister head tests passed");
     return 0;
 }

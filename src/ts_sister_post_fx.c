@@ -49,6 +49,32 @@ static TsStereoFrame effect_mix(TsStereoFrame dry, TsStereoFrame wet,
     return ts_stereo_frame_sanitize(result);
 }
 
+static void read_handoff_begin(TsSisterFxReadHandoff *handoff,
+                               uint32_t frames)
+{
+    if (handoff == NULL || !handoff->initialized) return;
+    if (frames == 0u) frames = 1u;
+    handoff->from = handoff->previous;
+    handoff->total = frames;
+    handoff->remaining = frames;
+}
+
+static TsStereoFrame read_handoff_apply(TsSisterFxReadHandoff *handoff,
+                                        TsStereoFrame current)
+{
+    TsStereoFrame result = current;
+    if (handoff == NULL) return result;
+    if (handoff->remaining > 0u && handoff->total > 0u) {
+        float amount = 1.0f - (float)handoff->remaining /
+                                  (float)handoff->total;
+        result = lerp_frame(handoff->from, current, amount);
+        --handoff->remaining;
+    }
+    handoff->previous = result;
+    handoff->initialized = 1;
+    return result;
+}
+
 static float soft_clip(float value)
 {
     if (!isfinite(value)) return 0.0f;
@@ -333,6 +359,12 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
     if (engine->ready && next.reverb_type != engine->controls.reverb_type) {
         for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
             TsSisterReverbState *state = &engine->reverb[i];
+            int interrupted = 0;
+            for (size_t line = 0u; line < TS_SISTER_REVERB_LINES; ++line)
+                interrupted |= state->line[line].transition_remaining > 0u;
+            if (interrupted)
+                read_handoff_begin(&state->read_handoff,
+                    (uint32_t)(0.060f * engine->sample_rate));
             state->old_type = state->type;
             state->type = next.reverb_type;
             state->type_blend = 0.0f;
@@ -404,6 +436,9 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
     float requested = ts_sister_delay_time_ms(c->delay_time) *
                       0.001f * engine->sample_rate;
     if (fabsf(requested - state->delay_target) > 0.5f) {
+        if (state->transition_remaining > 0u)
+            read_handoff_begin(&state->read_handoff,
+                (uint32_t)(0.025f * engine->sample_rate));
         state->delay_old = state->delay_current;
         state->delay_target = requested;
         state->transition_total = (uint32_t)(0.025f * engine->sample_rate);
@@ -440,6 +475,7 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
         if (state->transition_remaining == 0u)
             state->delay_current = state->delay_target;
     }
+    wet = read_handoff_apply(&state->read_handoff, wet);
     state->data[state->write_index * 2u] = feedback_condition(
         input.l * state->route_current +
         wet.l * (state->feedback_current * 1.08f));
@@ -574,6 +610,7 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
     wet.l = feedback_condition(wet.l * 2.25f);
     wet.r = feedback_condition(wet.r * 2.25f);
     wet = ts_stereo_frame_sanitize(wet);
+    wet = read_handoff_apply(&state->read_handoff, wet);
     return effect_mix(input, wet,
         clampf(state->mix_current * state->route_current, 0.0f, 1.0f));
 }

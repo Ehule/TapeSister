@@ -288,6 +288,66 @@ static void test_rapid_sweeps_finite(void)
     ts_sister_post_fx_free(&engine);
 }
 
+static void test_interrupted_wheel_handoffs(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+    TsStereoFrame previous;
+    TsStereoFrame current;
+
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.reverb_targets = 0u;
+    controls.distortion_targets = 0u;
+    controls.delay_mix = 1.0f;
+    controls.delay_feedback = 0.0f;
+    controls.delay_time = 0.0f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 2500; ++frame)
+        previous = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.65f * sinf((float)frame * 0.071f), 0.0f}, 0);
+    controls.delay_time = 1.0f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 5; ++frame)
+        previous = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.65f * sinf((float)(2500 + frame) * 0.071f),
+                            0.0f}, 0);
+    controls.delay_time = 0.5f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    current = ts_sister_post_fx_process(&engine, 3u,
+        (TsStereoFrame){0.65f * sinf(2505.0f * 0.071f), 0.0f}, 0);
+    assert(fabsf(current.l - previous.l) < 1.0e-5f);
+    assert(fabsf(current.r - previous.r) < 1.0e-5f);
+    ts_sister_post_fx_free(&engine);
+
+    memset(&engine, 0, sizeof(engine));
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.delay_targets = 0u;
+    controls.distortion_targets = 0u;
+    controls.reverb_mix = 1.0f;
+    controls.reverb_decay = 0.62f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 2500; ++frame)
+        previous = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.28f * sinf((float)frame * 0.043f),
+                            0.19f * cosf((float)frame * 0.037f)}, 0);
+    controls.reverb_type = TS_SISTER_REVERB_PLATE;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 10; ++frame)
+        previous = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.28f * sinf((float)(2500 + frame) * 0.043f),
+                            0.19f * cosf((float)(2500 + frame) * 0.037f)}, 0);
+    controls.reverb_type = TS_SISTER_REVERB_SPRING;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    current = ts_sister_post_fx_process(&engine, 3u,
+        (TsStereoFrame){0.28f * sinf(2510.0f * 0.043f),
+                        0.19f * cosf(2510.0f * 0.037f)}, 0);
+    assert(fabsf(current.l - previous.l) < 1.0e-5f);
+    assert(fabsf(current.r - previous.r) < 1.0e-5f);
+    ts_sister_post_fx_free(&engine);
+}
+
 static void test_master_feedback_causality(void)
 {
     TsSisterRuntime runtime;
@@ -339,6 +399,7 @@ int main(void)
     test_targets_mono_and_ordinary();
     test_exclusive_target_handoff();
     test_rapid_sweeps_finite();
+    test_interrupted_wheel_handoffs();
     test_master_feedback_causality();
     puts("sister post-effects tests passed");
     return 0;
