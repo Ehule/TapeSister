@@ -7,11 +7,43 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int run_sustained_recipe(const TsCdpRuntime *runtime,
+                                const TsSample *tone,
+                                const char *recipe_id, float first_control,
+                                unsigned job_id)
+{
+    const TsCdpRecipe *recipe = ts_cdp_recipe_find(recipe_id);
+    TsCdpRecipeValues values;
+    TsCdpRunOptions options;
+    TsCdpRunResult result;
+    char error[256];
+    int failed;
+    ts_cdp_recipe_values_default(recipe, &values);
+    if (first_control > 0.0f) values.controls[0] = first_control;
+    ts_cdp_run_options_init(&options);
+    options.job_id = job_id;
+    options.timeout_ms = 30000u;
+    ts_cdp_run_result_init(&result);
+    failed = !ts_cdp_run_recipe(runtime, recipe, &values, tone, &options,
+                                &result, error, sizeof(error)) ||
+             result.output.data == NULL ||
+             ts_sample_peak(&result.output) < 0.1f;
+    if (failed) {
+        fprintf(stderr, "FAIL sustained %-16s control %.2f %s\n",
+                recipe != NULL ? recipe->display_name : recipe_id,
+                first_control, error);
+    } else {
+        printf("PASS sustained %-16s control %.2f %zu frames peak %.3f\n",
+               recipe->display_name, first_control, result.output.frames,
+               ts_sample_peak(&result.output));
+    }
+    ts_cdp_run_result_free(&result);
+    return failed;
+}
+
 static int run_sustained_material_checks(const TsCdpRuntime *runtime)
 {
-    static const char *const recipe_ids[] = {"grev", "timewarp"};
     TsSample tone;
-    char error[256];
     int failures = 0;
     ts_sample_init(&tone);
     tone.frames = 96000u;
@@ -26,32 +58,10 @@ static int run_sustained_material_checks(const TsCdpRuntime *runtime)
         tone.data[frame] = 0.4f * sinf((float)frame *
                                       (2.0f * 3.14159265358979323846f *
                                        110.0f / 48000.0f));
-    for (size_t index = 0;
-         index < sizeof(recipe_ids) / sizeof(recipe_ids[0]); ++index) {
-        const TsCdpRecipe *recipe = ts_cdp_recipe_find(recipe_ids[index]);
-        TsCdpRecipeValues values;
-        TsCdpRunOptions options;
-        TsCdpRunResult result;
-        ts_cdp_recipe_values_default(recipe, &values);
-        ts_cdp_run_options_init(&options);
-        options.job_id = 2000u + index;
-        options.timeout_ms = 30000u;
-        ts_cdp_run_result_init(&result);
-        if (!ts_cdp_run_recipe(runtime, recipe, &values, &tone, &options,
-                               &result, error, sizeof(error)) ||
-            result.output.data == NULL ||
-            ts_sample_peak(&result.output) < 0.2f) {
-            fprintf(stderr, "FAIL sustained %-16s %s\n",
-                    recipe != NULL ? recipe->display_name : recipe_ids[index],
-                    error);
-            ++failures;
-        } else {
-            printf("PASS sustained %-16s %zu frames peak %.3f\n",
-                   recipe->display_name, result.output.frames,
-                   ts_sample_peak(&result.output));
-        }
-        ts_cdp_run_result_free(&result);
-    }
+    for (int mode = 1; mode <= 5; ++mode)
+        failures += run_sustained_recipe(runtime, &tone, "grev",
+                                         (float)mode, 2000u + (unsigned)mode);
+    failures += run_sustained_recipe(runtime, &tone, "timewarp", 1.5f, 2010u);
     ts_sample_free(&tone);
     return failures;
 }

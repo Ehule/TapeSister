@@ -997,7 +997,6 @@ static int grev_can_use_cycle_fallback(const TsCdpRecipe *recipe,
 {
     return recipe != NULL && command != NULL && result != NULL &&
            strcmp(recipe->id, "grev") == 0 && command->argc > 1 &&
-           strcmp(command->arguments[1], "1") == 0 &&
            (contains_case_insensitive(result->diagnostic, "TROUGH") ||
             contains_case_insensitive(result->diagnostic, "PEAK"));
 }
@@ -1013,20 +1012,45 @@ static int execute_grev_cycle_fallback(const TsCdpRuntime *runtime,
     TsCdpCommand fallback;
     char executable[TS_CDP_PATH_MAX];
     int group;
+    int mode;
     if (!runtime_executable(runtime, "distort", executable, sizeof(executable))) {
         set_error(error, error_size,
                   "GREV FALLBACK NEEDS THE CDP DISTORT COMPONENT");
         return 0;
     }
     group = values != NULL ? (int)lrintf(values->controls[2]) : 1;
+    mode = values != NULL ? (int)lrintf(values->controls[0]) : 1;
     if (group < 1) group = 1;
     memset(&fallback, 0, sizeof(fallback));
     snprintf(fallback.executable, sizeof(fallback.executable), "distort");
-    snprintf(fallback.arguments[0], TS_CDP_TEXT_MAX, "reverse");
-    snprintf(fallback.arguments[1], TS_CDP_TEXT_MAX, "input.wav");
-    snprintf(fallback.arguments[2], TS_CDP_TEXT_MAX, "output.wav");
-    snprintf(fallback.arguments[3], TS_CDP_TEXT_MAX, "%d", group);
-    fallback.argc = 4;
+    if (mode == 1) {
+        snprintf(fallback.arguments[0], TS_CDP_TEXT_MAX, "reverse");
+        snprintf(fallback.arguments[1], TS_CDP_TEXT_MAX, "input.wav");
+        snprintf(fallback.arguments[2], TS_CDP_TEXT_MAX, "output.wav");
+        snprintf(fallback.arguments[3], TS_CDP_TEXT_MAX, "%d", group);
+        fallback.argc = 4;
+    } else if (mode == 2 || mode == 5) {
+        snprintf(fallback.arguments[0], TS_CDP_TEXT_MAX, "repeat");
+        snprintf(fallback.arguments[1], TS_CDP_TEXT_MAX, "input.wav");
+        snprintf(fallback.arguments[2], TS_CDP_TEXT_MAX, "output.wav");
+        snprintf(fallback.arguments[3], TS_CDP_TEXT_MAX, "2");
+        snprintf(fallback.arguments[4], TS_CDP_TEXT_MAX, "-c%d", group);
+        fallback.argc = 5;
+    } else if (mode == 3) {
+        snprintf(fallback.arguments[0], TS_CDP_TEXT_MAX, "delete");
+        snprintf(fallback.arguments[1], TS_CDP_TEXT_MAX, "1");
+        snprintf(fallback.arguments[2], TS_CDP_TEXT_MAX, "input.wav");
+        snprintf(fallback.arguments[3], TS_CDP_TEXT_MAX, "output.wav");
+        snprintf(fallback.arguments[4], TS_CDP_TEXT_MAX, "%d", group + 2);
+        fallback.argc = 5;
+    } else {
+        snprintf(fallback.arguments[0], TS_CDP_TEXT_MAX, "omit");
+        snprintf(fallback.arguments[1], TS_CDP_TEXT_MAX, "input.wav");
+        snprintf(fallback.arguments[2], TS_CDP_TEXT_MAX, "output.wav");
+        snprintf(fallback.arguments[3], TS_CDP_TEXT_MAX, "%d", group);
+        snprintf(fallback.arguments[4], TS_CDP_TEXT_MAX, "%d", group + 2);
+        fallback.argc = 5;
+    }
     snprintf(fallback.expected_output, sizeof(fallback.expected_output),
              "output.wav");
     fallback.expected_output_type = TS_CDP_IO_WAV;

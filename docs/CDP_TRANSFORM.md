@@ -50,7 +50,7 @@ The placement is part of the compatibility contract:
 | 09 | SCRAMBLE | `extend scramble 1` |
 | 10 | DOUBLETS | `extend doublets` |
 | 11 | MOTOR | `motor motor 1` |
-| 12 | GREV | `grain grev 1-5`; mode 1 falls back to `distort reverse` when sustained material has no envelope landmarks |
+| 12 | GREV | `grain grev 1-5`; sustained material without envelope landmarks falls back to equivalent `distort` waveset operations |
 | 13 | TIMEWARP | `pvoc anal` → `stretch time` → `pvoc synth` |
 | 14 | TELESCOPE | `distort telescope` |
 | 15 | FREEZE | `extend freeze 2` |
