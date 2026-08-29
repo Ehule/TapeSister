@@ -296,7 +296,8 @@ typedef struct {
     int show_ingredients;
     int cdp_page;
     int dsp_page;
-    TsCdpRecipeValues cdp_presets[TS_CDP_FACTORY_RECIPE_COUNT];
+    TsCdpCatalogView cdp_catalog;
+    TsCdpRecipeValues cdp_presets[TS_CDP_CATALOG_CAPACITY];
     TsDspRecipeValues dsp_presets[TS_DSP_FACTORY_RECIPE_COUNT];
     TsCaptureState capture_state;
     int capture_overdub;
@@ -598,6 +599,7 @@ int ts_ui_bank_slot_from_point(int x, int y);
 int ts_ui_recipe_slot_from_point(int x, int y);
 int ts_ui_cdp_slot_from_point(int x, int y);
 int ts_ui_cdp_page_from_point(int x, int y);
+void ts_ui_refresh_cdp_catalog(TsUiState *ui);
 int ts_ui_dsp_page_from_point(int x, int y);
 TsUiBankAction ts_ui_bank_action(int right_button, unsigned modifiers);
 int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,

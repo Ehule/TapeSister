@@ -16,22 +16,24 @@ panel cycle also treats CDP as one mode.
 Left click is the performance path: it renders the tile's saved values asynchronously
 and applies the validated immutable result in one Undo transaction. Middle click opens
 the shared Transform workspace for editing and non-destructive audition. `SAVE/UPDATE`
-stores macro values, Mix, and the accepted seed as optional `CdpPreset01` through
-`CdpPreset32` rows in `tapesister.ini`; it never stores audio. Factory defaults remain
-the fallback when those rows are absent.
+stores macro values, Mix, and the accepted seed as an optional
+`CdpPreset.<recipe-id>` row in `tapesister.ini`; it never stores audio. Legacy numbered
+rows remain readable, and factory defaults remain the fallback when a row is absent.
 
 The fixed control positions and one selected algorithm follow the direct-interaction
 lesson of SOMA Laboratory WARP without copying its branding, artwork, algorithms, or
 panel design. A recipe exposes only the one to four controls its real process supports.
 
-## Versioned registry and fixed catalog
+## Versioned registry and configurable catalog
 
 `TsCdpRecipe` is compiled, versioned factory data. Each entry declares a stable ID,
-page/slot, display text, category, schema/recipe/provenance versions, one to three typed
-stages, executable requirements, input/output channels, minimum input, duration and Mix
-policy, determinism/seed support, analysis settings, and one to four typed musical
-controls. Enumerated controls carry valid numeric values and musical display names.
-Unknown user command text cannot enter the adapter.
+default visibility, display text, category, schema/recipe/provenance versions, one to
+three typed stages, executable requirements, input/output channels, minimum input,
+duration and Mix policy, determinism/seed support, analysis settings, and one to four
+typed musical controls. Enumerated controls carry valid numeric values and musical names.
+Unknown user command text cannot enter the adapter. The registry has capacity for 128
+recipes; a catalog view maps the first 32 enabled stable IDs onto the fixed two-page
+performance surface. Presentation slots are not recipe identity.
 
 The placement is part of the compatibility contract:
 
@@ -150,7 +152,8 @@ Mix and retains its complete natural-length result.
 
 ## Runtime discovery and dependency closure
 
-CDP source and binaries are not vendored. Runtime discovery checks:
+Standard native release builds stage a pinned CDP8 runtime in `cdp/bin` beside
+TapeSister. Runtime discovery checks:
 
 1. **CDP BIN PATH** (`[Paths] CdpBinPath` in `tapesister.ini`);
 2. `cdp/bin` beside the TapeSister executable;
@@ -161,15 +164,18 @@ The folder is canonicalized. Each selected recipe then checks its own stage exec
 and reports the exact missing name. TapeSister never edits `PATH` or another global
 environment variable.
 
-The complete catalog requires this curated executable set:
+The current 32-recipe catalog requires this curated executable set:
 
 ```text
 blur distmore distort distshift extend filter freeze glisten grain hover
 modify motor pvoc scramble sorter splinter stutter
 ```
 
-The upstream build links the required programs to CDP's `cdp2k`, `sfsys/newsfsys`, and
-`pvxio2` support libraries plus the platform math/system dependencies selected by CDP.
+The TapeSister CMake release path fetches the exact commit recorded in
+`cmake/CDP8Manifest.cmake`, builds this closure, and ships its corresponding source and
+license. The upstream build links the required programs to CDP's `cdp2k`,
+`sfsys/newsfsys`, and `pvxio2` support libraries plus the platform math/system
+dependencies selected by CDP.
 PortAudio playback/recording utilities are not required. Build the compatible upstream
 tree, then copy the 17 programs and their actual dynamic-library closure:
 
@@ -179,9 +185,9 @@ cmake --build cdp-build --target blur distmore distort distshift extend filter f
   glisten grain hover modify motor pvoc scramble sorter splinter stutter -j2
 ```
 
-On Windows, use an MSYS2 UCRT64 toolchain with CMake and Ninja or Make, copy the `.exe`
-files and DLLs reported by `objdump -p`/`ldd` into `cdp` or `cdp/bin` beside
-`tapesister.exe`, or select that directory in Configuration. Windows path quoting uses
+On Windows, use an MSYS2 UCRT64 toolchain with CMake and Ninja or Make. The bundle step
+places the native `.exe` files in `cdp/bin` beside `tapesister.exe`; the same build's
+runtime DLLs remain beside TapeSister. Windows path quoting uses
 CreateProcess argument quoting and a kill-on-close Job Object. A Windows compile is not
 reported as runtime execution unless the programs were actually run there.
 
@@ -254,8 +260,8 @@ approximately aligns audio. Duration-changing or latency-uncertain recipes disab
 ## Licensing
 
 CDP is LGPL-2.1-or-later, copyright Trevor Wishart and Composers Desktop Project Ltd.
-Anyone distributing CDP binaries with TapeSister must provide the applicable notices,
-license, corresponding source or compliant source offer, reproducible relinking/build
-information where required, dependency notices, and a modifications record. See
-`THIRD_PARTY_NOTICES.md`. This PR distributes none of the supplied CDP or SoundThread
-archives and does not turn TapeSister into a general CDP frontend.
+TapeSister's bundle step provides the upstream license, exact corresponding source
+archive, pinned revision, build instructions, dependency notices, and an explicit
+record that no local CDP modifications are applied. See `THIRD_PARTY_NOTICES.md` and
+`docs/CDP8_RUNTIME.md`. CDP remains a set of separate child-process executables; this
+does not turn TapeSister into a general CDP frontend.

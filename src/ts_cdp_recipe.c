@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
+_Static_assert(TS_CDP_FACTORY_RECIPE_COUNT <= TS_CDP_CATALOG_CAPACITY,
+               "CDP catalog exceeds configured storage capacity");
+
 /* PR-31 factory recipes are compiled data, not user-provided command text.  The
    four control positions stay stable in the UI while control_count lets a
    recipe honestly expose fewer controls. */
@@ -20,7 +23,8 @@
      sizeof(VALUES) / sizeof((VALUES)[0]), NAMES, ""}
 #define DIRECT(ID, NAME, DESC, CATEGORY, BANK, SLOT, EXE, COUNT, CHANGE, SEED, OUTCH, ...) \
     {.id=ID, .display_name=NAME, .description=DESC, .category=CATEGORY, \
-     .schema_version=2u, .recipe_version=1u, .bank=BANK, .slot=SLOT, \
+     .schema_version=2u, .recipe_version=1u, .default_enabled=1, \
+     .bank=BANK, .slot=SLOT, \
      .control_count=COUNT, .stages={{EXE,TS_CDP_IO_WAV,TS_CDP_IO_WAV}}, \
      .stage_count=1u, .controls={__VA_ARGS__}, .mix_policy=(CHANGE) ? \
      TS_CDP_MIX_UNSUPPORTED : TS_CDP_MIX_EXACT_FRAMES, \
@@ -30,7 +34,8 @@
      .deterministic=(SEED)>=0, .minimum_input_ms=40u, .provenance_version=2u}
 #define SPECTRAL(ID, NAME, DESC, BANK, SLOT, EXE, COUNT, CHANGE, DET, ...) \
     {.id=ID, .display_name=NAME, .description=DESC, .category="SPECTRAL", \
-     .schema_version=2u, .recipe_version=1u, .bank=BANK, .slot=SLOT, \
+     .schema_version=2u, .recipe_version=1u, .default_enabled=1, \
+     .bank=BANK, .slot=SLOT, \
      .control_count=COUNT, .stages={{"pvoc",TS_CDP_IO_WAV,TS_CDP_IO_ANALYSIS}, \
      {EXE,TS_CDP_IO_ANALYSIS,TS_CDP_IO_ANALYSIS}, \
      {"pvoc",TS_CDP_IO_ANALYSIS,TS_CDP_IO_WAV}}, .stage_count=3u, \
@@ -220,13 +225,61 @@ const TsCdpRecipe *ts_cdp_recipe_find(const char *id)
     return NULL;
 }
 
+int ts_cdp_recipe_index_for_id(const char *id)
+{
+    if (id == NULL) return -1;
+    for (size_t i = 0; i < TS_CDP_FACTORY_RECIPE_COUNT; ++i)
+        if (strcmp(factory_recipes[i].id, id) == 0) return (int)i;
+    return -1;
+}
+
+void ts_cdp_catalog_view_build(TsCdpCatalogView *view,
+                               const int *enabled, size_t enabled_count)
+{
+    size_t count;
+    if (view == NULL) return;
+    memset(view, 0, sizeof(*view));
+    for (size_t i = 0; i < TS_CDP_VISIBLE_RECIPE_COUNT; ++i)
+        view->recipe_indices[i] = UINT16_MAX;
+    count = ts_cdp_factory_recipe_count();
+    if (count > TS_CDP_CATALOG_CAPACITY) count = TS_CDP_CATALOG_CAPACITY;
+    for (size_t i = 0; i < count; ++i) {
+        int selected = enabled != NULL && i < enabled_count ?
+                       enabled[i] : factory_recipes[i].default_enabled;
+        if (!selected) continue;
+        if (view->visible_count < TS_CDP_VISIBLE_RECIPE_COUNT)
+            view->recipe_indices[view->visible_count++] = (uint16_t)i;
+        ++view->enabled_count;
+    }
+    view->truncated = view->enabled_count > view->visible_count;
+}
+
+int ts_cdp_catalog_index_for_slot(const TsCdpCatalogView *view,
+                                  size_t bank, size_t slot)
+{
+    size_t visible_index;
+    uint16_t recipe_index;
+    if (view == NULL || bank >= TS_CDP_VISIBLE_BANK_COUNT ||
+        slot >= TS_CDP_VISIBLE_BANK_SLOT_COUNT) return -1;
+    visible_index = bank * TS_CDP_VISIBLE_BANK_SLOT_COUNT + slot;
+    recipe_index = view->recipe_indices[visible_index];
+    return recipe_index == UINT16_MAX ? -1 : (int)recipe_index;
+}
+
+const TsCdpRecipe *ts_cdp_catalog_recipe_for_slot(const TsCdpCatalogView *view,
+                                                  size_t bank, size_t slot)
+{
+    int index = ts_cdp_catalog_index_for_slot(view, bank, slot);
+    return index < 0 ? NULL : ts_cdp_factory_recipe_at((size_t)index);
+}
+
 int ts_cdp_recipe_validate(const TsCdpRecipe *recipe, char *error, size_t error_size)
 {
     if (recipe == NULL || recipe->id == NULL || recipe->id[0] == '\0' ||
         recipe->display_name == NULL || recipe->schema_version == 0u ||
         recipe->recipe_version == 0u || recipe->provenance_version == 0u ||
-        recipe->bank >= TS_CDP_BANK_COUNT || recipe->slot >= TS_CDP_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "Recipe identity, slot, or version is invalid");
+        (recipe->default_enabled != 0 && recipe->default_enabled != 1)) {
+        set_error(error, error_size, "Recipe identity, default, or version is invalid");
         return 0;
     }
     if (recipe->control_count == 0u || recipe->control_count > TS_CDP_CONTROL_COUNT ||

@@ -31,6 +31,11 @@ endif()
 
 option(TAPESISTER_BUILD_SDL "Build the playable SDL2 instrument" ON)
 option(TAPESISTER_ENABLE_MIDI "Enable RtMidi note input" ON)
+option(TAPESISTER_BUNDLE_CDP8
+       "Build and stage the pinned CDP8 runtime beside TapeSister" ON)
+if(TAPESISTER_BUNDLE_CDP8)
+  include(cmake/CDP8Runtime.cmake)
+endif()
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
   # main_sdl.c is the one canonical callback/application translation unit.
@@ -164,6 +169,9 @@ if(TAPESISTER_BUILD_SDL)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/palette.pal"
             "$<TARGET_FILE_DIR:tapesister>/assets/palette.pal"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/tapesister.ini.example"
+            "$<TARGET_FILE_DIR:tapesister>/tapesister.ini.example"
     COMMENT "Copying TapeSister runtime artwork and palette")
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_welcome.wav")
     add_custom_command(TARGET tapesister POST_BUILD
@@ -171,6 +179,9 @@ if(TAPESISTER_BUILD_SDL)
               "${CMAKE_CURRENT_SOURCE_DIR}/assets/tapesister_welcome.wav"
               "$<TARGET_FILE_DIR:tapesister>/assets/tapesister_welcome.wav"
       COMMENT "Copying TapeSister welcome sample")
+  endif()
+  if(TAPESISTER_BUNDLE_CDP8)
+    tapesister_add_cdp8_runtime(tapesister)
   endif()
 endif()
 

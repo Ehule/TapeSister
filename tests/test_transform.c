@@ -50,6 +50,27 @@ static void recipe_tests(void)
     CHECK(strcmp(ts_cdp_factory_recipe_for_slot(0, 15)->id, "iterate") == 0);
     CHECK(strcmp(ts_cdp_factory_recipe_for_slot(1, 15)->id, "granulate") == 0);
     CHECK(ts_cdp_recipe_find("missing") == NULL);
+    CHECK(ts_cdp_recipe_index_for_id("glisten") == 16);
+    CHECK(ts_cdp_recipe_index_for_id("missing") == -1);
+    {
+        int enabled[TS_CDP_CATALOG_CAPACITY] = {0};
+        TsCdpCatalogView view;
+        for (size_t i = 0; i < ts_cdp_factory_recipe_count(); ++i)
+            enabled[i] = 1;
+        enabled[0] = 0;
+        enabled[16] = 0;
+        ts_cdp_catalog_view_build(&view, enabled, TS_CDP_CATALOG_CAPACITY);
+        CHECK(view.enabled_count == TS_CDP_FACTORY_RECIPE_COUNT - 2u &&
+              view.visible_count == TS_CDP_FACTORY_RECIPE_COUNT - 2u &&
+              !view.truncated);
+        CHECK(ts_cdp_catalog_index_for_slot(&view, 0u, 0u) == 1 &&
+              strcmp(ts_cdp_catalog_recipe_for_slot(&view, 0u, 0u)->id,
+                     "shred") == 0);
+        CHECK(ts_cdp_catalog_index_for_slot(&view, 1u, 13u) == 31 &&
+              ts_cdp_catalog_recipe_for_slot(&view, 1u, 14u) == NULL &&
+              ts_cdp_catalog_recipe_for_slot(&view, 1u, 15u) == NULL);
+        CHECK(ts_cdp_catalog_index_for_slot(&view, 2u, 0u) == -1);
+    }
     CHECK(ts_cdp_recipe_validate(recipe, error, sizeof(error)));
     CHECK(recipe->stage_count == 3u);
     CHECK(strcmp(recipe->stages[0].executable, "pvoc") == 0 &&
@@ -128,7 +149,8 @@ static void recipe_tests(void)
         TsCdpRecipeValues defaults;
         TsCdpCommand built[TS_CDP_MAX_STAGES];
         size_t count = 0u;
-        CHECK(catalog != NULL && catalog->bank == index / TS_CDP_BANK_SLOT_COUNT &&
+        CHECK(catalog != NULL && catalog->default_enabled &&
+              catalog->bank == index / TS_CDP_BANK_SLOT_COUNT &&
               catalog->slot == index % TS_CDP_BANK_SLOT_COUNT);
         CHECK(ts_cdp_recipe_validate(catalog, error, sizeof(error)));
         CHECK(catalog->control_count >= 1u &&

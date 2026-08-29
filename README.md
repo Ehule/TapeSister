@@ -228,14 +228,20 @@ a gentler squared group-size randomization. Actual CDP8 validation shows that PV
 analysis/resynthesis adds padding, so GLISTEN is declared duration-changing and Mix is
 disabled rather than silently truncating, stretching, or approximately aligning audio.
 
-TapeSister does not bundle CDP. Put compatible CDP8 executables in `cdp/bin` beside
-TapeSister, or set the **CDP BIN PATH** folder in the
-Configuration screen (stored as `CdpBinPath` under `[Paths]` in `tapesister.ini`). A
-missing executable is named for the selected recipe and leaves the tile unchanged.
-The complete catalog uses a curated 17-executable subset rather than exposing the CDP
-suite. See
+Standard TapeSister release builds bundle a pinned native CDP8 runtime in `cdp/bin`
+beside the executable, so no separate CDP installation is required. The **CDP BIN
+PATH** field remains available for developers and custom runtimes (stored as
+`CdpBinPath` under `[Paths]` in `tapesister.ini`). A missing executable is named for
+the selected recipe and leaves the tile unchanged.
+
+The interface displays at most 32 curated processes across its two pages, but the
+catalog can grow to 128 stable recipe IDs. `[CDP Processes]` entries such as
+`CdpProcess.drunk=1` and `CdpProcess.shred=0` choose the visible set; if more than 32
+are enabled, TapeSister uses the first 32 in canonical order and reports the overflow.
+Recipe-ID presets remain attached to their process when this selection changes. See
 [`docs/CDP_TRANSFORM.md`](docs/CDP_TRANSFORM.md) for the verified command pipeline,
-runtime closure, safety model, platform notes, and licensing obligations.
+runtime closure, safety model, platform notes, and licensing obligations, and
+[`docs/CDP8_RUNTIME.md`](docs/CDP8_RUNTIME.md) for reproducible native packaging.
 
 Every ordinary slider responds to click/drag, mouse wheel while hovered, and Left/Right while the pointer is over its box; Shift makes wheel or arrow adjustments coarser. This includes Palette RGB and contrast controls. WARP, SMEAR, and TEAR remain spring-loaded gestures and deliberately keep their separate Ctrl+wheel behavior.
 

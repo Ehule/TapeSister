@@ -50,10 +50,11 @@ resolved configuration file; they are user data, not a required factory asset.
 `tapesister.ini.example` is the configuration template and should accompany a package
 as documentation, not silently overwrite an existing user configuration.
 
-CDP is optional and not bundled. If supplied separately, its `cdp/bin` directory may
-live beside the executable/current directory or be selected by `CdpBinPath`. PR12 must
-decide whether CDP is excluded, downloaded separately, or distributed under its own
-license terms; PR11 does not vendor it.
+This historical PR11 handoff predates the shippable CDP8 runtime. Current release
+builds enable `TAPESISTER_BUNDLE_CDP8`, stage the pinned Windows programs under
+`cdp/bin`, and include their license and exact corresponding source archive. See
+`docs/CDP8_RUNTIME.md` for the current packaging contract. `CdpBinPath` remains an
+explicit developer override.
 
 ## Configuration and writable data
 

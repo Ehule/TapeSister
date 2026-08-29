@@ -3276,8 +3276,7 @@ static void save_cdp_transform_preset(TsUiState *ui)
     snprintf(ui->transform_message, sizeof(ui->transform_message),
              "%s SETTINGS SAVED IN TAPESISTER.INI", recipe->display_name);
     snprintf(ui->status, sizeof(ui->status),
-             "CDP %d TILE %02d NOW USES THE EDITED SETTINGS",
-             recipe->bank + 1, recipe->slot + 1);
+             "CDP %s NOW USES THE EDITED SETTINGS", recipe->display_name);
 }
 
 static void handle_transform_action(SDL_AudioDeviceID device, AudioState *audio,
@@ -9309,6 +9308,12 @@ int main(int argc, char **argv)
         else if (path_is_directory(ui.config.sample_path))
             snprintf(ui.browser.directory, sizeof(ui.browser.directory), "%s",
                      ui.config.sample_path);
+        ts_ui_refresh_cdp_catalog(&ui);
+        if (ui.cdp_catalog.truncated)
+            fprintf(stderr,
+                    "TapeSister CDP: %zu processes enabled; showing the first %d. "
+                    "Disable extras with CdpProcess.<id>=0 in tapesister.ini.\n",
+                    ui.cdp_catalog.enabled_count, TS_CDP_VISIBLE_RECIPE_COUNT);
         for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT; ++slot) {
             const TsDspRecipe *recipe = ts_dsp_factory_recipe_at((size_t)slot);
             if (!ui.config.dsp_factory_overridden[slot] || recipe == NULL) continue;
@@ -10666,12 +10671,18 @@ int main(int argc, char **argv)
                     } else {
                         ts_ui_select_panel(&ui, panel);
                         ui.bank_view_slot = -1;
-                        if (panel == TS_UI_PANEL_CDP)
-                            snprintf(ui.status, sizeof(ui.status),
-                                     "CDP %d PAGE%s - KEYS 1 2 3 4",
-                                     ui.cdp_page + 1,
-                                     before == TS_UI_PANEL_CDP ? " TOGGLED" : " RESTORED");
-                        else if (panel == TS_UI_PANEL_DSP)
+                        if (panel == TS_UI_PANEL_CDP) {
+                            if (ui.cdp_catalog.truncated)
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "CDP: %zu ENABLED - SHOWING FIRST %d; DISABLE EXTRAS IN INI",
+                                         ui.cdp_catalog.enabled_count,
+                                         TS_CDP_VISIBLE_RECIPE_COUNT);
+                            else
+                                snprintf(ui.status, sizeof(ui.status),
+                                         "CDP %d PAGE%s - KEYS 1 2 3 4",
+                                         ui.cdp_page + 1,
+                                         before == TS_UI_PANEL_CDP ? " TOGGLED" : " RESTORED");
+                        } else if (panel == TS_UI_PANEL_DSP)
                             snprintf(ui.status, sizeof(ui.status),
                                      "DSP %d %s%s - KEYS 1 2 3 4",
                                      ui.dsp_page + 1,
@@ -11529,9 +11540,11 @@ int main(int argc, char **argv)
                         request_transform_render(device, &audio, &ui,
                                                  &instrument, &transform);
                 } else if (cdp_slot >= 0) {
-                    int recipe_index = ui.cdp_page * TS_CDP_BANK_SLOT_COUNT + cdp_slot;
-                    begin_transform_workspace(&ui, &instrument, &transform,
-                                              recipe_index);
+                    int recipe_index = ts_cdp_catalog_index_for_slot(
+                        &ui.cdp_catalog, (size_t)ui.cdp_page, (size_t)cdp_slot);
+                    if (recipe_index >= 0)
+                        begin_transform_workspace(&ui, &instrument, &transform,
+                                                  recipe_index);
                 } else if (ui.input_meter_active &&
                            x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
@@ -12497,10 +12510,16 @@ int main(int argc, char **argv)
                 } else if (wave_action == TS_UI_WAVE_ACTION_CYCLE_PANEL) {
                     ts_ui_cycle_panel(&ui);
                     ui.bank_view_slot = -1;
-                    snprintf(ui.status, sizeof(ui.status), "%s PANEL",
-                             ui.show_keyboard ? "KEYS" :
-                             ui.show_recipes ? "CDP" :
-                             ui.show_ingredients ? "DSP" : "SAMPLE TILES");
+                    if (ui.show_recipes && ui.cdp_catalog.truncated)
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "CDP: %zu ENABLED - SHOWING FIRST %d; DISABLE EXTRAS IN INI",
+                                 ui.cdp_catalog.enabled_count,
+                                 TS_CDP_VISIBLE_RECIPE_COUNT);
+                    else
+                        snprintf(ui.status, sizeof(ui.status), "%s PANEL",
+                                 ui.show_keyboard ? "KEYS" :
+                                 ui.show_recipes ? "CDP" :
+                                 ui.show_ingredients ? "DSP" : "SAMPLE TILES");
                 } else {
                     int note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
                     int bank_slot = !ui.show_keyboard && !ui.show_recipes &&
@@ -12550,9 +12569,15 @@ int main(int argc, char **argv)
                                  ui.dsp_page == 0 ? "PROCESS" : "PRIMITIVES");
                     } else if (cdp_page >= 0) {
                         ui.cdp_page = cdp_page;
-                        snprintf(ui.status, sizeof(ui.status),
-                                 "CDP %d PAGE - SAMPLE AND SELECTION PRESERVED",
-                                 ui.cdp_page + 1);
+                        if (ui.cdp_catalog.truncated)
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "CDP: %zu ENABLED - SHOWING FIRST %d; DISABLE EXTRAS IN INI",
+                                     ui.cdp_catalog.enabled_count,
+                                     TS_CDP_VISIBLE_RECIPE_COUNT);
+                        else
+                            snprintf(ui.status, sizeof(ui.status),
+                                     "CDP %d PAGE - SAMPLE AND SELECTION PRESERVED",
+                                     ui.cdp_page + 1);
                     } else if (record_source_control) {
                         if (external_capture_busy(&external_input)) {
                             snprintf(ui.status, sizeof(ui.status),
@@ -12612,9 +12637,13 @@ int main(int argc, char **argv)
                         else
                             capture_button(device, &audio, &ui, &instrument, obtained.freq);
                     } else if (cdp_slot >= 0) {
-                        int recipe_index = ui.cdp_page * TS_CDP_BANK_SLOT_COUNT + cdp_slot;
-                        request_cdp_quick_apply(device, &audio, &ui, &instrument,
-                                                &transform, recipe_index);
+                        int recipe_index = ts_cdp_catalog_index_for_slot(
+                            &ui.cdp_catalog, (size_t)ui.cdp_page,
+                            (size_t)cdp_slot);
+                        if (recipe_index >= 0)
+                            request_cdp_quick_apply(device, &audio, &ui,
+                                                    &instrument, &transform,
+                                                    recipe_index);
                     } else if (recipe_slot >= 0) {
                         int recipe_index = ui.dsp_page * TS_DSP_BANK_SLOT_COUNT +
                                            recipe_slot;
