@@ -44,6 +44,22 @@ int main(void)
     p.fx.distortion_mix = 0.73f;
     p.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
     p.fx.master_feedback = 0.69f;
+    p.fx.fallout.enabled = 1;
+    p.fx.fallout.feedback = 0.58f;
+    p.fx.fallout.noise_type = TS_SISTER_FALLOUT_NOISE_BLUE;
+    p.fx.fallout.transition = 0.82f;
+    p.fx.fallout.lfo_rate = 0.24f;
+    p.fx.fallout.lfo_intensity = 0.67f;
+    p.fx.fallout.lfo_targets = TS_SISTER_FALLOUT_LFO_MIX |
+                               TS_SISTER_FALLOUT_LFO_FEEDBACK;
+    p.fx.fallout.rise_mode = TS_SISTER_FALLOUT_RISE_SAW;
+    p.fx.fallout.rise_length = 0.91f;
+    p.fx.fallout.rise_intensity = 0.54f;
+    p.fx.fallout.rise_targets = TS_SISTER_FALLOUT_LFO_MIX |
+                                TS_SISTER_FALLOUT_LFO_NOISE;
+    p.fx.fallout.skip_enabled = 1;
+    p.fx.fallout.skip_span = 0.76f;
+    p.fx.fallout.bit_enabled = 1;
     p.buffer_seconds = 23.0f;
     assert(ts_sister_preset_save_new_with_locks(
         &bank, "MY MEMORY", &p, locks, 48000u, error, sizeof(error)));
@@ -75,6 +91,23 @@ int main(void)
                                           TS_SISTER_EFFECT_TARGET_H3));
     assert(recalled.fx.distortion_targets == TS_SISTER_EFFECT_TARGET_MIX);
     assert(recalled.fx.master_feedback > 0.68f);
+    assert(recalled.fx.fallout.enabled == 1);
+    assert(recalled.fx.fallout.feedback > 0.57f);
+    assert(recalled.fx.fallout.noise_type == TS_SISTER_FALLOUT_NOISE_BLUE);
+    assert(recalled.fx.fallout.transition > 0.81f);
+    assert(recalled.fx.fallout.lfo_rate > 0.23f);
+    assert(recalled.fx.fallout.lfo_intensity > 0.66f);
+    assert(recalled.fx.fallout.lfo_targets ==
+           (TS_SISTER_FALLOUT_LFO_MIX |
+            TS_SISTER_FALLOUT_LFO_FEEDBACK));
+    assert(recalled.fx.fallout.rise_mode == TS_SISTER_FALLOUT_RISE_SAW);
+    assert(recalled.fx.fallout.rise_length > 0.90f);
+    assert(recalled.fx.fallout.rise_intensity > 0.53f);
+    assert(recalled.fx.fallout.rise_targets ==
+           (TS_SISTER_FALLOUT_LFO_MIX | TS_SISTER_FALLOUT_LFO_NOISE));
+    assert(recalled.fx.fallout.skip_enabled == 1);
+    assert(recalled.fx.fallout.skip_span > 0.75f);
+    assert(recalled.fx.fallout.bit_enabled == 1);
     assert(recalled.buffer_seconds == 23.0f);
     assert(ts_sister_preset_rename(&loaded, 3u, "RENAMED", error, sizeof(error)));
     assert(ts_sister_preset_overwrite(&loaded, 3u, &p, 48000u,

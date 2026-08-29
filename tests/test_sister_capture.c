@@ -44,6 +44,28 @@ int main(void)
     configure_fast_head(&runtime);
     CHECK(ts_sister_runtime_find_destination(&runtime, &instrument, 0) == 1);
 
+    {
+        TsCaptureRecorder prepared;
+        float *prepared_buffer;
+        ts_capture_init(&prepared);
+        CHECK(ts_sister_runtime_validate_capture_target(
+            &runtime, &instrument, 1, 0u, 0, error, sizeof(error)));
+        CHECK(ts_capture_arm_channels(&prepared, 1, 8u, 1000u, 2u,
+                                      error, sizeof(error)));
+        CHECK(ts_capture_set_source(&prepared, TS_CAPTURE_SOURCE_SISTER,
+                                    error, sizeof(error)));
+        prepared_buffer = prepared.buffer;
+        CHECK(ts_sister_runtime_install_prepared_capture(
+            &runtime, &instrument, &prepared, TS_SISTER_TAP_H2, 0u,
+            error, sizeof(error)));
+        CHECK(runtime.capture.buffer == prepared_buffer);
+        CHECK(runtime.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER);
+        CHECK(runtime.selected_tap == TS_SISTER_TAP_H2);
+        CHECK(prepared.buffer == NULL && prepared.state == TS_CAPTURE_IDLE);
+        CHECK(ts_sister_runtime_cancel_capture(&runtime));
+        ts_capture_free(&prepared);
+    }
+
     for (int tap = 0; tap < TS_SISTER_TAP_COUNT; ++tap) {
         CHECK(ts_sister_runtime_arm_capture(
             &runtime, &instrument, 1, 4u, 1000u, 2u,

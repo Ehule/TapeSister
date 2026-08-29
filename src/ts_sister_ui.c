@@ -127,6 +127,12 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
             (float)config->sister_erase_percent / 100.0f;
         model->parameters.ghost_tone =
             (float)config->sister_ghost_percent / 100.0f;
+        model->parameters.fx.fallout.transition =
+            ts_sister_fallout_transition_normalized(
+                (float)config->sister_fallout_transition_ms);
+        model->parameters.fx.fallout.rise_length =
+            ts_sister_fallout_rise_normalized(
+                (float)config->sister_fallout_rise_seconds);
     }
     snprintf(model->status, sizeof(model->status),
              "CLICK POWER TO ENABLE - WINDOW CLOSE HIDES ONLY");
@@ -167,6 +173,47 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         TS_SISTER_UI_ACTION_HOLD, TS_SISTER_UI_ACTION_CLEAR,
         TS_SISTER_UI_ACTION_MONITOR
     };
+    if (model != NULL && model->fallout_lfo_open) {
+        static const uint32_t targets[13] = {
+            TS_SISTER_FALLOUT_LFO_MIX, TS_SISTER_FALLOUT_LFO_FEEDBACK,
+            TS_SISTER_FALLOUT_LFO_NOISE, TS_SISTER_FALLOUT_LFO_DROP_RATE,
+            TS_SISTER_FALLOUT_LFO_PAN_RATE, TS_SISTER_FALLOUT_LFO_SKIP_SPAN,
+            TS_SISTER_FALLOUT_LFO_SKIP_RATE,
+            TS_SISTER_FALLOUT_LFO_BIT_QUALITY,
+            TS_SISTER_FALLOUT_LFO_BIT_RESOLUTION,
+            TS_SISTER_FALLOUT_LFO_BIT_RATE, TS_SISTER_FALLOUT_LFO_PITCH,
+            TS_SISTER_FALLOUT_LFO_PITCH_RAMP,
+            TS_SISTER_FALLOUT_LFO_PITCH_RATE
+        };
+        if (contains(x, y, 474, 72, 76, 22)) {
+            hit.action = TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG;
+            return hit;
+        }
+        if (contains(x, y, 300, 72, 72, 22) ||
+            contains(x, y, 378, 72, 88, 22)) {
+            hit.action = TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE;
+            hit.index = contains(x, y, 300, 72, 72, 22) ?
+                TS_SISTER_FALLOUT_RISE_SAW :
+                TS_SISTER_FALLOUT_RISE_ONE_SHOT;
+            return hit;
+        }
+        for (int target = 0; target < 13; ++target) {
+            int column = target / 7;
+            int row = target % 7;
+            int base_x = 90 + column * 240;
+            if (contains(x, y, base_x + 144, 112 + row * 25, 34, 22)) {
+                hit.action = TS_SISTER_UI_ACTION_FALLOUT_LFO_TARGET;
+                hit.index = (int)targets[target];
+                return hit;
+            }
+            if (contains(x, y, base_x + 184, 112 + row * 25, 34, 22)) {
+                hit.action = TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET;
+                hit.index = (int)targets[target];
+                return hit;
+            }
+        }
+        return hit;
+    }
     if (model != NULL && model->preset_manage_open) {
         if (contains(x, y, 180, 200, 128, 22))
             hit.action = TS_SISTER_UI_ACTION_PRESET_SAVE_AS;
@@ -214,7 +261,90 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         hit.action = TS_SISTER_UI_ACTION_PRESET_NEXT;
         return hit;
     }
-    if (model != NULL && model->fx_page) {
+    if (model != NULL && model->fx_page == 2) {
+        static const int toggle[7][5] = {
+            {TS_SISTER_UI_FALLOUT_POWER, 16, 50, 86, 22},
+            {TS_SISTER_UI_FALLOUT_NOISE_TYPE, 16, 84, 76, 18},
+            {TS_SISTER_UI_FALLOUT_DROP, 16, 116, 76, 18},
+            {TS_SISTER_UI_FALLOUT_PAN, 16, 150, 76, 18},
+            {TS_SISTER_UI_FALLOUT_SKIP, 16, 184, 76, 18},
+            {TS_SISTER_UI_FALLOUT_BIT, 16, 218, 76, 18},
+            {TS_SISTER_UI_FALLOUT_PITCH, 16, 252, 76, 18}
+        };
+        static const int slider[][5] = {
+            {TS_SISTER_UI_PARAM_FALLOUT_MIX, 120, 52, 165, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK, 300, 52, 220, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_NOISE, 120, 84, 400, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_DROP_RATE, 120, 116, 400, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_PAN_RATE, 120, 150, 400, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_SKIP_SPAN, 120, 184, 190, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE, 330, 184, 190, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_BIT_QUALITY, 120, 218, 125, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_BIT_RESOLUTION, 260, 218, 125, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_BIT_RATE, 400, 218, 120, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_PITCH, 120, 252, 125, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP, 260, 252, 125, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE, 400, 252, 120, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_TRANSITION, 120, 284, 400, 18}
+        };
+        if (contains(x, y, 10, 316, 86, 22)) {
+            hit.action = TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER;
+            return hit;
+        }
+        for (int i = 0; i < 7; ++i) {
+            if (contains(x, y, toggle[i][1], toggle[i][2],
+                         toggle[i][3], toggle[i][4])) {
+                hit.action = TS_SISTER_UI_ACTION_FALLOUT_TOGGLE;
+                hit.index = toggle[i][0];
+                return hit;
+            }
+        }
+        for (size_t i = 0u; i < sizeof(slider) / sizeof(slider[0]); ++i) {
+            if (contains(x, y, slider[i][1], slider[i][2],
+                         slider[i][3], slider[i][4])) {
+                hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+                hit.index = slider[i][0];
+                hit.normalized = (float)(x - slider[i][1]) /
+                                 (float)(slider[i][3] - 1);
+                return hit;
+            }
+        }
+        if (contains(x, y, 548, 55, 74, 22)) {
+            hit.action = TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG;
+            return hit;
+        }
+        if (contains(x, y, 546, 101, 20, 127)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE;
+            hit.normalized = 1.0f - (float)(y - 101) / 126.0f;
+            return hit;
+        }
+        if (contains(x, y, 567, 101, 20, 127)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY;
+            hit.normalized = 1.0f - (float)(y - 101) / 126.0f;
+            return hit;
+        }
+        if (contains(x, y, 588, 101, 20, 127)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH;
+            hit.normalized = 1.0f - (float)(y - 101) / 126.0f;
+            return hit;
+        }
+        if (contains(x, y, 609, 101, 20, 127)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY;
+            hit.normalized = 1.0f - (float)(y - 101) / 126.0f;
+            return hit;
+        }
+        if (contains(x, y, 10, 370, 58, 22)) hit.action = TS_SISTER_UI_ACTION_TAP;
+        else if (contains(x, y, 74, 370, 44, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE_FORMAT;
+        else if (contains(x, y, 124, 370, 100, 22)) hit.action = TS_SISTER_UI_ACTION_DESTINATION;
+        else if (contains(x, y, 450, 370, 82, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE;
+        else if (contains(x, y, 538, 370, 92, 22)) hit.action = TS_SISTER_UI_ACTION_OVERDUB;
+        return hit;
+    }
+    if (model != NULL && model->fx_page == 1) {
         static const int parameter[3][3] = {
             {TS_SISTER_UI_PARAM_REVERB_TYPE, TS_SISTER_UI_PARAM_REVERB_DECAY,
              TS_SISTER_UI_PARAM_REVERB_MIX},

@@ -382,6 +382,33 @@ static void wave_line(TsFramebuffer *fb, int x0, int y0, int x1, int y1, uint32_
     }
 }
 
+static void ui_line(TsFramebuffer *fb, int x0, int y0, int x1, int y1,
+                    uint32_t color)
+{
+    int dx = x1 > x0 ? x1 - x0 : x0 - x1;
+    int sx = x0 < x1 ? 1 : -1;
+    int dy = -(y1 > y0 ? y1 - y0 : y0 - y1);
+    int sy = y0 < y1 ? 1 : -1;
+    int error = dx + dy;
+    if (fb == NULL) return;
+    for (;;) {
+        if (x0 >= 0 && x0 < TS_UI_WIDTH && y0 >= 0 && y0 < TS_UI_HEIGHT)
+            fb->pixels[y0 * TS_UI_WIDTH + x0] = color;
+        if (x0 == x1 && y0 == y1) break;
+        {
+            int twice = error * 2;
+            if (twice >= dy) { error += dy; x0 += sx; }
+            if (twice <= dx) { error += dx; y0 += sy; }
+        }
+    }
+}
+
+static void ui_marker(TsFramebuffer *fb, int x, int y, uint32_t color)
+{
+    rect(fb, x - 2, y - 1, 5, 3, color);
+    rect(fb, x - 1, y - 2, 3, 5, color);
+}
+
 static const char *glyph(char c)
 {
     switch (c) {
@@ -1870,6 +1897,8 @@ static int point_in_slider(int x, int y, int left, int top, int width)
 
 TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y)
 {
+    if (x >= 240 && x < 302 && y >= 42 && y < 64)
+        return TS_UI_SLIDER_TILE_FADE;
     if (point_in_slider(x, y, 10, 233, 72)) return TS_UI_SLIDER_BODY;
     if (point_in_slider(x, y, 88, 233, 72)) return TS_UI_SLIDER_EDGE;
     if (point_in_slider(x, y, 166, 233, 72)) return TS_UI_SLIDER_DRIFT;
@@ -1911,6 +1940,28 @@ TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y)
         break;
     }
     return TS_UI_SLIDER_NONE;
+}
+
+float ts_ui_tile_fade_normalized(int milliseconds)
+{
+    float amount;
+    if (milliseconds <= TS_TILE_FADE_MS_MIN) return 0.0f;
+    if (milliseconds >= TS_TILE_FADE_MS_MAX) return 1.0f;
+    amount = (float)milliseconds / (float)TS_TILE_FADE_MS_MAX;
+    return sqrtf(amount);
+}
+
+int ts_ui_tile_fade_ms(float normalized)
+{
+    if (normalized <= 0.0f) return TS_TILE_FADE_MS_MIN;
+    if (normalized >= 1.0f) return TS_TILE_FADE_MS_MAX;
+    return (int)lrintf(normalized * normalized *
+                       (float)TS_TILE_FADE_MS_MAX);
+}
+
+int ts_ui_tile_fade_all_from_point(int x, int y)
+{
+    return x >= 154 && x < 232 && y >= 313 && y < 330;
 }
 
 static int cycle_index(int value, int amount, int count)
@@ -2329,7 +2380,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char tile[96], info[112];
         int tile_number = showing_bank ? ui->bank_view_slot + 1 :
                           instrument->selected_slot + 1;
-        snprintf(tile, sizeof(tile), "TILE %02d %c %.34s", tile_number,
+        snprintf(tile, sizeof(tile), "TILE %02d %c %.24s", tile_number,
                  sample->channels == 2u ? 'S' : 'M', sample->name);
         if (showing_bank && shown_slot->occupied) {
             snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
@@ -2350,6 +2401,21 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char empty[40];
         snprintf(empty, sizeof(empty), "TILE %02d EMPTY", instrument->selected_slot + 1);
         text(fb, 20, 49, empty, PAL_INSTRUMENT, 1);
+    }
+    {
+        char fade[16];
+        float amount = ts_ui_tile_fade_normalized(ui->config.tile_fade_ms);
+        if (ui->config.tile_fade_ms <= 0)
+            snprintf(fade, sizeof(fade), "FADE 0");
+        else if (ui->config.tile_fade_ms < 1000)
+            snprintf(fade, sizeof(fade), "FADE %dMS", ui->config.tile_fade_ms);
+        else
+            snprintf(fade, sizeof(fade), "FADE %.1FS",
+                     (double)ui->config.tile_fade_ms / 1000.0);
+        text(fb, 240, 45, fade, PAL_VOLUME, 1);
+        rect(fb, 240, 58, 62, 3, RGB(18, 18, 18));
+        rect(fb, 240, 58, (int)lrintf(amount * 62.0f), 3, PAL_VOLUME);
+        rect(fb, 239 + (int)lrintf(amount * 62.0f), 56, 3, 7, PAL_MOUSE);
     }
     mini_button(fb, 526, 43, 94,
                 ts_waveform_display_name((TsWaveformDisplayMode)
@@ -2947,7 +3013,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             "CREATE FRESH STAMP  VARY ANSWERS SCULPTED SELECTION" :
             ui->fx_page == TS_FX_FAMILY ?
             "CREATE FRESH SOURCE  VARY ANSWERS CURRENT MATERIAL" :
-            "CLICK PLAY  DOUBLE EMPTY  RESIZE";
+            "CLICK LAUNCH  CLICK AGAIN RELEASE";
         if (ui->external_record_bank)
             bank_hint = ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
                         "REC BANK ARMED  MAKE SOUND  THRESHOLD STARTS TAPE" :
@@ -2957,7 +3023,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                         "REC BANK  CHAIN ON  TAKES ADVANCE AND REARM" :
                         "REC BANK  SELECT EMPTY TILE  REC ARM  SHIFT+1";
         else {
-            snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %.22s",
+            snprintf(page_hint, sizeof(page_hint), "SAMPLE %d/%d  %.11s",
                      ui->sample_page + 1,
                      ui->sample_page_count > 0 ? ui->sample_page_count : 1,
                      bank_hint);
@@ -2980,6 +3046,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                                    ui->capture_channels :
                                    ui->config.capture_channels;
             char source_count[24];
+            mini_button(fb, 154, 313, 78, "FADE ALL",
+                        ui->tile_launcher_mask != 0u);
             snprintf(source_count, sizeof(source_count), "SRC %d  SHIFT+T",
                      ts_performance_source_count(ui->sister_source_mask));
             text(fb, 250, 318, source_count, PAL_NOTE, 1);
@@ -3014,6 +3082,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 rect(fb, x - 2, y + 22, 76, 3, record_color);
                 rect(fb, x - 2, y - 2, 3, 27, record_color);
                 rect(fb, x + 71, y - 2, 3, 27, record_color);
+            }
+            if ((ui->tile_launcher_mask & (uint16_t)(1u << i)) != 0u) {
+                rect(fb, x + 4, y + 18, 64, 2, PAL_VOLUME);
+                rect(fb, x + 4, y + 4, 2, 16, PAL_VOLUME);
             }
             ts_ui_draw_tile_state_borders(
                 fb, i, i == instrument->selected_slot,
@@ -3556,6 +3628,160 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
     }
 }
 
+static void sister_fallout_time_label(char *text_value, size_t size,
+                                      float milliseconds)
+{
+    if (milliseconds < 1000.0f)
+        snprintf(text_value, size, "%.0FMS", milliseconds);
+    else if (milliseconds < 10000.0f)
+        snprintf(text_value, size, "%.1FS", milliseconds / 1000.0f);
+    else
+        snprintf(text_value, size, "%.0FS", milliseconds / 1000.0f);
+}
+
+static void sister_fallout_lfo_panel(TsFramebuffer *fb,
+                                     const TsSisterFalloutControls *controls)
+{
+    const int track_y = 101;
+    const int track_height = 127;
+    const int lane_x[4] = {551, 572, 593, 614};
+    const float amount[4] = {controls->lfo_rate, controls->lfo_intensity,
+                             controls->rise_length, controls->rise_intensity};
+    const uint32_t color[4] = {PAL_TUNING, PAL_EFFECT, PAL_NOTE, PAL_EFFECT};
+    char value[24];
+    float hz = ts_sister_fallout_lfo_hz(controls->lfo_rate);
+    float period = 1.0f / hz;
+    float rise = ts_sister_fallout_rise_seconds(controls->rise_length);
+    rect(fb, 540, 48, 90, 256, RGB(15, 14, 16));
+    button(fb, 548, 55, 74, "MOD", controls->lfo_targets != 0u ||
+           controls->rise_targets != 0u);
+    text(fb, 548, 79, "LFO", PAL_TUNING, 1);
+    text(fb, 591, 79, "RISE", PAL_NOTE, 1);
+    text(fb, 551, 90, "R", PAL_TUNING, 1);
+    text(fb, 573, 90, "D", PAL_EFFECT, 1);
+    text(fb, 594, 90, "T", PAL_NOTE, 1);
+    text(fb, 615, 90, "D", PAL_EFFECT, 1);
+    for (int lane = 0; lane < 4; ++lane) {
+        int handle_y = track_y + (int)lrintf(
+            (track_height - 1) * (1.0f - sister_clamp(amount[lane])));
+        rect(fb, lane_x[lane] + 3, track_y, 4, track_height, RGB(7, 7, 8));
+        rect(fb, lane_x[lane] - 1, handle_y - 1, 13, 3, color[lane]);
+    }
+    if (period >= 3600.0f)
+        snprintf(value, sizeof(value), "%.0FM", period / 60.0f);
+    else if (period >= 60.0f)
+        snprintf(value, sizeof(value), "%.1FM", period / 60.0f);
+    else if (period >= 1.0f)
+        snprintf(value, sizeof(value), "%.1FS", period);
+    else
+        snprintf(value, sizeof(value), "%.2FHZ", hz);
+    text(fb, 544, 235, value, PAL_TUNING, 1);
+    snprintf(value, sizeof(value), "%d%%",
+             (int)lrintf(controls->lfo_intensity * 100.0f));
+    text(fb, 568, 247, value, PAL_EFFECT, 1);
+    if (rise >= 3600.0f)
+        snprintf(value, sizeof(value), "%.0FH", rise / 3600.0f);
+    else if (rise >= 60.0f)
+        snprintf(value, sizeof(value), "%.0FM", rise / 60.0f);
+    else
+        snprintf(value, sizeof(value), "%.0FS", rise);
+    text(fb, 590, 235, value, PAL_NOTE, 1);
+    snprintf(value, sizeof(value), "%d%%",
+             (int)lrintf(controls->rise_intensity * 100.0f));
+    text(fb, 610, 247, value, PAL_EFFECT, 1);
+    text(fb, 548, 267, ts_sister_fallout_rise_mode_name(controls->rise_mode),
+         PAL_NOTE, 1);
+    text(fb, 548, 278, "CLICK MOD", PAL_MOUSE, 1);
+}
+
+static void sister_fallout_lfo_dialog(TsFramebuffer *fb,
+                                      const TsSisterFalloutControls *controls)
+{
+    static const char *const labels[13] = {
+        "MIX", "FEEDBACK", "NOISE", "DROP RATE", "PAN RATE",
+        "SKIP SPAN", "SKIP RATE", "BIT SAMPLE", "BIT DEPTH",
+        "BIT RATE", "PITCH RATIO", "PITCH RAMP", "PITCH RATE"
+    };
+    static const uint32_t targets[13] = {
+        TS_SISTER_FALLOUT_LFO_MIX, TS_SISTER_FALLOUT_LFO_FEEDBACK,
+        TS_SISTER_FALLOUT_LFO_NOISE, TS_SISTER_FALLOUT_LFO_DROP_RATE,
+        TS_SISTER_FALLOUT_LFO_PAN_RATE, TS_SISTER_FALLOUT_LFO_SKIP_SPAN,
+        TS_SISTER_FALLOUT_LFO_SKIP_RATE,
+        TS_SISTER_FALLOUT_LFO_BIT_QUALITY,
+        TS_SISTER_FALLOUT_LFO_BIT_RESOLUTION,
+        TS_SISTER_FALLOUT_LFO_BIT_RATE, TS_SISTER_FALLOUT_LFO_PITCH,
+        TS_SISTER_FALLOUT_LFO_PITCH_RAMP,
+        TS_SISTER_FALLOUT_LFO_PITCH_RATE
+    };
+    rect(fb, 70, 52, 500, 292, RGB(8, 8, 9));
+    rect(fb, 70, 52, 500, 1, PAL_EFFECT);
+    rect(fb, 70, 343, 500, 1, PAL_EFFECT);
+    rect(fb, 70, 52, 1, 292, PAL_EFFECT);
+    rect(fb, 569, 52, 1, 292, PAL_EFFECT);
+    text(fb, 90, 62, "FALLOUT MODULATION", PAL_TEXT, 1);
+    text(fb, 90, 79, "RISE MODE", PAL_MOUSE, 1);
+    button(fb, 300, 72, 72, "SAW",
+           controls->rise_mode == TS_SISTER_FALLOUT_RISE_SAW);
+    button(fb, 378, 72, 88, "1-SHOT",
+           controls->rise_mode == TS_SISTER_FALLOUT_RISE_ONE_SHOT);
+    button(fb, 474, 72, 76, "CLOSE", 0);
+    text(fb, 234, 99, "LFO", PAL_TUNING, 1);
+    text(fb, 274, 99, "RISE", PAL_NOTE, 1);
+    text(fb, 474, 99, "LFO", PAL_TUNING, 1);
+    text(fb, 514, 99, "RISE", PAL_NOTE, 1);
+    for (int target = 0; target < 13; ++target) {
+        int column = target / 7;
+        int row = target % 7;
+        int base_x = 90 + column * 240;
+        int row_y = 112 + row * 25;
+        button(fb, base_x, row_y, 138, labels[target], 0);
+        button(fb, base_x + 144, row_y, 34, "L",
+               (controls->lfo_targets & targets[target]) != 0u);
+        button(fb, base_x + 184, row_y, 34, "R",
+               (controls->rise_targets & targets[target]) != 0u);
+    }
+    text(fb, 90, 302, "RISE MOVES CENTER / LFO OSCILLATES AROUND IT",
+         PAL_MOUSE, 1);
+    text(fb, 90, 316, "ALL RISE TARGETS SHARE THE MAIN RETRIGGER",
+         PAL_MOUSE, 1);
+}
+
+static void sister_fallout_modulation_status(TsFramebuffer *fb,
+                                             const TsSisterUiModel *model)
+{
+    float rise;
+    float lfo;
+    int rise_x;
+    int rise_y;
+    int lfo_x;
+    char label[32];
+    if (fb == NULL || model == NULL) return;
+    rise = sister_clamp(model->routing.fallout_rise_phase);
+    lfo = sister_clamp(model->routing.fallout_lfo_phase);
+
+    button(fb, 10, 316, 86, "RETRIGGER", 0);
+    snprintf(label, sizeof(label), model->routing.fallout_rise_complete ?
+             "RISE DONE" : "RISE %d%%", (int)lrintf(rise * 100.0f));
+    text(fb, 110, 316, label, PAL_NOTE, 1);
+    ui_line(fb, 110, 345, 285, 319, PAL_NOTE);
+    ui_line(fb, 285, 319, 285, 345, PAL_NOTE);
+    if (model->routing.fallout_rise_complete) {
+        rise_x = 285;
+        rise_y = 345;
+    } else {
+        rise_x = 110 + (int)lrintf(rise * 175.0f);
+        rise_y = 345 - (int)lrintf(rise * 26.0f);
+    }
+    ui_marker(fb, rise_x, rise_y, PAL_NOTE);
+
+    snprintf(label, sizeof(label), "LFO %d%%",
+             (int)lrintf(lfo * 100.0f));
+    text(fb, 340, 316, label, PAL_TUNING, 1);
+    ui_line(fb, 340, 332, 520, 332, PAL_TUNING);
+    lfo_x = 340 + (int)lrintf(lfo * 180.0f);
+    ui_marker(fb, lfo_x, 332, PAL_TUNING);
+}
+
 static void sister_choice_parameter_state(TsFramebuffer *fb, int x, int y,
                                           int width, const char *label,
                                           const char *choice, int active,
@@ -3721,12 +3947,79 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         rect(fb, 351, 25, (int)lrintf(92.0f * sister_clamp(amount)), 3,
              color);
     }
-    button(fb, 450, 8, 76, model->fx_page ? "TAPE" : "FX PAGE",
-           model->fx_page);
+    button(fb, 450, 8, 76,
+           model->fx_page == 0 ? "FX PAGE" :
+           model->fx_page == 1 ? "FALLOUT" : "TAPE",
+           model->fx_page != 0);
     button(fb, 532, 8, 98, ts_waveform_display_name(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
 
-    if (model->fx_page) {
+    if (model->fx_page == 2) {
+        const TsSisterFalloutControls *f = &model->parameters.fx.fallout;
+        char transition[24];
+        sister_fallout_time_label(transition, sizeof(transition),
+            ts_sister_fallout_transition_ms(f->transition));
+        rect(fb, 10, 42, 620, 268, RGB(9, 9, 10));
+        button(fb, 16, 50, 86, f->enabled ? "FALLOUT ON" : "FALLOUT",
+               f->enabled);
+        sister_percent_parameter_state(fb, 120, 52, 165, "MIX", f->mix,
+            100, PAL_EFFECT, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_MIX));
+        sister_percent_parameter_state(fb, 300, 52, 220, "FEEDBACK", f->feedback,
+            120, PAL_TUNING, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK));
+
+        button(fb, 16, 84, 76,
+               ts_sister_fallout_noise_type_name(f->noise_type),
+               f->noise > 0.0f);
+        sister_percent_parameter_state(fb, 120, 84, 400, "NOISE", f->noise,
+            100, PAL_WAVE_SUM, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_NOISE));
+        button(fb, 16, 116, 76, "DROP", f->drop_enabled);
+        sister_percent_parameter_state(fb, 120, 116, 400, "RATE", f->drop_rate,
+            100, PAL_VOLUME, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_DROP_RATE));
+        button(fb, 16, 150, 76, "PAN", f->pan_enabled);
+        sister_percent_parameter_state(fb, 120, 150, 400, "RATE", f->pan_rate,
+            100, PAL_WAVE_RIGHT, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_PAN_RATE));
+        button(fb, 16, 184, 76, "SKIP", f->skip_enabled);
+        sister_percent_parameter_state(fb, 120, 184, 190, "SPAN", f->skip_span,
+            100, PAL_EFFECT, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_SKIP_SPAN));
+        sister_percent_parameter_state(fb, 330, 184, 190, "RATE", f->skip_rate,
+            100, PAL_EFFECT, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE));
+        button(fb, 16, 218, 76, "BIT", f->bit_enabled);
+        sister_percent_parameter_state(fb, 120, 218, 125, "SAMPLE", f->bit_quality,
+            100, PAL_TUNING, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_BIT_QUALITY));
+        sister_percent_parameter_state(fb, 260, 218, 125, "BITS", f->bit_resolution,
+            100, PAL_TUNING, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_BIT_RESOLUTION));
+        sister_percent_parameter_state(fb, 400, 218, 120, "RATE", f->bit_rate,
+            100, PAL_TUNING, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_BIT_RATE));
+        button(fb, 16, 252, 76, "PITCH", f->pitch_enabled);
+        sister_percent_parameter_state(fb, 120, 252, 125, "RATIO", f->pitch,
+            100, PAL_NOTE, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_PITCH));
+        sister_percent_parameter_state(fb, 260, 252, 125, "RAMP", f->pitch_ramp,
+            100, PAL_NOTE, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP));
+        sister_percent_parameter_state(fb, 400, 252, 120, "RATE", f->pitch_rate,
+            100, PAL_NOTE, ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE));
+        sister_choice_parameter_state(fb, 120, 284, 400, "TRANSITION",
+            transition, f->transition > 0.0f, PAL_MOUSE,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_TRANSITION));
+        sister_fallout_lfo_panel(fb, f);
+        sister_fallout_modulation_status(fb, model);
+        goto sister_footer;
+    }
+
+    if (model->fx_page == 1) {
         static const char *const names[3] = {"REVERB", "DELAY", "DISTORTION"};
         const uint32_t colors[3] = {PAL_WAVE_RIGHT, PAL_EFFECT, PAL_VOLUME};
         const uint8_t masks[3] = {
@@ -3828,17 +4121,6 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     if (!model->routing.enabled ||
         model->power_visual != TS_SISTER_UI_POWER_VISUAL_NONE)
         sister_spirit_render(fb, model);
-    if (model->routing.capture_state == TS_CAPTURE_RECORDING) {
-        uint64_t capacity = model->routing.capture_capacity_frames;
-        uint64_t recorded = model->routing.capture_recorded_frames;
-        int progress = capacity > 0u ?
-            (int)((double)recorded * 620.0 / (double)capacity) : 0;
-        if (progress < 0) progress = 0;
-        if (progress > 620) progress = 620;
-        rect(fb, 10, 40, 620, 3, RGB(30, 8, 8));
-        rect(fb, 10, 40, progress, 3, PAL_VOLUME);
-    }
-
     button(fb, 10, 172, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
     button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
     button(fb, 162, 172, 70, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);
@@ -3963,6 +4245,16 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     text(fb, 510, 336, "STEREO WEAVE", PAL_MOUSE, 1);
 
 sister_footer:
+    if (model->routing.capture_state == TS_CAPTURE_RECORDING) {
+        uint64_t capacity = model->routing.capture_capacity_frames;
+        uint64_t recorded = model->routing.capture_recorded_frames;
+        int progress = capacity > 0u ?
+            (int)((double)recorded * 620.0 / (double)capacity) : 0;
+        if (progress < 0) progress = 0;
+        if (progress > 620) progress = 620;
+        rect(fb, 10, 40, 620, 3, RGB(30, 8, 8));
+        rect(fb, 10, 40, progress, 3, PAL_VOLUME);
+    }
     snprintf(line, sizeof(line), "TARGET %s  %.88s",
              model->destination_slot >= 0 ? "READY" : "--",
              model->routing.capture_state == TS_CAPTURE_RECORDING ?
@@ -3994,13 +4286,18 @@ sister_footer:
             recording && model->text_cursor_visible);
     }
 
-    if (model->preset_manage_open) {
+    if (model->fallout_lfo_open) {
+        sister_fallout_lfo_dialog(fb, &model->parameters.fx.fallout);
+    } else if (model->preset_manage_open) {
         rect(fb, 160, 130, 320, 170, RGB(8, 8, 9));
         rect(fb, 160, 130, 320, 1, PAL_MOUSE);
         rect(fb, 160, 299, 320, 1, PAL_MOUSE);
         rect(fb, 160, 130, 1, 170, PAL_MOUSE);
         rect(fb, 479, 130, 1, 170, PAL_MOUSE);
-        text(fb, 180, 145, "SISTER PRESET MANAGER", PAL_TEXT, 1);
+        text(fb, 180, 145,
+             model->fx_page == 2 ? "FALLOUT PRESET MANAGER" :
+                                   "SISTER PRESET MANAGER",
+             PAL_TEXT, 1);
         text(fb, 180, 165,
              model->preset_editing ? model->preset_edit_name : model->preset_name,
              model->preset_editing ? PAL_NOTE : PAL_MOUSE, 1);

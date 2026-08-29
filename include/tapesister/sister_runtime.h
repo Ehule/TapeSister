@@ -55,6 +55,7 @@ typedef enum {
 } TsSisterTileShiftResult;
 
 typedef struct {
+    TsStereoFrame tiles;
     TsStereoFrame fm;
     TsStereoFrame external;
     TsStereoFrame preview;
@@ -91,6 +92,9 @@ typedef struct {
     uint32_t warnings;
     int source_target_conflict;
     uint64_t processed_frames;
+    float fallout_lfo_phase;
+    float fallout_rise_phase;
+    int fallout_rise_complete;
     uint64_t revision;
 } TsSisterRoutingSnapshot;
 
@@ -116,10 +120,14 @@ typedef struct {
     atomic_uint_least32_t warnings;
     atomic_int source_target_conflict;
     atomic_uint_least64_t processed_frames;
+    atomic_uint_least32_t fallout_lfo_phase_bits;
+    atomic_uint_least32_t fallout_rise_phase_bits;
+    atomic_int fallout_rise_complete;
 } TsSisterRoutingSnapshotAtomic;
 
 typedef struct {
     TsSisterMachine machine;
+    TsSisterFalloutEngine fallout;
     TsSisterPostFxEngine post_fx;
     TsSisterParameters parameters;
     TsPerformanceBank performance;
@@ -151,6 +159,8 @@ typedef struct {
     TsSisterRamp ordinary_fx_return_gain;
     float master_feedback_current;
     TsStereoFrame master_feedback_previous;
+    float fallout_feedback_current;
+    TsStereoFrame fallout_feedback_previous;
     /* UI/controller performance-safety state; never read by the callback. */
     uint64_t parameter_locks;
     char selected_preset[48];
@@ -177,6 +187,8 @@ TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
     TsSisterRuntime *runtime, TsStereoFrame input);
 void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
                                       const TsSisterParameters *parameters);
+void ts_sister_runtime_recall_fallout_preset(
+    TsSisterRuntime *runtime, const TsSisterFalloutControls *controls);
 void ts_sister_runtime_set_selected_preset(TsSisterRuntime *runtime,
                                            const char *name);
 void ts_sister_runtime_set_rolling(TsSisterRuntime *runtime, int rolling);
@@ -240,6 +252,14 @@ void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
 int ts_sister_runtime_find_destination(const TsSisterRuntime *runtime,
                                        const TsInstrument *instrument,
                                        int preferred_slot);
+int ts_sister_runtime_validate_capture_target(
+    TsSisterRuntime *runtime, const TsInstrument *instrument,
+    int destination_slot, uint16_t transient_capture_sources, int overdub,
+    char *error, size_t error_size);
+int ts_sister_runtime_install_prepared_capture(
+    TsSisterRuntime *runtime, const TsInstrument *instrument,
+    TsCaptureRecorder *prepared, TsSisterTap tap,
+    uint16_t transient_capture_sources, char *error, size_t error_size);
 int ts_sister_runtime_arm_capture(TsSisterRuntime *runtime,
                                   const TsInstrument *instrument,
                                   int destination_slot,

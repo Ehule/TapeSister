@@ -334,6 +334,16 @@ static int sister_presets_file_path(char *path, size_t path_size)
            strlen("sister-presets.ini") < path_size;
 }
 
+static int fallout_presets_file_path(char *path, size_t path_size)
+{
+    char directory[TS_RUNTIME_PATH_MAX];
+    if (runtime_path_parent(config_file_path(), directory, sizeof(directory)) &&
+        runtime_join_path(path, path_size, directory, "fallout-presets.ini"))
+        return 1;
+    return snprintf(path, path_size, "fallout-presets.ini") >= 0 &&
+           strlen("fallout-presets.ini") < path_size;
+}
+
 enum { TS_SHARED_PALETTE_PATH_MAX = TS_RUNTIME_PATH_MAX };
 
 static int shared_palette_path(const TsUiState *ui, char *path, size_t path_size)
@@ -737,6 +747,10 @@ typedef struct {
     size_t attack_frames;
     TsNoteBank notes;
     TsPerformanceBank performance;
+    TsPerformanceBank tile_launchers;
+    TsStereoFrame tile_launcher_mix;
+    int tile_launcher_active;
+    _Atomic uint_least16_t tile_launcher_mask;
     TsAudioMixer mixer;
     TsSisterRuntime sister;
     TsCaptureRecorder capture;
@@ -972,6 +986,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                                         (uint32_t)audio->output_rate) :
             (TsStereoFrame){0.0f, 0.0f};
         sister_sources.fm = buses.fm;
+        sister_sources.tiles = audio->tile_launcher_mix;
         sister_sources.external = buses.external;
         sister_sources.preview = buses.legacy_preview;
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
@@ -1076,6 +1091,12 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         if (i + 1 < values) out[i + 1] = output.r;
     }
     ts_sister_runtime_end_audio_block(&audio->sister);
+    {
+        uint16_t mask = ts_performance_tile_mask(&audio->tile_launchers);
+        audio->tile_launcher_active = mask != 0u;
+        atomic_store_explicit(&audio->tile_launcher_mask, mask,
+                              memory_order_release);
+    }
     if (audio->input_monitor != NULL && audio->record_source != NULL &&
         atomic_load_explicit(audio->record_source, memory_order_acquire) ==
             TS_RECORD_SOURCE_SYNTH)
@@ -1524,14 +1545,74 @@ static void release_note(SDL_AudioDeviceID device, AudioState *audio,
     release_note_event(device, audio, ui, &event);
 }
 
+static void toggle_tile_launcher(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui,
+                                 const TsInstrument *instrument, int slot,
+                                 int output_rate)
+{
+    TsPerformanceTileResult result;
+    if (device) SDL_LockAudioDevice(device);
+    result = ts_performance_toggle_tile(
+        &audio->tile_launchers, instrument, slot,
+        ui->config.tile_fade_ms, output_rate);
+    ui->tile_launcher_mask =
+        ts_performance_tile_mask(&audio->tile_launchers);
+    audio->tile_launcher_active = ui->tile_launcher_mask != 0u;
+    atomic_store_explicit(&audio->tile_launcher_mask,
+                          ui->tile_launcher_mask, memory_order_release);
+    if (device) SDL_UnlockAudioDevice(device);
+    if (result == TS_PERFORMANCE_TILE_STARTED)
+        snprintf(ui->status, sizeof(ui->status),
+                 ui->config.tile_fade_ms > 0 ?
+                 "TILE %02d FADING IN - CLICK AGAIN TO RELEASE" :
+                 "TILE %02d STARTED - CLICK AGAIN TO STOP", slot + 1);
+    else if (result == TS_PERFORMANCE_TILE_RELEASING)
+        snprintf(ui->status, sizeof(ui->status),
+                 ui->config.tile_fade_ms > 0 ?
+                 "TILE %02d FADING OUT" : "TILE %02d STOPPED", slot + 1);
+    else if (result == TS_PERFORMANCE_TILE_RESUMED)
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d FADE REVERSED - CONTINUING", slot + 1);
+    else
+        snprintf(ui->status, sizeof(ui->status),
+                 "TILE %02d COULD NOT LAUNCH", slot + 1);
+}
+
+static void fade_all_tile_launchers(SDL_AudioDeviceID device,
+                                    AudioState *audio, TsUiState *ui)
+{
+    int had_tiles;
+    if (device) SDL_LockAudioDevice(device);
+    had_tiles = ts_performance_tile_mask(&audio->tile_launchers) != 0u;
+    ts_performance_fade_all_tiles(&audio->tile_launchers);
+    ui->tile_launcher_mask =
+        ts_performance_tile_mask(&audio->tile_launchers);
+    audio->tile_launcher_active = ui->tile_launcher_mask != 0u;
+    atomic_store_explicit(&audio->tile_launcher_mask,
+                          ui->tile_launcher_mask, memory_order_release);
+    if (device) SDL_UnlockAudioDevice(device);
+    snprintf(ui->status, sizeof(ui->status),
+             !had_tiles ?
+             "NO CLICK-LAUNCHED TILES TO FADE" :
+             ui->config.tile_fade_ms > 0 ?
+             "ALL CLICK-LAUNCHED TILES FADING OUT" :
+             "ALL CLICK-LAUNCHED TILES STOPPED");
+}
+
 static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
     if (device) SDL_LockAudioDevice(device);
     audio->playing = 0;
     audio->bank_slot = -1;
     runtime_note_clear(audio);
+    ts_performance_clear(&audio->tile_launchers);
+    audio->tile_launcher_mix = (TsStereoFrame){0.0f, 0.0f};
+    audio->tile_launcher_active = 0;
+    atomic_store_explicit(&audio->tile_launcher_mask, 0u,
+                          memory_order_release);
     if (device) SDL_UnlockAudioDevice(device);
     ui->active_notes = 0;
+    ui->tile_launcher_mask = 0u;
     ui->mouse_note = -1;
     ui->tape_dragging = 0;
     ui->tape_drag_button = 0;
@@ -1553,9 +1634,15 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
     if (!ts_ui_loop_transport_can_stop(ui, 0)) {
         if (device) SDL_LockAudioDevice(device);
         runtime_note_clear(audio);
+        ts_performance_clear(&audio->tile_launchers);
+        audio->tile_launcher_mix = (TsStereoFrame){0.0f, 0.0f};
+        audio->tile_launcher_active = 0;
+        atomic_store_explicit(&audio->tile_launcher_mask, 0u,
+                              memory_order_release);
         audio->bank_slot = -1;
         if (device) SDL_UnlockAudioDevice(device);
         ui->active_notes = 0;
+        ui->tile_launcher_mask = 0u;
         ui->mouse_note = -1;
         ui->tape_dragging = 0;
         ui->tape_drag_button = 0;
@@ -1966,6 +2053,23 @@ static int begin_native_sister_edit(SDL_AudioDeviceID device,
     return render_unlocked;
 }
 
+static int begin_capture_commit_edit(SDL_AudioDeviceID device,
+                                     AudioState *audio)
+{
+    int render_unlocked;
+    /* A completed Sister capture no longer writes its recorder buffer. EXT,
+       click-launched tiles, and Sister's routed performance bank are also
+       independent of the editable TsInstrument storage. Keep the callback
+       running while the potentially long capture render/history work is
+       prepared whenever no legacy voice owns Current/Parent directly. */
+    lock_edit(device, audio);
+    render_unlocked = audio != NULL && !audio->playing &&
+        ts_note_bank_count(&audio->notes) == 0 &&
+        ts_performance_count(&audio->performance) == 0;
+    if (render_unlocked && device) SDL_UnlockAudioDevice(device);
+    return render_unlocked;
+}
+
 static void finish_native_sister_edit(SDL_AudioDeviceID device,
                                       AudioState *audio, TsUiState *ui,
                                       TsInstrument *instrument,
@@ -1975,6 +2079,8 @@ static void finish_native_sister_edit(SDL_AudioDeviceID device,
         /* Clone the completed source generation while the callback continues
            reading its old immutable copy, then take the device lock only for
            the bounded voice-metadata publication. */
+        (void)ts_performance_prepare_sync(&audio->tile_launchers,
+                                          instrument);
         (void)ts_performance_prepare_sync(&audio->sister.performance,
                                           instrument);
         lock_edit(device, audio);
@@ -6649,6 +6755,8 @@ typedef struct {
     int minimized;
     TsSisterPresetBank presets;
     size_t preset_index;
+    TsSisterPresetBank fallout_presets;
+    size_t fallout_preset_index;
     int parameter_lock_gesture;
     TsUiPointerDrag parameter_drag;
 } SisterWindow;
@@ -6871,6 +6979,24 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: parameters->fx.distortion_tone = amount; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: parameters->fx.distortion_mix = amount; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: parameters->fx.master_feedback = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_MIX: parameters->fx.fallout.mix = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: parameters->fx.fallout.feedback = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_NOISE: parameters->fx.fallout.noise = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_DROP_RATE: parameters->fx.fallout.drop_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PAN_RATE: parameters->fx.fallout.pan_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_SPAN: parameters->fx.fallout.skip_span = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE: parameters->fx.fallout.skip_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_QUALITY: parameters->fx.fallout.bit_quality = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RESOLUTION: parameters->fx.fallout.bit_resolution = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RATE: parameters->fx.fallout.bit_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH: parameters->fx.fallout.pitch = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP: parameters->fx.fallout.pitch_ramp = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: parameters->fx.fallout.pitch_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: parameters->fx.fallout.transition = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: parameters->fx.fallout.lfo_rate = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: parameters->fx.fallout.lfo_intensity = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH: parameters->fx.fallout.rise_length = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY: parameters->fx.fallout.rise_intensity = amount; break;
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
         parameters->buffer_seconds = (float)TS_SISTER_MIN_SECONDS +
             amount * (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
@@ -6929,6 +7055,24 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: value = parameters->fx.distortion_tone; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: value = parameters->fx.distortion_mix; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: value = parameters->fx.master_feedback; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_MIX: value = parameters->fx.fallout.mix; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: value = parameters->fx.fallout.feedback; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_NOISE: value = parameters->fx.fallout.noise; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_DROP_RATE: value = parameters->fx.fallout.drop_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PAN_RATE: value = parameters->fx.fallout.pan_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_SPAN: value = parameters->fx.fallout.skip_span; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE: value = parameters->fx.fallout.skip_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_QUALITY: value = parameters->fx.fallout.bit_quality; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RESOLUTION: value = parameters->fx.fallout.bit_resolution; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RATE: value = parameters->fx.fallout.bit_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH: value = parameters->fx.fallout.pitch; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP: value = parameters->fx.fallout.pitch_ramp; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: value = parameters->fx.fallout.pitch_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: value = parameters->fx.fallout.transition; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: value = parameters->fx.fallout.lfo_rate; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: value = parameters->fx.fallout.lfo_intensity; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH: value = parameters->fx.fallout.rise_length; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY: value = parameters->fx.fallout.rise_intensity; break;
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS:
         value = (parameters->buffer_seconds - (float)TS_SISTER_MIN_SECONDS) /
             (float)(TS_SISTER_MAX_SECONDS - TS_SISTER_MIN_SECONDS);
@@ -6988,6 +7132,92 @@ static float sister_parameter_wheel_normalized(
 static void sister_preset_model_sync(SisterWindow *sister,
                                      const TsSisterRuntime *runtime);
 
+static void fallout_factory_presets_configure(TsSisterPresetBank *bank,
+                                              uint32_t sample_rate)
+{
+    static const char *const names[TS_SISTER_FACTORY_PRESET_COUNT] = {
+        "APPROACHING TRAIN", "DUST WEATHER", "DEAD TRANSMISSION"
+    };
+    if (bank == NULL || bank->count < TS_SISTER_FACTORY_PRESET_COUNT) return;
+    for (size_t index = 0u; index < TS_SISTER_FACTORY_PRESET_COUNT; ++index) {
+        TsSisterFalloutControls *f;
+        ts_sister_parameters_default(&bank->entries[index].parameters,
+                                     sample_rate);
+        f = &bank->entries[index].parameters.fx.fallout;
+        ts_sister_fallout_controls_default(f);
+        f->enabled = 0;
+        bank->entries[index].factory = 1;
+        bank->entries[index].parameter_locks = 0u;
+        snprintf(bank->entries[index].name,
+                 sizeof(bank->entries[index].name), "%s", names[index]);
+    }
+    {
+        TsSisterFalloutControls *f =
+            &bank->entries[0].parameters.fx.fallout;
+        f->mix = 0.0f;
+        f->feedback = 0.10f;
+        f->noise = 0.75f;
+        f->noise_type = TS_SISTER_FALLOUT_NOISE_BROWN;
+        f->transition = ts_sister_fallout_transition_normalized(1000.0f);
+        f->lfo_rate = ts_sister_fallout_lfo_normalized(8.0f);
+        f->lfo_intensity = 0.95f;
+        f->lfo_targets = TS_SISTER_FALLOUT_LFO_NOISE;
+        f->rise_mode = TS_SISTER_FALLOUT_RISE_SAW;
+        f->rise_length = ts_sister_fallout_rise_normalized(3600.0f);
+        f->rise_intensity = 1.0f;
+        f->rise_targets = TS_SISTER_FALLOUT_LFO_MIX;
+    }
+    {
+        TsSisterFalloutControls *f =
+            &bank->entries[1].parameters.fx.fallout;
+        f->mix = 0.38f;
+        f->feedback = 0.22f;
+        f->noise = 0.28f;
+        f->noise_type = TS_SISTER_FALLOUT_NOISE_PINK;
+        f->transition = ts_sister_fallout_transition_normalized(5000.0f);
+        f->pan_enabled = 1;
+        f->pan_rate = 0.65f;
+        f->lfo_rate = ts_sister_fallout_lfo_normalized(0.015f);
+        f->lfo_intensity = 0.55f;
+        f->lfo_targets = TS_SISTER_FALLOUT_LFO_NOISE |
+                         TS_SISTER_FALLOUT_LFO_FEEDBACK;
+        f->rise_mode = TS_SISTER_FALLOUT_RISE_ONE_SHOT;
+        f->rise_length = ts_sister_fallout_rise_normalized(2700.0f);
+        f->rise_intensity = 0.70f;
+        f->rise_targets = TS_SISTER_FALLOUT_LFO_MIX |
+                          TS_SISTER_FALLOUT_LFO_NOISE;
+    }
+    {
+        TsSisterFalloutControls *f =
+            &bank->entries[2].parameters.fx.fallout;
+        f->mix = 0.72f;
+        f->feedback = 0.30f;
+        f->noise = 0.18f;
+        f->noise_type = TS_SISTER_FALLOUT_NOISE_BLUE;
+        f->transition = ts_sister_fallout_transition_normalized(2000.0f);
+        f->skip_enabled = 1;
+        f->skip_span = 0.18f;
+        f->skip_rate = 0.35f;
+        f->bit_enabled = 1;
+        f->bit_quality = 0.32f;
+        f->bit_resolution = 0.25f;
+        f->bit_rate = 0.45f;
+        f->lfo_rate = ts_sister_fallout_lfo_normalized(0.08f);
+        f->lfo_intensity = 0.45f;
+        f->lfo_targets = TS_SISTER_FALLOUT_LFO_NOISE |
+                         TS_SISTER_FALLOUT_LFO_SKIP_SPAN |
+                         TS_SISTER_FALLOUT_LFO_BIT_QUALITY;
+        f->rise_mode = TS_SISTER_FALLOUT_RISE_ONE_SHOT;
+        f->rise_length = ts_sister_fallout_rise_normalized(1800.0f);
+        f->rise_intensity = 0.80f;
+        f->rise_targets = TS_SISTER_FALLOUT_LFO_MIX |
+                          TS_SISTER_FALLOUT_LFO_FEEDBACK;
+    }
+    for (size_t index = 0u; index < TS_SISTER_FACTORY_PRESET_COUNT; ++index)
+        ts_sister_parameters_sanitize(&bank->entries[index].parameters,
+                                      sample_rate);
+}
+
 static const char *sister_parameter_name(int parameter)
 {
     switch ((TsSisterUiParameter)parameter) {
@@ -7033,6 +7263,24 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: return "DISTORTION TONE";
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: return "DISTORTION MIX";
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: return "MASTER FX FEEDBACK";
+    case TS_SISTER_UI_PARAM_FALLOUT_MIX: return "FALLOUT MIX";
+    case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: return "FALLOUT FEEDBACK";
+    case TS_SISTER_UI_PARAM_FALLOUT_NOISE: return "FALLOUT NOISE";
+    case TS_SISTER_UI_PARAM_FALLOUT_DROP_RATE: return "FALLOUT DROP RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_PAN_RATE: return "FALLOUT PAN RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_SPAN: return "FALLOUT SKIP SPAN";
+    case TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE: return "FALLOUT SKIP RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_QUALITY: return "FALLOUT SAMPLE";
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RESOLUTION: return "FALLOUT BITS";
+    case TS_SISTER_UI_PARAM_FALLOUT_BIT_RATE: return "FALLOUT BIT RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH: return "FALLOUT PITCH";
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP: return "FALLOUT PITCH RAMP";
+    case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: return "FALLOUT PITCH RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: return "FALLOUT TRANSITION";
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: return "FALLOUT LFO RATE";
+    case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: return "FALLOUT LFO DEPTH";
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH: return "FALLOUT RISE LENGTH";
+    case TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY: return "FALLOUT RISE DEPTH";
     case TS_SISTER_UI_PARAM_BUFFER_SECONDS: return "BUFFER DURATION";
     default: return "PARAMETER";
     }
@@ -7062,6 +7310,21 @@ static void sister_preset_model_sync(SisterWindow *sister,
 {
     const char *name = runtime != NULL ? runtime->selected_preset : NULL;
     if (sister == NULL) return;
+    if (sister->model.fx_page == 2) {
+        if (sister->fallout_preset_index < sister->fallout_presets.count) {
+            const TsSisterPreset *preset =
+                &sister->fallout_presets.entries[
+                    sister->fallout_preset_index];
+            snprintf(sister->model.preset_name,
+                     sizeof(sister->model.preset_name), "%s", preset->name);
+            sister->model.preset_factory = preset->factory;
+        } else {
+            snprintf(sister->model.preset_name,
+                     sizeof(sister->model.preset_name), "CUSTOM");
+            sister->model.preset_factory = 0;
+        }
+        return;
+    }
     sister->preset_index = SIZE_MAX;
     if (name != NULL && name[0] != '\0') {
         for (size_t i = 0u; i < sister->presets.count; ++i) {
@@ -7088,11 +7351,17 @@ static int sister_preset_file_save(SisterWindow *sister,
                                    char *error, size_t error_size)
 {
     char path[TS_RUNTIME_PATH_MAX];
-    if (sister == NULL || !sister_presets_file_path(path, sizeof(path))) {
-        snprintf(error, error_size, "Sister preset path is unavailable");
+    int fallout = sister != NULL && sister->model.fx_page == 2;
+    if (sister == NULL ||
+        !(fallout ? fallout_presets_file_path(path, sizeof(path)) :
+                    sister_presets_file_path(path, sizeof(path)))) {
+        snprintf(error, error_size, "%s preset path is unavailable",
+                 fallout ? "Fallout" : "Sister");
         return 0;
     }
-    return ts_sister_preset_save(&sister->presets, path, error, error_size);
+    return ts_sister_preset_save(
+        fallout ? &sister->fallout_presets : &sister->presets,
+        path, error, error_size);
 }
 
 static void sister_recall_preset(SDL_AudioDeviceID device,
@@ -7101,20 +7370,33 @@ static void sister_recall_preset(SDL_AudioDeviceID device,
 {
     TsSisterParameters parameters;
     uint64_t parameter_locks;
-    if (audio == NULL || sister == NULL ||
-        !ts_sister_preset_recall_with_locks(
-            &sister->presets, index, &parameters, &parameter_locks)) return;
+    int fallout;
+    TsSisterPresetBank *bank;
+    if (audio == NULL || sister == NULL) return;
+    fallout = sister->model.fx_page == 2;
+    bank = fallout ? &sister->fallout_presets : &sister->presets;
+    if (!ts_sister_preset_recall_with_locks(
+            bank, index, &parameters, &parameter_locks)) return;
     if (device) SDL_LockAudioDevice(device);
-    ts_sister_runtime_set_parameters(&audio->sister, &parameters);
-    audio->sister.parameter_locks = parameter_locks;
-    ts_sister_runtime_set_selected_preset(
-        &audio->sister, sister->presets.entries[index].name);
+    if (fallout) {
+        ts_sister_runtime_recall_fallout_preset(
+            &audio->sister, &parameters.fx.fallout);
+        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        sister->fallout_preset_index = index;
+    } else {
+        ts_sister_runtime_set_parameters(&audio->sister, &parameters);
+        audio->sister.parameter_locks = parameter_locks;
+        ts_sister_runtime_set_selected_preset(
+            &audio->sister, bank->entries[index].name);
+        sister->fallout_preset_index = SIZE_MAX;
+    }
     if (device) SDL_UnlockAudioDevice(device);
     sister->model.parameters = audio->sister.parameters;
-    sister->model.parameter_locks = parameter_locks;
+    if (!fallout) sister->model.parameter_locks = parameter_locks;
     sister_preset_model_sync(sister, &audio->sister);
     snprintf(sister->model.status, sizeof(sister->model.status),
-             "PRESET RECALLED - ROLLING MEMORY CONTINUES");
+             fallout ? "FALLOUT PRESET TRANSITION STARTED" :
+                       "PRESET RECALLED - ROLLING MEMORY CONTINUES");
 }
 
 static void sister_preset_edit_append(TsSisterUiModel *model,
@@ -7184,6 +7466,7 @@ static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
                                 SisterWindow *sister, int overdub,
                                 uint32_t sample_rate)
 {
+    TsCaptureRecorder prepared;
     char error[160];
     int destination;
     size_t capacity;
@@ -7200,19 +7483,41 @@ static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
         return 0;
     }
     capacity = (size_t)sample_rate * (size_t)ui->config.capture_max_seconds;
+    ts_capture_init(&prepared);
+
+    /* Destination validation is quick and remains protected. The potentially
+       large zero-fill (and Overdub source copy) is prepared while the audio
+       callback continues, then ownership is published under a short lock. */
     if (device) SDL_LockAudioDevice(device);
-    if (overdub)
-        ok = ts_sister_runtime_arm_overdub(
-            &audio->sister, instrument, destination, capacity, sample_rate,
-            sister->model.selected_tap, 0u, error, sizeof(error));
-    else
-        ok = ts_sister_runtime_arm_capture(
-            &audio->sister, instrument, destination, capacity, sample_rate,
-            (uint8_t)sister->model.capture_channels,
-            sister->model.selected_tap, 0u, error, sizeof(error));
-    if (ok) ok = ts_sister_runtime_trigger_capture(
-        &audio->sister, error, sizeof(error));
+    ok = ts_sister_runtime_validate_capture_target(
+        &audio->sister, instrument, destination, 0u, overdub,
+        error, sizeof(error));
     if (device) SDL_UnlockAudioDevice(device);
+    if (ok && overdub) {
+        const TsSample *base = &instrument->bank[destination].sample;
+        ok = ts_capture_arm_overdub_channels(
+            &prepared, destination, capacity, sample_rate, base->channels,
+            base->data, base->frames, base->sample_rate, base->channels,
+            error, sizeof(error));
+    } else if (ok) {
+        ok = ts_capture_arm_channels(
+            &prepared, destination, capacity, sample_rate,
+            (uint8_t)sister->model.capture_channels, error, sizeof(error));
+    }
+    if (ok)
+        ok = ts_capture_set_source(&prepared, TS_CAPTURE_SOURCE_SISTER,
+                                   error, sizeof(error));
+    if (ok) {
+        if (device) SDL_LockAudioDevice(device);
+        ok = ts_sister_runtime_install_prepared_capture(
+            &audio->sister, instrument, &prepared,
+            sister->model.selected_tap, 0u, error, sizeof(error));
+        if (ok)
+            ok = ts_sister_runtime_trigger_capture(
+                &audio->sister, error, sizeof(error));
+        if (device) SDL_UnlockAudioDevice(device);
+    }
+    ts_capture_free(&prepared);
     sister->model.capture_overdub = overdub != 0;
     snprintf(sister->model.status, sizeof(sister->model.status), "%s",
              ok ? (overdub ? "OVERDUB RECORDING - PRESS AGAIN TO STOP" :
@@ -7232,26 +7537,35 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     uint8_t sources;
     int capture_state;
     int sync_ext = 0;
+    int fallout_preset_scope;
+    TsSisterPresetBank *preset_bank;
+    size_t *preset_index;
     if (audio == NULL || ui == NULL || sister == NULL) return;
+    fallout_preset_scope = sister->model.fx_page == 2;
+    preset_bank = fallout_preset_scope ?
+        &sister->fallout_presets : &sister->presets;
+    preset_index = fallout_preset_scope ?
+        &sister->fallout_preset_index : &sister->preset_index;
     error[0] = '\0';
     capture_state = atomic_load_explicit(&audio->sister.capture.state,
                                          memory_order_acquire);
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_PREVIOUS ||
         hit.action == TS_SISTER_UI_ACTION_PRESET_NEXT) {
         size_t index;
-        if (sister->presets.count == 0u) return;
-        if (sister->preset_index >= sister->presets.count)
+        if (preset_bank->count == 0u) return;
+        if (*preset_index >= preset_bank->count)
             index = hit.action == TS_SISTER_UI_ACTION_PRESET_NEXT ?
-                    0u : sister->presets.count - 1u;
+                    0u : preset_bank->count - 1u;
         else if (hit.action == TS_SISTER_UI_ACTION_PRESET_NEXT)
-            index = (sister->preset_index + 1u) % sister->presets.count;
+            index = (*preset_index + 1u) % preset_bank->count;
         else
-            index = sister->preset_index == 0u ? sister->presets.count - 1u :
-                    sister->preset_index - 1u;
+            index = *preset_index == 0u ? preset_bank->count - 1u :
+                    *preset_index - 1u;
         sister_recall_preset(device, audio, sister, index);
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_MANAGE) {
+        sister->model.fallout_lfo_open = 0;
         sister->model.preset_manage_open = 1;
         sister->model.preset_editing = 0;
         sister->model.preset_confirmation = 0;
@@ -7275,8 +7589,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_RENAME) {
-        if (sister->preset_index >= sister->presets.count ||
-            sister->presets.entries[sister->preset_index].factory) {
+        if (*preset_index >= preset_bank->count ||
+            preset_bank->entries[*preset_index].factory) {
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "FACTORY PRESETS CANNOT BE RENAMED");
         } else {
@@ -7284,7 +7598,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             sister->model.preset_confirmation = 0;
             snprintf(sister->model.preset_edit_name,
                      sizeof(sister->model.preset_edit_name), "%s",
-                     sister->presets.entries[sister->preset_index].name);
+                     preset_bank->entries[*preset_index].name);
             sister->model.preset_edit_cursor =
                 strlen(sister->model.preset_edit_name);
         }
@@ -7292,8 +7606,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_OVERWRITE ||
         hit.action == TS_SISTER_UI_ACTION_PRESET_DELETE) {
-        if (sister->preset_index >= sister->presets.count ||
-            sister->presets.entries[sister->preset_index].factory) {
+        if (*preset_index >= preset_bank->count ||
+            preset_bank->entries[*preset_index].factory) {
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "FACTORY PRESETS ARE RECALL-ONLY");
         } else {
@@ -7305,33 +7619,45 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_CONFIRM) {
         int ok = 0;
-        size_t index = sister->preset_index;
+        size_t index = *preset_index;
+        TsSisterParameters stored = audio->sister.parameters;
+        if (fallout_preset_scope) {
+            stored.fx.fallout.enabled = 0;
+            stored.fx.fallout.rise_retrigger = 0u;
+        }
         if (sister->model.preset_editing == 1) {
             ok = ts_sister_preset_save_new_with_locks(
-                &sister->presets, sister->model.preset_edit_name,
-                &audio->sister.parameters, audio->sister.parameter_locks,
+                preset_bank, sister->model.preset_edit_name,
+                &stored,
+                fallout_preset_scope ? 0u : audio->sister.parameter_locks,
                 sample_rate, error, sizeof(error));
-            if (ok) index = sister->presets.count - 1u;
+            if (ok) index = preset_bank->count - 1u;
         } else if (sister->model.preset_editing == 2) {
             ok = ts_sister_preset_rename(
-                &sister->presets, index, sister->model.preset_edit_name,
+                preset_bank, index, sister->model.preset_edit_name,
                 error, sizeof(error));
         } else if (sister->model.preset_confirmation == 1) {
             ok = ts_sister_preset_overwrite_with_locks(
-                &sister->presets, index, &audio->sister.parameters,
-                audio->sister.parameter_locks, sample_rate,
+                preset_bank, index, &stored,
+                fallout_preset_scope ? 0u : audio->sister.parameter_locks,
+                sample_rate,
                 error, sizeof(error));
         } else if (sister->model.preset_confirmation == 2) {
             ok = ts_sister_preset_delete(
-                &sister->presets, index, error, sizeof(error));
+                preset_bank, index, error, sizeof(error));
             if (ok) index = SIZE_MAX;
         }
         if (ok) ok = sister_preset_file_save(sister, error, sizeof(error));
-        if (ok && index < sister->presets.count)
-            ts_sister_runtime_set_selected_preset(
-                &audio->sister, sister->presets.entries[index].name);
-        else if (ok)
-            ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        if (ok) {
+            *preset_index = index;
+            if (!fallout_preset_scope) {
+                if (index < preset_bank->count)
+                    ts_sister_runtime_set_selected_preset(
+                        &audio->sister, preset_bank->entries[index].name);
+                else
+                    ts_sister_runtime_set_selected_preset(&audio->sister, "");
+            }
+        }
         if (ok) {
             sister_preset_model_sync(sister, &audio->sister);
             sister->model.preset_editing = 0;
@@ -7340,7 +7666,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             SDL_StopTextInput();
         }
         snprintf(sister->model.status, sizeof(sister->model.status), "%s",
-                 ok ? "SISTER PRESET BANK SAVED" : error);
+                 ok ? (fallout_preset_scope ? "FALLOUT PRESET BANK SAVED" :
+                                                "SISTER PRESET BANK SAVED") :
+                      error);
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_POWER) {
@@ -7397,8 +7725,61 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_PAGE) {
-        sister->model.fx_page = !sister->model.fx_page;
+        sister->model.fallout_lfo_open = 0;
+        sister->model.fx_page = (sister->model.fx_page + 1) % 3;
         sister->rendered_model_valid = 0;
+        return;
+    }
+    if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG) {
+        sister->model.fallout_lfo_open =
+            !sister->model.fallout_lfo_open;
+        sister->model.preset_manage_open = 0;
+        sister->rendered_model_valid = 0;
+        return;
+    }
+    if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_TARGET) {
+        if (device) SDL_LockAudioDevice(device);
+        sister->model.parameters.fx.fallout.lfo_targets ^=
+            (uint32_t)hit.index;
+        ts_sister_runtime_set_parameters(&audio->sister,
+                                         &sister->model.parameters);
+        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        sister->fallout_preset_index = SIZE_MAX;
+        if (device) SDL_UnlockAudioDevice(device);
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "FALLOUT LFO TARGETS UPDATED");
+        return;
+    }
+    if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET ||
+        hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE ||
+        hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER) {
+        TsSisterFalloutControls *fallout =
+            &sister->model.parameters.fx.fallout;
+        if (device) SDL_LockAudioDevice(device);
+        if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET) {
+            fallout->rise_targets ^= (uint32_t)hit.index;
+        } else if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE) {
+            fallout->rise_mode = (TsSisterFalloutRiseMode)hit.index;
+        } else
+            ++fallout->rise_retrigger;
+        ts_sister_runtime_set_parameters(&audio->sister,
+                                         &sister->model.parameters);
+        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        if (hit.action != TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER)
+            sister->fallout_preset_index = SIZE_MAX;
+        if (device) SDL_UnlockAudioDevice(device);
+        sister_preset_model_sync(sister, &audio->sister);
+        if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET)
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "FALLOUT RISE TARGETS UPDATED");
+        else if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER)
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "FALLOUT SHARED RISE RESTARTED");
+        else
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "FALLOUT RISE %s",
+                     ts_sister_fallout_rise_mode_name(fallout->rise_mode));
         return;
     }
     if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
@@ -7458,6 +7839,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         sister_set_parameter(&sister->model.parameters, hit.index, hit.normalized);
         ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
         ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        if (hit.index >= TS_SISTER_UI_PARAM_FALLOUT_MIX &&
+            hit.index <= TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY)
+            sister->fallout_preset_index = SIZE_MAX;
         sister_preset_model_sync(sister, &audio->sister);
         if (hit.index == TS_SISTER_UI_PARAM_INPUT_GAIN)
             ui->config.sister_input_percent =
@@ -7495,7 +7879,56 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         else if (hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS)
             ui->config.sister_buffer_seconds =
                 (int)lrintf(sister->model.parameters.buffer_seconds);
+        else if (hit.index == TS_SISTER_UI_PARAM_FALLOUT_TRANSITION)
+            ui->config.sister_fallout_transition_ms = (int)lrintf(
+                ts_sister_fallout_transition_ms(
+                    sister->model.parameters.fx.fallout.transition));
+        else if (hit.index == TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH)
+            ui->config.sister_fallout_rise_seconds = (int)lrintf(
+                ts_sister_fallout_rise_seconds(
+                    sister->model.parameters.fx.fallout.rise_length));
         break;
+    case TS_SISTER_UI_ACTION_FALLOUT_TOGGLE: {
+        TsSisterFalloutControls *fallout =
+            &sister->model.parameters.fx.fallout;
+        switch ((TsSisterUiFalloutToggle)hit.index) {
+        case TS_SISTER_UI_FALLOUT_POWER:
+            fallout->enabled = !fallout->enabled;
+            break;
+        case TS_SISTER_UI_FALLOUT_NOISE_TYPE:
+            fallout->noise_type = (TsSisterFalloutNoiseType)(
+                (fallout->noise_type + 1) % TS_SISTER_FALLOUT_NOISE_COUNT);
+            break;
+        case TS_SISTER_UI_FALLOUT_DROP:
+            fallout->drop_enabled = !fallout->drop_enabled;
+            break;
+        case TS_SISTER_UI_FALLOUT_PAN:
+            fallout->pan_enabled = !fallout->pan_enabled;
+            break;
+        case TS_SISTER_UI_FALLOUT_SKIP:
+            fallout->skip_enabled = !fallout->skip_enabled;
+            break;
+        case TS_SISTER_UI_FALLOUT_BIT:
+            fallout->bit_enabled = !fallout->bit_enabled;
+            break;
+        case TS_SISTER_UI_FALLOUT_PITCH:
+            fallout->pitch_enabled = !fallout->pitch_enabled;
+            break;
+        default: break;
+        }
+        ts_sister_runtime_set_parameters(&audio->sister,
+                                         &sister->model.parameters);
+        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        if (hit.index != TS_SISTER_UI_FALLOUT_POWER)
+            sister->fallout_preset_index = SIZE_MAX;
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 hit.index == TS_SISTER_UI_FALLOUT_POWER ?
+                     (fallout->enabled ? "FALLOUT INSERT ENGAGED" :
+                                         "FALLOUT TRUE BYPASS") :
+                     "FALLOUT AUTOMATION UPDATED");
+        break;
+    }
     case TS_SISTER_UI_ACTION_EFFECT_TARGET:
     {
         int effect = hit.index >> 8;
@@ -7652,6 +8085,17 @@ static int adjust_hovered_slider(SDL_AudioDeviceID device, AudioState *audio,
                         instrument->loop_crossfade_ms;
         set_loop_crossfade(device, audio, ui, instrument,
                            clamp_unit(current / 50.0f + step) * 50.0f);
+        return 1;
+    }
+    case TS_UI_SLIDER_TILE_FADE: {
+        int delta = amount * (coarse ? 1000 : 100);
+        int value = ui->config.tile_fade_ms + delta;
+        if (value < TS_TILE_FADE_MS_MIN) value = TS_TILE_FADE_MS_MIN;
+        if (value > TS_TILE_FADE_MS_MAX) value = TS_TILE_FADE_MS_MAX;
+        ui->config.tile_fade_ms = value;
+        snprintf(ui->status, sizeof(ui->status),
+                 "CLICK-LAUNCHED TILE FADE %.1F SEC (MAX 20%% EACH EDGE)",
+                 (double)value / 1000.0);
         return 1;
     }
     default:
@@ -8899,11 +9343,22 @@ int main(int argc, char **argv)
                                    48000u, preset_error,
                                    sizeof(preset_error)))
             fprintf(stderr, "TapeSister Sister presets: %s\n", preset_error);
+        ts_sister_preset_bank_init(&sister_window.fallout_presets, 48000u);
+        sister_window.fallout_preset_index = SIZE_MAX;
+        if (fallout_presets_file_path(preset_path, sizeof(preset_path)) &&
+            !ts_sister_preset_load(&sister_window.fallout_presets, preset_path,
+                                   48000u, preset_error,
+                                   sizeof(preset_error)))
+            fprintf(stderr, "TapeSister Fallout presets: %s\n", preset_error);
+        fallout_factory_presets_configure(
+            &sister_window.fallout_presets, 48000u);
         snprintf(sister_window.model.preset_name,
                  sizeof(sister_window.model.preset_name), "CUSTOM");
     }
     ts_note_bank_init(&audio.notes);
     ts_performance_init(&audio.performance);
+    ts_performance_init(&audio.tile_launchers);
+    atomic_init(&audio.tile_launcher_mask, 0u);
     ts_audio_mixer_init(&audio.mixer);
     audio.fm_output_gain = (float)ui.config.fm_output_percent / 100.0f;
     ts_sister_runtime_init(&audio.sister);
@@ -8933,6 +9388,12 @@ int main(int argc, char **argv)
         parameters.write_erase = (float)ui.config.sister_erase_percent / 100.0f;
         parameters.ghost_tone = (float)ui.config.sister_ghost_percent / 100.0f;
         parameters.buffer_seconds = (float)ui.config.sister_buffer_seconds;
+        parameters.fx.fallout.transition =
+            ts_sister_fallout_transition_normalized(
+                (float)ui.config.sister_fallout_transition_ms);
+        parameters.fx.fallout.rise_length =
+            ts_sister_fallout_rise_normalized(
+                (float)ui.config.sister_fallout_rise_seconds);
         ts_sister_runtime_set_parameters(&audio.sister, &parameters);
     }
     ts_sister_runtime_input_available(&audio.sister, 0);
@@ -9152,6 +9613,7 @@ int main(int argc, char **argv)
         /* Reader counts are atomic; retired immutable generations are owned
            and reclaimed by this controller thread, never by the callback. */
         ts_performance_collect_retired(&audio.performance);
+        ts_performance_collect_retired(&audio.tile_launchers);
         ts_performance_collect_retired(&audio.sister.performance);
         if (pending_file.active && pending_file.presented)
             run_pending_file_operation(device, &audio, &ui, &instrument,
@@ -9299,7 +9761,9 @@ int main(int argc, char **argv)
                     ui.config.sister_window_y = event.window.data2;
                 } else if (event.type == SDL_KEYDOWN &&
                            event.key.keysym.sym == SDLK_ESCAPE) {
-                    if (sister_window.model.preset_manage_open) {
+                    if (sister_window.model.fallout_lfo_open) {
+                        sister_window.model.fallout_lfo_open = 0;
+                    } else if (sister_window.model.preset_manage_open) {
                         sister_window.model.preset_manage_open = 0;
                         sister_window.model.preset_editing = 0;
                         sister_window.model.preset_confirmation = 0;
@@ -10339,7 +10803,7 @@ int main(int argc, char **argv)
                     else if (audio.capture.state == TS_CAPTURE_RECORDING)
                         stop_capture_early(device, &audio, &ui);
                     else if (audio.playing || ts_note_bank_count(&audio.notes) > 0 ||
-                        ui.workbench_loop_active)
+                        ui.tile_launcher_mask != 0u || ui.workbench_loop_active)
                         stop_all(device, &audio, &ui);
                     else {
                         ui.audition_source = TS_AUDITION_CURRENT;
@@ -11597,6 +12061,16 @@ int main(int argc, char **argv)
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 573 && x < 630) {
                     begin_export_choice(&ui);
+                } else if (x >= 240 && x < 302 && y >= 42 && y < 64) {
+                    ui.config.tile_fade_ms = ts_ui_tile_fade_ms(
+                        (float)(x - 240) / 62.0f);
+                    snprintf(ui.status, sizeof(ui.status),
+                             "CLICK-LAUNCHED TILE FADE %.1F SEC (MAX 20%% EACH EDGE)",
+                             (double)ui.config.tile_fade_ms / 1000.0);
+                } else if (!record_bank_active && !ui.show_keyboard &&
+                           !ui.show_recipes && !ui.show_ingredients &&
+                           ts_ui_tile_fade_all_from_point(x, y)) {
+                    fade_all_tile_launchers(device, &audio, &ui);
                 } else if (!ui.input_meter_active &&
                            ui.amplitude_draw_mode &&
                            ui.bank_view_slot < 0 &&
@@ -12223,7 +12697,6 @@ int main(int argc, char **argv)
                                              "LOOP LOCKED TO SILENT BANK %02d VIEW",
                                              bank_slot + 1);
                                 } else {
-                                    stop_all(device, &audio, &ui);
                                     snprintf(ui.status, sizeof(ui.status),
                                              "BANK %02d SILENT CANVAS - %zu FRAMES AT %u HZ",
                                              bank_slot + 1, instrument.current.frames,
@@ -12231,18 +12704,7 @@ int main(int argc, char **argv)
                                 }
                             }
                             else if (selected && occupied) {
-                                if (ts_sister_runtime_tiles_insert_active(
-                                        &audio.sister)) {
-                                    /* TILES is an insert, not a click-preview
-                                       shortcut. Selection must not add a clean
-                                       legacy-preview voice or disturb a
-                                       sounding Sister ensemble. */
-                                    ui.audition_source = TS_AUDITION_CURRENT;
-                                    ui.bank_view_slot = -1;
-                                    snprintf(ui.status, sizeof(ui.status),
-                                             "BANK %02d ACTIVE - SISTER ENSEMBLE UNCHANGED",
-                                             bank_slot + 1);
-                                } else if (ui.workbench_loop_active &&
+                                if (ui.workbench_loop_active &&
                                     ui.workbench_loop_persistent) {
                                     ui.audition_source = TS_AUDITION_CURRENT;
                                     ui.bank_view_slot = -1;
@@ -12259,10 +12721,10 @@ int main(int argc, char **argv)
                                     /* Keep the selected tile in Current-edit mode. Bank-preview
                                        mode intentionally makes the waveform read-only. */
                                     ui.audition_source = TS_AUDITION_CURRENT;
-                                    begin_audition(device, &audio, &ui, &instrument,
-                                                   instrument.has_loop ? TS_AUDITION_LOOP :
-                                                   TS_AUDITION_ALL,
-                                                   1.0, obtained.freq);
+                                    ui.bank_view_slot = -1;
+                                    toggle_tile_launcher(
+                                        device, &audio, &ui, &instrument,
+                                        bank_slot, obtained.freq);
                                 }
                             }
                             else if (attempted_silence) {
@@ -12282,9 +12744,8 @@ int main(int argc, char **argv)
                                          "SOURCE GROUP UNCHANGED: %.112s", select_error);
                             }
                             else if (selected) {
-                                stop_all(device, &audio, &ui);
                                 snprintf(ui.status, sizeof(ui.status),
-                                         "BANK %02d EMPTY - DOUBLE CLICK FOR SILENCE",
+                                         "BANK %02d EMPTY - DOUBLE CLICK FOR SILENCE; LAYERS CONTINUE",
                                          bank_slot + 1);
                             }
                             else
@@ -12618,11 +13079,12 @@ int main(int argc, char **argv)
         if (audio.sister.capture.state == TS_CAPTURE_COMPLETED) {
             char sister_error[160];
             int committed;
-            if (device) SDL_LockAudioDevice(device);
+            int rendered_unlocked = begin_capture_commit_edit(device, &audio);
             committed = ts_sister_runtime_commit_capture(
                 &audio.sister, &instrument, ui.config.capture_auto_resize,
                 sister_error, sizeof(sister_error));
-            if (device) SDL_UnlockAudioDevice(device);
+            finish_native_sister_edit(device, &audio, &ui, &instrument,
+                                      rendered_unlocked);
             if (committed) {
                 ts_ui_waveform_cache_invalidate(&ui, TS_UI_WAVEFORM_MAIN);
                 snprintf(sister_window.model.status,
@@ -12658,6 +13120,9 @@ int main(int argc, char **argv)
         if (device) SDL_LockAudioDevice(device);
         {
             const TsNoteVoice *voice = ts_note_bank_display_voice(&audio.notes);
+            const TsPerformanceVoice *tile_voice =
+                ts_performance_tile_display_voice(
+                    &audio.tile_launchers, instrument.selected_slot);
             if (ui.transform_preview_active &&
                 (audio.sample == &transform.preview.sample ||
                  audio.sample == &transform.dsp_preview.sample) &&
@@ -12670,8 +13135,11 @@ int main(int argc, char **argv)
             ui.tune_reference_active = audio.tune_reference_enabled;
             ui.active_notes = ts_note_bank_visible_mask(
                 &audio.notes, ts_ui_keyboard_base_note(&ui));
+            ui.tile_launcher_mask = (uint16_t)atomic_load_explicit(
+                &audio.tile_launcher_mask, memory_order_acquire);
             ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
-            ui.playback_active = audio.playing || voice != NULL;
+            ui.playback_active = audio.playing || voice != NULL ||
+                                 tile_voice != NULL;
             if (audio.playing) {
                 ui.playhead_source = audio.source;
                 ui.playhead_bank_slot = audio.bank_slot;
@@ -12684,6 +13152,18 @@ int main(int argc, char **argv)
                 ui.playhead_frame = voice->position > 0.0 ? (size_t)voice->position : 0;
                 ui.playhead_frames = voice->sample ? voice->sample->frames : 0;
                 ui.playhead_sample = voice->sample;
+            } else if (tile_voice != NULL) {
+                /* Click-launched tiles use immutable audio generations, but
+                   the waveform displays the selected tile's Current view.
+                   Their frame coordinates remain identical while the
+                   generation protects the audio thread from live edits. */
+                ui.playhead_source = TS_AUDITION_CURRENT;
+                ui.playhead_bank_slot = -1;
+                ui.playhead_frame = tile_voice->position > 0.0 ?
+                                    (size_t)tile_voice->position : 0;
+                ui.playhead_frames = tile_voice->sample ?
+                                     tile_voice->sample->frames : 0;
+                ui.playhead_sample = &instrument.current;
             } else {
                 ui.playhead_bank_slot = -1;
                 ui.playhead_frame = 0;
@@ -12810,6 +13290,7 @@ int main(int argc, char **argv)
     if (input_device) SDL_CloseAudioDevice(input_device);
     if (device) SDL_CloseAudioDevice(device);
     ts_performance_free(&audio.performance);
+    ts_performance_free(&audio.tile_launchers);
     ts_sister_runtime_free(&audio.sister);
     ts_external_recorder_free(&external_input.recorder);
     ts_capture_free(&audio.capture);

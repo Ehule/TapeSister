@@ -21,6 +21,8 @@ int main(void)
     CHECK(config.sister_buffer_seconds == 40);
     CHECK(config.sister_capture_channels == 1);
     CHECK(config.sister_waveform_display_mode == TS_WAVEFORM_DISPLAY_STEREO);
+    CHECK(config.sister_fallout_transition_ms == 10);
+    CHECK(config.sister_fallout_rise_seconds == 3600);
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
     CHECK(model.parameter_locks == 0u);
@@ -188,6 +190,57 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 200, 310);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK);
+    model.fx_page = 2;
+    hit = ts_sister_ui_hit_test_model(&model, 30, 55);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_TOGGLE &&
+          hit.index == TS_SISTER_UI_FALLOUT_POWER);
+    hit = ts_sister_ui_hit_test_model(&model, 200, 56);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_MIX);
+    hit = ts_sister_ui_hit_test_model(&model, 30, 190);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_TOGGLE &&
+          hit.index == TS_SISTER_UI_FALLOUT_SKIP);
+    hit = ts_sister_ui_hit_test_model(&model, 350, 190);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_SKIP_RATE);
+    hit = ts_sister_ui_hit_test_model(&model, 30, 89);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_TOGGLE &&
+          hit.index == TS_SISTER_UI_FALLOUT_NOISE_TYPE);
+    hit = ts_sister_ui_hit_test_model(&model, 200, 289);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_TRANSITION);
+    hit = ts_sister_ui_hit_test_model(&model, 555, 110);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE);
+    hit = ts_sister_ui_hit_test_model(&model, 575, 200);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY);
+    hit = ts_sister_ui_hit_test_model(&model, 596, 180);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH);
+    hit = ts_sister_ui_hit_test_model(&model, 617, 180);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY);
+    hit = ts_sister_ui_hit_test_model(&model, 560, 60);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG);
+    hit = ts_sister_ui_hit_test_model(&model, 30, 320);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER);
+    model.fallout_lfo_open = 1;
+    hit = ts_sister_ui_hit_test_model(&model, 240, 113);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_TARGET &&
+          hit.index == TS_SISTER_FALLOUT_LFO_MIX);
+    hit = ts_sister_ui_hit_test_model(&model, 280, 113);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET &&
+          hit.index == TS_SISTER_FALLOUT_LFO_MIX);
+    hit = ts_sister_ui_hit_test_model(&model, 310, 80);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE &&
+          hit.index == TS_SISTER_FALLOUT_RISE_SAW);
+    hit = ts_sister_ui_hit_test_model(&model, 400, 80);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_MODE &&
+          hit.index == TS_SISTER_FALLOUT_RISE_ONE_SHOT);
+    hit = ts_sister_ui_hit_test_model(&model, 490, 80);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG);
+    model.fallout_lfo_open = 0;
     model.fx_page = 0;
 
     {
@@ -327,6 +380,16 @@ int main(void)
           palette.colors[TS_PALETTE_PATTERN_VOLUME]);
     CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 111u] !=
           palette.colors[TS_PALETTE_PATTERN_TUNING]);
+    model.routing.capture_state = TS_CAPTURE_RECORDING;
+    model.routing.capture_recorded_frames = 25u;
+    model.routing.capture_capacity_frames = 100u;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[40u * TS_UI_WIDTH + 100u] ==
+          palette.colors[TS_PALETTE_PATTERN_VOLUME]);
+    model.fx_page = 2;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[40u * TS_UI_WIDTH + 100u] ==
+          palette.colors[TS_PALETTE_PATTERN_VOLUME]);
     puts("Sister UI model tests passed");
     return failures != 0;
 }

@@ -54,6 +54,21 @@ int main(void)
     runtime.parameters.fx.distortion_mix = 0.71f;
     runtime.parameters.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
     runtime.parameters.fx.master_feedback = 0.66f;
+    runtime.parameters.fx.fallout.enabled = 1;
+    runtime.parameters.fx.fallout.feedback = 0.64f;
+    runtime.parameters.fx.fallout.noise_type = TS_SISTER_FALLOUT_NOISE_PINK;
+    runtime.parameters.fx.fallout.transition = 0.71f;
+    runtime.parameters.fx.fallout.lfo_rate = 0.18f;
+    runtime.parameters.fx.fallout.lfo_intensity = 0.42f;
+    runtime.parameters.fx.fallout.lfo_targets =
+        TS_SISTER_FALLOUT_LFO_NOISE | TS_SISTER_FALLOUT_LFO_PITCH_RATE;
+    runtime.parameters.fx.fallout.rise_mode = TS_SISTER_FALLOUT_RISE_SAW;
+    runtime.parameters.fx.fallout.rise_length = 0.88f;
+    runtime.parameters.fx.fallout.rise_intensity = 0.61f;
+    runtime.parameters.fx.fallout.rise_targets =
+        TS_SISTER_FALLOUT_LFO_NOISE | TS_SISTER_FALLOUT_LFO_FEEDBACK;
+    runtime.parameters.fx.fallout.pitch_enabled = 1;
+    runtime.parameters.fx.fallout.pitch_ramp = 0.37f;
     runtime.parameters.buffer_seconds = 23.0f;
     runtime.parameter_locks =
         TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FILTER_TYPE) |
@@ -82,6 +97,25 @@ int main(void)
     assert(loaded.parameters.fx.distortion_targets ==
            TS_SISTER_EFFECT_TARGET_MIX);
     assert(loaded.parameters.fx.master_feedback > 0.65f);
+    assert(loaded.parameters.fx.fallout.enabled == 1);
+    assert(loaded.parameters.fx.fallout.feedback > 0.63f);
+    assert(loaded.parameters.fx.fallout.noise_type ==
+           TS_SISTER_FALLOUT_NOISE_PINK);
+    assert(loaded.parameters.fx.fallout.transition > 0.70f);
+    assert(loaded.parameters.fx.fallout.lfo_rate > 0.17f);
+    assert(loaded.parameters.fx.fallout.lfo_intensity > 0.41f);
+    assert(loaded.parameters.fx.fallout.lfo_targets ==
+           (TS_SISTER_FALLOUT_LFO_NOISE |
+            TS_SISTER_FALLOUT_LFO_PITCH_RATE));
+    assert(loaded.parameters.fx.fallout.rise_mode ==
+           TS_SISTER_FALLOUT_RISE_SAW);
+    assert(loaded.parameters.fx.fallout.rise_length > 0.87f);
+    assert(loaded.parameters.fx.fallout.rise_intensity > 0.60f);
+    assert(loaded.parameters.fx.fallout.rise_targets ==
+           (TS_SISTER_FALLOUT_LFO_NOISE |
+            TS_SISTER_FALLOUT_LFO_FEEDBACK));
+    assert(loaded.parameters.fx.fallout.pitch_enabled == 1);
+    assert(loaded.parameters.fx.fallout.pitch_ramp > 0.36f);
     assert(loaded.parameters.buffer_seconds == 23.0f);
     assert(loaded.parameter_locks == runtime.parameter_locks);
     assert(strcmp(loaded.selected_preset, "GHOST FIELD") == 0);

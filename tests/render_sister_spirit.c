@@ -20,7 +20,57 @@ int main(int argc, char **argv)
     ts_sister_ui_model_init(&model, &config);
     ts_sister_ui_model_show(&model);
     model.magnetic_phase = 3u;
-    if (strcmp(mode, "flash") == 0) {
+    if (strcmp(mode, "fallout") == 0 ||
+        strcmp(mode, "fallout-lfo") == 0 ||
+        strcmp(mode, "fallout-presets") == 0 ||
+        strcmp(mode, "capture-fallout") == 0) {
+        model.routing.enabled = 1;
+        model.routing.rolling = 1;
+        model.fx_page = 2;
+        model.parameters.fx.fallout.enabled = 1;
+        model.parameters.fx.fallout.mix = 0.72f;
+        model.parameters.fx.fallout.feedback = 0.28f;
+        model.parameters.fx.fallout.noise = 0.18f;
+        model.parameters.fx.fallout.noise_type = TS_SISTER_FALLOUT_NOISE_PINK;
+        model.parameters.fx.fallout.transition =
+            ts_sister_fallout_transition_normalized(2500.0f);
+        model.parameters.fx.fallout.drop_enabled = 1;
+        model.parameters.fx.fallout.pan_enabled = 1;
+        model.parameters.fx.fallout.skip_enabled = 1;
+        model.parameters.fx.fallout.bit_enabled = 1;
+        model.parameters.fx.fallout.pitch_enabled = 1;
+        model.parameters.fx.fallout.lfo_rate =
+            ts_sister_fallout_lfo_normalized(1.0f / 600.0f);
+        model.parameters.fx.fallout.lfo_intensity = 0.24f;
+        model.parameters.fx.fallout.lfo_targets =
+            TS_SISTER_FALLOUT_LFO_NOISE |
+            TS_SISTER_FALLOUT_LFO_FEEDBACK |
+            TS_SISTER_FALLOUT_LFO_PITCH_RATE;
+        model.parameters.fx.fallout.rise_mode =
+            TS_SISTER_FALLOUT_RISE_ONE_SHOT;
+        model.parameters.fx.fallout.rise_length =
+            ts_sister_fallout_rise_normalized(3600.0f);
+        model.parameters.fx.fallout.rise_intensity = 0.82f;
+        model.parameters.fx.fallout.rise_targets =
+            TS_SISTER_FALLOUT_LFO_MIX |
+            TS_SISTER_FALLOUT_LFO_FEEDBACK |
+            TS_SISTER_FALLOUT_LFO_NOISE;
+        model.routing.fallout_rise_phase = 0.63f;
+        model.routing.fallout_lfo_phase = 0.28f;
+        model.fallout_lfo_open = strcmp(mode, "fallout-lfo") == 0;
+        model.preset_manage_open = strcmp(mode, "fallout-presets") == 0;
+        model.preset_factory = 1;
+        snprintf(model.preset_name, sizeof(model.preset_name),
+                 "APPROACHING TRAIN");
+        snprintf(model.status, sizeof(model.status),
+                 "FALLOUT INSERT ENGAGED");
+    } else if (strcmp(mode, "capture-effects") == 0) {
+        model.routing.enabled = 1;
+        model.routing.rolling = 1;
+        model.fx_page = 1;
+        snprintf(model.status, sizeof(model.status),
+                 "CAPTURE CONTINUES WHILE MASTER EFFECTS ARE EDITED");
+    } else if (strcmp(mode, "flash") == 0) {
         model.routing.enabled = 1;
         model.power_visual = TS_SISTER_UI_POWER_VISUAL_ON;
         model.power_visual_elapsed_ms = 350u;
@@ -54,6 +104,14 @@ int main(int argc, char **argv)
         model.text_cursor_visible = 1;
         snprintf(model.status, sizeof(model.status),
                  "CAPTURE RECORDING - PRESS AGAIN TO STOP");
+    }
+    if (strcmp(mode, "capture-effects") == 0 ||
+        strcmp(mode, "capture-fallout") == 0) {
+        model.routing.monitor_enabled = 1;
+        model.routing.capture_state = TS_CAPTURE_RECORDING;
+        model.routing.capture_recorded_frames = 13u * 48000u;
+        model.routing.capture_capacity_frames = 20u * 48000u;
+        model.text_cursor_visible = 1;
     }
     ts_sister_ui_render(&framebuffer, &model, &palette);
     if (!ts_ui_write_ppm(&framebuffer, path)) {

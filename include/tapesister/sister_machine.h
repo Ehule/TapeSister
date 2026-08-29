@@ -168,6 +168,8 @@ typedef struct {
     /* Dry plus the scaled DISTORTION -> DELAY -> REVERB return before linked
        hardware safety. This is the owned Master FX Feedback tap. */
     TsStereoFrame post_fx;
+    /* Fallout's effect-only signal, pre-MIX and pre-Master FX. */
+    TsStereoFrame fallout_wet;
     /* Exact bounded frame offered to rolling memory this callback. */
     TsStereoFrame write;
     size_t write_position;
@@ -319,6 +321,10 @@ TsSisterOutput ts_sister_machine_process_frame_with_fx(
     TsSisterMachine *machine, TsSisterPostFxEngine *post_fx,
     TsStereoFrame input, TsStereoFrame duck_sidechain,
     TsStereoFrame causal_fx_return);
+TsSisterOutput ts_sister_machine_process_frame_with_insert_fx(
+    TsSisterMachine *machine, TsSisterFalloutEngine *fallout,
+    TsSisterPostFxEngine *post_fx, TsStereoFrame input,
+    TsStereoFrame duck_sidechain, TsStereoFrame causal_fx_return);
 void ts_sister_machine_process_block(TsSisterMachine *machine,
                                      const TsStereoFrame *input,
                                      const TsStereoFrame *duck_sidechain,

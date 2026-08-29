@@ -500,6 +500,12 @@ int main(void)
         CHECK(ts_ui_slider_from_point(&ui, 280, 244) == TS_UI_SLIDER_NONE);
         CHECK(ts_ui_slider_from_point(&ui, 450, 216) == TS_UI_SLIDER_NONE);
         CHECK(ts_ui_slider_from_point(&ui, 550, 216) == TS_UI_SLIDER_NONE);
+        CHECK(ts_ui_slider_from_point(&ui, 270, 52) == TS_UI_SLIDER_TILE_FADE);
+        CHECK(ts_ui_tile_fade_all_from_point(180, 320));
+        CHECK(!ts_ui_tile_fade_all_from_point(240, 320));
+        CHECK(ts_ui_tile_fade_ms(0.0f) == 0);
+        CHECK(ts_ui_tile_fade_ms(1.0f) == TS_TILE_FADE_MS_MAX);
+        CHECK(fabsf(ts_ui_tile_fade_normalized(7500) - 0.5f) < 0.0001f);
         for (size_t i = 0; i < sizeof(sliders) / sizeof(sliders[0]); ++i) {
             ui.fx_page = sliders[i].page;
             CHECK(ts_ui_slider_from_point(&ui, sliders[i].x, 272) ==

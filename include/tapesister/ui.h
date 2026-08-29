@@ -7,6 +7,7 @@
 #include "tapesister/capture.h"
 #include "tapesister/config.h"
 #include "tapesister/palette.h"
+#include "tapesister/performance.h"
 #include "tapesister/recipe.h"
 #include "tapesister/sample.h"
 #include "tapesister/transform.h"
@@ -82,7 +83,8 @@ typedef enum {
     TS_UI_SLIDER_REVERB_DECAY,
     TS_UI_SLIDER_REVERB_DAMPING,
     TS_UI_SLIDER_REVERB_MIX,
-    TS_UI_SLIDER_LOOP_CROSSFADE
+    TS_UI_SLIDER_LOOP_CROSSFADE,
+    TS_UI_SLIDER_TILE_FADE
 } TsUiSlider;
 
 typedef enum {
@@ -278,6 +280,7 @@ typedef struct {
     uint64_t waveform_revisions[TS_UI_WAVEFORM_COUNT];
     TsUiWheelGuard wheel_guard;
     uint32_t active_notes;
+    uint16_t tile_launcher_mask;
     int mouse_note;
     int selecting;
     int bank_clear_armed;
@@ -583,6 +586,9 @@ int ts_ui_canvas_edge_from_point(int x, int y);
 int ts_ui_drone_waveform_contains(int x, int y);
 int ts_ui_drone_crossfade_handle_from_point(const TsUiState *ui, int x, int y);
 TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y);
+float ts_ui_tile_fade_normalized(int milliseconds);
+int ts_ui_tile_fade_ms(float normalized);
+int ts_ui_tile_fade_all_from_point(int x, int y);
 int ts_ui_palette_cycle_entry(int entry, int amount);
 int ts_ui_palette_cycle_channel(int channel, int amount);
 TsConfigField ts_ui_config_cycle_field(TsConfigField field, int amount);

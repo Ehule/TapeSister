@@ -133,6 +133,9 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     atomic_init(&snapshot->warnings, 0u);
     atomic_init(&snapshot->source_target_conflict, 0);
     atomic_init(&snapshot->processed_frames, 0u);
+    atomic_init(&snapshot->fallout_lfo_phase_bits, float_bits(0.0f));
+    atomic_init(&snapshot->fallout_rise_phase_bits, float_bits(0.0f));
+    atomic_init(&snapshot->fallout_rise_complete, 0);
 }
 
 static void publish_snapshot(TsSisterRuntime *runtime)
@@ -201,6 +204,15 @@ static void publish_snapshot(TsSisterRuntime *runtime)
                           memory_order_relaxed);
     atomic_store_explicit(&snapshot->processed_frames,
                           runtime->processed_frames, memory_order_relaxed);
+    atomic_store_explicit(&snapshot->fallout_lfo_phase_bits,
+                          float_bits((float)runtime->fallout.lfo_phase),
+                          memory_order_relaxed);
+    atomic_store_explicit(&snapshot->fallout_rise_phase_bits,
+                          float_bits(runtime->fallout.rise_value),
+                          memory_order_relaxed);
+    atomic_store_explicit(&snapshot->fallout_rise_complete,
+                          runtime->fallout.rise_one_shot_complete,
+                          memory_order_relaxed);
     atomic_store_explicit(&snapshot->revision, revision + 2u,
                           memory_order_release);
 }
@@ -308,6 +320,7 @@ void ts_sister_runtime_free(TsSisterRuntime *runtime)
 {
     if (runtime == NULL) return;
     ts_sister_machine_free(&runtime->machine);
+    ts_sister_fallout_free(&runtime->fallout);
     ts_sister_post_fx_free(&runtime->post_fx);
     ts_capture_free(&runtime->capture);
     memset(runtime->page_source_masks, 0,
@@ -344,6 +357,13 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
         return 0;
     }
     memset(&machine, 0, sizeof(machine));
+    if ((!runtime->fallout.ready || runtime->fallout.sample_rate != sample_rate) &&
+        !ts_sister_fallout_reconfigure(&runtime->fallout, sample_rate)) {
+        runtime->warnings |= TS_SISTER_WARNING_ALLOCATION;
+        publish_snapshot(runtime);
+        runtime_error(error, error_size, "Could not allocate Fallout storage");
+        return 0;
+    }
     if ((!runtime->post_fx.ready || runtime->post_fx.sample_rate != sample_rate) &&
         !ts_sister_post_fx_reconfigure(&runtime->post_fx, sample_rate)) {
         runtime->warnings |= TS_SISTER_WARNING_ALLOCATION;
@@ -373,6 +393,8 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     runtime->machine = machine;
     runtime->parameters = machine.parameters;
     ts_sister_post_fx_set_controls(&runtime->post_fx, &runtime->parameters.fx);
+    ts_sister_fallout_set_controls(&runtime->fallout,
+                                   &runtime->parameters.fx.fallout);
     runtime->enabled = 1;
     runtime->output_channels = output_channels;
     runtime->callback_failed = 0;
@@ -383,6 +405,8 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     runtime->processed_frames = 0u;
     runtime->master_feedback_current = 0.0f;
     runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
+    runtime->fallout_feedback_current = 0.0f;
+    runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
     runtime->source_target_conflict = 0;
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     for (int source_index = 0; source_index < TS_SISTER_SOURCE_COUNT;
@@ -427,6 +451,9 @@ void ts_sister_runtime_disable(TsSisterRuntime *runtime)
     runtime->source_target_conflict = 0;
     runtime->master_feedback_current = 0.0f;
     runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
+    runtime->fallout_feedback_current = 0.0f;
+    runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
+    ts_sister_fallout_clear(&runtime->fallout);
     publish_snapshot(runtime);
 }
 
@@ -447,6 +474,17 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
                           "Sister output device contract is unavailable");
             return 0;
         }
+        if (!runtime->fallout.ready || runtime->fallout.sample_rate != sample_rate) {
+            if (!ts_sister_fallout_reconfigure(&runtime->fallout, sample_rate)) {
+                runtime->warnings |= TS_SISTER_WARNING_ALLOCATION;
+                publish_snapshot(runtime);
+                runtime_error(error, error_size,
+                              "Could not allocate Fallout storage");
+                return 0;
+            }
+            ts_sister_fallout_set_controls(&runtime->fallout,
+                                            &runtime->parameters.fx.fallout);
+        }
         if (!runtime->post_fx.ready || runtime->post_fx.sample_rate != sample_rate) {
             if (!ts_sister_post_fx_reconfigure(&runtime->post_fx, sample_rate)) {
                 runtime->warnings |= TS_SISTER_WARNING_ALLOCATION;
@@ -465,6 +503,7 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
         return 1;
     }
     if (sample_rate == 0u || output_channels != 2u ||
+        !ts_sister_fallout_reconfigure(&runtime->fallout, sample_rate) ||
         !ts_sister_post_fx_reconfigure(&runtime->post_fx, sample_rate) ||
         !ts_sister_machine_reconfigure(
             &runtime->machine, sample_rate, runtime->machine.buffer.channels,
@@ -479,9 +518,13 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     runtime->output_channels = output_channels;
     runtime->parameters = runtime->machine.parameters;
     ts_sister_post_fx_set_controls(&runtime->post_fx, &runtime->parameters.fx);
+    ts_sister_fallout_set_controls(&runtime->fallout,
+                                   &runtime->parameters.fx.fallout);
     runtime->last_frame = (TsSisterRuntimeFrame){0};
     runtime->master_feedback_current = 0.0f;
     runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
+    runtime->fallout_feedback_current = 0.0f;
+    runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
     ts_capture_free(&runtime->capture);
     ts_performance_clear(&runtime->performance);
     ts_sister_wave_publisher_clear(&runtime->waveform,
@@ -522,6 +565,31 @@ void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
         runtime->parameters = runtime->machine.parameters;
     }
     ts_sister_post_fx_set_controls(&runtime->post_fx, &runtime->parameters.fx);
+    ts_sister_fallout_set_controls(&runtime->fallout,
+                                   &runtime->parameters.fx.fallout);
+    publish_snapshot(runtime);
+}
+
+void ts_sister_runtime_recall_fallout_preset(
+    TsSisterRuntime *runtime, const TsSisterFalloutControls *controls)
+{
+    TsSisterFalloutControls target;
+    uint32_t sample_rate;
+    if (runtime == NULL || controls == NULL) return;
+    target = *controls;
+    sample_rate = runtime->post_fx.ready ? runtime->post_fx.sample_rate :
+                  runtime->enabled ? runtime->machine.buffer.sample_rate :
+                  48000u;
+    target.enabled = runtime->parameters.fx.fallout.enabled;
+    target.rise_retrigger = runtime->parameters.fx.fallout.rise_retrigger + 1u;
+    ts_sister_fallout_controls_sanitize(&target);
+    runtime->parameters.fx.fallout = target;
+    runtime->parameters_published = 1;
+    ts_sister_parameters_sanitize(&runtime->parameters, sample_rate);
+    if (runtime->enabled)
+        runtime->machine.parameters.fx.fallout = runtime->parameters.fx.fallout;
+    ts_sister_fallout_recall_preset(
+        &runtime->fallout, &runtime->parameters.fx.fallout);
     publish_snapshot(runtime);
 }
 
@@ -888,6 +956,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsStereoFrame tile_bus;
     TsStereoFrame input = {0.0f, 0.0f};
     TsSisterOutput output;
+    TsStereoFrame causal_return;
     float source_gain[TS_SISTER_SOURCE_COUNT];
     float source_route[TS_SISTER_SOURCE_COUNT];
     float route_energy = 0.0f;
@@ -895,10 +964,12 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     frame.dry_monitor_gain = 1.0f;
     if (runtime == NULL) return frame;
     if (sources != NULL) source = *sources;
+    source.tiles = ts_stereo_frame_sanitize(source.tiles);
     source.fm = ts_stereo_frame_sanitize(source.fm);
     source.external = ts_stereo_frame_sanitize(source.external);
     source.preview = ts_stereo_frame_sanitize(source.preview);
     tile_bus = ts_performance_read_stereo(&runtime->performance, &tile_raw);
+    tile_bus = frame_add(tile_bus, source.tiles);
     (void)tile_raw;
     if (!runtime->enabled || runtime->callback_failed) {
         runtime->last_frame = frame;
@@ -933,9 +1004,17 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         input = frame_scale(input, 1.0f / sqrtf(route_energy));
     monitor_route = runtime_ramp_advance(&runtime->monitor_route);
     (void)runtime_ramp_advance(&runtime->direct_tile_route);
-    output = ts_sister_machine_process_frame_with_fx(
-        &runtime->machine, &runtime->post_fx, input, input,
-        runtime->master_feedback_previous);
+    causal_return = frame_add(runtime->master_feedback_previous,
+                              runtime->fallout_feedback_previous);
+    {
+        float peak = fmaxf(fabsf(causal_return.l), fabsf(causal_return.r));
+        if (!isfinite(peak)) causal_return = (TsStereoFrame){0.0f, 0.0f};
+        else if (peak > 1.5f)
+            causal_return = frame_scale(causal_return, 1.5f / peak);
+    }
+    output = ts_sister_machine_process_frame_with_insert_fx(
+        &runtime->machine, &runtime->fallout, &runtime->post_fx,
+        input, input, causal_return);
     if (runtime->waveform_capacity_frames !=
         runtime->machine.buffer.capacity_frames) {
         ts_sister_wave_publisher_resize(
@@ -966,6 +1045,27 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         feedback.l = tanhf(feedback.l);
         feedback.r = tanhf(feedback.r);
         runtime->master_feedback_previous = ts_stereo_frame_sanitize(feedback);
+    }
+    runtime->fallout_feedback_current = monitor_approach(
+        runtime->fallout_feedback_current,
+        ts_sister_fallout_feedback_amount(&runtime->fallout) * 1.20f *
+            ts_sister_fallout_engage(&runtime->fallout),
+        runtime->machine.buffer.sample_rate);
+    if (!runtime->parameters.fx.fallout.enabled &&
+        runtime->fallout_feedback_current < 0.000001f) {
+        runtime->fallout_feedback_current = 0.0f;
+        runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
+    } else {
+        TsStereoFrame feedback = frame_scale(
+            ts_stereo_frame_sanitize(output.fallout_wet),
+            runtime->fallout_feedback_current);
+        float peak = fmaxf(fabsf(feedback.l), fabsf(feedback.r));
+        if (!isfinite(peak)) feedback = (TsStereoFrame){0.0f, 0.0f};
+        else if (peak > 1.5f) feedback = frame_scale(feedback, 1.5f / peak);
+        feedback.l = tanhf(feedback.l);
+        feedback.r = tanhf(feedback.r);
+        runtime->fallout_feedback_previous =
+            ts_stereo_frame_sanitize(feedback);
     }
     frame.input = ts_stereo_frame_sanitize(output.input);
     frame.duck_sidechain = frame.input;
@@ -1100,6 +1200,86 @@ static int validate_destination(TsSisterRuntime *runtime,
     }
     runtime->destination_status = TS_SISTER_DESTINATION_READY;
     publish_snapshot(runtime);
+    return 1;
+}
+
+int ts_sister_runtime_validate_capture_target(
+    TsSisterRuntime *runtime, const TsInstrument *instrument,
+    int destination_slot, uint16_t transient_capture_sources, int overdub,
+    char *error, size_t error_size)
+{
+    if (runtime == NULL || !runtime->enabled) {
+        runtime_error(error, error_size, "Enable Sister before Capture");
+        return 0;
+    }
+    if (atomic_load_explicit(&runtime->capture.state, memory_order_acquire) !=
+        TS_CAPTURE_IDLE) {
+        runtime_error(error, error_size, "Sister Capture is already active");
+        return 0;
+    }
+    return validate_destination(runtime, instrument, destination_slot,
+                                transient_capture_sources, overdub != 0,
+                                error, error_size);
+}
+
+static void install_capture_recorder(TsCaptureRecorder *destination,
+                                     TsCaptureRecorder *prepared)
+{
+    TsCaptureState state = atomic_load_explicit(&prepared->state,
+                                                 memory_order_acquire);
+    ts_capture_free(destination);
+    destination->buffer = prepared->buffer;
+    destination->overdub_base = prepared->overdub_base;
+    destination->capacity_frames = prepared->capacity_frames;
+    destination->recorded_frames = prepared->recorded_frames;
+    destination->overdub_base_frames = prepared->overdub_base_frames;
+    destination->sample_rate = prepared->sample_rate;
+    destination->overdub_base_rate = prepared->overdub_base_rate;
+    destination->channels = prepared->channels;
+    destination->overdub_base_channels = prepared->overdub_base_channels;
+    destination->staged_notes = prepared->staged_notes;
+    destination->destination_slot = prepared->destination_slot;
+    destination->source_slot = prepared->source_slot;
+    destination->provenance_slot = prepared->provenance_slot;
+    destination->stopped_early = prepared->stopped_early;
+    destination->auto_resize = prepared->auto_resize;
+    destination->overdub = prepared->overdub;
+    atomic_store_explicit(&destination->state, state, memory_order_release);
+    prepared->buffer = NULL;
+    prepared->overdub_base = NULL;
+    ts_capture_init(prepared);
+}
+
+int ts_sister_runtime_install_prepared_capture(
+    TsSisterRuntime *runtime, const TsInstrument *instrument,
+    TsCaptureRecorder *prepared, TsSisterTap tap,
+    uint16_t transient_capture_sources, char *error, size_t error_size)
+{
+    TsCaptureState prepared_state;
+    if (runtime == NULL || !runtime->enabled || prepared == NULL ||
+        tap < 0 || tap >= TS_SISTER_TAP_COUNT) {
+        runtime_error(error, error_size, "Enable Sister before Capture");
+        return 0;
+    }
+    prepared_state = atomic_load_explicit(&prepared->state,
+                                          memory_order_acquire);
+    if (prepared_state != TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ||
+        prepared->buffer == NULL ||
+        prepared->source_slot != TS_CAPTURE_SOURCE_SISTER) {
+        runtime_error(error, error_size,
+                      "Sister Capture buffer is not prepared");
+        return 0;
+    }
+    if (!ts_sister_runtime_validate_capture_target(
+            runtime, instrument, prepared->destination_slot,
+            transient_capture_sources, prepared->overdub,
+            error, error_size))
+        return 0;
+    install_capture_recorder(&runtime->capture, prepared);
+    runtime->selected_tap = tap;
+    runtime->capture_transient_source_mask = transient_capture_sources;
+    publish_snapshot(runtime);
+    runtime_error(error, error_size, "");
     return 1;
 }
 
@@ -1359,6 +1539,12 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
             &source->source_target_conflict, memory_order_relaxed);
         snapshot->processed_frames = atomic_load_explicit(
             &source->processed_frames, memory_order_relaxed);
+        snapshot->fallout_lfo_phase = bits_float(atomic_load_explicit(
+            &source->fallout_lfo_phase_bits, memory_order_relaxed));
+        snapshot->fallout_rise_phase = bits_float(atomic_load_explicit(
+            &source->fallout_rise_phase_bits, memory_order_relaxed));
+        snapshot->fallout_rise_complete = atomic_load_explicit(
+            &source->fallout_rise_complete, memory_order_relaxed);
         after = atomic_load_explicit(&source->revision, memory_order_acquire);
         if (before == after && (after & 1u) == 0u) {
             snapshot->revision = after;

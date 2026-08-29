@@ -318,12 +318,17 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     TsStereoFrame fm = {0.0f, 0.0f};
     TsStereoFrame synth = {0.0f, 0.0f};
     TsStereoFrame performance;
+    TsStereoFrame launcher;
     if (audio == NULL || buses == NULL) return;
     ts_note_bank_read_buses(&audio->notes, &sample, &fm, &synth);
     performance = ts_performance_read_stereo(
         &audio->performance, &audio->performance_raw_mix);
-    buses->tile_performance.l += sample.l + performance.l;
-    buses->tile_performance.r += sample.r + performance.r;
+    launcher = audio->tile_launcher_active ?
+        ts_performance_read_stereo(&audio->tile_launchers, NULL) :
+        (TsStereoFrame){0.0f, 0.0f};
+    audio->tile_launcher_mix = launcher;
+    buses->tile_performance.l += sample.l + performance.l + launcher.l;
+    buses->tile_performance.r += sample.r + performance.r + launcher.r;
     buses->fm.l += fm.l;
     buses->fm.r += fm.r;
     if (synth_capture != NULL) *synth_capture = synth;
@@ -336,6 +341,8 @@ static void runtime_note_sync(AudioState *audio,
     ts_note_bank_sync(&audio->notes, instrument, output_rate);
     if (ts_performance_count(&audio->performance) > 0)
         ts_performance_sync(&audio->performance, instrument, output_rate);
+    if (ts_performance_count(&audio->tile_launchers) > 0)
+        ts_performance_sync(&audio->tile_launchers, instrument, output_rate);
     ts_sister_runtime_sync_sources(&audio->sister, instrument, output_rate);
 }
 enum {

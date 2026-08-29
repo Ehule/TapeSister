@@ -48,6 +48,20 @@ int main(void)
     for (int tap = 0; tap < TS_SISTER_TAP_COUNT; ++tap)
         CHECK(sister_frame_finite(frame.tap[tap]));
 
+    /* The separate mouse-launch tile bus follows the TILES insert without
+       becoming a Sister keyboard-performance voice. */
+    ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TILES);
+    source.preview = (TsStereoFrame){0.0f, 0.0f};
+    source.tiles = (TsStereoFrame){0.4f, -0.2f};
+    for (int i = 0; i < 20; ++i)
+        frame = ts_sister_runtime_process_frame(&runtime, &source);
+    CHECK(frame.input.l > 0.1f && frame.input.r < -0.05f);
+    ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_PREVIEW);
+    source.tiles = (TsStereoFrame){0.0f, 0.0f};
+    source.preview = (TsStereoFrame){0.5f, -0.25f};
+    for (int i = 0; i < 20; ++i)
+        frame = ts_sister_runtime_process_frame(&runtime, &source);
+
     ts_sister_runtime_set_monitor(&runtime, 0);
     frame = ts_sister_runtime_process_frame(&runtime, &source);
     CHECK(CLOSE(frame.monitor_return.l, 0.0f));
@@ -96,9 +110,17 @@ int main(void)
         (void)ts_sister_runtime_process_frame(&runtime, &source);
     CHECK(CLOSE(ts_sister_runtime_direct_tile_route(&runtime), 0.0f));
 
+    runtime.fallout.lfo_phase = 0.25;
+    runtime.fallout.rise_value = 0.50f;
+    runtime.fallout.rise_one_shot_complete = 1;
+    (void)ts_sister_runtime_process_frame(&runtime, &source);
+
     CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
     CHECK(snapshot.enabled && snapshot.processed_frames == runtime.processed_frames);
     CHECK(snapshot.monitor_enabled && !snapshot.rolling && !snapshot.held);
+    CHECK(CLOSE(snapshot.fallout_lfo_phase, 0.25f));
+    CHECK(CLOSE(snapshot.fallout_rise_phase, 0.50f));
+    CHECK(snapshot.fallout_rise_complete);
 
     {
         uint64_t published_revision = snapshot.revision;
@@ -113,6 +135,30 @@ int main(void)
         CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
         CHECK(snapshot.revision == published_revision + 2u);
         CHECK(snapshot.processed_frames == published_frames + 64u);
+    }
+
+    {
+        TsSisterFalloutControls target;
+        parameters = runtime.parameters;
+        parameters.fx.fallout.enabled = 1;
+        parameters.fx.fallout.transition =
+            ts_sister_fallout_transition_normalized(10.0f);
+        parameters.fx.fallout.mix = 0.8f;
+        ts_sister_runtime_set_parameters(&runtime, &parameters);
+        for (int frame_index = 0; frame_index < 10; ++frame_index)
+            (void)ts_sister_runtime_process_frame(&runtime, &source);
+        target = runtime.parameters.fx.fallout;
+        target.enabled = 0;
+        target.mix = 0.2f;
+        target.noise_type = TS_SISTER_FALLOUT_NOISE_BROWN;
+        ts_sister_runtime_recall_fallout_preset(&runtime, &target);
+        CHECK(runtime.parameters.fx.fallout.enabled == 1);
+        CHECK(CLOSE(runtime.parameters.fx.fallout.mix, 0.2f));
+        CHECK(CLOSE(runtime.fallout.controls.mix, 0.8f));
+        for (int frame_index = 0; frame_index < 5; ++frame_index)
+            (void)ts_sister_runtime_process_frame(&runtime, &source);
+        CHECK(CLOSE(runtime.fallout.controls.mix, 0.2f));
+        CHECK(runtime.fallout.controls.enabled == 1);
     }
 
     ts_sister_runtime_disable(&runtime);

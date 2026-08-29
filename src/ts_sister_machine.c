@@ -1183,6 +1183,7 @@ int ts_sister_machine_perform_clear(TsSisterMachine *machine)
 static TsStereoFrame process_internal(TsSisterMachine *machine,
                                       TsStereoFrame input,
                                       TsStereoFrame duck_sidechain,
+                                      TsSisterFalloutEngine *fallout,
                                       TsSisterPostFxEngine *post_fx,
                                       TsStereoFrame causal_fx_return,
                                       TsSisterOutput *result);
@@ -1196,11 +1197,11 @@ int ts_sister_machine_clear_offline(TsSisterMachine *machine)
     if (!ts_sister_machine_request_clear(machine)) return 0;
     maximum = (size_t)machine->buffer.sample_rate + 16u;
     while (!ts_sister_machine_can_clear(machine) && guard++ < maximum)
-        process_internal(machine, silence, silence, NULL, silence, &ignored);
+        process_internal(machine, silence, silence, NULL, NULL, silence, &ignored);
     if (!ts_sister_machine_perform_clear(machine)) return 0;
     guard = 0u;
     while (machine->clear_state != TS_SISTER_CLEAR_IDLE && guard++ < maximum)
-        process_internal(machine, silence, silence, NULL, silence, &ignored);
+        process_internal(machine, silence, silence, NULL, NULL, silence, &ignored);
     publish_snapshot(machine);
     return machine->clear_state == TS_SISTER_CLEAR_IDLE;
 }
@@ -1652,6 +1653,7 @@ int ts_sister_machine_get_snapshot(const TsSisterMachine *machine,
 static TsStereoFrame process_internal(TsSisterMachine *machine,
                                       TsStereoFrame input,
                                       TsStereoFrame duck_sidechain,
+                                      TsSisterFalloutEngine *fallout,
                                       TsSisterPostFxEngine *post_fx,
                                       TsStereoFrame causal_fx_return,
                                       TsSisterOutput *result)
@@ -1882,6 +1884,12 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     sum = ts_sister_weave_process(
         &machine->soak_weave[TS_SISTER_HEAD_COUNT], sum,
         machine->buffer.channels == 1u);
+    if (fallout != NULL) {
+        TsSisterFalloutResult fallout_result =
+            ts_sister_fallout_process(fallout, sum);
+        sum = fallout_result.output;
+        output.fallout_wet = fallout_result.wet;
+    }
     {
         TsStereoFrame dry = sum;
         TsStereoFrame processed = ts_sister_post_fx_process(
@@ -1919,7 +1927,7 @@ TsSisterOutput ts_sister_machine_process_frame(TsSisterMachine *machine,
                                                TsStereoFrame duck_sidechain)
 {
     TsSisterOutput result;
-    process_internal(machine, input, duck_sidechain, NULL,
+    process_internal(machine, input, duck_sidechain, NULL, NULL,
                      (TsStereoFrame){0.0f, 0.0f}, &result);
     publish_frame_snapshot(machine);
     return result;
@@ -1931,7 +1939,19 @@ TsSisterOutput ts_sister_machine_process_frame_with_fx(
     TsStereoFrame causal_fx_return)
 {
     TsSisterOutput result;
-    process_internal(machine, input, duck_sidechain, post_fx,
+    process_internal(machine, input, duck_sidechain, NULL, post_fx,
+                     causal_fx_return, &result);
+    publish_frame_snapshot(machine);
+    return result;
+}
+
+TsSisterOutput ts_sister_machine_process_frame_with_insert_fx(
+    TsSisterMachine *machine, TsSisterFalloutEngine *fallout,
+    TsSisterPostFxEngine *post_fx, TsStereoFrame input,
+    TsStereoFrame duck_sidechain, TsStereoFrame causal_fx_return)
+{
+    TsSisterOutput result;
+    process_internal(machine, input, duck_sidechain, fallout, post_fx,
                      causal_fx_return, &result);
     publish_frame_snapshot(machine);
     return result;
@@ -1950,7 +1970,7 @@ void ts_sister_machine_process_block(TsSisterMachine *machine,
         TsStereoFrame source = input != NULL ? input[i] : silence;
         TsStereoFrame side = duck_sidechain != NULL ? duck_sidechain[i] : silence;
         TsSisterOutput frame_output;
-        process_internal(machine, source, side, NULL,
+        process_internal(machine, source, side, NULL, NULL,
                          (TsStereoFrame){0.0f, 0.0f}, &frame_output);
         if (output != NULL) output[i] = frame_output;
     }

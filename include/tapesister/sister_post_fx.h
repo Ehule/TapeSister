@@ -3,6 +3,7 @@
 
 #include "tapesister/sample.h"
 #include "tapesister/sister_effects.h"
+#include "tapesister/sister_fallout.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -29,6 +30,7 @@ typedef struct {
     float distortion_mix;
     uint8_t distortion_targets;
     float master_feedback;
+    TsSisterFalloutControls fallout;
 } TsSisterFxControls;
 
 enum {

@@ -42,6 +42,9 @@ audio_output_device=
 ; Per-voice note-on de-click ramp in milliseconds (0-20, default 2).
 ; Set to 0 to preserve the waveform's exact hard start.
 voice_attack_ms=2
+; Mouse-launched tile fade in/out (0-30000 ms). Each edge is capped at 20%
+; of the playable tile or loop duration. The header FADE control edits this live.
+tile_fade_ms=0
 
 [MIDI]
 ; Blank automatically opens the first available MIDI input. Use OFF to disable

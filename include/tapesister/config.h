@@ -106,6 +106,7 @@ typedef struct {
     int drone_crossfade_ms;
     int chain_stamp_crossfade_ms;
     int voice_attack_ms;
+    int tile_fade_ms;
     int ripple_cut_crop_canvas;
     int reference_tone_volume;
     int fm_output_percent;
@@ -125,6 +126,8 @@ typedef struct {
     int sister_buffer_seconds;
     int sister_buffer_channels;
     int sister_clear_ms;
+    int sister_fallout_transition_ms;
+    int sister_fallout_rise_seconds;
     int sister_capture_channels;
     int sister_restart_clear;
     int sister_dry_percent;
