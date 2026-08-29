@@ -3850,17 +3850,37 @@ static int sister_spirit_level(const TsSisterUiModel *model)
     return model->routing.enabled ? 0 : 12;
 }
 
+static int sister_spirit_dust_level(const TsSisterUiModel *model)
+{
+    uint32_t elapsed;
+    if (model->power_visual == TS_SISTER_UI_POWER_VISUAL_ON) {
+        elapsed = model->power_visual_elapsed_ms;
+        if (elapsed < 100u) return 30;
+        if (elapsed < 250u) return 30 - (int)((elapsed - 100u) * 18u / 150u);
+        if (elapsed < 450u) return 12;
+        if (elapsed < 700u) return 12 - (int)((elapsed - 450u) * 12u / 250u);
+        return 0;
+    }
+    if (model->power_visual == TS_SISTER_UI_POWER_VISUAL_OFF) {
+        elapsed = model->power_visual_elapsed_ms;
+        if (elapsed < 3200u)
+            return 14 + (int)(elapsed * 16u / 3200u);
+    }
+    return model->routing.enabled ? 0 : 30;
+}
+
 static void sister_spirit_glyph(TsFramebuffer *fb, int x, int y,
-                                const char *bits, uint32_t color)
+                                const char *bits, uint32_t color, int scale)
 {
     for (int gy = 0; gy < 7; ++gy)
         for (int gx = 0; gx < 5; ++gx)
             if (bits[gy * 5 + gx] == '1')
-                rect(fb, x + gx, y + gy, 1, 1, color);
+                rect(fb, x + gx * scale, y + gy * scale,
+                     scale, scale, color);
 }
 
 static void sister_spirit_cyrillic_title(TsFramebuffer *fb, int x, int y,
-                                         uint32_t color)
+                                         uint32_t color, int scale)
 {
     static const char cyrillic_i[] =
         "10001100111010111001100011000110001";
@@ -3875,9 +3895,62 @@ static void sister_spirit_cyrillic_title(TsFramebuffer *fb, int x, int y,
         cyrillic_i, glyph('H'), glyph('A')
     };
     for (size_t letter = 0u; letter < sizeof(letters) / sizeof(letters[0]);
-         ++letter, x += 6)
+         ++letter, x += 6 * scale)
         if (letters[letter] != NULL)
-            sister_spirit_glyph(fb, x, y, letters[letter], color);
+            sister_spirit_glyph(fb, x, y, letters[letter], color, scale);
+}
+
+static void sister_spirit_dust_render(TsFramebuffer *fb,
+                                      const TsSisterUiModel *model,
+                                      uint32_t background)
+{
+    const int canvas_x = 10;
+    const int canvas_y = 40;
+    const int canvas_width = 620;
+    const int canvas_height = 126;
+    int level = sister_spirit_dust_level(model);
+    int count = 72 + level * 3;
+    uint32_t phase = model->magnetic_phase & 7u;
+    if (level <= 0) return;
+    if (count > 192) count = 192;
+    for (int particle = 0; particle < count; ++particle) {
+        uint32_t hash = sister_spirit_hash(particle + 701, particle * 17 + 43);
+        uint32_t second = sister_spirit_hash(particle * 29 + 113,
+                                             particle + 991);
+        int local_x = (int)(hash % (uint32_t)(canvas_width - 8));
+        int local_y = (int)((hash >> 11) % (uint32_t)(canvas_height - 8));
+        int shape = (int)((hash >> 20) % 100u);
+        int intensity = level + 5 + (int)((hash >> 25) % 15u);
+        int width = 1;
+        int height = 1;
+
+        /* Most grains stay near their source, while enough escape to fill the
+           chassis like dispersed oxide rather than a localized bitmap. */
+        if ((hash & 3u) != 0u) {
+            int other_x = (int)(second % (uint32_t)(canvas_width - 8));
+            int other_y = (int)((second >> 11) % (uint32_t)(canvas_height - 8));
+            local_x = (local_x + other_x) / 2;
+            local_y = (local_y + other_y) / 2;
+        }
+        if (((hash >> 8) & 7u) == phase)
+            local_x += ((hash >> 16) & 1u) != 0u ? 1 : -1;
+        if (shape >= 68 && shape < 88)
+            width = 2;
+        else if (shape >= 88 && shape < 95)
+            height = 2;
+        else if (shape >= 95 && shape < 99) {
+            width = 2;
+            height = 2;
+            intensity += 8;
+        } else if (shape >= 99) {
+            width = 3;
+            intensity += 12;
+        }
+        if (intensity > 62) intensity = 62;
+        rect(fb, canvas_x + 4 + local_x, canvas_y + 4 + local_y,
+             width, height,
+             palette_blend(background, PAL_EFFECT, intensity));
+    }
 }
 
 static void sister_spirit_render(TsFramebuffer *fb,
@@ -3889,6 +3962,7 @@ static void sister_spirit_render(TsFramebuffer *fb,
     int level = sister_spirit_level(model);
     uint32_t phase = model->magnetic_phase & 7u;
     if (level <= 0) return;
+    sister_spirit_dust_render(fb, model, background);
     for (int y = 0; y < TS_SISTER_SPIRIT_MASK_HEIGHT; ++y) {
         for (int x = 0; x < TS_SISTER_SPIRIT_MASK_WIDTH; ++x) {
             size_t bit = (size_t)y * TS_SISTER_SPIRIT_MASK_WIDTH + (size_t)x;
@@ -3917,11 +3991,11 @@ static void sister_spirit_render(TsFramebuffer *fb,
         }
     }
     {
-        uint32_t title = palette_blend(background, PAL_MOUSE, 16);
-        uint32_t subtitle = palette_blend(background, PAL_MOUSE, 13);
-        sister_spirit_cyrillic_title(fb, 266, 128, title);
-        text(fb, 278, 140, "SISTER MACHINE", title, 1);
-        text(fb, 227, 152, "SIGNAL PROCESSING / TAPE SYSTEM", subtitle, 1);
+        uint32_t title = palette_blend(background, PAL_MOUSE, 17);
+        uint32_t subtitle = palette_blend(background, PAL_MOUSE, 14);
+        sister_spirit_cyrillic_title(fb, 212, 113, title, 2);
+        text(fb, 236, 133, "SISTER MACHINE", title, 2);
+        text(fb, 227, 153, "SIGNAL PROCESSING / TAPE SYSTEM", subtitle, 1);
     }
 }
 
