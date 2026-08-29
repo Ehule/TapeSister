@@ -201,8 +201,12 @@ static void recipe_tests(void)
         CHECK(ts_cdp_recipe_build_commands(ts_cdp_recipe_find("timewarp"),
                                            &values, 2400u, 48000u,
                                            commands, &count, error, sizeof(error)) &&
-              strcmp(commands[0].arguments[4], "-b0.05") == 0 &&
-              strcmp(commands[0].arguments[6], "-h0.032") == 0);
+              count == 3u &&
+              strcmp(commands[0].executable, "pvoc") == 0 &&
+              strcmp(commands[1].executable, "stretch") == 0 &&
+              strcmp(commands[1].arguments[0], "time") == 0 &&
+              strcmp(commands[1].arguments[4], "1.5") == 0 &&
+              strcmp(commands[2].executable, "pvoc") == 0);
         CHECK(shred != NULL && !shred->duration_may_change &&
               shred->mix_policy == TS_CDP_MIX_EXACT_FRAMES);
         CHECK(stutter != NULL && stutter->seed_supported);
@@ -1759,7 +1763,7 @@ static void adapter_pipeline_and_fault_tests(void)
     static const char *const required_executables[] = {
         "blur", "distmore", "distort", "distshift", "extend", "filter",
         "glisten", "grain", "hover", "modify", "motor", "pvoc",
-        "scramble", "sorter", "splinter", "stutter"
+        "scramble", "sorter", "splinter", "stretch", "stutter"
     };
     static const TsCdpFault faults[] = {
         TS_CDP_FAULT_LAUNCH,

@@ -50,8 +50,8 @@ The placement is part of the compatibility contract:
 | 09 | SCRAMBLE | `extend scramble 1` |
 | 10 | DOUBLETS | `extend doublets` |
 | 11 | MOTOR | `motor motor 1` |
-| 12 | GREV | `grain grev 1-5` |
-| 13 | TIMEWARP | `grain timewarp` |
+| 12 | GREV | `grain grev 1-5`; mode 1 falls back to `distort reverse` when sustained material has no envelope landmarks |
+| 13 | TIMEWARP | `pvoc anal` → `stretch time` → `pvoc synth` |
 | 14 | TELESCOPE | `distort telescope` |
 | 15 | FREEZE | `extend freeze 2` |
 | 16 | ITERATE | `extend iterate 2` |
@@ -98,7 +98,7 @@ control-to-CDP mapping so a future edit cannot silently turn a label into a fake
 | DOUBLETS | SEGMENT, REPEATS | `segdur`, `repets`; `-s` splice enabled |
 | MOTOR | INNER, OUTER, INNER SIZE, VARIATION | inner `freq`, outer `pulse`, `fratio`; VARIATION jointly drives bounded `-f/-p/-j` |
 | GREV | MODE, WINDOW, GROUP, TROUGH | modes 1–5, `wsiz`, `gpcnt`, `trof`; safe fixed repeat/keep/stretch values per mode |
-| TIMEWARP | RATIO, BUFFER, GATE, HOLE | timestretch ratio plus `-b`, `-l`, `-h` |
+| TIMEWARP | RATIO | pitch-stable spectral timestretch ratio |
 | TELESCOPE | GROUP, SKIP, SHAPE | `cyclecnt`, `-s`, optional average-cycle `-a` |
 | FREEZE | POSITION, SIZE, REPEATS, DRIFT | start/end, repetitions; DRIFT jointly drives delay randomization and pitch scatter; gain 1 |
 | ITERATE | REPEATS, GAP, PITCH, FADE | mode 2 repetitions plus `-d`, `-p`, `-f` |
@@ -168,7 +168,7 @@ The current 32-recipe catalog requires this curated executable set:
 
 ```text
 blur distmore distort distshift extend filter glisten grain hover
-modify motor pvoc scramble sorter splinter stutter
+modify motor pvoc scramble sorter splinter stretch stutter
 ```
 
 The TapeSister CMake release path fetches the exact commit recorded in
@@ -177,12 +177,12 @@ license. The upstream build links the required programs to CDP's `cdp2k`,
 `sfsys/newsfsys`, and `pvxio2` support libraries plus the platform math/system
 dependencies selected by CDP.
 PortAudio playback/recording utilities are not required. Build the compatible upstream
-tree, then copy the 16 programs and their actual dynamic-library closure:
+tree, then copy the 17 programs and their actual dynamic-library closure:
 
 ```bash
 cmake -S CDP8-main -B cdp-build -DCMAKE_BUILD_TYPE=Release -DUSE_LOCAL_PORTAUDIO=OFF
 cmake --build cdp-build --target blur distmore distort distshift extend filter \
-  glisten grain hover modify motor pvoc scramble sorter splinter stutter -j2
+  glisten grain hover modify motor pvoc scramble sorter splinter stretch stutter -j2
 ```
 
 On Windows, use an MSYS2 UCRT64 toolchain with CMake and Ninja or Make. The bundle step

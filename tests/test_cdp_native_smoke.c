@@ -2,8 +2,59 @@
 #include "tapesister/cdp_recipe.h"
 #include "tapesister/sample.h"
 
+#include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+static int run_sustained_material_checks(const TsCdpRuntime *runtime)
+{
+    static const char *const recipe_ids[] = {"grev", "timewarp"};
+    TsSample tone;
+    char error[256];
+    int failures = 0;
+    ts_sample_init(&tone);
+    tone.frames = 96000u;
+    tone.sample_rate = 48000u;
+    tone.channels = 1u;
+    tone.data = malloc(tone.frames * sizeof(*tone.data));
+    if (tone.data == NULL) {
+        fputs("sustained-material allocation failed\n", stderr);
+        return 1;
+    }
+    for (size_t frame = 0; frame < tone.frames; ++frame)
+        tone.data[frame] = 0.4f * sinf((float)frame *
+                                      (2.0f * 3.14159265358979323846f *
+                                       110.0f / 48000.0f));
+    for (size_t index = 0;
+         index < sizeof(recipe_ids) / sizeof(recipe_ids[0]); ++index) {
+        const TsCdpRecipe *recipe = ts_cdp_recipe_find(recipe_ids[index]);
+        TsCdpRecipeValues values;
+        TsCdpRunOptions options;
+        TsCdpRunResult result;
+        ts_cdp_recipe_values_default(recipe, &values);
+        ts_cdp_run_options_init(&options);
+        options.job_id = 2000u + index;
+        options.timeout_ms = 30000u;
+        ts_cdp_run_result_init(&result);
+        if (!ts_cdp_run_recipe(runtime, recipe, &values, &tone, &options,
+                               &result, error, sizeof(error)) ||
+            result.output.data == NULL ||
+            ts_sample_peak(&result.output) < 0.2f) {
+            fprintf(stderr, "FAIL sustained %-16s %s\n",
+                    recipe != NULL ? recipe->display_name : recipe_ids[index],
+                    error);
+            ++failures;
+        } else {
+            printf("PASS sustained %-16s %zu frames peak %.3f\n",
+                   recipe->display_name, result.output.frames,
+                   ts_sample_peak(&result.output));
+        }
+        ts_cdp_run_result_free(&result);
+    }
+    ts_sample_free(&tone);
+    return failures;
+}
 
 int main(int argc, char **argv)
 {
@@ -61,6 +112,7 @@ int main(int argc, char **argv)
         ts_cdp_run_result_free(&result);
     }
     ts_sample_free(&input);
+    failures += run_sustained_material_checks(&runtime);
     if (failures != 0) {
         fprintf(stderr, "%d native CDP recipe(s) failed\n", failures);
         return 1;

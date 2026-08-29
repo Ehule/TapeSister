@@ -3,7 +3,7 @@
 TapeSister release builds execute a curated subset of programs from the Composers
 Desktop Project (CDP): `blur`, `distmore`, `distort`, `distshift`, `extend`, `filter`,
 `glisten`, `grain`, `hover`, `modify`, `motor`, `pvoc`, `scramble`, `sorter`,
-`splinter`, and `stutter`. CDP source identifies the work as copyright 1983–2023
+`splinter`, `stretch`, and `stutter`. CDP source identifies the work as copyright 1983–2023
 Trevor Wishart and Composers Desktop Project Ltd and licenses it under the GNU Lesser
 General Public License, version 2.1 or (at the user's option) any later version.
 

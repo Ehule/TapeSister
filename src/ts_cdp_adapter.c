@@ -368,6 +368,21 @@ static int contains_text_error(const char *text)
     return 0;
 }
 
+static int contains_case_insensitive(const char *text, const char *needle)
+{
+    size_t needle_size;
+    if (text == NULL || needle == NULL || needle[0] == '\0') return 0;
+    needle_size = strlen(needle);
+    for (; strlen(text) >= needle_size; ++text) {
+        size_t at = 0u;
+        while (at < needle_size &&
+               toupper((unsigned char)text[at]) ==
+               toupper((unsigned char)needle[at])) ++at;
+        if (at == needle_size) return 1;
+    }
+    return 0;
+}
+
 static void set_cdp_execution_error(const TsCdpRunResult *result,
                                     const char *fallback,
                                     char *error, size_t error_size)
@@ -814,6 +829,42 @@ static int downmix_output_to_mono(TsSample *sample,
     return 1;
 }
 
+static int match_timewarp_level(const TsSample *input, TsSample *output,
+                                float *analysis_peak,
+                                char *error, size_t error_size)
+{
+    float input_peak;
+    float output_peak;
+    float target;
+    float gain;
+    size_t scalar_count;
+    if (input == NULL || output == NULL || output->data == NULL ||
+        analysis_peak == NULL || output->channels == 0u ||
+        output->frames > SIZE_MAX / output->channels) {
+        set_error(error, error_size, "TIMEWARP level matching input is invalid");
+        return 0;
+    }
+    input_peak = ts_sample_peak(input);
+    output_peak = ts_sample_peak(output);
+    if (input_peak <= 0.000001f) {
+        *analysis_peak = output_peak;
+        return 1;
+    }
+    if (output_peak < input_peak * 0.02f) {
+        set_error(error, error_size,
+                  "TIMEWARP COULD NOT PRESERVE AN AUDIBLE RESULT");
+        return 0;
+    }
+    target = fminf(input_peak, 1.0f);
+    gain = target / output_peak;
+    if (gain > 8.0f) gain = 8.0f;
+    scalar_count = output->frames * output->channels;
+    for (size_t scalar = 0; scalar < scalar_count; ++scalar)
+        output->data[scalar] *= gain;
+    *analysis_peak = ts_sample_peak(output);
+    return 1;
+}
+
 int ts_cdp_cleanup_job_directory(const char *directory,
                                  char *error, size_t error_size)
 {
@@ -940,6 +991,53 @@ static int prepare_content_safe_values(const TsCdpRecipe *recipe,
     return 1;
 }
 
+static int grev_can_use_cycle_fallback(const TsCdpRecipe *recipe,
+                                       const TsCdpCommand *command,
+                                       const TsCdpRunResult *result)
+{
+    return recipe != NULL && command != NULL && result != NULL &&
+           strcmp(recipe->id, "grev") == 0 && command->argc > 1 &&
+           strcmp(command->arguments[1], "1") == 0 &&
+           (contains_case_insensitive(result->diagnostic, "TROUGH") ||
+            contains_case_insensitive(result->diagnostic, "PEAK"));
+}
+
+static int execute_grev_cycle_fallback(const TsCdpRuntime *runtime,
+                                       const TsCdpRecipeValues *values,
+                                       const char *job_directory,
+                                       const char *output_path,
+                                       const TsCdpRunOptions *options,
+                                       TsCdpRunResult *result,
+                                       char *error, size_t error_size)
+{
+    TsCdpCommand fallback;
+    char executable[TS_CDP_PATH_MAX];
+    int group;
+    if (!runtime_executable(runtime, "distort", executable, sizeof(executable))) {
+        set_error(error, error_size,
+                  "GREV FALLBACK NEEDS THE CDP DISTORT COMPONENT");
+        return 0;
+    }
+    group = values != NULL ? (int)lrintf(values->controls[2]) : 1;
+    if (group < 1) group = 1;
+    memset(&fallback, 0, sizeof(fallback));
+    snprintf(fallback.executable, sizeof(fallback.executable), "distort");
+    snprintf(fallback.arguments[0], TS_CDP_TEXT_MAX, "reverse");
+    snprintf(fallback.arguments[1], TS_CDP_TEXT_MAX, "input.wav");
+    snprintf(fallback.arguments[2], TS_CDP_TEXT_MAX, "output.wav");
+    snprintf(fallback.arguments[3], TS_CDP_TEXT_MAX, "%d", group);
+    fallback.argc = 4;
+    snprintf(fallback.expected_output, sizeof(fallback.expected_output),
+             "output.wav");
+    fallback.expected_output_type = TS_CDP_IO_WAV;
+    (void)remove(output_path);
+    result->diagnostic[0] = '\0';
+    snprintf(result->failed_executable, sizeof(result->failed_executable),
+             "distort");
+    return execute_command(executable, &fallback, job_directory, 0u,
+                           options, result, error, error_size);
+}
+
 int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
                       const TsCdpRecipe *recipe,
                       const TsCdpRecipeValues *values,
@@ -957,6 +1055,7 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
     char executable[TS_CDP_PATH_MAX];
     char cleanup_error[160];
     TsCdpRecipeValues safe_values;
+    float analysis_peak;
     int ok = 0;
     if (result == NULL) { set_error(error, error_size, "CDP result destination is missing"); return 0; }
     ts_cdp_run_result_free(result);
@@ -996,7 +1095,13 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
         snprintf(result->failed_executable, sizeof(result->failed_executable), "%.63s",
                  commands[stage].executable);
         if (!execute_command(executable, &commands[stage], result->job_directory,
-                             stage, options, result, error, error_size)) goto finished;
+                             stage, options, result, error, error_size)) {
+            if (!grev_can_use_cycle_fallback(recipe, &commands[stage], result) ||
+                !execute_grev_cycle_fallback(runtime, &safe_values,
+                                             result->job_directory, output_path,
+                                             options, result,
+                                             error, error_size)) goto finished;
+        }
         if (commands[stage].expected_output_type !=
                 recipe->stages[stage].output_type ||
             commands[stage].expected_output[0] == '\0' ||
@@ -1047,7 +1152,11 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
     if (!ts_sample_load_wav(&result->output, output_path, error, error_size)) goto finished;
     if (input->channels == 1u && result->output.channels == 2u &&
         !downmix_output_to_mono(&result->output, error, error_size)) goto finished;
-    analyze_output(result, wav.raw_peak);
+    analysis_peak = wav.raw_peak;
+    if (strcmp(recipe->id, "timewarp") == 0 &&
+        !match_timewarp_level(input, &result->output, &analysis_peak,
+                              error, error_size)) goto finished;
+    analyze_output(result, analysis_peak);
     if (!result->finite || result->output.frames == 0u ||
         result->output.frames > TS_CANVAS_MAX_FRAMES ||
         (input->frames <= SIZE_MAX / 64u &&

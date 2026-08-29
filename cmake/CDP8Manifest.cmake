@@ -20,4 +20,5 @@ set(TAPESISTER_CDP8_REQUIRED_PROGRAMS
     scramble
     sorter
     splinter
+    stretch
     stutter)
