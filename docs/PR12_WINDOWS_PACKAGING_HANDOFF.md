@@ -20,10 +20,13 @@ portable layout, and friend-friendly delivery.
 Fresh MSYS2 UCRT64 build:
 
 ```bash
-cmake -S . -B build-windows -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
-cmake --build build-windows --target tapesister
+bash build.sh
 ```
+
+The shared wrapper verifies that it is running in UCRT64, supplies the Ninja and
+Release configuration, enables the bundled pinned CDP8 runtime, and targets only the
+application and its required dependencies. `SDL_MAIN_HANDLED` is supplied by the
+CMake target itself rather than as a user-provided compiler flag.
 
 For certification, configure a second tree without limiting the target, build it,
 then run `ctest --test-dir build-windows --output-on-failure`. A Debug tree changes

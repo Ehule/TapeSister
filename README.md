@@ -605,27 +605,40 @@ The default colors come from `assets/palette.pal`, using the complete shared Tap
 
 ## Build on Linux
 
+Install the build dependencies once:
+
 ```bash
-sudo apt install build-essential cmake libsdl2-dev
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j2
-ctest --test-dir build --output-on-failure
-./build/tapesister
+sudo apt install build-essential cmake git libsdl2-dev libasound2-dev
 ```
 
-The small Makefile is also available:
+Then build the complete TapeSister application and its pinned native CDP8 runtime with
+the same one-command entry point used on Windows:
+
+```bash
+bash build.sh
+./build-linux/tapesister
+```
+
+Plain `make` delegates to that same complete release build, so the familiar route also
+works and no longer produces an application without its bundled CDP8 programs:
+
+```bash
+make -j2
+./build-linux/tapesister
+```
+
+The direct Makefile development and certification targets remain available:
 
 ```bash
 make test
 make stress-sister       # explicit deterministic 2+ hour offline certification
 make benchmark-sister    # optional callback-cost benchmark
-make
-./tapesister
 ```
 
-Run `./tapesister --diagnostic-audio` for optional controller-thread reports of
-average/worst callback time, callback frames, near-deadlines, overruns, device rate,
-buffer size, active Sister configuration, and EXT ring occupancy/underrun/drop state.
+Run the built executable with `--diagnostic-audio` for optional controller-thread
+reports of average/worst callback time, callback frames, near-deadlines, overruns,
+device rate, buffer size, active Sister configuration, and EXT ring
+occupancy/underrun/drop state.
 Normal operation does not collect callback timings. The Configuration screen offers
 shared 256/512/1024-frame playback/capture requests beside OUTPUT; 512 is the
 performance-safe default, while 256 remains available when lower live-input latency
@@ -639,10 +652,13 @@ From an MSYS2 **UCRT64** terminal with CMake, Ninja, SDL2, and the UCRT64
 toolchain installed:
 
 ```bash
-cmake -S . -B build-windows -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
-cmake --build build-windows --target tapesister
+bash build.sh
 ```
+
+No extra compiler definitions are required. The script verifies the UCRT64
+environment, builds only TapeSister and its required dependencies, and stages the
+pinned native CDP8 programs automatically. Its default parallelism is two jobs; set
+`TAPESISTER_BUILD_JOBS` to override it on either platform.
 
 Targeting `tapesister` builds only the application and its required dependencies;
 it does not generate the complete collection of test executables. Use

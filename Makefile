@@ -29,9 +29,12 @@ MIDI_LDFLAGS = -lstdc++ $(shell pkg-config --libs alsa) -ldl -pthread
 endif
 endif
 
-.PHONY: all test stress-sister benchmark-sister screenshot screenshot-sister-spirit runtime-assets clean
+.PHONY: all bundled-release test stress-sister benchmark-sister screenshot screenshot-sister-spirit runtime-assets clean
 
-all: tapesister runtime-assets
+all: bundled-release
+
+bundled-release:
+	+@TAPESISTER_BUILD_JOBS="$${TAPESISTER_BUILD_JOBS:-2}" bash ./build.sh
 
 tapesister: $(CORE) $(SDL_MAIN) $(DIAG) $(MIDI_C) $(MIDI_CPP_OBJS)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(MIDI_CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) $(SDL_MAIN) $(DIAG) $(MIDI_C) $(MIDI_CPP_OBJS) -o $@ $(shell sdl2-config --libs) -lm $(TAPESISTER_LDFLAGS) $(MIDI_LDFLAGS)
