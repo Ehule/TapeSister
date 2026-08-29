@@ -225,7 +225,7 @@ static void apply_transition(TsSisterRuntime *runtime, TsInstrument *instrument,
                              uint64_t transition, StressResult *result)
 {
     uint32_t value = random_next(random);
-    switch (value % 16u) {
+    switch (value % 17u) {
     case 0u:
         p->head1_time_ms = random_unit(random) * 4000.0f;
         p->head2_scrub = random_unit(random);
@@ -312,6 +312,13 @@ static void apply_transition(TsSisterRuntime *runtime, TsInstrument *instrument,
         p->drop = random_unit(random) * 100.0f;
         p->width = random_unit(random);
         p->decorrelation_enabled = (int)(random_next(random) & 1u);
+        break;
+    case 15u:
+        p->fx.enabled = (int)(random_next(random) & 1u);
+        p->fx.reverb_enabled = (int)(random_next(random) & 1u);
+        p->fx.delay_enabled = (int)(random_next(random) & 1u);
+        p->fx.distortion_enabled = (int)(random_next(random) & 1u);
+        p->fx.transition = random_unit(random);
         break;
     default:
         p->filter_type = (TsSisterFilterType)(

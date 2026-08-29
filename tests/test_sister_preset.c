@@ -31,6 +31,11 @@ int main(void)
     p.soak_targets = TS_SISTER_EFFECT_TARGET_H1 |
                      TS_SISTER_EFFECT_TARGET_H3;
     p.fx.reverb_type = TS_SISTER_REVERB_CATHEDRAL;
+    p.fx.enabled = 0;
+    p.fx.reverb_enabled = 0;
+    p.fx.delay_enabled = 1;
+    p.fx.distortion_enabled = 0;
+    p.fx.transition = 0.82f;
     p.fx.reverb_mix = 0.63f;
     p.fx.reverb_decay = 0.91f;
     p.fx.reverb_targets = TS_SISTER_EFFECT_TARGET_H2;
@@ -85,6 +90,11 @@ int main(void)
     assert(recalled.soak_targets == (TS_SISTER_EFFECT_TARGET_H1 |
                                      TS_SISTER_EFFECT_TARGET_H3));
     assert(recalled.fx.reverb_type == TS_SISTER_REVERB_CATHEDRAL);
+    assert(recalled.fx.enabled == 0);
+    assert(recalled.fx.reverb_enabled == 0);
+    assert(recalled.fx.delay_enabled == 1);
+    assert(recalled.fx.distortion_enabled == 0);
+    assert(recalled.fx.transition > 0.81f);
     assert(recalled.fx.reverb_mix > 0.62f && recalled.fx.reverb_mix < 0.64f);
     assert(recalled.fx.reverb_targets == TS_SISTER_EFFECT_TARGET_H2);
     assert(recalled.fx.delay_targets == (TS_SISTER_EFFECT_TARGET_H1 |

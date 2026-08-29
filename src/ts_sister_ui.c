@@ -356,6 +356,11 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         };
         for (int row = 0; row < 3; ++row) {
             int top = 72 + row * 78;
+            if (contains(x, y, 16, top - 22, 86, 22)) {
+                hit.action = TS_SISTER_UI_ACTION_FX_TOGGLE;
+                hit.index = TS_SISTER_UI_FX_REVERB + row;
+                return hit;
+            }
             for (int field = 0; field < 3; ++field) {
                 int left = 110 + field * 140;
                 if (contains(x, y, left, top, 130, 18)) {
@@ -374,7 +379,18 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                 }
             }
         }
+        if (contains(x, y, 10, 304, 92, 22)) {
+            hit.action = TS_SISTER_UI_ACTION_FX_TOGGLE;
+            hit.index = TS_SISTER_UI_FX_MASTER;
+            return hit;
+        }
         if (contains(x, y, 110, 306, 410, 18)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = TS_SISTER_UI_PARAM_FX_TRANSITION;
+            hit.normalized = (float)(x - 110) / 409.0f;
+            return hit;
+        }
+        if (contains(x, y, 110, 332, 410, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK;
             hit.normalized = (float)(x - 110) / 409.0f;

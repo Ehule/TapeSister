@@ -17,6 +17,12 @@ typedef enum {
 } TsSisterReverbType;
 
 typedef struct {
+    int enabled;
+    int reverb_enabled;
+    int delay_enabled;
+    int distortion_enabled;
+    /* Shared logarithmic 10 ms..60 s performance-switch ramp. */
+    float transition;
     TsSisterReverbType reverb_type;
     float reverb_mix;
     float reverb_decay;
@@ -105,6 +111,13 @@ typedef struct {
 } TsSisterFxTargetState;
 
 typedef struct {
+    float current;
+    float target;
+    float step;
+    uint32_t remaining;
+} TsSisterFxRamp;
+
+typedef struct {
     TsSisterReverbState reverb[TS_SISTER_EFFECT_PROCESSOR_COUNT];
     TsSisterDelayState delay[TS_SISTER_EFFECT_PROCESSOR_COUNT];
     TsSisterDistortionState distortion[TS_SISTER_EFFECT_PROCESSOR_COUNT];
@@ -112,6 +125,10 @@ typedef struct {
     TsSisterFxTargetState reverb_target;
     TsSisterFxTargetState delay_target;
     TsSisterFxTargetState distortion_target;
+    TsSisterFxRamp master_engage;
+    TsSisterFxRamp reverb_engage;
+    TsSisterFxRamp delay_engage;
+    TsSisterFxRamp distortion_engage;
     uint32_t sample_rate;
     int ready;
 } TsSisterPostFxEngine;
@@ -122,6 +139,9 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls);
 float ts_sister_delay_time_ms(float normalized);
 float ts_sister_reverb_decay_seconds(TsSisterReverbType type,
                                      float normalized);
+float ts_sister_fx_transition_ms(float normalized);
+float ts_sister_fx_transition_normalized(float milliseconds);
+float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine);
 
 int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
                            uint32_t sample_rate);

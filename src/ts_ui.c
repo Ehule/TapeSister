@@ -4118,7 +4118,10 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         for (int row = 0; row < 3; ++row) {
             int top = 48 + row * 78;
             rect(fb, 10, top, 620, 68, RGB(10, 10, 11));
-            text(fb, 18, top + 28, names[row], colors[row], 1);
+            button(fb, 16, top + 2, 86, names[row],
+                row == 0 ? model->parameters.fx.reverb_enabled :
+                row == 1 ? model->parameters.fx.delay_enabled :
+                           model->parameters.fx.distortion_enabled);
         }
         sister_choice_parameter_state(fb, 110, 72, 130, "TYPE",
             ts_sister_reverb_type_name(model->parameters.fx.reverb_type),
@@ -4172,14 +4175,24 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 row == 1 ? "8-2000 MS / STEREO" :
                            "RAT-INSPIRED / 2X", PAL_MOUSE, 1);
         }
-        text(fb, 10, 311, "MASTER", PAL_TUNING, 1);
-        sister_percent_parameter_state(fb, 110, 306, 410, "FX FEEDBACK",
+        {
+            char transition[24];
+            sister_fallout_time_label(transition, sizeof(transition),
+                ts_sister_fx_transition_ms(model->parameters.fx.transition));
+            button(fb, 10, 304, 92,
+                   model->parameters.fx.enabled ? "MASTER FX ON" : "MASTER FX",
+                   model->parameters.fx.enabled);
+            sister_choice_parameter_state(fb, 110, 306, 410, "TRANSITION",
+                transition, model->parameters.fx.transition > 0.0f, PAL_MOUSE,
+                ts_sister_ui_parameter_locked(
+                    model, TS_SISTER_UI_PARAM_FX_TRANSITION));
+        }
+        sister_percent_parameter_state(fb, 110, 332, 410, "FX FEEDBACK",
             model->parameters.fx.master_feedback, 100, PAL_TUNING,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK));
-        text(fb, 530, 311, "0-135%", PAL_MOUSE, 1);
-        text(fb, 10, 340,
-             "FIXED ORDER  DISTORTION > DELAY > REVERB   MIX FX WORK WITH POWER OFF",
+        text(fb, 530, 337, "0-135%", PAL_MOUSE, 1);
+        text(fb, 10, 358, "DISTORTION > DELAY > REVERB   TIMED PERFORMANCE BYPASS",
              PAL_MOUSE, 1);
         goto sister_footer;
     }
@@ -4342,36 +4355,64 @@ sister_footer:
         if (progress > 620) progress = 620;
         rect(fb, 10, 40, 620, 3, RGB(30, 8, 8));
         rect(fb, 10, 40, progress, 3, PAL_VOLUME);
+    } else if (model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ||
+               model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING) {
+        int pulse = (int)((model->file_capture_frames / 1024u) % 620u);
+        rect(fb, 10, 40, 620, 3, RGB(30, 8, 8));
+        rect(fb, 10 + pulse, 40, pulse > 606 ? 620 - pulse : 14, 3,
+             PAL_VOLUME);
     }
-    snprintf(line, sizeof(line), "TARGET %s  %.88s",
-             model->destination_slot >= 0 ? "READY" : "--",
-             model->routing.capture_state == TS_CAPTURE_RECORDING ?
-             "RECORDING - MONITOR LEVELS DO NOT CHANGE CAPTURE" : model->status);
+    if (model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ||
+        model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING) {
+        uint64_t seconds = model->file_capture_sample_rate > 0u ?
+            model->file_capture_frames / model->file_capture_sample_rate : 0u;
+        snprintf(line, sizeof(line),
+                 "FILE %02llu:%02llu:%02llu  %s",
+                 (unsigned long long)(seconds / 3600u),
+                 (unsigned long long)((seconds / 60u) % 60u),
+                 (unsigned long long)(seconds % 60u),
+                 model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING ?
+                 "FINISHING WAV" : "RECORDING PERFORMANCE");
+    } else {
+        snprintf(line, sizeof(line), "TARGET %s  %.88s",
+                 model->destination_mode == TS_SISTER_UI_DEST_FILE ? "FILE" :
+                 model->destination_slot >= 0 ? "READY" : "--",
+                 model->routing.capture_state == TS_CAPTURE_RECORDING ?
+                 "RECORDING - MONITOR LEVELS DO NOT CHANGE CAPTURE" :
+                 model->status);
+    }
     text(fb, 10, 355, line,
          model->routing.source_target_conflict ? PAL_VOLUME : PAL_MOUSE, 1);
 
     button(fb, 10, 370, 58, tap_names[model->selected_tap], 1);
     button(fb, 74, 370, 44, model->capture_channels == 2 ? "S" : "M", model->capture_channels == 2);
     button(fb, 124, 370, 100,
-           model->destination_mode == TS_SISTER_UI_DEST_NEXT_EMPTY ? "NEXT EMPTY" : "CURRENT", 0);
+           model->destination_mode == TS_SISTER_UI_DEST_FILE ? "FILE" :
+           model->destination_mode == TS_SISTER_UI_DEST_NEXT_EMPTY ?
+           "NEXT EMPTY" : "CURRENT", 0);
     button(fb, 230, 370, 28, "<", 0);
     snprintf(preset_label, sizeof(preset_label), "%.18s",
              model->preset_name[0] != '\0' ? model->preset_name : "PRESET");
     button(fb, 264, 370, 130, preset_label, 0);
     button(fb, 400, 370, 28, ">", 0);
     {
+        int file_recording =
+            model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ||
+            model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING;
         int recording = model->routing.capture_state == TS_CAPTURE_RECORDING;
-        int capturing = recording && !model->capture_overdub;
+        int capturing = file_recording || (recording && !model->capture_overdub);
         int overdubbing = recording && model->capture_overdub;
-        button(fb, 450, 370, 82, capturing ? "STOP" : "CAPTURE",
-               model->routing.capture_state != TS_CAPTURE_IDLE &&
-               !model->capture_overdub);
+        button(fb, 450, 370, 82,
+               model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING ?
+               "WAIT" : capturing ? "STOP" : "CAPTURE",
+               file_recording || (model->routing.capture_state != TS_CAPTURE_IDLE &&
+               !model->capture_overdub));
         button(fb, 538, 370, 92, overdubbing ? "STOP" : "OVERDUB",
                model->routing.capture_state != TS_CAPTURE_IDLE &&
                model->capture_overdub);
         recording_button_outline(
             fb, capturing ? 450 : 538, 370, capturing ? 82 : 92, 22,
-            recording && model->text_cursor_visible);
+            (recording || file_recording) && model->text_cursor_visible);
     }
 
     if (model->fallout_lfo_open) {

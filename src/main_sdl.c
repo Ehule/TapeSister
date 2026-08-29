@@ -1,6 +1,7 @@
 #include "tapesister/sample.h"
 #include "tapesister/capture.h"
 #include "tapesister/capture_archive.h"
+#include "tapesister/performance_recorder.h"
 #include "tapesister/input_monitor.h"
 #include "tapesister/input_ownership.h"
 #include "tapesister/note_bank.h"
@@ -753,6 +754,8 @@ typedef struct {
     _Atomic uint_least16_t tile_launcher_mask;
     TsAudioMixer mixer;
     TsSisterRuntime sister;
+    TsPerformanceRecorder *sister_file_recorder;
+    _Atomic int sister_file_tap;
     TsCaptureRecorder capture;
     TsInputMonitor *input_monitor;
     _Atomic int *external_monitor_enabled;
@@ -991,6 +994,16 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.preview = buses.legacy_preview;
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
                                                         &sister_sources);
+        if (audio->sister_file_recorder != NULL &&
+            ts_performance_recorder_state(audio->sister_file_recorder) ==
+                TS_PERFORMANCE_FILE_RECORDING) {
+            int tap = atomic_load_explicit(&audio->sister_file_tap,
+                                           memory_order_relaxed);
+            if (tap < TS_SISTER_TAP_MIX || tap >= TS_SISTER_TAP_COUNT)
+                tap = TS_SISTER_TAP_MIX;
+            (void)ts_performance_recorder_push_frame(
+                audio->sister_file_recorder, sister_frame.tap[tap]);
+        }
         buses.sister = sister_frame.monitor_return;
         buses.program.l = buses.legacy_preview.l +
                           buses.tile_performance.l + buses.fm.l;
@@ -1129,6 +1142,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             configuration |= TS_RT_CONFIG_FX_FEEDBACK;
         if (p->fx.fallout.enabled)
             configuration |= TS_RT_CONFIG_FALLOUT;
+        if (audio->sister_file_recorder != NULL &&
+            ts_performance_recorder_state(audio->sister_file_recorder) ==
+                TS_PERFORMANCE_FILE_RECORDING)
+            configuration |= TS_RT_CONFIG_FILE_CAPTURE;
         ts_realtime_diagnostics_record(
             &audio->realtime_diagnostics,
             SDL_GetPerformanceCounter() - diagnostic_started,
@@ -6760,6 +6777,8 @@ typedef struct {
     size_t fallout_preset_index;
     int parameter_lock_gesture;
     TsUiPointerDrag parameter_drag;
+    TsPerformanceRecorder performance_recorder;
+    SDL_Thread *performance_writer;
 } SisterWindow;
 
 enum {
@@ -6979,6 +6998,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_DRIVE: parameters->fx.distortion_drive = amount; break;
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: parameters->fx.distortion_tone = amount; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: parameters->fx.distortion_mix = amount; break;
+    case TS_SISTER_UI_PARAM_FX_TRANSITION: parameters->fx.transition = amount; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: parameters->fx.master_feedback = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_MIX: parameters->fx.fallout.mix = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: parameters->fx.fallout.feedback = amount; break;
@@ -7055,6 +7075,7 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_DRIVE: value = parameters->fx.distortion_drive; break;
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: value = parameters->fx.distortion_tone; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: value = parameters->fx.distortion_mix; break;
+    case TS_SISTER_UI_PARAM_FX_TRANSITION: value = parameters->fx.transition; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: value = parameters->fx.master_feedback; break;
     case TS_SISTER_UI_PARAM_FALLOUT_MIX: value = parameters->fx.fallout.mix; break;
     case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: value = parameters->fx.fallout.feedback; break;
@@ -7263,6 +7284,7 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_DISTORTION_DRIVE: return "DISTORTION DRIVE";
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: return "DISTORTION TONE";
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: return "DISTORTION MIX";
+    case TS_SISTER_UI_PARAM_FX_TRANSITION: return "FX TRANSITION";
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: return "MASTER FX FEEDBACK";
     case TS_SISTER_UI_PARAM_FALLOUT_MIX: return "FALLOUT MIX";
     case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: return "FALLOUT FEEDBACK";
@@ -7462,6 +7484,123 @@ static void sister_preset_edit_move(TsSisterUiModel *model, int amount)
     model->preset_edit_cursor = (size_t)cursor;
 }
 
+static int sister_performance_writer_main(void *userdata)
+{
+    TsPerformanceRecorder *recorder = (TsPerformanceRecorder *)userdata;
+    while (recorder != NULL) {
+        TsPerformanceFileState state = ts_performance_recorder_state(recorder);
+        uint64_t before;
+        if (state != TS_PERFORMANCE_FILE_RECORDING &&
+            state != TS_PERFORMANCE_FILE_STOPPING) break;
+        before = atomic_load_explicit(&recorder->read_cursor,
+                                      memory_order_relaxed);
+        (void)ts_performance_recorder_pump(recorder, 8192u);
+        if (ts_performance_recorder_state(recorder) ==
+                TS_PERFORMANCE_FILE_RECORDING &&
+            atomic_load_explicit(&recorder->read_cursor,
+                                 memory_order_relaxed) == before)
+            SDL_Delay(2u);
+    }
+    return 0;
+}
+
+static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
+                                     uint32_t sample_rate)
+{
+    char path[1200];
+    char prefix[40];
+    char error[160];
+    size_t queue_frames;
+    if (audio == NULL || sister == NULL || sample_rate == 0u) return 0;
+    if (!audio->sister.enabled || audio->sister.callback_failed) {
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "ENABLE SISTER BEFORE RECORDING A PERFORMANCE");
+        return 0;
+    }
+    if (atomic_load_explicit(&audio->sister.capture.state,
+                             memory_order_acquire) != TS_CAPTURE_IDLE) {
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "FINISH THE TILE CAPTURE BEFORE RECORDING A FILE");
+        return 0;
+    }
+    snprintf(prefix, sizeof(prefix), "SISTER-%s",
+             ts_sister_tap_name(sister->model.selected_tap));
+    if (!ts_capture_archive_unique_path(
+            capture_archive_directory(), prefix, path, sizeof(path),
+            error, sizeof(error))) {
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "FILE CAPTURE FAILED: %.98s", error);
+        return 0;
+    }
+    queue_frames = (size_t)sample_rate * 10u;
+    atomic_store_explicit(&audio->sister_file_tap,
+                          sister->model.selected_tap, memory_order_relaxed);
+    if (!ts_performance_recorder_start(
+            &sister->performance_recorder, path, sample_rate,
+            (uint8_t)sister->model.capture_channels, queue_frames,
+            error, sizeof(error))) {
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "FILE CAPTURE FAILED: %.98s", error);
+        return 0;
+    }
+    sister->performance_writer = SDL_CreateThread(
+        sister_performance_writer_main, "TapeSister Performance WAV",
+        &sister->performance_recorder);
+    if (sister->performance_writer == NULL) {
+        (void)ts_performance_recorder_request_stop(
+            &sister->performance_recorder);
+        while (ts_performance_recorder_pump(
+                   &sister->performance_recorder, 8192u)) {}
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "COULD NOT START PERFORMANCE WRITER: %.72s", SDL_GetError());
+        ts_performance_recorder_free(&sister->performance_recorder);
+        return 0;
+    }
+    sister->model.capture_overdub = 0;
+    snprintf(sister->model.status, sizeof(sister->model.status),
+             "FILE RECORDING - PRESS CAPTURE AGAIN TO STOP");
+    return 1;
+}
+
+static void sister_poll_file_capture(SisterWindow *sister)
+{
+    TsPerformanceRecorder *recorder;
+    TsPerformanceFileState state;
+    uint64_t dropped;
+    uint64_t frames;
+    uint32_t rate;
+    if (sister == NULL) return;
+    recorder = &sister->performance_recorder;
+    state = ts_performance_recorder_state(recorder);
+    frames = ts_performance_recorder_frames(recorder);
+    dropped = ts_performance_recorder_dropped(recorder);
+    rate = recorder->sample_rate;
+    sister->model.file_capture_state = state;
+    sister->model.file_capture_sample_rate = rate;
+    sister->model.file_capture_frames = frames;
+    sister->model.file_capture_dropped_frames = dropped;
+    if (state != TS_PERFORMANCE_FILE_COMPLETED &&
+        state != TS_PERFORMANCE_FILE_FAILED) return;
+    if (sister->performance_writer != NULL) {
+        SDL_WaitThread(sister->performance_writer, NULL);
+        sister->performance_writer = NULL;
+    }
+    if (state == TS_PERFORMANCE_FILE_COMPLETED && dropped == 0u)
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "PERFORMANCE SAVED %.1F S - %.75s",
+                 rate > 0u ? (double)frames / rate : 0.0,
+                 recorder->path);
+    else if (state == TS_PERFORMANCE_FILE_COMPLETED)
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "PERFORMANCE SAVED WITH %llu DROPPED FRAMES - %.57s",
+                 (unsigned long long)dropped, recorder->path);
+    else
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "PERFORMANCE FILE FAILED: %.94s", recorder->error);
+    ts_performance_recorder_free(recorder);
+    sister->model.file_capture_state = TS_PERFORMANCE_FILE_IDLE;
+}
+
 static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, TsInstrument *instrument,
                                 SisterWindow *sister, int overdub,
@@ -7537,9 +7676,12 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     char error[160];
     uint8_t sources;
     int capture_state;
+    TsPerformanceFileState file_capture_state;
+    int capture_busy;
     int sync_ext = 0;
     int parameter_changed = -1;
     int fallout_toggle_changed = -1;
+    int fx_toggle_changed = -1;
     int effect_target_changed = 0;
     int fallout_preset_scope;
     TsSisterPresetBank *preset_bank;
@@ -7553,6 +7695,11 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     error[0] = '\0';
     capture_state = atomic_load_explicit(&audio->sister.capture.state,
                                          memory_order_acquire);
+    file_capture_state = ts_performance_recorder_state(
+        &sister->performance_recorder);
+    capture_busy = capture_state != TS_CAPTURE_IDLE ||
+        file_capture_state == TS_PERFORMANCE_FILE_RECORDING ||
+        file_capture_state == TS_PERFORMANCE_FILE_STOPPING;
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_PREVIOUS ||
         hit.action == TS_SISTER_UI_ACTION_PRESET_NEXT) {
         size_t index;
@@ -7677,6 +7824,11 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     if (hit.action == TS_SISTER_UI_ACTION_POWER) {
         uint32_t visual_now = SDL_GetTicks();
+        if (capture_busy) {
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "STOP RECORDING BEFORE CHANGING SISTER POWER");
+            return;
+        }
         if (device) SDL_LockAudioDevice(device);
         audio_begin_topology_crossfade(audio, sample_rate);
         if (audio->sister.enabled) {
@@ -7884,6 +8036,24 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         fallout_toggle_changed = hit.index;
         break;
     }
+    case TS_SISTER_UI_ACTION_FX_TOGGLE: {
+        TsSisterFxControls *fx = &sister->model.parameters.fx;
+        switch ((TsSisterUiFxToggle)hit.index) {
+        case TS_SISTER_UI_FX_MASTER: fx->enabled = !fx->enabled; break;
+        case TS_SISTER_UI_FX_REVERB:
+            fx->reverb_enabled = !fx->reverb_enabled; break;
+        case TS_SISTER_UI_FX_DELAY:
+            fx->delay_enabled = !fx->delay_enabled; break;
+        case TS_SISTER_UI_FX_DISTORTION:
+            fx->distortion_enabled = !fx->distortion_enabled; break;
+        default: break;
+        }
+        ts_sister_runtime_set_parameters(&audio->sister,
+                                         &sister->model.parameters);
+        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        fx_toggle_changed = hit.index;
+        break;
+    }
     case TS_SISTER_UI_ACTION_EFFECT_TARGET:
     {
         int effect = hit.index >> 8;
@@ -7915,6 +8085,20 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     if (effect_target_changed)
         sister_preset_model_sync(sister, &audio->sister);
+    if (fx_toggle_changed >= 0) {
+        const TsSisterFxControls *fx = &sister->model.parameters.fx;
+        int enabled = fx_toggle_changed == TS_SISTER_UI_FX_MASTER ? fx->enabled :
+            fx_toggle_changed == TS_SISTER_UI_FX_REVERB ? fx->reverb_enabled :
+            fx_toggle_changed == TS_SISTER_UI_FX_DELAY ? fx->delay_enabled :
+                                                        fx->distortion_enabled;
+        const char *name = fx_toggle_changed == TS_SISTER_UI_FX_MASTER ? "MASTER FX" :
+            fx_toggle_changed == TS_SISTER_UI_FX_REVERB ? "REVERB" :
+            fx_toggle_changed == TS_SISTER_UI_FX_DELAY ? "DELAY" : "DISTORTION";
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "%s %s OVER %.2F S", name, enabled ? "ENGAGING" : "BYPASSING",
+                 ts_sister_fx_transition_ms(fx->transition) / 1000.0f);
+    }
     if (parameter_changed >= 0) {
         /* Mouse-wheel bursts can publish many bounded DSP targets. Keep the
            audio-device critical section to the state transfer itself; preset
@@ -7976,25 +8160,53 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             sister->model.waveform_mode, 1);
         ui->config.sister_waveform_display_mode = sister->model.waveform_mode;
     } else if (hit.action == TS_SISTER_UI_ACTION_TAP) {
-        sister->model.selected_tap = (TsSisterTap)(
-            (sister->model.selected_tap + 1) % TS_SISTER_TAP_COUNT);
+        if (capture_busy)
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "STOP RECORDING BEFORE CHANGING THE CAPTURE TAP");
+        else
+            sister->model.selected_tap = (TsSisterTap)(
+                (sister->model.selected_tap + 1) % TS_SISTER_TAP_COUNT);
     } else if (hit.action == TS_SISTER_UI_ACTION_CAPTURE_FORMAT) {
-        sister->model.capture_channels = sister->model.capture_channels == 2 ? 1 : 2;
-        ui->config.sister_capture_channels = sister->model.capture_channels;
+        if (capture_busy)
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "STOP RECORDING BEFORE CHANGING MONO/STEREO");
+        else {
+            sister->model.capture_channels =
+                sister->model.capture_channels == 2 ? 1 : 2;
+            ui->config.sister_capture_channels = sister->model.capture_channels;
+        }
     } else if (hit.action == TS_SISTER_UI_ACTION_DESTINATION) {
-        sister->model.destination_mode = sister->model.destination_mode ==
-            TS_SISTER_UI_DEST_CURRENT ? TS_SISTER_UI_DEST_NEXT_EMPTY :
-            TS_SISTER_UI_DEST_CURRENT;
+        if (capture_busy)
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "STOP RECORDING BEFORE CHANGING THE DESTINATION");
+        else
+            sister->model.destination_mode = (TsSisterUiDestinationMode)(
+                (sister->model.destination_mode + 1) % 3);
     } else if (hit.action == TS_SISTER_UI_ACTION_CAPTURE ||
                hit.action == TS_SISTER_UI_ACTION_OVERDUB) {
-        if (capture_state == TS_CAPTURE_RECORDING) {
+        if (file_capture_state == TS_PERFORMANCE_FILE_RECORDING) {
+            (void)ts_performance_recorder_request_stop(
+                &sister->performance_recorder);
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "FINISHING PERFORMANCE WAV - AUDIO QUEUE IS DRAINING");
+        } else if (file_capture_state == TS_PERFORMANCE_FILE_STOPPING) {
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "PERFORMANCE WAV IS STILL FINISHING");
+        } else if (hit.action == TS_SISTER_UI_ACTION_OVERDUB &&
+                   sister->model.destination_mode == TS_SISTER_UI_DEST_FILE) {
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "OVERDUB WRITES TILES - USE CAPTURE FOR A PERFORMANCE FILE");
+        } else if (capture_state == TS_CAPTURE_RECORDING) {
             if (device) SDL_LockAudioDevice(device);
             (void)ts_sister_runtime_stop_capture(&audio->sister,
                                                  error, sizeof(error));
             if (device) SDL_UnlockAudioDevice(device);
         } else if (capture_state == TS_CAPTURE_IDLE) {
-            (void)sister_begin_capture(device, audio, ui, instrument, sister,
-                hit.action == TS_SISTER_UI_ACTION_OVERDUB, sample_rate);
+            if (sister->model.destination_mode == TS_SISTER_UI_DEST_FILE)
+                (void)sister_begin_file_capture(audio, sister, sample_rate);
+            else
+                (void)sister_begin_capture(device, audio, ui, instrument, sister,
+                    hit.action == TS_SISTER_UI_ACTION_OVERDUB, sample_rate);
         }
     }
 }
@@ -9356,6 +9568,7 @@ int main(int argc, char **argv)
         }
     }
     ts_sister_ui_model_init(&sister_window.model, &ui.config);
+    ts_performance_recorder_init(&sister_window.performance_recorder);
     {
         char preset_path[TS_RUNTIME_PATH_MAX];
         char preset_error[160];
@@ -9385,6 +9598,8 @@ int main(int argc, char **argv)
     ts_audio_mixer_init(&audio.mixer);
     audio.fm_output_gain = (float)ui.config.fm_output_percent / 100.0f;
     ts_sister_runtime_init(&audio.sister);
+    audio.sister_file_recorder = &sister_window.performance_recorder;
+    atomic_init(&audio.sister_file_tap, TS_SISTER_TAP_MIX);
     ts_realtime_diagnostics_init(&audio.realtime_diagnostics);
     audio.realtime_diagnostics_enabled = diagnostic_audio &&
         ts_realtime_diagnostics_is_lock_free(&audio.realtime_diagnostics);
@@ -13147,6 +13362,7 @@ int main(int argc, char **argv)
                          "CAPTURE COMMIT FAILED: %.100s", sister_error);
             }
         }
+        sister_poll_file_capture(&sister_window);
         if (ts_sister_runtime_can_clear(&audio.sister)) {
             if (device) SDL_LockAudioDevice(device);
             (void)ts_sister_runtime_perform_clear(&audio.sister);
@@ -13257,7 +13473,11 @@ int main(int argc, char **argv)
             ui.sister_rolling = routing.rolling;
             ui.sister_held = routing.held;
             ui.sister_monitor_enabled = routing.monitor_enabled;
-            ui.sister_capture_active = routing.capture_state != TS_CAPTURE_IDLE;
+            ui.sister_capture_active = routing.capture_state != TS_CAPTURE_IDLE ||
+                sister_window.model.file_capture_state ==
+                    TS_PERFORMANCE_FILE_RECORDING ||
+                sister_window.model.file_capture_state ==
+                    TS_PERFORMANCE_FILE_STOPPING;
             ui.sister_warning = routing.warnings != 0u;
             ui.sister_source_mask = routing.source_mask;
         }
@@ -13333,6 +13553,15 @@ int main(int argc, char **argv)
         transform.worker = NULL;
     }
     discard_transform_preview(device, &audio, &ui, &transform);
+    if (ts_performance_recorder_state(&sister_window.performance_recorder) ==
+            TS_PERFORMANCE_FILE_RECORDING)
+        (void)ts_performance_recorder_request_stop(
+            &sister_window.performance_recorder);
+    if (sister_window.performance_writer != NULL) {
+        SDL_WaitThread(sister_window.performance_writer, NULL);
+        sister_window.performance_writer = NULL;
+    }
+    ts_performance_recorder_free(&sister_window.performance_recorder);
     if (input_device) SDL_PauseAudioDevice(input_device, 1);
     if (input_device) SDL_CloseAudioDevice(input_device);
     if (device) SDL_CloseAudioDevice(device);

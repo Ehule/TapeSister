@@ -19,7 +19,8 @@ enum {
     TS_RT_CONFIG_DELAY = 1u << 10,
     TS_RT_CONFIG_DISTORTION = 1u << 11,
     TS_RT_CONFIG_FX_FEEDBACK = 1u << 12,
-    TS_RT_CONFIG_FALLOUT = 1u << 13
+    TS_RT_CONFIG_FALLOUT = 1u << 13,
+    TS_RT_CONFIG_FILE_CAPTURE = 1u << 14
 };
 
 typedef struct {

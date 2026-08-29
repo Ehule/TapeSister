@@ -1027,7 +1027,8 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     }
     runtime->master_feedback_current = monitor_approach(
         runtime->master_feedback_current,
-        runtime->parameters.fx.master_feedback * 1.35f,
+        runtime->parameters.fx.master_feedback * 1.35f *
+            ts_sister_post_fx_master_engage(&runtime->post_fx),
         runtime->machine.buffer.sample_rate);
     if (runtime->parameters.fx.master_feedback <= 0.0f &&
         runtime->master_feedback_current < 0.000001f) {

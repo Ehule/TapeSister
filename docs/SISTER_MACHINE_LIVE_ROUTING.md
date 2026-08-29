@@ -119,6 +119,14 @@ The destination helper accepts an explicit eligible target or searches the curre
 page for the nearest blank unlocked non-source tile. It never overwrites occupied
 audio or silently creates a page.
 
+FILE is a third Capture destination alongside CURRENT and NEXT EMPTY. It records the
+selected tap and M/S shape directly to a timestamped 32-bit float WAV under the normal
+`Captures/` archive directory; it does not allocate, modify, or commit a tile. MIX FILE
+captures contain Fallout and the complete post-effects return. A bounded SPSC queue is
+the only callback-facing storage. An SDL writer thread drains it, checkpoints a
+recoverable header, and finalizes RIFF or RF64 after STOP. Consequently there is no
+configured duration ceiling and no filesystem call on the audio callback.
+
 Safe recursion is transactional:
 
 1. Trigger masked source tiles into Sister.
@@ -160,6 +168,13 @@ program plus enabled EXT monitor. Direct inputs are removed for that frame and
 the result is added once on `post_fx`; Reference remains direct. Head effects and
 Master FX Feedback are dormant. POWER transitions do not invent routes or
 allocate rolling storage. See `SISTER_MACHINE_POST_EFFECTS.md`.
+
+On the FX page, Reverb, Delay, Distortion, and the complete Master FX chain have
+independent ON/OFF performance switches. All four share a logarithmic 10 ms–1
+minute TRANSITION time. Effect switches fade both contribution and new input
+feed so tails recede naturally; Master FX crossfades the completed chain to dry
+and scales its feedback return. Interrupted transitions reverse from their
+present gain rather than jumping to an endpoint.
 
 While POWER and ROLL are both active, Sister owns the tile performance speaker
 bus exclusively. If `TILES` is off, or no tiles are armed in the Sister source

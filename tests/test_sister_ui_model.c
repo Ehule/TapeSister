@@ -187,7 +187,16 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 300, 257);
     CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
           hit.index == ((3 << 8) | TS_SISTER_EFFECT_TARGET_MIX));
+    hit = ts_sister_ui_hit_test_model(&model, 25, 55);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
+          hit.index == TS_SISTER_UI_FX_REVERB);
+    hit = ts_sister_ui_hit_test_model(&model, 25, 310);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
+          hit.index == TS_SISTER_UI_FX_MASTER);
     hit = ts_sister_ui_hit_test_model(&model, 200, 310);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FX_TRANSITION);
+    hit = ts_sister_ui_hit_test_model(&model, 200, 336);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK);
     model.fx_page = 2;
@@ -331,6 +340,17 @@ int main(void)
           palette.colors[TS_PALETTE_ACTIVE_TILE]);
     model.routing.capture_state = TS_CAPTURE_IDLE;
     model.capture_overdub = 0;
+    model.destination_mode = TS_SISTER_UI_DEST_FILE;
+    model.file_capture_state = TS_PERFORMANCE_FILE_RECORDING;
+    model.file_capture_sample_rate = 48000u;
+    model.file_capture_frames = 48000u;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[40u * TS_UI_WIDTH + 56u] ==
+          palette.colors[TS_PALETTE_PATTERN_VOLUME]);
+    CHECK(framebuffer.pixels[368u * TS_UI_WIDTH + 448u] ==
+          palette.colors[TS_PALETTE_ACTIVE_TILE]);
+    model.file_capture_state = TS_PERFORMANCE_FILE_IDLE;
+    model.destination_mode = TS_SISTER_UI_DEST_CURRENT;
     model.text_cursor_visible = 0;
     model.parameter_locks =
         TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_H1_LEVEL);

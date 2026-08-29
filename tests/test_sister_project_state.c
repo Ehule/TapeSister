@@ -54,6 +54,11 @@ int main(void)
     runtime.parameters.fx.distortion_mix = 0.71f;
     runtime.parameters.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
     runtime.parameters.fx.master_feedback = 0.66f;
+    runtime.parameters.fx.enabled = 0;
+    runtime.parameters.fx.reverb_enabled = 0;
+    runtime.parameters.fx.delay_enabled = 1;
+    runtime.parameters.fx.distortion_enabled = 0;
+    runtime.parameters.fx.transition = 0.73f;
     runtime.parameters.fx.fallout.enabled = 1;
     runtime.parameters.fx.fallout.feedback = 0.64f;
     runtime.parameters.fx.fallout.noise_type = TS_SISTER_FALLOUT_NOISE_PINK;
@@ -97,6 +102,11 @@ int main(void)
     assert(loaded.parameters.fx.distortion_targets ==
            TS_SISTER_EFFECT_TARGET_MIX);
     assert(loaded.parameters.fx.master_feedback > 0.65f);
+    assert(loaded.parameters.fx.enabled == 0);
+    assert(loaded.parameters.fx.reverb_enabled == 0);
+    assert(loaded.parameters.fx.delay_enabled == 1);
+    assert(loaded.parameters.fx.distortion_enabled == 0);
+    assert(loaded.parameters.fx.transition > 0.72f);
     assert(loaded.parameters.fx.fallout.enabled == 1);
     assert(loaded.parameters.fx.fallout.feedback > 0.63f);
     assert(loaded.parameters.fx.fallout.noise_type ==

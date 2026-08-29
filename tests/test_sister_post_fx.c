@@ -390,6 +390,49 @@ static void test_master_feedback_causality(void)
     ts_sister_runtime_free(&runtime);
 }
 
+static void test_timed_performance_bypasses(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+    assert(fabsf(ts_sister_fx_transition_ms(0.0f) - 10.0f) < 0.001f);
+    assert(fabsf(ts_sister_fx_transition_ms(1.0f) - 60000.0f) < 0.1f);
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    assert(controls.enabled && controls.reverb_enabled &&
+           controls.delay_enabled && controls.distortion_enabled);
+    controls.transition = ts_sister_fx_transition_normalized(1000.0f);
+    controls.distortion_mix = 1.0f;
+    controls.distortion_enabled = 0;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    assert(engine.distortion_engage.remaining == 1000u);
+    for (int frame = 0; frame < 500; ++frame)
+        assert_finite(ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.3f, -0.2f}, 0));
+    assert(fabsf(engine.distortion_engage.current - 0.5f) < 0.002f);
+    controls.distortion_enabled = 1;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    assert(engine.distortion_engage.remaining == 1000u);
+    for (int frame = 0; frame < 1000; ++frame)
+        assert_finite(ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.3f, -0.2f}, 0));
+    assert(engine.distortion_engage.current == 1.0f);
+
+    controls.reverb_enabled = controls.delay_enabled = 0;
+    controls.enabled = 0;
+    controls.transition = 1.0f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    assert(engine.master_engage.remaining == 60000u);
+    assert(engine.reverb_engage.remaining == 60000u);
+    assert(engine.delay_engage.remaining == 60000u);
+    for (int frame = 0; frame < 60000; ++frame)
+        assert_finite(ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.1f, -0.1f}, 0));
+    assert(ts_sister_post_fx_master_engage(&engine) == 0.0f);
+    assert(engine.reverb_engage.current == 0.0f);
+    assert(engine.delay_engage.current == 0.0f);
+    ts_sister_post_fx_free(&engine);
+}
+
 int main(void)
 {
     test_defaults_and_identity();
@@ -401,6 +444,7 @@ int main(void)
     test_rapid_sweeps_finite();
     test_interrupted_wheel_handoffs();
     test_master_feedback_causality();
+    test_timed_performance_bypasses();
     puts("sister post-effects tests passed");
     return 0;
 }

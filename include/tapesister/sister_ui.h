@@ -3,6 +3,7 @@
 
 #include "tapesister/config.h"
 #include "tapesister/palette.h"
+#include "tapesister/performance_recorder.h"
 #include "tapesister/sister_runtime.h"
 #include "tapesister/ui.h"
 
@@ -27,6 +28,7 @@ typedef enum {
     TS_SISTER_UI_ACTION_OVERDUB,
     TS_SISTER_UI_ACTION_PARAMETER,
     TS_SISTER_UI_ACTION_EFFECT_TARGET,
+    TS_SISTER_UI_ACTION_FX_TOGGLE,
     TS_SISTER_UI_ACTION_FALLOUT_TOGGLE,
     TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG,
     TS_SISTER_UI_ACTION_FALLOUT_LFO_TARGET,
@@ -47,7 +49,8 @@ typedef enum {
 
 typedef enum {
     TS_SISTER_UI_DEST_CURRENT = 0,
-    TS_SISTER_UI_DEST_NEXT_EMPTY
+    TS_SISTER_UI_DEST_NEXT_EMPTY,
+    TS_SISTER_UI_DEST_FILE
 } TsSisterUiDestinationMode;
 
 typedef enum {
@@ -92,6 +95,7 @@ typedef enum {
     TS_SISTER_UI_PARAM_DISTORTION_DRIVE,
     TS_SISTER_UI_PARAM_DISTORTION_TONE,
     TS_SISTER_UI_PARAM_DISTORTION_MIX,
+    TS_SISTER_UI_PARAM_FX_TRANSITION,
     TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK,
     TS_SISTER_UI_PARAM_FALLOUT_MIX,
     TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK,
@@ -114,6 +118,13 @@ typedef enum {
     TS_SISTER_UI_PARAM_BUFFER_SECONDS,
     TS_SISTER_UI_PARAM_COUNT
 } TsSisterUiParameter;
+
+typedef enum {
+    TS_SISTER_UI_FX_MASTER = 0,
+    TS_SISTER_UI_FX_REVERB,
+    TS_SISTER_UI_FX_DELAY,
+    TS_SISTER_UI_FX_DISTORTION
+} TsSisterUiFxToggle;
 
 typedef enum {
     TS_SISTER_UI_FALLOUT_POWER = 0,
@@ -147,6 +158,10 @@ typedef struct {
     int visible;
     int capture_channels;
     int capture_overdub;
+    TsPerformanceFileState file_capture_state;
+    uint32_t file_capture_sample_rate;
+    uint64_t file_capture_frames;
+    uint64_t file_capture_dropped_frames;
     TsSisterTap selected_tap;
     TsSisterUiDestinationMode destination_mode;
     TsWaveformDisplayMode waveform_mode;

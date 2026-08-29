@@ -141,6 +141,16 @@ sounds, DSP/CDP renders, previews, or Undo states.
 destination to the completed performance length; set it to `0` to retain the blank
 canvas duration established before arming.
 
+Sister Machine's destination button cycles **CURRENT → NEXT EMPTY → FILE**. FILE is
+the long-form performance recorder: CAPTURE starts immediately and the next press
+stops it; no tile is allocated and `capture_max_seconds` does not apply. The selected
+H1/H2/H3/MIX tap and M/S shape still apply. MIX contains Fallout and the completed
+post-effects chain. Audio is streamed as 32-bit float WAV by a background writer into
+`Captures/` (or `TAPESISTER_CAPTURES`) with a timestamped `SISTER-<tap>_...wav` name.
+Ordinary WAV is used while it fits; very long takes upgrade automatically to RF64 in
+the same file. The audio callback only writes a bounded ten-second lock-free queue,
+so a slow or full disk is reported without blocking the performance thread.
+
 Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
 number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead.
@@ -560,6 +570,12 @@ reusable effect targets are specified in
 PR9 fixed Distortion→Delay→Reverb chain, POWER-off MIX bus, and causal Master FX
 Feedback return are specified in
 [`docs/SISTER_MACHINE_POST_EFFECTS.md`](docs/SISTER_MACHINE_POST_EFFECTS.md).
+The FX page now adds Reverb, Delay, Distortion, and Master FX performance
+switches governed by one logarithmic 10 ms–60 s TRANSITION control. Individual
+switches fade their effect contribution and input feed without moving the mix
+faders; Master FX crossfades the completed chain to dry and fades its feedback
+return. Reversing any switch during a long transition continues from its current
+gain without a jump.
 PR10's live 5–60-second age-anchored BUFFER canvas, crop/grow law, and realtime
 ownership are specified in
 [`docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md`](docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md).
