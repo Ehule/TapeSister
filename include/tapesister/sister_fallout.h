@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define TS_SISTER_FALLOUT_TARGET_COUNT 13u
+
 typedef enum {
     TS_SISTER_FALLOUT_NOISE_WHITE = 0,
     TS_SISTER_FALLOUT_NOISE_PINK,
@@ -126,6 +128,23 @@ typedef struct {
     float feedback_modulated;
     int rise_one_shot_complete;
     TsSisterFalloutControls controls;
+    /* Continuous panel values chase controls at audio rate.  Keeping this
+       state separate lets rapid wheel retargets continue from the value that
+       was actually heard instead of jumping to the newest UI value. */
+    TsSisterFalloutControls smoothed_controls;
+    float lfo_target_blend[TS_SISTER_FALLOUT_TARGET_COUNT];
+    float lfo_target_step[TS_SISTER_FALLOUT_TARGET_COUNT];
+    uint32_t lfo_target_remaining[TS_SISTER_FALLOUT_TARGET_COUNT];
+    float rise_target_blend[TS_SISTER_FALLOUT_TARGET_COUNT];
+    float rise_target_step[TS_SISTER_FALLOUT_TARGET_COUNT];
+    uint32_t rise_target_remaining[TS_SISTER_FALLOUT_TARGET_COUNT];
+    TsStereoFrame control_handoff_output;
+    TsStereoFrame control_handoff_wet;
+    TsStereoFrame previous_output;
+    TsStereoFrame previous_wet;
+    uint32_t control_handoff_total;
+    uint32_t control_handoff_remaining;
+    int previous_output_valid;
     TsSisterFalloutControls preset_target;
     float preset_gain;
     float preset_gain_step;

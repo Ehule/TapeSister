@@ -16,6 +16,9 @@
 #define FALLOUT_RISE_MIN_SECONDS 1.0f
 #define FALLOUT_RISE_MAX_SECONDS 14400.0f
 #define FALLOUT_RISE_DECLICK_MS 10.0f
+#define FALLOUT_CONTROL_SMOOTH_MS 20.0f
+#define FALLOUT_TARGET_BLEND_MS 20.0f
+#define FALLOUT_CONTROL_HANDOFF_MS 10.0f
 
 static float clampf(float v, float lo, float hi)
 {
@@ -168,6 +171,131 @@ static float slew_toward(float current, float target, float maximum_step)
     return target;
 }
 
+static uint32_t transition_frames(const TsSisterFalloutEngine *engine,
+                                  float milliseconds)
+{
+    float frames;
+    if (engine == NULL || engine->sample_rate == 0u) return 1u;
+    frames = milliseconds * (float)engine->sample_rate / 1000.0f;
+    return (uint32_t)fmaxf(1.0f, frames);
+}
+
+static void target_blends_reset(TsSisterFalloutEngine *engine)
+{
+    for (uint32_t slot = 0u; slot < TS_SISTER_FALLOUT_TARGET_COUNT; ++slot) {
+        uint32_t target = 1u << slot;
+        engine->lfo_target_blend[slot] =
+            (engine->controls.lfo_targets & target) != 0u ? 1.0f : 0.0f;
+        engine->lfo_target_step[slot] = 0.0f;
+        engine->lfo_target_remaining[slot] = 0u;
+        engine->rise_target_blend[slot] =
+            (engine->controls.rise_targets & target) != 0u ? 1.0f : 0.0f;
+        engine->rise_target_step[slot] = 0.0f;
+        engine->rise_target_remaining[slot] = 0u;
+    }
+}
+
+static void target_blends_set(TsSisterFalloutEngine *engine,
+                              uint32_t old_lfo, uint32_t new_lfo,
+                              uint32_t old_rise, uint32_t new_rise,
+                              int immediate)
+{
+    uint32_t frames = transition_frames(engine, FALLOUT_TARGET_BLEND_MS);
+    for (uint32_t slot = 0u; slot < TS_SISTER_FALLOUT_TARGET_COUNT; ++slot) {
+        uint32_t target = 1u << slot;
+        if ((old_lfo & target) != (new_lfo & target)) {
+            float destination = (new_lfo & target) != 0u ? 1.0f : 0.0f;
+            ramp(&engine->lfo_target_blend[slot],
+                 &engine->lfo_target_step[slot],
+                 &engine->lfo_target_remaining[slot], destination,
+                 immediate ? 0u : frames);
+        }
+        if ((old_rise & target) != (new_rise & target)) {
+            float destination = (new_rise & target) != 0u ? 1.0f : 0.0f;
+            ramp(&engine->rise_target_blend[slot],
+                 &engine->rise_target_step[slot],
+                 &engine->rise_target_remaining[slot], destination,
+                 immediate ? 0u : frames);
+        }
+    }
+}
+
+static void target_blends_advance(TsSisterFalloutEngine *engine)
+{
+    for (uint32_t slot = 0u; slot < TS_SISTER_FALLOUT_TARGET_COUNT; ++slot) {
+        float lfo_target = (engine->controls.lfo_targets & (1u << slot)) != 0u ?
+            1.0f : 0.0f;
+        float rise_target =
+            (engine->controls.rise_targets & (1u << slot)) != 0u ? 1.0f : 0.0f;
+        (void)advance(&engine->lfo_target_blend[slot], lfo_target,
+                      engine->lfo_target_step[slot],
+                      &engine->lfo_target_remaining[slot]);
+        (void)advance(&engine->rise_target_blend[slot], rise_target,
+                      engine->rise_target_step[slot],
+                      &engine->rise_target_remaining[slot]);
+    }
+}
+
+static void controls_smooth(TsSisterFalloutEngine *engine)
+{
+    TsSisterFalloutControls *current = &engine->smoothed_controls;
+    const TsSisterFalloutControls *target = &engine->controls;
+    float step = 1.0f /
+        (FALLOUT_CONTROL_SMOOTH_MS * 0.001f * (float)engine->sample_rate);
+#define SMOOTH(member) \
+    current->member = slew_toward(current->member, target->member, step)
+    SMOOTH(mix);
+    SMOOTH(feedback);
+    SMOOTH(noise);
+    SMOOTH(drop_rate);
+    SMOOTH(pan_rate);
+    SMOOTH(skip_span);
+    SMOOTH(skip_rate);
+    SMOOTH(bit_quality);
+    SMOOTH(bit_resolution);
+    SMOOTH(bit_rate);
+    SMOOTH(pitch);
+    SMOOTH(pitch_ramp);
+    SMOOTH(pitch_rate);
+    SMOOTH(lfo_rate);
+    SMOOTH(lfo_intensity);
+    SMOOTH(rise_length);
+    SMOOTH(rise_intensity);
+#undef SMOOTH
+}
+
+static void control_handoff_begin(TsSisterFalloutEngine *engine)
+{
+    if (engine == NULL || !engine->previous_output_valid) return;
+    engine->control_handoff_output = engine->previous_output;
+    engine->control_handoff_wet = engine->previous_wet;
+    engine->control_handoff_total =
+        transition_frames(engine, FALLOUT_CONTROL_HANDOFF_MS);
+    engine->control_handoff_remaining = engine->control_handoff_total;
+}
+
+static void control_handoff_apply(TsSisterFalloutEngine *engine,
+                                  TsSisterFalloutResult *result)
+{
+    if (engine->control_handoff_remaining > 0u &&
+        engine->control_handoff_total > 0u) {
+        float amount = 1.0f - (float)engine->control_handoff_remaining /
+                              (float)engine->control_handoff_total;
+        result->output.l = engine->control_handoff_output.l +
+            (result->output.l - engine->control_handoff_output.l) * amount;
+        result->output.r = engine->control_handoff_output.r +
+            (result->output.r - engine->control_handoff_output.r) * amount;
+        result->wet.l = engine->control_handoff_wet.l +
+            (result->wet.l - engine->control_handoff_wet.l) * amount;
+        result->wet.r = engine->control_handoff_wet.r +
+            (result->wet.r - engine->control_handoff_wet.r) * amount;
+        --engine->control_handoff_remaining;
+    }
+    engine->previous_output = result->output;
+    engine->previous_wet = result->wet;
+    engine->previous_output_valid = 1;
+}
+
 void ts_sister_fallout_controls_default(TsSisterFalloutControls *controls)
 {
     if (controls == NULL) return;
@@ -270,6 +398,15 @@ void ts_sister_fallout_clear(TsSisterFalloutEngine *engine)
     engine->rise_smoothed = 0.0f;
     engine->rise_one_shot_complete = 0;
     engine->feedback_modulated = engine->controls.feedback;
+    engine->smoothed_controls = engine->controls;
+    target_blends_reset(engine);
+    engine->control_handoff_output = (TsStereoFrame){0.0f, 0.0f};
+    engine->control_handoff_wet = (TsStereoFrame){0.0f, 0.0f};
+    engine->previous_output = (TsStereoFrame){0.0f, 0.0f};
+    engine->previous_wet = (TsStereoFrame){0.0f, 0.0f};
+    engine->control_handoff_total = 0u;
+    engine->control_handoff_remaining = 0u;
+    engine->previous_output_valid = 0;
     engine->preset_target = engine->controls;
     engine->preset_gain = 1.0f;
     engine->preset_gain_step = 0.0f;
@@ -332,7 +469,11 @@ void ts_sister_fallout_set_controls(
     TsSisterFalloutEngine *engine, const TsSisterFalloutControls *controls)
 {
     TsSisterFalloutControls next;
+    TsSisterFalloutControls previous;
     int restart_rise;
+    int was_active;
+    int discrete_change;
+    uint32_t added_rise_targets;
     uint32_t removed_targets;
     uint32_t fade;
     if (engine == NULL || controls == NULL) return;
@@ -346,8 +487,20 @@ void ts_sister_fallout_set_controls(
     }
     next = *controls;
     ts_sister_fallout_controls_sanitize(&next);
+    previous = engine->controls;
+    was_active = engine->active;
+    added_rise_targets = ~previous.rise_targets & next.rise_targets;
     restart_rise = next.rise_mode != engine->controls.rise_mode ||
-                   next.rise_retrigger != engine->controls.rise_retrigger;
+                   next.rise_retrigger != engine->controls.rise_retrigger ||
+                   (added_rise_targets != 0u &&
+                    next.rise_mode == TS_SISTER_FALLOUT_RISE_ONE_SHOT &&
+                    engine->rise_one_shot_complete);
+    discrete_change = next.noise_type != previous.noise_type ||
+                      next.drop_enabled != previous.drop_enabled ||
+                      next.pan_enabled != previous.pan_enabled ||
+                      next.skip_enabled != previous.skip_enabled ||
+                      next.bit_enabled != previous.bit_enabled ||
+                      next.pitch_enabled != previous.pitch_enabled;
     removed_targets = (engine->controls.lfo_targets & ~next.lfo_targets) |
                       (engine->controls.rise_targets & ~next.rise_targets);
     fade = engine->sample_rate > 0u ? (uint32_t)fmaxf(1.0f,
@@ -363,7 +516,14 @@ void ts_sister_fallout_set_controls(
         ramp(&engine->engage, &engine->engage_step,
              &engine->engage_remaining, 0.0f, fade);
     }
+    if (was_active && discrete_change && !engine->preset_applying)
+        control_handoff_begin(engine);
+    target_blends_set(engine, previous.lfo_targets, next.lfo_targets,
+                      previous.rise_targets, next.rise_targets,
+                      !was_active || engine->preset_applying);
     engine->controls = next;
+    if (!was_active || engine->preset_applying)
+        engine->smoothed_controls = next;
     /* Event-rate parameters are sampled when their event fires.  Re-arm the
        affected scheduler when modulation is disconnected so the saved panel
        value resumes on the very next audio frame rather than one old interval
@@ -514,25 +674,52 @@ static float choose_pitch(const TsSisterFalloutControls *controls)
     return ratios[index];
 }
 
-static float modulation_target(float start,
+static float modulation_target(TsSisterFalloutEngine *engine, float start,
                                const TsSisterFalloutControls *controls,
                                uint32_t target, float sine_value,
                                float rise_value)
 {
     float center = start;
-    if ((controls->rise_targets & target) != 0u)
-        center = ts_sister_fallout_rise_modulate(
-            start, controls->rise_intensity, rise_value);
-    if ((controls->lfo_targets & target) != 0u)
-        center = ts_sister_fallout_lfo_modulate(
-            center, controls->lfo_intensity, sine_value);
+    uint32_t slot = 0u;
+    float destination;
+    while (slot + 1u < TS_SISTER_FALLOUT_TARGET_COUNT &&
+           (1u << slot) != target)
+        ++slot;
+    destination = ts_sister_fallout_rise_modulate(
+        start, controls->rise_intensity, rise_value);
+    center += (destination - start) * engine->rise_target_blend[slot];
+    destination = ts_sister_fallout_lfo_modulate(
+        center, controls->lfo_intensity, sine_value);
+    center += (destination - center) * engine->lfo_target_blend[slot];
     return center;
 }
 
 static TsSisterFalloutControls modulated_controls(
     TsSisterFalloutEngine *engine)
 {
-    TsSisterFalloutControls out = engine->controls;
+    TsSisterFalloutControls out;
+    controls_smooth(engine);
+    target_blends_advance(engine);
+    out = engine->controls;
+#define USE_SMOOTHED(member) out.member = engine->smoothed_controls.member
+    USE_SMOOTHED(mix);
+    USE_SMOOTHED(feedback);
+    USE_SMOOTHED(noise);
+    USE_SMOOTHED(drop_rate);
+    USE_SMOOTHED(pan_rate);
+    USE_SMOOTHED(skip_span);
+    USE_SMOOTHED(skip_rate);
+    USE_SMOOTHED(bit_quality);
+    USE_SMOOTHED(bit_resolution);
+    USE_SMOOTHED(bit_rate);
+    USE_SMOOTHED(pitch);
+    USE_SMOOTHED(pitch_ramp);
+    USE_SMOOTHED(pitch_rate);
+    USE_SMOOTHED(lfo_rate);
+    USE_SMOOTHED(lfo_intensity);
+    USE_SMOOTHED(rise_length);
+    USE_SMOOTHED(rise_intensity);
+#undef USE_SMOOTHED
     float value = sinf((float)(engine->lfo_phase * 2.0 * M_PI));
     float rise = 0.0f;
     float rise_step;
@@ -564,8 +751,8 @@ static TsSisterFalloutControls modulated_controls(
         (FALLOUT_RISE_DECLICK_MS * (float)engine->sample_rate);
     engine->rise_smoothed = slew_toward(engine->rise_smoothed, rise, rise_step);
 #define MODULATE(member, target) \
-    out.member = modulation_target(engine->controls.member, &out, target, \
-                                   value, engine->rise_smoothed)
+    out.member = modulation_target(engine, out.member, &out, target, value, \
+                                   engine->rise_smoothed)
     MODULATE(mix, TS_SISTER_FALLOUT_LFO_MIX);
     MODULATE(feedback, TS_SISTER_FALLOUT_LFO_FEEDBACK);
     MODULATE(noise, TS_SISTER_FALLOUT_LFO_NOISE);
@@ -666,6 +853,12 @@ TsSisterFalloutResult ts_sister_fallout_process(
     } else if (engine->write_clock >= engine->next_pitch) {
         float target = choose_pitch(&controls);
         frames = (uint32_t)(controls.pitch_ramp * 0.5f * engine->sample_rate);
+        /* Even the nominally instant setting gets a short tape-speed handoff.
+           The selected ratio still changes immediately, but a wheel/toggle or
+           modulation-bank edit cannot turn that selection into a sample edge. */
+        if (frames < engine->sample_rate / 100u)
+            frames = engine->sample_rate / 100u;
+        if (frames == 0u) frames = 1u;
         engine->playback_target = target;
         ramp(&engine->playback_rate, &engine->playback_step,
              &engine->playback_remaining, target, frames);
@@ -766,6 +959,7 @@ TsSisterFalloutResult ts_sister_fallout_process(
     result.output.l = input.l + (result.output.l - input.l) * engine->preset_gain;
     result.output.r = input.r + (result.output.r - input.r) * engine->preset_gain;
     result.output = ts_stereo_frame_sanitize(result.output);
+    control_handoff_apply(engine, &result);
     if (!engine->controls.enabled && engine->engage_remaining == 0u &&
         engine->engage <= 0.0f) {
         engine->active = 0;

@@ -1127,6 +1127,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             configuration |= TS_RT_CONFIG_DISTORTION;
         if (p->fx.master_feedback > 0.0f)
             configuration |= TS_RT_CONFIG_FX_FEEDBACK;
+        if (p->fx.fallout.enabled)
+            configuration |= TS_RT_CONFIG_FALLOUT;
         ts_realtime_diagnostics_record(
             &audio->realtime_diagnostics,
             SDL_GetPerformanceCounter() - diagnostic_started,
@@ -7537,6 +7539,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     int capture_state;
     int sync_ext = 0;
     int parameter_changed = -1;
+    int fallout_toggle_changed = -1;
+    int effect_target_changed = 0;
     int fallout_preset_scope;
     TsSisterPresetBank *preset_bank;
     size_t *preset_index;
@@ -7877,12 +7881,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         ts_sister_runtime_set_selected_preset(&audio->sister, "");
         if (hit.index != TS_SISTER_UI_FALLOUT_POWER)
             sister->fallout_preset_index = SIZE_MAX;
-        sister_preset_model_sync(sister, &audio->sister);
-        snprintf(sister->model.status, sizeof(sister->model.status),
-                 hit.index == TS_SISTER_UI_FALLOUT_POWER ?
-                     (fallout->enabled ? "FALLOUT INSERT ENGAGED" :
-                                         "FALLOUT TRUE BYPASS") :
-                     "FALLOUT AUTOMATION UPDATED");
+        fallout_toggle_changed = hit.index;
         break;
     }
     case TS_SISTER_UI_ACTION_EFFECT_TARGET:
@@ -7898,12 +7897,24 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         ts_sister_runtime_set_parameters(&audio->sister,
                                          &sister->model.parameters);
         ts_sister_runtime_set_selected_preset(&audio->sister, "");
-        sister_preset_model_sync(sister, &audio->sister);
+        effect_target_changed = 1;
         break;
     }
     default: break;
     }
     if (device) SDL_UnlockAudioDevice(device);
+    if (fallout_toggle_changed >= 0) {
+        const TsSisterFalloutControls *fallout =
+            &sister->model.parameters.fx.fallout;
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 fallout_toggle_changed == TS_SISTER_UI_FALLOUT_POWER ?
+                     (fallout->enabled ? "FALLOUT INSERT ENGAGED" :
+                                         "FALLOUT TRUE BYPASS") :
+                     "FALLOUT AUTOMATION UPDATED");
+    }
+    if (effect_target_changed)
+        sister_preset_model_sync(sister, &audio->sister);
     if (parameter_changed >= 0) {
         /* Mouse-wheel bursts can publish many bounded DSP targets. Keep the
            audio-device critical section to the state transfer itself; preset

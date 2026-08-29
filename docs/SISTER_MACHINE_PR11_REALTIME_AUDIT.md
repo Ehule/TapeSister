@@ -71,6 +71,43 @@ the landing handoff. Separate hostile tests interrupt H1, Delay, and Reverb
 handoffs every few samples. These are continuity assertions rather than only
 finite/bounded-state checks.
 
+## Fallout wheel and modulation-bank follow-up
+
+Fallout's event engines already protected their own intentional changes: insert
+engage/disengage, preset recall, skip relocation, pitch motion, drop, pan, and
+RISE wrap all had bounded ramps or handoffs. The remaining controller edge was
+outside those event transitions. A wheel update replaced the continuous panel
+centers immediately, and LFO/RISE target membership was binary. Adding FEEDBACK
+halfway through a 60-minute shared RISE therefore applied the entire current
+half-rise on one sample even though the shared phase itself never jumped.
+
+All continuous Fallout panel values now chase their published targets over 20
+ms and restart an interrupted chase from the value actually used by the audio
+thread. Each of the 13 LFO and RISE destinations owns an independent 20 ms
+membership blend. Adding a destination fades it from its saved panel center to
+the current shared modulation value without resetting the LFO or RISE clock;
+removing it performs the inverse fade. A destination added after a completed
+one-shot re-arms that one-shot, while additions to a running one-shot or SAW
+only catch up to the existing phase. The explicit retrigger control remains the
+manual shared-clock restart.
+
+Discrete noise-type and DROP/PAN/SKIP/BIT/PITCH gate edits carry the exact last
+audible output and wet-feedback frames into a 10 ms handoff, including repeated
+edits before an earlier handoff completes. Pitch ratios retain their musical
+quantization but use a 10 ms minimum tape-speed ramp. Fallout toggle UI work is
+also completed after releasing the SDL audio-device lock.
+
+The dedicated regression simulates a target joining a half-complete one-hour
+RISE, insertion and removal of all 13 destinations, per-sample alternating
+wheel targets during simultaneous LFO/RISE modulation, completed one-shot
+insertion, explicit retrigger, and rapid discrete toggle edges. It asserts
+phase preservation, exact target-blend progress, bounded continuous-control
+motion, finite output, and first-frame identity at every discrete handoff.
+The maximum-load callback benchmark now enables Fallout as well as the three
+post effects, with every Fallout gate and all 13 destinations active at the
+fastest LFO/RISE/event settings; realtime diagnostics publish a dedicated
+Fallout configuration bit so that load is visible rather than implied.
+
 ## Callback and storage findings
 
 The active sample path contains no allocation, reallocation, free, filesystem,

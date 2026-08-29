@@ -62,6 +62,32 @@ int main(int argc, char **argv)
                           TS_SISTER_EFFECT_TARGET_H2 |
                           TS_SISTER_EFFECT_TARGET_H3;
     p.fx.master_feedback = 0.7f;
+    p.fx.fallout.enabled = 1;
+    p.fx.fallout.mix = 0.75f;
+    p.fx.fallout.feedback = 0.70f;
+    p.fx.fallout.noise = 0.50f;
+    p.fx.fallout.drop_enabled = 1;
+    p.fx.fallout.drop_rate = 0.0f;
+    p.fx.fallout.pan_enabled = 1;
+    p.fx.fallout.pan_rate = 0.0f;
+    p.fx.fallout.skip_enabled = 1;
+    p.fx.fallout.skip_span = 0.50f;
+    p.fx.fallout.skip_rate = 0.0f;
+    p.fx.fallout.bit_enabled = 1;
+    p.fx.fallout.bit_quality = 0.50f;
+    p.fx.fallout.bit_resolution = 0.50f;
+    p.fx.fallout.bit_rate = 0.0f;
+    p.fx.fallout.pitch_enabled = 1;
+    p.fx.fallout.pitch = 0.50f;
+    p.fx.fallout.pitch_ramp = 0.0f;
+    p.fx.fallout.pitch_rate = 0.0f;
+    p.fx.fallout.lfo_rate = 1.0f;
+    p.fx.fallout.lfo_intensity = 1.0f;
+    p.fx.fallout.lfo_targets = TS_SISTER_FALLOUT_LFO_ALL;
+    p.fx.fallout.rise_mode = TS_SISTER_FALLOUT_RISE_SAW;
+    p.fx.fallout.rise_length = 0.0f;
+    p.fx.fallout.rise_intensity = 1.0f;
+    p.fx.fallout.rise_targets = TS_SISTER_FALLOUT_LFO_ALL;
     ts_sister_runtime_set_parameters(&runtime, &p);
     ts_realtime_diagnostics_init(&diagnostics);
     while (completed < total_frames) {
@@ -95,7 +121,7 @@ int main(int argc, char **argv)
             TS_RT_CONFIG_PREVIEW | TS_RT_CONFIG_H1 | TS_RT_CONFIG_H2 |
             TS_RT_CONFIG_H3 | TS_RT_CONFIG_SOAK | TS_RT_CONFIG_REVERB |
             TS_RT_CONFIG_DELAY | TS_RT_CONFIG_DISTORTION |
-            TS_RT_CONFIG_FX_FEEDBACK);
+            TS_RT_CONFIG_FX_FEEDBACK | TS_RT_CONFIG_FALLOUT);
         completed += frames;
     }
     assert(ts_realtime_diagnostics_get(&diagnostics, &snapshot));
