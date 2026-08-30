@@ -4189,39 +4189,39 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 model, TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION));
         sister_fallout_lfo_panel(fb, f);
         if (model->routing.fallout_master_transition_active) {
-            rect(fb, 548, 284, 74, 9, RGB(15, 14, 16));
+            rect(fb, 548, 314, 74, 11, PAL_DESKTOP);
             sister_transition_caption(transition_caption,
                 sizeof(transition_caption), "FALLOUT",
                 model->routing.fallout_master_transition_target_enabled);
-            text(fb, 548, 286, transition_caption,
+            text(fb, 548, 316, transition_caption,
                 sister_transition_caption_color(
                     model->routing.fallout_master_transition_progress,
-                    RGB(15, 14, 16), PAL_MOUSE), 1);
+                    PAL_DESKTOP, PAL_MOUSE), 1);
         } else if (model->routing.fallout_component_transition_active) {
-            rect(fb, 548, 284, 74, 9, RGB(15, 14, 16));
+            rect(fb, 548, 314, 74, 11, PAL_DESKTOP);
             sister_transition_caption(transition_caption,
                 sizeof(transition_caption),
                 sister_fallout_transition_source_name(
                     model->routing.fallout_component_transition_source),
                 model->routing.fallout_component_transition_target_enabled);
-            text(fb, 548, 286, transition_caption,
+            text(fb, 548, 316, transition_caption,
                 sister_transition_caption_color(
                     model->routing.fallout_component_transition_progress,
-                    RGB(15, 14, 16), PAL_EFFECT), 1);
+                    PAL_DESKTOP, PAL_EFFECT), 1);
         } else if (model->routing.fallout_preset_transition_active) {
-            rect(fb, 548, 284, 74, 9, RGB(15, 14, 16));
-            text(fb, 548, 286, "PRESET",
+            rect(fb, 548, 314, 74, 11, PAL_DESKTOP);
+            text(fb, 548, 316, "PRESET",
                 sister_transition_caption_color(
                     model->routing.fallout_preset_transition_progress,
-                    RGB(15, 14, 16), PAL_NOTE), 1);
+                    PAL_DESKTOP, PAL_NOTE), 1);
         }
-        sister_transition_progress(fb, 548, 294, 74,
+        sister_transition_progress(fb, 548, 326, 74,
             model->routing.fallout_master_transition_progress,
             model->routing.fallout_master_transition_active, PAL_MOUSE);
-        sister_transition_progress(fb, 548, 300, 74,
+        sister_transition_progress(fb, 548, 333, 74,
             model->routing.fallout_component_transition_progress,
             model->routing.fallout_component_transition_active, PAL_EFFECT);
-        sister_transition_progress(fb, 548, 306, 74,
+        sister_transition_progress(fb, 548, 340, 74,
             model->routing.fallout_preset_transition_progress,
             model->routing.fallout_preset_transition_active, PAL_NOTE);
         sister_fallout_modulation_status(fb, model);
