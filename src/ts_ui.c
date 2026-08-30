@@ -4118,7 +4118,9 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         for (int row = 0; row < 3; ++row) {
             int top = 48 + row * 78;
             rect(fb, 10, top, 620, 68, RGB(10, 10, 11));
-            button(fb, 16, top + 2, 86, names[row],
+            /* The power switch belongs to the routing row. Keeping it beside
+               H1/H2/H3/MIX makes each effect read as one compact unit. */
+            button(fb, 16, top + 45, 86, names[row],
                 row == 0 ? model->parameters.fx.reverb_enabled :
                 row == 1 ? model->parameters.fx.delay_enabled :
                            model->parameters.fx.distortion_enabled);
@@ -4161,7 +4163,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DISTORTION_MIX));
         for (int row = 0; row < 3; ++row) {
-            int y = 97 + row * 78;
+            int y = 94 + row * 78;
             sister_target_toggle(fb, 110, y, 56, "H1",
                 masks[row] & TS_SISTER_EFFECT_TARGET_H1, PAL_NOTE);
             sister_target_toggle(fb, 172, y, 56, "H2",
@@ -4192,7 +4194,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK));
         text(fb, 530, 337, "0-135%", PAL_MOUSE, 1);
-        text(fb, 10, 358, "DISTORTION > DELAY > REVERB   TIMED PERFORMANCE BYPASS",
+        text(fb, 10, 284, "DISTORTION > DELAY > REVERB   TIMED PERFORMANCE BYPASS",
              PAL_MOUSE, 1);
         goto sister_footer;
     }

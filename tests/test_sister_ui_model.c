@@ -187,7 +187,7 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 300, 257);
     CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
           hit.index == ((3 << 8) | TS_SISTER_EFFECT_TARGET_MIX));
-    hit = ts_sister_ui_hit_test_model(&model, 25, 55);
+    hit = ts_sister_ui_hit_test_model(&model, 25, 101);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
           hit.index == TS_SISTER_UI_FX_REVERB);
     hit = ts_sister_ui_hit_test_model(&model, 25, 310);
@@ -392,11 +392,11 @@ int main(void)
     model.parameters.fx.delay_mix = 0.5f;
     model.parameters.fx.distortion_mix = 0.5f;
     ts_sister_ui_render(&framebuffer, &model, &palette);
-    CHECK(framebuffer.pixels[98u * TS_UI_WIDTH + 297u] ==
+    CHECK(framebuffer.pixels[95u * TS_UI_WIDTH + 297u] ==
           palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
-    CHECK(framebuffer.pixels[176u * TS_UI_WIDTH + 297u] ==
+    CHECK(framebuffer.pixels[173u * TS_UI_WIDTH + 297u] ==
           palette.colors[TS_PALETTE_PATTERN_EFFECT]);
-    CHECK(framebuffer.pixels[254u * TS_UI_WIDTH + 297u] ==
+    CHECK(framebuffer.pixels[251u * TS_UI_WIDTH + 297u] ==
           palette.colors[TS_PALETTE_PATTERN_VOLUME]);
     CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 111u] !=
           palette.colors[TS_PALETTE_PATTERN_TUNING]);

@@ -356,7 +356,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         };
         for (int row = 0; row < 3; ++row) {
             int top = 72 + row * 78;
-            if (contains(x, y, 16, top - 22, 86, 22)) {
+            if (contains(x, y, 16, top + 21, 86, 22)) {
                 hit.action = TS_SISTER_UI_ACTION_FX_TOGGLE;
                 hit.index = TS_SISTER_UI_FX_REVERB + row;
                 return hit;
@@ -372,7 +372,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             }
             for (int target = 0; target < TS_SISTER_EFFECT_PROCESSOR_COUNT;
                  ++target) {
-                if (contains(x, y, 110 + target * 62, top + 25, 56, 18)) {
+                if (contains(x, y, 110 + target * 62, top + 22, 56, 18)) {
                     hit.action = TS_SISTER_UI_ACTION_EFFECT_TARGET;
                     hit.index = ((row + 1) << 8) | (1 << target);
                     return hit;
