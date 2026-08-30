@@ -1114,17 +1114,29 @@ float ts_sister_fallout_feedback_amount(const TsSisterFalloutEngine *engine)
                             clampf(engine->mix_modulated, 0.0f, 1.0f) : 0.0f;
 }
 
-float ts_sister_fallout_component_transition_progress(
-    const TsSisterFalloutEngine *engine, int *active)
+TsSisterFalloutTransitionStatus ts_sister_fallout_component_transition_status(
+    const TsSisterFalloutEngine *engine)
 {
     const TsSisterFalloutRamp *ramps[5];
+    const TsSisterFalloutTransitionSource sources[5] = {
+        TS_SISTER_FALLOUT_TRANSITION_DROP,
+        TS_SISTER_FALLOUT_TRANSITION_PAN,
+        TS_SISTER_FALLOUT_TRANSITION_SKIP,
+        TS_SISTER_FALLOUT_TRANSITION_BIT,
+        TS_SISTER_FALLOUT_TRANSITION_PITCH
+    };
+    TsSisterFalloutTransitionStatus status = {
+        1.0f, TS_SISTER_FALLOUT_TRANSITION_NONE, 0, 0
+    };
     uint32_t remaining = 0u;
     uint32_t total = 0u;
-    if (active != NULL) *active = 0;
-    if (engine == NULL || !engine->ready) return 1.0f;
+    float target = 0.0f;
+    if (engine == NULL || !engine->ready) return status;
     if (engine->engage_remaining > 0u && engine->engage_total > 0u) {
         remaining = engine->engage_remaining;
         total = engine->engage_total;
+        target = engine->controls.enabled ? 1.0f : 0.0f;
+        status.source = TS_SISTER_FALLOUT_TRANSITION_MASTER;
     }
     ramps[0] = &engine->drop_engage;
     ramps[1] = &engine->pan_engage;
@@ -1135,11 +1147,25 @@ float ts_sister_fallout_component_transition_progress(
         if (ramps[i]->remaining > remaining && ramps[i]->total > 0u) {
             remaining = ramps[i]->remaining;
             total = ramps[i]->total;
+            target = ramps[i]->target;
+            status.source = sources[i];
         }
     }
-    if (remaining == 0u || total == 0u) return 1.0f;
-    if (active != NULL) *active = 1;
-    return clampf(1.0f - (float)remaining / (float)total, 0.0f, 1.0f);
+    if (remaining == 0u || total == 0u) return status;
+    status.active = 1;
+    status.target_enabled = target >= 0.5f;
+    status.progress = clampf(
+        1.0f - (float)remaining / (float)total, 0.0f, 1.0f);
+    return status;
+}
+
+float ts_sister_fallout_component_transition_progress(
+    const TsSisterFalloutEngine *engine, int *active)
+{
+    TsSisterFalloutTransitionStatus status =
+        ts_sister_fallout_component_transition_status(engine);
+    if (active != NULL) *active = status.active;
+    return status.progress;
 }
 
 float ts_sister_fallout_preset_transition_progress(

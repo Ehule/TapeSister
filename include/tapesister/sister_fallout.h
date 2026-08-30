@@ -85,6 +85,23 @@ typedef struct {
     uint32_t total;
 } TsSisterFalloutRamp;
 
+typedef enum {
+    TS_SISTER_FALLOUT_TRANSITION_NONE = 0,
+    TS_SISTER_FALLOUT_TRANSITION_MASTER,
+    TS_SISTER_FALLOUT_TRANSITION_DROP,
+    TS_SISTER_FALLOUT_TRANSITION_PAN,
+    TS_SISTER_FALLOUT_TRANSITION_SKIP,
+    TS_SISTER_FALLOUT_TRANSITION_BIT,
+    TS_SISTER_FALLOUT_TRANSITION_PITCH
+} TsSisterFalloutTransitionSource;
+
+typedef struct {
+    float progress;
+    TsSisterFalloutTransitionSource source;
+    int target_enabled;
+    int active;
+} TsSisterFalloutTransitionStatus;
+
 typedef struct {
     TsStereoFrame output;
     /* Effect-only signal before MIX and before the Master FX chain. */
@@ -204,6 +221,8 @@ TsSisterFalloutResult ts_sister_fallout_process(
 size_t ts_sister_fallout_memory_bytes(const TsSisterFalloutEngine *engine);
 float ts_sister_fallout_engage(const TsSisterFalloutEngine *engine);
 float ts_sister_fallout_feedback_amount(const TsSisterFalloutEngine *engine);
+TsSisterFalloutTransitionStatus ts_sister_fallout_component_transition_status(
+    const TsSisterFalloutEngine *engine);
 float ts_sister_fallout_component_transition_progress(
     const TsSisterFalloutEngine *engine, int *active);
 float ts_sister_fallout_preset_transition_progress(

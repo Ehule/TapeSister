@@ -728,26 +728,48 @@ float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine)
         clampf(engine->master_engage.current, 0.0f, 1.0f) : 0.0f;
 }
 
-float ts_sister_post_fx_transition_progress(
-    const TsSisterPostFxEngine *engine, int *active)
+TsSisterFxTransitionStatus ts_sister_post_fx_transition_status(
+    const TsSisterPostFxEngine *engine)
 {
     const TsSisterFxRamp *ramps[4];
+    const TsSisterFxTransitionSource sources[4] = {
+        TS_SISTER_FX_TRANSITION_MASTER,
+        TS_SISTER_FX_TRANSITION_REVERB,
+        TS_SISTER_FX_TRANSITION_DELAY,
+        TS_SISTER_FX_TRANSITION_DISTORTION
+    };
     const TsSisterFxRamp *latest = NULL;
-    if (active != NULL) *active = 0;
-    if (engine == NULL || !engine->ready) return 1.0f;
+    TsSisterFxTransitionStatus status = {
+        1.0f, TS_SISTER_FX_TRANSITION_NONE, 0, 0
+    };
+    if (engine == NULL || !engine->ready) return status;
     ramps[0] = &engine->master_engage;
     ramps[1] = &engine->reverb_engage;
     ramps[2] = &engine->delay_engage;
     ramps[3] = &engine->distortion_engage;
     for (size_t i = 0u; i < 4u; ++i) {
         if (ramps[i]->remaining == 0u || ramps[i]->total == 0u) continue;
-        if (latest == NULL || ramps[i]->remaining > latest->remaining)
+        if (latest == NULL || ramps[i]->remaining > latest->remaining) {
             latest = ramps[i];
+            status.source = sources[i];
+        }
     }
-    if (latest == NULL) return 1.0f;
-    if (active != NULL) *active = 1;
-    return clampf(1.0f - (float)latest->remaining / (float)latest->total,
-                  0.0f, 1.0f);
+    if (latest == NULL) return status;
+    status.active = 1;
+    status.target_enabled = latest->target >= 0.5f;
+    status.progress = clampf(
+        1.0f - (float)latest->remaining / (float)latest->total,
+        0.0f, 1.0f);
+    return status;
+}
+
+float ts_sister_post_fx_transition_progress(
+    const TsSisterPostFxEngine *engine, int *active)
+{
+    TsSisterFxTransitionStatus status =
+        ts_sister_post_fx_transition_status(engine);
+    if (active != NULL) *active = status.active;
+    return status.progress;
 }
 
 size_t ts_sister_post_fx_memory_bytes(const TsSisterPostFxEngine *engine)

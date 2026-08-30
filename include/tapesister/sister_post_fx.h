@@ -118,6 +118,21 @@ typedef struct {
     uint32_t total;
 } TsSisterFxRamp;
 
+typedef enum {
+    TS_SISTER_FX_TRANSITION_NONE = 0,
+    TS_SISTER_FX_TRANSITION_MASTER,
+    TS_SISTER_FX_TRANSITION_REVERB,
+    TS_SISTER_FX_TRANSITION_DELAY,
+    TS_SISTER_FX_TRANSITION_DISTORTION
+} TsSisterFxTransitionSource;
+
+typedef struct {
+    float progress;
+    TsSisterFxTransitionSource source;
+    int target_enabled;
+    int active;
+} TsSisterFxTransitionStatus;
+
 typedef struct {
     TsSisterReverbState reverb[TS_SISTER_EFFECT_PROCESSOR_COUNT];
     TsSisterDelayState delay[TS_SISTER_EFFECT_PROCESSOR_COUNT];
@@ -143,6 +158,8 @@ float ts_sister_reverb_decay_seconds(TsSisterReverbType type,
 float ts_sister_fx_transition_ms(float normalized);
 float ts_sister_fx_transition_normalized(float milliseconds);
 float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine);
+TsSisterFxTransitionStatus ts_sister_post_fx_transition_status(
+    const TsSisterPostFxEngine *engine);
 float ts_sister_post_fx_transition_progress(
     const TsSisterPostFxEngine *engine, int *active);
 

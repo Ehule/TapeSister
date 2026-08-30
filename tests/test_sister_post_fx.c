@@ -394,6 +394,7 @@ static void test_timed_performance_bypasses(void)
 {
     TsSisterPostFxEngine engine = {0};
     TsSisterFxControls controls;
+    TsSisterFxTransitionStatus status;
     assert(fabsf(ts_sister_fx_transition_ms(0.0f) - 10.0f) < 0.001f);
     assert(fabsf(ts_sister_fx_transition_ms(1.0f) - 3600000.0f) < 1.0f);
     assert(ts_sister_post_fx_init(&engine, 1000u));
@@ -405,13 +406,24 @@ static void test_timed_performance_bypasses(void)
     controls.distortion_enabled = 0;
     ts_sister_post_fx_set_controls(&engine, &controls);
     assert(engine.distortion_engage.remaining == 1000u);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.active && status.progress == 0.0f &&
+           status.source == TS_SISTER_FX_TRANSITION_DISTORTION &&
+           !status.target_enabled);
     for (int frame = 0; frame < 500; ++frame)
         assert_finite(ts_sister_post_fx_process(&engine, 3u,
             (TsStereoFrame){0.3f, -0.2f}, 0));
     assert(fabsf(engine.distortion_engage.current - 0.5f) < 0.002f);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.active && status.progress > 0.499f &&
+           status.progress < 0.501f &&
+           status.source == TS_SISTER_FX_TRANSITION_DISTORTION);
     controls.distortion_enabled = 1;
     ts_sister_post_fx_set_controls(&engine, &controls);
     assert(engine.distortion_engage.remaining == 1000u);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.source == TS_SISTER_FX_TRANSITION_DISTORTION &&
+           status.target_enabled && status.progress == 0.0f);
     for (int frame = 0; frame < 1000; ++frame)
         assert_finite(ts_sister_post_fx_process(&engine, 3u,
             (TsStereoFrame){0.3f, -0.2f}, 0));
@@ -424,6 +436,9 @@ static void test_timed_performance_bypasses(void)
     assert(engine.master_engage.remaining == 1000u);
     assert(engine.reverb_engage.remaining == 1000u);
     assert(engine.delay_engage.remaining == 1000u);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.source == TS_SISTER_FX_TRANSITION_MASTER &&
+           !status.target_enabled && status.progress == 0.0f);
     for (int frame = 0; frame < 1000; ++frame)
         assert_finite(ts_sister_post_fx_process(&engine, 3u,
             (TsStereoFrame){0.1f, -0.1f}, 0));
@@ -436,14 +451,23 @@ static void test_timed_performance_bypasses(void)
         int active = 0;
         assert(ts_sister_post_fx_transition_progress(&engine, &active) == 1.0f);
         assert(!active);
+        status = ts_sister_post_fx_transition_status(&engine);
+        assert(!status.active &&
+               status.source == TS_SISTER_FX_TRANSITION_NONE);
         output = ts_sister_post_fx_process(&engine, 3u, input, 0);
         assert(output.l == input.l && output.r == input.r);
         controls.distortion_enabled = 0;
         ts_sister_post_fx_set_controls(&engine, &controls);
+        status = ts_sister_post_fx_transition_status(&engine);
+        assert(status.source == TS_SISTER_FX_TRANSITION_DISTORTION &&
+               !status.target_enabled);
         for (int frame = 0; frame < 1000; ++frame)
             (void)ts_sister_post_fx_process(&engine, 3u, input, 0);
         controls.distortion_enabled = 1;
         ts_sister_post_fx_set_controls(&engine, &controls);
+        status = ts_sister_post_fx_transition_status(&engine);
+        assert(status.source == TS_SISTER_FX_TRANSITION_DISTORTION &&
+               status.target_enabled);
         for (int frame = 0; frame < 1000; ++frame)
             (void)ts_sister_post_fx_process(&engine, 3u, input, 0);
         output = ts_sister_post_fx_process(&engine, 3u, input, 0);

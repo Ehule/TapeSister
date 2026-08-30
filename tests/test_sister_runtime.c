@@ -122,6 +122,27 @@ int main(void)
     CHECK(CLOSE(snapshot.fallout_rise_phase, 0.50f));
     CHECK(snapshot.fallout_rise_complete);
 
+    /* The UI snapshot carries the identity and direction of the exact ramps
+       selected by the shared progress displays. */
+    parameters = runtime.parameters;
+    parameters.fx.transition = ts_sister_fx_transition_normalized(1000.0f);
+    parameters.fx.distortion_enabled = 0;
+    parameters.fx.fallout.component_transition =
+        ts_sister_fallout_transition_normalized(1000.0f);
+    parameters.fx.fallout.enabled = 1;
+    parameters.fx.fallout.mix = 0.0f;
+    ts_sister_runtime_set_parameters(&runtime, &parameters);
+    (void)ts_sister_runtime_process_frame(&runtime, &source);
+    CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+    CHECK(snapshot.fx_transition_active &&
+          snapshot.fx_transition_source ==
+              TS_SISTER_FX_TRANSITION_DISTORTION &&
+          !snapshot.fx_transition_target_enabled);
+    CHECK(snapshot.fallout_component_transition_active &&
+          snapshot.fallout_component_transition_source ==
+              TS_SISTER_FALLOUT_TRANSITION_MASTER &&
+          snapshot.fallout_component_transition_target_enabled);
+
     {
         uint64_t published_revision = snapshot.revision;
         uint64_t published_frames = snapshot.processed_frames;

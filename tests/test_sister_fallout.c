@@ -117,6 +117,7 @@ static void test_transition_noise_and_centered_lfo(void)
 {
     TsSisterFalloutEngine engine;
     TsSisterFalloutControls controls;
+    TsSisterFalloutTransitionStatus status;
     TsStereoFrame silence = {0.0f, 0.0f};
     float signatures[TS_SISTER_FALLOUT_NOISE_COUNT] = {0};
     assert(fabsf(ts_sister_fallout_transition_ms(0.0f) - 10.0f) < 0.001f);
@@ -155,6 +156,10 @@ static void test_transition_noise_and_centered_lfo(void)
         ts_sister_fallout_transition_normalized(60000.0f);
     assert(ts_sister_fallout_init(&engine, 1000u));
     ts_sister_fallout_set_controls(&engine, &controls);
+    status = ts_sister_fallout_component_transition_status(&engine);
+    assert(status.active && status.progress == 0.0f &&
+           status.source == TS_SISTER_FALLOUT_TRANSITION_MASTER &&
+           status.target_enabled);
     for (int i = 0; i < 1000; ++i)
         (void)ts_sister_fallout_process(&engine, silence);
     assert(ts_sister_fallout_engage(&engine) > 0.015f);
@@ -654,6 +659,7 @@ static void test_component_transition_progress_and_zero_mix_transparency(void)
 {
     TsSisterFalloutEngine engine;
     TsSisterFalloutControls controls;
+    TsSisterFalloutTransitionStatus status;
     TsStereoFrame input = {0.31f, -0.27f};
     int active = 0;
     float progress;
@@ -674,6 +680,10 @@ static void test_component_transition_progress_and_zero_mix_transparency(void)
 
     controls.drop_enabled = 1;
     ts_sister_fallout_set_controls(&engine, &controls);
+    status = ts_sister_fallout_component_transition_status(&engine);
+    assert(status.active && status.progress == 0.0f &&
+           status.source == TS_SISTER_FALLOUT_TRANSITION_DROP &&
+           status.target_enabled);
     progress = ts_sister_fallout_component_transition_progress(
         &engine, &active);
     assert(active && progress == 0.0f);
@@ -682,6 +692,18 @@ static void test_component_transition_progress_and_zero_mix_transparency(void)
     progress = ts_sister_fallout_component_transition_progress(
         &engine, &active);
     assert(active && progress > 0.499f && progress < 0.501f);
+    status = ts_sister_fallout_component_transition_status(&engine);
+    assert(status.source == TS_SISTER_FALLOUT_TRANSITION_DROP &&
+           status.target_enabled);
+
+    /* A newer component takes over the shared display without restarting
+       the older ramp. */
+    controls.pitch_enabled = 1;
+    ts_sister_fallout_set_controls(&engine, &controls);
+    status = ts_sister_fallout_component_transition_status(&engine);
+    assert(status.active && status.progress == 0.0f &&
+           status.source == TS_SISTER_FALLOUT_TRANSITION_PITCH &&
+           status.target_enabled && engine.drop_engage.remaining == 500u);
 
     /* A wheel edit updates its target immediately without restarting the
        minute-scale activation envelope. */
@@ -691,9 +713,19 @@ static void test_component_transition_progress_and_zero_mix_transparency(void)
     assert(engine.drop_engage.remaining == 500u);
     for (int frame = 0; frame < 500; ++frame)
         (void)ts_sister_fallout_process(&engine, input);
+    status = ts_sister_fallout_component_transition_status(&engine);
+    assert(status.active && status.progress > 0.499f &&
+           status.progress < 0.501f &&
+           status.source == TS_SISTER_FALLOUT_TRANSITION_PITCH &&
+           status.target_enabled && engine.drop_engage.remaining == 0u);
+    for (int frame = 0; frame < 500; ++frame)
+        (void)ts_sister_fallout_process(&engine, input);
     progress = ts_sister_fallout_component_transition_progress(
         &engine, &active);
     assert(!active && progress == 1.0f);
+    status = ts_sister_fallout_component_transition_status(&engine);
+    assert(!status.active &&
+           status.source == TS_SISTER_FALLOUT_TRANSITION_NONE);
     ts_sister_fallout_free(&engine);
 }
 

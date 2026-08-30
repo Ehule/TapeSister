@@ -59,6 +59,9 @@ int main(int argc, char **argv)
         model.routing.fallout_lfo_phase = 0.28f;
         model.routing.fallout_component_transition_active = 1;
         model.routing.fallout_component_transition_progress = 0.43f;
+        model.routing.fallout_component_transition_source =
+            TS_SISTER_FALLOUT_TRANSITION_PITCH;
+        model.routing.fallout_component_transition_target_enabled = 1;
         model.routing.fallout_preset_transition_active = 1;
         model.routing.fallout_preset_transition_progress = 0.18f;
         model.fallout_lfo_open = strcmp(mode, "fallout-lfo") == 0;
@@ -74,6 +77,9 @@ int main(int argc, char **argv)
         model.fx_page = 1;
         model.routing.fx_transition_active = 1;
         model.routing.fx_transition_progress = 0.61f;
+        model.routing.fx_transition_source =
+            TS_SISTER_FX_TRANSITION_DISTORTION;
+        model.routing.fx_transition_target_enabled = 0;
         snprintf(model.status, sizeof(model.status),
                  "CAPTURE CONTINUES WHILE MASTER EFFECTS ARE EDITED");
     } else if (strcmp(mode, "flash") == 0) {

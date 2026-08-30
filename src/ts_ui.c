@@ -3669,6 +3669,55 @@ static void sister_transition_progress(TsFramebuffer *fb, int x, int y,
         rect(fb, x, y + 1, width, 1, sister_dim_color(color));
 }
 
+static uint32_t sister_transition_caption_color(float progress,
+                                                 uint32_t background,
+                                                 uint32_t foreground)
+{
+    unsigned strength;
+    progress = sister_clamp(progress);
+    strength = 30u + (unsigned)lrintf((1.0f - progress) * 70.0f);
+    return blend_color(background, foreground, strength);
+}
+
+static const char *sister_fallout_transition_source_name(
+    TsSisterFalloutTransitionSource source)
+{
+    switch (source) {
+    case TS_SISTER_FALLOUT_TRANSITION_MASTER: return "FALLOUT";
+    case TS_SISTER_FALLOUT_TRANSITION_DROP: return "DROP";
+    case TS_SISTER_FALLOUT_TRANSITION_PAN: return "PAN";
+    case TS_SISTER_FALLOUT_TRANSITION_SKIP: return "SKIP";
+    case TS_SISTER_FALLOUT_TRANSITION_BIT: return "BIT";
+    case TS_SISTER_FALLOUT_TRANSITION_PITCH: return "PITCH";
+    default: return NULL;
+    }
+}
+
+static const char *sister_fx_transition_source_name(
+    TsSisterFxTransitionSource source)
+{
+    switch (source) {
+    case TS_SISTER_FX_TRANSITION_MASTER: return "MASTER FX";
+    case TS_SISTER_FX_TRANSITION_REVERB: return "REVERB";
+    case TS_SISTER_FX_TRANSITION_DELAY: return "DELAY";
+    case TS_SISTER_FX_TRANSITION_DISTORTION: return "DISTORTION";
+    default: return NULL;
+    }
+}
+
+static void sister_transition_caption(char *caption, size_t size,
+                                      const char *source,
+                                      int target_enabled)
+{
+    if (caption == NULL || size == 0u) return;
+    if (source == NULL) {
+        caption[0] = '\0';
+        return;
+    }
+    snprintf(caption, size, "%s %s", source,
+             target_enabled ? "ON" : "OFF");
+}
+
 static void sister_fallout_lfo_panel(TsFramebuffer *fb,
                                      const TsSisterFalloutControls *controls)
 {
@@ -4060,6 +4109,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
 
     if (model->fx_page == 2) {
         const TsSisterFalloutControls *f = &model->parameters.fx.fallout;
+        char transition_caption[24];
         char preset_transition[24];
         char component_transition[24];
         sister_fallout_time_label(preset_transition, sizeof(preset_transition),
@@ -4127,6 +4177,24 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_COMPONENT_TRANSITION));
         sister_fallout_lfo_panel(fb, f);
+        if (model->routing.fallout_component_transition_active) {
+            rect(fb, 548, 276, 74, 11, RGB(15, 14, 16));
+            sister_transition_caption(transition_caption,
+                sizeof(transition_caption),
+                sister_fallout_transition_source_name(
+                    model->routing.fallout_component_transition_source),
+                model->routing.fallout_component_transition_target_enabled);
+            text(fb, 548, 278, transition_caption,
+                sister_transition_caption_color(
+                    model->routing.fallout_component_transition_progress,
+                    RGB(15, 14, 16), PAL_EFFECT), 1);
+        } else if (model->routing.fallout_preset_transition_active) {
+            rect(fb, 548, 276, 74, 11, RGB(15, 14, 16));
+            text(fb, 548, 278, "PRESET",
+                sister_transition_caption_color(
+                    model->routing.fallout_preset_transition_progress,
+                    RGB(15, 14, 16), PAL_NOTE), 1);
+        }
         sister_transition_progress(fb, 548, 290, 74,
             model->routing.fallout_component_transition_progress,
             model->routing.fallout_component_transition_active, PAL_EFFECT);
@@ -4139,6 +4207,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
 
     if (model->fx_page == 1) {
         static const char *const names[3] = {"REVERB", "DELAY", "DISTORTION"};
+        char transition_caption[24];
         const uint32_t colors[3] = {PAL_WAVE_RIGHT, PAL_EFFECT, PAL_VOLUME};
         const uint8_t masks[3] = {
             model->parameters.fx.reverb_targets,
@@ -4224,8 +4293,18 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK));
         text(fb, 530, 337, "0-135%", PAL_MOUSE, 1);
-        text(fb, 10, 284, "DISTORTION > DELAY > REVERB   TIMED PERFORMANCE BYPASS",
-             PAL_MOUSE, 1);
+        text(fb, 10, 284, "DISTORTION > DELAY > REVERB", PAL_MOUSE, 1);
+        if (model->routing.fx_transition_active) {
+            sister_transition_caption(transition_caption,
+                sizeof(transition_caption),
+                sister_fx_transition_source_name(
+                    model->routing.fx_transition_source),
+                model->routing.fx_transition_target_enabled);
+            text(fb, 426, 275, transition_caption,
+                sister_transition_caption_color(
+                    model->routing.fx_transition_progress,
+                    PAL_DESKTOP, PAL_EFFECT), 1);
+        }
         sister_transition_progress(fb, 426, 284, 94,
             model->routing.fx_transition_progress,
             model->routing.fx_transition_active, PAL_EFFECT);
