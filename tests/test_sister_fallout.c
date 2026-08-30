@@ -286,9 +286,12 @@ static void test_runtime_feedback_is_wet_only_and_causal(void)
     }
     assert(observed);
     parameters.fx.fallout.enabled = 0;
+    parameters.fx.fallout.master_transition =
+        ts_sister_fallout_transition_normalized(10.0f);
     ts_sister_runtime_set_parameters(&runtime, &parameters);
-    for (int i = 0; i < 1000; ++i)
+    for (int i = 0; i < 10; ++i)
         (void)ts_sister_runtime_process_frame(&runtime, &sources);
+    assert(ts_sister_fallout_engage(&runtime.fallout) == 0.0f);
     assert(runtime.fallout_feedback_current == 0.0f);
     assert(runtime.fallout_feedback_previous.l == 0.0f);
     assert(runtime.fallout_feedback_previous.r == 0.0f);

@@ -383,6 +383,16 @@ static void test_master_feedback_causality(void)
            fabsf(second_write_l) * 2.0f);
     assert(runtime.machine.last_output.write.l > 0.0f);
     assert(runtime.machine.last_output.write.r < 0.0f);
+    parameters = runtime.parameters;
+    parameters.fx.enabled = 0;
+    parameters.fx.master_transition = ts_sister_fx_transition_normalized(10.0f);
+    ts_sister_runtime_set_parameters(&runtime, &parameters);
+    for (int frame = 0; frame < 10; ++frame)
+        (void)ts_sister_runtime_process_frame(&runtime, &sources);
+    assert(ts_sister_post_fx_master_engage(&runtime.post_fx) == 0.0f);
+    assert(runtime.master_feedback_current == 0.0f);
+    assert(runtime.master_feedback_previous.l == 0.0f);
+    assert(runtime.master_feedback_previous.r == 0.0f);
     ts_sister_runtime_disable(&runtime);
     assert(runtime.master_feedback_previous.l == 0.0f);
     assert(runtime.master_feedback_previous.r == 0.0f);
@@ -555,6 +565,64 @@ static void test_master_gate_restore_and_live_retime(void)
     ts_sister_post_fx_free(&engine);
 }
 
+static void test_master_zero_is_absolute_return_valve(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.reverb_mix = 1.0f;
+    controls.reverb_decay = 1.0f;
+    controls.delay_mix = 1.0f;
+    controls.delay_feedback = 0.95f;
+    controls.distortion_mix = 1.0f;
+    controls.distortion_drive = 1.0f;
+    controls.transition = ts_sister_fx_transition_normalized(1000.0f);
+    controls.master_transition = ts_sister_fx_transition_normalized(10.0f);
+    ts_sister_post_fx_sync_controls(&engine, &controls);
+
+    /* Load every processor and target with non-zero history and tails. */
+    for (int frame = 0; frame < 3000; ++frame) {
+        for (size_t target = 0u;
+             target < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++target) {
+            TsStereoFrame input = frame == 0 ?
+                (TsStereoFrame){0.9f, -0.7f} :
+                (TsStereoFrame){0.0f, 0.0f};
+            (void)ts_sister_post_fx_process(&engine, target, input, 0);
+        }
+    }
+
+    controls.enabled = 0;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 10; ++frame)
+        (void)ts_sister_post_fx_process(
+            &engine, TS_SISTER_EFFECT_PROCESSOR_COUNT - 1u,
+            (TsStereoFrame){0.13f, -0.09f}, 0);
+    assert(ts_sister_post_fx_master_engage(&engine) == 0.0f);
+
+    /* Individual automated faders remain independent behind the faucet. They
+       may move, reverse, and leave active tails, but Master zero must return
+       the input bit-for-bit on H1/H2/H3/MIX. */
+    for (int cycle = 0; cycle < 200; ++cycle) {
+        controls.reverb_enabled = (cycle & 1) != 0;
+        controls.delay_enabled = (cycle & 2) != 0;
+        controls.distortion_enabled = (cycle & 4) != 0;
+        ts_sister_post_fx_set_controls(&engine, &controls);
+        for (size_t target = 0u;
+             target < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++target) {
+            TsStereoFrame input = {
+                0.31f - (float)target * 0.03f,
+                -0.27f + (float)target * 0.02f
+            };
+            TsStereoFrame output =
+                ts_sister_post_fx_process(&engine, target, input, 0);
+            assert(output.l == input.l && output.r == input.r);
+        }
+    }
+    ts_sister_post_fx_free(&engine);
+}
+
 int main(void)
 {
     test_defaults_and_identity();
@@ -568,6 +636,7 @@ int main(void)
     test_master_feedback_causality();
     test_timed_performance_bypasses();
     test_master_gate_restore_and_live_retime();
+    test_master_zero_is_absolute_return_valve();
     puts("sister post-effects tests passed");
     return 0;
 }

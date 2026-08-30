@@ -1049,6 +1049,8 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     float source_route[TS_SISTER_SOURCE_COUNT];
     float route_energy = 0.0f;
     float monitor_route;
+    float master_fx_gate;
+    float fallout_gate;
     frame.dry_monitor_gain = 1.0f;
     if (runtime == NULL) return frame;
     if (sources != NULL) source = *sources;
@@ -1092,8 +1094,13 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         input = frame_scale(input, 1.0f / sqrtf(route_energy));
     monitor_route = runtime_ramp_advance(&runtime->monitor_route);
     (void)runtime_ramp_advance(&runtime->direct_tile_route);
-    causal_return = frame_add(runtime->master_feedback_previous,
-                              runtime->fallout_feedback_previous);
+    master_fx_gate = ts_sister_post_fx_master_engage(&runtime->post_fx);
+    fallout_gate = ts_sister_fallout_engage(&runtime->fallout);
+    causal_return = frame_add(
+        master_fx_gate > 0.0f ? runtime->master_feedback_previous :
+                               (TsStereoFrame){0.0f, 0.0f},
+        fallout_gate > 0.0f ? runtime->fallout_feedback_previous :
+                              (TsStereoFrame){0.0f, 0.0f});
     {
         float peak = fmaxf(fabsf(causal_return.l), fabsf(causal_return.r));
         if (!isfinite(peak)) causal_return = (TsStereoFrame){0.0f, 0.0f};
@@ -1113,16 +1120,18 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         runtime->waveform_capacity_frames =
             runtime->machine.buffer.capacity_frames;
     }
-    runtime->master_feedback_current = monitor_approach(
-        runtime->master_feedback_current,
-        runtime->parameters.fx.master_feedback * 1.35f *
-            ts_sister_post_fx_master_engage(&runtime->post_fx),
-        runtime->machine.buffer.sample_rate);
-    if (runtime->parameters.fx.master_feedback <= 0.0f &&
-        runtime->master_feedback_current < 0.000001f) {
+    master_fx_gate = ts_sister_post_fx_master_engage(&runtime->post_fx);
+    if (master_fx_gate <= 0.0f) {
         runtime->master_feedback_current = 0.0f;
         runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
     } else {
+        runtime->master_feedback_current = monitor_approach(
+            runtime->master_feedback_current,
+            runtime->parameters.fx.master_feedback * 1.35f * master_fx_gate,
+            runtime->machine.buffer.sample_rate);
+        if (runtime->parameters.fx.master_feedback <= 0.0f &&
+            runtime->master_feedback_current < 0.000001f)
+            runtime->master_feedback_current = 0.0f;
         TsStereoFrame feedback = frame_scale(
             ts_stereo_frame_sanitize(output.post_fx),
             runtime->master_feedback_current);
@@ -1135,16 +1144,19 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         feedback.r = tanhf(feedback.r);
         runtime->master_feedback_previous = ts_stereo_frame_sanitize(feedback);
     }
-    runtime->fallout_feedback_current = monitor_approach(
-        runtime->fallout_feedback_current,
-        ts_sister_fallout_feedback_amount(&runtime->fallout) * 1.20f *
-            ts_sister_fallout_engage(&runtime->fallout),
-        runtime->machine.buffer.sample_rate);
-    if (!runtime->parameters.fx.fallout.enabled &&
-        runtime->fallout_feedback_current < 0.000001f) {
+    fallout_gate = ts_sister_fallout_engage(&runtime->fallout);
+    if (fallout_gate <= 0.0f) {
         runtime->fallout_feedback_current = 0.0f;
         runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
     } else {
+        runtime->fallout_feedback_current = monitor_approach(
+            runtime->fallout_feedback_current,
+            ts_sister_fallout_feedback_amount(&runtime->fallout) * 1.20f *
+                fallout_gate,
+            runtime->machine.buffer.sample_rate);
+        if (!runtime->parameters.fx.fallout.enabled &&
+            runtime->fallout_feedback_current < 0.000001f)
+            runtime->fallout_feedback_current = 0.0f;
         TsStereoFrame feedback = frame_scale(
             ts_stereo_frame_sanitize(output.fallout_wet),
             runtime->fallout_feedback_current);

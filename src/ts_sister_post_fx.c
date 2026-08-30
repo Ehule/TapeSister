@@ -741,6 +741,7 @@ TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
                                         int explicit_mono)
 {
     uint8_t bit;
+    float master_gain;
     TsStereoFrame output;
     if (engine == NULL || !engine->ready ||
         target_index >= TS_SISTER_EFFECT_PROCESSOR_COUNT)
@@ -763,7 +764,14 @@ TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
         ts_sister_effect_target_enabled(engine->delay_target.active_mask, bit));
     output = reverb_process(engine, target_index, output,
         ts_sister_effect_target_enabled(engine->reverb_target.active_mask, bit));
-    output = lerp_frame(input, output, engine->master_engage.current);
+    master_gain = clampf(engine->master_engage.current, 0.0f, 1.0f);
+    /* Master is the final return valve. Keep the exact-zero case explicit so
+       no processor state, tail, malformed sample, or individual switch can
+       contribute even a floating-point residue once the master reaches dry. */
+    if (master_gain <= 0.0f)
+        output = input;
+    else if (master_gain < 1.0f)
+        output = lerp_frame(input, output, master_gain);
     if (target_index == TS_SISTER_EFFECT_PROCESSOR_COUNT - 1u) {
         target_state_advance(engine, &engine->distortion_target, 0);
         target_state_advance(engine, &engine->delay_target, 1);
