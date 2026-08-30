@@ -152,11 +152,11 @@ static void test_transition_noise_and_centered_lfo(void)
 
     ts_sister_fallout_controls_default(&controls);
     controls.enabled = 1;
-    controls.component_transition =
+    controls.master_transition =
         ts_sister_fallout_transition_normalized(60000.0f);
     assert(ts_sister_fallout_init(&engine, 1000u));
     ts_sister_fallout_set_controls(&engine, &controls);
-    status = ts_sister_fallout_component_transition_status(&engine);
+    status = ts_sister_fallout_master_transition_status(&engine);
     assert(status.active && status.progress == 0.0f &&
            status.source == TS_SISTER_FALLOUT_TRANSITION_MASTER &&
            status.target_enabled);
@@ -423,6 +423,50 @@ static void test_preset_transition_uses_current_transition(void)
     assert(engine.controls.enabled == 0);
     assert(fabsf(engine.controls.noise - 0.75f) < 0.0001f);
     assert(engine.preset_transition_stage == 0);
+    ts_sister_fallout_free(&engine);
+}
+
+static void test_running_preset_transition_retimes_in_place(void)
+{
+    TsSisterFalloutEngine engine;
+    TsSisterFalloutControls current;
+    TsSisterFalloutControls target;
+    TsStereoFrame silence = {0.0f, 0.0f};
+    int active = 0;
+    float progress;
+    ts_sister_fallout_controls_default(&current);
+    current.enabled = 1;
+    current.transition = ts_sister_fallout_transition_normalized(1000.0f);
+    assert(ts_sister_fallout_init(&engine, 1000u));
+    ts_sister_fallout_set_controls(&engine, &current);
+    for (int frame = 0; frame < 10; ++frame)
+        (void)ts_sister_fallout_process(&engine, silence);
+    target = current;
+    target.mix = 0.19f;
+    ts_sister_fallout_recall_preset(&engine, &target);
+    for (int frame = 0; frame < 250; ++frame)
+        (void)ts_sister_fallout_process(&engine, silence);
+    progress = ts_sister_fallout_preset_transition_progress(&engine, &active);
+    assert(active && progress > 0.249f && progress < 0.251f);
+
+    current.transition = ts_sister_fallout_transition_normalized(100.0f);
+    current.component_transition =
+        ts_sister_fallout_transition_normalized(250.0f);
+    current.master_transition =
+        ts_sister_fallout_transition_normalized(400.0f);
+    ts_sister_fallout_set_controls(&engine, &current);
+    assert(engine.preset_transition_stage == 1 &&
+           engine.preset_transition_total == 100u &&
+           engine.preset_gain_remaining == 25u);
+    assert(engine.controls.component_transition ==
+           current.component_transition);
+    assert(engine.controls.master_transition == current.master_transition);
+    progress = ts_sister_fallout_preset_transition_progress(&engine, &active);
+    assert(active && progress > 0.249f && progress < 0.251f);
+    for (int frame = 0; frame < 75; ++frame)
+        (void)ts_sister_fallout_process(&engine, silence);
+    assert(engine.preset_transition_stage == 0);
+    assert(fabsf(engine.controls.mix - target.mix) < 0.0001f);
     ts_sister_fallout_free(&engine);
 }
 
@@ -729,6 +773,68 @@ static void test_component_transition_progress_and_zero_mix_transparency(void)
     ts_sister_fallout_free(&engine);
 }
 
+static void test_independent_master_component_retime_and_restore(void)
+{
+    TsSisterFalloutEngine engine;
+    TsSisterFalloutControls controls;
+    TsSisterFalloutTransitionStatus status;
+    TsStereoFrame input = {0.24f, -0.18f};
+    ts_sister_fallout_controls_default(&controls);
+    controls.enabled = 1;
+    controls.mix = 1.0f;
+    controls.master_transition =
+        ts_sister_fallout_transition_normalized(1000.0f);
+    controls.component_transition =
+        ts_sister_fallout_transition_normalized(1000.0f);
+    assert(ts_sister_fallout_init(&engine, 1000u));
+    ts_sister_fallout_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 250; ++frame)
+        (void)ts_sister_fallout_process(&engine, input);
+    assert(engine.engage_remaining == 750u && engine.engage_total == 1000u);
+
+    /* The parts clock cannot perturb a running master entrance. */
+    controls.component_transition =
+        ts_sister_fallout_transition_normalized(100.0f);
+    ts_sister_fallout_set_controls(&engine, &controls);
+    assert(engine.engage_remaining == 750u && engine.engage_total == 1000u);
+
+    /* The master's own wheel edit preserves 25% progress and accelerates. */
+    controls.master_transition =
+        ts_sister_fallout_transition_normalized(100.0f);
+    ts_sister_fallout_set_controls(&engine, &controls);
+    assert(engine.engage_remaining == 75u && engine.engage_total == 100u);
+    status = ts_sister_fallout_master_transition_status(&engine);
+    assert(status.active && status.progress > 0.249f &&
+           status.progress < 0.251f && status.target_enabled);
+    for (int frame = 0; frame < 75; ++frame)
+        (void)ts_sister_fallout_process(&engine, input);
+    assert(ts_sister_fallout_engage(&engine) == 1.0f);
+
+    controls.pitch_enabled = 1;
+    ts_sister_fallout_set_controls(&engine, &controls);
+    assert(engine.pitch_engage.remaining == 100u);
+    for (int frame = 0; frame < 25; ++frame)
+        (void)ts_sister_fallout_process(&engine, input);
+    controls.master_transition =
+        ts_sister_fallout_transition_normalized(1000.0f);
+    ts_sister_fallout_set_controls(&engine, &controls);
+    assert(engine.pitch_engage.remaining == 75u &&
+           engine.pitch_engage.total == 100u);
+    controls.component_transition =
+        ts_sister_fallout_transition_normalized(40.0f);
+    ts_sister_fallout_set_controls(&engine, &controls);
+    assert(engine.pitch_engage.remaining == 30u &&
+           engine.pitch_engage.total == 40u);
+
+    controls.enabled = 0;
+    controls.master_transition =
+        ts_sister_fallout_transition_normalized(3600000.0f);
+    ts_sister_fallout_sync_controls(&engine, &controls);
+    assert(!engine.active && engine.engage == 0.0f &&
+           engine.engage_remaining == 0u);
+    ts_sister_fallout_free(&engine);
+}
+
 int main(void)
 {
     test_defaults_are_true_bypass();
@@ -738,11 +844,13 @@ int main(void)
     test_master_gates_and_modulation_disconnect();
     test_rise_reset_declicks_both_modes();
     test_preset_transition_uses_current_transition();
+    test_running_preset_transition_retimes_in_place();
     test_running_modulation_targets_fade_to_shared_phase();
     test_wheel_bursts_and_active_modulation_are_smoothed();
     test_every_modulation_destination_uses_target_blend();
     test_toggle_edges_restart_from_audible_output();
     test_component_transition_progress_and_zero_mix_transparency();
+    test_independent_master_component_retime_and_restore();
     test_runtime_feedback_is_wet_only_and_causal();
     puts("Sister Fallout tests passed");
     return 0;

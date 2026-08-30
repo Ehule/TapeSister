@@ -47,8 +47,10 @@ typedef struct {
     TsSisterFalloutNoiseType noise_type;
     /* Logarithmic 10 ms..60 min preset-recall crossfade. */
     float transition;
-    /* Logarithmic 10 ms..60 min master/component activation ramp. */
+    /* Logarithmic 10 ms..60 min component activation ramp. */
     float component_transition;
+    /* Independent logarithmic 10 ms..60 min Fallout master gate ramp. */
+    float master_transition;
     int drop_enabled;
     float drop_rate;
     int pan_enabled;
@@ -214,6 +216,8 @@ void ts_sister_fallout_clear(TsSisterFalloutEngine *engine);
 void ts_sister_fallout_seed(TsSisterFalloutEngine *engine, uint32_t seed);
 void ts_sister_fallout_set_controls(
     TsSisterFalloutEngine *engine, const TsSisterFalloutControls *controls);
+void ts_sister_fallout_sync_controls(
+    TsSisterFalloutEngine *engine, const TsSisterFalloutControls *controls);
 void ts_sister_fallout_recall_preset(
     TsSisterFalloutEngine *engine, const TsSisterFalloutControls *controls);
 TsSisterFalloutResult ts_sister_fallout_process(
@@ -222,6 +226,8 @@ size_t ts_sister_fallout_memory_bytes(const TsSisterFalloutEngine *engine);
 float ts_sister_fallout_engage(const TsSisterFalloutEngine *engine);
 float ts_sister_fallout_feedback_amount(const TsSisterFalloutEngine *engine);
 TsSisterFalloutTransitionStatus ts_sister_fallout_component_transition_status(
+    const TsSisterFalloutEngine *engine);
+TsSisterFalloutTransitionStatus ts_sister_fallout_master_transition_status(
     const TsSisterFalloutEngine *engine);
 float ts_sister_fallout_component_transition_progress(
     const TsSisterFalloutEngine *engine, int *active);

@@ -192,6 +192,30 @@ static void fallout_ramp_reset(TsSisterFalloutRamp *ramp, float value)
     *ramp = (TsSisterFalloutRamp){value, value, 0.0f, 0u, 0u};
 }
 
+static uint32_t retimed_remaining(uint32_t remaining, uint32_t total,
+                                  uint32_t new_total)
+{
+    uint64_t scaled;
+    if (remaining == 0u || total == 0u) return 0u;
+    if (new_total == 0u) new_total = 1u;
+    scaled = (uint64_t)new_total * (uint64_t)remaining;
+    remaining = (uint32_t)((scaled + total - 1u) / total);
+    return remaining == 0u ? 1u : remaining;
+}
+
+static void fallout_ramp_retime(TsSisterFalloutRamp *ramp,
+                                uint32_t new_total)
+{
+    uint32_t remaining;
+    if (ramp == NULL) return;
+    remaining = retimed_remaining(
+        ramp->remaining, ramp->total, new_total);
+    if (remaining == 0u) return;
+    ramp->remaining = remaining;
+    ramp->total = new_total;
+    ramp->step = (ramp->target - ramp->current) / (float)remaining;
+}
+
 static TsStereoFrame frame_lerp(TsStereoFrame a, TsStereoFrame b, float amount)
 {
     TsStereoFrame result = {
@@ -346,6 +370,7 @@ void ts_sister_fallout_controls_default(TsSisterFalloutControls *controls)
     controls->transition = ts_sister_fallout_transition_normalized(10.0f);
     controls->component_transition =
         ts_sister_fallout_transition_normalized(10.0f);
+    controls->master_transition = controls->component_transition;
     controls->drop_rate = 0.45f;
     controls->pan_rate = 0.50f;
     controls->skip_span = 0.35f;
@@ -378,6 +403,8 @@ void ts_sister_fallout_controls_sanitize(TsSisterFalloutControls *controls)
     controls->transition = clampf(controls->transition, 0.0f, 1.0f);
     controls->component_transition =
         clampf(controls->component_transition, 0.0f, 1.0f);
+    controls->master_transition =
+        clampf(controls->master_transition, 0.0f, 1.0f);
     controls->drop_enabled = controls->drop_enabled != 0;
     controls->drop_rate = clampf(controls->drop_rate, 0.0f, 1.0f);
     controls->pan_enabled = controls->pan_enabled != 0;
@@ -538,8 +565,71 @@ void ts_sister_fallout_set_controls(
     int handoff_change;
     uint32_t added_rise_targets;
     uint32_t removed_targets;
-    uint32_t fade;
+    uint32_t component_fade;
+    uint32_t master_fade;
     if (engine == NULL || controls == NULL) return;
+    next = *controls;
+    ts_sister_fallout_controls_sanitize(&next);
+    if ((engine->preset_transition_stage == 1 ||
+         engine->preset_transition_stage == 2) && !engine->preset_applying &&
+        (next.transition != engine->controls.transition ||
+         next.component_transition != engine->controls.component_transition ||
+         next.master_transition != engine->controls.master_transition)) {
+        if (next.transition != engine->controls.transition) {
+            uint32_t total = engine->sample_rate > 0u ? (uint32_t)fmaxf(2.0f,
+                ts_sister_fallout_transition_ms(next.transition) *
+                (float)engine->sample_rate / 1000.0f) : 2u;
+            uint32_t first = total / 2u;
+            uint32_t second = total - first;
+            uint32_t old_stage_total = engine->preset_transition_stage == 1 ?
+                engine->preset_transition_total - engine->preset_second_frames :
+                engine->preset_second_frames;
+            uint32_t new_stage_total = engine->preset_transition_stage == 1 ?
+                first : second;
+            uint32_t remaining = retimed_remaining(
+                engine->preset_gain_remaining, old_stage_total, new_stage_total);
+            float target_gain = engine->preset_transition_stage == 1 ?
+                0.0f : 1.0f;
+            engine->preset_transition_total = total;
+            engine->preset_second_frames = second;
+            engine->preset_gain_remaining = remaining;
+            engine->preset_gain_step =
+                (target_gain - engine->preset_gain) / (float)remaining;
+        }
+        if (next.master_transition != engine->controls.master_transition &&
+            engine->engage_remaining > 0u && engine->engage_total > 0u) {
+            uint32_t total = engine->sample_rate > 0u ?
+                (uint32_t)fmaxf(1.0f,
+                    ts_sister_fallout_transition_ms(next.master_transition) *
+                    (float)engine->sample_rate / 1000.0f) : 1u;
+            uint32_t remaining = retimed_remaining(
+                engine->engage_remaining, engine->engage_total, total);
+            engine->engage_remaining = remaining;
+            engine->engage_total = total;
+            engine->engage_step = ((engine->controls.enabled ? 1.0f : 0.0f) -
+                                   engine->engage) / (float)remaining;
+        }
+        if (next.component_transition !=
+            engine->controls.component_transition) {
+            uint32_t total = engine->sample_rate > 0u ?
+                (uint32_t)fmaxf(1.0f,
+                    ts_sister_fallout_transition_ms(
+                        next.component_transition) *
+                    (float)engine->sample_rate / 1000.0f) : 1u;
+            fallout_ramp_retime(&engine->drop_engage, total);
+            fallout_ramp_retime(&engine->pan_engage, total);
+            fallout_ramp_retime(&engine->skip_engage, total);
+            fallout_ramp_retime(&engine->bit_engage, total);
+            fallout_ramp_retime(&engine->pitch_engage, total);
+        }
+        engine->controls.transition = next.transition;
+        engine->controls.component_transition = next.component_transition;
+        engine->controls.master_transition = next.master_transition;
+        engine->preset_target.transition = next.transition;
+        engine->preset_target.component_transition = next.component_transition;
+        engine->preset_target.master_transition = next.master_transition;
+        return;
+    }
     if (engine->preset_transition_stage != 0 && !engine->preset_applying) {
         uint32_t cancel_frames = engine->sample_rate > 0u ?
             engine->sample_rate / 100u : 1u;
@@ -548,8 +638,6 @@ void ts_sister_fallout_set_controls(
              &engine->preset_gain_remaining, 1.0f, cancel_frames);
         engine->preset_transition_stage = 3;
     }
-    next = *controls;
-    ts_sister_fallout_controls_sanitize(&next);
     previous = engine->controls;
     was_active = engine->active;
     added_rise_targets = ~previous.rise_targets & next.rise_targets;
@@ -561,45 +649,65 @@ void ts_sister_fallout_set_controls(
     handoff_change = next.noise_type != previous.noise_type;
     removed_targets = (engine->controls.lfo_targets & ~next.lfo_targets) |
                       (engine->controls.rise_targets & ~next.rise_targets);
-    fade = engine->sample_rate > 0u ? (uint32_t)fmaxf(1.0f,
+    component_fade = engine->sample_rate > 0u ? (uint32_t)fmaxf(1.0f,
         ts_sister_fallout_transition_ms(next.component_transition) *
         (float)engine->sample_rate / 1000.0f) : 1u;
-    if (fade == 0u) fade = 1u;
+    master_fade = engine->sample_rate > 0u ? (uint32_t)fmaxf(1.0f,
+        ts_sister_fallout_transition_ms(next.master_transition) *
+        (float)engine->sample_rate / 1000.0f) : 1u;
+    if (component_fade == 0u) component_fade = 1u;
+    if (master_fade == 0u) master_fade = 1u;
+    if (next.master_transition != previous.master_transition &&
+        engine->engage_remaining > 0u && engine->engage_total > 0u) {
+        uint32_t remaining = retimed_remaining(
+            engine->engage_remaining, engine->engage_total, master_fade);
+        engine->engage_remaining = remaining;
+        engine->engage_total = master_fade;
+        engine->engage_step = ((next.enabled ? 1.0f : 0.0f) -
+                               engine->engage) / (float)remaining;
+    }
+    if (next.component_transition != previous.component_transition) {
+        fallout_ramp_retime(&engine->drop_engage, component_fade);
+        fallout_ramp_retime(&engine->pan_engage, component_fade);
+        fallout_ramp_retime(&engine->skip_engage, component_fade);
+        fallout_ramp_retime(&engine->bit_engage, component_fade);
+        fallout_ramp_retime(&engine->pitch_engage, component_fade);
+    }
     if (next.enabled && !engine->controls.enabled) {
         ts_sister_fallout_clear(engine);
         engine->active = 1;
         ramp(&engine->engage, &engine->engage_step,
-             &engine->engage_remaining, 1.0f, fade);
-        engine->engage_total = fade;
+             &engine->engage_remaining, 1.0f, master_fade);
+        engine->engage_total = master_fade;
     } else if (!next.enabled && engine->controls.enabled) {
         ramp(&engine->engage, &engine->engage_step,
-             &engine->engage_remaining, 0.0f, fade);
-        engine->engage_total = fade;
+             &engine->engage_remaining, 0.0f, master_fade);
+        engine->engage_total = master_fade;
     }
     if (was_active && !engine->preset_applying) {
         if (next.drop_enabled != previous.drop_enabled)
             fallout_ramp_start(&engine->drop_engage,
-                next.drop_enabled ? 1.0f : 0.0f, fade);
+                next.drop_enabled ? 1.0f : 0.0f, component_fade);
         if (next.pan_enabled != previous.pan_enabled)
             fallout_ramp_start(&engine->pan_engage,
-                next.pan_enabled ? 1.0f : 0.0f, fade);
+                next.pan_enabled ? 1.0f : 0.0f, component_fade);
         if (next.skip_enabled != previous.skip_enabled) {
             fallout_ramp_start(&engine->skip_engage,
-                next.skip_enabled ? 1.0f : 0.0f, fade);
+                next.skip_enabled ? 1.0f : 0.0f, component_fade);
             if (next.skip_enabled && engine->valid_frames >= 4u) {
                 choose_loop(engine, &next);
-                engine->skip_fade_total = fade;
-                engine->skip_fade_remaining = fade;
+                engine->skip_fade_total = component_fade;
+                engine->skip_fade_remaining = component_fade;
                 engine->next_skip = engine->write_clock +
                     interval_frames(next.skip_rate, engine->sample_rate);
             }
         }
         if (next.bit_enabled != previous.bit_enabled)
             fallout_ramp_start(&engine->bit_engage,
-                next.bit_enabled ? 1.0f : 0.0f, fade);
+                next.bit_enabled ? 1.0f : 0.0f, component_fade);
         if (next.pitch_enabled != previous.pitch_enabled)
             fallout_ramp_start(&engine->pitch_engage,
-                next.pitch_enabled ? 1.0f : 0.0f, fade);
+                next.pitch_enabled ? 1.0f : 0.0f, component_fade);
     } else {
         fallout_ramp_reset(&engine->drop_engage,
                            next.drop_enabled ? 1.0f : 0.0f);
@@ -643,6 +751,25 @@ void ts_sister_fallout_set_controls(
         engine->rise_value = 0.0f;
         engine->rise_one_shot_complete = 0;
     }
+}
+
+void ts_sister_fallout_sync_controls(
+    TsSisterFalloutEngine *engine, const TsSisterFalloutControls *controls)
+{
+    TsSisterFalloutControls next;
+    if (engine == NULL || controls == NULL) return;
+    next = *controls;
+    ts_sister_fallout_controls_sanitize(&next);
+    ts_sister_fallout_set_controls(engine, &next);
+    /* A cold/restored engine has no audible state to hand off. Align all gates
+       with the saved switch truth so OFF cannot begin life as a long fade from
+       an implementation default. */
+    ts_sister_fallout_clear(engine);
+    engine->engage = next.enabled ? 1.0f : 0.0f;
+    engine->engage_step = 0.0f;
+    engine->engage_remaining = 0u;
+    engine->engage_total = 0u;
+    engine->active = next.enabled;
 }
 
 void ts_sister_fallout_recall_preset(
@@ -1132,12 +1259,6 @@ TsSisterFalloutTransitionStatus ts_sister_fallout_component_transition_status(
     uint32_t total = 0u;
     float target = 0.0f;
     if (engine == NULL || !engine->ready) return status;
-    if (engine->engage_remaining > 0u && engine->engage_total > 0u) {
-        remaining = engine->engage_remaining;
-        total = engine->engage_total;
-        target = engine->controls.enabled ? 1.0f : 0.0f;
-        status.source = TS_SISTER_FALLOUT_TRANSITION_MASTER;
-    }
     ramps[0] = &engine->drop_engage;
     ramps[1] = &engine->pan_engage;
     ramps[2] = &engine->skip_engage;
@@ -1156,6 +1277,25 @@ TsSisterFalloutTransitionStatus ts_sister_fallout_component_transition_status(
     status.target_enabled = target >= 0.5f;
     status.progress = clampf(
         1.0f - (float)remaining / (float)total, 0.0f, 1.0f);
+    return status;
+}
+
+TsSisterFalloutTransitionStatus ts_sister_fallout_master_transition_status(
+    const TsSisterFalloutEngine *engine)
+{
+    TsSisterFalloutTransitionStatus status = {
+        1.0f, TS_SISTER_FALLOUT_TRANSITION_NONE, 0, 0
+    };
+    if (engine == NULL || !engine->ready ||
+        engine->engage_remaining == 0u || engine->engage_total == 0u)
+        return status;
+    status.active = 1;
+    status.source = TS_SISTER_FALLOUT_TRANSITION_MASTER;
+    status.target_enabled = engine->controls.enabled;
+    status.progress = clampf(
+        1.0f - (float)engine->engage_remaining /
+               (float)engine->engage_total,
+        0.0f, 1.0f);
     return status;
 }
 

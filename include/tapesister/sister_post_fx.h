@@ -21,8 +21,10 @@ typedef struct {
     int reverb_enabled;
     int delay_enabled;
     int distortion_enabled;
-    /* Shared logarithmic 10 ms..60 min performance-switch ramp. */
+    /* Logarithmic 10 ms..60 min Reverb/Delay/Distortion switch ramp. */
     float transition;
+    /* Independent logarithmic 10 ms..60 min Master FX gate ramp. */
+    float master_transition;
     TsSisterReverbType reverb_type;
     float reverb_mix;
     float reverb_decay;
@@ -160,6 +162,10 @@ float ts_sister_fx_transition_normalized(float milliseconds);
 float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine);
 TsSisterFxTransitionStatus ts_sister_post_fx_transition_status(
     const TsSisterPostFxEngine *engine);
+TsSisterFxTransitionStatus ts_sister_post_fx_effect_transition_status(
+    const TsSisterPostFxEngine *engine);
+TsSisterFxTransitionStatus ts_sister_post_fx_master_transition_status(
+    const TsSisterPostFxEngine *engine);
 float ts_sister_post_fx_transition_progress(
     const TsSisterPostFxEngine *engine, int *active);
 
@@ -170,6 +176,10 @@ int ts_sister_post_fx_reconfigure(TsSisterPostFxEngine *engine,
                                   uint32_t sample_rate);
 void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
                                     const TsSisterFxControls *controls);
+/* Applies a restored/cold-start state without manufacturing engage fades from
+   the engine defaults. Live UI edits should continue to use set_controls(). */
+void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
+                                     const TsSisterFxControls *controls);
 TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
                                         size_t target_index,
                                         TsStereoFrame input,

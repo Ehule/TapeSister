@@ -7013,6 +7013,8 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: parameters->fx.distortion_tone = amount; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: parameters->fx.distortion_mix = amount; break;
     case TS_SISTER_UI_PARAM_FX_TRANSITION: parameters->fx.transition = amount; break;
+    case TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION:
+        parameters->fx.master_transition = amount; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: parameters->fx.master_feedback = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_MIX: parameters->fx.fallout.mix = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: parameters->fx.fallout.feedback = amount; break;
@@ -7029,6 +7031,8 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: parameters->fx.fallout.pitch_rate = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: parameters->fx.fallout.transition = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_COMPONENT_TRANSITION: parameters->fx.fallout.component_transition = amount; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION:
+        parameters->fx.fallout.master_transition = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: parameters->fx.fallout.lfo_rate = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: parameters->fx.fallout.lfo_intensity = amount; break;
     case TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH: parameters->fx.fallout.rise_length = amount; break;
@@ -7091,6 +7095,8 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: value = parameters->fx.distortion_tone; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: value = parameters->fx.distortion_mix; break;
     case TS_SISTER_UI_PARAM_FX_TRANSITION: value = parameters->fx.transition; break;
+    case TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION:
+        value = parameters->fx.master_transition; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: value = parameters->fx.master_feedback; break;
     case TS_SISTER_UI_PARAM_FALLOUT_MIX: value = parameters->fx.fallout.mix; break;
     case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: value = parameters->fx.fallout.feedback; break;
@@ -7107,6 +7113,8 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: value = parameters->fx.fallout.pitch_rate; break;
     case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: value = parameters->fx.fallout.transition; break;
     case TS_SISTER_UI_PARAM_FALLOUT_COMPONENT_TRANSITION: value = parameters->fx.fallout.component_transition; break;
+    case TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION:
+        value = parameters->fx.fallout.master_transition; break;
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: value = parameters->fx.fallout.lfo_rate; break;
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: value = parameters->fx.fallout.lfo_intensity; break;
     case TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH: value = parameters->fx.fallout.rise_length; break;
@@ -7300,7 +7308,8 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_DISTORTION_DRIVE: return "DISTORTION DRIVE";
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: return "DISTORTION TONE";
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: return "DISTORTION MIX";
-    case TS_SISTER_UI_PARAM_FX_TRANSITION: return "FX TRANSITION";
+    case TS_SISTER_UI_PARAM_FX_TRANSITION: return "EFFECT TRANSITION";
+    case TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION: return "MASTER FX TRANSITION";
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: return "MASTER FX FEEDBACK";
     case TS_SISTER_UI_PARAM_FALLOUT_MIX: return "FALLOUT MIX";
     case TS_SISTER_UI_PARAM_FALLOUT_FEEDBACK: return "FALLOUT FEEDBACK";
@@ -7317,6 +7326,7 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE: return "FALLOUT PITCH RATE";
     case TS_SISTER_UI_PARAM_FALLOUT_TRANSITION: return "FALLOUT PRESET TRANSITION";
     case TS_SISTER_UI_PARAM_FALLOUT_COMPONENT_TRANSITION: return "FALLOUT ON/OFF TRANSITION";
+    case TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION: return "FALLOUT MASTER TRANSITION";
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE: return "FALLOUT LFO RATE";
     case TS_SISTER_UI_PARAM_FALLOUT_LFO_INTENSITY: return "FALLOUT LFO DEPTH";
     case TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH: return "FALLOUT RISE LENGTH";
@@ -8063,8 +8073,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         sister_set_parameter(&sister->model.parameters, hit.index, hit.normalized);
         ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
         ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
-        if (hit.index >= TS_SISTER_UI_PARAM_FALLOUT_MIX &&
-            hit.index <= TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY &&
+        if (((hit.index >= TS_SISTER_UI_PARAM_FALLOUT_MIX &&
+              hit.index <= TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY) ||
+             hit.index == TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION) &&
             sister->fallout_preset_index < sister->fallout_presets.count)
             sister->fallout_preset_modified = 1;
         parameter_changed = hit.index;
@@ -8167,7 +8178,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         sister_preset_model_sync(sister, &audio->sister);
         snprintf(sister->model.status, sizeof(sister->model.status),
                  "%s %s OVER %.2F S", name, enabled ? "ENGAGING" : "BYPASSING",
-                 ts_sister_fx_transition_ms(fx->transition) / 1000.0f);
+                 ts_sister_fx_transition_ms(
+                     fx_toggle_changed == TS_SISTER_UI_FX_MASTER ?
+                         fx->master_transition : fx->transition) / 1000.0f);
     }
     if (parameter_changed >= 0) {
         /* Mouse-wheel bursts can publish many bounded DSP targets. Keep the
@@ -8218,10 +8231,18 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             ui->config.sister_fallout_component_transition_ms = (int)lrintf(
                 ts_sister_fallout_transition_ms(
                     sister->model.parameters.fx.fallout.component_transition));
+        else if (parameter_changed == TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION)
+            ui->config.sister_fallout_master_transition_ms = (int)lrintf(
+                ts_sister_fallout_transition_ms(
+                    sister->model.parameters.fx.fallout.master_transition));
         else if (parameter_changed == TS_SISTER_UI_PARAM_FX_TRANSITION)
-            ui->config.sister_fx_transition_ms = (int)lrintf(
+            ui->config.sister_fx_effect_transition_ms = (int)lrintf(
                 ts_sister_fx_transition_ms(
                     sister->model.parameters.fx.transition));
+        else if (parameter_changed == TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION)
+            ui->config.sister_fx_transition_ms = (int)lrintf(
+                ts_sister_fx_transition_ms(
+                    sister->model.parameters.fx.master_transition));
         else if (parameter_changed == TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH)
             ui->config.sister_fallout_rise_seconds = (int)lrintf(
                 ts_sister_fallout_rise_seconds(
@@ -9708,10 +9729,15 @@ int main(int argc, char **argv)
             ts_sister_fallout_transition_normalized(
                 (float)ui.config.sister_fallout_transition_ms);
         parameters.fx.transition = ts_sister_fx_transition_normalized(
+            (float)ui.config.sister_fx_effect_transition_ms);
+        parameters.fx.master_transition = ts_sister_fx_transition_normalized(
             (float)ui.config.sister_fx_transition_ms);
         parameters.fx.fallout.component_transition =
             ts_sister_fallout_transition_normalized(
                 (float)ui.config.sister_fallout_component_transition_ms);
+        parameters.fx.fallout.master_transition =
+            ts_sister_fallout_transition_normalized(
+                (float)ui.config.sister_fallout_master_transition_ms);
         parameters.fx.fallout.rise_length =
             ts_sister_fallout_rise_normalized(
                 (float)ui.config.sister_fallout_rise_seconds);

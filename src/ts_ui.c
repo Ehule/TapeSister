@@ -4116,11 +4116,14 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         char transition_caption[24];
         char preset_transition[24];
         char component_transition[24];
+        char master_transition[24];
         sister_fallout_time_label(preset_transition, sizeof(preset_transition),
             ts_sister_fallout_transition_ms(f->transition));
         sister_fallout_time_label(component_transition,
             sizeof(component_transition),
             ts_sister_fallout_transition_ms(f->component_transition));
+        sister_fallout_time_label(master_transition, sizeof(master_transition),
+            ts_sister_fallout_transition_ms(f->master_transition));
         rect(fb, 10, 42, 620, 268, RGB(9, 9, 10));
         button(fb, 16, 50, 86, f->enabled ? "FALLOUT ON" : "FALLOUT",
                f->enabled);
@@ -4172,16 +4175,29 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         sister_percent_parameter_state(fb, 400, 252, 120, "RATE", f->pitch_rate,
             100, PAL_NOTE, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE));
-        sister_choice_parameter_state(fb, 120, 284, 190, "PRESET",
+        sister_choice_parameter_state(fb, 120, 284, 125, "PRESET",
             preset_transition, f->transition, PAL_NOTE,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_TRANSITION));
-        sister_choice_parameter_state(fb, 330, 284, 190, "ON/OFF",
+        sister_choice_parameter_state(fb, 260, 284, 125, "PARTS",
             component_transition, f->component_transition, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_COMPONENT_TRANSITION));
+        sister_choice_parameter_state(fb, 400, 284, 120, "MASTER",
+            master_transition, f->master_transition, PAL_MOUSE,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION));
         sister_fallout_lfo_panel(fb, f);
-        if (model->routing.fallout_component_transition_active) {
+        if (model->routing.fallout_master_transition_active) {
+            rect(fb, 548, 276, 74, 11, RGB(15, 14, 16));
+            sister_transition_caption(transition_caption,
+                sizeof(transition_caption), "FALLOUT",
+                model->routing.fallout_master_transition_target_enabled);
+            text(fb, 548, 278, transition_caption,
+                sister_transition_caption_color(
+                    model->routing.fallout_master_transition_progress,
+                    RGB(15, 14, 16), PAL_MOUSE), 1);
+        } else if (model->routing.fallout_component_transition_active) {
             rect(fb, 548, 276, 74, 11, RGB(15, 14, 16));
             sister_transition_caption(transition_caption,
                 sizeof(transition_caption),
@@ -4199,6 +4215,9 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                     model->routing.fallout_preset_transition_progress,
                     RGB(15, 14, 16), PAL_NOTE), 1);
         }
+        sister_transition_progress(fb, 548, 282, 74,
+            model->routing.fallout_master_transition_progress,
+            model->routing.fallout_master_transition_active, PAL_MOUSE);
         sister_transition_progress(fb, 548, 290, 74,
             model->routing.fallout_component_transition_progress,
             model->routing.fallout_component_transition_active, PAL_EFFECT);
@@ -4211,7 +4230,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
 
     if (model->fx_page == 1) {
         static const char *const names[3] = {"REVERB", "DELAY", "DISTORTION"};
-        char transition_caption[24];
+        char effect_transition_caption[24];
+        char master_transition_caption[24];
         const uint32_t colors[3] = {PAL_WAVE_RIGHT, PAL_EFFECT, PAL_VOLUME};
         const uint8_t masks[3] = {
             model->parameters.fx.reverb_targets,
@@ -4279,16 +4299,27 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                            "RAT-INSPIRED / 2X", PAL_MOUSE, 1);
         }
         {
-            char transition[24];
-            sister_fallout_time_label(transition, sizeof(transition),
+            char effect_transition[24];
+            char master_transition[24];
+            sister_fallout_time_label(effect_transition,
+                sizeof(effect_transition),
                 ts_sister_fx_transition_ms(model->parameters.fx.transition));
+            sister_fallout_time_label(master_transition,
+                sizeof(master_transition), ts_sister_fx_transition_ms(
+                    model->parameters.fx.master_transition));
+            sister_choice_parameter_state(fb, 110, 220, 410,
+                "EFFECT TRANSITION", effect_transition,
+                model->parameters.fx.transition, PAL_EFFECT,
+                ts_sister_ui_parameter_locked(
+                    model, TS_SISTER_UI_PARAM_FX_TRANSITION));
             button(fb, 10, 304, 92,
                    model->parameters.fx.enabled ? "MASTER FX ON" : "MASTER FX",
                    model->parameters.fx.enabled);
-            sister_choice_parameter_state(fb, 110, 306, 410, "TRANSITION",
-                transition, model->parameters.fx.transition, PAL_MOUSE,
+            sister_choice_parameter_state(fb, 110, 306, 410,
+                "MASTER TRANSITION", master_transition,
+                model->parameters.fx.master_transition, PAL_MOUSE,
                 ts_sister_ui_parameter_locked(
-                    model, TS_SISTER_UI_PARAM_FX_TRANSITION));
+                    model, TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION));
         }
         sister_percent_parameter_state(fb, 110, 332, 410, "FX FEEDBACK",
             model->parameters.fx.master_feedback, 100, PAL_TUNING,
@@ -4297,19 +4328,31 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         text(fb, 530, 337, "0-135%", PAL_MOUSE, 1);
         text(fb, 10, 284, "DISTORTION > DELAY > REVERB", PAL_MOUSE, 1);
         if (model->routing.fx_transition_active) {
-            sister_transition_caption(transition_caption,
-                sizeof(transition_caption),
+            sister_transition_caption(effect_transition_caption,
+                sizeof(effect_transition_caption),
                 sister_fx_transition_source_name(
                     model->routing.fx_transition_source),
                 model->routing.fx_transition_target_enabled);
-            text(fb, 426, 275, transition_caption,
+            text(fb, 426, 244, effect_transition_caption,
                 sister_transition_caption_color(
                     model->routing.fx_transition_progress,
                     PAL_DESKTOP, PAL_EFFECT), 1);
         }
-        sister_transition_progress(fb, 426, 284, 94,
+        sister_transition_progress(fb, 426, 253, 94,
             model->routing.fx_transition_progress,
             model->routing.fx_transition_active, PAL_EFFECT);
+        if (model->routing.fx_master_transition_active) {
+            sister_transition_caption(master_transition_caption,
+                sizeof(master_transition_caption), "MASTER FX",
+                model->routing.fx_master_transition_target_enabled);
+            text(fb, 426, 275, master_transition_caption,
+                sister_transition_caption_color(
+                    model->routing.fx_master_transition_progress,
+                    PAL_DESKTOP, PAL_MOUSE), 1);
+        }
+        sister_transition_progress(fb, 426, 284, 94,
+            model->routing.fx_master_transition_progress,
+            model->routing.fx_master_transition_active, PAL_MOUSE);
         goto sister_footer;
     }
 

@@ -141,12 +141,19 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     atomic_init(&snapshot->fx_transition_source,
                 TS_SISTER_FX_TRANSITION_NONE);
     atomic_init(&snapshot->fx_transition_target_enabled, 0);
+    atomic_init(&snapshot->fx_master_transition_progress_bits, float_bits(1.0f));
+    atomic_init(&snapshot->fx_master_transition_active, 0);
+    atomic_init(&snapshot->fx_master_transition_target_enabled, 0);
     atomic_init(&snapshot->fallout_component_transition_progress_bits,
                 float_bits(1.0f));
     atomic_init(&snapshot->fallout_component_transition_active, 0);
     atomic_init(&snapshot->fallout_component_transition_source,
                 TS_SISTER_FALLOUT_TRANSITION_NONE);
     atomic_init(&snapshot->fallout_component_transition_target_enabled, 0);
+    atomic_init(&snapshot->fallout_master_transition_progress_bits,
+                float_bits(1.0f));
+    atomic_init(&snapshot->fallout_master_transition_active, 0);
+    atomic_init(&snapshot->fallout_master_transition_target_enabled, 0);
     atomic_init(&snapshot->fallout_preset_transition_progress_bits,
                 float_bits(1.0f));
     atomic_init(&snapshot->fallout_preset_transition_active, 0);
@@ -158,7 +165,9 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     uint64_t revision;
     uint16_t mask = 0u;
     TsSisterFxTransitionStatus fx_transition;
+    TsSisterFxTransitionStatus fx_master_transition;
     TsSisterFalloutTransitionStatus fallout_transition;
+    TsSisterFalloutTransitionStatus fallout_master_transition;
     int transition_active = 0;
     float transition_progress;
     if (runtime == NULL) return;
@@ -231,7 +240,8 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     atomic_store_explicit(&snapshot->fallout_rise_complete,
                           runtime->fallout.rise_one_shot_complete,
                           memory_order_relaxed);
-    fx_transition = ts_sister_post_fx_transition_status(&runtime->post_fx);
+    fx_transition =
+        ts_sister_post_fx_effect_transition_status(&runtime->post_fx);
     atomic_store_explicit(&snapshot->fx_transition_progress_bits,
                           float_bits(fx_transition.progress),
                           memory_order_relaxed);
@@ -242,6 +252,16 @@ static void publish_snapshot(TsSisterRuntime *runtime)
                           fx_transition.source, memory_order_relaxed);
     atomic_store_explicit(&snapshot->fx_transition_target_enabled,
                           fx_transition.target_enabled, memory_order_relaxed);
+    fx_master_transition =
+        ts_sister_post_fx_master_transition_status(&runtime->post_fx);
+    atomic_store_explicit(&snapshot->fx_master_transition_progress_bits,
+                          float_bits(fx_master_transition.progress),
+                          memory_order_relaxed);
+    atomic_store_explicit(&snapshot->fx_master_transition_active,
+                          fx_master_transition.active, memory_order_relaxed);
+    atomic_store_explicit(&snapshot->fx_master_transition_target_enabled,
+                          fx_master_transition.target_enabled,
+                          memory_order_relaxed);
     fallout_transition =
         ts_sister_fallout_component_transition_status(&runtime->fallout);
     atomic_store_explicit(
@@ -254,6 +274,17 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     atomic_store_explicit(
         &snapshot->fallout_component_transition_target_enabled,
         fallout_transition.target_enabled, memory_order_relaxed);
+    fallout_master_transition =
+        ts_sister_fallout_master_transition_status(&runtime->fallout);
+    atomic_store_explicit(
+        &snapshot->fallout_master_transition_progress_bits,
+        float_bits(fallout_master_transition.progress), memory_order_relaxed);
+    atomic_store_explicit(&snapshot->fallout_master_transition_active,
+                          fallout_master_transition.active,
+                          memory_order_relaxed);
+    atomic_store_explicit(&snapshot->fallout_master_transition_target_enabled,
+                          fallout_master_transition.target_enabled,
+                          memory_order_relaxed);
     transition_progress = ts_sister_fallout_preset_transition_progress(
         &runtime->fallout, &transition_active);
     atomic_store_explicit(&snapshot->fallout_preset_transition_progress_bits,
@@ -439,9 +470,11 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     ts_sister_machine_free(&runtime->machine);
     runtime->machine = machine;
     runtime->parameters = machine.parameters;
-    ts_sister_post_fx_set_controls(&runtime->post_fx, &runtime->parameters.fx);
-    ts_sister_fallout_set_controls(&runtime->fallout,
-                                   &runtime->parameters.fx.fallout);
+    /* Audio is not running yet: restore the saved gate truth exactly. Starting
+       every new engine at fully wet made an OFF preset audibly fade from ON. */
+    ts_sister_post_fx_sync_controls(&runtime->post_fx, &runtime->parameters.fx);
+    ts_sister_fallout_sync_controls(&runtime->fallout,
+                                    &runtime->parameters.fx.fallout);
     runtime->enabled = 1;
     runtime->output_channels = output_channels;
     runtime->callback_failed = 0;
@@ -529,8 +562,8 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
                               "Could not allocate Fallout storage");
                 return 0;
             }
-            ts_sister_fallout_set_controls(&runtime->fallout,
-                                            &runtime->parameters.fx.fallout);
+            ts_sister_fallout_sync_controls(&runtime->fallout,
+                                             &runtime->parameters.fx.fallout);
         }
         if (!runtime->post_fx.ready || runtime->post_fx.sample_rate != sample_rate) {
             if (!ts_sister_post_fx_reconfigure(&runtime->post_fx, sample_rate)) {
@@ -540,8 +573,8 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
                               "Could not allocate post-effects storage");
                 return 0;
             }
-            ts_sister_post_fx_set_controls(&runtime->post_fx,
-                                            &runtime->parameters.fx);
+            ts_sister_post_fx_sync_controls(&runtime->post_fx,
+                                             &runtime->parameters.fx);
         }
         runtime->output_channels = output_channels;
         runtime->warnings &= ~(uint32_t)TS_SISTER_WARNING_DEVICE_CONTRACT;
@@ -564,9 +597,9 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     }
     runtime->output_channels = output_channels;
     runtime->parameters = runtime->machine.parameters;
-    ts_sister_post_fx_set_controls(&runtime->post_fx, &runtime->parameters.fx);
-    ts_sister_fallout_set_controls(&runtime->fallout,
-                                   &runtime->parameters.fx.fallout);
+    ts_sister_post_fx_sync_controls(&runtime->post_fx, &runtime->parameters.fx);
+    ts_sister_fallout_sync_controls(&runtime->fallout,
+                                    &runtime->parameters.fx.fallout);
     runtime->last_frame = (TsSisterRuntimeFrame){0};
     runtime->master_feedback_current = 0.0f;
     runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
@@ -1610,6 +1643,14 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
                 &source->fx_transition_source, memory_order_relaxed);
         snapshot->fx_transition_target_enabled = atomic_load_explicit(
             &source->fx_transition_target_enabled, memory_order_relaxed);
+        snapshot->fx_master_transition_progress = bits_float(
+            atomic_load_explicit(&source->fx_master_transition_progress_bits,
+                                 memory_order_relaxed));
+        snapshot->fx_master_transition_active = atomic_load_explicit(
+            &source->fx_master_transition_active, memory_order_relaxed);
+        snapshot->fx_master_transition_target_enabled = atomic_load_explicit(
+            &source->fx_master_transition_target_enabled,
+            memory_order_relaxed);
         snapshot->fallout_component_transition_progress = bits_float(
             atomic_load_explicit(
                 &source->fallout_component_transition_progress_bits,
@@ -1624,6 +1665,16 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
         snapshot->fallout_component_transition_target_enabled =
             atomic_load_explicit(
                 &source->fallout_component_transition_target_enabled,
+                memory_order_relaxed);
+        snapshot->fallout_master_transition_progress = bits_float(
+            atomic_load_explicit(
+                &source->fallout_master_transition_progress_bits,
+                memory_order_relaxed));
+        snapshot->fallout_master_transition_active = atomic_load_explicit(
+            &source->fallout_master_transition_active, memory_order_relaxed);
+        snapshot->fallout_master_transition_target_enabled =
+            atomic_load_explicit(
+                &source->fallout_master_transition_target_enabled,
                 memory_order_relaxed);
         snapshot->fallout_preset_transition_progress = bits_float(
             atomic_load_explicit(

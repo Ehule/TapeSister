@@ -117,7 +117,11 @@ typedef enum {
     TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH,
     TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY,
     TS_SISTER_UI_PARAM_BUFFER_SECONDS,
-    TS_SISTER_UI_PARAM_COUNT
+    TS_SISTER_UI_PARAM_COUNT,
+    /* These clocks are intentionally not preset-lock bits: the established
+       63 lock indices remain stable in existing preset files. */
+    TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION = 1000,
+    TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION
 } TsSisterUiParameter;
 
 typedef enum {

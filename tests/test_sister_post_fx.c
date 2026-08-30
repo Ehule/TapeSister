@@ -432,6 +432,8 @@ static void test_timed_performance_bypasses(void)
     controls.reverb_enabled = controls.delay_enabled = 0;
     controls.enabled = 0;
     controls.transition = ts_sister_fx_transition_normalized(1000.0f);
+    controls.master_transition =
+        ts_sister_fx_transition_normalized(1000.0f);
     ts_sister_post_fx_set_controls(&engine, &controls);
     assert(engine.master_engage.remaining == 1000u);
     assert(engine.reverb_engage.remaining == 1000u);
@@ -476,6 +478,83 @@ static void test_timed_performance_bypasses(void)
     ts_sister_post_fx_free(&engine);
 }
 
+static void test_master_gate_restore_and_live_retime(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+    TsSisterFxTransitionStatus status;
+    TsStereoFrame input = {0.37f, -0.21f};
+    TsStereoFrame output;
+
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.enabled = 0;
+    controls.reverb_enabled = 1;
+    controls.delay_enabled = 1;
+    controls.distortion_enabled = 1;
+    controls.reverb_mix = 1.0f;
+    controls.delay_mix = 1.0f;
+    controls.distortion_mix = 1.0f;
+    controls.distortion_drive = 1.0f;
+    controls.transition = ts_sister_fx_transition_normalized(1000.0f);
+    controls.master_transition =
+        ts_sister_fx_transition_normalized(1000.0f);
+    ts_sister_post_fx_sync_controls(&engine, &controls);
+
+    /* Restoring an OFF preset must never leave the live master at the engine's
+       default ON value. Individual effects remain armed behind the dry gate. */
+    assert(engine.controls.enabled == 0);
+    assert(ts_sister_post_fx_master_engage(&engine) == 0.0f);
+    assert(engine.reverb_engage.current == 1.0f);
+    assert(engine.delay_engage.current == 1.0f);
+    assert(engine.distortion_engage.current == 1.0f);
+    output = ts_sister_post_fx_process(&engine, 3u, input, 0);
+    assert(output.l == input.l && output.r == input.r);
+
+    /* Arming/disarming an individual processor behind Master OFF cannot leak
+       audio, but the individual transition is still allowed to complete. */
+    controls.distortion_enabled = 0;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 1000; ++frame) {
+        output = ts_sister_post_fx_process(&engine, 3u, input, 0);
+        assert(output.l == input.l && output.r == input.r);
+    }
+    controls.distortion_enabled = 1;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 1000; ++frame)
+        (void)ts_sister_post_fx_process(&engine, 3u, input, 0);
+    assert(engine.distortion_engage.current == 1.0f);
+
+    /* Master is the sole audible gate for the already-armed chain. */
+    controls.enabled = 1;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 250; ++frame)
+        (void)ts_sister_post_fx_process(&engine, 3u, input, 0);
+    assert(fabsf(engine.master_engage.current - 0.25f) < 0.002f);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.active && status.source == TS_SISTER_FX_TRANSITION_MASTER &&
+           status.target_enabled && status.progress > 0.249f &&
+           status.progress < 0.251f);
+
+    /* A wheel edit to the shared duration retimes the active fade in place,
+       preserving progress rather than requiring an off/on retrigger. */
+    controls.transition = ts_sister_fx_transition_normalized(100.0f);
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    assert(engine.master_engage.total == 1000u);
+    assert(engine.master_engage.remaining == 750u);
+    controls.master_transition = ts_sister_fx_transition_normalized(100.0f);
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    assert(engine.master_engage.total == 100u);
+    assert(engine.master_engage.remaining == 75u);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.progress > 0.249f && status.progress < 0.251f);
+    for (int frame = 0; frame < 75; ++frame)
+        (void)ts_sister_post_fx_process(&engine, 3u, input, 0);
+    assert(ts_sister_post_fx_master_engage(&engine) == 1.0f);
+    assert(!ts_sister_post_fx_transition_status(&engine).active);
+    ts_sister_post_fx_free(&engine);
+}
+
 int main(void)
 {
     test_defaults_and_identity();
@@ -488,6 +567,7 @@ int main(void)
     test_interrupted_wheel_handoffs();
     test_master_feedback_causality();
     test_timed_performance_bypasses();
+    test_master_gate_restore_and_live_retime();
     puts("sister post-effects tests passed");
     return 0;
 }

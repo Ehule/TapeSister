@@ -22,8 +22,10 @@ int main(void)
     CHECK(config.sister_capture_channels == 1);
     CHECK(config.sister_waveform_display_mode == TS_WAVEFORM_DISPLAY_STEREO);
     CHECK(config.sister_fx_transition_ms == 240000);
+    CHECK(config.sister_fx_effect_transition_ms == 240000);
     CHECK(config.sister_fallout_transition_ms == 240000);
     CHECK(config.sister_fallout_component_transition_ms == 240000);
+    CHECK(config.sister_fallout_master_transition_ms == 240000);
     CHECK(config.sister_fallout_rise_seconds == 3600);
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
@@ -207,9 +209,12 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 25, 310);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
           hit.index == TS_SISTER_UI_FX_MASTER);
-    hit = ts_sister_ui_hit_test_model(&model, 200, 310);
+    hit = ts_sister_ui_hit_test_model(&model, 200, 224);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FX_TRANSITION);
+    hit = ts_sister_ui_hit_test_model(&model, 200, 310);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION);
     hit = ts_sister_ui_hit_test_model(&model, 200, 336);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK);
@@ -232,9 +237,12 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 200, 289);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FALLOUT_TRANSITION);
-    hit = ts_sister_ui_hit_test_model(&model, 400, 289);
+    hit = ts_sister_ui_hit_test_model(&model, 300, 289);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FALLOUT_COMPONENT_TRANSITION);
+    hit = ts_sister_ui_hit_test_model(&model, 450, 289);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION);
     hit = ts_sister_ui_hit_test_model(&model, 555, 110);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FALLOUT_LFO_RATE);
@@ -415,13 +423,13 @@ int main(void)
           palette.colors[TS_PALETTE_PATTERN_EFFECT]);
     CHECK(framebuffer.pixels[187u * TS_UI_WIDTH + 297u] ==
           palette.colors[TS_PALETTE_PATTERN_VOLUME]);
-    model.parameters.fx.transition = 0.0f;
+    model.parameters.fx.master_transition = 0.0f;
     ts_sister_ui_render(&framebuffer, &model, &palette);
     CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 111u] !=
           palette.colors[TS_PALETTE_MOUSE]);
     /* One ordinary 5-percent wheel step is about 19 ms on the logarithmic
        10 ms..60 min range.  Its meter must remain near the left edge. */
-    model.parameters.fx.transition = 0.05f;
+    model.parameters.fx.master_transition = 0.05f;
     ts_sister_ui_render(&framebuffer, &model, &palette);
     CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 120u] ==
           palette.colors[TS_PALETTE_MOUSE]);
