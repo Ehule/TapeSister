@@ -122,8 +122,19 @@ int main(void)
     assert(recalled.fx.fallout.bit_enabled == 1);
     assert(recalled.buffer_seconds == 23.0f);
     assert(ts_sister_preset_rename(&loaded, 3u, "RENAMED", error, sizeof(error)));
-    assert(ts_sister_preset_overwrite(&loaded, 3u, &p, 48000u,
-                                      error, sizeof(error)));
+    p.ghost_tone = 0.77f;
+    p.fx.delay_feedback = 0.31f;
+    assert(ts_sister_preset_overwrite_with_locks(
+        &loaded, 3u, &p, locks, 48000u, error, sizeof(error)));
+    memset(&recalled, 0, sizeof(recalled));
+    recalled_locks = 0u;
+    assert(ts_sister_preset_recall_with_locks(
+        &loaded, 3u, &recalled, &recalled_locks));
+    assert(strcmp(loaded.entries[3].name, "RENAMED") == 0);
+    assert(recalled.ghost_tone > 0.76f && recalled.ghost_tone < 0.78f);
+    assert(recalled.fx.delay_feedback > 0.30f &&
+           recalled.fx.delay_feedback < 0.32f);
+    assert(recalled_locks == locks);
     assert(ts_sister_preset_delete(&loaded, 3u, error, sizeof(error)));
     assert(loaded.count == 3u);
     remove(path);

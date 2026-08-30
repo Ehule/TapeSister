@@ -181,6 +181,9 @@ typedef struct {
     uint32_t power_visual_elapsed_ms;
     uint8_t magnetic_phase;
     int preset_factory;
+    int preset_modified;
+    size_t preset_position;
+    size_t preset_count;
     int preset_manage_open;
     int preset_editing;
     int preset_confirmation;

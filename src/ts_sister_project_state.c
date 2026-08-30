@@ -59,6 +59,7 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
     if (selected_preset != NULL)
         snprintf(state->selected_preset, sizeof(state->selected_preset),
                  "%.47s", selected_preset);
+    state->selected_preset_modified = runtime->selected_preset_modified;
 }
 
 int ts_sister_project_state_apply(const TsSisterProjectState *state,
@@ -76,6 +77,8 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     ts_sister_runtime_set_parameters(runtime, &state->parameters);
     runtime->parameter_locks = state->parameter_locks;
     ts_sister_runtime_set_selected_preset(runtime, state->selected_preset);
+    if (state->selected_preset_modified)
+        ts_sister_runtime_mark_selected_preset_modified(runtime);
     if (active_instrument != NULL)
         (void)ts_sister_runtime_validate_source_mask(runtime, active_instrument);
     /* Publish once more after active-page validation so snapshots never expose
@@ -176,10 +179,12 @@ int ts_sister_project_state_save(const TsSisterProjectState *state,
     }
     failed = fprintf(file,
         "TapeSister Sister Project State\nVersion=%d\nPageCount=%zu\n"
-        "ActivePage=%zu\nRoutes=%u\nSelectedPreset=%s\nParameterLocks=%016" PRIX64 "\n",
+        "ActivePage=%zu\nRoutes=%u\nSelectedPreset=%s\n"
+        "SelectedPresetModified=%d\nParameterLocks=%016" PRIX64 "\n",
         TS_SISTER_PROJECT_STATE_VERSION, state->page_count, state->active_page,
         (unsigned)(state->source_switches & TS_SISTER_SOURCE_ALL),
-        state->selected_preset, state->parameter_locks) < 0;
+        state->selected_preset, state->selected_preset_modified != 0,
+        state->parameter_locks) < 0;
     for (size_t page = 0u; page < state->page_count && !failed; ++page)
         failed = fprintf(file, "Mask.%zu=%04X\n", page,
                          state->page_masks[page]) < 0;
@@ -408,6 +413,10 @@ int ts_sister_project_state_load(TsSisterProjectState *state,
         } else if (strcmp(key, "SelectedPreset") == 0) {
             if (strlen(value) > TS_SISTER_PROJECT_PRESET_NAME_MAX) goto malformed;
             snprintf(loaded.selected_preset, sizeof(loaded.selected_preset), "%s", value);
+        } else if (strcmp(key, "SelectedPresetModified") == 0) {
+            if (!parse_int_value(value, &loaded.selected_preset_modified) ||
+                (loaded.selected_preset_modified != 0 &&
+                 loaded.selected_preset_modified != 1)) goto malformed;
         } else if (strcmp(key, "ParameterLocks") == 0) {
             if (!parse_u64_hex_value(value, &loaded.parameter_locks))
                 goto malformed;

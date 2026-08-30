@@ -646,6 +646,14 @@ void ts_sister_runtime_set_selected_preset(TsSisterRuntime *runtime,
     if (runtime == NULL) return;
     snprintf(runtime->selected_preset, sizeof(runtime->selected_preset),
              "%.47s", name != NULL ? name : "");
+    runtime->selected_preset_modified = 0;
+    publish_snapshot(runtime);
+}
+
+void ts_sister_runtime_mark_selected_preset_modified(TsSisterRuntime *runtime)
+{
+    if (runtime == NULL || runtime->selected_preset[0] == '\0') return;
+    runtime->selected_preset_modified = 1;
     publish_snapshot(runtime);
 }
 

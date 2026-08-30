@@ -221,7 +221,11 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     if (model != NULL && model->preset_manage_open) {
-        if (contains(x, y, 180, 200, 128, 22))
+        if (contains(x, y, 180, 160, 24, 18))
+            hit.action = TS_SISTER_UI_ACTION_PRESET_PREVIOUS;
+        else if (contains(x, y, 436, 160, 24, 18))
+            hit.action = TS_SISTER_UI_ACTION_PRESET_NEXT;
+        else if (contains(x, y, 180, 200, 128, 22))
             hit.action = TS_SISTER_UI_ACTION_PRESET_SAVE_AS;
         else if (contains(x, y, 332, 200, 128, 22))
             hit.action = TS_SISTER_UI_ACTION_PRESET_OVERWRITE;

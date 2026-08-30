@@ -647,6 +647,8 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
                          sizeof(sister->parameter_locks));
         state_hash_bytes(&hash, sister->selected_preset,
                          strlen(sister->selected_preset));
+        state_hash_bytes(&hash, &sister->selected_preset_modified,
+                         sizeof(sister->selected_preset_modified));
     }
     return hash;
 }
@@ -6775,11 +6777,20 @@ typedef struct {
     size_t preset_index;
     TsSisterPresetBank fallout_presets;
     size_t fallout_preset_index;
+    int fallout_preset_modified;
     int parameter_lock_gesture;
     TsUiPointerDrag parameter_drag;
     TsPerformanceRecorder performance_recorder;
     SDL_Thread *performance_writer;
 } SisterWindow;
+
+typedef enum {
+    SISTER_PRESET_OPERATION_NONE = 0,
+    SISTER_PRESET_OPERATION_SAVE_AS,
+    SISTER_PRESET_OPERATION_RENAME,
+    SISTER_PRESET_OPERATION_OVERWRITE,
+    SISTER_PRESET_OPERATION_DELETE
+} SisterPresetOperation;
 
 enum {
     WHEEL_TARGET_SISTER = 0x1000,
@@ -7323,7 +7334,7 @@ static void sister_toggle_parameter_lock(AudioState *audio,
     if (result == 0) return;
     locked = ts_sister_ui_parameter_locked(&sister->model, parameter);
     audio->sister.parameter_locks = sister->model.parameter_locks;
-    ts_sister_runtime_set_selected_preset(&audio->sister, "");
+    ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
     sister_preset_model_sync(sister, &audio->sister);
     snprintf(sister->model.status, sizeof(sister->model.status), "%s %s",
              sister_parameter_name(parameter),
@@ -7337,6 +7348,9 @@ static void sister_preset_model_sync(SisterWindow *sister,
     const char *name = runtime != NULL ? runtime->selected_preset : NULL;
     if (sister == NULL) return;
     if (sister->model.fx_page == 2) {
+        sister->model.preset_count = sister->fallout_presets.count;
+        sister->model.preset_position = 0u;
+        sister->model.preset_modified = 0;
         if (sister->fallout_preset_index < sister->fallout_presets.count) {
             const TsSisterPreset *preset =
                 &sister->fallout_presets.entries[
@@ -7344,6 +7358,8 @@ static void sister_preset_model_sync(SisterWindow *sister,
             snprintf(sister->model.preset_name,
                      sizeof(sister->model.preset_name), "%s", preset->name);
             sister->model.preset_factory = preset->factory;
+            sister->model.preset_modified = sister->fallout_preset_modified;
+            sister->model.preset_position = sister->fallout_preset_index + 1u;
         } else {
             snprintf(sister->model.preset_name,
                      sizeof(sister->model.preset_name), "CUSTOM");
@@ -7352,6 +7368,9 @@ static void sister_preset_model_sync(SisterWindow *sister,
         return;
     }
     sister->preset_index = SIZE_MAX;
+    sister->model.preset_count = sister->presets.count;
+    sister->model.preset_position = 0u;
+    sister->model.preset_modified = 0;
     if (name != NULL && name[0] != '\0') {
         for (size_t i = 0u; i < sister->presets.count; ++i) {
             if (strcmp(sister->presets.entries[i].name, name) == 0) {
@@ -7366,6 +7385,9 @@ static void sister_preset_model_sync(SisterWindow *sister,
         snprintf(sister->model.preset_name,
                  sizeof(sister->model.preset_name), "%s", preset->name);
         sister->model.preset_factory = preset->factory;
+        sister->model.preset_modified =
+            runtime != NULL && runtime->selected_preset_modified;
+        sister->model.preset_position = sister->preset_index + 1u;
     } else {
         snprintf(sister->model.preset_name,
                  sizeof(sister->model.preset_name), "CUSTOM");
@@ -7373,21 +7395,20 @@ static void sister_preset_model_sync(SisterWindow *sister,
     }
 }
 
-static int sister_preset_file_save(SisterWindow *sister,
+static int sister_preset_file_save(const SisterWindow *sister,
+                                   const TsSisterPresetBank *bank,
+                                   int fallout,
                                    char *error, size_t error_size)
 {
     char path[TS_RUNTIME_PATH_MAX];
-    int fallout = sister != NULL && sister->model.fx_page == 2;
-    if (sister == NULL ||
+    if (sister == NULL || bank == NULL ||
         !(fallout ? fallout_presets_file_path(path, sizeof(path)) :
                     sister_presets_file_path(path, sizeof(path)))) {
         snprintf(error, error_size, "%s preset path is unavailable",
                  fallout ? "Fallout" : "Sister");
         return 0;
     }
-    return ts_sister_preset_save(
-        fallout ? &sister->fallout_presets : &sister->presets,
-        path, error, error_size);
+    return ts_sister_preset_save(bank, path, error, error_size);
 }
 
 static void sister_recall_preset(SDL_AudioDeviceID device,
@@ -7407,14 +7428,16 @@ static void sister_recall_preset(SDL_AudioDeviceID device,
     if (fallout) {
         ts_sister_runtime_recall_fallout_preset(
             &audio->sister, &parameters.fx.fallout);
-        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
         sister->fallout_preset_index = index;
+        sister->fallout_preset_modified = 0;
     } else {
         ts_sister_runtime_set_parameters(&audio->sister, &parameters);
         audio->sister.parameter_locks = parameter_locks;
         ts_sister_runtime_set_selected_preset(
             &audio->sister, bank->entries[index].name);
         sister->fallout_preset_index = SIZE_MAX;
+        sister->fallout_preset_modified = 0;
     }
     if (device) SDL_UnlockAudioDevice(device);
     sister->model.parameters = audio->sister.parameters;
@@ -7706,6 +7729,13 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_PREVIOUS ||
         hit.action == TS_SISTER_UI_ACTION_PRESET_NEXT) {
         size_t index;
+        if (sister->model.preset_manage_open &&
+            (sister->model.preset_editing ||
+             sister->model.preset_confirmation)) {
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "CONFIRM OR CANCEL THE CURRENT PRESET ACTION");
+            return;
+        }
         if (preset_bank->count == 0u) return;
         if (*preset_index >= preset_bank->count)
             index = hit.action == TS_SISTER_UI_ACTION_PRESET_NEXT ?
@@ -7743,8 +7773,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_RENAME) {
-        if (*preset_index >= preset_bank->count ||
-            preset_bank->entries[*preset_index].factory) {
+        if (*preset_index >= preset_bank->count) {
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "SELECT A USER PRESET OR USE SAVE AS");
+        } else if (preset_bank->entries[*preset_index].factory) {
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "FACTORY PRESETS CANNOT BE RENAMED");
         } else {
@@ -7760,8 +7792,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_OVERWRITE ||
         hit.action == TS_SISTER_UI_ACTION_PRESET_DELETE) {
-        if (*preset_index >= preset_bank->count ||
-            preset_bank->entries[*preset_index].factory) {
+        if (*preset_index >= preset_bank->count) {
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "SELECT A USER PRESET OR USE SAVE AS");
+        } else if (preset_bank->entries[*preset_index].factory) {
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "FACTORY PRESETS ARE RECALL-ONLY");
         } else {
@@ -7774,6 +7808,20 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_CONFIRM) {
         int ok = 0;
         size_t index = *preset_index;
+        SisterPresetOperation operation =
+            sister->model.preset_editing == 1 ?
+                SISTER_PRESET_OPERATION_SAVE_AS :
+            sister->model.preset_editing == 2 ?
+                SISTER_PRESET_OPERATION_RENAME :
+            sister->model.preset_confirmation == 1 ?
+                SISTER_PRESET_OPERATION_OVERWRITE :
+            sister->model.preset_confirmation == 2 ?
+                SISTER_PRESET_OPERATION_DELETE :
+                SISTER_PRESET_OPERATION_NONE;
+        int was_modified = fallout_preset_scope ?
+            sister->fallout_preset_modified :
+            audio->sister.selected_preset_modified;
+        TsSisterPresetBank updated_bank = *preset_bank;
         TsSisterParameters stored = audio->sister.parameters;
         if (fallout_preset_scope) {
             stored.fx.fallout.enabled = 0;
@@ -7781,35 +7829,46 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         }
         if (sister->model.preset_editing == 1) {
             ok = ts_sister_preset_save_new_with_locks(
-                preset_bank, sister->model.preset_edit_name,
+                &updated_bank, sister->model.preset_edit_name,
                 &stored,
                 fallout_preset_scope ? 0u : audio->sister.parameter_locks,
                 sample_rate, error, sizeof(error));
-            if (ok) index = preset_bank->count - 1u;
+            if (ok) index = updated_bank.count - 1u;
         } else if (sister->model.preset_editing == 2) {
             ok = ts_sister_preset_rename(
-                preset_bank, index, sister->model.preset_edit_name,
+                &updated_bank, index, sister->model.preset_edit_name,
                 error, sizeof(error));
         } else if (sister->model.preset_confirmation == 1) {
             ok = ts_sister_preset_overwrite_with_locks(
-                preset_bank, index, &stored,
+                &updated_bank, index, &stored,
                 fallout_preset_scope ? 0u : audio->sister.parameter_locks,
                 sample_rate,
                 error, sizeof(error));
         } else if (sister->model.preset_confirmation == 2) {
             ok = ts_sister_preset_delete(
-                preset_bank, index, error, sizeof(error));
+                &updated_bank, index, error, sizeof(error));
             if (ok) index = SIZE_MAX;
         }
-        if (ok) ok = sister_preset_file_save(sister, error, sizeof(error));
+        if (ok) ok = sister_preset_file_save(
+            sister, &updated_bank, fallout_preset_scope,
+            error, sizeof(error));
         if (ok) {
+            *preset_bank = updated_bank;
             *preset_index = index;
-            if (!fallout_preset_scope) {
+            if (fallout_preset_scope) {
+                sister->fallout_preset_modified =
+                    operation == SISTER_PRESET_OPERATION_RENAME ?
+                        was_modified : 0;
+            } else {
                 if (index < preset_bank->count)
                     ts_sister_runtime_set_selected_preset(
                         &audio->sister, preset_bank->entries[index].name);
                 else
                     ts_sister_runtime_set_selected_preset(&audio->sister, "");
+                if (operation == SISTER_PRESET_OPERATION_RENAME &&
+                    was_modified)
+                    ts_sister_runtime_mark_selected_preset_modified(
+                        &audio->sister);
             }
         }
         if (ok) {
@@ -7902,8 +7961,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             (uint32_t)hit.index;
         ts_sister_runtime_set_parameters(&audio->sister,
                                          &sister->model.parameters);
-        ts_sister_runtime_set_selected_preset(&audio->sister, "");
-        sister->fallout_preset_index = SIZE_MAX;
+        ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+        if (sister->fallout_preset_index < sister->fallout_presets.count)
+            sister->fallout_preset_modified = 1;
         if (device) SDL_UnlockAudioDevice(device);
         sister_preset_model_sync(sister, &audio->sister);
         snprintf(sister->model.status, sizeof(sister->model.status),
@@ -7924,9 +7984,11 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             ++fallout->rise_retrigger;
         ts_sister_runtime_set_parameters(&audio->sister,
                                          &sister->model.parameters);
-        ts_sister_runtime_set_selected_preset(&audio->sister, "");
-        if (hit.action != TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER)
-            sister->fallout_preset_index = SIZE_MAX;
+        if (hit.action != TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER) {
+            ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+            if (sister->fallout_preset_index < sister->fallout_presets.count)
+                sister->fallout_preset_modified = 1;
+        }
         if (device) SDL_UnlockAudioDevice(device);
         sister_preset_model_sync(sister, &audio->sister);
         if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_TARGET)
@@ -7997,10 +8059,11 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         }
         sister_set_parameter(&sister->model.parameters, hit.index, hit.normalized);
         ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
-        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
         if (hit.index >= TS_SISTER_UI_PARAM_FALLOUT_MIX &&
-            hit.index <= TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY)
-            sister->fallout_preset_index = SIZE_MAX;
+            hit.index <= TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY &&
+            sister->fallout_preset_index < sister->fallout_presets.count)
+            sister->fallout_preset_modified = 1;
         parameter_changed = hit.index;
         break;
     case TS_SISTER_UI_ACTION_FALLOUT_TOGGLE: {
@@ -8033,9 +8096,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         }
         ts_sister_runtime_set_parameters(&audio->sister,
                                          &sister->model.parameters);
-        ts_sister_runtime_set_selected_preset(&audio->sister, "");
-        if (hit.index != TS_SISTER_UI_FALLOUT_POWER)
-            sister->fallout_preset_index = SIZE_MAX;
+        ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+        if (hit.index != TS_SISTER_UI_FALLOUT_POWER &&
+            sister->fallout_preset_index < sister->fallout_presets.count)
+            sister->fallout_preset_modified = 1;
         fallout_toggle_changed = hit.index;
         break;
     }
@@ -8053,7 +8117,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         }
         ts_sister_runtime_set_parameters(&audio->sister,
                                          &sister->model.parameters);
-        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
         fx_toggle_changed = hit.index;
         break;
     }
@@ -8069,7 +8133,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         *mask = ts_sister_effect_targets_toggle(*mask, target);
         ts_sister_runtime_set_parameters(&audio->sister,
                                          &sister->model.parameters);
-        ts_sister_runtime_set_selected_preset(&audio->sister, "");
+        ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
         effect_target_changed = 1;
         break;
     }
@@ -10066,6 +10130,21 @@ int main(int argc, char **argv)
                         device, &audio, &ui, &instrument, &sister_window,
                         &input_device, &external_input,
                         (TsSisterUiHit){TS_SISTER_UI_ACTION_PRESET_CONFIRM, 0, 0.0f},
+                        (uint32_t)obtained.freq, obtained.channels);
+                } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
+                           sister_window.model.preset_manage_open &&
+                           !sister_window.model.preset_editing &&
+                           !sister_window.model.preset_confirmation &&
+                           (event.key.keysym.sym == SDLK_LEFT ||
+                            event.key.keysym.sym == SDLK_RIGHT)) {
+                    sister_apply_action(
+                        device, &audio, &ui, &instrument, &sister_window,
+                        &input_device, &external_input,
+                        (TsSisterUiHit){
+                            event.key.keysym.sym == SDLK_LEFT ?
+                                TS_SISTER_UI_ACTION_PRESET_PREVIOUS :
+                                TS_SISTER_UI_ACTION_PRESET_NEXT,
+                            0, 0.0f},
                         (uint32_t)obtained.freq, obtained.channels);
                 } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
                            sister_performance_keys_allowed(&ui) &&

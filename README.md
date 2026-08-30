@@ -558,7 +558,12 @@ both channels at a loop boundary with a short linked crossfade. WARP/SMEAR/TEAR 
 stereo channel shape.
 Named Sister presets store portable sonic state and the independent parameter-lock mask;
 TSR projects store routes, masks, the current Sister sound, and active locks, never live
-tape audio. Older preset and project files load with all parameters unlocked. See
+tape audio. Recalled preset identity survives performance edits: a `*` marks the
+selected preset as modified, user presets remain eligible for Overwrite, and factory
+presets remain recall-only but can be copied with Save As. The in-window manager browses
+the active bank with arrows and exposes Save As, Overwrite, Rename, and Delete. The
+Sister bank includes the complete FX chain; Fallout also has its own focused bank.
+Older preset and project files load with all parameters unlocked. See
 [`docs/SISTER_MACHINE_HEADLESS_ENGINE.md`](docs/SISTER_MACHINE_HEADLESS_ENGINE.md) and
 [`docs/SISTER_MACHINE_LIVE_ROUTING.md`](docs/SISTER_MACHINE_LIVE_ROUTING.md), plus the
 [`PR5 performance-window contract`](docs/SISTER_MACHINE_PERFORMANCE_WINDOW.md) and
@@ -571,7 +576,7 @@ PR9 fixed Distortion→Delay→Reverb chain, POWER-off MIX bus, and causal Maste
 Feedback return are specified in
 [`docs/SISTER_MACHINE_POST_EFFECTS.md`](docs/SISTER_MACHINE_POST_EFFECTS.md).
 The FX page now adds Reverb, Delay, Distortion, and Master FX performance
-switches governed by one logarithmic 10 ms–60 s TRANSITION control. Individual
+switches governed by one logarithmic 10 ms–60 min TRANSITION control. Individual
 switches fade their effect contribution and input feed without moving the mix
 faders; Master FX crossfades the completed chain to dry and fades its feedback
 return. Reversing any switch during a long transition continues from its current

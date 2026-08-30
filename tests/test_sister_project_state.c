@@ -80,6 +80,8 @@ int main(void)
         TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FILTER_TYPE) |
         TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_EXT_GAIN);
     ts_sister_runtime_set_parameters(&runtime, &runtime.parameters);
+    ts_sister_runtime_set_selected_preset(&runtime, "GHOST FIELD");
+    ts_sister_runtime_mark_selected_preset_modified(&runtime);
     runtime.machine.buffer.data[0] = 0.75f;
     ts_sister_project_state_capture(&state, &runtime, 2u, "GHOST FIELD");
     assert(ts_sister_project_state_save(&state, project, error, sizeof(error)));
@@ -131,10 +133,12 @@ int main(void)
     assert(loaded.parameters.buffer_seconds == 23.0f);
     assert(loaded.parameter_locks == runtime.parameter_locks);
     assert(strcmp(loaded.selected_preset, "GHOST FIELD") == 0);
+    assert(loaded.selected_preset_modified == 1);
     ts_sister_runtime_init(&restored);
     assert(ts_sister_project_state_apply(&loaded, &restored, &instrument));
     assert(restored.source_switches == loaded.source_switches);
     assert(restored.parameter_locks == loaded.parameter_locks);
+    assert(restored.selected_preset_modified == 1);
     assert(restored.active_page == 1u && restored.page_source_masks[0] == 1u);
     assert(restored.machine.buffer.data == NULL); /* live tape was not serialized */
     ts_sister_runtime_free(&restored);
@@ -154,6 +158,7 @@ int main(void)
                                             &present, error, sizeof(error)));
         assert(present && loaded.source_switches == TS_SISTER_SOURCE_FM &&
                loaded.parameters.ghost_tone == 0.25f);
+        assert(loaded.selected_preset_modified == 0);
         assert(loaded.parameter_locks == 0u);
         assert(loaded.parameters.soak == 0.0f &&
                loaded.parameters.bleed == 0.25f &&

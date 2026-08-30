@@ -160,6 +160,10 @@ int main(void)
     CHECK(ts_sister_ui_hit_test(280, 374).action ==
           TS_SISTER_UI_ACTION_PRESET_MANAGE);
     model.preset_manage_open = 1;
+    CHECK(ts_sister_ui_hit_test_model(&model, 190, 165).action ==
+          TS_SISTER_UI_ACTION_PRESET_PREVIOUS);
+    CHECK(ts_sister_ui_hit_test_model(&model, 445, 165).action ==
+          TS_SISTER_UI_ACTION_PRESET_NEXT);
     CHECK(ts_sister_ui_hit_test_model(&model, 190, 205).action ==
           TS_SISTER_UI_ACTION_PRESET_SAVE_AS);
     model.preset_manage_open = 0;

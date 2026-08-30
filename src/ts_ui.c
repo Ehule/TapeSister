@@ -4507,8 +4507,9 @@ sister_footer:
            model->destination_mode == TS_SISTER_UI_DEST_NEXT_EMPTY ?
            "NEXT EMPTY" : "CURRENT", 0);
     button(fb, 230, 370, 28, "<", 0);
-    snprintf(preset_label, sizeof(preset_label), "%.18s",
-             model->preset_name[0] != '\0' ? model->preset_name : "PRESET");
+    snprintf(preset_label, sizeof(preset_label), "%.17s%s",
+             model->preset_name[0] != '\0' ? model->preset_name : "PRESET",
+             model->preset_modified ? "*" : "");
     button(fb, 264, 370, 130, preset_label, 0);
     button(fb, 400, 370, 28, ">", 0);
     {
@@ -4534,6 +4535,8 @@ sister_footer:
     if (model->fallout_lfo_open) {
         sister_fallout_lfo_dialog(fb, &model->parameters.fx.fallout);
     } else if (model->preset_manage_open) {
+        char preset_count[16];
+        char managed_name[48];
         rect(fb, 160, 130, 320, 170, RGB(8, 8, 9));
         rect(fb, 160, 130, 320, 1, PAL_MOUSE);
         rect(fb, 160, 299, 320, 1, PAL_MOUSE);
@@ -4541,19 +4544,36 @@ sister_footer:
         rect(fb, 479, 130, 1, 170, PAL_MOUSE);
         text(fb, 180, 145,
              model->fx_page == 2 ? "FALLOUT PRESET MANAGER" :
+             model->fx_page == 1 ? "SISTER + FX PRESET MANAGER" :
                                    "SISTER PRESET MANAGER",
              PAL_TEXT, 1);
-        text(fb, 180, 165,
-             model->preset_editing ? model->preset_edit_name : model->preset_name,
+        snprintf(preset_count, sizeof(preset_count), "%02zu/%02zu",
+                 model->preset_position, model->preset_count);
+        text(fb, 426, 145, preset_count, PAL_MOUSE, 1);
+        button(fb, 180, 160, 24, "<", 0);
+        button(fb, 436, 160, 24, ">", 0);
+        snprintf(managed_name, sizeof(managed_name), "%.35s%s",
+                 model->preset_editing ? model->preset_edit_name :
+                                         model->preset_name,
+                 !model->preset_editing && model->preset_modified ? "*" : "");
+        text(fb, 212, 165, managed_name,
              model->preset_editing ? PAL_NOTE : PAL_MOUSE, 1);
         if (model->preset_editing && model->text_cursor_visible) {
             size_t length = strlen(model->preset_edit_name);
             size_t cursor = model->preset_edit_cursor > length ? length :
                             model->preset_edit_cursor;
-            rect(fb, 180 + (int)cursor * 6, 163, 2, 11, PAL_NOTE);
+            rect(fb, 212 + (int)cursor * 6, 163, 2, 11, PAL_NOTE);
         }
-        if (model->preset_factory)
+        if (model->preset_factory && model->preset_modified)
+            text(fb, 180, 182, "FACTORY MODIFIED - SAVE AS ONLY", PAL_TUNING, 1);
+        else if (model->preset_factory)
             text(fb, 180, 182, "FACTORY - RECALL ONLY", PAL_TUNING, 1);
+        else if (model->preset_modified)
+            text(fb, 180, 182, "MODIFIED - OVERWRITE OR SAVE AS", PAL_NOTE, 1);
+        else if (model->preset_position > 0u)
+            text(fb, 180, 182, "USER PRESET", PAL_MOUSE, 1);
+        else
+            text(fb, 180, 182, "CUSTOM - SAVE AS TO CREATE PRESET", PAL_MOUSE, 1);
         button(fb, 180, 200, 128, "SAVE AS", model->preset_editing == 1);
         button(fb, 332, 200, 128, "OVERWRITE", model->preset_confirmation == 1);
         button(fb, 180, 230, 128, "RENAME", model->preset_editing == 2);
