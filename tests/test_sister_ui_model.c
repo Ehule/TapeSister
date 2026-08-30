@@ -168,30 +168,38 @@ int main(void)
     CHECK(ts_sister_ui_hit_test(455, 374).action == TS_SISTER_UI_ACTION_CAPTURE);
     CHECK(ts_sister_ui_hit_test(540, 374).action == TS_SISTER_UI_ACTION_OVERDUB);
     model.fx_page = 1;
-    hit = ts_sister_ui_hit_test_model(&model, 120, 76);
+    hit = ts_sister_ui_hit_test_model(&model, 120, 56);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_REVERB_TYPE);
-    hit = ts_sister_ui_hit_test_model(&model, 260, 76);
+    hit = ts_sister_ui_hit_test_model(&model, 260, 56);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_REVERB_DECAY);
-    hit = ts_sister_ui_hit_test_model(&model, 400, 76);
+    hit = ts_sister_ui_hit_test_model(&model, 400, 56);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_REVERB_MIX);
-    hit = ts_sister_ui_hit_test_model(&model, 260, 154);
+    hit = ts_sister_ui_hit_test_model(&model, 260, 112);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_DELAY_FEEDBACK);
-    hit = ts_sister_ui_hit_test_model(&model, 400, 232);
+    hit = ts_sister_ui_hit_test_model(&model, 400, 168);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_DISTORTION_MIX);
-    hit = ts_sister_ui_hit_test_model(&model, 115, 101);
+    hit = ts_sister_ui_hit_test_model(&model, 115, 78);
     CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
           hit.index == ((1 << 8) | TS_SISTER_EFFECT_TARGET_H1));
-    hit = ts_sister_ui_hit_test_model(&model, 300, 257);
+    hit = ts_sister_ui_hit_test_model(&model, 300, 190);
     CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
           hit.index == ((3 << 8) | TS_SISTER_EFFECT_TARGET_MIX));
-    hit = ts_sister_ui_hit_test_model(&model, 25, 101);
+    hit = ts_sister_ui_hit_test_model(&model, 25, 55);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
           hit.index == TS_SISTER_UI_FX_REVERB);
+    hit = ts_sister_ui_hit_test_model(&model, 25, 111);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
+          hit.index == TS_SISTER_UI_FX_DELAY);
+    hit = ts_sister_ui_hit_test_model(&model, 25, 167);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
+          hit.index == TS_SISTER_UI_FX_DISTORTION);
+    CHECK(ts_sister_ui_hit_test_model(&model, 25, 95).action ==
+          TS_SISTER_UI_ACTION_NONE);
     hit = ts_sister_ui_hit_test_model(&model, 25, 310);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
           hit.index == TS_SISTER_UI_FX_MASTER);
@@ -397,14 +405,24 @@ int main(void)
     model.parameters.fx.delay_mix = 0.5f;
     model.parameters.fx.distortion_mix = 0.5f;
     ts_sister_ui_render(&framebuffer, &model, &palette);
-    CHECK(framebuffer.pixels[95u * TS_UI_WIDTH + 297u] ==
+    CHECK(framebuffer.pixels[75u * TS_UI_WIDTH + 297u] ==
           palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
-    CHECK(framebuffer.pixels[173u * TS_UI_WIDTH + 297u] ==
+    CHECK(framebuffer.pixels[131u * TS_UI_WIDTH + 297u] ==
           palette.colors[TS_PALETTE_PATTERN_EFFECT]);
-    CHECK(framebuffer.pixels[251u * TS_UI_WIDTH + 297u] ==
+    CHECK(framebuffer.pixels[187u * TS_UI_WIDTH + 297u] ==
           palette.colors[TS_PALETTE_PATTERN_VOLUME]);
+    model.parameters.fx.transition = 0.0f;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
     CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 111u] !=
-          palette.colors[TS_PALETTE_PATTERN_TUNING]);
+          palette.colors[TS_PALETTE_MOUSE]);
+    /* One ordinary 5-percent wheel step is about 19 ms on the logarithmic
+       10 ms..60 min range.  Its meter must remain near the left edge. */
+    model.parameters.fx.transition = 0.05f;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 120u] ==
+          palette.colors[TS_PALETTE_MOUSE]);
+    CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 150u] !=
+          palette.colors[TS_PALETTE_MOUSE]);
     model.routing.capture_state = TS_CAPTURE_RECORDING;
     model.routing.capture_recorded_frames = 25u;
     model.routing.capture_capacity_frames = 100u;

@@ -3863,13 +3863,17 @@ static void sister_fallout_modulation_status(TsFramebuffer *fb,
 
 static void sister_choice_parameter_state(TsFramebuffer *fb, int x, int y,
                                           int width, const char *label,
-                                          const char *choice, int active,
+                                          const char *choice, float amount,
                                           uint32_t color, int locked)
 {
     char value[32];
     if (locked) color = sister_dim_color(color);
+    if (!isfinite(amount)) amount = 0.0f;
+    amount = sister_clamp(amount);
     rect(fb, x, y, width, 18, RGB(24, 23, 25));
-    if (active) rect(fb, x + 1, y + 14, width - 2, 3, color);
+    if (amount > 0.0f)
+        rect(fb, x + 1, y + 14,
+             (int)lrintf((float)(width - 2) * amount), 3, color);
     snprintf(value, sizeof(value), "%s %s", label, choice);
     text(fb, x + 3, y + 3, value, color, 1);
 }
@@ -4169,11 +4173,11 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             100, PAL_NOTE, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE));
         sister_choice_parameter_state(fb, 120, 284, 190, "PRESET",
-            preset_transition, f->transition > 0.0f, PAL_NOTE,
+            preset_transition, f->transition, PAL_NOTE,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_TRANSITION));
         sister_choice_parameter_state(fb, 330, 284, 190, "ON/OFF",
-            component_transition, f->component_transition > 0.0f, PAL_EFFECT,
+            component_transition, f->component_transition, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_COMPONENT_TRANSITION));
         sister_fallout_lfo_panel(fb, f);
@@ -4215,54 +4219,52 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             model->parameters.fx.distortion_targets
         };
         for (int row = 0; row < 3; ++row) {
-            int top = 48 + row * 78;
-            rect(fb, 10, top, 620, 68, RGB(10, 10, 11));
-            /* The power switch belongs to the routing row. Keeping it beside
-               H1/H2/H3/MIX makes each effect read as one compact unit. */
-            button(fb, 16, top + 45, 86, names[row],
+            int top = 48 + row * 56;
+            rect(fb, 10, top, 620, 50, RGB(10, 10, 11));
+            button(fb, 16, top + 2, 86, names[row],
                 row == 0 ? model->parameters.fx.reverb_enabled :
                 row == 1 ? model->parameters.fx.delay_enabled :
                            model->parameters.fx.distortion_enabled);
         }
-        sister_choice_parameter_state(fb, 110, 72, 130, "TYPE",
+        sister_choice_parameter_state(fb, 110, 52, 130, "TYPE",
             ts_sister_reverb_type_name(model->parameters.fx.reverb_type),
             model->parameters.fx.reverb_mix > 0.0f, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_TYPE));
-        sister_percent_parameter_state(fb, 250, 72, 130, "DECAY",
+        sister_percent_parameter_state(fb, 250, 52, 130, "DECAY",
             model->parameters.fx.reverb_decay, 100, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_DECAY));
-        sister_percent_parameter_state(fb, 390, 72, 130, "MIX",
+        sister_percent_parameter_state(fb, 390, 52, 130, "MIX",
             model->parameters.fx.reverb_mix, 100, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_MIX));
-        sister_percent_parameter_state(fb, 110, 150, 130, "TIME",
+        sister_percent_parameter_state(fb, 110, 108, 130, "TIME",
             model->parameters.fx.delay_time, 100, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DELAY_TIME));
-        sister_percent_parameter_state(fb, 250, 150, 130, "FEEDBACK",
+        sister_percent_parameter_state(fb, 250, 108, 130, "FEEDBACK",
             model->parameters.fx.delay_feedback, 100, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DELAY_FEEDBACK));
-        sister_percent_parameter_state(fb, 390, 150, 130, "MIX",
+        sister_percent_parameter_state(fb, 390, 108, 130, "MIX",
             model->parameters.fx.delay_mix, 100, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DELAY_MIX));
-        sister_percent_parameter_state(fb, 110, 228, 130, "DRIVE",
+        sister_percent_parameter_state(fb, 110, 164, 130, "DRIVE",
             model->parameters.fx.distortion_drive, 100, PAL_VOLUME,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DISTORTION_DRIVE));
-        sister_percent_parameter_state(fb, 250, 228, 130, "TONE",
+        sister_percent_parameter_state(fb, 250, 164, 130, "TONE",
             model->parameters.fx.distortion_tone, 100, PAL_VOLUME,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DISTORTION_TONE));
-        sister_percent_parameter_state(fb, 390, 228, 130, "MIX",
+        sister_percent_parameter_state(fb, 390, 164, 130, "MIX",
             model->parameters.fx.distortion_mix, 100, PAL_VOLUME,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DISTORTION_MIX));
         for (int row = 0; row < 3; ++row) {
-            int y = 94 + row * 78;
+            int y = 74 + row * 56;
             sister_target_toggle(fb, 110, y, 56, "H1",
                 masks[row] & TS_SISTER_EFFECT_TARGET_H1, PAL_NOTE);
             sister_target_toggle(fb, 172, y, 56, "H2",
@@ -4284,7 +4286,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                    model->parameters.fx.enabled ? "MASTER FX ON" : "MASTER FX",
                    model->parameters.fx.enabled);
             sister_choice_parameter_state(fb, 110, 306, 410, "TRANSITION",
-                transition, model->parameters.fx.transition > 0.0f, PAL_MOUSE,
+                transition, model->parameters.fx.transition, PAL_MOUSE,
                 ts_sister_ui_parameter_locked(
                     model, TS_SISTER_UI_PARAM_FX_TRANSITION));
         }

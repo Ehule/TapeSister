@@ -362,8 +362,8 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
              TS_SISTER_UI_PARAM_DISTORTION_MIX}
         };
         for (int row = 0; row < 3; ++row) {
-            int top = 72 + row * 78;
-            if (contains(x, y, 16, top + 21, 86, 22)) {
+            int top = 52 + row * 56;
+            if (contains(x, y, 16, top - 2, 86, 22)) {
                 hit.action = TS_SISTER_UI_ACTION_FX_TOGGLE;
                 hit.index = TS_SISTER_UI_FX_REVERB + row;
                 return hit;
