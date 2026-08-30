@@ -4565,15 +4565,15 @@ sister_footer:
             rect(fb, 212 + (int)cursor * 6, 163, 2, 11, PAL_NOTE);
         }
         if (model->preset_factory && model->preset_modified)
-            text(fb, 180, 182, "FACTORY MODIFIED - SAVE AS ONLY", PAL_TUNING, 1);
+            text(fb, 180, 187, "FACTORY MODIFIED - SAVE AS ONLY", PAL_TUNING, 1);
         else if (model->preset_factory)
-            text(fb, 180, 182, "FACTORY - RECALL ONLY", PAL_TUNING, 1);
+            text(fb, 180, 187, "FACTORY - RECALL ONLY", PAL_TUNING, 1);
         else if (model->preset_modified)
-            text(fb, 180, 182, "MODIFIED - OVERWRITE OR SAVE AS", PAL_NOTE, 1);
+            text(fb, 180, 187, "MODIFIED - OVERWRITE OR SAVE AS", PAL_NOTE, 1);
         else if (model->preset_position > 0u)
-            text(fb, 180, 182, "USER PRESET", PAL_MOUSE, 1);
+            text(fb, 180, 187, "USER PRESET", PAL_MOUSE, 1);
         else
-            text(fb, 180, 182, "CUSTOM - SAVE AS TO CREATE PRESET", PAL_MOUSE, 1);
+            text(fb, 180, 187, "CUSTOM - SAVE AS TO CREATE PRESET", PAL_MOUSE, 1);
         button(fb, 180, 200, 128, "SAVE AS", model->preset_editing == 1);
         button(fb, 332, 200, 128, "OVERWRITE", model->preset_confirmation == 1);
         button(fb, 180, 230, 128, "RENAME", model->preset_editing == 2);

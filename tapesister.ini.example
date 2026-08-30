@@ -78,6 +78,8 @@ capture_auto_resize=1
 capture_max_seconds=20
 
 [Sister Machine]
+; Open the independent Sister Machine window maximized. Set to 0 for 640x400.
+sister_window_maximized=1
 ; Pre-tape input trim. Reduce this when internal sources overload the write head.
 sister_input_percent=100
 ; Independent Sister-return monitor levels. Capture taps remain unscaled.

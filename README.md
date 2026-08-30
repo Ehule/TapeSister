@@ -298,6 +298,10 @@ Selected-tile and Collection WAV exports write the standard `smpl` unity-note/pi
 
 Fresh launches also use two boolean startup settings (both default to `1` when absent): `startup_welcome_sample` installs `assets/tapesister_welcome.wav` as the ordinary imported working sound in bank 01, and `startup_welcome_autoplay` auditions it once after the splash closes. Set autoplay to `0` to keep the waveform without the greeting, or sample to `0` to start with an empty selected bank 01. Command-line WAV/TSR loading takes precedence and is never overwritten by the welcome artifact. See `tapesister.ini.example`.
 
+The independent Sister Machine window also opens maximized by default. Set
+`sister_window_maximized=0` under `[Sister Machine]` to open it at its native
+640 by 400 size; the setting remains portable with `tapesister.ini`.
+
 **FT2 Link** is the bidirectional handoff control. For sending, choose whether every
 occupied tile on the current page should become sample slots inside **Page -> One** or
 become **Page -> Split** instruments in Tapehead. When two or more Sample pages exist,

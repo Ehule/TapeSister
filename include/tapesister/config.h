@@ -143,6 +143,7 @@ typedef struct {
     int sister_output_percent;
     int sister_erase_percent;
     int sister_ghost_percent;
+    int sister_window_maximized;
     int sister_window_x;
     int sister_window_y;
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];

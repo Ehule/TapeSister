@@ -6854,14 +6854,17 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
 {
     int x = SDL_WINDOWPOS_CENTERED;
     int y = SDL_WINDOWPOS_CENTERED;
+    Uint32 flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE |
+                   SDL_WINDOW_ALLOW_HIGHDPI;
     if (sister == NULL) return 0;
     if (sister->window != NULL) return 1;
     if (config != NULL && config->sister_window_x >= 0) x = config->sister_window_x;
     if (config != NULL && config->sister_window_y >= 0) y = config->sister_window_y;
+    if (config == NULL || config->sister_window_maximized)
+        flags |= SDL_WINDOW_MAXIMIZED;
     sister->window = SDL_CreateWindow(
         TAPESISTER_SISTER_WINDOW_TITLE, x, y,
-        TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT,
-        SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT, flags);
     sister->renderer = sister->window ? SDL_CreateRenderer(
         sister->window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : NULL;
     if (sister->renderer == NULL && sister->window != NULL)

@@ -52,6 +52,8 @@ static int test_defaults(void)
                   "performance transitions should default to four minutes") &&
            expect(config.sister_fallout_rise_seconds == 3600,
                   "Fallout RISE should default to a one-hour ascent") &&
+           expect(config.sister_window_maximized == 1,
+                  "Sister window should open maximized by default") &&
            expect(config.sister_input_percent == 100 &&
                   config.sister_tiles_percent == 100 &&
                   config.sister_fm_percent == 100 &&
@@ -114,6 +116,7 @@ static int test_roundtrip(void)
     saved.sister_output_percent = 275;
     saved.sister_erase_percent = 20;
     saved.sister_ghost_percent = 67;
+    saved.sister_window_maximized = 0;
     saved.sister_window_x = 123;
     saved.sister_window_y = 456;
     saved.voice_attack_ms = 7;
@@ -169,8 +172,9 @@ static int test_roundtrip(void)
                 loaded.sister_erase_percent == 20 &&
                 loaded.sister_ghost_percent == 67,
                 "Sister input/monitor/output/erase preferences should roundtrip") &&
-         expect(loaded.sister_window_x == 123 && loaded.sister_window_y == 456,
-                "Sister window position should roundtrip") &&
+         expect(loaded.sister_window_maximized == 0 &&
+                loaded.sister_window_x == 123 && loaded.sister_window_y == 456,
+                "Sister window startup state and position should roundtrip") &&
          expect(loaded.capture_max_seconds == 47,
                 "Capture duration limit should roundtrip") &&
          expect(loaded.capture_channels == 2,
