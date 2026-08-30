@@ -120,9 +120,9 @@ static void test_transition_noise_and_centered_lfo(void)
     TsStereoFrame silence = {0.0f, 0.0f};
     float signatures[TS_SISTER_FALLOUT_NOISE_COUNT] = {0};
     assert(fabsf(ts_sister_fallout_transition_ms(0.0f) - 10.0f) < 0.001f);
-    assert(fabsf(ts_sister_fallout_transition_ms(1.0f) - 60000.0f) < 0.1f);
+    assert(fabsf(ts_sister_fallout_transition_ms(1.0f) - 3600000.0f) < 1.0f);
     assert(fabsf(ts_sister_fallout_transition_normalized(10.0f)) < 0.0001f);
-    assert(fabsf(ts_sister_fallout_transition_normalized(60000.0f) - 1.0f) <
+    assert(fabsf(ts_sister_fallout_transition_normalized(3600000.0f) - 1.0f) <
            0.0001f);
     assert(fabsf(ts_sister_fallout_lfo_hz(0.0f) - 1.0f / 3600.0f) <
            0.000001f);
@@ -151,7 +151,8 @@ static void test_transition_noise_and_centered_lfo(void)
 
     ts_sister_fallout_controls_default(&controls);
     controls.enabled = 1;
-    controls.transition = 1.0f;
+    controls.component_transition =
+        ts_sister_fallout_transition_normalized(60000.0f);
     assert(ts_sister_fallout_init(&engine, 1000u));
     ts_sister_fallout_set_controls(&engine, &controls);
     for (int i = 0; i < 1000; ++i)
@@ -185,6 +186,7 @@ static void test_transition_noise_and_centered_lfo(void)
 
     ts_sister_fallout_controls_default(&controls);
     controls.enabled = 1;
+    controls.mix = 1.0f;
     controls.feedback = 0.5f;
     controls.lfo_intensity = 1.0f;
     controls.lfo_targets = TS_SISTER_FALLOUT_LFO_FEEDBACK;
@@ -198,11 +200,17 @@ static void test_transition_noise_and_centered_lfo(void)
     (void)ts_sister_fallout_process(&engine, silence);
     assert(ts_sister_fallout_feedback_amount(&engine) < 0.001f);
     assert(engine.controls.feedback == 0.5f);
+    controls.mix = 0.0f;
+    ts_sister_fallout_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 25; ++frame)
+        (void)ts_sister_fallout_process(&engine, silence);
+    assert(ts_sister_fallout_feedback_amount(&engine) == 0.0f);
     ts_sister_fallout_free(&engine);
 
     /* RISE moves the center; the LFO then oscillates around that center. */
     ts_sister_fallout_controls_default(&controls);
     controls.enabled = 1;
+    controls.mix = 1.0f;
     controls.feedback = 0.25f;
     controls.rise_length = 0.0f;
     controls.rise_intensity = 1.0f;
@@ -319,9 +327,9 @@ static void test_master_gates_and_modulation_disconnect(void)
     engine.drop_gain = engine.drop_target = 0.25f;
     engine.pan = engine.pan_target = 0.9f;
     engine.hold_remaining = 5u;
-    engine.skip_fade_remaining = 5u;
+    engine.skip_fade_remaining = engine.skip_fade_total = 5u;
     ts_sister_fallout_set_controls(&engine, &controls);
-    for (int frame = 0; frame < 11; ++frame)
+    for (int frame = 0; frame < 25; ++frame)
         (void)ts_sister_fallout_process(&engine, silence);
     assert(engine.playback_target == 1.0f &&
            fabsf(engine.playback_rate - 1.0f) < 0.0001f);
@@ -423,6 +431,7 @@ static void test_running_modulation_targets_fade_to_shared_phase(void)
     float value;
     ts_sister_fallout_controls_default(&controls);
     controls.enabled = 1;
+    controls.mix = 1.0f;
     controls.feedback = 0.20f;
     controls.rise_mode = TS_SISTER_FALLOUT_RISE_SAW;
     controls.rise_length = ts_sister_fallout_rise_normalized(3600.0f);
@@ -641,6 +650,53 @@ static void test_toggle_edges_restart_from_audible_output(void)
     ts_sister_fallout_free(&engine);
 }
 
+static void test_component_transition_progress_and_zero_mix_transparency(void)
+{
+    TsSisterFalloutEngine engine;
+    TsSisterFalloutControls controls;
+    TsStereoFrame input = {0.31f, -0.27f};
+    int active = 0;
+    float progress;
+    ts_sister_fallout_controls_default(&controls);
+    controls.enabled = 1;
+    controls.mix = 0.0f;
+    controls.feedback = 1.0f;
+    controls.component_transition =
+        ts_sister_fallout_transition_normalized(1000.0f);
+    assert(ts_sister_fallout_init(&engine, 1000u));
+    ts_sister_fallout_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 1000; ++frame) {
+        TsSisterFalloutResult output =
+            ts_sister_fallout_process(&engine, input);
+        assert(output.output.l == input.l && output.output.r == input.r);
+    }
+    assert(ts_sister_fallout_feedback_amount(&engine) == 0.0f);
+
+    controls.drop_enabled = 1;
+    ts_sister_fallout_set_controls(&engine, &controls);
+    progress = ts_sister_fallout_component_transition_progress(
+        &engine, &active);
+    assert(active && progress == 0.0f);
+    for (int frame = 0; frame < 500; ++frame)
+        (void)ts_sister_fallout_process(&engine, input);
+    progress = ts_sister_fallout_component_transition_progress(
+        &engine, &active);
+    assert(active && progress > 0.499f && progress < 0.501f);
+
+    /* A wheel edit updates its target immediately without restarting the
+       minute-scale activation envelope. */
+    controls.drop_rate = 0.91f;
+    ts_sister_fallout_set_controls(&engine, &controls);
+    assert(engine.controls.drop_rate == 0.91f);
+    assert(engine.drop_engage.remaining == 500u);
+    for (int frame = 0; frame < 500; ++frame)
+        (void)ts_sister_fallout_process(&engine, input);
+    progress = ts_sister_fallout_component_transition_progress(
+        &engine, &active);
+    assert(!active && progress == 1.0f);
+    ts_sister_fallout_free(&engine);
+}
+
 int main(void)
 {
     test_defaults_are_true_bypass();
@@ -654,6 +710,7 @@ int main(void)
     test_wheel_bursts_and_active_modulation_are_smoothed();
     test_every_modulation_destination_uses_target_blend();
     test_toggle_edges_restart_from_audible_output();
+    test_component_transition_progress_and_zero_mix_transparency();
     test_runtime_feedback_is_wet_only_and_causal();
     puts("Sister Fallout tests passed");
     return 0;

@@ -46,8 +46,10 @@ static int test_defaults(void)
                   "Sister storage should retain the Kafka foundation defaults") &&
            expect(config.sister_capture_channels == 1,
                   "Sister Capture should remain deliberately mono by default") &&
-           expect(config.sister_fallout_transition_ms == 10,
-                  "Fallout should default to a fast 10 ms insert ramp") &&
+           expect(config.sister_fx_transition_ms == 240000 &&
+                  config.sister_fallout_transition_ms == 240000 &&
+                  config.sister_fallout_component_transition_ms == 240000,
+                  "performance transitions should default to four minutes") &&
            expect(config.sister_fallout_rise_seconds == 3600,
                   "Fallout RISE should default to a one-hour ascent") &&
            expect(config.sister_input_percent == 100 &&
@@ -95,7 +97,9 @@ static int test_roundtrip(void)
     saved.sister_buffer_seconds = 55;
     saved.sister_buffer_channels = 1;
     saved.sister_clear_ms = 33;
+    saved.sister_fx_transition_ms = 123456;
     saved.sister_fallout_transition_ms = 54321;
+    saved.sister_fallout_component_transition_ms = 654321;
     saved.sister_fallout_rise_seconds = 12345;
     saved.sister_capture_channels = 2;
     saved.sister_restart_clear = 0;
@@ -145,7 +149,9 @@ static int test_roundtrip(void)
          expect(loaded.sister_buffer_seconds == 55 &&
                 loaded.sister_buffer_channels == 1 &&
                 loaded.sister_clear_ms == 33 &&
+                loaded.sister_fx_transition_ms == 123456 &&
                 loaded.sister_fallout_transition_ms == 54321 &&
+                loaded.sister_fallout_component_transition_ms == 654321 &&
                 loaded.sister_fallout_rise_seconds == 12345,
                 "Sister storage preferences should roundtrip") &&
          expect(loaded.sister_capture_channels == 2 &&

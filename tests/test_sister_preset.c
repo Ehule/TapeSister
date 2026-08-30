@@ -53,6 +53,7 @@ int main(void)
     p.fx.fallout.feedback = 0.58f;
     p.fx.fallout.noise_type = TS_SISTER_FALLOUT_NOISE_BLUE;
     p.fx.fallout.transition = 0.82f;
+    p.fx.fallout.component_transition = 0.76f;
     p.fx.fallout.lfo_rate = 0.24f;
     p.fx.fallout.lfo_intensity = 0.67f;
     p.fx.fallout.lfo_targets = TS_SISTER_FALLOUT_LFO_MIX |
@@ -105,6 +106,7 @@ int main(void)
     assert(recalled.fx.fallout.feedback > 0.57f);
     assert(recalled.fx.fallout.noise_type == TS_SISTER_FALLOUT_NOISE_BLUE);
     assert(recalled.fx.fallout.transition > 0.81f);
+    assert(recalled.fx.fallout.component_transition > 0.75f);
     assert(recalled.fx.fallout.lfo_rate > 0.23f);
     assert(recalled.fx.fallout.lfo_intensity > 0.66f);
     assert(recalled.fx.fallout.lfo_targets ==

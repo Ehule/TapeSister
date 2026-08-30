@@ -21,7 +21,7 @@ typedef struct {
     int reverb_enabled;
     int delay_enabled;
     int distortion_enabled;
-    /* Shared logarithmic 10 ms..60 s performance-switch ramp. */
+    /* Shared logarithmic 10 ms..60 min performance-switch ramp. */
     float transition;
     TsSisterReverbType reverb_type;
     float reverb_mix;
@@ -115,6 +115,7 @@ typedef struct {
     float target;
     float step;
     uint32_t remaining;
+    uint32_t total;
 } TsSisterFxRamp;
 
 typedef struct {
@@ -142,6 +143,8 @@ float ts_sister_reverb_decay_seconds(TsSisterReverbType type,
 float ts_sister_fx_transition_ms(float normalized);
 float ts_sister_fx_transition_normalized(float milliseconds);
 float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine);
+float ts_sister_post_fx_transition_progress(
+    const TsSisterPostFxEngine *engine, int *active);
 
 int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
                            uint32_t sample_rate);

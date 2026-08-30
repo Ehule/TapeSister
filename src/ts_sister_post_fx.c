@@ -56,6 +56,7 @@ static void ramp_start(TsSisterFxRamp *ramp, float target, uint32_t frames)
     ramp->target = clampf(target, 0.0f, 1.0f);
     ramp->step = (ramp->target - ramp->current) / (float)frames;
     ramp->remaining = frames;
+    ramp->total = frames;
 }
 
 static void ramp_advance(TsSisterFxRamp *ramp)
@@ -180,13 +181,13 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
 float ts_sister_fx_transition_ms(float normalized)
 {
     normalized = clampf(normalized, 0.0f, 1.0f);
-    return 10.0f * powf(6000.0f, normalized);
+    return 10.0f * powf(360000.0f, normalized);
 }
 
 float ts_sister_fx_transition_normalized(float milliseconds)
 {
-    milliseconds = clampf(milliseconds, 10.0f, 60000.0f);
-    return logf(milliseconds / 10.0f) / logf(6000.0f);
+    milliseconds = clampf(milliseconds, 10.0f, 3600000.0f);
+    return logf(milliseconds / 10.0f) / logf(360000.0f);
 }
 
 float ts_sister_delay_time_ms(float normalized)
@@ -725,6 +726,28 @@ float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine)
 {
     return engine != NULL && engine->ready ?
         clampf(engine->master_engage.current, 0.0f, 1.0f) : 0.0f;
+}
+
+float ts_sister_post_fx_transition_progress(
+    const TsSisterPostFxEngine *engine, int *active)
+{
+    const TsSisterFxRamp *ramps[4];
+    const TsSisterFxRamp *latest = NULL;
+    if (active != NULL) *active = 0;
+    if (engine == NULL || !engine->ready) return 1.0f;
+    ramps[0] = &engine->master_engage;
+    ramps[1] = &engine->reverb_engage;
+    ramps[2] = &engine->delay_engage;
+    ramps[3] = &engine->distortion_engage;
+    for (size_t i = 0u; i < 4u; ++i) {
+        if (ramps[i]->remaining == 0u || ramps[i]->total == 0u) continue;
+        if (latest == NULL || ramps[i]->remaining > latest->remaining)
+            latest = ramps[i];
+    }
+    if (latest == NULL) return 1.0f;
+    if (active != NULL) *active = 1;
+    return clampf(1.0f - (float)latest->remaining / (float)latest->total,
+                  0.0f, 1.0f);
 }
 
 size_t ts_sister_post_fx_memory_bytes(const TsSisterPostFxEngine *engine)

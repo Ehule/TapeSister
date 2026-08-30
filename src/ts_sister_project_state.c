@@ -112,6 +112,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "FalloutBitResolution=%.9g\nFalloutBitRate=%.9g\n"
         "FalloutPitchEnabled=%d\nFalloutPitch=%.9g\n"
         "FalloutPitchRamp=%.9g\nFalloutPitchRate=%.9g\n"
+        "FalloutComponentTransition=%.9g\n"
         "FalloutLfoRate=%.9g\nFalloutLfoIntensity=%.9g\n"
         "FalloutLfoTargets=%u\nFalloutRiseMode=%d\n"
         "FalloutRiseLength=%.9g\nFalloutRiseIntensity=%.9g\n"
@@ -144,7 +145,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx.fallout.bit_quality, p->fx.fallout.bit_resolution,
         p->fx.fallout.bit_rate, p->fx.fallout.pitch_enabled,
         p->fx.fallout.pitch, p->fx.fallout.pitch_ramp,
-        p->fx.fallout.pitch_rate, p->fx.fallout.lfo_rate,
+        p->fx.fallout.pitch_rate, p->fx.fallout.component_transition,
+        p->fx.fallout.lfo_rate,
         p->fx.fallout.lfo_intensity,
         (unsigned)p->fx.fallout.lfo_targets, p->fx.fallout.rise_mode,
         p->fx.fallout.rise_length, p->fx.fallout.rise_intensity,
@@ -307,6 +309,7 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
         return 1;
     }
     PF("FalloutTransition", fx.fallout.transition);
+    PF("FalloutComponentTransition", fx.fallout.component_transition);
     PI("FalloutDropEnabled", fx.fallout.drop_enabled);
     PF("FalloutDropRate", fx.fallout.drop_rate);
     PI("FalloutPanEnabled", fx.fallout.pan_enabled);

@@ -136,6 +136,14 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     atomic_init(&snapshot->fallout_lfo_phase_bits, float_bits(0.0f));
     atomic_init(&snapshot->fallout_rise_phase_bits, float_bits(0.0f));
     atomic_init(&snapshot->fallout_rise_complete, 0);
+    atomic_init(&snapshot->fx_transition_progress_bits, float_bits(1.0f));
+    atomic_init(&snapshot->fx_transition_active, 0);
+    atomic_init(&snapshot->fallout_component_transition_progress_bits,
+                float_bits(1.0f));
+    atomic_init(&snapshot->fallout_component_transition_active, 0);
+    atomic_init(&snapshot->fallout_preset_transition_progress_bits,
+                float_bits(1.0f));
+    atomic_init(&snapshot->fallout_preset_transition_active, 0);
 }
 
 static void publish_snapshot(TsSisterRuntime *runtime)
@@ -143,6 +151,8 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     TsSisterRoutingSnapshotAtomic *snapshot;
     uint64_t revision;
     uint16_t mask = 0u;
+    int transition_active = 0;
+    float transition_progress;
     if (runtime == NULL) return;
     snapshot = &runtime->snapshot;
     revision = atomic_load_explicit(&snapshot->revision,
@@ -213,6 +223,25 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     atomic_store_explicit(&snapshot->fallout_rise_complete,
                           runtime->fallout.rise_one_shot_complete,
                           memory_order_relaxed);
+    transition_progress = ts_sister_post_fx_transition_progress(
+        &runtime->post_fx, &transition_active);
+    atomic_store_explicit(&snapshot->fx_transition_progress_bits,
+                          float_bits(transition_progress), memory_order_relaxed);
+    atomic_store_explicit(&snapshot->fx_transition_active, transition_active,
+                          memory_order_relaxed);
+    transition_progress = ts_sister_fallout_component_transition_progress(
+        &runtime->fallout, &transition_active);
+    atomic_store_explicit(
+        &snapshot->fallout_component_transition_progress_bits,
+        float_bits(transition_progress), memory_order_relaxed);
+    atomic_store_explicit(&snapshot->fallout_component_transition_active,
+                          transition_active, memory_order_relaxed);
+    transition_progress = ts_sister_fallout_preset_transition_progress(
+        &runtime->fallout, &transition_active);
+    atomic_store_explicit(&snapshot->fallout_preset_transition_progress_bits,
+                          float_bits(transition_progress), memory_order_relaxed);
+    atomic_store_explicit(&snapshot->fallout_preset_transition_active,
+                          transition_active, memory_order_relaxed);
     atomic_store_explicit(&snapshot->revision, revision + 2u,
                           memory_order_release);
 }
@@ -1546,6 +1575,23 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
             &source->fallout_rise_phase_bits, memory_order_relaxed));
         snapshot->fallout_rise_complete = atomic_load_explicit(
             &source->fallout_rise_complete, memory_order_relaxed);
+        snapshot->fx_transition_progress = bits_float(atomic_load_explicit(
+            &source->fx_transition_progress_bits, memory_order_relaxed));
+        snapshot->fx_transition_active = atomic_load_explicit(
+            &source->fx_transition_active, memory_order_relaxed);
+        snapshot->fallout_component_transition_progress = bits_float(
+            atomic_load_explicit(
+                &source->fallout_component_transition_progress_bits,
+                memory_order_relaxed));
+        snapshot->fallout_component_transition_active = atomic_load_explicit(
+            &source->fallout_component_transition_active,
+            memory_order_relaxed);
+        snapshot->fallout_preset_transition_progress = bits_float(
+            atomic_load_explicit(
+                &source->fallout_preset_transition_progress_bits,
+                memory_order_relaxed));
+        snapshot->fallout_preset_transition_active = atomic_load_explicit(
+            &source->fallout_preset_transition_active, memory_order_relaxed);
         after = atomic_load_explicit(&source->revision, memory_order_acquire);
         if (before == after && (after & 1u) == 0u) {
             snapshot->revision = after;

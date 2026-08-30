@@ -220,6 +220,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "distortion_targets=%u\nmaster_fx_feedback=%.9g\nbuffer_seconds=%.9g\n"
         "fallout_enabled=%d\nfallout_mix=%.9g\nfallout_feedback=%.9g\n"
         "fallout_noise=%.9g\nfallout_noise_type=%d\nfallout_transition=%.9g\n"
+        "fallout_component_transition=%.9g\n"
         "fallout_drop_enabled=%d\nfallout_drop_rate=%.9g\n"
         "fallout_pan_enabled=%d\nfallout_pan_rate=%.9g\n"
         "fallout_skip_enabled=%d\nfallout_skip_span=%.9g\nfallout_skip_rate=%.9g\n"
@@ -252,6 +253,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->buffer_seconds, p->fx.fallout.enabled, p->fx.fallout.mix,
         p->fx.fallout.feedback, p->fx.fallout.noise,
         p->fx.fallout.noise_type, p->fx.fallout.transition,
+        p->fx.fallout.component_transition,
         p->fx.fallout.drop_enabled, p->fx.fallout.drop_rate,
         p->fx.fallout.pan_enabled, p->fx.fallout.pan_rate,
         p->fx.fallout.skip_enabled, p->fx.fallout.skip_span,
@@ -415,6 +417,7 @@ static int assign_field(TsSisterParameters *p, const char *key,
         return 1;
     }
     FLOAT_FIELD("fallout_transition", fx.fallout.transition);
+    FLOAT_FIELD("fallout_component_transition", fx.fallout.component_transition);
     INT_FIELD("fallout_drop_enabled", fx.fallout.drop_enabled);
     FLOAT_FIELD("fallout_drop_rate", fx.fallout.drop_rate);
     INT_FIELD("fallout_pan_enabled", fx.fallout.pan_enabled);

@@ -45,8 +45,10 @@ typedef struct {
     float feedback;
     float noise;
     TsSisterFalloutNoiseType noise_type;
-    /* Logarithmic 10 ms..60 s engage/disengage ramp. */
+    /* Logarithmic 10 ms..60 min preset-recall crossfade. */
     float transition;
+    /* Logarithmic 10 ms..60 min master/component activation ramp. */
+    float component_transition;
     int drop_enabled;
     float drop_rate;
     int pan_enabled;
@@ -76,6 +78,14 @@ typedef struct {
 } TsSisterFalloutControls;
 
 typedef struct {
+    float current;
+    float target;
+    float step;
+    uint32_t remaining;
+    uint32_t total;
+} TsSisterFalloutRamp;
+
+typedef struct {
     TsStereoFrame output;
     /* Effect-only signal before MIX and before the Master FX chain. */
     TsStereoFrame wet;
@@ -102,6 +112,12 @@ typedef struct {
     float engage;
     float engage_step;
     uint32_t engage_remaining;
+    uint32_t engage_total;
+    TsSisterFalloutRamp drop_engage;
+    TsSisterFalloutRamp pan_engage;
+    TsSisterFalloutRamp skip_engage;
+    TsSisterFalloutRamp bit_engage;
+    TsSisterFalloutRamp pitch_engage;
     float playback_rate;
     float playback_target;
     float playback_step;
@@ -126,6 +142,7 @@ typedef struct {
     float rise_value;
     float rise_smoothed;
     float feedback_modulated;
+    float mix_modulated;
     int rise_one_shot_complete;
     TsSisterFalloutControls controls;
     /* Continuous panel values chase controls at audio rate.  Keeping this
@@ -149,6 +166,7 @@ typedef struct {
     float preset_gain;
     float preset_gain_step;
     uint32_t preset_gain_remaining;
+    uint32_t preset_transition_total;
     uint32_t preset_second_frames;
     int preset_transition_stage;
     int preset_applying;
@@ -186,5 +204,9 @@ TsSisterFalloutResult ts_sister_fallout_process(
 size_t ts_sister_fallout_memory_bytes(const TsSisterFalloutEngine *engine);
 float ts_sister_fallout_engage(const TsSisterFalloutEngine *engine);
 float ts_sister_fallout_feedback_amount(const TsSisterFalloutEngine *engine);
+float ts_sister_fallout_component_transition_progress(
+    const TsSisterFalloutEngine *engine, int *active);
+float ts_sister_fallout_preset_transition_progress(
+    const TsSisterFalloutEngine *engine, int *active);
 
 #endif

@@ -3649,8 +3649,24 @@ static void sister_fallout_time_label(char *text_value, size_t size,
         snprintf(text_value, size, "%.0FMS", milliseconds);
     else if (milliseconds < 10000.0f)
         snprintf(text_value, size, "%.1FS", milliseconds / 1000.0f);
-    else
+    else if (milliseconds < 60000.0f)
         snprintf(text_value, size, "%.0FS", milliseconds / 1000.0f);
+    else if (milliseconds < 3600000.0f)
+        snprintf(text_value, size, "%.1FM", milliseconds / 60000.0f);
+    else
+        snprintf(text_value, size, "%.0FH", milliseconds / 3600000.0f);
+}
+
+static void sister_transition_progress(TsFramebuffer *fb, int x, int y,
+                                       int width, float progress, int active,
+                                       uint32_t color)
+{
+    progress = sister_clamp(progress);
+    rect(fb, x, y, width, 4, RGB(24, 23, 25));
+    if (active)
+        rect(fb, x, y, (int)lrintf((float)width * progress), 4, color);
+    else
+        rect(fb, x, y + 1, width, 1, sister_dim_color(color));
 }
 
 static void sister_fallout_lfo_panel(TsFramebuffer *fb,
@@ -4044,9 +4060,13 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
 
     if (model->fx_page == 2) {
         const TsSisterFalloutControls *f = &model->parameters.fx.fallout;
-        char transition[24];
-        sister_fallout_time_label(transition, sizeof(transition),
+        char preset_transition[24];
+        char component_transition[24];
+        sister_fallout_time_label(preset_transition, sizeof(preset_transition),
             ts_sister_fallout_transition_ms(f->transition));
+        sister_fallout_time_label(component_transition,
+            sizeof(component_transition),
+            ts_sister_fallout_transition_ms(f->component_transition));
         rect(fb, 10, 42, 620, 268, RGB(9, 9, 10));
         button(fb, 16, 50, 86, f->enabled ? "FALLOUT ON" : "FALLOUT",
                f->enabled);
@@ -4098,11 +4118,21 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         sister_percent_parameter_state(fb, 400, 252, 120, "RATE", f->pitch_rate,
             100, PAL_NOTE, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE));
-        sister_choice_parameter_state(fb, 120, 284, 400, "TRANSITION",
-            transition, f->transition > 0.0f, PAL_MOUSE,
+        sister_choice_parameter_state(fb, 120, 284, 190, "PRESET",
+            preset_transition, f->transition > 0.0f, PAL_NOTE,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_TRANSITION));
+        sister_choice_parameter_state(fb, 330, 284, 190, "ON/OFF",
+            component_transition, f->component_transition > 0.0f, PAL_EFFECT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_COMPONENT_TRANSITION));
         sister_fallout_lfo_panel(fb, f);
+        sister_transition_progress(fb, 548, 290, 74,
+            model->routing.fallout_component_transition_progress,
+            model->routing.fallout_component_transition_active, PAL_EFFECT);
+        sister_transition_progress(fb, 548, 298, 74,
+            model->routing.fallout_preset_transition_progress,
+            model->routing.fallout_preset_transition_active, PAL_NOTE);
         sister_fallout_modulation_status(fb, model);
         goto sister_footer;
     }
@@ -4196,6 +4226,9 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         text(fb, 530, 337, "0-135%", PAL_MOUSE, 1);
         text(fb, 10, 284, "DISTORTION > DELAY > REVERB   TIMED PERFORMANCE BYPASS",
              PAL_MOUSE, 1);
+        sister_transition_progress(fb, 426, 284, 94,
+            model->routing.fx_transition_progress,
+            model->routing.fx_transition_active, PAL_EFFECT);
         goto sister_footer;
     }
 

@@ -95,6 +95,12 @@ typedef struct {
     float fallout_lfo_phase;
     float fallout_rise_phase;
     int fallout_rise_complete;
+    float fx_transition_progress;
+    int fx_transition_active;
+    float fallout_component_transition_progress;
+    int fallout_component_transition_active;
+    float fallout_preset_transition_progress;
+    int fallout_preset_transition_active;
     uint64_t revision;
 } TsSisterRoutingSnapshot;
 
@@ -123,6 +129,12 @@ typedef struct {
     atomic_uint_least32_t fallout_lfo_phase_bits;
     atomic_uint_least32_t fallout_rise_phase_bits;
     atomic_int fallout_rise_complete;
+    atomic_uint_least32_t fx_transition_progress_bits;
+    atomic_int fx_transition_active;
+    atomic_uint_least32_t fallout_component_transition_progress_bits;
+    atomic_int fallout_component_transition_active;
+    atomic_uint_least32_t fallout_preset_transition_progress_bits;
+    atomic_int fallout_preset_transition_active;
 } TsSisterRoutingSnapshotAtomic;
 
 typedef struct {

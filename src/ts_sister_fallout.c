@@ -10,7 +10,7 @@
 
 #define FALLOUT_SECONDS 20u
 #define FALLOUT_TRANSITION_MIN_MS 10.0f
-#define FALLOUT_TRANSITION_MAX_MS 60000.0f
+#define FALLOUT_TRANSITION_MAX_MS 3600000.0f
 #define FALLOUT_LFO_MIN_HZ (1.0f / 3600.0f)
 #define FALLOUT_LFO_MAX_HZ 10.0f
 #define FALLOUT_RISE_MIN_SECONDS 1.0f
@@ -163,6 +163,44 @@ static float advance(float *current, float target, float step,
     return *current;
 }
 
+static void fallout_ramp_start(TsSisterFalloutRamp *ramp, float target,
+                               uint32_t frames)
+{
+    if (ramp == NULL) return;
+    if (frames == 0u) frames = 1u;
+    ramp->target = clampf(target, 0.0f, 1.0f);
+    ramp->step = (ramp->target - ramp->current) / (float)frames;
+    ramp->remaining = frames;
+    ramp->total = frames;
+}
+
+static float fallout_ramp_advance(TsSisterFalloutRamp *ramp)
+{
+    if (ramp == NULL) return 0.0f;
+    if (ramp->remaining > 0u) {
+        ramp->current += ramp->step;
+        if (--ramp->remaining == 0u) ramp->current = ramp->target;
+    }
+    ramp->current = clampf(ramp->current, 0.0f, 1.0f);
+    return ramp->current;
+}
+
+static void fallout_ramp_reset(TsSisterFalloutRamp *ramp, float value)
+{
+    if (ramp == NULL) return;
+    value = clampf(value, 0.0f, 1.0f);
+    *ramp = (TsSisterFalloutRamp){value, value, 0.0f, 0u, 0u};
+}
+
+static TsStereoFrame frame_lerp(TsStereoFrame a, TsStereoFrame b, float amount)
+{
+    TsStereoFrame result = {
+        a.l + (b.l - a.l) * clampf(amount, 0.0f, 1.0f),
+        a.r + (b.r - a.r) * clampf(amount, 0.0f, 1.0f)
+    };
+    return ts_stereo_frame_sanitize(result);
+}
+
 static float slew_toward(float current, float target, float maximum_step)
 {
     float difference = target - current;
@@ -179,6 +217,9 @@ static uint32_t transition_frames(const TsSisterFalloutEngine *engine,
     frames = milliseconds * (float)engine->sample_rate / 1000.0f;
     return (uint32_t)fmaxf(1.0f, frames);
 }
+
+static void choose_loop(TsSisterFalloutEngine *engine,
+                        const TsSisterFalloutControls *controls);
 
 static void target_blends_reset(TsSisterFalloutEngine *engine)
 {
@@ -302,7 +343,9 @@ void ts_sister_fallout_controls_default(TsSisterFalloutControls *controls)
     memset(controls, 0, sizeof(*controls));
     controls->mix = 0.65f;
     controls->noise_type = TS_SISTER_FALLOUT_NOISE_WHITE;
-    controls->transition = 0.0f;
+    controls->transition = ts_sister_fallout_transition_normalized(10.0f);
+    controls->component_transition =
+        ts_sister_fallout_transition_normalized(10.0f);
     controls->drop_rate = 0.45f;
     controls->pan_rate = 0.50f;
     controls->skip_span = 0.35f;
@@ -333,6 +376,8 @@ void ts_sister_fallout_controls_sanitize(TsSisterFalloutControls *controls)
         controls->noise_type >= TS_SISTER_FALLOUT_NOISE_COUNT)
         controls->noise_type = TS_SISTER_FALLOUT_NOISE_WHITE;
     controls->transition = clampf(controls->transition, 0.0f, 1.0f);
+    controls->component_transition =
+        clampf(controls->component_transition, 0.0f, 1.0f);
     controls->drop_enabled = controls->drop_enabled != 0;
     controls->drop_rate = clampf(controls->drop_rate, 0.0f, 1.0f);
     controls->pan_enabled = controls->pan_enabled != 0;
@@ -398,6 +443,7 @@ void ts_sister_fallout_clear(TsSisterFalloutEngine *engine)
     engine->rise_smoothed = 0.0f;
     engine->rise_one_shot_complete = 0;
     engine->feedback_modulated = engine->controls.feedback;
+    engine->mix_modulated = engine->controls.mix;
     engine->smoothed_controls = engine->controls;
     target_blends_reset(engine);
     engine->control_handoff_output = (TsStereoFrame){0.0f, 0.0f};
@@ -411,9 +457,26 @@ void ts_sister_fallout_clear(TsSisterFalloutEngine *engine)
     engine->preset_gain = 1.0f;
     engine->preset_gain_step = 0.0f;
     engine->preset_gain_remaining = 0u;
+    engine->preset_transition_total = 0u;
     engine->preset_second_frames = 0u;
     engine->preset_transition_stage = 0;
     engine->preset_applying = 0;
+    engine->engage_total = 0u;
+    engine->drop_engage = (TsSisterFalloutRamp){
+        engine->controls.drop_enabled ? 1.0f : 0.0f,
+        engine->controls.drop_enabled ? 1.0f : 0.0f, 0.0f, 0u, 0u};
+    engine->pan_engage = (TsSisterFalloutRamp){
+        engine->controls.pan_enabled ? 1.0f : 0.0f,
+        engine->controls.pan_enabled ? 1.0f : 0.0f, 0.0f, 0u, 0u};
+    engine->skip_engage = (TsSisterFalloutRamp){
+        engine->controls.skip_enabled ? 1.0f : 0.0f,
+        engine->controls.skip_enabled ? 1.0f : 0.0f, 0.0f, 0u, 0u};
+    engine->bit_engage = (TsSisterFalloutRamp){
+        engine->controls.bit_enabled ? 1.0f : 0.0f,
+        engine->controls.bit_enabled ? 1.0f : 0.0f, 0.0f, 0u, 0u};
+    engine->pitch_engage = (TsSisterFalloutRamp){
+        engine->controls.pitch_enabled ? 1.0f : 0.0f,
+        engine->controls.pitch_enabled ? 1.0f : 0.0f, 0.0f, 0u, 0u};
     engine->prng = seed;
 }
 
@@ -472,7 +535,7 @@ void ts_sister_fallout_set_controls(
     TsSisterFalloutControls previous;
     int restart_rise;
     int was_active;
-    int discrete_change;
+    int handoff_change;
     uint32_t added_rise_targets;
     uint32_t removed_targets;
     uint32_t fade;
@@ -495,16 +558,11 @@ void ts_sister_fallout_set_controls(
                    (added_rise_targets != 0u &&
                     next.rise_mode == TS_SISTER_FALLOUT_RISE_ONE_SHOT &&
                     engine->rise_one_shot_complete);
-    discrete_change = next.noise_type != previous.noise_type ||
-                      next.drop_enabled != previous.drop_enabled ||
-                      next.pan_enabled != previous.pan_enabled ||
-                      next.skip_enabled != previous.skip_enabled ||
-                      next.bit_enabled != previous.bit_enabled ||
-                      next.pitch_enabled != previous.pitch_enabled;
+    handoff_change = next.noise_type != previous.noise_type;
     removed_targets = (engine->controls.lfo_targets & ~next.lfo_targets) |
                       (engine->controls.rise_targets & ~next.rise_targets);
     fade = engine->sample_rate > 0u ? (uint32_t)fmaxf(1.0f,
-        ts_sister_fallout_transition_ms(next.transition) *
+        ts_sister_fallout_transition_ms(next.component_transition) *
         (float)engine->sample_rate / 1000.0f) : 1u;
     if (fade == 0u) fade = 1u;
     if (next.enabled && !engine->controls.enabled) {
@@ -512,11 +570,49 @@ void ts_sister_fallout_set_controls(
         engine->active = 1;
         ramp(&engine->engage, &engine->engage_step,
              &engine->engage_remaining, 1.0f, fade);
+        engine->engage_total = fade;
     } else if (!next.enabled && engine->controls.enabled) {
         ramp(&engine->engage, &engine->engage_step,
              &engine->engage_remaining, 0.0f, fade);
+        engine->engage_total = fade;
     }
-    if (was_active && discrete_change && !engine->preset_applying)
+    if (was_active && !engine->preset_applying) {
+        if (next.drop_enabled != previous.drop_enabled)
+            fallout_ramp_start(&engine->drop_engage,
+                next.drop_enabled ? 1.0f : 0.0f, fade);
+        if (next.pan_enabled != previous.pan_enabled)
+            fallout_ramp_start(&engine->pan_engage,
+                next.pan_enabled ? 1.0f : 0.0f, fade);
+        if (next.skip_enabled != previous.skip_enabled) {
+            fallout_ramp_start(&engine->skip_engage,
+                next.skip_enabled ? 1.0f : 0.0f, fade);
+            if (next.skip_enabled && engine->valid_frames >= 4u) {
+                choose_loop(engine, &next);
+                engine->skip_fade_total = fade;
+                engine->skip_fade_remaining = fade;
+                engine->next_skip = engine->write_clock +
+                    interval_frames(next.skip_rate, engine->sample_rate);
+            }
+        }
+        if (next.bit_enabled != previous.bit_enabled)
+            fallout_ramp_start(&engine->bit_engage,
+                next.bit_enabled ? 1.0f : 0.0f, fade);
+        if (next.pitch_enabled != previous.pitch_enabled)
+            fallout_ramp_start(&engine->pitch_engage,
+                next.pitch_enabled ? 1.0f : 0.0f, fade);
+    } else {
+        fallout_ramp_reset(&engine->drop_engage,
+                           next.drop_enabled ? 1.0f : 0.0f);
+        fallout_ramp_reset(&engine->pan_engage,
+                           next.pan_enabled ? 1.0f : 0.0f);
+        fallout_ramp_reset(&engine->skip_engage,
+                           next.skip_enabled ? 1.0f : 0.0f);
+        fallout_ramp_reset(&engine->bit_engage,
+                           next.bit_enabled ? 1.0f : 0.0f);
+        fallout_ramp_reset(&engine->pitch_engage,
+                           next.pitch_enabled ? 1.0f : 0.0f);
+    }
+    if (was_active && handoff_change && !engine->preset_applying)
         control_handoff_begin(engine);
     target_blends_set(engine, previous.lfo_targets, next.lfo_targets,
                       previous.rise_targets, next.rise_targets,
@@ -568,6 +664,7 @@ void ts_sister_fallout_recall_preset(
         engine->preset_applying = 0;
         engine->preset_gain = 1.0f;
         engine->preset_transition_stage = 0;
+        engine->preset_transition_total = 0u;
         return;
     }
     total_frames = (uint32_t)fmaxf(2.0f,
@@ -580,6 +677,7 @@ void ts_sister_fallout_recall_preset(
     if (engine->preset_second_frames == 0u)
         engine->preset_second_frames = 1u;
     engine->preset_transition_stage = 1;
+    engine->preset_transition_total = total_frames;
     ramp(&engine->preset_gain, &engine->preset_gain_step,
          &engine->preset_gain_remaining, 0.0f, first_frames);
 }
@@ -610,6 +708,7 @@ static void preset_transition_advance(TsSisterFalloutEngine *engine)
         engine->preset_gain = 1.0f;
         engine->preset_gain_step = 0.0f;
         engine->preset_transition_stage = 0;
+        engine->preset_transition_total = 0u;
     }
 }
 
@@ -768,6 +867,7 @@ static TsSisterFalloutControls modulated_controls(
     MODULATE(pitch_rate, TS_SISTER_FALLOUT_LFO_PITCH_RATE);
 #undef MODULATE
     engine->feedback_modulated = out.feedback;
+    engine->mix_modulated = out.mix;
     return out;
 }
 
@@ -811,7 +911,9 @@ TsSisterFalloutResult ts_sister_fallout_process(
     TsSisterFalloutResult result = {input, {0.0f, 0.0f}};
     TsSisterFalloutControls controls;
     TsStereoFrame wet;
+    TsStereoFrame stage_dry;
     float rate, gain, pan, left, right, bits, levels, mix;
+    float drop_blend, pan_blend, bit_blend, pitch_blend;
     uint32_t frames;
     size_t write_index;
     double loop_end;
@@ -820,6 +922,11 @@ TsSisterFalloutResult ts_sister_fallout_process(
     if (engine == NULL || !engine->ready || !engine->active) return result;
     preset_transition_advance(engine);
     controls = modulated_controls(engine);
+    drop_blend = fallout_ramp_advance(&engine->drop_engage);
+    pan_blend = fallout_ramp_advance(&engine->pan_engage);
+    (void)fallout_ramp_advance(&engine->skip_engage);
+    bit_blend = fallout_ramp_advance(&engine->bit_engage);
+    pitch_blend = fallout_ramp_advance(&engine->pitch_engage);
 
     write_index = (size_t)(engine->write_clock % engine->capacity_frames);
     engine->buffer[write_index * 2u] = input.l;
@@ -835,22 +942,33 @@ TsSisterFalloutResult ts_sister_fallout_process(
         if (engine->read_clock < engine->loop_start ||
             engine->read_clock >= engine->loop_start + engine->loop_length)
             engine->read_clock = engine->loop_start;
-        engine->skip_fade_remaining = 0u;
     }
 
-    if (controls.skip_enabled && engine->write_clock >= engine->next_skip) {
+    if (controls.skip_enabled && engine->skip_engage.target > 0.0f &&
+        engine->skip_engage.remaining > 0u &&
+        engine->skip_fade_remaining == 0u && engine->valid_frames >= 4u) {
+        choose_loop(engine, &controls);
+        engine->skip_fade_total = engine->skip_engage.remaining;
+        engine->skip_fade_remaining = engine->skip_engage.remaining;
+        engine->next_skip = engine->write_clock +
+            interval_frames(controls.skip_rate, engine->sample_rate);
+    }
+
+    if (controls.skip_enabled && engine->skip_engage.remaining == 0u &&
+        engine->write_clock >= engine->next_skip) {
         choose_loop(engine, &controls);
         engine->next_skip = engine->write_clock +
             interval_frames(controls.skip_rate, engine->sample_rate);
     }
-    if (!controls.pitch_enabled) {
+    if (!controls.pitch_enabled && pitch_blend <= 0.0f) {
         if (engine->playback_target != 1.0f) {
             frames = engine->sample_rate / 100u; /* 10 ms de-click bypass. */
             engine->playback_target = 1.0f;
             ramp(&engine->playback_rate, &engine->playback_step,
                  &engine->playback_remaining, 1.0f, frames);
         }
-    } else if (engine->write_clock >= engine->next_pitch) {
+    } else if (controls.pitch_enabled &&
+               engine->write_clock >= engine->next_pitch) {
         float target = choose_pitch(&controls);
         frames = (uint32_t)(controls.pitch_ramp * 0.5f * engine->sample_rate);
         /* Even the nominally instant setting gets a short tape-speed handoff.
@@ -867,6 +985,7 @@ TsSisterFalloutResult ts_sister_fallout_process(
     }
     rate = advance(&engine->playback_rate, engine->playback_target,
                    engine->playback_step, &engine->playback_remaining);
+    rate = 1.0f + (rate - 1.0f) * pitch_blend;
     wet = read_frame(engine, engine->read_clock);
     if (engine->skip_fade_remaining > 0u && engine->skip_fade_total > 0u) {
         TsStereoFrame old = read_frame(engine, engine->old_read_clock);
@@ -882,13 +1001,15 @@ TsSisterFalloutResult ts_sister_fallout_process(
     while (engine->read_clock >= loop_end) engine->read_clock -= engine->loop_length;
     while (engine->read_clock < engine->loop_start) engine->read_clock += engine->loop_length;
 
-    if (controls.drop_enabled && engine->write_clock >= engine->next_drop) {
+    stage_dry = wet;
+    if ((controls.drop_enabled || drop_blend > 0.0f) &&
+        engine->write_clock >= engine->next_drop) {
         engine->drop_target = clampf(0.70f + 0.25f * random_gaussian(engine), 0.0f, 1.2f);
         ramp(&engine->drop_gain, &engine->drop_step, &engine->drop_remaining,
              engine->drop_target, engine->sample_rate * 5u / 1000u);
         engine->next_drop = engine->write_clock +
             interval_frames(controls.drop_rate, engine->sample_rate);
-    } else if (!controls.drop_enabled) {
+    } else if (!controls.drop_enabled && drop_blend <= 0.0f) {
         engine->drop_gain = engine->drop_target = 1.0f;
         engine->drop_remaining = 0u;
     }
@@ -896,14 +1017,17 @@ TsSisterFalloutResult ts_sister_fallout_process(
                    engine->drop_step, &engine->drop_remaining);
     wet.l *= gain;
     wet.r *= gain;
+    wet = frame_lerp(stage_dry, wet, drop_blend);
 
-    if (controls.pan_enabled && engine->write_clock >= engine->next_pan) {
+    stage_dry = wet;
+    if ((controls.pan_enabled || pan_blend > 0.0f) &&
+        engine->write_clock >= engine->next_pan) {
         engine->pan_target = clampf(0.5f + 0.25f * random_gaussian(engine), 0.0f, 1.0f);
         ramp(&engine->pan, &engine->pan_step, &engine->pan_remaining,
              engine->pan_target, engine->sample_rate * 50u / 1000u);
         engine->next_pan = engine->write_clock +
             interval_frames(controls.pan_rate, engine->sample_rate);
-    } else if (!controls.pan_enabled) {
+    } else if (!controls.pan_enabled && pan_blend <= 0.0f) {
         engine->pan = engine->pan_target = 0.5f;
         engine->pan_remaining = 0u;
     }
@@ -913,8 +1037,10 @@ TsSisterFalloutResult ts_sister_fallout_process(
     right = sinf(pan * (float)(M_PI * 0.5));
     wet.l *= left * 1.41421356f;
     wet.r *= right * 1.41421356f;
+    wet = frame_lerp(stage_dry, wet, pan_blend);
 
-    if (controls.bit_enabled) {
+    stage_dry = wet;
+    if (controls.bit_enabled || bit_blend > 0.0f) {
         uint32_t hold;
         if (engine->write_clock >= engine->next_bit) {
             engine->bit_quality_current = clampf(
@@ -938,6 +1064,7 @@ TsSisterFalloutResult ts_sister_fallout_process(
     } else {
         engine->hold_remaining = 0u;
     }
+    wet = frame_lerp(stage_dry, wet, bit_blend);
 
     if (controls.noise > 0.0f) {
         gain = controls.noise * 0.42f * fminf(fabsf(rate), 3.0f);
@@ -983,6 +1110,56 @@ float ts_sister_fallout_engage(const TsSisterFalloutEngine *engine)
 
 float ts_sister_fallout_feedback_amount(const TsSisterFalloutEngine *engine)
 {
-    return engine != NULL ? clampf(engine->feedback_modulated, 0.0f, 1.0f) :
-                            0.0f;
+    return engine != NULL ? clampf(engine->feedback_modulated, 0.0f, 1.0f) *
+                            clampf(engine->mix_modulated, 0.0f, 1.0f) : 0.0f;
+}
+
+float ts_sister_fallout_component_transition_progress(
+    const TsSisterFalloutEngine *engine, int *active)
+{
+    const TsSisterFalloutRamp *ramps[5];
+    uint32_t remaining = 0u;
+    uint32_t total = 0u;
+    if (active != NULL) *active = 0;
+    if (engine == NULL || !engine->ready) return 1.0f;
+    if (engine->engage_remaining > 0u && engine->engage_total > 0u) {
+        remaining = engine->engage_remaining;
+        total = engine->engage_total;
+    }
+    ramps[0] = &engine->drop_engage;
+    ramps[1] = &engine->pan_engage;
+    ramps[2] = &engine->skip_engage;
+    ramps[3] = &engine->bit_engage;
+    ramps[4] = &engine->pitch_engage;
+    for (size_t i = 0u; i < 5u; ++i) {
+        if (ramps[i]->remaining > remaining && ramps[i]->total > 0u) {
+            remaining = ramps[i]->remaining;
+            total = ramps[i]->total;
+        }
+    }
+    if (remaining == 0u || total == 0u) return 1.0f;
+    if (active != NULL) *active = 1;
+    return clampf(1.0f - (float)remaining / (float)total, 0.0f, 1.0f);
+}
+
+float ts_sister_fallout_preset_transition_progress(
+    const TsSisterFalloutEngine *engine, int *active)
+{
+    uint32_t elapsed;
+    uint32_t first;
+    if (active != NULL) *active = 0;
+    if (engine == NULL || engine->preset_transition_stage == 0 ||
+        engine->preset_transition_total == 0u)
+        return 1.0f;
+    if (active != NULL) *active = 1;
+    first = engine->preset_transition_total - engine->preset_second_frames;
+    if (engine->preset_transition_stage == 1)
+        elapsed = first - engine->preset_gain_remaining;
+    else if (engine->preset_transition_stage == 2)
+        elapsed = first + engine->preset_second_frames -
+                  engine->preset_gain_remaining;
+    else
+        return 1.0f;
+    return clampf((float)elapsed / (float)engine->preset_transition_total,
+                  0.0f, 1.0f);
 }
