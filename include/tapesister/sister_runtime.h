@@ -195,6 +195,7 @@ typedef struct {
     TsStereoFrame fallout_feedback_previous;
     /* UI/controller performance-safety state; never read by the callback. */
     uint64_t parameter_locks;
+    uint64_t parameter_locks_high;
     char selected_preset[48];
     int selected_preset_modified;
     TsSisterRoutingSnapshotAtomic snapshot;

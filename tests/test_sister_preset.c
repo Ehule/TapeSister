@@ -11,9 +11,12 @@ int main(void)
     TsSisterPresetBank bank, loaded;
     TsSisterParameters p, recalled;
     uint64_t recalled_locks = 0u;
+    uint64_t recalled_locks_high = 0u;
     const uint64_t locks =
         TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FILTER_TYPE) |
         TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_H2_RATE);
+    const uint64_t locks_high = TS_SISTER_UI_PARAMETER_BIT(
+        TS_SISTER_UI_PARAM_DELAY_GAIN - 64);
     char error[160];
     ts_sister_preset_bank_init(&bank, 48000u);
     assert(bank.count == 3u && bank.entries[0].factory);
@@ -40,15 +43,18 @@ int main(void)
     p.fx.master_transition = 0.64f;
     p.fx.reverb_mix = 0.63f;
     p.fx.reverb_decay = 0.91f;
+    p.fx.reverb_gain_db = 6.0f;
     p.fx.reverb_targets = TS_SISTER_EFFECT_TARGET_H2;
     p.fx.delay_time = 0.77f;
     p.fx.delay_feedback = 0.88f;
     p.fx.delay_mix = 0.52f;
+    p.fx.delay_gain_db = -4.0f;
     p.fx.delay_targets = TS_SISTER_EFFECT_TARGET_H1 |
                          TS_SISTER_EFFECT_TARGET_H3;
     p.fx.distortion_drive = 0.84f;
     p.fx.distortion_tone = 0.19f;
     p.fx.distortion_mix = 0.73f;
+    p.fx.distortion_gain_db = 11.0f;
     p.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
     p.fx.master_feedback = 0.69f;
     p.fx.fallout.enabled = 1;
@@ -70,16 +76,19 @@ int main(void)
     p.fx.fallout.skip_span = 0.76f;
     p.fx.fallout.bit_enabled = 1;
     p.buffer_seconds = 23.0f;
-    assert(ts_sister_preset_save_new_with_locks(
-        &bank, "MY MEMORY", &p, locks, 48000u, error, sizeof(error)));
+    assert(ts_sister_preset_save_new_with_lock_words(
+        &bank, "MY MEMORY", &p, locks, locks_high,
+        48000u, error, sizeof(error)));
     assert(!ts_sister_preset_overwrite(&bank, 0u, &p, 48000u,
                                        error, sizeof(error)));
     assert(ts_sister_preset_save(&bank, path, error, sizeof(error)));
     assert(ts_sister_preset_load(&loaded, path, 48000u, error, sizeof(error)));
     assert(loaded.count == 4u);
-    assert(ts_sister_preset_recall_with_locks(
-        &loaded, 3u, &recalled, &recalled_locks));
+    assert(ts_sister_preset_recall_with_lock_words(
+        &loaded, 3u, &recalled, &recalled_locks,
+        &recalled_locks_high));
     assert(recalled_locks == locks);
+    assert(recalled_locks_high == locks_high);
     assert((recalled_locks &
             TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FILTER_CUTOFF)) == 0u);
     assert(recalled.ghost_tone > 0.42f && recalled.ghost_tone < 0.44f);
@@ -104,10 +113,16 @@ int main(void)
     assert(recalled.fx.master_transition > 0.63f &&
            recalled.fx.master_transition < 0.65f);
     assert(recalled.fx.reverb_mix > 0.62f && recalled.fx.reverb_mix < 0.64f);
+    assert(recalled.fx.reverb_gain_db > 5.99f &&
+           recalled.fx.reverb_gain_db < 6.01f);
     assert(recalled.fx.reverb_targets == TS_SISTER_EFFECT_TARGET_H2);
     assert(recalled.fx.delay_targets == (TS_SISTER_EFFECT_TARGET_H1 |
                                           TS_SISTER_EFFECT_TARGET_H3));
+    assert(recalled.fx.delay_gain_db < -3.99f &&
+           recalled.fx.delay_gain_db > -4.01f);
     assert(recalled.fx.distortion_targets == TS_SISTER_EFFECT_TARGET_MIX);
+    assert(recalled.fx.distortion_gain_db > 10.99f &&
+           recalled.fx.distortion_gain_db < 11.01f);
     assert(recalled.fx.master_feedback > 0.68f);
     assert(recalled.fx.fallout.enabled == 1);
     assert(recalled.fx.fallout.feedback > 0.57f);
@@ -159,6 +174,7 @@ int main(void)
                                      error, sizeof(error)));
         assert(loaded.count == 4u && loaded.entries[3].parameters.ghost_tone == 0.5f);
         assert(loaded.entries[3].parameter_locks == 0u);
+        assert(loaded.entries[3].parameter_locks_high == 0u);
         assert(loaded.entries[3].parameters.soak == 0.0f);
         assert(loaded.entries[3].parameters.bleed == 0.25f);
         assert(loaded.entries[3].parameters.soak_targets ==
@@ -168,6 +184,9 @@ int main(void)
                loaded.entries[3].parameters.fx.reverb_size < 0.83f);
         assert(loaded.entries[3].parameters.fx.delay_mix == 0.0f);
         assert(loaded.entries[3].parameters.fx.distortion_mix == 0.0f);
+        assert(loaded.entries[3].parameters.fx.reverb_gain_db == 0.0f);
+        assert(loaded.entries[3].parameters.fx.delay_gain_db == 0.0f);
+        assert(loaded.entries[3].parameters.fx.distortion_gain_db == 0.0f);
         assert(loaded.entries[3].parameters.fx.master_feedback == 0.0f);
         assert(loaded.entries[3].parameters.tiles_gain == 1.0f);
         assert(loaded.entries[3].parameters.fm_gain == 1.0f);

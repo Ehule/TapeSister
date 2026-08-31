@@ -7,7 +7,7 @@
 #include "tapesister/sister_machine.h"
 
 enum {
-    TS_SISTER_PRESET_VERSION = 8,
+    TS_SISTER_PRESET_VERSION = 9,
     TS_SISTER_PRESET_NAME_MAX = 47,
     TS_SISTER_PRESET_LIMIT = 64,
     TS_SISTER_FACTORY_PRESET_COUNT = 3
@@ -17,6 +17,7 @@ typedef struct {
     char name[TS_SISTER_PRESET_NAME_MAX + 1];
     TsSisterParameters parameters;
     uint64_t parameter_locks;
+    uint64_t parameter_locks_high;
     int factory;
 } TsSisterPreset;
 
@@ -33,6 +34,10 @@ int ts_sister_preset_recall_with_locks(const TsSisterPresetBank *bank,
                                        size_t index,
                                        TsSisterParameters *parameters,
                                        uint64_t *parameter_locks);
+int ts_sister_preset_recall_with_lock_words(
+    const TsSisterPresetBank *bank, size_t index,
+    TsSisterParameters *parameters, uint64_t *parameter_locks,
+    uint64_t *parameter_locks_high);
 int ts_sister_preset_save_new(TsSisterPresetBank *bank, const char *name,
                               const TsSisterParameters *parameters,
                               uint32_t sample_rate,
@@ -41,6 +46,11 @@ int ts_sister_preset_save_new_with_locks(
     TsSisterPresetBank *bank, const char *name,
     const TsSisterParameters *parameters, uint64_t parameter_locks,
     uint32_t sample_rate, char *error, size_t error_size);
+int ts_sister_preset_save_new_with_lock_words(
+    TsSisterPresetBank *bank, const char *name,
+    const TsSisterParameters *parameters, uint64_t parameter_locks,
+    uint64_t parameter_locks_high, uint32_t sample_rate,
+    char *error, size_t error_size);
 int ts_sister_preset_overwrite(TsSisterPresetBank *bank, size_t index,
                                const TsSisterParameters *parameters,
                                uint32_t sample_rate,
@@ -49,6 +59,11 @@ int ts_sister_preset_overwrite_with_locks(
     TsSisterPresetBank *bank, size_t index,
     const TsSisterParameters *parameters, uint64_t parameter_locks,
     uint32_t sample_rate, char *error, size_t error_size);
+int ts_sister_preset_overwrite_with_lock_words(
+    TsSisterPresetBank *bank, size_t index,
+    const TsSisterParameters *parameters, uint64_t parameter_locks,
+    uint64_t parameter_locks_high, uint32_t sample_rate,
+    char *error, size_t error_size);
 int ts_sister_preset_rename(TsSisterPresetBank *bank, size_t index,
                             const char *name,
                             char *error, size_t error_size);

@@ -25,6 +25,9 @@ static void test_defaults_and_identity(void)
     assert(controls.reverb_mix == 0.0f);
     assert(controls.delay_mix == 0.0f);
     assert(controls.distortion_mix == 0.0f);
+    assert(controls.reverb_gain_db == 0.0f);
+    assert(controls.delay_gain_db == 0.0f);
+    assert(controls.distortion_gain_db == 0.0f);
     assert(controls.master_feedback == 0.0f);
     assert(ts_sister_post_fx_init(&engine, 48000u));
     ts_sister_post_fx_set_controls(&engine, &controls);
@@ -36,6 +39,35 @@ static void test_defaults_and_identity(void)
         assert(output.r == input.r);
     }
     assert(ts_sister_post_fx_memory_bytes(&engine) > 3000000u);
+    ts_sister_post_fx_free(&engine);
+}
+
+static void test_post_mix_makeup_gain_and_bypass(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+    const TsStereoFrame input = {0.10f, -0.05f};
+    TsStereoFrame output = {0.0f, 0.0f};
+
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.transition = ts_sister_fx_transition_normalized(10.0f);
+    controls.distortion_gain_db = 12.0f;
+    ts_sister_post_fx_sync_controls(&engine, &controls);
+    for (int frame = 0; frame < 500; ++frame)
+        output = ts_sister_post_fx_process(&engine, 3u, input, 0);
+    /* Gain follows Mix, so it remains useful at exact dry and feeds the next
+       processor in the chain. +12 dB is approximately 3.981x. */
+    assert(output.l > 0.397f && output.l < 0.399f);
+    assert(output.r < -0.198f && output.r > -0.200f);
+
+    controls.distortion_enabled = 0;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 10; ++frame)
+        output = ts_sister_post_fx_process(&engine, 3u, input, 0);
+    output = ts_sister_post_fx_process(&engine, 3u, input, 0);
+    assert(output.l == input.l);
+    assert(output.r == input.r);
     ts_sister_post_fx_free(&engine);
 }
 
@@ -811,6 +843,7 @@ static void test_master_zero_is_absolute_return_valve(void)
 int main(void)
 {
     test_defaults_and_identity();
+    test_post_mix_makeup_gain_and_bypass();
     test_delay_length_and_stereo();
     test_equal_power_chain_makeup();
     test_tape_feedback_tail();

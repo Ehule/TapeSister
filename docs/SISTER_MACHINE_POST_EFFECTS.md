@@ -106,6 +106,21 @@ continuous pitch drift. FEEDBACK retains the 0–1.08 regenerative range: the to
 can sustain and compress into a dub-like haze but cannot produce a non-finite
 line. MIX 0 remains exact identity; feedback zero produces one four-head event.
 
+## Per-effect makeup gain
+
+Reverb, Delay, and Distortion each provide a post-MIX **GAIN** control spanning
+**-12 to +12 dB**, with exact 0 dB as the default. The gain stage follows that
+effect's dry/wet blend and precedes the next processor, so it can compensate a
+quiet effect, deliberately push the following processor, or trim a stacked
+chain. Its linear multiplier smooths over approximately 20 ms; decibel
+conversion occurs when controls are published rather than once per sample.
+
+The makeup stage shares the effect's target and timed bypass envelope. As an
+effect fades out, its multiplier converges to exact unity even when GAIN is not
+0 dB. Consequently GAIN remains useful at MIX 0 while the effect is engaged,
+but bypass never leaves a hidden level change behind. Presets and projects save
+all three gains, and older files load them at 0 dB.
+
 ## Distortion
 
 The RAT-inspired digital chain is:

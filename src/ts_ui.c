@@ -3597,6 +3597,24 @@ static void sister_percent_parameter_state(TsFramebuffer *fb, int x, int y,
     text(fb, x + 3, y + 3, value, color, 1);
 }
 
+static void sister_db_parameter_state(TsFramebuffer *fb, int x, int y,
+                                      int width, const char *label,
+                                      float decibels, uint32_t color,
+                                      int locked)
+{
+    char value[32];
+    float amount;
+    if (!isfinite(decibels)) decibels = 0.0f;
+    if (decibels < -12.0f) decibels = -12.0f;
+    if (decibels > 12.0f) decibels = 12.0f;
+    amount = (decibels + 12.0f) / 24.0f;
+    if (locked) color = sister_dim_color(color);
+    rect(fb, x, y, width, 18, RGB(24, 23, 25));
+    rect(fb, x + 1, y + 14, (int)lrintf((width - 2) * amount), 3, color);
+    snprintf(value, sizeof(value), "%s %+.0fDB", label, decibels);
+    text(fb, x + 3, y + 3, value, color, 1);
+}
+
 static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
                                   const TsSisterUiModel *model)
 {
@@ -4246,39 +4264,51 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 row == 1 ? model->parameters.fx.delay_enabled :
                            model->parameters.fx.distortion_enabled);
         }
-        sister_percent_parameter_state(fb, 110, 52, 130, "SIZE",
+        sister_db_parameter_state(fb, 110, 52, 95, "GAIN",
+            model->parameters.fx.reverb_gain_db, PAL_WAVE_RIGHT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_REVERB_GAIN));
+        sister_percent_parameter_state(fb, 215, 52, 95, "SIZE",
             model->parameters.fx.reverb_size, 100, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_TYPE));
-        sister_percent_parameter_state(fb, 250, 52, 130, "DECAY",
+        sister_percent_parameter_state(fb, 320, 52, 95, "DECAY",
             model->parameters.fx.reverb_decay, 100, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_DECAY));
-        sister_percent_parameter_state(fb, 390, 52, 130, "MIX",
+        sister_percent_parameter_state(fb, 425, 52, 95, "MIX",
             model->parameters.fx.reverb_mix, 100, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_MIX));
-        sister_percent_parameter_state(fb, 110, 108, 130, "TIME",
+        sister_db_parameter_state(fb, 110, 108, 95, "GAIN",
+            model->parameters.fx.delay_gain_db, PAL_EFFECT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DELAY_GAIN));
+        sister_percent_parameter_state(fb, 215, 108, 95, "TIME",
             model->parameters.fx.delay_time, 100, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DELAY_TIME));
-        sister_percent_parameter_state(fb, 250, 108, 130, "FEEDBACK",
+        sister_percent_parameter_state(fb, 320, 108, 95, "FEED",
             model->parameters.fx.delay_feedback, 100, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DELAY_FEEDBACK));
-        sister_percent_parameter_state(fb, 390, 108, 130, "MIX",
+        sister_percent_parameter_state(fb, 425, 108, 95, "MIX",
             model->parameters.fx.delay_mix, 100, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DELAY_MIX));
-        sister_percent_parameter_state(fb, 110, 164, 130, "DRIVE",
+        sister_db_parameter_state(fb, 110, 164, 95, "GAIN",
+            model->parameters.fx.distortion_gain_db, PAL_VOLUME,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_DISTORTION_GAIN));
+        sister_percent_parameter_state(fb, 215, 164, 95, "DRIVE",
             model->parameters.fx.distortion_drive, 100, PAL_VOLUME,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DISTORTION_DRIVE));
-        sister_percent_parameter_state(fb, 250, 164, 130, "TONE",
+        sister_percent_parameter_state(fb, 320, 164, 95, "TONE",
             model->parameters.fx.distortion_tone, 100, PAL_VOLUME,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DISTORTION_TONE));
-        sister_percent_parameter_state(fb, 390, 164, 130, "MIX",
+        sister_percent_parameter_state(fb, 425, 164, 95, "MIX",
             model->parameters.fx.distortion_mix, 100, PAL_VOLUME,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DISTORTION_MIX));

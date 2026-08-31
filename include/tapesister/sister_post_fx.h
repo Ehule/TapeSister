@@ -31,14 +31,18 @@ typedef struct {
     float reverb_size;
     float reverb_mix;
     float reverb_decay;
+    /* Post-mix makeup gain in decibels (-12..+12). */
+    float reverb_gain_db;
     uint8_t reverb_targets;
     float delay_time;
     float delay_feedback;
     float delay_mix;
+    float delay_gain_db;
     uint8_t delay_targets;
     float distortion_drive;
     float distortion_tone;
     float distortion_mix;
+    float distortion_gain_db;
     uint8_t distortion_targets;
     float master_feedback;
     TsSisterFalloutControls fallout;
@@ -74,6 +78,8 @@ typedef struct {
     float size_current;
     float mix_current;
     float decay_current;
+    float gain_current;
+    float gain_target;
     float route_current;
     float modulation_sin[TS_SISTER_REVERB_LINES];
     float modulation_cos[TS_SISTER_REVERB_LINES];
@@ -107,6 +113,8 @@ typedef struct {
     float feedback_alpha_dark;
     float feedback_current;
     float mix_current;
+    float gain_current;
+    float gain_target;
     float route_current;
     int has_history;
 } TsSisterDelayState;
@@ -119,6 +127,8 @@ typedef struct {
     float drive_current;
     float tone_current;
     float mix_current;
+    float gain_current;
+    float gain_target;
     float route_current;
 } TsSisterDistortionState;
 

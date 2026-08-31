@@ -49,6 +49,20 @@ static TsStereoFrame effect_mix(TsStereoFrame dry, TsStereoFrame wet,
     return ts_stereo_frame_sanitize(result);
 }
 
+static float makeup_gain_linear(float decibels)
+{
+    return powf(10.0f, clampf(decibels, -12.0f, 12.0f) * 0.05f);
+}
+
+static TsStereoFrame effect_makeup(TsStereoFrame frame, float gain,
+                                   float active)
+{
+    float multiplier = 1.0f + (gain - 1.0f) * clampf(active, 0.0f, 1.0f);
+    frame.l *= multiplier;
+    frame.r *= multiplier;
+    return ts_stereo_frame_sanitize(frame);
+}
+
 /* Reverb is most often used as a surrounding field rather than an insert
    replacement. Keep more of the immediate instrument through the middle of
    the control while still reaching exact dry and exact wet at the ends. */
@@ -242,16 +256,20 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
     controls->reverb_size = clampf(controls->reverb_size, 0.0f, 1.0f);
     controls->reverb_mix = clampf(controls->reverb_mix, 0.0f, 1.0f);
     controls->reverb_decay = clampf(controls->reverb_decay, 0.0f, 1.0f);
+    controls->reverb_gain_db = clampf(controls->reverb_gain_db, -12.0f, 12.0f);
     controls->reverb_targets = ts_sister_effect_targets_sanitize(
         controls->reverb_targets);
     controls->delay_time = clampf(controls->delay_time, 0.0f, 1.0f);
     controls->delay_feedback = clampf(controls->delay_feedback, 0.0f, 1.0f);
     controls->delay_mix = clampf(controls->delay_mix, 0.0f, 1.0f);
+    controls->delay_gain_db = clampf(controls->delay_gain_db, -12.0f, 12.0f);
     controls->delay_targets = ts_sister_effect_targets_sanitize(
         controls->delay_targets);
     controls->distortion_drive = clampf(controls->distortion_drive, 0.0f, 1.0f);
     controls->distortion_tone = clampf(controls->distortion_tone, 0.0f, 1.0f);
     controls->distortion_mix = clampf(controls->distortion_mix, 0.0f, 1.0f);
+    controls->distortion_gain_db = clampf(
+        controls->distortion_gain_db, -12.0f, 12.0f);
     controls->distortion_targets = ts_sister_effect_targets_sanitize(
         controls->distortion_targets);
     controls->master_feedback = clampf(controls->master_feedback, 0.0f, 1.0f);
@@ -337,6 +355,7 @@ static int reverb_init(TsSisterReverbState *state, uint32_t rate)
     state->sample_rate = rate;
     state->size_current = 0.58f;
     state->decay_current = 0.42f;
+    state->gain_current = state->gain_target = 1.0f;
     for (line = 0u; line < TS_SISTER_REVERB_LINES; ++line) {
         size_t capacity = (size_t)ceil((reverb_delay_ms(
             1.0f, line) + 5.0f) * 0.001f * rate) + 2u;
@@ -381,6 +400,7 @@ static int delay_init_state(TsSisterDelayState *state, uint32_t rate)
     state->delay_current = ts_sister_delay_time_ms(0.38f) * 0.001f * rate;
     state->delay_target = state->delay_current;
     state->feedback_current = 0.32f;
+    state->gain_current = state->gain_target = 1.0f;
     state->follow_coefficient = 1.0f - expf(
         -1.0f / (0.035f * (float)rate));
     for (size_t tap = 0u; tap < TS_SISTER_DELAY_TAPS; ++tap)
@@ -441,6 +461,8 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
         }
         next.distortion[i].drive_current = next.controls.distortion_drive;
         next.distortion[i].tone_current = next.controls.distortion_tone;
+        next.distortion[i].gain_current = 1.0f;
+        next.distortion[i].gain_target = 1.0f;
     }
     next.ready = 1;
     ts_sister_post_fx_free(engine);
@@ -546,6 +568,12 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
                      engine->sample_rate);
     target_state_set(&engine->distortion_target, next.distortion_targets,
                      engine->sample_rate);
+    for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
+        engine->reverb[i].gain_target = makeup_gain_linear(next.reverb_gain_db);
+        engine->delay[i].gain_target = makeup_gain_linear(next.delay_gain_db);
+        engine->distortion[i].gain_target = makeup_gain_linear(
+            next.distortion_gain_db);
+    }
     if (engine->ready && next.reverb_size != engine->controls.reverb_size) {
         for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
             TsSisterReverbState *state = &engine->reverb[i];
@@ -585,6 +613,7 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
                next.distortion_enabled ? 1.0f : 0.0f);
     for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
         engine->reverb[i].size_current = next.reverb_size;
+        engine->reverb[i].gain_current = engine->reverb[i].gain_target;
         for (size_t line = 0u; line < TS_SISTER_REVERB_LINES; ++line) {
             float frames = reverb_delay_ms(next.reverb_size, line) * 0.001f *
                            engine->sample_rate;
@@ -596,6 +625,8 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
         engine->delay[i].delay_current = ts_sister_delay_time_ms(
             next.delay_time) * 0.001f * engine->sample_rate;
         engine->delay[i].delay_target = engine->delay[i].delay_current;
+        engine->delay[i].gain_current = engine->delay[i].gain_target;
+        engine->distortion[i].gain_current = engine->distortion[i].gain_target;
     }
 }
 
@@ -614,10 +645,13 @@ static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
         c->distortion_tone, engine->sample_rate, 20.0f);
     state->mix_current = approach(state->mix_current,
         c->distortion_mix, engine->sample_rate, 20.0f);
+    state->gain_current = approach(state->gain_current,
+        state->gain_target, engine->sample_rate, 20.0f);
     state->route_current = approach(state->route_current,
         enabled ? 1.0f : 0.0f, engine->sample_rate, 12.0f);
     if (state->mix_current <= FLT_EPSILON && c->distortion_mix <= 0.0f)
-        return input;
+        return effect_makeup(input, state->gain_current,
+            state->route_current * engine->distortion_engage.current);
     for (size_t channel = 0u; channel < 2u; ++channel) {
         float drive = powf(60.0f, state->drive_current);
         float midpoint = 0.5f * (state->previous_input[channel] + values[channel]);
@@ -639,9 +673,11 @@ static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
         *outputs[channel] = soft_clip(dc * (1.35f - 0.35f * state->drive_current));
     }
     wet = ts_stereo_frame_sanitize(wet);
-    return effect_mix(input, wet,
+    return effect_makeup(effect_mix(input, wet,
         clampf(state->mix_current * state->route_current *
-               engine->distortion_engage.current, 0.0f, 1.0f));
+               engine->distortion_engage.current, 0.0f, 1.0f)),
+        state->gain_current,
+        state->route_current * engine->distortion_engage.current);
 }
 
 static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
@@ -687,12 +723,15 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
         c->delay_feedback, engine->sample_rate, 20.0f);
     state->mix_current = approach(state->mix_current,
         c->delay_mix, engine->sample_rate, 20.0f);
+    state->gain_current = approach(state->gain_current,
+        state->gain_target, engine->sample_rate, 20.0f);
     state->route_current = approach(state->route_current,
         enabled ? 1.0f : 0.0f, engine->sample_rate, 12.0f);
     if (!state->has_history &&
         ((state->mix_current <= FLT_EPSILON && c->delay_mix <= 0.0f) ||
          (!enabled && state->route_current <= FLT_EPSILON)))
-        return input;
+        return effect_makeup(input, state->gain_current,
+            state->route_current * engine->delay_engage.current);
     if (state->route_current * engine->delay_engage.current *
         fmaxf(fabsf(input.l), fabsf(input.r)) > 1.0e-12f)
         state->has_history = 1;
@@ -783,9 +822,11 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
     }
     wet.l = tape_saturate(wet.l);
     wet.r = tape_saturate(wet.r);
-    return effect_mix(input, wet,
+    return effect_makeup(effect_mix(input, wet,
         clampf(state->mix_current * state->route_current *
-               engine->delay_engage.current, 0.0f, 1.0f));
+               engine->delay_engage.current, 0.0f, 1.0f)),
+        state->gain_current,
+        state->route_current * engine->delay_engage.current);
 }
 
 static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
@@ -807,6 +848,8 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
     };
     state->mix_current = approach(state->mix_current,
         c->reverb_mix, engine->sample_rate, 24.0f);
+    state->gain_current = approach(state->gain_current,
+        state->gain_target, engine->sample_rate, 20.0f);
     state->decay_current = approach(state->decay_current,
         c->reverb_decay, engine->sample_rate, 35.0f);
     state->size_current = approach(state->size_current,
@@ -816,7 +859,8 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
     if (!state->has_history &&
         ((state->mix_current <= FLT_EPSILON && c->reverb_mix <= 0.0f) ||
          (!enabled && state->route_current <= FLT_EPSILON)))
-        return input;
+        return effect_makeup(input, state->gain_current,
+            state->route_current * engine->reverb_engage.current);
     if (state->route_current * engine->reverb_engage.current *
         fmaxf(fabsf(input.l), fabsf(input.r)) > 1.0e-12f)
         state->has_history = 1;
@@ -915,9 +959,11 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
     wet.r = feedback_condition(wet.r);
     wet = ts_stereo_frame_sanitize(wet);
     wet = read_handoff_apply(&state->read_handoff, wet);
-    return reverb_effect_mix(input, wet,
+    return effect_makeup(reverb_effect_mix(input, wet,
         clampf(state->mix_current * state->route_current *
-               engine->reverb_engage.current, 0.0f, 1.0f));
+               engine->reverb_engage.current, 0.0f, 1.0f)),
+        state->gain_current,
+        state->route_current * engine->reverb_engage.current);
 }
 
 TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
