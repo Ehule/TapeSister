@@ -46,6 +46,7 @@ int main(void)
     runtime.parameters.soak_targets = TS_SISTER_EFFECT_TARGET_H1 |
                                       TS_SISTER_EFFECT_TARGET_H2;
     runtime.parameters.fx.reverb_type = TS_SISTER_REVERB_SPRING;
+    runtime.parameters.fx.reverb_size = 0.29f;
     runtime.parameters.fx.reverb_mix = 0.57f;
     runtime.parameters.fx.reverb_targets = TS_SISTER_EFFECT_TARGET_H3;
     runtime.parameters.fx.delay_mix = 0.43f;
@@ -101,6 +102,8 @@ int main(void)
     assert(loaded.parameters.soak_targets ==
            (TS_SISTER_EFFECT_TARGET_H1 | TS_SISTER_EFFECT_TARGET_H2));
     assert(loaded.parameters.fx.reverb_type == TS_SISTER_REVERB_SPRING);
+    assert(loaded.parameters.fx.reverb_size > 0.28f &&
+           loaded.parameters.fx.reverb_size < 0.30f);
     assert(loaded.parameters.fx.reverb_targets == TS_SISTER_EFFECT_TARGET_H3);
     assert(loaded.parameters.fx.delay_targets ==
            (TS_SISTER_EFFECT_TARGET_H1 | TS_SISTER_EFFECT_TARGET_H2));
@@ -157,7 +160,7 @@ int main(void)
         assert(file != NULL);
         fputs("TapeSister Sister Project State\nVersion=9\nPageCount=1\n"
               "ActivePage=0\nRoutes=2\nSelectedPreset=FUTURE\n"
-              "Mask.0=0000\nGhostTone=0.25\nSoakTargets=255\n"
+              "Mask.0=0000\nGhostTone=0.25\nSoakTargets=255\nReverbType=2\n"
               "FutureField=17\n", file);
         fclose(file);
         assert(ts_sister_project_state_load(&loaded, project, 48000u,
@@ -170,6 +173,8 @@ int main(void)
                loaded.parameters.bleed == 0.25f &&
                loaded.parameters.soak_targets == TS_SISTER_EFFECT_TARGET_MIX);
         assert(loaded.parameters.fx.reverb_mix == 0.0f &&
+               loaded.parameters.fx.reverb_size > 0.21f &&
+               loaded.parameters.fx.reverb_size < 0.23f &&
                loaded.parameters.fx.delay_mix == 0.0f &&
                loaded.parameters.fx.distortion_mix == 0.0f &&
                loaded.parameters.fx.master_feedback == 0.0f &&

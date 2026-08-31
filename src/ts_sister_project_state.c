@@ -99,7 +99,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "ExternalGain=%.9g\nPreviewGain=%.9g\nDry=%.9g\nWet=%.9g\nOut=%.9g\n"
         "FxReturnGain=%.9g\n"
         "Erase=%.9g\nGhostTone=%.9g\nSoak=%.9g\nBleed=%.9g\n"
-        "SoakTargets=%u\nReverbType=%d\nReverbMix=%.9g\n"
+        "SoakTargets=%u\nReverbType=%d\nReverbSize=%.9g\nReverbMix=%.9g\n"
         "FxEnabled=%d\nReverbEnabled=%d\nDelayEnabled=%d\n"
         "DistortionEnabled=%d\nFxTransition=%.9g\nMasterFxTransition=%.9g\n"
         "ReverbDecay=%.9g\nReverbTargets=%u\nDelayTime=%.9g\n"
@@ -130,7 +130,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->preview_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
         p->fx_return_gain,
         p->write_erase, p->ghost_tone, p->soak, p->bleed,
-        (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_mix,
+        (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_size,
+        p->fx.reverb_mix,
         p->fx.enabled, p->fx.reverb_enabled, p->fx.delay_enabled,
         p->fx.distortion_enabled, p->fx.transition, p->fx.master_transition,
         p->fx.reverb_decay, (unsigned)p->fx.reverb_targets,
@@ -294,8 +295,12 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     }
     if (strcmp(key, "ReverbType") == 0) {
         if (!parse_int_value(value, &integer)) return 0;
-        p->fx.reverb_type = (TsSisterReverbType)integer; return 1;
+        p->fx.reverb_type = (TsSisterReverbType)integer;
+        p->fx.reverb_size = ts_sister_reverb_legacy_size(
+            p->fx.reverb_type);
+        return 1;
     }
+    PF("ReverbSize", fx.reverb_size);
     PI("FxEnabled", fx.enabled); PI("ReverbEnabled", fx.reverb_enabled);
     PI("DelayEnabled", fx.delay_enabled);
     PI("DistortionEnabled", fx.distortion_enabled);

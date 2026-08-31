@@ -7002,8 +7002,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_SOAK: parameters->soak = amount; break;
     case TS_SISTER_UI_PARAM_BLEED: parameters->bleed = amount; break;
     case TS_SISTER_UI_PARAM_REVERB_TYPE:
-        parameters->fx.reverb_type = (TsSisterReverbType)lrintf(
-            amount * (TS_SISTER_REVERB_TYPE_COUNT - 1)); break;
+        parameters->fx.reverb_size = amount; break;
     case TS_SISTER_UI_PARAM_REVERB_MIX: parameters->fx.reverb_mix = amount; break;
     case TS_SISTER_UI_PARAM_REVERB_DECAY: parameters->fx.reverb_decay = amount; break;
     case TS_SISTER_UI_PARAM_DELAY_TIME: parameters->fx.delay_time = amount; break;
@@ -7084,8 +7083,7 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_SOAK: value = parameters->soak; break;
     case TS_SISTER_UI_PARAM_BLEED: value = parameters->bleed; break;
     case TS_SISTER_UI_PARAM_REVERB_TYPE:
-        value = parameters->fx.reverb_type /
-            (float)(TS_SISTER_REVERB_TYPE_COUNT - 1); break;
+        value = parameters->fx.reverb_size; break;
     case TS_SISTER_UI_PARAM_REVERB_MIX: value = parameters->fx.reverb_mix; break;
     case TS_SISTER_UI_PARAM_REVERB_DECAY: value = parameters->fx.reverb_decay; break;
     case TS_SISTER_UI_PARAM_DELAY_TIME: value = parameters->fx.delay_time; break;
@@ -7146,12 +7144,6 @@ static float sister_parameter_wheel_normalized(
         if (value >= TS_SISTER_FILTER_TYPE_COUNT)
             value = TS_SISTER_FILTER_TYPE_COUNT - 1;
         return value / (float)(TS_SISTER_FILTER_TYPE_COUNT - 1);
-    case TS_SISTER_UI_PARAM_REVERB_TYPE:
-        value = parameters->fx.reverb_type + direction * steps;
-        if (value < TS_SISTER_REVERB_HALL) value = TS_SISTER_REVERB_HALL;
-        if (value >= TS_SISTER_REVERB_TYPE_COUNT)
-            value = TS_SISTER_REVERB_TYPE_COUNT - 1;
-        return value / (float)(TS_SISTER_REVERB_TYPE_COUNT - 1);
     case TS_SISTER_UI_PARAM_H2_RATE:
         value = parameters->head2_rate_index + direction * steps;
         if (value < 0) value = 0;
@@ -7299,7 +7291,7 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_GHOST_TONE: return "GHOST TONE";
     case TS_SISTER_UI_PARAM_SOAK: return "SOAK";
     case TS_SISTER_UI_PARAM_BLEED: return "BLEED";
-    case TS_SISTER_UI_PARAM_REVERB_TYPE: return "REVERB TYPE";
+    case TS_SISTER_UI_PARAM_REVERB_TYPE: return "REVERB SIZE";
     case TS_SISTER_UI_PARAM_REVERB_MIX: return "REVERB MIX";
     case TS_SISTER_UI_PARAM_REVERB_DECAY: return "REVERB DECAY";
     case TS_SISTER_UI_PARAM_DELAY_TIME: return "DELAY TIME";

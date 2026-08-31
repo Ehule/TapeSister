@@ -31,6 +31,7 @@ int main(void)
     p.soak_targets = TS_SISTER_EFFECT_TARGET_H1 |
                      TS_SISTER_EFFECT_TARGET_H3;
     p.fx.reverb_type = TS_SISTER_REVERB_CATHEDRAL;
+    p.fx.reverb_size = 0.87f;
     p.fx.enabled = 0;
     p.fx.reverb_enabled = 0;
     p.fx.delay_enabled = 1;
@@ -93,6 +94,8 @@ int main(void)
     assert(recalled.soak_targets == (TS_SISTER_EFFECT_TARGET_H1 |
                                      TS_SISTER_EFFECT_TARGET_H3));
     assert(recalled.fx.reverb_type == TS_SISTER_REVERB_CATHEDRAL);
+    assert(recalled.fx.reverb_size > 0.86f &&
+           recalled.fx.reverb_size < 0.88f);
     assert(recalled.fx.enabled == 0);
     assert(recalled.fx.reverb_enabled == 0);
     assert(recalled.fx.delay_enabled == 1);
@@ -150,7 +153,7 @@ int main(void)
         assert(file != NULL);
         fputs("TapeSister Sister Presets\nVersion=9\n\n[Preset]\n"
               "Name=FUTURE\nghost_tone=0.5\nsoak_targets=255\n"
-              "newer_field=42\n", file);
+              "reverb_type=3\nnewer_field=42\n", file);
         fclose(file);
         assert(ts_sister_preset_load(&loaded, path, 48000u,
                                      error, sizeof(error)));
@@ -161,6 +164,8 @@ int main(void)
         assert(loaded.entries[3].parameters.soak_targets ==
                TS_SISTER_EFFECT_TARGET_MIX);
         assert(loaded.entries[3].parameters.fx.reverb_mix == 0.0f);
+        assert(loaded.entries[3].parameters.fx.reverb_size > 0.81f &&
+               loaded.entries[3].parameters.fx.reverb_size < 0.83f);
         assert(loaded.entries[3].parameters.fx.delay_mix == 0.0f);
         assert(loaded.entries[3].parameters.fx.distortion_mix == 0.0f);
         assert(loaded.entries[3].parameters.fx.master_feedback == 0.0f);

@@ -256,8 +256,7 @@ static void apply_transition(TsSisterRuntime *runtime, TsInstrument *instrument,
             (uint8_t)(random_next(random) & TS_SISTER_EFFECT_TARGET_ALL));
         break;
     case 6u:
-        p->fx.reverb_type = (TsSisterReverbType)(
-            random_next(random) % TS_SISTER_REVERB_TYPE_COUNT);
+        p->fx.reverb_size = random_unit(random);
         p->fx.reverb_mix = random_unit(random);
         p->fx.reverb_decay = random_unit(random);
         p->fx.reverb_targets = ts_sister_effect_targets_sanitize(

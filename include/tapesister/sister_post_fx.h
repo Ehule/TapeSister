@@ -26,6 +26,9 @@ typedef struct {
     /* Independent logarithmic 10 ms..60 min Master FX gate ramp. */
     float master_transition;
     TsSisterReverbType reverb_type;
+    /* Continuous room scale. reverb_type remains only for loading older
+       presets and projects; the live instrument is one wide-range space. */
+    float reverb_size;
     float reverb_mix;
     float reverb_decay;
     uint8_t reverb_targets;
@@ -42,7 +45,7 @@ typedef struct {
 } TsSisterFxControls;
 
 enum {
-    TS_SISTER_REVERB_LINES = 4
+    TS_SISTER_REVERB_LINES = 8
 };
 
 typedef struct {
@@ -66,15 +69,16 @@ typedef struct {
 
 typedef struct {
     TsSisterReverbLine line[TS_SISTER_REVERB_LINES];
-    float spring_state[2];
-    float spring_previous[2];
-    TsSisterReverbType type;
-    TsSisterReverbType old_type;
     uint32_t sample_rate;
+    float size_current;
     float mix_current;
     float decay_current;
     float route_current;
-    float type_blend;
+    float modulation_sin[TS_SISTER_REVERB_LINES];
+    float modulation_cos[TS_SISTER_REVERB_LINES];
+    float modulation_step_sin[TS_SISTER_REVERB_LINES];
+    float modulation_step_cos[TS_SISTER_REVERB_LINES];
+    uint32_t modulation_renormalize;
     int has_history;
     TsSisterFxReadHandoff read_handoff;
 } TsSisterReverbState;
@@ -152,11 +156,11 @@ typedef struct {
 } TsSisterPostFxEngine;
 
 const char *ts_sister_reverb_type_name(TsSisterReverbType type);
+float ts_sister_reverb_legacy_size(TsSisterReverbType type);
 void ts_sister_fx_controls_default(TsSisterFxControls *controls);
 void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls);
 float ts_sister_delay_time_ms(float normalized);
-float ts_sister_reverb_decay_seconds(TsSisterReverbType type,
-                                     float normalized);
+float ts_sister_reverb_decay_seconds(float normalized);
 float ts_sister_fx_transition_ms(float normalized);
 float ts_sister_fx_transition_normalized(float milliseconds);
 float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine);

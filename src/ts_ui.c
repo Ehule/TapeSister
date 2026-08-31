@@ -4246,9 +4246,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 row == 1 ? model->parameters.fx.delay_enabled :
                            model->parameters.fx.distortion_enabled);
         }
-        sister_choice_parameter_state(fb, 110, 52, 130, "TYPE",
-            ts_sister_reverb_type_name(model->parameters.fx.reverb_type),
-            model->parameters.fx.reverb_mix > 0.0f, PAL_WAVE_RIGHT,
+        sister_percent_parameter_state(fb, 110, 52, 130, "SIZE",
+            model->parameters.fx.reverb_size, 100, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_TYPE));
         sister_percent_parameter_state(fb, 250, 52, 130, "DECAY",
@@ -4294,7 +4293,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             sister_target_toggle(fb, 296, y, 56, "MIX",
                 masks[row] & TS_SISTER_EFFECT_TARGET_MIX, colors[row]);
             text(fb, 366, y + 5,
-                row == 0 ? "TAIL-SAFE TYPE MORPH" :
+                row == 0 ? "TAIL-SAFE SIZE MORPH" :
                 row == 1 ? "8-2000 MS / STEREO" :
                            "RAT-INSPIRED / 2X", PAL_MOUSE, 1);
         }

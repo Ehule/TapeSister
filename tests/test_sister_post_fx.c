@@ -100,14 +100,14 @@ static void test_equal_power_chain_makeup(void)
     ts_sister_post_fx_free(&engine);
 }
 
-static double reverb_signature(TsSisterReverbType type)
+static double reverb_signature(float size)
 {
     TsSisterPostFxEngine engine = {0};
     TsSisterFxControls controls;
     double signature = 0.0;
     assert(ts_sister_post_fx_init(&engine, 48000u));
     ts_sister_fx_controls_default(&controls);
-    controls.reverb_type = type;
+    controls.reverb_size = size;
     controls.reverb_mix = 1.0f;
     controls.reverb_decay = 0.62f;
     controls.delay_targets = 0u;
@@ -127,16 +127,19 @@ static double reverb_signature(TsSisterReverbType type)
     return signature;
 }
 
-static void test_reverb_types_and_distortion(void)
+static void test_reverb_space_and_distortion(void)
 {
-    double signatures[TS_SISTER_REVERB_TYPE_COUNT];
+    static const float sizes[] = {0.08f, 0.35f, 0.68f, 0.96f};
+    double signatures[sizeof(sizes) / sizeof(sizes[0])];
     TsSisterPostFxEngine engine = {0};
     TsSisterFxControls controls;
     double difference = 0.0;
-    for (int type = 0; type < TS_SISTER_REVERB_TYPE_COUNT; ++type)
-        signatures[type] = reverb_signature((TsSisterReverbType)type);
-    for (int a = 0; a < TS_SISTER_REVERB_TYPE_COUNT; ++a)
-        for (int b = a + 1; b < TS_SISTER_REVERB_TYPE_COUNT; ++b)
+    assert(fabsf(ts_sister_reverb_decay_seconds(0.0f) - 0.35f) < 1.0e-5f);
+    assert(fabsf(ts_sister_reverb_decay_seconds(1.0f) - 60.0f) < 1.0e-3f);
+    for (size_t size = 0u; size < sizeof(sizes) / sizeof(sizes[0]); ++size)
+        signatures[size] = reverb_signature(sizes[size]);
+    for (size_t a = 0u; a < sizeof(sizes) / sizeof(sizes[0]); ++a)
+        for (size_t b = a + 1u; b < sizeof(sizes) / sizeof(sizes[0]); ++b)
             assert(fabs(signatures[a] - signatures[b]) > 0.01);
 
     assert(ts_sister_post_fx_init(&engine, 48000u));
@@ -155,6 +158,93 @@ static void test_reverb_types_and_distortion(void)
         difference += fabs((double)output.l - input.l);
     }
     assert(difference > 100.0);
+    ts_sister_post_fx_free(&engine);
+}
+
+static void test_reverb_level_density_and_width(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+    double dry_energy = 0.0;
+    double output_energy = 0.0;
+    double wet_energy = 0.0;
+    double stereo_difference = 0.0;
+    size_t active_tail_frames = 0u;
+
+    assert(ts_sister_post_fx_init(&engine, 48000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.delay_targets = 0u;
+    controls.distortion_targets = 0u;
+    controls.reverb_size = 0.76f;
+    controls.reverb_decay = 0.72f;
+    controls.reverb_mix = 0.5f;
+    ts_sister_post_fx_sync_controls(&engine, &controls);
+    for (int frame = 0; frame < 144000; ++frame) {
+        TsStereoFrame input = {
+            0.25f * sinf((float)frame * 0.017f) +
+            0.12f * sinf((float)frame * 0.043f),
+            0.22f * sinf((float)frame * 0.019f) -
+            0.10f * sinf((float)frame * 0.037f)
+        };
+        TsStereoFrame output = ts_sister_post_fx_process(
+            &engine, 3u, input, 0);
+        assert_finite(output);
+        if (frame >= 48000) {
+            dry_energy += input.l * input.l + input.r * input.r;
+            output_energy += output.l * output.l + output.r * output.r;
+        }
+    }
+    /* The middle of MIX must surround the source rather than behaving like a
+       channel fader. A little energy lift is acceptable; collapse is not. */
+    assert(output_energy > dry_energy * 0.78);
+    assert(output_energy < dry_energy * 2.0);
+    controls.reverb_mix = 1.0f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    dry_energy = 0.0;
+    output_energy = 0.0;
+    for (int frame = 0; frame < 96000; ++frame) {
+        TsStereoFrame input = {
+            0.25f * sinf((float)frame * 0.017f) +
+            0.12f * sinf((float)frame * 0.043f),
+            0.22f * sinf((float)frame * 0.019f) -
+            0.10f * sinf((float)frame * 0.037f)
+        };
+        TsStereoFrame output = ts_sister_post_fx_process(
+            &engine, 3u, input, 0);
+        assert_finite(output);
+        if (frame >= 48000) {
+            dry_energy += input.l * input.l + input.r * input.r;
+            output_energy += output.l * output.l + output.r * output.r;
+        }
+    }
+    assert(output_energy > dry_energy * 0.20);
+    assert(output_energy < dry_energy * 2.0);
+    ts_sister_post_fx_free(&engine);
+
+    memset(&engine, 0, sizeof(engine));
+    assert(ts_sister_post_fx_init(&engine, 48000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.delay_targets = 0u;
+    controls.distortion_targets = 0u;
+    controls.reverb_size = 0.88f;
+    controls.reverb_decay = 0.82f;
+    controls.reverb_mix = 1.0f;
+    ts_sister_post_fx_sync_controls(&engine, &controls);
+    for (int frame = 0; frame < 96000; ++frame) {
+        TsStereoFrame input = {frame == 0 ? 0.8f : 0.0f, 0.0f};
+        TsStereoFrame output = ts_sister_post_fx_process(
+            &engine, 3u, input, 0);
+        assert_finite(output);
+        if (frame >= 12000) {
+            float magnitude = fabsf(output.l) + fabsf(output.r);
+            wet_energy += output.l * output.l + output.r * output.r;
+            stereo_difference += fabs((double)output.l - (double)output.r);
+            if (magnitude > 1.0e-7f) ++active_tail_frames;
+        }
+    }
+    assert(wet_energy > 1.0e-10);
+    assert(stereo_difference > 0.01);
+    assert(active_tail_frames > 50000u);
     ts_sister_post_fx_free(&engine);
 }
 
@@ -278,7 +368,8 @@ static void test_rapid_sweeps_finite(void)
         if ((i % 97) == 0) {
             controls.delay_time = (float)((i / 97) % 101) / 100.0f;
             controls.reverb_decay = 1.0f - controls.delay_time;
-            controls.reverb_type = (TsSisterReverbType)((i / 97) % 4);
+            controls.reverb_size =
+                (float)((i / 97) % 101) / 100.0f;
             ts_sister_post_fx_set_controls(&engine, &controls);
         }
         assert_finite(ts_sister_post_fx_process(&engine, 3u,
@@ -332,13 +423,13 @@ static void test_interrupted_wheel_handoffs(void)
         previous = ts_sister_post_fx_process(&engine, 3u,
             (TsStereoFrame){0.28f * sinf((float)frame * 0.043f),
                             0.19f * cosf((float)frame * 0.037f)}, 0);
-    controls.reverb_type = TS_SISTER_REVERB_PLATE;
+    controls.reverb_size = 0.92f;
     ts_sister_post_fx_set_controls(&engine, &controls);
     for (int frame = 0; frame < 10; ++frame)
         previous = ts_sister_post_fx_process(&engine, 3u,
             (TsStereoFrame){0.28f * sinf((float)(2500 + frame) * 0.043f),
                             0.19f * cosf((float)(2500 + frame) * 0.037f)}, 0);
-    controls.reverb_type = TS_SISTER_REVERB_SPRING;
+    controls.reverb_size = 0.18f;
     ts_sister_post_fx_set_controls(&engine, &controls);
     current = ts_sister_post_fx_process(&engine, 3u,
         (TsStereoFrame){0.28f * sinf(2510.0f * 0.043f),
@@ -628,7 +719,8 @@ int main(void)
     test_defaults_and_identity();
     test_delay_length_and_stereo();
     test_equal_power_chain_makeup();
-    test_reverb_types_and_distortion();
+    test_reverb_space_and_distortion();
+    test_reverb_level_density_and_width();
     test_targets_mono_and_ordinary();
     test_exclusive_target_handoff();
     test_rapid_sweeps_finite();

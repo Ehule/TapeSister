@@ -68,22 +68,21 @@ processor remains alive across Sister window hide/show and POWER state.
 
 ## Reverb
 
-The reverb is a stereo four-line Householder-style FDN. Each line uses fractional
-linear reads, per-channel damping, bounded writes, and cross-channel injection.
-Type changes crossfade old/new delay taps for 60 ms without clearing memory.
-MIX and DECAY smooth over approximately 24 ms and 35 ms.
+The reverb is one continuous stereo space rather than four named simulations.
+Its eight-line Householder-style FDN uses fractional reads, slow decorrelated
+delay modulation, per-channel damping, bounded writes, cross-channel injection,
+and independent stereo output vectors. SIZE scales the complete prime-spaced
+network from close room reflections to an impossible deep field. SIZE changes
+crossfade old/new taps for 60 ms without clearing memory. MIX, SIZE, and DECAY
+also smooth over approximately 24, 55, and 35 ms.
 
-| Type | Line lengths at nominal tuning | Decay range | Character |
-|---|---|---|---|
-| Hall | 31.1, 43.7, 59.3, 71.9 ms | 0.45–8 s | balanced diffusion and damping |
-| Plate | 19.7, 27.1, 37.9, 49.3 ms | 0.30–5 s | bright, dense, stronger stereo crossfeed |
-| Spring | 13.1, 21.7, 34.9, 55.3 ms | 0.22–4 s | FDN plus bounded paired resonant dispersion |
-| Cathedral | 43.1, 59.9, 78.7, 96.1 ms | 1.2–24 s | slow, dark, deep field |
-
-DECAY is exponential within each type's range. MIX 0 is exact dry identity and
-MIX 1 is fully wet. A bounded 2.25× return calibration prevents the complete
-MIX target from collapsing behind unaffected head paths. Long states flush
-below `1e-20` to zero.
+DECAY maps exponentially from **0.35 to 60 seconds**. MIX 0 is exact dry
+identity and MIX 1 is fully wet. The middle of the MIX law retains more of the
+immediate source than a conventional equal-power insert crossfade, so adding a
+surrounding field does not behave like lowering the channel fader. Modulation
+breaks up stationary ringing without imposing an audible chorus cycle. Long
+states flush below `1e-20` to zero, and linear-at-musical-level saturation keeps
+the feedback network finite without prematurely shortening quiet tails.
 
 ## Delay
 
@@ -144,10 +143,11 @@ master return. Published parameters are sanitized before entering the engine.
 No live line samples, tails, pointers, rolling audio, or feedback audio are saved.
 
 At 48 kHz the four delay instances reserve 3,087,424 bytes and the four reverbs
-451,584 bytes (3.375 MiB total). At 96 kHz the total is 6.750 MiB. Sister-active
+approximately 1.19 MB (about 4.08 MiB total). At 96 kHz the total is approximately
+8.16 MiB. Sister-active
 worst case advances four stable target instances so removed tails can drain;
 ordinary POWER-off operation advances only MIX. Storage and time scale linearly
-with sample rate. The topology uses four FDN lines and two-channel scalar filters,
+with sample rate. The topology uses eight FDN lines and two-channel scalar filters,
 with no convolution, FFT, locks, logging, file I/O, or callback allocation.
 Never-used zero-MIX delay/reverb instances and zero-MIX distortion take the
 exact-bypass fast path; a time-based instance continues only after it has owned
@@ -158,7 +158,8 @@ real history so tails can drain safely.
 PR9 introduced preset/project schema version 3. PR10 version 4 added the live
 buffer duration; version 5 adds the four source trims and FX return gain without
 changing effect history. They store every visible PR9
-parameter and mask. Legacy state receives Hall, safe midrange DECAY/TIME/FEEDBACK,
+parameter and mask. Legacy Hall/Plate/Spring/Cathedral values map to continuous
+SIZE positions; legacy state otherwise receives safe midrange DECAY/TIME/FEEDBACK,
 MIX targets, and exact-zero Reverb/Delay/Distortion MIX and Master FX Feedback.
 Opening a legacy file does not rewrite it. Invalid enums and values are clamped;
 unknown fields are ignored; masks are restricted through the PR8 sanitizer.
