@@ -16,9 +16,12 @@ int ts_sister_ui_parameter_lockable(int parameter)
 int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,
                                   int parameter)
 {
-    return model != NULL && ts_sister_ui_parameter_lockable(parameter) &&
-           (model->parameter_locks &
-            TS_SISTER_UI_PARAMETER_BIT(parameter)) != 0u;
+    if (model == NULL || !ts_sister_ui_parameter_lockable(parameter)) return 0;
+    if (parameter < 64)
+        return (model->parameter_locks &
+                TS_SISTER_UI_PARAMETER_BIT(parameter)) != 0u;
+    return (model->parameter_locks_high &
+            TS_SISTER_UI_PARAMETER_BIT(parameter - 64)) != 0u;
 }
 
 int ts_sister_ui_parameter_lock_toggle(TsSisterUiModel *model,
@@ -26,8 +29,13 @@ int ts_sister_ui_parameter_lock_toggle(TsSisterUiModel *model,
 {
     uint64_t bit;
     if (model == NULL || !ts_sister_ui_parameter_lockable(parameter)) return 0;
-    bit = TS_SISTER_UI_PARAMETER_BIT(parameter);
-    model->parameter_locks ^= bit;
+    if (parameter < 64) {
+        bit = TS_SISTER_UI_PARAMETER_BIT(parameter);
+        model->parameter_locks ^= bit;
+    } else {
+        bit = TS_SISTER_UI_PARAMETER_BIT(parameter - 64);
+        model->parameter_locks_high ^= bit;
+    }
     return 1;
 }
 
@@ -363,12 +371,13 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     if (model != NULL && model->fx_page == 1) {
-        static const int parameter[3][3] = {
-            {TS_SISTER_UI_PARAM_REVERB_TYPE, TS_SISTER_UI_PARAM_REVERB_DECAY,
-             TS_SISTER_UI_PARAM_REVERB_MIX},
-            {TS_SISTER_UI_PARAM_DELAY_TIME, TS_SISTER_UI_PARAM_DELAY_FEEDBACK,
-             TS_SISTER_UI_PARAM_DELAY_MIX},
-            {TS_SISTER_UI_PARAM_DISTORTION_DRIVE,
+        static const int parameter[3][4] = {
+            {TS_SISTER_UI_PARAM_REVERB_GAIN, TS_SISTER_UI_PARAM_REVERB_TYPE,
+             TS_SISTER_UI_PARAM_REVERB_DECAY, TS_SISTER_UI_PARAM_REVERB_MIX},
+            {TS_SISTER_UI_PARAM_DELAY_GAIN, TS_SISTER_UI_PARAM_DELAY_TIME,
+             TS_SISTER_UI_PARAM_DELAY_FEEDBACK, TS_SISTER_UI_PARAM_DELAY_MIX},
+            {TS_SISTER_UI_PARAM_DISTORTION_GAIN,
+             TS_SISTER_UI_PARAM_DISTORTION_DRIVE,
              TS_SISTER_UI_PARAM_DISTORTION_TONE,
              TS_SISTER_UI_PARAM_DISTORTION_MIX}
         };
@@ -379,12 +388,12 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                 hit.index = TS_SISTER_UI_FX_REVERB + row;
                 return hit;
             }
-            for (int field = 0; field < 3; ++field) {
-                int left = 110 + field * 140;
-                if (contains(x, y, left, top, 130, 18)) {
+            for (int field = 0; field < 4; ++field) {
+                int left = 110 + field * 105;
+                if (contains(x, y, left, top, 95, 18)) {
                     hit.action = TS_SISTER_UI_ACTION_PARAMETER;
                     hit.index = parameter[row][field];
-                    hit.normalized = (float)(x - left) / 129.0f;
+                    hit.normalized = (float)(x - left) / 94.0f;
                     return hit;
                 }
             }

@@ -53,6 +53,7 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
            state->page_count * sizeof(state->page_masks[0]));
     state->parameters = runtime->parameters;
     state->parameter_locks = runtime->parameter_locks;
+    state->parameter_locks_high = runtime->parameter_locks_high;
     ts_sister_parameters_sanitize(&state->parameters,
         runtime->enabled ? runtime->machine.buffer.sample_rate : 48000u);
     if (selected_preset == NULL) selected_preset = runtime->selected_preset;
@@ -76,6 +77,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     runtime->active_page = state->active_page;
     ts_sister_runtime_set_parameters(runtime, &state->parameters);
     runtime->parameter_locks = state->parameter_locks;
+    runtime->parameter_locks_high = state->parameter_locks_high;
     ts_sister_runtime_set_selected_preset(runtime, state->selected_preset);
     if (state->selected_preset_modified)
         ts_sister_runtime_mark_selected_preset_modified(runtime);
@@ -99,13 +101,14 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "ExternalGain=%.9g\nPreviewGain=%.9g\nDry=%.9g\nWet=%.9g\nOut=%.9g\n"
         "FxReturnGain=%.9g\n"
         "Erase=%.9g\nGhostTone=%.9g\nSoak=%.9g\nBleed=%.9g\n"
-        "SoakTargets=%u\nReverbType=%d\nReverbMix=%.9g\n"
+        "SoakTargets=%u\nReverbType=%d\nReverbSize=%.9g\nReverbMix=%.9g\n"
         "FxEnabled=%d\nReverbEnabled=%d\nDelayEnabled=%d\n"
         "DistortionEnabled=%d\nFxTransition=%.9g\nMasterFxTransition=%.9g\n"
-        "ReverbDecay=%.9g\nReverbTargets=%u\nDelayTime=%.9g\n"
-        "DelayFeedback=%.9g\nDelayMix=%.9g\nDelayTargets=%u\n"
+        "ReverbDecay=%.9g\nReverbGainDb=%.9g\nReverbTargets=%u\nDelayTime=%.9g\n"
+        "DelayFeedback=%.9g\nDelayMix=%.9g\nDelayGainDb=%.9g\nDelayTargets=%u\n"
         "DistortionDrive=%.9g\nDistortionTone=%.9g\nDistortionMix=%.9g\n"
-        "DistortionTargets=%u\nMasterFxFeedback=%.9g\nBufferSeconds=%.9g\n"
+        "DistortionGainDb=%.9g\nDistortionTargets=%u\n"
+        "MasterFxFeedback=%.9g\nBufferSeconds=%.9g\n"
         "FalloutEnabled=%d\nFalloutMix=%.9g\nFalloutFeedback=%.9g\n"
         "FalloutNoise=%.9g\nFalloutNoiseType=%d\nFalloutTransition=%.9g\n"
         "FalloutDropEnabled=%d\nFalloutDropRate=%.9g\n"
@@ -130,14 +133,18 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->preview_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
         p->fx_return_gain,
         p->write_erase, p->ghost_tone, p->soak, p->bleed,
-        (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_mix,
+        (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_size,
+        p->fx.reverb_mix,
         p->fx.enabled, p->fx.reverb_enabled, p->fx.delay_enabled,
         p->fx.distortion_enabled, p->fx.transition, p->fx.master_transition,
-        p->fx.reverb_decay, (unsigned)p->fx.reverb_targets,
+        p->fx.reverb_decay, p->fx.reverb_gain_db,
+        (unsigned)p->fx.reverb_targets,
         p->fx.delay_time, p->fx.delay_feedback, p->fx.delay_mix,
-        (unsigned)p->fx.delay_targets, p->fx.distortion_drive,
+        p->fx.delay_gain_db, (unsigned)p->fx.delay_targets,
+        p->fx.distortion_drive,
         p->fx.distortion_tone, p->fx.distortion_mix,
-        (unsigned)p->fx.distortion_targets, p->fx.master_feedback,
+        p->fx.distortion_gain_db, (unsigned)p->fx.distortion_targets,
+        p->fx.master_feedback,
         p->buffer_seconds, p->fx.fallout.enabled, p->fx.fallout.mix,
         p->fx.fallout.feedback, p->fx.fallout.noise,
         p->fx.fallout.noise_type, p->fx.fallout.transition,
@@ -181,11 +188,12 @@ int ts_sister_project_state_save(const TsSisterProjectState *state,
     failed = fprintf(file,
         "TapeSister Sister Project State\nVersion=%d\nPageCount=%zu\n"
         "ActivePage=%zu\nRoutes=%u\nSelectedPreset=%s\n"
-        "SelectedPresetModified=%d\nParameterLocks=%016" PRIX64 "\n",
+        "SelectedPresetModified=%d\nParameterLocks=%016" PRIX64
+        "\nParameterLocksHigh=%016" PRIX64 "\n",
         TS_SISTER_PROJECT_STATE_VERSION, state->page_count, state->active_page,
         (unsigned)(state->source_switches & TS_SISTER_SOURCE_ALL),
         state->selected_preset, state->selected_preset_modified != 0,
-        state->parameter_locks) < 0;
+        state->parameter_locks, state->parameter_locks_high) < 0;
     for (size_t page = 0u; page < state->page_count && !failed; ++page)
         failed = fprintf(file, "Mask.%zu=%04X\n", page,
                          state->page_masks[page]) < 0;
@@ -294,8 +302,12 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     }
     if (strcmp(key, "ReverbType") == 0) {
         if (!parse_int_value(value, &integer)) return 0;
-        p->fx.reverb_type = (TsSisterReverbType)integer; return 1;
+        p->fx.reverb_type = (TsSisterReverbType)integer;
+        p->fx.reverb_size = ts_sister_reverb_legacy_size(
+            p->fx.reverb_type);
+        return 1;
     }
+    PF("ReverbSize", fx.reverb_size);
     PI("FxEnabled", fx.enabled); PI("ReverbEnabled", fx.reverb_enabled);
     PI("DelayEnabled", fx.delay_enabled);
     PI("DistortionEnabled", fx.distortion_enabled);
@@ -306,9 +318,12 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     }
     PF("MasterFxTransition", fx.master_transition);
     PF("ReverbMix", fx.reverb_mix); PF("ReverbDecay", fx.reverb_decay);
+    PF("ReverbGainDb", fx.reverb_gain_db);
     PF("DelayTime", fx.delay_time); PF("DelayFeedback", fx.delay_feedback);
-    PF("DelayMix", fx.delay_mix); PF("DistortionDrive", fx.distortion_drive);
+    PF("DelayMix", fx.delay_mix); PF("DelayGainDb", fx.delay_gain_db);
+    PF("DistortionDrive", fx.distortion_drive);
     PF("DistortionTone", fx.distortion_tone); PF("DistortionMix", fx.distortion_mix);
+    PF("DistortionGainDb", fx.distortion_gain_db);
     PF("MasterFxFeedback", fx.master_feedback);
     PF("BufferSeconds", buffer_seconds);
     PI("FalloutEnabled", fx.fallout.enabled);
@@ -432,6 +447,9 @@ int ts_sister_project_state_load(TsSisterProjectState *state,
                  loaded.selected_preset_modified != 1)) goto malformed;
         } else if (strcmp(key, "ParameterLocks") == 0) {
             if (!parse_u64_hex_value(value, &loaded.parameter_locks))
+                goto malformed;
+        } else if (strcmp(key, "ParameterLocksHigh") == 0) {
+            if (!parse_u64_hex_value(value, &loaded.parameter_locks_high))
                 goto malformed;
         } else if (strncmp(key, "Mask.", 5u) == 0) {
             size_t page;

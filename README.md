@@ -585,6 +585,10 @@ switches fade their effect contribution and input feed without moving the mix
 faders; Master FX crossfades the completed chain to dry and fades its feedback
 return. Reversing any switch during a long transition continues from its current
 gain without a jump.
+Each effect also has a smoothed post-MIX GAIN stage from -12 to +12 dB. It feeds
+the next effect in the chain and returns to exact unity with that effect's timed
+bypass, so level changes remain performable rather than becoming hidden routing
+state.
 PR10's live 5–60-second age-anchored BUFFER canvas, crop/grow law, and realtime
 ownership are specified in
 [`docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md`](docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md).

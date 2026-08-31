@@ -26,23 +26,31 @@ typedef struct {
     /* Independent logarithmic 10 ms..60 min Master FX gate ramp. */
     float master_transition;
     TsSisterReverbType reverb_type;
+    /* Continuous room scale. reverb_type remains only for loading older
+       presets and projects; the live instrument is one wide-range space. */
+    float reverb_size;
     float reverb_mix;
     float reverb_decay;
+    /* Post-mix makeup gain in decibels (-12..+12). */
+    float reverb_gain_db;
     uint8_t reverb_targets;
     float delay_time;
     float delay_feedback;
     float delay_mix;
+    float delay_gain_db;
     uint8_t delay_targets;
     float distortion_drive;
     float distortion_tone;
     float distortion_mix;
+    float distortion_gain_db;
     uint8_t distortion_targets;
     float master_feedback;
     TsSisterFalloutControls fallout;
 } TsSisterFxControls;
 
 enum {
-    TS_SISTER_REVERB_LINES = 4
+    TS_SISTER_REVERB_LINES = 8,
+    TS_SISTER_DELAY_TAPS = 4
 };
 
 typedef struct {
@@ -66,15 +74,18 @@ typedef struct {
 
 typedef struct {
     TsSisterReverbLine line[TS_SISTER_REVERB_LINES];
-    float spring_state[2];
-    float spring_previous[2];
-    TsSisterReverbType type;
-    TsSisterReverbType old_type;
     uint32_t sample_rate;
+    float size_current;
     float mix_current;
     float decay_current;
+    float gain_current;
+    float gain_target;
     float route_current;
-    float type_blend;
+    float modulation_sin[TS_SISTER_REVERB_LINES];
+    float modulation_cos[TS_SISTER_REVERB_LINES];
+    float modulation_step_sin[TS_SISTER_REVERB_LINES];
+    float modulation_step_cos[TS_SISTER_REVERB_LINES];
+    uint32_t modulation_renormalize;
     int has_history;
     TsSisterFxReadHandoff read_handoff;
 } TsSisterReverbState;
@@ -84,15 +95,28 @@ typedef struct {
     size_t capacity_frames;
     size_t write_index;
     float delay_current;
-    float delay_old;
     float delay_target;
-    uint32_t transition_remaining;
-    uint32_t transition_total;
+    float tap_tone[TS_SISTER_DELAY_TAPS][2];
+    float feedback_tone[2];
+    float wow_sin;
+    float wow_cos;
+    float wow_step_sin;
+    float wow_step_cos;
+    float flutter_sin;
+    float flutter_cos;
+    float flutter_step_sin;
+    float flutter_step_cos;
+    uint32_t modulation_renormalize;
+    float follow_coefficient;
+    float tap_alpha[TS_SISTER_DELAY_TAPS];
+    float feedback_alpha_bright;
+    float feedback_alpha_dark;
     float feedback_current;
     float mix_current;
+    float gain_current;
+    float gain_target;
     float route_current;
     int has_history;
-    TsSisterFxReadHandoff read_handoff;
 } TsSisterDelayState;
 
 typedef struct {
@@ -103,6 +127,8 @@ typedef struct {
     float drive_current;
     float tone_current;
     float mix_current;
+    float gain_current;
+    float gain_target;
     float route_current;
 } TsSisterDistortionState;
 
@@ -152,11 +178,12 @@ typedef struct {
 } TsSisterPostFxEngine;
 
 const char *ts_sister_reverb_type_name(TsSisterReverbType type);
+float ts_sister_reverb_legacy_size(TsSisterReverbType type);
 void ts_sister_fx_controls_default(TsSisterFxControls *controls);
 void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls);
 float ts_sister_delay_time_ms(float normalized);
-float ts_sister_reverb_decay_seconds(TsSisterReverbType type,
-                                     float normalized);
+float ts_sister_reverb_size_scale(float normalized);
+float ts_sister_reverb_decay_seconds(float normalized);
 float ts_sister_fx_transition_ms(float normalized);
 float ts_sister_fx_transition_normalized(float milliseconds);
 float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine);

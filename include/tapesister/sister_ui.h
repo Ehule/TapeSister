@@ -117,6 +117,10 @@ typedef enum {
     TS_SISTER_UI_PARAM_FALLOUT_RISE_LENGTH,
     TS_SISTER_UI_PARAM_FALLOUT_RISE_INTENSITY,
     TS_SISTER_UI_PARAM_BUFFER_SECONDS,
+    /* Appended so every established preset-lock bit retains its identity. */
+    TS_SISTER_UI_PARAM_REVERB_GAIN,
+    TS_SISTER_UI_PARAM_DELAY_GAIN,
+    TS_SISTER_UI_PARAM_DISTORTION_GAIN,
     TS_SISTER_UI_PARAM_COUNT,
     /* These clocks are intentionally not preset-lock bits: the established
        63 lock indices remain stable in existing preset files. */
@@ -141,8 +145,8 @@ typedef enum {
     TS_SISTER_UI_FALLOUT_PITCH
 } TsSisterUiFalloutToggle;
 
-_Static_assert(TS_SISTER_UI_PARAM_COUNT <= 64,
-               "Sister parameter locks require a 64-bit mask");
+_Static_assert(TS_SISTER_UI_PARAM_COUNT <= 128,
+               "Sister parameter locks require two 64-bit masks");
 
 #define TS_SISTER_UI_PARAMETER_BIT(parameter) \
     (UINT64_C(1) << (unsigned)(parameter))
@@ -175,6 +179,7 @@ typedef struct {
     TsSisterWaveSnapshot waveform;
     TsSisterParameters parameters;
     uint64_t parameter_locks;
+    uint64_t parameter_locks_high;
     int destination_slot;
     char status[128];
     char preset_name[48];

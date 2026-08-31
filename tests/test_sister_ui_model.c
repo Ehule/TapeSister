@@ -30,6 +30,7 @@ int main(void)
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
     CHECK(model.parameter_locks == 0u);
+    CHECK(model.parameter_locks_high == 0u);
     for (int parameter = 0; parameter < TS_SISTER_UI_PARAM_COUNT;
          ++parameter)
         CHECK(ts_sister_ui_parameter_lockable(parameter));
@@ -63,7 +64,13 @@ int main(void)
               &model, TS_SISTER_UI_PARAM_REVERB_MIX));
     CHECK(ts_sister_ui_parameter_locked(
               &model, TS_SISTER_UI_PARAM_REVERB_MIX));
+    CHECK(ts_sister_ui_parameter_lock_toggle(
+              &model, TS_SISTER_UI_PARAM_DELAY_GAIN));
+    CHECK(ts_sister_ui_parameter_locked(
+              &model, TS_SISTER_UI_PARAM_DELAY_GAIN));
+    CHECK(model.parameter_locks_high != 0u);
     model.parameter_locks = 0u;
+    model.parameter_locks_high = 0u;
     CHECK(model.parameters.input_gain == 1.0f &&
           model.parameters.tiles_gain == 1.0f &&
           model.parameters.fm_gain == 1.0f &&
@@ -176,17 +183,26 @@ int main(void)
     model.fx_page = 1;
     hit = ts_sister_ui_hit_test_model(&model, 120, 56);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_REVERB_GAIN);
+    hit = ts_sister_ui_hit_test_model(&model, 220, 56);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_REVERB_TYPE);
-    hit = ts_sister_ui_hit_test_model(&model, 260, 56);
+    hit = ts_sister_ui_hit_test_model(&model, 325, 56);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_REVERB_DECAY);
-    hit = ts_sister_ui_hit_test_model(&model, 400, 56);
+    hit = ts_sister_ui_hit_test_model(&model, 430, 56);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_REVERB_MIX);
-    hit = ts_sister_ui_hit_test_model(&model, 260, 112);
+    hit = ts_sister_ui_hit_test_model(&model, 120, 112);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_DELAY_GAIN);
+    hit = ts_sister_ui_hit_test_model(&model, 325, 112);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_DELAY_FEEDBACK);
-    hit = ts_sister_ui_hit_test_model(&model, 400, 168);
+    hit = ts_sister_ui_hit_test_model(&model, 120, 168);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_DISTORTION_GAIN);
+    hit = ts_sister_ui_hit_test_model(&model, 430, 168);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_DISTORTION_MIX);
     hit = ts_sister_ui_hit_test_model(&model, 115, 78);

@@ -49,6 +49,39 @@ static TsStereoFrame effect_mix(TsStereoFrame dry, TsStereoFrame wet,
     return ts_stereo_frame_sanitize(result);
 }
 
+static float makeup_gain_linear(float decibels)
+{
+    return powf(10.0f, clampf(decibels, -12.0f, 12.0f) * 0.05f);
+}
+
+static TsStereoFrame effect_makeup(TsStereoFrame frame, float gain,
+                                   float active)
+{
+    float multiplier = 1.0f + (gain - 1.0f) * clampf(active, 0.0f, 1.0f);
+    frame.l *= multiplier;
+    frame.r *= multiplier;
+    return ts_stereo_frame_sanitize(frame);
+}
+
+/* Reverb is most often used as a surrounding field rather than an insert
+   replacement. Keep more of the immediate instrument through the middle of
+   the control while still reaching exact dry and exact wet at the ends. */
+static TsStereoFrame reverb_effect_mix(TsStereoFrame dry, TsStereoFrame wet,
+                                       float amount)
+{
+    TsStereoFrame result;
+    float dry_gain;
+    float wet_gain;
+    amount = clampf(amount, 0.0f, 1.0f);
+    if (amount <= 0.0f) return ts_stereo_frame_sanitize(dry);
+    if (amount >= 1.0f) return ts_stereo_frame_sanitize(wet);
+    dry_gain = cosf(amount * amount * (float)(M_PI * 0.5));
+    wet_gain = sinf(amount * (float)(M_PI * 0.5));
+    result.l = dry.l * dry_gain + wet.l * wet_gain;
+    result.r = dry.r * dry_gain + wet.r * wet_gain;
+    return ts_stereo_frame_sanitize(result);
+}
+
 static void ramp_start(TsSisterFxRamp *ramp, float target, uint32_t frames)
 {
     if (ramp == NULL) return;
@@ -126,6 +159,26 @@ static float soft_clip(float value)
     return fabsf(value) < 1.0e-20f ? 0.0f : value;
 }
 
+static float reverb_saturate(float value)
+{
+    if (!isfinite(value)) return 0.0f;
+    value = clampf(value, -3.0f, 3.0f);
+    value = tanhf(value);
+    return fabsf(value) < 1.0e-20f ? 0.0f : value;
+}
+
+static float tape_saturate(float value)
+{
+    float magnitude;
+    float conditioned;
+    if (!isfinite(value)) return 0.0f;
+    magnitude = fabsf(value);
+    if (magnitude <= 0.65f)
+        return magnitude < 1.0e-20f ? 0.0f : value;
+    conditioned = 0.65f + tanhf((magnitude - 0.65f) * 1.7f) / 1.7f;
+    return value < 0.0f ? -conditioned : conditioned;
+}
+
 static float flush_tiny(float value)
 {
     if (!isfinite(value) || fabsf(value) < 1.0e-20f) return 0.0f;
@@ -154,6 +207,16 @@ const char *ts_sister_reverb_type_name(TsSisterReverbType type)
     }
 }
 
+float ts_sister_reverb_legacy_size(TsSisterReverbType type)
+{
+    switch (type) {
+    case TS_SISTER_REVERB_PLATE: return 0.34f;
+    case TS_SISTER_REVERB_SPRING: return 0.22f;
+    case TS_SISTER_REVERB_CATHEDRAL: return 0.82f;
+    default: return 0.52f;
+    }
+}
+
 void ts_sister_fx_controls_default(TsSisterFxControls *controls)
 {
     if (controls == NULL) return;
@@ -165,6 +228,7 @@ void ts_sister_fx_controls_default(TsSisterFxControls *controls)
     controls->transition = ts_sister_fx_transition_normalized(10.0f);
     controls->master_transition = controls->transition;
     controls->reverb_type = TS_SISTER_REVERB_HALL;
+    controls->reverb_size = 0.58f;
     controls->reverb_decay = 0.42f;
     controls->reverb_targets = TS_SISTER_EFFECT_TARGET_MIX;
     controls->delay_time = 0.38f;
@@ -189,18 +253,23 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
     if (controls->reverb_type < TS_SISTER_REVERB_HALL ||
         controls->reverb_type >= TS_SISTER_REVERB_TYPE_COUNT)
         controls->reverb_type = TS_SISTER_REVERB_HALL;
+    controls->reverb_size = clampf(controls->reverb_size, 0.0f, 1.0f);
     controls->reverb_mix = clampf(controls->reverb_mix, 0.0f, 1.0f);
     controls->reverb_decay = clampf(controls->reverb_decay, 0.0f, 1.0f);
+    controls->reverb_gain_db = clampf(controls->reverb_gain_db, -12.0f, 12.0f);
     controls->reverb_targets = ts_sister_effect_targets_sanitize(
         controls->reverb_targets);
     controls->delay_time = clampf(controls->delay_time, 0.0f, 1.0f);
     controls->delay_feedback = clampf(controls->delay_feedback, 0.0f, 1.0f);
     controls->delay_mix = clampf(controls->delay_mix, 0.0f, 1.0f);
+    controls->delay_gain_db = clampf(controls->delay_gain_db, -12.0f, 12.0f);
     controls->delay_targets = ts_sister_effect_targets_sanitize(
         controls->delay_targets);
     controls->distortion_drive = clampf(controls->distortion_drive, 0.0f, 1.0f);
     controls->distortion_tone = clampf(controls->distortion_tone, 0.0f, 1.0f);
     controls->distortion_mix = clampf(controls->distortion_mix, 0.0f, 1.0f);
+    controls->distortion_gain_db = clampf(
+        controls->distortion_gain_db, -12.0f, 12.0f);
     controls->distortion_targets = ts_sister_effect_targets_sanitize(
         controls->distortion_targets);
     controls->master_feedback = clampf(controls->master_feedback, 0.0f, 1.0f);
@@ -226,19 +295,27 @@ float ts_sister_delay_time_ms(float normalized)
     return 8.0f * powf(250.0f, normalized);
 }
 
-float ts_sister_reverb_decay_seconds(TsSisterReverbType type,
-                                     float normalized)
+float ts_sister_reverb_size_scale(float normalized)
 {
-    static const float minimum[TS_SISTER_REVERB_TYPE_COUNT] = {
-        0.45f, 0.30f, 0.22f, 1.20f
-    };
-    static const float maximum[TS_SISTER_REVERB_TYPE_COUNT] = {
-        8.0f, 5.0f, 4.0f, 24.0f
-    };
-    if (type < 0 || type >= TS_SISTER_REVERB_TYPE_COUNT)
-        type = TS_SISTER_REVERB_HALL;
+    float extreme;
     normalized = clampf(normalized, 0.0f, 1.0f);
-    return minimum[type] * powf(maximum[type] / minimum[type], normalized);
+    /* Preserve the original close-room-through-deep-field sweep across most
+       of the control, then open the final quarter into a second, deliberately
+       extreme region.  The top is twice the former maximum physical scale. */
+    extreme = normalized * normalized * normalized;
+    extreme *= extreme;
+    return 0.55f + normalized * 1.20f + extreme * 1.75f;
+}
+
+float ts_sister_reverb_decay_seconds(float normalized)
+{
+    float extreme;
+    normalized = clampf(normalized, 0.0f, 1.0f);
+    /* A single continuous space: close room through an hour-scale musical
+       horizon without a discontinuity between named algorithms. */
+    extreme = normalized * normalized * normalized;
+    extreme *= extreme;
+    return 0.35f * powf(60.0f / 0.35f, normalized) * powf(2.0f, extreme);
 }
 
 static float delay_read(const float *data, size_t capacity, size_t write,
@@ -259,15 +336,16 @@ static float delay_read(const float *data, size_t capacity, size_t write,
         (data[i1 * 2u + channel] - data[i0 * 2u + channel]) * fraction;
 }
 
-static float reverb_delay_ms(TsSisterReverbType type, size_t line)
+static float reverb_delay_ms(float size, size_t line)
 {
-    static const float values[TS_SISTER_REVERB_TYPE_COUNT][TS_SISTER_REVERB_LINES] = {
-        {31.1f, 43.7f, 59.3f, 71.9f},
-        {19.7f, 27.1f, 37.9f, 49.3f},
-        {13.1f, 21.7f, 34.9f, 55.3f},
-        {43.1f, 59.9f, 78.7f, 96.1f}
+    static const float base[TS_SISTER_REVERB_LINES] = {
+        17.3f, 23.7f, 31.1f, 41.9f, 53.3f, 67.7f, 82.1f, 101.3f
     };
-    return values[type][line];
+    float scale;
+    if (line >= TS_SISTER_REVERB_LINES) line = 0u;
+    size = clampf(size, 0.0f, 1.0f);
+    scale = ts_sister_reverb_size_scale(size);
+    return base[line] * scale;
 }
 
 static int reverb_init(TsSisterReverbState *state, uint32_t rate)
@@ -275,19 +353,27 @@ static int reverb_init(TsSisterReverbState *state, uint32_t rate)
     size_t line;
     memset(state, 0, sizeof(*state));
     state->sample_rate = rate;
-    state->type = TS_SISTER_REVERB_HALL;
-    state->old_type = state->type;
-    state->type_blend = 1.0f;
+    state->size_current = 0.58f;
     state->decay_current = 0.42f;
+    state->gain_current = state->gain_target = 1.0f;
     for (line = 0u; line < TS_SISTER_REVERB_LINES; ++line) {
         size_t capacity = (size_t)ceil((reverb_delay_ms(
-            TS_SISTER_REVERB_CATHEDRAL, line) + 4.0f) * 0.001f * rate) + 2u;
+            1.0f, line) + 5.0f) * 0.001f * rate) + 2u;
         state->line[line].data = calloc(capacity * 2u, sizeof(float));
         if (state->line[line].data == NULL) return 0;
         state->line[line].capacity_frames = capacity;
         state->line[line].new_delay_frames =
-            reverb_delay_ms(state->type, line) * 0.001f * rate;
+            reverb_delay_ms(state->size_current, line) * 0.001f * rate;
         state->line[line].old_delay_frames = state->line[line].new_delay_frames;
+        {
+            float phase = (float)line * 0.731f;
+            float step = (float)(2.0 * M_PI) *
+                (0.037f + 0.011f * (float)line) / rate;
+            state->modulation_sin[line] = sinf(phase);
+            state->modulation_cos[line] = cosf(phase);
+            state->modulation_step_sin[line] = sinf(step);
+            state->modulation_step_cos[line] = cosf(step);
+        }
     }
     return 1;
 }
@@ -300,6 +386,10 @@ static void reverb_free(TsSisterReverbState *state)
     memset(state, 0, sizeof(*state));
 }
 
+static const float sister_delay_tap_cutoff[TS_SISTER_DELAY_TAPS] = {
+    1800.0f, 2800.0f, 4500.0f, 8500.0f
+};
+
 static int delay_init_state(TsSisterDelayState *state, uint32_t rate)
 {
     size_t capacity = (size_t)ceil(2.01 * (double)rate) + 2u;
@@ -308,9 +398,29 @@ static int delay_init_state(TsSisterDelayState *state, uint32_t rate)
     if (state->data == NULL) return 0;
     state->capacity_frames = capacity;
     state->delay_current = ts_sister_delay_time_ms(0.38f) * 0.001f * rate;
-    state->delay_old = state->delay_current;
     state->delay_target = state->delay_current;
     state->feedback_current = 0.32f;
+    state->gain_current = state->gain_target = 1.0f;
+    state->follow_coefficient = 1.0f - expf(
+        -1.0f / (0.035f * (float)rate));
+    for (size_t tap = 0u; tap < TS_SISTER_DELAY_TAPS; ++tap)
+        state->tap_alpha[tap] = 1.0f - expf(-(float)(2.0 * M_PI) *
+            sister_delay_tap_cutoff[tap] / (float)rate);
+    state->feedback_alpha_bright = 1.0f - expf(
+        -(float)(2.0 * M_PI) * 5600.0f / (float)rate);
+    state->feedback_alpha_dark = 1.0f - expf(
+        -(float)(2.0 * M_PI) * 3200.0f / (float)rate);
+    state->wow_cos = 1.0f;
+    state->flutter_sin = sinf(1.917f);
+    state->flutter_cos = cosf(1.917f);
+    {
+        float wow_step = (float)(2.0 * M_PI) * 0.23f / rate;
+        float flutter_step = (float)(2.0 * M_PI) * 3.73f / rate;
+        state->wow_step_sin = sinf(wow_step);
+        state->wow_step_cos = cosf(wow_step);
+        state->flutter_step_sin = sinf(flutter_step);
+        state->flutter_step_cos = cosf(flutter_step);
+    }
     return 1;
 }
 
@@ -351,6 +461,8 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
         }
         next.distortion[i].drive_current = next.controls.distortion_drive;
         next.distortion[i].tone_current = next.controls.distortion_tone;
+        next.distortion[i].gain_current = 1.0f;
+        next.distortion[i].gain_target = 1.0f;
     }
     next.ready = 1;
     ts_sister_post_fx_free(engine);
@@ -456,7 +568,13 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
                      engine->sample_rate);
     target_state_set(&engine->distortion_target, next.distortion_targets,
                      engine->sample_rate);
-    if (engine->ready && next.reverb_type != engine->controls.reverb_type) {
+    for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
+        engine->reverb[i].gain_target = makeup_gain_linear(next.reverb_gain_db);
+        engine->delay[i].gain_target = makeup_gain_linear(next.delay_gain_db);
+        engine->distortion[i].gain_target = makeup_gain_linear(
+            next.distortion_gain_db);
+    }
+    if (engine->ready && next.reverb_size != engine->controls.reverb_size) {
         for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
             TsSisterReverbState *state = &engine->reverb[i];
             int interrupted = 0;
@@ -465,14 +583,11 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
             if (interrupted)
                 read_handoff_begin(&state->read_handoff,
                     (uint32_t)(0.060f * engine->sample_rate));
-            state->old_type = state->type;
-            state->type = next.reverb_type;
-            state->type_blend = 0.0f;
             for (size_t line = 0u; line < TS_SISTER_REVERB_LINES; ++line) {
                 state->line[line].old_delay_frames =
                     state->line[line].new_delay_frames;
                 state->line[line].new_delay_frames = reverb_delay_ms(
-                    state->type, line) * 0.001f * engine->sample_rate;
+                    next.reverb_size, line) * 0.001f * engine->sample_rate;
                 state->line[line].transition_total =
                     (uint32_t)(0.060f * engine->sample_rate);
                 state->line[line].transition_remaining =
@@ -496,6 +611,23 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
     ramp_reset(&engine->delay_engage, next.delay_enabled ? 1.0f : 0.0f);
     ramp_reset(&engine->distortion_engage,
                next.distortion_enabled ? 1.0f : 0.0f);
+    for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
+        engine->reverb[i].size_current = next.reverb_size;
+        engine->reverb[i].gain_current = engine->reverb[i].gain_target;
+        for (size_t line = 0u; line < TS_SISTER_REVERB_LINES; ++line) {
+            float frames = reverb_delay_ms(next.reverb_size, line) * 0.001f *
+                           engine->sample_rate;
+            engine->reverb[i].line[line].old_delay_frames = frames;
+            engine->reverb[i].line[line].new_delay_frames = frames;
+            engine->reverb[i].line[line].transition_remaining = 0u;
+            engine->reverb[i].line[line].transition_total = 0u;
+        }
+        engine->delay[i].delay_current = ts_sister_delay_time_ms(
+            next.delay_time) * 0.001f * engine->sample_rate;
+        engine->delay[i].delay_target = engine->delay[i].delay_current;
+        engine->delay[i].gain_current = engine->delay[i].gain_target;
+        engine->distortion[i].gain_current = engine->distortion[i].gain_target;
+    }
 }
 
 static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
@@ -513,10 +645,13 @@ static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
         c->distortion_tone, engine->sample_rate, 20.0f);
     state->mix_current = approach(state->mix_current,
         c->distortion_mix, engine->sample_rate, 20.0f);
+    state->gain_current = approach(state->gain_current,
+        state->gain_target, engine->sample_rate, 20.0f);
     state->route_current = approach(state->route_current,
         enabled ? 1.0f : 0.0f, engine->sample_rate, 12.0f);
     if (state->mix_current <= FLT_EPSILON && c->distortion_mix <= 0.0f)
-        return input;
+        return effect_makeup(input, state->gain_current,
+            state->route_current * engine->distortion_engage.current);
     for (size_t channel = 0u; channel < 2u; ++channel) {
         float drive = powf(60.0f, state->drive_current);
         float midpoint = 0.5f * (state->previous_input[channel] + values[channel]);
@@ -538,9 +673,11 @@ static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
         *outputs[channel] = soft_clip(dc * (1.35f - 0.35f * state->drive_current));
     }
     wet = ts_stereo_frame_sanitize(wet);
-    return effect_mix(input, wet,
+    return effect_makeup(effect_mix(input, wet,
         clampf(state->mix_current * state->route_current *
-               engine->distortion_engage.current, 0.0f, 1.0f));
+               engine->distortion_engage.current, 0.0f, 1.0f)),
+        state->gain_current,
+        state->route_current * engine->distortion_engage.current);
 }
 
 static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
@@ -548,61 +685,148 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
 {
     TsSisterDelayState *state = &engine->delay[index];
     TsSisterFxControls *c = &engine->controls;
-    TsStereoFrame wet;
+    TsStereoFrame wet = {0.0f, 0.0f};
+    TsStereoFrame feedback_read = {0.0f, 0.0f};
+    static const float tap_ratio[TS_SISTER_DELAY_TAPS] = {
+        0.29f, 0.47f, 0.71f, 1.0f
+    };
+    static const float tap_weight[TS_SISTER_DELAY_TAPS] = {
+        0.30f, 0.38f, 0.48f, 0.72f
+    };
+    static const float tap_pan_l[TS_SISTER_DELAY_TAPS] = {
+        0.89442719f, 0.48989795f, 0.8f, 0.63245553f
+    };
+    static const float tap_pan_r[TS_SISTER_DELAY_TAPS] = {
+        0.44721360f, 0.87177979f, 0.6f, 0.77459667f
+    };
     float requested = ts_sister_delay_time_ms(c->delay_time) *
                       0.001f * engine->sample_rate;
-    if (fabsf(requested - state->delay_target) > 0.5f) {
-        if (state->transition_remaining > 0u)
-            read_handoff_begin(&state->read_handoff,
-                (uint32_t)(0.025f * engine->sample_rate));
-        state->delay_old = state->delay_current;
-        state->delay_target = requested;
-        state->transition_total = (uint32_t)(0.025f * engine->sample_rate);
-        if (state->transition_total == 0u) state->transition_total = 1u;
-        state->transition_remaining = state->transition_total;
-    }
+    float difference;
+    float follow;
+    float wow_frames;
+    float flutter_frames;
+    float mod_l;
+    float mod_r;
+    state->delay_target = requested;
+    difference = state->delay_target - state->delay_current;
+    follow = difference * state->follow_coefficient;
+    /* A lengthening delay reads the tape as slowly as half speed; a
+       shortening delay reads it as fast as double speed. The resulting
+       octave-down/octave-up limits make abrupt wheel moves dramatic but
+       continuous, while slow LFO movement follows naturally. */
+    follow = clampf(follow, -1.0f, 0.5f);
+    if (fabsf(difference) <= fabsf(follow))
+        state->delay_current = state->delay_target;
+    else
+        state->delay_current += follow;
     state->feedback_current = approach(state->feedback_current,
         c->delay_feedback, engine->sample_rate, 20.0f);
     state->mix_current = approach(state->mix_current,
         c->delay_mix, engine->sample_rate, 20.0f);
+    state->gain_current = approach(state->gain_current,
+        state->gain_target, engine->sample_rate, 20.0f);
     state->route_current = approach(state->route_current,
         enabled ? 1.0f : 0.0f, engine->sample_rate, 12.0f);
     if (!state->has_history &&
         ((state->mix_current <= FLT_EPSILON && c->delay_mix <= 0.0f) ||
          (!enabled && state->route_current <= FLT_EPSILON)))
-        return input;
+        return effect_makeup(input, state->gain_current,
+            state->route_current * engine->delay_engage.current);
     if (state->route_current * engine->delay_engage.current *
         fmaxf(fabsf(input.l), fabsf(input.r)) > 1.0e-12f)
         state->has_history = 1;
-    wet.l = delay_read(state->data, state->capacity_frames,
-                       state->write_index, state->delay_current, 0u);
-    wet.r = delay_read(state->data, state->capacity_frames,
-                       state->write_index, state->delay_current, 1u);
-    if (state->transition_remaining > 0u) {
-        float amount = 1.0f - (float)state->transition_remaining /
-                                  (float)state->transition_total;
-        TsStereoFrame next = {
-            delay_read(state->data, state->capacity_frames,
-                       state->write_index, state->delay_target, 0u),
-            delay_read(state->data, state->capacity_frames,
-                       state->write_index, state->delay_target, 1u)
-        };
-        wet = lerp_frame(wet, next, amount);
-        --state->transition_remaining;
-        if (state->transition_remaining == 0u)
-            state->delay_current = state->delay_target;
+    wow_frames = (0.03f + 0.16f * c->delay_time) * 0.001f *
+                 engine->sample_rate;
+    flutter_frames = 0.012f * 0.001f * engine->sample_rate;
+    mod_l = state->wow_sin * wow_frames +
+            state->flutter_sin * flutter_frames;
+    mod_r = (-0.216440f * state->wow_sin +
+              0.976296f * state->wow_cos) * wow_frames +
+            (0.613746f * state->flutter_sin +
+             0.789504f * state->flutter_cos) * flutter_frames;
+    for (size_t tap = 0u; tap < TS_SISTER_DELAY_TAPS; ++tap) {
+        float delay_frames = state->delay_current * tap_ratio[tap];
+        float read_l = delay_read(state->data, state->capacity_frames,
+            state->write_index, delay_frames + mod_l * tap_ratio[tap], 0u);
+        float read_r = delay_read(state->data, state->capacity_frames,
+            state->write_index, delay_frames + mod_r * tap_ratio[tap], 1u);
+        float alpha = state->tap_alpha[tap];
+        float center;
+        float side;
+        state->tap_tone[tap][0] +=
+            (read_l - state->tap_tone[tap][0]) * alpha;
+        state->tap_tone[tap][1] +=
+            (read_r - state->tap_tone[tap][1]) * alpha;
+        state->tap_tone[tap][0] = flush_tiny(state->tap_tone[tap][0]);
+        state->tap_tone[tap][1] = flush_tiny(state->tap_tone[tap][1]);
+        center = (state->tap_tone[tap][0] +
+                  state->tap_tone[tap][1]) * 0.5f;
+        side = (state->tap_tone[tap][0] -
+                state->tap_tone[tap][1]) * 0.5f;
+        wet.l += tap_weight[tap] *
+            (center * tap_pan_l[tap] + side * 0.55f);
+        wet.r += tap_weight[tap] *
+            (center * tap_pan_r[tap] - side * 0.55f);
+        if (tap == TS_SISTER_DELAY_TAPS - 1u) {
+            feedback_read.l = read_l * 0.94f + read_r * 0.06f;
+            feedback_read.r = read_r * 0.94f + read_l * 0.06f;
+        }
     }
-    wet = read_handoff_apply(&state->read_handoff, wet);
-    state->data[state->write_index * 2u] = feedback_condition(
+    {
+        float feedback_alpha = state->feedback_alpha_bright +
+            (state->feedback_alpha_dark - state->feedback_alpha_bright) *
+            state->feedback_current;
+        state->feedback_tone[0] +=
+            (feedback_read.l - state->feedback_tone[0]) * feedback_alpha;
+        state->feedback_tone[1] +=
+            (feedback_read.r - state->feedback_tone[1]) * feedback_alpha;
+        state->feedback_tone[0] = flush_tiny(state->feedback_tone[0]);
+        state->feedback_tone[1] = flush_tiny(state->feedback_tone[1]);
+    }
+    state->data[state->write_index * 2u] = feedback_condition(tape_saturate(
         input.l * state->route_current * engine->delay_engage.current +
-        wet.l * (state->feedback_current * 1.08f));
-    state->data[state->write_index * 2u + 1u] = feedback_condition(
+        state->feedback_tone[0] * (state->feedback_current * 1.08f)));
+    state->data[state->write_index * 2u + 1u] = feedback_condition(tape_saturate(
         input.r * state->route_current * engine->delay_engage.current +
-        wet.r * (state->feedback_current * 1.08f));
+        state->feedback_tone[1] * (state->feedback_current * 1.08f)));
     state->write_index = (state->write_index + 1u) % state->capacity_frames;
-    return effect_mix(input, wet,
+    {
+        float wow_sin = state->wow_sin;
+        float wow_cos = state->wow_cos;
+        float flutter_sin = state->flutter_sin;
+        float flutter_cos = state->flutter_cos;
+        state->wow_sin = wow_sin * state->wow_step_cos +
+                         wow_cos * state->wow_step_sin;
+        state->wow_cos = wow_cos * state->wow_step_cos -
+                         wow_sin * state->wow_step_sin;
+        state->flutter_sin = flutter_sin * state->flutter_step_cos +
+                             flutter_cos * state->flutter_step_sin;
+        state->flutter_cos = flutter_cos * state->flutter_step_cos -
+                             flutter_sin * state->flutter_step_sin;
+    }
+    if (++state->modulation_renormalize >= 4096u) {
+        float wow_magnitude = sqrtf(state->wow_sin * state->wow_sin +
+                                    state->wow_cos * state->wow_cos);
+        float flutter_magnitude = sqrtf(
+            state->flutter_sin * state->flutter_sin +
+            state->flutter_cos * state->flutter_cos);
+        state->modulation_renormalize = 0u;
+        if (wow_magnitude > 0.0f && isfinite(wow_magnitude)) {
+            state->wow_sin /= wow_magnitude;
+            state->wow_cos /= wow_magnitude;
+        }
+        if (flutter_magnitude > 0.0f && isfinite(flutter_magnitude)) {
+            state->flutter_sin /= flutter_magnitude;
+            state->flutter_cos /= flutter_magnitude;
+        }
+    }
+    wet.l = tape_saturate(wet.l);
+    wet.r = tape_saturate(wet.r);
+    return effect_makeup(effect_mix(input, wet,
         clampf(state->mix_current * state->route_current *
-               engine->delay_engage.current, 0.0f, 1.0f));
+               engine->delay_engage.current, 0.0f, 1.0f)),
+        state->gain_current,
+        state->route_current * engine->delay_engage.current);
 }
 
 static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
@@ -614,125 +838,132 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
     float read_r[TS_SISTER_REVERB_LINES];
     float mean_l = 0.0f, mean_r = 0.0f;
     float decay_seconds;
-    float old_decay_seconds;
     float damping;
-    float old_damping;
-    float type_blend;
     TsStereoFrame wet = {0.0f, 0.0f};
+    static const float output_l[TS_SISTER_REVERB_LINES] = {
+         1.0f, -1.0f,  1.0f,  1.0f, -1.0f,  1.0f, -1.0f, -1.0f
+    };
+    static const float output_r[TS_SISTER_REVERB_LINES] = {
+        -1.0f,  1.0f,  1.0f, -1.0f,  1.0f,  1.0f, -1.0f, -1.0f
+    };
     state->mix_current = approach(state->mix_current,
         c->reverb_mix, engine->sample_rate, 24.0f);
+    state->gain_current = approach(state->gain_current,
+        state->gain_target, engine->sample_rate, 20.0f);
     state->decay_current = approach(state->decay_current,
         c->reverb_decay, engine->sample_rate, 35.0f);
+    state->size_current = approach(state->size_current,
+        c->reverb_size, engine->sample_rate, 55.0f);
     state->route_current = approach(state->route_current,
         enabled ? 1.0f : 0.0f, engine->sample_rate, 18.0f);
     if (!state->has_history &&
         ((state->mix_current <= FLT_EPSILON && c->reverb_mix <= 0.0f) ||
          (!enabled && state->route_current <= FLT_EPSILON)))
-        return input;
+        return effect_makeup(input, state->gain_current,
+            state->route_current * engine->reverb_engage.current);
     if (state->route_current * engine->reverb_engage.current *
         fmaxf(fabsf(input.l), fabsf(input.r)) > 1.0e-12f)
         state->has_history = 1;
-    state->type_blend = approach(state->type_blend, 1.0f,
-                                 engine->sample_rate, 16.0f);
-    type_blend = clampf(state->type_blend, 0.0f, 1.0f);
-    decay_seconds = ts_sister_reverb_decay_seconds(state->type,
-                                                   state->decay_current);
-    old_decay_seconds = ts_sister_reverb_decay_seconds(state->old_type,
-                                                       state->decay_current);
-    decay_seconds = old_decay_seconds +
-                    (decay_seconds - old_decay_seconds) * type_blend;
-    damping = state->type == TS_SISTER_REVERB_PLATE ? 0.72f :
-              state->type == TS_SISTER_REVERB_CATHEDRAL ? 0.16f :
-              state->type == TS_SISTER_REVERB_SPRING ? 0.88f : 0.42f;
-    old_damping = state->old_type == TS_SISTER_REVERB_PLATE ? 0.72f :
-                  state->old_type == TS_SISTER_REVERB_CATHEDRAL ? 0.16f :
-                  state->old_type == TS_SISTER_REVERB_SPRING ? 0.88f : 0.42f;
-    damping = old_damping + (damping - old_damping) * type_blend;
+    decay_seconds = ts_sister_reverb_decay_seconds(state->decay_current);
+    damping = 0.90f + (1.0f - state->size_current) * 0.05f +
+              (1.0f - state->decay_current) * 0.03f;
     for (size_t line = 0u; line < TS_SISTER_REVERB_LINES; ++line) {
         TsSisterReverbLine *delay = &state->line[line];
+        float depth_frames = (0.08f + state->size_current * 0.48f) *
+                             0.001f * engine->sample_rate;
+        float oscillator_sin = state->modulation_sin[line];
+        float oscillator_cos = state->modulation_cos[line];
+        float mod_l = oscillator_sin * depth_frames;
+        float mod_r = (-0.159519f * oscillator_sin +
+                        0.987195f * oscillator_cos) * depth_frames;
         read_l[line] = delay_read(delay->data, delay->capacity_frames,
                                   delay->write_index,
-                                  delay->new_delay_frames, 0u);
+                                  delay->new_delay_frames + mod_l, 0u);
         read_r[line] = delay_read(delay->data, delay->capacity_frames,
                                   delay->write_index,
-                                  delay->new_delay_frames, 1u);
+                                  delay->new_delay_frames + mod_r, 1u);
         if (delay->transition_remaining > 0u) {
             float amount = 1.0f - (float)delay->transition_remaining /
                                       (float)delay->transition_total;
             read_l[line] = read_l[line] * amount +
                 delay_read(delay->data, delay->capacity_frames,
-                           delay->write_index, delay->old_delay_frames, 0u) *
+                           delay->write_index,
+                           delay->old_delay_frames + mod_l, 0u) *
                 (1.0f - amount);
             read_r[line] = read_r[line] * amount +
                 delay_read(delay->data, delay->capacity_frames,
-                           delay->write_index, delay->old_delay_frames, 1u) *
+                           delay->write_index,
+                           delay->old_delay_frames + mod_r, 1u) *
                 (1.0f - amount);
             --delay->transition_remaining;
         }
-        mean_l += read_l[line] * 0.25f;
-        mean_r += read_r[line] * 0.25f;
+        mean_l += read_l[line] * (1.0f / (float)TS_SISTER_REVERB_LINES);
+        mean_r += read_r[line] * (1.0f / (float)TS_SISTER_REVERB_LINES);
+        wet.l += (read_l[line] * output_l[line] +
+                  read_r[line] * output_r[line] * 0.16f) * 0.35355339f;
+        wet.r += (read_r[line] * output_r[line] -
+                  read_l[line] * output_l[line] * 0.16f) * 0.35355339f;
+        state->modulation_sin[line] =
+            oscillator_sin * state->modulation_step_cos[line] +
+            oscillator_cos * state->modulation_step_sin[line];
+        state->modulation_cos[line] =
+            oscillator_cos * state->modulation_step_cos[line] -
+            oscillator_sin * state->modulation_step_sin[line];
     }
-    if (state->type == TS_SISTER_REVERB_SPRING ||
-        state->old_type == TS_SISTER_REVERB_SPRING) {
-        float spring_mix =
-            (state->old_type == TS_SISTER_REVERB_SPRING ?
-             1.0f - type_blend : 0.0f) +
-            (state->type == TS_SISTER_REVERB_SPRING ? type_blend : 0.0f);
-        float dry_mean_l = mean_l;
-        float dry_mean_r = mean_r;
-        float resonant_l = mean_l + 0.72f * state->spring_state[0] -
-                           0.48f * state->spring_previous[0];
-        float resonant_r = mean_r + 0.69f * state->spring_state[1] -
-                           0.51f * state->spring_previous[1];
-        state->spring_previous[0] = state->spring_state[0];
-        state->spring_previous[1] = state->spring_state[1];
-        state->spring_state[0] = flush_tiny(soft_clip(resonant_l));
-        state->spring_state[1] = flush_tiny(soft_clip(resonant_r));
-        mean_l = dry_mean_l +
-            (0.60f * dry_mean_l + 0.40f * state->spring_state[0] -
-             dry_mean_l) * spring_mix;
-        mean_r = dry_mean_r +
-            (0.60f * dry_mean_r + 0.40f * state->spring_state[1] -
-             dry_mean_r) * spring_mix;
+    if (++state->modulation_renormalize >= 4096u) {
+        state->modulation_renormalize = 0u;
+        for (size_t line = 0u; line < TS_SISTER_REVERB_LINES; ++line) {
+            float magnitude = sqrtf(
+                state->modulation_sin[line] * state->modulation_sin[line] +
+                state->modulation_cos[line] * state->modulation_cos[line]);
+            if (magnitude > 0.0f && isfinite(magnitude)) {
+                state->modulation_sin[line] /= magnitude;
+                state->modulation_cos[line] /= magnitude;
+            } else {
+                state->modulation_sin[line] = 0.0f;
+                state->modulation_cos[line] = 1.0f;
+            }
+        }
     }
-    {
-        float old_cross = state->old_type == TS_SISTER_REVERB_PLATE ?
-                          0.38f : 0.18f;
-        float new_cross = state->type == TS_SISTER_REVERB_PLATE ?
-                          0.38f : 0.18f;
-        float cross = old_cross + (new_cross - old_cross) * type_blend;
-        wet.l = (1.0f - cross) * mean_l + cross * mean_r;
-        wet.r = (1.0f - cross) * mean_r + cross * mean_l;
-    }
+    /* Retain the spacious common mode as well as the decorrelated output
+       vectors. Omitting it makes a centered sustained source appear wide but
+       lets its reverb body vanish through matrix cancellation. */
+    wet.l += mean_l * 1.15f + mean_r * 0.08f;
+    wet.r += mean_r * 1.15f + mean_l * 0.08f;
     for (size_t line = 0u; line < TS_SISTER_REVERB_LINES; ++line) {
         TsSisterReverbLine *delay = &state->line[line];
         float seconds = delay->new_delay_frames / engine->sample_rate;
         float gain = powf(0.001f, seconds / decay_seconds);
         float matrix_l = 2.0f * mean_l - read_l[line];
         float matrix_r = 2.0f * mean_r - read_r[line];
+        float polarity = output_l[line];
         float inject_l = state->route_current * engine->reverb_engage.current *
-            (input.l * (0.18f + 0.04f * (float)line) +
-             input.r * (line & 1u ? 0.07f : -0.04f));
+            (input.l * (0.155f + 0.006f * (float)line +
+                        0.035f * polarity) +
+             input.r * polarity * 0.045f);
         float inject_r = state->route_current * engine->reverb_engage.current *
-            (input.r * (0.18f + 0.04f * (float)line) +
-             input.l * (line & 1u ? -0.04f : 0.07f));
+            (input.r * (0.155f + 0.006f * (float)line +
+                        0.035f * output_r[line]) -
+             input.l * output_r[line] * 0.045f);
         delay->damping[0] += (matrix_l - delay->damping[0]) * damping;
         delay->damping[1] += (matrix_r - delay->damping[1]) * damping;
         delay->damping[0] = flush_tiny(delay->damping[0]);
         delay->damping[1] = flush_tiny(delay->damping[1]);
-        delay->data[delay->write_index * 2u] = soft_clip(
+        delay->data[delay->write_index * 2u] = reverb_saturate(
             inject_l + delay->damping[0] * gain);
-        delay->data[delay->write_index * 2u + 1u] = soft_clip(
+        delay->data[delay->write_index * 2u + 1u] = reverb_saturate(
             inject_r + delay->damping[1] * gain);
         delay->write_index = (delay->write_index + 1u) % delay->capacity_frames;
     }
-    wet.l = feedback_condition(wet.l * 2.25f);
-    wet.r = feedback_condition(wet.r * 2.25f);
+    wet.l = feedback_condition(wet.l);
+    wet.r = feedback_condition(wet.r);
     wet = ts_stereo_frame_sanitize(wet);
     wet = read_handoff_apply(&state->read_handoff, wet);
-    return effect_mix(input, wet,
+    return effect_makeup(reverb_effect_mix(input, wet,
         clampf(state->mix_current * state->route_current *
-               engine->reverb_engage.current, 0.0f, 1.0f));
+               engine->reverb_engage.current, 0.0f, 1.0f)),
+        state->gain_current,
+        state->route_current * engine->reverb_engage.current);
 }
 
 TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,

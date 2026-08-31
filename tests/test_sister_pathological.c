@@ -256,9 +256,9 @@ static void apply_transition(TsSisterRuntime *runtime, TsInstrument *instrument,
             (uint8_t)(random_next(random) & TS_SISTER_EFFECT_TARGET_ALL));
         break;
     case 6u:
-        p->fx.reverb_type = (TsSisterReverbType)(
-            random_next(random) % TS_SISTER_REVERB_TYPE_COUNT);
+        p->fx.reverb_size = random_unit(random);
         p->fx.reverb_mix = random_unit(random);
+        p->fx.reverb_gain_db = -12.0f + random_unit(random) * 24.0f;
         p->fx.reverb_decay = random_unit(random);
         p->fx.reverb_targets = ts_sister_effect_targets_sanitize(
             (uint8_t)(random_next(random) & TS_SISTER_EFFECT_TARGET_ALL));
@@ -267,6 +267,7 @@ static void apply_transition(TsSisterRuntime *runtime, TsInstrument *instrument,
         p->fx.delay_time = random_unit(random);
         p->fx.delay_feedback = random_unit(random);
         p->fx.delay_mix = random_unit(random);
+        p->fx.delay_gain_db = -12.0f + random_unit(random) * 24.0f;
         p->fx.delay_targets = ts_sister_effect_targets_sanitize(
             (uint8_t)(random_next(random) & TS_SISTER_EFFECT_TARGET_ALL));
         break;
@@ -274,6 +275,7 @@ static void apply_transition(TsSisterRuntime *runtime, TsInstrument *instrument,
         p->fx.distortion_drive = random_unit(random);
         p->fx.distortion_tone = random_unit(random);
         p->fx.distortion_mix = random_unit(random);
+        p->fx.distortion_gain_db = -12.0f + random_unit(random) * 24.0f;
         p->fx.distortion_targets = ts_sister_effect_targets_sanitize(
             (uint8_t)(random_next(random) & TS_SISTER_EFFECT_TARGET_ALL));
         break;

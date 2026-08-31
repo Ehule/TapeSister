@@ -645,6 +645,8 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
                          sizeof(sister->parameters));
         state_hash_bytes(&hash, &sister->parameter_locks,
                          sizeof(sister->parameter_locks));
+        state_hash_bytes(&hash, &sister->parameter_locks_high,
+                         sizeof(sister->parameter_locks_high));
         state_hash_bytes(&hash, sister->selected_preset,
                          strlen(sister->selected_preset));
         state_hash_bytes(&hash, &sister->selected_preset_modified,
@@ -7002,16 +7004,21 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_SOAK: parameters->soak = amount; break;
     case TS_SISTER_UI_PARAM_BLEED: parameters->bleed = amount; break;
     case TS_SISTER_UI_PARAM_REVERB_TYPE:
-        parameters->fx.reverb_type = (TsSisterReverbType)lrintf(
-            amount * (TS_SISTER_REVERB_TYPE_COUNT - 1)); break;
+        parameters->fx.reverb_size = amount; break;
     case TS_SISTER_UI_PARAM_REVERB_MIX: parameters->fx.reverb_mix = amount; break;
     case TS_SISTER_UI_PARAM_REVERB_DECAY: parameters->fx.reverb_decay = amount; break;
+    case TS_SISTER_UI_PARAM_REVERB_GAIN:
+        parameters->fx.reverb_gain_db = -12.0f + amount * 24.0f; break;
     case TS_SISTER_UI_PARAM_DELAY_TIME: parameters->fx.delay_time = amount; break;
     case TS_SISTER_UI_PARAM_DELAY_FEEDBACK: parameters->fx.delay_feedback = amount; break;
     case TS_SISTER_UI_PARAM_DELAY_MIX: parameters->fx.delay_mix = amount; break;
+    case TS_SISTER_UI_PARAM_DELAY_GAIN:
+        parameters->fx.delay_gain_db = -12.0f + amount * 24.0f; break;
     case TS_SISTER_UI_PARAM_DISTORTION_DRIVE: parameters->fx.distortion_drive = amount; break;
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: parameters->fx.distortion_tone = amount; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: parameters->fx.distortion_mix = amount; break;
+    case TS_SISTER_UI_PARAM_DISTORTION_GAIN:
+        parameters->fx.distortion_gain_db = -12.0f + amount * 24.0f; break;
     case TS_SISTER_UI_PARAM_FX_TRANSITION: parameters->fx.transition = amount; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION:
         parameters->fx.master_transition = amount; break;
@@ -7084,16 +7091,21 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_SOAK: value = parameters->soak; break;
     case TS_SISTER_UI_PARAM_BLEED: value = parameters->bleed; break;
     case TS_SISTER_UI_PARAM_REVERB_TYPE:
-        value = parameters->fx.reverb_type /
-            (float)(TS_SISTER_REVERB_TYPE_COUNT - 1); break;
+        value = parameters->fx.reverb_size; break;
     case TS_SISTER_UI_PARAM_REVERB_MIX: value = parameters->fx.reverb_mix; break;
     case TS_SISTER_UI_PARAM_REVERB_DECAY: value = parameters->fx.reverb_decay; break;
+    case TS_SISTER_UI_PARAM_REVERB_GAIN:
+        value = (parameters->fx.reverb_gain_db + 12.0f) / 24.0f; break;
     case TS_SISTER_UI_PARAM_DELAY_TIME: value = parameters->fx.delay_time; break;
     case TS_SISTER_UI_PARAM_DELAY_FEEDBACK: value = parameters->fx.delay_feedback; break;
     case TS_SISTER_UI_PARAM_DELAY_MIX: value = parameters->fx.delay_mix; break;
+    case TS_SISTER_UI_PARAM_DELAY_GAIN:
+        value = (parameters->fx.delay_gain_db + 12.0f) / 24.0f; break;
     case TS_SISTER_UI_PARAM_DISTORTION_DRIVE: value = parameters->fx.distortion_drive; break;
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: value = parameters->fx.distortion_tone; break;
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: value = parameters->fx.distortion_mix; break;
+    case TS_SISTER_UI_PARAM_DISTORTION_GAIN:
+        value = (parameters->fx.distortion_gain_db + 12.0f) / 24.0f; break;
     case TS_SISTER_UI_PARAM_FX_TRANSITION: value = parameters->fx.transition; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION:
         value = parameters->fx.master_transition; break;
@@ -7146,12 +7158,6 @@ static float sister_parameter_wheel_normalized(
         if (value >= TS_SISTER_FILTER_TYPE_COUNT)
             value = TS_SISTER_FILTER_TYPE_COUNT - 1;
         return value / (float)(TS_SISTER_FILTER_TYPE_COUNT - 1);
-    case TS_SISTER_UI_PARAM_REVERB_TYPE:
-        value = parameters->fx.reverb_type + direction * steps;
-        if (value < TS_SISTER_REVERB_HALL) value = TS_SISTER_REVERB_HALL;
-        if (value >= TS_SISTER_REVERB_TYPE_COUNT)
-            value = TS_SISTER_REVERB_TYPE_COUNT - 1;
-        return value / (float)(TS_SISTER_REVERB_TYPE_COUNT - 1);
     case TS_SISTER_UI_PARAM_H2_RATE:
         value = parameters->head2_rate_index + direction * steps;
         if (value < 0) value = 0;
@@ -7194,6 +7200,7 @@ static void fallout_factory_presets_configure(TsSisterPresetBank *bank,
         f->enabled = 0;
         bank->entries[index].factory = 1;
         bank->entries[index].parameter_locks = 0u;
+        bank->entries[index].parameter_locks_high = 0u;
         snprintf(bank->entries[index].name,
                  sizeof(bank->entries[index].name), "%s", names[index]);
     }
@@ -7299,15 +7306,18 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_GHOST_TONE: return "GHOST TONE";
     case TS_SISTER_UI_PARAM_SOAK: return "SOAK";
     case TS_SISTER_UI_PARAM_BLEED: return "BLEED";
-    case TS_SISTER_UI_PARAM_REVERB_TYPE: return "REVERB TYPE";
+    case TS_SISTER_UI_PARAM_REVERB_TYPE: return "REVERB SIZE";
     case TS_SISTER_UI_PARAM_REVERB_MIX: return "REVERB MIX";
     case TS_SISTER_UI_PARAM_REVERB_DECAY: return "REVERB DECAY";
+    case TS_SISTER_UI_PARAM_REVERB_GAIN: return "REVERB GAIN";
     case TS_SISTER_UI_PARAM_DELAY_TIME: return "DELAY TIME";
     case TS_SISTER_UI_PARAM_DELAY_FEEDBACK: return "DELAY FEEDBACK";
     case TS_SISTER_UI_PARAM_DELAY_MIX: return "DELAY MIX";
+    case TS_SISTER_UI_PARAM_DELAY_GAIN: return "DELAY GAIN";
     case TS_SISTER_UI_PARAM_DISTORTION_DRIVE: return "DISTORTION DRIVE";
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: return "DISTORTION TONE";
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: return "DISTORTION MIX";
+    case TS_SISTER_UI_PARAM_DISTORTION_GAIN: return "DISTORTION GAIN";
     case TS_SISTER_UI_PARAM_FX_TRANSITION: return "EFFECT TRANSITION";
     case TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION: return "MASTER FX TRANSITION";
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: return "MASTER FX FEEDBACK";
@@ -7347,6 +7357,7 @@ static void sister_toggle_parameter_lock(AudioState *audio,
     if (result == 0) return;
     locked = ts_sister_ui_parameter_locked(&sister->model, parameter);
     audio->sister.parameter_locks = sister->model.parameter_locks;
+    audio->sister.parameter_locks_high = sister->model.parameter_locks_high;
     ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
     sister_preset_model_sync(sister, &audio->sister);
     snprintf(sister->model.status, sizeof(sister->model.status), "%s %s",
@@ -7430,13 +7441,15 @@ static void sister_recall_preset(SDL_AudioDeviceID device,
 {
     TsSisterParameters parameters;
     uint64_t parameter_locks;
+    uint64_t parameter_locks_high;
     int fallout;
     TsSisterPresetBank *bank;
     if (audio == NULL || sister == NULL) return;
     fallout = sister->model.fx_page == 2;
     bank = fallout ? &sister->fallout_presets : &sister->presets;
-    if (!ts_sister_preset_recall_with_locks(
-            bank, index, &parameters, &parameter_locks)) return;
+    if (!ts_sister_preset_recall_with_lock_words(
+            bank, index, &parameters, &parameter_locks,
+            &parameter_locks_high)) return;
     if (device) SDL_LockAudioDevice(device);
     if (fallout) {
         ts_sister_runtime_recall_fallout_preset(
@@ -7447,6 +7460,7 @@ static void sister_recall_preset(SDL_AudioDeviceID device,
     } else {
         ts_sister_runtime_set_parameters(&audio->sister, &parameters);
         audio->sister.parameter_locks = parameter_locks;
+        audio->sister.parameter_locks_high = parameter_locks_high;
         ts_sister_runtime_set_selected_preset(
             &audio->sister, bank->entries[index].name);
         sister->fallout_preset_index = SIZE_MAX;
@@ -7454,7 +7468,10 @@ static void sister_recall_preset(SDL_AudioDeviceID device,
     }
     if (device) SDL_UnlockAudioDevice(device);
     sister->model.parameters = audio->sister.parameters;
-    if (!fallout) sister->model.parameter_locks = parameter_locks;
+    if (!fallout) {
+        sister->model.parameter_locks = parameter_locks;
+        sister->model.parameter_locks_high = parameter_locks_high;
+    }
     sister_preset_model_sync(sister, &audio->sister);
     snprintf(sister->model.status, sizeof(sister->model.status),
              fallout ? "FALLOUT PRESET TRANSITION STARTED" :
@@ -7841,10 +7858,11 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             stored.fx.fallout.rise_retrigger = 0u;
         }
         if (sister->model.preset_editing == 1) {
-            ok = ts_sister_preset_save_new_with_locks(
+            ok = ts_sister_preset_save_new_with_lock_words(
                 &updated_bank, sister->model.preset_edit_name,
                 &stored,
                 fallout_preset_scope ? 0u : audio->sister.parameter_locks,
+                fallout_preset_scope ? 0u : audio->sister.parameter_locks_high,
                 sample_rate, error, sizeof(error));
             if (ok) index = updated_bank.count - 1u;
         } else if (sister->model.preset_editing == 2) {
@@ -7852,9 +7870,10 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                 &updated_bank, index, sister->model.preset_edit_name,
                 error, sizeof(error));
         } else if (sister->model.preset_confirmation == 1) {
-            ok = ts_sister_preset_overwrite_with_locks(
+            ok = ts_sister_preset_overwrite_with_lock_words(
                 &updated_bank, index, &stored,
                 fallout_preset_scope ? 0u : audio->sister.parameter_locks,
+                fallout_preset_scope ? 0u : audio->sister.parameter_locks_high,
                 sample_rate,
                 error, sizeof(error));
         } else if (sister->model.preset_confirmation == 2) {
@@ -13577,6 +13596,8 @@ int main(int argc, char **argv)
                     &wave, &audio.sister.parameters);
                 sister_window.model.parameter_locks =
                     audio.sister.parameter_locks;
+                sister_window.model.parameter_locks_high =
+                    audio.sister.parameter_locks_high;
                 sister_window.last_model_sync_ms = now;
             }
             if (sister_window.power_visual != TS_SISTER_UI_POWER_VISUAL_NONE) {

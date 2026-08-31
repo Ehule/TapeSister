@@ -96,10 +96,21 @@ int ts_sister_preset_recall_with_locks(const TsSisterPresetBank *bank,
                                        TsSisterParameters *parameters,
                                        uint64_t *parameter_locks)
 {
+    return ts_sister_preset_recall_with_lock_words(
+        bank, index, parameters, parameter_locks, NULL);
+}
+
+int ts_sister_preset_recall_with_lock_words(
+    const TsSisterPresetBank *bank, size_t index,
+    TsSisterParameters *parameters, uint64_t *parameter_locks,
+    uint64_t *parameter_locks_high)
+{
     if (bank == NULL || parameters == NULL || index >= bank->count) return 0;
     *parameters = bank->entries[index].parameters;
     if (parameter_locks != NULL)
         *parameter_locks = bank->entries[index].parameter_locks;
+    if (parameter_locks_high != NULL)
+        *parameter_locks_high = bank->entries[index].parameter_locks_high;
     return 1;
 }
 
@@ -116,6 +127,17 @@ int ts_sister_preset_save_new_with_locks(
     TsSisterPresetBank *bank, const char *name,
     const TsSisterParameters *parameters, uint64_t parameter_locks,
     uint32_t sample_rate, char *error, size_t error_size)
+{
+    return ts_sister_preset_save_new_with_lock_words(
+        bank, name, parameters, parameter_locks, 0u, sample_rate,
+        error, error_size);
+}
+
+int ts_sister_preset_save_new_with_lock_words(
+    TsSisterPresetBank *bank, const char *name,
+    const TsSisterParameters *parameters, uint64_t parameter_locks,
+    uint64_t parameter_locks_high, uint32_t sample_rate,
+    char *error, size_t error_size)
 {
     TsSisterPreset *preset;
     if (bank == NULL || parameters == NULL || !valid_name(name)) {
@@ -135,6 +157,7 @@ int ts_sister_preset_save_new_with_locks(
     snprintf(preset->name, sizeof(preset->name), "%s", name);
     preset->parameters = *parameters;
     preset->parameter_locks = parameter_locks;
+    preset->parameter_locks_high = parameter_locks_high;
     ts_sister_parameters_sanitize(&preset->parameters, sample_rate);
     set_error(error, error_size, "");
     return 1;
@@ -154,6 +177,17 @@ int ts_sister_preset_overwrite_with_locks(
     const TsSisterParameters *parameters, uint64_t parameter_locks,
     uint32_t sample_rate, char *error, size_t error_size)
 {
+    return ts_sister_preset_overwrite_with_lock_words(
+        bank, index, parameters, parameter_locks, 0u, sample_rate,
+        error, error_size);
+}
+
+int ts_sister_preset_overwrite_with_lock_words(
+    TsSisterPresetBank *bank, size_t index,
+    const TsSisterParameters *parameters, uint64_t parameter_locks,
+    uint64_t parameter_locks_high, uint32_t sample_rate,
+    char *error, size_t error_size)
+{
     if (bank == NULL || parameters == NULL || index >= bank->count ||
         bank->entries[index].factory) {
         set_error(error, error_size, "Factory presets cannot be overwritten");
@@ -161,6 +195,7 @@ int ts_sister_preset_overwrite_with_locks(
     }
     bank->entries[index].parameters = *parameters;
     bank->entries[index].parameter_locks = parameter_locks;
+    bank->entries[index].parameter_locks_high = parameter_locks_high;
     ts_sister_parameters_sanitize(&bank->entries[index].parameters, sample_rate);
     set_error(error, error_size, "");
     return 1;
@@ -212,13 +247,15 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "dry=%.9g\nwet=%.9g\nout=%.9g\nfx_return_gain=%.9g\n"
         "erase=%.9g\nghost_tone=%.9g\n"
         "soak=%.9g\nbleed=%.9g\nsoak_targets=%u\n"
-        "reverb_type=%d\nreverb_mix=%.9g\nfx_enabled=%d\n"
+        "reverb_type=%d\nreverb_size=%.9g\nreverb_mix=%.9g\nfx_enabled=%d\n"
         "reverb_enabled=%d\ndelay_enabled=%d\ndistortion_enabled=%d\n"
         "fx_transition=%.9g\nmaster_fx_transition=%.9g\n"
-        "reverb_decay=%.9g\nreverb_targets=%u\n"
-        "delay_time=%.9g\ndelay_feedback=%.9g\ndelay_mix=%.9g\ndelay_targets=%u\n"
+        "reverb_decay=%.9g\nreverb_gain_db=%.9g\nreverb_targets=%u\n"
+        "delay_time=%.9g\ndelay_feedback=%.9g\ndelay_mix=%.9g\n"
+        "delay_gain_db=%.9g\ndelay_targets=%u\n"
         "distortion_drive=%.9g\ndistortion_tone=%.9g\ndistortion_mix=%.9g\n"
-        "distortion_targets=%u\nmaster_fx_feedback=%.9g\nbuffer_seconds=%.9g\n"
+        "distortion_gain_db=%.9g\ndistortion_targets=%u\n"
+        "master_fx_feedback=%.9g\nbuffer_seconds=%.9g\n"
         "fallout_enabled=%d\nfallout_mix=%.9g\nfallout_feedback=%.9g\n"
         "fallout_noise=%.9g\nfallout_noise_type=%d\nfallout_transition=%.9g\n"
         "fallout_component_transition=%.9g\nfallout_master_transition=%.9g\n"
@@ -243,14 +280,18 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->preview_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
         p->fx_return_gain,
         p->write_erase, p->ghost_tone, p->soak, p->bleed,
-        (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_mix,
+        (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_size,
+        p->fx.reverb_mix,
         p->fx.enabled, p->fx.reverb_enabled, p->fx.delay_enabled,
         p->fx.distortion_enabled, p->fx.transition, p->fx.master_transition,
-        p->fx.reverb_decay, (unsigned)p->fx.reverb_targets,
+        p->fx.reverb_decay, p->fx.reverb_gain_db,
+        (unsigned)p->fx.reverb_targets,
         p->fx.delay_time, p->fx.delay_feedback, p->fx.delay_mix,
-        (unsigned)p->fx.delay_targets, p->fx.distortion_drive,
+        p->fx.delay_gain_db, (unsigned)p->fx.delay_targets,
+        p->fx.distortion_drive,
         p->fx.distortion_tone, p->fx.distortion_mix,
-        (unsigned)p->fx.distortion_targets, p->fx.master_feedback,
+        p->fx.distortion_gain_db, (unsigned)p->fx.distortion_targets,
+        p->fx.master_feedback,
         p->buffer_seconds, p->fx.fallout.enabled, p->fx.fallout.mix,
         p->fx.fallout.feedback, p->fx.fallout.noise,
         p->fx.fallout.noise_type, p->fx.fallout.transition,
@@ -300,9 +341,11 @@ int ts_sister_preset_save(const TsSisterPresetBank *bank, const char *path,
                      TS_SISTER_PRESET_VERSION) < 0;
     for (size_t i = TS_SISTER_FACTORY_PRESET_COUNT;
          i < bank->count && !failed; ++i) {
-        failed = fprintf(file, "\n[Preset]\nName=%s\nlocks=%016" PRIX64 "\n",
+        failed = fprintf(file, "\n[Preset]\nName=%s\nlocks=%016" PRIX64
+                         "\nlocks_high=%016" PRIX64 "\n",
                          bank->entries[i].name,
-                         bank->entries[i].parameter_locks) < 0 ||
+                         bank->entries[i].parameter_locks,
+                         bank->entries[i].parameter_locks_high) < 0 ||
                  !write_parameters(file, &bank->entries[i].parameters);
     }
     if (fclose(file) != 0) failed = 1;
@@ -391,8 +434,12 @@ static int assign_field(TsSisterParameters *p, const char *key,
     }
     if (strcmp(key, "reverb_type") == 0) {
         if (!parse_int(value, &parsed_int)) return 0;
-        p->fx.reverb_type = (TsSisterReverbType)parsed_int; return 1;
+        p->fx.reverb_type = (TsSisterReverbType)parsed_int;
+        p->fx.reverb_size = ts_sister_reverb_legacy_size(
+            p->fx.reverb_type);
+        return 1;
     }
+    FLOAT_FIELD("reverb_size", fx.reverb_size);
     FLOAT_FIELD("reverb_mix", fx.reverb_mix);
     INT_FIELD("fx_enabled", fx.enabled);
     INT_FIELD("reverb_enabled", fx.reverb_enabled);
@@ -406,12 +453,15 @@ static int assign_field(TsSisterParameters *p, const char *key,
     }
     FLOAT_FIELD("master_fx_transition", fx.master_transition);
     FLOAT_FIELD("reverb_decay", fx.reverb_decay);
+    FLOAT_FIELD("reverb_gain_db", fx.reverb_gain_db);
     FLOAT_FIELD("delay_time", fx.delay_time);
     FLOAT_FIELD("delay_feedback", fx.delay_feedback);
     FLOAT_FIELD("delay_mix", fx.delay_mix);
+    FLOAT_FIELD("delay_gain_db", fx.delay_gain_db);
     FLOAT_FIELD("distortion_drive", fx.distortion_drive);
     FLOAT_FIELD("distortion_tone", fx.distortion_tone);
     FLOAT_FIELD("distortion_mix", fx.distortion_mix);
+    FLOAT_FIELD("distortion_gain_db", fx.distortion_gain_db);
     FLOAT_FIELD("master_fx_feedback", fx.master_feedback);
     FLOAT_FIELD("buffer_seconds", buffer_seconds);
     INT_FIELD("fallout_enabled", fx.fallout.enabled);
@@ -487,6 +537,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
     TsSisterPresetBank loaded;
     TsSisterParameters current;
     uint64_t current_locks = 0u;
+    uint64_t current_locks_high = 0u;
     char current_name[TS_SISTER_PRESET_NAME_MAX + 1] = "";
     char line[512];
     FILE *file;
@@ -520,8 +571,9 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
         if (strcmp(text, "[Preset]") == 0) {
             if (in_preset) {
                 if (!valid_name(current_name) ||
-                    !ts_sister_preset_save_new_with_locks(
+                    !ts_sister_preset_save_new_with_lock_words(
                         &loaded, current_name, &current, current_locks,
+                        current_locks_high,
                         sample_rate, error, error_size))
                     goto fail;
             }
@@ -529,6 +581,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
             current_name[0] = '\0';
             ts_sister_parameters_default(&current, sample_rate);
             current_locks = 0u;
+            current_locks_high = 0u;
             continue;
         }
         equals = strchr(text, '=');
@@ -551,6 +604,14 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
             if (errno != 0 || end == equals || *trim(end) != '\0')
                 goto malformed;
             current_locks = (uint64_t)parsed;
+        } else if (in_preset && strcmp(text, "locks_high") == 0) {
+            char *end;
+            unsigned long long parsed;
+            errno = 0;
+            parsed = strtoull(equals, &end, 16);
+            if (errno != 0 || end == equals || *trim(end) != '\0')
+                goto malformed;
+            current_locks_high = (uint64_t)parsed;
         } else if (in_preset && !assign_field(&current, text, equals)) {
             goto malformed;
         }
@@ -559,8 +620,9 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
     if (!saw_header || !saw_version) goto malformed;
     if (in_preset) {
         if (!valid_name(current_name) ||
-            !ts_sister_preset_save_new_with_locks(
+            !ts_sister_preset_save_new_with_lock_words(
                 &loaded, current_name, &current, current_locks,
+                current_locks_high,
                 sample_rate, error, error_size))
             goto fail;
     }
