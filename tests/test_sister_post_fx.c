@@ -22,12 +22,16 @@ static void test_defaults_and_identity(void)
     assert(controls.reverb_targets == TS_SISTER_EFFECT_TARGET_MIX);
     assert(controls.delay_targets == TS_SISTER_EFFECT_TARGET_MIX);
     assert(controls.distortion_targets == TS_SISTER_EFFECT_TARGET_MIX);
+    assert(controls.grain_targets == TS_SISTER_EFFECT_TARGET_MIX);
     assert(controls.reverb_mix == 0.0f);
     assert(controls.delay_mix == 0.0f);
     assert(controls.distortion_mix == 0.0f);
+    assert(controls.grain_mix == 0.0f);
     assert(controls.reverb_gain_db == 0.0f);
     assert(controls.delay_gain_db == 0.0f);
     assert(controls.distortion_gain_db == 0.0f);
+    assert(controls.grain_gain_db == 0.0f);
+    assert(controls.grain_pitch == 0.5f);
     assert(controls.master_feedback == 0.0f);
     assert(ts_sister_post_fx_init(&engine, 48000u));
     ts_sister_post_fx_set_controls(&engine, &controls);
@@ -39,6 +43,89 @@ static void test_defaults_and_identity(void)
         assert(output.r == input.r);
     }
     assert(ts_sister_post_fx_memory_bytes(&engine) > 3000000u);
+    ts_sister_post_fx_free(&engine);
+}
+
+static void test_grain_cloud_ranges_pitch_and_width(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+    double wet_energy = 0.0;
+    double stereo_difference = 0.0;
+    size_t maximum_voices = 0u;
+    int heard = 0;
+
+    assert(fabsf(ts_sister_grain_size_ms(0.0f) - 8.0f) < 0.001f);
+    assert(fabsf(ts_sister_grain_size_ms(1.0f) - 1000.0f) < 0.01f);
+    assert(fabsf(ts_sister_grain_density_hz(0.0f) - 0.25f) < 0.001f);
+    assert(fabsf(ts_sister_grain_density_hz(1.0f) - 120.0f) < 0.001f);
+    assert(fabsf(ts_sister_grain_pitch_semitones(0.0f) + 24.0f) < 0.001f);
+    assert(fabsf(ts_sister_grain_pitch_semitones(0.5f)) < 0.001f);
+    assert(fabsf(ts_sister_grain_pitch_semitones(1.0f) - 24.0f) < 0.001f);
+
+    assert(ts_sister_post_fx_init(&engine, 48000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.reverb_targets = 0u;
+    controls.delay_targets = 0u;
+    controls.distortion_targets = 0u;
+    controls.grain_size = 0.34f;
+    controls.grain_density = 1.0f;
+    controls.grain_pitch = 0.5f;
+    controls.grain_mix = 1.0f;
+    ts_sister_post_fx_sync_controls(&engine, &controls);
+    for (int frame = 0; frame < 144000; ++frame) {
+        TsStereoFrame input = {
+            0.28f * sinf((float)frame * 0.031f),
+            0.19f * cosf((float)frame * 0.027f)
+        };
+        TsStereoFrame output = ts_sister_post_fx_process(&engine, 3u, input, 0);
+        size_t voices = 0u;
+        assert_finite(output);
+        for (size_t voice = 0u; voice < TS_SISTER_GRAIN_VOICES; ++voice)
+            voices += engine.grain[3].voice[voice].active != 0;
+        if (voices > maximum_voices) maximum_voices = voices;
+        assert(voices <= TS_SISTER_GRAIN_VOICES);
+        if (frame > 12000) {
+            wet_energy += output.l * output.l + output.r * output.r;
+            stereo_difference += fabs((double)output.l - output.r);
+            heard |= fabsf(output.l) + fabsf(output.r) > 1.0e-5f;
+        }
+    }
+    assert(heard);
+    assert(wet_energy > 1.0);
+    assert(stereo_difference > 10.0);
+    assert(maximum_voices > 0u);
+    ts_sister_post_fx_free(&engine);
+
+    memset(&engine, 0, sizeof(engine));
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.reverb_targets = 0u;
+    controls.delay_targets = 0u;
+    controls.distortion_targets = 0u;
+    controls.grain_mix = 0.0f;
+    controls.grain_size = 0.0f;
+    controls.grain_density = 1.0f;
+    controls.grain_pitch = 1.0f;
+    ts_sister_post_fx_sync_controls(&engine, &controls);
+    for (int frame = 0; frame < 1000; ++frame)
+        (void)ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.2f, -0.1f}, 0);
+    controls.grain_mix = 1.0f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 200; ++frame)
+        (void)ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.2f, -0.1f}, 0);
+    {
+        int found = 0;
+        for (size_t voice = 0u; voice < TS_SISTER_GRAIN_VOICES; ++voice)
+            if (engine.grain[3].voice[voice].active) {
+                assert(fabs(engine.grain[3].voice[voice].read_step - 4.0) <
+                       0.001);
+                found = 1;
+            }
+        assert(found);
+    }
     ts_sister_post_fx_free(&engine);
 }
 
@@ -457,6 +544,7 @@ static void test_rapid_sweeps_finite(void)
     assert(ts_sister_post_fx_init(&engine, 48000u));
     ts_sister_fx_controls_default(&controls);
     controls.reverb_mix = controls.delay_mix = controls.distortion_mix = 1.0f;
+    controls.grain_mix = 1.0f;
     controls.delay_feedback = 1.0f;
     controls.distortion_drive = 1.0f;
     controls.master_feedback = 1.0f;
@@ -466,6 +554,9 @@ static void test_rapid_sweeps_finite(void)
             controls.reverb_decay = 1.0f - controls.delay_time;
             controls.reverb_size =
                 (float)((i / 97) % 101) / 100.0f;
+            controls.grain_size = controls.delay_time;
+            controls.grain_density = 1.0f - controls.delay_time;
+            controls.grain_pitch = controls.reverb_decay;
             ts_sister_post_fx_set_controls(&engine, &controls);
         }
         assert_finite(ts_sister_post_fx_process(&engine, 3u,
@@ -627,7 +718,8 @@ static void test_timed_performance_bypasses(void)
     assert(ts_sister_post_fx_init(&engine, 1000u));
     ts_sister_fx_controls_default(&controls);
     assert(controls.enabled && controls.reverb_enabled &&
-           controls.delay_enabled && controls.distortion_enabled);
+           controls.delay_enabled && controls.distortion_enabled &&
+           controls.grain_enabled);
     controls.transition = ts_sister_fx_transition_normalized(1000.0f);
     controls.distortion_mix = 1.0f;
     controls.distortion_enabled = 0;
@@ -656,7 +748,7 @@ static void test_timed_performance_bypasses(void)
             (TsStereoFrame){0.3f, -0.2f}, 0));
     assert(engine.distortion_engage.current == 1.0f);
 
-    controls.reverb_enabled = controls.delay_enabled = 0;
+    controls.reverb_enabled = controls.delay_enabled = controls.grain_enabled = 0;
     controls.enabled = 0;
     controls.transition = ts_sister_fx_transition_normalized(1000.0f);
     controls.master_transition =
@@ -665,6 +757,7 @@ static void test_timed_performance_bypasses(void)
     assert(engine.master_engage.remaining == 1000u);
     assert(engine.reverb_engage.remaining == 1000u);
     assert(engine.delay_engage.remaining == 1000u);
+    assert(engine.grain_engage.remaining == 1000u);
     status = ts_sister_post_fx_transition_status(&engine);
     assert(status.source == TS_SISTER_FX_TRANSITION_MASTER &&
            !status.target_enabled && status.progress == 0.0f);
@@ -674,6 +767,7 @@ static void test_timed_performance_bypasses(void)
     assert(ts_sister_post_fx_master_engage(&engine) == 0.0f);
     assert(engine.reverb_engage.current == 0.0f);
     assert(engine.delay_engage.current == 0.0f);
+    assert(engine.grain_engage.current == 0.0f);
     {
         TsStereoFrame input = {0.31f, -0.27f};
         TsStereoFrame output;
@@ -719,6 +813,7 @@ static void test_master_gate_restore_and_live_retime(void)
     controls.reverb_enabled = 1;
     controls.delay_enabled = 1;
     controls.distortion_enabled = 1;
+    controls.grain_enabled = 1;
     controls.reverb_mix = 1.0f;
     controls.delay_mix = 1.0f;
     controls.distortion_mix = 1.0f;
@@ -735,6 +830,7 @@ static void test_master_gate_restore_and_live_retime(void)
     assert(engine.reverb_engage.current == 1.0f);
     assert(engine.delay_engage.current == 1.0f);
     assert(engine.distortion_engage.current == 1.0f);
+    assert(engine.grain_engage.current == 1.0f);
     output = ts_sister_post_fx_process(&engine, 3u, input, 0);
     assert(output.l == input.l && output.r == input.r);
 
@@ -825,6 +921,7 @@ static void test_master_zero_is_absolute_return_valve(void)
         controls.reverb_enabled = (cycle & 1) != 0;
         controls.delay_enabled = (cycle & 2) != 0;
         controls.distortion_enabled = (cycle & 4) != 0;
+        controls.grain_enabled = (cycle & 8) != 0;
         ts_sister_post_fx_set_controls(&engine, &controls);
         for (size_t target = 0u;
              target < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++target) {
@@ -844,6 +941,7 @@ int main(void)
 {
     test_defaults_and_identity();
     test_post_mix_makeup_gain_and_bypass();
+    test_grain_cloud_ranges_pitch_and_width();
     test_delay_length_and_stereo();
     test_equal_power_chain_makeup();
     test_tape_feedback_tail();

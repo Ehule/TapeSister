@@ -371,26 +371,34 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     if (model != NULL && model->fx_page == 1) {
-        static const int parameter[3][4] = {
+        static const int parameter[4][5] = {
             {TS_SISTER_UI_PARAM_REVERB_GAIN, TS_SISTER_UI_PARAM_REVERB_TYPE,
-             TS_SISTER_UI_PARAM_REVERB_DECAY, TS_SISTER_UI_PARAM_REVERB_MIX},
+             TS_SISTER_UI_PARAM_REVERB_DECAY, TS_SISTER_UI_PARAM_REVERB_MIX,
+             -1},
             {TS_SISTER_UI_PARAM_DELAY_GAIN, TS_SISTER_UI_PARAM_DELAY_TIME,
-             TS_SISTER_UI_PARAM_DELAY_FEEDBACK, TS_SISTER_UI_PARAM_DELAY_MIX},
+             TS_SISTER_UI_PARAM_DELAY_FEEDBACK, TS_SISTER_UI_PARAM_DELAY_MIX,
+             -1},
             {TS_SISTER_UI_PARAM_DISTORTION_GAIN,
              TS_SISTER_UI_PARAM_DISTORTION_DRIVE,
              TS_SISTER_UI_PARAM_DISTORTION_TONE,
-             TS_SISTER_UI_PARAM_DISTORTION_MIX}
+             TS_SISTER_UI_PARAM_DISTORTION_MIX, -1},
+            {TS_SISTER_UI_PARAM_GRAIN_GAIN, TS_SISTER_UI_PARAM_GRAIN_SIZE,
+             TS_SISTER_UI_PARAM_GRAIN_DENSITY,
+             TS_SISTER_UI_PARAM_GRAIN_PITCH, TS_SISTER_UI_PARAM_GRAIN_MIX}
         };
-        for (int row = 0; row < 3; ++row) {
+        for (int row = 0; row < 4; ++row) {
             int top = 52 + row * 56;
             if (contains(x, y, 16, top - 2, 86, 22)) {
                 hit.action = TS_SISTER_UI_ACTION_FX_TOGGLE;
                 hit.index = TS_SISTER_UI_FX_REVERB + row;
                 return hit;
             }
-            for (int field = 0; field < 4; ++field) {
-                int left = 110 + field * 105;
-                if (contains(x, y, left, top, 95, 18)) {
+            int field_count = row == 3 ? 5 : 4;
+            int field_step = row == 3 ? 82 : 105;
+            int field_width = row == 3 ? 76 : 95;
+            for (int field = 0; field < field_count; ++field) {
+                int left = 110 + field * field_step;
+                if (contains(x, y, left, top, field_width, 18)) {
                     hit.action = TS_SISTER_UI_ACTION_PARAMETER;
                     hit.index = parameter[row][field];
                     hit.normalized = (float)(x - left) / 94.0f;
@@ -411,22 +419,22 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             hit.index = TS_SISTER_UI_FX_MASTER;
             return hit;
         }
-        if (contains(x, y, 110, 220, 410, 18)) {
+        if (contains(x, y, 110, 276, 300, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = TS_SISTER_UI_PARAM_FX_TRANSITION;
-            hit.normalized = (float)(x - 110) / 409.0f;
+            hit.normalized = (float)(x - 110) / 299.0f;
             return hit;
         }
-        if (contains(x, y, 110, 306, 410, 18)) {
+        if (contains(x, y, 110, 306, 300, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION;
-            hit.normalized = (float)(x - 110) / 409.0f;
+            hit.normalized = (float)(x - 110) / 299.0f;
             return hit;
         }
-        if (contains(x, y, 110, 332, 410, 18)) {
+        if (contains(x, y, 110, 332, 300, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK;
-            hit.normalized = (float)(x - 110) / 409.0f;
+            hit.normalized = (float)(x - 110) / 299.0f;
             return hit;
         }
         if (contains(x, y, 10, 370, 58, 22)) hit.action = TS_SISTER_UI_ACTION_TAP;

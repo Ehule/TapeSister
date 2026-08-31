@@ -121,6 +121,11 @@ typedef enum {
     TS_SISTER_UI_PARAM_REVERB_GAIN,
     TS_SISTER_UI_PARAM_DELAY_GAIN,
     TS_SISTER_UI_PARAM_DISTORTION_GAIN,
+    TS_SISTER_UI_PARAM_GRAIN_GAIN,
+    TS_SISTER_UI_PARAM_GRAIN_SIZE,
+    TS_SISTER_UI_PARAM_GRAIN_DENSITY,
+    TS_SISTER_UI_PARAM_GRAIN_PITCH,
+    TS_SISTER_UI_PARAM_GRAIN_MIX,
     TS_SISTER_UI_PARAM_COUNT,
     /* These clocks are intentionally not preset-lock bits: the established
        63 lock indices remain stable in existing preset files. */
@@ -132,7 +137,8 @@ typedef enum {
     TS_SISTER_UI_FX_MASTER = 0,
     TS_SISTER_UI_FX_REVERB,
     TS_SISTER_UI_FX_DELAY,
-    TS_SISTER_UI_FX_DISTORTION
+    TS_SISTER_UI_FX_DISTORTION,
+    TS_SISTER_UI_FX_GRAIN
 } TsSisterUiFxToggle;
 
 typedef enum {
