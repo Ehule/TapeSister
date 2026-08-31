@@ -153,6 +153,18 @@ static float reverb_saturate(float value)
     return fabsf(value) < 1.0e-20f ? 0.0f : value;
 }
 
+static float tape_saturate(float value)
+{
+    float magnitude;
+    float conditioned;
+    if (!isfinite(value)) return 0.0f;
+    magnitude = fabsf(value);
+    if (magnitude <= 0.65f)
+        return magnitude < 1.0e-20f ? 0.0f : value;
+    conditioned = 0.65f + tanhf((magnitude - 0.65f) * 1.7f) / 1.7f;
+    return value < 0.0f ? -conditioned : conditioned;
+}
+
 static float flush_tiny(float value)
 {
     if (!isfinite(value) || fabsf(value) < 1.0e-20f) return 0.0f;
@@ -355,6 +367,10 @@ static void reverb_free(TsSisterReverbState *state)
     memset(state, 0, sizeof(*state));
 }
 
+static const float sister_delay_tap_cutoff[TS_SISTER_DELAY_TAPS] = {
+    1800.0f, 2800.0f, 4500.0f, 8500.0f
+};
+
 static int delay_init_state(TsSisterDelayState *state, uint32_t rate)
 {
     size_t capacity = (size_t)ceil(2.01 * (double)rate) + 2u;
@@ -363,9 +379,28 @@ static int delay_init_state(TsSisterDelayState *state, uint32_t rate)
     if (state->data == NULL) return 0;
     state->capacity_frames = capacity;
     state->delay_current = ts_sister_delay_time_ms(0.38f) * 0.001f * rate;
-    state->delay_old = state->delay_current;
     state->delay_target = state->delay_current;
     state->feedback_current = 0.32f;
+    state->follow_coefficient = 1.0f - expf(
+        -1.0f / (0.035f * (float)rate));
+    for (size_t tap = 0u; tap < TS_SISTER_DELAY_TAPS; ++tap)
+        state->tap_alpha[tap] = 1.0f - expf(-(float)(2.0 * M_PI) *
+            sister_delay_tap_cutoff[tap] / (float)rate);
+    state->feedback_alpha_bright = 1.0f - expf(
+        -(float)(2.0 * M_PI) * 5600.0f / (float)rate);
+    state->feedback_alpha_dark = 1.0f - expf(
+        -(float)(2.0 * M_PI) * 3200.0f / (float)rate);
+    state->wow_cos = 1.0f;
+    state->flutter_sin = sinf(1.917f);
+    state->flutter_cos = cosf(1.917f);
+    {
+        float wow_step = (float)(2.0 * M_PI) * 0.23f / rate;
+        float flutter_step = (float)(2.0 * M_PI) * 3.73f / rate;
+        state->wow_step_sin = sinf(wow_step);
+        state->wow_step_cos = cosf(wow_step);
+        state->flutter_step_sin = sinf(flutter_step);
+        state->flutter_step_cos = cosf(flutter_step);
+    }
     return 1;
 }
 
@@ -558,6 +593,9 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
             engine->reverb[i].line[line].transition_remaining = 0u;
             engine->reverb[i].line[line].transition_total = 0u;
         }
+        engine->delay[i].delay_current = ts_sister_delay_time_ms(
+            next.delay_time) * 0.001f * engine->sample_rate;
+        engine->delay[i].delay_target = engine->delay[i].delay_current;
     }
 }
 
@@ -611,19 +649,40 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
 {
     TsSisterDelayState *state = &engine->delay[index];
     TsSisterFxControls *c = &engine->controls;
-    TsStereoFrame wet;
+    TsStereoFrame wet = {0.0f, 0.0f};
+    TsStereoFrame feedback_read = {0.0f, 0.0f};
+    static const float tap_ratio[TS_SISTER_DELAY_TAPS] = {
+        0.29f, 0.47f, 0.71f, 1.0f
+    };
+    static const float tap_weight[TS_SISTER_DELAY_TAPS] = {
+        0.30f, 0.38f, 0.48f, 0.72f
+    };
+    static const float tap_pan_l[TS_SISTER_DELAY_TAPS] = {
+        0.89442719f, 0.48989795f, 0.8f, 0.63245553f
+    };
+    static const float tap_pan_r[TS_SISTER_DELAY_TAPS] = {
+        0.44721360f, 0.87177979f, 0.6f, 0.77459667f
+    };
     float requested = ts_sister_delay_time_ms(c->delay_time) *
                       0.001f * engine->sample_rate;
-    if (fabsf(requested - state->delay_target) > 0.5f) {
-        if (state->transition_remaining > 0u)
-            read_handoff_begin(&state->read_handoff,
-                (uint32_t)(0.025f * engine->sample_rate));
-        state->delay_old = state->delay_current;
-        state->delay_target = requested;
-        state->transition_total = (uint32_t)(0.025f * engine->sample_rate);
-        if (state->transition_total == 0u) state->transition_total = 1u;
-        state->transition_remaining = state->transition_total;
-    }
+    float difference;
+    float follow;
+    float wow_frames;
+    float flutter_frames;
+    float mod_l;
+    float mod_r;
+    state->delay_target = requested;
+    difference = state->delay_target - state->delay_current;
+    follow = difference * state->follow_coefficient;
+    /* A lengthening delay reads the tape as slowly as half speed; a
+       shortening delay reads it as fast as double speed. The resulting
+       octave-down/octave-up limits make abrupt wheel moves dramatic but
+       continuous, while slow LFO movement follows naturally. */
+    follow = clampf(follow, -1.0f, 0.5f);
+    if (fabsf(difference) <= fabsf(follow))
+        state->delay_current = state->delay_target;
+    else
+        state->delay_current += follow;
     state->feedback_current = approach(state->feedback_current,
         c->delay_feedback, engine->sample_rate, 20.0f);
     state->mix_current = approach(state->mix_current,
@@ -637,32 +696,93 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
     if (state->route_current * engine->delay_engage.current *
         fmaxf(fabsf(input.l), fabsf(input.r)) > 1.0e-12f)
         state->has_history = 1;
-    wet.l = delay_read(state->data, state->capacity_frames,
-                       state->write_index, state->delay_current, 0u);
-    wet.r = delay_read(state->data, state->capacity_frames,
-                       state->write_index, state->delay_current, 1u);
-    if (state->transition_remaining > 0u) {
-        float amount = 1.0f - (float)state->transition_remaining /
-                                  (float)state->transition_total;
-        TsStereoFrame next = {
-            delay_read(state->data, state->capacity_frames,
-                       state->write_index, state->delay_target, 0u),
-            delay_read(state->data, state->capacity_frames,
-                       state->write_index, state->delay_target, 1u)
-        };
-        wet = lerp_frame(wet, next, amount);
-        --state->transition_remaining;
-        if (state->transition_remaining == 0u)
-            state->delay_current = state->delay_target;
+    wow_frames = (0.03f + 0.16f * c->delay_time) * 0.001f *
+                 engine->sample_rate;
+    flutter_frames = 0.012f * 0.001f * engine->sample_rate;
+    mod_l = state->wow_sin * wow_frames +
+            state->flutter_sin * flutter_frames;
+    mod_r = (-0.216440f * state->wow_sin +
+              0.976296f * state->wow_cos) * wow_frames +
+            (0.613746f * state->flutter_sin +
+             0.789504f * state->flutter_cos) * flutter_frames;
+    for (size_t tap = 0u; tap < TS_SISTER_DELAY_TAPS; ++tap) {
+        float delay_frames = state->delay_current * tap_ratio[tap];
+        float read_l = delay_read(state->data, state->capacity_frames,
+            state->write_index, delay_frames + mod_l * tap_ratio[tap], 0u);
+        float read_r = delay_read(state->data, state->capacity_frames,
+            state->write_index, delay_frames + mod_r * tap_ratio[tap], 1u);
+        float alpha = state->tap_alpha[tap];
+        float center;
+        float side;
+        state->tap_tone[tap][0] +=
+            (read_l - state->tap_tone[tap][0]) * alpha;
+        state->tap_tone[tap][1] +=
+            (read_r - state->tap_tone[tap][1]) * alpha;
+        state->tap_tone[tap][0] = flush_tiny(state->tap_tone[tap][0]);
+        state->tap_tone[tap][1] = flush_tiny(state->tap_tone[tap][1]);
+        center = (state->tap_tone[tap][0] +
+                  state->tap_tone[tap][1]) * 0.5f;
+        side = (state->tap_tone[tap][0] -
+                state->tap_tone[tap][1]) * 0.5f;
+        wet.l += tap_weight[tap] *
+            (center * tap_pan_l[tap] + side * 0.55f);
+        wet.r += tap_weight[tap] *
+            (center * tap_pan_r[tap] - side * 0.55f);
+        if (tap == TS_SISTER_DELAY_TAPS - 1u) {
+            feedback_read.l = read_l * 0.94f + read_r * 0.06f;
+            feedback_read.r = read_r * 0.94f + read_l * 0.06f;
+        }
     }
-    wet = read_handoff_apply(&state->read_handoff, wet);
-    state->data[state->write_index * 2u] = feedback_condition(
+    {
+        float feedback_alpha = state->feedback_alpha_bright +
+            (state->feedback_alpha_dark - state->feedback_alpha_bright) *
+            state->feedback_current;
+        state->feedback_tone[0] +=
+            (feedback_read.l - state->feedback_tone[0]) * feedback_alpha;
+        state->feedback_tone[1] +=
+            (feedback_read.r - state->feedback_tone[1]) * feedback_alpha;
+        state->feedback_tone[0] = flush_tiny(state->feedback_tone[0]);
+        state->feedback_tone[1] = flush_tiny(state->feedback_tone[1]);
+    }
+    state->data[state->write_index * 2u] = feedback_condition(tape_saturate(
         input.l * state->route_current * engine->delay_engage.current +
-        wet.l * (state->feedback_current * 1.08f));
-    state->data[state->write_index * 2u + 1u] = feedback_condition(
+        state->feedback_tone[0] * (state->feedback_current * 1.08f)));
+    state->data[state->write_index * 2u + 1u] = feedback_condition(tape_saturate(
         input.r * state->route_current * engine->delay_engage.current +
-        wet.r * (state->feedback_current * 1.08f));
+        state->feedback_tone[1] * (state->feedback_current * 1.08f)));
     state->write_index = (state->write_index + 1u) % state->capacity_frames;
+    {
+        float wow_sin = state->wow_sin;
+        float wow_cos = state->wow_cos;
+        float flutter_sin = state->flutter_sin;
+        float flutter_cos = state->flutter_cos;
+        state->wow_sin = wow_sin * state->wow_step_cos +
+                         wow_cos * state->wow_step_sin;
+        state->wow_cos = wow_cos * state->wow_step_cos -
+                         wow_sin * state->wow_step_sin;
+        state->flutter_sin = flutter_sin * state->flutter_step_cos +
+                             flutter_cos * state->flutter_step_sin;
+        state->flutter_cos = flutter_cos * state->flutter_step_cos -
+                             flutter_sin * state->flutter_step_sin;
+    }
+    if (++state->modulation_renormalize >= 4096u) {
+        float wow_magnitude = sqrtf(state->wow_sin * state->wow_sin +
+                                    state->wow_cos * state->wow_cos);
+        float flutter_magnitude = sqrtf(
+            state->flutter_sin * state->flutter_sin +
+            state->flutter_cos * state->flutter_cos);
+        state->modulation_renormalize = 0u;
+        if (wow_magnitude > 0.0f && isfinite(wow_magnitude)) {
+            state->wow_sin /= wow_magnitude;
+            state->wow_cos /= wow_magnitude;
+        }
+        if (flutter_magnitude > 0.0f && isfinite(flutter_magnitude)) {
+            state->flutter_sin /= flutter_magnitude;
+            state->flutter_cos /= flutter_magnitude;
+        }
+    }
+    wet.l = tape_saturate(wet.l);
+    wet.r = tape_saturate(wet.r);
     return effect_mix(input, wet,
         clampf(state->mix_current * state->route_current *
                engine->delay_engage.current, 0.0f, 1.0f));

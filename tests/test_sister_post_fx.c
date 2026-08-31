@@ -42,13 +42,18 @@ static void test_defaults_and_identity(void)
 static void test_delay_length_and_stereo(void)
 {
     const uint32_t rates[] = {44100u, 48000u, 96000u};
+    static const float ratios[TS_SISTER_DELAY_TAPS] = {
+        0.29f, 0.47f, 0.71f, 1.0f
+    };
     for (size_t rate_index = 0u; rate_index < 3u; ++rate_index) {
         TsSisterPostFxEngine engine = {0};
         TsSisterFxControls controls;
         uint32_t rate = rates[rate_index];
-        size_t expected = (size_t)lrintf(0.008f * rate);
-        float peak = 0.0f;
-        size_t peak_at = 0u;
+        size_t master_delay = (size_t)lrintf(0.008f * rate);
+        float tap_peak[TS_SISTER_DELAY_TAPS] = {0.0f};
+        double left_energy = 0.0;
+        double right_energy = 0.0;
+        double stereo_difference = 0.0;
         assert(ts_sister_post_fx_init(&engine, rate));
         ts_sister_fx_controls_default(&controls);
         controls.delay_time = 0.0f;
@@ -56,24 +61,35 @@ static void test_delay_length_and_stereo(void)
         controls.delay_mix = 1.0f;
         controls.reverb_targets = 0u;
         controls.distortion_targets = 0u;
-        ts_sister_post_fx_set_controls(&engine, &controls);
+        ts_sister_post_fx_sync_controls(&engine, &controls);
         for (size_t i = 0u; i < rate / 10u; ++i)
             (void)ts_sister_post_fx_process(&engine, 3u,
                 (TsStereoFrame){0.0f, 0.0f}, 0);
-        for (size_t i = 0u; i < expected + 8u; ++i) {
+        for (size_t i = 0u; i < master_delay + 64u; ++i) {
             TsStereoFrame input = {i == 0u ? 1.0f : 0.0f, 0.0f};
             TsStereoFrame output = ts_sister_post_fx_process(&engine, 3u,
                                                               input, 0);
             assert_finite(output);
-            assert(fabsf(output.r) < 1.0e-7f);
-            if (fabsf(output.l) > peak) {
-                peak = fabsf(output.l);
-                peak_at = i;
+            left_energy += output.l * output.l;
+            right_energy += output.r * output.r;
+            stereo_difference += fabs((double)output.l - (double)output.r);
+            for (size_t tap = 0u; tap < TS_SISTER_DELAY_TAPS; ++tap) {
+                size_t expected = (size_t)lrintf(
+                    0.008f * ratios[tap] * rate);
+                size_t distance = i > expected ? i - expected : expected - i;
+                float magnitude = fabsf(output.l) + fabsf(output.r);
+                if (distance <= 6u && magnitude > tap_peak[tap])
+                    tap_peak[tap] = magnitude;
             }
         }
-        /* Feedback safety must not halve an ordinary one-shot echo. */
-        assert(peak > 0.70f);
-        assert(peak_at + 1u >= expected && peak_at <= expected + 1u);
+        for (size_t tap = 0u; tap < TS_SISTER_DELAY_TAPS; ++tap) {
+            assert(tap_peak[tap] > 0.005f);
+        }
+        /* A one-sided source must become a real stereo head pattern, not four
+           identical centered copies or a collapsed mono return. */
+        assert(left_energy > 0.001);
+        assert(right_energy > 0.001);
+        assert(stereo_difference > 0.1);
         ts_sister_post_fx_free(&engine);
     }
 }
@@ -97,6 +113,52 @@ static void test_equal_power_chain_makeup(void)
         (TsStereoFrame){0.8f, -0.4f}, 0);
     assert(output.l > 0.38f);
     assert(output.r < -0.19f);
+    ts_sister_post_fx_free(&engine);
+}
+
+static void test_tape_feedback_tail(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+    double early_energy = 0.0;
+    double late_energy = 0.0;
+    double early_roughness = 0.0;
+    double late_roughness = 0.0;
+    float previous = 0.0f;
+
+    assert(ts_sister_post_fx_init(&engine, 48000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.reverb_targets = 0u;
+    controls.distortion_targets = 0u;
+    controls.delay_time = 0.0f;
+    controls.delay_feedback = 0.92f;
+    controls.delay_mix = 1.0f;
+    ts_sister_post_fx_sync_controls(&engine, &controls);
+    for (int frame = 0; frame < 4800; ++frame)
+        (void)ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.0f, 0.0f}, 0);
+    for (int frame = 0; frame < 4800; ++frame) {
+        TsStereoFrame output = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){frame == 0 ? 0.8f : 0.0f, 0.0f}, 0);
+        float mono = (output.l + output.r) * 0.5f;
+        double energy = (double)mono * mono;
+        double difference = (double)mono - previous;
+        assert_finite(output);
+        if (frame >= 96 && frame < 720) {
+            early_energy += energy;
+            early_roughness += difference * difference;
+        }
+        if (frame >= 1920 && frame < 4320) {
+            late_energy += energy;
+            late_roughness += difference * difference;
+        }
+        previous = mono;
+    }
+    assert(early_energy > 1.0e-5);
+    assert(late_energy > 1.0e-8);
+    /* Every trip around the virtual tape loses high-frequency energy. */
+    assert(late_roughness / late_energy <
+           early_roughness / early_energy);
     ts_sister_post_fx_free(&engine);
 }
 
@@ -385,7 +447,7 @@ static void test_interrupted_wheel_handoffs(void)
 {
     TsSisterPostFxEngine engine = {0};
     TsSisterFxControls controls;
-    TsStereoFrame previous;
+    TsStereoFrame previous = {0.0f, 0.0f};
     TsStereoFrame current;
 
     assert(ts_sister_post_fx_init(&engine, 1000u));
@@ -399,18 +461,48 @@ static void test_interrupted_wheel_handoffs(void)
     for (int frame = 0; frame < 2500; ++frame)
         previous = ts_sister_post_fx_process(&engine, 3u,
             (TsStereoFrame){0.65f * sinf((float)frame * 0.071f), 0.0f}, 0);
+    {
+        float before = engine.delay[3].delay_current;
+        controls.delay_time = 1.0f;
+        ts_sister_post_fx_set_controls(&engine, &controls);
+        current = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.65f * sinf(2500.0f * 0.071f), 0.0f}, 0);
+        assert_finite(current);
+        assert(engine.delay[3].delay_current > before);
+        assert(engine.delay[3].delay_current - before <= 0.5001f);
+    }
+    for (int frame = 0; frame < 50; ++frame) {
+        float before = engine.delay[3].delay_current;
+        previous = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.65f * sinf((float)(2501 + frame) * 0.071f),
+                            0.0f}, 0);
+        assert_finite(previous);
+        assert(engine.delay[3].delay_current >= before);
+        assert(engine.delay[3].delay_current - before <= 0.5001f);
+    }
+    {
+        float before = engine.delay[3].delay_current;
+        controls.delay_time = 0.0f;
+        ts_sister_post_fx_set_controls(&engine, &controls);
+        current = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.65f * sinf(2551.0f * 0.071f), 0.0f}, 0);
+        assert_finite(current);
+        assert(engine.delay[3].delay_current < before);
+        assert(before - engine.delay[3].delay_current <= 1.0001f);
+    }
     controls.delay_time = 1.0f;
     ts_sister_post_fx_set_controls(&engine, &controls);
     for (int frame = 0; frame < 5; ++frame)
         previous = ts_sister_post_fx_process(&engine, 3u,
-            (TsStereoFrame){0.65f * sinf((float)(2500 + frame) * 0.071f),
+            (TsStereoFrame){0.65f * sinf((float)(2552 + frame) * 0.071f),
                             0.0f}, 0);
     controls.delay_time = 0.5f;
     ts_sister_post_fx_set_controls(&engine, &controls);
     current = ts_sister_post_fx_process(&engine, 3u,
-        (TsStereoFrame){0.65f * sinf(2505.0f * 0.071f), 0.0f}, 0);
-    assert(fabsf(current.l - previous.l) < 1.0e-5f);
-    assert(fabsf(current.r - previous.r) < 1.0e-5f);
+        (TsStereoFrame){0.65f * sinf(2557.0f * 0.071f), 0.0f}, 0);
+    assert_finite(current);
+    assert(fabsf(current.l - previous.l) < 1.5f);
+    assert(fabsf(current.r - previous.r) < 1.5f);
     ts_sister_post_fx_free(&engine);
 
     memset(&engine, 0, sizeof(engine));
@@ -721,6 +813,7 @@ int main(void)
     test_defaults_and_identity();
     test_delay_length_and_stereo();
     test_equal_power_chain_makeup();
+    test_tape_feedback_tail();
     test_reverb_space_and_distortion();
     test_reverb_level_density_and_width();
     test_targets_mono_and_ordinary();

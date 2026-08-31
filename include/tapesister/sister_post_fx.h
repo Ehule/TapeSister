@@ -45,7 +45,8 @@ typedef struct {
 } TsSisterFxControls;
 
 enum {
-    TS_SISTER_REVERB_LINES = 8
+    TS_SISTER_REVERB_LINES = 8,
+    TS_SISTER_DELAY_TAPS = 4
 };
 
 typedef struct {
@@ -88,15 +89,26 @@ typedef struct {
     size_t capacity_frames;
     size_t write_index;
     float delay_current;
-    float delay_old;
     float delay_target;
-    uint32_t transition_remaining;
-    uint32_t transition_total;
+    float tap_tone[TS_SISTER_DELAY_TAPS][2];
+    float feedback_tone[2];
+    float wow_sin;
+    float wow_cos;
+    float wow_step_sin;
+    float wow_step_cos;
+    float flutter_sin;
+    float flutter_cos;
+    float flutter_step_sin;
+    float flutter_step_cos;
+    uint32_t modulation_renormalize;
+    float follow_coefficient;
+    float tap_alpha[TS_SISTER_DELAY_TAPS];
+    float feedback_alpha_bright;
+    float feedback_alpha_dark;
     float feedback_current;
     float mix_current;
     float route_current;
     int has_history;
-    TsSisterFxReadHandoff read_handoff;
 } TsSisterDelayState;
 
 typedef struct {

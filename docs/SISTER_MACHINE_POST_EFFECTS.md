@@ -90,14 +90,21 @@ network finite without prematurely shortening quiet tails.
 
 ## Delay
 
-TIME maps logarithmically from **8 ms to 2000 ms**. L and R use the same time but
-independent samples. Reads use linear fractional interpolation. A TIME change
-starts a 25 ms dual-tap crossfade, so it is pitch-preserving rather than a tape
-glide and is independent of callback block size. FEEDBACK maps to an internal
-0–1.08 coefficient through unity-preserving bounded conditioning: ordinary
-samples through 0.9 remain unchanged, while larger recursive values enter a
-smooth knee below unity. The top can sustain and scream but cannot produce a
-non-finite line. MIX 0 is exact identity and feedback zero produces one event.
+The delay is a four-head stereo tape echo. TIME maps logarithmically from
+**8 ms to 2000 ms** and places the heads at asymmetric 0.29, 0.47, 0.71, and
+1.00 multiples. Earlier heads are quieter and darker, while alternating
+constant-power positions spread the pattern without relying on a fragile
+channel offset. The final head feeds the record path through cross-channel tape
+bleed, progressive high-frequency loss, gentle saturation, and bounded
+conditioning. Subtle shared wow/flutter keeps stationary repeats alive.
+
+TIME movement is continuous tape-speed motion rather than a pitch-preserving
+tap crossfade. Sudden lengthening is limited to half-speed playback and sudden
+shortening to double-speed playback, producing bounded octave-down and
+octave-up gestures without discontinuous reads. Slow LFO movement follows as a
+continuous pitch drift. FEEDBACK retains the 0–1.08 regenerative range: the top
+can sustain and compress into a dub-like haze but cannot produce a non-finite
+line. MIX 0 remains exact identity; feedback zero produces one four-head event.
 
 ## Distortion
 
