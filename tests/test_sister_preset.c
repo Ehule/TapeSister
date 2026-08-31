@@ -39,6 +39,7 @@ int main(void)
     p.fx.reverb_enabled = 0;
     p.fx.delay_enabled = 1;
     p.fx.distortion_enabled = 0;
+    p.fx.grain_enabled = 1;
     p.fx.transition = 0.82f;
     p.fx.master_transition = 0.64f;
     p.fx.reverb_mix = 0.63f;
@@ -56,6 +57,13 @@ int main(void)
     p.fx.distortion_mix = 0.73f;
     p.fx.distortion_gain_db = 11.0f;
     p.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
+    p.fx.grain_size = 0.67f;
+    p.fx.grain_density = 0.81f;
+    p.fx.grain_pitch = 0.26f;
+    p.fx.grain_mix = 0.59f;
+    p.fx.grain_gain_db = -3.0f;
+    p.fx.grain_targets = TS_SISTER_EFFECT_TARGET_H2 |
+                         TS_SISTER_EFFECT_TARGET_H3;
     p.fx.master_feedback = 0.69f;
     p.fx.fallout.enabled = 1;
     p.fx.fallout.feedback = 0.58f;
@@ -123,6 +131,16 @@ int main(void)
     assert(recalled.fx.distortion_targets == TS_SISTER_EFFECT_TARGET_MIX);
     assert(recalled.fx.distortion_gain_db > 10.99f &&
            recalled.fx.distortion_gain_db < 11.01f);
+    assert(recalled.fx.grain_enabled == 1);
+    assert(recalled.fx.grain_size > 0.66f && recalled.fx.grain_size < 0.68f);
+    assert(recalled.fx.grain_density > 0.80f &&
+           recalled.fx.grain_density < 0.82f);
+    assert(recalled.fx.grain_pitch > 0.25f && recalled.fx.grain_pitch < 0.27f);
+    assert(recalled.fx.grain_mix > 0.58f && recalled.fx.grain_mix < 0.60f);
+    assert(recalled.fx.grain_gain_db < -2.99f &&
+           recalled.fx.grain_gain_db > -3.01f);
+    assert(recalled.fx.grain_targets == (TS_SISTER_EFFECT_TARGET_H2 |
+                                          TS_SISTER_EFFECT_TARGET_H3));
     assert(recalled.fx.master_feedback > 0.68f);
     assert(recalled.fx.fallout.enabled == 1);
     assert(recalled.fx.fallout.feedback > 0.57f);
@@ -187,6 +205,11 @@ int main(void)
         assert(loaded.entries[3].parameters.fx.reverb_gain_db == 0.0f);
         assert(loaded.entries[3].parameters.fx.delay_gain_db == 0.0f);
         assert(loaded.entries[3].parameters.fx.distortion_gain_db == 0.0f);
+        assert(loaded.entries[3].parameters.fx.grain_mix == 0.0f);
+        assert(loaded.entries[3].parameters.fx.grain_gain_db == 0.0f);
+        assert(loaded.entries[3].parameters.fx.grain_pitch == 0.5f);
+        assert(loaded.entries[3].parameters.fx.grain_targets ==
+               TS_SISTER_EFFECT_TARGET_MIX);
         assert(loaded.entries[3].parameters.fx.master_feedback == 0.0f);
         assert(loaded.entries[3].parameters.tiles_gain == 1.0f);
         assert(loaded.entries[3].parameters.fm_gain == 1.0f);

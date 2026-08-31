@@ -57,11 +57,19 @@ int main(void)
     runtime.parameters.fx.distortion_mix = 0.71f;
     runtime.parameters.fx.distortion_gain_db = 3.0f;
     runtime.parameters.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
+    runtime.parameters.fx.grain_size = 0.64f;
+    runtime.parameters.fx.grain_density = 0.78f;
+    runtime.parameters.fx.grain_pitch = 0.31f;
+    runtime.parameters.fx.grain_mix = 0.56f;
+    runtime.parameters.fx.grain_gain_db = 5.0f;
+    runtime.parameters.fx.grain_targets = TS_SISTER_EFFECT_TARGET_H2 |
+                                          TS_SISTER_EFFECT_TARGET_H3;
     runtime.parameters.fx.master_feedback = 0.66f;
     runtime.parameters.fx.enabled = 0;
     runtime.parameters.fx.reverb_enabled = 0;
     runtime.parameters.fx.delay_enabled = 1;
     runtime.parameters.fx.distortion_enabled = 0;
+    runtime.parameters.fx.grain_enabled = 1;
     runtime.parameters.fx.transition = 0.73f;
     runtime.parameters.fx.master_transition = 0.62f;
     runtime.parameters.fx.fallout.enabled = 1;
@@ -117,6 +125,18 @@ int main(void)
     assert(loaded.parameters.fx.distortion_targets ==
            TS_SISTER_EFFECT_TARGET_MIX);
     assert(loaded.parameters.fx.distortion_gain_db == 3.0f);
+    assert(loaded.parameters.fx.grain_enabled == 1);
+    assert(loaded.parameters.fx.grain_size > 0.63f &&
+           loaded.parameters.fx.grain_size < 0.65f);
+    assert(loaded.parameters.fx.grain_density > 0.77f &&
+           loaded.parameters.fx.grain_density < 0.79f);
+    assert(loaded.parameters.fx.grain_pitch > 0.30f &&
+           loaded.parameters.fx.grain_pitch < 0.32f);
+    assert(loaded.parameters.fx.grain_mix > 0.55f &&
+           loaded.parameters.fx.grain_mix < 0.57f);
+    assert(loaded.parameters.fx.grain_gain_db == 5.0f);
+    assert(loaded.parameters.fx.grain_targets ==
+           (TS_SISTER_EFFECT_TARGET_H2 | TS_SISTER_EFFECT_TARGET_H3));
     assert(loaded.parameters.fx.master_feedback > 0.65f);
     assert(loaded.parameters.fx.enabled == 0);
     assert(loaded.parameters.fx.reverb_enabled == 0);
@@ -191,6 +211,11 @@ int main(void)
                loaded.parameters.fx.reverb_gain_db == 0.0f &&
                loaded.parameters.fx.delay_gain_db == 0.0f &&
                loaded.parameters.fx.distortion_gain_db == 0.0f &&
+               loaded.parameters.fx.grain_mix == 0.0f &&
+               loaded.parameters.fx.grain_gain_db == 0.0f &&
+               loaded.parameters.fx.grain_pitch == 0.5f &&
+               loaded.parameters.fx.grain_targets ==
+                   TS_SISTER_EFFECT_TARGET_MIX &&
                loaded.parameters.fx.master_feedback == 0.0f &&
                loaded.parameters.tiles_gain == 1.0f &&
                loaded.parameters.fx_return_gain == 1.0f &&

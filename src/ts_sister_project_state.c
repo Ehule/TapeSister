@@ -103,11 +103,14 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "Erase=%.9g\nGhostTone=%.9g\nSoak=%.9g\nBleed=%.9g\n"
         "SoakTargets=%u\nReverbType=%d\nReverbSize=%.9g\nReverbMix=%.9g\n"
         "FxEnabled=%d\nReverbEnabled=%d\nDelayEnabled=%d\n"
-        "DistortionEnabled=%d\nFxTransition=%.9g\nMasterFxTransition=%.9g\n"
+        "DistortionEnabled=%d\nGrainEnabled=%d\n"
+        "FxTransition=%.9g\nMasterFxTransition=%.9g\n"
         "ReverbDecay=%.9g\nReverbGainDb=%.9g\nReverbTargets=%u\nDelayTime=%.9g\n"
         "DelayFeedback=%.9g\nDelayMix=%.9g\nDelayGainDb=%.9g\nDelayTargets=%u\n"
         "DistortionDrive=%.9g\nDistortionTone=%.9g\nDistortionMix=%.9g\n"
         "DistortionGainDb=%.9g\nDistortionTargets=%u\n"
+        "GrainSize=%.9g\nGrainDensity=%.9g\nGrainPitch=%.9g\n"
+        "GrainMix=%.9g\nGrainGainDb=%.9g\nGrainTargets=%u\n"
         "MasterFxFeedback=%.9g\nBufferSeconds=%.9g\n"
         "FalloutEnabled=%d\nFalloutMix=%.9g\nFalloutFeedback=%.9g\n"
         "FalloutNoise=%.9g\nFalloutNoiseType=%d\nFalloutTransition=%.9g\n"
@@ -136,7 +139,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_size,
         p->fx.reverb_mix,
         p->fx.enabled, p->fx.reverb_enabled, p->fx.delay_enabled,
-        p->fx.distortion_enabled, p->fx.transition, p->fx.master_transition,
+        p->fx.distortion_enabled, p->fx.grain_enabled,
+        p->fx.transition, p->fx.master_transition,
         p->fx.reverb_decay, p->fx.reverb_gain_db,
         (unsigned)p->fx.reverb_targets,
         p->fx.delay_time, p->fx.delay_feedback, p->fx.delay_mix,
@@ -144,6 +148,9 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx.distortion_drive,
         p->fx.distortion_tone, p->fx.distortion_mix,
         p->fx.distortion_gain_db, (unsigned)p->fx.distortion_targets,
+        p->fx.grain_size, p->fx.grain_density, p->fx.grain_pitch,
+        p->fx.grain_mix, p->fx.grain_gain_db,
+        (unsigned)p->fx.grain_targets,
         p->fx.master_feedback,
         p->buffer_seconds, p->fx.fallout.enabled, p->fx.fallout.mix,
         p->fx.fallout.feedback, p->fx.fallout.noise,
@@ -311,6 +318,7 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     PI("FxEnabled", fx.enabled); PI("ReverbEnabled", fx.reverb_enabled);
     PI("DelayEnabled", fx.delay_enabled);
     PI("DistortionEnabled", fx.distortion_enabled);
+    PI("GrainEnabled", fx.grain_enabled);
     if (strcmp(key, "FxTransition") == 0) {
         if (!parse_float_value(value, &p->fx.transition)) return 0;
         p->fx.master_transition = p->fx.transition;
@@ -324,6 +332,9 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     PF("DistortionDrive", fx.distortion_drive);
     PF("DistortionTone", fx.distortion_tone); PF("DistortionMix", fx.distortion_mix);
     PF("DistortionGainDb", fx.distortion_gain_db);
+    PF("GrainSize", fx.grain_size); PF("GrainDensity", fx.grain_density);
+    PF("GrainPitch", fx.grain_pitch); PF("GrainMix", fx.grain_mix);
+    PF("GrainGainDb", fx.grain_gain_db);
     PF("MasterFxFeedback", fx.master_feedback);
     PF("BufferSeconds", buffer_seconds);
     PI("FalloutEnabled", fx.fallout.enabled);
@@ -376,10 +387,12 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     }
     if (strcmp(key, "ReverbTargets") == 0 ||
         strcmp(key, "DelayTargets") == 0 ||
-        strcmp(key, "DistortionTargets") == 0) {
+        strcmp(key, "DistortionTargets") == 0 ||
+        strcmp(key, "GrainTargets") == 0) {
         uint8_t *target = strcmp(key, "ReverbTargets") == 0 ?
             &p->fx.reverb_targets : strcmp(key, "DelayTargets") == 0 ?
-            &p->fx.delay_targets : &p->fx.distortion_targets;
+            &p->fx.delay_targets : strcmp(key, "DistortionTargets") == 0 ?
+            &p->fx.distortion_targets : &p->fx.grain_targets;
         if (!parse_int_value(value, &integer) || integer < 0 || integer > 255)
             return 0;
         *target = (uint8_t)integer; return 1;

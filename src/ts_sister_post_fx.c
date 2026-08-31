@@ -225,6 +225,7 @@ void ts_sister_fx_controls_default(TsSisterFxControls *controls)
     controls->reverb_enabled = 1;
     controls->delay_enabled = 1;
     controls->distortion_enabled = 1;
+    controls->grain_enabled = 1;
     controls->transition = ts_sister_fx_transition_normalized(10.0f);
     controls->master_transition = controls->transition;
     controls->reverb_type = TS_SISTER_REVERB_HALL;
@@ -237,6 +238,10 @@ void ts_sister_fx_controls_default(TsSisterFxControls *controls)
     controls->distortion_drive = 0.25f;
     controls->distortion_tone = 0.55f;
     controls->distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
+    controls->grain_size = 0.46f;
+    controls->grain_density = 0.42f;
+    controls->grain_pitch = 0.50f;
+    controls->grain_targets = TS_SISTER_EFFECT_TARGET_MIX;
     ts_sister_fallout_controls_default(&controls->fallout);
 }
 
@@ -247,6 +252,7 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
     controls->reverb_enabled = controls->reverb_enabled != 0;
     controls->delay_enabled = controls->delay_enabled != 0;
     controls->distortion_enabled = controls->distortion_enabled != 0;
+    controls->grain_enabled = controls->grain_enabled != 0;
     controls->transition = clampf(controls->transition, 0.0f, 1.0f);
     controls->master_transition = clampf(
         controls->master_transition, 0.0f, 1.0f);
@@ -272,6 +278,13 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
         controls->distortion_gain_db, -12.0f, 12.0f);
     controls->distortion_targets = ts_sister_effect_targets_sanitize(
         controls->distortion_targets);
+    controls->grain_size = clampf(controls->grain_size, 0.0f, 1.0f);
+    controls->grain_density = clampf(controls->grain_density, 0.0f, 1.0f);
+    controls->grain_pitch = clampf(controls->grain_pitch, 0.0f, 1.0f);
+    controls->grain_mix = clampf(controls->grain_mix, 0.0f, 1.0f);
+    controls->grain_gain_db = clampf(controls->grain_gain_db, -12.0f, 12.0f);
+    controls->grain_targets = ts_sister_effect_targets_sanitize(
+        controls->grain_targets);
     controls->master_feedback = clampf(controls->master_feedback, 0.0f, 1.0f);
     ts_sister_fallout_controls_sanitize(&controls->fallout);
 }
@@ -316,6 +329,23 @@ float ts_sister_reverb_decay_seconds(float normalized)
     extreme = normalized * normalized * normalized;
     extreme *= extreme;
     return 0.35f * powf(60.0f / 0.35f, normalized) * powf(2.0f, extreme);
+}
+
+float ts_sister_grain_size_ms(float normalized)
+{
+    /* Percussive dust through long, overlapping atmospheric fragments. */
+    return 8.0f * powf(125.0f, clampf(normalized, 0.0f, 1.0f));
+}
+
+float ts_sister_grain_density_hz(float normalized)
+{
+    /* One event every four seconds through a continuous short-grain cloud. */
+    return 0.25f * powf(480.0f, clampf(normalized, 0.0f, 1.0f));
+}
+
+float ts_sister_grain_pitch_semitones(float normalized)
+{
+    return -24.0f + 48.0f * clampf(normalized, 0.0f, 1.0f);
 }
 
 static float delay_read(const float *data, size_t capacity, size_t write,
@@ -424,12 +454,103 @@ static int delay_init_state(TsSisterDelayState *state, uint32_t rate)
     return 1;
 }
 
+static int grain_init_state(TsSisterGrainState *state, uint32_t rate,
+                            uint32_t seed)
+{
+    size_t capacity = (size_t)ceil(5.1 * (double)rate) + 2u;
+    memset(state, 0, sizeof(*state));
+    state->data = calloc(capacity * 2u, sizeof(float));
+    if (state->data == NULL) return 0;
+    state->capacity_frames = capacity;
+    state->sample_rate = rate;
+    state->random_state = seed != 0u ? seed : UINT32_C(0x7f4a7c15);
+    state->spawn_threshold = 1.0;
+    state->size_current = 0.46f;
+    state->density_current = 0.42f;
+    state->density_hz_current = state->density_hz_target =
+        ts_sister_grain_density_hz(0.42f);
+    state->pitch_current = 0.50f;
+    state->gain_current = state->gain_target = 1.0f;
+    return 1;
+}
+
+static uint32_t grain_random(TsSisterGrainState *state)
+{
+    uint32_t value = state->random_state;
+    value ^= value << 13;
+    value ^= value >> 17;
+    value ^= value << 5;
+    state->random_state = value != 0u ? value : UINT32_C(0x7f4a7c15);
+    return state->random_state;
+}
+
+static float grain_random_unit(TsSisterGrainState *state)
+{
+    return (float)(grain_random(state) >> 8) * (1.0f / 16777216.0f);
+}
+
+static float grain_read(const TsSisterGrainState *state, double position,
+                        size_t channel)
+{
+    size_t i0, i1;
+    float fraction;
+    if (state->data == NULL || state->capacity_frames < 2u) return 0.0f;
+    while (position < 0.0) position += (double)state->capacity_frames;
+    while (position >= (double)state->capacity_frames)
+        position -= (double)state->capacity_frames;
+    i0 = (size_t)position;
+    i1 = (i0 + 1u) % state->capacity_frames;
+    fraction = (float)(position - (double)i0);
+    return state->data[i0 * 2u + channel] +
+        (state->data[i1 * 2u + channel] -
+         state->data[i0 * 2u + channel]) * fraction;
+}
+
+static void grain_spawn(TsSisterGrainState *state)
+{
+    TsSisterGrainVoice *voice = NULL;
+    uint32_t total;
+    double step;
+    double travel;
+    double lookback;
+    float pan;
+    for (size_t i = 0u; i < TS_SISTER_GRAIN_VOICES; ++i)
+        if (!state->voice[i].active) {
+            voice = &state->voice[i];
+            break;
+        }
+    if (voice == NULL) return;
+    total = (uint32_t)fmaxf(8.0f, ts_sister_grain_size_ms(
+        state->size_current) * 0.001f * state->sample_rate);
+    step = pow(2.0, (double)ts_sister_grain_pitch_semitones(
+        state->pitch_current) / 12.0);
+    travel = ((double)total + 2.0) * step;
+    if ((double)state->history_frames <= travel + 3.0) return;
+    lookback = travel + (double)total *
+        (0.35 + 1.25 * (double)grain_random_unit(state));
+    if (lookback > (double)state->history_frames - 2.0)
+        lookback = (double)state->history_frames - 2.0;
+    if (lookback > (double)state->capacity_frames - 2.0)
+        lookback = (double)state->capacity_frames - 2.0;
+    pan = -0.75f + grain_random_unit(state) * 1.50f;
+    memset(voice, 0, sizeof(*voice));
+    voice->read_position = (double)state->write_index - lookback;
+    while (voice->read_position < 0.0)
+        voice->read_position += (double)state->capacity_frames;
+    voice->read_step = step;
+    voice->total = total;
+    voice->pan_l = sqrtf(1.0f - pan);
+    voice->pan_r = sqrtf(1.0f + pan);
+    voice->active = 1;
+}
+
 void ts_sister_post_fx_free(TsSisterPostFxEngine *engine)
 {
     if (engine == NULL) return;
     for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
         reverb_free(&engine->reverb[i]);
         free(engine->delay[i].data);
+        free(engine->grain[i].data);
     }
     memset(engine, 0, sizeof(*engine));
 }
@@ -449,13 +570,19 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
     next.delay_target.pending_mask = next.controls.delay_targets;
     next.distortion_target.active_mask = next.controls.distortion_targets;
     next.distortion_target.pending_mask = next.controls.distortion_targets;
+    next.grain_target.active_mask = next.controls.grain_targets;
+    next.grain_target.pending_mask = next.controls.grain_targets;
     next.master_engage.current = next.master_engage.target = 1.0f;
     next.reverb_engage.current = next.reverb_engage.target = 1.0f;
     next.delay_engage.current = next.delay_engage.target = 1.0f;
     next.distortion_engage.current = next.distortion_engage.target = 1.0f;
+    next.grain_engage.current = next.grain_engage.target = 1.0f;
     for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
         if (!reverb_init(&next.reverb[i], sample_rate) ||
-            !delay_init_state(&next.delay[i], sample_rate)) {
+            !delay_init_state(&next.delay[i], sample_rate) ||
+            !grain_init_state(&next.grain[i], sample_rate,
+                UINT32_C(0x9e3779b9) ^ (uint32_t)(i + 1u) *
+                UINT32_C(0x85ebca6b))) {
             ts_sister_post_fx_free(&next);
             return 0;
         }
@@ -507,7 +634,8 @@ static void target_state_advance(TsSisterPostFxEngine *engine,
        Make its now-inaudible route exact before the new branch ramps in. */
     for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
         if (effect == 0) engine->distortion[i].route_current = 0.0f;
-        else if (effect == 1) engine->delay[i].route_current = 0.0f;
+        else if (effect == 1) engine->grain[i].route_current = 0.0f;
+        else if (effect == 2) engine->delay[i].route_current = 0.0f;
         else engine->reverb[i].route_current = 0.0f;
     }
     state->active_mask = state->pending_mask;
@@ -546,6 +674,7 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
             ramp_retime(&engine->reverb_engage, effect_frames);
             ramp_retime(&engine->delay_engage, effect_frames);
             ramp_retime(&engine->distortion_engage, effect_frames);
+            ramp_retime(&engine->grain_engage, effect_frames);
         }
         if (next.master_transition != engine->controls.master_transition)
             ramp_retime(&engine->master_engage, master_frames);
@@ -561,6 +690,9 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
         if (next.distortion_enabled != engine->controls.distortion_enabled)
             ramp_start(&engine->distortion_engage,
                        next.distortion_enabled ? 1.0f : 0.0f, effect_frames);
+        if (next.grain_enabled != engine->controls.grain_enabled)
+            ramp_start(&engine->grain_engage,
+                       next.grain_enabled ? 1.0f : 0.0f, effect_frames);
     }
     target_state_set(&engine->reverb_target, next.reverb_targets,
                      engine->sample_rate);
@@ -568,11 +700,16 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
                      engine->sample_rate);
     target_state_set(&engine->distortion_target, next.distortion_targets,
                      engine->sample_rate);
+    target_state_set(&engine->grain_target, next.grain_targets,
+                     engine->sample_rate);
     for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
         engine->reverb[i].gain_target = makeup_gain_linear(next.reverb_gain_db);
         engine->delay[i].gain_target = makeup_gain_linear(next.delay_gain_db);
         engine->distortion[i].gain_target = makeup_gain_linear(
             next.distortion_gain_db);
+        engine->grain[i].gain_target = makeup_gain_linear(next.grain_gain_db);
+        engine->grain[i].density_hz_target = ts_sister_grain_density_hz(
+            next.grain_density);
     }
     if (engine->ready && next.reverb_size != engine->controls.reverb_size) {
         for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
@@ -611,6 +748,7 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
     ramp_reset(&engine->delay_engage, next.delay_enabled ? 1.0f : 0.0f);
     ramp_reset(&engine->distortion_engage,
                next.distortion_enabled ? 1.0f : 0.0f);
+    ramp_reset(&engine->grain_engage, next.grain_enabled ? 1.0f : 0.0f);
     for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
         engine->reverb[i].size_current = next.reverb_size;
         engine->reverb[i].gain_current = engine->reverb[i].gain_target;
@@ -627,6 +765,12 @@ void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
         engine->delay[i].delay_target = engine->delay[i].delay_current;
         engine->delay[i].gain_current = engine->delay[i].gain_target;
         engine->distortion[i].gain_current = engine->distortion[i].gain_target;
+        engine->grain[i].size_current = next.grain_size;
+        engine->grain[i].density_current = next.grain_density;
+        engine->grain[i].density_hz_current =
+            engine->grain[i].density_hz_target;
+        engine->grain[i].pitch_current = next.grain_pitch;
+        engine->grain[i].gain_current = engine->grain[i].gain_target;
     }
 }
 
@@ -678,6 +822,93 @@ static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
                engine->distortion_engage.current, 0.0f, 1.0f)),
         state->gain_current,
         state->route_current * engine->distortion_engage.current);
+}
+
+static TsStereoFrame grain_process(TsSisterPostFxEngine *engine, size_t index,
+                                   TsStereoFrame input, int enabled)
+{
+    TsSisterGrainState *state = &engine->grain[index];
+    TsSisterFxControls *c = &engine->controls;
+    TsStereoFrame wet = {0.0f, 0.0f};
+    float energy = 0.0f;
+    float active;
+    state->size_current = approach(state->size_current,
+        c->grain_size, engine->sample_rate, 30.0f);
+    state->density_current = approach(state->density_current,
+        c->grain_density, engine->sample_rate, 30.0f);
+    state->density_hz_current = approach(state->density_hz_current,
+        state->density_hz_target, engine->sample_rate, 30.0f);
+    state->pitch_current = approach(state->pitch_current,
+        c->grain_pitch, engine->sample_rate, 24.0f);
+    state->mix_current = approach(state->mix_current,
+        c->grain_mix, engine->sample_rate, 20.0f);
+    state->gain_current = approach(state->gain_current,
+        state->gain_target, engine->sample_rate, 20.0f);
+    state->route_current = approach(state->route_current,
+        enabled ? 1.0f : 0.0f, engine->sample_rate, 12.0f);
+    active = clampf(state->route_current * engine->grain_engage.current,
+                    0.0f, 1.0f);
+
+    state->spawn_phase += state->density_hz_current /
+                          (double)engine->sample_rate;
+    if (state->spawn_phase >= state->spawn_threshold) {
+        state->spawn_phase -= state->spawn_threshold;
+        /* Built-in asynchronous scheduling prevents sparse clouds from
+           becoming a rigid pulse train. The mean interval remains one grain
+           period, and the deterministic target-local PRNG keeps recalls
+           reproducible. */
+        state->spawn_threshold = 0.70 +
+            0.60 * (double)grain_random_unit(state);
+        if (active > 1.0e-5f &&
+            (state->mix_current > FLT_EPSILON || c->grain_mix > 0.0f))
+            grain_spawn(state);
+    }
+    for (size_t i = 0u; i < TS_SISTER_GRAIN_VOICES; ++i) {
+        TsSisterGrainVoice *voice = &state->voice[i];
+        float phase;
+        float window;
+        if (!voice->active) continue;
+        if (voice->age >= voice->total) {
+            voice->active = 0;
+            continue;
+        }
+        phase = voice->total > 1u ?
+            (float)voice->age / (float)(voice->total - 1u) : 1.0f;
+        /* A squared parabolic window is a close, deliberately cheap Hann
+           analogue. At maximum density this avoids millions of sinf calls
+           per second on the X220/X230 while retaining a smooth zero-valued
+           attack and release. */
+        window = 4.0f * phase * (1.0f - phase);
+        window *= window;
+        wet.l += grain_read(state, voice->read_position, 0u) *
+                 window * voice->pan_l;
+        wet.r += grain_read(state, voice->read_position, 1u) *
+                 window * voice->pan_r;
+        energy += window * window;
+        voice->read_position += voice->read_step;
+        while (voice->read_position >= (double)state->capacity_frames)
+            voice->read_position -= (double)state->capacity_frames;
+        ++voice->age;
+        if (voice->age >= voice->total) voice->active = 0;
+    }
+    if (energy > 1.0f) {
+        float normalization = 1.0f / sqrtf(energy);
+        wet.l *= normalization;
+        wet.r *= normalization;
+    }
+    wet.l = feedback_condition(wet.l * 0.86f);
+    wet.r = feedback_condition(wet.r * 0.86f);
+    wet = ts_stereo_frame_sanitize(wet);
+
+    state->data[state->write_index * 2u] = input.l * active;
+    state->data[state->write_index * 2u + 1u] = input.r * active;
+    state->write_index = (state->write_index + 1u) % state->capacity_frames;
+    if (state->history_frames < state->capacity_frames)
+        ++state->history_frames;
+
+    return effect_makeup(effect_mix(input, wet,
+        clampf(state->mix_current * active, 0.0f, 1.0f)),
+        state->gain_current, active);
 }
 
 static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
@@ -984,6 +1215,7 @@ TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
             ramp_advance(&engine->reverb_engage);
             ramp_advance(&engine->delay_engage);
             ramp_advance(&engine->distortion_engage);
+            ramp_advance(&engine->grain_engage);
         }
         return (TsStereoFrame){input.l, input.l};
     }
@@ -991,6 +1223,8 @@ TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
     output = distortion_process(engine, target_index, input,
         ts_sister_effect_target_enabled(
             engine->distortion_target.active_mask, bit));
+    output = grain_process(engine, target_index, output,
+        ts_sister_effect_target_enabled(engine->grain_target.active_mask, bit));
     output = delay_process(engine, target_index, output,
         ts_sister_effect_target_enabled(engine->delay_target.active_mask, bit));
     output = reverb_process(engine, target_index, output,
@@ -1005,12 +1239,14 @@ TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
         output = lerp_frame(input, output, master_gain);
     if (target_index == TS_SISTER_EFFECT_PROCESSOR_COUNT - 1u) {
         target_state_advance(engine, &engine->distortion_target, 0);
-        target_state_advance(engine, &engine->delay_target, 1);
-        target_state_advance(engine, &engine->reverb_target, 2);
+        target_state_advance(engine, &engine->grain_target, 1);
+        target_state_advance(engine, &engine->delay_target, 2);
+        target_state_advance(engine, &engine->reverb_target, 3);
         ramp_advance(&engine->master_engage);
         ramp_advance(&engine->reverb_engage);
         ramp_advance(&engine->delay_engage);
         ramp_advance(&engine->distortion_engage);
+        ramp_advance(&engine->grain_engage);
     }
     return ts_stereo_frame_sanitize(output);
 }
@@ -1024,12 +1260,13 @@ float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine)
 TsSisterFxTransitionStatus ts_sister_post_fx_transition_status(
     const TsSisterPostFxEngine *engine)
 {
-    const TsSisterFxRamp *ramps[4];
-    const TsSisterFxTransitionSource sources[4] = {
+    const TsSisterFxRamp *ramps[5];
+    const TsSisterFxTransitionSource sources[5] = {
         TS_SISTER_FX_TRANSITION_MASTER,
         TS_SISTER_FX_TRANSITION_REVERB,
         TS_SISTER_FX_TRANSITION_DELAY,
-        TS_SISTER_FX_TRANSITION_DISTORTION
+        TS_SISTER_FX_TRANSITION_DISTORTION,
+        TS_SISTER_FX_TRANSITION_GRAIN
     };
     const TsSisterFxRamp *latest = NULL;
     TsSisterFxTransitionStatus status = {
@@ -1040,7 +1277,8 @@ TsSisterFxTransitionStatus ts_sister_post_fx_transition_status(
     ramps[1] = &engine->reverb_engage;
     ramps[2] = &engine->delay_engage;
     ramps[3] = &engine->distortion_engage;
-    for (size_t i = 0u; i < 4u; ++i) {
+    ramps[4] = &engine->grain_engage;
+    for (size_t i = 0u; i < 5u; ++i) {
         if (ramps[i]->remaining == 0u || ramps[i]->total == 0u) continue;
         if (latest == NULL || ramps[i]->remaining > latest->remaining) {
             latest = ramps[i];
@@ -1059,11 +1297,12 @@ TsSisterFxTransitionStatus ts_sister_post_fx_transition_status(
 TsSisterFxTransitionStatus ts_sister_post_fx_effect_transition_status(
     const TsSisterPostFxEngine *engine)
 {
-    const TsSisterFxRamp *ramps[3];
-    const TsSisterFxTransitionSource sources[3] = {
+    const TsSisterFxRamp *ramps[4];
+    const TsSisterFxTransitionSource sources[4] = {
         TS_SISTER_FX_TRANSITION_REVERB,
         TS_SISTER_FX_TRANSITION_DELAY,
-        TS_SISTER_FX_TRANSITION_DISTORTION
+        TS_SISTER_FX_TRANSITION_DISTORTION,
+        TS_SISTER_FX_TRANSITION_GRAIN
     };
     const TsSisterFxRamp *latest = NULL;
     TsSisterFxTransitionStatus status = {
@@ -1073,7 +1312,8 @@ TsSisterFxTransitionStatus ts_sister_post_fx_effect_transition_status(
     ramps[0] = &engine->reverb_engage;
     ramps[1] = &engine->delay_engage;
     ramps[2] = &engine->distortion_engage;
-    for (size_t i = 0u; i < 3u; ++i) {
+    ramps[3] = &engine->grain_engage;
+    for (size_t i = 0u; i < 4u; ++i) {
         if (ramps[i]->remaining == 0u || ramps[i]->total == 0u) continue;
         if (latest == NULL || ramps[i]->remaining > latest->remaining) {
             latest = ramps[i];
@@ -1123,6 +1363,7 @@ size_t ts_sister_post_fx_memory_bytes(const TsSisterPostFxEngine *engine)
     if (engine == NULL) return 0u;
     for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
         bytes += engine->delay[i].capacity_frames * 2u * sizeof(float);
+        bytes += engine->grain[i].capacity_frames * 2u * sizeof(float);
         for (size_t line = 0u; line < TS_SISTER_REVERB_LINES; ++line)
             bytes += engine->reverb[i].line[line].capacity_frames *
                      2u * sizeof(float);

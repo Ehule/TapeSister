@@ -225,7 +225,7 @@ static void apply_transition(TsSisterRuntime *runtime, TsInstrument *instrument,
                              uint64_t transition, StressResult *result)
 {
     uint32_t value = random_next(random);
-    switch (value % 17u) {
+    switch (value % 18u) {
     case 0u:
         p->head1_time_ms = random_unit(random) * 4000.0f;
         p->head2_scrub = random_unit(random);
@@ -320,7 +320,17 @@ static void apply_transition(TsSisterRuntime *runtime, TsInstrument *instrument,
         p->fx.reverb_enabled = (int)(random_next(random) & 1u);
         p->fx.delay_enabled = (int)(random_next(random) & 1u);
         p->fx.distortion_enabled = (int)(random_next(random) & 1u);
+        p->fx.grain_enabled = (int)(random_next(random) & 1u);
         p->fx.transition = random_unit(random);
+        break;
+    case 16u:
+        p->fx.grain_size = random_unit(random);
+        p->fx.grain_density = random_unit(random);
+        p->fx.grain_pitch = random_unit(random);
+        p->fx.grain_mix = random_unit(random);
+        p->fx.grain_gain_db = -12.0f + random_unit(random) * 24.0f;
+        p->fx.grain_targets = ts_sister_effect_targets_sanitize(
+            (uint8_t)(random_next(random) & TS_SISTER_EFFECT_TARGET_ALL));
         break;
     default:
         p->filter_type = (TsSisterFilterType)(
@@ -352,6 +362,7 @@ static StressResult run_stress(uint32_t seed, uint64_t transitions,
     p.head1_feedback = p.head2_feedback = 0.7f;
     p.soak = 0.5f;
     p.fx.delay_mix = p.fx.reverb_mix = p.fx.distortion_mix = 0.45f;
+    p.fx.grain_mix = 0.45f;
     p.fx.master_feedback = 0.65f;
     ts_sister_runtime_set_parameters(&runtime, &p);
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_ALL);

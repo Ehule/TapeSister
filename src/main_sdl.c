@@ -7019,6 +7019,12 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: parameters->fx.distortion_mix = amount; break;
     case TS_SISTER_UI_PARAM_DISTORTION_GAIN:
         parameters->fx.distortion_gain_db = -12.0f + amount * 24.0f; break;
+    case TS_SISTER_UI_PARAM_GRAIN_GAIN:
+        parameters->fx.grain_gain_db = -12.0f + amount * 24.0f; break;
+    case TS_SISTER_UI_PARAM_GRAIN_SIZE: parameters->fx.grain_size = amount; break;
+    case TS_SISTER_UI_PARAM_GRAIN_DENSITY: parameters->fx.grain_density = amount; break;
+    case TS_SISTER_UI_PARAM_GRAIN_PITCH: parameters->fx.grain_pitch = amount; break;
+    case TS_SISTER_UI_PARAM_GRAIN_MIX: parameters->fx.grain_mix = amount; break;
     case TS_SISTER_UI_PARAM_FX_TRANSITION: parameters->fx.transition = amount; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION:
         parameters->fx.master_transition = amount; break;
@@ -7106,6 +7112,12 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: value = parameters->fx.distortion_mix; break;
     case TS_SISTER_UI_PARAM_DISTORTION_GAIN:
         value = (parameters->fx.distortion_gain_db + 12.0f) / 24.0f; break;
+    case TS_SISTER_UI_PARAM_GRAIN_GAIN:
+        value = (parameters->fx.grain_gain_db + 12.0f) / 24.0f; break;
+    case TS_SISTER_UI_PARAM_GRAIN_SIZE: value = parameters->fx.grain_size; break;
+    case TS_SISTER_UI_PARAM_GRAIN_DENSITY: value = parameters->fx.grain_density; break;
+    case TS_SISTER_UI_PARAM_GRAIN_PITCH: value = parameters->fx.grain_pitch; break;
+    case TS_SISTER_UI_PARAM_GRAIN_MIX: value = parameters->fx.grain_mix; break;
     case TS_SISTER_UI_PARAM_FX_TRANSITION: value = parameters->fx.transition; break;
     case TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION:
         value = parameters->fx.master_transition; break;
@@ -7318,6 +7330,11 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_DISTORTION_TONE: return "DISTORTION TONE";
     case TS_SISTER_UI_PARAM_DISTORTION_MIX: return "DISTORTION MIX";
     case TS_SISTER_UI_PARAM_DISTORTION_GAIN: return "DISTORTION GAIN";
+    case TS_SISTER_UI_PARAM_GRAIN_GAIN: return "GRAIN GAIN";
+    case TS_SISTER_UI_PARAM_GRAIN_SIZE: return "GRAIN SIZE";
+    case TS_SISTER_UI_PARAM_GRAIN_DENSITY: return "GRAIN DENSITY";
+    case TS_SISTER_UI_PARAM_GRAIN_PITCH: return "GRAIN PITCH";
+    case TS_SISTER_UI_PARAM_GRAIN_MIX: return "GRAIN MIX";
     case TS_SISTER_UI_PARAM_FX_TRANSITION: return "EFFECT TRANSITION";
     case TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION: return "MASTER FX TRANSITION";
     case TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK: return "MASTER FX FEEDBACK";
@@ -8146,6 +8163,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             fx->delay_enabled = !fx->delay_enabled; break;
         case TS_SISTER_UI_FX_DISTORTION:
             fx->distortion_enabled = !fx->distortion_enabled; break;
+        case TS_SISTER_UI_FX_GRAIN:
+            fx->grain_enabled = !fx->grain_enabled; break;
         default: break;
         }
         ts_sister_runtime_set_parameters(&audio->sister,
@@ -8162,7 +8181,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             &sister->model.parameters.fx.reverb_targets : effect == 2 ?
             &sister->model.parameters.fx.delay_targets : effect == 3 ?
             &sister->model.parameters.fx.distortion_targets :
-            &sister->model.parameters.soak_targets;
+            effect == 4 ? &sister->model.parameters.fx.grain_targets :
+                          &sister->model.parameters.soak_targets;
         *mask = ts_sister_effect_targets_toggle(*mask, target);
         ts_sister_runtime_set_parameters(&audio->sister,
                                          &sister->model.parameters);
@@ -8190,10 +8210,13 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         int enabled = fx_toggle_changed == TS_SISTER_UI_FX_MASTER ? fx->enabled :
             fx_toggle_changed == TS_SISTER_UI_FX_REVERB ? fx->reverb_enabled :
             fx_toggle_changed == TS_SISTER_UI_FX_DELAY ? fx->delay_enabled :
-                                                        fx->distortion_enabled;
+            fx_toggle_changed == TS_SISTER_UI_FX_DISTORTION ?
+                fx->distortion_enabled : fx->grain_enabled;
         const char *name = fx_toggle_changed == TS_SISTER_UI_FX_MASTER ? "MASTER FX" :
             fx_toggle_changed == TS_SISTER_UI_FX_REVERB ? "REVERB" :
-            fx_toggle_changed == TS_SISTER_UI_FX_DELAY ? "DELAY" : "DISTORTION";
+            fx_toggle_changed == TS_SISTER_UI_FX_DELAY ? "DELAY" :
+            fx_toggle_changed == TS_SISTER_UI_FX_DISTORTION ? "DISTORTION" :
+                                                              "GRAIN";
         sister_preset_model_sync(sister, &audio->sister);
         snprintf(sister->model.status, sizeof(sister->model.status),
                  "%s %s OVER %.2F S", name, enabled ? "ENGAGING" : "BYPASSING",

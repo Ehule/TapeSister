@@ -1,15 +1,27 @@
-# Sister Machine PR9 post-effects architecture
+# Sister Machine post-effects architecture
 
-PR9 adds one compact fixed chain—**DISTORTION → DELAY → REVERB**—and one
+The current compact fixed chain is **DISTORTION → GRAIN → DELAY → REVERB**, with one
 explicit Master FX Feedback return. The effects share PR8's generic target bits;
 there is no second routing language and no per-head parameter copy.
+
+This fixed order is the stable bridge to the four-slot virtual pedalboard. The
+future slot model can select and order four processors, including duplicates,
+without patch cables; the bounded four-slot limit also makes timed topology
+morphs practical on the X220/X230.
+
+Each future slot has exactly one placement: **PRE** fresh Sister input, one or
+more internal **H1/H2/H3** heads, or **POST** completed MIX. A single slot never
+runs both pre and post. Using the same processor on both sides requires two
+explicit duplicate slots, keeping CPU cost visible and bounded. PRE colors only
+new source material before the rolling write; feedback already inside Sister is
+not silently processed a second time.
 
 ## Target and ownership contract
 
 Each effect owns one global control set and one independent mask:
 `H1 | H2 | H3 | MIX`. H1/H2/H3 may be combined. Selecting a head clears MIX;
 selecting MIX clears all heads; zero is bypass. The delay, reverb, and distortion
-state bank has four stable instances (H1, H2, H3, MIX), so selected heads never
+state bank for every processor has four stable instances (H1, H2, H3, MIX), so selected heads never
 share mutable history. Target removal ramps the send/return down while time-based
 state drains with zero input. A head↔MIX ownership change uses an exclusive
 14 ms fade-out/dead handoff before the new group fades in, preventing double
@@ -19,7 +31,7 @@ restart, never in the callback or on a target click.
 ```text
 interpolated Hn frame
   → PR8 Soak/Bleed when Hn-targeted
-  → Distortion → Delay → Reverb when Hn-targeted
+  → Distortion → Grain → Delay → Reverb when Hn-targeted
   → established raw H1/H2 feedback send
   → Drop / Decor / Width / head level
   → Hn Capture and head sum
@@ -57,7 +69,7 @@ reference ----------------------------------------------------------→ output
 
 `FX RET` is one smoothed 0–200% linked-stereo effects-return gain. At every selected
 head or MIX insertion it scales only the difference between the dry input and the
-completed Distortion → Delay → Reverb output. It applies to ordinary POWER-off MIX
+completed Distortion → Grain → Delay → Reverb output. It applies to ordinary POWER-off MIX
 processing and Sister-active head/MIX processing. Its unity default is exact PR9
 identity; zero is exact dry bypass while effect tail state continues advancing.
 
@@ -106,9 +118,34 @@ continuous pitch drift. FEEDBACK retains the 0–1.08 regenerative range: the to
 can sustain and compress into a dub-like haze but cannot produce a non-finite
 line. MIX 0 remains exact identity; feedback zero produces one four-head event.
 
+## Grain
+
+The granular processor is a deterministic stereo cloud with four performance
+controls: **SIZE**, **DENS**, **PITCH**, and **MIX**, followed by the shared
+post-MIX **GAIN** stage. SIZE maps logarithmically from **8 to 1000 ms**. DENS
+maps logarithmically from **0.25 to 120 grains per second**. PITCH spans
+**-24 to +24 semitones**, with exact unity at the center. Each target owns a
+5.1-second stereo circular history and at most **24 simultaneous voices**.
+
+Grains use fractional reads, randomized constant-power stereo positions, smooth
+zero-valued squared-parabolic windows, and overlap-energy normalization. A small
+deterministic start-time deviation breaks up rigid pulse trains while retaining
+the requested average density. The target-local random sequence also varies read
+position and pan reproducibly without collapsing H1/H2/H3/MIX into the same
+stereo image.
+
+At +24 semitones the history reserve safely covers the four-times read travel of
+a one-second grain. If all 24 voices are occupied, a scheduled grain is skipped;
+there is no allocation, stealing scan, or unbounded queue in the audio callback.
+History is written continuously while the target is engaged, even at MIX 0, so
+bringing the cloud into a performance reveals recent material rather than
+starting from an empty buffer. Timed bypass shares the same 10 ms–60 minute
+performance envelope as the other three effects and returns to exact dry/unity
+when complete.
+
 ## Per-effect makeup gain
 
-Reverb, Delay, and Distortion each provide a post-MIX **GAIN** control spanning
+Reverb, Delay, Distortion, and Grain each provide a post-MIX **GAIN** control spanning
 **-12 to +12 dB**, with exact 0 dB as the default. The gain stage follows that
 effect's dry/wet blend and precedes the next processor, so it can compensate a
 quiet effect, deliberately push the following processor, or trim a stacked
@@ -119,7 +156,7 @@ The makeup stage shares the effect's target and timed bypass envelope. As an
 effect fades out, its multiplier converges to exact unity even when GAIN is not
 0 dB. Consequently GAIN remains useful at MIX 0 while the effect is engaged,
 but bypass never leaves a hidden level change behind. Presets and projects save
-all three gains, and older files load them at 0 dB.
+all four gains, and older files load them at 0 dB.
 
 ## Distortion
 
@@ -135,7 +172,7 @@ The midpoint/current pair is a low-cost 2× antialiasing policy rather than an
 exact analog emulation. L/R have independent filter and DC state. DRIVE, TONE,
 MIX, and routing smooth over about 20/20/20/12 ms. MIX zero is exact identity.
 
-All three effect MIX controls use equal-power dry/wet gains between their exact
+All four effect MIX controls use equal-power dry/wet gains between their exact
 0% and 100% endpoints. This prevents a serial chain of moderate MIX settings
 from repeatedly halving the direct component, which is especially important
 when the whole summed MIX path is targeted.
@@ -168,9 +205,9 @@ values, delay indices, FDN/filter histories, target ramps, and the previous-samp
 master return. Published parameters are sanitized before entering the engine.
 No live line samples, tails, pointers, rolling audio, or feedback audio are saved.
 
-At 48 kHz the four delay instances reserve 3,087,424 bytes and the four reverbs
-approximately 1.19 MB (about 4.08 MiB total). At 96 kHz the total is approximately
-8.16 MiB. Sister-active
+At 48 kHz the four delay instances reserve 3,087,424 bytes, the four reverbs
+approximately 1.19 MB, and the four grain histories approximately 7.47 MiB
+(about 11.55 MiB total). At 96 kHz storage approximately doubles. Sister-active
 worst case advances four stable target instances so removed tails can drain;
 ordinary POWER-off operation advances only MIX. Storage and time scale linearly
 with sample rate. The topology uses eight FDN lines and two-channel scalar filters,
@@ -181,11 +218,10 @@ real history so tails can drain safely.
 
 ## Persistence and compatibility
 
-PR9 introduced preset/project schema version 3. PR10 version 4 added the live
-buffer duration; version 5 adds the four source trims and FX return gain without
-changing effect history. They store every visible PR9
-parameter and mask. Legacy Hall/Plate/Spring/Cathedral values map to continuous
+Preset schema version 10 and project schema version 11 add Grain enable, SIZE,
+DENS, PITCH, MIX, GAIN, and target mask without saving live grain history. They
+store every visible effect parameter and mask. Legacy Hall/Plate/Spring/Cathedral values map to continuous
 SIZE positions; legacy state otherwise receives safe midrange DECAY/TIME/FEEDBACK,
-MIX targets, and exact-zero Reverb/Delay/Distortion MIX and Master FX Feedback.
+MIX targets, and exact-zero Reverb/Delay/Distortion/Grain MIX and Master FX Feedback.
 Opening a legacy file does not rewrite it. Invalid enums and values are clamped;
 unknown fields are ignored; masks are restricted through the PR8 sanitizer.

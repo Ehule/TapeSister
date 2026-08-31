@@ -88,6 +88,7 @@ int main(void)
           model.parameters.fx.reverb_targets == TS_SISTER_EFFECT_TARGET_MIX &&
           model.parameters.fx.delay_targets == TS_SISTER_EFFECT_TARGET_MIX &&
           model.parameters.fx.distortion_targets == TS_SISTER_EFFECT_TARGET_MIX &&
+          model.parameters.fx.grain_targets == TS_SISTER_EFFECT_TARGET_MIX &&
           model.parameters.buffer_seconds == 40.0f);
     ts_sister_ui_model_show(&model);
     CHECK(model.visible);
@@ -205,12 +206,30 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 430, 168);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_DISTORTION_MIX);
+    hit = ts_sister_ui_hit_test_model(&model, 120, 224);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_GRAIN_GAIN);
+    hit = ts_sister_ui_hit_test_model(&model, 200, 224);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_GRAIN_SIZE);
+    hit = ts_sister_ui_hit_test_model(&model, 280, 224);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_GRAIN_DENSITY);
+    hit = ts_sister_ui_hit_test_model(&model, 365, 224);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_GRAIN_PITCH);
+    hit = ts_sister_ui_hit_test_model(&model, 445, 224);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+          hit.index == TS_SISTER_UI_PARAM_GRAIN_MIX);
     hit = ts_sister_ui_hit_test_model(&model, 115, 78);
     CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
           hit.index == ((1 << 8) | TS_SISTER_EFFECT_TARGET_H1));
     hit = ts_sister_ui_hit_test_model(&model, 300, 190);
     CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
           hit.index == ((3 << 8) | TS_SISTER_EFFECT_TARGET_MIX));
+    hit = ts_sister_ui_hit_test_model(&model, 300, 246);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
+          hit.index == ((4 << 8) | TS_SISTER_EFFECT_TARGET_MIX));
     hit = ts_sister_ui_hit_test_model(&model, 25, 55);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
           hit.index == TS_SISTER_UI_FX_REVERB);
@@ -220,12 +239,15 @@ int main(void)
     hit = ts_sister_ui_hit_test_model(&model, 25, 167);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
           hit.index == TS_SISTER_UI_FX_DISTORTION);
+    hit = ts_sister_ui_hit_test_model(&model, 25, 223);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
+          hit.index == TS_SISTER_UI_FX_GRAIN);
     CHECK(ts_sister_ui_hit_test_model(&model, 25, 95).action ==
           TS_SISTER_UI_ACTION_NONE);
     hit = ts_sister_ui_hit_test_model(&model, 25, 310);
     CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
           hit.index == TS_SISTER_UI_FX_MASTER);
-    hit = ts_sister_ui_hit_test_model(&model, 200, 224);
+    hit = ts_sister_ui_hit_test_model(&model, 200, 280);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_FX_TRANSITION);
     hit = ts_sister_ui_hit_test_model(&model, 200, 310);

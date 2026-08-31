@@ -61,6 +61,13 @@ int main(int argc, char **argv)
     p.fx.reverb_targets = TS_SISTER_EFFECT_TARGET_H1 |
                           TS_SISTER_EFFECT_TARGET_H2 |
                           TS_SISTER_EFFECT_TARGET_H3;
+    p.fx.grain_size = 1.0f;
+    p.fx.grain_density = 1.0f;
+    p.fx.grain_pitch = 1.0f;
+    p.fx.grain_mix = 0.65f;
+    p.fx.grain_targets = TS_SISTER_EFFECT_TARGET_H1 |
+                         TS_SISTER_EFFECT_TARGET_H2 |
+                         TS_SISTER_EFFECT_TARGET_H3;
     p.fx.master_feedback = 0.7f;
     p.fx.fallout.enabled = 1;
     p.fx.fallout.mix = 0.75f;
