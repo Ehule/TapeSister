@@ -59,6 +59,7 @@ void ts_sister_project_state_capture(TsSisterProjectState *state,
     if (selected_preset != NULL)
         snprintf(state->selected_preset, sizeof(state->selected_preset),
                  "%.47s", selected_preset);
+    state->selected_preset_modified = runtime->selected_preset_modified;
 }
 
 int ts_sister_project_state_apply(const TsSisterProjectState *state,
@@ -76,6 +77,8 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
     ts_sister_runtime_set_parameters(runtime, &state->parameters);
     runtime->parameter_locks = state->parameter_locks;
     ts_sister_runtime_set_selected_preset(runtime, state->selected_preset);
+    if (state->selected_preset_modified)
+        ts_sister_runtime_mark_selected_preset_modified(runtime);
     if (active_instrument != NULL)
         (void)ts_sister_runtime_validate_source_mask(runtime, active_instrument);
     /* Publish once more after active-page validation so snapshots never expose
@@ -97,6 +100,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "FxReturnGain=%.9g\n"
         "Erase=%.9g\nGhostTone=%.9g\nSoak=%.9g\nBleed=%.9g\n"
         "SoakTargets=%u\nReverbType=%d\nReverbMix=%.9g\n"
+        "FxEnabled=%d\nReverbEnabled=%d\nDelayEnabled=%d\n"
+        "DistortionEnabled=%d\nFxTransition=%.9g\nMasterFxTransition=%.9g\n"
         "ReverbDecay=%.9g\nReverbTargets=%u\nDelayTime=%.9g\n"
         "DelayFeedback=%.9g\nDelayMix=%.9g\nDelayTargets=%u\n"
         "DistortionDrive=%.9g\nDistortionTone=%.9g\nDistortionMix=%.9g\n"
@@ -110,6 +115,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "FalloutBitResolution=%.9g\nFalloutBitRate=%.9g\n"
         "FalloutPitchEnabled=%d\nFalloutPitch=%.9g\n"
         "FalloutPitchRamp=%.9g\nFalloutPitchRate=%.9g\n"
+        "FalloutComponentTransition=%.9g\nFalloutMasterTransition=%.9g\n"
         "FalloutLfoRate=%.9g\nFalloutLfoIntensity=%.9g\n"
         "FalloutLfoTargets=%u\nFalloutRiseMode=%d\n"
         "FalloutRiseLength=%.9g\nFalloutRiseIntensity=%.9g\n"
@@ -125,6 +131,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx_return_gain,
         p->write_erase, p->ghost_tone, p->soak, p->bleed,
         (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_mix,
+        p->fx.enabled, p->fx.reverb_enabled, p->fx.delay_enabled,
+        p->fx.distortion_enabled, p->fx.transition, p->fx.master_transition,
         p->fx.reverb_decay, (unsigned)p->fx.reverb_targets,
         p->fx.delay_time, p->fx.delay_feedback, p->fx.delay_mix,
         (unsigned)p->fx.delay_targets, p->fx.distortion_drive,
@@ -140,7 +148,9 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx.fallout.bit_quality, p->fx.fallout.bit_resolution,
         p->fx.fallout.bit_rate, p->fx.fallout.pitch_enabled,
         p->fx.fallout.pitch, p->fx.fallout.pitch_ramp,
-        p->fx.fallout.pitch_rate, p->fx.fallout.lfo_rate,
+        p->fx.fallout.pitch_rate, p->fx.fallout.component_transition,
+        p->fx.fallout.master_transition,
+        p->fx.fallout.lfo_rate,
         p->fx.fallout.lfo_intensity,
         (unsigned)p->fx.fallout.lfo_targets, p->fx.fallout.rise_mode,
         p->fx.fallout.rise_length, p->fx.fallout.rise_intensity,
@@ -170,10 +180,12 @@ int ts_sister_project_state_save(const TsSisterProjectState *state,
     }
     failed = fprintf(file,
         "TapeSister Sister Project State\nVersion=%d\nPageCount=%zu\n"
-        "ActivePage=%zu\nRoutes=%u\nSelectedPreset=%s\nParameterLocks=%016" PRIX64 "\n",
+        "ActivePage=%zu\nRoutes=%u\nSelectedPreset=%s\n"
+        "SelectedPresetModified=%d\nParameterLocks=%016" PRIX64 "\n",
         TS_SISTER_PROJECT_STATE_VERSION, state->page_count, state->active_page,
         (unsigned)(state->source_switches & TS_SISTER_SOURCE_ALL),
-        state->selected_preset, state->parameter_locks) < 0;
+        state->selected_preset, state->selected_preset_modified != 0,
+        state->parameter_locks) < 0;
     for (size_t page = 0u; page < state->page_count && !failed; ++page)
         failed = fprintf(file, "Mask.%zu=%04X\n", page,
                          state->page_masks[page]) < 0;
@@ -284,6 +296,15 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
         if (!parse_int_value(value, &integer)) return 0;
         p->fx.reverb_type = (TsSisterReverbType)integer; return 1;
     }
+    PI("FxEnabled", fx.enabled); PI("ReverbEnabled", fx.reverb_enabled);
+    PI("DelayEnabled", fx.delay_enabled);
+    PI("DistortionEnabled", fx.distortion_enabled);
+    if (strcmp(key, "FxTransition") == 0) {
+        if (!parse_float_value(value, &p->fx.transition)) return 0;
+        p->fx.master_transition = p->fx.transition;
+        return 1;
+    }
+    PF("MasterFxTransition", fx.master_transition);
     PF("ReverbMix", fx.reverb_mix); PF("ReverbDecay", fx.reverb_decay);
     PF("DelayTime", fx.delay_time); PF("DelayFeedback", fx.delay_feedback);
     PF("DelayMix", fx.delay_mix); PF("DistortionDrive", fx.distortion_drive);
@@ -299,6 +320,14 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
         return 1;
     }
     PF("FalloutTransition", fx.fallout.transition);
+    if (strcmp(key, "FalloutComponentTransition") == 0) {
+        if (!parse_float_value(value,
+                               &p->fx.fallout.component_transition)) return 0;
+        p->fx.fallout.master_transition =
+            p->fx.fallout.component_transition;
+        return 1;
+    }
+    PF("FalloutMasterTransition", fx.fallout.master_transition);
     PI("FalloutDropEnabled", fx.fallout.drop_enabled);
     PF("FalloutDropRate", fx.fallout.drop_rate);
     PI("FalloutPanEnabled", fx.fallout.pan_enabled);
@@ -397,6 +426,10 @@ int ts_sister_project_state_load(TsSisterProjectState *state,
         } else if (strcmp(key, "SelectedPreset") == 0) {
             if (strlen(value) > TS_SISTER_PROJECT_PRESET_NAME_MAX) goto malformed;
             snprintf(loaded.selected_preset, sizeof(loaded.selected_preset), "%s", value);
+        } else if (strcmp(key, "SelectedPresetModified") == 0) {
+            if (!parse_int_value(value, &loaded.selected_preset_modified) ||
+                (loaded.selected_preset_modified != 0 &&
+                 loaded.selected_preset_modified != 1)) goto malformed;
         } else if (strcmp(key, "ParameterLocks") == 0) {
             if (!parse_u64_hex_value(value, &loaded.parameter_locks))
                 goto malformed;

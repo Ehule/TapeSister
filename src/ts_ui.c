@@ -3649,8 +3649,73 @@ static void sister_fallout_time_label(char *text_value, size_t size,
         snprintf(text_value, size, "%.0FMS", milliseconds);
     else if (milliseconds < 10000.0f)
         snprintf(text_value, size, "%.1FS", milliseconds / 1000.0f);
-    else
+    else if (milliseconds < 60000.0f)
         snprintf(text_value, size, "%.0FS", milliseconds / 1000.0f);
+    else if (milliseconds < 3600000.0f)
+        snprintf(text_value, size, "%.1FM", milliseconds / 60000.0f);
+    else
+        snprintf(text_value, size, "%.0FH", milliseconds / 3600000.0f);
+}
+
+static void sister_transition_progress(TsFramebuffer *fb, int x, int y,
+                                       int width, float progress, int active,
+                                       uint32_t color)
+{
+    progress = sister_clamp(progress);
+    rect(fb, x, y, width, 4, RGB(24, 23, 25));
+    if (active)
+        rect(fb, x, y, (int)lrintf((float)width * progress), 4, color);
+    else
+        rect(fb, x, y + 1, width, 1, sister_dim_color(color));
+}
+
+static uint32_t sister_transition_caption_color(float progress,
+                                                 uint32_t background,
+                                                 uint32_t foreground)
+{
+    unsigned strength;
+    progress = sister_clamp(progress);
+    strength = 30u + (unsigned)lrintf((1.0f - progress) * 70.0f);
+    return blend_color(background, foreground, strength);
+}
+
+static const char *sister_fallout_transition_source_name(
+    TsSisterFalloutTransitionSource source)
+{
+    switch (source) {
+    case TS_SISTER_FALLOUT_TRANSITION_MASTER: return "FALLOUT";
+    case TS_SISTER_FALLOUT_TRANSITION_DROP: return "DROP";
+    case TS_SISTER_FALLOUT_TRANSITION_PAN: return "PAN";
+    case TS_SISTER_FALLOUT_TRANSITION_SKIP: return "SKIP";
+    case TS_SISTER_FALLOUT_TRANSITION_BIT: return "BIT";
+    case TS_SISTER_FALLOUT_TRANSITION_PITCH: return "PITCH";
+    default: return NULL;
+    }
+}
+
+static const char *sister_fx_transition_source_name(
+    TsSisterFxTransitionSource source)
+{
+    switch (source) {
+    case TS_SISTER_FX_TRANSITION_MASTER: return "MASTER FX";
+    case TS_SISTER_FX_TRANSITION_REVERB: return "REVERB";
+    case TS_SISTER_FX_TRANSITION_DELAY: return "DELAY";
+    case TS_SISTER_FX_TRANSITION_DISTORTION: return "DISTORTION";
+    default: return NULL;
+    }
+}
+
+static void sister_transition_caption(char *caption, size_t size,
+                                      const char *source,
+                                      int target_enabled)
+{
+    if (caption == NULL || size == 0u) return;
+    if (source == NULL) {
+        caption[0] = '\0';
+        return;
+    }
+    snprintf(caption, size, "%s %s", source,
+             target_enabled ? "ON" : "OFF");
 }
 
 static void sister_fallout_lfo_panel(TsFramebuffer *fb,
@@ -3798,13 +3863,17 @@ static void sister_fallout_modulation_status(TsFramebuffer *fb,
 
 static void sister_choice_parameter_state(TsFramebuffer *fb, int x, int y,
                                           int width, const char *label,
-                                          const char *choice, int active,
+                                          const char *choice, float amount,
                                           uint32_t color, int locked)
 {
     char value[32];
     if (locked) color = sister_dim_color(color);
+    if (!isfinite(amount)) amount = 0.0f;
+    amount = sister_clamp(amount);
     rect(fb, x, y, width, 18, RGB(24, 23, 25));
-    if (active) rect(fb, x + 1, y + 14, width - 2, 3, color);
+    if (amount > 0.0f)
+        rect(fb, x + 1, y + 14,
+             (int)lrintf((float)(width - 2) * amount), 3, color);
     snprintf(value, sizeof(value), "%s %s", label, choice);
     text(fb, x + 3, y + 3, value, color, 1);
 }
@@ -3850,17 +3919,37 @@ static int sister_spirit_level(const TsSisterUiModel *model)
     return model->routing.enabled ? 0 : 12;
 }
 
+static int sister_spirit_dust_level(const TsSisterUiModel *model)
+{
+    uint32_t elapsed;
+    if (model->power_visual == TS_SISTER_UI_POWER_VISUAL_ON) {
+        elapsed = model->power_visual_elapsed_ms;
+        if (elapsed < 100u) return 30;
+        if (elapsed < 250u) return 30 - (int)((elapsed - 100u) * 18u / 150u);
+        if (elapsed < 450u) return 12;
+        if (elapsed < 700u) return 12 - (int)((elapsed - 450u) * 12u / 250u);
+        return 0;
+    }
+    if (model->power_visual == TS_SISTER_UI_POWER_VISUAL_OFF) {
+        elapsed = model->power_visual_elapsed_ms;
+        if (elapsed < 3200u)
+            return 14 + (int)(elapsed * 16u / 3200u);
+    }
+    return model->routing.enabled ? 0 : 30;
+}
+
 static void sister_spirit_glyph(TsFramebuffer *fb, int x, int y,
-                                const char *bits, uint32_t color)
+                                const char *bits, uint32_t color, int scale)
 {
     for (int gy = 0; gy < 7; ++gy)
         for (int gx = 0; gx < 5; ++gx)
             if (bits[gy * 5 + gx] == '1')
-                rect(fb, x + gx, y + gy, 1, 1, color);
+                rect(fb, x + gx * scale, y + gy * scale,
+                     scale, scale, color);
 }
 
 static void sister_spirit_cyrillic_title(TsFramebuffer *fb, int x, int y,
-                                         uint32_t color)
+                                         uint32_t color, int scale)
 {
     static const char cyrillic_i[] =
         "10001100111010111001100011000110001";
@@ -3875,9 +3964,62 @@ static void sister_spirit_cyrillic_title(TsFramebuffer *fb, int x, int y,
         cyrillic_i, glyph('H'), glyph('A')
     };
     for (size_t letter = 0u; letter < sizeof(letters) / sizeof(letters[0]);
-         ++letter, x += 6)
+         ++letter, x += 6 * scale)
         if (letters[letter] != NULL)
-            sister_spirit_glyph(fb, x, y, letters[letter], color);
+            sister_spirit_glyph(fb, x, y, letters[letter], color, scale);
+}
+
+static void sister_spirit_dust_render(TsFramebuffer *fb,
+                                      const TsSisterUiModel *model,
+                                      uint32_t background)
+{
+    const int canvas_x = 10;
+    const int canvas_y = 40;
+    const int canvas_width = 620;
+    const int canvas_height = 126;
+    int level = sister_spirit_dust_level(model);
+    int count = 72 + level * 3;
+    uint32_t phase = model->magnetic_phase & 7u;
+    if (level <= 0) return;
+    if (count > 192) count = 192;
+    for (int particle = 0; particle < count; ++particle) {
+        uint32_t hash = sister_spirit_hash(particle + 701, particle * 17 + 43);
+        uint32_t second = sister_spirit_hash(particle * 29 + 113,
+                                             particle + 991);
+        int local_x = (int)(hash % (uint32_t)(canvas_width - 8));
+        int local_y = (int)((hash >> 11) % (uint32_t)(canvas_height - 8));
+        int shape = (int)((hash >> 20) % 100u);
+        int intensity = level + 5 + (int)((hash >> 25) % 15u);
+        int width = 1;
+        int height = 1;
+
+        /* Most grains stay near their source, while enough escape to fill the
+           chassis like dispersed oxide rather than a localized bitmap. */
+        if ((hash & 3u) != 0u) {
+            int other_x = (int)(second % (uint32_t)(canvas_width - 8));
+            int other_y = (int)((second >> 11) % (uint32_t)(canvas_height - 8));
+            local_x = (local_x + other_x) / 2;
+            local_y = (local_y + other_y) / 2;
+        }
+        if (((hash >> 8) & 7u) == phase)
+            local_x += ((hash >> 16) & 1u) != 0u ? 1 : -1;
+        if (shape >= 68 && shape < 88)
+            width = 2;
+        else if (shape >= 88 && shape < 95)
+            height = 2;
+        else if (shape >= 95 && shape < 99) {
+            width = 2;
+            height = 2;
+            intensity += 8;
+        } else if (shape >= 99) {
+            width = 3;
+            intensity += 12;
+        }
+        if (intensity > 62) intensity = 62;
+        rect(fb, canvas_x + 4 + local_x, canvas_y + 4 + local_y,
+             width, height,
+             palette_blend(background, PAL_EFFECT, intensity));
+    }
 }
 
 static void sister_spirit_render(TsFramebuffer *fb,
@@ -3889,6 +4031,7 @@ static void sister_spirit_render(TsFramebuffer *fb,
     int level = sister_spirit_level(model);
     uint32_t phase = model->magnetic_phase & 7u;
     if (level <= 0) return;
+    sister_spirit_dust_render(fb, model, background);
     for (int y = 0; y < TS_SISTER_SPIRIT_MASK_HEIGHT; ++y) {
         for (int x = 0; x < TS_SISTER_SPIRIT_MASK_WIDTH; ++x) {
             size_t bit = (size_t)y * TS_SISTER_SPIRIT_MASK_WIDTH + (size_t)x;
@@ -3917,11 +4060,11 @@ static void sister_spirit_render(TsFramebuffer *fb,
         }
     }
     {
-        uint32_t title = palette_blend(background, PAL_MOUSE, 16);
-        uint32_t subtitle = palette_blend(background, PAL_MOUSE, 13);
-        sister_spirit_cyrillic_title(fb, 266, 128, title);
-        text(fb, 278, 140, "SISTER MACHINE", title, 1);
-        text(fb, 227, 152, "SIGNAL PROCESSING / TAPE SYSTEM", subtitle, 1);
+        uint32_t title = palette_blend(background, PAL_MOUSE, 17);
+        uint32_t subtitle = palette_blend(background, PAL_MOUSE, 14);
+        sister_spirit_cyrillic_title(fb, 212, 113, title, 2);
+        text(fb, 236, 133, "SISTER MACHINE", title, 2);
+        text(fb, 227, 153, "SIGNAL PROCESSING / TAPE SYSTEM", subtitle, 1);
     }
 }
 
@@ -3970,9 +4113,17 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
 
     if (model->fx_page == 2) {
         const TsSisterFalloutControls *f = &model->parameters.fx.fallout;
-        char transition[24];
-        sister_fallout_time_label(transition, sizeof(transition),
+        char transition_caption[24];
+        char preset_transition[24];
+        char component_transition[24];
+        char master_transition[24];
+        sister_fallout_time_label(preset_transition, sizeof(preset_transition),
             ts_sister_fallout_transition_ms(f->transition));
+        sister_fallout_time_label(component_transition,
+            sizeof(component_transition),
+            ts_sister_fallout_transition_ms(f->component_transition));
+        sister_fallout_time_label(master_transition, sizeof(master_transition),
+            ts_sister_fallout_transition_ms(f->master_transition));
         rect(fb, 10, 42, 620, 268, RGB(9, 9, 10));
         button(fb, 16, 50, 86, f->enabled ? "FALLOUT ON" : "FALLOUT",
                f->enabled);
@@ -4024,17 +4175,63 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         sister_percent_parameter_state(fb, 400, 252, 120, "RATE", f->pitch_rate,
             100, PAL_NOTE, ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE));
-        sister_choice_parameter_state(fb, 120, 284, 400, "TRANSITION",
-            transition, f->transition > 0.0f, PAL_MOUSE,
+        sister_choice_parameter_state(fb, 120, 284, 125, "PRESET",
+            preset_transition, f->transition, PAL_NOTE,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_FALLOUT_TRANSITION));
+        sister_choice_parameter_state(fb, 260, 284, 125, "PARTS",
+            component_transition, f->component_transition, PAL_EFFECT,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_COMPONENT_TRANSITION));
+        sister_choice_parameter_state(fb, 400, 284, 120, "MASTER",
+            master_transition, f->master_transition, PAL_MOUSE,
+            ts_sister_ui_parameter_locked(
+                model, TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION));
         sister_fallout_lfo_panel(fb, f);
+        if (model->routing.fallout_master_transition_active) {
+            rect(fb, 548, 314, 74, 11, PAL_DESKTOP);
+            sister_transition_caption(transition_caption,
+                sizeof(transition_caption), "FALLOUT",
+                model->routing.fallout_master_transition_target_enabled);
+            text(fb, 548, 316, transition_caption,
+                sister_transition_caption_color(
+                    model->routing.fallout_master_transition_progress,
+                    PAL_DESKTOP, PAL_MOUSE), 1);
+        } else if (model->routing.fallout_component_transition_active) {
+            rect(fb, 548, 314, 74, 11, PAL_DESKTOP);
+            sister_transition_caption(transition_caption,
+                sizeof(transition_caption),
+                sister_fallout_transition_source_name(
+                    model->routing.fallout_component_transition_source),
+                model->routing.fallout_component_transition_target_enabled);
+            text(fb, 548, 316, transition_caption,
+                sister_transition_caption_color(
+                    model->routing.fallout_component_transition_progress,
+                    PAL_DESKTOP, PAL_EFFECT), 1);
+        } else if (model->routing.fallout_preset_transition_active) {
+            rect(fb, 548, 314, 74, 11, PAL_DESKTOP);
+            text(fb, 548, 316, "PRESET",
+                sister_transition_caption_color(
+                    model->routing.fallout_preset_transition_progress,
+                    PAL_DESKTOP, PAL_NOTE), 1);
+        }
+        sister_transition_progress(fb, 548, 326, 74,
+            model->routing.fallout_master_transition_progress,
+            model->routing.fallout_master_transition_active, PAL_MOUSE);
+        sister_transition_progress(fb, 548, 333, 74,
+            model->routing.fallout_component_transition_progress,
+            model->routing.fallout_component_transition_active, PAL_EFFECT);
+        sister_transition_progress(fb, 548, 340, 74,
+            model->routing.fallout_preset_transition_progress,
+            model->routing.fallout_preset_transition_active, PAL_NOTE);
         sister_fallout_modulation_status(fb, model);
         goto sister_footer;
     }
 
     if (model->fx_page == 1) {
         static const char *const names[3] = {"REVERB", "DELAY", "DISTORTION"};
+        char effect_transition_caption[24];
+        char master_transition_caption[24];
         const uint32_t colors[3] = {PAL_WAVE_RIGHT, PAL_EFFECT, PAL_VOLUME};
         const uint8_t masks[3] = {
             model->parameters.fx.reverb_targets,
@@ -4042,49 +4239,52 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             model->parameters.fx.distortion_targets
         };
         for (int row = 0; row < 3; ++row) {
-            int top = 48 + row * 78;
-            rect(fb, 10, top, 620, 68, RGB(10, 10, 11));
-            text(fb, 18, top + 28, names[row], colors[row], 1);
+            int top = 48 + row * 56;
+            rect(fb, 10, top, 620, 50, RGB(10, 10, 11));
+            button(fb, 16, top + 2, 86, names[row],
+                row == 0 ? model->parameters.fx.reverb_enabled :
+                row == 1 ? model->parameters.fx.delay_enabled :
+                           model->parameters.fx.distortion_enabled);
         }
-        sister_choice_parameter_state(fb, 110, 72, 130, "TYPE",
+        sister_choice_parameter_state(fb, 110, 52, 130, "TYPE",
             ts_sister_reverb_type_name(model->parameters.fx.reverb_type),
             model->parameters.fx.reverb_mix > 0.0f, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_TYPE));
-        sister_percent_parameter_state(fb, 250, 72, 130, "DECAY",
+        sister_percent_parameter_state(fb, 250, 52, 130, "DECAY",
             model->parameters.fx.reverb_decay, 100, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_DECAY));
-        sister_percent_parameter_state(fb, 390, 72, 130, "MIX",
+        sister_percent_parameter_state(fb, 390, 52, 130, "MIX",
             model->parameters.fx.reverb_mix, 100, PAL_WAVE_RIGHT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_REVERB_MIX));
-        sister_percent_parameter_state(fb, 110, 150, 130, "TIME",
+        sister_percent_parameter_state(fb, 110, 108, 130, "TIME",
             model->parameters.fx.delay_time, 100, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DELAY_TIME));
-        sister_percent_parameter_state(fb, 250, 150, 130, "FEEDBACK",
+        sister_percent_parameter_state(fb, 250, 108, 130, "FEEDBACK",
             model->parameters.fx.delay_feedback, 100, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DELAY_FEEDBACK));
-        sister_percent_parameter_state(fb, 390, 150, 130, "MIX",
+        sister_percent_parameter_state(fb, 390, 108, 130, "MIX",
             model->parameters.fx.delay_mix, 100, PAL_EFFECT,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DELAY_MIX));
-        sister_percent_parameter_state(fb, 110, 228, 130, "DRIVE",
+        sister_percent_parameter_state(fb, 110, 164, 130, "DRIVE",
             model->parameters.fx.distortion_drive, 100, PAL_VOLUME,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DISTORTION_DRIVE));
-        sister_percent_parameter_state(fb, 250, 228, 130, "TONE",
+        sister_percent_parameter_state(fb, 250, 164, 130, "TONE",
             model->parameters.fx.distortion_tone, 100, PAL_VOLUME,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DISTORTION_TONE));
-        sister_percent_parameter_state(fb, 390, 228, 130, "MIX",
+        sister_percent_parameter_state(fb, 390, 164, 130, "MIX",
             model->parameters.fx.distortion_mix, 100, PAL_VOLUME,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_DISTORTION_MIX));
         for (int row = 0; row < 3; ++row) {
-            int y = 97 + row * 78;
+            int y = 74 + row * 56;
             sister_target_toggle(fb, 110, y, 56, "H1",
                 masks[row] & TS_SISTER_EFFECT_TARGET_H1, PAL_NOTE);
             sister_target_toggle(fb, 172, y, 56, "H2",
@@ -4098,15 +4298,61 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 row == 1 ? "8-2000 MS / STEREO" :
                            "RAT-INSPIRED / 2X", PAL_MOUSE, 1);
         }
-        text(fb, 10, 311, "MASTER", PAL_TUNING, 1);
-        sister_percent_parameter_state(fb, 110, 306, 410, "FX FEEDBACK",
+        {
+            char effect_transition[24];
+            char master_transition[24];
+            sister_fallout_time_label(effect_transition,
+                sizeof(effect_transition),
+                ts_sister_fx_transition_ms(model->parameters.fx.transition));
+            sister_fallout_time_label(master_transition,
+                sizeof(master_transition), ts_sister_fx_transition_ms(
+                    model->parameters.fx.master_transition));
+            sister_choice_parameter_state(fb, 110, 220, 410,
+                "EFFECT TRANSITION", effect_transition,
+                model->parameters.fx.transition, PAL_EFFECT,
+                ts_sister_ui_parameter_locked(
+                    model, TS_SISTER_UI_PARAM_FX_TRANSITION));
+            button(fb, 10, 304, 92,
+                   model->parameters.fx.enabled ? "MASTER FX ON" : "MASTER FX",
+                   model->parameters.fx.enabled);
+            sister_choice_parameter_state(fb, 110, 306, 410,
+                "MASTER TRANSITION", master_transition,
+                model->parameters.fx.master_transition, PAL_MOUSE,
+                ts_sister_ui_parameter_locked(
+                    model, TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION));
+        }
+        sister_percent_parameter_state(fb, 110, 332, 410, "FX FEEDBACK",
             model->parameters.fx.master_feedback, 100, PAL_TUNING,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK));
-        text(fb, 530, 311, "0-135%", PAL_MOUSE, 1);
-        text(fb, 10, 340,
-             "FIXED ORDER  DISTORTION > DELAY > REVERB   MIX FX WORK WITH POWER OFF",
-             PAL_MOUSE, 1);
+        text(fb, 530, 337, "0-135%", PAL_MOUSE, 1);
+        text(fb, 10, 284, "DISTORTION > DELAY > REVERB", PAL_MOUSE, 1);
+        if (model->routing.fx_transition_active) {
+            sister_transition_caption(effect_transition_caption,
+                sizeof(effect_transition_caption),
+                sister_fx_transition_source_name(
+                    model->routing.fx_transition_source),
+                model->routing.fx_transition_target_enabled);
+            text(fb, 426, 244, effect_transition_caption,
+                sister_transition_caption_color(
+                    model->routing.fx_transition_progress,
+                    PAL_DESKTOP, PAL_EFFECT), 1);
+        }
+        sister_transition_progress(fb, 426, 253, 94,
+            model->routing.fx_transition_progress,
+            model->routing.fx_transition_active, PAL_EFFECT);
+        if (model->routing.fx_master_transition_active) {
+            sister_transition_caption(master_transition_caption,
+                sizeof(master_transition_caption), "MASTER FX",
+                model->routing.fx_master_transition_target_enabled);
+            text(fb, 426, 275, master_transition_caption,
+                sister_transition_caption_color(
+                    model->routing.fx_master_transition_progress,
+                    PAL_DESKTOP, PAL_MOUSE), 1);
+        }
+        sister_transition_progress(fb, 426, 284, 94,
+            model->routing.fx_master_transition_progress,
+            model->routing.fx_master_transition_active, PAL_MOUSE);
         goto sister_footer;
     }
 
@@ -4268,41 +4514,72 @@ sister_footer:
         if (progress > 620) progress = 620;
         rect(fb, 10, 40, 620, 3, RGB(30, 8, 8));
         rect(fb, 10, 40, progress, 3, PAL_VOLUME);
+    } else if (model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ||
+               model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING) {
+        int pulse = (int)((model->file_capture_frames / 1024u) % 620u);
+        rect(fb, 10, 40, 620, 3, RGB(30, 8, 8));
+        rect(fb, 10 + pulse, 40, pulse > 606 ? 620 - pulse : 14, 3,
+             PAL_VOLUME);
     }
-    snprintf(line, sizeof(line), "TARGET %s  %.88s",
-             model->destination_slot >= 0 ? "READY" : "--",
-             model->routing.capture_state == TS_CAPTURE_RECORDING ?
-             "RECORDING - MONITOR LEVELS DO NOT CHANGE CAPTURE" : model->status);
+    if (model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ||
+        model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING) {
+        uint64_t seconds = model->file_capture_sample_rate > 0u ?
+            model->file_capture_frames / model->file_capture_sample_rate : 0u;
+        snprintf(line, sizeof(line),
+                 "FILE %02llu:%02llu:%02llu  %s",
+                 (unsigned long long)(seconds / 3600u),
+                 (unsigned long long)((seconds / 60u) % 60u),
+                 (unsigned long long)(seconds % 60u),
+                 model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING ?
+                 "FINISHING WAV" : "RECORDING PERFORMANCE");
+    } else {
+        snprintf(line, sizeof(line), "TARGET %s  %.88s",
+                 model->destination_mode == TS_SISTER_UI_DEST_FILE ? "FILE" :
+                 model->destination_slot >= 0 ? "READY" : "--",
+                 model->routing.capture_state == TS_CAPTURE_RECORDING ?
+                 "RECORDING - MONITOR LEVELS DO NOT CHANGE CAPTURE" :
+                 model->status);
+    }
     text(fb, 10, 355, line,
          model->routing.source_target_conflict ? PAL_VOLUME : PAL_MOUSE, 1);
 
     button(fb, 10, 370, 58, tap_names[model->selected_tap], 1);
     button(fb, 74, 370, 44, model->capture_channels == 2 ? "S" : "M", model->capture_channels == 2);
     button(fb, 124, 370, 100,
-           model->destination_mode == TS_SISTER_UI_DEST_NEXT_EMPTY ? "NEXT EMPTY" : "CURRENT", 0);
+           model->destination_mode == TS_SISTER_UI_DEST_FILE ? "FILE" :
+           model->destination_mode == TS_SISTER_UI_DEST_NEXT_EMPTY ?
+           "NEXT EMPTY" : "CURRENT", 0);
     button(fb, 230, 370, 28, "<", 0);
-    snprintf(preset_label, sizeof(preset_label), "%.18s",
-             model->preset_name[0] != '\0' ? model->preset_name : "PRESET");
+    snprintf(preset_label, sizeof(preset_label), "%.17s%s",
+             model->preset_name[0] != '\0' ? model->preset_name : "PRESET",
+             model->preset_modified ? "*" : "");
     button(fb, 264, 370, 130, preset_label, 0);
     button(fb, 400, 370, 28, ">", 0);
     {
+        int file_recording =
+            model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ||
+            model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING;
         int recording = model->routing.capture_state == TS_CAPTURE_RECORDING;
-        int capturing = recording && !model->capture_overdub;
+        int capturing = file_recording || (recording && !model->capture_overdub);
         int overdubbing = recording && model->capture_overdub;
-        button(fb, 450, 370, 82, capturing ? "STOP" : "CAPTURE",
-               model->routing.capture_state != TS_CAPTURE_IDLE &&
-               !model->capture_overdub);
+        button(fb, 450, 370, 82,
+               model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING ?
+               "WAIT" : capturing ? "STOP" : "CAPTURE",
+               file_recording || (model->routing.capture_state != TS_CAPTURE_IDLE &&
+               !model->capture_overdub));
         button(fb, 538, 370, 92, overdubbing ? "STOP" : "OVERDUB",
                model->routing.capture_state != TS_CAPTURE_IDLE &&
                model->capture_overdub);
         recording_button_outline(
             fb, capturing ? 450 : 538, 370, capturing ? 82 : 92, 22,
-            recording && model->text_cursor_visible);
+            (recording || file_recording) && model->text_cursor_visible);
     }
 
     if (model->fallout_lfo_open) {
         sister_fallout_lfo_dialog(fb, &model->parameters.fx.fallout);
     } else if (model->preset_manage_open) {
+        char preset_count[16];
+        char managed_name[48];
         rect(fb, 160, 130, 320, 170, RGB(8, 8, 9));
         rect(fb, 160, 130, 320, 1, PAL_MOUSE);
         rect(fb, 160, 299, 320, 1, PAL_MOUSE);
@@ -4310,19 +4587,36 @@ sister_footer:
         rect(fb, 479, 130, 1, 170, PAL_MOUSE);
         text(fb, 180, 145,
              model->fx_page == 2 ? "FALLOUT PRESET MANAGER" :
+             model->fx_page == 1 ? "SISTER + FX PRESET MANAGER" :
                                    "SISTER PRESET MANAGER",
              PAL_TEXT, 1);
-        text(fb, 180, 165,
-             model->preset_editing ? model->preset_edit_name : model->preset_name,
+        snprintf(preset_count, sizeof(preset_count), "%02zu/%02zu",
+                 model->preset_position, model->preset_count);
+        text(fb, 426, 145, preset_count, PAL_MOUSE, 1);
+        button(fb, 180, 160, 24, "<", 0);
+        button(fb, 436, 160, 24, ">", 0);
+        snprintf(managed_name, sizeof(managed_name), "%.35s%s",
+                 model->preset_editing ? model->preset_edit_name :
+                                         model->preset_name,
+                 !model->preset_editing && model->preset_modified ? "*" : "");
+        text(fb, 212, 165, managed_name,
              model->preset_editing ? PAL_NOTE : PAL_MOUSE, 1);
         if (model->preset_editing && model->text_cursor_visible) {
             size_t length = strlen(model->preset_edit_name);
             size_t cursor = model->preset_edit_cursor > length ? length :
                             model->preset_edit_cursor;
-            rect(fb, 180 + (int)cursor * 6, 163, 2, 11, PAL_NOTE);
+            rect(fb, 212 + (int)cursor * 6, 163, 2, 11, PAL_NOTE);
         }
-        if (model->preset_factory)
-            text(fb, 180, 182, "FACTORY - RECALL ONLY", PAL_TUNING, 1);
+        if (model->preset_factory && model->preset_modified)
+            text(fb, 180, 187, "FACTORY MODIFIED - SAVE AS ONLY", PAL_TUNING, 1);
+        else if (model->preset_factory)
+            text(fb, 180, 187, "FACTORY - RECALL ONLY", PAL_TUNING, 1);
+        else if (model->preset_modified)
+            text(fb, 180, 187, "MODIFIED - OVERWRITE OR SAVE AS", PAL_NOTE, 1);
+        else if (model->preset_position > 0u)
+            text(fb, 180, 187, "USER PRESET", PAL_MOUSE, 1);
+        else
+            text(fb, 180, 187, "CUSTOM - SAVE AS TO CREATE PRESET", PAL_MOUSE, 1);
         button(fb, 180, 200, 128, "SAVE AS", model->preset_editing == 1);
         button(fb, 332, 200, 128, "OVERWRITE", model->preset_confirmation == 1);
         button(fb, 180, 230, 128, "RENAME", model->preset_editing == 2);

@@ -288,6 +288,66 @@ static void test_rapid_sweeps_finite(void)
     ts_sister_post_fx_free(&engine);
 }
 
+static void test_interrupted_wheel_handoffs(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+    TsStereoFrame previous;
+    TsStereoFrame current;
+
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.reverb_targets = 0u;
+    controls.distortion_targets = 0u;
+    controls.delay_mix = 1.0f;
+    controls.delay_feedback = 0.0f;
+    controls.delay_time = 0.0f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 2500; ++frame)
+        previous = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.65f * sinf((float)frame * 0.071f), 0.0f}, 0);
+    controls.delay_time = 1.0f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 5; ++frame)
+        previous = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.65f * sinf((float)(2500 + frame) * 0.071f),
+                            0.0f}, 0);
+    controls.delay_time = 0.5f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    current = ts_sister_post_fx_process(&engine, 3u,
+        (TsStereoFrame){0.65f * sinf(2505.0f * 0.071f), 0.0f}, 0);
+    assert(fabsf(current.l - previous.l) < 1.0e-5f);
+    assert(fabsf(current.r - previous.r) < 1.0e-5f);
+    ts_sister_post_fx_free(&engine);
+
+    memset(&engine, 0, sizeof(engine));
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.delay_targets = 0u;
+    controls.distortion_targets = 0u;
+    controls.reverb_mix = 1.0f;
+    controls.reverb_decay = 0.62f;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 2500; ++frame)
+        previous = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.28f * sinf((float)frame * 0.043f),
+                            0.19f * cosf((float)frame * 0.037f)}, 0);
+    controls.reverb_type = TS_SISTER_REVERB_PLATE;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 10; ++frame)
+        previous = ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.28f * sinf((float)(2500 + frame) * 0.043f),
+                            0.19f * cosf((float)(2500 + frame) * 0.037f)}, 0);
+    controls.reverb_type = TS_SISTER_REVERB_SPRING;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    current = ts_sister_post_fx_process(&engine, 3u,
+        (TsStereoFrame){0.28f * sinf(2510.0f * 0.043f),
+                        0.19f * cosf(2510.0f * 0.037f)}, 0);
+    assert(fabsf(current.l - previous.l) < 1.0e-5f);
+    assert(fabsf(current.r - previous.r) < 1.0e-5f);
+    ts_sister_post_fx_free(&engine);
+}
+
 static void test_master_feedback_causality(void)
 {
     TsSisterRuntime runtime;
@@ -323,11 +383,244 @@ static void test_master_feedback_causality(void)
            fabsf(second_write_l) * 2.0f);
     assert(runtime.machine.last_output.write.l > 0.0f);
     assert(runtime.machine.last_output.write.r < 0.0f);
+    parameters = runtime.parameters;
+    parameters.fx.enabled = 0;
+    parameters.fx.master_transition = ts_sister_fx_transition_normalized(10.0f);
+    ts_sister_runtime_set_parameters(&runtime, &parameters);
+    for (int frame = 0; frame < 10; ++frame)
+        (void)ts_sister_runtime_process_frame(&runtime, &sources);
+    assert(ts_sister_post_fx_master_engage(&runtime.post_fx) == 0.0f);
+    assert(runtime.master_feedback_current == 0.0f);
+    assert(runtime.master_feedback_previous.l == 0.0f);
+    assert(runtime.master_feedback_previous.r == 0.0f);
     ts_sister_runtime_disable(&runtime);
     assert(runtime.master_feedback_previous.l == 0.0f);
     assert(runtime.master_feedback_previous.r == 0.0f);
     assert(!runtime.enabled && runtime.post_fx.ready);
     ts_sister_runtime_free(&runtime);
+}
+
+static void test_timed_performance_bypasses(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+    TsSisterFxTransitionStatus status;
+    assert(fabsf(ts_sister_fx_transition_ms(0.0f) - 10.0f) < 0.001f);
+    assert(fabsf(ts_sister_fx_transition_ms(1.0f) - 3600000.0f) < 1.0f);
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    assert(controls.enabled && controls.reverb_enabled &&
+           controls.delay_enabled && controls.distortion_enabled);
+    controls.transition = ts_sister_fx_transition_normalized(1000.0f);
+    controls.distortion_mix = 1.0f;
+    controls.distortion_enabled = 0;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    assert(engine.distortion_engage.remaining == 1000u);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.active && status.progress == 0.0f &&
+           status.source == TS_SISTER_FX_TRANSITION_DISTORTION &&
+           !status.target_enabled);
+    for (int frame = 0; frame < 500; ++frame)
+        assert_finite(ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.3f, -0.2f}, 0));
+    assert(fabsf(engine.distortion_engage.current - 0.5f) < 0.002f);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.active && status.progress > 0.499f &&
+           status.progress < 0.501f &&
+           status.source == TS_SISTER_FX_TRANSITION_DISTORTION);
+    controls.distortion_enabled = 1;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    assert(engine.distortion_engage.remaining == 1000u);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.source == TS_SISTER_FX_TRANSITION_DISTORTION &&
+           status.target_enabled && status.progress == 0.0f);
+    for (int frame = 0; frame < 1000; ++frame)
+        assert_finite(ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.3f, -0.2f}, 0));
+    assert(engine.distortion_engage.current == 1.0f);
+
+    controls.reverb_enabled = controls.delay_enabled = 0;
+    controls.enabled = 0;
+    controls.transition = ts_sister_fx_transition_normalized(1000.0f);
+    controls.master_transition =
+        ts_sister_fx_transition_normalized(1000.0f);
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    assert(engine.master_engage.remaining == 1000u);
+    assert(engine.reverb_engage.remaining == 1000u);
+    assert(engine.delay_engage.remaining == 1000u);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.source == TS_SISTER_FX_TRANSITION_MASTER &&
+           !status.target_enabled && status.progress == 0.0f);
+    for (int frame = 0; frame < 1000; ++frame)
+        assert_finite(ts_sister_post_fx_process(&engine, 3u,
+            (TsStereoFrame){0.1f, -0.1f}, 0));
+    assert(ts_sister_post_fx_master_engage(&engine) == 0.0f);
+    assert(engine.reverb_engage.current == 0.0f);
+    assert(engine.delay_engage.current == 0.0f);
+    {
+        TsStereoFrame input = {0.31f, -0.27f};
+        TsStereoFrame output;
+        int active = 0;
+        assert(ts_sister_post_fx_transition_progress(&engine, &active) == 1.0f);
+        assert(!active);
+        status = ts_sister_post_fx_transition_status(&engine);
+        assert(!status.active &&
+               status.source == TS_SISTER_FX_TRANSITION_NONE);
+        output = ts_sister_post_fx_process(&engine, 3u, input, 0);
+        assert(output.l == input.l && output.r == input.r);
+        controls.distortion_enabled = 0;
+        ts_sister_post_fx_set_controls(&engine, &controls);
+        status = ts_sister_post_fx_transition_status(&engine);
+        assert(status.source == TS_SISTER_FX_TRANSITION_DISTORTION &&
+               !status.target_enabled);
+        for (int frame = 0; frame < 1000; ++frame)
+            (void)ts_sister_post_fx_process(&engine, 3u, input, 0);
+        controls.distortion_enabled = 1;
+        ts_sister_post_fx_set_controls(&engine, &controls);
+        status = ts_sister_post_fx_transition_status(&engine);
+        assert(status.source == TS_SISTER_FX_TRANSITION_DISTORTION &&
+               status.target_enabled);
+        for (int frame = 0; frame < 1000; ++frame)
+            (void)ts_sister_post_fx_process(&engine, 3u, input, 0);
+        output = ts_sister_post_fx_process(&engine, 3u, input, 0);
+        assert(output.l == input.l && output.r == input.r);
+    }
+    ts_sister_post_fx_free(&engine);
+}
+
+static void test_master_gate_restore_and_live_retime(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+    TsSisterFxTransitionStatus status;
+    TsStereoFrame input = {0.37f, -0.21f};
+    TsStereoFrame output;
+
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.enabled = 0;
+    controls.reverb_enabled = 1;
+    controls.delay_enabled = 1;
+    controls.distortion_enabled = 1;
+    controls.reverb_mix = 1.0f;
+    controls.delay_mix = 1.0f;
+    controls.distortion_mix = 1.0f;
+    controls.distortion_drive = 1.0f;
+    controls.transition = ts_sister_fx_transition_normalized(1000.0f);
+    controls.master_transition =
+        ts_sister_fx_transition_normalized(1000.0f);
+    ts_sister_post_fx_sync_controls(&engine, &controls);
+
+    /* Restoring an OFF preset must never leave the live master at the engine's
+       default ON value. Individual effects remain armed behind the dry gate. */
+    assert(engine.controls.enabled == 0);
+    assert(ts_sister_post_fx_master_engage(&engine) == 0.0f);
+    assert(engine.reverb_engage.current == 1.0f);
+    assert(engine.delay_engage.current == 1.0f);
+    assert(engine.distortion_engage.current == 1.0f);
+    output = ts_sister_post_fx_process(&engine, 3u, input, 0);
+    assert(output.l == input.l && output.r == input.r);
+
+    /* Arming/disarming an individual processor behind Master OFF cannot leak
+       audio, but the individual transition is still allowed to complete. */
+    controls.distortion_enabled = 0;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 1000; ++frame) {
+        output = ts_sister_post_fx_process(&engine, 3u, input, 0);
+        assert(output.l == input.l && output.r == input.r);
+    }
+    controls.distortion_enabled = 1;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 1000; ++frame)
+        (void)ts_sister_post_fx_process(&engine, 3u, input, 0);
+    assert(engine.distortion_engage.current == 1.0f);
+
+    /* Master is the sole audible gate for the already-armed chain. */
+    controls.enabled = 1;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 250; ++frame)
+        (void)ts_sister_post_fx_process(&engine, 3u, input, 0);
+    assert(fabsf(engine.master_engage.current - 0.25f) < 0.002f);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.active && status.source == TS_SISTER_FX_TRANSITION_MASTER &&
+           status.target_enabled && status.progress > 0.249f &&
+           status.progress < 0.251f);
+
+    /* A wheel edit to the shared duration retimes the active fade in place,
+       preserving progress rather than requiring an off/on retrigger. */
+    controls.transition = ts_sister_fx_transition_normalized(100.0f);
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    assert(engine.master_engage.total == 1000u);
+    assert(engine.master_engage.remaining == 750u);
+    controls.master_transition = ts_sister_fx_transition_normalized(100.0f);
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    assert(engine.master_engage.total == 100u);
+    assert(engine.master_engage.remaining == 75u);
+    status = ts_sister_post_fx_transition_status(&engine);
+    assert(status.progress > 0.249f && status.progress < 0.251f);
+    for (int frame = 0; frame < 75; ++frame)
+        (void)ts_sister_post_fx_process(&engine, 3u, input, 0);
+    assert(ts_sister_post_fx_master_engage(&engine) == 1.0f);
+    assert(!ts_sister_post_fx_transition_status(&engine).active);
+    ts_sister_post_fx_free(&engine);
+}
+
+static void test_master_zero_is_absolute_return_valve(void)
+{
+    TsSisterPostFxEngine engine = {0};
+    TsSisterFxControls controls;
+
+    assert(ts_sister_post_fx_init(&engine, 1000u));
+    ts_sister_fx_controls_default(&controls);
+    controls.reverb_mix = 1.0f;
+    controls.reverb_decay = 1.0f;
+    controls.delay_mix = 1.0f;
+    controls.delay_feedback = 0.95f;
+    controls.distortion_mix = 1.0f;
+    controls.distortion_drive = 1.0f;
+    controls.transition = ts_sister_fx_transition_normalized(1000.0f);
+    controls.master_transition = ts_sister_fx_transition_normalized(10.0f);
+    ts_sister_post_fx_sync_controls(&engine, &controls);
+
+    /* Load every processor and target with non-zero history and tails. */
+    for (int frame = 0; frame < 3000; ++frame) {
+        for (size_t target = 0u;
+             target < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++target) {
+            TsStereoFrame input = frame == 0 ?
+                (TsStereoFrame){0.9f, -0.7f} :
+                (TsStereoFrame){0.0f, 0.0f};
+            (void)ts_sister_post_fx_process(&engine, target, input, 0);
+        }
+    }
+
+    controls.enabled = 0;
+    ts_sister_post_fx_set_controls(&engine, &controls);
+    for (int frame = 0; frame < 10; ++frame)
+        (void)ts_sister_post_fx_process(
+            &engine, TS_SISTER_EFFECT_PROCESSOR_COUNT - 1u,
+            (TsStereoFrame){0.13f, -0.09f}, 0);
+    assert(ts_sister_post_fx_master_engage(&engine) == 0.0f);
+
+    /* Individual automated faders remain independent behind the faucet. They
+       may move, reverse, and leave active tails, but Master zero must return
+       the input bit-for-bit on H1/H2/H3/MIX. */
+    for (int cycle = 0; cycle < 200; ++cycle) {
+        controls.reverb_enabled = (cycle & 1) != 0;
+        controls.delay_enabled = (cycle & 2) != 0;
+        controls.distortion_enabled = (cycle & 4) != 0;
+        ts_sister_post_fx_set_controls(&engine, &controls);
+        for (size_t target = 0u;
+             target < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++target) {
+            TsStereoFrame input = {
+                0.31f - (float)target * 0.03f,
+                -0.27f + (float)target * 0.02f
+            };
+            TsStereoFrame output =
+                ts_sister_post_fx_process(&engine, target, input, 0);
+            assert(output.l == input.l && output.r == input.r);
+        }
+    }
+    ts_sister_post_fx_free(&engine);
 }
 
 int main(void)
@@ -339,7 +632,11 @@ int main(void)
     test_targets_mono_and_ordinary();
     test_exclusive_target_handoff();
     test_rapid_sweeps_finite();
+    test_interrupted_wheel_handoffs();
     test_master_feedback_causality();
+    test_timed_performance_bypasses();
+    test_master_gate_restore_and_live_retime();
+    test_master_zero_is_absolute_return_valve();
     puts("sister post-effects tests passed");
     return 0;
 }

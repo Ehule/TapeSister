@@ -212,12 +212,16 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "dry=%.9g\nwet=%.9g\nout=%.9g\nfx_return_gain=%.9g\n"
         "erase=%.9g\nghost_tone=%.9g\n"
         "soak=%.9g\nbleed=%.9g\nsoak_targets=%u\n"
-        "reverb_type=%d\nreverb_mix=%.9g\nreverb_decay=%.9g\nreverb_targets=%u\n"
+        "reverb_type=%d\nreverb_mix=%.9g\nfx_enabled=%d\n"
+        "reverb_enabled=%d\ndelay_enabled=%d\ndistortion_enabled=%d\n"
+        "fx_transition=%.9g\nmaster_fx_transition=%.9g\n"
+        "reverb_decay=%.9g\nreverb_targets=%u\n"
         "delay_time=%.9g\ndelay_feedback=%.9g\ndelay_mix=%.9g\ndelay_targets=%u\n"
         "distortion_drive=%.9g\ndistortion_tone=%.9g\ndistortion_mix=%.9g\n"
         "distortion_targets=%u\nmaster_fx_feedback=%.9g\nbuffer_seconds=%.9g\n"
         "fallout_enabled=%d\nfallout_mix=%.9g\nfallout_feedback=%.9g\n"
         "fallout_noise=%.9g\nfallout_noise_type=%d\nfallout_transition=%.9g\n"
+        "fallout_component_transition=%.9g\nfallout_master_transition=%.9g\n"
         "fallout_drop_enabled=%d\nfallout_drop_rate=%.9g\n"
         "fallout_pan_enabled=%d\nfallout_pan_rate=%.9g\n"
         "fallout_skip_enabled=%d\nfallout_skip_span=%.9g\nfallout_skip_rate=%.9g\n"
@@ -240,6 +244,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx_return_gain,
         p->write_erase, p->ghost_tone, p->soak, p->bleed,
         (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_mix,
+        p->fx.enabled, p->fx.reverb_enabled, p->fx.delay_enabled,
+        p->fx.distortion_enabled, p->fx.transition, p->fx.master_transition,
         p->fx.reverb_decay, (unsigned)p->fx.reverb_targets,
         p->fx.delay_time, p->fx.delay_feedback, p->fx.delay_mix,
         (unsigned)p->fx.delay_targets, p->fx.distortion_drive,
@@ -248,6 +254,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->buffer_seconds, p->fx.fallout.enabled, p->fx.fallout.mix,
         p->fx.fallout.feedback, p->fx.fallout.noise,
         p->fx.fallout.noise_type, p->fx.fallout.transition,
+        p->fx.fallout.component_transition, p->fx.fallout.master_transition,
         p->fx.fallout.drop_enabled, p->fx.fallout.drop_rate,
         p->fx.fallout.pan_enabled, p->fx.fallout.pan_rate,
         p->fx.fallout.skip_enabled, p->fx.fallout.skip_span,
@@ -387,6 +394,17 @@ static int assign_field(TsSisterParameters *p, const char *key,
         p->fx.reverb_type = (TsSisterReverbType)parsed_int; return 1;
     }
     FLOAT_FIELD("reverb_mix", fx.reverb_mix);
+    INT_FIELD("fx_enabled", fx.enabled);
+    INT_FIELD("reverb_enabled", fx.reverb_enabled);
+    INT_FIELD("delay_enabled", fx.delay_enabled);
+    INT_FIELD("distortion_enabled", fx.distortion_enabled);
+    if (strcmp(key, "fx_transition") == 0) {
+        if (!parse_float(value, &p->fx.transition)) return 0;
+        /* Files written before the split used this one clock for both. */
+        p->fx.master_transition = p->fx.transition;
+        return 1;
+    }
+    FLOAT_FIELD("master_fx_transition", fx.master_transition);
     FLOAT_FIELD("reverb_decay", fx.reverb_decay);
     FLOAT_FIELD("delay_time", fx.delay_time);
     FLOAT_FIELD("delay_feedback", fx.delay_feedback);
@@ -406,6 +424,13 @@ static int assign_field(TsSisterParameters *p, const char *key,
         return 1;
     }
     FLOAT_FIELD("fallout_transition", fx.fallout.transition);
+    if (strcmp(key, "fallout_component_transition") == 0) {
+        if (!parse_float(value, &p->fx.fallout.component_transition)) return 0;
+        p->fx.fallout.master_transition =
+            p->fx.fallout.component_transition;
+        return 1;
+    }
+    FLOAT_FIELD("fallout_master_transition", fx.fallout.master_transition);
     INT_FIELD("fallout_drop_enabled", fx.fallout.drop_enabled);
     FLOAT_FIELD("fallout_drop_rate", fx.fallout.drop_rate);
     INT_FIELD("fallout_pan_enabled", fx.fallout.pan_enabled);

@@ -79,6 +79,33 @@ static uint32_t milliseconds_frames(uint32_t sample_rate, float milliseconds)
     return (uint32_t)ceil(frames);
 }
 
+static void begin_head_read_handoff(TsSisterMachine *machine,
+                                    TsSisterHeadState *head,
+                                    float milliseconds)
+{
+    if (machine == NULL || head == NULL || !head->guard_initialized) return;
+    head->guard_from = head->previous_read;
+    head->guard_total = milliseconds_frames(machine->buffer.sample_rate,
+                                             milliseconds);
+    head->guard_remaining = head->guard_total;
+}
+
+static TsStereoFrame apply_head_read_handoff(TsSisterHeadState *head,
+                                             TsStereoFrame current)
+{
+    TsStereoFrame result = current;
+    if (head == NULL) return result;
+    if (head->guard_remaining > 0u && head->guard_total > 0u) {
+        float amount = 1.0f - (float)head->guard_remaining /
+                                  (float)head->guard_total;
+        result = frame_lerp(head->guard_from, current, amount);
+        --head->guard_remaining;
+    }
+    head->previous_read = result;
+    head->guard_initialized = 1;
+    return result;
+}
+
 static void ramp_reset(TsSisterRamp *ramp, float value)
 {
     if (ramp == NULL) return;
@@ -1057,6 +1084,8 @@ void ts_sister_machine_set_parameters(TsSisterMachine *machine,
                           1.0, (double)machine->buffer.capacity_frames - 1.0);
     jump_threshold = (double)machine->buffer.sample_rate * 0.005;
     if (fabs(target_delay - machine->head[0].target_delay_frames) > jump_threshold) {
+        if (machine->head[0].jump_remaining > 0u)
+            begin_head_read_handoff(machine, &machine->head[0], 15.0f);
         machine->head[0].old_delay_frames = machine->head[0].current_delay_frames;
         machine->head[0].current_delay_frames = target_delay;
         machine->head[0].jump_total = milliseconds_frames(machine->buffer.sample_rate, 15.0f);
@@ -1223,25 +1252,22 @@ static TsStereoFrame read_with_write_guard(TsSisterMachine *machine,
 {
     double guarded = guard_read_age(age, machine->buffer.capacity_frames);
     double difference = -age;
+    double capacity = (double)machine->buffer.capacity_frames;
     TsStereoFrame current = buffer_read_age(machine, guarded);
-    TsStereoFrame result = current;
     if (head->guard_initialized &&
         difference * head->previous_guard_difference < 0.0 &&
         fabs(difference) < 4.0 && fabs(head->previous_guard_difference) < 4.0) {
-        head->guard_from = head->previous_read;
-        head->guard_total = milliseconds_frames(machine->buffer.sample_rate, 10.0f);
-        head->guard_remaining = head->guard_total;
+        begin_head_read_handoff(machine, head, 10.0f);
+    } else if (head->guard_initialized &&
+               (age < 0.0 || age >= capacity) &&
+               head->guard_remaining == 0u) {
+        /* Scrub/span and wow can cross either edge before the authoritative
+           logical age is wrapped. Preserve the last audible sample while the
+           read settles onto the opposite side of the live canvas. */
+        begin_head_read_handoff(machine, head, 10.0f);
     }
-    if (head->guard_remaining > 0u) {
-        float amount = 1.0f - (float)head->guard_remaining /
-                                  (float)head->guard_total;
-        result = frame_lerp(head->guard_from, current, amount);
-        --head->guard_remaining;
-    }
-    head->previous_read = result;
     head->previous_guard_difference = difference;
-    head->guard_initialized = 1;
-    return result;
+    return apply_head_read_handoff(head, current);
 }
 
 static float update_wow(TsSisterMachine *machine, float wow_amount)
@@ -1766,6 +1792,7 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
                                         machine->buffer.capacity_frames);
         raw[0] = buffer_read_age(machine, delay_position);
     }
+    raw[0] = apply_head_read_handoff(&machine->head[0], raw[0]);
     delay_position = guard_read_age(machine->head[0].current_delay_frames,
                                     machine->buffer.capacity_frames);
     machine->last_head_position[0] = phase_for_age(machine, delay_position);
@@ -1910,10 +1937,16 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
     for (size_t i = 1u; i < TS_SISTER_HEAD_COUNT; ++i) {
         int rate_index = i == 1u ? machine->parameters.head2_rate_index :
                                   machine->parameters.head3_rate_index;
+        double age_step = 1.0 - ts_sister_rate_value(rate_index);
+        double next_age = machine->head[i].logical_age + age_step;
+        double oldest = (double)machine->buffer.capacity_frames - 1.0;
+        int crosses_seam = (age_step < 0.0 && next_age <= 1.0) ||
+                           (age_step > 0.0 && next_age >= oldest);
+        if (crosses_seam &&
+            machine->head[i].guard_remaining == 0u)
+            begin_head_read_handoff(machine, &machine->head[i], 10.0f);
         machine->head[i].logical_age = ts_sister_positive_modulo(
-            machine->head[i].logical_age + 1.0 -
-            ts_sister_rate_value(rate_index),
-            machine->buffer.capacity_frames);
+            next_age, machine->buffer.capacity_frames);
         machine->head[i].phase = phase_for_age(
             machine, machine->head[i].logical_age);
     }

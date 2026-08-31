@@ -141,6 +141,16 @@ sounds, DSP/CDP renders, previews, or Undo states.
 destination to the completed performance length; set it to `0` to retain the blank
 canvas duration established before arming.
 
+Sister Machine's destination button cycles **CURRENT → NEXT EMPTY → FILE**. FILE is
+the long-form performance recorder: CAPTURE starts immediately and the next press
+stops it; no tile is allocated and `capture_max_seconds` does not apply. The selected
+H1/H2/H3/MIX tap and M/S shape still apply. MIX contains Fallout and the completed
+post-effects chain. Audio is streamed as 32-bit float WAV by a background writer into
+`Captures/` (or `TAPESISTER_CAPTURES`) with a timestamped `SISTER-<tap>_...wav` name.
+Ordinary WAV is used while it fits; very long takes upgrade automatically to RF64 in
+the same file. The audio callback only writes a bounded ten-second lock-free queue,
+so a slow or full disk is reported without blocking the performance thread.
+
 Over the waveform, the mouse wheel keeps pointer-anchored zoom and Shift+wheel scrolls
 horizontally. Ctrl+wheel rotates the editable waveform through the configured coarse
 number of zero-crossing candidates; Ctrl+Shift+wheel uses the fine count instead.
@@ -287,6 +297,10 @@ Selected-tile and Collection WAV exports write the standard `smpl` unity-note/pi
 **Config** replaces only the framed waveform panel with compact blank-safe editable paths for the sample root, FastTracker executable, and FT2 exchange folder, leaving the toolbar and every control below `y=205` visible. The values persist in portable `tapesister.ini`; Tab or Up/Down changes field, the usual caret keys edit anywhere in a path, Ctrl+Backspace clears it, and **Use CWD** copies the current directory. Double-click a path field to browse: the sample and exchange fields select a folder, while the FastTracker field selects the executable file. Browser Cancel returns to the unchanged, still-unsaved Config edit. The configured sample root becomes the file browser's starting directory while normal browsing still remembers later navigation.
 
 Fresh launches also use two boolean startup settings (both default to `1` when absent): `startup_welcome_sample` installs `assets/tapesister_welcome.wav` as the ordinary imported working sound in bank 01, and `startup_welcome_autoplay` auditions it once after the splash closes. Set autoplay to `0` to keep the waveform without the greeting, or sample to `0` to start with an empty selected bank 01. Command-line WAV/TSR loading takes precedence and is never overwritten by the welcome artifact. See `tapesister.ini.example`.
+
+The independent Sister Machine window also opens maximized by default. Set
+`sister_window_maximized=0` under `[Sister Machine]` to open it at its native
+640 by 400 size; the setting remains portable with `tapesister.ini`.
 
 **FT2 Link** is the bidirectional handoff control. For sending, choose whether every
 occupied tile on the current page should become sample slots inside **Page -> One** or
@@ -548,7 +562,12 @@ both channels at a loop boundary with a short linked crossfade. WARP/SMEAR/TEAR 
 stereo channel shape.
 Named Sister presets store portable sonic state and the independent parameter-lock mask;
 TSR projects store routes, masks, the current Sister sound, and active locks, never live
-tape audio. Older preset and project files load with all parameters unlocked. See
+tape audio. Recalled preset identity survives performance edits: a `*` marks the
+selected preset as modified, user presets remain eligible for Overwrite, and factory
+presets remain recall-only but can be copied with Save As. The in-window manager browses
+the active bank with arrows and exposes Save As, Overwrite, Rename, and Delete. The
+Sister bank includes the complete FX chain; Fallout also has its own focused bank.
+Older preset and project files load with all parameters unlocked. See
 [`docs/SISTER_MACHINE_HEADLESS_ENGINE.md`](docs/SISTER_MACHINE_HEADLESS_ENGINE.md) and
 [`docs/SISTER_MACHINE_LIVE_ROUTING.md`](docs/SISTER_MACHINE_LIVE_ROUTING.md), plus the
 [`PR5 performance-window contract`](docs/SISTER_MACHINE_PERFORMANCE_WINDOW.md) and
@@ -560,6 +579,12 @@ reusable effect targets are specified in
 PR9 fixed Distortion→Delay→Reverb chain, POWER-off MIX bus, and causal Master FX
 Feedback return are specified in
 [`docs/SISTER_MACHINE_POST_EFFECTS.md`](docs/SISTER_MACHINE_POST_EFFECTS.md).
+The FX page now adds Reverb, Delay, Distortion, and Master FX performance
+switches governed by one logarithmic 10 ms–60 min TRANSITION control. Individual
+switches fade their effect contribution and input feed without moving the mix
+faders; Master FX crossfades the completed chain to dry and fades its feedback
+return. Reversing any switch during a long transition continues from its current
+gain without a jump.
 PR10's live 5–60-second age-anchored BUFFER canvas, crop/grow law, and realtime
 ownership are specified in
 [`docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md`](docs/SISTER_MACHINE_LIVE_BUFFER_CANVAS.md).
@@ -605,27 +630,40 @@ The default colors come from `assets/palette.pal`, using the complete shared Tap
 
 ## Build on Linux
 
+Install the build dependencies once:
+
 ```bash
-sudo apt install build-essential cmake libsdl2-dev
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j2
-ctest --test-dir build --output-on-failure
-./build/tapesister
+sudo apt install build-essential cmake git libsdl2-dev libasound2-dev
 ```
 
-The small Makefile is also available:
+Then build the complete TapeSister application and its pinned native CDP8 runtime with
+the same one-command entry point used on Windows:
+
+```bash
+bash build.sh
+./build-linux/tapesister
+```
+
+Plain `make` delegates to that same complete release build, so the familiar route also
+works and no longer produces an application without its bundled CDP8 programs:
+
+```bash
+make -j2
+./build-linux/tapesister
+```
+
+The direct Makefile development and certification targets remain available:
 
 ```bash
 make test
 make stress-sister       # explicit deterministic 2+ hour offline certification
 make benchmark-sister    # optional callback-cost benchmark
-make
-./tapesister
 ```
 
-Run `./tapesister --diagnostic-audio` for optional controller-thread reports of
-average/worst callback time, callback frames, near-deadlines, overruns, device rate,
-buffer size, active Sister configuration, and EXT ring occupancy/underrun/drop state.
+Run the built executable with `--diagnostic-audio` for optional controller-thread
+reports of average/worst callback time, callback frames, near-deadlines, overruns,
+device rate, buffer size, active Sister configuration, and EXT ring
+occupancy/underrun/drop state.
 Normal operation does not collect callback timings. The Configuration screen offers
 shared 256/512/1024-frame playback/capture requests beside OUTPUT; 512 is the
 performance-safe default, while 256 remains available when lower live-input latency
@@ -639,10 +677,13 @@ From an MSYS2 **UCRT64** terminal with CMake, Ninja, SDL2, and the UCRT64
 toolchain installed:
 
 ```bash
-cmake -S . -B build-windows -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_FLAGS="-DSDL_MAIN_HANDLED"
-cmake --build build-windows --target tapesister
+bash build.sh
 ```
+
+No extra compiler definitions are required. The script verifies the UCRT64
+environment, builds only TapeSister and its required dependencies, and stages the
+pinned native CDP8 programs automatically. Its default parallelism is two jobs; set
+`TAPESISTER_BUILD_JOBS` to override it on either platform.
 
 Targeting `tapesister` builds only the application and its required dependencies;
 it does not generate the complete collection of test executables. Use

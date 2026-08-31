@@ -54,10 +54,18 @@ int main(void)
     runtime.parameters.fx.distortion_mix = 0.71f;
     runtime.parameters.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_MIX;
     runtime.parameters.fx.master_feedback = 0.66f;
+    runtime.parameters.fx.enabled = 0;
+    runtime.parameters.fx.reverb_enabled = 0;
+    runtime.parameters.fx.delay_enabled = 1;
+    runtime.parameters.fx.distortion_enabled = 0;
+    runtime.parameters.fx.transition = 0.73f;
+    runtime.parameters.fx.master_transition = 0.62f;
     runtime.parameters.fx.fallout.enabled = 1;
     runtime.parameters.fx.fallout.feedback = 0.64f;
     runtime.parameters.fx.fallout.noise_type = TS_SISTER_FALLOUT_NOISE_PINK;
     runtime.parameters.fx.fallout.transition = 0.71f;
+    runtime.parameters.fx.fallout.component_transition = 0.67f;
+    runtime.parameters.fx.fallout.master_transition = 0.56f;
     runtime.parameters.fx.fallout.lfo_rate = 0.18f;
     runtime.parameters.fx.fallout.lfo_intensity = 0.42f;
     runtime.parameters.fx.fallout.lfo_targets =
@@ -74,6 +82,8 @@ int main(void)
         TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_FILTER_TYPE) |
         TS_SISTER_UI_PARAMETER_BIT(TS_SISTER_UI_PARAM_EXT_GAIN);
     ts_sister_runtime_set_parameters(&runtime, &runtime.parameters);
+    ts_sister_runtime_set_selected_preset(&runtime, "GHOST FIELD");
+    ts_sister_runtime_mark_selected_preset_modified(&runtime);
     runtime.machine.buffer.data[0] = 0.75f;
     ts_sister_project_state_capture(&state, &runtime, 2u, "GHOST FIELD");
     assert(ts_sister_project_state_save(&state, project, error, sizeof(error)));
@@ -97,11 +107,21 @@ int main(void)
     assert(loaded.parameters.fx.distortion_targets ==
            TS_SISTER_EFFECT_TARGET_MIX);
     assert(loaded.parameters.fx.master_feedback > 0.65f);
+    assert(loaded.parameters.fx.enabled == 0);
+    assert(loaded.parameters.fx.reverb_enabled == 0);
+    assert(loaded.parameters.fx.delay_enabled == 1);
+    assert(loaded.parameters.fx.distortion_enabled == 0);
+    assert(loaded.parameters.fx.transition > 0.72f);
+    assert(loaded.parameters.fx.master_transition > 0.61f &&
+           loaded.parameters.fx.master_transition < 0.63f);
     assert(loaded.parameters.fx.fallout.enabled == 1);
     assert(loaded.parameters.fx.fallout.feedback > 0.63f);
     assert(loaded.parameters.fx.fallout.noise_type ==
            TS_SISTER_FALLOUT_NOISE_PINK);
     assert(loaded.parameters.fx.fallout.transition > 0.70f);
+    assert(loaded.parameters.fx.fallout.component_transition > 0.66f);
+    assert(loaded.parameters.fx.fallout.master_transition > 0.55f &&
+           loaded.parameters.fx.fallout.master_transition < 0.57f);
     assert(loaded.parameters.fx.fallout.lfo_rate > 0.17f);
     assert(loaded.parameters.fx.fallout.lfo_intensity > 0.41f);
     assert(loaded.parameters.fx.fallout.lfo_targets ==
@@ -119,10 +139,12 @@ int main(void)
     assert(loaded.parameters.buffer_seconds == 23.0f);
     assert(loaded.parameter_locks == runtime.parameter_locks);
     assert(strcmp(loaded.selected_preset, "GHOST FIELD") == 0);
+    assert(loaded.selected_preset_modified == 1);
     ts_sister_runtime_init(&restored);
     assert(ts_sister_project_state_apply(&loaded, &restored, &instrument));
     assert(restored.source_switches == loaded.source_switches);
     assert(restored.parameter_locks == loaded.parameter_locks);
+    assert(restored.selected_preset_modified == 1);
     assert(restored.active_page == 1u && restored.page_source_masks[0] == 1u);
     assert(restored.machine.buffer.data == NULL); /* live tape was not serialized */
     ts_sister_runtime_free(&restored);
@@ -142,6 +164,7 @@ int main(void)
                                             &present, error, sizeof(error)));
         assert(present && loaded.source_switches == TS_SISTER_SOURCE_FM &&
                loaded.parameters.ghost_tone == 0.25f);
+        assert(loaded.selected_preset_modified == 0);
         assert(loaded.parameter_locks == 0u);
         assert(loaded.parameters.soak == 0.0f &&
                loaded.parameters.bleed == 0.25f &&

@@ -13,7 +13,8 @@ add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts
              src/ts_sister_runtime.c src/ts_sister_ui.c
              src/ts_sister_preset.c src/ts_sister_project_state.c
              src/ts_capture.c
-             src/ts_capture_archive.c src/ts_input_monitor.c
+             src/ts_capture_archive.c src/ts_performance_recorder.c
+             src/ts_input_monitor.c
              src/ts_input_ownership.c
              src/ts_sample_pages.c
              src/ts_browser.c src/ts_config.c src/ts_audio_config.c
@@ -43,6 +44,9 @@ if(TAPESISTER_BUILD_SDL)
                             src/ts_midi_input.c)
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
+  if(WIN32)
+    target_compile_definitions(tapesister PRIVATE SDL_MAIN_HANDLED)
+  endif()
   set(TAPESISTER_MIDI_AVAILABLE OFF)
   if(TAPESISTER_ENABLE_MIDI)
     if(WIN32 OR APPLE)
@@ -205,7 +209,8 @@ if(TAPESISTER_BUILD_SDL AND TAPESISTER_BUNDLE_CDP8)
 endif()
 
 foreach(stereo_test IN ITEMS audio_mixer note_bank_stereo performance_stereo
-                             capture_stereo external_input_channels
+                             capture_stereo performance_recorder
+                             external_input_channels
                              input_ownership realtime_diagnostics)
   add_executable(test_${stereo_test} tests/test_${stereo_test}.c)
   target_link_libraries(test_${stereo_test} PRIVATE tapesister_core)

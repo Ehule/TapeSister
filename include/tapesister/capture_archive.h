@@ -10,6 +10,11 @@ typedef enum {
     TS_CAPTURE_ARCHIVE_SYNTH
 } TsCaptureArchiveKind;
 
+int ts_capture_archive_unique_path(const char *directory, const char *prefix,
+                                   char *written_path,
+                                   size_t written_path_size,
+                                   char *error, size_t error_size);
+
 int ts_capture_archive_write(const char *directory,
                              TsCaptureArchiveKind kind,
                              const float *samples, size_t frames,

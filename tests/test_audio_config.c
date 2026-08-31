@@ -46,10 +46,16 @@ static int test_defaults(void)
                   "Sister storage should retain the Kafka foundation defaults") &&
            expect(config.sister_capture_channels == 1,
                   "Sister Capture should remain deliberately mono by default") &&
-           expect(config.sister_fallout_transition_ms == 10,
-                  "Fallout should default to a fast 10 ms insert ramp") &&
+           expect(config.sister_fx_effect_transition_ms == 240000 &&
+                  config.sister_fx_transition_ms == 240000 &&
+                  config.sister_fallout_transition_ms == 240000 &&
+                  config.sister_fallout_component_transition_ms == 240000 &&
+                  config.sister_fallout_master_transition_ms == 240000,
+                  "performance transitions should default to four minutes") &&
            expect(config.sister_fallout_rise_seconds == 3600,
                   "Fallout RISE should default to a one-hour ascent") &&
+           expect(config.sister_window_maximized == 1,
+                  "Sister window should open maximized by default") &&
            expect(config.sister_input_percent == 100 &&
                   config.sister_tiles_percent == 100 &&
                   config.sister_fm_percent == 100 &&
@@ -95,7 +101,11 @@ static int test_roundtrip(void)
     saved.sister_buffer_seconds = 55;
     saved.sister_buffer_channels = 1;
     saved.sister_clear_ms = 33;
+    saved.sister_fx_effect_transition_ms = 234567;
+    saved.sister_fx_transition_ms = 123456;
     saved.sister_fallout_transition_ms = 54321;
+    saved.sister_fallout_component_transition_ms = 654321;
+    saved.sister_fallout_master_transition_ms = 765432;
     saved.sister_fallout_rise_seconds = 12345;
     saved.sister_capture_channels = 2;
     saved.sister_restart_clear = 0;
@@ -110,6 +120,7 @@ static int test_roundtrip(void)
     saved.sister_output_percent = 275;
     saved.sister_erase_percent = 20;
     saved.sister_ghost_percent = 67;
+    saved.sister_window_maximized = 0;
     saved.sister_window_x = 123;
     saved.sister_window_y = 456;
     saved.voice_attack_ms = 7;
@@ -145,7 +156,11 @@ static int test_roundtrip(void)
          expect(loaded.sister_buffer_seconds == 55 &&
                 loaded.sister_buffer_channels == 1 &&
                 loaded.sister_clear_ms == 33 &&
+                loaded.sister_fx_effect_transition_ms == 234567 &&
+                loaded.sister_fx_transition_ms == 123456 &&
                 loaded.sister_fallout_transition_ms == 54321 &&
+                loaded.sister_fallout_component_transition_ms == 654321 &&
+                loaded.sister_fallout_master_transition_ms == 765432 &&
                 loaded.sister_fallout_rise_seconds == 12345,
                 "Sister storage preferences should roundtrip") &&
          expect(loaded.sister_capture_channels == 2 &&
@@ -163,8 +178,9 @@ static int test_roundtrip(void)
                 loaded.sister_erase_percent == 20 &&
                 loaded.sister_ghost_percent == 67,
                 "Sister input/monitor/output/erase preferences should roundtrip") &&
-         expect(loaded.sister_window_x == 123 && loaded.sister_window_y == 456,
-                "Sister window position should roundtrip") &&
+         expect(loaded.sister_window_maximized == 0 &&
+                loaded.sister_window_x == 123 && loaded.sister_window_y == 456,
+                "Sister window startup state and position should roundtrip") &&
          expect(loaded.capture_max_seconds == 47,
                 "Capture duration limit should roundtrip") &&
          expect(loaded.capture_channels == 2,
@@ -224,7 +240,9 @@ static int test_legacy_config(void)
           "record_preroll_ms=180\n"
           "record_silence_ms=650\n"
           "record_tail_ms=180\n"
-          "record_max_seconds=20\n", file);
+          "record_max_seconds=20\n"
+          "sister_fx_transition_ms=34567\n"
+          "sister_fallout_component_transition_ms=45678\n", file);
     fclose(file);
 
     ok = ts_audio_config_load(&loaded, path, error, sizeof(error));
@@ -250,7 +268,13 @@ static int test_legacy_config(void)
          expect(loaded.tile_fade_ms == TS_TILE_FADE_MS_DEFAULT,
                 "legacy config should receive the tile fade default") &&
          expect(loaded.capture_channels == 1,
-                "legacy config should receive mono Capture default");
+                "legacy config should receive mono Capture default") &&
+         expect(loaded.sister_fx_transition_ms == 34567 &&
+                loaded.sister_fx_effect_transition_ms == 34567,
+                "legacy FX clock should seed both split timers") &&
+         expect(loaded.sister_fallout_component_transition_ms == 45678 &&
+                loaded.sister_fallout_master_transition_ms == 45678,
+                "legacy Fallout clock should seed both split timers");
     remove(path);
     return ok;
 }

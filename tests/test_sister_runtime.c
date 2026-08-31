@@ -24,7 +24,8 @@ int main(void)
     CHECK(!runtime.enabled && runtime.machine.buffer.data == NULL);
     CHECK(!ts_sister_runtime_enable(&runtime, 0u, 2u, 2u, 0.1,
                                     NULL, 0u));
-    CHECK(sister_test_enable(&runtime, 1000u, 2u, 0.1));
+    CHECK(ts_sister_runtime_enable(&runtime, 1000u, 2u, 2u, 0.1,
+                                   NULL, 0u));
     CHECK(ts_sister_runtime_owns_direct_tile_bus(&runtime));
     parameters = runtime.parameters;
     parameters.head1_level = 1.0f;
@@ -122,6 +123,27 @@ int main(void)
     CHECK(CLOSE(snapshot.fallout_rise_phase, 0.50f));
     CHECK(snapshot.fallout_rise_complete);
 
+    /* The UI snapshot carries the identity and direction of the exact ramps
+       selected by the shared progress displays. */
+    parameters = runtime.parameters;
+    parameters.fx.transition = ts_sister_fx_transition_normalized(1000.0f);
+    parameters.fx.distortion_enabled = 0;
+    parameters.fx.fallout.component_transition =
+        ts_sister_fallout_transition_normalized(1000.0f);
+    parameters.fx.fallout.master_transition =
+        ts_sister_fallout_transition_normalized(1000.0f);
+    parameters.fx.fallout.enabled = 1;
+    parameters.fx.fallout.mix = 0.0f;
+    ts_sister_runtime_set_parameters(&runtime, &parameters);
+    (void)ts_sister_runtime_process_frame(&runtime, &source);
+    CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+    CHECK(snapshot.fx_transition_active &&
+          snapshot.fx_transition_source ==
+              TS_SISTER_FX_TRANSITION_DISTORTION &&
+          !snapshot.fx_transition_target_enabled);
+    CHECK(snapshot.fallout_master_transition_active &&
+          snapshot.fallout_master_transition_target_enabled);
+
     {
         uint64_t published_revision = snapshot.revision;
         uint64_t published_frames = snapshot.processed_frames;
@@ -168,6 +190,26 @@ int main(void)
     CHECK(runtime.machine.buffer.data == NULL);
     CHECK(CLOSE(frame.tap[TS_SISTER_TAP_H1].l, 0.0f));
     CHECK(CLOSE(frame.dry_monitor_gain, 1.0f));
+
+    /* A saved OFF state applied while audio is stopped must be the first live
+       state after restart, not a one-hour fade from an internal ON default. */
+    parameters = runtime.parameters;
+    parameters.fx.enabled = 0;
+    parameters.fx.master_transition =
+        ts_sister_fx_transition_normalized(3600000.0f);
+    parameters.fx.fallout.enabled = 0;
+    parameters.fx.fallout.master_transition =
+        ts_sister_fallout_transition_normalized(3600000.0f);
+    ts_sister_runtime_set_parameters(&runtime, &parameters);
+    CHECK(ts_sister_runtime_enable(&runtime, 1000u, 2u, 2u, 0.1,
+                                   NULL, 0u));
+    CHECK(runtime.post_fx.controls.enabled == 0);
+    CHECK(ts_sister_post_fx_master_engage(&runtime.post_fx) == 0.0f);
+    CHECK(runtime.post_fx.master_engage.remaining == 0u);
+    CHECK(runtime.fallout.controls.enabled == 0);
+    CHECK(ts_sister_fallout_engage(&runtime.fallout) == 0.0f);
+    CHECK(runtime.fallout.engage_remaining == 0u);
+    ts_sister_runtime_disable(&runtime);
 
     {
         TsAudioMixer mixer;

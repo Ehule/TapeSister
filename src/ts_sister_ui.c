@@ -130,6 +130,18 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
         model->parameters.fx.fallout.transition =
             ts_sister_fallout_transition_normalized(
                 (float)config->sister_fallout_transition_ms);
+        model->parameters.fx.transition =
+            ts_sister_fx_transition_normalized(
+                (float)config->sister_fx_effect_transition_ms);
+        model->parameters.fx.master_transition =
+            ts_sister_fx_transition_normalized(
+                (float)config->sister_fx_transition_ms);
+        model->parameters.fx.fallout.component_transition =
+            ts_sister_fallout_transition_normalized(
+                (float)config->sister_fallout_component_transition_ms);
+        model->parameters.fx.fallout.master_transition =
+            ts_sister_fallout_transition_normalized(
+                (float)config->sister_fallout_master_transition_ms);
         model->parameters.fx.fallout.rise_length =
             ts_sister_fallout_rise_normalized(
                 (float)config->sister_fallout_rise_seconds);
@@ -215,7 +227,11 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     if (model != NULL && model->preset_manage_open) {
-        if (contains(x, y, 180, 200, 128, 22))
+        if (contains(x, y, 180, 160, 24, 18))
+            hit.action = TS_SISTER_UI_ACTION_PRESET_PREVIOUS;
+        else if (contains(x, y, 436, 160, 24, 18))
+            hit.action = TS_SISTER_UI_ACTION_PRESET_NEXT;
+        else if (contains(x, y, 180, 200, 128, 22))
             hit.action = TS_SISTER_UI_ACTION_PRESET_SAVE_AS;
         else if (contains(x, y, 332, 200, 128, 22))
             hit.action = TS_SISTER_UI_ACTION_PRESET_OVERWRITE;
@@ -285,7 +301,9 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             {TS_SISTER_UI_PARAM_FALLOUT_PITCH, 120, 252, 125, 18},
             {TS_SISTER_UI_PARAM_FALLOUT_PITCH_RAMP, 260, 252, 125, 18},
             {TS_SISTER_UI_PARAM_FALLOUT_PITCH_RATE, 400, 252, 120, 18},
-            {TS_SISTER_UI_PARAM_FALLOUT_TRANSITION, 120, 284, 400, 18}
+            {TS_SISTER_UI_PARAM_FALLOUT_TRANSITION, 120, 284, 125, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_COMPONENT_TRANSITION, 260, 284, 125, 18},
+            {TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION, 400, 284, 120, 18}
         };
         if (contains(x, y, 10, 316, 86, 22)) {
             hit.action = TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER;
@@ -355,7 +373,12 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
              TS_SISTER_UI_PARAM_DISTORTION_MIX}
         };
         for (int row = 0; row < 3; ++row) {
-            int top = 72 + row * 78;
+            int top = 52 + row * 56;
+            if (contains(x, y, 16, top - 2, 86, 22)) {
+                hit.action = TS_SISTER_UI_ACTION_FX_TOGGLE;
+                hit.index = TS_SISTER_UI_FX_REVERB + row;
+                return hit;
+            }
             for (int field = 0; field < 3; ++field) {
                 int left = 110 + field * 140;
                 if (contains(x, y, left, top, 130, 18)) {
@@ -367,14 +390,31 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             }
             for (int target = 0; target < TS_SISTER_EFFECT_PROCESSOR_COUNT;
                  ++target) {
-                if (contains(x, y, 110 + target * 62, top + 25, 56, 18)) {
+                if (contains(x, y, 110 + target * 62, top + 22, 56, 18)) {
                     hit.action = TS_SISTER_UI_ACTION_EFFECT_TARGET;
                     hit.index = ((row + 1) << 8) | (1 << target);
                     return hit;
                 }
             }
         }
+        if (contains(x, y, 10, 304, 92, 22)) {
+            hit.action = TS_SISTER_UI_ACTION_FX_TOGGLE;
+            hit.index = TS_SISTER_UI_FX_MASTER;
+            return hit;
+        }
+        if (contains(x, y, 110, 220, 410, 18)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = TS_SISTER_UI_PARAM_FX_TRANSITION;
+            hit.normalized = (float)(x - 110) / 409.0f;
+            return hit;
+        }
         if (contains(x, y, 110, 306, 410, 18)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION;
+            hit.normalized = (float)(x - 110) / 409.0f;
+            return hit;
+        }
+        if (contains(x, y, 110, 332, 410, 18)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK;
             hit.normalized = (float)(x - 110) / 409.0f;

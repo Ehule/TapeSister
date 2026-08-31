@@ -95,6 +95,22 @@ typedef struct {
     float fallout_lfo_phase;
     float fallout_rise_phase;
     int fallout_rise_complete;
+    float fx_transition_progress;
+    int fx_transition_active;
+    TsSisterFxTransitionSource fx_transition_source;
+    int fx_transition_target_enabled;
+    float fx_master_transition_progress;
+    int fx_master_transition_active;
+    int fx_master_transition_target_enabled;
+    float fallout_component_transition_progress;
+    int fallout_component_transition_active;
+    TsSisterFalloutTransitionSource fallout_component_transition_source;
+    int fallout_component_transition_target_enabled;
+    float fallout_master_transition_progress;
+    int fallout_master_transition_active;
+    int fallout_master_transition_target_enabled;
+    float fallout_preset_transition_progress;
+    int fallout_preset_transition_active;
     uint64_t revision;
 } TsSisterRoutingSnapshot;
 
@@ -123,6 +139,22 @@ typedef struct {
     atomic_uint_least32_t fallout_lfo_phase_bits;
     atomic_uint_least32_t fallout_rise_phase_bits;
     atomic_int fallout_rise_complete;
+    atomic_uint_least32_t fx_transition_progress_bits;
+    atomic_int fx_transition_active;
+    atomic_int fx_transition_source;
+    atomic_int fx_transition_target_enabled;
+    atomic_uint_least32_t fx_master_transition_progress_bits;
+    atomic_int fx_master_transition_active;
+    atomic_int fx_master_transition_target_enabled;
+    atomic_uint_least32_t fallout_component_transition_progress_bits;
+    atomic_int fallout_component_transition_active;
+    atomic_int fallout_component_transition_source;
+    atomic_int fallout_component_transition_target_enabled;
+    atomic_uint_least32_t fallout_master_transition_progress_bits;
+    atomic_int fallout_master_transition_active;
+    atomic_int fallout_master_transition_target_enabled;
+    atomic_uint_least32_t fallout_preset_transition_progress_bits;
+    atomic_int fallout_preset_transition_active;
 } TsSisterRoutingSnapshotAtomic;
 
 typedef struct {
@@ -164,6 +196,7 @@ typedef struct {
     /* UI/controller performance-safety state; never read by the callback. */
     uint64_t parameter_locks;
     char selected_preset[48];
+    int selected_preset_modified;
     TsSisterRoutingSnapshotAtomic snapshot;
     TsSisterWavePublisher waveform;
     size_t waveform_capacity_frames;
@@ -191,6 +224,7 @@ void ts_sister_runtime_recall_fallout_preset(
     TsSisterRuntime *runtime, const TsSisterFalloutControls *controls);
 void ts_sister_runtime_set_selected_preset(TsSisterRuntime *runtime,
                                            const char *name);
+void ts_sister_runtime_mark_selected_preset_modified(TsSisterRuntime *runtime);
 void ts_sister_runtime_set_rolling(TsSisterRuntime *runtime, int rolling);
 void ts_sister_runtime_set_hold(TsSisterRuntime *runtime, int held);
 void ts_sister_runtime_set_monitor(TsSisterRuntime *runtime, int enabled);

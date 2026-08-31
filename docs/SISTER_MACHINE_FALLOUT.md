@@ -74,7 +74,11 @@ becoming audible clicks without perceptibly changing the rise timing.
 On the Fallout page, the footer preset controls address an independent Fallout bank;
 the same controls on the Tape and Master FX pages continue to address the complete
 Sister Machine bank. Fallout user presets persist in `fallout-presets.ini` and support
-the established Save As, Overwrite, Rename, Delete, previous, and next workflow.
+the established Save As, Overwrite, Rename, Delete, previous, and next workflow. The
+selected identity remains attached after an edit and gains a `*`, so a modified user
+preset can be overwritten instead of being demoted to CUSTOM. Factory presets remain
+recall-only and become Save As sources when modified. Previous/next arrows and the bank
+position are also available inside the manager.
 Factory starting points are APPROACHING TRAIN, DUST WEATHER, and DEAD TRANSMISSION.
 
 Presets store every Fallout sound and modulation setting except master power and live

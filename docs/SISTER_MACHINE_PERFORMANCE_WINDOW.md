@@ -156,7 +156,9 @@ only by the UI clock and does not add callback work or alter capture timing.
 Configuration supplies the startup buffer duration/channel shape; PR10 promotes
 duration to a live preset/project musical parameter as well. Configuration preserves clear fade, Sister Capture
 format, both waveform display modes, restart-clear policy, INPUT trim, DRY/WET monitor levels,
-the four source trims, FX return, MIX output gain, ERASE strength and Sister window position.
+the four source trims, FX return, MIX output gain, ERASE strength, Sister window position and
+the `sister_window_maximized` startup preference. The window opens maximized by default;
+set that portable INI value to `0` to start at the native 640 by 400 size instead.
 Musical source masks and parameter state are intentionally runtime-only. Output restart
 retains the PR4 policy: rolling memory and published waveform are cleared; failure leaves
 Sister disabled while ordinary TapeSister audio remains available.

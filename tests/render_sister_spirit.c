@@ -57,17 +57,41 @@ int main(int argc, char **argv)
             TS_SISTER_FALLOUT_LFO_NOISE;
         model.routing.fallout_rise_phase = 0.63f;
         model.routing.fallout_lfo_phase = 0.28f;
+        model.routing.fallout_component_transition_active = 1;
+        model.routing.fallout_component_transition_progress = 0.43f;
+        model.routing.fallout_component_transition_source =
+            TS_SISTER_FALLOUT_TRANSITION_PITCH;
+        model.routing.fallout_component_transition_target_enabled = 1;
+        model.routing.fallout_preset_transition_active = 1;
+        model.routing.fallout_preset_transition_progress = 0.18f;
         model.fallout_lfo_open = strcmp(mode, "fallout-lfo") == 0;
         model.preset_manage_open = strcmp(mode, "fallout-presets") == 0;
         model.preset_factory = 1;
+        model.preset_modified = model.preset_manage_open;
+        model.preset_position = 2u;
+        model.preset_count = 6u;
         snprintf(model.preset_name, sizeof(model.preset_name),
                  "APPROACHING TRAIN");
         snprintf(model.status, sizeof(model.status),
                  "FALLOUT INSERT ENGAGED");
-    } else if (strcmp(mode, "capture-effects") == 0) {
+    } else if (strcmp(mode, "capture-effects") == 0 ||
+               strcmp(mode, "fx-presets") == 0) {
         model.routing.enabled = 1;
         model.routing.rolling = 1;
         model.fx_page = 1;
+        model.routing.fx_transition_active = 1;
+        model.routing.fx_transition_progress = 0.61f;
+        model.routing.fx_transition_source =
+            TS_SISTER_FX_TRANSITION_DISTORTION;
+        model.routing.fx_transition_target_enabled = 0;
+        if (strcmp(mode, "fx-presets") == 0) {
+            model.preset_manage_open = 1;
+            model.preset_modified = 1;
+            model.preset_position = 4u;
+            model.preset_count = 8u;
+            snprintf(model.preset_name, sizeof(model.preset_name),
+                     "MIDNIGHT DUST");
+        }
         snprintf(model.status, sizeof(model.status),
                  "CAPTURE CONTINUES WHILE MASTER EFFECTS ARE EDITED");
     } else if (strcmp(mode, "flash") == 0) {

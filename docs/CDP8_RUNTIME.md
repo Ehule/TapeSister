@@ -18,9 +18,10 @@ processes; they are not linked into TapeSister.
 
 ## Building a native release
 
-A normal SDL CMake build enables `TAPESISTER_BUNDLE_CDP8` by default. CMake fetches the
-pinned commit, builds only the runtime closure used by the current recipes, and stages
-the results after linking TapeSister:
+The cross-platform `bash build.sh` entry point configures a Release build with
+`TAPESISTER_BUNDLE_CDP8` enabled. Plain `make` delegates to the same complete build.
+CMake fetches the pinned commit, builds only the runtime closure used by the current
+recipes, and stages the results after linking TapeSister:
 
 ```text
 TapeSister/

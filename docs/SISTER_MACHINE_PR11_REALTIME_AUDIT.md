@@ -34,12 +34,81 @@ publication.
 | Delay time/feedback/mix | Controller parameter publish | Time uses 25 ms dual-tap crossfade; mix/routing smooth; recursive values use bounded conditioning. | Four stable preallocated stereo lines. | Post-FX, feedback and pathological tests. |
 | Distortion drive/tone/mix | Controller parameter publish | Controls smooth about 20 ms and route about 12 ms; intentional nonlinear edges are allowed. | Four independent fixed filter/state instances. | Post-FX, effect-routing and pathological tests. |
 | Master FX feedback | Controller parameter publish | Gain approaches over 20 ms; one-sample causal return, linked limiter and `tanh` prevent non-finite escape. POWER off clears causal state; POWER on starts from zero. | One callback-owned previous frame; no zero-delay loop. | Feedback, post-FX and pathological self-oscillation stress. |
+| FX performance bypass | UI toggle / wheel transition | Reverb, Delay, Distortion, and Master use callback-owned linear 10 ms–60 s ramps; interrupted toggles retarget from current gain. Master also scales its causal feedback return. | No allocation, lock, or topology change in the callback. | Exact endpoints, midway reversal, one-minute ramp, finite-output and pathological toggle stress. |
 | BUFFER 5↔60 s, rapid resize, crop through heads | Controller publishes latest requested duration | 25 ms coalescing then O(1) age-anchored commit. Surviving ages persist; cropped heads and recurrence use 15 ms handoffs. | One maximum store prepared at POWER; no callback allocation/copy/free; current/pending generations remain valid. | Resize, canvas, heads, continuity and pathological alternating-resize tests. |
 | Resize while Roll/Hold/feedback/Capture/source change/tails | Same request path | Resize does not reset transport, notes, Capture, effects, feedback, or source ramps; fixed overview remap is bounded. | Callback owns commit and retirement point. | Resize and pathological chain tests. Native long recording remains manual. |
 | Capture M/S and Overdub arm/start/stop/commit | Controller arms preallocated recorder; callback writes | Capture is pre-monitor, so start/stop is inaudible. M folds `0.5(L+R)`; S preserves L/R. Commit validates destination and swaps immutable sample data off-callback. | Recorder capacity fixed while active; no live sample mutation. | Capture, capture-stereo/archive, recursion and project tests. |
+| FILE performance Capture | Controller creates the path/queue and launches a writer; callback pushes the selected tap | Start/stop does not alter speaker routing. MIX contains Fallout and post-FX. M folds `0.5(L+R)` and S preserves L/R. The take runs until STOP or a disk error, independent of tile duration. | Ten-second SPSC queue; all `fwrite`, header checkpoints, RIFF/RF64 finalization and close operations run on the writer thread. Queue exhaustion drops/report frames rather than waiting in the callback. | Performance-recorder RIFF/RF64, mono/stereo, bounded-overflow and UI tests; long X230 disk recording remains manual. |
 | Edit/undo/redo/Warp/Smear/Tear replacement | Controller/editor | Active one-shots retain their generation; new notes use replacement; locked loops adopt at loop boundary with linked crossfade. | Immutable generation references and deferred release. | Editor-contract, smear, tear, transform, bank and performance tests. Long simultaneous editing is manual. |
 | Preset/project/config load/save/legacy defaults | Controller/file path, never callback | Recall republishes normal parameter/resize transitions; live audio, phases and tails are never serialized. Schema-v5 canonical mixer values round-trip; old files get deterministic defaults. | Temporary-file replacement; loaded state copied into owned runtime structures. | Preset, project-state, config/audio-config, TSR and sample-pages tests. |
 | Sample rate/callback size/device loss | Controller device lifecycle | Restart occurs with callback stopped/locked, preserves requested musical state, rebuilds rate-sized storage, and clears incompatible live history. Diagnostics publish callback timing without callback logging. | Device owns callback lifetime; all rate-sized memory prepared outside it. | 44.1/48/96 kHz engine tests and optional 128/256/512/1024 benchmark. SDL/hardware switch remains manual. |
+
+## Post-PR11 head-motion and wheel follow-up
+
+The final listening pass on a ThinkPad X230 exposed transition restarts that
+the original finite-state and broad discontinuity tests did not measure tightly
+enough:
+
+- H2/H3 normal Rate traversal could cross the newest/oldest live-canvas seam
+  without arming the write-boundary handoff. Scrub gestures near zero were
+  guarded, but ordinary fractional and fast playback wraps were not. Both
+  directions now anticipate the seam and carry the last audible stereo frame
+  into the established 10 ms landing handoff.
+- A second H1 Time command received during its 15 ms dual-tap handoff restarted
+  from the prior target tap rather than the sample actually being heard. Rapid
+  drags and coarse wheel steps now restart from the last audible H1 frame.
+- Delay Time and Reverb Type had the same interrupted-transition shape under
+  fast wheel input. Their 25 ms and 60 ms read handoffs now retain the last
+  audible wet frame when a new target arrives before completion.
+- Sister wheel steps remain intentionally coarse at 5% (Shift: 1%), while rate,
+  filter type, reverb type, and buffer duration use their discrete domains.
+  Parameter transfer stays under the SDL audio-device lock, but preset-label
+  lookup, formatting, and config mirroring now happen after unlock so a burst of
+  wheel events cannot enlarge the callback exclusion window with UI work.
+
+The dedicated head regression now distinguishes a pure H1/H2 crossing from a
+canvas seam: an interior head-to-head crossing must remain continuous, while a
+deliberately discontinuous 0.98-amplitude loop seam must be distributed across
+the landing handoff. Separate hostile tests interrupt H1, Delay, and Reverb
+handoffs every few samples. These are continuity assertions rather than only
+finite/bounded-state checks.
+
+## Fallout wheel and modulation-bank follow-up
+
+Fallout's event engines already protected their own intentional changes: insert
+engage/disengage, preset recall, skip relocation, pitch motion, drop, pan, and
+RISE wrap all had bounded ramps or handoffs. The remaining controller edge was
+outside those event transitions. A wheel update replaced the continuous panel
+centers immediately, and LFO/RISE target membership was binary. Adding FEEDBACK
+halfway through a 60-minute shared RISE therefore applied the entire current
+half-rise on one sample even though the shared phase itself never jumped.
+
+All continuous Fallout panel values now chase their published targets over 20
+ms and restart an interrupted chase from the value actually used by the audio
+thread. Each of the 13 LFO and RISE destinations owns an independent 20 ms
+membership blend. Adding a destination fades it from its saved panel center to
+the current shared modulation value without resetting the LFO or RISE clock;
+removing it performs the inverse fade. A destination added after a completed
+one-shot re-arms that one-shot, while additions to a running one-shot or SAW
+only catch up to the existing phase. The explicit retrigger control remains the
+manual shared-clock restart.
+
+Discrete noise-type and DROP/PAN/SKIP/BIT/PITCH gate edits carry the exact last
+audible output and wet-feedback frames into a 10 ms handoff, including repeated
+edits before an earlier handoff completes. Pitch ratios retain their musical
+quantization but use a 10 ms minimum tape-speed ramp. Fallout toggle UI work is
+also completed after releasing the SDL audio-device lock.
+
+The dedicated regression simulates a target joining a half-complete one-hour
+RISE, insertion and removal of all 13 destinations, per-sample alternating
+wheel targets during simultaneous LFO/RISE modulation, completed one-shot
+insertion, explicit retrigger, and rapid discrete toggle edges. It asserts
+phase preservation, exact target-blend progress, bounded continuous-control
+motion, finite output, and first-frame identity at every discrete handoff.
+The maximum-load callback benchmark now enables Fallout as well as the three
+post effects, with every Fallout gate and all 13 destinations active at the
+fastest LFO/RISE/event settings; realtime diagnostics publish a dedicated
+Fallout configuration bit so that load is visible rather than implied.
 
 ## Callback and storage findings
 

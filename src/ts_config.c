@@ -46,7 +46,11 @@ void ts_config_init(TsConfig *config)
         config->sister_buffer_seconds = 40;
         config->sister_buffer_channels = 2;
         config->sister_clear_ms = 20;
-        config->sister_fallout_transition_ms = 10;
+        config->sister_fx_effect_transition_ms = 240000;
+        config->sister_fx_transition_ms = 240000;
+        config->sister_fallout_transition_ms = 240000;
+        config->sister_fallout_component_transition_ms = 240000;
+        config->sister_fallout_master_transition_ms = 240000;
         config->sister_fallout_rise_seconds = 3600;
         config->sister_capture_channels = 1;
         config->sister_restart_clear = 1;
@@ -61,6 +65,7 @@ void ts_config_init(TsConfig *config)
         config->sister_output_percent = TS_SISTER_OUTPUT_PERCENT_DEFAULT;
         config->sister_erase_percent = TS_SISTER_ERASE_PERCENT_DEFAULT;
         config->sister_ghost_percent = TS_SISTER_GHOST_PERCENT_DEFAULT;
+        config->sister_window_maximized = 1;
         config->sister_window_x = -1;
         config->sister_window_y = -1;
         for (size_t recipe = 0; recipe < ts_cdp_factory_recipe_count() &&
@@ -209,6 +214,8 @@ int ts_config_load(TsConfig *config, const char *path,
     char line[TS_CONFIG_PATH_MAX + 80];
     TsConfig loaded;
     int line_number = 0;
+    int saw_fx_effect_transition = 0;
+    int saw_fallout_master_transition = 0;
     if (config == NULL || path == NULL || path[0] == '\0') {
         set_error(error, error_size, "Invalid config destination");
         return 0;
@@ -305,8 +312,24 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, 1, 2, &loaded.sister_buffer_channels)) { snprintf(error, error_size, "Invalid Sister channels on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_clear_ms") == 0) {
             if (!parse_clamped_integer(value, 1, 1000, &loaded.sister_clear_ms)) { snprintf(error, error_size, "Invalid Sister clear time on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_fx_effect_transition_ms") == 0) {
+            if (!parse_clamped_integer(value, 10, 3600000, &loaded.sister_fx_effect_transition_ms)) { snprintf(error, error_size, "Invalid individual FX transition time on config line %d", line_number); fclose(file); return 0; }
+            saw_fx_effect_transition = 1;
+        } else if (strcmp(key, "sister_fx_transition_ms") == 0) {
+            if (!parse_clamped_integer(value, 10, 3600000, &loaded.sister_fx_transition_ms)) { snprintf(error, error_size, "Invalid FX transition time on config line %d", line_number); fclose(file); return 0; }
+            if (!saw_fx_effect_transition)
+                loaded.sister_fx_effect_transition_ms =
+                    loaded.sister_fx_transition_ms;
         } else if (strcmp(key, "sister_fallout_transition_ms") == 0) {
-            if (!parse_clamped_integer(value, 10, 60000, &loaded.sister_fallout_transition_ms)) { snprintf(error, error_size, "Invalid Fallout transition time on config line %d", line_number); fclose(file); return 0; }
+            if (!parse_clamped_integer(value, 10, 3600000, &loaded.sister_fallout_transition_ms)) { snprintf(error, error_size, "Invalid Fallout preset transition time on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_fallout_component_transition_ms") == 0) {
+            if (!parse_clamped_integer(value, 10, 3600000, &loaded.sister_fallout_component_transition_ms)) { snprintf(error, error_size, "Invalid Fallout component transition time on config line %d", line_number); fclose(file); return 0; }
+            if (!saw_fallout_master_transition)
+                loaded.sister_fallout_master_transition_ms =
+                    loaded.sister_fallout_component_transition_ms;
+        } else if (strcmp(key, "sister_fallout_master_transition_ms") == 0) {
+            if (!parse_clamped_integer(value, 10, 3600000, &loaded.sister_fallout_master_transition_ms)) { snprintf(error, error_size, "Invalid Fallout master transition time on config line %d", line_number); fclose(file); return 0; }
+            saw_fallout_master_transition = 1;
         } else if (strcmp(key, "sister_fallout_rise_seconds") == 0) {
             if (!parse_clamped_integer(value, 1, 14400, &loaded.sister_fallout_rise_seconds)) { snprintf(error, error_size, "Invalid Fallout rise time on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_capture_channels") == 0) {
@@ -335,6 +358,8 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, TS_SISTER_ERASE_PERCENT_MIN, TS_SISTER_ERASE_PERCENT_MAX, &loaded.sister_erase_percent)) { snprintf(error, error_size, "Invalid Sister erase strength on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_ghost_percent") == 0) {
             if (!parse_clamped_integer(value, TS_SISTER_GHOST_PERCENT_MIN, TS_SISTER_GHOST_PERCENT_MAX, &loaded.sister_ghost_percent)) { snprintf(error, error_size, "Invalid Sister Ghost Tone on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_window_maximized") == 0) {
+            if (!parse_boolean(value, &loaded.sister_window_maximized)) { snprintf(error, error_size, "Invalid Sister window maximize setting on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_window_x") == 0) {
             if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_x)) { snprintf(error, error_size, "Invalid Sister window X on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_window_y") == 0) {
@@ -434,8 +459,16 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "sister_buffer_seconds=%d\n"
                 "sister_buffer_channels=%d\n"
                 "sister_clear_ms=%d\n"
-                "; Default Fallout ON/OFF ramp: 10 ms to 60000 ms.\n"
+                "; Default individual Reverb/Delay/Distortion ramp: 10 ms to 60 minutes.\n"
+                "sister_fx_effect_transition_ms=%d\n"
+                "; Default Master FX gate ramp: 10 ms to 60 minutes.\n"
+                "sister_fx_transition_ms=%d\n"
+                "; Default Fallout preset crossfade: 10 ms to 60 minutes.\n"
                 "sister_fallout_transition_ms=%d\n"
+                "; Default Fallout component ramp: 10 ms to 60 minutes.\n"
+                "sister_fallout_component_transition_ms=%d\n"
+                "; Default Fallout master gate ramp: 10 ms to 60 minutes.\n"
+                "sister_fallout_master_transition_ms=%d\n"
                 "; Default Fallout RISE length: 1 second to 4 hours.\n"
                 "sister_fallout_rise_seconds=%d\n"
                 "sister_capture_channels=%d\n"
@@ -457,6 +490,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "sister_erase_percent=%d\n"
                 "; Per-pass spectral aging of retained old tape; 0 is exact bypass.\n"
                 "sister_ghost_percent=%d\n"
+                "; Open the independent Sister window maximized: 1=yes, 0=no.\n"
+                "sister_window_maximized=%d\n"
                 "sister_window_x=%d\n"
                 "sister_window_y=%d\n"
                 "\n[DSP Presets]\n"
@@ -489,7 +524,11 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_buffer_seconds,
                 config->sister_buffer_channels,
                 config->sister_clear_ms,
+                config->sister_fx_effect_transition_ms,
+                config->sister_fx_transition_ms,
                 config->sister_fallout_transition_ms,
+                config->sister_fallout_component_transition_ms,
+                config->sister_fallout_master_transition_ms,
                 config->sister_fallout_rise_seconds,
                 config->sister_capture_channels,
                 config->sister_restart_clear ? 1 : 0,
@@ -504,6 +543,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_output_percent,
                 config->sister_erase_percent,
                 config->sister_ghost_percent,
+                config->sister_window_maximized ? 1 : 0,
                 config->sister_window_x,
                 config->sister_window_y) < 0;
     for (int slot = 0; slot < TS_DSP_FACTORY_RECIPE_COUNT && !write_failed; ++slot) {

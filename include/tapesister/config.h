@@ -126,7 +126,11 @@ typedef struct {
     int sister_buffer_seconds;
     int sister_buffer_channels;
     int sister_clear_ms;
+    int sister_fx_effect_transition_ms;
+    int sister_fx_transition_ms;
     int sister_fallout_transition_ms;
+    int sister_fallout_component_transition_ms;
+    int sister_fallout_master_transition_ms;
     int sister_fallout_rise_seconds;
     int sister_capture_channels;
     int sister_restart_clear;
@@ -141,6 +145,7 @@ typedef struct {
     int sister_output_percent;
     int sister_erase_percent;
     int sister_ghost_percent;
+    int sister_window_maximized;
     int sister_window_x;
     int sister_window_y;
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];

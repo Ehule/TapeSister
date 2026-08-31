@@ -49,6 +49,76 @@ static TsStereoFrame effect_mix(TsStereoFrame dry, TsStereoFrame wet,
     return ts_stereo_frame_sanitize(result);
 }
 
+static void ramp_start(TsSisterFxRamp *ramp, float target, uint32_t frames)
+{
+    if (ramp == NULL) return;
+    if (frames == 0u) frames = 1u;
+    ramp->target = clampf(target, 0.0f, 1.0f);
+    ramp->step = (ramp->target - ramp->current) / (float)frames;
+    ramp->remaining = frames;
+    ramp->total = frames;
+}
+
+static void ramp_reset(TsSisterFxRamp *ramp, float value)
+{
+    if (ramp == NULL) return;
+    ramp->current = ramp->target = clampf(value, 0.0f, 1.0f);
+    ramp->step = 0.0f;
+    ramp->remaining = 0u;
+    ramp->total = 0u;
+}
+
+static void ramp_retime(TsSisterFxRamp *ramp, uint32_t frames)
+{
+    uint64_t scaled;
+    uint32_t remaining;
+    if (ramp == NULL || ramp->remaining == 0u || ramp->total == 0u) return;
+    if (frames == 0u) frames = 1u;
+    /* Preserve the completed fraction while changing the clock beneath the
+       fade. A 25%-complete hour fade changed to one minute therefore has
+       45 seconds left, rather than restarting or ignoring the wheel edit. */
+    scaled = (uint64_t)frames * (uint64_t)ramp->remaining;
+    remaining = (uint32_t)((scaled + ramp->total - 1u) / ramp->total);
+    if (remaining == 0u) remaining = 1u;
+    ramp->remaining = remaining;
+    ramp->total = frames;
+    ramp->step = (ramp->target - ramp->current) / (float)remaining;
+}
+
+static void ramp_advance(TsSisterFxRamp *ramp)
+{
+    if (ramp == NULL || ramp->remaining == 0u) return;
+    ramp->current += ramp->step;
+    if (--ramp->remaining == 0u) ramp->current = ramp->target;
+    ramp->current = clampf(ramp->current, 0.0f, 1.0f);
+}
+
+static void read_handoff_begin(TsSisterFxReadHandoff *handoff,
+                               uint32_t frames)
+{
+    if (handoff == NULL || !handoff->initialized) return;
+    if (frames == 0u) frames = 1u;
+    handoff->from = handoff->previous;
+    handoff->total = frames;
+    handoff->remaining = frames;
+}
+
+static TsStereoFrame read_handoff_apply(TsSisterFxReadHandoff *handoff,
+                                        TsStereoFrame current)
+{
+    TsStereoFrame result = current;
+    if (handoff == NULL) return result;
+    if (handoff->remaining > 0u && handoff->total > 0u) {
+        float amount = 1.0f - (float)handoff->remaining /
+                                  (float)handoff->total;
+        result = lerp_frame(handoff->from, current, amount);
+        --handoff->remaining;
+    }
+    handoff->previous = result;
+    handoff->initialized = 1;
+    return result;
+}
+
 static float soft_clip(float value)
 {
     if (!isfinite(value)) return 0.0f;
@@ -88,6 +158,12 @@ void ts_sister_fx_controls_default(TsSisterFxControls *controls)
 {
     if (controls == NULL) return;
     memset(controls, 0, sizeof(*controls));
+    controls->enabled = 1;
+    controls->reverb_enabled = 1;
+    controls->delay_enabled = 1;
+    controls->distortion_enabled = 1;
+    controls->transition = ts_sister_fx_transition_normalized(10.0f);
+    controls->master_transition = controls->transition;
     controls->reverb_type = TS_SISTER_REVERB_HALL;
     controls->reverb_decay = 0.42f;
     controls->reverb_targets = TS_SISTER_EFFECT_TARGET_MIX;
@@ -103,6 +179,13 @@ void ts_sister_fx_controls_default(TsSisterFxControls *controls)
 void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
 {
     if (controls == NULL) return;
+    controls->enabled = controls->enabled != 0;
+    controls->reverb_enabled = controls->reverb_enabled != 0;
+    controls->delay_enabled = controls->delay_enabled != 0;
+    controls->distortion_enabled = controls->distortion_enabled != 0;
+    controls->transition = clampf(controls->transition, 0.0f, 1.0f);
+    controls->master_transition = clampf(
+        controls->master_transition, 0.0f, 1.0f);
     if (controls->reverb_type < TS_SISTER_REVERB_HALL ||
         controls->reverb_type >= TS_SISTER_REVERB_TYPE_COUNT)
         controls->reverb_type = TS_SISTER_REVERB_HALL;
@@ -122,6 +205,18 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
         controls->distortion_targets);
     controls->master_feedback = clampf(controls->master_feedback, 0.0f, 1.0f);
     ts_sister_fallout_controls_sanitize(&controls->fallout);
+}
+
+float ts_sister_fx_transition_ms(float normalized)
+{
+    normalized = clampf(normalized, 0.0f, 1.0f);
+    return 10.0f * powf(360000.0f, normalized);
+}
+
+float ts_sister_fx_transition_normalized(float milliseconds)
+{
+    milliseconds = clampf(milliseconds, 10.0f, 3600000.0f);
+    return logf(milliseconds / 10.0f) / logf(360000.0f);
 }
 
 float ts_sister_delay_time_ms(float normalized)
@@ -244,6 +339,10 @@ int ts_sister_post_fx_init(TsSisterPostFxEngine *engine,
     next.delay_target.pending_mask = next.controls.delay_targets;
     next.distortion_target.active_mask = next.controls.distortion_targets;
     next.distortion_target.pending_mask = next.controls.distortion_targets;
+    next.master_engage.current = next.master_engage.target = 1.0f;
+    next.reverb_engage.current = next.reverb_engage.target = 1.0f;
+    next.delay_engage.current = next.delay_engage.target = 1.0f;
+    next.distortion_engage.current = next.distortion_engage.target = 1.0f;
     for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
         if (!reverb_init(&next.reverb[i], sample_rate) ||
             !delay_init_state(&next.delay[i], sample_rate)) {
@@ -311,7 +410,7 @@ int ts_sister_post_fx_reconfigure(TsSisterPostFxEngine *engine,
     controls = engine->controls;
     memset(&next, 0, sizeof(next));
     if (!ts_sister_post_fx_init(&next, sample_rate)) return 0;
-    ts_sister_post_fx_set_controls(&next, &controls);
+    ts_sister_post_fx_sync_controls(&next, &controls);
     ts_sister_post_fx_free(engine);
     *engine = next;
     return 1;
@@ -324,6 +423,33 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
     if (engine == NULL || controls == NULL) return;
     next = *controls;
     ts_sister_fx_controls_sanitize(&next);
+    {
+        uint32_t effect_frames = (uint32_t)fmaxf(1.0f,
+            ts_sister_fx_transition_ms(next.transition) *
+            (float)engine->sample_rate / 1000.0f);
+        uint32_t master_frames = (uint32_t)fmaxf(1.0f,
+            ts_sister_fx_transition_ms(next.master_transition) *
+            (float)engine->sample_rate / 1000.0f);
+        if (next.transition != engine->controls.transition) {
+            ramp_retime(&engine->reverb_engage, effect_frames);
+            ramp_retime(&engine->delay_engage, effect_frames);
+            ramp_retime(&engine->distortion_engage, effect_frames);
+        }
+        if (next.master_transition != engine->controls.master_transition)
+            ramp_retime(&engine->master_engage, master_frames);
+        if (next.enabled != engine->controls.enabled)
+            ramp_start(&engine->master_engage, next.enabled ? 1.0f : 0.0f,
+                       master_frames);
+        if (next.reverb_enabled != engine->controls.reverb_enabled)
+            ramp_start(&engine->reverb_engage,
+                       next.reverb_enabled ? 1.0f : 0.0f, effect_frames);
+        if (next.delay_enabled != engine->controls.delay_enabled)
+            ramp_start(&engine->delay_engage,
+                       next.delay_enabled ? 1.0f : 0.0f, effect_frames);
+        if (next.distortion_enabled != engine->controls.distortion_enabled)
+            ramp_start(&engine->distortion_engage,
+                       next.distortion_enabled ? 1.0f : 0.0f, effect_frames);
+    }
     target_state_set(&engine->reverb_target, next.reverb_targets,
                      engine->sample_rate);
     target_state_set(&engine->delay_target, next.delay_targets,
@@ -333,6 +459,12 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
     if (engine->ready && next.reverb_type != engine->controls.reverb_type) {
         for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i) {
             TsSisterReverbState *state = &engine->reverb[i];
+            int interrupted = 0;
+            for (size_t line = 0u; line < TS_SISTER_REVERB_LINES; ++line)
+                interrupted |= state->line[line].transition_remaining > 0u;
+            if (interrupted)
+                read_handoff_begin(&state->read_handoff,
+                    (uint32_t)(0.060f * engine->sample_rate));
             state->old_type = state->type;
             state->type = next.reverb_type;
             state->type_blend = 0.0f;
@@ -349,6 +481,21 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
         }
     }
     engine->controls = next;
+}
+
+void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
+                                     const TsSisterFxControls *controls)
+{
+    TsSisterFxControls next;
+    if (engine == NULL || controls == NULL) return;
+    next = *controls;
+    ts_sister_fx_controls_sanitize(&next);
+    ts_sister_post_fx_set_controls(engine, &next);
+    ramp_reset(&engine->master_engage, next.enabled ? 1.0f : 0.0f);
+    ramp_reset(&engine->reverb_engage, next.reverb_enabled ? 1.0f : 0.0f);
+    ramp_reset(&engine->delay_engage, next.delay_enabled ? 1.0f : 0.0f);
+    ramp_reset(&engine->distortion_engage,
+               next.distortion_enabled ? 1.0f : 0.0f);
 }
 
 static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
@@ -392,7 +539,8 @@ static TsStereoFrame distortion_process(TsSisterPostFxEngine *engine,
     }
     wet = ts_stereo_frame_sanitize(wet);
     return effect_mix(input, wet,
-        clampf(state->mix_current * state->route_current, 0.0f, 1.0f));
+        clampf(state->mix_current * state->route_current *
+               engine->distortion_engage.current, 0.0f, 1.0f));
 }
 
 static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
@@ -404,6 +552,9 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
     float requested = ts_sister_delay_time_ms(c->delay_time) *
                       0.001f * engine->sample_rate;
     if (fabsf(requested - state->delay_target) > 0.5f) {
+        if (state->transition_remaining > 0u)
+            read_handoff_begin(&state->read_handoff,
+                (uint32_t)(0.025f * engine->sample_rate));
         state->delay_old = state->delay_current;
         state->delay_target = requested;
         state->transition_total = (uint32_t)(0.025f * engine->sample_rate);
@@ -420,7 +571,8 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
         ((state->mix_current <= FLT_EPSILON && c->delay_mix <= 0.0f) ||
          (!enabled && state->route_current <= FLT_EPSILON)))
         return input;
-    if (state->route_current * fmaxf(fabsf(input.l), fabsf(input.r)) > 1.0e-12f)
+    if (state->route_current * engine->delay_engage.current *
+        fmaxf(fabsf(input.l), fabsf(input.r)) > 1.0e-12f)
         state->has_history = 1;
     wet.l = delay_read(state->data, state->capacity_frames,
                        state->write_index, state->delay_current, 0u);
@@ -440,15 +592,17 @@ static TsStereoFrame delay_process(TsSisterPostFxEngine *engine, size_t index,
         if (state->transition_remaining == 0u)
             state->delay_current = state->delay_target;
     }
+    wet = read_handoff_apply(&state->read_handoff, wet);
     state->data[state->write_index * 2u] = feedback_condition(
-        input.l * state->route_current +
+        input.l * state->route_current * engine->delay_engage.current +
         wet.l * (state->feedback_current * 1.08f));
     state->data[state->write_index * 2u + 1u] = feedback_condition(
-        input.r * state->route_current +
+        input.r * state->route_current * engine->delay_engage.current +
         wet.r * (state->feedback_current * 1.08f));
     state->write_index = (state->write_index + 1u) % state->capacity_frames;
     return effect_mix(input, wet,
-        clampf(state->mix_current * state->route_current, 0.0f, 1.0f));
+        clampf(state->mix_current * state->route_current *
+               engine->delay_engage.current, 0.0f, 1.0f));
 }
 
 static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
@@ -475,7 +629,8 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
         ((state->mix_current <= FLT_EPSILON && c->reverb_mix <= 0.0f) ||
          (!enabled && state->route_current <= FLT_EPSILON)))
         return input;
-    if (state->route_current * fmaxf(fabsf(input.l), fabsf(input.r)) > 1.0e-12f)
+    if (state->route_current * engine->reverb_engage.current *
+        fmaxf(fabsf(input.l), fabsf(input.r)) > 1.0e-12f)
         state->has_history = 1;
     state->type_blend = approach(state->type_blend, 1.0f,
                                  engine->sample_rate, 16.0f);
@@ -555,10 +710,10 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
         float gain = powf(0.001f, seconds / decay_seconds);
         float matrix_l = 2.0f * mean_l - read_l[line];
         float matrix_r = 2.0f * mean_r - read_r[line];
-        float inject_l = state->route_current *
+        float inject_l = state->route_current * engine->reverb_engage.current *
             (input.l * (0.18f + 0.04f * (float)line) +
              input.r * (line & 1u ? 0.07f : -0.04f));
-        float inject_r = state->route_current *
+        float inject_r = state->route_current * engine->reverb_engage.current *
             (input.r * (0.18f + 0.04f * (float)line) +
              input.l * (line & 1u ? -0.04f : 0.07f));
         delay->damping[0] += (matrix_l - delay->damping[0]) * damping;
@@ -574,8 +729,10 @@ static TsStereoFrame reverb_process(TsSisterPostFxEngine *engine, size_t index,
     wet.l = feedback_condition(wet.l * 2.25f);
     wet.r = feedback_condition(wet.r * 2.25f);
     wet = ts_stereo_frame_sanitize(wet);
+    wet = read_handoff_apply(&state->read_handoff, wet);
     return effect_mix(input, wet,
-        clampf(state->mix_current * state->route_current, 0.0f, 1.0f));
+        clampf(state->mix_current * state->route_current *
+               engine->reverb_engage.current, 0.0f, 1.0f));
 }
 
 TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
@@ -584,12 +741,21 @@ TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
                                         int explicit_mono)
 {
     uint8_t bit;
+    float master_gain;
     TsStereoFrame output;
     if (engine == NULL || !engine->ready ||
         target_index >= TS_SISTER_EFFECT_PROCESSOR_COUNT)
         return ts_stereo_frame_sanitize(input);
     input = ts_stereo_frame_sanitize(input);
-    if (explicit_mono) return (TsStereoFrame){input.l, input.l};
+    if (explicit_mono) {
+        if (target_index == TS_SISTER_EFFECT_PROCESSOR_COUNT - 1u) {
+            ramp_advance(&engine->master_engage);
+            ramp_advance(&engine->reverb_engage);
+            ramp_advance(&engine->delay_engage);
+            ramp_advance(&engine->distortion_engage);
+        }
+        return (TsStereoFrame){input.l, input.l};
+    }
     bit = (uint8_t)(1u << target_index);
     output = distortion_process(engine, target_index, input,
         ts_sister_effect_target_enabled(
@@ -598,12 +764,126 @@ TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
         ts_sister_effect_target_enabled(engine->delay_target.active_mask, bit));
     output = reverb_process(engine, target_index, output,
         ts_sister_effect_target_enabled(engine->reverb_target.active_mask, bit));
+    master_gain = clampf(engine->master_engage.current, 0.0f, 1.0f);
+    /* Master is the final return valve. Keep the exact-zero case explicit so
+       no processor state, tail, malformed sample, or individual switch can
+       contribute even a floating-point residue once the master reaches dry. */
+    if (master_gain <= 0.0f)
+        output = input;
+    else if (master_gain < 1.0f)
+        output = lerp_frame(input, output, master_gain);
     if (target_index == TS_SISTER_EFFECT_PROCESSOR_COUNT - 1u) {
         target_state_advance(engine, &engine->distortion_target, 0);
         target_state_advance(engine, &engine->delay_target, 1);
         target_state_advance(engine, &engine->reverb_target, 2);
+        ramp_advance(&engine->master_engage);
+        ramp_advance(&engine->reverb_engage);
+        ramp_advance(&engine->delay_engage);
+        ramp_advance(&engine->distortion_engage);
     }
     return ts_stereo_frame_sanitize(output);
+}
+
+float ts_sister_post_fx_master_engage(const TsSisterPostFxEngine *engine)
+{
+    return engine != NULL && engine->ready ?
+        clampf(engine->master_engage.current, 0.0f, 1.0f) : 0.0f;
+}
+
+TsSisterFxTransitionStatus ts_sister_post_fx_transition_status(
+    const TsSisterPostFxEngine *engine)
+{
+    const TsSisterFxRamp *ramps[4];
+    const TsSisterFxTransitionSource sources[4] = {
+        TS_SISTER_FX_TRANSITION_MASTER,
+        TS_SISTER_FX_TRANSITION_REVERB,
+        TS_SISTER_FX_TRANSITION_DELAY,
+        TS_SISTER_FX_TRANSITION_DISTORTION
+    };
+    const TsSisterFxRamp *latest = NULL;
+    TsSisterFxTransitionStatus status = {
+        1.0f, TS_SISTER_FX_TRANSITION_NONE, 0, 0
+    };
+    if (engine == NULL || !engine->ready) return status;
+    ramps[0] = &engine->master_engage;
+    ramps[1] = &engine->reverb_engage;
+    ramps[2] = &engine->delay_engage;
+    ramps[3] = &engine->distortion_engage;
+    for (size_t i = 0u; i < 4u; ++i) {
+        if (ramps[i]->remaining == 0u || ramps[i]->total == 0u) continue;
+        if (latest == NULL || ramps[i]->remaining > latest->remaining) {
+            latest = ramps[i];
+            status.source = sources[i];
+        }
+    }
+    if (latest == NULL) return status;
+    status.active = 1;
+    status.target_enabled = latest->target >= 0.5f;
+    status.progress = clampf(
+        1.0f - (float)latest->remaining / (float)latest->total,
+        0.0f, 1.0f);
+    return status;
+}
+
+TsSisterFxTransitionStatus ts_sister_post_fx_effect_transition_status(
+    const TsSisterPostFxEngine *engine)
+{
+    const TsSisterFxRamp *ramps[3];
+    const TsSisterFxTransitionSource sources[3] = {
+        TS_SISTER_FX_TRANSITION_REVERB,
+        TS_SISTER_FX_TRANSITION_DELAY,
+        TS_SISTER_FX_TRANSITION_DISTORTION
+    };
+    const TsSisterFxRamp *latest = NULL;
+    TsSisterFxTransitionStatus status = {
+        1.0f, TS_SISTER_FX_TRANSITION_NONE, 0, 0
+    };
+    if (engine == NULL || !engine->ready) return status;
+    ramps[0] = &engine->reverb_engage;
+    ramps[1] = &engine->delay_engage;
+    ramps[2] = &engine->distortion_engage;
+    for (size_t i = 0u; i < 3u; ++i) {
+        if (ramps[i]->remaining == 0u || ramps[i]->total == 0u) continue;
+        if (latest == NULL || ramps[i]->remaining > latest->remaining) {
+            latest = ramps[i];
+            status.source = sources[i];
+        }
+    }
+    if (latest == NULL) return status;
+    status.active = 1;
+    status.target_enabled = latest->target >= 0.5f;
+    status.progress = clampf(
+        1.0f - (float)latest->remaining / (float)latest->total,
+        0.0f, 1.0f);
+    return status;
+}
+
+TsSisterFxTransitionStatus ts_sister_post_fx_master_transition_status(
+    const TsSisterPostFxEngine *engine)
+{
+    TsSisterFxTransitionStatus status = {
+        1.0f, TS_SISTER_FX_TRANSITION_NONE, 0, 0
+    };
+    if (engine == NULL || !engine->ready ||
+        engine->master_engage.remaining == 0u ||
+        engine->master_engage.total == 0u) return status;
+    status.active = 1;
+    status.source = TS_SISTER_FX_TRANSITION_MASTER;
+    status.target_enabled = engine->master_engage.target >= 0.5f;
+    status.progress = clampf(
+        1.0f - (float)engine->master_engage.remaining /
+               (float)engine->master_engage.total,
+        0.0f, 1.0f);
+    return status;
+}
+
+float ts_sister_post_fx_transition_progress(
+    const TsSisterPostFxEngine *engine, int *active)
+{
+    TsSisterFxTransitionStatus status =
+        ts_sister_post_fx_transition_status(engine);
+    if (active != NULL) *active = status.active;
+    return status.progress;
 }
 
 size_t ts_sister_post_fx_memory_bytes(const TsSisterPostFxEngine *engine)

@@ -41,7 +41,7 @@ else()
   endif()
   execute_process(
     COMMAND "${GIT_EXECUTABLE}" -C "${CDP8_SOURCE_DIR}" archive
-            --format=zip --output="${source_archive}" "${CDP8_GIT_TAG}"
+            --format=zip "--output=${source_archive}" "${CDP8_GIT_TAG}"
     RESULT_VARIABLE archive_result
     ERROR_VARIABLE archive_error)
   if(NOT archive_result EQUAL 0)
