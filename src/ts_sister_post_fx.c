@@ -265,12 +265,27 @@ float ts_sister_delay_time_ms(float normalized)
     return 8.0f * powf(250.0f, normalized);
 }
 
+float ts_sister_reverb_size_scale(float normalized)
+{
+    float extreme;
+    normalized = clampf(normalized, 0.0f, 1.0f);
+    /* Preserve the original close-room-through-deep-field sweep across most
+       of the control, then open the final quarter into a second, deliberately
+       extreme region.  The top is twice the former maximum physical scale. */
+    extreme = normalized * normalized * normalized;
+    extreme *= extreme;
+    return 0.55f + normalized * 1.20f + extreme * 1.75f;
+}
+
 float ts_sister_reverb_decay_seconds(float normalized)
 {
+    float extreme;
     normalized = clampf(normalized, 0.0f, 1.0f);
     /* A single continuous space: close room through an hour-scale musical
        horizon without a discontinuity between named algorithms. */
-    return 0.35f * powf(60.0f / 0.35f, normalized);
+    extreme = normalized * normalized * normalized;
+    extreme *= extreme;
+    return 0.35f * powf(60.0f / 0.35f, normalized) * powf(2.0f, extreme);
 }
 
 static float delay_read(const float *data, size_t capacity, size_t write,
@@ -299,7 +314,7 @@ static float reverb_delay_ms(float size, size_t line)
     float scale;
     if (line >= TS_SISTER_REVERB_LINES) line = 0u;
     size = clampf(size, 0.0f, 1.0f);
-    scale = 0.55f + size * 1.20f;
+    scale = ts_sister_reverb_size_scale(size);
     return base[line] * scale;
 }
 

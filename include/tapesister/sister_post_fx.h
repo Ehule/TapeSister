@@ -160,6 +160,7 @@ float ts_sister_reverb_legacy_size(TsSisterReverbType type);
 void ts_sister_fx_controls_default(TsSisterFxControls *controls);
 void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls);
 float ts_sister_delay_time_ms(float normalized);
+float ts_sister_reverb_size_scale(float normalized);
 float ts_sister_reverb_decay_seconds(float normalized);
 float ts_sister_fx_transition_ms(float normalized);
 float ts_sister_fx_transition_normalized(float milliseconds);

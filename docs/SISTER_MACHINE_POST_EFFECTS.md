@@ -72,17 +72,21 @@ The reverb is one continuous stereo space rather than four named simulations.
 Its eight-line Householder-style FDN uses fractional reads, slow decorrelated
 delay modulation, per-channel damping, bounded writes, cross-channel injection,
 and independent stereo output vectors. SIZE scales the complete prime-spaced
-network from close room reflections to an impossible deep field. SIZE changes
-crossfade old/new taps for 60 ms without clearing memory. MIX, SIZE, and DECAY
-also smooth over approximately 24, 55, and 35 ms.
+network from close room reflections to an impossible deep field. The upper
+quarter progressively opens an extreme region whose maximum physical scale is
+twice the original deep-field maximum. SIZE changes crossfade old/new taps for
+60 ms without clearing memory. MIX, SIZE, and DECAY also smooth over
+approximately 24, 55, and 35 ms.
 
-DECAY maps exponentially from **0.35 to 60 seconds**. MIX 0 is exact dry
-identity and MIX 1 is fully wet. The middle of the MIX law retains more of the
-immediate source than a conventional equal-power insert crossfade, so adding a
-surrounding field does not behave like lowering the channel fader. Modulation
-breaks up stationary ringing without imposing an audible chorus cycle. Long
-states flush below `1e-20` to zero, and linear-at-musical-level saturation keeps
-the feedback network finite without prematurely shortening quiet tails.
+DECAY maps exponentially from **0.35 to 120 seconds**, with the added extension
+blooming progressively in the upper quarter so ordinary preset positions retain
+their established response. MIX 0 is exact dry identity and MIX 1 is fully wet.
+The middle of the MIX law retains more of the immediate source than a
+conventional equal-power insert crossfade, so adding a surrounding field does
+not behave like lowering the channel fader. Modulation breaks up stationary
+ringing without imposing an audible chorus cycle. Long states flush below
+`1e-20` to zero, and linear-at-musical-level saturation keeps the feedback
+network finite without prematurely shortening quiet tails.
 
 ## Delay
 

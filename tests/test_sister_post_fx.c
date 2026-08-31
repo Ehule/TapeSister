@@ -134,8 +134,10 @@ static void test_reverb_space_and_distortion(void)
     TsSisterPostFxEngine engine = {0};
     TsSisterFxControls controls;
     double difference = 0.0;
+    assert(fabsf(ts_sister_reverb_size_scale(0.0f) - 0.55f) < 1.0e-5f);
+    assert(fabsf(ts_sister_reverb_size_scale(1.0f) - 3.50f) < 1.0e-5f);
     assert(fabsf(ts_sister_reverb_decay_seconds(0.0f) - 0.35f) < 1.0e-5f);
-    assert(fabsf(ts_sister_reverb_decay_seconds(1.0f) - 60.0f) < 1.0e-3f);
+    assert(fabsf(ts_sister_reverb_decay_seconds(1.0f) - 120.0f) < 1.0e-3f);
     for (size_t size = 0u; size < sizeof(sizes) / sizeof(sizes[0]); ++size)
         signatures[size] = reverb_signature(sizes[size]);
     for (size_t a = 0u; a < sizeof(sizes) / sizeof(sizes[0]); ++a)
