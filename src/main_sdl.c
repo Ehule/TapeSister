@@ -948,7 +948,6 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         TsSisterRuntimeFrame sister_frame;
         TsStereoFrame synth_capture = {0.0f, 0.0f};
         TsStereoFrame output;
-        float sister_routes[TS_SISTER_SOURCE_COUNT] = {0};
         ts_audio_buses_clear(&buses);
         if (audio->playing && audio->sample && audio->sample->data &&
             audio->sample->frames > 1u) {
@@ -1025,13 +1024,6 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                         atomic_load_explicit(audio->external_monitor_enabled,
                                              memory_order_acquire) != 0 ?
                         buses.external : (TsStereoFrame){0.0f, 0.0f};
-        if (audio->sister.enabled && !audio->sister.callback_failed) {
-            for (int source_index = 0;
-                 source_index < TS_SISTER_SOURCE_COUNT; ++source_index)
-                sister_routes[source_index] =
-                    ts_sister_runtime_source_route(&audio->sister,
-                                                   source_index);
-        }
         if (!audio->sister.enabled && !audio->sister.callback_failed &&
             audio->sister.post_fx.ready) {
             /* Recreate the legacy ordinary program contribution exactly,
@@ -1051,16 +1043,12 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             buses.fm = (TsStereoFrame){0.0f, 0.0f};
             buses.monitor = (TsStereoFrame){0.0f, 0.0f};
         }
-        /* Sister is an insert, not an extra parallel audition bus. Every
-           selected source is removed from TapeSister's direct speaker path.
-           Its dry and processed returns come back together through Sister's
-           MONITOR bus; input construction and Capture stay pre-monitor. */
-        ts_audio_buses_apply_source_insert(
-            &buses,
-            sister_routes[3],
-            fmaxf(ts_sister_runtime_direct_tile_route(&audio->sister),
-                  sister_routes[0]),
-            sister_routes[1], sister_routes[2]);
+        /* Sister is a closed insert, not an extra parallel audition bus. When
+           powered, it owns every musical source: selected inputs return via
+           Sister, while unselected inputs are silent. Capture remains tapped
+           before this speaker-path ownership rule. */
+        ts_audio_buses_apply_sister_ownership(
+            &buses, audio->sister.enabled && !audio->sister.callback_failed);
         if (runtime_capture_write_frame(audio, buses.capture)) {
             audio->playing = 0;
             audio->bank_slot = -1;
@@ -1423,6 +1411,7 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
     TsNoteStartResult result;
     char note_name[8];
     int voice_count;
+    uint32_t visible_notes;
     int capture_started = 0;
     ui->bank_view_slot = -1;
     if (!device || output_rate <= 0) {
@@ -1442,7 +1431,15 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
         audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
         runtime_capture_source_matches(audio, instrument->selected_slot))
         capture_started = runtime_capture_trigger(audio, NULL, 0);
-    voice_count = ts_note_bank_count(&audio->notes);
+    visible_notes = ts_note_bank_visible_mask(
+        &audio->notes, ts_ui_keyboard_base_note(ui));
+    visible_notes |= ts_performance_visible_mask(
+        &audio->sister.performance, ts_ui_keyboard_base_note(ui));
+    voice_count = 0;
+    while (visible_notes != 0u) {
+        voice_count += (int)(visible_notes & 1u);
+        visible_notes >>= 1u;
+    }
     SDL_UnlockAudioDevice(device);
     if (result == TS_NOTE_LIMIT_REACHED)
         snprintf(ui->status, sizeof(ui->status), "CHORD LIMIT %d NOTES", TS_NOTE_VOICE_LIMIT);
@@ -13752,6 +13749,9 @@ int main(int argc, char **argv)
             const TsPerformanceVoice *tile_voice =
                 ts_performance_tile_display_voice(
                     &audio.tile_launchers, instrument.selected_slot);
+            const TsPerformanceVoice *sister_voice =
+                ts_performance_source_display_voice(
+                    &audio.sister.performance, instrument.selected_slot);
             if (ui.transform_preview_active &&
                 (audio.sample == &transform.preview.sample ||
                  audio.sample == &transform.dsp_preview.sample) &&
@@ -13764,11 +13764,13 @@ int main(int argc, char **argv)
             ui.tune_reference_active = audio.tune_reference_enabled;
             ui.active_notes = ts_note_bank_visible_mask(
                 &audio.notes, ts_ui_keyboard_base_note(&ui));
+            ui.active_notes |= ts_performance_visible_mask(
+                &audio.sister.performance, ts_ui_keyboard_base_note(&ui));
             ui.tile_launcher_mask = (uint16_t)atomic_load_explicit(
                 &audio.tile_launcher_mask, memory_order_acquire);
             ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
             ui.playback_active = audio.playing || voice != NULL ||
-                                 tile_voice != NULL;
+                                 sister_voice != NULL || tile_voice != NULL;
             if (audio.playing) {
                 ui.playhead_source = audio.source;
                 ui.playhead_bank_slot = audio.bank_slot;
@@ -13781,6 +13783,16 @@ int main(int argc, char **argv)
                 ui.playhead_frame = voice->position > 0.0 ? (size_t)voice->position : 0;
                 ui.playhead_frames = voice->sample ? voice->sample->frames : 0;
                 ui.playhead_sample = voice->sample;
+            } else if (sister_voice != NULL) {
+                /* Sister owns this QWERTY/MIDI voice, but its immutable
+                   generation uses the same frame coordinates as Current. */
+                ui.playhead_source = TS_AUDITION_CURRENT;
+                ui.playhead_bank_slot = -1;
+                ui.playhead_frame = sister_voice->position > 0.0 ?
+                                    (size_t)sister_voice->position : 0;
+                ui.playhead_frames = sister_voice->sample ?
+                                     sister_voice->sample->frames : 0;
+                ui.playhead_sample = &instrument.current;
             } else if (tile_voice != NULL) {
                 /* Click-launched tiles use immutable audio generations, but
                    the waveform displays the selected tile's Current view.

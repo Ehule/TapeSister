@@ -340,6 +340,19 @@ const TsPerformanceVoice *ts_performance_tile_display_voice(
     return NULL;
 }
 
+const TsPerformanceVoice *ts_performance_source_display_voice(
+    const TsPerformanceBank *bank, int source_slot)
+{
+    if (bank == NULL || source_slot < 0 ||
+        source_slot >= TS_BANK_SLOT_COUNT) return NULL;
+    for (int index = 0; index < TS_PERFORMANCE_VOICE_LIMIT; ++index) {
+        const TsPerformanceVoice *voice = &bank->voices[index];
+        if (voice->active && voice->source_slot == source_slot)
+            return voice;
+    }
+    return NULL;
+}
+
 void ts_performance_init(TsPerformanceBank *bank)
 {
     if (bank != NULL) {

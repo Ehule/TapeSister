@@ -104,8 +104,10 @@ int main(void)
     CHECK(hit.action == TS_SISTER_UI_ACTION_POWER);
     CHECK(ts_sister_ui_hit_test(540, 10).action ==
           TS_SISTER_UI_ACTION_LIMITER_TOGGLE);
-    CHECK(ts_sister_ui_hit_test_model(&model, 540, 150).action ==
+    CHECK(ts_sister_ui_hit_test_model(&model, 610, 150).action ==
           TS_SISTER_UI_ACTION_WAVE_MODE);
+    CHECK(ts_sister_ui_hit_test_model(&model, 540, 150).action ==
+          TS_SISTER_UI_ACTION_NONE);
     CHECK(ts_sister_ui_hit_test(455, 10).action == TS_SISTER_UI_ACTION_PAGE);
     hit = ts_sister_ui_hit_test(360, 10);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&

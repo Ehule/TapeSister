@@ -338,7 +338,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     if (model != NULL && model->fx_page == 0 &&
-        contains(x, y, 532, 144, 92, 18)) {
+        contains(x, y, 600, 144, 24, 18)) {
         hit.action = TS_SISTER_UI_ACTION_WAVE_MODE;
         return hit;
     }

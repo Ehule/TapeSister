@@ -86,6 +86,13 @@ void ts_audio_buses_apply_source_insert(TsAudioBuses *buses,
         buses->monitor, direct_gain_for_insert(external_insert));
 }
 
+void ts_audio_buses_apply_sister_ownership(TsAudioBuses *buses,
+                                           int sister_active)
+{
+    if (!sister_active) return;
+    ts_audio_buses_apply_source_insert(buses, 1.0f, 1.0f, 1.0f, 1.0f);
+}
+
 TsStereoFrame ts_audio_mixer_render_unclamped(TsAudioMixer *mixer,
                                               const TsAudioBuses *sources)
 {

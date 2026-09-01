@@ -110,6 +110,30 @@ int main(void)
     CHECK(CLOSE(buses.monitor.l, 0.0f));
     CHECK(CLOSE(buses.capture.l, 0.75f));
 
+    /* Sister owns the full musical path while active. An unselected preview
+       (including Loop Lock), tile, FM voice, or EXT monitor cannot leak around
+       the machine; non-musical taps and Sister's return remain intact. */
+    ts_audio_buses_clear(&buses);
+    buses.legacy_preview = (TsStereoFrame){0.4f, -0.4f};
+    buses.tile_performance = (TsStereoFrame){0.3f, -0.3f};
+    buses.fm = (TsStereoFrame){0.2f, -0.2f};
+    buses.monitor = (TsStereoFrame){0.1f, -0.1f};
+    buses.sister = (TsStereoFrame){0.6f, -0.6f};
+    buses.reference = (TsStereoFrame){0.05f, -0.05f};
+    buses.capture = (TsStereoFrame){0.75f, -0.75f};
+    ts_audio_buses_apply_sister_ownership(&buses, 1);
+    CHECK(CLOSE(buses.legacy_preview.l, 0.0f));
+    CHECK(CLOSE(buses.tile_performance.l, 0.0f));
+    CHECK(CLOSE(buses.fm.l, 0.0f));
+    CHECK(CLOSE(buses.monitor.l, 0.0f));
+    CHECK(CLOSE(buses.sister.l, 0.6f));
+    CHECK(CLOSE(buses.reference.l, 0.05f));
+    CHECK(CLOSE(buses.capture.l, 0.75f));
+
+    buses.legacy_preview = (TsStereoFrame){0.4f, -0.4f};
+    ts_audio_buses_apply_sister_ownership(&buses, 0);
+    CHECK(CLOSE(buses.legacy_preview.l, 0.4f));
+
     if (failures) return 1;
     puts("audio mixer tests passed");
     return 0;

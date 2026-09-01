@@ -39,6 +39,10 @@ void ts_audio_buses_apply_source_insert(TsAudioBuses *buses,
                                         float tiles_insert,
                                         float fm_insert,
                                         float external_insert);
+/* An active Sister Machine owns the complete musical input path. Sources not
+   selected for Sister are silent rather than leaking around the insert. */
+void ts_audio_buses_apply_sister_ownership(TsAudioBuses *buses,
+                                           int sister_active);
 TsStereoFrame ts_audio_mixer_render(TsAudioMixer *mixer,
                                     const TsAudioBuses *sources);
 TsStereoFrame ts_audio_mixer_render_unclamped(TsAudioMixer *mixer,

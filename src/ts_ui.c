@@ -3760,6 +3760,16 @@ static void sister_output_meter(TsFramebuffer *fb,
     }
 }
 
+static const char *sister_wave_mode_letter(TsWaveformDisplayMode mode)
+{
+    switch (ts_waveform_display_sanitize(mode)) {
+    case TS_WAVEFORM_DISPLAY_LEFT: return "L";
+    case TS_WAVEFORM_DISPLAY_RIGHT: return "R";
+    case TS_WAVEFORM_DISPLAY_MONO_SUM: return "M";
+    default: return "S";
+    }
+}
+
 static uint32_t sister_transition_caption_color(float progress,
                                                  uint32_t background,
                                                  uint32_t foreground)
@@ -4495,8 +4505,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     if (!model->routing.enabled ||
         model->power_visual != TS_SISTER_UI_POWER_VISUAL_NONE)
         sister_spirit_render(fb, model);
-    button(fb, 532, 144, 92,
-           ts_waveform_display_name(model->waveform_mode),
+    button(fb, 600, 144, 24,
+           sister_wave_mode_letter(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
     button(fb, 10, 172, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
     button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
