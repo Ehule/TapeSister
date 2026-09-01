@@ -194,7 +194,7 @@ int ts_ui_pointer_drag_accept_motion(TsUiPointerDrag *drag, int target,
 
 int ts_ui_waveform_mode_contains(int x, int y)
 {
-    return x >= 526 && x < 620 && y >= 43 && y < 60;
+    return x >= 600 && x < 624 && y >= 43 && y < 60;
 }
 
 typedef struct {
@@ -2428,9 +2428,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, 240, 58, (int)lrintf(amount * 62.0f), 3, PAL_VOLUME);
         rect(fb, 239 + (int)lrintf(amount * 62.0f), 56, 3, 7, PAL_MOUSE);
     }
-    mini_button(fb, 526, 43, 94,
-                ts_waveform_display_name((TsWaveformDisplayMode)
-                                         ui->config.waveform_display_mode),
+    mini_button(fb, 600, 43, 24,
+                ts_waveform_display_letter((TsWaveformDisplayMode)
+                                           ui->config.waveform_display_mode),
                 ui->config.waveform_display_mode != TS_WAVEFORM_DISPLAY_STEREO);
     wave_rect(fb, TS_WAVE_X, TS_WAVE_Y, TS_WAVE_W, TS_WAVE_H, RGB(8, 8, 8));
     if (grid_divisions < TS_GRID_DIVISION_MIN ||
@@ -2452,12 +2452,35 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             }
         }
     }
-    for (int y = TS_WAVE_Y + 20; y < TS_WAVE_Y + TS_WAVE_H; y += 20)
-        wave_rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1,
-                  contrast_color(PAL_DESKTOP,
-                                 active_palette()->desktop_contrast, 0.72f));
-    wave_rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2,
-              TS_WAVE_W, 1, PAL_BUTTON);
+    {
+        TsWaveformDisplayMode mode = ts_waveform_display_sanitize(
+            ui->config.waveform_display_mode);
+        int stereo_lanes = sample->channels == 2u &&
+                           mode == TS_WAVEFORM_DISPLAY_STEREO;
+        if (stereo_lanes) {
+            int lane_height = TS_WAVE_H / 2;
+            int left_middle = TS_WAVE_Y + lane_height / 2;
+            int right_middle = TS_WAVE_Y + lane_height +
+                               (TS_WAVE_H - lane_height) / 2;
+            wave_rect(fb, TS_WAVE_X, left_middle, TS_WAVE_W, 1, PAL_BUTTON);
+            wave_rect(fb, TS_WAVE_X, TS_WAVE_Y + lane_height,
+                      TS_WAVE_W, 1,
+                      contrast_color(PAL_DESKTOP,
+                                     active_palette()->desktop_contrast, 0.72f));
+            wave_rect(fb, TS_WAVE_X, right_middle, TS_WAVE_W, 1, PAL_BUTTON);
+            wave_text(fb, TS_WAVE_X + 4, TS_WAVE_Y + 4,
+                      "L", PAL_WAVE_LEFT, 1);
+            wave_text(fb, TS_WAVE_X + 4, TS_WAVE_Y + lane_height + 4,
+                      "R", PAL_WAVE_RIGHT, 1);
+        } else {
+            for (int y = TS_WAVE_Y + 20; y < TS_WAVE_Y + TS_WAVE_H; y += 20)
+                wave_rect(fb, TS_WAVE_X, y, TS_WAVE_W, 1,
+                          contrast_color(PAL_DESKTOP,
+                              active_palette()->desktop_contrast, 0.72f));
+            wave_rect(fb, TS_WAVE_X, TS_WAVE_Y + TS_WAVE_H / 2,
+                      TS_WAVE_W, 1, PAL_BUTTON);
+        }
+    }
 
     if (has_loop && loop_last > view_first && loop_first < view_last) {
         int lx0 = frame_x(loop_first, view_first, view_last);
@@ -2502,14 +2525,20 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                                  TS_WAVEFORM_DISPLAY_MONO_SUM ? PAL_WAVE_SUM :
                              PAL_WAVE_LEFT;
             if (display.stereo) {
-                int left_y0 = middle - (int)(display.left_maximum *
-                                              (TS_WAVE_H / 2 - 6));
-                int left_y1 = middle - (int)(display.left_minimum *
-                                              (TS_WAVE_H / 2 - 6));
-                int right_y0 = middle - (int)(display.right_maximum *
-                                               (TS_WAVE_H / 2 - 6));
-                int right_y1 = middle - (int)(display.right_minimum *
-                                               (TS_WAVE_H / 2 - 6));
+                int lane_height = TS_WAVE_H / 2;
+                int left_middle = TS_WAVE_Y + lane_height / 2;
+                int right_middle = TS_WAVE_Y + lane_height +
+                                   (TS_WAVE_H - lane_height) / 2;
+                int left_scale = lane_height / 2 - 4;
+                int right_scale = (TS_WAVE_H - lane_height) / 2 - 4;
+                int left_y0 = left_middle - (int)lrintf(
+                    display.left_maximum * left_scale);
+                int left_y1 = left_middle - (int)lrintf(
+                    display.left_minimum * left_scale);
+                int right_y0 = right_middle - (int)lrintf(
+                    display.right_maximum * right_scale);
+                int right_y1 = right_middle - (int)lrintf(
+                    display.right_minimum * right_scale);
                 uint32_t right_color = selected ? PAL_TUNING : PAL_WAVE_RIGHT;
                 wave_line(fb, TS_WAVE_X + x, left_y0,
                           TS_WAVE_X + x, left_y1, color);
@@ -2521,8 +2550,21 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 wave_line(fb, TS_WAVE_X + x, y0,
                           TS_WAVE_X + x, y1, color);
             }
-            if (analysis->has_zero_crossing)
-                wave_rect(fb, TS_WAVE_X + x, middle - 1, 1, 3, PAL_VOLUME);
+            if (analysis->has_zero_crossing) {
+                if (display.stereo) {
+                    int lane_height = TS_WAVE_H / 2;
+                    int left_middle = TS_WAVE_Y + lane_height / 2;
+                    int right_middle = TS_WAVE_Y + lane_height +
+                                       (TS_WAVE_H - lane_height) / 2;
+                    wave_rect(fb, TS_WAVE_X + x, left_middle - 1,
+                              1, 3, PAL_VOLUME);
+                    wave_rect(fb, TS_WAVE_X + x, right_middle - 1,
+                              1, 3, PAL_VOLUME);
+                } else {
+                    wave_rect(fb, TS_WAVE_X + x, middle - 1,
+                              1, 3, PAL_VOLUME);
+                }
+            }
         }
     } else {
         text(fb, showing_bank ? 199 : 211, 135,
@@ -3760,16 +3802,6 @@ static void sister_output_meter(TsFramebuffer *fb,
     }
 }
 
-static const char *sister_wave_mode_letter(TsWaveformDisplayMode mode)
-{
-    switch (ts_waveform_display_sanitize(mode)) {
-    case TS_WAVEFORM_DISPLAY_LEFT: return "L";
-    case TS_WAVEFORM_DISPLAY_RIGHT: return "R";
-    case TS_WAVEFORM_DISPLAY_MONO_SUM: return "M";
-    default: return "S";
-    }
-}
-
 static uint32_t sister_transition_caption_color(float progress,
                                                  uint32_t background,
                                                  uint32_t foreground)
@@ -4506,7 +4538,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         model->power_visual != TS_SISTER_UI_POWER_VISUAL_NONE)
         sister_spirit_render(fb, model);
     button(fb, 600, 144, 24,
-           sister_wave_mode_letter(model->waveform_mode),
+           ts_waveform_display_letter(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
     button(fb, 10, 172, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
     button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);

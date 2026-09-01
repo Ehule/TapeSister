@@ -25,6 +25,14 @@ const char *ts_waveform_display_name(TsWaveformDisplayMode mode)
     return names[ts_waveform_display_sanitize(mode)];
 }
 
+const char *ts_waveform_display_letter(TsWaveformDisplayMode mode)
+{
+    static const char *const letters[TS_WAVEFORM_DISPLAY_COUNT] = {
+        "S", "L", "R", "M"
+    };
+    return letters[ts_waveform_display_sanitize(mode)];
+}
+
 static void ordered(float *minimum, float *maximum)
 {
     if (*minimum > *maximum) {
