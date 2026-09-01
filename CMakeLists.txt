@@ -9,6 +9,7 @@ add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts
              src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_realtime_diagnostics.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
+             src/ts_sister_limiter.c
              src/ts_sister_machine.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
              src/ts_sister_preset.c src/ts_sister_project_state.c
@@ -221,7 +222,8 @@ foreach(sister_test IN ITEMS sister_buffer sister_resize sister_heads sister_tra
                              sister_modulation sister_feedback sister_stereo
                              sister_weave
                              sister_effect_routing
-                             sister_post_fx sister_fallout sister_duck_filter sister_snapshot
+                             sister_post_fx sister_fallout sister_limiter
+                             sister_duck_filter sister_snapshot
                              sister_routes
                              sister_runtime sister_source_mask sister_capture
                              sister_performance_sources sister_recursion
