@@ -29,8 +29,10 @@ int main(void)
     CHECK(config.sister_fallout_component_transition_ms == 240000);
     CHECK(config.sister_fallout_master_transition_ms == 240000);
     CHECK(config.sister_fallout_rise_seconds == 3600);
+    CHECK(config.master_output_percent == 100);
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
+    CHECK(model.routing.master_output_gain == 1.0f);
     CHECK(model.parameter_locks == 0u);
     CHECK(model.parameter_locks_high == 0u);
     for (int parameter = 0; parameter < TS_SISTER_UI_PARAM_COUNT;
@@ -104,8 +106,12 @@ int main(void)
     CHECK(model.routing.enabled && model.routing.source_mask == 0x8001u);
     hit = ts_sister_ui_hit_test(12, 10);
     CHECK(hit.action == TS_SISTER_UI_ACTION_POWER);
-    CHECK(ts_sister_ui_hit_test(540, 10).action ==
+    CHECK(ts_sister_ui_hit_test(500, 10).action ==
           TS_SISTER_UI_ACTION_LIMITER_TOGGLE);
+    hit = ts_sister_ui_hit_test(552, 10);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT &&
+          hit.index == TS_SISTER_UI_PARAM_MASTER_OUTPUT &&
+          hit.normalized > 0.4f && hit.normalized < 0.6f);
     CHECK(ts_sister_ui_hit_test_model(&model, 610, 150).action ==
           TS_SISTER_UI_ACTION_WAVE_MODE);
     CHECK(ts_sister_ui_hit_test_model(&model, 540, 150).action ==

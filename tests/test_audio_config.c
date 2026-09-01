@@ -30,6 +30,9 @@ static int test_defaults(void)
                   "audio buffer should default to the performance-safe size") &&
            expect(config.fm_output_percent == TS_FM_OUTPUT_PERCENT_DEFAULT,
                   "FM output trim should default to a conservative level") &&
+           expect(config.master_output_percent ==
+                      TS_MASTER_OUTPUT_PERCENT_DEFAULT,
+                  "master output should default to exact unity") &&
            expect(config.record_input_channel == TS_RECORD_INPUT_CHANNEL_DEFAULT,
                   "default input channel should remain channel 1") &&
            expect(config.capture_auto_resize == 1,
@@ -98,6 +101,7 @@ static int test_roundtrip(void)
     saved.record_input_channel = 3;
     saved.audio_buffer_frames = 1024;
     saved.fm_output_percent = 37;
+    saved.master_output_percent = 63;
     saved.midi_input_channel = 7;
     saved.capture_auto_resize = 0;
     saved.capture_max_seconds = 47;
@@ -158,6 +162,8 @@ static int test_roundtrip(void)
                 "audio buffer size should roundtrip") &&
          expect(loaded.fm_output_percent == 37,
                 "FM output trim should roundtrip") &&
+         expect(loaded.master_output_percent == 63,
+                "master output attenuation should roundtrip") &&
          expect(loaded.capture_auto_resize == 0,
                 "Capture auto resize should roundtrip") &&
          expect(loaded.waveform_display_mode == TS_WAVEFORM_DISPLAY_RIGHT &&
@@ -291,7 +297,9 @@ static int test_legacy_config(void)
                 "legacy Fallout clock should seed both split timers") &&
          expect(loaded.sister_limiter_enabled == 1 &&
                 fabsf(loaded.sister_limiter_ceiling_db + 1.0f) < 0.001f,
-                "legacy configs should receive the safe limiter default");
+                "legacy configs should receive the safe limiter default") &&
+         expect(loaded.master_output_percent == 100,
+                "legacy configs should receive unity master output");
     remove(path);
     return ok;
 }

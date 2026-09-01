@@ -96,6 +96,7 @@ typedef struct {
     float limiter_ceiling_db;
     float limiter_gain_reduction_db;
     float limiter_input_peak;
+    float master_output_gain;
     uint64_t overload_count;
     uint32_t warnings;
     int source_target_conflict;
@@ -148,6 +149,7 @@ typedef struct {
     atomic_uint_least32_t limiter_ceiling_db_bits;
     atomic_uint_least32_t limiter_gain_reduction_db_bits;
     atomic_uint_least32_t limiter_input_peak_bits;
+    atomic_uint_least32_t master_output_gain_bits;
     atomic_uint_least64_t overload_count;
     atomic_uint_least32_t warnings;
     atomic_int source_target_conflict;
@@ -207,6 +209,7 @@ typedef struct {
     TsSisterRamp monitor_route;
     TsSisterRamp direct_tile_route;
     TsSisterRamp ordinary_fx_return_gain;
+    TsSisterRamp master_output_gain;
     float master_feedback_current;
     TsStereoFrame master_feedback_previous;
     float fallout_feedback_current;
@@ -251,6 +254,8 @@ void ts_sister_runtime_configure_limiter(TsSisterRuntime *runtime,
                                          float release_ms);
 void ts_sister_runtime_set_limiter_enabled(TsSisterRuntime *runtime,
                                            int enabled);
+void ts_sister_runtime_set_master_output_gain(TsSisterRuntime *runtime,
+                                              float gain);
 void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
                                       const TsSisterParameters *parameters);
 void ts_sister_runtime_recall_fallout_preset(

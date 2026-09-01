@@ -30,6 +30,9 @@ enum {
     TS_FM_OUTPUT_PERCENT_MIN = 0,
     TS_FM_OUTPUT_PERCENT_MAX = 100,
     TS_FM_OUTPUT_PERCENT_DEFAULT = 50,
+    TS_MASTER_OUTPUT_PERCENT_MIN = 0,
+    TS_MASTER_OUTPUT_PERCENT_MAX = 100,
+    TS_MASTER_OUTPUT_PERCENT_DEFAULT = 100,
     TS_AUDIO_BUFFER_FRAMES_MIN = 256,
     TS_AUDIO_BUFFER_FRAMES_MAX = 1024,
     TS_AUDIO_BUFFER_FRAMES_DEFAULT = 512,
@@ -110,6 +113,7 @@ typedef struct {
     int ripple_cut_crop_canvas;
     int reference_tone_volume;
     int fm_output_percent;
+    int master_output_percent;
     int audio_buffer_frames;
     int record_input_channel;
     int midi_input_channel;

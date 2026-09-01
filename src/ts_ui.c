@@ -3751,6 +3751,29 @@ static float sister_meter_normalized(float amplitude)
     return (decibels + 48.0f) / 48.0f;
 }
 
+static void sister_master_output_fader(TsFramebuffer *fb, float gain,
+                                       int x, int y)
+{
+    char label[16];
+    int fill;
+    int handle;
+    int text_x;
+    if (!isfinite(gain)) gain = 1.0f;
+    gain = sister_clamp(gain);
+    if (gain <= 0.0001f)
+        snprintf(label, sizeof(label), "OUT -INF");
+    else
+        snprintf(label, sizeof(label), "OUT %+.0F", 20.0f * log10f(gain));
+    rect(fb, x, y, 48, 22, RGB(24, 23, 25));
+    text_x = x + (48 - (int)strlen(label) * 6) / 2;
+    text(fb, text_x, y + 2, label, PAL_MOUSE, 1);
+    rect(fb, x + 4, y + 15, 40, 3, RGB(7, 7, 8));
+    fill = (int)lrintf(39.0f * gain);
+    if (fill > 0) rect(fb, x + 4, y + 15, fill + 1, 3, PAL_INSTRUMENT);
+    handle = x + 4 + fill;
+    rect(fb, handle, y + 13, 2, 7, PAL_MOUSE);
+}
+
 static void sister_output_meter(TsFramebuffer *fb,
                                 const TsSisterRoutingSnapshot *routing,
                                 int x, int y)
@@ -3764,41 +3787,40 @@ static void sister_output_meter(TsFramebuffer *fb,
     float ceiling = routing->limiter_ceiling_db;
     int ceiling_x;
     if (!isfinite(ceiling)) ceiling = TS_SISTER_LIMITER_DEFAULT_CEILING_DB;
-    snprintf(status, sizeof(status), "C%+.0F GR%.1F", ceiling,
-             routing->limiter_gain_reduction_db);
-    text(fb, x + 40, 1, status,
+    snprintf(status, sizeof(status), "G%.1FC%.0F",
+             routing->limiter_gain_reduction_db, ceiling);
+    text(fb, x, 1, status,
          routing->limiter_gain_reduction_db > 0.05f ? colors[3] : PAL_MOUSE,
          1);
-    button(fb, x, y, 36, "LIM", routing->limiter_enabled);
-    ceiling_x = (int)lrintf(48.0f * sister_meter_normalized(
+    ceiling_x = (int)lrintf(42.0f * sister_meter_normalized(
         powf(10.0f, ceiling / 20.0f)));
     if (ceiling_x < 0) ceiling_x = 0;
-    if (ceiling_x > 47) ceiling_x = 47;
+    if (ceiling_x > 41) ceiling_x = 41;
     for (int channel = 0; channel < 2; ++channel) {
         int lane_y = y + 1 + channel * 11;
-        int width = 48;
+        int width = 42;
         int fill = (int)lrintf((float)width * sister_meter_normalized(
             routing->output_level[channel]));
         int peak = (int)lrintf((float)(width - 1) *
             sister_meter_normalized(routing->output_peak_hold[channel]));
-        static const int boundaries[4] = {36, 42, 45, 48};
+        static const int boundaries[4] = {32, 37, 39, 42};
         int start = 0;
-        text(fb, x + 40, lane_y - 1, names[channel], PAL_MOUSE, 1);
-        rect(fb, x + 48, lane_y, width, 6, RGB(7, 7, 8));
+        text(fb, x, lane_y - 1, names[channel], PAL_MOUSE, 1);
+        rect(fb, x + 8, lane_y, width, 6, RGB(7, 7, 8));
         for (int zone = 0; zone < 4; ++zone) {
             int end = fill < boundaries[zone] ? fill : boundaries[zone];
             if (end > start)
-                rect(fb, x + 48 + start, lane_y + 1,
+                rect(fb, x + 8 + start, lane_y + 1,
                      end - start, 4, colors[zone]);
             start = boundaries[zone];
             if (fill <= start) break;
         }
-        rect(fb, x + 48 + ceiling_x, lane_y, 1, 6, PAL_BUTTON);
-        if (peak > 0) rect(fb, x + 48 + peak, lane_y, 1, 6,
+        rect(fb, x + 8 + ceiling_x, lane_y, 1, 6, PAL_BUTTON);
+        if (peak > 0) rect(fb, x + 8 + peak, lane_y, 1, 6,
                            routing->output_clip[channel] ? colors[3] :
                            PAL_MOUSE);
         if (routing->output_clip[channel])
-            rect(fb, x + 97, lane_y, 2, 6, colors[3]);
+            rect(fb, x + 48, lane_y, 2, 6, colors[3]);
     }
 }
 
@@ -4237,16 +4259,18 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             snprintf(canvas, sizeof(canvas), "BUF %.0F>%.0F", current, target);
         else
             snprintf(canvas, sizeof(canvas), "BUFFER %.0FS", target);
-        sister_choice_parameter_state(fb, 350, 8, 94, "", canvas,
+        sister_choice_parameter_state(fb, 350, 8, 86, "", canvas,
             model->engine.resize_pending, PAL_TUNING, locked);
-        rect(fb, 351, 25, (int)lrintf(92.0f * sister_clamp(amount)), 3,
+        rect(fb, 351, 25, (int)lrintf(84.0f * sister_clamp(amount)), 3,
              color);
     }
-    button(fb, 450, 8, 76,
-           model->fx_page == 0 ? "FX PAGE" :
-           model->fx_page == 1 ? "FALLOUT" : "TAPE",
+    button(fb, 440, 8, 50,
+           model->fx_page == 0 ? "FX" :
+           model->fx_page == 1 ? "FALL" : "TAPE",
            model->fx_page != 0);
-    sister_output_meter(fb, &model->routing, 532, 8);
+    button(fb, 494, 8, 30, "LIM", model->routing.limiter_enabled);
+    sister_master_output_fader(fb, model->routing.master_output_gain, 528, 8);
+    sister_output_meter(fb, &model->routing, 580, 8);
 
     if (model->fx_page == 2) {
         const TsSisterFalloutControls *f = &model->parameters.fx.fallout;

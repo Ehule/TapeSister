@@ -185,6 +185,7 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
                 float_bits(TS_SISTER_LIMITER_DEFAULT_CEILING_DB));
     atomic_init(&snapshot->limiter_gain_reduction_db_bits, float_bits(0.0f));
     atomic_init(&snapshot->limiter_input_peak_bits, float_bits(0.0f));
+    atomic_init(&snapshot->master_output_gain_bits, float_bits(1.0f));
     atomic_init(&snapshot->overload_count, 0u);
     atomic_init(&snapshot->warnings, 0u);
     atomic_init(&snapshot->source_target_conflict, 0);
@@ -299,6 +300,9 @@ static void publish_snapshot(TsSisterRuntime *runtime)
                           memory_order_relaxed);
     atomic_store_explicit(&snapshot->limiter_input_peak_bits,
                           float_bits(runtime->limiter_input_peak),
+                          memory_order_relaxed);
+    atomic_store_explicit(&snapshot->master_output_gain_bits,
+                          float_bits(runtime->master_output_gain.target),
                           memory_order_relaxed);
     atomic_store_explicit(&snapshot->overload_count,
                           runtime->enabled ? runtime->machine.overload_count : 0u,
@@ -480,6 +484,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     runtime_ramp_reset(&runtime->direct_tile_route, 0.0f);
     runtime_ramp_reset(&runtime->ordinary_fx_return_gain,
                        runtime->parameters.fx_return_gain);
+    runtime_ramp_reset(&runtime->master_output_gain, 1.0f);
     runtime->selected_tap = TS_SISTER_TAP_MIX;
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     snapshot_atomic_init(&runtime->snapshot);
@@ -1349,6 +1354,10 @@ TsStereoFrame ts_sister_runtime_process_output(TsSisterRuntime *runtime,
     if (runtime == NULL) return ts_stereo_frame_sanitize(input);
     output = ts_sister_limiter_process(&runtime->limiter, input,
                                        NULL, &pre_peak);
+    /* The global OUT fader is the final audible gain stage. The VU and FILE
+       OUT tap deliberately observe this post-fader signal. */
+    output = frame_scale(output,
+                         runtime_ramp_advance(&runtime->master_output_gain));
     if (runtime->snapshot_batch_depth == 0u)
         runtime->limiter_gain_reduction_db =
             ts_sister_limiter_gain_reduction_db(&runtime->limiter);
@@ -1376,6 +1385,22 @@ void ts_sister_runtime_set_limiter_enabled(TsSisterRuntime *runtime,
 {
     if (runtime == NULL) return;
     ts_sister_limiter_set_enabled(&runtime->limiter, enabled);
+    publish_snapshot(runtime);
+}
+
+void ts_sister_runtime_set_master_output_gain(TsSisterRuntime *runtime,
+                                              float gain)
+{
+    uint32_t sample_rate;
+    if (runtime == NULL) return;
+    if (!isfinite(gain)) gain = 1.0f;
+    if (gain < 0.0f) gain = 0.0f;
+    if (gain > 1.0f) gain = 1.0f;
+    sample_rate = runtime->limiter.sample_rate;
+    if (sample_rate == 0u) sample_rate = runtime->machine.buffer.sample_rate;
+    if (sample_rate == 0u && runtime->post_fx.ready)
+        sample_rate = runtime->post_fx.sample_rate;
+    runtime_ramp_set(&runtime->master_output_gain, gain, sample_rate);
     publish_snapshot(runtime);
 }
 
@@ -1823,6 +1848,8 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
                                  memory_order_relaxed));
         snapshot->limiter_input_peak = bits_float(atomic_load_explicit(
             &source->limiter_input_peak_bits, memory_order_relaxed));
+        snapshot->master_output_gain = bits_float(atomic_load_explicit(
+            &source->master_output_gain_bits, memory_order_relaxed));
         snapshot->overload_count = atomic_load_explicit(
             &source->overload_count, memory_order_relaxed);
         snapshot->warnings = atomic_load_explicit(

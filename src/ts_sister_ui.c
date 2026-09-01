@@ -181,6 +181,8 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
     model->routing.limiter_ceiling_db = config != NULL ?
         config->sister_limiter_ceiling_db :
         TS_SISTER_LIMITER_DEFAULT_CEILING_DB;
+    model->routing.master_output_gain = config != NULL ?
+        (float)config->master_output_percent / 100.0f : 1.0f;
     model->selected_tap = TS_SISTER_TAP_MIX;
     model->destination_slot = -1;
     ts_sister_parameters_default(&model->parameters, 48000u);
@@ -333,8 +335,14 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             return hit;
         }
     }
-    if (contains(x, y, 532, 8, 36, 22)) {
+    if (contains(x, y, 494, 8, 30, 22)) {
         hit.action = TS_SISTER_UI_ACTION_LIMITER_TOGGLE;
+        return hit;
+    }
+    if (contains(x, y, 528, 8, 48, 22)) {
+        hit.action = TS_SISTER_UI_ACTION_MASTER_OUTPUT;
+        hit.index = TS_SISTER_UI_PARAM_MASTER_OUTPUT;
+        hit.normalized = (float)(x - 528) / 47.0f;
         return hit;
     }
     if (model != NULL && model->fx_page == 0 &&
@@ -342,13 +350,13 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         hit.action = TS_SISTER_UI_ACTION_WAVE_MODE;
         return hit;
     }
-    if (contains(x, y, 350, 8, 94, 22)) {
+    if (contains(x, y, 350, 8, 86, 22)) {
         hit.action = TS_SISTER_UI_ACTION_PARAMETER;
         hit.index = TS_SISTER_UI_PARAM_BUFFER_SECONDS;
-        hit.normalized = (float)(x - 350) / 93.0f;
+        hit.normalized = (float)(x - 350) / 85.0f;
         return hit;
     }
-    if (contains(x, y, 450, 8, 76, 22)) {
+    if (contains(x, y, 440, 8, 50, 22)) {
         hit.action = TS_SISTER_UI_ACTION_PAGE;
         return hit;
     }

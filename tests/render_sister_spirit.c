@@ -138,6 +138,7 @@ int main(int argc, char **argv)
     model.routing.limiter_ceiling_db = -1.0f;
     model.routing.limiter_gain_reduction_db = 3.2f;
     model.routing.limiter_input_peak = 1.29f;
+    model.routing.master_output_gain = 0.63f;
     model.routing.output_level[0] = 0.84f;
     model.routing.output_level[1] = 0.52f;
     model.routing.output_peak_hold[0] = 0.89f;

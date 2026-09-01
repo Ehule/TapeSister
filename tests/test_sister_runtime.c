@@ -93,6 +93,30 @@ int main(void)
           snapshot.output_level[1] > 0.0f);
     CHECK(snapshot.output_peak_hold[0] >= snapshot.output_level[0] &&
           snapshot.output_peak_hold[1] >= snapshot.output_level[1]);
+    ts_sister_runtime_set_limiter_enabled(&runtime, 0);
+    ts_sister_runtime_set_master_output_gain(&runtime, 0.25f);
+    {
+        TsStereoFrame output = {0};
+        for (int i = 0; i < 24; ++i)
+            (void)ts_sister_runtime_process_output(
+                &runtime, (TsStereoFrame){0.0f, 0.0f});
+        runtime.output_level[0] = runtime.output_level[1] = 0.0f;
+        runtime.output_peak_hold[0] = runtime.output_peak_hold[1] = 0.0f;
+        (void)ts_sister_runtime_process_output(
+            &runtime, (TsStereoFrame){0.8f, -0.4f});
+        output = ts_sister_runtime_process_output(
+            &runtime, (TsStereoFrame){0.0f, 0.0f});
+        CHECK(CLOSE(output.l, 0.2f));
+        CHECK(CLOSE(output.r, -0.1f));
+        CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+        CHECK(CLOSE(snapshot.master_output_gain, 0.25f));
+        CHECK(snapshot.output_level[0] < 0.3f);
+    }
+    ts_sister_runtime_set_master_output_gain(&runtime, 1.0f);
+    for (int i = 0; i < 24; ++i)
+        (void)ts_sister_runtime_process_output(
+            &runtime, (TsStereoFrame){0.0f, 0.0f});
+    ts_sister_runtime_set_limiter_enabled(&runtime, 1);
     source.preview = (TsStereoFrame){4.0f, -4.0f};
     (void)ts_sister_runtime_process_frame(&runtime, &source);
     (void)ts_sister_runtime_process_output(

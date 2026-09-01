@@ -1084,9 +1084,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         output = audio_apply_topology_crossfade(audio, output);
         output = ts_sister_runtime_process_output(&audio->sister, output);
         /* FILE OUT captures the final audible program after ordinary or
-           Sister POST effects, topology fades, and the output limiter. The
-           optional H1/H2/H3 file stems retain their internal taps. Neither
-           path writes to Sister's rolling memory. */
+           Sister POST effects, topology fades, the output limiter, and the
+           global OUT fader. The optional H1/H2/H3 file stems retain their
+           internal taps. Neither path writes to Sister's rolling memory. */
         if (audio->sister_file_recorder != NULL &&
             ts_performance_recorder_state(audio->sister_file_recorder) ==
                 TS_PERFORMANCE_FILE_RECORDING) {
@@ -8099,6 +8099,25 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                  audio->sister.limiter.enabled ? "ON" : "OFF");
         return;
     }
+    if (hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) {
+        float gain = hit.normalized;
+        float decibels;
+        if (!isfinite(gain)) gain = 1.0f;
+        if (gain < 0.0f) gain = 0.0f;
+        if (gain > 1.0f) gain = 1.0f;
+        if (device) SDL_LockAudioDevice(device);
+        ts_sister_runtime_set_master_output_gain(&audio->sister, gain);
+        if (device) SDL_UnlockAudioDevice(device);
+        ui->config.master_output_percent = (int)lrintf(gain * 100.0f);
+        decibels = gain > 0.0001f ? 20.0f * log10f(gain) : -INFINITY;
+        if (isfinite(decibels))
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "MASTER OUT %+.1F DB - POST LIMITER", decibels);
+        else
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "MASTER OUT MUTED - POST LIMITER");
+        return;
+    }
     if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG) {
         sister->model.fallout_lfo_open =
             !sister->model.fallout_lfo_open;
@@ -8156,6 +8175,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
         hit.action != TS_SISTER_UI_ACTION_LIMITER_TOGGLE &&
+        hit.action != TS_SISTER_UI_ACTION_MASTER_OUTPUT &&
         hit.action != TS_SISTER_UI_ACTION_CAPTURE_FORMAT &&
         hit.action != TS_SISTER_UI_ACTION_DESTINATION &&
         hit.action != TS_SISTER_UI_ACTION_TAP &&
@@ -9944,6 +9964,8 @@ int main(int argc, char **argv)
         ui.config.sister_limiter_ceiling_db,
         ui.config.sister_limiter_lookahead_ms,
         ui.config.sister_limiter_release_ms);
+    ts_sister_runtime_set_master_output_gain(
+        &audio.sister, (float)ui.config.master_output_percent / 100.0f);
     audio.sister_file_recorder = &sister_window.performance_recorder;
     atomic_init(&audio.sister_file_tap, TS_SISTER_TAP_MIX);
     ts_realtime_diagnostics_init(&audio.realtime_diagnostics);
@@ -10487,7 +10509,8 @@ int main(int argc, char **argv)
                         } else {
                             if (event.button.button == SDL_BUTTON_LEFT)
                                 sister_window.parameter_lock_gesture = 0;
-                            if (hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+                            if ((hit.action == TS_SISTER_UI_ACTION_PARAMETER ||
+                                 hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) &&
                                 !ts_sister_ui_parameter_locked(
                                     &sister_window.model, hit.index)) {
                                 uint32_t button_mask =
@@ -10521,7 +10544,8 @@ int main(int argc, char **argv)
                         continue;
                     }
                     hit = ts_sister_ui_hit_test_model(&sister_window.model, x, y);
-                    target = hit.action == TS_SISTER_UI_ACTION_PARAMETER ?
+                    target = (hit.action == TS_SISTER_UI_ACTION_PARAMETER ||
+                              hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) ?
                              hit.index : -1;
                     if (ts_ui_pointer_drag_accept_motion(
                             &sister_window.parameter_drag, target,
@@ -10542,16 +10566,26 @@ int main(int argc, char **argv)
                                              raw_x, raw_y, &x, &y))
                         continue;
                     hit = ts_sister_ui_hit_test_model(&sister_window.model, x, y);
-                    if (hit.action == TS_SISTER_UI_ACTION_PARAMETER && wheel != 0 &&
+                    if ((hit.action == TS_SISTER_UI_ACTION_PARAMETER ||
+                         hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) &&
+                        wheel != 0 &&
                         !sister_window.parameter_lock_gesture &&
                         !ts_sister_ui_parameter_locked(
                             &sister_window.model, hit.index) &&
                         ts_ui_wheel_guard_accept(
                             &ui.wheel_guard,
                             WHEEL_TARGET_SISTER + hit.index, SDL_GetTicks())) {
-                        hit.normalized = sister_parameter_wheel_normalized(
-                            &sister_window.model.parameters, hit.index, wheel,
-                            (SDL_GetModState() & KMOD_SHIFT) != 0);
+                        if (hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) {
+                            float step = (SDL_GetModState() & KMOD_SHIFT) != 0 ?
+                                         0.01f : 0.05f;
+                            hit.normalized =
+                                sister_window.model.routing.master_output_gain +
+                                step * (float)wheel;
+                        } else {
+                            hit.normalized = sister_parameter_wheel_normalized(
+                                &sister_window.model.parameters, hit.index, wheel,
+                                (SDL_GetModState() & KMOD_SHIFT) != 0);
+                        }
                         sister_apply_action(device, &audio, &ui, &instrument,
                                             &sister_window, &input_device,
                                             &external_input, hit,

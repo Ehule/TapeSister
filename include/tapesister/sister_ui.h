@@ -17,6 +17,7 @@ typedef enum {
     TS_SISTER_UI_ACTION_CLEAR,
     TS_SISTER_UI_ACTION_MONITOR,
     TS_SISTER_UI_ACTION_LIMITER_TOGGLE,
+    TS_SISTER_UI_ACTION_MASTER_OUTPUT,
     TS_SISTER_UI_ACTION_WAVE_MODE,
     TS_SISTER_UI_ACTION_SOURCE_TILES,
     TS_SISTER_UI_ACTION_SOURCE_FM,
@@ -155,7 +156,9 @@ typedef enum {
     /* These clocks are intentionally not preset-lock bits: the established
        63 lock indices remain stable in existing preset files. */
     TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION = 1000,
-    TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION
+    TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION,
+    /* Global session control: deliberately outside preset-lock storage. */
+    TS_SISTER_UI_PARAM_MASTER_OUTPUT
 } TsSisterUiParameter;
 
 #define TS_SISTER_UI_SLOT_PARAMETER(slot, field) \
