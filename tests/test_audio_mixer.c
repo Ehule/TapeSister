@@ -66,6 +66,14 @@ int main(void)
     out = ts_audio_mixer_render(&mixer, &buses);
     CHECK(CLOSE(out.l, 0.8f) && CLOSE(out.r, -0.8f));
 
+    ts_audio_buses_clear(&buses);
+    buses.sister = (TsStereoFrame){0.8f, -0.8f};
+    buses.post_fx = (TsStereoFrame){0.8f, -0.8f};
+    out = ts_audio_mixer_render_unclamped(&mixer, &buses);
+    CHECK(CLOSE(out.l, 1.6f) && CLOSE(out.r, -1.6f));
+    out = ts_audio_mixer_render(&mixer, &buses);
+    CHECK(CLOSE(out.l, 1.0f) && CLOSE(out.r, -1.0f));
+
     for (int count = 1; count <= TS_MIDI_NOTE_VOICE_LIMIT; count *= 2) {
         TsStereoFrame normalized = ts_audio_normalize_linked(
             (TsStereoFrame){(float)count, (float)count * 0.25f}, count);

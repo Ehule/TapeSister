@@ -1102,8 +1102,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             }
             buses.reference = ts_stereo_frame_from_mono(reference_value);
         }
-        output = ts_audio_mixer_render(&audio->mixer, &buses);
+        output = ts_audio_mixer_render_unclamped(&audio->mixer, &buses);
         output = audio_apply_topology_crossfade(audio, output);
+        output = ts_sister_runtime_process_output(&audio->sister, output);
+        audio->last_output = output;
+        audio->mixer.buses.output = output;
         out[i] = output.l;
         if (i + 1 < values) out[i + 1] = output.r;
     }
@@ -8081,6 +8084,16 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         sister->rendered_model_valid = 0;
         return;
     }
+    if (hit.action == TS_SISTER_UI_ACTION_LIMITER_TOGGLE) {
+        if (device) SDL_LockAudioDevice(device);
+        ts_sister_runtime_set_limiter_enabled(
+            &audio->sister, !audio->sister.limiter.enabled);
+        if (device) SDL_UnlockAudioDevice(device);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "OUTPUT LIMITER %s - SESSION OVERRIDE",
+                 audio->sister.limiter.enabled ? "ON" : "OFF");
+        return;
+    }
     if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG) {
         sister->model.fallout_lfo_open =
             !sister->model.fallout_lfo_open;
@@ -8137,6 +8150,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
+        hit.action != TS_SISTER_UI_ACTION_LIMITER_TOGGLE &&
         hit.action != TS_SISTER_UI_ACTION_CAPTURE_FORMAT &&
         hit.action != TS_SISTER_UI_ACTION_DESTINATION &&
         hit.action != TS_SISTER_UI_ACTION_TAP &&
@@ -9920,6 +9934,11 @@ int main(int argc, char **argv)
     ts_audio_mixer_init(&audio.mixer);
     audio.fm_output_gain = (float)ui.config.fm_output_percent / 100.0f;
     ts_sister_runtime_init(&audio.sister);
+    ts_sister_runtime_configure_limiter(
+        &audio.sister, ui.config.sister_limiter_enabled,
+        ui.config.sister_limiter_ceiling_db,
+        ui.config.sister_limiter_lookahead_ms,
+        ui.config.sister_limiter_release_ms);
     audio.sister_file_recorder = &sister_window.performance_recorder;
     atomic_init(&audio.sister_file_tap, TS_SISTER_TAP_MIX);
     ts_realtime_diagnostics_init(&audio.realtime_diagnostics);

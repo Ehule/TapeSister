@@ -1,6 +1,7 @@
 #include "tapesister/audio_config.h"
 #include "tapesister/performance.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -46,6 +47,11 @@ static int test_defaults(void)
                   "Sister storage should retain the Kafka foundation defaults") &&
            expect(config.sister_capture_channels == 1,
                   "Sister Capture should remain deliberately mono by default") &&
+           expect(config.sister_limiter_enabled == 1 &&
+                  fabsf(config.sister_limiter_ceiling_db + 1.0f) < 0.001f &&
+                  fabsf(config.sister_limiter_lookahead_ms - 1.0f) < 0.001f &&
+                  fabsf(config.sister_limiter_release_ms - 120.0f) < 0.001f,
+                  "final limiter should default to transparent safety settings") &&
            expect(config.sister_fx_effect_transition_ms == 240000 &&
                   config.sister_fx_transition_ms == 240000 &&
                   config.sister_fallout_transition_ms == 240000 &&
@@ -101,6 +107,10 @@ static int test_roundtrip(void)
     saved.sister_buffer_seconds = 55;
     saved.sister_buffer_channels = 1;
     saved.sister_clear_ms = 33;
+    saved.sister_limiter_enabled = 0;
+    saved.sister_limiter_ceiling_db = -2.5f;
+    saved.sister_limiter_lookahead_ms = 2.75f;
+    saved.sister_limiter_release_ms = 333.0f;
     saved.sister_fx_effect_transition_ms = 234567;
     saved.sister_fx_transition_ms = 123456;
     saved.sister_fallout_transition_ms = 54321;
@@ -156,6 +166,10 @@ static int test_roundtrip(void)
          expect(loaded.sister_buffer_seconds == 55 &&
                 loaded.sister_buffer_channels == 1 &&
                 loaded.sister_clear_ms == 33 &&
+                loaded.sister_limiter_enabled == 0 &&
+                fabsf(loaded.sister_limiter_ceiling_db + 2.5f) < 0.001f &&
+                fabsf(loaded.sister_limiter_lookahead_ms - 2.75f) < 0.001f &&
+                fabsf(loaded.sister_limiter_release_ms - 333.0f) < 0.001f &&
                 loaded.sister_fx_effect_transition_ms == 234567 &&
                 loaded.sister_fx_transition_ms == 123456 &&
                 loaded.sister_fallout_transition_ms == 54321 &&
@@ -274,7 +288,10 @@ static int test_legacy_config(void)
                 "legacy FX clock should seed both split timers") &&
          expect(loaded.sister_fallout_component_transition_ms == 45678 &&
                 loaded.sister_fallout_master_transition_ms == 45678,
-                "legacy Fallout clock should seed both split timers");
+                "legacy Fallout clock should seed both split timers") &&
+         expect(loaded.sister_limiter_enabled == 1 &&
+                fabsf(loaded.sister_limiter_ceiling_db + 1.0f) < 0.001f,
+                "legacy configs should receive the safe limiter default");
     remove(path);
     return ok;
 }

@@ -126,6 +126,10 @@ typedef struct {
     int sister_buffer_seconds;
     int sister_buffer_channels;
     int sister_clear_ms;
+    int sister_limiter_enabled;
+    float sister_limiter_ceiling_db;
+    float sister_limiter_lookahead_ms;
+    float sister_limiter_release_ms;
     int sister_fx_effect_transition_ms;
     int sister_fx_transition_ms;
     int sister_fallout_transition_ms;

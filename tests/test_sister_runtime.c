@@ -73,6 +73,8 @@ int main(void)
                 frame.input.l + frame.tap[TS_SISTER_TAP_MIX].l));
     CHECK(CLOSE(frame.monitor_return.r,
                 frame.input.r + frame.tap[TS_SISTER_TAP_MIX].r));
+    (void)ts_sister_runtime_process_output(&runtime, frame.monitor_return);
+    (void)ts_sister_runtime_process_output(&runtime, frame.monitor_return);
     CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
     CHECK(snapshot.output_level[0] > 0.0f &&
           snapshot.output_level[1] > 0.0f);
@@ -80,6 +82,8 @@ int main(void)
           snapshot.output_peak_hold[1] >= snapshot.output_level[1]);
     source.preview = (TsStereoFrame){4.0f, -4.0f};
     (void)ts_sister_runtime_process_frame(&runtime, &source);
+    (void)ts_sister_runtime_process_output(
+        &runtime, (TsStereoFrame){4.0f, -4.0f});
     CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
     CHECK(snapshot.output_clip[0] && snapshot.output_clip[1]);
     source.preview = (TsStereoFrame){0.5f, -0.25f};

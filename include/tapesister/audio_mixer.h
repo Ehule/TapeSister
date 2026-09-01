@@ -41,5 +41,7 @@ void ts_audio_buses_apply_source_insert(TsAudioBuses *buses,
                                         float external_insert);
 TsStereoFrame ts_audio_mixer_render(TsAudioMixer *mixer,
                                     const TsAudioBuses *sources);
+TsStereoFrame ts_audio_mixer_render_unclamped(TsAudioMixer *mixer,
+                                              const TsAudioBuses *sources);
 
 #endif

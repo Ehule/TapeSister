@@ -3714,25 +3714,49 @@ static void sister_output_meter(TsFramebuffer *fb,
                                 int x, int y)
 {
     static const char *const names[2] = {"L", "R"};
-    uint32_t colors[2] = {PAL_WAVE_LEFT, PAL_WAVE_RIGHT};
-    text(fb, x, y, "VU", PAL_MOUSE, 1);
+    static const uint32_t colors[4] = {
+        RGB(48, 184, 88), RGB(210, 196, 46),
+        RGB(236, 126, 38), RGB(226, 48, 44)
+    };
+    char status[24];
+    float ceiling = routing->limiter_ceiling_db;
+    int ceiling_x;
+    if (!isfinite(ceiling)) ceiling = TS_SISTER_LIMITER_DEFAULT_CEILING_DB;
+    snprintf(status, sizeof(status), "C%+.0F GR%.1F", ceiling,
+             routing->limiter_gain_reduction_db);
+    text(fb, x + 40, 1, status,
+         routing->limiter_gain_reduction_db > 0.05f ? colors[3] : PAL_MOUSE,
+         1);
+    button(fb, x, y, 36, "LIM", routing->limiter_enabled);
+    ceiling_x = (int)lrintf(48.0f * sister_meter_normalized(
+        powf(10.0f, ceiling / 20.0f)));
+    if (ceiling_x < 0) ceiling_x = 0;
+    if (ceiling_x > 47) ceiling_x = 47;
     for (int channel = 0; channel < 2; ++channel) {
-        int lane_y = y + 10 + channel * 11;
-        int width = 72;
+        int lane_y = y + 1 + channel * 11;
+        int width = 48;
         int fill = (int)lrintf((float)width * sister_meter_normalized(
             routing->output_level[channel]));
         int peak = (int)lrintf((float)(width - 1) *
             sister_meter_normalized(routing->output_peak_hold[channel]));
-        text(fb, x, lane_y - 1, names[channel], colors[channel], 1);
-        rect(fb, x + 10, lane_y, width, 6, RGB(12, 12, 12));
-        if (fill > 0) rect(fb, x + 10, lane_y + 1, fill, 4,
-                           routing->output_clip[channel] ? PAL_VOLUME :
-                           colors[channel]);
-        if (peak > 0) rect(fb, x + 10 + peak, lane_y, 1, 6,
-                           routing->output_clip[channel] ? PAL_VOLUME :
+        static const int boundaries[4] = {36, 42, 45, 48};
+        int start = 0;
+        text(fb, x + 40, lane_y - 1, names[channel], PAL_MOUSE, 1);
+        rect(fb, x + 48, lane_y, width, 6, RGB(7, 7, 8));
+        for (int zone = 0; zone < 4; ++zone) {
+            int end = fill < boundaries[zone] ? fill : boundaries[zone];
+            if (end > start)
+                rect(fb, x + 48 + start, lane_y + 1,
+                     end - start, 4, colors[zone]);
+            start = boundaries[zone];
+            if (fill <= start) break;
+        }
+        rect(fb, x + 48 + ceiling_x, lane_y, 1, 6, PAL_BUTTON);
+        if (peak > 0) rect(fb, x + 48 + peak, lane_y, 1, 6,
+                           routing->output_clip[channel] ? colors[3] :
                            PAL_MOUSE);
         if (routing->output_clip[channel])
-            rect(fb, x + 84, lane_y, 3, 6, PAL_VOLUME);
+            rect(fb, x + 97, lane_y, 2, 6, colors[3]);
     }
 }
 
@@ -4180,8 +4204,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
            model->fx_page == 0 ? "FX PAGE" :
            model->fx_page == 1 ? "FALLOUT" : "TAPE",
            model->fx_page != 0);
-    button(fb, 532, 8, 98, ts_waveform_display_name(model->waveform_mode),
-           model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
+    sister_output_meter(fb, &model->routing, 532, 8);
 
     if (model->fx_page == 2) {
         const TsSisterFalloutControls *f = &model->parameters.fx.fallout;
@@ -4444,7 +4467,6 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         sister_transition_progress(fb, 420, 319, 100,
             model->routing.fx_master_transition_progress,
             model->routing.fx_master_transition_active, PAL_MOUSE);
-        sister_output_meter(fb, &model->routing, 538, 326);
         goto sister_footer;
     }
 
@@ -4473,6 +4495,9 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     if (!model->routing.enabled ||
         model->power_visual != TS_SISTER_UI_POWER_VISUAL_NONE)
         sister_spirit_render(fb, model);
+    button(fb, 532, 144, 92,
+           ts_waveform_display_name(model->waveform_mode),
+           model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
     button(fb, 10, 172, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
     button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
     button(fb, 162, 172, 70, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);

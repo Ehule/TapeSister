@@ -176,6 +176,11 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
     model->capture_channels = config != NULL ? config->sister_capture_channels : 1;
     model->waveform_mode = ts_waveform_display_sanitize(
         config != NULL ? config->sister_waveform_display_mode : 0);
+    model->routing.limiter_enabled = config != NULL ?
+        config->sister_limiter_enabled : TS_SISTER_LIMITER_DEFAULT_ENABLED;
+    model->routing.limiter_ceiling_db = config != NULL ?
+        config->sister_limiter_ceiling_db :
+        TS_SISTER_LIMITER_DEFAULT_CEILING_DB;
     model->selected_tap = TS_SISTER_TAP_MIX;
     model->destination_slot = -1;
     ts_sister_parameters_default(&model->parameters, 48000u);
@@ -328,7 +333,12 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             return hit;
         }
     }
-    if (contains(x, y, 532, 8, 98, 22)) {
+    if (contains(x, y, 532, 8, 36, 22)) {
+        hit.action = TS_SISTER_UI_ACTION_LIMITER_TOGGLE;
+        return hit;
+    }
+    if (model != NULL && model->fx_page == 0 &&
+        contains(x, y, 532, 144, 92, 18)) {
         hit.action = TS_SISTER_UI_ACTION_WAVE_MODE;
         return hit;
     }

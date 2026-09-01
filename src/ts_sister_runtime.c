@@ -59,14 +59,16 @@ static float monitor_approach(float current, float target, uint32_t sample_rate)
 }
 
 static void output_meter_update(TsSisterRuntime *runtime,
-                                TsStereoFrame output)
+                                TsStereoFrame output,
+                                float pre_limiter_peak)
 {
     float sample[2];
     float level_release;
     float peak_release;
     uint32_t sample_rate;
     if (runtime == NULL) return;
-    sample_rate = runtime->machine.buffer.sample_rate;
+    sample_rate = runtime->limiter.sample_rate;
+    if (sample_rate == 0u) sample_rate = runtime->machine.buffer.sample_rate;
     if (sample_rate == 0u) sample_rate = 48000u;
     sample[0] = fabsf(isfinite(output.l) ? output.l : 0.0f);
     sample[1] = fabsf(isfinite(output.r) ? output.r : 0.0f);
@@ -93,7 +95,7 @@ static void output_meter_update(TsSisterRuntime *runtime,
                 runtime->output_peak_hold[channel] =
                     runtime->output_level[channel];
         }
-        if (sample[channel] >= 1.0f)
+        if (pre_limiter_peak >= 1.0f)
             runtime->output_clip_hold_frames[channel] = sample_rate * 2u;
         else if (runtime->output_clip_hold_frames[channel] != 0u)
             --runtime->output_clip_hold_frames[channel];
@@ -177,6 +179,12 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
                     float_bits(0.0f));
         atomic_init(&snapshot->output_clip[channel], 0);
     }
+    atomic_init(&snapshot->limiter_enabled,
+                TS_SISTER_LIMITER_DEFAULT_ENABLED);
+    atomic_init(&snapshot->limiter_ceiling_db_bits,
+                float_bits(TS_SISTER_LIMITER_DEFAULT_CEILING_DB));
+    atomic_init(&snapshot->limiter_gain_reduction_db_bits, float_bits(0.0f));
+    atomic_init(&snapshot->limiter_input_peak_bits, float_bits(0.0f));
     atomic_init(&snapshot->overload_count, 0u);
     atomic_init(&snapshot->warnings, 0u);
     atomic_init(&snapshot->source_target_conflict, 0);
@@ -281,6 +289,17 @@ static void publish_snapshot(TsSisterRuntime *runtime)
                               runtime->output_clip_hold_frames[channel] != 0u,
                               memory_order_relaxed);
     }
+    atomic_store_explicit(&snapshot->limiter_enabled,
+                          runtime->limiter.enabled, memory_order_relaxed);
+    atomic_store_explicit(&snapshot->limiter_ceiling_db_bits,
+                          float_bits(runtime->limiter.ceiling_db),
+                          memory_order_relaxed);
+    atomic_store_explicit(&snapshot->limiter_gain_reduction_db_bits,
+                          float_bits(runtime->limiter_gain_reduction_db),
+                          memory_order_relaxed);
+    atomic_store_explicit(&snapshot->limiter_input_peak_bits,
+                          float_bits(runtime->limiter_input_peak),
+                          memory_order_relaxed);
     atomic_store_explicit(&snapshot->overload_count,
                           runtime->enabled ? runtime->machine.overload_count : 0u,
                           memory_order_relaxed);
@@ -380,6 +399,8 @@ void ts_sister_runtime_end_audio_block(TsSisterRuntime *runtime)
     if (runtime == NULL || runtime->snapshot_batch_depth == 0u) return;
     ts_sister_machine_end_audio_block(&runtime->machine);
     --runtime->snapshot_batch_depth;
+    runtime->limiter_gain_reduction_db =
+        ts_sister_limiter_gain_reduction_db(&runtime->limiter);
     if (runtime->snapshot_batch_depth == 0u && runtime->snapshot_pending) {
         runtime->snapshot_pending = 0;
         publish_snapshot(runtime);
@@ -430,6 +451,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_sister_parameters_default(&runtime->parameters, 48000u);
     ts_performance_init(&runtime->performance);
     ts_capture_init(&runtime->capture);
+    ts_sister_limiter_init(&runtime->limiter);
     runtime->rolling = 1;
     runtime->input_available = 1;
     runtime->monitor_dry_current = 1.0f;
@@ -462,6 +484,7 @@ void ts_sister_runtime_free(TsSisterRuntime *runtime)
     ts_sister_machine_free(&runtime->machine);
     ts_sister_fallout_free(&runtime->fallout);
     ts_sister_post_fx_free(&runtime->post_fx);
+    ts_sister_limiter_free(&runtime->limiter);
     ts_capture_free(&runtime->capture);
     memset(runtime->page_source_masks, 0,
            sizeof(runtime->page_source_masks));
@@ -509,6 +532,15 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
         runtime->warnings |= TS_SISTER_WARNING_ALLOCATION;
         publish_snapshot(runtime);
         runtime_error(error, error_size, "Could not allocate Sister FX storage");
+        return 0;
+    }
+    if ((!runtime->limiter.ready ||
+         runtime->limiter.sample_rate != sample_rate) &&
+        !ts_sister_limiter_reconfigure(&runtime->limiter, sample_rate)) {
+        runtime->warnings |= TS_SISTER_WARNING_ALLOCATION;
+        publish_snapshot(runtime);
+        runtime_error(error, error_size,
+                      "Could not allocate output limiter lookahead");
         return 0;
     }
     if (!ts_sister_machine_init(&machine, sample_rate, buffer_channels,
@@ -650,6 +682,17 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
             ts_sister_post_fx_sync_controls(&runtime->post_fx,
                                              &runtime->parameters.fx);
         }
+        if (!runtime->limiter.ready ||
+            runtime->limiter.sample_rate != sample_rate) {
+            if (!ts_sister_limiter_reconfigure(&runtime->limiter,
+                                                sample_rate)) {
+                runtime->warnings |= TS_SISTER_WARNING_ALLOCATION;
+                publish_snapshot(runtime);
+                runtime_error(error, error_size,
+                              "Could not allocate output limiter lookahead");
+                return 0;
+            }
+        }
         runtime->output_channels = output_channels;
         runtime->warnings &= ~(uint32_t)TS_SISTER_WARNING_DEVICE_CONTRACT;
         publish_snapshot(runtime);
@@ -659,6 +702,7 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
     if (sample_rate == 0u || output_channels != 2u ||
         !ts_sister_fallout_reconfigure(&runtime->fallout, sample_rate) ||
         !ts_sister_post_fx_reconfigure(&runtime->post_fx, sample_rate) ||
+        !ts_sister_limiter_reconfigure(&runtime->limiter, sample_rate) ||
         !ts_sister_machine_reconfigure(
             &runtime->machine, sample_rate, runtime->machine.buffer.channels,
             runtime->machine.parameters.buffer_seconds)) {
@@ -1268,7 +1312,6 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         frame_scale(frame.input, runtime->monitor_dry_current),
         frame_scale(frame.tap[TS_SISTER_TAP_MIX],
                     runtime->monitor_wet_current)), monitor_route);
-    output_meter_update(runtime, frame.monitor_return);
     runtime->last_frame = frame;
     ++runtime->processed_frames;
     publish_frame_snapshot(runtime);
@@ -1287,6 +1330,44 @@ TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
         TS_SISTER_HEAD_COUNT, input, 0);
     return_gain = runtime_ramp_advance(&runtime->ordinary_fx_return_gain);
     return frame_effect_return(input, output, return_gain);
+}
+
+TsStereoFrame ts_sister_runtime_process_output(TsSisterRuntime *runtime,
+                                               TsStereoFrame input)
+{
+    TsStereoFrame output;
+    float pre_peak = 0.0f;
+    if (runtime == NULL) return ts_stereo_frame_sanitize(input);
+    output = ts_sister_limiter_process(&runtime->limiter, input,
+                                       NULL, &pre_peak);
+    if (runtime->snapshot_batch_depth == 0u)
+        runtime->limiter_gain_reduction_db =
+            ts_sister_limiter_gain_reduction_db(&runtime->limiter);
+    runtime->limiter_input_peak = pre_peak;
+    output_meter_update(runtime, output, pre_peak);
+    publish_frame_snapshot(runtime);
+    return output;
+}
+
+void ts_sister_runtime_configure_limiter(TsSisterRuntime *runtime,
+                                         int enabled, float ceiling_db,
+                                         float lookahead_ms,
+                                         float release_ms)
+{
+    if (runtime == NULL) return;
+    ts_sister_limiter_set_controls(&runtime->limiter, enabled, ceiling_db,
+                                   lookahead_ms, release_ms);
+    runtime->limiter_gain_reduction_db = 0.0f;
+    runtime->limiter_input_peak = 0.0f;
+    publish_snapshot(runtime);
+}
+
+void ts_sister_runtime_set_limiter_enabled(TsSisterRuntime *runtime,
+                                           int enabled)
+{
+    if (runtime == NULL) return;
+    ts_sister_limiter_set_enabled(&runtime->limiter, enabled);
+    publish_snapshot(runtime);
 }
 
 void ts_sister_runtime_process_block(TsSisterRuntime *runtime,
@@ -1724,6 +1805,15 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
             snapshot->output_clip[channel] = atomic_load_explicit(
                 &source->output_clip[channel], memory_order_relaxed);
         }
+        snapshot->limiter_enabled = atomic_load_explicit(
+            &source->limiter_enabled, memory_order_relaxed);
+        snapshot->limiter_ceiling_db = bits_float(atomic_load_explicit(
+            &source->limiter_ceiling_db_bits, memory_order_relaxed));
+        snapshot->limiter_gain_reduction_db = bits_float(
+            atomic_load_explicit(&source->limiter_gain_reduction_db_bits,
+                                 memory_order_relaxed));
+        snapshot->limiter_input_peak = bits_float(atomic_load_explicit(
+            &source->limiter_input_peak_bits, memory_order_relaxed));
         snapshot->overload_count = atomic_load_explicit(
             &source->overload_count, memory_order_relaxed);
         snapshot->warnings = atomic_load_explicit(

@@ -4,6 +4,7 @@
 #include "tapesister/capture.h"
 #include "tapesister/performance.h"
 #include "tapesister/sister_machine.h"
+#include "tapesister/sister_limiter.h"
 #include "tapesister/sister_wave_snapshot.h"
 
 #include <stdatomic.h>
@@ -91,6 +92,10 @@ typedef struct {
     float output_level[2];
     float output_peak_hold[2];
     int output_clip[2];
+    int limiter_enabled;
+    float limiter_ceiling_db;
+    float limiter_gain_reduction_db;
+    float limiter_input_peak;
     uint64_t overload_count;
     uint32_t warnings;
     int source_target_conflict;
@@ -139,6 +144,10 @@ typedef struct {
     atomic_uint_least32_t output_level_bits[2];
     atomic_uint_least32_t output_peak_hold_bits[2];
     atomic_int output_clip[2];
+    atomic_int limiter_enabled;
+    atomic_uint_least32_t limiter_ceiling_db_bits;
+    atomic_uint_least32_t limiter_gain_reduction_db_bits;
+    atomic_uint_least32_t limiter_input_peak_bits;
     atomic_uint_least64_t overload_count;
     atomic_uint_least32_t warnings;
     atomic_int source_target_conflict;
@@ -169,6 +178,7 @@ typedef struct {
     TsSisterMachine machine;
     TsSisterFalloutEngine fallout;
     TsSisterPostFxEngine post_fx;
+    TsSisterLimiter limiter;
     TsSisterParameters parameters;
     TsPerformanceBank performance;
     TsCaptureRecorder capture;
@@ -205,6 +215,8 @@ typedef struct {
     float output_peak_hold[2];
     uint32_t output_peak_hold_frames[2];
     uint32_t output_clip_hold_frames[2];
+    float limiter_gain_reduction_db;
+    float limiter_input_peak;
     /* UI/controller performance-safety state; never read by the callback. */
     uint64_t parameter_locks;
     uint64_t parameter_locks_high;
@@ -231,6 +243,14 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
                                   char *error, size_t error_size);
 TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
     TsSisterRuntime *runtime, TsStereoFrame input);
+TsStereoFrame ts_sister_runtime_process_output(TsSisterRuntime *runtime,
+                                               TsStereoFrame input);
+void ts_sister_runtime_configure_limiter(TsSisterRuntime *runtime,
+                                         int enabled, float ceiling_db,
+                                         float lookahead_ms,
+                                         float release_ms);
+void ts_sister_runtime_set_limiter_enabled(TsSisterRuntime *runtime,
+                                           int enabled);
 void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
                                       const TsSisterParameters *parameters);
 void ts_sister_runtime_recall_fallout_preset(

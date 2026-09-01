@@ -102,7 +102,10 @@ int main(void)
     CHECK(model.routing.enabled && model.routing.source_mask == 0x8001u);
     hit = ts_sister_ui_hit_test(12, 10);
     CHECK(hit.action == TS_SISTER_UI_ACTION_POWER);
-    CHECK(ts_sister_ui_hit_test(540, 10).action == TS_SISTER_UI_ACTION_WAVE_MODE);
+    CHECK(ts_sister_ui_hit_test(540, 10).action ==
+          TS_SISTER_UI_ACTION_LIMITER_TOGGLE);
+    CHECK(ts_sister_ui_hit_test_model(&model, 540, 150).action ==
+          TS_SISTER_UI_ACTION_WAVE_MODE);
     CHECK(ts_sister_ui_hit_test(455, 10).action == TS_SISTER_UI_ACTION_PAGE);
     hit = ts_sister_ui_hit_test(360, 10);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
@@ -453,14 +456,11 @@ int main(void)
     model.routing.output_peak_hold[0] = 0.75f;
     model.routing.output_peak_hold[1] = 0.5f;
     ts_sister_ui_render(&framebuffer, &model, &palette);
-    CHECK(framebuffer.pixels[337u * TS_UI_WIDTH + 560u] ==
-          palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
-    CHECK(framebuffer.pixels[348u * TS_UI_WIDTH + 560u] ==
-          palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
+    CHECK(framebuffer.pixels[10u * TS_UI_WIDTH + 590u] == 0xff30b858u);
+    CHECK(framebuffer.pixels[21u * TS_UI_WIDTH + 590u] == 0xff30b858u);
     model.routing.output_clip[0] = 1;
     ts_sister_ui_render(&framebuffer, &model, &palette);
-    CHECK(framebuffer.pixels[337u * TS_UI_WIDTH + 560u] ==
-          palette.colors[TS_PALETTE_PATTERN_VOLUME]);
+    CHECK(framebuffer.pixels[10u * TS_UI_WIDTH + 629u] == 0xffe2302cu);
     model.parameters.fx.master_transition = 0.0f;
     ts_sister_ui_render(&framebuffer, &model, &palette);
     CHECK(framebuffer.pixels[320u * TS_UI_WIDTH + 111u] !=

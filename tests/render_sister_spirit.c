@@ -134,6 +134,14 @@ int main(int argc, char **argv)
         snprintf(model.status, sizeof(model.status),
                  "CAPTURE RECORDING - PRESS AGAIN TO STOP");
     }
+    model.routing.limiter_enabled = 1;
+    model.routing.limiter_ceiling_db = -1.0f;
+    model.routing.limiter_gain_reduction_db = 3.2f;
+    model.routing.limiter_input_peak = 1.29f;
+    model.routing.output_level[0] = 0.84f;
+    model.routing.output_level[1] = 0.52f;
+    model.routing.output_peak_hold[0] = 0.89f;
+    model.routing.output_peak_hold[1] = 0.68f;
     if (strcmp(mode, "capture-effects") == 0 ||
         strcmp(mode, "capture-fallout") == 0) {
         model.routing.monitor_enabled = 1;
