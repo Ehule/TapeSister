@@ -39,6 +39,75 @@ int ts_sister_ui_parameter_lock_toggle(TsSisterUiModel *model,
     return 1;
 }
 
+static int lock_words_contain(uint64_t locks, uint64_t locks_high,
+                              int parameter)
+{
+    if (parameter < 0 || parameter >= TS_SISTER_UI_PARAM_COUNT) return 0;
+    return parameter < 64 ?
+        (locks & TS_SISTER_UI_PARAMETER_BIT(parameter)) != 0u :
+        (locks_high & TS_SISTER_UI_PARAMETER_BIT(parameter - 64)) != 0u;
+}
+
+static void lock_words_add(uint64_t *locks, uint64_t *locks_high,
+                           int parameter)
+{
+    if (locks == NULL || locks_high == NULL || parameter < 0 ||
+        parameter >= TS_SISTER_UI_PARAM_COUNT) return;
+    if (parameter < 64)
+        *locks |= TS_SISTER_UI_PARAMETER_BIT(parameter);
+    else
+        *locks_high |= TS_SISTER_UI_PARAMETER_BIT(parameter - 64);
+}
+
+static void migrate_effect_lock(uint64_t *locks, uint64_t *locks_high,
+                                int legacy_parameter, int slot_parameter)
+{
+    if (locks == NULL || locks_high == NULL) return;
+    if (lock_words_contain(*locks, *locks_high, legacy_parameter))
+        lock_words_add(locks, locks_high, slot_parameter);
+}
+
+void ts_sister_ui_migrate_legacy_effect_locks(uint64_t *locks,
+                                              uint64_t *locks_high)
+{
+    /* The old fixed chain migrates to Distortion, Grain, Delay, Reverb.
+       Retain the old bits as historical data and add their slot equivalents. */
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_DISTORTION_GAIN,
+        TS_SISTER_UI_SLOT_PARAMETER(0, 0));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_DISTORTION_DRIVE,
+        TS_SISTER_UI_SLOT_PARAMETER(0, 1));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_DISTORTION_TONE,
+        TS_SISTER_UI_SLOT_PARAMETER(0, 2));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_DISTORTION_MIX,
+        TS_SISTER_UI_SLOT_PARAMETER(0, 4));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_GRAIN_GAIN,
+        TS_SISTER_UI_SLOT_PARAMETER(1, 0));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_GRAIN_SIZE,
+        TS_SISTER_UI_SLOT_PARAMETER(1, 1));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_GRAIN_DENSITY,
+        TS_SISTER_UI_SLOT_PARAMETER(1, 2));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_GRAIN_PITCH,
+        TS_SISTER_UI_SLOT_PARAMETER(1, 3));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_GRAIN_MIX,
+        TS_SISTER_UI_SLOT_PARAMETER(1, 4));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_DELAY_GAIN,
+        TS_SISTER_UI_SLOT_PARAMETER(2, 0));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_DELAY_TIME,
+        TS_SISTER_UI_SLOT_PARAMETER(2, 1));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_DELAY_FEEDBACK,
+        TS_SISTER_UI_SLOT_PARAMETER(2, 2));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_DELAY_MIX,
+        TS_SISTER_UI_SLOT_PARAMETER(2, 4));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_REVERB_GAIN,
+        TS_SISTER_UI_SLOT_PARAMETER(3, 0));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_REVERB_TYPE,
+        TS_SISTER_UI_SLOT_PARAMETER(3, 1));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_REVERB_DECAY,
+        TS_SISTER_UI_SLOT_PARAMETER(3, 2));
+    migrate_effect_lock(locks, locks_high, TS_SISTER_UI_PARAM_REVERB_MIX,
+        TS_SISTER_UI_SLOT_PARAMETER(3, 4));
+}
+
 int ts_sister_ui_event_point(int event_x, int event_y,
                              int *logical_x, int *logical_y)
 {
@@ -371,47 +440,52 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     if (model != NULL && model->fx_page == 1) {
-        static const int parameter[4][5] = {
-            {TS_SISTER_UI_PARAM_REVERB_GAIN, TS_SISTER_UI_PARAM_REVERB_TYPE,
-             TS_SISTER_UI_PARAM_REVERB_DECAY, TS_SISTER_UI_PARAM_REVERB_MIX,
-             -1},
-            {TS_SISTER_UI_PARAM_DELAY_GAIN, TS_SISTER_UI_PARAM_DELAY_TIME,
-             TS_SISTER_UI_PARAM_DELAY_FEEDBACK, TS_SISTER_UI_PARAM_DELAY_MIX,
-             -1},
-            {TS_SISTER_UI_PARAM_DISTORTION_GAIN,
-             TS_SISTER_UI_PARAM_DISTORTION_DRIVE,
-             TS_SISTER_UI_PARAM_DISTORTION_TONE,
-             TS_SISTER_UI_PARAM_DISTORTION_MIX, -1},
-            {TS_SISTER_UI_PARAM_GRAIN_GAIN, TS_SISTER_UI_PARAM_GRAIN_SIZE,
-             TS_SISTER_UI_PARAM_GRAIN_DENSITY,
-             TS_SISTER_UI_PARAM_GRAIN_PITCH, TS_SISTER_UI_PARAM_GRAIN_MIX}
-        };
         for (int row = 0; row < 4; ++row) {
             int top = 52 + row * 56;
-            if (contains(x, y, 16, top - 2, 86, 22)) {
-                hit.action = TS_SISTER_UI_ACTION_FX_TOGGLE;
-                hit.index = TS_SISTER_UI_FX_REVERB + row;
+            int field_count = model->parameters.fx.slot[row].type ==
+                              TS_SISTER_FX_GRAIN ? 5 : 4;
+            int field_width = field_count == 5 ? 70 : 88;
+            int field_step = field_count == 5 ? 74 : 92;
+            if (contains(x, y, 16, top - 2, 40, 22)) {
+                hit.action = TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE;
+                hit.index = row;
                 return hit;
             }
-            int field_count = row == 3 ? 5 : 4;
-            int field_step = row == 3 ? 82 : 105;
-            int field_width = row == 3 ? 76 : 95;
-            for (int field = 0; field < field_count; ++field) {
-                int left = 110 + field * field_step;
-                if (contains(x, y, left, top, field_width, 18)) {
-                    hit.action = TS_SISTER_UI_ACTION_PARAMETER;
-                    hit.index = parameter[row][field];
-                    hit.normalized = (float)(x - left) / 94.0f;
+            if (contains(x, y, 60, top - 2, 90, 22)) {
+                hit.action = TS_SISTER_UI_ACTION_FX_SLOT_TYPE;
+                hit.index = row;
+                return hit;
+            }
+            if (model->parameters.fx.slot[row].type != TS_SISTER_FX_EMPTY) {
+                for (int field = 0; field < field_count; ++field) {
+                    int left = 156 + field * field_step;
+                    if (contains(x, y, left, top, field_width, 18)) {
+                        hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+                        hit.index = TS_SISTER_UI_SLOT_PARAMETER(
+                            row, field_count == 4 && field == 3 ? 4 : field);
+                        hit.normalized = (float)(x - left) /
+                                         (float)(field_width - 1);
+                        return hit;
+                    }
+                }
+            }
+            for (int placement = 0; placement < 5; ++placement) {
+                if (contains(x, y, 60 + placement * 52,
+                             top + 22, 46, 18)) {
+                    hit.action = TS_SISTER_UI_ACTION_FX_SLOT_PLACEMENT;
+                    hit.index = (row << 8) | (1 << placement);
                     return hit;
                 }
             }
-            for (int target = 0; target < TS_SISTER_EFFECT_PROCESSOR_COUNT;
-                 ++target) {
-                if (contains(x, y, 110 + target * 62, top + 22, 56, 18)) {
-                    hit.action = TS_SISTER_UI_ACTION_EFFECT_TARGET;
-                    hit.index = ((row + 1) << 8) | (1 << target);
-                    return hit;
-                }
+            if (row > 0 && contains(x, y, 542, top, 36, 18)) {
+                hit.action = TS_SISTER_UI_ACTION_FX_SLOT_MOVE;
+                hit.index = row << 8;
+                return hit;
+            }
+            if (row < 3 && contains(x, y, 584, top, 36, 18)) {
+                hit.action = TS_SISTER_UI_ACTION_FX_SLOT_MOVE;
+                hit.index = (row << 8) | 1;
+                return hit;
             }
         }
         if (contains(x, y, 10, 304, 92, 22)) {

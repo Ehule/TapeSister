@@ -73,6 +73,16 @@ int main(void)
                 frame.input.l + frame.tap[TS_SISTER_TAP_MIX].l));
     CHECK(CLOSE(frame.monitor_return.r,
                 frame.input.r + frame.tap[TS_SISTER_TAP_MIX].r));
+    CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+    CHECK(snapshot.output_level[0] > 0.0f &&
+          snapshot.output_level[1] > 0.0f);
+    CHECK(snapshot.output_peak_hold[0] >= snapshot.output_level[0] &&
+          snapshot.output_peak_hold[1] >= snapshot.output_level[1]);
+    source.preview = (TsStereoFrame){4.0f, -4.0f};
+    (void)ts_sister_runtime_process_frame(&runtime, &source);
+    CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+    CHECK(snapshot.output_clip[0] && snapshot.output_clip[1]);
+    source.preview = (TsStereoFrame){0.5f, -0.25f};
 
     parameters = runtime.parameters;
     parameters.monitor_dry = 0.25f;
@@ -127,7 +137,7 @@ int main(void)
        selected by the shared progress displays. */
     parameters = runtime.parameters;
     parameters.fx.transition = ts_sister_fx_transition_normalized(1000.0f);
-    parameters.fx.distortion_enabled = 0;
+    parameters.fx.slot[0].enabled = 0;
     parameters.fx.fallout.component_transition =
         ts_sister_fallout_transition_normalized(1000.0f);
     parameters.fx.fallout.master_transition =
@@ -139,7 +149,7 @@ int main(void)
     CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
     CHECK(snapshot.fx_transition_active &&
           snapshot.fx_transition_source ==
-              TS_SISTER_FX_TRANSITION_DISTORTION &&
+              TS_SISTER_FX_TRANSITION_SLOT_1 &&
           !snapshot.fx_transition_target_enabled);
     CHECK(snapshot.fallout_master_transition_active &&
           snapshot.fallout_master_transition_target_enabled);

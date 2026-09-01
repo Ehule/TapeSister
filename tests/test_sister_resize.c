@@ -139,20 +139,21 @@ static void rapid_random_full_graph_stress(void)
     parameters.soak = 0.65f;
     parameters.soak_targets = TS_SISTER_EFFECT_TARGET_H1 |
                               TS_SISTER_EFFECT_TARGET_H3;
-    parameters.fx.distortion_drive = 0.9f;
-    parameters.fx.distortion_mix = 0.75f;
-    parameters.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_H1;
-    parameters.fx.delay_feedback = 0.95f;
-    parameters.fx.delay_mix = 0.7f;
-    parameters.fx.delay_targets = TS_SISTER_EFFECT_TARGET_H2;
-    parameters.fx.reverb_mix = 0.7f;
-    parameters.fx.reverb_decay = 0.9f;
-    parameters.fx.reverb_targets = TS_SISTER_EFFECT_TARGET_H3;
+    parameters.fx.slot[0].parameter_a = 0.9f;
+    parameters.fx.slot[0].mix = 0.75f;
+    parameters.fx.slot[0].placement = TS_SISTER_FX_PLACE_H1;
+    parameters.fx.slot[1].enabled = 0;
+    parameters.fx.slot[2].parameter_b = 0.95f;
+    parameters.fx.slot[2].mix = 0.7f;
+    parameters.fx.slot[2].placement = TS_SISTER_FX_PLACE_H2;
+    parameters.fx.slot[3].mix = 0.7f;
+    parameters.fx.slot[3].parameter_b = 0.9f;
+    parameters.fx.slot[3].placement = TS_SISTER_FX_PLACE_H3;
     parameters.fx.master_feedback = 0.8f;
     ts_sister_runtime_set_parameters(&runtime, &parameters);
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_FM);
     rolling_store = runtime.machine.buffer.data;
-    delay_store = runtime.post_fx.delay[1].data;
+    delay_store = runtime.post_fx.delay[2][2].data;
     for (size_t i = 0u; i < 200000u; ++i) {
         random ^= random << 13; random ^= random >> 17; random ^= random << 5;
         source.fm.l = (float)(int32_t)random / (float)INT32_MAX * 0.2f;
@@ -172,10 +173,10 @@ static void rapid_random_full_graph_stress(void)
         assert(runtime.machine.buffer.capacity_frames >= 5000u &&
                runtime.machine.buffer.capacity_frames <= 60000u);
         assert(runtime.machine.buffer.data == rolling_store);
-        assert(runtime.post_fx.delay[1].data == delay_store);
+        assert(runtime.post_fx.delay[2][2].data == delay_store);
     }
-    assert(runtime.post_fx.delay[1].has_history);
-    assert(runtime.post_fx.reverb[2].has_history);
+    assert(runtime.post_fx.delay[2][2].has_history);
+    assert(runtime.post_fx.reverb[3][3].has_history);
     ts_sister_runtime_free(&runtime);
 }
 

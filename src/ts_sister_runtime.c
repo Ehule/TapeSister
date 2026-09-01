@@ -58,6 +58,48 @@ static float monitor_approach(float current, float target, uint32_t sample_rate)
     return fabsf(target - current) < 0.000001f ? target : current;
 }
 
+static void output_meter_update(TsSisterRuntime *runtime,
+                                TsStereoFrame output)
+{
+    float sample[2];
+    float level_release;
+    float peak_release;
+    uint32_t sample_rate;
+    if (runtime == NULL) return;
+    sample_rate = runtime->machine.buffer.sample_rate;
+    if (sample_rate == 0u) sample_rate = 48000u;
+    sample[0] = fabsf(isfinite(output.l) ? output.l : 0.0f);
+    sample[1] = fabsf(isfinite(output.r) ? output.r : 0.0f);
+    level_release = 1.0f / (0.30f * (float)sample_rate);
+    peak_release = 1.0f / (0.75f * (float)sample_rate);
+    for (int channel = 0; channel < 2; ++channel) {
+        if (sample[channel] >= runtime->output_level[channel])
+            runtime->output_level[channel] = sample[channel];
+        else {
+            runtime->output_level[channel] -= level_release;
+            if (runtime->output_level[channel] < sample[channel])
+                runtime->output_level[channel] = sample[channel];
+        }
+        if (sample[channel] >= runtime->output_peak_hold[channel]) {
+            runtime->output_peak_hold[channel] = sample[channel];
+            runtime->output_peak_hold_frames[channel] =
+                (uint32_t)(0.75f * (float)sample_rate);
+        } else if (runtime->output_peak_hold_frames[channel] != 0u) {
+            --runtime->output_peak_hold_frames[channel];
+        } else {
+            runtime->output_peak_hold[channel] -= peak_release;
+            if (runtime->output_peak_hold[channel] <
+                runtime->output_level[channel])
+                runtime->output_peak_hold[channel] =
+                    runtime->output_level[channel];
+        }
+        if (sample[channel] >= 1.0f)
+            runtime->output_clip_hold_frames[channel] = sample_rate * 2u;
+        else if (runtime->output_clip_hold_frames[channel] != 0u)
+            --runtime->output_clip_hold_frames[channel];
+    }
+}
+
 static void runtime_ramp_reset(TsSisterRamp *ramp, float value)
 {
     if (ramp == NULL) return;
@@ -129,6 +171,12 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     atomic_init(&snapshot->source_input_peak_bits, float_bits(0.0f));
     for (int tap = 0; tap < TS_SISTER_TAP_COUNT; ++tap)
         atomic_init(&snapshot->tap_peak_bits[tap], float_bits(0.0f));
+    for (int channel = 0; channel < 2; ++channel) {
+        atomic_init(&snapshot->output_level_bits[channel], float_bits(0.0f));
+        atomic_init(&snapshot->output_peak_hold_bits[channel],
+                    float_bits(0.0f));
+        atomic_init(&snapshot->output_clip[channel], 0);
+    }
     atomic_init(&snapshot->overload_count, 0u);
     atomic_init(&snapshot->warnings, 0u);
     atomic_init(&snapshot->source_target_conflict, 0);
@@ -141,6 +189,7 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     atomic_init(&snapshot->fx_transition_source,
                 TS_SISTER_FX_TRANSITION_NONE);
     atomic_init(&snapshot->fx_transition_target_enabled, 0);
+    atomic_init(&snapshot->fx_transition_topology, 0);
     atomic_init(&snapshot->fx_master_transition_progress_bits, float_bits(1.0f));
     atomic_init(&snapshot->fx_master_transition_active, 0);
     atomic_init(&snapshot->fx_master_transition_target_enabled, 0);
@@ -221,6 +270,17 @@ static void publish_snapshot(TsSisterRuntime *runtime)
         atomic_store_explicit(&snapshot->tap_peak_bits[tap],
                               float_bits(frame_peak(runtime->last_frame.tap[tap])),
                               memory_order_relaxed);
+    for (int channel = 0; channel < 2; ++channel) {
+        atomic_store_explicit(&snapshot->output_level_bits[channel],
+                              float_bits(runtime->output_level[channel]),
+                              memory_order_relaxed);
+        atomic_store_explicit(&snapshot->output_peak_hold_bits[channel],
+                              float_bits(runtime->output_peak_hold[channel]),
+                              memory_order_relaxed);
+        atomic_store_explicit(&snapshot->output_clip[channel],
+                              runtime->output_clip_hold_frames[channel] != 0u,
+                              memory_order_relaxed);
+    }
     atomic_store_explicit(&snapshot->overload_count,
                           runtime->enabled ? runtime->machine.overload_count : 0u,
                           memory_order_relaxed);
@@ -252,6 +312,8 @@ static void publish_snapshot(TsSisterRuntime *runtime)
                           fx_transition.source, memory_order_relaxed);
     atomic_store_explicit(&snapshot->fx_transition_target_enabled,
                           fx_transition.target_enabled, memory_order_relaxed);
+    atomic_store_explicit(&snapshot->fx_transition_topology,
+                          fx_transition.topology, memory_order_relaxed);
     fx_master_transition =
         ts_sister_post_fx_master_transition_status(&runtime->post_fx);
     atomic_store_explicit(&snapshot->fx_master_transition_progress_bits,
@@ -487,6 +549,12 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
     runtime->fallout_feedback_current = 0.0f;
     runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
+    memset(runtime->output_level, 0, sizeof(runtime->output_level));
+    memset(runtime->output_peak_hold, 0, sizeof(runtime->output_peak_hold));
+    memset(runtime->output_peak_hold_frames, 0,
+           sizeof(runtime->output_peak_hold_frames));
+    memset(runtime->output_clip_hold_frames, 0,
+           sizeof(runtime->output_clip_hold_frames));
     runtime->source_target_conflict = 0;
     runtime->destination_status = TS_SISTER_DESTINATION_NONE;
     for (int source_index = 0; source_index < TS_SISTER_SOURCE_COUNT;
@@ -533,6 +601,12 @@ void ts_sister_runtime_disable(TsSisterRuntime *runtime)
     runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
     runtime->fallout_feedback_current = 0.0f;
     runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
+    memset(runtime->output_level, 0, sizeof(runtime->output_level));
+    memset(runtime->output_peak_hold, 0, sizeof(runtime->output_peak_hold));
+    memset(runtime->output_peak_hold_frames, 0,
+           sizeof(runtime->output_peak_hold_frames));
+    memset(runtime->output_clip_hold_frames, 0,
+           sizeof(runtime->output_clip_hold_frames));
     ts_sister_fallout_clear(&runtime->fallout);
     publish_snapshot(runtime);
 }
@@ -645,6 +719,9 @@ void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
         runtime->parameters = runtime->machine.parameters;
     }
     ts_sister_post_fx_set_controls(&runtime->post_fx, &runtime->parameters.fx);
+    /* Publish sanitized, authoritative slot state back to the controller and
+       persistence model after every edit. */
+    runtime->parameters.fx = runtime->post_fx.controls;
     ts_sister_fallout_set_controls(&runtime->fallout,
                                    &runtime->parameters.fx.fallout);
     publish_snapshot(runtime);
@@ -1092,6 +1169,10 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         source.preview, source_gain[3] * source_route[3]));
     if (route_energy > 1.0f)
         input = frame_scale(input, 1.0f / sqrtf(route_energy));
+    /* PRE slots touch only newly arriving source material. They run before
+       Sister's input trim, rolling write, Duck detector, and head feedback;
+       material already resident in the tape buffer is never processed again. */
+    input = ts_sister_post_fx_process_pre(&runtime->post_fx, input, 0);
     monitor_route = runtime_ramp_advance(&runtime->monitor_route);
     (void)runtime_ramp_advance(&runtime->direct_tile_route);
     master_fx_gate = ts_sister_post_fx_master_engage(&runtime->post_fx);
@@ -1187,6 +1268,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         frame_scale(frame.input, runtime->monitor_dry_current),
         frame_scale(frame.tap[TS_SISTER_TAP_MIX],
                     runtime->monitor_wet_current)), monitor_route);
+    output_meter_update(runtime, frame.monitor_return);
     runtime->last_frame = frame;
     ++runtime->processed_frames;
     publish_frame_snapshot(runtime);
@@ -1632,6 +1714,16 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
         for (int tap = 0; tap < TS_SISTER_TAP_COUNT; ++tap)
             snapshot->tap_peak[tap] = bits_float(atomic_load_explicit(
                 &source->tap_peak_bits[tap], memory_order_relaxed));
+        for (int channel = 0; channel < 2; ++channel) {
+            snapshot->output_level[channel] = bits_float(
+                atomic_load_explicit(&source->output_level_bits[channel],
+                                     memory_order_relaxed));
+            snapshot->output_peak_hold[channel] = bits_float(
+                atomic_load_explicit(&source->output_peak_hold_bits[channel],
+                                     memory_order_relaxed));
+            snapshot->output_clip[channel] = atomic_load_explicit(
+                &source->output_clip[channel], memory_order_relaxed);
+        }
         snapshot->overload_count = atomic_load_explicit(
             &source->overload_count, memory_order_relaxed);
         snapshot->warnings = atomic_load_explicit(
@@ -1655,6 +1747,8 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
                 &source->fx_transition_source, memory_order_relaxed);
         snapshot->fx_transition_target_enabled = atomic_load_explicit(
             &source->fx_transition_target_enabled, memory_order_relaxed);
+        snapshot->fx_transition_topology = atomic_load_explicit(
+            &source->fx_transition_topology, memory_order_relaxed);
         snapshot->fx_master_transition_progress = bits_float(
             atomic_load_explicit(&source->fx_master_transition_progress_bits,
                                  memory_order_relaxed));

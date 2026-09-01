@@ -7,7 +7,7 @@
 #include "tapesister/sister_machine.h"
 
 enum {
-    TS_SISTER_PRESET_VERSION = 10,
+    TS_SISTER_PRESET_VERSION = 11,
     TS_SISTER_PRESET_NAME_MAX = 47,
     TS_SISTER_PRESET_LIMIT = 64,
     TS_SISTER_FACTORY_PRESET_COUNT = 3

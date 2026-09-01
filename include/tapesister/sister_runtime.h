@@ -88,6 +88,9 @@ typedef struct {
     TsSisterDestinationStatus destination_status;
     float source_input_peak;
     float tap_peak[TS_SISTER_TAP_COUNT];
+    float output_level[2];
+    float output_peak_hold[2];
+    int output_clip[2];
     uint64_t overload_count;
     uint32_t warnings;
     int source_target_conflict;
@@ -99,6 +102,7 @@ typedef struct {
     int fx_transition_active;
     TsSisterFxTransitionSource fx_transition_source;
     int fx_transition_target_enabled;
+    int fx_transition_topology;
     float fx_master_transition_progress;
     int fx_master_transition_active;
     int fx_master_transition_target_enabled;
@@ -132,6 +136,9 @@ typedef struct {
     atomic_int destination_status;
     atomic_uint_least32_t source_input_peak_bits;
     atomic_uint_least32_t tap_peak_bits[TS_SISTER_TAP_COUNT];
+    atomic_uint_least32_t output_level_bits[2];
+    atomic_uint_least32_t output_peak_hold_bits[2];
+    atomic_int output_clip[2];
     atomic_uint_least64_t overload_count;
     atomic_uint_least32_t warnings;
     atomic_int source_target_conflict;
@@ -143,6 +150,7 @@ typedef struct {
     atomic_int fx_transition_active;
     atomic_int fx_transition_source;
     atomic_int fx_transition_target_enabled;
+    atomic_int fx_transition_topology;
     atomic_uint_least32_t fx_master_transition_progress_bits;
     atomic_int fx_master_transition_active;
     atomic_int fx_master_transition_target_enabled;
@@ -193,6 +201,10 @@ typedef struct {
     TsStereoFrame master_feedback_previous;
     float fallout_feedback_current;
     TsStereoFrame fallout_feedback_previous;
+    float output_level[2];
+    float output_peak_hold[2];
+    uint32_t output_peak_hold_frames[2];
+    uint32_t output_clip_hold_frames[2];
     /* UI/controller performance-safety state; never read by the callback. */
     uint64_t parameter_locks;
     uint64_t parameter_locks_high;

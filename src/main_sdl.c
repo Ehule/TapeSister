@@ -6953,9 +6953,23 @@ static void application_window_focus(SDL_Window *window)
 static void sister_set_parameter(TsSisterParameters *parameters,
                                  int parameter, float amount)
 {
+    int slot_offset;
     if (parameters == NULL) return;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
+    slot_offset = parameter - TS_SISTER_UI_PARAM_SLOT1_GAIN;
+    if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
+        TsSisterFxSlotControls *slot = &parameters->fx.slot[slot_offset / 5];
+        switch (slot_offset % 5) {
+        case 0: slot->gain_db = -12.0f + amount * 24.0f; break;
+        case 1: slot->parameter_a = amount; break;
+        case 2: slot->parameter_b = amount; break;
+        case 3: slot->parameter_c = amount; break;
+        case 4: slot->mix = amount; break;
+        default: break;
+        }
+        return;
+    }
     switch ((TsSisterUiParameter)parameter) {
     case TS_SISTER_UI_PARAM_H1_LEVEL: parameters->head1_level = amount; break;
     case TS_SISTER_UI_PARAM_H1_TIME: parameters->head1_time_ms = amount * 4000.0f; break;
@@ -7062,7 +7076,23 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
                                          int parameter)
 {
     float value = 0.0f;
+    int slot_offset;
     if (parameters == NULL) return 0.0f;
+    slot_offset = parameter - TS_SISTER_UI_PARAM_SLOT1_GAIN;
+    if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
+        const TsSisterFxSlotControls *slot =
+            &parameters->fx.slot[slot_offset / 5];
+        switch (slot_offset % 5) {
+        case 0: value = (slot->gain_db + 12.0f) / 24.0f; break;
+        case 1: value = slot->parameter_a; break;
+        case 2: value = slot->parameter_b; break;
+        case 3: value = slot->parameter_c; break;
+        case 4: value = slot->mix; break;
+        default: break;
+        }
+        if (!isfinite(value) || value < 0.0f) return 0.0f;
+        return value > 1.0f ? 1.0f : value;
+    }
     switch ((TsSisterUiParameter)parameter) {
     case TS_SISTER_UI_PARAM_H1_LEVEL: value = parameters->head1_level; break;
     case TS_SISTER_UI_PARAM_H1_TIME: value = parameters->head1_time_ms / 4000.0f; break;
@@ -7285,6 +7315,14 @@ static void fallout_factory_presets_configure(TsSisterPresetBank *bank,
 
 static const char *sister_parameter_name(int parameter)
 {
+    int slot_offset = parameter - TS_SISTER_UI_PARAM_SLOT1_GAIN;
+    if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
+        static const char *const names[5] = {
+            "SLOT GAIN", "SLOT PARAMETER A", "SLOT PARAMETER B",
+            "SLOT PARAMETER C", "SLOT MIX"
+        };
+        return names[slot_offset % 5];
+    }
     switch ((TsSisterUiParameter)parameter) {
     case TS_SISTER_UI_PARAM_H1_LEVEL: return "H1 LEVEL";
     case TS_SISTER_UI_PARAM_H1_TIME: return "H1 TIME";
@@ -7738,6 +7776,49 @@ static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
     return ok;
 }
 
+static void sister_fx_slot_select_type(TsSisterFxSlotControls *slot,
+                                       TsSisterFxType type)
+{
+    if (slot == NULL) return;
+    slot->type = type;
+    switch (type) {
+    case TS_SISTER_FX_REVERB:
+        slot->parameter_a = 0.58f;
+        slot->parameter_b = 0.42f;
+        slot->parameter_c = 0.50f;
+        break;
+    case TS_SISTER_FX_DELAY:
+        slot->parameter_a = 0.38f;
+        slot->parameter_b = 0.32f;
+        slot->parameter_c = 0.50f;
+        break;
+    case TS_SISTER_FX_DISTORTION:
+        slot->parameter_a = 0.25f;
+        slot->parameter_b = 0.55f;
+        slot->parameter_c = 0.50f;
+        break;
+    case TS_SISTER_FX_GRAIN:
+        slot->parameter_a = 0.46f;
+        slot->parameter_b = 0.42f;
+        slot->parameter_c = 0.50f;
+        break;
+    default:
+        break;
+    }
+}
+
+static const char *sister_fx_slot_placement_name(uint8_t placement)
+{
+    placement = ts_sister_fx_placement_sanitize(placement);
+    if (placement == TS_SISTER_FX_PLACE_PRE) return "PRE";
+    if (placement == TS_SISTER_FX_PLACE_POST) return "POST";
+    if (placement == TS_SISTER_FX_PLACE_HEADS) return "H1+H2+H3";
+    if (placement == TS_SISTER_FX_PLACE_H1) return "H1";
+    if (placement == TS_SISTER_FX_PLACE_H2) return "H2";
+    if (placement == TS_SISTER_FX_PLACE_H3) return "H3";
+    return "SELECTED HEADS";
+}
+
 static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, TsInstrument *instrument,
                                 SisterWindow *sister,
@@ -7755,6 +7836,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     int parameter_changed = -1;
     int fallout_toggle_changed = -1;
     int fx_toggle_changed = -1;
+    int fx_slot_changed = -1;
+    int fx_topology_changed = -1;
+    int fx_order_changed = 0;
     int effect_target_changed = 0;
     int fallout_preset_scope;
     TsSisterPresetBank *preset_bank;
@@ -8061,6 +8145,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             hit.index <= TS_SISTER_UI_PARAM_FX_RETURN_GAIN) ||
            hit.index >= TS_SISTER_UI_PARAM_REVERB_TYPE ||
            hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS)) &&
+        !(hit.action >= TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE &&
+          hit.action <= TS_SISTER_UI_ACTION_FX_SLOT_MOVE) &&
         !(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
           (hit.index >> 8) != 0)) {
         snprintf(sister->model.status, sizeof(sister->model.status),
@@ -8173,6 +8259,73 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         fx_toggle_changed = hit.index;
         break;
     }
+    case TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE: {
+        TsSisterFxControls *fx = &sister->model.parameters.fx;
+        if (hit.index >= 0 && hit.index < TS_SISTER_FX_SLOT_COUNT) {
+            fx->slot[hit.index].enabled = !fx->slot[hit.index].enabled;
+            ts_sister_runtime_set_parameters(&audio->sister,
+                                             &sister->model.parameters);
+            ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+            fx_slot_changed = hit.index;
+        }
+        break;
+    }
+    case TS_SISTER_UI_ACTION_FX_SLOT_TYPE: {
+        TsSisterFxControls *fx = &sister->model.parameters.fx;
+        if (hit.index >= 0 && hit.index < TS_SISTER_FX_SLOT_COUNT) {
+            TsSisterFxType next = (TsSisterFxType)(
+                (fx->slot[hit.index].type + 1) % TS_SISTER_FX_TYPE_COUNT);
+            sister_fx_slot_select_type(&fx->slot[hit.index], next);
+            ts_sister_runtime_set_parameters(&audio->sister,
+                                             &sister->model.parameters);
+            ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+            fx_topology_changed = hit.index;
+        }
+        break;
+    }
+    case TS_SISTER_UI_ACTION_FX_SLOT_PLACEMENT: {
+        TsSisterFxControls *fx = &sister->model.parameters.fx;
+        int slot_index = hit.index >> 8;
+        uint8_t place = (uint8_t)(hit.index & 0xff);
+        if (slot_index >= 0 && slot_index < TS_SISTER_FX_SLOT_COUNT &&
+            (place & TS_SISTER_FX_PLACE_ALL) != 0u) {
+            TsSisterFxSlotControls *slot = &fx->slot[slot_index];
+            if (place == TS_SISTER_FX_PLACE_PRE ||
+                place == TS_SISTER_FX_PLACE_POST) {
+                slot->placement = place;
+            } else {
+                uint8_t heads = (uint8_t)(slot->placement &
+                                           TS_SISTER_FX_PLACE_HEADS);
+                heads ^= place;
+                if (heads == 0u) heads = place;
+                slot->placement = heads;
+            }
+            slot->placement =
+                ts_sister_fx_placement_sanitize(slot->placement);
+            ts_sister_runtime_set_parameters(&audio->sister,
+                                             &sister->model.parameters);
+            ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+            fx_topology_changed = slot_index;
+        }
+        break;
+    }
+    case TS_SISTER_UI_ACTION_FX_SLOT_MOVE: {
+        TsSisterFxControls *fx = &sister->model.parameters.fx;
+        int slot_index = hit.index >> 8;
+        int direction = hit.index & 0xff;
+        int other = direction == 0 ? slot_index - 1 : slot_index + 1;
+        if (slot_index >= 0 && slot_index < TS_SISTER_FX_SLOT_COUNT &&
+            other >= 0 && other < TS_SISTER_FX_SLOT_COUNT) {
+            TsSisterFxSlotControls temporary = fx->slot[slot_index];
+            fx->slot[slot_index] = fx->slot[other];
+            fx->slot[other] = temporary;
+            ts_sister_runtime_set_parameters(&audio->sister,
+                                             &sister->model.parameters);
+            ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+            fx_order_changed = 1;
+        }
+        break;
+    }
     case TS_SISTER_UI_ACTION_EFFECT_TARGET:
     {
         int effect = hit.index >> 8;
@@ -8223,6 +8376,34 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                  ts_sister_fx_transition_ms(
                      fx_toggle_changed == TS_SISTER_UI_FX_MASTER ?
                          fx->master_transition : fx->transition) / 1000.0f);
+    }
+    if (fx_slot_changed >= 0) {
+        const TsSisterFxControls *fx = &sister->model.parameters.fx;
+        const TsSisterFxSlotControls *slot = &fx->slot[fx_slot_changed];
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "SLOT %d %s %s OVER %.2F S", fx_slot_changed + 1,
+                 ts_sister_fx_type_name(slot->type),
+                 slot->enabled ? "ENGAGING" : "BYPASSING",
+                 ts_sister_fx_transition_ms(fx->transition) / 1000.0f);
+    }
+    if (fx_topology_changed >= 0) {
+        const TsSisterFxControls *fx = &sister->model.parameters.fx;
+        const TsSisterFxSlotControls *slot = &fx->slot[fx_topology_changed];
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "SLOT %d MORPHING TO %s %s OVER %.2F S",
+                 fx_topology_changed + 1,
+                 ts_sister_fx_type_name(slot->type),
+                 sister_fx_slot_placement_name(slot->placement),
+                 ts_sister_fx_transition_ms(fx->transition) / 1000.0f);
+    }
+    if (fx_order_changed) {
+        const TsSisterFxControls *fx = &sister->model.parameters.fx;
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "PEDALBOARD ORDER MORPHING OVER %.2F S",
+                 ts_sister_fx_transition_ms(fx->transition) / 1000.0f);
     }
     if (parameter_changed >= 0) {
         /* Mouse-wheel bursts can publish many bounded DSP targets. Keep the

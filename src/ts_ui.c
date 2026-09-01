@@ -3699,6 +3699,43 @@ static void sister_transition_progress(TsFramebuffer *fb, int x, int y,
         rect(fb, x, y + 1, width, 1, sister_dim_color(color));
 }
 
+static float sister_meter_normalized(float amplitude)
+{
+    float decibels;
+    if (!isfinite(amplitude) || amplitude <= 0.000001f) return 0.0f;
+    decibels = 20.0f * log10f(amplitude);
+    if (decibels <= -48.0f) return 0.0f;
+    if (decibels >= 0.0f) return 1.0f;
+    return (decibels + 48.0f) / 48.0f;
+}
+
+static void sister_output_meter(TsFramebuffer *fb,
+                                const TsSisterRoutingSnapshot *routing,
+                                int x, int y)
+{
+    static const char *const names[2] = {"L", "R"};
+    uint32_t colors[2] = {PAL_WAVE_LEFT, PAL_WAVE_RIGHT};
+    text(fb, x, y, "VU", PAL_MOUSE, 1);
+    for (int channel = 0; channel < 2; ++channel) {
+        int lane_y = y + 10 + channel * 11;
+        int width = 72;
+        int fill = (int)lrintf((float)width * sister_meter_normalized(
+            routing->output_level[channel]));
+        int peak = (int)lrintf((float)(width - 1) *
+            sister_meter_normalized(routing->output_peak_hold[channel]));
+        text(fb, x, lane_y - 1, names[channel], colors[channel], 1);
+        rect(fb, x + 10, lane_y, width, 6, RGB(12, 12, 12));
+        if (fill > 0) rect(fb, x + 10, lane_y + 1, fill, 4,
+                           routing->output_clip[channel] ? PAL_VOLUME :
+                           colors[channel]);
+        if (peak > 0) rect(fb, x + 10 + peak, lane_y, 1, 6,
+                           routing->output_clip[channel] ? PAL_VOLUME :
+                           PAL_MOUSE);
+        if (routing->output_clip[channel])
+            rect(fb, x + 84, lane_y, 3, 6, PAL_VOLUME);
+    }
+}
+
 static uint32_t sister_transition_caption_color(float progress,
                                                  uint32_t background,
                                                  uint32_t foreground)
@@ -3732,6 +3769,10 @@ static const char *sister_fx_transition_source_name(
     case TS_SISTER_FX_TRANSITION_DELAY: return "DELAY";
     case TS_SISTER_FX_TRANSITION_DISTORTION: return "DISTORTION";
     case TS_SISTER_FX_TRANSITION_GRAIN: return "GRAIN";
+    case TS_SISTER_FX_TRANSITION_SLOT_1: return "SLOT 1";
+    case TS_SISTER_FX_TRANSITION_SLOT_2: return "SLOT 2";
+    case TS_SISTER_FX_TRANSITION_SLOT_3: return "SLOT 3";
+    case TS_SISTER_FX_TRANSITION_SLOT_4: return "SLOT 4";
     default: return NULL;
     }
 }
@@ -4260,125 +4301,87 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     }
 
     if (model->fx_page == 1) {
-        static const char *const names[4] = {
-            "REVERB", "DELAY", "DISTORTION", "GRAIN"
-        };
         char effect_transition_caption[24];
         char master_transition_caption[24];
-        const uint32_t colors[4] = {
-            PAL_WAVE_RIGHT, PAL_EFFECT, PAL_VOLUME, PAL_NOTE
-        };
-        const uint8_t masks[4] = {
-            model->parameters.fx.reverb_targets,
-            model->parameters.fx.delay_targets,
-            model->parameters.fx.distortion_targets,
-            model->parameters.fx.grain_targets
-        };
         for (int row = 0; row < 4; ++row) {
+            const TsSisterFxSlotControls *slot =
+                &model->parameters.fx.slot[row];
             int top = 48 + row * 56;
+            int fields = slot->type == TS_SISTER_FX_GRAIN ? 5 : 4;
+            int field_width = fields == 5 ? 70 : 88;
+            int field_step = fields == 5 ? 74 : 92;
+            uint32_t color = slot->type == TS_SISTER_FX_REVERB ?
+                PAL_WAVE_RIGHT : slot->type == TS_SISTER_FX_DELAY ?
+                PAL_EFFECT : slot->type == TS_SISTER_FX_DISTORTION ?
+                PAL_VOLUME : PAL_NOTE;
+            char number[8];
+            const char *description = slot->type == TS_SISTER_FX_REVERB ?
+                "TAIL-SAFE SPACE" : slot->type == TS_SISTER_FX_DELAY ?
+                "4-HEAD TAPE" : slot->type == TS_SISTER_FX_DISTORTION ?
+                "RAT / 2X" : slot->type == TS_SISTER_FX_GRAIN ?
+                "24 VOICES" : "NO PROCESSOR";
             rect(fb, 10, top, 620, 50, RGB(10, 10, 11));
-            button(fb, 16, top + 2, 86, names[row],
-                row == 0 ? model->parameters.fx.reverb_enabled :
-                row == 1 ? model->parameters.fx.delay_enabled :
-                row == 2 ? model->parameters.fx.distortion_enabled :
-                           model->parameters.fx.grain_enabled);
-        }
-        sister_db_parameter_state(fb, 110, 52, 95, "GAIN",
-            model->parameters.fx.reverb_gain_db, PAL_WAVE_RIGHT,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_REVERB_GAIN));
-        sister_percent_parameter_state(fb, 215, 52, 95, "SIZE",
-            model->parameters.fx.reverb_size, 100, PAL_WAVE_RIGHT,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_REVERB_TYPE));
-        sister_percent_parameter_state(fb, 320, 52, 95, "DECAY",
-            model->parameters.fx.reverb_decay, 100, PAL_WAVE_RIGHT,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_REVERB_DECAY));
-        sister_percent_parameter_state(fb, 425, 52, 95, "MIX",
-            model->parameters.fx.reverb_mix, 100, PAL_WAVE_RIGHT,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_REVERB_MIX));
-        sister_db_parameter_state(fb, 110, 108, 95, "GAIN",
-            model->parameters.fx.delay_gain_db, PAL_EFFECT,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_DELAY_GAIN));
-        sister_percent_parameter_state(fb, 215, 108, 95, "TIME",
-            model->parameters.fx.delay_time, 100, PAL_EFFECT,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_DELAY_TIME));
-        sister_percent_parameter_state(fb, 320, 108, 95, "FEED",
-            model->parameters.fx.delay_feedback, 100, PAL_EFFECT,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_DELAY_FEEDBACK));
-        sister_percent_parameter_state(fb, 425, 108, 95, "MIX",
-            model->parameters.fx.delay_mix, 100, PAL_EFFECT,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_DELAY_MIX));
-        sister_db_parameter_state(fb, 110, 164, 95, "GAIN",
-            model->parameters.fx.distortion_gain_db, PAL_VOLUME,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_DISTORTION_GAIN));
-        sister_percent_parameter_state(fb, 215, 164, 95, "DRIVE",
-            model->parameters.fx.distortion_drive, 100, PAL_VOLUME,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_DISTORTION_DRIVE));
-        sister_percent_parameter_state(fb, 320, 164, 95, "TONE",
-            model->parameters.fx.distortion_tone, 100, PAL_VOLUME,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_DISTORTION_TONE));
-        sister_percent_parameter_state(fb, 425, 164, 95, "MIX",
-            model->parameters.fx.distortion_mix, 100, PAL_VOLUME,
-            ts_sister_ui_parameter_locked(
-                model, TS_SISTER_UI_PARAM_DISTORTION_MIX));
-        {
-            char size_value[20];
-            char density_value[20];
-            char pitch_value[20];
-            snprintf(size_value, sizeof(size_value), "SIZE %.0f",
-                ts_sister_grain_size_ms(model->parameters.fx.grain_size));
-            snprintf(density_value, sizeof(density_value), "DENS %.1f",
-                ts_sister_grain_density_hz(
-                    model->parameters.fx.grain_density));
-            snprintf(pitch_value, sizeof(pitch_value), "PITCH %+.0f",
-                ts_sister_grain_pitch_semitones(
-                    model->parameters.fx.grain_pitch));
-            sister_db_parameter_state(fb, 110, 220, 76, "GAIN",
-                model->parameters.fx.grain_gain_db, PAL_NOTE,
-                ts_sister_ui_parameter_locked(
-                    model, TS_SISTER_UI_PARAM_GRAIN_GAIN));
-            sister_value_parameter_state(fb, 192, 220, 76, size_value,
-                model->parameters.fx.grain_size, PAL_NOTE,
-                ts_sister_ui_parameter_locked(
-                    model, TS_SISTER_UI_PARAM_GRAIN_SIZE));
-            sister_value_parameter_state(fb, 274, 220, 76, density_value,
-                model->parameters.fx.grain_density, PAL_NOTE,
-                ts_sister_ui_parameter_locked(
-                    model, TS_SISTER_UI_PARAM_GRAIN_DENSITY));
-            sister_value_parameter_state(fb, 356, 220, 76, pitch_value,
-                model->parameters.fx.grain_pitch, PAL_NOTE,
-                ts_sister_ui_parameter_locked(
-                    model, TS_SISTER_UI_PARAM_GRAIN_PITCH));
-            sister_percent_parameter_state(fb, 438, 220, 76, "MIX",
-                model->parameters.fx.grain_mix, 100, PAL_NOTE,
-                ts_sister_ui_parameter_locked(
-                    model, TS_SISTER_UI_PARAM_GRAIN_MIX));
-        }
-        for (int row = 0; row < 4; ++row) {
-            int y = 74 + row * 56;
-            sister_target_toggle(fb, 110, y, 56, "H1",
-                masks[row] & TS_SISTER_EFFECT_TARGET_H1, PAL_NOTE);
-            sister_target_toggle(fb, 172, y, 56, "H2",
-                masks[row] & TS_SISTER_EFFECT_TARGET_H2, PAL_EFFECT);
-            sister_target_toggle(fb, 234, y, 56, "H3",
-                masks[row] & TS_SISTER_EFFECT_TARGET_H3, PAL_TUNING);
-            sister_target_toggle(fb, 296, y, 56, "MIX",
-                masks[row] & TS_SISTER_EFFECT_TARGET_MIX, colors[row]);
-            text(fb, 366, y + 5,
-                row == 0 ? "TAIL-SAFE SIZE MORPH" :
-                row == 1 ? "8-2000 MS / STEREO" :
-                row == 2 ? "RAT-INSPIRED / 2X" :
-                           "8-1000MS / 0.25-120HZ", PAL_MOUSE, 1);
+            snprintf(number, sizeof(number), "%d", row + 1);
+            button(fb, 16, top + 2, 40, number, slot->enabled);
+            button(fb, 60, top + 2, 90,
+                   ts_sister_fx_type_name(slot->type),
+                   slot->type != TS_SISTER_FX_EMPTY);
+            if (slot->type != TS_SISTER_FX_EMPTY) {
+                int parameter = TS_SISTER_UI_SLOT_PARAMETER(row, 0);
+                sister_db_parameter_state(fb, 156, top + 4, field_width,
+                    "GAIN", slot->gain_db, color,
+                    ts_sister_ui_parameter_locked(model, parameter));
+                if (slot->type == TS_SISTER_FX_GRAIN) {
+                    char a[20], b[20], c[20];
+                    snprintf(a, sizeof(a), "SIZE %.0f",
+                        ts_sister_grain_size_ms(slot->parameter_a));
+                    snprintf(b, sizeof(b), "DENS %.1f",
+                        ts_sister_grain_density_hz(slot->parameter_b));
+                    snprintf(c, sizeof(c), "PITCH %+.0f",
+                        ts_sister_grain_pitch_semitones(slot->parameter_c));
+                    sister_value_parameter_state(fb, 156 + field_step,
+                        top + 4, field_width, a, slot->parameter_a, color,
+                        ts_sister_ui_parameter_locked(model, parameter + 1));
+                    sister_value_parameter_state(fb, 156 + field_step * 2,
+                        top + 4, field_width, b, slot->parameter_b, color,
+                        ts_sister_ui_parameter_locked(model, parameter + 2));
+                    sister_value_parameter_state(fb, 156 + field_step * 3,
+                        top + 4, field_width, c, slot->parameter_c, color,
+                        ts_sister_ui_parameter_locked(model, parameter + 3));
+                    sister_percent_parameter_state(fb, 156 + field_step * 4,
+                        top + 4, field_width, "MIX", slot->mix, 100, color,
+                        ts_sister_ui_parameter_locked(model, parameter + 4));
+                } else {
+                    const char *a = slot->type == TS_SISTER_FX_REVERB ?
+                        "SIZE" : slot->type == TS_SISTER_FX_DELAY ?
+                        "TIME" : "DRIVE";
+                    const char *b = slot->type == TS_SISTER_FX_REVERB ?
+                        "DECAY" : slot->type == TS_SISTER_FX_DELAY ?
+                        "FEED" : "TONE";
+                    sister_percent_parameter_state(fb, 156 + field_step,
+                        top + 4, field_width, a, slot->parameter_a, 100, color,
+                        ts_sister_ui_parameter_locked(model, parameter + 1));
+                    sister_percent_parameter_state(fb, 156 + field_step * 2,
+                        top + 4, field_width, b, slot->parameter_b, 100, color,
+                        ts_sister_ui_parameter_locked(model, parameter + 2));
+                    sister_percent_parameter_state(fb, 156 + field_step * 3,
+                        top + 4, field_width, "MIX", slot->mix, 100, color,
+                        ts_sister_ui_parameter_locked(model, parameter + 4));
+                }
+            }
+            sister_target_toggle(fb, 60, top + 26, 46, "PRE",
+                slot->placement & TS_SISTER_FX_PLACE_PRE, PAL_WAVE_LEFT);
+            sister_target_toggle(fb, 112, top + 26, 46, "H1",
+                slot->placement & TS_SISTER_FX_PLACE_H1, PAL_NOTE);
+            sister_target_toggle(fb, 164, top + 26, 46, "H2",
+                slot->placement & TS_SISTER_FX_PLACE_H2, PAL_EFFECT);
+            sister_target_toggle(fb, 216, top + 26, 46, "H3",
+                slot->placement & TS_SISTER_FX_PLACE_H3, PAL_TUNING);
+            sister_target_toggle(fb, 268, top + 26, 46, "POST",
+                slot->placement & TS_SISTER_FX_PLACE_POST, PAL_WAVE_RIGHT);
+            text(fb, 330, top + 31, description, PAL_MOUSE, 1);
+            if (row > 0) button(fb, 542, top + 4, 36, "UP", 0);
+            if (row < 3) button(fb, 584, top + 4, 36, "DN", 0);
         }
         {
             char effect_transition[24];
@@ -4408,13 +4411,19 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             ts_sister_ui_parameter_locked(
                 model, TS_SISTER_UI_PARAM_MASTER_FX_FEEDBACK));
         text(fb, 420, 337, "0-135%", PAL_MOUSE, 1);
-        text(fb, 10, 284, "D > G > D > R", PAL_MOUSE, 1);
+        text(fb, 10, 284, "1 > 2 > 3 > 4", PAL_MOUSE, 1);
         if (model->routing.fx_transition_active) {
-            sister_transition_caption(effect_transition_caption,
-                sizeof(effect_transition_caption),
-                sister_fx_transition_source_name(
-                    model->routing.fx_transition_source),
-                model->routing.fx_transition_target_enabled);
+            if (model->routing.fx_transition_topology)
+                snprintf(effect_transition_caption,
+                    sizeof(effect_transition_caption), "%s MORPH",
+                    sister_fx_transition_source_name(
+                        model->routing.fx_transition_source));
+            else
+                sister_transition_caption(effect_transition_caption,
+                    sizeof(effect_transition_caption),
+                    sister_fx_transition_source_name(
+                        model->routing.fx_transition_source),
+                    model->routing.fx_transition_target_enabled);
             text(fb, 420, 278, effect_transition_caption,
                 sister_transition_caption_color(
                     model->routing.fx_transition_progress,
@@ -4435,6 +4444,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         sister_transition_progress(fb, 420, 319, 100,
             model->routing.fx_master_transition_progress,
             model->routing.fx_master_transition_active, PAL_MOUSE);
+        sister_output_meter(fb, &model->routing, 538, 326);
         goto sister_footer;
     }
 

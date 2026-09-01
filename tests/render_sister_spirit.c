@@ -82,8 +82,13 @@ int main(int argc, char **argv)
         model.routing.fx_transition_active = 1;
         model.routing.fx_transition_progress = 0.61f;
         model.routing.fx_transition_source =
-            TS_SISTER_FX_TRANSITION_DISTORTION;
+            TS_SISTER_FX_TRANSITION_SLOT_2;
         model.routing.fx_transition_target_enabled = 0;
+        model.routing.fx_transition_topology = 1;
+        model.routing.output_level[0] = 0.58f;
+        model.routing.output_level[1] = 0.41f;
+        model.routing.output_peak_hold[0] = 0.82f;
+        model.routing.output_peak_hold[1] = 0.67f;
         if (strcmp(mode, "fx-presets") == 0) {
             model.preset_manage_open = 1;
             model.preset_modified = 1;

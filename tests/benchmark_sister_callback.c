@@ -47,27 +47,16 @@ int main(int argc, char **argv)
     p.soak_targets = TS_SISTER_EFFECT_TARGET_H1 |
                      TS_SISTER_EFFECT_TARGET_H2 |
                      TS_SISTER_EFFECT_TARGET_H3;
-    p.fx.distortion_mix = 0.65f;
-    p.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_H1 |
-                              TS_SISTER_EFFECT_TARGET_H2 |
-                              TS_SISTER_EFFECT_TARGET_H3;
-    p.fx.delay_mix = 0.65f;
-    p.fx.delay_feedback = 0.8f;
-    p.fx.delay_targets = TS_SISTER_EFFECT_TARGET_H1 |
-                         TS_SISTER_EFFECT_TARGET_H2 |
-                         TS_SISTER_EFFECT_TARGET_H3;
-    p.fx.reverb_mix = 0.65f;
-    p.fx.reverb_decay = 0.8f;
-    p.fx.reverb_targets = TS_SISTER_EFFECT_TARGET_H1 |
-                          TS_SISTER_EFFECT_TARGET_H2 |
-                          TS_SISTER_EFFECT_TARGET_H3;
-    p.fx.grain_size = 1.0f;
-    p.fx.grain_density = 1.0f;
-    p.fx.grain_pitch = 1.0f;
-    p.fx.grain_mix = 0.65f;
-    p.fx.grain_targets = TS_SISTER_EFFECT_TARGET_H1 |
-                         TS_SISTER_EFFECT_TARGET_H2 |
-                         TS_SISTER_EFFECT_TARGET_H3;
+    for (size_t slot = 0u; slot < 3u; ++slot) {
+        p.fx.slot[slot] = (TsSisterFxSlotControls){
+            TS_SISTER_FX_GRAIN, 1, TS_SISTER_FX_PLACE_HEADS,
+            6.0f, 1.0f, 1.0f, 0.25f + 0.25f * (float)slot, 0.80f
+        };
+    }
+    p.fx.slot[3] = (TsSisterFxSlotControls){
+        TS_SISTER_FX_REVERB, 1, TS_SISTER_FX_PLACE_HEADS,
+        6.0f, 1.0f, 1.0f, 0.5f, 0.80f
+    };
     p.fx.master_feedback = 0.7f;
     p.fx.fallout.enabled = 1;
     p.fx.fallout.mix = 0.75f;

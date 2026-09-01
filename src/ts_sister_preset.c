@@ -1,4 +1,5 @@
 #include "tapesister/sister_preset.h"
+#include "tapesister/sister_ui.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -236,7 +237,7 @@ int ts_sister_preset_delete(TsSisterPresetBank *bank, size_t index,
 
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
-    return fprintf(file,
+    if (fprintf(file,
         "h1_level=%.9g\nh1_time_ms=%.9g\nh1_feedback=%.9g\n"
         "h2_level=%.9g\nh2_scrub=%.9g\nh2_rate=%d\nh2_feedback=%.9g\n"
         "h3_level=%.9g\nh3_span=%.9g\nh3_rate=%d\n"
@@ -314,7 +315,20 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx.fallout.lfo_intensity,
         (unsigned)p->fx.fallout.lfo_targets, p->fx.fallout.rise_mode,
         p->fx.fallout.rise_length, p->fx.fallout.rise_intensity,
-        (unsigned)p->fx.fallout.rise_targets) >= 0;
+        (unsigned)p->fx.fallout.rise_targets) < 0) return 0;
+    for (int index = 0; index < TS_SISTER_FX_SLOT_COUNT; ++index) {
+        const TsSisterFxSlotControls *slot = &p->fx.slot[index];
+        if (fprintf(file,
+            "slot%d_type=%d\nslot%d_enabled=%d\nslot%d_placement=%u\n"
+            "slot%d_gain_db=%.9g\nslot%d_a=%.9g\nslot%d_b=%.9g\n"
+            "slot%d_c=%.9g\nslot%d_mix=%.9g\n",
+            index + 1, slot->type, index + 1, slot->enabled,
+            index + 1, (unsigned)slot->placement,
+            index + 1, slot->gain_db, index + 1, slot->parameter_a,
+            index + 1, slot->parameter_b, index + 1, slot->parameter_c,
+            index + 1, slot->mix) < 0) return 0;
+    }
+    return 1;
 }
 
 static int replace_file(const char *temporary, const char *path)
@@ -402,8 +416,38 @@ static int assign_field(TsSisterParameters *p, const char *key,
                         const char *value)
 {
     int parsed_int;
+    int slot_number;
+    char slot_field[32];
 #define FLOAT_FIELD(name, member) if (strcmp(key, name) == 0) return parse_float(value, &p->member)
 #define INT_FIELD(name, member) if (strcmp(key, name) == 0) return parse_int(value, &p->member)
+    if (sscanf(key, "slot%d_%31s", &slot_number, slot_field) == 2 &&
+        slot_number >= 1 && slot_number <= TS_SISTER_FX_SLOT_COUNT) {
+        TsSisterFxSlotControls *slot = &p->fx.slot[slot_number - 1];
+        if (strcmp(slot_field, "type") == 0) {
+            if (!parse_int(value, &parsed_int)) return 0;
+            slot->type = (TsSisterFxType)parsed_int;
+            return 1;
+        }
+        if (strcmp(slot_field, "enabled") == 0)
+            return parse_int(value, &slot->enabled);
+        if (strcmp(slot_field, "placement") == 0) {
+            if (!parse_int(value, &parsed_int) || parsed_int < 0 ||
+                parsed_int > 255) return 0;
+            slot->placement = (uint8_t)parsed_int;
+            return 1;
+        }
+        if (strcmp(slot_field, "gain_db") == 0)
+            return parse_float(value, &slot->gain_db);
+        if (strcmp(slot_field, "a") == 0)
+            return parse_float(value, &slot->parameter_a);
+        if (strcmp(slot_field, "b") == 0)
+            return parse_float(value, &slot->parameter_b);
+        if (strcmp(slot_field, "c") == 0)
+            return parse_float(value, &slot->parameter_c);
+        if (strcmp(slot_field, "mix") == 0)
+            return parse_float(value, &slot->mix);
+        return 1;
+    }
     FLOAT_FIELD("h1_level", head1_level); FLOAT_FIELD("h1_time_ms", head1_time_ms);
     FLOAT_FIELD("h1_feedback", head1_feedback); FLOAT_FIELD("h2_level", head2_level);
     FLOAT_FIELD("h2_scrub", head2_scrub); INT_FIELD("h2_rate", head2_rate_index);
@@ -559,6 +603,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
     int line_number = 0;
     int saw_header = 0;
     int saw_version = 0;
+    int file_version = 0;
     int in_preset = 0;
     if (bank == NULL || path == NULL) return 0;
     file = fopen(path, "rb");
@@ -585,6 +630,11 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
         }
         if (strcmp(text, "[Preset]") == 0) {
             if (in_preset) {
+                if (file_version < TS_SISTER_PRESET_VERSION) {
+                    ts_sister_fx_controls_migrate_legacy(&current.fx);
+                    ts_sister_ui_migrate_legacy_effect_locks(
+                        &current_locks, &current_locks_high);
+                }
                 if (!valid_name(current_name) ||
                     !ts_sister_preset_save_new_with_lock_words(
                         &loaded, current_name, &current, current_locks,
@@ -605,8 +655,8 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
         text = trim(text);
         equals = trim(equals);
         if (!in_preset && strcmp(text, "Version") == 0) {
-            int version;
-            if (!parse_int(equals, &version) || version < 1) goto malformed;
+            if (!parse_int(equals, &file_version) || file_version < 1)
+                goto malformed;
             saw_version = 1;
         } else if (in_preset && strcmp(text, "Name") == 0) {
             if (!valid_name(equals)) goto malformed;
@@ -634,6 +684,11 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
     if (ferror(file)) goto malformed;
     if (!saw_header || !saw_version) goto malformed;
     if (in_preset) {
+        if (file_version < TS_SISTER_PRESET_VERSION) {
+            ts_sister_fx_controls_migrate_legacy(&current.fx);
+            ts_sister_ui_migrate_legacy_effect_locks(
+                &current_locks, &current_locks_high);
+        }
         if (!valid_name(current_name) ||
             !ts_sister_preset_save_new_with_lock_words(
                 &loaded, current_name, &current, current_locks,

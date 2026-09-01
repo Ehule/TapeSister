@@ -16,6 +16,45 @@ typedef enum {
     TS_SISTER_REVERB_TYPE_COUNT
 } TsSisterReverbType;
 
+typedef enum {
+    TS_SISTER_FX_EMPTY = 0,
+    TS_SISTER_FX_REVERB,
+    TS_SISTER_FX_DELAY,
+    TS_SISTER_FX_DISTORTION,
+    TS_SISTER_FX_GRAIN,
+    TS_SISTER_FX_TYPE_COUNT
+} TsSisterFxType;
+
+enum {
+    TS_SISTER_FX_SLOT_COUNT = 4,
+    TS_SISTER_FX_PLACE_PRE = 1u << 0,
+    TS_SISTER_FX_PLACE_H1 = 1u << 1,
+    TS_SISTER_FX_PLACE_H2 = 1u << 2,
+    TS_SISTER_FX_PLACE_H3 = 1u << 3,
+    TS_SISTER_FX_PLACE_POST = 1u << 4,
+    TS_SISTER_FX_PLACE_HEADS = TS_SISTER_FX_PLACE_H1 |
+                               TS_SISTER_FX_PLACE_H2 |
+                               TS_SISTER_FX_PLACE_H3,
+    TS_SISTER_FX_PLACE_ALL = TS_SISTER_FX_PLACE_PRE |
+                             TS_SISTER_FX_PLACE_HEADS |
+                             TS_SISTER_FX_PLACE_POST,
+    TS_SISTER_FX_LOCATION_COUNT = 5
+};
+
+/* A slot owns an independent processor instance. The generic A/B/C controls
+   map to the visible controls for the selected type: Reverb SIZE/DECAY,
+   Delay TIME/FEEDBACK, Distortion DRIVE/TONE, and Grain SIZE/DENSITY/PITCH. */
+typedef struct {
+    TsSisterFxType type;
+    int enabled;
+    uint8_t placement;
+    float gain_db;
+    float parameter_a;
+    float parameter_b;
+    float parameter_c;
+    float mix;
+} TsSisterFxSlotControls;
+
 typedef struct {
     int enabled;
     int reverb_enabled;
@@ -52,6 +91,7 @@ typedef struct {
     float grain_gain_db;
     uint8_t grain_targets;
     float master_feedback;
+    TsSisterFxSlotControls slot[TS_SISTER_FX_SLOT_COUNT];
     TsSisterFalloutControls fallout;
 } TsSisterFxControls;
 
@@ -84,6 +124,7 @@ typedef struct {
     TsSisterReverbLine line[TS_SISTER_REVERB_LINES];
     uint32_t sample_rate;
     float size_current;
+    float size_target;
     float mix_current;
     float decay_current;
     float gain_current;
@@ -191,35 +232,50 @@ typedef enum {
     TS_SISTER_FX_TRANSITION_REVERB,
     TS_SISTER_FX_TRANSITION_DELAY,
     TS_SISTER_FX_TRANSITION_DISTORTION,
-    TS_SISTER_FX_TRANSITION_GRAIN
+    TS_SISTER_FX_TRANSITION_GRAIN,
+    TS_SISTER_FX_TRANSITION_SLOT_1,
+    TS_SISTER_FX_TRANSITION_SLOT_2,
+    TS_SISTER_FX_TRANSITION_SLOT_3,
+    TS_SISTER_FX_TRANSITION_SLOT_4
 } TsSisterFxTransitionSource;
 
 typedef struct {
     float progress;
     TsSisterFxTransitionSource source;
     int target_enabled;
+    int topology;
     int active;
 } TsSisterFxTransitionStatus;
 
 typedef struct {
-    TsSisterReverbState reverb[TS_SISTER_EFFECT_PROCESSOR_COUNT];
-    TsSisterDelayState delay[TS_SISTER_EFFECT_PROCESSOR_COUNT];
-    TsSisterDistortionState distortion[TS_SISTER_EFFECT_PROCESSOR_COUNT];
-    TsSisterGrainState grain[TS_SISTER_EFFECT_PROCESSOR_COUNT];
+    TsSisterFxSlotControls active;
+    TsSisterFxSlotControls pending;
+    TsSisterFxSlotControls queued;
+    TsSisterFxRamp morph;
+    TsSisterFxRamp engage;
+    int has_pending;
+    int has_queued;
+} TsSisterFxSlotState;
+
+typedef struct {
+    TsSisterReverbState
+        reverb[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
+    TsSisterDelayState
+        delay[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
+    TsSisterDistortionState
+        distortion[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
+    TsSisterGrainState
+        grain[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsSisterFxControls controls;
-    TsSisterFxTargetState reverb_target;
-    TsSisterFxTargetState delay_target;
-    TsSisterFxTargetState distortion_target;
-    TsSisterFxTargetState grain_target;
+    TsSisterFxSlotState slot[TS_SISTER_FX_SLOT_COUNT];
     TsSisterFxRamp master_engage;
-    TsSisterFxRamp reverb_engage;
-    TsSisterFxRamp delay_engage;
-    TsSisterFxRamp distortion_engage;
-    TsSisterFxRamp grain_engage;
     uint32_t sample_rate;
     int ready;
 } TsSisterPostFxEngine;
 
+const char *ts_sister_fx_type_name(TsSisterFxType type);
+uint8_t ts_sister_fx_placement_sanitize(uint8_t placement);
+void ts_sister_fx_controls_migrate_legacy(TsSisterFxControls *controls);
 const char *ts_sister_reverb_type_name(TsSisterReverbType type);
 float ts_sister_reverb_legacy_size(TsSisterReverbType type);
 void ts_sister_fx_controls_default(TsSisterFxControls *controls);
@@ -253,6 +309,9 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
    the engine defaults. Live UI edits should continue to use set_controls(). */
 void ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
                                      const TsSisterFxControls *controls);
+TsStereoFrame ts_sister_post_fx_process_pre(TsSisterPostFxEngine *engine,
+                                            TsStereoFrame input,
+                                            int explicit_mono);
 TsStereoFrame ts_sister_post_fx_process(TsSisterPostFxEngine *engine,
                                         size_t target_index,
                                         TsStereoFrame input,

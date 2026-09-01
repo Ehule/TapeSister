@@ -182,66 +182,59 @@ int main(void)
     CHECK(ts_sister_ui_hit_test(455, 374).action == TS_SISTER_UI_ACTION_CAPTURE);
     CHECK(ts_sister_ui_hit_test(540, 374).action == TS_SISTER_UI_ACTION_OVERDUB);
     model.fx_page = 1;
-    hit = ts_sister_ui_hit_test_model(&model, 120, 56);
+    hit = ts_sister_ui_hit_test_model(&model, 160, 56);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_REVERB_GAIN);
-    hit = ts_sister_ui_hit_test_model(&model, 220, 56);
+          hit.index == TS_SISTER_UI_PARAM_SLOT1_GAIN);
+    hit = ts_sister_ui_hit_test_model(&model, 250, 56);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_REVERB_TYPE);
-    hit = ts_sister_ui_hit_test_model(&model, 325, 56);
+          hit.index == TS_SISTER_UI_PARAM_SLOT1_A);
+    hit = ts_sister_ui_hit_test_model(&model, 345, 56);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_REVERB_DECAY);
-    hit = ts_sister_ui_hit_test_model(&model, 430, 56);
+          hit.index == TS_SISTER_UI_PARAM_SLOT1_B);
+    hit = ts_sister_ui_hit_test_model(&model, 435, 56);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_REVERB_MIX);
-    hit = ts_sister_ui_hit_test_model(&model, 120, 112);
+          hit.index == TS_SISTER_UI_PARAM_SLOT1_MIX);
+    hit = ts_sister_ui_hit_test_model(&model, 160, 112);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_DELAY_GAIN);
-    hit = ts_sister_ui_hit_test_model(&model, 325, 112);
+          hit.index == TS_SISTER_UI_PARAM_SLOT2_GAIN);
+    hit = ts_sister_ui_hit_test_model(&model, 230, 112);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_DELAY_FEEDBACK);
-    hit = ts_sister_ui_hit_test_model(&model, 120, 168);
+          hit.index == TS_SISTER_UI_PARAM_SLOT2_A);
+    hit = ts_sister_ui_hit_test_model(&model, 304, 112);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_DISTORTION_GAIN);
-    hit = ts_sister_ui_hit_test_model(&model, 430, 168);
+          hit.index == TS_SISTER_UI_PARAM_SLOT2_B);
+    hit = ts_sister_ui_hit_test_model(&model, 378, 112);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_DISTORTION_MIX);
-    hit = ts_sister_ui_hit_test_model(&model, 120, 224);
+          hit.index == TS_SISTER_UI_PARAM_SLOT2_C);
+    hit = ts_sister_ui_hit_test_model(&model, 452, 112);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_GRAIN_GAIN);
-    hit = ts_sister_ui_hit_test_model(&model, 200, 224);
+          hit.index == TS_SISTER_UI_PARAM_SLOT2_MIX);
+    hit = ts_sister_ui_hit_test_model(&model, 345, 168);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_GRAIN_SIZE);
-    hit = ts_sister_ui_hit_test_model(&model, 280, 224);
+          hit.index == TS_SISTER_UI_PARAM_SLOT3_B);
+    hit = ts_sister_ui_hit_test_model(&model, 435, 224);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_GRAIN_DENSITY);
-    hit = ts_sister_ui_hit_test_model(&model, 365, 224);
-    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_GRAIN_PITCH);
-    hit = ts_sister_ui_hit_test_model(&model, 445, 224);
-    CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
-          hit.index == TS_SISTER_UI_PARAM_GRAIN_MIX);
+          hit.index == TS_SISTER_UI_PARAM_SLOT4_MIX);
     hit = ts_sister_ui_hit_test_model(&model, 115, 78);
-    CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
-          hit.index == ((1 << 8) | TS_SISTER_EFFECT_TARGET_H1));
-    hit = ts_sister_ui_hit_test_model(&model, 300, 190);
-    CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
-          hit.index == ((3 << 8) | TS_SISTER_EFFECT_TARGET_MIX));
-    hit = ts_sister_ui_hit_test_model(&model, 300, 246);
-    CHECK(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
-          hit.index == ((4 << 8) | TS_SISTER_EFFECT_TARGET_MIX));
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_PLACEMENT &&
+          hit.index == TS_SISTER_FX_PLACE_H1);
+    hit = ts_sister_ui_hit_test_model(&model, 280, 190);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_PLACEMENT &&
+          hit.index == ((2 << 8) | TS_SISTER_FX_PLACE_POST));
     hit = ts_sister_ui_hit_test_model(&model, 25, 55);
-    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
-          hit.index == TS_SISTER_UI_FX_REVERB);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE && hit.index == 0);
     hit = ts_sister_ui_hit_test_model(&model, 25, 111);
-    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
-          hit.index == TS_SISTER_UI_FX_DELAY);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE && hit.index == 1);
     hit = ts_sister_ui_hit_test_model(&model, 25, 167);
-    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
-          hit.index == TS_SISTER_UI_FX_DISTORTION);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE && hit.index == 2);
     hit = ts_sister_ui_hit_test_model(&model, 25, 223);
-    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE &&
-          hit.index == TS_SISTER_UI_FX_GRAIN);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE && hit.index == 3);
+    hit = ts_sister_ui_hit_test_model(&model, 80, 55);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_TYPE && hit.index == 0);
+    hit = ts_sister_ui_hit_test_model(&model, 590, 55);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_MOVE && hit.index == 1);
+    hit = ts_sister_ui_hit_test_model(&model, 550, 111);
+    CHECK(hit.action == TS_SISTER_UI_ACTION_FX_SLOT_MOVE && hit.index == 256);
     CHECK(ts_sister_ui_hit_test_model(&model, 25, 95).action ==
           TS_SISTER_UI_ACTION_NONE);
     hit = ts_sister_ui_hit_test_model(&model, 25, 310);
@@ -451,15 +444,22 @@ int main(void)
     CHECK(framebuffer.pixels[331u * TS_UI_WIDTH + 451u] !=
           palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
     model.fx_page = 1;
-    model.parameters.fx.reverb_mix = 0.5f;
-    model.parameters.fx.delay_mix = 0.5f;
-    model.parameters.fx.distortion_mix = 0.5f;
+    model.parameters.fx.slot[0].mix = 0.5f;
+    model.parameters.fx.slot[1].mix = 0.5f;
+    model.parameters.fx.slot[2].mix = 0.5f;
+    model.parameters.fx.slot[3].mix = 0.5f;
+    model.routing.output_level[0] = 0.5f;
+    model.routing.output_level[1] = 0.25f;
+    model.routing.output_peak_hold[0] = 0.75f;
+    model.routing.output_peak_hold[1] = 0.5f;
     ts_sister_ui_render(&framebuffer, &model, &palette);
-    CHECK(framebuffer.pixels[75u * TS_UI_WIDTH + 297u] ==
+    CHECK(framebuffer.pixels[337u * TS_UI_WIDTH + 560u] ==
+          palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
+    CHECK(framebuffer.pixels[348u * TS_UI_WIDTH + 560u] ==
           palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
-    CHECK(framebuffer.pixels[131u * TS_UI_WIDTH + 297u] ==
-          palette.colors[TS_PALETTE_PATTERN_EFFECT]);
-    CHECK(framebuffer.pixels[187u * TS_UI_WIDTH + 297u] ==
+    model.routing.output_clip[0] = 1;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    CHECK(framebuffer.pixels[337u * TS_UI_WIDTH + 560u] ==
           palette.colors[TS_PALETTE_PATTERN_VOLUME]);
     model.parameters.fx.master_transition = 0.0f;
     ts_sister_ui_render(&framebuffer, &model, &palette);
