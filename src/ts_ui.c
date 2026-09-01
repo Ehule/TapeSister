@@ -4670,7 +4670,10 @@ sister_footer:
     text(fb, 10, 355, line,
          model->routing.source_target_conflict ? PAL_VOLUME : PAL_MOUSE, 1);
 
-    button(fb, 10, 370, 58, tap_names[model->selected_tap], 1);
+    button(fb, 10, 370, 58,
+           model->destination_mode == TS_SISTER_UI_DEST_FILE &&
+           model->selected_tap == TS_SISTER_TAP_MIX ? "OUT" :
+           tap_names[model->selected_tap], 1);
     button(fb, 74, 370, 44, model->capture_channels == 2 ? "S" : "M", model->capture_channels == 2);
     button(fb, 124, 370, 100,
            model->destination_mode == TS_SISTER_UI_DEST_FILE ? "FILE" :

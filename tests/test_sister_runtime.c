@@ -21,6 +21,19 @@ int main(void)
     float held_value;
 
     ts_sister_runtime_init(&runtime);
+    frame = (TsSisterRuntimeFrame){0};
+    frame.tap[TS_SISTER_TAP_H1] = (TsStereoFrame){0.125f, -0.25f};
+    {
+        TsStereoFrame final_output = {0.75f, -0.50f};
+        TsStereoFrame captured = ts_sister_runtime_file_capture_frame(
+            &frame, TS_SISTER_TAP_MIX, final_output);
+        CHECK(CLOSE(captured.l, final_output.l));
+        CHECK(CLOSE(captured.r, final_output.r));
+        captured = ts_sister_runtime_file_capture_frame(
+            &frame, TS_SISTER_TAP_H1, final_output);
+        CHECK(CLOSE(captured.l, frame.tap[TS_SISTER_TAP_H1].l));
+        CHECK(CLOSE(captured.r, frame.tap[TS_SISTER_TAP_H1].r));
+    }
     CHECK(!runtime.enabled && runtime.machine.buffer.data == NULL);
     CHECK(!ts_sister_runtime_enable(&runtime, 0u, 2u, 2u, 0.1,
                                     NULL, 0u));

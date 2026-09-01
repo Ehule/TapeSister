@@ -119,13 +119,16 @@ The destination helper accepts an explicit eligible target or searches the curre
 page for the nearest blank unlocked non-source tile. It never overwrites occupied
 audio or silently creates a page.
 
-FILE is a third Capture destination alongside CURRENT and NEXT EMPTY. It records the
-selected tap and M/S shape directly to a timestamped 32-bit float WAV under the normal
-`Captures/` archive directory; it does not allocate, modify, or commit a tile. MIX FILE
-captures contain Fallout and the complete post-effects return. A bounded SPSC queue is
-the only callback-facing storage. An SDL writer thread drains it, checkpoints a
-recoverable header, and finalizes RIFF or RF64 after STOP. Consequently there is no
-configured duration ceiling and no filesystem call on the audio callback.
+FILE is a third Capture destination alongside CURRENT and NEXT EMPTY. It records its
+selected source and M/S shape directly to a timestamped 32-bit float WAV under the normal
+`Captures/` archive directory; it does not allocate, modify, or commit a tile.
+In FILE mode, MIX is labeled `OUT` and records after ordinary or Sister POST effects,
+topology crossfades, and the global output limiter. OUT remains available while Sister
+POWER is off. H1/H2/H3 retain their isolated internal file taps and require Sister to be
+running. A bounded SPSC queue is the only callback-facing storage. An SDL writer thread
+drains it, checkpoints a recoverable header, and finalizes RIFF or RF64 after STOP.
+Consequently there is no configured duration ceiling and no filesystem call on the audio
+callback.
 
 Safe recursion is transactional:
 

@@ -309,6 +309,11 @@ void ts_sister_runtime_panic(TsSisterRuntime *runtime);
 
 TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsSisterRuntime *runtime, const TsSisterSourceFrames *sources);
+/* FILE's OUT selection follows the final audible program. H1/H2/H3 retain
+   their isolated internal taps for powered-Sister stem recording. */
+TsStereoFrame ts_sister_runtime_file_capture_frame(
+    const TsSisterRuntimeFrame *frame, TsSisterTap tap,
+    TsStereoFrame final_output);
 void ts_sister_runtime_begin_audio_block(TsSisterRuntime *runtime);
 void ts_sister_runtime_end_audio_block(TsSisterRuntime *runtime);
 void ts_sister_runtime_process_block(TsSisterRuntime *runtime,

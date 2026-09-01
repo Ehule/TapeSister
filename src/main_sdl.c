@@ -997,16 +997,6 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.preview = buses.legacy_preview;
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
                                                         &sister_sources);
-        if (audio->sister_file_recorder != NULL &&
-            ts_performance_recorder_state(audio->sister_file_recorder) ==
-                TS_PERFORMANCE_FILE_RECORDING) {
-            int tap = atomic_load_explicit(&audio->sister_file_tap,
-                                           memory_order_relaxed);
-            if (tap < TS_SISTER_TAP_MIX || tap >= TS_SISTER_TAP_COUNT)
-                tap = TS_SISTER_TAP_MIX;
-            (void)ts_performance_recorder_push_frame(
-                audio->sister_file_recorder, sister_frame.tap[tap]);
-        }
         buses.sister = sister_frame.monitor_return;
         buses.program.l = buses.legacy_preview.l +
                           buses.tile_performance.l + buses.fm.l;
@@ -1093,6 +1083,20 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         output = ts_audio_mixer_render_unclamped(&audio->mixer, &buses);
         output = audio_apply_topology_crossfade(audio, output);
         output = ts_sister_runtime_process_output(&audio->sister, output);
+        /* FILE OUT captures the final audible program after ordinary or
+           Sister POST effects, topology fades, and the output limiter. The
+           optional H1/H2/H3 file stems retain their internal taps. Neither
+           path writes to Sister's rolling memory. */
+        if (audio->sister_file_recorder != NULL &&
+            ts_performance_recorder_state(audio->sister_file_recorder) ==
+                TS_PERFORMANCE_FILE_RECORDING) {
+            int tap = atomic_load_explicit(&audio->sister_file_tap,
+                                           memory_order_relaxed);
+            TsStereoFrame capture_frame = ts_sister_runtime_file_capture_frame(
+                &sister_frame, (TsSisterTap)tap, output);
+            (void)ts_performance_recorder_push_frame(
+                audio->sister_file_recorder, capture_frame);
+        }
         audio->last_output = output;
         audio->mixer.buses.output = output;
         out[i] = output.l;
@@ -7623,9 +7627,10 @@ static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
     char error[160];
     size_t queue_frames;
     if (audio == NULL || sister == NULL || sample_rate == 0u) return 0;
-    if (!audio->sister.enabled || audio->sister.callback_failed) {
+    if (sister->model.selected_tap != TS_SISTER_TAP_MIX &&
+        (!audio->sister.enabled || audio->sister.callback_failed)) {
         snprintf(sister->model.status, sizeof(sister->model.status),
-                 "ENABLE SISTER BEFORE RECORDING A PERFORMANCE");
+                 "SELECT OUT OR ENABLE SISTER FOR A HEAD FILE");
         return 0;
     }
     if (atomic_load_explicit(&audio->sister.capture.state,
@@ -7634,8 +7639,11 @@ static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
                  "FINISH THE TILE CAPTURE BEFORE RECORDING A FILE");
         return 0;
     }
-    snprintf(prefix, sizeof(prefix), "SISTER-%s",
-             ts_sister_tap_name(sister->model.selected_tap));
+    if (sister->model.selected_tap == TS_SISTER_TAP_MIX)
+        snprintf(prefix, sizeof(prefix), "TAPESISTER-OUT");
+    else
+        snprintf(prefix, sizeof(prefix), "SISTER-%s",
+                 ts_sister_tap_name(sister->model.selected_tap));
     if (!ts_capture_archive_unique_path(
             capture_archive_directory(), prefix, path, sizeof(path),
             error, sizeof(error))) {

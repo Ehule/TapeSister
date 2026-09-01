@@ -17,6 +17,8 @@ int main(void)
     TsPalette palette;
     uint64_t first_hash = 1469598103934665603ull;
     uint64_t second_hash = 1469598103934665603ull;
+    uint64_t file_out_hash = 1469598103934665603ull;
+    uint64_t file_head_hash = 1469598103934665603ull;
     ts_config_init(&config);
     CHECK(config.sister_buffer_seconds == 40);
     CHECK(config.sister_capture_channels == 1);
@@ -410,6 +412,27 @@ int main(void)
           palette.colors[TS_PALETTE_PATTERN_VOLUME]);
     CHECK(framebuffer.pixels[368u * TS_UI_WIDTH + 448u] ==
           palette.colors[TS_PALETTE_ACTIVE_TILE]);
+    /* FILE renames MIX to the global final-output OUT tap while preserving
+       the three isolated Sister head taps. */
+    model.selected_tap = TS_SISTER_TAP_MIX;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    for (int y = 370; y < 388; ++y) {
+        for (int x = 10; x < 68; ++x) {
+            file_out_hash ^= framebuffer.pixels[
+                (size_t)y * TS_UI_WIDTH + (size_t)x];
+            file_out_hash *= 1099511628211ull;
+        }
+    }
+    model.selected_tap = TS_SISTER_TAP_H1;
+    ts_sister_ui_render(&framebuffer, &model, &palette);
+    for (int y = 370; y < 388; ++y) {
+        for (int x = 10; x < 68; ++x) {
+            file_head_hash ^= framebuffer.pixels[
+                (size_t)y * TS_UI_WIDTH + (size_t)x];
+            file_head_hash *= 1099511628211ull;
+        }
+    }
+    CHECK(file_out_hash != file_head_hash);
     model.file_capture_state = TS_PERFORMANCE_FILE_IDLE;
     model.destination_mode = TS_SISTER_UI_DEST_CURRENT;
     model.text_cursor_visible = 0;

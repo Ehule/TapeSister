@@ -436,6 +436,15 @@ static TsStereoFrame selected_tap(const TsSisterRuntimeFrame *frame,
     return frame->tap[tap];
 }
 
+TsStereoFrame ts_sister_runtime_file_capture_frame(
+    const TsSisterRuntimeFrame *frame, TsSisterTap tap,
+    TsStereoFrame final_output)
+{
+    if (tap <= TS_SISTER_TAP_MIX || tap >= TS_SISTER_TAP_COUNT)
+        return ts_stereo_frame_sanitize(final_output);
+    return ts_stereo_frame_sanitize(selected_tap(frame, tap));
+}
+
 static TsBankCaptureKind capture_kind_for_tap(TsSisterTap tap)
 {
     if (tap == TS_SISTER_TAP_H1) return TS_BANK_CAPTURE_SISTER_H1;
