@@ -21,6 +21,25 @@ static int execute(TsInstrument *instrument, int slot, TsUiBankAction action,
 
 int main(void)
 {
+    CONTRACT("master_limiter_hit",
+             ts_ui_master_limiter_contains(TS_UI_MASTER_LIMITER_X,
+                                           TS_UI_MASTER_LIMITER_Y));
+    CONTRACT("master_limiter_left_boundary",
+             !ts_ui_master_limiter_contains(TS_UI_MASTER_LIMITER_X - 1,
+                                            TS_UI_MASTER_LIMITER_Y));
+    CONTRACT("master_output_hit",
+             ts_ui_master_output_contains(TS_UI_MASTER_OUTPUT_X + 20,
+                                          TS_UI_MASTER_OUTPUT_Y + 10));
+    CONTRACT("master_output_slider_hit",
+             ts_ui_slider_from_point(NULL, TS_UI_MASTER_OUTPUT_X + 20,
+                                     TS_UI_MASTER_OUTPUT_Y + 10) ==
+                 TS_UI_SLIDER_MASTER_OUTPUT);
+    CONTRACT("master_output_zero",
+             ts_ui_master_output_normalized_from_x(
+                 TS_UI_MASTER_OUTPUT_X) == 0.0f);
+    CONTRACT("master_output_unity",
+             ts_ui_master_output_normalized_from_x(
+                 TS_UI_MASTER_OUTPUT_X + TS_UI_MASTER_OUTPUT_W) == 1.0f);
     TsInstrument instrument;
     TsNoteBank notes;
     TsAuditionPlan plan;

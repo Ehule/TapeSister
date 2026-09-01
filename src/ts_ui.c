@@ -22,6 +22,13 @@ static const TsPalette *render_palette;
 static TsWaveformCache waveform_caches[TS_UI_WAVEFORM_COUNT];
 static int waveform_caches_initialized;
 
+static void master_output_fader(TsFramebuffer *fb, float gain, int x, int y);
+static void master_output_meter(TsFramebuffer *fb,
+                                const TsUiMasterOutputStatus *output,
+                                int x, int y);
+static void master_output_diagnostic(char *label, size_t label_size,
+                                     const TsUiMasterOutputStatus *output);
+
 void ts_ui_update_input_activity(TsUiState *ui,
                                  uint32_t hold_until_ms[8],
                                  uint32_t now_ms,
@@ -585,6 +592,7 @@ static void sister_portal_render(TsFramebuffer *fb, const TsUiState *ui)
         }
     text(fb, 55, 7, "TAPESISTER", title, 1);
     text(fb, 55, 18, "SISTER MACHINE", subtitle, 1);
+    text(fb, 121, 7, TAPESISTER_BUILD_MARKER, PAL_EFFECT, 1);
     if (ui->sister_enabled)
         rect(fb, 55, 27, 83, 2,
              palette_blend(background,
@@ -592,11 +600,11 @@ static void sister_portal_render(TsFramebuffer *fb, const TsUiState *ui)
                            PAL_WAVE_LEFT : PAL_BUTTON,
                            55 + state * 15));
     if (ui->sister_held) {
-        rect(fb, 142, 8, 2, 10, PAL_TUNING);
-        rect(fb, 147, 8, 2, 10, PAL_TUNING);
+        rect(fb, 142, 25, 2, 3, PAL_TUNING);
+        rect(fb, 147, 25, 2, 3, PAL_TUNING);
     } else if (ui->sister_rolling) {
-        for (int row = 0; row < 5; ++row)
-            rect(fb, 142 + row, 9 + row, 1, 10 - row * 2, PAL_WAVE_LEFT);
+        for (int row = 0; row < 4; ++row)
+            rect(fb, 142 + row, 24 + row, 1, 4 - row, PAL_WAVE_LEFT);
     }
     if (ui->sister_monitor_enabled)
         text(fb, 148, 19, "M", PAL_WAVE_SUM, 1);
@@ -1438,6 +1446,8 @@ void ts_ui_init(TsUiState *ui)
     ui->capture_state = TS_CAPTURE_IDLE;
     ui->external_record_bank = 0;
     ui->record_source = TS_RECORD_SOURCE_EXT;
+    ui->master_output.gain = 1.0f;
+    ui->master_output.limiter_ceiling_db = -1.0f;
     ui->renaming_bank_slot = -1;
     ui->renaming_recipe_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
@@ -1908,6 +1918,8 @@ static int point_in_slider(int x, int y, int left, int top, int width)
 
 TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y)
 {
+    if (ts_ui_master_output_contains(x, y))
+        return TS_UI_SLIDER_MASTER_OUTPUT;
     if (x >= 240 && x < 302 && y >= 42 && y < 64)
         return TS_UI_SLIDER_TILE_FADE;
     if (point_in_slider(x, y, 10, 233, 72)) return TS_UI_SLIDER_BODY;
@@ -1951,6 +1963,28 @@ TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y)
         break;
     }
     return TS_UI_SLIDER_NONE;
+}
+
+int ts_ui_master_limiter_contains(int x, int y)
+{
+    return x >= TS_UI_MASTER_LIMITER_X &&
+           x < TS_UI_MASTER_LIMITER_X + TS_UI_MASTER_LIMITER_W &&
+           y >= TS_UI_MASTER_LIMITER_Y && y < TS_UI_MASTER_LIMITER_Y + 22;
+}
+
+int ts_ui_master_output_contains(int x, int y)
+{
+    return x >= TS_UI_MASTER_OUTPUT_X &&
+           x < TS_UI_MASTER_OUTPUT_X + TS_UI_MASTER_OUTPUT_W &&
+           y >= TS_UI_MASTER_OUTPUT_Y && y < TS_UI_MASTER_OUTPUT_Y + 22;
+}
+
+float ts_ui_master_output_normalized_from_x(int x)
+{
+    float normalized = (float)(x - (TS_UI_MASTER_OUTPUT_X + 4)) / 39.0f;
+    if (normalized < 0.0f) return 0.0f;
+    if (normalized > 1.0f) return 1.0f;
+    return normalized;
 }
 
 float ts_ui_tile_fade_normalized(int milliseconds)
@@ -2358,13 +2392,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, 152, 3, 2, 27, PAL_VOLUME);
         text(fb, 160, 13, "REC", PAL_VOLUME, 1);
     }
-    text(fb, 196, 13, TAPESISTER_BUILD_MARKER, PAL_EFFECT, 1);
     {
         uint8_t channels = ui->input_available_channels <=
                            TS_INPUT_DEVICE_CHANNEL_MAX ?
                            ui->input_available_channels : 0u;
         char input_label[4] = {'I', 'N', (char)('0' + channels), '\0'};
-        text(fb, 242, 13, input_label, PAL_TEXT, 1);
+        text(fb, 160, 13, input_label, PAL_TEXT, 1);
     }
     for (int channel = 0; channel < TS_INPUT_DEVICE_CHANNEL_MAX; ++channel) {
         int x = TS_UI_INPUT_LED_X + channel * TS_UI_INPUT_LED_STEP_X;
@@ -2375,16 +2408,16 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         rect(fb, x, TS_UI_INPUT_LED_Y,
              TS_UI_INPUT_LED_W, TS_UI_INPUT_LED_H, color);
     }
-    {
-        char history[24];
-        snprintf(history, sizeof(history), "UNDO %02d/%02d",
-                 instrument->undo_count, TS_HISTORY_DEPTH);
-        text(fb, 289, 13, history, PAL_EFFECT, 1);
-    }
-    button(fb, 350, 4, 76, "CONFIG", ui->config_open);
-    button(fb, 431, 4, 80, "FT2 LINK", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
-    button(fb, 516, 4, 52, "SAVE", 0);
-    button(fb, 573, 4, 57, "EXPORT", 0);
+    button(fb, TS_UI_MASTER_LIMITER_X, TS_UI_MASTER_LIMITER_Y,
+           TS_UI_MASTER_LIMITER_W, "LIM", ui->master_output.limiter_enabled);
+    master_output_fader(fb, ui->master_output.gain,
+                        TS_UI_MASTER_OUTPUT_X, TS_UI_MASTER_OUTPUT_Y);
+    master_output_meter(fb, &ui->master_output,
+                        TS_UI_MASTER_METER_X, TS_UI_MASTER_METER_Y);
+    button(fb, 214, 4, 60, "CONFIG", ui->config_open);
+    button(fb, 278, 4, 66, "FT2 LINK", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
+    button(fb, 348, 4, 50, "SAVE", 0);
+    button(fb, 402, 4, 58, "EXPORT", 0);
 
     frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
     if (sample->frames) {
@@ -3150,7 +3183,24 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         }
     }
     rect(fb, 0, 386, TS_UI_WIDTH, 14, RGB(10, 10, 10));
-    text(fb, 8, 389, ui->status, PAL_MOUSE, 1);
+    {
+        char status_line[83];
+        char output_info[24];
+        char diagnostic[48];
+        int diagnostic_x;
+        snprintf(status_line, sizeof(status_line), "%.82s", ui->status);
+        master_output_diagnostic(output_info, sizeof(output_info),
+                                 &ui->master_output);
+        snprintf(diagnostic, sizeof(diagnostic), "UNDO %02d/%02d  %s",
+                 instrument->undo_count, TS_HISTORY_DEPTH, output_info);
+        diagnostic_x = 632 - (int)strlen(diagnostic) * 6;
+        text(fb, 8, 389, status_line, PAL_MOUSE, 1);
+        rect(fb, diagnostic_x - 6, 385,
+             TS_UI_WIDTH - diagnostic_x + 6, 15, PAL_DESKTOP);
+        text(fb, diagnostic_x, 389, diagnostic,
+             ui->master_output.limiter_gain_reduction_db > 0.05f ?
+             PAL_VOLUME : PAL_EFFECT, 1);
+    }
 
     if (ui->exit_confirm_open) {
         frame(fb, 154, 128, 332, 130, RGB(36, 33, 37), PAL_MOUSE);
@@ -3751,8 +3801,8 @@ static float sister_meter_normalized(float amplitude)
     return (decibels + 48.0f) / 48.0f;
 }
 
-static void sister_master_output_fader(TsFramebuffer *fb, float gain,
-                                       int x, int y)
+static void master_output_fader(TsFramebuffer *fb, float gain,
+                                int x, int y)
 {
     char label[16];
     int fill;
@@ -3774,8 +3824,8 @@ static void sister_master_output_fader(TsFramebuffer *fb, float gain,
     rect(fb, handle, y + 13, 2, 7, PAL_MOUSE);
 }
 
-static void sister_output_meter(TsFramebuffer *fb,
-                                const TsSisterRoutingSnapshot *routing,
+static void master_output_meter(TsFramebuffer *fb,
+                                const TsUiMasterOutputStatus *output,
                                 int x, int y)
 {
     static const char *const names[2] = {"L", "R"};
@@ -3783,15 +3833,9 @@ static void sister_output_meter(TsFramebuffer *fb,
         RGB(48, 184, 88), RGB(210, 196, 46),
         RGB(236, 126, 38), RGB(226, 48, 44)
     };
-    char status[24];
-    float ceiling = routing->limiter_ceiling_db;
+    float ceiling = output->limiter_ceiling_db;
     int ceiling_x;
     if (!isfinite(ceiling)) ceiling = TS_SISTER_LIMITER_DEFAULT_CEILING_DB;
-    snprintf(status, sizeof(status), "G%.1FC%.0F",
-             routing->limiter_gain_reduction_db, ceiling);
-    text(fb, x, 1, status,
-         routing->limiter_gain_reduction_db > 0.05f ? colors[3] : PAL_MOUSE,
-         1);
     ceiling_x = (int)lrintf(42.0f * sister_meter_normalized(
         powf(10.0f, ceiling / 20.0f)));
     if (ceiling_x < 0) ceiling_x = 0;
@@ -3800,9 +3844,9 @@ static void sister_output_meter(TsFramebuffer *fb,
         int lane_y = y + 1 + channel * 11;
         int width = 42;
         int fill = (int)lrintf((float)width * sister_meter_normalized(
-            routing->output_level[channel]));
+            output->level[channel]));
         int peak = (int)lrintf((float)(width - 1) *
-            sister_meter_normalized(routing->output_peak_hold[channel]));
+            sister_meter_normalized(output->peak_hold[channel]));
         static const int boundaries[4] = {32, 37, 39, 42};
         int start = 0;
         text(fb, x, lane_y - 1, names[channel], PAL_MOUSE, 1);
@@ -3817,11 +3861,41 @@ static void sister_output_meter(TsFramebuffer *fb,
         }
         rect(fb, x + 8 + ceiling_x, lane_y, 1, 6, PAL_BUTTON);
         if (peak > 0) rect(fb, x + 8 + peak, lane_y, 1, 6,
-                           routing->output_clip[channel] ? colors[3] :
+                           output->clip[channel] ? colors[3] :
                            PAL_MOUSE);
-        if (routing->output_clip[channel])
+        if (output->clip[channel])
             rect(fb, x + 48, lane_y, 2, 6, colors[3]);
     }
+}
+
+static void master_output_diagnostic(char *label, size_t label_size,
+                                     const TsUiMasterOutputStatus *output)
+{
+    if (label == NULL || label_size == 0u) return;
+    if (output == NULL || !output->limiter_enabled)
+        snprintf(label, label_size, "LIM OFF");
+    else if (output->limiter_gain_reduction_db > 0.05f)
+        snprintf(label, label_size, "GR-%.1F",
+                 output->limiter_gain_reduction_db);
+    else
+        snprintf(label, label_size, "GR 0.0");
+}
+
+static TsUiMasterOutputStatus master_output_from_routing(
+    const TsSisterRoutingSnapshot *routing)
+{
+    TsUiMasterOutputStatus output = {0};
+    if (routing == NULL) return output;
+    for (int channel = 0; channel < 2; ++channel) {
+        output.level[channel] = routing->output_level[channel];
+        output.peak_hold[channel] = routing->output_peak_hold[channel];
+        output.clip[channel] = routing->output_clip[channel];
+    }
+    output.limiter_enabled = routing->limiter_enabled;
+    output.limiter_ceiling_db = routing->limiter_ceiling_db;
+    output.limiter_gain_reduction_db = routing->limiter_gain_reduction_db;
+    output.gain = routing->master_output_gain;
+    return output;
 }
 
 static uint32_t sister_transition_caption_color(float progress,
@@ -4237,8 +4311,10 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     TsWaveformDisplayMode mode;
     char line[160];
     char preset_label[20];
+    TsUiMasterOutputStatus master_output;
     if (fb == NULL || model == NULL || palette == NULL) return;
     render_palette = palette;
+    master_output = master_output_from_routing(&model->routing);
     clear(fb, PAL_DESKTOP);
     rect(fb, 0, 0, TS_SISTER_UI_WIDTH, 36, RGB(12, 12, 12));
     button(fb, 10, 8, 62, model->routing.enabled ? "POWER ON" : "POWER", model->routing.enabled);
@@ -4269,8 +4345,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
            model->fx_page == 1 ? "FALL" : "TAPE",
            model->fx_page != 0);
     button(fb, 494, 8, 30, "LIM", model->routing.limiter_enabled);
-    sister_master_output_fader(fb, model->routing.master_output_gain, 528, 8);
-    sister_output_meter(fb, &model->routing, 580, 8);
+    master_output_fader(fb, model->routing.master_output_gain, 528, 8);
+    master_output_meter(fb, &master_output, 580, 8);
 
     if (model->fx_page == 2) {
         const TsSisterFalloutControls *f = &model->parameters.fx.fallout;
@@ -4716,7 +4792,7 @@ sister_footer:
                  model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING ?
                  "FINISHING WAV" : "RECORDING PERFORMANCE");
     } else {
-        snprintf(line, sizeof(line), "TARGET %s  %.88s",
+        snprintf(line, sizeof(line), "TARGET %s  %.80s",
                  model->destination_mode == TS_SISTER_UI_DEST_FILE ? "FILE" :
                  model->destination_slot >= 0 ? "READY" : "--",
                  model->routing.capture_state == TS_CAPTURE_RECORDING ?
@@ -4725,6 +4801,18 @@ sister_footer:
     }
     text(fb, 10, 355, line,
          model->routing.source_target_conflict ? PAL_VOLUME : PAL_MOUSE, 1);
+    {
+        char output_info[24];
+        int output_x;
+        master_output_diagnostic(output_info, sizeof(output_info),
+                                 &master_output);
+        output_x = 630 - (int)strlen(output_info) * 6;
+        rect(fb, output_x - 6, 351,
+             TS_SISTER_UI_WIDTH - output_x + 6, 15, PAL_DESKTOP);
+        text(fb, output_x, 355, output_info,
+             master_output.limiter_gain_reduction_db > 0.05f ?
+             PAL_VOLUME : PAL_EFFECT, 1);
+    }
 
     button(fb, 10, 370, 58,
            model->destination_mode == TS_SISTER_UI_DEST_FILE &&

@@ -7827,6 +7827,52 @@ static const char *sister_fx_slot_placement_name(uint8_t placement)
     return "SELECTED HEADS";
 }
 
+static void set_master_output_gain(SDL_AudioDeviceID device, AudioState *audio,
+                                   TsUiState *ui, SisterWindow *sister,
+                                   float gain)
+{
+    float decibels;
+    if (!isfinite(gain)) gain = 1.0f;
+    if (gain < 0.0f) gain = 0.0f;
+    if (gain > 1.0f) gain = 1.0f;
+    if (device) SDL_LockAudioDevice(device);
+    ts_sister_runtime_set_master_output_gain(&audio->sister, gain);
+    if (device) SDL_UnlockAudioDevice(device);
+    ui->config.master_output_percent = (int)lrintf(gain * 100.0f);
+    ui->master_output.gain = gain;
+    decibels = gain > 0.0001f ? 20.0f * log10f(gain) : -INFINITY;
+    if (isfinite(decibels)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "MASTER OUT %+.1F DB - FINAL POST-LIMITER LEVEL", decibels);
+        if (sister != NULL)
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "MASTER OUT %+.1F DB - POST LIMITER", decibels);
+    } else {
+        snprintf(ui->status, sizeof(ui->status),
+                 "MASTER OUT MUTED - FINAL POST-LIMITER LEVEL");
+        if (sister != NULL)
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "MASTER OUT MUTED - POST LIMITER");
+    }
+}
+
+static void set_output_limiter_enabled(SDL_AudioDeviceID device,
+                                       AudioState *audio, TsUiState *ui,
+                                       SisterWindow *sister, int enabled)
+{
+    if (device) SDL_LockAudioDevice(device);
+    ts_sister_runtime_set_limiter_enabled(&audio->sister, enabled);
+    if (device) SDL_UnlockAudioDevice(device);
+    ui->master_output.limiter_enabled = enabled != 0;
+    snprintf(ui->status, sizeof(ui->status),
+             "OUTPUT LIMITER %s - SESSION OVERRIDE",
+             enabled ? "ON" : "OFF");
+    if (sister != NULL)
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "OUTPUT LIMITER %s - SESSION OVERRIDE",
+                 enabled ? "ON" : "OFF");
+}
+
 static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, TsInstrument *instrument,
                                 SisterWindow *sister,
@@ -8090,32 +8136,12 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_LIMITER_TOGGLE) {
-        if (device) SDL_LockAudioDevice(device);
-        ts_sister_runtime_set_limiter_enabled(
-            &audio->sister, !audio->sister.limiter.enabled);
-        if (device) SDL_UnlockAudioDevice(device);
-        snprintf(sister->model.status, sizeof(sister->model.status),
-                 "OUTPUT LIMITER %s - SESSION OVERRIDE",
-                 audio->sister.limiter.enabled ? "ON" : "OFF");
+        set_output_limiter_enabled(
+            device, audio, ui, sister, !audio->sister.limiter.enabled);
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) {
-        float gain = hit.normalized;
-        float decibels;
-        if (!isfinite(gain)) gain = 1.0f;
-        if (gain < 0.0f) gain = 0.0f;
-        if (gain > 1.0f) gain = 1.0f;
-        if (device) SDL_LockAudioDevice(device);
-        ts_sister_runtime_set_master_output_gain(&audio->sister, gain);
-        if (device) SDL_UnlockAudioDevice(device);
-        ui->config.master_output_percent = (int)lrintf(gain * 100.0f);
-        decibels = gain > 0.0001f ? 20.0f * log10f(gain) : -INFINITY;
-        if (isfinite(decibels))
-            snprintf(sister->model.status, sizeof(sister->model.status),
-                     "MASTER OUT %+.1F DB - POST LIMITER", decibels);
-        else
-            snprintf(sister->model.status, sizeof(sister->model.status),
-                     "MASTER OUT MUTED - POST LIMITER");
+        set_master_output_gain(device, audio, ui, sister, hit.normalized);
         return;
     }
     if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG) {
@@ -8688,6 +8714,11 @@ static int adjust_hovered_slider(SDL_AudioDeviceID device, AudioState *audio,
                  (double)value / 1000.0);
         return 1;
     }
+    case TS_UI_SLIDER_MASTER_OUTPUT:
+        set_master_output_gain(
+            device, audio, ui, NULL,
+            ui->master_output.gain + step);
+        return 1;
     default:
         return 0;
     }
@@ -10616,6 +10647,21 @@ int main(int argc, char **argv)
                     continue;
                 }
                 if (!ui_dialog_open(&ui) &&
+                    ts_ui_master_limiter_contains(x, y)) {
+                    set_output_limiter_enabled(
+                        device, &audio, &ui, &sister_window,
+                        !audio.sister.limiter.enabled);
+                    continue;
+                }
+                if (!ui_dialog_open(&ui) &&
+                    ts_ui_master_output_contains(x, y)) {
+                    ui.master_output_dragging = 1;
+                    set_master_output_gain(
+                        device, &audio, &ui, &sister_window,
+                        ts_ui_master_output_normalized_from_x(x));
+                    continue;
+                }
+                if (!ui_dialog_open(&ui) &&
                     ts_ui_waveform_mode_contains(x, y)) {
                     ui.config.waveform_display_mode = ts_waveform_display_cycle(
                         (TsWaveformDisplayMode)ui.config.waveform_display_mode, 1);
@@ -10704,6 +10750,10 @@ int main(int argc, char **argv)
                 if (ui.browser.filename_focus &&
                     ts_browser_edits_text(&ui.browser))
                     ts_browser_append_filename(&ui.browser, event.text.text);
+            } else if (event.type == SDL_WINDOWEVENT &&
+                       event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
+                       ui.master_output_dragging) {
+                ui.master_output_dragging = 0;
             } else if (event.type == SDL_WINDOWEVENT &&
                        event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
                        ui.transform_open) {
@@ -12017,6 +12067,14 @@ int main(int argc, char **argv)
                 set_fm_output_trim(device, &audio, &ui,
                                    (float)(x - 518) / 102.0f, 0);
             } else if (event.type == SDL_MOUSEMOTION &&
+                       ui.master_output_dragging) {
+                int x, y;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
+                (void)y;
+                set_master_output_gain(
+                    device, &audio, &ui, &sister_window,
+                    ts_ui_master_output_normalized_from_x(x));
+            } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.palette_open || ui.export_choice_open ||
                         ui.exchange_dialog != TS_UI_EXCHANGE_NONE ||
@@ -12703,14 +12761,14 @@ int main(int argc, char **argv)
                         ui.browser.action_focus = 3;
                         browser_cancel(&ui);
                     }
-                } else if (y >= 4 && y < 28 && x >= 350 && x < 426) {
+                } else if (y >= 4 && y < 28 && x >= 214 && x < 274) {
                     begin_config(&ui);
-                } else if (y >= 4 && y < 28 && x >= 431 && x < 511) {
+                } else if (y >= 4 && y < 28 && x >= 278 && x < 344) {
                     begin_exchange_send(&ui, &instrument, &sample_pages);
-                } else if (y >= 4 && y < 28 && x >= 516 && x < 568) {
+                } else if (y >= 4 && y < 28 && x >= 348 && x < 398) {
                     browser_open(&ui, ui.show_ingredients ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
-                } else if (y >= 4 && y < 28 && x >= 573 && x < 630) {
+                } else if (y >= 4 && y < 28 && x >= 402 && x < 460) {
                     begin_export_choice(&ui);
                 } else if (x >= 240 && x < 302 && y >= 42 && y < 64) {
                     ui.config.tile_fade_ms = ts_ui_tile_fade_ms(
@@ -13586,6 +13644,11 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONUP &&
                        (event.button.button == SDL_BUTTON_LEFT ||
                         event.button.button == SDL_BUTTON_RIGHT)) {
+                if (ui.master_output_dragging &&
+                    event.button.button == SDL_BUTTON_LEFT) {
+                    ui.master_output_dragging = 0;
+                    continue;
+                }
                 if (ui.fm_output_dragging &&
                     event.button.button == SDL_BUTTON_LEFT) {
                     ui.fm_output_dragging = 0;
@@ -13902,6 +13965,20 @@ int main(int argc, char **argv)
                     TS_PERFORMANCE_FILE_STOPPING;
             ui.sister_warning = routing.warnings != 0u;
             ui.sister_source_mask = routing.source_mask;
+            for (int channel = 0; channel < 2; ++channel) {
+                ui.master_output.level[channel] =
+                    routing.output_level[channel];
+                ui.master_output.peak_hold[channel] =
+                    routing.output_peak_hold[channel];
+                ui.master_output.clip[channel] =
+                    routing.output_clip[channel];
+            }
+            ui.master_output.limiter_enabled = routing.limiter_enabled;
+            ui.master_output.limiter_ceiling_db =
+                routing.limiter_ceiling_db;
+            ui.master_output.limiter_gain_reduction_db =
+                routing.limiter_gain_reduction_db;
+            ui.master_output.gain = routing.master_output_gain;
         }
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         sister_window.model.text_cursor_visible = ui.text_cursor_visible;

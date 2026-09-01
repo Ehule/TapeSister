@@ -15,10 +15,20 @@
 #include "tapesister/exchange.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
-enum { TS_UI_INPUT_LED_X = 263, TS_UI_INPUT_LED_Y = 12,
+enum { TS_UI_INPUT_LED_X = 184, TS_UI_INPUT_LED_Y = 12,
        TS_UI_INPUT_LED_W = 2, TS_UI_INPUT_LED_H = 9,
        TS_UI_INPUT_LED_STEP_X = 3 };
 #define TS_UI_INPUT_ACTIVITY_HOLD_MS 140u
+enum {
+    TS_UI_MASTER_LIMITER_X = 494,
+    TS_UI_MASTER_LIMITER_Y = 5,
+    TS_UI_MASTER_LIMITER_W = 28,
+    TS_UI_MASTER_OUTPUT_X = 528,
+    TS_UI_MASTER_OUTPUT_Y = 5,
+    TS_UI_MASTER_OUTPUT_W = 48,
+    TS_UI_MASTER_METER_X = 580,
+    TS_UI_MASTER_METER_Y = 8
+};
 enum { TS_WAVE_X = 20, TS_WAVE_Y = 64, TS_WAVE_W = 600, TS_WAVE_H = 134 };
 enum { TS_MODAL_PANEL_X = 10, TS_MODAL_PANEL_Y = 40,
        TS_MODAL_PANEL_W = 620, TS_MODAL_PANEL_H = 164 };
@@ -84,7 +94,8 @@ typedef enum {
     TS_UI_SLIDER_REVERB_DAMPING,
     TS_UI_SLIDER_REVERB_MIX,
     TS_UI_SLIDER_LOOP_CROSSFADE,
-    TS_UI_SLIDER_TILE_FADE
+    TS_UI_SLIDER_TILE_FADE,
+    TS_UI_SLIDER_MASTER_OUTPUT
 } TsUiSlider;
 
 typedef enum {
@@ -116,6 +127,16 @@ typedef enum {
     TS_UI_BANK_ACTION_TOGGLE_LOCK,
     TS_UI_BANK_ACTION_INVALID
 } TsUiBankAction;
+
+typedef struct {
+    float level[2];
+    float peak_hold[2];
+    int clip[2];
+    int limiter_enabled;
+    float limiter_ceiling_db;
+    float limiter_gain_reduction_db;
+    float gain;
+} TsUiMasterOutputStatus;
 
 typedef enum {
     TS_UI_CONFIG_ACTION_NONE = 0,
@@ -329,6 +350,8 @@ typedef struct {
     uint16_t sister_source_mask;
     int sister_portal_hovered;
     int sister_portal_pressed;
+    TsUiMasterOutputStatus master_output;
+    int master_output_dragging;
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
     uint32_t staged_notes;
@@ -532,6 +555,9 @@ size_t ts_ui_right_drag_playhead_frame(size_t anchor, size_t pointer,
 int ts_ui_keyboard_set_octave(TsUiState *ui, int octave);
 int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount);
 int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount);
+int ts_ui_master_limiter_contains(int x, int y);
+int ts_ui_master_output_contains(int x, int y);
+float ts_ui_master_output_normalized_from_x(int x);
 int ts_ui_config_field_from_point(int x, int y);
 size_t ts_ui_config_cursor_from_point(const TsUiState *ui,
                                       TsConfigField field, int x);
