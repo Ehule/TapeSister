@@ -32,6 +32,14 @@ int main(void)
     CHECK(config.master_output_percent == 100);
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
+    ts_sister_ui_set_capture_channels(&model, &config, 2);
+    CHECK(model.capture_channels == 2);
+    CHECK(config.capture_channels == 2);
+    CHECK(config.sister_capture_channels == 2);
+    ts_sister_ui_set_capture_channels(&model, &config, 1);
+    CHECK(model.capture_channels == 1);
+    CHECK(config.capture_channels == 1);
+    CHECK(config.sister_capture_channels == 1);
     CHECK(model.routing.master_output_gain == 1.0f);
     CHECK(model.parameter_locks == 0u);
     CHECK(model.parameter_locks_high == 0u);

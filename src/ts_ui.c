@@ -654,11 +654,13 @@ static void sister_portal_render(TsFramebuffer *fb, const TsUiState *ui)
                            PAL_WAVE_LEFT : PAL_BUTTON,
                            55 + state * 15));
     if (ui->sister_held) {
-        rect(fb, 142, 25, 2, 3, PAL_TUNING);
-        rect(fb, 147, 25, 2, 3, PAL_TUNING);
+        rect(fb, 141, 20, 2, 7, PAL_TUNING);
+        rect(fb, 145, 20, 2, 7, PAL_TUNING);
     } else if (ui->sister_rolling) {
-        for (int row = 0; row < 4; ++row)
-            rect(fb, 142 + row, 24 + row, 1, 4 - row, PAL_WAVE_LEFT);
+        for (int row = 0; row < 7; ++row) {
+            int width = 4 - (row > 3 ? row - 3 : 3 - row);
+            rect(fb, 141, 20 + row, width, 1, PAL_WAVE_LEFT);
+        }
     }
     if (ui->sister_monitor_enabled)
         text(fb, 148, 19, "M", PAL_WAVE_SUM, 1);

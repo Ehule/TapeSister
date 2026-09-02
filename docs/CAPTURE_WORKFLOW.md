@@ -7,6 +7,8 @@ to the REC BANK use `SYNTH_...wav`; and Capture-to-New-Tile uses `CAPTURE_...wav
 Archives are 32-bit float WAV files in `Captures/` and preserve the take's explicit
 channel shape. Internal Capture defaults to mono (**M**) and may deliberately preserve
 stereo (**S**); external MIX/LEFT/RIGHT takes are mono and STEREO takes are stereo.
+The main-page and Sister Machine M/S buttons mirror one shared Internal Capture format,
+including Sister's long-form FILE destination.
 FM/SYNTH remains native mono. Files live in `TAPESISTER_CAPTURES` when set and use local
 time, milliseconds, process identity, and a
 collision counter. Files are written to a temporary name and renamed only after the

@@ -40,6 +40,28 @@ int main(void)
     CONTRACT("master_output_unity",
              ts_ui_master_output_normalized_from_x(
                  TS_UI_MASTER_OUTPUT_X + TS_UI_MASTER_OUTPUT_W) == 1.0f);
+    {
+        TsInstrument portal_instrument;
+        TsUiState portal_ui;
+        TsFramebuffer portal_fb;
+        uint32_t rolling_color;
+        ts_instrument_init(&portal_instrument);
+        ts_ui_init(&portal_ui);
+        portal_ui.sister_enabled = 1;
+        portal_ui.sister_rolling = 1;
+        rolling_color =
+            portal_ui.palette.colors[TS_PALETTE_STEREO_WAVE_LEFT];
+        ts_ui_render(&portal_fb, &portal_ui, &portal_instrument);
+        CONTRACT("portal_roll_marker_has_centered_tip",
+                 portal_fb.pixels[23 * TS_UI_WIDTH + 144] == rolling_color);
+        CONTRACT("portal_roll_marker_has_upper_half",
+                 portal_fb.pixels[20 * TS_UI_WIDTH + 141] == rolling_color);
+        CONTRACT("portal_roll_marker_has_lower_half",
+                 portal_fb.pixels[26 * TS_UI_WIDTH + 141] == rolling_color);
+        CONTRACT("portal_roll_marker_clears_bottom_border",
+                 portal_fb.pixels[27 * TS_UI_WIDTH + 144] != rolling_color);
+        ts_instrument_free(&portal_instrument);
+    }
     TsInstrument instrument;
     TsNoteBank notes;
     TsAuditionPlan plan;

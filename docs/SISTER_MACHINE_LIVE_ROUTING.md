@@ -122,6 +122,8 @@ audio or silently creates a page.
 FILE is a third Capture destination alongside CURRENT and NEXT EMPTY. It records its
 selected source and M/S shape directly to a timestamped 32-bit float WAV under the normal
 `Captures/` archive directory; it does not allocate, modify, or commit a tile.
+M/S is the same shared setting shown beside Capture on the main page, and both buttons
+remain visually synchronized.
 In FILE mode, MIX is labeled `OUT` and records after ordinary or Sister POST effects,
 topology crossfades, and the global output limiter. OUT remains available while Sister
 POWER is off. H1/H2/H3 retain their isolated internal file taps and require Sister to be

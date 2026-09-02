@@ -80,6 +80,8 @@ Capture prints TapeSister's final live audition mix into an independent Bank til
 **BANK**, double-click an empty tile to make blank tape, then use the visible **M/S**
 control beside Overdub to choose the armed take's channel shape: **M** stores exactly
 `0.5 * (L + R)` and remains the compatibility default; **S** preserves left and right.
+The matching M/S button in Sister Machine mirrors this same shared setting, so changing
+either location also selects the channel shape for Sister tile and FILE captures.
 Overdub follows the target tile instead: a mono layer is duplicated into a stereo
 target, while a stereo layer entering a mono target uses the displayed mono fold.
 Click **CAPTURE**, then select

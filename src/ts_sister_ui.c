@@ -173,7 +173,7 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
 {
     if (model == NULL) return;
     memset(model, 0, sizeof(*model));
-    model->capture_channels = config != NULL ? config->sister_capture_channels : 1;
+    model->capture_channels = config != NULL ? config->capture_channels : 1;
     model->waveform_mode = ts_waveform_display_sanitize(
         config != NULL ? config->sister_waveform_display_mode : 0);
     model->routing.limiter_enabled = config != NULL ?
@@ -232,6 +232,18 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
     }
     snprintf(model->status, sizeof(model->status),
              "CLICK POWER TO ENABLE - WINDOW CLOSE HIDES ONLY");
+}
+
+void ts_sister_ui_set_capture_channels(TsSisterUiModel *model,
+                                       TsConfig *config, int channels)
+{
+    int shared_channels = channels == 2 ? 2 : 1;
+    if (model != NULL) model->capture_channels = shared_channels;
+    if (config != NULL) {
+        config->capture_channels = shared_channels;
+        /* Retain the old key as a synchronized compatibility alias. */
+        config->sister_capture_channels = shared_channels;
+    }
 }
 
 void ts_sister_ui_model_show(TsSisterUiModel *model)

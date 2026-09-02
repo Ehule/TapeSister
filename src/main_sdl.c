@@ -8621,9 +8621,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "STOP RECORDING BEFORE CHANGING MONO/STEREO");
         else {
-            sister->model.capture_channels =
-                sister->model.capture_channels == 2 ? 1 : 2;
-            ui->config.sister_capture_channels = sister->model.capture_channels;
+            ts_sister_ui_set_capture_channels(
+                &sister->model, &ui->config,
+                sister->model.capture_channels == 2 ? 1 : 2);
         }
     } else if (hit.action == TS_SISTER_UI_ACTION_DESTINATION) {
         if (capture_busy)
@@ -13380,8 +13380,9 @@ int main(int argc, char **argv)
                                      "CAPTURE TARGET IS %s - FINISH OR CANCEL FIRST",
                                      audio.capture.channels == 2u ? "STEREO" : "MONO");
                         else {
-                            ui.config.capture_channels =
-                                ui.config.capture_channels == 2 ? 1 : 2;
+                            ts_sister_ui_set_capture_channels(
+                                &sister_window.model, &ui.config,
+                                ui.config.capture_channels == 2 ? 1 : 2);
                             snprintf(ui.status, sizeof(ui.status),
                                      "CAPTURE CHANNELS %s (%s)",
                                      ui.config.capture_channels == 2 ? "S" : "M",
