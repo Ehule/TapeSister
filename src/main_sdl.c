@@ -6544,12 +6544,20 @@ typedef struct {
 static void queue_active_project_save(TsUiState *ui,
                                       PendingFileOperation *pending)
 {
+    char bundled[TS_BROWSER_PATH_MAX];
+    char error[160];
     if (ui == NULL || pending == NULL || pending->active || ui->file_busy ||
         ui->project_path[0] == '\0') return;
+    if (!ts_sample_pages_bundle_project_path(
+            ui->project_path, bundled, sizeof(bundled),
+            error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "SAVE FAILED: %.135s", error);
+        return;
+    }
     pending->mode = TS_BROWSER_SAVE_RECIPE;
-    snprintf(pending->path, sizeof(pending->path), "%s", ui->project_path);
+    snprintf(pending->path, sizeof(pending->path), "%s", bundled);
     snprintf(pending->filename, sizeof(pending->filename), "%s",
-             path_basename(ui->project_path));
+             path_basename(bundled));
     pending->selection_load = 0;
     pending->active = 1;
     pending->presented = 0;
@@ -6649,6 +6657,18 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             snprintf(browser->message, sizeof(browser->message), "ENTER A VALID FILENAME");
             return;
         }
+        if (browser->mode == TS_BROWSER_SAVE_RECIPE) {
+            char bundled[TS_BROWSER_PATH_MAX];
+            char bundle_error[160];
+            if (!ts_sample_pages_bundle_project_path(
+                    path, bundled, sizeof(bundled),
+                    bundle_error, sizeof(bundle_error))) {
+                snprintf(browser->message, sizeof(browser->message),
+                         "%.150s", bundle_error);
+                return;
+            }
+            snprintf(path, sizeof(path), "%s", bundled);
+        }
         if (browser->mode == TS_BROWSER_EXPORT_BANK && ts_browser_path_exists(path)) {
             snprintf(browser->message, sizeof(browser->message),
                      "FOLDER EXISTS - CHOOSE A NEW NAME");
@@ -6714,16 +6734,13 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         const TsInstrument *active_sample = record_bank_active ? NULL : instrument;
         const TsInstrument *record_bank = record_bank_active ?
                                           instrument : parked_record;
+        TsSisterProjectState sister_state;
+        ts_sister_project_state_capture(
+            &sister_state, &audio->sister,
+            ts_sample_pages_count(sample_pages), NULL);
         ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
-                                          pending->path, error, sizeof(error));
-        if (ok) {
-            TsSisterProjectState sister_state;
-            ts_sister_project_state_capture(
-                &sister_state, &audio->sister,
-                ts_sample_pages_count(sample_pages), NULL);
-            ok = ts_sister_project_state_save(
-                &sister_state, pending->path, error, sizeof(error));
-        }
+                                          &sister_state, pending->path,
+                                          error, sizeof(error));
         if (ok)
             ui->saved_state_hash = paged_project_state_hash(
                 sample_pages, active_sample, record_bank, &audio->sister);

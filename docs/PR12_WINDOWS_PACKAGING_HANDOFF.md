@@ -65,13 +65,14 @@ Configuration resolves from `TAPESISTER_CONFIG`, then `tapesister.ini` in the cu
 directory, beside the executable, or in its parent. The app writes configuration on
 exit. Palette search uses `TAPESISTER_PALETTE`, the config/exchange/current/executable
 locations, then the packaged asset. Captures use `TAPESISTER_CAPTURES` or a `Captures`
-directory under the current working directory. Projects create a companion
-`<project>.tsr.samples` directory beside the `.tsr`.
+directory under the current working directory. Saving a TSR creates one named project
+folder containing the TSR, its manifest and state, internal page data, and extractable
+per-tile WAV files.
 
 This works in a writable portable folder but is unsuitable for a conventional
 read-only Program Files install. PR12 must choose and document a per-user writable
 config/preset/capture location, migration behavior, portable-mode override, and errors
-for unwritable project companions.
+for unwritable project folders.
 
 ## Repository audit
 
@@ -79,7 +80,7 @@ for unwritable project companions.
   in renderer test fixtures. CDP temporary work honors the platform temporary path.
 - Runtime assets are referenced with the case shown above; packaging must preserve it.
 - Do not ship build trees, object/test executables, generated captures, local INI files,
-  or project/sample companions as application assets.
+  or saved project folders as application assets.
 - Shell-specific build lines belong to developer documentation; the packaged program
   must launch from Explorer without an MSYS2 `PATH`.
 
@@ -97,7 +98,7 @@ download sources.
 2. Copy only the declared portable layout to a directory outside MSYS2.
 3. Launch `tapesister.exe` from Explorer with no UCRT64 terminal and no developer PATH.
 4. Verify splash/palette/welcome lookup, create and reload configuration/presets, and
-   confirm Captures and a TSR companion are created in documented writable locations.
+   confirm Captures and a complete TSR project folder are created in documented writable locations.
 5. Exercise WAV/TSR/TSP load/save, mono/stereo input, FM, QWERTY, MIDI/WinMM, Sister
    POWER/ROLL/HOLD/CLEAR, a multi-tile ensemble, effects, Capture, and device restart.
 6. Run the short PR11 sound-check checklist and inspect `--diagnostic-audio` output.

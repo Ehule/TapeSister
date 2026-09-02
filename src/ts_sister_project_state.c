@@ -21,8 +21,46 @@ static void state_error(char *error, size_t size, const char *message)
 
 static int state_path(const char *project, char *path, size_t size)
 {
+    const char *slash;
+    const char *backslash;
+    const char *separator;
+    char manifest[1200];
+    char line[1024];
+    char expected[768];
+    FILE *probe;
     int written;
     if (project == NULL || project[0] == '\0') return 0;
+    slash = strrchr(project, '/');
+    backslash = strrchr(project, '\\');
+    separator = slash != NULL && (backslash == NULL || slash > backslash) ?
+                slash : backslash;
+    if (separator != NULL) {
+        size_t directory_length = (size_t)(separator - project);
+        if (directory_length + 22u < sizeof(manifest)) {
+            memcpy(manifest, project, directory_length);
+            manifest[directory_length] = '\0';
+            snprintf(manifest + directory_length,
+                     sizeof(manifest) - directory_length,
+                     "/manifest.txt");
+            probe = fopen(manifest, "rb");
+            if (probe != NULL) {
+                const char *name = separator + 1;
+                int matched = fgets(line, sizeof(line), probe) != NULL &&
+                              strcmp(line, "TAPESISTER_PROJECT 2\n") == 0 &&
+                              fgets(line, sizeof(line), probe) != NULL;
+                if (matched) {
+                    snprintf(expected, sizeof(expected), "project=%s\n", name);
+                    matched = strcmp(line, expected) == 0;
+                }
+                fclose(probe);
+                if (matched) {
+                    written = snprintf(path, size, "%.*s/sister-state.ini",
+                                       (int)directory_length, project);
+                    return written >= 0 && (size_t)written < size;
+                }
+            }
+        }
+    }
     written = snprintf(path, size, "%s.samples/sister-state.ini", project);
     return written >= 0 && (size_t)written < size;
 }
@@ -185,17 +223,17 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
     return 1;
 }
 
-int ts_sister_project_state_save(const TsSisterProjectState *state,
-                                 const char *project_path,
-                                 char *error, size_t error_size)
+int ts_sister_project_state_save_file(const TsSisterProjectState *state,
+                                      const char *path,
+                                      char *error, size_t error_size)
 {
-    char path[1200], temporary[1224];
+    char temporary[1224];
     FILE *file;
     int failed;
     if (state == NULL || state->page_count == 0u ||
         state->page_count > TS_SISTER_RUNTIME_PAGE_LIMIT ||
         state->active_page >= state->page_count ||
-        !state_path(project_path, path, sizeof(path)) ||
+        path == NULL || path[0] == '\0' ||
         snprintf(temporary, sizeof(temporary), "%s.tapesister-tmp", path) < 0 ||
         strlen(path) + 20u >= sizeof(temporary)) {
         state_error(error, error_size, "Invalid Sister project state");
@@ -236,6 +274,18 @@ int ts_sister_project_state_save(const TsSisterProjectState *state,
     }
     state_error(error, error_size, "");
     return 1;
+}
+
+int ts_sister_project_state_save(const TsSisterProjectState *state,
+                                 const char *project_path,
+                                 char *error, size_t error_size)
+{
+    char path[1200];
+    if (!state_path(project_path, path, sizeof(path))) {
+        state_error(error, error_size, "Invalid Sister project path");
+        return 0;
+    }
+    return ts_sister_project_state_save_file(state, path, error, error_size);
 }
 
 static char *trim(char *text)
@@ -446,17 +496,17 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     return 1;
 }
 
-int ts_sister_project_state_load(TsSisterProjectState *state,
-                                 const char *project_path,
-                                 uint32_t sample_rate, int *present,
-                                 char *error, size_t error_size)
+int ts_sister_project_state_load_file(TsSisterProjectState *state,
+                                      const char *path,
+                                      uint32_t sample_rate, int *present,
+                                      char *error, size_t error_size)
 {
     TsSisterProjectState loaded;
-    char path[1200], line[512];
+    char line[512];
     FILE *file;
     int line_number = 0, header = 0, version = 0, have_pages = 0;
     if (present != NULL) *present = 0;
-    if (state == NULL || !state_path(project_path, path, sizeof(path))) return 0;
+    if (state == NULL || path == NULL || path[0] == '\0') return 0;
     file = fopen(path, "rb");
     if (file == NULL) {
         if (errno == ENOENT) {
@@ -537,4 +587,18 @@ malformed:
         snprintf(error, error_size,
                  "Malformed Sister project state at line %d", line_number);
     return 0;
+}
+
+int ts_sister_project_state_load(TsSisterProjectState *state,
+                                 const char *project_path,
+                                 uint32_t sample_rate, int *present,
+                                 char *error, size_t error_size)
+{
+    char path[1200];
+    if (!state_path(project_path, path, sizeof(path))) {
+        state_error(error, error_size, "Invalid Sister project path");
+        return 0;
+    }
+    return ts_sister_project_state_load_file(
+        state, path, sample_rate, present, error, error_size);
 }

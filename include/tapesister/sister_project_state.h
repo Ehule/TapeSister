@@ -36,8 +36,15 @@ int ts_sister_project_state_load(TsSisterProjectState *state,
                                  const char *project_path,
                                  uint32_t sample_rate, int *present,
                                  char *error, size_t error_size);
+int ts_sister_project_state_load_file(TsSisterProjectState *state,
+                                      const char *path,
+                                      uint32_t sample_rate, int *present,
+                                      char *error, size_t error_size);
 int ts_sister_project_state_save(const TsSisterProjectState *state,
                                  const char *project_path,
                                  char *error, size_t error_size);
+int ts_sister_project_state_save_file(const TsSisterProjectState *state,
+                                      const char *path,
+                                      char *error, size_t error_size);
 
 #endif

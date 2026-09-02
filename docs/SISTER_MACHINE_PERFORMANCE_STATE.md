@@ -116,16 +116,16 @@ mask at MIX. Safe non-audible parameter defaults remain available for the first
 intentional raise. Unknown future fields are ignored and masks reuse PR8
 sanitization.
 
-Each TSR collection gains an atomically replaced companion file:
+Each named TSR project folder contains the atomically written state file:
 
 ```text
-<project>.samples/sister-state.ini
+<project>/sister-state.ini
 ```
 
 The versioned text file contains page count/active page, source switches, one hexadecimal
 mask per page, the selected preset name and a full parameter snapshot. It contains no
 sample frames, tape cells, notes, phases, meters, handles, callbacks or synchronization
-state. Legacy projects without the companion load with routes off and empty masks.
+state. Legacy projects without project state load with routes off and empty masks.
 Malformed state is rejected; unknown future fields are ignored. Loading an EXT route
 does not touch hardware while parsing. The shared device is requested only after the
 project is valid and only if Sister is already powered.

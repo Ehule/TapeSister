@@ -621,12 +621,23 @@ Load, Save, and Export now open one shared FT2-informed browser rather than writ
 
 TSR27 stores every occupied tile as a complete independent object, including mono/stereo channel shape, its persistent protection flag and the full FM genome, Drone/Extreme modes, and random-pitch lock/root/scale: audio canvas, tile-local three-state grid mode, private render baseline, tuning, loop, selection, playhead, viewport, persistent native-shelf selection scope, processing and edit timelines, Undo/Redo stacks, Capture-performance provenance, and the audio patches needed to replay Paste, FM stamp, tape-length, canvas-resize, performance-capture history, and pre-process Transform material checkpoints. Undo is a rolling 20-step history; the `UNDO nn/20` toolbar readout exposes its current depth, and internal edit graphs checkpoint retained states automatically instead of demanding a manual Commit at their fixed ceiling. The selected tile may also be empty, so saving never invents a fallback or gives Bank 01 special status. TSR6 through TSR26 remain loadable as mono for compatibility; older 24-step histories retain their newest 20 states. TSP2 remains audio-independent and therefore complements rather than replaces the project format; TSP1 remains loadable as processing-only.
 
-The chosen `.tsr` remains an ordinary first-page TSR27.
-Additional pages, the REC BANK, and a tiny manifest live beside it in
-`<project>.tsr.samples/`. Move, copy, or back up the `.tsr` and that companion folder
-together. A legacy project with no companion folder opens as one Sample page with an
-empty REC BANK. Saving uses temporary files plus replacement for each member; the
-long-lived `Captures/` archive is deliberately outside this project bundle.
+Saving `Terra Night.tsr` creates one movable `Terra Night/` project folder. Its
+`Terra Night.tsr` remains an ordinary first-page TSR27; `project-data/` contains later
+pages and the optional REC BANK, `sister-state.ini` contains Sister Machine/Fallout
+state, and `manifest.txt` maps the complete collection. `samples/` also contains one
+ordinary 16-bit PCM WAV for every occupied Sample-page and REC BANK tile, organized by
+page and named by tile number plus a filesystem-safe sample name. The WAV copies retain
+standard tuning and loop metadata for direct extraction and interchange; TSR27 remains
+the lossless source of truth for editing state and Undo/Redo history.
+
+Save builds and validates a complete sibling staging folder before replacing an existing
+project folder, so removed pages or samples cannot survive as stale members and a failed
+write cannot publish a mixed-generation project. Move, copy, or back up the one named
+folder as the project. Legacy split `.tsr` plus `<project>.tsr.samples/` collections and
+legacy single-page TSR files remain loadable; their next save migrates to the named
+folder without deleting the old source. The long-lived `Captures/` archive remains
+outside project bundles. TSP files remain audio-independent processing presets and do
+not create folders or collect WAVs.
 
 The browser owns all keyboard and mouse input while open. Escape or Cancel closes it without changing the sound or writing a file. WAV, TSR, and TSP files can also be dragged onto the window or passed on the command line.
 
