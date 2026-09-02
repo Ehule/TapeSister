@@ -297,6 +297,10 @@ static const TsWaveButton wave_buttons[] = {
 enum {
     TS_CANVAS_CONTROLS_Y = TS_WAVE_Y + TS_WAVE_H - 19,
     TS_CANVAS_CONTROLS_H = 17,
+    TS_CANVAS_DRAW_X = TS_WAVE_X + TS_WAVE_W - 54,
+    TS_CANVAS_DRAW_Y = TS_WAVE_Y + 4,
+    TS_CANVAS_DRAW_W = 50,
+    TS_CANVAS_READOUT_GAP = 8,
     TS_CANVAS_LEFT_HANDLE_X = TS_WAVE_X + 3,
     TS_CANVAS_RIGHT_HANDLE_X = TS_WAVE_X + TS_WAVE_W - 11,
     TS_CANVAS_HANDLE_Y = TS_WAVE_Y + 48,
@@ -654,16 +658,16 @@ static void sister_portal_render(TsFramebuffer *fb, const TsUiState *ui)
                            PAL_WAVE_LEFT : PAL_BUTTON,
                            55 + state * 15));
     if (ui->sister_held) {
-        rect(fb, 141, 20, 2, 7, PAL_TUNING);
-        rect(fb, 145, 20, 2, 7, PAL_TUNING);
+        rect(fb, 141, 18, 2, 7, PAL_TUNING);
+        rect(fb, 145, 18, 2, 7, PAL_TUNING);
     } else if (ui->sister_rolling) {
         for (int row = 0; row < 7; ++row) {
             int width = 4 - (row > 3 ? row - 3 : 3 - row);
-            rect(fb, 141, 20 + row, width, 1, PAL_WAVE_LEFT);
+            rect(fb, 141, 18 + row, width, 1, PAL_WAVE_LEFT);
         }
     }
     if (ui->sister_monitor_enabled)
-        text(fb, 148, 19, "M", PAL_WAVE_SUM, 1);
+        text(fb, 148, 18, "M", PAL_WAVE_SUM, 1);
 }
 
 static void mini_button(TsFramebuffer *fb, int x, int y, int w,
@@ -2849,14 +2853,18 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         if (ui->canvas_gesture.active && sample->sample_rate > 0 &&
             ui->canvas_drag_start_frames > 0) {
             char canvas[64];
+            int canvas_width;
+            int canvas_x;
             double seconds = (double)sample->frames / sample->sample_rate;
             double change = ((double)sample->frames -
                              (double)ui->canvas_drag_start_frames) /
                             sample->sample_rate;
             snprintf(canvas, sizeof(canvas), "CANVAS %.3F S (%+.3F S)",
                      seconds, change);
-            wave_text(fb, TS_WAVE_X + TS_WAVE_W - 194, TS_WAVE_Y + 5,
-                      canvas, PAL_EFFECT, 1);
+            canvas_width = (int)strlen(canvas) * 6 - 1;
+            canvas_x = TS_CANVAS_DRAW_X - TS_CANVAS_READOUT_GAP - canvas_width;
+            if (canvas_x < TS_WAVE_X + 4) canvas_x = TS_WAVE_X + 4;
+            wave_text(fb, canvas_x, TS_WAVE_Y + 5, canvas, PAL_EFFECT, 1);
         }
         wave_rect(fb, TS_CANVAS_LEFT_HANDLE_X, TS_CANVAS_HANDLE_Y,
                   TS_CANVAS_HANDLE_W, 2, handle_color);
@@ -2886,8 +2894,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                     grid_snap == TS_GRID_SNAP_ALL ? "SNAP" :
                     grid_snap == TS_GRID_SNAP_MOVE_ONLY ? "MOVE" : "OFF",
                     grid_snap != TS_GRID_SNAP_OFF);
-        mini_button(fb, TS_WAVE_X + TS_WAVE_W - 54, TS_WAVE_Y + 4,
-                    50, "DRAW", ui->amplitude_draw_mode);
+        mini_button(fb, TS_CANVAS_DRAW_X, TS_CANVAS_DRAW_Y,
+                    TS_CANVAS_DRAW_W, "DRAW", ui->amplitude_draw_mode);
     }
 
     if (ui->input_meter_active) live_input_render(fb, ui);
