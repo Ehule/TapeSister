@@ -60,6 +60,10 @@ typedef struct {
     size_t attack_frames;
     size_t tile_fade_frames;
     size_t tile_ramp_remaining;
+    size_t turnaround_crossfade_frames;
+    size_t turnaround_crossfade_remaining;
+    TsStereoFrame turnaround_from;
+    TsStereoFrame previous_frame;
     TsLoopMode loop_mode;
     TsLoopMode transition_loop_mode;
     TsLoopMode pending_loop_mode;
@@ -81,6 +85,7 @@ typedef struct {
     int latched;
     int releasing;
     int tile_launched;
+    int previous_frame_valid;
     int active;
 } TsPerformanceVoice;
 
