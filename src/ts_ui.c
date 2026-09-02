@@ -29,6 +29,60 @@ static void master_output_meter(TsFramebuffer *fb,
 static void master_output_diagnostic(char *label, size_t label_size,
                                      const TsUiMasterOutputStatus *output);
 
+enum {
+    TS_KEYBOARD_NOTE_COUNT = 24,
+    TS_KEYBOARD_WHITE_COUNT = 14,
+    TS_KEYBOARD_BLACK_COUNT = 10,
+    TS_KEYBOARD_X = 10,
+    TS_KEYBOARD_Y = 330,
+    TS_KEYBOARD_RIGHT = 622,
+    TS_KEYBOARD_WHITE_WIDTH = 43,
+    TS_KEYBOARD_WHITE_HEIGHT = 49,
+    TS_KEYBOARD_BLACK_WIDTH = 31,
+    TS_KEYBOARD_BLACK_HEIGHT = 31
+};
+
+typedef struct TsKeyboardLayout {
+    int white_notes[TS_KEYBOARD_WHITE_COUNT];
+    int black_notes[TS_KEYBOARD_BLACK_COUNT];
+    int black_left[TS_KEYBOARD_BLACK_COUNT];
+    int white_count;
+    int black_count;
+} TsKeyboardLayout;
+
+static int keyboard_note_is_black(int midi_note)
+{
+    int pitch_class = midi_note % 12;
+    if (pitch_class < 0) pitch_class += 12;
+    return pitch_class == 1 || pitch_class == 3 || pitch_class == 6 ||
+           pitch_class == 8 || pitch_class == 10;
+}
+
+static void keyboard_layout(int keyboard_base_note, TsKeyboardLayout *layout)
+{
+    int note;
+    if (layout == NULL) return;
+    memset(layout, 0, sizeof(*layout));
+    for (note = 0; note < TS_KEYBOARD_NOTE_COUNT; ++note) {
+        if (keyboard_note_is_black(keyboard_base_note + note)) {
+            int white_before = layout->white_count;
+            int left = TS_KEYBOARD_X +
+                       white_before * TS_KEYBOARD_WHITE_WIDTH -
+                       TS_KEYBOARD_BLACK_WIDTH / 2;
+            if (left < TS_KEYBOARD_X) left = TS_KEYBOARD_X;
+            if (left + TS_KEYBOARD_BLACK_WIDTH > TS_KEYBOARD_RIGHT)
+                left = TS_KEYBOARD_RIGHT - TS_KEYBOARD_BLACK_WIDTH;
+            if (layout->black_count < TS_KEYBOARD_BLACK_COUNT) {
+                layout->black_notes[layout->black_count] = note;
+                layout->black_left[layout->black_count] = left;
+                ++layout->black_count;
+            }
+        } else if (layout->white_count < TS_KEYBOARD_WHITE_COUNT) {
+            layout->white_notes[layout->white_count++] = note;
+        }
+    }
+}
+
 void ts_ui_update_input_activity(TsUiState *ui,
                                  uint32_t hold_until_ms[8],
                                  uint32_t now_ms,
@@ -3000,39 +3054,41 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                      ts_midi_note_name(ts_ui_keyboard_base_note(ui),
                                        base_note, sizeof(base_note)));
         text(fb, 11, 318, keyboard_hint, RGB(184, 180, 184), 1);
-        const int white_x = 10, white_y = 330, white_w = 43, white_h = 49;
-        const int white_semitones[14] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
-        for (int i = 0; i < 14; ++i) {
+        TsKeyboardLayout layout;
+        int keyboard_base_note = ts_ui_keyboard_base_note(ui);
+        keyboard_layout(keyboard_base_note, &layout);
+        for (int i = 0; i < layout.white_count; ++i) {
             char label[8];
             int label_x;
-            int active = (ui->active_notes & (1u << white_semitones[i])) != 0;
-            int staged = (ui->staged_notes & (1u << white_semitones[i])) != 0;
-            rect(fb, white_x + i * white_w, white_y, white_w - 1, white_h,
+            int key = layout.white_notes[i];
+            int active = (ui->active_notes & (1u << key)) != 0;
+            int staged = (ui->staged_notes & (1u << key)) != 0;
+            rect(fb, TS_KEYBOARD_X + i * TS_KEYBOARD_WHITE_WIDTH,
+                 TS_KEYBOARD_Y, TS_KEYBOARD_WHITE_WIDTH - 1,
+                 TS_KEYBOARD_WHITE_HEIGHT,
                  staged ? PAL_TUNING : active ? PAL_MOUSE : RGB(220, 216, 207));
-            ts_midi_note_name(ts_ui_keyboard_base_note(ui) + white_semitones[i],
-                              label, sizeof(label));
-            label_x = white_x + i * white_w +
-                      (white_w - 1 - (int)strlen(label) * 6) / 2;
-            text(fb, label_x, white_y + 36, label, RGB(24, 24, 24), 1);
+            ts_midi_note_name(keyboard_base_note + key, label, sizeof(label));
+            label_x = TS_KEYBOARD_X + i * TS_KEYBOARD_WHITE_WIDTH +
+                      (TS_KEYBOARD_WHITE_WIDTH - 1 -
+                       (int)strlen(label) * 6) / 2;
+            text(fb, label_x, TS_KEYBOARD_Y + 36, label,
+                 RGB(24, 24, 24), 1);
         }
-        {
-            const int black_after[] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
-            const int semitones[] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
-            for (int i = 0; i < 10; ++i) {
-                char label[8];
-                int left = white_x + (black_after[i] + 1) * white_w - 16;
-                int label_x;
-                int key = semitones[i];
-                int active = (ui->active_notes & (1u << key)) != 0;
-                int staged = (ui->staged_notes & (1u << key)) != 0;
-                rect(fb, left, white_y, 31, 31,
-                     staged ? PAL_TUNING : active ? PAL_VOLUME : RGB(18, 18, 18));
-                ts_midi_note_name(ts_ui_keyboard_base_note(ui) + key,
-                                  label, sizeof(label));
-                label_x = left + (31 - (int)strlen(label) * 6) / 2;
-                text(fb, label_x, white_y + 19, label,
-                     active || staged ? PAL_BLOCK_TEXT : RGB(220, 216, 207), 1);
-            }
+        for (int i = 0; i < layout.black_count; ++i) {
+            char label[8];
+            int left = layout.black_left[i];
+            int label_x;
+            int key = layout.black_notes[i];
+            int active = (ui->active_notes & (1u << key)) != 0;
+            int staged = (ui->staged_notes & (1u << key)) != 0;
+            rect(fb, left, TS_KEYBOARD_Y, TS_KEYBOARD_BLACK_WIDTH,
+                 TS_KEYBOARD_BLACK_HEIGHT,
+                 staged ? PAL_TUNING : active ? PAL_VOLUME : RGB(18, 18, 18));
+            ts_midi_note_name(keyboard_base_note + key, label, sizeof(label));
+            label_x = left +
+                      (TS_KEYBOARD_BLACK_WIDTH - (int)strlen(label) * 6) / 2;
+            text(fb, label_x, TS_KEYBOARD_Y + 19, label,
+                 active || staged ? PAL_BLOCK_TEXT : RGB(220, 216, 207), 1);
         }
     } else if (ui->show_recipes) {
         mini_button(fb, 10, 312, 48, "CDP 1", ui->cdp_page == 0);
@@ -3408,19 +3464,28 @@ int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path)
 
 int ts_ui_key_from_point(int x, int y)
 {
-    if (x < 10 || x >= 622 || y < 330 || y >= 379) return -1;
-    const int white_w = 43;
-    const int black_after[] = {0, 1, 3, 4, 5, 7, 8, 10, 11, 12};
-    const int semitones[] = {1, 3, 6, 8, 10, 13, 15, 18, 20, 22};
-    if (y < 361) {
-        for (int i = 0; i < 10; ++i) {
-            int left = 10 + (black_after[i] + 1) * white_w - 16;
-            if (x >= left && x < left + 31) return semitones[i];
+    return ts_ui_key_from_point_for_base(x, y, TS_KEYBOARD_BASE_NOTE);
+}
+
+int ts_ui_key_from_point_for_base(int x, int y, int keyboard_base_note)
+{
+    TsKeyboardLayout layout;
+    int index;
+    if (x < TS_KEYBOARD_X || x >= TS_KEYBOARD_RIGHT ||
+        y < TS_KEYBOARD_Y ||
+        y >= TS_KEYBOARD_Y + TS_KEYBOARD_WHITE_HEIGHT)
+        return -1;
+    keyboard_layout(keyboard_base_note, &layout);
+    if (y < TS_KEYBOARD_Y + TS_KEYBOARD_BLACK_HEIGHT) {
+        for (int i = 0; i < layout.black_count; ++i) {
+            int left = layout.black_left[i];
+            if (x >= left && x < left + TS_KEYBOARD_BLACK_WIDTH)
+                return layout.black_notes[i];
         }
     }
-    static const int white_semitones[] = {0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23};
-    int index = (x - 10) / white_w;
-    return index >= 0 && index < 14 ? white_semitones[index] : -1;
+    index = (x - TS_KEYBOARD_X) / TS_KEYBOARD_WHITE_WIDTH;
+    return index >= 0 && index < layout.white_count ?
+           layout.white_notes[index] : -1;
 }
 
 size_t ts_ui_right_drag_playhead_frame(size_t anchor, size_t pointer,

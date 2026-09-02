@@ -547,6 +547,7 @@ void ts_ui_draw_tile_state_borders(TsFramebuffer *fb, int slot,
                                    const TsPalette *palette);
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
+int ts_ui_key_from_point_for_base(int x, int y, int keyboard_base_note);
 int ts_ui_keyboard_base_note(const TsUiState *ui);
 size_t ts_ui_right_drag_playhead_frame(size_t anchor, size_t pointer,
                                        size_t selection_first,

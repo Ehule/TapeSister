@@ -3440,6 +3440,36 @@ int main(void)
                   black_semitones[i]);
     }
     CHECK(ts_ui_key_from_point(0, 0) == -1);
+    {
+        for (int base_note = 60; base_note < 72; ++base_note) {
+            uint32_t reachable = 0u;
+            for (int y = 330; y < 379; ++y) {
+                for (int x = 10; x < 622; ++x) {
+                    int note = ts_ui_key_from_point_for_base(
+                        x, y, base_note);
+                    if (note >= 0) reachable |= UINT32_C(1) << note;
+                }
+            }
+            CHECK(reachable == UINT32_C(0x00ffffff));
+            for (int note = 0; note < 24; ++note) {
+                int pitch_class = (base_note + note) % 12;
+                int black = pitch_class == 1 || pitch_class == 3 ||
+                            pitch_class == 6 || pitch_class == 8 ||
+                            pitch_class == 10;
+                int found = 0;
+                int y = black ? 345 : 370;
+                for (int x = 10; x < 622 && !found; ++x)
+                    found = ts_ui_key_from_point_for_base(
+                                x, y, base_note) == note;
+                CHECK(found);
+            }
+        }
+        /* With the F#2 range from the reported screenshot, F#2 is black,
+           G2 is white, and C4 remains a selectable white key. */
+        CHECK(ts_ui_key_from_point_for_base(10, 345, 42) == 0);
+        CHECK(ts_ui_key_from_point_for_base(20, 370, 42) == 1);
+        CHECK(ts_ui_key_from_point_for_base(461, 370, 42) == 18);
+    }
 
     ui.fx_page = TS_FX_FAMILY;
     ui.show_keyboard = 0;
