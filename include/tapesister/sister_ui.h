@@ -16,6 +16,8 @@ typedef enum {
     TS_SISTER_UI_ACTION_HOLD,
     TS_SISTER_UI_ACTION_CLEAR,
     TS_SISTER_UI_ACTION_MONITOR,
+    TS_SISTER_UI_ACTION_LIMITER_TOGGLE,
+    TS_SISTER_UI_ACTION_MASTER_OUTPUT,
     TS_SISTER_UI_ACTION_WAVE_MODE,
     TS_SISTER_UI_ACTION_SOURCE_TILES,
     TS_SISTER_UI_ACTION_SOURCE_FM,
@@ -29,6 +31,10 @@ typedef enum {
     TS_SISTER_UI_ACTION_PARAMETER,
     TS_SISTER_UI_ACTION_EFFECT_TARGET,
     TS_SISTER_UI_ACTION_FX_TOGGLE,
+    TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE,
+    TS_SISTER_UI_ACTION_FX_SLOT_TYPE,
+    TS_SISTER_UI_ACTION_FX_SLOT_PLACEMENT,
+    TS_SISTER_UI_ACTION_FX_SLOT_MOVE,
     TS_SISTER_UI_ACTION_FALLOUT_TOGGLE,
     TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG,
     TS_SISTER_UI_ACTION_FALLOUT_LFO_TARGET,
@@ -126,12 +132,37 @@ typedef enum {
     TS_SISTER_UI_PARAM_GRAIN_DENSITY,
     TS_SISTER_UI_PARAM_GRAIN_PITCH,
     TS_SISTER_UI_PARAM_GRAIN_MIX,
+    TS_SISTER_UI_PARAM_SLOT1_GAIN,
+    TS_SISTER_UI_PARAM_SLOT1_A,
+    TS_SISTER_UI_PARAM_SLOT1_B,
+    TS_SISTER_UI_PARAM_SLOT1_C,
+    TS_SISTER_UI_PARAM_SLOT1_MIX,
+    TS_SISTER_UI_PARAM_SLOT2_GAIN,
+    TS_SISTER_UI_PARAM_SLOT2_A,
+    TS_SISTER_UI_PARAM_SLOT2_B,
+    TS_SISTER_UI_PARAM_SLOT2_C,
+    TS_SISTER_UI_PARAM_SLOT2_MIX,
+    TS_SISTER_UI_PARAM_SLOT3_GAIN,
+    TS_SISTER_UI_PARAM_SLOT3_A,
+    TS_SISTER_UI_PARAM_SLOT3_B,
+    TS_SISTER_UI_PARAM_SLOT3_C,
+    TS_SISTER_UI_PARAM_SLOT3_MIX,
+    TS_SISTER_UI_PARAM_SLOT4_GAIN,
+    TS_SISTER_UI_PARAM_SLOT4_A,
+    TS_SISTER_UI_PARAM_SLOT4_B,
+    TS_SISTER_UI_PARAM_SLOT4_C,
+    TS_SISTER_UI_PARAM_SLOT4_MIX,
     TS_SISTER_UI_PARAM_COUNT,
     /* These clocks are intentionally not preset-lock bits: the established
        63 lock indices remain stable in existing preset files. */
     TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION = 1000,
-    TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION
+    TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION,
+    /* Global session control: deliberately outside preset-lock storage. */
+    TS_SISTER_UI_PARAM_MASTER_OUTPUT
 } TsSisterUiParameter;
+
+#define TS_SISTER_UI_SLOT_PARAMETER(slot, field) \
+    (TS_SISTER_UI_PARAM_SLOT1_GAIN + (int)(slot) * 5 + (int)(field))
 
 typedef enum {
     TS_SISTER_UI_FX_MASTER = 0,
@@ -211,6 +242,8 @@ int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,
                                   int parameter);
 int ts_sister_ui_parameter_lock_toggle(TsSisterUiModel *model,
                                        int parameter);
+void ts_sister_ui_migrate_legacy_effect_locks(uint64_t *locks,
+                                              uint64_t *locks_high);
 
 void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config);
 void ts_sister_ui_model_show(TsSisterUiModel *model);

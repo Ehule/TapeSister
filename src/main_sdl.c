@@ -948,7 +948,6 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         TsSisterRuntimeFrame sister_frame;
         TsStereoFrame synth_capture = {0.0f, 0.0f};
         TsStereoFrame output;
-        float sister_routes[TS_SISTER_SOURCE_COUNT] = {0};
         ts_audio_buses_clear(&buses);
         if (audio->playing && audio->sample && audio->sample->data &&
             audio->sample->frames > 1u) {
@@ -998,16 +997,6 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         sister_sources.preview = buses.legacy_preview;
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
                                                         &sister_sources);
-        if (audio->sister_file_recorder != NULL &&
-            ts_performance_recorder_state(audio->sister_file_recorder) ==
-                TS_PERFORMANCE_FILE_RECORDING) {
-            int tap = atomic_load_explicit(&audio->sister_file_tap,
-                                           memory_order_relaxed);
-            if (tap < TS_SISTER_TAP_MIX || tap >= TS_SISTER_TAP_COUNT)
-                tap = TS_SISTER_TAP_MIX;
-            (void)ts_performance_recorder_push_frame(
-                audio->sister_file_recorder, sister_frame.tap[tap]);
-        }
         buses.sister = sister_frame.monitor_return;
         buses.program.l = buses.legacy_preview.l +
                           buses.tile_performance.l + buses.fm.l;
@@ -1025,13 +1014,6 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
                         atomic_load_explicit(audio->external_monitor_enabled,
                                              memory_order_acquire) != 0 ?
                         buses.external : (TsStereoFrame){0.0f, 0.0f};
-        if (audio->sister.enabled && !audio->sister.callback_failed) {
-            for (int source_index = 0;
-                 source_index < TS_SISTER_SOURCE_COUNT; ++source_index)
-                sister_routes[source_index] =
-                    ts_sister_runtime_source_route(&audio->sister,
-                                                   source_index);
-        }
         if (!audio->sister.enabled && !audio->sister.callback_failed &&
             audio->sister.post_fx.ready) {
             /* Recreate the legacy ordinary program contribution exactly,
@@ -1051,16 +1033,12 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             buses.fm = (TsStereoFrame){0.0f, 0.0f};
             buses.monitor = (TsStereoFrame){0.0f, 0.0f};
         }
-        /* Sister is an insert, not an extra parallel audition bus. Every
-           selected source is removed from TapeSister's direct speaker path.
-           Its dry and processed returns come back together through Sister's
-           MONITOR bus; input construction and Capture stay pre-monitor. */
-        ts_audio_buses_apply_source_insert(
-            &buses,
-            sister_routes[3],
-            fmaxf(ts_sister_runtime_direct_tile_route(&audio->sister),
-                  sister_routes[0]),
-            sister_routes[1], sister_routes[2]);
+        /* Sister is a closed insert, not an extra parallel audition bus. When
+           powered, it owns every musical source: selected inputs return via
+           Sister, while unselected inputs are silent. Capture remains tapped
+           before this speaker-path ownership rule. */
+        ts_audio_buses_apply_sister_ownership(
+            &buses, audio->sister.enabled && !audio->sister.callback_failed);
         if (runtime_capture_write_frame(audio, buses.capture)) {
             audio->playing = 0;
             audio->bank_slot = -1;
@@ -1102,8 +1080,25 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             }
             buses.reference = ts_stereo_frame_from_mono(reference_value);
         }
-        output = ts_audio_mixer_render(&audio->mixer, &buses);
+        output = ts_audio_mixer_render_unclamped(&audio->mixer, &buses);
         output = audio_apply_topology_crossfade(audio, output);
+        output = ts_sister_runtime_process_output(&audio->sister, output);
+        /* FILE OUT captures the final audible program after ordinary or
+           Sister POST effects, topology fades, the output limiter, and the
+           global OUT fader. The optional H1/H2/H3 file stems retain their
+           internal taps. Neither path writes to Sister's rolling memory. */
+        if (audio->sister_file_recorder != NULL &&
+            ts_performance_recorder_state(audio->sister_file_recorder) ==
+                TS_PERFORMANCE_FILE_RECORDING) {
+            int tap = atomic_load_explicit(&audio->sister_file_tap,
+                                           memory_order_relaxed);
+            TsStereoFrame capture_frame = ts_sister_runtime_file_capture_frame(
+                &sister_frame, (TsSisterTap)tap, output);
+            (void)ts_performance_recorder_push_frame(
+                audio->sister_file_recorder, capture_frame);
+        }
+        audio->last_output = output;
+        audio->mixer.buses.output = output;
         out[i] = output.l;
         if (i + 1 < values) out[i + 1] = output.r;
     }
@@ -1420,6 +1415,7 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
     TsNoteStartResult result;
     char note_name[8];
     int voice_count;
+    uint32_t visible_notes;
     int capture_started = 0;
     ui->bank_view_slot = -1;
     if (!device || output_rate <= 0) {
@@ -1439,7 +1435,15 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
         audio->capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
         runtime_capture_source_matches(audio, instrument->selected_slot))
         capture_started = runtime_capture_trigger(audio, NULL, 0);
-    voice_count = ts_note_bank_count(&audio->notes);
+    visible_notes = ts_note_bank_visible_mask(
+        &audio->notes, ts_ui_keyboard_base_note(ui));
+    visible_notes |= ts_performance_visible_mask(
+        &audio->sister.performance, ts_ui_keyboard_base_note(ui));
+    voice_count = 0;
+    while (visible_notes != 0u) {
+        voice_count += (int)(visible_notes & 1u);
+        visible_notes >>= 1u;
+    }
     SDL_UnlockAudioDevice(device);
     if (result == TS_NOTE_LIMIT_REACHED)
         snprintf(ui->status, sizeof(ui->status), "CHORD LIMIT %d NOTES", TS_NOTE_VOICE_LIMIT);
@@ -6953,9 +6957,23 @@ static void application_window_focus(SDL_Window *window)
 static void sister_set_parameter(TsSisterParameters *parameters,
                                  int parameter, float amount)
 {
+    int slot_offset;
     if (parameters == NULL) return;
     if (amount < 0.0f) amount = 0.0f;
     if (amount > 1.0f) amount = 1.0f;
+    slot_offset = parameter - TS_SISTER_UI_PARAM_SLOT1_GAIN;
+    if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
+        TsSisterFxSlotControls *slot = &parameters->fx.slot[slot_offset / 5];
+        switch (slot_offset % 5) {
+        case 0: slot->gain_db = -12.0f + amount * 24.0f; break;
+        case 1: slot->parameter_a = amount; break;
+        case 2: slot->parameter_b = amount; break;
+        case 3: slot->parameter_c = amount; break;
+        case 4: slot->mix = amount; break;
+        default: break;
+        }
+        return;
+    }
     switch ((TsSisterUiParameter)parameter) {
     case TS_SISTER_UI_PARAM_H1_LEVEL: parameters->head1_level = amount; break;
     case TS_SISTER_UI_PARAM_H1_TIME: parameters->head1_time_ms = amount * 4000.0f; break;
@@ -7062,7 +7080,23 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
                                          int parameter)
 {
     float value = 0.0f;
+    int slot_offset;
     if (parameters == NULL) return 0.0f;
+    slot_offset = parameter - TS_SISTER_UI_PARAM_SLOT1_GAIN;
+    if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
+        const TsSisterFxSlotControls *slot =
+            &parameters->fx.slot[slot_offset / 5];
+        switch (slot_offset % 5) {
+        case 0: value = (slot->gain_db + 12.0f) / 24.0f; break;
+        case 1: value = slot->parameter_a; break;
+        case 2: value = slot->parameter_b; break;
+        case 3: value = slot->parameter_c; break;
+        case 4: value = slot->mix; break;
+        default: break;
+        }
+        if (!isfinite(value) || value < 0.0f) return 0.0f;
+        return value > 1.0f ? 1.0f : value;
+    }
     switch ((TsSisterUiParameter)parameter) {
     case TS_SISTER_UI_PARAM_H1_LEVEL: value = parameters->head1_level; break;
     case TS_SISTER_UI_PARAM_H1_TIME: value = parameters->head1_time_ms / 4000.0f; break;
@@ -7285,6 +7319,14 @@ static void fallout_factory_presets_configure(TsSisterPresetBank *bank,
 
 static const char *sister_parameter_name(int parameter)
 {
+    int slot_offset = parameter - TS_SISTER_UI_PARAM_SLOT1_GAIN;
+    if (slot_offset >= 0 && slot_offset < TS_SISTER_FX_SLOT_COUNT * 5) {
+        static const char *const names[5] = {
+            "SLOT GAIN", "SLOT PARAMETER A", "SLOT PARAMETER B",
+            "SLOT PARAMETER C", "SLOT MIX"
+        };
+        return names[slot_offset % 5];
+    }
     switch ((TsSisterUiParameter)parameter) {
     case TS_SISTER_UI_PARAM_H1_LEVEL: return "H1 LEVEL";
     case TS_SISTER_UI_PARAM_H1_TIME: return "H1 TIME";
@@ -7585,9 +7627,10 @@ static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
     char error[160];
     size_t queue_frames;
     if (audio == NULL || sister == NULL || sample_rate == 0u) return 0;
-    if (!audio->sister.enabled || audio->sister.callback_failed) {
+    if (sister->model.selected_tap != TS_SISTER_TAP_MIX &&
+        (!audio->sister.enabled || audio->sister.callback_failed)) {
         snprintf(sister->model.status, sizeof(sister->model.status),
-                 "ENABLE SISTER BEFORE RECORDING A PERFORMANCE");
+                 "SELECT OUT OR ENABLE SISTER FOR A HEAD FILE");
         return 0;
     }
     if (atomic_load_explicit(&audio->sister.capture.state,
@@ -7596,8 +7639,11 @@ static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
                  "FINISH THE TILE CAPTURE BEFORE RECORDING A FILE");
         return 0;
     }
-    snprintf(prefix, sizeof(prefix), "SISTER-%s",
-             ts_sister_tap_name(sister->model.selected_tap));
+    if (sister->model.selected_tap == TS_SISTER_TAP_MIX)
+        snprintf(prefix, sizeof(prefix), "TAPESISTER-OUT");
+    else
+        snprintf(prefix, sizeof(prefix), "SISTER-%s",
+                 ts_sister_tap_name(sister->model.selected_tap));
     if (!ts_capture_archive_unique_path(
             capture_archive_directory(), prefix, path, sizeof(path),
             error, sizeof(error))) {
@@ -7738,6 +7784,95 @@ static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
     return ok;
 }
 
+static void sister_fx_slot_select_type(TsSisterFxSlotControls *slot,
+                                       TsSisterFxType type)
+{
+    if (slot == NULL) return;
+    slot->type = type;
+    switch (type) {
+    case TS_SISTER_FX_REVERB:
+        slot->parameter_a = 0.58f;
+        slot->parameter_b = 0.42f;
+        slot->parameter_c = 0.50f;
+        break;
+    case TS_SISTER_FX_DELAY:
+        slot->parameter_a = 0.38f;
+        slot->parameter_b = 0.32f;
+        slot->parameter_c = 0.50f;
+        break;
+    case TS_SISTER_FX_DISTORTION:
+        slot->parameter_a = 0.25f;
+        slot->parameter_b = 0.55f;
+        slot->parameter_c = 0.50f;
+        break;
+    case TS_SISTER_FX_GRAIN:
+        slot->parameter_a = 0.46f;
+        slot->parameter_b = 0.42f;
+        slot->parameter_c = 0.50f;
+        break;
+    default:
+        break;
+    }
+}
+
+static const char *sister_fx_slot_placement_name(uint8_t placement)
+{
+    placement = ts_sister_fx_placement_sanitize(placement);
+    if (placement == TS_SISTER_FX_PLACE_PRE) return "PRE";
+    if (placement == TS_SISTER_FX_PLACE_POST) return "POST";
+    if (placement == TS_SISTER_FX_PLACE_HEADS) return "H1+H2+H3";
+    if (placement == TS_SISTER_FX_PLACE_H1) return "H1";
+    if (placement == TS_SISTER_FX_PLACE_H2) return "H2";
+    if (placement == TS_SISTER_FX_PLACE_H3) return "H3";
+    return "SELECTED HEADS";
+}
+
+static void set_master_output_gain(SDL_AudioDeviceID device, AudioState *audio,
+                                   TsUiState *ui, SisterWindow *sister,
+                                   float gain)
+{
+    float decibels;
+    if (!isfinite(gain)) gain = 1.0f;
+    if (gain < 0.0f) gain = 0.0f;
+    if (gain > 1.0f) gain = 1.0f;
+    if (device) SDL_LockAudioDevice(device);
+    ts_sister_runtime_set_master_output_gain(&audio->sister, gain);
+    if (device) SDL_UnlockAudioDevice(device);
+    ui->config.master_output_percent = (int)lrintf(gain * 100.0f);
+    ui->master_output.gain = gain;
+    decibels = gain > 0.0001f ? 20.0f * log10f(gain) : -INFINITY;
+    if (isfinite(decibels)) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "MASTER OUT %+.1F DB - FINAL POST-LIMITER LEVEL", decibels);
+        if (sister != NULL)
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "MASTER OUT %+.1F DB - POST LIMITER", decibels);
+    } else {
+        snprintf(ui->status, sizeof(ui->status),
+                 "MASTER OUT MUTED - FINAL POST-LIMITER LEVEL");
+        if (sister != NULL)
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "MASTER OUT MUTED - POST LIMITER");
+    }
+}
+
+static void set_output_limiter_enabled(SDL_AudioDeviceID device,
+                                       AudioState *audio, TsUiState *ui,
+                                       SisterWindow *sister, int enabled)
+{
+    if (device) SDL_LockAudioDevice(device);
+    ts_sister_runtime_set_limiter_enabled(&audio->sister, enabled);
+    if (device) SDL_UnlockAudioDevice(device);
+    ui->master_output.limiter_enabled = enabled != 0;
+    snprintf(ui->status, sizeof(ui->status),
+             "OUTPUT LIMITER %s - SESSION OVERRIDE",
+             enabled ? "ON" : "OFF");
+    if (sister != NULL)
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "OUTPUT LIMITER %s - SESSION OVERRIDE",
+                 enabled ? "ON" : "OFF");
+}
+
 static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, TsInstrument *instrument,
                                 SisterWindow *sister,
@@ -7755,6 +7890,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     int parameter_changed = -1;
     int fallout_toggle_changed = -1;
     int fx_toggle_changed = -1;
+    int fx_slot_changed = -1;
+    int fx_topology_changed = -1;
+    int fx_order_changed = 0;
     int effect_target_changed = 0;
     int fallout_preset_scope;
     TsSisterPresetBank *preset_bank;
@@ -7997,6 +8135,15 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         sister->rendered_model_valid = 0;
         return;
     }
+    if (hit.action == TS_SISTER_UI_ACTION_LIMITER_TOGGLE) {
+        set_output_limiter_enabled(
+            device, audio, ui, sister, !audio->sister.limiter.enabled);
+        return;
+    }
+    if (hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) {
+        set_master_output_gain(device, audio, ui, sister, hit.normalized);
+        return;
+    }
     if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_LFO_DIALOG) {
         sister->model.fallout_lfo_open =
             !sister->model.fallout_lfo_open;
@@ -8053,6 +8200,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
+        hit.action != TS_SISTER_UI_ACTION_LIMITER_TOGGLE &&
+        hit.action != TS_SISTER_UI_ACTION_MASTER_OUTPUT &&
         hit.action != TS_SISTER_UI_ACTION_CAPTURE_FORMAT &&
         hit.action != TS_SISTER_UI_ACTION_DESTINATION &&
         hit.action != TS_SISTER_UI_ACTION_TAP &&
@@ -8061,6 +8210,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             hit.index <= TS_SISTER_UI_PARAM_FX_RETURN_GAIN) ||
            hit.index >= TS_SISTER_UI_PARAM_REVERB_TYPE ||
            hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS)) &&
+        !(hit.action >= TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE &&
+          hit.action <= TS_SISTER_UI_ACTION_FX_SLOT_MOVE) &&
         !(hit.action == TS_SISTER_UI_ACTION_EFFECT_TARGET &&
           (hit.index >> 8) != 0)) {
         snprintf(sister->model.status, sizeof(sister->model.status),
@@ -8173,6 +8324,73 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         fx_toggle_changed = hit.index;
         break;
     }
+    case TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE: {
+        TsSisterFxControls *fx = &sister->model.parameters.fx;
+        if (hit.index >= 0 && hit.index < TS_SISTER_FX_SLOT_COUNT) {
+            fx->slot[hit.index].enabled = !fx->slot[hit.index].enabled;
+            ts_sister_runtime_set_parameters(&audio->sister,
+                                             &sister->model.parameters);
+            ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+            fx_slot_changed = hit.index;
+        }
+        break;
+    }
+    case TS_SISTER_UI_ACTION_FX_SLOT_TYPE: {
+        TsSisterFxControls *fx = &sister->model.parameters.fx;
+        if (hit.index >= 0 && hit.index < TS_SISTER_FX_SLOT_COUNT) {
+            TsSisterFxType next = (TsSisterFxType)(
+                (fx->slot[hit.index].type + 1) % TS_SISTER_FX_TYPE_COUNT);
+            sister_fx_slot_select_type(&fx->slot[hit.index], next);
+            ts_sister_runtime_set_parameters(&audio->sister,
+                                             &sister->model.parameters);
+            ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+            fx_topology_changed = hit.index;
+        }
+        break;
+    }
+    case TS_SISTER_UI_ACTION_FX_SLOT_PLACEMENT: {
+        TsSisterFxControls *fx = &sister->model.parameters.fx;
+        int slot_index = hit.index >> 8;
+        uint8_t place = (uint8_t)(hit.index & 0xff);
+        if (slot_index >= 0 && slot_index < TS_SISTER_FX_SLOT_COUNT &&
+            (place & TS_SISTER_FX_PLACE_ALL) != 0u) {
+            TsSisterFxSlotControls *slot = &fx->slot[slot_index];
+            if (place == TS_SISTER_FX_PLACE_PRE ||
+                place == TS_SISTER_FX_PLACE_POST) {
+                slot->placement = place;
+            } else {
+                uint8_t heads = (uint8_t)(slot->placement &
+                                           TS_SISTER_FX_PLACE_HEADS);
+                heads ^= place;
+                if (heads == 0u) heads = place;
+                slot->placement = heads;
+            }
+            slot->placement =
+                ts_sister_fx_placement_sanitize(slot->placement);
+            ts_sister_runtime_set_parameters(&audio->sister,
+                                             &sister->model.parameters);
+            ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+            fx_topology_changed = slot_index;
+        }
+        break;
+    }
+    case TS_SISTER_UI_ACTION_FX_SLOT_MOVE: {
+        TsSisterFxControls *fx = &sister->model.parameters.fx;
+        int slot_index = hit.index >> 8;
+        int direction = hit.index & 0xff;
+        int other = direction == 0 ? slot_index - 1 : slot_index + 1;
+        if (slot_index >= 0 && slot_index < TS_SISTER_FX_SLOT_COUNT &&
+            other >= 0 && other < TS_SISTER_FX_SLOT_COUNT) {
+            TsSisterFxSlotControls temporary = fx->slot[slot_index];
+            fx->slot[slot_index] = fx->slot[other];
+            fx->slot[other] = temporary;
+            ts_sister_runtime_set_parameters(&audio->sister,
+                                             &sister->model.parameters);
+            ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+            fx_order_changed = 1;
+        }
+        break;
+    }
     case TS_SISTER_UI_ACTION_EFFECT_TARGET:
     {
         int effect = hit.index >> 8;
@@ -8223,6 +8441,34 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                  ts_sister_fx_transition_ms(
                      fx_toggle_changed == TS_SISTER_UI_FX_MASTER ?
                          fx->master_transition : fx->transition) / 1000.0f);
+    }
+    if (fx_slot_changed >= 0) {
+        const TsSisterFxControls *fx = &sister->model.parameters.fx;
+        const TsSisterFxSlotControls *slot = &fx->slot[fx_slot_changed];
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "SLOT %d %s %s OVER %.2F S", fx_slot_changed + 1,
+                 ts_sister_fx_type_name(slot->type),
+                 slot->enabled ? "ENGAGING" : "BYPASSING",
+                 ts_sister_fx_transition_ms(fx->transition) / 1000.0f);
+    }
+    if (fx_topology_changed >= 0) {
+        const TsSisterFxControls *fx = &sister->model.parameters.fx;
+        const TsSisterFxSlotControls *slot = &fx->slot[fx_topology_changed];
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "SLOT %d MORPHING TO %s %s OVER %.2F S",
+                 fx_topology_changed + 1,
+                 ts_sister_fx_type_name(slot->type),
+                 sister_fx_slot_placement_name(slot->placement),
+                 ts_sister_fx_transition_ms(fx->transition) / 1000.0f);
+    }
+    if (fx_order_changed) {
+        const TsSisterFxControls *fx = &sister->model.parameters.fx;
+        sister_preset_model_sync(sister, &audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "PEDALBOARD ORDER MORPHING OVER %.2F S",
+                 ts_sister_fx_transition_ms(fx->transition) / 1000.0f);
     }
     if (parameter_changed >= 0) {
         /* Mouse-wheel bursts can publish many bounded DSP targets. Keep the
@@ -8468,6 +8714,11 @@ static int adjust_hovered_slider(SDL_AudioDeviceID device, AudioState *audio,
                  (double)value / 1000.0);
         return 1;
     }
+    case TS_UI_SLIDER_MASTER_OUTPUT:
+        set_master_output_gain(
+            device, audio, ui, NULL,
+            ui->master_output.gain + step);
+        return 1;
     default:
         return 0;
     }
@@ -9739,6 +9990,13 @@ int main(int argc, char **argv)
     ts_audio_mixer_init(&audio.mixer);
     audio.fm_output_gain = (float)ui.config.fm_output_percent / 100.0f;
     ts_sister_runtime_init(&audio.sister);
+    ts_sister_runtime_configure_limiter(
+        &audio.sister, ui.config.sister_limiter_enabled,
+        ui.config.sister_limiter_ceiling_db,
+        ui.config.sister_limiter_lookahead_ms,
+        ui.config.sister_limiter_release_ms);
+    ts_sister_runtime_set_master_output_gain(
+        &audio.sister, (float)ui.config.master_output_percent / 100.0f);
     audio.sister_file_recorder = &sister_window.performance_recorder;
     atomic_init(&audio.sister_file_tap, TS_SISTER_TAP_MIX);
     ts_realtime_diagnostics_init(&audio.realtime_diagnostics);
@@ -10282,7 +10540,8 @@ int main(int argc, char **argv)
                         } else {
                             if (event.button.button == SDL_BUTTON_LEFT)
                                 sister_window.parameter_lock_gesture = 0;
-                            if (hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
+                            if ((hit.action == TS_SISTER_UI_ACTION_PARAMETER ||
+                                 hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) &&
                                 !ts_sister_ui_parameter_locked(
                                     &sister_window.model, hit.index)) {
                                 uint32_t button_mask =
@@ -10316,7 +10575,8 @@ int main(int argc, char **argv)
                         continue;
                     }
                     hit = ts_sister_ui_hit_test_model(&sister_window.model, x, y);
-                    target = hit.action == TS_SISTER_UI_ACTION_PARAMETER ?
+                    target = (hit.action == TS_SISTER_UI_ACTION_PARAMETER ||
+                              hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) ?
                              hit.index : -1;
                     if (ts_ui_pointer_drag_accept_motion(
                             &sister_window.parameter_drag, target,
@@ -10337,16 +10597,26 @@ int main(int argc, char **argv)
                                              raw_x, raw_y, &x, &y))
                         continue;
                     hit = ts_sister_ui_hit_test_model(&sister_window.model, x, y);
-                    if (hit.action == TS_SISTER_UI_ACTION_PARAMETER && wheel != 0 &&
+                    if ((hit.action == TS_SISTER_UI_ACTION_PARAMETER ||
+                         hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) &&
+                        wheel != 0 &&
                         !sister_window.parameter_lock_gesture &&
                         !ts_sister_ui_parameter_locked(
                             &sister_window.model, hit.index) &&
                         ts_ui_wheel_guard_accept(
                             &ui.wheel_guard,
                             WHEEL_TARGET_SISTER + hit.index, SDL_GetTicks())) {
-                        hit.normalized = sister_parameter_wheel_normalized(
-                            &sister_window.model.parameters, hit.index, wheel,
-                            (SDL_GetModState() & KMOD_SHIFT) != 0);
+                        if (hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) {
+                            float step = (SDL_GetModState() & KMOD_SHIFT) != 0 ?
+                                         0.01f : 0.05f;
+                            hit.normalized =
+                                sister_window.model.routing.master_output_gain +
+                                step * (float)wheel;
+                        } else {
+                            hit.normalized = sister_parameter_wheel_normalized(
+                                &sister_window.model.parameters, hit.index, wheel,
+                                (SDL_GetModState() & KMOD_SHIFT) != 0);
+                        }
                         sister_apply_action(device, &audio, &ui, &instrument,
                                             &sister_window, &input_device,
                                             &external_input, hit,
@@ -10374,6 +10644,21 @@ int main(int argc, char **argv)
                     } else {
                         sister_window_show(&sister_window);
                     }
+                    continue;
+                }
+                if (!ui_dialog_open(&ui) &&
+                    ts_ui_master_limiter_contains(x, y)) {
+                    set_output_limiter_enabled(
+                        device, &audio, &ui, &sister_window,
+                        !audio.sister.limiter.enabled);
+                    continue;
+                }
+                if (!ui_dialog_open(&ui) &&
+                    ts_ui_master_output_contains(x, y)) {
+                    ui.master_output_dragging = 1;
+                    set_master_output_gain(
+                        device, &audio, &ui, &sister_window,
+                        ts_ui_master_output_normalized_from_x(x));
                     continue;
                 }
                 if (!ui_dialog_open(&ui) &&
@@ -10465,6 +10750,10 @@ int main(int argc, char **argv)
                 if (ui.browser.filename_focus &&
                     ts_browser_edits_text(&ui.browser))
                     ts_browser_append_filename(&ui.browser, event.text.text);
+            } else if (event.type == SDL_WINDOWEVENT &&
+                       event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
+                       ui.master_output_dragging) {
+                ui.master_output_dragging = 0;
             } else if (event.type == SDL_WINDOWEVENT &&
                        event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
                        ui.transform_open) {
@@ -11778,6 +12067,14 @@ int main(int argc, char **argv)
                 set_fm_output_trim(device, &audio, &ui,
                                    (float)(x - 518) / 102.0f, 0);
             } else if (event.type == SDL_MOUSEMOTION &&
+                       ui.master_output_dragging) {
+                int x, y;
+                logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
+                (void)y;
+                set_master_output_gain(
+                    device, &audio, &ui, &sister_window,
+                    ts_ui_master_output_normalized_from_x(x));
+            } else if (event.type == SDL_MOUSEMOTION &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.palette_open || ui.export_choice_open ||
                         ui.exchange_dialog != TS_UI_EXCHANGE_NONE ||
@@ -12464,14 +12761,14 @@ int main(int argc, char **argv)
                         ui.browser.action_focus = 3;
                         browser_cancel(&ui);
                     }
-                } else if (y >= 4 && y < 28 && x >= 350 && x < 426) {
+                } else if (y >= 4 && y < 28 && x >= 214 && x < 274) {
                     begin_config(&ui);
-                } else if (y >= 4 && y < 28 && x >= 431 && x < 511) {
+                } else if (y >= 4 && y < 28 && x >= 278 && x < 344) {
                     begin_exchange_send(&ui, &instrument, &sample_pages);
-                } else if (y >= 4 && y < 28 && x >= 516 && x < 568) {
+                } else if (y >= 4 && y < 28 && x >= 348 && x < 398) {
                     browser_open(&ui, ui.show_ingredients ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
-                } else if (y >= 4 && y < 28 && x >= 573 && x < 630) {
+                } else if (y >= 4 && y < 28 && x >= 402 && x < 460) {
                     begin_export_choice(&ui);
                 } else if (x >= 240 && x < 302 && y >= 42 && y < 64) {
                     ui.config.tile_fade_ms = ts_ui_tile_fade_ms(
@@ -13347,6 +13644,11 @@ int main(int argc, char **argv)
             } else if (event.type == SDL_MOUSEBUTTONUP &&
                        (event.button.button == SDL_BUTTON_LEFT ||
                         event.button.button == SDL_BUTTON_RIGHT)) {
+                if (ui.master_output_dragging &&
+                    event.button.button == SDL_BUTTON_LEFT) {
+                    ui.master_output_dragging = 0;
+                    continue;
+                }
                 if (ui.fm_output_dragging &&
                     event.button.button == SDL_BUTTON_LEFT) {
                     ui.fm_output_dragging = 0;
@@ -13552,6 +13854,9 @@ int main(int argc, char **argv)
             const TsPerformanceVoice *tile_voice =
                 ts_performance_tile_display_voice(
                     &audio.tile_launchers, instrument.selected_slot);
+            const TsPerformanceVoice *sister_voice =
+                ts_performance_source_display_voice(
+                    &audio.sister.performance, instrument.selected_slot);
             if (ui.transform_preview_active &&
                 (audio.sample == &transform.preview.sample ||
                  audio.sample == &transform.dsp_preview.sample) &&
@@ -13564,11 +13869,13 @@ int main(int argc, char **argv)
             ui.tune_reference_active = audio.tune_reference_enabled;
             ui.active_notes = ts_note_bank_visible_mask(
                 &audio.notes, ts_ui_keyboard_base_note(&ui));
+            ui.active_notes |= ts_performance_visible_mask(
+                &audio.sister.performance, ts_ui_keyboard_base_note(&ui));
             ui.tile_launcher_mask = (uint16_t)atomic_load_explicit(
                 &audio.tile_launcher_mask, memory_order_acquire);
             ui.fm_held_notes = ts_note_bank_latched_synth_count(&audio.notes);
             ui.playback_active = audio.playing || voice != NULL ||
-                                 tile_voice != NULL;
+                                 sister_voice != NULL || tile_voice != NULL;
             if (audio.playing) {
                 ui.playhead_source = audio.source;
                 ui.playhead_bank_slot = audio.bank_slot;
@@ -13581,6 +13888,16 @@ int main(int argc, char **argv)
                 ui.playhead_frame = voice->position > 0.0 ? (size_t)voice->position : 0;
                 ui.playhead_frames = voice->sample ? voice->sample->frames : 0;
                 ui.playhead_sample = voice->sample;
+            } else if (sister_voice != NULL) {
+                /* Sister owns this QWERTY/MIDI voice, but its immutable
+                   generation uses the same frame coordinates as Current. */
+                ui.playhead_source = TS_AUDITION_CURRENT;
+                ui.playhead_bank_slot = -1;
+                ui.playhead_frame = sister_voice->position > 0.0 ?
+                                    (size_t)sister_voice->position : 0;
+                ui.playhead_frames = sister_voice->sample ?
+                                     sister_voice->sample->frames : 0;
+                ui.playhead_sample = &instrument.current;
             } else if (tile_voice != NULL) {
                 /* Click-launched tiles use immutable audio generations, but
                    the waveform displays the selected tile's Current view.
@@ -13648,6 +13965,20 @@ int main(int argc, char **argv)
                     TS_PERFORMANCE_FILE_STOPPING;
             ui.sister_warning = routing.warnings != 0u;
             ui.sister_source_mask = routing.source_mask;
+            for (int channel = 0; channel < 2; ++channel) {
+                ui.master_output.level[channel] =
+                    routing.output_level[channel];
+                ui.master_output.peak_hold[channel] =
+                    routing.output_peak_hold[channel];
+                ui.master_output.clip[channel] =
+                    routing.output_clip[channel];
+            }
+            ui.master_output.limiter_enabled = routing.limiter_enabled;
+            ui.master_output.limiter_ceiling_db =
+                routing.limiter_ceiling_db;
+            ui.master_output.limiter_gain_reduction_db =
+                routing.limiter_gain_reduction_db;
+            ui.master_output.gain = routing.master_output_gain;
         }
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         sister_window.model.text_cursor_visible = ui.text_cursor_visible;

@@ -53,6 +53,10 @@ int main(void)
                (uint16_t)((1u << 0) | (1u << 3) | (1u << 7)),
                0, 60, 0, 44100) == 3);
     assert(ts_performance_count(&performance) == 3);
+    assert(ts_performance_visible_mask(&performance, 60) == 1u);
+    assert(ts_performance_source_display_voice(&performance, 0) != NULL);
+    assert(ts_performance_source_display_voice(&performance, 3) != NULL);
+    assert(ts_performance_source_display_voice(&performance, 1) == NULL);
     monitored = ts_performance_read(&performance, &raw);
     assert(raw == 0.0f && monitored == 0.0f);
     for (int frame = 1; frame < 8; ++frame)

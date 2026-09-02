@@ -2954,13 +2954,13 @@ int main(void)
         ui.input_available_channels = 2u;
         ts_ui_render(&fb, &ui, &committed);
         for (int label_y = 10; label_y < 22; ++label_y)
-            for (int label_x = 242; label_x < TS_UI_INPUT_LED_X; ++label_x)
+            for (int label_x = 160; label_x < TS_UI_INPUT_LED_X; ++label_x)
                 label_two = label_two * UINT64_C(33) ^
                     fb.pixels[label_y * TS_UI_WIDTH + label_x];
         ui.input_available_channels = 6u;
         ts_ui_render(&fb, &ui, &committed);
         for (int label_y = 10; label_y < 22; ++label_y)
-            for (int label_x = 242; label_x < TS_UI_INPUT_LED_X; ++label_x)
+            for (int label_x = 160; label_x < TS_UI_INPUT_LED_X; ++label_x)
                 label_six = label_six * UINT64_C(33) ^
                     fb.pixels[label_y * TS_UI_WIDTH + label_x];
         CHECK(label_two != label_six);
@@ -3054,7 +3054,7 @@ int main(void)
                                       TS_WAVE_H) > 0);
         ui.config_open = 1;
         ts_ui_render(&fb, &ui, &imported);
-        CHECK(fb.pixels[10 * TS_UI_WIDTH + 420] == 0xff102132u);
+        CHECK(fb.pixels[10 * TS_UI_WIDTH + 250] == 0xff102132u);
         ui.config_open = 0;
         ts_palette_default(&ui.palette);
     }

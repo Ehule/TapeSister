@@ -1,4 +1,5 @@
 #include "tapesister/sister_project_state.h"
+#include "tapesister/sister_ui.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -91,7 +92,7 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
 
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
-    return fprintf(file,
+    if (fprintf(file,
         "H1Level=%.9g\nH1TimeMs=%.9g\nH1Feedback=%.9g\n"
         "H2Level=%.9g\nH2Scrub=%.9g\nH2Rate=%d\nH2Feedback=%.9g\n"
         "H3Level=%.9g\nH3Span=%.9g\nH3Rate=%d\nWow=%.9g\nDrop=%.9g\n"
@@ -168,7 +169,20 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->fx.fallout.lfo_intensity,
         (unsigned)p->fx.fallout.lfo_targets, p->fx.fallout.rise_mode,
         p->fx.fallout.rise_length, p->fx.fallout.rise_intensity,
-        (unsigned)p->fx.fallout.rise_targets) >= 0;
+        (unsigned)p->fx.fallout.rise_targets) < 0) return 0;
+    for (int index = 0; index < TS_SISTER_FX_SLOT_COUNT; ++index) {
+        const TsSisterFxSlotControls *slot = &p->fx.slot[index];
+        if (fprintf(file,
+            "Slot%dType=%d\nSlot%dEnabled=%d\nSlot%dPlacement=%u\n"
+            "Slot%dGainDb=%.9g\nSlot%dA=%.9g\nSlot%dB=%.9g\n"
+            "Slot%dC=%.9g\nSlot%dMix=%.9g\n",
+            index + 1, slot->type, index + 1, slot->enabled,
+            index + 1, (unsigned)slot->placement,
+            index + 1, slot->gain_db, index + 1, slot->parameter_a,
+            index + 1, slot->parameter_b, index + 1, slot->parameter_c,
+            index + 1, slot->mix) < 0) return 0;
+    }
+    return 1;
 }
 
 int ts_sister_project_state_save(const TsSisterProjectState *state,
@@ -283,8 +297,38 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
                             const char *value)
 {
     int integer;
+    int slot_number;
+    char slot_field[32];
 #define PF(name, member) if (strcmp(key, name) == 0) return parse_float_value(value, &p->member)
 #define PI(name, member) if (strcmp(key, name) == 0) return parse_int_value(value, &p->member)
+    if (sscanf(key, "Slot%d%31s", &slot_number, slot_field) == 2 &&
+        slot_number >= 1 && slot_number <= TS_SISTER_FX_SLOT_COUNT) {
+        TsSisterFxSlotControls *slot = &p->fx.slot[slot_number - 1];
+        if (strcmp(slot_field, "Type") == 0) {
+            if (!parse_int_value(value, &integer)) return 0;
+            slot->type = (TsSisterFxType)integer;
+            return 1;
+        }
+        if (strcmp(slot_field, "Enabled") == 0)
+            return parse_int_value(value, &slot->enabled);
+        if (strcmp(slot_field, "Placement") == 0) {
+            if (!parse_int_value(value, &integer) || integer < 0 ||
+                integer > 255) return 0;
+            slot->placement = (uint8_t)integer;
+            return 1;
+        }
+        if (strcmp(slot_field, "GainDb") == 0)
+            return parse_float_value(value, &slot->gain_db);
+        if (strcmp(slot_field, "A") == 0)
+            return parse_float_value(value, &slot->parameter_a);
+        if (strcmp(slot_field, "B") == 0)
+            return parse_float_value(value, &slot->parameter_b);
+        if (strcmp(slot_field, "C") == 0)
+            return parse_float_value(value, &slot->parameter_c);
+        if (strcmp(slot_field, "Mix") == 0)
+            return parse_float_value(value, &slot->mix);
+        return 1;
+    }
     PF("H1Level", head1_level); PF("H1TimeMs", head1_time_ms); PF("H1Feedback", head1_feedback);
     PF("H2Level", head2_level); PF("H2Scrub", head2_scrub); PI("H2Rate", head2_rate_index);
     PF("H2Feedback", head2_feedback); PF("H3Level", head3_level); PF("H3Span", head3_span);
@@ -440,7 +484,7 @@ int ts_sister_project_state_load(TsSisterProjectState *state,
         if (strcmp(key, "Version") == 0) {
             int parsed;
             if (!parse_int_value(value, &parsed) || parsed < 1) goto malformed;
-            version = 1;
+            version = parsed;
         } else if (strcmp(key, "PageCount") == 0) {
             if (!parse_size_value(value, &loaded.page_count) || loaded.page_count == 0u ||
                 loaded.page_count > TS_SISTER_RUNTIME_PAGE_LIMIT) goto malformed;
@@ -477,6 +521,11 @@ int ts_sister_project_state_load(TsSisterProjectState *state,
     if (ferror(file) || !header || !version || !have_pages ||
         loaded.active_page >= loaded.page_count) goto malformed;
     fclose(file);
+    if (version < TS_SISTER_PROJECT_STATE_VERSION) {
+        ts_sister_fx_controls_migrate_legacy(&loaded.parameters.fx);
+        ts_sister_ui_migrate_legacy_effect_locks(
+            &loaded.parameter_locks, &loaded.parameter_locks_high);
+    }
     ts_sister_parameters_sanitize(&loaded.parameters, sample_rate);
     *state = loaded;
     if (present != NULL) *present = 1;

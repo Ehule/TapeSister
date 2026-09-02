@@ -40,6 +40,7 @@ int main(int argc, char **argv)
                                             TS_SISTER_SOURCE_PREVIEW);
     assert(ts_sister_runtime_enable(&runtime, 48000u, 2u, 2u, 60.0,
                                     error, sizeof(error)));
+    ts_sister_runtime_set_monitor(&runtime, 1);
     p = runtime.parameters;
     p.head1_level = p.head2_level = p.head3_level = 0.7f;
     p.head1_feedback = p.head2_feedback = 0.75f;
@@ -47,27 +48,16 @@ int main(int argc, char **argv)
     p.soak_targets = TS_SISTER_EFFECT_TARGET_H1 |
                      TS_SISTER_EFFECT_TARGET_H2 |
                      TS_SISTER_EFFECT_TARGET_H3;
-    p.fx.distortion_mix = 0.65f;
-    p.fx.distortion_targets = TS_SISTER_EFFECT_TARGET_H1 |
-                              TS_SISTER_EFFECT_TARGET_H2 |
-                              TS_SISTER_EFFECT_TARGET_H3;
-    p.fx.delay_mix = 0.65f;
-    p.fx.delay_feedback = 0.8f;
-    p.fx.delay_targets = TS_SISTER_EFFECT_TARGET_H1 |
-                         TS_SISTER_EFFECT_TARGET_H2 |
-                         TS_SISTER_EFFECT_TARGET_H3;
-    p.fx.reverb_mix = 0.65f;
-    p.fx.reverb_decay = 0.8f;
-    p.fx.reverb_targets = TS_SISTER_EFFECT_TARGET_H1 |
-                          TS_SISTER_EFFECT_TARGET_H2 |
-                          TS_SISTER_EFFECT_TARGET_H3;
-    p.fx.grain_size = 1.0f;
-    p.fx.grain_density = 1.0f;
-    p.fx.grain_pitch = 1.0f;
-    p.fx.grain_mix = 0.65f;
-    p.fx.grain_targets = TS_SISTER_EFFECT_TARGET_H1 |
-                         TS_SISTER_EFFECT_TARGET_H2 |
-                         TS_SISTER_EFFECT_TARGET_H3;
+    for (size_t slot = 0u; slot < 3u; ++slot) {
+        p.fx.slot[slot] = (TsSisterFxSlotControls){
+            TS_SISTER_FX_GRAIN, 1, TS_SISTER_FX_PLACE_HEADS,
+            6.0f, 1.0f, 1.0f, 0.25f + 0.25f * (float)slot, 0.80f
+        };
+    }
+    p.fx.slot[3] = (TsSisterFxSlotControls){
+        TS_SISTER_FX_REVERB, 1, TS_SISTER_FX_PLACE_HEADS,
+        6.0f, 1.0f, 1.0f, 0.5f, 0.80f
+    };
     p.fx.master_feedback = 0.7f;
     p.fx.fallout.enabled = 1;
     p.fx.fallout.mix = 0.75f;
@@ -107,6 +97,7 @@ int main(int argc, char **argv)
         ts_sister_runtime_begin_audio_block(&runtime);
         for (uint32_t i = 0u; i < frames; ++i) {
             TsSisterRuntimeFrame frame;
+            TsStereoFrame final_output;
             random ^= random << 13;
             random ^= random >> 17;
             random ^= random << 5;
@@ -117,8 +108,14 @@ int main(int argc, char **argv)
                                          source.external.l * 0.5f};
             source.preview = (TsStereoFrame){0.03f, -0.02f};
             frame = ts_sister_runtime_process_frame(&runtime, &source);
-            checksum += frame.tap[TS_SISTER_TAP_MIX].l * 0.61803398875 +
-                        frame.tap[TS_SISTER_TAP_MIX].r * 0.38196601125;
+#ifdef TAPESISTER_BENCHMARK_SKIP_FINAL_OUTPUT
+            final_output = frame.monitor_return;
+#else
+            final_output = ts_sister_runtime_process_output(
+                &runtime, frame.monitor_return);
+#endif
+            checksum += final_output.l * 0.61803398875 +
+                        final_output.r * 0.38196601125;
         }
         ts_sister_runtime_end_audio_block(&runtime);
         elapsed = monotonicish_ns() - started;

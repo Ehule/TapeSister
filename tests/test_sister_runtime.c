@@ -21,6 +21,19 @@ int main(void)
     float held_value;
 
     ts_sister_runtime_init(&runtime);
+    frame = (TsSisterRuntimeFrame){0};
+    frame.tap[TS_SISTER_TAP_H1] = (TsStereoFrame){0.125f, -0.25f};
+    {
+        TsStereoFrame final_output = {0.75f, -0.50f};
+        TsStereoFrame captured = ts_sister_runtime_file_capture_frame(
+            &frame, TS_SISTER_TAP_MIX, final_output);
+        CHECK(CLOSE(captured.l, final_output.l));
+        CHECK(CLOSE(captured.r, final_output.r));
+        captured = ts_sister_runtime_file_capture_frame(
+            &frame, TS_SISTER_TAP_H1, final_output);
+        CHECK(CLOSE(captured.l, frame.tap[TS_SISTER_TAP_H1].l));
+        CHECK(CLOSE(captured.r, frame.tap[TS_SISTER_TAP_H1].r));
+    }
     CHECK(!runtime.enabled && runtime.machine.buffer.data == NULL);
     CHECK(!ts_sister_runtime_enable(&runtime, 0u, 2u, 2u, 0.1,
                                     NULL, 0u));
@@ -73,6 +86,44 @@ int main(void)
                 frame.input.l + frame.tap[TS_SISTER_TAP_MIX].l));
     CHECK(CLOSE(frame.monitor_return.r,
                 frame.input.r + frame.tap[TS_SISTER_TAP_MIX].r));
+    (void)ts_sister_runtime_process_output(&runtime, frame.monitor_return);
+    (void)ts_sister_runtime_process_output(&runtime, frame.monitor_return);
+    CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+    CHECK(snapshot.output_level[0] > 0.0f &&
+          snapshot.output_level[1] > 0.0f);
+    CHECK(snapshot.output_peak_hold[0] >= snapshot.output_level[0] &&
+          snapshot.output_peak_hold[1] >= snapshot.output_level[1]);
+    ts_sister_runtime_set_limiter_enabled(&runtime, 0);
+    ts_sister_runtime_set_master_output_gain(&runtime, 0.25f);
+    {
+        TsStereoFrame output = {0};
+        for (int i = 0; i < 24; ++i)
+            (void)ts_sister_runtime_process_output(
+                &runtime, (TsStereoFrame){0.0f, 0.0f});
+        runtime.output_level[0] = runtime.output_level[1] = 0.0f;
+        runtime.output_peak_hold[0] = runtime.output_peak_hold[1] = 0.0f;
+        (void)ts_sister_runtime_process_output(
+            &runtime, (TsStereoFrame){0.8f, -0.4f});
+        output = ts_sister_runtime_process_output(
+            &runtime, (TsStereoFrame){0.0f, 0.0f});
+        CHECK(CLOSE(output.l, 0.2f));
+        CHECK(CLOSE(output.r, -0.1f));
+        CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+        CHECK(CLOSE(snapshot.master_output_gain, 0.25f));
+        CHECK(snapshot.output_level[0] < 0.3f);
+    }
+    ts_sister_runtime_set_master_output_gain(&runtime, 1.0f);
+    for (int i = 0; i < 24; ++i)
+        (void)ts_sister_runtime_process_output(
+            &runtime, (TsStereoFrame){0.0f, 0.0f});
+    ts_sister_runtime_set_limiter_enabled(&runtime, 1);
+    source.preview = (TsStereoFrame){4.0f, -4.0f};
+    (void)ts_sister_runtime_process_frame(&runtime, &source);
+    (void)ts_sister_runtime_process_output(
+        &runtime, (TsStereoFrame){4.0f, -4.0f});
+    CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+    CHECK(snapshot.output_clip[0] && snapshot.output_clip[1]);
+    source.preview = (TsStereoFrame){0.5f, -0.25f};
 
     parameters = runtime.parameters;
     parameters.monitor_dry = 0.25f;
@@ -127,7 +178,7 @@ int main(void)
        selected by the shared progress displays. */
     parameters = runtime.parameters;
     parameters.fx.transition = ts_sister_fx_transition_normalized(1000.0f);
-    parameters.fx.distortion_enabled = 0;
+    parameters.fx.slot[0].enabled = 0;
     parameters.fx.fallout.component_transition =
         ts_sister_fallout_transition_normalized(1000.0f);
     parameters.fx.fallout.master_transition =
@@ -139,7 +190,7 @@ int main(void)
     CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
     CHECK(snapshot.fx_transition_active &&
           snapshot.fx_transition_source ==
-              TS_SISTER_FX_TRANSITION_DISTORTION &&
+              TS_SISTER_FX_TRANSITION_SLOT_1 &&
           !snapshot.fx_transition_target_enabled);
     CHECK(snapshot.fallout_master_transition_active &&
           snapshot.fallout_master_transition_target_enabled);

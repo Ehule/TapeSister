@@ -65,6 +65,15 @@ int main(void)
     runtime.parameters.fx.grain_targets = TS_SISTER_EFFECT_TARGET_H2 |
                                           TS_SISTER_EFFECT_TARGET_H3;
     runtime.parameters.fx.master_feedback = 0.66f;
+    runtime.parameters.fx.slot[0] = (TsSisterFxSlotControls){
+        TS_SISTER_FX_REVERB, 1, TS_SISTER_FX_PLACE_PRE,
+        2.0f, 0.83f, 0.74f, 0.5f, 0.68f
+    };
+    runtime.parameters.fx.slot[3] = (TsSisterFxSlotControls){
+        TS_SISTER_FX_GRAIN, 1,
+        TS_SISTER_FX_PLACE_H1 | TS_SISTER_FX_PLACE_H2,
+        -6.0f, 0.22f, 0.91f, 0.36f, 1.0f
+    };
     runtime.parameters.fx.enabled = 0;
     runtime.parameters.fx.reverb_enabled = 0;
     runtime.parameters.fx.delay_enabled = 1;
@@ -138,6 +147,14 @@ int main(void)
     assert(loaded.parameters.fx.grain_targets ==
            (TS_SISTER_EFFECT_TARGET_H2 | TS_SISTER_EFFECT_TARGET_H3));
     assert(loaded.parameters.fx.master_feedback > 0.65f);
+    assert(loaded.parameters.fx.slot[0].type == TS_SISTER_FX_REVERB);
+    assert(loaded.parameters.fx.slot[0].placement == TS_SISTER_FX_PLACE_PRE);
+    assert(loaded.parameters.fx.slot[0].parameter_a > 0.82f &&
+           loaded.parameters.fx.slot[0].parameter_a < 0.84f);
+    assert(loaded.parameters.fx.slot[3].type == TS_SISTER_FX_GRAIN);
+    assert(loaded.parameters.fx.slot[3].placement ==
+           (TS_SISTER_FX_PLACE_H1 | TS_SISTER_FX_PLACE_H2));
+    assert(loaded.parameters.fx.slot[3].mix == 1.0f);
     assert(loaded.parameters.fx.enabled == 0);
     assert(loaded.parameters.fx.reverb_enabled == 0);
     assert(loaded.parameters.fx.delay_enabled == 1);
@@ -190,6 +207,7 @@ int main(void)
         assert(file != NULL);
         fputs("TapeSister Sister Project State\nVersion=9\nPageCount=1\n"
               "ActivePage=0\nRoutes=2\nSelectedPreset=FUTURE\n"
+              "ParameterLocks=0000000100000000\nParameterLocksHigh=0\n"
               "Mask.0=0000\nGhostTone=0.25\nSoakTargets=255\nReverbType=2\n"
               "FutureField=17\n", file);
         fclose(file);
@@ -198,8 +216,10 @@ int main(void)
         assert(present && loaded.source_switches == TS_SISTER_SOURCE_FM &&
                loaded.parameters.ghost_tone == 0.25f);
         assert(loaded.selected_preset_modified == 0);
-        assert(loaded.parameter_locks == 0u);
-        assert(loaded.parameter_locks_high == 0u);
+        assert((loaded.parameter_locks & TS_SISTER_UI_PARAMETER_BIT(
+                    TS_SISTER_UI_PARAM_REVERB_TYPE)) != 0u);
+        assert((loaded.parameter_locks_high & TS_SISTER_UI_PARAMETER_BIT(
+                    TS_SISTER_UI_SLOT_PARAMETER(3, 1) - 64)) != 0u);
         assert(loaded.parameters.soak == 0.0f &&
                loaded.parameters.bleed == 0.25f &&
                loaded.parameters.soak_targets == TS_SISTER_EFFECT_TARGET_MIX);
@@ -220,6 +240,11 @@ int main(void)
                loaded.parameters.tiles_gain == 1.0f &&
                loaded.parameters.fx_return_gain == 1.0f &&
                loaded.parameters.fx.reverb_targets == TS_SISTER_EFFECT_TARGET_MIX);
+        assert(loaded.parameters.fx.slot[3].type == TS_SISTER_FX_REVERB);
+        assert(loaded.parameters.fx.slot[3].placement ==
+               TS_SISTER_FX_PLACE_POST);
+        assert(loaded.parameters.fx.slot[3].parameter_a > 0.21f &&
+               loaded.parameters.fx.slot[3].parameter_a < 0.23f);
         assert(loaded.parameters.buffer_seconds == 40.0f);
     }
     remove(state_path);

@@ -238,6 +238,10 @@ static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
         mutable_ui->active_notes |= ts_performance_visible_mask(
             &audio->performance, ts_ui_keyboard_base_note(mutable_ui));
     }
+    if (mutable_ui != NULL && audio != NULL)
+        mutable_ui->active_notes |= ts_performance_visible_mask(
+            &audio->sister.performance,
+            ts_ui_keyboard_base_note(mutable_ui));
     ts_audio_unlock_device(TS_AUDIO_LOGICAL_OUTPUT);
 
     ts_ui_render(fb, ui, instrument);

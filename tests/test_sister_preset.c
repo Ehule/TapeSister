@@ -65,6 +65,15 @@ int main(void)
     p.fx.grain_targets = TS_SISTER_EFFECT_TARGET_H2 |
                          TS_SISTER_EFFECT_TARGET_H3;
     p.fx.master_feedback = 0.69f;
+    p.fx.slot[0] = (TsSisterFxSlotControls){
+        TS_SISTER_FX_GRAIN, 1, TS_SISTER_FX_PLACE_PRE,
+        4.0f, 0.21f, 0.34f, 0.75f, 0.82f
+    };
+    p.fx.slot[1] = (TsSisterFxSlotControls){
+        TS_SISTER_FX_DISTORTION, 1,
+        TS_SISTER_FX_PLACE_H1 | TS_SISTER_FX_PLACE_H3,
+        -2.0f, 0.73f, 0.44f, 0.5f, 0.61f
+    };
     p.fx.fallout.enabled = 1;
     p.fx.fallout.feedback = 0.58f;
     p.fx.fallout.noise_type = TS_SISTER_FALLOUT_NOISE_BLUE;
@@ -141,6 +150,15 @@ int main(void)
            recalled.fx.grain_gain_db > -3.01f);
     assert(recalled.fx.grain_targets == (TS_SISTER_EFFECT_TARGET_H2 |
                                           TS_SISTER_EFFECT_TARGET_H3));
+    assert(recalled.fx.slot[0].type == TS_SISTER_FX_GRAIN);
+    assert(recalled.fx.slot[0].placement == TS_SISTER_FX_PLACE_PRE);
+    assert(recalled.fx.slot[0].gain_db > 3.99f &&
+           recalled.fx.slot[0].gain_db < 4.01f);
+    assert(recalled.fx.slot[0].mix > 0.81f &&
+           recalled.fx.slot[0].mix < 0.83f);
+    assert(recalled.fx.slot[1].type == TS_SISTER_FX_DISTORTION);
+    assert(recalled.fx.slot[1].placement ==
+           (TS_SISTER_FX_PLACE_H1 | TS_SISTER_FX_PLACE_H3));
     assert(recalled.fx.master_feedback > 0.68f);
     assert(recalled.fx.fallout.enabled == 1);
     assert(recalled.fx.fallout.feedback > 0.57f);
@@ -185,14 +203,19 @@ int main(void)
         FILE *file = fopen(path, "wb");
         assert(file != NULL);
         fputs("TapeSister Sister Presets\nVersion=9\n\n[Preset]\n"
-              "Name=FUTURE\nghost_tone=0.5\nsoak_targets=255\n"
+              "Name=FUTURE\nlocks=0000000100000000\nlocks_high=0\n"
+              "ghost_tone=0.5\nsoak_targets=255\n"
               "reverb_type=3\nnewer_field=42\n", file);
         fclose(file);
         assert(ts_sister_preset_load(&loaded, path, 48000u,
                                      error, sizeof(error)));
         assert(loaded.count == 4u && loaded.entries[3].parameters.ghost_tone == 0.5f);
-        assert(loaded.entries[3].parameter_locks == 0u);
-        assert(loaded.entries[3].parameter_locks_high == 0u);
+        assert((loaded.entries[3].parameter_locks &
+                TS_SISTER_UI_PARAMETER_BIT(
+                    TS_SISTER_UI_PARAM_REVERB_TYPE)) != 0u);
+        assert((loaded.entries[3].parameter_locks_high &
+                TS_SISTER_UI_PARAMETER_BIT(
+                    TS_SISTER_UI_SLOT_PARAMETER(3, 1) - 64)) != 0u);
         assert(loaded.entries[3].parameters.soak == 0.0f);
         assert(loaded.entries[3].parameters.bleed == 0.25f);
         assert(loaded.entries[3].parameters.soak_targets ==
@@ -218,6 +241,12 @@ int main(void)
         assert(loaded.entries[3].parameters.fx_return_gain == 1.0f);
         assert(loaded.entries[3].parameters.fx.reverb_targets ==
                TS_SISTER_EFFECT_TARGET_MIX);
+        assert(loaded.entries[3].parameters.fx.slot[3].type ==
+               TS_SISTER_FX_REVERB);
+        assert(loaded.entries[3].parameters.fx.slot[3].placement ==
+               TS_SISTER_FX_PLACE_POST);
+        assert(loaded.entries[3].parameters.fx.slot[3].parameter_a > 0.81f &&
+               loaded.entries[3].parameters.fx.slot[3].parameter_a < 0.83f);
         assert(loaded.entries[3].parameters.buffer_seconds == 40.0f);
     }
     remove(path);

@@ -22,6 +22,7 @@ TsWaveformDisplayMode ts_waveform_display_sanitize(int mode);
 TsWaveformDisplayMode ts_waveform_display_cycle(TsWaveformDisplayMode mode,
                                                 int amount);
 const char *ts_waveform_display_name(TsWaveformDisplayMode mode);
+const char *ts_waveform_display_letter(TsWaveformDisplayMode mode);
 TsWaveformDisplayColumn ts_waveform_display_column(
     const TsWaveformColumn *column, uint8_t sample_channels,
     TsWaveformDisplayMode mode);

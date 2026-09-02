@@ -21,6 +21,25 @@ static int execute(TsInstrument *instrument, int slot, TsUiBankAction action,
 
 int main(void)
 {
+    CONTRACT("master_limiter_hit",
+             ts_ui_master_limiter_contains(TS_UI_MASTER_LIMITER_X,
+                                           TS_UI_MASTER_LIMITER_Y));
+    CONTRACT("master_limiter_left_boundary",
+             !ts_ui_master_limiter_contains(TS_UI_MASTER_LIMITER_X - 1,
+                                            TS_UI_MASTER_LIMITER_Y));
+    CONTRACT("master_output_hit",
+             ts_ui_master_output_contains(TS_UI_MASTER_OUTPUT_X + 20,
+                                          TS_UI_MASTER_OUTPUT_Y + 10));
+    CONTRACT("master_output_slider_hit",
+             ts_ui_slider_from_point(NULL, TS_UI_MASTER_OUTPUT_X + 20,
+                                     TS_UI_MASTER_OUTPUT_Y + 10) ==
+                 TS_UI_SLIDER_MASTER_OUTPUT);
+    CONTRACT("master_output_zero",
+             ts_ui_master_output_normalized_from_x(
+                 TS_UI_MASTER_OUTPUT_X) == 0.0f);
+    CONTRACT("master_output_unity",
+             ts_ui_master_output_normalized_from_x(
+                 TS_UI_MASTER_OUTPUT_X + TS_UI_MASTER_OUTPUT_W) == 1.0f);
     TsInstrument instrument;
     TsNoteBank notes;
     TsAuditionPlan plan;
@@ -152,6 +171,10 @@ int main(void)
     CONTRACT("wave_toolbar_panel_hitbox",
              ts_ui_wave_action_from_point(600, 300) ==
              TS_UI_WAVE_ACTION_CYCLE_PANEL);
+    CONTRACT("waveform_mode_compact_button_hitbox",
+             ts_ui_waveform_mode_contains(610, 50));
+    CONTRACT("waveform_mode_former_wide_hitbox_is_inert",
+             !ts_ui_waveform_mode_contains(540, 50));
     CONTRACT("wave_toolbar_gap_is_inert",
              ts_ui_wave_action_from_point(70, 300) == TS_UI_WAVE_ACTION_NONE);
     CONTRACT("wave_toolbar_stops_above_lower_panel",
@@ -224,6 +247,39 @@ int main(void)
         CONTRACT("selection_waveform_color_covers_straddling_left_pixel",
                  visual_fb.pixels[waveform_y * TS_UI_WIDTH + TS_WAVE_X] ==
                  visual_ui.palette.colors[TS_PALETTE_TEXT_ON_BLOCK]);
+        ts_instrument_free(&visual);
+    }
+
+    {
+        TsInstrument visual;
+        TsUiState visual_ui;
+        TsFramebuffer visual_fb;
+        int lane_height = TS_WAVE_H / 2;
+        int left_middle = TS_WAVE_Y + lane_height / 2;
+        int right_middle = TS_WAVE_Y + lane_height +
+                           (TS_WAVE_H - lane_height) / 2;
+        int left_y = left_middle - (int)lrintf(0.6f *
+                                               (lane_height / 2 - 4));
+        int right_y = right_middle - (int)lrintf(0.6f *
+            ((TS_WAVE_H - lane_height) / 2 - 4));
+        int x = TS_WAVE_X + TS_WAVE_W / 2;
+        ts_instrument_init(&visual);
+        ts_ui_init(&visual_ui);
+        CONTRACT("stereo_lane_fixture_activates",
+                 ts_instrument_activate_silence_channels(
+                     &visual, 1200, 44100, 2u, error, sizeof(error)));
+        for (size_t frame = 0; frame < visual.current.frames; ++frame) {
+            visual.current.data[frame * 2u] = 0.6f;
+            visual.current.data[frame * 2u + 1u] = 0.6f;
+        }
+        visual_ui.config.waveform_display_mode = TS_WAVEFORM_DISPLAY_STEREO;
+        ts_ui_render(&visual_fb, &visual_ui, &visual);
+        CONTRACT("stereo_canvas_left_uses_upper_lane",
+                 visual_fb.pixels[left_y * TS_UI_WIDTH + x] ==
+                 visual_ui.palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
+        CONTRACT("stereo_canvas_right_uses_lower_lane",
+                 visual_fb.pixels[right_y * TS_UI_WIDTH + x] ==
+                 visual_ui.palette.colors[TS_PALETTE_STEREO_WAVE_RIGHT]);
         ts_instrument_free(&visual);
     }
 

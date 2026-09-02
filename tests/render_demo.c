@@ -487,6 +487,20 @@ int main(int argc, char **argv)
         snprintf(ui.status, sizeof(ui.status),
                  "TAPESISTER EMBLEM OPENS SISTER MACHINE");
     }
+    if (argc > 2 && strcmp(argv[2], "master-output") == 0) {
+        ui.input_available_channels = 2;
+        ui.input_activity_mask = 3u;
+        ui.master_output.level[0] = 0.34f;
+        ui.master_output.level[1] = 0.82f;
+        ui.master_output.peak_hold[0] = 0.56f;
+        ui.master_output.peak_hold[1] = 0.94f;
+        ui.master_output.limiter_enabled = 1;
+        ui.master_output.limiter_ceiling_db = -1.0f;
+        ui.master_output.limiter_gain_reduction_db = 2.4f;
+        ui.master_output.gain = 0.72f;
+        snprintf(ui.status, sizeof(ui.status),
+                 "GLOBAL LIMITER, MASTER OUT, AND L/R METER REMAIN VISIBLE");
+    }
     if (argc > 2 && strcmp(argv[2], "save-confirm") == 0) {
         ui.project_overwrite_confirm_open = 1;
         snprintf(ui.project_path, sizeof(ui.project_path),

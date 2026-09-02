@@ -1,5 +1,6 @@
 #include "tapesister/config.h"
 #include "tapesister/performance.h"
+#include "tapesister/sister_limiter.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -30,6 +31,7 @@ void ts_config_init(TsConfig *config)
         config->ripple_cut_crop_canvas = 0;
         config->reference_tone_volume = TS_REFERENCE_TONE_VOLUME_DEFAULT;
         config->fm_output_percent = TS_FM_OUTPUT_PERCENT_DEFAULT;
+        config->master_output_percent = TS_MASTER_OUTPUT_PERCENT_DEFAULT;
         config->audio_buffer_frames = TS_AUDIO_BUFFER_FRAMES_DEFAULT;
         config->record_input_channel = TS_RECORD_INPUT_CHANNEL_DEFAULT;
         config->midi_input_channel = TS_MIDI_INPUT_CHANNEL_DEFAULT;
@@ -46,6 +48,13 @@ void ts_config_init(TsConfig *config)
         config->sister_buffer_seconds = 40;
         config->sister_buffer_channels = 2;
         config->sister_clear_ms = 20;
+        config->sister_limiter_enabled = TS_SISTER_LIMITER_DEFAULT_ENABLED;
+        config->sister_limiter_ceiling_db =
+            TS_SISTER_LIMITER_DEFAULT_CEILING_DB;
+        config->sister_limiter_lookahead_ms =
+            TS_SISTER_LIMITER_DEFAULT_LOOKAHEAD_MS;
+        config->sister_limiter_release_ms =
+            TS_SISTER_LIMITER_DEFAULT_RELEASE_MS;
         config->sister_fx_effect_transition_ms = 240000;
         config->sister_fx_transition_ms = 240000;
         config->sister_fallout_transition_ms = 240000;
@@ -141,6 +150,21 @@ static int parse_clamped_integer(const char *value, int minimum, int maximum,
     if (parsed < minimum) parsed = minimum;
     if (parsed > maximum) parsed = maximum;
     *destination = (int)parsed;
+    return 1;
+}
+
+static int parse_clamped_float(const char *value, float minimum, float maximum,
+                               float *destination)
+{
+    char *end;
+    float parsed;
+    errno = 0;
+    parsed = strtof(value, &end);
+    if (errno != 0 || end == value || *end != '\0' || !isfinite(parsed))
+        return 0;
+    if (parsed < minimum) parsed = minimum;
+    if (parsed > maximum) parsed = maximum;
+    *destination = parsed;
     return 1;
 }
 
@@ -282,6 +306,8 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, TS_REFERENCE_TONE_VOLUME_MIN, TS_REFERENCE_TONE_VOLUME_MAX, &loaded.reference_tone_volume)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "fm_output_percent") == 0) {
             if (!parse_clamped_integer(value, TS_FM_OUTPUT_PERCENT_MIN, TS_FM_OUTPUT_PERCENT_MAX, &loaded.fm_output_percent)) { snprintf(error, error_size, "Invalid FM output level on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "master_output_percent") == 0) {
+            if (!parse_clamped_integer(value, TS_MASTER_OUTPUT_PERCENT_MIN, TS_MASTER_OUTPUT_PERCENT_MAX, &loaded.master_output_percent)) { snprintf(error, error_size, "Invalid master output level on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "record_input_channel") == 0) {
             if (!parse_clamped_integer(value, TS_RECORD_INPUT_CHANNEL_MIN, TS_RECORD_INPUT_CHANNEL_MAX, &loaded.record_input_channel)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "record_threshold_db") == 0) {
@@ -312,6 +338,14 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, 1, 2, &loaded.sister_buffer_channels)) { snprintf(error, error_size, "Invalid Sister channels on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_clear_ms") == 0) {
             if (!parse_clamped_integer(value, 1, 1000, &loaded.sister_clear_ms)) { snprintf(error, error_size, "Invalid Sister clear time on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_limiter_enabled") == 0) {
+            if (!parse_boolean(value, &loaded.sister_limiter_enabled)) { snprintf(error, error_size, "Invalid limiter switch on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_limiter_ceiling_db") == 0) {
+            if (!parse_clamped_float(value, TS_SISTER_LIMITER_CEILING_DB_MIN, TS_SISTER_LIMITER_CEILING_DB_MAX, &loaded.sister_limiter_ceiling_db)) { snprintf(error, error_size, "Invalid limiter ceiling on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_limiter_lookahead_ms") == 0) {
+            if (!parse_clamped_float(value, TS_SISTER_LIMITER_LOOKAHEAD_MS_MIN, TS_SISTER_LIMITER_LOOKAHEAD_MS_MAX, &loaded.sister_limiter_lookahead_ms)) { snprintf(error, error_size, "Invalid limiter lookahead on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_limiter_release_ms") == 0) {
+            if (!parse_clamped_float(value, TS_SISTER_LIMITER_RELEASE_MS_MIN, TS_SISTER_LIMITER_RELEASE_MS_MAX, &loaded.sister_limiter_release_ms)) { snprintf(error, error_size, "Invalid limiter release on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_fx_effect_transition_ms") == 0) {
             if (!parse_clamped_integer(value, 10, 3600000, &loaded.sister_fx_effect_transition_ms)) { snprintf(error, error_size, "Invalid individual FX transition time on config line %d", line_number); fclose(file); return 0; }
             saw_fx_effect_transition = 1;
@@ -459,6 +493,14 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "sister_buffer_seconds=%d\n"
                 "sister_buffer_channels=%d\n"
                 "sister_clear_ms=%d\n"
+                "; Final stereo safety limiter; UI switch is a session-only override.\n"
+                "sister_limiter_enabled=%d\n"
+                "; Ceiling -12..0 dBFS, lookahead 0.1..10 ms, release 10..2000 ms.\n"
+                "sister_limiter_ceiling_db=%.3g\n"
+                "sister_limiter_lookahead_ms=%.3g\n"
+                "sister_limiter_release_ms=%.3g\n"
+                "; Final attenuation after the limiter: 0=mute, 100=unity.\n"
+                "master_output_percent=%d\n"
                 "; Default individual Reverb/Delay/Distortion ramp: 10 ms to 60 minutes.\n"
                 "sister_fx_effect_transition_ms=%d\n"
                 "; Default Master FX gate ramp: 10 ms to 60 minutes.\n"
@@ -524,6 +566,11 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_buffer_seconds,
                 config->sister_buffer_channels,
                 config->sister_clear_ms,
+                config->sister_limiter_enabled ? 1 : 0,
+                config->sister_limiter_ceiling_db,
+                config->sister_limiter_lookahead_ms,
+                config->sister_limiter_release_ms,
+                config->master_output_percent,
                 config->sister_fx_effect_transition_ms,
                 config->sister_fx_transition_ms,
                 config->sister_fallout_transition_ms,

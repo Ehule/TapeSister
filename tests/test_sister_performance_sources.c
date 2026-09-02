@@ -74,6 +74,22 @@ int main(void)
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TILES);
     assert(ts_note_event_qwerty(&qwerty, 0, TS_KEYBOARD_BASE_NOTE));
     assert(ts_note_event_midi(&midi, 60, 100, 3));
+
+    /* Shift-click latch toggles remain visible while sounding and clear on
+       the second press even though Sister, not the ordinary note bank, owns
+       the voices. */
+    ts_sister_runtime_clear_source_mask(&runtime);
+    assert(ts_sister_runtime_set_source_slot(&runtime, &ensemble, 0, 1));
+    assert(ts_sister_runtime_note_on(
+               &runtime, &ensemble, &qwerty, 1, 1000) == 1);
+    assert(ts_performance_visible_mask(
+               &runtime.performance, TS_KEYBOARD_BASE_NOTE) == 1u);
+    assert(ts_sister_runtime_note_on(
+               &runtime, &ensemble, &qwerty, 1, 1000) == 1);
+    assert(ts_performance_count(&runtime.performance) == 0);
+    assert(ts_performance_visible_mask(
+               &runtime.performance, TS_KEYBOARD_BASE_NOTE) == 0u);
+
     for (int members = 1; members <= 3; ++members) {
         ts_sister_runtime_clear_source_mask(&runtime);
         for (int slot = 0; slot < members; ++slot)
@@ -81,6 +97,10 @@ int main(void)
                 &runtime, &ensemble, slot, 1));
         assert(ts_sister_runtime_note_on(
                    &runtime, &ensemble, &qwerty, 0, 1000) == members);
+        assert(ts_performance_visible_mask(
+                   &runtime.performance, TS_KEYBOARD_BASE_NOTE) == 1u);
+        assert(ts_performance_source_display_voice(
+                   &runtime.performance, 0) != NULL);
         ts_sister_runtime_panic(&runtime);
         assert(ts_sister_runtime_note_on(
                    &runtime, &ensemble, &midi, 0, 1000) == members);

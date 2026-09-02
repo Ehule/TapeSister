@@ -37,6 +37,10 @@ int main(void)
     CHECK(ts_waveform_display_cycle(TS_WAVEFORM_DISPLAY_MONO_SUM, 1) ==
           TS_WAVEFORM_DISPLAY_STEREO);
     CHECK(strcmp(ts_waveform_display_name(TS_WAVEFORM_DISPLAY_RIGHT), "RIGHT") == 0);
+    CHECK(strcmp(ts_waveform_display_letter(TS_WAVEFORM_DISPLAY_STEREO), "S") == 0);
+    CHECK(strcmp(ts_waveform_display_letter(TS_WAVEFORM_DISPLAY_LEFT), "L") == 0);
+    CHECK(strcmp(ts_waveform_display_letter(TS_WAVEFORM_DISPLAY_RIGHT), "R") == 0);
+    CHECK(strcmp(ts_waveform_display_letter(TS_WAVEFORM_DISPLAY_MONO_SUM), "M") == 0);
     puts("waveform display mode tests passed");
     return failures != 0;
 }

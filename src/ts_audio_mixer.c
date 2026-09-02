@@ -86,8 +86,15 @@ void ts_audio_buses_apply_source_insert(TsAudioBuses *buses,
         buses->monitor, direct_gain_for_insert(external_insert));
 }
 
-TsStereoFrame ts_audio_mixer_render(TsAudioMixer *mixer,
-                                    const TsAudioBuses *sources)
+void ts_audio_buses_apply_sister_ownership(TsAudioBuses *buses,
+                                           int sister_active)
+{
+    if (!sister_active) return;
+    ts_audio_buses_apply_source_insert(buses, 1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+TsStereoFrame ts_audio_mixer_render_unclamped(TsAudioMixer *mixer,
+                                              const TsAudioBuses *sources)
 {
     TsAudioBuses buses;
     TsStereoFrame program;
@@ -107,7 +114,7 @@ TsStereoFrame ts_audio_mixer_render(TsAudioMixer *mixer,
     if (mixer->monitor_enabled)
         output = add_frame(output, buses.monitor);
     output = add_frame(output, buses.reference);
-    output = clamp_frame(scale_frame(output, mixer->master_gain));
+    output = scale_frame(output, mixer->master_gain);
 
     buses.external = ts_stereo_frame_sanitize(buses.external);
     buses.monitor = ts_stereo_frame_sanitize(buses.monitor);
@@ -117,5 +124,14 @@ TsStereoFrame ts_audio_mixer_render(TsAudioMixer *mixer,
     buses.program = program;
     buses.output = output;
     mixer->buses = buses;
+    return output;
+}
+
+TsStereoFrame ts_audio_mixer_render(TsAudioMixer *mixer,
+                                    const TsAudioBuses *sources)
+{
+    TsStereoFrame output = ts_audio_mixer_render_unclamped(mixer, sources);
+    output = clamp_frame(output);
+    if (mixer != NULL) mixer->buses.output = output;
     return output;
 }

@@ -46,7 +46,7 @@ normalized bin, not UI cost.
 Both ordinary sample waveform and Sister overview use the reusable
 `TsWaveformDisplayMode` contract:
 
-- `STEREO`: independent L/R extrema; Sister uses two labeled lanes.
+- `STEREO`: independent L/R extrema in two labeled lanes on both canvases.
 - `LEFT`: channel one only.
 - `RIGHT`: channel two only.
 - `MONO SUM`: display-only `0.5 * (L + R)`.
@@ -54,7 +54,8 @@ Both ordinary sample waveform and Sister overview use the reusable
 Mono material has a safe dual-mono visual fallback. These modes never rewrite samples,
 alter selections, change Capture format or change frame indexing. The palette adds
 `StereoWaveLeft`, `StereoWaveRight` and `StereoWaveSum`. Missing keys inherit the
-legacy `PatternNote`, `PatternEffect` and `PatternInstrument` colors.
+legacy `PatternNote`, `PatternEffect` and `PatternInstrument` colors. Each canvas uses
+the same compact `S` / `L` / `R` / `M` button to cycle the display-only mode.
 
 ## Controls and fixed routing
 

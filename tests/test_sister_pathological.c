@@ -149,9 +149,12 @@ static void head_identity_and_crossing(void)
         assert(runtime.machine.head[0].phase == h1_phase);
     }
     assert(result.crossings > 0u);
-    assert(runtime.post_fx.delay[0].data != runtime.post_fx.delay[1].data);
-    assert(runtime.post_fx.delay[1].data != runtime.post_fx.delay[2].data);
-    assert(runtime.post_fx.delay[2].data != runtime.post_fx.delay[3].data);
+    assert(runtime.post_fx.delay[2][0].data !=
+           runtime.post_fx.delay[2][1].data);
+    assert(runtime.post_fx.delay[2][1].data !=
+           runtime.post_fx.delay[2][2].data);
+    assert(runtime.post_fx.delay[2][2].data !=
+           runtime.post_fx.delay[2][3].data);
     ts_sister_runtime_free(&runtime);
 }
 
@@ -167,7 +170,8 @@ static void continuity_transitions(void)
     p = runtime.parameters;
     p.head1_level = p.head2_level = p.head3_level = 0.22f;
     p.head1_feedback = p.head2_feedback = 0.15f;
-    p.fx.reverb_mix = p.fx.delay_mix = p.fx.distortion_mix = 0.0f;
+    for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot)
+        p.fx.slot[slot].mix = 0.0f;
     p.fx.master_feedback = 0.0f;
     ts_sister_runtime_set_parameters(&runtime, &p);
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_EXT);
@@ -256,28 +260,22 @@ static void apply_transition(TsSisterRuntime *runtime, TsInstrument *instrument,
             (uint8_t)(random_next(random) & TS_SISTER_EFFECT_TARGET_ALL));
         break;
     case 6u:
-        p->fx.reverb_size = random_unit(random);
-        p->fx.reverb_mix = random_unit(random);
-        p->fx.reverb_gain_db = -12.0f + random_unit(random) * 24.0f;
-        p->fx.reverb_decay = random_unit(random);
-        p->fx.reverb_targets = ts_sister_effect_targets_sanitize(
-            (uint8_t)(random_next(random) & TS_SISTER_EFFECT_TARGET_ALL));
+        p->fx.slot[3].parameter_a = random_unit(random);
+        p->fx.slot[3].mix = random_unit(random);
+        p->fx.slot[3].gain_db = -12.0f + random_unit(random) * 24.0f;
+        p->fx.slot[3].parameter_b = random_unit(random);
         break;
     case 7u:
-        p->fx.delay_time = random_unit(random);
-        p->fx.delay_feedback = random_unit(random);
-        p->fx.delay_mix = random_unit(random);
-        p->fx.delay_gain_db = -12.0f + random_unit(random) * 24.0f;
-        p->fx.delay_targets = ts_sister_effect_targets_sanitize(
-            (uint8_t)(random_next(random) & TS_SISTER_EFFECT_TARGET_ALL));
+        p->fx.slot[2].parameter_a = random_unit(random);
+        p->fx.slot[2].parameter_b = random_unit(random);
+        p->fx.slot[2].mix = random_unit(random);
+        p->fx.slot[2].gain_db = -12.0f + random_unit(random) * 24.0f;
         break;
     case 8u:
-        p->fx.distortion_drive = random_unit(random);
-        p->fx.distortion_tone = random_unit(random);
-        p->fx.distortion_mix = random_unit(random);
-        p->fx.distortion_gain_db = -12.0f + random_unit(random) * 24.0f;
-        p->fx.distortion_targets = ts_sister_effect_targets_sanitize(
-            (uint8_t)(random_next(random) & TS_SISTER_EFFECT_TARGET_ALL));
+        p->fx.slot[0].parameter_a = random_unit(random);
+        p->fx.slot[0].parameter_b = random_unit(random);
+        p->fx.slot[0].mix = random_unit(random);
+        p->fx.slot[0].gain_db = -12.0f + random_unit(random) * 24.0f;
         break;
     case 9u:
         p->tiles_gain = random_unit(random) * 4.0f;
@@ -317,20 +315,24 @@ static void apply_transition(TsSisterRuntime *runtime, TsInstrument *instrument,
         break;
     case 15u:
         p->fx.enabled = (int)(random_next(random) & 1u);
-        p->fx.reverb_enabled = (int)(random_next(random) & 1u);
-        p->fx.delay_enabled = (int)(random_next(random) & 1u);
-        p->fx.distortion_enabled = (int)(random_next(random) & 1u);
-        p->fx.grain_enabled = (int)(random_next(random) & 1u);
+        for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot) {
+            uint32_t location = random_next(random) % 5u;
+            p->fx.slot[slot].enabled = (int)(random_next(random) & 1u);
+            p->fx.slot[slot].type = (TsSisterFxType)(
+                random_next(random) % TS_SISTER_FX_TYPE_COUNT);
+            p->fx.slot[slot].placement = location == 0u ?
+                TS_SISTER_FX_PLACE_PRE : location == 4u ?
+                TS_SISTER_FX_PLACE_POST :
+                (uint8_t)(TS_SISTER_FX_PLACE_H1 << (location - 1u));
+        }
         p->fx.transition = random_unit(random);
         break;
     case 16u:
-        p->fx.grain_size = random_unit(random);
-        p->fx.grain_density = random_unit(random);
-        p->fx.grain_pitch = random_unit(random);
-        p->fx.grain_mix = random_unit(random);
-        p->fx.grain_gain_db = -12.0f + random_unit(random) * 24.0f;
-        p->fx.grain_targets = ts_sister_effect_targets_sanitize(
-            (uint8_t)(random_next(random) & TS_SISTER_EFFECT_TARGET_ALL));
+        p->fx.slot[1].parameter_a = random_unit(random);
+        p->fx.slot[1].parameter_b = random_unit(random);
+        p->fx.slot[1].parameter_c = random_unit(random);
+        p->fx.slot[1].mix = random_unit(random);
+        p->fx.slot[1].gain_db = -12.0f + random_unit(random) * 24.0f;
         break;
     default:
         p->filter_type = (TsSisterFilterType)(
@@ -354,31 +356,37 @@ static StressResult run_stress(uint32_t seed, uint64_t transitions,
     StressResult result = {0};
     uint32_t random = seed;
     float *rolling_store;
-    float *delay_store[TS_SISTER_EFFECT_PROCESSOR_COUNT];
+    float *delay_store[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     assert(sister_test_make_tiles(&instrument, 4, 1, STRESS_RATE, 400u));
     assert(sister_test_enable(&runtime, STRESS_RATE, 2u, 5.0));
     p = runtime.parameters;
     p.head1_level = p.head2_level = p.head3_level = 0.55f;
     p.head1_feedback = p.head2_feedback = 0.7f;
     p.soak = 0.5f;
-    p.fx.delay_mix = p.fx.reverb_mix = p.fx.distortion_mix = 0.45f;
-    p.fx.grain_mix = 0.45f;
+    for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot)
+        p.fx.slot[slot].mix = 0.45f;
     p.fx.master_feedback = 0.65f;
     ts_sister_runtime_set_parameters(&runtime, &p);
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_ALL);
     for (int slot = 0; slot < 4; ++slot)
         assert(ts_sister_runtime_set_source_slot(&runtime, &instrument, slot, 1));
     rolling_store = runtime.machine.buffer.data;
-    for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i)
-        delay_store[i] = runtime.post_fx.delay[i].data;
+    for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot)
+        for (size_t location = 0u;
+             location < TS_SISTER_FX_LOCATION_COUNT; ++location)
+            delay_store[slot][location] =
+                runtime.post_fx.delay[slot][location].data;
 
     for (uint64_t transition = 0u; transition < transitions; ++transition) {
         apply_transition(&runtime, &instrument, &p, &random, transition,
                          &result);
         process_frames(&runtime, &source, &random, 4u, &result);
         assert(runtime.machine.buffer.data == rolling_store);
-        for (size_t i = 0u; i < TS_SISTER_EFFECT_PROCESSOR_COUNT; ++i)
-            assert(runtime.post_fx.delay[i].data == delay_store[i]);
+        for (size_t slot = 0u; slot < TS_SISTER_FX_SLOT_COUNT; ++slot)
+            for (size_t location = 0u;
+                 location < TS_SISTER_FX_LOCATION_COUNT; ++location)
+                assert(runtime.post_fx.delay[slot][location].data ==
+                       delay_store[slot][location]);
     }
 
     /* Faster-than-realtime soak: at the 1 kHz deterministic test rate, the

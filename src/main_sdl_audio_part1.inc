@@ -230,15 +230,22 @@ static TsNoteStartResult runtime_note_start_event(
 {
     int started;
     int sister_started;
+    int sister_before;
+    int sister_after;
     TsNoteStartResult result;
     if (audio == NULL) return TS_NOTE_START_FAILED;
     ts_performance_set_attack_ms(&audio->performance, audio->notes.attack_ms);
+    sister_before = ts_performance_count(&audio->sister.performance);
     sister_started = ts_sister_runtime_note_on(
         &audio->sister, instrument, event, latched, output_rate);
     /* TILES is a true insert performance group. A successful Sister group
        trigger owns this note event; do not also start the ordinary current
        tile voice and then hide it downstream. */
-    if (sister_started > 0) return TS_NOTE_STARTED;
+    if (sister_started > 0) {
+        sister_after = ts_performance_count(&audio->sister.performance);
+        return latched && sister_after < sister_before ?
+               TS_NOTE_TOGGLED_OFF : TS_NOTE_STARTED;
+    }
     if (!audio->performance_group_latched ||
         audio->performance_source_mask == 0u) {
         result = ts_note_bank_start_tuned_event(
