@@ -183,6 +183,7 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
         TS_SISTER_LIMITER_DEFAULT_CEILING_DB;
     model->routing.master_output_gain = config != NULL ?
         (float)config->master_output_percent / 100.0f : 1.0f;
+    model->midi_map = config != NULL ? &config->midi_map : NULL;
     model->selected_tap = TS_SISTER_TAP_MIX;
     model->destination_slot = -1;
     ts_sister_parameters_default(&model->parameters, 48000u);
@@ -654,4 +655,54 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
 TsSisterUiHit ts_sister_ui_hit_test(int x, int y)
 {
     return ts_sister_ui_hit_test_model(NULL, x, y);
+}
+
+int ts_sister_ui_midi_target(TsSisterUiHit hit, char *target,
+                             size_t target_size)
+{
+    const char *name = NULL;
+    int result;
+    if (target == NULL || target_size == 0u) return 0;
+    target[0] = '\0';
+    if (hit.action == TS_SISTER_UI_ACTION_PARAMETER ||
+        hit.action == TS_SISTER_UI_ACTION_MASTER_OUTPUT) {
+        if (hit.index == TS_SISTER_UI_PARAM_MASTER_OUTPUT)
+            name = "sister.param.master_output";
+        else {
+            result = snprintf(target, target_size, "sister.param.%03d",
+                              hit.index);
+            return result > 0 && (size_t)result < target_size;
+        }
+    } else if (hit.action == TS_SISTER_UI_ACTION_POWER) name = "sister.power";
+    else if (hit.action == TS_SISTER_UI_ACTION_ROLL) name = "sister.roll";
+    else if (hit.action == TS_SISTER_UI_ACTION_HOLD) name = "sister.hold";
+    else if (hit.action == TS_SISTER_UI_ACTION_MONITOR) name = "sister.monitor";
+    else if (hit.action == TS_SISTER_UI_ACTION_LIMITER_TOGGLE)
+        name = "sister.limiter";
+    else if (hit.action >= TS_SISTER_UI_ACTION_SOURCE_TILES &&
+             hit.action <= TS_SISTER_UI_ACTION_SOURCE_PREVIEW) {
+        static const char *const sources[4] = {
+            "tiles", "fm", "external", "preview"
+        };
+        result = snprintf(target, target_size, "sister.source.%s",
+                          sources[hit.action - TS_SISTER_UI_ACTION_SOURCE_TILES]);
+        return result > 0 && (size_t)result < target_size;
+    } else if (hit.action == TS_SISTER_UI_ACTION_CAPTURE)
+        name = "sister.capture";
+    else if (hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE) {
+        result = snprintf(target, target_size, "sister.fx.toggle.%d", hit.index);
+        return result > 0 && (size_t)result < target_size;
+    } else if (hit.action == TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE) {
+        result = snprintf(target, target_size, "sister.fx.slot.%d.toggle",
+                          hit.index + 1);
+        return result > 0 && (size_t)result < target_size;
+    } else if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_TOGGLE) {
+        result = snprintf(target, target_size, "sister.fallout.toggle.%d",
+                          hit.index);
+        return result > 0 && (size_t)result < target_size;
+    } else if (hit.action == TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER)
+        name = "sister.fallout.rise.retrigger";
+    if (name == NULL) return 0;
+    result = snprintf(target, target_size, "%s", name);
+    return result > 0 && (size_t)result < target_size;
 }

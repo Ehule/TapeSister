@@ -247,12 +247,9 @@ static int ts_audio_main_config_load(TsConfig *config, const char *path,
     return ok;
 }
 
-static int ts_audio_main_config_save(const TsConfig *config, const char *path,
-                                     char *error, size_t error_size)
+static int ts_audio_main_config_write(const TsConfig *config, const char *path,
+                                      char *error, size_t error_size)
 {
-    char midi_error[160];
-    char switch_error[160];
-    int output_changed;
     if (!ts_audio_config_save(config, path, error, error_size)) return 0;
     {
         FILE *display = fopen(path, "ab");
@@ -265,6 +262,16 @@ static int ts_audio_main_config_save(const TsConfig *config, const char *path,
             fclose(display);
         }
     }
+    return 1;
+}
+
+static int ts_audio_main_config_save(const TsConfig *config, const char *path,
+                                     char *error, size_t error_size)
+{
+    char midi_error[160];
+    char switch_error[160];
+    int output_changed;
+    if (!ts_audio_main_config_write(config, path, error, error_size)) return 0;
     ts_live_config = (TsConfig *)config;
 
     output_changed = ts_real_output == 0 ||

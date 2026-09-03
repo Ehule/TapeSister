@@ -4,6 +4,7 @@ CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
 CXXFLAGS ?= -std=c++11 -O2
 CPPFLAGS ?= -Iinclude -Ithird_party
 CORE = src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c src/ts_realtime_diagnostics.c src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c src/ts_sister_limiter.c src/ts_sister_machine.c src/ts_sister_wave_snapshot.c src/ts_sister_runtime.c src/ts_sister_ui.c src/ts_sister_preset.c src/ts_sister_project_state.c src/ts_capture.c src/ts_capture_archive.c src/ts_performance_recorder.c src/ts_input_monitor.c src/ts_input_ownership.c src/ts_sample_pages.c src/ts_browser.c src/ts_config.c src/ts_audio_config.c src/ts_recipe.c src/ts_dsp_recipe.c src/ts_palette.c src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c src/ts_dsp_transform.c src/ts_exchange.c src/ts_render_damage.c src/ts_waveform_cache.c src/ts_waveform_display.c src/ts_ui.c
+CORE += src/ts_midi_map.c
 SDL_MAIN = src/main_sdl.c
 DIAG = src/ts_startup_diag.c
 MIDI_C = src/ts_midi_input.c

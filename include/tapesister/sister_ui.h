@@ -235,6 +235,10 @@ typedef struct {
     int preset_confirmation;
     int fx_page;
     int fallout_lfo_open;
+    int midi_learn_active;
+    int midi_activity;
+    char midi_learn_pending[TS_MIDI_TARGET_ID_MAX];
+    const TsMidiMap *midi_map;
 } TsSisterUiModel;
 
 int ts_sister_ui_parameter_lockable(int parameter);
@@ -264,6 +268,8 @@ int ts_sister_ui_window_point(int raw_x, int raw_y,
                               int window_width, int window_height,
                               int output_width, int output_height,
                               int *logical_x, int *logical_y);
+int ts_sister_ui_midi_target(TsSisterUiHit hit, char *target,
+                             size_t target_size);
 void ts_sister_ui_render(TsFramebuffer *framebuffer,
                          const TsSisterUiModel *model,
                          const TsPalette *palette);

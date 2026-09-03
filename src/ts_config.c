@@ -35,6 +35,7 @@ void ts_config_init(TsConfig *config)
         config->audio_buffer_frames = TS_AUDIO_BUFFER_FRAMES_DEFAULT;
         config->record_input_channel = TS_RECORD_INPUT_CHANNEL_DEFAULT;
         config->midi_input_channel = TS_MIDI_INPUT_CHANNEL_DEFAULT;
+        ts_midi_map_init(&config->midi_map);
         config->record_threshold_db = TS_RECORD_THRESHOLD_DB_DEFAULT;
         config->record_preroll_ms = TS_RECORD_PREROLL_MS_DEFAULT;
         config->record_silence_ms = TS_RECORD_SILENCE_MS_DEFAULT;
@@ -402,6 +403,24 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_x)) { snprintf(error, error_size, "Invalid Sister window X on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_window_y") == 0) {
             if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_y)) { snprintf(error, error_size, "Invalid Sister window Y on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "midi_learn_takeover") == 0) {
+            if (!ts_midi_takeover_parse(value, &loaded.midi_map.takeover)) {
+                snprintf(error, error_size,
+                         "Invalid MIDI takeover mode on config line %d",
+                         line_number);
+                fclose(file); return 0;
+            }
+        } else if (strncmp(key, "MidiMap.", 8u) == 0) {
+            TsMidiSource source;
+            int trigger_on_zero;
+            if (!ts_midi_mapping_source_parse(
+                    value, &source, &trigger_on_zero) ||
+                !ts_midi_map_assign_trigger(
+                    &loaded.midi_map, key + 8u, source, trigger_on_zero)) {
+                snprintf(error, error_size,
+                         "Invalid MIDI mapping on config line %d", line_number);
+                fclose(file); return 0;
+            }
         } else {
             int process = parse_cdp_process(key, value, &loaded);
             int dsp = process == 0 ? parse_dsp_preset(key, value, &loaded) : 0;
@@ -640,6 +659,24 @@ int ts_config_save(const TsConfig *config, const char *path,
                                config->cdp_factory_controls[slot][3],
                                config->cdp_factory_mix[slot],
                                (unsigned long long)config->cdp_factory_seed[slot]) < 0;
+    }
+    if (!write_failed)
+        write_failed = fprintf(file,
+                               "\n[MIDI Learn]\n"
+                               "; Global mappings. Channels are written 1-16.\n"
+                               "; Pickup waits for a fader to cross the current value.\n"
+                               "midi_learn_takeover=%s\n",
+                               ts_midi_takeover_name(config->midi_map.takeover)) < 0;
+    for (size_t index = 0; index < config->midi_map.count && !write_failed;
+         ++index) {
+        char source[40];
+        const TsMidiMapping *mapping = &config->midi_map.mappings[index];
+        if (!ts_midi_mapping_source_format(mapping, source, sizeof(source))) {
+            write_failed = 1;
+            break;
+        }
+        write_failed = fprintf(file, "MidiMap.%s=%s\n", mapping->target,
+                               source) < 0;
     }
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {

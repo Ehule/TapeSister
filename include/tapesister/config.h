@@ -5,6 +5,7 @@
 
 #include "tapesister/audition.h"
 #include "tapesister/dsp_recipe.h"
+#include "tapesister/midi_map.h"
 #include "tapesister/recipe.h"
 #include "tapesister/cdp_recipe.h"
 #include "tapesister/waveform_display.h"
@@ -117,6 +118,7 @@ typedef struct {
     int audio_buffer_frames;
     int record_input_channel;
     int midi_input_channel;
+    TsMidiMap midi_map;
     int record_threshold_db;
     int record_preroll_ms;
     int record_silence_ms;

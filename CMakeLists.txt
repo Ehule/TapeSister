@@ -6,7 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
-             src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c
+             src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_realtime_diagnostics.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
              src/ts_sister_limiter.c

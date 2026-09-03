@@ -66,8 +66,84 @@ int main(void)
     CHECK(midi.action == TS_MIDI_ACTION_NOTE_OFF && midi.note.midi_note == 61);
     CHECK(ts_midi_decode_short_message(0xb3u, 123u, 0u, &midi));
     CHECK(midi.action == TS_MIDI_ACTION_PANIC && midi.channel == 3);
-    CHECK(!ts_midi_decode_short_message(0xb0u, 1u, 64u, &midi));
+    CHECK(ts_midi_decode_short_message(0xb0u, 1u, 64u, &midi));
+    CHECK(midi.action == TS_MIDI_ACTION_CONTROL &&
+          midi.source_kind == TS_MIDI_SOURCE_CC && midi.channel == 0 &&
+          midi.number == 1 && midi.value == 64 && midi.maximum == 127);
+    CHECK(ts_midi_decode_short_message(0xefu, 0x7fu, 0x7fu, &midi));
+    CHECK(midi.action == TS_MIDI_ACTION_CONTROL &&
+          midi.source_kind == TS_MIDI_SOURCE_PITCH_BEND &&
+          midi.channel == 15 && midi.value == 16383 &&
+          midi.maximum == 16383);
     CHECK(!ts_midi_decode_short_message(0xf8u, 0u, 0u, &midi));
+
+    {
+        TsMidiMap map;
+        TsMidiSource source = {TS_MIDI_SOURCE_PITCH_BEND, 7, 0};
+        TsMidiSource parsed;
+        char formatted[40];
+        ts_midi_map_init(&map);
+        CHECK(map.takeover == TS_MIDI_TAKEOVER_PICKUP);
+        CHECK(ts_midi_map_assign(&map, "sister.param.delay_time", source));
+        CHECK(map.count == 1u);
+        CHECK(ts_midi_map_find_source(&map, source) != NULL);
+        CHECK(ts_midi_map_find_target_const(
+                  &map, "sister.param.delay_time") != NULL);
+        CHECK(ts_midi_source_format(source, formatted, sizeof(formatted)));
+        CHECK(strcmp(formatted, "pitchbend,8") == 0);
+        CHECK(ts_midi_source_parse(formatted, &parsed));
+        CHECK(ts_midi_source_equal(source, parsed));
+        CHECK(ts_midi_map_remove_target(&map, "sister.param.delay_time"));
+        CHECK(map.count == 0u);
+    }
+    {
+        TsMidiMap map;
+        TsMidiSource source = {TS_MIDI_SOURCE_CC, 0, 80};
+        TsMidiSource parsed;
+        TsMidiMapping *mapping;
+        char formatted[40];
+        int trigger_on_zero = 0;
+        ts_midi_map_init(&map);
+        CHECK(ts_midi_map_assign_trigger(
+                  &map, "tile.01.launch", source, 0));
+        CHECK(ts_midi_decode_short_message(0xb0u, 80u, 127u, &midi));
+        mapping = ts_midi_map_find_source(
+            &map, (TsMidiSource){midi.source_kind, midi.channel, midi.number});
+        CHECK(mapping != NULL);
+        CHECK(ts_midi_mapping_should_trigger(
+                  mapping, midi.value, midi.maximum));
+        CHECK(ts_midi_tile_target_slot(mapping->target) == 0);
+        CHECK(ts_midi_mapping_source_format(
+                  mapping, formatted, sizeof(formatted)));
+        CHECK(strcmp(formatted, "cc,1,80") == 0);
+        CHECK(ts_midi_map_assign_trigger(
+                  &map, "tile.01.launch", source, 1));
+        mapping = ts_midi_map_find_source(&map, source);
+        CHECK(mapping != NULL &&
+              ts_midi_mapping_should_trigger(mapping, 0, 127) &&
+              !ts_midi_mapping_should_trigger(mapping, 127, 127));
+        CHECK(ts_midi_mapping_source_format(
+                  mapping, formatted, sizeof(formatted)));
+        CHECK(strcmp(formatted, "cc,1,80,zero") == 0);
+        CHECK(ts_midi_mapping_source_parse(
+                  formatted, &parsed, &trigger_on_zero));
+        CHECK(ts_midi_source_equal(parsed, source) && trigger_on_zero == 1);
+        CHECK(ts_midi_tile_target_slot("tile.16.launch") == 15);
+        CHECK(ts_midi_tile_target_slot("tile.17.launch") == -1);
+        CHECK(ts_midi_tile_target_slot("tile.01.launch.extra") == -1);
+        CHECK(ts_midi_target_accepts_source(
+                  "tile.01.launch", TS_MIDI_SOURCE_CC));
+        CHECK(ts_midi_target_accepts_source(
+                  "tile.01.launch", TS_MIDI_SOURCE_NOTE));
+        CHECK(!ts_midi_target_accepts_source(
+                  "tile.01.launch", TS_MIDI_SOURCE_PITCH_BEND));
+        CHECK(ts_midi_target_accepts_source(
+                  "sister.param.035", TS_MIDI_SOURCE_CC));
+        CHECK(ts_midi_target_accepts_source(
+                  "sister.param.035", TS_MIDI_SOURCE_PITCH_BEND));
+        CHECK(!ts_midi_target_accepts_source(
+                  "sister.param.035", TS_MIDI_SOURCE_NOTE));
+    }
     CHECK(fabsf(ts_note_event_gain(&c4_channel_1) - 96.0f / 127.0f) < 0.0001f);
 
     prepare_instrument(&instrument);
@@ -192,6 +268,35 @@ int main(void)
     ts_note_bank_clear(&notes);
 
     ts_performance_init(&performance);
+    {
+        TsMidiMap button_map;
+        TsMidiMapping *mapping;
+        TsMidiSource source;
+        int slot;
+        ts_midi_map_init(&button_map);
+        CHECK(ts_midi_map_assign_trigger(
+                  &button_map, "tile.01.launch",
+                  (TsMidiSource){TS_MIDI_SOURCE_CC, 0, 80}, 0));
+        CHECK(ts_midi_decode_short_message(0xb0u, 80u, 127u, &midi));
+        source = (TsMidiSource){midi.source_kind, midi.channel, midi.number};
+        mapping = ts_midi_map_find_source(&button_map, source);
+        CHECK(mapping != NULL && ts_midi_mapping_should_trigger(
+                  mapping, midi.value, midi.maximum));
+        slot = ts_midi_tile_target_slot(mapping->target);
+        CHECK(slot == 0);
+        CHECK(ts_performance_toggle_tile(
+                  &performance, &instrument, slot, 0, 48000) ==
+              TS_PERFORMANCE_TILE_STARTED);
+        CHECK(ts_performance_tile_mask(&performance) == 0x0001u);
+        CHECK(ts_midi_decode_short_message(0xb0u, 80u, 0u, &midi));
+        CHECK(!ts_midi_mapping_should_trigger(
+                  mapping, midi.value, midi.maximum));
+        CHECK(ts_performance_tile_mask(&performance) == 0x0001u);
+        CHECK(ts_performance_toggle_tile(
+                  &performance, &instrument, slot, 0, 48000) ==
+              TS_PERFORMANCE_TILE_RELEASING);
+        CHECK(ts_performance_tile_mask(&performance) == 0u);
+    }
     CHECK(ts_performance_trigger_group_event(
               &performance, &instrument, 0x0003u, &c4_channel_1,
               0, 48000) == 2);

@@ -15,6 +15,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `4` | Show native DSP; press again to cycle DSP pages |
 | `F1`–`F8` | Select keyboard octave |
 | `Space` | Play selection/from playhead; press again for panic stop |
+| `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
 | `Escape` | Cancel active gesture/dialog; otherwise request exit |
 
 ## QWERTY note keyboard
@@ -25,6 +26,36 @@ Upper row: `Q 2 W 3 E R 5 T 6 Y 7 U`
 
 MIDI note 60/C4 is unity for created FM material. MIDI velocity controls sample voice
 level. MIDI All Notes Off is honored.
+
+## MIDI Learn
+
+1. Set MIDI input to **OMNI** when a controller sends different channels per
+   control (the XVI-M factory pitch-bend layout uses channels 1–16).
+2. Press `Ctrl+Shift+M`; every safe learnable control receives a translucent
+   ice-cyan dither. The armed control is pale ice; mapped controls are electric blue.
+3. Click a highlighted UI control, then move or press the hardware control.
+4. Continue mapping, or press `Ctrl+Shift+M` again to leave Learn mode.
+
+| Learn-mode action | Result |
+| --- | --- |
+| Click an unmapped control | Arm it for the next MIDI message |
+| Click the armed control again | Cancel that pending learn |
+| Click an already mapped control | Remove its mapping and save immediately |
+| `Escape` | Cancel the pending learn |
+| `Escape`, `Escape` within 500 ms | Leave Learn mode |
+
+Mappings accept Note, 7-bit CC, and full 14-bit pitch bend, and are stored globally
+in `tapesister.ini`. Pickup takeover is the default. Tile targets mean positions 1–16
+on the active Sample page. The small LED beside the L/R meter flashes for every accepted
+incoming MIDI message, whether mapped or not.
+
+Tiles and switches learn Note or CC sources; continuous parameters learn CC or pitch
+bend. This prevents pitch-bend fader jitter from claiming a button target. A learned CC
+button may use either zero or a positive value for its press message.
+
+For the Michigan Synth Works XVI-M, leave the 16 factory faders in 14-bit pitch-bend
+mode and use **OMNI**. Configure the buttons as momentary CC messages for tile launch;
+this avoids collisions with the playable note range.
 
 ## Project and editor shortcuts
 

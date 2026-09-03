@@ -133,6 +133,18 @@ int main(int argc, char **argv)
         model.text_cursor_visible = 1;
         snprintf(model.status, sizeof(model.status),
                  "CAPTURE RECORDING - PRESS AGAIN TO STOP");
+    } else if (strcmp(mode, "midi-learn") == 0) {
+        model.routing.enabled = 1;
+        model.routing.rolling = 1;
+        model.midi_learn_active = 1;
+        model.midi_activity = 1;
+        (void)ts_midi_map_assign(
+            &config.midi_map, "sister.power",
+            (TsMidiSource){TS_MIDI_SOURCE_CC, 0, 20});
+        snprintf(model.midi_learn_pending,
+                 sizeof(model.midi_learn_pending), "sister.hold");
+        snprintf(model.status, sizeof(model.status),
+                 "MIDI LEARN HOLD - PRESS THE XVI-M BUTTON");
     }
     model.routing.limiter_enabled = 1;
     model.routing.limiter_ceiling_db = -1.0f;
