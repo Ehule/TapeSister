@@ -133,6 +133,17 @@ int main(int argc, char **argv)
         model.text_cursor_visible = 1;
         snprintf(model.status, sizeof(model.status),
                  "CAPTURE RECORDING - PRESS AGAIN TO STOP");
+    } else if (strcmp(mode, "midi-learn") == 0) {
+        model.routing.enabled = 1;
+        model.routing.rolling = 1;
+        model.fx_page = 1;
+        model.midi_learn_active = 1;
+        model.midi_activity = 1;
+        snprintf(model.midi_learn_pending,
+                 sizeof(model.midi_learn_pending), "sister.param.%03d",
+                 TS_SISTER_UI_PARAM_FX_TRANSITION);
+        snprintf(model.status, sizeof(model.status),
+                 "MIDI LEARN DELAY TIME - MOVE THE XVI-M FADER");
     }
     model.routing.limiter_enabled = 1;
     model.routing.limiter_ceiling_db = -1.0f;

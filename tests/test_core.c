@@ -3122,6 +3122,19 @@ int main(void)
                                      error, sizeof(error)));
     ts_ui_render(&fb, &ui, &imported);
     CHECK(ts_ui_bank_slot_from_point(46, 341) == 0);
+    {
+        char target[TS_MIDI_TARGET_ID_MAX];
+        ui.show_keyboard = 0;
+        ui.show_recipes = 0;
+        ui.show_ingredients = 0;
+        CHECK(ts_ui_midi_target_from_point(
+                  &ui, 46, 341, target, sizeof(target)));
+        CHECK(strcmp(target, "tile.01.launch") == 0);
+        CHECK(ts_ui_midi_target_from_point(
+                  &ui, TS_UI_MASTER_OUTPUT_X + 10,
+                  TS_UI_MASTER_OUTPUT_Y + 5, target, sizeof(target)));
+        CHECK(strcmp(target, "main.master_output") == 0);
+    }
     CHECK(fb.pixels[340 * TS_UI_WIDTH + 20] != 0xff20201fu);
     {
         int selected = imported.selected_slot;

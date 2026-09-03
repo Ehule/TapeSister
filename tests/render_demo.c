@@ -530,6 +530,17 @@ int main(int argc, char **argv)
         snprintf(ui.status, sizeof(ui.status),
                  "GLOBAL LIMITER, MASTER OUT, AND L/R METER REMAIN VISIBLE");
     }
+    if (argc > 2 && strcmp(argv[2], "midi-learn") == 0) {
+        ui.show_keyboard = 0;
+        ui.show_recipes = 0;
+        ui.show_ingredients = 0;
+        ui.midi_learn_active = 1;
+        ui.midi_activity_until_ms = 1u;
+        snprintf(ui.midi_learn_pending, sizeof(ui.midi_learn_pending),
+                 "tile.01.launch");
+        snprintf(ui.status, sizeof(ui.status),
+                 "MIDI LEARN TILE 01 - PRESS THE XVI-M BUTTON");
+    }
     if (argc > 2 && strcmp(argv[2], "save-confirm") == 0) {
         ui.project_overwrite_confirm_open = 1;
         snprintf(ui.project_path, sizeof(ui.project_path),

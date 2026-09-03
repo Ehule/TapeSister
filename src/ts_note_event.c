@@ -57,14 +57,36 @@ int ts_midi_decode_short_message(uint8_t status, uint8_t data1, uint8_t data2,
     data2 &= 0x7fu;
     if (kind == 0x90u && data2 > 0u) {
         event->action = TS_MIDI_ACTION_NOTE_ON;
+        event->source_kind = TS_MIDI_SOURCE_NOTE;
+        event->number = data1;
+        event->value = data2;
+        event->maximum = 127;
         return ts_note_event_midi(&event->note, data1, data2, channel);
     }
     if (kind == 0x80u || (kind == 0x90u && data2 == 0u)) {
         event->action = TS_MIDI_ACTION_NOTE_OFF;
+        event->source_kind = TS_MIDI_SOURCE_NOTE;
+        event->number = data1;
+        event->maximum = 127;
         return ts_note_event_midi(&event->note, data1, 0, channel);
     }
     if (kind == 0xb0u && (data1 == 120u || data1 == 123u)) {
         event->action = TS_MIDI_ACTION_PANIC;
+        return 1;
+    }
+    if (kind == 0xb0u) {
+        event->action = TS_MIDI_ACTION_CONTROL;
+        event->source_kind = TS_MIDI_SOURCE_CC;
+        event->number = data1;
+        event->value = data2;
+        event->maximum = 127;
+        return 1;
+    }
+    if (kind == 0xe0u) {
+        event->action = TS_MIDI_ACTION_CONTROL;
+        event->source_kind = TS_MIDI_SOURCE_PITCH_BEND;
+        event->value = (int)data1 | ((int)data2 << 7);
+        event->maximum = 16383;
         return 1;
     }
     return 0;

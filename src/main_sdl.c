@@ -8661,6 +8661,299 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
 }
 
+static void midi_learn_sync_model(TsUiState *ui, SisterWindow *sister)
+{
+    if (ui == NULL || sister == NULL) return;
+    sister->model.midi_learn_active = ui->midi_learn_active;
+    snprintf(sister->model.midi_learn_pending,
+             sizeof(sister->model.midi_learn_pending), "%s",
+             ui->midi_learn_pending);
+    sister->rendered_model_valid = 0;
+}
+
+static int midi_learn_save(TsUiState *ui)
+{
+    char error[160];
+    if (ui == NULL) return 0;
+    /* Persist mappings without closing and reopening the MIDI input after
+       every learned control.  The full Config save path still applies device
+       changes when the user leaves that dialog. */
+    if (ts_audio_main_config_write(&ui->config, config_file_path(), error,
+                                   sizeof(error))) return 1;
+    snprintf(ui->status, sizeof(ui->status),
+             "MIDI MAP SAVE FAILED: %.132s", error);
+    return 0;
+}
+
+static void midi_learn_set_active(TsUiState *ui, SisterWindow *sister,
+                                  int active)
+{
+    if (ui == NULL || sister == NULL) return;
+    ui->midi_learn_active = active != 0;
+    ui->midi_learn_pending[0] = '\0';
+    ui->midi_learn_escape_ms = 0u;
+    snprintf(ui->status, sizeof(ui->status), "%s",
+             active ?
+             "MIDI LEARN - CLICK A HIGHLIGHTED CONTROL, THEN MOVE HARDWARE" :
+             "MIDI LEARN OFF - MAPPINGS REMAIN ACTIVE");
+    snprintf(sister->model.status, sizeof(sister->model.status), "%s",
+             ui->status);
+    midi_learn_sync_model(ui, sister);
+}
+
+static void midi_learn_click(TsUiState *ui, SisterWindow *sister,
+                             const char *target)
+{
+    if (ui == NULL || sister == NULL) return;
+    if (target == NULL || target[0] == '\0') {
+        snprintf(ui->status, sizeof(ui->status),
+                 "MIDI LEARN - THAT CONTROL IS NOT PERFORMANCE-MAPPABLE");
+    } else if (ts_midi_map_find_target_const(&ui->config.midi_map, target)) {
+        (void)ts_midi_map_remove_target(&ui->config.midi_map, target);
+        ui->midi_learn_pending[0] = '\0';
+        snprintf(ui->status, sizeof(ui->status),
+                 "MIDI UNMAPPED: %.120s", target);
+        (void)midi_learn_save(ui);
+    } else if (strcmp(ui->midi_learn_pending, target) == 0) {
+        ui->midi_learn_pending[0] = '\0';
+        snprintf(ui->status, sizeof(ui->status),
+                 "MIDI LEARN SELECTION CANCELLED");
+    } else {
+        snprintf(ui->midi_learn_pending, sizeof(ui->midi_learn_pending),
+                 "%s", target);
+        snprintf(ui->status, sizeof(ui->status),
+                 "MIDI LEARN %.112s - MOVE OR PRESS HARDWARE", target);
+    }
+    snprintf(sister->model.status, sizeof(sister->model.status), "%s",
+             ui->status);
+    midi_learn_sync_model(ui, sister);
+}
+
+static void midi_learn_escape(TsUiState *ui, SisterWindow *sister,
+                              uint32_t now)
+{
+    int second;
+    if (ui == NULL || sister == NULL) return;
+    second = ui->midi_learn_escape_ms != 0u &&
+             now - ui->midi_learn_escape_ms <= 500u;
+    if (second) {
+        midi_learn_set_active(ui, sister, 0);
+        return;
+    }
+    ui->midi_learn_pending[0] = '\0';
+    ui->midi_learn_escape_ms = now;
+    snprintf(ui->status, sizeof(ui->status),
+             "MIDI LEARN SELECTION CANCELLED - ESC AGAIN TO EXIT");
+    snprintf(sister->model.status, sizeof(sister->model.status), "%s",
+             ui->status);
+    midi_learn_sync_model(ui, sister);
+}
+
+static int midi_source_from_event(const TsMidiEvent *midi,
+                                  TsMidiSource *source)
+{
+    if (midi == NULL || source == NULL ||
+        midi->source_kind == TS_MIDI_SOURCE_NONE) return 0;
+    source->kind = midi->source_kind;
+    source->channel = midi->channel;
+    source->number = midi->number;
+    return 1;
+}
+
+static int midi_target_is_continuous(const char *target)
+{
+    return target != NULL &&
+           (strncmp(target, "sister.param.", 13u) == 0 ||
+            strcmp(target, "main.master_output") == 0 ||
+            strcmp(target, "main.tile_fade") == 0);
+}
+
+static int midi_sister_hit_from_target(const char *target, float normalized,
+                                       TsSisterUiHit *hit)
+{
+    int parameter;
+    int index;
+    char trailing;
+    if (target == NULL || hit == NULL) return 0;
+    memset(hit, 0, sizeof(*hit));
+    hit->normalized = normalized;
+    if (strcmp(target, "sister.param.master_output") == 0) {
+        hit->action = TS_SISTER_UI_ACTION_MASTER_OUTPUT;
+        hit->index = TS_SISTER_UI_PARAM_MASTER_OUTPUT;
+        return 1;
+    }
+    if (sscanf(target, "sister.param.%d%c", &parameter, &trailing) == 1 &&
+        ((parameter >= 0 && parameter < TS_SISTER_UI_PARAM_COUNT) ||
+         parameter == TS_SISTER_UI_PARAM_MASTER_FX_TRANSITION ||
+         parameter == TS_SISTER_UI_PARAM_FALLOUT_MASTER_TRANSITION)) {
+        hit->action = TS_SISTER_UI_ACTION_PARAMETER;
+        hit->index = parameter;
+        return 1;
+    }
+    if (strcmp(target, "sister.power") == 0) hit->action = TS_SISTER_UI_ACTION_POWER;
+    else if (strcmp(target, "sister.roll") == 0) hit->action = TS_SISTER_UI_ACTION_ROLL;
+    else if (strcmp(target, "sister.hold") == 0) hit->action = TS_SISTER_UI_ACTION_HOLD;
+    else if (strcmp(target, "sister.monitor") == 0) hit->action = TS_SISTER_UI_ACTION_MONITOR;
+    else if (strcmp(target, "sister.limiter") == 0)
+        hit->action = TS_SISTER_UI_ACTION_LIMITER_TOGGLE;
+    else if (strcmp(target, "sister.source.tiles") == 0)
+        hit->action = TS_SISTER_UI_ACTION_SOURCE_TILES;
+    else if (strcmp(target, "sister.source.fm") == 0)
+        hit->action = TS_SISTER_UI_ACTION_SOURCE_FM;
+    else if (strcmp(target, "sister.source.external") == 0)
+        hit->action = TS_SISTER_UI_ACTION_SOURCE_EXT;
+    else if (strcmp(target, "sister.source.preview") == 0)
+        hit->action = TS_SISTER_UI_ACTION_SOURCE_PREVIEW;
+    else if (strcmp(target, "sister.capture") == 0)
+        hit->action = TS_SISTER_UI_ACTION_CAPTURE;
+    else if (sscanf(target, "sister.fx.toggle.%d%c", &index, &trailing) == 1 &&
+             index >= 0 && index <= TS_SISTER_UI_FX_GRAIN) {
+        hit->action = TS_SISTER_UI_ACTION_FX_TOGGLE;
+        hit->index = index;
+    } else if (sscanf(target, "sister.fx.slot.%d.toggle%c", &index,
+                      &trailing) == 1 && index >= 1 && index <= 4) {
+        hit->action = TS_SISTER_UI_ACTION_FX_SLOT_TOGGLE;
+        hit->index = index - 1;
+    } else if (sscanf(target, "sister.fallout.toggle.%d%c", &index,
+                      &trailing) == 1 && index >= TS_SISTER_UI_FALLOUT_POWER &&
+                      index <= TS_SISTER_UI_FALLOUT_PITCH) {
+        hit->action = TS_SISTER_UI_ACTION_FALLOUT_TOGGLE;
+        hit->index = index;
+    } else if (strcmp(target, "sister.fallout.rise.retrigger") == 0)
+        hit->action = TS_SISTER_UI_ACTION_FALLOUT_RISE_RETRIGGER;
+    return hit->action != TS_SISTER_UI_ACTION_NONE;
+}
+
+static float midi_target_current_value(const char *target,
+                                       const TsUiState *ui,
+                                       const SisterWindow *sister)
+{
+    int parameter;
+    char trailing;
+    if (target == NULL || ui == NULL || sister == NULL) return 0.0f;
+    if (strcmp(target, "main.master_output") == 0 ||
+        strcmp(target, "sister.param.master_output") == 0)
+        return ui->master_output.gain;
+    if (strcmp(target, "main.tile_fade") == 0)
+        return ts_ui_tile_fade_normalized(ui->config.tile_fade_ms);
+    if (sscanf(target, "sister.param.%d%c", &parameter, &trailing) == 1)
+        return sister_parameter_normalized(&sister->model.parameters, parameter);
+    return 0.0f;
+}
+
+static int midi_pickup_accept(TsMidiMapping *mapping, TsMidiTakeover takeover,
+                              float value, float target)
+{
+    float threshold;
+    int crossed;
+    if (mapping == NULL || takeover == TS_MIDI_TAKEOVER_JUMP ||
+        !mapping->pickup_waiting) return 1;
+    threshold = mapping->source.kind == TS_MIDI_SOURCE_PITCH_BEND ?
+                0.004f : 0.025f;
+    crossed = mapping->has_previous &&
+              ((mapping->previous <= target && value >= target) ||
+               (mapping->previous >= target && value <= target));
+    mapping->previous = value;
+    mapping->has_previous = 1;
+    if (fabsf(value - target) > threshold && !crossed) return 0;
+    mapping->pickup_waiting = 0;
+    return 1;
+}
+
+static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
+                             TsUiState *ui, TsInstrument *instrument,
+                             SisterWindow *sister,
+                             SDL_AudioDeviceID *input_device,
+                             ExternalInputState *external_input,
+                             const char *target, float normalized,
+                             uint32_t sample_rate, uint8_t output_channels)
+{
+    int slot;
+    char trailing;
+    TsSisterUiHit hit;
+    if (sscanf(target, "tile.%d.launch%c", &slot, &trailing) == 1 &&
+        slot >= 1 && slot <= TS_BANK_SLOT_COUNT) {
+        toggle_tile_launcher(device, audio, ui, instrument, slot - 1);
+        return 1;
+    }
+    if (strcmp(target, "main.master_output") == 0) {
+        set_master_output_gain(device, audio, ui, sister, normalized);
+        return 1;
+    }
+    if (strcmp(target, "main.tile_fade") == 0) {
+        ui->config.tile_fade_ms = ts_ui_tile_fade_ms(normalized);
+        snprintf(ui->status, sizeof(ui->status), "TILE FADE %d MS",
+                 ui->config.tile_fade_ms);
+        return 1;
+    }
+    if (!midi_sister_hit_from_target(target, normalized, &hit)) return 0;
+    sister_apply_action(device, audio, ui, instrument, sister, input_device,
+                        external_input, hit, sample_rate, output_channels);
+    return 1;
+}
+
+static int handle_midi_mapping(SDL_AudioDeviceID device, AudioState *audio,
+                               TsUiState *ui, TsInstrument *instrument,
+                               SisterWindow *sister,
+                               SDL_AudioDeviceID *input_device,
+                               ExternalInputState *external_input,
+                               const TsMidiEvent *midi, uint32_t sample_rate,
+                               uint8_t output_channels)
+{
+    TsMidiSource source;
+    TsMidiMapping *mapping;
+    float normalized;
+    if (midi->action == TS_MIDI_ACTION_PANIC) return 0;
+    if (!midi_source_from_event(midi, &source)) return ui->midi_learn_active;
+    if (ui->midi_learn_active) {
+        /* Releases must reach the normal MIDI path so notes held before
+           entering Learn mode can never be stranded. */
+        if (midi->action == TS_MIDI_ACTION_NOTE_OFF) return 0;
+        if (ui->midi_learn_pending[0] != '\0' &&
+            (midi->action == TS_MIDI_ACTION_NOTE_ON ||
+             midi->action == TS_MIDI_ACTION_CONTROL)) {
+            char formatted[40];
+            if (ts_midi_map_assign(&ui->config.midi_map,
+                                   ui->midi_learn_pending, source)) {
+                (void)ts_midi_source_format(source, formatted,
+                                            sizeof(formatted));
+                snprintf(ui->status, sizeof(ui->status),
+                         "MIDI MAPPED %.88s <- %.36s",
+                         ui->midi_learn_pending, formatted);
+                ui->midi_learn_pending[0] = '\0';
+                (void)midi_learn_save(ui);
+                snprintf(sister->model.status,
+                         sizeof(sister->model.status), "%s", ui->status);
+                midi_learn_sync_model(ui, sister);
+            }
+        }
+        return 1;
+    }
+    mapping = ts_midi_map_find_source(&ui->config.midi_map, source);
+    if (mapping == NULL) return 0;
+    if (midi->action == TS_MIDI_ACTION_NOTE_OFF) return 1;
+    if (midi->action != TS_MIDI_ACTION_NOTE_ON &&
+        midi->action != TS_MIDI_ACTION_CONTROL) return 1;
+    normalized = midi->maximum > 0 ?
+                 (float)midi->value / (float)midi->maximum : 0.0f;
+    if (!midi_target_is_continuous(mapping->target)) {
+        if (normalized <= 0.0f) return 1;
+    } else if (!midi_pickup_accept(
+                   mapping, ui->config.midi_map.takeover, normalized,
+                   midi_target_current_value(mapping->target, ui, sister))) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "MIDI PICKUP %.105s - MOVE THROUGH CURRENT VALUE",
+                 mapping->target);
+        return 1;
+    }
+    /* A mapped source is always consumed, including a stale target left by a
+       newer build, so it cannot unexpectedly fall through and play a note. */
+    (void)midi_apply_target(device, audio, ui, instrument, sister,
+                            input_device, external_input, mapping->target,
+                            normalized, sample_rate, output_channels);
+    return 1;
+}
+
 static float clamp_unit(float value)
 {
     if (value < 0.0f) return 0.0f;
@@ -10408,6 +10701,17 @@ int main(int argc, char **argv)
                 int modal_key_owner = ui_blocking_dialog_open_except_fm(&ui) ||
                     ui.fm_bank_choice_open || ui.fm_full_choice_open ||
                     sister_window.model.preset_manage_open;
+                if (global_key == SDLK_m &&
+                    (global_mod & (KMOD_CTRL | KMOD_SHIFT)) ==
+                    (KMOD_CTRL | KMOD_SHIFT) && !modal_key_owner) {
+                    midi_learn_set_active(&ui, &sister_window,
+                                          !ui.midi_learn_active);
+                    continue;
+                }
+                if (global_key == SDLK_ESCAPE && ui.midi_learn_active) {
+                    midi_learn_escape(&ui, &sister_window, SDL_GetTicks());
+                    continue;
+                }
                 if (global_key == SDLK_TAB && !modal_key_owner) {
                     if (sister_window.window != NULL &&
                         event_id == sister_window.window_id) {
@@ -10438,6 +10742,33 @@ int main(int argc, char **argv)
                     continue;
                 }
             }
+            if (ui.midi_learn_active && event.type == SDL_MOUSEBUTTONDOWN &&
+                event.button.button == SDL_BUTTON_LEFT) {
+                char target[TS_MIDI_TARGET_ID_MAX];
+                int x, y;
+                target[0] = '\0';
+                if (sister_window.window != NULL &&
+                    event_id == sister_window.window_id &&
+                    sister_event_mouse(event.button.x, event.button.y, &x, &y)) {
+                    TsSisterUiHit hit = ts_sister_ui_hit_test_model(
+                        &sister_window.model, x, y);
+                    (void)ts_sister_ui_midi_target(hit, target,
+                                                  sizeof(target));
+                } else if (event_id == SDL_GetWindowID(window)) {
+                    logical_mouse(window, event.button.x, event.button.y, &x, &y);
+                    (void)ts_ui_midi_target_from_point(&ui, x, y, target,
+                                                      sizeof(target));
+                }
+                midi_learn_click(&ui, &sister_window, target);
+                continue;
+            }
+            if (ui.midi_learn_active &&
+                (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ||
+                 event.type == SDL_MOUSEBUTTONDOWN ||
+                 event.type == SDL_MOUSEBUTTONUP ||
+                 event.type == SDL_MOUSEMOTION ||
+                 event.type == SDL_MOUSEWHEEL))
+                continue;
             if (sister_window.window != NULL &&
                 event_id == sister_window.window_id) {
                 if (event.type == SDL_WINDOWEVENT &&
@@ -13824,9 +14155,21 @@ int main(int argc, char **argv)
 
         if (ts_midi_input != NULL) {
             TsMidiEvent midi;
-            while (ts_midi_input_poll(ts_midi_input, &midi))
-                handle_midi_event(device, &audio, &ui, &instrument,
-                                  &fm_preview, &midi, obtained.freq);
+            while (ts_midi_input_poll(ts_midi_input, &midi)) {
+                ui.midi_activity_until_ms = SDL_GetTicks() + 140u;
+                sister_window.model.midi_activity = 1;
+                if (!handle_midi_mapping(
+                        device, &audio, &ui, &instrument, &sister_window,
+                        &input_device, &external_input, &midi,
+                        (uint32_t)obtained.freq, obtained.channels))
+                    handle_midi_event(device, &audio, &ui, &instrument,
+                                      &fm_preview, &midi, obtained.freq);
+            }
+        }
+        if (ui.midi_activity_until_ms != 0u &&
+            SDL_TICKS_PASSED(SDL_GetTicks(), ui.midi_activity_until_ms)) {
+            ui.midi_activity_until_ms = 0u;
+            sister_window.model.midi_activity = 0;
         }
 
         /* Some window managers can drop the button-up event after a captured,

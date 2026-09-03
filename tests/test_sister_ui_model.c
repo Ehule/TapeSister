@@ -114,6 +114,16 @@ int main(void)
     CHECK(model.routing.enabled && model.routing.source_mask == 0x8001u);
     hit = ts_sister_ui_hit_test(12, 10);
     CHECK(hit.action == TS_SISTER_UI_ACTION_POWER);
+    {
+        char target[TS_MIDI_TARGET_ID_MAX];
+        CHECK(ts_sister_ui_midi_target(hit, target, sizeof(target)));
+        CHECK(strcmp(target, "sister.power") == 0);
+        hit = ts_sister_ui_hit_test(100, 206);
+        CHECK(ts_sister_ui_midi_target(hit, target, sizeof(target)));
+        CHECK(strcmp(target, "sister.param.000") == 0);
+        hit = ts_sister_ui_hit_test(220, 374);
+        CHECK(!ts_sister_ui_midi_target(hit, target, sizeof(target)));
+    }
     CHECK(ts_sister_ui_hit_test(500, 10).action ==
           TS_SISTER_UI_ACTION_LIMITER_TOGGLE);
     hit = ts_sister_ui_hit_test(552, 10);

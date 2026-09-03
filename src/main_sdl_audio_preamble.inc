@@ -25,6 +25,8 @@ static void ts_audio_pause_device(SDL_AudioDeviceID device, int pause_on);
 static void ts_audio_quit(void);
 static int ts_audio_main_config_load(TsConfig *config, const char *path,
                                      char *error, size_t error_size);
+static int ts_audio_main_config_write(const TsConfig *config, const char *path,
+                                      char *error, size_t error_size);
 static int ts_audio_main_config_save(const TsConfig *config, const char *path,
                                      char *error, size_t error_size);
 static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,

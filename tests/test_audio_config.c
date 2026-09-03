@@ -139,6 +139,16 @@ static int test_roundtrip(void)
     saved.sister_window_y = 456;
     saved.voice_attack_ms = 7;
     saved.tile_fade_ms = 12345;
+    saved.midi_map.takeover = TS_MIDI_TAKEOVER_JUMP;
+    if (!expect(ts_midi_map_assign(
+                    &saved.midi_map, "tile.01.launch",
+                    (TsMidiSource){TS_MIDI_SOURCE_CC, 0, 32}),
+                "tile MIDI mapping should be accepted") ||
+        !expect(ts_midi_map_assign(
+                    &saved.midi_map, "sister.param.035",
+                    (TsMidiSource){TS_MIDI_SOURCE_PITCH_BEND, 15, 0}),
+                "14-bit Sister mapping should be accepted"))
+        return 0;
 
     ok = ts_audio_config_save(&saved, path, error, sizeof(error)) &&
          ts_audio_config_load(&loaded, path, error, sizeof(error));
@@ -208,7 +218,15 @@ static int test_roundtrip(void)
          expect(loaded.voice_attack_ms == 7,
                 "voice de-click attack should roundtrip") &&
          expect(loaded.tile_fade_ms == 12345,
-                "mouse-launched tile fade should roundtrip");
+                "mouse-launched tile fade should roundtrip") &&
+         expect(loaded.midi_map.takeover == TS_MIDI_TAKEOVER_JUMP,
+                "MIDI takeover mode should roundtrip") &&
+         expect(loaded.midi_map.count == 2u &&
+                ts_midi_map_find_target_const(
+                    &loaded.midi_map, "tile.01.launch") != NULL &&
+                ts_midi_map_find_target_const(
+                    &loaded.midi_map, "sister.param.035") != NULL,
+                "global MIDI mappings should roundtrip");
     remove(path);
     return ok;
 }

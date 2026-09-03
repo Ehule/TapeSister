@@ -591,6 +591,54 @@ static uint32_t palette_blend(uint32_t background, uint32_t foreground,
     return 0xff000000u | (red << 16) | (green << 8) | blue;
 }
 
+static void midi_learn_tint(TsFramebuffer *fb, int x, int y, int w, int h,
+                            int strength, int solid_border)
+{
+    if (fb == NULL) return;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > TS_UI_WIDTH) w = TS_UI_WIDTH - x;
+    if (y + h > TS_UI_HEIGHT) h = TS_UI_HEIGHT - y;
+    if (w <= 0 || h <= 0) return;
+    for (int row = 0; row < h; ++row)
+        for (int column = 0; column < w; ++column) {
+            int border = row < 2 || row >= h - 2 || column < 2 ||
+                         column >= w - 2;
+            if (!border && ((row + column) & 1) != 0) continue;
+            fb->pixels[(y + row) * TS_UI_WIDTH + x + column] =
+                palette_blend(
+                    fb->pixels[(y + row) * TS_UI_WIDTH + x + column],
+                    PAL_WAVE_SELECTION,
+                    border && solid_border ? strength + 25 : strength);
+        }
+}
+
+static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
+{
+    char target[TS_MIDI_TARGET_ID_MAX];
+    if (fb == NULL || ui == NULL || !ui->midi_learn_active) return;
+    midi_learn_tint(fb, TS_UI_MASTER_OUTPUT_X, TS_UI_MASTER_OUTPUT_Y,
+                    TS_UI_MASTER_OUTPUT_W, 22, 30,
+                    strcmp(ui->midi_learn_pending, "main.master_output") == 0);
+    midi_learn_tint(fb, 239, 42, 64, 22, 30,
+                    strcmp(ui->midi_learn_pending, "main.tile_fade") == 0);
+    if (!ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients) {
+        for (int slot = 0; slot < 16; ++slot) {
+            int column = slot % 8;
+            int row = slot / 8;
+            snprintf(target, sizeof(target), "tile.%02d.launch", slot + 1);
+            midi_learn_tint(fb, 10 + column * 77, 330 + row * 25, 72, 24,
+                            30, strcmp(ui->midi_learn_pending, target) == 0);
+        }
+    }
+    rect(fb, 0, TS_UI_HEIGHT - 16, TS_UI_WIDTH, 16, RGB(12, 12, 12));
+    text(fb, 10, TS_UI_HEIGHT - 12,
+         ui->midi_learn_pending[0] != '\0' ?
+         "MIDI LEARN: MOVE OR PRESS A CONTROL  ESC CANCELS" :
+         "MIDI LEARN: CLICK A HIGHLIGHTED CONTROL  ESC ESC EXITS",
+         PAL_WAVE_SELECTION, 1);
+}
+
 static void bevel_frame(TsFramebuffer *fb, int x, int y, int w, int h,
                         uint32_t fill, uint32_t light, uint32_t dark)
 {
@@ -2474,6 +2522,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                         TS_UI_MASTER_OUTPUT_X, TS_UI_MASTER_OUTPUT_Y);
     master_output_meter(fb, &ui->master_output,
                         TS_UI_MASTER_METER_X, TS_UI_MASTER_METER_Y);
+    rect(fb, 576, 12, 3, 9,
+         ui->midi_activity_until_ms != 0u ? PAL_TUNING : RGB(22, 22, 22));
     button(fb, 214, 4, 60, "CONFIG", ui->config_open);
     button(fb, 278, 4, 66, "FT2 LINK", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
     button(fb, 348, 4, 50, "SAVE", 0);
@@ -3454,6 +3504,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         text(fb, 174, 207, "PLEASE WAIT - FILE OPERATION IN PROGRESS",
              RGB(190, 185, 190), 1);
     }
+    main_midi_learn_overlay(fb, ui);
 }
 
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path)
@@ -3519,6 +3570,29 @@ int ts_ui_bank_slot_from_point(int x, int y)
     if (column < 0 || column >= 8 || row < 0 || row >= 2) return -1;
     if ((x - 10) % 77 >= 72 || (y - 330) % 25 >= 24) return -1;
     return row * 8 + column;
+}
+
+int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
+                                 char *target, size_t target_size)
+{
+    int slot;
+    TsUiSlider slider;
+    int result;
+    if (ui == NULL || target == NULL || target_size == 0u) return 0;
+    target[0] = '\0';
+    slot = !ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients ?
+           ts_ui_bank_slot_from_point(x, y) : -1;
+    if (slot >= 0) {
+        result = snprintf(target, target_size, "tile.%02d.launch", slot + 1);
+        return result > 0 && (size_t)result < target_size;
+    }
+    slider = ts_ui_slider_from_point(ui, x, y);
+    if (slider == TS_UI_SLIDER_MASTER_OUTPUT)
+        result = snprintf(target, target_size, "main.master_output");
+    else if (slider == TS_UI_SLIDER_TILE_FADE)
+        result = snprintf(target, target_size, "main.tile_fade");
+    else return 0;
+    return result > 0 && (size_t)result < target_size;
 }
 
 int ts_ui_recipe_slot_from_point(int x, int y)
@@ -4422,6 +4496,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 494, 8, 30, "LIM", model->routing.limiter_enabled);
     master_output_fader(fb, model->routing.master_output_gain, 528, 8);
     master_output_meter(fb, &master_output, 580, 8);
+    rect(fb, 576, 12, 3, 9,
+         model->midi_activity ? PAL_TUNING : RGB(22, 22, 22));
 
     if (model->fx_page == 2) {
         const TsSisterFalloutControls *f = &model->parameters.fx.fallout;
@@ -4972,5 +5048,27 @@ sister_footer:
         button(fb, 332, 230, 128, "DELETE", model->preset_confirmation == 2);
         button(fb, 180, 260, 128, "CONFIRM", model->preset_editing || model->preset_confirmation);
         button(fb, 332, 260, 128, "CANCEL", 0);
+    }
+    if (model->midi_learn_active && !model->fallout_lfo_open &&
+        !model->preset_manage_open) {
+        char target[TS_MIDI_TARGET_ID_MAX];
+        for (int y = 0; y < TS_SISTER_UI_HEIGHT; y += 2)
+            for (int x = 0; x < TS_SISTER_UI_WIDTH; x += 2) {
+                TsSisterUiHit hit = ts_sister_ui_hit_test_model(model, x, y);
+                if (!ts_sister_ui_midi_target(hit, target, sizeof(target)))
+                    continue;
+                {
+                    int selected = strcmp(model->midi_learn_pending, target) == 0;
+                    uint32_t *pixel = &fb->pixels[y * TS_UI_WIDTH + x];
+                    *pixel = palette_blend(*pixel, PAL_WAVE_SELECTION,
+                                           selected ? 70 : 32);
+                }
+            }
+        rect(fb, 0, 351, TS_SISTER_UI_WIDTH, 16, RGB(12, 12, 12));
+        text(fb, 10, 355,
+             model->midi_learn_pending[0] != '\0' ?
+             "MIDI LEARN: MOVE OR PRESS A CONTROL  ESC CANCELS" :
+             "MIDI LEARN: CLICK A HIGHLIGHTED CONTROL  ESC ESC EXITS",
+             PAL_WAVE_SELECTION, 1);
     }
 }

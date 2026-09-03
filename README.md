@@ -188,11 +188,21 @@ remains outside projects by design.
 
 ![Project overwrite confirmation](docs/images/manual/project-save.png)
 
-## MIDI and TapeHead status
+## MIDI Learn and TapeHead status
 
-Current MIDI support includes Note On/Off, velocity, channels 1–16 or Omni, All Notes
-Off, a 64-voice sample pool, and the shared QWERTY/FM performance path. MIDI Learn and
-MIDI CC mapping are planned but not currently implemented.
+Current MIDI support includes Note On/Off, 7-bit CC, channel-specific 14-bit pitch
+bend, velocity, channels 1–16 or Omni, All Notes Off, a 64-voice sample pool, and the
+shared QWERTY/FM performance path. `Ctrl+Shift+M` opens Ableton-style MIDI Learn across
+both windows; safe controls are highlighted, mappings use Pickup takeover by default,
+and assignments are stored globally in `tapesister.ini`.
+
+![MIDI Learn across the active tile positions](docs/images/midi-learn-main.png)
+
+The sixteen tile targets always address positions 1–16 on the active Sample page.
+Sister Machine exposes its live tape, mixer, Fallout, pedalboard, transition, timer,
+LFO, and Rise controls while excluding destructive editing and file operations. See
+the [MIDI Learn chapter](docs/USER_MANUAL.md#midi-learn-and-performance-controllers)
+for controller setup and unmapping behavior.
 
 FT2 LINK provides atomic folder-based exchange with TapeHead. The direct live audio link
 is planned separately.

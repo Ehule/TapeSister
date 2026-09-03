@@ -66,8 +66,36 @@ int main(void)
     CHECK(midi.action == TS_MIDI_ACTION_NOTE_OFF && midi.note.midi_note == 61);
     CHECK(ts_midi_decode_short_message(0xb3u, 123u, 0u, &midi));
     CHECK(midi.action == TS_MIDI_ACTION_PANIC && midi.channel == 3);
-    CHECK(!ts_midi_decode_short_message(0xb0u, 1u, 64u, &midi));
+    CHECK(ts_midi_decode_short_message(0xb0u, 1u, 64u, &midi));
+    CHECK(midi.action == TS_MIDI_ACTION_CONTROL &&
+          midi.source_kind == TS_MIDI_SOURCE_CC && midi.channel == 0 &&
+          midi.number == 1 && midi.value == 64 && midi.maximum == 127);
+    CHECK(ts_midi_decode_short_message(0xefu, 0x7fu, 0x7fu, &midi));
+    CHECK(midi.action == TS_MIDI_ACTION_CONTROL &&
+          midi.source_kind == TS_MIDI_SOURCE_PITCH_BEND &&
+          midi.channel == 15 && midi.value == 16383 &&
+          midi.maximum == 16383);
     CHECK(!ts_midi_decode_short_message(0xf8u, 0u, 0u, &midi));
+
+    {
+        TsMidiMap map;
+        TsMidiSource source = {TS_MIDI_SOURCE_PITCH_BEND, 7, 0};
+        TsMidiSource parsed;
+        char formatted[40];
+        ts_midi_map_init(&map);
+        CHECK(map.takeover == TS_MIDI_TAKEOVER_PICKUP);
+        CHECK(ts_midi_map_assign(&map, "sister.param.delay_time", source));
+        CHECK(map.count == 1u);
+        CHECK(ts_midi_map_find_source(&map, source) != NULL);
+        CHECK(ts_midi_map_find_target_const(
+                  &map, "sister.param.delay_time") != NULL);
+        CHECK(ts_midi_source_format(source, formatted, sizeof(formatted)));
+        CHECK(strcmp(formatted, "pitchbend,8") == 0);
+        CHECK(ts_midi_source_parse(formatted, &parsed));
+        CHECK(ts_midi_source_equal(source, parsed));
+        CHECK(ts_midi_map_remove_target(&map, "sister.param.delay_time"));
+        CHECK(map.count == 0u);
+    }
     CHECK(fabsf(ts_note_event_gain(&c4_channel_1) - 96.0f / 127.0f) < 0.0001f);
 
     prepare_instrument(&instrument);

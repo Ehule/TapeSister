@@ -7,8 +7,8 @@ Fallout, and a four-slot effects pedalboard. It is designed to make playable aud
 not to hide sound behind a project format: saved projects include ordinary WAV copies
 of every occupied tile.
 
-This manual describes the current instrument. MIDI notes are supported; MIDI Learn
-and MIDI CC mapping are planned but are not part of the present build. The direct
+This manual describes the current instrument. MIDI notes and global MIDI Learn are
+supported. The direct
 TapeHead live link is also planned. The existing FT2 Link folder exchange is described
 in [TapeSister and TapeHead exchange](#tapesister-and-tapehead-exchange).
 
@@ -942,10 +942,83 @@ Some offline operations remain intentionally mono until they can preserve linked
 behavior. Use WARP, SMEAR, TEAR, performance, Sister, and supported channel-aware tools,
 or make a deliberate mono version rather than expecting a silent automatic fold-down.
 
+## MIDI Learn and performance controllers
+
+TapeSister's MIDI Learn works across the main and Sister Machine windows. Press
+`Ctrl+Shift+M` from either window to enter Learn mode. Safe performance controls are
+covered with a translucent version of the waveform-selection color; clicks now manage
+mappings and do not change audio or operate the underlying control.
+
+![MIDI Learn over the main tile positions](images/midi-learn-main.png)
+
+The mapping sequence is:
+
+1. Open **CONFIG**, select the MIDI input, and choose **OMNI** or one channel.
+2. Press `Ctrl+Shift+M`.
+3. Click a highlighted tile, fader, switch, or performance action.
+4. Move the desired fader or press the desired hardware button.
+5. Repeat steps 3–4 for more controls. Learn remains open after each assignment.
+6. Press `Ctrl+Shift+M` again, or press Escape twice within half a second, to leave.
+
+One Escape cancels the currently armed control. Clicking that armed control again also
+cancels it. Clicking an already mapped control removes its mapping immediately. This is
+the fastest way to replace a mapping: remove it, click it again, then move the new
+hardware control.
+
+![MIDI Learn over Sister Machine's pedalboard](images/midi-learn-sister.png)
+
+### MIDI messages and takeover
+
+Learn accepts:
+
+- Note On/Off pairs, normally used for momentary performance buttons;
+- 7-bit Control Change values;
+- full 14-bit pitch bend values on each MIDI channel.
+
+Continuous controls use **Pickup** takeover by default. After loading TapeSister or
+creating a mapping, a hardware fader must pass through the current software value before
+it takes control. This prevents abrupt jumps during a set. Advanced users can change
+`midi_learn_takeover=pickup` to `jump` in `tapesister.ini`.
+
+Mapped Note messages are consumed by the mapping layer, so a tile-launch button does not
+also play the note keyboard. Unmapped notes continue through the ordinary sample/FM
+performance path. A tiny indicator beside the output L/R meter lights for roughly
+140 ms for every accepted incoming message, including unmapped messages; it is a quick
+check that TapeSister can see the controller.
+
+### What can be mapped
+
+- the 16 tile-launch positions on the active Sample page;
+- main Master Out and Tile Fade;
+- all continuous Sister tape, head, mixer, FX-pedalboard, Fallout, transition, timer,
+  LFO, and Rise parameters visible on the current Sister page;
+- safe live switches including Power, Roll, Hold, Monitor, Limiter, source routing,
+  FX/slot enables, Fallout enables, Rise Retrigger, and Capture.
+
+File operations, Clear, destructive waveform editing, preset management, effect type,
+effect order, and placement are deliberately excluded. Mappings remain active when a
+window or page is hidden. Tile mappings address slot positions, not particular sample
+contents, so controller button 1 always addresses tile 1 on whichever Sample page is
+active.
+
+### XVI-M setup
+
+The Michigan Synth Works XVI-M factory layout sends its sixteen 14-bit pitch-bend
+faders on MIDI channels 1–16. Select **OMNI** in TapeSister so all sixteen arrive; no
+conversion to 7-bit CC is required. Configure its sixteen buttons as distinct momentary
+CC messages and map them to tiles 1–16. CC buttons avoid collisions with TapeSister's
+playable note range and do not require MIDI output feedback.
+
+Mappings are global and are saved immediately in the `[MIDI Learn]` section of
+`tapesister.ini`; they are intentionally not embedded in `.tsr` projects. This first
+implementation receives MIDI only and does not drive controller LEDs or motorized
+faders.
+
 ## Current boundaries
 
-- MIDI note input, velocity, channels, All Notes Off, and sample polyphony are supported.
-- MIDI Learn and MIDI CC control mapping are not yet implemented.
+- MIDI note input, velocity, channels, All Notes Off, sample polyphony, CC mapping,
+  14-bit pitch bend, and global MIDI Learn are supported.
+- MIDI output feedback to controller LEDs and motorized controls is not implemented.
 - FT2 Link exchange is supported; direct TapeHead-to-TapeSister live audio is not yet
   implemented.
 - Portable Windows/Linux build staging exists; final end-user packaging remains a

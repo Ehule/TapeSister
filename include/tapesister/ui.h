@@ -459,6 +459,10 @@ typedef struct {
     TsAuditionSource playhead_source;
     TsBrowser browser;
     TsConfig config;
+    int midi_learn_active;
+    char midi_learn_pending[TS_MIDI_TARGET_ID_MAX];
+    uint32_t midi_activity_until_ms;
+    uint32_t midi_learn_escape_ms;
     TsConfig config_before_edit;
     TsPalette palette;
     TsPalette palette_before_edit;
@@ -623,6 +627,8 @@ TsConfigField ts_ui_config_cycle_field(TsConfigField field, int amount);
 void ts_ui_begin_palette_edit(TsUiState *ui);
 void ts_ui_finish_palette_edit(TsUiState *ui, int cancel);
 int ts_ui_bank_slot_from_point(int x, int y);
+int ts_ui_midi_target_from_point(const TsUiState *ui, int x, int y,
+                                 char *target, size_t target_size);
 int ts_ui_recipe_slot_from_point(int x, int y);
 int ts_ui_cdp_slot_from_point(int x, int y);
 int ts_ui_cdp_page_from_point(int x, int y);

@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "tapesister/midi_map.h"
+
 typedef enum {
     TS_NOTE_ORIGIN_QWERTY = 0,
     TS_NOTE_ORIGIN_MIDI
@@ -21,13 +23,18 @@ typedef enum {
     TS_MIDI_ACTION_NONE = 0,
     TS_MIDI_ACTION_NOTE_ON,
     TS_MIDI_ACTION_NOTE_OFF,
-    TS_MIDI_ACTION_PANIC
+    TS_MIDI_ACTION_PANIC,
+    TS_MIDI_ACTION_CONTROL
 } TsMidiAction;
 
 typedef struct {
     TsMidiAction action;
     TsNoteEvent note;
     int channel;
+    TsMidiSourceKind source_kind;
+    int number;
+    int value;
+    int maximum;
 } TsMidiEvent;
 
 int ts_note_event_qwerty(TsNoteEvent *event, int key, int keyboard_base_note);
