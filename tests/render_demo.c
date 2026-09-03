@@ -301,6 +301,30 @@ int main(int argc, char **argv)
         ui.playhead_frames = instrument.bank[2].sample.frames;
         snprintf(ui.status, sizeof(ui.status),
                  "TILES 02 + 04 LAYERED - FADE ALL RELEASES THEM TOGETHER");
+    } else if (argc > 2 && strcmp(argv[2], "capture-tile") == 0) {
+        if (!ts_instrument_bank_capture(&instrument, 1,
+                                        TS_BANK_CAPTURE_CURRENT,
+                                        error, sizeof(error))) {
+            fprintf(stderr, "%s\n", error);
+            ts_instrument_free(&instrument);
+            return 1;
+        }
+        ui.show_keyboard = 0;
+        ui.capture_state = TS_CAPTURE_RECORDING;
+        ui.capture_overdub = 0;
+        ui.capture_channels = 2;
+        ui.capture_destination_slot = 2;
+        ui.capture_source_slot = 1;
+        ui.capture_recorded_frames = 6u * 44100u;
+        ui.capture_capacity_frames = 12u * 44100u;
+        ui.text_cursor_visible = 1;
+        ui.tile_launcher_mask = (uint16_t)(1u << 1);
+        ui.playback_active = 1;
+        ui.playhead_bank_slot = 1;
+        ui.playhead_frame = instrument.bank[1].sample.frames / 2u;
+        ui.playhead_frames = instrument.bank[1].sample.frames;
+        snprintf(ui.status, sizeof(ui.status),
+                 "CAPTURING STEREO PERFORMANCE TO TILE 03 - PRESS STOP TO KEEP");
     } else if (argc > 2 && strcmp(argv[2], "family") == 0) {
         int child = -1;
         int cousin = -1;

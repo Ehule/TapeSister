@@ -1,5 +1,10 @@
 # Sister Machine PR5 performance window
 
+> Historical note: this document follows the PR5-PR10 interface as it was introduced.
+> The current FX page is a four-slot pedalboard rather than the fixed three-panel layout
+> described below. See the [User Manual](USER_MANUAL.md#sister-machine) for the current
+> interface and workflows.
+
 PR8 retains the 640x400 logical size while shortening the waveform viewport enough to
 add one compact `SOAK / BLEED / H1 / H2 / H3 / MIX` row above status and Capture. The
 two continuous fields use the existing guarded wheel and drag language. The four target
