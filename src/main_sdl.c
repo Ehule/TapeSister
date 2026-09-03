@@ -8873,7 +8873,8 @@ static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
     TsSisterUiHit hit;
     if (sscanf(target, "tile.%d.launch%c", &slot, &trailing) == 1 &&
         slot >= 1 && slot <= TS_BANK_SLOT_COUNT) {
-        toggle_tile_launcher(device, audio, ui, instrument, slot - 1);
+        toggle_tile_launcher(device, audio, ui, instrument, slot - 1,
+                             (int)sample_rate);
         return 1;
     }
     if (strcmp(target, "main.master_output") == 0) {
