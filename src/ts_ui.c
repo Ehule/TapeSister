@@ -171,6 +171,16 @@ static const TsPalette *active_palette(void)
 #define PAL_WAVE_RIGHT (active_palette()->colors[TS_PALETTE_STEREO_WAVE_RIGHT])
 #define PAL_WAVE_SUM (active_palette()->colors[TS_PALETTE_STEREO_WAVE_SUM])
 
+#ifndef TS_MIDI_LEARN_AVAILABLE_COLOR
+#define TS_MIDI_LEARN_AVAILABLE_COLOR 0xff35ffffu
+#endif
+#ifndef TS_MIDI_LEARN_MAPPED_COLOR
+#define TS_MIDI_LEARN_MAPPED_COLOR 0xff258cffu
+#endif
+#ifndef TS_MIDI_LEARN_SELECTED_COLOR
+#define TS_MIDI_LEARN_SELECTED_COLOR 0xffd8ffffu
+#endif
+
 int ts_ui_logo_contains(int x, int y)
 {
     return x >= 0 && x < 160 && y >= 0 && y < 32;
@@ -591,9 +601,33 @@ static uint32_t palette_blend(uint32_t background, uint32_t foreground,
     return 0xff000000u | (red << 16) | (green << 8) | blue;
 }
 
-static void midi_learn_tint(TsFramebuffer *fb, int x, int y, int w, int h,
-                            int strength, int solid_border)
+enum {
+    MIDI_LEARN_AVAILABLE = 0,
+    MIDI_LEARN_MAPPED,
+    MIDI_LEARN_SELECTED
+};
+
+static uint32_t midi_learn_color(int state)
 {
+    if (state == MIDI_LEARN_SELECTED) return TS_MIDI_LEARN_SELECTED_COLOR;
+    if (state == MIDI_LEARN_MAPPED) return TS_MIDI_LEARN_MAPPED_COLOR;
+    return TS_MIDI_LEARN_AVAILABLE_COLOR;
+}
+
+static int midi_learn_target_state(const TsMidiMap *map, const char *pending,
+                                   const char *target)
+{
+    if (pending != NULL && strcmp(pending, target) == 0)
+        return MIDI_LEARN_SELECTED;
+    if (ts_midi_map_find_target_const(map, target) != NULL)
+        return MIDI_LEARN_MAPPED;
+    return MIDI_LEARN_AVAILABLE;
+}
+
+static void midi_learn_tint(TsFramebuffer *fb, int x, int y, int w, int h,
+                            int state)
+{
+    uint32_t color = midi_learn_color(state);
     if (fb == NULL) return;
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }
@@ -605,30 +639,40 @@ static void midi_learn_tint(TsFramebuffer *fb, int x, int y, int w, int h,
             int border = row < 2 || row >= h - 2 || column < 2 ||
                          column >= w - 2;
             if (!border && ((row + column) & 1) != 0) continue;
+            if (border && state == MIDI_LEARN_AVAILABLE &&
+                ((row + column) & 1) != 0) continue;
             fb->pixels[(y + row) * TS_UI_WIDTH + x + column] =
                 palette_blend(
                     fb->pixels[(y + row) * TS_UI_WIDTH + x + column],
-                    PAL_WAVE_SELECTION,
-                    border && solid_border ? strength + 25 : strength);
+                    color,
+                    border && state != MIDI_LEARN_AVAILABLE ? 100 :
+                    state == MIDI_LEARN_SELECTED ? 82 : 72);
         }
 }
 
 static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
 {
     char target[TS_MIDI_TARGET_ID_MAX];
+    int state;
     if (fb == NULL || ui == NULL || !ui->midi_learn_active) return;
+    state = midi_learn_target_state(&ui->config.midi_map,
+                                    ui->midi_learn_pending,
+                                    "main.master_output");
     midi_learn_tint(fb, TS_UI_MASTER_OUTPUT_X, TS_UI_MASTER_OUTPUT_Y,
-                    TS_UI_MASTER_OUTPUT_W, 22, 30,
-                    strcmp(ui->midi_learn_pending, "main.master_output") == 0);
-    midi_learn_tint(fb, 239, 42, 64, 22, 30,
-                    strcmp(ui->midi_learn_pending, "main.tile_fade") == 0);
+                    TS_UI_MASTER_OUTPUT_W, 22, state);
+    state = midi_learn_target_state(&ui->config.midi_map,
+                                    ui->midi_learn_pending,
+                                    "main.tile_fade");
+    midi_learn_tint(fb, 239, 42, 64, 22, state);
     if (!ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients) {
         for (int slot = 0; slot < 16; ++slot) {
             int column = slot % 8;
             int row = slot / 8;
             snprintf(target, sizeof(target), "tile.%02d.launch", slot + 1);
+            state = midi_learn_target_state(&ui->config.midi_map,
+                                            ui->midi_learn_pending, target);
             midi_learn_tint(fb, 10 + column * 77, 330 + row * 25, 72, 24,
-                            30, strcmp(ui->midi_learn_pending, target) == 0);
+                            state);
         }
     }
     rect(fb, 0, TS_UI_HEIGHT - 16, TS_UI_WIDTH, 16, RGB(12, 12, 12));
@@ -636,7 +680,7 @@ static void main_midi_learn_overlay(TsFramebuffer *fb, const TsUiState *ui)
          ui->midi_learn_pending[0] != '\0' ?
          "MIDI LEARN: MOVE OR PRESS A CONTROL  ESC CANCELS" :
          "MIDI LEARN: CLICK A HIGHLIGHTED CONTROL  ESC ESC EXITS",
-         PAL_WAVE_SELECTION, 1);
+         TS_MIDI_LEARN_AVAILABLE_COLOR, 1);
 }
 
 static void bevel_frame(TsFramebuffer *fb, int x, int y, int w, int h,
@@ -5063,10 +5107,27 @@ sister_footer:
                 if (!ts_sister_ui_midi_target(hit, target, sizeof(target)))
                     continue;
                 {
-                    int selected = strcmp(model->midi_learn_pending, target) == 0;
+                    int state = midi_learn_target_state(
+                        model->midi_map, model->midi_learn_pending, target);
+                    uint32_t color = midi_learn_color(state);
                     uint32_t *pixel = &fb->pixels[y * TS_UI_WIDTH + x];
-                    *pixel = palette_blend(*pixel, PAL_WAVE_SELECTION,
-                                           selected ? 70 : 32);
+                    *pixel = palette_blend(*pixel, color,
+                                           state == MIDI_LEARN_SELECTED ? 82 :
+                                           state == MIDI_LEARN_MAPPED ? 90 : 72);
+                    if (state != MIDI_LEARN_AVAILABLE && x + 1 < TS_UI_WIDTH &&
+                        y + 1 < TS_SISTER_UI_HEIGHT) {
+                        uint32_t *diagonal =
+                            &fb->pixels[(y + 1) * TS_UI_WIDTH + x + 1];
+                        *diagonal = palette_blend(
+                            *diagonal, color,
+                            state == MIDI_LEARN_SELECTED ? 82 : 90);
+                    }
+                    if (state == MIDI_LEARN_SELECTED &&
+                        x + 1 < TS_UI_WIDTH) {
+                        uint32_t *horizontal = &fb->pixels[
+                            y * TS_UI_WIDTH + x + 1];
+                        *horizontal = palette_blend(*horizontal, color, 72);
+                    }
                 }
             }
         rect(fb, 0, 351, TS_SISTER_UI_WIDTH, 16, RGB(12, 12, 12));
@@ -5074,6 +5135,6 @@ sister_footer:
              model->midi_learn_pending[0] != '\0' ?
              "MIDI LEARN: MOVE OR PRESS A CONTROL  ESC CANCELS" :
              "MIDI LEARN: CLICK A HIGHLIGHTED CONTROL  ESC ESC EXITS",
-             PAL_WAVE_SELECTION, 1);
+             TS_MIDI_LEARN_AVAILABLE_COLOR, 1);
     }
 }

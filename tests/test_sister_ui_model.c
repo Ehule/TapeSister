@@ -32,6 +32,7 @@ int main(void)
     CHECK(config.master_output_percent == 100);
     ts_sister_ui_model_init(&model, &config);
     CHECK(!model.visible && model.capture_channels == 1);
+    CHECK(model.midi_map == &config.midi_map);
     ts_sister_ui_set_capture_channels(&model, &config, 2);
     CHECK(model.capture_channels == 2);
     CHECK(config.capture_channels == 2);

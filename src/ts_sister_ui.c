@@ -183,6 +183,7 @@ void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config)
         TS_SISTER_LIMITER_DEFAULT_CEILING_DB;
     model->routing.master_output_gain = config != NULL ?
         (float)config->master_output_percent / 100.0f : 1.0f;
+    model->midi_map = config != NULL ? &config->midi_map : NULL;
     model->selected_tap = TS_SISTER_TAP_MIX;
     model->destination_slot = -1;
     ts_sister_parameters_default(&model->parameters, 48000u);

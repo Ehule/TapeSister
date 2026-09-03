@@ -238,6 +238,7 @@ typedef struct {
     int midi_learn_active;
     int midi_activity;
     char midi_learn_pending[TS_MIDI_TARGET_ID_MAX];
+    const TsMidiMap *midi_map;
 } TsSisterUiModel;
 
 int ts_sister_ui_parameter_lockable(int parameter);

@@ -536,6 +536,9 @@ int main(int argc, char **argv)
         ui.show_ingredients = 0;
         ui.midi_learn_active = 1;
         ui.midi_activity_until_ms = 1u;
+        (void)ts_midi_map_assign(
+            &ui.config.midi_map, "tile.02.launch",
+            (TsMidiSource){TS_MIDI_SOURCE_CC, 0, 21});
         snprintf(ui.midi_learn_pending, sizeof(ui.midi_learn_pending),
                  "tile.01.launch");
         snprintf(ui.status, sizeof(ui.status),
