@@ -8760,14 +8760,6 @@ static int midi_source_from_event(const TsMidiEvent *midi,
     return 1;
 }
 
-static int midi_target_is_continuous(const char *target)
-{
-    return target != NULL &&
-           (strncmp(target, "sister.param.", 13u) == 0 ||
-            strcmp(target, "main.master_output") == 0 ||
-            strcmp(target, "main.tile_fade") == 0);
-}
-
 static int midi_sister_hit_from_target(const char *target, float normalized,
                                        TsSisterUiHit *hit)
 {
@@ -8869,11 +8861,10 @@ static int midi_apply_target(SDL_AudioDeviceID device, AudioState *audio,
                              uint32_t sample_rate, uint8_t output_channels)
 {
     int slot;
-    char trailing;
     TsSisterUiHit hit;
-    if (sscanf(target, "tile.%d.launch%c", &slot, &trailing) == 1 &&
-        slot >= 1 && slot <= TS_BANK_SLOT_COUNT) {
-        toggle_tile_launcher(device, audio, ui, instrument, slot - 1,
+    slot = ts_midi_tile_target_slot(target);
+    if (slot >= 0 && slot < TS_BANK_SLOT_COUNT) {
+        toggle_tile_launcher(device, audio, ui, instrument, slot,
                              (int)sample_rate);
         return 1;
     }
@@ -8912,10 +8903,14 @@ static int handle_midi_mapping(SDL_AudioDeviceID device, AudioState *audio,
         if (midi->action == TS_MIDI_ACTION_NOTE_OFF) return 0;
         if (ui->midi_learn_pending[0] != '\0' &&
             (midi->action == TS_MIDI_ACTION_NOTE_ON ||
-             midi->action == TS_MIDI_ACTION_CONTROL)) {
+             midi->action == TS_MIDI_ACTION_CONTROL) &&
+            ts_midi_target_accepts_source(
+                ui->midi_learn_pending, source.kind)) {
             char formatted[40];
-            if (ts_midi_map_assign(&ui->config.midi_map,
-                                   ui->midi_learn_pending, source)) {
+            if (ts_midi_map_assign_trigger(
+                    &ui->config.midi_map, ui->midi_learn_pending, source,
+                    midi->action == TS_MIDI_ACTION_CONTROL &&
+                    midi->value == 0)) {
                 (void)ts_midi_source_format(source, formatted,
                                             sizeof(formatted));
                 snprintf(ui->status, sizeof(ui->status),
@@ -8937,8 +8932,9 @@ static int handle_midi_mapping(SDL_AudioDeviceID device, AudioState *audio,
         midi->action != TS_MIDI_ACTION_CONTROL) return 1;
     normalized = midi->maximum > 0 ?
                  (float)midi->value / (float)midi->maximum : 0.0f;
-    if (!midi_target_is_continuous(mapping->target)) {
-        if (normalized <= 0.0f) return 1;
+    if (!ts_midi_target_is_continuous(mapping->target)) {
+        if (!ts_midi_mapping_should_trigger(
+                mapping, midi->value, midi->maximum)) return 1;
     } else if (!midi_pickup_accept(
                    mapping, ui->config.midi_map.takeover, normalized,
                    midi_target_current_value(mapping->target, ui, sister))) {

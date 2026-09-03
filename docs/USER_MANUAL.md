@@ -946,8 +946,9 @@ or make a deliberate mono version rather than expecting a silent automatic fold-
 
 TapeSister's MIDI Learn works across the main and Sister Machine windows. Press
 `Ctrl+Shift+M` from either window to enter Learn mode. Safe performance controls are
-covered with a translucent version of the waveform-selection color; clicks now manage
-mappings and do not change audio or operate the underlying control.
+covered with an ice-cyan dither. The armed control changes to pale ice, and completed
+mappings change to electric blue. Clicks manage mappings and do not change audio or
+operate the underlying control.
 
 ![MIDI Learn over the main tile positions](images/midi-learn-main.png)
 
@@ -974,6 +975,12 @@ Learn accepts:
 - Note On/Off pairs, normally used for momentary performance buttons;
 - 7-bit Control Change values;
 - full 14-bit pitch bend values on each MIDI channel.
+
+Button-style targets such as tiles and switches learn Note or CC messages. Continuous
+parameters learn CC or pitch bend, preventing small high-resolution fader movements
+from claiming a tile while a hardware button is being pressed. For CC buttons,
+TapeSister remembers whether the learned press message used zero or a positive value;
+the opposite message is treated as release rather than a second activation.
 
 Continuous controls use **Pickup** takeover by default. After loading TapeSister or
 creating a mapping, a hardware fader must pass through the current software value before
@@ -1006,8 +1013,9 @@ active.
 The Michigan Synth Works XVI-M factory layout sends its sixteen 14-bit pitch-bend
 faders on MIDI channels 1–16. Select **OMNI** in TapeSister so all sixteen arrive; no
 conversion to 7-bit CC is required. Configure its sixteen buttons as distinct momentary
-CC messages and map them to tiles 1–16. CC buttons avoid collisions with TapeSister's
-playable note range and do not require MIDI output feedback.
+CC messages and map them to tiles 1–16. The factory-style `CC 80 / value 127` button
+messages work directly. CC buttons avoid collisions with TapeSister's playable note
+range and do not require MIDI output feedback.
 
 Mappings are global and are saved immediately in the `[MIDI Learn]` section of
 `tapesister.ini`; they are intentionally not embedded in `.tsr` projects. This first

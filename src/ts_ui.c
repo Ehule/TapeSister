@@ -646,7 +646,7 @@ static void midi_learn_tint(TsFramebuffer *fb, int x, int y, int w, int h,
                     fb->pixels[(y + row) * TS_UI_WIDTH + x + column],
                     color,
                     border && state != MIDI_LEARN_AVAILABLE ? 100 :
-                    state == MIDI_LEARN_SELECTED ? 82 : 72);
+                    state == MIDI_LEARN_SELECTED ? 82 : 55);
         }
 }
 
@@ -5113,7 +5113,7 @@ sister_footer:
                     uint32_t *pixel = &fb->pixels[y * TS_UI_WIDTH + x];
                     *pixel = palette_blend(*pixel, color,
                                            state == MIDI_LEARN_SELECTED ? 82 :
-                                           state == MIDI_LEARN_MAPPED ? 90 : 72);
+                                           state == MIDI_LEARN_MAPPED ? 90 : 55);
                     if (state != MIDI_LEARN_AVAILABLE && x + 1 < TS_UI_WIDTH &&
                         y + 1 < TS_SISTER_UI_HEIGHT) {
                         uint32_t *diagonal =

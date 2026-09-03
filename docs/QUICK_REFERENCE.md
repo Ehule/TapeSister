@@ -32,7 +32,7 @@ level. MIDI All Notes Off is honored.
 1. Set MIDI input to **OMNI** when a controller sends different channels per
    control (the XVI-M factory pitch-bend layout uses channels 1–16).
 2. Press `Ctrl+Shift+M`; every safe learnable control receives a translucent
-   selection-colored overlay.
+   ice-cyan dither. The armed control is pale ice; mapped controls are electric blue.
 3. Click a highlighted UI control, then move or press the hardware control.
 4. Continue mapping, or press `Ctrl+Shift+M` again to leave Learn mode.
 
@@ -48,6 +48,10 @@ Mappings accept Note, 7-bit CC, and full 14-bit pitch bend, and are stored globa
 in `tapesister.ini`. Pickup takeover is the default. Tile targets mean positions 1–16
 on the active Sample page. The small LED beside the L/R meter flashes for every accepted
 incoming MIDI message, whether mapped or not.
+
+Tiles and switches learn Note or CC sources; continuous parameters learn CC or pitch
+bend. This prevents pitch-bend fader jitter from claiming a button target. A learned CC
+button may use either zero or a positive value for its press message.
 
 For the Michigan Synth Works XVI-M, leave the 16 factory faders in 14-bit pitch-bend
 mode and use **OMNI**. Configure the buttons as momentary CC messages for tile launch;

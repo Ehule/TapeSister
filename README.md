@@ -194,7 +194,10 @@ Current MIDI support includes Note On/Off, 7-bit CC, channel-specific 14-bit pit
 bend, velocity, channels 1–16 or Omni, All Notes Off, a 64-voice sample pool, and the
 shared QWERTY/FM performance path. `Ctrl+Shift+M` opens Ableton-style MIDI Learn across
 both windows; safe controls are highlighted, mappings use Pickup takeover by default,
-and assignments are stored globally in `tapesister.ini`.
+and assignments are stored globally in `tapesister.ini`. Ice-cyan controls are
+available, pale ice is armed, and electric blue is already mapped. Button targets
+accept Note or CC while continuous targets accept CC or pitch bend, so high-resolution
+fader jitter cannot steal a pending tile assignment.
 
 ![MIDI Learn across the active tile positions](docs/images/midi-learn-main.png)
 

@@ -412,8 +412,11 @@ int ts_config_load(TsConfig *config, const char *path,
             }
         } else if (strncmp(key, "MidiMap.", 8u) == 0) {
             TsMidiSource source;
-            if (!ts_midi_source_parse(value, &source) ||
-                !ts_midi_map_assign(&loaded.midi_map, key + 8u, source)) {
+            int trigger_on_zero;
+            if (!ts_midi_mapping_source_parse(
+                    value, &source, &trigger_on_zero) ||
+                !ts_midi_map_assign_trigger(
+                    &loaded.midi_map, key + 8u, source, trigger_on_zero)) {
                 snprintf(error, error_size,
                          "Invalid MIDI mapping on config line %d", line_number);
                 fclose(file); return 0;
@@ -668,7 +671,7 @@ int ts_config_save(const TsConfig *config, const char *path,
          ++index) {
         char source[40];
         const TsMidiMapping *mapping = &config->midi_map.mappings[index];
-        if (!ts_midi_source_format(mapping->source, source, sizeof(source))) {
+        if (!ts_midi_mapping_source_format(mapping, source, sizeof(source))) {
             write_failed = 1;
             break;
         }
