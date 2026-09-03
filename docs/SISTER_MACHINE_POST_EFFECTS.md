@@ -1,15 +1,20 @@
 # Sister Machine post-effects architecture
 
-The current compact fixed chain is **DISTORTION → GRAIN → DELAY → REVERB**, with one
-explicit Master FX Feedback return. The effects share PR8's generic target bits;
-there is no second routing language and no per-head parameter copy.
+> Historical note: this document records the earlier fixed-chain implementation. The
+> current instrument replaces that chain with four reorderable, independently placed,
+> duplicate-capable Reverb/Delay/Distortion/Grain slots. See the
+> [User Manual](USER_MANUAL.md#the-four-slot-fx-pedalboard) for current operation.
 
-This fixed order is the stable bridge to the four-slot virtual pedalboard. The
-future slot model can select and order four processors, including duplicates,
+The earlier compact fixed chain was **DISTORTION → GRAIN → DELAY → REVERB**, with one
+explicit Master FX Feedback return. Those effects shared PR8's generic target bits;
+there was no second routing language and no per-head parameter copy.
+
+This fixed order was the design bridge to the four-slot virtual pedalboard. The
+then-proposed slot model could select and order four processors, including duplicates,
 without patch cables; the bounded four-slot limit also makes timed topology
 morphs practical on the X220/X230.
 
-Each future slot has exactly one placement: **PRE** fresh Sister input, one or
+Each proposed slot had exactly one placement: **PRE** fresh Sister input, one or
 more internal **H1/H2/H3** heads, or **POST** completed MIX. A single slot never
 runs both pre and post. Using the same processor on both sides requires two
 explicit duplicate slots, keeping CPU cost visible and bounded. PRE colors only

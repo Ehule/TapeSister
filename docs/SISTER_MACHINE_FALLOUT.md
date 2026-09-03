@@ -1,9 +1,13 @@
 # Sister Machine Fallout
 
 Fallout is a stereo deterioration instrument inserted after Sister Machine's completed
-MIX and before the existing Master FX chain:
+MIX and before pedalboard slots placed at POST:
 
-`Sister MIX -> Fallout -> Distortion -> Delay -> Reverb -> linked safety -> output`
+`Sister MIX -> Fallout -> POST slots in 1-2-3-4 order -> linked safety -> global limiter -> master OUT`
+
+Pedalboard slots placed at PRE or H1/H2/H3 enter at their named earlier locations and
+therefore do not appear in this post-MIX shorthand. See the
+[User Manual](USER_MANUAL.md#the-four-slot-fx-pedalboard) for the current rack.
 
 It is an original C reimplementation inspired by Bahiamansa's freely shared
 `failure_v2` ppooll act. No Max, ppooll, patcher, artwork, or UI code is embedded.
@@ -13,7 +17,7 @@ It is an original C reimplementation inspired by Bahiamansa's freely shared
 FALLOUT is a real insert switch. OFF returns the dry Sister frame exactly after its
 selected transition, stops loop-buffer activity, and clears history. ON starts from a
 clean 20-second stereo store and fades into the selected MIX. TRANSITION is logarithmic
-from 10 ms to 60 seconds, so the insert can arrive almost immediately or emerge over a
+from 10 ms to 60 minutes, so the insert can arrive almost immediately or emerge over a
 performance-length ramp. `sister_fallout_transition_ms` selects the startup default in
 `tapesister.ini`; presets and projects preserve the live setting. This prevents a stale
 fragment from appearing after a later re-enable and keeps the callback allocation free.
