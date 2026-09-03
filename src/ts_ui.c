@@ -2117,6 +2117,11 @@ int ts_ui_tile_fade_all_from_point(int x, int y)
     return x >= 154 && x < 232 && y >= 313 && y < 330;
 }
 
+int ts_ui_midi_learn_chord(int control_down, int shift_down)
+{
+    return control_down != 0 && shift_down != 0;
+}
+
 static int cycle_index(int value, int amount, int count)
 {
     int result;

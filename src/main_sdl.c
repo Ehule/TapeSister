@@ -10698,13 +10698,14 @@ int main(int argc, char **argv)
             }
             if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode global_key = event.key.keysym.sym;
-                SDL_Keymod global_mod = SDL_GetModState();
+                SDL_Keymod global_mod = (SDL_Keymod)event.key.keysym.mod;
                 int modal_key_owner = ui_blocking_dialog_open_except_fm(&ui) ||
                     ui.fm_bank_choice_open || ui.fm_full_choice_open ||
                     sister_window.model.preset_manage_open;
                 if (global_key == SDLK_m &&
-                    (global_mod & (KMOD_CTRL | KMOD_SHIFT)) ==
-                    (KMOD_CTRL | KMOD_SHIFT) && !modal_key_owner) {
+                    ts_ui_midi_learn_chord(
+                        (global_mod & KMOD_CTRL) != 0,
+                        (global_mod & KMOD_SHIFT) != 0) && !modal_key_owner) {
                     midi_learn_set_active(&ui, &sister_window,
                                           !ui.midi_learn_active);
                     continue;

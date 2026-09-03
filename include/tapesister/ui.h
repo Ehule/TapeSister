@@ -621,6 +621,7 @@ TsUiSlider ts_ui_slider_from_point(const TsUiState *ui, int x, int y);
 float ts_ui_tile_fade_normalized(int milliseconds);
 int ts_ui_tile_fade_ms(float normalized);
 int ts_ui_tile_fade_all_from_point(int x, int y);
+int ts_ui_midi_learn_chord(int control_down, int shift_down);
 int ts_ui_palette_cycle_entry(int entry, int amount);
 int ts_ui_palette_cycle_channel(int channel, int amount);
 TsConfigField ts_ui_config_cycle_field(TsConfigField field, int amount);

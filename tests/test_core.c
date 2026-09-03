@@ -506,6 +506,9 @@ int main(void)
         CHECK(ts_ui_tile_fade_ms(0.0f) == 0);
         CHECK(ts_ui_tile_fade_ms(1.0f) == TS_TILE_FADE_MS_MAX);
         CHECK(fabsf(ts_ui_tile_fade_normalized(7500) - 0.5f) < 0.0001f);
+        CHECK(ts_ui_midi_learn_chord(1, 1));
+        CHECK(!ts_ui_midi_learn_chord(1, 0));
+        CHECK(!ts_ui_midi_learn_chord(0, 1));
         for (size_t i = 0; i < sizeof(sliders) / sizeof(sliders[0]); ++i) {
             ui.fx_page = sliders[i].page;
             CHECK(ts_ui_slider_from_point(&ui, sliders[i].x, 272) ==
