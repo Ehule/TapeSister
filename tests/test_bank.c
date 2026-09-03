@@ -188,6 +188,50 @@ int main(void)
           ts_sample_hash(&destinations.bank[4].sample) == slot5_hash);
     remove("test-bank-load.wav");
 
+    {
+        TsInstrument crop_sync;
+        TsFmSeedSequence stamp_sequence;
+        uint64_t cropped_hash;
+        ts_instrument_init(&crop_sync);
+        CHECK(ts_ui_execute_bank_action(
+            &crop_sync, 3, TS_UI_BANK_ACTION_AUDITION,
+            error, sizeof(error)));
+        CHECK(ts_instrument_activate_silence(
+            &crop_sync, 4096u, 8000u, error, sizeof(error)));
+        ts_instrument_set_selection(&crop_sync, 1024u, 2048u);
+        ts_fm_seed_sequence_init(
+            &stamp_sequence, UINT64_C(0x0123456789abcdef));
+        CHECK(ts_instrument_stamp_create_fresh(
+            &crop_sync, &stamp_sequence, NULL, error, sizeof(error)));
+        CHECK(crop_sync.post_edit_count == 1);
+        CHECK(ts_instrument_stamp_vary(
+            &crop_sync, error, sizeof(error)));
+        CHECK(crop_sync.post_edit_count == 2);
+        CHECK(ts_instrument_crop_selection(
+            &crop_sync, error, sizeof(error)));
+        cropped_hash = ts_sample_hash(&crop_sync.current);
+        CHECK(crop_sync.current.frames == 1024u &&
+              !crop_sync.has_selection && crop_sync.post_edit_count == 3);
+        CHECK(crop_sync.bank[3].sample.frames == crop_sync.current.frames &&
+              ts_sample_hash(&crop_sync.bank[3].sample) == cropped_hash);
+        CHECK(ts_ui_execute_bank_action(
+            &crop_sync, 3, TS_UI_BANK_ACTION_AUDITION,
+            error, sizeof(error)));
+        CHECK(crop_sync.current.frames == 1024u &&
+              ts_sample_hash(&crop_sync.current) == cropped_hash &&
+              !crop_sync.has_selection && crop_sync.post_edit_count == 3);
+        CHECK(ts_instrument_undo(&crop_sync, error, sizeof(error)) &&
+              crop_sync.current.frames == 4096u &&
+              crop_sync.has_selection &&
+              crop_sync.selection_first == 1024u &&
+              crop_sync.selection_last == 2048u);
+        CHECK(ts_instrument_redo(&crop_sync, error, sizeof(error)) &&
+              crop_sync.current.frames == 1024u &&
+              ts_sample_hash(&crop_sync.current) == cropped_hash &&
+              !crop_sync.has_selection);
+        ts_instrument_free(&crop_sync);
+    }
+
     ts_instrument_init(&clone_reset);
     CHECK(ts_instrument_generate(&clone_reset, TS_GENERATOR_PULSE, 0x434c4f4eu,
                                  error, sizeof(error)));

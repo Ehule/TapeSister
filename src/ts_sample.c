@@ -8172,7 +8172,7 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
         ts_instrument_clear_selection(instrument);
         ts_instrument_show_all(instrument);
         set_error(error, error_size, "");
-        return 1;
+        return bank_sync_selected(instrument, error, error_size);
     }
     new_first = instrument->crop_first + instrument->selection_first;
     new_last = instrument->crop_first + instrument->selection_last;
@@ -8225,7 +8225,8 @@ int ts_instrument_crop_selection(TsInstrument *instrument, char *error, size_t e
     instrument->sample_edit_count = target.sample_edit_count;
     ts_instrument_clear_selection(instrument);
     ts_instrument_show_all(instrument);
-    return 1;
+    set_error(error, error_size, "");
+    return bank_sync_selected(instrument, error, error_size);
 }
 
 int ts_instrument_apply_sample_edit(TsInstrument *instrument, TsSampleEditKind kind,
