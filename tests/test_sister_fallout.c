@@ -776,6 +776,38 @@ static void test_component_transition_progress_and_zero_mix_transparency(void)
     ts_sister_fallout_free(&engine);
 }
 
+static void test_pitch_only_wraps_are_crossfaded(void)
+{
+    TsSisterFalloutEngine engine;
+    TsSisterFalloutControls controls;
+    TsSisterFalloutResult previous;
+    float worst = 0.0f;
+    ts_sister_fallout_controls_default(&controls);
+    controls.enabled = 1;
+    controls.mix = 1.0f;
+    controls.feedback = 0.0f;
+    controls.pitch_enabled = 1;
+    controls.pitch = 1.0f;
+    controls.pitch_ramp = 0.0f;
+    controls.pitch_rate = 1.0f;
+    assert(ts_sister_fallout_init(&engine, 1000u));
+    ts_sister_fallout_sync_controls(&engine, &controls);
+    previous = ts_sister_fallout_process(
+        &engine, (TsStereoFrame){0.0f, 0.0f});
+    for (int frame = 1; frame < 50000; ++frame) {
+        float input = 0.55f * sinf((float)frame * 0.0017f);
+        TsSisterFalloutResult current = ts_sister_fallout_process(
+            &engine, (TsStereoFrame){input, input});
+        if (frame > 21000) {
+            float jump = fabsf(current.output.l - previous.output.l);
+            if (jump > worst) worst = jump;
+        }
+        previous = current;
+    }
+    assert(worst < 0.04f);
+    ts_sister_fallout_free(&engine);
+}
+
 static void test_independent_master_component_retime_and_restore(void)
 {
     TsSisterFalloutEngine engine;
@@ -854,6 +886,7 @@ int main(void)
     test_toggle_edges_restart_from_audible_output();
     test_component_transition_progress_and_zero_mix_transparency();
     test_independent_master_component_retime_and_restore();
+    test_pitch_only_wraps_are_crossfaded();
     test_runtime_feedback_is_wet_only_and_causal();
     puts("Sister Fallout tests passed");
     return 0;

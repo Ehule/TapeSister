@@ -860,6 +860,55 @@ static TsStereoFrame read_frame(const TsSisterFalloutEngine *engine,
     return ts_stereo_frame_sanitize(out);
 }
 
+static double pitch_wrap_span(const TsSisterFalloutEngine *engine,
+                              double loop_length, float rate)
+{
+    double span;
+    if (engine == NULL || engine->sample_rate == 0u ||
+        loop_length < 4.0 || !isfinite(rate) || fabsf(rate) < 0.000001f)
+        return 0.0;
+    span = 0.030 * (double)engine->sample_rate * fabs((double)rate);
+    if (span > loop_length * 0.25) span = loop_length * 0.25;
+    if (span < 1.0) span = 1.0;
+    return span;
+}
+
+static TsStereoFrame read_pitch_wrap_crossfade(
+    const TsSisterFalloutEngine *engine, double clock, double loop_start,
+    double loop_length, float rate)
+{
+    TsStereoFrame current = read_frame(engine, clock);
+    double loop_end = loop_start + loop_length;
+    double span = pitch_wrap_span(engine, loop_length, rate);
+    double cycle = loop_length - span;
+    double distance;
+    double alternate_clock;
+    float phase;
+    float smooth;
+    TsStereoFrame alternate;
+    if (span <= 0.0 || cycle < 2.0) return current;
+    /* Thirty output milliseconds expressed in source-clock frames. Limiting the
+       overlap to a quarter of the available loop keeps very young buffers
+       valid while giving the normal 20-second Fallout memory a transparent
+       tape-head handoff. */
+    if (rate > 0.0f) {
+        distance = loop_end - clock;
+        alternate_clock = clock - cycle;
+    } else {
+        distance = clock - loop_start;
+        alternate_clock = clock + cycle;
+    }
+    if (distance < 0.0 || distance > span) return current;
+    phase = (float)(1.0 - distance / span);
+    if (phase < 0.0f) phase = 0.0f;
+    if (phase > 1.0f) phase = 1.0f;
+    smooth = phase * phase * (3.0f - 2.0f * phase);
+    alternate = read_frame(engine, alternate_clock);
+    current.l += (alternate.l - current.l) * smooth;
+    current.r += (alternate.r - current.r) * smooth;
+    return ts_stereo_frame_sanitize(current);
+}
+
 static void choose_loop(TsSisterFalloutEngine *engine,
                         const TsSisterFalloutControls *controls)
 {
@@ -1113,7 +1162,13 @@ TsSisterFalloutResult ts_sister_fallout_process(
     rate = advance(&engine->playback_rate, engine->playback_target,
                    engine->playback_step, &engine->playback_remaining);
     rate = 1.0f + (rate - 1.0f) * pitch_blend;
-    wet = read_frame(engine, engine->read_clock);
+    if (controls.pitch_enabled && !controls.skip_enabled &&
+        pitch_blend > 0.0f)
+        wet = read_pitch_wrap_crossfade(
+            engine, engine->read_clock, engine->loop_start,
+            engine->loop_length, rate);
+    else
+        wet = read_frame(engine, engine->read_clock);
     if (engine->skip_fade_remaining > 0u && engine->skip_fade_total > 0u) {
         TsStereoFrame old = read_frame(engine, engine->old_read_clock);
         float amount = 1.0f - (float)engine->skip_fade_remaining /
@@ -1125,8 +1180,17 @@ TsSisterFalloutResult ts_sister_fallout_process(
     }
     engine->read_clock += rate;
     loop_end = engine->loop_start + engine->loop_length;
-    while (engine->read_clock >= loop_end) engine->read_clock -= engine->loop_length;
-    while (engine->read_clock < engine->loop_start) engine->read_clock += engine->loop_length;
+    {
+        double cycle = engine->loop_length;
+        if (controls.pitch_enabled && !controls.skip_enabled &&
+            pitch_blend > 0.0f) {
+            double span = pitch_wrap_span(engine, engine->loop_length, rate);
+            if (engine->loop_length - span >= 2.0)
+                cycle = engine->loop_length - span;
+        }
+        while (engine->read_clock >= loop_end) engine->read_clock -= cycle;
+        while (engine->read_clock < engine->loop_start) engine->read_clock += cycle;
+    }
 
     stage_dry = wet;
     if ((controls.drop_enabled || drop_blend > 0.0f) &&

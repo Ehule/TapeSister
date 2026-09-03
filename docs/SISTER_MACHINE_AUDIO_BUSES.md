@@ -39,8 +39,9 @@ linked peak-safety pass after Capture.
 ## Channel policies
 
 Internal Capture exposes **M/S** while arming. M stores `0.5 * (L + R)` and is the
-configuration-compatible default; S stores interleaved L/R. Overdub always records and
-commits the base tile's shape. A mono layer becomes dual mono in a stereo result; a
+configuration-compatible default; S stores interleaved L/R. The main-page and Sister
+Machine buttons mirror this one shared M/S setting. Overdub always records and commits
+the base tile's shape. A mono layer becomes dual mono in a stereo result; a
 stereo layer folds explicitly when the base is mono. Base identity checks include
 frame count, sample rate, channel count, and audio bytes. One peak gain is calculated
 over the complete frame pair, preserving balance. Allocation happens before arming.

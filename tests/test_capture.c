@@ -50,6 +50,11 @@ static void test_recorder_boundaries_and_states(void)
     CHECK(ts_capture_toggle_staged_note(&recorder, 4, error, sizeof(error)));
     CHECK(recorder.destination_slot == 3 && recorder.source_slot == 1);
     CHECK(recorder.staged_notes == ((1u << 0) | (1u << 4)));
+    CHECK(ts_capture_shift_staged_notes(&recorder, 1) == (1u << 3));
+    CHECK(ts_capture_shift_staged_notes(&recorder, -2) == (1u << 5));
+    CHECK(ts_capture_shift_staged_notes(&recorder, 24) == 0u);
+    CHECK(ts_capture_toggle_staged_note(&recorder, 0, error, sizeof(error)));
+    CHECK(ts_capture_toggle_staged_note(&recorder, 4, error, sizeof(error)));
     CHECK(ts_capture_trigger(&recorder, error, sizeof(error)));
     CHECK(recorder.state == TS_CAPTURE_RECORDING && recorder.staged_notes == 0u);
     CHECK(ts_capture_set_source(&recorder, 2, error, sizeof(error)));

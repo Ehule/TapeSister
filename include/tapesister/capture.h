@@ -90,6 +90,8 @@ int ts_capture_set_source(TsCaptureRecorder *recorder, int source_slot,
                           char *error, size_t error_size);
 int ts_capture_toggle_staged_note(TsCaptureRecorder *recorder, int note,
                                   char *error, size_t error_size);
+uint32_t ts_capture_shift_staged_notes(TsCaptureRecorder *recorder,
+                                       int keyboard_base_delta);
 void ts_capture_clear_staged_notes(TsCaptureRecorder *recorder);
 int ts_capture_trigger(TsCaptureRecorder *recorder,
                        char *error, size_t error_size);

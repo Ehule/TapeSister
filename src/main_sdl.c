@@ -1572,6 +1572,52 @@ static void release_note(SDL_AudioDeviceID device, AudioState *audio,
     release_note_event(device, audio, ui, &event);
 }
 
+static void preserve_staged_notes_after_keyboard_move(
+    SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+    int previous_base_note)
+{
+    int base_delta;
+    if (audio == NULL || ui == NULL) return;
+    base_delta = ts_ui_keyboard_base_note(ui) - previous_base_note;
+    if (base_delta == 0) return;
+    if (device) SDL_LockAudioDevice(device);
+    ui->staged_notes = ts_capture_shift_staged_notes(
+        &audio->capture, base_delta);
+    if (device) SDL_UnlockAudioDevice(device);
+}
+
+static void release_mouse_note_before_keyboard_move(
+    SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
+{
+    if (ui == NULL || ui->mouse_note < 0) return;
+    release_note(device, audio, ui, ui->mouse_note);
+    ui->mouse_note = -1;
+}
+
+static int set_keyboard_octave(SDL_AudioDeviceID device, AudioState *audio,
+                               TsUiState *ui, int octave)
+{
+    int previous_base_note = ts_ui_keyboard_base_note(ui);
+    int result;
+    release_mouse_note_before_keyboard_move(device, audio, ui);
+    result = ts_ui_keyboard_set_octave(ui, octave);
+    preserve_staged_notes_after_keyboard_move(
+        device, audio, ui, previous_base_note);
+    return result;
+}
+
+static int shift_keyboard_range(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, int amount)
+{
+    int previous_base_note = ts_ui_keyboard_base_note(ui);
+    int result;
+    release_mouse_note_before_keyboard_move(device, audio, ui);
+    result = ts_ui_keyboard_shift_semitone(ui, amount);
+    preserve_staged_notes_after_keyboard_move(
+        device, audio, ui, previous_base_note);
+    return result;
+}
+
 static void toggle_tile_launcher(SDL_AudioDeviceID device, AudioState *audio,
                                  TsUiState *ui,
                                  const TsInstrument *instrument, int slot,
@@ -6498,12 +6544,20 @@ typedef struct {
 static void queue_active_project_save(TsUiState *ui,
                                       PendingFileOperation *pending)
 {
+    char bundled[TS_BROWSER_PATH_MAX];
+    char error[160];
     if (ui == NULL || pending == NULL || pending->active || ui->file_busy ||
         ui->project_path[0] == '\0') return;
+    if (!ts_sample_pages_bundle_project_path(
+            ui->project_path, bundled, sizeof(bundled),
+            error, sizeof(error))) {
+        snprintf(ui->status, sizeof(ui->status), "SAVE FAILED: %.135s", error);
+        return;
+    }
     pending->mode = TS_BROWSER_SAVE_RECIPE;
-    snprintf(pending->path, sizeof(pending->path), "%s", ui->project_path);
+    snprintf(pending->path, sizeof(pending->path), "%s", bundled);
     snprintf(pending->filename, sizeof(pending->filename), "%s",
-             path_basename(ui->project_path));
+             path_basename(bundled));
     pending->selection_load = 0;
     pending->active = 1;
     pending->presented = 0;
@@ -6603,6 +6657,18 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
             snprintf(browser->message, sizeof(browser->message), "ENTER A VALID FILENAME");
             return;
         }
+        if (browser->mode == TS_BROWSER_SAVE_RECIPE) {
+            char bundled[TS_BROWSER_PATH_MAX];
+            char bundle_error[160];
+            if (!ts_sample_pages_bundle_project_path(
+                    path, bundled, sizeof(bundled),
+                    bundle_error, sizeof(bundle_error))) {
+                snprintf(browser->message, sizeof(browser->message),
+                         "%.150s", bundle_error);
+                return;
+            }
+            snprintf(path, sizeof(path), "%s", bundled);
+        }
         if (browser->mode == TS_BROWSER_EXPORT_BANK && ts_browser_path_exists(path)) {
             snprintf(browser->message, sizeof(browser->message),
                      "FOLDER EXISTS - CHOOSE A NEW NAME");
@@ -6668,16 +6734,13 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         const TsInstrument *active_sample = record_bank_active ? NULL : instrument;
         const TsInstrument *record_bank = record_bank_active ?
                                           instrument : parked_record;
+        TsSisterProjectState sister_state;
+        ts_sister_project_state_capture(
+            &sister_state, &audio->sister,
+            ts_sample_pages_count(sample_pages), NULL);
         ok = ts_sample_pages_save_project(sample_pages, active_sample, record_bank,
-                                          pending->path, error, sizeof(error));
-        if (ok) {
-            TsSisterProjectState sister_state;
-            ts_sister_project_state_capture(
-                &sister_state, &audio->sister,
-                ts_sample_pages_count(sample_pages), NULL);
-            ok = ts_sister_project_state_save(
-                &sister_state, pending->path, error, sizeof(error));
-        }
+                                          &sister_state, pending->path,
+                                          error, sizeof(error));
         if (ok)
             ui->saved_state_hash = paged_project_state_hash(
                 sample_pages, active_sample, record_bank, &audio->sister);
@@ -8558,9 +8621,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             snprintf(sister->model.status, sizeof(sister->model.status),
                      "STOP RECORDING BEFORE CHANGING MONO/STEREO");
         else {
-            sister->model.capture_channels =
-                sister->model.capture_channels == 2 ? 1 : 2;
-            ui->config.sister_capture_channels = sister->model.capture_channels;
+            ts_sister_ui_set_capture_channels(
+                &sister->model, &ui->config,
+                sister->model.capture_channels == 2 ? 1 : 2);
         }
     } else if (hit.action == TS_SISTER_UI_ACTION_DESTINATION) {
         if (capture_busy)
@@ -10482,8 +10545,9 @@ int main(int argc, char **argv)
                     SDL_Keymod mod = SDL_GetModState();
                     if (event.key.keysym.sym >= SDLK_F1 &&
                         event.key.keysym.sym <= SDLK_F8) {
-                        int octave = ts_ui_keyboard_set_octave(
-                            &ui, (int)(event.key.keysym.sym - SDLK_F1));
+                        int octave = set_keyboard_octave(
+                            device, &audio, &ui,
+                            (int)(event.key.keysym.sym - SDLK_F1));
                         snprintf(sister_window.model.status,
                                  sizeof(sister_window.model.status),
                                  "KEYBOARD OCTAVE %d", octave);
@@ -10941,8 +11005,8 @@ int main(int argc, char **argv)
                     } else if (key == SDLK_ESCAPE) {
                         close_fm_workspace(device, &audio, &ui, &fm_preview);
                     } else if (key >= SDLK_F1 && key <= SDLK_F8) {
-                        int octave = ts_ui_keyboard_set_octave(
-                            &ui, (int)(key - SDLK_F1));
+                        int octave = set_keyboard_octave(
+                            device, &audio, &ui, (int)(key - SDLK_F1));
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  "SYNTH KEYBOARD OCTAVE %d", octave);
                     } else if ((mod & KMOD_CTRL) && key == SDLK_z) {
@@ -11274,7 +11338,8 @@ int main(int argc, char **argv)
                                                    record_bank_active, &pending_file);
                     }
                 } else if (key >= SDLK_F1 && key <= SDLK_F8) {
-                    int octave = ts_ui_keyboard_set_octave(&ui, (int)(key - SDLK_F1));
+                    int octave = set_keyboard_octave(
+                        device, &audio, &ui, (int)(key - SDLK_F1));
                     snprintf(ui.status, sizeof(ui.status),
                              "KEYBOARD OCTAVE %d - HELD CHORD PRESERVED", octave);
                 } else if (hovered_slider != TS_UI_SLIDER_NONE) {
@@ -11823,7 +11888,8 @@ int main(int argc, char **argv)
                 if (ui.show_keyboard && (mod & KMOD_SHIFT) && wheel_y != 0 &&
                     x >= 10 && x < 622 && y >= 318 && y < 379) {
                     char note_name[8];
-                    int base_note = ts_ui_keyboard_shift_semitone(&ui, wheel_y);
+                    int base_note = shift_keyboard_range(
+                        device, &audio, &ui, wheel_y);
                     snprintf(ui.status, sizeof(ui.status),
                              "KEYBOARD START %s - HELD CHORD PRESERVED",
                              ts_midi_note_name(base_note, note_name, sizeof(note_name)));
@@ -13217,7 +13283,9 @@ int main(int argc, char **argv)
                                  ui.show_recipes ? "CDP" :
                                  ui.show_ingredients ? "DSP" : "SAMPLE TILES");
                 } else {
-                    int note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
+                    int note = ui.show_keyboard ?
+                        ts_ui_key_from_point_for_base(
+                            x, y, ts_ui_keyboard_base_note(&ui)) : -1;
                     int bank_slot = !ui.show_keyboard && !ui.show_recipes &&
                                     !ui.show_ingredients ?
                                     ts_ui_bank_slot_from_point(x, y) : -1;
@@ -13312,8 +13380,9 @@ int main(int argc, char **argv)
                                      "CAPTURE TARGET IS %s - FINISH OR CANCEL FIRST",
                                      audio.capture.channels == 2u ? "STEREO" : "MONO");
                         else {
-                            ui.config.capture_channels =
-                                ui.config.capture_channels == 2 ? 1 : 2;
+                            ts_sister_ui_set_capture_channels(
+                                &sister_window.model, &ui.config,
+                                ui.config.capture_channels == 2 ? 1 : 2);
                             snprintf(ui.status, sizeof(ui.status),
                                      "CAPTURE CHANNELS %s (%s)",
                                      ui.config.capture_channels == 2 ? "S" : "M",
@@ -13576,7 +13645,9 @@ int main(int argc, char **argv)
                 ui.bank_clear_armed = 0;
                 bank_slot = ts_ui_bank_slot_from_point(x, y);
                 recipe_slot = ts_ui_recipe_slot_from_point(x, y);
-                note = ui.show_keyboard ? ts_ui_key_from_point(x, y) : -1;
+                note = ui.show_keyboard ?
+                    ts_ui_key_from_point_for_base(
+                        x, y, ts_ui_keyboard_base_note(&ui)) : -1;
                 action = runtime_bank_action(&audio, 1, bank_modifiers(mod));
                 if (record_bank_active && bank_slot >= 0 &&
                     external_capture_busy(&external_input)) {

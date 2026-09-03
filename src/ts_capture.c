@@ -190,6 +190,21 @@ int ts_capture_toggle_staged_note(TsCaptureRecorder *recorder, int note,
     return 1;
 }
 
+uint32_t ts_capture_shift_staged_notes(TsCaptureRecorder *recorder,
+                                       int keyboard_base_delta)
+{
+    const uint32_t visible_notes = UINT32_C(0x00ffffff);
+    if (recorder == NULL) return 0u;
+    if (keyboard_base_delta >= 24 || keyboard_base_delta <= -24)
+        recorder->staged_notes = 0u;
+    else if (keyboard_base_delta > 0)
+        recorder->staged_notes >>= keyboard_base_delta;
+    else if (keyboard_base_delta < 0)
+        recorder->staged_notes =
+            (recorder->staged_notes << -keyboard_base_delta) & visible_notes;
+    return recorder->staged_notes;
+}
+
 void ts_capture_clear_staged_notes(TsCaptureRecorder *recorder)
 {
     if (recorder != NULL) recorder->staged_notes = 0u;

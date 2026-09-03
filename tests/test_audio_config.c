@@ -328,6 +328,37 @@ static int test_attack_clamp(void)
     return ok;
 }
 
+static int test_shared_capture_format_compatibility(void)
+{
+    static const char legacy_path[] = "test-audio-config-capture-legacy.ini";
+    static const char conflict_path[] = "test-audio-config-capture-conflict.ini";
+    TsConfig loaded;
+    char error[160];
+    FILE *file = fopen(legacy_path, "wb");
+    int ok;
+    if (file == NULL) return 0;
+    fputs("[Sister Machine]\nsister_capture_channels=2\n", file);
+    fclose(file);
+    ok = ts_audio_config_load(&loaded, legacy_path, error, sizeof(error)) &&
+         expect(loaded.capture_channels == 2 &&
+                loaded.sister_capture_channels == 2,
+                "legacy Sister-only format should seed the shared setting");
+    remove(legacy_path);
+    if (!ok) return 0;
+
+    file = fopen(conflict_path, "wb");
+    if (file == NULL) return 0;
+    fputs("[Internal Capture]\ncapture_channels=1\n"
+          "[Sister Machine]\nsister_capture_channels=2\n", file);
+    fclose(file);
+    ok = ts_audio_config_load(&loaded, conflict_path, error, sizeof(error)) &&
+         expect(loaded.capture_channels == 1 &&
+                loaded.sister_capture_channels == 1,
+                "main Capture format should resolve conflicting old settings");
+    remove(conflict_path);
+    return ok;
+}
+
 static int test_invalid_audio_buffer(void)
 {
     static const char path[] = "test-audio-config-buffer.ini";
@@ -352,6 +383,7 @@ int main(void)
     if (!test_roundtrip()) return 1;
     if (!test_blank_roundtrip()) return 1;
     if (!test_legacy_config()) return 1;
+    if (!test_shared_capture_format_compatibility()) return 1;
     if (!test_attack_clamp()) return 1;
     if (!test_invalid_audio_buffer()) return 1;
     puts("audio config tests passed");

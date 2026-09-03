@@ -620,6 +620,41 @@ static int loop_boundary(const TsPerformanceVoice *voice)
            voice->position < (double)voice->range_first;
 }
 
+static void begin_ping_pong_turnaround(TsPerformanceVoice *voice)
+{
+    double output_frames;
+    size_t frames;
+    if (voice == NULL || !voice->previous_frame_valid ||
+        voice->crossfade_frames == 0u || !isfinite(voice->step) ||
+        fabs(voice->step) < 0.0000001) return;
+    output_frames = (double)voice->crossfade_frames / fabs(voice->step);
+    frames = (size_t)ceil(output_frames);
+    if (frames < 2u) frames = 2u;
+    voice->turnaround_from = voice->previous_frame;
+    voice->turnaround_crossfade_frames = frames;
+    voice->turnaround_crossfade_remaining = frames;
+}
+
+static TsStereoFrame apply_ping_pong_turnaround(TsPerformanceVoice *voice,
+                                                 TsStereoFrame current)
+{
+    if (voice != NULL && voice->turnaround_crossfade_remaining > 0u &&
+        voice->turnaround_crossfade_frames > 0u) {
+        size_t completed = voice->turnaround_crossfade_frames -
+                           voice->turnaround_crossfade_remaining;
+        float phase = voice->turnaround_crossfade_frames > 1u ?
+            (float)completed /
+            (float)(voice->turnaround_crossfade_frames - 1u) : 1.0f;
+        float smooth = phase * phase * (3.0f - 2.0f * phase);
+        current.l = voice->turnaround_from.l +
+            (current.l - voice->turnaround_from.l) * smooth;
+        current.r = voice->turnaround_from.r +
+            (current.r - voice->turnaround_from.r) * smooth;
+        --voice->turnaround_crossfade_remaining;
+    }
+    return ts_stereo_frame_sanitize(current);
+}
+
 static void adopt_pending_generation(TsPerformanceVoice *voice)
 {
     TsPerformanceGeneration *pending;
@@ -694,11 +729,16 @@ TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
             continue;
         }
         if (voice->looping) {
+            int direction_before = voice->direction;
             if (voice->pending_generation != NULL && loop_boundary(voice))
                 adopt_pending_generation(voice);
             voice->position = ts_audition_loop_position(
                 voice->position, voice->range_first, voice->range_last,
                 voice->crossfade_frames, voice->loop_mode, &voice->direction);
+            if (voice->loop_mode == TS_LOOP_PING_PONG &&
+                voice->direction != direction_before &&
+                voice->transition_generation == NULL)
+                begin_ping_pong_turnaround(voice);
             value = ts_audition_read_looped_mode_frame(
                 voice->sample, voice->position, voice->range_first,
                 voice->range_last, voice->crossfade_frames, voice->loop_mode);
@@ -719,6 +759,9 @@ TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
             value = ts_audition_read_frame(
                 voice->sample, voice->position, voice->range_last);
         }
+        value = apply_ping_pong_turnaround(voice, value);
+        voice->previous_frame = value;
+        voice->previous_frame_valid = 1;
         if (voice->tile_launched) {
             if (voice->tile_ramp_remaining > 0u) {
                 voice->tile_gain += voice->tile_gain_step;

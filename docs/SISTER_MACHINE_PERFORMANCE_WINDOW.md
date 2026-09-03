@@ -141,6 +141,8 @@ Sister-window TILES button remains the non-destructive insert/bypass for that ma
 ## Capture and Overdub
 
 The performance window selects MIX/H1/H2/H3, M/S, and CURRENT/NEXT EMPTY before arming.
+Its M/S button mirrors the main-page Capture button; either location changes the one
+shared format used by ordinary Capture, Sister Capture, and FILE recording.
 Allocation occurs on the UI thread while the audio device is locked, then callback writes
 reuse the PR4 recorder. Completion commits through the existing protected transaction,
 including linked stereo peak protection, channel-shape identity, provenance, canvas

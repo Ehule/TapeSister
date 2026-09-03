@@ -275,6 +275,42 @@ int main(void)
     assert(ts_performance_tile_mask(&performance) == 0u);
     assert(ts_performance_count(&performance) == 0);
 
+    /* PING-PONG advertises the same loop XFADE as the other modes. Its
+       direction reversal must use that overlap instead of exposing a sharp
+       fractional-step turnaround for POST effects to magnify. */
+    free_slot(&instrument.bank[5]);
+    fill_slot(&instrument.bank[5], 0.0f, 40u, 1000u);
+    for (size_t i = 0u; i < instrument.bank[5].sample.frames; ++i)
+        instrument.bank[5].sample.data[i] =
+            -1.0f + 2.0f * (float)i /
+                     (float)(instrument.bank[5].sample.frames - 1u);
+    instrument.bank[5].has_loop = 1;
+    instrument.bank[5].loop_first = 0u;
+    instrument.bank[5].loop_last = 40u;
+    instrument.bank[5].loop_mode = TS_LOOP_PING_PONG;
+    instrument.bank[5].loop_crossfade_ms = 8.0f;
+    assert(ts_performance_toggle_tile(&performance, &instrument, 5, 0, 1000) ==
+           TS_PERFORMANCE_TILE_STARTED);
+    performance.voices[0].step = 5.5;
+    {
+        float previous = ts_performance_read(&performance, NULL);
+        float worst_turnaround = 0.0f;
+        int turnarounds = 0;
+        for (int i = 0; i < 80; ++i) {
+            int direction = performance.voices[0].direction;
+            float current = ts_performance_read(&performance, NULL);
+            if (performance.voices[0].direction != direction) {
+                float jump = fabsf(current - previous);
+                if (jump > worst_turnaround) worst_turnaround = jump;
+                ++turnarounds;
+            }
+            previous = current;
+        }
+        assert(turnarounds > 4);
+        assert(worst_turnaround < 0.0001f);
+    }
+    ts_performance_clear(&performance);
+
     ts_performance_free(&performance);
     for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) free_slot(&instrument.bank[slot]);
     puts("performance tests passed");

@@ -2,6 +2,7 @@
 #define TAPESISTER_SAMPLE_PAGES_H
 
 #include "tapesister/sample.h"
+#include "tapesister/sister_project_state.h"
 
 #include <stddef.h>
 
@@ -44,9 +45,14 @@ int ts_sample_pages_keep_record_bank(TsSamplePages *pages,
                                      size_t *first_page,
                                      size_t *last_page,
                                      char *error, size_t error_size);
+int ts_sample_pages_bundle_project_path(const char *requested_path,
+                                        char *project_path,
+                                        size_t project_path_size,
+                                        char *error, size_t error_size);
 int ts_sample_pages_save_project(const TsSamplePages *pages,
                                  const TsInstrument *active_sample,
                                  const TsInstrument *record_bank,
+                                 const TsSisterProjectState *sister_state,
                                  const char *path,
                                  char *error, size_t error_size);
 int ts_sample_pages_load_project(TsSamplePages *pages,

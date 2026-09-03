@@ -3,6 +3,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 static int failures;
 
@@ -40,6 +41,43 @@ int main(void)
     CONTRACT("master_output_unity",
              ts_ui_master_output_normalized_from_x(
                  TS_UI_MASTER_OUTPUT_X + TS_UI_MASTER_OUTPUT_W) == 1.0f);
+    {
+        TsInstrument portal_instrument;
+        TsUiState portal_ui;
+        TsFramebuffer portal_fb;
+        uint32_t rolling_color;
+        ts_instrument_init(&portal_instrument);
+        ts_ui_init(&portal_ui);
+        portal_ui.sister_enabled = 1;
+        portal_ui.sister_rolling = 1;
+        portal_ui.sister_monitor_enabled = 1;
+        rolling_color =
+            portal_ui.palette.colors[TS_PALETTE_STEREO_WAVE_LEFT];
+        ts_ui_render(&portal_fb, &portal_ui, &portal_instrument);
+        CONTRACT("portal_roll_marker_has_centered_tip",
+                 portal_fb.pixels[21 * TS_UI_WIDTH + 144] == rolling_color);
+        CONTRACT("portal_roll_marker_aligns_with_subtitle_top",
+                 portal_fb.pixels[18 * TS_UI_WIDTH + 141] == rolling_color);
+        CONTRACT("portal_roll_marker_has_lower_half",
+                 portal_fb.pixels[24 * TS_UI_WIDTH + 141] == rolling_color);
+        CONTRACT("portal_roll_marker_clears_subtitle_bottom",
+                 portal_fb.pixels[25 * TS_UI_WIDTH + 144] != rolling_color);
+        CONTRACT("portal_monitor_marker_aligns_with_subtitle_top",
+                 portal_fb.pixels[18 * TS_UI_WIDTH + 148] ==
+                 portal_ui.palette.colors[TS_PALETTE_STEREO_WAVE_SUM]);
+        portal_ui.sister_held = 1;
+        ts_ui_render(&portal_fb, &portal_ui, &portal_instrument);
+        CONTRACT("portal_hold_marker_aligns_with_subtitle_top",
+                 portal_fb.pixels[18 * TS_UI_WIDTH + 141] ==
+                 portal_ui.palette.colors[TS_PALETTE_PATTERN_TUNING]);
+        CONTRACT("portal_hold_marker_aligns_with_subtitle_bottom",
+                 portal_fb.pixels[24 * TS_UI_WIDTH + 145] ==
+                 portal_ui.palette.colors[TS_PALETTE_PATTERN_TUNING]);
+        CONTRACT("portal_hold_marker_clears_subtitle_bottom",
+                 portal_fb.pixels[25 * TS_UI_WIDTH + 145] !=
+                 portal_ui.palette.colors[TS_PALETTE_PATTERN_TUNING]);
+        ts_instrument_free(&portal_instrument);
+    }
     TsInstrument instrument;
     TsNoteBank notes;
     TsAuditionPlan plan;
@@ -247,6 +285,32 @@ int main(void)
         CONTRACT("selection_waveform_color_covers_straddling_left_pixel",
                  visual_fb.pixels[waveform_y * TS_UI_WIDTH + TS_WAVE_X] ==
                  visual_ui.palette.colors[TS_PALETTE_TEXT_ON_BLOCK]);
+        ts_instrument_free(&visual);
+    }
+
+    {
+        TsInstrument visual;
+        TsUiState visual_ui;
+        TsFramebuffer visual_fb;
+        const char *readout = "CANVAS 1.000 S (+0.500 S)";
+        int draw_x = TS_WAVE_X + TS_WAVE_W - 54;
+        int readout_width = (int)strlen(readout) * 6 - 1;
+        int readout_x = draw_x - 8 - readout_width;
+        int final_unit_x = readout_x + 23 * 6;
+        ts_instrument_init(&visual);
+        ts_ui_init(&visual_ui);
+        CONTRACT("canvas_readout_fixture_activates",
+                 ts_instrument_activate_silence(&visual, 48000, 48000,
+                                                error, sizeof(error)));
+        visual_ui.canvas_gesture.active = 1;
+        visual_ui.canvas_drag_start_frames = 24000;
+        ts_ui_render(&visual_fb, &visual_ui, &visual);
+        CONTRACT("canvas_resize_readout_ends_before_draw_tile",
+                 final_unit_x + 5 < draw_x);
+        CONTRACT("canvas_resize_readout_keeps_final_unit_visible",
+                 visual_fb.pixels[(TS_WAVE_Y + 5) * TS_UI_WIDTH +
+                                  final_unit_x + 1] ==
+                 visual_ui.palette.colors[TS_PALETTE_PATTERN_EFFECT]);
         ts_instrument_free(&visual);
     }
 

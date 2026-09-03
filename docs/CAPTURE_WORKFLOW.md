@@ -7,6 +7,8 @@ to the REC BANK use `SYNTH_...wav`; and Capture-to-New-Tile uses `CAPTURE_...wav
 Archives are 32-bit float WAV files in `Captures/` and preserve the take's explicit
 channel shape. Internal Capture defaults to mono (**M**) and may deliberately preserve
 stereo (**S**); external MIX/LEFT/RIGHT takes are mono and STEREO takes are stereo.
+The main-page and Sister Machine M/S buttons mirror one shared Internal Capture format,
+including Sister's long-form FILE destination.
 FM/SYNTH remains native mono. Files live in `TAPESISTER_CAPTURES` when set and use local
 time, milliseconds, process identity, and a
 collision counter. Files are written to a temporary name and renamed only after the
@@ -30,13 +32,13 @@ KEEP deep-copies occupied REC tiles in ascending order into ascending empty Samp
 slots, then clears the REC BANK only after every copy succeeds. Allocation/copy failure
 rolls back all new destinations and any pages created by that KEEP operation.
 
-The primary `.tsr` is page 1 and remains a normal single-page project; TSR27-aware
-builds can open it without the companion folder.
-`<project>.tsr.samples/manifest.txt` declares the page count, active page, and optional
-REC BANK; later pages and REC state use ordinary TSR27 members. Opening a project is
-transactional: all members load into temporary instruments before current state is
-replaced. The bundle is intentionally simpler and safer than widening the fixed
-16-tile serializer, but users must keep the `.tsr` and companion folder together.
+The primary `.tsr` is page 1 and remains a normal single-page project. A save creates
+one named project folder containing that TSR, `manifest.txt`, `sister-state.ini`, later
+page/REC BANK TSR27 members under `project-data/`, and extractable 16-bit PCM copies of
+every occupied tile under `samples/`. Opening remains transactional: all required TSR
+members load into temporary instruments before current state is replaced. Saving stages
+and validates the complete folder before replacement, so a shortened project cannot
+retain stale pages or WAVs. Legacy `.tsr` plus `.tsr.samples/` pairs remain loadable.
 
 ## Audio and rendering boundaries
 

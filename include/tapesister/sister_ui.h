@@ -246,6 +246,8 @@ void ts_sister_ui_migrate_legacy_effect_locks(uint64_t *locks,
                                               uint64_t *locks_high);
 
 void ts_sister_ui_model_init(TsSisterUiModel *model, const TsConfig *config);
+void ts_sister_ui_set_capture_channels(TsSisterUiModel *model,
+                                       TsConfig *config, int channels);
 void ts_sister_ui_model_show(TsSisterUiModel *model);
 void ts_sister_ui_model_hide(TsSisterUiModel *model);
 void ts_sister_ui_model_update(TsSisterUiModel *model,

@@ -240,6 +240,8 @@ int ts_config_load(TsConfig *config, const char *path,
     int line_number = 0;
     int saw_fx_effect_transition = 0;
     int saw_fallout_master_transition = 0;
+    int saw_capture_channels = 0;
+    int saw_sister_capture_channels = 0;
     if (config == NULL || path == NULL || path[0] == '\0') {
         set_error(error, error_size, "Invalid config destination");
         return 0;
@@ -326,6 +328,7 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, TS_CAPTURE_MAX_SECONDS_MIN, TS_CAPTURE_MAX_SECONDS_MAX, &loaded.capture_max_seconds)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "capture_channels") == 0) {
             if (!parse_clamped_integer(value, TS_CAPTURE_CHANNELS_MIN, TS_CAPTURE_CHANNELS_MAX, &loaded.capture_channels)) { snprintf(error, error_size, "Invalid integer on config line %d", line_number); fclose(file); return 0; }
+            saw_capture_channels = 1;
         } else if (strcmp(key, "waveform_display_mode") == 0) {
             if (!parse_clamped_integer(value, 0, TS_WAVEFORM_DISPLAY_COUNT - 1, &loaded.waveform_display_mode)) { snprintf(error, error_size, "Invalid waveform mode on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_waveform_display_mode") == 0) {
@@ -368,6 +371,7 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, 1, 14400, &loaded.sister_fallout_rise_seconds)) { snprintf(error, error_size, "Invalid Fallout rise time on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_capture_channels") == 0) {
             if (!parse_clamped_integer(value, 1, 2, &loaded.sister_capture_channels)) { snprintf(error, error_size, "Invalid Sister capture format on config line %d", line_number); fclose(file); return 0; }
+            saw_sister_capture_channels = 1;
         } else if (strcmp(key, "sister_restart_clear") == 0) {
             if (!parse_boolean(value, &loaded.sister_restart_clear)) { snprintf(error, error_size, "Invalid Sister restart policy on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_dry_percent") == 0) {
@@ -418,6 +422,9 @@ int ts_config_load(TsConfig *config, const char *path,
         return 0;
     }
     fclose(file);
+    if (!saw_capture_channels && saw_sister_capture_channels)
+        loaded.capture_channels = loaded.sister_capture_channels;
+    loaded.sister_capture_channels = loaded.capture_channels;
     *config = loaded;
     set_error(error, error_size, "");
     return 1;
@@ -484,7 +491,8 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "capture_auto_resize=%d\n"
                 "; Hard safety limit when automatic Capture resizing is enabled.\n"
                 "capture_max_seconds=%d\n"
-                "; Internal Capture format: 1=M, 2=S. Overdub always follows its target shape.\n"
+                "; Shared Capture format: 1=M, 2=S. Both UI buttons mirror this value.\n"
+                "; Overdub always follows its target shape.\n"
                 "capture_channels=%d\n"
                 "\n[Sister Machine]\n"
                 "; Display modes: 0=STEREO, 1=LEFT, 2=RIGHT, 3=MONO SUM.\n"
@@ -513,6 +521,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "sister_fallout_master_transition_ms=%d\n"
                 "; Default Fallout RISE length: 1 second to 4 hours.\n"
                 "sister_fallout_rise_seconds=%d\n"
+                "; Compatibility alias for capture_channels; kept synchronized.\n"
                 "sister_capture_channels=%d\n"
                 "sister_restart_clear=%d\n"
                 "; Source trims feed the normalized Sister input mixer; INPUT remains its master.\n"
@@ -577,7 +586,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_fallout_component_transition_ms,
                 config->sister_fallout_master_transition_ms,
                 config->sister_fallout_rise_seconds,
-                config->sister_capture_channels,
+                config->capture_channels,
                 config->sister_restart_clear ? 1 : 0,
                 config->sister_input_percent,
                 config->sister_tiles_percent,

@@ -1,3 +1,7 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "tapesister/sample_pages.h"
 
 #include <errno.h>
@@ -10,8 +14,12 @@
 #include <direct.h>
 #include <windows.h>
 #define TS_PAGES_MKDIR(path) _mkdir(path)
+#define TS_PAGES_RMDIR(path) _rmdir(path)
 #else
+#include <dirent.h>
+#include <unistd.h>
 #define TS_PAGES_MKDIR(path) mkdir(path, 0775)
+#define TS_PAGES_RMDIR(path) rmdir(path)
 #endif
 
 enum { TS_PROJECT_PATH_MAX = 2048, TS_PROJECT_PAGE_LIMIT = 1024 };
@@ -350,15 +358,125 @@ static int directory_exists(const char *path)
 #endif
 }
 
-static int ensure_companion_directory(const char *path,
-                                      char *error, size_t error_size)
+static int regular_file_exists(const char *path)
 {
-    if (directory_exists(path)) return 1;
-    if (TS_PAGES_MKDIR(path) == 0 || errno == EEXIST) return 1;
-    if (error != NULL && error_size > 0u)
-        snprintf(error, error_size, "Could not create project companion folder: %s",
-                 strerror(errno));
-    return 0;
+    struct stat info;
+    if (path == NULL || stat(path, &info) != 0) return 0;
+#ifdef _WIN32
+    return (info.st_mode & _S_IFREG) != 0;
+#else
+    return S_ISREG(info.st_mode);
+#endif
+}
+
+static const char *path_name(const char *path)
+{
+    const char *slash = path != NULL ? strrchr(path, '/') : NULL;
+    const char *backslash = path != NULL ? strrchr(path, '\\') : NULL;
+    const char *separator = slash != NULL &&
+                            (backslash == NULL || slash > backslash) ?
+                            slash : backslash;
+    return separator != NULL ? separator + 1 : path;
+}
+
+static int path_directory(const char *path, char *directory, size_t size)
+{
+    const char *name;
+    size_t length;
+    if (path == NULL || path[0] == '\0' || directory == NULL || size == 0u)
+        return 0;
+    name = path_name(path);
+    length = name != NULL && name > path ? (size_t)(name - path - 1) : 0u;
+    if (length == 0u) {
+        if (size < 2u) return 0;
+        directory[0] = '.';
+        directory[1] = '\0';
+        return 1;
+    }
+    if (length >= size) return 0;
+    memcpy(directory, path, length);
+    directory[length] = '\0';
+    return 1;
+}
+
+static int project_stem(const char *path, char *stem, size_t size)
+{
+    const char *name = path_name(path);
+    size_t length = name != NULL ? strlen(name) : 0u;
+    if (length <= 4u || name[length - 4u] != '.' ||
+        (name[length - 3u] != 't' && name[length - 3u] != 'T') ||
+        (name[length - 2u] != 's' && name[length - 2u] != 'S') ||
+        (name[length - 1u] != 'r' && name[length - 1u] != 'R') ||
+        length - 4u >= size) return 0;
+    memcpy(stem, name, length - 4u);
+    stem[length - 4u] = '\0';
+    return stem[0] != '\0';
+}
+
+static int path_component_equal(const char *first, const char *second)
+{
+#ifdef _WIN32
+    if (first == NULL || second == NULL) return first == second;
+    while (*first != '\0' && *second != '\0') {
+        unsigned char left = (unsigned char)*first++;
+        unsigned char right = (unsigned char)*second++;
+        if (left >= 'A' && left <= 'Z') left = (unsigned char)(left + 'a' - 'A');
+        if (right >= 'A' && right <= 'Z') right = (unsigned char)(right + 'a' - 'A');
+        if (left != right) return 0;
+    }
+    return *first == *second;
+#else
+    return first != NULL && second != NULL && strcmp(first, second) == 0;
+#endif
+}
+
+static int bundle_is_owned(const char *directory, const char *project_name);
+
+int ts_sample_pages_bundle_project_path(const char *requested_path,
+                                        char *project_path,
+                                        size_t project_path_size,
+                                        char *error, size_t error_size)
+{
+    char requested_copy[TS_PROJECT_PATH_MAX];
+    char directory[TS_PROJECT_PATH_MAX];
+    char stem[512];
+    char name_copy[768];
+    const char *name;
+    const char *directory_name;
+    int written;
+    if (requested_path == NULL ||
+        snprintf(requested_copy, sizeof(requested_copy), "%s", requested_path) < 0 ||
+        strlen(requested_path) >= sizeof(requested_copy) ||
+        project_path == NULL || project_path_size == 0u ||
+        !path_directory(requested_copy, directory, sizeof(directory)) ||
+        !project_stem(requested_copy, stem, sizeof(stem))) {
+        pages_error(error, error_size, "Enter a valid TSR project name");
+        return 0;
+    }
+    name = path_name(requested_copy);
+    if (name == NULL || snprintf(name_copy, sizeof(name_copy), "%s", name) < 0 ||
+        strlen(name) >= sizeof(name_copy)) {
+        pages_error(error, error_size, "Project filename is too long");
+        return 0;
+    }
+    name = name_copy;
+    directory_name = path_name(directory);
+    if (directory_name != NULL &&
+        (path_component_equal(directory_name, stem) ||
+         bundle_is_owned(directory, name))) {
+        written = snprintf(project_path, project_path_size, "%s", requested_copy);
+    } else if (strcmp(directory, ".") == 0) {
+        written = snprintf(project_path, project_path_size, "%s/%s", stem, name);
+    } else {
+        written = snprintf(project_path, project_path_size, "%s/%s/%s",
+                           directory, stem, name);
+    }
+    if (written < 0 || (size_t)written >= project_path_size) {
+        pages_error(error, error_size, "Project bundle path is too long");
+        return 0;
+    }
+    pages_error(error, error_size, "");
+    return 1;
 }
 
 static int companion_path(const char *project, char *directory, size_t size,
@@ -406,91 +524,508 @@ static int save_instrument_atomic(const TsInstrument *instrument,
     return finish_atomic(temporary, destination, error, error_size);
 }
 
+static int remove_tree(const char *path)
+{
+#ifdef _WIN32
+    {
+        DWORD attributes = GetFileAttributesA(path);
+        if (attributes == INVALID_FILE_ATTRIBUTES)
+            return GetLastError() == ERROR_FILE_NOT_FOUND ||
+                   GetLastError() == ERROR_PATH_NOT_FOUND;
+        if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+            return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ?
+                   RemoveDirectoryA(path) != 0 : DeleteFileA(path) != 0;
+        if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
+            return DeleteFileA(path) != 0;
+    }
+    {
+        WIN32_FIND_DATAA entry;
+        HANDLE search;
+        char pattern[TS_PROJECT_PATH_MAX];
+        char child[TS_PROJECT_PATH_MAX];
+        if (snprintf(pattern, sizeof(pattern), "%s/*", path) < 0 ||
+            strlen(path) + 3u >= sizeof(pattern)) return 0;
+        search = FindFirstFileA(pattern, &entry);
+        if (search != INVALID_HANDLE_VALUE) {
+            do {
+                if (strcmp(entry.cFileName, ".") == 0 ||
+                    strcmp(entry.cFileName, "..") == 0) continue;
+                if (snprintf(child, sizeof(child), "%s/%s", path,
+                             entry.cFileName) < 0 ||
+                    strlen(path) + strlen(entry.cFileName) + 2u >= sizeof(child) ||
+                    !remove_tree(child)) {
+                    FindClose(search);
+                    return 0;
+                }
+            } while (FindNextFileA(search, &entry));
+            FindClose(search);
+        }
+    }
+#else
+    {
+        struct stat info;
+        if (lstat(path, &info) != 0) return errno == ENOENT;
+        if (!S_ISDIR(info.st_mode)) return unlink(path) == 0;
+    }
+    {
+        DIR *directory = opendir(path);
+        struct dirent *entry;
+        char child[TS_PROJECT_PATH_MAX];
+        if (directory == NULL) return 0;
+        while ((entry = readdir(directory)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 ||
+                strcmp(entry->d_name, "..") == 0) continue;
+            if (snprintf(child, sizeof(child), "%s/%s", path,
+                         entry->d_name) < 0 ||
+                strlen(path) + strlen(entry->d_name) + 2u >= sizeof(child) ||
+                !remove_tree(child)) {
+                closedir(directory);
+                return 0;
+            }
+        }
+        closedir(directory);
+    }
+#endif
+    return TS_PAGES_RMDIR(path) == 0;
+}
+
+static int rename_directory(const char *source, const char *destination)
+{
+#ifdef _WIN32
+    return MoveFileExA(source, destination, MOVEFILE_WRITE_THROUGH) != 0;
+#else
+    return rename(source, destination) == 0;
+#endif
+}
+
+static void sample_safe_name(const char *source, char *safe, size_t size)
+{
+    size_t used = 0u;
+    int separator = 0;
+    if (safe == NULL || size == 0u) return;
+    if (source == NULL) source = "sample";
+    while (*source != '\0' && used + 1u < size) {
+        unsigned char ch = (unsigned char)*source++;
+        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+            (ch >= '0' && ch <= '9')) {
+            safe[used++] = (char)ch;
+            separator = 0;
+        } else if (!separator && used > 0u) {
+            safe[used++] = '-';
+            separator = 1;
+        }
+    }
+    while (used > 0u && safe[used - 1u] == '-') --used;
+    if (used == 0u) {
+        snprintf(safe, size, "sample");
+        return;
+    }
+    safe[used] = '\0';
+}
+
+static int make_directory(const char *path, const char *description,
+                          char *error, size_t error_size)
+{
+    if (TS_PAGES_MKDIR(path) == 0) return 1;
+    if (error != NULL && error_size > 0u)
+        snprintf(error, error_size, "Could not create %s: %s",
+                 description, strerror(errno));
+    return 0;
+}
+
+static int write_partial_marker(const char *directory,
+                                char *error, size_t error_size)
+{
+    char path[TS_PROJECT_PATH_MAX];
+    FILE *file;
+    if (snprintf(path, sizeof(path), "%s/.tapesister-partial", directory) < 0 ||
+        strlen(directory) + 21u >= sizeof(path)) {
+        pages_error(error, error_size, "Project staging path is too long");
+        return 0;
+    }
+    file = fopen(path, "wb");
+    if (file == NULL) {
+        pages_error(error, error_size, "Could not mark project staging folder");
+        return 0;
+    }
+    {
+        int failed = fputs("TapeSister partial project\n", file) == EOF;
+        if (fclose(file) != 0) failed = 1;
+        if (!failed) return 1;
+        remove(path);
+        pages_error(error, error_size, "Could not mark project staging folder");
+        return 0;
+    }
+}
+
+static int stage_is_owned(const char *directory)
+{
+    char marker[TS_PROJECT_PATH_MAX];
+    return snprintf(marker, sizeof(marker), "%s/.tapesister-partial", directory) >= 0 &&
+           strlen(directory) + 21u < sizeof(marker) && regular_file_exists(marker);
+}
+
+static int bundle_is_owned(const char *directory, const char *project_name)
+{
+    char manifest[TS_PROJECT_PATH_MAX];
+    char line[1024];
+    FILE *file;
+    int matched = 0;
+    if (snprintf(manifest, sizeof(manifest), "%s/manifest.txt", directory) < 0 ||
+        strlen(directory) + 14u >= sizeof(manifest)) return 0;
+    file = fopen(manifest, "rb");
+    if (file == NULL) return 0;
+    if (fgets(line, sizeof(line), file) != NULL &&
+        strcmp(line, "TAPESISTER_PROJECT 2\n") == 0 &&
+        fgets(line, sizeof(line), file) != NULL) {
+        char expected[768];
+        snprintf(expected, sizeof(expected), "project=%s\n", project_name);
+        matched = strcmp(line, expected) == 0;
+    }
+    fclose(file);
+    return matched;
+}
+
+static int write_instrument_wavs(const TsInstrument *instrument,
+                                 const char *directory,
+                                 char *error, size_t error_size)
+{
+    char path[TS_PROJECT_PATH_MAX];
+    char safe[96];
+    if (!make_directory(directory, "project sample folder", error, error_size))
+        return 0;
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        const TsBankSlot *member = &instrument->bank[slot];
+        if (!member->occupied) continue;
+        sample_safe_name(member->sample.name, safe, sizeof(safe));
+        if (snprintf(path, sizeof(path), "%s/%02d_%s.wav", directory,
+                     slot + 1, safe) < 0 ||
+            strlen(directory) + strlen(safe) + 9u >= sizeof(path)) {
+            pages_error(error, error_size, "Project WAV path is too long");
+            return 0;
+        }
+        if (!ts_sample_save_wav16_tuned_looped(
+                &member->sample, &member->audible_tuning,
+                member->has_loop, member->loop_first, member->loop_last,
+                member->loop_mode, path, error, error_size)) return 0;
+    }
+    return 1;
+}
+
+static int write_manifest_members(FILE *file, const TsInstrument *instrument,
+                                  const char *group, const char *directory)
+{
+    char safe[96];
+    for (int slot = 0; slot < TS_BANK_SLOT_COUNT; ++slot) {
+        const TsBankSlot *member = &instrument->bank[slot];
+        if (!member->occupied) continue;
+        sample_safe_name(member->sample.name, safe, sizeof(safe));
+        if (fprintf(file,
+                    "sample=%s,%d,samples/%s/%02d_%s.wav,%u,%u,%zu,%d,%.9g,%d,%.9g,%d,%zu,%zu,%d,%.9g\n",
+                    group, slot + 1, directory, slot + 1, safe,
+                    (unsigned)member->sample.channels,
+                    (unsigned)member->sample.sample_rate,
+                    member->sample.frames,
+                    member->tuning.root_note, member->tuning.fine_tune_cents,
+                    member->audible_tuning.root_note,
+                    member->audible_tuning.fine_tune_cents,
+                    member->has_loop, member->loop_first, member->loop_last,
+                    member->loop_mode, member->loop_crossfade_ms) < 0)
+            return 0;
+    }
+    return 1;
+}
+
+static int validate_saved_instrument(const char *path,
+                                     char *error, size_t error_size)
+{
+    TsInstrument loaded;
+    int ok;
+    ts_instrument_init(&loaded);
+    ok = ts_instrument_load_recipe(&loaded, path, error, error_size);
+    ts_instrument_free(&loaded);
+    return ok;
+}
+
 int ts_sample_pages_save_project(const TsSamplePages *pages,
                                  const TsInstrument *active_sample,
                                  const TsInstrument *record_bank,
+                                 const TsSisterProjectState *sister_state,
                                  const char *path,
                                  char *error, size_t error_size)
 {
     char directory[TS_PROJECT_PATH_MAX];
+    char stem[512];
+    char staging[TS_PROJECT_PATH_MAX];
+    char backup[TS_PROJECT_PATH_MAX];
+    char project_data[TS_PROJECT_PATH_MAX];
+    char samples[TS_PROJECT_PATH_MAX];
     char destination[TS_PROJECT_PATH_MAX];
     char manifest[TS_PROJECT_PATH_MAX];
-    char temporary[TS_PROJECT_PATH_MAX + 32];
+    char state_path[TS_PROJECT_PATH_MAX];
+    char sample_directory[TS_PROJECT_PATH_MAX];
+    char group[64];
     FILE *file;
     int record_present;
+    int had_existing;
+    size_t sample_count = 0u;
+    const char *project_name = path_name(path);
     if (pages == NULL || path == NULL || path[0] == '\0' ||
         pages->page_count == 0u ||
         (pages->active_live && active_sample == NULL)) {
         pages_error(error, error_size, "No paged project to save");
         return 0;
     }
-    if (!companion_path(path, directory, sizeof(directory), error, error_size) ||
-        !ensure_companion_directory(directory, error, error_size)) return 0;
-    if (!save_instrument_atomic(ts_sample_pages_page(pages, active_sample, 0u),
-                                path, error, error_size)) return 0;
-    for (size_t page = 1u; page < pages->page_count; ++page) {
-        if (snprintf(destination, sizeof(destination), "%s/page-%03zu.tsr",
-                     directory, page + 1u) < 0 || strlen(directory) + 24u >= sizeof(destination)) {
-            pages_error(error, error_size, "Project page path is too long");
+    if (!path_directory(path, directory, sizeof(directory)) ||
+        !project_stem(path, stem, sizeof(stem)) ||
+        (!path_component_equal(path_name(directory), stem) &&
+         !bundle_is_owned(directory, project_name))) {
+        pages_error(error, error_size,
+                    "TSR project must be saved inside its named project folder");
+        return 0;
+    }
+    if (snprintf(staging, sizeof(staging), "%s.tapesister-partial", directory) < 0 ||
+        snprintf(backup, sizeof(backup), "%s.tapesister-backup", directory) < 0 ||
+        strlen(directory) + 21u >= sizeof(staging) ||
+        strlen(directory) + 20u >= sizeof(backup)) {
+        pages_error(error, error_size, "Project transaction path is too long");
+        return 0;
+    }
+    had_existing = directory_exists(directory);
+    if (had_existing && !bundle_is_owned(directory, project_name)) {
+        pages_error(error, error_size,
+                    "A folder with that name exists but is not this TapeSister project");
+        return 0;
+    }
+    if (directory_exists(backup)) {
+        pages_error(error, error_size,
+                    "A previous project backup needs attention before saving");
+        return 0;
+    }
+    if (directory_exists(staging)) {
+        if (!stage_is_owned(staging) || !remove_tree(staging)) {
+            pages_error(error, error_size,
+                        "A project staging folder already exists and could not be recovered");
             return 0;
         }
+    }
+    if (!make_directory(staging, "project staging folder", error, error_size) ||
+        !write_partial_marker(staging, error, error_size)) goto failed;
+    if (snprintf(project_data, sizeof(project_data), "%s/project-data", staging) < 0 ||
+        snprintf(samples, sizeof(samples), "%s/samples", staging) < 0 ||
+        strlen(staging) + 14u >= sizeof(project_data) ||
+        strlen(staging) + 9u >= sizeof(samples) ||
+        !make_directory(project_data, "project data folder", error, error_size) ||
+        !make_directory(samples, "project WAV folder", error, error_size)) goto failed;
+    if (snprintf(destination, sizeof(destination), "%s/%s", staging,
+                 project_name) < 0 ||
+        strlen(staging) + strlen(project_name) + 2u >= sizeof(destination)) {
+        pages_error(error, error_size, "Project file path is too long");
+        goto failed;
+    }
+    if (!save_instrument_atomic(ts_sample_pages_page(pages, active_sample, 0u),
+                                destination, error, error_size) ||
+        !validate_saved_instrument(destination, error, error_size)) goto failed;
+    for (size_t page = 1u; page < pages->page_count; ++page) {
+        if (snprintf(destination, sizeof(destination), "%s/page-%03zu.tsr",
+                     project_data, page + 1u) < 0 ||
+            strlen(project_data) + 24u >= sizeof(destination)) {
+            pages_error(error, error_size, "Project page path is too long");
+            goto failed;
+        }
         if (!save_instrument_atomic(ts_sample_pages_page(pages, active_sample, page),
-                                    destination, error, error_size)) return 0;
+                                    destination, error, error_size) ||
+            !validate_saved_instrument(destination, error, error_size)) goto failed;
     }
     record_present = record_bank != NULL && ts_instrument_bank_count(record_bank) > 0;
     if (record_present) {
         if (snprintf(destination, sizeof(destination), "%s/record-bank.tsr",
-                     directory) < 0 || strlen(directory) + 18u >= sizeof(destination)) {
+                     project_data) < 0 ||
+            strlen(project_data) + 18u >= sizeof(destination)) {
             pages_error(error, error_size, "Record Bank path is too long");
-            return 0;
+            goto failed;
         }
-        if (!save_instrument_atomic(record_bank, destination, error, error_size)) return 0;
+        if (!save_instrument_atomic(record_bank, destination, error, error_size) ||
+            !validate_saved_instrument(destination, error, error_size)) goto failed;
     }
-    if (snprintf(manifest, sizeof(manifest), "%s/manifest.txt", directory) < 0 ||
-        strlen(directory) + 14u >= sizeof(manifest) ||
-        snprintf(temporary, sizeof(temporary), "%s.tapesister-tmp", manifest) < 0 ||
-        strlen(manifest) + 16u >= sizeof(temporary)) {
+    for (size_t page = 0u; page < pages->page_count; ++page) {
+        const TsInstrument *instrument = ts_sample_pages_page(
+            pages, active_sample, page);
+        snprintf(group, sizeof(group), "page-%03zu", page + 1u);
+        if (snprintf(sample_directory, sizeof(sample_directory), "%s/%s",
+                     samples, group) < 0 ||
+            strlen(samples) + strlen(group) + 2u >= sizeof(sample_directory) ||
+            !write_instrument_wavs(instrument, sample_directory,
+                                   error, error_size)) goto failed;
+        sample_count += (size_t)ts_instrument_bank_count(instrument);
+    }
+    if (record_present) {
+        if (snprintf(sample_directory, sizeof(sample_directory),
+                     "%s/record-bank", samples) < 0 ||
+            strlen(samples) + 13u >= sizeof(sample_directory) ||
+            !write_instrument_wavs(record_bank, sample_directory,
+                                   error, error_size)) goto failed;
+        sample_count += (size_t)ts_instrument_bank_count(record_bank);
+    }
+    if (sister_state != NULL) {
+        TsSisterProjectState validated_state;
+        int state_present = 0;
+        if (sister_state->page_count != pages->page_count ||
+            sister_state->active_page != pages->active_page) {
+            pages_error(error, error_size,
+                        "Sister state does not match the project pages");
+            goto failed;
+        }
+        if (snprintf(state_path, sizeof(state_path), "%s/sister-state.ini",
+                     staging) < 0 || strlen(staging) + 19u >= sizeof(state_path)) {
+            pages_error(error, error_size, "Sister project state path is too long");
+            goto failed;
+        }
+        if (!ts_sister_project_state_save_file(
+                sister_state, state_path, error, error_size) ||
+            !ts_sister_project_state_load_file(
+                &validated_state, state_path, 48000u,
+                &state_present, error, error_size) ||
+            !state_present || validated_state.page_count != pages->page_count ||
+            validated_state.active_page != pages->active_page) {
+            if (error != NULL && error_size > 0u && error[0] == '\0')
+                pages_error(error, error_size,
+                            "Could not validate Sister project state");
+            goto failed;
+        }
+    }
+    if (snprintf(manifest, sizeof(manifest), "%s/manifest.txt", staging) < 0 ||
+        strlen(staging) + 14u >= sizeof(manifest)) {
         pages_error(error, error_size, "Project manifest path is too long");
-        return 0;
+        goto failed;
     }
-    file = fopen(temporary, "wb");
+    file = fopen(manifest, "wb");
     if (file == NULL) {
         pages_error(error, error_size, "Could not create project page manifest");
-        return 0;
+        goto failed;
     }
-    fprintf(file, "TAPESISTER_PAGES 1\npage_count=%zu\nactive_page=%zu\nrecord_bank=%d\n",
-            pages->page_count, pages->active_page, record_present);
+    if (fprintf(file,
+                "TAPESISTER_PROJECT 2\nproject=%s\npage_count=%zu\n"
+                "active_page=%zu\nrecord_bank=%d\n"
+                "sister_state=%d\nsample_format=WAV_PCM16\nsample_count=%zu\n",
+                project_name, pages->page_count, pages->active_page,
+                record_present, sister_state != NULL, sample_count) < 0)
+        goto manifest_failed;
+    for (size_t page = 0u; page < pages->page_count; ++page) {
+        snprintf(group, sizeof(group), "page-%03zu", page + 1u);
+        if (!write_manifest_members(file,
+                ts_sample_pages_page(pages, active_sample, page),
+                group, group)) goto manifest_failed;
+    }
+    if (record_present &&
+        !write_manifest_members(file, record_bank,
+                                "record-bank", "record-bank"))
+        goto manifest_failed;
     {
         int write_failed = ferror(file);
         int close_failed = fclose(file) != 0;
         if (write_failed || close_failed) {
-            remove(temporary);
             pages_error(error, error_size, "Could not finish project page manifest");
-            return 0;
+            goto failed;
         }
     }
-    if (!finish_atomic(temporary, manifest, error, error_size)) return 0;
+    if (had_existing && !rename_directory(directory, backup)) {
+        pages_error(error, error_size, "Could not prepare the existing project for replacement");
+        goto failed;
+    }
+    if (!rename_directory(staging, directory)) {
+        if (had_existing) (void)rename_directory(backup, directory);
+        pages_error(error, error_size, "Could not publish the complete project folder");
+        goto failed;
+    }
+    if (snprintf(destination, sizeof(destination), "%s/.tapesister-partial",
+                 directory) >= 0 && strlen(directory) + 21u < sizeof(destination))
+        (void)remove(destination);
+    if (had_existing) (void)remove_tree(backup);
     pages_error(error, error_size, "");
     return 1;
+
+manifest_failed:
+    fclose(file);
+    pages_error(error, error_size, "Could not write project page manifest");
+failed:
+    if (stage_is_owned(staging)) (void)remove_tree(staging);
+    return 0;
 }
 
-static int read_manifest(const char *directory, size_t *page_count,
-                         size_t *active_page, int *record_present,
-                         int *found, char *error, size_t error_size)
+static int read_manifest(const char *project, char *directory,
+                         size_t directory_size, int *layout,
+                         size_t *page_count, size_t *active_page,
+                         int *record_present, int *found,
+                         char *error, size_t error_size)
 {
     char path[TS_PROJECT_PATH_MAX];
-    char line[128];
+    char expected[768];
+    char line[1024];
     FILE *file;
     int version;
-    if (snprintf(path, sizeof(path), "%s/manifest.txt", directory) < 0 ||
+    if (!path_directory(project, directory, directory_size) ||
+        snprintf(path, sizeof(path), "%s/manifest.txt", directory) < 0 ||
         strlen(directory) + 14u >= sizeof(path)) {
         pages_error(error, error_size, "Project manifest path is too long");
         return 0;
     }
     file = fopen(path, "rb");
+    if (file != NULL) {
+        if (fgets(line, sizeof(line), file) != NULL &&
+            strncmp(line, "TAPESISTER_PROJECT ", 19u) == 0) {
+            if (sscanf(line, "TAPESISTER_PROJECT %d", &version) != 1 ||
+                version != 2) {
+                fclose(file);
+                pages_error(error, error_size,
+                            "Unsupported TapeSister project manifest version");
+                return 0;
+            }
+            if (fgets(line, sizeof(line), file) == NULL) {
+                fclose(file);
+                pages_error(error, error_size, "Malformed TapeSister project manifest");
+                return 0;
+            }
+            snprintf(expected, sizeof(expected), "project=%s", path_name(project));
+            line[strcspn(line, "\r\n")] = '\0';
+            if (strcmp(line, expected) != 0) {
+                fclose(file);
+                pages_error(error, error_size,
+                            "Project manifest names a different TSR file");
+                return 0;
+            }
+            if (fgets(line, sizeof(line), file) == NULL ||
+                sscanf(line, "page_count=%zu", page_count) != 1 ||
+                fgets(line, sizeof(line), file) == NULL ||
+                sscanf(line, "active_page=%zu", active_page) != 1 ||
+                fgets(line, sizeof(line), file) == NULL ||
+                sscanf(line, "record_bank=%d", record_present) != 1 ||
+                *page_count == 0u || *page_count > TS_PROJECT_PAGE_LIMIT ||
+                *active_page >= *page_count ||
+                (*record_present != 0 && *record_present != 1)) {
+                fclose(file);
+                pages_error(error, error_size, "Malformed TapeSister project manifest");
+                return 0;
+            }
+            fclose(file);
+            *layout = 2;
+            *found = 1;
+            return 1;
+        }
+        fclose(file);
+    } else if (errno != ENOENT) {
+        pages_error(error, error_size, "Could not open project page manifest");
+        return 0;
+    }
+    if (!companion_path(project, directory, directory_size,
+                        error, error_size) ||
+        snprintf(path, sizeof(path), "%s/manifest.txt", directory) < 0 ||
+        strlen(directory) + 14u >= sizeof(path)) return 0;
+    file = fopen(path, "rb");
     if (file == NULL) {
         if (errno == ENOENT) {
             *found = 0;
+            *layout = 0;
             return 1;
         }
         pages_error(error, error_size, "Could not open project page manifest");
@@ -513,6 +1048,7 @@ static int read_manifest(const char *directory, size_t *page_count,
         return 0;
     }
     fclose(file);
+    *layout = 1;
     return 1;
 }
 
@@ -530,6 +1066,7 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
     size_t active_page = 0u;
     int record_present = 0;
     int manifest_found = 0;
+    int layout = 0;
     int loaded_ready = 0;
     if (pages == NULL || active_sample == NULL || record_bank == NULL ||
         !pages->active_live || path == NULL || path[0] == '\0') {
@@ -544,16 +1081,19 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
     loaded.active_live = 0;
     if (!ts_instrument_load_recipe(loaded.pages[0], path, error, error_size))
         goto failed;
-    if (!companion_path(path, directory, sizeof(directory), error, error_size) ||
-        !read_manifest(directory, &page_count, &active_page, &record_present,
+    if (!read_manifest(path, directory, sizeof(directory), &layout,
+                       &page_count, &active_page, &record_present,
                        &manifest_found, error, error_size)) goto failed;
     if (manifest_found) {
         while (loaded.page_count < page_count)
             if (!append_page(&loaded, error, error_size)) goto failed;
         for (size_t page = 1u; page < page_count; ++page) {
-            if (snprintf(page_path, sizeof(page_path), "%s/page-%03zu.tsr",
+            if (snprintf(page_path, sizeof(page_path),
+                         layout == 2 ? "%s/project-data/page-%03zu.tsr" :
+                                       "%s/page-%03zu.tsr",
                          directory, page + 1u) < 0 ||
-                strlen(directory) + 24u >= sizeof(page_path)) {
+                strlen(directory) + (layout == 2 ? 37u : 24u) >=
+                    sizeof(page_path)) {
                 pages_error(error, error_size, "Project page path is too long");
                 goto failed;
             }
@@ -561,8 +1101,12 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
                                            error, error_size)) goto failed;
         }
         if (record_present) {
-            if (snprintf(page_path, sizeof(page_path), "%s/record-bank.tsr",
-                         directory) < 0 || strlen(directory) + 18u >= sizeof(page_path)) {
+            if (snprintf(page_path, sizeof(page_path),
+                         layout == 2 ? "%s/project-data/record-bank.tsr" :
+                                       "%s/record-bank.tsr",
+                         directory) < 0 ||
+                strlen(directory) + (layout == 2 ? 31u : 18u) >=
+                    sizeof(page_path)) {
                 pages_error(error, error_size, "Record Bank path is too long");
                 goto failed;
             }
