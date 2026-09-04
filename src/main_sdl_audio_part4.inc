@@ -127,7 +127,8 @@ static void ts_audio_render_config(TsFramebuffer *fb, const TsUiState *ui)
     uint32_t row = 0xff1b191cu;
     uint32_t edge = 0xff48434au;
 
-    cfg_frame(fb, 10, 40, 620, 172, panel, mouse_color);
+    cfg_frame(fb, 10, TS_AUDIO_CONFIG_PANEL_Y, 620,
+              TS_AUDIO_CONFIG_PANEL_H, panel, mouse_color);
     cfg_text(fb, 20, 45, "CONFIGURATION", instrument_color);
     cfg_text(fb, 320, 45, "AUDIO/MIDI < OR >   SAVE APPLIES", effect_color);
 

@@ -353,18 +353,24 @@ static void runtime_note_sync(AudioState *audio,
     ts_sister_runtime_sync_sources(&audio->sister, instrument, output_rate);
 }
 enum {
+    TS_AUDIO_CONFIG_PANEL_Y = 40,
+    TS_AUDIO_CONFIG_PANEL_H = 155,
     TS_AUDIO_CONFIG_PATH_Y = 58,
-    TS_AUDIO_CONFIG_PATH_STEP = 19,
+    TS_AUDIO_CONFIG_PATH_STEP = 17,
     TS_AUDIO_CONFIG_ROW_H = 16,
     TS_AUDIO_CONFIG_VALUE_X = 188,
-    TS_AUDIO_CONFIG_BACKEND_Y = 136,
-    TS_AUDIO_CONFIG_INPUT_Y = 155,
-    TS_AUDIO_CONFIG_OUTPUT_Y = 174,
-    TS_MIDI_CONFIG_INPUT_Y = 193,
+    TS_AUDIO_CONFIG_BACKEND_Y = 127,
+    TS_AUDIO_CONFIG_INPUT_Y = 144,
+    TS_AUDIO_CONFIG_OUTPUT_Y = 161,
+    TS_MIDI_CONFIG_INPUT_Y = 178,
     TS_AUDIO_CONFIG_INPUT_W = 430,
     TS_AUDIO_CONFIG_CHANNEL_X = 455,
     TS_AUDIO_CONFIG_CHANNEL_W = 165
 };
+
+typedef char TsAudioConfigMustLeaveActionsVisible[
+    TS_AUDIO_CONFIG_PANEL_Y + TS_AUDIO_CONFIG_PANEL_H <= TS_CONFIG_ACTION_Y ?
+    1 : -1];
 
 #define TS_AUDIO_LOGICAL_OUTPUT ((SDL_AudioDeviceID)0x7fff0001u)
 #define TS_AUDIO_LOGICAL_CAPTURE ((SDL_AudioDeviceID)0x7fff0002u)

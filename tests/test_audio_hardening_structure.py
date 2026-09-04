@@ -11,7 +11,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = (ROOT / "src/main_sdl.c").read_text(encoding="utf-8")
+PART1 = (ROOT / "src/main_sdl_audio_part1.inc").read_text(encoding="utf-8")
 PART3 = (ROOT / "src/main_sdl_audio_part3.inc").read_text(encoding="utf-8")
+PART4 = (ROOT / "src/main_sdl_audio_part4.inc").read_text(encoding="utf-8")
 
 
 def require(condition: bool, message: str) -> None:
@@ -50,5 +52,10 @@ require("ts_audio_device_event_matches" in MAIN[device_removed:global_keys],
         "removal events must be matched through real SDL identity")
 require("event.adevice.which == input_device" not in MAIN,
         "real SDL capture IDs must not be compared with logical handles")
+
+require("TsAudioConfigMustLeaveActionsVisible" in PART1,
+        "the extended audio configuration panel must leave config actions visible")
+require("TS_AUDIO_CONFIG_PANEL_H" in PART4,
+        "config rendering must use the guarded panel height")
 
 print("audio hardening structural guards passed")
