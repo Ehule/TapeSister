@@ -236,6 +236,27 @@ make benchmark-sister
 Use `--diagnostic-audio` for optional callback, device, buffer, and external-input
 diagnostics.
 
+### Windows audio coexistence
+
+TapeSister defaults to `audio_backend=Auto`. On Windows, CONFIG can also select
+WASAPI or DirectSound; save and restart after changing the backend. Auto/WASAPI
+shared mode is the recommended starting point when TapeSister must coexist with
+TapeHead, REAPER, or VB-CABLE. TapeSister does not provide native ASIO: running
+beside REAPER/ASIO is an interoperability case and still depends on the interface
+driver's sharing and exclusivity rules.
+
+Configured and active devices are tracked separately. A named output or input is
+never silently replaced with the system default. If a named output fails at startup,
+TapeSister offers Retry, a temporary explicitly approved system-default output,
+continued operation without physical output, or Exit. Capture hardware is opened only
+while EXT, external recording, or input monitoring needs it; capture loss does not stop
+tiles, FM, audition, or Sister's internal sources. CONFIG shows connection state, while
+stderr and `tapesister-diagnostic.log` record the active backend, real SDL device IDs,
+negotiated format, rate, channels, buffer, fallback state, and last error.
+
+See the [Windows audio validation checklist](docs/WINDOWS_AUDIO_VALIDATION.md) before a
+release build is signed off on physical Windows hardware.
+
 ## Build on Windows
 
 From an MSYS2 **UCRT64** terminal with CMake, Ninja, SDL2, and the UCRT64 toolchain:
@@ -267,4 +288,5 @@ Final one-click end-user release packaging remains a release task.
 - [Sister Fallout](docs/SISTER_MACHINE_FALLOUT.md)
 - [Sister Realtime Audit](docs/SISTER_MACHINE_PR11_REALTIME_AUDIT.md)
 - [Universal TapeSister/TapeHead Palette](docs/UNIVERSAL_PALETTE.md)
+- [Windows Audio Validation](docs/WINDOWS_AUDIO_VALIDATION.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)

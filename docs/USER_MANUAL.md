@@ -877,7 +877,7 @@ requirements.
 
 CONFIG exposes the settings most likely to vary by computer or performance:
 
-- output device and buffer request;
+- audio backend, output device, and buffer request;
 - input device and channel mode;
 - MIDI device and channel;
 - sample, TapeHead, exchange, and optional CDP paths;
@@ -887,9 +887,47 @@ CONFIG exposes the settings most likely to vary by computer or performance:
 - waveform gesture resolution;
 - palette.
 
-Saving CONFIG applies a new MIDI choice immediately. Audio device changes may restart
-the audio contract and clear Sister's rolling memory. Named presets and saved projects
-preserve musical state separately from machine-specific device choices.
+Saving CONFIG applies a new MIDI choice immediately. Output and input device changes
+are applied on the control thread; a backend change applies after restart. Named
+presets and saved projects preserve musical state separately from machine-specific
+device choices.
+
+### Windows backend and device policy
+
+The persistent `audio_backend` choices are:
+
+- **Auto** — default and recommended; SDL chooses its preferred Windows backend;
+- **WASAPI** — recommended when deliberately standardizing TapeSister, TapeHead,
+  REAPER, and VB-CABLE on Windows shared-mode audio;
+- **DirectSound** — compatibility option for systems where WASAPI is unsuitable.
+
+The backend is selected before SDL initializes audio. An invalid value resolves safely
+to Auto and is reported in diagnostics. TapeSister does not expose ASIO because it does
+not contain a native ASIO implementation. REAPER may use ASIO beside TapeSister, but
+whether that works depends on the hardware driver's multi-client and exclusive-mode
+behavior.
+
+A blank output or input setting deliberately means **SYSTEM DEFAULT**. A nonblank name
+means exactly that device. TapeSister never silently substitutes a default device for
+an unavailable named device:
+
+- named output failure offers Retry, temporary system default for this session,
+  continued operation without physical output, or Exit;
+- accepting a temporary output fallback does not rewrite the saved device;
+- named capture failure leaves EXT, external recording, and input monitoring
+  unavailable while tiles, FM, audition, and internal Sister sources continue;
+- capture hardware remains closed until EXT, external recording, or input monitoring
+  actually requests it;
+- device-add events retry the configured device, while repeated removal events are
+  harmless and cannot close the same handle twice.
+
+CONFIG identifies each endpoint as closed, opening, active, lost, retry-pending, or
+fallback-active. Closed capture is normal when no capture-dependent feature is active.
+Startup and recovery diagnostics in stderr and `tapesister-diagnostic.log` distinguish
+configured and active names and report the active SDL backend, real SDL IDs, negotiated
+rate, sample format, channels, buffer size, fallback approval, and latest error.
+
+For Windows release validation, follow [WINDOWS_AUDIO_VALIDATION.md](WINDOWS_AUDIO_VALIDATION.md).
 
 ### External input channel modes
 
@@ -923,6 +961,18 @@ source routed into Sister is intentionally removed from its ordinary direct path
 For main Capture, deliberately trigger a source after arming. For REC BANK SRC EXT,
 check the selected device, channel mode, IN indicators, and threshold. For Sister tile
 Capture, confirm the destination is not also a Sister source.
+
+If CONFIG says capture is **retry-pending** or **lost**, internal playback remains
+available. Reconnect the configured input or select another input and save CONFIG. A
+named input will not be replaced with the system default unless you deliberately change
+the setting to SYSTEM DEFAULT.
+
+### Output is disconnected
+
+TapeSister remains responsive when physical output disappears. Reconnect the configured
+device to trigger a retry, or open CONFIG, choose an output, and save. A temporary
+system-default fallback is used only after approval and is labeled fallback-active;
+the configured device remains unchanged.
 
 ### External input is only two channels
 

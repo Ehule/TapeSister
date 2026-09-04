@@ -53,6 +53,20 @@ static int load_device_settings(TsConfig *config, const char *path,
         *equals = '\0';
         value = trim(equals + 1);
         key = trim(key);
+        if (strcmp(key, "audio_backend") == 0 || strcmp(key, "Backend") == 0) {
+            TsAudioBackend backend;
+            if (!ts_audio_backend_parse(value, &backend)) {
+                config->audio_backend = TS_AUDIO_BACKEND_AUTO;
+                config->audio_backend_invalid = 1;
+                fprintf(stderr,
+                        "TapeSister: invalid audio backend '%s'; using Auto\n",
+                        value);
+            } else {
+                config->audio_backend = backend;
+                config->audio_backend_invalid = 0;
+            }
+            continue;
+        }
         if (strcmp(key, "audio_buffer_frames") == 0) {
             char *end;
             long frames = strtol(value, &end, 10);
@@ -134,6 +148,8 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
     }
     if (fprintf(file,
                 "\n[Audio]\n"
+                "; Auto is recommended. Windows also supports WASAPI and DirectSound.\n"
+                "audio_backend=%s\n"
                 "; Blank uses the operating system default stereo playback device.\n"
                 "audio_output_device=%s\n"
                 "; Shared playback/capture callback size: 256, 512, or 1024 frames.\n"
@@ -143,6 +159,7 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
                 "midi_input_device=%s\n"
                 "; 0 listens on all channels; 1-16 selects one channel.\n"
                 "midi_input_channel=%d\n",
+                ts_audio_backend_name(config->audio_backend),
                 config->audio_output_device, config->audio_buffer_frames,
                 config->midi_input_device,
                 config->midi_input_channel) < 0) {

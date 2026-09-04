@@ -32,6 +32,8 @@ void ts_config_init(TsConfig *config)
         config->reference_tone_volume = TS_REFERENCE_TONE_VOLUME_DEFAULT;
         config->fm_output_percent = TS_FM_OUTPUT_PERCENT_DEFAULT;
         config->master_output_percent = TS_MASTER_OUTPUT_PERCENT_DEFAULT;
+        config->audio_backend = TS_AUDIO_BACKEND_AUTO;
+        config->audio_backend_invalid = 0;
         config->audio_buffer_frames = TS_AUDIO_BUFFER_FRAMES_DEFAULT;
         config->record_input_channel = TS_RECORD_INPUT_CHANNEL_DEFAULT;
         config->midi_input_channel = TS_MIDI_INPUT_CHANNEL_DEFAULT;

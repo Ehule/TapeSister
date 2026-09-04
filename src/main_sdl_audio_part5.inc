@@ -20,12 +20,30 @@
         char shown[96];
         char channel[24];
         char buffer[24];
+        const char *active_backend = SDL_GetCurrentAudioDriver();
+
+        cfg_frame(fb, 20, TS_AUDIO_CONFIG_BACKEND_Y,
+                  TS_AUDIO_CONFIG_INPUT_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
+        cfg_text(fb, 28, TS_AUDIO_CONFIG_BACKEND_Y + 5, "<", text_color);
+        cfg_text(fb, 44, TS_AUDIO_CONFIG_BACKEND_Y + 5, "BACKEND", text_color);
+        cfg_text(fb, 100, TS_AUDIO_CONFIG_BACKEND_Y + 5,
+                 ts_audio_backend_name(ui->config.audio_backend), text_color);
+        cfg_text(fb, 432, TS_AUDIO_CONFIG_BACKEND_Y + 5, ">", text_color);
+        cfg_frame(fb, TS_AUDIO_CONFIG_CHANNEL_X, TS_AUDIO_CONFIG_BACKEND_Y,
+                  TS_AUDIO_CONFIG_CHANNEL_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
+        cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 5,
+                 TS_AUDIO_CONFIG_BACKEND_Y + 5, "ACTIVE", effect_color);
+        snprintf(shown, sizeof(shown), "%.17s",
+                 active_backend != NULL ? active_backend : "NONE");
+        cfg_text(fb, TS_AUDIO_CONFIG_CHANNEL_X + 52,
+                 TS_AUDIO_CONFIG_BACKEND_Y + 5, shown, text_color);
 
         cfg_frame(fb, 20, TS_AUDIO_CONFIG_INPUT_Y,
                   TS_AUDIO_CONFIG_INPUT_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
         cfg_text(fb, 28, TS_AUDIO_CONFIG_INPUT_Y + 5, "<", text_color);
         cfg_text(fb, 44, TS_AUDIO_CONFIG_INPUT_Y + 5, "INPUT", text_color);
-        snprintf(shown, sizeof(shown), "%.52s", input);
+        snprintf(shown, sizeof(shown), "%.34s [%s]", input,
+                 ts_audio_connection_state_name(ts_capture_endpoint.state));
         cfg_text(fb, 88, TS_AUDIO_CONFIG_INPUT_Y + 5, shown, text_color);
         cfg_text(fb, 432, TS_AUDIO_CONFIG_INPUT_Y + 5, ">", text_color);
 
@@ -46,7 +64,8 @@
                   TS_AUDIO_CONFIG_INPUT_W, TS_AUDIO_CONFIG_ROW_H, row, edge);
         cfg_text(fb, 28, TS_AUDIO_CONFIG_OUTPUT_Y + 5, "<", text_color);
         cfg_text(fb, 44, TS_AUDIO_CONFIG_OUTPUT_Y + 5, "OUTPUT", text_color);
-        snprintf(shown, sizeof(shown), "%.52s", output);
+        snprintf(shown, sizeof(shown), "%.33s [%s]", output,
+                 ts_audio_connection_state_name(ts_output_endpoint.state));
         cfg_text(fb, 94, TS_AUDIO_CONFIG_OUTPUT_Y + 5, shown, text_color);
         cfg_text(fb, 432, TS_AUDIO_CONFIG_OUTPUT_Y + 5, ">", text_color);
 
@@ -266,6 +285,17 @@ static int ts_audio_config_field_from_point(int x, int y)
         if (x >= 20 && x < 620 &&
             y >= top && y < top + TS_AUDIO_CONFIG_ROW_H)
             return field;
+    }
+
+    if (y >= TS_AUDIO_CONFIG_BACKEND_Y &&
+        y < TS_AUDIO_CONFIG_BACKEND_Y + TS_AUDIO_CONFIG_ROW_H &&
+        x >= 20 && x < 20 + TS_AUDIO_CONFIG_INPUT_W) {
+        if (x < 48) ts_cycle_audio_backend(-1);
+        else if (x >= 420) ts_cycle_audio_backend(1);
+        snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
+                 "AUDIO BACKEND: %s - SAVE AND RESTART TO APPLY",
+                 ts_audio_backend_name(ts_live_ui->config.audio_backend));
+        return -1;
     }
 
     if (y >= TS_AUDIO_CONFIG_INPUT_Y &&

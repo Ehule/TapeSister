@@ -252,6 +252,24 @@ Final order: mix → linked limiter → OUT fader → L/R meter and FILE OUT.
 
 OUT is after the limiter. Lower pre-limiter stages to reduce gain reduction.
 
+## Windows audio
+
+| Setting/state | Meaning |
+| --- | --- |
+| Backend Auto | recommended; SDL chooses the Windows backend |
+| Backend WASAPI | explicit Windows WASAPI; save and restart |
+| Backend DirectSound | explicit compatibility backend; save and restart |
+| Input/Output SYSTEM DEFAULT | deliberate use of the current system default |
+| active | configured endpoint is open |
+| closed capture | normal when EXT, external REC, and input monitoring are idle |
+| lost / retry-pending | configured endpoint unavailable; no silent substitution |
+| fallback-active | system-default output was explicitly approved for this session |
+
+Capture loss leaves tiles, FM, audition, and internal Sister audio available. Output
+loss leaves the application responsive. Reconnect the configured endpoint or select a
+new one in CONFIG. TapeSister has no native ASIO backend; prefer WASAPI shared mode for
+coexistence and validate REAPER/ASIO against the interface driver's own sharing rules.
+
 ## Files and folders
 
 | Item | Contains | Portable rule |
