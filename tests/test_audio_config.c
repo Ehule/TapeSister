@@ -22,6 +22,9 @@ static int test_defaults(void)
                   "default input device should be system default") &&
            expect(config.audio_output_device[0] == '\0',
                   "default output device should be system default") &&
+           expect(config.audio_backend == TS_AUDIO_BACKEND_AUTO &&
+                  config.audio_backend_invalid == 0,
+                  "audio backend should default to valid Auto") &&
            expect(config.midi_input_device[0] == '\0',
                   "default MIDI device should use automatic first input") &&
            expect(config.midi_input_channel == TS_MIDI_INPUT_CHANNEL_DEFAULT,
@@ -98,6 +101,7 @@ static int test_roundtrip(void)
              "Test Playback Device");
     snprintf(saved.midi_input_device, sizeof(saved.midi_input_device),
              "Test MIDI Keyboard");
+    saved.audio_backend = TS_AUDIO_BACKEND_WASAPI;
     saved.record_input_channel = 3;
     saved.audio_buffer_frames = 1024;
     saved.fm_output_percent = 37;
@@ -162,6 +166,9 @@ static int test_roundtrip(void)
                 "named input device should roundtrip") &&
          expect(strcmp(loaded.audio_output_device, "Test Playback Device") == 0,
                 "named output device should roundtrip") &&
+         expect(loaded.audio_backend == TS_AUDIO_BACKEND_WASAPI &&
+                loaded.audio_backend_invalid == 0,
+                "WASAPI backend should roundtrip") &&
          expect(strcmp(loaded.midi_input_device, "Test MIDI Keyboard") == 0,
                 "named MIDI input should roundtrip") &&
          expect(loaded.midi_input_channel == 7,
@@ -298,6 +305,9 @@ static int test_legacy_config(void)
                 "legacy input channel should load") &&
          expect(loaded.audio_output_device[0] == '\0',
                 "legacy config should default output to system default") &&
+         expect(loaded.audio_backend == TS_AUDIO_BACKEND_AUTO &&
+                loaded.audio_backend_invalid == 0,
+                "legacy config should default backend to Auto") &&
          expect(loaded.midi_input_device[0] == '\0',
                 "legacy config should default MIDI to auto") &&
          expect(loaded.midi_input_channel == 0,
@@ -398,6 +408,26 @@ static int test_invalid_audio_buffer(void)
     return ok;
 }
 
+static int test_invalid_backend_falls_back_to_auto(void)
+{
+    static const char path[] = "test-audio-config-backend.ini";
+    TsConfig loaded;
+    char error[160];
+    FILE *file = fopen(path, "wb");
+    int ok;
+    if (file == NULL) return 0;
+    fputs("[Audio]\naudio_backend=ASIO\n", file);
+    fclose(file);
+    ok = expect(ts_audio_config_load(&loaded, path, error, sizeof(error)),
+                "invalid backend should not prevent startup") &&
+         expect(loaded.audio_backend == TS_AUDIO_BACKEND_AUTO,
+                "invalid backend should resolve to Auto") &&
+         expect(loaded.audio_backend_invalid == 1,
+                "invalid backend should remain diagnostically visible");
+    remove(path);
+    return ok;
+}
+
 int main(void)
 {
     if (!test_defaults()) return 1;
@@ -407,6 +437,7 @@ int main(void)
     if (!test_shared_capture_format_compatibility()) return 1;
     if (!test_attack_clamp()) return 1;
     if (!test_invalid_audio_buffer()) return 1;
+    if (!test_invalid_backend_falls_back_to_auto()) return 1;
     puts("audio config tests passed");
     return 0;
 }

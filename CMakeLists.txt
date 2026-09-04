@@ -7,6 +7,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
              src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
+             src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
              src/ts_sister_limiter.c
@@ -198,6 +199,17 @@ add_test(NAME tapesister_core_tests COMMAND tapesister_core_tests)
 add_executable(tapesister_audio_frame_tests tests/test_audio_frame.c)
 target_link_libraries(tapesister_audio_frame_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_audio_frame_tests COMMAND tapesister_audio_frame_tests)
+
+add_executable(test_audio_lifecycle tests/test_audio_lifecycle.c)
+target_link_libraries(test_audio_lifecycle PRIVATE tapesister_core)
+add_test(NAME test_audio_lifecycle COMMAND test_audio_lifecycle)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME test_audio_hardening_structure
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audio_hardening_structure.py")
+endif()
 
 if(TAPESISTER_BUILD_SDL AND TAPESISTER_BUNDLE_CDP8)
   add_executable(tapesister_cdp_native_smoke tests/test_cdp_native_smoke.c)

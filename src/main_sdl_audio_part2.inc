@@ -8,10 +8,16 @@ static void ts_audio_catalog_refresh(void)
     int midi_ok = ts_midi_input != NULL &&
         ts_midi_input_rescan(ts_midi_input, midi_error, sizeof(midi_error));
     if (ts_live_ui != NULL) {
-        snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
-                 input_ok && output_ok && midi_ok ?
-                 "AUDIO/MIDI DEVICES REFRESHED - CLICK < OR > TO SELECT" :
-                 "DEVICE LIST PARTIAL - AUDIO DEFAULTS AND MIDI OFF REMAIN AVAILABLE");
+        if (input_ok && output_ok && midi_ok)
+            snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
+                     "ACTIVE OUT %.48s | IN %.48s",
+                     ts_output_endpoint.active_name[0] != '\0' ?
+                     ts_output_endpoint.active_name : "NONE",
+                     ts_capture_endpoint.active_name[0] != '\0' ?
+                     ts_capture_endpoint.active_name : "CLOSED");
+        else
+            snprintf(ts_live_ui->status, sizeof(ts_live_ui->status),
+                     "DEVICE LIST PARTIAL - DEFAULTS AND MIDI OFF REMAIN AVAILABLE");
     }
 }
 
@@ -184,14 +190,29 @@ static int ts_reopen_capture_for_config(void)
     return 1;
 }
 
+static int ts_audio_retry_capture_for_event(char *error, size_t error_size)
+{
+    int reopened = ts_reopen_capture_for_config();
+    if (!reopened && error != NULL && error_size > 0u)
+        snprintf(error, error_size, "%s", ts_capture_reconfigure_error);
+    else if (error != NULL && error_size > 0u)
+        error[0] = '\0';
+    return reopened;
+}
+
 static int ts_switch_output_for_config(char *error, size_t error_size)
 {
     SDL_AudioSpec desired;
     SDL_AudioSpec obtained;
     SDL_AudioDeviceID replacement;
     SDL_AudioDeviceID old = ts_real_output;
+    TsAudioEndpoint previous;
+    char active_name[TS_AUDIO_ENDPOINT_NAME_MAX];
     const char *wanted = ts_configured_output_name();
     AudioState *audio = (AudioState *)ts_output_userdata;
+
+    ts_audio_endpoints_init();
+    previous = ts_output_endpoint;
 
     if (audio != NULL && audio->capture.state != TS_CAPTURE_IDLE) {
         snprintf(error, error_size,

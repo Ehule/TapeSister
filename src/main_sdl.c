@@ -10403,6 +10403,10 @@ int main(int argc, char **argv)
     audio.record_bank_recorder = &external_input.recorder;
     audio.record_source = &external_input.record_source;
     audio.bank_slot = -1;
+    if (!ts_audio_apply_backend_before_sdl(ui.config.audio_backend)) {
+        fprintf(stderr, "TapeSister audio: configured backend could not be applied\n");
+        return 1;
+    }
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
         ts_sample_free(&fm_preview);
@@ -10414,6 +10418,10 @@ int main(int argc, char **argv)
         ts_sample_pages_free(&sample_pages);
         fm_bank_history_free(&fm_bank_history);
         ts_instrument_free(&instrument);
+        return 1;
+    }
+    if (!ts_audio_log_active_backend(ui.config.audio_backend)) {
+        SDL_Quit();
         return 1;
     }
     ts_fm_seed_sequence_init(&fm_seed_sequence, fm_session_seed_root());
@@ -10510,22 +10518,20 @@ int main(int argc, char **argv)
     desired.userdata = &audio;
     device = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
     audio.output_rate = obtained.freq;
-    if (device && obtained.freq > 0)
+    if (ts_audio_output_is_available() && obtained.freq > 0)
         (void)ts_sister_runtime_reconfigure(
             &audio.sister, (uint32_t)obtained.freq, obtained.channels,
             NULL, 0u);
-    if (!device) snprintf(ui.status, sizeof(ui.status), "AUDIO UNAVAILABLE: %.130s", SDL_GetError());
-    else SDL_PauseAudioDevice(device, 0);
-    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
-    {
-        char capture_error[160];
-        external_input_request(&external_input, TS_INPUT_CONSUMER_ACTIVITY, 1);
-        if (!sync_external_input_consumers(
-                &input_device, &audio, &external_input, &ui.config,
-                capture_error, sizeof(capture_error)))
-            diagnostic_log("input activity unavailable (nonfatal): %s",
-                           capture_error);
+    if (!ts_audio_output_is_available()) {
+        int recovery = ts_audio_resolve_output_failure(window);
+        if (recovery < 0) running = 0;
+        if (!ts_audio_output_is_available())
+            snprintf(ui.status, sizeof(ui.status),
+                     "PHYSICAL OUTPUT DISCONNECTED - INTERNAL STATE AVAILABLE");
+    } else {
+        SDL_PauseAudioDevice(device, 0);
     }
+    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
     if (argc > 1 && !diagnostic_bank_stress && !diagnostic_audio) {
         load_instrument(device, &audio, &ui, &instrument,
@@ -10548,7 +10554,8 @@ int main(int argc, char **argv)
             snprintf(ui.status, sizeof(ui.status), "WELCOME SAMPLE MISSING - BANK 01 EMPTY");
         }
     }
-    if (ts_ui_request_startup_welcome(&ui, 1, device != 0)) {
+    if (ts_ui_request_startup_welcome(
+            &ui, 1, ts_audio_output_is_available())) {
         ui.audition_source = TS_AUDITION_CURRENT;
         begin_audition(device, &audio, &ui, &instrument,
                        TS_AUDITION_ALL, 1.0, obtained.freq);
@@ -10676,20 +10683,80 @@ int main(int argc, char **argv)
                 ts_ui_wheel_guard_interrupt(&ui.wheel_guard, SDL_GetTicks());
             }
             if (event.type == SDL_AUDIODEVICEREMOVED &&
-                event.adevice.iscapture && input_device != 0 &&
-                event.adevice.which == input_device) {
-                SDL_CloseAudioDevice(input_device);
+                ts_audio_device_event_matches(
+                    event.adevice.iscapture != 0, event.adevice.which)) {
+                if (!event.adevice.iscapture) {
+                    ts_audio_handle_removed(0, "SDL reported output removal");
+                    if (audio.capture.state != TS_CAPTURE_IDLE)
+                        cancel_capture(device, &audio, &ui);
+                    stop_all_force(device, &audio, &ui);
+                    snprintf(ui.status, sizeof(ui.status),
+                             "PHYSICAL OUTPUT DISCONNECTED - WAITING FOR %.80s",
+                             ui.config.audio_output_device[0] != '\0' ?
+                             ui.config.audio_output_device : "SYSTEM DEFAULT");
+                    continue;
+                }
+                ts_audio_handle_removed(1, "SDL reported capture removal");
                 input_device = 0;
                 ts_input_ownership_set_device(&external_input.ownership, 0, 0);
                 ts_input_monitor_set_enabled(&external_input.monitor, 0,
                                              external_input.sample_rate);
                 ts_input_activity_set_available(&external_input.activity, 0u);
                 ts_sister_runtime_input_available(&audio.sister, 0);
+                if (ui.record_source == TS_RECORD_SOURCE_EXT &&
+                    (external_input.recorder.state == TS_EXTERNAL_CAPTURE_ARMED ||
+                     external_input.recorder.state == TS_EXTERNAL_CAPTURE_RECORDING))
+                    cancel_external_capture(device, 0, &external_input, &ui);
                 snprintf(sister_window.model.status,
                          sizeof(sister_window.model.status),
-                         "EXT - DEVICE UNAVAILABLE");
+                         "EXT - DEVICE UNAVAILABLE; INTERNAL AUDIO CONTINUES");
                 snprintf(ui.status, sizeof(ui.status),
-                         "EXTERNAL INPUT DEVICE WAS REMOVED");
+                         "CAPTURE DISCONNECTED - INTERNAL PLAYBACK CONTINUES");
+                continue;
+            }
+            if (event.type == SDL_AUDIODEVICEADDED) {
+                char reconnect_error[160];
+                ts_audio_catalog_refresh();
+                if (!event.adevice.iscapture &&
+                    ts_audio_endpoint_should_retry_output()) {
+                    if (ts_switch_output_for_config(
+                            reconnect_error, sizeof(reconnect_error)))
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "CONFIGURED OUTPUT RECONNECTED: %.98s",
+                                 ui.config.audio_output_device[0] != '\0' ?
+                                 ui.config.audio_output_device : "SYSTEM DEFAULT");
+                    else
+                        snprintf(ui.status, sizeof(ui.status), "%s: %.84s",
+                                 ts_audio_output_is_available() ?
+                                 "CONFIGURED OUTPUT UNAVAILABLE - TEMPORARY OUTPUT CONTINUES" :
+                                 "OUTPUT STILL DISCONNECTED",
+                                 reconnect_error);
+                } else if (event.adevice.iscapture &&
+                           external_input.ownership.requests != 0u &&
+                           (input_device == 0 ||
+                            ts_audio_endpoint_should_retry_capture())) {
+                    int reconnected = input_device == 0 ?
+                        sync_external_input_consumers(
+                            &input_device, &audio, &external_input, &ui.config,
+                            reconnect_error, sizeof(reconnect_error)) :
+                        ts_audio_retry_capture_for_event(
+                            reconnect_error, sizeof(reconnect_error));
+                    if (reconnected) {
+                        snprintf(ui.status, sizeof(ui.status),
+                                 "CONFIGURED CAPTURE RECONNECTED: %.95s",
+                                 ui.config.record_input_device[0] != '\0' ?
+                                 ui.config.record_input_device : "SYSTEM DEFAULT");
+                        snprintf(sister_window.model.status,
+                                 sizeof(sister_window.model.status),
+                                 "EXT - INPUT RECONNECTED");
+                    } else {
+                        snprintf(ui.status, sizeof(ui.status), "%s: %.82s",
+                                 input_device != 0 ?
+                                 "CONFIGURED CAPTURE UNAVAILABLE - PREVIOUS INPUT CONTINUES" :
+                                 "CAPTURE STILL DISCONNECTED",
+                                 reconnect_error);
+                    }
+                }
                 continue;
             }
             if (event.type == SDL_KEYDOWN && !event.key.repeat) {

@@ -7,6 +7,7 @@
  * input, and mixer behavior must use ordinary functions and AudioState.
  */
 #include "tapesister/audio_config.h"
+#include "tapesister/audio_lifecycle.h"
 #include "tapesister/audio_mixer.h"
 #include "tapesister/midi_input.h"
 #include "tapesister/performance.h"
@@ -22,6 +23,18 @@ static void ts_audio_close_device(SDL_AudioDeviceID device);
 static void ts_audio_lock_device(SDL_AudioDeviceID device);
 static void ts_audio_unlock_device(SDL_AudioDeviceID device);
 static void ts_audio_pause_device(SDL_AudioDeviceID device, int pause_on);
+static int ts_audio_apply_backend_before_sdl(TsAudioBackend backend);
+static int ts_audio_log_active_backend(TsAudioBackend backend);
+static int ts_audio_device_event_matches(int is_capture,
+                                         SDL_AudioDeviceID real_event_id);
+static void ts_audio_handle_removed(int is_capture, const char *error);
+static int ts_audio_endpoint_should_retry_output(void);
+static int ts_audio_endpoint_should_retry_capture(void);
+static int ts_audio_retry_capture_for_event(char *error, size_t error_size);
+static int ts_audio_output_is_available(void);
+static int ts_audio_resolve_output_failure(SDL_Window *window);
+static int ts_switch_output_for_config(char *error, size_t error_size);
+static void ts_audio_catalog_refresh(void);
 static void ts_audio_quit(void);
 static int ts_audio_main_config_load(TsConfig *config, const char *path,
                                      char *error, size_t error_size);

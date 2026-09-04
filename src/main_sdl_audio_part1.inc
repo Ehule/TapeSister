@@ -353,17 +353,24 @@ static void runtime_note_sync(AudioState *audio,
     ts_sister_runtime_sync_sources(&audio->sister, instrument, output_rate);
 }
 enum {
+    TS_AUDIO_CONFIG_PANEL_Y = 40,
+    TS_AUDIO_CONFIG_PANEL_H = 155,
     TS_AUDIO_CONFIG_PATH_Y = 58,
-    TS_AUDIO_CONFIG_PATH_STEP = 19,
+    TS_AUDIO_CONFIG_PATH_STEP = 17,
     TS_AUDIO_CONFIG_ROW_H = 16,
     TS_AUDIO_CONFIG_VALUE_X = 188,
-    TS_AUDIO_CONFIG_INPUT_Y = 136,
-    TS_AUDIO_CONFIG_OUTPUT_Y = 155,
-    TS_MIDI_CONFIG_INPUT_Y = 174,
+    TS_AUDIO_CONFIG_BACKEND_Y = 127,
+    TS_AUDIO_CONFIG_INPUT_Y = 144,
+    TS_AUDIO_CONFIG_OUTPUT_Y = 161,
+    TS_MIDI_CONFIG_INPUT_Y = 178,
     TS_AUDIO_CONFIG_INPUT_W = 430,
     TS_AUDIO_CONFIG_CHANNEL_X = 455,
     TS_AUDIO_CONFIG_CHANNEL_W = 165
 };
+
+typedef char TsAudioConfigMustLeaveActionsVisible[
+    TS_AUDIO_CONFIG_PANEL_Y + TS_AUDIO_CONFIG_PANEL_H <= TS_CONFIG_ACTION_Y ?
+    1 : -1];
 
 #define TS_AUDIO_LOGICAL_OUTPUT ((SDL_AudioDeviceID)0x7fff0001u)
 #define TS_AUDIO_LOGICAL_CAPTURE ((SDL_AudioDeviceID)0x7fff0002u)
@@ -377,6 +384,10 @@ typedef struct {
 
 static SDL_AudioDeviceID ts_real_output;
 static SDL_AudioDeviceID ts_real_capture;
+static TsAudioEndpoint ts_output_endpoint;
+static TsAudioEndpoint ts_capture_endpoint;
+static int ts_audio_endpoints_initialized;
+static TsAudioBackend ts_started_backend = TS_AUDIO_BACKEND_AUTO;
 static SDL_AudioSpec ts_output_desired;
 static SDL_AudioSpec ts_capture_desired;
 static SDL_AudioSpec *ts_output_obtained_target;
@@ -394,6 +405,86 @@ static char ts_pending_notice[160];
 static char ts_capture_reconfigure_error[160];
 
 static void ts_copy_name(char *destination, size_t size, const char *source);
+
+static void ts_audio_endpoints_init(void)
+{
+    if (ts_audio_endpoints_initialized) return;
+    ts_audio_endpoint_init(&ts_output_endpoint, TS_AUDIO_ENDPOINT_OUTPUT,
+                           (uint32_t)TS_AUDIO_LOGICAL_OUTPUT);
+    ts_audio_endpoint_init(&ts_capture_endpoint, TS_AUDIO_ENDPOINT_CAPTURE,
+                           (uint32_t)TS_AUDIO_LOGICAL_CAPTURE);
+    ts_audio_endpoints_initialized = 1;
+}
+
+static const char *ts_audio_format_name(SDL_AudioFormat format)
+{
+    if (format == AUDIO_F32SYS) return "F32";
+    if (format == AUDIO_S16SYS) return "S16";
+    if (format == AUDIO_S32SYS) return "S32";
+    if (format == AUDIO_U8) return "U8";
+    return "OTHER";
+}
+
+static void ts_audio_active_device_name(char *name, size_t name_size,
+                                        const char *requested, int capture)
+{
+    if (requested != NULL && requested[0] != '\0') {
+        ts_copy_name(name, name_size, requested);
+        return;
+    }
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+    {
+        char *default_name = NULL;
+        SDL_AudioSpec default_spec;
+        SDL_zero(default_spec);
+        if (SDL_GetDefaultAudioInfo(&default_name, &default_spec, capture) == 0 &&
+            default_name != NULL && default_name[0] != '\0') {
+            ts_copy_name(name, name_size, default_name);
+            SDL_free(default_name);
+            return;
+        }
+        if (default_name != NULL) SDL_free(default_name);
+    }
+#else
+    (void)capture;
+#endif
+    ts_copy_name(name, name_size, "SYSTEM DEFAULT");
+}
+
+static void ts_audio_log_endpoint(const TsAudioEndpoint *endpoint)
+{
+    char message[4096];
+    if (!ts_audio_endpoint_format_diagnostic(endpoint, message,
+                                             sizeof(message)))
+        snprintf(message, sizeof(message), "%s diagnostic was truncated",
+                 endpoint != NULL &&
+                 endpoint->role == TS_AUDIO_ENDPOINT_CAPTURE ?
+                 "capture" : "output");
+    fprintf(stderr, "TapeSister audio: %s\n", message);
+    diagnostic_log("%s", message);
+}
+
+static void ts_audio_reconfigure_sister_if_needed(AudioState *audio,
+                                                   const SDL_AudioSpec *spec)
+{
+    if (audio == NULL || spec == NULL || spec->freq <= 0) return;
+    if (audio->sister.enabled &&
+        audio->sister.machine.buffer.sample_rate == (uint32_t)spec->freq &&
+        audio->sister.output_channels == spec->channels)
+        return;
+    (void)ts_sister_runtime_reconfigure(
+        &audio->sister, (uint32_t)spec->freq, spec->channels, NULL, 0u);
+}
+
+static void ts_cycle_audio_backend(int direction)
+{
+    int backend;
+    if (ts_live_config == NULL) return;
+    backend = (int)ts_live_config->audio_backend;
+    backend = (backend + (direction >= 0 ? 1 : 2)) % 3;
+    ts_live_config->audio_backend = (TsAudioBackend)backend;
+    ts_live_config->audio_backend_invalid = 0;
+}
 
 static void ts_cycle_midi_device(int direction)
 {
@@ -482,6 +573,109 @@ static SDL_AudioDeviceID ts_audio_real_id(SDL_AudioDeviceID logical)
     if (logical == TS_AUDIO_LOGICAL_OUTPUT) return ts_real_output;
     if (logical == TS_AUDIO_LOGICAL_CAPTURE) return ts_real_capture;
     return logical;
+}
+
+static int ts_audio_apply_backend_before_sdl(TsAudioBackend backend)
+{
+    const char *driver = ts_audio_backend_sdl_driver(backend);
+    ts_audio_endpoints_init();
+    ts_started_backend = backend;
+#ifdef _WIN32
+    if (driver != NULL &&
+        !SDL_SetHintWithPriority(SDL_HINT_AUDIODRIVER, driver,
+                                 SDL_HINT_OVERRIDE)) {
+        fprintf(stderr,
+                "TapeSister audio: could not request configured backend %s\n",
+                ts_audio_backend_name(backend));
+        return 0;
+    }
+#else
+    if (driver != NULL)
+        fprintf(stderr,
+                "TapeSister audio: backend %s is Windows-only; using Auto here\n",
+                ts_audio_backend_name(backend));
+#endif
+    fprintf(stderr, "TapeSister audio: configured backend=%s\n",
+            ts_audio_backend_name(backend));
+    return 1;
+}
+
+static int ts_audio_log_active_backend(TsAudioBackend backend)
+{
+    const char *active = SDL_GetCurrentAudioDriver();
+    const char *requested = ts_audio_backend_sdl_driver(backend);
+#ifndef _WIN32
+    requested = NULL;
+#endif
+    fprintf(stderr,
+            "TapeSister audio: configured backend=%s active SDL backend=%s\n",
+            ts_audio_backend_name(backend),
+            active != NULL ? active : "NONE");
+    diagnostic_log("configured backend=%s active SDL backend=%s",
+                   ts_audio_backend_name(backend),
+                   active != NULL ? active : "NONE");
+    if (requested != NULL &&
+        (active == NULL || strcmp(active, requested) != 0)) {
+        fprintf(stderr,
+                "TapeSister audio: requested backend %s did not activate; "
+                "refusing silent backend substitution\n",
+                ts_audio_backend_name(backend));
+        diagnostic_log(
+            "requested backend %s did not activate; startup stopped",
+            ts_audio_backend_name(backend));
+        return 0;
+    }
+    return 1;
+}
+
+static int ts_audio_device_event_matches(int is_capture,
+                                         SDL_AudioDeviceID real_event_id)
+{
+    ts_audio_endpoints_init();
+    return ts_audio_endpoint_matches_removed(
+        is_capture ? &ts_capture_endpoint : &ts_output_endpoint,
+        is_capture, (uint32_t)real_event_id);
+}
+
+static void ts_audio_handle_removed(int is_capture, const char *error)
+{
+    TsAudioEndpoint *endpoint;
+    SDL_AudioDeviceID real;
+    ts_audio_endpoints_init();
+    endpoint = is_capture ? &ts_capture_endpoint : &ts_output_endpoint;
+    real = (SDL_AudioDeviceID)ts_audio_endpoint_removed(endpoint, error);
+    if (real != 0) SDL_CloseAudioDevice(real);
+    if (is_capture) {
+        ts_real_capture = 0;
+    } else {
+        AudioState *audio = (AudioState *)ts_output_userdata;
+        ts_real_output = 0;
+        if (ts_output_obtained_target != NULL)
+            SDL_zero(*ts_output_obtained_target);
+        if (audio != NULL) audio->output_rate = 0;
+    }
+    ts_audio_log_endpoint(endpoint);
+}
+
+static int ts_audio_endpoint_should_retry_output(void)
+{
+    ts_audio_endpoints_init();
+    return ts_audio_endpoint_should_retry(&ts_output_endpoint) ||
+           (ts_output_endpoint.state == TS_AUDIO_CONNECTION_FALLBACK_ACTIVE &&
+            ts_output_endpoint.explicit_device);
+}
+
+static int ts_audio_endpoint_should_retry_capture(void)
+{
+    ts_audio_endpoints_init();
+    return ts_audio_endpoint_should_retry(&ts_capture_endpoint) ||
+           (ts_capture_endpoint.state == TS_AUDIO_CONNECTION_FALLBACK_ACTIVE &&
+            ts_capture_endpoint.explicit_device);
+}
+
+static int ts_audio_output_is_available(void)
+{
+    return ts_real_output != 0;
 }
 
 static char *ts_audio_name_copy(const char *name)

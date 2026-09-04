@@ -34,9 +34,13 @@ chain_stamp_crossfade_ms=3
 ripple_cut_crop_canvas=0
 
 [Audio]
+; Auto is recommended. Windows also supports WASAPI and DirectSound.
+audio_backend=Auto
 ; Blank uses the machine's default stereo playback device.
 ; Config can select SYSTEM DEFAULT or any SDL playback device.
 audio_output_device=
+; Shared playback/capture callback size: 256, 512, or 1024 frames.
+audio_buffer_frames=512
 
 [Audition]
 ; Per-voice note-on de-click ramp in milliseconds (0-20, default 2).
