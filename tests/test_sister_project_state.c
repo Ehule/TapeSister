@@ -40,6 +40,7 @@ int main(void)
     runtime.parameters.fm_gain = 2.34f;
     runtime.parameters.external_gain = 3.45f;
     runtime.parameters.preview_gain = 0.67f;
+    runtime.parameters.tapehead_gain = 1.89f;
     runtime.parameters.fx_return_gain = 1.54f;
     runtime.parameters.soak = 0.68f;
     runtime.parameters.bleed = 0.74f;
@@ -118,6 +119,7 @@ int main(void)
     assert(loaded.parameters.fm_gain > 2.33f && loaded.parameters.fm_gain < 2.35f);
     assert(loaded.parameters.external_gain > 3.44f && loaded.parameters.external_gain < 3.46f);
     assert(loaded.parameters.preview_gain > 0.66f && loaded.parameters.preview_gain < 0.68f);
+    assert(loaded.parameters.tapehead_gain > 1.88f && loaded.parameters.tapehead_gain < 1.90f);
     assert(loaded.parameters.fx_return_gain > 1.53f && loaded.parameters.fx_return_gain < 1.55f);
     assert(loaded.parameters.soak > 0.67f && loaded.parameters.soak < 0.69f);
     assert(loaded.parameters.bleed > 0.73f && loaded.parameters.bleed < 0.75f);
@@ -274,6 +276,7 @@ int main(void)
            loaded.parameters.fm_gain == 1.0f &&
            loaded.parameters.external_gain == 1.0f &&
            loaded.parameters.preview_gain == 1.0f &&
+           loaded.parameters.tapehead_gain == 1.0f &&
            loaded.parameters.fx_return_gain == 1.0f &&
            loaded.parameters.buffer_seconds == 40.0f);
     puts("sister project-state tests passed");

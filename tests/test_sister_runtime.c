@@ -62,6 +62,26 @@ int main(void)
     for (int tap = 0; tap < TS_SISTER_TAP_COUNT; ++tap)
         CHECK(sister_frame_finite(frame.tap[tap]));
 
+    /* Tapehead is silent until a live producer is present, then enters and
+       leaves the same smoothed source path as every other Sister input. */
+    ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TAPEHEAD);
+    source.preview = (TsStereoFrame){0.0f, 0.0f};
+    source.tapehead = (TsStereoFrame){0.75f, -0.50f};
+    for (int i = 0; i < 20; ++i)
+        frame = ts_sister_runtime_process_frame(&runtime, &source);
+    CHECK(CLOSE(frame.input.l, 0.0f));
+    CHECK(CLOSE(frame.input.r, 0.0f));
+    ts_sister_runtime_live_link_available(&runtime, 1);
+    for (int i = 0; i < 20; ++i)
+        frame = ts_sister_runtime_process_frame(&runtime, &source);
+    CHECK(frame.input.l > 0.1f && frame.input.r < -0.05f);
+    CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+    CHECK(snapshot.live_link_available);
+    ts_sister_runtime_live_link_available(&runtime, 0);
+    CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+    CHECK(!snapshot.live_link_available);
+    source.tapehead = (TsStereoFrame){0.0f, 0.0f};
+
     /* The separate mouse-launch tile bus follows the TILES insert without
        becoming a Sister keyboard-performance voice. */
     ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TILES);

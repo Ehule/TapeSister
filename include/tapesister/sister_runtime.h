@@ -17,9 +17,11 @@ enum {
     TS_SISTER_SOURCE_FM = 1u << 1,
     TS_SISTER_SOURCE_EXT = 1u << 2,
     TS_SISTER_SOURCE_PREVIEW = 1u << 3,
-    TS_SISTER_SOURCE_COUNT = 4,
+    TS_SISTER_SOURCE_TAPEHEAD = 1u << 4,
+    TS_SISTER_SOURCE_COUNT = 5,
     TS_SISTER_SOURCE_ALL = TS_SISTER_SOURCE_TILES | TS_SISTER_SOURCE_FM |
-                           TS_SISTER_SOURCE_EXT | TS_SISTER_SOURCE_PREVIEW
+                           TS_SISTER_SOURCE_EXT | TS_SISTER_SOURCE_PREVIEW |
+                           TS_SISTER_SOURCE_TAPEHEAD
 };
 
 typedef enum {
@@ -60,6 +62,7 @@ typedef struct {
     TsStereoFrame fm;
     TsStereoFrame external;
     TsStereoFrame preview;
+    TsStereoFrame tapehead;
 } TsSisterSourceFrames;
 
 typedef struct {
@@ -77,6 +80,7 @@ typedef struct {
     int rolling;
     int held;
     int monitor_enabled;
+    int live_link_available;
     uint8_t source_switches;
     uint16_t source_mask;
     size_t active_page;
@@ -130,6 +134,7 @@ typedef struct {
     atomic_int rolling;
     atomic_int held;
     atomic_int monitor_enabled;
+    atomic_int live_link_available;
     atomic_uint_least32_t source_switches;
     atomic_uint_least32_t source_mask;
     atomic_uint_least64_t active_page;
@@ -199,6 +204,7 @@ typedef struct {
     int held;
     int monitor_enabled;
     int input_available;
+    int live_link_available;
     int source_target_conflict;
     int callback_failed;
     int parameters_published;
@@ -364,6 +370,8 @@ int ts_sister_runtime_commit_capture(TsSisterRuntime *runtime,
 
 void ts_sister_runtime_input_available(TsSisterRuntime *runtime,
                                        int available);
+void ts_sister_runtime_live_link_available(TsSisterRuntime *runtime,
+                                           int available);
 void ts_sister_runtime_project_close(TsSisterRuntime *runtime);
 void ts_sister_runtime_fail_silent(TsSisterRuntime *runtime,
                                    uint32_t warning);

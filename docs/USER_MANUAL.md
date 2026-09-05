@@ -498,12 +498,19 @@ window is hidden according to their current state.
 
 ### Source routing
 
-The four source switches are:
+The five source switches are:
 
 - **TILES** — the per-page Shift-click source group;
 - **FM** — live FM Logic performance;
 - **EXT** — configured external input;
-- **AUDITION** — preview/audition audio.
+- **AUDITION** — preview/audition audio;
+- **TAPEHEAD** — Tapehead's direct stereo Live Link.
+
+To connect it, leave TapeSister on the desired physical output and select
+**TapeSister Live Link** in Tapehead's Audio output list. **WAIT** in Sister's source
+strip changes to **LINK** when the producer is available. Either program may start
+first, and an armed TAPEHEAD source fades back in after a restart. See the
+[Live Link guide](LIVE_LINK.md).
 
 When a source is routed into Sister it is removed from its ordinary direct speaker path.
 It returns through Sister's DRY/WET monitor section, like a real hardware insert. Sources

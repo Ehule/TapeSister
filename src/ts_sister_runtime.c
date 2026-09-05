@@ -160,6 +160,7 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     atomic_init(&snapshot->rolling, 1);
     atomic_init(&snapshot->held, 0);
     atomic_init(&snapshot->monitor_enabled, 0);
+    atomic_init(&snapshot->live_link_available, 0);
     atomic_init(&snapshot->source_switches, 0u);
     atomic_init(&snapshot->source_mask, 0u);
     atomic_init(&snapshot->active_page, 0u);
@@ -245,6 +246,9 @@ static void publish_snapshot(TsSisterRuntime *runtime)
                           memory_order_relaxed);
     atomic_store_explicit(&snapshot->monitor_enabled,
                           runtime->monitor_enabled, memory_order_relaxed);
+    atomic_store_explicit(&snapshot->live_link_available,
+                          runtime->live_link_available,
+                          memory_order_relaxed);
     atomic_store_explicit(&snapshot->source_switches,
                           runtime->source_switches, memory_order_relaxed);
     atomic_store_explicit(&snapshot->source_mask, mask,
@@ -415,7 +419,8 @@ static uint8_t source_bit(int source_index)
 {
     static const uint8_t bits[TS_SISTER_SOURCE_COUNT] = {
         TS_SISTER_SOURCE_TILES, TS_SISTER_SOURCE_FM,
-        TS_SISTER_SOURCE_EXT, TS_SISTER_SOURCE_PREVIEW
+        TS_SISTER_SOURCE_EXT, TS_SISTER_SOURCE_PREVIEW,
+        TS_SISTER_SOURCE_TAPEHEAD
     };
     return source_index >= 0 && source_index < TS_SISTER_SOURCE_COUNT ?
            bits[source_index] : 0u;
@@ -429,6 +434,8 @@ static float source_route_target(const TsSisterRuntime *runtime,
     bit = source_bit(source_index);
     if ((runtime->source_switches & bit) == 0u) return 0.0f;
     if (bit == TS_SISTER_SOURCE_EXT && !runtime->input_available) return 0.0f;
+    if (bit == TS_SISTER_SOURCE_TAPEHEAD && !runtime->live_link_available)
+        return 0.0f;
     return 1.0f;
 }
 
@@ -467,6 +474,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_sister_limiter_init(&runtime->limiter);
     runtime->rolling = 1;
     runtime->input_available = 1;
+    runtime->live_link_available = 0;
     runtime->monitor_dry_current = 1.0f;
     runtime->monitor_wet_current = 1.0f;
     runtime_ramp_reset(&runtime->source_gain[0],
@@ -477,6 +485,8 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
                        runtime->parameters.external_gain);
     runtime_ramp_reset(&runtime->source_gain[3],
                        runtime->parameters.preview_gain);
+    runtime_ramp_reset(&runtime->source_gain[4],
+                       runtime->parameters.tapehead_gain);
     for (int source_index = 0; source_index < TS_SISTER_SOURCE_COUNT;
          ++source_index)
         runtime_ramp_reset(&runtime->source_route[source_index], 0.0f);
@@ -770,6 +780,8 @@ void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
                      runtime->parameters.external_gain, sample_rate);
     runtime_ramp_set(&runtime->source_gain[3],
                      runtime->parameters.preview_gain, sample_rate);
+    runtime_ramp_set(&runtime->source_gain[4],
+                     runtime->parameters.tapehead_gain, sample_rate);
     runtime_ramp_set(&runtime->ordinary_fx_return_gain,
                      runtime->parameters.fx_return_gain, sample_rate);
     if (runtime->enabled) {
@@ -1193,6 +1205,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     source.fm = ts_stereo_frame_sanitize(source.fm);
     source.external = ts_stereo_frame_sanitize(source.external);
     source.preview = ts_stereo_frame_sanitize(source.preview);
+    source.tapehead = ts_stereo_frame_sanitize(source.tapehead);
     tile_bus = ts_performance_read_stereo(&runtime->performance, &tile_raw);
     tile_bus = frame_add(tile_bus, source.tiles);
     (void)tile_raw;
@@ -1225,6 +1238,8 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         source.external, source_gain[2] * source_route[2]));
     input = frame_add(input, frame_scale(
         source.preview, source_gain[3] * source_route[3]));
+    input = frame_add(input, frame_scale(
+        source.tapehead, source_gain[4] * source_route[4]));
     if (route_energy > 1.0f)
         input = frame_scale(input, 1.0f / sqrtf(route_energy));
     /* PRE slots touch only newly arriving source material. They run before
@@ -1753,6 +1768,24 @@ void ts_sister_runtime_input_available(TsSisterRuntime *runtime,
     publish_snapshot(runtime);
 }
 
+void ts_sister_runtime_live_link_available(TsSisterRuntime *runtime,
+                                           int available)
+{
+    uint32_t sample_rate;
+    if (runtime == NULL) return;
+    runtime->live_link_available = available != 0;
+    sample_rate = runtime->enabled ? runtime->machine.buffer.sample_rate :
+                  runtime->post_fx.ready ? runtime->post_fx.sample_rate :
+                  48000u;
+    if (runtime->enabled)
+        runtime_ramp_set(&runtime->source_route[4],
+                         source_route_target(runtime, 4), sample_rate);
+    else
+        runtime_ramp_reset(&runtime->source_route[4],
+                           source_route_target(runtime, 4));
+    publish_snapshot(runtime);
+}
+
 void ts_sister_runtime_project_close(TsSisterRuntime *runtime)
 {
     if (runtime == NULL) return;
@@ -1803,6 +1836,8 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
                                               memory_order_relaxed);
         snapshot->monitor_enabled = atomic_load_explicit(
             &source->monitor_enabled, memory_order_relaxed);
+        snapshot->live_link_available = atomic_load_explicit(
+            &source->live_link_available, memory_order_relaxed);
         snapshot->source_switches = (uint8_t)atomic_load_explicit(
             &source->source_switches, memory_order_relaxed);
         snapshot->source_mask = (uint16_t)atomic_load_explicit(

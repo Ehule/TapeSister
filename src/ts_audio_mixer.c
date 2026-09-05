@@ -50,7 +50,8 @@ TsStereoFrame ts_audio_normalize_linked(TsStereoFrame sum, int active_voices)
 
 void ts_audio_buses_apply_source_dry(TsAudioBuses *buses, float gain,
                                      int preview_routed, int tiles_routed,
-                                     int fm_routed, int external_routed)
+                                     int fm_routed, int external_routed,
+                                     int tapehead_routed)
 {
     if (buses == NULL) return;
     if (!isfinite(gain)) gain = 0.0f;
@@ -60,6 +61,7 @@ void ts_audio_buses_apply_source_dry(TsAudioBuses *buses, float gain,
     if (tiles_routed) buses->tile_performance = scale_frame(buses->tile_performance, gain);
     if (fm_routed) buses->fm = scale_frame(buses->fm, gain);
     if (external_routed) buses->monitor = scale_frame(buses->monitor, gain);
+    if (tapehead_routed) buses->tapehead = scale_frame(buses->tapehead, gain);
 }
 
 static float direct_gain_for_insert(float insert)
@@ -74,7 +76,8 @@ void ts_audio_buses_apply_source_insert(TsAudioBuses *buses,
                                         float preview_insert,
                                         float tiles_insert,
                                         float fm_insert,
-                                        float external_insert)
+                                        float external_insert,
+                                        float tapehead_insert)
 {
     if (buses == NULL) return;
     buses->legacy_preview = scale_frame(
@@ -84,13 +87,15 @@ void ts_audio_buses_apply_source_insert(TsAudioBuses *buses,
     buses->fm = scale_frame(buses->fm, direct_gain_for_insert(fm_insert));
     buses->monitor = scale_frame(
         buses->monitor, direct_gain_for_insert(external_insert));
+    buses->tapehead = scale_frame(
+        buses->tapehead, direct_gain_for_insert(tapehead_insert));
 }
 
 void ts_audio_buses_apply_sister_ownership(TsAudioBuses *buses,
                                            int sister_active)
 {
     if (!sister_active) return;
-    ts_audio_buses_apply_source_insert(buses, 1.0f, 1.0f, 1.0f, 1.0f);
+    ts_audio_buses_apply_source_insert(buses, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 TsStereoFrame ts_audio_mixer_render_unclamped(TsAudioMixer *mixer,
@@ -107,6 +112,7 @@ TsStereoFrame ts_audio_mixer_render_unclamped(TsAudioMixer *mixer,
        program path, apply its 0.8 gain, then add monitor and reference. */
     program = add_frame(buses.legacy_preview, buses.tile_performance);
     program = add_frame(program, buses.fm);
+    program = add_frame(program, buses.tapehead);
     program = clamp_frame(program);
     output = scale_frame(program, mixer->program_gain);
     output = add_frame(output, buses.sister);
@@ -117,6 +123,7 @@ TsStereoFrame ts_audio_mixer_render_unclamped(TsAudioMixer *mixer,
     output = scale_frame(output, mixer->master_gain);
 
     buses.external = ts_stereo_frame_sanitize(buses.external);
+    buses.tapehead = ts_stereo_frame_sanitize(buses.tapehead);
     buses.monitor = ts_stereo_frame_sanitize(buses.monitor);
     buses.sister = ts_stereo_frame_sanitize(buses.sister);
     buses.post_fx = ts_stereo_frame_sanitize(buses.post_fx);

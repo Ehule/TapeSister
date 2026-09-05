@@ -154,6 +154,7 @@ typedef struct {
     int sister_fm_percent;
     int sister_ext_percent;
     int sister_audition_percent;
+    int sister_tapehead_percent;
     int sister_fx_return_percent;
     int sister_output_percent;
     int sister_erase_percent;

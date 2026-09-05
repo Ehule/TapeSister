@@ -73,6 +73,7 @@ void ts_config_init(TsConfig *config)
         config->sister_fm_percent = TS_SISTER_SOURCE_PERCENT_DEFAULT;
         config->sister_ext_percent = TS_SISTER_SOURCE_PERCENT_DEFAULT;
         config->sister_audition_percent = TS_SISTER_SOURCE_PERCENT_DEFAULT;
+        config->sister_tapehead_percent = TS_SISTER_SOURCE_PERCENT_DEFAULT;
         config->sister_fx_return_percent = TS_SISTER_FX_RETURN_PERCENT_DEFAULT;
         config->sister_output_percent = TS_SISTER_OUTPUT_PERCENT_DEFAULT;
         config->sister_erase_percent = TS_SISTER_ERASE_PERCENT_DEFAULT;
@@ -391,6 +392,8 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, TS_SISTER_SOURCE_PERCENT_MIN, TS_SISTER_SOURCE_PERCENT_MAX, &loaded.sister_ext_percent)) { snprintf(error, error_size, "Invalid Sister EXT trim on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_audition_percent") == 0) {
             if (!parse_clamped_integer(value, TS_SISTER_SOURCE_PERCENT_MIN, TS_SISTER_SOURCE_PERCENT_MAX, &loaded.sister_audition_percent)) { snprintf(error, error_size, "Invalid Sister AUDITION trim on config line %d", line_number); fclose(file); return 0; }
+        } else if (strcmp(key, "sister_tapehead_percent") == 0) {
+            if (!parse_clamped_integer(value, TS_SISTER_SOURCE_PERCENT_MIN, TS_SISTER_SOURCE_PERCENT_MAX, &loaded.sister_tapehead_percent)) { snprintf(error, error_size, "Invalid Sister TAPEHEAD trim on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_fx_return_percent") == 0) {
             if (!parse_clamped_integer(value, TS_SISTER_FX_RETURN_PERCENT_MIN, TS_SISTER_FX_RETURN_PERCENT_MAX, &loaded.sister_fx_return_percent)) { snprintf(error, error_size, "Invalid Sister FX return level on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_output_percent") == 0) {
@@ -551,6 +554,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "sister_fm_percent=%d\n"
                 "sister_ext_percent=%d\n"
                 "sister_audition_percent=%d\n"
+                "sister_tapehead_percent=%d\n"
                 "; Completed post-effects return, before linked safety and Master FX Feedback tap.\n"
                 "sister_fx_return_percent=%d\n"
                 "; Dry and wet affect monitoring only.\n"
@@ -614,6 +618,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 config->sister_fm_percent,
                 config->sister_ext_percent,
                 config->sister_audition_percent,
+                config->sister_tapehead_percent,
                 config->sister_fx_return_percent,
                 config->sister_dry_percent,
                 config->sister_wet_percent,

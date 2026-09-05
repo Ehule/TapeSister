@@ -23,6 +23,11 @@ int main(void)
     CHECK(CLOSE(out.l, 0.2f) && CLOSE(out.r, 0.2f));
 
     ts_audio_buses_clear(&buses);
+    buses.tapehead = (TsStereoFrame){0.25f, -0.50f};
+    out = ts_audio_mixer_render(&mixer, &buses);
+    CHECK(CLOSE(out.l, 0.2f) && CLOSE(out.r, -0.4f));
+    ts_audio_buses_clear(&buses);
+
     buses.sister = (TsStereoFrame){0.1f, -0.2f};
     out = ts_audio_mixer_render(&mixer, &buses);
     CHECK(CLOSE(out.l, 0.1f) && CLOSE(out.r, -0.2f));
@@ -89,11 +94,11 @@ int main(void)
     buses.fm = (TsStereoFrame){0.25f, 0.25f};
     buses.monitor = (TsStereoFrame){0.40f, 0.40f};
     buses.capture = (TsStereoFrame){0.75f, -0.75f};
-    ts_audio_buses_apply_source_dry(&buses, 0.0f, 1, 0, 1, 1);
+    ts_audio_buses_apply_source_dry(&buses, 0.0f, 1, 0, 1, 1, 0);
     out = ts_audio_mixer_render(&mixer, &buses);
     CHECK(CLOSE(out.l, 0.40f) && CLOSE(out.r, 0.40f));
     CHECK(CLOSE(buses.capture.l, 0.75f) && CLOSE(buses.capture.r, -0.75f));
-    ts_audio_buses_apply_source_dry(&buses, 0.0f, 0, 1, 0, 0);
+    ts_audio_buses_apply_source_dry(&buses, 0.0f, 0, 1, 0, 0, 0);
     out = ts_audio_mixer_render(&mixer, &buses);
     CHECK(CLOSE(out.l, 0.0f) && CLOSE(out.r, 0.0f));
 
@@ -102,12 +107,15 @@ int main(void)
     buses.tile_performance = (TsStereoFrame){0.4f, -0.4f};
     buses.fm = (TsStereoFrame){0.4f, -0.4f};
     buses.monitor = (TsStereoFrame){0.4f, -0.4f};
+    buses.tapehead = (TsStereoFrame){0.4f, -0.4f};
     buses.capture = (TsStereoFrame){0.75f, -0.75f};
-    ts_audio_buses_apply_source_insert(&buses, 0.25f, 0.5f, 0.75f, 1.0f);
+    ts_audio_buses_apply_source_insert(&buses, 0.25f, 0.5f, 0.75f, 1.0f,
+                                       0.0f);
     CHECK(CLOSE(buses.legacy_preview.l, 0.3f));
     CHECK(CLOSE(buses.tile_performance.l, 0.2f));
     CHECK(CLOSE(buses.fm.l, 0.1f));
     CHECK(CLOSE(buses.monitor.l, 0.0f));
+    CHECK(CLOSE(buses.tapehead.l, 0.4f));
     CHECK(CLOSE(buses.capture.l, 0.75f));
 
     /* Sister owns the full musical path while active. An unselected preview
@@ -118,6 +126,7 @@ int main(void)
     buses.tile_performance = (TsStereoFrame){0.3f, -0.3f};
     buses.fm = (TsStereoFrame){0.2f, -0.2f};
     buses.monitor = (TsStereoFrame){0.1f, -0.1f};
+    buses.tapehead = (TsStereoFrame){0.15f, -0.15f};
     buses.sister = (TsStereoFrame){0.6f, -0.6f};
     buses.reference = (TsStereoFrame){0.05f, -0.05f};
     buses.capture = (TsStereoFrame){0.75f, -0.75f};
@@ -126,6 +135,7 @@ int main(void)
     CHECK(CLOSE(buses.tile_performance.l, 0.0f));
     CHECK(CLOSE(buses.fm.l, 0.0f));
     CHECK(CLOSE(buses.monitor.l, 0.0f));
+    CHECK(CLOSE(buses.tapehead.l, 0.0f));
     CHECK(CLOSE(buses.sister.l, 0.6f));
     CHECK(CLOSE(buses.reference.l, 0.05f));
     CHECK(CLOSE(buses.capture.l, 0.75f));

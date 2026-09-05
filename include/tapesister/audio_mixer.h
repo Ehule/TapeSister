@@ -11,6 +11,7 @@ typedef struct {
     TsStereoFrame tile_performance;
     TsStereoFrame fm;
     TsStereoFrame external;
+    TsStereoFrame tapehead;
     TsStereoFrame reference;
     TsStereoFrame monitor;
     TsStereoFrame sister;
@@ -33,12 +34,14 @@ void ts_audio_mixer_init(TsAudioMixer *mixer);
 TsStereoFrame ts_audio_normalize_linked(TsStereoFrame sum, int active_voices);
 void ts_audio_buses_apply_source_dry(TsAudioBuses *buses, float gain,
                                      int preview_routed, int tiles_routed,
-                                     int fm_routed, int external_routed);
+                                     int fm_routed, int external_routed,
+                                     int tapehead_routed);
 void ts_audio_buses_apply_source_insert(TsAudioBuses *buses,
                                         float preview_insert,
                                         float tiles_insert,
                                         float fm_insert,
-                                        float external_insert);
+                                        float external_insert,
+                                        float tapehead_insert);
 /* An active Sister Machine owns the complete musical input path. Sources not
    selected for Sister are silent rather than leaking around the insert. */
 void ts_audio_buses_apply_sister_ownership(TsAudioBuses *buses,

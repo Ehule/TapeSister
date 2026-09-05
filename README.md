@@ -95,9 +95,10 @@ Every completed real-time take is also preserved as a timestamped 32-bit float W
 ## Sister Machine
 
 Sister Machine is a live 5–60 second rolling stereo tape memory with one moving write
-head and three playback heads. It accepts selected tiles, FM, external input, and
-audition/preview audio. Sources routed into Sister behave like hardware inserts: they
-leave their direct path and return through Sister's DRY/WET monitor section.
+head and three playback heads. It accepts selected tiles, FM, external input,
+audition/preview audio, and Tapehead's direct Live Link. Sources routed into Sister
+behave like hardware inserts: they leave their direct path and return through Sister's
+DRY/WET monitor section.
 
 Its controls include:
 
@@ -207,8 +208,10 @@ LFO, and Rise controls while excluding destructive editing and file operations. 
 the [MIDI Learn chapter](docs/USER_MANUAL.md#midi-learn-and-performance-controllers)
 for controller setup and unmapping behavior.
 
-FT2 LINK provides atomic folder-based exchange with TapeHead. The direct live audio link
-is planned separately.
+FT2 LINK provides atomic folder-based exchange with Tapehead. For real-time audio,
+Tapehead can select **TapeSister Live Link** as its output and appear as TapeSister's
+fifth musical source without opening another hardware device. See the
+[Live Link guide](docs/LIVE_LINK.md).
 
 ## Build on Linux
 
@@ -279,6 +282,7 @@ Final one-click end-user release packaging remains a release task.
 - [Curated CDP Transform](docs/CDP_TRANSFORM.md)
 - [Bundled CDP8 Runtime](docs/CDP8_RUNTIME.md)
 - [FT2 Exchange](docs/FT2_EXCHANGE.md)
+- [Tapehead Live Link](docs/LIVE_LINK.md)
 - [Sister Audio Buses](docs/SISTER_MACHINE_AUDIO_BUSES.md)
 - [Sister Headless Engine](docs/SISTER_MACHINE_HEADLESS_ENGINE.md)
 - [Sister Live Routing](docs/SISTER_MACHINE_LIVE_ROUTING.md)

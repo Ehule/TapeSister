@@ -73,6 +73,7 @@ static int test_defaults(void)
                   config.sister_fm_percent == 100 &&
                   config.sister_ext_percent == 100 &&
                   config.sister_audition_percent == 100 &&
+                  config.sister_tapehead_percent == 100 &&
                   config.sister_fx_return_percent == 100 &&
                   config.sister_dry_percent == 100 &&
                   config.sister_wet_percent == 100 &&
@@ -132,6 +133,7 @@ static int test_roundtrip(void)
     saved.sister_fm_percent = 234;
     saved.sister_ext_percent = 345;
     saved.sister_audition_percent = 67;
+    saved.sister_tapehead_percent = 189;
     saved.sister_fx_return_percent = 154;
     saved.sister_dry_percent = 35;
     saved.sister_wet_percent = 80;
@@ -208,6 +210,7 @@ static int test_roundtrip(void)
                 loaded.sister_fm_percent == 234 &&
                 loaded.sister_ext_percent == 345 &&
                 loaded.sister_audition_percent == 67 &&
+                loaded.sister_tapehead_percent == 189 &&
                 loaded.sister_fx_return_percent == 154 &&
                 loaded.sister_dry_percent == 35 &&
                 loaded.sister_wet_percent == 80 &&

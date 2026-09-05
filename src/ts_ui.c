@@ -3920,29 +3920,32 @@ static void sister_value_parameter_state(TsFramebuffer *fb, int x, int y,
 static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
                                   const TsSisterUiModel *model)
 {
-    static const char *const labels[5] = {"T", "F", "E", "A", "X"};
-    const float amounts[5] = {
+    static const char *const labels[6] = {"T", "F", "E", "A", "H", "X"};
+    const float amounts[6] = {
         model->parameters.tiles_gain / 4.0f,
         model->parameters.fm_gain / 4.0f,
         model->parameters.external_gain / 4.0f,
         model->parameters.preview_gain / 4.0f,
+        model->parameters.tapehead_gain / 4.0f,
         model->parameters.fx_return_gain / 2.0f
     };
-    const uint32_t colors[5] = {
-        PAL_NOTE, PAL_EFFECT, PAL_WAVE_RIGHT, PAL_MOUSE, PAL_INSTRUMENT
+    const uint32_t colors[6] = {
+        PAL_NOTE, PAL_EFFECT, PAL_WAVE_RIGHT, PAL_MOUSE, PAL_VOLUME,
+        PAL_INSTRUMENT
     };
-    const int parameters[5] = {
+    const int parameters[6] = {
         TS_SISTER_UI_PARAM_TILES_GAIN, TS_SISTER_UI_PARAM_FM_GAIN,
         TS_SISTER_UI_PARAM_EXT_GAIN, TS_SISTER_UI_PARAM_PREVIEW_GAIN,
+        TS_SISTER_UI_PARAM_TAPEHEAD_GAIN,
         TS_SISTER_UI_PARAM_FX_RETURN_GAIN
     };
     const int track_y = y + 22;
     const int track_height = 84;
-    rect(fb, x, y, 80, 110, RGB(24, 23, 25));
-    text(fb, x + 25, y + 3, "MIXER", PAL_MOUSE, 1);
-    for (int control = 0; control < 5; ++control) {
+    rect(fb, x, y, 104, 110, RGB(24, 23, 25));
+    text(fb, x + 37, y + 3, "MIXER", PAL_MOUSE, 1);
+    for (int control = 0; control < 6; ++control) {
         float amount = amounts[control];
-        int lane_x = x + 2 + control * 15;
+        int lane_x = x + 3 + control * 16;
         int handle_y;
         int unity_y;
         int locked = ts_sister_ui_parameter_locked(model, parameters[control]);
@@ -3954,7 +3957,7 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
         text(fb, lane_x + 4, y + 12, labels[control], color, 1);
         rect(fb, lane_x + 5, track_y, 4, track_height, RGB(7, 7, 8));
         unity_y = track_y + (int)lrintf(
-            (track_height - 1) * (control == 4 ? 0.5f : 0.75f));
+            (track_height - 1) * (control == 5 ? 0.5f : 0.75f));
         rect(fb, lane_x + 2, unity_y, 10, 1, PAL_BUTTON);
         handle_y = track_y + (int)lrintf(
             (track_height - 1) * (1.0f - amount));
@@ -4510,6 +4513,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     char line[160];
     char preset_label[20];
     TsUiMasterOutputStatus master_output;
+    unsigned long long overload_display;
     if (fb == NULL || model == NULL || palette == NULL) return;
     render_palette = palette;
     master_output = master_output_from_routing(&model->routing);
@@ -4840,24 +4844,29 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 600, 144, 24,
            ts_waveform_display_letter(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
-    button(fb, 10, 172, 70, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
-    button(fb, 86, 172, 70, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
-    button(fb, 162, 172, 70, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);
-    button(fb, 238, 172, 70, "AUDITION", model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
-    snprintf(line, sizeof(line), "MASK %04X  V %02d  IN %.2F  MIX %.2F",
+    button(fb, 10, 172, 60, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
+    button(fb, 76, 172, 60, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
+    button(fb, 142, 172, 60, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);
+    button(fb, 208, 172, 60, "AUDITION", model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
+    button(fb, 274, 172, 60, "TAPEHEAD", model->routing.source_switches & TS_SISTER_SOURCE_TAPEHEAD);
+    snprintf(line, sizeof(line), "%s MASK%04X V%02d IN%.2F M%.2F",
+             model->routing.live_link_available ? "LINK" : "WAIT",
              model->routing.source_mask, model->routing.active_source_voices,
              model->routing.source_input_peak,
              model->routing.tap_peak[TS_SISTER_TAP_MIX]);
-    text(fb, 322, 179, line,
+    text(fb, 342, 179, line,
          model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
-    snprintf(line, sizeof(line), "H1 %.2F  H2 %.2F  H3 %.2F  OV %llu",
+    overload_display = model->routing.overload_count > 9999u ?
+        9999u : (unsigned long long)model->routing.overload_count;
+    snprintf(line, sizeof(line), "H1%.2F H2%.2F H3%.2F O%04llu%s",
              model->routing.tap_peak[TS_SISTER_TAP_H1],
              model->routing.tap_peak[TS_SISTER_TAP_H2],
              model->routing.tap_peak[TS_SISTER_TAP_H3],
-             (unsigned long long)model->routing.overload_count);
-    text(fb, 322, 190, line,
+             overload_display,
+             model->routing.overload_count > 9999u ? "+" : "");
+    text(fb, 342, 190, line,
          model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING, 1);
-    sister_vertical_mixer(fb, 548, 172, model);
+    sister_vertical_mixer(fb, 526, 172, model);
 
     text(fb, 10, 207, "H1", PAL_NOTE, 1);
     sister_parameter_state(fb, 72, 202, 110, "LEVEL",
@@ -4869,7 +4878,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_parameter_state(fb, 312, 202, 110, "FEED",
         model->parameters.head1_feedback, PAL_NOTE,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H1_FEEDBACK));
-    sister_parameter_state(fb, 432, 202, 110, "CUTOFF",
+    sister_parameter_state(fb, 432, 202, 88, "CUTOFF",
         log10f(model->parameters.filter_cutoff_hz / 20.0f) / 3.0f,
         PAL_INSTRUMENT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_CUTOFF));
@@ -4883,7 +4892,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_parameter_state(fb, 312, 230, 110, "RATE",
         model->parameters.head2_rate_index / 9.0f, PAL_EFFECT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_RATE));
-    sister_parameter_state(fb, 432, 230, 110, "FEED",
+    sister_parameter_state(fb, 432, 230, 88, "FEED",
         model->parameters.head2_feedback, PAL_EFFECT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_FEEDBACK));
     text(fb, 10, 263, "H3", PAL_TUNING, 1);
@@ -4896,7 +4905,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_parameter_state(fb, 312, 258, 110, "RATE",
         model->parameters.head3_rate_index / 9.0f, PAL_TUNING,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H3_RATE));
-    sister_parameter_state(fb, 432, 258, 110, "FILTER Q",
+    sister_parameter_state(fb, 432, 258, 88, "FILTER Q",
         (model->parameters.filter_q - 0.1f) / 19.9f, PAL_INSTRUMENT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_Q));
 
