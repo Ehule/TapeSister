@@ -21,9 +21,10 @@ source route fades in automatically when the producer appears.
 ## Signal and capture behavior
 
 The transport carries 32-bit float stereo. TapeSister accepts Tapehead rates from
-8–384 kHz and linearly resamples to its current output rate. An adaptive roughly 50 ms
-buffer corrects small independent-clock drift. Start, stop, disconnect, underrun, and
-session replacement use short fades rather than discontinuous cuts.
+8–384 kHz and linearly resamples to its current output rate. An adaptive nominal 25 ms
+buffer, with a two-callback safety floor for large device buffers, corrects small
+independent-clock drift. Start, stop, disconnect, underrun, and session replacement use
+short fades rather than discontinuous cuts.
 
 The TAPEHEAD source has its own 0–400% mixer trim. It is stored in `tapesister.ini`,
 Sister projects, and Sister presets. As with the other Sister inputs, a selected source
