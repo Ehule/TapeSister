@@ -565,8 +565,8 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             TS_SISTER_UI_PARAM_TAPEHEAD_GAIN,
             TS_SISTER_UI_PARAM_FX_RETURN_GAIN
         };
-        int left = 535 + control * 15;
-        if (contains(x, y, left, 194, 14, 84)) {
+        int left = 529 + control * 16;
+        if (contains(x, y, left, 194, 15, 84)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = parameters[control];
             hit.normalized = 1.0f - (float)(y - 194) / 83.0f;
@@ -578,7 +578,8 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         int top = 202 + row * 28;
         for (int field = 0; field < 4; ++field) {
             int left = 72 + field * 120;
-            if (contains(x, y, left, top, 110, 18)) {
+            int width = field == 3 ? 88 : 110;
+            if (contains(x, y, left, top, width, 18)) {
                 static const int parameter[3][4] = {
                     {TS_SISTER_UI_PARAM_H1_LEVEL, TS_SISTER_UI_PARAM_H1_TIME,
                      TS_SISTER_UI_PARAM_H1_FEEDBACK,

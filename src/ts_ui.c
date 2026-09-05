@@ -3941,11 +3941,11 @@ static void sister_vertical_mixer(TsFramebuffer *fb, int x, int y,
     };
     const int track_y = y + 22;
     const int track_height = 84;
-    rect(fb, x, y, 95, 110, RGB(24, 23, 25));
-    text(fb, x + 32, y + 3, "MIXER", PAL_MOUSE, 1);
+    rect(fb, x, y, 104, 110, RGB(24, 23, 25));
+    text(fb, x + 37, y + 3, "MIXER", PAL_MOUSE, 1);
     for (int control = 0; control < 6; ++control) {
         float amount = amounts[control];
-        int lane_x = x + 2 + control * 15;
+        int lane_x = x + 3 + control * 16;
         int handle_y;
         int unity_y;
         int locked = ts_sister_ui_parameter_locked(model, parameters[control]);
@@ -4866,7 +4866,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
              model->routing.overload_count > 9999u ? "+" : "");
     text(fb, 342, 190, line,
          model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING, 1);
-    sister_vertical_mixer(fb, 533, 172, model);
+    sister_vertical_mixer(fb, 526, 172, model);
 
     text(fb, 10, 207, "H1", PAL_NOTE, 1);
     sister_parameter_state(fb, 72, 202, 110, "LEVEL",
@@ -4878,7 +4878,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_parameter_state(fb, 312, 202, 110, "FEED",
         model->parameters.head1_feedback, PAL_NOTE,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H1_FEEDBACK));
-    sister_parameter_state(fb, 432, 202, 110, "CUTOFF",
+    sister_parameter_state(fb, 432, 202, 88, "CUTOFF",
         log10f(model->parameters.filter_cutoff_hz / 20.0f) / 3.0f,
         PAL_INSTRUMENT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_CUTOFF));
@@ -4892,7 +4892,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_parameter_state(fb, 312, 230, 110, "RATE",
         model->parameters.head2_rate_index / 9.0f, PAL_EFFECT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_RATE));
-    sister_parameter_state(fb, 432, 230, 110, "FEED",
+    sister_parameter_state(fb, 432, 230, 88, "FEED",
         model->parameters.head2_feedback, PAL_EFFECT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H2_FEEDBACK));
     text(fb, 10, 263, "H3", PAL_TUNING, 1);
@@ -4905,7 +4905,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     sister_parameter_state(fb, 312, 258, 110, "RATE",
         model->parameters.head3_rate_index / 9.0f, PAL_TUNING,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_H3_RATE));
-    sister_parameter_state(fb, 432, 258, 110, "FILTER Q",
+    sister_parameter_state(fb, 432, 258, 88, "FILTER Q",
         (model->parameters.filter_q - 0.1f) / 19.9f, PAL_INSTRUMENT,
         ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_FILTER_Q));
 
