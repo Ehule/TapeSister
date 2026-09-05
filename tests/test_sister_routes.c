@@ -50,6 +50,14 @@ int main(void)
         frame = ts_sister_runtime_process_frame(&runtime, &sources);
     CHECK(CLOSE(frame.input.l, 0.0f) && CLOSE(frame.input.r, 0.6f));
 
+    sources.tapehead = (TsStereoFrame){0.3f, -0.7f};
+    ts_sister_runtime_live_link_available(&runtime, 1);
+    ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TAPEHEAD);
+    for (int sample = 0; sample < 20; ++sample)
+        frame = ts_sister_runtime_process_frame(&runtime, &sources);
+    CHECK(CLOSE(frame.input.l, 0.3f) && CLOSE(frame.input.r, -0.7f));
+    sources.tapehead = (TsStereoFrame){0.0f, 0.0f};
+
     {
         TsSisterParameters parameters = runtime.parameters;
         parameters.fm_gain = 2.0f;
@@ -151,7 +159,7 @@ int main(void)
     ts_audio_buses_clear(&buses);
     buses.tile_performance = (TsStereoFrame){0.5f, -0.5f};
     buses.sister = (TsStereoFrame){0.25f, -0.25f};
-    ts_audio_buses_apply_source_dry(&buses, 0.0f, 0, 1, 0, 0);
+    ts_audio_buses_apply_source_dry(&buses, 0.0f, 0, 1, 0, 0, 0);
     frame.monitor_return = ts_audio_mixer_render(&mixer, &buses);
     CHECK(CLOSE(frame.monitor_return.l, 0.25f));
     CHECK(CLOSE(frame.monitor_return.r, -0.25f));

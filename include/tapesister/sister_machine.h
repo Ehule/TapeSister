@@ -147,6 +147,7 @@ typedef struct {
     float fm_gain;
     float external_gain;
     float preview_gain;
+    float tapehead_gain;
     float monitor_dry;
     float monitor_wet;
     /* Post-filter MIX gain. Final linked safety remains authoritative. */

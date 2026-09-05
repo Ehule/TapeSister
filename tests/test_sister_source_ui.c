@@ -18,6 +18,7 @@ int main(void)
     TsFramebuffer fb;
     TsPalette palette;
     char status[160];
+    char midi_target[64];
     uint16_t mask;
     uint64_t protected_hash;
     CHECK(sister_test_make_tiles(&instrument, 4, 2, 1000u, 32u));
@@ -31,6 +32,13 @@ int main(void)
     CHECK(model.routing.source_mask == 0x9u);
     CHECK(ts_sister_ui_hit_test(12, 177).action == TS_SISTER_UI_ACTION_SOURCE_TILES);
     CHECK(ts_sister_ui_hit_test(240, 177).action == TS_SISTER_UI_ACTION_SOURCE_PREVIEW);
+    {
+        TsSisterUiHit tapehead_hit = ts_sister_ui_hit_test(300, 177);
+        CHECK(tapehead_hit.action == TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD);
+        CHECK(ts_sister_ui_midi_target(tapehead_hit, midi_target,
+                                       sizeof(midi_target)));
+        CHECK(strcmp(midi_target, "sister.source.tapehead") == 0);
+    }
     CHECK(ts_sister_runtime_set_page(&runtime, 1u, &instrument));
     CHECK(ts_sister_runtime_source_mask(&runtime) == 0u);
     CHECK(ts_sister_runtime_set_page(&runtime, 0u, &instrument));

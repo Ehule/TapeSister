@@ -137,7 +137,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "DuckEnabled=%d\nDuckMode=%d\nDuckSensitivity=%.9g\nDecor=%d\n"
         "Width=%.9g\nFilterType=%d\nFilterCutoff=%.9g\nFilterQ=%.9g\n"
         "FilterGain=%.9g\nInput=%.9g\nTilesGain=%.9g\nFmGain=%.9g\n"
-        "ExternalGain=%.9g\nPreviewGain=%.9g\nDry=%.9g\nWet=%.9g\nOut=%.9g\n"
+        "ExternalGain=%.9g\nPreviewGain=%.9g\nTapeheadGain=%.9g\nDry=%.9g\nWet=%.9g\nOut=%.9g\n"
         "FxReturnGain=%.9g\n"
         "Erase=%.9g\nGhostTone=%.9g\nSoak=%.9g\nBleed=%.9g\n"
         "SoakTargets=%u\nReverbType=%d\nReverbSize=%.9g\nReverbMix=%.9g\n"
@@ -172,7 +172,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->decorrelation_enabled, p->width, p->filter_type,
         p->filter_cutoff_hz, p->filter_q, p->filter_gain_db,
         p->input_gain, p->tiles_gain, p->fm_gain, p->external_gain,
-        p->preview_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
+        p->preview_gain, p->tapehead_gain, p->monitor_dry, p->monitor_wet,
+        p->mix_output_gain,
         p->fx_return_gain,
         p->write_erase, p->ghost_tone, p->soak, p->bleed,
         (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_size,
@@ -391,6 +392,7 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
     PF("FilterCutoff", filter_cutoff_hz); PF("FilterQ", filter_q); PF("FilterGain", filter_gain_db);
     PF("Input", input_gain); PF("TilesGain", tiles_gain); PF("FmGain", fm_gain);
     PF("ExternalGain", external_gain); PF("PreviewGain", preview_gain);
+    PF("TapeheadGain", tapehead_gain);
     PF("Dry", monitor_dry); PF("Wet", monitor_wet);
     PF("Out", mix_output_gain); PF("FxReturnGain", fx_return_gain);
     PF("Erase", write_erase); PF("GhostTone", ghost_tone);

@@ -245,6 +245,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         "decor=%d\nwidth=%.9g\nfilter_type=%d\nfilter_cutoff=%.9g\n"
         "filter_q=%.9g\nfilter_gain=%.9g\ninput=%.9g\n"
         "tiles_gain=%.9g\nfm_gain=%.9g\nexternal_gain=%.9g\npreview_gain=%.9g\n"
+        "tapehead_gain=%.9g\n"
         "dry=%.9g\nwet=%.9g\nout=%.9g\nfx_return_gain=%.9g\n"
         "erase=%.9g\nghost_tone=%.9g\n"
         "soak=%.9g\nbleed=%.9g\nsoak_targets=%u\n"
@@ -281,7 +282,8 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         p->decorrelation_enabled, p->width, p->filter_type,
         p->filter_cutoff_hz, p->filter_q, p->filter_gain_db,
         p->input_gain, p->tiles_gain, p->fm_gain, p->external_gain,
-        p->preview_gain, p->monitor_dry, p->monitor_wet, p->mix_output_gain,
+        p->preview_gain, p->tapehead_gain, p->monitor_dry, p->monitor_wet,
+        p->mix_output_gain,
         p->fx_return_gain,
         p->write_erase, p->ghost_tone, p->soak, p->bleed,
         (unsigned)p->soak_targets, p->fx.reverb_type, p->fx.reverb_size,
@@ -471,6 +473,7 @@ static int assign_field(TsSisterParameters *p, const char *key,
     FLOAT_FIELD("tiles_gain", tiles_gain); FLOAT_FIELD("fm_gain", fm_gain);
     FLOAT_FIELD("external_gain", external_gain);
     FLOAT_FIELD("preview_gain", preview_gain);
+    FLOAT_FIELD("tapehead_gain", tapehead_gain);
     FLOAT_FIELD("dry", monitor_dry); FLOAT_FIELD("wet", monitor_wet);
     FLOAT_FIELD("out", mix_output_gain);
     FLOAT_FIELD("fx_return_gain", fx_return_gain);

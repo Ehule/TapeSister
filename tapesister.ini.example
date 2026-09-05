@@ -86,6 +86,12 @@ capture_max_seconds=20
 sister_window_maximized=1
 ; Pre-tape input trim. Reduce this when internal sources overload the write head.
 sister_input_percent=100
+; Independent trims for Sister's five musical inputs (0-400%).
+sister_tiles_percent=100
+sister_fm_percent=100
+sister_ext_percent=100
+sister_audition_percent=100
+sister_tapehead_percent=100
 ; Independent Sister-return monitor levels. Capture taps remain unscaled.
 sister_dry_percent=100
 sister_wet_percent=100

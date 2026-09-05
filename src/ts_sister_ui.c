@@ -549,22 +549,23 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         else if (contains(x, y, 538, 370, 92, 22)) hit.action = TS_SISTER_UI_ACTION_OVERDUB;
         return hit;
     }
-    for (int source = 0; source < 4; ++source) {
-        if (contains(x, y, 10 + source * 76, 172, 70, 20)) {
+    for (int source = 0; source < 5; ++source) {
+        if (contains(x, y, 10 + source * 66, 172, 60, 20)) {
             hit.action = (TsSisterUiAction)(TS_SISTER_UI_ACTION_SOURCE_TILES + source);
             hit.index = source;
             return hit;
         }
     }
-    for (int control = 0; control < 5; ++control) {
-        static const int parameters[5] = {
+    for (int control = 0; control < 6; ++control) {
+        static const int parameters[6] = {
             TS_SISTER_UI_PARAM_TILES_GAIN,
             TS_SISTER_UI_PARAM_FM_GAIN,
             TS_SISTER_UI_PARAM_EXT_GAIN,
             TS_SISTER_UI_PARAM_PREVIEW_GAIN,
+            TS_SISTER_UI_PARAM_TAPEHEAD_GAIN,
             TS_SISTER_UI_PARAM_FX_RETURN_GAIN
         };
-        int left = 550 + control * 15;
+        int left = 535 + control * 15;
         if (contains(x, y, left, 194, 14, 84)) {
             hit.action = TS_SISTER_UI_ACTION_PARAMETER;
             hit.index = parameters[control];
@@ -680,9 +681,9 @@ int ts_sister_ui_midi_target(TsSisterUiHit hit, char *target,
     else if (hit.action == TS_SISTER_UI_ACTION_LIMITER_TOGGLE)
         name = "sister.limiter";
     else if (hit.action >= TS_SISTER_UI_ACTION_SOURCE_TILES &&
-             hit.action <= TS_SISTER_UI_ACTION_SOURCE_PREVIEW) {
-        static const char *const sources[4] = {
-            "tiles", "fm", "external", "preview"
+             hit.action <= TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD) {
+        static const char *const sources[5] = {
+            "tiles", "fm", "external", "preview", "tapehead"
         };
         result = snprintf(target, target_size, "sister.source.%s",
                           sources[hit.action - TS_SISTER_UI_ACTION_SOURCE_TILES]);
