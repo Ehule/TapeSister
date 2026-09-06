@@ -826,15 +826,22 @@ static void compact_slider(TsFramebuffer *fb, int x, int y, int w,
 }
 
 static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
-                           int cursor_visible, int file_busy)
+                           int cursor_visible, int file_busy,
+                           int import_preview_available)
 {
     char shown[96];
     char footer[40];
     const char *directory = browser->directory;
     size_t directory_length = strlen(directory);
-    frame(fb, 42, 34, 556, 342, RGB(36, 33, 37), PAL_MOUSE);
-    rect(fb, 44, 36, 552, 28, RGB(12, 12, 12));
-    text(fb, 56, 45, ts_browser_mode_title(browser->mode), PAL_NOTE, 1);
+    frame(fb, 20, 34, 600, 342, RGB(36, 33, 37), PAL_MOUSE);
+    rect(fb, 22, 36, 596, 28, RGB(12, 12, 12));
+    if (browser->mode == TS_BROWSER_LOAD_WAV) {
+        button(fb, 34, 39, 108, "FILE BROWSER", 1);
+        button(fb, 150, 39, 96,
+               import_preview_available ? "PREVIEW" : "PREVIEW --", 0);
+        text(fb, 262, 45, "LOAD AUDIO OR RAW DATA", PAL_NOTE, 1);
+    } else
+        text(fb, 56, 45, ts_browser_mode_title(browser->mode), PAL_NOTE, 1);
     if (directory_length > 73) directory += directory_length - 73;
     text(fb, 56, 70, directory, PAL_INSTRUMENT, 1);
 
@@ -986,10 +993,11 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
     const TsSample *sample = ui->import_preview_sample;
     double seconds = sample != NULL && sample->sample_rate > 0u ?
                      (double)sample->frames / sample->sample_rate : 0.0;
-    frame(fb, 20, 34, 600, 332, RGB(36, 33, 37), PAL_MOUSE);
+    frame(fb, 20, 34, 600, 342, RGB(36, 33, 37), PAL_MOUSE);
     rect(fb, 22, 36, 596, 28, RGB(12, 12, 12));
-    text(fb, 34, 45, "IMPORT PREVIEW", PAL_NOTE, 1);
-    text(fb, 154, 45, ui->import_preview_name, PAL_EFFECT, 1);
+    button(fb, 34, 39, 108, "FILE BROWSER", 0);
+    button(fb, 150, 39, 96, "PREVIEW", 1);
+    text(fb, 262, 45, ui->import_preview_name, PAL_EFFECT, 1);
     snprintf(detail, sizeof(detail), "%s  %u HZ  %u CH  %.3F SEC",
              ts_audio_import_kind_name(ui->import_preview_kind),
              sample != NULL ? sample->sample_rate : 0u,
@@ -1037,9 +1045,9 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
            ui->import_preview_active ? "STOP PREVIEW" : "PLAY PREVIEW",
            ui->import_preview_active);
     button(fb, 254, 286, 132, "IMPORT", 1);
-    button(fb, 424, 286, 132, "CANCEL", 0);
+    button(fb, 424, 286, 132, "BACK TO FILES", 0);
     text(fb, 92, 330,
-         "SPACE PLAY/STOP   ENTER IMPORT   ESC CANCEL   SETTINGS UPDATE LIVE",
+         "SPACE PLAY/STOP   ENTER IMPORT   ESC BACK   SETTINGS UPDATE LIVE",
          RGB(190, 185, 190), 1);
 }
 
@@ -1783,6 +1791,10 @@ int ts_ui_config_field_from_point(int x, int y)
 
 TsUiImportAction ts_ui_import_action_from_point(int x, int y)
 {
+    if (y >= 39 && y < 62) {
+        if (x >= 34 && x < 142) return TS_UI_IMPORT_ACTION_SHOW_BROWSER;
+        if (x >= 150 && x < 246) return TS_UI_IMPORT_ACTION_SHOW_PREVIEW;
+    }
     if (y >= 188 && y < 211) {
         if (x >= 36 && x < 124) return TS_UI_IMPORT_ACTION_MODE;
         if (x >= 132 && x < 156) return TS_UI_IMPORT_ACTION_ENCODING_PREVIOUS;
@@ -3619,7 +3631,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     else if (ui->config_open)
         config_render(fb, ui);
     else if (ui->browser.mode != TS_BROWSER_CLOSED)
-        browser_render(fb, &ui->browser, ui->text_cursor_visible, ui->file_busy);
+        browser_render(fb, &ui->browser, ui->text_cursor_visible, ui->file_busy,
+                       ui->import_preview_available);
     else if (ui->renaming_bank_slot >= 0) {
         size_t length = strlen(ui->bank_rename);
         size_t cursor = ui->bank_rename_cursor > length ? length : ui->bank_rename_cursor;

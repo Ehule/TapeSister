@@ -148,6 +148,11 @@ int main(void)
     CHECK(ui.import_raw_settings.encoding == TS_RAW_SIGNED_8);
     CHECK(ui.import_raw_settings.sample_rate == 44100u);
     CHECK(ui.import_raw_settings.channels == 1u);
+    CHECK(!ui.import_preview_available);
+    CHECK(ts_ui_import_action_from_point(80, 50) ==
+          TS_UI_IMPORT_ACTION_SHOW_BROWSER);
+    CHECK(ts_ui_import_action_from_point(180, 50) ==
+          TS_UI_IMPORT_ACTION_SHOW_PREVIEW);
     CHECK(ts_ui_import_action_from_point(80, 198) ==
           TS_UI_IMPORT_ACTION_MODE);
     CHECK(ts_ui_import_action_from_point(144, 198) ==

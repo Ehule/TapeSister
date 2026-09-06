@@ -84,7 +84,9 @@ this avoids collisions with the playable note range.
 | --- | --- |
 | `Space` | Play/stop the immutable preview |
 | `Enter` | Import the preview |
-| `Escape` | Cancel without changing the tile |
+| `Escape` in Preview | Return to the preserved file-browser tab |
+| `Escape` in File Browser | Exit LOAD without changing the tile |
+| `P` in File Browser | Return to the cached preview |
 | `R` or **AUTO / RAW DATA** | Toggle automatic decoding and raw-byte interpretation |
 | Raw `<` / `>` controls | Change encoding, sample rate, or byte offset |
 | `Shift` while changing offset | Move the raw offset by 256 frames |

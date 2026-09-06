@@ -116,10 +116,13 @@ present and the whole tile otherwise.
 
 Click **LOAD** or press `Ctrl+O`, choose a file, and TapeSister opens an import preview
 before it changes a tile. WAV, FLAC, MP3, and Ogg Vorbis are recognized from their file
-contents and decoded automatically. The preview shows the decoded waveform, format,
-sample rate, channel count, duration, and frame count. Press `Space` or click **PLAY
-PREVIEW** to audition it, `Enter` or **IMPORT** to commit it, and `Escape` or **CANCEL**
-to leave the destination unchanged.
+contents and decoded automatically. The import dialog has **FILE BROWSER** and
+**PREVIEW** tabs, and the preview shows the decoded waveform, format, sample rate,
+channel count, duration, and frame count. Press `Space` or click **PLAY PREVIEW** to
+audition it and `Enter` or **IMPORT** to commit it. `Escape`, **BACK TO FILES**, or the
+**FILE BROWSER** tab returns to the same directory and highlighted file without changing
+the destination; the cached preview remains available in the **PREVIEW** tab. Use
+`Escape` or **CANCEL** from the file browser to leave LOAD completely.
 
 Any non-project file can also become sound as **RAW DATA**. This mode interprets its
 bytes directly instead of requiring an audio container. Adjust the following while

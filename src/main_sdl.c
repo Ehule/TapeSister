@@ -6631,6 +6631,7 @@ static void close_import_preview(SDL_AudioDeviceID device, AudioState *audio,
     if (controller == NULL || ui == NULL) return;
     stop_import_preview(device, audio, ui, controller);
     ui->import_preview_open = 0;
+    ui->import_preview_available = 0;
     ui->import_preview_raw = 0;
     ui->import_preview_sample = NULL;
     ui->import_preview_kind = TS_AUDIO_IMPORT_UNKNOWN;
@@ -6691,6 +6692,7 @@ static int begin_import_preview(SDL_AudioDeviceID device, AudioState *audio,
         ui->import_preview_raw = 1;
     }
     ui->import_preview_open = 1;
+    ui->import_preview_available = 1;
     sync_import_preview_model(ui, controller);
     if (!automatic)
         snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
@@ -6698,6 +6700,51 @@ static int begin_import_preview(SDL_AudioDeviceID device, AudioState *audio,
     snprintf(ui->status, sizeof(ui->status),
              "IMPORT PREVIEW - LISTEN, ADJUST RAW SETTINGS, THEN IMPORT");
     return 1;
+}
+
+static int show_import_browser_tab(SDL_AudioDeviceID device, AudioState *audio,
+                                   TsUiState *ui, ImportController *controller)
+{
+    char browser_error[160];
+    stop_import_preview(device, audio, ui, controller);
+    ui->import_preview_open = 0;
+    if (!ts_browser_open(&ui->browser, TS_BROWSER_LOAD_WAV, NULL)) {
+        snprintf(browser_error, sizeof(browser_error), "%.150s", ui->browser.message);
+        ts_browser_close(&ui->browser);
+        close_import_preview(device, audio, ui, controller);
+        snprintf(ui->status, sizeof(ui->status),
+                 "BROWSER FAILED: %.142s", browser_error);
+        return 0;
+    }
+    ui->import_preview_available = 1;
+    snprintf(ui->status, sizeof(ui->status),
+             "FILE BROWSER - PREVIEW IS PRESERVED IN THE OTHER TAB");
+    return 1;
+}
+
+static void show_import_preview_tab(TsUiState *ui,
+                                    const ImportController *controller)
+{
+    if (ui == NULL || controller == NULL || !ui->import_preview_available ||
+        controller->decoded.sample.data == NULL) return;
+    SDL_StopTextInput();
+    ts_browser_close(&ui->browser);
+    ui->import_preview_open = 1;
+    sync_import_preview_model(ui, controller);
+    snprintf(ui->status, sizeof(ui->status),
+             "IMPORT PREVIEW - LISTEN, ADJUST RAW SETTINGS, THEN IMPORT");
+}
+
+static void cancel_browser_with_import(SDL_AudioDeviceID device,
+                                       AudioState *audio, TsUiState *ui,
+                                       ImportController *controller)
+{
+    int discard_preview = ui != NULL &&
+        ui->browser.mode == TS_BROWSER_LOAD_WAV &&
+        ui->import_preview_available;
+    browser_cancel(ui);
+    if (discard_preview && ui->browser.mode == TS_BROWSER_CLOSED)
+        close_import_preview(device, audio, ui, controller);
 }
 
 static int rebuild_import_preview(SDL_AudioDeviceID device, AudioState *audio,
@@ -6828,6 +6875,12 @@ static void handle_import_action(SDL_AudioDeviceID device, AudioState *audio,
     };
     TsRawImportSettings previous = ui->import_raw_settings;
     int rebuild = 0;
+    if (action == TS_UI_IMPORT_ACTION_SHOW_BROWSER ||
+        action == TS_UI_IMPORT_ACTION_CANCEL) {
+        (void)show_import_browser_tab(device, audio, ui, controller);
+        return;
+    }
+    if (action == TS_UI_IMPORT_ACTION_SHOW_PREVIEW) return;
     if (action == TS_UI_IMPORT_ACTION_AUDITION) {
         audition_import_preview(device, audio, ui, controller, output_rate);
         return;
@@ -6835,12 +6888,6 @@ static void handle_import_action(SDL_AudioDeviceID device, AudioState *audio,
     if (action == TS_UI_IMPORT_ACTION_ACCEPT) {
         apply_import_preview(device, audio, ui, instrument,
                              pending_selection_load, controller);
-        return;
-    }
-    if (action == TS_UI_IMPORT_ACTION_CANCEL) {
-        close_import_preview(device, audio, ui, controller);
-        snprintf(ui->status, sizeof(ui->status),
-                 "IMPORT CANCELLED - TILE UNCHANGED");
         return;
     }
     if (action == TS_UI_IMPORT_ACTION_MODE) {
@@ -7080,6 +7127,8 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         ok = begin_import_preview(device, audio, ui, import_controller,
                                   pending->path, pending->selection_load);
     } else if (pending->mode == TS_BROWSER_LOAD_WAV) {
+        if (ui->import_preview_available)
+            close_import_preview(device, audio, ui, import_controller);
         ok = load_instrument(device, audio, ui, instrument,
                              sample_pages, parked_record,
                              record_bank_active, pending->path);
@@ -12134,7 +12183,13 @@ int main(int argc, char **argv)
                         browser_open_bank(&ui, &instrument);
                     }
                 } else if (ui.browser.mode != TS_BROWSER_CLOSED) {
-                    if (key == SDLK_ESCAPE) browser_cancel(&ui);
+                    if (key == SDLK_ESCAPE)
+                        cancel_browser_with_import(
+                            device, &audio, &ui, &import_controller);
+                    else if (key == SDLK_p &&
+                             ui.browser.mode == TS_BROWSER_LOAD_WAV &&
+                             ui.import_preview_available)
+                        show_import_preview_tab(&ui, &import_controller);
                     else if ((mod & KMOD_CTRL) && key == SDLK_n &&
                              ts_browser_mode_allows_create_directory(ui.browser.mode)) {
                         if (ts_browser_begin_create_directory(&ui.browser))
@@ -12165,7 +12220,8 @@ int main(int argc, char **argv)
                                            &sample_pages, parked_instrument,
                                            record_bank_active, &pending_file);
                         else
-                            browser_cancel(&ui);
+                            cancel_browser_with_import(
+                                device, &audio, &ui, &import_controller);
                     }
                     else if (ui.browser.filename_focus && key == SDLK_LEFT)
                         ts_browser_move_filename_cursor(&ui.browser, -1);
@@ -13641,7 +13697,13 @@ int main(int argc, char **argv)
                         browser_open_bank(&ui, &instrument);
                     }
                 } else if (ui.browser.mode != TS_BROWSER_CLOSED) {
-                    if (x >= TS_BROWSER_LIST_X && x < TS_BROWSER_LIST_X + TS_BROWSER_LIST_W &&
+                    TsUiImportAction import_tab =
+                        ts_ui_import_action_from_point(x, y);
+                    if (ui.browser.mode == TS_BROWSER_LOAD_WAV &&
+                        ui.import_preview_available &&
+                        import_tab == TS_UI_IMPORT_ACTION_SHOW_PREVIEW) {
+                        show_import_preview_tab(&ui, &import_controller);
+                    } else if (x >= TS_BROWSER_LIST_X && x < TS_BROWSER_LIST_X + TS_BROWSER_LIST_W &&
                         y >= TS_BROWSER_LIST_Y && y < TS_BROWSER_LIST_Y + TS_BROWSER_SCROLL_H) {
                         int row = (y - TS_BROWSER_LIST_Y) / TS_BROWSER_ROW_H;
                         int index = ui.browser.scroll + row;
@@ -13712,7 +13774,8 @@ int main(int argc, char **argv)
                                        record_bank_active, &pending_file);
                     } else if (x >= 349 && x < 433 && y >= 326 && y < 349) {
                         ui.browser.action_focus = 3;
-                        browser_cancel(&ui);
+                        cancel_browser_with_import(
+                            device, &audio, &ui, &import_controller);
                     }
                 } else if (y >= 4 && y < 28 && x >= 214 && x < 274) {
                     begin_config(&ui);

@@ -165,6 +165,8 @@ typedef enum {
 
 typedef enum {
     TS_UI_IMPORT_ACTION_NONE = 0,
+    TS_UI_IMPORT_ACTION_SHOW_BROWSER,
+    TS_UI_IMPORT_ACTION_SHOW_PREVIEW,
     TS_UI_IMPORT_ACTION_MODE,
     TS_UI_IMPORT_ACTION_ENCODING_PREVIOUS,
     TS_UI_IMPORT_ACTION_ENCODING_NEXT,
@@ -393,6 +395,7 @@ typedef struct {
     int exchange_force_new_instance;
     int load_selection_choice_open;
     int import_preview_open;
+    int import_preview_available;
     int import_preview_raw;
     int import_preview_active;
     TsRawImportSettings import_raw_settings;
