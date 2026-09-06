@@ -52,8 +52,8 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: Assemble archive
         shell: pwsh
-        run: Compress-Archive -Path build/tapesister.exe,build/*.dll,build/assets,build/cdp,build/licenses,build/tapesister.ini.example -DestinationPath TapeSister-windows-x86_64.zip
+        run: ./scripts/package-windows-portable.ps1 -BuildDirectory build -OutputDirectory .
       - uses: actions/upload-artifact@v4
         with:
-          name: TapeSister-windows-x86_64
-          path: TapeSister-windows-x86_64.zip
+          name: TapeSister-Windows-x64
+          path: TapeSister-Windows-x64.zip

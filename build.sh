@@ -20,7 +20,7 @@ case "$(uname -s)" in
     platform="Windows UCRT64"
     build_dir="${TAPESISTER_BUILD_DIR:-$script_dir/build-windows}"
     generator_args=(-G Ninja)
-    executable="$build_dir/tapesister.exe"
+    executable="$build_dir/TapeSister.exe"
     ;;
   *)
     printf 'Unsupported build host: %s\n' "$(uname -s)" >&2

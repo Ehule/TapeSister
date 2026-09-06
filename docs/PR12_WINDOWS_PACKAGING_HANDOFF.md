@@ -1,8 +1,8 @@
 # PR12 Windows packaging handoff
 
-PR11 deliberately does not create an installer or distribution archive. This document
-records the current reproducible boundary so PR12 can focus on dependency acquisition,
-portable layout, and friend-friendly delivery.
+This document began as the PR11-to-PR12 handoff. The portable ZIP, embedded executable
+identity, and one-command Windows build/package path described below are now
+implemented. The remaining release work is signing and clean-machine certification.
 
 ## Known build contract
 
@@ -15,17 +15,17 @@ portable layout, and friend-friendly delivery.
   `TAPESISTER_ENABLE_MIDI` (default ON).
 - Make entry points are `make`, `make test`, `make stress-sister`, and
   `make benchmark-sister`. CMake/CTest is the portable release entry point.
-- Expected executable: `tapesister.exe`. MinGW reserves a 16 MiB stack.
+- Expected executable: `TapeSister.exe`. MinGW reserves a 16 MiB stack.
 
 Fresh MSYS2 UCRT64 build:
 
 ```bash
-bash build.sh
+powershell.exe -ExecutionPolicy Bypass -File scripts/build-windows-portable.ps1
 ```
 
-The shared wrapper verifies that it is running in UCRT64, supplies the Ninja and
-Release configuration, enables the bundled pinned CDP8 runtime, and targets only the
-application and its required dependencies. `SDL_MAIN_HANDLED` is supplied by the
+The shared wrapper verifies that it is running in UCRT64, invokes the established
+Ninja/Release build with the bundled pinned CDP8 runtime, validates the staged runtime,
+and writes `dist/TapeSister-Windows-x64.zip`. `SDL_MAIN_HANDLED` is supplied by the
 CMake target itself rather than as a user-provided compiler flag.
 
 For certification, configure a second tree without limiting the target, build it,
@@ -35,7 +35,7 @@ optimization/debug information only; it is not a callback-performance reference.
 ## Current portable layout
 
 ```text
-tapesister.exe
+TapeSister.exe
 SDL2.dll
 libgcc_s_<toolchain>.dll
 libstdc++-6.dll          # when MIDI/RtMidi is enabled
@@ -104,15 +104,15 @@ download sources.
 6. Run the short PR11 sound-check checklist and inspect `--diagnostic-audio` output.
 7. Repeat on a clean 64-bit Windows machine without MSYS2 installed.
 
-## PR12 blockers and decisions
+## Remaining release decisions
 
-1. Establish a pinned, automated dependency/toolchain acquisition path.
-2. Select installer versus signed portable archive (or both), version metadata, icon,
-   signing, uninstall/upgrade behavior, and release checksums.
-3. Move default writable data out of an installed read-only directory while retaining
+1. Decide whether releases remain unsigned portable archives or add code signing and
+   published checksums.
+2. Move default writable data out of an installed read-only directory if a future
+   installer is introduced, while retaining
    an explicit portable mode and existing environment overrides.
-4. Generate and ship complete third-party notices and confirm runtime redistribution.
-5. Add clean Windows CI for Release build, CTest, dependency/layout validation, and an
-   Explorer-style launch smoke test.
-6. Validate 44.1/48/96 kHz and practical 128/256/512/1024 buffers on the target Windows
+3. Confirm final runtime redistribution notices before a public tagged release.
+4. Add an Explorer-style launch smoke test to the existing clean Windows CI build,
+   CTest pass, and package-layout validation.
+5. Validate 44.1/48/96 kHz and practical 128/256/512/1024 buffers on the target Windows
    hardware; do not derive release claims from Debug/sanitizer timing.

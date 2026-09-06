@@ -268,14 +268,18 @@ release build is signed off on physical Windows hardware.
 From an MSYS2 **UCRT64** terminal with CMake, Ninja, SDL2, and the UCRT64 toolchain:
 
 ```bash
-bash build.sh
+powershell.exe -ExecutionPolicy Bypass -File scripts/build-windows-portable.ps1
 ```
 
-The build stages `tapesister.exe`, SDL2, required MinGW runtime DLLs, assets, and the
-pinned CDP8 programs together under `build-windows/`. Keep that portable directory
-together when moving it. Set `TAPESISTER_BUILD_JOBS` to change the default two-job build.
+That single command builds TapeSister and the pinned native CDP8 runtime, stages the
+Windows DLLs and assets, and creates the friend-ready archive at
+`dist/TapeSister-Windows-x64.zip`. Its `TapeSister.exe` includes the application icon
+and Windows product/version metadata. Extract the whole archive before running it; do
+not separate the executable from its DLLs, `assets`, `cdp`, or `licenses` directories.
 
-Final one-click end-user release packaging remains a release task.
+For an ordinary developer build without creating the ZIP, continue to use
+`bash build.sh`. It stages the same runtime under `build-windows/`. Set
+`TAPESISTER_BUILD_JOBS` to change the default two-job build.
 
 ## Technical documentation
 
