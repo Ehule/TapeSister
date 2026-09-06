@@ -3031,29 +3031,37 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
 
 static int bank_sync_selected(TsInstrument *instrument, char *error, size_t error_size);
 
-int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
-                           char *error, size_t error_size)
+int ts_instrument_import_sample(TsInstrument *instrument, const TsSample *sample,
+                                int has_loop, size_t loop_first,
+                                size_t loop_last, TsLoopMode loop_mode,
+                                char *error, size_t error_size)
 {
     TsBankSlot imported;
     TsTuning tuning = default_tuning();
-    size_t loop_first = 0, loop_last = 0;
-    TsLoopMode loop_mode = TS_LOOP_FORWARD;
-    int has_loop = 0;
     int slot;
     if (instrument == NULL || instrument->selected_slot < 0 ||
         instrument->selected_slot >= TS_BANK_SLOT_COUNT) {
-        set_error(error, error_size, "Select a bank tile before loading a WAV");
+        set_error(error, error_size, "Select a bank tile before importing audio");
         return 0;
+    }
+    if (sample == NULL || sample->data == NULL || sample->frames == 0u ||
+        sample->sample_rate == 0u || !ts_sample_valid_channels(sample->channels)) {
+        set_error(error, error_size, "Decoded import contains no usable audio");
+        return 0;
+    }
+    if (!has_loop || loop_last <= loop_first || loop_last > sample->frames) {
+        has_loop = 0;
+        loop_first = 0u;
+        loop_last = 0u;
+        loop_mode = TS_LOOP_FORWARD;
     }
     slot = instrument->selected_slot;
     if (instrument->bank[slot].locked) {
-        set_error(error, error_size, "Tile is locked - unlock it before loading a WAV");
+        set_error(error, error_size, "Tile is locked - unlock it before importing audio");
         return 0;
     }
     bank_slot_init(&imported);
-    if (!ts_sample_load_wav_metadata(&imported.sample, &tuning, &has_loop,
-                                     &loop_first, &loop_last, &loop_mode,
-                                     path, error, error_size) ||
+    if (!ts_sample_clone(&imported.sample, sample, error, error_size) ||
         !ts_sample_clone(&imported.edit_parent, &imported.sample,
                          error, error_size)) {
         bank_slot_free(&imported);
@@ -3092,6 +3100,26 @@ int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
     if (!bank_sync_selected(instrument, error, error_size)) return 0;
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
+                           char *error, size_t error_size)
+{
+    TsSample sample;
+    TsTuning tuning = default_tuning();
+    size_t loop_first = 0u, loop_last = 0u;
+    TsLoopMode loop_mode = TS_LOOP_FORWARD;
+    int has_loop = 0;
+    int ok;
+    ts_sample_init(&sample);
+    ok = ts_sample_load_wav_metadata(&sample, &tuning, &has_loop,
+                                     &loop_first, &loop_last, &loop_mode,
+                                     path, error, error_size) &&
+         ts_instrument_import_sample(instrument, &sample, has_loop,
+                                     loop_first, loop_last, loop_mode,
+                                     error, error_size);
+    ts_sample_free(&sample);
+    return ok;
 }
 
 int ts_instrument_reseed(TsInstrument *instrument, char *error, size_t error_size)

@@ -56,9 +56,10 @@ The normal creative cycle is:
 > Create or load material → shape it → make variations → perform it → capture the
 > performance → use the capture as new material.
 
-Nothing requires that exact order. A WAV can be loaded and immediately sent through
-Sister Machine; a blank tile can become a precisely timed sound; a captured Sister
-performance can be cropped, varied, looped, and used as a new Sister source.
+Nothing requires that exact order. Imported audio or raw data can be loaded and
+immediately sent through Sister Machine; a blank tile can become a precisely timed
+sound; a captured Sister performance can be cropped, varied, looped, and used as a new
+Sister source.
 
 ## First run
 
@@ -110,6 +111,34 @@ The editor buttons beneath the waveform provide loading, creation, variation, lo
 Drone Maker, tuning, native DSP, CDP transforms, clipboard editing, gain, fades, crop,
 selection, and playback operations. Most operations affect the selection when one is
 present and the whole tile otherwise.
+
+### Import preview and raw data
+
+Click **LOAD** or press `Ctrl+O`, choose a file, and TapeSister opens an import preview
+before it changes a tile. WAV, FLAC, MP3, and Ogg Vorbis are recognized from their file
+contents and decoded automatically. The preview shows the decoded waveform, format,
+sample rate, channel count, duration, and frame count. Press `Space` or click **PLAY
+PREVIEW** to audition it, `Enter` or **IMPORT** to commit it, and `Escape` or **CANCEL**
+to leave the destination unchanged.
+
+Any non-project file can also become sound as **RAW DATA**. This mode interprets its
+bytes directly instead of requiring an audio container. Adjust the following while
+watching and auditioning the preview:
+
+- unsigned or signed 8-bit, signed 16/24/32-bit integer, or 32-bit float encoding;
+- little- or big-endian byte order for multi-byte encodings;
+- mono or interleaved stereo;
+- sample rate from 8 kHz through 192 kHz;
+- byte offset, with `Shift` selecting a larger step;
+- optional peak normalization.
+
+The source file and destination tile remain untouched while settings change. Different
+interpretations can sound radically different: sample rate changes speed and pitch,
+channel and offset choices change byte alignment, and encoding or byte order changes
+the waveform itself. Click **AUTO** / **RAW DATA** or press `R` to switch modes when an
+ordinary audio file should be deliberately reinterpreted as bytes. If a waveform
+selection is active, accepting an import proceeds to the existing **PASTE / FIT /
+CANCEL** choice instead of replacing the whole tile.
 
 ### Lower workspaces
 
@@ -885,7 +914,8 @@ never automatically deleted or rewritten.
 - **COLLECTION** — export the occupied sound collection.
 
 `.tsp` files are processing recipes. They do not contain audio and do not create project
-folders. `.tsr` files are project state. WAV files are directly usable audio.
+folders. `.tsr` files are project state. WAV, FLAC, MP3, and Ogg Vorbis are directly
+usable audio; any other non-project file can be auditioned and imported as raw data.
 
 ### TapeSister and TapeHead exchange
 

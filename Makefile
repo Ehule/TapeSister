@@ -2,10 +2,13 @@ CC ?= cc
 CXX ?= c++
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
 CXXFLAGS ?= -std=c++11 -O2
-CPPFLAGS ?= -Iinclude -Ithird_party
-CORE = src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c src/ts_audio_lifecycle.c src/ts_realtime_diagnostics.c src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c src/ts_sister_limiter.c src/ts_sister_machine.c src/ts_sister_wave_snapshot.c src/ts_sister_runtime.c src/ts_sister_ui.c src/ts_sister_preset.c src/ts_sister_project_state.c src/ts_capture.c src/ts_capture_archive.c src/ts_performance_recorder.c src/ts_input_monitor.c src/ts_input_ownership.c src/ts_sample_pages.c src/ts_browser.c src/ts_config.c src/ts_audio_config.c src/ts_recipe.c src/ts_dsp_recipe.c src/ts_palette.c src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c src/ts_dsp_transform.c src/ts_exchange.c src/ts_render_damage.c src/ts_waveform_cache.c src/ts_waveform_display.c src/ts_ui.c
-CORE += src/ts_midi_map.c
-SDL_MAIN = src/main_sdl.c src/tape_companion.c
+MINIAUDIO_DIR ?= .deps/miniaudio
+MINIAUDIO_COMMIT = 350784a9467a79d0fa65802132668e5afbcf3777
+CPPFLAGS ?= -Iinclude -Ithird_party -I$(MINIAUDIO_DIR)
+CORE_SOURCES = src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c src/ts_audio_lifecycle.c src/ts_realtime_diagnostics.c src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c src/ts_sister_limiter.c src/ts_sister_machine.c src/ts_sister_wave_snapshot.c src/ts_sister_runtime.c src/ts_sister_ui.c src/ts_sister_preset.c src/ts_sister_project_state.c src/ts_capture.c src/ts_capture_archive.c src/ts_performance_recorder.c src/ts_input_monitor.c src/ts_input_ownership.c src/ts_sample_pages.c src/ts_browser.c src/ts_config.c src/ts_audio_config.c src/ts_recipe.c src/ts_dsp_recipe.c src/ts_palette.c src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c src/ts_dsp_transform.c src/ts_exchange.c src/ts_render_damage.c src/ts_waveform_cache.c src/ts_waveform_display.c src/ts_ui.c src/ts_midi_map.c
+DECODER_OBJ = .deps/ts_audio_import.o
+CORE = $(CORE_SOURCES) $(DECODER_OBJ)
+SDL_MAIN = src/main_sdl.c src/tape_link.c src/tape_companion.c
 DIAG = src/ts_startup_diag.c
 MIDI_C = src/ts_midi_input.c
 MIDI_CPP_OBJS =
@@ -31,7 +34,17 @@ MIDI_LDFLAGS = -lstdc++ $(shell pkg-config --libs alsa) -ldl -pthread
 endif
 endif
 
-.PHONY: all bundled-release test test_audio_hardening_structure test_live_link_structure test_companion_focus_structure test_identity_packaging stress-sister benchmark-sister screenshot screenshot-sister-spirit runtime-assets clean
+.PHONY: all bundled-release dependencies test test_audio_hardening_structure test_live_link_structure test_companion_focus_structure test_identity_packaging stress-sister benchmark-sister screenshot screenshot-sister-spirit runtime-assets clean
+
+dependencies: $(MINIAUDIO_DIR)/miniaudio.h
+
+$(MINIAUDIO_DIR)/miniaudio.h:
+	@mkdir -p .deps
+	@git clone --quiet --filter=blob:none https://github.com/mackron/miniaudio.git $(MINIAUDIO_DIR)
+	@git -C $(MINIAUDIO_DIR) checkout --quiet $(MINIAUDIO_COMMIT)
+
+$(DECODER_OBJ): src/ts_audio_import.c include/tapesister/audio_import.h $(MINIAUDIO_DIR)/miniaudio.h
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c src/ts_audio_import.c -o $@
 
 all: bundled-release
 
@@ -73,6 +86,7 @@ screenshot-sister-spirit: tapesister_sister_spirit_demo tapesister_render_demo
 	./tapesister_sister_spirit_demo fallout-presets artifacts/sister-fallout-preset-manager.ppm
 
 test: test_sister_resize
+test: tapesister_audio_import_tests
 test: test_audio_hardening_structure
 test: test_live_link_structure
 test: test_companion_focus_structure
@@ -127,6 +141,7 @@ test: tapesister_core_tests tapesister_audio_frame_tests test_audio_mixer test_a
 	./tapesister_sample_channels_tests
 	./tapesister_tsr27_tests
 	./tapesister_wav_channels_tests
+	./tapesister_audio_import_tests
 	./tapesister_smear_tests
 	./tapesister_tear_tests
 	./tapesister_bank_tests
@@ -310,6 +325,9 @@ tapesister_tsr27_tests: $(CORE) tests/test_tsr27.c
 tapesister_wav_channels_tests: $(CORE) tests/test_wav_channels.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
+tapesister_audio_import_tests: $(CORE) tests/test_audio_import.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
 tapesister_tear_tests: $(CORE) tests/test_tear.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
@@ -374,7 +392,7 @@ screenshot: tapesister_render_demo
 	./tapesister_render_demo artifacts/tapesister-independent-tiles.ppm
 
 clean:
-	rm -f tapesister benchmark_sister_callback tapesister_core_tests tapesister_audio_frame_tests test_audio_mixer test_note_bank_stereo test_performance_stereo test_capture_stereo test_external_input_channels test_input_ownership test_realtime_diagnostics test_sister_buffer test_sister_heads test_sister_transport test_sister_modulation test_sister_feedback test_sister_ghost_tone test_sister_stereo test_sister_weave test_sister_effect_routing test_sister_post_fx test_sister_fallout test_sister_limiter test_sister_duck_filter test_sister_snapshot test_sister_routes test_sister_runtime test_sister_source_mask test_sister_performance_sources test_sister_capture test_sister_recursion test_sister_lifecycle test_sister_visibility test_sister_preset test_sister_project_state test_sister_pathological tapesister_sample_channels_tests tapesister_tsr27_tests tapesister_wav_channels_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_performance_tests tapesister_midi_tests tapesister_external_record_tests tapesister_input_monitor_tests tapesister_capture_archive_tests tapesister_sample_pages_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_cdp_native_smoke tapesister_chain_stamp_tests tapesister_exchange_tests tapesister_render_damage_tests tapesister_waveform_cache_tests tapesister_render_efficiency_tests tapesister_render_demo tapesister_sister_spirit_demo third_party/rtmidi/*.o test-family.tsr test-roundtrip.wav test-external-stereo.wav test-tear.tsr test-bank-independent.tsr test-drone.ini test-drone.tsr test-canvas.tsr test-transform.tsr test-audio-config.ini test-audio-config-blank.ini test-audio-config-legacy.ini artifacts/*.ppm artifacts/*.png
+	rm -f tapesister benchmark_sister_callback tapesister_core_tests tapesister_audio_frame_tests test_audio_mixer test_note_bank_stereo test_performance_stereo test_capture_stereo test_external_input_channels test_input_ownership test_realtime_diagnostics test_sister_buffer test_sister_heads test_sister_transport test_sister_modulation test_sister_feedback test_sister_ghost_tone test_sister_stereo test_sister_weave test_sister_effect_routing test_sister_post_fx test_sister_fallout test_sister_limiter test_sister_duck_filter test_sister_snapshot test_sister_routes test_sister_runtime test_sister_source_mask test_sister_performance_sources test_sister_capture test_sister_recursion test_sister_lifecycle test_sister_visibility test_sister_preset test_sister_project_state test_sister_pathological tapesister_sample_channels_tests tapesister_tsr27_tests tapesister_wav_channels_tests tapesister_audio_import_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_performance_tests tapesister_midi_tests tapesister_external_record_tests tapesister_input_monitor_tests tapesister_capture_archive_tests tapesister_sample_pages_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_cdp_native_smoke tapesister_chain_stamp_tests tapesister_exchange_tests tapesister_render_damage_tests tapesister_waveform_cache_tests tapesister_render_efficiency_tests tapesister_render_demo tapesister_sister_spirit_demo third_party/rtmidi/*.o test-family.tsr test-roundtrip.wav test-external-stereo.wav test-tear.tsr test-bank-independent.tsr test-drone.ini test-drone.tsr test-canvas.tsr test-transform.tsr test-audio-config.ini test-audio-config-blank.ini test-audio-config-legacy.ini artifacts/*.ppm artifacts/*.png
 	rm -f test_performance_recorder test_sister_ui_model test_sister_wave_snapshot test_waveform_display_modes test_sister_source_ui test_sister_capture_ui test_sister_palette test-sister-palette.pal test-sister-palette-legacy.pal
 	rm -f test_audio_lifecycle test-audio-config-backend.ini
 	rm -f test_sister_resize

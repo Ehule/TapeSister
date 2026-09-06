@@ -6223,7 +6223,8 @@ static int ui_blocking_dialog_open_except_fm(const TsUiState *ui)
     return ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
            ui->file_busy || ui->transform_open || ui->drone_open ||
-           ui->load_selection_choice_open || ui->palette_open || ui->config_open ||
+           ui->import_preview_open || ui->load_selection_choice_open ||
+           ui->palette_open || ui->config_open ||
            ui->renaming_bank_slot >= 0 || ui->renaming_recipe_slot >= 0 ||
            ui->export_choice_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
@@ -6578,11 +6579,11 @@ static void apply_selection_load(SDL_AudioDeviceID device, AudioState *audio,
     ui->load_selection_name[0] = '\0';
     if (fit)
         snprintf(ui->status, sizeof(ui->status),
-                 "FIT %zu WAV FRAMES INTO %zu - UNDO AVAILABLE",
+                 "FIT %zu AUDIO FRAMES INTO %zu - UNDO AVAILABLE",
                  source_frames, target_frames);
     else
         snprintf(ui->status, sizeof(ui->status),
-                 "PASTED %zu WAV FRAMES INTO SELECTION - UNDO AVAILABLE",
+                 "PASTED %zu AUDIO FRAMES INTO SELECTION - UNDO AVAILABLE",
                  source_frames);
 }
 
@@ -6594,6 +6595,309 @@ typedef struct {
     int active;
     int presented;
 } PendingFileOperation;
+
+typedef struct {
+    TsAudioImport decoded;
+    char path[TS_BROWSER_PATH_MAX];
+    int selection_load;
+    int destination_slot;
+} ImportController;
+
+static void import_controller_init(ImportController *controller)
+{
+    if (controller == NULL) return;
+    memset(controller, 0, sizeof(*controller));
+    ts_audio_import_init(&controller->decoded);
+    controller->destination_slot = -1;
+}
+
+static void stop_import_preview(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, ImportController *controller)
+{
+    if (audio == NULL || ui == NULL || controller == NULL) return;
+    if (device) SDL_LockAudioDevice(device);
+    if (audio->sample == &controller->decoded.sample) {
+        audio->playing = 0;
+        audio->sample = NULL;
+        runtime_note_clear(audio);
+    }
+    if (device) SDL_UnlockAudioDevice(device);
+    ui->import_preview_active = 0;
+}
+
+static void close_import_preview(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui, ImportController *controller)
+{
+    if (controller == NULL || ui == NULL) return;
+    stop_import_preview(device, audio, ui, controller);
+    ui->import_preview_open = 0;
+    ui->import_preview_raw = 0;
+    ui->import_preview_sample = NULL;
+    ui->import_preview_kind = TS_AUDIO_IMPORT_UNKNOWN;
+    ui->import_preview_name[0] = '\0';
+    ui->import_preview_message[0] = '\0';
+    controller->path[0] = '\0';
+    controller->selection_load = 0;
+    controller->destination_slot = -1;
+    ts_audio_import_free(&controller->decoded);
+}
+
+static void sync_import_preview_model(TsUiState *ui,
+                                      const ImportController *controller)
+{
+    const TsSample *sample;
+    if (ui == NULL || controller == NULL) return;
+    sample = &controller->decoded.sample;
+    ui->import_preview_sample = sample;
+    ui->import_preview_kind = controller->decoded.kind;
+    snprintf(ui->import_preview_name, sizeof(ui->import_preview_name), "%.72s",
+             path_basename(controller->path));
+    snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
+             "%zu FRAMES - PREVIEW IS IMMUTABLE UNTIL IMPORT",
+             sample->frames);
+}
+
+static int begin_import_preview(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, ImportController *controller,
+                                const char *path, int selection_load)
+{
+    char auto_error[160];
+    char raw_error[160];
+    int automatic;
+    if (audio == NULL || ui == NULL || controller == NULL || path == NULL) return 0;
+    if (audio->capture.state == TS_CAPTURE_COMPLETED)
+        return 0;
+    if (audio->capture.state != TS_CAPTURE_IDLE) {
+        snprintf(ui->status, sizeof(ui->status),
+                 "FINISH OR CANCEL CAPTURE BEFORE IMPORTING");
+        return 0;
+    }
+    close_import_preview(device, audio, ui, controller);
+    snprintf(controller->path, sizeof(controller->path), "%s", path);
+    controller->selection_load = selection_load != 0;
+    controller->destination_slot = ui->load_bank_slot;
+    ts_raw_import_settings_default(&ui->import_raw_settings);
+    automatic = ts_audio_import_decode(&controller->decoded, path,
+                                       auto_error, sizeof(auto_error));
+    if (!automatic) {
+        if (!ts_audio_import_decode_raw(&controller->decoded, path,
+                                        &ui->import_raw_settings,
+                                        raw_error, sizeof(raw_error))) {
+            snprintf(ui->status, sizeof(ui->status),
+                     "IMPORT PREVIEW FAILED: %.126s", raw_error);
+            close_import_preview(device, audio, ui, controller);
+            return 0;
+        }
+        ui->import_preview_raw = 1;
+    }
+    ui->import_preview_open = 1;
+    sync_import_preview_model(ui, controller);
+    if (!automatic)
+        snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
+                 "UNRECOGNIZED AUDIO - OPENED AS RAW SIGNED 8-BIT DATA");
+    snprintf(ui->status, sizeof(ui->status),
+             "IMPORT PREVIEW - LISTEN, ADJUST RAW SETTINGS, THEN IMPORT");
+    return 1;
+}
+
+static int rebuild_import_preview(SDL_AudioDeviceID device, AudioState *audio,
+                                  TsUiState *ui, ImportController *controller)
+{
+    char error[160];
+    int ok;
+    stop_import_preview(device, audio, ui, controller);
+    ok = ui->import_preview_raw ?
+         ts_audio_import_decode_raw(&controller->decoded, controller->path,
+                                    &ui->import_raw_settings,
+                                    error, sizeof(error)) :
+         ts_audio_import_decode(&controller->decoded, controller->path,
+                                error, sizeof(error));
+    if (ok) sync_import_preview_model(ui, controller);
+    else snprintf(ui->import_preview_message,
+                  sizeof(ui->import_preview_message), "%.150s", error);
+    return ok;
+}
+
+static void audition_import_preview(SDL_AudioDeviceID device, AudioState *audio,
+                                    TsUiState *ui, ImportController *controller,
+                                    int output_rate)
+{
+    TsSample *sample;
+    if (ui->import_preview_active) {
+        stop_import_preview(device, audio, ui, controller);
+        snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
+                 "PREVIEW STOPPED - NOTHING IMPORTED");
+        return;
+    }
+    sample = &controller->decoded.sample;
+    if (!device || output_rate <= 0 || sample->data == NULL || sample->frames == 0u) {
+        snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
+                 "AUDIO OUTPUT UNAVAILABLE");
+        return;
+    }
+    SDL_LockAudioDevice(device);
+    runtime_note_clear(audio);
+    audio->sample = sample;
+    audio->position = 0.0;
+    audio->pitch = 1.0;
+    audio->range_start = 0u;
+    audio->range_end = sample->frames;
+    audio->source = TS_AUDITION_CURRENT;
+    audio->range = TS_AUDITION_ALL;
+    audio->looping = 0;
+    audio->loop_mode = TS_LOOP_FORWARD;
+    audio->loop_direction = 1;
+    audio->crossfade_frames = 0u;
+    audio->bank_slot = -1;
+    audio->step = (double)sample->sample_rate / (double)output_rate;
+    restart_audio_attack(audio, output_rate, ui->config.voice_attack_ms);
+    audio->playing = 1;
+    SDL_UnlockAudioDevice(device);
+    ui->import_preview_active = 1;
+    snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
+             "AUDITIONING PREVIEW - TILE REMAINS UNCHANGED");
+}
+
+static void apply_import_preview(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui, TsInstrument *instrument,
+                                 TsSample *pending_selection_load,
+                                 ImportController *controller)
+{
+    char error[160];
+    int ok;
+    int destination = controller->destination_slot;
+    stop_import_preview(device, audio, ui, controller);
+    if (controller->selection_load) {
+        ts_sample_free(pending_selection_load);
+        ok = ts_sample_clone(pending_selection_load, &controller->decoded.sample,
+                             error, sizeof(error));
+        if (ok) {
+            snprintf(ui->load_selection_name, sizeof(ui->load_selection_name),
+                     "%s", pending_selection_load->name);
+            close_import_preview(device, audio, ui, controller);
+            ui->load_selection_choice_open = 1;
+            ui->load_bank_slot = -1;
+            snprintf(ui->status, sizeof(ui->status),
+                     "CHOOSE PASTE, FIT, OR CANCEL FOR THE SELECTED RANGE");
+        } else snprintf(ui->import_preview_message,
+                        sizeof(ui->import_preview_message), "%.150s", error);
+        return;
+    }
+    if (destination < 0 || destination >= TS_BANK_SLOT_COUNT)
+        destination = instrument->selected_slot;
+    if (ui->workbench_loop_active) stop_all(device, audio, ui);
+    lock_edit(device, audio);
+    ui->bank_view_slot = -1;
+    if (audio->bank_slot >= 0) {
+        audio->playing = 0;
+        audio->bank_slot = -1;
+    }
+    ts_sister_runtime_prepare_slot_replacement(&audio->sister, destination);
+    ok = ts_instrument_select_bank(instrument, destination, error, sizeof(error)) &&
+         ts_instrument_import_sample(
+             instrument, &controller->decoded.sample,
+             controller->decoded.has_loop, controller->decoded.loop_first,
+             controller->decoded.loop_last, controller->decoded.loop_mode,
+             error, sizeof(error));
+    unlock_edit(device, audio, ui, instrument);
+    if (!ok) {
+        snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
+                 "IMPORT FAILED: %.134s", error);
+        return;
+    }
+    ui->audition_source = TS_AUDITION_CURRENT;
+    ui->load_bank_slot = -1;
+    ts_ui_reset_parent_view(ui, instrument->parent.frames);
+    snprintf(ui->status, sizeof(ui->status),
+             "IMPORTED %s INTO BANK %02d %.77s",
+             ts_audio_import_kind_name(controller->decoded.kind),
+             instrument->selected_slot + 1, instrument->parent.name);
+    close_import_preview(device, audio, ui, controller);
+}
+
+static void handle_import_action(SDL_AudioDeviceID device, AudioState *audio,
+                                 TsUiState *ui, TsInstrument *instrument,
+                                 TsSample *pending_selection_load,
+                                 ImportController *controller,
+                                 TsUiImportAction action, int shift,
+                                 int output_rate)
+{
+    static const uint32_t rates[] = {
+        8000u, 11025u, 16000u, 22050u, 32000u,
+        44100u, 48000u, 88200u, 96000u, 192000u
+    };
+    TsRawImportSettings previous = ui->import_raw_settings;
+    int rebuild = 0;
+    if (action == TS_UI_IMPORT_ACTION_AUDITION) {
+        audition_import_preview(device, audio, ui, controller, output_rate);
+        return;
+    }
+    if (action == TS_UI_IMPORT_ACTION_ACCEPT) {
+        apply_import_preview(device, audio, ui, instrument,
+                             pending_selection_load, controller);
+        return;
+    }
+    if (action == TS_UI_IMPORT_ACTION_CANCEL) {
+        close_import_preview(device, audio, ui, controller);
+        snprintf(ui->status, sizeof(ui->status),
+                 "IMPORT CANCELLED - TILE UNCHANGED");
+        return;
+    }
+    if (action == TS_UI_IMPORT_ACTION_MODE) {
+        int requested_raw = !ui->import_preview_raw;
+        ui->import_preview_raw = requested_raw;
+        if (!rebuild_import_preview(device, audio, ui, controller))
+            ui->import_preview_raw = !requested_raw;
+        return;
+    }
+    if (!ui->import_preview_raw) return;
+    if (action == TS_UI_IMPORT_ACTION_ENCODING_PREVIOUS) {
+        ui->import_raw_settings.encoding = (TsRawEncoding)(
+            (ui->import_raw_settings.encoding + TS_RAW_ENCODING_COUNT - 1) %
+            TS_RAW_ENCODING_COUNT);
+        rebuild = 1;
+    } else if (action == TS_UI_IMPORT_ACTION_ENCODING_NEXT) {
+        ui->import_raw_settings.encoding = (TsRawEncoding)(
+            (ui->import_raw_settings.encoding + 1) % TS_RAW_ENCODING_COUNT);
+        rebuild = 1;
+    } else if (action == TS_UI_IMPORT_ACTION_ENDIAN) {
+        ui->import_raw_settings.byte_order =
+            ui->import_raw_settings.byte_order == TS_RAW_BIG_ENDIAN ?
+            TS_RAW_LITTLE_ENDIAN : TS_RAW_BIG_ENDIAN;
+        rebuild = 1;
+    } else if (action == TS_UI_IMPORT_ACTION_CHANNELS) {
+        ui->import_raw_settings.channels =
+            ui->import_raw_settings.channels == 1u ? 2u : 1u;
+        rebuild = 1;
+    } else if (action == TS_UI_IMPORT_ACTION_NORMALIZE) {
+        ui->import_raw_settings.normalize = !ui->import_raw_settings.normalize;
+        rebuild = 1;
+    } else if (action == TS_UI_IMPORT_ACTION_RATE_PREVIOUS ||
+               action == TS_UI_IMPORT_ACTION_RATE_NEXT) {
+        size_t index = 0u;
+        while (index + 1u < sizeof(rates) / sizeof(rates[0]) &&
+               rates[index] < ui->import_raw_settings.sample_rate) ++index;
+        if (action == TS_UI_IMPORT_ACTION_RATE_PREVIOUS && index > 0u) --index;
+        if (action == TS_UI_IMPORT_ACTION_RATE_NEXT &&
+            index + 1u < sizeof(rates) / sizeof(rates[0])) ++index;
+        ui->import_raw_settings.sample_rate = rates[index];
+        rebuild = 1;
+    } else if (action == TS_UI_IMPORT_ACTION_OFFSET_PREVIOUS ||
+               action == TS_UI_IMPORT_ACTION_OFFSET_NEXT) {
+        size_t frame_bytes = ts_raw_encoding_bytes(ui->import_raw_settings.encoding) *
+                             ui->import_raw_settings.channels;
+        size_t step = shift ? frame_bytes * 256u : frame_bytes;
+        if (action == TS_UI_IMPORT_ACTION_OFFSET_PREVIOUS)
+            ui->import_raw_settings.byte_offset =
+                step >= ui->import_raw_settings.byte_offset ? 0u :
+                ui->import_raw_settings.byte_offset - step;
+        else if (ui->import_raw_settings.byte_offset <= SIZE_MAX - step)
+            ui->import_raw_settings.byte_offset += step;
+        rebuild = 1;
+    }
+    if (rebuild && !rebuild_import_preview(device, audio, ui, controller))
+        ui->import_raw_settings = previous;
+}
 
 static void queue_active_project_save(TsUiState *ui,
                                       PendingFileOperation *pending)
@@ -6699,7 +7003,8 @@ static void browser_action(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     }
     if (browser->mode == TS_BROWSER_LOAD_WAV) {
         if (!ts_browser_selected_path(browser, path, sizeof(path))) {
-            snprintf(browser->message, sizeof(browser->message), "SELECT A WAV OR TSR FILE");
+            snprintf(browser->message, sizeof(browser->message),
+                     "SELECT AUDIO, RAW DATA, TSR, OR TSP");
             return;
         }
         pending->selection_load =
@@ -6757,6 +7062,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
                                        AudioState *audio, TsUiState *ui,
                                        TsInstrument *instrument,
                                        TsSample *pending_selection_load,
+                                       ImportController *import_controller,
                                        TsSamplePages *sample_pages,
                                        TsInstrument *parked_record,
                                        int record_bank_active,
@@ -6766,20 +7072,13 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
     char error[160];
     int ok = 0;
     if (pending == NULL || !pending->active) return;
-    if (pending->mode == TS_BROWSER_LOAD_WAV && pending->selection_load) {
-        ts_sample_free(pending_selection_load);
-        ok = ts_sample_load_wav(pending_selection_load, pending->path,
-                                error, sizeof(error));
-        if (ok) {
-            snprintf(ui->load_selection_name, sizeof(ui->load_selection_name),
-                     "%s", pending_selection_load->name);
-            ui->load_selection_choice_open = 1;
-            ui->load_bank_slot = -1;
-            snprintf(ui->status, sizeof(ui->status),
-                     "CHOOSE PASTE, FIT, OR CANCEL FOR THE SELECTED RANGE");
-        } else
-            snprintf(ui->status, sizeof(ui->status),
-                     "WAV LOAD FAILED: %.132s", error);
+    (void)pending_selection_load;
+    if (pending->mode == TS_BROWSER_LOAD_WAV &&
+        !path_is_tsr(pending->path) && !path_is_tsp(pending->path)) {
+        if (audio->capture.state == TS_CAPTURE_COMPLETED)
+            finalize_capture(device, audio, ui, instrument);
+        ok = begin_import_preview(device, audio, ui, import_controller,
+                                  pending->path, pending->selection_load);
     } else if (pending->mode == TS_BROWSER_LOAD_WAV) {
         ok = load_instrument(device, audio, ui, instrument,
                              sample_pages, parked_record,
@@ -10309,6 +10608,7 @@ int main(int argc, char **argv)
     FmBankHistory fm_bank_history;
     TsExchangeOffer exchange_offer;
     TransformController transform;
+    ImportController import_controller;
     PendingFileOperation pending_file = {0};
     size_t clipboard_origin_first = 0;
     size_t clipboard_source_frames = 0;
@@ -10368,6 +10668,7 @@ int main(int argc, char **argv)
     ts_sample_init(&fm_preview);
     ts_exchange_offer_init(&exchange_offer);
     transform_controller_init(&transform);
+    import_controller_init(&import_controller);
     ts_ui_init(&ui);
     ui.sample_page = 0;
     ui.sample_page_count = 1;
@@ -10512,6 +10813,7 @@ int main(int argc, char **argv)
         ts_sample_free(&fm_preview);
         ts_sample_free(&drone_preview);
         ts_sample_free(&pending_selection_load);
+        ts_audio_import_free(&import_controller.decoded);
         ts_sample_free(&clipboard);
         ts_instrument_free(parked_instrument);
         free(parked_instrument);
@@ -10591,6 +10893,7 @@ int main(int argc, char **argv)
         ts_sample_free(&fm_preview);
         ts_sample_free(&drone_preview);
         ts_sample_free(&pending_selection_load);
+        ts_audio_import_free(&import_controller.decoded);
         ts_sample_free(&clipboard);
         ts_instrument_free(parked_instrument);
         free(parked_instrument);
@@ -10743,7 +11046,8 @@ int main(int argc, char **argv)
         ts_performance_collect_retired(&audio.sister.performance);
         if (pending_file.active && pending_file.presented)
             run_pending_file_operation(device, &audio, &ui, &instrument,
-                                       &pending_selection_load, &sample_pages,
+                                       &pending_selection_load, &import_controller,
+                                       &sample_pages,
                                        parked_instrument, record_bank_active,
                                        &pending_file);
         if (ui.exit_after_save == 2) {
@@ -11315,7 +11619,7 @@ int main(int argc, char **argv)
                      (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                       ui.config_open || ui.palette_open || ui.export_choice_open ||
                       ui.exchange_dialog != TS_UI_EXCHANGE_NONE ||
-                      ui.load_selection_choice_open ||
+                      ui.import_preview_open || ui.load_selection_choice_open ||
                       ui.fm_open ||
                       ui.transform_open ||
                       ui.drone_open ||
@@ -11327,9 +11631,21 @@ int main(int argc, char **argv)
                 SDL_free(event.drop.file);
             }
             else if (event.type == SDL_DROPFILE) {
-                load_instrument(device, &audio, &ui, &instrument,
-                                &sample_pages, parked_instrument,
-                                record_bank_active, event.drop.file);
+                if (audio.capture.state == TS_CAPTURE_COMPLETED)
+                    finalize_capture(device, &audio, &ui, &instrument);
+                if (path_is_tsr(event.drop.file) || path_is_tsp(event.drop.file))
+                    load_instrument(device, &audio, &ui, &instrument,
+                                    &sample_pages, parked_instrument,
+                                    record_bank_active, event.drop.file);
+                else {
+                    int selection_load = instrument.current.data != NULL &&
+                        instrument.has_selection &&
+                        instrument.selection_last > instrument.selection_first;
+                    ui.load_bank_slot = instrument.selected_slot;
+                    (void)begin_import_preview(
+                        device, &audio, &ui, &import_controller,
+                        event.drop.file, selection_load);
+                }
                 SDL_free(event.drop.file);
             } else if (event.type == SDL_TEXTINPUT && ui.config_open &&
                        !ui.exit_confirm_open &&
@@ -11686,6 +12002,27 @@ int main(int argc, char **argv)
                         (void)import_incoming_exchange(
                             device, &audio, &ui, &instrument, &exchange_offer);
                     }
+                } else if (ui.import_preview_open) {
+                    if (key == SDLK_ESCAPE)
+                        handle_import_action(
+                            device, &audio, &ui, &instrument,
+                            &pending_selection_load, &import_controller,
+                            TS_UI_IMPORT_ACTION_CANCEL, 0, obtained.freq);
+                    else if (key == SDLK_SPACE)
+                        handle_import_action(
+                            device, &audio, &ui, &instrument,
+                            &pending_selection_load, &import_controller,
+                            TS_UI_IMPORT_ACTION_AUDITION, 0, obtained.freq);
+                    else if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
+                        handle_import_action(
+                            device, &audio, &ui, &instrument,
+                            &pending_selection_load, &import_controller,
+                            TS_UI_IMPORT_ACTION_ACCEPT, 0, obtained.freq);
+                    else if (key == SDLK_r)
+                        handle_import_action(
+                            device, &audio, &ui, &instrument,
+                            &pending_selection_load, &import_controller,
+                            TS_UI_IMPORT_ACTION_MODE, 0, obtained.freq);
                 } else if (ui.load_selection_choice_open) {
                     if (key == SDLK_ESCAPE || key == SDLK_c)
                         cancel_selection_load(&ui, &pending_selection_load);
@@ -12170,6 +12507,7 @@ int main(int argc, char **argv)
                        ui.renaming_bank_slot < 0 &&
                        ui.renaming_recipe_slot < 0 && !ui.export_choice_open &&
                        ui.exchange_dialog == TS_UI_EXCHANGE_NONE &&
+                       !ui.import_preview_open &&
                        !ui.load_selection_choice_open &&
                        !ui.transform_open &&
                        !ui.drone_open &&
@@ -12396,7 +12734,7 @@ int main(int argc, char **argv)
                         ui.config_open || ui.export_choice_open ||
                         ui.overdub_confirm_open || ui.file_busy ||
                         ui.exchange_dialog != TS_UI_EXCHANGE_NONE ||
-                        ui.load_selection_choice_open ||
+                        ui.import_preview_open || ui.load_selection_choice_open ||
                         ui.fm_open ||
                         ui.transform_open ||
                         ui.exit_confirm_open ||
@@ -12684,7 +13022,7 @@ int main(int argc, char **argv)
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.palette_open || ui.export_choice_open ||
                         ui.exchange_dialog != TS_UI_EXCHANGE_NONE ||
-                        ui.load_selection_choice_open ||
+                        ui.import_preview_open || ui.load_selection_choice_open ||
                         ui.fm_open ||
                         ui.transform_open ||
                         ui.drone_open ||
@@ -12814,6 +13152,7 @@ int main(int argc, char **argv)
                        event.button.button == SDL_BUTTON_MIDDLE &&
                        !ui.config_open && !ui.palette_open &&
                        ui.exchange_dialog == TS_UI_EXCHANGE_NONE &&
+                       !ui.import_preview_open &&
                        !ui.load_selection_choice_open &&
                        !ui.fm_open &&
                        !ui.transform_open &&
@@ -13207,6 +13546,14 @@ int main(int argc, char **argv)
                                  "TAPEHEAD TRANSFER LEFT IN INBOX FOR LATER" :
                                  "FT2 LINK CANCELLED");
                     }
+                } else if (ui.import_preview_open) {
+                    TsUiImportAction action =
+                        ts_ui_import_action_from_point(x, y);
+                    handle_import_action(
+                        device, &audio, &ui, &instrument,
+                        &pending_selection_load, &import_controller,
+                        action, (SDL_GetModState() & KMOD_SHIFT) != 0,
+                        obtained.freq);
                 } else if (ui.load_selection_choice_open) {
                     TsUiLoadSelectionAction action =
                         ts_ui_load_selection_action_from_point(x, y);
@@ -14170,6 +14517,7 @@ int main(int argc, char **argv)
                        event.button.button == SDL_BUTTON_RIGHT &&
                        !ui.config_open && !ui.palette_open &&
                        ui.exchange_dialog == TS_UI_EXCHANGE_NONE &&
+                       !ui.import_preview_open &&
                        !ui.load_selection_choice_open &&
                        !ui.transform_open &&
                        !ui.drone_open &&
@@ -14618,6 +14966,9 @@ int main(int argc, char **argv)
         }
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         sister_window.model.text_cursor_visible = ui.text_cursor_visible;
+        if (ui.import_preview_active &&
+            (!audio.playing || audio.sample != &import_controller.decoded.sample))
+            ui.import_preview_active = 0;
         if (ui.file_busy)
             ui.file_busy_phase = (int)((SDL_GetTicks() / 180u) % 4u);
         {
@@ -14713,6 +15064,7 @@ int main(int argc, char **argv)
     ts_sample_free(&fm_preview);
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);
+    ts_audio_import_free(&import_controller.decoded);
     ts_sample_free(&clipboard);
     ts_sample_pages_free(&sample_pages);
     fm_bank_history_free(&fm_bank_history);

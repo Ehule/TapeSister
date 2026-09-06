@@ -32,6 +32,12 @@ shape, tuning, loop, selection, viewport, processing, protection state, and priv
 Click an occupied tile to select and audition it. Click an empty tile to select a
 destination. Double-click an empty tile to create editable silent tape.
 
+**LOAD** accepts WAV, FLAC, MP3, and Ogg Vorbis, then opens an immutable waveform
+preview before changing the destination tile. Any other file can be interpreted as
+raw sample data with live controls for encoding, byte order, channels, sample rate,
+offset, and normalization. That makes arbitrary bytes available as sound material and
+lets the same source be auditioned through several interpretations before import.
+
 ### Create and Variation
 
 CREATE renders a fresh deterministic six-voice FM sound. VARY answers the material that

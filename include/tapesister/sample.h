@@ -571,6 +571,10 @@ int ts_instrument_generate(TsInstrument *instrument, TsGeneratorKind kind, uint3
                            char *error, size_t error_size);
 int ts_instrument_load_wav(TsInstrument *instrument, const char *path,
                            char *error, size_t error_size);
+int ts_instrument_import_sample(TsInstrument *instrument, const TsSample *sample,
+                                int has_loop, size_t loop_first,
+                                size_t loop_last, TsLoopMode loop_mode,
+                                char *error, size_t error_size);
 int ts_instrument_reseed(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_set_process(TsInstrument *instrument, const TsProcessRecipe *process,
                               char *error, size_t error_size);

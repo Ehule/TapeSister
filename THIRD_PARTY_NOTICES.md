@@ -29,3 +29,9 @@ TapeSister includes RtMidi 6.0.0 for portable MIDI input on Windows, macOS, and
 Linux. RtMidi is copyright 2003–2023 Gary P. Scavone and is distributed under
 its permissive license in `third_party/rtmidi/LICENSE.txt`. The vendored source
 matches the Tapehead Edition copy, including its WinMM callback-lock fix.
+
+TapeSister uses miniaudio 0.11.22, pinned at commit
+`350784a9467a79d0fa65802132668e5afbcf3777`, for in-process FLAC and MP3 decoding.
+miniaudio is copyright David Reid and is available under either the public domain or
+MIT No Attribution license. Its bundled `stb_vorbis` decoder provides Ogg Vorbis
+support and is likewise available under either the public domain or MIT license.

@@ -62,7 +62,7 @@ this avoids collisions with the playable note range.
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+O` | Load WAV, TSR, or TSP |
+| `Ctrl+O` | Load audio, raw data, TSR, or TSP |
 | `Ctrl+S` | Save active project / open Save browser |
 | `Ctrl+E` | Export selected WAV or collection |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
@@ -77,6 +77,22 @@ this avoids collisions with the playable note range.
 | `+` or `=` / `-` | Zoom in / out |
 | `Left` / `Right` | Pan waveform |
 | `0` | Show complete tile |
+
+## Import preview
+
+| Control | Action |
+| --- | --- |
+| `Space` | Play/stop the immutable preview |
+| `Enter` | Import the preview |
+| `Escape` | Cancel without changing the tile |
+| `R` or **AUTO / RAW DATA** | Toggle automatic decoding and raw-byte interpretation |
+| Raw `<` / `>` controls | Change encoding, sample rate, or byte offset |
+| `Shift` while changing offset | Move the raw offset by 256 frames |
+
+Automatic decoding supports WAV, FLAC, MP3, and Ogg Vorbis. Raw mode accepts any
+non-project file as unsigned/signed 8-bit, signed 16/24/32-bit integer, or 32-bit float
+data with selectable endian order, mono/stereo layout, sample rate, offset, and
+normalization.
 
 ## Waveform mouse gestures
 
@@ -285,6 +301,8 @@ coexistence and validate REAPER/ASIO against the interface driver's own sharing 
 | `manifest.txt` | collection map | move with the project folder |
 | `.tsp` | processing recipe, no audio | standalone |
 | `.wav` | ordinary audio export/capture | standalone |
+| `.flac`, `.mp3`, `.ogg` | automatically decoded import audio | standalone |
+| any other non-project file | raw-data import source | standalone |
 | `Captures/` | immutable 32-bit float performance archive | intentionally outside projects |
 
 Saving `Name.tsr` creates the movable folder `Name/`. Share or back up that whole folder.

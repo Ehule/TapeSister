@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "tapesister/audition.h"
+#include "tapesister/audio_import.h"
 #include "tapesister/browser.h"
 #include "tapesister/capture.h"
 #include "tapesister/config.h"
@@ -161,6 +162,23 @@ typedef enum {
     TS_UI_LOAD_SELECTION_FIT,
     TS_UI_LOAD_SELECTION_CANCEL
 } TsUiLoadSelectionAction;
+
+typedef enum {
+    TS_UI_IMPORT_ACTION_NONE = 0,
+    TS_UI_IMPORT_ACTION_MODE,
+    TS_UI_IMPORT_ACTION_ENCODING_PREVIOUS,
+    TS_UI_IMPORT_ACTION_ENCODING_NEXT,
+    TS_UI_IMPORT_ACTION_ENDIAN,
+    TS_UI_IMPORT_ACTION_CHANNELS,
+    TS_UI_IMPORT_ACTION_NORMALIZE,
+    TS_UI_IMPORT_ACTION_RATE_PREVIOUS,
+    TS_UI_IMPORT_ACTION_RATE_NEXT,
+    TS_UI_IMPORT_ACTION_OFFSET_PREVIOUS,
+    TS_UI_IMPORT_ACTION_OFFSET_NEXT,
+    TS_UI_IMPORT_ACTION_AUDITION,
+    TS_UI_IMPORT_ACTION_ACCEPT,
+    TS_UI_IMPORT_ACTION_CANCEL
+} TsUiImportAction;
 
 typedef enum {
     TS_UI_EXCHANGE_NONE = 0,
@@ -374,6 +392,14 @@ typedef struct {
     int exchange_item_count;
     int exchange_force_new_instance;
     int load_selection_choice_open;
+    int import_preview_open;
+    int import_preview_raw;
+    int import_preview_active;
+    TsRawImportSettings import_raw_settings;
+    const TsSample *import_preview_sample;
+    TsAudioImportKind import_preview_kind;
+    char import_preview_name[128];
+    char import_preview_message[160];
     int drone_open;
     int drone_preview_active;
     int drone_crossfade_dragging;
@@ -564,6 +590,7 @@ int ts_ui_master_limiter_contains(int x, int y);
 int ts_ui_master_output_contains(int x, int y);
 float ts_ui_master_output_normalized_from_x(int x);
 int ts_ui_config_field_from_point(int x, int y);
+TsUiImportAction ts_ui_import_action_from_point(int x, int y);
 size_t ts_ui_config_cursor_from_point(const TsUiState *ui,
                                       TsConfigField field, int x);
 TsUiConfigAction ts_ui_config_action_from_point(int x, int y);

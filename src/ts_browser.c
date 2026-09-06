@@ -53,7 +53,7 @@ const char *ts_browser_mode_extension(TsBrowserMode mode)
 
 const char *ts_browser_mode_title(TsBrowserMode mode)
 {
-    if (mode == TS_BROWSER_LOAD_WAV) return "LOAD WAV, TSR, OR TSP";
+    if (mode == TS_BROWSER_LOAD_WAV) return "LOAD AUDIO, RAW DATA, TSR, OR TSP";
     if (mode == TS_BROWSER_SAVE_RECIPE) return "SAVE TSR PROJECT";
     if (mode == TS_BROWSER_SAVE_PRESET) return "SAVE PROCESS RECIPE";
     if (mode == TS_BROWSER_EXPORT_WAV) return "EXPORT CURRENT WAV";
@@ -133,8 +133,7 @@ int ts_browser_path_exists(const char *path)
 static int mode_accepts(const TsBrowser *browser, const char *name)
 {
     if (browser->mode == TS_BROWSER_LOAD_WAV)
-        return ends_with_case(name, ".wav") || ends_with_case(name, ".tsr") ||
-               ends_with_case(name, ".tsp");
+        return name != NULL && name[0] != '\0';
     if (browser->mode == TS_BROWSER_EXPORT_BANK) return 0;
     if (ts_browser_mode_selects_directory(browser->mode)) return 0;
     if (browser->mode == TS_BROWSER_SELECT_FASTTRACKER_EXECUTABLE) return 1;
