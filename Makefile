@@ -96,6 +96,10 @@ tapesister_portal_tests: $(CORE) tests/test_cdp_portal.c
 tapesister_portal_controller_tests: $(CORE) tests/test_portal_controller.c src/main_sdl.c src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_portal_controller.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
 test: tapesister_audio_import_tests
+
+tapesister_preview_loop_tests: $(CORE) tests/test_preview_loop_selection.c src/main_sdl.c src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_preview_loop_selection.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
+
 test: test_audio_hardening_structure
 test: test_live_link_structure
 test: test_companion_focus_structure

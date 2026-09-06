@@ -312,6 +312,26 @@ static void portal_parameter_drag(SDL_AudioDeviceID device,AudioState *audio,
     if(p->recipe.values[index]!=v) {portal_invalidate(device,audio,p,c);p->recipe.values[index]=v;}
     snprintf(p->message,sizeof(p->message),"%s; %.6g..%.6g; CLICK VALUE TO TYPE",s->help,s->minimum,s->maximum);
 }
+static int portal_sync_loop(SDL_AudioDeviceID device,AudioState *audio,TsPortalUi *p,
+                            int which,int seek)
+{
+    TsPortalWave *w=&p->waves[which];
+    int live=sync_preview_loop(device,audio,which?p->result:p->source,p->loop,
+        w->has_selection,w->selection_first,w->selection_last,&w->playhead,seek);
+    if(live)p->playing=1;
+    return live;
+}
+static void portal_resize_selection(SDL_AudioDeviceID device,AudioState *audio,
+                                     TsUiState *ui,int which,int x,int wheel)
+{
+    TsPortalUi *p=&ui->portal;TsPortalWave *w=&p->waves[which];
+    if(resize_preview_selection(which?p->result:p->source,w->has_selection,
+        ts_portal_wave_frame(w,x-154),wheel,ui->config.rotate_wheel_coarse,
+        &w->selection_first,&w->selection_last,p->message,sizeof(p->message))) {
+        w->playhead=w->selection_first;
+        (void)portal_sync_loop(device,audio,p,which,0);
+    }
+}
 static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
                          AudioState *audio,TsUiState *ui,TsInstrument *instrument,
                          PortalController *c,SisterWindow *sister,int output_rate,
@@ -413,16 +433,22 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
     if(event->type==SDL_MOUSEMOTION) {
         if(ui->master_output_dragging)set_master_output_gain(device,audio,ui,sister,ts_ui_master_output_normalized_from_x(x));
         else if(p->dragging_parameter>=0)portal_parameter_drag(device,audio,p,c,p->dragging_parameter,x);
-        else if(p->dragging_wave>=0 && abs(x-p->drag_x)>=2) {
+        else if(p->dragging_wave>=0 && (p->wave_dragged || abs(x-p->drag_x)>=2)) {
+            p->wave_dragged=1;
             TsPortalWave *w=&p->waves[p->dragging_wave];size_t end=ts_portal_wave_frame(w,x-154);
             w->selection_first=end<p->drag_anchor?end:p->drag_anchor;
             w->selection_last=end>p->drag_anchor?end:p->drag_anchor;
             w->has_selection=w->selection_last>w->selection_first;
             w->playhead=w->selection_first;
+            (void)portal_sync_loop(device,audio,p,p->dragging_wave,0);
         }
         return 1;
     }
     if(event->type==SDL_MOUSEBUTTONUP) {
+        if(event->button.button==SDL_BUTTON_LEFT && p->dragging_wave>=0 && !p->wave_dragged) {
+            p->waves[p->dragging_wave].playhead=p->drag_anchor;
+            (void)portal_sync_loop(device,audio,p,p->dragging_wave,1);
+        }
         p->dragging_parameter=-1;p->dragging_wave=-1;ui->master_output_dragging=0;return 1;
     }
     if(event->type==SDL_WINDOWEVENT && event->window.event==SDL_WINDOWEVENT_FOCUS_LOST) {
@@ -440,7 +466,8 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         }
         else if(x>=154 && x<464 && ((y>=60 && y<122) || (y>=152 && y<214))) {
             int which=y>=152;const TsSample *s=which?p->result:p->source;
-            if(SDL_GetModState()&KMOD_SHIFT)ts_portal_wave_pan(&p->waves[which],s,d>0?-1:1);
+            if(SDL_GetModState()&KMOD_ALT)portal_resize_selection(device,audio,ui,which,x,d);
+            else if(SDL_GetModState()&KMOD_SHIFT)ts_portal_wave_pan(&p->waves[which],s,d>0?-1:1);
             else ts_portal_wave_zoom(&p->waves[which],s,x-154,d);
         } else if(x>=148 && x<466 && y>=245 && y<327) {
             int i=portal_parameter_at(p,(y-265)/19);
@@ -462,9 +489,10 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
     }
     if(event->type!=SDL_MOUSEBUTTONDOWN)return 0;
     if(event->button.button==SDL_BUTTON_RIGHT) {
-        if(x>=154 && x<464 && y>=60 && y<214) {
-            int which=y>=152;portal_stop(device,audio,p,c);
+        if(x>=154 && x<464 && ((y>=60 && y<122) || (y>=152 && y<214))) {
+            int which=y>=152;
             p->waves[which].has_selection=0;p->waves[which].playhead=0;
+            if(!portal_sync_loop(device,audio,p,which,0))portal_stop(device,audio,p,c);
         }
         return 1;
     }
@@ -487,9 +515,12 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
             snprintf(p->message,sizeof(p->message),"%.60s - ENTER TO PREVIEW; FULL SHOWS ALL PARAMETERS",r.name);
         }
     } else if(x>=154 && x<464 && ((y>=60 && y<122) || (y>=152 && y<214))) {
-        int which=y>=152;portal_stop(device,audio,p,c);p->listen_result=which;p->dragging_wave=which;p->drag_x=x;
+        int which=y>=152;
+        int live=portal_sync_loop(device,audio,p,which,0);
+        if(!live)portal_stop(device,audio,p,c);
+        p->listen_result=which;p->dragging_wave=which;p->drag_x=x;p->wave_dragged=0;
         p->drag_anchor=ts_portal_wave_frame(&p->waves[which],x-154);
-        p->waves[which].playhead=p->drag_anchor;
+        if(!live)p->waves[which].playhead=p->drag_anchor;
     } else if(y>=223 && y<239 && x>=150 && x<464) {
         if(x<199)portal_play(device,audio,ui,c,output_rate,1);
         else if(x<331)portal_ab(device,audio,ui,c,output_rate,x>=269);

@@ -85,6 +85,7 @@ this avoids collisions with the playable note range.
 | Click waveform | Move the preview playhead |
 | Drag waveform | Select a range, snap both edges to zero crossings, and place playhead at its start |
 | Wheel / `Shift`+wheel | Pointer-anchored zoom / pan |
+| `Alt`+wheel over selection | Expand (up) or contract (down) the edge on that half; active loop follows live |
 | `Left` / `Right` | Pan the preview waveform |
 | `0` | Show the complete file |
 | Middle-click waveform | Clear selection and return playhead to the start |
@@ -99,6 +100,10 @@ this avoids collisions with the playable note range.
 | `R` or **AUTO / RAW DATA** | Toggle automatic decoding and raw-byte interpretation |
 | Raw `<` / `>` controls | Change encoding, sample rate, or byte offset |
 | `Shift` while changing offset | Move the raw offset by 256 frames |
+
+With LOOP playing, selection drags and Alt+wheel keep auditioning continuously.
+The playhead is preserved inside the new range; clearing a selection keeps the
+whole file looping. With playback stopped, selection editing stays silent.
 
 Decoding runs in the background; `Escape` or **CANCEL** stops a long decode and returns
 to the browser. Automatic decoding supports WAV, FLAC, MP3, and Ogg Vorbis, including

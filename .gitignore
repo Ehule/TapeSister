@@ -7,6 +7,7 @@
 /tapesister_audio_import_tests
 /tapesister_portal_tests
 /tapesister_portal_controller_tests
+/tapesister_preview_loop_tests
 /cdp-portal.recipes
 /cdp-portal.recipes.tmp
 /tapesister_render_demo
