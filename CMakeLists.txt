@@ -45,6 +45,16 @@ if(TAPESISTER_BUILD_SDL)
   add_executable(tapesister src/main_sdl.c src/tape_link.c
                             src/tape_companion.c src/ts_startup_diag.c
                             src/ts_midi_input.c)
+  if(WIN32)
+    enable_language(RC)
+    set(TAPESISTER_WINDOWS_ICON
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/tapesister.ico")
+    configure_file(src/tapesister.rc.in
+                   "${CMAKE_CURRENT_BINARY_DIR}/tapesister.rc" @ONLY)
+    target_sources(tapesister PRIVATE
+                   "${CMAKE_CURRENT_BINARY_DIR}/tapesister.rc")
+    set_target_properties(tapesister PROPERTIES OUTPUT_NAME "TapeSister")
+  endif()
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
   if(UNIX AND NOT APPLE)
@@ -224,6 +234,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME test_companion_focus_structure
     COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_companion_focus_structure.py")
+  add_test(NAME test_identity_packaging
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_identity_packaging.py")
 endif()
 
 if(TAPESISTER_BUILD_SDL AND TAPESISTER_BUNDLE_CDP8)

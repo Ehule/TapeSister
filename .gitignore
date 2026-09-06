@@ -1,4 +1,5 @@
 /build*/
+/dist/
 /tapesister
 /tapesister_core_tests
 /tapesister_core_tests_*

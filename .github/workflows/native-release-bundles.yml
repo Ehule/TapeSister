@@ -2,6 +2,17 @@ name: Native release bundles
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/native-release-bundles.yml"
+      - "CMakeLists.txt"
+      - "build.sh"
+      - "cmake/**"
+      - "scripts/**"
+      - "src/tapesister.rc.in"
+      - "assets/**"
+      - "release/**"
+      - "third_party/**"
   push:
     tags:
       - "v*"
@@ -17,7 +28,11 @@ jobs:
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DTAPESISTER_BUNDLE_CDP8=ON
       - name: Build TapeSister, tests, and CDP8
         run: cmake --build build
-      - name: Run regression suite
+      - name: Run package regression guard
+        if: github.event_name == 'pull_request'
+        run: ctest --test-dir build --output-on-failure -R test_identity_packaging
+      - name: Run full release regression suite
+        if: github.event_name != 'pull_request'
         run: ctest --test-dir build --output-on-failure
       - name: Assemble archive
         run: tar -C build -czf TapeSister-linux-x86_64.tar.gz tapesister assets cdp licenses tapesister.ini.example
@@ -47,13 +62,18 @@ jobs:
       - name: Build TapeSister, tests, and CDP8
         shell: msys2 {0}
         run: cmake --build build
-      - name: Run regression suite
+      - name: Run package regression guard
+        if: github.event_name == 'pull_request'
+        shell: msys2 {0}
+        run: ctest --test-dir build --output-on-failure -R test_identity_packaging
+      - name: Run full release regression suite
+        if: github.event_name != 'pull_request'
         shell: msys2 {0}
         run: ctest --test-dir build --output-on-failure
       - name: Assemble archive
         shell: pwsh
-        run: Compress-Archive -Path build/tapesister.exe,build/*.dll,build/assets,build/cdp,build/licenses,build/tapesister.ini.example -DestinationPath TapeSister-windows-x86_64.zip
+        run: ./scripts/package-windows-portable.ps1 -BuildDirectory build -OutputDirectory .
       - uses: actions/upload-artifact@v4
         with:
-          name: TapeSister-windows-x86_64
-          path: TapeSister-windows-x86_64.zip
+          name: TapeSister-Windows-x64
+          path: TapeSister-Windows-x64.zip
