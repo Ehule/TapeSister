@@ -56,9 +56,10 @@ The normal creative cycle is:
 > Create or load material → shape it → make variations → perform it → capture the
 > performance → use the capture as new material.
 
-Nothing requires that exact order. A WAV can be loaded and immediately sent through
-Sister Machine; a blank tile can become a precisely timed sound; a captured Sister
-performance can be cropped, varied, looped, and used as a new Sister source.
+Nothing requires that exact order. Imported audio or raw data can be loaded and
+immediately sent through Sister Machine; a blank tile can become a precisely timed
+sound; a captured Sister performance can be cropped, varied, looped, and used as a new
+Sister source.
 
 ## First run
 
@@ -110,6 +111,61 @@ The editor buttons beneath the waveform provide loading, creation, variation, lo
 Drone Maker, tuning, native DSP, CDP transforms, clipboard editing, gain, fades, crop,
 selection, and playback operations. Most operations affect the selection when one is
 present and the whole tile otherwise.
+
+### Import preview and raw data
+
+Click **LOAD** or press `Ctrl+O`, choose a file, and TapeSister opens an import preview
+before it changes a tile. WAV, FLAC, MP3, and Ogg Vorbis are recognized from their file
+contents and decoded automatically. The import dialog has **FILE BROWSER** and
+**PREVIEW** tabs, and the preview shows the decoded waveform, format, sample rate,
+channel count, duration, and frame count. Recorder-oriented extensible, RF64, and
+multichannel WAV files use the general decoder when the sampler-metadata reader cannot
+open them; multichannel material is downmixed to stereo.
+
+The preview behaves like TapeSister's canvas. Click the waveform to position its
+playhead, or drag across it to select part of the file and return the playhead to the
+selection start. Both selection edges snap to nearby zero crossings to avoid a
+discontinuity at the imported boundaries. Use the wheel for pointer-anchored zoom,
+Shift+wheel or `Left`/`Right` to pan, and `0` to restore the complete-file view.
+Middle-click clears the selection and returns the playhead to the beginning.
+
+`Space` or **PLAY PREVIEW** starts at the playhead and stays inside the selection when
+one exists. After playback reaches the end, the playhead returns to the beginning of
+that range so Space immediately replays it. `L` or **LOOP** continuously repeats the
+selection—or the complete file when there is no selection—with a short boundary
+crossfade. `Enter` or **IMPORT ALL** commits the complete file; `S` or **IMPORT
+SELECTION** commits only the selected range. A contained sampler loop is retained and
+translated into the range; a loop cut by the selection is omitted.
+
+Decoding happens in the background, so the window continues updating during a long
+MP3. `Escape` or **CANCEL** stops the decode and returns to the browser. When no preview
+or raw-data adjustment is needed, Shift-click a file (or use Shift+Enter/Shift+Open) to
+decode recognized audio and install it directly into the selected tile. Unknown files
+still open in Preview as raw data so their interpretation can be checked.
+
+`Escape`, **BACK TO FILES**, or the
+**FILE BROWSER** tab returns to the same directory and highlighted file without changing
+the destination; the cached preview remains available in the **PREVIEW** tab. Use
+`Escape` or **CANCEL** from the file browser to leave LOAD completely.
+
+Any non-project file can also become sound as **RAW DATA**. This mode interprets its
+bytes directly instead of requiring an audio container. Adjust the following while
+watching and auditioning the preview:
+
+- unsigned or signed 8-bit, signed 16/24/32-bit integer, or 32-bit float encoding;
+- little- or big-endian byte order for multi-byte encodings;
+- mono or interleaved stereo;
+- sample rate from 8 kHz through 192 kHz;
+- byte offset, with `Shift` selecting a larger step;
+- optional peak normalization.
+
+The source file and destination tile remain untouched while settings change. Different
+interpretations can sound radically different: sample rate changes speed and pitch,
+channel and offset choices change byte alignment, and encoding or byte order changes
+the waveform itself. Click **AUTO** / **RAW DATA** or press `R` to switch modes when an
+ordinary audio file should be deliberately reinterpreted as bytes. If a waveform
+selection is active, accepting an import proceeds to the existing **PASTE / FIT /
+CANCEL** choice instead of replacing the whole tile.
 
 ### Lower workspaces
 
@@ -885,7 +941,8 @@ never automatically deleted or rewritten.
 - **COLLECTION** — export the occupied sound collection.
 
 `.tsp` files are processing recipes. They do not contain audio and do not create project
-folders. `.tsr` files are project state. WAV files are directly usable audio.
+folders. `.tsr` files are project state. WAV, FLAC, MP3, and Ogg Vorbis are directly
+usable audio; any other non-project file can be auditioned and imported as raw data.
 
 ### TapeSister and TapeHead exchange
 

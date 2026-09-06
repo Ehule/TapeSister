@@ -145,6 +145,51 @@ int main(void)
     ts_note_bank_init(&notes);
     ts_recipe_bank_init(&recipe_bank);
     ts_ui_init(&ui);
+    CHECK(ui.import_raw_settings.encoding == TS_RAW_SIGNED_8);
+    CHECK(ui.import_raw_settings.sample_rate == 44100u);
+    CHECK(ui.import_raw_settings.channels == 1u);
+    CHECK(!ui.import_preview_available);
+    CHECK(ts_ui_import_action_from_point(80, 50) ==
+          TS_UI_IMPORT_ACTION_SHOW_BROWSER);
+    CHECK(ts_ui_import_action_from_point(180, 50) ==
+          TS_UI_IMPORT_ACTION_SHOW_PREVIEW);
+    CHECK(ts_ui_import_action_from_point(80, 198) ==
+          TS_UI_IMPORT_ACTION_MODE);
+    CHECK(ts_ui_import_action_from_point(144, 198) ==
+          TS_UI_IMPORT_ACTION_ENCODING_PREVIOUS);
+    CHECK(ts_ui_import_action_from_point(180, 198) ==
+          TS_UI_IMPORT_ACTION_NONE);
+    CHECK(ts_ui_import_action_from_point(288, 198) ==
+          TS_UI_IMPORT_ACTION_ENCODING_NEXT);
+    CHECK(ts_ui_import_action_from_point(48, 228) ==
+          TS_UI_IMPORT_ACTION_RATE_PREVIOUS);
+    CHECK(ts_ui_import_action_from_point(184, 228) ==
+          TS_UI_IMPORT_ACTION_RATE_NEXT);
+    CHECK(ts_ui_import_action_from_point(96, 298) ==
+          TS_UI_IMPORT_ACTION_AUDITION);
+    CHECK(ts_ui_import_action_from_point(180, 298) ==
+          TS_UI_IMPORT_ACTION_LOOP);
+    CHECK(ts_ui_import_action_from_point(260, 298) ==
+          TS_UI_IMPORT_ACTION_ACCEPT);
+    CHECK(ts_ui_import_action_from_point(350, 298) ==
+          TS_UI_IMPORT_ACTION_ACCEPT_SELECTION);
+    CHECK(ts_ui_import_action_from_point(500, 298) ==
+          TS_UI_IMPORT_ACTION_CANCEL);
+    CHECK(ts_ui_import_waveform_contains(36, 90));
+    CHECK(ts_ui_import_waveform_contains(603, 171));
+    CHECK(!ts_ui_import_waveform_contains(604, 171));
+    CHECK(ts_ui_import_frame_from_x(5680u, 36) == 0u);
+    CHECK(ts_ui_import_frame_from_x(5680u, 320) == 2840u);
+    CHECK(ts_ui_import_frame_from_x(5680u, 604) == 5679u);
+    ts_ui_reset_import_view(&ui, 5680u);
+    CHECK(ts_ui_import_frame_from_view_x(&ui, 5680u, 320) == 2840u);
+    CHECK(ts_ui_zoom_import_view(&ui, 5680u, 2840u, 0.5f, 0.5f));
+    CHECK(ui.import_preview_view_last - ui.import_preview_view_first == 2840u);
+    CHECK(ts_ui_import_frame_from_view_x(&ui, 5680u, 320) == 2840u);
+    CHECK(ts_ui_pan_import_view(&ui, 5680u, 100));
+    CHECK(ts_ui_import_frame_from_view_x(&ui, 5680u, 36) ==
+          ui.import_preview_view_first);
+    ts_ui_reset_import_view(&ui, 0u);
     {
         static const uint32_t expected[] = {
             0xb1f5929au, 0xe1d28208u, 0xb6fd7b90u,
@@ -2796,7 +2841,7 @@ int main(void)
         CHECK(browser_find(&browser, "test-browser-load.wav") >= 0);
         CHECK(browser_find(&browser, "test-browser-save.tsr") >= 0);
         CHECK(browser_find(&browser, "test-browser-process.tsp") >= 0);
-        CHECK(browser_find(&browser, "test-browser-ignore.txt") < 0);
+        CHECK(browser_find(&browser, "test-browser-ignore.txt") >= 0);
         ts_browser_select(&browser, browser_find(&browser, "test-browser-load.wav"));
         CHECK(ts_browser_selected_path(&browser, path, sizeof(path)));
         CHECK(strstr(path, "test-browser-load.wav") != NULL);

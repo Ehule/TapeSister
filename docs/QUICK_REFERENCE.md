@@ -62,7 +62,7 @@ this avoids collisions with the playable note range.
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+O` | Load WAV, TSR, or TSP |
+| `Ctrl+O` | Load audio, raw data, TSR, or TSP |
 | `Ctrl+S` | Save active project / open Save browser |
 | `Ctrl+E` | Export selected WAV or collection |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
@@ -77,6 +77,35 @@ this avoids collisions with the playable note range.
 | `+` or `=` / `-` | Zoom in / out |
 | `Left` / `Right` | Pan waveform |
 | `0` | Show complete tile |
+
+## Import preview
+
+| Control | Action |
+| --- | --- |
+| Click waveform | Move the preview playhead |
+| Drag waveform | Select a range, snap both edges to zero crossings, and place playhead at its start |
+| Wheel / `Shift`+wheel | Pointer-anchored zoom / pan |
+| `Left` / `Right` | Pan the preview waveform |
+| `0` | Show the complete file |
+| Middle-click waveform | Clear selection and return playhead to the start |
+| `Space` | Play/stop; after reaching the end, Space replays from the range start |
+| `L` / **LOOP** | Repeat the selection, or the complete file when none is selected |
+| `Enter` / **IMPORT ALL** | Import the complete decoded file |
+| `S` / **IMPORT SELECTION** | Import only the zero-snapped preview selection |
+| `Escape` in Preview | Return to the preserved file-browser tab |
+| `Escape` in File Browser | Exit LOAD without changing the tile |
+| `P` in File Browser | Return to the cached preview |
+| `Shift`+click file / `Shift`+`Enter` | Decode and import recognized audio directly, bypassing Preview |
+| `R` or **AUTO / RAW DATA** | Toggle automatic decoding and raw-byte interpretation |
+| Raw `<` / `>` controls | Change encoding, sample rate, or byte offset |
+| `Shift` while changing offset | Move the raw offset by 256 frames |
+
+Decoding runs in the background; `Escape` or **CANCEL** stops a long decode and returns
+to the browser. Automatic decoding supports WAV, FLAC, MP3, and Ogg Vorbis, including
+multichannel WAV downmixed to stereo. Raw mode accepts any
+non-project file as unsigned/signed 8-bit, signed 16/24/32-bit integer, or 32-bit float
+data with selectable endian order, mono/stereo layout, sample rate, offset, and
+normalization.
 
 ## Waveform mouse gestures
 
@@ -285,6 +314,8 @@ coexistence and validate REAPER/ASIO against the interface driver's own sharing 
 | `manifest.txt` | collection map | move with the project folder |
 | `.tsp` | processing recipe, no audio | standalone |
 | `.wav` | ordinary audio export/capture | standalone |
+| `.flac`, `.mp3`, `.ogg` | automatically decoded import audio | standalone |
+| any other non-project file | raw-data import source | standalone |
 | `Captures/` | immutable 32-bit float performance archive | intentionally outside projects |
 
 Saving `Name.tsr` creates the movable folder `Name/`. Share or back up that whole folder.

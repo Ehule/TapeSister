@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "tapesister/audition.h"
+#include "tapesister/audio_import.h"
 #include "tapesister/browser.h"
 #include "tapesister/capture.h"
 #include "tapesister/config.h"
@@ -15,6 +16,7 @@
 #include "tapesister/exchange.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
+enum { TS_IMPORT_PREVIEW_COLUMNS = 568 };
 enum { TS_UI_INPUT_LED_X = 184, TS_UI_INPUT_LED_Y = 12,
        TS_UI_INPUT_LED_W = 2, TS_UI_INPUT_LED_H = 9,
        TS_UI_INPUT_LED_STEP_X = 3 };
@@ -161,6 +163,27 @@ typedef enum {
     TS_UI_LOAD_SELECTION_FIT,
     TS_UI_LOAD_SELECTION_CANCEL
 } TsUiLoadSelectionAction;
+
+typedef enum {
+    TS_UI_IMPORT_ACTION_NONE = 0,
+    TS_UI_IMPORT_ACTION_SHOW_BROWSER,
+    TS_UI_IMPORT_ACTION_SHOW_PREVIEW,
+    TS_UI_IMPORT_ACTION_MODE,
+    TS_UI_IMPORT_ACTION_ENCODING_PREVIOUS,
+    TS_UI_IMPORT_ACTION_ENCODING_NEXT,
+    TS_UI_IMPORT_ACTION_ENDIAN,
+    TS_UI_IMPORT_ACTION_CHANNELS,
+    TS_UI_IMPORT_ACTION_NORMALIZE,
+    TS_UI_IMPORT_ACTION_RATE_PREVIOUS,
+    TS_UI_IMPORT_ACTION_RATE_NEXT,
+    TS_UI_IMPORT_ACTION_OFFSET_PREVIOUS,
+    TS_UI_IMPORT_ACTION_OFFSET_NEXT,
+    TS_UI_IMPORT_ACTION_AUDITION,
+    TS_UI_IMPORT_ACTION_LOOP,
+    TS_UI_IMPORT_ACTION_ACCEPT,
+    TS_UI_IMPORT_ACTION_ACCEPT_SELECTION,
+    TS_UI_IMPORT_ACTION_CANCEL
+} TsUiImportAction;
 
 typedef enum {
     TS_UI_EXCHANGE_NONE = 0,
@@ -374,6 +397,29 @@ typedef struct {
     int exchange_item_count;
     int exchange_force_new_instance;
     int load_selection_choice_open;
+    int import_preview_open;
+    int import_preview_available;
+    int import_preview_raw;
+    int import_preview_active;
+    int import_preview_selecting;
+    int import_preview_selection_dragged;
+    int import_preview_selection_start_x;
+    int import_preview_has_selection;
+    size_t import_preview_selection_anchor;
+    size_t import_preview_selection_first;
+    size_t import_preview_selection_last;
+    size_t import_preview_playhead;
+    size_t import_preview_view_first;
+    size_t import_preview_view_last;
+    int import_preview_loop;
+    int import_preview_waveform_ready;
+    float import_preview_minimum[2][TS_IMPORT_PREVIEW_COLUMNS];
+    float import_preview_maximum[2][TS_IMPORT_PREVIEW_COLUMNS];
+    TsRawImportSettings import_raw_settings;
+    const TsSample *import_preview_sample;
+    TsAudioImportKind import_preview_kind;
+    char import_preview_name[128];
+    char import_preview_message[160];
     int drone_open;
     int drone_preview_active;
     int drone_crossfade_dragging;
@@ -564,6 +610,9 @@ int ts_ui_master_limiter_contains(int x, int y);
 int ts_ui_master_output_contains(int x, int y);
 float ts_ui_master_output_normalized_from_x(int x);
 int ts_ui_config_field_from_point(int x, int y);
+TsUiImportAction ts_ui_import_action_from_point(int x, int y);
+int ts_ui_import_waveform_contains(int x, int y);
+size_t ts_ui_import_frame_from_x(size_t frames, int x);
 size_t ts_ui_config_cursor_from_point(const TsUiState *ui,
                                       TsConfigField field, int x);
 TsUiConfigAction ts_ui_config_action_from_point(int x, int y);
@@ -652,5 +701,11 @@ int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
                            float anchor_ratio, float scale);
 int ts_ui_pan_parent_view(TsUiState *ui, size_t frames, ptrdiff_t amount);
 size_t ts_ui_parent_frame_from_x(const TsUiState *ui, size_t frames, int x, int width);
+void ts_ui_reset_import_view(TsUiState *ui, size_t frames);
+int ts_ui_zoom_import_view(TsUiState *ui, size_t frames, size_t anchor,
+                           float anchor_ratio, float scale);
+int ts_ui_pan_import_view(TsUiState *ui, size_t frames, ptrdiff_t amount);
+size_t ts_ui_import_frame_from_view_x(const TsUiState *ui, size_t frames,
+                                      int x);
 
 #endif

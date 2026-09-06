@@ -5,6 +5,15 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+include(FetchContent)
+FetchContent_Declare(
+  miniaudio
+  GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+  GIT_TAG 350784a9467a79d0fa65802132668e5afbcf3777
+  GIT_SHALLOW FALSE
+  SOURCE_SUBDIR _tapesister_header_only)
+FetchContent_MakeAvailable(miniaudio)
+
 add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
              src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c
@@ -25,8 +34,8 @@ add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts
              src/ts_render_damage.c src/ts_waveform_cache.c
              src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c
              src/ts_dsp_transform.c src/ts_exchange.c src/ts_waveform_display.c
-             src/ts_ui.c)
-target_include_directories(tapesister_core PUBLIC include)
+             src/ts_audio_import.c src/ts_ui.c)
+target_include_directories(tapesister_core PUBLIC include PRIVATE ${miniaudio_SOURCE_DIR})
 target_link_libraries(tapesister_core PUBLIC m)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(tapesister_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -303,6 +312,10 @@ add_test(NAME tapesister_tsr27_tests COMMAND tapesister_tsr27_tests)
 add_executable(tapesister_wav_channels_tests tests/test_wav_channels.c)
 target_link_libraries(tapesister_wav_channels_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_wav_channels_tests COMMAND tapesister_wav_channels_tests)
+
+add_executable(tapesister_audio_import_tests tests/test_audio_import.c)
+target_link_libraries(tapesister_audio_import_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_audio_import_tests COMMAND tapesister_audio_import_tests)
 
 add_executable(tapesister_smear_tests tests/test_smear.c)
 target_link_libraries(tapesister_smear_tests PRIVATE tapesister_core)
