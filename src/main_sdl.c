@@ -7747,9 +7747,16 @@ static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
     size_t queue_frames;
     if (audio == NULL || sister == NULL || sample_rate == 0u) return 0;
     if (sister->model.selected_tap != TS_SISTER_TAP_MIX &&
+        sister->model.selected_tap != TS_SISTER_TAP_TAPEHEAD &&
         (!audio->sister.enabled || audio->sister.callback_failed)) {
         snprintf(sister->model.status, sizeof(sister->model.status),
                  "SELECT OUT OR ENABLE SISTER FOR A HEAD FILE");
+        return 0;
+    }
+    if (sister->model.selected_tap == TS_SISTER_TAP_TAPEHEAD &&
+        !audio->live_link_available) {
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "TAPEHEAD FILE CAPTURE IS WAITING FOR A LIVE LINK");
         return 0;
     }
     if (atomic_load_explicit(&audio->sister.capture.state,
@@ -7760,6 +7767,8 @@ static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
     }
     if (sister->model.selected_tap == TS_SISTER_TAP_MIX)
         snprintf(prefix, sizeof(prefix), "TAPESISTER-OUT");
+    else if (sister->model.selected_tap == TS_SISTER_TAP_TAPEHEAD)
+        snprintf(prefix, sizeof(prefix), "TAPEHEAD-RAW");
     else
         snprintf(prefix, sizeof(prefix), "SISTER-%s",
                  ts_sister_tap_name(sister->model.selected_tap));
@@ -11066,9 +11075,31 @@ int main(int argc, char **argv)
                                            &x, &y)) {
                         TsSisterUiHit hit = ts_sister_ui_hit_test_model(
                             &sister_window.model, x, y);
+                        SDL_Keymod click_mod = SDL_GetModState();
                         ts_ui_pointer_drag_cancel(&sister_window.parameter_drag);
                         if (event.button.button == SDL_BUTTON_LEFT &&
-                            (SDL_GetModState() & KMOD_SHIFT) != 0 &&
+                            hit.action == TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD) {
+                            TapeLinkCommand command = TAPE_LINK_COMMAND_NONE;
+                            if ((click_mod & KMOD_SHIFT) != 0 &&
+                                (click_mod & (KMOD_CTRL | KMOD_ALT)) == 0)
+                                command = TAPE_LINK_COMMAND_TOGGLE_SONG;
+                            else if ((click_mod & KMOD_CTRL) != 0 &&
+                                     (click_mod & (KMOD_SHIFT | KMOD_ALT)) == 0)
+                                command = TAPE_LINK_COMMAND_TOGGLE_PATTERN;
+                            if (command != TAPE_LINK_COMMAND_NONE) {
+                                int sent = tapeLinkReaderSendCommand(
+                                    &audio.live_link, command);
+                                snprintf(sister_window.model.status,
+                                         sizeof(sister_window.model.status),
+                                         sent ?
+                                         (command == TAPE_LINK_COMMAND_TOGGLE_SONG ?
+                                          "TAPEHEAD SONG PLAY/STOP SENT" :
+                                          "TAPEHEAD PATTERN PLAY/STOP SENT") :
+                                         "TAPEHEAD TRANSPORT UNAVAILABLE - WAIT FOR LINK");
+                            }
+                        }
+                        if (event.button.button == SDL_BUTTON_LEFT &&
+                            (click_mod & KMOD_SHIFT) != 0 &&
                             hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
                             ts_sister_ui_parameter_lockable(hit.index)) {
                             sister_window.parameter_lock_gesture = 1;

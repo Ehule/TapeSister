@@ -133,6 +133,19 @@ int main(int argc, char **argv)
         model.text_cursor_visible = 1;
         snprintf(model.status, sizeof(model.status),
                  "CAPTURE RECORDING - PRESS AGAIN TO STOP");
+    } else if (strcmp(mode, "file") == 0) {
+        model.routing.enabled = 1;
+        model.routing.rolling = 1;
+        model.routing.live_link_available = 1;
+        model.routing.source_switches = TS_SISTER_SOURCE_TAPEHEAD;
+        model.selected_tap = TS_SISTER_TAP_TAPEHEAD;
+        model.destination_mode = TS_SISTER_UI_DEST_FILE;
+        model.file_capture_state = TS_PERFORMANCE_FILE_RECORDING;
+        model.file_capture_sample_rate = 48000u;
+        model.file_capture_frames = UINT64_C(3723) * 48000u;
+        model.text_cursor_visible = 1;
+        snprintf(model.status, sizeof(model.status),
+                 "RAW TAPEHEAD FILE RECORDING");
     } else if (strcmp(mode, "midi-learn") == 0) {
         model.routing.enabled = 1;
         model.routing.rolling = 1;

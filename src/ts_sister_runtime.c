@@ -1206,6 +1206,9 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     source.external = ts_stereo_frame_sanitize(source.external);
     source.preview = ts_stereo_frame_sanitize(source.preview);
     source.tapehead = ts_stereo_frame_sanitize(source.tapehead);
+    /* This is the untrimmed, pre-Sister Live Link stream. It remains available
+       as a recorder tap even when Sister processing itself is bypassed. */
+    frame.tap[TS_SISTER_TAP_TAPEHEAD] = source.tapehead;
     tile_bus = ts_performance_read_stereo(&runtime->performance, &tile_raw);
     tile_bus = frame_add(tile_bus, source.tiles);
     (void)tile_raw;
@@ -1963,5 +1966,6 @@ const char *ts_sister_tap_name(TsSisterTap tap)
     if (tap == TS_SISTER_TAP_H1) return "H1";
     if (tap == TS_SISTER_TAP_H2) return "H2";
     if (tap == TS_SISTER_TAP_H3) return "H3";
+    if (tap == TS_SISTER_TAP_TAPEHEAD) return "TAPEHEAD";
     return "MIX";
 }

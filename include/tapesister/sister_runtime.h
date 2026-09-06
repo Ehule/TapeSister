@@ -29,6 +29,7 @@ typedef enum {
     TS_SISTER_TAP_H1,
     TS_SISTER_TAP_H2,
     TS_SISTER_TAP_H3,
+    TS_SISTER_TAP_TAPEHEAD,
     TS_SISTER_TAP_COUNT
 } TsSisterTap;
 

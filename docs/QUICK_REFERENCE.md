@@ -165,7 +165,7 @@ STEREO maps odd channels to L and even channels to R.
 | FM | Route live FM Logic |
 | EXT | Route external input |
 | AUDITION | Route preview/audition bus |
-| TAPEHEAD | Route Tapehead's direct Live Link stereo bus |
+| TAPEHEAD | Route Tapehead's direct Live Link stereo bus; Shift-click also toggles Song, Ctrl-click Pattern |
 
 A routed source leaves its ordinary direct speaker path and returns through Sister.
 
@@ -192,11 +192,11 @@ Shift-click an adjustable Sister/FX field to lock or unlock it.
 
 | Selector | Choices |
 | --- | --- |
-| Tap | H1, H2, H3, MIX; final MIX becomes OUT in FILE mode |
+| Tap | H1, H2, H3, MIX, raw TAPEHEAD; final MIX becomes OUT in FILE mode |
 | Format | M or S |
 | Destination | CURRENT, NEXT EMPTY, FILE |
 
-FILE records until stopped and automatically upgrades WAV to RF64 when required. OUT
+FILE records until stopped, shows `REC hh:mm:ss`, and automatically upgrades WAV to RF64 when required. OUT
 file recording remains available when Sister is powered off; H1/H2/H3 require Sister.
 
 ## FX pedalboard

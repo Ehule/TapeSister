@@ -4507,7 +4507,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          const TsPalette *palette)
 {
     static const char *const tap_names[TS_SISTER_TAP_COUNT] = {
-        "MIX", "H1", "H2", "H3"
+        "MIX", "H1", "H2", "H3", "TAPEHEAD"
     };
     TsWaveformDisplayMode mode;
     char line[160];
@@ -4991,13 +4991,7 @@ sister_footer:
     }
     if (model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ||
         model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING) {
-        uint64_t seconds = model->file_capture_sample_rate > 0u ?
-            model->file_capture_frames / model->file_capture_sample_rate : 0u;
-        snprintf(line, sizeof(line),
-                 "FILE %02llu:%02llu:%02llu  %s",
-                 (unsigned long long)(seconds / 3600u),
-                 (unsigned long long)((seconds / 60u) % 60u),
-                 (unsigned long long)(seconds % 60u),
+        snprintf(line, sizeof(line), "FILE %s",
                  model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING ?
                  "FINISHING WAV" : "RECORDING PERFORMANCE");
     } else {
@@ -5053,6 +5047,19 @@ sister_footer:
         button(fb, 538, 370, 92, overdubbing ? "STOP" : "OVERDUB",
                model->routing.capture_state != TS_CAPTURE_IDLE &&
                model->capture_overdub);
+        if (file_recording) {
+            uint64_t seconds = model->file_capture_sample_rate > 0u ?
+                model->file_capture_frames / model->file_capture_sample_rate : 0u;
+            uint64_t raw_hours = seconds / 3600u;
+            uint16_t hours = (uint16_t)(raw_hours > 9999u ? 9999u : raw_hours);
+            char duration[24];
+            snprintf(duration, sizeof(duration), "REC %02u:%02llu:%02llu",
+                     (unsigned)hours,
+                     (unsigned long long)((seconds / 60u) % 60u),
+                     (unsigned long long)(seconds % 60u));
+            rect(fb, 444, 351, 108, 15, PAL_DESKTOP);
+            text(fb, 450, 355, duration, PAL_INSTRUMENT, 1);
+        }
         recording_button_outline(
             fb, capturing ? 450 : 538, 370, capturing ? 82 : 92, 22,
             (recording || file_recording) && model->text_cursor_visible);

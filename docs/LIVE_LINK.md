@@ -36,7 +36,15 @@ Tapehead audio can be captured in the same places as other musical sources:
 
 - main Capture or Overdub prints the complete performed TapeSister output to a tile;
 - Sister H1/H2/H3/MIX capture prints the chosen tape tap to a tile;
-- FILE records the selected tap or final OUT as a long-form WAV/RF64 take.
+- the **TAPEHEAD** capture tap records the raw linked stereo stream, independent of
+  source routing and processing, to a tile, Overdub, or FILE destination;
+- FILE records the selected tap or final OUT as a long-form WAV/RF64 take and shows
+  `REC hh:mm:ss` above CAPTURE while it is running.
+
+The source button also provides optional remote transport while Tapehead is linked.
+A plain left-click only toggles the TAPEHEAD source. **Shift-click** toggles that source
+and sends Tapehead Song Play/Stop; **Ctrl-click** toggles it and sends Pattern
+Play/Stop. Combined modifiers send no transport command.
 
 Only one consumer and one active producer are supported. If multiple Tapehead instances
 select Live Link, the newest session becomes authoritative and TapeSister reconnects to
@@ -55,5 +63,6 @@ and a virtual cable independently request the same interface.
 - Confirm **WAIT → LINK** and clean fades on connection/disconnection.
 - Test matching rates plus 44.1 kHz → 48 kHz and 96 kHz → 48 kHz.
 - Verify the TAPEHEAD trim, ordinary post-FX, Sister Machine, Fallout, all four pedalboard
-  placements, tile Capture/Overdub, and FILE capture.
+  placements, raw TAPEHEAD tile Capture/Overdub, and FILE capture.
+- Verify plain/Shift/Ctrl-click source behavior and the FILE duration readout.
 - Leave a link running long enough to check the audio diagnostic overrun counters.

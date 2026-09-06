@@ -469,17 +469,19 @@ another page if required, and clears the REC BANK only after every copy succeeds
 
 In Sister Machine, choose the tap, channel format, and destination before recording:
 
-- Tap: H1, H2, H3, or MIX. In FILE mode, final MIX is labeled **OUT**.
+- Tap: H1, H2, H3, MIX, or raw TAPEHEAD. In FILE mode, final MIX is labeled **OUT**.
 - Format: M or S.
 - Destination: CURRENT, NEXT EMPTY, or FILE.
 
-CURRENT and NEXT EMPTY use tile Capture/Overdub. FILE starts immediately, allocates no
+CURRENT and NEXT EMPTY use tile Capture/Overdub. The TAPEHEAD tap records the raw linked
+stereo stream before TapeSister trim or processing. FILE starts immediately, allocates no
 tile, and continues until **STOP** is pressed. Long recordings begin as ordinary WAV
-and automatically become RF64 in the same file when necessary.
+and automatically become RF64 in the same file when necessary. A dedicated
+`REC hh:mm:ss` readout above CAPTURE shows the duration accepted into the file.
 
-H1/H2/H3 file taps require Sister to be powered. OUT remains available with Sister off
-and records the final sound reaching the output path, including ordinary post effects,
-the global limiter, and the final OUT fader.
+H1/H2/H3 file taps require Sister to be powered. OUT and raw TAPEHEAD remain available
+with Sister off. OUT records the final sound reaching the output path, including
+ordinary post effects, the global limiter, and the final OUT fader.
 
 ## Sister Machine
 
@@ -511,6 +513,10 @@ To connect it, leave TapeSister on the desired physical output and select
 strip changes to **LINK** when the producer is available. Either program may start
 first, and an armed TAPEHEAD source fades back in after a restart. See the
 [Live Link guide](LIVE_LINK.md).
+
+Plain-click TAPEHEAD to change only its source routing. Shift-click additionally sends
+Tapehead Song Play/Stop; Ctrl-click sends Pattern Play/Stop. These remote commands let
+Tapehead remain behind the TapeSister performance window.
 
 When a source is routed into Sister it is removed from its ordinary direct speaker path.
 It returns through Sister's DRY/WET monitor section, like a real hardware insert. Sources
