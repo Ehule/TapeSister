@@ -2,6 +2,17 @@ name: Native release bundles
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/native-release-bundles.yml"
+      - "CMakeLists.txt"
+      - "build.sh"
+      - "cmake/**"
+      - "scripts/**"
+      - "src/tapesister.rc.in"
+      - "assets/**"
+      - "release/**"
+      - "third_party/**"
   push:
     tags:
       - "v*"
