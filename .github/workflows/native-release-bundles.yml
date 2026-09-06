@@ -28,7 +28,11 @@ jobs:
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DTAPESISTER_BUNDLE_CDP8=ON
       - name: Build TapeSister, tests, and CDP8
         run: cmake --build build
-      - name: Run regression suite
+      - name: Run package regression guard
+        if: github.event_name == 'pull_request'
+        run: ctest --test-dir build --output-on-failure -R test_identity_packaging
+      - name: Run full release regression suite
+        if: github.event_name != 'pull_request'
         run: ctest --test-dir build --output-on-failure
       - name: Assemble archive
         run: tar -C build -czf TapeSister-linux-x86_64.tar.gz tapesister assets cdp licenses tapesister.ini.example
@@ -58,7 +62,12 @@ jobs:
       - name: Build TapeSister, tests, and CDP8
         shell: msys2 {0}
         run: cmake --build build
-      - name: Run regression suite
+      - name: Run package regression guard
+        if: github.event_name == 'pull_request'
+        shell: msys2 {0}
+        run: ctest --test-dir build --output-on-failure -R test_identity_packaging
+      - name: Run full release regression suite
+        if: github.event_name != 'pull_request'
         shell: msys2 {0}
         run: ctest --test-dir build --output-on-failure
       - name: Assemble archive
