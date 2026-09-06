@@ -118,8 +118,24 @@ Click **LOAD** or press `Ctrl+O`, choose a file, and TapeSister opens an import 
 before it changes a tile. WAV, FLAC, MP3, and Ogg Vorbis are recognized from their file
 contents and decoded automatically. The import dialog has **FILE BROWSER** and
 **PREVIEW** tabs, and the preview shows the decoded waveform, format, sample rate,
-channel count, duration, and frame count. Press `Space` or click **PLAY PREVIEW** to
-audition it and `Enter` or **IMPORT** to commit it. `Escape`, **BACK TO FILES**, or the
+channel count, duration, and frame count. Recorder-oriented extensible, RF64, and
+multichannel WAV files use the general decoder when the sampler-metadata reader cannot
+open them; multichannel material is downmixed to stereo.
+
+Click the waveform to position its playhead, or drag across it to select part of the
+file. Both selection edges snap to nearby zero crossings to avoid a discontinuity at
+the imported boundaries. `Space` or **PLAY PREVIEW** starts at the playhead and stays
+inside the selection when one exists. `Enter` or **IMPORT ALL** commits the complete
+file; `S` or **IMPORT SELECTION** commits only the selected range. A contained sampler
+loop is retained and translated into the range; a loop cut by the selection is omitted.
+
+Decoding happens in the background, so the window continues updating during a long
+MP3. `Escape` or **CANCEL** stops the decode and returns to the browser. When no preview
+or raw-data adjustment is needed, Shift-click a file (or use Shift+Enter/Shift+Open) to
+decode recognized audio and install it directly into the selected tile. Unknown files
+still open in Preview as raw data so their interpretation can be checked.
+
+`Escape`, **BACK TO FILES**, or the
 **FILE BROWSER** tab returns to the same directory and highlighted file without changing
 the destination; the cached preview remains available in the **PREVIEW** tab. Use
 `Escape` or **CANCEL** from the file browser to leave LOAD completely.

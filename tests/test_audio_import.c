@@ -10,6 +10,12 @@ static int near(float a, float b)
     return fabsf(a - b) < 0.0001f;
 }
 
+static int cancel_now(void *userdata)
+{
+    (void)userdata;
+    return 1;
+}
+
 static void write_bytes(const char *path, const unsigned char *bytes, size_t count)
 {
     FILE *file = fopen(path, "wb");
@@ -198,6 +204,65 @@ static void test_wav_decoder_and_instrument_install(void)
     remove("test-import.wav");
 }
 
+static void test_multichannel_wav_falls_back_to_stereo_decoder(void)
+{
+    static const unsigned char wav[] = {
+        'R','I','F','F', 52,0,0,0, 'W','A','V','E',
+        'f','m','t',' ', 16,0,0,0,
+        1,0, 4,0, 0x40,0x1f,0,0, 0x00,0xfa,0,0, 8,0, 16,0,
+        'd','a','t','a', 16,0,0,0,
+        0x00,0x20, 0x00,0xe0, 0x00,0x10, 0x00,0xf0,
+        0x00,0x30, 0x00,0xd0, 0x00,0x08, 0x00,0xf8
+    };
+    TsAudioImport imported;
+    char error[160];
+    write_bytes("test-import-4ch.wav", wav, sizeof(wav));
+    ts_audio_import_init(&imported);
+    assert(ts_audio_import_decode(&imported, "test-import-4ch.wav",
+                                  error, sizeof(error)));
+    assert(imported.kind == TS_AUDIO_IMPORT_WAV);
+    assert(imported.sample.frames == 2u);
+    assert(imported.sample.channels == 2u);
+    assert(imported.sample.sample_rate == 8000u);
+    ts_audio_import_free(&imported);
+    assert(!ts_audio_import_decode_cancelable(
+        &imported, "test-import-4ch.wav", cancel_now, NULL,
+        error, sizeof(error)));
+    assert(strstr(error, "cancelled") != NULL);
+    remove("test-import-4ch.wav");
+}
+
+static void test_range_copy_and_loop_translation(void)
+{
+    float values[12] = {
+        -1.0f, 1.0f, -0.8f, 0.8f, -0.6f, 0.6f,
+        -0.4f, 0.4f, -0.2f, 0.2f, 0.0f, 0.0f
+    };
+    TsAudioImport source;
+    TsAudioImport copied;
+    char error[160];
+    ts_audio_import_init(&source);
+    ts_audio_import_init(&copied);
+    source.sample.data = values;
+    source.sample.frames = 6u;
+    source.sample.channels = 2u;
+    source.sample.sample_rate = 48000u;
+    snprintf(source.sample.name, sizeof(source.sample.name), "RANGE SOURCE");
+    source.kind = TS_AUDIO_IMPORT_WAV;
+    source.has_loop = 1;
+    source.loop_first = 2u;
+    source.loop_last = 5u;
+    assert(ts_audio_import_copy_range(&copied, &source, 1u, 6u,
+                                      error, sizeof(error)));
+    assert(copied.sample.frames == 5u && copied.sample.channels == 2u);
+    assert(near(copied.sample.data[0], -0.8f));
+    assert(copied.has_loop && copied.loop_first == 1u && copied.loop_last == 4u);
+    assert(!ts_audio_import_copy_range(&copied, &source, 3u, 6u,
+                                       error, sizeof(error)) || !copied.has_loop);
+    ts_audio_import_free(&copied);
+    source.sample.data = NULL;
+}
+
 int main(int argc, char **argv)
 {
     test_defaults_and_names();
@@ -207,6 +272,8 @@ int main(int argc, char **argv)
     test_failed_decode_is_transactional();
     test_recognized_decoder_rejects_arbitrary_data();
     test_wav_decoder_and_instrument_install();
+    test_multichannel_wav_falls_back_to_stereo_decoder();
+    test_range_copy_and_loop_translation();
     for (int argument = 1; argument < argc; ++argument) {
         TsAudioImport imported;
         char error[160];

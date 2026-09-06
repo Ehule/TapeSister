@@ -82,16 +82,22 @@ this avoids collisions with the playable note range.
 
 | Control | Action |
 | --- | --- |
-| `Space` | Play/stop the immutable preview |
-| `Enter` | Import the preview |
+| Click waveform | Move the preview playhead |
+| Drag waveform | Select a range; both edges snap to nearby zero crossings |
+| `Space` | Play/stop from the playhead, within the selection when present |
+| `Enter` / **IMPORT ALL** | Import the complete decoded file |
+| `S` / **IMPORT SELECTION** | Import only the zero-snapped preview selection |
 | `Escape` in Preview | Return to the preserved file-browser tab |
 | `Escape` in File Browser | Exit LOAD without changing the tile |
 | `P` in File Browser | Return to the cached preview |
+| `Shift`+click file / `Shift`+`Enter` | Decode and import recognized audio directly, bypassing Preview |
 | `R` or **AUTO / RAW DATA** | Toggle automatic decoding and raw-byte interpretation |
 | Raw `<` / `>` controls | Change encoding, sample rate, or byte offset |
 | `Shift` while changing offset | Move the raw offset by 256 frames |
 
-Automatic decoding supports WAV, FLAC, MP3, and Ogg Vorbis. Raw mode accepts any
+Decoding runs in the background; `Escape` or **CANCEL** stops a long decode and returns
+to the browser. Automatic decoding supports WAV, FLAC, MP3, and Ogg Vorbis, including
+multichannel WAV downmixed to stereo. Raw mode accepts any
 non-project file as unsigned/signed 8-bit, signed 16/24/32-bit integer, or 32-bit float
 data with selectable endian order, mono/stereo layout, sample rate, offset, and
 normalization.

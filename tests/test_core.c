@@ -167,10 +167,18 @@ int main(void)
           TS_UI_IMPORT_ACTION_RATE_NEXT);
     CHECK(ts_ui_import_action_from_point(96, 298) ==
           TS_UI_IMPORT_ACTION_AUDITION);
-    CHECK(ts_ui_import_action_from_point(300, 298) ==
+    CHECK(ts_ui_import_action_from_point(200, 298) ==
           TS_UI_IMPORT_ACTION_ACCEPT);
+    CHECK(ts_ui_import_action_from_point(350, 298) ==
+          TS_UI_IMPORT_ACTION_ACCEPT_SELECTION);
     CHECK(ts_ui_import_action_from_point(500, 298) ==
           TS_UI_IMPORT_ACTION_CANCEL);
+    CHECK(ts_ui_import_waveform_contains(36, 90));
+    CHECK(ts_ui_import_waveform_contains(603, 171));
+    CHECK(!ts_ui_import_waveform_contains(604, 171));
+    CHECK(ts_ui_import_frame_from_x(5680u, 36) == 0u);
+    CHECK(ts_ui_import_frame_from_x(5680u, 320) == 2840u);
+    CHECK(ts_ui_import_frame_from_x(5680u, 604) == 5679u);
     {
         static const uint32_t expected[] = {
             0xb1f5929au, 0xe1d28208u, 0xb6fd7b90u,

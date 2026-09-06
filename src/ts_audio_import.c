@@ -1,6 +1,7 @@
 #include "tapesister/audio_import.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,7 +14,6 @@
 #define MA_NO_RESOURCE_MANAGER
 #define MA_NO_ENCODING
 #define MA_NO_GENERATION
-#define MA_NO_WAV
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -104,15 +104,18 @@ void ts_audio_import_free(TsAudioImport *imported)
     ts_audio_import_init(imported);
 }
 
-static TsAudioImportKind sniff_kind(const char *path)
+TsAudioImportKind ts_audio_import_detect_kind(const char *path)
 {
     unsigned char header[16] = {0};
-    FILE *file = fopen(path, "rb");
+    FILE *file;
     size_t count;
+    if (path == NULL || path[0] == '\0') return TS_AUDIO_IMPORT_UNKNOWN;
+    file = fopen(path, "rb");
     if (file == NULL) return TS_AUDIO_IMPORT_UNKNOWN;
     count = fread(header, 1u, sizeof(header), file);
     fclose(file);
-    if (count >= 12u && memcmp(header, "RIFF", 4u) == 0 &&
+    if (count >= 12u &&
+        (memcmp(header, "RIFF", 4u) == 0 || memcmp(header, "RF64", 4u) == 0) &&
         memcmp(header + 8u, "WAVE", 4u) == 0) return TS_AUDIO_IMPORT_WAV;
     if (count >= 4u && memcmp(header, "fLaC", 4u) == 0) return TS_AUDIO_IMPORT_FLAC;
     if (count >= 4u && memcmp(header, "OggS", 4u) == 0) return TS_AUDIO_IMPORT_OGG_VORBIS;
@@ -123,6 +126,8 @@ static TsAudioImportKind sniff_kind(const char *path)
 }
 
 static int decode_miniaudio(TsSample *sample, const char *path,
+                            TsAudioImportCancelCheck cancel_check,
+                            void *cancel_userdata,
                             char *error, size_t error_size)
 {
     ma_decoder decoder;
@@ -136,6 +141,16 @@ static int decode_miniaudio(TsSample *sample, const char *path,
         set_error(error, error_size, "Unsupported or damaged audio file");
         return 0;
     }
+    if (decoder.outputChannels > 2u) {
+        ma_decoder_uninit(&decoder);
+        config = ma_decoder_config_init(ma_format_f32, 2u, 0u);
+        result = ma_decoder_init_file(path, &config, &decoder);
+        if (result != MA_SUCCESS) {
+            set_error(error, error_size,
+                      "Could not downmix multichannel audio to stereo");
+            return 0;
+        }
+    }
     if (decoder.outputChannels == 0u || decoder.outputChannels > 2u ||
         decoder.outputSampleRate < 1000u) {
         ma_decoder_uninit(&decoder);
@@ -147,6 +162,12 @@ static int decode_miniaudio(TsSample *sample, const char *path,
         enum { CHUNK_FRAMES = 4096 };
         ma_uint64 read = 0u;
         size_t wanted = frames + CHUNK_FRAMES;
+        if (cancel_check != NULL && cancel_check(cancel_userdata)) {
+            free(data);
+            ma_decoder_uninit(&decoder);
+            set_error(error, error_size, "Import cancelled");
+            return 0;
+        }
         if (wanted > TS_CANVAS_MAX_FRAMES) wanted = TS_CANVAS_MAX_FRAMES;
         if (wanted > capacity) {
             size_t next = capacity > 0u ? capacity : CHUNK_FRAMES;
@@ -181,6 +202,12 @@ static int decode_miniaudio(TsSample *sample, const char *path,
             &decoder, data + frames * decoder.outputChannels,
             (ma_uint64)(wanted - frames), &read);
         frames += (size_t)read;
+        if (cancel_check != NULL && cancel_check(cancel_userdata)) {
+            free(data);
+            ma_decoder_uninit(&decoder);
+            set_error(error, error_size, "Import cancelled");
+            return 0;
+        }
         if (read == 0u || result == MA_AT_END) break;
         if (result != MA_SUCCESS) {
             free(data);
@@ -217,8 +244,10 @@ static int decode_miniaudio(TsSample *sample, const char *path,
     return 1;
 }
 
-int ts_audio_import_decode(TsAudioImport *imported, const char *path,
-                           char *error, size_t error_size)
+int ts_audio_import_decode_cancelable(
+    TsAudioImport *imported, const char *path,
+    TsAudioImportCancelCheck cancel_check, void *cancel_userdata,
+    char *error, size_t error_size)
 {
     TsAudioImport decoded;
     TsAudioImportKind kind;
@@ -227,7 +256,7 @@ int ts_audio_import_decode(TsAudioImport *imported, const char *path,
         set_error(error, error_size, "Choose an audio file to import");
         return 0;
     }
-    kind = sniff_kind(path);
+    kind = ts_audio_import_detect_kind(path);
     if (kind == TS_AUDIO_IMPORT_UNKNOWN) {
         set_error(error, error_size,
                   "Not WAV, FLAC, MP3, or Ogg Vorbis; try RAW DATA");
@@ -236,12 +265,22 @@ int ts_audio_import_decode(TsAudioImport *imported, const char *path,
     ts_audio_import_init(&decoded);
     decoded.kind = kind;
     if (kind == TS_AUDIO_IMPORT_WAV) {
+        char wav_error[160];
         ok = ts_sample_load_wav_metadata(
             &decoded.sample, &decoded.tuning, &decoded.has_loop,
             &decoded.loop_first, &decoded.loop_last, &decoded.loop_mode,
-            path, error, error_size);
+            path, wav_error, sizeof(wav_error));
+        if (!ok) {
+            ok = decode_miniaudio(&decoded.sample, path,
+                                  cancel_check, cancel_userdata,
+                                  error, error_size);
+            if (!ok && strcmp(error, "Unsupported or damaged audio file") == 0)
+                set_error(error, error_size, wav_error);
+        }
     } else {
-        ok = decode_miniaudio(&decoded.sample, path, error, error_size);
+        ok = decode_miniaudio(&decoded.sample, path,
+                              cancel_check, cancel_userdata,
+                              error, error_size);
     }
     if (!ok) {
         ts_audio_import_free(&decoded);
@@ -249,6 +288,63 @@ int ts_audio_import_decode(TsAudioImport *imported, const char *path,
     }
     ts_audio_import_free(imported);
     *imported = decoded;
+    set_error(error, error_size, "");
+    return 1;
+}
+
+int ts_audio_import_decode(TsAudioImport *imported, const char *path,
+                           char *error, size_t error_size)
+{
+    return ts_audio_import_decode_cancelable(imported, path, NULL, NULL,
+                                             error, error_size);
+}
+
+int ts_audio_import_copy_range(TsAudioImport *destination,
+                               const TsAudioImport *source,
+                               size_t first, size_t last,
+                               char *error, size_t error_size)
+{
+    TsAudioImport copied;
+    size_t frames;
+    size_t scalar_count;
+    size_t byte_count;
+    if (destination == NULL || source == NULL || source->sample.data == NULL ||
+        source->sample.channels == 0u || first >= last ||
+        last > source->sample.frames) {
+        set_error(error, error_size, "Choose a nonempty preview selection");
+        return 0;
+    }
+    frames = last - first;
+    if (!ts_sample_dimensions(frames, source->sample.channels,
+                              &scalar_count, &byte_count)) {
+        set_error(error, error_size, "Preview selection is too large");
+        return 0;
+    }
+    ts_audio_import_init(&copied);
+    copied.sample.data = (float *)malloc(byte_count);
+    if (copied.sample.data == NULL) {
+        set_error(error, error_size, "Out of memory copying preview selection");
+        return 0;
+    }
+    memcpy(copied.sample.data,
+           source->sample.data + first * source->sample.channels,
+           scalar_count * sizeof(*copied.sample.data));
+    copied.sample.frames = frames;
+    copied.sample.channels = source->sample.channels;
+    copied.sample.sample_rate = source->sample.sample_rate;
+    snprintf(copied.sample.name, sizeof(copied.sample.name), "%s",
+             source->sample.name);
+    copied.kind = source->kind;
+    copied.tuning = source->tuning;
+    copied.loop_mode = source->loop_mode;
+    if (source->has_loop && source->loop_first >= first &&
+        source->loop_last <= last && source->loop_first < source->loop_last) {
+        copied.has_loop = 1;
+        copied.loop_first = source->loop_first - first;
+        copied.loop_last = source->loop_last - first;
+    }
+    ts_audio_import_free(destination);
+    *destination = copied;
     set_error(error, error_size, "");
     return 1;
 }
@@ -300,12 +396,39 @@ static float decode_raw_scalar(const unsigned char *source,
     }
 }
 
-int ts_audio_import_decode_raw(TsAudioImport *imported, const char *path,
-                               const TsRawImportSettings *settings,
-                               char *error, size_t error_size)
+static int measure_file(FILE *file, uint64_t *size)
+{
+#ifdef _WIN32
+    __int64 measured;
+    if (_fseeki64(file, 0, SEEK_END) != 0 ||
+        (measured = _ftelli64(file)) < 0) return 0;
+#else
+    long measured;
+    if (fseek(file, 0, SEEK_END) != 0 || (measured = ftell(file)) < 0) return 0;
+#endif
+    *size = (uint64_t)measured;
+    return 1;
+}
+
+static int seek_file(FILE *file, uint64_t offset)
+{
+#ifdef _WIN32
+    return offset <= (uint64_t)INT64_MAX &&
+           _fseeki64(file, (__int64)offset, SEEK_SET) == 0;
+#else
+    return offset <= (uint64_t)LONG_MAX &&
+           fseek(file, (long)offset, SEEK_SET) == 0;
+#endif
+}
+
+int ts_audio_import_decode_raw_cancelable(
+    TsAudioImport *imported, const char *path,
+    const TsRawImportSettings *settings,
+    TsAudioImportCancelCheck cancel_check, void *cancel_userdata,
+    char *error, size_t error_size)
 {
     FILE *file;
-    long file_size_long;
+    uint64_t measured_size;
     size_t file_size;
     size_t bytes_per_scalar;
     size_t bytes_per_frame;
@@ -330,12 +453,17 @@ int ts_audio_import_decode_raw(TsAudioImport *imported, const char *path,
         set_error(error, error_size, message);
         return 0;
     }
-    if (fseek(file, 0, SEEK_END) != 0 || (file_size_long = ftell(file)) < 0) {
+    if (!measure_file(file, &measured_size)) {
         fclose(file);
         set_error(error, error_size, "Could not measure raw-data file");
         return 0;
     }
-    file_size = (size_t)file_size_long;
+    if (measured_size > (uint64_t)SIZE_MAX) {
+        fclose(file);
+        set_error(error, error_size, "Raw-data file is too large");
+        return 0;
+    }
+    file_size = (size_t)measured_size;
     bytes_per_scalar = ts_raw_encoding_bytes(settings->encoding);
     bytes_per_frame = bytes_per_scalar * settings->channels;
     if (settings->byte_offset >= file_size ||
@@ -361,7 +489,7 @@ int ts_audio_import_decode_raw(TsAudioImport *imported, const char *path,
         set_error(error, error_size, "Out of memory while interpreting raw data");
         return 0;
     }
-    if (fseek(file, (long)settings->byte_offset, SEEK_SET) != 0 ||
+    if (!seek_file(file, (uint64_t)settings->byte_offset) ||
         fread(bytes, bytes_per_scalar, scalar_count, file) != scalar_count) {
         free(bytes);
         fclose(file);
@@ -373,14 +501,28 @@ int ts_audio_import_decode_raw(TsAudioImport *imported, const char *path,
     for (size_t i = 0u; i < scalar_count; ++i) {
         float value = decode_raw_scalar(bytes + i * bytes_per_scalar, settings);
         float magnitude = fabsf(value);
+        if ((i & 4095u) == 0u && cancel_check != NULL &&
+            cancel_check(cancel_userdata)) {
+            free(bytes);
+            ts_audio_import_free(&decoded);
+            set_error(error, error_size, "Import cancelled");
+            return 0;
+        }
         decoded.sample.data[i] = value;
         if (magnitude > peak) peak = magnitude;
     }
     free(bytes);
     if (settings->normalize && peak > 0.000001f) {
         float gain = 0.95f / peak;
-        for (size_t i = 0u; i < scalar_count; ++i)
+        for (size_t i = 0u; i < scalar_count; ++i) {
+            if ((i & 4095u) == 0u && cancel_check != NULL &&
+                cancel_check(cancel_userdata)) {
+                ts_audio_import_free(&decoded);
+                set_error(error, error_size, "Import cancelled");
+                return 0;
+            }
             decoded.sample.data[i] *= gain;
+        }
     }
     decoded.sample.frames = frames;
     decoded.sample.channels = settings->channels;
@@ -391,4 +533,12 @@ int ts_audio_import_decode_raw(TsAudioImport *imported, const char *path,
     *imported = decoded;
     set_error(error, error_size, "");
     return 1;
+}
+
+int ts_audio_import_decode_raw(TsAudioImport *imported, const char *path,
+                               const TsRawImportSettings *settings,
+                               char *error, size_t error_size)
+{
+    return ts_audio_import_decode_raw_cancelable(
+        imported, path, settings, NULL, NULL, error, error_size);
 }

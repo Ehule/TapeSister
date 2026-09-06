@@ -833,6 +833,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
     char footer[40];
     const char *directory = browser->directory;
     size_t directory_length = strlen(directory);
+    rect(fb, 0, 32, TS_UI_WIDTH, 352, RGB(12, 12, 12));
     frame(fb, 20, 34, 600, 342, RGB(36, 33, 37), PAL_MOUSE);
     rect(fb, 22, 36, 596, 28, RGB(12, 12, 12));
     if (browser->mode == TS_BROWSER_LOAD_WAV) {
@@ -899,7 +900,8 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
             rect(fb, cursor_x, 301, 2, 11, PAL_MOUSE);
         }
     } else if (browser->mode == TS_BROWSER_LOAD_WAV) {
-        text(fb, 58, 300, "AUDIO DECODES AUTOMATICALLY; ANY FILE CAN OPEN AS RAW DATA",
+        text(fb, 58, 300,
+             "AUDIO AUTO-DECODE; SHIFT+CLICK BYPASSES PREVIEW; OTHER FILES OPEN AS RAW",
              PAL_EFFECT, 1);
     } else if (ts_browser_mode_selects_directory(browser->mode)) {
         text(fb, 58, 300, "NAVIGATE, THEN USE THIS FOLDER", PAL_EFFECT, 1);
@@ -933,29 +935,53 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
 enum {
     TS_IMPORT_WAVE_X = 36,
     TS_IMPORT_WAVE_Y = 90,
-    TS_IMPORT_WAVE_W = 568,
+    TS_IMPORT_WAVE_W = TS_IMPORT_PREVIEW_COLUMNS,
     TS_IMPORT_WAVE_H = 82
 };
 
-static void import_wave_render(TsFramebuffer *fb, const TsSample *sample)
+int ts_ui_import_waveform_contains(int x, int y)
+{
+    return x >= TS_IMPORT_WAVE_X &&
+           x < TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W &&
+           y >= TS_IMPORT_WAVE_Y &&
+           y < TS_IMPORT_WAVE_Y + TS_IMPORT_WAVE_H;
+}
+
+size_t ts_ui_import_frame_from_x(size_t frames, int x)
+{
+    if (frames == 0u) return 0u;
+    if (x <= TS_IMPORT_WAVE_X) return 0u;
+    if (x >= TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W) return frames - 1u;
+    return (size_t)(x - TS_IMPORT_WAVE_X) * frames / TS_IMPORT_WAVE_W;
+}
+
+static void import_wave_render(TsFramebuffer *fb, const TsUiState *ui,
+                               const TsSample *sample)
 {
     rect(fb, TS_IMPORT_WAVE_X, TS_IMPORT_WAVE_Y,
          TS_IMPORT_WAVE_W, TS_IMPORT_WAVE_H, RGB(7, 7, 8));
+    if (sample != NULL && sample->frames > 0u &&
+        ui->import_preview_has_selection) {
+        int first_x = TS_IMPORT_WAVE_X +
+            (int)(ui->import_preview_selection_first * TS_IMPORT_WAVE_W /
+                  sample->frames);
+        int last_x = TS_IMPORT_WAVE_X +
+            (int)(ui->import_preview_selection_last * TS_IMPORT_WAVE_W /
+                  sample->frames);
+        if (last_x <= first_x) last_x = first_x + 1;
+        if (last_x > TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W)
+            last_x = TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W;
+        rect(fb, first_x, TS_IMPORT_WAVE_Y, last_x - first_x,
+             TS_IMPORT_WAVE_H, RGB(42, 5, 48));
+    }
     rect(fb, TS_IMPORT_WAVE_X, TS_IMPORT_WAVE_Y + TS_IMPORT_WAVE_H / 2,
          TS_IMPORT_WAVE_W, 1, RGB(52, 48, 55));
-    if (sample == NULL || sample->data == NULL || sample->frames == 0u) return;
+    if (sample == NULL || sample->data == NULL || sample->frames == 0u ||
+        !ui->import_preview_waveform_ready) return;
     for (int x = 0; x < TS_IMPORT_WAVE_W; ++x) {
-        size_t first = (size_t)x * sample->frames / TS_IMPORT_WAVE_W;
-        size_t last = (size_t)(x + 1) * sample->frames / TS_IMPORT_WAVE_W;
-        if (last <= first) last = first + 1u;
-        if (last > sample->frames) last = sample->frames;
         if (sample->channels == 1u) {
-            float low = 1.0f, high = -1.0f;
-            for (size_t frame_index = first; frame_index < last; ++frame_index) {
-                float value = sample->data[frame_index];
-                if (value < low) low = value;
-                if (value > high) high = value;
-            }
+            float low = ui->import_preview_minimum[0][x];
+            float high = ui->import_preview_maximum[0][x];
             {
                 int center = TS_IMPORT_WAVE_Y + TS_IMPORT_WAVE_H / 2;
                 int y0 = center - (int)lrintf(high * (TS_IMPORT_WAVE_H / 2 - 2));
@@ -965,14 +991,10 @@ static void import_wave_render(TsFramebuffer *fb, const TsSample *sample)
             }
         } else {
             for (uint8_t channel = 0u; channel < 2u; ++channel) {
-                float low = 1.0f, high = -1.0f;
+                float low = ui->import_preview_minimum[channel][x];
+                float high = ui->import_preview_maximum[channel][x];
                 int half = TS_IMPORT_WAVE_H / 2;
                 int center = TS_IMPORT_WAVE_Y + (int)channel * half + half / 2;
-                for (size_t frame_index = first; frame_index < last; ++frame_index) {
-                    float value = sample->data[frame_index * 2u + channel];
-                    if (value < low) low = value;
-                    if (value > high) high = value;
-                }
                 {
                     int y0 = center - (int)lrintf(high * (half / 2 - 2));
                     int y1 = center - (int)lrintf(low * (half / 2 - 2));
@@ -983,16 +1005,38 @@ static void import_wave_render(TsFramebuffer *fb, const TsSample *sample)
             }
         }
     }
+    if (ui->import_preview_has_selection) {
+        int first_x = TS_IMPORT_WAVE_X +
+            (int)(ui->import_preview_selection_first * TS_IMPORT_WAVE_W /
+                  sample->frames);
+        int last_x = TS_IMPORT_WAVE_X +
+            (int)(ui->import_preview_selection_last * TS_IMPORT_WAVE_W /
+                  sample->frames);
+        if (last_x >= TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W)
+            last_x = TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W - 1;
+        rect(fb, first_x, TS_IMPORT_WAVE_Y, 1, TS_IMPORT_WAVE_H, PAL_EFFECT);
+        rect(fb, last_x, TS_IMPORT_WAVE_Y, 1, TS_IMPORT_WAVE_H, PAL_EFFECT);
+    }
+    if (ui->import_preview_playhead < sample->frames) {
+        int playhead_x = TS_IMPORT_WAVE_X +
+            (int)(ui->import_preview_playhead * TS_IMPORT_WAVE_W /
+                  sample->frames);
+        if (playhead_x >= TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W)
+            playhead_x = TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W - 1;
+        rect(fb, playhead_x, TS_IMPORT_WAVE_Y, 1, TS_IMPORT_WAVE_H, PAL_VOLUME);
+    }
 }
 
 static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     char detail[128];
+    char selection[128];
     char rate[32];
     char offset[48];
     const TsSample *sample = ui->import_preview_sample;
     double seconds = sample != NULL && sample->sample_rate > 0u ?
                      (double)sample->frames / sample->sample_rate : 0.0;
+    rect(fb, 0, 32, TS_UI_WIDTH, 352, RGB(12, 12, 12));
     frame(fb, 20, 34, 600, 342, RGB(36, 33, 37), PAL_MOUSE);
     rect(fb, 22, 36, 596, 28, RGB(12, 12, 12));
     button(fb, 34, 39, 108, "FILE BROWSER", 0);
@@ -1003,7 +1047,7 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
              sample != NULL ? sample->sample_rate : 0u,
              sample != NULL ? sample->channels : 0u, seconds);
     text(fb, 36, 70, detail, PAL_INSTRUMENT, 1);
-    import_wave_render(fb, sample);
+    import_wave_render(fb, ui, sample);
 
     button(fb, 36, 188, 88, ui->import_preview_raw ? "RAW DATA" : "AUTO", 1);
     if (ui->import_preview_raw) {
@@ -1032,22 +1076,37 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
         button(fb, 430, 218, 24, ">", 0);
         text(fb, 466, 226, "SHIFT = LARGE STEP", RGB(190, 185, 190), 1);
     } else {
-        text(fb, 36, 204,
+        text(fb, 132, 196,
              "AUTO: WAV / FLAC / MP3 / OGG. RAW REINTERPRETS THE FILE BYTES.",
              PAL_EFFECT, 1);
     }
+    if (ui->import_preview_has_selection && sample != NULL) {
+        double selected_seconds = sample->sample_rate > 0u ?
+            (double)(ui->import_preview_selection_last -
+                     ui->import_preview_selection_first) /
+            sample->sample_rate : 0.0;
+        snprintf(selection, sizeof(selection),
+                 "SELECTED %zu FRAMES / %.3F SEC - ZERO-CROSSING SNAPPED",
+                 ui->import_preview_selection_last -
+                 ui->import_preview_selection_first, selected_seconds);
+    } else
+        snprintf(selection, sizeof(selection),
+                 "CLICK SETS PLAYHEAD - DRAG SELECTS AN IMPORT RANGE");
+    text(fb, 36, 246, selection, PAL_INSTRUMENT, 1);
     {
         char message[97];
         snprintf(message, sizeof(message), "%.96s", ui->import_preview_message);
-        text(fb, 36, 258, message, PAL_EFFECT, 1);
+        text(fb, 36, 260, message, PAL_EFFECT, 1);
     }
-    button(fb, 84, 286, 132,
+    button(fb, 36, 286, 116,
            ui->import_preview_active ? "STOP PREVIEW" : "PLAY PREVIEW",
            ui->import_preview_active);
-    button(fb, 254, 286, 132, "IMPORT", 1);
-    button(fb, 424, 286, 132, "BACK TO FILES", 0);
-    text(fb, 92, 330,
-         "SPACE PLAY/STOP   ENTER IMPORT   ESC BACK   SETTINGS UPDATE LIVE",
+    button(fb, 158, 286, 116, "IMPORT ALL", 1);
+    button(fb, 280, 286, 150, "IMPORT SELECTION",
+           ui->import_preview_has_selection);
+    button(fb, 436, 286, 168, "BACK TO FILES", 0);
+    text(fb, 76, 330,
+         "SPACE PLAY/STOP   ENTER ALL   S SELECTION   ESC BACK",
          RGB(190, 185, 190), 1);
 }
 
@@ -1810,9 +1869,11 @@ TsUiImportAction ts_ui_import_action_from_point(int x, int y)
         if (x >= 430 && x < 454) return TS_UI_IMPORT_ACTION_OFFSET_NEXT;
     }
     if (y >= 286 && y < 309) {
-        if (x >= 84 && x < 216) return TS_UI_IMPORT_ACTION_AUDITION;
-        if (x >= 254 && x < 386) return TS_UI_IMPORT_ACTION_ACCEPT;
-        if (x >= 424 && x < 556) return TS_UI_IMPORT_ACTION_CANCEL;
+        if (x >= 36 && x < 152) return TS_UI_IMPORT_ACTION_AUDITION;
+        if (x >= 158 && x < 274) return TS_UI_IMPORT_ACTION_ACCEPT;
+        if (x >= 280 && x < 430)
+            return TS_UI_IMPORT_ACTION_ACCEPT_SELECTION;
+        if (x >= 436 && x < 604) return TS_UI_IMPORT_ACTION_CANCEL;
     }
     return TS_UI_IMPORT_ACTION_NONE;
 }
@@ -3711,7 +3772,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                  dots, "....");
         frame(fb, 154, 142, 332, 94, RGB(12, 12, 12), PAL_VOLUME);
         text(fb, 174, 158, busy, PAL_VOLUME, 2);
-        text(fb, 174, 207, "PLEASE WAIT - FILE OPERATION IN PROGRESS",
+        text(fb, 174, 207,
+             strcmp(ui->file_busy_label, "DECODING") == 0 ?
+             "ESC OR CANCEL STOPS DECODING" :
+             "PLEASE WAIT - FILE OPERATION IN PROGRESS",
              RGB(190, 185, 190), 1);
     }
     main_midi_learn_overlay(fb, ui);
