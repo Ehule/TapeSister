@@ -21,10 +21,12 @@ source route fades in automatically when the producer appears.
 ## Signal and capture behavior
 
 The transport carries 32-bit float stereo. TapeSister accepts Tapehead rates from
-8–384 kHz and linearly resamples to its current output rate. An adaptive nominal 25 ms
-buffer, with a two-callback safety floor for large device buffers, corrects small
-independent-clock drift. Start, stop, disconnect, underrun, and session replacement use
-short fades rather than discontinuous cuts.
+8–384 kHz and linearly resamples to its current output rate. Tapehead renders the link
+in a short 256-frame software quantum independent of its hardware-buffer preference.
+TapeSister keeps an adaptive nominal 25 ms reserve, with a two-callback safety floor for
+large output buffers, to absorb scheduler jitter and correct small independent-clock
+drift. Start, stop, disconnect, underrun, and session replacement use short fades rather
+than discontinuous cuts.
 
 The TAPEHEAD source has its own 0–400% mixer trim. It is stored in `tapesister.ini`,
 Sister projects, and Sister presets. As with the other Sister inputs, a selected source
@@ -41,10 +43,15 @@ Tapehead audio can be captured in the same places as other musical sources:
 - FILE records the selected tap or final OUT as a long-form WAV/RF64 take and shows
   `REC hh:mm:ss` above CAPTURE while it is running.
 
-The source button also provides optional remote transport while Tapehead is linked.
-A plain left-click only toggles the TAPEHEAD source. **Shift-click** toggles that source
-and sends Tapehead Song Play/Stop; **Ctrl-click** toggles it and sends Pattern
-Play/Stop. Combined modifiers send no transport command.
+The three Tapehead controls have deliberately separate jobs:
+
+- **TH SRC** only selects whether the Live Link is routed through Sister Machine;
+- **TH SONG** sends Tapehead Song Play/Stop and lights only while Song mode is playing;
+- **TH PATT** sends Tapehead Pattern Play/Stop and lights only while Pattern mode is
+  playing.
+
+Modifier-clicking TH SRC has no hidden transport behavior. The source can remain armed
+while WAIT is shown and will enter Sister automatically when Tapehead reconnects.
 
 Only one consumer and one active producer are supported. If multiple Tapehead instances
 select Live Link, the newest session becomes authoritative and TapeSister reconnects to
@@ -64,5 +71,6 @@ and a virtual cable independently request the same interface.
 - Test matching rates plus 44.1 kHz → 48 kHz and 96 kHz → 48 kHz.
 - Verify the TAPEHEAD trim, ordinary post-FX, Sister Machine, Fallout, all four pedalboard
   placements, raw TAPEHEAD tile Capture/Overdub, and FILE capture.
-- Verify plain/Shift/Ctrl-click source behavior and the FILE duration readout.
+- Verify independent TH SRC, TH SONG, and TH PATT behavior, truthful transport lights,
+  256/512/1024/2048-frame TapeSister buffers, and the FILE duration readout.
 - Leave a link running long enough to check the audio diagnostic overrun counters.

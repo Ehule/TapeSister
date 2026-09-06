@@ -12,6 +12,7 @@ MIDI_CPP_OBJS =
 MIDI_CPPFLAGS =
 MIDI_LDFLAGS =
 TAPESISTER_LDFLAGS =
+LIVE_LINK_LDFLAGS = $(if $(filter Linux,$(shell uname -s 2>/dev/null)),-lrt,)
 ifeq ($(OS),Windows_NT)
 TAPESISTER_LDFLAGS += -Wl,--stack,16777216
 MIDI_CPP_OBJS = third_party/rtmidi/RtMidi.o third_party/rtmidi/rtmidi_c.o
@@ -30,7 +31,7 @@ MIDI_LDFLAGS = -lstdc++ $(shell pkg-config --libs alsa) -ldl -pthread
 endif
 endif
 
-.PHONY: all bundled-release test test_audio_hardening_structure stress-sister benchmark-sister screenshot screenshot-sister-spirit runtime-assets clean
+.PHONY: all bundled-release test test_audio_hardening_structure test_live_link_structure stress-sister benchmark-sister screenshot screenshot-sister-spirit runtime-assets clean
 
 all: bundled-release
 
@@ -73,12 +74,15 @@ screenshot-sister-spirit: tapesister_sister_spirit_demo tapesister_render_demo
 
 test: test_sister_resize
 test: test_audio_hardening_structure
+test: test_live_link_structure
+test: test_live_link
 
 test: tapesister_core_tests tapesister_audio_frame_tests test_audio_mixer test_audio_lifecycle test_note_bank_stereo test_performance_stereo test_capture_stereo test_performance_recorder test_external_input_channels test_input_ownership test_realtime_diagnostics test_sister_buffer test_sister_heads test_sister_transport test_sister_modulation test_sister_feedback test_sister_ghost_tone test_sister_stereo test_sister_weave test_sister_effect_routing test_sister_post_fx test_sister_fallout test_sister_limiter test_sister_duck_filter test_sister_snapshot test_sister_routes test_sister_runtime test_sister_source_mask test_sister_performance_sources test_sister_capture test_sister_recursion test_sister_lifecycle test_sister_visibility test_sister_ui_model test_sister_wave_snapshot test_waveform_display_modes test_sister_source_ui test_sister_capture_ui test_sister_palette test_sister_preset test_sister_project_state test_sister_pathological tapesister_sample_channels_tests tapesister_tsr27_tests tapesister_wav_channels_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_performance_tests tapesister_midi_tests tapesister_external_record_tests tapesister_input_monitor_tests tapesister_capture_archive_tests tapesister_sample_pages_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_chain_stamp_tests tapesister_exchange_tests tapesister_render_damage_tests tapesister_waveform_cache_tests tapesister_render_efficiency_tests
 	./tapesister_core_tests
 	./tapesister_audio_frame_tests
 	./test_audio_mixer
 	./test_audio_lifecycle
+	./test_live_link
 	./test_note_bank_stereo
 	./test_performance_stereo
 	./test_capture_stereo
@@ -156,6 +160,9 @@ test_audio_lifecycle: src/ts_audio_lifecycle.c tests/test_audio_lifecycle.c
 
 test_audio_hardening_structure:
 	python3 tests/test_audio_hardening_structure.py
+
+test_live_link_structure:
+	python3 tests/test_live_link_structure.py
 
 test_note_bank_stereo: $(CORE) tests/test_note_bank_stereo.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
@@ -259,6 +266,9 @@ test_waveform_display_modes: $(CORE) tests/test_waveform_display_modes.c
 test_sister_source_ui: $(CORE) tests/test_sister_source_ui.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
+test_live_link: tests/test_live_link.c src/tape_link.c
+	$(CC) $(CFLAGS) -Isrc $^ -o $@ -lm $(LIVE_LINK_LDFLAGS)
+
 test_sister_capture_ui: $(CORE) tests/test_sister_capture_ui.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
@@ -360,3 +370,4 @@ clean:
 	rm -f test_performance_recorder test_sister_ui_model test_sister_wave_snapshot test_waveform_display_modes test_sister_source_ui test_sister_capture_ui test_sister_palette test-sister-palette.pal test-sister-palette-legacy.pal
 	rm -f test_audio_lifecycle test-audio-config-backend.ini
 	rm -f test_sister_resize
+	rm -f test_live_link

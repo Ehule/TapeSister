@@ -4844,17 +4844,24 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     button(fb, 600, 144, 24,
            ts_waveform_display_letter(model->waveform_mode),
            model->waveform_mode != TS_WAVEFORM_DISPLAY_STEREO);
-    button(fb, 10, 172, 60, "TILES", model->routing.source_switches & TS_SISTER_SOURCE_TILES);
-    button(fb, 76, 172, 60, "FM", model->routing.source_switches & TS_SISTER_SOURCE_FM);
-    button(fb, 142, 172, 60, "EXT", model->routing.source_switches & TS_SISTER_SOURCE_EXT);
-    button(fb, 208, 172, 60, "AUDITION", model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
-    button(fb, 274, 172, 60, "TAPEHEAD", model->routing.source_switches & TS_SISTER_SOURCE_TAPEHEAD);
+    button(fb, 10, 172, 44, "TILES",
+           model->routing.source_switches & TS_SISTER_SOURCE_TILES);
+    button(fb, 58, 172, 28, "FM",
+           model->routing.source_switches & TS_SISTER_SOURCE_FM);
+    button(fb, 90, 172, 34, "EXT",
+           model->routing.source_switches & TS_SISTER_SOURCE_EXT);
+    button(fb, 128, 172, 38, "AUD",
+           model->routing.source_switches & TS_SISTER_SOURCE_PREVIEW);
+    button(fb, 170, 172, 48, "TH SRC",
+           model->routing.source_switches & TS_SISTER_SOURCE_TAPEHEAD);
+    button(fb, 222, 172, 52, "TH SONG", model->tapehead_song_playing);
+    button(fb, 278, 172, 52, "TH PATT", model->tapehead_pattern_playing);
     snprintf(line, sizeof(line), "%s MASK%04X V%02d IN%.2F M%.2F",
              model->routing.live_link_available ? "LINK" : "WAIT",
              model->routing.source_mask, model->routing.active_source_voices,
              model->routing.source_input_peak,
              model->routing.tap_peak[TS_SISTER_TAP_MIX]);
-    text(fb, 342, 179, line,
+    text(fb, 336, 179, line,
          model->routing.warnings ? PAL_VOLUME : PAL_MOUSE, 1);
     overload_display = model->routing.overload_count > 9999u ?
         9999u : (unsigned long long)model->routing.overload_count;
@@ -4864,7 +4871,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
              model->routing.tap_peak[TS_SISTER_TAP_H3],
              overload_display,
              model->routing.overload_count > 9999u ? "+" : "");
-    text(fb, 342, 190, line,
+    text(fb, 336, 190, line,
          model->routing.overload_count != 0u ? PAL_VOLUME : PAL_TUNING, 1);
     sister_vertical_mixer(fb, 526, 172, model);
 

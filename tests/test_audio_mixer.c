@@ -139,6 +139,9 @@ int main(void)
     CHECK(CLOSE(buses.sister.l, 0.6f));
     CHECK(CLOSE(buses.reference.l, 0.05f));
     CHECK(CLOSE(buses.capture.l, 0.75f));
+    out = ts_audio_mixer_render_unclamped(&mixer, &buses);
+    CHECK(CLOSE(out.l, 0.65f) && CLOSE(out.r, -0.65f));
+    CHECK(CLOSE(mixer.buses.program.l, 0.0f));
 
     buses.legacy_preview = (TsStereoFrame){0.4f, -0.4f};
     ts_audio_buses_apply_sister_ownership(&buses, 0);

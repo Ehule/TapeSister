@@ -138,6 +138,7 @@ int main(int argc, char **argv)
         model.routing.rolling = 1;
         model.routing.live_link_available = 1;
         model.routing.source_switches = TS_SISTER_SOURCE_TAPEHEAD;
+        model.tapehead_song_playing = 1;
         model.selected_tap = TS_SISTER_TAP_TAPEHEAD;
         model.destination_mode = TS_SISTER_UI_DEST_FILE;
         model.file_capture_state = TS_PERFORMANCE_FILE_RECORDING;

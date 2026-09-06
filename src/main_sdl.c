@@ -8330,6 +8330,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
         hit.action != TS_SISTER_UI_ACTION_LIMITER_TOGGLE &&
         hit.action != TS_SISTER_UI_ACTION_MASTER_OUTPUT &&
+        hit.action != TS_SISTER_UI_ACTION_TAPEHEAD_SONG &&
+        hit.action != TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN &&
         hit.action != TS_SISTER_UI_ACTION_CAPTURE_FORMAT &&
         hit.action != TS_SISTER_UI_ACTION_DESTINATION &&
         hit.action != TS_SISTER_UI_ACTION_TAP &&
@@ -8379,6 +8381,21 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             sync_ext = 1;
         }
         break;
+    case TS_SISTER_UI_ACTION_TAPEHEAD_SONG:
+    case TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN: {
+        TapeLinkCommand command =
+            hit.action == TS_SISTER_UI_ACTION_TAPEHEAD_SONG ?
+            TAPE_LINK_COMMAND_TOGGLE_SONG :
+            TAPE_LINK_COMMAND_TOGGLE_PATTERN;
+        int sent = tapeLinkReaderSendCommand(&audio->live_link, command);
+        snprintf(sister->model.status, sizeof(sister->model.status), "%s",
+                 sent ?
+                 (command == TAPE_LINK_COMMAND_TOGGLE_SONG ?
+                  "TAPEHEAD SONG PLAY/STOP SENT" :
+                  "TAPEHEAD PATTERN PLAY/STOP SENT") :
+                 "TAPEHEAD TRANSPORT UNAVAILABLE - WAIT FOR LINK");
+        break;
+    }
     case TS_SISTER_UI_ACTION_PARAMETER:
         if (ts_sister_ui_parameter_locked(&sister->model, hit.index)) {
             snprintf(sister->model.status, sizeof(sister->model.status),
@@ -8867,6 +8884,10 @@ static int midi_sister_hit_from_target(const char *target, float normalized,
         hit->action = TS_SISTER_UI_ACTION_SOURCE_PREVIEW;
     else if (strcmp(target, "sister.source.tapehead") == 0)
         hit->action = TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD;
+    else if (strcmp(target, "sister.tapehead.song") == 0)
+        hit->action = TS_SISTER_UI_ACTION_TAPEHEAD_SONG;
+    else if (strcmp(target, "sister.tapehead.pattern") == 0)
+        hit->action = TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN;
     else if (strcmp(target, "sister.capture") == 0)
         hit->action = TS_SISTER_UI_ACTION_CAPTURE;
     else if (sscanf(target, "sister.fx.toggle.%d%c", &index, &trailing) == 1 &&
@@ -11075,31 +11096,9 @@ int main(int argc, char **argv)
                                            &x, &y)) {
                         TsSisterUiHit hit = ts_sister_ui_hit_test_model(
                             &sister_window.model, x, y);
-                        SDL_Keymod click_mod = SDL_GetModState();
                         ts_ui_pointer_drag_cancel(&sister_window.parameter_drag);
                         if (event.button.button == SDL_BUTTON_LEFT &&
-                            hit.action == TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD) {
-                            TapeLinkCommand command = TAPE_LINK_COMMAND_NONE;
-                            if ((click_mod & KMOD_SHIFT) != 0 &&
-                                (click_mod & (KMOD_CTRL | KMOD_ALT)) == 0)
-                                command = TAPE_LINK_COMMAND_TOGGLE_SONG;
-                            else if ((click_mod & KMOD_CTRL) != 0 &&
-                                     (click_mod & (KMOD_SHIFT | KMOD_ALT)) == 0)
-                                command = TAPE_LINK_COMMAND_TOGGLE_PATTERN;
-                            if (command != TAPE_LINK_COMMAND_NONE) {
-                                int sent = tapeLinkReaderSendCommand(
-                                    &audio.live_link, command);
-                                snprintf(sister_window.model.status,
-                                         sizeof(sister_window.model.status),
-                                         sent ?
-                                         (command == TAPE_LINK_COMMAND_TOGGLE_SONG ?
-                                          "TAPEHEAD SONG PLAY/STOP SENT" :
-                                          "TAPEHEAD PATTERN PLAY/STOP SENT") :
-                                         "TAPEHEAD TRANSPORT UNAVAILABLE - WAIT FOR LINK");
-                            }
-                        }
-                        if (event.button.button == SDL_BUTTON_LEFT &&
-                            (click_mod & KMOD_SHIFT) != 0 &&
+                            (SDL_GetModState() & KMOD_SHIFT) != 0 &&
                             hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
                             ts_sister_ui_parameter_lockable(hit.index)) {
                             sister_window.parameter_lock_gesture = 1;
@@ -14526,6 +14525,14 @@ int main(int argc, char **argv)
                 ts_sister_ui_model_update(
                     &sister_window.model, &routing, &engine,
                     &wave, &audio.sister.parameters);
+                {
+                    uint32_t transport = tapeLinkReaderTransportState(
+                        &audio.live_link);
+                    sister_window.model.tapehead_song_playing =
+                        (transport & TAPE_LINK_TRANSPORT_SONG) != 0u;
+                    sister_window.model.tapehead_pattern_playing =
+                        (transport & TAPE_LINK_TRANSPORT_PATTERN) != 0u;
+                }
                 sister_window.model.parameter_locks =
                     audio.sister.parameter_locks;
                 sister_window.model.parameter_locks_high =

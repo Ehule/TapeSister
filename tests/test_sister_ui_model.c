@@ -140,7 +140,7 @@ int main(void)
     hit = ts_sister_ui_hit_test(360, 10);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_BUFFER_SECONDS);
-    CHECK(ts_sister_ui_hit_test(90, 177).action == TS_SISTER_UI_ACTION_SOURCE_FM);
+    CHECK(ts_sister_ui_hit_test(60, 177).action == TS_SISTER_UI_ACTION_SOURCE_FM);
     hit = ts_sister_ui_hit_test(540, 235);
     CHECK(hit.action == TS_SISTER_UI_ACTION_PARAMETER &&
           hit.index == TS_SISTER_UI_PARAM_TILES_GAIN);

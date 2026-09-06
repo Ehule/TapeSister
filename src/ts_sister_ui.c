@@ -549,12 +549,24 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         else if (contains(x, y, 538, 370, 92, 22)) hit.action = TS_SISTER_UI_ACTION_OVERDUB;
         return hit;
     }
-    for (int source = 0; source < 5; ++source) {
-        if (contains(x, y, 10 + source * 66, 172, 60, 20)) {
+    {
+        static const int source_left[5] = {10, 58, 90, 128, 170};
+        static const int source_width[5] = {44, 28, 34, 38, 48};
+        for (int source = 0; source < 5; ++source) {
+            if (!contains(x, y, source_left[source], 172,
+                          source_width[source], 20)) continue;
             hit.action = (TsSisterUiAction)(TS_SISTER_UI_ACTION_SOURCE_TILES + source);
             hit.index = source;
             return hit;
         }
+    }
+    if (contains(x, y, 222, 172, 52, 20)) {
+        hit.action = TS_SISTER_UI_ACTION_TAPEHEAD_SONG;
+        return hit;
+    }
+    if (contains(x, y, 278, 172, 52, 20)) {
+        hit.action = TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN;
+        return hit;
     }
     for (int control = 0; control < 6; ++control) {
         static const int parameters[6] = {
@@ -689,7 +701,11 @@ int ts_sister_ui_midi_target(TsSisterUiHit hit, char *target,
         result = snprintf(target, target_size, "sister.source.%s",
                           sources[hit.action - TS_SISTER_UI_ACTION_SOURCE_TILES]);
         return result > 0 && (size_t)result < target_size;
-    } else if (hit.action == TS_SISTER_UI_ACTION_CAPTURE)
+    } else if (hit.action == TS_SISTER_UI_ACTION_TAPEHEAD_SONG)
+        name = "sister.tapehead.song";
+    else if (hit.action == TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN)
+        name = "sister.tapehead.pattern";
+    else if (hit.action == TS_SISTER_UI_ACTION_CAPTURE)
         name = "sister.capture";
     else if (hit.action == TS_SISTER_UI_ACTION_FX_TOGGLE) {
         result = snprintf(target, target_size, "sister.fx.toggle.%d", hit.index);

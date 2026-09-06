@@ -31,13 +31,25 @@ int main(void)
     ts_sister_ui_model_update(&model, &routing, NULL, NULL, NULL);
     CHECK(model.routing.source_mask == 0x9u);
     CHECK(ts_sister_ui_hit_test(12, 177).action == TS_SISTER_UI_ACTION_SOURCE_TILES);
-    CHECK(ts_sister_ui_hit_test(240, 177).action == TS_SISTER_UI_ACTION_SOURCE_PREVIEW);
+    CHECK(ts_sister_ui_hit_test(140, 177).action == TS_SISTER_UI_ACTION_SOURCE_PREVIEW);
     {
-        TsSisterUiHit tapehead_hit = ts_sister_ui_hit_test(300, 177);
+        TsSisterUiHit tapehead_hit = ts_sister_ui_hit_test(180, 177);
         CHECK(tapehead_hit.action == TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD);
         CHECK(ts_sister_ui_midi_target(tapehead_hit, midi_target,
                                        sizeof(midi_target)));
         CHECK(strcmp(midi_target, "sister.source.tapehead") == 0);
+    }
+    {
+        TsSisterUiHit song_hit = ts_sister_ui_hit_test(230, 177);
+        TsSisterUiHit pattern_hit = ts_sister_ui_hit_test(290, 177);
+        CHECK(song_hit.action == TS_SISTER_UI_ACTION_TAPEHEAD_SONG);
+        CHECK(pattern_hit.action == TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN);
+        CHECK(ts_sister_ui_midi_target(song_hit, midi_target,
+                                       sizeof(midi_target)));
+        CHECK(strcmp(midi_target, "sister.tapehead.song") == 0);
+        CHECK(ts_sister_ui_midi_target(pattern_hit, midi_target,
+                                       sizeof(midi_target)));
+        CHECK(strcmp(midi_target, "sister.tapehead.pattern") == 0);
     }
     CHECK(ts_sister_runtime_set_page(&runtime, 1u, &instrument));
     CHECK(ts_sister_runtime_source_mask(&runtime) == 0u);

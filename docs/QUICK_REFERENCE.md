@@ -165,7 +165,9 @@ STEREO maps odd channels to L and even channels to R.
 | FM | Route live FM Logic |
 | EXT | Route external input |
 | AUDITION | Route preview/audition bus |
-| TAPEHEAD | Route Tapehead's direct Live Link stereo bus; Shift-click also toggles Song, Ctrl-click Pattern |
+| TH SRC | Route Tapehead's direct Live Link stereo bus; never changes transport |
+| TH SONG | Toggle Tapehead Song Play/Stop; lit only while Song mode is playing |
+| TH PATT | Toggle Tapehead Pattern Play/Stop; lit only while Pattern mode is playing |
 
 A routed source leaves its ordinary direct speaker path and returns through Sister.
 

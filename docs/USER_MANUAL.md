@@ -514,9 +514,10 @@ strip changes to **LINK** when the producer is available. Either program may sta
 first, and an armed TAPEHEAD source fades back in after a restart. See the
 [Live Link guide](LIVE_LINK.md).
 
-Plain-click TAPEHEAD to change only its source routing. Shift-click additionally sends
-Tapehead Song Play/Stop; Ctrl-click sends Pattern Play/Stop. These remote commands let
-Tapehead remain behind the TapeSister performance window.
+**TH SRC** changes only Tapehead's Sister routing. The separate **TH SONG** and
+**TH PATT** buttons send Song Play/Stop and Pattern Play/Stop, so source selection can
+never accidentally change transport (or vice versa). TH SONG and TH PATT reflect
+Tapehead's real playback mode and light only while that mode is actually playing.
 
 When a source is routed into Sister it is removed from its ordinary direct speaker path.
 It returns through Sister's DRY/WET monitor section, like a real hardware insert. Sources
