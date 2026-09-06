@@ -84,6 +84,9 @@ The top row remains available across the main workspaces.
 
 - **TAPESISTER / SISTER MACHINE** opens Sister Machine. `Tab` also opens it and moves
   keyboard focus between the two windows.
+- `Ctrl+Tab` crosses to a running Tapehead and returns to whichever TapeSister window
+  was last active. It leaves open panels, playback, routing, and recording untouched
+  and works whether or not Live Link audio is enabled.
 - **CONFIG** selects audio, input, MIDI, paths, palette, and performance defaults.
 - **FT2 LINK** opens the current folder-based TapeSister/TapeHead exchange.
 - **SAVE** saves the complete active project.
@@ -518,6 +521,12 @@ first, and an armed TAPEHEAD source fades back in after a restart. See the
 **TH PATT** buttons send Song Play/Stop and Pattern Play/Stop, so source selection can
 never accidentally change transport (or vice versa). TH SONG and TH PATT reflect
 Tapehead's real playback mode and light only while that mode is actually playing.
+
+`Ctrl+Tab` switches between the two running applications without entering or leaving
+this audio route. TapeSister remembers whether the main window or Sister Machine was
+active, including an open Fallout or pedalboard view; Tapehead preserves its own open
+editor or Config panel. If the companion is not running, the command does nothing and
+never launches it.
 
 When a source is routed into Sister it is removed from its ordinary direct speaker path.
 It returns through Sister's DRY/WET monitor section, like a real hardware insert. Sources

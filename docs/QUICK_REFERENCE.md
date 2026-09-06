@@ -7,6 +7,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | Control | Action |
 | --- | --- |
 | `Tab` | Open Sister Machine or move focus between Sister and the main window |
+| `Ctrl+Tab` | Move to a running Tapehead; press again there to return unchanged |
 | `` ` `` | Open/close FM Logic |
 | `1` | Show Sample Tiles; press again to cycle Sample pages |
 | `Shift+1` | Open external REC BANK |

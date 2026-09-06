@@ -42,7 +42,8 @@ endif()
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
   # main_sdl.c is the one canonical callback/application translation unit.
-  add_executable(tapesister src/main_sdl.c src/tape_link.c src/ts_startup_diag.c
+  add_executable(tapesister src/main_sdl.c src/tape_link.c
+                            src/tape_companion.c src/ts_startup_diag.c
                             src/ts_midi_input.c)
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
@@ -220,6 +221,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME test_audio_hardening_structure
     COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audio_hardening_structure.py")
+  add_test(NAME test_companion_focus_structure
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_companion_focus_structure.py")
 endif()
 
 if(TAPESISTER_BUILD_SDL AND TAPESISTER_BUNDLE_CDP8)

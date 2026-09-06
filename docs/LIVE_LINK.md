@@ -11,7 +11,7 @@ only application that owns the speakers or audio interface.
 3. Open Sister Machine. The source strip shows **LINK** when Tapehead is present and
    **WAIT** while TapeSister is waiting.
 4. With Sister Machine off, Tapehead enters the ordinary program/post-FX path. With
-   Sister Machine on, click **TAPEHEAD** to route it through the tape, heads, Fallout,
+   Sister Machine on, click **TH SRC** to route it through the tape, heads, Fallout,
    and placed pedalboard effects.
 
 Start order does not matter. TapeSister checks once per second and reconnects after a
@@ -57,6 +57,17 @@ Only one consumer and one active producer are supported. If multiple Tapehead in
 select Live Link, the newest session becomes authoritative and TapeSister reconnects to
 it.
 
+## Companion window switching
+
+Press **Ctrl+Tab** in TapeSister to focus a running Tapehead; press it in Tapehead to
+return. The command is independent of Live Link audio and therefore works while
+Tapehead uses a physical output. It never launches the companion or changes either
+application's transport, routing, recording, or interface state.
+
+TapeSister remembers whether its main window or Sister Machine was last active, so an
+open Fallout or pedalboard performance returns exactly as it was left. Tapehead also
+retains an open Config panel or performance surface.
+
 ## Why it avoids the Windows conflict
 
 Tapehead opens no hardware device while Live Link is selected. TapeSister alone owns
@@ -74,3 +85,5 @@ and a virtual cable independently request the same interface.
 - Verify independent TH SRC, TH SONG, and TH PATT behavior, truthful transport lights,
   256/512/1024/2048-frame TapeSister buffers, and the FILE duration readout.
 - Leave a link running long enough to check the audio diagnostic overrun counters.
+- With Live Link selected and unselected, use Ctrl+Tab both ways and verify that the
+  active TapeSister window plus all open panels remain unchanged.

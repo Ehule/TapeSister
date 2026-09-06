@@ -213,6 +213,9 @@ Tapehead can select **TapeSister Live Link** as its output and appear as TapeSis
 fifth musical source without opening another hardware device. See the
 [Live Link guide](docs/LIVE_LINK.md).
 
+`Ctrl+Tab` moves directly between running TapeSister and Tapehead instances without
+changing either workspace. It remains available when Live Link audio is off.
+
 ## Build on Linux
 
 Install dependencies once:

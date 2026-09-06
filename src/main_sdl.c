@@ -16,6 +16,7 @@
 #include "tapesister/ui.h"
 #include "tapesister/version.h"
 #include "tape_link.h"
+#include "tape_companion.h"
 
 #include <SDL2/SDL.h>
 #include "main_sdl_audio_preamble.inc"
@@ -10297,6 +10298,7 @@ int main(int argc, char **argv)
     TsInstrument *parked_instrument = NULL;
     TsUiState ui;
     SisterWindow sister_window = {0};
+    TapeCompanion companion_focus;
     TsFramebuffer framebuffer;
     uint32_t *frame_snapshot = NULL;
     TsSample clipboard;
@@ -10329,6 +10331,7 @@ int main(int argc, char **argv)
     uint32_t last_audio_diagnostic_log = 0u;
 
     initialize_runtime_paths(argc > 0 ? argv[0] : NULL);
+    tapeCompanionInit(&companion_focus);
     diagnostic_log("entered main: TsInstrument=%zu framebuffer=%zu UI=%zu stress=%d",
                    sizeof(TsInstrument), sizeof(TsFramebuffer), sizeof(TsUiState),
                    diagnostic_bank_stress);
@@ -10604,6 +10607,14 @@ int main(int argc, char **argv)
             running = 0;
         }
     }
+    if (running) {
+        char companion_error[128];
+        if (!tapeCompanionOpen(&companion_focus,
+                               TAPE_COMPANION_TAPESISTER_NAME, window,
+                               companion_error, sizeof(companion_error)))
+            fprintf(stderr, "TapeSister companion focus: %s\n",
+                    companion_error);
+    }
 
     SDL_zero(desired);
     SDL_zero(obtained);
@@ -10724,6 +10735,7 @@ int main(int argc, char **argv)
     while (running) {
         SDL_Event event;
         Uint64 frame_started = SDL_GetPerformanceCounter();
+        (void)tapeCompanionPump(&companion_focus);
         /* Reader counts are atomic; retired immutable generations are owned
            and reclaimed by this controller thread, never by the callback. */
         ts_performance_collect_retired(&audio.performance);
@@ -10780,6 +10792,15 @@ int main(int argc, char **argv)
         }
         while (SDL_PollEvent(&event)) {
             uint32_t event_id = event_window_id(&event);
+            if (event.type == SDL_WINDOWEVENT &&
+                event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+                if (sister_window.window != NULL &&
+                    event_id == sister_window.window_id)
+                    tapeCompanionSetActiveWindow(&companion_focus,
+                                                 sister_window.window);
+                else if (event_id == SDL_GetWindowID(window))
+                    tapeCompanionSetActiveWindow(&companion_focus, window);
+            }
             if (event.type == SDL_WINDOWEVENT &&
                 (event.window.event == SDL_WINDOWEVENT_LEAVE ||
                  event.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
@@ -10872,6 +10893,22 @@ int main(int argc, char **argv)
                 int modal_key_owner = ui_blocking_dialog_open_except_fm(&ui) ||
                     ui.fm_bank_choice_open || ui.fm_full_choice_open ||
                     sister_window.model.preset_manage_open;
+                /* Cross to Tapehead without closing or changing the active
+                   TapeSister workspace. This precedes modal handling so an
+                   open menu, Fallout page or pedalboard remains untouched. */
+                if (!event.key.repeat && global_key == SDLK_TAB &&
+                    (global_mod & KMOD_CTRL) != 0 &&
+                    (global_mod & (KMOD_SHIFT | KMOD_ALT | KMOD_GUI)) == 0) {
+                    if (sister_window.window != NULL &&
+                        event_id == sister_window.window_id)
+                        tapeCompanionSetActiveWindow(&companion_focus,
+                                                     sister_window.window);
+                    else if (event_id == SDL_GetWindowID(window))
+                        tapeCompanionSetActiveWindow(&companion_focus, window);
+                    (void)tapeCompanionRequestFocus(
+                        TAPE_COMPANION_TAPEHEAD_NAME);
+                    continue;
+                }
                 if (global_key == SDLK_m &&
                     ts_ui_midi_learn_chord(
                         (global_mod & KMOD_CTRL) != 0,
@@ -14663,6 +14700,7 @@ int main(int argc, char **argv)
     if (input_device) SDL_PauseAudioDevice(input_device, 1);
     if (input_device) SDL_CloseAudioDevice(input_device);
     if (device) SDL_PauseAudioDevice(device, 1);
+    tapeCompanionClose(&companion_focus);
     tapeLinkReaderClose(&audio.live_link);
     free(audio.live_link_buffer);
     audio.live_link_buffer = NULL;
