@@ -167,7 +167,9 @@ int main(void)
           TS_UI_IMPORT_ACTION_RATE_NEXT);
     CHECK(ts_ui_import_action_from_point(96, 298) ==
           TS_UI_IMPORT_ACTION_AUDITION);
-    CHECK(ts_ui_import_action_from_point(200, 298) ==
+    CHECK(ts_ui_import_action_from_point(180, 298) ==
+          TS_UI_IMPORT_ACTION_LOOP);
+    CHECK(ts_ui_import_action_from_point(260, 298) ==
           TS_UI_IMPORT_ACTION_ACCEPT);
     CHECK(ts_ui_import_action_from_point(350, 298) ==
           TS_UI_IMPORT_ACTION_ACCEPT_SELECTION);
@@ -179,6 +181,15 @@ int main(void)
     CHECK(ts_ui_import_frame_from_x(5680u, 36) == 0u);
     CHECK(ts_ui_import_frame_from_x(5680u, 320) == 2840u);
     CHECK(ts_ui_import_frame_from_x(5680u, 604) == 5679u);
+    ts_ui_reset_import_view(&ui, 5680u);
+    CHECK(ts_ui_import_frame_from_view_x(&ui, 5680u, 320) == 2840u);
+    CHECK(ts_ui_zoom_import_view(&ui, 5680u, 2840u, 0.5f, 0.5f));
+    CHECK(ui.import_preview_view_last - ui.import_preview_view_first == 2840u);
+    CHECK(ts_ui_import_frame_from_view_x(&ui, 5680u, 320) == 2840u);
+    CHECK(ts_ui_pan_import_view(&ui, 5680u, 100));
+    CHECK(ts_ui_import_frame_from_view_x(&ui, 5680u, 36) ==
+          ui.import_preview_view_first);
+    ts_ui_reset_import_view(&ui, 0u);
     {
         static const uint32_t expected[] = {
             0xb1f5929au, 0xe1d28208u, 0xb6fd7b90u,

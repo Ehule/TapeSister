@@ -6628,16 +6628,24 @@ static int import_cancel_check(void *userdata)
 
 static int build_import_waveform_cache(
     const TsSample *sample,
+    size_t view_first, size_t view_last,
     float minimum[2][TS_IMPORT_PREVIEW_COLUMNS],
     float maximum[2][TS_IMPORT_PREVIEW_COLUMNS],
     TsAudioImportCancelCheck cancel_check, void *cancel_userdata)
 {
+    size_t view_span;
     if (sample == NULL || sample->data == NULL || sample->frames == 0u ||
         (sample->channels != 1u && sample->channels != 2u)) return 0;
+    if (view_last <= view_first || view_last > sample->frames) {
+        view_first = 0u;
+        view_last = sample->frames;
+    }
+    view_span = view_last - view_first;
     for (int x = 0; x < TS_IMPORT_PREVIEW_COLUMNS; ++x) {
-        size_t first = (size_t)x * sample->frames / TS_IMPORT_PREVIEW_COLUMNS;
-        size_t last = (size_t)(x + 1) * sample->frames /
-                      TS_IMPORT_PREVIEW_COLUMNS;
+        size_t first = view_first +
+            (size_t)x * view_span / TS_IMPORT_PREVIEW_COLUMNS;
+        size_t last = view_first +
+            (size_t)(x + 1) * view_span / TS_IMPORT_PREVIEW_COLUMNS;
         if (last <= first) last = first + 1u;
         if (last > sample->frames) last = sample->frames;
         for (uint8_t channel = 0u; channel < sample->channels; ++channel) {
@@ -6679,6 +6687,7 @@ static int import_worker_main(void *userdata)
             worker->error, sizeof(worker->error));
     if (worker->ok && !build_import_waveform_cache(
             &worker->decoded.sample,
+            0u, worker->decoded.sample.frames,
             worker->waveform_minimum, worker->waveform_maximum,
             import_cancel_check, worker)) {
         ts_audio_import_free(&worker->decoded);
@@ -6739,6 +6748,9 @@ static void close_import_preview(SDL_AudioDeviceID device, AudioState *audio,
     ui->import_preview_selection_first = 0u;
     ui->import_preview_selection_last = 0u;
     ui->import_preview_playhead = 0u;
+    ui->import_preview_view_first = 0u;
+    ui->import_preview_view_last = 0u;
+    ui->import_preview_loop = 0;
     ui->import_preview_waveform_ready = 0;
     ui->import_preview_sample = NULL;
     ui->import_preview_kind = TS_AUDIO_IMPORT_UNKNOWN;
@@ -6799,7 +6811,7 @@ static void update_import_selection(TsUiState *ui,
     if (ui == NULL || controller == NULL) return;
     sample = &controller->decoded.sample;
     if (sample->data == NULL || sample->frames == 0u) return;
-    at = ts_ui_import_frame_from_x(sample->frames, x);
+    at = ts_ui_import_frame_from_view_x(ui, sample->frames, x);
     first = import_preview_snap(sample, ui->import_preview_selection_anchor);
     last = import_preview_snap(sample, at);
     if (first > last) {
@@ -6934,6 +6946,7 @@ static void poll_import_worker(SDL_AudioDeviceID device, AudioState *audio,
     ui->import_preview_selection_first = 0u;
     ui->import_preview_selection_last = 0u;
     ui->import_preview_playhead = 0u;
+    ts_ui_reset_import_view(ui, controller->decoded.sample.frames);
     memcpy(ui->import_preview_minimum, worker->waveform_minimum,
            sizeof(ui->import_preview_minimum));
     memcpy(ui->import_preview_maximum, worker->waveform_maximum,
@@ -7024,8 +7037,10 @@ static int rebuild_import_preview(SDL_AudioDeviceID device, AudioState *audio,
         ui->import_preview_selection_first = 0u;
         ui->import_preview_selection_last = 0u;
         ui->import_preview_playhead = 0u;
+        ts_ui_reset_import_view(ui, controller->decoded.sample.frames);
         ui->import_preview_waveform_ready = build_import_waveform_cache(
             &controller->decoded.sample,
+            ui->import_preview_view_first, ui->import_preview_view_last,
             ui->import_preview_minimum, ui->import_preview_maximum,
             NULL, NULL);
         sync_import_preview_model(ui, controller);
@@ -7033,6 +7048,63 @@ static int rebuild_import_preview(SDL_AudioDeviceID device, AudioState *audio,
     else snprintf(ui->import_preview_message,
                   sizeof(ui->import_preview_message), "%.150s", error);
     return ok;
+}
+
+static int refresh_import_waveform_view(TsUiState *ui,
+                                        const ImportController *controller)
+{
+    const TsSample *sample;
+    if (ui == NULL || controller == NULL) return 0;
+    sample = &controller->decoded.sample;
+    ui->import_preview_waveform_ready = build_import_waveform_cache(
+        sample, ui->import_preview_view_first, ui->import_preview_view_last,
+        ui->import_preview_minimum, ui->import_preview_maximum, NULL, NULL);
+    return ui->import_preview_waveform_ready;
+}
+
+static int pan_import_preview(TsUiState *ui,
+                              const ImportController *controller,
+                              ptrdiff_t amount)
+{
+    if (ui == NULL || controller == NULL ||
+        !ts_ui_pan_import_view(ui, controller->decoded.sample.frames, amount))
+        return 0;
+    (void)refresh_import_waveform_view(ui, controller);
+    return 1;
+}
+
+static void reset_import_preview_view(TsUiState *ui,
+                                      const ImportController *controller)
+{
+    if (ui == NULL || controller == NULL) return;
+    ts_ui_reset_import_view(ui, controller->decoded.sample.frames);
+    (void)refresh_import_waveform_view(ui, controller);
+    snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
+             "FULL WAVEFORM VIEW");
+}
+
+static void set_import_preview_loop(SDL_AudioDeviceID device,
+                                    AudioState *audio, TsUiState *ui,
+                                    const ImportController *controller)
+{
+    size_t span;
+    if (audio == NULL || ui == NULL || controller == NULL) return;
+    ui->import_preview_loop = !ui->import_preview_loop;
+    if (device) SDL_LockAudioDevice(device);
+    if (audio->sample == &controller->decoded.sample) {
+        audio->looping = ui->import_preview_loop;
+        span = audio->range_end > audio->range_start ?
+               audio->range_end - audio->range_start : 0u;
+        audio->crossfade_frames = ui->import_preview_loop ?
+            controller->decoded.sample.sample_rate / 200u : 0u;
+        if (audio->crossfade_frames * 2u > span)
+            audio->crossfade_frames = span / 2u;
+    }
+    if (device) SDL_UnlockAudioDevice(device);
+    snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
+             ui->import_preview_loop ?
+             "LOOP ON - REPEATS SELECTION OR FULL WAVE" :
+             "LOOP OFF - PREVIEW STOPS AT THE END");
 }
 
 static void audition_import_preview(SDL_AudioDeviceID device, AudioState *audio,
@@ -7071,10 +7143,14 @@ static void audition_import_preview(SDL_AudioDeviceID device, AudioState *audio,
     audio->pitch = 1.0;
     audio->source = TS_AUDITION_CURRENT;
     audio->range = TS_AUDITION_ALL;
-    audio->looping = 0;
+    audio->looping = ui->import_preview_loop;
     audio->loop_mode = TS_LOOP_FORWARD;
     audio->loop_direction = 1;
-    audio->crossfade_frames = 0u;
+    audio->crossfade_frames = ui->import_preview_loop ?
+                              sample->sample_rate / 200u : 0u;
+    if (audio->crossfade_frames * 2u > audio->range_end - audio->range_start)
+        audio->crossfade_frames =
+            (audio->range_end - audio->range_start) / 2u;
     audio->bank_slot = -1;
     audio->step = (double)sample->sample_rate / (double)output_rate;
     restart_audio_attack(audio, output_rate, ui->config.voice_attack_ms);
@@ -7192,6 +7268,10 @@ static void handle_import_action(SDL_AudioDeviceID device, AudioState *audio,
     if (action == TS_UI_IMPORT_ACTION_SHOW_PREVIEW) return;
     if (action == TS_UI_IMPORT_ACTION_AUDITION) {
         audition_import_preview(device, audio, ui, controller, output_rate);
+        return;
+    }
+    if (action == TS_UI_IMPORT_ACTION_LOOP) {
+        set_import_preview_loop(device, audio, ui, controller);
         return;
     }
     if (action == TS_UI_IMPORT_ACTION_ACCEPT) {
@@ -12396,6 +12476,28 @@ int main(int argc, char **argv)
                             device, &audio, &ui, &instrument,
                             &pending_selection_load, &import_controller,
                             TS_UI_IMPORT_ACTION_AUDITION, 0, obtained.freq);
+                    else if (key == SDLK_l)
+                        handle_import_action(
+                            device, &audio, &ui, &instrument,
+                            &pending_selection_load, &import_controller,
+                            TS_UI_IMPORT_ACTION_LOOP, 0, obtained.freq);
+                    else if (key == SDLK_0 || key == SDLK_KP_0)
+                        reset_import_preview_view(&ui, &import_controller);
+                    else if (key == SDLK_LEFT || key == SDLK_RIGHT) {
+                        size_t span = ui.import_preview_view_last >
+                                      ui.import_preview_view_first ?
+                            ui.import_preview_view_last -
+                            ui.import_preview_view_first :
+                            import_controller.decoded.sample.frames;
+                        ptrdiff_t step = (ptrdiff_t)(span / 8u);
+                        if (step < 1) step = 1;
+                        snprintf(ui.import_preview_message,
+                                 sizeof(ui.import_preview_message),
+                                 pan_import_preview(
+                                     &ui, &import_controller,
+                                     key == SDLK_LEFT ? -step : step) ?
+                                 "KEYBOARD PANNED WAVEFORM VIEW" : "PAN LIMIT");
+                    }
                     else if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
                         handle_import_action(
                             device, &audio, &ui, &instrument,
@@ -13128,6 +13230,52 @@ int main(int argc, char **argv)
                 } else snprintf(ui.status, sizeof(ui.status),
                                 "HOVER THE DRONE WAVEFORM TO ADJUST CROSSFADE");
             } else if (event.type == SDL_MOUSEWHEEL &&
+                       ui.import_preview_open) {
+                int raw_x, raw_y, x, y;
+                int wheel_y = event.wheel.y;
+                int wheel_x = event.wheel.x;
+                SDL_Keymod mod = SDL_GetModState();
+                const TsSample *sample = &import_controller.decoded.sample;
+                SDL_GetMouseState(&raw_x, &raw_y);
+                logical_mouse(window, raw_x, raw_y, &x, &y);
+                if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
+                    wheel_y = -wheel_y;
+                    wheel_x = -wheel_x;
+                }
+                if (!ts_ui_import_waveform_contains(x, y)) {
+                    snprintf(ui.import_preview_message,
+                             sizeof(ui.import_preview_message),
+                             "HOVER THE WAVEFORM TO ZOOM OR PAN");
+                } else if ((mod & KMOD_SHIFT) || wheel_x != 0) {
+                    size_t span = ui.import_preview_view_last >
+                                  ui.import_preview_view_first ?
+                        ui.import_preview_view_last -
+                        ui.import_preview_view_first : sample->frames;
+                    ptrdiff_t step = (ptrdiff_t)(span / 8u);
+                    ptrdiff_t amount;
+                    if (step < 1) step = 1;
+                    amount = -(ptrdiff_t)wheel_y * step +
+                             (ptrdiff_t)wheel_x * step;
+                    snprintf(ui.import_preview_message,
+                             sizeof(ui.import_preview_message),
+                             pan_import_preview(&ui, &import_controller, amount) ?
+                             "MOUSE PANNED WAVEFORM VIEW" : "PAN LIMIT");
+                } else if (wheel_y != 0) {
+                    size_t anchor = ts_ui_import_frame_from_view_x(
+                        &ui, sample->frames, x);
+                    float ratio = (float)(x - 36) /
+                                  (float)TS_IMPORT_PREVIEW_COLUMNS;
+                    float scale = powf(0.75f, (float)wheel_y);
+                    int changed = ts_ui_zoom_import_view(
+                        &ui, sample->frames, anchor, ratio, scale);
+                    if (changed) (void)refresh_import_waveform_view(
+                        &ui, &import_controller);
+                    snprintf(ui.import_preview_message,
+                             sizeof(ui.import_preview_message),
+                             changed ? "MOUSE ZOOM - POINTER ANCHORED" :
+                                       "ZOOM LIMIT");
+                }
+            } else if (event.type == SDL_MOUSEWHEEL &&
                        (ui.renaming_bank_slot >= 0 || ui.renaming_recipe_slot >= 0 ||
                         ui.config_open || ui.export_choice_open ||
                         ui.overdub_confirm_open || ui.file_busy ||
@@ -13558,6 +13706,19 @@ int main(int argc, char **argv)
                 continue;
             } else if (event.type == SDL_MOUSEBUTTONDOWN &&
                        event.button.button == SDL_BUTTON_MIDDLE &&
+                       ui.import_preview_open) {
+                stop_import_preview(device, &audio, &ui, &import_controller);
+                ui.import_preview_selecting = 0;
+                ui.import_preview_selection_dragged = 0;
+                ui.import_preview_has_selection = 0;
+                ui.import_preview_selection_first = 0u;
+                ui.import_preview_selection_last = 0u;
+                ui.import_preview_playhead = 0u;
+                snprintf(ui.import_preview_message,
+                         sizeof(ui.import_preview_message),
+                         "SELECTION CLEARED - PLAYHEAD AT START");
+            } else if (event.type == SDL_MOUSEBUTTONDOWN &&
+                       event.button.button == SDL_BUTTON_MIDDLE &&
                        !ui.config_open && !ui.palette_open &&
                        ui.exchange_dialog == TS_UI_EXCHANGE_NONE &&
                        !ui.import_preview_open &&
@@ -13964,7 +14125,8 @@ int main(int argc, char **argv)
                         ui.import_preview_selection_dragged = 0;
                         ui.import_preview_selection_start_x = x;
                         ui.import_preview_selection_anchor =
-                            ts_ui_import_frame_from_x(sample->frames, x);
+                            ts_ui_import_frame_from_view_x(
+                                &ui, sample->frames, x);
                         ui.import_preview_playhead =
                             ui.import_preview_selection_anchor;
                         snprintf(ui.import_preview_message,
@@ -15054,7 +15216,8 @@ int main(int argc, char **argv)
                                  "SELECTION TOO SHORT - DRAG A WIDER RANGE");
                     } else {
                         ui.import_preview_playhead =
-                            ts_ui_import_frame_from_x(
+                            ts_ui_import_frame_from_view_x(
+                                &ui,
                                 import_controller.decoded.sample.frames, x);
                         snprintf(ui.import_preview_message,
                                  sizeof(ui.import_preview_message),
@@ -15430,9 +15593,17 @@ int main(int argc, char **argv)
         if (ui.import_preview_active) {
             if (device) SDL_LockAudioDevice(device);
             if (!audio.playing ||
-                audio.sample != &import_controller.decoded.sample)
+                audio.sample != &import_controller.decoded.sample) {
                 ui.import_preview_active = 0;
-            else if (audio.position >= 0.0 &&
+                ui.import_preview_playhead =
+                    ui.import_preview_has_selection ?
+                    ui.import_preview_selection_first : 0u;
+                if (audio.sample == &import_controller.decoded.sample)
+                    audio.sample = NULL;
+                snprintf(ui.import_preview_message,
+                         sizeof(ui.import_preview_message),
+                         "PREVIEW FINISHED - SPACE REPLAYS FROM THE START");
+            } else if (audio.position >= 0.0 &&
                      import_controller.decoded.sample.frames > 0u) {
                 size_t position = (size_t)audio.position;
                 if (position >= import_controller.decoded.sample.frames)

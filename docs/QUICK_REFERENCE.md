@@ -83,8 +83,13 @@ this avoids collisions with the playable note range.
 | Control | Action |
 | --- | --- |
 | Click waveform | Move the preview playhead |
-| Drag waveform | Select a range; both edges snap to nearby zero crossings |
-| `Space` | Play/stop from the playhead, within the selection when present |
+| Drag waveform | Select a range, snap both edges to zero crossings, and place playhead at its start |
+| Wheel / `Shift`+wheel | Pointer-anchored zoom / pan |
+| `Left` / `Right` | Pan the preview waveform |
+| `0` | Show the complete file |
+| Middle-click waveform | Clear selection and return playhead to the start |
+| `Space` | Play/stop; after reaching the end, Space replays from the range start |
+| `L` / **LOOP** | Repeat the selection, or the complete file when none is selected |
 | `Enter` / **IMPORT ALL** | Import the complete decoded file |
 | `S` / **IMPORT SELECTION** | Import only the zero-snapped preview selection |
 | `Escape` in Preview | Return to the preserved file-browser tab |

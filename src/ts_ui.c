@@ -833,7 +833,7 @@ static void browser_render(TsFramebuffer *fb, const TsBrowser *browser,
     char footer[40];
     const char *directory = browser->directory;
     size_t directory_length = strlen(directory);
-    rect(fb, 0, 32, TS_UI_WIDTH, 352, RGB(12, 12, 12));
+    rect(fb, 0, 32, TS_UI_WIDTH, TS_UI_HEIGHT - 48, RGB(12, 12, 12));
     frame(fb, 20, 34, 600, 342, RGB(36, 33, 37), PAL_MOUSE);
     rect(fb, 22, 36, 596, 28, RGB(12, 12, 12));
     if (browser->mode == TS_BROWSER_LOAD_WAV) {
@@ -955,19 +955,51 @@ size_t ts_ui_import_frame_from_x(size_t frames, int x)
     return (size_t)(x - TS_IMPORT_WAVE_X) * frames / TS_IMPORT_WAVE_W;
 }
 
+size_t ts_ui_import_frame_from_view_x(const TsUiState *ui, size_t frames,
+                                      int x)
+{
+    size_t first;
+    size_t last;
+    size_t span;
+    if (ui == NULL || frames == 0u) return 0u;
+    first = ui->import_preview_view_first;
+    last = ui->import_preview_view_last;
+    if (last <= first || last > frames) {
+        first = 0u;
+        last = frames;
+    }
+    span = last - first;
+    if (x <= TS_IMPORT_WAVE_X) return first;
+    if (x >= TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W) return last - 1u;
+    return first + (size_t)(x - TS_IMPORT_WAVE_X) * span / TS_IMPORT_WAVE_W;
+}
+
 static void import_wave_render(TsFramebuffer *fb, const TsUiState *ui,
                                const TsSample *sample)
 {
+    size_t view_first = ui->import_preview_view_first;
+    size_t view_last = ui->import_preview_view_last;
+    size_t view_span;
+    if (sample != NULL && sample->frames > 0u &&
+        (view_last <= view_first || view_last > sample->frames)) {
+        view_first = 0u;
+        view_last = sample->frames;
+    }
+    view_span = view_last > view_first ? view_last - view_first : 0u;
     rect(fb, TS_IMPORT_WAVE_X, TS_IMPORT_WAVE_Y,
          TS_IMPORT_WAVE_W, TS_IMPORT_WAVE_H, RGB(7, 7, 8));
     if (sample != NULL && sample->frames > 0u &&
-        ui->import_preview_has_selection) {
+        view_span > 0u && ui->import_preview_has_selection &&
+        ui->import_preview_selection_last > view_first &&
+        ui->import_preview_selection_first < view_last) {
+        size_t shown_first = ui->import_preview_selection_first < view_first ?
+                             view_first : ui->import_preview_selection_first;
+        size_t shown_last = ui->import_preview_selection_last > view_last ?
+                            view_last : ui->import_preview_selection_last;
         int first_x = TS_IMPORT_WAVE_X +
-            (int)(ui->import_preview_selection_first * TS_IMPORT_WAVE_W /
-                  sample->frames);
+            (int)((shown_first - view_first) * TS_IMPORT_WAVE_W / view_span);
         int last_x = TS_IMPORT_WAVE_X +
-            (int)(ui->import_preview_selection_last * TS_IMPORT_WAVE_W /
-                  sample->frames);
+            (int)((shown_last - view_first) * TS_IMPORT_WAVE_W / view_span);
         if (last_x <= first_x) last_x = first_x + 1;
         if (last_x > TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W)
             last_x = TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W;
@@ -1005,22 +1037,29 @@ static void import_wave_render(TsFramebuffer *fb, const TsUiState *ui,
             }
         }
     }
-    if (ui->import_preview_has_selection) {
+    if (ui->import_preview_has_selection && view_span > 0u &&
+        ui->import_preview_selection_last > view_first &&
+        ui->import_preview_selection_first < view_last) {
+        size_t shown_first = ui->import_preview_selection_first < view_first ?
+                             view_first : ui->import_preview_selection_first;
+        size_t shown_last = ui->import_preview_selection_last > view_last ?
+                            view_last : ui->import_preview_selection_last;
         int first_x = TS_IMPORT_WAVE_X +
-            (int)(ui->import_preview_selection_first * TS_IMPORT_WAVE_W /
-                  sample->frames);
+            (int)((shown_first - view_first) *
+                  TS_IMPORT_WAVE_W / view_span);
         int last_x = TS_IMPORT_WAVE_X +
-            (int)(ui->import_preview_selection_last * TS_IMPORT_WAVE_W /
-                  sample->frames);
+            (int)((shown_last - view_first) *
+                  TS_IMPORT_WAVE_W / view_span);
         if (last_x >= TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W)
             last_x = TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W - 1;
         rect(fb, first_x, TS_IMPORT_WAVE_Y, 1, TS_IMPORT_WAVE_H, PAL_EFFECT);
         rect(fb, last_x, TS_IMPORT_WAVE_Y, 1, TS_IMPORT_WAVE_H, PAL_EFFECT);
     }
-    if (ui->import_preview_playhead < sample->frames) {
+    if (view_span > 0u && ui->import_preview_playhead >= view_first &&
+        ui->import_preview_playhead < view_last) {
         int playhead_x = TS_IMPORT_WAVE_X +
-            (int)(ui->import_preview_playhead * TS_IMPORT_WAVE_W /
-                  sample->frames);
+            (int)((ui->import_preview_playhead - view_first) *
+                  TS_IMPORT_WAVE_W / view_span);
         if (playhead_x >= TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W)
             playhead_x = TS_IMPORT_WAVE_X + TS_IMPORT_WAVE_W - 1;
         rect(fb, playhead_x, TS_IMPORT_WAVE_Y, 1, TS_IMPORT_WAVE_H, PAL_VOLUME);
@@ -1036,7 +1075,7 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
     const TsSample *sample = ui->import_preview_sample;
     double seconds = sample != NULL && sample->sample_rate > 0u ?
                      (double)sample->frames / sample->sample_rate : 0.0;
-    rect(fb, 0, 32, TS_UI_WIDTH, 352, RGB(12, 12, 12));
+    rect(fb, 0, 32, TS_UI_WIDTH, TS_UI_HEIGHT - 48, RGB(12, 12, 12));
     frame(fb, 20, 34, 600, 342, RGB(36, 33, 37), PAL_MOUSE);
     rect(fb, 22, 36, 596, 28, RGB(12, 12, 12));
     button(fb, 34, 39, 108, "FILE BROWSER", 0);
@@ -1098,15 +1137,21 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
         snprintf(message, sizeof(message), "%.96s", ui->import_preview_message);
         text(fb, 36, 260, message, PAL_EFFECT, 1);
     }
-    button(fb, 36, 286, 116,
+    button(fb, 36, 286, 100,
            ui->import_preview_active ? "STOP PREVIEW" : "PLAY PREVIEW",
            ui->import_preview_active);
-    button(fb, 158, 286, 116, "IMPORT ALL", 1);
-    button(fb, 280, 286, 150, "IMPORT SELECTION",
+    button(fb, 142, 286, 70,
+           ui->import_preview_loop ? "LOOP ON" : "LOOP OFF",
+           ui->import_preview_loop);
+    button(fb, 218, 286, 96, "IMPORT ALL", 1);
+    button(fb, 320, 286, 148, "IMPORT SELECTION",
            ui->import_preview_has_selection);
-    button(fb, 436, 286, 168, "BACK TO FILES", 0);
-    text(fb, 76, 330,
-         "SPACE PLAY/STOP   ENTER ALL   S SELECTION   ESC BACK",
+    button(fb, 474, 286, 130, "BACK TO FILES", 0);
+    text(fb, 65, 330,
+         "WHEEL ZOOM  SHIFT+WHEEL PAN  0 FULL  SPACE PLAY/STOP",
+         RGB(190, 185, 190), 1);
+    text(fb, 161, 344,
+         "ENTER ALL  S SELECTION  L LOOP  ESC BACK",
          RGB(190, 185, 190), 1);
 }
 
@@ -1869,11 +1914,12 @@ TsUiImportAction ts_ui_import_action_from_point(int x, int y)
         if (x >= 430 && x < 454) return TS_UI_IMPORT_ACTION_OFFSET_NEXT;
     }
     if (y >= 286 && y < 309) {
-        if (x >= 36 && x < 152) return TS_UI_IMPORT_ACTION_AUDITION;
-        if (x >= 158 && x < 274) return TS_UI_IMPORT_ACTION_ACCEPT;
-        if (x >= 280 && x < 430)
+        if (x >= 36 && x < 136) return TS_UI_IMPORT_ACTION_AUDITION;
+        if (x >= 142 && x < 212) return TS_UI_IMPORT_ACTION_LOOP;
+        if (x >= 218 && x < 314) return TS_UI_IMPORT_ACTION_ACCEPT;
+        if (x >= 320 && x < 468)
             return TS_UI_IMPORT_ACTION_ACCEPT_SELECTION;
-        if (x >= 436 && x < 604) return TS_UI_IMPORT_ACTION_CANCEL;
+        if (x >= 474 && x < 604) return TS_UI_IMPORT_ACTION_CANCEL;
     }
     return TS_UI_IMPORT_ACTION_NONE;
 }
@@ -2601,6 +2647,68 @@ size_t ts_ui_parent_frame_from_x(const TsUiState *ui, size_t frames, int x, int 
     if (x < 0) x = 0;
     if (x >= width - 1) return last;
     return first + (size_t)x * (last - first) / (size_t)width;
+}
+
+void ts_ui_reset_import_view(TsUiState *ui, size_t frames)
+{
+    if (ui == NULL) return;
+    ui->import_preview_view_first = 0u;
+    ui->import_preview_view_last = frames;
+}
+
+static void valid_import_view(const TsUiState *ui, size_t frames,
+                              size_t *first, size_t *last)
+{
+    *first = ui != NULL ? ui->import_preview_view_first : 0u;
+    *last = ui != NULL ? ui->import_preview_view_last : frames;
+    if (*last <= *first || *last > frames) {
+        *first = 0u;
+        *last = frames;
+    }
+}
+
+int ts_ui_zoom_import_view(TsUiState *ui, size_t frames, size_t anchor,
+                           float anchor_ratio, float scale)
+{
+    size_t first, last, span, new_span, new_first;
+    if (ui == NULL || frames < 2u || scale <= 0.0f) return 0;
+    valid_import_view(ui, frames, &first, &last);
+    span = last - first;
+    new_span = (size_t)lrintf((float)span * scale);
+    if (new_span < 16u) new_span = frames < 16u ? frames : 16u;
+    if (new_span > frames) new_span = frames;
+    if (new_span == span) return 0;
+    if (anchor > frames) anchor = frames;
+    if (anchor_ratio < 0.0f) anchor_ratio = 0.0f;
+    if (anchor_ratio > 1.0f) anchor_ratio = 1.0f;
+    {
+        size_t before = (size_t)lrintf((float)new_span * anchor_ratio);
+        new_first = anchor > before ? anchor - before : 0u;
+    }
+    if (new_first + new_span > frames) new_first = frames - new_span;
+    ui->import_preview_view_first = new_first;
+    ui->import_preview_view_last = new_first + new_span;
+    return 1;
+}
+
+int ts_ui_pan_import_view(TsUiState *ui, size_t frames, ptrdiff_t amount)
+{
+    size_t first, last, span, new_first;
+    if (ui == NULL || frames < 2u || amount == 0) return 0;
+    valid_import_view(ui, frames, &first, &last);
+    span = last - first;
+    if (span >= frames) return 0;
+    if (amount < 0) {
+        size_t magnitude = (size_t)(-amount);
+        new_first = magnitude > first ? 0u : first - magnitude;
+    } else {
+        new_first = first + (size_t)amount;
+        if (new_first + span > frames) new_first = frames - span;
+    }
+    if (new_first == first) return 0;
+    ui->import_preview_view_first = new_first;
+    ui->import_preview_view_last = new_first + span;
+    return 1;
 }
 
 static int frame_x(size_t frame_index, size_t view_first, size_t view_last)

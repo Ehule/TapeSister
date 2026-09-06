@@ -122,12 +122,20 @@ channel count, duration, and frame count. Recorder-oriented extensible, RF64, an
 multichannel WAV files use the general decoder when the sampler-metadata reader cannot
 open them; multichannel material is downmixed to stereo.
 
-Click the waveform to position its playhead, or drag across it to select part of the
-file. Both selection edges snap to nearby zero crossings to avoid a discontinuity at
-the imported boundaries. `Space` or **PLAY PREVIEW** starts at the playhead and stays
-inside the selection when one exists. `Enter` or **IMPORT ALL** commits the complete
-file; `S` or **IMPORT SELECTION** commits only the selected range. A contained sampler
-loop is retained and translated into the range; a loop cut by the selection is omitted.
+The preview behaves like TapeSister's canvas. Click the waveform to position its
+playhead, or drag across it to select part of the file and return the playhead to the
+selection start. Both selection edges snap to nearby zero crossings to avoid a
+discontinuity at the imported boundaries. Use the wheel for pointer-anchored zoom,
+Shift+wheel or `Left`/`Right` to pan, and `0` to restore the complete-file view.
+Middle-click clears the selection and returns the playhead to the beginning.
+
+`Space` or **PLAY PREVIEW** starts at the playhead and stays inside the selection when
+one exists. After playback reaches the end, the playhead returns to the beginning of
+that range so Space immediately replays it. `L` or **LOOP** continuously repeats the
+selection—or the complete file when there is no selection—with a short boundary
+crossfade. `Enter` or **IMPORT ALL** commits the complete file; `S` or **IMPORT
+SELECTION** commits only the selected range. A contained sampler loop is retained and
+translated into the range; a loop cut by the selection is omitted.
 
 Decoding happens in the background, so the window continues updating during a long
 MP3. `Escape` or **CANCEL** stops the decode and returns to the browser. When no preview

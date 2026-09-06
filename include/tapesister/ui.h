@@ -179,6 +179,7 @@ typedef enum {
     TS_UI_IMPORT_ACTION_OFFSET_PREVIOUS,
     TS_UI_IMPORT_ACTION_OFFSET_NEXT,
     TS_UI_IMPORT_ACTION_AUDITION,
+    TS_UI_IMPORT_ACTION_LOOP,
     TS_UI_IMPORT_ACTION_ACCEPT,
     TS_UI_IMPORT_ACTION_ACCEPT_SELECTION,
     TS_UI_IMPORT_ACTION_CANCEL
@@ -408,6 +409,9 @@ typedef struct {
     size_t import_preview_selection_first;
     size_t import_preview_selection_last;
     size_t import_preview_playhead;
+    size_t import_preview_view_first;
+    size_t import_preview_view_last;
+    int import_preview_loop;
     int import_preview_waveform_ready;
     float import_preview_minimum[2][TS_IMPORT_PREVIEW_COLUMNS];
     float import_preview_maximum[2][TS_IMPORT_PREVIEW_COLUMNS];
@@ -697,5 +701,11 @@ int ts_ui_zoom_parent_view(TsUiState *ui, size_t frames, size_t anchor,
                            float anchor_ratio, float scale);
 int ts_ui_pan_parent_view(TsUiState *ui, size_t frames, ptrdiff_t amount);
 size_t ts_ui_parent_frame_from_x(const TsUiState *ui, size_t frames, int x, int width);
+void ts_ui_reset_import_view(TsUiState *ui, size_t frames);
+int ts_ui_zoom_import_view(TsUiState *ui, size_t frames, size_t anchor,
+                           float anchor_ratio, float scale);
+int ts_ui_pan_import_view(TsUiState *ui, size_t frames, ptrdiff_t amount);
+size_t ts_ui_import_frame_from_view_x(const TsUiState *ui, size_t frames,
+                                      int x);
 
 #endif
