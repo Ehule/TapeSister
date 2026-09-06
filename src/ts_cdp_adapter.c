@@ -1,6 +1,7 @@
 #define _XOPEN_SOURCE 700
 
 #include "tapesister/cdp_adapter.h"
+#include "tapesister/cdp_portal.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -1062,23 +1063,22 @@ static int execute_grev_cycle_fallback(const TsCdpRuntime *runtime,
                            options, result, error, error_size);
 }
 
-int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
+static int run_prepared_commands(const TsCdpRuntime *runtime,
                       const TsCdpRecipe *recipe,
                       const TsCdpRecipeValues *values,
                       const TsSample *input,
                       const TsCdpRunOptions *options,
                       TsCdpRunResult *result,
-                      char *error, size_t error_size)
+                      char *error, size_t error_size,
+                      const TsCdpCommand *commands, size_t command_count,
+                      size_t output_limit)
 {
-    TsCdpCommand commands[TS_CDP_MAX_STAGES];
     TsCdpWavInfo wav;
-    size_t command_count = 0u;
     char input_path[TS_CDP_PATH_MAX];
     char output_path[TS_CDP_PATH_MAX];
     char stage_output[TS_CDP_PATH_MAX];
     char executable[TS_CDP_PATH_MAX];
     char cleanup_error[160];
-    TsCdpRecipeValues safe_values;
     float analysis_peak;
     int ok = 0;
     if (result == NULL) { set_error(error, error_size, "CDP result destination is missing"); return 0; }
@@ -1088,14 +1088,8 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
         return 0;
     }
     if (input == NULL || input->data == NULL || input->frames == 0u || values == NULL ||
-        !ts_cdp_recipe_validate(recipe, error, error_size) ||
-        !ts_cdp_recipe_input_valid(recipe, input->frames, input->sample_rate,
-                                   error, error_size) ||
-        !prepare_content_safe_values(recipe, values, input, &safe_values,
-                                     error, error_size) ||
-        !ts_cdp_recipe_build_commands(recipe, &safe_values, input->frames,
-                                      input->sample_rate, commands,
-                                      &command_count, error, error_size)) {
+        commands == NULL || command_count == 0u || command_count > TS_CDP_MAX_STAGES) {
+        set_error(error, error_size, "Invalid prepared CDP job");
         result->status = TS_CDP_RUN_FAILED;
         return 0;
     }
@@ -1107,7 +1101,7 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
     if (!path_join(input_path, sizeof(input_path), result->job_directory, "input.wav") ||
         !path_join(output_path, sizeof(output_path), result->job_directory, "output.wav") ||
         !ts_sample_save_wav16(input, input_path, error, error_size) ||
-        !create_stutter_data(recipe, &safe_values, input, result->job_directory,
+        !create_stutter_data(recipe, values, input, result->job_directory,
                              error, error_size)) goto finished;
     for (unsigned stage = 0; stage < command_count; ++stage) {
         if (!runtime_executable(runtime, commands[stage].executable,
@@ -1121,7 +1115,7 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
         if (!execute_command(executable, &commands[stage], result->job_directory,
                              stage, options, result, error, error_size)) {
             if (!grev_can_use_cycle_fallback(recipe, &commands[stage], result) ||
-                !execute_grev_cycle_fallback(runtime, &safe_values,
+                !execute_grev_cycle_fallback(runtime, values,
                                              result->job_directory, output_path,
                                              options, result,
                                              error, error_size)) goto finished;
@@ -1169,6 +1163,10 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime,
     }
     if (!probe_wav(output_path, recipe->expected_output_channels,
                    &wav, error, error_size)) goto finished;
+    if(wav.frames>output_limit) {
+        set_error(error,error_size,"CDP output exceeds this workbench's memory limit");
+        goto finished;
+    }
     if (wav.sample_rate != input->sample_rate) {
         set_error(error, error_size, "CDP output sample rate changed unexpectedly");
         goto finished;
@@ -1203,6 +1201,53 @@ finished:
             set_error(error, error_size, cleanup_error);
     } else result->job_directory[0] = '\0';
     return ok;
+}
+
+int ts_cdp_run_recipe(const TsCdpRuntime *runtime, const TsCdpRecipe *recipe,
+                      const TsCdpRecipeValues *values, const TsSample *input,
+                      const TsCdpRunOptions *options, TsCdpRunResult *result,
+                      char *error, size_t error_size)
+{
+    TsCdpCommand commands[TS_CDP_MAX_STAGES];
+    TsCdpRecipeValues safe;
+    size_t count=0;
+    if (!result) { set_error(error,error_size,"CDP result destination is missing"); return 0; }
+    ts_cdp_run_result_free(result);
+    if (!ts_cdp_runtime_recipe_available(runtime,recipe,error,error_size) ||
+        !input || !input->data || !input->frames || !values ||
+        !ts_cdp_recipe_validate(recipe,error,error_size) ||
+        !ts_cdp_recipe_input_valid(recipe,input->frames,input->sample_rate,error,error_size) ||
+        !prepare_content_safe_values(recipe,values,input,&safe,error,error_size) ||
+        !ts_cdp_recipe_build_commands(recipe,&safe,input->frames,input->sample_rate,
+                                      commands,&count,error,error_size)) {
+        result->status=TS_CDP_RUN_FAILED;
+        return 0;
+    }
+    return run_prepared_commands(runtime,recipe,&safe,input,options,result,
+                                  error,error_size,commands,count,TS_CANVAS_MAX_FRAMES);
+}
+
+int ts_cdp_run_portal(const TsCdpRuntime *runtime, const TsPortalRecipe *recipe,
+                      const TsSample *input, const TsCdpRunOptions *options,
+                      TsCdpRunResult *result, char *error, size_t error_size)
+{
+    TsCdpCommand command;
+    TsCdpRecipe policy={0};
+    TsCdpRecipeValues values={0};
+    if(!result) {set_error(error,error_size,"CDP result destination is missing");return 0;}
+    ts_cdp_run_result_free(result);
+    if(!ts_portal_build_command(recipe,input,&command,error,error_size)) {
+        result->status=TS_CDP_RUN_FAILED; return 0;
+    }
+    /* Only registry-built arguments enter the runner. User recipes never
+       provide executable paths, output paths, or arbitrary command strings. */
+    policy.id=recipe->process_id;
+    policy.stages[0]=(TsCdpStageSpec){"distort",TS_CDP_IO_WAV,TS_CDP_IO_WAV};
+    policy.stage_count=1;
+    policy.required_input_channels=1;
+    policy.expected_output_channels=1;
+    return run_prepared_commands(runtime,&policy,&values,input,options,result,
+                                  error,error_size,&command,1,TS_PORTAL_MAX_FRAMES);
 }
 
 const char *ts_cdp_safety_name(TsCdpSafetyStatus safety)

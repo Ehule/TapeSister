@@ -5,6 +5,10 @@
 /tapesister_core_tests
 /tapesister_core_tests_*
 /tapesister_audio_import_tests
+/tapesister_portal_tests
+/tapesister_portal_controller_tests
+/cdp-portal.recipes
+/cdp-portal.recipes.tmp
 /tapesister_render_demo
 /test-roundtrip.wav
 /tapesister-export.wav

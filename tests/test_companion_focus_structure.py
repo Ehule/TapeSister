@@ -24,6 +24,10 @@ assert "KMOD_SHIFT | KMOD_ALT | KMOD_GUI" in MAIN[MAIN.index(chord):
                                                      MAIN.index(request)]
 
 assert "src/tape_companion.c" in CMAKE
-assert "src/main_sdl.c src/tape_companion.c" in MAKEFILE
+# Source ordering is not significant; Live Link sits between these files.
+sdl_sources = next(line for line in MAKEFILE.splitlines()
+                   if line.startswith("SDL_MAIN =")).split("=", 1)[1].split()
+assert "src/main_sdl.c" in sdl_sources
+assert "src/tape_companion.c" in sdl_sources
 
 print("Companion focus SDL integration guards passed")

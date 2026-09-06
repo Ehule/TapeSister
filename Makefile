@@ -6,6 +6,7 @@ MINIAUDIO_DIR ?= .deps/miniaudio
 MINIAUDIO_COMMIT = 350784a9467a79d0fa65802132668e5afbcf3777
 CPPFLAGS ?= -Iinclude -Ithird_party -I$(MINIAUDIO_DIR)
 CORE_SOURCES = src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c src/ts_audio_lifecycle.c src/ts_realtime_diagnostics.c src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c src/ts_sister_limiter.c src/ts_sister_machine.c src/ts_sister_wave_snapshot.c src/ts_sister_runtime.c src/ts_sister_ui.c src/ts_sister_preset.c src/ts_sister_project_state.c src/ts_capture.c src/ts_capture_archive.c src/ts_performance_recorder.c src/ts_input_monitor.c src/ts_input_ownership.c src/ts_sample_pages.c src/ts_browser.c src/ts_config.c src/ts_audio_config.c src/ts_recipe.c src/ts_dsp_recipe.c src/ts_palette.c src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c src/ts_dsp_transform.c src/ts_exchange.c src/ts_render_damage.c src/ts_waveform_cache.c src/ts_waveform_display.c src/ts_ui.c src/ts_midi_map.c
+CORE_SOURCES += src/ts_cdp_portal.c
 DECODER_OBJ = .deps/ts_audio_import.o
 CORE = $(CORE_SOURCES) $(DECODER_OBJ)
 SDL_MAIN = src/main_sdl.c src/tape_link.c src/tape_companion.c
@@ -51,7 +52,7 @@ all: bundled-release
 bundled-release:
 	+@TAPESISTER_BUILD_JOBS="$${TAPESISTER_BUILD_JOBS:-2}" bash ./build.sh
 
-tapesister: $(CORE) $(SDL_MAIN) $(DIAG) $(MIDI_C) $(MIDI_CPP_OBJS)
+tapesister: $(CORE) $(SDL_MAIN) $(DIAG) $(MIDI_C) $(MIDI_CPP_OBJS) src/main_sdl_portal.inc src/ts_cdp_portal_ui.inc include/tapesister/cdp_portal.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(MIDI_CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) $(SDL_MAIN) $(DIAG) $(MIDI_C) $(MIDI_CPP_OBJS) -o $@ $(shell sdl2-config --libs) -lm $(TAPESISTER_LDFLAGS) $(MIDI_LDFLAGS)
 
 third_party/rtmidi/%.o: third_party/rtmidi/%.cpp
@@ -86,6 +87,14 @@ screenshot-sister-spirit: tapesister_sister_spirit_demo tapesister_render_demo
 	./tapesister_sister_spirit_demo fallout-presets artifacts/sister-fallout-preset-manager.ppm
 
 test: test_sister_resize
+test: tapesister_portal_tests
+
+tapesister_portal_tests: $(CORE) tests/test_cdp_portal.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
+# Optional real-CDP/SDL lifecycle harness; use TS_TEST_CDP_BIN to select runtime.
+tapesister_portal_controller_tests: $(CORE) tests/test_portal_controller.c src/main_sdl.c src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_portal_controller.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
 test: tapesister_audio_import_tests
 test: test_audio_hardening_structure
 test: test_live_link_structure
@@ -95,6 +104,7 @@ test: test_live_link
 
 test: tapesister_core_tests tapesister_audio_frame_tests test_audio_mixer test_audio_lifecycle test_note_bank_stereo test_performance_stereo test_capture_stereo test_performance_recorder test_external_input_channels test_input_ownership test_realtime_diagnostics test_sister_buffer test_sister_heads test_sister_transport test_sister_modulation test_sister_feedback test_sister_ghost_tone test_sister_stereo test_sister_weave test_sister_effect_routing test_sister_post_fx test_sister_fallout test_sister_limiter test_sister_duck_filter test_sister_snapshot test_sister_routes test_sister_runtime test_sister_source_mask test_sister_performance_sources test_sister_capture test_sister_recursion test_sister_lifecycle test_sister_visibility test_sister_ui_model test_sister_wave_snapshot test_waveform_display_modes test_sister_source_ui test_sister_capture_ui test_sister_palette test_sister_preset test_sister_project_state test_sister_pathological tapesister_sample_channels_tests tapesister_tsr27_tests tapesister_wav_channels_tests tapesister_smear_tests tapesister_tear_tests tapesister_bank_tests tapesister_editor_contract_tests tapesister_drone_tests tapesister_canvas_tests tapesister_capture_tests tapesister_performance_tests tapesister_midi_tests tapesister_external_record_tests tapesister_input_monitor_tests tapesister_capture_archive_tests tapesister_sample_pages_tests tapesister_audio_config_tests tapesister_transform_tests tapesister_chain_stamp_tests tapesister_exchange_tests tapesister_render_damage_tests tapesister_waveform_cache_tests tapesister_render_efficiency_tests
 	./tapesister_core_tests
+	./tapesister_portal_tests
 	./tapesister_audio_frame_tests
 	./test_audio_mixer
 	./test_audio_lifecycle

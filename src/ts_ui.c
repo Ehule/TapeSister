@@ -5,6 +5,7 @@
 #include "tapesister/waveform_cache.h"
 
 #include <math.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1809,6 +1810,7 @@ int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
+    ts_portal_ui_init(&ui->portal);
     ts_raw_import_settings_default(&ui->import_raw_settings);
     for (int i = 0; i < TS_UI_WAVEFORM_COUNT; ++i)
         ui->waveform_revisions[i] = 1u;
@@ -2819,7 +2821,7 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
 int ts_ui_foreground_panel_open(const TsUiState *ui)
 {
     if (ui == NULL) return 0;
-    return ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open || ui->fm_open ||
            ui->transform_open || ui->drone_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
@@ -2829,9 +2831,12 @@ int ts_ui_foreground_panel_open(const TsUiState *ui)
            ui->export_choice_open;
 }
 
+#include "ts_cdp_portal_ui.inc"
+
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
     render_palette = &ui->palette;
+    if(ui->portal.open) { portal_render(fb,ui); return; }
     const TsTuning *display_tuning = &ui->tune_reference;
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
     int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
@@ -3527,10 +3532,12 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                  active || staged ? PAL_BLOCK_TEXT : RGB(220, 216, 207), 1);
         }
     } else if (ui->show_recipes) {
-        mini_button(fb, 10, 312, 48, "CDP 1", ui->cdp_page == 0);
-        mini_button(fb, 62, 312, 48, "CDP 2", ui->cdp_page == 1);
-        text(fb, 120, 318,
-             "LEFT APPLY  MIDDLE EDIT     1 TILES  2 KEYS  3 PAGE  4 DSP",
+        mini_button(fb, 10, 312, 48, ui->cdp_user_pins ? "PIN 1" : "CDP 1", ui->cdp_page == 0);
+        mini_button(fb, 62, 312, 48, ui->cdp_user_pins ? "PIN 2" : "CDP 2", ui->cdp_page == 1);
+        mini_button(fb, 114, 312, 64, "PORTAL", 0);
+        mini_button(fb, 182, 312, 48, "PINS", ui->cdp_user_pins);
+        text(fb, 242, 318,
+             "LEFT APPLY  MIDDLE EDIT  CTRL+SHIFT+P PORTAL",
              RGB(184, 180, 184), 1);
         for (int i = 0; i < TS_RECIPE_SLOT_COUNT; ++i) {
             const TsCdpRecipe *recipe =
@@ -3542,6 +3549,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             char label[24];
             int x = 10 + (i % 8) * 77;
             int y = 330 + (i / 8) * 25;
+            if(ui->cdp_user_pins) {
+                int pin=ui->cdp_page*16+i;
+                const TsPortalRecipe *r=&ui->portal.library.pins[pin];
+                snprintf(label,sizeof(label),"%02d %.6s",pin+1,r->process_id[0]?r->name:"EMPTY");
+                button(fb,x,y,72,label,0);
+                if(r->process_id[0])rect(fb,x+2,y+2,3,19,PAL_EFFECT);
+                continue;
+            }
             if (recipe != NULL)
                 snprintf(label, sizeof(label), "%02d %.5s", i + 1,
                          recipe->display_name);

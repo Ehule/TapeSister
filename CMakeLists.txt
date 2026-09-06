@@ -32,7 +32,7 @@ add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts
              src/ts_recipe.c src/ts_dsp_recipe.c
              src/ts_palette.c
              src/ts_render_damage.c src/ts_waveform_cache.c
-             src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c
+             src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_cdp_portal.c src/ts_transform.c
              src/ts_dsp_transform.c src/ts_exchange.c src/ts_waveform_display.c
              src/ts_audio_import.c src/ts_ui.c)
 target_include_directories(tapesister_core PUBLIC include PRIVATE ${miniaudio_SOURCE_DIR})
@@ -369,6 +369,22 @@ add_executable(tapesister_audio_config_tests tests/test_audio_config.c)
 target_link_libraries(tapesister_audio_config_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_audio_config_tests COMMAND tapesister_audio_config_tests)
 
+add_executable(tapesister_portal_tests tests/test_cdp_portal.c)
+target_link_libraries(tapesister_portal_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_portal_tests COMMAND tapesister_portal_tests)
+if(TAPESISTER_BUILD_SDL)
+  add_executable(tapesister_portal_controller_tests tests/test_portal_controller.c
+                 src/tape_link.c src/tape_companion.c src/ts_startup_diag.c
+                 src/ts_midi_input.c)
+  target_include_directories(tapesister_portal_controller_tests PRIVATE third_party)
+  target_link_libraries(tapesister_portal_controller_tests PRIVATE tapesister_core SDL2::SDL2)
+  if(WIN32)
+    target_compile_definitions(tapesister_portal_controller_tests PRIVATE SDL_MAIN_HANDLED)
+  elseif(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_portal_controller_tests PRIVATE rt)
+  endif()
+  add_test(NAME tapesister_portal_controller_tests COMMAND tapesister_portal_controller_tests)
+endif()
 add_executable(tapesister_transform_tests tests/test_transform.c)
 target_link_libraries(tapesister_transform_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_transform_tests COMMAND tapesister_transform_tests)

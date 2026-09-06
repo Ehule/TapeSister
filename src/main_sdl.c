@@ -6222,7 +6222,7 @@ static int ui_blocking_dialog_open_except_fm(const TsUiState *ui)
 {
     return ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
-           ui->file_busy || ui->transform_open || ui->drone_open ||
+           ui->portal.open || ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->import_preview_open || ui->load_selection_choice_open ||
            ui->palette_open || ui->config_open ||
            ui->renaming_bank_slot >= 0 || ui->renaming_recipe_slot >= 0 ||
@@ -11039,6 +11039,8 @@ static void keep_record_bank(SDL_AudioDeviceID output_device,
                  copied, first_page, last_page);
 }
 
+#include "main_sdl_portal.inc"
+
 int main(int argc, char **argv)
 {
     SDL_Window *window = NULL;
@@ -11064,6 +11066,7 @@ int main(int argc, char **argv)
     TsExchangeOffer exchange_offer;
     TransformController transform;
     ImportController import_controller;
+    PortalController portal;
     PendingFileOperation pending_file = {0};
     size_t clipboard_origin_first = 0;
     size_t clipboard_source_frames = 0;
@@ -11125,6 +11128,7 @@ int main(int argc, char **argv)
     transform_controller_init(&transform);
     import_controller_init(&import_controller);
     ts_ui_init(&ui);
+    portal_init(&portal,&ui.portal);
     ui.sample_page = 0;
     ui.sample_page_count = 1;
     {
@@ -11991,6 +11995,8 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            if (portal_event(&event,window,device,&audio,&ui,&instrument,
+                             &portal,&sister_window,obtained.freq,&transform)) continue;
             if (event.type == SDL_MOUSEBUTTONDOWN &&
                 event.button.button == SDL_BUTTON_LEFT &&
                 event.button.windowID == SDL_GetWindowID(window) &&
@@ -15439,6 +15445,7 @@ int main(int argc, char **argv)
                      sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
         }
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
+        portal_poll(device,&audio,&ui,&instrument,&portal);
         if (record_bank_active)
             sync_external_capture_ui(device, input_device, &external_input, &ui);
         else
@@ -15699,6 +15706,7 @@ int main(int argc, char **argv)
     free(audio.live_link_buffer);
     audio.live_link_buffer = NULL;
     if (device) SDL_CloseAudioDevice(device);
+    portal_free(&portal);
     ts_performance_free(&audio.performance);
     ts_performance_free(&audio.tile_launchers);
     ts_sister_runtime_free(&audio.sister);

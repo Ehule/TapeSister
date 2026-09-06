@@ -17,6 +17,8 @@ Its basic creative loop is simple:
   recording, routing, saving, and performance techniques.
 - [Quick Reference](docs/QUICK_REFERENCE.md) — keys, mouse gestures, control ranges,
   capture modes, signal placement, and file types.
+- [CDP Portal](docs/CDP_PORTAL.md) — explore processes with source/result waveforms,
+  save reusable recipes, and build a personal process-pin bank.
 - [Design Charter](DESIGN_CHARTER.md) — the principles behind the instrument.
 - [Technical documentation](#technical-documentation) — architecture, exchange,
   packaging, and certification notes.
