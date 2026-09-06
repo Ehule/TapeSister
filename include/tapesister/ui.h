@@ -14,6 +14,7 @@
 #include "tapesister/transform.h"
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/exchange.h"
+#include "tapesister/cdp_portal.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_IMPORT_PREVIEW_COLUMNS = 568 };
@@ -339,6 +340,8 @@ typedef struct {
     int show_recipes;
     int show_ingredients;
     int cdp_page;
+    int cdp_user_pins;
+    TsPortalUi portal;
     int dsp_page;
     TsCdpCatalogView cdp_catalog;
     TsCdpRecipeValues cdp_presets[TS_CDP_CATALOG_CAPACITY];
