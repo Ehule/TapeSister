@@ -15,6 +15,8 @@
 #include "tapesister/render_damage.h"
 #include "tapesister/ui.h"
 #include "tapesister/version.h"
+#include "tape_link.h"
+#include "tape_companion.h"
 
 #include <SDL2/SDL.h>
 #include "main_sdl_audio_preamble.inc"
@@ -782,6 +784,10 @@ typedef struct {
     uint64_t realtime_counter_frequency;
     TsRealtimeDiagnostics realtime_diagnostics;
     float fm_output_gain;
+    TapeLinkReader live_link;
+    float *live_link_buffer;
+    size_t live_link_buffer_frames;
+    int live_link_available;
     TsStereoFrame last_output;
     TsStereoFrame topology_crossfade_from;
     uint32_t topology_crossfade_remaining;
@@ -939,8 +945,17 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     float *out = (float *)stream;
     int values = bytes / (int)sizeof(float);
     float synth_block_peak = 0.0f;
+    size_t live_link_frames = values > 0 ? (size_t)values / 2u : 0u;
+    int live_link_block_valid = audio->live_link_buffer != NULL &&
+                                live_link_frames <=
+                                    audio->live_link_buffer_frames;
     Uint64 diagnostic_started = audio->realtime_diagnostics_enabled ?
         SDL_GetPerformanceCounter() : 0u;
+    if (live_link_block_valid)
+        (void)tapeLinkReaderRead(&audio->live_link,
+                                 audio->live_link_buffer,
+                                 live_link_frames,
+                                 (uint32_t)audio->output_rate);
     ts_sister_runtime_begin_audio_block(&audio->sister);
     for (int i = 0; i < values; i += 2) {
         TsAudioBuses buses;
@@ -991,17 +1006,25 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             ts_input_monitor_read_frame(audio->input_monitor,
                                         (uint32_t)audio->output_rate) :
             (TsStereoFrame){0.0f, 0.0f};
+        if (live_link_block_valid) {
+            buses.tapehead.l = audio->live_link_buffer[i];
+            buses.tapehead.r = i + 1 < values ?
+                audio->live_link_buffer[i + 1] : buses.tapehead.l;
+        }
         sister_sources.fm = buses.fm;
         sister_sources.tiles = audio->tile_launcher_mix;
         sister_sources.external = buses.external;
         sister_sources.preview = buses.legacy_preview;
+        sister_sources.tapehead = buses.tapehead;
         sister_frame = ts_sister_runtime_process_frame(&audio->sister,
                                                         &sister_sources);
         buses.sister = sister_frame.monitor_return;
         buses.program.l = buses.legacy_preview.l +
-                          buses.tile_performance.l + buses.fm.l;
+                          buses.tile_performance.l + buses.fm.l +
+                          buses.tapehead.l;
         buses.program.r = buses.legacy_preview.r +
-                          buses.tile_performance.r + buses.fm.r;
+                          buses.tile_performance.r + buses.fm.r +
+                          buses.tapehead.r;
         buses.program = ts_stereo_frame_sanitize(buses.program);
         if (buses.program.l > 1.0f) buses.program.l = 1.0f;
         if (buses.program.l < -1.0f) buses.program.l = -1.0f;
@@ -1031,6 +1054,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             buses.legacy_preview = (TsStereoFrame){0.0f, 0.0f};
             buses.tile_performance = (TsStereoFrame){0.0f, 0.0f};
             buses.fm = (TsStereoFrame){0.0f, 0.0f};
+            buses.tapehead = (TsStereoFrame){0.0f, 0.0f};
             buses.monitor = (TsStereoFrame){0.0f, 0.0f};
         }
         /* Sister is a closed insert, not an extra parallel audition bus. When
@@ -1126,6 +1150,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             configuration |= TS_RT_CONFIG_EXT;
         if ((sources & TS_SISTER_SOURCE_PREVIEW) != 0u)
             configuration |= TS_RT_CONFIG_PREVIEW;
+        if ((sources & TS_SISTER_SOURCE_TAPEHEAD) != 0u)
+            configuration |= TS_RT_CONFIG_TAPEHEAD;
         if (p->head1_level > 0.0f) configuration |= TS_RT_CONFIG_H1;
         if (p->head2_level > 0.0f) configuration |= TS_RT_CONFIG_H2;
         if (p->head3_level > 0.0f) configuration |= TS_RT_CONFIG_H3;
@@ -1153,6 +1179,34 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             values > 0 ? (uint32_t)((values + 1) / 2) : 0u,
             configuration);
     }
+}
+
+static int sync_live_link(SDL_AudioDeviceID device, AudioState *audio,
+                          char *status_text, size_t status_size)
+{
+    TapeLinkStatus status = {0};
+    char error[160];
+    int available;
+    if (audio == NULL) return 0;
+    if (device) SDL_LockAudioDevice(device);
+    tapeLinkReaderStatus(&audio->live_link, &status);
+    if (audio->live_link.shared == NULL || !status.connected) {
+        tapeLinkReaderClose(&audio->live_link);
+        (void)tapeLinkReaderOpen(&audio->live_link, error, sizeof(error));
+        tapeLinkReaderStatus(&audio->live_link, &status);
+    }
+    available = status.connected != 0;
+    if (available != audio->live_link_available) {
+        audio->live_link_available = available;
+        ts_sister_runtime_live_link_available(&audio->sister, available);
+        if (status_text != NULL && status_size > 0u)
+            snprintf(status_text, status_size, "%s",
+                     available ?
+                     "TAPEHEAD LIVE LINK CONNECTED - INTERNAL STEREO READY" :
+                     "TAPEHEAD LIVE LINK WAITING FOR TAPEHEAD");
+    }
+    if (device) SDL_UnlockAudioDevice(device);
+    return available;
 }
 
 static int audition_plan_ui(const TsInstrument *instrument, const TsUiState *ui,
@@ -7076,6 +7130,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FM_GAIN: parameters->fm_gain = amount * 4.0f; break;
     case TS_SISTER_UI_PARAM_EXT_GAIN: parameters->external_gain = amount * 4.0f; break;
     case TS_SISTER_UI_PARAM_PREVIEW_GAIN: parameters->preview_gain = amount * 4.0f; break;
+    case TS_SISTER_UI_PARAM_TAPEHEAD_GAIN: parameters->tapehead_gain = amount * 4.0f; break;
     case TS_SISTER_UI_PARAM_FX_RETURN_GAIN: parameters->fx_return_gain = amount * 2.0f; break;
     case TS_SISTER_UI_PARAM_MONITOR_DRY: parameters->monitor_dry = amount; break;
     case TS_SISTER_UI_PARAM_MONITOR_WET: parameters->monitor_wet = amount; break;
@@ -7185,6 +7240,7 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_FM_GAIN: value = parameters->fm_gain / 4.0f; break;
     case TS_SISTER_UI_PARAM_EXT_GAIN: value = parameters->external_gain / 4.0f; break;
     case TS_SISTER_UI_PARAM_PREVIEW_GAIN: value = parameters->preview_gain / 4.0f; break;
+    case TS_SISTER_UI_PARAM_TAPEHEAD_GAIN: value = parameters->tapehead_gain / 4.0f; break;
     case TS_SISTER_UI_PARAM_FX_RETURN_GAIN: value = parameters->fx_return_gain / 2.0f; break;
     case TS_SISTER_UI_PARAM_MONITOR_DRY: value = parameters->monitor_dry; break;
     case TS_SISTER_UI_PARAM_MONITOR_WET: value = parameters->monitor_wet; break;
@@ -7415,6 +7471,7 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_FM_GAIN: return "FM MIX";
     case TS_SISTER_UI_PARAM_EXT_GAIN: return "EXT MIX";
     case TS_SISTER_UI_PARAM_PREVIEW_GAIN: return "AUDITION MIX";
+    case TS_SISTER_UI_PARAM_TAPEHEAD_GAIN: return "TAPEHEAD MIX";
     case TS_SISTER_UI_PARAM_FX_RETURN_GAIN: return "FX MIX";
     case TS_SISTER_UI_PARAM_MONITOR_DRY: return "DRY LEVEL";
     case TS_SISTER_UI_PARAM_MONITOR_WET: return "WET LEVEL";
@@ -7691,9 +7748,16 @@ static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
     size_t queue_frames;
     if (audio == NULL || sister == NULL || sample_rate == 0u) return 0;
     if (sister->model.selected_tap != TS_SISTER_TAP_MIX &&
+        sister->model.selected_tap != TS_SISTER_TAP_TAPEHEAD &&
         (!audio->sister.enabled || audio->sister.callback_failed)) {
         snprintf(sister->model.status, sizeof(sister->model.status),
                  "SELECT OUT OR ENABLE SISTER FOR A HEAD FILE");
+        return 0;
+    }
+    if (sister->model.selected_tap == TS_SISTER_TAP_TAPEHEAD &&
+        !audio->live_link_available) {
+        snprintf(sister->model.status, sizeof(sister->model.status),
+                 "TAPEHEAD FILE CAPTURE IS WAITING FOR A LIVE LINK");
         return 0;
     }
     if (atomic_load_explicit(&audio->sister.capture.state,
@@ -7704,6 +7768,8 @@ static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
     }
     if (sister->model.selected_tap == TS_SISTER_TAP_MIX)
         snprintf(prefix, sizeof(prefix), "TAPESISTER-OUT");
+    else if (sister->model.selected_tap == TS_SISTER_TAP_TAPEHEAD)
+        snprintf(prefix, sizeof(prefix), "TAPEHEAD-RAW");
     else
         snprintf(prefix, sizeof(prefix), "SISTER-%s",
                  ts_sister_tap_name(sister->model.selected_tap));
@@ -8265,6 +8331,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
         hit.action != TS_SISTER_UI_ACTION_LIMITER_TOGGLE &&
         hit.action != TS_SISTER_UI_ACTION_MASTER_OUTPUT &&
+        hit.action != TS_SISTER_UI_ACTION_TAPEHEAD_SONG &&
+        hit.action != TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN &&
         hit.action != TS_SISTER_UI_ACTION_CAPTURE_FORMAT &&
         hit.action != TS_SISTER_UI_ACTION_DESTINATION &&
         hit.action != TS_SISTER_UI_ACTION_TAP &&
@@ -8299,6 +8367,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     case TS_SISTER_UI_ACTION_SOURCE_FM:
     case TS_SISTER_UI_ACTION_SOURCE_EXT:
     case TS_SISTER_UI_ACTION_SOURCE_PREVIEW:
+    case TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD:
         sources = ts_sister_runtime_sources(&audio->sister);
         sources ^= (uint8_t)(1u << hit.index);
         ts_sister_runtime_set_sources(&audio->sister, sources);
@@ -8313,6 +8382,21 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
             sync_ext = 1;
         }
         break;
+    case TS_SISTER_UI_ACTION_TAPEHEAD_SONG:
+    case TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN: {
+        TapeLinkCommand command =
+            hit.action == TS_SISTER_UI_ACTION_TAPEHEAD_SONG ?
+            TAPE_LINK_COMMAND_TOGGLE_SONG :
+            TAPE_LINK_COMMAND_TOGGLE_PATTERN;
+        int sent = tapeLinkReaderSendCommand(&audio->live_link, command);
+        snprintf(sister->model.status, sizeof(sister->model.status), "%s",
+                 sent ?
+                 (command == TAPE_LINK_COMMAND_TOGGLE_SONG ?
+                  "TAPEHEAD SONG PLAY/STOP SENT" :
+                  "TAPEHEAD PATTERN PLAY/STOP SENT") :
+                 "TAPEHEAD TRANSPORT UNAVAILABLE - WAIT FOR LINK");
+        break;
+    }
     case TS_SISTER_UI_ACTION_PARAMETER:
         if (ts_sister_ui_parameter_locked(&sister->model, hit.index)) {
             snprintf(sister->model.status, sizeof(sister->model.status),
@@ -8553,6 +8637,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         else if (parameter_changed == TS_SISTER_UI_PARAM_PREVIEW_GAIN)
             ui->config.sister_audition_percent =
                 (int)lrintf(sister->model.parameters.preview_gain * 100.0f);
+        else if (parameter_changed == TS_SISTER_UI_PARAM_TAPEHEAD_GAIN)
+            ui->config.sister_tapehead_percent =
+                (int)lrintf(sister->model.parameters.tapehead_gain * 100.0f);
         else if (parameter_changed == TS_SISTER_UI_PARAM_FX_RETURN_GAIN)
             ui->config.sister_fx_return_percent =
                 (int)lrintf(sister->model.parameters.fx_return_gain * 100.0f);
@@ -8796,6 +8883,12 @@ static int midi_sister_hit_from_target(const char *target, float normalized,
         hit->action = TS_SISTER_UI_ACTION_SOURCE_EXT;
     else if (strcmp(target, "sister.source.preview") == 0)
         hit->action = TS_SISTER_UI_ACTION_SOURCE_PREVIEW;
+    else if (strcmp(target, "sister.source.tapehead") == 0)
+        hit->action = TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD;
+    else if (strcmp(target, "sister.tapehead.song") == 0)
+        hit->action = TS_SISTER_UI_ACTION_TAPEHEAD_SONG;
+    else if (strcmp(target, "sister.tapehead.pattern") == 0)
+        hit->action = TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN;
     else if (strcmp(target, "sister.capture") == 0)
         hit->action = TS_SISTER_UI_ACTION_CAPTURE;
     else if (sscanf(target, "sister.fx.toggle.%d%c", &index, &trailing) == 1 &&
@@ -10205,6 +10298,7 @@ int main(int argc, char **argv)
     TsInstrument *parked_instrument = NULL;
     TsUiState ui;
     SisterWindow sister_window = {0};
+    TapeCompanion companion_focus;
     TsFramebuffer framebuffer;
     uint32_t *frame_snapshot = NULL;
     TsSample clipboard;
@@ -10223,6 +10317,7 @@ int main(int argc, char **argv)
     ExternalInputState external_input = {0};
     char ignored_exchange[TS_EXCHANGE_PATH_MAX] = {0};
     uint32_t last_exchange_poll = 0;
+    uint32_t last_live_link_poll = 0;
     int record_bank_active = 0;
     int diagnostic_bank_stress = argc > 1 &&
                                  strcmp(argv[1], "--diagnostic-bank-toggle-stress") == 0;
@@ -10236,6 +10331,7 @@ int main(int argc, char **argv)
     uint32_t last_audio_diagnostic_log = 0u;
 
     initialize_runtime_paths(argc > 0 ? argv[0] : NULL);
+    tapeCompanionInit(&companion_focus);
     diagnostic_log("entered main: TsInstrument=%zu framebuffer=%zu UI=%zu stress=%d",
                    sizeof(TsInstrument), sizeof(TsFramebuffer), sizeof(TsUiState),
                    diagnostic_bank_stress);
@@ -10337,6 +10433,8 @@ int main(int argc, char **argv)
                  sizeof(sister_window.model.preset_name), "CUSTOM");
     }
     ts_note_bank_init(&audio.notes);
+    tapeLinkReaderInit(&audio.live_link);
+    audio.live_link_available = -1;
     ts_performance_init(&audio.performance);
     ts_performance_init(&audio.tile_launchers);
     atomic_init(&audio.tile_launcher_mask, 0u);
@@ -10369,6 +10467,8 @@ int main(int argc, char **argv)
             (float)ui.config.sister_ext_percent / 100.0f;
         parameters.preview_gain =
             (float)ui.config.sister_audition_percent / 100.0f;
+        parameters.tapehead_gain =
+            (float)ui.config.sister_tapehead_percent / 100.0f;
         parameters.fx_return_gain =
             (float)ui.config.sister_fx_return_percent / 100.0f;
         parameters.monitor_dry = (float)ui.config.sister_dry_percent / 100.0f;
@@ -10507,6 +10607,14 @@ int main(int argc, char **argv)
             running = 0;
         }
     }
+    if (running) {
+        char companion_error[128];
+        if (!tapeCompanionOpen(&companion_focus,
+                               TAPE_COMPANION_TAPESISTER_NAME, window,
+                               companion_error, sizeof(companion_error)))
+            fprintf(stderr, "TapeSister companion focus: %s\n",
+                    companion_error);
+    }
 
     SDL_zero(desired);
     SDL_zero(obtained);
@@ -10518,6 +10626,14 @@ int main(int argc, char **argv)
     desired.userdata = &audio;
     device = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
     audio.output_rate = obtained.freq;
+    audio.live_link_buffer_frames = obtained.samples > 0u ?
+        obtained.samples : desired.samples;
+    audio.live_link_buffer = (float *)calloc(
+        audio.live_link_buffer_frames * 2u, sizeof(float));
+    if (audio.live_link_buffer == NULL) {
+        fprintf(stderr, "TapeSister Live Link: buffer allocation failed\n");
+        running = 0;
+    }
     if (ts_audio_output_is_available() && obtained.freq > 0)
         (void)ts_sister_runtime_reconfigure(
             &audio.sister, (uint32_t)obtained.freq, obtained.channels,
@@ -10529,6 +10645,7 @@ int main(int argc, char **argv)
             snprintf(ui.status, sizeof(ui.status),
                      "PHYSICAL OUTPUT DISCONNECTED - INTERNAL STATE AVAILABLE");
     } else {
+        (void)sync_live_link(device, &audio, ui.status, sizeof(ui.status));
         SDL_PauseAudioDevice(device, 0);
     }
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
@@ -10564,6 +10681,7 @@ int main(int argc, char **argv)
         &sample_pages, &instrument, parked_instrument, record_bank_active,
         &audio.sister);
     last_exchange_poll = SDL_GetTicks();
+    last_live_link_poll = last_exchange_poll;
     (void)ts_exchange_presence_touch(exchange_directory(&ui), "tapesister");
     (void)stage_incoming_exchange(&ui, &exchange_offer, ignored_exchange, 0);
 
@@ -10617,6 +10735,7 @@ int main(int argc, char **argv)
     while (running) {
         SDL_Event event;
         Uint64 frame_started = SDL_GetPerformanceCounter();
+        (void)tapeCompanionPump(&companion_focus);
         /* Reader counts are atomic; retired immutable generations are owned
            and reclaimed by this controller thread, never by the callback. */
         ts_performance_collect_retired(&audio.performance);
@@ -10673,6 +10792,15 @@ int main(int argc, char **argv)
         }
         while (SDL_PollEvent(&event)) {
             uint32_t event_id = event_window_id(&event);
+            if (event.type == SDL_WINDOWEVENT &&
+                event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+                if (sister_window.window != NULL &&
+                    event_id == sister_window.window_id)
+                    tapeCompanionSetActiveWindow(&companion_focus,
+                                                 sister_window.window);
+                else if (event_id == SDL_GetWindowID(window))
+                    tapeCompanionSetActiveWindow(&companion_focus, window);
+            }
             if (event.type == SDL_WINDOWEVENT &&
                 (event.window.event == SDL_WINDOWEVENT_LEAVE ||
                  event.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
@@ -10765,6 +10893,22 @@ int main(int argc, char **argv)
                 int modal_key_owner = ui_blocking_dialog_open_except_fm(&ui) ||
                     ui.fm_bank_choice_open || ui.fm_full_choice_open ||
                     sister_window.model.preset_manage_open;
+                /* Cross to Tapehead without closing or changing the active
+                   TapeSister workspace. This precedes modal handling so an
+                   open menu, Fallout page or pedalboard remains untouched. */
+                if (!event.key.repeat && global_key == SDLK_TAB &&
+                    (global_mod & KMOD_CTRL) != 0 &&
+                    (global_mod & (KMOD_SHIFT | KMOD_ALT | KMOD_GUI)) == 0) {
+                    if (sister_window.window != NULL &&
+                        event_id == sister_window.window_id)
+                        tapeCompanionSetActiveWindow(&companion_focus,
+                                                     sister_window.window);
+                    else if (event_id == SDL_GetWindowID(window))
+                        tapeCompanionSetActiveWindow(&companion_focus, window);
+                    (void)tapeCompanionRequestFocus(
+                        TAPE_COMPANION_TAPEHEAD_NAME);
+                    continue;
+                }
                 if (global_key == SDLK_m &&
                     ts_ui_midi_learn_chord(
                         (global_mod & KMOD_CTRL) != 0,
@@ -14271,6 +14415,11 @@ int main(int argc, char **argv)
                 (void)stage_incoming_exchange(
                     &ui, &exchange_offer, ignored_exchange, 0);
         }
+        if (SDL_GetTicks() - last_live_link_poll >= 1000u) {
+            last_live_link_poll = SDL_GetTicks();
+            (void)sync_live_link(device, &audio, ui.status,
+                                 sizeof(ui.status));
+        }
         if (record_bank_active &&
             external_input.recorder.state == TS_EXTERNAL_CAPTURE_RECORDING &&
             ui.capture_state != TS_CAPTURE_RECORDING) {
@@ -14413,6 +14562,14 @@ int main(int argc, char **argv)
                 ts_sister_ui_model_update(
                     &sister_window.model, &routing, &engine,
                     &wave, &audio.sister.parameters);
+                {
+                    uint32_t transport = tapeLinkReaderTransportState(
+                        &audio.live_link);
+                    sister_window.model.tapehead_song_playing =
+                        (transport & TAPE_LINK_TRANSPORT_SONG) != 0u;
+                    sister_window.model.tapehead_pattern_playing =
+                        (transport & TAPE_LINK_TRANSPORT_PATTERN) != 0u;
+                }
                 sister_window.model.parameter_locks =
                     audio.sister.parameter_locks;
                 sister_window.model.parameter_locks_high =
@@ -14542,6 +14699,11 @@ int main(int argc, char **argv)
     ts_performance_recorder_free(&sister_window.performance_recorder);
     if (input_device) SDL_PauseAudioDevice(input_device, 1);
     if (input_device) SDL_CloseAudioDevice(input_device);
+    if (device) SDL_PauseAudioDevice(device, 1);
+    tapeCompanionClose(&companion_focus);
+    tapeLinkReaderClose(&audio.live_link);
+    free(audio.live_link_buffer);
+    audio.live_link_buffer = NULL;
     if (device) SDL_CloseAudioDevice(device);
     ts_performance_free(&audio.performance);
     ts_performance_free(&audio.tile_launchers);

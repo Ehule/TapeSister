@@ -28,6 +28,7 @@ int main(void)
     p.fm_gain = 2.34f;
     p.external_gain = 3.45f;
     p.preview_gain = 0.67f;
+    p.tapehead_gain = 1.89f;
     p.fx_return_gain = 1.54f;
     p.soak = 0.72f;
     p.bleed = 0.81f;
@@ -114,6 +115,7 @@ int main(void)
     assert(recalled.fm_gain > 2.33f && recalled.fm_gain < 2.35f);
     assert(recalled.external_gain > 3.44f && recalled.external_gain < 3.46f);
     assert(recalled.preview_gain > 0.66f && recalled.preview_gain < 0.68f);
+    assert(recalled.tapehead_gain > 1.88f && recalled.tapehead_gain < 1.90f);
     assert(recalled.fx_return_gain > 1.53f && recalled.fx_return_gain < 1.55f);
     assert(recalled.soak > 0.71f && recalled.soak < 0.73f);
     assert(recalled.bleed > 0.80f && recalled.bleed < 0.82f);
@@ -238,6 +240,7 @@ int main(void)
         assert(loaded.entries[3].parameters.fm_gain == 1.0f);
         assert(loaded.entries[3].parameters.external_gain == 1.0f);
         assert(loaded.entries[3].parameters.preview_gain == 1.0f);
+        assert(loaded.entries[3].parameters.tapehead_gain == 1.0f);
         assert(loaded.entries[3].parameters.fx_return_gain == 1.0f);
         assert(loaded.entries[3].parameters.fx.reverb_targets ==
                TS_SISTER_EFFECT_TARGET_MIX);

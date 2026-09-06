@@ -23,6 +23,7 @@ int main(void)
     ts_sister_runtime_init(&runtime);
     frame = (TsSisterRuntimeFrame){0};
     frame.tap[TS_SISTER_TAP_H1] = (TsStereoFrame){0.125f, -0.25f};
+    frame.tap[TS_SISTER_TAP_TAPEHEAD] = (TsStereoFrame){-0.375f, 0.625f};
     {
         TsStereoFrame final_output = {0.75f, -0.50f};
         TsStereoFrame captured = ts_sister_runtime_file_capture_frame(
@@ -33,6 +34,10 @@ int main(void)
             &frame, TS_SISTER_TAP_H1, final_output);
         CHECK(CLOSE(captured.l, frame.tap[TS_SISTER_TAP_H1].l));
         CHECK(CLOSE(captured.r, frame.tap[TS_SISTER_TAP_H1].r));
+        captured = ts_sister_runtime_file_capture_frame(
+            &frame, TS_SISTER_TAP_TAPEHEAD, final_output);
+        CHECK(CLOSE(captured.l, frame.tap[TS_SISTER_TAP_TAPEHEAD].l));
+        CHECK(CLOSE(captured.r, frame.tap[TS_SISTER_TAP_TAPEHEAD].r));
     }
     CHECK(!runtime.enabled && runtime.machine.buffer.data == NULL);
     CHECK(!ts_sister_runtime_enable(&runtime, 0u, 2u, 2u, 0.1,
@@ -61,6 +66,28 @@ int main(void)
         frame = ts_sister_runtime_process_frame(&runtime, &source);
     for (int tap = 0; tap < TS_SISTER_TAP_COUNT; ++tap)
         CHECK(sister_frame_finite(frame.tap[tap]));
+
+    /* Tapehead is silent until a live producer is present, then enters and
+       leaves the same smoothed source path as every other Sister input. */
+    ts_sister_runtime_set_sources(&runtime, TS_SISTER_SOURCE_TAPEHEAD);
+    source.preview = (TsStereoFrame){0.0f, 0.0f};
+    source.tapehead = (TsStereoFrame){0.75f, -0.50f};
+    for (int i = 0; i < 20; ++i)
+        frame = ts_sister_runtime_process_frame(&runtime, &source);
+    CHECK(CLOSE(frame.input.l, 0.0f));
+    CHECK(CLOSE(frame.input.r, 0.0f));
+    CHECK(CLOSE(frame.tap[TS_SISTER_TAP_TAPEHEAD].l, source.tapehead.l));
+    CHECK(CLOSE(frame.tap[TS_SISTER_TAP_TAPEHEAD].r, source.tapehead.r));
+    ts_sister_runtime_live_link_available(&runtime, 1);
+    for (int i = 0; i < 20; ++i)
+        frame = ts_sister_runtime_process_frame(&runtime, &source);
+    CHECK(frame.input.l > 0.1f && frame.input.r < -0.05f);
+    CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+    CHECK(snapshot.live_link_available);
+    ts_sister_runtime_live_link_available(&runtime, 0);
+    CHECK(ts_sister_runtime_get_snapshot(&runtime, &snapshot));
+    CHECK(!snapshot.live_link_available);
+    source.tapehead = (TsStereoFrame){0.0f, 0.0f};
 
     /* The separate mouse-launch tile bus follows the TILES insert without
        becoming a Sister keyboard-performance voice. */

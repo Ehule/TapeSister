@@ -23,6 +23,9 @@ typedef enum {
     TS_SISTER_UI_ACTION_SOURCE_FM,
     TS_SISTER_UI_ACTION_SOURCE_EXT,
     TS_SISTER_UI_ACTION_SOURCE_PREVIEW,
+    TS_SISTER_UI_ACTION_SOURCE_TAPEHEAD,
+    TS_SISTER_UI_ACTION_TAPEHEAD_SONG,
+    TS_SISTER_UI_ACTION_TAPEHEAD_PATTERN,
     TS_SISTER_UI_ACTION_TAP,
     TS_SISTER_UI_ACTION_CAPTURE_FORMAT,
     TS_SISTER_UI_ACTION_DESTINATION,
@@ -152,6 +155,7 @@ typedef enum {
     TS_SISTER_UI_PARAM_SLOT4_B,
     TS_SISTER_UI_PARAM_SLOT4_C,
     TS_SISTER_UI_PARAM_SLOT4_MIX,
+    TS_SISTER_UI_PARAM_TAPEHEAD_GAIN,
     TS_SISTER_UI_PARAM_COUNT,
     /* These clocks are intentionally not preset-lock bits: the established
        63 lock indices remain stable in existing preset files. */
@@ -237,6 +241,8 @@ typedef struct {
     int fallout_lfo_open;
     int midi_learn_active;
     int midi_activity;
+    int tapehead_song_playing;
+    int tapehead_pattern_playing;
     char midi_learn_pending[TS_MIDI_TARGET_ID_MAX];
     const TsMidiMap *midi_map;
 } TsSisterUiModel;

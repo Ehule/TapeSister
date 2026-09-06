@@ -263,6 +263,7 @@ void ts_sister_parameters_default(TsSisterParameters *parameters,
     parameters->fm_gain = 1.0f;
     parameters->external_gain = 1.0f;
     parameters->preview_gain = 1.0f;
+    parameters->tapehead_gain = 1.0f;
     parameters->monitor_dry = 1.0f;
     parameters->monitor_wet = 1.0f;
     parameters->mix_output_gain = 1.0f;
@@ -699,6 +700,7 @@ static TsSisterParameters sanitize_parameters(const TsSisterMachine *machine,
     result.fm_gain = clampf(result.fm_gain, 0.0f, 4.0f);
     result.external_gain = clampf(result.external_gain, 0.0f, 4.0f);
     result.preview_gain = clampf(result.preview_gain, 0.0f, 4.0f);
+    result.tapehead_gain = clampf(result.tapehead_gain, 0.0f, 4.0f);
     result.monitor_dry = clampf(result.monitor_dry, 0.0f, 1.0f);
     result.monitor_wet = clampf(result.monitor_wet, 0.0f, 1.0f);
     result.mix_output_gain = clampf(result.mix_output_gain, 0.0f, 4.0f);

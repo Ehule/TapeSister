@@ -7,6 +7,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | Control | Action |
 | --- | --- |
 | `Tab` | Open Sister Machine or move focus between Sister and the main window |
+| `Ctrl+Tab` | Move to a running Tapehead; press again there to return unchanged |
 | `` ` `` | Open/close FM Logic |
 | `1` | Show Sample Tiles; press again to cycle Sample pages |
 | `Shift+1` | Open external REC BANK |
@@ -165,6 +166,9 @@ STEREO maps odd channels to L and even channels to R.
 | FM | Route live FM Logic |
 | EXT | Route external input |
 | AUDITION | Route preview/audition bus |
+| TH SRC | Route Tapehead's direct Live Link stereo bus; never changes transport |
+| TH SONG | Toggle Tapehead Song Play/Stop; lit only while Song mode is playing |
+| TH PATT | Toggle Tapehead Pattern Play/Stop; lit only while Pattern mode is playing |
 
 A routed source leaves its ordinary direct speaker path and returns through Sister.
 
@@ -191,11 +195,11 @@ Shift-click an adjustable Sister/FX field to lock or unlock it.
 
 | Selector | Choices |
 | --- | --- |
-| Tap | H1, H2, H3, MIX; final MIX becomes OUT in FILE mode |
+| Tap | H1, H2, H3, MIX, raw TAPEHEAD; final MIX becomes OUT in FILE mode |
 | Format | M or S |
 | Destination | CURRENT, NEXT EMPTY, FILE |
 
-FILE records until stopped and automatically upgrades WAV to RF64 when required. OUT
+FILE records until stopped, shows `REC hh:mm:ss`, and automatically upgrades WAV to RF64 when required. OUT
 file recording remains available when Sister is powered off; H1/H2/H3 require Sister.
 
 ## FX pedalboard

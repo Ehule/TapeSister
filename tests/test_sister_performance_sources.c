@@ -57,7 +57,7 @@ int main(void)
     ts_audio_buses_clear(&buses);
     buses.fm = (TsStereoFrame){0.3f, 0.3f};
     buses.sister = (TsStereoFrame){0.2f, 0.2f};
-    ts_audio_buses_apply_source_dry(&buses, 0.0f, 0, 0, 1, 0);
+    ts_audio_buses_apply_source_dry(&buses, 0.0f, 0, 0, 1, 0, 0);
     frame.monitor_return = ts_audio_mixer_render(&mixer, &buses);
     assert(sister_close(frame.monitor_return.l, 0.2f, 0.0001f));
 

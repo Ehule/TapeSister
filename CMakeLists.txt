@@ -42,10 +42,14 @@ endif()
 if(TAPESISTER_BUILD_SDL)
   find_package(SDL2 REQUIRED)
   # main_sdl.c is the one canonical callback/application translation unit.
-  add_executable(tapesister src/main_sdl.c src/ts_startup_diag.c
+  add_executable(tapesister src/main_sdl.c src/tape_link.c
+                            src/tape_companion.c src/ts_startup_diag.c
                             src/ts_midi_input.c)
   target_include_directories(tapesister PRIVATE third_party)
   target_link_libraries(tapesister PRIVATE tapesister_core SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister PRIVATE rt)
+  endif()
   if(WIN32)
     target_compile_definitions(tapesister PRIVATE SDL_MAIN_HANDLED)
   endif()
@@ -204,11 +208,22 @@ add_executable(test_audio_lifecycle tests/test_audio_lifecycle.c)
 target_link_libraries(test_audio_lifecycle PRIVATE tapesister_core)
 add_test(NAME test_audio_lifecycle COMMAND test_audio_lifecycle)
 
+add_executable(test_live_link tests/test_live_link.c src/tape_link.c)
+target_include_directories(test_live_link PRIVATE src)
+target_link_libraries(test_live_link PRIVATE m)
+if(UNIX AND NOT APPLE)
+  target_link_libraries(test_live_link PRIVATE rt)
+endif()
+add_test(NAME test_live_link COMMAND test_live_link)
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
   add_test(NAME test_audio_hardening_structure
     COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audio_hardening_structure.py")
+  add_test(NAME test_companion_focus_structure
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_companion_focus_structure.py")
 endif()
 
 if(TAPESISTER_BUILD_SDL AND TAPESISTER_BUNDLE_CDP8)

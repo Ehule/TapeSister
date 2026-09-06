@@ -74,6 +74,21 @@ int main(void)
         CHECK(ts_sister_runtime_cancel_capture(&runtime));
     }
 
+    {
+        TsSisterSourceFrames raw = {0};
+        raw.tapehead = (TsStereoFrame){0.25f, -0.375f};
+        CHECK(ts_sister_runtime_arm_capture(
+            &runtime, &instrument, 1, 4u, 1000u, 2u,
+            TS_SISTER_TAP_TAPEHEAD, 0u, error, sizeof(error)));
+        CHECK(ts_sister_runtime_trigger_capture(&runtime, error, sizeof(error)));
+        for (int frame = 0; frame < 4; ++frame)
+            (void)ts_sister_runtime_process_frame(&runtime, &raw);
+        CHECK(runtime.capture.state == TS_CAPTURE_COMPLETED);
+        CHECK(CLOSE(runtime.capture.buffer[0], raw.tapehead.l));
+        CHECK(CLOSE(runtime.capture.buffer[1], raw.tapehead.r));
+        ts_capture_free(&runtime.capture);
+    }
+
     CHECK(ts_sister_runtime_set_source_slot(&runtime, &instrument, 0, 1));
     CHECK(!ts_sister_runtime_arm_capture(
         &runtime, &instrument, 0, 16u, 1000u, 2u,

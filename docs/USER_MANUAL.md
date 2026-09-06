@@ -84,6 +84,9 @@ The top row remains available across the main workspaces.
 
 - **TAPESISTER / SISTER MACHINE** opens Sister Machine. `Tab` also opens it and moves
   keyboard focus between the two windows.
+- `Ctrl+Tab` crosses to a running Tapehead and returns to whichever TapeSister window
+  was last active. It leaves open panels, playback, routing, and recording untouched
+  and works whether or not Live Link audio is enabled.
 - **CONFIG** selects audio, input, MIDI, paths, palette, and performance defaults.
 - **FT2 LINK** opens the current folder-based TapeSister/TapeHead exchange.
 - **SAVE** saves the complete active project.
@@ -469,17 +472,19 @@ another page if required, and clears the REC BANK only after every copy succeeds
 
 In Sister Machine, choose the tap, channel format, and destination before recording:
 
-- Tap: H1, H2, H3, or MIX. In FILE mode, final MIX is labeled **OUT**.
+- Tap: H1, H2, H3, MIX, or raw TAPEHEAD. In FILE mode, final MIX is labeled **OUT**.
 - Format: M or S.
 - Destination: CURRENT, NEXT EMPTY, or FILE.
 
-CURRENT and NEXT EMPTY use tile Capture/Overdub. FILE starts immediately, allocates no
+CURRENT and NEXT EMPTY use tile Capture/Overdub. The TAPEHEAD tap records the raw linked
+stereo stream before TapeSister trim or processing. FILE starts immediately, allocates no
 tile, and continues until **STOP** is pressed. Long recordings begin as ordinary WAV
-and automatically become RF64 in the same file when necessary.
+and automatically become RF64 in the same file when necessary. A dedicated
+`REC hh:mm:ss` readout above CAPTURE shows the duration accepted into the file.
 
-H1/H2/H3 file taps require Sister to be powered. OUT remains available with Sister off
-and records the final sound reaching the output path, including ordinary post effects,
-the global limiter, and the final OUT fader.
+H1/H2/H3 file taps require Sister to be powered. OUT and raw TAPEHEAD remain available
+with Sister off. OUT records the final sound reaching the output path, including
+ordinary post effects, the global limiter, and the final OUT fader.
 
 ## Sister Machine
 
@@ -498,12 +503,30 @@ window is hidden according to their current state.
 
 ### Source routing
 
-The four source switches are:
+The five source switches are:
 
 - **TILES** — the per-page Shift-click source group;
 - **FM** — live FM Logic performance;
 - **EXT** — configured external input;
-- **AUDITION** — preview/audition audio.
+- **AUDITION** — preview/audition audio;
+- **TAPEHEAD** — Tapehead's direct stereo Live Link.
+
+To connect it, leave TapeSister on the desired physical output and select
+**TapeSister Live Link** in Tapehead's Audio output list. **WAIT** in Sister's source
+strip changes to **LINK** when the producer is available. Either program may start
+first, and an armed TAPEHEAD source fades back in after a restart. See the
+[Live Link guide](LIVE_LINK.md).
+
+**TH SRC** changes only Tapehead's Sister routing. The separate **TH SONG** and
+**TH PATT** buttons send Song Play/Stop and Pattern Play/Stop, so source selection can
+never accidentally change transport (or vice versa). TH SONG and TH PATT reflect
+Tapehead's real playback mode and light only while that mode is actually playing.
+
+`Ctrl+Tab` switches between the two running applications without entering or leaving
+this audio route. TapeSister remembers whether the main window or Sister Machine was
+active, including an open Fallout or pedalboard view; Tapehead preserves its own open
+editor or Config panel. If the companion is not running, the command does nothing and
+never launches it.
 
 When a source is routed into Sister it is removed from its ordinary direct speaker path.
 It returns through Sister's DRY/WET monitor section, like a real hardware insert. Sources

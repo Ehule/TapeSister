@@ -1,0 +1,89 @@
+# Tapehead → TapeSister Live Link
+
+Live Link makes Tapehead a native stereo source inside TapeSister. It replaces the
+VB-CABLE-style handoff with a local shared-memory audio ring, leaving TapeSister as the
+only application that owns the speakers or audio interface.
+
+## Start it
+
+1. Start TapeSister with the desired physical output device.
+2. In Tapehead, open **Config → Audio** and select **TapeSister Live Link**.
+3. Open Sister Machine. The source strip shows **LINK** when Tapehead is present and
+   **WAIT** while TapeSister is waiting.
+4. With Sister Machine off, Tapehead enters the ordinary program/post-FX path. With
+   Sister Machine on, click **TH SRC** to route it through the tape, heads, Fallout,
+   and placed pedalboard effects.
+
+Start order does not matter. TapeSister checks once per second and reconnects after a
+Tapehead restart. The TAPEHEAD switch can remain armed while **WAIT** is shown; its
+source route fades in automatically when the producer appears.
+
+## Signal and capture behavior
+
+The transport carries 32-bit float stereo. TapeSister accepts Tapehead rates from
+8–384 kHz and linearly resamples to its current output rate. Tapehead renders the link
+in a short 256-frame software quantum independent of its hardware-buffer preference.
+TapeSister keeps an adaptive nominal 25 ms reserve, with a two-callback safety floor for
+large output buffers, to absorb scheduler jitter and correct small independent-clock
+drift. Start, stop, disconnect, underrun, and session replacement use short fades rather
+than discontinuous cuts.
+
+The TAPEHEAD source has its own 0–400% mixer trim. It is stored in `tapesister.ini`,
+Sister projects, and Sister presets. As with the other Sister inputs, a selected source
+is a closed insert while Sister Machine is powered: it leaves the ordinary direct path
+and returns through Sister's DRY/WET monitoring. If Sister is off, it remains audible
+through the ordinary post-effects rack.
+
+Tapehead audio can be captured in the same places as other musical sources:
+
+- main Capture or Overdub prints the complete performed TapeSister output to a tile;
+- Sister H1/H2/H3/MIX capture prints the chosen tape tap to a tile;
+- the **TAPEHEAD** capture tap records the raw linked stereo stream, independent of
+  source routing and processing, to a tile, Overdub, or FILE destination;
+- FILE records the selected tap or final OUT as a long-form WAV/RF64 take and shows
+  `REC hh:mm:ss` above CAPTURE while it is running.
+
+The three Tapehead controls have deliberately separate jobs:
+
+- **TH SRC** only selects whether the Live Link is routed through Sister Machine;
+- **TH SONG** sends Tapehead Song Play/Stop and lights only while Song mode is playing;
+- **TH PATT** sends Tapehead Pattern Play/Stop and lights only while Pattern mode is
+  playing.
+
+Modifier-clicking TH SRC has no hidden transport behavior. The source can remain armed
+while WAIT is shown and will enter Sister automatically when Tapehead reconnects.
+
+Only one consumer and one active producer are supported. If multiple Tapehead instances
+select Live Link, the newest session becomes authoritative and TapeSister reconnects to
+it.
+
+## Companion window switching
+
+Press **Ctrl+Tab** in TapeSister to focus a running Tapehead; press it in Tapehead to
+return. The command is independent of Live Link audio and therefore works while
+Tapehead uses a physical output. It never launches the companion or changes either
+application's transport, routing, recording, or interface state.
+
+TapeSister remembers whether its main window or Sister Machine was last active, so an
+open Fallout or pedalboard performance returns exactly as it was left. Tapehead also
+retains an open Config panel or performance surface.
+
+## Why it avoids the Windows conflict
+
+Tapehead opens no hardware device while Live Link is selected. TapeSister alone owns
+the physical output and keeps its existing Auto/WASAPI/DirectSound policy. This removes
+the cross-backend ownership fight that can occur when Tapehead, TapeSister, REAPER/ASIO,
+and a virtual cable independently request the same interface.
+
+## Release check
+
+- Test both application start orders and restart each side independently.
+- Confirm **WAIT → LINK** and clean fades on connection/disconnection.
+- Test matching rates plus 44.1 kHz → 48 kHz and 96 kHz → 48 kHz.
+- Verify the TAPEHEAD trim, ordinary post-FX, Sister Machine, Fallout, all four pedalboard
+  placements, raw TAPEHEAD tile Capture/Overdub, and FILE capture.
+- Verify independent TH SRC, TH SONG, and TH PATT behavior, truthful transport lights,
+  256/512/1024/2048-frame TapeSister buffers, and the FILE duration readout.
+- Leave a link running long enough to check the audio diagnostic overrun counters.
+- With Live Link selected and unselected, use Ctrl+Tab both ways and verify that the
+  active TapeSister window plus all open panels remain unchanged.

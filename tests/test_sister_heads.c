@@ -22,6 +22,7 @@ static void default_contract(void)
     assert(parameters.fm_gain == 1.0f);
     assert(parameters.external_gain == 1.0f);
     assert(parameters.preview_gain == 1.0f);
+    assert(parameters.tapehead_gain == 1.0f);
     assert(parameters.fx_return_gain == 1.0f);
     assert(parameters.mix_output_gain == 1.0f);
     assert(parameters.clear_ms == 20.0f);
