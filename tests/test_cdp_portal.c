@@ -44,6 +44,113 @@ static double grain_band_power(const TsSample *s,double center)
     return power;
 }
 
+static void render_checked(const TsCdpRuntime *runtime, const TsPortalRecipe *recipe,
+                           const TsSample *input, TsCdpRunResult *result)
+{
+    char error[2048];TsCdpRunOptions options;ts_cdp_run_options_init(&options);
+    int ok=ts_cdp_run_portal(runtime,recipe,input,&options,result,error,sizeof(error));
+    if(!ok)fprintf(stderr,"SEMANTICS %s: %s\n%s\n",recipe->process_id,error,result->diagnostic);
+    assert(ok && result->finite && !result->cleanup_failed && !result->job_directory[0]);
+}
+
+/* Independent signal checks catch valid commands routed to the wrong native mode. */
+static void test_sound_families(const TsCdpRuntime *runtime)
+{
+    TsPortalRecipe r;TsCdpRunResult out;ts_cdp_run_result_init(&out);
+    for(unsigned sr=44100;sr<=48000;sr+=3900) {
+        TsSample s={.frames=sr*2,.sample_rate=sr,.channels=1};
+        s.data=calloc(s.frames,sizeof(float));assert(s.data);
+        for(size_t n=0;n<s.frames;++n)s.data[n]=(float)(.1*sin(6.283185307179586*500*n/sr));
+        uint64_t hash=ts_sample_hash(&s);
+        const char *gain_ids[]={"modify.loudness.1","modify.loudness.2","modify.loudness.3","modify.loudness.4","modify.loudness.6"};
+        const double gain_values[]={.5,-6,.2,.05,0};
+        const double gains[]={.5,.5011872336,2,.5,-1};
+        for(int i=0;i<5;++i) {
+            ts_portal_recipe_default(&r,ts_portal_process_find(gain_ids[i]));
+            if(i<4)r.values[0]=gain_values[i];
+            render_checked(runtime,&r,&s,&out);assert(out.output.frames==s.frames);
+            for(size_t n=0;n<s.frames;n+=137)assert(fabs(out.output.data[n]-s.data[n]*gains[i])<.0002);
+        }
+        ts_portal_recipe_default(&r,ts_portal_process_find("modify.radical.5"));r.values[0]=150;
+        render_checked(runtime,&r,&s,&out);
+        assert(out.output.frames==s.frames);
+        assert(tone_level(&out.output,350)>.045 && tone_level(&out.output,650)>.045);
+        assert(tone_level(&out.output,500)<.001);
+        ts_portal_recipe_default(&r,ts_portal_process_find("modify.radical.4"));r.values[0]=4;r.values[1]=3;
+        s.frames--;render_checked(runtime,&r,&s,&out);
+        assert(out.output.frames==(s.frames/3)*3);
+        for(size_t n=0;n<out.output.frames;n+=3)
+            assert(out.output.data[n]==out.output.data[n+1] && out.output.data[n]==out.output.data[n+2]);
+        s.frames++;
+        ts_portal_recipe_default(&r,ts_portal_process_find("modify.radical.7"));r.values[0]=3;
+        render_checked(runtime,&r,&s,&out);assert(out.output.frames==s.frames);
+        unsigned levels=0;float seen[16]={0};
+        for(size_t n=0;n<out.output.frames;++n) {
+            unsigned i=0;while(i<levels && seen[i]!=out.output.data[n])++i;
+            if(i==levels) {assert(levels<8);seen[levels++]=out.output.data[n];}
+        }
+        assert(levels>=2);
+        /* Square reform adds odd harmonics; sinusoidal reform does not. */
+        ts_portal_recipe_default(&r,ts_portal_process_find("distort.reform.2"));
+        render_checked(runtime,&r,&s,&out);assert(tone_level(&out.output,1500)>.025);
+        ts_portal_recipe_default(&r,ts_portal_process_find("distort.reform.7"));
+        render_checked(runtime,&r,&s,&out);assert(tone_level(&out.output,1500)<.004);
+        /* Amplitude-only chorus at one agrees with a PVOC round trip. Frequency
+           modes still re-bin partials at one, but must retain the tone's pitch. */
+        ts_portal_recipe_default(&r,ts_portal_process_find("blur.noise"));r.values[0]=0;
+        render_checked(runtime,&r,&s,&out);
+        size_t neutral_frames=out.output.frames;
+        float *neutral=malloc(neutral_frames*sizeof(float));assert(neutral);
+        memcpy(neutral,out.output.data,neutral_frames*sizeof(float));
+        for(int mode=1;mode<=7;++mode) {
+            char id[32];snprintf(id,sizeof(id),"blur.chorus.%d",mode);
+            const TsPortalProcess *p=ts_portal_process_find(id);ts_portal_recipe_default(&r,p);
+            for(unsigned i=0;i<p->parameter_count;++i)r.values[i]=1;
+            render_checked(runtime,&r,&s,&out);assert(out.output.frames==neutral_frames);
+            if(mode==1)for(size_t n=0;n<neutral_frames;n+=137)assert(fabs(neutral[n]-out.output.data[n])<.0001);
+            assert(tone_level(&out.output,500)>.02 && tone_level(&out.output,1500)<.001);
+        }
+        free(neutral);
+        for(size_t n=0;n<s.frames;++n)s.data[n]=(float)(.05*(sin(6.283185307179586*500*n/sr)+sin(6.283185307179586*5000*n/sr)));
+        ts_portal_recipe_default(&r,ts_portal_process_find("stretch.spectrum.1"));
+        render_checked(runtime,&r,&s,&out);
+        assert(tone_level(&out.output,500)>.04 && tone_level(&out.output,5000)<.01);
+        ts_portal_recipe_default(&r,ts_portal_process_find("stretch.spectrum.2"));
+        render_checked(runtime,&r,&s,&out);
+        assert(tone_level(&out.output,500)<.01 && tone_level(&out.output,5000)>.04);
+        for(size_t n=0;n<s.frames;++n)s.data[n]=(float)(.1*sin(6.283185307179586*500*n/sr));
+        assert(ts_sample_hash(&s)==hash);
+        /* Fixed EQ is measured in bands well away from the shelf transition. */
+        for(size_t n=0;n<s.frames;++n)s.data[n]=(float)(.02*(sin(6.283185307179586*100*n/sr)+sin(6.283185307179586*1000*n/sr)+sin(6.283185307179586*5000*n/sr)));
+        for(int mode=1;mode<=3;++mode) {
+            char id[32];snprintf(id,sizeof(id),"filter.fixed.%d",mode);
+            for(int sign=-1;sign<=1;sign+=2) {
+                ts_portal_recipe_default(&r,ts_portal_process_find(id));
+                r.values[mode==3?1:0]=sign*12;r.values[mode==3?4:3]=1;
+                render_checked(runtime,&r,&s,&out);
+                double selected=tone_level(&out.output,mode==1?100:mode==2?5000:1000);
+                assert(sign>0?selected>.055:selected<.008);
+            }
+        }
+        /* A zero-feedback, wet-only delay must place one impulse exactly at delay time. */
+        memset(s.data,0,s.frames*sizeof(float));s.data[0]=.25f;
+        ts_portal_recipe_default(&r,ts_portal_process_find("modify.revecho.1"));
+        r.values[0]=10;r.values[1]=1;r.values[2]=0;r.values[3]=.1;r.values[4]=1;
+        render_checked(runtime,&r,&s,&out);
+        size_t offset=(size_t)round(.01*sr);
+        assert(fabs((double)out.output.frames-s.frames-round(.1*sr))<=1);
+        assert(fabs(out.output.data[offset]-.25)<.0001);
+        for(size_t n=0;n<out.output.frames;++n)if(n!=offset)assert(fabs(out.output.data[n])<.0001);
+        r.values[1]=0;r.values[5]=1;render_checked(runtime,&r,&s,&out);
+        assert(fabs(out.output.data[0]+.25)<.0001 && fabs(out.output.data[offset])<.0001);
+        ts_portal_recipe_default(&r,ts_portal_process_find("filter.phasing.1"));
+        r.values[0]=0;r.values[1]=10;render_checked(runtime,&r,&s,&out);
+        assert(fabs(out.output.data[offset]-.25)<.0001 && fabs(out.output.data[0])<.0001);
+        free(s.data);
+    }
+    ts_cdp_run_result_free(&out);
+}
+
 int main(int argc,char **argv)
 {
     static TsInstrument instrument;
@@ -55,7 +162,7 @@ int main(int argc,char **argv)
     ts_instrument_init(&instrument);ts_ui_init(&ui);
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,0x54415045,error,sizeof(error)));
     uint64_t original=ts_sample_hash(&instrument.current);
-    assert(ts_portal_process_count()==30);
+    assert(ts_portal_process_count()==64);
     assert(ts_cdp_factory_recipe_count()==32);
     for(size_t i=0;i<ts_portal_process_count();++i) {
         const TsPortalProcess *p=ts_portal_process_at(i);
@@ -150,14 +257,14 @@ int main(int argc,char **argv)
     ui.portal.tab=0;snprintf(ui.portal.query,sizeof(ui.portal.query),"partials");
     assert(ts_portal_filter(&ui.portal,0,&recipe));
     assert(ts_portal_process_find(recipe.process_id)->family==TS_PORTAL_SPECTRAL);
-    ui.portal.query[0]=0;assert(ts_portal_filter(&ui.portal,3,&recipe));assert(!ts_portal_filter(&ui.portal,4,&recipe));
+    ui.portal.query[0]=0;assert(ts_portal_filter(&ui.portal,14,&recipe));assert(!ts_portal_filter(&ui.portal,15,&recipe));
     ui.portal.family=TS_PORTAL_TIME+1;
     assert(ts_portal_filter(&ui.portal,3,&recipe));assert(!ts_portal_filter(&ui.portal,4,&recipe));
     snprintf(ui.portal.query,sizeof(ui.portal.query),"semitones");
     assert(ts_portal_filter(&ui.portal,0,&recipe) && !strcmp(recipe.process_id,"modify.speed.2"));
     ui.portal.query[0]=0;
     ui.portal.family=TS_PORTAL_FILTER+1;
-    assert(ts_portal_filter(&ui.portal,5,&recipe));assert(!ts_portal_filter(&ui.portal,6,&recipe));
+    assert(ts_portal_filter(&ui.portal,12,&recipe));assert(!ts_portal_filter(&ui.portal,13,&recipe));
     snprintf(ui.portal.query,sizeof(ui.portal.query),"sweeping");
     assert(ts_portal_filter_slot(&ui.portal,0,&recipe)==24);
     assert(!strcmp(recipe.process_id,"filter.sweeping.2"));
@@ -184,6 +291,37 @@ int main(int argc,char **argv)
     TsCdpRunResult result;ts_cdp_run_result_init(&result);
     TsCdpRunOptions options;ts_cdp_run_options_init(&options);
     TsCdpCommand stages[TS_CDP_MAX_STAGES];size_t stage_count;
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("blur.avrg"));
+    recipe.values[0]=12;assert(!ts_portal_recipe_validate(&recipe,error,sizeof(error)) && strstr(error,"ODD"));
+    recipe.values[0]=13;assert(ts_portal_recipe_validate(&recipe,error,sizeof(error)));
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("blur.spread"));
+    assert(ts_portal_build_commands(&recipe,&instrument.current,stages,&stage_count,error,sizeof(error)));
+    assert(stage_count==3 && !strcmp(stages[1].arguments[3],"-f4") && !strcmp(stages[1].arguments[4],"-s0.5"));
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("stretch.spectrum.1"));
+    assert(ts_portal_build_commands(&recipe,&instrument.current,stages,&stage_count,error,sizeof(error)));
+    assert(!strcmp(stages[1].arguments[7],"-d1"));
+    recipe.values[1]=1;assert(!ts_portal_build_commands(&recipe,&instrument.current,stages,&stage_count,error,sizeof(error)));
+    recipe.values[1]=.25;recipe.values[0]=5000;
+    TsSample low_rate=instrument.current;low_rate.sample_rate=22050;
+    assert(!ts_portal_build_commands(&recipe,&low_rate,stages,&stage_count,error,sizeof(error)) && strstr(error,"INCOMPATIBLE"));
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("filter.fixed.1"));recipe.values[1]=16000;
+    assert(ts_portal_build_commands(&recipe,&instrument.current,stages,&stage_count,error,sizeof(error)));
+    assert(!ts_portal_build_commands(&recipe,&low_rate,stages,&stage_count,error,sizeof(error)) && strstr(error,"NYQUIST"));
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("filter.fixed.3"));recipe.values[0]=4000;low_rate.sample_rate=12000;
+    assert(!ts_portal_build_commands(&recipe,&low_rate,stages,&stage_count,error,sizeof(error)) && strstr(error,"BANDWIDTH"));
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.radical.5"));recipe.values[0]=12000;
+    assert(!ts_portal_build_commands(&recipe,&low_rate,stages,&stage_count,error,sizeof(error)) && strstr(error,"NYQUIST"));
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.revecho.1"));
+    recipe.values[2]=.45;recipe.values[3]=.5;recipe.values[5]=1;recipe.exposed=(1u<<2)|(1u<<5);
+    TsPortalLibrary delay_library={0},delay_loaded={0};delay_library.pins[31]=recipe;
+    assert(ts_portal_library_save(&delay_library,path,error,sizeof(error)));
+    assert(ts_portal_library_load(&delay_loaded,path,error,sizeof(error)));
+    assert(!memcmp(&delay_library,&delay_loaded,sizeof(delay_library)));remove(path);
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.loudness.3"));recipe.values[0]=.01;
+    assert(!ts_portal_build_commands(&recipe,&instrument.current,stages,&stage_count,error,sizeof(error)) && strstr(error,"USE SET PEAK"));
+    float silent[2048]={0};TsSample silence={.data=silent,.frames=2048,.sample_rate=44100,.channels=1};
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.loudness.4"));
+    assert(!ts_portal_build_commands(&recipe,&silence,stages,&stage_count,error,sizeof(error)) && strstr(error,"TOO QUIET"));
     ts_portal_recipe_default(&recipe,ts_portal_process_find("blur.blur"));
     TsSample short_input=instrument.current;short_input.frames=1024;
     assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)) && stage_count==0);
@@ -284,14 +422,21 @@ int main(int argc,char **argv)
             ts_portal_recipe_default(&recipe,proc);
             for(unsigned n=0;n<proc->parameter_count;++n)recipe.values[n]=edge?proc->parameters[n].maximum:proc->parameters[n].minimum;
             if(!strcmp(proc->id,"blur.blur") && edge)recipe.values[0]=(double)(input.frames/128);
-            if(!strcmp(proc->id,"filter.sweeping.2")) {
+            if(proc->family==TS_PORTAL_FILTER && !strcmp(proc->command,"sweeping")) {
                 recipe.values[2]=20;recipe.values[3]=edge?6000:40;
             }
+            float *quiet=NULL;
+            if(!strcmp(proc->id,"modify.loudness.3")) {
+                quiet=malloc(input.frames*sizeof(float));assert(quiet);
+                for(size_t n=0;n<input.frames;++n)quiet[n]=input.data[n]*.001f;
+                input.data=quiet;
+            }
             int ok=ts_cdp_run_portal(&runtime,&recipe,&input,&options,&result,error,sizeof(error));
+            free(quiet);
             if(!ok)fprintf(stderr,"PROCESS EDGE %s rate %u edge %d: %s\n%s\n",proc->id,input.sample_rate,edge,error,result.diagnostic);
             assert(ok && result.finite && result.output.sample_rate==input.sample_rate && !result.cleanup_failed);
             assert(result.output.frames<=TS_PORTAL_MAX_FRAMES && result.job_directory[0]==0);
-            if(proc->family==TS_PORTAL_FILTER) {
+            if(proc->family==TS_PORTAL_FILTER || proc->family==TS_PORTAL_DELAY) {
                 double tail=0;
                 for(unsigned n=0;n<proc->parameter_count;++n)
                     if(!strcmp(proc->parameters[n].id,"tail"))tail=recipe.values[n];
@@ -310,6 +455,7 @@ int main(int argc,char **argv)
         }
         /* Known tones distinguish the four native modes and catch wrong mode routing.
            Independent cutoff/acuity corners also cover combinations missed by all-min/all-max. */
+        test_sound_families(&runtime);
         for(int rate=0;rate<2;++rate) {
             TsSample tones={.frames=rate?48000:44100,.sample_rate=rate?48000:44100,.channels=1};
             tones.data=malloc(tones.frames*sizeof(float));assert(tones.data);
@@ -379,6 +525,7 @@ int main(int argc,char **argv)
             /* Source-dependent bounds on short and lower-rate audio are also
                checked by CDP itself, not just by the Portal validator. */
             for(size_t i=26;i<ts_portal_process_count();++i) {
+                if(ts_portal_process_at(i)->family!=TS_PORTAL_GRAIN)continue;
                 ts_portal_recipe_default(&recipe,ts_portal_process_at(i));
                 TsSample short_grain=tone;short_grain.frames=sr/10;
                 if(!strcmp(recipe.process_id,"modify.brassage.4"))recipe.values[1]=200;
@@ -411,9 +558,8 @@ int main(int argc,char **argv)
     }
     if(argc>1) {
         assert(bin && *bin); /* A screenshot must show a real render. */
-        ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("modify.brassage.5"));
-        ui.portal.recipe.values[0]=.25;
-        ui.portal.family=TS_PORTAL_GRAIN+1;ui.portal.selected_tab=0;ui.portal.selected_slot=29;
+        ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("stretch.spectrum.1"));
+        ui.portal.family=TS_PORTAL_SPECTRAL+1;ui.portal.selected_tab=0;ui.portal.selected_slot=39;ui.portal.scroll=3;
         assert(ts_cdp_run_portal(&runtime,&ui.portal.recipe,&instrument.current,&options,&result,error,sizeof(error)));
         ui.portal.open=1;ui.portal.valid=1;ui.portal.source=&instrument.current;
         snprintf(ui.portal.source_name,sizeof(ui.portal.source_name),"TILE 01 METAL");
@@ -422,7 +568,7 @@ int main(int argc,char **argv)
         ts_portal_wave_reset(&ui.portal.waves[1],ui.portal.result);
         ui.portal.waves[0].playhead=22050;ui.portal.waves[1].playhead=22050;
         ui.portal.history_count=1;ui.portal.history_selected=0;
-        snprintf(ui.portal.history_names[0],24,"GRAIN DENSITY");
+        snprintf(ui.portal.history_names[0],24,"STRETCH ABOVE");
         snprintf(ui.portal.message,sizeof(ui.portal.message),"REAL CDP PREVIEW READY - SOURCE UNCHANGED - ENTER PREVIEW / SPACE PLAY / TAB A-B");
         ts_ui_render(&fb,&ui,&instrument);
         f=fopen(argv[1],"wb");assert(f);fprintf(f,"P6\n%d %d\n255\n",TS_UI_WIDTH,TS_UI_HEIGHT);

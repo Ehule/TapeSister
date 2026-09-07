@@ -9,10 +9,10 @@
 #include <windows.h>
 #endif
 
-/* Audited against CDP8 dev/distort/ap_distort.c (usage2) and
-   dev/cdp2k/tklib1.c (ranges). Expansion factors deliberately capped at 16
-   for this first release; group/skip ranges retain CDP's full 32767 limit.
-   Each mode has a stable identity. No invented SCRAMBLE macro parameters. */
+/* Native command layouts, modes, and scalar ranges are audited against CDP8
+   distort/blur/stretch/filter/modify and cdp2k sources. Portal-specific bounds
+   protect source compatibility and output size; stable IDs preserve recipes.
+   The runtime supplies the DSP, including PVOC analysis/synthesis for spectra. */
 #define GROUP(lo, def) {"cycles", "CYCLE GROUP", "NUMBER OF WAVECYCLES IN EACH GROUP", "", TS_PORTAL_INTEGER, lo, 32767, def}
 #define SKIP {"skip", "SKIP CYCLES", "LEAVE THESE INITIAL WAVECYCLES UNPROCESSED", "-s", TS_PORTAL_INTEGER, 0, 32767, 0}
 #define MULT {"multiplier", "REPEATS", "TIMES EACH WAVECYCLE GROUP IS REPEATED", "", TS_PORTAL_INTEGER, 2, 16, 2}
@@ -21,6 +21,21 @@
 #define FILTER_GAIN {"gain", "OUTPUT GAIN", "LINEAR OUTPUT MULTIPLIER; RESONANCE CAN STILL BOOST LEVEL", "", TS_PORTAL_REAL, .01, 1, .5}
 #define FILTER_FREQ {"frequency", "FREQUENCY HZ", "20 TO 6000 HZ; ALSO LIMITED TO ONE SIXTH OF SOURCE RATE", "", TS_PORTAL_REAL, 20, 6000, 1000}
 #define FILTER_TAIL {"tail", "TAIL SECONDS", "APPEND 0.01 TO 2 SECONDS FOR FILTER DECAY", "-t", TS_PORTAL_REAL, .01, 2, .25}
+#define CHORUS_AMP {"amplitude", "AMP SCATTER", "MAXIMUM RANDOM PARTIAL-AMPLITUDE RATIO; 1 IS UNCHANGED", "", TS_PORTAL_REAL, 1, 1028, 1.5}
+#define CHORUS_FREQ {"frequency", "FREQ SCATTER", "FREQUENCY SCATTER RATIO; 1 DISABLES SCATTER BUT CDP STILL RE-BINS PARTIALS", "", TS_PORTAL_REAL, 1, 4, 1.05}
+#define EQ_GAIN {"db", "BOOST / CUT DB", "GAIN IN THE SELECTED FREQUENCY REGION; -24 TO +24 DB", "", TS_PORTAL_REAL, -24, 24, -6}
+#define EQ_FREQ {"frequency", "FREQUENCY HZ", "FILTER FREQUENCY; MUST BE BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 40, 16000, 1000}
+#define EQ_PRESCALE {"prescale", "INPUT GAIN", "SCALE INPUT BEFORE EQ; 0.01 TO 1", "-s", TS_PORTAL_REAL, .01, 1, .5}
+#define SPECTRUM_PARAMS { \
+    {"divide", "DIVIDE HZ", "SPECTRAL SPLIT; MUST FIT THE STRETCH RATIO AND ANALYSIS BINS", "", TS_PORTAL_REAL, 500, 5000, 1500}, \
+    {"ratio", "STRETCH RATIO", "PARTIAL-FREQUENCY RATIO; 1 MAKES NO CHANGE AND IS REJECTED BY CDP", "", TS_PORTAL_REAL, .25, 4, 1.4}, \
+    {"exponent", "EXPONENT", "SHAPE OF THE FREQUENCY-STRETCH CURVE", "", TS_PORTAL_REAL, .25, 8, 1}, \
+    {"depth", "DEPTH", "STRETCH DEPTH; CDP REQUIRES A POSITIVE VALUE", "-d", TS_PORTAL_REAL, .01, 1, 1} }
+#define SWEEP_PARAMS {ACUITY, FILTER_GAIN, \
+    {"low", "LOW HZ", "LOWER SWEEP FREQUENCY; MUST BE BELOW HIGH HZ", "", TS_PORTAL_REAL, 20, 6000, 200}, \
+    {"high", "HIGH HZ", "UPPER SWEEP FREQUENCY; MAXIMUM ONE SIXTH OF SOURCE RATE", "", TS_PORTAL_REAL, 20, 6000, 3000}, \
+    {"rate", "SWEEP RATE HZ", "SWEEP CYCLES PER SECOND; ZERO HOLDS THE STARTING PHASE", "", TS_PORTAL_REAL, 0, 20, .5}, \
+    FILTER_TAIL, {"phase", "START PHASE", "0 STARTS LOW; 0.5 STARTS HIGH; 1 RETURNS LOW", "-p", TS_PORTAL_REAL, 0, 1, 0} }
 static const TsPortalProcess processes[] = {
     {"distort.reverse", "CYCLE REVERSE", "Reverse groups of wavecycles. Larger groups reveal reversed gestures; small groups reshape the timbre.", "reverse", 1, 0, 1, 0, {GROUP(1,8)}, TS_PORTAL_WAVESET, "distort"},
     {"distort.repeat", "CYCLE REPEAT", "Repeat groups of wavecycles to stretch the sound. Group size changes the texture of the repetition.", "repeat", 1, 0, 3, 1, {MULT, CYCLEFLAG, SKIP}, TS_PORTAL_WAVESET, "distort"},
@@ -50,7 +65,7 @@ static const TsPortalProcess processes[] = {
         {{"partials", "PARTIALS", "NUMBER OF LOUDEST PARTIALS TO REJECT (513 ANALYSIS BINS)", "", TS_PORTAL_INTEGER, 1, 513, 8}}, TS_PORTAL_SPECTRAL, "blur"},
     {"blur.chorus.5", "SPECTRAL CHORUS", "Scatter partial amplitudes and frequencies. Values near one are subtle; larger amounts become grainy or noisy. Random results can vary each render.", "chorus", 1, 5, 2, 0,
         {{"amplitude", "AMP SCATTER", "MAXIMUM RANDOM PARTIAL-AMPLITUDE RATIO; 1 IS UNCHANGED", "", TS_PORTAL_REAL, 1, 1028, 1.5},
-         {"frequency", "FREQ SCATTER", "MAXIMUM RANDOM PARTIAL-FREQUENCY RATIO; 1 IS UNCHANGED", "", TS_PORTAL_REAL, 1, 4, 1.01}}, TS_PORTAL_SPECTRAL, "blur"},
+         {"frequency", "FREQ SCATTER", "FREQUENCY SCATTER RATIO; 1 DISABLES SCATTER BUT CDP STILL RE-BINS PARTIALS", "", TS_PORTAL_REAL, 1, 4, 1.01}}, TS_PORTAL_SPECTRAL, "blur"},
     {"stretch.time.1", "SPECTRAL TIME", "Stretch or compress time while retaining pitch. Ratio two doubles the duration. Spectral resynthesis can soften transients; compare source and result.", "time", 1, 1, 1, 1,
         {{"ratio", "TIME RATIO", "OUTPUT DURATION MULTIPLIER; PORTAL RANGE 0.25 TO 16", "", TS_PORTAL_REAL, .25, 16, 1.5}}, TS_PORTAL_SPECTRAL, "stretch"},
     /* CDP8 modify/ap_modify.c usage2 and cdp2k/tklib1.c MOD_PITCH /
@@ -96,7 +111,82 @@ static const TsPortalProcess processes[] = {
         {{"grain_ms", "GRAIN MS", "GRAIN LENGTH; 12 TO 250 MS, LONGER THAN THE TWO 5 MS SPLICES", "", TS_PORTAL_REAL, 12, 250, 50},
          {"lookback_ms", "LOOKBACK MS", "RANDOM BACKWARD SEARCH; MUST NOT EXCEED TWICE SOURCE DURATION", "-r", TS_PORTAL_REAL, 0, 2000, 250}}, TS_PORTAL_GRAIN, "modify"},
     {"modify.brassage.5", "GRAIN DENSITY", "Break the source into scattered 50 ms grains. Density below one leaves gaps; higher values overlap grains. Compare the gaps in the result waveform.", "brassage", 1, 5, 1, 1,
-        {{"density", "DENSITY", "GRAIN OVERLAP; BELOW 1 LEAVES GAPS; PORTAL RANGE 0.125 TO 2", "", TS_PORTAL_REAL, .125, 2, .5}}, TS_PORTAL_GRAIN, "modify"}
+        {{"density", "DENSITY", "GRAIN OVERLAP; BELOW 1 LEAVES GAPS; PORTAL RANGE 0.125 TO 2", "", TS_PORTAL_REAL, .125, 2, .5}}, TS_PORTAL_GRAIN, "modify"},
+    /* Extended spectral modes: blur/ap_blur.c, stretch/ap_stretch.c,
+       cdp2k/formantsg.c, cdp2k/tklib1.c and include/speccon.h. */
+    {"blur.avrg", "SPECTRAL AVERAGE", "Smooth energy across neighboring frequency bins. Larger odd groups soften spectral detail. Compare with Spectral Blur, which averages through time.", "avrg", 1, 0, 1, 0,
+        {{"bins", "NEIGHBOR BINS", "ODD NUMBER OF ADJACENT ANALYSIS BINS TO AVERAGE", "", TS_PORTAL_ODD_INTEGER, 3, 511, 13}}, TS_PORTAL_SPECTRAL, "blur"},
+    {"blur.chorus.1", "AMPLITUDE CHORUS", "Randomise the amplitudes of partials while retaining their frequencies. Raise scatter to make the spectral balance flicker between frames.", "chorus", 1, 1, 1, 0,
+        {CHORUS_AMP}, TS_PORTAL_SPECTRAL, "blur"},
+    {"blur.chorus.2", "FREQUENCY CHORUS", "Scatter partial frequencies upward and downward. Amplitudes are not randomised. Small ratios detune; large ratios break apart the harmonic structure.", "chorus", 1, 2, 1, 0,
+        {CHORUS_FREQ}, TS_PORTAL_SPECTRAL, "blur"},
+    {"blur.chorus.3", "CHORUS UP", "Scatter partial frequencies upward only. A ratio of one leaves frequencies unchanged; larger ratios open the sound into an inharmonic shimmer.", "chorus", 1, 3, 1, 0,
+        {CHORUS_FREQ}, TS_PORTAL_SPECTRAL, "blur"},
+    {"blur.chorus.4", "CHORUS DOWN", "Scatter partial frequencies downward only. Compare with Chorus Up on the same source to hear how the direction changes the spectral texture.", "chorus", 1, 4, 1, 0,
+        {CHORUS_FREQ}, TS_PORTAL_SPECTRAL, "blur"},
+    {"blur.chorus.6", "AMP + CHORUS UP", "Randomise partial amplitudes and scatter their frequencies upward. The two controls independently change spectral balance and detuning.", "chorus", 1, 6, 2, 0,
+        {CHORUS_AMP, CHORUS_FREQ}, TS_PORTAL_SPECTRAL, "blur"},
+    {"blur.chorus.7", "AMP + CHORUS DOWN", "Randomise partial amplitudes and scatter their frequencies downward. Compare with Spectral Chorus for scatter in both directions.", "chorus", 1, 7, 2, 0,
+        {CHORUS_AMP, CHORUS_FREQ}, TS_PORTAL_SPECTRAL, "blur"},
+    {"blur.noise", "SPECTRAL NOISE", "Introduce noise into the existing spectrum. Zero leaves it unchanged; one saturates it with noise. Useful for moving pitched material toward breath or hiss.", "noise", 1, 0, 1, 0,
+        {{"amount", "NOISE AMOUNT", "0 LEAVES THE SPECTRUM UNCHANGED; 1 SATURATES IT WITH NOISE", "", TS_PORTAL_REAL, 0, 1, .25}}, TS_PORTAL_SPECTRAL, "blur"},
+    {"blur.spread", "SPECTRAL SPREAD", "Spread spectral peaks using a frequency-based formant envelope. Envelope bins set its resolution; spread moves toward a noisy texture.", "spread", 1, 0, 2, 0,
+        {{"bins", "ENVELOPE BINS", "FREQUENCY-WISE FORMANT ENVELOPE GROUPING; NATIVE -f CONTROL", "-f", TS_PORTAL_INTEGER, 1, 64, 4},
+         {"spread", "SPREAD", "DEGREE OF SPECTRAL PEAK SPREADING", "-s", TS_PORTAL_REAL, 0, 1, .5}}, TS_PORTAL_SPECTRAL, "blur"},
+    {"stretch.spectrum.1", "STRETCH ABOVE", "Warp partial frequencies above the split frequency. Ratio changes tuning, exponent shapes the curve, and depth controls the amount. Duration is retained.", "spectrum", 1, 1, 4, 0,
+        SPECTRUM_PARAMS, TS_PORTAL_SPECTRAL, "stretch"},
+    {"stretch.spectrum.2", "STRETCH BELOW", "Warp partial frequencies below the split frequency. Explore inharmonic bass structures while leaving the upper region in place. Duration is retained.", "spectrum", 1, 2, 4, 0,
+        SPECTRUM_PARAMS, TS_PORTAL_SPECTRAL, "stretch"},
+    /* Complete fixed-EQ, sweeping-filter, and allpass mode sets. */
+    {"filter.fixed.1", "LOW SHELF EQ", "Boost or cut frequencies below the shelf. Positive dB adds weight; negative dB thins the low end. Input gain leaves room for boosts.", "fixed", 1, 1, 4, 1,
+        {EQ_GAIN, EQ_FREQ, FILTER_TAIL, EQ_PRESCALE}, TS_PORTAL_FILTER, "filter"},
+    {"filter.fixed.2", "HIGH SHELF EQ", "Boost or cut frequencies above the shelf. Use it to brighten a texture or soften its upper edge. Input gain leaves room for boosts.", "fixed", 1, 2, 4, 1,
+        {EQ_GAIN, EQ_FREQ, FILTER_TAIL, EQ_PRESCALE}, TS_PORTAL_FILTER, "filter"},
+    {"filter.fixed.3", "PEAK EQ", "Boost or cut a band around the center frequency. Bandwidth sets the region in Hz. Compare narrow resonant accents with broader tonal changes.", "fixed", 1, 3, 5, 1,
+        {{"bandwidth", "BANDWIDTH HZ", "WIDTH OF THE EQ BAND; MUST BE BELOW ONE QUARTER OF SOURCE RATE", "", TS_PORTAL_REAL, 20, 4000, 500},
+         EQ_GAIN, EQ_FREQ, FILTER_TAIL, EQ_PRESCALE}, TS_PORTAL_FILTER, "filter"},
+    {"filter.sweeping.1", "SWEEPING NOTCH", "Move a rejected band through the sound. Lower acuity narrows the notch. Scroll for sweep rate, tail, and starting phase.", "sweeping", 1, 1, 7, 1,
+        SWEEP_PARAMS, TS_PORTAL_FILTER, "filter"},
+    {"filter.sweeping.3", "SWEEPING LOW PASS", "Move a resonant low-pass cutoff between two frequencies. Slow rates open and close the texture; fast rates add rhythmic movement.", "sweeping", 1, 3, 7, 1,
+        SWEEP_PARAMS, TS_PORTAL_FILTER, "filter"},
+    {"filter.sweeping.4", "SWEEPING HIGH PASS", "Move a resonant high-pass cutoff between two frequencies. Sweep away the low body of a sound to reveal its upper detail.", "sweeping", 1, 4, 7, 1,
+        SWEEP_PARAMS, TS_PORTAL_FILTER, "filter"},
+    {"filter.phasing.1", "ALLPASS SHIFT", "Shift phase through a delayed allpass network. Unlike Phasing, this mode does not mix the dry sound back in. The decay tail is included.", "phasing", 1, 1, 3, 1,
+        {{"gain", "FEEDBACK", "ALLPASS FEEDBACK COEFFICIENT; -0.95 TO 0.95", "", TS_PORTAL_REAL, -.95, .95, .6},
+         {"delay", "DELAY MS", "0.1 TO 50 MS; MUST NOT EXCEED HALF THE SOURCE DURATION", "", TS_PORTAL_REAL, .1, 50, 3},
+         FILTER_TAIL}, TS_PORTAL_FILTER, "filter"},
+    /* Lo-fi / modulation: modify/radical.c and tklib1.c. */
+    {"modify.radical.4", "BIT + RATE REDUCE", "Reduce amplitude resolution and average blocks of samples into held values. Larger blocks create a lower-rate texture. A partial final block is dropped.", "radical", 1, 4, 2, 1,
+        {{"bits", "BITS", "NATIVE AMPLITUDE RESOLUTION; 1 TO 16 BITS", "", TS_PORTAL_INTEGER, 1, 16, 8},
+         {"division", "RATE DIVISION", "SAMPLES PER AVERAGED AND HELD BLOCK; 1 TO 256", "", TS_PORTAL_INTEGER, 1, 256, 4}}, TS_PORTAL_LOFI, "modify"},
+    {"modify.radical.7", "QUANTISE", "Apply mid-rise amplitude quantisation. Low bit counts add stepped distortion. This mode changes amplitude resolution without reducing the sample rate.", "radical", 1, 7, 1, 0,
+        {{"bits", "BITS", "MID-RISE QUANTISATION RESOLUTION; 1 TO 16 BITS", "", TS_PORTAL_INTEGER, 1, 16, 6}}, TS_PORTAL_LOFI, "modify"},
+    {"modify.radical.5", "RING MODULATE", "Multiply the source by a sine wave to create sum and difference frequencies. Low rates pulse; higher rates give metallic or inharmonic sidebands.", "radical", 1, 5, 1, 0,
+        {{"frequency", "MODULATION HZ", "SINE MODULATOR FREQUENCY; MUST BE BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, .1, 12000, 150}}, TS_PORTAL_LOFI, "modify"},
+    {"distort.reform.1", "FIXED SQUARE", "Replace half-cycles with a fixed-level square wave. This discards the amplitude envelope and can be loud. Review the peak before applying.", "reform", 1, 1, 0, 0, {{0}}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.reform.2", "SQUARE WAVE", "Square each half-cycle while following its peak level. Adds strong upper harmonics while retaining the changing amplitude of the source.", "reform", 1, 2, 0, 0, {{0}}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.reform.3", "FIXED TRIANGLE", "Replace half-cycles with fixed-level triangles. The original amplitude envelope is discarded. Review the output peak before applying.", "reform", 1, 3, 0, 0, {{0}}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.reform.4", "TRIANGLE WAVE", "Reshape half-cycles into triangles following their peak levels. Turns irregular wave shapes into a more geometric contour.", "reform", 1, 4, 0, 0, {{0}}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.reform.6", "CLICK STREAM", "Convert half-cycles into short clicks. Reveals the zero-crossing rhythm as a sharp, dense impulse texture.", "reform", 1, 6, 0, 0, {{0}}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.reform.7", "SINE WAVE", "Reshape half-cycles into sinusoidal curves following their peak levels. Simplifies the contour without imposing one global pitch.", "reform", 1, 7, 0, 0, {{0}}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.reform.8", "CONTOUR EXAGGERATE", "Apply an exponent to each half-cycle contour. Explore flattened or sharpened wave shapes; 1 preserves the contour.", "reform", 1, 8, 1, 0,
+        {{"exponent", "EXAGGERATION", "HALF-CYCLE CONTOUR EXPONENT; 1 IS NEUTRAL", "", TS_PORTAL_REAL, .125, 8, 2}}, TS_PORTAL_WAVESET, "distort"},
+    {"modify.loudness.1", "LINEAR GAIN", "Multiply amplitude by a positive gain. Values below 1 attenuate; values above 1 amplify. Review the output peak before applying.", "loudness", 1, 1, 1, 0,
+        {{"gain", "GAIN", "POSITIVE AMPLITUDE MULTIPLIER; CDP REJECTS ZERO GAIN", "", TS_PORTAL_REAL, .001, 4, .5}}, TS_PORTAL_LEVEL, "modify"},
+    {"modify.loudness.2", "DB GAIN", "Raise or lower the level in decibels. Positive values amplify; negative values attenuate. Zero retains the level.", "loudness", 1, 2, 1, 0,
+        {{"db", "GAIN DB", "AMPLITUDE GAIN IN DECIBELS", "", TS_PORTAL_REAL, -24, 24, -6}}, TS_PORTAL_LEVEL, "modify"},
+    {"modify.loudness.3", "RAISE PEAK", "CDP normalise raises the peak to a target. It rejects a sound already at or above that level. Use Set Peak when attenuation is needed.", "loudness", 1, 3, 1, 0,
+        {{"level", "TARGET PEAK", "TARGET MUST EXCEED SOURCE PEAK; SILENCE CANNOT BE NORMALISED", "-l", TS_PORTAL_REAL, .01, 1, .9}}, TS_PORTAL_LEVEL, "modify"},
+    {"modify.loudness.4", "SET PEAK", "Scale a non-silent sound up or down to the target peak. CDP rejects a source already at the requested level.", "loudness", 1, 4, 1, 0,
+        {{"level", "TARGET PEAK", "LINEAR PEAK TARGET; 1 IS FULL SCALE", "-l", TS_PORTAL_REAL, .01, 1, .9}}, TS_PORTAL_LEVEL, "modify"},
+    {"modify.loudness.6", "INVERT POLARITY", "Reverse the sign of every sample. The duration and amplitude envelope remain the same. Useful for phase comparisons and later layering.", "loudness", 1, 6, 0, 0, {{0}}, TS_PORTAL_LEVEL, "modify"},
+    {"modify.revecho.1", "FEEDBACK DELAY", "Add a fixed delay with feedback and a dry/wet mix. Short times create resonance; longer times create echoes. Scroll for tail, input gain, and dry inversion.", "revecho", 1, 1, 6, 1,
+        {{"delay", "DELAY MS", "DELAY TIME; AT LEAST ONE SOURCE SAMPLE", "", TS_PORTAL_REAL, .1, 2000, 180},
+         {"mix", "WET MIX", "0 IS DRY; 1 IS DELAYED SIGNAL ONLY", "", TS_PORTAL_REAL, 0, 1, .4},
+         {"feedback", "FEEDBACK", "FEEDBACK COEFFICIENT; NEGATIVE VALUES INVERT EACH REPEAT", "", TS_PORTAL_REAL, -.95, .95, .35},
+         {"tail", "TAIL SECONDS", "EXTRA OUTPUT TIME FOR ECHO DECAY", "", TS_PORTAL_REAL, 0, 4, 1},
+         {"prescale", "INPUT GAIN", "INPUT LEVEL BEFORE THE NATIVE FEEDBACK COMPENSATION", "-p", TS_PORTAL_REAL, .01, 1, .5},
+         {"invert", "INVERT DRY", "REVERSE THE DRY SIGNAL FOR PHASING EFFECTS", "-i", TS_PORTAL_SWITCH, 0, 1, 0}}, TS_PORTAL_DELAY, "modify"}
 };
 #undef GROUP
 #undef SKIP
@@ -106,6 +196,13 @@ static const TsPortalProcess processes[] = {
 #undef FILTER_GAIN
 #undef FILTER_FREQ
 #undef FILTER_TAIL
+#undef CHORUS_AMP
+#undef CHORUS_FREQ
+#undef EQ_GAIN
+#undef EQ_FREQ
+#undef EQ_PRESCALE
+#undef SPECTRUM_PARAMS
+#undef SWEEP_PARAMS
 
 static int fail(char *error, size_t size, const char *message)
 { if (error && size) snprintf(error, size, "%s", message); return 0; }
@@ -146,6 +243,8 @@ int ts_portal_recipe_validate(const TsPortalRecipe *r, char *error, size_t size)
         const TsPortalParam *s=&p->parameters[i];
         if(v<s->minimum || v>s->maximum || (s->type!=TS_PORTAL_REAL && v!=floor(v)))
             return fail(error,size,"PARAMETER OUTSIDE CDP RANGE");
+        if(s->type==TS_PORTAL_ODD_INTEGER && fmod(v,2)!=1)
+            return fail(error,size,"PARAMETER MUST BE AN ODD INTEGER");
     }
     if (!strcmp(p->command,"omit") && r->values[0]>=r->values[1])
         return fail(error,size,"OMIT A MUST BE LESS THAN EVERY B");
@@ -267,9 +366,13 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
             /* CDP's state-variable recurrence uses 2*pi*f/sr directly. Keep
                this batch below sr/6, safely inside its stability region for
                every exposed acuity, rather than permitting Nyquist. */
-            if((!strcmp(id,"frequency") || !strcmp(id,"low") || !strcmp(id,"high")) &&
+            if(strcmp(p->command,"fixed") && (!strcmp(id,"frequency") || !strcmp(id,"low") || !strcmp(id,"high")) &&
                r->values[i]>(double)input->sample_rate/6)
                 return fail(error,size,"FILTER FREQUENCY MUST NOT EXCEED SOURCE RATE / 6");
+            if(!strcmp(p->command,"fixed") && !strcmp(id,"frequency") && r->values[i]>=input->sample_rate*.5)
+                return fail(error,size,"EQ FREQUENCY MUST BE BELOW SOURCE NYQUIST");
+            if(!strcmp(id,"bandwidth") && r->values[i]>=input->sample_rate*.25)
+                return fail(error,size,"EQ BANDWIDTH MUST BE BELOW SOURCE RATE / 4");
             if(!strcmp(id,"delay") &&
                (r->values[i]<1000.0/input->sample_rate || r->values[i]>(double)input->frames*500/input->sample_rate))
                 return fail(error,size,"DELAY MUST FIT ONE SAMPLE TO HALF THE SOURCE DURATION");
@@ -291,21 +394,46 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         c->expected_output_type=TS_CDP_IO_WAV;
         *count=1;return 1;
     }
-    if(p->family==TS_PORTAL_TIME) {
+    if(p->family==TS_PORTAL_TIME || p->family==TS_PORTAL_LOFI ||
+       p->family==TS_PORTAL_LEVEL || p->family==TS_PORTAL_DELAY) {
         if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
            input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES)
-            return fail(error,size,"TIME PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+            return fail(error,size,"PROCESS REQUIRES A MONO SOURCE WITHIN THE PORTAL LIMIT");
         if(input->frames<(size_t)input->sample_rate/25)
-            return fail(error,size,"TIME SOURCE NEEDS AT LEAST 40 MS");
-        for(size_t i=0;i<input->frames;++i)if(!isfinite(input->data[i]))
-            return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
+            return fail(error,size,"SOURCE NEEDS AT LEAST 40 MS");
+        double peak=0,tail=0;
+        for(size_t i=0;i<input->frames;++i) {
+            if(!isfinite(input->data[i]))return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
+            peak=fmax(peak,fabs(input->data[i]));
+        }
+        if(p->family==TS_PORTAL_LOFI) {
+            if(p->mode==5 && r->values[0]>=input->sample_rate*.5)
+                return fail(error,size,"MODULATION FREQUENCY MUST BE BELOW SOURCE NYQUIST");
+            if(p->mode==4 && r->values[1]>input->frames)
+                return fail(error,size,"RATE DIVISION EXCEEDS SOURCE LENGTH");
+        }
+        if(p->family==TS_PORTAL_LEVEL && (p->mode==3 || p->mode==4)) {
+            if(peak<1.0/32767)return fail(error,size,"SOURCE TOO QUIET TO NORMALISE AFTER WAV STAGING");
+            if(fabs(peak-r->values[0])<.0001)
+                return fail(error,size,"SOURCE PEAK ALREADY AT TARGET LEVEL");
+            if(p->mode==3 && peak>r->values[0])
+                return fail(error,size,"RAISE PEAK TARGET MUST EXCEED SOURCE PEAK; USE SET PEAK TO ATTENUATE");
+        }
+        if(p->family==TS_PORTAL_DELAY)for(unsigned i=0;i<p->parameter_count;++i) {
+            const char *id=p->parameters[i].id;
+            if(!strcmp(id,"delay") && r->values[i]<1000.0/input->sample_rate)
+                return fail(error,size,"DELAY MUST FIT AT LEAST ONE SOURCE SAMPLE");
+            if(!strcmp(id,"tail"))tail=r->values[i];
+        }
+        if((double)input->frames+ceil(tail*input->sample_rate)>TS_PORTAL_MAX_FRAMES)
+            return fail(error,size,"SOURCE PLUS DELAY TAIL EXCEEDS PORTAL LIMIT");
         double expansion=1;
         if(!strcmp(p->command,"speed")) {
             if(p->mode==1)expansion=1/r->values[0];
             else if(p->mode==2)expansion=exp2(-r->values[0]/12);
             else expansion=exp2(r->values[1]/12); /* Conservative slowest vibrato speed. */
         }
-        if(p->changes_duration && (double)input->frames*expansion+1024>TS_PORTAL_MAX_FRAMES)
+        if(p->family==TS_PORTAL_TIME && p->changes_duration && (double)input->frames*expansion+1024>TS_PORTAL_MAX_FRAMES)
             return fail(error,size,"REQUESTED TIME PROCESS EXCEEDS PORTAL LIMIT");
         TsCdpCommand *c=&commands[0];
         snprintf(c->executable,sizeof(c->executable),"%s",p->executable);
@@ -313,7 +441,12 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%u",p->mode);
         snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"input.wav");
         snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"output.wav");
-        for(unsigned i=0;i<p->parameter_count;++i)snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%.9g",r->values[i]);
+        for(unsigned i=0;i<p->parameter_count;++i) {
+            const TsPortalParam *param=&p->parameters[i];
+            if(param->type==TS_PORTAL_SWITCH) {
+                if(r->values[i])snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s",param->flag);
+            } else snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s%.9g",param->flag,r->values[i]);
+        }
         snprintf(c->expected_output,sizeof(c->expected_output),"output.wav");
         c->expected_output_type=TS_CDP_IO_WAV;
         *count=1;return 1;
@@ -326,6 +459,16 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
     if(!strcmp(p->id,"blur.blur") && r->values[0]>(double)(input->frames/128))
         return fail(error,size,"BLUR WINDOWS EXCEED SOURCE; LOWER BLUR OR LOAD A LONGER SOUND");
+    if(!strcmp(p->command,"spectrum")) {
+        /* Match CDP's 1024-point bin mapping and compatibility checks, while
+           excluding zero denominators in the above/below stretch recurrence. */
+        double split=floor(r->values[0]*1024/input->sample_rate+.5),ratio=r->values[1];
+        if(fabs(ratio-1)<.000001)return fail(error,size,"STRETCH RATIO 1 MAKES NO CHANGE; CHOOSE A DIFFERENT RATIO");
+        if(split<2 || split>=512 ||
+           (p->mode==1 && round(512*(ratio>1?1/ratio:ratio))<=split) ||
+           (p->mode==2 && (ratio>=split || 1/ratio>=split || (ratio>1 && split-1<=round(ratio)))))
+            return fail(error,size,"SPECTRAL SPLIT / RATIO INCOMPATIBLE AT SOURCE RATE");
+    }
     if(p->changes_duration && ((double)input->frames+1024)*r->values[0]+1024>TS_PORTAL_MAX_FRAMES)
         return fail(error,size,"REQUESTED STRETCH EXCEEDS PORTAL LIMIT");
     TsCdpCommand *a=&commands[0],*c=&commands[1],*s=&commands[2];
@@ -338,7 +481,7 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
     if(p->mode)snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%u",p->mode);
     snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"input.ana");
     snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"effect.ana");
-    for(unsigned i=0;i<p->parameter_count;++i)snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%.9g",r->values[i]);
+    for(unsigned i=0;i<p->parameter_count;++i)snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s%.9g",p->parameters[i].flag,r->values[i]);
     snprintf(c->expected_output,sizeof(c->expected_output),"effect.ana");c->expected_output_type=TS_CDP_IO_ANALYSIS;
     snprintf(s->executable,sizeof(s->executable),"pvoc");
     const char *synth[]={"synth","effect.ana","output.wav"};
@@ -422,7 +565,7 @@ static int contains(const char *s,const char *q)
     return 0;
 }
 const char *ts_portal_family_name(int family)
-{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":family==TS_PORTAL_FILTER?"FILTER":family==TS_PORTAL_GRAIN?"GRAINS":"UNKNOWN"; }
+{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":family==TS_PORTAL_FILTER?"FILTER":family==TS_PORTAL_GRAIN?"GRAINS":family==TS_PORTAL_LOFI?"LO-FI / MOD":family==TS_PORTAL_LEVEL?"LEVEL":family==TS_PORTAL_DELAY?"DELAY":"UNKNOWN"; }
 
 int ts_portal_library_edit(TsPortalLibrary *lib,const char *path,int pin,int slot,
                            TsPortalEdit edit,const TsPortalRecipe *recipe,const char *name,

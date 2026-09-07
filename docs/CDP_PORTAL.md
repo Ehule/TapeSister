@@ -1,6 +1,6 @@
 # CDP Portal — explore, save, and manage your tools
 
-![Native CDP Portal rendering with a real grain-density result](images/cdp-portal.png)
+![Native CDP Portal rendering with a real spectral-stretch result](images/cdp-portal.png)
 
 CDP Portal is the exploratory workbench inside TapeSister. The original 32
 curated CDP instruments remain unchanged. The Portal uses a separate, stable-ID
@@ -14,20 +14,40 @@ of Current (the current selection when one exists). **SOURCE/SEL** toggles
 between whole-tile and main-canvas selection scope; **RELOAD** refreshes the
 snapshot. Failed source loading clears the previous snapshot.
 
-The waveset family exposes 12 source-verified modes of CDP's `distort` program:
-cycle reverse, repeat, repeat2, interpolate, multiply, divide, omit, average,
-delete modes 1/2/3, and reform mode 5. Four spectral, four time/tape, six filter, and four granular modes bring
-the Portal to 30 processes. Search matches names, stable command IDs, descriptions, and
+The Portal exposes **64 processes across eight families**: 19 waveset, 15 spectral,
+four time/tape, 13 filter, four grains, three lo-fi/modulation, five level, and one
+delay process. Search matches names, stable command IDs, descriptions, and
 families. **ALL**, **SAVE**, and **PINS** switch the left browser between
 processes, saved recipes, and user process pins. Scroll that column with the
 mouse wheel. The family button below the tabs cycles **ALL FAMILIES**,
-**WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, and **GRAINS**. Family and text filters combine, including in
+**WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, **GRAINS**, **LO-FI / MOD**, **LEVEL**, and **DELAY**. Family and text filters combine, including in
 saved recipes and pins. Clearing the search and choosing ALL FAMILIES restores
 the complete list. Filtering never renumbers stored slots.
 
-These 30 Portal modes accept mono input only; stereo is rejected explicitly.
+These 64 Portal modes accept mono input only; stereo is rejected explicitly.
 Multi-input/multichannel, breakpoint-file, and text-file workflows remain future
 work. The factory bank retains its original 32 curated instruments.
+
+## Waveset family
+
+Cycle Reverse, Repeat, Repeat 2, Interpolate, Multiply, Divide, Omit, Average,
+and Delete modes 1–3 are joined by all eight native `distort reform` modes:
+
+| Process | Native CDP identity | Behavior / controls |
+| --- | --- | --- |
+| Fixed Square | `distort.reform.1` | Fixed-level square half-cycles |
+| Square Wave | `distort.reform.2` | Square half-cycles following source peaks |
+| Fixed Triangle | `distort.reform.3` | Fixed-level triangular half-cycles |
+| Triangle Wave | `distort.reform.4` | Triangular half-cycles following source peaks |
+| Half Invert | `distort.reform.5` | Inverted half-cycles (existing process) |
+| Click Stream | `distort.reform.6` | Short clicks at half-cycle boundaries |
+| Sine Wave | `distort.reform.7` | Sinusoidal half-cycles following source peaks |
+| Contour Exaggerate | `distort.reform.8` | Contour exponent 0.125–8; 1 is neutral |
+
+Reform modes 1–7 have no numeric controls. Their settings can still be saved and
+pinned. Fixed-level modes discard the original amplitude envelope and can be loud;
+check the result peak before Apply. Waveset processing needs at least two complete
+wavecycles, and group/skip controls must fit the source.
 
 ## Spectral family
 
@@ -37,6 +57,14 @@ work. The factory bank retains its original 32 curated instruments.
 | Suppress Partials | `blur.suppress` | Remove 1–513 loudest partials per frame |
 | Spectral Chorus | `blur.chorus.5` | Amplitude scatter 1–1028; frequency scatter 1–4 |
 | Spectral Time | `stretch.time.1` | Duration ratio 0.25–16, bounded by Portal memory limit |
+| Spectral Average | `blur.avrg` | Average over 3–511 bins, odd integers only |
+| Amplitude Chorus | `blur.chorus.1` | Amplitude scatter 1–1028 |
+| Frequency Chorus | `blur.chorus.2` | Frequency scatter 1–4, both directions |
+| Chorus Up / Down | `blur.chorus.3` / `.4` | Frequency scatter 1–4, upward / downward |
+| Amp + Chorus Up / Down | `blur.chorus.6` / `.7` | Amplitude scatter 1–1028; frequency scatter 1–4 |
+| Spectral Noise | `blur.noise` | Noise amount 0–1 |
+| Spectral Spread | `blur.spread` | Frequency-wise envelope bins 1–64 (`-f`); spread 0–1 (`-s`) |
+| Stretch Above / Below | `stretch.spectrum.1` / `.2` | Split 500–5000 Hz, ratio 0.25–4, exponent 0.25–8, depth 0.01–1 |
 
 Each preview automatically runs **PVOC analysis → process → PVOC synthesis**.
 You bring in audio and receive audio; intermediate analysis files stay in the
@@ -45,6 +73,19 @@ isolated temporary job directory and are cleaned up afterward. This batch uses
 bins. Analysis settings are fixed in these version-1 process definitions.
 Sources need at least 2048 frames and 40 ms. Blur rejects window counts longer
 than the source supports rather than silently changing the recipe.
+
+Spectral Average exposes odd window counts because CDP rounds its averaging
+window to an odd number internally. Dragging and wheeling preserve that constraint;
+exact entry rejects even numbers. All seven chorus modes are available, with
+separate amplitude and frequency controls where the native mode supports them.
+A frequency ratio of one removes scatter, but native frequency modes still re-bin
+partials, so they need not null against the unprocessed PVOC round trip.
+
+Stretch Above and Stretch Below warp partial frequencies on one side of the split.
+CDP rejects ratio 1 and scalar depth 0, so these are explained or excluded by the
+Portal. Split and ratio must also fit the source sample rate and analysis bins;
+combinations that leave no room for CDP's stretch recurrence are rejected before
+analysis. This is frequency warping, distinct from Spectral Time's duration change.
 
 These are native scalar controls. CDP can also accept breakpoint files for some
 parameters; this batch does not expose that input. The time-ratio and blur caps
@@ -85,6 +126,10 @@ Vibrato uses a conservative estimate based on its slowest permitted speed.
 | High Pass | `filter.variable.4` | Acuity, output gain, frequency, tail |
 | Sweeping Band | `filter.sweeping.2` | Acuity, output gain, low/high frequency, sweep rate, tail, start phase |
 | Phasing | `filter.phasing.2` | Phasing gain, fixed delay, tail |
+| Low Shelf EQ / High Shelf EQ | `filter.fixed.1` / `.2` | Boost/cut −24 to +24 dB, frequency 40–16000 Hz, tail, input gain 0.01–1 |
+| Peak EQ | `filter.fixed.3` | Bandwidth 20–4000 Hz plus boost/cut, center frequency, tail, input gain |
+| Sweeping Notch / Low Pass / High Pass | `filter.sweeping.1` / `.3` / `.4` | Same seven controls as Sweeping Band |
+| Allpass Shift | `filter.phasing.1` | Feedback −0.95 to +0.95, delay 0.1–50 ms, tail |
 
 Try Low Pass and High Pass on the same source to hear which layers each reveals.
 Band Pass isolates a region; Notch cuts a region out. **Acuity** is CDP's native
@@ -99,7 +144,7 @@ labels** to reach the remaining controls; the footer shows which controls are
 visible. Wheeling a slider or number makes fine changes to that value instead.
 All seven controls can be typed exactly, saved, or exposed as pin macros.
 
-Frequency controls span 20–6000 Hz and must also fit within one sixth of the
+Variable and sweeping filter frequencies span 20–6000 Hz and must also fit within one sixth of the
 source sample rate. This is a conservative Portal bound for CDP's state-variable
 filter, whose recurrence is not stable all the way up to Nyquist. Settings are
 rejected with an explanation when the source rate is too low; saved recipes are
@@ -110,7 +155,15 @@ feedback coefficient (−0.95 to +0.95), not an output-volume slider. Delay rang
 from 0.1–50 ms and must fit between one source sample and half the source duration.
 This version holds the delay fixed; Sweeping Band provides automatic motion.
 
-All six modes work directly on mono WAV audio of at least 40 ms. **TAIL SECONDS**
+Allpass Shift returns the delayed allpass signal without mixing the dry source
+back in. Compare it with Phasing using the same feedback and delay settings.
+The three fixed EQ modes use a separate native algorithm: their frequencies must
+be below source Nyquist, and Peak EQ bandwidth must stay below one quarter of the
+source sample rate to avoid the native coefficient singularity. EQ input gain is
+applied before the filter. These EQ limits are distinct from the state-variable
+filter's rate/6 bound.
+
+All 13 modes work directly on mono WAV audio of at least 40 ms. **TAIL SECONDS**
 appends 0.01–2 seconds (default 0.25) for decay. Zero is deliberately excluded:
 CDP uses it to request an automatic tail of unknown duration. The source plus
 explicit tail must fit the Portal's eight-million-frame limit. The tail is part
@@ -165,6 +218,58 @@ maximum scatter against the eight-million-frame Portal limit. Grain boundaries,
 source-end handling, and scatter mean durations are approximate, including for
 pitch-only processing. The slider bounds above are Portal limits within CDP's
 native ranges. Breakpoint files and stereo spatialisation remain future work.
+
+## Lo-fi / modulation family
+
+| Process | Native CDP identity | Controls |
+| --- | --- | --- |
+| Bit + Rate Reduce | `modify.radical.4` | Bits 1–16; rate division 1–256 |
+| Quantise | `modify.radical.7` | Bits 1–16 |
+| Ring Modulate | `modify.radical.5` | Sine modulation frequency 0.1–12000 Hz, below source Nyquist |
+
+Bit + Rate Reduce averages each group of N samples, quantises it, and holds the
+value for that group. The native implementation accepts non-power-of-two division
+values, including 3. A partial last group is discarded, so output can be a few
+samples shorter. The WAV sample-rate tag remains unchanged. Quantise changes only
+amplitude resolution with native mid-rise quantisation. Ring Modulate creates sum
+and difference frequencies; try 150 Hz on a 500 Hz tone to hear 350/650 Hz sidebands.
+
+## Level family
+
+| Process | Native CDP identity | Controls |
+| --- | --- | --- |
+| Linear Gain | `modify.loudness.1` | Positive gain 0.001–4; 1 retains level |
+| dB Gain | `modify.loudness.2` | −24 to +24 dB; 0 retains level |
+| Raise Peak | `modify.loudness.3` | Target peak 0.01–1, above the source peak |
+| Set Peak | `modify.loudness.4` | Target peak 0.01–1, above or below source peak |
+| Invert Polarity | `modify.loudness.6` | No numeric controls |
+
+The labels reflect the audited implementation: CDP's mode 3 **raises** the peak
+and rejects audio already above the target. Set Peak can either amplify or
+attenuate. Both reject silence and an already-matching target; the Portal checks
+these cases before launching. Very quiet audio below the WAV16 staging resolution
+is also rejected for peak normalisation. CDP rejects zero linear gain, so it is
+excluded from the slider. This is peak scaling, not perceived-loudness measurement.
+
+## Delay family
+
+| Process | Native CDP identity | Controls |
+| --- | --- | --- |
+| Feedback Delay | `modify.revecho.1` | Delay, wet mix, feedback, tail, input gain, invert dry |
+
+Feedback Delay uses delay 0.1–2000 ms (at least one source sample), wet mix 0–1, feedback
+−0.95 to +0.95, tail 0–4 seconds, and input gain 0.01–1. Negative feedback inverts
+successive repeats. CDP also applies its native feedback-dependent gain
+compensation, so input gain is not a final output-volume control. Feedback Delay
+can invert the dry signal for phase cancellation effects.
+
+**Wheel over the labels** to reach tail, input gain, and dry inversion. All six
+controls support exact entry, recipe saving, and pin macro mapping.
+
+Unlike filter tails, delay tail 0 is an explicit zero-length tail. The source plus
+tail must fit eight million frames. CDP's block handling may shorten the nominal
+source-plus-tail length by one sample. Lo-fi, level, and delay processes require
+at least 40 ms of mono input and use the existing isolated WAV processing path.
 
 ## Preview and learn
 
@@ -297,6 +402,8 @@ cannot be overwritten accidentally. Back up and repair that file, then restart.
 Registry metadata is checked against the supplied CDP8 source
 (`dev/distort/ap_distort.c`, `dev/blur/ap_blur.c`, `dev/stretch/ap_stretch.c`,
 `dev/modify/ap_modify.c`, `dev/modify/brapcon.c`, `dev/modify/granula1.c`,
+`dev/modify/gain.c`, `dev/modify/radical.c`, `dev/modify/delay.c`,
+`dev/distort/distort.c`, `dev/blur/blur.c`, `dev/stretch/stretch.c`,
 `dev/filter/ap_filter.c`, `dev/filter/filters0.c`,
 `dev/filter/fltpcon.c`, `dev/include/filtcon.h`, `dev/cdp2k/tklib1.c`, `dev/include/speccon.h`,
 `dev/include/modicon.h`, and `dev/pv/pvoc.c`). The process/mode IDs and
@@ -335,6 +442,45 @@ To render a screenshot of actual CDP output:
 ```sh
 TS_TEST_CDP_BIN=/absolute/path/to/cdp/bin ./tapesister_portal_tests portal.ppm manager.ppm
 ```
+
+### Multi-family expansion verification record
+
+This expansion adds **34 processes**, bringing the Portal from 30 to **64**:
+seven waveset reform modes, 11 spectral modes, seven filters/EQs, three
+lo-fi/modulation modes, five level modes, and one feedback delay. All accept one
+mono sound and return one sound, using internal PVOC staging where required.
+
+All 64 defaults rendered using the source-built CDP binaries. Scalar lower/upper
+settings for the additions and existing non-waveset families rendered at 44.1 and
+48 kHz. Dependent settings use valid source-aware combinations: blur windows fit
+the source, sweeping low/high remain ordered, and Raise Peak uses a quiet source
+so even the minimum target actually raises its peak. Filter/delay tail lengths
+and the output-frame limit are checked.
+
+Independent signal tests cover gain scaling, raise/set peak, polarity inversion,
+ring-modulation sidebands, three-sample rate-reduction blocks and final truncation,
+quantisation levels, square/sine harmonics, chorus pitch retention at neutral
+scatter, above/below spectral warping, shelf/peak EQ boost and cut, exact impulse
+delay, dry inversion, and the unmixed allpass path. Source audio remains unchanged.
+Validation covers odd-only spectral windows, source Nyquist, EQ bandwidth, invalid
+spectral split/ratio combinations, silence normalisation, and native rejected
+zero settings. Flagged commands and a saved delay pin with sparse macros are checked.
+
+The native SDL controller test covers all eight family categories, scrolling to
+dry inversion, exact entry, a real feedback-delay preview, and odd-only averaging
+through mouse drag, wheel, and rejected/accepted numeric input. Existing collection,
+history, Apply, QWERTY, and live-loop tests passed. Portal core and SDL controller
+code passed ASan/UBSan; the keyboard/loop harness also passed under sanitizers.
+Leak detection was disabled because LeakSanitizer is unsupported here. These are
+Linux source-build and dummy-device checks; Windows packaging and physical-device
+listening remain native validation steps. The screenshots show real CDP output
+rendered by the native 640×400 interface.
+
+`modify revecho 2` was audited but excluded: the tested pinned runtime produced
+silence for dry-only mix and identical output for different random seeds. The
+source multiplies its dry path by an inversion value not initialised in that mode.
+That mode needs separate runtime investigation before exposing its advertised
+controls. No CDP source patch or extra runtime dependency is included in this batch.
 
 ### Grains-family verification record
 
