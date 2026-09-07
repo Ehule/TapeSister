@@ -20,3 +20,5 @@
 /artifacts/*.ppm
 /artifacts/*.png
 /tapesister_canvas_recording_tests
+/tapesister_stereo_gesture_tests
+/tapesister_stereo_gesture_controller_tests
