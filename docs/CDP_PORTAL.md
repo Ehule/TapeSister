@@ -38,6 +38,12 @@ breakpoint-file, and text-file families are not implemented by this slice.
 - **LOOP** repeats the current audition range.
 - Click a waveform to place its playhead; drag to select an audition range and
   move the playhead to its start; right-click clears that range.
+- **Alt+wheel** over a selection expands (up) or contracts (down) the edge on
+  that side of its center, using the canvas's zero-crossing steps. While looping,
+  wheel resizing and dragging update the audible range without stopping or
+  restarting the voice. The playhead stays where it is while inside the new
+  range; otherwise it moves to the new start. Clearing the range keeps the whole
+  waveform looping. Editing a stopped preview does not start playback.
 - Wheel over either waveform to zoom; Shift+wheel pans; **FIT** restores both
   full views. These waveform selections are audition-only. Processing uses the
   snapshot identified by SOURCE/SEL and the status line.
@@ -120,6 +126,8 @@ Tests:
 ```sh
 make test
 make tapesister_portal_controller_tests
+make tapesister_preview_loop_tests
+./tapesister_preview_loop_tests
 TS_TEST_CDP_BIN=/absolute/path/to/cdp/bin ./tapesister_portal_tests
 TS_TEST_CDP_BIN=/absolute/path/to/cdp/bin ./tapesister_portal_controller_tests
 ```
@@ -131,6 +139,9 @@ including stale page/audio rejection, apply/undo, control changes during a job,
 selection boundaries, close/cancel, history eviction, pointer detachment, occupied-pin preservation,
 new-tile copying, and stale-source clearing. Without TS_TEST_CDP_BIN the
 controller harness prints that real-CDP checks were skipped.
+The standalone preview-loop test requires SDL but no CDP installation. It covers
+live Alt+wheel and drag edits, callback continuity, range clearing, tiny loops,
+and stopped/non-looping behavior in Portal and mono/stereo import previews.
 It also exercises native input routing (typed values, waveform drag, middle-click
 pin editing, and left-click quick apply) and audition range/A-B ownership using
 paused dummy SDL devices; it does not open physical audio hardware.

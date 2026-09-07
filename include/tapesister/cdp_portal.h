@@ -38,7 +38,7 @@ typedef struct {
     int open, busy, valid, playing, listen_result, loop;
     int tab, scroll, search_focus, name_focus, exact_pin, pin_slot, macro_view;
     int parameter_scroll, dragging_parameter, dragging_wave, drag_x;
-    int number_focus;
+    int number_focus, wave_dragged;
     char number_text[32];
     size_t drag_anchor;
     char query[32], message[160], source_name[64];

@@ -129,6 +129,14 @@ discontinuity at the imported boundaries. Use the wheel for pointer-anchored zoo
 Shift+wheel or `Left`/`Right` to pan, and `0` to restore the complete-file view.
 Middle-click clears the selection and returns the playhead to the beginning.
 
+Hold `Alt` and wheel over a selection to expand it (up) or contract it (down).
+Hover its left half to move the left edge, or its right half to move the right
+edge, using the same zero-crossing steps as the canvas. While LOOP is playing,
+both wheel resizing and selection dragging change the audible range without
+stopping playback. The playhead stays in place if it still lies inside the new
+range; otherwise it moves to the new start. Clearing the selection while looping
+continues through the whole file. Editing a stopped preview does not start it.
+
 `Space` or **PLAY PREVIEW** starts at the playhead and stays inside the selection when
 one exists. After playback reaches the end, the playhead returns to the beginning of
 that range so Space immediately replays it. `L` or **LOOP** continuously repeats the
