@@ -59,7 +59,7 @@ static int portal_source(SDL_AudioDeviceID device,AudioState *audio,TsUiState *u
     ts_sample_free(&c->source);p->source=NULL;ts_portal_wave_reset(&p->waves[0],NULL);
     const TsSample *src=&instrument->current;
     if(!src->data || src->frames<2 || src->channels!=1) {
-        snprintf(p->message,sizeof(p->message),"CHOOSE A MONO TILE; THIS WAVESET FAMILY DOES NOT ACCEPT STEREO");return 0;
+        snprintf(p->message,sizeof(p->message),"CHOOSE A MONO TILE; CURRENT PORTAL FAMILIES REQUIRE MONO");return 0;
     }
     size_t first=0,last=src->frames;
     if(c->selection_scope && instrument->has_selection) {first=instrument->selection_first;last=instrument->selection_last;}
@@ -86,6 +86,7 @@ static void portal_close(SDL_AudioDeviceID device,AudioState *audio,TsUiState *u
     portal_stop(device,audio,&ui->portal,c);portal_cancel(c);ui->portal.open=0;
     ui->portal.dragging_parameter=-1;ui->portal.dragging_wave=-1;
     ui->portal.search_focus=ui->portal.name_focus=0;ui->portal.number_focus=-1;
+    ui->portal.manage_open=0;
     ui->master_output_dragging=0;
     SDL_StopTextInput();
     snprintf(ui->status,sizeof(ui->status),"CDP PORTAL CLOSED - SAVED RECIPES AND PINS RETAINED");
@@ -147,6 +148,7 @@ static void portal_select_history(SDL_AudioDeviceID device,AudioState *audio,
     p->valid=1;p->history_selected=index;p->listen_result=1;
     p->safety=c->history[index].safety;p->peak=c->history[index].peak;
     p->parameter_scroll=0;p->number_focus=-1;
+    p->selected_tab=p->selected_slot=-1;
     ts_portal_wave_reset(&p->waves[1],p->result);
 }
 static void portal_apply(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
@@ -183,7 +185,9 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
                 c->history[slot]=w->result;ts_cdp_run_result_init(&w->result);c->recipes[slot]=p->recipe;
                 p->history_count=c->history_count;
                 for(int i=0;i<c->history_count;++i)snprintf(p->history_names[i],sizeof(p->history_names[i]),"%.23s",c->recipes[i].name);
+                int selected_tab=p->selected_tab,selected_slot=p->selected_slot;
                 portal_select_history(device,audio,p,c,slot);
+                p->selected_tab=selected_tab;p->selected_slot=selected_slot;
                 snprintf(p->message,sizeof(p->message),"PREVIEW READY (%s) - A/B TO COMPARE; APPLY CHANGES THE TILE",ts_cdp_safety_name(p->safety));
                 if(c->quick_apply) {c->quick_apply=0;portal_apply(device,audio,ui,instrument,c,0);}
             } else snprintf(p->message,sizeof(p->message),"CDP: %.150s",w->error[0]?w->error:"RENDER FAILED");
@@ -251,12 +255,13 @@ static void portal_save(TsPortalUi *p,PortalController *c,int pin)
     int index=p->pin_slot;
     if(!pin) {for(index=0;index<TS_PORTAL_SLOTS && next.recipes[index].process_id[0];++index);}
     if(index>=TS_PORTAL_SLOTS) {snprintf(p->message,sizeof(p->message),"SAVED RECIPE LIBRARY IS FULL (32); NO EXISTING RECIPE CHANGED");return;}
-    if(pin && next.pins[index].process_id[0]) {snprintf(p->message,sizeof(p->message),"PIN SLOT OCCUPIED - CHOOSE AN EMPTY SLOT; EXISTING PIN PRESERVED");return;}
+    if(pin && next.pins[index].process_id[0]) {snprintf(p->message,sizeof(p->message),"PIN SLOT OCCUPIED - USE MANAGE TOOLS TO UPDATE OR REPLACE IT");return;}
     TsPortalRecipe r=p->recipe;if(pin && p->exact_pin)r.exposed=0;
     if(!ts_portal_recipe_validate(&r,p->message,sizeof(p->message)))return;
     if(pin)next.pins[index]=r;else next.recipes[index]=r;
     if(!ts_portal_library_save(&next,c->library_path,p->message,sizeof(p->message)))return;
     p->library=next;
+    p->selected_tab=pin?2:1;p->selected_slot=index;
     snprintf(p->message,sizeof(p->message),pin?"PIN %02d SAVED; OPEN PINS TO REUSE ON ANOTHER TILE":"RECIPE %02d SAVED; SOURCE AUDIO IS NOT PART OF THE RECIPE",index+1);
 }
 static void portal_apply(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
@@ -332,6 +337,101 @@ static void portal_resize_selection(SDL_AudioDeviceID device,AudioState *audio,
         (void)portal_sync_loop(device,audio,p,which,0);
     }
 }
+static void portal_manage_select(TsPortalUi *p,int slot)
+{
+    p->manage_slot=slot;p->manage_action=0;p->manage_name_focus=0;
+    const TsPortalRecipe *r=p->manage_tab?&p->library.pins[slot]:&p->library.recipes[slot];
+    snprintf(p->manage_name,sizeof(p->manage_name),"%s",r->name);
+}
+static void portal_manage_open(TsPortalUi *p)
+{
+    p->manage_open=1;p->manage_tab=p->selected_tab>=1?p->selected_tab-1:p->tab==2;
+    int slot=p->selected_tab==p->manage_tab+1 && p->selected_slot>=0?p->selected_slot:p->manage_tab?p->pin_slot:0;
+    portal_manage_select(p,slot);p->manage_scroll=(slot/8)*8;
+    p->manage_recipe=p->recipe;
+    p->search_focus=p->name_focus=0;p->number_focus=-1;
+    p->dragging_parameter=p->dragging_wave=-1;
+    snprintf(p->message,sizeof(p->message),"SELECT A NUMBERED SLOT; UPDATE USES CURRENT SETTINGS; REPLACE CAN CHANGE PROCESS");
+}
+static void portal_manage_commit(TsPortalUi *p,PortalController *c)
+{
+    if(!c->library_writable) {
+        snprintf(p->message,sizeof(p->message),"LIBRARY UNREADABLE: REPAIR THE EXISTING RECIPE FILE BEFORE EDITING");return;
+    }
+    int action=p->manage_action,slot=p->manage_slot,pin=p->manage_tab;
+    TsPortalRecipe r=p->manage_recipe;
+    if(pin && p->exact_pin)r.exposed=0;
+    if(!ts_portal_library_edit(&p->library,c->library_path,pin,slot,(TsPortalEdit)action,
+                               &r,p->manage_name,p->message,sizeof(p->message)))return;
+    if(p->selected_tab==pin+1 && p->selected_slot==slot) {
+        if(action==TS_PORTAL_RENAME) {
+            memset(p->recipe.name,0,sizeof(p->recipe.name));
+            memset(p->manage_recipe.name,0,sizeof(p->manage_recipe.name));
+            snprintf(p->recipe.name,sizeof(p->recipe.name),"%s",p->manage_name);
+            snprintf(p->manage_recipe.name,sizeof(p->manage_recipe.name),"%s",p->manage_name);
+        }
+        else if(action==TS_PORTAL_REMOVE)p->selected_tab=p->selected_slot=-1;
+    }
+    if(pin)p->pin_slot=slot;
+    p->scroll=0;
+    portal_manage_select(p,slot);
+    snprintf(p->message,sizeof(p->message),"%s %02d %s - SAVED",pin?"PIN":"RECIPE",slot+1,
+        action==TS_PORTAL_RENAME?"RENAMED":action==TS_PORTAL_UPDATE?"UPDATED":action==TS_PORTAL_REPLACE?"REPLACED":"REMOVED");
+}
+static int portal_manage_event(SDL_Event *e,SDL_Window *window,TsPortalUi *p,PortalController *c,int x,int y)
+{
+    if(e->type==SDL_DROPFILE) {SDL_free(e->drop.file);return 1;}
+    if(e->type==SDL_TEXTINPUT && p->manage_name_focus) {
+        for(const char *s=e->text.text;*s;++s)if((unsigned char)*s>=32 && (unsigned char)*s<127 && *s!='|') {
+            size_t n=strlen(p->manage_name);if(n+1<sizeof(p->manage_name)) {p->manage_name[n]=*s;p->manage_name[n+1]=0;}
+        }
+    } else if(e->type==SDL_KEYDOWN) {
+        SDL_Keycode key=e->key.keysym.sym;
+        if(key==SDLK_ESCAPE) {
+            if(p->manage_action || p->manage_name_focus)portal_manage_select(p,p->manage_slot);
+            else p->manage_open=0;
+        } else if(p->manage_name_focus && key==SDLK_BACKSPACE && p->manage_name[0])
+            p->manage_name[strlen(p->manage_name)-1]=0;
+        else if(p->manage_name_focus && key==SDLK_a && (e->key.keysym.mod&KMOD_CTRL))p->manage_name[0]=0;
+        else if(!e->key.repeat && key==SDLK_RETURN && p->manage_name_focus) {
+            p->manage_name_focus=0;p->manage_action=TS_PORTAL_RENAME;
+        }
+    } else if(e->type==SDL_MOUSEWHEEL && !p->manage_action) {
+        int rx,ry;SDL_GetMouseState(&rx,&ry);logical_mouse(window,rx,ry,&x,&y);
+        if(x>=94 && x<295 && y>=107 && y<260) {
+            int d=e->wheel.direction==SDL_MOUSEWHEEL_FLIPPED?-e->wheel.y:e->wheel.y;
+            p->manage_scroll-=d;if(p->manage_scroll<0)p->manage_scroll=0;
+            if(p->manage_scroll>TS_PORTAL_SLOTS-8)p->manage_scroll=TS_PORTAL_SLOTS-8;
+        }
+    } else if(e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT) {
+        if(x>=472 && x<542 && y>=62 && y<78) {p->manage_open=0;return 1;}
+        if(p->manage_action) {
+            if(y>=300 && y<316 && x>=310 && x<420)portal_manage_commit(p,c);
+            else if(y>=300 && y<316 && x>=430 && x<540)portal_manage_select(p,p->manage_slot);
+            return 1;
+        }
+        if(y>=86 && y<102 && x>=94 && x<294) {
+            p->manage_tab=x>=196;p->manage_scroll=0;portal_manage_select(p,0);
+        } else if(y>=109 && y<253 && x>=94 && x<294)portal_manage_select(p,p->manage_scroll+(y-109)/18);
+        else if(y>=258 && y<274 && x>=94 && x<294) {
+            p->manage_scroll+=x<194?-8:8;
+            if(p->manage_scroll<0)p->manage_scroll=0;
+            if(p->manage_scroll>24)p->manage_scroll=24;
+        } else if(y>=178 && y<194 && x>=310 && x<542)p->manage_name_focus=1;
+        else if(y>=205 && y<243 && x>=310 && x<542) {
+            int action=y<223?(x<426?TS_PORTAL_RENAME:TS_PORTAL_UPDATE):(x<426?TS_PORTAL_REPLACE:TS_PORTAL_REMOVE);
+            const TsPortalRecipe *r=p->manage_tab?&p->library.pins[p->manage_slot]:&p->library.recipes[p->manage_slot];
+            if(action!=TS_PORTAL_REPLACE && !r->process_id[0]) {
+                snprintf(p->message,sizeof(p->message),"CHOOSE AN OCCUPIED SLOT; REPLACE CAN FILL AN EMPTY SLOT");return 1;
+            }
+            if(action==TS_PORTAL_UPDATE && strcmp(r->process_id,p->manage_recipe.process_id)) {
+                snprintf(p->message,sizeof(p->message),"DIFFERENT PROCESS: USE REPLACE INSTEAD");return 1;
+            }
+            p->manage_action=action;p->manage_name_focus=0;
+        }
+    }
+    return e->type==SDL_WINDOWEVENT?0:1;
+}
 static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
                          AudioState *audio,TsUiState *ui,TsInstrument *instrument,
                          PortalController *c,SisterWindow *sister,int output_rate,
@@ -372,6 +472,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
                     snprintf(ui->status,sizeof(ui->status),"FINISH CAPTURE / RENDER BEFORE USING A PROCESS PIN");return 1;
                 }
                 stop_all_force(device,audio,ui);p->open=1;p->recipe=r;p->macro_view=1;
+                p->selected_tab=2;p->selected_slot=pin;p->pin_slot=pin;
                 p->exact_pin=r.exposed==0;p->parameter_scroll=0;c->selection_scope=instrument->has_selection;
                 SDL_StartTextInput();
                 if(portal_source(device,audio,ui,instrument,c) && event->button.button==SDL_BUTTON_LEFT) {
@@ -392,6 +493,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         }
         return 0;
     }
+    if(p->manage_open)return portal_manage_event(event,window,p,c,x,y);
     if(event->type==SDL_DROPFILE) {SDL_free(event->drop.file);snprintf(p->message,sizeof(p->message),"LOAD AUDIO ON MAIN; THEN REOPEN OR RELOAD THE PORTAL");return 1;}
     if(event->type==SDL_TEXTINPUT) {
         char *dst=p->search_focus?p->query:p->name_focus?p->recipe.name:p->number_focus>=0?p->number_text:NULL;
@@ -508,9 +610,12 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
     }
     if(x>=14 && x<136 && y>=62 && y<78)p->search_focus=1;
     else if(x>=14 && x<136 && y>=83 && y<99) {p->tab=x<54?0:x<96?1:2;p->scroll=0;}
+    else if(x>=14 && x<136 && y>=105 && y<121) {p->family=(p->family+1)%(TS_PORTAL_FAMILIES+1);p->scroll=0;}
+    else if(x>=14 && x<136 && y>=334 && y<350)portal_manage_open(p);
     else if(x>=14 && x<136 && y>=126 && y<330) {
-        TsPortalRecipe r;if(ts_portal_filter(p,p->scroll+(y-126)/17,&r)) {
+        TsPortalRecipe r;int slot=ts_portal_filter_slot(p,p->scroll+(y-126)/17,&r);if(slot>=0) {
             portal_invalidate(device,audio,p,c);p->recipe=r;p->parameter_scroll=0;
+            p->selected_tab=p->tab;p->selected_slot=slot;if(p->tab==2)p->pin_slot=slot;
             p->macro_view=p->tab==2;p->exact_pin=r.exposed==0;
             snprintf(p->message,sizeof(p->message),"%.60s - ENTER TO PREVIEW; FULL SHOWS ALL PARAMETERS",r.name);
         }

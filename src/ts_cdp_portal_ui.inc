@@ -52,6 +52,50 @@ static void portal_wave_render(TsFramebuffer *fb,const TsPortalUi *p,int which,i
         }
     } else portal_caption(fb,168,mid-3,45,which?"PREVIEW TO HEAR AND SEE THE RESULT":"LOAD A MONO TILE ON THE MAIN PAGE",RGB(210,204,210));
 }
+static void portal_manager_render(TsFramebuffer *fb,const TsPortalUi *p)
+{
+    const TsPortalRecipe *r=p->manage_tab?&p->library.pins[p->manage_slot]:&p->library.recipes[p->manage_slot];
+    char line[100];
+    frame(fb,80,50,476,292,RGB(18,18,18),PAL_VOLUME);
+    text(fb,94,66,"MANAGE YOUR TOOLS",PAL_VOLUME,1);
+    portal_mini(fb,472,62,70,"CLOSE",0);
+    portal_mini(fb,94,86,96,"SAVED",!p->manage_tab);
+    portal_mini(fb,196,86,98,"PINS",p->manage_tab);
+    for(int i=0;i<8;++i) {
+        int slot=p->manage_scroll+i;
+        const TsPortalRecipe *item=p->manage_tab?&p->library.pins[slot]:&p->library.recipes[slot];
+        int selected=slot==p->manage_slot;
+        if(selected)frame(fb,94,109+i*18,200,17,PAL_BLOCK,PAL_VOLUME);
+        snprintf(line,sizeof(line),"%02d %.28s",slot+1,item->process_id[0]?item->name:"[EMPTY]");
+        portal_caption(fb,98,114+i*18,32,line,selected?PAL_BLOCK_TEXT:RGB(210,204,210));
+    }
+    portal_mini(fb,94,258,96,"< PREVIOUS",0);
+    portal_mini(fb,196,258,98,"NEXT >",0);
+    snprintf(line,sizeof(line),"%s SLOT %02d",p->manage_tab?"PIN":"SAVED",p->manage_slot+1);
+    portal_caption(fb,310,90,38,line,PAL_VOLUME);
+    portal_caption(fb,310,108,38,r->process_id[0]?r->name:"EMPTY SLOT",PAL_EFFECT);
+    portal_caption(fb,310,122,38,r->process_id,RGB(210,204,210));
+    portal_caption(fb,310,144,38,"CURRENT WORKING RECIPE:",PAL_TUNING);
+    portal_caption(fb,310,158,38,p->manage_recipe.name,PAL_EFFECT);
+    portal_mini(fb,310,178,232,p->manage_name[0]?p->manage_name:"TYPE A NEW NAME...",p->manage_name_focus);
+    portal_mini(fb,310,205,110,"RENAME",0);
+    portal_mini(fb,430,205,110,"UPDATE",0);
+    portal_mini(fb,310,227,110,"REPLACE",0);
+    portal_mini(fb,430,227,110,"REMOVE",0);
+    if(p->manage_action) {
+        const char *verb=p->manage_action==TS_PORTAL_RENAME?"RENAME":p->manage_action==TS_PORTAL_UPDATE?"UPDATE":p->manage_action==TS_PORTAL_REPLACE?"REPLACE":"REMOVE";
+        snprintf(line,sizeof(line),"%s %s %02d?",verb,p->manage_tab?"PIN":"RECIPE",p->manage_slot+1);
+        portal_caption(fb,310,265,38,line,PAL_VOLUME);
+        portal_caption(fb,310,280,38,p->manage_action==TS_PORTAL_REMOVE?"AUDIO AND OTHER SLOTS ARE KEPT":p->manage_action==TS_PORTAL_RENAME?p->manage_name:"USES CURRENT WORKING SETTINGS",RGB(210,204,210));
+        portal_mini(fb,310,300,110,"CONFIRM",1);
+        portal_mini(fb,430,300,110,"CANCEL",0);
+    } else {
+        portal_caption(fb,310,262,38,"UPDATE: SETTINGS, SAME PROCESS",PAL_TUNING);
+        portal_caption(fb,310,276,38,"REPLACE: WHOLE WORKING RECIPE",PAL_TUNING);
+        portal_caption(fb,94,304,72,"NAME FIELD: CLICK TO EDIT / CTRL+A CLEARS / ESC CANCELS",RGB(210,204,210));
+    }
+    portal_caption(fb,94,326,72,"SLOTS STAY NUMBERED; REMOVING A PIN LEAVES ITS TILE EMPTY",PAL_TUNING);
+}
 static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
 {
     const TsPortalUi *p=&ui->portal;
@@ -75,19 +119,19 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     portal_mini(fb,14,83,38,"ALL",p->tab==0);
     portal_mini(fb,56,83,38,"SAVE",p->tab==1);
     portal_mini(fb,98,83,38,"PINS",p->tab==2);
-    snprintf(line,sizeof(line),p->tab==0?"WAVESET / %zu MODES":p->tab==1?"SAVED RECIPES":"PROCESS PINS",ts_portal_process_count());
-    portal_caption(fb,14,109,20,line,PAL_VOLUME);
+    snprintf(line,sizeof(line),"%s >",p->family?ts_portal_family_name(p->family-1):"ALL FAMILIES");
+    portal_mini(fb,14,105,122,line,p->family!=0);
     int rows=0;
     for(int i=0;i<12;++i) {
         TsPortalRecipe r;
-        if(!ts_portal_filter(p,p->scroll+i,&r))break;
-        int active=!strcmp(r.process_id,p->recipe.process_id) && !strcmp(r.name,p->recipe.name);
+        int slot=ts_portal_filter_slot(p,p->scroll+i,&r);if(slot<0)break;
+        int active=p->selected_tab==p->tab && p->selected_slot==slot;
         if(active)frame(fb,13,126+i*17,124,16,PAL_BLOCK,PAL_VOLUME);
         portal_caption(fb,17,130+i*17,19,r.name,active?PAL_BLOCK_TEXT:RGB(210,204,210));
         ++rows;
     }
     if(!rows)portal_caption(fb,17,133,19,"NO MATCHES",RGB(210,204,210));
-    portal_caption(fb,14,335,20,"WHEEL: SCROLL LIST",PAL_TUNING);
+    portal_mini(fb,14,334,122,"MANAGE TOOLS",0);
 
     portal_wave_render(fb,p,0,40);
     portal_wave_render(fb,p,1,132);
@@ -131,7 +175,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     portal_caption(fb,478,63,25,p->recipe.process_id,PAL_EFFECT);
     if(proc)portal_wrap(fb,478,83,24,8,proc->description);
     text(fb,478,178,"INPUT: MONO WAV",RGB(210,204,210),1);
-    text(fb,478,190,proc && proc->changes_duration?"DURATION MAY CHANGE":"TIME / WAVESET",PAL_TUNING,1);
+    text(fb,478,190,proc && proc->changes_duration?"DURATION MAY CHANGE":proc?ts_portal_family_name(proc->family):"",PAL_TUNING,1);
     snprintf(line,sizeof(line),"%s  PEAK %.2F",ts_cdp_safety_name(p->safety),p->peak);
     portal_caption(fb,478,202,24,p->valid?line:"NO RESULT YET",p->safety==TS_CDP_SAFETY_HOT?PAL_VOLUME:PAL_NOTE);
     portal_mini(fb,478,220,72,"DEFAULT",0);
@@ -142,7 +186,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     snprintf(line,sizeof(line),"PIN SLOT %02d%s",p->pin_slot+1,p->library.pins[p->pin_slot].process_id[0]?" FULL":"");
     portal_caption(fb,505,292,16,line,RGB(210,204,210));
     portal_mini(fb,604,287,22,">",0);
-    portal_caption(fb,478,314,24,"RECIPE SETTINGS ARE SAVED",RGB(210,204,210));
+    portal_caption(fb,478,314,24,"SAVE SETTINGS, NOT AUDIO",RGB(210,204,210));
     button(fb,150,332,76,p->busy?"CANCEL":"PREVIEW",p->busy);
     button(fb,230,332,64,"APPLY",p->valid);
     button(fb,298,332,78,"NEW TILE",0);
@@ -155,6 +199,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
         portal_caption(fb,69+i*107,365,16,line,i==p->history_selected?PAL_EFFECT:RGB(210,204,210));
     }
     portal_mini(fb,501,360,125,"MAIN: CTRL+Z",0);
+    if(p->manage_open)portal_manager_render(fb,p);
     rect(fb,0,382,640,18,RGB(8,8,8));
     portal_caption(fb,9,388,103,p->message,PAL_WAVE_LEFT);
 }

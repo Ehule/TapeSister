@@ -1231,23 +1231,26 @@ int ts_cdp_run_portal(const TsCdpRuntime *runtime, const TsPortalRecipe *recipe,
                       const TsSample *input, const TsCdpRunOptions *options,
                       TsCdpRunResult *result, char *error, size_t error_size)
 {
-    TsCdpCommand command;
+    TsCdpCommand commands[TS_CDP_MAX_STAGES];
+    size_t count=0;
     TsCdpRecipe policy={0};
     TsCdpRecipeValues values={0};
     if(!result) {set_error(error,error_size,"CDP result destination is missing");return 0;}
     ts_cdp_run_result_free(result);
-    if(!ts_portal_build_command(recipe,input,&command,error,error_size)) {
+    if(!ts_portal_build_commands(recipe,input,commands,&count,error,error_size)) {
         result->status=TS_CDP_RUN_FAILED; return 0;
     }
     /* Only registry-built arguments enter the runner. User recipes never
        provide executable paths, output paths, or arbitrary command strings. */
     policy.id=recipe->process_id;
-    policy.stages[0]=(TsCdpStageSpec){"distort",TS_CDP_IO_WAV,TS_CDP_IO_WAV};
-    policy.stage_count=1;
+    for(size_t i=0;i<count;++i)
+        policy.stages[i]=(TsCdpStageSpec){commands[i].executable,
+            i?commands[i-1].expected_output_type:TS_CDP_IO_WAV,commands[i].expected_output_type};
+    policy.stage_count=count;
     policy.required_input_channels=1;
     policy.expected_output_channels=1;
     return run_prepared_commands(runtime,&policy,&values,input,options,result,
-                                  error,error_size,&command,1,TS_PORTAL_MAX_FRAMES);
+                                  error,error_size,commands,count,TS_PORTAL_MAX_FRAMES);
 }
 
 const char *ts_cdp_safety_name(TsCdpSafetyStatus safety)
