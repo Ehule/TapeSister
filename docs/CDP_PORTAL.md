@@ -1,6 +1,6 @@
-# CDP Portal — first working slice
+# CDP Portal — explore, save, and manage your tools
 
-![Native CDP Portal rendering with a real waveset-repeat result](images/cdp-portal.png)
+![Native CDP Portal rendering with a real spectral-chorus result](images/cdp-portal.png)
 
 CDP Portal is the exploratory workbench inside TapeSister. The original 32
 curated CDP instruments remain unchanged. The Portal uses a separate, stable-ID
@@ -14,17 +14,47 @@ of Current (the current selection when one exists). **SOURCE/SEL** toggles
 between whole-tile and main-canvas selection scope; **RELOAD** refreshes the
 snapshot. Failed source loading clears the previous snapshot.
 
-The first release exposes 12 source-verified modes of CDP's `distort` program:
+The waveset family exposes 12 source-verified modes of CDP's `distort` program:
 cycle reverse, repeat, repeat2, interpolate, multiply, divide, omit, average,
-delete modes 1/2/3, and reform mode 5. Search matches their names or stable
-command IDs. **ALL**, **SAVE**, and **PINS** switch the left browser between
+delete modes 1/2/3, and reform mode 5. Four spectral modes bring the Portal to
+16 processes. Search matches names, stable command IDs, descriptions, and
+families. **ALL**, **SAVE**, and **PINS** switch the left browser between
 processes, saved recipes, and user process pins. Scroll that column with the
-mouse wheel.
+mouse wheel. The family button below the tabs cycles **ALL FAMILIES**,
+**WAVESET**, and **SPECTRAL**. Family and text filters combine, including in
+saved recipes and pins. Clearing the search and choosing ALL FAMILIES restores
+the complete list. Filtering never renumbers stored slots.
 
-This is intentionally an extensible first family, not a claim to expose 500
-processes yet. These CDP modes accept mono input only; stereo is rejected
-explicitly, never silently mixed. The broader spectral/multi-input/multichannel,
-breakpoint-file, and text-file families are not implemented by this slice.
+These 16 CDP modes accept mono input only; stereo is rejected explicitly.
+Multi-input/multichannel, breakpoint-file, and text-file workflows remain future
+work. The factory bank retains its original 32 curated instruments.
+
+## Spectral family
+
+| Process | Native CDP identity | Controls |
+| --- | --- | --- |
+| Spectral Blur | `blur.blur` | 1–4096 spectral windows, bounded by source length |
+| Suppress Partials | `blur.suppress` | Remove 1–513 loudest partials per frame |
+| Spectral Chorus | `blur.chorus.5` | Amplitude scatter 1–1028; frequency scatter 1–4 |
+| Spectral Time | `stretch.time.1` | Duration ratio 0.25–16, bounded by Portal memory limit |
+
+Each preview automatically runs **PVOC analysis → process → PVOC synthesis**.
+You bring in audio and receive audio; intermediate analysis files stay in the
+isolated temporary job directory and are cleaned up afterward. This batch uses
+1024-point analysis, CDP overlap setting 3, a 128-frame hop, and 513 spectral
+bins. Analysis settings are fixed in these version-1 process definitions.
+Sources need at least 2048 frames and 40 ms. Blur rejects window counts longer
+than the source supports rather than silently changing the recipe.
+
+These are native scalar controls. CDP can also accept breakpoint files for some
+parameters; this batch does not expose that input. The time-ratio and blur caps
+are Portal bounds, not claims about CDP's maximum capability.
+
+Chorus uses randomness, so an exact pin preserves the settings rather than
+guaranteeing identical audio on each render. Spectral processing can produce
+HOT results or intentional silence (especially strong partial suppression).
+The existing peak report and audition limiter remain available. PVOC padding
+can slightly extend duration even when a process does not stretch time.
 
 ## Preview and learn
 
@@ -87,10 +117,33 @@ apply its stored settings (the Portal opens so cancellation/errors remain
 visible). Middle-click to explore its exposed controls before rendering.
 The factory bank and sample tiles are not overwritten by saving pins.
 
-There are 32 saved-recipe slots and 32 process-pin slots. This first version is
-append-only in the UI: occupied pins and full recipe storage report a clear
-message, preserving the existing entry. Delete/replace management is deferred.
-Save another version to a free slot when experimenting.
+There are 32 saved-recipe slots and 32 process-pin slots. **SAVE AS** still adds
+to an empty saved slot; pinning to an occupied slot directs you to the manager.
+
+### Manage the collection
+
+![Native collection manager showing an explicit update of pin 03](images/cdp-portal-manager.png)
+
+Click **MANAGE TOOLS** below the process list. Choose **SAVED** or **PINS**, then
+a numbered destination. Wheel the list or use Previous/Next to reach all 32
+slots. If you loaded a saved recipe or pin, its slot is selected initially.
+The manager takes a snapshot of your current working recipe when it opens.
+
+- **Rename:** click the name field, edit it (Ctrl+A clears it), then Rename.
+  This changes only the destination's name.
+- **Update:** copy current parameter values and macro choices into the selected
+  slot while keeping its name. The process must match; for a different process,
+  use Replace. Edit controls on the main Portal page before opening the manager.
+- **Replace:** put the complete working recipe, including its name and process,
+  into the selected slot. This also fills an empty slot.
+- **Remove:** empty just that slot. Other slots keep their numbers; no audio or
+  factory instruments are removed.
+
+For pins, Update and Replace honor **EXACT RECIPE / CHECKED MACROS** from the
+Portal page. Each action shows its destination and requires **CONFIRM**.
+**CANCEL** or Escape abandons the pending action; Close returns to the Portal.
+Changes are persisted before the in-memory collection is updated. If saving
+fails, both the existing collection and the previous file remain intact.
 
 `cdp-portal.recipes` is saved beside the active `tapesister.ini`, using a temporary
 file and atomic replacement. It is an application-level personal collection,
@@ -114,10 +167,11 @@ cannot be overwritten accidentally. Back up and repair that file, then restart.
 - `main_sdl_portal.inc`: immutable worker ownership, history, audition pointers,
   input handling, main-panel pin actions, stale apply prevention.
 
-All metadata in this first registry is checked against the pinned CDP8 source
-(`dev/distort/ap_distort.c` and `dev/cdp2k/tklib1.c`). The process/mode IDs and
+Registry metadata is checked against the supplied CDP8 source
+(`dev/distort/ap_distort.c`, `dev/blur/ap_blur.c`, `dev/stretch/ap_stretch.c`,
+`dev/cdp2k/tklib1.c`, `dev/include/speccon.h`, and `dev/pv/pvoc.c`). The process/mode IDs and
 names are distinct from the illustrative SCRAMBLE controls in the concept art.
-`distort` is already part of the bundled runtime closure; no runtime dependency
+`distort`, `pvoc`, `blur`, and `stretch` are already in the bundled runtime closure; no runtime dependency
 or audio backend change is needed. No SoundThread code or descriptions are
 copied into this implementation.
 
@@ -149,8 +203,26 @@ paused dummy SDL devices; it does not open physical audio hardware.
 To render a screenshot of actual CDP output:
 
 ```sh
-TS_TEST_CDP_BIN=/absolute/path/to/cdp/bin ./tapesister_portal_tests portal.ppm
+TS_TEST_CDP_BIN=/absolute/path/to/cdp/bin ./tapesister_portal_tests portal.ppm manager.ppm
 ```
+
+### Collection / spectral verification record
+
+The follow-up passed registry and persistence tests, actual SDL collection-manager
+events, and the existing controller lifecycle suite. Checks cover duplicate names,
+filtered slot identity, rename/update/replace/remove, cancellation, failed saves,
+and loading the resulting collection. The previous live-preview-loop regression
+also passed. Manager/controller, Portal core, and live-loop harnesses passed
+AddressSanitizer/UndefinedBehaviorSanitizer with leak detection disabled because
+LeakSanitizer is unsupported in this environment.
+
+All 16 process defaults rendered using binaries built from the supplied CDP8
+source. The four spectral processes also rendered at both parameter-range ends
+at 44.1 and 48 kHz (blur's upper endpoint adjusted to the source-length limit).
+Cancellation during the middle spectral stage and invalid final-output handling
+both passed cleanup checks. Core instrument tests and audio-hardening / companion
+focus structural checks passed. The images above were rendered by the native
+640×400 UI with real CDP output, not a concept mockup.
 
 ### First-slice verification record
 

@@ -147,6 +147,48 @@ int main(void)
     assert(window);
     static SisterWindow sister;TransformController transform;
     transform_controller_init(&transform);
+    /* Manage duplicate-name entries by stable slot, using native input events. */
+    TsPortalLibrary prior_library=p->library;TsPortalRecipe prior_recipe=p->recipe;
+    ts_portal_recipe_default(&p->recipe,ts_portal_process_find("blur.chorus.5"));
+    p->library.recipes[1]=p->library.recipes[19]=p->recipe;
+    p->library.recipes[19].values[0]=3;
+    p->tab=1;p->family=TS_PORTAL_SPECTRAL+1;
+    snprintf(p->query,sizeof(p->query),"chorus");
+    SDL_Event manage={0};manage.type=SDL_MOUSEBUTTONDOWN;manage.button.windowID=SDL_GetWindowID(window);
+    manage.button.button=SDL_BUTTON_LEFT;
+#define CLICK(X,Y) do { manage.button.x=(X);manage.button.y=(Y); \
+    assert(portal_event(&manage,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform)); } while(0)
+    CLICK(20,148);assert(p->selected_slot==19 && p->recipe.values[0]==3);
+    p->recipe.values[0]=4;p->exact_pin=1;
+    CLICK(30,340);assert(p->manage_open && p->manage_slot==19 && p->manage_scroll==16);
+    CLICK(440,210);assert(p->manage_action==TS_PORTAL_UPDATE);
+    CLICK(440,306);assert(!p->manage_action && p->library.recipes[19].values[0]==3);
+    CLICK(440,210);CLICK(320,306);
+    assert(p->library.recipes[19].values[0]==4 && p->library.recipes[1].values[0]==1.5);
+    CLICK(315,182);
+    SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);
+    key.key.keysym.sym=SDLK_a;key.key.keysym.mod=KMOD_CTRL;
+    portal_event(&key,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
+    SDL_Event typed={0};typed.type=SDL_TEXTINPUT;typed.text.windowID=SDL_GetWindowID(window);
+    snprintf(typed.text.text,sizeof(typed.text.text),"SOFT GHOST");
+    portal_event(&typed,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
+    CLICK(320,210);CLICK(320,306);
+    assert(!strcmp(p->library.recipes[19].name,"SOFT GHOST") && !strcmp(p->recipe.name,"SOFT GHOST"));
+    /* Switch banks and replace an empty pin from the captured working recipe. */
+    CLICK(205,92);CLICK(320,234);CLICK(320,306);
+    assert(!strcmp(p->library.pins[0].process_id,"blur.chorus.5"));
+    assert(p->library.pins[0].exposed==0); /* Exact-pin mode is retained. */
+    TsPortalLibrary snapshot=p->library;
+    CLICK(440,234);CLICK(440,306);assert(!memcmp(&snapshot,&p->library,sizeof(snapshot)));
+    CLICK(440,234);c.library_writable=0;CLICK(320,306);
+    assert(!memcmp(&snapshot,&p->library,sizeof(snapshot)));c.library_writable=1;
+    CLICK(320,306);assert(!p->library.pins[0].process_id[0] && p->library.pins[2].process_id[0]);
+    TsPortalLibrary reloaded={0};assert(ts_portal_library_load(&reloaded,c.library_path,error,sizeof(error)));
+    assert(!memcmp(&reloaded,&p->library,sizeof(reloaded)));remove(c.library_path);
+    CLICK(480,70);assert(!p->manage_open);
+    p->library=prior_library;p->recipe=prior_recipe;p->query[0]=0;p->tab=p->family=0;
+    p->selected_tab=p->selected_slot=-1;
+#undef CLICK
     SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;
     event.button.windowID=SDL_GetWindowID(window);event.button.button=SDL_BUTTON_LEFT;
     event.button.x=395;event.button.y=267;

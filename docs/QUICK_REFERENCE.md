@@ -13,11 +13,31 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `Shift+1` | Open external REC BANK |
 | `2` | Show performance keyboard |
 | `3` | Show CDP; press again to cycle CDP pages |
+| `Ctrl+Shift+P` | Open CDP Portal from Main |
 | `4` | Show native DSP; press again to cycle DSP pages |
 | `F1`–`F8` | Select keyboard octave |
 | `Space` | Play selection/from playhead; press again for panic stop |
 | `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
 | `Escape` | Cancel active gesture/dialog; otherwise request exit |
+
+## CDP Portal
+
+See the [Portal guide](CDP_PORTAL.md) for spectral processing and personal tools.
+
+| Control | Action |
+| --- | --- |
+| ALL / SAVE / PINS | Browse processes, saved recipes, or user pins |
+| Family button below tabs | Cycle all families, waveset, and spectral; combines with search |
+| Enter / PREVIEW | Render current settings; Preview cancels a running job |
+| Space / Tab | Play-stop / source-result A-B |
+| Alt+wheel over selection | Expand/contract its hovered edge while the loop keeps playing |
+| SAVE AS / PIN PROCESS TILE | Save settings to an empty recipe or chosen pin slot |
+| MANAGE TOOLS | Rename, update, replace, or remove a numbered recipe/pin slot |
+| Manager: CONFIRM / CANCEL | Commit the pending collection change / discard it |
+
+Update preserves the destination's name and requires the same process. Replace
+uses the whole working recipe and can fill an empty slot. Removing a pin leaves
+its slot empty; other slots keep their numbers.
 
 ## QWERTY note keyboard
 

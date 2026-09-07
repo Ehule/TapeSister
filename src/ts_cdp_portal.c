@@ -18,25 +18,37 @@
 #define MULT {"multiplier", "REPEATS", "TIMES EACH WAVECYCLE GROUP IS REPEATED", "", TS_PORTAL_INTEGER, 2, 16, 2}
 #define CYCLEFLAG {"cycles", "CYCLE GROUP", "NUMBER OF WAVECYCLES IN EACH GROUP", "-c", TS_PORTAL_INTEGER, 1, 32767, 8}
 static const TsPortalProcess processes[] = {
-    {"distort.reverse", "CYCLE REVERSE", "Reverse groups of wavecycles. Larger groups reveal reversed gestures; small groups reshape the timbre.", "reverse", 1, 0, 1, 0, {GROUP(1,8)}},
-    {"distort.repeat", "CYCLE REPEAT", "Repeat groups of wavecycles to stretch the sound. Group size changes the texture of the repetition.", "repeat", 1, 0, 3, 1, {MULT, CYCLEFLAG, SKIP}},
-    {"distort.repeat2", "REPEAT FIXED", "Repeat wavecycle groups without stretching the overall duration. Listen for changes in local articulation.", "repeat2", 1, 0, 3, 0, {MULT, CYCLEFLAG, SKIP}},
-    {"distort.interpolate", "INTERPOLATE", "Stretch by repeating wavecycles and interpolating between them. Compare this with ordinary cycle repeat.", "interpolate", 1, 0, 2, 1, {MULT, SKIP}},
+    {"distort.reverse", "CYCLE REVERSE", "Reverse groups of wavecycles. Larger groups reveal reversed gestures; small groups reshape the timbre.", "reverse", 1, 0, 1, 0, {GROUP(1,8)}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.repeat", "CYCLE REPEAT", "Repeat groups of wavecycles to stretch the sound. Group size changes the texture of the repetition.", "repeat", 1, 0, 3, 1, {MULT, CYCLEFLAG, SKIP}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.repeat2", "REPEAT FIXED", "Repeat wavecycle groups without stretching the overall duration. Listen for changes in local articulation.", "repeat2", 1, 0, 3, 0, {MULT, CYCLEFLAG, SKIP}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.interpolate", "INTERPOLATE", "Stretch by repeating wavecycles and interpolating between them. Compare this with ordinary cycle repeat.", "interpolate", 1, 0, 2, 1, {MULT, SKIP}, TS_PORTAL_WAVESET, "distort"},
     {"distort.multiply", "FREQ MULTIPLY", "Multiply wavecycle frequency by an integer. This is waveset distortion, not a transparent pitch shifter.", "multiply", 1, 0, 2, 0,
         {{"factor", "MULTIPLIER", "INTEGER FREQUENCY MULTIPLIER", "", TS_PORTAL_INTEGER, 2, 16, 2},
-         {"smooth", "SMOOTHING", "ENABLE CDP SMOOTHING IF GLITCHES APPEAR", "-s", TS_PORTAL_SWITCH, 0, 1, 1}}},
+         {"smooth", "SMOOTHING", "ENABLE CDP SMOOTHING IF GLITCHES APPEAR", "-s", TS_PORTAL_SWITCH, 0, 1, 1}}, TS_PORTAL_WAVESET, "distort"},
     {"distort.divide", "FREQ DIVIDE", "Divide wavecycle frequency by an integer. Optional interpolation gives a different, often cleaner texture.", "divide", 1, 0, 2, 0,
         {{"factor", "DIVISOR", "INTEGER FREQUENCY DIVISOR", "", TS_PORTAL_INTEGER, 2, 16, 2},
-         {"interpolate", "INTERPOLATE", "INTERPOLATE WAVEFORMS DURING DIVISION", "-i", TS_PORTAL_SWITCH, 0, 1, 1}}},
+         {"interpolate", "INTERPOLATE", "INTERPOLATE WAVEFORMS DURING DIVISION", "-i", TS_PORTAL_SWITCH, 0, 1, 1}}, TS_PORTAL_WAVESET, "distort"},
     {"distort.omit", "CYCLE OMIT", "Replace A out of every B wavecycles with silence. A must remain smaller than B. Inspect the new gaps.", "omit", 1, 0, 2, 0,
         {{"omit", "OMIT A", "CYCLES TO SILENCE IN EACH GROUP", "", TS_PORTAL_INTEGER, 1, 32767, 1},
-         {"every", "EVERY B", "TOTAL CYCLES PER GROUP; MUST EXCEED A", "", TS_PORTAL_INTEGER, 2, 32768, 4}}},
+         {"every", "EVERY B", "TOTAL CYCLES PER GROUP; MUST EXCEED A", "", TS_PORTAL_INTEGER, 2, 32768, 4}}, TS_PORTAL_WAVESET, "distort"},
     {"distort.average", "CYCLE AVERAGE", "Average shapes across successive wavecycles. This changes waveform detail, not simply the volume envelope.", "average", 1, 0, 3, 0,
-        {GROUP(2,5), {"max_length", "MAX WAVE SEC", "MAXIMUM PERMITTED WAVECYCLE LENGTH IN SECONDS", "-m", TS_PORTAL_REAL, 0.001, 1, 0.1}, SKIP}},
-    {"distort.delete.1", "KEEP ONE", "Retain one wavecycle in every group, deleting the others. The result becomes shorter.", "delete", 1, 1, 2, 1, {GROUP(2,3), SKIP}},
-    {"distort.delete.2", "KEEP LOUDEST", "Retain only the strongest wavecycle in each group. The result becomes shorter and differently articulated.", "delete", 1, 2, 2, 1, {GROUP(2,3), SKIP}},
-    {"distort.delete.3", "DROP WEAKEST", "Delete the weakest wavecycle in each group. Compare the changed duration and transient structure.", "delete", 1, 3, 2, 1, {GROUP(2,3), SKIP}},
-    {"distort.reform.5", "HALF INVERT", "Invert half cycles to change the waveform contour. This mode has no numerical parameters.", "reform", 1, 5, 0, 0, {{0}}}
+        {GROUP(2,5), {"max_length", "MAX WAVE SEC", "MAXIMUM PERMITTED WAVECYCLE LENGTH IN SECONDS", "-m", TS_PORTAL_REAL, 0.001, 1, 0.1}, SKIP}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.delete.1", "KEEP ONE", "Retain one wavecycle in every group, deleting the others. The result becomes shorter.", "delete", 1, 1, 2, 1, {GROUP(2,3), SKIP}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.delete.2", "KEEP LOUDEST", "Retain only the strongest wavecycle in each group. The result becomes shorter and differently articulated.", "delete", 1, 2, 2, 1, {GROUP(2,3), SKIP}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.delete.3", "DROP WEAKEST", "Delete the weakest wavecycle in each group. Compare the changed duration and transient structure.", "delete", 1, 3, 2, 1, {GROUP(2,3), SKIP}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.reform.5", "HALF INVERT", "Invert half cycles to change the waveform contour. This mode has no numerical parameters.", "reform", 1, 5, 0, 0, {{0}}, TS_PORTAL_WAVESET, "distort"},
+    /* CDP8 blur/ap_blur.c, stretch/ap_stretch.c and cdp2k/tklib1.c.
+       Fixed 1024-point PVOC analysis, overlap 3, hop 128, 513 bins.
+       Scalar native parameters only; no breakpoint-file input in this batch. */
+    {"blur.blur", "SPECTRAL BLUR", "Average spectra across time. Longer window groups soften transients into a spectral haze. Analysis and resynthesis are automatic.", "blur", 1, 0, 1, 0,
+        {{"windows", "BLUR WINDOWS", "SPECTRAL WINDOWS TO AVERAGE; MUST FIT THE SOURCE", "", TS_PORTAL_INTEGER, 1, 4096, 8}}, TS_PORTAL_SPECTRAL, "blur"},
+    {"blur.suppress", "SUPPRESS PARTIALS", "Remove the loudest spectral partials in each frame, revealing quieter components underneath. Large counts can intentionally approach silence.", "suppress", 1, 0, 1, 0,
+        {{"partials", "PARTIALS", "NUMBER OF LOUDEST PARTIALS TO REJECT (513 ANALYSIS BINS)", "", TS_PORTAL_INTEGER, 1, 513, 8}}, TS_PORTAL_SPECTRAL, "blur"},
+    {"blur.chorus.5", "SPECTRAL CHORUS", "Scatter partial amplitudes and frequencies. Values near one are subtle; larger amounts become grainy or noisy. Random results can vary each render.", "chorus", 1, 5, 2, 0,
+        {{"amplitude", "AMP SCATTER", "MAXIMUM RANDOM PARTIAL-AMPLITUDE RATIO; 1 IS UNCHANGED", "", TS_PORTAL_REAL, 1, 1028, 1.5},
+         {"frequency", "FREQ SCATTER", "MAXIMUM RANDOM PARTIAL-FREQUENCY RATIO; 1 IS UNCHANGED", "", TS_PORTAL_REAL, 1, 4, 1.01}}, TS_PORTAL_SPECTRAL, "blur"},
+    {"stretch.time.1", "SPECTRAL TIME", "Stretch or compress time while retaining pitch. Ratio two doubles the duration. Spectral resynthesis can soften transients; compare source and result.", "time", 1, 1, 1, 1,
+        {{"ratio", "TIME RATIO", "OUTPUT DURATION MULTIPLIER; PORTAL RANGE 0.25 TO 16", "", TS_PORTAL_REAL, .25, 16, 1.5}}, TS_PORTAL_SPECTRAL, "stretch"}
 };
 #undef GROUP
 #undef SKIP
@@ -95,6 +107,7 @@ int ts_portal_build_command(const TsPortalRecipe *r, const TsSample *input,
     size_t cycles=0; int sign=0;
     if (!ts_portal_recipe_validate(r,error,size)) return 0;
     p=ts_portal_process_find(r->process_id);
+    if(p->family!=TS_PORTAL_WAVESET)return fail(error,size,"SPECTRAL PROCESS REQUIRES ANALYSIS / PROCESS / RESYNTHESIS");
     if (!input || !input->data || input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES ||
         !input->sample_rate || input->channels!=1)
         return fail(error,size,"WAVESET PROCESSES REQUIRE A MONO SOURCE");
@@ -132,6 +145,48 @@ int ts_portal_build_command(const TsPortalRecipe *r, const TsSample *input,
     snprintf(c->expected_output,sizeof(c->expected_output),"output.wav");
     c->expected_output_type=TS_CDP_IO_WAV;
     return 1;
+}
+
+int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
+                             TsCdpCommand commands[TS_CDP_MAX_STAGES],size_t *count,
+                             char *error,size_t size)
+{
+    if(count)*count=0;
+    if(!commands || !count)return fail(error,size,"MISSING COMMAND DESTINATION");
+    if(!ts_portal_recipe_validate(r,error,size))return 0;
+    const TsPortalProcess *p=ts_portal_process_find(r->process_id);
+    memset(commands,0,sizeof(*commands)*TS_CDP_MAX_STAGES);
+    if(p->family==TS_PORTAL_WAVESET) {
+        if(!ts_portal_build_command(r,input,&commands[0],error,size))return 0;
+        *count=1;return 1;
+    }
+    if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
+       input->frames>TS_PORTAL_MAX_FRAMES)return fail(error,size,"SPECTRAL PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+    if(input->frames<2048 || input->frames<(size_t)input->sample_rate/25)
+        return fail(error,size,"SPECTRAL SOURCE NEEDS AT LEAST 2048 FRAMES AND 40 MS");
+    for(size_t i=0;i<input->frames;++i)if(!isfinite(input->data[i]))
+        return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
+    if(!strcmp(p->id,"blur.blur") && r->values[0]>(double)(input->frames/128))
+        return fail(error,size,"BLUR WINDOWS EXCEED SOURCE; LOWER BLUR OR LOAD A LONGER SOUND");
+    if(p->changes_duration && ((double)input->frames+1024)*r->values[0]+1024>TS_PORTAL_MAX_FRAMES)
+        return fail(error,size,"REQUESTED STRETCH EXCEEDS PORTAL LIMIT");
+    TsCdpCommand *a=&commands[0],*c=&commands[1],*s=&commands[2];
+    snprintf(a->executable,sizeof(a->executable),"pvoc");
+    const char *analysis[]={"anal","1","input.wav","input.ana","-c1024","-o3"};
+    for(int i=0;i<6;++i)snprintf(a->arguments[a->argc++],TS_CDP_TEXT_MAX,"%s",analysis[i]);
+    snprintf(a->expected_output,sizeof(a->expected_output),"input.ana");a->expected_output_type=TS_CDP_IO_ANALYSIS;
+    snprintf(c->executable,sizeof(c->executable),"%s",p->executable);
+    snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s",p->command);
+    if(p->mode)snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%u",p->mode);
+    snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"input.ana");
+    snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"effect.ana");
+    for(unsigned i=0;i<p->parameter_count;++i)snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%.9g",r->values[i]);
+    snprintf(c->expected_output,sizeof(c->expected_output),"effect.ana");c->expected_output_type=TS_CDP_IO_ANALYSIS;
+    snprintf(s->executable,sizeof(s->executable),"pvoc");
+    const char *synth[]={"synth","effect.ana","output.wav"};
+    for(int i=0;i<3;++i)snprintf(s->arguments[s->argc++],TS_CDP_TEXT_MAX,"%s",synth[i]);
+    snprintf(s->expected_output,sizeof(s->expected_output),"output.wav");s->expected_output_type=TS_CDP_IO_WAV;
+    *count=3;return 1;
 }
 
 int ts_portal_library_save(const TsPortalLibrary *lib,const char *path,char *error,size_t size)
@@ -198,6 +253,7 @@ void ts_portal_ui_init(TsPortalUi *ui)
 {
     memset(ui,0,sizeof(*ui)); ui->dragging_parameter=-1; ui->dragging_wave=-1;
     ui->history_selected=-1; ui->number_focus=-1;
+    ui->selected_tab=ui->selected_slot=-1;
     ts_portal_recipe_default(&ui->recipe,ts_portal_process_at(0));
     snprintf(ui->message,sizeof(ui->message),"CHOOSE A PROCESS; PREVIEW LEAVES YOUR TILE UNCHANGED");
 }
@@ -207,18 +263,59 @@ static int contains(const char *s,const char *q)
     for(;*s;++s) {size_t i=0;while(q[i] && s[i] && toupper((unsigned char)s[i])==toupper((unsigned char)q[i])) ++i; if(!q[i]) return 1;}
     return 0;
 }
-int ts_portal_filter(const TsPortalUi *ui,int row,TsPortalRecipe *out)
+const char *ts_portal_family_name(int family)
+{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":"UNKNOWN"; }
+
+int ts_portal_library_edit(TsPortalLibrary *lib,const char *path,int pin,int slot,
+                           TsPortalEdit edit,const TsPortalRecipe *recipe,const char *name,
+                           char *error,size_t size)
 {
+    if(!lib || (pin!=0 && pin!=1) || slot<0 || slot>=TS_PORTAL_SLOTS)
+        return fail(error,size,"INVALID LIBRARY SLOT");
+    TsPortalLibrary next=*lib;
+    TsPortalRecipe *dst=pin?&next.pins[slot]:&next.recipes[slot];
+    if(edit!=TS_PORTAL_REPLACE && !dst->process_id[0])
+        return fail(error,size,"CHOOSE AN OCCUPIED SLOT");
+    if(edit==TS_PORTAL_REMOVE) memset(dst,0,sizeof(*dst));
+    else if(edit==TS_PORTAL_RENAME) {
+        if(!name || !*name || strlen(name)>=sizeof(dst->name))
+            return fail(error,size,"ENTER A NAME (1 TO 39 CHARACTERS)");
+        memset(dst->name,0,sizeof(dst->name));
+        snprintf(dst->name,sizeof(dst->name),"%s",name);
+    } else if(edit==TS_PORTAL_UPDATE || edit==TS_PORTAL_REPLACE) {
+        if(!ts_portal_recipe_validate(recipe,error,size))return 0;
+        if(edit==TS_PORTAL_UPDATE) {
+            if(strcmp(dst->process_id,recipe->process_id) || dst->version!=recipe->version)
+                return fail(error,size,"DIFFERENT PROCESS: USE REPLACE INSTEAD");
+            /* Updating controls preserves the destination's personal name. */
+            char saved_name[40];memcpy(saved_name,dst->name,sizeof(saved_name));
+            *dst=*recipe;memcpy(dst->name,saved_name,sizeof(saved_name));
+        } else *dst=*recipe;
+    } else return fail(error,size,"UNKNOWN LIBRARY ACTION");
+    if(!ts_portal_library_save(&next,path,error,size))return 0;
+    *lib=next;
+    return 1;
+}
+
+int ts_portal_filter_slot(const TsPortalUi *ui,int row,TsPortalRecipe *out)
+{
+    if(row<0)return -1;
     int count=ui->tab==0?(int)ts_portal_process_count():TS_PORTAL_SLOTS;
     for(int i=0;i<count;++i) {
         TsPortalRecipe r;
         if(ui->tab==0) ts_portal_recipe_default(&r,ts_portal_process_at((size_t)i));
         else r=ui->tab==1?ui->library.recipes[i]:ui->library.pins[i];
-        if(!r.process_id[0] || (!contains(r.name,ui->query) && !contains(r.process_id,ui->query))) continue;
-        if(row--==0) {*out=r;return 1;}
+        const TsPortalProcess *p=ts_portal_process_find(r.process_id);
+        if(!p || (ui->family && (int)p->family!=ui->family-1))continue;
+        if(!contains(r.name,ui->query) && !contains(r.process_id,ui->query) &&
+           !contains(p->title,ui->query) && !contains(p->description,ui->query) &&
+           !contains(ts_portal_family_name(p->family),ui->query))continue;
+        if(row--==0) {*out=r;return i;}
     }
-    return 0;
+    return -1;
 }
+int ts_portal_filter(const TsPortalUi *ui,int row,TsPortalRecipe *out)
+{return ts_portal_filter_slot(ui,row,out)>=0;}
 void ts_portal_wave_refresh(TsPortalWave *w,const TsSample *s)
 {
     memset(w->minimum,0,sizeof(w->minimum)); memset(w->maximum,0,sizeof(w->maximum));
