@@ -3,7 +3,7 @@
 This pass adds 43 verified one-mono-sound-in/one-sound-out modes, taking Portal
 from 88 to 131. It targets the remaining conventional command families with
 scalar controls; it is not a claim that every CDP8 executable has been exhausted.
-The next planned feature is reusable process chains. Further individual CDP
+Reusable process chains are now available (see `CDP_PORTAL.md`). Further individual CDP
 modes can be added alongside that work when their controls and behavior are clear.
 
 ## Included

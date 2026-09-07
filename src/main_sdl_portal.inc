@@ -7,13 +7,20 @@ typedef struct {
     uint64_t generation;
     TsSample input;
     TsPortalRegion region;
-    TsPortalRecipe recipe;
+    TsPortalRecipe recipe, chain;
+    int chain_start, chain_cleanup_failed;
+    size_t original_last;
+    TsCdpRunResult stages[TS_PORTAL_CHAIN_STAGES];
+    TsPortalRegion stage_regions[TS_PORTAL_CHAIN_STAGES];
     TsCdpRuntime runtime;
     TsCdpRunResult result;
     char error[160];
 } PortalWorker;
 typedef struct {
     TsSample source;
+    TsCdpRunResult stages[TS_PORTAL_CHAIN_STAGES];
+    TsPortalRegion stage_regions[TS_PORTAL_CHAIN_STAGES], cache_region;
+    TsPortalRecipe cache_recipe;
     TsCdpRunResult history[TS_PORTAL_HISTORY];
     TsPortalRecipe recipes[TS_PORTAL_HISTORY];
     TsPortalRegion regions[TS_PORTAL_HISTORY];
@@ -27,9 +34,37 @@ typedef struct {
     char library_path[TS_CDP_PATH_MAX];
 } PortalController;
 
+/* The scalar editor is mirrored into its selected chain stage only at a
+   transition or snapshot boundary. Workers never read mutable UI state. */
+static TsPortalRecipe portal_working(TsPortalUi *p)
+{
+    if(!p->chain_active)return p->recipe;
+    ts_portal_step_set(&p->chain.stages[p->chain_stage],&p->recipe);
+    return p->chain;
+}
+static void portal_load_recipe(TsPortalUi *p,const TsPortalRecipe *r)
+{
+    p->chain_active=r->stage_count!=0;p->chain_stage=0;p->chain_add=0;p->chain_audition=-1;p->chain_cached=0;
+    if(p->chain_active){p->chain=*r;ts_portal_step_get(&r->stages[0],&p->recipe);}
+    else p->recipe=*r;
+}
+static int portal_has_macros(const TsPortalRecipe *r)
+{
+    if(!r->stage_count)return r->exposed!=0;
+    for(unsigned i=0;i<r->stage_count;++i)if(r->stages[i].exposed)return 1;
+    return 0;
+}
+static char *portal_recipe_name(TsPortalUi *p)
+{return p->chain_active?p->chain.name:p->recipe.name;}
+static void portal_cache_clear(PortalController *c,TsPortalUi *p)
+{
+    for(int i=0;i<TS_PORTAL_CHAIN_STAGES;++i)ts_cdp_run_result_free(&c->stages[i]);
+    memset(&c->cache_recipe,0,sizeof(c->cache_recipe));p->chain_cached=0;p->chain_audition=-1;
+}
 static int portal_owns_sample(const PortalController *c,const TsSample *sample)
 {
     if(sample==&c->source)return 1;
+    for(int i=0;i<TS_PORTAL_CHAIN_STAGES;++i)if(sample==&c->stages[i].output)return 1;
     for(int i=0;i<TS_PORTAL_HISTORY;++i)if(sample==&c->history[i].output)return 1;
     return 0;
 }
@@ -75,10 +110,13 @@ static void portal_invalidate(SDL_AudioDeviceID device,AudioState *audio,
     c->quick_apply=0;
     p->full_action=0;
     p->valid=0;p->result=NULL;p->history_selected=-1;
+    p->chain_audition=-1;
+    if(p->chain_active)p->chain_cached&=(1u<<p->chain_stage)-1u;
     ts_portal_wave_reset(&p->waves[1],NULL);
 }
 static void portal_clear_history(PortalController *c,TsPortalUi *p)
 {
+    portal_cache_clear(c,p);
     for(int i=0;i<TS_PORTAL_HISTORY;++i)ts_cdp_run_result_free(&c->history[i]);
     c->history_count=0;p->history_count=0;p->history_selected=-1;p->valid=0;p->result=NULL;
     ts_portal_wave_reset(&p->waves[1],NULL);
@@ -142,7 +180,7 @@ static void portal_init(PortalController *c,TsPortalUi *p)
 }
 static int portal_worker_cancel(void *data)
 {return SDL_AtomicGet(&((PortalWorker*)data)->cancel)!=0;}
-static int portal_worker_main(void *data)
+static int portal_worker_render(void *data)
 {
     PortalWorker *w=data;TsCdpRunOptions options;ts_cdp_run_options_init(&options);
     options.job_id=w->generation;options.cancel_check=portal_worker_cancel;options.cancel_userdata=w;
@@ -151,7 +189,7 @@ static int portal_worker_main(void *data)
     for(size_t i=0;i<w->input.frames;++i)if(!isfinite(w->input.data[i])) {
         snprintf(w->error,sizeof(w->error),"SOURCE CONTAINS NONFINITE AUDIO");
         w->result.status=TS_CDP_RUN_FAILED;w->result.finite=0;
-        SDL_AtomicSet(&w->done,1);return 0;
+        return 0;
     }
     TsSample input=w->input;
     if(w->region.selection) {input.data+=w->region.first;input.frames=w->region.last-w->region.first;}
@@ -184,20 +222,72 @@ static int portal_worker_main(void *data)
             }
         }
     }
+    return 0;
+}
+static int portal_worker_main(void *data)
+{
+    PortalWorker *w=data;
+    if(!w->chain.stage_count)portal_worker_render(w);
+    else {
+        for(size_t n=0;n<w->input.frames;++n)if(!isfinite(w->input.data[n])) {
+            snprintf(w->error,sizeof(w->error),"SOURCE CONTAINS NONFINITE AUDIO");
+            w->result.status=TS_CDP_RUN_FAILED;SDL_AtomicSet(&w->done,1);return 0;
+        }
+        TsSample original=w->input;
+
+        for(unsigned i=(unsigned)w->chain_start;i<w->chain.stage_count;++i) {
+            if(SDL_AtomicGet(&w->cancel)){w->result.status=TS_CDP_RUN_CANCELLED;break;}
+            ts_portal_step_get(&w->chain.stages[i],&w->recipe);
+            if(w->chain.stages[i].bypass) {
+                if(ts_sample_clone(&w->result.output,&w->input,w->error,sizeof(w->error))) {
+                    w->result.status=TS_CDP_RUN_OK;w->result.finite=1;
+                    w->result.peak=ts_sample_peak(&w->result.output);
+                    w->result.safety=w->result.peak>=.9999f?TS_CDP_SAFETY_HOT:w->result.peak<.00001f?TS_CDP_SAFETY_SILENT:TS_CDP_SAFETY_SAFE;
+                    w->region.result_last=w->region.last;
+                } else w->result.status=TS_CDP_RUN_FAILED;
+            } else portal_worker_render(w);
+            if(w->result.status!=TS_CDP_RUN_OK) {
+                char detail[160];snprintf(detail,sizeof(detail),"%s",w->error);
+                snprintf(w->error,sizeof(w->error),"STAGE %u %.30s: %.100s",i+1,w->recipe.name,detail);break;
+            }
+            if(w->result.cleanup_failed) {
+                w->chain_cleanup_failed=1;
+                fprintf(stderr,"Portal chain stage %u cleanup: %s\n",i+1,w->result.job_directory);
+            }
+            w->stages[i]=w->result;ts_cdp_run_result_init(&w->result);
+            w->stage_regions[i]=w->region;
+            w->stage_regions[i].last=w->original_last;
+            w->input=w->stages[i].output;w->region.last=w->region.result_last;
+            /* Keep at most 8 million intermediate frames. The newest stage
+               always survives; evicted stages can be rendered again. */
+            size_t frames=0;for(unsigned j=0;j<=i;++j)frames+=w->stages[j].output.frames;
+            for(unsigned j=0;j<i && frames>TS_PORTAL_MAX_FRAMES;++j) {
+                frames-=w->stages[j].output.frames;ts_cdp_run_result_free(&w->stages[j]);
+            }
+        }
+        if(w->stages[w->chain.stage_count-1].output.data && !SDL_AtomicGet(&w->cancel)) {
+            const TsCdpRunResult *last=&w->stages[w->chain.stage_count-1];
+            w->result=*last;ts_sample_init(&w->result.output);
+            if(!ts_sample_clone(&w->result.output,&last->output,w->error,sizeof(w->error)))w->result.status=TS_CDP_RUN_FAILED;
+        }
+        w->input=original;w->region.last=w->original_last;
+    }
     SDL_AtomicSet(&w->done,1);return 0;
 }
 static void portal_worker_free(PortalWorker *w)
 {
     if(!w)return;
     if(w->thread)SDL_WaitThread(w->thread,NULL);
-    ts_sample_free(&w->input);ts_cdp_run_result_free(&w->result);free(w);
+    ts_sample_free(&w->input);ts_cdp_run_result_free(&w->result);
+    for(int i=0;i<TS_PORTAL_CHAIN_STAGES;++i)ts_cdp_run_result_free(&w->stages[i]);free(w);
 }
 static void portal_preview(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                            PortalController *c)
 {
     TsPortalUi *p=&ui->portal;
     if(c->worker) {portal_cancel(c);snprintf(p->message,sizeof(p->message),"CANCELLING CDP JOB");return;}
-    if(!ts_portal_recipe_validate(&p->recipe,p->message,sizeof(p->message)))return;
+    TsPortalRecipe working=portal_working(p);
+    if(!ts_portal_recipe_validate(&working,p->message,sizeof(p->message)))return;
     if(!c->source.data) {snprintf(p->message,sizeof(p->message),"LOAD A MONO SOURCE FIRST");return;}
     const TsPortalWave *source_wave=&p->waves[0];
     if(p->process_selection && (!source_wave->has_selection || source_wave->selection_first>=source_wave->selection_last ||
@@ -208,29 +298,50 @@ static void portal_preview(SDL_AudioDeviceID device,AudioState *audio,TsUiState 
     if(!w) {snprintf(p->message,sizeof(p->message),"NOT ENOUGH MEMORY FOR RENDER JOB");return;}
     ts_sample_init(&w->input);ts_cdp_run_result_init(&w->result);
     w->region=(TsPortalRegion){p->process_selection,source_wave->selection_first,source_wave->selection_last,0};
+    w->original_last=w->region.last;
     char *base=SDL_GetBasePath();
     int ok=ts_cdp_runtime_discover(&w->runtime,ui->config.cdp_bin_path,base,p->message,sizeof(p->message));
     SDL_free(base);
-    if(!ok || !ts_sample_clone(&w->input,&c->source,p->message,sizeof(p->message))) {portal_worker_free(w);return;}
+    const TsSample *start=&c->source;
+    if(working.stage_count) {
+        unsigned first=0;
+        int region_same=w->region.selection==c->cache_region.selection &&
+            (!w->region.selection || (w->region.first==c->cache_region.first && w->region.last==c->cache_region.last));
+        if(region_same)while(first<working.stage_count && first<c->cache_recipe.stage_count &&
+            ts_portal_step_equal(&working.stages[first],&c->cache_recipe.stages[first]))++first;
+        if(first==working.stage_count)first=(unsigned)p->chain_stage; /* explicit preview rerolls this stage */
+        while(first && !c->stages[first-1].output.data)--first;
+        w->chain_start=(int)first;w->chain=working;
+        if(first) {start=&c->stages[first-1].output;w->region.last=c->stage_regions[first-1].result_last;}
+    }
+    if(!ok || !ts_sample_clone(&w->input,start,p->message,sizeof(p->message))) {portal_worker_free(w);return;}
+    /* Preserve the original selection's extent for the assembled final result. */
     portal_invalidate(device,audio,p,c);
     w->recipe=p->recipe;w->generation=c->generation;
     w->thread=SDL_CreateThread(portal_worker_main,"TapeSister CDP Portal",w);
     if(!w->thread) {snprintf(p->message,sizeof(p->message),"RENDER THREAD UNAVAILABLE");portal_worker_free(w);return;}
     c->worker=w;p->busy=1;
-    snprintf(p->message,sizeof(p->message),"RENDERING %s: %.50s - CANCEL IS AVAILABLE; TILE UNCHANGED",p->process_selection?"SOURCE SELECTION":"WHOLE SOURCE",p->recipe.name);
+    snprintf(p->message,sizeof(p->message),"RENDERING %s: %.50s - CANCEL IS AVAILABLE; TILE UNCHANGED",p->process_selection?"SOURCE SELECTION":"WHOLE SOURCE",portal_recipe_name(p));
 }
 static void portal_select_history(SDL_AudioDeviceID device,AudioState *audio,
                                    TsPortalUi *p,PortalController *c,int index)
 {
     if(index<0 || index>=c->history_count)return;
     portal_stop(device,audio,p,c);portal_cancel(c);
-    p->recipe=c->recipes[index];p->result=&c->history[index].output;
+    portal_load_recipe(p,&c->recipes[index]);p->result=&c->history[index].output;
     p->valid=1;p->history_selected=index;p->listen_result=1;
     p->safety=c->history[index].safety;p->peak=c->history[index].peak;
     p->parameter_scroll=0;p->number_focus=-1;
     p->selected_tab=p->selected_slot=-1;
     ts_portal_wave_reset(&p->waves[1],p->result);
     p->rendered_region=c->regions[index];p->process_selection=p->rendered_region.selection;
+    if(p->chain_active && p->rendered_region.selection==c->cache_region.selection &&
+       (!p->process_selection || (p->rendered_region.first==c->cache_region.first && p->rendered_region.last==c->cache_region.last))) {
+        for(unsigned i=0;i<p->chain.stage_count && i<c->cache_recipe.stage_count;++i) {
+            if(!ts_portal_step_equal(&p->chain.stages[i],&c->cache_recipe.stages[i]))break;
+            if(c->stages[i].output.data)p->chain_cached|=1u<<i;
+        }
+    }
     if(p->process_selection) {
         p->waves[0].has_selection=p->waves[1].has_selection=1;
         p->waves[0].selection_first=p->waves[1].selection_first=p->rendered_region.first;
@@ -246,7 +357,7 @@ static void portal_select_history(SDL_AudioDeviceID device,AudioState *audio,
 static void portal_selection_changed(TsPortalUi *p,PortalController *c)
 {
     if(!p->process_selection)return;
-    portal_cancel(c);c->quick_apply=0;p->valid=0;p->full_action=0;
+    portal_cancel(c);c->quick_apply=0;p->valid=0;p->full_action=0;p->chain_cached=0;
     snprintf(p->message,sizeof(p->message),"SOURCE SELECTION CHANGED - PREVIEW AGAIN; AUDITION LOOPS REMAIN INDEPENDENT");
 }
 static int portal_apply(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
@@ -260,7 +371,7 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
         if(p->open && w->generation==c->generation && !SDL_AtomicGet(&w->cancel)) {
             if(w->result.status==TS_CDP_RUN_OK) {
                 portal_stop(device,audio,p,c);
-                snprintf(w->result.output.name,sizeof(w->result.output.name),"%s",p->recipe.name);
+                snprintf(w->result.output.name,sizeof(w->result.output.name),"%s",portal_recipe_name(p));
                 if(c->source_slot==instrument->selected_slot && c->source_page==ui->sample_page &&
                    c->source_hash==ts_sample_hash(&instrument->current) &&
                    (c->source_first>0 || c->source_last<instrument->current.frames)) {
@@ -282,14 +393,29 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
                     --c->history_count;ts_cdp_run_result_init(&c->history[c->history_count]);
                 }
                 int slot=c->history_count++;
-                c->history[slot]=w->result;ts_cdp_run_result_init(&w->result);c->recipes[slot]=p->recipe;
+                c->history[slot]=w->result;ts_cdp_run_result_init(&w->result);c->recipes[slot]=portal_working(p);
                 c->regions[slot]=w->region;
                 p->history_count=c->history_count;
                 for(int i=0;i<c->history_count;++i)snprintf(p->history_names[i],sizeof(p->history_names[i]),"%.23s",c->recipes[i].name);
-                int selected_tab=p->selected_tab,selected_slot=p->selected_slot;
+                int selected_tab=p->selected_tab,selected_slot=p->selected_slot,chain_stage=p->chain_stage;
                 portal_select_history(device,audio,p,c,slot);
                 p->selected_tab=selected_tab;p->selected_slot=selected_slot;
+                if(w->chain.stage_count) {
+                    for(unsigned i=(unsigned)w->chain_start;i<TS_PORTAL_CHAIN_STAGES;++i) {
+                        ts_cdp_run_result_free(&c->stages[i]);
+                        c->stages[i]=w->stages[i];ts_cdp_run_result_init(&w->stages[i]);c->stage_regions[i]=w->stage_regions[i];
+                    }
+                    c->cache_recipe=w->chain;c->cache_region=w->region;
+                    size_t frames=0;for(unsigned i=0;i<w->chain.stage_count;++i)frames+=c->stages[i].output.frames;
+                    for(unsigned i=0;i+1<w->chain.stage_count && frames>TS_PORTAL_MAX_FRAMES;++i) {
+                        frames-=c->stages[i].output.frames;ts_cdp_run_result_free(&c->stages[i]);
+                    }
+                    p->chain_cached=0;
+                    for(unsigned i=0;i<w->chain.stage_count;++i)if(c->stages[i].output.data)p->chain_cached|=1u<<i;
+                    p->chain_stage=chain_stage;ts_portal_step_get(&p->chain.stages[chain_stage],&p->recipe);
+                }
                 snprintf(p->message,sizeof(p->message),"PREVIEW READY (%s) - A/B TO COMPARE; APPLY CHANGES THE TILE",ts_cdp_safety_name(p->safety));
+                if(w->chain_cleanup_failed)snprintf(p->message,sizeof(p->message),"CHAIN READY; STAGE TEMP CLEANUP FAILED - SEE DIAGNOSTIC LOG");
                 if(c->quick_apply) {c->quick_apply=0;portal_apply(device,audio,ui,instrument,c,0);}
             } else snprintf(p->message,sizeof(p->message),"CDP: %.150s",w->error[0]?w->error:"RENDER FAILED");
             if(w->result.cleanup_failed)fprintf(stderr,"Portal cleanup: %s\n",w->result.job_directory);
@@ -403,7 +529,7 @@ static void portal_save(TsPortalUi *p,PortalController *c,int pin)
     if(!pin) {for(index=0;index<TS_PORTAL_SLOTS && next.recipes[index].process_id[0];++index);}
     if(index>=TS_PORTAL_SLOTS) {snprintf(p->message,sizeof(p->message),"SAVED RECIPE LIBRARY IS FULL (32); NO EXISTING RECIPE CHANGED");return;}
     if(pin && next.pins[index].process_id[0]) {snprintf(p->message,sizeof(p->message),"PIN SLOT OCCUPIED - USE MANAGE TOOLS TO UPDATE OR REPLACE IT");return;}
-    TsPortalRecipe r=p->recipe;if(pin && p->exact_pin)r.exposed=0;
+    TsPortalRecipe r=portal_working(p);if(pin && p->exact_pin)ts_portal_recipe_exact(&r);
     if(!ts_portal_recipe_validate(&r,p->message,sizeof(p->message)))return;
     if(pin)next.pins[index]=r;else next.recipes[index]=r;
     if(!ts_portal_library_save(&next,c->library_path,p->message,sizeof(p->message)))return;
@@ -416,6 +542,10 @@ static int portal_apply(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
 {
     TsPortalUi *p=&ui->portal;char error[160];
     int promote=new_tile!=1;
+    if(p->chain_active && p->chain_audition>=0 && p->valid && p->history_selected>=0) {
+        portal_stop(device,audio,p,c);p->result=&c->history[p->history_selected].output;
+        p->chain_audition=-1;ts_portal_wave_reset(&p->waves[1],p->result);
+    }
     TsPortalRegion region=p->rendered_region;
     if(!p->valid || !p->result || p->busy) {snprintf(p->message,sizeof(p->message),"PREVIEW CURRENT SETTINGS BEFORE APPLYING");return 0;}
     if(ui->capture_state!=TS_CAPTURE_IDLE || ui->external_record_bank || ui->sister_capture_active) {
@@ -566,7 +696,7 @@ static void portal_manage_open(TsPortalUi *p)
     p->manage_open=1;p->manage_tab=p->selected_tab>=1?p->selected_tab-1:p->tab==2;
     int slot=p->selected_tab==p->manage_tab+1 && p->selected_slot>=0?p->selected_slot:p->manage_tab?p->pin_slot:0;
     portal_manage_select(p,slot);p->manage_scroll=(slot/8)*8;
-    p->manage_recipe=p->recipe;
+    p->manage_recipe=portal_working(p);
     p->search_focus=p->name_focus=0;p->number_focus=-1;
     p->dragging_parameter=p->dragging_wave=-1;
     snprintf(p->message,sizeof(p->message),"SELECT A NUMBERED SLOT; UPDATE USES CURRENT SETTINGS; REPLACE CAN CHANGE PROCESS");
@@ -578,14 +708,14 @@ static void portal_manage_commit(TsPortalUi *p,PortalController *c)
     }
     int action=p->manage_action,slot=p->manage_slot,pin=p->manage_tab;
     TsPortalRecipe r=p->manage_recipe;
-    if(pin && p->exact_pin)r.exposed=0;
+    if(pin && p->exact_pin)ts_portal_recipe_exact(&r);
     if(!ts_portal_library_edit(&p->library,c->library_path,pin,slot,(TsPortalEdit)action,
                                &r,p->manage_name,p->message,sizeof(p->message)))return;
     if(p->selected_tab==pin+1 && p->selected_slot==slot) {
         if(action==TS_PORTAL_RENAME) {
-            memset(p->recipe.name,0,sizeof(p->recipe.name));
+            memset(portal_recipe_name(p),0,sizeof(p->recipe.name));
             memset(p->manage_recipe.name,0,sizeof(p->manage_recipe.name));
-            snprintf(p->recipe.name,sizeof(p->recipe.name),"%s",p->manage_name);
+            snprintf(portal_recipe_name(p),sizeof(p->recipe.name),"%s",p->manage_name);
             snprintf(p->manage_recipe.name,sizeof(p->manage_recipe.name),"%s",p->manage_name);
         }
         else if(action==TS_PORTAL_REMOVE)p->selected_tab=p->selected_slot=-1;
@@ -650,6 +780,94 @@ static int portal_manage_event(SDL_Event *e,SDL_Window *window,TsPortalUi *p,Por
     }
     return e->type==SDL_WINDOWEVENT?0:1;
 }
+static void portal_chain_select(SDL_AudioDeviceID device,AudioState *audio,TsPortalUi *p,PortalController *c,int index)
+{
+    (void)portal_working(p);portal_stop(device,audio,p,c);
+    p->chain_stage=index;p->chain_add=0;p->parameter_scroll=0;p->number_focus=-1;
+    ts_portal_step_get(&p->chain.stages[index],&p->recipe);
+    p->chain_audition=index;p->listen_result=1;
+    p->result=(p->chain_cached&(1u<<index))?&c->stages[index].output:NULL;
+    if(p->result){p->peak=c->stages[index].peak;p->safety=c->stages[index].safety;}
+    ts_portal_wave_reset(&p->waves[1],p->result);
+    if(p->result && c->stage_regions[index].selection) {
+        p->waves[1].has_selection=1;p->waves[1].selection_first=c->stage_regions[index].first;
+        p->waves[1].selection_last=c->stage_regions[index].result_last;
+        p->waves[1].playhead=p->waves[1].selection_first;
+    }
+    snprintf(p->message,sizeof(p->message),p->result?
+        "STAGE %d OUTPUT - PLAY / QWERTY TO AUDITION; APPLY ALWAYS USES THE FINAL CHAIN":
+        "STAGE %d - PREVIEW TO RENDER; PICK A PROCESS TO REPLACE THIS STAGE",index+1);
+}
+static int portal_chain_click(SDL_AudioDeviceID device,AudioState *audio,TsPortalUi *p,PortalController *c,int x,int y)
+{
+    if(x>=8 && x<62 && y>=360 && y<377) {
+        (void)portal_working(p);portal_invalidate(device,audio,p,c);portal_clear_history(c,p);
+        p->chain_active=!p->chain_active;p->chain_add=0;p->chain_stage=0;
+        if(p->chain_active) {
+            memset(&p->chain,0,sizeof(p->chain));p->chain.stage_count=1;p->chain.version=1;
+            snprintf(p->chain.process_id,sizeof(p->chain.process_id),"@chain");
+            snprintf(p->chain.name,sizeof(p->chain.name),"MY CHAIN");
+            ts_portal_step_set(&p->chain.stages[0],&p->recipe);
+        }
+        snprintf(p->message,sizeof(p->message),p->chain_active?
+            "CHAIN: ADD THEN PICK A PROCESS; ROWS AUDITION STAGES; APPLY USES FINAL OUTPUT":
+            "SINGLE PROCESS MODE - SELECTED STAGE KEPT; SAVED CHAINS ARE RETAINED");return 1;
+    }
+    if(!p->chain_active)return 0;
+    if(x>=478 && x<626 && y>=63 && y<79) {
+        (void)portal_working(p);
+        if(x<526) {
+            if(p->chain.stage_count==TS_PORTAL_CHAIN_STAGES)snprintf(p->message,sizeof(p->message),"CHAIN FULL: MAXIMUM EIGHT STAGES");
+            else {p->chain_add=!p->chain_add;p->tab=0;p->scroll=0;p->family=0;p->query[0]=0;
+                snprintf(p->message,sizeof(p->message),p->chain_add?"PICK A PROCESS IN THE LIBRARY TO INSERT AFTER STAGE %d":"ADD CANCELLED; LIBRARY NOW REPLACES THE SELECTED STAGE",p->chain_stage+1);}
+        } else {
+            int to=p->chain_stage+(x<576?-1:1);
+            if(to>=0 && to<(int)p->chain.stage_count) {
+                TsPortalStep temp=p->chain.stages[to];p->chain.stages[to]=p->chain.stages[p->chain_stage];p->chain.stages[p->chain_stage]=temp;
+                int first=to<p->chain_stage?to:p->chain_stage;
+                portal_invalidate(device,audio,p,c);p->chain_cached&=(1u<<first)-1;
+                p->chain_stage=to;ts_portal_step_get(&p->chain.stages[to],&p->recipe);
+            }
+        }
+        return 1;
+    }
+    if(x>=478 && x<626 && y>=84 && y<196) {
+        int i=(y-84)/14;if(i>=(int)p->chain.stage_count)return 1;
+        portal_chain_select(device,audio,p,c,i);
+        if(x>=602) {portal_invalidate(device,audio,p,c);p->chain.stages[i].bypass=!p->chain.stages[i].bypass;}
+        return 1;
+    }
+    if(x>=478 && x<626 && y>=201 && y<217) {
+        if(x<550) {
+            if(p->chain.stage_count==1)snprintf(p->message,sizeof(p->message),"KEEP ONE STAGE; SINGLE RETURNS TO ONE-PROCESS MODE");
+            else {
+                (void)portal_working(p);portal_invalidate(device,audio,p,c);
+                for(unsigned i=(unsigned)p->chain_stage;i+1<p->chain.stage_count;++i)p->chain.stages[i]=p->chain.stages[i+1];
+                memset(&p->chain.stages[--p->chain.stage_count],0,sizeof(TsPortalStep));
+                if(p->chain_stage>=(int)p->chain.stage_count)--p->chain_stage;
+                ts_portal_step_get(&p->chain.stages[p->chain_stage],&p->recipe);
+            }
+        } else {
+            const TsPortalProcess *proc=ts_portal_process_find(p->recipe.process_id);
+            snprintf(p->message,sizeof(p->message),"%s",proc?proc->description:"");
+        }
+        return 1;
+    }
+    if(x>=501 && x<626 && y>=360 && y<377) {
+        if(p->valid && p->history_selected>=0) {
+            portal_stop(device,audio,p,c);p->chain_audition=-1;p->result=&c->history[p->history_selected].output;
+            p->peak=c->history[p->history_selected].peak;p->safety=c->history[p->history_selected].safety;
+            p->listen_result=1;ts_portal_wave_reset(&p->waves[1],p->result);
+            if(p->rendered_region.selection) {
+                p->waves[1].has_selection=1;p->waves[1].selection_first=p->rendered_region.first;
+                p->waves[1].selection_last=p->rendered_region.result_last;
+            }
+            snprintf(p->message,sizeof(p->message),"FINAL CHAIN OUTPUT - READY TO APPLY OR SAVE TO A NEW TILE");
+        } else snprintf(p->message,sizeof(p->message),"PREVIEW THE CURRENT CHAIN TO HEAR ITS FINAL OUTPUT");
+        return 1;
+    }
+    return 0;
+}
 static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
                          AudioState *audio,TsUiState *ui,TsInstrument *instrument,
                          PortalController *c,SisterWindow *sister,int output_rate,
@@ -689,9 +907,9 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
                 if(ui->capture_state!=TS_CAPTURE_IDLE || ui->external_record_bank || ui->sister_capture_active || transform->worker || c->worker) {
                     snprintf(ui->status,sizeof(ui->status),"FINISH CAPTURE / RENDER BEFORE USING A PROCESS PIN");return 1;
                 }
-                stop_all_force(device,audio,ui);p->open=1;p->recipe=r;p->macro_view=1;
+                stop_all_force(device,audio,ui);p->open=1;portal_load_recipe(p,&r);p->macro_view=1;
                 p->selected_tab=2;p->selected_slot=pin;p->pin_slot=pin;
-                p->exact_pin=r.exposed==0;p->parameter_scroll=0;c->selection_scope=instrument->has_selection;
+                p->exact_pin=!portal_has_macros(&r);p->parameter_scroll=0;c->selection_scope=instrument->has_selection;
                 SDL_StartTextInput();
                 if(portal_source(device,audio,ui,instrument,c) && event->button.button==SDL_BUTTON_LEFT) {
                     portal_preview(device,audio,ui,c);c->quick_apply=c->worker!=NULL;
@@ -736,7 +954,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
     if(p->manage_open)return portal_manage_event(event,window,p,c,x,y);
     if(event->type==SDL_DROPFILE) {SDL_free(event->drop.file);snprintf(p->message,sizeof(p->message),"LOAD AUDIO ON MAIN; THEN REOPEN OR RELOAD THE PORTAL");return 1;}
     if(event->type==SDL_TEXTINPUT) {
-        char *dst=p->search_focus?p->query:p->name_focus?p->recipe.name:p->number_focus>=0?p->number_text:NULL;
+        char *dst=p->search_focus?p->query:p->name_focus?portal_recipe_name(p):p->number_focus>=0?p->number_text:NULL;
         size_t size=p->search_focus?sizeof(p->query):p->name_focus?sizeof(p->recipe.name):sizeof(p->number_text);
         if(dst)for(const char *s=event->text.text;*s;++s)if((unsigned char)*s>=32 && (unsigned char)*s<127 && *s!='|' && strlen(dst)+1<size) {
             size_t n=strlen(dst);dst[n]=*s;dst[n+1]=0;
@@ -747,7 +965,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
     if(event->type==SDL_KEYDOWN) {
         SDL_Keycode key=event->key.keysym.sym;
         if(p->search_focus || p->name_focus || p->number_focus>=0) {
-            char *dst=p->search_focus?p->query:p->name_focus?p->recipe.name:p->number_text;
+            char *dst=p->search_focus?p->query:p->name_focus?portal_recipe_name(p):p->number_text;
             if(key==SDLK_BACKSPACE && strlen(dst))dst[strlen(dst)-1]=0;
             if(key==SDLK_RETURN || key==SDLK_ESCAPE) {
                 if(key==SDLK_RETURN && p->number_focus>=0) {
@@ -848,6 +1066,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
     }
     if(event->button.button!=SDL_BUTTON_LEFT)return 1;
     p->search_focus=p->name_focus=0;p->number_focus=-1;
+    if(portal_chain_click(device,audio,p,c,x,y))return 1;
     if(y<32) {
         if(ts_ui_master_limiter_contains(x,y))set_output_limiter_enabled(device,audio,ui,sister,!audio->sister.limiter.enabled);
         else if(ts_ui_master_output_contains(x,y)) {ui->master_output_dragging=1;set_master_output_gain(device,audio,ui,sister,ts_ui_master_output_normalized_from_x(x));}
@@ -862,9 +1081,22 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
     else if(x>=14 && x<136 && y>=334 && y<350) {if(x<82)portal_manage_open(p);else portal_save(p,c,0);}
     else if(x>=14 && x<136 && y>=126 && y<330) {
         TsPortalRecipe r;int slot=ts_portal_filter_slot(p,p->scroll+(y-126)/17,&r);if(slot>=0) {
-            portal_invalidate(device,audio,p,c);p->recipe=r;p->parameter_scroll=0;
+            if(p->chain_active && p->chain_add && r.stage_count) {
+                snprintf(p->message,sizeof(p->message),"PICK A SINGLE PROCESS FOR THIS STAGE; CANCEL ADD TO LOAD A SAVED CHAIN");return 1;
+            }
+            portal_invalidate(device,audio,p,c);
+            if(p->chain_active && !r.stage_count && (p->tab==0 || p->chain_add)) {
+                (void)portal_working(p);
+                if(p->chain_add && p->chain.stage_count<TS_PORTAL_CHAIN_STAGES) {
+                    unsigned at=(unsigned)++p->chain_stage;
+                    for(unsigned n=p->chain.stage_count;n>at;--n)p->chain.stages[n]=p->chain.stages[n-1];
+                    ++p->chain.stage_count;memset(&p->chain.stages[at],0,sizeof(TsPortalStep));
+                }
+                p->recipe=r;ts_portal_step_set(&p->chain.stages[p->chain_stage],&r);p->chain_add=0;
+            } else portal_load_recipe(p,&r);
+            p->parameter_scroll=0;
             p->selected_tab=p->tab;p->selected_slot=slot;if(p->tab==2)p->pin_slot=slot;
-            p->macro_view=p->tab==2;p->exact_pin=r.exposed==0;
+            p->macro_view=p->tab==2;p->exact_pin=!portal_has_macros(&r);
             snprintf(p->message,sizeof(p->message),"%.60s - ENTER TO PREVIEW; FULL SHOWS ALL PARAMETERS",r.name);
         }
     } else if(x>=154 && x<464 && ((y>=60 && y<122) || (y>=152 && y<214))) {
@@ -928,5 +1160,6 @@ static void portal_free(PortalController *c)
 {
     portal_cancel(c);portal_worker_free(c->worker);c->worker=NULL;
     ts_sample_free(&c->source);
+    for(int i=0;i<TS_PORTAL_CHAIN_STAGES;++i)ts_cdp_run_result_free(&c->stages[i]);
     for(int i=0;i<TS_PORTAL_HISTORY;++i)ts_cdp_run_result_free(&c->history[i]);
 }

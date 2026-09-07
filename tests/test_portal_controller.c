@@ -165,6 +165,9 @@ static void test_selection_workflow(SDL_Window *window,SDL_AudioDeviceID device)
     ts_performance_free(&audio.tile_launchers);ts_capture_free(&audio.capture);
 }
 
+
+#include "test_portal_chains.inc"
+
 int main(void)
 {
     static TsInstrument instrument;
@@ -506,6 +509,7 @@ int main(void)
     assert(ts_instrument_undo(&instrument,error,sizeof(error)));
     assert(ts_sample_hash(&instrument.current)==before);
     test_selection_workflow(window,audition);
+    test_chain_workflow(window,audition);
     SDL_DestroyWindow(window);
 
     /* Reopening a stereo source cannot leave a previous mono source active. */

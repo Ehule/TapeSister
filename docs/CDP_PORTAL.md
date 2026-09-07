@@ -1,4 +1,4 @@
-# CDP Portal — explore, save, and manage your tools
+# CDP Portal — explore, chain, and save your tools
 
 ![Native CDP Portal rendering with a real selection-only tape-speed result](images/cdp-portal.png)
 
@@ -27,6 +27,77 @@ the complete list. Filtering never renumbers stored slots.
 These 131 Portal modes accept mono input only; stereo is rejected explicitly.
 Multi-input/multichannel, breakpoint-file, and text-file workflows remain future
 work. The factory bank retains its original 32 curated instruments.
+
+## Reusable process chains
+
+![Native three-stage chain: Random Chunks, Spectral Blur, Linear Gain](images/cdp-portal-chain.png)
+
+Click **CHAIN** at the bottom left to turn the current process into stage one.
+A chain holds **one to eight stages**. The stage list replaces the explanation
+area on the right; the source/result waveforms and parameter controls stay in
+place. The process catalog remains at 131 modes.
+
+1. Click **ADD**, then choose a process in the left browser. It is inserted
+   after the selected stage. You can also pick a saved single-process recipe
+   while ADD is armed. Click ADD again to cancel insertion.
+2. Click a stage row to edit its parameters. Choosing another process from
+   **ALL** replaces the selected stage unless ADD is armed. Loading a saved
+   chain from SAVE/PINS loads the complete chain; chains cannot be nested.
+3. **UP / DOWN** reorder the selected stage. **ON / OFF** enables or bypasses
+   it without losing its settings. **REMOVE** deletes that stage from the
+   working chain. At least one stage remains.
+4. **PREVIEW** runs the chain. Changes invalidate that stage and the stages
+   after it. Earlier compatible cached results are reused. Pressing Preview
+   with unchanged controls deliberately re-renders from the selected stage,
+   which lets you reroll a random process. Select stage one to rerender all.
+5. A **+** beside a stage means its output is available for audition. Click
+   its row, then use Play, Loop or QWERTY to hear that intermediate output.
+   **FINAL RESULT** returns to the completed chain. Source/result audition
+   selections remain independent, including while looping.
+
+The selected stage's parameter checkboxes decide its exposed macro controls.
+**MACROS** shows only those checked controls for the selected stage; **FULL**
+shows all of its controls. Choose another stage to reach its macros. The chain
+name field names the whole tool. **SAVE AS** saves every stage, its order,
+bypass state and values. **PIN CHAIN TILE** saves the whole chain in a user-pin
+slot. Exact pins clear exposed controls on every stage; checked-macro pins
+preserve each stage's choices. The same collection manager can rename, update,
+replace or remove these tools. Updating a chain keeps the saved name and copies
+its complete current stage sequence. Replacing can switch a slot between a
+single process and a chain.
+
+**Apply, New Tile and New + Continue always use the final completed chain**,
+including when an intermediate stage is displayed. Apply replaces the current
+tile's source region and promotes the complete result. New Tile preserves the
+Portal source. New + Continue makes the new tile the source. Each successful
+Apply is one Undo step for the whole chain, not a separate step per stage.
+
+With **PROCESS: SEL**, the chain processes the selected source region. Each
+stage receives the processed region at its current length; the surrounding
+audio remains intact. This is one processing region for the entire chain,
+not a separate selection stored per stage. Changing the source selection
+requires a new preview. Main-canvas selection import still works as before.
+Neither processing selections nor source audio are stored in chain recipes.
+
+The **SINGLE** button returns to single-process mode with the currently selected
+stage. It clears the working chain and preview history; save a chain before
+leaving it if you want to keep it. Saved chains and pins are retained. Closing
+and reopening the Portal retains the working chain but reloads the source.
+
+Intermediate caching is limited to **eight million mono frames total** (about
+32 MB), separately from the existing four-result / eight-million-frame history
+limit. Old intermediate audio is evicted first. Selecting an evicted stage
+shows that a preview is needed; rendering restarts from the nearest compatible
+cached predecessor, or from source. Cached audio is not saved to disk with the
+recipe. Random stages without native seed controls can produce a new result
+when rerendered; a saved chain preserves the recipe, not its audio.
+
+A failing stage reports its number and process. No partial chain can be applied,
+and cancellation discards the unfinished generation. Rendering stays off the
+audio callback. Notes are detached before replacing source, stage or history
+audio. Each process retains its own source-dependent bounds and timeout. Stage
+boundaries use the existing CDP WAV staging format, so this does not introduce
+a new high-resolution rendering path or remove per-stage quantization.
 
 ## Waveset family
 
@@ -485,7 +556,10 @@ fails, both the existing collection and the previous file remain intact.
 file and atomic replacement. It is an application-level personal collection,
 not embedded in a `.tsr` project. Copy this file alongside the INI when moving
 your personal configuration. Source audio, rendered history, and temporary
-analysis files are not included. Invalid/unknown-version files are rejected
+analysis files are not included. Collections containing chains use `TSCDPPORTAL 2`;
+single-process-only collections retain version 1. This build reads both versions.
+Earlier TapeSister builds cannot read version 2, so keep a copy of the collection
+before going back to an older application version. Invalid/unknown-version files are rejected
 transactionally rather than partially loaded.
 Saving is blocked after an unsuccessful load so an unreadable existing collection
 cannot be overwritten accidentally. Back up and repair that file, then restart.
@@ -725,9 +799,8 @@ to source/result A-B, selection joins, and pin quick apply on real hardware.
 
 This batch adds **43 processes**: 35 spectral modes and eight Structure modes.
 The remaining candidates and exclusions are recorded in
-[the audit](CDP_SIMPLE_PROCESS_AUDIT.md). The next planned workflow feature is
-reusable multi-process chains; these additions still save as single-process
-recipes or pins.
+[the audit](CDP_SIMPLE_PROCESS_AUDIT.md). Reusable multi-process chains are now available as described above; the
+individual additions can also be saved as single-process recipes or pins.
 
 Structure provides Keep Segment, Keep Tail, Remove Segment, Segment Repeats,
 Advancing Loops, Loop to Duration, Loop Count, and Random Chunks. Position controls
@@ -763,3 +836,21 @@ The native controller checks the new family browser, real Structure and Waver
 previews, and existing collection, Apply, QWERTY, A/B and live-loop workflows.
 Address/undefined-behavior checks pass; leak detection is unavailable in this
 environment. Windows bundle and hardware listening checks remain before release.
+
+### Chain verification record
+
+The native controller renders a three-stage Random Chunks → Spectral Blur →
+Linear Gain chain and compares it with the core runner. Editing the last stage
+retains the earlier sample allocations and audio hashes. Intermediate QWERTY
+chords, final-output application, saved macros/exact pins, manager rename,
+reorder/remove/bypass, selection-only duration changes, stale-tile rejection,
+Apply/Undo, later-stage failure and cancellation are covered. Eight bypass
+stages verify pass-through behavior and bounded intermediate eviction.
+
+Core recipe checks cover version-1 compatibility, mixed version-2 collections,
+per-stage values/macros/bypass round trips, filtering, malformed/truncated input,
+unknown versions, stage limits, nested-chain rejection and transactional load
+failure. Existing Portal lifecycle and live-loop suites run alongside these
+checks with AddressSanitizer and UndefinedBehaviorSanitizer. Leak detection is
+unavailable in this environment. Windows packaging and real-hardware listening
+remain the release checks.
