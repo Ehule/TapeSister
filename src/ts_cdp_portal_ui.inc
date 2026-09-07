@@ -108,7 +108,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     button(fb,165,4,54,"MAIN",0);
     button(fb,224,4,66,"SISTER",0);
     button(fb,295,4,66,"RELOAD",0);
-    button(fb,366,4,94,"SOURCE/SEL",0);
+    button(fb,366,4,94,p->load_selection?"LOAD: SEL":"LOAD: TILE",p->load_selection);
     button(fb,TS_UI_MASTER_LIMITER_X,5,28,"LIM",ui->master_output.limiter_enabled);
     master_output_fader(fb,ui->master_output.gain,528,5);
     master_output_meter(fb,&ui->master_output,580,8);
@@ -131,7 +131,8 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
         ++rows;
     }
     if(!rows)portal_caption(fb,17,133,19,"NO MATCHES",RGB(210,204,210));
-    portal_mini(fb,14,334,122,"MANAGE TOOLS",0);
+    portal_mini(fb,14,334,68,"TOOLS",0);
+    portal_mini(fb,86,334,50,"SAVE AS",0);
 
     portal_wave_render(fb,p,0,40);
     portal_wave_render(fb,p,1,132);
@@ -144,6 +145,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
 
     frame(fb,148,245,318,82,RGB(18,18,18),RGB(84,77,84));
     text(fb,154,250,p->macro_view?"PIN MACROS":"PROCESS PARAMETERS",RGB(210,204,210),1);
+    portal_mini(fb,310,247,124,p->process_selection?"PROCESS: SEL":"PROCESS: WHOLE",p->process_selection);
     text(fb,439,250,"PIN",PAL_VOLUME,1);
     int visible=0;
     if(proc) for(unsigned i=0;i<proc->parameter_count;++i) {
@@ -199,7 +201,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     button(fb,150,332,76,p->busy?"CANCEL":"PREVIEW",p->busy);
     button(fb,230,332,64,"APPLY",p->valid);
     button(fb,298,332,78,"NEW TILE",0);
-    button(fb,380,332,84,"SAVE AS",0);
+    button(fb,380,332,84,"NEW+CONT",0);
     button(fb,478,332,148,"PIN PROCESS TILE",0);
     text(fb,12,364,"HISTORY",PAL_WAVE_LEFT,1);
     for(int i=0;i<p->history_count;++i) {
@@ -209,6 +211,14 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     }
     portal_mini(fb,501,360,125,"MAIN: CTRL+Z",0);
     if(p->manage_open)portal_manager_render(fb,p);
+    if(p->full_action) {
+        frame(fb,166,140,308,113,RGB(18,18,18),PAL_VOLUME);
+        text(fb,181,155,"THIS SAMPLE PAGE IS FULL",PAL_VOLUME,1);
+        text(fb,181,177,"KEEP THE RESULT ON A NEW PAGE?",PAL_EFFECT,1);
+        text(fb,181,193,"SOURCE AND PREVIEW ARE KEPT IF CANCELLED",RGB(210,204,210),1);
+        button(fb,192,217,118,"NEW PAGE",1);
+        button(fb,330,217,118,"CANCEL",0);
+    }
     rect(fb,0,382,640,18,RGB(8,8,8));
     portal_caption(fb,9,388,103,p->message,PAL_WAVE_LEFT);
 }

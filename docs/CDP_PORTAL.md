@@ -1,6 +1,6 @@
 # CDP Portal — explore, save, and manage your tools
 
-![Native CDP Portal rendering with a real spectral-stretch result](images/cdp-portal.png)
+![Native CDP Portal rendering with a real selection-only tape-speed result](images/cdp-portal.png)
 
 CDP Portal is the exploratory workbench inside TapeSister. The original 32
 curated CDP instruments remain unchanged. The Portal uses a separate, stable-ID
@@ -10,8 +10,8 @@ process registry and separate recipe/pin storage.
 
 Load or generate a mono tile. On the CDP panel, click **PORTAL**, or press
 **Ctrl+Shift+P** from the main workspace. The Portal takes an immutable snapshot
-of Current (the current selection when one exists). **SOURCE/SEL** toggles
-between whole-tile and main-canvas selection scope; **RELOAD** refreshes the
+of Current (the current selection when one exists). **LOAD: TILE / LOAD: SEL** toggles
+between whole-tile and main-canvas selection import; **RELOAD** refreshes the
 snapshot. Failed source loading clears the previous snapshot.
 
 The Portal exposes **88 processes across nine families**: 28 waveset, 15 spectral,
@@ -372,22 +372,49 @@ output validation, and the existing eight-million-frame limit still apply.
   range; otherwise it moves to the new start. Clearing the range keeps the whole
   waveform looping. Editing a stopped preview does not start playback.
 - Wheel over either waveform to zoom; Shift+wheel pans; **FIT** restores both
-  full views. These waveform selections are audition-only. Processing uses the
-  snapshot identified by SOURCE/SEL and the status line.
+  full views. Source and Result audition selections remain independent.
+- **PROCESS: WHOLE / PROCESS: SEL**, above the parameter sliders, controls the
+  render scope. WHOLE processes the full Portal source. SEL processes the region
+  drawn on the Source waveform; without a source selection, Preview asks you to
+  draw one. The Result waveform selection always controls auditioning only.
+  To process part of a result, first use Apply or New+Cont to make it the source.
+- A selection render combines the untouched source prefix, the transformed
+  selection, and the untouched suffix into a complete result. Length changes
+  move the suffix accordingly. Short boundary splices affect the processed
+  region only. Source and Result initially highlight the corresponding regions,
+  even when their lengths differ. You can then audition either independently.
+- In PROCESS: SEL mode, changing or clearing the source selection invalidates
+  the render and cancels an outstanding job, without interrupting a running
+  audition loop. Preview again before applying. Result-selection changes do not
+  invalidate the render. In WHOLE mode, both selections are audition-only.
 - **APPLY** replaces the original snapshot range and promotes that result to
   the new Portal source. Choose another process and Preview immediately; no
   Reload is needed. For a main-canvas selection, the transformed region remains
   the source, with its new length; surrounding audio stays outside the operation.
   Each Apply retains its own normal tile Undo step. The old source’s preview
   history is cleared, audition returns to Source, and held notes stop before
-  their audio is replaced.
+  their audio is replaced. For a Portal selection render, the new source is the
+  complete assembled result, with the transformed region selected for the next
+  operation. Main-canvas selection imports continue to target their original
+  region within the main tile.
 - **NEW TILE** copies the result into an empty slot on the current sample page.
   A full page is reported without overwriting anything. Like the existing
   copy-to-new-tile helper, the new tile receives a whole-sample forward loop.
   **The Portal source stays unchanged**, allowing further variations from the
   same sound. The main canvas selects the new tile; Apply still checks the
   original source tile, so return to it or Reload before replacing another tile.
+- **NEW+CONT** (New + Continue) keeps the complete result in an empty tile and
+  promotes that tile to the Portal source. The original tile remains available.
+  Repeat Preview then New+Cont to keep each successive generation. A processed
+  selection follows its new boundaries into the next source.
+- A full page opens **NEW PAGE / CANCEL** for both New Tile and New+Cont. Cancel
+  keeps the source and ready result intact. New Page creates a sample page and
+  completes the requested action; recording and page-limit restrictions are
+  reported without losing the preview. If copying fails after page creation,
+  the empty new page is removed and the previous page restored.
 - **MAIN: CTRL+Z** returns to Main, where Ctrl+Z undoes the last tile edit.
+
+![Full-page prompt preserves the ready result while offering a new sample page](images/cdp-portal-full.png)
 
 Rendering never changes audio automatically except when explicitly invoking a
 main-page process pin's left-click quick apply. Edited parameters invalidate the
@@ -396,8 +423,9 @@ page, and audio hash; it rejects a stale result. Preview auditioning uses the
 existing playback path and global output/limiter controls.
 
 The history strip retains up to four rendered variants for the current source.
-Click one to restore its settings and audio. History is session-only and resets
-on source reload or successful Apply to the current tile. Aggregate history storage is bounded to eight million mono
+Click one to restore its settings, processing scope, and audio, including the
+original selected-region boundaries. History is session-only and resets on source
+reload, successful Apply, or New+Cont. Aggregate history storage is bounded to eight million mono
 frames (32 MB); oldest results are evicted first. Each source and result is also
 bounded to eight million frames. This permits about 181 seconds at 44.1 kHz;
 choose a smaller main-canvas selection for longer recordings. Expanding
@@ -405,9 +433,11 @@ processes also preflight their output estimate. CDP timeouts remain enforced.
 
 ## Save a recipe or make an instrument
 
-Click the name field to name a recipe. **SAVE AS** adds its exact current
+Click the name field to name a recipe. **SAVE AS**, beside **TOOLS** below the
+process browser, adds its exact current
 settings to the saved browser. A saved recipe contains no source audio or
-source file paths, so it can be applied to a different waveform.
+source file paths, so it can be applied to a different waveform. Processing
+selections are specific to the current source and are not stored in recipes.
 
 The **PIN** checkboxes beside parameters select which controls the user-made
 instrument exposes. Choose **PIN: CHECKED MACROS** or **PIN: EXACT RECIPE**,
@@ -516,6 +546,30 @@ To render a screenshot of actual CDP output:
 ```sh
 TS_TEST_CDP_BIN=/absolute/path/to/cdp/bin ./tapesister_portal_tests portal.ppm manager.ppm
 ```
+
+### Portal selection and New + Continue verification
+
+The controller now renders the Source waveform selection and assembles the
+complete result on its background worker. Tests use a Portal selection inside
+a main-canvas selection import: a real CDP time stretch changes the selected
+region's length while every sample outside that region remains unchanged.
+Apply, Undo/Redo, and two consecutive New+Cont generations preserve the expected
+contents and select the transformed region in each new source.
+
+Native Alt+wheel checks confirm that source-selection changes invalidate the
+render without stopping a loop; result-selection changes leave the render
+valid. History restores the original processing range. Changed-range jobs are
+cancelled/discarded, and nonfinite audio outside the processed region is rejected.
+New Tile retains the original source pointer, target, and selection scope.
+
+The full-page prompt is tested through native mouse events: Cancel preserves
+source/result, capture and page-limit failures retain the pending preview, a
+failed copy rolls back the newly created page, and New Page successfully keeps
+the result and promotes it when continuing. Existing controller and Portal/import
+loop regressions pass. The controller also passes AddressSanitizer and
+UndefinedBehaviorSanitizer, with leak detection disabled in this environment.
+The process catalog remains at 88; this follow-up adds
+workflow controls rather than additional CDP modes.
 
 ### Envelope expansion and successive Apply verification
 

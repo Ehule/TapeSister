@@ -39,11 +39,17 @@ typedef struct {
     float minimum[TS_PORTAL_WAVE_COLUMNS], maximum[TS_PORTAL_WAVE_COLUMNS];
 } TsPortalWave;
 typedef struct {
+    int selection;
+    size_t first, last, result_last;
+} TsPortalRegion;
+typedef struct {
     int open, busy, valid, playing, listen_result, loop;
     int tab, scroll, search_focus, name_focus, exact_pin, pin_slot, macro_view;
     int parameter_scroll, dragging_parameter, dragging_wave, drag_x;
     int number_focus, wave_dragged;
     int note_count;
+    int load_selection, process_selection, full_action;
+    TsPortalRegion rendered_region;
     int family, selected_tab, selected_slot;
     int manage_open, manage_tab, manage_slot, manage_scroll, manage_action, manage_name_focus;
     char manage_name[40];

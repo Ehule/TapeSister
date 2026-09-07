@@ -11239,6 +11239,7 @@ int main(int argc, char **argv)
     import_controller_init(&import_controller);
     ts_ui_init(&ui);
     portal_init(&portal,&ui.portal);
+    portal.pages=&sample_pages;portal.external_input=&external_input;
     ui.sample_page = 0;
     ui.sample_page_count = 1;
     {
