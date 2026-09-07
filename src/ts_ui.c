@@ -3481,6 +3481,11 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, wave_buttons[8].x, 289, wave_buttons[8].width,
                ui->bank_clear_armed ? "CONFIRM CLEAR" : "CLEAR ALL",
                ui->bank_clear_armed);
+    else if (ui->show_keyboard)
+        button(fb,486,289,97,
+               ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING?"FILE WAIT":
+               ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING?"STOP FILE":"REC FILE",
+               ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING && ui->text_cursor_visible);
     button(fb, wave_buttons[9].x, 289, wave_buttons[9].width,
            ui->show_keyboard ? "BANK" : ui->show_recipes ? "DSP" :
            ui->show_ingredients ? "KEYS" : "CDP", !ui->show_keyboard);

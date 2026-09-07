@@ -48,6 +48,9 @@ int main(void)
     char folder[160];snprintf(folder,sizeof(folder),"/tmp/tapesister-canvas-%lu",(unsigned long)SDL_GetTicks());
     SDL_setenv("TAPESISTER_CAPTURES",folder,1);
     event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);event.button.button=SDL_BUTTON_LEFT;event.button.x=270;event.button.y=319;
+    if(getenv("TS_TEST_CANVAS_KEYS")) {
+        ui.show_keyboard=1;event.button.x=530;event.button.y=300;
+    }
     assert(main_file_capture_event(&event,window,&audio,&ui,&sister,44100));
     assert(ui.file_record_state==TS_PERFORMANCE_FILE_RECORDING && !audio.sister.enabled);
     assert(sister.model.selected_tap==TS_SISTER_TAP_H1 && sister.model.destination_mode==TS_SISTER_UI_DEST_CURRENT);

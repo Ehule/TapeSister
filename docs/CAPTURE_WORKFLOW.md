@@ -116,7 +116,10 @@ feedback safety, early stop/cancel, and recording with MONITOR both off and on.
 
 ![Canvas with direct file recording active](images/canvas-file-recording.png)
 
-**REC FILE**, beside the sample-bank capture controls, starts recording the final
+![Keyboard view with its recording button beside Bank](images/keyboard-file-recording.png)
+
+**REC FILE**, beside the sample-bank capture controls or beside **BANK** when
+the keyboard is visible, starts recording the final
 stereo output immediately. **Ctrl+Shift+F** is the main-window shortcut. Click
 **STOP FILE** or press the shortcut again to finish the WAV without stopping
 playback. Files are saved automatically as `TAPESISTER-OUT_...wav` in `Captures`

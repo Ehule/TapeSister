@@ -8952,6 +8952,8 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
        event->button.windowID==SDL_GetWindowID(window)) {
         int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
         if(active && x>=544 && x<630 && y>=382 && y<398)trigger=1;
+        else if(!ui_dialog_open(ui) && ui->show_keyboard &&
+                x>=486 && x<583 && y>=289 && y<311)trigger=1;
         else if(!ui_dialog_open(ui) && !ui->show_keyboard && !ui->show_recipes &&
                 !ui->show_ingredients && !ui->external_record_bank &&
                 x>=250 && x<344 && y>=313 && y<329)trigger=1;
