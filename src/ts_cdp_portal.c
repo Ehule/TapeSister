@@ -257,7 +257,163 @@ static const TsPortalProcess processes[] = {
     {"envel.tremolo.1", "TREMOLO", "Modulate amplitude with a periodic envelope. Slow rates create pulses; faster rates add sidebands. Depth zero retains the source at the chosen gain.", "tremolo", 1, 1, 3, 0,
         {{"rate", "RATE HZ", "AMPLITUDE MODULATION RATE", "", TS_PORTAL_REAL, 0, 100, 5},
          {"depth", "DEPTH", "0 NO MODULATION; 1 FULL DEPTH", "", TS_PORTAL_REAL, 0, 1, .6},
-         {"gain", "OUTPUT GAIN", "OVERALL LINEAR SIGNAL GAIN", "", TS_PORTAL_REAL, 0, 1, .8}}, TS_PORTAL_ENVELOPE, "envel"}
+         {"gain", "OUTPUT GAIN", "OVERALL LINEAR SIGNAL GAIN", "", TS_PORTAL_REAL, 0, 1, .8}}, TS_PORTAL_ENVELOPE, "envel"},
+    /* Final scalar-input batch: focus, hilite, sfedit and extend (CDP8). */
+    {"focus.accu", "SPECTRAL SUSTAIN", "Sustain each spectral band until louder material replaces it. Decay controls retention per second; glide moves held bands in octaves per second.", "accu", 1, 0, 2, 0,
+        {{"decay", "DECAY / SECOND", "RETAINED AMPLITUDE AFTER ONE SECOND; 1 HOLDS LEVEL", "-d", TS_PORTAL_REAL, 0.001, 1, 0.25},
+         {"glide", "GLIDE OCT / SEC", "PITCH DRIFT OF SUSTAINED SPECTRAL BANDS", "-g", TS_PORTAL_REAL, -2, 2, 0}}, TS_PORTAL_SPECTRAL, "focus"},
+    {"focus.exag", "SPECTRAL CONTRAST", "Reshape relative partial levels while retaining total spectral amplitude. Below 1 emphasises stronger peaks; above 1 brings quieter partials forward.", "exag", 1, 0, 1, 0,
+        {{"contrast", "CONTOUR RATIO", "CDP USES THE RECIPROCAL AS A POWER; 1 RETAINS CONTOUR", "", TS_PORTAL_REAL, 0.125, 8, 0.5}}, TS_PORTAL_SPECTRAL, "focus"},
+    {"focus.focus", "SPECTRAL PEAK FOCUS", "Concentrate energy around detected spectral-envelope peaks. Peak count selects how many regions survive; width controls their bandwidth in octaves.", "focus", 1, 0, 3, 0,
+        {{"bins", "ENVELOPE BINS", "LINEAR FREQUENCY GROUPING FOR THE FORMANT ENVELOPE", "-f", TS_PORTAL_INTEGER, 1, 32, 4},
+         {"peaks", "PEAK COUNT", "MAXIMUM NUMBER OF SPECTRAL ENVELOPE PEAKS", "", TS_PORTAL_INTEGER, 1, 16, 4},
+         {"width", "WIDTH OCTAVES", "BANDWIDTH AROUND EACH DETECTED PEAK", "", TS_PORTAL_REAL, 0.1, 4, 0.5}}, TS_PORTAL_SPECTRAL, "focus"},
+    {"focus.fold", "SPECTRAL OCTAVE FOLD", "Move partials by octaves into a chosen frequency band. The band must span at least one octave. Full Spectrum retains a denser folded result.", "fold", 1, 0, 3, 0,
+        {{"low", "LOW HZ", "LOWER FREQUENCY; BELOW HIGH HZ AND SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 8000, 300},
+         {"high", "HIGH HZ", "UPPER FREQUENCY; ABOVE LOW HZ AND BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 40, 16000, 3000},
+         {"full", "FULL SPECTRUM", "RETAIN A FULLER FOLDED SPECTRUM", "-x", TS_PORTAL_SWITCH, 0, 1, 0}}, TS_PORTAL_SPECTRAL, "focus"},
+    {"focus.step", "SPECTRAL STEP HOLD", "Freeze a spectral frame at regular intervals until the next step. Duration stays approximately unchanged; larger steps create blocky spectral motion.", "step", 1, 0, 1, 0,
+        {{"step", "STEP SECONDS", "HOLD INTERVAL; AT LEAST TWO ANALYSIS HOPS AND WITHIN SOURCE", "", TS_PORTAL_REAL, 0.01, 2, 0.1}}, TS_PORTAL_SPECTRAL, "focus"},
+    {"hilite.filter.1", "SPEC HIGH PASS", "Filter partial amplitudes in the analysis spectrum. Removed bands are not automatically made up in level. Skirt width controls the transition in Hz.", "filter", 1, 1, 2, 0,
+        {{"frequency", "CUTOFF HZ", "SPECTRAL FILTER CUTOFF; BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 16000, 1000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.filter.2", "SPEC HIGH PASS NORM", "Filter partial amplitudes in the analysis spectrum. CDP restores each frame's total amplitude after filtering. Skirt width controls the transition in Hz.", "filter", 1, 2, 2, 0,
+        {{"frequency", "CUTOFF HZ", "SPECTRAL FILTER CUTOFF; BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 16000, 1000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.filter.3", "SPEC LOW PASS", "Filter partial amplitudes in the analysis spectrum. Removed bands are not automatically made up in level. Skirt width controls the transition in Hz.", "filter", 1, 3, 2, 0,
+        {{"frequency", "CUTOFF HZ", "SPECTRAL FILTER CUTOFF; BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 16000, 1000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.filter.4", "SPEC LOW PASS NORM", "Filter partial amplitudes in the analysis spectrum. CDP restores each frame's total amplitude after filtering. Skirt width controls the transition in Hz.", "filter", 1, 4, 2, 0,
+        {{"frequency", "CUTOFF HZ", "SPECTRAL FILTER CUTOFF; BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 16000, 1000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.filter.5", "SPEC HIGH PASS GAIN", "Filter partial amplitudes in the analysis spectrum. Gain scales the filtered spectrum. Skirt width controls the transition in Hz.", "filter", 1, 5, 3, 0,
+        {{"frequency", "CUTOFF HZ", "SPECTRAL FILTER CUTOFF; BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 16000, 1000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200},
+         {"gain", "OUTPUT GAIN", "LINEAR GAIN AFTER SPECTRAL FILTERING", "", TS_PORTAL_REAL, 0.01, 4, 0.5}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.filter.6", "SPEC LOW PASS GAIN", "Filter partial amplitudes in the analysis spectrum. Gain scales the filtered spectrum. Skirt width controls the transition in Hz.", "filter", 1, 6, 3, 0,
+        {{"frequency", "CUTOFF HZ", "SPECTRAL FILTER CUTOFF; BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 16000, 1000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200},
+         {"gain", "OUTPUT GAIN", "LINEAR GAIN AFTER SPECTRAL FILTERING", "", TS_PORTAL_REAL, 0.01, 4, 0.5}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.filter.7", "SPEC BAND PASS", "Filter partial amplitudes in the analysis spectrum. Removed bands are not automatically made up in level. Skirt width controls the transition in Hz.", "filter", 1, 7, 3, 0,
+        {{"low", "LOW HZ", "LOWER FREQUENCY; BELOW HIGH HZ AND SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 8000, 300},
+         {"high", "HIGH HZ", "UPPER FREQUENCY; ABOVE LOW HZ AND BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 40, 16000, 3000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.filter.8", "SPEC BAND PASS NORM", "Filter partial amplitudes in the analysis spectrum. CDP restores each frame's total amplitude after filtering. Skirt width controls the transition in Hz.", "filter", 1, 8, 3, 0,
+        {{"low", "LOW HZ", "LOWER FREQUENCY; BELOW HIGH HZ AND SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 8000, 300},
+         {"high", "HIGH HZ", "UPPER FREQUENCY; ABOVE LOW HZ AND BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 40, 16000, 3000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.filter.9", "SPEC NOTCH", "Filter partial amplitudes in the analysis spectrum. Removed bands are not automatically made up in level. Skirt width controls the transition in Hz.", "filter", 1, 9, 3, 0,
+        {{"low", "LOW HZ", "LOWER FREQUENCY; BELOW HIGH HZ AND SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 8000, 300},
+         {"high", "HIGH HZ", "UPPER FREQUENCY; ABOVE LOW HZ AND BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 40, 16000, 3000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.filter.10", "SPEC NOTCH NORM", "Filter partial amplitudes in the analysis spectrum. CDP restores each frame's total amplitude after filtering. Skirt width controls the transition in Hz.", "filter", 1, 10, 3, 0,
+        {{"low", "LOW HZ", "LOWER FREQUENCY; BELOW HIGH HZ AND SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 8000, 300},
+         {"high", "HIGH HZ", "UPPER FREQUENCY; ABOVE LOW HZ AND BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 40, 16000, 3000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.filter.11", "SPEC BAND PASS GAIN", "Filter partial amplitudes in the analysis spectrum. Gain scales the filtered spectrum. Skirt width controls the transition in Hz.", "filter", 1, 11, 4, 0,
+        {{"low", "LOW HZ", "LOWER FREQUENCY; BELOW HIGH HZ AND SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 8000, 300},
+         {"high", "HIGH HZ", "UPPER FREQUENCY; ABOVE LOW HZ AND BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 40, 16000, 3000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200},
+         {"gain", "OUTPUT GAIN", "LINEAR GAIN AFTER SPECTRAL FILTERING", "", TS_PORTAL_REAL, 0.01, 4, 0.5}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.filter.12", "SPEC NOTCH GAIN", "Filter partial amplitudes in the analysis spectrum. Gain scales the filtered spectrum. Skirt width controls the transition in Hz.", "filter", 1, 12, 4, 0,
+        {{"low", "LOW HZ", "LOWER FREQUENCY; BELOW HIGH HZ AND SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 8000, 300},
+         {"high", "HIGH HZ", "UPPER FREQUENCY; ABOVE LOW HZ AND BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 40, 16000, 3000},
+         {"skirt", "SKIRT WIDTH HZ", "TRANSITION WIDTH IN HZ; CDP CALLS THIS Q", "", TS_PORTAL_REAL, 1, 4000, 200},
+         {"gain", "OUTPUT GAIN", "LINEAR GAIN AFTER SPECTRAL FILTERING", "", TS_PORTAL_REAL, 0.01, 4, 0.5}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.trace.1", "TRACE PARTIALS", "Retain only the loudest spectral partials in each frame. Compare with Suppress Partials, which removes the loudest instead.", "trace", 1, 1, 1, 0,
+        {{"partials", "PARTIALS", "NUMBER OF LOUDEST ANALYSIS CHANNELS TO RETAIN", "", TS_PORTAL_INTEGER, 1, 512, 16}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.trace.2", "TRACE ABOVE", "Retain only the loudest spectral partials in each frame within the chosen frequency region; discard material outside it.", "trace", 1, 2, 2, 0,
+        {{"partials", "PARTIALS", "NUMBER OF LOUDEST ANALYSIS CHANNELS TO RETAIN", "", TS_PORTAL_INTEGER, 1, 512, 16},
+         {"low", "LOW HZ", "LOWER FREQUENCY; BELOW HIGH HZ AND SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 8000, 300}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.trace.3", "TRACE BELOW", "Retain only the loudest spectral partials in each frame within the chosen frequency region; discard material outside it.", "trace", 1, 3, 2, 0,
+        {{"partials", "PARTIALS", "NUMBER OF LOUDEST ANALYSIS CHANNELS TO RETAIN", "", TS_PORTAL_INTEGER, 1, 512, 16},
+         {"high", "HIGH HZ", "UPPER FREQUENCY; ABOVE LOW HZ AND BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 40, 16000, 3000}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.trace.4", "TRACE BAND", "Retain only the loudest spectral partials in each frame within the chosen frequency region; discard material outside it.", "trace", 1, 4, 3, 0,
+        {{"partials", "PARTIALS", "NUMBER OF LOUDEST ANALYSIS CHANNELS TO RETAIN", "", TS_PORTAL_INTEGER, 1, 512, 16},
+         {"low", "LOW HZ", "LOWER FREQUENCY; BELOW HIGH HZ AND SOURCE NYQUIST", "", TS_PORTAL_REAL, 20, 8000, 300},
+         {"high", "HIGH HZ", "UPPER FREQUENCY; ABOVE LOW HZ AND BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, 40, 16000, 3000}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.pluck", "SPECTRAL PLUCK", "Boost partials when they become newly prominent in the spectrum. Useful after spectral stepping or other effects that introduce changing bands.", "pluck", 1, 0, 1, 0,
+        {{"gain", "ATTACK GAIN", "GAIN APPLIED TO NEWLY PROMINENT PARTIALS", "", TS_PORTAL_REAL, 0, 16, 2}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"hilite.bltr", "BLUR AND TRACE", "Average spectra across time, then retain only the loudest partials. Combines softened motion with a sparse spectral outline.", "bltr", 1, 0, 2, 0,
+        {{"windows", "BLUR WINDOWS", "ANALYSIS WINDOWS TO AVERAGE; MUST FIT SOURCE", "", TS_PORTAL_INTEGER, 1, 256, 16},
+         {"partials", "PARTIALS", "NUMBER OF LOUDEST ANALYSIS CHANNELS TO RETAIN", "", TS_PORTAL_INTEGER, 1, 512, 16}}, TS_PORTAL_SPECTRAL, "hilite"},
+    {"sfedit.cut.1", "KEEP SEGMENT", "Keep the segment between Start and End, fading its edges. Times refer to the current Portal source.", "cut", 1, 1, 3, 1,
+        {{"start", "START SECONDS", "START POSITION WITHIN THE SOURCE", "", TS_PORTAL_REAL, 0, 30, 0.1},
+         {"end", "END SECONDS", "END POSITION; AFTER START AND WITHIN SOURCE", "", TS_PORTAL_REAL, 0.01, 30, 0.4},
+         {"splice", "SPLICE MS", "EDGE CROSSFADE LENGTH; MUST FIT THE SEGMENT", "-w", TS_PORTAL_REAL, 1, 50, 5}}, TS_PORTAL_STRUCTURE, "sfedit"},
+    {"sfedit.cutend.1", "KEEP TAIL", "Keep a chosen duration from the end of the source, with a splice at the new beginning.", "cutend", 1, 1, 2, 1,
+        {{"length", "LENGTH SECONDS", "DURATION TO KEEP AT THE END OF THE SOURCE", "", TS_PORTAL_REAL, 0.02, 30, 0.3},
+         {"splice", "SPLICE MS", "EDGE CROSSFADE LENGTH; MUST FIT THE SEGMENT", "-w", TS_PORTAL_REAL, 1, 50, 5}}, TS_PORTAL_STRUCTURE, "sfedit"},
+    {"sfedit.excise.1", "REMOVE SEGMENT", "Remove an interior segment and close the gap with a crossfade. Leaves the surrounding material in its original order.", "excise", 1, 1, 3, 1,
+        {{"start", "START SECONDS", "START POSITION WITHIN THE SOURCE", "", TS_PORTAL_REAL, 0, 30, 0.1},
+         {"end", "END SECONDS", "END POSITION; AFTER START AND WITHIN SOURCE", "", TS_PORTAL_REAL, 0.01, 30, 0.4},
+         {"splice", "SPLICE MS", "EDGE CROSSFADE LENGTH; MUST FIT THE SEGMENT", "-w", TS_PORTAL_REAL, 1, 50, 5}}, TS_PORTAL_STRUCTURE, "sfedit"},
+    {"extend.doublets", "SEGMENT REPEATS", "Divide the source into consecutive segments and repeat each before advancing. Sync asks CDP to stay near the original time position instead of expanding every segment.", "doublets", 1, 0, 3, 1,
+        {{"segment", "SEGMENT SECONDS", "SEGMENT DURATION; MUST FIT SOURCE", "", TS_PORTAL_REAL, 0.02, 2, 0.1},
+         {"repeats", "REPEATS", "NUMBER OF COPIES OF EACH SEGMENT", "", TS_PORTAL_INTEGER, 2, 16, 2},
+         {"sync", "SYNC TO SOURCE", "TRY TO KEEP OUTPUT SYNCHRONISED TO SOURCE TIME", "-s", TS_PORTAL_SWITCH, 0, 1, 0}}, TS_PORTAL_STRUCTURE, "extend"},
+    {"extend.loop.1", "ADVANCING LOOPS", "Splice repeated segments while moving through the source. Playback stops when it reaches the source end. Advance sets the distance between successive source starts.", "loop", 1, 1, 4, 1,
+        {{"start", "START SECONDS", "START POSITION WITHIN THE SOURCE", "", TS_PORTAL_REAL, 0, 30, 0.1},
+         {"length", "LOOP LENGTH MS", "LOOP SEGMENT LENGTH; MUST FIT SOURCE AND TWO SPLICES", "", TS_PORTAL_REAL, 20, 2000, 100},
+         {"advance", "ADVANCE MS", "SOURCE ADVANCE BETWEEN LOOPS; ZERO REPEATS ONE SEGMENT", "", TS_PORTAL_REAL, 1, 1000, 25},
+         {"splice", "SPLICE MS", "EDGE CROSSFADE LENGTH; MUST FIT THE SEGMENT", "-w", TS_PORTAL_REAL, 1, 50, 5}}, TS_PORTAL_STRUCTURE, "extend"},
+    {"extend.loop.2", "LOOP TO DURATION", "Splice repeated segments while moving through the source. Playback stops when it reaches the source end. Advance sets the distance between successive source starts.", "loop", 1, 2, 5, 1,
+        {{"duration", "OUTPUT SECONDS", "REQUESTED OUTPUT DURATION; MAY END EARLY AT SOURCE END", "", TS_PORTAL_REAL, 0.1, 30, 2},
+         {"start", "START SECONDS", "START POSITION WITHIN THE SOURCE", "", TS_PORTAL_REAL, 0, 30, 0.1},
+         {"length", "LOOP LENGTH MS", "LOOP SEGMENT LENGTH; MUST FIT SOURCE AND TWO SPLICES", "", TS_PORTAL_REAL, 20, 2000, 100},
+         {"advance", "ADVANCE MS", "SOURCE ADVANCE BETWEEN LOOPS; ZERO REPEATS ONE SEGMENT", "-l", TS_PORTAL_REAL, 0, 1000, 0},
+         {"splice", "SPLICE MS", "EDGE CROSSFADE LENGTH; MUST FIT THE SEGMENT", "-w", TS_PORTAL_REAL, 1, 50, 5}}, TS_PORTAL_STRUCTURE, "extend"},
+    {"extend.loop.3", "LOOP COUNT", "Splice repeated segments while moving through the source. Playback stops when it reaches the source end. Advance sets the distance between successive source starts.", "loop", 1, 3, 5, 1,
+        {{"repeats", "LOOP REPEATS", "REQUESTED LOOP COUNT; MAY END EARLY AT SOURCE END", "", TS_PORTAL_INTEGER, 1, 32, 4},
+         {"start", "START SECONDS", "START POSITION WITHIN THE SOURCE", "", TS_PORTAL_REAL, 0, 30, 0.1},
+         {"length", "LOOP LENGTH MS", "LOOP SEGMENT LENGTH; MUST FIT SOURCE AND TWO SPLICES", "", TS_PORTAL_REAL, 20, 2000, 100},
+         {"advance", "ADVANCE MS", "SOURCE ADVANCE BETWEEN LOOPS; ZERO REPEATS ONE SEGMENT", "-l", TS_PORTAL_REAL, 0, 1000, 0},
+         {"splice", "SPLICE MS", "EDGE CROSSFADE LENGTH; MUST FIT THE SEGMENT", "-w", TS_PORTAL_REAL, 1, 50, 5}}, TS_PORTAL_STRUCTURE, "extend"},
+    {"extend.scramble.1", "RANDOM CHUNKS", "Cut and splice random source chunks into a new sequence. Choose a minimum and maximum chunk duration. Positive seeds make the choices repeatable.", "scramble", 1, 1, 5, 1,
+        {{"minimum", "MIN CHUNK SEC", "MINIMUM CHUNK DURATION; BELOW MAXIMUM", "", TS_PORTAL_REAL, 0.06, 2, 0.1},
+         {"maximum", "MAX CHUNK SEC", "MAXIMUM CHUNK DURATION; WITHIN SOURCE", "", TS_PORTAL_REAL, 0.07, 3, 0.3},
+         {"duration", "OUTPUT SECONDS", "OUTPUT DURATION; LONGER THAN A CHUNK", "", TS_PORTAL_REAL, 0.1, 30, 2},
+         {"splice", "SPLICE MS", "EDGE CROSSFADE LENGTH; MUST FIT THE SEGMENT", "-w", TS_PORTAL_REAL, 1, 50, 5},
+         {"seed", "RANDOM SEED", "SAME POSITIVE SEED REPEATS THE RANDOM CHOICES", "-s", TS_PORTAL_INTEGER, 1, 32767, 1}}, TS_PORTAL_STRUCTURE, "extend"},
+    {"strange.shift.1", "SPECTRAL HZ SHIFT", "Add the same frequency offset to all partials. This changes harmonic relationships, unlike musical transposition by a ratio.", "shift", 1, 1, 1, 0,
+        {{"shift", "SHIFT HZ", "LINEAR FREQUENCY OFFSET; PARTIALS LEAVING THE SPECTRUM ARE LOST", "", TS_PORTAL_REAL, -2000, 2000, 100}}, TS_PORTAL_SPECTRAL, "strange"},
+    {"strange.shift.2", "HZ SHIFT ABOVE", "Add the same frequency offset to partials above the divide. This changes harmonic relationships, unlike musical transposition by a ratio.", "shift", 1, 2, 2, 0,
+        {{"shift", "SHIFT HZ", "LINEAR FREQUENCY OFFSET; PARTIALS LEAVING THE SPECTRUM ARE LOST", "", TS_PORTAL_REAL, -2000, 2000, 100},
+         {"divide", "DIVIDE HZ", "BOUNDARY BETWEEN SHIFTED AND UNSHIFTED FREQUENCIES", "", TS_PORTAL_REAL, 40, 16000, 1000}}, TS_PORTAL_SPECTRAL, "strange"},
+    {"strange.shift.3", "HZ SHIFT BELOW", "Add the same frequency offset to partials below the divide. This changes harmonic relationships, unlike musical transposition by a ratio.", "shift", 1, 3, 2, 0,
+        {{"shift", "SHIFT HZ", "LINEAR FREQUENCY OFFSET; PARTIALS LEAVING THE SPECTRUM ARE LOST", "", TS_PORTAL_REAL, -2000, 2000, 100},
+         {"divide", "DIVIDE HZ", "BOUNDARY BETWEEN SHIFTED AND UNSHIFTED FREQUENCIES", "", TS_PORTAL_REAL, 40, 16000, 1000}}, TS_PORTAL_SPECTRAL, "strange"},
+    {"strange.shift.4", "HZ SHIFT BAND", "Add the same frequency offset to partials inside the band. This changes harmonic relationships, unlike musical transposition by a ratio.", "shift", 1, 4, 3, 0,
+        {{"shift", "SHIFT HZ", "LINEAR FREQUENCY OFFSET; PARTIALS LEAVING THE SPECTRUM ARE LOST", "", TS_PORTAL_REAL, -2000, 2000, 100},
+         {"low", "LOW HZ", "LOWER FREQUENCY BOUNDARY; BELOW HIGH AND NYQUIST", "", TS_PORTAL_REAL, 40, 8000, 500},
+         {"high", "HIGH HZ", "UPPER FREQUENCY BOUNDARY; ABOVE LOW AND BELOW NYQUIST", "", TS_PORTAL_REAL, 80, 16000, 4000}}, TS_PORTAL_SPECTRAL, "strange"},
+    {"strange.shift.5", "HZ SHIFT OUTSIDE", "Add the same frequency offset to partials outside the band. This changes harmonic relationships, unlike musical transposition by a ratio.", "shift", 1, 5, 3, 0,
+        {{"shift", "SHIFT HZ", "LINEAR FREQUENCY OFFSET; PARTIALS LEAVING THE SPECTRUM ARE LOST", "", TS_PORTAL_REAL, -2000, 2000, 100},
+         {"low", "LOW HZ", "LOWER FREQUENCY BOUNDARY; BELOW HIGH AND NYQUIST", "", TS_PORTAL_REAL, 40, 8000, 500},
+         {"high", "HIGH HZ", "UPPER FREQUENCY BOUNDARY; ABOVE LOW AND BELOW NYQUIST", "", TS_PORTAL_REAL, 80, 16000, 4000}}, TS_PORTAL_SPECTRAL, "strange"},
+    {"strange.glis.1", "SHEPARD GLIDE", "Create Shepard tones inside the changing spectral envelope of the source. Glide rate controls direction and speed.", "glis", 1, 1, 2, 0,
+        {{"bins", "ENVELOPE BINS", "FREQUENCY GROUPING FOR SOURCE FORMANT ENVELOPE", "-f", TS_PORTAL_INTEGER, 1, 32, 4},
+         {"rate", "SEMITONES / SEC", "CONTINUOUS GLIDE RATE; NEGATIVE GLIDES DOWNWARD", "", TS_PORTAL_REAL, -24, 24, 4}}, TS_PORTAL_SPECTRAL, "strange"},
+    {"strange.glis.2", "INHARMONIC GLIDE", "Create inharmonic gliding partials inside the changing spectral envelope of the source. Glide rate controls direction and speed.", "glis", 1, 2, 3, 0,
+        {{"bins", "ENVELOPE BINS", "FREQUENCY GROUPING FOR SOURCE FORMANT ENVELOPE", "-f", TS_PORTAL_INTEGER, 1, 32, 4},
+         {"rate", "SEMITONES / SEC", "CONTINUOUS GLIDE RATE; NEGATIVE GLIDES DOWNWARD", "", TS_PORTAL_REAL, -24, 24, 4},
+         {"spacing", "PARTIAL GAP HZ", "INHARMONIC PARTIAL SPACING; AT LEAST ONE ANALYSIS BIN", "", TS_PORTAL_REAL, 50, 4000, 200}}, TS_PORTAL_SPECTRAL, "strange"},
+    {"strange.glis.3", "SELF GLISSANDO", "Create a self-glissando inside the changing spectral envelope of the source. Glide rate controls direction and speed.", "glis", 1, 3, 2, 0,
+        {{"bins", "ENVELOPE BINS", "FREQUENCY GROUPING FOR SOURCE FORMANT ENVELOPE", "-f", TS_PORTAL_INTEGER, 1, 32, 4},
+         {"rate", "SEMITONES / SEC", "CONTINUOUS GLIDE RATE; NEGATIVE GLIDES DOWNWARD", "", TS_PORTAL_REAL, -24, 24, 4}}, TS_PORTAL_SPECTRAL, "strange"},
+    {"strange.waver.1", "SPECTRAL WAVER", "Oscillate between the original spectrum and an inharmonic stretch. Waver changes the frequency relationships between partials.", "waver", 1, 1, 3, 0,
+        {{"rate", "WAVER RATE HZ", "OSCILLATION RATE; AT LEAST ONE CYCLE OVER SOURCE DURATION", "", TS_PORTAL_REAL, 0.5, 20, 2},
+         {"stretch", "MAX STRETCH", "MAXIMUM INHARMONIC SPECTRAL STRETCH", "", TS_PORTAL_REAL, 1, 4, 1.5},
+         {"low", "ABOVE HZ", "FREQUENCY ABOVE WHICH STRETCHING OCCURS", "", TS_PORTAL_REAL, 40, 8000, 500}}, TS_PORTAL_SPECTRAL, "strange"},
+    {"strange.waver.2", "SHAPED WAVER", "Oscillate between the original spectrum and an inharmonic stretch. Waver changes the frequency relationships between partials.", "waver", 1, 2, 4, 0,
+        {{"rate", "WAVER RATE HZ", "OSCILLATION RATE; AT LEAST ONE CYCLE OVER SOURCE DURATION", "", TS_PORTAL_REAL, 0.5, 20, 2},
+         {"stretch", "MAX STRETCH", "MAXIMUM INHARMONIC SPECTRAL STRETCH", "", TS_PORTAL_REAL, 1, 4, 1.5},
+         {"low", "ABOVE HZ", "FREQUENCY ABOVE WHICH STRETCHING OCCURS", "", TS_PORTAL_REAL, 40, 8000, 500},
+         {"exponent", "EXPONENT", "SHAPE OF THE INHARMONIC STRETCH", "", TS_PORTAL_REAL, 0.1, 8, 2}}, TS_PORTAL_SPECTRAL, "strange"},
+    {"strange.invert.1", "INVERT SPECTRUM", "Invert partial amplitudes relative to their observed maxima. Strong spectral regions become weak and weak regions become strong.", "invert", 1, 1, 0, 0,
+        {{0}}, TS_PORTAL_SPECTRAL, "strange"},
+    {"strange.invert.2", "INVERT KEEP ENVELOPE", "Invert partial amplitudes relative to their observed maxima, while retaining the source amplitude envelope.", "invert", 1, 2, 0, 0,
+        {{0}}, TS_PORTAL_SPECTRAL, "strange"}
 
 };
 #undef ENV_WINDOW
@@ -337,6 +493,17 @@ int ts_portal_recipe_validate(const TsPortalRecipe *r, char *error, size_t size)
         if(p->mode==11 && r->values[1]>=r->values[2])
             return fail(error,size,"TROUGH WIDTH MUST BE LESS THAN PEAK SEPARATION");
     }
+    if(p->family==TS_PORTAL_STRUCTURE &&
+       ((!strcmp(p->command,"cut") || !strcmp(p->command,"excise") ||
+         (!strcmp(p->command,"scramble") && p->mode==1)) && r->values[0]>=r->values[1]))
+        return fail(error,size,"START / MINIMUM MUST BE BELOW END / MAXIMUM");
+    if(p->family==TS_PORTAL_SPECTRAL) {
+        if((!strcmp(p->command,"fold") && r->values[1]<2*r->values[0]) ||
+           (!strcmp(p->command,"filter") && p->mode>=7 && r->values[0]>=r->values[1]) ||
+           (!strcmp(p->command,"shift") && p->mode>=4 && r->values[1]>=r->values[2]) ||
+           (!strcmp(p->command,"trace") && p->mode==4 && r->values[1]>=r->values[2]))
+            return fail(error,size,"LOW MUST BE BELOW HIGH; OCTAVE FOLD NEEDS AT LEAST ONE OCTAVE");
+    }
     if(error && size) error[0]=0;
     return 1;
 }
@@ -405,6 +572,62 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
     if(p->family==TS_PORTAL_WAVESET) {
         if(!ts_portal_build_command(r,input,&commands[0],error,size))return 0;
         *count=1;return 1;
+    }
+    if(p->family==TS_PORTAL_STRUCTURE) {
+        if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
+           input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES)
+            return fail(error,size,"STRUCTURE PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+        double duration=(double)input->frames/input->sample_rate, estimate=duration;
+        if(duration<.04)return fail(error,size,"STRUCTURE SOURCE NEEDS AT LEAST 40 MS");
+        for(size_t i=0;i<input->frames;++i)if(!isfinite(input->data[i]))
+            return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
+        if(!strcmp(p->executable,"sfedit")) {
+            double first=!strcmp(p->command,"cutend")?duration-r->values[0]:r->values[0];
+            double last=!strcmp(p->command,"cutend")?duration:r->values[1];
+            double splice=r->values[p->parameter_count-1]*.001;
+            if(first<0 || last>duration || last-first<=2*splice)
+                return fail(error,size,"SEGMENT MUST FIT SOURCE AND TWO SPLICES");
+            if(!strcmp(p->command,"excise") && (first<=splice || last+splice>=duration))
+                return fail(error,size,"REMOVE SEGMENT NEEDS AUDIO BEFORE AND AFTER ITS SPLICES");
+        } else if(!strcmp(p->command,"doublets")) {
+            if(r->values[0]>=duration-.01)return fail(error,size,"SEGMENT MUST LEAVE AT LEAST 10 MS OF SOURCE AFTER IT");
+            estimate=(duration+r->values[0])*r->values[1];
+        } else if(!strcmp(p->command,"loop")) {
+            unsigned offset=p->mode==1?0:1;
+            double start=r->values[offset],length=r->values[offset+1]*.001;
+            double advance=r->values[offset+2]*.001,splice=r->values[offset+3]*.001;
+            /* CDP scalar ranges reserve 50 ms even when a smaller splice is used. */
+            if(start>duration-.05 || length>duration-.05 ||
+               start+length+splice>duration || length<=2*splice || advance>duration)
+                return fail(error,size,"LOOP START / LENGTH / SPLICE MUST FIT SOURCE");
+            if((p->mode==2 && r->values[0]<start+length+1.0/input->sample_rate) ||
+               (p->mode==1 && start+length+advance>duration))
+                return fail(error,size,"LOOP NEEDS ROOM FOR A COMPLETE REPEAT");
+            estimate=p->mode==1?(ceil((duration-start)/advance)+1)*length:
+                     p->mode==2?r->values[0]+length:(r->values[0]+1)*length;
+        } else if(!strcmp(p->command,"scramble")) {
+            double splice=r->values[3]*.001;
+            if(r->values[1]>duration-.025 || r->values[0]<=2*splice ||
+               r->values[2]<=r->values[1])
+                return fail(error,size,"CHUNKS MUST FIT SOURCE, SPLICES AND OUTPUT DURATION");
+            estimate=r->values[2]+duration;
+        }
+        if(ceil(estimate*input->sample_rate)+1024>TS_PORTAL_MAX_FRAMES)
+            return fail(error,size,"REQUESTED STRUCTURE OUTPUT EXCEEDS PORTAL LIMIT");
+        TsCdpCommand *c=&commands[0];
+        snprintf(c->executable,sizeof(c->executable),"%s",p->executable);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s",p->command);
+        if(p->mode)snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%u",p->mode);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"input.wav");
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"output.wav");
+        for(unsigned i=0;i<p->parameter_count;++i) {
+            const TsPortalParam *param=&p->parameters[i];
+            if(param->type==TS_PORTAL_SWITCH) {
+                if(r->values[i])snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s",param->flag);
+            } else snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s%.9g",param->flag,r->values[i]);
+        }
+        snprintf(c->expected_output,sizeof(c->expected_output),"output.wav");
+        c->expected_output_type=TS_CDP_IO_WAV;*count=1;return 1;
     }
     if(p->family==TS_PORTAL_ENVELOPE) {
         if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
@@ -601,6 +824,34 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         return fail(error,size,"SPECTRAL SOURCE NEEDS AT LEAST 2048 FRAMES AND 40 MS");
     for(size_t i=0;i<input->frames;++i)if(!isfinite(input->data[i]))
         return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
+    if(!strcmp(p->executable,"focus") || !strcmp(p->executable,"hilite") || !strcmp(p->executable,"strange")) {
+        for(unsigned i=0;i<p->parameter_count;++i) {
+            const char *id=p->parameters[i].id;
+            if((!strcmp(id,"low") || !strcmp(id,"high") || !strcmp(id,"frequency") ||
+                !strcmp(id,"skirt") || !strcmp(id,"divide")) && r->values[i]>=input->sample_rate*.5)
+                return fail(error,size,"SPECTRAL FREQUENCIES MUST BE BELOW SOURCE NYQUIST");
+        }
+        if(!strcmp(p->command,"fold") && r->values[0]<input->sample_rate/1024.0)
+            return fail(error,size,"FOLD LOW HZ MUST REACH THE FIRST ANALYSIS BIN");
+        if(!strcmp(p->command,"step") && (r->values[0]<256.0/input->sample_rate ||
+            r->values[0]>(double)input->frames/input->sample_rate))
+            return fail(error,size,"STEP MUST FIT TWO ANALYSIS HOPS AND SOURCE DURATION");
+        if(!strcmp(p->command,"bltr") && r->values[0]>(double)(input->frames/128))
+            return fail(error,size,"BLUR WINDOWS EXCEED SOURCE");
+        if(!strcmp(p->command,"shift")) {
+            if(fabs(r->values[0])>=input->sample_rate*.5)
+                return fail(error,size,"FREQUENCY SHIFT MUST STAY WITHIN SOURCE NYQUIST");
+            for(unsigned i=1;i<p->parameter_count;++i)
+                if(r->values[i]<input->sample_rate/4096.0 || r->values[i]>input->sample_rate*.5-input->sample_rate/4096.0)
+                    return fail(error,size,"SHIFT BOUNDARY MUST STAY INSIDE THE ANALYSIS EDGE BINS");
+        }
+        if(!strcmp(p->command,"glis") && p->mode==2 &&
+           (r->values[2]<input->sample_rate/1024.0 || r->values[2]>input->sample_rate*.25))
+            return fail(error,size,"PARTIAL GAP MUST FIT ANALYSIS BIN WIDTH AND QUARTER SAMPLE RATE");
+        if(!strcmp(p->command,"waver") && (r->values[0]<input->sample_rate/(double)input->frames ||
+           r->values[0]>input->sample_rate/256.0))
+            return fail(error,size,"WAVER RATE MUST FIT SOURCE DURATION AND ANALYSIS HOP");
+    }
     if(!strcmp(p->id,"blur.blur") && r->values[0]>(double)(input->frames/128))
         return fail(error,size,"BLUR WINDOWS EXCEED SOURCE; LOWER BLUR OR LOAD A LONGER SOUND");
     if(!strcmp(p->command,"spectrum")) {
@@ -625,7 +876,12 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
     if(p->mode)snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%u",p->mode);
     snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"input.ana");
     snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"effect.ana");
-    for(unsigned i=0;i<p->parameter_count;++i)snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s%.9g",p->parameters[i].flag,r->values[i]);
+    for(unsigned i=0;i<p->parameter_count;++i) {
+        const TsPortalParam *param=&p->parameters[i];
+        if(param->type==TS_PORTAL_SWITCH) {
+            if(r->values[i])snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s",param->flag);
+        } else snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s%.9g",param->flag,r->values[i]);
+    }
     snprintf(c->expected_output,sizeof(c->expected_output),"effect.ana");c->expected_output_type=TS_CDP_IO_ANALYSIS;
     snprintf(s->executable,sizeof(s->executable),"pvoc");
     const char *synth[]={"synth","effect.ana","output.wav"};
@@ -709,7 +965,7 @@ static int contains(const char *s,const char *q)
     return 0;
 }
 const char *ts_portal_family_name(int family)
-{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":family==TS_PORTAL_FILTER?"FILTER":family==TS_PORTAL_GRAIN?"GRAINS":family==TS_PORTAL_LOFI?"LO-FI / MOD":family==TS_PORTAL_LEVEL?"LEVEL":family==TS_PORTAL_DELAY?"DELAY":family==TS_PORTAL_ENVELOPE?"ENVELOPE":"UNKNOWN"; }
+{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":family==TS_PORTAL_FILTER?"FILTER":family==TS_PORTAL_GRAIN?"GRAINS":family==TS_PORTAL_LOFI?"LO-FI / MOD":family==TS_PORTAL_LEVEL?"LEVEL":family==TS_PORTAL_DELAY?"DELAY":family==TS_PORTAL_ENVELOPE?"ENVELOPE":family==TS_PORTAL_STRUCTURE?"STRUCTURE":"UNKNOWN"; }
 
 int ts_portal_library_edit(TsPortalLibrary *lib,const char *path,int pin,int slot,
                            TsPortalEdit edit,const TsPortalRecipe *recipe,const char *name,
