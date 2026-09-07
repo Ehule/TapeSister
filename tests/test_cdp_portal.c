@@ -28,6 +28,22 @@ static double tone_level(const TsSample *s,double hz)
     return 2*hypot(re,im)/(double)(last-first);
 }
 
+/* Grain jitter broadens a tone. Measure a narrow band, not one FFT bin. */
+static double grain_band_power(const TsSample *s,double center)
+{
+    size_t first=s->sample_rate/4,last=s->sample_rate*3/4;
+    double power=0;assert(s->frames>=last);
+    for(int offset=-40;offset<=40;offset+=10) {
+        double re=0,im=0;
+        for(size_t n=first;n<last;++n) {
+            double phase=6.283185307179586*(center+offset)*n/s->sample_rate;
+            re+=s->data[n]*cos(phase);im+=s->data[n]*sin(phase);
+        }
+        power+=re*re+im*im;
+    }
+    return power;
+}
+
 int main(int argc,char **argv)
 {
     static TsInstrument instrument;
@@ -39,7 +55,7 @@ int main(int argc,char **argv)
     ts_instrument_init(&instrument);ts_ui_init(&ui);
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,0x54415045,error,sizeof(error)));
     uint64_t original=ts_sample_hash(&instrument.current);
-    assert(ts_portal_process_count()==26);
+    assert(ts_portal_process_count()==30);
     assert(ts_cdp_factory_recipe_count()==32);
     for(size_t i=0;i<ts_portal_process_count();++i) {
         const TsPortalProcess *p=ts_portal_process_at(i);
@@ -145,6 +161,11 @@ int main(int argc,char **argv)
     snprintf(ui.portal.query,sizeof(ui.portal.query),"sweeping");
     assert(ts_portal_filter_slot(&ui.portal,0,&recipe)==24);
     assert(!strcmp(recipe.process_id,"filter.sweeping.2"));
+    ui.portal.family=TS_PORTAL_GRAIN+1;ui.portal.query[0]=0;
+    assert(ts_portal_filter(&ui.portal,3,&recipe));assert(!ts_portal_filter(&ui.portal,4,&recipe));
+    snprintf(ui.portal.query,sizeof(ui.portal.query),"scramble");
+    assert(ts_portal_filter_slot(&ui.portal,0,&recipe)==28);
+    assert(!strcmp(recipe.process_id,"modify.brassage.4"));
     ui.portal.family=0;
     ui.portal.query[0]=0;ui.portal.tab=0;
     TsPortalWave wave;
@@ -208,6 +229,37 @@ int main(int argc,char **argv)
     /* Filter recipes round-trip in the existing format with flags and hidden macros intact. */
     ts_portal_recipe_default(&recipe,ts_portal_process_find("filter.sweeping.2"));
     recipe.values[4]=3;recipe.values[5]=.75;recipe.values[6]=.5;recipe.exposed=1u<<6;
+    loaded=(TsPortalLibrary){0};loaded.pins[31]=recipe;loaded.recipes[31]=recipe;
+    assert(ts_portal_library_save(&loaded,path,error,sizeof(error)));
+    assert(ts_portal_library_load(&saved,path,error,sizeof(error)));
+    assert(!memcmp(&loaded,&saved,sizeof(saved)));remove(path);
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.brassage.4"));
+    assert(ts_portal_build_commands(&recipe,&instrument.current,stages,&stage_count,error,sizeof(error)));
+    assert(stage_count==1 && stages[0].argc==6);
+    assert(!strcmp(stages[0].arguments[1],"4") && !strcmp(stages[0].arguments[4],"50") && !strcmp(stages[0].arguments[5],"-r250"));
+    short_input=instrument.current;short_input.channels=2;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)) && !stage_count);
+    short_input=instrument.current;short_input.frames=100;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    short_input.frames=4410;recipe.values[1]=201;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)) && strstr(error,"LOOKBACK"));
+    recipe.values[1]=200;assert(ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    recipe.values[0]=100;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)) && strstr(error,"TOO SHORT"));
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.brassage.1"));
+    recipe.values[0]=24;short_input.frames=8821;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)) && strstr(error,"TOO SHORT"));
+    short_input.frames=8822;
+    assert(ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    short_input=instrument.current;first_sample=short_input.data[0];short_input.data[0]=INFINITY;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    short_input.data[0]=first_sample;
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.brassage.2"));
+    recipe.values[0]=0;assert(!ts_portal_recipe_validate(&recipe,error,sizeof(error)));
+    recipe.values[0]=.125;short_input=instrument.current;short_input.frames=TS_PORTAL_MAX_FRAMES;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)) && strstr(error,"OUTPUT EXCEEDS"));
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.brassage.4"));
+    recipe.values[0]=80;recipe.values[1]=450;recipe.exposed=2;
     loaded=(TsPortalLibrary){0};loaded.pins[31]=recipe;loaded.recipes[31]=recipe;
     assert(ts_portal_library_save(&loaded,path,error,sizeof(error)));
     assert(ts_portal_library_load(&saved,path,error,sizeof(error)));
@@ -293,6 +345,51 @@ int main(int argc,char **argv)
             }
             free(tones.data);
         }
+        /* Granular pitch and time must be independent; sparse density must
+           leave actual gaps. Use steady audio so no grain detection is needed. */
+        for(int rate=0;rate<2;++rate) {
+            unsigned sr=rate?48000:44100;
+            TsSample tone={.frames=sr*2,.sample_rate=sr,.channels=1};
+            tone.data=malloc(tone.frames*sizeof(float));assert(tone.data);
+            for(size_t n=0;n<tone.frames;++n)tone.data[n]=(float)(.1*sin(6.283185307179586*500*n/sr));
+            ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.brassage.1"));
+            for(int direction=-1;direction<=1;direction+=2) {
+                recipe.values[0]=direction*12;
+                assert(ts_cdp_run_portal(&runtime,&recipe,&tone,&options,&result,error,sizeof(error)));
+                assert(grain_band_power(&result.output,direction>0?1000:250)>grain_band_power(&result.output,500)*4);
+                assert(fabs((double)result.output.frames-tone.frames)<.3*sr);
+            }
+            ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.brassage.2"));
+            for(int edge=0;edge<2;++edge) {
+                recipe.values[0]=edge?2:.5;
+                assert(ts_cdp_run_portal(&runtime,&recipe,&tone,&options,&result,error,sizeof(error)));
+                assert(fabs((double)result.output.frames-tone.frames/recipe.values[0])<sr*(.12/recipe.values[0]+.06));
+                assert(grain_band_power(&result.output,500)>grain_band_power(&result.output,edge?1000:250)*4);
+            }
+            double quiet[2];
+            ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.brassage.5"));
+            for(int edge=0;edge<2;++edge) {
+                recipe.values[0]=edge?2:.125;
+                assert(ts_cdp_run_portal(&runtime,&recipe,&tone,&options,&result,error,sizeof(error)));
+                size_t zeros=0;
+                for(size_t n=0;n<result.output.frames;++n)if(fabsf(result.output.data[n])<.0001f)++zeros;
+                quiet[edge]=(double)zeros/result.output.frames;
+            }
+            assert(quiet[0]>.6 && quiet[1]<.4 && quiet[0]>quiet[1]+.3);
+            /* Source-dependent bounds on short and lower-rate audio are also
+               checked by CDP itself, not just by the Portal validator. */
+            for(size_t i=26;i<ts_portal_process_count();++i) {
+                ts_portal_recipe_default(&recipe,ts_portal_process_at(i));
+                TsSample short_grain=tone;short_grain.frames=sr/10;
+                if(!strcmp(recipe.process_id,"modify.brassage.4"))recipe.values[1]=200;
+                assert(ts_cdp_run_portal(&runtime,&recipe,&short_grain,&options,&result,error,sizeof(error)));
+                assert(result.finite && result.output.frames>0 && !result.cleanup_failed);
+                short_grain=tone;short_grain.sample_rate=22050;
+                assert(ts_cdp_run_portal(&runtime,&recipe,&short_grain,&options,&result,error,sizeof(error)));
+                assert(result.finite && result.output.sample_rate==22050 && !result.cleanup_failed);
+            }
+            free(tone.data);
+        }
         ts_portal_recipe_default(&recipe,ts_portal_process_find("blur.blur"));
         options.cancel_check=cancel_spectral_stage;options.cancel_userdata=&result;
         assert(!ts_cdp_run_portal(&runtime,&recipe,&instrument.current,&options,&result,error,sizeof(error)));
@@ -314,8 +411,9 @@ int main(int argc,char **argv)
     }
     if(argc>1) {
         assert(bin && *bin); /* A screenshot must show a real render. */
-        ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("filter.sweeping.2"));
-        ui.portal.family=TS_PORTAL_FILTER+1;ui.portal.selected_tab=0;ui.portal.selected_slot=24;
+        ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("modify.brassage.5"));
+        ui.portal.recipe.values[0]=.25;
+        ui.portal.family=TS_PORTAL_GRAIN+1;ui.portal.selected_tab=0;ui.portal.selected_slot=29;
         assert(ts_cdp_run_portal(&runtime,&ui.portal.recipe,&instrument.current,&options,&result,error,sizeof(error)));
         ui.portal.open=1;ui.portal.valid=1;ui.portal.source=&instrument.current;
         snprintf(ui.portal.source_name,sizeof(ui.portal.source_name),"TILE 01 METAL");
@@ -324,7 +422,7 @@ int main(int argc,char **argv)
         ts_portal_wave_reset(&ui.portal.waves[1],ui.portal.result);
         ui.portal.waves[0].playhead=22050;ui.portal.waves[1].playhead=22050;
         ui.portal.history_count=1;ui.portal.history_selected=0;
-        snprintf(ui.portal.history_names[0],24,"SWEEPING BAND");
+        snprintf(ui.portal.history_names[0],24,"GRAIN DENSITY");
         snprintf(ui.portal.message,sizeof(ui.portal.message),"REAL CDP PREVIEW READY - SOURCE UNCHANGED - ENTER PREVIEW / SPACE PLAY / TAB A-B");
         ts_ui_render(&fb,&ui,&instrument);
         f=fopen(argv[1],"wb");assert(f);fprintf(f,"P6\n%d %d\n255\n",TS_UI_WIDTH,TS_UI_HEIGHT);

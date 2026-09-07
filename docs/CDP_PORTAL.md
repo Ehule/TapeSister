@@ -1,6 +1,6 @@
 # CDP Portal — explore, save, and manage your tools
 
-![Native CDP Portal rendering with a real sweeping-band result](images/cdp-portal.png)
+![Native CDP Portal rendering with a real grain-density result](images/cdp-portal.png)
 
 CDP Portal is the exploratory workbench inside TapeSister. The original 32
 curated CDP instruments remain unchanged. The Portal uses a separate, stable-ID
@@ -16,16 +16,16 @@ snapshot. Failed source loading clears the previous snapshot.
 
 The waveset family exposes 12 source-verified modes of CDP's `distort` program:
 cycle reverse, repeat, repeat2, interpolate, multiply, divide, omit, average,
-delete modes 1/2/3, and reform mode 5. Four spectral, four time/tape, and six filter modes bring
-the Portal to 26 processes. Search matches names, stable command IDs, descriptions, and
+delete modes 1/2/3, and reform mode 5. Four spectral, four time/tape, six filter, and four granular modes bring
+the Portal to 30 processes. Search matches names, stable command IDs, descriptions, and
 families. **ALL**, **SAVE**, and **PINS** switch the left browser between
 processes, saved recipes, and user process pins. Scroll that column with the
 mouse wheel. The family button below the tabs cycles **ALL FAMILIES**,
-**WAVESET**, **SPECTRAL**, **TIME / TAPE**, and **FILTER**. Family and text filters combine, including in
+**WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, and **GRAINS**. Family and text filters combine, including in
 saved recipes and pins. Clearing the search and choosing ALL FAMILIES restores
 the complete list. Filtering never renumbers stored slots.
 
-These 26 Portal modes accept mono input only; stereo is rejected explicitly.
+These 30 Portal modes accept mono input only; stereo is rejected explicitly.
 Multi-input/multichannel, breakpoint-file, and text-file workflows remain future
 work. The factory bank retains its original 32 curated instruments.
 
@@ -116,6 +116,55 @@ CDP uses it to request an automatic tail of unknown duration. The source plus
 explicit tail must fit the Portal's eight-million-frame limit. The tail is part
 of the rendered result when applied or copied to a new tile. No breakpoint files
 are needed for this batch.
+
+## Grains family
+
+| Process | Native CDP identity | Controls |
+| --- | --- | --- |
+| Granular Pitch | `modify.brassage.1` | Semitone shift −24 to +24 |
+| Granular Time | `modify.brassage.2` | Input velocity 0.125–8 |
+| Grain Scramble | `modify.brassage.4` | Grain length 12–250 ms; lookback 0–2000 ms |
+| Grain Density | `modify.brassage.5` | Grain overlap 0.125–2 |
+
+These processes cut grains out of the source rather than relying on quiet gaps
+to detect pre-existing grains. They work with sustained sounds, drones, and
+ordinary recordings. They are offline CDP processes; their controls are separate
+from the live granular pedalboard effect.
+
+**Granular Pitch** shifts the contents of overlapping grains while keeping roughly
+the same overall duration. Compare it with Tape Transpose, where pitch and duration
+change together. **Granular Time** keeps pitch while changing duration, using CDP's
+native **velocity** parameter: 0.5 makes roughly twice the duration; 2 makes roughly
+half. Compare its grain texture with Spectral Time on a sound with clear attacks.
+Zero velocity is excluded because it requires an explicit output-duration workflow.
+
+**Grain Scramble** chooses grain material from behind the advancing source position.
+Grain length controls the size of each fragment. Lookback controls how far into the
+past it can reach; zero keeps the normal source progression, with grain scatter
+still active. The lookback range must fit within twice the source duration, CDP's
+native bound. This is backward local searching, not a full-file random permutation.
+
+**Grain Density** changes how closely the grains sit together. Values below one
+leave gaps; larger values overlap them. Try 0.25 and inspect the result waveform,
+then hold a QWERTY note with Loop enabled. Compare against 2 for a denser texture.
+Density changes overlap and gaps, rather than acting as a duration multiplier.
+
+Pitch, Time, and Density use CDP's fixed 50 ms grains. All four modes use 5 ms
+start/end splices and native random scatter of 0.5 of the output hop. These are
+fixed settings of the selected CDP modes, not hidden adjustable Portal controls.
+An exact recipe or pin preserves parameter settings, **not an identical random
+render**. Overlapping grains can boost the level; check the existing peak report
+and use Source/Result auditioning to compare.
+
+Input must be mono, at least 40 ms, and long enough to supply a complete grain.
+Pitching upward reads more source frames for each output grain, so it may need a
+longer selection. Grain Scramble requires a grain shorter than the source, with
+room for its splices. Invalid combinations report an explanation before CDP runs.
+Output length is checked using CDP's rounded input/output hops, final grain, and
+maximum scatter against the eight-million-frame Portal limit. Grain boundaries,
+source-end handling, and scatter mean durations are approximate, including for
+pitch-only processing. The slider bounds above are Portal limits within CDP's
+native ranges. Breakpoint files and stereo spatialisation remain future work.
 
 ## Preview and learn
 
@@ -247,7 +296,8 @@ cannot be overwritten accidentally. Back up and repair that file, then restart.
 
 Registry metadata is checked against the supplied CDP8 source
 (`dev/distort/ap_distort.c`, `dev/blur/ap_blur.c`, `dev/stretch/ap_stretch.c`,
-`dev/modify/ap_modify.c`, `dev/filter/ap_filter.c`, `dev/filter/filters0.c`,
+`dev/modify/ap_modify.c`, `dev/modify/brapcon.c`, `dev/modify/granula1.c`,
+`dev/filter/ap_filter.c`, `dev/filter/filters0.c`,
 `dev/filter/fltpcon.c`, `dev/include/filtcon.h`, `dev/cdp2k/tklib1.c`, `dev/include/speccon.h`,
 `dev/include/modicon.h`, and `dev/pv/pvoc.c`). The process/mode IDs and
 names are distinct from the illustrative SCRAMBLE controls in the concept art.
@@ -285,6 +335,25 @@ To render a screenshot of actual CDP output:
 ```sh
 TS_TEST_CDP_BIN=/absolute/path/to/cdp/bin ./tapesister_portal_tests portal.ppm manager.ppm
 ```
+
+### Grains-family verification record
+
+All 30 process defaults and the four new modes' parameter endpoints rendered
+through source-built CDP at 44.1 and 48 kHz. Steady-tone measurements verify
+up/down granular transposition with approximately preserved length, and time
+stretch/compression with retained pitch. Sparse-density renders contain more
+measured silence than dense renders. Short-source and 22.05 kHz renders also
+passed. Validation covers grain/splice fit, pitch-dependent source length,
+lookback limits, finite input, positive velocity, and bounded output length.
+Recipes and exact/macro pins round-trip through the existing collection format.
+
+The actual SDL controller test selects the new family, renders Grain Density,
+auditions its result as a note, saves an exact pin, and releases the note on
+invalidation. Existing collection/history/apply and QWERTY/live-loop regressions
+passed. Portal and controller code passed ASan/UBSan with leak detection disabled
+because LeakSanitizer is unsupported here. Updated native 640×400 screenshots
+show a real density render. Windows compilation and physical-device listening
+remain native validation steps.
 
 ### Filter-family verification record
 

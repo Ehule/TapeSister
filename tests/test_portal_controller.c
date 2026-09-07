@@ -218,6 +218,20 @@ int main(void)
     p->recipe.exposed=(1u<<4)|(1u<<6);p->macro_view=1;p->parameter_scroll=0;
     assert(portal_parameter_at(p,0)==4 && portal_parameter_at(p,1)==6 && portal_parameter_at(p,2)==-1);
     p->macro_view=0;p->parameter_scroll=0;
+    CLICK(25,112);assert(p->family==TS_PORTAL_GRAIN+1);
+    CLICK(25,181);assert(!strcmp(p->recipe.process_id,"modify.brassage.5"));
+    uint64_t grain_source_hash=ts_sample_hash(&instrument.current);
+    p->recipe.values[0]=.25;
+    portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
+    assert(p->valid && p->result->frames>0 && p->result->channels==1);
+    assert(ts_sample_hash(&instrument.current)==grain_source_hash);
+    p->listen_result=1;portal_note_on(audition,&audio,&ui,0,44100);
+    assert(ts_note_bank_count(&audio.notes)==1);
+    p->pin_slot=31;p->exact_pin=1;portal_save(p,&c,1);
+    assert(ts_portal_library_load(&reloaded,c.library_path,error,sizeof(error)));
+    assert(!strcmp(reloaded.pins[31].process_id,"modify.brassage.5") && reloaded.pins[31].values[0]==.25 && reloaded.pins[31].exposed==0);
+    remove(c.library_path);
+    portal_invalidate(audition,&audio,p,&c);assert(ts_note_bank_count(&audio.notes)==0);
     CLICK(25,112);assert(p->family==0); /* Family cycle returns to All. */
     p->library=prior_library;p->recipe=prior_recipe;p->query[0]=0;p->tab=p->family=0;
     p->selected_tab=p->selected_slot=-1;

@@ -28,7 +28,7 @@ See the [Portal guide](CDP_PORTAL.md) for spectral processing and personal tools
 | --- | --- |
 | ALL / SAVE / PINS | Browse processes, saved recipes, or user pins |
 | Wheel over parameter labels | Scroll controls; footer shows the visible range. Wheel sliders/numbers for fine value changes |
-| Family button below tabs | Cycle all families, waveset, spectral, time/tape, and filter; combines with search |
+| Family button below tabs | Cycle all families, waveset, spectral, time/tape, filter, and grains; combines with search |
 | Enter / PREVIEW | Render current settings; Preview cancels a running job |
 | Space / Tab | Play-stop / source-result A-B |
 | QWERTY note rows | Play selected Source/Result, up to five notes; release stops a note |

@@ -84,7 +84,19 @@ static const TsPortalProcess processes[] = {
     {"filter.phasing.2", "PHASING", "Mix with a delayed allpass signal for comb-like coloration. Gain changes interference; delay sets its spacing. Delay stays fixed in this mode.", "phasing", 1, 2, 3, 1,
         {{"gain", "PHASING GAIN", "ALLPASS FEEDBACK COEFFICIENT; PORTAL RANGE -0.95 TO 0.95", "", TS_PORTAL_REAL, -.95, .95, .6},
          {"delay", "DELAY MS", "0.1 TO 50 MS; MUST NOT EXCEED HALF THE SOURCE DURATION", "", TS_PORTAL_REAL, .1, 50, 3},
-         FILTER_TAIL}, TS_PORTAL_FILTER, "filter"}
+         FILTER_TAIL}, TS_PORTAL_FILTER, "filter"},
+    /* CDP8 modify/ap_modify.c, brapcon.c, granula1.c, cdp2k/tklib1.c
+       and include/modicon.h. Native mono modes with 5 ms start/end splices
+       and fixed 0.5 scatter. Grain length is 50 ms except in mode 4. */
+    {"modify.brassage.1", "GRANULAR PITCH", "Shift pitch in overlapping 50 ms grains while keeping roughly the same duration. Compare with Tape Transpose. Grain scatter varies each render.", "brassage", 1, 1, 1, 1,
+        {{"semitones", "SEMITONES", "GRANULAR TRANSPOSITION; PORTAL RANGE -24 TO +24 SEMITONES", "", TS_PORTAL_REAL, -24, 24, 7}}, TS_PORTAL_GRAIN, "modify"},
+    {"modify.brassage.2", "GRANULAR TIME", "Change duration using overlapping 50 ms grains. Velocity 0.5 roughly doubles time; 2 halves it. Pitch is retained, with grain texture and scatter.", "brassage", 1, 2, 1, 1,
+        {{"velocity", "VELOCITY", "INPUT ADVANCE SPEED; 0.5 DOUBLES TIME, 2 HALVES IT; ZERO EXCLUDED", "", TS_PORTAL_REAL, .125, 8, .5}}, TS_PORTAL_GRAIN, "modify"},
+    {"modify.brassage.4", "GRAIN SCRAMBLE", "Rebuild the sound from grains selected behind the current source position. Grain size sets detail; lookback sets how far it reaches into the past.", "brassage", 1, 4, 2, 1,
+        {{"grain_ms", "GRAIN MS", "GRAIN LENGTH; 12 TO 250 MS, LONGER THAN THE TWO 5 MS SPLICES", "", TS_PORTAL_REAL, 12, 250, 50},
+         {"lookback_ms", "LOOKBACK MS", "RANDOM BACKWARD SEARCH; MUST NOT EXCEED TWICE SOURCE DURATION", "-r", TS_PORTAL_REAL, 0, 2000, 250}}, TS_PORTAL_GRAIN, "modify"},
+    {"modify.brassage.5", "GRAIN DENSITY", "Break the source into scattered 50 ms grains. Density below one leaves gaps; higher values overlap grains. Compare the gaps in the result waveform.", "brassage", 1, 5, 1, 1,
+        {{"density", "DENSITY", "GRAIN OVERLAP; BELOW 1 LEAVES GAPS; PORTAL RANGE 0.125 TO 2", "", TS_PORTAL_REAL, .125, 2, .5}}, TS_PORTAL_GRAIN, "modify"}
 };
 #undef GROUP
 #undef SKIP
@@ -200,6 +212,47 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
     memset(commands,0,sizeof(*commands)*TS_CDP_MAX_STAGES);
     if(p->family==TS_PORTAL_WAVESET) {
         if(!ts_portal_build_command(r,input,&commands[0],error,size))return 0;
+        *count=1;return 1;
+    }
+    if(p->family==TS_PORTAL_GRAIN) {
+        if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
+           input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES)
+            return fail(error,size,"GRANULAR PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+        if((double)input->frames/input->sample_rate<.04)
+            return fail(error,size,"GRANULAR SOURCE NEEDS AT LEAST 40 MS");
+        double grain=round((p->mode==4?r->values[0]:50)*.001*input->sample_rate);
+        double splice=round(.005*input->sample_rate);
+        double pitch=p->mode==1?exp2(r->values[0]/12):1;
+        if(grain<4 || splice<1 || grain<=2*splice)
+            return fail(error,size,"GRAIN MUST FIT TWO 5 MS SPLICES AT THE SOURCE RATE");
+        if((double)input->frames<=fmax(grain,floor(grain*pitch)+1))
+            return fail(error,size,"SOURCE TOO SHORT FOR GRAIN / PITCH; USE A LONGER SELECTION");
+        if(p->mode==1 && fabs(r->values[0])>12*log2((double)input->sample_rate/20))
+            return fail(error,size,"GRANULAR PITCH EXCEEDS CDP RANGE AT THIS SOURCE RATE");
+        if(p->mode==4 && r->values[1]>(double)input->frames*2000/input->sample_rate)
+            return fail(error,size,"LOOKBACK MUST NOT EXCEED TWICE THE SOURCE DURATION");
+        /* CDP rounds both hop sizes to whole frames. Use those hops instead
+           of just 1/velocity, and include the last grain and maximum scatter. */
+        double outstep=round(grain/(p->mode==5?r->values[0]:2));
+        double instep=round(outstep*(p->mode==2?r->values[0]:1));
+        if(outstep<1 || instep<1)
+            return fail(error,size,"GRANULAR HOP TOO SMALL AT THIS SOURCE RATE");
+        double grains=ceil(((double)input->frames-grain)/instep);
+        double output_bound=(grains-1)*outstep+ceil(outstep*.5)+grain+2;
+        if(output_bound>TS_PORTAL_MAX_FRAMES)
+            return fail(error,size,"REQUESTED GRANULAR OUTPUT EXCEEDS PORTAL LIMIT");
+        for(size_t i=0;i<input->frames;++i)if(!isfinite(input->data[i]))
+            return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
+        TsCdpCommand *c=&commands[0];
+        snprintf(c->executable,sizeof(c->executable),"%s",p->executable);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s",p->command);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%u",p->mode);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"input.wav");
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"output.wav");
+        for(unsigned i=0;i<p->parameter_count;++i)
+            snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s%.9g",p->parameters[i].flag,r->values[i]);
+        snprintf(c->expected_output,sizeof(c->expected_output),"output.wav");
+        c->expected_output_type=TS_CDP_IO_WAV;
         *count=1;return 1;
     }
     if(p->family==TS_PORTAL_FILTER) {
@@ -369,7 +422,7 @@ static int contains(const char *s,const char *q)
     return 0;
 }
 const char *ts_portal_family_name(int family)
-{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":family==TS_PORTAL_FILTER?"FILTER":"UNKNOWN"; }
+{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":family==TS_PORTAL_FILTER?"FILTER":family==TS_PORTAL_GRAIN?"GRAINS":"UNKNOWN"; }
 
 int ts_portal_library_edit(TsPortalLibrary *lib,const char *path,int pin,int slot,
                            TsPortalEdit edit,const TsPortalRecipe *recipe,const char *name,
