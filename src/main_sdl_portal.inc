@@ -23,12 +23,41 @@ typedef struct {
     char library_path[TS_CDP_PATH_MAX];
 } PortalController;
 
+static int portal_owns_sample(const PortalController *c,const TsSample *sample)
+{
+    if(sample==&c->source)return 1;
+    for(int i=0;i<TS_PORTAL_HISTORY;++i)if(sample==&c->history[i].output)return 1;
+    return 0;
+}
+/* Called with the audio device locked. Detach even inactive voice pointers
+   before moving/freeing history or source storage. */
+static void portal_clear_notes(AudioState *audio,TsPortalUi *p,const PortalController *c)
+{
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i) {
+        TsNoteVoice *v=&audio->notes.voices[i];
+        if(v->preview && portal_owns_sample(c,v->sample))memset(v,0,sizeof(*v));
+    }
+    p->note_count=0;
+}
+static void portal_note_range(TsNoteVoice *v,const TsPortalWave *w,const TsSample *s,int loop,int seek)
+{
+    v->range_first=w->has_selection?w->selection_first:0;
+    v->range_last=w->has_selection?w->selection_last:s->frames;
+    if(v->range_first>=v->range_last || v->range_last>s->frames) {v->active=0;return;}
+    v->looping=loop;
+    v->crossfade_frames=loop?s->sample_rate/200u:0;
+    if(v->crossfade_frames>(v->range_last-v->range_first)/2u)
+        v->crossfade_frames=(v->range_last-v->range_first)/2u;
+    if(seek)v->position=(double)w->playhead;
+    if(v->position<(double)v->range_first || v->position>=(double)v->range_last)
+        v->position=(double)v->range_first;
+}
 static void portal_stop(SDL_AudioDeviceID device,AudioState *audio,TsPortalUi *p,
                         PortalController *c)
 {
     if(device)SDL_LockAudioDevice(device);
-    int owned=audio->sample==&c->source;
-    for(int i=0;i<TS_PORTAL_HISTORY;++i) if(audio->sample==&c->history[i].output)owned=1;
+    int owned=portal_owns_sample(c,audio->sample);
+    portal_clear_notes(audio,p,c);
     if(owned) {audio->playing=0;audio->sample=NULL;runtime_note_clear(audio);}
     if(device)SDL_UnlockAudioDevice(device);
     p->playing=0;
@@ -204,6 +233,15 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
         const TsSample *sample=p->listen_result?p->result:p->source;
         int active=audio->playing && sample && audio->sample==sample;
         size_t position=active?(size_t)audio->position:0;
+        p->note_count=0;uint64_t serial=0;
+        for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i) {
+            const TsNoteVoice *v=&audio->notes.voices[i];
+            if(v->active && v->preview && sample && v->sample==sample) {
+                ++p->note_count;
+                if(v->serial>serial) {serial=v->serial;position=(size_t)v->position;}
+            }
+        }
+        active=active || p->note_count>0;
         if(device)SDL_UnlockAudioDevice(device);
         TsPortalWave *wave=&p->waves[p->listen_result];
         p->playing=active;
@@ -235,16 +273,53 @@ static void portal_play(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
 static void portal_ab(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                       PortalController *c,int output_rate,int next)
 {
-    TsPortalUi *p=&ui->portal;int was=p->playing,prev=p->listen_result;
+    TsPortalUi *p=&ui->portal;int prev=p->listen_result;
+    if(prev==next)return;
     const TsSample *a=prev?p->result:p->source,*b=next?p->result:p->source;
     size_t old=p->waves[prev].playhead;
-    portal_stop(device,audio,p,c);p->listen_result=next;
+    if(device)SDL_LockAudioDevice(device);
+    int was=audio->playing && a && audio->sample==a;
+    if(was) {audio->playing=0;audio->sample=NULL;}
+    int notes=0;
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i) {
+        TsNoteVoice *v=&audio->notes.voices[i];
+        if(!v->active || !v->preview || v->sample!=a)continue;
+        if(!b || !b->data || !b->frames || !a->sample_rate || output_rate<=0) {memset(v,0,sizeof(*v));continue;}
+        v->position=v->position*b->sample_rate/a->sample_rate;
+        v->sample=b;v->step=(double)b->sample_rate/output_rate*v->pitch;
+        portal_note_range(v,&p->waves[next],b,p->loop,0);
+        notes+=v->active;
+    }
+    if(device)SDL_UnlockAudioDevice(device);
+    p->listen_result=next;p->note_count=notes;p->playing=notes>0;
     /* Match elapsed seconds, never assume equal output duration. */
     if(a && b && a->sample_rate) {
         size_t pos=(size_t)((double)old*b->sample_rate/a->sample_rate);
         p->waves[next].playhead=pos<b->frames?pos:0;
     }
     if(was)portal_play(device,audio,ui,c,output_rate,0);
+}
+static void portal_note_on(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
+                            int note,int output_rate)
+{
+    TsPortalUi *p=&ui->portal;TsNoteEvent event;
+    const TsSample *s=p->listen_result?p->result:p->source;
+    const TsPortalWave *w=&p->waves[p->listen_result];
+    const TsTuning unity={TS_KEYBOARD_BASE_NOTE,0.0f};
+    if(!device || !ts_audio_output_is_available() || output_rate<=0 || !s || !s->data) {
+        snprintf(p->message,sizeof(p->message),"NO AUDIO OUTPUT OR NO AUDITIONABLE SAMPLE");return;
+    }
+    if(!ts_note_event_qwerty(&event,note,ts_ui_keyboard_base_note(ui)))return;
+    SDL_LockAudioDevice(device);
+    ts_note_bank_set_attack_ms(&audio->notes,ui->config.voice_attack_ms);
+    TsNoteStartResult result=ts_note_bank_start_preview_event(&audio->notes,s,&unity,&event,
+        w->has_selection?w->selection_first:0,w->has_selection?w->selection_last:s->frames,p->loop,output_rate);
+    if(result==TS_NOTE_STARTED) {audio->playing=0;audio->sample=NULL;p->playing=1;}
+    SDL_UnlockAudioDevice(device);
+    char name[8];
+    snprintf(p->message,sizeof(p->message),result==TS_NOTE_STARTED?"%s %s - C4 IS ORIGINAL PITCH; F1-F8 OCTAVE; SPACE STOPS ALL":
+        result==TS_NOTE_LIMIT_REACHED?"CHORD LIMIT: 5 NOTES":"NOTE COULD NOT START",
+        p->listen_result?"RESULT":"SOURCE",ts_midi_note_name(event.midi_note,name,sizeof(name)));
 }
 static void portal_save(TsPortalUi *p,PortalController *c,int pin)
 {
@@ -323,6 +398,18 @@ static int portal_sync_loop(SDL_AudioDeviceID device,AudioState *audio,TsPortalU
     TsPortalWave *w=&p->waves[which];
     int live=sync_preview_loop(device,audio,which?p->result:p->source,p->loop,
         w->has_selection,w->selection_first,w->selection_last,&w->playhead,seek);
+    const TsSample *s=which?p->result:p->source;
+    size_t requested=w->playhead,display=requested;uint64_t serial=0;
+    if(device)SDL_LockAudioDevice(device);
+    if(p->loop && s)for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i) {
+        TsNoteVoice *v=&audio->notes.voices[i];
+        if(v->active && v->preview && v->sample==s && v->looping) {
+            w->playhead=requested;portal_note_range(v,w,s,1,seek);
+            if(v->active) {live=1;if(v->serial>serial) {serial=v->serial;display=(size_t)v->position;}}
+        }
+    }
+    if(device)SDL_UnlockAudioDevice(device);
+    w->playhead=display;
     if(live)p->playing=1;
     return live;
 }
@@ -493,6 +580,19 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         }
         return 0;
     }
+    /* Releases must reach held notes even after focus moves into a text field
+       or the manager, and are keyed by physical note key rather than octave. */
+    if(event->type==SDL_KEYUP && note_for_key(event->key.keysym.sym)>=0) {
+        if(device)SDL_LockAudioDevice(device);
+        ts_note_bank_release(&audio->notes,note_for_key(event->key.keysym.sym));
+        if(device)SDL_UnlockAudioDevice(device);
+        return 1;
+    }
+    if(event->type==SDL_WINDOWEVENT && event->window.event==SDL_WINDOWEVENT_FOCUS_LOST) {
+        if(device)SDL_LockAudioDevice(device);
+        portal_clear_notes(audio,p,c);
+        if(device)SDL_UnlockAudioDevice(device);
+    }
     if(p->manage_open)return portal_manage_event(event,window,p,c,x,y);
     if(event->type==SDL_DROPFILE) {SDL_free(event->drop.file);snprintf(p->message,sizeof(p->message),"LOAD AUDIO ON MAIN; THEN REOPEN OR RELOAD THE PORTAL");return 1;}
     if(event->type==SDL_TEXTINPUT) {
@@ -529,6 +629,12 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         else if(key==SDLK_SPACE)portal_play(device,audio,ui,c,output_rate,1);
         else if(key==SDLK_RETURN)portal_preview(device,audio,ui,c);
         else if(key==SDLK_TAB)portal_ab(device,audio,ui,c,output_rate,!p->listen_result);
+        else if(!(event->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
+            if(key>=SDLK_F1 && key<=SDLK_F8) {
+                int octave=ts_ui_keyboard_set_octave(ui,(int)(key-SDLK_F1));
+                snprintf(p->message,sizeof(p->message),"QWERTY OCTAVE %d - C4 IS ORIGINAL PITCH; HELD NOTES KEEP THEIR PITCH",octave);
+            } else if(note_for_key(key)>=0)portal_note_on(device,audio,ui,note_for_key(key),output_rate);
+        }
         return 1;
     }
     if(event->type==SDL_KEYUP)return 1;
@@ -629,7 +735,18 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
     } else if(y>=223 && y<239 && x>=150 && x<464) {
         if(x<199)portal_play(device,audio,ui,c,output_rate,1);
         else if(x<331)portal_ab(device,audio,ui,c,output_rate,x>=269);
-        else if(x<377) {p->loop=!p->loop;if(p->playing)portal_play(device,audio,ui,c,output_rate,0);}
+        else if(x<377) {
+            p->loop=!p->loop;
+            const TsSample *s=p->listen_result?p->result:p->source;
+            if(device)SDL_LockAudioDevice(device);
+            int transport=s && audio->playing && audio->sample==s;
+            for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i) {
+                TsNoteVoice *v=&audio->notes.voices[i];
+                if(s && v->active && v->preview && v->sample==s)portal_note_range(v,&p->waves[p->listen_result],s,p->loop,0);
+            }
+            if(device)SDL_UnlockAudioDevice(device);
+            if(transport)portal_play(device,audio,ui,c,output_rate,0);
+        }
         else if(x<421)for(int i=0;i<2;++i) {TsPortalWave *w=&p->waves[i];const TsSample *s=i?p->result:p->source;w->first=0;w->last=s?s->frames:0;ts_portal_wave_refresh(w,s);}
         else portal_ab(device,audio,ui,c,output_rate,!p->listen_result);
     } else if(y>=265 && y<323 && x>=253 && x<464) {

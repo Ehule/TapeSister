@@ -27,7 +27,7 @@ int main(int argc,char **argv)
     ts_instrument_init(&instrument);ts_ui_init(&ui);
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,0x54415045,error,sizeof(error)));
     uint64_t original=ts_sample_hash(&instrument.current);
-    assert(ts_portal_process_count()==16);
+    assert(ts_portal_process_count()==20);
     assert(ts_cdp_factory_recipe_count()==32);
     for(size_t i=0;i<ts_portal_process_count();++i) {
         const TsPortalProcess *p=ts_portal_process_at(i);
@@ -39,7 +39,7 @@ int main(int argc,char **argv)
         TsCdpCommand commands[TS_CDP_MAX_STAGES];size_t count=0;
         assert(ts_portal_build_commands(&recipe,&instrument.current,commands,&count,error,sizeof(error)));
         assert(count==(p->family==TS_PORTAL_SPECTRAL?3u:1u));
-        assert(!strcmp(commands[0].executable,p->family==TS_PORTAL_SPECTRAL?"pvoc":"distort"));
+        assert(!strcmp(commands[0].executable,p->family==TS_PORTAL_SPECTRAL?"pvoc":p->executable));
         assert(!strcmp(commands[count-1].expected_output,"output.wav"));
         for(size_t n=0;n<count;++n)assert(commands[n].argc<TS_CDP_MAX_COMMAND_ARGS);
         if(count==3) {
@@ -123,6 +123,11 @@ int main(int argc,char **argv)
     assert(ts_portal_filter(&ui.portal,0,&recipe));
     assert(ts_portal_process_find(recipe.process_id)->family==TS_PORTAL_SPECTRAL);
     ui.portal.query[0]=0;assert(ts_portal_filter(&ui.portal,3,&recipe));assert(!ts_portal_filter(&ui.portal,4,&recipe));
+    ui.portal.family=TS_PORTAL_TIME+1;
+    assert(ts_portal_filter(&ui.portal,3,&recipe));assert(!ts_portal_filter(&ui.portal,4,&recipe));
+    snprintf(ui.portal.query,sizeof(ui.portal.query),"semitones");
+    assert(ts_portal_filter(&ui.portal,0,&recipe) && !strcmp(recipe.process_id,"modify.speed.2"));
+    ui.portal.query[0]=0;
     ui.portal.family=0;
     ui.portal.query[0]=0;ui.portal.tab=0;
     TsPortalWave wave;
@@ -148,6 +153,11 @@ int main(int argc,char **argv)
     assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
     recipe.values[0]=8;assert(ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
     short_input.channels=2;assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.speed.1"));
+    short_input=instrument.current;short_input.frames=100;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    short_input=instrument.current;short_input.channels=2;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
     const char *bin=getenv("TS_TEST_CDP_BIN");
     if(bin && *bin) {
         assert(ts_cdp_runtime_discover(&runtime,bin,NULL,error,sizeof(error)));
@@ -169,9 +179,19 @@ int main(int argc,char **argv)
             for(unsigned n=0;n<proc->parameter_count;++n)recipe.values[n]=edge?proc->parameters[n].maximum:proc->parameters[n].minimum;
             if(!strcmp(proc->id,"blur.blur") && edge)recipe.values[0]=(double)(input.frames/128);
             int ok=ts_cdp_run_portal(&runtime,&recipe,&input,&options,&result,error,sizeof(error));
-            if(!ok)fprintf(stderr,"SPECTRAL EDGE %s rate %u edge %d: %s\n%s\n",proc->id,input.sample_rate,edge,error,result.diagnostic);
+            if(!ok)fprintf(stderr,"PROCESS EDGE %s rate %u edge %d: %s\n%s\n",proc->id,input.sample_rate,edge,error,result.diagnostic);
             assert(ok && result.finite && result.output.sample_rate==input.sample_rate && !result.cleanup_failed);
             assert(result.output.frames<=TS_PORTAL_MAX_FRAMES && result.job_directory[0]==0);
+            if(proc->family==TS_PORTAL_TIME) {
+                double ratio=!strcmp(proc->id,"modify.speed.1")?1/recipe.values[0]:
+                             !strcmp(proc->id,"modify.speed.2")?exp2(-recipe.values[0]/12):0;
+                if(ratio>0)assert(fabs((double)result.output.frames-(double)input.frames*ratio)<2048);
+                if(!strcmp(proc->id,"modify.radical.1")) {
+                    assert(result.output.frames==input.frames);
+                    for(size_t n=0;n<input.frames;n+=137)
+                        assert(fabs(result.output.data[n]-input.data[input.frames-1-n])<.0002);
+                }
+            }
         }
         ts_portal_recipe_default(&recipe,ts_portal_process_find("blur.blur"));
         options.cancel_check=cancel_spectral_stage;options.cancel_userdata=&result;
@@ -194,9 +214,9 @@ int main(int argc,char **argv)
     }
     if(argc>1) {
         assert(bin && *bin); /* A screenshot must show a real render. */
-        ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("blur.chorus.5"));
-        ui.portal.recipe.values[0]=3;ui.portal.recipe.values[1]=1.03;
-        ui.portal.family=TS_PORTAL_SPECTRAL+1;ui.portal.selected_tab=0;ui.portal.selected_slot=14;
+        ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("modify.speed.6"));
+        ui.portal.recipe.values[0]=5;ui.portal.recipe.values[1]=2;
+        ui.portal.family=TS_PORTAL_TIME+1;ui.portal.selected_tab=0;ui.portal.selected_slot=18;
         assert(ts_cdp_run_portal(&runtime,&ui.portal.recipe,&instrument.current,&options,&result,error,sizeof(error)));
         ui.portal.open=1;ui.portal.valid=1;ui.portal.source=&instrument.current;
         snprintf(ui.portal.source_name,sizeof(ui.portal.source_name),"TILE 01 METAL");
@@ -205,7 +225,7 @@ int main(int argc,char **argv)
         ts_portal_wave_reset(&ui.portal.waves[1],ui.portal.result);
         ui.portal.waves[0].playhead=22050;ui.portal.waves[1].playhead=22050;
         ui.portal.history_count=1;ui.portal.history_selected=0;
-        snprintf(ui.portal.history_names[0],24,"SPECTRAL CHORUS");
+        snprintf(ui.portal.history_names[0],24,"TAPE VIBRATO");
         snprintf(ui.portal.message,sizeof(ui.portal.message),"REAL CDP PREVIEW READY - SOURCE UNCHANGED - ENTER PREVIEW / SPACE PLAY / TAB A-B");
         ts_ui_render(&fb,&ui,&instrument);
         f=fopen(argv[1],"wb");assert(f);fprintf(f,"P6\n%d %d\n255\n",TS_UI_WIDTH,TS_UI_HEIGHT);

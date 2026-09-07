@@ -186,7 +186,8 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     snprintf(line,sizeof(line),"PIN SLOT %02d%s",p->pin_slot+1,p->library.pins[p->pin_slot].process_id[0]?" FULL":"");
     portal_caption(fb,505,292,16,line,RGB(210,204,210));
     portal_mini(fb,604,287,22,">",0);
-    portal_caption(fb,478,314,24,"SAVE SETTINGS, NOT AUDIO",RGB(210,204,210));
+    snprintf(line,sizeof(line),"KEYS C%d %d/5 F1-F8 OCT",ts_ui_keyboard_base_note(ui)/12-1,p->note_count);
+    portal_caption(fb,478,314,24,line,p->note_count?PAL_VOLUME:RGB(210,204,210));
     button(fb,150,332,76,p->busy?"CANCEL":"PREVIEW",p->busy);
     button(fb,230,332,64,"APPLY",p->valid);
     button(fb,298,332,78,"NEW TILE",0);

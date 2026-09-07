@@ -447,16 +447,21 @@ release builds. The visible CDP catalog can be selected in `tapesister.ini`.
 
 **CDP Portal** is a separate exploratory workbench: open it with **Ctrl+Shift+P**
 or the CDP panel's **PORTAL** button. It has source/result waveforms, audition
-loops, render history, and searchable waveset and spectral families. Spectral
+loops, render history, and searchable waveset, spectral, and time/tape families. Spectral
 analysis and resynthesis happen automatically around the selected CDP process.
 The original 32 curated instruments remain available.
+
+The QWERTY note rows also work inside the Portal: play its selected Source or
+Result at different pitches, or hold up to five notes as a chord. C4 is the
+original pitch; F1–F8 choose octaves. Notes follow the audition selection and Loop
+setting, and release when you let go. Typing in a text field does not play notes.
 
 Save discoveries as recipes or pin them as personal process tiles. **MANAGE
 TOOLS** lets you rename, update, replace, and remove numbered saved slots.
 Update copies current settings while retaining the destination's name; Replace
 can change the process too. Collection changes require confirmation and persist
 separately from audio projects. See the illustrated [CDP Portal guide](CDP_PORTAL.md)
-for the complete workflow and the four-process spectral batch.
+for the complete workflow and the spectral and time/tape batches.
 
 Some operations are intentionally unavailable for linked stereo material until their
 channel relationship can be preserved exactly. TapeSister reports that boundary rather
