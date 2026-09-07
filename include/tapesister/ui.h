@@ -404,6 +404,7 @@ typedef struct {
     int import_preview_available;
     int import_preview_raw;
     int import_preview_active;
+    int import_preview_note_count;
     int import_preview_selecting;
     int import_preview_selection_dragged;
     int import_preview_selection_start_x;

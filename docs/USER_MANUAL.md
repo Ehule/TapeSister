@@ -114,6 +114,8 @@ present and the whole tile otherwise.
 
 ### Import preview and raw data
 
+![File preview with QWERTY auditioning and updated shortcuts](images/import-preview-keyboard.png)
+
 Click **LOAD** or press `Ctrl+O`, choose a file, and TapeSister opens an import preview
 before it changes a tile. WAV, FLAC, MP3, and Ogg Vorbis are recognized from their file
 contents and decoded automatically. The import dialog has **FILE BROWSER** and
@@ -121,6 +123,13 @@ contents and decoded automatically. The import dialog has **FILE BROWSER** and
 channel count, duration, and frame count. Recorder-oriented extensible, RF64, and
 multichannel WAV files use the general decoder when the sampler-metadata reader cannot
 open them; multichannel material is downmixed to stereo.
+
+QWERTY plays the preview at different pitches, with up to five simultaneous
+notes. C4 plays at the file's original pitch; `F1`–`F8` choose the keyboard octave.
+Release a key to stop its note. Held notes follow live loop-selection changes;
+changing octave keeps their pitches and key releases working. `Space` stops all
+preview voices. Going back to files, changing decoding mode, or importing clears
+held preview notes before replacing their audio. File-list typing remains normal.
 
 The preview behaves like TapeSister's canvas. Click the waveform to position its
 playhead, or drag across it to select part of the file and return the playhead to the
@@ -141,7 +150,7 @@ continues through the whole file. Editing a stopped preview does not start it.
 one exists. After playback reaches the end, the playhead returns to the beginning of
 that range so Space immediately replays it. `L` or **LOOP** continuously repeats the
 selection—or the complete file when there is no selection—with a short boundary
-crossfade. `Enter` or **IMPORT ALL** commits the complete file; `S` or **IMPORT
+crossfade. `Enter` or **IMPORT ALL** commits the complete file; `Shift+Enter` or **IMPORT
 SELECTION** commits only the selected range. A contained sampler loop is retained and
 translated into the range; a loop cut by the selection is omitted.
 
@@ -170,7 +179,7 @@ watching and auditioning the preview:
 The source file and destination tile remain untouched while settings change. Different
 interpretations can sound radically different: sample rate changes speed and pitch,
 channel and offset choices change byte alignment, and encoding or byte order changes
-the waveform itself. Click **AUTO** / **RAW DATA** or press `R` to switch modes when an
+the waveform itself. Click **AUTO** / **RAW DATA** or press `Ctrl+R` to switch modes when an
 ordinary audio file should be deliberately reinterpreted as bytes. If a waveform
 selection is active, accepting an import proceeds to the existing **PASTE / FIT /
 CANCEL** choice instead of replacing the whole tile.

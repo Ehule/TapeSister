@@ -113,14 +113,15 @@ this avoids collisions with the playable note range.
 | `0` | Show the complete file |
 | Middle-click waveform | Clear selection and return playhead to the start |
 | `Space` | Play/stop; after reaching the end, Space replays from the range start |
+| QWERTY note keys / `F1`–`F8` | Play up to five preview notes / change octave; C4 is original pitch |
 | `L` / **LOOP** | Repeat the selection, or the complete file when none is selected |
 | `Enter` / **IMPORT ALL** | Import the complete decoded file |
-| `S` / **IMPORT SELECTION** | Import only the zero-snapped preview selection |
+| `Shift+Enter` / **IMPORT SELECTION** | Import only the zero-snapped preview selection |
 | `Escape` in Preview | Return to the preserved file-browser tab |
 | `Escape` in File Browser | Exit LOAD without changing the tile |
 | `P` in File Browser | Return to the cached preview |
 | `Shift`+click file / `Shift`+`Enter` | Decode and import recognized audio directly, bypassing Preview |
-| `R` or **AUTO / RAW DATA** | Toggle automatic decoding and raw-byte interpretation |
+| `Ctrl+R` or **AUTO / RAW DATA** | Toggle automatic decoding and raw-byte interpretation |
 | Raw `<` / `>` controls | Change encoding, sample rate, or byte offset |
 | `Shift` while changing offset | Move the raw offset by 256 frames |
 

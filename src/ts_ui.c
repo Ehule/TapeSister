@@ -1148,11 +1148,15 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
     button(fb, 320, 286, 148, "IMPORT SELECTION",
            ui->import_preview_has_selection);
     button(fb, 474, 286, 130, "BACK TO FILES", 0);
+    char keyboard[96];
+    snprintf(keyboard, sizeof(keyboard), "QWERTY C%d  %d/5 NOTES  F1-F8 OCTAVE  C4 ORIGINAL PITCH",
+             ts_ui_keyboard_base_note(ui) / 12 - 1, ui->import_preview_note_count);
+    text(fb, 65, 316, keyboard, PAL_EFFECT, 1);
     text(fb, 65, 330,
          "WHEEL ZOOM  SHIFT+WHEEL PAN  0 FULL  SPACE PLAY/STOP",
          RGB(190, 185, 190), 1);
-    text(fb, 161, 344,
-         "ENTER ALL  S SELECTION  L LOOP  ESC BACK",
+    text(fb, 47, 344,
+         "ENTER ALL  SHIFT+ENTER SELECTION  L LOOP  CTRL+R AUTO/RAW  ESC BACK",
          RGB(190, 185, 190), 1);
 }
 
@@ -2823,7 +2827,7 @@ int ts_ui_foreground_panel_open(const TsUiState *ui)
     if (ui == NULL) return 0;
     return ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open || ui->fm_open ||
-           ui->transform_open || ui->drone_open ||
+           ui->transform_open || ui->drone_open || ui->import_preview_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
            ui->load_selection_choice_open || ui->palette_open ||
            ui->config_open || ui->browser.mode != TS_BROWSER_CLOSED ||
@@ -3641,12 +3645,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             int capture_channels = ui->capture_state != TS_CAPTURE_IDLE ?
                                    ui->capture_channels :
                                    ui->config.capture_channels;
-            char source_count[24];
             mini_button(fb, 154, 313, 78, "FADE ALL",
                         ui->tile_launcher_mask != 0u);
-            snprintf(source_count, sizeof(source_count), "SRC %d  SHIFT+T",
-                     ts_performance_source_count(ui->sister_source_mask));
-            text(fb, 250, 318, source_count, PAL_NOTE, 1);
             mini_button(fb, 350, 313, 28,
                         capture_channels == 2 ? "S" : "M",
                         capture_channels == 2);

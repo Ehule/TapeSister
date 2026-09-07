@@ -6718,11 +6718,69 @@ static void import_controller_init(ImportController *controller)
     controller->destination_slot = -1;
 }
 
+/* Clear inactive pointers too: decoded audio can be replaced or freed next.
+   Called with the output device locked. */
+static void clear_import_notes(AudioState *audio, TsUiState *ui,
+                                const ImportController *controller)
+{
+    for (int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i) {
+        TsNoteVoice *v=&audio->notes.voices[i];
+        if (v->preview && v->sample==&controller->decoded.sample)
+            memset(v,0,sizeof(*v));
+    }
+    ui->import_preview_note_count=0;
+}
+
+static void import_note_range(TsNoteVoice *v, const TsUiState *ui,
+                               const TsSample *sample, int seek)
+{
+    v->range_first=ui->import_preview_has_selection?ui->import_preview_selection_first:0;
+    v->range_last=ui->import_preview_has_selection?ui->import_preview_selection_last:sample->frames;
+    if(v->range_first>=v->range_last || v->range_last>sample->frames) {v->active=0;return;}
+    v->looping=ui->import_preview_loop;
+    v->crossfade_frames=v->looping?sample->sample_rate/200u:0;
+    if(v->crossfade_frames>(v->range_last-v->range_first)/2u)
+        v->crossfade_frames=(v->range_last-v->range_first)/2u;
+    if(seek)v->position=(double)ui->import_preview_playhead;
+    if(v->position<(double)v->range_first || v->position>=(double)v->range_last)
+        v->position=(double)v->range_first;
+}
+
+static void poll_import_playback(SDL_AudioDeviceID device, AudioState *audio,
+                                  TsUiState *ui, const ImportController *controller)
+{
+    if(!ui->import_preview_active && !ui->import_preview_open)return;
+    if(device)SDL_LockAudioDevice(device);
+    const TsSample *sample=&controller->decoded.sample;
+    int active=audio->playing && audio->sample==sample;
+    size_t position=active?(size_t)fmax(0,audio->position):0;
+    uint64_t serial=0;
+    ui->import_preview_note_count=0;
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i) {
+        const TsNoteVoice *v=&audio->notes.voices[i];
+        if(v->active && v->preview && v->sample==sample) {
+            ++ui->import_preview_note_count;active=1;
+            if(v->serial>serial) {serial=v->serial;position=(size_t)fmax(0,v->position);}
+        }
+    }
+    if(active && sample->frames)
+        ui->import_preview_playhead=position<sample->frames?position:sample->frames-1;
+    else if(ui->import_preview_active) {
+        ui->import_preview_playhead=ui->import_preview_has_selection?ui->import_preview_selection_first:0;
+        if(audio->sample==sample)audio->sample=NULL;
+        snprintf(ui->import_preview_message,sizeof(ui->import_preview_message),
+                 "PREVIEW FINISHED - SPACE REPLAYS FROM THE START");
+    }
+    ui->import_preview_active=active;
+    if(device)SDL_UnlockAudioDevice(device);
+}
+
 static void stop_import_preview(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, ImportController *controller)
 {
     if (audio == NULL || ui == NULL || controller == NULL) return;
     if (device) SDL_LockAudioDevice(device);
+    clear_import_notes(audio,ui,controller);
     if (audio->sample == &controller->decoded.sample) {
         audio->playing = 0;
         audio->sample = NULL;
@@ -6858,10 +6916,25 @@ static int sync_import_preview_loop(SDL_AudioDeviceID device, AudioState *audio,
                                     TsUiState *ui, const ImportController *controller,
                                     int seek)
 {
-    return sync_preview_loop(device, audio, &controller->decoded.sample,
+    int active=sync_preview_loop(device, audio, &controller->decoded.sample,
         ui->import_preview_loop, ui->import_preview_has_selection,
         ui->import_preview_selection_first, ui->import_preview_selection_last,
         &ui->import_preview_playhead, seek);
+    if(!ui->import_preview_loop)return active;
+    if(device)SDL_LockAudioDevice(device);
+    uint64_t serial=0;
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i) {
+        TsNoteVoice *v=&audio->notes.voices[i];
+        if(v->active && v->preview && v->sample==&controller->decoded.sample) {
+            import_note_range(v,ui,v->sample,seek);
+            if(v->active) {
+                active=1;
+                if(v->serial>serial) {serial=v->serial;ui->import_preview_playhead=(size_t)v->position;}
+            }
+        }
+    }
+    if(device)SDL_UnlockAudioDevice(device);
+    return active;
 }
 
 static void begin_import_selection(SDL_AudioDeviceID device, AudioState *audio,
@@ -7210,6 +7283,11 @@ static void set_import_preview_loop(SDL_AudioDeviceID device,
         if (audio->crossfade_frames * 2u > span)
             audio->crossfade_frames = span / 2u;
     }
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i) {
+        TsNoteVoice *v=&audio->notes.voices[i];
+        if(v->active && v->preview && v->sample==&controller->decoded.sample)
+            import_note_range(v,ui,v->sample,0);
+    }
     if (device) SDL_UnlockAudioDevice(device);
     snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
              ui->import_preview_loop ?
@@ -7229,7 +7307,7 @@ static void audition_import_preview(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     sample = &controller->decoded.sample;
-    if (!device || output_rate <= 0 || sample->data == NULL || sample->frames == 0u) {
+    if (!device || !ts_audio_output_is_available() || output_rate <= 0 || sample->data == NULL || sample->frames == 0u) {
         snprintf(ui->import_preview_message, sizeof(ui->import_preview_message),
                  "AUDIO OUTPUT UNAVAILABLE");
         return;
@@ -7448,6 +7526,88 @@ static void handle_import_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     if (rebuild && !rebuild_import_preview(device, audio, ui, controller))
         ui->import_raw_settings = previous;
+}
+
+static void audition_import_note(SDL_AudioDeviceID device, AudioState *audio,
+                                  TsUiState *ui, ImportController *controller,
+                                  int note, int output_rate)
+{
+    const TsSample *sample=&controller->decoded.sample;
+    const TsTuning unity={TS_KEYBOARD_BASE_NOTE,0.0f};
+    TsNoteEvent event;
+    if(!device || !ts_audio_output_is_available() || output_rate<=0 || !sample->data) {
+        snprintf(ui->import_preview_message,sizeof(ui->import_preview_message),"AUDIO OUTPUT UNAVAILABLE");return;
+    }
+    if(!ts_note_event_qwerty(&event,note,ts_ui_keyboard_base_note(ui)))return;
+    SDL_LockAudioDevice(device);
+    ts_note_bank_set_attack_ms(&audio->notes,ui->config.voice_attack_ms);
+    TsNoteStartResult result=ts_note_bank_start_preview_event(&audio->notes,sample,&unity,&event,
+        ui->import_preview_has_selection?ui->import_preview_selection_first:0,
+        ui->import_preview_has_selection?ui->import_preview_selection_last:sample->frames,
+        ui->import_preview_loop,output_rate);
+    if(result==TS_NOTE_STARTED) {audio->playing=0;audio->sample=NULL;ui->import_preview_active=1;}
+    SDL_UnlockAudioDevice(device);
+    poll_import_playback(device,audio,ui,controller);
+    char name[8];
+    snprintf(ui->import_preview_message,sizeof(ui->import_preview_message),
+        result==TS_NOTE_STARTED?"PREVIEW %s - C4 IS ORIGINAL PITCH; SPACE STOPS ALL":
+        result==TS_NOTE_LIMIT_REACHED?"CHORD LIMIT: 5 NOTES":"NOTE COULD NOT START",
+        ts_midi_note_name(event.midi_note,name,sizeof(name)));
+}
+
+/* Preview keys are routed before the main workspace. File-list text entry is
+   untouched, and releases/focus loss always detach this preview's notes. */
+static int import_preview_event(const SDL_Event *event, SDL_AudioDeviceID device,
+                                 AudioState *audio, TsUiState *ui, TsInstrument *instrument,
+                                 TsSample *pending, ImportController *controller, int output_rate)
+{
+    if(!ui->import_preview_open)return 0;
+    if(event->type==SDL_KEYUP && note_for_key(event->key.keysym.sym)>=0) {
+        if(device)SDL_LockAudioDevice(device);
+        ts_note_bank_release(&audio->notes,note_for_key(event->key.keysym.sym));
+        if(device)SDL_UnlockAudioDevice(device);
+        poll_import_playback(device,audio,ui,controller);return 1;
+    }
+    if(event->type==SDL_WINDOWEVENT && event->window.event==SDL_WINDOWEVENT_FOCUS_LOST) {
+        if(device)SDL_LockAudioDevice(device);
+        clear_import_notes(audio,ui,controller);
+        if(device)SDL_UnlockAudioDevice(device);
+        poll_import_playback(device,audio,ui,controller);return 0;
+    }
+    if(ui->exit_confirm_open || ui->project_overwrite_confirm_open || ui->file_busy)return 0;
+    if(event->type==SDL_TEXTINPUT)return 1;
+    if(event->type!=SDL_KEYDOWN)return 0;
+    if(event->key.repeat)return 1;
+    SDL_Keycode key=event->key.keysym.sym;SDL_Keymod mod=event->key.keysym.mod;
+    TsUiImportAction action=TS_UI_IMPORT_ACTION_NONE;
+    if(key==SDLK_ESCAPE)action=TS_UI_IMPORT_ACTION_CANCEL;
+    else if(key==SDLK_SPACE)action=TS_UI_IMPORT_ACTION_AUDITION;
+    else if((mod&KMOD_CTRL) && !(mod&(KMOD_ALT|KMOD_GUI)) && key==SDLK_r)
+        action=TS_UI_IMPORT_ACTION_MODE;
+    else if(!(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
+        if(key==SDLK_RETURN || key==SDLK_KP_ENTER)
+            action=(mod&KMOD_SHIFT)?TS_UI_IMPORT_ACTION_ACCEPT_SELECTION:TS_UI_IMPORT_ACTION_ACCEPT;
+        else if(key==SDLK_l)action=TS_UI_IMPORT_ACTION_LOOP;
+        else if(key==SDLK_0 || key==SDLK_KP_0)reset_import_preview_view(ui,controller);
+        else if(key>=SDLK_F1 && key<=SDLK_F8) {
+            int octave=ts_ui_keyboard_set_octave(ui,(int)(key-SDLK_F1));
+            snprintf(ui->import_preview_message,sizeof(ui->import_preview_message),
+                     "QWERTY OCTAVE %d - C4 IS ORIGINAL PITCH; HELD NOTES KEEP THEIR PITCH",octave);
+        } else if(note_for_key(key)>=0)
+            audition_import_note(device,audio,ui,controller,note_for_key(key),output_rate);
+        else if(key==SDLK_LEFT || key==SDLK_RIGHT) {
+            size_t span=ui->import_preview_view_last>ui->import_preview_view_first?
+                ui->import_preview_view_last-ui->import_preview_view_first:controller->decoded.sample.frames;
+            ptrdiff_t step=(ptrdiff_t)(span/8u);if(step<1)step=1;
+            snprintf(ui->import_preview_message,sizeof(ui->import_preview_message),
+                     pan_import_preview(ui,controller,key==SDLK_LEFT?-step:step)?
+                     "KEYBOARD PANNED WAVEFORM VIEW":"PAN LIMIT");
+        }
+    }
+    if(action!=TS_UI_IMPORT_ACTION_NONE)
+        handle_import_action(device,audio,ui,instrument,pending,controller,action,
+                             (mod&KMOD_SHIFT)!=0,output_rate);
+    return 1;
 }
 
 static void queue_active_project_save(TsUiState *ui,
@@ -12108,6 +12268,8 @@ int main(int argc, char **argv)
             }
             if (portal_event(&event,window,device,&audio,&ui,&instrument,
                              &portal,&sister_window,obtained.freq,&transform)) continue;
+            if (import_preview_event(&event,device,&audio,&ui,&instrument,
+                                      &pending_selection_load,&import_controller,obtained.freq)) continue;
             if (event.type == SDL_MOUSEBUTTONDOWN &&
                 event.button.button == SDL_BUTTON_LEFT &&
                 event.button.windowID == SDL_GetWindowID(window) &&
@@ -12582,55 +12744,6 @@ int main(int argc, char **argv)
                         (void)import_incoming_exchange(
                             device, &audio, &ui, &instrument, &exchange_offer);
                     }
-                } else if (ui.import_preview_open) {
-                    if (key == SDLK_ESCAPE)
-                        handle_import_action(
-                            device, &audio, &ui, &instrument,
-                            &pending_selection_load, &import_controller,
-                            TS_UI_IMPORT_ACTION_CANCEL, 0, obtained.freq);
-                    else if (key == SDLK_SPACE)
-                        handle_import_action(
-                            device, &audio, &ui, &instrument,
-                            &pending_selection_load, &import_controller,
-                            TS_UI_IMPORT_ACTION_AUDITION, 0, obtained.freq);
-                    else if (key == SDLK_l)
-                        handle_import_action(
-                            device, &audio, &ui, &instrument,
-                            &pending_selection_load, &import_controller,
-                            TS_UI_IMPORT_ACTION_LOOP, 0, obtained.freq);
-                    else if (key == SDLK_0 || key == SDLK_KP_0)
-                        reset_import_preview_view(&ui, &import_controller);
-                    else if (key == SDLK_LEFT || key == SDLK_RIGHT) {
-                        size_t span = ui.import_preview_view_last >
-                                      ui.import_preview_view_first ?
-                            ui.import_preview_view_last -
-                            ui.import_preview_view_first :
-                            import_controller.decoded.sample.frames;
-                        ptrdiff_t step = (ptrdiff_t)(span / 8u);
-                        if (step < 1) step = 1;
-                        snprintf(ui.import_preview_message,
-                                 sizeof(ui.import_preview_message),
-                                 pan_import_preview(
-                                     &ui, &import_controller,
-                                     key == SDLK_LEFT ? -step : step) ?
-                                 "KEYBOARD PANNED WAVEFORM VIEW" : "PAN LIMIT");
-                    }
-                    else if (key == SDLK_RETURN || key == SDLK_KP_ENTER)
-                        handle_import_action(
-                            device, &audio, &ui, &instrument,
-                            &pending_selection_load, &import_controller,
-                            TS_UI_IMPORT_ACTION_ACCEPT, 0, obtained.freq);
-                    else if (key == SDLK_s)
-                        handle_import_action(
-                            device, &audio, &ui, &instrument,
-                            &pending_selection_load, &import_controller,
-                            TS_UI_IMPORT_ACTION_ACCEPT_SELECTION, 0,
-                            obtained.freq);
-                    else if (key == SDLK_r)
-                        handle_import_action(
-                            device, &audio, &ui, &instrument,
-                            &pending_selection_load, &import_controller,
-                            TS_UI_IMPORT_ACTION_MODE, 0, obtained.freq);
                 } else if (ui.load_selection_choice_open) {
                     if (key == SDLK_ESCAPE || key == SDLK_c)
                         cancel_selection_load(&ui, &pending_selection_load);
@@ -15692,28 +15805,7 @@ int main(int argc, char **argv)
         }
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         sister_window.model.text_cursor_visible = ui.text_cursor_visible;
-        if (ui.import_preview_active) {
-            if (device) SDL_LockAudioDevice(device);
-            if (!audio.playing ||
-                audio.sample != &import_controller.decoded.sample) {
-                ui.import_preview_active = 0;
-                ui.import_preview_playhead =
-                    ui.import_preview_has_selection ?
-                    ui.import_preview_selection_first : 0u;
-                if (audio.sample == &import_controller.decoded.sample)
-                    audio.sample = NULL;
-                snprintf(ui.import_preview_message,
-                         sizeof(ui.import_preview_message),
-                         "PREVIEW FINISHED - SPACE REPLAYS FROM THE START");
-            } else if (audio.position >= 0.0 &&
-                     import_controller.decoded.sample.frames > 0u) {
-                size_t position = (size_t)audio.position;
-                if (position >= import_controller.decoded.sample.frames)
-                    position = import_controller.decoded.sample.frames - 1u;
-                ui.import_preview_playhead = position;
-            }
-            if (device) SDL_UnlockAudioDevice(device);
-        }
+        poll_import_playback(device,&audio,&ui,&import_controller);
         if (ui.file_busy)
             ui.file_busy_phase = (int)((SDL_GetTicks() / 180u) % 4u);
         {
