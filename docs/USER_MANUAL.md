@@ -447,7 +447,7 @@ release builds. The visible CDP catalog can be selected in `tapesister.ini`.
 
 **CDP Portal** is a separate exploratory workbench: open it with **Ctrl+Shift+P**
 or the CDP panel's **PORTAL** button. It has source/result waveforms, audition
-loops, render history, and 30 processes across searchable waveset, spectral, time/tape, filter, and grains families. Spectral
+loops, render history, and 64 processes across searchable waveset, spectral, time/tape, filter, grains, lo-fi/modulation, level, and delay families. Spectral
 analysis and resynthesis happen automatically around the selected CDP process.
 The original 32 curated instruments remain available.
 

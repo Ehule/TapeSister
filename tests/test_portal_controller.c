@@ -232,7 +232,38 @@ int main(void)
     assert(!strcmp(reloaded.pins[31].process_id,"modify.brassage.5") && reloaded.pins[31].values[0]==.25 && reloaded.pins[31].exposed==0);
     remove(c.library_path);
     portal_invalidate(audition,&audio,p,&c);assert(ts_note_bank_count(&audio.notes)==0);
+    CLICK(25,112);assert(p->family==TS_PORTAL_LOFI+1);
+    CLICK(25,112);assert(p->family==TS_PORTAL_LEVEL+1);
+    CLICK(25,112);assert(p->family==TS_PORTAL_DELAY+1);
+    CLICK(25,130);assert(!strcmp(p->recipe.process_id,"modify.revecho.1"));
+    wheel.wheel.y=-100;SDL_WarpMouseInWindow(window,180,280);
+    portal_event(&wheel,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
+    assert(p->parameter_scroll==3 && portal_parameter_at(p,2)==5);
+    CLICK(395,305);assert(p->number_focus==5);
+    snprintf(p->number_text,sizeof(p->number_text),"1");
+    portal_event(&key,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
+    assert(p->number_focus==-1 && p->recipe.values[5]==1);
+    portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
+    assert(p->valid && p->result->frames>c.source.frames);
     CLICK(25,112);assert(p->family==0); /* Family cycle returns to All. */
+    /* Odd-only spectral averaging remains valid through drag, wheel, and typing. */
+    portal_invalidate(audition,&audio,p,&c);
+    ts_portal_recipe_default(&p->recipe,ts_portal_process_find("blur.avrg"));p->parameter_scroll=0;
+    CLICK(300,270);assert(fmod(p->recipe.values[0],2)==1);
+    SDL_Event release={0};release.type=SDL_MOUSEBUTTONUP;release.button.windowID=SDL_GetWindowID(window);
+    release.button.button=SDL_BUTTON_LEFT;
+    portal_event(&release,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
+    double odd=p->recipe.values[0];
+    wheel.wheel.y=1;SDL_WarpMouseInWindow(window,395,270);
+    portal_event(&wheel,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
+    assert(p->recipe.values[0]==odd+2);
+    CLICK(395,270);assert(p->number_focus==0);
+    snprintf(p->number_text,sizeof(p->number_text),"12");
+    portal_event(&key,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
+    assert(p->number_focus==0 && p->recipe.values[0]==odd+2 && strstr(p->message,"ODD INTEGER"));
+    snprintf(p->number_text,sizeof(p->number_text),"13");
+    portal_event(&key,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
+    assert(p->number_focus==-1 && p->recipe.values[0]==13);
     p->library=prior_library;p->recipe=prior_recipe;p->query[0]=0;p->tab=p->family=0;
     p->selected_tab=p->selected_slot=-1;
 #undef CLICK

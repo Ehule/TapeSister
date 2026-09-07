@@ -387,6 +387,7 @@ static void portal_parameter_drag(SDL_AudioDeviceID device,AudioState *audio,
     double v=s->minimum+t*(s->maximum-s->minimum);
     if(s->maximum>100 && s->minimum>=0)v=s->minimum+expm1(t*log1p(s->maximum-s->minimum));
     if(s->type!=TS_PORTAL_REAL)v=floor(v+0.5);
+    if(s->type==TS_PORTAL_ODD_INTEGER)v=2*floor(v/2)+1;
     if(v<s->minimum)v=s->minimum;
     if(v>s->maximum)v=s->maximum;
     if(p->recipe.values[index]!=v) {portal_invalidate(device,audio,p,c);p->recipe.values[index]=v;}
@@ -614,8 +615,8 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
                     const TsPortalProcess *proc=ts_portal_process_find(p->recipe.process_id);char *end;
                     int i=p->number_focus;double v=strtod(dst,&end);
                     const TsPortalParam *s=&proc->parameters[i];
-                    if(end==dst || *end || !isfinite(v) || v<s->minimum || v>s->maximum || (s->type!=TS_PORTAL_REAL && floor(v)!=v)) {
-                        snprintf(p->message,sizeof(p->message),"VALUE MUST BE %s %.6g..%.6g",s->type==TS_PORTAL_REAL?"A NUMBER":"AN INTEGER",s->minimum,s->maximum);return 1;
+                    if(end==dst || *end || !isfinite(v) || v<s->minimum || v>s->maximum || (s->type!=TS_PORTAL_REAL && floor(v)!=v) || (s->type==TS_PORTAL_ODD_INTEGER && fmod(v,2)!=1)) {
+                        snprintf(p->message,sizeof(p->message),"VALUE MUST BE %s %.6g..%.6g",s->type==TS_PORTAL_REAL?"A NUMBER":s->type==TS_PORTAL_ODD_INTEGER?"AN ODD INTEGER":"AN INTEGER",s->minimum,s->maximum);return 1;
                     }
                     portal_invalidate(device,audio,p,c);p->recipe.values[i]=v;
                 }
@@ -681,7 +682,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
             int i=portal_parameter_at(p,(y-265)/19);
             const TsPortalProcess *proc=ts_portal_process_find(p->recipe.process_id);
             if(y>=265 && i>=0 && x>=253) {
-                const TsPortalParam *s=&proc->parameters[i];double step=s->type==TS_PORTAL_REAL?0.001:1;
+                const TsPortalParam *s=&proc->parameters[i];double step=s->type==TS_PORTAL_REAL?0.001:s->type==TS_PORTAL_ODD_INTEGER?2:1;
                 double v=p->recipe.values[i]+d*step;if(v<s->minimum)v=s->minimum;if(v>s->maximum)v=s->maximum;
                 portal_invalidate(device,audio,p,c);p->recipe.values[i]=v;
             } else {
