@@ -111,3 +111,38 @@ publication, rate conversion, and bounded live envelopes. Release validation sti
 requires real SDL devices on Linux and Windows: arm/threshold/pre-roll/tail, long-take
 display cost, device/channel selection, dry-monitor stability and latency, headphone
 feedback safety, early stop/cancel, and recording with MONITOR both off and on.
+
+## Record the output directly from the canvas
+
+![Canvas with direct file recording active](images/canvas-file-recording.png)
+
+![Keyboard view with its recording button beside Bank](images/keyboard-file-recording.png)
+
+**REC FILE**, beside the sample-bank capture controls or beside **BANK** when
+the keyboard is visible, starts recording the final
+stereo output immediately. **Ctrl+Shift+F** is the main-window shortcut. Click
+**STOP FILE** or press the shortcut again to finish the WAV without stopping
+playback. Files are saved automatically as `TAPESISTER-OUT_...wav` in `Captures`
+(or the directory specified by `TAPESISTER_CAPTURES`). Nothing is placed on a tile.
+
+This works with Sister Machine off. Loop a canvas range, play up to five QWERTY
+notes, and record the performance as you hear it. Earlier notes keep playing when
+another key is pressed; the playhead follows the newest voice. C4 plays at the
+sample's root tuning, and the normal octave keys and note-release behavior apply.
+
+Recording captures the final output after the master fader and limiter. It does
+not enable Sister Machine, Fallout, or the pedalboard. Leave those off for a dry
+canvas performance; effects you deliberately enable are part of the audible take.
+
+A recording timer, large capture-colored border, moving bar, and flashing stop
+control remain visible throughout the main window, including Portal and file
+preview. The footer's Stop File control works over those panels too. The moving
+bar indicates activity, not a fixed recording limit. Recording continues until
+stopped; the existing background writer supports long WAV/RF64 recordings without
+keeping the complete take in memory. While finishing, the display says WAIT.
+
+The main and Sister FILE controls share one recorder. Starting from the main
+canvas always chooses final stereo OUT, while leaving Sister's selected tap and
+destination unchanged. Either interface can stop the active file. Tile capture
+must finish before starting a file recording. Missing output devices and file
+creation errors are reported without interrupting playback or changing a tile.

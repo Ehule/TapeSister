@@ -9,6 +9,7 @@
 #include "tapesister/config.h"
 #include "tapesister/palette.h"
 #include "tapesister/performance.h"
+#include "tapesister/performance_recorder.h"
 #include "tapesister/recipe.h"
 #include "tapesister/sample.h"
 #include "tapesister/transform.h"
@@ -400,6 +401,9 @@ typedef struct {
     int exchange_item_count;
     int exchange_force_new_instance;
     int load_selection_choice_open;
+    TsPerformanceFileState file_record_state;
+    uint32_t file_record_rate;
+    uint64_t file_record_frames;
     int import_preview_open;
     int import_preview_available;
     int import_preview_raw;
@@ -599,6 +603,7 @@ int ts_ui_foreground_panel_open(const TsUiState *ui);
 void ts_ui_draw_tile_state_borders(TsFramebuffer *fb, int slot,
                                    int active, int sister_source,
                                    const TsPalette *palette);
+void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui);
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path);
 int ts_ui_key_from_point(int x, int y);
 int ts_ui_key_from_point_for_base(int x, int y, int keyboard_base_note);

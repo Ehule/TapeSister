@@ -371,3 +371,16 @@ confirmation.
 - Lower Sister/FX/Fallout levels before the limiter when GR is excessive.
 - Use headphones for microphone monitoring.
 - Sister Capture refuses a destination that is also a live Sister source.
+
+### Direct output recording
+
+| Control | Action |
+| --- | --- |
+| **REC FILE** on the sample bank | Start a stereo output WAV immediately; no tile destination |
+| `Ctrl+Shift+F` in the main window | Start from the canvas; stop an active file from any main-window panel |
+| **STOP FILE** in the recording footer | Finish the WAV and keep playback running |
+| QWERTY on the canvas | Up to five simultaneous notes; newest voice supplies the playhead |
+
+Files go to `Captures/TAPESISTER-OUT_...wav`. The timer and recording border stay
+visible when opening other main-window panels. Sister Machine and effects can
+remain off; the recording follows the final audible output.
