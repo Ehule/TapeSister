@@ -27,9 +27,11 @@ See the [Portal guide](CDP_PORTAL.md) for spectral processing and personal tools
 | Control | Action |
 | --- | --- |
 | ALL / SAVE / PINS | Browse processes, saved recipes, or user pins |
-| Family button below tabs | Cycle all families, waveset, and spectral; combines with search |
+| Family button below tabs | Cycle all families, waveset, spectral, and time/tape; combines with search |
 | Enter / PREVIEW | Render current settings; Preview cancels a running job |
 | Space / Tab | Play-stop / source-result A-B |
+| QWERTY note rows | Play selected Source/Result, up to five notes; release stops a note |
+| F1–F8 | Set note octave; F5 selects C4 (original preview pitch) |
 | Alt+wheel over selection | Expand/contract its hovered edge while the loop keeps playing |
 | SAVE AS / PIN PROCESS TILE | Save settings to an empty recipe or chosen pin slot |
 | MANAGE TOOLS | Rename, update, replace, or remove a numbered recipe/pin slot |

@@ -36,6 +36,8 @@ typedef struct {
     int direction;
     int latched;
     int synth;
+    /* Immutable preview owned by a workbench, never retargeted to Current. */
+    int preview;
     int active;
 } TsNoteVoice;
 
@@ -84,6 +86,10 @@ TsNoteStartResult ts_note_bank_start_sample(TsNoteBank *bank,
 TsNoteStartResult ts_note_bank_start_sample_event(
     TsNoteBank *bank, const TsSample *sample, const TsTuning *tuning,
     const TsNoteEvent *event, int latched, int output_rate);
+TsNoteStartResult ts_note_bank_start_preview_event(
+    TsNoteBank *bank, const TsSample *sample, const TsTuning *tuning,
+    const TsNoteEvent *event, size_t first, size_t last, int looping,
+    int output_rate);
 void ts_note_bank_replace_sample(TsNoteBank *bank,
                                  const TsSample *old_sample,
                                  const TsSample *new_sample,

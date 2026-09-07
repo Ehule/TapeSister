@@ -15,6 +15,7 @@ static void update_voice(TsNoteVoice *voice, const TsInstrument *instrument,
                          const TsTuning *tuning, TsAuditionSource source,
                          int output_rate)
 {
+    if(voice->preview)return; /* The workbench owns its immutable sample/range. */
     TsAuditionPlan plan;
     int looping = instrument->has_loop;
     size_t old_first = voice->range_first;
@@ -225,21 +226,23 @@ TsNoteStartResult ts_note_bank_start_sample(TsNoteBank *bank,
                                            latched, output_rate);
 }
 
-TsNoteStartResult ts_note_bank_start_sample_event(
+static TsNoteStartResult start_sample_event(
     TsNoteBank *bank, const TsSample *sample, const TsTuning *tuning,
-    const TsNoteEvent *event, int latched, int output_rate)
+    const TsNoteEvent *event, int latched, int output_rate,
+    int preview, size_t first, size_t last, int looping)
 {
     int free_voice = -1;
     if (bank == NULL || sample == NULL || sample->data == NULL || sample->frames < 2u ||
         sample->sample_rate == 0u || tuning == NULL || event == NULL ||
         event->key < 0 || event->midi_note < 0 || event->midi_note > 127 ||
-        event->velocity <= 0 || event->velocity > 127 || output_rate <= 0)
+        event->velocity <= 0 || event->velocity > 127 || output_rate <= 0 ||
+        first>=last || last>sample->frames)
         return TS_NOTE_START_FAILED;
     /* FM/QWERTY synth preview intentionally keeps the established five-voice
        pool; expanded MIDI sample polyphony lives in the separate upper pool. */
     for (int index = 0; index < TS_NOTE_VOICE_LIMIT; ++index) {
         TsNoteVoice *voice = &bank->voices[index];
-        if (voice->active && voice->synth &&
+        if (voice->active && (preview?voice->preview:voice->synth) &&
             voice->midi_note == event->midi_note &&
             ts_note_event_same_trigger(event, voice->origin, voice->note,
                                        voice->channel)) {
@@ -258,15 +261,16 @@ TsNoteStartResult ts_note_bank_start_sample_event(
         TsNoteVoice *voice = &bank->voices[free_voice];
         memset(voice, 0, sizeof(*voice));
         voice->sample = sample;
-        voice->range_first = 0u;
-        voice->range_last = sample->frames;
-        voice->position = 0.0;
+        voice->range_first = first;
+        voice->range_last = last;
+        voice->position = (double)first;
         voice->pitch = ts_tuning_note_pitch(
             tuning, event->midi_note - TS_KEYBOARD_BASE_NOTE);
         voice->step = (double)sample->sample_rate / (double)output_rate * voice->pitch;
-        voice->crossfade_frames = sample->sample_rate / 100u;
-        if (voice->crossfade_frames > sample->frames / 4u)
-            voice->crossfade_frames = sample->frames / 4u;
+        voice->crossfade_frames = looping?sample->sample_rate / (preview?200u:100u):0;
+        size_t fade_limit=(last-first)/(preview?2u:4u);
+        if (voice->crossfade_frames > fade_limit)
+            voice->crossfade_frames = fade_limit;
         voice->attack_frames = ts_audition_attack_frames(
             output_rate, bank->attack_ms);
         voice->source = TS_AUDITION_CURRENT;
@@ -278,12 +282,28 @@ TsNoteStartResult ts_note_bank_start_sample_event(
         voice->midi_note = event->midi_note;
         voice->channel = event->channel;
         voice->gain = ts_note_event_gain(event);
-        voice->looping = 1;
+        voice->looping = looping;
         voice->latched = latched != 0;
-        voice->synth = 1;
+        voice->synth = !preview;
+        voice->preview = preview;
         voice->active = 1;
     }
     return TS_NOTE_STARTED;
+}
+
+TsNoteStartResult ts_note_bank_start_sample_event(
+    TsNoteBank *bank,const TsSample *sample,const TsTuning *tuning,
+    const TsNoteEvent *event,int latched,int output_rate)
+{
+    return start_sample_event(bank,sample,tuning,event,latched,output_rate,
+                               0,0,sample?sample->frames:0,1);
+}
+TsNoteStartResult ts_note_bank_start_preview_event(
+    TsNoteBank *bank,const TsSample *sample,const TsTuning *tuning,
+    const TsNoteEvent *event,size_t first,size_t last,int looping,int output_rate)
+{
+    return start_sample_event(bank,sample,tuning,event,0,output_rate,
+                               1,first,last,looping!=0);
 }
 
 void ts_note_bank_replace_sample(TsNoteBank *bank,
@@ -352,7 +372,7 @@ void ts_note_bank_release(TsNoteBank *bank, int note)
         TsNoteVoice *voice = &bank->voices[i];
         if (voice->active && !voice->latched &&
             voice->origin == TS_NOTE_ORIGIN_QWERTY && voice->note == note &&
-            voice->looping)
+            (voice->looping || voice->preview))
             voice->active = 0;
     }
 }
@@ -364,7 +384,7 @@ void ts_note_bank_release_event(TsNoteBank *bank, const TsNoteEvent *event)
         TsNoteVoice *voice = &bank->voices[i];
         if (voice->active && !voice->latched && event != NULL &&
             ts_note_event_same_trigger(event, voice->origin, voice->note,
-                                       voice->channel) && voice->looping)
+                                       voice->channel) && (voice->looping || voice->preview))
             voice->active = 0;
     }
 }

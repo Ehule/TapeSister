@@ -83,6 +83,87 @@ static void test_import(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
     memset(&canvas.current,0,sizeof(canvas.current));
 }
 
+static void test_portal_keyboard(SDL_Window *window,SDL_AudioDeviceID device,AudioState *audio,
+    TsUiState *ui,TsInstrument *instrument,PortalController *c,SisterWindow *sister,TransformController *transform)
+{
+    TsPortalUi *p=&ui->portal;SDL_Event event={0};
+#define SEND() assert(portal_event(&event,window,device,audio,ui,instrument,c,sister,44100,transform))
+#define KEY(K,T) do {memset(&event,0,sizeof(event));event.type=(T);event.key.windowID=SDL_GetWindowID(window);event.key.keysym.sym=(K);SEND();} while(0)
+    p->open=p->loop=1;p->listen_result=0;p->dragging_wave=-1;
+    ts_ui_keyboard_set_octave(ui,4);
+    for(int i=0;i<2;++i) {
+        TsPortalWave *w=&p->waves[i];ts_portal_wave_reset(w,i?p->result:p->source);
+        w->has_selection=1;w->selection_first=1000;w->selection_last=10000;
+    }
+    p->playing=0;p->waves[0].playhead=6000;
+    portal_poll(device,audio,ui,instrument,c);assert(p->waves[0].playhead==6000);
+    portal_play(device,audio,ui,c,44100,0);assert(audio->playing);
+    KEY(SDLK_z,SDL_KEYDOWN);assert(!audio->playing && ts_note_bank_count(&audio->notes)==1);
+    KEY(SDLK_q,SDL_KEYDOWN);assert(ts_note_bank_count(&audio->notes)==2);
+    TsNoteVoice *low=&audio->notes.voices[0],*high=&audio->notes.voices[1];
+    assert(low->preview && !low->synth && low->sample==p->source && low->position==1000);
+    assert(low->midi_note==60 && fabs(low->step-1)<1e-9);
+    assert(high->midi_note==72 && fabs(high->step-2)<1e-9);
+    uint64_t serial=high->serial;event.key.repeat=1;SEND();assert(high->serial==serial);
+    /* A normal Current sync must never redirect Portal-owned voices. */
+    ts_note_bank_sync(&audio->notes,instrument,44100);
+    assert(low->active && low->sample==p->source && low->range_first==1000);
+    double energy=0;float block[512];
+    for(int n=0;n<4;++n) {
+        audio_callback(audio,(Uint8*)block,sizeof(block));
+        for(int i=0;i<512;++i) {assert(isfinite(block[i]));energy+=fabsf(block[i]);}
+    }
+    assert(energy>0);
+    TsStereoFrame sample,fm,capture;ts_note_bank_read_buses(&audio->notes,&sample,&fm,&capture);
+    assert(fm.l==0 && fm.r==0 && capture.l==0 && capture.r==0);
+    KEY(SDLK_F6,SDL_KEYDOWN);assert(ts_ui_keyboard_base_note(ui)==72 && low->midi_note==60);
+    p->name_focus=1;KEY(SDLK_q,SDL_KEYUP);assert(!high->active && low->active);
+    KEY(SDLK_c,SDL_KEYDOWN);assert(ts_note_bank_count(&audio->notes)==1);
+    p->name_focus=0;p->search_focus=1;KEY(SDLK_d,SDL_KEYDOWN);assert(ts_note_bank_count(&audio->notes)==1);
+    p->search_focus=0;p->number_focus=0;KEY(SDLK_2,SDL_KEYDOWN);assert(ts_note_bank_count(&audio->notes)==1);p->number_focus=-1;
+    KEY(SDLK_q,SDL_KEYDOWN);assert(high->midi_note==84 && fabs(high->step-4)<1e-9);
+    KEY(SDLK_q,SDL_KEYUP);
+    KEY(SDLK_TAB,SDL_KEYDOWN);assert(p->listen_result==1 && low->active && low->sample==p->result && low->pitch==1);
+    size_t attack=low->attack_frame;low->position=4000;
+    portal_resize_selection(device,audio,ui,1,169,1);
+    assert(low->range_first==p->waves[1].selection_first && low->range_first<1000);
+    assert(low->position==4000 && low->attack_frame==attack && low->pitch==1);
+    p->waves[1].selection_first=5000;p->waves[1].selection_last=6000;
+    assert(portal_sync_loop(device,audio,p,1,0));assert(low->position==5000 && low->range_last==6000);
+    p->waves[1].has_selection=0;assert(portal_sync_loop(device,audio,p,1,0));
+    assert(low->range_last==p->result->frames && low->active);
+    p->manage_open=1;KEY(SDLK_z,SDL_KEYUP);assert(!low->active);p->manage_open=0;
+    /* Modifier shortcuts and text input cannot leak notes or main-page actions. */
+    KEY(SDLK_z,SDL_KEYDOWN);KEY(SDLK_SPACE,SDL_KEYDOWN);assert(ts_note_bank_count(&audio->notes)==0 && !audio->playing);
+    event.key.keysym.sym=SDLK_c;event.key.keysym.mod=KMOD_CTRL;SEND();assert(ts_note_bank_count(&audio->notes)==0);
+    KEY(SDLK_z,SDL_KEYDOWN);
+    memset(&event,0,sizeof(event));event.type=SDL_MOUSEBUTTONDOWN;
+    event.button.windowID=SDL_GetWindowID(window);event.button.button=SDL_BUTTON_LEFT;
+    event.button.x=350;event.button.y=230;SEND();
+    assert(!p->loop && audio->notes.voices[0].active && !audio->notes.voices[0].looping && !audio->playing);
+    KEY(SDLK_z,SDL_KEYUP);assert(ts_note_bank_count(&audio->notes)==0);
+    /* Toggle after release, before polling: never resurrect unity playback. */
+    memset(&event,0,sizeof(event));event.type=SDL_MOUSEBUTTONDOWN;
+    event.button.windowID=SDL_GetWindowID(window);event.button.button=SDL_BUTTON_LEFT;
+    event.button.x=350;event.button.y=230;SEND();assert(p->loop && !audio->playing && ts_note_bank_count(&audio->notes)==0);
+    p->loop=1;ts_ui_keyboard_set_octave(ui,4);
+    const SDL_Keycode chord[]={SDLK_z,SDLK_x,SDLK_c,SDLK_v,SDLK_b,SDLK_n};
+    for(int i=0;i<6;++i)KEY(chord[i],SDL_KEYDOWN);
+    assert(ts_note_bank_count(&audio->notes)==5 && strstr(p->message,"LIMIT"));
+    portal_poll(device,audio,ui,instrument,c);assert(p->note_count==5 && p->playing);
+    memset(&event,0,sizeof(event));event.type=SDL_WINDOWEVENT;event.window.windowID=SDL_GetWindowID(window);
+    event.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
+    (void)portal_event(&event,window,device,audio,ui,instrument,c,sister,44100,transform);
+    assert(ts_note_bank_count(&audio->notes)==0);
+    KEY(SDLK_z,SDL_KEYDOWN);portal_invalidate(device,audio,p,c);
+    assert(ts_note_bank_count(&audio->notes)==0 && !p->result);
+    p->listen_result=0;KEY(SDLK_z,SDL_KEYDOWN);assert(ts_note_bank_count(&audio->notes)==1);
+    portal_close(device,audio,ui,c);assert(ts_note_bank_count(&audio->notes)==0);
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)assert(!audio->notes.voices[i].preview);
+#undef KEY
+#undef SEND
+}
+
 int main(void)
 {
     static AudioState audio;static TsUiState ui;static TsInstrument instrument;
@@ -153,6 +234,8 @@ int main(void)
         portal_event(&event,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform);
         assert(!audio.playing);ui.portal.loop=1;
     }
+    assert(ts_sample_hash(&c.source)==hash && ts_sample_hash(&c.history[0].output)==hash);
+    test_portal_keyboard(window,device,&audio,&ui,&instrument,&c,&sister,&transform);
     assert(ts_sample_hash(&c.source)==hash && ts_sample_hash(&c.history[0].output)==hash);
     test_import(device,&audio,&ui,&c.source,1);
     test_import(device,&audio,&ui,&c.source,2);

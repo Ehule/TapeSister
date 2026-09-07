@@ -112,7 +112,13 @@ int main(void)
     /* History owns the result; callback references are detached on eviction. */
     for(int i=0;i<TS_PORTAL_HISTORY+2;++i) {
         p->recipe.values[0]=(double)(i+2);
-        portal_preview(0,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
+        portal_preview(0,&audio,&ui,&c);
+        /* A held source note started during a render is detached before
+           result/history storage moves on worker completion. */
+        p->listen_result=0;portal_note_on(audition,&audio,&ui,0,44100);
+        assert(ts_note_bank_count(&audio.notes)==1);
+        wait_portal(&audio,&ui,&instrument,&c);
+        assert(ts_note_bank_count(&audio.notes)==0);
         assert(p->valid && c.history_count<=TS_PORTAL_HISTORY);
         audio.sample=p->result;audio.playing=1;p->playing=1;
     }

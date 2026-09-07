@@ -48,7 +48,17 @@ static const TsPortalProcess processes[] = {
         {{"amplitude", "AMP SCATTER", "MAXIMUM RANDOM PARTIAL-AMPLITUDE RATIO; 1 IS UNCHANGED", "", TS_PORTAL_REAL, 1, 1028, 1.5},
          {"frequency", "FREQ SCATTER", "MAXIMUM RANDOM PARTIAL-FREQUENCY RATIO; 1 IS UNCHANGED", "", TS_PORTAL_REAL, 1, 4, 1.01}}, TS_PORTAL_SPECTRAL, "blur"},
     {"stretch.time.1", "SPECTRAL TIME", "Stretch or compress time while retaining pitch. Ratio two doubles the duration. Spectral resynthesis can soften transients; compare source and result.", "time", 1, 1, 1, 1,
-        {{"ratio", "TIME RATIO", "OUTPUT DURATION MULTIPLIER; PORTAL RANGE 0.25 TO 16", "", TS_PORTAL_REAL, .25, 16, 1.5}}, TS_PORTAL_SPECTRAL, "stretch"}
+        {{"ratio", "TIME RATIO", "OUTPUT DURATION MULTIPLIER; PORTAL RANGE 0.25 TO 16", "", TS_PORTAL_REAL, .25, 16, 1.5}}, TS_PORTAL_SPECTRAL, "stretch"},
+    /* CDP8 modify/ap_modify.c usage2 and cdp2k/tklib1.c MOD_PITCH /
+       MOD_RADICAL ranges. Speed/depth limits are bounded Portal ranges. */
+    {"modify.speed.1", "TAPE SPEED", "Change playback speed and pitch together, like changing tape speed. Faster makes the sound shorter and higher; slower makes it longer and lower.", "speed", 1, 1, 1, 1,
+        {{"speed", "SPEED RATIO", "PLAYBACK SPEED MULTIPLIER; PORTAL RANGE 0.125 TO 8", "", TS_PORTAL_REAL, .125, 8, .75}}, TS_PORTAL_TIME, "modify"},
+    {"modify.speed.2", "TAPE TRANSPOSE", "Transpose by semitones using resampling. Pitch and duration change together. Unlike spectral time stretch, this does not preserve pitch while changing duration.", "speed", 1, 2, 1, 1,
+        {{"semitones", "SEMITONES", "RESAMPLED TRANSPOSITION; PORTAL RANGE -36 TO +36 SEMITONES", "", TS_PORTAL_REAL, -36, 36, -7}}, TS_PORTAL_TIME, "modify"},
+    {"modify.speed.6", "TAPE VIBRATO", "Oscillate playback speed to bend pitch continuously. Slow rates give tape-like drift; higher rates and depths create rapid pitch motion. Duration can change.", "speed", 1, 6, 2, 1,
+        {{"rate", "RATE HZ", "VIBRATO CYCLES PER SECOND; CDP RANGE 0 TO 120 HZ", "", TS_PORTAL_REAL, 0, 120, 5},
+         {"depth", "DEPTH SEMITONES", "VIBRATO DEPTH; PORTAL RANGE 0 TO 24 SEMITONES", "", TS_PORTAL_REAL, 0, 24, .667}}, TS_PORTAL_TIME, "modify"},
+    {"modify.radical.1", "SOUND REVERSE", "Reverse the entire source snapshot. This reverses the order of larger gestures and transients, rather than reversing individual wavecycle groups.", "radical", 1, 1, 0, 0, {{0}}, TS_PORTAL_TIME, "modify"}
 };
 #undef GROUP
 #undef SKIP
@@ -160,6 +170,33 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         if(!ts_portal_build_command(r,input,&commands[0],error,size))return 0;
         *count=1;return 1;
     }
+    if(p->family==TS_PORTAL_TIME) {
+        if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
+           input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES)
+            return fail(error,size,"TIME PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+        if(input->frames<(size_t)input->sample_rate/25)
+            return fail(error,size,"TIME SOURCE NEEDS AT LEAST 40 MS");
+        for(size_t i=0;i<input->frames;++i)if(!isfinite(input->data[i]))
+            return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
+        double expansion=1;
+        if(!strcmp(p->command,"speed")) {
+            if(p->mode==1)expansion=1/r->values[0];
+            else if(p->mode==2)expansion=exp2(-r->values[0]/12);
+            else expansion=exp2(r->values[1]/12); /* Conservative slowest vibrato speed. */
+        }
+        if(p->changes_duration && (double)input->frames*expansion+1024>TS_PORTAL_MAX_FRAMES)
+            return fail(error,size,"REQUESTED TIME PROCESS EXCEEDS PORTAL LIMIT");
+        TsCdpCommand *c=&commands[0];
+        snprintf(c->executable,sizeof(c->executable),"%s",p->executable);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s",p->command);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%u",p->mode);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"input.wav");
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"output.wav");
+        for(unsigned i=0;i<p->parameter_count;++i)snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%.9g",r->values[i]);
+        snprintf(c->expected_output,sizeof(c->expected_output),"output.wav");
+        c->expected_output_type=TS_CDP_IO_WAV;
+        *count=1;return 1;
+    }
     if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
        input->frames>TS_PORTAL_MAX_FRAMES)return fail(error,size,"SPECTRAL PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
     if(input->frames<2048 || input->frames<(size_t)input->sample_rate/25)
@@ -264,7 +301,7 @@ static int contains(const char *s,const char *q)
     return 0;
 }
 const char *ts_portal_family_name(int family)
-{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":"UNKNOWN"; }
+{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":"UNKNOWN"; }
 
 int ts_portal_library_edit(TsPortalLibrary *lib,const char *path,int pin,int slot,
                            TsPortalEdit edit,const TsPortalRecipe *recipe,const char *name,
