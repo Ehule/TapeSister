@@ -1472,7 +1472,7 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
     uint32_t visible_notes;
     int capture_started = 0;
     ui->bank_view_slot = -1;
-    if (!device || output_rate <= 0) {
+    if (!device || !ts_audio_output_is_available() || output_rate <= 0 || event == NULL) {
         snprintf(ui->status, sizeof(ui->status), "AUDIO UNAVAILABLE");
         return;
     }
@@ -1480,7 +1480,6 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
     if (audio->capture.state != TS_CAPTURE_RECORDING)
         audio->playing = 0;
     audio->bank_slot = -1;
-    if (event == NULL) return;
     ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
     result = runtime_note_start_event(
         audio, instrument, ts_ui_audition_tuning(ui, instrument),
@@ -1602,6 +1601,20 @@ static void launch_staged_capture(SDL_AudioDeviceID device, AudioState *audio,
     } else
         snprintf(ui->status, sizeof(ui->status),
                  "CLICK ONE OF THE STAGED KEYS TO LAUNCH THE CHORD");
+}
+
+static int canvas_qwerty_event(const SDL_Event *event, SDL_AudioDeviceID device,
+                                AudioState *audio, TsUiState *ui,
+                                const TsInstrument *instrument, int output_rate)
+{
+    if(event->type!=SDL_KEYDOWN)return 0;
+    int note=note_for_key(event->key.keysym.sym);
+    if(note<0)return 0;
+    if(event->key.repeat)return 1;
+    if(audio->capture.state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER && audio->capture.staged_notes)
+        launch_staged_capture(device,audio,ui,instrument,note,output_rate);
+    else begin_note(device,audio,ui,instrument,note,output_rate,0);
+    return 1;
 }
 
 static void release_note_event(SDL_AudioDeviceID device, AudioState *audio,
@@ -8763,22 +8776,31 @@ static int sister_performance_writer_main(void *userdata)
     return 0;
 }
 
-static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
-                                     uint32_t sample_rate)
+static int begin_file_capture(AudioState *audio, SisterWindow *sister,
+                               uint32_t sample_rate, TsSisterTap tap, int channels)
 {
     char path[1200];
     char prefix[40];
     char error[160];
     size_t queue_frames;
     if (audio == NULL || sister == NULL || sample_rate == 0u) return 0;
-    if (sister->model.selected_tap != TS_SISTER_TAP_MIX &&
-        sister->model.selected_tap != TS_SISTER_TAP_TAPEHEAD &&
+    if (!ts_audio_output_is_available()) {
+        snprintf(sister->model.status,sizeof(sister->model.status),"FILE RECORDING NEEDS AN AVAILABLE AUDIO OUTPUT");
+        return 0;
+    }
+    if (ts_performance_recorder_state(&sister->performance_recorder)!=TS_PERFORMANCE_FILE_IDLE ||
+        sister->performance_writer!=NULL) {
+        snprintf(sister->model.status,sizeof(sister->model.status),"FINISH THE CURRENT FILE RECORDING FIRST");
+        return 0;
+    }
+    if (tap != TS_SISTER_TAP_MIX &&
+        tap != TS_SISTER_TAP_TAPEHEAD &&
         (!audio->sister.enabled || audio->sister.callback_failed)) {
         snprintf(sister->model.status, sizeof(sister->model.status),
                  "SELECT OUT OR ENABLE SISTER FOR A HEAD FILE");
         return 0;
     }
-    if (sister->model.selected_tap == TS_SISTER_TAP_TAPEHEAD &&
+    if (tap == TS_SISTER_TAP_TAPEHEAD &&
         !audio->live_link_available) {
         snprintf(sister->model.status, sizeof(sister->model.status),
                  "TAPEHEAD FILE CAPTURE IS WAITING FOR A LIVE LINK");
@@ -8790,13 +8812,13 @@ static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
                  "FINISH THE TILE CAPTURE BEFORE RECORDING A FILE");
         return 0;
     }
-    if (sister->model.selected_tap == TS_SISTER_TAP_MIX)
+    if (tap == TS_SISTER_TAP_MIX)
         snprintf(prefix, sizeof(prefix), "TAPESISTER-OUT");
-    else if (sister->model.selected_tap == TS_SISTER_TAP_TAPEHEAD)
+    else if (tap == TS_SISTER_TAP_TAPEHEAD)
         snprintf(prefix, sizeof(prefix), "TAPEHEAD-RAW");
     else
         snprintf(prefix, sizeof(prefix), "SISTER-%s",
-                 ts_sister_tap_name(sister->model.selected_tap));
+                 ts_sister_tap_name(tap));
     if (!ts_capture_archive_unique_path(
             capture_archive_directory(), prefix, path, sizeof(path),
             error, sizeof(error))) {
@@ -8806,10 +8828,10 @@ static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
     }
     queue_frames = (size_t)sample_rate * 10u;
     atomic_store_explicit(&audio->sister_file_tap,
-                          sister->model.selected_tap, memory_order_relaxed);
+                          tap, memory_order_relaxed);
     if (!ts_performance_recorder_start(
             &sister->performance_recorder, path, sample_rate,
-            (uint8_t)sister->model.capture_channels, queue_frames,
+            (uint8_t)channels, queue_frames,
             error, sizeof(error))) {
         snprintf(sister->model.status, sizeof(sister->model.status),
                  "FILE CAPTURE FAILED: %.98s", error);
@@ -8832,6 +8854,13 @@ static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
     snprintf(sister->model.status, sizeof(sister->model.status),
              "FILE RECORDING - PRESS CAPTURE AGAIN TO STOP");
     return 1;
+}
+
+static int sister_begin_file_capture(AudioState *audio, SisterWindow *sister,
+                                     uint32_t sample_rate)
+{
+    return begin_file_capture(audio,sister,sample_rate,sister->model.selected_tap,
+                              sister->model.capture_channels);
 }
 
 static void sister_poll_file_capture(SisterWindow *sister)
@@ -8871,6 +8900,64 @@ static void sister_poll_file_capture(SisterWindow *sister)
                  "PERFORMANCE FILE FAILED: %.94s", recorder->error);
     ts_performance_recorder_free(recorder);
     sister->model.file_capture_state = TS_PERFORMANCE_FILE_IDLE;
+}
+
+static void poll_file_capture_ui(TsUiState *ui, SisterWindow *sister)
+{
+    TsPerformanceFileState before=ts_performance_recorder_state(&sister->performance_recorder);
+    sister_poll_file_capture(sister);
+    ui->file_record_state=sister->model.file_capture_state;
+    ui->file_record_rate=sister->model.file_capture_sample_rate;
+    ui->file_record_frames=sister->model.file_capture_frames;
+    if(before!=TS_PERFORMANCE_FILE_IDLE && ui->file_record_state==TS_PERFORMANCE_FILE_IDLE)
+        snprintf(ui->status,sizeof(ui->status),"%s",sister->model.status);
+}
+
+static void main_file_capture_toggle(AudioState *audio, TsUiState *ui,
+                                      SisterWindow *sister, uint32_t sample_rate)
+{
+    poll_file_capture_ui(ui,sister);
+    TsPerformanceFileState state=ts_performance_recorder_state(&sister->performance_recorder);
+    if(state==TS_PERFORMANCE_FILE_RECORDING) {
+        (void)ts_performance_recorder_request_stop(&sister->performance_recorder);
+        snprintf(ui->status,sizeof(ui->status),"FINISHING OUTPUT WAV - PLAYBACK CONTINUES");
+    } else if(state==TS_PERFORMANCE_FILE_STOPPING) {
+        snprintf(ui->status,sizeof(ui->status),"OUTPUT WAV IS STILL FINISHING");
+    } else if(ui->capture_state!=TS_CAPTURE_IDLE) {
+        snprintf(ui->status,sizeof(ui->status),"FINISH THE TILE CAPTURE BEFORE RECORDING A FILE");
+    } else {
+        /* MIX is the existing final OUT tap, after the master fader/limiter.
+           Selecting it here leaves Sister's destination and tap controls alone. */
+        (void)begin_file_capture(audio,sister,sample_rate,TS_SISTER_TAP_MIX,2);
+        snprintf(ui->status,sizeof(ui->status),"%s",sister->model.status);
+    }
+    poll_file_capture_ui(ui,sister);
+}
+
+static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
+                                   AudioState *audio, TsUiState *ui,
+                                   SisterWindow *sister, uint32_t sample_rate)
+{
+    int active=ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING ||
+               ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING;
+    int trigger=0;
+    if(event->type==SDL_KEYDOWN && event->key.windowID==SDL_GetWindowID(window) &&
+       event->key.keysym.sym==SDLK_f &&
+       (event->key.keysym.mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT) &&
+       !(event->key.keysym.mod&(KMOD_ALT|KMOD_GUI)) && (active || !ui_dialog_open(ui))) {
+        if(event->key.repeat)return 1;
+        trigger=1;
+    }
+    if(event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT &&
+       event->button.windowID==SDL_GetWindowID(window)) {
+        int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
+        if(active && x>=544 && x<630 && y>=382 && y<398)trigger=1;
+        else if(!ui_dialog_open(ui) && !ui->show_keyboard && !ui->show_recipes &&
+                !ui->show_ingredients && !ui->external_record_bank &&
+                x>=250 && x<344 && y>=313 && y<329)trigger=1;
+    }
+    if(!trigger)return 0;
+    main_file_capture_toggle(audio,ui,sister,sample_rate);return 1;
 }
 
 static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
@@ -12141,15 +12228,6 @@ int main(int argc, char **argv)
                                           &fm_preview, note, obtained.freq,
                                           (mod & KMOD_SHIFT) != 0);
                         } else {
-                            if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0 &&
-                                !(audio.sister.enabled &&
-                                  (audio.sister.source_switches &
-                                   TS_SISTER_SOURCE_TILES) != 0u &&
-                                  ts_sister_runtime_source_mask(&audio.sister) != 0u)) {
-                                SDL_LockAudioDevice(device);
-                                runtime_note_clear(&audio);
-                                SDL_UnlockAudioDevice(device);
-                            }
                             begin_note(device, &audio, &ui, &instrument,
                                        note, obtained.freq,
                                        (mod & KMOD_SHIFT) != 0);
@@ -12266,6 +12344,8 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            if (main_file_capture_event(&event,window,&audio,&ui,&sister_window,
+                                         (uint32_t)obtained.freq)) continue;
             if (portal_event(&event,window,device,&audio,&ui,&instrument,
                              &portal,&sister_window,obtained.freq,&transform)) continue;
             if (import_preview_event(&event,device,&audio,&ui,&instrument,
@@ -13190,26 +13270,7 @@ int main(int argc, char **argv)
                         }
                     }
                 } else {
-                    int note = note_for_key(key);
-                    if (note >= 0 && device) {
-                        if (audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
-                            audio.capture.staged_notes != 0u) {
-                            launch_staged_capture(device, &audio, &ui, &instrument,
-                                                  note, obtained.freq);
-                        } else {
-                            if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0 &&
-                                !(audio.sister.enabled &&
-                                  (audio.sister.source_switches &
-                                   TS_SISTER_SOURCE_TILES) != 0u &&
-                                  ts_sister_runtime_source_mask(&audio.sister) != 0u)) {
-                                SDL_LockAudioDevice(device);
-                                runtime_note_clear(&audio);
-                                SDL_UnlockAudioDevice(device);
-                            }
-                            begin_note(device, &audio, &ui, &instrument,
-                                       note, obtained.freq, 0);
-                        }
-                    }
+                    (void)canvas_qwerty_event(&event,device,&audio,&ui,&instrument,obtained.freq);
                 }
             } else if (event.type == SDL_KEYUP && ui.stretch_wheel_active &&
                        (event.key.keysym.sym == SDLK_LSHIFT ||
@@ -15644,7 +15705,7 @@ int main(int argc, char **argv)
                          "CAPTURE COMMIT FAILED: %.100s", sister_error);
             }
         }
-        sister_poll_file_capture(&sister_window);
+        poll_file_capture_ui(&ui,&sister_window);
         if (ts_sister_runtime_can_clear(&audio.sister)) {
             if (device) SDL_LockAudioDevice(device);
             (void)ts_sister_runtime_perform_clear(&audio.sister);

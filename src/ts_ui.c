@@ -3647,6 +3647,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                                    ui->config.capture_channels;
             mini_button(fb, 154, 313, 78, "FADE ALL",
                         ui->tile_launcher_mask != 0u);
+            mini_button(fb,250,313,94,
+                        ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING?"FILE WAIT":
+                        ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING?"STOP FILE":"REC FILE",
+                        ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING && ui->text_cursor_visible);
             mini_button(fb, 350, 313, 28,
                         capture_channels == 2 ? "S" : "M",
                         capture_channels == 2);
@@ -3902,6 +3906,31 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
              RGB(190, 185, 190), 1);
     }
     main_midi_learn_overlay(fb, ui);
+}
+
+/* This is drawn after every main-window panel, including Portal and browser,
+   so a long recording cannot become invisible when changing workspaces. */
+void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
+{
+    if(!fb || !ui || (ui->file_record_state!=TS_PERFORMANCE_FILE_RECORDING &&
+       ui->file_record_state!=TS_PERFORMANCE_FILE_STOPPING))return;
+    render_palette=&ui->palette;
+    uint32_t color=PAL_VOLUME;
+    uint64_t seconds=ui->file_record_rate?ui->file_record_frames/ui->file_record_rate:0;
+    char label[88];
+    snprintf(label,sizeof(label),"FILE %s  %02llu:%02llu:%02llu  CTRL+SHIFT+F STOP",
+             ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING?"FINISHING":"RECORDING",
+             (unsigned long long)(seconds/3600),
+             (unsigned long long)(seconds/60%60),(unsigned long long)(seconds%60));
+    rect(fb,0,0,640,3,color);rect(fb,0,397,640,3,color);
+    rect(fb,0,0,3,400,color);rect(fb,637,0,3,400,color);
+    rect(fb,3,32,634,3,RGB(30,8,8));
+    int pulse=(int)((ui->file_record_frames/1024u)%620u);
+    rect(fb,3+pulse,32,14,3,color);
+    rect(fb,3,382,634,15,RGB(12,12,12));
+    text(fb,10,387,label,color,1);
+    mini_button(fb,544,382,86,ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING?"WAIT":"STOP FILE",
+                ui->text_cursor_visible);
 }
 
 int ts_ui_write_ppm(const TsFramebuffer *fb, const char *path)

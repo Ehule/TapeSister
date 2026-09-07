@@ -273,6 +273,7 @@ static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
     } else {
         ts_config_was_open = 0;
     }
+    ts_ui_render_file_recording(fb,ui);
 }
 
 static int ts_audio_config_field_from_point(int x, int y)
