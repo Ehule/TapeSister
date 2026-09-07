@@ -447,7 +447,7 @@ release builds. The visible CDP catalog can be selected in `tapesister.ini`.
 
 **CDP Portal** is a separate exploratory workbench: open it with **Ctrl+Shift+P**
 or the CDP panel's **PORTAL** button. It has source/result waveforms, audition
-loops, render history, and 26 processes across searchable waveset, spectral, time/tape, and filter families. Spectral
+loops, render history, and 30 processes across searchable waveset, spectral, time/tape, filter, and grains families. Spectral
 analysis and resynthesis happen automatically around the selected CDP process.
 The original 32 curated instruments remain available.
 
@@ -468,6 +468,13 @@ Phasing. Wheel over parameter labels to reach additional controls, including the
 explicit decay tail. Smaller acuity values give narrower, more resonant filters;
 frequency limits depend on the source rate. Sweeping Band moves automatically
 between two frequencies, while Phasing adds fixed-delay coloration.
+
+The Grains family adds Granular Pitch, Granular Time, Grain Scramble, and Grain
+Density. These cut grains from any mono source, including sustained audio.
+Granular Time uses input velocity (0.5 roughly doubles duration); Granular Pitch
+changes pitch without tape-style time scaling. Scramble searches backward for
+grain material; Density below one leaves gaps. These modes include native random
+scatter, so saved settings can give different textures on successive renders.
 
 Some operations are intentionally unavailable for linked stereo material until their
 channel relationship can be preserved exactly. TapeSister reports that boundary rather
