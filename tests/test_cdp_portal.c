@@ -151,6 +151,105 @@ static void test_sound_families(const TsCdpRuntime *runtime)
     ts_cdp_run_result_free(&out);
 }
 
+/* Test source-dependent rejection separately from successful endpoint renders. */
+static void envelope_batch_checks(const TsCdpRuntime *runtime)
+{
+    TsPortalRecipe r;TsCdpRunResult out;ts_cdp_run_result_init(&out);
+    char error[2048];TsCdpCommand plan[TS_CDP_MAX_STAGES];size_t count;
+    for(unsigned sr=44100;sr<=48000;sr+=3900) {
+        TsSample s={.frames=sr*6,.sample_rate=sr,.channels=1};
+        s.data=malloc(s.frames*sizeof(float));assert(s.data);
+        for(size_t n=0;n<s.frames;++n) {
+            double amplitude=.25+.15*sin(6.283185307179586*2*n/sr);
+            s.data[n]=(float)(amplitude*sin(6.283185307179586*500*n/sr));
+        }
+        uint64_t hash=ts_sample_hash(&s);
+        for(size_t i=64;i<ts_portal_process_count();++i) {
+            const TsPortalProcess *p=ts_portal_process_at(i);
+            ts_portal_recipe_default(&r,p);render_checked(runtime,&r,&s,&out);
+            for(unsigned n=0;n<p->parameter_count;++n)for(int edge=0;edge<2;++edge) {
+                ts_portal_recipe_default(&r,p);
+                r.values[n]=edge?p->parameters[n].maximum:p->parameters[n].minimum;
+                if(!ts_portal_build_commands(&r,&s,plan,&count,error,sizeof(error))) {
+                    /* Coupled gate/threshold, cycle skips, and window counts
+                       can make a scalar endpoint invalid for this source. */
+                    assert(!count && error[0]);
+                    printf("CONTEXT LIMIT %s %s %.9g: %s\n",p->id,p->parameters[n].id,r.values[n],error);
+                    continue;
+                }
+                render_checked(runtime,&r,&s,&out);
+                assert(out.output.sample_rate==sr && out.output.channels==1);
+                if(p->family==TS_PORTAL_ENVELOPE)assert(out.output.frames==s.frames);
+                printf("ENVELOPE EDGE %s %s %.9g rate %u\n",p->id,p->parameters[n].id,r.values[n],sr);
+            }
+        }
+        assert(ts_sample_hash(&s)==hash);
+        /* A stepped loudness contour distinguishes envelope reversal from
+           audio reversal, gating from amplification, and ducking from limiting. */
+        s.frames=sr*2;
+        for(size_t n=0;n<s.frames;++n)s.data[n]=(float)((n<sr?.1:.5)*sin(6.283185307179586*500*n/sr));
+        const char *ids[]={"envel.warp.2","envel.warp.3","envel.warp.5","envel.warp.8","envel.warp.14","envel.warp.15"};
+        const double expected[][2]={{.5,.1},{.01,.25},{.2,.6},{0,.5},{.5,.5},{.1,.1}};
+        for(int i=0;i<6;++i) {
+            ts_portal_recipe_default(&r,ts_portal_process_find(ids[i]));
+            if(i==3)r.values[1]=.2;
+            render_checked(runtime,&r,&s,&out);
+            for(int half=0;half<2;++half) {
+                double re=0,im=0;
+                size_t first=half*sr+sr/4,last=half*sr+sr*3/4;
+                for(size_t n=first;n<last;++n) {
+                    double phase=6.283185307179586*500*n/sr;
+                    re+=out.output.data[n]*cos(phase);im+=out.output.data[n]*sin(phase);
+                }
+                double measured=2*hypot(re,im)/(last-first);
+                if(fabs(measured-expected[i][half])>=.015)
+                    fprintf(stderr,"ENVELOPE LEVEL %s half %d: %.6f expected %.3f\n",ids[i],half,measured,expected[i][half]);
+                assert(fabs(measured-expected[i][half])<.015);
+            }
+        }
+        for(size_t n=0;n<s.frames;++n)s.data[n]=(float)(.2*sin(6.283185307179586*500*n/sr));
+        ts_portal_recipe_default(&r,ts_portal_process_find("envel.tremolo.1"));
+        r.values[1]=0;r.values[2]=.5;render_checked(runtime,&r,&s,&out);
+        for(size_t n=0;n<s.frames;n+=137)assert(fabs(out.output.data[n]-.5*s.data[n])<.0002);
+        r.values[0]=20;r.values[1]=1;r.values[2]=1;render_checked(runtime,&r,&s,&out);
+        assert(fabs(tone_level(&out.output,500)-.1)<.002);
+        assert(fabs(tone_level(&out.output,480)-.05)<.002 && fabs(tone_level(&out.output,520)-.05)<.002);
+        for(int mode=1;mode<=2;++mode) {
+            char id[32];snprintf(id,sizeof(id),"envel.dovetail.%d",mode);
+            ts_portal_recipe_default(&r,ts_portal_process_find(id));r.values[0]=r.values[1]=.2;
+            render_checked(runtime,&r,&s,&out);
+            assert(fabs(tone_level(&out.output,500)-.2)<.002);
+            double early=0,late=0;
+            for(size_t n=0;n<sr/100;++n) {early+=fabs(out.output.data[n]);late+=fabs(out.output.data[s.frames-1-n]);}
+            assert(early/(sr/100)<.01 && late/(sr/100)<.01);
+        }
+        /* Invalid source lengths, nonfinite input, and coupled controls are
+           rejected before CDP starts. */
+        const char *coupled[]={"envel.warp.9","envel.warp.10","envel.warp.11","envel.warp.12"};
+        for(int i=0;i<4;++i) {
+            ts_portal_recipe_default(&r,ts_portal_process_find(coupled[i]));r.values[1]=r.values[2];
+            assert(!ts_portal_recipe_validate(&r,error,sizeof(error)));
+        }
+        ts_portal_recipe_default(&r,ts_portal_process_find("envel.swell"));
+        TsSample short_s=s;short_s.frames=sr/10;
+        assert(!ts_portal_build_commands(&r,&short_s,plan,&count,error,sizeof(error)) && !count);
+        ts_portal_recipe_default(&r,ts_portal_process_find("envel.dovetail.1"));r.values[0]=r.values[1]=.06;
+        assert(!ts_portal_build_commands(&r,&short_s,plan,&count,error,sizeof(error)));
+        ts_portal_recipe_default(&r,ts_portal_process_find("envel.warp.7"));r.values[1]=64;
+        assert(!ts_portal_build_commands(&r,&short_s,plan,&count,error,sizeof(error)));
+        ts_portal_recipe_default(&r,ts_portal_process_find("envel.warp.2"));short_s.channels=2;
+        assert(!ts_portal_build_commands(&r,&short_s,plan,&count,error,sizeof(error)));
+        short_s.channels=1;short_s.data[0]=NAN;
+        assert(!ts_portal_build_commands(&r,&short_s,plan,&count,error,sizeof(error)));
+        short_s.data[0]=0;
+        ts_portal_recipe_default(&r,ts_portal_process_find("distort.overload.2"));
+        short_s.sample_rate=22050;r.values[2]=12000;
+        assert(!ts_portal_build_commands(&r,&short_s,plan,&count,error,sizeof(error)));
+        free(s.data);
+    }
+    ts_cdp_run_result_free(&out);
+}
+
 int main(int argc,char **argv)
 {
     static TsInstrument instrument;
@@ -162,7 +261,7 @@ int main(int argc,char **argv)
     ts_instrument_init(&instrument);ts_ui_init(&ui);
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,0x54415045,error,sizeof(error)));
     uint64_t original=ts_sample_hash(&instrument.current);
-    assert(ts_portal_process_count()==64);
+    assert(ts_portal_process_count()==88);
     assert(ts_cdp_factory_recipe_count()==32);
     for(size_t i=0;i<ts_portal_process_count();++i) {
         const TsPortalProcess *p=ts_portal_process_at(i);
@@ -415,8 +514,9 @@ int main(int argc,char **argv)
             printf("REAL CDP %-22s %zu frames %s\n",recipe.process_id,result.output.frames,ts_cdp_safety_name(result.safety));
             assert(ts_sample_hash(&instrument.current)==original);
         }
+        envelope_batch_checks(&runtime);
         /* Exercise native scalar endpoints at both common rates. */
-        for(size_t i=12;i<ts_portal_process_count();++i)for(int rate=0;rate<2;++rate)for(int edge=0;edge<2;++edge) {
+        for(size_t i=12;i<64;++i)for(int rate=0;rate<2;++rate)for(int edge=0;edge<2;++edge) {
             const TsPortalProcess *proc=ts_portal_process_at(i);
             TsSample input=instrument.current;input.sample_rate=rate?48000:44100;
             ts_portal_recipe_default(&recipe,proc);
@@ -558,8 +658,8 @@ int main(int argc,char **argv)
     }
     if(argc>1) {
         assert(bin && *bin); /* A screenshot must show a real render. */
-        ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("stretch.spectrum.1"));
-        ui.portal.family=TS_PORTAL_SPECTRAL+1;ui.portal.selected_tab=0;ui.portal.selected_slot=39;ui.portal.scroll=3;
+        ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("envel.warp.11"));
+        ui.portal.family=TS_PORTAL_ENVELOPE+1;ui.portal.selected_tab=0;ui.portal.selected_slot=80;ui.portal.scroll=2;
         assert(ts_cdp_run_portal(&runtime,&ui.portal.recipe,&instrument.current,&options,&result,error,sizeof(error)));
         ui.portal.open=1;ui.portal.valid=1;ui.portal.source=&instrument.current;
         snprintf(ui.portal.source_name,sizeof(ui.portal.source_name),"TILE 01 METAL");
@@ -568,7 +668,7 @@ int main(int argc,char **argv)
         ts_portal_wave_reset(&ui.portal.waves[1],ui.portal.result);
         ui.portal.waves[0].playhead=22050;ui.portal.waves[1].playhead=22050;
         ui.portal.history_count=1;ui.portal.history_selected=0;
-        snprintf(ui.portal.history_names[0],24,"STRETCH ABOVE");
+        snprintf(ui.portal.history_names[0],24,"ENVELOPE CORRUGATE");
         snprintf(ui.portal.message,sizeof(ui.portal.message),"REAL CDP PREVIEW READY - SOURCE UNCHANGED - ENTER PREVIEW / SPACE PLAY / TAB A-B");
         ts_ui_render(&fb,&ui,&instrument);
         f=fopen(argv[1],"wb");assert(f);fprintf(f,"P6\n%d %d\n255\n",TS_UI_WIDTH,TS_UI_HEIGHT);
@@ -578,8 +678,8 @@ int main(int argc,char **argv)
             ui.portal.manage_open=1;ui.portal.manage_tab=1;ui.portal.manage_slot=2;
             ui.portal.manage_recipe=ui.portal.recipe;
             ui.portal.library.pins[2]=ui.portal.recipe;
-            snprintf(ui.portal.library.pins[2].name,40,"GHOST CHOIR");
-            snprintf(ui.portal.manage_name,40,"GHOST CHOIR");
+            snprintf(ui.portal.library.pins[2].name,40,"BROKEN PULSES");
+            snprintf(ui.portal.manage_name,40,"BROKEN PULSES");
             ui.portal.manage_action=TS_PORTAL_UPDATE;
             ts_ui_render(&fb,&ui,&instrument);
             f=fopen(argv[2],"wb");assert(f);fprintf(f,"P6\n%d %d\n255\n",TS_UI_WIDTH,TS_UI_HEIGHT);

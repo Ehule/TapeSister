@@ -18,10 +18,116 @@ static void render_loop(AudioState *audio)
     if(audio->range_end-audio->range_start>=100)assert(energy>0);
 }
 
+static void test_import_keyboard(SDL_AudioDeviceID device, AudioState *audio,
+                                  TsUiState *ui, ImportController *c)
+{
+    static TsInstrument instrument;TsSample pending;ts_sample_init(&pending);
+    ts_instrument_init(&instrument);SDL_Event event={0};
+    const TsSample *sample=&c->decoded.sample;uint64_t original=ts_sample_hash(sample);
+    uint64_t tile=ts_sample_hash(&instrument.current);
+#define IMPORT_KEY(K,T,M) do {memset(&event,0,sizeof(event));event.type=(T);event.key.keysym.sym=(K);event.key.keysym.mod=(M);assert(import_preview_event(&event,device,audio,ui,&instrument,&pending,c,44100));} while(0)
+    ui->import_preview_loop=1;ui->import_preview_has_selection=1;
+    ui->import_preview_selection_first=1000;ui->import_preview_selection_last=10000;
+    ts_ui_keyboard_set_octave(ui,4);
+    IMPORT_KEY(SDLK_z,SDL_KEYDOWN,KMOD_NONE);
+    TsNoteVoice *low=&audio->notes.voices[0];
+    assert(low->active && low->preview && !low->synth && low->sample==sample);
+    assert(low->midi_note==60 && low->step==1 && low->position==1000 && !audio->playing);
+    IMPORT_KEY(SDLK_q,SDL_KEYDOWN,KMOD_NONE);
+    TsNoteVoice *high=&audio->notes.voices[1];
+    assert(high->midi_note==72 && high->step==2 && ui->import_preview_note_count==2);
+    event.key.repeat=1;assert(import_preview_event(&event,device,audio,ui,&instrument,&pending,c,44100));
+    assert(ts_note_bank_count(&audio->notes)==2);
+    ts_note_bank_sync(&audio->notes,&instrument,44100);assert(low->sample==sample);
+    double left=0,right=0;float block[512];
+    for(int n=0;n<4;++n) {
+        audio_callback(audio,(Uint8*)block,sizeof(block));
+        for(int i=0;i<512;i+=2) {assert(isfinite(block[i]) && isfinite(block[i+1]));left+=fabsf(block[i]);right+=fabsf(block[i+1]);}
+    }
+    assert(left>0 && right>0);
+    if(sample->channels==2)assert(fabs(left-2*right)<.001);
+    IMPORT_KEY(SDLK_F6,SDL_KEYDOWN,KMOD_NONE);assert(low->midi_note==60);
+    IMPORT_KEY(SDLK_q,SDL_KEYUP,KMOD_CTRL);assert(!high->active && low->active);
+    IMPORT_KEY(SDLK_s,SDL_KEYDOWN,KMOD_NONE);assert(high->midi_note==73 && ui->import_preview_open);
+    IMPORT_KEY(SDLK_r,SDL_KEYDOWN,KMOD_NONE);assert(ts_note_bank_count(&audio->notes)==3 && !ui->import_preview_raw);
+    IMPORT_KEY(SDLK_s,SDL_KEYUP,KMOD_NONE);IMPORT_KEY(SDLK_r,SDL_KEYUP,KMOD_NONE);
+    low->position=4000;size_t attack=low->attack_frame;
+    resize_import_selection(device,audio,ui,c,61,1);
+    assert(low->range_first<1000 && low->position==4000 && low->attack_frame==attack);
+    ui->import_preview_selection_first=5000;ui->import_preview_selection_last=6000;
+    assert(sync_import_preview_loop(device,audio,ui,c,0) && low->position==5000);
+    clear_import_selection(device,audio,ui,c);assert(low->active && low->range_last==sample->frames);
+    IMPORT_KEY(SDLK_l,SDL_KEYDOWN,KMOD_NONE);assert(!low->looping && low->active && !audio->playing);
+    IMPORT_KEY(SDLK_z,SDL_KEYUP,KMOD_NONE);assert(!low->active);
+    IMPORT_KEY(SDLK_l,SDL_KEYDOWN,KMOD_NONE);assert(!low->active && !audio->playing);
+    ui->import_preview_playhead=3456;poll_import_playback(device,audio,ui,c);assert(ui->import_preview_playhead==3456);
+    ts_ui_keyboard_set_octave(ui,4);
+    const SDL_Keycode chord[]={SDLK_z,SDLK_x,SDLK_c,SDLK_v,SDLK_b,SDLK_n};
+    for(int i=0;i<6;++i)IMPORT_KEY(chord[i],SDL_KEYDOWN,KMOD_NONE);
+    assert(ts_note_bank_count(&audio->notes)==5 && strstr(ui->import_preview_message,"LIMIT"));
+    IMPORT_KEY(SDLK_SPACE,SDL_KEYDOWN,KMOD_NONE);
+    assert(ts_note_bank_count(&audio->notes)==0 && !audio->playing);
+    IMPORT_KEY(SDLK_c,SDL_KEYDOWN,KMOD_CTRL);assert(ts_note_bank_count(&audio->notes)==0);
+    IMPORT_KEY(SDLK_z,SDL_KEYDOWN,KMOD_NONE);
+    event.type=SDL_WINDOWEVENT;event.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
+    assert(!import_preview_event(&event,device,audio,ui,&instrument,&pending,c,44100));
+    assert(ts_note_bank_count(&audio->notes)==0);
+    assert(ts_sample_hash(sample)==original && ts_sample_hash(&instrument.current)==tile);
+    SDL_AudioDeviceID connected=ts_real_output;ts_real_output=0;
+    IMPORT_KEY(SDLK_z,SDL_KEYDOWN,KMOD_NONE);assert(ts_note_bank_count(&audio->notes)==0);
+    ts_real_output=connected;
+    IMPORT_KEY(SDLK_z,SDL_KEYDOWN,KMOD_NONE);
+    IMPORT_KEY(SDLK_ESCAPE,SDL_KEYDOWN,KMOD_NONE);
+    assert(!ui->import_preview_open && ts_note_bank_count(&audio->notes)==0);
+    show_import_preview_tab(ui,c);assert(ui->import_preview_open);
+    IMPORT_KEY(SDLK_z,SDL_KEYDOWN,KMOD_NONE);
+    IMPORT_KEY(SDLK_r,SDL_KEYDOWN,KMOD_CTRL); /* missing-file decode fails safely */
+    assert(!ui->import_preview_raw && ts_note_bank_count(&audio->notes)==0);
+    assert(ts_sample_hash(sample)==original);
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)assert(audio->notes.voices[i].sample!=sample);
+    snprintf(ui->status,sizeof(ui->status),"FILE PREVIEW - CURRENT TILE UNCHANGED");
+    snprintf(ui->import_preview_message,sizeof(ui->import_preview_message),"PREVIEW READY - QWERTY PLAYS NOTES; SPACE PLAYS THE RANGE");
+    /* The actual late overlay must leave both browser panels byte-identical. */
+    static TsFramebuffer before,after;
+    ui->show_keyboard=ui->show_recipes=ui->show_ingredients=0;
+    ui->import_preview_sample=sample;ui->import_preview_kind=TS_AUDIO_IMPORT_WAV;
+    snprintf(ui->import_preview_name,sizeof(ui->import_preview_name),"KEYBOARD PREVIEW.WAV");
+    refresh_import_waveform_view(ui,c);instrument.selected_slot=2;
+    ts_ui_render(&before,ui,&instrument);after=before;
+    ts_overlay_tile_states(&after,ui,&instrument);assert(!memcmp(&before,&after,sizeof(before)));
+    const char *shot=getenv("TS_TEST_IMPORT_SCREENSHOT");
+    if(shot && sample->channels==2)assert(ts_ui_write_ppm(&after,shot));
+    ui->import_preview_open=0;ui->browser.mode=TS_BROWSER_LOAD_WAV;
+    ts_ui_render(&before,ui,&instrument);after=before;
+    ts_overlay_tile_states(&after,ui,&instrument);assert(!memcmp(&before,&after,sizeof(before)));
+    event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_z;
+    assert(!import_preview_event(&event,device,audio,ui,&instrument,&pending,c,44100));
+    assert(ts_note_bank_count(&audio->notes)==0);
+    ui->browser.mode=TS_BROWSER_CLOSED;ui->import_preview_open=1;
+    /* Main tiles still get their late state borders. */
+    memset(&before,0,sizeof(before));after=before;ui->import_preview_open=0;
+    ts_overlay_tile_states(&after,ui,&instrument);assert(memcmp(&before,&after,sizeof(before)));
+    ui->import_preview_open=1;
+    IMPORT_KEY(SDLK_z,SDL_KEYDOWN,KMOD_NONE);
+    stop_import_preview(device,audio,ui,c);
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)assert(audio->notes.voices[i].sample!=sample);
+    /* Shift+Enter imports the selected range; bare S above only played a note. */
+    ui->import_preview_has_selection=1;ui->import_preview_selection_first=1000;
+    ui->import_preview_selection_last=2000;c->destination_slot=0;
+    IMPORT_KEY(SDLK_z,SDL_KEYDOWN,KMOD_NONE);
+    IMPORT_KEY(SDLK_RETURN,SDL_KEYDOWN,KMOD_SHIFT);
+    assert(!ui->import_preview_open && instrument.current.frames==1000);
+    assert(ts_note_bank_count(&audio->notes)==0);
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)assert(audio->notes.voices[i].sample!=sample);
+#undef IMPORT_KEY
+    ts_sample_free(&pending);ts_instrument_free(&instrument);
+}
+
 static void test_import(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
                          const TsSample *source, int channels)
 {
     ImportController c;import_controller_init(&c);
+    c.decoded.kind=TS_AUDIO_IMPORT_WAV;
     TsSample *sample=&c.decoded.sample;
     sample->frames=source->frames;sample->channels=(uint8_t)channels;
     sample->sample_rate=source->sample_rate;
@@ -79,6 +185,7 @@ static void test_import(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
     audition_import_preview(device,audio,ui,&c,44100);assert(audio->playing);
     begin_import_selection(device,audio,ui,&c,100);assert(!audio->playing);
     assert(ts_sample_hash(sample)==hash);
+    test_import_keyboard(device,audio,ui,&c);
     close_import_preview(device,audio,ui,&c);
     memset(&canvas.current,0,sizeof(canvas.current));
 }

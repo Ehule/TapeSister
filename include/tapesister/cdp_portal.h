@@ -9,7 +9,7 @@ enum { TS_PORTAL_PARAMS = 16, TS_PORTAL_SLOTS = 32,
        TS_PORTAL_HISTORY = 4, TS_PORTAL_WAVE_COLUMNS = 310,
        TS_PORTAL_MAX_FRAMES = 8000000 };
 typedef enum { TS_PORTAL_INTEGER, TS_PORTAL_REAL, TS_PORTAL_SWITCH, TS_PORTAL_ODD_INTEGER } TsPortalParamType;
-typedef enum { TS_PORTAL_WAVESET, TS_PORTAL_SPECTRAL, TS_PORTAL_TIME, TS_PORTAL_FILTER, TS_PORTAL_GRAIN, TS_PORTAL_LOFI, TS_PORTAL_LEVEL, TS_PORTAL_DELAY, TS_PORTAL_FAMILIES } TsPortalFamily;
+typedef enum { TS_PORTAL_WAVESET, TS_PORTAL_SPECTRAL, TS_PORTAL_TIME, TS_PORTAL_FILTER, TS_PORTAL_GRAIN, TS_PORTAL_LOFI, TS_PORTAL_LEVEL, TS_PORTAL_DELAY, TS_PORTAL_ENVELOPE, TS_PORTAL_FAMILIES } TsPortalFamily;
 typedef enum { TS_PORTAL_RENAME=1, TS_PORTAL_UPDATE, TS_PORTAL_REPLACE, TS_PORTAL_REMOVE } TsPortalEdit;
 typedef struct {
     const char *id, *label, *help, *flag;
@@ -39,11 +39,17 @@ typedef struct {
     float minimum[TS_PORTAL_WAVE_COLUMNS], maximum[TS_PORTAL_WAVE_COLUMNS];
 } TsPortalWave;
 typedef struct {
+    int selection;
+    size_t first, last, result_last;
+} TsPortalRegion;
+typedef struct {
     int open, busy, valid, playing, listen_result, loop;
     int tab, scroll, search_focus, name_focus, exact_pin, pin_slot, macro_view;
     int parameter_scroll, dragging_parameter, dragging_wave, drag_x;
     int number_focus, wave_dragged;
     int note_count;
+    int load_selection, process_selection, full_action;
+    TsPortalRegion rendered_region;
     int family, selected_tab, selected_slot;
     int manage_open, manage_tab, manage_slot, manage_scroll, manage_action, manage_name_focus;
     char manage_name[40];

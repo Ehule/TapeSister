@@ -1,5 +1,5 @@
-# CDP8 runtime closure used by the 32 curated TapeSister recipes.
-# Keep this list synchronized with TsCdpRecipe stage executable names.
+# CDP8 runtime closure used by the factory recipes and CDP Portal.
+# Keep this list synchronized with both registries' stage executable names.
 set(TAPESISTER_CDP8_GIT_REPOSITORY
     "https://github.com/ComposersDesktop/CDP8.git")
 set(TAPESISTER_CDP8_GIT_TAG
@@ -9,6 +9,7 @@ set(TAPESISTER_CDP8_REQUIRED_PROGRAMS
     distmore
     distort
     distshift
+    envel
     extend
     filter
     glisten
