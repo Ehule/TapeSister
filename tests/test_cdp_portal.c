@@ -250,6 +250,9 @@ static void envelope_batch_checks(const TsCdpRuntime *runtime)
     ts_cdp_run_result_free(&out);
 }
 
+
+#include "test_portal_chain_recipes.inc"
+
 int main(int argc,char **argv)
 {
     static TsInstrument instrument;
@@ -261,6 +264,7 @@ int main(int argc,char **argv)
     ts_instrument_init(&instrument);ts_ui_init(&ui);
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,0x54415045,error,sizeof(error)));
     uint64_t original=ts_sample_hash(&instrument.current);
+    test_chain_recipes();
     assert(ts_portal_process_count()==131);
     assert(ts_cdp_factory_recipe_count()==32);
     for(size_t i=0;i<ts_portal_process_count();++i) {

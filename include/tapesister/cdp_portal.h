@@ -5,7 +5,7 @@
 
 /* Portal identities are independent of the fixed 32 factory instrument slots.
    Recipes contain data, never executable names, paths, or shell fragments. */
-enum { TS_PORTAL_PARAMS = 16, TS_PORTAL_SLOTS = 32,
+enum { TS_PORTAL_CHAIN_STAGES = 8, TS_PORTAL_PARAMS = 16, TS_PORTAL_SLOTS = 32,
        TS_PORTAL_HISTORY = 4, TS_PORTAL_WAVE_COLUMNS = 310,
        TS_PORTAL_MAX_FRAMES = 8000000 };
 typedef enum { TS_PORTAL_INTEGER, TS_PORTAL_REAL, TS_PORTAL_SWITCH, TS_PORTAL_ODD_INTEGER } TsPortalParamType;
@@ -28,6 +28,14 @@ typedef struct {
     char process_id[64], name[40];
     unsigned version, exposed;
     double values[TS_PORTAL_PARAMS];
+    int bypass;
+} TsPortalStep;
+typedef struct {
+    char process_id[64], name[40];
+    unsigned version, exposed;
+    double values[TS_PORTAL_PARAMS];
+    unsigned stage_count; /* zero is a legacy single-process recipe */
+    TsPortalStep stages[TS_PORTAL_CHAIN_STAGES];
 } TsPortalRecipe;
 typedef struct {
     TsPortalRecipe recipes[TS_PORTAL_SLOTS], pins[TS_PORTAL_SLOTS];
@@ -57,6 +65,9 @@ typedef struct {
     char number_text[32];
     size_t drag_anchor;
     char query[32], message[160], source_name[64];
+    int chain_active, chain_stage, chain_add, chain_audition;
+    unsigned chain_cached;
+    TsPortalRecipe chain;
     TsPortalRecipe recipe;
     TsPortalLibrary library;
     const TsSample *source, *result;
@@ -67,6 +78,10 @@ typedef struct {
     char history_names[TS_PORTAL_HISTORY][24];
 } TsPortalUi;
 
+void ts_portal_step_get(const TsPortalStep *step, TsPortalRecipe *recipe);
+void ts_portal_step_set(TsPortalStep *step, const TsPortalRecipe *recipe);
+void ts_portal_recipe_exact(TsPortalRecipe *recipe);
+int ts_portal_step_equal(const TsPortalStep *a, const TsPortalStep *b);
 size_t ts_portal_process_count(void);
 const TsPortalProcess *ts_portal_process_at(size_t index);
 const TsPortalProcess *ts_portal_process_find(const char *id);

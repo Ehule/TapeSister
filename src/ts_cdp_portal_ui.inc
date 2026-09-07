@@ -29,7 +29,7 @@ static void portal_wave_render(TsFramebuffer *fb,const TsPortalUi *p,int which,i
     char label[64];
     frame(fb,148,y,318,87,RGB(8,8,8),RGB(84,77,84));
     text(fb,154,y+6,which?"RESULT":"SOURCE",which?PAL_NOTE:PAL_EFFECT,1);
-    portal_caption(fb,201,y+6,17,which?p->recipe.name:p->source_name,RGB(210,204,210));
+    portal_caption(fb,201,y+6,17,which?(p->chain_active?(p->chain_audition>=0?p->recipe.name:p->chain.name):p->recipe.name):p->source_name,RGB(210,204,210));
     if(s && s->frames) {
         snprintf(label,sizeof(label),"%.2FS  %u HZ",(double)s->frames/s->sample_rate,s->sample_rate);
         portal_caption(fb,316,y+6,24,label,RGB(210,204,210));
@@ -181,6 +181,27 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     }
 
     frame(fb,472,40,160,314,RGB(18,18,18),RGB(84,77,84));
+    if(p->chain_active) {
+        if(p->result)snprintf(line,sizeof(line),"%u/8 STAGES %s %.2F",p->chain.stage_count,ts_cdp_safety_name(p->safety),p->peak);
+        else snprintf(line,sizeof(line),"CHAIN: %u/8 STAGES",p->chain.stage_count);
+        portal_caption(fb,478,48,25,line,PAL_VOLUME);
+        portal_mini(fb,478,63,46,p->chain_add?"PICK":"ADD",p->chain_add);
+        portal_mini(fb,528,63,46,"UP",0);portal_mini(fb,578,63,48,"DOWN",0);
+        for(unsigned i=0;i<p->chain.stage_count;++i) {
+            const TsPortalStep *step=&p->chain.stages[i];
+            snprintf(line,sizeof(line),"%u %c %.16s",i+1,(p->chain_cached&(1u<<i))?'+':' ',i==(unsigned)p->chain_stage?p->recipe.name:step->name);
+            if(i==(unsigned)p->chain_stage)frame(fb,477,83+(int)i*14,124,14,PAL_BLOCK,PAL_VOLUME);
+            portal_caption(fb,480,87+(int)i*14,20,line,i==(unsigned)p->chain_stage?PAL_EFFECT:RGB(210,204,210));
+            frame(fb,603,84+(int)i*14,23,13,step->bypass?PAL_DESKTOP:PAL_BLOCK,RGB(84,77,84));
+            portal_caption(fb,605,87+(int)i*14,3,step->bypass?"OFF":"ON",step->bypass?RGB(210,204,210):PAL_EFFECT);
+        }
+        int info_y=90+(int)p->chain.stage_count*14;
+        if(proc && info_y<185) {
+            portal_caption(fb,478,info_y,24,p->recipe.process_id,PAL_TUNING);
+            portal_wrap(fb,478,info_y+13,24,(198-info_y-13)/11,proc->description);
+        }
+        portal_mini(fb,478,201,72,"REMOVE",0);portal_mini(fb,554,201,72,"HELP",0);
+    } else {
     portal_caption(fb,478,48,25,proc?proc->title:"PROCESS",PAL_VOLUME);
     portal_caption(fb,478,63,25,p->recipe.process_id,PAL_EFFECT);
     if(proc)portal_wrap(fb,478,83,24,8,proc->description);
@@ -188,9 +209,10 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     text(fb,478,190,proc && proc->changes_duration?"DURATION MAY CHANGE":proc?ts_portal_family_name(proc->family):"",PAL_TUNING,1);
     snprintf(line,sizeof(line),"%s  PEAK %.2F",ts_cdp_safety_name(p->safety),p->peak);
     portal_caption(fb,478,202,24,p->valid?line:"NO RESULT YET",p->safety==TS_CDP_SAFETY_HOT?PAL_VOLUME:PAL_NOTE);
+    }
     portal_mini(fb,478,220,72,"DEFAULT",0);
     portal_mini(fb,554,220,72,p->macro_view?"FULL":"MACROS",p->macro_view);
-    portal_mini(fb,478,242,148,p->recipe.name,p->name_focus);
+    portal_mini(fb,478,242,148,p->chain_active?p->chain.name:p->recipe.name,p->name_focus);
     portal_mini(fb,478,263,148,p->exact_pin?"PIN: EXACT RECIPE":"PIN: CHECKED MACROS",!p->exact_pin);
     portal_mini(fb,478,287,22,"<",0);
     snprintf(line,sizeof(line),"PIN SLOT %02d%s",p->pin_slot+1,p->library.pins[p->pin_slot].process_id[0]?" FULL":"");
@@ -202,14 +224,14 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     button(fb,230,332,64,"APPLY",p->valid);
     button(fb,298,332,78,"NEW TILE",0);
     button(fb,380,332,84,"NEW+CONT",0);
-    button(fb,478,332,148,"PIN PROCESS TILE",0);
-    text(fb,12,364,"HISTORY",PAL_WAVE_LEFT,1);
+    button(fb,478,332,148,p->chain_active?"PIN CHAIN TILE":"PIN PROCESS TILE",0);
+    portal_mini(fb,8,360,54,p->chain_active?"SINGLE":"CHAIN",p->chain_active);
     for(int i=0;i<p->history_count;++i) {
         portal_mini(fb,64+i*107,360,103,"",i==p->history_selected);
         snprintf(line,sizeof(line),"%d %.13s",i+1,p->history_names[i]);
         portal_caption(fb,69+i*107,365,16,line,i==p->history_selected?PAL_EFFECT:RGB(210,204,210));
     }
-    portal_mini(fb,501,360,125,"MAIN: CTRL+Z",0);
+    portal_mini(fb,501,360,125,p->chain_active?"FINAL RESULT":"MAIN: CTRL+Z",0);
     if(p->manage_open)portal_manager_render(fb,p);
     if(p->full_action) {
         frame(fb,166,140,308,113,RGB(18,18,18),PAL_VOLUME);

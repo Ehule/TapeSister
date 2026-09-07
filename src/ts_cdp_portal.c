@@ -460,11 +460,40 @@ void ts_portal_recipe_default(TsPortalRecipe *r, const TsPortalProcess *p)
     r->exposed=(1u<<p->parameter_count)-1u;
     for (unsigned i=0;i<p->parameter_count;++i) r->values[i]=p->parameters[i].initial;
 }
+void ts_portal_step_get(const TsPortalStep *s,TsPortalRecipe *r)
+{
+    memset(r,0,sizeof(*r));memcpy(r->process_id,s->process_id,sizeof(r->process_id));
+    memcpy(r->name,s->name,sizeof(r->name));r->version=s->version;r->exposed=s->exposed;
+    memcpy(r->values,s->values,sizeof(r->values));
+}
+void ts_portal_step_set(TsPortalStep *s,const TsPortalRecipe *r)
+{
+    memcpy(s->process_id,r->process_id,sizeof(s->process_id));memcpy(s->name,r->name,sizeof(s->name));
+    s->version=r->version;s->exposed=r->exposed;memcpy(s->values,r->values,sizeof(s->values));
+}
+void ts_portal_recipe_exact(TsPortalRecipe *r)
+{r->exposed=0;for(unsigned i=0;i<r->stage_count && i<TS_PORTAL_CHAIN_STAGES;++i)r->stages[i].exposed=0;}
+int ts_portal_step_equal(const TsPortalStep *a,const TsPortalStep *b)
+{return !strcmp(a->process_id,b->process_id) && a->version==b->version && a->bypass==b->bypass &&
+    !memcmp(a->values,b->values,sizeof(a->values));}
 int ts_portal_recipe_validate(const TsPortalRecipe *r, char *error, size_t size)
 {
     const TsPortalProcess *p;
     if (!r || !memchr(r->process_id,0,sizeof(r->process_id)) ||
         !memchr(r->name,0,sizeof(r->name))) return fail(error,size,"MALFORMED RECIPE");
+    if(r->stage_count || !strcmp(r->process_id,"@chain")) {
+        if(strcmp(r->process_id,"@chain") || r->version!=1 || !r->stage_count || r->stage_count>TS_PORTAL_CHAIN_STAGES)
+            return fail(error,size,"INVALID CHAIN VERSION OR STAGE COUNT (1 TO 8)");
+        for(const char *s=r->name;*s;++s)if((unsigned char)*s<32 || (unsigned char)*s>126 || *s=='|')
+            return fail(error,size,"INVALID CHAIN NAME");
+        for(unsigned i=0;i<r->stage_count;++i) {
+            TsPortalRecipe step;ts_portal_step_get(&r->stages[i],&step);
+            if(r->stages[i].bypass!=0 && r->stages[i].bypass!=1)
+                return fail(error,size,"NESTED CHAINS OR INVALID BYPASS ARE NOT SUPPORTED");
+            if(!ts_portal_recipe_validate(&step,error,size))return 0;
+        }
+        return 1;
+    }
     p=ts_portal_process_find(r->process_id);
     if (!p || r->version!=p->version) return fail(error,size,"UNKNOWN PROCESS OR RECIPE VERSION");
     if (r->exposed >> p->parameter_count) return fail(error,size,"INVALID MACRO MASK");
@@ -514,7 +543,7 @@ int ts_portal_build_command(const TsPortalRecipe *r, const TsSample *input,
     size_t cycles=0; int sign=0;
     if (!ts_portal_recipe_validate(r,error,size)) return 0;
     p=ts_portal_process_find(r->process_id);
-    if(p->family!=TS_PORTAL_WAVESET)return fail(error,size,"USE THE PROCESS COMMAND PLAN FOR THIS FAMILY");
+    if(!p || p->family!=TS_PORTAL_WAVESET)return fail(error,size,"USE THE PROCESS COMMAND PLAN FOR THIS FAMILY");
     if (!input || !input->data || input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES ||
         !input->sample_rate || input->channels!=1)
         return fail(error,size,"WAVESET PROCESSES REQUIRE A MONO SOURCE");
@@ -568,6 +597,7 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
     if(!commands || !count)return fail(error,size,"MISSING COMMAND DESTINATION");
     if(!ts_portal_recipe_validate(r,error,size))return 0;
     const TsPortalProcess *p=ts_portal_process_find(r->process_id);
+    if(!p)return fail(error,size,"CHAINS MUST BE RENDERED ONE STAGE AT A TIME");
     memset(commands,0,sizeof(*commands)*TS_CDP_MAX_STAGES);
     if(p->family==TS_PORTAL_WAVESET) {
         if(!ts_portal_build_command(r,input,&commands[0],error,size))return 0;
@@ -890,23 +920,49 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
     *count=3;return 1;
 }
 
+static int portal_write_recipe(FILE *f,char bank,int index,const TsPortalRecipe *r)
+{
+    if(fprintf(f,"%c %d %s %u %u",bank,index,r->process_id,r->version,r->exposed)<0)return 0;
+    for(int n=0;n<TS_PORTAL_PARAMS;++n)if(fprintf(f," %.17g",r->values[n])<0)return 0;
+    return fprintf(f," |%s\n",r->name)>0;
+}
+static int portal_read_recipe(char *line,char *bank,int *index,TsPortalRecipe *r)
+{
+    int used=0;char *name=strchr(line,'|');memset(r,0,sizeof(*r));
+    if(!strchr(line,'\n') || !name || sscanf(line,"%c %d %63s %u %u %n",bank,index,r->process_id,&r->version,&r->exposed,&used)!=5)return 0;
+    char *at=line+used;
+    for(int n=0;n<TS_PORTAL_PARAMS;++n) {
+        char *end;errno=0;r->values[n]=strtod(at,&end);
+        if(end==at || end>name || errno)return 0;at=end;
+    }
+    while(*at==' ')++at;
+    if(at!=name)return 0;
+    ++name;name[strcspn(name,"\r\n")]=0;
+    if(strlen(name)>=sizeof(r->name))return 0;
+    snprintf(r->name,sizeof(r->name),"%s",name);return 1;
+}
 int ts_portal_library_save(const TsPortalLibrary *lib,const char *path,char *error,size_t size)
 {
-    char tmp[TS_CDP_PATH_MAX]; FILE *f; int ok=1;
+    char tmp[TS_CDP_PATH_MAX]; FILE *f; int ok=1,version=1;
     if(!lib || !path || snprintf(tmp,sizeof(tmp),"%s.tmp",path)>=(int)sizeof(tmp))
         return fail(error,size,"INVALID PORTAL LIBRARY PATH");
     for(int bank=0;bank<2;++bank) for(int i=0;i<TS_PORTAL_SLOTS;++i) {
         const TsPortalRecipe *r=bank?&lib->pins[i]:&lib->recipes[i];
         if(r->process_id[0] && !ts_portal_recipe_validate(r,error,size)) return 0;
+        if(r->stage_count)version=2;
     }
     f=fopen(tmp,"wb"); if(!f) return fail(error,size,"CANNOT SAVE PORTAL LIBRARY");
-    ok=fprintf(f,"TSCDPPORTAL 1\n")>0;
+    ok=fprintf(f,"TSCDPPORTAL %d\n",version)>0;
     for(int bank=0;bank<2;++bank) for(int i=0;i<TS_PORTAL_SLOTS;++i) {
         const TsPortalRecipe *r=bank?&lib->pins[i]:&lib->recipes[i];
         if(!r->process_id[0]) continue;
-        if(fprintf(f,"%c %d %s %u %u",bank?'P':'R',i,r->process_id,r->version,r->exposed)<0) ok=0;
-        for(int n=0;n<TS_PORTAL_PARAMS;++n) if(fprintf(f," %.17g",r->values[n])<0) ok=0;
-        if(fprintf(f," |%s\n",r->name)<0) ok=0;
+        if(r->stage_count) {
+            if(fprintf(f,"C %c %d %u |%s\n",bank?'P':'R',i,r->stage_count,r->name)<0)ok=0;
+            for(unsigned n=0;n<r->stage_count;++n) {
+                TsPortalRecipe step;ts_portal_step_get(&r->stages[n],&step);
+                if(!portal_write_recipe(f,r->stages[n].bypass?'B':'E',(int)n,&step))ok=0;
+            }
+        } else if(!portal_write_recipe(f,bank?'P':'R',i,r))ok=0;
     }
     if(fclose(f)!=0) ok=0;
 #ifdef _WIN32
@@ -920,35 +976,41 @@ int ts_portal_library_save(const TsPortalLibrary *lib,const char *path,char *err
 }
 int ts_portal_library_load(TsPortalLibrary *lib,const char *path,char *error,size_t size)
 {
-    TsPortalLibrary next={0}; char line[2048]; FILE *f; int ok=1,lines=0;
-    if(!lib || !path) return fail(error,size,"INVALID PORTAL LIBRARY PATH");
+    /* Heap staging keeps an expanded library off the Windows UI stack. */
+    TsPortalLibrary *next;char line[2048];FILE *f;int ok=1,lines=0,version=1;
+    if(!lib || !path)return fail(error,size,"INVALID PORTAL LIBRARY PATH");
     f=fopen(path,"rb");
-    if(!f) { if(errno==ENOENT) return 1; return fail(error,size,"CANNOT READ PORTAL LIBRARY"); }
-    if(!fgets(line,sizeof(line),f) || strcmp(line,"TSCDPPORTAL 1\n")) ok=0;
+    if(!f){if(errno==ENOENT)return 1;return fail(error,size,"CANNOT READ PORTAL LIBRARY");}
+    next=calloc(1,sizeof(*next));if(!next){fclose(f);return fail(error,size,"NOT ENOUGH MEMORY FOR LIBRARY");}
+    if(!fgets(line,sizeof(line),f))ok=0;
+    else if(!strcmp(line,"TSCDPPORTAL 2\n"))version=2;
+    else if(strcmp(line,"TSCDPPORTAL 1\n"))ok=0;
     while(ok && fgets(line,sizeof(line),f)) {
-        TsPortalRecipe r={0}; char bank=0, extra; int index=-1,used=0; char *name=strchr(line,'|');
-        if(++lines>TS_PORTAL_SLOTS*2 || !strchr(line,'\n') || !name ||
-           sscanf(line,"%c %d %63s %u %u %n",&bank,&index,r.process_id,&r.version,&r.exposed,&used)!=5 ||
-           (bank!='R' && bank!='P') || index<0 || index>=TS_PORTAL_SLOTS) {ok=0;break;}
-        char *at=line+used;
-        for(int n=0;n<TS_PORTAL_PARAMS;++n) {
-            char *end; errno=0; r.values[n]=strtod(at,&end);
-            if(end==at || end>name || errno) {ok=0;break;} at=end;
-        }
-        while(*at==' ') ++at;
-        if(!ok || at!=name) {ok=0;break;}
-        ++name; name[strcspn(name,"\r\n")]=0;
-        if(strlen(name)>=sizeof(r.name)) {ok=0;break;}
-        snprintf(r.name,sizeof(r.name),"%s",name);
-        (void)extra;
-        TsPortalRecipe *dst=bank=='P'?&next.pins[index]:&next.recipes[index];
-        if(dst->process_id[0] || !ts_portal_recipe_validate(&r,error,size)) {ok=0;break;}
-        *dst=r;
+        TsPortalRecipe r={0};char bank=0;int index=-1;
+        if(++lines>TS_PORTAL_SLOTS*2){ok=0;break;}
+        if(version==2 && line[0]=='C') {
+            int used=0;char *name=strchr(line,'|');
+            if(!strchr(line,'\n') || !name || sscanf(line,"C %c %d %u %n",&bank,&index,&r.stage_count,&used)!=3 ||
+               line+used!=name || !r.stage_count || r.stage_count>TS_PORTAL_CHAIN_STAGES){ok=0;break;}
+            ++name;name[strcspn(name,"\r\n")]=0;
+            if(strlen(name)>=sizeof(r.name)){ok=0;break;}
+            snprintf(r.name,sizeof(r.name),"%s",name);snprintf(r.process_id,sizeof(r.process_id),"@chain");r.version=1;
+            for(unsigned n=0;n<r.stage_count;++n) {
+                TsPortalRecipe step;char state=0;int order=-1;
+                if(!fgets(line,sizeof(line),f) || !portal_read_recipe(line,&state,&order,&step) ||
+                   order!=(int)n || (state!='E' && state!='B') || !strcmp(step.process_id,"@chain")){ok=0;break;}
+                ts_portal_step_set(&r.stages[n],&step);r.stages[n].bypass=state=='B';
+            }
+        } else if(!portal_read_recipe(line,&bank,&index,&r)){ok=0;break;}
+        if(!ok || (bank!='P' && bank!='R') || index<0 || index>=TS_PORTAL_SLOTS ||
+           !ts_portal_recipe_validate(&r,error,size)){ok=0;break;}
+        TsPortalRecipe *dst=bank=='P'?&next->pins[index]:&next->recipes[index];
+        if(dst->process_id[0]){ok=0;break;}*dst=r;
     }
-    if(ferror(f)) ok=0;
-    fclose(f);
-    if(!ok) return fail(error,size,"PORTAL LIBRARY INVALID; NOTHING LOADED");
-    *lib=next; if(error && size) error[0]=0; return 1;
+    if(ferror(f))ok=0;fclose(f);
+    if(ok)*lib=*next;free(next);
+    if(!ok)return fail(error,size,"PORTAL LIBRARY INVALID; NOTHING LOADED");
+    if(error && size)error[0]=0;return 1;
 }
 void ts_portal_ui_init(TsPortalUi *ui)
 {
@@ -1007,6 +1069,16 @@ int ts_portal_filter_slot(const TsPortalUi *ui,int row,TsPortalRecipe *out)
         if(ui->tab==0) ts_portal_recipe_default(&r,ts_portal_process_at((size_t)i));
         else r=ui->tab==1?ui->library.recipes[i]:ui->library.pins[i];
         const TsPortalProcess *p=ts_portal_process_find(r.process_id);
+        if(r.stage_count) {
+            int family=!ui->family,match=contains(r.name,ui->query) || contains("CHAIN",ui->query);
+            for(unsigned n=0;n<r.stage_count;++n) {
+                const TsPortalProcess *step=ts_portal_process_find(r.stages[n].process_id);
+                if(step) {if((int)step->family==ui->family-1)family=1;
+                    if(contains(step->title,ui->query) || contains(step->description,ui->query) || contains(step->id,ui->query) ||
+                       contains(ts_portal_family_name(step->family),ui->query))match=1;}
+            }
+            if(family && match && row--==0){*out=r;return i;}continue;
+        }
         if(!p || (ui->family && (int)p->family!=ui->family-1))continue;
         if(!contains(r.name,ui->query) && !contains(r.process_id,ui->query) &&
            !contains(p->title,ui->query) && !contains(p->description,ui->query) &&

@@ -1231,6 +1231,36 @@ int ts_cdp_run_portal(const TsCdpRuntime *runtime, const TsPortalRecipe *recipe,
                       const TsSample *input, const TsCdpRunOptions *options,
                       TsCdpRunResult *result, char *error, size_t error_size)
 {
+    if(recipe && recipe->stage_count) {
+        if(!result)return 0;
+        ts_cdp_run_result_free(result);
+        if(!ts_portal_recipe_validate(recipe,error,error_size) || !input || !input->data || input->channels!=1 ||
+           !input->sample_rate || input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES) {
+            result->status=TS_CDP_RUN_FAILED;set_error(error,error_size,"Invalid chain or mono source");return 0;
+        }
+        for(size_t n=0;n<input->frames;++n)if(!isfinite(input->data[n])) {
+            result->status=TS_CDP_RUN_FAILED;set_error(error,error_size,"Source contains nonfinite audio");return 0;
+        }
+        TsSample current;ts_sample_init(&current);
+        if(!ts_sample_clone(&current,input,error,error_size)){result->status=TS_CDP_RUN_FAILED;return 0;}
+        for(unsigned i=0;i<recipe->stage_count;++i) {
+            if(options && options->cancel_check && options->cancel_check(options->cancel_userdata)) {
+                result->status=TS_CDP_RUN_CANCELLED;ts_sample_free(&current);return 0;
+            }
+            if(recipe->stages[i].bypass)continue;
+            TsPortalRecipe step;ts_portal_step_get(&recipe->stages[i],&step);
+            if(!ts_cdp_run_portal(runtime,&step,&current,options,result,error,error_size)) {
+                char detail[160];snprintf(detail,sizeof(detail),"%s",error?error:"");
+                if(error && error_size)snprintf(error,error_size,"STAGE %u %.30s: %.100s",i+1,step.name,detail);
+                ts_sample_free(&current);return 0;
+            }
+            ts_sample_free(&current);current=result->output;ts_sample_init(&result->output);
+        }
+        result->output=current;result->status=TS_CDP_RUN_OK;result->finite=1;
+        result->peak=ts_sample_peak(&current);
+        result->safety=result->peak>=.9999f?TS_CDP_SAFETY_HOT:result->peak<.00001f?TS_CDP_SAFETY_SILENT:TS_CDP_SAFETY_SAFE;
+        return 1;
+    }
     TsCdpCommand commands[TS_CDP_MAX_STAGES];
     size_t count=0;
     TsCdpRecipe policy={0};
