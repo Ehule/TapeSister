@@ -169,6 +169,14 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
         portal_mini(fb,440,y-3,20,(p->recipe.exposed&(1u<<i))?"X":"-",(p->recipe.exposed&(1u<<i))!=0);
     }
     if(!visible)portal_caption(fb,156,272,48,p->macro_view?"EXACT RECIPE: ALL PARAMETERS ARE FIXED":"THIS MODE HAS NO NUMERIC PARAMETERS",PAL_EFFECT);
+    unsigned total=0;
+    if(proc)for(unsigned i=0;i<proc->parameter_count;++i)
+        if(!p->macro_view || (p->recipe.exposed&(1u<<i)))++total;
+    if(total>3) {
+        unsigned last=(unsigned)p->parameter_scroll+3;if(last>total)last=total;
+        snprintf(line,sizeof(line),"WHEEL LABELS: CONTROLS %d-%u OF %u",p->parameter_scroll+1,last,total);
+        portal_caption(fb,154,317,50,line,PAL_TUNING);
+    }
 
     frame(fb,472,40,160,314,RGB(18,18,18),RGB(84,77,84));
     portal_caption(fb,478,48,25,proc?proc->title:"PROCESS",PAL_VOLUME);
