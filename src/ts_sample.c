@@ -2626,9 +2626,11 @@ static int render_material_snapshot(TsSample *destination,
             float *source;
             float *output;
             int64_t left = operation->destination < 0 ? operation->destination : 0;
-            int64_t right = operation->destination + (int64_t)length;
-            size_t prepend = left < 0 ? (size_t)(-left) : 0u;
+            int64_t right;
+            size_t prepend;
             size_t output_frames;
+            size_t channels = destination->channels;
+            size_t source_scalars, output_scalars;
             size_t destination_first;
             size_t fade = operation->crossfade_frames;
             float mix_scale = 1.0f;
@@ -2636,37 +2638,48 @@ static int render_material_snapshot(TsSample *destination,
                          operation->kind == TS_POST_MOVE_OVERWRITE;
             int overwrite = operation->kind == TS_POST_COPY_OVERWRITE ||
                             operation->kind == TS_POST_MOVE_OVERWRITE;
-            if (destination->channels == 2u) {
-                set_error(error, error_size,
-                          "Stereo tape Move/Copy placement arrives in a later PR");
-                return 0;
-            }
-            if (right < (int64_t)destination->frames) right = (int64_t)destination->frames;
-            if (right < left || (uint64_t)(right - left) > SIZE_MAX / sizeof(float)) {
+            if (length > INT64_MAX || destination->frames > INT64_MAX ||
+                operation->destination > INT64_MAX - (int64_t)length ||
+                left == INT64_MIN) {
                 set_error(error, error_size, "Tape placement is too large");
                 return 0;
             }
-            output_frames = (size_t)(right - left);
-            source = (float *)malloc(length * sizeof(float));
-            output = (float *)calloc(output_frames, sizeof(float));
+            right = operation->destination + (int64_t)length;
+            prepend = (size_t)(-left);
+            if (right < (int64_t)destination->frames) right = (int64_t)destination->frames;
+            if ((uint64_t)right + (uint64_t)prepend > SIZE_MAX ||
+                (uint64_t)right + (uint64_t)prepend > TS_CANVAS_MAX_FRAMES ||
+                !ts_sample_dimensions(length, destination->channels,
+                                      &source_scalars, NULL) ||
+                !ts_sample_dimensions((size_t)right + prepend, destination->channels,
+                                      &output_scalars, NULL)) {
+                set_error(error, error_size, "Tape placement is too large");
+                return 0;
+            }
+            output_frames = (size_t)right + prepend;
+            source = (float *)malloc(source_scalars * sizeof(float));
+            output = (float *)calloc(output_scalars, sizeof(float));
             if (source == NULL || output == NULL) {
                 free(source); free(output);
                 set_error(error, error_size, "Out of memory while moving tape");
                 return 0;
             }
-            memcpy(source, destination->data + first, length * sizeof(float));
-            memcpy(output + prepend, destination->data,
-                   destination->frames * sizeof(float));
+            memcpy(source, destination->data + first * channels,
+                   source_scalars * sizeof(float));
+            memcpy(output + prepend * channels, destination->data,
+                   destination->frames * channels * sizeof(float));
             if (fade > length / 2u) fade = length / 2u;
             if (moving) {
                 size_t cleared = prepend + first;
-                for (size_t i = 0; i < length; ++i) output[cleared + i] = 0.0f;
+                memset(output + cleared * channels, 0, source_scalars * sizeof(float));
                 for (size_t i = 0; i < fade; ++i) {
                     float gain = (float)(i + 1u) / (float)(fade + 1u);
-                    if (cleared > prepend + i)
-                        output[cleared - 1u - i] *= gain;
-                    if (cleared + length + i < prepend + destination->frames)
-                        output[cleared + length + i] *= gain;
+                    for (size_t channel = 0; channel < channels; ++channel) {
+                        if (cleared > prepend + i)
+                            output[(cleared - 1u - i) * channels + channel] *= gain;
+                        if (cleared + length + i < prepend + destination->frames)
+                            output[(cleared + length + i) * channels + channel] *= gain;
+                    }
                 }
             }
             destination_first = (size_t)(operation->destination - left);
@@ -2674,12 +2687,11 @@ static int render_material_snapshot(TsSample *destination,
                 float source_peak = 0.0f;
                 float destination_peak = 0.0f;
                 float summed_peak = 0.0f;
-                for (size_t i = 0; i < length; ++i)
+                for (size_t i = 0; i < source_scalars; ++i)
                     if (fabsf(source[i]) > source_peak) source_peak = fabsf(source[i]);
                 for (size_t i = 0; i < length; ++i) {
                     size_t at = destination_first + i;
                     float edge_gain = 1.0f;
-                    float summed;
                     if (at < prepend || at >= prepend + destination->frames) continue;
                     if (fade > 0u) {
                         if (i < fade)
@@ -2689,10 +2701,13 @@ static int render_material_snapshot(TsSample *destination,
                             if (tail < edge_gain) edge_gain = tail;
                         }
                     }
-                    if (fabsf(output[at]) > destination_peak)
-                        destination_peak = fabsf(output[at]);
-                    summed = output[at] + source[i] * edge_gain;
-                    if (fabsf(summed) > summed_peak) summed_peak = fabsf(summed);
+                    for (size_t channel = 0; channel < channels; ++channel) {
+                        size_t out = at * channels + channel;
+                        float summed = output[out] + source[i * channels + channel] * edge_gain;
+                        if (fabsf(output[out]) > destination_peak)
+                            destination_peak = fabsf(output[out]);
+                        if (fabsf(summed) > summed_peak) summed_peak = fabsf(summed);
+                    }
                 }
                 if (summed_peak > 0.0000001f) {
                     float target_peak = source_peak > destination_peak ?
@@ -2703,7 +2718,6 @@ static int render_material_snapshot(TsSample *destination,
             for (size_t i = 0; i < length; ++i) {
                 size_t at = destination_first + i;
                 float gain = 1.0f;
-                float value;
                 if (fade > 0u) {
                     if (i < fade) gain = (float)(i + 1u) / (float)(fade + 1u);
                     if (length - 1u - i < fade) {
@@ -2711,19 +2725,23 @@ static int render_material_snapshot(TsSample *destination,
                         if (tail < gain) gain = tail;
                     }
                 }
-                value = source[i] * gain;
-                if (overwrite)
-                    output[at] = output[at] * (1.0f - gain) + value;
-                else if (at >= prepend && at < prepend + destination->frames)
-                    output[at] = clampf((output[at] + value) * mix_scale,
-                                        -1.0f, 1.0f);
-                else
-                    output[at] = source[i];
+                for (size_t channel = 0; channel < channels; ++channel) {
+                    size_t out = at * channels + channel;
+                    float value = source[i * channels + channel] * gain;
+                    if (overwrite)
+                        output[out] = output[out] * (1.0f - gain) + value;
+                    else if (at >= prepend && at < prepend + destination->frames)
+                        output[out] = clampf((output[out] + value) * mix_scale,
+                                            -1.0f, 1.0f);
+                    else
+                        output[out] = source[i * channels + channel];
+                }
             }
             free(source);
             ts_sample_free(destination);
             destination->data = output;
             destination->frames = output_frames;
+            destination->channels = (uint8_t)channels;
             destination->sample_rate = instrument->parent.sample_rate;
             snprintf(destination->name, sizeof(destination->name), "%s",
                      instrument->parent.name);
@@ -3396,6 +3414,13 @@ int ts_instrument_select_all(TsInstrument *instrument)
            instrument->selection_last == instrument->current.frames;
 }
 
+/* Boundary energy must not cancel when L and R have opposite polarity. */
+static float frame_peak(const TsSample *sample, size_t frame)
+{
+    TsStereoFrame value = ts_sample_read_frame(sample, frame);
+    return fmaxf(fabsf(value.l), fabsf(value.r));
+}
+
 int ts_instrument_select_wave(TsInstrument *instrument)
 {
     size_t first;
@@ -3405,12 +3430,12 @@ int ts_instrument_select_wave(TsInstrument *instrument)
         return 0;
     first = 0;
     while (first < instrument->current.frames &&
-           ts_sample_read_mono(&instrument->current, first) == 0.0f)
+           frame_peak(&instrument->current, first) == 0.0f)
         ++first;
     if (first == instrument->current.frames) return 0;
     last = instrument->current.frames;
     while (last > first &&
-           ts_sample_read_mono(&instrument->current, last - 1u) == 0.0f)
+           frame_peak(&instrument->current, last - 1u) == 0.0f)
         --last;
     ts_instrument_set_selection(instrument, first, last);
     return instrument->has_selection && instrument->selection_first == first &&
@@ -3421,11 +3446,21 @@ static int is_zero_crossing(const TsSample *sample, size_t frame)
 {
     float before;
     float after;
+    TsStereoFrame a, b;
     if (sample == NULL || sample->data == NULL || frame >= sample->frames) return 0;
-    after = ts_sample_read_mono(sample, frame);
+    a = ts_sample_read_frame(sample, frame);
+    b = ts_sample_read_frame(sample, frame > 0u ? frame - 1u : frame);
+    /* Follow the louder channel across this adjacent pair; keep one common
+       frame boundary for both channels, including right-only/anti-phase audio. */
+    if (fmaxf(fabsf(a.r), fabsf(b.r)) > fmaxf(fabsf(a.l), fabsf(b.l))) {
+        after = a.r;
+        before = b.r;
+    } else {
+        after = a.l;
+        before = b.l;
+    }
     if (after == 0.0f) return 1;
     if (frame == 0) return 0;
-    before = ts_sample_read_mono(sample, frame - 1u);
     return before == 0.0f || (before < 0.0f && after > 0.0f) ||
            (before > 0.0f && after < 0.0f);
 }
@@ -3448,9 +3483,9 @@ size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
         if (distance > 0 && target + distance < sample->frames &&
             is_zero_crossing(sample, target + distance)) return target + distance;
     }
-    closest_level = fabsf(ts_sample_read_mono(sample, 0u));
+    closest_level = frame_peak(sample, 0u);
     for (size_t i = 1; i < sample->frames; ++i) {
-        float level = fabsf(ts_sample_read_mono(sample, i));
+        float level = frame_peak(sample, i);
         if (level < closest_level) {
             closest = i;
             closest_level = level;
@@ -3490,9 +3525,9 @@ size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
         }
     }
     closest = first;
-    closest_level = fabsf(ts_sample_read_mono(sample, first));
+    closest_level = frame_peak(sample, first);
     for (size_t frame = first + 1u; frame <= last; ++frame) {
-        float level = fabsf(ts_sample_read_mono(sample, frame));
+        float level = frame_peak(sample, frame);
         if (level < closest_level) {
             closest = frame;
             closest_level = level;
@@ -4047,9 +4082,9 @@ int64_t ts_sample_snap_tape_destination(const TsSample *sample, int64_t target,
             size_t end = candidate + source_frames;
             int crossings = is_zero_crossing(sample, candidate) +
                             (end < sample->frames && is_zero_crossing(sample, end));
-            float level = fabsf(ts_sample_read_mono(sample, candidate)) +
+            float level = frame_peak(sample, candidate) +
                           (end < sample->frames ?
-                           fabsf(ts_sample_read_mono(sample, end)) : 0.0f);
+                           frame_peak(sample, end) : 0.0f);
             if (crossings > best_crossings ||
                 (crossings == best_crossings &&
                  (level < best_level ||
@@ -4085,17 +4120,18 @@ int ts_instrument_apply_tape_drag(TsInstrument *instrument, TsPostEditKind kind,
         set_error(error, error_size, "Invalid tape drag gesture");
         return 0;
     }
-    if (instrument->current.channels == 2u) {
-        set_error(error, error_size,
-                  "Stereo tape Move/Copy placement arrives in a later PR");
-        return 0;
-    }
     if (first >= last || last > instrument->current.frames) {
         set_error(error, error_size, "Select a valid tape range first");
         return 0;
     }
     if (!ensure_edit_graph_capacity(instrument, 0, error, error_size)) return 0;
     length = last - first;
+    /* Validate signed placement before snapping or deriving selection offsets. */
+    if (length > INT64_MAX || destination == INT64_MIN ||
+        destination > INT64_MAX - (int64_t)length) {
+        set_error(error, error_size, "Tape placement is too large");
+        return 0;
+    }
     old_frames = instrument->current.frames;
     view_span = instrument->view_last > instrument->view_first ?
                 instrument->view_last - instrument->view_first : old_frames;
@@ -8358,7 +8394,7 @@ int ts_instrument_rotate_zero_crossing(TsInstrument *instrument, int direction,
         if (is_zero_crossing(&base, frame)) ++usable;
     if (usable == 0) {
         TsSample range = base;
-        range.data += first;
+        range.data += first * range.channels;
         range.frames = last - first;
         offset = ts_sample_nearest_zero_crossing(
             &range, direction > 0 ? 1u : range.frames - 1u);

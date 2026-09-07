@@ -3184,20 +3184,33 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 source_begin < (int64_t)ui->tape_source_last)
                 source_end = source_begin + 1;
             if (source_begin < source_end) {
-                float low = 1.0f;
-                float high = -1.0f;
-                int middle = TS_WAVE_Y + TS_WAVE_H / 2;
-                int y0;
-                int y1;
+                float low[2] = {1.0f, 1.0f};
+                float high[2] = {-1.0f, -1.0f};
+                TsWaveformDisplayMode mode = ts_waveform_display_sanitize(
+                    ui->config.waveform_display_mode);
+                int lanes = instrument->current.channels == 2u &&
+                            mode == TS_WAVEFORM_DISPLAY_STEREO ? 2 : 1;
                 for (int64_t source_at = source_begin; source_at < source_end; ++source_at) {
-                    float value = instrument->current.data[source_at];
-                    if (value < low) low = value;
-                    if (value > high) high = value;
+                    TsStereoFrame value = ts_waveform_display_frame(
+                        ts_sample_read_frame(&instrument->current, (size_t)source_at),
+                        instrument->current.channels, mode);
+                    float values[2] = {value.l, value.r};
+                    for (int lane = 0; lane < lanes; ++lane) {
+                        if (values[lane] < low[lane]) low[lane] = values[lane];
+                        if (values[lane] > high[lane]) high[lane] = values[lane];
+                    }
                 }
-                y0 = middle - (int)(high * (TS_WAVE_H / 2 - 6));
-                y1 = middle - (int)(low * (TS_WAVE_H / 2 - 6));
-                if (y0 == y1) wave_rect(fb, x, y0 - 1, 1, 3, PAL_EFFECT);
-                else wave_line(fb, x, y0, x, y1, PAL_EFFECT);
+                for (int lane = 0; lane < lanes; ++lane) {
+                    int height = lanes == 2 ?
+                        (lane == 0 ? TS_WAVE_H / 2 : TS_WAVE_H - TS_WAVE_H / 2) :
+                        TS_WAVE_H;
+                    int middle = TS_WAVE_Y + lane * (TS_WAVE_H / 2) + height / 2;
+                    int scale = height / 2 - (lanes == 2 ? 4 : 6);
+                    int y0 = middle - (int)(high[lane] * scale);
+                    int y1 = middle - (int)(low[lane] * scale);
+                    if (y0 == y1) wave_rect(fb, x, y0 - 1, 1, 3, PAL_EFFECT);
+                    else wave_line(fb, x, y0, x, y1, PAL_EFFECT);
+                }
             }
         }
         if (clipped_last > clipped_first) {

@@ -143,6 +143,10 @@ normalization.
 | Click | Place edit playhead |
 | Right-click | Play from pointer |
 | Drag | Make selection |
+| `Shift` + left drag inside selection | Copy and mix at destination |
+| `Shift` + right drag inside selection | Copy and overwrite at destination |
+| `Ctrl` + left drag inside selection | Move and mix; leave a gap at source |
+| `Ctrl` + right drag inside selection | Move and overwrite; leave a gap at source |
 | Wheel | Pointer-anchored zoom |
 | `Shift+wheel` | Horizontal pan |
 | `Ctrl+wheel` | Rotate through zero crossings |
@@ -151,6 +155,13 @@ normalization.
 | `Shift+Alt+wheel` | Tape-length change in semitones |
 | `Ctrl+Shift+Alt+wheel` | Tape-length change in cents |
 | Escape during gesture | Restore the pre-gesture audio |
+
+Canvas gestures edit both stereo channels together, even while viewing only L,
+R, or Sum. Move/Copy keeps paired frames, uses common crossfades and mix gain,
+and extends the canvas when dragged beyond an edge. The ghost follows the
+selected waveform display mode. Stereo snapping follows the louder channel at
+each candidate boundary; opposite-polarity channels no longer cancel into false
+silence. See [the stereo gesture audit](STEREO_CANVAS_GESTURES.md).
 
 Ordinary sliders accept click/drag, wheel, and Left/Right while hovered. Shift makes
 wheel/arrow adjustment finer in Sister Machine and coarser where the main interface

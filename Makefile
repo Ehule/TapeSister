@@ -101,6 +101,9 @@ tapesister_preview_loop_tests: $(CORE) tests/test_preview_loop_selection.c src/m
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_preview_loop_selection.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
 
 # Native SDL/output-file workflow harness; optional dummy-device tests.
+tapesister_stereo_gesture_controller_tests: $(CORE) tests/test_stereo_gesture_controller.c src/main_sdl.c src/main_sdl_portal.inc $(wildcard src/main_sdl_audio*.inc) src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_stereo_gesture_controller.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
+
 tapesister_canvas_recording_tests: $(CORE) tests/test_canvas_recording.c src/main_sdl.c src/main_sdl_portal.inc $(wildcard src/main_sdl_audio*.inc) src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_canvas_recording.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
 
@@ -336,6 +339,18 @@ benchmark-sister: benchmark_sister_callback
 
 tapesister_sample_channels_tests: $(CORE) tests/test_sample_channels.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
+test: test_stereo_gestures
+test_stereo_gestures: tapesister_stereo_gesture_tests
+	./tapesister_stereo_gesture_tests
+
+tapesister_stereo_gesture_tests: $(CORE) tests/test_stereo_gestures.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
+clean: clean_stereo_gestures
+.PHONY: test_stereo_gestures clean_stereo_gestures
+clean_stereo_gestures:
+	rm -f tapesister_stereo_gesture_tests tapesister_stereo_gesture_controller_tests test-stereo-gestures.tsr
 
 tapesister_tsr27_tests: $(CORE) tests/test_tsr27.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
