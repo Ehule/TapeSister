@@ -192,6 +192,33 @@ int main(void)
     TsPortalLibrary reloaded={0};assert(ts_portal_library_load(&reloaded,c.library_path,error,sizeof(error)));
     assert(!memcmp(&reloaded,&p->library,sizeof(reloaded)));remove(c.library_path);
     CLICK(480,70);assert(!p->manage_open);
+    /* The first seven-control process must expose its offscreen tail/phase
+       through native scrolling, exact entry, macro mapping, and rendering. */
+    p->tab=0;p->family=TS_PORTAL_TIME+1;p->query[0]=0;
+    CLICK(25,112);assert(p->family==TS_PORTAL_FILTER+1);
+    CLICK(25,198);assert(!strcmp(p->recipe.process_id,"filter.sweeping.2"));
+    assert(p->parameter_scroll==0 && portal_parameter_at(p,2)==2);
+    SDL_Event wheel={0};wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=SDL_GetWindowID(window);
+    wheel.wheel.y=-100;
+    SDL_WarpMouseInWindow(window,180,280);
+    assert(portal_event(&wheel,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform));
+    assert(p->parameter_scroll==4 && portal_parameter_at(p,0)==4 && portal_parameter_at(p,2)==6);
+    CLICK(395,305);assert(p->number_focus==6);
+    key.key.keysym.sym=SDLK_a;key.key.keysym.mod=KMOD_CTRL;
+    portal_event(&key,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
+    snprintf(typed.text.text,sizeof(typed.text.text),"0.5");
+    portal_event(&typed,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
+    key.key.keysym.sym=SDLK_RETURN;key.key.keysym.mod=KMOD_NONE;
+    portal_event(&key,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
+    assert(p->number_focus==-1 && p->recipe.values[6]==.5);
+    CLICK(445,305);assert(!(p->recipe.exposed&(1u<<6)));
+    CLICK(445,305);assert(p->recipe.exposed&(1u<<6));
+    portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
+    assert(p->valid && p->result->frames==c.source.frames+(size_t)round(.25*c.source.sample_rate));
+    p->recipe.exposed=(1u<<4)|(1u<<6);p->macro_view=1;p->parameter_scroll=0;
+    assert(portal_parameter_at(p,0)==4 && portal_parameter_at(p,1)==6 && portal_parameter_at(p,2)==-1);
+    p->macro_view=0;p->parameter_scroll=0;
+    CLICK(25,112);assert(p->family==0); /* Family cycle returns to All. */
     p->library=prior_library;p->recipe=prior_recipe;p->query[0]=0;p->tab=p->family=0;
     p->selected_tab=p->selected_slot=-1;
 #undef CLICK

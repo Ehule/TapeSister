@@ -17,6 +17,10 @@
 #define SKIP {"skip", "SKIP CYCLES", "LEAVE THESE INITIAL WAVECYCLES UNPROCESSED", "-s", TS_PORTAL_INTEGER, 0, 32767, 0}
 #define MULT {"multiplier", "REPEATS", "TIMES EACH WAVECYCLE GROUP IS REPEATED", "", TS_PORTAL_INTEGER, 2, 16, 2}
 #define CYCLEFLAG {"cycles", "CYCLE GROUP", "NUMBER OF WAVECYCLES IN EACH GROUP", "-c", TS_PORTAL_INTEGER, 1, 32767, 8}
+#define ACUITY {"acuity", "ACUITY", "SMALLER VALUES MAKE A NARROWER, MORE RESONANT FILTER", "", TS_PORTAL_REAL, .05, 1, .5}
+#define FILTER_GAIN {"gain", "OUTPUT GAIN", "LINEAR OUTPUT MULTIPLIER; RESONANCE CAN STILL BOOST LEVEL", "", TS_PORTAL_REAL, .01, 1, .5}
+#define FILTER_FREQ {"frequency", "FREQUENCY HZ", "20 TO 6000 HZ; ALSO LIMITED TO ONE SIXTH OF SOURCE RATE", "", TS_PORTAL_REAL, 20, 6000, 1000}
+#define FILTER_TAIL {"tail", "TAIL SECONDS", "APPEND 0.01 TO 2 SECONDS FOR FILTER DECAY", "-t", TS_PORTAL_REAL, .01, 2, .25}
 static const TsPortalProcess processes[] = {
     {"distort.reverse", "CYCLE REVERSE", "Reverse groups of wavecycles. Larger groups reveal reversed gestures; small groups reshape the timbre.", "reverse", 1, 0, 1, 0, {GROUP(1,8)}, TS_PORTAL_WAVESET, "distort"},
     {"distort.repeat", "CYCLE REPEAT", "Repeat groups of wavecycles to stretch the sound. Group size changes the texture of the repetition.", "repeat", 1, 0, 3, 1, {MULT, CYCLEFLAG, SKIP}, TS_PORTAL_WAVESET, "distort"},
@@ -58,12 +62,38 @@ static const TsPortalProcess processes[] = {
     {"modify.speed.6", "TAPE VIBRATO", "Oscillate playback speed to bend pitch continuously. Slow rates give tape-like drift; higher rates and depths create rapid pitch motion. Duration can change.", "speed", 1, 6, 2, 1,
         {{"rate", "RATE HZ", "VIBRATO CYCLES PER SECOND; CDP RANGE 0 TO 120 HZ", "", TS_PORTAL_REAL, 0, 120, 5},
          {"depth", "DEPTH SEMITONES", "VIBRATO DEPTH; PORTAL RANGE 0 TO 24 SEMITONES", "", TS_PORTAL_REAL, 0, 24, .667}}, TS_PORTAL_TIME, "modify"},
-    {"modify.radical.1", "SOUND REVERSE", "Reverse the entire source snapshot. This reverses the order of larger gestures and transients, rather than reversing individual wavecycle groups.", "radical", 1, 1, 0, 0, {{0}}, TS_PORTAL_TIME, "modify"}
+    {"modify.radical.1", "SOUND REVERSE", "Reverse the entire source snapshot. This reverses the order of larger gestures and transients, rather than reversing individual wavecycle groups.", "radical", 1, 1, 0, 0, {{0}}, TS_PORTAL_TIME, "modify"},
+    /* CDP8 filter/ap_filter.c, filters0.c, fltpcon.c, cdp2k/tklib1.c,
+       include/filtcon.h. Bounded scalar controls; positive explicit tails avoid
+       CDP's automatic, potentially long tail when -t0 is supplied. */
+    {"filter.variable.1", "NOTCH FILTER", "Carve a band out while keeping surrounding frequencies. Lower acuity narrows the notch. Compare with Band Pass at the same frequency.", "variable", 1, 1, 4, 1,
+        {ACUITY, FILTER_GAIN, FILTER_FREQ, FILTER_TAIL}, TS_PORTAL_FILTER, "filter"},
+    {"filter.variable.2", "BAND PASS", "Isolate a frequency band to reveal a tone inside the source. Lower acuity makes it narrower and more resonant. Reduce output gain if needed.", "variable", 1, 2, 4, 1,
+        {ACUITY, FILTER_GAIN, FILTER_FREQ, FILTER_TAIL}, TS_PORTAL_FILTER, "filter"},
+    {"filter.variable.3", "LOW PASS", "Keep low frequencies and soften the highs. Lower acuity adds resonance at the cutoff and can turn a transient into a ringing tone.", "variable", 1, 3, 4, 1,
+        {ACUITY, FILTER_GAIN, FILTER_FREQ, FILTER_TAIL}, TS_PORTAL_FILTER, "filter"},
+    {"filter.variable.4", "HIGH PASS", "Remove lows to uncover upper harmonics and noisy detail. Lower acuity adds resonance at the cutoff. Compare with Low Pass on the same source.", "variable", 1, 4, 4, 1,
+        {ACUITY, FILTER_GAIN, FILTER_FREQ, FILTER_TAIL}, TS_PORTAL_FILTER, "filter"},
+    {"filter.sweeping.2", "SWEEPING BAND", "Move a resonant band between two frequencies. Slow sweeps reveal layers; fast sweeps create rhythm. Scroll controls for rate, tail, and phase.", "sweeping", 1, 2, 7, 1,
+        {ACUITY, FILTER_GAIN,
+         {"low", "LOW HZ", "LOWER SWEEP FREQUENCY; MUST BE BELOW HIGH HZ", "", TS_PORTAL_REAL, 20, 6000, 200},
+         {"high", "HIGH HZ", "UPPER SWEEP FREQUENCY; MAXIMUM ONE SIXTH OF SOURCE RATE", "", TS_PORTAL_REAL, 20, 6000, 3000},
+         {"rate", "SWEEP RATE HZ", "SWEEP CYCLES PER SECOND; ZERO HOLDS THE STARTING PHASE", "", TS_PORTAL_REAL, 0, 20, .5},
+         FILTER_TAIL,
+         {"phase", "START PHASE", "0 STARTS LOW; 0.5 STARTS HIGH; 1 RETURNS LOW", "-p", TS_PORTAL_REAL, 0, 1, 0}}, TS_PORTAL_FILTER, "filter"},
+    {"filter.phasing.2", "PHASING", "Mix with a delayed allpass signal for comb-like coloration. Gain changes interference; delay sets its spacing. Delay stays fixed in this mode.", "phasing", 1, 2, 3, 1,
+        {{"gain", "PHASING GAIN", "ALLPASS FEEDBACK COEFFICIENT; PORTAL RANGE -0.95 TO 0.95", "", TS_PORTAL_REAL, -.95, .95, .6},
+         {"delay", "DELAY MS", "0.1 TO 50 MS; MUST NOT EXCEED HALF THE SOURCE DURATION", "", TS_PORTAL_REAL, .1, 50, 3},
+         FILTER_TAIL}, TS_PORTAL_FILTER, "filter"}
 };
 #undef GROUP
 #undef SKIP
 #undef MULT
 #undef CYCLEFLAG
+#undef ACUITY
+#undef FILTER_GAIN
+#undef FILTER_FREQ
+#undef FILTER_TAIL
 
 static int fail(char *error, size_t size, const char *message)
 { if (error && size) snprintf(error, size, "%s", message); return 0; }
@@ -107,6 +137,8 @@ int ts_portal_recipe_validate(const TsPortalRecipe *r, char *error, size_t size)
     }
     if (!strcmp(p->command,"omit") && r->values[0]>=r->values[1])
         return fail(error,size,"OMIT A MUST BE LESS THAN EVERY B");
+    if (p->family==TS_PORTAL_FILTER && !strcmp(p->command,"sweeping") && r->values[2]>=r->values[3])
+        return fail(error,size,"LOW HZ MUST BE BELOW HIGH HZ");
     if(error && size) error[0]=0;
     return 1;
 }
@@ -117,7 +149,7 @@ int ts_portal_build_command(const TsPortalRecipe *r, const TsSample *input,
     size_t cycles=0; int sign=0;
     if (!ts_portal_recipe_validate(r,error,size)) return 0;
     p=ts_portal_process_find(r->process_id);
-    if(p->family!=TS_PORTAL_WAVESET)return fail(error,size,"SPECTRAL PROCESS REQUIRES ANALYSIS / PROCESS / RESYNTHESIS");
+    if(p->family!=TS_PORTAL_WAVESET)return fail(error,size,"USE THE PROCESS COMMAND PLAN FOR THIS FAMILY");
     if (!input || !input->data || input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES ||
         !input->sample_rate || input->channels!=1)
         return fail(error,size,"WAVESET PROCESSES REQUIRE A MONO SOURCE");
@@ -168,6 +200,42 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
     memset(commands,0,sizeof(*commands)*TS_CDP_MAX_STAGES);
     if(p->family==TS_PORTAL_WAVESET) {
         if(!ts_portal_build_command(r,input,&commands[0],error,size))return 0;
+        *count=1;return 1;
+    }
+    if(p->family==TS_PORTAL_FILTER) {
+        if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
+           input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES)
+            return fail(error,size,"FILTER PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+        if((double)input->frames/input->sample_rate<.04)
+            return fail(error,size,"FILTER SOURCE NEEDS AT LEAST 40 MS");
+        double tail=0;
+        for(unsigned i=0;i<p->parameter_count;++i) {
+            const char *id=p->parameters[i].id;
+            /* CDP's state-variable recurrence uses 2*pi*f/sr directly. Keep
+               this batch below sr/6, safely inside its stability region for
+               every exposed acuity, rather than permitting Nyquist. */
+            if((!strcmp(id,"frequency") || !strcmp(id,"low") || !strcmp(id,"high")) &&
+               r->values[i]>(double)input->sample_rate/6)
+                return fail(error,size,"FILTER FREQUENCY MUST NOT EXCEED SOURCE RATE / 6");
+            if(!strcmp(id,"delay") &&
+               (r->values[i]<1000.0/input->sample_rate || r->values[i]>(double)input->frames*500/input->sample_rate))
+                return fail(error,size,"DELAY MUST FIT ONE SAMPLE TO HALF THE SOURCE DURATION");
+            if(!strcmp(id,"tail"))tail=r->values[i];
+        }
+        if((double)input->frames+ceil(tail*input->sample_rate)>TS_PORTAL_MAX_FRAMES)
+            return fail(error,size,"SOURCE PLUS FILTER TAIL EXCEEDS PORTAL LIMIT");
+        for(size_t i=0;i<input->frames;++i)if(!isfinite(input->data[i]))
+            return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
+        TsCdpCommand *c=&commands[0];
+        snprintf(c->executable,sizeof(c->executable),"%s",p->executable);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s",p->command);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%u",p->mode);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"input.wav");
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"output.wav");
+        for(unsigned i=0;i<p->parameter_count;++i)
+            snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s%.9g",p->parameters[i].flag,r->values[i]);
+        snprintf(c->expected_output,sizeof(c->expected_output),"output.wav");
+        c->expected_output_type=TS_CDP_IO_WAV;
         *count=1;return 1;
     }
     if(p->family==TS_PORTAL_TIME) {
@@ -301,7 +369,7 @@ static int contains(const char *s,const char *q)
     return 0;
 }
 const char *ts_portal_family_name(int family)
-{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":"UNKNOWN"; }
+{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":family==TS_PORTAL_FILTER?"FILTER":"UNKNOWN"; }
 
 int ts_portal_library_edit(TsPortalLibrary *lib,const char *path,int pin,int slot,
                            TsPortalEdit edit,const TsPortalRecipe *recipe,const char *name,

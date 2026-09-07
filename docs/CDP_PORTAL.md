@@ -1,6 +1,6 @@
 # CDP Portal — explore, save, and manage your tools
 
-![Native CDP Portal rendering with a real tape-vibrato result](images/cdp-portal.png)
+![Native CDP Portal rendering with a real sweeping-band result](images/cdp-portal.png)
 
 CDP Portal is the exploratory workbench inside TapeSister. The original 32
 curated CDP instruments remain unchanged. The Portal uses a separate, stable-ID
@@ -16,16 +16,16 @@ snapshot. Failed source loading clears the previous snapshot.
 
 The waveset family exposes 12 source-verified modes of CDP's `distort` program:
 cycle reverse, repeat, repeat2, interpolate, multiply, divide, omit, average,
-delete modes 1/2/3, and reform mode 5. Four spectral and four time/tape modes bring
-the Portal to 20 processes. Search matches names, stable command IDs, descriptions, and
+delete modes 1/2/3, and reform mode 5. Four spectral, four time/tape, and six filter modes bring
+the Portal to 26 processes. Search matches names, stable command IDs, descriptions, and
 families. **ALL**, **SAVE**, and **PINS** switch the left browser between
 processes, saved recipes, and user process pins. Scroll that column with the
 mouse wheel. The family button below the tabs cycles **ALL FAMILIES**,
-**WAVESET**, **SPECTRAL**, and **TIME / TAPE**. Family and text filters combine, including in
+**WAVESET**, **SPECTRAL**, **TIME / TAPE**, and **FILTER**. Family and text filters combine, including in
 saved recipes and pins. Clearing the search and choosing ALL FAMILIES restores
 the complete list. Filtering never renumbers stored slots.
 
-These 20 Portal modes accept mono input only; stereo is rejected explicitly.
+These 26 Portal modes accept mono input only; stereo is rejected explicitly.
 Multi-input/multichannel, breakpoint-file, and text-file workflows remain future
 work. The factory bank retains its original 32 curated instruments.
 
@@ -74,6 +74,48 @@ This batch requires at least 40 ms of mono audio. Speed, transposition, and
 depth use bounded Portal ranges within CDP's native limits. Requests whose
 estimated output exceeds eight million frames are rejected before launching.
 Vibrato uses a conservative estimate based on its slowest permitted speed.
+
+## Filter family
+
+| Process | Native CDP identity | Controls |
+| --- | --- | --- |
+| Notch Filter | `filter.variable.1` | Acuity, output gain, frequency, tail |
+| Band Pass | `filter.variable.2` | Acuity, output gain, frequency, tail |
+| Low Pass | `filter.variable.3` | Acuity, output gain, frequency, tail |
+| High Pass | `filter.variable.4` | Acuity, output gain, frequency, tail |
+| Sweeping Band | `filter.sweeping.2` | Acuity, output gain, low/high frequency, sweep rate, tail, start phase |
+| Phasing | `filter.phasing.2` | Phasing gain, fixed delay, tail |
+
+Try Low Pass and High Pass on the same source to hear which layers each reveals.
+Band Pass isolates a region; Notch cuts a region out. **Acuity** is CDP's native
+control: smaller values make a narrower, more resonant filter. Its Portal range
+is 0.05–1. Output gain is a linear multiplier from 0.01–1; resonance can still
+boost the result, so watch the peak report and compare Source/Result levels.
+
+Sweeping Band moves between **LOW HZ** and **HIGH HZ** at 0–20 cycles per second.
+Low must be below High. Start phase 0 begins low, 0.5 begins high, and 1 returns
+low. A zero sweep rate holds the starting position. **Wheel over the parameter
+labels** to reach the remaining controls; the footer shows which controls are
+visible. Wheeling a slider or number makes fine changes to that value instead.
+All seven controls can be typed exactly, saved, or exposed as pin macros.
+
+Frequency controls span 20–6000 Hz and must also fit within one sixth of the
+source sample rate. This is a conservative Portal bound for CDP's state-variable
+filter, whose recurrence is not stable all the way up to Nyquist. Settings are
+rejected with an explanation when the source rate is too low; saved recipes are
+never silently adjusted. These bounds are not CDP's full nominal parameter range.
+
+Phasing mixes the source with a delayed allpass signal. **Phasing Gain** is its
+feedback coefficient (−0.95 to +0.95), not an output-volume slider. Delay ranges
+from 0.1–50 ms and must fit between one source sample and half the source duration.
+This version holds the delay fixed; Sweeping Band provides automatic motion.
+
+All six modes work directly on mono WAV audio of at least 40 ms. **TAIL SECONDS**
+appends 0.01–2 seconds (default 0.25) for decay. Zero is deliberately excluded:
+CDP uses it to request an automatic tail of unknown duration. The source plus
+explicit tail must fit the Portal's eight-million-frame limit. The tail is part
+of the rendered result when applied or copied to a new tile. No breakpoint files
+are needed for this batch.
 
 ## Preview and learn
 
@@ -205,10 +247,11 @@ cannot be overwritten accidentally. Back up and repair that file, then restart.
 
 Registry metadata is checked against the supplied CDP8 source
 (`dev/distort/ap_distort.c`, `dev/blur/ap_blur.c`, `dev/stretch/ap_stretch.c`,
-`dev/modify/ap_modify.c`, `dev/cdp2k/tklib1.c`, `dev/include/speccon.h`,
+`dev/modify/ap_modify.c`, `dev/filter/ap_filter.c`, `dev/filter/filters0.c`,
+`dev/filter/fltpcon.c`, `dev/include/filtcon.h`, `dev/cdp2k/tklib1.c`, `dev/include/speccon.h`,
 `dev/include/modicon.h`, and `dev/pv/pvoc.c`). The process/mode IDs and
 names are distinct from the illustrative SCRAMBLE controls in the concept art.
-`distort`, `pvoc`, `blur`, `stretch`, and `modify` are already in the bundled runtime closure; no runtime dependency
+`distort`, `pvoc`, `blur`, `stretch`, `modify`, and `filter` are already in the bundled runtime closure; no runtime dependency
 or audio backend change is needed. No SoundThread code or descriptions are
 copied into this implementation.
 
@@ -242,6 +285,25 @@ To render a screenshot of actual CDP output:
 ```sh
 TS_TEST_CDP_BIN=/absolute/path/to/cdp/bin ./tapesister_portal_tests portal.ppm manager.ppm
 ```
+
+### Filter-family verification record
+
+All 26 process defaults rendered with source-built CDP binaries. The six filter
+modes passed scalar endpoint checks at 44.1 and 48 kHz, including explicit tail
+lengths. Three-tone measurements distinguish notch, band-pass, low-pass, and
+high-pass behavior; independent acuity/frequency corners also rendered. Sweep
+rate/phase and phasing gain changes produced different audio. Validation covers
+sample-rate limits, delay versus source duration, finite input, positive tails,
+sweep ordering, and the aggregate output limit. Filter recipes and pin macros
+round-trip through the existing collection format.
+
+The actual SDL controller test covers reaching the new family, scrolling to
+controls 5–7, exact phase entry, pin checkboxes, sparse macro mapping, and a real
+sweeping-band preview. Existing collection/history/apply and QWERTY/live-loop
+regressions passed. Portal and controller code passed ASan/UBSan; leak detection
+was disabled because LeakSanitizer is unsupported here. The screenshots show
+actual native 640×400 rendering. Windows compilation and physical-device listening
+remain native validation steps.
 
 ### QWERTY / time-family verification record
 

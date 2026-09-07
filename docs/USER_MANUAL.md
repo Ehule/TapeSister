@@ -447,7 +447,7 @@ release builds. The visible CDP catalog can be selected in `tapesister.ini`.
 
 **CDP Portal** is a separate exploratory workbench: open it with **Ctrl+Shift+P**
 or the CDP panel's **PORTAL** button. It has source/result waveforms, audition
-loops, render history, and searchable waveset, spectral, and time/tape families. Spectral
+loops, render history, and 26 processes across searchable waveset, spectral, time/tape, and filter families. Spectral
 analysis and resynthesis happen automatically around the selected CDP process.
 The original 32 curated instruments remain available.
 
@@ -461,7 +461,13 @@ TOOLS** lets you rename, update, replace, and remove numbered saved slots.
 Update copies current settings while retaining the destination's name; Replace
 can change the process too. Collection changes require confirmation and persist
 separately from audio projects. See the illustrated [CDP Portal guide](CDP_PORTAL.md)
-for the complete workflow and the spectral and time/tape batches.
+for the complete workflow and process-family controls.
+
+The Filter family adds Notch, Band Pass, Low Pass, High Pass, Sweeping Band, and
+Phasing. Wheel over parameter labels to reach additional controls, including the
+explicit decay tail. Smaller acuity values give narrower, more resonant filters;
+frequency limits depend on the source rate. Sweeping Band moves automatically
+between two frequencies, while Phasing adds fixed-delay coloration.
 
 Some operations are intentionally unavailable for linked stereo material until their
 channel relationship can be preserved exactly. TapeSister reports that boundary rather

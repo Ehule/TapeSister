@@ -16,6 +16,18 @@ static int cancel_always(void *unused) {(void)unused;return 1;}
 static int cancel_spectral_stage(void *data)
 {return !strcmp(((TsCdpRunResult*)data)->failed_executable,"blur");}
 
+/* Measure a steady tone after the filter's startup transient. */
+static double tone_level(const TsSample *s,double hz)
+{
+    double re=0,im=0;size_t first=s->sample_rate/2,last=s->sample_rate;
+    assert(s->frames>=last);
+    for(size_t n=first;n<last;++n) {
+        double phase=6.283185307179586*hz*(double)n/s->sample_rate;
+        re+=s->data[n]*cos(phase);im+=s->data[n]*sin(phase);
+    }
+    return 2*hypot(re,im)/(double)(last-first);
+}
+
 int main(int argc,char **argv)
 {
     static TsInstrument instrument;
@@ -27,7 +39,7 @@ int main(int argc,char **argv)
     ts_instrument_init(&instrument);ts_ui_init(&ui);
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,0x54415045,error,sizeof(error)));
     uint64_t original=ts_sample_hash(&instrument.current);
-    assert(ts_portal_process_count()==20);
+    assert(ts_portal_process_count()==26);
     assert(ts_cdp_factory_recipe_count()==32);
     for(size_t i=0;i<ts_portal_process_count();++i) {
         const TsPortalProcess *p=ts_portal_process_at(i);
@@ -128,6 +140,11 @@ int main(int argc,char **argv)
     snprintf(ui.portal.query,sizeof(ui.portal.query),"semitones");
     assert(ts_portal_filter(&ui.portal,0,&recipe) && !strcmp(recipe.process_id,"modify.speed.2"));
     ui.portal.query[0]=0;
+    ui.portal.family=TS_PORTAL_FILTER+1;
+    assert(ts_portal_filter(&ui.portal,5,&recipe));assert(!ts_portal_filter(&ui.portal,6,&recipe));
+    snprintf(ui.portal.query,sizeof(ui.portal.query),"sweeping");
+    assert(ts_portal_filter_slot(&ui.portal,0,&recipe)==24);
+    assert(!strcmp(recipe.process_id,"filter.sweeping.2"));
     ui.portal.family=0;
     ui.portal.query[0]=0;ui.portal.tab=0;
     TsPortalWave wave;
@@ -158,6 +175,43 @@ int main(int argc,char **argv)
     assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
     short_input=instrument.current;short_input.channels=2;
     assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("filter.sweeping.2"));
+    assert(ts_portal_build_commands(&recipe,&instrument.current,stages,&stage_count,error,sizeof(error)));
+    assert(stage_count==1 && stages[0].argc==11);
+    assert(!strcmp(stages[0].arguments[9],"-t0.25") && !strcmp(stages[0].arguments[10],"-p0"));
+    recipe.values[2]=recipe.values[3];
+    assert(!ts_portal_recipe_validate(&recipe,error,sizeof(error)));
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("filter.variable.3"));
+    short_input=instrument.current;short_input.sample_rate=22050;recipe.values[2]=4000;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)) && !stage_count);
+    assert(strstr(error,"SOURCE RATE / 6"));
+    recipe.values[2]=3675;
+    assert(ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    short_input=instrument.current;short_input.channels=2;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    short_input=instrument.current;short_input.frames=100;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    recipe.values[3]=0;assert(!ts_portal_recipe_validate(&recipe,error,sizeof(error))); /* -t0 means auto-tail in CDP. */
+    recipe.values[3]=2;
+    short_input=instrument.current;short_input.frames=TS_PORTAL_MAX_FRAMES;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    assert(strstr(error,"TAIL EXCEEDS")); /* Checked before reading the artificial oversized input. */
+    short_input=instrument.current;float first_sample=short_input.data[0];short_input.data[0]=NAN;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    short_input.data[0]=first_sample;
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("filter.phasing.2"));
+    short_input=instrument.current;short_input.frames=1764;recipe.values[1]=21;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    recipe.values[1]=20;assert(ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    short_input.sample_rate=8000;short_input.frames=320;recipe.values[1]=.1;
+    assert(!ts_portal_build_commands(&recipe,&short_input,stages,&stage_count,error,sizeof(error)));
+    /* Filter recipes round-trip in the existing format with flags and hidden macros intact. */
+    ts_portal_recipe_default(&recipe,ts_portal_process_find("filter.sweeping.2"));
+    recipe.values[4]=3;recipe.values[5]=.75;recipe.values[6]=.5;recipe.exposed=1u<<6;
+    loaded=(TsPortalLibrary){0};loaded.pins[31]=recipe;loaded.recipes[31]=recipe;
+    assert(ts_portal_library_save(&loaded,path,error,sizeof(error)));
+    assert(ts_portal_library_load(&saved,path,error,sizeof(error)));
+    assert(!memcmp(&loaded,&saved,sizeof(saved)));remove(path);
     const char *bin=getenv("TS_TEST_CDP_BIN");
     if(bin && *bin) {
         assert(ts_cdp_runtime_discover(&runtime,bin,NULL,error,sizeof(error)));
@@ -178,10 +232,19 @@ int main(int argc,char **argv)
             ts_portal_recipe_default(&recipe,proc);
             for(unsigned n=0;n<proc->parameter_count;++n)recipe.values[n]=edge?proc->parameters[n].maximum:proc->parameters[n].minimum;
             if(!strcmp(proc->id,"blur.blur") && edge)recipe.values[0]=(double)(input.frames/128);
+            if(!strcmp(proc->id,"filter.sweeping.2")) {
+                recipe.values[2]=20;recipe.values[3]=edge?6000:40;
+            }
             int ok=ts_cdp_run_portal(&runtime,&recipe,&input,&options,&result,error,sizeof(error));
             if(!ok)fprintf(stderr,"PROCESS EDGE %s rate %u edge %d: %s\n%s\n",proc->id,input.sample_rate,edge,error,result.diagnostic);
             assert(ok && result.finite && result.output.sample_rate==input.sample_rate && !result.cleanup_failed);
             assert(result.output.frames<=TS_PORTAL_MAX_FRAMES && result.job_directory[0]==0);
+            if(proc->family==TS_PORTAL_FILTER) {
+                double tail=0;
+                for(unsigned n=0;n<proc->parameter_count;++n)
+                    if(!strcmp(proc->parameters[n].id,"tail"))tail=recipe.values[n];
+                assert(fabs((double)result.output.frames-input.frames-round(tail*input.sample_rate))<=1);
+            }
             if(proc->family==TS_PORTAL_TIME) {
                 double ratio=!strcmp(proc->id,"modify.speed.1")?1/recipe.values[0]:
                              !strcmp(proc->id,"modify.speed.2")?exp2(-recipe.values[0]/12):0;
@@ -192,6 +255,43 @@ int main(int argc,char **argv)
                         assert(fabs(result.output.data[n]-input.data[input.frames-1-n])<.0002);
                 }
             }
+        }
+        /* Known tones distinguish the four native modes and catch wrong mode routing.
+           Independent cutoff/acuity corners also cover combinations missed by all-min/all-max. */
+        for(int rate=0;rate<2;++rate) {
+            TsSample tones={.frames=rate?48000:44100,.sample_rate=rate?48000:44100,.channels=1};
+            tones.data=malloc(tones.frames*sizeof(float));assert(tones.data);
+            for(size_t n=0;n<tones.frames;++n)tones.data[n]=(float)(.025*(
+                sin(6.283185307179586*100*n/tones.sample_rate)+
+                sin(6.283185307179586*1000*n/tones.sample_rate)+
+                sin(6.283185307179586*5000*n/tones.sample_rate)));
+            for(unsigned mode=1;mode<=4;++mode) {
+                char id[64];snprintf(id,sizeof(id),"filter.variable.%u",mode);
+                ts_portal_recipe_default(&recipe,ts_portal_process_find(id));
+                recipe.values[0]=.5;
+                assert(ts_cdp_run_portal(&runtime,&recipe,&tones,&options,&result,error,sizeof(error)));
+                double low=tone_level(&result.output,100),mid=tone_level(&result.output,1000),high=tone_level(&result.output,5000);
+                if(mode==1)assert(mid<low*.4 && mid<high*.4);
+                if(mode==2)assert(mid>low*4 && mid>high*4);
+                if(mode==3)assert(low>high*10);
+                if(mode==4)assert(high>low*10);
+                for(int corner=0;corner<2;++corner) {
+                    recipe.values[0]=corner?.05:1;recipe.values[2]=corner?6000:20;
+                    assert(ts_cdp_run_portal(&runtime,&recipe,&tones,&options,&result,error,sizeof(error)));
+                    assert(result.finite && !result.cleanup_failed);
+                }
+            }
+            /* Changing sweep rate/phase and phasing gain must actually change the result. */
+            const char *moving[]={"filter.sweeping.2","filter.phasing.2"};
+            for(unsigned i=0;i<2;++i) {
+                ts_portal_recipe_default(&recipe,ts_portal_process_find(moving[i]));
+                assert(ts_cdp_run_portal(&runtime,&recipe,&tones,&options,&result,error,sizeof(error)));
+                uint64_t hash=ts_sample_hash(&result.output);
+                if(i==0) {recipe.values[4]=3;recipe.values[6]=.5;}else recipe.values[0]=-.6;
+                assert(ts_cdp_run_portal(&runtime,&recipe,&tones,&options,&result,error,sizeof(error)));
+                assert(ts_sample_hash(&result.output)!=hash);
+            }
+            free(tones.data);
         }
         ts_portal_recipe_default(&recipe,ts_portal_process_find("blur.blur"));
         options.cancel_check=cancel_spectral_stage;options.cancel_userdata=&result;
@@ -214,9 +314,8 @@ int main(int argc,char **argv)
     }
     if(argc>1) {
         assert(bin && *bin); /* A screenshot must show a real render. */
-        ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("modify.speed.6"));
-        ui.portal.recipe.values[0]=5;ui.portal.recipe.values[1]=2;
-        ui.portal.family=TS_PORTAL_TIME+1;ui.portal.selected_tab=0;ui.portal.selected_slot=18;
+        ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("filter.sweeping.2"));
+        ui.portal.family=TS_PORTAL_FILTER+1;ui.portal.selected_tab=0;ui.portal.selected_slot=24;
         assert(ts_cdp_run_portal(&runtime,&ui.portal.recipe,&instrument.current,&options,&result,error,sizeof(error)));
         ui.portal.open=1;ui.portal.valid=1;ui.portal.source=&instrument.current;
         snprintf(ui.portal.source_name,sizeof(ui.portal.source_name),"TILE 01 METAL");
@@ -225,7 +324,7 @@ int main(int argc,char **argv)
         ts_portal_wave_reset(&ui.portal.waves[1],ui.portal.result);
         ui.portal.waves[0].playhead=22050;ui.portal.waves[1].playhead=22050;
         ui.portal.history_count=1;ui.portal.history_selected=0;
-        snprintf(ui.portal.history_names[0],24,"TAPE VIBRATO");
+        snprintf(ui.portal.history_names[0],24,"SWEEPING BAND");
         snprintf(ui.portal.message,sizeof(ui.portal.message),"REAL CDP PREVIEW READY - SOURCE UNCHANGED - ENTER PREVIEW / SPACE PLAY / TAB A-B");
         ts_ui_render(&fb,&ui,&instrument);
         f=fopen(argv[1],"wb");assert(f);fprintf(f,"P6\n%d %d\n255\n",TS_UI_WIDTH,TS_UI_HEIGHT);
