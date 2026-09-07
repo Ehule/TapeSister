@@ -92,6 +92,15 @@ test: tapesister_portal_tests
 tapesister_portal_tests: $(CORE) tests/test_cdp_portal.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
+# Optional source-built CDP parameter and signal checks for the final simple batch.
+tapesister_portal_final_tests: $(CORE) tests/test_portal_final_batch.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+
+clean: clean_portal_final
+.PHONY: clean_portal_final
+clean_portal_final:
+	rm -f tapesister_portal_final_tests
+
 # Optional real-CDP/SDL lifecycle harness; use TS_TEST_CDP_BIN to select runtime.
 tapesister_portal_controller_tests: $(CORE) tests/test_portal_controller.c src/main_sdl.c src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_portal_controller.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)

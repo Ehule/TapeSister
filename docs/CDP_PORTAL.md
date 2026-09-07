@@ -14,17 +14,17 @@ of Current (the current selection when one exists). **LOAD: TILE / LOAD: SEL** t
 between whole-tile and main-canvas selection import; **RELOAD** refreshes the
 snapshot. Failed source loading clears the previous snapshot.
 
-The Portal exposes **88 processes across nine families**: 28 waveset, 15 spectral,
+The Portal exposes **131 processes across ten families**: 28 waveset, 50 spectral,
 four time/tape, 13 filter, four grains, three lo-fi/modulation, five level, one
-delay, and 15 envelope processes. Search matches names, stable command IDs, descriptions, and
+delay, 15 envelope, and eight structure processes. Search matches names, stable command IDs, descriptions, and
 families. **ALL**, **SAVE**, and **PINS** switch the left browser between
 processes, saved recipes, and user process pins. Scroll that column with the
 mouse wheel. The family button below the tabs cycles **ALL FAMILIES**,
-**WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, **GRAINS**, **LO-FI / MOD**, **LEVEL**, **DELAY**, and **ENVELOPE**. Family and text filters combine, including in
+**WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, **GRAINS**, **LO-FI / MOD**, **LEVEL**, **DELAY**, **ENVELOPE**, and **STRUCTURE**. Family and text filters combine, including in
 saved recipes and pins. Clearing the search and choosing ALL FAMILIES restores
 the complete list. Filtering never renumbers stored slots.
 
-These 88 Portal modes accept mono input only; stereo is rejected explicitly.
+These 131 Portal modes accept mono input only; stereo is rejected explicitly.
 Multi-input/multichannel, breakpoint-file, and text-file workflows remain future
 work. The factory bank retains its original 32 curated instruments.
 
@@ -719,3 +719,47 @@ in this runner, so leak checking was disabled for that sanitizer run.
 CMake, Windows packaging, and physical-device listening checks have not been
 run in this environment. Before release, verify the Windows bundle and listen
 to source/result A-B, selection joins, and pin quick apply on real hardware.
+
+
+### Final straightforward-process batch
+
+This batch adds **43 processes**: 35 spectral modes and eight Structure modes.
+The remaining candidates and exclusions are recorded in
+[the audit](CDP_SIMPLE_PROCESS_AUDIT.md). The next planned workflow feature is
+reusable multi-process chains; these additions still save as single-process
+recipes or pins.
+
+Structure provides Keep Segment, Keep Tail, Remove Segment, Segment Repeats,
+Advancing Loops, Loop to Duration, Loop Count, and Random Chunks. Position controls
+are seconds relative to the current Portal source. Loop length/advance and splice
+controls are explicitly labelled in milliseconds. Duration-changing processes
+still use the existing Apply, New Tile and New + Continue behavior.
+
+The spectral additions provide sustain, contrast, peak focus, octave folding,
+step holding, twelve filter variants, four partial-trace modes, spectral pluck,
+blur-and-trace, five frequency-shift modes, three glides, two wavers and two
+spectral inversions. Analysis/resynthesis remain automatic. Spectral output may
+include a small PVOC tail; use the rendered duration shown in the Portal.
+
+![Structure: Segment Repeats](images/cdp-portal-structure.png)
+
+![Spectral Waver](images/cdp-portal-waver.png)
+
+The runtime bundle now includes `focus`, `hilite`, `sfedit`, and `strange` in
+addition to the previously bundled programs. No new project or recipe file
+version is needed. Structure is appended to the family list, preserving existing
+family values and process IDs.
+
+All 131 defaults passed source-built CDP rendering. The new batch has separate
+44.1/48 kHz scalar-endpoint and signal checks in
+`tests/test_portal_final_batch.c`; run `tapesister_portal_final_tests` with
+`TS_TEST_CDP_BIN` pointing to the CDP runtime. Known-tone checks cover spectral
+filters, frequency shifts and spectral contrast; structural checks cover exact
+slice contents, output durations and repeatable positive-seed scrambling.
+Cancellation during the new spectral executable also checks temporary cleanup.
+Source-dependent invalid ranges are rejected before rendering.
+
+The native controller checks the new family browser, real Structure and Waver
+previews, and existing collection, Apply, QWERTY, A/B and live-loop workflows.
+Address/undefined-behavior checks pass; leak detection is unavailable in this
+environment. Windows bundle and hardware listening checks remain before release.

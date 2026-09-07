@@ -430,6 +430,14 @@ int main(void)
     CLICK(25,130);assert(!strcmp(p->recipe.process_id,"envel.warp.2"));
     portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     assert(p->valid && p->result && p->result->frames==c.source.frames);
+    CLICK(25,112);assert(p->family==TS_PORTAL_STRUCTURE+1);
+    CLICK(25,130);assert(!strcmp(p->recipe.process_id,"sfedit.cut.1"));
+    portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
+    assert(p->valid && llabs((long long)p->result->frames-llround(.3*c.source.sample_rate))<=1);
+    CLICK(25,181);assert(!strcmp(p->recipe.process_id,"extend.doublets"));
+    portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
+    assert(p->valid && p->result->frames>c.source.frames);
+    selection_screenshot("TS_TEST_PORTAL_STRUCTURE_SCREENSHOT",&ui,&instrument);
     CLICK(25,112);assert(p->family==0); /* Family cycle returns to All. */
     /* Odd-only spectral averaging remains valid through drag, wheel, and typing. */
     portal_invalidate(audition,&audio,p,&c);
@@ -449,6 +457,12 @@ int main(void)
     snprintf(p->number_text,sizeof(p->number_text),"13");
     portal_event(&key,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
     assert(p->number_focus==-1 && p->recipe.values[0]==13);
+    p->family=TS_PORTAL_SPECTRAL+1;p->scroll=0;
+    snprintf(p->query,sizeof(p->query),"SPECTRAL WAVER");
+    CLICK(25,130);assert(!strcmp(p->recipe.process_id,"strange.waver.1"));
+    portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
+    assert(p->valid && p->result && p->result->frames>0);
+    selection_screenshot("TS_TEST_PORTAL_SPECTRAL_SCREENSHOT",&ui,&instrument);
     p->library=prior_library;p->recipe=prior_recipe;p->query[0]=0;p->tab=p->family=0;
     p->selected_tab=p->selected_slot=-1;
 #undef CLICK

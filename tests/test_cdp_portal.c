@@ -164,7 +164,7 @@ static void envelope_batch_checks(const TsCdpRuntime *runtime)
             s.data[n]=(float)(amplitude*sin(6.283185307179586*500*n/sr));
         }
         uint64_t hash=ts_sample_hash(&s);
-        for(size_t i=64;i<ts_portal_process_count();++i) {
+        for(size_t i=64;i<88;++i) {
             const TsPortalProcess *p=ts_portal_process_at(i);
             ts_portal_recipe_default(&r,p);render_checked(runtime,&r,&s,&out);
             for(unsigned n=0;n<p->parameter_count;++n)for(int edge=0;edge<2;++edge) {
@@ -261,7 +261,7 @@ int main(int argc,char **argv)
     ts_instrument_init(&instrument);ts_ui_init(&ui);
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,0x54415045,error,sizeof(error)));
     uint64_t original=ts_sample_hash(&instrument.current);
-    assert(ts_portal_process_count()==88);
+    assert(ts_portal_process_count()==131);
     assert(ts_cdp_factory_recipe_count()==32);
     for(size_t i=0;i<ts_portal_process_count();++i) {
         const TsPortalProcess *p=ts_portal_process_at(i);
@@ -356,7 +356,7 @@ int main(int argc,char **argv)
     ui.portal.tab=0;snprintf(ui.portal.query,sizeof(ui.portal.query),"partials");
     assert(ts_portal_filter(&ui.portal,0,&recipe));
     assert(ts_portal_process_find(recipe.process_id)->family==TS_PORTAL_SPECTRAL);
-    ui.portal.query[0]=0;assert(ts_portal_filter(&ui.portal,14,&recipe));assert(!ts_portal_filter(&ui.portal,15,&recipe));
+    ui.portal.query[0]=0;assert(ts_portal_filter(&ui.portal,49,&recipe));assert(!ts_portal_filter(&ui.portal,50,&recipe));
     ui.portal.family=TS_PORTAL_TIME+1;
     assert(ts_portal_filter(&ui.portal,3,&recipe));assert(!ts_portal_filter(&ui.portal,4,&recipe));
     snprintf(ui.portal.query,sizeof(ui.portal.query),"semitones");

@@ -12,6 +12,8 @@ set(TAPESISTER_CDP8_REQUIRED_PROGRAMS
     envel
     extend
     filter
+    focus
+    hilite
     glisten
     grain
     hover
@@ -20,6 +22,8 @@ set(TAPESISTER_CDP8_REQUIRED_PROGRAMS
     pvoc
     scramble
     sorter
+    sfedit
     splinter
+    strange
     stretch
     stutter)
