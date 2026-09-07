@@ -66,7 +66,22 @@ int main(void)
     ts_real_output=0;portal_play(audition,&audio,&ui,&c,44100,1);
     assert(!p->playing && strstr(p->message,"NO AUDIO OUTPUT"));ts_real_output=audition;
     uint64_t rendered=ts_sample_hash(p->result);
+    p->listen_result=1;portal_note_on(audition,&audio,&ui,0,44100);
+    assert(ts_note_bank_count(&audio.notes)==1);
     portal_apply(0,&audio,&ui,&instrument,&c,0);
+    assert(ts_sample_hash(&instrument.current)==rendered);
+    assert(ts_sample_hash(p->source)==rendered && c.source_hash==rendered);
+    assert(!p->valid && !p->result && !p->history_count && !c.history_count && !p->listen_result);
+    assert(ts_note_bank_count(&audio.notes)==0 && !audio.playing && !portal_owns_sample(&c,audio.sample));
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i)assert(!audio.notes.voices[i].sample);
+    assert(c.source_first==0 && c.source_last==instrument.current.frames);
+    /* The next preview uses the promoted sound immediately, without Reload. */
+    ts_portal_recipe_default(&p->recipe,ts_portal_process_find("modify.loudness.6"));
+    portal_preview(0,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
+    uint64_t second=ts_sample_hash(p->result);
+    portal_apply(0,&audio,&ui,&instrument,&c,0);
+    assert(ts_sample_hash(&instrument.current)==second && ts_sample_hash(p->source)==second);
+    assert(ts_instrument_undo(&instrument,error,sizeof(error)));
     assert(ts_sample_hash(&instrument.current)==rendered);
     assert(ts_instrument_undo(&instrument,error,sizeof(error)));
     assert(ts_sample_hash(&instrument.current)==before);
@@ -79,18 +94,30 @@ int main(void)
     memcpy(suffix,instrument.current.data+original_frames-1000,sizeof(suffix));
     assert(portal_source(0,&audio,&ui,&instrument,&c));
     assert(c.source.frames==original_frames-2000);
+    ts_portal_recipe_default(&p->recipe,ts_portal_process_at(1));
     portal_preview(0,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     assert(p->valid);size_t replaced_frames=p->result->frames;
     portal_apply(0,&audio,&ui,&instrument,&c,0);
     assert(instrument.current.frames==replaced_frames+2000);
     assert(!memcmp(prefix,instrument.current.data,sizeof(prefix)));
     assert(!memcmp(suffix,instrument.current.data+instrument.current.frames-1000,sizeof(suffix)));
+    assert(c.source_first==1000 && c.source_last==1000+replaced_frames && c.source.frames==replaced_frames);
+    assert(!memcmp(c.source.data,instrument.current.data+1000,replaced_frames*sizeof(float)));
+    ts_portal_recipe_default(&p->recipe,ts_portal_process_find("modify.loudness.6"));
+    portal_preview(0,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
+    portal_apply(0,&audio,&ui,&instrument,&c,0);
+    assert(instrument.current.frames==replaced_frames+2000);
+    assert(!memcmp(prefix,instrument.current.data,sizeof(prefix)));
+    assert(!memcmp(suffix,instrument.current.data+instrument.current.frames-1000,sizeof(suffix)));
+    assert(ts_instrument_undo(&instrument,error,sizeof(error)));
     assert(ts_instrument_undo(&instrument,error,sizeof(error)));
     assert(ts_sample_hash(&instrument.current)==before);
     instrument.has_selection=0;c.selection_scope=0;
 
     /* Old preview cannot target a changed page or tile. */
-    portal_select_history(0,&audio,p,&c,0);ui.sample_page=1;
+    assert(portal_source(0,&audio,&ui,&instrument,&c));
+    portal_preview(0,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
+    ui.sample_page=1;
     portal_apply(0,&audio,&ui,&instrument,&c,0);
     assert(strstr(p->message,"CHANGED") && ts_sample_hash(&instrument.current)==before);
     ui.sample_page=0;instrument.current.data[10]*=0.5f;
@@ -98,6 +125,7 @@ int main(void)
 
     /* Changing a control invalidates an in-flight result. */
     assert(portal_source(0,&audio,&ui,&instrument,&c));
+    ts_portal_recipe_default(&p->recipe,ts_portal_process_at(0));
     portal_preview(0,&audio,&ui,&c);assert(c.worker);
     portal_parameter_drag(0,&audio,p,&c,0,370);
     wait_portal(&audio,&ui,&instrument,&c);assert(!p->valid && !p->result);
@@ -142,9 +170,15 @@ int main(void)
     ts_portal_recipe_default(&p->recipe,ts_portal_process_at(0));
     portal_preview(0,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     int source=instrument.selected_slot;before=ts_sample_hash(&instrument.current);
+    uint64_t snapshot_hash=ts_sample_hash(p->source),snapshot_target=c.source_hash;
+    size_t snapshot_first=c.source_first,snapshot_last=c.source_last;
+    const float *snapshot_data=p->source->data;
     portal_apply(0,&audio,&ui,&instrument,&c,1);
     assert(instrument.selected_slot!=source && instrument.bank[instrument.selected_slot].occupied);
     assert(ts_sample_hash(&instrument.bank[source].sample)==before);
+    assert(ts_sample_hash(p->source)==snapshot_hash && p->source->data==snapshot_data);
+    assert(c.source_hash==snapshot_target && c.source_slot==source);
+    assert(c.source_first==snapshot_first && c.source_last==snapshot_last);
 
     /* Exercise native event routing, numeric entry, waveform selection, and
        both main-page pin actions with a headless SDL window. */
@@ -245,6 +279,10 @@ int main(void)
     assert(p->number_focus==-1 && p->recipe.values[5]==1);
     portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     assert(p->valid && p->result->frames>c.source.frames);
+    CLICK(25,112);assert(p->family==TS_PORTAL_ENVELOPE+1);
+    CLICK(25,130);assert(!strcmp(p->recipe.process_id,"envel.warp.2"));
+    portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
+    assert(p->valid && p->result && p->result->frames==c.source.frames);
     CLICK(25,112);assert(p->family==0); /* Family cycle returns to All. */
     /* Odd-only spectral averaging remains valid through drag, wheel, and typing. */
     portal_invalidate(audition,&audio,p,&c);

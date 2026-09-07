@@ -14,17 +14,17 @@ of Current (the current selection when one exists). **SOURCE/SEL** toggles
 between whole-tile and main-canvas selection scope; **RELOAD** refreshes the
 snapshot. Failed source loading clears the previous snapshot.
 
-The Portal exposes **64 processes across eight families**: 19 waveset, 15 spectral,
-four time/tape, 13 filter, four grains, three lo-fi/modulation, five level, and one
-delay process. Search matches names, stable command IDs, descriptions, and
+The Portal exposes **88 processes across nine families**: 28 waveset, 15 spectral,
+four time/tape, 13 filter, four grains, three lo-fi/modulation, five level, one
+delay, and 15 envelope processes. Search matches names, stable command IDs, descriptions, and
 families. **ALL**, **SAVE**, and **PINS** switch the left browser between
 processes, saved recipes, and user process pins. Scroll that column with the
 mouse wheel. The family button below the tabs cycles **ALL FAMILIES**,
-**WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, **GRAINS**, **LO-FI / MOD**, **LEVEL**, and **DELAY**. Family and text filters combine, including in
+**WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, **GRAINS**, **LO-FI / MOD**, **LEVEL**, **DELAY**, and **ENVELOPE**. Family and text filters combine, including in
 saved recipes and pins. Clearing the search and choosing ALL FAMILIES restores
 the complete list. Filtering never renumbers stored slots.
 
-These 64 Portal modes accept mono input only; stereo is rejected explicitly.
+These 88 Portal modes accept mono input only; stereo is rejected explicitly.
 Multi-input/multichannel, breakpoint-file, and text-file workflows remain future
 work. The factory bank retains its original 32 curated instruments.
 
@@ -271,6 +271,71 @@ tail must fit eight million frames. CDP's block handling may shorten the nominal
 source-plus-tail length by one sample. Lo-fi, level, and delay processes require
 at least 40 ms of mono input and use the existing isolated WAV processing path.
 
+
+## Envelope and wavecycle expansion
+
+The Envelope family operates directly on a mono WAV. CDP's `envel` executable
+is included in the packaged runtime; an external CDP installation must also
+provide it. No breakpoint file or auxiliary sound is needed for these modes.
+
+| Process | Native ID | Main controls |
+|---|---|---|
+| Envelope Reverse | `envel.warp.2` | Envelope window |
+| Envelope Exaggerate | `envel.warp.3` | Window, exponent |
+| Envelope Lift | `envel.warp.5` | Window, lift amount |
+| Envelope Flatten | `envel.warp.7` | Window, averaging windows |
+| Envelope Gate | `envel.warp.8` | Window, gate, smoothing |
+| Envelope Invert | `envel.warp.9` | Window, gate, mirror |
+| Envelope Limit | `envel.warp.10` | Window, limit, threshold |
+| Envelope Corrugate | `envel.warp.11` | Window, trough width, peak separation |
+| Envelope Expand | `envel.warp.12` | Window, gate, threshold, smoothing |
+| Envelope Ceiling | `envel.warp.14` | Window |
+| Envelope Duck | `envel.warp.15` | Window, duck level, threshold |
+| Dovetail Fades | `envel.dovetail.1` | Fade-in/out seconds and linear/exponential curves |
+| Steep Dovetail | `envel.dovetail.2` | Fade-in/out seconds, doubly exponential curves |
+| Envelope Swell | `envel.swell` | Peak time in seconds, linear/exponential curve |
+| Tremolo | `envel.tremolo.1` | Rate Hz, depth, output gain |
+
+**Envelope Reverse** reverses the loudness contour while the audio continues
+forward. Compare it with Sound Reverse. **Corrugate** digs gaps around detected
+troughs; **Ceiling** raises the contour toward its own maximum. **Expand** follows
+CDP's particular mapping: levels below the gate disappear and levels above it
+move upward toward the threshold. It is not a conventional downward expander.
+Envelope Invert changes dynamics, not polarity. Depth zero in Tremolo preserves
+the sound at its output gain.
+
+Envelope windows range from 5–200 ms and CDP rounds them to supported sample
+blocks. Short sources need at least two complete windows; averaging counts and
+peak separation must fit the extracted contour. Fade durations must not overlap,
+and a swell peak needs at least 5 ms on each side. Portal reports incompatible
+settings before rendering. Mirror stays below 1 to avoid CDP's zero denominator;
+mirror/threshold must exceed the gate, and the limit must exceed its threshold.
+A gate that removes the entire contour is reported explicitly. Some other
+extreme settings can also produce an effectively zero envelope; CDP's failure
+is shown and cannot be applied. Envelope imposition uses CDP's native peak
+scaling when necessary, so check the actual rendered result.
+
+The Waveset family gains nine more transformations:
+
+| Process | Native ID | Main controls |
+|---|---|---|
+| Cycle Rise | `distort.envel.1` | Cycle group, trough level, exponent |
+| Cycle Fall | `distort.envel.2` | Cycle group, trough level, exponent |
+| Cycle Trough | `distort.envel.3` | Cycle group, trough level, exponent |
+| Cycle Fractal | `distort.fractal` | Scale division, copy gain, input gain |
+| Strongest Cycle | `distort.replace` | Cycle group, skipped cycles |
+| Cycle Telescope | `distort.telescope` | Cycle group, skipped cycles, average/longest length |
+| Cycle Pitch Warp | `distort.pitch` | Octave range, cycle span, skipped cycles |
+| Noise Overload | `distort.overload.1` | Clip level, pattern depth |
+| Sine Overload | `distort.overload.2` | Clip level, pattern depth, pattern frequency |
+
+Cycle group/skip must fit the source. Strongest Cycle can alter duration because
+cycles have unequal lengths; Telescope contracts groups into composite cycles.
+Pitch Warp and Noise Overload use native randomness: saved settings do not
+promise an identical random realization. Sine Overload's pattern frequency
+must remain below the source Nyquist frequency. Expansion estimates, timeouts,
+output validation, and the existing eight-million-frame limit still apply.
+
 ## Preview and learn
 
 - **PREVIEW / Enter** runs CDP in the background. The same button cancels a job.
@@ -309,10 +374,19 @@ at least 40 ms of mono input and use the existing isolated WAV processing path.
 - Wheel over either waveform to zoom; Shift+wheel pans; **FIT** restores both
   full views. These waveform selections are audition-only. Processing uses the
   snapshot identified by SOURCE/SEL and the status line.
-- **APPLY** replaces the original snapshot range, preserving normal tile undo.
+- **APPLY** replaces the original snapshot range and promotes that result to
+  the new Portal source. Choose another process and Preview immediately; no
+  Reload is needed. For a main-canvas selection, the transformed region remains
+  the source, with its new length; surrounding audio stays outside the operation.
+  Each Apply retains its own normal tile Undo step. The old source’s preview
+  history is cleared, audition returns to Source, and held notes stop before
+  their audio is replaced.
 - **NEW TILE** copies the result into an empty slot on the current sample page.
   A full page is reported without overwriting anything. Like the existing
   copy-to-new-tile helper, the new tile receives a whole-sample forward loop.
+  **The Portal source stays unchanged**, allowing further variations from the
+  same sound. The main canvas selects the new tile; Apply still checks the
+  original source tile, so return to it or Reload before replacing another tile.
 - **MAIN: CTRL+Z** returns to Main, where Ctrl+Z undoes the last tile edit.
 
 Rendering never changes audio automatically except when explicitly invoking a
@@ -323,7 +397,7 @@ existing playback path and global output/limiter controls.
 
 The history strip retains up to four rendered variants for the current source.
 Click one to restore its settings and audio. History is session-only and resets
-on source reload. Aggregate history storage is bounded to eight million mono
+on source reload or successful Apply to the current tile. Aggregate history storage is bounded to eight million mono
 frames (32 MB); oldest results are evicted first. Each source and result is also
 bounded to eight million frames. This permits about 181 seconds at 44.1 kHz;
 choose a smaller main-canvas selection for longer recordings. Expanding
@@ -442,6 +516,30 @@ To render a screenshot of actual CDP output:
 ```sh
 TS_TEST_CDP_BIN=/absolute/path/to/cdp/bin ./tapesister_portal_tests portal.ppm manager.ppm
 ```
+
+### Envelope expansion and successive Apply verification
+
+This batch adds **24 processes**, bringing the Portal from 64 to **88**:
+15 envelope processes and nine wavecycle processes. The runtime manifest adds
+`envel` while retaining all previously bundled programs.
+
+All 88 defaults rendered successfully with source-built CDP8. The new batch's
+scalar endpoints were exercised at 44.1 and 48 kHz: source-dependent or coupled
+settings were rejected by preflight, and accepted settings produced finite mono
+output with clean temporary-file cleanup. Known-tone tests measured reversed,
+exaggerated, lifted, gated, ceiling, and ducked contours; neutral-depth tremolo,
+its expected modulation sidebands, and both dovetail fade modes also passed.
+
+The actual SDL controller verified two consecutive Apply operations without
+Reload, separate Undo steps, duration-changing selection replacement with intact
+prefix/suffix audio, updated source hashes/ranges, old-history clearing, and
+held-note detachment. New Tile retained the original source pointer, contents,
+range, and destination identity. Existing QWERTY, A/B, cancellation, collection
+management, and Portal/import live-loop checks passed. The SDL controller also
+passed AddressSanitizer and UndefinedBehaviorSanitizer with leak detection
+disabled because it is unsupported in this environment. Native screenshots above
+show real Envelope Corrugate output. Physical-device listening and Windows
+compile checks remain for the release workflow and user testing.
 
 ### Multi-family expansion verification record
 

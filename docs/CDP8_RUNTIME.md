@@ -1,8 +1,8 @@
 # Shippable CDP8 runtime
 
 TapeSister release builds include the exact native CDP8 programs required by the
-curated transform catalog. Users of those release archives do not need to install or
-configure CDP separately: TapeSister discovers `cdp/bin` beside its executable before
+curated transform catalog and CDP Portal (including `envel`). Users of those
+release archives do not need to install or configure CDP separately: TapeSister discovers `cdp/bin` beside its executable before
 consulting `CdpBinPath`.
 
 ## Pinned source
@@ -21,7 +21,7 @@ processes; they are not linked into TapeSister.
 The cross-platform `bash build.sh` entry point configures a Release build with
 `TAPESISTER_BUNDLE_CDP8` enabled. Plain `make` delegates to the same complete build.
 CMake fetches the pinned commit, builds only the runtime closure used by the current
-recipes, and stages the results after linking TapeSister:
+factory and Portal recipes, and stages the results after linking TapeSister:
 
 ```text
 TapeSister/

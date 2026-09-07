@@ -356,6 +356,13 @@ static void portal_apply(SDL_AudioDeviceID device,AudioState *audio,TsUiState *u
         for(destination=0;destination<TS_BANK_SLOT_COUNT && instrument->bank[destination].occupied;++destination);
         if(destination>=TS_BANK_SLOT_COUNT) {snprintf(p->message,sizeof(p->message),"BANK FULL; NO TILE OVERWRITTEN");return;}
     }
+    /* Allocate before editing so a failed snapshot allocation leaves both the
+       tile and its auditionable preview intact. The promoted source is exactly
+       the replacement, including when only a main-canvas region was rendered. */
+    TsSample promoted;ts_sample_init(&promoted);
+    if(!new_tile && !ts_sample_clone(&promoted,p->result,error,sizeof(error))) {
+        snprintf(p->message,sizeof(p->message),"APPLY FAILED: %.144s",error);return;
+    }
     portal_stop(device,audio,p,c);
     lock_edit(device,audio);
     ts_sister_runtime_prepare_slot_replacement(&audio->sister,destination);
@@ -365,8 +372,20 @@ static void portal_apply(SDL_AudioDeviceID device,AudioState *audio,TsUiState *u
     unlock_edit(device,audio,ui,instrument);
     if(ok) {
         ui->bank_view_slot=-1;p->valid=0;
-        snprintf(p->message,sizeof(p->message),"%s TO TILE %02d; UNDO AVAILABLE ON MAIN; RELOAD TO PROCESS AGAIN",new_tile?"COPIED":"APPLIED",instrument->selected_slot+1);
+        if(!new_tile) {
+            portal_invalidate(device,audio,p,c);portal_clear_history(c,p);
+            ts_sample_free(&c->source);c->source=promoted;ts_sample_init(&promoted);
+            c->source_last=c->source_first+c->source.frames;
+            c->source_hash=ts_sample_hash(&instrument->current);
+            p->source=&c->source;p->listen_result=0;
+            snprintf(p->source_name,sizeof(p->source_name),"TILE %02d %.40s",c->source_slot+1,instrument->current.name);
+            ts_portal_wave_reset(&p->waves[0],p->source);
+        }
+        snprintf(p->message,sizeof(p->message),new_tile?
+            "COPIED TO TILE %02d; PORTAL SOURCE UNCHANGED":
+            "APPLIED TO TILE %02d; RESULT IS NEW SOURCE; READY FOR NEXT PROCESS; UNDO ON MAIN",instrument->selected_slot+1);
     } else snprintf(p->message,sizeof(p->message),"APPLY FAILED: %.144s",error);
+    ts_sample_free(&promoted);
 }
 static int portal_parameter_at(TsPortalUi *p,int row)
 {

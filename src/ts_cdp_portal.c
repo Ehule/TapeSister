@@ -36,6 +36,14 @@
     {"high", "HIGH HZ", "UPPER SWEEP FREQUENCY; MAXIMUM ONE SIXTH OF SOURCE RATE", "", TS_PORTAL_REAL, 20, 6000, 3000}, \
     {"rate", "SWEEP RATE HZ", "SWEEP CYCLES PER SECOND; ZERO HOLDS THE STARTING PHASE", "", TS_PORTAL_REAL, 0, 20, .5}, \
     FILTER_TAIL, {"phase", "START PHASE", "0 STARTS LOW; 0.5 STARTS HIGH; 1 RETURNS LOW", "-p", TS_PORTAL_REAL, 0, 1, 0} }
+/* CDP8 env/ap_envel.c, envfuncs.c, envprepro.c, and cdp2k/tklib1.c. */
+#define ENV_WINDOW {"window", "WINDOW MS", "PEAK-ENVELOPE WINDOW; CDP ROUNDS TO SUPPORTED SAMPLE BLOCKS", "", TS_PORTAL_REAL, 5, 200, 20}
+#define ENV_GROUP {"cycles", "CYCLE GROUP", "WAVECYCLES PER ENVELOPE; MUST FIT SOURCE", "", TS_PORTAL_INTEGER, 1, 1000, 8}
+#define ENV_EXP {"exponent", "EXPONENT", "CURVE EXPONENT; 1 IS LINEAR", "-e", TS_PORTAL_REAL, .125, 8, 1}
+#define ENV_GATE {"gate", "GATE LEVEL", "LINEAR LEVEL BELOW WHICH THE ENVELOPE IS SILENCED", "", TS_PORTAL_REAL, 0, 1, .02}
+#define ENV_SMOOTH {"smooth", "SMOOTH WINDOWS", "REMOVE SHORT LOW-LEVEL SEGMENTS; ZERO DISABLES SMOOTHING", "", TS_PORTAL_INTEGER, 0, 64, 0}
+#define FADE_IN {"in", "FADE IN SEC", "START FADE DURATION; START AND END FADES MUST NOT OVERLAP", "", TS_PORTAL_REAL, 0, 5, .01}
+#define FADE_OUT {"out", "FADE OUT SEC", "END FADE DURATION; START AND END FADES MUST NOT OVERLAP", "", TS_PORTAL_REAL, 0, 5, .02}
 static const TsPortalProcess processes[] = {
     {"distort.reverse", "CYCLE REVERSE", "Reverse groups of wavecycles. Larger groups reveal reversed gestures; small groups reshape the timbre.", "reverse", 1, 0, 1, 0, {GROUP(1,8)}, TS_PORTAL_WAVESET, "distort"},
     {"distort.repeat", "CYCLE REPEAT", "Repeat groups of wavecycles to stretch the sound. Group size changes the texture of the repetition.", "repeat", 1, 0, 3, 1, {MULT, CYCLEFLAG, SKIP}, TS_PORTAL_WAVESET, "distort"},
@@ -186,8 +194,79 @@ static const TsPortalProcess processes[] = {
          {"feedback", "FEEDBACK", "FEEDBACK COEFFICIENT; NEGATIVE VALUES INVERT EACH REPEAT", "", TS_PORTAL_REAL, -.95, .95, .35},
          {"tail", "TAIL SECONDS", "EXTRA OUTPUT TIME FOR ECHO DECAY", "", TS_PORTAL_REAL, 0, 4, 1},
          {"prescale", "INPUT GAIN", "INPUT LEVEL BEFORE THE NATIVE FEEDBACK COMPENSATION", "-p", TS_PORTAL_REAL, .01, 1, .5},
-         {"invert", "INVERT DRY", "REVERSE THE DRY SIGNAL FOR PHASING EFFECTS", "-i", TS_PORTAL_SWITCH, 0, 1, 0}}, TS_PORTAL_DELAY, "modify"}
+         {"invert", "INVERT DRY", "REVERSE THE DRY SIGNAL FOR PHASING EFFECTS", "-i", TS_PORTAL_SWITCH, 0, 1, 0}}, TS_PORTAL_DELAY, "modify"},
+    {"distort.envel.1", "CYCLE RISE", "Apply a rising envelope to each group of wavecycles. Group sets the rhythm, trough sets the starting level, and exponent bends the rise.", "envel", 1, 1, 3, 0,
+        {ENV_GROUP, {"trough", "TROUGH LEVEL", "LEVEL AT THE START OF EACH RISE", "-t", TS_PORTAL_REAL, 0, 1, .1}, ENV_EXP}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.envel.2", "CYCLE FALL", "Apply a falling envelope to each group of wavecycles. Use small groups for rough buzzing or larger groups for repeated decays.", "envel", 1, 2, 3, 0,
+        {ENV_GROUP, {"trough", "TROUGH LEVEL", "LEVEL AT THE END OF EACH FALL", "-t", TS_PORTAL_REAL, 0, 1, .1}, ENV_EXP}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.envel.3", "CYCLE TROUGH", "Dip the amplitude inside every group of wavecycles. Trough controls the depth of each dip and exponent controls its contour.", "envel", 1, 3, 3, 0,
+        {ENV_GROUP, {"trough", "TROUGH LEVEL", "LOWEST LEVEL WITHIN EACH ENVELOPE GROUP", "", TS_PORTAL_REAL, 0, 1, .1}, ENV_EXP}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.fractal", "CYCLE FRACTAL", "Superimpose miniature wavecycle copies on the source. Scale controls their size; copy gain and input gain control their contribution and headroom.", "fractal", 1, 0, 3, 0,
+        {{"scale", "SCALE DIVISION", "INTEGER SHRINK FACTOR FOR THE COPIES", "", TS_PORTAL_INTEGER, 2, 64, 4},
+         {"gain", "COPY GAIN", "COPY AMPLITUDE RELATIVE TO SOURCE", "", TS_PORTAL_REAL, .01, 4, .5},
+         {"prescale", "INPUT GAIN", "SCALE THE SOURCE BEFORE ADDING COPIES", "-p", TS_PORTAL_REAL, .01, 1, .5}}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.replace", "STRONGEST CYCLE", "Replace each group with copies of its strongest wavecycle, measured by summed absolute amplitude. Cycle lengths can change the resulting duration.", "replace", 1, 0, 2, 1,
+        {{"cycles", "CYCLE GROUP", "GROUP TO SEARCH FOR THE STRONGEST CYCLE", "", TS_PORTAL_INTEGER, 2, 64, 4}, SKIP}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.telescope", "CYCLE TELESCOPE", "Contract a group of wavecycles into one composite cycle. Choose the longest cycle length or the group's average length as the destination.", "telescope", 1, 0, 3, 1,
+        {{"cycles", "CYCLE GROUP", "WAVECYCLES TO COMBINE INTO ONE", "", TS_PORTAL_INTEGER, 2, 64, 4}, SKIP,
+         {"average", "AVERAGE LENGTH", "OFF USES LONGEST CYCLE; ON USES AVERAGE CYCLE LENGTH", "-a", TS_PORTAL_SWITCH, 0, 1, 0}}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.pitch", "CYCLE PITCH WARP", "Randomly bend wavecycle pitch up and down. Octave range controls the excursion; cycle span controls how often new random targets are chosen.", "pitch", 1, 0, 3, 1,
+        {{"octaves", "OCTAVE RANGE", "MAXIMUM RANDOM SHIFT UP OR DOWN", "", TS_PORTAL_REAL, .01, 2, .25},
+         {"cycles", "CYCLE SPAN", "MAXIMUM CYCLES BETWEEN RANDOM PITCH TARGETS", "-c", TS_PORTAL_INTEGER, 2, 64, 8}, SKIP}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.overload.1", "NOISE OVERLOAD", "Clip peaks with a random noise pattern. Threshold selects the peaks; depth roughens their clipped tops. CDP applies its native level scaling.", "overload", 1, 1, 2, 0,
+        {{"threshold", "CLIP LEVEL", "LINEAR AMPLITUDE WHERE OVERLOAD BEGINS", "", TS_PORTAL_REAL, .01, 1, .2},
+         {"depth", "PATTERN DEPTH", "NOISE DEPTH ON CLIPPED PEAKS", "", TS_PORTAL_REAL, 0, 1, .5}}, TS_PORTAL_WAVESET, "distort"},
+    {"distort.overload.2", "SINE OVERLOAD", "Impose a sine pattern on overloaded peaks. The pattern restarts on each clipped region; it is distinct from whole-signal ring modulation.", "overload", 1, 2, 3, 0,
+        {{"threshold", "CLIP LEVEL", "LINEAR AMPLITUDE WHERE OVERLOAD BEGINS", "", TS_PORTAL_REAL, .01, 1, .2},
+         {"depth", "PATTERN DEPTH", "SINE DEPTH ON CLIPPED PEAKS", "", TS_PORTAL_REAL, 0, 1, .5},
+         {"frequency", "PATTERN HZ", "SINE PATTERN FREQUENCY; BELOW SOURCE NYQUIST", "", TS_PORTAL_REAL, .1, 12000, 500}}, TS_PORTAL_WAVESET, "distort"},
+    {"envel.warp.2", "ENVELOPE REVERSE", "Reverse the extracted loudness contour while the sound itself continues forward. Compare with Sound Reverse to hear the difference in attacks and texture.", "warp", 1, 2, 1, 0,
+        {ENV_WINDOW}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.warp.3", "ENVELOPE EXAGGERATE", "Raise envelope levels to a power. Exponents above 1 deepen the contrast; values below 1 bring quieter material forward. One retains the contour.", "warp", 1, 3, 2, 0,
+        {ENV_WINDOW, {"exponent", "EXPONENT", "ENVELOPE POWER; 1 RETAINS THE CONTOUR", "", TS_PORTAL_REAL, .125, 8, 2}}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.warp.5", "ENVELOPE LIFT", "Add a fixed amount to the extracted envelope. Raises quiet material within the sound. Silence cannot supply new audio, and peaks can become louder.", "warp", 1, 5, 2, 0,
+        {ENV_WINDOW, {"lift", "LIFT AMOUNT", "LINEAR AMOUNT ADDED TO ENVELOPE LEVELS", "", TS_PORTAL_REAL, 0, 1, .1}}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.warp.7", "ENVELOPE FLATTEN", "Smooth the loudness contour across neighbouring envelope windows. Window duration and averaging count together set the smoothing time.", "warp", 1, 7, 2, 0,
+        {ENV_WINDOW, {"average", "AVERAGE WINDOWS", "WINDOWS TO AVERAGE; MUST BE LESS THAN SOURCE ENVELOPE LENGTH", "", TS_PORTAL_INTEGER, 2, 64, 4}}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.warp.8", "ENVELOPE GATE", "Silence envelope regions below the gate. The window sets detection resolution; optional smoothing removes short low-level regions.", "warp", 1, 8, 3, 0,
+        {ENV_WINDOW, ENV_GATE, ENV_SMOOTH}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.warp.9", "ENVELOPE INVERT", "Reflect envelope levels around a mirror level. Regions below the gate are silenced. This changes dynamics, not waveform polarity.", "warp", 1, 9, 3, 0,
+        {ENV_WINDOW, ENV_GATE, {"mirror", "MIRROR LEVEL", "REFLECTION LEVEL; ABOVE GATE AND BELOW 1", "", TS_PORTAL_REAL, .01, .99, .3}}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.warp.10", "ENVELOPE LIMIT", "Squeeze envelope levels above a threshold toward a ceiling. This is offline envelope shaping; compare its result with the live output limiter.", "warp", 1, 10, 3, 0,
+        {ENV_WINDOW, {"limit", "LIMIT LEVEL", "UPPER ENVELOPE LEVEL; MUST EXCEED THRESHOLD", "", TS_PORTAL_REAL, .01, 1, .5},
+         {"threshold", "THRESHOLD", "LEVEL WHERE ENVELOPE COMPRESSION BEGINS", "", TS_PORTAL_REAL, 0, .99, .2}}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.warp.11", "ENVELOPE CORRUGATE", "Deepen detected envelope troughs to silence. Trough width and peak separation set which valleys become gaps in the sound.", "warp", 1, 11, 3, 0,
+        {ENV_WINDOW, {"trough", "TROUGH WINDOWS", "WINDOWS TO SILENCE AT A TROUGH; LESS THAN PEAK SEPARATION", "", TS_PORTAL_INTEGER, 1, 32, 1},
+         {"separation", "PEAK SEPARATION", "MINIMUM WINDOWS BETWEEN DETECTED PEAKS", "", TS_PORTAL_INTEGER, 2, 64, 4}}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.warp.12", "ENVELOPE EXPAND", "Silence material below the gate and push remaining envelope levels upward toward the threshold. Smoothing controls short low-level regions.", "warp", 1, 12, 4, 0,
+        {ENV_WINDOW, ENV_GATE, {"threshold", "THRESHOLD", "LOWER TARGET LEVEL; MUST EXCEED GATE", "", TS_PORTAL_REAL, .01, 1, .1}, ENV_SMOOTH}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.warp.14", "ENVELOPE CEILING", "Raise the loudness contour toward its maximum throughout the sound. Brings sustained detail forward while preserving the forward audio order.", "warp", 1, 14, 1, 0,
+        {ENV_WINDOW}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.warp.15", "ENVELOPE DUCK", "Reduce envelope regions above the threshold to the duck level. Elsewhere the envelope is unchanged. Try it on pronounced attacks.", "warp", 1, 15, 3, 0,
+        {ENV_WINDOW, {"duck", "DUCK LEVEL", "TARGET LEVEL IN REGIONS ABOVE THRESHOLD", "", TS_PORTAL_REAL, 0, 1, .1},
+         {"threshold", "THRESHOLD", "LEVEL THAT TRIGGERS DUCKING", "", TS_PORTAL_REAL, 0, 1, .3}}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.dovetail.1", "DOVETAIL FADES", "Fade the beginning and end without shortening the sound. Choose linear or exponential curves separately for the two ends.", "dovetail", 1, 1, 4, 0,
+        {FADE_IN, FADE_OUT,
+         {"in_type", "IN CURVE", "0 LINEAR; 1 EXPONENTIAL", "", TS_PORTAL_INTEGER, 0, 1, 0},
+         {"out_type", "OUT CURVE", "0 LINEAR; 1 EXPONENTIAL", "", TS_PORTAL_INTEGER, 0, 1, 1}}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.dovetail.2", "STEEP DOVETAIL", "Fade both ends using CDP's doubly exponential curves. Compare with ordinary dovetail fades at the same durations.", "dovetail", 1, 2, 2, 0,
+        {FADE_IN, FADE_OUT}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.swell", "ENVELOPE SWELL", "Fade from silence to a chosen peak moment and back to silence. Peak time sets the balance between the rise and fall.", "swell", 1, 0, 2, 0,
+        {{"peak", "PEAK TIME SEC", "PEAK TIME; LEAVE AT LEAST 5 MS AT EACH END", "", TS_PORTAL_REAL, .005, 5, .25},
+         {"curve", "CURVE", "0 LINEAR; 1 EXPONENTIAL", "", TS_PORTAL_INTEGER, 0, 1, 0}}, TS_PORTAL_ENVELOPE, "envel"},
+    {"envel.tremolo.1", "TREMOLO", "Modulate amplitude with a periodic envelope. Slow rates create pulses; faster rates add sidebands. Depth zero retains the source at the chosen gain.", "tremolo", 1, 1, 3, 0,
+        {{"rate", "RATE HZ", "AMPLITUDE MODULATION RATE", "", TS_PORTAL_REAL, 0, 100, 5},
+         {"depth", "DEPTH", "0 NO MODULATION; 1 FULL DEPTH", "", TS_PORTAL_REAL, 0, 1, .6},
+         {"gain", "OUTPUT GAIN", "OVERALL LINEAR SIGNAL GAIN", "", TS_PORTAL_REAL, 0, 1, .8}}, TS_PORTAL_ENVELOPE, "envel"}
+
 };
+#undef ENV_WINDOW
+#undef ENV_GROUP
+#undef ENV_EXP
+#undef ENV_GATE
+#undef ENV_SMOOTH
+#undef FADE_IN
+#undef FADE_OUT
 #undef GROUP
 #undef SKIP
 #undef MULT
@@ -250,6 +329,14 @@ int ts_portal_recipe_validate(const TsPortalRecipe *r, char *error, size_t size)
         return fail(error,size,"OMIT A MUST BE LESS THAN EVERY B");
     if (p->family==TS_PORTAL_FILTER && !strcmp(p->command,"sweeping") && r->values[2]>=r->values[3])
         return fail(error,size,"LOW HZ MUST BE BELOW HIGH HZ");
+    if(p->family==TS_PORTAL_ENVELOPE && !strcmp(p->command,"warp")) {
+        if((p->mode==9 || p->mode==12) && r->values[2]<=r->values[1])
+            return fail(error,size,"MIRROR / THRESHOLD MUST EXCEED GATE");
+        if(p->mode==10 && r->values[1]<=r->values[2])
+            return fail(error,size,"LIMIT MUST EXCEED THRESHOLD");
+        if(p->mode==11 && r->values[1]>=r->values[2])
+            return fail(error,size,"TROUGH WIDTH MUST BE LESS THAN PEAK SEPARATION");
+    }
     if(error && size) error[0]=0;
     return 1;
 }
@@ -280,6 +367,12 @@ int ts_portal_build_command(const TsPortalRecipe *r, const TsSample *input,
     }
     if(skip>=cycles || group>cycles-skip)
         return fail(error,size,"GROUP / SKIP EXCEEDS SOURCE WAVECYCLES");
+    if(!strcmp(p->command,"overload") && p->mode==2 && r->values[2]>=input->sample_rate*.5)
+        return fail(error,size,"PATTERN FREQUENCY MUST BE BELOW SOURCE NYQUIST");
+    if(!strcmp(p->command,"pitch") && (double)input->frames*exp2(r->values[0])+1024>TS_PORTAL_MAX_FRAMES)
+        return fail(error,size,"REQUESTED PITCH WARP EXCEEDS PORTAL LIMIT");
+    if(!strcmp(p->command,"replace") && (double)input->frames*group>TS_PORTAL_MAX_FRAMES)
+        return fail(error,size,"REQUESTED CYCLE REPLACEMENT EXCEEDS PORTAL LIMIT");
     if ((!strcmp(p->command,"repeat") || !strcmp(p->command,"interpolate")) &&
         input->frames>(size_t)TS_PORTAL_MAX_FRAMES/(size_t)r->values[0])
         return fail(error,size,"REQUESTED STRETCH EXCEEDS CANVAS LIMIT");
@@ -311,6 +404,57 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
     memset(commands,0,sizeof(*commands)*TS_CDP_MAX_STAGES);
     if(p->family==TS_PORTAL_WAVESET) {
         if(!ts_portal_build_command(r,input,&commands[0],error,size))return 0;
+        *count=1;return 1;
+    }
+    if(p->family==TS_PORTAL_ENVELOPE) {
+        if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
+           input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES)
+            return fail(error,size,"ENVELOPE PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+        double duration=(double)input->frames/input->sample_rate;
+        if(duration<.04)return fail(error,size,"ENVELOPE SOURCE NEEDS AT LEAST 40 MS");
+        if(!strcmp(p->command,"warp")) {
+            if(r->values[0]>duration*1000)
+                return fail(error,size,"ENVELOPE WINDOW EXCEEDS SOURCE DURATION");
+            /* Match CDP's mono window rounding in generate_samp_windowsize.
+               Require complete windows, conservatively excluding the final
+               partial extraction window from source-dependent counts. */
+            double requested=round(r->values[0]*.001*input->sample_rate),window;
+            if(requested<1)return fail(error,size,"ENVELOPE WINDOW MUST FIT AT LEAST ONE SOURCE SAMPLE");
+            if(requested<256) {
+                double lower=256;while(lower>requested && lower>1)lower/=2;
+                window=2*lower-requested>requested-lower?lower:2*lower;
+            } else window=256*round(requested/256);
+            size_t windows=(size_t)((double)input->frames/window);
+            if(windows<2)return fail(error,size,"SOURCE NEEDS AT LEAST TWO ENVELOPE WINDOWS");
+            if(p->mode==7 && r->values[1]>=windows)
+                return fail(error,size,"AVERAGING WINDOWS EXCEED SOURCE ENVELOPE; LOWER COUNT OR WINDOW");
+            if(p->mode==11 && r->values[2]>=windows)
+                return fail(error,size,"PEAK SEPARATION EXCEEDS SOURCE ENVELOPE");
+        }
+        if(!strcmp(p->command,"dovetail") && r->values[0]+r->values[1]>=duration)
+            return fail(error,size,"START AND END FADES MUST NOT OVERLAP; LOWER FADE DURATIONS");
+        if(!strcmp(p->command,"swell") && r->values[0]>duration-.005)
+            return fail(error,size,"SWELL PEAK MUST LEAVE AT LEAST 5 MS AT EACH END");
+        double peak=0;
+        for(size_t i=0;i<input->frames;++i) {
+            if(!isfinite(input->data[i]))return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
+            peak=fmax(peak,fabs(input->data[i]));
+        }
+        if(!strcmp(p->command,"warp")) {
+            if(peak<1.0/32767)return fail(error,size,"SOURCE TOO QUIET TO EXTRACT AN ENVELOPE AFTER WAV STAGING");
+            if((p->mode==8 || p->mode==9 || p->mode==12) && peak<=r->values[1])
+                return fail(error,size,"GATE WOULD REMOVE THE ENTIRE ENVELOPE; LOWER GATE");
+        }
+        TsCdpCommand *c=&commands[0];
+        snprintf(c->executable,sizeof(c->executable),"%s",p->executable);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s",p->command);
+        if(p->mode)snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%u",p->mode);
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"input.wav");
+        snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"output.wav");
+        for(unsigned i=0;i<p->parameter_count;++i)
+            snprintf(c->arguments[c->argc++],TS_CDP_TEXT_MAX,"%s%.9g",p->parameters[i].flag,r->values[i]);
+        snprintf(c->expected_output,sizeof(c->expected_output),"output.wav");
+        c->expected_output_type=TS_CDP_IO_WAV;
         *count=1;return 1;
     }
     if(p->family==TS_PORTAL_GRAIN) {
@@ -565,7 +709,7 @@ static int contains(const char *s,const char *q)
     return 0;
 }
 const char *ts_portal_family_name(int family)
-{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":family==TS_PORTAL_FILTER?"FILTER":family==TS_PORTAL_GRAIN?"GRAINS":family==TS_PORTAL_LOFI?"LO-FI / MOD":family==TS_PORTAL_LEVEL?"LEVEL":family==TS_PORTAL_DELAY?"DELAY":"UNKNOWN"; }
+{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":family==TS_PORTAL_FILTER?"FILTER":family==TS_PORTAL_GRAIN?"GRAINS":family==TS_PORTAL_LOFI?"LO-FI / MOD":family==TS_PORTAL_LEVEL?"LEVEL":family==TS_PORTAL_DELAY?"DELAY":family==TS_PORTAL_ENVELOPE?"ENVELOPE":"UNKNOWN"; }
 
 int ts_portal_library_edit(TsPortalLibrary *lib,const char *path,int pin,int slot,
                            TsPortalEdit edit,const TsPortalRecipe *recipe,const char *name,
