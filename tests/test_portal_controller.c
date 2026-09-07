@@ -167,6 +167,7 @@ static void test_selection_workflow(SDL_Window *window,SDL_AudioDeviceID device)
 
 
 #include "test_portal_chains.inc"
+#include "test_portal_factory_controller.inc"
 
 int main(void)
 {
@@ -441,6 +442,7 @@ int main(void)
     portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     assert(p->valid && p->result->frames>c.source.frames);
     selection_screenshot("TS_TEST_PORTAL_STRUCTURE_SCREENSHOT",&ui,&instrument);
+    CLICK(25,112);assert(p->family==TS_PORTAL_FACTORY+1);
     CLICK(25,112);assert(p->family==0); /* Family cycle returns to All. */
     /* Odd-only spectral averaging remains valid through drag, wheel, and typing. */
     portal_invalidate(audition,&audio,p,&c);
@@ -510,6 +512,7 @@ int main(void)
     assert(ts_sample_hash(&instrument.current)==before);
     test_selection_workflow(window,audition);
     test_chain_workflow(window,audition);
+    test_factory_workflow(window,audition);
     SDL_DestroyWindow(window);
 
     /* Reopening a stereo source cannot leave a previous mono source active. */

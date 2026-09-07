@@ -2,6 +2,7 @@
 
 #include "tapesister/cdp_adapter.h"
 #include "tapesister/cdp_portal.h"
+#include "tapesister/transform.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -1203,10 +1204,10 @@ finished:
     return ok;
 }
 
-int ts_cdp_run_recipe(const TsCdpRuntime *runtime, const TsCdpRecipe *recipe,
+static int run_factory_bounded(const TsCdpRuntime *runtime, const TsCdpRecipe *recipe,
                       const TsCdpRecipeValues *values, const TsSample *input,
                       const TsCdpRunOptions *options, TsCdpRunResult *result,
-                      char *error, size_t error_size)
+                      char *error, size_t error_size, size_t output_limit)
 {
     TsCdpCommand commands[TS_CDP_MAX_STAGES];
     TsCdpRecipeValues safe;
@@ -1224,7 +1225,15 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime, const TsCdpRecipe *recipe,
         return 0;
     }
     return run_prepared_commands(runtime,recipe,&safe,input,options,result,
-                                  error,error_size,commands,count,TS_CANVAS_MAX_FRAMES);
+                                  error,error_size,commands,count,output_limit);
+}
+
+int ts_cdp_run_recipe(const TsCdpRuntime *runtime, const TsCdpRecipe *recipe,
+                      const TsCdpRecipeValues *values, const TsSample *input,
+                      const TsCdpRunOptions *options, TsCdpRunResult *result,
+                      char *error, size_t error_size)
+{
+    return run_factory_bounded(runtime,recipe,values,input,options,result,error,error_size,TS_CANVAS_MAX_FRAMES);
 }
 
 int ts_cdp_run_portal(const TsCdpRuntime *runtime, const TsPortalRecipe *recipe,
@@ -1259,6 +1268,25 @@ int ts_cdp_run_portal(const TsCdpRuntime *runtime, const TsPortalRecipe *recipe,
         result->output=current;result->status=TS_CDP_RUN_OK;result->finite=1;
         result->peak=ts_sample_peak(&current);
         result->safety=result->peak>=.9999f?TS_CDP_SAFETY_HOT:result->peak<.00001f?TS_CDP_SAFETY_SILENT:TS_CDP_SAFETY_SAFE;
+        return 1;
+    }
+    const TsCdpRecipe *factory=recipe?ts_portal_factory_find(recipe->process_id):NULL;
+    if(factory) {
+        if(!result)return 0;
+        ts_cdp_run_result_free(result);
+        if(!ts_portal_recipe_validate(recipe,error,error_size)) {result->status=TS_CDP_RUN_FAILED;return 0;}
+        if(!input || !input->data || input->channels!=1 || input->frames>TS_PORTAL_MAX_FRAMES) {
+            set_error(error,error_size,"Factory Portal instruments need a mono source within the Portal limit");
+            result->status=TS_CDP_RUN_FAILED;return 0;
+        }
+        TsCdpRecipeValues values;ts_portal_factory_values(recipe,&values);
+        if(!run_factory_bounded(runtime,factory,&values,input,options,result,error,error_size,TS_PORTAL_MAX_FRAMES))return 0;
+        TsSample mixed;ts_sample_init(&mixed);
+        if(!ts_transform_mix_samples(input,&result->output,values.mix,factory->mix_policy,&mixed,error,error_size)) {
+            result->status=TS_CDP_RUN_FAILED;return 0;
+        }
+        ts_sample_free(&result->output);result->output=mixed;
+        if(values.mix!=1)analyze_output(result,ts_sample_peak(&mixed));
         return 1;
     }
     TsCdpCommand commands[TS_CDP_MAX_STAGES];

@@ -165,7 +165,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
         if(t>1)t=1;
         rect(fb,253,y+2,(int)(t*124),5,PAL_EFFECT);
         rect(fb,253+(int)(t*124),y,4,9,PAL_WAVE_LEFT);
-        snprintf(line,sizeof(line),s->type==TS_PORTAL_SWITCH?(v?"ON":"OFF"):"%.4g",v);
+        ts_portal_parameter_format(proc,i,v,line,sizeof(line));
         portal_caption(fb,390,y,7,p->number_focus==(int)i?p->number_text:line,
                        p->number_focus==(int)i?PAL_VOLUME:PAL_EFFECT);
         portal_mini(fb,440,y-3,20,(p->recipe.exposed&(1u<<i))?"X":"-",(p->recipe.exposed&(1u<<i))!=0);
@@ -231,7 +231,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
         snprintf(line,sizeof(line),"%d %.13s",i+1,p->history_names[i]);
         portal_caption(fb,69+i*107,365,16,line,i==p->history_selected?PAL_EFFECT:RGB(210,204,210));
     }
-    portal_mini(fb,501,360,125,p->chain_active?"FINAL RESULT":"MAIN: CTRL+Z",0);
+    portal_mini(fb,501,360,125,p->chain_active?"FINAL RESULT":ts_portal_factory_find(p->recipe.process_id)?"SAVE BANK":"MAIN: CTRL+Z",0);
     if(p->manage_open)portal_manager_render(fb,p);
     if(p->full_action) {
         frame(fb,166,140,308,113,RGB(18,18,18),PAL_VOLUME);

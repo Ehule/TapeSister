@@ -1,5 +1,6 @@
 #include "tapesister/cdp_portal.h"
 #include "tapesister/ui.h"
+#include "tapesister/transform.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -252,6 +253,7 @@ static void envelope_batch_checks(const TsCdpRuntime *runtime)
 
 
 #include "test_portal_chain_recipes.inc"
+#include "test_portal_factory.inc"
 
 int main(int argc,char **argv)
 {
@@ -265,6 +267,8 @@ int main(int argc,char **argv)
     assert(ts_instrument_generate(&instrument,TS_GENERATOR_METALLIC,0x54415045,error,sizeof(error)));
     uint64_t original=ts_sample_hash(&instrument.current);
     test_chain_recipes();
+    test_factory_recipes();
+    if(getenv("TS_TEST_FACTORY_BIN")) {test_factory_native(getenv("TS_TEST_FACTORY_BIN"));ts_instrument_free(&instrument);return 0;}
     assert(ts_portal_process_count()==131);
     assert(ts_cdp_factory_recipe_count()==32);
     for(size_t i=0;i<ts_portal_process_count();++i) {
