@@ -226,8 +226,9 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     portal_caption(fb,505,292,16,line,RGB(210,204,210));
     portal_mini(fb,604,287,22,">",0);
     portal_mini(fb,478,308,66,p->auto_preview?"AUTO ON":"AUTO OFF",p->auto_preview);
-    snprintf(line,sizeof(line),"C%d KEYS %d/5",ts_ui_keyboard_base_note(ui)/12-1,p->note_count);
-    portal_caption(fb,550,314,12,line,p->note_count?PAL_VOLUME:RGB(210,204,210));
+    portal_mini(fb,550,308,32,"SUS",ui->keyboard_sustain);
+    snprintf(line,sizeof(line),"C%d %d/5",ts_ui_keyboard_base_note(ui)/12-1,p->note_count);
+    portal_caption(fb,586,314,6,line,p->note_count?PAL_VOLUME:RGB(210,204,210));
     button(fb,150,332,76,p->busy?"CANCEL":"PREVIEW",p->busy);
     button(fb,230,332,64,"APPLY",p->valid);
     button(fb,298,332,78,"NEW TILE",0);

@@ -72,9 +72,9 @@ int main(void)
                2, 60, 0, 44100) == 3);
     assert(ts_performance_count(&performance) == 6);
     ts_performance_release(&performance, 0);
-    assert(ts_performance_count(&performance) == 6);
+    assert(ts_performance_count(&performance) == 3);
     ts_performance_release(&performance, 2);
-    assert(ts_performance_count(&performance) == 6);
+    assert(ts_performance_count(&performance) == 0);
     ts_performance_clear(&performance);
 
     assert(ts_performance_trigger_staged(
@@ -122,7 +122,7 @@ int main(void)
                                 (uint16_t)((1u << 0) | (1u << 3)));
     assert(ts_performance_count(&performance) == TS_BANK_SLOT_COUNT - 2);
     ts_performance_release(&performance, 0);
-    assert(ts_performance_count(&performance) == TS_BANK_SLOT_COUNT - 2);
+    assert(ts_performance_count(&performance) == 0);
     ts_performance_clear(&performance);
 
     /* The full 16-tile, 24-note fan-out fits exactly in the dedicated bank. */

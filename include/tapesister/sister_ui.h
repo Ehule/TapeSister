@@ -227,6 +227,7 @@ typedef struct {
     char preset_edit_name[48];
     size_t preset_edit_cursor;
     int text_cursor_visible;
+    int keyboard_sustain;
     TsSisterUiPowerVisual power_visual;
     uint32_t power_visual_elapsed_ms;
     uint8_t magnetic_phase;

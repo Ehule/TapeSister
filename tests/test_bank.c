@@ -88,11 +88,12 @@ int main(void)
     CHECK(strcmp(bank.bank[0].sample.name, "ONE") == 0 &&
           strcmp(bank.bank[5].sample.name, "SIX") == 0);
 
+    /* Clicking Current retains the live edit, including the changed sample. */
     CHECK(ts_ui_execute_bank_action(&bank, 0, TS_UI_BANK_ACTION_AUDITION,
                                     error, sizeof(error)));
     CHECK(ts_bank_audition_plan(&bank, 0, &plan));
     CHECK(plan.sample == &bank.bank[0].sample && bank.selected_slot == 0 &&
-          ts_sample_hash(&bank.current) == slot0_hash);
+          ts_sample_hash(&bank.current) == slot5_hash);
     CHECK(ts_sample_hash(&bank.bank[5].sample) == slot5_hash);
     CHECK(ts_ui_execute_bank_action(&bank, 0, TS_UI_BANK_ACTION_TOGGLE_LOCK,
                                     error, sizeof(error)));
@@ -107,7 +108,7 @@ int main(void)
                                     error, sizeof(error)));
     CHECK(bank.selected_slot == 2 && !bank.bank[2].occupied &&
           bank.parent.data == NULL && bank.current.data == NULL &&
-          ts_sample_hash(&bank.bank[0].sample) == slot0_hash);
+          ts_sample_hash(&bank.bank[0].sample) == slot5_hash);
 
     CHECK(ts_ui_execute_bank_action(&bank, 0, TS_UI_BANK_ACTION_CLEAR,
                                     error, sizeof(error)));

@@ -83,6 +83,7 @@ typedef struct {
     int transition_direction;
     int pending_direction;
     int latched;
+    int key_down; /* Physical trigger state, independent of explicit latch. */
     int releasing;
     int tile_launched;
     int previous_frame_valid;
@@ -96,10 +97,13 @@ typedef struct {
     uint64_t next_generation_id;
     uint64_t next_group_id;
     int attack_ms;
+    int sustain;
 } TsPerformanceBank;
 
 void ts_performance_init(TsPerformanceBank *bank);
 void ts_performance_clear(TsPerformanceBank *bank);
+/* Disabling releases key-up voices, preserving held keys and explicit latches. */
+void ts_performance_set_sustain(TsPerformanceBank *bank, int enabled);
 void ts_performance_free(TsPerformanceBank *bank);
 void ts_performance_collect_retired(TsPerformanceBank *bank);
 void ts_performance_set_attack_ms(TsPerformanceBank *bank, int milliseconds);

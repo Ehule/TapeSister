@@ -124,9 +124,11 @@ channel count, duration, and frame count. Recorder-oriented extensible, RF64, an
 multichannel WAV files use the general decoder when the sampler-metadata reader cannot
 open them; multichannel material is downmixed to stereo.
 
-QWERTY plays the preview at different pitches, with up to five simultaneous
+QWERTY or MIDI plays the preview at different pitches, with up to five simultaneous
 notes. C4 plays at the file's original pitch; `F1`–`F8` choose the keyboard octave.
-Release a key to stop its note. Held notes follow live loop-selection changes;
+With Sustain off, release a key to stop its note. With Sustain on, released
+notes finish or keep looping. Use `Shift+S` or the **SUSTAIN** button; turning it
+off releases notes whose keys are up. Held notes follow live loop-selection changes;
 changing octave keeps their pitches and key releases working. `Space` stops all
 preview voices. Going back to files, changing decoding mode, or importing clears
 held preview notes before replacing their audio. File-list typing remains normal.
@@ -537,6 +539,26 @@ and the button in Sister Machine always mirror one another.
 
 Overdub follows the target tile: mono is duplicated into a stereo target, while stereo
 is folded into a mono target using the displayed mono sum.
+
+### Keyboard Sustain
+
+`Shift+S` toggles **SUSTAIN** across the canvas, FM, CDP Portal, import preview,
+and Sister Machine. The main keyboard panel has a button; Portal uses the compact
+**SUS** label. Active coloring shows when it is on. Typing in text fields does not
+toggle it. The setting starts off each session and applies to QWERTY and MIDI.
+
+| Sustain | Tile / preview Loop | After key release |
+|---|---|---|
+| Off | Off or On | Note stops |
+| On | Off | One-shot finishes |
+| On | On | Loop continues |
+
+Turning Sustain off releases only notes whose keys have been released. Keys still
+held keep playing. FM's looping preview follows the same rule. Existing explicit
+Shift-click latches, staged capture chords, and mouse-launched tile layers keep
+their own launch/stop behavior; Sustain does not change the tile's loop setting.
+
+[Detailed behavior and checks](KEYBOARD_SUSTAIN.md).
 
 ### Multi-tile performance sources
 

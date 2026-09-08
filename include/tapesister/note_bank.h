@@ -35,6 +35,7 @@ typedef struct {
     int looping;
     int direction;
     int latched;
+    int key_down; /* Physical trigger state, independent of explicit latch. */
     int synth;
     /* Immutable preview owned by a workbench, never retargeted to Current. */
     int preview;
@@ -45,6 +46,7 @@ typedef struct {
     TsNoteVoice voices[TS_NOTE_BANK_VOICE_CAPACITY];
     uint64_t next_serial;
     int attack_ms;
+    int sustain;
 } TsNoteBank;
 
 typedef enum {
@@ -56,6 +58,8 @@ typedef enum {
 
 void ts_note_bank_init(TsNoteBank *bank);
 void ts_note_bank_clear(TsNoteBank *bank);
+/* Disabling releases key-up voices, preserving held keys and explicit latches. */
+void ts_note_bank_set_sustain(TsNoteBank *bank, int enabled);
 void ts_note_bank_set_attack_ms(TsNoteBank *bank, int milliseconds);
 void ts_note_bank_clear_latched(TsNoteBank *bank);
 int ts_note_bank_latch_active_synth(TsNoteBank *bank);

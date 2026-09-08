@@ -336,6 +336,7 @@ typedef struct {
     int startup_welcome_playback_requested;
     int text_cursor_visible;
     int show_keyboard;
+    int keyboard_sustain;
     int keyboard_octave;
     int keyboard_base_note;
     int show_recipes;

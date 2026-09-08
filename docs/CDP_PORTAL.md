@@ -500,21 +500,24 @@ output validation, and the existing eight-million-frame limit still apply.
   aligns elapsed time in seconds; it does not pretend unequal files have equal
   duration. An out-of-range position restarts in the destination's valid range.
 - **LOOP** repeats the current audition range.
-- **QWERTY notes:** the same two keyboard rows as Main play the selected
+- **QWERTY and MIDI notes:** the same two keyboard rows as Main, or a connected MIDI keyboard, play the selected
   **SOURCE** or **RESULT**, with up to five simultaneous notes. **C4 plays the
   original pitch**, C5 is an octave up. **F1–F8** select keyboard octaves
   (F5 selects C4); held notes keep their pitch when the octave changes.
   Each note starts at the selection's beginning, or the whole sound's beginning
-  without a selection. It stops on key release or at the end when Loop is off.
-  With Loop on, it repeats while held. Starting a note replaces ordinary Play
+  without a selection. With **Sustain OFF**, key release stops the note.
+  With **Sustain ON**, a released one-shot finishes and a released loop keeps
+  repeating. **Shift+S** or the **SUS** button toggles the shared setting. Turning
+  Sustain off releases notes whose keys are up, preserving keys still held.
+  Starting a note replaces ordinary Play
   auditioning; Space/Stop clears the whole preview chord.
 - **A/B with held notes** preserves each note's pitch and matches elapsed source
   position, clamping to the destination selection when needed. Live loop-range
   editing also applies to all held preview notes. The playhead follows the most
-  recently started active note. The KEYS line shows octave and active voice count.
+  recently started active note. The readout beside SUS shows octave and active voice count.
 - Search, name, numeric fields, and the collection manager consume typing without
-  starting notes. Releasing a held key still stops its note after focus moves
-  into one of these fields. Losing window focus, closing the Portal, replacing
+  starting notes or changing Sustain. Key releases still follow the Sustain
+  setting after focus moves into one of these fields. Losing window focus, closing the Portal, replacing
   its source/result, and changing process settings release preview voices.
   Playing notes does not alter rendered audio or saved recipe parameters.
 - Click a waveform to place its playhead; drag to select an audition range and
@@ -966,3 +969,18 @@ caret, including a long entry. The recorder test plays two Portal notes and
 compares the saved stereo WAV sample-for-sample with callback output; tile audio
 and held notes survive recording start/stop. Existing canvas file capture and
 Portal recipe/controller regressions run alongside these checks.
+
+### Shared Sustain and MIDI previews
+
+Sustain is a session-wide keyboard setting, initially off, shared with the canvas,
+FM, Sister Machine, and file-import preview. MIDI now auditions the selected
+Portal Source/Result, including loop selections and pitch/velocity. MIDI previews
+share the five-voice preview pool with QWERTY; MIDI channel panic clears that
+channel even with Sustain enabled. MIDI note-offs remain routed while editing text.
+
+The factory SCRUB direction labels are corrected: numeric **0 = BOUNCE**, numeric
+**1 = FORWARD** (`-f`). Saved values and generated commands are unchanged. Forward
+is a single sweep; CDP ignores the requested length in that mode.
+
+See [Keyboard Sustain](KEYBOARD_SUSTAIN.md) for the release/loop combinations and
+validation commands.

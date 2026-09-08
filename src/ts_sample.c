@@ -4442,6 +4442,11 @@ static int bank_sync_selected(TsInstrument *instrument, char *error, size_t erro
     return 1;
 }
 
+int ts_instrument_sync_selected(TsInstrument *instrument, char *error, size_t error_size)
+{
+    return bank_sync_selected(instrument, error, error_size);
+}
+
 static int bank_slot_deep_clone(TsBankSlot *destination, const TsBankSlot *source,
                                 char *error, size_t error_size)
 {
