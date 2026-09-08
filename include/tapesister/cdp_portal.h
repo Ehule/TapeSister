@@ -8,8 +8,8 @@
 enum { TS_PORTAL_CHAIN_STAGES = 8, TS_PORTAL_PARAMS = 16, TS_PORTAL_SLOTS = 32,
        TS_PORTAL_HISTORY = 4, TS_PORTAL_WAVE_COLUMNS = 310,
        TS_PORTAL_MAX_FRAMES = 8000000 };
-typedef enum { TS_PORTAL_INTEGER, TS_PORTAL_REAL, TS_PORTAL_SWITCH, TS_PORTAL_ODD_INTEGER } TsPortalParamType;
-typedef enum { TS_PORTAL_WAVESET, TS_PORTAL_SPECTRAL, TS_PORTAL_TIME, TS_PORTAL_FILTER, TS_PORTAL_GRAIN, TS_PORTAL_LOFI, TS_PORTAL_LEVEL, TS_PORTAL_DELAY, TS_PORTAL_ENVELOPE, TS_PORTAL_STRUCTURE, TS_PORTAL_FAMILIES } TsPortalFamily;
+typedef enum { TS_PORTAL_INTEGER, TS_PORTAL_REAL, TS_PORTAL_SWITCH, TS_PORTAL_ODD_INTEGER, TS_PORTAL_ENUMERATED } TsPortalParamType;
+typedef enum { TS_PORTAL_WAVESET, TS_PORTAL_SPECTRAL, TS_PORTAL_TIME, TS_PORTAL_FILTER, TS_PORTAL_GRAIN, TS_PORTAL_LOFI, TS_PORTAL_LEVEL, TS_PORTAL_DELAY, TS_PORTAL_ENVELOPE, TS_PORTAL_STRUCTURE, TS_PORTAL_FACTORY, TS_PORTAL_FAMILIES } TsPortalFamily;
 typedef enum { TS_PORTAL_RENAME=1, TS_PORTAL_UPDATE, TS_PORTAL_REPLACE, TS_PORTAL_REMOVE } TsPortalEdit;
 typedef struct {
     const char *id, *label, *help, *flag;
@@ -52,6 +52,7 @@ typedef struct {
 } TsPortalRegion;
 typedef struct {
     int open, busy, valid, playing, listen_result, loop;
+    int auto_preview;
     int tab, scroll, search_focus, name_focus, exact_pin, pin_slot, macro_view;
     int parameter_scroll, dragging_parameter, dragging_wave, drag_x;
     int number_focus, wave_dragged;
@@ -82,6 +83,13 @@ void ts_portal_step_get(const TsPortalStep *step, TsPortalRecipe *recipe);
 void ts_portal_step_set(TsPortalStep *step, const TsPortalRecipe *recipe);
 void ts_portal_recipe_exact(TsPortalRecipe *recipe);
 int ts_portal_step_equal(const TsPortalStep *a, const TsPortalStep *b);
+const TsCdpRecipe *ts_portal_factory_find(const char *id);
+const TsPortalProcess *ts_portal_factory_process_at(size_t index);
+void ts_portal_factory_recipe(const TsCdpRecipe *factory,const TsCdpRecipeValues *values,TsPortalRecipe *recipe);
+void ts_portal_factory_values(const TsPortalRecipe *recipe,TsCdpRecipeValues *values);
+double ts_portal_parameter_quantize(const TsPortalProcess *process,unsigned index,double value);
+double ts_portal_parameter_nudge(const TsPortalProcess *process,unsigned index,double value,int direction);
+void ts_portal_parameter_format(const TsPortalProcess *process,unsigned index,double value,char *text,size_t size);
 size_t ts_portal_process_count(void);
 const TsPortalProcess *ts_portal_process_at(size_t index);
 const TsPortalProcess *ts_portal_process_find(const char *id);

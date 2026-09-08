@@ -4,6 +4,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include <string.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -439,6 +440,8 @@ static const TsPortalProcess processes[] = {
 #undef SPECTRUM_PARAMS
 #undef SWEEP_PARAMS
 
+#include "ts_cdp_portal_factory.inc"
+
 static int fail(char *error, size_t size, const char *message)
 { if (error && size) snprintf(error, size, "%s", message); return 0; }
 size_t ts_portal_process_count(void) { return sizeof(processes)/sizeof(processes[0]); }
@@ -448,12 +451,15 @@ const TsPortalProcess *ts_portal_process_find(const char *id)
 {
     if (id) for (size_t i=0; i<ts_portal_process_count(); ++i)
         if (!strcmp(id, processes[i].id)) return &processes[i];
-    return NULL;
+    const TsCdpRecipe *f=ts_portal_factory_find(id);
+    return f?ts_portal_factory_process_at((size_t)ts_cdp_recipe_index_for_id(f->id)):NULL;
 }
 void ts_portal_recipe_default(TsPortalRecipe *r, const TsPortalProcess *p)
 {
     memset(r, 0, sizeof(*r));
     if (!p) return;
+    const TsCdpRecipe *f=ts_portal_factory_find(p->id);
+    if(f){TsCdpRecipeValues v;ts_cdp_recipe_values_default(f,&v);ts_portal_factory_recipe(f,&v,r);return;}
     snprintf(r->process_id, sizeof(r->process_id), "%s", p->id);
     snprintf(r->name, sizeof(r->name), "%s", p->title);
     r->version=p->version;
@@ -500,9 +506,17 @@ int ts_portal_recipe_validate(const TsPortalRecipe *r, char *error, size_t size)
     for (const char *s=r->name;*s;++s)
         if ((unsigned char)*s<32 || (unsigned char)*s>126 || *s=='|')
             return fail(error,size,"INVALID RECIPE NAME");
+    const TsCdpRecipe *factory=ts_portal_factory_find(r->process_id);
     for (unsigned i=0;i<TS_PORTAL_PARAMS;++i) {
         double v=r->values[i];
         if (!isfinite(v)) return fail(error,size,"NONFINITE PARAMETER");
+        if(factory && i>=13) {
+            if(v<0 || (i==13?v>1e8:v>UINT32_MAX || floor(v)!=v))return fail(error,size,"INVALID FACTORY SEED OR TUNING CONTEXT");
+            continue;
+        }
+        if(factory && i<factory->control_count && factory->controls[i].type==TS_CDP_CONTROL_ENUMERATED &&
+           ts_cdp_control_quantize(&factory->controls[i],(float)v)!=v)
+            return fail(error,size,"CHOOSE ONE OF THIS FACTORY CONTROL'S NAMED MODES");
         if (i>=p->parameter_count) { if(v!=0) return fail(error,size,"UNUSED PARAMETER IS NOT ZERO"); continue; }
         const TsPortalParam *s=&p->parameters[i];
         if(v<s->minimum || v>s->maximum || (s->type!=TS_PORTAL_REAL && v!=floor(v)))
@@ -598,6 +612,7 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
     if(!ts_portal_recipe_validate(r,error,size))return 0;
     const TsPortalProcess *p=ts_portal_process_find(r->process_id);
     if(!p)return fail(error,size,"CHAINS MUST BE RENDERED ONE STAGE AT A TIME");
+    if(p->family==TS_PORTAL_FACTORY)return fail(error,size,"FACTORY INSTRUMENTS USE THEIR EXISTING RENDERER");
     memset(commands,0,sizeof(*commands)*TS_CDP_MAX_STAGES);
     if(p->family==TS_PORTAL_WAVESET) {
         if(!ts_portal_build_command(r,input,&commands[0],error,size))return 0;
@@ -1027,7 +1042,7 @@ static int contains(const char *s,const char *q)
     return 0;
 }
 const char *ts_portal_family_name(int family)
-{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":family==TS_PORTAL_FILTER?"FILTER":family==TS_PORTAL_GRAIN?"GRAINS":family==TS_PORTAL_LOFI?"LO-FI / MOD":family==TS_PORTAL_LEVEL?"LEVEL":family==TS_PORTAL_DELAY?"DELAY":family==TS_PORTAL_ENVELOPE?"ENVELOPE":family==TS_PORTAL_STRUCTURE?"STRUCTURE":"UNKNOWN"; }
+{ return family==TS_PORTAL_WAVESET?"WAVESET":family==TS_PORTAL_SPECTRAL?"SPECTRAL":family==TS_PORTAL_TIME?"TIME / TAPE":family==TS_PORTAL_FILTER?"FILTER":family==TS_PORTAL_GRAIN?"GRAINS":family==TS_PORTAL_LOFI?"LO-FI / MOD":family==TS_PORTAL_LEVEL?"LEVEL":family==TS_PORTAL_DELAY?"DELAY":family==TS_PORTAL_ENVELOPE?"ENVELOPE":family==TS_PORTAL_STRUCTURE?"STRUCTURE":family==TS_PORTAL_FACTORY?"FACTORY":"UNKNOWN"; }
 
 int ts_portal_library_edit(TsPortalLibrary *lib,const char *path,int pin,int slot,
                            TsPortalEdit edit,const TsPortalRecipe *recipe,const char *name,
@@ -1063,10 +1078,10 @@ int ts_portal_library_edit(TsPortalLibrary *lib,const char *path,int pin,int slo
 int ts_portal_filter_slot(const TsPortalUi *ui,int row,TsPortalRecipe *out)
 {
     if(row<0)return -1;
-    int count=ui->tab==0?(int)ts_portal_process_count():TS_PORTAL_SLOTS;
+    int count=ui->tab==0?(int)(ts_portal_process_count()+ts_cdp_factory_recipe_count()):TS_PORTAL_SLOTS;
     for(int i=0;i<count;++i) {
         TsPortalRecipe r;
-        if(ui->tab==0) ts_portal_recipe_default(&r,ts_portal_process_at((size_t)i));
+        if(ui->tab==0) ts_portal_recipe_default(&r,(size_t)i<ts_portal_process_count()?ts_portal_process_at((size_t)i):ts_portal_factory_process_at((size_t)i-ts_portal_process_count()));
         else r=ui->tab==1?ui->library.recipes[i]:ui->library.pins[i];
         const TsPortalProcess *p=ts_portal_process_find(r.process_id);
         if(r.stage_count) {

@@ -30,6 +30,8 @@ typedef struct {
     uint64_t generation, source_hash;
     int source_slot, source_page, selection_scope, history_count;
     int quick_apply, library_writable;
+    int auto_pending;
+    Uint32 auto_due;
     size_t source_first, source_last;
     char library_path[TS_CDP_PATH_MAX];
 } PortalController;
@@ -103,6 +105,11 @@ static void portal_stop(SDL_AudioDeviceID device,AudioState *audio,TsPortalUi *p
 }
 static void portal_cancel(PortalController *c)
 {++c->generation;if(c->worker)SDL_AtomicSet(&c->worker->cancel,1);}
+static void portal_auto_schedule(const TsPortalUi *p,PortalController *c)
+{
+    c->auto_pending=p->open && p->auto_preview;
+    c->auto_due=SDL_GetTicks()+500u;
+}
 static void portal_invalidate(SDL_AudioDeviceID device,AudioState *audio,
                                TsPortalUi *p,PortalController *c)
 {
@@ -113,6 +120,7 @@ static void portal_invalidate(SDL_AudioDeviceID device,AudioState *audio,
     p->chain_audition=-1;
     if(p->chain_active)p->chain_cached&=(1u<<p->chain_stage)-1u;
     ts_portal_wave_reset(&p->waves[1],NULL);
+    portal_auto_schedule(p,c);
 }
 static void portal_clear_history(PortalController *c,TsPortalUi *p)
 {
@@ -158,6 +166,7 @@ static void portal_close(SDL_AudioDeviceID device,AudioState *audio,TsUiState *u
                          PortalController *c)
 {
     portal_stop(device,audio,&ui->portal,c);portal_cancel(c);ui->portal.open=0;
+    c->auto_pending=0;
     ui->portal.dragging_parameter=-1;ui->portal.dragging_wave=-1;
     ui->portal.search_focus=ui->portal.name_focus=0;ui->portal.number_focus=-1;
     ui->portal.manage_open=0;
@@ -285,6 +294,7 @@ static void portal_preview(SDL_AudioDeviceID device,AudioState *audio,TsUiState 
                            PortalController *c)
 {
     TsPortalUi *p=&ui->portal;
+    c->auto_pending=0; /* Explicit Preview/Cancel consumes any queued update. */
     if(c->worker) {portal_cancel(c);snprintf(p->message,sizeof(p->message),"CANCELLING CDP JOB");return;}
     TsPortalRecipe working=portal_working(p);
     if(!ts_portal_recipe_validate(&working,p->message,sizeof(p->message)))return;
@@ -317,6 +327,7 @@ static void portal_preview(SDL_AudioDeviceID device,AudioState *audio,TsUiState 
     if(!ok || !ts_sample_clone(&w->input,start,p->message,sizeof(p->message))) {portal_worker_free(w);return;}
     /* Preserve the original selection's extent for the assembled final result. */
     portal_invalidate(device,audio,p,c);
+    c->auto_pending=0;
     w->recipe=p->recipe;w->generation=c->generation;
     w->thread=SDL_CreateThread(portal_worker_main,"TapeSister CDP Portal",w);
     if(!w->thread) {snprintf(p->message,sizeof(p->message),"RENDER THREAD UNAVAILABLE");portal_worker_free(w);return;}
@@ -327,6 +338,7 @@ static void portal_select_history(SDL_AudioDeviceID device,AudioState *audio,
                                    TsPortalUi *p,PortalController *c,int index)
 {
     if(index<0 || index>=c->history_count)return;
+    c->auto_pending=0;
     portal_stop(device,audio,p,c);portal_cancel(c);
     portal_load_recipe(p,&c->recipes[index]);p->result=&c->history[index].output;
     p->valid=1;p->history_selected=index;p->listen_result=1;
@@ -358,10 +370,23 @@ static void portal_selection_changed(TsPortalUi *p,PortalController *c)
 {
     if(!p->process_selection)return;
     portal_cancel(c);c->quick_apply=0;p->valid=0;p->full_action=0;p->chain_cached=0;
+    portal_auto_schedule(p,c);
     snprintf(p->message,sizeof(p->message),"SOURCE SELECTION CHANGED - PREVIEW AGAIN; AUDITION LOOPS REMAIN INDEPENDENT");
 }
 static int portal_apply(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                          TsInstrument *instrument,PortalController *c,int new_tile);
+/* Only the UI thread launches jobs. Edits coalesce while a cancelled worker
+   finishes; incomplete text, held drags and modal choices never start a job. */
+static void portal_auto_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
+                              PortalController *c,Uint32 now)
+{
+    TsPortalUi *p=&ui->portal;
+    if(!p->open || !p->auto_preview) {c->auto_pending=0;return;}
+    if(!c->auto_pending || c->worker || p->dragging_parameter>=0 || p->dragging_wave>=0 ||
+       p->number_focus>=0 || p->search_focus || p->name_focus || p->manage_open || p->full_action ||
+       !SDL_TICKS_PASSED(now,c->auto_due))return;
+    portal_preview(device,audio,ui,c);
+}
 static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                         TsInstrument *instrument,PortalController *c)
 {
@@ -426,6 +451,7 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
         } else if(p->open)snprintf(p->message,sizeof(p->message),"OLD JOB DISCARDED; PRESS PREVIEW FOR CURRENT SETTINGS");
         portal_worker_free(w);
     }
+    portal_auto_poll(device,audio,ui,c,SDL_GetTicks());
     if(p->playing) {
         if(device)SDL_LockAudioDevice(device);
         const TsSample *sample=p->listen_result?p->result:p->source;
@@ -646,10 +672,7 @@ static void portal_parameter_drag(SDL_AudioDeviceID device,AudioState *audio,
     double t=(x-253)/124.0;if(t<0)t=0;if(t>1)t=1;
     double v=s->minimum+t*(s->maximum-s->minimum);
     if(s->maximum>100 && s->minimum>=0)v=s->minimum+expm1(t*log1p(s->maximum-s->minimum));
-    if(s->type!=TS_PORTAL_REAL)v=floor(v+0.5);
-    if(s->type==TS_PORTAL_ODD_INTEGER)v=2*floor(v/2)+1;
-    if(v<s->minimum)v=s->minimum;
-    if(v>s->maximum)v=s->maximum;
+    v=ts_portal_parameter_quantize(proc,(unsigned)index,v);
     if(p->recipe.values[index]!=v) {portal_invalidate(device,audio,p,c);p->recipe.values[index]=v;}
     snprintf(p->message,sizeof(p->message),"%s; %.6g..%.6g; CLICK VALUE TO TYPE",s->help,s->minimum,s->maximum);
 }
@@ -868,6 +891,38 @@ static int portal_chain_click(SDL_AudioDeviceID device,AudioState *audio,TsPorta
     }
     return 0;
 }
+static int portal_open_factory(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
+    TsInstrument *instrument,PortalController *c,TransformController *transform,int index)
+{
+    const TsCdpRecipe *f=index>=0?ts_cdp_factory_recipe_at((size_t)index):NULL;
+    if(!f || ui_dialog_open(ui))return 0;
+    if(ui->canvas_gesture.active || ui->amplitude_gesture.active || ui->material_macro_gesture.active ||
+       ui->stretch_gesture.active || ui->warp_gesture.active || ui->smear_gesture.active || ui->tear_gesture.active) {
+        snprintf(ui->status,sizeof(ui->status),"FINISH THE CURRENT EDIT GESTURE BEFORE OPENING CDP PORTAL");return 0;
+    }
+    if(ui->capture_state!=TS_CAPTURE_IDLE || ui->external_record_bank || ui->sister_capture_active || c->worker || transform->worker) {
+        snprintf(ui->status,sizeof(ui->status),"FINISH CAPTURE / RENDER BEFORE EDITING A FACTORY INSTRUMENT");return 0;
+    }
+    TsCdpRecipeValues values=ui->cdp_presets[index];
+    values.tuning_hz=(float)ts_tuning_frequency(&instrument->audible_tuning);
+    TsPortalRecipe recipe;ts_portal_factory_recipe(f,&values,&recipe);
+    TsPortalUi *p=&ui->portal;
+    stop_all_force(device,audio,ui);portal_load_recipe(p,&recipe);p->open=1;
+    p->tab=0;p->family=TS_PORTAL_FACTORY+1;p->query[0]=0;p->scroll=index>11?index-11:0;
+    p->selected_tab=0;p->selected_slot=(int)ts_portal_process_count()+index;
+    p->parameter_scroll=0;p->macro_view=0;p->exact_pin=0;
+    c->selection_scope=instrument->has_selection;SDL_StartTextInput();
+    int ok=portal_source(device,audio,ui,instrument,c);
+    if(ok)snprintf(p->message,sizeof(p->message),"%s FACTORY SETTINGS - PREVIEW / SAVE BANK / SAVE AS / CHAIN",f->display_name);
+    return ok;
+}
+static void portal_save_factory(TsUiState *ui)
+{
+    TsPortalUi *p=&ui->portal;const TsCdpRecipe *f=ts_portal_factory_find(p->recipe.process_id);
+    if(p->chain_active || !f || !ts_portal_recipe_validate(&p->recipe,p->message,sizeof(p->message)))return;
+    TsCdpRecipeValues values;ts_portal_factory_values(&p->recipe,&values);
+    (void)save_cdp_preset_values(ui,ts_cdp_recipe_index_for_id(f->id),&values,p->message,sizeof(p->message));
+}
 static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
                          AudioState *audio,TsUiState *ui,TsInstrument *instrument,
                          PortalController *c,SisterWindow *sister,int output_rate,
@@ -885,7 +940,8 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
     int shortcut=event->type==SDL_KEYDOWN && !event->key.repeat && event->key.keysym.sym==SDLK_p &&
         (event->key.keysym.mod & KMOD_CTRL) && (event->key.keysym.mod & KMOD_SHIFT);
     int open_button=event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT &&
-        ui->show_recipes && x>=114 && x<178 && y>=312 && y<328;
+        ((x>=464 && x<492 && y>=4 && y<30) ||
+         (ui->show_recipes && x>=114 && x<178 && y>=312 && y<328));
     if(!p->open) {
         if(event->type==SDL_MOUSEBUTTONDOWN && ui->show_recipes && !ui_dialog_open(ui)) {
             if(event->button.button==SDL_BUTTON_LEFT && x>=182 && x<230 && y>=312 && y<328) {
@@ -894,6 +950,10 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
                 return 1;
             }
             int pin_slot=ts_ui_cdp_slot_from_point(x,y);
+            if(!ui->cdp_user_pins && pin_slot>=0 && event->button.button==SDL_BUTTON_MIDDLE) {
+                int index=ts_cdp_catalog_index_for_slot(&ui->cdp_catalog,(size_t)ui->cdp_page,(size_t)pin_slot);
+                (void)portal_open_factory(device,audio,ui,instrument,c,transform,index);return 1;
+            }
             if(ui->cdp_user_pins && pin_slot>=0) {
                 if(event->button.button!=SDL_BUTTON_LEFT && event->button.button!=SDL_BUTTON_MIDDLE)return 1;
                 int pin=ui->cdp_page*16+pin_slot;
@@ -972,10 +1032,16 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
                     const TsPortalProcess *proc=ts_portal_process_find(p->recipe.process_id);char *end;
                     int i=p->number_focus;double v=strtod(dst,&end);
                     const TsPortalParam *s=&proc->parameters[i];
+                    const TsCdpRecipe *factory=ts_portal_factory_find(proc->id);
+                    if(factory && i<(int)factory->control_count)v=(double)(float)v;
+                    if(s->type==TS_PORTAL_ENUMERATED && ts_portal_parameter_quantize(proc,(unsigned)i,v)!=v) {
+                        snprintf(p->message,sizeof(p->message),"CHOOSE A NAMED MODE; WHEEL THE VALUE TO CYCLE THE AVAILABLE CHOICES");return 1;
+                    }
                     if(end==dst || *end || !isfinite(v) || v<s->minimum || v>s->maximum || (s->type!=TS_PORTAL_REAL && floor(v)!=v) || (s->type==TS_PORTAL_ODD_INTEGER && fmod(v,2)!=1)) {
                         snprintf(p->message,sizeof(p->message),"VALUE MUST BE %s %.6g..%.6g",s->type==TS_PORTAL_REAL?"A NUMBER":s->type==TS_PORTAL_ODD_INTEGER?"AN ODD INTEGER":"AN INTEGER",s->minimum,s->maximum);return 1;
                     }
-                    portal_invalidate(device,audio,p,c);p->recipe.values[i]=v;
+                    v=ts_portal_parameter_quantize(proc,(unsigned)i,v);
+                    if(p->recipe.values[i]!=v) {portal_invalidate(device,audio,p,c);p->recipe.values[i]=v;}
                 }
                 p->search_focus=p->name_focus=0;p->number_focus=-1;
             }
@@ -1040,9 +1106,8 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
             int i=portal_parameter_at(p,(y-265)/19);
             const TsPortalProcess *proc=ts_portal_process_find(p->recipe.process_id);
             if(y>=265 && i>=0 && x>=253) {
-                const TsPortalParam *s=&proc->parameters[i];double step=s->type==TS_PORTAL_REAL?0.001:s->type==TS_PORTAL_ODD_INTEGER?2:1;
-                double v=p->recipe.values[i]+d*step;if(v<s->minimum)v=s->minimum;if(v>s->maximum)v=s->maximum;
-                portal_invalidate(device,audio,p,c);p->recipe.values[i]=v;
+                double v=ts_portal_parameter_nudge(proc,(unsigned)i,p->recipe.values[i],d);
+                if(p->recipe.values[i]!=v) {portal_invalidate(device,audio,p,c);p->recipe.values[i]=v;}
             } else {
                 int count=0;
                 if(proc)for(unsigned n=0;n<proc->parameter_count;++n)
@@ -1065,6 +1130,11 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         return 1;
     }
     if(event->button.button!=SDL_BUTTON_LEFT)return 1;
+    if(x>=478 && x<544 && y>=308 && y<325) {
+        p->auto_preview=!p->auto_preview;portal_auto_schedule(p,c);
+        snprintf(p->message,sizeof(p->message),"AUTO PREVIEW %s - WAITS 500 MS AFTER EDITS; PREVIEW BUTTON CAN CANCEL",p->auto_preview?"ON":"OFF");
+        return 1;
+    }
     p->search_focus=p->name_focus=0;p->number_focus=-1;
     if(portal_chain_click(device,audio,p,c,x,y))return 1;
     if(y<32) {
@@ -1149,6 +1219,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         else if(x>=478 && x<626)portal_save(p,c,1);
     } else if(y>=360 && y<377) {
         if(x>=64 && x<492)portal_select_history(device,audio,p,c,(x-64)/107);
+        else if(x>=501 && x<626 && ts_portal_factory_find(p->recipe.process_id))portal_save_factory(ui);
         else if(x>=501 && x<626) {
             portal_close(device,audio,ui,c);
             snprintf(ui->status,sizeof(ui->status),"CTRL+Z UNDOES THE LAST TILE EDIT; CTRL+SHIFT+P REOPENS PORTAL");

@@ -3,12 +3,13 @@
 ![Native CDP Portal rendering with a real selection-only tape-speed result](images/cdp-portal.png)
 
 CDP Portal is the exploratory workbench inside TapeSister. The original 32
-curated CDP instruments remain unchanged. The Portal uses a separate, stable-ID
-process registry and separate recipe/pin storage.
+curated CDP instruments now open here for editing. Their original renderers and
+bank presets remain in use; personal recipes and pins have separate storage.
 
 ## Open and explore
 
-Load or generate a mono tile. On the CDP panel, click **PORTAL**, or press
+Load or generate a mono tile. Click **CDP** in the main header, between Export
+and the limiter. On the CDP panel you can also click **PORTAL**, or press
 **Ctrl+Shift+P** from the main workspace. The Portal takes an immutable snapshot
 of Current (the current selection when one exists). **LOAD: TILE / LOAD: SEL** toggles
 between whole-tile and main-canvas selection import; **RELOAD** refreshes the
@@ -20,13 +21,95 @@ delay, 15 envelope, and eight structure processes. Search matches names, stable 
 families. **ALL**, **SAVE**, and **PINS** switch the left browser between
 processes, saved recipes, and user process pins. Scroll that column with the
 mouse wheel. The family button below the tabs cycles **ALL FAMILIES**,
-**WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, **GRAINS**, **LO-FI / MOD**, **LEVEL**, **DELAY**, **ENVELOPE**, and **STRUCTURE**. Family and text filters combine, including in
+**WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, **GRAINS**, **LO-FI / MOD**, **LEVEL**, **DELAY**, **ENVELOPE**, **STRUCTURE**, and **FACTORY**. Family and text filters combine, including in
 saved recipes and pins. Clearing the search and choosing ALL FAMILIES restores
 the complete list. Filtering never renumbers stored slots.
 
 These 131 Portal modes accept mono input only; stereo is rejected explicitly.
 Multi-input/multichannel, breakpoint-file, and text-file workflows remain future
 work. The factory bank retains its original 32 curated instruments.
+
+## Auto Preview, parameter entry and file capture
+
+![Main canvas with direct CDP access](images/cdp-portal-main-access.png)
+
+The **AUTO OFF / AUTO ON** toggle sits below the pin controls. It starts off,
+remembers your choice while TapeSister remains open, and waits **500 ms after the
+last edit** before rendering. Process changes, committed parameter changes,
+chain edits and processing-selection changes can queue an update. Held drags,
+incomplete numeric entry and open management/confirmation dialogs pause it.
+
+Only one CDP worker runs at a time. New edits cancel an obsolete job, then the
+latest settings render after that worker exits. **PREVIEW / CANCEL** takes
+precedence over queued automatic work. Turning Auto off clears the queue;
+an already-running render can finish. Failed renders wait for another edit or
+manual Preview. Auto refreshes the result; Play/QWERTY audition it and Apply
+commits it to the tile.
+
+![Auto Preview and the parameter-entry cursor](images/cdp-portal-cursor.png)
+
+Click a numeric value to type it, **Enter** to commit, or **Escape** to cancel.
+The active field has a blinking cursor; long values scroll to keep the end
+visible. Typing does not repeatedly render partially entered numbers. Search,
+recipe names and macro checkboxes do not trigger rendering.
+
+![Recording Portal output directly to a WAV](images/cdp-portal-record.png)
+
+**REC** in the Portal header starts/stops the existing direct-to-file recorder.
+It captures the final stereo output, including Portal playback and QWERTY chords,
+after the master fader and limiter. It uses the usual captures folder and creates
+no audio tile. Sister Machine does not need to be enabled.
+
+While recording, REC flashes and the window shows the pink border, moving
+progress indicator, elapsed time and **STOP FILE** control. **Ctrl+Shift+F** also
+starts/stops recording in the Portal. The recording remains visible across
+workspace changes; the saved-file status appears when it finishes. Changing
+processes uses the same safe preview replacement behavior as manual rendering.
+
+## Factory instruments in the Portal
+
+![Factory REFORM opened from the bank with a real selection render](images/cdp-portal-factory.png)
+
+**Middle-click an original CDP bank instrument** to open it in the Portal with
+its saved bank controls. Left-click still performs the existing quick apply.
+The **FACTORY** family contains all **32 curated instruments**, in addition to
+the **131 raw processes**. Some instruments use the same underlying CDP modes;
+these are curated alternatives, not 32 newly discovered commands.
+
+Named modes such as REFORM's SQUARE/TRIANGLE/CLICK/SINE and GREV's REVERSE/REPEAT
+remain named controls. Wheel moves between valid choices; exact entry uses their
+original numeric values. Scroll over parameter labels for additional controls,
+including **SEED**, **DRY / WET**, and FILTER BANK's **ROOT HZ** where supported.
+The same content checks, auxiliary-file preparation and native command mapping
+used by the original instruments also run in the Portal.
+
+- **SAVE BANK** saves a standalone factory instrument's controls, mix and seed
+  back to its original bank preset. Rendering or Apply alone does not save bank
+  settings. Failed saves leave the previous preset intact.
+- **SAVE AS** creates a separate personal recipe. **PIN PROCESS TILE** saves to
+  the personal pin bank. Neither changes the original factory preset.
+- **CHAIN** makes the instrument a stage. You can combine factory instruments
+  and raw processes, audition intermediate outputs, and save the whole chain.
+  SAVE BANK is available only in single-process mode; use SINGLE to retain the
+  selected factory stage when returning from a chain.
+
+Opening from the bank captures the current canvas selection when present.
+Within the Portal, Apply, New Tile, New+Continue and selection processing behave
+as they do for raw processes. These factory Portal entries also require mono
+input. BRASSAGE retains the original renderer's stereo-cloud-to-mono fold.
+
+Factory seeds retain their original full 64-bit value when imported and saved.
+The visible seed is CDP's effective seed (1–256 or 1–32767, depending on the
+instrument); changing it selects a new native seed. Instruments without a
+repeatable seed can produce different takes with the same settings, including
+GRANULATE's native grain scatter. Dry/wet mix
+requires matching lengths for intermediate blends, as in the original dialog.
+
+FILTER BANK takes its root from canvas tuning when opened from the bank. Its
+Portal ROOT HZ can be saved in personal recipes or chains. SAVE BANK preserves
+the original bank behavior of following canvas tuning; it does not fix that
+root in the bank. Existing recipe files remain compatible: scalar collections
+still use version 1, and chains use version 2.
 
 ## Reusable process chains
 
@@ -35,7 +118,7 @@ work. The factory bank retains its original 32 curated instruments.
 Click **CHAIN** at the bottom left to turn the current process into stage one.
 A chain holds **one to eight stages**. The stage list replaces the explanation
 area on the right; the source/result waveforms and parameter controls stay in
-place. The process catalog remains at 131 modes.
+place. Choose from the 131 raw processes and 32 curated factory instruments.
 
 1. Click **ADD**, then choose a process in the left browser. It is inserted
    after the selected stage. You can also pick a saved single-process recipe
@@ -854,3 +937,32 @@ failure. Existing Portal lifecycle and live-loop suites run alongside these
 checks with AddressSanitizer and UndefinedBehaviorSanitizer. Leak detection is
 unavailable in this environment. Windows packaging and real-hardware listening
 remain the release checks.
+
+### Factory integration verification
+
+The core tests round-trip all 32 factory recipes, named modes and full-width
+seeds through scalar and chain collections. Native checks compare the Portal
+route with the original factory renderer on the welcome WAV, including exact
+hash comparisons for deterministic/seeded instruments and matching-length
+50% dry/wet blends. SPLINTER uses its established 10% target for this fixture
+because its 50% target exceeds the curated target frequency.
+
+The controller checks a filtered bank's actual recipe identity, saved preset
+loading, canvas-selection import, SAVE BANK persistence and failed-save rollback,
+a factory-plus-gain chain, retained stage cache, Apply and Undo. The screenshot
+is produced by the actual native renderer. These tests and the existing live-loop
+regressions pass with AddressSanitizer and UndefinedBehaviorSanitizer; leak
+detection is unavailable in this environment. Identity/packaging and SDL
+structural guards pass. Windows compile-and-listen validation remains the user
+release check.
+
+### Portal workflow UI verification
+
+Native controller coverage checks direct header access, 500 ms debounce,
+held-drag/typing deferral, obsolete-worker cancellation, latest-value rendering,
+process switching, explicit Cancel, invalid-input retry suppression, Auto off
+and closing with a queued update. A pixel check verifies the blinking numeric
+caret, including a long entry. The recorder test plays two Portal notes and
+compares the saved stereo WAV sample-for-sample with callback output; tile audio
+and held notes survive recording start/stop. Existing canvas file capture and
+Portal recipe/controller regressions run alongside these checks.

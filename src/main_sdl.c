@@ -3386,37 +3386,23 @@ static void save_dsp_transform_preset(TsUiState *ui)
              "DSP TILE %02d NOW USES THE EDITED SETTINGS", slot + 1);
 }
 
+static int save_cdp_preset_values(TsUiState *ui,int slot,const TsCdpRecipeValues *values,char *error,size_t size)
+{
+    const TsCdpRecipe *recipe=slot>=0?ts_cdp_factory_recipe_at((size_t)slot):NULL;
+    if(!recipe || !values){snprintf(error,size,"CDP PRESET CANNOT BE UPDATED");return 0;}
+    TsConfig previous=ui->config;
+    ui->config.cdp_factory_overridden[slot]=1;
+    memcpy(ui->config.cdp_factory_controls[slot],values->controls,sizeof(values->controls));
+    ui->config.cdp_factory_mix[slot]=values->mix;ui->config.cdp_factory_seed[slot]=values->seed;
+    if(!ts_config_save(&ui->config,config_file_path(),error,size)){ui->config=previous;return 0;}
+    ui->cdp_presets[slot]=*values;
+    snprintf(error,size,"%s SETTINGS SAVED IN TAPESISTER.INI",recipe->display_name);return 1;
+}
 static void save_cdp_transform_preset(TsUiState *ui)
 {
-    int slot;
-    const TsCdpRecipe *recipe;
-    TsConfig previous;
-    char error[160];
-    if (ui == NULL || ui->transform_backend != TS_TRANSFORM_BACKEND_CDP) return;
-    slot = ui->transform_recipe_index;
-    recipe = slot >= 0 ? ts_cdp_factory_recipe_at((size_t)slot) : NULL;
-    if (recipe == NULL) {
-        snprintf(ui->transform_message, sizeof(ui->transform_message),
-                 "CDP PRESET CANNOT BE UPDATED");
-        return;
-    }
-    previous = ui->config;
-    ui->config.cdp_factory_overridden[slot] = 1;
-    memcpy(ui->config.cdp_factory_controls[slot], ui->transform_values.controls,
-           sizeof(ui->config.cdp_factory_controls[slot]));
-    ui->config.cdp_factory_mix[slot] = ui->transform_values.mix;
-    ui->config.cdp_factory_seed[slot] = ui->transform_values.seed;
-    if (!ts_config_save(&ui->config, config_file_path(), error, sizeof(error))) {
-        ui->config = previous;
-        snprintf(ui->transform_message, sizeof(ui->transform_message),
-                 "PRESET UPDATE FAILED: %.69s", error);
-        return;
-    }
-    ui->cdp_presets[slot] = ui->transform_values;
-    snprintf(ui->transform_message, sizeof(ui->transform_message),
-             "%s SETTINGS SAVED IN TAPESISTER.INI", recipe->display_name);
-    snprintf(ui->status, sizeof(ui->status),
-             "CDP %s NOW USES THE EDITED SETTINGS", recipe->display_name);
+    if(!ui || ui->transform_backend!=TS_TRANSFORM_BACKEND_CDP)return;
+    (void)save_cdp_preset_values(ui,ui->transform_recipe_index,&ui->transform_values,
+        ui->transform_message,sizeof(ui->transform_message));
 }
 
 static void handle_transform_action(SDL_AudioDeviceID device, AudioState *audio,
@@ -8909,8 +8895,10 @@ static void poll_file_capture_ui(TsUiState *ui, SisterWindow *sister)
     ui->file_record_state=sister->model.file_capture_state;
     ui->file_record_rate=sister->model.file_capture_sample_rate;
     ui->file_record_frames=sister->model.file_capture_frames;
-    if(before!=TS_PERFORMANCE_FILE_IDLE && ui->file_record_state==TS_PERFORMANCE_FILE_IDLE)
+    if(before!=TS_PERFORMANCE_FILE_IDLE && ui->file_record_state==TS_PERFORMANCE_FILE_IDLE) {
         snprintf(ui->status,sizeof(ui->status),"%s",sister->model.status);
+        if(ui->portal.open)snprintf(ui->portal.message,sizeof(ui->portal.message),"%s",ui->status);
+    }
 }
 
 static void main_file_capture_toggle(AudioState *audio, TsUiState *ui,
@@ -8944,7 +8932,7 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
     if(event->type==SDL_KEYDOWN && event->key.windowID==SDL_GetWindowID(window) &&
        event->key.keysym.sym==SDLK_f &&
        (event->key.keysym.mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT) &&
-       !(event->key.keysym.mod&(KMOD_ALT|KMOD_GUI)) && (active || !ui_dialog_open(ui))) {
+       !(event->key.keysym.mod&(KMOD_ALT|KMOD_GUI)) && (active || ui->portal.open || !ui_dialog_open(ui))) {
         if(event->key.repeat)return 1;
         trigger=1;
     }
@@ -8952,6 +8940,7 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
        event->button.windowID==SDL_GetWindowID(window)) {
         int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
         if(active && x>=544 && x<630 && y>=382 && y<398)trigger=1;
+        else if(ui->portal.open && x>=464 && x<492 && y>=4 && y<30)trigger=1;
         else if(!ui_dialog_open(ui) && ui->show_keyboard &&
                 x>=486 && x<583 && y>=289 && y<311)trigger=1;
         else if(!ui_dialog_open(ui) && !ui->show_keyboard && !ui->show_recipes &&
@@ -8959,7 +8948,9 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
                 x>=250 && x<344 && y>=313 && y<329)trigger=1;
     }
     if(!trigger)return 0;
-    main_file_capture_toggle(audio,ui,sister,sample_rate);return 1;
+    main_file_capture_toggle(audio,ui,sister,sample_rate);
+    if(ui->portal.open)snprintf(ui->portal.message,sizeof(ui->portal.message),"%s",ui->status);
+    return 1;
 }
 
 static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,
@@ -14040,8 +14031,8 @@ int main(int argc, char **argv)
                     int recipe_index = ts_cdp_catalog_index_for_slot(
                         &ui.cdp_catalog, (size_t)ui.cdp_page, (size_t)cdp_slot);
                     if (recipe_index >= 0)
-                        begin_transform_workspace(&ui, &instrument, &transform,
-                                                  recipe_index);
+                        portal_open_factory(device, &audio, &ui, &instrument,
+                                            &portal, &transform, recipe_index);
                 } else if (ui.input_meter_active &&
                            x >= TS_WAVE_X && x < TS_WAVE_X + TS_WAVE_W &&
                            y >= TS_WAVE_Y && y < TS_WAVE_Y + TS_WAVE_H) {
