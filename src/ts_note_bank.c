@@ -55,11 +55,11 @@ void ts_note_bank_init(TsNoteBank *bank)
 
 void ts_note_bank_clear(TsNoteBank *bank)
 {
-    int attack_ms;
+    int attack_ms, sustain;
     if (bank == NULL) return;
-    attack_ms = bank->attack_ms;
+    attack_ms = bank->attack_ms;sustain=bank->sustain;
     memset(bank, 0, sizeof(*bank));
-    ts_note_bank_set_attack_ms(bank, attack_ms);
+    ts_note_bank_set_attack_ms(bank, attack_ms);bank->sustain=sustain;
 }
 
 void ts_note_bank_set_attack_ms(TsNoteBank *bank, int milliseconds)
@@ -205,6 +205,7 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
         voice->loop_mode = instrument->loop_mode;
         voice->direction = voice->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
         voice->latched = latched != 0;
+        voice->key_down = 1;
         voice->crossfade_frames = voice->looping ?
                                   ts_audition_crossfade_frames(
                                       &plan, instrument->loop_crossfade_ms) : 0;
@@ -284,6 +285,7 @@ static TsNoteStartResult start_sample_event(
         voice->gain = ts_note_event_gain(event);
         voice->looping = looping;
         voice->latched = latched != 0;
+        voice->key_down = 1;
         voice->synth = !preview;
         voice->preview = preview;
         voice->active = 1;
@@ -361,31 +363,29 @@ int ts_note_bank_start_staged_chord(TsNoteBank *bank,
     return started;
 }
 
+void ts_note_bank_set_sustain(TsNoteBank *bank,int enabled)
+{
+    if(!bank)return;
+    bank->sustain=enabled!=0;
+    if(!bank->sustain)for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i) {
+        TsNoteVoice *v=&bank->voices[i];
+        if(v->active && !v->latched && !v->key_down)v->active=0;
+    }
+}
 void ts_note_bank_release(TsNoteBank *bank, int note)
 {
     TsNoteEvent event;
-    if (!ts_note_event_qwerty(&event, note, TS_KEYBOARD_BASE_NOTE)) return;
-    /* QWERTY release follows the physical key even after the octave changes,
-       so only its origin and key identity are used below. */
-    if (bank == NULL) return;
-    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
-        TsNoteVoice *voice = &bank->voices[i];
-        if (voice->active && !voice->latched &&
-            voice->origin == TS_NOTE_ORIGIN_QWERTY && voice->note == note &&
-            (voice->looping || voice->preview))
-            voice->active = 0;
-    }
+    if(ts_note_event_qwerty(&event,note,TS_KEYBOARD_BASE_NOTE))ts_note_bank_release_event(bank,&event);
 }
-
-void ts_note_bank_release_event(TsNoteBank *bank, const TsNoteEvent *event)
+void ts_note_bank_release_event(TsNoteBank *bank,const TsNoteEvent *event)
 {
-    if (bank == NULL) return;
-    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
-        TsNoteVoice *voice = &bank->voices[i];
-        if (voice->active && !voice->latched && event != NULL &&
-            ts_note_event_same_trigger(event, voice->origin, voice->note,
-                                       voice->channel) && (voice->looping || voice->preview))
-            voice->active = 0;
+    if(!bank || !event)return;
+    for(int i=0;i<TS_NOTE_BANK_VOICE_CAPACITY;++i) {
+        TsNoteVoice *v=&bank->voices[i];
+        if(v->active && ts_note_event_same_trigger(event,v->origin,v->note,v->channel)) {
+            v->key_down=0;
+            if(!v->latched && !bank->sustain)v->active=0;
+        }
     }
 }
 

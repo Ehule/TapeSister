@@ -193,6 +193,7 @@ static int start_slot_event(TsPerformanceBank *bank, const TsBankSlot *slot,
     voice->gain = ts_note_event_gain(event);
     voice->group_gain = group_gain;
     voice->latched = latched != 0;
+    voice->key_down = 1;
     voice->active = 1;
     return 1;
 }
@@ -443,16 +444,24 @@ void ts_performance_release(TsPerformanceBank *bank, int note)
     ts_performance_release_event(bank, &event);
 }
 
-void ts_performance_release_event(TsPerformanceBank *bank,
-                                  const TsNoteEvent *event)
+void ts_performance_set_sustain(TsPerformanceBank *bank,int enabled)
 {
-    if (bank == NULL) return;
-    for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i) {
-        TsPerformanceVoice *voice = &bank->voices[i];
-        if (voice->active && !voice->latched && event != NULL &&
-            ts_note_event_same_trigger(event, voice->origin, voice->note,
-                                       voice->channel) && voice->looping)
-            voice_deactivate(voice);
+    if(!bank)return;
+    bank->sustain=enabled!=0;
+    if(!bank->sustain)for(int i=0;i<TS_PERFORMANCE_VOICE_LIMIT;++i) {
+        TsPerformanceVoice *v=&bank->voices[i];
+        if(v->active && !v->latched && !v->tile_launched && !v->key_down)voice_deactivate(v);
+    }
+}
+void ts_performance_release_event(TsPerformanceBank *bank,const TsNoteEvent *event)
+{
+    if(!bank || !event)return;
+    for(int i=0;i<TS_PERFORMANCE_VOICE_LIMIT;++i) {
+        TsPerformanceVoice *v=&bank->voices[i];
+        if(v->active && !v->tile_launched && ts_note_event_same_trigger(event,v->origin,v->note,v->channel)) {
+            v->key_down=0;
+            if(!v->latched && !bank->sustain)voice_deactivate(v);
+        }
     }
 }
 

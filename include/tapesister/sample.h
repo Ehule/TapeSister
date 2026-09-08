@@ -880,6 +880,8 @@ int ts_instrument_bank_move_loop_endpoint(TsInstrument *instrument, int slot,
                                           int endpoint, size_t frame);
 int ts_instrument_set_bank_as_current(TsInstrument *instrument, int slot,
                                       char *error, size_t error_size);
+/* Store the live editor and history without reloading or adding an Undo step. */
+int ts_instrument_sync_selected(TsInstrument *instrument, char *error, size_t error_size);
 int ts_instrument_select_bank(TsInstrument *instrument, int slot,
                               char *error, size_t error_size);
 int ts_instrument_create_selected(TsInstrument *instrument, uint32_t seed,

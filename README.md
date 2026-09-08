@@ -84,7 +84,10 @@ or canceled work leaves the tile untouched.
 Tiles, loops, QWERTY notes, MIDI notes, FM, and staged chords can be layered while
 TapeSister records the final performance into a new tile. Shift-clicked source groups
 fan notes across several tiles. Plain-clicked one-shots and loops form a separate live
-performance layer.
+performance layer. **Shift+S / SUSTAIN** selects whether QWERTY and MIDI notes
+release with the key or continue to their end (or keep looping). This setting is
+shared with FM, Portal, import preview, and Sister Machine; Portal and file previews
+now accept MIDI notes. See [Keyboard Sustain](docs/KEYBOARD_SUSTAIN.md).
 
 The main and Sister Machine **M/S** buttons mirror one capture-format setting:
 

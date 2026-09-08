@@ -6246,6 +6246,45 @@ static int sister_performance_keys_allowed(const TsUiState *ui)
                              !ui->fm_full_choice_open));
 }
 
+/* Both preview workspaces audition the selected immutable buffer directly;
+   MIDI must not fall through to the underlying tile behind the dialog. */
+static void preview_midi_note(SDL_AudioDeviceID device, AudioState *audio,
+                              TsUiState *ui, const TsNoteEvent *event, int rate)
+{
+    const TsSample *sample=NULL;
+    size_t first=0,last=0;int loop=0;
+    if(ui->portal.open) {
+        TsPortalUi *p=&ui->portal;
+        if(p->search_focus || p->name_focus || p->number_focus>=0 || p->manage_open || p->full_action)return;
+        sample=p->listen_result?p->result:p->source;
+        const TsPortalWave *w=&p->waves[p->listen_result];
+        first=w->has_selection?w->selection_first:0;
+        last=w->has_selection?w->selection_last:sample?sample->frames:0;
+        loop=p->loop;
+    } else {
+        sample=ui->import_preview_sample;
+        first=ui->import_preview_has_selection?ui->import_preview_selection_first:0;
+        last=ui->import_preview_has_selection?ui->import_preview_selection_last:sample?sample->frames:0;
+        loop=ui->import_preview_loop;
+    }
+    if(!device || !ts_audio_output_is_available() || rate<=0 || !sample || !sample->data)return;
+    const TsTuning unity={TS_KEYBOARD_BASE_NOTE,0.0f};
+    SDL_LockAudioDevice(device);
+    ts_note_bank_set_attack_ms(&audio->notes,ui->config.voice_attack_ms);
+    TsNoteStartResult result=ts_note_bank_start_preview_event(&audio->notes,sample,&unity,event,first,last,loop,rate);
+    if(result==TS_NOTE_STARTED) {
+        audio->playing=0;audio->sample=NULL;
+        if(ui->portal.open)ui->portal.playing=1;else ui->import_preview_active=1;
+    }
+    SDL_UnlockAudioDevice(device);
+    char *message=ui->portal.open?ui->portal.message:ui->import_preview_message;
+    size_t capacity=ui->portal.open?sizeof(ui->portal.message):sizeof(ui->import_preview_message);
+    char name[8];
+    snprintf(message,capacity,result==TS_NOTE_STARTED?"MIDI %s - C4 ORIGINAL PITCH; SPACE STOPS ALL":
+             result==TS_NOTE_LIMIT_REACHED?"CHORD LIMIT: 5 NOTES":"NOTE COULD NOT START",
+             ts_midi_note_name(event->midi_note,name,sizeof(name)));
+}
+
 static void handle_midi_event(SDL_AudioDeviceID device, AudioState *audio,
                               TsUiState *ui, const TsInstrument *instrument,
                               const TsSample *fm_preview,
@@ -6281,6 +6320,11 @@ static void handle_midi_event(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (midi->action != TS_MIDI_ACTION_NOTE_ON) return;
+    if ((ui->portal.open || ui->import_preview_open) && !ui->file_busy &&
+        !ui->exit_confirm_open && !ui->project_overwrite_confirm_open) {
+        preview_midi_note(device,audio,ui,&midi->note,output_rate);
+        return;
+    }
     if (ui->fm_open && !ui->fm_bank_choice_open && !ui->fm_full_choice_open) {
         begin_fm_note_event(device, audio, ui, instrument, fm_preview,
                             &midi->note, output_rate, 0);
@@ -11391,6 +11435,69 @@ static void keep_record_bank(SDL_AudioDeviceID output_device,
 
 #include "main_sdl_portal.inc"
 
+/* One session-wide release policy. Explicit Shift+click latches and tile
+   launches remain independent; disabling sustain preserves physically held keys. */
+static int keyboard_sustain_allowed(const TsUiState *ui)
+{
+    if(ui->exit_confirm_open || ui->project_overwrite_confirm_open || ui->file_busy)return 0;
+    if(ui->portal.open) {
+        const TsPortalUi *p=&ui->portal;
+        return !p->search_focus && !p->name_focus && p->number_focus<0 && !p->manage_open && !p->full_action;
+    }
+    if(ui->import_preview_open)return 1;
+    return sister_performance_keys_allowed(ui);
+}
+static void keyboard_sustain_toggle(SDL_AudioDeviceID device,AudioState *audio,
+                                     TsUiState *ui,SisterWindow *sister)
+{
+    int enabled=!ui->keyboard_sustain;
+    if(device)SDL_LockAudioDevice(device);
+    ts_note_bank_set_sustain(&audio->notes,enabled);
+    ts_performance_set_sustain(&audio->performance,enabled);
+    ts_performance_set_sustain(&audio->sister.performance,enabled);
+    if(device)SDL_UnlockAudioDevice(device);
+    ui->keyboard_sustain=enabled;
+    sister->model.keyboard_sustain=enabled;
+    snprintf(ui->status,sizeof(ui->status),enabled?
+        "SUSTAIN ON - RELEASED NOTES CONTINUE; SHIFT+S RELEASES THEM":
+        "SUSTAIN OFF - NOTES RELEASE WITH KEYS; HELD KEYS KEEP PLAYING");
+    snprintf(ui->portal.message,sizeof(ui->portal.message),"%s",ui->status);
+    snprintf(ui->import_preview_message,sizeof(ui->import_preview_message),"%s",ui->status);
+    snprintf(ui->fm_message,sizeof(ui->fm_message),"%s",ui->status);
+    snprintf(sister->model.status,sizeof(sister->model.status),"%s",ui->status);
+}
+static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
+                                   SDL_AudioDeviceID device,AudioState *audio,
+                                   TsUiState *ui,SisterWindow *sister)
+{
+    if(!keyboard_sustain_allowed(ui) || sister->model.preset_manage_open || sister->model.fallout_lfo_open)return 0;
+    Uint32 id=event->type==SDL_KEYDOWN?event->key.windowID:
+              event->type==SDL_MOUSEBUTTONDOWN?event->button.windowID:0;
+    int in_sister=sister->window && id==sister->window_id;
+    if(!in_sister && id!=SDL_GetWindowID(window))return 0;
+    int trigger=0;
+    if(event->type==SDL_KEYDOWN && event->key.keysym.sym==SDLK_s &&
+       (event->key.keysym.mod&KMOD_SHIFT) && !(event->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) {
+        if(event->key.repeat)return 1;
+        trigger=1;
+    } else if(event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT) {
+        int x,y;
+        if(in_sister) {
+            if(!sister_event_mouse(event->button.x,event->button.y,&x,&y))return 0;
+            trigger=x>=356 && x<438 && y>=350 && y<367;
+        } else {
+            logical_mouse(window,event->button.x,event->button.y,&x,&y);
+            if(ui->portal.open)trigger=x>=550 && x<582 && y>=308 && y<325;
+            else if(ui->import_preview_open)trigger=x>=514 && x<604 && y>=312 && y<329;
+            else if(ui->show_keyboard)trigger=x>=540 && x<630 && y>=313 && y<330;
+        }
+    }
+    if(!trigger)return 0;
+    keyboard_sustain_toggle(device,audio,ui,sister);
+    return 1;
+}
+
+
 int main(int argc, char **argv)
 {
     SDL_Window *window = NULL;
@@ -12003,6 +12110,7 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            if (keyboard_sustain_event(&event,window,device,&audio,&ui,&sister_window))continue;
             if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode global_key = event.key.keysym.sym;
                 SDL_Keymod global_mod = (SDL_Keymod)event.key.keysym.mod;

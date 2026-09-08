@@ -1152,6 +1152,7 @@ static void import_preview_render(TsFramebuffer *fb, const TsUiState *ui)
     snprintf(keyboard, sizeof(keyboard), "QWERTY C%d  %d/5 NOTES  F1-F8 OCTAVE  C4 ORIGINAL PITCH",
              ts_ui_keyboard_base_note(ui) / 12 - 1, ui->import_preview_note_count);
     text(fb, 65, 316, keyboard, PAL_EFFECT, 1);
+    mini_button(fb,514,312,90,ui->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",ui->keyboard_sustain);
     text(fb, 65, 330,
          "WHEEL ZOOM  SHIFT+WHEEL PAN  0 FULL  SPACE PLAY/STOP",
          RGB(190, 185, 190), 1);
@@ -3518,6 +3519,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                      ts_midi_note_name(ts_ui_keyboard_base_note(ui),
                                        base_note, sizeof(base_note)));
         text(fb, 11, 318, keyboard_hint, RGB(184, 180, 184), 1);
+        text(fb,460,320,"SHIFT+S",PAL_EFFECT,1);
+        mini_button(fb,540,313,90,ui->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",ui->keyboard_sustain);
         TsKeyboardLayout layout;
         int keyboard_base_note = ts_ui_keyboard_base_note(ui);
         keyboard_layout(keyboard_base_note, &layout);
@@ -4109,8 +4112,13 @@ int ts_ui_execute_bank_action(TsInstrument *instrument, int slot,
         return ts_instrument_bank_clear(instrument, slot, error, error_size);
     if (action == TS_UI_BANK_ACTION_TOGGLE_LOCK)
         return ts_instrument_bank_toggle_locked(instrument, slot, error, error_size);
-    if (action == TS_UI_BANK_ACTION_AUDITION)
+    if (action == TS_UI_BANK_ACTION_AUDITION) {
+        /* Current loop/selection edits are live in the editor. Reloading the
+           same slot here would discard them before the tile launcher reads it. */
+        if (slot == instrument->selected_slot && instrument->bank[slot].occupied)
+            return ts_instrument_sync_selected(instrument, error, error_size);
         return ts_instrument_select_bank(instrument, slot, error, error_size);
+    }
     if (action == TS_UI_BANK_ACTION_RENAME) {
         if (!instrument->bank[slot].occupied) {
             if (error != NULL && error_size > 0)
@@ -5405,6 +5413,7 @@ sister_footer:
                  "RECORDING - MONITOR LEVELS DO NOT CHANGE CAPTURE" :
                  model->status);
     }
+    line[56]='\0';
     text(fb, 10, 355, line,
          model->routing.source_target_conflict ? PAL_VOLUME : PAL_MOUSE, 1);
     {
@@ -5467,6 +5476,8 @@ sister_footer:
             fb, capturing ? 450 : 538, 370, capturing ? 82 : 92, 22,
             (recording || file_recording) && model->text_cursor_visible);
     }
+
+    mini_button(fb,356,350,82,model->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",model->keyboard_sustain);
 
     if (model->fallout_lfo_open) {
         sister_fallout_lfo_dialog(fb, &model->parameters.fx.fallout);
