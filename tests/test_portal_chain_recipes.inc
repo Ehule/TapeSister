@@ -20,7 +20,7 @@ static void test_chain_recipes(void)
     for(unsigned i=0;i<3;++i)assert(!loaded.pins[31].stages[i].exposed);
     before=loaded;
     const char *bad[]={"TSCDPPORTAL 2\nC R 0 9 |TOO MANY\n", "TSCDPPORTAL 2\nC R 0 1 |TRUNCATED\n",
-        "TSCDPPORTAL 2\nC R 0 0 |EMPTY\n", "TSCDPPORTAL 2\nC R 33 1 |BAD SLOT\n", "TSCDPPORTAL 3\n"};
+        "TSCDPPORTAL 2\nC R 0 0 |EMPTY\n", "TSCDPPORTAL 2\nC R 33 1 |BAD SLOT\n", "TSCDPPORTAL 999\n"};
     for(unsigned i=0;i<sizeof(bad)/sizeof(bad[0]);++i) {
         FILE *f=fopen(path,"wb");assert(f);fputs(bad[i],f);fclose(f);
         assert(!ts_portal_library_load(&loaded,path,error,sizeof(error)));

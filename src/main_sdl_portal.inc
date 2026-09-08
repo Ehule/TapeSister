@@ -383,7 +383,7 @@ static void portal_auto_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
     TsPortalUi *p=&ui->portal;
     if(!p->open || !p->auto_preview) {c->auto_pending=0;return;}
     if(!c->auto_pending || c->worker || p->dragging_parameter>=0 || p->dragging_wave>=0 ||
-       p->number_focus>=0 || p->search_focus || p->name_focus || p->manage_open || p->full_action ||
+       p->number_focus>=0 || p->macro_edit || p->search_focus || p->name_focus || p->manage_open || p->full_action ||
        !SDL_TICKS_PASSED(now,c->auto_due))return;
     portal_preview(device,audio,ui,c);
 }
@@ -656,12 +656,13 @@ static void portal_continue_page(SDL_AudioDeviceID device,AudioState *audio,TsUi
 }
 static int portal_parameter_at(TsPortalUi *p,int row)
 {
-    const TsPortalProcess *proc=ts_portal_process_find(p->recipe.process_id);int n=0;
-    if(proc)for(unsigned i=0;i<proc->parameter_count;++i) {
-        if(p->macro_view && !(p->recipe.exposed&(1u<<i)))continue;
-        if(n++==row+p->parameter_scroll)return (int)i;
+    TsPortalControl control;
+    if(!ts_portal_control_at(p,row+p->parameter_scroll,&control))return -1;
+    if(control.stage>=0 && control.stage!=p->chain_stage) {
+        (void)portal_working(p);p->chain_stage=control.stage;
+        ts_portal_step_get(&p->chain.stages[p->chain_stage],&p->recipe);
     }
-    return -1;
+    return control.index;
 }
 static void portal_parameter_drag(SDL_AudioDeviceID device,AudioState *audio,
                                   TsPortalUi *p,PortalController *c,int index,int x)
@@ -670,11 +671,60 @@ static void portal_parameter_drag(SDL_AudioDeviceID device,AudioState *audio,
     if(!proc || index<0 || (unsigned)index>=proc->parameter_count)return;
     const TsPortalParam *s=&proc->parameters[index];
     double t=(x-253)/124.0;if(t<0)t=0;if(t>1)t=1;
-    double v=s->minimum+t*(s->maximum-s->minimum);
-    if(s->maximum>100 && s->minimum>=0)v=s->minimum+expm1(t*log1p(s->maximum-s->minimum));
+    double lo,hi;ts_portal_control_bounds(&p->recipe,(unsigned)index,p->macro_view,&lo,&hi);
+    double v=lo+t*(hi-lo);
+    if(hi>100 && lo>=0)v=lo+expm1(t*log1p(hi-lo));
     v=ts_portal_parameter_quantize(proc,(unsigned)index,v);
     if(p->recipe.values[index]!=v) {portal_invalidate(device,audio,p,c);p->recipe.values[index]=v;}
-    snprintf(p->message,sizeof(p->message),"%s; %.6g..%.6g; CLICK VALUE TO TYPE",s->help,s->minimum,s->maximum);
+    snprintf(p->message,sizeof(p->message),"%s; %.6g..%.6g; CLICK VALUE TO TYPE",s->help,lo,hi);
+}
+static void portal_macro_open(TsPortalUi *p,int index)
+{
+    const TsPortalProcess *proc=ts_portal_process_find(p->recipe.process_id);
+    const TsPortalMacro *m=&p->recipe.macros[index];double lo,hi;
+    ts_portal_control_bounds(&p->recipe,(unsigned)index,1,&lo,&hi);
+    p->macro_edit=index+1;p->macro_field=0;p->number_focus=-1;p->search_focus=p->name_focus=0;
+    snprintf(p->macro_text[0],sizeof(p->macro_text[0]),"%s",m->configured?m->name:proc->parameters[index].label);
+    snprintf(p->macro_text[1],sizeof(p->macro_text[1]),"%.9g",lo);
+    snprintf(p->macro_text[2],sizeof(p->macro_text[2]),"%.9g",hi);
+    snprintf(p->message,sizeof(p->message),"NAME AND RANGE FOR THIS CONTROL; CDP INPUT-DEPENDENT LIMITS STILL APPLY");
+}
+static int portal_macro_event(const SDL_Event *event,TsPortalUi *p,int x,int y)
+{
+    char *text=p->macro_text[p->macro_field];int apply=0;
+    if(event->type==SDL_TEXTINPUT) {
+        for(const char *s=event->text.text;*s;++s)if(*s>=32 && *s<127 && *s!='|' && strlen(text)+1<32) {
+            size_t n=strlen(text);text[n]=*s;text[n+1]=0;
+        }
+    } else if(event->type==SDL_KEYDOWN) {
+        SDL_Keycode key=event->key.keysym.sym;
+        if(key==SDLK_ESCAPE)p->macro_edit=0;
+        else if(key==SDLK_BACKSPACE && text[0])text[strlen(text)-1]=0;
+        else if(key==SDLK_TAB)p->macro_field=(p->macro_field+((event->key.keysym.mod&KMOD_SHIFT)?2:1))%3;
+        else if(key==SDLK_RETURN || key==SDLK_KP_ENTER)apply=1;
+        else if((event->key.keysym.mod&KMOD_CTRL) && key==SDLK_a)text[0]=0;
+    } else if(event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT) {
+        if(x>=268 && x<466 && y>=157 && y<231)p->macro_field=(y-157)/25;
+        if(y>=250 && y<272) {
+            if(x>=178 && x<268)apply=1;
+            else if(x>=277 && x<367) {
+                memset(&p->recipe.macros[p->macro_edit-1],0,sizeof(TsPortalMacro));
+                (void)portal_working(p);p->macro_edit=0;
+                snprintf(p->message,sizeof(p->message),"MACRO RESTORED TO CDP NAME AND FULL RANGE; SAVE TO KEEP");
+            } else if(x>=376 && x<466)p->macro_edit=0;
+        }
+    } else if(event->type==SDL_DROPFILE)SDL_free(event->drop.file);
+    if(apply) {
+        char *a,*b;double lo=strtod(p->macro_text[1],&a),hi=strtod(p->macro_text[2],&b);
+        if(a==p->macro_text[1] || *a || b==p->macro_text[2] || *b) {
+            snprintf(p->message,sizeof(p->message),"TYPE NUMERIC MINIMUM AND MAXIMUM");return 1;
+        }
+        if(ts_portal_macro_set(&p->recipe,(unsigned)p->macro_edit-1,p->macro_text[0],lo,hi,p->message,sizeof(p->message))) {
+            (void)portal_working(p);p->macro_edit=0;
+            snprintf(p->message,sizeof(p->message),"MACRO NAME AND RANGE UPDATED; SAVE AS / UPDATE TOOL TO KEEP");
+        }
+    }
+    return event->type==SDL_WINDOWEVENT?0:1;
 }
 static int portal_sync_loop(SDL_AudioDeviceID device,AudioState *audio,TsPortalUi *p,
                             int which,int seek)
@@ -872,7 +922,7 @@ static int portal_chain_click(SDL_AudioDeviceID device,AudioState *audio,TsPorta
             }
         } else {
             const TsPortalProcess *proc=ts_portal_process_find(p->recipe.process_id);
-            snprintf(p->message,sizeof(p->message),"%s",proc?proc->description:"");
+            snprintf(p->message,sizeof(p->message),"%s",p->macro_view && p->chain.description[0]?p->chain.description:proc?proc->description:"");
         }
         return 1;
     }
@@ -1011,6 +1061,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         }
         return event->type==SDL_WINDOWEVENT?0:1;
     }
+    if(p->macro_edit)return portal_macro_event(event,p,x,y);
     if(p->manage_open)return portal_manage_event(event,window,p,c,x,y);
     if(event->type==SDL_DROPFILE) {SDL_free(event->drop.file);snprintf(p->message,sizeof(p->message),"LOAD AUDIO ON MAIN; THEN REOPEN OR RELOAD THE PORTAL");return 1;}
     if(event->type==SDL_TEXTINPUT) {
@@ -1032,13 +1083,14 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
                     const TsPortalProcess *proc=ts_portal_process_find(p->recipe.process_id);char *end;
                     int i=p->number_focus;double v=strtod(dst,&end);
                     const TsPortalParam *s=&proc->parameters[i];
+                    double lo,hi;ts_portal_control_bounds(&p->recipe,(unsigned)i,p->macro_view,&lo,&hi);
                     const TsCdpRecipe *factory=ts_portal_factory_find(proc->id);
                     if(factory && i<(int)factory->control_count)v=(double)(float)v;
                     if(s->type==TS_PORTAL_ENUMERATED && ts_portal_parameter_quantize(proc,(unsigned)i,v)!=v) {
                         snprintf(p->message,sizeof(p->message),"CHOOSE A NAMED MODE; WHEEL THE VALUE TO CYCLE THE AVAILABLE CHOICES");return 1;
                     }
-                    if(end==dst || *end || !isfinite(v) || v<s->minimum || v>s->maximum || (s->type!=TS_PORTAL_REAL && floor(v)!=v) || (s->type==TS_PORTAL_ODD_INTEGER && fmod(v,2)!=1)) {
-                        snprintf(p->message,sizeof(p->message),"VALUE MUST BE %s %.6g..%.6g",s->type==TS_PORTAL_REAL?"A NUMBER":s->type==TS_PORTAL_ODD_INTEGER?"AN ODD INTEGER":"AN INTEGER",s->minimum,s->maximum);return 1;
+                    if(end==dst || *end || !isfinite(v) || v<lo || v>hi || (s->type!=TS_PORTAL_REAL && floor(v)!=v) || (s->type==TS_PORTAL_ODD_INTEGER && fmod(v,2)!=1)) {
+                        snprintf(p->message,sizeof(p->message),"VALUE MUST BE %s %.6g..%.6g",s->type==TS_PORTAL_REAL?"A NUMBER":s->type==TS_PORTAL_ODD_INTEGER?"AN ODD INTEGER":"AN INTEGER",lo,hi);return 1;
                     }
                     v=ts_portal_parameter_quantize(proc,(unsigned)i,v);
                     if(p->recipe.values[i]!=v) {portal_invalidate(device,audio,p,c);p->recipe.values[i]=v;}
@@ -1103,15 +1155,15 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
             else if(SDL_GetModState()&KMOD_SHIFT)ts_portal_wave_pan(&p->waves[which],s,d>0?-1:1);
             else ts_portal_wave_zoom(&p->waves[which],s,x-154,d);
         } else if(x>=148 && x<466 && y>=245 && y<327) {
-            int i=portal_parameter_at(p,(y-265)/19);
+            int i=(y>=265 && y<322 && x>=253)?portal_parameter_at(p,(y-265)/19):-1;
             const TsPortalProcess *proc=ts_portal_process_find(p->recipe.process_id);
             if(y>=265 && i>=0 && x>=253) {
+                double lo,hi;ts_portal_control_bounds(&p->recipe,(unsigned)i,p->macro_view,&lo,&hi);
                 double v=ts_portal_parameter_nudge(proc,(unsigned)i,p->recipe.values[i],d);
+                v=fmax(lo,fmin(hi,v));
                 if(p->recipe.values[i]!=v) {portal_invalidate(device,audio,p,c);p->recipe.values[i]=v;}
             } else {
-                int count=0;
-                if(proc)for(unsigned n=0;n<proc->parameter_count;++n)
-                    if(!p->macro_view || (p->recipe.exposed&(1u<<n)))++count;
+                int count=ts_portal_control_count(p);
                 int last=count>3?count-3:0;
                 p->parameter_scroll-=d;if(p->parameter_scroll<0)p->parameter_scroll=0;
                 if(p->parameter_scroll>last)p->parameter_scroll=last;
@@ -1121,6 +1173,9 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
     }
     if(event->type!=SDL_MOUSEBUTTONDOWN)return 0;
     if(event->button.button==SDL_BUTTON_RIGHT) {
+        if(x>=154 && x<253 && y>=265 && y<322) {
+            int i=portal_parameter_at(p,(y-265)/19);if(i>=0)portal_macro_open(p,i);return 1;
+        }
         if(x>=154 && x<464 && ((y>=60 && y<122) || (y>=152 && y<214))) {
             int which=y>=152;
             p->waves[which].has_selection=0;p->waves[which].playhead=0;
@@ -1166,8 +1221,9 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
             } else portal_load_recipe(p,&r);
             p->parameter_scroll=0;
             p->selected_tab=p->tab;p->selected_slot=slot;if(p->tab==2)p->pin_slot=slot;
-            p->macro_view=p->tab==2;p->exact_pin=!portal_has_macros(&r);
-            snprintf(p->message,sizeof(p->message),"%.60s - ENTER TO PREVIEW; FULL SHOWS ALL PARAMETERS",r.name);
+            p->macro_view=p->tab==2 || r.stage_count;p->exact_pin=!portal_has_macros(&r);
+            if(r.description[0])snprintf(p->message,sizeof(p->message),"%s",r.description);
+            else snprintf(p->message,sizeof(p->message),"%.60s - ENTER TO PREVIEW; FULL SHOWS ALL PARAMETERS",r.name);
         }
     } else if(x>=154 && x<464 && ((y>=60 && y<122) || (y>=152 && y<214))) {
         int which=y>=152;

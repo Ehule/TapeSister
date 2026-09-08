@@ -108,8 +108,8 @@ requires matching lengths for intermediate blends, as in the original dialog.
 FILTER BANK takes its root from canvas tuning when opened from the bank. Its
 Portal ROOT HZ can be saved in personal recipes or chains. SAVE BANK preserves
 the original bank behavior of following canvas tuning; it does not fix that
-root in the bank. Existing recipe files remain compatible: scalar collections
-still use version 1, and chains use version 2.
+root in the bank. Existing recipe files remain compatible; custom macro names,
+ranges and chain descriptions use the version-3 format described below.
 
 ## Reusable process chains
 
@@ -139,9 +139,11 @@ place. Choose from the 131 raw processes and 32 curated factory instruments.
    selections remain independent, including while looping.
 
 The selected stage's parameter checkboxes decide its exposed macro controls.
-**MACROS** shows only those checked controls for the selected stage; **FULL**
-shows all of its controls. Choose another stage to reach its macros. The chain
-name field names the whole tool. **SAVE AS** saves every stage, its order,
+**MACROS** brings checked controls from **every stage** into one scrollable view.
+The number before each label identifies its stage. Editing a macro selects its
+stage without switching the audition away from the current result. **FULL**
+shows all original CDP controls for the selected stage. The chain name field
+names the whole tool. **SAVE AS** saves every stage, its order,
 bypass state and values. **PIN CHAIN TILE** saves the whole chain in a user-pin
 slot. Exact pins clear exposed controls on every stage; checked-macro pins
 preserve each stage's choices. The same collection manager can rename, update,
@@ -588,6 +590,51 @@ bounded to eight million frames. This permits about 181 seconds at 44.1 kHz;
 choose a smaller main-canvas selection for longer recordings. Expanding
 processes also preflight their output estimate. CDP timeouts remain enforced.
 
+## Chain instruments and named macros
+
+![Native chain-wide Macros view](images/cdp-chain-macros.png)
+
+Select **CHAIN TOOLS** in the family filter, or search ALL, to load one of four
+factory starter chains. These are combinations of existing processes, in
+addition to the 131 raw processes and 32 single-process factory instruments.
+Loading one opens its Macros view. **HELP** explains the whole chain in Macros
+view and the selected CDP process in Full view.
+
+| Chain | Stages | Exposed controls |
+|---|---|---|
+| DUST HALO | Grain Scramble → Spectral Blur → Linear Gain | FRAGMENTS, MEMORY, HAZE, OUTPUT |
+| DARK GLASS | Tape Transpose → Spectral Blur → Linear Gain | PITCH, HAZE, OUTPUT |
+| BROKEN SIGNAL | Bit Reduction → Ring Modulation → Linear Gain | RESOLUTION, METAL, OUTPUT |
+| SLOW BLOOM | Granular Time → Spectral Blur → Linear Gain | TIME SPEED, HAZE, OUTPUT |
+
+DUST HALO scatters fragments into a blurred texture; start with at least one
+second of mono audio. DARK GLASS lowers the tape pitch before blurring its
+spectrum. BROKEN SIGNAL reduces resolution before adding ring-modulation
+sidebands. SLOW BLOOM lengthens grains before softening their spectral detail;
+smaller TIME SPEED values make a longer result. Linear Gain supplies a final
+output control in each chain. Native grain scatter can vary between renders.
+
+These factory chains are fresh starting points. **SAVE AS** stores your edited
+copy; **PIN CHAIN TILE** makes it a personal instrument. Loading or editing a
+factory chain does not overwrite your saved collection.
+
+![Native macro name and range editor](images/cdp-macro-editor.png)
+
+**Right-click a parameter label** in Full or Macros view to edit its name and
+range. Click a field or use Tab/Shift+Tab, Ctrl+A to clear, and Enter or **SAVE**
+to accept. Escape/**CANCEL** discards edits. **RESET** restores the original CDP
+name and range without changing the parameter value or exposure checkbox.
+
+Custom ranges must fit the process's legal range and use valid parameter steps.
+They govern dragging, wheel changes and exact entry in **MACROS**; **FULL**
+retains the native CDP names and full ranges. Narrowing a range does not alter
+the current sound or clamp an existing value. Changing a name or range does not
+trigger a render. Save or Update the recipe/pin to keep these edits after closing.
+
+Names, ranges and exposure travel with their stages when reordered. Audio
+changes rerender the edited stage and those after it; earlier cached outputs
+remain available. Wheel over parameter labels to reach additional chain macros.
+
 ## Save a recipe or make an instrument
 
 Click the name field to name a recipe. **SAVE AS**, beside **TOOLS** below the
@@ -600,9 +647,9 @@ The **PIN** checkboxes beside parameters select which controls the user-made
 instrument exposes. Choose **PIN: CHECKED MACROS** or **PIN: EXACT RECIPE**,
 select an empty pin slot, then click **PIN PROCESS TILE**. An exact pin fixes all
 values; a macro pin exposes only the checked controls. **FULL** reveals the
-underlying controls again. Macro names are the real CDP parameter names in this
-first release; custom macro naming, range remapping, and multi-parameter macros
-are future work.
+underlying controls again. Right-click a parameter label to give that macro a
+custom name and minimum/maximum range. One macro controls one parameter;
+multi-parameter mappings are not yet supported.
 
 Back on the main CDP panel, **PINS** switches between factory instruments and a
 separate pair of 16-slot user-pin pages. Left-click a filled pin to render and
@@ -642,9 +689,10 @@ fails, both the existing collection and the previous file remain intact.
 file and atomic replacement. It is an application-level personal collection,
 not embedded in a `.tsr` project. Copy this file alongside the INI when moving
 your personal configuration. Source audio, rendered history, and temporary
-analysis files are not included. Collections containing chains use `TSCDPPORTAL 2`;
-single-process-only collections retain version 1. This build reads both versions.
-Earlier TapeSister builds cannot read version 2, so keep a copy of the collection
+analysis files are not included. Collections with custom macro metadata or chain
+descriptions use `TSCDPPORTAL 3`. Without that metadata, chains retain version 2
+and single-process collections retain version 1. This build reads all three.
+Older builds that only support versions 1/2 cannot load version 3; keep a copy
 before going back to an older application version. Invalid/unknown-version files are rejected
 transactionally rather than partially loaded.
 Saving is blocked after an unsuccessful load so an unreadable existing collection
@@ -984,3 +1032,15 @@ is a single sweep; CDP ignores the requested length in that mode.
 
 See [Keyboard Sustain](KEYBOARD_SUSTAIN.md) for the release/loop combinations and
 validation commands.
+
+### Chain instrument verification
+
+The four factory chains passed real-CDP defaults and every exposed macro's
+minimum/maximum endpoints at 44.1 and 48 kHz. Outputs were finite, nonempty mono
+audio; pitch/time chains also met duration checks. Native controller checks
+cover browser loading, text input and focus, cross-stage editing, custom numeric
+limits, cache reuse, save/reload and reordering. Recipe tests cover legacy v1/v2
+loading, v3 round trips and transactional rejection of malformed metadata.
+Portal/controller and shared Sustain regressions passed address/undefined-behavior
+sanitizers; leak checking is unavailable in this environment. Windows compilation
+and real-hardware listening remain the release checks.
