@@ -168,6 +168,7 @@ static void test_selection_workflow(SDL_Window *window,SDL_AudioDeviceID device)
 
 #include "test_portal_chains.inc"
 #include "test_portal_factory_controller.inc"
+#include "test_portal_workflow_ui.inc"
 
 int main(void)
 {
@@ -513,6 +514,7 @@ int main(void)
     test_selection_workflow(window,audition);
     test_chain_workflow(window,audition);
     test_factory_workflow(window,audition);
+    test_portal_workflow_ui(window,audition);
     SDL_DestroyWindow(window);
 
     /* Reopening a stereo source cannot leave a previous mono source active. */

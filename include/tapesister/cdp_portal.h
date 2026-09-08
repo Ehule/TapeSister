@@ -52,6 +52,7 @@ typedef struct {
 } TsPortalRegion;
 typedef struct {
     int open, busy, valid, playing, listen_result, loop;
+    int auto_preview;
     int tab, scroll, search_focus, name_focus, exact_pin, pin_slot, macro_view;
     int parameter_scroll, dragging_parameter, dragging_wave, drag_x;
     int number_focus, wave_dragged;

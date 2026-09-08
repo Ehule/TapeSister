@@ -2913,6 +2913,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     button(fb, 278, 4, 66, "FT2 LINK", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
     button(fb, 348, 4, 50, "SAVE", 0);
     button(fb, 402, 4, 58, "EXPORT", 0);
+    button(fb, 464, 4, 28, "CDP", 0);
 
     frame(fb, 10, 40, 620, 164, RGB(42, 39, 42), RGB(105, 98, 105));
     if (sample->frames) {

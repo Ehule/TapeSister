@@ -8895,8 +8895,10 @@ static void poll_file_capture_ui(TsUiState *ui, SisterWindow *sister)
     ui->file_record_state=sister->model.file_capture_state;
     ui->file_record_rate=sister->model.file_capture_sample_rate;
     ui->file_record_frames=sister->model.file_capture_frames;
-    if(before!=TS_PERFORMANCE_FILE_IDLE && ui->file_record_state==TS_PERFORMANCE_FILE_IDLE)
+    if(before!=TS_PERFORMANCE_FILE_IDLE && ui->file_record_state==TS_PERFORMANCE_FILE_IDLE) {
         snprintf(ui->status,sizeof(ui->status),"%s",sister->model.status);
+        if(ui->portal.open)snprintf(ui->portal.message,sizeof(ui->portal.message),"%s",ui->status);
+    }
 }
 
 static void main_file_capture_toggle(AudioState *audio, TsUiState *ui,
@@ -8930,7 +8932,7 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
     if(event->type==SDL_KEYDOWN && event->key.windowID==SDL_GetWindowID(window) &&
        event->key.keysym.sym==SDLK_f &&
        (event->key.keysym.mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT) &&
-       !(event->key.keysym.mod&(KMOD_ALT|KMOD_GUI)) && (active || !ui_dialog_open(ui))) {
+       !(event->key.keysym.mod&(KMOD_ALT|KMOD_GUI)) && (active || ui->portal.open || !ui_dialog_open(ui))) {
         if(event->key.repeat)return 1;
         trigger=1;
     }
@@ -8938,6 +8940,7 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
        event->button.windowID==SDL_GetWindowID(window)) {
         int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
         if(active && x>=544 && x<630 && y>=382 && y<398)trigger=1;
+        else if(ui->portal.open && x>=464 && x<492 && y>=4 && y<30)trigger=1;
         else if(!ui_dialog_open(ui) && ui->show_keyboard &&
                 x>=486 && x<583 && y>=289 && y<311)trigger=1;
         else if(!ui_dialog_open(ui) && !ui->show_keyboard && !ui->show_recipes &&
@@ -8945,7 +8948,9 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
                 x>=250 && x<344 && y>=313 && y<329)trigger=1;
     }
     if(!trigger)return 0;
-    main_file_capture_toggle(audio,ui,sister,sample_rate);return 1;
+    main_file_capture_toggle(audio,ui,sister,sample_rate);
+    if(ui->portal.open)snprintf(ui->portal.message,sizeof(ui->portal.message),"%s",ui->status);
+    return 1;
 }
 
 static int sister_begin_capture(SDL_AudioDeviceID device, AudioState *audio,

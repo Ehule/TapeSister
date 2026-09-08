@@ -109,6 +109,8 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     button(fb,224,4,66,"SISTER",0);
     button(fb,295,4,66,"RELOAD",0);
     button(fb,366,4,94,p->load_selection?"LOAD: SEL":"LOAD: TILE",p->load_selection);
+    int recording=ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING;
+    button(fb,464,4,28,"REC",recording && ui->text_cursor_visible);
     button(fb,TS_UI_MASTER_LIMITER_X,5,28,"LIM",ui->master_output.limiter_enabled);
     master_output_fader(fb,ui->master_output.gain,528,5);
     master_output_meter(fb,&ui->master_output,580,8);
@@ -166,8 +168,13 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
         rect(fb,253,y+2,(int)(t*124),5,PAL_EFFECT);
         rect(fb,253+(int)(t*124),y,4,9,PAL_WAVE_LEFT);
         ts_portal_parameter_format(proc,i,v,line,sizeof(line));
-        portal_caption(fb,390,y,7,p->number_focus==(int)i?p->number_text:line,
-                       p->number_focus==(int)i?PAL_VOLUME:PAL_EFFECT);
+        if(p->number_focus==(int)i) {
+            const char *entry=p->number_text;size_t length=strlen(entry);
+            if(length>6)entry+=length-6;
+            frame(fb,388,y-2,49,13,PAL_BLOCK,PAL_VOLUME);
+            portal_caption(fb,390,y,6,entry,PAL_VOLUME);
+            if(ui->text_cursor_visible)rect(fb,390+(int)strlen(entry)*6,y,1,9,PAL_VOLUME);
+        } else portal_caption(fb,390,y,7,line,PAL_EFFECT);
         portal_mini(fb,440,y-3,20,(p->recipe.exposed&(1u<<i))?"X":"-",(p->recipe.exposed&(1u<<i))!=0);
     }
     if(!visible)portal_caption(fb,156,272,48,p->macro_view?"EXACT RECIPE: ALL PARAMETERS ARE FIXED":"THIS MODE HAS NO NUMERIC PARAMETERS",PAL_EFFECT);
@@ -218,8 +225,9 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     snprintf(line,sizeof(line),"PIN SLOT %02d%s",p->pin_slot+1,p->library.pins[p->pin_slot].process_id[0]?" FULL":"");
     portal_caption(fb,505,292,16,line,RGB(210,204,210));
     portal_mini(fb,604,287,22,">",0);
-    snprintf(line,sizeof(line),"KEYS C%d %d/5 F1-F8 OCT",ts_ui_keyboard_base_note(ui)/12-1,p->note_count);
-    portal_caption(fb,478,314,24,line,p->note_count?PAL_VOLUME:RGB(210,204,210));
+    portal_mini(fb,478,308,66,p->auto_preview?"AUTO ON":"AUTO OFF",p->auto_preview);
+    snprintf(line,sizeof(line),"C%d KEYS %d/5",ts_ui_keyboard_base_note(ui)/12-1,p->note_count);
+    portal_caption(fb,550,314,12,line,p->note_count?PAL_VOLUME:RGB(210,204,210));
     button(fb,150,332,76,p->busy?"CANCEL":"PREVIEW",p->busy);
     button(fb,230,332,64,"APPLY",p->valid);
     button(fb,298,332,78,"NEW TILE",0);
