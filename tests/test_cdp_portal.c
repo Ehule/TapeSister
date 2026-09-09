@@ -254,6 +254,7 @@ static void envelope_batch_checks(const TsCdpRuntime *runtime)
 
 #include "test_portal_chain_recipes.inc"
 #include "test_portal_instruments.inc"
+#include "test_portal_stereo.inc"
 #include "test_portal_factory.inc"
 
 int main(int argc,char **argv)
@@ -269,6 +270,7 @@ int main(int argc,char **argv)
     uint64_t original=ts_sample_hash(&instrument.current);
     test_chain_recipes();
     test_instrument_recipes();
+    if(getenv("TS_TEST_STEREO_BIN")){test_portal_stereo(getenv("TS_TEST_STEREO_BIN"));ts_instrument_free(&instrument);return 0;}
     if(getenv("TS_TEST_INSTRUMENT_BIN")){test_instrument_audio(getenv("TS_TEST_INSTRUMENT_BIN"));ts_instrument_free(&instrument);return 0;}
     test_factory_recipes();
     if(getenv("TS_TEST_FACTORY_BIN")) {test_factory_native(getenv("TS_TEST_FACTORY_BIN"));ts_instrument_free(&instrument);return 0;}

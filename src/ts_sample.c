@@ -6605,8 +6605,8 @@ int ts_instrument_copy_drone_to_new_tile(TsInstrument *instrument,
     snprintf(name, sizeof(name), "%.127s", drone->name);
     if (!bank_sync_selected(instrument, error, error_size) ||
         !ts_instrument_select_bank(instrument, destination, error, error_size) ||
-        !ts_instrument_activate_silence(instrument, drone->frames,
-                                       drone->sample_rate, error, error_size))
+        !ts_instrument_activate_silence_channels(instrument, drone->frames,
+                                       drone->sample_rate, drone->channels, error, error_size))
         goto failed;
     ts_instrument_set_selection(instrument, 0, drone->frames);
     if (!ts_instrument_paste(instrument, drone, 0, 0, error, error_size))

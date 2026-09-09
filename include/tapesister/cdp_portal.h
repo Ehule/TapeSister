@@ -53,6 +53,7 @@ typedef struct {
     size_t first, last, selection_first, selection_last, playhead;
     int has_selection;
     float minimum[TS_PORTAL_WAVE_COLUMNS], maximum[TS_PORTAL_WAVE_COLUMNS];
+    float right_minimum[TS_PORTAL_WAVE_COLUMNS], right_maximum[TS_PORTAL_WAVE_COLUMNS];
 } TsPortalWave;
 typedef struct {
     int selection;
@@ -100,6 +101,7 @@ int ts_portal_control_at(const TsPortalUi *ui,int row,TsPortalControl *control);
 int ts_portal_control_count(const TsPortalUi *ui);
 void ts_portal_control_bounds(const TsPortalRecipe *recipe,unsigned index,int macros,double *minimum,double *maximum);
 int ts_portal_macro_set(TsPortalRecipe *recipe,unsigned index,const char *name,double minimum,double maximum,char *error,size_t size);
+int ts_portal_stereo_supported(const TsPortalRecipe *recipe);
 size_t ts_portal_instrument_count(void);
 int ts_portal_instrument_recipe(size_t index,TsPortalRecipe *recipe);
 void ts_portal_step_get(const TsPortalStep *step, TsPortalRecipe *recipe);

@@ -1171,9 +1171,28 @@ int ts_portal_filter_slot(const TsPortalUi *ui,int row,TsPortalRecipe *out)
 }
 int ts_portal_filter(const TsPortalUi *ui,int row,TsPortalRecipe *out)
 {return ts_portal_filter_slot(ui,row,out)>=0;}
+int ts_portal_stereo_supported(const TsPortalRecipe *r)
+{
+    if(!r)return 0;
+    if(r->stage_count) {
+        if(r->stage_count>TS_PORTAL_CHAIN_STAGES)return 0;
+        for(unsigned i=0;i<r->stage_count;++i)if(!r->stages[i].bypass) {
+            TsPortalRecipe step;ts_portal_step_get(&r->stages[i],&step);
+            if(!ts_portal_stereo_supported(&step))return 0;
+        }
+        return 1;
+    }
+    static const char *ids[]={"modify.loudness.1","modify.loudness.2","modify.loudness.6",
+        "modify.speed.1","modify.speed.2","modify.speed.6","modify.radical.1",
+        "modify.radical.4","modify.radical.5","modify.radical.7","filter.fixed.1",
+        "filter.fixed.2","filter.fixed.3"};
+    for(size_t i=0;i<sizeof(ids)/sizeof(ids[0]);++i)if(!strcmp(r->process_id,ids[i]))return 1;
+    return 0;
+}
 void ts_portal_wave_refresh(TsPortalWave *w,const TsSample *s)
 {
     memset(w->minimum,0,sizeof(w->minimum)); memset(w->maximum,0,sizeof(w->maximum));
+    memset(w->right_minimum,0,sizeof(w->right_minimum));memset(w->right_maximum,0,sizeof(w->right_maximum));
     if(!s || !s->data || !s->frames) return;
     if(w->last>s->frames || w->first>=w->last) {w->first=0;w->last=s->frames;}
     size_t span=w->last-w->first;
@@ -1181,9 +1200,12 @@ void ts_portal_wave_refresh(TsPortalWave *w,const TsSample *s)
         size_t a=w->first+span*x/TS_PORTAL_WAVE_COLUMNS, b=w->first+span*(x+1)/TS_PORTAL_WAVE_COLUMNS;
         if(b<=a) b=a+1;
         if(b>s->frames) b=s->frames;
-        float lo=1,hi=-1;
-        for(size_t i=a;i<b;++i) {float v=ts_sample_read_mono(s,i);if(v<lo)lo=v;if(v>hi)hi=v;}
-        w->minimum[x]=lo;w->maximum[x]=hi;
+        for(unsigned ch=0;ch<s->channels && ch<2;++ch) {
+            float lo=1,hi=-1;
+            for(size_t i=a;i<b;++i) {float v=ts_sample_read_channel(s,i,(uint8_t)ch);if(v<lo)lo=v;if(v>hi)hi=v;}
+            if(ch){w->right_minimum[x]=lo;w->right_maximum[x]=hi;}
+            else {w->minimum[x]=lo;w->maximum[x]=hi;}
+        }
     }
 }
 void ts_portal_wave_reset(TsPortalWave *w,const TsSample *s)

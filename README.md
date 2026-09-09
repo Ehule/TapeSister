@@ -19,7 +19,7 @@ Its basic creative loop is simple:
   capture modes, signal placement, and file types.
 - [CDP Portal](docs/CDP_PORTAL.md) — explore processes with source/result waveforms,
   save reusable chains, shape named macros, explore four starter chains, and
-  build a personal process-pin bank.
+  build a personal process-pin bank. Thirteen verified processes support stereo.
 - [Design Charter](DESIGN_CHARTER.md) — the principles behind the instrument.
 - [Technical documentation](#technical-documentation) — architecture, exchange,
   packaging, and certification notes.

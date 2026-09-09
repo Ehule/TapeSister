@@ -25,7 +25,8 @@ mouse wheel. The family button below the tabs cycles **ALL FAMILIES**,
 saved recipes and pins. Clearing the search and choosing ALL FAMILIES restores
 the complete list. Filtering never renumbers stored slots.
 
-These 131 Portal modes accept mono input only; stereo is rejected explicitly.
+All 131 Portal modes accept mono input. Thirteen verified modes also accept
+stereo, as described below; other modes reject stereo explicitly.
 Multi-input/multichannel, breakpoint-file, and text-file workflows remain future
 work. The factory bank retains its original 32 curated instruments.
 
@@ -65,6 +66,45 @@ progress indicator, elapsed time and **STOP FILE** control. **Ctrl+Shift+F** als
 starts/stops recording in the Portal. The recording remains visible across
 workspace changes; the saved-file status appears when it finishes. Changing
 processes uses the same safe preview replacement behavior as manual rendering.
+
+## Stereo processing
+
+The Portal accepts mono or stereo tiles and canvas selections. Stereo source
+and result panes show **left above right**, using separate colors, with **ST**
+in the duration readout. They share one time selection, zoom, pan and playhead;
+anti-phase channels remain visible instead of disappearing in a mono sum.
+
+The first verified stereo set contains **13 processes**:
+
+| Family | Stereo-capable modes |
+|---|---|
+| Level | Linear Gain, dB Gain, Invert Polarity |
+| Time / Tape | Tape Speed, Tape Transpose, Tape Vibrato, Sound Reverse |
+| Lo-fi / Mod | Bit + Rate Reduce, Quantise, Ring Modulate |
+| Filter | Low Shelf EQ, High Shelf EQ, Peak EQ |
+
+The process help shows **INPUT: MONO / ST** or **INPUT: MONO ONLY**. Stereo
+rendering runs the same deterministic settings independently on left and right,
+then interleaves the outputs. Both channels must return exactly the same length
+and sample rate. A mismatch fails the render; neither padding nor trimming is
+used. Rendering takes two channel passes and uses more memory than mono.
+
+A chain accepts stereo when every enabled stage supports it. **BROKEN SIGNAL**
+is the first stereo-capable factory starter chain. Saved recipes need no format
+change: the source determines whether one or two channels are rendered.
+
+**PROCESS: SEL** processes the same frame range on both channels, preserves
+surrounding audio, and moves the following audio together when duration changes.
+Apply promotes the stereo result and supports Undo. New Tile preserves the old
+Portal source; New + Continue promotes the new stereo tile. Source/result
+keyboard audition, looping and capture retain their existing controls.
+
+Spectral analysis/resynthesis is still mono-only: independent channel processing
+can change their phase relationship. Grain/waveset rearrangement and independent
+peak normalization also need a specific stereo policy before they can be enabled.
+Unsupported recipes fail explicitly rather than folding a stereo source to mono.
+
+![Native stereo selection processing](images/cdp-portal-stereo.png)
 
 ## Factory instruments in the Portal
 
@@ -1044,3 +1084,16 @@ loading, v3 round trips and transactional rejection of malformed metadata.
 Portal/controller and shared Sustain regressions passed address/undefined-behavior
 sanitizers; leak checking is unavailable in this environment. Windows compilation
 and real-hardware listening remain the release checks.
+
+### Stereo validation
+
+All 13 stereo defaults were compared sample-by-sample against separate mono
+channel reference renders at 44.1 and 48 kHz. Further checks cover anti-phase
+tape/gain chains, silent-channel isolation, cancellation, nonfinite samples
+in the right channel, and rejection of unsupported chains. Native controller
+checks cover stereo selection splicing, duration changes, note ownership,
+Apply/Undo, New Tile, chain caches and the dual waveform screenshot.
+
+Core and native controller checks passed with address/undefined-behavior
+sanitizers. Leak checking is unavailable here. Windows compilation and hardware
+listening remain the final release checks.

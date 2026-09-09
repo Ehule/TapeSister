@@ -139,18 +139,18 @@ static int portal_source(SDL_AudioDeviceID device,AudioState *audio,TsUiState *u
     portal_invalidate(device,audio,p,c);portal_clear_history(c,p);
     ts_sample_free(&c->source);p->source=NULL;ts_portal_wave_reset(&p->waves[0],NULL);
     const TsSample *src=&instrument->current;
-    if(!src->data || src->frames<2 || src->channels!=1) {
-        snprintf(p->message,sizeof(p->message),"CHOOSE A MONO TILE; CURRENT PORTAL FAMILIES REQUIRE MONO");return 0;
+    if(!src->data || src->frames<2 || !ts_sample_valid_channels(src->channels)) {
+        snprintf(p->message,sizeof(p->message),"CHOOSE A MONO OR STEREO TILE");return 0;
     }
     size_t first=0,last=src->frames;
     if(c->selection_scope && instrument->has_selection) {first=instrument->selection_first;last=instrument->selection_last;}
     if(first>=last || last>src->frames || last-first>TS_PORTAL_MAX_FRAMES) {
         snprintf(p->message,sizeof(p->message),"SELECT A SHORTER SOURCE (PORTAL LIMIT: 8 MILLION FRAMES)");return 0;
     }
-    next.data=malloc((last-first)*sizeof(float));
+    next.data=malloc((last-first)*src->channels*sizeof(float));
     if(!next.data) {snprintf(p->message,sizeof(p->message),"NOT ENOUGH MEMORY FOR SOURCE SNAPSHOT");return 0;}
-    memcpy(next.data,src->data+first,(last-first)*sizeof(float));
-    next.frames=last-first;next.channels=1;next.sample_rate=src->sample_rate;
+    memcpy(next.data,src->data+first*src->channels,(last-first)*src->channels*sizeof(float));
+    next.frames=last-first;next.channels=src->channels;next.sample_rate=src->sample_rate;
     snprintf(next.name,sizeof(next.name),"%s",src->name);
     c->source=next;c->source_first=first;c->source_last=last;
     c->source_hash=ts_sample_hash(src);c->source_slot=instrument->selected_slot;c->source_page=ui->sample_page;
@@ -195,13 +195,13 @@ static int portal_worker_render(void *data)
     options.job_id=w->generation;options.cancel_check=portal_worker_cancel;options.cancel_userdata=w;
     /* Unprocessed regions will also enter the result; validate the complete
        snapshot, not just the slice staged to CDP. */
-    for(size_t i=0;i<w->input.frames;++i)if(!isfinite(w->input.data[i])) {
+    for(size_t i=0;i<w->input.frames*w->input.channels;++i)if(!isfinite(w->input.data[i])) {
         snprintf(w->error,sizeof(w->error),"SOURCE CONTAINS NONFINITE AUDIO");
         w->result.status=TS_CDP_RUN_FAILED;w->result.finite=0;
         return 0;
     }
     TsSample input=w->input;
-    if(w->region.selection) {input.data+=w->region.first;input.frames=w->region.last-w->region.first;}
+    if(w->region.selection) {input.data+=w->region.first*input.channels;input.frames=w->region.last-w->region.first;}
     int ok=ts_cdp_run_portal(&w->runtime,&w->recipe,&input,&options,&w->result,w->error,sizeof(w->error));
     if(ok && w->region.selection && !SDL_AtomicGet(&w->cancel)) {
         TsSample *out=&w->result.output;
@@ -211,21 +211,21 @@ static int portal_worker_render(void *data)
             w->result.status=TS_CDP_RUN_FAILED;
         } else {
             size_t total=outside+out->frames;
-            float *joined=malloc(total*sizeof(float));
+            float *joined=malloc(total*out->channels*sizeof(float));
             if(!joined) {
                 snprintf(w->error,sizeof(w->error),"NOT ENOUGH MEMORY TO ASSEMBLE SELECTION RESULT");
                 w->result.status=TS_CDP_RUN_FAILED;
             } else {
                 ts_transform_boundary_splice(out,&w->input,w->region.first,w->region.last);
-                memcpy(joined,w->input.data,w->region.first*sizeof(float));
-                memcpy(joined+w->region.first,out->data,out->frames*sizeof(float));
+                memcpy(joined,w->input.data,w->region.first*out->channels*sizeof(float));
+                memcpy(joined+w->region.first*out->channels,out->data,out->frames*out->channels*sizeof(float));
                 w->region.result_last=w->region.first+out->frames;
-                memcpy(joined+w->region.result_last,w->input.data+w->region.last,
-                       (w->input.frames-w->region.last)*sizeof(float));
+                memcpy(joined+w->region.result_last*out->channels,w->input.data+w->region.last*out->channels,
+                       (w->input.frames-w->region.last)*out->channels*sizeof(float));
                 free(out->data);out->data=joined;out->frames=total;
                 w->result.peak=ts_sample_peak(out);
-                double sum=0;for(size_t i=0;i<total;++i)sum+=joined[i];
-                w->result.dc_offset=sum/total;
+                double sum=0;for(size_t i=0;i<total*out->channels;++i)sum+=joined[i];
+                w->result.dc_offset=sum/(total*out->channels);
                 if(w->result.peak>=.9999f || w->result.clipped_samples)w->result.safety=TS_CDP_SAFETY_HOT;
                 else w->result.safety=w->result.peak<.00001f?TS_CDP_SAFETY_SILENT:TS_CDP_SAFETY_SAFE;
             }
@@ -238,7 +238,7 @@ static int portal_worker_main(void *data)
     PortalWorker *w=data;
     if(!w->chain.stage_count)portal_worker_render(w);
     else {
-        for(size_t n=0;n<w->input.frames;++n)if(!isfinite(w->input.data[n])) {
+        for(size_t n=0;n<w->input.frames*w->input.channels;++n)if(!isfinite(w->input.data[n])) {
             snprintf(w->error,sizeof(w->error),"SOURCE CONTAINS NONFINITE AUDIO");
             w->result.status=TS_CDP_RUN_FAILED;SDL_AtomicSet(&w->done,1);return 0;
         }
@@ -298,7 +298,10 @@ static void portal_preview(SDL_AudioDeviceID device,AudioState *audio,TsUiState 
     if(c->worker) {portal_cancel(c);snprintf(p->message,sizeof(p->message),"CANCELLING CDP JOB");return;}
     TsPortalRecipe working=portal_working(p);
     if(!ts_portal_recipe_validate(&working,p->message,sizeof(p->message)))return;
-    if(!c->source.data) {snprintf(p->message,sizeof(p->message),"LOAD A MONO SOURCE FIRST");return;}
+    if(!c->source.data) {snprintf(p->message,sizeof(p->message),"LOAD A SOURCE FIRST");return;}
+    if(c->source.channels==2 && !ts_portal_stereo_supported(&working)) {
+        snprintf(p->message,sizeof(p->message),"MONO-ONLY PROCESS IN THIS RECIPE; CHOOSE A STEREO-CAPABLE PROCESS");return;
+    }
     const TsPortalWave *source_wave=&p->waves[0];
     if(p->process_selection && (!source_wave->has_selection || source_wave->selection_first>=source_wave->selection_last ||
        source_wave->selection_last>c->source.frames)) {
