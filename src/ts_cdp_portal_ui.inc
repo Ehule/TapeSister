@@ -31,7 +31,7 @@ static void portal_wave_render(TsFramebuffer *fb,const TsPortalUi *p,int which,i
     text(fb,154,y+6,which?"RESULT":"SOURCE",which?PAL_NOTE:PAL_EFFECT,1);
     portal_caption(fb,201,y+6,17,which?(p->chain_active?(p->chain_audition>=0?p->recipe.name:p->chain.name):p->recipe.name):p->source_name,RGB(210,204,210));
     if(s && s->frames) {
-        snprintf(label,sizeof(label),"%.2FS  %u HZ",(double)s->frames/s->sample_rate,s->sample_rate);
+        snprintf(label,sizeof(label),"%.2FS %uHZ %s",(double)s->frames/s->sample_rate,s->sample_rate,s->channels==2?"ST":"M");
         portal_caption(fb,316,y+6,24,label,RGB(210,204,210));
     }
     const int top=y+20,height=62,mid=top+height/2;
@@ -42,15 +42,23 @@ static void portal_wave_render(TsFramebuffer *fb,const TsPortalUi *p,int which,i
             size_t f=ts_portal_wave_frame(w,x);
             if(w->has_selection && f>=w->selection_first && f<w->selection_last)
                 rect(fb,154+x,top,1,height,PAL_BLOCK);
-            float lo=fmaxf(-1,fminf(1,w->minimum[x])),hi=fmaxf(-1,fminf(1,w->maximum[x]));
-            int a=mid-(int)(hi*29),b=mid-(int)(lo*29);
-            rect(fb,154+x,a,1,b-a+1,color);
+            for(unsigned ch=0;ch<s->channels && ch<2;++ch) {
+                float lo=fmaxf(-1,fminf(1,ch?w->right_minimum[x]:w->minimum[x]));
+                float hi=fmaxf(-1,fminf(1,ch?w->right_maximum[x]:w->maximum[x]));
+                int center=s->channels==2?top+15+(int)ch*31:mid;
+                int scale=s->channels==2?14:29;
+                int a=center-(int)(hi*scale),b=center-(int)(lo*scale);
+                rect(fb,154+x,a,1,b-a+1,ch?PAL_NOTE:color);
+            }
+        }
+        if(s->channels==2) {
+            text(fb,155,top+1,"L",color,1);text(fb,155,top+32,"R",PAL_NOTE,1);
         }
         if(w->playhead>=w->first && w->playhead<w->last) {
             int x=154+(int)((w->playhead-w->first)*TS_PORTAL_WAVE_COLUMNS/(w->last-w->first));
             rect(fb,x,top,1,height,PAL_VOLUME);
         }
-    } else portal_caption(fb,168,mid-3,45,which?"PREVIEW TO HEAR AND SEE THE RESULT":"LOAD A MONO TILE ON THE MAIN PAGE",RGB(210,204,210));
+    } else portal_caption(fb,168,mid-3,45,which?"PREVIEW TO HEAR AND SEE THE RESULT":"LOAD A MONO OR STEREO TILE",RGB(210,204,210));
 }
 static void portal_manager_render(TsFramebuffer *fb,const TsPortalUi *p)
 {
@@ -207,7 +215,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     portal_caption(fb,478,48,25,proc?proc->title:"PROCESS",PAL_VOLUME);
     portal_caption(fb,478,63,25,p->recipe.process_id,PAL_EFFECT);
     if(proc)portal_wrap(fb,478,83,24,8,proc->description);
-    text(fb,478,178,"INPUT: MONO WAV",RGB(210,204,210),1);
+    text(fb,478,178,ts_portal_stereo_supported(&p->recipe)?"INPUT: MONO / ST":"INPUT: MONO ONLY",RGB(210,204,210),1);
     text(fb,478,190,proc && proc->changes_duration?"DURATION MAY CHANGE":proc?ts_portal_family_name(proc->family):"",PAL_TUNING,1);
     snprintf(line,sizeof(line),"%s  PEAK %.2F",ts_cdp_safety_name(p->safety),p->peak);
     portal_caption(fb,478,202,24,p->valid?line:"NO RESULT YET",p->safety==TS_CDP_SAFETY_HOT?PAL_VOLUME:PAL_NOTE);

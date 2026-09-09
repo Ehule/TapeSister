@@ -788,7 +788,7 @@ static void analyze_output(TsCdpRunResult *result, float raw_peak)
     int clipped = 0;
     float peak = raw_peak;
     result->finite = 1;
-    for (size_t i = 0; i < result->output.frames; ++i) {
+    for (size_t i = 0; i < result->output.frames * result->output.channels; ++i) {
         float value = result->output.data[i];
         if (!isfinite(value)) { result->finite = 0; continue; }
         if (fabsf(value) > peak) peak = fabsf(value);
@@ -796,7 +796,7 @@ static void analyze_output(TsCdpRunResult *result, float raw_peak)
         sum += value;
     }
     result->peak = peak;
-    result->dc_offset = result->output.frames > 0u ? sum / result->output.frames : 0.0;
+    result->dc_offset = result->output.frames > 0u ? sum / (result->output.frames * result->output.channels) : 0.0;
     result->clipped_samples = clipped;
     if (!result->finite) result->safety = TS_CDP_SAFETY_INVALID;
     else if (peak < 0.00001f) result->safety = TS_CDP_SAFETY_SILENT;
@@ -1236,10 +1236,65 @@ int ts_cdp_run_recipe(const TsCdpRuntime *runtime, const TsCdpRecipe *recipe,
     return run_factory_bounded(runtime,recipe,values,input,options,result,error,error_size,TS_CANVAS_MAX_FRAMES);
 }
 
+/* Verified deterministic modes use identical controls on each channel. Never
+   pad or trim unequal outputs: a stereo pair must have exactly aligned frames. */
+static int run_portal_stereo(const TsCdpRuntime *runtime,const TsPortalRecipe *recipe,
+    const TsSample *input,const TsCdpRunOptions *options,TsCdpRunResult *result,
+    char *error,size_t error_size)
+{
+    ts_cdp_run_result_free(result);
+    if(!ts_portal_recipe_validate(recipe,error,error_size) || !ts_portal_stereo_supported(recipe)) {
+        result->status=TS_CDP_RUN_FAILED;
+        set_error(error,error_size,"This process or chain is not yet verified for stereo; choose a stereo-capable process");return 0;
+    }
+    if(!input->data || input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES || !input->sample_rate) {
+        result->status=TS_CDP_RUN_FAILED;set_error(error,error_size,"Invalid stereo source");return 0;
+    }
+    for(size_t i=0;i<input->frames*2;++i)if(!isfinite(input->data[i])) {
+        result->status=TS_CDP_RUN_FAILED;set_error(error,error_size,"Source contains nonfinite audio");return 0;
+    }
+    TsSample mono=*input;mono.channels=1;mono.data=malloc(input->frames*sizeof(float));
+    if(!mono.data){result->status=TS_CDP_RUN_FAILED;set_error(error,error_size,"Cannot allocate stereo channel");return 0;}
+    TsCdpRunResult sides[2];for(int ch=0;ch<2;++ch)ts_cdp_run_result_init(&sides[ch]);
+    int ok=0;
+    for(int ch=0;ch<2;++ch) {
+        for(size_t i=0;i<input->frames;++i)mono.data[i]=input->data[i*2+ch];
+        if(!ts_cdp_run_portal(runtime,recipe,&mono,options,&sides[ch],error,error_size)) {
+            *result=sides[ch];ts_cdp_run_result_init(&sides[ch]);goto done;
+        }
+        if(sides[ch].cleanup_failed) {
+            result->cleanup_failed=1;snprintf(result->job_directory,sizeof(result->job_directory),"%s",sides[ch].job_directory);
+        }
+    }
+    if(options && options->cancel_check && options->cancel_check(options->cancel_userdata)) {
+        result->status=TS_CDP_RUN_CANCELLED;goto done;
+    }
+    if(sides[0].output.frames!=sides[1].output.frames || sides[0].output.sample_rate!=sides[1].output.sample_rate) {
+        set_error(error,error_size,"Stereo channel lengths differ; result rejected without padding or truncation");goto done;
+    }
+    result->output=sides[0].output;result->output.channels=2;
+    result->output.data=malloc(result->output.frames*2*sizeof(float));
+    if(!result->output.data){ts_sample_init(&result->output);set_error(error,error_size,"Cannot allocate stereo result");goto done;}
+    for(size_t i=0;i<result->output.frames;++i)for(int ch=0;ch<2;++ch)
+        result->output.data[i*2+ch]=sides[ch].output.data[i];
+    result->status=TS_CDP_RUN_OK;analyze_output(result,ts_sample_peak(&result->output));ok=1;
+ done:
+    if(!ok && result->status!=TS_CDP_RUN_CANCELLED)result->status=TS_CDP_RUN_FAILED;
+    free(mono.data);
+    for(int ch=0;ch<2;++ch) {
+        if(sides[ch].cleanup_failed) {
+            result->cleanup_failed=1;snprintf(result->job_directory,sizeof(result->job_directory),"%s",sides[ch].job_directory);
+        }
+        ts_cdp_run_result_free(&sides[ch]);
+    }
+    return ok;
+}
+
 int ts_cdp_run_portal(const TsCdpRuntime *runtime, const TsPortalRecipe *recipe,
                       const TsSample *input, const TsCdpRunOptions *options,
                       TsCdpRunResult *result, char *error, size_t error_size)
 {
+    if(input && input->channels==2 && result)return run_portal_stereo(runtime,recipe,input,options,result,error,error_size);
     if(recipe && recipe->stage_count) {
         if(!result)return 0;
         ts_cdp_run_result_free(result);

@@ -170,6 +170,7 @@ static void test_selection_workflow(SDL_Window *window,SDL_AudioDeviceID device)
 #include "test_portal_factory_controller.inc"
 #include "test_portal_workflow_ui.inc"
 #include "test_portal_instrument_controller.inc"
+#include "test_portal_stereo_controller.inc"
 
 int main(void)
 {
@@ -518,10 +519,11 @@ int main(void)
     test_factory_workflow(window,audition);
     test_portal_workflow_ui(window,audition);
     test_instrument_controls(window,audition);
+    test_stereo_workflow(window,audition);
     SDL_DestroyWindow(window);
 
-    /* Reopening a stereo source cannot leave a previous mono source active. */
-    instrument.current.channels=2;
+    /* Reopening an unsupported channel layout clears the previous source. */
+    instrument.current.channels=3;
     assert(!portal_source(0,&audio,&ui,&instrument,&c));
     assert(!p->source && !p->result && !c.source.data);
     instrument.current.channels=1;
