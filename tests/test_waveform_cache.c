@@ -11,7 +11,7 @@ static int brute_zero(const TsSample *sample, size_t first, size_t last)
     for (size_t i = first; i < last; ++i) {
         if (sample->data[i] == 0.0f ||
             (i > 0u &&
-             ((sample->data[i - 1u] < 0.0f && sample->data[i] > 0.0f) ||
+             (sample->data[i - 1u] == 0.0f || (sample->data[i - 1u] < 0.0f && sample->data[i] > 0.0f) ||
               (sample->data[i - 1u] > 0.0f && sample->data[i] < 0.0f))))
             return 1;
     }
@@ -46,7 +46,9 @@ static void check_brute_force(const TsSample *sample, size_t first, size_t last,
         }
         assert(result->first == begin && result->last == end);
         assert(result->minimum == minimum && result->maximum == maximum);
-        assert(result->has_zero_crossing == brute_zero(sample, begin, end));
+        size_t marker_first=first+((size_t)column*(last-first)+width-1u)/width;
+        size_t marker_last=first+((size_t)(column+1)*(last-first)+width-1u)/width;
+        assert(result->has_zero_crossing == brute_zero(sample, marker_first, marker_last));
     }
 }
 
@@ -181,12 +183,40 @@ static void test_stereo_columns_and_shape_key(void)
     assert(cache.rebuild_count == 3u);
 }
 
+static void test_stereo_snap_markers(void)
+{
+    float mixed[]={.8f,-.2f, .2f,-.8f, -.2f,-.7f, -.1f,.6f,
+                   .8f,.1f, .5f,-.9f, .4f,-.95f, -.8f,-.5f};
+    float phase[]={.3f,-.3f, .2f,-.2f, -.2f,.2f, -.3f,.3f};
+    float right[]={0,.2f, 0,.4f, 0,-.1f, 0,-.3f};
+    float *signals[]={mixed,phase,right};
+    for(int signal=0;signal<3;++signal) {
+        TsSample sample={signals[signal],signal?4u:8u,48000u,"snap",1u,2u};
+        TsWaveformRequest request={0};request.sample=&sample;request.last=sample.frames;
+        request.width=2400;request.detect_zero_crossings=1;
+        TsWaveformColumn *columns=calloc(2400,sizeof(*columns));assert(columns);
+        assert(ts_waveform_analyze_columns(columns,&request));
+        int markers=0;
+        for(int x=0;x<2400;++x)if(columns[x].has_zero_crossing) {
+            size_t frame=(size_t)x*sample.frames/2400;
+            unsigned expected=signal?(signal==1?3u:2u):(frame==2 || frame==4 || frame==7)?1u:2u;
+            assert(columns[x].zero_crossing_channels==expected);
+            size_t mixed_frames[]={2,3,4,5,7};
+            assert(frame==(signal?2u:mixed_frames[markers]));
+            assert(ts_sample_nearest_edit_crossing(&sample,frame)==frame);
+            ++markers;
+        }
+        assert(markers==(signal?1:5));free(columns);
+    }
+}
+
 int main(void)
 {
     test_cache_keys_and_revisions();
     test_preview_publication_and_removal();
     test_empty_short_and_long_samples();
     test_stereo_columns_and_shape_key();
+    test_stereo_snap_markers();
     puts("Waveform cache tests passed.");
     return 0;
 }

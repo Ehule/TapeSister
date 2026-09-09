@@ -53,13 +53,35 @@ writer does not preserve its private reverse-loop flag; WAV exchange supports it
 
 ## Waveform detail
 
-The main waveform keeps its peak envelope and connects the actual boundary
-samples of neighboring columns, removing the dotted gaps. At less than one
-sample per pixel it draws a continuous line with linear interpolation between
-sample values. This affects the display only, including stereo/left/right/mono
-views; it does not resample or change the audio.
+The main waveform now uses the actual output pixel dimensions. For example, a
+2560-pixel-wide window analyzes 2400 waveform columns instead of enlarging the
+old 600-column trace. Its thin, antialiased line keeps TapeSister's waveform
+colors; controls, labels and loop handles retain their original pixel style.
+The peak envelope is computed from the audio at that width and cached until the
+source, view or output width changes. At sample zoom it draws the actual sample
+values with linear interpolation between them. Selection and loop dragging use
+the full pointer resolution too. Audio data and playback are unaffected.
 
-![Connected waveform](images/waveform-connected.png)
+Pink ticks indicate actual crossings in the displayed L/R channels. Editor
+selection, playhead, loop boundaries and Alt+wheel selection resizing snap to
+the nearest crossing in either channel, using one shared frame for both. A tick
+on one lane does not mean the other channel is also silent there. The earlier
+louder-channel rule could reject most crossings in phase-shifted stereo, while
+the display incorrectly marked the L+R sum on both lanes. DSP processes retain
+their existing boundary policy. At deep zoom a boundary is marked once at its
+frame rather than repeated across that sample's pixels. If there is no crossing,
+editor selection keeps the requested position. Grid ALL can still prioritize
+musical grid positions.
+
+![Native-resolution waveform and selection](images/native-waveform-detail.png)
+
+Sister Machine fills the full width and height of its window. Maximizing it
+enters desktop fullscreen, like the main canvas, covering the entire display.
+F11 toggles back to a resizable window. Mouse buttons, drags and wheel targeting
+use the same mapping, including high-DPI output. Exposing the window forces a
+fresh redraw.
+
+![Sister Machine filling a wide window](images/sister-filled-window.png)
 
 ## Validation
 
@@ -68,4 +90,9 @@ QWERTY and MIDI release, explicit HOLD, Shift-click, live LOOP takeover, preview
 replacement, modal release, stereo START traversal and bounds, group voices,
 standalone audition, Undo, WAV/project round-trips, and rename carets. The WAV
 checks also ignore the private chunk to verify the standard loop fallback.
-Windows compilation and listening on physical hardware remain the user's checks.
+The waveform follow-up also checks native output at 2560×1600, selection at
+every visible crossing, analysis-cache reuse, and Sister window coverage and
+pointer targeting at wide, tall and high-DPI sizes. Core and native controller
+checks passed with address and undefined-behavior sanitizers; leak checking was
+disabled. Windows compilation and listening on physical hardware remain the
+user's checks.

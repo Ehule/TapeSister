@@ -115,9 +115,8 @@ int ts_sister_ui_event_point(int event_x, int event_y,
         event_x >= TS_SISTER_UI_WIDTH || event_y >= TS_SISTER_UI_HEIGHT)
         return 0;
 
-    /* SDL_RenderSetLogicalSize filters queued mouse events into the renderer's
-       logical coordinate space. Do not scale button or motion event positions
-       again when the window is resized or maximized. */
+    /* Validate an already mapped point. Native SDL event coordinates are
+       converted through ts_sister_ui_window_point before hit testing. */
     *logical_x = event_x;
     *logical_y = event_y;
     return 1;
@@ -128,44 +127,14 @@ int ts_sister_ui_window_point(int raw_x, int raw_y,
                               int output_width, int output_height,
                               int *logical_x, int *logical_y)
 {
-    double output_x;
-    double output_y;
-    double scale_x;
-    double scale_y;
-    double scale;
-    double viewport_width;
-    double viewport_height;
-    double viewport_x;
-    double viewport_y;
-    double x;
-    double y;
-
     if (logical_x == NULL || logical_y == NULL || window_width <= 0 ||
-        window_height <= 0 || output_width <= 0 || output_height <= 0)
+        window_height <= 0 || output_width <= 0 || output_height <= 0 ||
+        raw_x < 0 || raw_y < 0 || raw_x >= window_width || raw_y >= window_height)
         return 0;
-
-    /* SDL_GetMouseState returns unfiltered window coordinates, unlike queued
-       button and motion events. Convert that raw state through the letterboxed
-       high-DPI renderer for mouse-wheel targeting. */
-    output_x = (double)raw_x * (double)output_width / (double)window_width;
-    output_y = (double)raw_y * (double)output_height / (double)window_height;
-    scale_x = (double)output_width / (double)TS_SISTER_UI_WIDTH;
-    scale_y = (double)output_height / (double)TS_SISTER_UI_HEIGHT;
-    scale = scale_x < scale_y ? scale_x : scale_y;
-    if (scale <= 0.0) return 0;
-
-    viewport_width = (double)TS_SISTER_UI_WIDTH * scale;
-    viewport_height = (double)TS_SISTER_UI_HEIGHT * scale;
-    viewport_x = ((double)output_width - viewport_width) * 0.5;
-    viewport_y = ((double)output_height - viewport_height) * 0.5;
-    x = (output_x - viewport_x) / scale;
-    y = (output_y - viewport_y) / scale;
-    if (x < 0.0 || x >= (double)TS_SISTER_UI_WIDTH ||
-        y < 0.0 || y >= (double)TS_SISTER_UI_HEIGHT)
-        return 0;
-
-    *logical_x = (int)x;
-    *logical_y = (int)y;
+    /* RenderCopy fills both dimensions. Window-to-output DPI scaling cancels
+       against output-to-canvas scaling, for events and polled wheel targets. */
+    *logical_x = (int)((int64_t)raw_x * TS_SISTER_UI_WIDTH / window_width);
+    *logical_y = (int)((int64_t)raw_y * TS_SISTER_UI_HEIGHT / window_height);
     return 1;
 }
 

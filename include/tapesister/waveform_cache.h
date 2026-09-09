@@ -18,6 +18,7 @@ typedef struct {
     float right_minimum;
     float right_maximum;
     int has_zero_crossing;
+    unsigned zero_crossing_channels;
 } TsWaveformColumn;
 
 typedef struct {
@@ -59,5 +60,8 @@ void ts_waveform_cache_init(TsWaveformCache *cache);
 void ts_waveform_cache_invalidate(TsWaveformCache *cache);
 int ts_waveform_cache_prepare(TsWaveformCache *cache,
                               const TsWaveformRequest *request);
+/* Caller owns request->width columns; used by the native-resolution display. */
+int ts_waveform_analyze_columns(TsWaveformColumn *columns,
+                                const TsWaveformRequest *request);
 
 #endif

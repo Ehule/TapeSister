@@ -64,6 +64,72 @@ static TsStereoFrame displayed_frame(const TsWaveformRequest *request,
     return ts_sample_read_frame(request->sample, frame);
 }
 
+int ts_waveform_analyze_columns(TsWaveformColumn *columns,
+                                const TsWaveformRequest *request)
+{
+    const TsSample *sample;
+    if (columns == NULL || request == NULL || request->sample == NULL ||
+        request->sample->data == NULL || request->width <= 0 ||
+        request->last <= request->first || request->last > request->sample->frames ||
+        !ts_sample_valid_channels(request->sample->channels)) return 0;
+    sample = request->sample;
+    for (int column = 0; column < request->width; ++column) {
+        TsWaveformColumn *result = &columns[column];
+        size_t begin = request->first +
+                       (size_t)column * (request->last - request->first) /
+                       (size_t)request->width;
+        size_t end = request->first +
+                     (size_t)(column + 1) * (request->last - request->first) /
+                     (size_t)request->width;
+        float minimum = 1.0f;
+        float maximum = -1.0f;
+        float left_minimum = 1.0f;
+        float left_maximum = -1.0f;
+        float right_minimum = 1.0f;
+        float right_maximum = -1.0f;
+        unsigned zero_crossing = 0;
+        size_t span = request->last - request->first;
+        /* A boundary belongs to the pixel containing its actual frame. Ceil
+           intervals avoid repeating one boundary across sub-sample pixels. */
+        size_t marker_first = request->first +
+            ((size_t)column * span + request->width - 1u) / request->width;
+        size_t marker_last = request->first +
+            ((size_t)(column + 1) * span + request->width - 1u) / request->width;
+        TsStereoFrame previous = displayed_frame(request, begin > 0u ? begin - 1u : begin);
+        if (end <= begin) end = begin + 1u;
+        if (end > sample->frames) end = sample->frames;
+        size_t analyze_last = end > marker_last ? end : marker_last;
+        for (size_t frame = begin; frame < analyze_last; ++frame) {
+            TsStereoFrame values = displayed_frame(request, frame);
+            if (frame < end) {
+                if (values.l < left_minimum) left_minimum = values.l;
+                if (values.l > left_maximum) left_maximum = values.l;
+                if (values.r < right_minimum) right_minimum = values.r;
+                if (values.r > right_maximum) right_maximum = values.r;
+                if (values.l < minimum) minimum = values.l;
+                if (values.r < minimum) minimum = values.r;
+                if (values.l > maximum) maximum = values.l;
+                if (values.r > maximum) maximum = values.r;
+            }
+            if (request->detect_zero_crossings && frame >= marker_first && frame < marker_last)
+                zero_crossing |= ts_sample_zero_crossing_channels(previous, values, frame > 0u);
+            previous = values;
+        }
+        result->first = begin;
+        result->last = end;
+        result->minimum = minimum;
+        result->maximum = maximum;
+        result->left_minimum = left_minimum;
+        result->left_maximum = left_maximum;
+        result->right_minimum = right_minimum;
+        result->right_maximum = right_maximum;
+        result->has_zero_crossing = zero_crossing != 0u;
+        result->zero_crossing_channels = zero_crossing;
+    }
+
+    return 1;
+}
+
 int ts_waveform_cache_prepare(TsWaveformCache *cache,
                               const TsWaveformRequest *request)
 {
@@ -84,53 +150,7 @@ int ts_waveform_cache_prepare(TsWaveformCache *cache,
 
     sample = request->sample;
     rebuild_count = cache->rebuild_count + 1u;
-    for (int column = 0; column < request->width; ++column) {
-        TsWaveformColumn *result = &cache->columns[column];
-        size_t begin = request->first +
-                       (size_t)column * (request->last - request->first) /
-                       (size_t)request->width;
-        size_t end = request->first +
-                     (size_t)(column + 1) * (request->last - request->first) /
-                     (size_t)request->width;
-        float minimum = 1.0f;
-        float maximum = -1.0f;
-        float left_minimum = 1.0f;
-        float left_maximum = -1.0f;
-        float right_minimum = 1.0f;
-        float right_maximum = -1.0f;
-        int zero_crossing = 0;
-        float previous = begin > 0u ? ts_stereo_frame_fold_mono(
-            displayed_frame(request, begin - 1u)) : 0.0f;
-        if (end <= begin) end = begin + 1u;
-        if (end > sample->frames) end = sample->frames;
-        for (size_t frame = begin; frame < end; ++frame) {
-            TsStereoFrame values = displayed_frame(request, frame);
-            float value = ts_stereo_frame_fold_mono(values);
-            if (values.l < left_minimum) left_minimum = values.l;
-            if (values.l > left_maximum) left_maximum = values.l;
-            if (values.r < right_minimum) right_minimum = values.r;
-            if (values.r > right_maximum) right_maximum = values.r;
-            if (values.l < minimum) minimum = values.l;
-            if (values.r < minimum) minimum = values.r;
-            if (values.l > maximum) maximum = values.l;
-            if (values.r > maximum) maximum = values.r;
-            if (request->detect_zero_crossings && !zero_crossing &&
-                (value == 0.0f ||
-                 (frame > 0u && ((previous < 0.0f && value > 0.0f) ||
-                                 (previous > 0.0f && value < 0.0f)))))
-                zero_crossing = 1;
-            previous = value;
-        }
-        result->first = begin;
-        result->last = end;
-        result->minimum = minimum;
-        result->maximum = maximum;
-        result->left_minimum = left_minimum;
-        result->left_maximum = left_maximum;
-        result->right_minimum = right_minimum;
-        result->right_maximum = right_maximum;
-        result->has_zero_crossing = zero_crossing;
-    }
+    if (!ts_waveform_analyze_columns(cache->columns, request)) return 0;
 
     cache->sample_identity = pointer_identity(sample);
     cache->sample_data_identity = pointer_identity(sample->data);

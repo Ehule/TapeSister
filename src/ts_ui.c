@@ -2718,6 +2718,8 @@ int ts_ui_pan_import_view(TsUiState *ui, size_t frames, ptrdiff_t amount)
     return 1;
 }
 
+#include "ts_ui_waveform_detail.inc"
+
 static int frame_x(size_t frame_index, size_t view_first, size_t view_last)
 {
     if (view_last <= view_first) return TS_WAVE_X;
@@ -3040,6 +3042,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         request.detect_zero_crossings = 1;
         request.revision = ui->waveform_revisions[TS_UI_WAVEFORM_MAIN];
         (void)ts_waveform_cache_prepare(cache, &request);
+        detail_render(fb,ui,&request,cache->rebuild_count,has_selection,selection_first,selection_last);
         int previous_y[2] = {0, 0};
         int detailed = view_last - view_first <= TS_WAVE_W;
         for (int x = 0; x < TS_WAVE_W; ++x) {
@@ -3063,7 +3066,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             TsStereoFrame head, tail;
             if (detailed) {
                 double at = (double)view_first + (double)x *
-                    (double)(view_last - view_first - 1u) / (TS_WAVE_W - 1);
+                    (double)(view_last - view_first) / TS_WAVE_W;
                 size_t index = (size_t)at;
                 TsStereoFrame a = ts_sample_read_frame(sample, index);
                 TsStereoFrame b = ts_sample_read_frame(sample, index + 1u < view_last ? index + 1u : index);
@@ -3119,16 +3122,17 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                     int left_middle = TS_WAVE_Y + lane_height / 2;
                     int right_middle = TS_WAVE_Y + lane_height +
                                        (TS_WAVE_H - lane_height) / 2;
-                    wave_rect(fb, TS_WAVE_X + x, left_middle - 1,
-                              1, 3, PAL_VOLUME);
-                    wave_rect(fb, TS_WAVE_X + x, right_middle - 1,
-                              1, 3, PAL_VOLUME);
+                    if (analysis->zero_crossing_channels & 1u)
+                        wave_rect(fb, TS_WAVE_X + x, left_middle - 1, 1, 3, PAL_VOLUME);
+                    if (analysis->zero_crossing_channels & 2u)
+                        wave_rect(fb, TS_WAVE_X + x, right_middle - 1, 1, 3, PAL_VOLUME);
                 } else {
                     wave_rect(fb, TS_WAVE_X + x, middle - 1,
                               1, 3, PAL_VOLUME);
                 }
             }
         }
+        detail_capture_coarse(fb);
     } else {
         text(fb, showing_bank ? 199 : 211, 135,
              showing_bank ? "EMPTY BANK SLOT" : "DROP WAV HERE",

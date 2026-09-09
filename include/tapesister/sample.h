@@ -676,7 +676,12 @@ int ts_instrument_amplitude_gesture_commit(TsInstrument *instrument,
 int ts_instrument_amplitude_gesture_cancel(TsInstrument *instrument,
                                            TsAmplitudeGesture *gesture,
                                            char *error, size_t error_size);
+/* Editor snap markers: bit 0 = left crossing, bit 1 = right crossing.
+   Selection uses one shared frame for both channels; DSP policy is unchanged. */
+unsigned ts_sample_zero_crossing_channels(TsStereoFrame before,
+                                          TsStereoFrame after, int has_before);
 size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame);
+size_t ts_sample_nearest_edit_crossing(const TsSample *sample, size_t frame);
 size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
                                                 size_t frame,
                                                 size_t first, size_t last);

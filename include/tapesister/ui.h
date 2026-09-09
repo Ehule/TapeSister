@@ -16,6 +16,7 @@
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/exchange.h"
 #include "tapesister/cdp_portal.h"
+#include "tapesister/waveform_cache.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_IMPORT_PREVIEW_COLUMNS = 568 };
@@ -301,6 +302,21 @@ typedef enum {
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
+
+/* Optional native-pixel waveform; the surrounding UI stays 640x400. */
+typedef struct {
+    uint32_t *pixels;
+    uint32_t *coarse;
+    int *logical_x;
+    TsWaveformColumn *columns;
+    int width, height, valid;
+    uint64_t source_revision, analysis_count;
+} TsUiWaveformDetail;
+
+int ts_ui_waveform_detail_resize(TsUiWaveformDetail *detail, int width, int height);
+void ts_ui_waveform_detail_begin(TsUiWaveformDetail *detail);
+int ts_ui_waveform_detail_finish(TsUiWaveformDetail *detail, const TsFramebuffer *frame);
+void ts_ui_waveform_detail_free(TsUiWaveformDetail *detail);
 
 /* High-resolution wheels, touchpads, and queued SDL wheel events can keep
    emitting after the pointer crosses a parameter or application window. */

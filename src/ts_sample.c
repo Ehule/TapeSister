@@ -3458,31 +3458,45 @@ int ts_instrument_select_wave(TsInstrument *instrument)
            instrument->selection_last == last;
 }
 
-static int is_zero_crossing(const TsSample *sample, size_t frame)
+static int channel_crosses(float before, float after, int has_before)
 {
-    float before;
-    float after;
-    TsStereoFrame a, b;
-    if (sample == NULL || sample->data == NULL || frame >= sample->frames) return 0;
-    a = ts_sample_read_frame(sample, frame);
-    b = ts_sample_read_frame(sample, frame > 0u ? frame - 1u : frame);
-    /* Follow the louder channel across this adjacent pair; keep one common
-       frame boundary for both channels, including right-only/anti-phase audio. */
-    if (fmaxf(fabsf(a.r), fabsf(b.r)) > fmaxf(fabsf(a.l), fabsf(b.l))) {
-        after = a.r;
-        before = b.r;
-    } else {
-        after = a.l;
-        before = b.l;
-    }
-    if (after == 0.0f) return 1;
-    if (frame == 0) return 0;
-    return before == 0.0f || (before < 0.0f && after > 0.0f) ||
-           (before > 0.0f && after < 0.0f);
+    return after==0.0f || (has_before && (before==0.0f ||
+        (before<0.0f && after>0.0f) || (before>0.0f && after<0.0f)));
 }
 
-size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
+unsigned ts_sample_zero_crossing_channels(TsStereoFrame before, TsStereoFrame after,
+                                          int has_before)
 {
+    unsigned result=0;
+    /* A silent channel must not turn every frame of its audible partner into
+       a crossing. Entirely silent pairs remain freely selectable. */
+    if(before.l==0 && after.l==0 && before.r==0 && after.r==0)return 3u;
+    if((before.l!=0 || after.l!=0) && channel_crosses(before.l,after.l,has_before))result|=1u;
+    if((before.r!=0 || after.r!=0) && channel_crosses(before.r,after.r,has_before))result|=2u;
+    return result;
+}
+
+static int is_zero_crossing(const TsSample *sample, size_t frame)
+{
+    if (!sample || !sample->data || frame>=sample->frames)return 0;
+    TsStereoFrame a=ts_sample_read_frame(sample,frame);
+    TsStereoFrame b=ts_sample_read_frame(sample,frame>0?frame-1:frame);
+    /* Preserve the established louder-channel policy for DSP operations. */
+    return fmaxf(fabsf(a.r),fabsf(b.r))>fmaxf(fabsf(a.l),fabsf(b.l)) ?
+        channel_crosses(b.r,a.r,frame>0) : channel_crosses(b.l,a.l,frame>0);
+}
+
+static int is_edit_zero_crossing(const TsSample *sample, size_t frame)
+{
+    if (!sample || !sample->data || frame>=sample->frames)return 0;
+    return ts_sample_zero_crossing_channels(
+        ts_sample_read_frame(sample,frame>0?frame-1:frame),
+        ts_sample_read_frame(sample,frame),frame>0)!=0;
+}
+
+static size_t nearest_crossing(const TsSample *sample, size_t frame, int editing)
+{
+    int (*crossing)(const TsSample *, size_t)=editing?is_edit_zero_crossing:is_zero_crossing;
     size_t target;
     size_t maximum_distance;
     size_t closest = 0;
@@ -3494,11 +3508,12 @@ size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
     for (size_t distance = 0; distance <= maximum_distance; ++distance) {
         if (distance <= target) {
             size_t left = target - distance;
-            if (is_zero_crossing(sample, left)) return left;
+            if (crossing(sample, left)) return left;
         }
         if (distance > 0 && target + distance < sample->frames &&
-            is_zero_crossing(sample, target + distance)) return target + distance;
+            crossing(sample, target + distance)) return target + distance;
     }
+    if (editing) return target; /* No crossing: retain the requested edit position. */
     closest_level = frame_peak(sample, 0u);
     for (size_t i = 1; i < sample->frames; ++i) {
         float level = frame_peak(sample, i);
@@ -3508,6 +3523,16 @@ size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
         }
     }
     return closest;
+}
+
+size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
+{
+    return nearest_crossing(sample,frame,0);
+}
+
+size_t ts_sample_nearest_edit_crossing(const TsSample *sample, size_t frame)
+{
+    return nearest_crossing(sample,frame,1);
 }
 
 size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
@@ -3758,7 +3783,7 @@ static size_t resolve_sample_boundary(const TsSample *sample,
     if (frame >= sample->frames) return sample->frames;
     target = grid_snap ? grid_target_for_frames(sample->frames, divisions, frame) : frame;
     if (target == 0 || target >= sample->frames) return target;
-    return ts_sample_nearest_zero_crossing(sample, target);
+    return ts_sample_nearest_edit_crossing(sample, target);
 }
 
 size_t ts_instrument_grid_target(const TsInstrument *instrument, size_t frame)
@@ -3868,7 +3893,7 @@ void ts_instrument_set_playhead_snapped(TsInstrument *instrument, size_t frame)
         instrument->current.frames == 0) return;
     if (frame >= instrument->current.frames) frame = instrument->current.frames - 1u;
     ts_instrument_set_playhead(
-        instrument, ts_sample_nearest_zero_crossing(&instrument->current, frame));
+        instrument, ts_sample_nearest_edit_crossing(&instrument->current, frame));
 }
 
 void ts_instrument_clear_playhead(TsInstrument *instrument)
@@ -3890,9 +3915,10 @@ int ts_instrument_reset_selection_playhead(TsInstrument *instrument)
     return changed;
 }
 
-size_t ts_sample_zero_crossing_in_direction(const TsSample *sample, size_t frame,
-                                            int direction, size_t count)
+static size_t crossing_in_direction(const TsSample *sample, size_t frame,
+                                            int direction, size_t count, int editing)
 {
+    int (*crossing)(const TsSample *, size_t)=editing?is_edit_zero_crossing:is_zero_crossing;
     size_t at;
     if (sample == NULL || sample->data == NULL || sample->frames == 0 || count == 0)
         return frame;
@@ -3901,15 +3927,21 @@ size_t ts_sample_zero_crossing_in_direction(const TsSample *sample, size_t frame
         if (direction < 0) {
             if (at == 0) return 0;
             --at;
-            while (at > 0 && !is_zero_crossing(sample, at)) --at;
+            while (at > 0 && !crossing(sample, at)) --at;
         } else {
             if (at >= sample->frames) return sample->frames;
             ++at;
-            while (at < sample->frames && !is_zero_crossing(sample, at)) ++at;
+            while (at < sample->frames && !crossing(sample, at)) ++at;
         }
         --count;
     }
     return at;
+}
+
+size_t ts_sample_zero_crossing_in_direction(const TsSample *sample, size_t frame,
+                                            int direction, size_t count)
+{
+    return crossing_in_direction(sample,frame,direction,count,0);
 }
 
 int ts_instrument_resize_selection(TsInstrument *instrument, int endpoint,
@@ -3921,16 +3953,16 @@ int ts_instrument_resize_selection(TsInstrument *instrument, int endpoint,
         instrument->selection_last <= instrument->selection_first ||
         (endpoint != 1 && endpoint != 2) || crossing_count == 0) return 0;
     if (endpoint == 1) {
-        moved = ts_sample_zero_crossing_in_direction(
+        moved = crossing_in_direction(
             &instrument->current, instrument->selection_first,
-            expand ? -1 : 1, crossing_count);
+            expand ? -1 : 1, crossing_count,1);
         if (moved >= instrument->selection_last) return 0;
         if (moved == instrument->selection_first) return 0;
         instrument->selection_first = moved;
     } else {
-        moved = ts_sample_zero_crossing_in_direction(
+        moved = crossing_in_direction(
             &instrument->current, instrument->selection_last,
-            expand ? 1 : -1, crossing_count);
+            expand ? 1 : -1, crossing_count,1);
         if (moved <= instrument->selection_first) return 0;
         if (moved == instrument->selection_last) return 0;
         instrument->selection_last = moved;
@@ -3956,9 +3988,9 @@ int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
         first = 0;
         last = instrument->current.frames;
     } else {
-        first = ts_sample_nearest_zero_crossing(&instrument->current,
+        first = ts_sample_nearest_edit_crossing(&instrument->current,
                                                 instrument->selection_first);
-        last = ts_sample_nearest_zero_crossing(&instrument->current,
+        last = ts_sample_nearest_edit_crossing(&instrument->current,
                                                instrument->selection_last);
     }
     if (first > last) {

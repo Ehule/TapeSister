@@ -8145,7 +8145,7 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
     if (config != NULL && config->sister_window_x >= 0) x = config->sister_window_x;
     if (config != NULL && config->sister_window_y >= 0) y = config->sister_window_y;
     if (config == NULL || config->sister_window_maximized)
-        flags |= SDL_WINDOW_MAXIMIZED;
+        flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     sister->window = SDL_CreateWindow(
         TAPESISTER_SISTER_WINDOW_TITLE, x, y,
         TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT, flags);
@@ -8176,8 +8176,8 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
                            (info.flags & SDL_RENDERER_PRESENTVSYNC) != 0u ?
                                "vsync" : "controller-30hz");
     }
-    SDL_RenderSetLogicalSize(sister->renderer, TS_SISTER_UI_WIDTH,
-                             TS_SISTER_UI_HEIGHT);
+    /* Fill the entire client area; input is mapped explicitly for both
+       queued events and polled mouse state, including high-DPI output. */
     sister->window_id = SDL_GetWindowID(sister->window);
     return 1;
 }
@@ -8191,9 +8191,22 @@ static void sister_window_hide(SisterWindow *sister)
     if (sister->window != NULL) SDL_HideWindow(sister->window);
 }
 
-static int sister_event_mouse(int event_x, int event_y, int *x, int *y)
+static void sister_window_fullscreen(SisterWindow *sister, int enabled)
 {
-    return ts_sister_ui_event_point(event_x, event_y, x, y);
+    if (!sister || !sister->window) return;
+    if (SDL_SetWindowFullscreen(sister->window,enabled?SDL_WINDOW_FULLSCREEN_DESKTOP:0)==0) {
+        if (!enabled) SDL_RestoreWindow(sister->window);
+        sister->rendered_model_valid=0;
+    }
+}
+
+static int sister_event_mouse(SDL_Window *window, int event_x, int event_y, int *x, int *y)
+{
+    int width, height;
+    if (!window) return 0;
+    SDL_GetWindowSize(window, &width, &height);
+    return ts_sister_ui_window_point(event_x, event_y, width, height,
+                                     width, height, x, y);
 }
 
 static int sister_window_mouse(SDL_Window *window, SDL_Renderer *renderer,
@@ -10432,6 +10445,31 @@ static size_t selection_frame_from_x(const TsInstrument *instrument, const TsUiS
     return ts_instrument_frame_from_view_x(instrument, x, TS_WAVE_W);
 }
 
+/* Preserve native pointer precision instead of reducing it to 600 columns. */
+static size_t selection_frame_from_pointer(const TsInstrument *instrument,
+    const TsUiState *ui, SDL_Window *window, int raw_x)
+{
+    int width, height; SDL_GetWindowSize(window,&width,&height);
+    if (width <= 0) return 0;
+    long double position=(((long double)raw_x+0.5L)*TS_UI_WIDTH/width-TS_WAVE_X)/TS_WAVE_W;
+    if (position<0) position=0;
+    if (position>1) position=1;
+    size_t first=instrument->view_first,last=instrument->view_last;
+    int parent=ui->audition_source==TS_AUDITION_PARENT && instrument->parent.frames>0;
+    if (parent) {
+        first=ui->parent_view_first; last=ui->parent_view_last;
+        if (last<=first || last>instrument->parent.frames) {first=0;last=instrument->parent.frames;}
+    }
+    if (last<first) return 0;
+    size_t frame=first+(size_t)floorl(position*(last-first)+0.5L);
+    if (parent) {
+        if(frame<=instrument->crop_first)return 0;
+        if(frame>=instrument->crop_last)return instrument->current.frames;
+        frame-=instrument->crop_first;
+    }
+    return frame;
+}
+
 static int64_t tape_frame_from_x(const TsInstrument *instrument, int x)
 {
     int64_t first = (int64_t)instrument->view_first;
@@ -11582,7 +11620,7 @@ static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
     } else if(event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT) {
         int x,y;
         if(in_sister) {
-            if(!sister_event_mouse(event->button.x,event->button.y,&x,&y))return 0;
+            if(!sister_event_mouse(sister->window,event->button.x,event->button.y,&x,&y))return 0;
             trigger=x>=356 && x<438 && y>=350 && y<367;
         } else {
             logical_mouse(window,event->button.x,event->button.y,&x,&y);
@@ -11641,6 +11679,8 @@ int main(int argc, char **argv)
     SDL_Window *window = NULL;
     SDL_Renderer *renderer = NULL;
     SDL_Texture *texture = NULL;
+    SDL_Texture *waveform_texture = NULL;
+    TsUiWaveformDetail waveform_detail = {0};
     SDL_AudioDeviceID device = 0;
     SDL_AudioDeviceID input_device = 0;
     SDL_AudioSpec desired, obtained;
@@ -12320,7 +12360,7 @@ int main(int argc, char **argv)
                 target[0] = '\0';
                 if (sister_window.window != NULL &&
                     event_id == sister_window.window_id &&
-                    sister_event_mouse(event.button.x, event.button.y, &x, &y)) {
+                    sister_event_mouse(sister_window.window,event.button.x, event.button.y, &x, &y)) {
                     TsSisterUiHit hit = ts_sister_ui_hit_test_model(
                         &sister_window.model, x, y);
                     (void)ts_sister_ui_midi_target(hit, target,
@@ -12360,17 +12400,24 @@ int main(int argc, char **argv)
                     sister_window.parameter_lock_gesture = 0;
                     ts_ui_pointer_drag_cancel(&sister_window.parameter_drag);
                 } else if (event.type == SDL_WINDOWEVENT &&
-                           (event.window.event == SDL_WINDOWEVENT_RESTORED ||
+                           (event.window.event == SDL_WINDOWEVENT_EXPOSED ||
+                            event.window.event == SDL_WINDOWEVENT_RESTORED ||
                             event.window.event == SDL_WINDOWEVENT_SHOWN ||
                             event.window.event == SDL_WINDOWEVENT_MAXIMIZED ||
                             event.window.event == SDL_WINDOWEVENT_RESIZED ||
                             event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)) {
                     sister_window.minimized = 0;
                     sister_window.rendered_model_valid = 0;
+                    if(event.window.event==SDL_WINDOWEVENT_MAXIMIZED &&
+                       (SDL_GetWindowFlags(sister_window.window)&SDL_WINDOW_MAXIMIZED))
+                        sister_window_fullscreen(&sister_window,1);
                 } else if (event.type == SDL_WINDOWEVENT &&
                            event.window.event == SDL_WINDOWEVENT_MOVED) {
                     ui.config.sister_window_x = event.window.data1;
                     ui.config.sister_window_y = event.window.data2;
+                } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F11) {
+                    if(!event.key.repeat)sister_window_fullscreen(&sister_window,
+                        !(SDL_GetWindowFlags(sister_window.window)&SDL_WINDOW_FULLSCREEN_DESKTOP));
                 } else if (event.type == SDL_KEYDOWN &&
                            event.key.keysym.sym == SDLK_ESCAPE) {
                     if (sister_window.model.fallout_lfo_open) {
@@ -12480,7 +12527,7 @@ int main(int argc, char **argv)
                            (event.button.button == SDL_BUTTON_LEFT ||
                             event.button.button == SDL_BUTTON_RIGHT)) {
                     int x, y;
-                    if (sister_event_mouse(event.button.x, event.button.y,
+                    if (sister_event_mouse(sister_window.window,event.button.x, event.button.y,
                                            &x, &y)) {
                         TsSisterUiHit hit = ts_sister_ui_hit_test_model(
                             &sister_window.model, x, y);
@@ -12524,7 +12571,7 @@ int main(int argc, char **argv)
                     int x, y;
                     TsSisterUiHit hit;
                     int target;
-                    if (!sister_event_mouse(event.motion.x, event.motion.y,
+                    if (!sister_event_mouse(sister_window.window,event.motion.x, event.motion.y,
                                             &x, &y)) {
                         ts_ui_pointer_drag_cancel(&sister_window.parameter_drag);
                         continue;
@@ -14157,7 +14204,7 @@ int main(int argc, char **argv)
                              "BANK %02d LOOP FLAGS %zu - %zu ZERO SNAPPED",
                              ui.bank_view_slot + 1, slot->loop_first, slot->loop_last);
                 } else {
-                    frame = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
+                    frame = selection_frame_from_pointer(&instrument, &ui, window, event.motion.x);
                     if (!ui.loop_drag_started) {
                         ts_instrument_begin_loop_drag(&instrument);
                         ui.loop_drag_started = 1;
@@ -14174,8 +14221,7 @@ int main(int argc, char **argv)
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
                 (void)y;
                 if (abs(x - ui.wave_pointer_start_x) >= 2) {
-                    size_t at = selection_frame_from_x(&instrument, &ui,
-                                                       x - TS_WAVE_X);
+                    size_t at = selection_frame_from_pointer(&instrument, &ui, window, event.motion.x);
                     ui.selecting = 1;
                     ui.selecting_button = ui.wave_pointer_button;
                     ui.wave_pointer_pending = 0;
@@ -14200,7 +14246,7 @@ int main(int argc, char **argv)
                 int x, y;
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
                 (void)y;
-                size_t at = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
+                size_t at = selection_frame_from_pointer(&instrument, &ui, window, event.motion.x);
                 ts_instrument_set_selection_snapped(&instrument, ui.selection_anchor, at);
                 if (ui.selecting_button == SDL_BUTTON_RIGHT && instrument.has_selection)
                     ts_instrument_set_playhead(
@@ -14943,8 +14989,8 @@ int main(int argc, char **argv)
                                      "DRAG LOOP END - ZERO SNAPPED");
                         } else {
                             cancel_pitch_preview(device, &audio, &ui, &instrument);
-                            ui.selection_anchor = selection_frame_from_x(
-                                &instrument, &ui, x - TS_WAVE_X);
+                            ui.selection_anchor = selection_frame_from_pointer(
+                                &instrument, &ui, window, event.button.x);
                             ui.wave_pointer_pending = 1;
                             ui.wave_pointer_button = SDL_BUTTON_LEFT;
                             ui.wave_pointer_start_x = x;
@@ -15642,8 +15688,8 @@ int main(int argc, char **argv)
                     } else if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0) {
                         ui.bank_view_slot = -1;
                         cancel_pitch_preview(device, &audio, &ui, &instrument);
-                        ui.selection_anchor = selection_frame_from_x(
-                            &instrument, &ui, x - TS_WAVE_X);
+                        ui.selection_anchor = selection_frame_from_pointer(
+                            &instrument, &ui, window, event.button.x);
                         ui.wave_pointer_pending = 1;
                         ui.wave_pointer_button = SDL_BUTTON_RIGHT;
                         ui.wave_pointer_start_x = x;
@@ -16087,12 +16133,34 @@ int main(int argc, char **argv)
                 hovered && (buttons & SDL_BUTTON_LMASK) != 0u;
         }
         if (!window_minimized) {
+            waveform_detail.valid=0;
+            SDL_Rect wave_rect = {0};
+            int output_w=0,output_h=0,detail_ready=0;
+            if (!ui_dialog_open(&ui) && !ui.portal.open && !ui.input_meter_active &&
+                !ui.amplitude_gesture.active &&
+                SDL_GetRendererOutputSize(renderer,&output_w,&output_h)==0) {
+                wave_rect.x=TS_WAVE_X*output_w/TS_UI_WIDTH;
+                wave_rect.y=TS_WAVE_Y*output_h/TS_UI_HEIGHT;
+                wave_rect.w=(TS_WAVE_X+TS_WAVE_W)*output_w/TS_UI_WIDTH-wave_rect.x;
+                wave_rect.h=(TS_WAVE_Y+TS_WAVE_H)*output_h/TS_UI_HEIGHT-wave_rect.y;
+                if (wave_rect.w!=waveform_detail.width || wave_rect.h!=waveform_detail.height) {
+                    if(waveform_texture)SDL_DestroyTexture(waveform_texture);
+                    waveform_texture=NULL;
+                    if(ts_ui_waveform_detail_resize(&waveform_detail,wave_rect.w,wave_rect.h))
+                        waveform_texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,
+                            SDL_TEXTUREACCESS_STREAMING,wave_rect.w,wave_rect.h);
+                }
+                if(waveform_texture)ts_ui_waveform_detail_begin(&waveform_detail);
+            }
             ts_ui_render(&framebuffer, &ui, &instrument);
+            detail_ready=ts_ui_waveform_detail_finish(&waveform_detail,&framebuffer);
             if (update_texture_damage(texture, &framebuffer, frame_snapshot,
                                       &frame_snapshot_valid)) {
-                /* The texture copy covers the complete destination. A clear
-                   would only write the same output a second time. */
                 SDL_RenderCopy(renderer, texture, NULL, NULL);
+                if (detail_ready && waveform_texture &&
+                    SDL_UpdateTexture(waveform_texture,NULL,waveform_detail.pixels,
+                                      waveform_detail.width*(int)sizeof(uint32_t))==0)
+                    SDL_RenderCopy(renderer,waveform_texture,NULL,&wave_rect);
                 SDL_RenderPresent(renderer);
             }
         }
@@ -16187,6 +16255,8 @@ int main(int argc, char **argv)
             fprintf(stderr, "TapeSister config save: %s\n", config_error);
     }
     free(frame_snapshot);
+    ts_ui_waveform_detail_free(&waveform_detail);
+    if (waveform_texture) SDL_DestroyTexture(waveform_texture);
     if (sister_window.texture) SDL_DestroyTexture(sister_window.texture);
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);
