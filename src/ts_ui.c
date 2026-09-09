@@ -5217,6 +5217,11 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         sister_transition_progress(fb, 420, 319, 100,
             model->routing.fx_master_transition_progress,
             model->routing.fx_master_transition_active, PAL_MOUSE);
+        button(fb, TS_SISTER_UI_FX_REC_X, TS_SISTER_UI_FX_REC_Y,
+            TS_SISTER_UI_FX_REC_W,
+            model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING ? "FILE WAIT" :
+            model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ? "STOP FILE" : "REC FILE",
+            model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING && model->text_cursor_visible);
         goto sister_footer;
     }
 

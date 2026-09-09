@@ -6087,6 +6087,43 @@ static void browser_open(TsUiState *ui, TsBrowserMode mode)
     }
 }
 
+static void browser_open_export_wav(TsUiState *ui, const TsInstrument *instrument)
+{
+    /* Renaming a tile changes its bank label independently of Current's
+       render name, so prefer the displayed selected-tile name. */
+    const char *source = instrument->current.name;
+    int slot = instrument->selected_slot;
+    if (slot >= 0 && slot < TS_BANK_SLOT_COUNT && instrument->bank[slot].occupied &&
+        instrument->bank[slot].sample.name[0])source = instrument->bank[slot].sample.name;
+    char stem[TS_BROWSER_NAME_MAX + 1], filename[TS_BROWSER_NAME_MAX + 1];
+    size_t length = 0;
+    while (*source == ' ' || *source == '\t')++source;
+    while (*source && length + 6 < sizeof(stem)) {
+        unsigned char c = (unsigned char)*source++;
+        stem[length++] = c < 32 || c == 127 || strchr("<>:\"/\\|?*", c) ? '_' : (char)c;
+    }
+    while (length && (stem[length-1] == ' ' || stem[length-1] == '.'))--length;
+    stem[length] = '\0';
+    if (length >= 4 && !SDL_strcasecmp(stem + length - 4, ".wav"))length -= 4;
+    while (length && (stem[length-1] == ' ' || stem[length-1] == '.'))--length;
+    stem[length] = '\0';
+    if (!length)snprintf(stem, sizeof(stem), "tapesister-export");
+    /* Windows reserves these stems even when an extension is present. */
+    char device_name[8];size_t device_length = strcspn(stem, ".");
+    int reserved = 0;
+    if (device_length < sizeof(device_name)) {
+        memcpy(device_name, stem, device_length);device_name[device_length] = '\0';
+        reserved = !SDL_strcasecmp(device_name,"CON") || !SDL_strcasecmp(device_name,"PRN") ||
+                   !SDL_strcasecmp(device_name,"AUX") || !SDL_strcasecmp(device_name,"NUL") ||
+                   (device_length == 4 && device_name[3] >= '1' && device_name[3] <= '9' &&
+                    (!SDL_strncasecmp(device_name,"COM",3) || !SDL_strncasecmp(device_name,"LPT",3)));
+    }
+    snprintf(filename, sizeof(filename), "%s%.*s.wav", reserved ? "_" : "",
+             TS_BROWSER_NAME_MAX - 5, stem);
+    browser_open(ui, TS_BROWSER_EXPORT_WAV);
+    if (ui->browser.mode == TS_BROWSER_EXPORT_WAV)ts_browser_set_filename(&ui->browser, filename);
+}
+
 static void browser_cycle_focus(TsBrowser *browser, int amount)
 {
     int focus;
@@ -9188,6 +9225,11 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     capture_busy = capture_state != TS_CAPTURE_IDLE ||
         file_capture_state == TS_PERFORMANCE_FILE_RECORDING ||
         file_capture_state == TS_PERFORMANCE_FILE_STOPPING;
+    if (hit.action == TS_SISTER_UI_ACTION_RECORD_FILE) {
+        main_file_capture_toggle(audio, ui, sister, sample_rate);
+        snprintf(sister->model.status, sizeof(sister->model.status), "%.127s", ui->status);
+        return;
+    }
     if (hit.action == TS_SISTER_UI_ACTION_PRESET_PREVIOUS ||
         hit.action == TS_SISTER_UI_ACTION_PRESET_NEXT) {
         size_t index;
@@ -13030,7 +13072,7 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status), "EXPORT CANCELLED");
                     } else if (key == SDLK_c || key == SDLK_RETURN || key == SDLK_KP_ENTER) {
                         ui.export_choice_open = 0;
-                        browser_open(&ui, TS_BROWSER_EXPORT_WAV);
+                        browser_open_export_wav(&ui, &instrument);
                     } else if (key == SDLK_f) {
                         ui.export_choice_open = 0;
                         browser_open_bank(&ui, &instrument);
@@ -14596,7 +14638,7 @@ int main(int argc, char **argv)
                 } else if (ui.export_choice_open) {
                     if (x >= 172 && x < 308 && y >= 176 && y < 199) {
                         ui.export_choice_open = 0;
-                        browser_open(&ui, TS_BROWSER_EXPORT_WAV);
+                        browser_open_export_wav(&ui, &instrument);
                     } else if (x >= 324 && x < 468 && y >= 176 && y < 199) {
                         ui.export_choice_open = 0;
                         browser_open_bank(&ui, &instrument);
