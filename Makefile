@@ -1,3 +1,4 @@
+.DEFAULT_GOAL := all
 CC ?= cc
 CXX ?= c++
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
@@ -9,6 +10,7 @@ CORE_SOURCES = src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c 
 CORE_SOURCES += src/ts_cdp_portal.c
 DECODER_OBJ = .deps/ts_audio_import.o
 CORE = $(CORE_SOURCES) $(DECODER_OBJ)
+tapesister tapesister_core_tests tapesister_portal_tests tapesister_portal_controller_tests tapesister_keyboard_sustain_tests: src/ts_cdp_portal_instruments.inc
 SDL_MAIN = src/main_sdl.c src/tape_link.c src/tape_companion.c
 DIAG = src/ts_startup_diag.c
 MIDI_C = src/ts_midi_input.c
@@ -89,7 +91,7 @@ screenshot-sister-spirit: tapesister_sister_spirit_demo tapesister_render_demo
 test: test_sister_resize
 test: tapesister_portal_tests
 
-tapesister_portal_tests: src/ts_cdp_portal_factory.inc $(CORE) tests/test_cdp_portal.c tests/test_portal_chain_recipes.inc tests/test_portal_factory.inc
+tapesister_portal_tests: tests/test_portal_instruments.inc src/ts_cdp_portal_factory.inc $(CORE) tests/test_cdp_portal.c tests/test_portal_chain_recipes.inc tests/test_portal_factory.inc
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/test_cdp_portal.c -o $@ -lm
 
 # Optional source-built CDP parameter and signal checks for the final simple batch.
@@ -102,7 +104,7 @@ clean_portal_final:
 	rm -f tapesister_portal_final_tests
 
 # Optional real-CDP/SDL lifecycle harness; use TS_TEST_CDP_BIN to select runtime.
-tapesister_portal_controller_tests: src/ts_cdp_portal_factory.inc $(CORE) tests/test_portal_controller.c tests/test_portal_chains.inc tests/test_portal_factory_controller.inc tests/test_portal_workflow_ui.inc src/main_sdl.c src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
+tapesister_portal_controller_tests: tests/test_portal_instrument_controller.inc src/ts_cdp_portal_factory.inc $(CORE) tests/test_portal_controller.c tests/test_portal_chains.inc tests/test_portal_factory_controller.inc tests/test_portal_workflow_ui.inc src/main_sdl.c src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_portal_controller.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
 test: tapesister_audio_import_tests
 

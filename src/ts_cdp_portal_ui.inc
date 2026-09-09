@@ -146,46 +146,41 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     portal_mini(fb,425,223,39,"A/B",0);
 
     frame(fb,148,245,318,82,RGB(18,18,18),RGB(84,77,84));
-    text(fb,154,250,p->macro_view?"PIN MACROS":"PROCESS PARAMETERS",RGB(210,204,210),1);
+    text(fb,154,250,p->macro_view?(p->chain_active?"CHAIN MACROS":"PIN MACROS"):"PROCESS PARAMETERS",RGB(210,204,210),1);
     portal_mini(fb,310,247,124,p->process_selection?"PROCESS: SEL":"PROCESS: WHOLE",p->process_selection);
-    text(fb,439,250,"PIN",PAL_VOLUME,1);
-    int visible=0;
-    if(proc) for(unsigned i=0;i<proc->parameter_count;++i) {
-        if(p->macro_view && !(p->recipe.exposed&(1u<<i)))continue;
-        if(visible++<p->parameter_scroll)continue;
-        int row=visible-1-p->parameter_scroll;
-        if(row>=3)break;
+    text(fb,440,250,"PIN",PAL_VOLUME,1);
+    unsigned total=(unsigned)ts_portal_control_count(p);
+    for(int row=0;row<3;++row) {
+        TsPortalControl c;if(!ts_portal_control_at(p,p->parameter_scroll+row,&c))break;
+        unsigned i=(unsigned)c.index;const TsPortalProcess *control_proc=c.process;
+        const TsPortalParam *param=&control_proc->parameters[i];
+        const TsPortalMacro *macro=c.macro;
         int y=265+row*19;
-        const TsPortalParam *s=&proc->parameters[i];
-        portal_caption(fb,154,y,16,s->label,RGB(210,204,210));
-        rect(fb,253,y+2,129,5,RGB(8,8,8));
-        double v=p->recipe.values[i];
-        double t=s->maximum>s->minimum?(v-s->minimum)/(s->maximum-s->minimum):0;
-        /* Log-positioned large integer ranges; exact values are editable. */
-        if(s->maximum>100 && s->minimum>=0)t=log1p(v-s->minimum)/log1p(s->maximum-s->minimum);
-        if(t<0)t=0;
-        if(t>1)t=1;
-        rect(fb,253,y+2,(int)(t*124),5,PAL_EFFECT);
+        const char *label=p->macro_view && macro->configured?macro->name:param->label;
+        if(p->macro_view && p->chain_active) {
+            snprintf(line,sizeof(line),"%d %.13s",c.stage+1,label);label=line;
+        }
+        portal_caption(fb,154,y,16,label,RGB(210,204,210));
+        double lo=param->minimum,hi=param->maximum,v=c.value;
+        if(p->macro_view && macro->configured){lo=macro->minimum;hi=macro->maximum;}
+        double t=hi>lo?(v-lo)/(hi-lo):0;
+        if(hi>100 && lo>=0)t=log1p(fmax(0,v-lo))/log1p(hi-lo);
+        if(t<0)t=0;if(t>1)t=1;
+        rect(fb,253,y+2,129,5,RGB(8,8,8));rect(fb,253,y+2,(int)(t*124),5,PAL_EFFECT);
         rect(fb,253+(int)(t*124),y,4,9,PAL_WAVE_LEFT);
-        ts_portal_parameter_format(proc,i,v,line,sizeof(line));
-        if(p->number_focus==(int)i) {
-            const char *entry=p->number_text;size_t length=strlen(entry);
-            if(length>6)entry+=length-6;
-            frame(fb,388,y-2,49,13,PAL_BLOCK,PAL_VOLUME);
-            portal_caption(fb,390,y,6,entry,PAL_VOLUME);
+        ts_portal_parameter_format(control_proc,i,v,line,sizeof(line));
+        if(p->number_focus==(int)i && (c.stage<0 || c.stage==p->chain_stage)) {
+            const char *entry=p->number_text;size_t length=strlen(entry);if(length>6)entry+=length-6;
+            frame(fb,388,y-2,49,13,PAL_BLOCK,PAL_VOLUME);portal_caption(fb,390,y,6,entry,PAL_VOLUME);
             if(ui->text_cursor_visible)rect(fb,390+(int)strlen(entry)*6,y,1,9,PAL_VOLUME);
         } else portal_caption(fb,390,y,7,line,PAL_EFFECT);
-        portal_mini(fb,440,y-3,20,(p->recipe.exposed&(1u<<i))?"X":"-",(p->recipe.exposed&(1u<<i))!=0);
+        portal_mini(fb,440,y-3,20,c.exposed?"X":"-",c.exposed);
     }
-    if(!visible)portal_caption(fb,156,272,48,p->macro_view?"EXACT RECIPE: ALL PARAMETERS ARE FIXED":"THIS MODE HAS NO NUMERIC PARAMETERS",PAL_EFFECT);
-    unsigned total=0;
-    if(proc)for(unsigned i=0;i<proc->parameter_count;++i)
-        if(!p->macro_view || (p->recipe.exposed&(1u<<i)))++total;
-    if(total>3) {
-        unsigned last=(unsigned)p->parameter_scroll+3;if(last>total)last=total;
-        snprintf(line,sizeof(line),"WHEEL LABELS: CONTROLS %d-%u OF %u",p->parameter_scroll+1,last,total);
-        portal_caption(fb,154,317,50,line,PAL_TUNING);
-    }
+    if(!total)portal_caption(fb,156,272,48,p->macro_view?"EXACT RECIPE: ALL PARAMETERS ARE FIXED":"THIS MODE HAS NO NUMERIC PARAMETERS",PAL_EFFECT);
+    unsigned last=(unsigned)p->parameter_scroll+3;if(last>total)last=total;
+    if(total>3)snprintf(line,sizeof(line),"WHEEL LABELS %d-%u/%u; RIGHT LABEL: EDIT MACRO",p->parameter_scroll+1,last,total);
+    else snprintf(line,sizeof(line),"RIGHT-CLICK LABEL: NAME / RANGE FOR MACRO");
+    portal_caption(fb,154,317,50,line,PAL_TUNING);
 
     frame(fb,472,40,160,314,RGB(18,18,18),RGB(84,77,84));
     if(p->chain_active) {
@@ -242,6 +237,23 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     }
     portal_mini(fb,501,360,125,p->chain_active?"FINAL RESULT":ts_portal_factory_find(p->recipe.process_id)?"SAVE BANK":"MAIN: CTRL+Z",0);
     if(p->manage_open)portal_manager_render(fb,p);
+    if(p->macro_edit) {
+        frame(fb,162,116,316,167,RGB(18,18,18),PAL_VOLUME);
+        text(fb,174,126,"EDIT MACRO",PAL_EFFECT,1);
+        const TsPortalParam *param=&proc->parameters[p->macro_edit-1];
+        snprintf(line,sizeof(line),"%s / %s",proc->title,param->label);
+        portal_caption(fb,174,141,48,line,RGB(210,204,210));
+        const char *labels[]={"NAME","MINIMUM","MAXIMUM"};
+        for(int i=0;i<3;++i) {
+            int y=157+i*25;text(fb,178,y+5,labels[i],PAL_EFFECT,1);
+            portal_mini(fb,268,y,198,"",i==p->macro_field);
+            const char *entry=p->macro_text[i];if(strlen(entry)>29)entry+=strlen(entry)-29;
+            text(fb,272,y+5,entry,PAL_VOLUME,1);
+            if(i==p->macro_field && ui->text_cursor_visible)rect(fb,272+(int)strlen(entry)*6,y+5,1,9,PAL_VOLUME);
+        }
+        text(fb,174,235,"TAB FIELD  CTRL+A CLEAR  ENTER SAVE",RGB(210,204,210),1);
+        button(fb,178,250,90,"SAVE",1);button(fb,277,250,90,"RESET",0);button(fb,376,250,90,"CANCEL",0);
+    }
     if(p->full_action) {
         frame(fb,166,140,308,113,RGB(18,18,18),PAL_VOLUME);
         text(fb,181,155,"THIS SAMPLE PAGE IS FULL",PAL_VOLUME,1);

@@ -9,7 +9,7 @@ enum { TS_PORTAL_CHAIN_STAGES = 8, TS_PORTAL_PARAMS = 16, TS_PORTAL_SLOTS = 32,
        TS_PORTAL_HISTORY = 4, TS_PORTAL_WAVE_COLUMNS = 310,
        TS_PORTAL_MAX_FRAMES = 8000000 };
 typedef enum { TS_PORTAL_INTEGER, TS_PORTAL_REAL, TS_PORTAL_SWITCH, TS_PORTAL_ODD_INTEGER, TS_PORTAL_ENUMERATED } TsPortalParamType;
-typedef enum { TS_PORTAL_WAVESET, TS_PORTAL_SPECTRAL, TS_PORTAL_TIME, TS_PORTAL_FILTER, TS_PORTAL_GRAIN, TS_PORTAL_LOFI, TS_PORTAL_LEVEL, TS_PORTAL_DELAY, TS_PORTAL_ENVELOPE, TS_PORTAL_STRUCTURE, TS_PORTAL_FACTORY, TS_PORTAL_FAMILIES } TsPortalFamily;
+typedef enum { TS_PORTAL_WAVESET, TS_PORTAL_SPECTRAL, TS_PORTAL_TIME, TS_PORTAL_FILTER, TS_PORTAL_GRAIN, TS_PORTAL_LOFI, TS_PORTAL_LEVEL, TS_PORTAL_DELAY, TS_PORTAL_ENVELOPE, TS_PORTAL_STRUCTURE, TS_PORTAL_FACTORY, TS_PORTAL_INSTRUMENTS, TS_PORTAL_FAMILIES } TsPortalFamily;
 typedef enum { TS_PORTAL_RENAME=1, TS_PORTAL_UPDATE, TS_PORTAL_REPLACE, TS_PORTAL_REMOVE } TsPortalEdit;
 typedef struct {
     const char *id, *label, *help, *flag;
@@ -25,15 +25,23 @@ typedef struct {
     const char *executable;
 } TsPortalProcess;
 typedef struct {
+    char name[24];
+    double minimum, maximum;
+    int configured;
+} TsPortalMacro;
+typedef struct {
     char process_id[64], name[40];
     unsigned version, exposed;
     double values[TS_PORTAL_PARAMS];
+    TsPortalMacro macros[TS_PORTAL_PARAMS];
     int bypass;
 } TsPortalStep;
 typedef struct {
     char process_id[64], name[40];
     unsigned version, exposed;
     double values[TS_PORTAL_PARAMS];
+    TsPortalMacro macros[TS_PORTAL_PARAMS];
+    char description[160];
     unsigned stage_count; /* zero is a legacy single-process recipe */
     TsPortalStep stages[TS_PORTAL_CHAIN_STAGES];
 } TsPortalRecipe;
@@ -56,6 +64,8 @@ typedef struct {
     int tab, scroll, search_focus, name_focus, exact_pin, pin_slot, macro_view;
     int parameter_scroll, dragging_parameter, dragging_wave, drag_x;
     int number_focus, wave_dragged;
+    int macro_edit, macro_field; /* edit index + 1, zero closes the dialog */
+    char macro_text[3][32];
     int note_count;
     int load_selection, process_selection, full_action;
     TsPortalRegion rendered_region;
@@ -79,6 +89,19 @@ typedef struct {
     char history_names[TS_PORTAL_HISTORY][24];
 } TsPortalUi;
 
+typedef struct {
+    int stage, index;
+    const TsPortalProcess *process;
+    const TsPortalMacro *macro;
+    double value;
+    int exposed;
+} TsPortalControl;
+int ts_portal_control_at(const TsPortalUi *ui,int row,TsPortalControl *control);
+int ts_portal_control_count(const TsPortalUi *ui);
+void ts_portal_control_bounds(const TsPortalRecipe *recipe,unsigned index,int macros,double *minimum,double *maximum);
+int ts_portal_macro_set(TsPortalRecipe *recipe,unsigned index,const char *name,double minimum,double maximum,char *error,size_t size);
+size_t ts_portal_instrument_count(void);
+int ts_portal_instrument_recipe(size_t index,TsPortalRecipe *recipe);
 void ts_portal_step_get(const TsPortalStep *step, TsPortalRecipe *recipe);
 void ts_portal_step_set(TsPortalStep *step, const TsPortalRecipe *recipe);
 void ts_portal_recipe_exact(TsPortalRecipe *recipe);

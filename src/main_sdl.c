@@ -6255,7 +6255,7 @@ static void preview_midi_note(SDL_AudioDeviceID device, AudioState *audio,
     size_t first=0,last=0;int loop=0;
     if(ui->portal.open) {
         TsPortalUi *p=&ui->portal;
-        if(p->search_focus || p->name_focus || p->number_focus>=0 || p->manage_open || p->full_action)return;
+        if(p->search_focus || p->name_focus || p->number_focus>=0 || p->macro_edit || p->manage_open || p->full_action)return;
         sample=p->listen_result?p->result:p->source;
         const TsPortalWave *w=&p->waves[p->listen_result];
         first=w->has_selection?w->selection_first:0;
@@ -11442,7 +11442,7 @@ static int keyboard_sustain_allowed(const TsUiState *ui)
     if(ui->exit_confirm_open || ui->project_overwrite_confirm_open || ui->file_busy)return 0;
     if(ui->portal.open) {
         const TsPortalUi *p=&ui->portal;
-        return !p->search_focus && !p->name_focus && p->number_focus<0 && !p->manage_open && !p->full_action;
+        return !p->search_focus && !p->name_focus && p->number_focus<0 && !p->macro_edit && !p->manage_open && !p->full_action;
     }
     if(ui->import_preview_open)return 1;
     return sister_performance_keys_allowed(ui);
