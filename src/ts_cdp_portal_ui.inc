@@ -125,22 +125,28 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
 
     frame(fb,8,40,134,314,RGB(18,18,18),RGB(84,77,84));
     text(fb,14,47,"PROCESS LIBRARY",RGB(210,204,210),1);
-    portal_mini(fb,14,62,122,p->query[0]?p->query:"SEARCH...",p->search_focus);
+    const char *query=p->query;
+    if(strlen(query)>18)query+=strlen(query)-18;
+    portal_mini(fb,14,62,122,p->query[0] || p->search_focus?query:"SEARCH...",p->search_focus);
+    if(p->search_focus && ui->text_cursor_visible)
+        rect(fb,18+(int)strlen(query)*6,67,1,9,PAL_VOLUME);
     portal_mini(fb,14,83,38,"ALL",p->tab==0);
     portal_mini(fb,56,83,38,"SAVE",p->tab==1);
     portal_mini(fb,98,83,38,"PINS",p->tab==2);
     snprintf(line,sizeof(line),"%s >",p->family?ts_portal_family_name(p->family-1):"ALL FAMILIES");
     portal_mini(fb,14,105,122,line,p->family!=0);
+    portal_mini(fb,14,126,122,p->channel_filter==TS_PORTAL_CHANNEL_STEREO?"STEREO >":
+        p->channel_filter==TS_PORTAL_CHANNEL_MONO_ONLY?"MONO ONLY >":"ANY CHANNELS >",p->channel_filter!=TS_PORTAL_CHANNEL_ANY);
     int rows=0;
-    for(int i=0;i<12;++i) {
+    for(int i=0;i<TS_PORTAL_LIST_ROWS;++i) {
         TsPortalRecipe r;
         int slot=ts_portal_filter_slot(p,p->scroll+i,&r);if(slot<0)break;
         int active=p->selected_tab==p->tab && p->selected_slot==slot;
-        if(active)frame(fb,13,126+i*17,124,16,PAL_BLOCK,PAL_VOLUME);
-        portal_caption(fb,17,130+i*17,19,r.name,active?PAL_BLOCK_TEXT:RGB(210,204,210));
+        if(active)frame(fb,13,TS_PORTAL_LIST_Y+i*TS_PORTAL_LIST_ROW_H,124,16,PAL_BLOCK,PAL_VOLUME);
+        portal_caption(fb,17,TS_PORTAL_LIST_Y+4+i*TS_PORTAL_LIST_ROW_H,19,r.name,active?PAL_BLOCK_TEXT:RGB(210,204,210));
         ++rows;
     }
-    if(!rows)portal_caption(fb,17,133,19,"NO MATCHES",RGB(210,204,210));
+    if(!rows)portal_caption(fb,17,TS_PORTAL_LIST_Y+7,19,"NO MATCHES",RGB(210,204,210));
     portal_mini(fb,14,334,68,"TOOLS",0);
     portal_mini(fb,86,334,50,"SAVE AS",0);
 
@@ -271,5 +277,5 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
         button(fb,330,217,118,"CANCEL",0);
     }
     rect(fb,0,382,640,18,RGB(8,8,8));
-    portal_caption(fb,9,388,103,p->message,PAL_WAVE_LEFT);
+    portal_caption(fb,9,388,103,p->tooltip[0]?p->tooltip:p->message,p->tooltip[0]?PAL_TUNING:PAL_WAVE_LEFT);
 }

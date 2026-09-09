@@ -8,7 +8,7 @@ bank presets remain in use; personal recipes and pins have separate storage.
 
 ## Open and explore
 
-Load or generate a mono tile. Click **CDP** in the main header, between Export
+Load or generate a mono or stereo tile. Click **CDP** in the main header, between Export
 and the limiter. On the CDP panel you can also click **PORTAL**, or press
 **Ctrl+Shift+P** from the main workspace. The Portal takes an immutable snapshot
 of Current (the current selection when one exists). **LOAD: TILE / LOAD: SEL** toggles
@@ -19,11 +19,39 @@ The Portal exposes **131 processes across ten families**: 28 waveset, 50 spectra
 four time/tape, 13 filter, four grains, three lo-fi/modulation, five level, one
 delay, 15 envelope, and eight structure processes. Search matches names, stable command IDs, descriptions, and
 families. **ALL**, **SAVE**, and **PINS** switch the left browser between
-processes, saved recipes, and user process pins. Scroll that column with the
-mouse wheel. The family button below the tabs cycles **ALL FAMILIES**,
-**WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, **GRAINS**, **LO-FI / MOD**, **LEVEL**, **DELAY**, **ENVELOPE**, **STRUCTURE**, and **FACTORY**. Family and text filters combine, including in
-saved recipes and pins. Clearing the search and choosing ALL FAMILIES restores
-the complete list. Filtering never renumbers stored slots.
+processes, saved recipes, and user process pins. Click **SEARCH** to clear the
+previous query and type a new one; the placeholder disappears and a blinking
+caret shows where you are typing. Long queries keep their end visible.
+Ctrl+A clears the field; Enter or Escape leaves it.
+
+Scroll the list with the mouse wheel or use **Up / Down** to select processes.
+Holding an arrow repeats, and the selected row scrolls into view. From Search,
+Down enters the filtered list. **Left / Right** cycles families when no text
+field is being edited. Arrows leave recipe names, numeric entry and dialogs
+under their own controls. Selecting with arrows behaves like clicking, including
+Auto Preview, chain-stage replacement and ADD.
+
+The family button below the tabs cycles **ALL FAMILIES**,
+**WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, **GRAINS**, **LO-FI / MOD**, **LEVEL**, **DELAY**, **ENVELOPE**, **STRUCTURE**, **FACTORY**, and **CHAIN TOOLS**.
+
+The channel button below it cycles **ANY CHANNELS / STEREO / MONO ONLY**.
+STEREO shows verified stereo-capable tools, which also accept mono. MONO ONLY
+shows tools that require mono. Saved chains qualify for stereo only when every
+enabled stage supports it; bypassed stages do not restrict the filter.
+Channel, family and text filters combine in ALL, SAVE and PINS. Clear Search,
+choose ALL FAMILIES and ANY CHANNELS to restore the complete list. Filtering
+does not change audio, render a process, or renumber stored slots.
+
+![Stereo-filtered native Portal library](images/cdp-portal-library-filter.png)
+
+Hover a Portal button for **600 ms** to see its help in the bottom status line.
+Waveforms, parameters and library entries also provide hints. Help disappears
+when you move away, press a key, click or drag; the operation message is retained.
+Rendering keeps its status visible, and fresh result/error messages receive
+2.4 seconds before help can return over the same control. Dialogs show help for
+their own controls. This first hover-help pass is scoped to the Portal.
+
+![Delayed help in the native Portal status line](images/cdp-portal-hover-help.png)
 
 All 131 Portal modes accept mono input. Thirteen verified modes also accept
 stereo, as described below; other modes reject stereo explicitly.
@@ -1097,3 +1125,18 @@ Apply/Undo, New Tile, chain caches and the dual waveform screenshot.
 Core and native controller checks passed with address/undefined-behavior
 sanitizers. Leak checking is unavailable here. Windows compilation and hardware
 listening remain the final release checks.
+
+### Library navigation and hover-help validation
+
+The native Portal controller harness also checks search clearing/caret bounds,
+combined channel/family/text filters, sparse saved/pin slots, bypassed chain
+eligibility, arrow key repeat and scrolling, text/modal focus, chain insertion,
+and cancellation of obsolete renders during keyboard navigation. Hover checks
+cover the 600 ms delay, fresh-status visibility, timer wraparound, dragging and
+dialog isolation without changing the operation message or audio state.
+
+The Portal controller and shared Sustain harness passed address/undefined-behavior
+sanitizers with leak checking disabled. Core, Portal and live-preview selection
+regressions passed; the standalone Linux application compiled. The native
+640x400 search, filtered list and hover-help renders were inspected. Windows
+compilation and physical QWERTY/MIDI listening remain user checks.

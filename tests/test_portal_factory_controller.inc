@@ -38,7 +38,7 @@ static void test_factory_workflow(SDL_Window *window,SDL_AudioDeviceID device)
     /* The exact same factory stage can be followed by an ordinary Portal stage. */
     click.button.x=25;FACTORY_EVENT();assert(p->chain_active && p->chain.stage_count==1);
     click.button.x=490;click.button.y=70;FACTORY_EVENT();assert(p->chain_add);
-    p->family=0;snprintf(p->query,sizeof(p->query),"LINEAR GAIN");click.button.x=25;click.button.y=130;FACTORY_EVENT();
+    p->family=0;snprintf(p->query,sizeof(p->query),"LINEAR GAIN");click.button.x=25;click.button.y=TS_PORTAL_LIST_Y+4;FACTORY_EVENT();
     assert(p->chain.stage_count==2 && !strcmp(p->recipe.process_id,"modify.loudness.1"));p->recipe.values[0]=.5;
     portal_preview(device,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);assert(p->valid);
     assert(fabs(ts_sample_peak(p->result)-.5*ts_sample_peak(&c.stages[0].output))<.0001);

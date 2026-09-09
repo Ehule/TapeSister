@@ -374,6 +374,12 @@ Saving `Name.tsr` creates the movable folder `Name/`. Share or back up that whol
 Save and Export append the proper extension. Replacing a file requires a deliberate
 confirmation.
 
+**Export selected WAV** starts with the selected tile's name, including a custom
+tile rename. It keeps a single `.wav` extension and substitutes filename-safe
+characters where needed. You can edit the suggested name before saving.
+
+![Selected tile name in the WAV export dialog](images/export-tile-filename.png)
+
 ## Safety
 
 - Space is the immediate playback panic stop.
@@ -388,6 +394,7 @@ confirmation.
 | Control | Action |
 | --- | --- |
 | **REC FILE** on the sample bank | Start a stereo output WAV immediately; no tile destination |
+| **REC FILE** on the FX/pedalboard page | Record the final stereo master output, including effects; works with Sister power off |
 | `Ctrl+Shift+F` in the main window | Start from the canvas; stop an active file from any main-window panel |
 | **STOP FILE** in the recording footer | Finish the WAV and keep playback running |
 | QWERTY on the canvas | Up to five simultaneous notes; newest voice supplies the playhead |
@@ -395,3 +402,9 @@ confirmation.
 Files go to `Captures/TAPESISTER-OUT_...wav`. The timer and recording border stay
 visible when opening other main-window panels. Sister Machine and effects can
 remain off; the recording follows the final audible output.
+
+The FX page's dedicated button changes to **STOP FILE** while recording and
+**FILE WAIT** while finishing. Its existing footer shows recording duration.
+This button leaves the tap, mono/stereo and tile-destination selectors unchanged.
+
+![Direct master-output recording from the FX page](images/fx-record-file.png)

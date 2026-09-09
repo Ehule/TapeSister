@@ -24,9 +24,15 @@ does not add voices: QWERTY and FM/Portal/import preview retain the existing
 five-note limit. MIDI tile playback retains its larger independent voice pool.
 
 The earlier canvas behavior implicitly let non-looping samples finish while
-releasing looped notes at key-up. The switch now makes the release choice explicit
-and consistent with preview and FM notes. FM preview audio loops, so Sustain lets
-it continue after key release.
+releasing looped notes at key-up. The switch makes the release choice explicit.
+
+**FM:** physically held keys repeat the rendered preview. With Sustain on,
+releasing an ordinary QWERTY, onscreen or MIDI key lets the current pass finish
+once; it does not latch an endless loop. With Sustain off, key-up stops it.
+**HOLD / HELD** and explicit Shift-click latches keep repeating until released
+with their own controls. HOLD can also catch a note that is still finishing.
+Changing FM parameters preserves whether a note is held or finishing; a fresh
+key press retriggers normally.
 
 Explicit Shift-click latches, FM HOLD, staged capture chords, and plain-clicked tile
 launches retain their own controls. Space/Stop and MIDI panic still clear their
@@ -67,6 +73,8 @@ Run `./tapesister_keyboard_sustain_tests` with SDL's dummy audio/video drivers
 - QWERTY and MIDI release behavior for tile, FM and preview voices, with and
   without loops; released versus physically held notes when Sustain is disabled.
 - Repeated notes, explicit latches, natural one-shot completion, and panic.
+- Real FM preview audio finishing after QWERTY/MIDI key release with Sustain,
+  while physical keys and explicit HOLD/latches keep looping; rerender and retrigger.
 - Main/FM MIDI routing and Portal Source/Result, selected ranges, pitch, channel
   panic, text focus, and stereo import-preview output.
 - Shift+S auto-repeat protection, visible button click targets, and Sister's

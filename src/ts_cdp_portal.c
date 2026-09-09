@@ -1149,6 +1149,8 @@ int ts_portal_filter_slot(const TsPortalUi *ui,int row,TsPortalRecipe *out)
         if(ui->tab==0 && i>=scalar_count)ts_portal_instrument_recipe((size_t)(i-scalar_count),&r);
         else if(ui->tab==0) ts_portal_recipe_default(&r,(size_t)i<ts_portal_process_count()?ts_portal_process_at((size_t)i):ts_portal_factory_process_at((size_t)i-ts_portal_process_count()));
         else r=ui->tab==1?ui->library.recipes[i]:ui->library.pins[i];
+        if(ui->channel_filter==TS_PORTAL_CHANNEL_STEREO && !ts_portal_stereo_supported(&r))continue;
+        if(ui->channel_filter==TS_PORTAL_CHANNEL_MONO_ONLY && ts_portal_stereo_supported(&r))continue;
         const TsPortalProcess *p=ts_portal_process_find(r.process_id);
         if(ui->tab==0 && i>=scalar_count && ui->family && ui->family!=TS_PORTAL_INSTRUMENTS+1)continue;
         if(r.stage_count) {

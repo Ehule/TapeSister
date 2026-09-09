@@ -87,6 +87,7 @@ int ts_note_bank_latch_active_synth(TsNoteBank *bank)
         TsNoteVoice *voice = &bank->voices[i];
         if (!voice->active || !voice->synth) continue;
         voice->latched = 1;
+        voice->looping = 1; /* HOLD can also catch an FM note finishing under Sustain. */
         ++count;
     }
     return count;
@@ -385,6 +386,9 @@ void ts_note_bank_release_event(TsNoteBank *bank,const TsNoteEvent *event)
         if(v->active && ts_note_event_same_trigger(event,v->origin,v->note,v->channel)) {
             v->key_down=0;
             if(!v->latched && !bank->sustain)v->active=0;
+            /* FM repeats while physically held. Sustain lets the released
+               preview finish this pass; only explicit HOLD/latches repeat. */
+            else if(v->synth && !v->latched)v->looping=0;
         }
     }
 }

@@ -471,6 +471,11 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         return hit;
     }
     if (model != NULL && model->fx_page == 1) {
+        if (contains(x, y, TS_SISTER_UI_FX_REC_X, TS_SISTER_UI_FX_REC_Y,
+                     TS_SISTER_UI_FX_REC_W, TS_SISTER_UI_FX_REC_H)) {
+            hit.action = TS_SISTER_UI_ACTION_RECORD_FILE;
+            return hit;
+        }
         for (int row = 0; row < 4; ++row) {
             int top = 52 + row * 56;
             int field_count = model->parameters.fx.slot[row].type ==
