@@ -393,9 +393,11 @@ characters where needed. You can edit the suggested name before saving.
 
 | Control | Action |
 | --- | --- |
+| **REC FILE** above the virtual keyboard | Record tile or FM playing; remains accessible with FM open |
+| **REC FILE** in the bottom-right footer | Start/stop output recording from any main-window panel |
 | **REC FILE** on the sample bank | Start a stereo output WAV immediately; no tile destination |
 | **REC FILE** on the FX/pedalboard page | Record the final stereo master output, including effects; works with Sister power off |
-| `Ctrl+Shift+F` in the main window | Start from the canvas; stop an active file from any main-window panel |
+| `Ctrl+Shift+F` in the main window | Start/stop the output file from any main-window panel |
 | **STOP FILE** in the recording footer | Finish the WAV and keep playback running |
 | QWERTY on the canvas | Up to five simultaneous notes; newest voice supplies the playhead |
 
@@ -408,3 +410,16 @@ The FX page's dedicated button changes to **STOP FILE** while recording and
 This button leaves the tap, mono/stereo and tile-destination selectors unchanged.
 
 ![Direct master-output recording from the FX page](images/fx-record-file.png)
+
+## Keyboard playback and loop modes
+
+The virtual keyboard shares **HOLD** between tile and FM playing. Arm HOLD before
+playing to latch/repeat notes; click again or press Space to release. Ordinary
+clicks/QWERTY/MIDI never arm HOLD. Shift-click toggles one chord note. Sustain
+controls key-up; LOOP or saved loop points control repetition.
+
+The loop MODE button now also offers **START FWD**, **START REV**, and
+**START P-P**: play from the sample beginning, then remain inside the saved loop.
+[Playback and loop modes](PLAYBACK_LOOPS.md) explains all six choices and TapeHead
+compatibility. Zoomed waveforms now connect adjacent sample columns; at high zoom
+they draw a continuous line through the sample values.

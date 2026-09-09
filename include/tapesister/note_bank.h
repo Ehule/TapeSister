@@ -34,6 +34,7 @@ typedef struct {
     float gain;
     int looping;
     int direction;
+    int loop_intro;
     int latched;
     int key_down; /* Physical trigger state, independent of explicit latch. */
     int synth;
@@ -47,6 +48,7 @@ typedef struct {
     uint64_t next_serial;
     int attack_ms;
     int sustain;
+    int workbench_loop; /* Session-only selection/view loop for played notes. */
 } TsNoteBank;
 
 typedef enum {

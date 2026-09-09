@@ -439,6 +439,7 @@ typedef struct {
     TsFmPatch fm_patch;
     const TsSample *fm_preview_sample;
     int fm_held_notes;
+    int keyboard_hold; /* Explicit session latch, shared by tile/FM keyboard. */
     int fm_full_choice_open;
     int fm_bank_choice_open;
     int fm_output_dragging;

@@ -285,6 +285,9 @@ typedef enum {
     TS_LOOP_FORWARD = 0,
     TS_LOOP_REVERSE,
     TS_LOOP_PING_PONG,
+    TS_LOOP_START_FORWARD,
+    TS_LOOP_START_REVERSE,
+    TS_LOOP_START_PING_PONG,
     TS_LOOP_MODE_COUNT
 } TsLoopMode;
 
@@ -968,5 +971,7 @@ int ts_instrument_next_family_path(const TsInstrument *instrument,
 const char *ts_bank_capture_name(TsBankCaptureKind kind);
 const char *ts_family_relation_name(TsFamilyRelation relation);
 const char *ts_loop_mode_name(TsLoopMode mode);
+TsLoopMode ts_loop_base_mode(TsLoopMode mode);
+int ts_loop_starts_at_sample(TsLoopMode mode);
 
 #endif

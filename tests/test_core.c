@@ -1182,7 +1182,7 @@ int main(void)
                                      error, sizeof(error)));
         CHECK(imported.has_loop && imported.loop_first == 123 &&
               imported.loop_last == 4321 &&
-              imported.loop_mode == TS_LOOP_PING_PONG);
+              imported.loop_mode == TS_LOOP_START_PING_PONG);
         CHECK(imported.bank[0].has_loop && imported.bank[0].loop_first == 123);
         CHECK(imported.tuning.root_note == 60 &&
               imported.audible_tuning.root_note == 60);

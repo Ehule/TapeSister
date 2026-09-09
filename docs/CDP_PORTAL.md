@@ -1140,3 +1140,9 @@ sanitizers with leak checking disabled. Core, Portal and live-preview selection
 regressions passed; the standalone Linux application compiled. The native
 640x400 search, filtered list and hover-help renders were inspected. Windows
 compilation and physical QWERTY/MIDI listening remain user checks.
+
+Recipe/chain names and the manager's rename field show a blinking caret while
+editing, including an empty field. Long names scroll to keep the typing position
+inside the field. The Portal retains its permanent header REC control.
+
+![Portal recipe rename caret](images/portal-rename-caret.png)

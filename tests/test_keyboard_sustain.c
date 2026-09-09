@@ -11,7 +11,7 @@ static void shot(const char *name,TsUiState *ui,TsInstrument *instrument)
 {
     const char *dir=getenv("TS_TEST_SUSTAIN_SHOTS");if(!dir)return;
     char path[1024];snprintf(path,sizeof(path),"%s/%s.ppm",dir,name);
-    static TsFramebuffer fb;ts_ui_render(&fb,ui,instrument);assert(ts_ui_write_ppm(&fb,path));
+    static TsFramebuffer fb;ts_ui_render(&fb,ui,instrument);ts_ui_render_file_recording(&fb,ui);assert(ts_ui_write_ppm(&fb,path));
 }
 static void test_voice_policy(TsInstrument *instrument,const TsSample *sample)
 {
@@ -52,50 +52,7 @@ static void test_voice_policy(TsInstrument *instrument,const TsSample *sample)
     assert(!ts_note_bank_count(&bank));
 }
 
-static void test_fm_sustain_finish(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsInstrument *instrument)
-{
-    TsSample fm;ts_sample_init(&fm);char error[160];
-    assert(ts_fm_render_sample(&fm,&ui->fm_patch,.1f,261.6256f,44100,31337,error,sizeof(error)));
-    for(int midi=0;midi<2;++midi) {
-        TsNoteEvent a,b;
-        if(midi) {assert(ts_note_event_midi(&a,60,100,0));assert(ts_note_event_midi(&b,64,100,1));}
-        else {assert(ts_note_event_qwerty(&a,0,60));assert(ts_note_event_qwerty(&b,4,60));}
-        ts_note_bank_clear(&audio->notes);ts_note_bank_set_sustain(&audio->notes,1);
-        begin_fm_note_event(device,audio,ui,instrument,&fm,&a,44100,0);
-        begin_fm_note_event(device,audio,ui,instrument,&fm,&b,44100,0);
-        for(size_t i=0;i<fm.frames*2;++i)(void)ts_note_bank_read(&audio->notes);
-        assert(ts_note_bank_count(&audio->notes)==2); /* Physically held keys still loop. */
-        ts_note_bank_release_event(&audio->notes,&a);
-        double energy=0;
-        for(size_t i=0;i<fm.frames+2;++i) {
-            float heard=ts_note_bank_read(&audio->notes);assert(isfinite(heard));energy+=fabs(heard);
-        }
-        assert(energy>0 && ts_note_bank_count(&audio->notes)==1);
-        assert(ts_note_bank_display_voice(&audio->notes)->key_down);
-        ts_note_bank_release_event(&audio->notes,&b);
-        for(size_t i=0;i<fm.frames+2;++i)(void)ts_note_bank_read(&audio->notes);
-        assert(!ts_note_bank_count(&audio->notes));
-        /* Retrigger resets the finish state; a rerender keeps it. HOLD can
-           catch a released tail and remains explicit when Sustain turns off. */
-        begin_fm_note_event(device,audio,ui,instrument,&fm,&a,44100,0);
-        assert(ts_note_bank_display_voice(&audio->notes)->looping);
-        ts_note_bank_release_event(&audio->notes,&a);
-        ts_note_bank_replace_sample(&audio->notes,&fm,&fm,48000);
-        assert(!ts_note_bank_display_voice(&audio->notes)->looping);
-        toggle_fm_hold(device,audio,ui);
-        assert(ui->fm_held_notes==1 && ts_note_bank_display_voice(&audio->notes)->looping);
-        ts_note_bank_set_sustain(&audio->notes,0);
-        for(size_t i=0;i<fm.frames*3;++i)(void)ts_note_bank_read(&audio->notes);
-        assert(ts_note_bank_count(&audio->notes)==1);
-        toggle_fm_hold(device,audio,ui);assert(!ts_note_bank_count(&audio->notes));
-        begin_fm_note_event(device,audio,ui,instrument,&fm,&a,44100,1);
-        ts_note_bank_set_sustain(&audio->notes,1);ts_note_bank_release_event(&audio->notes,&a);
-        for(size_t i=0;i<fm.frames*2;++i)(void)ts_note_bank_read(&audio->notes);
-        assert(ts_note_bank_count(&audio->notes)==1); /* Shift-click latch. */
-        runtime_note_clear(audio);assert(!ts_note_bank_count(&audio->notes));
-    }
-    ts_note_bank_set_sustain(&audio->notes,0);ts_sample_free(&fm);
-}
+#include "test_playback_continuity.inc"
 
 int main(void)
 {
@@ -113,7 +70,9 @@ int main(void)
     for(size_t i=0;i<sample.frames;++i)sample.data[i]=.2f*sinf((float)i*.07f);
     assert(ts_instrument_import_sample(&instrument,&sample,0,0,sample.frames,TS_LOOP_FORWARD,error,sizeof(error)));
     test_voice_policy(&instrument,&sample);
-    test_fm_sustain_finish(device,&audio,&ui,&instrument);
+    test_keyboard_continuity(window,device,&audio,&ui,&instrument);
+    test_start_loops(device,&audio,&ui);
+    test_continuity_ui(&ui,&instrument);
     /* Reproduce Set Loop -> click current tile -> launch, then revisit and Undo. */
     ui.bank_view_slot=-1;ts_instrument_set_selection(&instrument,500,2500);
     set_loop(device,&audio,&ui,&instrument);assert(instrument.has_loop);
@@ -150,11 +109,11 @@ int main(void)
 
     SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.windowID=SDL_GetWindowID(window);
     key.key.keysym.sym=SDLK_s;key.key.keysym.mod=KMOD_SHIFT;
-    assert(keyboard_sustain_event(&key,window,device,&audio,&ui,&sister));
+    assert(keyboard_sustain_event(&key,window,device,&audio,&ui,&sister,&instrument));
     assert(ui.keyboard_sustain && audio.notes.sustain && audio.performance.sustain && audio.sister.performance.sustain);
-    key.key.repeat=1;assert(keyboard_sustain_event(&key,window,device,&audio,&ui,&sister));assert(ui.keyboard_sustain);key.key.repeat=0;
+    key.key.repeat=1;assert(keyboard_sustain_event(&key,window,device,&audio,&ui,&sister,&instrument));assert(ui.keyboard_sustain);key.key.repeat=0;
     shot("sustain-canvas",&ui,&instrument);
-    ui.config_open=1;assert(!keyboard_sustain_event(&key,window,device,&audio,&ui,&sister));ui.config_open=0;
+    ui.config_open=1;assert(!keyboard_sustain_event(&key,window,device,&audio,&ui,&sister,&instrument));ui.config_open=0;
     ui.fm_open=1;shot("sustain-fm",&ui,&instrument);ui.fm_open=0;
     /* Group/Sister use the same pedal policy, including MIDI channel identity. */
     TsNoteEvent a,b;assert(ts_note_event_midi(&a,60,100,0));assert(ts_note_event_midi(&b,64,100,1));
@@ -164,7 +123,7 @@ int main(void)
         assert(ts_performance_trigger_group_event(bank,&instrument,1,&b,0,44100)==1);
         ts_performance_release_event(bank,&a);assert(ts_performance_count(bank)==2);
     }
-    assert(keyboard_sustain_event(&key,window,device,&audio,&ui,&sister));
+    assert(keyboard_sustain_event(&key,window,device,&audio,&ui,&sister,&instrument));
     assert(!ui.keyboard_sustain && ts_performance_count(&audio.performance)==1 && ts_performance_count(&audio.sister.performance)==1);
     runtime_note_release_event(&audio,&b);assert(!ts_performance_count(&audio.performance) && !ts_performance_count(&audio.sister.performance));
     keyboard_sustain_toggle(device,&audio,&ui,&sister);
@@ -193,9 +152,9 @@ int main(void)
     assert(v->sample==ui.portal.source && v->range_first==100 && v->range_last==1000 && v->looping);
     midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);
     assert(ts_note_bank_count(&audio.notes)==1);
-    ui.portal.name_focus=1;assert(!keyboard_sustain_event(&key,window,device,&audio,&ui,&sister));
+    ui.portal.name_focus=1;assert(!keyboard_sustain_event(&key,window,device,&audio,&ui,&sister,&instrument));
     midi.action=TS_MIDI_ACTION_NOTE_ON;midi.note=b;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);assert(ts_note_bank_count(&audio.notes)==1);
-    ui.portal.name_focus=0;ui.portal.number_focus=0;assert(!keyboard_sustain_event(&key,window,device,&audio,&ui,&sister));ui.portal.number_focus=-1;
+    ui.portal.name_focus=0;ui.portal.number_focus=0;assert(!keyboard_sustain_event(&key,window,device,&audio,&ui,&sister,&instrument));ui.portal.number_focus=-1;
     shot("sustain-portal",&ui,&instrument);
     portal_clear_notes(&audio,&ui.portal,&c);assert(!ts_note_bank_count(&audio.notes));
     ui.portal.result=&sample;ui.portal.listen_result=1;ui.portal.loop=0;
@@ -216,20 +175,20 @@ int main(void)
     shot("sustain-import",&ui,&instrument);
     SDL_Event click={0};click.type=SDL_MOUSEBUTTONDOWN;click.button.windowID=SDL_GetWindowID(window);
     click.button.button=SDL_BUTTON_LEFT;click.button.x=550;click.button.y=320;
-    assert(keyboard_sustain_event(&click,window,device,&audio,&ui,&sister));assert(!ui.keyboard_sustain && !ts_note_bank_count(&audio.notes));
+    assert(keyboard_sustain_event(&click,window,device,&audio,&ui,&sister,&instrument));assert(!ui.keyboard_sustain && !ts_note_bank_count(&audio.notes));
     midi.action=TS_MIDI_ACTION_NOTE_ON;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);
     midi.action=TS_MIDI_ACTION_NOTE_OFF;handle_midi_event(device,&audio,&ui,&instrument,NULL,&midi,44100);assert(!ts_note_bank_count(&audio.notes));
     ui.import_preview_open=0;
     /* Canvas and Portal buttons are actual click targets; hidden keyboard is not. */
-    ui.show_keyboard=0;assert(!keyboard_sustain_event(&click,window,device,&audio,&ui,&sister));
-    ui.show_keyboard=1;assert(keyboard_sustain_event(&click,window,device,&audio,&ui,&sister));assert(ui.keyboard_sustain);
+    ui.show_keyboard=0;assert(!keyboard_sustain_event(&click,window,device,&audio,&ui,&sister,&instrument));
+    ui.show_keyboard=1;assert(keyboard_sustain_event(&click,window,device,&audio,&ui,&sister,&instrument));assert(ui.keyboard_sustain);
     ui.portal.open=1;ui.portal.number_focus=-1;click.button.x=565;click.button.y=316;
-    assert(keyboard_sustain_event(&click,window,device,&audio,&ui,&sister));assert(!ui.keyboard_sustain);ui.portal.open=0;
+    assert(keyboard_sustain_event(&click,window,device,&audio,&ui,&sister,&instrument));assert(!ui.keyboard_sustain);ui.portal.open=0;
     /* Same shortcut in the companion window; preset text remains text. */
     sister.window=SDL_CreateWindow("Sister",0,0,640,400,0);assert(sister.window);sister.window_id=SDL_GetWindowID(sister.window);
     key.key.windowID=sister.window_id;
-    assert(keyboard_sustain_event(&key,window,device,&audio,&ui,&sister));assert(sister.model.keyboard_sustain);
-    sister.model.preset_manage_open=1;assert(!keyboard_sustain_event(&key,window,device,&audio,&ui,&sister));sister.model.preset_manage_open=0;
+    assert(keyboard_sustain_event(&key,window,device,&audio,&ui,&sister,&instrument));assert(sister.model.keyboard_sustain);
+    sister.model.preset_manage_open=1;assert(!keyboard_sustain_event(&key,window,device,&audio,&ui,&sister,&instrument));sister.model.preset_manage_open=0;
     const char *dir=getenv("TS_TEST_SUSTAIN_SHOTS");if(dir) {
         static TsFramebuffer fb;char path[1024];ts_sister_ui_render(&fb,&sister.model,&ui.palette);
         snprintf(path,sizeof(path),"%s/sustain-sister.ppm",dir);assert(ts_ui_write_ppm(&fb,path));

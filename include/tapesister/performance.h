@@ -80,6 +80,8 @@ typedef struct {
     double pending_step;
     int looping;
     int direction;
+    int loop_intro;
+    int transition_loop_intro;
     int transition_direction;
     int pending_direction;
     int latched;
@@ -98,10 +100,12 @@ typedef struct {
     uint64_t next_group_id;
     int attack_ms;
     int sustain;
+    int keyboard_loop; /* Whole sample fallback for notes without saved loops. */
 } TsPerformanceBank;
 
 void ts_performance_init(TsPerformanceBank *bank);
 void ts_performance_clear(TsPerformanceBank *bank);
+void ts_performance_clear_latched(TsPerformanceBank *bank);
 /* Disabling releases key-up voices, preserving held keys and explicit latches. */
 void ts_performance_set_sustain(TsPerformanceBank *bank, int enabled);
 void ts_performance_free(TsPerformanceBank *bank);

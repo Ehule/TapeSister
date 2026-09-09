@@ -173,11 +173,12 @@ static int start_slot_event(TsPerformanceBank *bank, const TsBankSlot *slot,
     voice->sample = &generation->sample;
     voice->range_first = first;
     voice->range_last = last;
-    voice->looping = slot->has_loop && last > first + 1u;
+    voice->looping = (slot->has_loop || (!voice->tile_launched && bank->keyboard_loop)) && last > first + 1u;
     voice->loop_mode = slot->loop_mode;
-    voice->direction = voice->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
-    voice->position = voice->looping && voice->direction < 0 ?
-                      (double)(last - 1u) : (double)first;
+    voice->direction = 1;
+    voice->position = (double)first;
+    if (voice->looping) voice->position = ts_audition_loop_begin(
+        first, last, voice->loop_mode, &voice->direction, &voice->loop_intro);
     voice->step = (double)generation->sample.sample_rate / (double)output_rate *
                   ts_tuning_note_pitch(&slot->audible_tuning,
                                        event->midi_note - TS_KEYBOARD_BASE_NOTE);
@@ -281,9 +282,10 @@ TsPerformanceTileResult ts_performance_toggle_tile(
     voice->range_last = last;
     voice->looping = slot->has_loop && last > first + 1u;
     voice->loop_mode = slot->loop_mode;
-    voice->direction = voice->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
-    voice->position = voice->looping && voice->direction < 0 ?
-                      (double)(last - 1u) : (double)first;
+    voice->direction = 1;
+    voice->position = (double)first;
+    if (voice->looping) voice->position = ts_audition_loop_begin(
+        first, last, voice->loop_mode, &voice->direction, &voice->loop_intro);
     voice->step = (double)generation->sample.sample_rate /
                   (double)output_rate *
                   ts_tuning_pair_audition_pitch(&slot->tuning,
@@ -360,6 +362,13 @@ void ts_performance_init(TsPerformanceBank *bank)
         memset(bank, 0, sizeof(*bank));
         bank->attack_ms = TS_AUDITION_ATTACK_MS_DEFAULT;
     }
+}
+
+void ts_performance_clear_latched(TsPerformanceBank *bank)
+{
+    if (bank == NULL) return;
+    for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i)
+        if (bank->voices[i].latched) voice_deactivate(&bank->voices[i]);
 }
 
 void ts_performance_clear(TsPerformanceBank *bank)
@@ -680,6 +689,8 @@ static void adopt_pending_generation(TsPerformanceVoice *voice)
     voice->transition_crossfade_frames = voice->crossfade_frames;
     voice->transition_loop_mode = voice->loop_mode;
     voice->transition_direction = voice->direction;
+    voice->transition_loop_intro = voice->loop_intro;
+    voice->loop_intro = 0;
     voice->transition_frame = 0u;
     voice->transition_frames = voice->pending_transition_frames;
     voice->generation = pending;
@@ -691,7 +702,7 @@ static void adopt_pending_generation(TsPerformanceVoice *voice)
     voice->loop_mode = voice->pending_loop_mode;
     voice->direction = voice->pending_direction;
     voice->step = voice->pending_step;
-    if (voice->loop_mode == TS_LOOP_PING_PONG) {
+    if (ts_loop_base_mode(voice->loop_mode) == TS_LOOP_PING_PONG) {
         voice->direction = boundary_direction >= 0 ? -1 : 1;
         voice->position = voice->direction < 0 ?
             (double)(voice->range_last - 1u) :
@@ -707,14 +718,11 @@ static TsStereoFrame transition_old_frame(TsPerformanceVoice *voice)
 {
     TsStereoFrame frame = {0.0f, 0.0f};
     if (voice == NULL || voice->transition_generation == NULL) return frame;
-    voice->transition_position = ts_audition_loop_position(
-        voice->transition_position, voice->transition_range_first,
-        voice->transition_range_last, voice->transition_crossfade_frames,
-        voice->transition_loop_mode, &voice->transition_direction);
-    frame = ts_audition_read_looped_mode_frame(
-        &voice->transition_generation->sample, voice->transition_position,
+    frame = ts_audition_loop_frame(
+        &voice->transition_generation->sample, &voice->transition_position,
         voice->transition_range_first, voice->transition_range_last,
-        voice->transition_crossfade_frames, voice->transition_loop_mode);
+        voice->transition_crossfade_frames, voice->transition_loop_mode,
+        &voice->transition_direction, &voice->transition_loop_intro);
     voice->transition_position +=
         voice->transition_step * voice->transition_direction;
     return frame;
@@ -741,16 +749,15 @@ TsStereoFrame ts_performance_read_stereo(TsPerformanceBank *bank,
             int direction_before = voice->direction;
             if (voice->pending_generation != NULL && loop_boundary(voice))
                 adopt_pending_generation(voice);
-            voice->position = ts_audition_loop_position(
-                voice->position, voice->range_first, voice->range_last,
-                voice->crossfade_frames, voice->loop_mode, &voice->direction);
-            if (voice->loop_mode == TS_LOOP_PING_PONG &&
+            value = ts_audition_loop_frame(
+                voice->sample, &voice->position, voice->range_first,
+                voice->range_last, voice->crossfade_frames, voice->loop_mode,
+                &voice->direction, &voice->loop_intro);
+            if (ts_loop_base_mode(voice->loop_mode) == TS_LOOP_PING_PONG &&
                 voice->direction != direction_before &&
                 voice->transition_generation == NULL)
                 begin_ping_pong_turnaround(voice);
-            value = ts_audition_read_looped_mode_frame(
-                voice->sample, voice->position, voice->range_first,
-                voice->range_last, voice->crossfade_frames, voice->loop_mode);
+
         } else {
             size_t at;
             if ((voice->direction >= 0 &&
@@ -896,7 +903,7 @@ void ts_performance_sync(TsPerformanceBank *bank,
                 voice->pending_crossfade_frames = crossfade;
                 voice->pending_loop_mode = slot->loop_mode;
                 voice->pending_direction =
-                    slot->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
+                    ts_loop_base_mode(slot->loop_mode) == TS_LOOP_REVERSE ? -1 : 1;
                 voice->pending_step =
                     (double)generation->sample.sample_rate /
                     (double)output_rate *
@@ -917,10 +924,16 @@ void ts_performance_sync(TsPerformanceBank *bank,
         voice->pending_generation = NULL;
         voice->range_first = first;
         voice->range_last = last;
-        voice->looping = voice->releasing ? 0 : slot->has_loop;
+        voice->looping = voice->releasing ? 0 : slot->has_loop || (!voice->tile_launched && bank->keyboard_loop);
         voice->loop_mode = slot->loop_mode;
-        if (!voice->releasing)
-            voice->direction = voice->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
+        if (!ts_loop_starts_at_sample(voice->loop_mode)) voice->loop_intro = 0;
+        if (!voice->releasing && voice->loop_intro) voice->direction = 1;
+        else if (!voice->releasing && ts_loop_base_mode(voice->loop_mode) != TS_LOOP_PING_PONG)
+            voice->direction = ts_loop_base_mode(voice->loop_mode) == TS_LOOP_REVERSE ? -1 : 1;
+        if (!voice->releasing && !voice->looping) {
+            voice->direction = 1;
+            voice->loop_intro = 0;
+        }
         voice->crossfade_frames = voice->releasing ? 0u : crossfade;
         voice->step = (double)slot->sample.sample_rate / (double)output_rate *
                       (voice->tile_launched ?

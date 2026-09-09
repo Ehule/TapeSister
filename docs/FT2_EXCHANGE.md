@@ -82,7 +82,13 @@ is present, it launches the configured FastTracker executable when that path is 
 Toggle **New Instance** before choosing a layout to deliberately launch another
 Tapehead. A blank executable path leaves the completed transfer ready for manual import.
 
-Every WAV carries TapeSister's standard `smpl` tuning and loop metadata. FT2 remains
+Every WAV carries TapeSister's standard `smpl` tuning and loop metadata.
+START loop variants use the existing standard direction values (0 forward,
+1 alternating, 2 backward). An optional `tslp` chunk stores the TapeSister start
+choice: two little-endian 32-bit integers, version 1 and loop mode (3 START FWD,
+4 START REV, 5 START P-P). It is only applied when it agrees with a valid `smpl`
+loop direction. Other WAV readers can ignore this chunk; no manifest change is
+required. [Playback and loop modes](PLAYBACK_LOOPS.md) explains compatibility. FT2 remains
 responsible for validating destination instruments/sample slots and for applying the
 chosen import as one undoable operation.
 

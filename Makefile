@@ -119,7 +119,7 @@ tapesister_stereo_gesture_controller_tests: $(CORE) tests/test_stereo_gesture_co
 tapesister_canvas_recording_tests: $(CORE) tests/test_canvas_recording.c src/main_sdl.c src/main_sdl_portal.inc $(wildcard src/main_sdl_audio*.inc) src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_canvas_recording.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
 
-tapesister_keyboard_sustain_tests: $(CORE) tests/test_keyboard_sustain.c src/main_sdl.c src/main_sdl_portal.inc $(wildcard src/main_sdl_audio*.inc) src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
+tapesister_keyboard_sustain_tests: tests/test_playback_continuity.inc $(CORE) tests/test_keyboard_sustain.c src/main_sdl.c src/main_sdl_portal.inc $(wildcard src/main_sdl_audio*.inc) src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_keyboard_sustain.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
 
 test: test_audio_hardening_structure

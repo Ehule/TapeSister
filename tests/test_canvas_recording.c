@@ -79,7 +79,11 @@ int main(void)
     SDL_setenv("TAPESISTER_CAPTURES",folder,1);
     event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);event.button.button=SDL_BUTTON_LEFT;event.button.x=270;event.button.y=319;
     if(getenv("TS_TEST_CANVAS_KEYS")) {
-        ui.show_keyboard=1;event.button.x=530;event.button.y=300;
+        ui.show_keyboard=1;event.button.x=410;event.button.y=320;
+        if(getenv("TS_TEST_FM_KEYS"))ui.fm_open=1;
+    }
+    if(getenv("TS_TEST_GLOBAL_FILE")) {
+        ui.config_open=1;event.button.x=580;event.button.y=390;
     }
     int fx=getenv("TS_TEST_FX_FILE")!=NULL;
     TsSisterUiHit record_hit={0};

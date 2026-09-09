@@ -661,6 +661,7 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
     uint32_t loaded_loop_start = 0;
     uint32_t loaded_loop_end = 0;
     uint32_t loaded_loop_type = 0;
+    uint32_t loaded_start_mode = UINT32_MAX;
     int loaded_has_loop = 0;
 
     if (f == NULL) {
@@ -695,6 +696,10 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
             data_offset = ftell(f);
             data_size = size;
             fseek(f, (long)size, SEEK_CUR);
+        } else if (memcmp(chunk, "tslp", 4) == 0 && size == 8u) {
+            unsigned char metadata[8];
+            if (fread(metadata,1,8,f)!=8) break;
+            if (le32(metadata)==1u) loaded_start_mode=le32(metadata+4);
         } else if (memcmp(chunk, "smpl", 4) == 0 && size >= 20u) {
             unsigned char smpl[60] = {0};
             size_t keep = size < sizeof(smpl) ? size : sizeof(smpl);
@@ -806,10 +811,17 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
         if (has_loop != NULL) *has_loop = 1;
         if (loop_first != NULL) *loop_first = loaded_loop_start;
         if (loop_last != NULL) *loop_last = (size_t)loaded_loop_end + 1u;
-        if (loop_mode != NULL)
+        if (loop_mode != NULL) {
             *loop_mode = loaded_loop_type == 0u ? TS_LOOP_FORWARD :
                          loaded_loop_type == 2u ? TS_LOOP_REVERSE :
                          TS_LOOP_PING_PONG;
+            /* Optional TapeSister start behavior. The standard smpl chunk
+               remains authoritative for direction and bounds. */
+            if (loaded_loop_type <= 2u && loaded_start_mode >= TS_LOOP_START_FORWARD &&
+                loaded_start_mode < TS_LOOP_MODE_COUNT &&
+                ts_loop_base_mode((TsLoopMode)loaded_start_mode)==*loop_mode)
+                *loop_mode=(TsLoopMode)loaded_start_mode;
+        }
     } else {
         if (has_loop != NULL) *has_loop = 0;
         if (loop_first != NULL) *loop_first = 0;
@@ -849,8 +861,9 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
         return 0;
     }
     has_loop = has_loop && loop_first < loop_last && loop_last <= sample->frames;
+    uint32_t start_bytes = has_loop && ts_loop_starts_at_sample(loop_mode) ? 16u : 0u;
     bytes_per_frame = (uint32_t)sample->channels * 2u;
-    if (sample->frames > (UINT32_MAX - 104u) / bytes_per_frame) {
+    if (sample->frames > (UINT32_MAX - 104u - start_bytes) / bytes_per_frame) {
         set_error(error, error_size, "Sample is too long for a RIFF WAV");
         return 0;
     }
@@ -861,7 +874,7 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
     }
     uint32_t data_bytes = (uint32_t)(sample->frames * bytes_per_frame);
     uint32_t loop_bytes = has_loop ? 24u : 0u;
-    fwrite("RIFF", 1, 4, f); put32(f, 80u + loop_bytes + data_bytes); fwrite("WAVE", 1, 4, f);
+    fwrite("RIFF", 1, 4, f); put32(f, 80u + loop_bytes + start_bytes + data_bytes); fwrite("WAVE", 1, 4, f);
     fwrite("fmt ", 1, 4, f); put32(f, 16); put16(f, 1); put16(f, sample->channels);
     put32(f, sample->sample_rate);
     put32(f, sample->sample_rate * bytes_per_frame);
@@ -884,8 +897,8 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
         put32(f, (uint32_t)unity); put32(f, (uint32_t)fraction_bits);
         put32(f, 0); put32(f, 0); put32(f, has_loop ? 1u : 0u); put32(f, 0);
         if (has_loop) {
-            uint32_t type = loop_mode == TS_LOOP_PING_PONG ? 1u :
-                            loop_mode == TS_LOOP_REVERSE ? 2u : 0u;
+            uint32_t type = ts_loop_base_mode(loop_mode) == TS_LOOP_PING_PONG ? 1u :
+                            ts_loop_base_mode(loop_mode) == TS_LOOP_REVERSE ? 2u : 0u;
             put32(f, 0);
             put32(f, type);
             put32(f, (uint32_t)loop_first);
@@ -893,6 +906,9 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
             put32(f, 0);
             put32(f, 0);
         }
+    }
+    if (start_bytes) {
+        fwrite("tslp",1,4,f); put32(f,8); put32(f,1); put32(f,(uint32_t)loop_mode);
     }
     fwrite("data", 1, 4, f); put32(f, data_bytes);
     for (size_t i = 0; i < scalar_count; ++i) {
@@ -3999,9 +4015,23 @@ int ts_instrument_set_loop_crossfade(TsInstrument *instrument, float millisecond
 
 const char *ts_loop_mode_name(TsLoopMode mode)
 {
+    if (mode == TS_LOOP_START_FORWARD) return "START FWD";
+    if (mode == TS_LOOP_START_REVERSE) return "START REV";
+    if (mode == TS_LOOP_START_PING_PONG) return "START P-P";
     if (mode == TS_LOOP_REVERSE) return "REVERSE";
     if (mode == TS_LOOP_PING_PONG) return "PING-PONG";
     return "FORWARD";
+}
+
+int ts_loop_starts_at_sample(TsLoopMode mode)
+{
+    return mode >= TS_LOOP_START_FORWARD && mode < TS_LOOP_MODE_COUNT;
+}
+
+TsLoopMode ts_loop_base_mode(TsLoopMode mode)
+{
+    return ts_loop_starts_at_sample(mode) ?
+           (TsLoopMode)(mode - TS_LOOP_START_FORWARD) : mode;
 }
 
 int ts_instrument_set_loop_mode(TsInstrument *instrument, TsLoopMode mode,
@@ -4385,7 +4415,7 @@ static void family_copy_or_vary_loop(TsBankSlot *candidate,
             candidate->has_loop = 1;
             candidate->loop_first = first;
             candidate->loop_last = last;
-            candidate->loop_mode = (TsLoopMode)(rng_next(&rng) % TS_LOOP_MODE_COUNT);
+            candidate->loop_mode = (TsLoopMode)(rng_next(&rng) % (TS_LOOP_PING_PONG + 1));
             candidate->loop_crossfade_ms = anchor->loop_crossfade_ms;
         }
     }

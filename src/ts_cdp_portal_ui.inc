@@ -11,6 +11,14 @@ static void portal_mini(TsFramebuffer *fb,int x,int y,int width,const char *labe
     mini_button(fb,x,y,width,"",active);
     portal_caption(fb,x+4,y+5,(width-8)/6,label,active?PAL_EFFECT:RGB(230,223,230));
 }
+static void portal_name_field(TsFramebuffer *fb,int x,int y,int width,
+                              const char *name,const char *placeholder,int focus,int blink)
+{
+    int capacity=(width-12)/6;
+    size_t length=strlen(name),first=focus && length>(size_t)capacity?length-(size_t)capacity:0;
+    portal_mini(fb,x,y,width,focus || length?name+first:placeholder,focus);
+    if(focus && blink)rect(fb,x+4+(int)(length-first)*6,y+5,1,9,PAL_VOLUME);
+}
 static void portal_wrap(TsFramebuffer *fb,int x,int y,int columns,int rows,const char *s)
 {
     for(int row=0;*s && row<rows;++row) {
@@ -60,7 +68,7 @@ static void portal_wave_render(TsFramebuffer *fb,const TsPortalUi *p,int which,i
         }
     } else portal_caption(fb,168,mid-3,45,which?"PREVIEW TO HEAR AND SEE THE RESULT":"LOAD A MONO OR STEREO TILE",RGB(210,204,210));
 }
-static void portal_manager_render(TsFramebuffer *fb,const TsPortalUi *p)
+static void portal_manager_render(TsFramebuffer *fb,const TsPortalUi *p,int blink)
 {
     const TsPortalRecipe *r=p->manage_tab?&p->library.pins[p->manage_slot]:&p->library.recipes[p->manage_slot];
     char line[100];
@@ -85,7 +93,7 @@ static void portal_manager_render(TsFramebuffer *fb,const TsPortalUi *p)
     portal_caption(fb,310,122,38,r->process_id,RGB(210,204,210));
     portal_caption(fb,310,144,38,"CURRENT WORKING RECIPE:",PAL_TUNING);
     portal_caption(fb,310,158,38,p->manage_recipe.name,PAL_EFFECT);
-    portal_mini(fb,310,178,232,p->manage_name[0]?p->manage_name:"TYPE A NEW NAME...",p->manage_name_focus);
+    portal_name_field(fb,310,178,232,p->manage_name,"TYPE A NEW NAME...",p->manage_name_focus,blink);
     portal_mini(fb,310,205,110,"RENAME",0);
     portal_mini(fb,430,205,110,"UPDATE",0);
     portal_mini(fb,310,227,110,"REPLACE",0);
@@ -228,7 +236,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     }
     portal_mini(fb,478,220,72,"DEFAULT",0);
     portal_mini(fb,554,220,72,p->macro_view?"FULL":"MACROS",p->macro_view);
-    portal_mini(fb,478,242,148,p->chain_active?p->chain.name:p->recipe.name,p->name_focus);
+    portal_name_field(fb,478,242,148,p->chain_active?p->chain.name:p->recipe.name,"NAME...",p->name_focus,ui->text_cursor_visible);
     portal_mini(fb,478,263,148,p->exact_pin?"PIN: EXACT RECIPE":"PIN: CHECKED MACROS",!p->exact_pin);
     portal_mini(fb,478,287,22,"<",0);
     snprintf(line,sizeof(line),"PIN SLOT %02d%s",p->pin_slot+1,p->library.pins[p->pin_slot].process_id[0]?" FULL":"");
@@ -250,7 +258,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
         portal_caption(fb,69+i*107,365,16,line,i==p->history_selected?PAL_EFFECT:RGB(210,204,210));
     }
     portal_mini(fb,501,360,125,p->chain_active?"FINAL RESULT":ts_portal_factory_find(p->recipe.process_id)?"SAVE BANK":"MAIN: CTRL+Z",0);
-    if(p->manage_open)portal_manager_render(fb,p);
+    if(p->manage_open)portal_manager_render(fb,p,ui->text_cursor_visible);
     if(p->macro_edit) {
         frame(fb,162,116,316,167,RGB(18,18,18),PAL_VOLUME);
         text(fb,174,126,"EDIT MACRO",PAL_EFFECT,1);

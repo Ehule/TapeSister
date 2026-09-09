@@ -245,6 +245,7 @@ double ts_audition_loop_position(double position, size_t first, size_t last,
                                  size_t crossfade_frames, TsLoopMode mode,
                                  int *direction)
 {
+    mode = ts_loop_base_mode(mode);
     int travel = direction != NULL && *direction < 0 ? -1 : 1;
     if (last <= first + 1u) return (double)first;
     if (mode == TS_LOOP_FORWARD)
@@ -282,6 +283,7 @@ TsStereoFrame ts_audition_read_looped_mode_frame(
     const TsSample *sample, double position, size_t first, size_t last,
     size_t crossfade_frames, TsLoopMode mode)
 {
+    mode = ts_loop_base_mode(mode);
     TsStereoFrame silence = {0.0f, 0.0f};
     if (mode == TS_LOOP_FORWARD)
         return ts_audition_read_looped_frame(
@@ -325,4 +327,52 @@ double ts_audition_map_progress(double position, size_t first, size_t last,
     if (progress < 0.0) progress = 0.0;
     if (progress > 1.0) progress = 1.0;
     return (double)target_first + progress * (double)(target_last - target_first);
+}
+
+double ts_audition_loop_begin(size_t first, size_t last, TsLoopMode mode,
+                              int *direction, int *intro)
+{
+    *intro = ts_loop_starts_at_sample(mode);
+    *direction = !*intro && ts_loop_base_mode(mode) == TS_LOOP_REVERSE ? -1 : 1;
+    return *intro ? 0.0 : *direction < 0 && last > first ?
+           (double)(last - 1u) : (double)first;
+}
+
+TsStereoFrame ts_audition_loop_frame(const TsSample *sample, double *position,
+    size_t first, size_t last, size_t crossfade, TsLoopMode mode,
+    int *direction, int *intro)
+{
+    TsLoopMode base = ts_loop_base_mode(mode);
+    if (*intro && ts_loop_starts_at_sample(mode) && last > first) {
+        *direction = 1;
+        /* The attack is read directly, without wrapping into the loop or
+           crossfading its lower edge. Forward joins the ordinary wrap; the
+           other modes turn after the first forward pass, without a jump. */
+        double edge = base == TS_LOOP_FORWARD ? (double)first : (double)(last - 1u);
+        if (*position <= edge && base != TS_LOOP_FORWARD)
+            return ts_audition_read_frame(sample, *position, last);
+        if (*position < edge)
+            return ts_audition_read_frame(sample, *position, last);
+        *intro = 0;
+        if (base == TS_LOOP_REVERSE) {
+            *position = 2.0 * (double)(last - 1u) - *position;
+            *direction = -1;
+        }
+    } else *intro = 0;
+    if (ts_loop_starts_at_sample(mode) && base == TS_LOOP_REVERSE &&
+        last > first && *position < (double)first) {
+        size_t fade = crossfade > (last-first)/2u ? (last-first)/2u : crossfade;
+        double cycle = (double)(last-first-fade);
+        *position = (double)first + fmod(fmod(*position-first,cycle)+cycle,cycle);
+    }
+    if (ts_loop_starts_at_sample(mode) && base == TS_LOOP_PING_PONG &&
+        last > first+1u && (*position < (double)first || *position > (double)(last-1u))) {
+        double span=(double)(last-1u-first),cycle=2.0*span;
+        double phase=*direction<0?cycle-(*position-first):*position-first;
+        phase=fmod(fmod(phase,cycle)+cycle,cycle);
+        *direction=phase<span?1:-1;
+        *position=first+(phase<span?phase:cycle-phase);
+    }
+    *position = ts_audition_loop_position(*position, first, last, crossfade, base, direction);
+    return ts_audition_read_looped_mode_frame(sample, *position, first, last, crossfade, base);
 }

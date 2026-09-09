@@ -4,6 +4,14 @@
 #include <stddef.h>
 #include "tapesister/sample.h"
 
+/* START modes play forward from frame zero through the first loop pass.
+   Reverse and ping-pong turn at the upper edge, then remain in the loop. */
+double ts_audition_loop_begin(size_t first, size_t last, TsLoopMode mode,
+                              int *direction, int *intro);
+TsStereoFrame ts_audition_loop_frame(const TsSample *sample, double *position,
+    size_t first, size_t last, size_t crossfade, TsLoopMode mode,
+    int *direction, int *intro);
+
 enum {
     TS_AUDITION_ATTACK_MS_MIN = 0,
     TS_AUDITION_ATTACK_MS_MAX = 20,
