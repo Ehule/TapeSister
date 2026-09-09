@@ -51,11 +51,11 @@ static void test_portal_workflow_ui(SDL_Window *window,SDL_AudioDeviceID device)
     portal_preview(device,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     portal_auto_poll(device,&audio,&ui,&c,SDL_GetTicks()+10000);assert(!c.worker && !c.auto_pending);
     /* Choosing processes schedules a new render; filtering alone does not. */
-    p->query[0]=0;WORK_CLICK(25,130);assert(c.auto_pending && !strcmp(p->recipe.process_id,"distort.reverse"));
+    p->query[0]=0;WORK_CLICK(25,TS_PORTAL_LIST_Y+4);assert(c.auto_pending && !strcmp(p->recipe.process_id,"distort.reverse"));
     portal_auto_poll(device,&audio,&ui,&c,c.auto_due);assert(c.worker);
     wait_portal(&audio,&ui,&instrument,&c);assert(p->valid && !c.auto_pending);
     snprintf(p->query,sizeof(p->query),"LINEAR GAIN");assert(!c.auto_pending);
-    WORK_CLICK(25,130);assert(c.auto_pending && !strcmp(p->recipe.process_id,"modify.loudness.1"));p->query[0]=0;
+    WORK_CLICK(25,TS_PORTAL_LIST_Y+4);assert(c.auto_pending && !strcmp(p->recipe.process_id,"modify.loudness.1"));p->query[0]=0;
     /* Invalid recipes make one attempt, not an automatic retry loop. */
     portal_invalidate(device,&audio,p,&c);p->recipe.values[0]=-1;
     portal_auto_poll(device,&audio,&ui,&c,c.auto_due);assert(!c.worker && !c.auto_pending);

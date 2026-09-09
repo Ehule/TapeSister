@@ -13,7 +13,7 @@ static void test_instrument_controls(SDL_Window *window,SDL_AudioDeviceID device
     p->family=TS_PORTAL_INSTRUMENTS+1;
     SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.button=SDL_BUTTON_LEFT;event.button.windowID=SDL_GetWindowID(window);
 #define TOOL_CLICK(X,Y,B) do {event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);event.button.button=(B);event.button.x=(X);event.button.y=(Y);assert(portal_event(&event,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform));}while(0)
-    TOOL_CLICK(25,130+3*17,SDL_BUTTON_LEFT);
+    TOOL_CLICK(25,TS_PORTAL_LIST_Y+4+3*17,SDL_BUTTON_LEFT);
     assert(p->chain_active && p->macro_view && !strcmp(p->chain.name,"SLOW BLOOM"));
     portal_preview(device,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     assert(p->valid && p->chain_cached==7);uint64_t hash=ts_sample_hash(p->result),generation=c.generation;

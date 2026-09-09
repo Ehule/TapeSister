@@ -52,6 +52,51 @@ static void test_voice_policy(TsInstrument *instrument,const TsSample *sample)
     assert(!ts_note_bank_count(&bank));
 }
 
+static void test_fm_sustain_finish(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsInstrument *instrument)
+{
+    TsSample fm;ts_sample_init(&fm);char error[160];
+    assert(ts_fm_render_sample(&fm,&ui->fm_patch,.1f,261.6256f,44100,31337,error,sizeof(error)));
+    for(int midi=0;midi<2;++midi) {
+        TsNoteEvent a,b;
+        if(midi) {assert(ts_note_event_midi(&a,60,100,0));assert(ts_note_event_midi(&b,64,100,1));}
+        else {assert(ts_note_event_qwerty(&a,0,60));assert(ts_note_event_qwerty(&b,4,60));}
+        ts_note_bank_clear(&audio->notes);ts_note_bank_set_sustain(&audio->notes,1);
+        begin_fm_note_event(device,audio,ui,instrument,&fm,&a,44100,0);
+        begin_fm_note_event(device,audio,ui,instrument,&fm,&b,44100,0);
+        for(size_t i=0;i<fm.frames*2;++i)(void)ts_note_bank_read(&audio->notes);
+        assert(ts_note_bank_count(&audio->notes)==2); /* Physically held keys still loop. */
+        ts_note_bank_release_event(&audio->notes,&a);
+        double energy=0;
+        for(size_t i=0;i<fm.frames+2;++i) {
+            float heard=ts_note_bank_read(&audio->notes);assert(isfinite(heard));energy+=fabs(heard);
+        }
+        assert(energy>0 && ts_note_bank_count(&audio->notes)==1);
+        assert(ts_note_bank_display_voice(&audio->notes)->key_down);
+        ts_note_bank_release_event(&audio->notes,&b);
+        for(size_t i=0;i<fm.frames+2;++i)(void)ts_note_bank_read(&audio->notes);
+        assert(!ts_note_bank_count(&audio->notes));
+        /* Retrigger resets the finish state; a rerender keeps it. HOLD can
+           catch a released tail and remains explicit when Sustain turns off. */
+        begin_fm_note_event(device,audio,ui,instrument,&fm,&a,44100,0);
+        assert(ts_note_bank_display_voice(&audio->notes)->looping);
+        ts_note_bank_release_event(&audio->notes,&a);
+        ts_note_bank_replace_sample(&audio->notes,&fm,&fm,48000);
+        assert(!ts_note_bank_display_voice(&audio->notes)->looping);
+        toggle_fm_hold(device,audio,ui);
+        assert(ui->fm_held_notes==1 && ts_note_bank_display_voice(&audio->notes)->looping);
+        ts_note_bank_set_sustain(&audio->notes,0);
+        for(size_t i=0;i<fm.frames*3;++i)(void)ts_note_bank_read(&audio->notes);
+        assert(ts_note_bank_count(&audio->notes)==1);
+        toggle_fm_hold(device,audio,ui);assert(!ts_note_bank_count(&audio->notes));
+        begin_fm_note_event(device,audio,ui,instrument,&fm,&a,44100,1);
+        ts_note_bank_set_sustain(&audio->notes,1);ts_note_bank_release_event(&audio->notes,&a);
+        for(size_t i=0;i<fm.frames*2;++i)(void)ts_note_bank_read(&audio->notes);
+        assert(ts_note_bank_count(&audio->notes)==1); /* Shift-click latch. */
+        runtime_note_clear(audio);assert(!ts_note_bank_count(&audio->notes));
+    }
+    ts_note_bank_set_sustain(&audio->notes,0);ts_sample_free(&fm);
+}
+
 int main(void)
 {
     static AudioState audio;static TsUiState ui;static TsInstrument instrument;static SisterWindow sister;
@@ -68,6 +113,7 @@ int main(void)
     for(size_t i=0;i<sample.frames;++i)sample.data[i]=.2f*sinf((float)i*.07f);
     assert(ts_instrument_import_sample(&instrument,&sample,0,0,sample.frames,TS_LOOP_FORWARD,error,sizeof(error)));
     test_voice_policy(&instrument,&sample);
+    test_fm_sustain_finish(device,&audio,&ui,&instrument);
     /* Reproduce Set Loop -> click current tile -> launch, then revisit and Undo. */
     ui.bank_view_slot=-1;ts_instrument_set_selection(&instrument,500,2500);
     set_loop(device,&audio,&ui,&instrument);assert(instrument.has_loop);

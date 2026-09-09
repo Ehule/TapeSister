@@ -15981,6 +15981,8 @@ int main(int argc, char **argv)
                 logical_mouse(window, raw_x, raw_y, &x, &y);
                 hovered = ts_ui_logo_contains(x, y);
             }
+            portal_hover_poll(&ui.portal,&portal,x,y,SDL_GetTicks(),
+                buttons!=0 || ui.master_output_dragging);
             ui.sister_portal_hovered = hovered;
             ui.sister_portal_pressed =
                 hovered && (buttons & SDL_BUTTON_LMASK) != 0u;

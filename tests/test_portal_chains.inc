@@ -19,9 +19,9 @@ static void test_chain_workflow(SDL_Window *window,SDL_AudioDeviceID device)
 #define CHAIN_CLICK(X,Y) do {click.button.x=(X);click.button.y=(Y);assert(portal_event(&click,window,device,&audio,&ui,&instrument,&c,&sister,44100,&transform));}while(0)
     CHAIN_CLICK(25,365);assert(p->chain_active && p->chain.stage_count==1);
     CHAIN_CLICK(490,70);assert(p->chain_add);
-    snprintf(p->query,sizeof(p->query),"SPECTRAL BLUR");CHAIN_CLICK(25,130);
+    snprintf(p->query,sizeof(p->query),"SPECTRAL BLUR");CHAIN_CLICK(25,TS_PORTAL_LIST_Y+4);
     assert(p->chain.stage_count==2 && p->chain_stage==1 && !strcmp(p->recipe.process_id,"blur.blur"));
-    CHAIN_CLICK(490,70);snprintf(p->query,sizeof(p->query),"LINEAR GAIN");CHAIN_CLICK(25,130);
+    CHAIN_CLICK(490,70);snprintf(p->query,sizeof(p->query),"LINEAR GAIN");CHAIN_CLICK(25,TS_PORTAL_LIST_Y+4);
     assert(p->chain.stage_count==3 && p->chain_stage==2);
     p->recipe.values[0]=.5;
     portal_preview(device,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
@@ -68,7 +68,7 @@ static void test_chain_workflow(SDL_Window *window,SDL_AudioDeviceID device)
     CHAIN_CLICK(610,88);assert(p->chain.stages[0].bypass && !p->valid);
     CHAIN_CLICK(490,205);assert(p->chain.stage_count==2 && !strcmp(p->recipe.process_id,"blur.blur"));
     /* Backward-compatible collection load restores full chains from the browser. */
-    p->tab=1;p->family=0;p->query[0]=0;p->scroll=0;CHAIN_CLICK(25,130);
+    p->tab=1;p->family=0;p->query[0]=0;p->scroll=0;CHAIN_CLICK(25,TS_PORTAL_LIST_Y+4);
     assert(p->chain_active && p->chain.stage_count==3 && !strcmp(p->chain.name,"GHOST CHAIN"));
     /* Selection follows duration-changing stages while surrounding audio stays exact. */
     portal_invalidate(device,&audio,p,&c);portal_clear_history(&c,p);

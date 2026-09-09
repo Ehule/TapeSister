@@ -171,6 +171,7 @@ static void test_selection_workflow(SDL_Window *window,SDL_AudioDeviceID device)
 #include "test_portal_workflow_ui.inc"
 #include "test_portal_instrument_controller.inc"
 #include "test_portal_stereo_controller.inc"
+#include "test_portal_usability.inc"
 
 int main(void)
 {
@@ -352,7 +353,7 @@ int main(void)
     manage.button.button=SDL_BUTTON_LEFT;
 #define CLICK(X,Y) do { manage.button.x=(X);manage.button.y=(Y); \
     assert(portal_event(&manage,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform)); } while(0)
-    CLICK(20,148);assert(p->selected_slot==19 && p->recipe.values[0]==3);
+    CLICK(20,TS_PORTAL_LIST_Y+TS_PORTAL_LIST_ROW_H+5);assert(p->selected_slot==19 && p->recipe.values[0]==3);
     p->recipe.values[0]=4;p->exact_pin=1;
     CLICK(30,340);assert(p->manage_open && p->manage_slot==19 && p->manage_scroll==16);
     CLICK(440,210);assert(p->manage_action==TS_PORTAL_UPDATE);
@@ -384,7 +385,7 @@ int main(void)
        through native scrolling, exact entry, macro mapping, and rendering. */
     p->tab=0;p->family=TS_PORTAL_TIME+1;p->query[0]=0;
     CLICK(25,112);assert(p->family==TS_PORTAL_FILTER+1);
-    CLICK(25,198);assert(!strcmp(p->recipe.process_id,"filter.sweeping.2"));
+    CLICK(25,TS_PORTAL_LIST_Y+4*TS_PORTAL_LIST_ROW_H+4);assert(!strcmp(p->recipe.process_id,"filter.sweeping.2"));
     assert(p->parameter_scroll==0 && portal_parameter_at(p,2)==2);
     SDL_Event wheel={0};wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=SDL_GetWindowID(window);
     wheel.wheel.y=-100;
@@ -407,7 +408,7 @@ int main(void)
     assert(portal_parameter_at(p,0)==4 && portal_parameter_at(p,1)==6 && portal_parameter_at(p,2)==-1);
     p->macro_view=0;p->parameter_scroll=0;
     CLICK(25,112);assert(p->family==TS_PORTAL_GRAIN+1);
-    CLICK(25,181);assert(!strcmp(p->recipe.process_id,"modify.brassage.5"));
+    CLICK(25,TS_PORTAL_LIST_Y+3*TS_PORTAL_LIST_ROW_H+4);assert(!strcmp(p->recipe.process_id,"modify.brassage.5"));
     uint64_t grain_source_hash=ts_sample_hash(&instrument.current);
     p->recipe.values[0]=.25;
     portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
@@ -423,7 +424,7 @@ int main(void)
     CLICK(25,112);assert(p->family==TS_PORTAL_LOFI+1);
     CLICK(25,112);assert(p->family==TS_PORTAL_LEVEL+1);
     CLICK(25,112);assert(p->family==TS_PORTAL_DELAY+1);
-    CLICK(25,130);assert(!strcmp(p->recipe.process_id,"modify.revecho.1"));
+    CLICK(25,TS_PORTAL_LIST_Y+4);assert(!strcmp(p->recipe.process_id,"modify.revecho.1"));
     wheel.wheel.y=-100;SDL_WarpMouseInWindow(window,180,280);
     portal_event(&wheel,window,audition,&audio,&ui,&instrument,&c,&sister,44100,&transform);
     assert(p->parameter_scroll==3 && portal_parameter_at(p,2)==5);
@@ -434,14 +435,14 @@ int main(void)
     portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     assert(p->valid && p->result->frames>c.source.frames);
     CLICK(25,112);assert(p->family==TS_PORTAL_ENVELOPE+1);
-    CLICK(25,130);assert(!strcmp(p->recipe.process_id,"envel.warp.2"));
+    CLICK(25,TS_PORTAL_LIST_Y+4);assert(!strcmp(p->recipe.process_id,"envel.warp.2"));
     portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     assert(p->valid && p->result && p->result->frames==c.source.frames);
     CLICK(25,112);assert(p->family==TS_PORTAL_STRUCTURE+1);
-    CLICK(25,130);assert(!strcmp(p->recipe.process_id,"sfedit.cut.1"));
+    CLICK(25,TS_PORTAL_LIST_Y+4);assert(!strcmp(p->recipe.process_id,"sfedit.cut.1"));
     portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     assert(p->valid && llabs((long long)p->result->frames-llround(.3*c.source.sample_rate))<=1);
-    CLICK(25,181);assert(!strcmp(p->recipe.process_id,"extend.doublets"));
+    CLICK(25,TS_PORTAL_LIST_Y+3*TS_PORTAL_LIST_ROW_H+4);assert(!strcmp(p->recipe.process_id,"extend.doublets"));
     portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     assert(p->valid && p->result->frames>c.source.frames);
     selection_screenshot("TS_TEST_PORTAL_STRUCTURE_SCREENSHOT",&ui,&instrument);
@@ -468,7 +469,7 @@ int main(void)
     assert(p->number_focus==-1 && p->recipe.values[0]==13);
     p->family=TS_PORTAL_SPECTRAL+1;p->scroll=0;
     snprintf(p->query,sizeof(p->query),"SPECTRAL WAVER");
-    CLICK(25,130);assert(!strcmp(p->recipe.process_id,"strange.waver.1"));
+    CLICK(25,TS_PORTAL_LIST_Y+4);assert(!strcmp(p->recipe.process_id,"strange.waver.1"));
     portal_preview(audition,&audio,&ui,&c);wait_portal(&audio,&ui,&instrument,&c);
     assert(p->valid && p->result && p->result->frames>0);
     selection_screenshot("TS_TEST_PORTAL_SPECTRAL_SCREENSHOT",&ui,&instrument);
@@ -520,6 +521,7 @@ int main(void)
     test_portal_workflow_ui(window,audition);
     test_instrument_controls(window,audition);
     test_stereo_workflow(window,audition);
+    test_portal_usability(window,audition);
     SDL_DestroyWindow(window);
 
     /* Reopening an unsupported channel layout clears the previous source. */

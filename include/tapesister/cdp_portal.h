@@ -8,6 +8,10 @@
 enum { TS_PORTAL_CHAIN_STAGES = 8, TS_PORTAL_PARAMS = 16, TS_PORTAL_SLOTS = 32,
        TS_PORTAL_HISTORY = 4, TS_PORTAL_WAVE_COLUMNS = 310,
        TS_PORTAL_MAX_FRAMES = 8000000 };
+enum { TS_PORTAL_LIST_Y = 147, TS_PORTAL_LIST_ROWS = 11, TS_PORTAL_LIST_ROW_H = 17,
+       TS_PORTAL_TOOLTIP_DELAY_MS = 600 };
+typedef enum { TS_PORTAL_CHANNEL_ANY, TS_PORTAL_CHANNEL_STEREO, TS_PORTAL_CHANNEL_MONO_ONLY,
+               TS_PORTAL_CHANNEL_FILTERS } TsPortalChannelFilter;
 typedef enum { TS_PORTAL_INTEGER, TS_PORTAL_REAL, TS_PORTAL_SWITCH, TS_PORTAL_ODD_INTEGER, TS_PORTAL_ENUMERATED } TsPortalParamType;
 typedef enum { TS_PORTAL_WAVESET, TS_PORTAL_SPECTRAL, TS_PORTAL_TIME, TS_PORTAL_FILTER, TS_PORTAL_GRAIN, TS_PORTAL_LOFI, TS_PORTAL_LEVEL, TS_PORTAL_DELAY, TS_PORTAL_ENVELOPE, TS_PORTAL_STRUCTURE, TS_PORTAL_FACTORY, TS_PORTAL_INSTRUMENTS, TS_PORTAL_FAMILIES } TsPortalFamily;
 typedef enum { TS_PORTAL_RENAME=1, TS_PORTAL_UPDATE, TS_PORTAL_REPLACE, TS_PORTAL_REMOVE } TsPortalEdit;
@@ -71,6 +75,8 @@ typedef struct {
     int load_selection, process_selection, full_action;
     TsPortalRegion rendered_region;
     int family, selected_tab, selected_slot;
+    TsPortalChannelFilter channel_filter;
+    char tooltip[160]; /* Display overlay only; never replaces the operation status. */
     int manage_open, manage_tab, manage_slot, manage_scroll, manage_action, manage_name_focus;
     char manage_name[40];
     TsPortalRecipe manage_recipe;
