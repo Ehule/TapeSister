@@ -137,10 +137,10 @@ int main(void)
                                             error, sizeof(error)) &&
                  locked_ui.workbench_loop_persistent);
         ts_instrument_clear_selection(&locked);
-        CONTRACT("loop_lock_view_range_follows_visible_waveform",
+        CONTRACT("loop_lock_without_selection_uses_whole_sample",
                  ts_audition_plan(&locked, TS_AUDITION_CURRENT,
                                   TS_AUDITION_WORKBENCH_LOOP, &plan) &&
-                 plan.first == locked.view_first && plan.last == locked.view_last);
+                 plan.first == 0 && plan.last == locked.current.frames);
         CONTRACT("loop_lock_survives_selection_clear",
                  locked_ui.workbench_loop_persistent &&
                  !ts_ui_loop_transport_can_stop(&locked_ui, 0));
@@ -203,9 +203,11 @@ int main(void)
              ts_ui_wave_action_from_point(380, 300) ==
              TS_UI_WAVE_ACTION_SELECT_WAVE);
     CONTRACT("wave_toolbar_show_all_hitbox",
-             ts_ui_wave_action_from_point(440, 300) == TS_UI_WAVE_ACTION_SHOW_ALL);
+             ts_ui_wave_action_from_point(480, 300) == TS_UI_WAVE_ACTION_SHOW_ALL);
+    CONTRACT("wave_toolbar_select_view_hitbox",
+             ts_ui_wave_action_from_point(420, 300) == TS_UI_WAVE_ACTION_SELECT_VIEW);
     CONTRACT("wave_toolbar_clear_all_hitbox",
-             ts_ui_wave_action_from_point(520, 300) == TS_UI_WAVE_ACTION_CLEAR_ALL);
+             ts_ui_wave_action_from_point(550, 300) == TS_UI_WAVE_ACTION_CLEAR_ALL);
     CONTRACT("wave_toolbar_panel_hitbox",
              ts_ui_wave_action_from_point(600, 300) ==
              TS_UI_WAVE_ACTION_CYCLE_PANEL);
@@ -214,7 +216,7 @@ int main(void)
     CONTRACT("waveform_mode_former_wide_hitbox_is_inert",
              !ts_ui_waveform_mode_contains(540, 50));
     CONTRACT("wave_toolbar_gap_is_inert",
-             ts_ui_wave_action_from_point(70, 300) == TS_UI_WAVE_ACTION_NONE);
+             ts_ui_wave_action_from_point(69, 300) == TS_UI_WAVE_ACTION_NONE);
     CONTRACT("wave_toolbar_stops_above_lower_panel",
              ts_ui_wave_action_from_point(320, 318) == TS_UI_WAVE_ACTION_NONE);
     CONTRACT("canvas_half_hitbox",

@@ -362,8 +362,14 @@ external input or operating-system loopback.
 - Right-click to play from the pointer.
 - Space plays the selection when one exists; otherwise it plays from the edit playhead.
   Press Space again for an immediate stop.
-- **PLAY ALL**, **PLAY SEL**, and **PLAY VIEW** explicitly audition the whole tile,
-  selection, or visible range.
+- **PLAY ALL** and **PLAY SEL** audition the whole tile or selection once.
+- **PLAY VIEW** toggles visible-range playback for QWERTY, MIDI and onscreen
+  keyboard notes. Its highlighted state makes zoom/pan affect those notes;
+  when off, zoom/pan only changes the display. LOOP/HOLD still controls repeat.
+  With PLAY VIEW on, Space auditions the visible range once at its current bounds.
+- **SEL VIEW** captures the visible region as a fixed selection and turns PLAY
+  VIEW off. Subsequent zoom/pan leaves that selection in place. Saved loop points
+  retain their normal priority for played notes.
 - **ZOOM SEL** fills the display with the selection. **SHOW ALL** or `0` restores the
   complete tile.
 

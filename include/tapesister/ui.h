@@ -266,7 +266,8 @@ typedef enum {
     TS_UI_WAVE_ACTION_SELECT_WAVE,
     TS_UI_WAVE_ACTION_SHOW_ALL,
     TS_UI_WAVE_ACTION_CLEAR_ALL,
-    TS_UI_WAVE_ACTION_CYCLE_PANEL
+    TS_UI_WAVE_ACTION_CYCLE_PANEL,
+    TS_UI_WAVE_ACTION_SELECT_VIEW
 } TsUiWaveAction;
 
 typedef enum {
@@ -411,6 +412,7 @@ typedef struct {
     uint32_t overlay_until_ms;
     int workbench_loop_active;
     int workbench_loop_persistent;
+    int play_view; /* Explicit canvas range mode; never enabled by zoom itself. */
     int bank_view_slot;
     int load_bank_slot;
     int playhead_bank_slot;

@@ -37,8 +37,7 @@ int ts_audition_plan(const TsInstrument *instrument, TsAuditionSource source,
             instrument->selection_last <= instrument->selection_first) return 0;
         first = instrument->selection_first;
         last = instrument->selection_last;
-    } else if (range == TS_AUDITION_DISPLAYED ||
-               range == TS_AUDITION_WORKBENCH_LOOP) {
+    } else if (range == TS_AUDITION_DISPLAYED) {
         first = instrument->view_first;
         last = instrument->view_last;
     } else if (range == TS_AUDITION_LOOP) {
@@ -54,7 +53,8 @@ int ts_audition_plan(const TsInstrument *instrument, TsAuditionSource source,
 
     if (source == TS_AUDITION_PARENT &&
         (range == TS_AUDITION_SELECTION || range == TS_AUDITION_DISPLAYED ||
-         range == TS_AUDITION_LOOP)) {
+         range == TS_AUDITION_LOOP ||
+         (range == TS_AUDITION_WORKBENCH_LOOP && instrument->has_selection))) {
         first += instrument->crop_first;
         last += instrument->crop_first;
     }

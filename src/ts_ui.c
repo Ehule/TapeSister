@@ -294,15 +294,16 @@ typedef struct {
 
 static const TsWaveButton wave_buttons[] = {
     {TS_UI_WAVE_ACTION_PLAY_ALL, 10, 58, "PLAY ALL"},
-    {TS_UI_WAVE_ACTION_PLAY_SELECTION, 72, 58, "PLAY SEL"},
-    {TS_UI_WAVE_ACTION_PLAY_VIEW, 134, 64, "PLAY VIEW"},
-    {TS_UI_WAVE_ACTION_CROP, 202, 38, "CROP"},
-    {TS_UI_WAVE_ACTION_ZOOM_SELECTION, 244, 58, "ZOOM SEL"},
-    {TS_UI_WAVE_ACTION_SELECT_ALL, 306, 52, "SEL ALL"},
-    {TS_UI_WAVE_ACTION_SELECT_WAVE, 362, 58, "SEL WAVE"},
-    {TS_UI_WAVE_ACTION_SHOW_ALL, 424, 58, "SHOW ALL"},
-    {TS_UI_WAVE_ACTION_CLEAR_ALL, 486, 97, "CLEAR ALL"},
-    {TS_UI_WAVE_ACTION_CYCLE_PANEL, 588, 42, "BANK"}
+    {TS_UI_WAVE_ACTION_PLAY_SELECTION, 70, 58, "PLAY SEL"},
+    {TS_UI_WAVE_ACTION_PLAY_VIEW, 130, 64, "PLAY VIEW"},
+    {TS_UI_WAVE_ACTION_CROP, 196, 36, "CROP"},
+    {TS_UI_WAVE_ACTION_ZOOM_SELECTION, 234, 58, "ZOOM SEL"},
+    {TS_UI_WAVE_ACTION_SELECT_ALL, 294, 52, "SEL ALL"},
+    {TS_UI_WAVE_ACTION_SELECT_WAVE, 348, 58, "SEL WAVE"},
+    {TS_UI_WAVE_ACTION_SELECT_VIEW, 408, 58, "SEL VIEW"},
+    {TS_UI_WAVE_ACTION_SHOW_ALL, 468, 58, "SHOW ALL"},
+    {TS_UI_WAVE_ACTION_CLEAR_ALL, 528, 64, "CLEAR ALL"},
+    {TS_UI_WAVE_ACTION_CYCLE_PANEL, 594, 36, "BANK"}
 };
 
 enum {
@@ -3526,14 +3527,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                PAL_TUNING);
     }
 
-    for (size_t i = 0; i < 8u; ++i)
+    for (size_t i = 0; i < 9u; ++i)
         button(fb, wave_buttons[i].x, 289, wave_buttons[i].width,
-               wave_buttons[i].label, 0);
+               wave_buttons[i].label, wave_buttons[i].action == TS_UI_WAVE_ACTION_PLAY_VIEW && ui->play_view);
     if (!ui->show_keyboard && !ui->show_recipes && !ui->show_ingredients)
-        button(fb, wave_buttons[8].x, 289, wave_buttons[8].width,
-               ui->bank_clear_armed ? "CONFIRM CLEAR" : "CLEAR ALL",
+        button(fb, wave_buttons[9].x, 289, wave_buttons[9].width,
+               ui->bank_clear_armed ? "CONFIRM" : "CLEAR ALL",
                ui->bank_clear_armed);
-    button(fb, wave_buttons[9].x, 289, wave_buttons[9].width,
+    button(fb, wave_buttons[10].x, 289, wave_buttons[10].width,
            ui->show_keyboard ? "BANK" : ui->show_recipes ? "DSP" :
            ui->show_ingredients ? "KEYS" : "CDP", !ui->show_keyboard);
 
