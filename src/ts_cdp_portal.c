@@ -1193,6 +1193,9 @@ int ts_portal_stereo_supported(const TsPortalRecipe *r)
 }
 void ts_portal_wave_refresh(TsPortalWave *w,const TsSample *s)
 {
+    static uint64_t publication; /* All Portal wave refreshes run on the UI thread. */
+    if(++publication==0)++publication;
+    w->revision=publication;
     memset(w->minimum,0,sizeof(w->minimum)); memset(w->maximum,0,sizeof(w->maximum));
     memset(w->right_minimum,0,sizeof(w->right_minimum));memset(w->right_maximum,0,sizeof(w->right_maximum));
     if(!s || !s->data || !s->frames) return;

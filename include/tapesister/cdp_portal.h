@@ -55,6 +55,7 @@ typedef struct {
 
 typedef struct {
     size_t first, last, selection_first, selection_last, playhead;
+    uint64_t revision; /* UI-thread waveform publication, including same-address replacement. */
     int has_selection;
     float minimum[TS_PORTAL_WAVE_COLUMNS], maximum[TS_PORTAL_WAVE_COLUMNS];
     float right_minimum[TS_PORTAL_WAVE_COLUMNS], right_maximum[TS_PORTAL_WAVE_COLUMNS];
@@ -84,6 +85,7 @@ typedef struct {
     size_t drag_anchor;
     char query[32], message[160], source_name[64];
     int chain_active, chain_stage, chain_add, chain_audition;
+    int chain_edit; /* Library replaces a stage only with EDIT or one-shot ADD. */
     unsigned chain_cached;
     TsPortalRecipe chain;
     TsPortalRecipe recipe;

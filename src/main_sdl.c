@@ -747,6 +747,7 @@ typedef struct {
     TsLoopMode loop_mode;
     int looping;
     int loop_direction;
+    int loop_intro;
     int playing;
     int output_rate;
     int bank_slot;
@@ -967,13 +968,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
         if (audio->playing && audio->sample && audio->sample->data &&
             audio->sample->frames > 1u) {
             if (audio->looping) {
-                audio->position = ts_audition_loop_position(
-                    audio->position, audio->range_start, audio->range_end,
-                    audio->crossfade_frames, audio->loop_mode,
-                    &audio->loop_direction);
-                buses.legacy_preview = ts_audition_read_looped_mode_frame(
-                    audio->sample, audio->position, audio->range_start,
-                    audio->range_end, audio->crossfade_frames, audio->loop_mode);
+                buses.legacy_preview = ts_audition_loop_frame(
+                    audio->sample, &audio->position, audio->range_start,
+                    audio->range_end, audio->crossfade_frames, audio->loop_mode,
+                    &audio->loop_direction, &audio->loop_intro);
                 audio->position += audio->step * audio->loop_direction;
             } else {
                 size_t at = (size_t)audio->position;
@@ -1271,9 +1269,10 @@ static void begin_audition(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     audio->bank_slot = -1;
     audio->sample = plan.sample;
     audio->loop_mode = instrument->loop_mode;
-    audio->loop_direction = audio->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
-    audio->position = range == TS_AUDITION_LOOP && audio->loop_direction < 0 ?
-                      (double)(plan.last - 1u) : (double)plan.first;
+    audio->loop_direction = 1; audio->loop_intro = 0;
+    audio->position = range == TS_AUDITION_LOOP ? ts_audition_loop_begin(
+        plan.first, plan.last, audio->loop_mode, &audio->loop_direction, &audio->loop_intro) :
+        (double)plan.first;
     audio->pitch = pitch;
     audio->range_start = plan.first;
     audio->range_end = plan.last;
@@ -1386,10 +1385,41 @@ static void set_loop_lock_silence(SDL_AudioDeviceID device, AudioState *audio)
     if (device) SDL_UnlockAudioDevice(device);
 }
 
+static void keyboard_loop_policy(AudioState *audio, const TsUiState *ui)
+{
+    int enabled = ui->workbench_loop_active || ui->keyboard_hold;
+    audio->notes.workbench_loop = enabled;
+    audio->performance.keyboard_loop = enabled;
+    audio->sister.performance.keyboard_loop = enabled;
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
+        TsNoteVoice *v = &audio->notes.voices[i];
+        if (v->active && v->synth) {
+            v->looping = enabled;
+            v->crossfade_frames = enabled ? v->sample->sample_rate/100u : 0u;
+            size_t limit=(v->range_last-v->range_first)/4u;
+            if(v->crossfade_frames>limit)v->crossfade_frames=limit;
+        }
+    }
+}
+
 static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
                                   TsUiState *ui, const TsInstrument *instrument,
                                   int output_rate, int persistent)
 {
+    if (!persistent && !ui->workbench_loop_persistent &&
+        (ui->fm_open || ts_note_bank_count(&audio->notes) > 0 ||
+         ts_performance_count(&audio->performance) > 0 ||
+         ts_performance_count(&audio->sister.performance) > 0)) {
+        if (device) SDL_LockAudioDevice(device);
+        ui->workbench_loop_active = !ui->workbench_loop_active;
+        audio->playing = 0;
+        keyboard_loop_policy(audio, ui);
+        runtime_note_sync(audio, instrument, output_rate);
+        if (device) SDL_UnlockAudioDevice(device);
+        snprintf(ui->status, sizeof(ui->status), "PLAYED NOTES LOOP %s",
+                 ui->workbench_loop_active ? "ON" : "OFF");
+        return;
+    }
     TsUiLoopCommand command = ts_ui_loop_command(ui, persistent);
     if (command == TS_UI_LOOP_LOCKED) {
         snprintf(ui->status, sizeof(ui->status),
@@ -1411,6 +1441,9 @@ static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
     ui->audition_source = TS_AUDITION_CURRENT;
     ui->workbench_loop_active = 1;
     ui->workbench_loop_persistent = command == TS_UI_LOOP_LOCK_START;
+    if (device) SDL_LockAudioDevice(device);
+    keyboard_loop_policy(audio, ui);
+    if (device) SDL_UnlockAudioDevice(device);
     begin_audition(device, audio, ui, instrument,
                    TS_AUDITION_WORKBENCH_LOOP, 1.0, output_rate);
     if (!audio->playing) {
@@ -1436,6 +1469,16 @@ static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
 {
     TsAuditionPlan plan;
     if (!ui->workbench_loop_active) return;
+    if (ts_note_bank_count(&audio->notes) > 0 ||
+        ts_performance_count(&audio->performance) > 0 ||
+        ts_performance_count(&audio->sister.performance) > 0) {
+        if (device) SDL_LockAudioDevice(device);
+        audio->playing = 0;
+        keyboard_loop_policy(audio, ui);
+        runtime_note_sync(audio, instrument, audio->output_rate);
+        if (device) SDL_UnlockAudioDevice(device);
+        return;
+    }
     if (!audition_plan_ui(instrument, ui, TS_AUDITION_CURRENT,
                           TS_AUDITION_WORKBENCH_LOOP, &plan)) {
         if (ui->workbench_loop_persistent) set_loop_lock_silence(device, audio);
@@ -1481,6 +1524,8 @@ static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
         audio->playing = 0;
     audio->bank_slot = -1;
     ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
+    keyboard_loop_policy(audio, ui);
+    latched = latched || ui->keyboard_hold;
     result = runtime_note_start_event(
         audio, instrument, ts_ui_audition_tuning(ui, instrument),
         ui->audition_source, event, latched, output_rate);
@@ -1613,7 +1658,8 @@ static int canvas_qwerty_event(const SDL_Event *event, SDL_AudioDeviceID device,
     if(event->key.repeat)return 1;
     if(audio->capture.state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER && audio->capture.staged_notes)
         launch_staged_capture(device,audio,ui,instrument,note,output_rate);
-    else begin_note(device,audio,ui,instrument,note,output_rate,0);
+    else begin_note(device,audio,ui,instrument,note,output_rate,
+                    (event->key.keysym.mod & KMOD_SHIFT)!=0);
     return 1;
 }
 
@@ -1742,6 +1788,9 @@ static void fade_all_tile_launchers(SDL_AudioDeviceID device,
 static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
 {
     if (device) SDL_LockAudioDevice(device);
+    ui->keyboard_hold = 0;
+    ui->workbench_loop_active = 0;
+    keyboard_loop_policy(audio, ui);
     audio->playing = 0;
     audio->bank_slot = -1;
     runtime_note_clear(audio);
@@ -2249,8 +2298,8 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
     } else if (audio->playing && audition_plan_ui(instrument, ui, audio->source,
                                            audio->range, &plan)) {
         audio->position = ts_audition_map_progress(
-            audio->position, audio->range_start, audio->range_end,
-            plan.first, plan.last);
+            audio->position, audio->loop_intro ? 0 : audio->range_start, audio->range_end,
+            audio->loop_intro ? 0 : plan.first, plan.last);
         if (audio->position >= (double)plan.last) audio->position = (double)plan.first;
         audio->sample = plan.sample;
         audio->range_start = plan.first;
@@ -2258,8 +2307,10 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio, TsUiState *
         audio->looping = audio->range == TS_AUDITION_WORKBENCH_LOOP ||
                          (audio->range == TS_AUDITION_LOOP && instrument->has_loop);
         audio->loop_mode = instrument->loop_mode;
-        if (audio->loop_mode == TS_LOOP_REVERSE) audio->loop_direction = -1;
-        else if (audio->loop_mode == TS_LOOP_FORWARD) audio->loop_direction = 1;
+        if (!ts_loop_starts_at_sample(audio->loop_mode)) audio->loop_intro = 0;
+        if (audio->loop_intro) audio->loop_direction = 1;
+        else if (ts_loop_base_mode(audio->loop_mode) == TS_LOOP_REVERSE) audio->loop_direction = -1;
+        else if (ts_loop_base_mode(audio->loop_mode) == TS_LOOP_FORWARD) audio->loop_direction = 1;
         else if (audio->loop_direction == 0) audio->loop_direction = 1;
         audio->crossfade_frames = audio->looping ?
                                   ts_audition_crossfade_frames(
@@ -3752,6 +3803,7 @@ static int render_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ui->fm_preview_sample = preview;
     if (device) SDL_UnlockAudioDevice(device);
     ts_sample_free(&rendered);
+    ts_ui_waveform_cache_invalidate(ui,TS_UI_WAVEFORM_FM);
     snprintf(ui->fm_message, sizeof(ui->fm_message),
              "%s / %s  %d VOICE MASK",
              ts_fm_structure_name(ui->fm_patch.structure),
@@ -3877,6 +3929,8 @@ static void begin_fm_note_event(SDL_AudioDeviceID device, AudioState *audio,
     if (!device || preview == NULL || preview->data == NULL || event == NULL) return;
     SDL_LockAudioDevice(device);
     ts_note_bank_set_attack_ms(&audio->notes, ui->config.voice_attack_ms);
+    keyboard_loop_policy(audio, ui);
+    latched = latched || ui->keyboard_hold;
     result = ts_note_bank_start_sample_event(
         &audio->notes, preview, &unity, event, latched, output_rate);
     if (result == TS_NOTE_STARTED &&
@@ -3926,32 +3980,31 @@ static void begin_fm_note(SDL_AudioDeviceID device, AudioState *audio,
 }
 
 static void toggle_fm_hold(SDL_AudioDeviceID device, AudioState *audio,
-                           TsUiState *ui)
+                           TsUiState *ui, const TsInstrument *instrument)
 {
-    int synth_count;
-    int latched_count;
-    int changed;
-    if (audio == NULL || ui == NULL) return;
     if (device) SDL_LockAudioDevice(device);
-    synth_count = ts_note_bank_synth_count(&audio->notes);
-    latched_count = ts_note_bank_latched_synth_count(&audio->notes);
-    if (synth_count > 0 && synth_count == latched_count)
-        changed = -ts_note_bank_release_latched_synth(&audio->notes);
-    else
-        changed = ts_note_bank_latch_active_synth(&audio->notes);
-    ui->active_notes = ts_note_bank_visible_mask(
-        &audio->notes, ts_ui_keyboard_base_note(ui));
+    ui->keyboard_hold = !ui->keyboard_hold;
+    for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
+        TsNoteVoice *v = &audio->notes.voices[i];
+        if (!v->active || v->preview) continue;
+        if (ui->keyboard_hold) v->latched = 1;
+        else if (v->latched) v->active = 0;
+    }
+    TsPerformanceBank *banks[] = {&audio->performance, &audio->sister.performance};
+    for (int b = 0; b < 2; ++b) {
+        if (!ui->keyboard_hold) ts_performance_clear_latched(banks[b]);
+        else for (int i = 0; i < TS_PERFORMANCE_VOICE_LIMIT; ++i)
+            if (banks[b]->voices[i].active) banks[b]->voices[i].latched = 1;
+    }
+    keyboard_loop_policy(audio, ui);
+    runtime_note_sync(audio, instrument, audio->output_rate);
+    ui->active_notes = ts_note_bank_visible_mask(&audio->notes, ts_ui_keyboard_base_note(ui));
     ui->fm_held_notes = ts_note_bank_latched_synth_count(&audio->notes);
     if (device) SDL_UnlockAudioDevice(device);
-    if (changed > 0)
-        snprintf(ui->fm_message, sizeof(ui->fm_message),
-                 "HELD %d-NOTE SYNTH CHORD", changed);
-    else if (changed < 0)
-        snprintf(ui->fm_message, sizeof(ui->fm_message),
-                 "RELEASED HELD SYNTH CHORD");
-    else
-        snprintf(ui->fm_message, sizeof(ui->fm_message),
-                 "PLAY NOTES, THEN CLICK HOLD");
+    snprintf(ui->status, sizeof(ui->status), ui->keyboard_hold ?
+             "HOLD ON - PLAY NOTES TO LATCH AND REPEAT; HOLD AGAIN RELEASES" :
+             "HOLD OFF - ORDINARY KEYS FOLLOW SUSTAIN AND LOOP");
+    snprintf(ui->fm_message, sizeof(ui->fm_message), "%.95s", ui->status);
 }
 
 static void apply_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
@@ -5573,8 +5626,8 @@ static void cycle_loop_mode(SDL_AudioDeviceID device, AudioState *audio, TsUiSta
     ok = ts_instrument_set_loop_mode(instrument, mode, error, sizeof(error));
     if (ok && audio->playing && audio->bank_slot < 0 && audio->looping) {
         audio->loop_mode = mode;
-        audio->loop_direction = mode == TS_LOOP_REVERSE ? -1 : 1;
-        if (mode == TS_LOOP_REVERSE) audio->position = (double)(audio->range_end - 1u);
+        audio->position = ts_audition_loop_begin(audio->range_start, audio->range_end,
+            mode, &audio->loop_direction, &audio->loop_intro);
     }
     if (ok) runtime_note_sync(audio, instrument, audio->output_rate);
     if (device) SDL_UnlockAudioDevice(device);
@@ -5611,10 +5664,12 @@ static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
             audio->step = (double)plan.sample->sample_rate / audio->output_rate *
                           audio->pitch;
         audio->loop_mode = slot->loop_mode;
-        if (audio->loop_mode == TS_LOOP_REVERSE) audio->loop_direction = -1;
-        else if (audio->loop_mode == TS_LOOP_FORWARD) audio->loop_direction = 1;
+        if (!ts_loop_starts_at_sample(audio->loop_mode)) audio->loop_intro = 0;
+        if (audio->loop_intro) audio->loop_direction = 1;
+        else if (ts_loop_base_mode(audio->loop_mode) == TS_LOOP_REVERSE) audio->loop_direction = -1;
+        else if (ts_loop_base_mode(audio->loop_mode) == TS_LOOP_FORWARD) audio->loop_direction = 1;
         else if (audio->loop_direction == 0) audio->loop_direction = 1;
-        if (audio->position < (double)plan.first || audio->position >= (double)plan.last)
+        if ((!audio->loop_intro && audio->position < (double)plan.first) || audio->position >= (double)plan.last)
             audio->position = audio->loop_mode == TS_LOOP_REVERSE && slot->has_loop ?
                               (double)(plan.last - 1u) : (double)plan.first;
     } else if (audio->playing && audio->bank_slot < 0 && audio->looping &&
@@ -5629,10 +5684,12 @@ static void sync_playing_loop(SDL_AudioDeviceID device, AudioState *audio,
             audio->step = (double)plan.sample->sample_rate / audio->output_rate *
                           audio->pitch;
         audio->loop_mode = instrument->loop_mode;
-        if (audio->loop_mode == TS_LOOP_REVERSE) audio->loop_direction = -1;
-        else if (audio->loop_mode == TS_LOOP_FORWARD) audio->loop_direction = 1;
+        if (!ts_loop_starts_at_sample(audio->loop_mode)) audio->loop_intro = 0;
+        if (audio->loop_intro) audio->loop_direction = 1;
+        else if (ts_loop_base_mode(audio->loop_mode) == TS_LOOP_REVERSE) audio->loop_direction = -1;
+        else if (ts_loop_base_mode(audio->loop_mode) == TS_LOOP_FORWARD) audio->loop_direction = 1;
         else if (audio->loop_direction == 0) audio->loop_direction = 1;
-        if (audio->position < (double)plan.first || audio->position >= (double)plan.last)
+        if ((!audio->loop_intro && audio->position < (double)plan.first) || audio->position >= (double)plan.last)
             audio->position = audio->loop_mode == TS_LOOP_REVERSE ?
                               (double)(plan.last - 1u) : (double)plan.first;
     }
@@ -5682,9 +5739,10 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
     }
     audio->sample = &slot->sample;
     audio->loop_mode = slot->loop_mode;
-    audio->loop_direction = audio->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
-    audio->position = slot->has_loop && audio->loop_direction < 0 ?
-                      (double)(plan.last - 1u) : (double)plan.first;
+    audio->loop_direction = 1; audio->loop_intro = 0;
+    audio->position = slot->has_loop ? ts_audition_loop_begin(
+        plan.first, plan.last, audio->loop_mode, &audio->loop_direction, &audio->loop_intro) :
+        (double)plan.first;
     audio->pitch = ts_tuning_pair_audition_pitch(&slot->tuning,
                                                  &slot->audible_tuning);
     audio->step = (double)slot->sample.sample_rate / output_rate * audio->pitch;
@@ -7990,6 +8048,8 @@ typedef struct {
     SDL_Window *window;
     SDL_Renderer *renderer;
     SDL_Texture *texture;
+    SDL_Texture *waveform_textures[2];
+    TsUiWaveformDetail waveform_details[2];
     TsSisterUiModel model;
     TsSisterUiModel rendered_model;
     TsFramebuffer framebuffer;
@@ -8088,7 +8148,7 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
     if (config != NULL && config->sister_window_x >= 0) x = config->sister_window_x;
     if (config != NULL && config->sister_window_y >= 0) y = config->sister_window_y;
     if (config == NULL || config->sister_window_maximized)
-        flags |= SDL_WINDOW_MAXIMIZED;
+        flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     sister->window = SDL_CreateWindow(
         TAPESISTER_SISTER_WINDOW_TITLE, x, y,
         TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT, flags);
@@ -8119,8 +8179,8 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
                            (info.flags & SDL_RENDERER_PRESENTVSYNC) != 0u ?
                                "vsync" : "controller-30hz");
     }
-    SDL_RenderSetLogicalSize(sister->renderer, TS_SISTER_UI_WIDTH,
-                             TS_SISTER_UI_HEIGHT);
+    /* Fill the entire client area; input is mapped explicitly for both
+       queued events and polled mouse state, including high-DPI output. */
     sister->window_id = SDL_GetWindowID(sister->window);
     return 1;
 }
@@ -8134,9 +8194,22 @@ static void sister_window_hide(SisterWindow *sister)
     if (sister->window != NULL) SDL_HideWindow(sister->window);
 }
 
-static int sister_event_mouse(int event_x, int event_y, int *x, int *y)
+static void sister_window_fullscreen(SisterWindow *sister, int enabled)
 {
-    return ts_sister_ui_event_point(event_x, event_y, x, y);
+    if (!sister || !sister->window) return;
+    if (SDL_SetWindowFullscreen(sister->window,enabled?SDL_WINDOW_FULLSCREEN_DESKTOP:0)==0) {
+        if (!enabled) SDL_RestoreWindow(sister->window);
+        sister->rendered_model_valid=0;
+    }
+}
+
+static int sister_event_mouse(SDL_Window *window, int event_x, int event_y, int *x, int *y)
+{
+    int width, height;
+    if (!window) return 0;
+    SDL_GetWindowSize(window, &width, &height);
+    return ts_sister_ui_window_point(event_x, event_y, width, height,
+                                     width, height, x, y);
 }
 
 static int sister_window_mouse(SDL_Window *window, SDL_Renderer *renderer,
@@ -8165,14 +8238,71 @@ static void sister_window_show(SisterWindow *sister)
     (void)SDL_SetWindowInputFocus(sister->window);
 }
 
-static void application_window_focus(SDL_Window *window)
+static void application_window_focus(SDL_Window *window, SisterWindow *sister)
 {
+    if(sister && sister->model.visible)sister_window_hide(sister);
     if (window == NULL) return;
     if ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0u)
         SDL_RestoreWindow(window);
     SDL_ShowWindow(window);
     SDL_RaiseWindow(window);
     (void)SDL_SetWindowInputFocus(window);
+}
+
+/* Hide fullscreen Sister before raising the canvas: raising alone can leave
+   the desktop-fullscreen sibling above it on Windows. Audio ownership stays put. */
+static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
+                                SisterWindow *sister, TsUiState *ui)
+{
+    if(event->type!=SDL_KEYDOWN || event->key.keysym.sym!=SDLK_TAB ||
+       (event->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)))return 0;
+    uint32_t id=event->key.windowID;
+    if(sister->window && id==sister->window_id) {
+        if(sister->model.preset_manage_open)return 0;
+        if(!event->key.repeat) {application_window_focus(window,sister);}
+        return 1;
+    }
+    if(id!=SDL_GetWindowID(window) || ui_blocking_dialog_open_except_fm(ui) ||
+       ui->fm_bank_choice_open || ui->fm_full_choice_open)return 0;
+    if(!event->key.repeat) {
+        if(sister_window_ensure(sister,&ui->config))sister_window_show(sister);
+        else snprintf(ui->status,sizeof(ui->status),"SISTER WINDOW UNAVAILABLE: %.112s",SDL_GetError());
+    }
+    return 1;
+}
+
+static int main_waveform_detail_allowed(const TsUiState *ui)
+{
+    return ui->portal.open ? !ui->portal.manage_open && !ui->portal.macro_edit :
+        !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
+}
+
+static void native_waveform_prepare(SDL_Renderer *renderer, TsUiWaveformDetail details[2], int enabled)
+{
+    int width=0,height=0;
+    details[0].valid=details[1].valid=0;
+    ts_ui_waveform_detail_begin(NULL);
+    if(enabled && SDL_GetRendererOutputSize(renderer,&width,&height)==0)
+        ts_ui_waveform_details_begin(details,width,height);
+}
+
+static void native_waveform_copy(SDL_Renderer *renderer, SDL_Texture *textures[2],
+                                  TsUiWaveformDetail details[2], const TsFramebuffer *fb)
+{
+    for(int i=0;i<2;++i) {
+        TsUiWaveformDetail *d=&details[i];
+        if(!ts_ui_waveform_detail_finish(d,fb))continue;
+        int width=0,height=0;
+        if(textures[i])SDL_QueryTexture(textures[i],NULL,NULL,&width,&height);
+        if(width!=d->width || height!=d->height) {
+            if(textures[i])SDL_DestroyTexture(textures[i]);
+            textures[i]=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,
+                SDL_TEXTUREACCESS_STREAMING,d->width,d->height);
+        }
+        SDL_Rect target={d->output_x,d->output_y,d->width,d->height};
+        if(textures[i] && SDL_UpdateTexture(textures[i],NULL,d->pixels,d->width*sizeof(uint32_t))==0)
+            SDL_RenderCopy(renderer,textures[i],NULL,&target);
+    }
 }
 
 static void sister_set_parameter(TsSisterParameters *parameters,
@@ -9007,23 +9137,23 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
                                    AudioState *audio, TsUiState *ui,
                                    SisterWindow *sister, uint32_t sample_rate)
 {
-    int active=ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING ||
-               ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING;
     int trigger=0;
     if(event->type==SDL_KEYDOWN && event->key.windowID==SDL_GetWindowID(window) &&
        event->key.keysym.sym==SDLK_f &&
        (event->key.keysym.mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT) &&
-       !(event->key.keysym.mod&(KMOD_ALT|KMOD_GUI)) && (active || ui->portal.open || !ui_dialog_open(ui))) {
+       !(event->key.keysym.mod&(KMOD_ALT|KMOD_GUI))  ) {
         if(event->key.repeat)return 1;
         trigger=1;
     }
     if(event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT &&
        event->button.windowID==SDL_GetWindowID(window)) {
         int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
-        if(active && x>=544 && x<630 && y>=382 && y<398)trigger=1;
+        if((!ui->portal.open || ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING ||
+            ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING) &&
+           x>=544 && x<630 && y>=382 && y<398)trigger=1;
         else if(ui->portal.open && x>=464 && x<492 && y>=4 && y<30)trigger=1;
-        else if(!ui_dialog_open(ui) && ui->show_keyboard &&
-                x>=486 && x<583 && y>=289 && y<311)trigger=1;
+        else if(sister_performance_keys_allowed(ui) && ui->show_keyboard &&
+                x>=380 && x<454 && y>=313 && y<330)trigger=1;
         else if(!ui_dialog_open(ui) && !ui->show_keyboard && !ui->show_recipes &&
                 !ui->show_ingredients && !ui->external_record_bank &&
                 x>=250 && x<344 && y>=313 && y<329)trigger=1;
@@ -10375,6 +10505,31 @@ static size_t selection_frame_from_x(const TsInstrument *instrument, const TsUiS
     return ts_instrument_frame_from_view_x(instrument, x, TS_WAVE_W);
 }
 
+/* Preserve native pointer precision instead of reducing it to 600 columns. */
+static size_t selection_frame_from_pointer(const TsInstrument *instrument,
+    const TsUiState *ui, SDL_Window *window, int raw_x)
+{
+    int width, height; SDL_GetWindowSize(window,&width,&height);
+    if (width <= 0) return 0;
+    long double position=(((long double)raw_x+0.5L)*TS_UI_WIDTH/width-TS_WAVE_X)/TS_WAVE_W;
+    if (position<0) position=0;
+    if (position>1) position=1;
+    size_t first=instrument->view_first,last=instrument->view_last;
+    int parent=ui->audition_source==TS_AUDITION_PARENT && instrument->parent.frames>0;
+    if (parent) {
+        first=ui->parent_view_first; last=ui->parent_view_last;
+        if (last<=first || last>instrument->parent.frames) {first=0;last=instrument->parent.frames;}
+    }
+    if (last<first) return 0;
+    size_t frame=first+(size_t)floorl(position*(last-first)+0.5L);
+    if (parent) {
+        if(frame<=instrument->crop_first)return 0;
+        if(frame>=instrument->crop_last)return instrument->current.frames;
+        frame-=instrument->crop_first;
+    }
+    return frame;
+}
+
 static int64_t tape_frame_from_x(const TsInstrument *instrument, int x)
 {
     int64_t first = (int64_t)instrument->view_first;
@@ -11510,7 +11665,7 @@ static void keyboard_sustain_toggle(SDL_AudioDeviceID device,AudioState *audio,
 }
 static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
                                    SDL_AudioDeviceID device,AudioState *audio,
-                                   TsUiState *ui,SisterWindow *sister)
+                                   TsUiState *ui,SisterWindow *sister, const TsInstrument *instrument)
 {
     if(!keyboard_sustain_allowed(ui) || sister->model.preset_manage_open || sister->model.fallout_lfo_open)return 0;
     Uint32 id=event->type==SDL_KEYDOWN?event->key.windowID:
@@ -11525,17 +11680,56 @@ static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
     } else if(event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT) {
         int x,y;
         if(in_sister) {
-            if(!sister_event_mouse(event->button.x,event->button.y,&x,&y))return 0;
+            if(!sister_event_mouse(sister->window,event->button.x,event->button.y,&x,&y))return 0;
             trigger=x>=356 && x<438 && y>=350 && y<367;
         } else {
             logical_mouse(window,event->button.x,event->button.y,&x,&y);
             if(ui->portal.open)trigger=x>=550 && x<582 && y>=308 && y<325;
             else if(ui->import_preview_open)trigger=x>=514 && x<604 && y>=312 && y<329;
+            else if(ui->show_keyboard && x>=460 && x<532 && y>=313 && y<330) {
+                toggle_fm_hold(device,audio,ui,instrument);
+                return 1;
+            }
             else if(ui->show_keyboard)trigger=x>=540 && x<630 && y>=313 && y<330;
         }
     }
     if(!trigger)return 0;
     keyboard_sustain_toggle(device,audio,ui,sister);
+    return 1;
+}
+
+/* One pointer route for the visible keyboard, regardless of its sound source.
+   Releases still arrive after opening a dialog or moving focus within the UI. */
+static int keyboard_pointer_event(const SDL_Event *event, SDL_Window *window,
+    SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
+    const TsInstrument *instrument, const TsSample *fm_preview, int rate)
+{
+    if (event->type == SDL_KEYUP && event->key.windowID == SDL_GetWindowID(window) &&
+        note_for_key(event->key.keysym.sym) >= 0) {
+        release_note(device,audio,ui,note_for_key(event->key.keysym.sym));
+        return 1;
+    }
+    if (event->type == SDL_MOUSEBUTTONUP && event->button.button == SDL_BUTTON_LEFT &&
+        ui->mouse_note >= 0) {
+        release_note(device,audio,ui,ui->mouse_note);ui->mouse_note=-1;
+        return 1;
+    }
+    if (event->type != SDL_MOUSEBUTTONDOWN || event->button.button != SDL_BUTTON_LEFT ||
+        event->button.windowID != SDL_GetWindowID(window) || !ui->show_keyboard ||
+        !sister_performance_keys_allowed(ui)) return 0;
+    int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
+    int note=ts_ui_key_from_point_for_base(x,y,ts_ui_keyboard_base_note(ui));
+    if (note < 0) return 0;
+    int shifted=(SDL_GetModState() & KMOD_SHIFT)!=0;
+    if (audio->capture.state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER && shifted) {
+        ui->mouse_note=-1;stage_capture_note(device,audio,ui,note);
+    } else if (audio->capture.state==TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER && audio->capture.staged_notes) {
+        ui->mouse_note=-1;launch_staged_capture(device,audio,ui,instrument,note,rate);
+    } else {
+        ui->mouse_note=shifted?-1:note;
+        if (ui->fm_open) begin_fm_note(device,audio,ui,instrument,fm_preview,note,rate,shifted);
+        else begin_note(device,audio,ui,instrument,note,rate,shifted);
+    }
     return 1;
 }
 
@@ -11545,6 +11739,8 @@ int main(int argc, char **argv)
     SDL_Window *window = NULL;
     SDL_Renderer *renderer = NULL;
     SDL_Texture *texture = NULL;
+    SDL_Texture *waveform_textures[2] = {0};
+    TsUiWaveformDetail waveform_details[2] = {0};
     SDL_AudioDeviceID device = 0;
     SDL_AudioDeviceID input_device = 0;
     SDL_AudioSpec desired, obtained;
@@ -12152,7 +12348,7 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
-            if (keyboard_sustain_event(&event,window,device,&audio,&ui,&sister_window))continue;
+            if (keyboard_sustain_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode global_key = event.key.keysym.sym;
                 SDL_Keymod global_mod = (SDL_Keymod)event.key.keysym.mod;
@@ -12187,33 +12383,20 @@ int main(int argc, char **argv)
                     midi_learn_escape(&ui, &sister_window, SDL_GetTicks());
                     continue;
                 }
-                if (global_key == SDLK_TAB && !modal_key_owner) {
-                    if (sister_window.window != NULL &&
-                        event_id == sister_window.window_id) {
-                        application_window_focus(window);
-                    } else if (event_id == SDL_GetWindowID(window)) {
-                        if (!sister_window_ensure(&sister_window, &ui.config))
-                            snprintf(ui.status, sizeof(ui.status),
-                                     "SISTER WINDOW UNAVAILABLE: %.112s",
-                                     SDL_GetError());
-                        else
-                            sister_window_show(&sister_window);
-                    }
-                    continue;
-                }
+                if (workspace_tab_event(&event,window,&sister_window,&ui))continue;
                 if (global_key == SDLK_BACKQUOTE && !modal_key_owner) {
                     if (ui.fm_open)
                         close_fm_workspace(device, &audio, &ui, &fm_preview);
                     else
                         begin_fm_workspace(device, &audio, &ui, &instrument,
                                            &fm_preview);
-                    application_window_focus(window);
+                    application_window_focus(window,&sister_window);
                     continue;
                 }
                 if (global_key == SDLK_s && (global_mod & KMOD_CTRL) != 0 &&
                     !modal_key_owner) {
                     begin_active_project_save(&ui);
-                    application_window_focus(window);
+                    application_window_focus(window,&sister_window);
                     continue;
                 }
             }
@@ -12224,7 +12407,7 @@ int main(int argc, char **argv)
                 target[0] = '\0';
                 if (sister_window.window != NULL &&
                     event_id == sister_window.window_id &&
-                    sister_event_mouse(event.button.x, event.button.y, &x, &y)) {
+                    sister_event_mouse(sister_window.window,event.button.x, event.button.y, &x, &y)) {
                     TsSisterUiHit hit = ts_sister_ui_hit_test_model(
                         &sister_window.model, x, y);
                     (void)ts_sister_ui_midi_target(hit, target,
@@ -12264,17 +12447,24 @@ int main(int argc, char **argv)
                     sister_window.parameter_lock_gesture = 0;
                     ts_ui_pointer_drag_cancel(&sister_window.parameter_drag);
                 } else if (event.type == SDL_WINDOWEVENT &&
-                           (event.window.event == SDL_WINDOWEVENT_RESTORED ||
+                           (event.window.event == SDL_WINDOWEVENT_EXPOSED ||
+                            event.window.event == SDL_WINDOWEVENT_RESTORED ||
                             event.window.event == SDL_WINDOWEVENT_SHOWN ||
                             event.window.event == SDL_WINDOWEVENT_MAXIMIZED ||
                             event.window.event == SDL_WINDOWEVENT_RESIZED ||
                             event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)) {
                     sister_window.minimized = 0;
                     sister_window.rendered_model_valid = 0;
+                    if(event.window.event==SDL_WINDOWEVENT_MAXIMIZED &&
+                       (SDL_GetWindowFlags(sister_window.window)&SDL_WINDOW_MAXIMIZED))
+                        sister_window_fullscreen(&sister_window,1);
                 } else if (event.type == SDL_WINDOWEVENT &&
                            event.window.event == SDL_WINDOWEVENT_MOVED) {
                     ui.config.sister_window_x = event.window.data1;
                     ui.config.sister_window_y = event.window.data2;
+                } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F11) {
+                    if(!event.key.repeat)sister_window_fullscreen(&sister_window,
+                        !(SDL_GetWindowFlags(sister_window.window)&SDL_WINDOW_FULLSCREEN_DESKTOP));
                 } else if (event.type == SDL_KEYDOWN &&
                            event.key.keysym.sym == SDLK_ESCAPE) {
                     if (sister_window.model.fallout_lfo_open) {
@@ -12377,8 +12567,6 @@ int main(int argc, char **argv)
                         }
                     }
                 } else if (event.type == SDL_KEYUP &&
-                           sister_performance_keys_allowed(&ui) &&
-                           !sister_window.model.preset_manage_open &&
                            note_for_key(event.key.keysym.sym) >= 0) {
                     release_note(device, &audio, &ui,
                                  note_for_key(event.key.keysym.sym));
@@ -12386,7 +12574,7 @@ int main(int argc, char **argv)
                            (event.button.button == SDL_BUTTON_LEFT ||
                             event.button.button == SDL_BUTTON_RIGHT)) {
                     int x, y;
-                    if (sister_event_mouse(event.button.x, event.button.y,
+                    if (sister_event_mouse(sister_window.window,event.button.x, event.button.y,
                                            &x, &y)) {
                         TsSisterUiHit hit = ts_sister_ui_hit_test_model(
                             &sister_window.model, x, y);
@@ -12430,7 +12618,7 @@ int main(int argc, char **argv)
                     int x, y;
                     TsSisterUiHit hit;
                     int target;
-                    if (!sister_event_mouse(event.motion.x, event.motion.y,
+                    if (!sister_event_mouse(sister_window.window,event.motion.x, event.motion.y,
                                             &x, &y)) {
                         ts_ui_pointer_drag_cancel(&sister_window.parameter_drag);
                         continue;
@@ -12493,6 +12681,8 @@ int main(int argc, char **argv)
                              &portal,&sister_window,obtained.freq,&transform)) continue;
             if (import_preview_event(&event,device,&audio,&ui,&instrument,
                                       &pending_selection_load,&import_controller,obtained.freq)) continue;
+            if (keyboard_pointer_event(&event,window,device,&audio,&ui,&instrument,
+                                        &fm_preview,obtained.freq)) continue;
             if (event.type == SDL_MOUSEBUTTONDOWN &&
                 event.button.button == SDL_BUTTON_LEFT &&
                 event.button.windowID == SDL_GetWindowID(window) &&
@@ -14061,7 +14251,7 @@ int main(int argc, char **argv)
                              "BANK %02d LOOP FLAGS %zu - %zu ZERO SNAPPED",
                              ui.bank_view_slot + 1, slot->loop_first, slot->loop_last);
                 } else {
-                    frame = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
+                    frame = selection_frame_from_pointer(&instrument, &ui, window, event.motion.x);
                     if (!ui.loop_drag_started) {
                         ts_instrument_begin_loop_drag(&instrument);
                         ui.loop_drag_started = 1;
@@ -14078,8 +14268,7 @@ int main(int argc, char **argv)
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
                 (void)y;
                 if (abs(x - ui.wave_pointer_start_x) >= 2) {
-                    size_t at = selection_frame_from_x(&instrument, &ui,
-                                                       x - TS_WAVE_X);
+                    size_t at = selection_frame_from_pointer(&instrument, &ui, window, event.motion.x);
                     ui.selecting = 1;
                     ui.selecting_button = ui.wave_pointer_button;
                     ui.wave_pointer_pending = 0;
@@ -14104,7 +14293,7 @@ int main(int argc, char **argv)
                 int x, y;
                 logical_mouse(window, event.motion.x, event.motion.y, &x, &y);
                 (void)y;
-                size_t at = selection_frame_from_x(&instrument, &ui, x - TS_WAVE_X);
+                size_t at = selection_frame_from_pointer(&instrument, &ui, window, event.motion.x);
                 ts_instrument_set_selection_snapped(&instrument, ui.selection_anchor, at);
                 if (ui.selecting_button == SDL_BUTTON_RIGHT && instrument.has_selection)
                     ts_instrument_set_playhead(
@@ -14367,7 +14556,7 @@ int main(int argc, char **argv)
                         begin_fm_note(device, &audio, &ui, &instrument,
                                       &fm_preview, 0, obtained.freq, 0);
                     } else if (fm_action == TS_UI_FM_ACTION_HOLD) {
-                        toggle_fm_hold(device, &audio, &ui);
+                        toggle_fm_hold(device, &audio, &ui, &instrument);
                     } else if (fm_action == TS_UI_FM_ACTION_DRONE) {
                         ui.fm_patch.drone_mode = !ui.fm_patch.drone_mode;
                         ts_fm_patch_sanitize(&ui.fm_patch);
@@ -14847,8 +15036,8 @@ int main(int argc, char **argv)
                                      "DRAG LOOP END - ZERO SNAPPED");
                         } else {
                             cancel_pitch_preview(device, &audio, &ui, &instrument);
-                            ui.selection_anchor = selection_frame_from_x(
-                                &instrument, &ui, x - TS_WAVE_X);
+                            ui.selection_anchor = selection_frame_from_pointer(
+                                &instrument, &ui, window, event.button.x);
                             ui.wave_pointer_pending = 1;
                             ui.wave_pointer_button = SDL_BUTTON_LEFT;
                             ui.wave_pointer_start_x = x;
@@ -15487,45 +15676,6 @@ int main(int argc, char **argv)
                             snprintf(ui.status, sizeof(ui.status),
                                      "CLICK PLAY  SHIFT FULL  ALT LOOP  CTRL SEL");
                         }
-                    } else if (ui.show_keyboard && note >= 0 && device) {
-                        if (audio.capture.state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
-                            (mod & KMOD_SHIFT)) {
-                            ui.mouse_note = -1;
-                            stage_capture_note(device, &audio, &ui, note);
-                        } else if (audio.capture.state ==
-                                   TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER &&
-                                   audio.capture.staged_notes != 0u) {
-                            ui.mouse_note = -1;
-                            launch_staged_capture(device, &audio, &ui, &instrument,
-                                                  note, obtained.freq);
-                        } else if (mod & KMOD_SHIFT) {
-                            ui.mouse_note = -1;
-                            if (ui.fm_open)
-                                begin_fm_note(device, &audio, &ui, &instrument,
-                                              &fm_preview, note, obtained.freq, 1);
-                            else
-                                begin_note(device, &audio, &ui, &instrument,
-                                           note, obtained.freq, 1);
-                        } else {
-                            ui.mouse_note = note;
-                            if (ui.fm_open) {
-                                begin_fm_note(device, &audio, &ui, &instrument,
-                                              &fm_preview, note, obtained.freq, 0);
-                            } else {
-                                if ((mod & (KMOD_CTRL | KMOD_ALT)) == 0 &&
-                                    !(audio.sister.enabled &&
-                                      (audio.sister.source_switches &
-                                       TS_SISTER_SOURCE_TILES) != 0u &&
-                                      ts_sister_runtime_source_mask(
-                                          &audio.sister) != 0u)) {
-                                    SDL_LockAudioDevice(device);
-                                    runtime_note_clear(&audio);
-                                    SDL_UnlockAudioDevice(device);
-                                }
-                                begin_note(device, &audio, &ui, &instrument,
-                                           note, obtained.freq, 0);
-                            }
-                        }
                     }
                 }
             } else if (event.type == SDL_MOUSEBUTTONDOWN &&
@@ -15585,8 +15735,8 @@ int main(int argc, char **argv)
                     } else if ((mod & (KMOD_SHIFT | KMOD_CTRL | KMOD_ALT)) == 0) {
                         ui.bank_view_slot = -1;
                         cancel_pitch_preview(device, &audio, &ui, &instrument);
-                        ui.selection_anchor = selection_frame_from_x(
-                            &instrument, &ui, x - TS_WAVE_X);
+                        ui.selection_anchor = selection_frame_from_pointer(
+                            &instrument, &ui, window, event.button.x);
                         ui.wave_pointer_pending = 1;
                         ui.wave_pointer_button = SDL_BUTTON_RIGHT;
                         ui.wave_pointer_start_x = x;
@@ -15948,11 +16098,11 @@ int main(int argc, char **argv)
                 if (routing.enabled)
                     (void)ts_sister_machine_get_snapshot(
                         &audio.sister.machine, &engine);
-                (void)ts_sister_runtime_get_wave_snapshot(
+                int wave_valid=ts_sister_runtime_get_wave_snapshot(
                     &audio.sister, &wave);
                 ts_sister_ui_model_update(
                     &sister_window.model, &routing, &engine,
-                    &wave, &audio.sister.parameters);
+                    wave_valid?&wave:NULL, &audio.sister.parameters);
                 {
                     uint32_t transport = tapeLinkReaderTransportState(
                         &audio.live_link);
@@ -16030,12 +16180,12 @@ int main(int argc, char **argv)
                 hovered && (buttons & SDL_BUTTON_LMASK) != 0u;
         }
         if (!window_minimized) {
+            native_waveform_prepare(renderer,waveform_details,main_waveform_detail_allowed(&ui));
             ts_ui_render(&framebuffer, &ui, &instrument);
             if (update_texture_damage(texture, &framebuffer, frame_snapshot,
                                       &frame_snapshot_valid)) {
-                /* The texture copy covers the complete destination. A clear
-                   would only write the same output a second time. */
                 SDL_RenderCopy(renderer, texture, NULL, NULL);
+                native_waveform_copy(renderer,waveform_textures,waveform_details,&framebuffer);
                 SDL_RenderPresent(renderer);
             }
         }
@@ -16045,6 +16195,8 @@ int main(int argc, char **argv)
              memcmp(&sister_window.model, &sister_window.rendered_model,
                     sizeof(sister_window.model)) != 0) &&
             SDL_GetTicks() - sister_window.last_present_ms >= 33u) {
+            native_waveform_prepare(sister_window.renderer,sister_window.waveform_details,
+                !sister_window.model.preset_manage_open && !sister_window.model.fallout_lfo_open);
             ts_sister_ui_render(&sister_window.framebuffer,
                                 &sister_window.model, &ui.palette);
             if (SDL_UpdateTexture(sister_window.texture, NULL,
@@ -16054,6 +16206,8 @@ int main(int argc, char **argv)
                 SDL_RenderClear(sister_window.renderer);
                 SDL_RenderCopy(sister_window.renderer,
                                sister_window.texture, NULL, NULL);
+                native_waveform_copy(sister_window.renderer,sister_window.waveform_textures,
+                    sister_window.waveform_details,&sister_window.framebuffer);
                 SDL_RenderPresent(sister_window.renderer);
                 sister_window.rendered_model = sister_window.model;
                 sister_window.rendered_model_valid = 1;
@@ -16130,6 +16284,12 @@ int main(int argc, char **argv)
             fprintf(stderr, "TapeSister config save: %s\n", config_error);
     }
     free(frame_snapshot);
+    for(int i=0;i<2;++i) {
+        ts_ui_waveform_detail_free(&waveform_details[i]);
+        if(waveform_textures[i])SDL_DestroyTexture(waveform_textures[i]);
+        ts_ui_waveform_detail_free(&sister_window.waveform_details[i]);
+        if(sister_window.waveform_textures[i])SDL_DestroyTexture(sister_window.waveform_textures[i]);
+    }
     if (sister_window.texture) SDL_DestroyTexture(sister_window.texture);
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);

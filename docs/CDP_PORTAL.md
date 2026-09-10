@@ -29,7 +29,14 @@ Holding an arrow repeats, and the selected row scrolls into view. From Search,
 Down enters the filtered list. **Left / Right** cycles families when no text
 field is being edited. Arrows leave recipe names, numeric entry and dialogs
 under their own controls. Selecting with arrows behaves like clicking, including
-Auto Preview, chain-stage replacement and ADD.
+Auto Preview, explicit chain-stage replacement and ADD.
+
+Library browsing loads **the whole selected item**. You can move from a single
+process to DUST HALO, through other starter chains, then back to REFORM or a raw
+process without retaining unwanted stages. Chains load with **EDIT OFF**. This
+also applies to SAVE, PINS and explicit history recall. Parameter tweaks and
+stage audition remain available while browsing; they do not enable replacement.
+Use SAVE AS or a pin to keep a working variation before browsing elsewhere.
 
 The family button below the tabs cycles **ALL FAMILIES**,
 **WAVESET**, **SPECTRAL**, **TIME / TAPE**, **FILTER**, **GRAINS**, **LO-FI / MOD**, **LEVEL**, **DELAY**, **ENVELOPE**, **STRUCTURE**, **FACTORY**, and **CHAIN TOOLS**.
@@ -190,10 +197,16 @@ place. Choose from the 131 raw processes and 32 curated factory instruments.
 
 1. Click **ADD**, then choose a process in the left browser. It is inserted
    after the selected stage. You can also pick a saved single-process recipe
-   while ADD is armed. Click ADD again to cancel insertion.
-2. Click a stage row to edit its parameters. Choosing another process from
-   **ALL** replaces the selected stage unless ADD is armed. Loading a saved
-   chain from SAVE/PINS loads the complete chain; chains cannot be nested.
+   while ADD is armed. ADD inserts once and returns to the previous browse/edit
+   mode. Click ADD again to cancel insertion.
+2. Click a stage row to adjust its parameters or audition it. Turn **EDIT ON**
+   (beside REMOVE, replacing the former HELP button) to make library clicks and
+   Up/Down arrows replace that stage. This works with raw processes, factory
+   instruments and single recipes from SAVE/PINS. Other stages retain their
+   settings, macro bindings and order. While editing or adding, choosing a whole
+   chain leaves the working chain intact and explains how to return to browsing.
+   Turn **EDIT OFF** to load whole items again; this also cancels a pending ADD.
+   Creating a chain with the bottom-left CHAIN button starts with EDIT ON.
 3. **UP / DOWN** reorder the selected stage. **ON / OFF** enables or bypasses
    it without losing its settings. **REMOVE** deletes that stage from the
    working chain. At least one stage remains.
@@ -205,6 +218,20 @@ place. Choose from the 131 raw processes and 32 curated factory instruments.
    its row, then use Play, Loop or QWERTY to hear that intermediate output.
    **FINAL RESULT** returns to the completed chain. Source/result audition
    selections remain independent, including while looping.
+
+EDIT controls library replacement only. Parameters, ADD, UP/DOWN stage buttons,
+bypass and REMOVE remain explicit actions. The process description above
+REMOVE/EDIT and delayed status-line hints remain available. Library hover hints
+say whether a click will load a whole item, replace a stage, or insert a stage.
+Changing EDIT does not render, stop audition notes, clear selections or discard
+the current result. A completing preview retains the current EDIT/ADD state.
+The mode is workspace state; it does not change the recipe file format.
+
+![A complete starter chain loaded for browsing, with EDIT OFF](images/portal-browse-chain.png)
+
+![Explicit stage replacement enabled with EDIT ON](images/portal-edit-chain.png)
+
+![Returning to a single process leaves no extra stages](images/portal-browse-single.png)
 
 The selected stage's parameter checkboxes decide its exposed macro controls.
 **MACROS** brings checked controls from **every stage** into one scrollable view.
@@ -598,6 +625,9 @@ output validation, and the existing eight-million-frame limit still apply.
   restarting the voice. The playhead stays where it is while inside the new
   range; otherwise it moves to the new start. Clearing the range keeps the whole
   waveform looping. Editing a stopped preview does not start playback.
+- Source and Result use native display-resolution traces, with amber L and cyan R.
+  Each view caches its own audio analysis; selection and playhead movement reuse it.
+  Mouse selection uses physical window coordinates. See [waveform detail](WAVEFORM_DETAIL.md).
 - Wheel over either waveform to zoom; Shift+wheel pans; **FIT** restores both
   full views. Source and Result audition selections remain independent.
 - **PROCESS: WHOLE / PROCESS: SEL**, above the parameter sliders, controls the
@@ -665,8 +695,8 @@ processes also preflight their output estimate. CDP timeouts remain enforced.
 Select **CHAIN TOOLS** in the family filter, or search ALL, to load one of four
 factory starter chains. These are combinations of existing processes, in
 addition to the 131 raw processes and 32 single-process factory instruments.
-Loading one opens its Macros view. **HELP** explains the whole chain in Macros
-view and the selected CDP process in Full view.
+Loading one opens its Macros view with EDIT OFF and shows its description in
+the status line. The selected process description stays above REMOVE and EDIT.
 
 | Chain | Stages | Exposed controls |
 |---|---|---|
@@ -1140,3 +1170,9 @@ sanitizers with leak checking disabled. Core, Portal and live-preview selection
 regressions passed; the standalone Linux application compiled. The native
 640x400 search, filtered list and hover-help renders were inspected. Windows
 compilation and physical QWERTY/MIDI listening remain user checks.
+
+Recipe/chain names and the manager's rename field show a blinking caret while
+editing, including an empty field. Long names scroll to keep the typing position
+inside the field. The Portal retains its permanent header REC control.
+
+![Portal recipe rename caret](images/portal-rename-caret.png)

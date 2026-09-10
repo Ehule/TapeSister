@@ -1565,6 +1565,8 @@ static void transform_render(TsFramebuffer *fb, const TsUiState *ui,
          dsp || ui->transform_runtime_available ? PAL_TUNING : PAL_VOLUME, 1);
 }
 
+#include "ts_ui_waveform_detail.inc"
+
 static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
                       const TsInstrument *instrument)
 {
@@ -1580,17 +1582,15 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
     frame(fb, 20, 62, 600, 48, RGB(8, 8, 8), PAL_BUTTON);
     rect(fb, 22, 85, 596, 1, PAL_BUTTON);
     if (preview != NULL && preview->data != NULL && preview->frames > 1u) {
+        TsWaveformRequest request={0};request.sample=preview;request.last=preview->frames;
+        request.width=596;request.revision=ui->waveform_revisions[TS_UI_WAVEFORM_FM];
+        TsWaveformCache *cache=waveform_cache(TS_UI_WAVEFORM_FM);
+        (void)ts_waveform_cache_prepare(cache,&request);
+        detail_sample(fb,0,22,63,596,44,&request,TS_WAVEFORM_DISPLAY_STEREO,
+            PAL_INSTRUMENT,PAL_WAVE_RIGHT,PAL_INSTRUMENT,PAL_WAVE_RIGHT,0,0,0,2);
         for (int column = 0; column < 596; ++column) {
-            size_t first = (size_t)column * preview->frames / 596u;
-            size_t last = (size_t)(column + 1) * preview->frames / 596u;
-            float low = 1.0f, high = -1.0f;
-            if (last <= first) last = first + 1u;
-            if (last > preview->frames) last = preview->frames;
-            for (size_t frame_at = first; frame_at < last; ++frame_at) {
-                float sample_value = preview->data[frame_at];
-                if (sample_value < low) low = sample_value;
-                if (sample_value > high) high = sample_value;
-            }
+            float low=cache->columns[column].left_minimum;
+            float high=cache->columns[column].left_maximum;
             {
                 int y0 = 85 - (int)lrintf(high * 20.0f);
                 int y1 = 85 - (int)lrintf(low * 20.0f);
@@ -1600,6 +1600,7 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
             }
         }
     }
+    detail_capture_slot(fb,0);
     mini_playhead(fb, ui, preview, 22, 63, 596, 46,
                   0u, preview != NULL ? preview->frames : 0u);
     for (int page = 0; page < TS_FM_PAGE_COUNT; ++page) {
@@ -1656,8 +1657,8 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
     button(fb, 114, 252, 90, "MAKE BANK", 0);
     button(fb, 210, 252, 66, "APPLY", 0);
     button(fb, 282, 252, 84, "AUDITION", 0);
-    button(fb, 372, 252, 70, ui->fm_held_notes > 0 ? "HELD" : "HOLD",
-           ui->fm_held_notes > 0);
+    button(fb, 372, 252, 70, ui->keyboard_hold ? "HOLD ON" : "HOLD",
+           ui->keyboard_hold);
     button(fb, 448, 252, 64, "BACK", 0);
     {
         char output[24];
@@ -2718,6 +2719,7 @@ int ts_ui_pan_import_view(TsUiState *ui, size_t frames, ptrdiff_t amount)
     return 1;
 }
 
+
 static int frame_x(size_t frame_index, size_t view_first, size_t view_last)
 {
     if (view_last <= view_first) return TS_WAVE_X;
@@ -3040,6 +3042,9 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         request.detect_zero_crossings = 1;
         request.revision = ui->waveform_revisions[TS_UI_WAVEFORM_MAIN];
         (void)ts_waveform_cache_prepare(cache, &request);
+        detail_render(fb,ui,&request,cache->rebuild_count,has_selection,selection_first,selection_last);
+        int previous_y[2] = {0, 0};
+        int detailed = view_last - view_first <= TS_WAVE_W;
         for (int x = 0; x < TS_WAVE_W; ++x) {
             const TsWaveformColumn *analysis = &cache->columns[x];
             size_t begin = analysis->first;
@@ -3054,6 +3059,37 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                              ui->config.waveform_display_mode ==
                                  TS_WAVEFORM_DISPLAY_MONO_SUM ? PAL_WAVE_SUM :
                              PAL_WAVE_LEFT;
+            /* Join the actual last frame of one bucket to the first of the
+               next. At sample zoom use linear interpolation between frames,
+               so the display remains continuous even below one frame/pixel. */
+            TsWaveformDisplayMode wave_mode = (TsWaveformDisplayMode)ui->config.waveform_display_mode;
+            TsStereoFrame head, tail;
+            if (detailed) {
+                double at = (double)view_first + (double)x *
+                    (double)(view_last - view_first) / TS_WAVE_W;
+                size_t index = (size_t)at;
+                TsStereoFrame a = ts_sample_read_frame(sample, index);
+                TsStereoFrame b = ts_sample_read_frame(sample, index + 1u < view_last ? index + 1u : index);
+                float fraction = (float)(at - index);
+                head = ts_waveform_display_frame((TsStereoFrame){
+                    a.l + (b.l-a.l)*fraction, a.r + (b.r-a.r)*fraction}, sample->channels, wave_mode);
+                tail = head;
+                display.left_minimum = display.left_maximum = head.l;
+                display.right_minimum = display.right_maximum = head.r;
+            } else {
+                head = ts_waveform_display_frame(ts_sample_read_frame(sample, begin), sample->channels, wave_mode);
+                tail = ts_waveform_display_frame(ts_sample_read_frame(sample, end-1u), sample->channels, wave_mode);
+            }
+            for (int lane = 0; lane < (display.stereo ? 2 : 1); ++lane) {
+                int height = display.stereo ? TS_WAVE_H/2 : TS_WAVE_H;
+                int center = TS_WAVE_Y + lane*height + height/2;
+                int scale = height/2 - (display.stereo ? 4 : 6);
+                int head_y = center-(int)lrintf((lane ? head.r : head.l)*scale);
+                int tail_y = center-(int)lrintf((lane ? tail.r : tail.l)*scale);
+                uint32_t lane_color = lane ? (selected ? PAL_TUNING : PAL_WAVE_RIGHT) : color;
+                if (x > 0) wave_line(fb, TS_WAVE_X+x-1, previous_y[lane], TS_WAVE_X+x, head_y, lane_color);
+                previous_y[lane] = tail_y;
+            }
             if (display.stereo) {
                 int lane_height = TS_WAVE_H / 2;
                 int left_middle = TS_WAVE_Y + lane_height / 2;
@@ -3075,8 +3111,8 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                 wave_line(fb, TS_WAVE_X + x, right_y0,
                           TS_WAVE_X + x, right_y1, right_color);
             } else {
-                int y0 = middle - (int)(display.left_maximum * (TS_WAVE_H / 2 - 6));
-                int y1 = middle - (int)(display.left_minimum * (TS_WAVE_H / 2 - 6));
+                int y0 = middle - (int)lrintf(display.left_maximum * (TS_WAVE_H / 2 - 6));
+                int y1 = middle - (int)lrintf(display.left_minimum * (TS_WAVE_H / 2 - 6));
                 wave_line(fb, TS_WAVE_X + x, y0,
                           TS_WAVE_X + x, y1, color);
             }
@@ -3086,16 +3122,17 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                     int left_middle = TS_WAVE_Y + lane_height / 2;
                     int right_middle = TS_WAVE_Y + lane_height +
                                        (TS_WAVE_H - lane_height) / 2;
-                    wave_rect(fb, TS_WAVE_X + x, left_middle - 1,
-                              1, 3, PAL_VOLUME);
-                    wave_rect(fb, TS_WAVE_X + x, right_middle - 1,
-                              1, 3, PAL_VOLUME);
+                    if (analysis->zero_crossing_channels & 1u)
+                        wave_rect(fb, TS_WAVE_X + x, left_middle - 1, 1, 3, PAL_VOLUME);
+                    if (analysis->zero_crossing_channels & 2u)
+                        wave_rect(fb, TS_WAVE_X + x, right_middle - 1, 1, 3, PAL_VOLUME);
                 } else {
                     wave_rect(fb, TS_WAVE_X + x, middle - 1,
                               1, 3, PAL_VOLUME);
                 }
             }
         }
+        detail_capture_coarse(fb);
     } else {
         text(fb, showing_bank ? 199 : 211, 135,
              showing_bank ? "EMPTY BANK SLOT" : "DROP WAV HERE",
@@ -3235,13 +3272,13 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         {
             int cy = TS_WAVE_Y + 10;
             int center = (lx0 + lx1) / 2;
-            if (display_loop_mode != TS_LOOP_REVERSE) {
+            if (ts_loop_base_mode(display_loop_mode) != TS_LOOP_REVERSE) {
                 wave_line(fb, center - 8, cy, center + 8, cy, PAL_TUNING);
                 wave_line(fb, center + 8, cy, center + 3, cy - 4, PAL_TUNING);
                 wave_line(fb, center + 8, cy, center + 3, cy + 4, PAL_TUNING);
             }
-            if (display_loop_mode != TS_LOOP_FORWARD) {
-                int offset = display_loop_mode == TS_LOOP_PING_PONG ? 18 : 0;
+            if (ts_loop_base_mode(display_loop_mode) != TS_LOOP_FORWARD) {
+                int offset = ts_loop_base_mode(display_loop_mode) == TS_LOOP_PING_PONG ? 18 : 0;
                 wave_line(fb, center - 8, cy + offset, center + 8, cy + offset, PAL_TUNING);
                 wave_line(fb, center - 8, cy + offset, center - 3, cy + offset - 4, PAL_TUNING);
                 wave_line(fb, center - 8, cy + offset, center - 3, cy + offset + 4, PAL_TUNING);
@@ -3496,11 +3533,6 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         button(fb, wave_buttons[8].x, 289, wave_buttons[8].width,
                ui->bank_clear_armed ? "CONFIRM CLEAR" : "CLEAR ALL",
                ui->bank_clear_armed);
-    else if (ui->show_keyboard)
-        button(fb,486,289,97,
-               ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING?"FILE WAIT":
-               ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING?"STOP FILE":"REC FILE",
-               ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING && ui->text_cursor_visible);
     button(fb, wave_buttons[9].x, 289, wave_buttons[9].width,
            ui->show_keyboard ? "BANK" : ui->show_recipes ? "DSP" :
            ui->show_ingredients ? "KEYS" : "CDP", !ui->show_keyboard);
@@ -3510,16 +3542,20 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         char base_note[8];
         if (ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER)
             snprintf(keyboard_hint, sizeof(keyboard_hint),
-                     "KEY %s  SHIFT+CLICK STAGES  CLICK STAGED KEY LAUNCHES",
+                     "KEY %s  SHIFT+CLICK STAGES / CLICK LAUNCHES",
                      ts_midi_note_name(ts_ui_keyboard_base_note(ui),
                                        base_note, sizeof(base_note)));
         else
             snprintf(keyboard_hint, sizeof(keyboard_hint),
-                     "KEY %s  SHIFT+WHEEL SEMITONE / F1-F8  SHIFT+CLICK CHORD",
+                     "KEY %s  F1-F8 OCT  SHIFT+CLICK CHORD  SHIFT+S SUS",
                      ts_midi_note_name(ts_ui_keyboard_base_note(ui),
                                        base_note, sizeof(base_note)));
         text(fb, 11, 318, keyboard_hint, RGB(184, 180, 184), 1);
-        text(fb,460,320,"SHIFT+S",PAL_EFFECT,1);
+        mini_button(fb,380,313,74,
+            ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING?"FILE WAIT":
+            ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING?"STOP FILE":"REC FILE",
+            ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING && ui->text_cursor_visible);
+        mini_button(fb,460,313,72,ui->keyboard_hold?"HOLD ON":"HOLD",ui->keyboard_hold);
         mini_button(fb,540,313,90,ui->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",ui->keyboard_sustain);
         TsKeyboardLayout layout;
         int keyboard_base_note = ts_ui_keyboard_base_note(ui);
@@ -3726,7 +3762,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                                  &ui->master_output);
         snprintf(diagnostic, sizeof(diagnostic), "UNDO %02d/%02d  %s",
                  instrument->undo_count, TS_HISTORY_DEPTH, output_info);
-        diagnostic_x = 632 - (int)strlen(diagnostic) * 6;
+        diagnostic_x = 536 - (int)strlen(diagnostic) * 6;
         text(fb, 8, 389, status_line, PAL_MOUSE, 1);
         rect(fb, diagnostic_x - 6, 385,
              TS_UI_WIDTH - diagnostic_x + 6, 15, PAL_DESKTOP);
@@ -3934,9 +3970,14 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
    so a long recording cannot become invisible when changing workspaces. */
 void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
 {
-    if(!fb || !ui || (ui->file_record_state!=TS_PERFORMANCE_FILE_RECORDING &&
-       ui->file_record_state!=TS_PERFORMANCE_FILE_STOPPING))return;
+    if(!fb || !ui)return;
     render_palette=&ui->palette;
+    if(ui->file_record_state!=TS_PERFORMANCE_FILE_RECORDING &&
+       ui->file_record_state!=TS_PERFORMANCE_FILE_STOPPING) {
+        if(ui->portal.open)return; /* Portal already has a permanent header REC. */
+        mini_button(fb,544,382,86,"REC FILE",0);
+        return;
+    }
     uint32_t color=PAL_VOLUME;
     uint64_t seconds=ui->file_record_rate?ui->file_record_frames/ui->file_record_rate:0;
     char label[88];
@@ -4156,31 +4197,46 @@ static float sister_clamp(float value)
     return value;
 }
 
+static void sister_wave_column(const TsSisterWaveSnapshot *wave, int px, int width,
+                                int channel, float *low, float *high)
+{
+    size_t first=(size_t)px*TS_SISTER_WAVE_BIN_COUNT/width;
+    size_t last=(size_t)(px+1)*TS_SISTER_WAVE_BIN_COUNT/width;
+    if(last<=first)last=first+1;
+    *low=1;*high=-1;
+    for(size_t i=first;i<last;++i) {
+        const TsSisterWaveBin *s=&wave->bins[i];
+        float lo=channel==0?s->left_minimum:channel==1?s->right_minimum:0.5f*(s->left_minimum+s->right_minimum);
+        float hi=channel==0?s->left_maximum:channel==1?s->right_maximum:0.5f*(s->left_maximum+s->right_maximum);
+        if(lo<*low)*low=lo;if(hi>*high)*high=hi;
+    }
+}
+
 static void sister_wave_lane(TsFramebuffer *fb,
                              const TsSisterWaveSnapshot *wave,
                              int x, int y, int width, int height,
                              int channel, uint32_t color)
 {
-    int middle = y + height / 2;
-    rect(fb, x, middle, width, 1, RGB(55, 52, 57));
-    for (int px = 0; px < width; ++px) {
-        size_t bin = (size_t)px * TS_SISTER_WAVE_BIN_COUNT / (size_t)width;
-        const TsSisterWaveBin *source = &wave->bins[bin];
-        float low = channel == 0 ? source->left_minimum :
-                    channel == 1 ? source->right_minimum :
-                    0.5f * (source->left_minimum + source->right_minimum);
-        float high = channel == 0 ? source->left_maximum :
-                     channel == 1 ? source->right_maximum :
-                     0.5f * (source->left_maximum + source->right_maximum);
-        int y0 = middle - (int)lrintf(sister_clamp(high) * (height / 2 - 3));
-        int y1 = middle - (int)lrintf(sister_clamp(low) * (height / 2 - 3));
-        if (y0 > y1) { int swap = y0; y0 = y1; y1 = swap; }
-        /* Sister has its own waveform viewport.  wave_line() deliberately
-           clips to the ordinary TapeSister canvas, whose top edge is y=64
-           and right edge is x=620; using it here discarded the upper part
-           and final columns of this 640x400 window. */
-        rect(fb, x + px, y0, 1, y1 - y0 + 1, color);
+    int slot=y==103?1:0;
+    int middle=y+height/2;
+    rect(fb,x,middle,width,1,RGB(55,52,57));
+    TsUiWaveformDetail *d=detail_region(slot,x,y,width,height);
+    if(d) {
+        detail_background(d,fb);
+        for(int px=0;px<d->width;++px) {
+            float lo,hi;sister_wave_column(wave,px,d->width,channel,&lo,&hi);
+            detail_line(d,px,detail_y(d,lo,0,0,3),px,detail_y(d,hi,0,0,3),color);
+        }
+        d->valid=1;
     }
+    for(int px=0;px<width;++px) {
+        float low,high;sister_wave_column(wave,px,width,channel,&low,&high);
+        int y0=middle-(int)lrintf(sister_clamp(high)*(height/2-3));
+        int y1=middle-(int)lrintf(sister_clamp(low)*(height/2-3));
+        if(y0>y1){int swap=y0;y0=y1;y1=swap;}
+        rect(fb,x+px,y0,1,y1-y0+1,color);
+    }
+    detail_capture_slot(fb,slot);
 }
 
 static void sister_marker(TsFramebuffer *fb, float normalized,

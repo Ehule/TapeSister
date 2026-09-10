@@ -52,7 +52,10 @@ static const char *portal_hover_help(const TsPortalUi *p,int x,int y,char *text,
     if(x>=14 && x<136 && y>=TS_PORTAL_LIST_Y && y<TS_PORTAL_LIST_Y+TS_PORTAL_LIST_ROWS*TS_PORTAL_LIST_ROW_H) {
         TsPortalRecipe r;
         if(ts_portal_filter(p,p->scroll+(y-TS_PORTAL_LIST_Y)/TS_PORTAL_LIST_ROW_H,&r)) {
-            snprintf(text,size,"%.65s - %s",r.name,ts_portal_stereo_supported(&r)?"MONO / STEREO":"MONO ONLY");return text;
+            const char *action=p->chain_active && (p->chain_edit || p->chain_add)?
+                (r.stage_count?"WHOLE CHAIN; LEAVE EDIT / ADD TO LOAD":p->chain_add?"INSERT AFTER SELECTED STAGE":"REPLACE SELECTED STAGE"):
+                r.stage_count?"LOAD WHOLE CHAIN":"LOAD SINGLE PROCESS";
+            snprintf(text,size,"%.55s - %s; %s",r.name,ts_portal_stereo_supported(&r)?"MONO / STEREO":"MONO ONLY",action);return text;
         }
     }
     H(14,334,68,16,"MANAGE SAVED RECIPES AND PINS: RENAME / UPDATE / REPLACE / REMOVE");
@@ -85,7 +88,9 @@ static const char *portal_hover_help(const TsPortalUi *p,int x,int y,char *text,
             H(478,84,124,112,"SELECT THIS STAGE TO EDIT AND AUDITION ITS CACHED OUTPUT; APPLY USES THE FINAL CHAIN");
         }
         H(478,201,72,16,"REMOVE THE SELECTED STAGE; A CHAIN KEEPS AT LEAST ONE STAGE");
-        H(554,201,72,16,"SHOW THE CHAIN DESCRIPTION IN MACROS VIEW OR THE SELECTED PROCESS IN FULL VIEW");
+        H(554,201,72,16,p->chain_edit?
+            "TURN EDIT OFF TO BROWSE WHOLE PROCESSES / CHAINS; CANCELS ADD; SAVE AS KEEPS YOUR CHAIN":
+            "TURN EDIT ON SO LIBRARY CLICKS / ARROWS REPLACE THE SELECTED STAGE; PARAMETERS WORK IN EITHER MODE");
     }
     H(478,220,72,16,"RESTORE DEFAULT PARAMETER VALUES FOR THE SELECTED PROCESS");
     H(554,220,72,16,"SWITCH ALL ORIGINAL PARAMETERS / EXPOSED MACROS FROM EVERY CHAIN STAGE");

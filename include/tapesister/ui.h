@@ -16,6 +16,7 @@
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/exchange.h"
 #include "tapesister/cdp_portal.h"
+#include "tapesister/waveform_cache.h"
 
 enum { TS_UI_WIDTH = 640, TS_UI_HEIGHT = 400 };
 enum { TS_IMPORT_PREVIEW_COLUMNS = 568 };
@@ -295,12 +296,36 @@ typedef enum {
     TS_UI_WAVEFORM_MAIN = 0,
     TS_UI_WAVEFORM_TRANSFORM,
     TS_UI_WAVEFORM_DRONE,
+    TS_UI_WAVEFORM_FM,
     TS_UI_WAVEFORM_COUNT
 } TsUiWaveformKind;
 
 typedef struct {
     uint32_t pixels[TS_UI_WIDTH * TS_UI_HEIGHT];
 } TsFramebuffer;
+
+/* Optional native-pixel waveform; the surrounding UI stays 640x400. */
+typedef struct {
+    uint32_t *pixels;
+    uint32_t *coarse;
+    int *logical_x;
+    TsWaveformColumn *columns;
+    int width, height, valid;
+    int x, y, logical_width, logical_height, output_x, output_y;
+    const TsSample *source;
+    const float *source_data;
+    size_t source_frames, first, last;
+    uint8_t source_channels;
+    int detect_zero_crossings;
+    uint64_t source_revision, analysis_count;
+} TsUiWaveformDetail;
+
+int ts_ui_waveform_detail_resize(TsUiWaveformDetail *detail, int width, int height);
+void ts_ui_waveform_detail_begin(TsUiWaveformDetail *detail);
+/* Up to two independently cached regions in one native window. */
+void ts_ui_waveform_details_begin(TsUiWaveformDetail details[2], int output_width, int output_height);
+int ts_ui_waveform_detail_finish(TsUiWaveformDetail *detail, const TsFramebuffer *frame);
+void ts_ui_waveform_detail_free(TsUiWaveformDetail *detail);
 
 /* High-resolution wheels, touchpads, and queued SDL wheel events can keep
    emitting after the pointer crosses a parameter or application window. */
@@ -439,6 +464,7 @@ typedef struct {
     TsFmPatch fm_patch;
     const TsSample *fm_preview_sample;
     int fm_held_notes;
+    int keyboard_hold; /* Explicit session latch, shared by tile/FM keyboard. */
     int fm_full_choice_open;
     int fm_bank_choice_open;
     int fm_output_dragging;

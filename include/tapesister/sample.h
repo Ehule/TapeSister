@@ -285,6 +285,9 @@ typedef enum {
     TS_LOOP_FORWARD = 0,
     TS_LOOP_REVERSE,
     TS_LOOP_PING_PONG,
+    TS_LOOP_START_FORWARD,
+    TS_LOOP_START_REVERSE,
+    TS_LOOP_START_PING_PONG,
     TS_LOOP_MODE_COUNT
 } TsLoopMode;
 
@@ -673,7 +676,12 @@ int ts_instrument_amplitude_gesture_commit(TsInstrument *instrument,
 int ts_instrument_amplitude_gesture_cancel(TsInstrument *instrument,
                                            TsAmplitudeGesture *gesture,
                                            char *error, size_t error_size);
+/* Editor snap markers: bit 0 = left crossing, bit 1 = right crossing.
+   Selection uses one shared frame for both channels; DSP policy is unchanged. */
+unsigned ts_sample_zero_crossing_channels(TsStereoFrame before,
+                                          TsStereoFrame after, int has_before);
 size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame);
+size_t ts_sample_nearest_edit_crossing(const TsSample *sample, size_t frame);
 size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
                                                 size_t frame,
                                                 size_t first, size_t last);
@@ -968,5 +976,7 @@ int ts_instrument_next_family_path(const TsInstrument *instrument,
 const char *ts_bank_capture_name(TsBankCaptureKind kind);
 const char *ts_family_relation_name(TsFamilyRelation relation);
 const char *ts_loop_mode_name(TsLoopMode mode);
+TsLoopMode ts_loop_base_mode(TsLoopMode mode);
+int ts_loop_starts_at_sample(TsLoopMode mode);
 
 #endif

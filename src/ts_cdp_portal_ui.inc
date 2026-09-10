@@ -11,6 +11,14 @@ static void portal_mini(TsFramebuffer *fb,int x,int y,int width,const char *labe
     mini_button(fb,x,y,width,"",active);
     portal_caption(fb,x+4,y+5,(width-8)/6,label,active?PAL_EFFECT:RGB(230,223,230));
 }
+static void portal_name_field(TsFramebuffer *fb,int x,int y,int width,
+                              const char *name,const char *placeholder,int focus,int blink)
+{
+    int capacity=(width-12)/6;
+    size_t length=strlen(name),first=focus && length>(size_t)capacity?length-(size_t)capacity:0;
+    portal_mini(fb,x,y,width,focus || length?name+first:placeholder,focus);
+    if(focus && blink)rect(fb,x+4+(int)(length-first)*6,y+5,1,9,PAL_VOLUME);
+}
 static void portal_wrap(TsFramebuffer *fb,int x,int y,int columns,int rows,const char *s)
 {
     for(int row=0;*s && row<rows;++row) {
@@ -25,7 +33,7 @@ static void portal_wave_render(TsFramebuffer *fb,const TsPortalUi *p,int which,i
 {
     const TsSample *s=which?p->result:p->source;
     const TsPortalWave *w=&p->waves[which];
-    uint32_t color=which?PAL_EFFECT:PAL_WAVE_LEFT;
+    uint32_t color=PAL_WAVE_LEFT; /* Keep L/R colors consistent with the main canvas. */
     char label[64];
     frame(fb,148,y,318,87,RGB(8,8,8),RGB(84,77,84));
     text(fb,154,y+6,which?"RESULT":"SOURCE",which?PAL_NOTE:PAL_EFFECT,1);
@@ -42,17 +50,25 @@ static void portal_wave_render(TsFramebuffer *fb,const TsPortalUi *p,int which,i
             size_t f=ts_portal_wave_frame(w,x);
             if(w->has_selection && f>=w->selection_first && f<w->selection_last)
                 rect(fb,154+x,top,1,height,PAL_BLOCK);
+        }
+        TsWaveformRequest request={0};request.sample=s;request.first=w->first;
+        request.last=w->last;request.revision=w->revision;
+        detail_sample(fb,which,154,top,TS_PORTAL_WAVE_COLUMNS,height,&request,
+            TS_WAVEFORM_DISPLAY_STEREO,color,PAL_WAVE_RIGHT,color,PAL_WAVE_RIGHT,
+            0,0,0,s->channels==2?1.5:2);
+        for(int x=0;x<TS_PORTAL_WAVE_COLUMNS;++x) {
             for(unsigned ch=0;ch<s->channels && ch<2;++ch) {
                 float lo=fmaxf(-1,fminf(1,ch?w->right_minimum[x]:w->minimum[x]));
                 float hi=fmaxf(-1,fminf(1,ch?w->right_maximum[x]:w->maximum[x]));
                 int center=s->channels==2?top+15+(int)ch*31:mid;
                 int scale=s->channels==2?14:29;
                 int a=center-(int)(hi*scale),b=center-(int)(lo*scale);
-                rect(fb,154+x,a,1,b-a+1,ch?PAL_NOTE:color);
+                rect(fb,154+x,a,1,b-a+1,ch?PAL_WAVE_RIGHT:color);
             }
         }
+        detail_capture_slot(fb,which);
         if(s->channels==2) {
-            text(fb,155,top+1,"L",color,1);text(fb,155,top+32,"R",PAL_NOTE,1);
+            text(fb,155,top+1,"L",color,1);text(fb,155,top+32,"R",PAL_WAVE_RIGHT,1);
         }
         if(w->playhead>=w->first && w->playhead<w->last) {
             int x=154+(int)((w->playhead-w->first)*TS_PORTAL_WAVE_COLUMNS/(w->last-w->first));
@@ -60,7 +76,7 @@ static void portal_wave_render(TsFramebuffer *fb,const TsPortalUi *p,int which,i
         }
     } else portal_caption(fb,168,mid-3,45,which?"PREVIEW TO HEAR AND SEE THE RESULT":"LOAD A MONO OR STEREO TILE",RGB(210,204,210));
 }
-static void portal_manager_render(TsFramebuffer *fb,const TsPortalUi *p)
+static void portal_manager_render(TsFramebuffer *fb,const TsPortalUi *p,int blink)
 {
     const TsPortalRecipe *r=p->manage_tab?&p->library.pins[p->manage_slot]:&p->library.recipes[p->manage_slot];
     char line[100];
@@ -85,7 +101,7 @@ static void portal_manager_render(TsFramebuffer *fb,const TsPortalUi *p)
     portal_caption(fb,310,122,38,r->process_id,RGB(210,204,210));
     portal_caption(fb,310,144,38,"CURRENT WORKING RECIPE:",PAL_TUNING);
     portal_caption(fb,310,158,38,p->manage_recipe.name,PAL_EFFECT);
-    portal_mini(fb,310,178,232,p->manage_name[0]?p->manage_name:"TYPE A NEW NAME...",p->manage_name_focus);
+    portal_name_field(fb,310,178,232,p->manage_name,"TYPE A NEW NAME...",p->manage_name_focus,blink);
     portal_mini(fb,310,205,110,"RENAME",0);
     portal_mini(fb,430,205,110,"UPDATE",0);
     portal_mini(fb,310,227,110,"REPLACE",0);
@@ -216,7 +232,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
             portal_caption(fb,478,info_y,24,p->recipe.process_id,PAL_TUNING);
             portal_wrap(fb,478,info_y+13,24,(198-info_y-13)/11,proc->description);
         }
-        portal_mini(fb,478,201,72,"REMOVE",0);portal_mini(fb,554,201,72,"HELP",0);
+        portal_mini(fb,478,201,72,"REMOVE",0);portal_mini(fb,554,201,72,p->chain_edit?"EDIT ON":"EDIT OFF",p->chain_edit);
     } else {
     portal_caption(fb,478,48,25,proc?proc->title:"PROCESS",PAL_VOLUME);
     portal_caption(fb,478,63,25,p->recipe.process_id,PAL_EFFECT);
@@ -228,7 +244,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     }
     portal_mini(fb,478,220,72,"DEFAULT",0);
     portal_mini(fb,554,220,72,p->macro_view?"FULL":"MACROS",p->macro_view);
-    portal_mini(fb,478,242,148,p->chain_active?p->chain.name:p->recipe.name,p->name_focus);
+    portal_name_field(fb,478,242,148,p->chain_active?p->chain.name:p->recipe.name,"NAME...",p->name_focus,ui->text_cursor_visible);
     portal_mini(fb,478,263,148,p->exact_pin?"PIN: EXACT RECIPE":"PIN: CHECKED MACROS",!p->exact_pin);
     portal_mini(fb,478,287,22,"<",0);
     snprintf(line,sizeof(line),"PIN SLOT %02d%s",p->pin_slot+1,p->library.pins[p->pin_slot].process_id[0]?" FULL":"");
@@ -250,7 +266,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
         portal_caption(fb,69+i*107,365,16,line,i==p->history_selected?PAL_EFFECT:RGB(210,204,210));
     }
     portal_mini(fb,501,360,125,p->chain_active?"FINAL RESULT":ts_portal_factory_find(p->recipe.process_id)?"SAVE BANK":"MAIN: CTRL+Z",0);
-    if(p->manage_open)portal_manager_render(fb,p);
+    if(p->manage_open)portal_manager_render(fb,p,ui->text_cursor_visible);
     if(p->macro_edit) {
         frame(fb,162,116,316,167,RGB(18,18,18),PAL_VOLUME);
         text(fb,174,126,"EDIT MACRO",PAL_EFFECT,1);

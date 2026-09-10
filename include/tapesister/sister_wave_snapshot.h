@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum { TS_SISTER_WAVE_BIN_COUNT = 256 };
+enum { TS_SISTER_WAVE_BIN_COUNT = 4096 };
 
 typedef struct {
     float left_minimum, left_maximum;

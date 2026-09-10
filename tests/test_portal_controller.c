@@ -172,6 +172,7 @@ static void test_selection_workflow(SDL_Window *window,SDL_AudioDeviceID device)
 #include "test_portal_instrument_controller.inc"
 #include "test_portal_stereo_controller.inc"
 #include "test_portal_usability.inc"
+#include "test_portal_browsing.inc"
 
 int main(void)
 {
@@ -522,6 +523,7 @@ int main(void)
     test_instrument_controls(window,audition);
     test_stereo_workflow(window,audition);
     test_portal_usability(window,audition);
+    test_portal_browsing(window,audition);
     SDL_DestroyWindow(window);
 
     /* Reopening an unsupported channel layout clears the previous source. */

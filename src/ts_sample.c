@@ -661,6 +661,7 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
     uint32_t loaded_loop_start = 0;
     uint32_t loaded_loop_end = 0;
     uint32_t loaded_loop_type = 0;
+    uint32_t loaded_start_mode = UINT32_MAX;
     int loaded_has_loop = 0;
 
     if (f == NULL) {
@@ -695,6 +696,10 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
             data_offset = ftell(f);
             data_size = size;
             fseek(f, (long)size, SEEK_CUR);
+        } else if (memcmp(chunk, "tslp", 4) == 0 && size == 8u) {
+            unsigned char metadata[8];
+            if (fread(metadata,1,8,f)!=8) break;
+            if (le32(metadata)==1u) loaded_start_mode=le32(metadata+4);
         } else if (memcmp(chunk, "smpl", 4) == 0 && size >= 20u) {
             unsigned char smpl[60] = {0};
             size_t keep = size < sizeof(smpl) ? size : sizeof(smpl);
@@ -806,10 +811,17 @@ int ts_sample_load_wav_metadata(TsSample *sample, TsTuning *tuning,
         if (has_loop != NULL) *has_loop = 1;
         if (loop_first != NULL) *loop_first = loaded_loop_start;
         if (loop_last != NULL) *loop_last = (size_t)loaded_loop_end + 1u;
-        if (loop_mode != NULL)
+        if (loop_mode != NULL) {
             *loop_mode = loaded_loop_type == 0u ? TS_LOOP_FORWARD :
                          loaded_loop_type == 2u ? TS_LOOP_REVERSE :
                          TS_LOOP_PING_PONG;
+            /* Optional TapeSister start behavior. The standard smpl chunk
+               remains authoritative for direction and bounds. */
+            if (loaded_loop_type <= 2u && loaded_start_mode >= TS_LOOP_START_FORWARD &&
+                loaded_start_mode < TS_LOOP_MODE_COUNT &&
+                ts_loop_base_mode((TsLoopMode)loaded_start_mode)==*loop_mode)
+                *loop_mode=(TsLoopMode)loaded_start_mode;
+        }
     } else {
         if (has_loop != NULL) *has_loop = 0;
         if (loop_first != NULL) *loop_first = 0;
@@ -849,8 +861,9 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
         return 0;
     }
     has_loop = has_loop && loop_first < loop_last && loop_last <= sample->frames;
+    uint32_t start_bytes = has_loop && ts_loop_starts_at_sample(loop_mode) ? 16u : 0u;
     bytes_per_frame = (uint32_t)sample->channels * 2u;
-    if (sample->frames > (UINT32_MAX - 104u) / bytes_per_frame) {
+    if (sample->frames > (UINT32_MAX - 104u - start_bytes) / bytes_per_frame) {
         set_error(error, error_size, "Sample is too long for a RIFF WAV");
         return 0;
     }
@@ -861,7 +874,7 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
     }
     uint32_t data_bytes = (uint32_t)(sample->frames * bytes_per_frame);
     uint32_t loop_bytes = has_loop ? 24u : 0u;
-    fwrite("RIFF", 1, 4, f); put32(f, 80u + loop_bytes + data_bytes); fwrite("WAVE", 1, 4, f);
+    fwrite("RIFF", 1, 4, f); put32(f, 80u + loop_bytes + start_bytes + data_bytes); fwrite("WAVE", 1, 4, f);
     fwrite("fmt ", 1, 4, f); put32(f, 16); put16(f, 1); put16(f, sample->channels);
     put32(f, sample->sample_rate);
     put32(f, sample->sample_rate * bytes_per_frame);
@@ -884,8 +897,8 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
         put32(f, (uint32_t)unity); put32(f, (uint32_t)fraction_bits);
         put32(f, 0); put32(f, 0); put32(f, has_loop ? 1u : 0u); put32(f, 0);
         if (has_loop) {
-            uint32_t type = loop_mode == TS_LOOP_PING_PONG ? 1u :
-                            loop_mode == TS_LOOP_REVERSE ? 2u : 0u;
+            uint32_t type = ts_loop_base_mode(loop_mode) == TS_LOOP_PING_PONG ? 1u :
+                            ts_loop_base_mode(loop_mode) == TS_LOOP_REVERSE ? 2u : 0u;
             put32(f, 0);
             put32(f, type);
             put32(f, (uint32_t)loop_first);
@@ -893,6 +906,9 @@ int ts_sample_save_wav16_tuned_looped(const TsSample *sample,
             put32(f, 0);
             put32(f, 0);
         }
+    }
+    if (start_bytes) {
+        fwrite("tslp",1,4,f); put32(f,8); put32(f,1); put32(f,(uint32_t)loop_mode);
     }
     fwrite("data", 1, 4, f); put32(f, data_bytes);
     for (size_t i = 0; i < scalar_count; ++i) {
@@ -3442,31 +3458,45 @@ int ts_instrument_select_wave(TsInstrument *instrument)
            instrument->selection_last == last;
 }
 
-static int is_zero_crossing(const TsSample *sample, size_t frame)
+static int channel_crosses(float before, float after, int has_before)
 {
-    float before;
-    float after;
-    TsStereoFrame a, b;
-    if (sample == NULL || sample->data == NULL || frame >= sample->frames) return 0;
-    a = ts_sample_read_frame(sample, frame);
-    b = ts_sample_read_frame(sample, frame > 0u ? frame - 1u : frame);
-    /* Follow the louder channel across this adjacent pair; keep one common
-       frame boundary for both channels, including right-only/anti-phase audio. */
-    if (fmaxf(fabsf(a.r), fabsf(b.r)) > fmaxf(fabsf(a.l), fabsf(b.l))) {
-        after = a.r;
-        before = b.r;
-    } else {
-        after = a.l;
-        before = b.l;
-    }
-    if (after == 0.0f) return 1;
-    if (frame == 0) return 0;
-    return before == 0.0f || (before < 0.0f && after > 0.0f) ||
-           (before > 0.0f && after < 0.0f);
+    return after==0.0f || (has_before && (before==0.0f ||
+        (before<0.0f && after>0.0f) || (before>0.0f && after<0.0f)));
 }
 
-size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
+unsigned ts_sample_zero_crossing_channels(TsStereoFrame before, TsStereoFrame after,
+                                          int has_before)
 {
+    unsigned result=0;
+    /* A silent channel must not turn every frame of its audible partner into
+       a crossing. Entirely silent pairs remain freely selectable. */
+    if(before.l==0 && after.l==0 && before.r==0 && after.r==0)return 3u;
+    if((before.l!=0 || after.l!=0) && channel_crosses(before.l,after.l,has_before))result|=1u;
+    if((before.r!=0 || after.r!=0) && channel_crosses(before.r,after.r,has_before))result|=2u;
+    return result;
+}
+
+static int is_zero_crossing(const TsSample *sample, size_t frame)
+{
+    if (!sample || !sample->data || frame>=sample->frames)return 0;
+    TsStereoFrame a=ts_sample_read_frame(sample,frame);
+    TsStereoFrame b=ts_sample_read_frame(sample,frame>0?frame-1:frame);
+    /* Preserve the established louder-channel policy for DSP operations. */
+    return fmaxf(fabsf(a.r),fabsf(b.r))>fmaxf(fabsf(a.l),fabsf(b.l)) ?
+        channel_crosses(b.r,a.r,frame>0) : channel_crosses(b.l,a.l,frame>0);
+}
+
+static int is_edit_zero_crossing(const TsSample *sample, size_t frame)
+{
+    if (!sample || !sample->data || frame>=sample->frames)return 0;
+    return ts_sample_zero_crossing_channels(
+        ts_sample_read_frame(sample,frame>0?frame-1:frame),
+        ts_sample_read_frame(sample,frame),frame>0)!=0;
+}
+
+static size_t nearest_crossing(const TsSample *sample, size_t frame, int editing)
+{
+    int (*crossing)(const TsSample *, size_t)=editing?is_edit_zero_crossing:is_zero_crossing;
     size_t target;
     size_t maximum_distance;
     size_t closest = 0;
@@ -3478,11 +3508,12 @@ size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
     for (size_t distance = 0; distance <= maximum_distance; ++distance) {
         if (distance <= target) {
             size_t left = target - distance;
-            if (is_zero_crossing(sample, left)) return left;
+            if (crossing(sample, left)) return left;
         }
         if (distance > 0 && target + distance < sample->frames &&
-            is_zero_crossing(sample, target + distance)) return target + distance;
+            crossing(sample, target + distance)) return target + distance;
     }
+    if (editing) return target; /* No crossing: retain the requested edit position. */
     closest_level = frame_peak(sample, 0u);
     for (size_t i = 1; i < sample->frames; ++i) {
         float level = frame_peak(sample, i);
@@ -3492,6 +3523,16 @@ size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
         }
     }
     return closest;
+}
+
+size_t ts_sample_nearest_zero_crossing(const TsSample *sample, size_t frame)
+{
+    return nearest_crossing(sample,frame,0);
+}
+
+size_t ts_sample_nearest_edit_crossing(const TsSample *sample, size_t frame)
+{
+    return nearest_crossing(sample,frame,1);
 }
 
 size_t ts_sample_nearest_zero_crossing_in_range(const TsSample *sample,
@@ -3742,7 +3783,7 @@ static size_t resolve_sample_boundary(const TsSample *sample,
     if (frame >= sample->frames) return sample->frames;
     target = grid_snap ? grid_target_for_frames(sample->frames, divisions, frame) : frame;
     if (target == 0 || target >= sample->frames) return target;
-    return ts_sample_nearest_zero_crossing(sample, target);
+    return ts_sample_nearest_edit_crossing(sample, target);
 }
 
 size_t ts_instrument_grid_target(const TsInstrument *instrument, size_t frame)
@@ -3852,7 +3893,7 @@ void ts_instrument_set_playhead_snapped(TsInstrument *instrument, size_t frame)
         instrument->current.frames == 0) return;
     if (frame >= instrument->current.frames) frame = instrument->current.frames - 1u;
     ts_instrument_set_playhead(
-        instrument, ts_sample_nearest_zero_crossing(&instrument->current, frame));
+        instrument, ts_sample_nearest_edit_crossing(&instrument->current, frame));
 }
 
 void ts_instrument_clear_playhead(TsInstrument *instrument)
@@ -3874,9 +3915,10 @@ int ts_instrument_reset_selection_playhead(TsInstrument *instrument)
     return changed;
 }
 
-size_t ts_sample_zero_crossing_in_direction(const TsSample *sample, size_t frame,
-                                            int direction, size_t count)
+static size_t crossing_in_direction(const TsSample *sample, size_t frame,
+                                            int direction, size_t count, int editing)
 {
+    int (*crossing)(const TsSample *, size_t)=editing?is_edit_zero_crossing:is_zero_crossing;
     size_t at;
     if (sample == NULL || sample->data == NULL || sample->frames == 0 || count == 0)
         return frame;
@@ -3885,15 +3927,21 @@ size_t ts_sample_zero_crossing_in_direction(const TsSample *sample, size_t frame
         if (direction < 0) {
             if (at == 0) return 0;
             --at;
-            while (at > 0 && !is_zero_crossing(sample, at)) --at;
+            while (at > 0 && !crossing(sample, at)) --at;
         } else {
             if (at >= sample->frames) return sample->frames;
             ++at;
-            while (at < sample->frames && !is_zero_crossing(sample, at)) ++at;
+            while (at < sample->frames && !crossing(sample, at)) ++at;
         }
         --count;
     }
     return at;
+}
+
+size_t ts_sample_zero_crossing_in_direction(const TsSample *sample, size_t frame,
+                                            int direction, size_t count)
+{
+    return crossing_in_direction(sample,frame,direction,count,0);
 }
 
 int ts_instrument_resize_selection(TsInstrument *instrument, int endpoint,
@@ -3905,16 +3953,16 @@ int ts_instrument_resize_selection(TsInstrument *instrument, int endpoint,
         instrument->selection_last <= instrument->selection_first ||
         (endpoint != 1 && endpoint != 2) || crossing_count == 0) return 0;
     if (endpoint == 1) {
-        moved = ts_sample_zero_crossing_in_direction(
+        moved = crossing_in_direction(
             &instrument->current, instrument->selection_first,
-            expand ? -1 : 1, crossing_count);
+            expand ? -1 : 1, crossing_count,1);
         if (moved >= instrument->selection_last) return 0;
         if (moved == instrument->selection_first) return 0;
         instrument->selection_first = moved;
     } else {
-        moved = ts_sample_zero_crossing_in_direction(
+        moved = crossing_in_direction(
             &instrument->current, instrument->selection_last,
-            expand ? 1 : -1, crossing_count);
+            expand ? 1 : -1, crossing_count,1);
         if (moved <= instrument->selection_first) return 0;
         if (moved == instrument->selection_last) return 0;
         instrument->selection_last = moved;
@@ -3940,9 +3988,9 @@ int ts_instrument_set_loop_from_selection(TsInstrument *instrument,
         first = 0;
         last = instrument->current.frames;
     } else {
-        first = ts_sample_nearest_zero_crossing(&instrument->current,
+        first = ts_sample_nearest_edit_crossing(&instrument->current,
                                                 instrument->selection_first);
-        last = ts_sample_nearest_zero_crossing(&instrument->current,
+        last = ts_sample_nearest_edit_crossing(&instrument->current,
                                                instrument->selection_last);
     }
     if (first > last) {
@@ -3999,9 +4047,23 @@ int ts_instrument_set_loop_crossfade(TsInstrument *instrument, float millisecond
 
 const char *ts_loop_mode_name(TsLoopMode mode)
 {
+    if (mode == TS_LOOP_START_FORWARD) return "START FWD";
+    if (mode == TS_LOOP_START_REVERSE) return "START REV";
+    if (mode == TS_LOOP_START_PING_PONG) return "START P-P";
     if (mode == TS_LOOP_REVERSE) return "REVERSE";
     if (mode == TS_LOOP_PING_PONG) return "PING-PONG";
     return "FORWARD";
+}
+
+int ts_loop_starts_at_sample(TsLoopMode mode)
+{
+    return mode >= TS_LOOP_START_FORWARD && mode < TS_LOOP_MODE_COUNT;
+}
+
+TsLoopMode ts_loop_base_mode(TsLoopMode mode)
+{
+    return ts_loop_starts_at_sample(mode) ?
+           (TsLoopMode)(mode - TS_LOOP_START_FORWARD) : mode;
 }
 
 int ts_instrument_set_loop_mode(TsInstrument *instrument, TsLoopMode mode,
@@ -4385,7 +4447,7 @@ static void family_copy_or_vary_loop(TsBankSlot *candidate,
             candidate->has_loop = 1;
             candidate->loop_first = first;
             candidate->loop_last = last;
-            candidate->loop_mode = (TsLoopMode)(rng_next(&rng) % TS_LOOP_MODE_COUNT);
+            candidate->loop_mode = (TsLoopMode)(rng_next(&rng) % (TS_LOOP_PING_PONG + 1));
             candidate->loop_crossfade_ms = anchor->loop_crossfade_ms;
         }
     }

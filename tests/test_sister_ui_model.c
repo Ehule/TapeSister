@@ -347,9 +347,7 @@ int main(void)
     {
         int x = -1;
         int y = -1;
-        /* SDL has already converted queued button/motion events to logical
-           coordinates, including after a maximize. They must not be scaled a
-           second time. Letterbox events arrive outside the logical bounds. */
+        /* Logical-point validation is separate from native event mapping. */
         CHECK(ts_sister_ui_event_point(320, 200, &x, &y));
         CHECK(x == 320 && y == 200);
         CHECK(ts_sister_ui_event_point(10, 8, &x, &y));
@@ -367,21 +365,15 @@ int main(void)
                                         1280, 800, &x, &y));
         CHECK(x == 320 && y == 200);
 
-        /* A tall window letterboxes vertically: the bars are not controls. */
-        CHECK(!ts_sister_ui_window_point(12, 20, 640, 480,
-                                         640, 480, &x, &y));
-        CHECK(ts_sister_ui_window_point(12, 48, 640, 480,
-                                        640, 480, &x, &y));
-        CHECK(x == 12 && y == 8);
-
-        /* A wide window letterboxes horizontally and rejects either bar. */
-        CHECK(!ts_sister_ui_window_point(20, 10, 800, 400,
-                                         800, 400, &x, &y));
-        CHECK(ts_sister_ui_window_point(90, 10, 800, 400,
-                                        800, 400, &x, &y));
-        CHECK(x == 10 && y == 10);
-        CHECK(!ts_sister_ui_window_point(790, 10, 800, 400,
-                                         800, 400, &x, &y));
+        /* Tall, wide and high-DPI windows fill their client area. */
+        CHECK(ts_sister_ui_window_point(12, 20, 640, 480,640,480,&x,&y));
+        CHECK(x==12 && y==16);
+        CHECK(ts_sister_ui_window_point(20, 10, 800, 400,1600,800,&x,&y));
+        CHECK(x==16 && y==10);
+        CHECK(ts_sister_ui_window_point(799, 399, 800, 400,1600,800,&x,&y));
+        CHECK(x==639 && y==399);
+        CHECK(!ts_sister_ui_window_point(800, 20, 800, 400,1600,800,&x,&y));
+        CHECK(!ts_sister_ui_window_point(-1, 20, 800, 400,1600,800,&x,&y));
     }
     ts_palette_default(&palette);
     model.waveform.channels = 2u;
@@ -410,6 +402,11 @@ int main(void)
           palette.colors[TS_PALETTE_PATTERN_NOTE]);
     CHECK(framebuffer.pixels[344u * TS_UI_WIDTH + 145u] ==
           palette.colors[TS_PALETTE_PATTERN_EFFECT]);
+    /* A peak between the old sampled bins must survive width reduction. */
+    memset(model.waveform.bins,0,sizeof(model.waveform.bins));
+    model.waveform.bins[700].left_maximum=.75f;
+    ts_sister_ui_render(&framebuffer,&model,&palette);
+    CHECK(framebuffer.pixels[55u*TS_UI_WIDTH+128u]==palette.colors[TS_PALETTE_STEREO_WAVE_LEFT]);
     model.routing.capture_state = TS_CAPTURE_RECORDING;
     model.routing.capture_recorded_frames = 25u;
     model.routing.capture_capacity_frames = 100u;

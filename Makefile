@@ -105,7 +105,7 @@ clean_portal_final:
 	rm -f tapesister_portal_final_tests
 
 # Optional real-CDP/SDL lifecycle harness; use TS_TEST_CDP_BIN to select runtime.
-tapesister_portal_controller_tests: tests/test_portal_usability.inc tests/test_portal_stereo_controller.inc tests/test_portal_instrument_controller.inc src/ts_cdp_portal_factory.inc $(CORE) tests/test_portal_controller.c tests/test_portal_chains.inc tests/test_portal_factory_controller.inc tests/test_portal_workflow_ui.inc src/main_sdl.c src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
+tapesister_portal_controller_tests: tests/test_portal_browsing.inc tests/test_portal_usability.inc tests/test_portal_stereo_controller.inc tests/test_portal_instrument_controller.inc src/ts_cdp_portal_factory.inc $(CORE) tests/test_portal_controller.c tests/test_portal_chains.inc tests/test_portal_factory_controller.inc tests/test_portal_workflow_ui.inc src/main_sdl.c src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_portal_controller.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
 test: tapesister_audio_import_tests
 
@@ -119,7 +119,7 @@ tapesister_stereo_gesture_controller_tests: $(CORE) tests/test_stereo_gesture_co
 tapesister_canvas_recording_tests: $(CORE) tests/test_canvas_recording.c src/main_sdl.c src/main_sdl_portal.inc $(wildcard src/main_sdl_audio*.inc) src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_canvas_recording.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
 
-tapesister_keyboard_sustain_tests: $(CORE) tests/test_keyboard_sustain.c src/main_sdl.c src/main_sdl_portal.inc $(wildcard src/main_sdl_audio*.inc) src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
+tapesister_keyboard_sustain_tests: tests/test_waveform_workspaces.inc tests/test_waveform_native.inc tests/test_playback_continuity.inc $(CORE) tests/test_keyboard_sustain.c src/main_sdl.c src/main_sdl_portal.inc $(wildcard src/main_sdl_audio*.inc) src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_keyboard_sustain.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
 
 test: test_audio_hardening_structure
@@ -314,7 +314,7 @@ test_sister_visibility: $(CORE) tests/test_sister_visibility.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
 test_sister_ui_model: $(CORE) tests/test_sister_ui_model.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(filter %.c %.o,$^) -o $@ -lm
 
 test_sister_wave_snapshot: $(CORE) tests/test_sister_wave_snapshot.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
@@ -446,3 +446,6 @@ clean:
 	rm -f test_audio_lifecycle test-audio-config-backend.ini
 	rm -f test_sister_resize
 	rm -f test_live_link
+
+# Native waveform rendering is included by the shared UI translation unit.
+tapesister tapesister_core_tests tapesister_keyboard_sustain_tests tapesister_canvas_recording_tests tapesister_portal_controller_tests test_sister_ui_model: src/ts_ui_waveform_detail.inc

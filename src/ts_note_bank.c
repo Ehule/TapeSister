@@ -4,29 +4,30 @@
 #include <string.h>
 
 static int voice_plan(const TsInstrument *instrument, TsAuditionSource source,
-                      int looping, TsAuditionPlan *plan)
+                      int looping, int workbench, TsAuditionPlan *plan)
 {
     return ts_audition_plan(instrument, source,
                             looping && instrument->has_loop ?
-                            TS_AUDITION_LOOP : TS_AUDITION_NOTE, plan);
+                            TS_AUDITION_LOOP : workbench ? TS_AUDITION_WORKBENCH_LOOP : TS_AUDITION_NOTE, plan);
 }
 
 static void update_voice(TsNoteVoice *voice, const TsInstrument *instrument,
                          const TsTuning *tuning, TsAuditionSource source,
-                         int output_rate)
+                         int output_rate, int workbench)
 {
-    if(voice->preview)return; /* The workbench owns its immutable sample/range. */
+    if(voice->preview || voice->synth)return; /* The workbench owns its immutable sample/range. */
     TsAuditionPlan plan;
-    int looping = instrument->has_loop;
+    int looping = instrument->has_loop || workbench;
     size_t old_first = voice->range_first;
     size_t old_last = voice->range_last;
     double old_position = voice->position;
-    if (!voice_plan(instrument, source, looping, &plan) || output_rate <= 0) {
+    if (!voice_plan(instrument, source, looping, workbench, &plan) || output_rate <= 0) {
         voice->active = 0;
         return;
     }
-    voice->position = ts_audition_map_progress(old_position, old_first, old_last,
-                                               plan.first, plan.last);
+    voice->position = ts_audition_map_progress(old_position,
+        voice->loop_intro ? 0 : old_first, old_last,
+        voice->loop_intro ? 0 : plan.first, plan.last);
     if (voice->position >= (double)plan.last) voice->position = (double)plan.first;
     voice->sample = plan.sample;
     voice->range_first = plan.first;
@@ -34,9 +35,12 @@ static void update_voice(TsNoteVoice *voice, const TsInstrument *instrument,
     voice->source = source;
     voice->looping = looping;
     voice->loop_mode = instrument->loop_mode;
-    if (voice->loop_mode == TS_LOOP_REVERSE) voice->direction = -1;
-    else if (voice->loop_mode == TS_LOOP_FORWARD) voice->direction = 1;
+    if (!ts_loop_starts_at_sample(voice->loop_mode)) voice->loop_intro = 0;
+    if (voice->loop_intro) voice->direction = 1;
+    else if (ts_loop_base_mode(voice->loop_mode) == TS_LOOP_REVERSE) voice->direction = -1;
+    else if (ts_loop_base_mode(voice->loop_mode) == TS_LOOP_FORWARD) voice->direction = 1;
     else if (voice->direction == 0) voice->direction = 1;
+    if (!voice->looping) { voice->direction = 1; voice->loop_intro = 0; }
     voice->crossfade_frames = voice->looping ?
                               ts_audition_crossfade_frames(
                                   &plan, instrument->loop_crossfade_ms) : 0;
@@ -55,11 +59,11 @@ void ts_note_bank_init(TsNoteBank *bank)
 
 void ts_note_bank_clear(TsNoteBank *bank)
 {
-    int attack_ms, sustain;
+    int attack_ms, sustain, workbench;
     if (bank == NULL) return;
-    attack_ms = bank->attack_ms;sustain=bank->sustain;
+    attack_ms = bank->attack_ms;sustain=bank->sustain;workbench=bank->workbench_loop;
     memset(bank, 0, sizeof(*bank));
-    ts_note_bank_set_attack_ms(bank, attack_ms);bank->sustain=sustain;
+    ts_note_bank_set_attack_ms(bank, attack_ms);bank->sustain=sustain;bank->workbench_loop=workbench;
 }
 
 void ts_note_bank_set_attack_ms(TsNoteBank *bank, int milliseconds)
@@ -153,7 +157,7 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
         event->key < 0 || event->midi_note < 0 || event->midi_note > 127 ||
         event->velocity <= 0 || event->velocity > 127 ||
         tuning == NULL || output_rate <= 0 ||
-        !voice_plan(instrument, source, instrument->has_loop, &plan))
+        !voice_plan(instrument, source, instrument->has_loop, bank->workbench_loop, &plan))
         return TS_NOTE_START_FAILED;
     first_voice = event->origin == TS_NOTE_ORIGIN_MIDI ?
                   TS_NOTE_VOICE_LIMIT : 0;
@@ -185,9 +189,7 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
         TsNoteVoice *voice = &bank->voices[free_voice];
         memset(voice, 0, sizeof(*voice));
         voice->sample = plan.sample;
-        voice->position = instrument->loop_mode == TS_LOOP_REVERSE &&
-                          instrument->has_loop ? (double)(plan.last - 1u) :
-                          (double)plan.first;
+        voice->position = (double)plan.first;
         voice->pitch = ts_tuning_note_pitch(
             tuning, event->midi_note - TS_KEYBOARD_BASE_NOTE);
         voice->step = (double)plan.sample->sample_rate / output_rate * voice->pitch;
@@ -202,9 +204,11 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
         voice->midi_note = event->midi_note;
         voice->channel = event->channel;
         voice->gain = ts_note_event_gain(event);
-        voice->looping = instrument->has_loop;
+        voice->looping = instrument->has_loop || bank->workbench_loop;
         voice->loop_mode = instrument->loop_mode;
-        voice->direction = voice->loop_mode == TS_LOOP_REVERSE ? -1 : 1;
+        voice->direction = 1;
+        if (voice->looping) voice->position = ts_audition_loop_begin(
+            plan.first, plan.last, voice->loop_mode, &voice->direction, &voice->loop_intro);
         voice->latched = latched != 0;
         voice->key_down = 1;
         voice->crossfade_frames = voice->looping ?
@@ -299,7 +303,7 @@ TsNoteStartResult ts_note_bank_start_sample_event(
     const TsNoteEvent *event,int latched,int output_rate)
 {
     return start_sample_event(bank,sample,tuning,event,latched,output_rate,
-                               0,0,sample?sample->frames:0,1);
+                               0,0,sample?sample->frames:0,bank && bank->workbench_loop);
 }
 TsNoteStartResult ts_note_bank_start_preview_event(
     TsNoteBank *bank,const TsSample *sample,const TsTuning *tuning,
@@ -386,9 +390,6 @@ void ts_note_bank_release_event(TsNoteBank *bank,const TsNoteEvent *event)
         if(v->active && ts_note_event_same_trigger(event,v->origin,v->note,v->channel)) {
             v->key_down=0;
             if(!v->latched && !bank->sustain)v->active=0;
-            /* FM repeats while physically held. Sustain lets the released
-               preview finish this pass; only explicit HOLD/latches repeat. */
-            else if(v->synth && !v->latched)v->looping=0;
         }
     }
 }
@@ -418,7 +419,7 @@ void ts_note_bank_sync_tuned(TsNoteBank *bank, const TsInstrument *instrument,
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active)
             update_voice(&bank->voices[i], instrument, tuning,
-                         bank->voices[i].source, output_rate);
+                         bank->voices[i].source, output_rate, bank->workbench_loop);
 }
 
 void ts_note_bank_set_source(TsNoteBank *bank, const TsInstrument *instrument,
@@ -437,7 +438,7 @@ void ts_note_bank_set_source_tuned(TsNoteBank *bank,
     if (bank == NULL || instrument == NULL || tuning == NULL) return;
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active)
-            update_voice(&bank->voices[i], instrument, tuning, source, output_rate);
+            update_voice(&bank->voices[i], instrument, tuning, source, output_rate, bank->workbench_loop);
 }
 
 void ts_note_bank_read_buses(TsNoteBank *bank,
@@ -459,12 +460,10 @@ void ts_note_bank_read_buses(TsNoteBank *bank,
         float gain;
         if (!voice->active || voice->sample == NULL || voice->sample->data == NULL) continue;
         if (voice->looping) {
-            voice->position = ts_audition_loop_position(
-                voice->position, voice->range_first, voice->range_last,
-                voice->crossfade_frames, voice->loop_mode, &voice->direction);
-            value = ts_audition_read_looped_mode_frame(
-                voice->sample, voice->position, voice->range_first,
-                voice->range_last, voice->crossfade_frames, voice->loop_mode);
+            value = ts_audition_loop_frame(
+                voice->sample, &voice->position, voice->range_first,
+                voice->range_last, voice->crossfade_frames, voice->loop_mode,
+                &voice->direction, &voice->loop_intro);
         } else {
             size_t at = voice->position > 0.0 ? (size_t)voice->position : 0;
             if (at + 1u >= voice->range_last || at + 1u >= voice->sample->frames) {
