@@ -50,9 +50,9 @@ static TsPortalRecipe portal_working(TsPortalUi *p)
 }
 static void portal_load_recipe(TsPortalUi *p,const TsPortalRecipe *r)
 {
-    p->chain_active=r->stage_count!=0;p->chain_stage=0;p->chain_add=0;p->chain_audition=-1;p->chain_cached=0;
+    p->chain_active=r->stage_count!=0;p->chain_stage=0;p->chain_add=0;p->chain_edit=0;p->chain_audition=-1;p->chain_cached=0;
     if(p->chain_active){p->chain=*r;ts_portal_step_get(&r->stages[0],&p->recipe);}
-    else p->recipe=*r;
+    else {p->recipe=*r;memset(&p->chain,0,sizeof(p->chain));}
 }
 static int portal_has_macros(const TsPortalRecipe *r)
 {
@@ -430,8 +430,12 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
                 p->history_count=c->history_count;
                 for(int i=0;i<c->history_count;++i)snprintf(p->history_names[i],sizeof(p->history_names[i]),"%.23s",c->recipes[i].name);
                 int selected_tab=p->selected_tab,selected_slot=p->selected_slot,chain_stage=p->chain_stage;
+                int chain_edit=p->chain_edit,chain_add=p->chain_add;
                 portal_select_history(device,audio,p,c,slot);
                 p->selected_tab=selected_tab;p->selected_slot=selected_slot;
+                /* Publishing audio is not a library/history navigation. Keep
+                   the user's current edit/insert intent, even if toggled mid-job. */
+                p->chain_edit=chain_edit;p->chain_add=chain_add;
                 if(w->chain.stage_count) {
                     for(unsigned i=(unsigned)w->chain_start;i<TS_PORTAL_CHAIN_STAGES;++i) {
                         ts_cdp_run_result_free(&c->stages[i]);
@@ -883,6 +887,7 @@ static int portal_chain_click(SDL_AudioDeviceID device,AudioState *audio,TsPorta
     if(x>=8 && x<62 && y>=360 && y<377) {
         (void)portal_working(p);portal_invalidate(device,audio,p,c);portal_clear_history(c,p);
         p->chain_active=!p->chain_active;p->chain_add=0;p->chain_stage=0;
+        p->chain_edit=p->chain_active;
         if(p->chain_active) {
             memset(&p->chain,0,sizeof(p->chain));p->chain.stage_count=1;p->chain.version=1;
             snprintf(p->chain.process_id,sizeof(p->chain.process_id),"@chain");
@@ -899,7 +904,8 @@ static int portal_chain_click(SDL_AudioDeviceID device,AudioState *audio,TsPorta
         if(x<526) {
             if(p->chain.stage_count==TS_PORTAL_CHAIN_STAGES)snprintf(p->message,sizeof(p->message),"CHAIN FULL: MAXIMUM EIGHT STAGES");
             else {p->chain_add=!p->chain_add;p->tab=0;p->scroll=0;p->family=0;p->query[0]=0;
-                snprintf(p->message,sizeof(p->message),p->chain_add?"PICK A PROCESS IN THE LIBRARY TO INSERT AFTER STAGE %d":"ADD CANCELLED; LIBRARY NOW REPLACES THE SELECTED STAGE",p->chain_stage+1);}
+                snprintf(p->message,sizeof(p->message),p->chain_add?"PICK A SINGLE PROCESS TO INSERT AFTER STAGE %d":
+                    p->chain_edit?"ADD CANCELLED; LIBRARY REPLACES STAGE %d":"ADD CANCELLED; LIBRARY LOADS WHOLE PROCESSES OR CHAINS",p->chain_stage+1);}
         } else {
             int to=p->chain_stage+(x<576?-1:1);
             if(to>=0 && to<(int)p->chain.stage_count) {
@@ -927,9 +933,11 @@ static int portal_chain_click(SDL_AudioDeviceID device,AudioState *audio,TsPorta
                 if(p->chain_stage>=(int)p->chain.stage_count)--p->chain_stage;
                 ts_portal_step_get(&p->chain.stages[p->chain_stage],&p->recipe);
             }
-        } else {
-            const TsPortalProcess *proc=ts_portal_process_find(p->recipe.process_id);
-            snprintf(p->message,sizeof(p->message),"%s",p->macro_view && p->chain.description[0]?p->chain.description:proc?proc->description:"");
+        } else if(x>=554) {
+            p->chain_edit=!p->chain_edit;p->chain_add=0;
+            snprintf(p->message,sizeof(p->message),p->chain_edit?
+                "EDIT ON: LIBRARY REPLACES THE SELECTED STAGE; ADD INSERTS; EDIT OFF RETURNS TO BROWSING":
+                "EDIT OFF: LIBRARY LOADS WHOLE PROCESSES OR CHAINS; SAVE AS KEEPS YOUR CURRENT CHAIN");
         }
         return 1;
     }
@@ -984,11 +992,14 @@ static void portal_save_factory(TsUiState *ui)
 static void portal_select_row(SDL_AudioDeviceID device,AudioState *audio,TsPortalUi *p,PortalController *c,int row)
 {
     TsPortalRecipe r;int slot=ts_portal_filter_slot(p,row,&r);if(slot>=0) {
-        if(p->chain_active && p->chain_add && r.stage_count) {
-            snprintf(p->message,sizeof(p->message),"PICK A SINGLE PROCESS FOR THIS STAGE; CANCEL ADD TO LOAD A SAVED CHAIN");return;
+        int edit_stage=p->chain_active && (p->chain_edit || p->chain_add);
+        if(edit_stage && r.stage_count) {
+            snprintf(p->message,sizeof(p->message),p->chain_edit?
+                "PICK A SINGLE PROCESS FOR THIS STAGE; TURN EDIT OFF TO LOAD A WHOLE CHAIN":
+                "PICK A SINGLE PROCESS FOR THIS STAGE; CANCEL ADD TO LOAD A WHOLE CHAIN");return;
         }
         portal_invalidate(device,audio,p,c);
-        if(p->chain_active && !r.stage_count && (p->tab==0 || p->chain_add)) {
+        if(edit_stage) {
             (void)portal_working(p);
             if(p->chain_add && p->chain.stage_count<TS_PORTAL_CHAIN_STAGES) {
                 unsigned at=(unsigned)++p->chain_stage;

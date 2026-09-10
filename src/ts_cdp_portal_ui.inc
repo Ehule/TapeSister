@@ -232,7 +232,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
             portal_caption(fb,478,info_y,24,p->recipe.process_id,PAL_TUNING);
             portal_wrap(fb,478,info_y+13,24,(198-info_y-13)/11,proc->description);
         }
-        portal_mini(fb,478,201,72,"REMOVE",0);portal_mini(fb,554,201,72,"HELP",0);
+        portal_mini(fb,478,201,72,"REMOVE",0);portal_mini(fb,554,201,72,p->chain_edit?"EDIT ON":"EDIT OFF",p->chain_edit);
     } else {
     portal_caption(fb,478,48,25,proc?proc->title:"PROCESS",PAL_VOLUME);
     portal_caption(fb,478,63,25,p->recipe.process_id,PAL_EFFECT);
