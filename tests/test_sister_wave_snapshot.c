@@ -11,11 +11,12 @@ int main(void)
     TsSisterWavePublisher publisher;
     TsSisterWaveSnapshot snapshot;
     uint64_t revision;
+    const size_t capacity=TS_SISTER_WAVE_BIN_COUNT*2u;
     ts_sister_wave_publisher_init(&publisher);
-    for (size_t frame = 0u; frame < 512u; ++frame) {
-        float phase = (float)frame / 511.0f;
+    for (size_t frame = 0u; frame < capacity; ++frame) {
+        float phase = (float)frame / (float)(capacity-1u);
         ts_sister_wave_publisher_push(&publisher,
-            (TsStereoFrame){phase, -phase}, frame, 512u, 2u, 1);
+            (TsStereoFrame){phase, -phase}, frame, capacity, 2u, 1);
     }
     CHECK(ts_sister_wave_snapshot_get(&publisher, &snapshot));
     CHECK(snapshot.channels == 2u);
@@ -24,14 +25,14 @@ int main(void)
     CHECK(snapshot.bins[100].right_minimum < 0.0f);
     revision = snapshot.revision;
     ts_sister_wave_publisher_push(&publisher,
-        (TsStereoFrame){1.0f, 1.0f}, 0u, 512u, 2u, 0);
+        (TsStereoFrame){1.0f, 1.0f}, 0u, capacity, 2u, 0);
     CHECK(ts_sister_wave_snapshot_get(&publisher, &snapshot));
     CHECK(snapshot.revision == revision);
-    ts_sister_wave_publisher_resize(&publisher, 512u, 1024u, 511u);
+    ts_sister_wave_publisher_resize(&publisher, capacity, capacity*2u, capacity-1u);
     CHECK(ts_sister_wave_snapshot_get(&publisher, &snapshot));
     CHECK(snapshot.valid_bins > 0u &&
           snapshot.valid_bins < TS_SISTER_WAVE_BIN_COUNT);
-    ts_sister_wave_publisher_resize(&publisher, 1024u, 256u, 511u);
+    ts_sister_wave_publisher_resize(&publisher, capacity*2u, capacity/2u, capacity-1u);
     CHECK(ts_sister_wave_snapshot_get(&publisher, &snapshot));
     CHECK(snapshot.write_bin < TS_SISTER_WAVE_BIN_COUNT);
     ts_sister_wave_publisher_clear(&publisher, 1u);

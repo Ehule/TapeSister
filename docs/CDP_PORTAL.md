@@ -598,6 +598,9 @@ output validation, and the existing eight-million-frame limit still apply.
   restarting the voice. The playhead stays where it is while inside the new
   range; otherwise it moves to the new start. Clearing the range keeps the whole
   waveform looping. Editing a stopped preview does not start playback.
+- Source and Result use native display-resolution traces, with amber L and cyan R.
+  Each view caches its own audio analysis; selection and playhead movement reuse it.
+  Mouse selection uses physical window coordinates. See [waveform detail](WAVEFORM_DETAIL.md).
 - Wheel over either waveform to zoom; Shift+wheel pans; **FIT** restores both
   full views. Source and Result audition selections remain independent.
 - **PROCESS: WHOLE / PROCESS: SEL**, above the parameter sliders, controls the

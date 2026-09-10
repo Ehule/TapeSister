@@ -33,7 +33,7 @@ static void portal_wave_render(TsFramebuffer *fb,const TsPortalUi *p,int which,i
 {
     const TsSample *s=which?p->result:p->source;
     const TsPortalWave *w=&p->waves[which];
-    uint32_t color=which?PAL_EFFECT:PAL_WAVE_LEFT;
+    uint32_t color=PAL_WAVE_LEFT; /* Keep L/R colors consistent with the main canvas. */
     char label[64];
     frame(fb,148,y,318,87,RGB(8,8,8),RGB(84,77,84));
     text(fb,154,y+6,which?"RESULT":"SOURCE",which?PAL_NOTE:PAL_EFFECT,1);
@@ -50,17 +50,25 @@ static void portal_wave_render(TsFramebuffer *fb,const TsPortalUi *p,int which,i
             size_t f=ts_portal_wave_frame(w,x);
             if(w->has_selection && f>=w->selection_first && f<w->selection_last)
                 rect(fb,154+x,top,1,height,PAL_BLOCK);
+        }
+        TsWaveformRequest request={0};request.sample=s;request.first=w->first;
+        request.last=w->last;request.revision=w->revision;
+        detail_sample(fb,which,154,top,TS_PORTAL_WAVE_COLUMNS,height,&request,
+            TS_WAVEFORM_DISPLAY_STEREO,color,PAL_WAVE_RIGHT,color,PAL_WAVE_RIGHT,
+            0,0,0,s->channels==2?1.5:2);
+        for(int x=0;x<TS_PORTAL_WAVE_COLUMNS;++x) {
             for(unsigned ch=0;ch<s->channels && ch<2;++ch) {
                 float lo=fmaxf(-1,fminf(1,ch?w->right_minimum[x]:w->minimum[x]));
                 float hi=fmaxf(-1,fminf(1,ch?w->right_maximum[x]:w->maximum[x]));
                 int center=s->channels==2?top+15+(int)ch*31:mid;
                 int scale=s->channels==2?14:29;
                 int a=center-(int)(hi*scale),b=center-(int)(lo*scale);
-                rect(fb,154+x,a,1,b-a+1,ch?PAL_NOTE:color);
+                rect(fb,154+x,a,1,b-a+1,ch?PAL_WAVE_RIGHT:color);
             }
         }
+        detail_capture_slot(fb,which);
         if(s->channels==2) {
-            text(fb,155,top+1,"L",color,1);text(fb,155,top+32,"R",PAL_NOTE,1);
+            text(fb,155,top+1,"L",color,1);text(fb,155,top+32,"R",PAL_WAVE_RIGHT,1);
         }
         if(w->playhead>=w->first && w->playhead<w->last) {
             int x=154+(int)((w->playhead-w->first)*TS_PORTAL_WAVE_COLUMNS/(w->last-w->first));

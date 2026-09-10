@@ -54,6 +54,7 @@ static void test_voice_policy(TsInstrument *instrument,const TsSample *sample)
 
 #include "test_playback_continuity.inc"
 #include "test_waveform_native.inc"
+#include "test_waveform_workspaces.inc"
 
 int main(void)
 {
@@ -75,6 +76,7 @@ int main(void)
     test_start_loops(device,&audio,&ui);
     test_continuity_ui(&ui,&instrument);
     test_native_waveform_and_window();
+    test_workspace_waveforms();
     /* Reproduce Set Loop -> click current tile -> launch, then revisit and Undo. */
     ui.bank_view_slot=-1;ts_instrument_set_selection(&instrument,500,2500);
     set_loop(device,&audio,&ui,&instrument);assert(instrument.has_loop);

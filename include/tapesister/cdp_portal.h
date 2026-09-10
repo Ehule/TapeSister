@@ -55,6 +55,7 @@ typedef struct {
 
 typedef struct {
     size_t first, last, selection_first, selection_last, playhead;
+    uint64_t revision; /* UI-thread waveform publication, including same-address replacement. */
     int has_selection;
     float minimum[TS_PORTAL_WAVE_COLUMNS], maximum[TS_PORTAL_WAVE_COLUMNS];
     float right_minimum[TS_PORTAL_WAVE_COLUMNS], right_maximum[TS_PORTAL_WAVE_COLUMNS];

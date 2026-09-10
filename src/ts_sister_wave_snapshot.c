@@ -83,7 +83,7 @@ void ts_sister_wave_publisher_push(TsSisterWavePublisher *publisher,
 {
     size_t bin;
     if (publisher == NULL || !written || capacity_frames == 0u) return;
-    bin = frame_position * TS_SISTER_WAVE_BIN_COUNT / capacity_frames;
+    bin = (uint64_t)frame_position * TS_SISTER_WAVE_BIN_COUNT / capacity_frames;
     if (bin >= TS_SISTER_WAVE_BIN_COUNT) bin = TS_SISTER_WAVE_BIN_COUNT - 1u;
     if (!publisher->initialized || publisher->current_bin != bin) {
         if (publisher->initialized) publish_bin(publisher, publisher->current_bin);
@@ -140,13 +140,13 @@ void ts_sister_wave_publisher_resize(TsSisterWavePublisher *publisher,
         if (source.left_minimum == 0.0f && source.left_maximum == 0.0f &&
             source.right_minimum == 0.0f && source.right_maximum == 0.0f)
             continue;
-        old_position = bin * old_capacity_frames / TS_SISTER_WAVE_BIN_COUNT;
+        old_position = (uint64_t)bin * old_capacity_frames / TS_SISTER_WAVE_BIN_COUNT;
         age = (old_write + old_capacity_frames - old_position) %
               old_capacity_frames;
         if (age >= new_capacity_frames) continue;
         new_position = (new_write + new_capacity_frames - age) %
                        new_capacity_frames;
-        destination = new_position * TS_SISTER_WAVE_BIN_COUNT /
+        destination = (uint64_t)new_position * TS_SISTER_WAVE_BIN_COUNT /
                       new_capacity_frames;
         if (destination >= TS_SISTER_WAVE_BIN_COUNT)
             destination = TS_SISTER_WAVE_BIN_COUNT - 1u;
@@ -178,7 +178,7 @@ void ts_sister_wave_publisher_resize(TsSisterWavePublisher *publisher,
         }
     }
     publisher->current = empty_bin();
-    publisher->current_bin = new_write * TS_SISTER_WAVE_BIN_COUNT /
+    publisher->current_bin = (uint64_t)new_write * TS_SISTER_WAVE_BIN_COUNT /
                              new_capacity_frames;
     publisher->valid_bins_writer = valid;
     publisher->initialized = 0;

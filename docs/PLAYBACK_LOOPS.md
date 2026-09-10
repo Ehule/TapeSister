@@ -75,11 +75,17 @@ musical grid positions.
 
 ![Native-resolution waveform and selection](images/native-waveform-detail.png)
 
+The same rendering now covers the CDP Portal and FM preview. Sister Machine
+also has a finer live envelope. See [waveform rendering and performance](WAVEFORM_DETAIL.md)
+for screenshots, cache behavior, and the measured live-display cost.
+
 Sister Machine fills the full width and height of its window. Maximizing it
 enters desktop fullscreen, like the main canvas, covering the entire display.
 F11 toggles back to a resizable window. Mouse buttons, drags and wheel targeting
 use the same mapping, including high-DPI output. Exposing the window forces a
-fresh redraw.
+fresh redraw. Tab from Sister hides its window and returns to the main
+workspace; Tab from the main canvas or FM opens it again. The tape engine,
+effects and recording keep running while the window is hidden.
 
 ![Sister Machine filling a wide window](images/sister-filled-window.png)
 

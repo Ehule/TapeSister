@@ -7,6 +7,12 @@ shows that Sustain is enabled. FM uses the main keyboard's control.
 
 ![Main keyboard with Sustain enabled](images/keyboard-sustain.png)
 
+**Tab** opens Sister Machine from the main canvas or FM. From Sister Machine,
+Tab hides the window and returns to the main workspace, including desktop
+fullscreen. Its tape processing and recording continue. Portal retains its
+own Tab A/B shortcut; Sister preset text dialogs retain their field navigation.
+Ctrl+Tab still switches to TapeHead.
+
 Sustain starts **off** each session. It does not change the sample, loop points,
 saved recipe, or tile. Text fields and destination/preset dialogs retain their
 normal input; Shift+S does not interrupt typing.

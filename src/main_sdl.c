@@ -3803,6 +3803,7 @@ static int render_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ui->fm_preview_sample = preview;
     if (device) SDL_UnlockAudioDevice(device);
     ts_sample_free(&rendered);
+    ts_ui_waveform_cache_invalidate(ui,TS_UI_WAVEFORM_FM);
     snprintf(ui->fm_message, sizeof(ui->fm_message),
              "%s / %s  %d VOICE MASK",
              ts_fm_structure_name(ui->fm_patch.structure),
@@ -8047,6 +8048,8 @@ typedef struct {
     SDL_Window *window;
     SDL_Renderer *renderer;
     SDL_Texture *texture;
+    SDL_Texture *waveform_textures[2];
+    TsUiWaveformDetail waveform_details[2];
     TsSisterUiModel model;
     TsSisterUiModel rendered_model;
     TsFramebuffer framebuffer;
@@ -8235,14 +8238,71 @@ static void sister_window_show(SisterWindow *sister)
     (void)SDL_SetWindowInputFocus(sister->window);
 }
 
-static void application_window_focus(SDL_Window *window)
+static void application_window_focus(SDL_Window *window, SisterWindow *sister)
 {
+    if(sister && sister->model.visible)sister_window_hide(sister);
     if (window == NULL) return;
     if ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0u)
         SDL_RestoreWindow(window);
     SDL_ShowWindow(window);
     SDL_RaiseWindow(window);
     (void)SDL_SetWindowInputFocus(window);
+}
+
+/* Hide fullscreen Sister before raising the canvas: raising alone can leave
+   the desktop-fullscreen sibling above it on Windows. Audio ownership stays put. */
+static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
+                                SisterWindow *sister, TsUiState *ui)
+{
+    if(event->type!=SDL_KEYDOWN || event->key.keysym.sym!=SDLK_TAB ||
+       (event->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)))return 0;
+    uint32_t id=event->key.windowID;
+    if(sister->window && id==sister->window_id) {
+        if(sister->model.preset_manage_open)return 0;
+        if(!event->key.repeat) {application_window_focus(window,sister);}
+        return 1;
+    }
+    if(id!=SDL_GetWindowID(window) || ui_blocking_dialog_open_except_fm(ui) ||
+       ui->fm_bank_choice_open || ui->fm_full_choice_open)return 0;
+    if(!event->key.repeat) {
+        if(sister_window_ensure(sister,&ui->config))sister_window_show(sister);
+        else snprintf(ui->status,sizeof(ui->status),"SISTER WINDOW UNAVAILABLE: %.112s",SDL_GetError());
+    }
+    return 1;
+}
+
+static int main_waveform_detail_allowed(const TsUiState *ui)
+{
+    return ui->portal.open ? !ui->portal.manage_open && !ui->portal.macro_edit :
+        !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
+}
+
+static void native_waveform_prepare(SDL_Renderer *renderer, TsUiWaveformDetail details[2], int enabled)
+{
+    int width=0,height=0;
+    details[0].valid=details[1].valid=0;
+    ts_ui_waveform_detail_begin(NULL);
+    if(enabled && SDL_GetRendererOutputSize(renderer,&width,&height)==0)
+        ts_ui_waveform_details_begin(details,width,height);
+}
+
+static void native_waveform_copy(SDL_Renderer *renderer, SDL_Texture *textures[2],
+                                  TsUiWaveformDetail details[2], const TsFramebuffer *fb)
+{
+    for(int i=0;i<2;++i) {
+        TsUiWaveformDetail *d=&details[i];
+        if(!ts_ui_waveform_detail_finish(d,fb))continue;
+        int width=0,height=0;
+        if(textures[i])SDL_QueryTexture(textures[i],NULL,NULL,&width,&height);
+        if(width!=d->width || height!=d->height) {
+            if(textures[i])SDL_DestroyTexture(textures[i]);
+            textures[i]=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,
+                SDL_TEXTUREACCESS_STREAMING,d->width,d->height);
+        }
+        SDL_Rect target={d->output_x,d->output_y,d->width,d->height};
+        if(textures[i] && SDL_UpdateTexture(textures[i],NULL,d->pixels,d->width*sizeof(uint32_t))==0)
+            SDL_RenderCopy(renderer,textures[i],NULL,&target);
+    }
 }
 
 static void sister_set_parameter(TsSisterParameters *parameters,
@@ -11679,8 +11739,8 @@ int main(int argc, char **argv)
     SDL_Window *window = NULL;
     SDL_Renderer *renderer = NULL;
     SDL_Texture *texture = NULL;
-    SDL_Texture *waveform_texture = NULL;
-    TsUiWaveformDetail waveform_detail = {0};
+    SDL_Texture *waveform_textures[2] = {0};
+    TsUiWaveformDetail waveform_details[2] = {0};
     SDL_AudioDeviceID device = 0;
     SDL_AudioDeviceID input_device = 0;
     SDL_AudioSpec desired, obtained;
@@ -12323,33 +12383,20 @@ int main(int argc, char **argv)
                     midi_learn_escape(&ui, &sister_window, SDL_GetTicks());
                     continue;
                 }
-                if (global_key == SDLK_TAB && !modal_key_owner) {
-                    if (sister_window.window != NULL &&
-                        event_id == sister_window.window_id) {
-                        application_window_focus(window);
-                    } else if (event_id == SDL_GetWindowID(window)) {
-                        if (!sister_window_ensure(&sister_window, &ui.config))
-                            snprintf(ui.status, sizeof(ui.status),
-                                     "SISTER WINDOW UNAVAILABLE: %.112s",
-                                     SDL_GetError());
-                        else
-                            sister_window_show(&sister_window);
-                    }
-                    continue;
-                }
+                if (workspace_tab_event(&event,window,&sister_window,&ui))continue;
                 if (global_key == SDLK_BACKQUOTE && !modal_key_owner) {
                     if (ui.fm_open)
                         close_fm_workspace(device, &audio, &ui, &fm_preview);
                     else
                         begin_fm_workspace(device, &audio, &ui, &instrument,
                                            &fm_preview);
-                    application_window_focus(window);
+                    application_window_focus(window,&sister_window);
                     continue;
                 }
                 if (global_key == SDLK_s && (global_mod & KMOD_CTRL) != 0 &&
                     !modal_key_owner) {
                     begin_active_project_save(&ui);
-                    application_window_focus(window);
+                    application_window_focus(window,&sister_window);
                     continue;
                 }
             }
@@ -16051,11 +16098,11 @@ int main(int argc, char **argv)
                 if (routing.enabled)
                     (void)ts_sister_machine_get_snapshot(
                         &audio.sister.machine, &engine);
-                (void)ts_sister_runtime_get_wave_snapshot(
+                int wave_valid=ts_sister_runtime_get_wave_snapshot(
                     &audio.sister, &wave);
                 ts_sister_ui_model_update(
                     &sister_window.model, &routing, &engine,
-                    &wave, &audio.sister.parameters);
+                    wave_valid?&wave:NULL, &audio.sister.parameters);
                 {
                     uint32_t transport = tapeLinkReaderTransportState(
                         &audio.live_link);
@@ -16133,34 +16180,12 @@ int main(int argc, char **argv)
                 hovered && (buttons & SDL_BUTTON_LMASK) != 0u;
         }
         if (!window_minimized) {
-            waveform_detail.valid=0;
-            SDL_Rect wave_rect = {0};
-            int output_w=0,output_h=0,detail_ready=0;
-            if (!ui_dialog_open(&ui) && !ui.portal.open && !ui.input_meter_active &&
-                !ui.amplitude_gesture.active &&
-                SDL_GetRendererOutputSize(renderer,&output_w,&output_h)==0) {
-                wave_rect.x=TS_WAVE_X*output_w/TS_UI_WIDTH;
-                wave_rect.y=TS_WAVE_Y*output_h/TS_UI_HEIGHT;
-                wave_rect.w=(TS_WAVE_X+TS_WAVE_W)*output_w/TS_UI_WIDTH-wave_rect.x;
-                wave_rect.h=(TS_WAVE_Y+TS_WAVE_H)*output_h/TS_UI_HEIGHT-wave_rect.y;
-                if (wave_rect.w!=waveform_detail.width || wave_rect.h!=waveform_detail.height) {
-                    if(waveform_texture)SDL_DestroyTexture(waveform_texture);
-                    waveform_texture=NULL;
-                    if(ts_ui_waveform_detail_resize(&waveform_detail,wave_rect.w,wave_rect.h))
-                        waveform_texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,
-                            SDL_TEXTUREACCESS_STREAMING,wave_rect.w,wave_rect.h);
-                }
-                if(waveform_texture)ts_ui_waveform_detail_begin(&waveform_detail);
-            }
+            native_waveform_prepare(renderer,waveform_details,main_waveform_detail_allowed(&ui));
             ts_ui_render(&framebuffer, &ui, &instrument);
-            detail_ready=ts_ui_waveform_detail_finish(&waveform_detail,&framebuffer);
             if (update_texture_damage(texture, &framebuffer, frame_snapshot,
                                       &frame_snapshot_valid)) {
                 SDL_RenderCopy(renderer, texture, NULL, NULL);
-                if (detail_ready && waveform_texture &&
-                    SDL_UpdateTexture(waveform_texture,NULL,waveform_detail.pixels,
-                                      waveform_detail.width*(int)sizeof(uint32_t))==0)
-                    SDL_RenderCopy(renderer,waveform_texture,NULL,&wave_rect);
+                native_waveform_copy(renderer,waveform_textures,waveform_details,&framebuffer);
                 SDL_RenderPresent(renderer);
             }
         }
@@ -16170,6 +16195,8 @@ int main(int argc, char **argv)
              memcmp(&sister_window.model, &sister_window.rendered_model,
                     sizeof(sister_window.model)) != 0) &&
             SDL_GetTicks() - sister_window.last_present_ms >= 33u) {
+            native_waveform_prepare(sister_window.renderer,sister_window.waveform_details,
+                !sister_window.model.preset_manage_open && !sister_window.model.fallout_lfo_open);
             ts_sister_ui_render(&sister_window.framebuffer,
                                 &sister_window.model, &ui.palette);
             if (SDL_UpdateTexture(sister_window.texture, NULL,
@@ -16179,6 +16206,8 @@ int main(int argc, char **argv)
                 SDL_RenderClear(sister_window.renderer);
                 SDL_RenderCopy(sister_window.renderer,
                                sister_window.texture, NULL, NULL);
+                native_waveform_copy(sister_window.renderer,sister_window.waveform_textures,
+                    sister_window.waveform_details,&sister_window.framebuffer);
                 SDL_RenderPresent(sister_window.renderer);
                 sister_window.rendered_model = sister_window.model;
                 sister_window.rendered_model_valid = 1;
@@ -16255,8 +16284,12 @@ int main(int argc, char **argv)
             fprintf(stderr, "TapeSister config save: %s\n", config_error);
     }
     free(frame_snapshot);
-    ts_ui_waveform_detail_free(&waveform_detail);
-    if (waveform_texture) SDL_DestroyTexture(waveform_texture);
+    for(int i=0;i<2;++i) {
+        ts_ui_waveform_detail_free(&waveform_details[i]);
+        if(waveform_textures[i])SDL_DestroyTexture(waveform_textures[i]);
+        ts_ui_waveform_detail_free(&sister_window.waveform_details[i]);
+        if(sister_window.waveform_textures[i])SDL_DestroyTexture(sister_window.waveform_textures[i]);
+    }
     if (sister_window.texture) SDL_DestroyTexture(sister_window.texture);
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
     if (sister_window.window) SDL_DestroyWindow(sister_window.window);

@@ -1019,6 +1019,14 @@ static void portal_library_move(SDL_AudioDeviceID device,AudioState *audio,TsPor
     if(next<p->scroll)p->scroll=next;
     if(next>=p->scroll+TS_PORTAL_LIST_ROWS)p->scroll=next-TS_PORTAL_LIST_ROWS+1;
 }
+static size_t portal_frame_from_pointer(const TsPortalWave *w, SDL_Window *window, int raw_x)
+{
+    int width,height;SDL_GetWindowSize(window,&width,&height);if(width<=0)return w->first;
+    long double t=(((long double)raw_x+0.5L)*TS_UI_WIDTH/width-154)/TS_PORTAL_WAVE_COLUMNS;
+    if(t<0)t=0;if(t>1)t=1;
+    return w->first+(size_t)floorl(t*(w->last-w->first)+0.5L);
+}
+
 static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
                          AudioState *audio,TsUiState *ui,TsInstrument *instrument,
                          PortalController *c,SisterWindow *sister,int output_rate,
@@ -1180,7 +1188,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         else if(p->dragging_parameter>=0)portal_parameter_drag(device,audio,p,c,p->dragging_parameter,x);
         else if(p->dragging_wave>=0 && (p->wave_dragged || abs(x-p->drag_x)>=2)) {
             p->wave_dragged=1;
-            TsPortalWave *w=&p->waves[p->dragging_wave];size_t end=ts_portal_wave_frame(w,x-154);
+            TsPortalWave *w=&p->waves[p->dragging_wave];size_t end=portal_frame_from_pointer(w,window,event->motion.x);
             w->selection_first=end<p->drag_anchor?end:p->drag_anchor;
             w->selection_last=end>p->drag_anchor?end:p->drag_anchor;
             w->has_selection=w->selection_last>w->selection_first;
@@ -1273,7 +1281,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         int live=portal_sync_loop(device,audio,p,which,0);
         if(!live)portal_stop(device,audio,p,c);
         p->listen_result=which;p->dragging_wave=which;p->drag_x=x;p->wave_dragged=0;
-        p->drag_anchor=ts_portal_wave_frame(&p->waves[which],x-154);
+        p->drag_anchor=portal_frame_from_pointer(&p->waves[which],window,event->button.x);
         if(!live)p->waves[which].playhead=p->drag_anchor;
     } else if(y>=223 && y<239 && x>=150 && x<464) {
         if(x<199)portal_play(device,audio,ui,c,output_rate,1);

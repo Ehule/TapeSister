@@ -296,6 +296,7 @@ typedef enum {
     TS_UI_WAVEFORM_MAIN = 0,
     TS_UI_WAVEFORM_TRANSFORM,
     TS_UI_WAVEFORM_DRONE,
+    TS_UI_WAVEFORM_FM,
     TS_UI_WAVEFORM_COUNT
 } TsUiWaveformKind;
 
@@ -310,11 +311,19 @@ typedef struct {
     int *logical_x;
     TsWaveformColumn *columns;
     int width, height, valid;
+    int x, y, logical_width, logical_height, output_x, output_y;
+    const TsSample *source;
+    const float *source_data;
+    size_t source_frames, first, last;
+    uint8_t source_channels;
+    int detect_zero_crossings;
     uint64_t source_revision, analysis_count;
 } TsUiWaveformDetail;
 
 int ts_ui_waveform_detail_resize(TsUiWaveformDetail *detail, int width, int height);
 void ts_ui_waveform_detail_begin(TsUiWaveformDetail *detail);
+/* Up to two independently cached regions in one native window. */
+void ts_ui_waveform_details_begin(TsUiWaveformDetail details[2], int output_width, int output_height);
 int ts_ui_waveform_detail_finish(TsUiWaveformDetail *detail, const TsFramebuffer *frame);
 void ts_ui_waveform_detail_free(TsUiWaveformDetail *detail);
 
