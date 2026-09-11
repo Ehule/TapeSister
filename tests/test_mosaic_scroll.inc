@@ -27,7 +27,7 @@ static void test_mosaic_scroll_waveforms(void)
             unsigned changed=0;Uint64 started=SDL_GetPerformanceCounter();
             for(int step=0;step<40;++step) {
                 double travel=step*.173; /* Includes many frames between raster steps. */
-                view.mosaic_scroll=event->start+(100+travel)/rate;
+                view.mosaic_scroll=(floor(event->start*rate+.5)+100+travel)/rate;
                 ts_ui_waveform_details_begin(detail,width,height);ts_ui_render(&fb,&view,&doc);
                 assert(ts_ui_waveform_detail_finish(&detail[0],&fb));
                 TsUiWaveformDetail *d=&detail[0];
@@ -56,10 +56,12 @@ static void test_mosaic_scroll_waveforms(void)
             ts_ui_waveform_details_begin(detail,width,height);ts_ui_render(&fb,&view,&doc);
             assert(ts_ui_waveform_detail_finish(&detail[0],&fb));
             int y=edge?370:70,x=221;
-            assert(fb.pixels[y*640+x]==0xff201f27u);
             TsUiWaveformDetail *d=&detail[0];
             int px=(int)((x-151+.5)*d->width/480),py=(int)((y-66+.5)*d->height/310);
             assert(d->pixels[(size_t)py*d->width+px]==0xff201f27u);
+            /* With native detail disabled the coarse fallback still draws. */
+            ts_ui_waveform_detail_begin(NULL);ts_ui_render(&fb,&view,&doc);
+            assert(fb.pixels[y*640+x]==0xff201f27u);
         }
         for(int i=0;i<2;++i)ts_ui_waveform_detail_free(&detail[i]);
         ts_sample_free(&sample);ts_mosaic_free(view.mosaic);view.mosaic=NULL;

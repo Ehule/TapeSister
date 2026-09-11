@@ -165,14 +165,17 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         if(t<100)snprintf(label,sizeof(label),"%04.1f",t);else if(t<10000)snprintf(label,sizeof(label),"%04.0f",t);else snprintf(label,sizeof(label),"%3.0fm",t/60);text(fb,115,y+2,label,RGB(133,127,141),1);
         rect(fb,147,y,484,1,RGB(28,30,35));
     }
-    for(int i=0;i<ui->mosaic_ghost_count;++i)mosaic_card(fb,ui,&ui->mosaic_ghosts[i],0,0,1);
     int any_solo=0;
     if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)any_solo|=m->events[i].solo;
-    if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
-        const TsMosaicEvent *e=&m->events[i];if(!e->id)continue;
-        mosaic_card(fb,ui,e,e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i],e->muted || (any_solo && !e->solo),0);
+    if(!mosaic_detail_cards(fb,ui,any_solo,interval)) {
+        /* Keep the logical renderer for disabled/unavailable native surfaces. */
+        for(int i=0;i<ui->mosaic_ghost_count;++i)mosaic_card(fb,ui,&ui->mosaic_ghosts[i],0,0,1);
+        if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+            const TsMosaicEvent *e=&m->events[i];if(!e->id)continue;
+            mosaic_card(fb,ui,e,e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i],e->muted || (any_solo && !e->solo),0);
+        }
     }
-    mosaic_detail_cards(fb,ui,any_solo);mosaic_detail_sources(fb,ui);
+    mosaic_detail_sources(fb,ui);
     if(ui->mosaic_box) {
         int x=ui->mosaic_box_x<ui->mosaic_box_end_x?ui->mosaic_box_x:ui->mosaic_box_end_x;
         int y=ui->mosaic_box_y<ui->mosaic_box_end_y?ui->mosaic_box_y:ui->mosaic_box_end_y;

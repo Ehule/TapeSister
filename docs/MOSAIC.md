@@ -85,9 +85,10 @@ different times. Event and source waveforms render at the window's actual pixel
 resolution, with antialiased edges, while the surrounding pixel UI stays familiar.
 The brighter body shows typical energy and the outer envelope preserves peaks.
 Waveform detail follows fixed sample intervals attached to the event. Scrolling
-moves that drawing in single physical-pixel steps, preserving peak widths and
-shape. Repeat dividers move with the same drawing. Header
-and footer spacing stays attached to each tile as it crosses the canvas edges.
+moves each complete tile—waveform, labels, borders and repeat dividers—together
+in single physical-pixel steps. The tile keeps its height and waveform shape;
+header and footer spacing stays attached as it crosses the canvas edges.
+Tiles that meet end to end share the same drawn boundary.
 Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
 actual sample ranges instead of enlarging those bins. Source thumbnails cache
 extrema at their displayed width. None of this analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.
