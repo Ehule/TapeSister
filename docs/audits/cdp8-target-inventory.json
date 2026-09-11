@@ -1,0 +1,3178 @@
+{
+  "schema": 1,
+  "scope": "Uncommented CMake executable declarations, including platform alternatives and utilities; not mode or build counts",
+  "unique_targets": 224,
+  "declarations": 227,
+  "bundled_targets": 22,
+  "programs": [
+    {
+      "program": "abfdcode",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "abfdcode.cpp"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "abfpan",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "abfpan.cpp"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "abfpan2",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "abfpan2.cpp"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "analjoin",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "analjoin.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "asciiget",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "asciiget.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "blur",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/blur/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_blur.c",
+            "blur.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "blur.drunk",
+        "blur.scatter"
+      ]
+    },
+    {
+      "program": "bounce",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "bounce.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "bounce.bounce"
+      ]
+    },
+    {
+      "program": "brkdur",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "brkdur.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "brktopi",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "brktopi.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "brownian",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "brownian.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "caltrain",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "caltrain.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "caltrain.caltrain"
+      ]
+    },
+    {
+      "program": "cantor",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "cantor.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "cascade",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "cascade.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "cdparams",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/cdparams/CMakeLists.txt",
+          "source_arguments": [
+            "cdparams.c",
+            "display.c",
+            "flagnames.c",
+            "parnames.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "cdparams_other",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/cdparams_other/CMakeLists.txt",
+          "source_arguments": [
+            "cdparams_other.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "cdparse",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/cdparse/CMakeLists.txt",
+          "source_arguments": [
+            "cdparse.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "ceracu",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "ceracu.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "channelx",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "channel.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "chanphase",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "chanphase.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "chirikov",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "chirikov.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "chorder",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "chorder.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "chxformat",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "chxformat.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "clicknew",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "clicknew.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "clip",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "clip.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "clip.clip.1",
+        "clip.clip.2"
+      ]
+    },
+    {
+      "program": "columns",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/tabedit/CMakeLists.txt",
+          "source_arguments": [
+            "columns0.c",
+            "columns1.c",
+            "columns2.c",
+            "columns3.c",
+            "columns4.c",
+            "columns5.c",
+            "columns6.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "combine",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/combine/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "combine.c",
+            "ap_combine.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "constrict",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "constrict.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "constrict.constrict"
+      ]
+    },
+    {
+      "program": "convert_to_midi",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "convert_to_midi.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "copysfx",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "copysf.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "crumble",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "crumble.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "crystal",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "crystal.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "cubicspline",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "cubicspline.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "dirsf",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/sfutils/CMakeLists.txt",
+          "source_arguments": [
+            "dirsf.c",
+            "wildcard.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "diskspace",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "diskspace.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "distcut",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "distcut.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "distmark",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "distmark.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "distmore",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "distmore.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "distort",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/distort/CMakeLists.txt",
+          "source_arguments": [
+            "ap_distort.c",
+            "disprepro.c",
+            "distdel.c",
+            "distflt.c",
+            "distintlv.c",
+            "distort.c",
+            "distorta.c",
+            "distorte.c",
+            "distortf.c",
+            "distorth.c",
+            "distortion.c",
+            "distortm.c",
+            "distorto.c",
+            "distortp.c",
+            "distortr.c",
+            "distorts.c",
+            "distresize.c",
+            "distrpl.c",
+            "distrpt.c",
+            "disttel.c",
+            "main.c",
+            "pulse.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "distortt",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "distortt.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "distrep",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "distrep.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "distshift",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "distshift.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "dshift",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "dshift.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "dvdwind",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "dvdwind.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "dvdwind.dvdwind"
+      ]
+    },
+    {
+      "program": "envcut",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "envcut.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "envel",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/env/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_envel.c",
+            "envel.c",
+            "envfuncs.c",
+            "envimpos.c",
+            "envprepro.c",
+            "envprocess.c",
+            "envxtract.c",
+            "pluck.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "envel.dovetail.1",
+        "envel.dovetail.2",
+        "envel.swell",
+        "envel.tremolo.1",
+        "envel.warp.2"
+      ]
+    },
+    {
+      "program": "envnu",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "envnu.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "envspeak",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "envspeak.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "envspeak.envspeak.1",
+        "envspeak.envspeak.2",
+        "envspeak.envspeak.5",
+        "envspeak.envspeak.6"
+      ]
+    },
+    {
+      "program": "extend",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/extend/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_extend.c",
+            "drunk.c",
+            "extprepro.c",
+            "iterate.c",
+            "zigzag.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "extend.zigzag.1",
+        "extend.drunk.1",
+        "extend.drunk.2",
+        "extend.iterate.1",
+        "extend.iterate.2",
+        "extend.freeze.1",
+        "extend.freeze.2",
+        "extend.baktobak",
+        "extend.doublets",
+        "extend.loop.1",
+        "extend.loop.2",
+        "extend.loop.3",
+        "extend.scramble.1"
+      ]
+    },
+    {
+      "program": "fastconv",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/fastconv/CMakeLists.txt",
+          "source_arguments": [
+            "fconv.cpp",
+            "genrespframe2.cpp",
+            "mxfftd.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "features",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "features.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "filter",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/filter/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_filter.c",
+            "filters0.c",
+            "filters1.c",
+            "fltpcon.c",
+            "fltprepro.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "filter.lohi.1",
+        "filter.variable.2",
+        "filter.sweeping.2",
+        "filter.phasing.1",
+        "filter.phasing.2"
+      ]
+    },
+    {
+      "program": "filtrage",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "filtrage.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "fixgobo",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "fixgobo.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "flatten",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "flatten.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "flutter",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "flutter.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "fmdcode",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "fmdcode.c",
+            "fmhfuncs.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "focus",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/focus/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_focus.c",
+            "focus.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "fofex",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "fofex.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "formants",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/formants/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_formants.c",
+            "formants.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "fractal",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "fractal.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "fracture",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "fracture.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "frame",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "frame.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "freeze",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "freeze.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "frfractal",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "frfractal.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "fturanal",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "fturanal.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "gate",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "gate.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "gate.gate.1",
+        "gate.gate.2"
+      ]
+    },
+    {
+      "program": "get_partials",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "get_partials.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "getcol",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/tabedit/CMakeLists.txt",
+          "source_arguments": [
+            "getcol.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "glisten",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "glisten.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "gobo",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "gobo.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "gobosee",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "gobosee.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "grain",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/grain/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_grain.c",
+            "grain.c",
+            "grain1.c",
+            "graprepro.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "grainex",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "grainex.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "hfperm",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/hfperm/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_hfperm.c",
+            "hfperm.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "hilite",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/hilite/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_hilite.c",
+            "hilite.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "histconv",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "histconv.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "housekeep",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/houskeep/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_house.c",
+            "channels.c",
+            "clean.c",
+            "dump.c",
+            "dupl.c",
+            "respec.c",
+            "sort.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "hover",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "hover.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "hover2",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "hover2.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "impulse",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "impulse.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "interlx",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "interlx.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "isolate",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "isolate.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "iterfof",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "iterfof.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "iterline",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "iterline.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "iterlinef",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "iterlinef.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "listaudevs",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/paprogs/listaudevs/CMakeLists.txt",
+          "source_arguments": [
+            "devs.c",
+            "cmakedummy.cpp"
+          ]
+        },
+        {
+          "cmake": "dev/externals/paprogs/listaudevs/CMakeLists.txt",
+          "source_arguments": [
+            "devs.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "listdate",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "listdate.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "logdate",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "logdate.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "madrid",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "madrid.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "manysil",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "manysil.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "matrix",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "unitary_matrix.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "maxsamp2",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "maxsamp2.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "mchanpan",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "mchanpan.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "mchanrev",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "mchanrev.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "mchiter",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "mchiter.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "mchshred",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "mchshred.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "mchstereo",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "mchstereo.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "mchzig",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "mchzig.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "modify",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/modify/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_modify.c",
+            "brapcon.c",
+            "delay.c",
+            "gain.c",
+            "pan.c",
+            "granula1.c",
+            "radical.c",
+            "strans.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "modify.speed.5",
+        "modify.stack",
+        "modify.radical.3",
+        "modify.loudness.3",
+        "modify.loudness.4",
+        "modify.revecho.1"
+      ]
+    },
+    {
+      "program": "morph",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/morph/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_morph.c",
+            "morph.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "motor",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "motor.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "mton",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "mton.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "multimix",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "multimix.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "multiosc",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "multiosc.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "multisynth",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "multisynth.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "newdelay",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "newdelay.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "newdelay.newdelay"
+      ]
+    },
+    {
+      "program": "newmix",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "newmix.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "newmorph",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "newmorph.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "newscales",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "newscales.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "newsynth",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "synthesis.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "newtex",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "newtex.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "njoin",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "njoin.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "nmix",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "nmix.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "notchinvert",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "notchinvert.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "oneform",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "oneform.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "onset",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "onset.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "packet",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "packet.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "pagrab",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/pagrab/CMakeLists.txt",
+          "source_arguments": [
+            "pagrab.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "pairex",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "pairex.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "panorama",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "panorama.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "paplay",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/paprogs/paplay/CMakeLists.txt",
+          "source_arguments": [
+            "paplay.c",
+            "fmhfuncs.c",
+            "cmakedummy.cpp"
+          ]
+        },
+        {
+          "cmake": "dev/externals/paprogs/paplay/CMakeLists.txt",
+          "source_arguments": [
+            "paplay.c",
+            "fmhfuncs.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "partition",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "partition.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "paudition",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "paudition.c",
+            "mxfft.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "paview",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/paview/CMakeLists.txt",
+          "source_arguments": [
+            "paview.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "pdisplay",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "pdisplay.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "peak",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "sethares.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "peakfind",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "peakfind.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "peakiso",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "peakiso.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "phase",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "phase.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "phase.phase.2"
+      ]
+    },
+    {
+      "program": "phasor",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "phasor.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "pitch",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/pitch/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_pitch.c",
+            "pitch.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "pitchinfo",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/pitchinfo/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_pinfo.c",
+            "specpinfo.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "pmodify",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "pmodify.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "prefix",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "prefix.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "progmach",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "progmach.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "psow",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "psow.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "ptobrk",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "ptobrk.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "pulser",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "pulser.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "putcol",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/tabedit/CMakeLists.txt",
+          "source_arguments": [
+            "putcol.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "pview",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/pview/CMakeLists.txt",
+          "source_arguments": [
+            "pview.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "pvoc",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/pv/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_pvoc.c",
+            "mxfft.c",
+            "pvoc.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "pvplay",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/paprogs/pvplay/CMakeLists.txt",
+          "source_arguments": [
+            "pvplay.cpp",
+            "pvoc2.cpp",
+            "fmhfuncs.c",
+            "pvthreads.cpp",
+            "mxfft.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "quirk",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "quirk.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "quirk.quirk.1",
+        "quirk.quirk.2"
+      ]
+    },
+    {
+      "program": "recsf",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/paprogs/recsf/CMakeLists.txt",
+          "source_arguments": [
+            "recsf.c",
+            "cmakedummy.cpp"
+          ]
+        },
+        {
+          "cmake": "dev/externals/paprogs/recsf/CMakeLists.txt",
+          "source_arguments": [
+            "recsf.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "refocus",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "refocus.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "rejoin",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "rejoin.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "repair",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "repair.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "repeater",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "repeater.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "repitch",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/repitch/CMakeLists.txt",
+          "source_arguments": [
+            "repitch.c",
+            "main.c",
+            "ap_repitch.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "retime",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "retime.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "reverb",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/reverb/CMakeLists.txt",
+          "source_arguments": [
+            "reverb.cpp",
+            "reverberator.cpp",
+            "wavetable.cpp"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "rmresp",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/reverb/CMakeLists.txt",
+          "source_arguments": [
+            "roomresp.cpp"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "rmsinfo",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "rmsinfo.cpp"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "rmverb",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/reverb/CMakeLists.txt",
+          "source_arguments": [
+            "rmverb.cpp",
+            "reverberator.cpp",
+            "wavetable.cpp"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "rotor",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "rotor.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "scramble",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "scramble.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "search",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "search.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "selfsim",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "selfsim.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "sfecho",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "echo.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "sfedit",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/editsf/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_edit.c",
+            "cut.c",
+            "twixt.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "sfedit.cut.1",
+        "sfedit.cutend.1",
+        "sfedit.excise.1"
+      ]
+    },
+    {
+      "program": "sfprops",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/mctools/CMakeLists.txt",
+          "source_arguments": [
+            "sfprops.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "shifter",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "shifter.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "shrink",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "shrink.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "silend",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "silend.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "silend.silend.1"
+      ]
+    },
+    {
+      "program": "smooth",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "smooth.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "sndinfo",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/sndinfo/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_sndinfo.c",
+            "compare.c",
+            "musunit.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "sorter",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "sorter.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "spacedesign",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "spacedesign.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "spec",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/spec/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_simple.c",
+            "simple.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "spec.magnify",
+        "spec.gate"
+      ]
+    },
+    {
+      "program": "specanal",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "specanal.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "specav",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "specav.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "specenv",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "specenv.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "specfnu",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "specfnu.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "specfnu.specfnu.1",
+        "specfnu.specfnu.3",
+        "specfnu.specfnu.4"
+      ]
+    },
+    {
+      "program": "specfold",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "specfold.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "specfold.specfold.1",
+        "specfold.specfold.2",
+        "specfold.specfold.3"
+      ]
+    },
+    {
+      "program": "specgrids",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "specgrids.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "specinfo",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/specinfo/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_specinfo.c",
+            "specinfo.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "speclean",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "speclean.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "specnu",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "specnu.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "specross",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "specross.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "specsphinx",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "specsphinx.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "spectrum",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "spectrum.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "spectstr",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "spectstr.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "spectstr.stretch"
+      ]
+    },
+    {
+      "program": "spectune",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "spectune.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "spectwin",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "spectwin.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "speculate",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "speculation.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "specvu",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "specvu.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "spike",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "spike.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "spin",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "spin.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "splinter",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "splinter.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "strands",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "strands.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "strange",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/strange/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_strange.c",
+            "strange.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "strans",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "strans_multi.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "stretch",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/stretch/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_stretch.c",
+            "stretch.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "stretcha",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "stretcha.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "stutter",
+      "bundled": true,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "stutter.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "submix",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/submix/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_mix.c",
+            "inbetwee.c",
+            "mixmerge.c",
+            "mixprepro.c",
+            "mixshuf0.c",
+            "mixshuf1.c",
+            "mixshuf2.c",
+            "newmix0.c",
+            "newmix1.c",
+            "setupmix.c",
+            "syncatt.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "subtract",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "subtract.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "superaccu",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "superaccu.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "superaccu.superaccu.2"
+      ]
+    },
+    {
+      "program": "suppress",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "suppress.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "synfilt",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "synfilt.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "synspline",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "synspline.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "synth",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/synth/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_synthesis.c",
+            "mxfft.c",
+            "pvoc_addon.c",
+            "wave.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "tangent",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "tangent.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "tapdelay",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/externals/reverb/CMakeLists.txt",
+          "source_arguments": [
+            "tdelaymain.cpp",
+            "reverberator.cpp",
+            "wavetable.cpp"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "tesselate",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "tesselate.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "texmchan",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "texmchan.c",
+            "texprepromch.c",
+            "texture5mc.c",
+            "../texture/texperm.c",
+            "../texture/texture1.c",
+            "../texture/texture2.c",
+            "../texture/texture3.c",
+            "../texture/texture4.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "texture",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/texture/CMakeLists.txt",
+          "source_arguments": [
+            "main.c",
+            "ap_texture.c",
+            "texperm.c",
+            "texture1.c",
+            "texture2.c",
+            "texture3.c",
+            "texture4.c",
+            "texture5.c",
+            "texprepro.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "tkusage",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "tkusage.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "tkusage_other",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "tkusage_other.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "topantail2",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "topantail2.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "tostereo",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standnew/CMakeLists.txt",
+          "source_arguments": [
+            "tostereo.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "transit",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "transit.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "tremenv",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "tremenv.c"
+          ]
+        }
+      ],
+      "probed_modes": [
+        "tremenv.tremenv"
+      ]
+    },
+    {
+      "program": "tremolo",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "tremolo.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "ts",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "timeseries.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "tsconvert",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "ts_convert.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "tunevary",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/new/CMakeLists.txt",
+          "source_arguments": [
+            "tunevary.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "tweet",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "tweet.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "unknot",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "unknot.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "vectors",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/tabedit/CMakeLists.txt",
+          "source_arguments": [
+            "vectors.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "verges",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "verges.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "vuform",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/misc/CMakeLists.txt",
+          "source_arguments": [
+            "vuform.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "waveform",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/science/CMakeLists.txt",
+          "source_arguments": [
+            "waveform.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    },
+    {
+      "program": "wrappage",
+      "bundled": false,
+      "declarations": [
+        {
+          "cmake": "dev/standalone/CMakeLists.txt",
+          "source_arguments": [
+            "wrappage.c"
+          ]
+        }
+      ],
+      "probed_modes": []
+    }
+  ]
+}

@@ -1,0 +1,262 @@
+[
+  {
+    "check": "extend.zigzag.1-seed-and-link",
+    "rate": 44100,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 3.503246160812043e-46
+  },
+  {
+    "check": "extend.drunk.1-seed-and-link",
+    "rate": 44100,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 3.503246160812043e-46
+  },
+  {
+    "check": "extend.drunk.2-seed-and-link",
+    "rate": 44100,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 3.503246160812043e-46
+  },
+  {
+    "check": "extend.iterate.1-seed-and-link",
+    "rate": 44100,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 0.0
+  },
+  {
+    "check": "extend.iterate.2-seed-and-link",
+    "rate": 44100,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 4.203895392974451e-45
+  },
+  {
+    "check": "extend.freeze.1-seed-and-link",
+    "rate": 44100,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 7.006492321624085e-46
+  },
+  {
+    "check": "extend.freeze.2-seed-and-link",
+    "rate": 44100,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 7.006492321624085e-46
+  },
+  {
+    "check": "extend.scramble.1-seed-and-link",
+    "rate": 44100,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 3.503246160812043e-46
+  },
+  {
+    "check": "normalize3-shared-gain",
+    "rate": 44100,
+    "passed": true,
+    "max_error": 2.9802322387695312e-08
+  },
+  {
+    "check": "normalize4-shared-gain",
+    "rate": 44100,
+    "passed": true,
+    "max_error": 2.9802322387695312e-08
+  },
+  {
+    "check": "silend-content",
+    "rate": 44100,
+    "passed": true,
+    "prefix_equal": true,
+    "tail_silent": true,
+    "frames": 99225
+  },
+  {
+    "check": "lohi-band-rejection",
+    "rate": 44100,
+    "passed": true,
+    "high_relative_to_low_db": -32.10803610655785
+  },
+  {
+    "check": "acceleration-pitch-and-length",
+    "rate": 44100,
+    "passed": true,
+    "early_hz": 216.66666666666669,
+    "late_hz": 446.6666666666663,
+    "seconds": 1.270544217687075
+  },
+  {
+    "check": "stack-octave-components",
+    "rate": 44100,
+    "passed": true,
+    "component_amplitudes": [
+      293.9999994596384,
+      293.9999990289622,
+      294.00000024293564
+    ]
+  },
+  {
+    "check": "newdelay-tuned-impulses",
+    "rate": 44100,
+    "passed": true,
+    "expected_period": 337,
+    "measured_periods": [
+      337
+    ]
+  },
+  {
+    "check": "bounce-accelerating-repeats",
+    "rate": 44100,
+    "passed": true,
+    "impulse_gaps_frames": [
+      13230,
+      9922,
+      7442,
+      5581,
+      4186,
+      3140
+    ]
+  },
+  {
+    "check": "extend.zigzag.1-seed-and-link",
+    "rate": 48000,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 3.503246160812043e-46
+  },
+  {
+    "check": "extend.drunk.1-seed-and-link",
+    "rate": 48000,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 3.503246160812043e-46
+  },
+  {
+    "check": "extend.drunk.2-seed-and-link",
+    "rate": 48000,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 3.503246160812043e-46
+  },
+  {
+    "check": "extend.iterate.1-seed-and-link",
+    "rate": 48000,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 0.0
+  },
+  {
+    "check": "extend.iterate.2-seed-and-link",
+    "rate": 48000,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 3.853570776893247e-45
+  },
+  {
+    "check": "extend.freeze.1-seed-and-link",
+    "rate": 48000,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 7.006492321624085e-46
+  },
+  {
+    "check": "extend.freeze.2-seed-and-link",
+    "rate": 48000,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 7.006492321624085e-46
+  },
+  {
+    "check": "extend.scramble.1-seed-and-link",
+    "rate": 48000,
+    "passed": true,
+    "same_seed_identical": true,
+    "different_seed_changes": true,
+    "linked_error": 3.503246160812043e-46
+  },
+  {
+    "check": "normalize3-shared-gain",
+    "rate": 48000,
+    "passed": true,
+    "max_error": 2.9801341838719964e-08
+  },
+  {
+    "check": "normalize4-shared-gain",
+    "rate": 48000,
+    "passed": true,
+    "max_error": 2.9801341838719964e-08
+  },
+  {
+    "check": "silend-content",
+    "rate": 48000,
+    "passed": true,
+    "prefix_equal": true,
+    "tail_silent": true,
+    "frames": 108000
+  },
+  {
+    "check": "lohi-band-rejection",
+    "rate": 48000,
+    "passed": true,
+    "high_relative_to_low_db": -31.93667281181112
+  },
+  {
+    "check": "acceleration-pitch-and-length",
+    "rate": 48000,
+    "passed": true,
+    "early_hz": 216.66666666666669,
+    "late_hz": 446.6666666666663,
+    "seconds": 1.2705416666666667
+  },
+  {
+    "check": "stack-octave-components",
+    "rate": 48000,
+    "passed": true,
+    "component_amplitudes": [
+      320.00000046800363,
+      320.00000140034683,
+      320.0000019682641
+    ]
+  },
+  {
+    "check": "newdelay-tuned-impulses",
+    "rate": 48000,
+    "passed": true,
+    "expected_period": 367,
+    "measured_periods": [
+      367
+    ]
+  },
+  {
+    "check": "bounce-accelerating-repeats",
+    "rate": 48000,
+    "passed": true,
+    "impulse_gaps_frames": [
+      14400,
+      10800,
+      8100,
+      6075,
+      4556,
+      3417
+    ]
+  }
+]
