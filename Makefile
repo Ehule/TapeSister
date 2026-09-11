@@ -7,7 +7,8 @@ MINIAUDIO_DIR ?= .deps/miniaudio
 MINIAUDIO_COMMIT = 350784a9467a79d0fa65802132668e5afbcf3777
 CPPFLAGS ?= -Iinclude -Ithird_party -I$(MINIAUDIO_DIR)
 CORE_SOURCES = src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c src/ts_note_event.c src/ts_performance.c src/ts_audio_mixer.c src/ts_audio_lifecycle.c src/ts_realtime_diagnostics.c src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c src/ts_sister_limiter.c src/ts_sister_machine.c src/ts_sister_wave_snapshot.c src/ts_sister_runtime.c src/ts_sister_ui.c src/ts_sister_preset.c src/ts_sister_project_state.c src/ts_capture.c src/ts_capture_archive.c src/ts_performance_recorder.c src/ts_input_monitor.c src/ts_input_ownership.c src/ts_sample_pages.c src/ts_browser.c src/ts_config.c src/ts_audio_config.c src/ts_recipe.c src/ts_dsp_recipe.c src/ts_palette.c src/ts_cdp_recipe.c src/ts_cdp_adapter.c src/ts_transform.c src/ts_dsp_transform.c src/ts_exchange.c src/ts_render_damage.c src/ts_waveform_cache.c src/ts_waveform_display.c src/ts_ui.c src/ts_midi_map.c
-CORE_SOURCES += src/ts_cdp_portal.c
+CORE_SOURCES += src/ts_cdp_portal.c src/ts_mosaic.c
+tapesister tapesister_portal_controller_tests tapesister_keyboard_sustain_tests: src/main_sdl_mosaic.inc src/main_sdl_mosaic_editor.inc src/ts_mosaic_ui.inc include/tapesister/mosaic.h
 DECODER_OBJ = .deps/ts_audio_import.o
 CORE = $(CORE_SOURCES) $(DECODER_OBJ)
 tapesister tapesister_core_tests tapesister_portal_tests tapesister_portal_controller_tests tapesister_keyboard_sustain_tests: src/ts_cdp_portal_instruments.inc src/ts_cdp_portal_ui.inc include/tapesister/cdp_portal.h
@@ -453,3 +454,15 @@ clean:
 
 # Native waveform rendering is included by the shared UI translation unit.
 tapesister tapesister_core_tests tapesister_keyboard_sustain_tests tapesister_canvas_recording_tests tapesister_portal_controller_tests test_sister_ui_model: src/ts_ui_waveform_detail.inc
+
+.PHONY: test-mosaic
+test: test-mosaic
+test-mosaic: tapesister_mosaic_tests tapesister_mosaic_controller_tests
+	./tapesister_mosaic_tests
+	./tapesister_mosaic_controller_tests
+
+tapesister_mosaic_tests: tests/test_mosaic.c $(CORE) include/tapesister/mosaic.h
+	$(CC) $(CFLAGS) $(CPPFLAGS) tests/test_mosaic.c $(CORE) -o $@ -lm
+
+tapesister_mosaic_controller_tests: tests/test_mosaic_controller.c $(CORE) src/main_sdl.c src/main_sdl_mosaic.inc src/main_sdl_mosaic_editor.inc src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) tests/test_mosaic_controller.c $(CORE) src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)

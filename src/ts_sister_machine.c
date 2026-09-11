@@ -1914,9 +1914,11 @@ static TsStereoFrame process_internal(TsSisterMachine *machine,
         &machine->soak_weave[TS_SISTER_HEAD_COUNT], sum,
         machine->buffer.channels == 1u);
     if (fallout != NULL) {
+        float master = post_fx && post_fx->ready ?
+            ts_sister_post_fx_master_engage(post_fx) : 1.0f;
         TsSisterFalloutResult fallout_result =
             ts_sister_fallout_process(fallout, sum);
-        sum = fallout_result.output;
+        sum = frame_effect_return(sum, fallout_result.output, master);
         output.fallout_wet = fallout_result.wet;
     }
     {

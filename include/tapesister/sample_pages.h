@@ -6,12 +6,15 @@
 
 #include <stddef.h>
 
+struct TsMosaic;
 typedef struct {
     TsInstrument **pages;
     size_t page_count;
     size_t page_capacity;
     size_t active_page;
     int active_live;
+    const TsInstrument *mosaic_bank; /* Parked bank while the main view edits an event. */
+    struct TsMosaic *mosaic; /* Non-owning, optional arrangement in this project. */
 } TsSamplePages;
 
 int ts_sample_pages_init(TsSamplePages *pages,

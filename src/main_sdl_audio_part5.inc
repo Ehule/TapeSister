@@ -194,7 +194,7 @@ static void ts_overlay_tile_states(TsFramebuffer *fb, const TsUiState *ui,
 {
     const AudioState *audio = (const AudioState *)ts_output_userdata;
     uint32_t source_color;
-    if (fb == NULL || ui == NULL || instrument == NULL || ui->show_keyboard ||
+    if (fb == NULL || ui == NULL || instrument == NULL || ui->mosaic_open || ui->show_keyboard ||
         ui->show_recipes || ui->show_ingredients ||
         ts_ui_foreground_panel_open(ui)) return;
     ts_discover_tile_bounds();
@@ -274,6 +274,7 @@ static void ts_audio_ui_render(TsFramebuffer *fb, const TsUiState *ui,
         ts_config_was_open = 0;
     }
     ts_ui_render_file_recording(fb,ui);
+    ts_ui_render_mosaic_choice(fb,ui);
 }
 
 static int ts_audio_config_field_from_point(int x, int y)

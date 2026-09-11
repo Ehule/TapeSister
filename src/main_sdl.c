@@ -620,6 +620,8 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
                                          const TsSisterRuntime *sister)
 {
     uint64_t hash = 1469598103934665603ull;
+    uint64_t mosaic_hash = ts_mosaic_hash(pages ? pages->mosaic : NULL);
+    state_hash_bytes(&hash, &mosaic_hash, sizeof(mosaic_hash));
     size_t count = ts_sample_pages_count(pages);
     size_t active = ts_sample_pages_active(pages);
     state_hash_bytes(&hash, &count, sizeof(count));
@@ -755,6 +757,7 @@ typedef struct {
     size_t attack_frames;
     TsNoteBank notes;
     TsPerformanceBank performance;
+    TsMosaic *mosaic;
     TsPerformanceBank tile_launchers;
     TsStereoFrame tile_launcher_mix;
     int tile_launcher_active;
@@ -1868,7 +1871,9 @@ static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     ui->drone_preview_active = 0;
     snprintf(ui->status, sizeof(ui->status),
              ui->tune_reference_active ?
-             "AUDITION STOPPED - REFERENCE TONE CONTINUES" : "STOPPED");
+             "AUDITION STOPPED - REFERENCE TONE CONTINUES" :
+             audio->mosaic && audio->mosaic->playing ?
+             "AUDITION STOPPED - MOSAIC CONTINUES" : "STOPPED");
 }
 
 static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
@@ -2277,7 +2282,8 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio,
 static int native_sister_edit_can_render_unlocked(const AudioState *audio)
 {
     return audio != NULL &&
-           ts_sister_runtime_tiles_insert_active(&audio->sister) &&
+           (ts_sister_runtime_tiles_insert_active(&audio->sister) ||
+            (audio->mosaic && audio->mosaic->playing)) &&
            !audio->playing && ts_note_bank_count(&audio->notes) == 0 &&
            ts_performance_count(&audio->performance) == 0;
 }
@@ -3682,6 +3688,9 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                      loaded.name, loaded.has_tuning ? " + TUNING" : "");
         } else snprintf(ui->status, sizeof(ui->status), "TSP LOAD FAILED: %.131s", error);
         return ok;
+    }
+    if(recipe && ui->mosaic_editing) {
+        snprintf(ui->status,sizeof(ui->status),"RETURN TO MOSAIC BEFORE OPENING A PROJECT");return 0;
     }
     if (recipe && record_bank_active) {
         snprintf(ui->status, sizeof(ui->status),
@@ -6075,7 +6084,7 @@ static void palette_save_shared(TsUiState *ui)
         return;
     }
     if (ts_palette_save(&ui->palette, path, error, sizeof(error))) {
-        ui->palette.defined_colors = (1u << TS_PALETTE_COLOR_COUNT) - 1u;
+        ui->palette.defined_colors = TS_PALETTE_ALL_COLORS;
         ui->palette_suggestions = ui->palette;
         snprintf(ui->status, sizeof(ui->status), "SAVED SHARED PALETTE %.105s", path);
     }
@@ -6396,17 +6405,22 @@ static const char *path_basename(const char *path)
     return slash != NULL ? slash + 1 : path;
 }
 
-static int ui_blocking_dialog_open_except_fm(const TsUiState *ui)
+static int ui_blocking_dialog_open_except_workspaces(const TsUiState *ui)
 {
-    return ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->mosaic_edit_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
-           ui->portal.open || ui->file_busy || ui->transform_open || ui->drone_open ||
+           ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->import_preview_open || ui->load_selection_choice_open ||
            ui->palette_open || ui->config_open ||
            ui->renaming_bank_slot >= 0 || ui->renaming_recipe_slot >= 0 ||
            ui->export_choice_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
            ui->browser.mode != TS_BROWSER_CLOSED;
+}
+
+static int ui_blocking_dialog_open_except_fm(const TsUiState *ui)
+{
+    return ui->portal.open || ui_blocking_dialog_open_except_workspaces(ui);
 }
 
 static int ui_dialog_open(const TsUiState *ui)
@@ -9231,10 +9245,13 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
     }
     if(event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT &&
        event->button.windowID==SDL_GetWindowID(window)) {
+        if(ui->midi_learn_active)return 0;
         int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
         if((!ui->portal.open || ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING ||
             ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING) &&
            x>=544 && x<630 && y>=382 && y<398)trigger=1;
+        else if(ui->mosaic_open && !ui_dialog_open(ui))
+            trigger=x>=206 && x<270 && y>=39 && y<58;
         else if(ui->portal.open && x>=464 && x<492 && y>=4 && y<30)trigger=1;
         else if(sister_performance_keys_allowed(ui) && ui->show_keyboard &&
                 x>=380 && x<454 && y>=313 && y<330)trigger=1;
@@ -9733,6 +9750,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
+        hit.action != TS_SISTER_UI_ACTION_FALLOUT_TOGGLE &&
+        hit.action != TS_SISTER_UI_ACTION_FX_TOGGLE &&
         hit.action != TS_SISTER_UI_ACTION_LIMITER_TOGGLE &&
         hit.action != TS_SISTER_UI_ACTION_MASTER_OUTPUT &&
         hit.action != TS_SISTER_UI_ACTION_TAPEHEAD_SONG &&
@@ -11714,7 +11733,10 @@ static void keep_record_bank(SDL_AudioDeviceID output_device,
                  copied, first_page, last_page);
 }
 
+#include "main_sdl_mosaic_editor.inc"
 #include "main_sdl_portal.inc"
+#include "main_sdl_mosaic.inc"
+#include "main_sdl_workspaces.inc"
 
 /* One session-wide release policy. Explicit Shift+click latches and tile
    launches remain independent; disabling sustain preserves physically held keys. */
@@ -11846,6 +11868,7 @@ int main(int argc, char **argv)
     TransformController transform;
     ImportController import_controller;
     PortalController portal;
+    MosaicController mosaic = {0};
     PendingFileOperation pending_file = {0};
     size_t clipboard_origin_first = 0;
     size_t clipboard_source_frames = 0;
@@ -11908,6 +11931,10 @@ int main(int argc, char **argv)
     import_controller_init(&import_controller);
     ts_ui_init(&ui);
     portal_init(&portal,&ui.portal);
+    ui.mosaic = audio.mosaic = sample_pages.mosaic = ts_mosaic_create();
+    if(!ui.mosaic) {fprintf(stderr,"Mosaic: out of memory\n");return 1;}
+    ui.mosaic_scale=24.0;ui.mosaic_hscale=1.0;
+    portal.mosaic=&mosaic;mosaic.pages=&sample_pages;
     portal.create_seeds=&fm_seed_sequence;
     portal.pages=&sample_pages;portal.external_input=&external_input;
     ui.sample_page = 0;
@@ -12433,6 +12460,19 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            mosaic_commit(device,&ui,&instrument,&mosaic);
+            if(main_file_capture_event(&event,window,&audio,&ui,&sister_window,(uint32_t)obtained.freq))continue;
+            if(workspace_event(&event,window,device,&audio,&ui,&instrument,&mosaic,
+                               &portal,&sister_window,&transform,&fm_preview))continue;
+            if(event_id==SDL_GetWindowID(window) &&
+               mosaic_event(&event,window,device,&audio,&ui,&instrument,&mosaic,
+                            &portal,&sister_window,&transform,obtained.freq))continue;
+            if((event.type==SDL_QUIT || (event.type==SDL_WINDOWEVENT &&
+                event.window.event==SDL_WINDOWEVENT_CLOSE && event_id==SDL_GetWindowID(window))) && mosaic.active)
+                if(!mosaic_leave(device,&audio,&ui,&instrument,&mosaic)) {
+                    if(ui.mosaic_edit_choice){mosaic.resume_exit=1;mosaic.exit_event=event;}
+                    continue;
+                }
             if (keyboard_sustain_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode global_key = event.key.keysym.sym;
@@ -12469,15 +12509,6 @@ int main(int argc, char **argv)
                     continue;
                 }
                 if (workspace_tab_event(&event,window,&sister_window,&ui))continue;
-                if (global_key == SDLK_BACKQUOTE && !modal_key_owner) {
-                    if (ui.fm_open)
-                        close_fm_workspace(device, &audio, &ui, &fm_preview);
-                    else
-                        begin_fm_workspace(device, &audio, &ui, &instrument,
-                                           &fm_preview);
-                    application_window_focus(window,&sister_window);
-                    continue;
-                }
                 if (global_key == SDLK_s && (global_mod & KMOD_CTRL) != 0 &&
                     !modal_key_owner) {
                     begin_active_project_save(&ui);
@@ -12560,7 +12591,7 @@ int main(int argc, char **argv)
                         sister_window.model.preset_confirmation = 0;
                         SDL_StopTextInput();
                     } else {
-                        sister_window_hide(&sister_window);
+                        application_window_focus(window,&sister_window);
                     }
                 } else if (event.type == SDL_TEXTINPUT &&
                            sister_window.model.preset_manage_open &&
@@ -12760,8 +12791,6 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
-            if (main_file_capture_event(&event,window,&audio,&ui,&sister_window,
-                                         (uint32_t)obtained.freq)) continue;
             if (portal_event(&event,window,device,&audio,&ui,&instrument,
                              &portal,&sister_window,obtained.freq,&transform)) continue;
             if (import_preview_event(&event,device,&audio,&ui,&instrument,
@@ -15006,11 +15035,11 @@ int main(int argc, char **argv)
                         cancel_browser_with_import(
                             device, &audio, &ui, &import_controller);
                     }
-                } else if (y >= 4 && y < 28 && x >= 214 && x < 274) {
+                } else if (y >= 4 && y < 28 && x >= 214 && x < 260) {
                     begin_config(&ui);
-                } else if (y >= 4 && y < 28 && x >= 278 && x < 344) {
+                } else if (y >= 4 && y < 28 && x >= 264 && x < 296) {
                     begin_exchange_send(&ui, &instrument, &sample_pages);
-                } else if (y >= 4 && y < 28 && x >= 348 && x < 398) {
+                } else if (y >= 4 && y < 28 && x >= 360 && x < 398) {
                     browser_open(&ui, ui.show_ingredients ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 402 && x < 460) {
@@ -16096,6 +16125,7 @@ int main(int argc, char **argv)
                      sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
         }
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
+        mosaic_commit(device,&ui,&instrument,&mosaic);
         portal_poll(device,&audio,&ui,&instrument,&portal);
         if (record_bank_active)
             sync_external_capture_ui(device, input_device, &external_input, &ui);
@@ -16106,6 +16136,8 @@ int main(int argc, char **argv)
             (Sint32)(SDL_GetTicks() - ui.overlay_until_ms) >= 0)
             ui.overlay[0] = '\0';
         refresh_workbench_loop(device, &audio, &ui, &instrument);
+        mosaic_poll(device,&ui,&instrument,&mosaic);
+        if(ui_dialog_open(&ui) && !ui.portal.open)ui.mosaic_open=0;
         if (device) SDL_LockAudioDevice(device);
         {
             const TsNoteVoice *voice = ts_note_bank_display_voice(&audio.notes);
@@ -16343,6 +16375,8 @@ int main(int argc, char **argv)
     audio.live_link_buffer = NULL;
     if (device) SDL_CloseAudioDevice(device);
     portal_free(&portal);
+    mosaic_controller_free(&mosaic);
+    ts_mosaic_free(ui.mosaic);
     ts_performance_free(&audio.performance);
     ts_performance_free(&audio.tile_launchers);
     ts_sister_runtime_free(&audio.sister);

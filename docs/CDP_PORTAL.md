@@ -8,13 +8,17 @@ bank presets remain in use; personal recipes and pins have separate storage.
 
 ## CREATE + CDP
 
-Right-click **CREATE** in the main canvas to toggle **CREATE+CDP**. A left-click
-then generates fresh FM and rolls one of twelve bounded CDP transformations.
-The CDP render runs in the background; click **CANCEL CDP** or press Escape in
-the main workspace to keep the fresh FM source. A usable result applies to the
-same tile or selection, and Undo returns to the fresh FM before CDP.
-Click **CDP** afterwards to see, edit, save or pin the rolled settings.
-The choice lasts for the session; right-click again restores ordinary CREATE.
+The **CREATE** button has separate FM and CDP dice:
+
+- **Left-click:** generate a fresh FM waveform. Repeat until you find a source you like.
+- **Right-click:** roll a CDP variation of that source. Each reroll starts from the
+  retained clean waveform, without stacking previous CDP results.
+- **Middle-click:** cancel pending CDP and restore the exact clean waveform.
+
+CDP runs in the background. Another right-click during rendering queues a new
+roll; middle-click cancels that queue too. Later manual edits or a different
+selected tile cannot be overwritten by restoration. Click **CDP** after completion
+to see, edit, save or pin the rolled settings. VARY keeps its existing behavior.
 Full details and source restrictions: [CDP expansion](CDP_EXPANSION.md).
 
 ## Open and explore

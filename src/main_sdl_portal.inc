@@ -26,11 +26,21 @@ typedef struct {
     TsPortalRegion regions[TS_PORTAL_HISTORY];
     TsSamplePages *pages;
     ExternalInputState *external_input;
+    MosaicController *mosaic;
+    uint64_t source_event, source_event_revision, source_event_epoch;
     PortalWorker *worker;
     uint64_t generation, source_hash;
     int source_slot, source_page, selection_scope, history_count;
     int quick_apply, library_writable;
-    int create_roll, create_ready;
+    int create_roll, create_ready, create_retry;
+    TsSample create_original;
+    uint64_t create_hash, create_event, create_epoch;
+    int create_slot, create_page, create_selection, create_loop;
+    size_t create_first, create_last, create_loop_first, create_loop_last;
+    TsLoopMode create_loop_mode;
+    float create_crossfade;
+    TsTuning create_tuning, create_audible_tuning;
+    TsFmSeedSequence create_dice;
     TsFmSeedSequence *create_seeds;
     TransformController *create_transform;
     int auto_pending;
@@ -148,6 +158,7 @@ static int portal_source(SDL_AudioDeviceID device,AudioState *audio,TsUiState *u
     TsPortalUi *p=&ui->portal;
     p->load_selection=c->selection_scope;
     TsSample next;ts_sample_init(&next);
+    if(c->worker && c->source_event) {snprintf(p->message,sizeof(p->message),"EVENT RENDER RUNNING - WAIT OR CANCEL IN PORTAL");return 0;}
     if(c->worker) {portal_cancel(c);snprintf(p->message,sizeof(p->message),"CANCELLING; RELOAD AFTER JOB STOPS");return 0;}
     portal_invalidate(device,audio,p,c);portal_clear_history(c,p);
     ts_sample_free(&c->source);p->source=NULL;ts_portal_wave_reset(&p->waves[0],NULL);
@@ -166,10 +177,16 @@ static int portal_source(SDL_AudioDeviceID device,AudioState *audio,TsUiState *u
     next.frames=last-first;next.channels=src->channels;next.sample_rate=src->sample_rate;
     snprintf(next.name,sizeof(next.name),"%s",src->name);
     c->source=next;c->source_first=first;c->source_last=last;
+    if(c->mosaic)mosaic_commit(device,ui,instrument,c->mosaic);
+    c->source_event=ui->mosaic_editing;
+    TsMosaicEvent *owner=ts_mosaic_find(ui->mosaic,c->source_event);
+    c->source_event_revision=owner?owner->revision:0;
+    c->source_event_epoch=ui->mosaic?ui->mosaic->epoch:0;
     c->source_hash=ts_sample_hash(src);c->source_slot=instrument->selected_slot;c->source_page=ui->sample_page;
     p->source=&c->source;
     p->process_selection=0;
     snprintf(p->source_name,sizeof(p->source_name),"TILE %02d %.40s",c->source_slot+1,src->name);
+    if(c->source_event)snprintf(p->source_name,sizeof(p->source_name),"EVENT %llu %.36s",(unsigned long long)c->source_event,src->name);
     ts_portal_wave_reset(&p->waves[0],p->source);
     snprintf(p->message,sizeof(p->message),"%s SNAPSHOT READY; DRAG SELECTS AUDITION RANGE; PREVIEW RENDERS SNAPSHOT",
              c->selection_scope && instrument->has_selection?"SELECTION":"WHOLE TILE");
@@ -178,7 +195,7 @@ static int portal_source(SDL_AudioDeviceID device,AudioState *audio,TsUiState *u
 static void portal_close(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                          PortalController *c)
 {
-    portal_stop(device,audio,&ui->portal,c);portal_cancel(c);ui->portal.open=0;
+    portal_stop(device,audio,&ui->portal,c);if(!c->source_event)portal_cancel(c);ui->portal.open=0;
     c->auto_pending=0;portal_hover_reset(&ui->portal,c);
     ui->portal.dragging_parameter=-1;ui->portal.dragging_wave=-1;
     ui->portal.search_focus=ui->portal.name_focus=0;ui->portal.number_focus=-1;
@@ -403,23 +420,26 @@ static void portal_auto_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
        !SDL_TICKS_PASSED(now,c->auto_due))return;
     portal_preview(device,audio,ui,c);
 }
+static int portal_create_event(const SDL_Event *,int,int,SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,PortalController *,TransformController *);
+static int portal_create_matches(const PortalController *,const TsUiState *,const TsInstrument *);
 static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                         TsInstrument *instrument,PortalController *c)
 {
     TsPortalUi *p=&ui->portal;PortalWorker *w=c->worker;
     if(w && SDL_AtomicGet(&w->done)) {
         SDL_WaitThread(w->thread,NULL);w->thread=NULL;c->worker=NULL;p->busy=0;
-        int creating=c->create_roll,render_ok=w->result.status==TS_CDP_RUN_OK;
-        if((p->open || creating) && w->generation==c->generation && !SDL_AtomicGet(&w->cancel)) {
+        int creating=c->create_roll,create_applied=0,render_ok=w->result.status==TS_CDP_RUN_OK;
+        TsInstrument *owner=c->source_event?mosaic_document(c->mosaic,ui,instrument,c->source_event):instrument;
+        if((p->open || creating || c->source_event) && w->generation==c->generation && !SDL_AtomicGet(&w->cancel)) {
             if(w->result.status==TS_CDP_RUN_OK) {
                 portal_stop(device,audio,p,c);
                 snprintf(w->result.output.name,sizeof(w->result.output.name),"%s",portal_recipe_name(p));
-                if(c->source_slot==instrument->selected_slot && c->source_page==ui->sample_page &&
-                   c->source_hash==ts_sample_hash(&instrument->current) &&
-                   (c->source_first>0 || c->source_last<instrument->current.frames)) {
+                if(owner && (c->source_event || (!ui->mosaic_editing && c->source_slot==instrument->selected_slot && c->source_page==ui->sample_page)) &&
+                   c->source_hash==ts_sample_hash(&owner->current) &&
+                   (c->source_first>0 || c->source_last<owner->current.frames)) {
                     size_t first=(!w->region.selection || !w->region.first)?c->source_first:0;
-                    size_t last=(!w->region.selection || w->region.last==c->source.frames)?c->source_last:instrument->current.frames;
-                    ts_transform_boundary_splice(&w->result.output,&instrument->current,
+                    size_t last=(!w->region.selection || w->region.last==c->source.frames)?c->source_last:owner->current.frames;
+                    ts_transform_boundary_splice(&w->result.output,&owner->current,
                                                   first,last);
                     float peak=ts_sample_peak(&w->result.output);
                     if(peak>w->result.peak)w->result.peak=peak;
@@ -471,8 +491,9 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
                     else if(!available)
                         snprintf(ui->status,sizeof(ui->status),"CDP ROLL READY - FINISH CURRENT EDIT; OPEN CDP TO REVIEW");
                     else if(portal_apply(device,audio,ui,instrument,c,0) && creating) {
-                        ts_ui_reset_parent_view(ui,instrument->current.frames);
-                        snprintf(ui->status,sizeof(ui->status),"CREATED %.39s - CDP OPENS THE ROLLED RECIPE; UNDO RETURNS TO FRESH FM",portal_recipe_name(p));
+                        create_applied=1;if(owner)c->create_hash=ts_sample_hash(&owner->current);
+                        if(!c->source_event || c->source_event==ui->mosaic_editing)ts_ui_reset_parent_view(ui,instrument->current.frames);
+                        snprintf(ui->status,sizeof(ui->status),"CREATED %.39s - RIGHT CREATE REROLLS CDP; MIDDLE RESTORES FM",portal_recipe_name(p));
                     } else if(creating)
                         snprintf(ui->status,sizeof(ui->status),"CDP ROLL NOT APPLIED: %.130s",p->message);
                 }
@@ -486,8 +507,15 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
             }
         } else if(creating)snprintf(ui->status,sizeof(ui->status),"CDP ROLL CANCELLED - FRESH FM KEPT");
         else if(p->open)snprintf(p->message,sizeof(p->message),"OLD JOB DISCARDED; PRESS PREVIEW FOR CURRENT SETTINGS");
-        if(creating) {c->create_roll=0;c->quick_apply=0;c->create_ready=1;ui->cdp_creating=0;}
+        if(creating) {c->create_roll=0;c->quick_apply=0;c->create_ready=1;ui->cdp_creating=0;ui->cdp_create=create_applied;}
         portal_worker_free(w);
+        if(c->create_retry) {
+            c->create_retry=0;
+            if(portal_create_matches(c,ui,instrument)) {
+                SDL_Event retry={0};retry.type=SDL_MOUSEBUTTONDOWN;retry.button.button=SDL_BUTTON_RIGHT;
+                portal_create_event(&retry,100,214,device,audio,ui,instrument,c,c->create_transform);
+            }
+        }
     }
     portal_auto_poll(device,audio,ui,c,SDL_GetTicks());
     if(p->playing) {
@@ -601,6 +629,39 @@ static void portal_save(TsPortalUi *p,PortalController *c,int pin)
     p->selected_tab=pin?2:1;p->selected_slot=index;
     snprintf(p->message,sizeof(p->message),pin?"PIN %02d SAVED; OPEN PINS TO REUSE ON ANOTHER TILE":"RECIPE %02d SAVED; SOURCE AUDIO IS NOT PART OF THE RECIPE",index+1);
 }
+static int portal_apply_mosaic(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
+                               TsInstrument *instrument,PortalController *c,int new_tile)
+{
+    TsPortalUi *p=&ui->portal;
+    TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,c->source_event);
+    TsInstrument *doc=mosaic_document(c->mosaic,ui,instrument,c->source_event);
+    if(!e || !doc || c->source_event_epoch!=ui->mosaic->epoch) {snprintf(p->message,sizeof(p->message),"REQUESTING EVENT REMOVED - PREVIEW RETAINED");return 0;}
+    if(e->revision!=c->source_event_revision || ts_sample_hash(&doc->current)!=c->source_hash) {
+        snprintf(p->message,sizeof(p->message),"REQUESTING EVENT CHANGED - PREVIEW RETAINED; RELOAD BEFORE APPLYING");return 0;
+    }
+    if(!p->valid || !p->result || p->busy)return 0;
+    if(new_tile) {
+        snprintf(p->message,sizeof(p->message),"APPLY UPDATES ONLY THIS EVENT; COPY THE EVENT IN MOSAIC FOR ANOTHER VERSION");return 0;
+    }
+    char error[160];TsSample promoted;ts_sample_init(&promoted);
+    if(!ts_sample_clone(&promoted,p->result,error,sizeof(error)))return 0;
+    portal_stop(device,audio,p,c);
+    if(doc==instrument)lock_edit(device,audio);
+    int ok=ts_instrument_apply_rendered_replacement(doc,p->result,c->source_first,c->source_last,error,sizeof(error));
+    if(doc==instrument)unlock_edit(device,audio,ui,instrument);
+    if(ok)ok=doc==instrument && c->mosaic->active==e->id?
+        mosaic_commit(device,ui,doc,c->mosaic):mosaic_publish(device,ui,doc,e,1);
+    if(ok) {
+        portal_invalidate(device,audio,p,c);portal_clear_history(c,p);
+        ts_sample_free(&c->source);c->source=promoted;ts_sample_init(&promoted);
+        c->source_last=c->source_first+c->source.frames;c->source_hash=ts_sample_hash(&doc->current);
+        c->source_event_revision=e->revision;p->source=&c->source;p->listen_result=0;
+        ts_portal_wave_reset(&p->waves[0],p->source);
+        snprintf(p->source_name,sizeof(p->source_name),"EVENT %llu %.36s",(unsigned long long)e->id,doc->current.name);
+        snprintf(p->message,sizeof(p->message),"APPLIED TO EVENT %llu - OTHER PLACEMENTS KEEP THEIR AUDIO",(unsigned long long)e->id);
+    } else snprintf(p->message,sizeof(p->message),"EVENT APPLY FAILED: %.130s",error);
+    ts_sample_free(&promoted);return ok;
+}
 static int portal_apply(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                          TsInstrument *instrument,PortalController *c,int new_tile)
 {
@@ -610,12 +671,13 @@ static int portal_apply(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
         portal_stop(device,audio,p,c);p->result=&c->history[p->history_selected].output;
         p->chain_audition=-1;ts_portal_wave_reset(&p->waves[1],p->result);
     }
+    if(c->source_event)return portal_apply_mosaic(device,audio,ui,instrument,c,new_tile);
     TsPortalRegion region=p->rendered_region;
     if(!p->valid || !p->result || p->busy) {snprintf(p->message,sizeof(p->message),"PREVIEW CURRENT SETTINGS BEFORE APPLYING");return 0;}
     if(ui->capture_state!=TS_CAPTURE_IDLE || ui->external_record_bank || ui->sister_capture_active) {
         snprintf(p->message,sizeof(p->message),"FINISH CAPTURE BEFORE CHANGING A TILE");return 0;
     }
-    if(!new_tile && (c->source_slot!=instrument->selected_slot || c->source_page!=ui->sample_page ||
+    if(!new_tile && (ui->mosaic_editing || c->source_slot!=instrument->selected_slot || c->source_page!=ui->sample_page ||
         c->source_hash!=ts_sample_hash(&instrument->current))) {
         snprintf(p->message,sizeof(p->message),"SOURCE TILE CHANGED - RELOAD; OLD PREVIEW CANNOT REPLACE IT");return 0;
     }
@@ -1125,6 +1187,11 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         if((shortcut || open_button) && !ui_dialog_open(ui) && !ui->canvas_gesture.active &&
            !ui->amplitude_gesture.active && !ui->material_macro_gesture.active &&
            !ui->stretch_gesture.active && !ui->warp_gesture.active && !ui->smear_gesture.active && !ui->tear_gesture.active) {
+            if(c->source_event && (c->worker || p->valid)) {
+                p->open=1;SDL_StartTextInput();
+                snprintf(p->message,sizeof(p->message),"EVENT %llu %s - RELOAD TAKES THE CURRENT EVENT AFTER THIS JOB FINISHES",
+                    (unsigned long long)c->source_event,c->worker?"RENDERING":"PREVIEW RETAINED");return 1;
+            }
             if(ui->capture_state!=TS_CAPTURE_IDLE || ui->external_record_bank || ui->sister_capture_active || transform->worker || c->worker) {
                 snprintf(ui->status,sizeof(ui->status),"FINISH CAPTURE OR CURRENT TRANSFORM BEFORE OPENING CDP PORTAL");return 1;
             }
@@ -1381,7 +1448,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
 static void portal_free(PortalController *c)
 {
     portal_cancel(c);portal_worker_free(c->worker);c->worker=NULL;
-    ts_sample_free(&c->source);
+    ts_sample_free(&c->source);ts_sample_free(&c->create_original);
     for(int i=0;i<TS_PORTAL_CHAIN_STAGES;++i)ts_cdp_run_result_free(&c->stages[i]);
     for(int i=0;i<TS_PORTAL_HISTORY;++i)ts_cdp_run_result_free(&c->history[i]);
 }

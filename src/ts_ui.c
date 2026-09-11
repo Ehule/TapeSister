@@ -1708,6 +1708,14 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
     }
 }
 
+static int palette_mosaic_x(int slot)
+{
+    return slot?TS_PALETTE_MOSAIC_TILE_X+(slot-1)*TS_PALETTE_MOSAIC_TILE_STEP:TS_PALETTE_MOSAIC_HIGHLIGHT_X;
+}
+static int palette_mosaic_width(int slot)
+{
+    return slot?TS_PALETTE_MOSAIC_TILE_W:TS_PALETTE_MOSAIC_HIGHLIGHT_W;
+}
 static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     static const char *const short_names[TS_PALETTE_TAPESISTER_COLOR_COUNT] = {
@@ -1741,7 +1749,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
              color == ui->palette_entry ? PAL_BLOCK_TEXT : RGB(222, 218, 214), 1);
     }
     snprintf(value, sizeof(value), "%s  #%06X",
-             short_names[ui->palette_entry],
+             ui->palette_entry<TS_PALETTE_TAPESISTER_COLOR_COUNT?short_names[ui->palette_entry]:ts_palette_color_name((TsPaletteColor)ui->palette_entry),
              (unsigned)(selected & 0xffffffu));
     /* The palette now has three swatch rows. Keep the selected-color readout
        in the free lower-middle lane rather than painting across row three. */
@@ -1781,6 +1789,15 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
              x >= 538 && x < 578 ? PAL_BLOCK_TEXT : PAL_NOTE);
     }
     text(fb, 541, 121, "0.25S", PAL_EFFECT, 1);
+    text(fb,20,157,"MOSAIC",PAL_TUNING,1);
+    for(int slot=0;slot<TS_PALETTE_MOSAIC_COLOR_COUNT;++slot) {
+        int color=TS_PALETTE_MOSAIC_HIGHLIGHT+slot,x=palette_mosaic_x(slot),w=palette_mosaic_width(slot);
+        int active=color==ui->palette_entry;
+        frame(fb,x,TS_PALETTE_MOSAIC_Y,w,TS_PALETTE_MOSAIC_H,active?PAL_BLOCK:RGB(18,18,18),active?PAL_MOUSE:RGB(70,61,75));
+        rect(fb,x+3,TS_PALETTE_MOSAIC_Y+3,11,10,ui->palette.colors[color]);
+        char label[12];if(slot)snprintf(label,sizeof(label),"%d",slot);else snprintf(label,sizeof(label),"HILITE");
+        text(fb,x+18,TS_PALETTE_MOSAIC_Y+5,label,active?PAL_BLOCK_TEXT:RGB(222,218,214),1);
+    }
     text(fb, TS_PALETTE_TAPEHEAD_X, 159, "TAPEHEAD EYEDROPPER", PAL_TUNING, 1);
     for (int swatch = 0; swatch < ts_palette_tapehead_swatch_count(); ++swatch) {
         TsPaletteColor source = ts_palette_tapehead_swatch_color(swatch);
@@ -1976,6 +1993,9 @@ int ts_ui_palette_entry_from_point(int x, int y)
         if (x >= left && x < left + TS_PALETTE_SWATCH_W &&
             y >= top && y < top + TS_PALETTE_SWATCH_H) return color;
     }
+    if(y>=TS_PALETTE_MOSAIC_Y && y<TS_PALETTE_MOSAIC_Y+TS_PALETTE_MOSAIC_H)
+        for(int slot=0;slot<TS_PALETTE_MOSAIC_COLOR_COUNT;++slot)
+            if(x>=palette_mosaic_x(slot) && x<palette_mosaic_x(slot)+palette_mosaic_width(slot))return TS_PALETTE_MOSAIC_HIGHLIGHT+slot;
     return -1;
 }
 
@@ -2490,7 +2510,9 @@ int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount)
 
 int ts_ui_palette_cycle_entry(int entry, int amount)
 {
-    return cycle_index(entry, amount, TS_PALETTE_TAPESISTER_COLOR_COUNT);
+    int index=entry>=TS_PALETTE_MOSAIC_HIGHLIGHT?TS_PALETTE_TAPESISTER_COLOR_COUNT+entry-TS_PALETTE_MOSAIC_HIGHLIGHT:entry;
+    index=cycle_index(index,amount,TS_PALETTE_TAPESISTER_COLOR_COUNT+TS_PALETTE_MOSAIC_COLOR_COUNT);
+    return index<TS_PALETTE_TAPESISTER_COLOR_COUNT?index:TS_PALETTE_MOSAIC_HIGHLIGHT+index-TS_PALETTE_TAPESISTER_COLOR_COUNT;
 }
 
 int ts_ui_palette_cycle_channel(int channel, int amount)
@@ -2829,7 +2851,7 @@ static void live_input_render(TsFramebuffer *fb, const TsUiState *ui)
 int ts_ui_foreground_panel_open(const TsUiState *ui)
 {
     if (ui == NULL) return 0;
-    return ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->mosaic_edit_choice || ui->portal.open || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open || ui->fm_open ||
            ui->transform_open || ui->drone_open || ui->import_preview_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
@@ -2840,11 +2862,13 @@ int ts_ui_foreground_panel_open(const TsUiState *ui)
 }
 
 #include "ts_cdp_portal_ui.inc"
+#include "ts_mosaic_ui.inc"
 
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
     render_palette = &ui->palette;
     if(ui->portal.open) { portal_render(fb,ui); return; }
+    if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);return;}
     const TsTuning *display_tuning = &ui->tune_reference;
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
     int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
@@ -2913,9 +2937,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                         TS_UI_MASTER_METER_X, TS_UI_MASTER_METER_Y);
     rect(fb, 576, 12, 3, 9,
          ui->midi_activity_until_ms != 0u ? PAL_TUNING : RGB(22, 22, 22));
-    button(fb, 214, 4, 60, "CONFIG", ui->config_open);
-    button(fb, 278, 4, 66, "FT2 LINK", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
-    button(fb, 348, 4, 50, "SAVE", 0);
+    button(fb, 214, 4, 46, "CFG", ui->config_open);
+    button(fb, 264, 4, 32, "FT2", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
+    button(fb, 300, 4, 56, "MOSAIC", ui->mosaic_editing != 0 || ui->mosaic_playing);
+    button(fb, 360, 4, 38, "SAVE", 0);
     button(fb, 402, 4, 58, "EXPORT", 0);
     button(fb, 464, 4, 28, "CDP", 0);
 
@@ -2926,6 +2951,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                           instrument->selected_slot + 1;
         snprintf(tile, sizeof(tile), "TILE %02d %c %.24s", tile_number,
                  sample->channels == 2u ? 'S' : 'M', sample->name);
+        if(ui->mosaic_editing)snprintf(tile,sizeof(tile),"EVENT %llu  %.24s",(unsigned long long)ui->mosaic_editing,sample->name);
         if (showing_bank && shown_slot->occupied) {
             snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
                      ui->bank_view_slot + 1,
@@ -3389,7 +3415,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     if (ui->input_meter_active) live_input_render(fb, ui);
 
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
-    button(fb, 85, 205, 82, ui->cdp_creating ? "CANCEL CDP" : ui->cdp_create ? "CREATE+CDP" : "CREATE", ui->cdp_create);
+    button(fb, 85, 205, 82, ui->cdp_creating ? "CDP..." : ui->cdp_create ? "CREATE+CDP" : "CREATE", ui->cdp_create);
     button(fb, 172, 205, 70, "VARY", 0);
     button(fb, 247, 205, 78,
            ui->workbench_loop_persistent ? "LOOP LOCK" : "LOOP",
@@ -3557,7 +3583,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING?"STOP FILE":"REC FILE",
             ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING && ui->text_cursor_visible);
         mini_button(fb,460,313,72,ui->keyboard_hold?"HOLD ON":"HOLD",ui->keyboard_hold);
-        mini_button(fb,540,313,90,ui->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",ui->keyboard_sustain);
+        if(ui->mosaic_editing) {
+            const TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_editing);
+            mini_button(fb,540,313,90,e && e->looping?"EVENT LOOP":"EVENT ONCE",e && e->looping);
+        } else mini_button(fb,540,313,90,ui->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",ui->keyboard_sustain);
         TsKeyboardLayout layout;
         int keyboard_base_note = ts_ui_keyboard_base_note(ui);
         keyboard_layout(keyboard_base_note, &layout);

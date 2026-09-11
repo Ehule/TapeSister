@@ -3,6 +3,7 @@
 #endif
 
 #include "tapesister/sample_pages.h"
+#include "tapesister/mosaic.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -114,7 +115,7 @@ const TsInstrument *ts_sample_pages_page(const TsSamplePages *pages,
                                          size_t page)
 {
     if (pages == NULL || page >= pages->page_count) return NULL;
-    if (pages->active_live && page == pages->active_page) return active;
+    if (pages->active_live && page == pages->active_page) return pages->mosaic_bank ? pages->mosaic_bank : active;
     return pages->pages[page];
 }
 
@@ -155,6 +156,9 @@ static int append_page(TsSamplePages *pages, char *error, size_t error_size)
 int ts_sample_pages_switch(TsSamplePages *pages, TsInstrument *active,
                            size_t page, char *error, size_t error_size)
 {
+    if(pages && pages->mosaic_bank) {
+        pages_error(error,error_size,"Return to Mosaic before changing Sample pages");return 0;
+    }
     if (pages == NULL || active == NULL || !pages->active_live ||
         page >= pages->page_count) {
         pages_error(error, error_size, "Invalid Sample page switch");
@@ -176,6 +180,9 @@ int ts_sample_pages_append_and_switch(TsSamplePages *pages,
                                       size_t *new_page,
                                       char *error, size_t error_size)
 {
+    if(pages && pages->mosaic_bank) {
+        pages_error(error,error_size,"Return to Mosaic before changing Sample pages");return 0;
+    }
     size_t page;
     if (new_page != NULL) *new_page = 0u;
     if (pages == NULL || active == NULL || !pages->active_live) {
@@ -202,6 +209,9 @@ int ts_sample_pages_remove_last_and_switch(TsSamplePages *pages,
                                            size_t destination_page,
                                            char *error, size_t error_size)
 {
+    if(pages && pages->mosaic_bank) {
+        pages_error(error,error_size,"Return to Mosaic before changing Sample pages");return 0;
+    }
     size_t last;
     TsInstrument *discard;
     if (pages == NULL || active == NULL || !pages->active_live ||
@@ -228,6 +238,9 @@ int ts_sample_pages_remove_last_and_switch(TsSamplePages *pages,
 int ts_sample_pages_park(TsSamplePages *pages, TsInstrument *active,
                          char *error, size_t error_size)
 {
+    if(pages && pages->mosaic_bank) {
+        pages_error(error,error_size,"Return to Mosaic before changing Sample pages");return 0;
+    }
     if (pages == NULL || active == NULL || !pages->active_live ||
         pages->active_page >= pages->page_count) {
         pages_error(error, error_size, "Sample page is already parked");
@@ -242,6 +255,9 @@ int ts_sample_pages_park(TsSamplePages *pages, TsInstrument *active,
 int ts_sample_pages_unpark(TsSamplePages *pages, TsInstrument *active,
                            char *error, size_t error_size)
 {
+    if(pages && pages->mosaic_bank) {
+        pages_error(error,error_size,"Return to Mosaic before changing Sample pages");return 0;
+    }
     if (pages == NULL || active == NULL || pages->active_live ||
         pages->active_page >= pages->page_count) {
         pages_error(error, error_size, "Sample page is already active");
@@ -837,6 +853,7 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
                                     destination, error, error_size) ||
             !validate_saved_instrument(destination, error, error_size)) goto failed;
     }
+    if (!ts_mosaic_save(pages->mosaic, project_data, error, error_size)) goto failed;
     record_present = record_bank != NULL && ts_instrument_bank_count(record_bank) > 0;
     if (record_present) {
         if (snprintf(destination, sizeof(destination), "%s/record-bank.tsr",
@@ -907,9 +924,9 @@ int ts_sample_pages_save_project(const TsSamplePages *pages,
     if (fprintf(file,
                 "TAPESISTER_PROJECT 2\nproject=%s\npage_count=%zu\n"
                 "active_page=%zu\nrecord_bank=%d\n"
-                "sister_state=%d\nsample_format=WAV_PCM16\nsample_count=%zu\n",
+                "sister_state=%d\nsample_format=WAV_PCM16\nsample_count=%zu\nmosaic=%d\n",
                 project_name, pages->page_count, pages->active_page,
-                record_present, sister_state != NULL, sample_count) < 0)
+                record_present, sister_state != NULL, sample_count, pages->mosaic != NULL) < 0)
         goto manifest_failed;
     for (size_t page = 0u; page < pages->page_count; ++page) {
         snprintf(group, sizeof(group), "page-%03zu", page + 1u);
@@ -956,7 +973,7 @@ failed:
 static int read_manifest(const char *project, char *directory,
                          size_t directory_size, int *layout,
                          size_t *page_count, size_t *active_page,
-                         int *record_present, int *found,
+                         int *record_present, int *found, int *mosaic_present,
                          char *error, size_t error_size)
 {
     char path[TS_PROJECT_PATH_MAX];
@@ -1007,6 +1024,14 @@ static int read_manifest(const char *project, char *directory,
                 pages_error(error, error_size, "Malformed TapeSister project manifest");
                 return 0;
             }
+            while(fgets(line,sizeof(line),file)) {
+                if(strncmp(line,"mosaic=",7)==0) {
+                    if(sscanf(line,"mosaic=%d",mosaic_present)!=1 || (*mosaic_present!=0 && *mosaic_present!=1)) {
+                        fclose(file);pages_error(error,error_size,"Malformed Mosaic manifest entry");return 0;
+                    }
+                }
+            }
+            if(ferror(file)){fclose(file);pages_error(error,error_size,"Could not read project manifest");return 0;}
             fclose(file);
             *layout = 2;
             *found = 1;
@@ -1058,6 +1083,8 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
                                  const char *path,
                                  char *error, size_t error_size)
 {
+    TsMosaic *mosaic_target = pages ? pages->mosaic : NULL;
+    TsMosaic *mosaic_loaded = NULL;
     TsSamplePages loaded;
     TsInstrument loaded_record;
     char directory[TS_PROJECT_PATH_MAX];
@@ -1065,7 +1092,7 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
     size_t page_count = 1u;
     size_t active_page = 0u;
     int record_present = 0;
-    int manifest_found = 0;
+    int manifest_found = 0, mosaic_present = 0;
     int layout = 0;
     int loaded_ready = 0;
     if (pages == NULL || active_sample == NULL || record_bank == NULL ||
@@ -1083,7 +1110,7 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
         goto failed;
     if (!read_manifest(path, directory, sizeof(directory), &layout,
                        &page_count, &active_page, &record_present,
-                       &manifest_found, error, error_size)) goto failed;
+                       &manifest_found, &mosaic_present, error, error_size)) goto failed;
     if (manifest_found) {
         while (loaded.page_count < page_count)
             if (!append_page(&loaded, error, error_size)) goto failed;
@@ -1114,6 +1141,24 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
                                            error, error_size)) goto failed;
         }
     }
+    if(mosaic_present) {
+        if(strlen(directory)+25 >= sizeof(page_path))goto failed;
+        strcpy(page_path,directory);strcat(page_path,"/project-data/mosaic.tsm");
+        FILE *check=fopen(page_path,"r");
+        if(!check){pages_error(error,error_size,"Mosaic arrangement is missing from this project");goto failed;}
+        fclose(check);
+    }
+    if (mosaic_target) {
+        mosaic_loaded = ts_mosaic_create();
+        if (!mosaic_loaded) goto failed;
+        if (layout == 2) {
+            if (strlen(directory)+14 >= sizeof(page_path)) goto failed;
+            memcpy(page_path,directory,strlen(directory));
+            strcpy(page_path+strlen(directory),"/project-data");
+            if (!ts_mosaic_load(mosaic_loaded, page_path, error, error_size)) goto failed;
+        }
+    }
+    loaded.mosaic = mosaic_target;
     loaded.active_page = active_page;
     ts_instrument_free(active_sample);
     ts_instrument_init(active_sample);
@@ -1122,6 +1167,10 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
     *record_bank = loaded_record;
     ts_instrument_init(&loaded_record);
     *pages = loaded;
+    if (mosaic_loaded) {
+        TsMosaic swap = *mosaic_target; *mosaic_target = *mosaic_loaded;
+        *mosaic_loaded = swap; ts_mosaic_free(mosaic_loaded); mosaic_loaded = NULL;
+    }
     memset(&loaded, 0, sizeof(loaded));
     if (!ts_sample_pages_unpark(pages, active_sample, error, error_size))
         return 0;
@@ -1129,6 +1178,7 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
     return 1;
 
 failed:
+    ts_mosaic_free(mosaic_loaded);
     if (loaded_ready) ts_sample_pages_free(&loaded);
     ts_instrument_free(&loaded_record);
     return 0;

@@ -9,6 +9,8 @@
 #define RGB(r,g,b) (0xff000000u | ((uint32_t)(r) << 16) | \
                     ((uint32_t)(g) << 8) | (uint32_t)(b))
 
+_Static_assert(TS_PALETTE_COLOR_COUNT <= 32, "Palette defined-color mask needs more bits");
+
 static const char *const color_keys[TS_PALETTE_COLOR_COUNT] = {
     "PatternText", "BlockMark", "TextOnBlock", "Mouse", "Desktop", "Buttons",
     "PatternNote", "PatternInstrument", "PatternVolume", "PatternTuning",
@@ -17,7 +19,8 @@ static const char *const color_keys[TS_PALETTE_COLOR_COUNT] = {
     "SisterSourceHorizontal", "SisterSourceVertical",
     "TrackLengthPlayhead", "FastTracksPlayhead", "ControlPlayhead",
     "FastTracksSync", "FastTracksPhase", "FastTracksSong",
-    "FastTracksLengthPlayhead"
+    "FastTracksLengthPlayhead", "MosaicHighlight", "MosaicTile1",
+    "MosaicTile2", "MosaicTile3", "MosaicTile4", "MosaicTile5"
 };
 
 static const char *const color_names[TS_PALETTE_COLOR_COUNT] = {
@@ -27,7 +30,9 @@ static const char *const color_names[TS_PALETTE_COLOR_COUNT] = {
     "STEREO WAVE RIGHT", "STEREO WAVE SUM",
     "SISTER SOURCE H", "SISTER SOURCE V", "LEN HEAD",
     "FASTTRACKS HEAD", "CONTROL HEAD", "FASTTRACKS SYNC",
-    "FASTTRACKS PHASE", "FASTTRACKS SONG", "FASTTRACKS + LEN HEAD"
+    "FASTTRACKS PHASE", "FASTTRACKS SONG", "FASTTRACKS + LEN HEAD",
+    "MOSAIC HIGHLIGHT", "MOSAIC TILE 1", "MOSAIC TILE 2", "MOSAIC TILE 3",
+    "MOSAIC TILE 4", "MOSAIC TILE 5"
 };
 
 static const TsPaletteColor tapehead_swatch_colors[TS_PALETTE_TAPEHEAD_COLOR_COUNT] = {
@@ -62,7 +67,9 @@ static const TsPaletteColor universal_save_order[TS_PALETTE_COLOR_COUNT] = {
     TS_PALETTE_ACTIVE_TILE, TS_PALETTE_STEREO_WAVE_LEFT,
     TS_PALETTE_STEREO_WAVE_RIGHT, TS_PALETTE_STEREO_WAVE_SUM,
     TS_PALETTE_SISTER_SOURCE_HORIZONTAL,
-    TS_PALETTE_SISTER_SOURCE_VERTICAL
+    TS_PALETTE_SISTER_SOURCE_VERTICAL, TS_PALETTE_MOSAIC_HIGHLIGHT,
+    TS_PALETTE_MOSAIC_TILE_1, TS_PALETTE_MOSAIC_TILE_2, TS_PALETTE_MOSAIC_TILE_3,
+    TS_PALETTE_MOSAIC_TILE_4, TS_PALETTE_MOSAIC_TILE_5
 };
 
 static void set_error(char *error, size_t error_size, const char *message)
@@ -130,11 +137,13 @@ void ts_palette_default(TsPalette *palette)
         RGB(53, 255, 255), RGB(24, 255, 0),
         RGB(255, 174, 32), RGB(53, 255, 255), RGB(65, 215, 255),
         RGB(255, 174, 32), RGB(255, 49, 49), RGB(0, 206, 65),
-        RGB(255, 49, 49), RGB(255, 174, 32), RGB(206, 97, 255)
+        RGB(255, 49, 49), RGB(255, 174, 32), RGB(206, 97, 255),
+        RGB(255,49,49), RGB(129,206,200), RGB(213,179,124), RGB(186,147,186),
+        RGB(162,185,131), RGB(141,169,203)
     };
     if (palette == NULL) return;
     memcpy(palette->colors, defaults, sizeof(defaults));
-    palette->defined_colors = (1u << TS_PALETTE_COLOR_COUNT) - 1u;
+    palette->defined_colors = TS_PALETTE_ALL_COLORS;
     palette->desktop_contrast = 18;
     palette->buttons_contrast = 18;
 }
@@ -371,7 +380,8 @@ int ts_palette_sample_tapehead_from(TsPalette *destination_palette,
     TsPaletteColor source = ts_palette_tapehead_swatch_color(swatch);
     if (destination_palette == NULL || source_palette == NULL ||
         destination < 0 ||
-        (int)destination >= TS_PALETTE_TAPESISTER_COLOR_COUNT ||
+        ((int)destination >= TS_PALETTE_TAPESISTER_COLOR_COUNT &&
+         (destination < TS_PALETTE_MOSAIC_HIGHLIGHT || destination > TS_PALETTE_MOSAIC_TILE_5)) ||
         source < 0 || source >= TS_PALETTE_COLOR_COUNT ||
         !ts_palette_color_is_defined(source_palette, source)) return 0;
     destination_palette->colors[destination] = source_palette->colors[source];

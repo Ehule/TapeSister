@@ -12,6 +12,7 @@
 #include "tapesister/performance_recorder.h"
 #include "tapesister/recipe.h"
 #include "tapesister/sample.h"
+#include "tapesister/mosaic.h"
 #include "tapesister/transform.h"
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/exchange.h"
@@ -54,6 +55,11 @@ enum { TS_PALETTE_SLIDER_X = 20, TS_PALETTE_SLIDER_Y = 102,
        TS_PALETTE_CONTRAST_X = 250, TS_PALETTE_CONTRAST_W = 170,
        TS_PALETTE_ACTION_Y = 174 };
 enum { TS_CONFIG_ACTION_Y = 196 };
+enum { TS_PALETTE_MOSAIC_Y = 153, TS_PALETTE_MOSAIC_H = 16,
+       TS_PALETTE_MOSAIC_HIGHLIGHT_X = 72, TS_PALETTE_MOSAIC_HIGHLIGHT_W = 64,
+       TS_PALETTE_MOSAIC_TILE_X = 145, TS_PALETTE_MOSAIC_TILE_W = 46,
+       TS_PALETTE_MOSAIC_TILE_STEP = 52 };
+
 enum { TS_PALETTE_TAPEHEAD_X = 432, TS_PALETTE_TAPEHEAD_Y = 171,
        TS_PALETTE_TAPEHEAD_W = 7, TS_PALETTE_TAPEHEAD_H = 8,
        TS_PALETTE_TAPEHEAD_STEP_X = 9 };
@@ -369,7 +375,7 @@ typedef struct {
     int show_ingredients;
     int cdp_page;
     int cdp_user_pins;
-    int cdp_create; /* Session choice: right-click CREATE toggles the CDP roll. */
+    int cdp_create; /* The current CREATE waveform has a CDP variation. */
     int cdp_creating;
     TsPortalUi portal;
     int dsp_page;
@@ -410,6 +416,24 @@ typedef struct {
     int master_output_dragging;
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
+    TsMosaic *mosaic;
+    uint64_t mosaic_selected, mosaic_editing;
+    uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
+    int mosaic_open, mosaic_playing;
+    int mosaic_edit_choice;
+    int mosaic_follow, mosaic_box, mosaic_box_x, mosaic_box_y, mosaic_box_end_x, mosaic_box_end_y;
+    int mosaic_ghost_count;
+    TsMosaicEvent mosaic_ghosts[TS_MOSAIC_EVENTS];
+    struct {
+        const TsSample *sample;
+        TsMosaicSource *source;
+        uint64_t event;
+        int bank_slot, bank_page;
+        uint64_t hash;
+    } mosaic_sources[TS_MOSAIC_EVENTS + TS_BANK_SLOT_COUNT];
+    int mosaic_source_count, mosaic_source_page, mosaic_source_selected;
+    int mosaic_bank_count, mosaic_source_pages, mosaic_source_offset;
+    double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;
     uint32_t staged_notes;
     uint32_t overlay_until_ms;
     int workbench_loop_active;
@@ -629,6 +653,7 @@ const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
                                       const TsInstrument *instrument);
 const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
                                      const TsInstrument *instrument);
+void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_foreground_panel_open(const TsUiState *ui);
 void ts_ui_draw_tile_state_borders(TsFramebuffer *fb, int slot,

@@ -306,6 +306,13 @@ int main(void)
               palette.colors[TS_PALETTE_BLOCK_MARK]);
         CHECK(palette.colors[TS_PALETTE_ACTIVE_TILE] == 0xffff3131u);
         CHECK(palette.colors[TS_PALETTE_MOUSE] == 0xffcc830bu);
+        CHECK(palette.colors[TS_PALETTE_MOSAIC_HIGHLIGHT] == 0xffff3131u);
+        CHECK(palette.defined_colors == UINT32_MAX);
+        for(int i=0;i<TS_PALETTE_MOSAIC_COLOR_COUNT;++i) {
+            TsPaletteColor color=(TsPaletteColor)(TS_PALETTE_MOSAIC_HIGHLIGHT+i);
+            CHECK(ts_palette_color_is_defined(&palette,color));
+            ts_palette_set_component(&palette,color,1,(uint8_t)(41+i));
+        }
         CHECK(palette.desktop_contrast == 18 &&
               palette.buttons_contrast == 18);
         ts_palette_set_component(&palette, TS_PALETTE_MOUSE, 0, 0x12);
@@ -419,6 +426,16 @@ int main(void)
                      "PRIMARY") == 0);
         CHECK(strcmp(ts_palette_color_name(TS_PALETTE_ACTIVE_TILE),
                      "ACTIVE TILE") == 0);
+        CHECK(reopened.colors[TS_PALETTE_MOSAIC_HIGHLIGHT]==0xffff3131u); /* Old palette fallback. */
+        for(int i=0;i<TS_PALETTE_MOSAIC_COLOR_COUNT;++i) {
+            TsPaletteColor color=(TsPaletteColor)(TS_PALETTE_MOSAIC_HIGHLIGHT+i);
+            CHECK(ts_palette_sample_tapehead_from(&reopened,&palette,color,0));
+            CHECK(reopened.colors[color]==palette.colors[TS_PALETTE_PATTERN_TEXT]);
+        }
+        CHECK(ts_palette_save(&reopened,"test-mosaic-palette.pal",error,sizeof(error)));
+        CHECK(ts_palette_load(&tapehead_reopened,"test-mosaic-palette.pal",error,sizeof(error)));
+        for(int i=0;i<TS_PALETTE_MOSAIC_COLOR_COUNT;++i)CHECK(tapehead_reopened.colors[TS_PALETTE_MOSAIC_HIGHLIGHT+i]==palette.colors[TS_PALETTE_PATTERN_TEXT]);
+        remove("test-mosaic-palette.pal");
         remove("test-palette.pal");
         remove("test-compatible.pal");
         remove("test-tapehead-legacy.pal");
@@ -437,6 +454,14 @@ int main(void)
             CHECK(ts_ui_palette_entry_from_point(x, y) == color);
         }
         CHECK(ts_ui_palette_entry_from_point(610, 90) == -1);
+        CHECK(ts_ui_palette_cycle_entry(TS_PALETTE_SISTER_SOURCE_VERTICAL,1)==TS_PALETTE_MOSAIC_HIGHLIGHT);
+        CHECK(ts_ui_palette_cycle_entry(TS_PALETTE_MOSAIC_HIGHLIGHT,-1)==TS_PALETTE_SISTER_SOURCE_VERTICAL);
+        for(int i=0;i<TS_PALETTE_MOSAIC_COLOR_COUNT;++i) {
+            int x=i?TS_PALETTE_MOSAIC_TILE_X+(i-1)*TS_PALETTE_MOSAIC_TILE_STEP:TS_PALETTE_MOSAIC_HIGHLIGHT_X;
+            CHECK(ts_ui_palette_entry_from_point(x+2,TS_PALETTE_MOSAIC_Y+2)==TS_PALETTE_MOSAIC_HIGHLIGHT+i);
+            CHECK(ts_ui_palette_channel_from_point(x+2,TS_PALETTE_MOSAIC_Y+2,NULL)==-1);
+            CHECK(ts_ui_palette_action_from_point(x+2,TS_PALETTE_MOSAIC_Y+2)==TS_UI_PALETTE_ACTION_NONE);
+        }
         for (int swatch = 0; swatch < TS_PALETTE_TAPEHEAD_COLOR_COUNT; ++swatch) {
             int x = TS_PALETTE_TAPEHEAD_X +
                     swatch * TS_PALETTE_TAPEHEAD_STEP_X +
@@ -464,9 +489,9 @@ int main(void)
               TS_UI_PALETTE_ACTION_CANCEL);
         CHECK(ts_ui_palette_action_from_point(50, 205) == TS_UI_PALETTE_ACTION_NONE);
         CHECK(ts_ui_palette_cycle_entry(0, -1) ==
-              TS_PALETTE_TAPESISTER_COLOR_COUNT - 1);
+              TS_PALETTE_MOSAIC_TILE_5);
         CHECK(ts_ui_palette_cycle_entry(
-                  TS_PALETTE_TAPESISTER_COLOR_COUNT - 1, 1) == 0);
+                  TS_PALETTE_MOSAIC_TILE_5, 1) == 0);
         CHECK(ts_ui_palette_cycle_channel(0, -1) == 4);
         CHECK(ts_ui_palette_cycle_channel(4, 1) == 0);
         CHECK(ts_ui_config_cycle_field(TS_CONFIG_SAMPLE_PATH, -1) ==
