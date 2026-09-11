@@ -5,25 +5,40 @@ set(TAPESISTER_CDP8_GIT_REPOSITORY
 set(TAPESISTER_CDP8_GIT_TAG
     "28bc42c72c1a7cb0fab933acd1c433be958a787b")
 set(TAPESISTER_CDP8_REQUIRED_PROGRAMS
+    bounce
     blur
+    caltrain
+    clip
     distmore
     distort
     distshift
+    dvdwind
     envel
+    envspeak
     extend
     filter
     focus
     hilite
     glisten
     grain
+    gate
     hover
     modify
     motor
+    newdelay
     pvoc
+    quirk
     scramble
     sorter
     sfedit
+    silend
+    spec
+    specfnu
+    specfold
+    spectstr
     splinter
     strange
     stretch
+    superaccu
+    tremenv
     stutter)

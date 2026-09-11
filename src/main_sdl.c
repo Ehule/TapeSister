@@ -3760,10 +3760,10 @@ static void begin_bank_audition(SDL_AudioDeviceID device, AudioState *audio,
                                 TsUiState *ui, const TsInstrument *instrument,
                                 int slot, int output_rate);
 
-static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio,
+static int generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio,
                                       TsUiState *ui, TsInstrument *instrument,
                                       TsFmSeedSequence *seed_sequence,
-                                      int vary, int unused_promote, int unused_radical)
+                                      int vary, int unused_promote, int unused_radical, uint32_t *created_seed)
 {
     char error[160];
     int slot = instrument->selected_slot;
@@ -3771,7 +3771,7 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
                 instrument->selection_last > instrument->selection_first;
     size_t stamp_frames = stamp ? instrument->selection_last -
                                  instrument->selection_first : 0;
-    int ok;
+    int ok;uint32_t seed=0;
     (void)unused_promote; (void)unused_radical;
     if (ui->workbench_loop_active) stop_all(device, audio, ui);
     lock_edit(device, audio);
@@ -3784,18 +3784,18 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
         ok = ts_instrument_stamp_vary(instrument, error, sizeof(error));
     else if (stamp)
         ok = ts_instrument_stamp_create_fresh(
-            instrument, seed_sequence, NULL, error, sizeof(error));
+            instrument, seed_sequence, &seed, error, sizeof(error));
     else if (vary)
         ok = ts_instrument_vary_selected(instrument, instrument->family_trajectory,
                                          &slot, error, sizeof(error));
     else
         ok = ts_instrument_create_selected_fresh(
-            instrument, seed_sequence, NULL, error, sizeof(error));
+            instrument, seed_sequence, &seed, error, sizeof(error));
     unlock_edit(device, audio, ui, instrument);
     if (!ok) {
         snprintf(ui->status, sizeof(ui->status), "%s FAILED: %.132s",
                  vary ? "VARY" : "CREATE", error);
-        return;
+        return 0;
     }
     ui->bank_view_slot = -1;
     ui->audition_source = TS_AUDITION_CURRENT;
@@ -3822,8 +3822,10 @@ static void generate_family_candidate(SDL_AudioDeviceID device, AudioState *audi
                      instrument->family_trajectory ? " CHAIN" : "");
         else
             snprintf(ui->status, sizeof(ui->status),
-                     "BANK %02d CREATED FRESH FM SOURCE", slot + 1);
+                     "BANK %02d CREATED FRESH FM SOURCE - RIGHT-CLICK CREATE FOR CDP ROLLS", slot + 1);
     }
+    if(created_seed)*created_seed=seed;
+    return 1;
 }
 
 static int render_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
@@ -11906,6 +11908,7 @@ int main(int argc, char **argv)
     import_controller_init(&import_controller);
     ts_ui_init(&ui);
     portal_init(&portal,&ui.portal);
+    portal.create_seeds=&fm_seed_sequence;
     portal.pages=&sample_pages;portal.external_input=&external_input;
     ui.sample_page = 0;
     ui.sample_page_count = 1;
@@ -15137,11 +15140,11 @@ int main(int argc, char **argv)
                     generate_family_candidate(device, &audio, &ui, &instrument,
                                               &fm_seed_sequence, 0,
                                               (mod & KMOD_SHIFT) != 0,
-                                              (mod & KMOD_CTRL) != 0);
+                                              (mod & KMOD_CTRL) != 0, NULL);
                 } else if (y >= 205 && y < 228 && x >= 172 && x < 242) {
                     generate_family_candidate(device, &audio, &ui, &instrument,
                                               &fm_seed_sequence, 1,
-                                              (mod & KMOD_SHIFT) != 0, 0);
+                                              (mod & KMOD_SHIFT) != 0, 0, NULL);
                 } else if (y >= 205 && y < 228 && x >= 247 && x < 325) {
                     toggle_workbench_loop(device, &audio, &ui, &instrument,
                                           obtained.freq, (mod & KMOD_SHIFT) != 0);

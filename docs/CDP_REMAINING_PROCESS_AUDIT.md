@@ -1,5 +1,9 @@
 # CDP expansion audit — September 2026
 
+This document records the pre-implementation audit at the 131-process baseline.
+See [CDP expansion](CDP_EXPANSION.md) for the subsequent implementation, native
+stereo policies, original chain instruments and CREATE integration.
+
 ## Recommendation
 
 There is substantial useful CDP territory left. The strongest next step is a

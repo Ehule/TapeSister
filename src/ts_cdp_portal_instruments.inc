@@ -40,7 +40,41 @@ int ts_portal_control_at(const TsPortalUi *ui,int row,TsPortalControl *out)
 int ts_portal_control_count(const TsPortalUi *ui)
 {TsPortalControl c;int n=0;while(ts_portal_control_at(ui,n,&c))++n;return n;}
 
-size_t ts_portal_instrument_count(void){return 4;}
+/* Original TapeSister instruments composed from named CDP processes. These are
+   editable recipes, not claims of new upstream CDP algorithms. */
+static int portal_original_instrument(size_t index,TsPortalRecipe *r)
+{
+    static const char *names[]={"TAPE COMET","WIRE CHOIR","SYLLABLE RAIN","FORMANT LANTERN"};
+    static const char *descriptions[]={
+        "Tape acceleration sends a gesture into a tuned feedback tail. FLIGHT bends its path; RING PITCH and MEMORY shape the resonator. Mono or stereo.",
+        "Transposed layers form a small choir; a low-pass softens their edges. INTERVAL and VOICES shape the harmony; COLOUR opens the top. Mono or stereo.",
+        "Envelope segments repeat with shrinking tails, then excite a tuned delay. Try speech, singing or pulsed sounds. WINDOW sets the scale. Mono or stereo.",
+        "Hold one spectrum, then rotate its formant envelope into a moving lantern of tone. MOMENT chooses the source colour; ORBIT animates it. Mono only."};
+    static const char *ids[][3]={
+        {"modify.speed.5","newdelay.newdelay","modify.loudness.1"},
+        {"modify.stack","filter.lohi.1","modify.loudness.1"},
+        {"envspeak.envspeak.5","newdelay.newdelay","modify.loudness.1"},
+        {"spec.magnify","specfnu.specfnu.4","modify.loudness.1"}};
+    if(index>=4 || !r)return 0;
+    memset(r,0,sizeof(*r));snprintf(r->process_id,sizeof(r->process_id),"@chain");r->version=1;r->stage_count=3;
+    snprintf(r->name,sizeof(r->name),"%s",names[index]);snprintf(r->description,sizeof(r->description),"%s",descriptions[index]);
+    for(unsigned stage=0;stage<3;++stage) {
+        TsPortalRecipe step;ts_portal_recipe_default(&step,ts_portal_process_find(ids[index][stage]));step.exposed=0;
+#define MACRO(i,name,lo,hi,value) do {step.values[i]=value;step.exposed|=1u<<(i);if(!ts_portal_macro_set(&step,i,name,lo,hi,NULL,0))return 0;}while(0)
+        if(stage==2) {MACRO(0,"OUTPUT",.1,1,.65);}
+        else if(stage==0 && index==0) {MACRO(0,"FLIGHT",1.1,2.5,1.8);MACRO(1,"RISE TIME",.2,.8,.4);step.values[2]=0;}
+        else if(stage==0 && index==1) {MACRO(0,"INTERVAL",3,12,7);MACRO(1,"VOICES",2,4,3);step.values[4]=.3;}
+        else if(stage==0 && index==2) {MACRO(0,"WINDOW",20,80,30);MACRO(2,"DROPS",2,5,3);step.values[1]=5;}
+        else if(stage==0 && index==3) {MACRO(0,"MOMENT",.02,.5,.08);MACRO(1,"GLOW TIME",.5,6,2);}
+        else if(index==0 || index==2) {MACRO(0,"RING PITCH",36,72,index==0?48:55);MACRO(2,"MEMORY",.1,.75,.55);step.values[1]=.5;}
+        else if(index==1) {MACRO(0,"REJECTION",-50,-20,-36);MACRO(2,"COLOUR",2500,8000,4000);}
+        else {MACRO(0,"ORBIT",-1,1,.15);step.values[1]=.5;}
+        ts_portal_step_set(&r->stages[stage],&step);
+#undef MACRO
+    }
+    return 1;
+}
+size_t ts_portal_instrument_count(void){return 8;}
 int ts_portal_instrument_recipe(size_t index,TsPortalRecipe *r)
 {
     static const char *names[]={"DUST HALO","DARK GLASS","BROKEN SIGNAL","SLOW BLOOM"};
@@ -54,7 +88,8 @@ int ts_portal_instrument_recipe(size_t index,TsPortalRecipe *r)
         {"modify.speed.2","blur.blur","modify.loudness.1"},
         {"modify.radical.4","modify.radical.5","modify.loudness.1"},
         {"modify.brassage.2","blur.blur","modify.loudness.1"}};
-    if(index>=4 || !r)return 0;
+    if(index>=4)return portal_original_instrument(index-4,r);
+    if(!r)return 0;
     memset(r,0,sizeof(*r));snprintf(r->process_id,sizeof(r->process_id),"@chain");r->version=1;r->stage_count=3;
     snprintf(r->name,sizeof(r->name),"%s",names[index]);snprintf(r->description,sizeof(r->description),"%s",descriptions[index]);
     for(int stage=0;stage<3;++stage) {

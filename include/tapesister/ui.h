@@ -369,6 +369,8 @@ typedef struct {
     int show_ingredients;
     int cdp_page;
     int cdp_user_pins;
+    int cdp_create; /* Session choice: right-click CREATE toggles the CDP roll. */
+    int cdp_creating;
     TsPortalUi portal;
     int dsp_page;
     TsCdpCatalogView cdp_catalog;

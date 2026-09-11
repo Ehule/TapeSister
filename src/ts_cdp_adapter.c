@@ -748,6 +748,8 @@ static int probe_wav(const char *path, uint16_t expected_channels, TsCdpWavInfo 
     if ((info->format != 1u && info->format != 3u) ||
         info->channels != expected_channels ||
         info->sample_rate < 1000u || info->block_align == 0u ||
+        info->block_align != info->channels * (info->bits / 8u) ||
+        (info->block_align && info->data_size % info->block_align != 0u) ||
         info->data_offset < 0 || info->data_size < info->block_align ||
         (info->format == 3u && info->bits != 32u)) {
         fclose(file); set_error(error, error_size,
@@ -1143,7 +1145,23 @@ static int run_prepared_commands(const TsCdpRuntime *runtime,
         if (empty != NULL) fclose(empty);
     } else if (options != NULL && options->fault == TS_CDP_FAULT_MALFORMED_WAV) {
         FILE *bad = fopen(output_path, "wb");
-        if (bad != NULL) { fwrite("BAD", 1, 3, bad); fclose(bad); }
+        if (bad != NULL) {
+            /* Valid RIFF/PCM header, but one whole frame plus a partial frame.
+               This catches silent flooring of malformed interleaved output. */
+            unsigned char bytes[64]={0};
+            unsigned align=recipe->expected_output_channels*2u,data_size=align+1u;
+            unsigned length=44u+data_size+(data_size&1u);
+            memcpy(bytes,"RIFF",4);bytes[4]=(unsigned char)(length-8u);
+            memcpy(bytes+8,"WAVEfmt ",8);bytes[16]=16;bytes[20]=1;
+            bytes[22]=(unsigned char)recipe->expected_output_channels;
+            for(unsigned b=0;b<4;++b) {
+                bytes[24+b]=(unsigned char)(input->sample_rate>>(8*b));
+                bytes[28+b]=(unsigned char)((input->sample_rate*align)>>(8*b));
+            }
+            bytes[32]=(unsigned char)align;bytes[34]=16;
+            memcpy(bytes+36,"data",4);bytes[40]=(unsigned char)data_size;
+            fwrite(bytes,1,length,bad);fclose(bad);
+        }
     }
     if (options != NULL && options->fault == TS_CDP_FAULT_NONFINITE_OUTPUT) {
         set_error(error, error_size, "Injected CDP output contains NaN or infinity");
@@ -1170,6 +1188,16 @@ static int run_prepared_commands(const TsCdpRuntime *runtime,
     }
     if (wav.sample_rate != input->sample_rate) {
         set_error(error, error_size, "CDP output sample rate changed unexpectedly");
+        goto finished;
+    }
+    /* Float output exposes overload before PCM conversion. Some CDP filters
+       still clip internally, so full scale is also suspect except for the
+       explicit shared-peak operations. Reject instead of changing balance
+       or introducing implicit normalization. Mono retains the PCM path. */
+    int peak_process=!strcmp(recipe->id,"modify.loudness.3") || !strcmp(recipe->id,"modify.loudness.4");
+    if (input->channels == 2u && (wav.raw_peak > 1.0f ||
+        (wav.raw_peak >= 1.0f && !peak_process))) {
+        set_error(error,error_size,"STEREO OUTPUT WOULD CLIP; LOWER INPUT OR PROCESS GAIN");
         goto finished;
     }
     if (!ts_sample_load_wav(&result->output, output_path, error, error_size)) goto finished;
@@ -1294,15 +1322,20 @@ int ts_cdp_run_portal(const TsCdpRuntime *runtime, const TsPortalRecipe *recipe,
                       const TsSample *input, const TsCdpRunOptions *options,
                       TsCdpRunResult *result, char *error, size_t error_size)
 {
-    if(input && input->channels==2 && result)return run_portal_stereo(runtime,recipe,input,options,result,error,error_size);
+    /* Chains dispatch each stage using its own policy. Splitting a whole chain
+       would turn native shared normalization/random decisions into mono ones. */
+    if(input && input->channels==2 && result && (!recipe || !recipe->stage_count) &&
+       ts_portal_stereo_policy(recipe)!=TS_PORTAL_STEREO_NATIVE)
+        return run_portal_stereo(runtime,recipe,input,options,result,error,error_size);
     if(recipe && recipe->stage_count) {
         if(!result)return 0;
         ts_cdp_run_result_free(result);
-        if(!ts_portal_recipe_validate(recipe,error,error_size) || !input || !input->data || input->channels!=1 ||
+        if(!ts_portal_recipe_validate(recipe,error,error_size) || !input || !input->data ||
+           (input->channels!=1 && (input->channels!=2 || !ts_portal_stereo_supported(recipe))) ||
            !input->sample_rate || input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES) {
-            result->status=TS_CDP_RUN_FAILED;set_error(error,error_size,"Invalid chain or mono source");return 0;
+            result->status=TS_CDP_RUN_FAILED;set_error(error,error_size,"Invalid chain or unsupported source channels");return 0;
         }
-        for(size_t n=0;n<input->frames;++n)if(!isfinite(input->data[n])) {
+        for(size_t n=0;n<input->frames*input->channels;++n)if(!isfinite(input->data[n])) {
             result->status=TS_CDP_RUN_FAILED;set_error(error,error_size,"Source contains nonfinite audio");return 0;
         }
         TsSample current;ts_sample_init(&current);
@@ -1320,9 +1353,8 @@ int ts_cdp_run_portal(const TsCdpRuntime *runtime, const TsPortalRecipe *recipe,
             }
             ts_sample_free(&current);current=result->output;ts_sample_init(&result->output);
         }
-        result->output=current;result->status=TS_CDP_RUN_OK;result->finite=1;
-        result->peak=ts_sample_peak(&current);
-        result->safety=result->peak>=.9999f?TS_CDP_SAFETY_HOT:result->peak<.00001f?TS_CDP_SAFETY_SILENT:TS_CDP_SAFETY_SAFE;
+        result->output=current;result->status=TS_CDP_RUN_OK;
+        analyze_output(result,ts_sample_peak(&current));
         return 1;
     }
     const TsCdpRecipe *factory=recipe?ts_portal_factory_find(recipe->process_id):NULL;
@@ -1355,13 +1387,23 @@ int ts_cdp_run_portal(const TsCdpRuntime *runtime, const TsPortalRecipe *recipe,
     }
     /* Only registry-built arguments enter the runner. User recipes never
        provide executable paths, output paths, or arbitrary command strings. */
+    if(input->channels==2) {
+        for(size_t n=0;n<input->frames*2;++n)if(fabsf(input->data[n])>1) {
+            set_error(error,error_size,"STEREO INPUT WOULD CLIP; LOWER SOURCE GAIN");
+            result->status=TS_CDP_RUN_FAILED;return 0;
+        }
+        for(size_t stage=0;stage<count;++stage)
+            for(unsigned arg=0;arg<commands[stage].argc;++arg)
+                if(!strcmp(commands[stage].arguments[arg],"output.wav"))
+                    snprintf(commands[stage].arguments[arg],TS_CDP_TEXT_MAX,"-foutput.wav");
+    }
     policy.id=recipe->process_id;
     for(size_t i=0;i<count;++i)
         policy.stages[i]=(TsCdpStageSpec){commands[i].executable,
             i?commands[i-1].expected_output_type:TS_CDP_IO_WAV,commands[i].expected_output_type};
     policy.stage_count=count;
-    policy.required_input_channels=1;
-    policy.expected_output_channels=1;
+    policy.required_input_channels=input->channels;
+    policy.expected_output_channels=input->channels;
     return run_prepared_commands(runtime,&policy,&values,input,options,result,
                                   error,error_size,commands,count,TS_PORTAL_MAX_FRAMES);
 }

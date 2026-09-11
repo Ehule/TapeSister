@@ -30,6 +30,9 @@ typedef struct {
     uint64_t generation, source_hash;
     int source_slot, source_page, selection_scope, history_count;
     int quick_apply, library_writable;
+    int create_roll, create_ready;
+    TsFmSeedSequence *create_seeds;
+    TransformController *create_transform;
     int auto_pending;
     Uint32 auto_due;
     Uint32 hover_due;
@@ -125,6 +128,12 @@ static void portal_invalidate(SDL_AudioDeviceID device,AudioState *audio,
     if(p->chain_active)p->chain_cached&=(1u<<p->chain_stage)-1u;
     ts_portal_wave_reset(&p->waves[1],NULL);
     portal_auto_schedule(p,c);
+}
+static int portal_edit_gesture_active(const TsUiState *ui)
+{
+    return ui->canvas_gesture.active || ui->amplitude_gesture.active ||
+        ui->material_macro_gesture.active || ui->stretch_gesture.active ||
+        ui->warp_gesture.active || ui->smear_gesture.active || ui->tear_gesture.active;
 }
 static void portal_clear_history(PortalController *c,TsPortalUi *p)
 {
@@ -400,7 +409,8 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
     TsPortalUi *p=&ui->portal;PortalWorker *w=c->worker;
     if(w && SDL_AtomicGet(&w->done)) {
         SDL_WaitThread(w->thread,NULL);w->thread=NULL;c->worker=NULL;p->busy=0;
-        if(p->open && w->generation==c->generation && !SDL_AtomicGet(&w->cancel)) {
+        int creating=c->create_roll,render_ok=w->result.status==TS_CDP_RUN_OK;
+        if((p->open || creating) && w->generation==c->generation && !SDL_AtomicGet(&w->cancel)) {
             if(w->result.status==TS_CDP_RUN_OK) {
                 portal_stop(device,audio,p,c);
                 snprintf(w->result.output.name,sizeof(w->result.output.name),"%s",portal_recipe_name(p));
@@ -452,14 +462,31 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
                 }
                 snprintf(p->message,sizeof(p->message),"PREVIEW READY (%s) - A/B TO COMPARE; APPLY CHANGES THE TILE",ts_cdp_safety_name(p->safety));
                 if(w->chain_cleanup_failed)snprintf(p->message,sizeof(p->message),"CHAIN READY; STAGE TEMP CLEANUP FAILED - SEE DIAGNOSTIC LOG");
-                if(c->quick_apply) {c->quick_apply=0;portal_apply(device,audio,ui,instrument,c,0);}
+                if(c->quick_apply) {
+                    c->quick_apply=0;
+                    int available=!creating || (!ui_dialog_open(ui) && !portal_edit_gesture_active(ui) &&
+                        (!c->create_transform || !c->create_transform->worker));
+                    if(creating && p->safety!=TS_CDP_SAFETY_SAFE)
+                        snprintf(ui->status,sizeof(ui->status),"CDP ROLL %s - FRESH FM KEPT; OPEN CDP TO REVIEW",ts_cdp_safety_name(p->safety));
+                    else if(!available)
+                        snprintf(ui->status,sizeof(ui->status),"CDP ROLL READY - FINISH CURRENT EDIT; OPEN CDP TO REVIEW");
+                    else if(portal_apply(device,audio,ui,instrument,c,0) && creating) {
+                        ts_ui_reset_parent_view(ui,instrument->current.frames);
+                        snprintf(ui->status,sizeof(ui->status),"CREATED %.39s - CDP OPENS THE ROLLED RECIPE; UNDO RETURNS TO FRESH FM",portal_recipe_name(p));
+                    } else if(creating)
+                        snprintf(ui->status,sizeof(ui->status),"CDP ROLL NOT APPLIED: %.130s",p->message);
+                }
             } else snprintf(p->message,sizeof(p->message),"CDP: %.150s",w->error[0]?w->error:"RENDER FAILED");
+            if(creating && !render_ok)
+                snprintf(ui->status,sizeof(ui->status),"CDP ROLL FAILED; FRESH FM KEPT: %.124s",w->error);
             if(w->result.cleanup_failed)fprintf(stderr,"Portal cleanup: %s\n",w->result.job_directory);
             if(p->history_selected>=0 && c->history[p->history_selected].cleanup_failed) {
                 fprintf(stderr,"Portal cleanup: %s\n",c->history[p->history_selected].job_directory);
                 snprintf(p->message,sizeof(p->message),"RENDER READY; TEMP CLEANUP FAILED - SEE DIAGNOSTIC LOG");
             }
-        } else if(p->open)snprintf(p->message,sizeof(p->message),"OLD JOB DISCARDED; PRESS PREVIEW FOR CURRENT SETTINGS");
+        } else if(creating)snprintf(ui->status,sizeof(ui->status),"CDP ROLL CANCELLED - FRESH FM KEPT");
+        else if(p->open)snprintf(p->message,sizeof(p->message),"OLD JOB DISCARDED; PRESS PREVIEW FOR CURRENT SETTINGS");
+        if(creating) {c->create_roll=0;c->quick_apply=0;c->create_ready=1;ui->cdp_creating=0;}
         portal_worker_free(w);
     }
     portal_auto_poll(device,audio,ui,c,SDL_GetTicks());
@@ -1038,6 +1065,8 @@ static size_t portal_frame_from_pointer(const TsPortalWave *w, SDL_Window *windo
     return w->first+(size_t)floorl(t*(w->last-w->first)+0.5L);
 }
 
+#include "main_sdl_portal_create.inc"
+
 static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
                          AudioState *audio,TsUiState *ui,TsInstrument *instrument,
                          PortalController *c,SisterWindow *sister,int output_rate,
@@ -1058,6 +1087,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         ((x>=464 && x<492 && y>=4 && y<30) ||
          (ui->show_recipes && x>=114 && x<178 && y>=312 && y<328));
     if(!p->open) {
+        if(portal_create_event(event,x,y,device,audio,ui,instrument,c,transform))return 1;
         if(event->type==SDL_MOUSEBUTTONDOWN && ui->show_recipes && !ui_dialog_open(ui)) {
             if(event->button.button==SDL_BUTTON_LEFT && x>=182 && x<230 && y>=312 && y<328) {
                 ui->cdp_user_pins=!ui->cdp_user_pins;
@@ -1100,7 +1130,10 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
             }
             stop_all_force(device,audio,ui);p->open=1;c->selection_scope=instrument->has_selection;
             SDL_StartTextInput();
-            (void)portal_source(device,audio,ui,instrument,c);return 1;
+            if(!c->create_ready || c->source_slot!=instrument->selected_slot ||
+               c->source_page!=ui->sample_page || c->source_hash!=ts_sample_hash(&instrument->current))
+                (void)portal_source(device,audio,ui,instrument,c);
+            c->create_ready=0;return 1;
         }
         return 0;
     }

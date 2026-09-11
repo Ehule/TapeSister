@@ -11,7 +11,8 @@ CORE_SOURCES += src/ts_cdp_portal.c
 DECODER_OBJ = .deps/ts_audio_import.o
 CORE = $(CORE_SOURCES) $(DECODER_OBJ)
 tapesister tapesister_core_tests tapesister_portal_tests tapesister_portal_controller_tests tapesister_keyboard_sustain_tests: src/ts_cdp_portal_instruments.inc src/ts_cdp_portal_ui.inc include/tapesister/cdp_portal.h
-tapesister tapesister_portal_controller_tests tapesister_keyboard_sustain_tests: src/main_sdl_portal_help.inc
+tapesister tapesister_core_tests tapesister_portal_tests tapesister_portal_controller_tests tapesister_keyboard_sustain_tests tapesister_portal_expansion_tests tapesister_portal_final_tests: src/ts_cdp_portal_expansion_defs.inc src/ts_cdp_portal_expansion.inc src/ts_cdp_portal_create.inc
+tapesister tapesister_portal_controller_tests tapesister_keyboard_sustain_tests: src/main_sdl_portal_help.inc src/main_sdl_portal_create.inc
 SDL_MAIN = src/main_sdl.c src/tape_link.c src/tape_companion.c
 DIAG = src/ts_startup_diag.c
 MIDI_C = src/ts_midi_input.c
@@ -95,17 +96,20 @@ test: tapesister_portal_tests
 tapesister_portal_tests: tests/test_portal_stereo.inc tests/test_portal_instruments.inc src/ts_cdp_portal_factory.inc $(CORE) tests/test_cdp_portal.c tests/test_portal_chain_recipes.inc tests/test_portal_factory.inc
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/test_cdp_portal.c -o $@ -lm
 
-# Optional source-built CDP parameter and signal checks for the final simple batch.
+# Optional source-built CDP expansion, parameter-boundary and signal checks.
+tapesister_portal_expansion_tests: src/ts_cdp_portal_instruments.inc $(CORE) tests/test_portal_expansion.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/test_portal_expansion.c -o $@ -lm
+
 tapesister_portal_final_tests: $(CORE) tests/test_portal_final_batch.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/test_portal_final_batch.c -o $@ -lm
 
 clean: clean_portal_final
 .PHONY: clean_portal_final
 clean_portal_final:
-	rm -f tapesister_portal_final_tests
+	rm -f tapesister_portal_final_tests tapesister_portal_expansion_tests
 
 # Optional real-CDP/SDL lifecycle harness; use TS_TEST_CDP_BIN to select runtime.
-tapesister_portal_controller_tests: tests/test_portal_browsing.inc tests/test_portal_usability.inc tests/test_portal_stereo_controller.inc tests/test_portal_instrument_controller.inc src/ts_cdp_portal_factory.inc $(CORE) tests/test_portal_controller.c tests/test_portal_chains.inc tests/test_portal_factory_controller.inc tests/test_portal_workflow_ui.inc src/main_sdl.c src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
+tapesister_portal_controller_tests: tests/test_portal_create_controller.inc tests/test_portal_browsing.inc tests/test_portal_usability.inc tests/test_portal_stereo_controller.inc tests/test_portal_instrument_controller.inc src/ts_cdp_portal_factory.inc $(CORE) tests/test_portal_controller.c tests/test_portal_chains.inc tests/test_portal_factory_controller.inc tests/test_portal_workflow_ui.inc src/main_sdl.c src/main_sdl_portal.inc src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(shell sdl2-config --cflags) $(CORE) tests/test_portal_controller.c src/tape_link.c src/tape_companion.c $(DIAG) $(MIDI_C) -o $@ $(shell sdl2-config --libs) -lm $(LIVE_LINK_LDFLAGS)
 test: tapesister_audio_import_tests
 

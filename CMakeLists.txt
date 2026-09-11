@@ -369,6 +369,9 @@ add_executable(tapesister_audio_config_tests tests/test_audio_config.c)
 target_link_libraries(tapesister_audio_config_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_audio_config_tests COMMAND tapesister_audio_config_tests)
 
+# Opt-in real-CDP audit harness: requires TS_TEST_CDP_BIN and is not a CTest gate.
+add_executable(tapesister_portal_expansion_tests tests/test_portal_expansion.c)
+target_link_libraries(tapesister_portal_expansion_tests PRIVATE tapesister_core)
 add_executable(tapesister_portal_tests tests/test_cdp_portal.c)
 target_link_libraries(tapesister_portal_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_portal_tests COMMAND tapesister_portal_tests)

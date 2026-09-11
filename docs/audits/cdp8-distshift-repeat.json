@@ -1,0 +1,25 @@
+{
+  "source": "assets/tapesister_welcome.wav",
+  "sample_rate": 48000,
+  "staging": "PCM16 matching float32 multiplication and round-to-nearest",
+  "process": "distshift distshift 1 input.wav output.wav 12 4",
+  "pinned_cdp": "28bc42c72c1a7cb0fab933acd1c433be958a787b",
+  "runs": [
+    {
+      "malloc_perturb": 0,
+      "returncode": 0,
+      "frames": 81778,
+      "pcm_sha256": "c7e561554ae9d062c8f086b95145479784dcbb8758ccc414038e6f665d7453ae"
+    },
+    {
+      "malloc_perturb": 17,
+      "returncode": 0,
+      "frames": 81778,
+      "pcm_sha256": "2c6c6773b1d4e5528809424eaa6a308b356bda234efaf0dfd75a8eb07f5de466"
+    }
+  ],
+  "different_samples": 3,
+  "first_difference": 3105,
+  "max_difference": 0.890625,
+  "conclusion": "Unchanged upstream binary depends on allocator initialization; no new CDP stereo/CREATE eligibility"
+}

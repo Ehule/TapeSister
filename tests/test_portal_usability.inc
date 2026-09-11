@@ -21,12 +21,12 @@ static void test_portal_usability(SDL_Window *window,SDL_AudioDeviceID device)
 #define USE_KEY(K,M,R) do {memset(&e,0,sizeof(e));e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=(K);e.key.keysym.mod=(M);e.key.repeat=(R);USE_EVENT();}while(0)
     /* Channel filtering combines with family/search, including actual chain
        eligibility and stable, sparse saved/pin slots. No filtering renders. */
-    int all=usability_count(p);assert(all==167);
-    USE_CLICK(30,134);assert(p->channel_filter==TS_PORTAL_CHANNEL_STEREO && usability_count(p)==14);
-    p->family=TS_PORTAL_LEVEL+1;assert(usability_count(p)==3);
+    int all=usability_count(p);assert(all==210);
+    USE_CLICK(30,134);assert(p->channel_filter==TS_PORTAL_CHANNEL_STEREO && usability_count(p)==57);
+    p->family=TS_PORTAL_LEVEL+1;assert(usability_count(p)==5);
     snprintf(p->query,sizeof(p->query),"gain");assert(usability_count(p)==2);
     p->family=0;p->query[0]=0;
-    USE_CLICK(30,134);assert(p->channel_filter==TS_PORTAL_CHANNEL_MONO_ONLY && usability_count(p)==all-14);
+    USE_CLICK(30,134);assert(p->channel_filter==TS_PORTAL_CHANNEL_MONO_ONLY && usability_count(p)==all-57);
     USE_CLICK(30,134);assert(usability_count(p)==all && c.generation==generation && !c.auto_pending);
     TsPortalRecipe r;assert(ts_portal_instrument_recipe(0,&r)); /* DUST HALO includes mono-only stages. */
     p->library.recipes[19]=r;p->library.recipes[19].stages[0].bypass=1;p->library.recipes[19].stages[1].bypass=1;

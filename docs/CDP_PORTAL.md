@@ -6,6 +6,17 @@ CDP Portal is the exploratory workbench inside TapeSister. The original 32
 curated CDP instruments now open here for editing. Their original renderers and
 bank presets remain in use; personal recipes and pins have separate storage.
 
+## CREATE + CDP
+
+Right-click **CREATE** in the main canvas to toggle **CREATE+CDP**. A left-click
+then generates fresh FM and rolls one of twelve bounded CDP transformations.
+The CDP render runs in the background; click **CANCEL CDP** or press Escape in
+the main workspace to keep the fresh FM source. A usable result applies to the
+same tile or selection, and Undo returns to the fresh FM before CDP.
+Click **CDP** afterwards to see, edit, save or pin the rolled settings.
+The choice lasts for the session; right-click again restores ordinary CREATE.
+Full details and source restrictions: [CDP expansion](CDP_EXPANSION.md).
+
 ## Open and explore
 
 Load or generate a mono or stereo tile. Click **CDP** in the main header, between Export
@@ -15,9 +26,9 @@ of Current (the current selection when one exists). **LOAD: TILE / LOAD: SEL** t
 between whole-tile and main-canvas selection import; **RELOAD** refreshes the
 snapshot. Failed source loading clears the previous snapshot.
 
-The Portal exposes **131 processes across ten families**: 28 waveset, 50 spectral,
-four time/tape, 13 filter, four grains, three lo-fi/modulation, five level, one
-delay, 15 envelope, and eight structure processes. Search matches names, stable command IDs, descriptions, and
+The Portal exposes **170 processes across ten families**: 28 waveset, 63 spectral,
+seven time/tape, 14 filter, four grains, seven lo-fi/modulation, six level, two
+delay, 20 envelope, and 19 structure processes. Search matches names, stable command IDs, descriptions, and
 families. **ALL**, **SAVE**, and **PINS** switch the left browser between
 processes, saved recipes, and user process pins. Click **SEARCH** to clear the
 previous query and type a new one; the placeholder disappears and a blinking
@@ -60,7 +71,7 @@ their own controls. This first hover-help pass is scoped to the Portal.
 
 ![Delayed help in the native Portal status line](images/cdp-portal-hover-help.png)
 
-All 131 Portal modes accept mono input. Thirteen verified modes also accept
+All 170 Portal modes accept mono input. Fifty-three verified modes also accept
 stereo, as described below; other modes reject stereo explicitly.
 Multi-input/multichannel, breakpoint-file, and text-file workflows remain future
 work. The factory bank retains its original 32 curated instruments.
@@ -109,7 +120,8 @@ and result panes show **left above right**, using separate colors, with **ST**
 in the duration readout. They share one time selection, zoom, pan and playhead;
 anti-phase channels remain visible instead of disappearing in a mono sum.
 
-The first verified stereo set contains **13 processes**:
+The Portal supports **53 stereo processes**. The original **13** retain their
+independent-channel implementation:
 
 | Family | Stereo-capable modes |
 |---|---|
@@ -118,14 +130,23 @@ The first verified stereo set contains **13 processes**:
 | Lo-fi / Mod | Bit + Rate Reduce, Quantise, Ring Modulate |
 | Filter | Low Shelf EQ, High Shelf EQ, Peak EQ |
 
-The process help shows **INPUT: MONO / ST** or **INPUT: MONO ONLY**. Stereo
+The process help shows **INPUT: MONO / ST** or **INPUT: MONO ONLY**. For the original 13, stereo
 rendering runs the same deterministic settings independently on left and right,
 then interleaves the outputs. Both channels must return exactly the same length
 and sample rate. A mismatch fails the render; neither padding nor trimming is
 used. Rendering takes two channel passes and uses more memory than mono.
 
-A chain accepts stereo when every enabled stage supports it. **BROKEN SIGNAL**
-is the first stereo-capable factory starter chain. Saved recipes need no format
+The additional **40** run through CDP's native interleaved stereo modes, sharing
+traversal, random decisions and normalization across the pair. They include
+Normalize/Force Peak, delay, filters, envelope tools, editing/repetition modes,
+and 20 of the new raw processes. Native stereo renders float output and rejects
+overload before loading it; lower input/process gain when requested. This avoids
+clipping one channel or silently changing the pair's level. The full allowlist,
+limits and evidence are in [CDP expansion](CDP_EXPANSION.md).
+
+A chain accepts stereo when every enabled stage supports it. Each stage uses
+its own channel policy, including chains mixing native and independent-channel
+stages. **BROKEN SIGNAL, TAPE COMET, WIRE CHOIR and SYLLABLE RAIN** support stereo. Saved recipes need no format
 change: the source determines whether one or two channels are rendered.
 
 **PROCESS: SEL** processes the same frame range on both channels, preserves
@@ -135,8 +156,8 @@ Portal source; New + Continue promotes the new stereo tile. Source/result
 keyboard audition, looping and capture retain their existing controls.
 
 Spectral analysis/resynthesis is still mono-only: independent channel processing
-can change their phase relationship. Grain/waveset rearrangement and independent
-peak normalization also need a specific stereo policy before they can be enabled.
+can change their phase relationship. Unverified grain/waveset rearrangement
+also remains mono-only; native peak normalization uses one gain for the pair.
 Unsupported recipes fail explicitly rather than folding a stereo source to mono.
 
 ![Native stereo selection processing](images/cdp-portal-stereo.png)
@@ -148,7 +169,7 @@ Unsupported recipes fail explicitly rather than folding a stereo source to mono.
 **Middle-click an original CDP bank instrument** to open it in the Portal with
 its saved bank controls. Left-click still performs the existing quick apply.
 The **FACTORY** family contains all **32 curated instruments**, in addition to
-the **131 raw processes**. Some instruments use the same underlying CDP modes;
+the **170 raw processes**. Some instruments use the same underlying CDP modes;
 these are curated alternatives, not 32 newly discovered commands.
 
 Named modes such as REFORM's SQUARE/TRIANGLE/CLICK/SINE and GREV's REVERSE/REPEAT
@@ -193,7 +214,7 @@ ranges and chain descriptions use the version-3 format described below.
 Click **CHAIN** at the bottom left to turn the current process into stage one.
 A chain holds **one to eight stages**. The stage list replaces the explanation
 area on the right; the source/result waveforms and parameter controls stay in
-place. Choose from the 131 raw processes and 32 curated factory instruments.
+place. Choose from the 170 raw processes and 32 curated factory instruments.
 
 1. Click **ADD**, then choose a process in the left browser. It is inserted
    after the selected stage. You can also pick a saved single-process recipe
@@ -692,9 +713,9 @@ processes also preflight their output estimate. CDP timeouts remain enforced.
 
 ![Native chain-wide Macros view](images/cdp-chain-macros.png)
 
-Select **CHAIN TOOLS** in the family filter, or search ALL, to load one of four
+Select **CHAIN TOOLS** in the family filter, or search ALL, to load one of eight
 factory starter chains. These are combinations of existing processes, in
-addition to the 131 raw processes and 32 single-process factory instruments.
+addition to the 170 raw processes and 32 single-process factory instruments.
 Loading one opens its Macros view with EDIT OFF and shows its description in
 the status line. The selected process description stays above REMOVE and EDIT.
 
@@ -704,6 +725,10 @@ the status line. The selected process description stays above REMOVE and EDIT.
 | DARK GLASS | Tape Transpose → Spectral Blur → Linear Gain | PITCH, HAZE, OUTPUT |
 | BROKEN SIGNAL | Bit Reduction → Ring Modulation → Linear Gain | RESOLUTION, METAL, OUTPUT |
 | SLOW BLOOM | Granular Time → Spectral Blur → Linear Gain | TIME SPEED, HAZE, OUTPUT |
+| TAPE COMET | Tape Acceleration → Tuned Feedback Delay → Linear Gain | FLIGHT, RISE TIME, RING PITCH, MEMORY, OUTPUT |
+| WIRE CHOIR | Transposition Stack → Low/High Pass → Linear Gain | INTERVAL, VOICES, REJECTION, COLOUR, OUTPUT |
+| SYLLABLE RAIN | Syllable Shrink Tail → Tuned Feedback Delay → Linear Gain | WINDOW, DROPS, RING PITCH, MEMORY, OUTPUT |
+| FORMANT LANTERN | Spectral Magnify → Rotate Formants → Linear Gain | MOMENT, GLOW TIME, ORBIT, OUTPUT |
 
 DUST HALO scatters fragments into a blurred texture; start with at least one
 second of mono audio. DARK GLASS lowers the tape pitch before blurring its
@@ -1036,7 +1061,9 @@ individual additions can also be saved as single-process recipes or pins.
 
 The subsequent [CDP expansion audit](CDP_REMAINING_PROCESS_AUDIT.md) inventories
 the wider suite and records native stereo and new-process candidates. Those
-probes do not change the current catalog or stereo allowlist.
+probes are the historical feasibility evidence. The subsequent
+[implementation and CREATE + CDP option](CDP_EXPANSION.md) expand the catalog
+and add the verified native stereo path.
 
 Structure provides Keep Segment, Keep Tail, Remove Segment, Segment Repeats,
 Advancing Loops, Loop to Duration, Loop Count, and Random Chunks. Position controls

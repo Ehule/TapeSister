@@ -18,7 +18,7 @@ static void test_portal_stereo(const char *bin)
         uint64_t hash=ts_sample_hash(&source);unsigned supported=0;
         for(size_t p=0;p<ts_portal_process_count();++p) {
             const TsPortalProcess *proc=ts_portal_process_at(p);ts_portal_recipe_default(&recipe,proc);
-            if(!ts_portal_stereo_supported(&recipe))continue;
+            if(ts_portal_stereo_policy(&recipe)!=TS_PORTAL_STEREO_SPLIT)continue;
             ++supported;
             if(!ts_cdp_run_portal(&runtime,&recipe,&source,&options,&result,error,sizeof(error))) {
                 fprintf(stderr,"Stereo %s: %s\n",proc->id,error);assert(0);

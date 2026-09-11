@@ -12,6 +12,8 @@ enum { TS_PORTAL_LIST_Y = 147, TS_PORTAL_LIST_ROWS = 11, TS_PORTAL_LIST_ROW_H = 
        TS_PORTAL_TOOLTIP_DELAY_MS = 600 };
 typedef enum { TS_PORTAL_CHANNEL_ANY, TS_PORTAL_CHANNEL_STEREO, TS_PORTAL_CHANNEL_MONO_ONLY,
                TS_PORTAL_CHANNEL_FILTERS } TsPortalChannelFilter;
+typedef enum { TS_PORTAL_STEREO_MONO, TS_PORTAL_STEREO_SPLIT,
+               TS_PORTAL_STEREO_NATIVE } TsPortalStereoPolicy;
 typedef enum { TS_PORTAL_INTEGER, TS_PORTAL_REAL, TS_PORTAL_SWITCH, TS_PORTAL_ODD_INTEGER, TS_PORTAL_ENUMERATED } TsPortalParamType;
 typedef enum { TS_PORTAL_WAVESET, TS_PORTAL_SPECTRAL, TS_PORTAL_TIME, TS_PORTAL_FILTER, TS_PORTAL_GRAIN, TS_PORTAL_LOFI, TS_PORTAL_LEVEL, TS_PORTAL_DELAY, TS_PORTAL_ENVELOPE, TS_PORTAL_STRUCTURE, TS_PORTAL_FACTORY, TS_PORTAL_INSTRUMENTS, TS_PORTAL_FAMILIES } TsPortalFamily;
 typedef enum { TS_PORTAL_RENAME=1, TS_PORTAL_UPDATE, TS_PORTAL_REPLACE, TS_PORTAL_REMOVE } TsPortalEdit;
@@ -110,8 +112,10 @@ int ts_portal_control_count(const TsPortalUi *ui);
 void ts_portal_control_bounds(const TsPortalRecipe *recipe,unsigned index,int macros,double *minimum,double *maximum);
 int ts_portal_macro_set(TsPortalRecipe *recipe,unsigned index,const char *name,double minimum,double maximum,char *error,size_t size);
 int ts_portal_stereo_supported(const TsPortalRecipe *recipe);
+TsPortalStereoPolicy ts_portal_stereo_policy(const TsPortalRecipe *recipe);
 size_t ts_portal_instrument_count(void);
 int ts_portal_instrument_recipe(size_t index,TsPortalRecipe *recipe);
+int ts_portal_create_recipe(uint32_t seed,const TsSample *source,TsPortalRecipe *recipe,char *error,size_t size);
 void ts_portal_step_get(const TsPortalStep *step, TsPortalRecipe *recipe);
 void ts_portal_step_set(TsPortalStep *step, const TsPortalRecipe *recipe);
 void ts_portal_recipe_exact(TsPortalRecipe *recipe);
