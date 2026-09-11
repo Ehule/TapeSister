@@ -2,8 +2,8 @@ static void test_instrument_recipes(void)
 {
     static TsPortalLibrary lib,loaded,before;static TsPortalUi ui;TsPortalRecipe r,step;char error[256];
     const char *path="portal-instruments-test.recipes";
-    assert(ts_portal_instrument_count()==4);
-    for(unsigned n=0;n<4;++n) {
+    assert(ts_portal_instrument_count()==8);
+    for(unsigned n=0;n<ts_portal_instrument_count();++n) {
         assert(ts_portal_instrument_recipe(n,&r));assert(ts_portal_recipe_validate(&r,error,sizeof(error)));
         lib.recipes[n]=r;lib.pins[n]=r;ts_portal_recipe_exact(&lib.pins[n]);
         for(unsigned i=0;i<3;++i)assert(!lib.pins[n].stages[i].exposed && lib.pins[n].stages[i].macros[0].configured);
@@ -35,7 +35,7 @@ static void test_instrument_recipes(void)
     TsPortalStep changed=ui.chain.stages[0];snprintf(changed.macros[0].name,sizeof(changed.macros[0].name),"RENAMED");
     assert(ts_portal_step_equal(&changed,&ui.chain.stages[0]));changed.values[0]=90;
     assert(!ts_portal_step_equal(&changed,&ui.chain.stages[0]));
-    ui.family=TS_PORTAL_INSTRUMENTS+1;assert(ts_portal_filter(&ui,3,&r));assert(!ts_portal_filter(&ui,4,&r));
+    ui.family=TS_PORTAL_INSTRUMENTS+1;assert(ts_portal_filter(&ui,3,&r));assert(!ts_portal_filter(&ui,8,&r));
     snprintf(ui.query,sizeof(ui.query),"sidebands");assert(ts_portal_filter(&ui,0,&r) && !strcmp(r.name,"BROKEN SIGNAL"));
     remove(path);
 }
@@ -47,8 +47,13 @@ static void test_instrument_audio(const char *bin)
     for(int rate=44100;rate<=48000;rate+=3900) {
         source.sample_rate=(uint32_t)rate;source.frames=(size_t)rate;source.channels=1;source.data=malloc(source.frames*sizeof(float));assert(source.data);
         for(size_t i=0;i<source.frames;++i)source.data[i]=(float)(.12*sin(6.283185307179586*440*i/rate)+.04*sin(6.283185307179586*713*i/rate));
-        for(unsigned n=0;n<4;++n) {
+        for(unsigned n=0;n<ts_portal_instrument_count();++n) {
             assert(ts_portal_instrument_recipe(n,&r));
+            /* New syllable instruments are designed for articulated material. */
+            for(size_t i=0;i<source.frames;++i) {
+                double t=(double)i/rate,envelope=n<4?1:.1+.9*pow(fmax(0,sin(6.283185307179586*6*t)),2);
+                source.data[i]=(float)(envelope*(.12*sin(6.283185307179586*440*t)+.04*sin(6.283185307179586*713*t)));
+            }
             assert(ts_cdp_run_portal(&runtime,&r,&source,&options,&result,error,sizeof(error)));
             assert(result.output.channels==1 && result.output.frames>0 && !result.cleanup_failed);
             double energy=0;for(size_t i=0;i<result.output.frames;++i){assert(isfinite(result.output.data[i]));energy+=fabs(result.output.data[i]);}assert(energy>1);
@@ -71,5 +76,5 @@ static void test_instrument_audio(const char *bin)
         }
         ts_sample_free(&source);
     }
-    puts("Four factory chains: defaults, macro endpoints and duration checks passed at 44.1/48 kHz");
+    puts("Eight factory chains: defaults, macro endpoints and duration checks passed at 44.1/48 kHz");
 }

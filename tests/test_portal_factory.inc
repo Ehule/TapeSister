@@ -65,6 +65,7 @@ static void test_factory_native(const char *bin)
     assert(ts_sample_load_wav(&input,"assets/tapesister_welcome.wav",error,sizeof(error)));
     for(size_t i=0;i<32;++i) {
         const TsCdpRecipe *f=ts_cdp_factory_recipe_at(i);ts_cdp_recipe_values_default(f,&v);
+        if(getenv("TS_TEST_FACTORY_ONLY") && strcmp(f->id,getenv("TS_TEST_FACTORY_ONLY")))continue;
         if(!strcmp(f->id,"splinter"))v.controls[0]=.1f;
         v.seed=UINT64_C(0xfedcba9876543210);ts_portal_factory_recipe(f,&v,&r);
         int old_ok=ts_cdp_run_recipe(&runtime,f,&v,&input,&options,&legacy,error,sizeof(error));
@@ -74,7 +75,18 @@ static void test_factory_native(const char *bin)
         if(!ok)fprintf(stderr,"FACTORY %s: %s\n%s\n",f->id,error,portal.diagnostic);
         assert(ok && portal.finite && portal.output.channels==1 && !portal.cleanup_failed && !portal.job_directory[0]);
         int repeatable=strcmp(f->id,"granulate") && (f->deterministic || f->seed_supported);
-        if(repeatable)assert(ts_sample_hash(&legacy.output)==ts_sample_hash(&portal.output));
+        if(repeatable) {
+            if(ts_sample_hash(&legacy.output)!=ts_sample_hash(&portal.output)) {
+                size_t differences=0,first=SIZE_MAX;double maximum=0;
+                for(size_t n=0;n<legacy.output.frames && n<portal.output.frames;++n)
+                    if(legacy.output.data[n]!=portal.output.data[n]) {
+                        ++differences;if(first==SIZE_MAX)first=n;
+                        maximum=fmax(maximum,fabs(legacy.output.data[n]-portal.output.data[n]));
+                    }
+                fprintf(stderr,"FACTORY MISMATCH %s: frames %zu/%zu, differences %zu, first %zu, max %.9g\n",f->id,legacy.output.frames,portal.output.frames,differences,first,maximum);
+            }
+            assert(ts_sample_hash(&legacy.output)==ts_sample_hash(&portal.output));
+        }
         printf("FACTORY %s: %zu frames, %s\n",f->id,portal.output.frames,repeatable?"legacy audio matches":"random render valid");fflush(stdout);
         if(f->mix_policy==TS_CDP_MIX_EXACT_FRAMES && legacy.output.frames==input.frames && f->deterministic) {
             v.mix=.5f;ts_portal_factory_recipe(f,&v,&r);

@@ -238,7 +238,7 @@ static void envelope_batch_checks(const TsCdpRuntime *runtime)
         assert(!ts_portal_build_commands(&r,&short_s,plan,&count,error,sizeof(error)));
         ts_portal_recipe_default(&r,ts_portal_process_find("envel.warp.7"));r.values[1]=64;
         assert(!ts_portal_build_commands(&r,&short_s,plan,&count,error,sizeof(error)));
-        ts_portal_recipe_default(&r,ts_portal_process_find("envel.warp.2"));short_s.channels=2;
+        ts_portal_recipe_default(&r,ts_portal_process_find("envel.warp.1"));short_s.channels=2;
         assert(!ts_portal_build_commands(&r,&short_s,plan,&count,error,sizeof(error)));
         short_s.channels=1;short_s.data[0]=NAN;
         assert(!ts_portal_build_commands(&r,&short_s,plan,&count,error,sizeof(error)));
@@ -274,7 +274,7 @@ int main(int argc,char **argv)
     if(getenv("TS_TEST_INSTRUMENT_BIN")){test_instrument_audio(getenv("TS_TEST_INSTRUMENT_BIN"));ts_instrument_free(&instrument);return 0;}
     test_factory_recipes();
     if(getenv("TS_TEST_FACTORY_BIN")) {test_factory_native(getenv("TS_TEST_FACTORY_BIN"));ts_instrument_free(&instrument);return 0;}
-    assert(ts_portal_process_count()==131);
+    assert(ts_portal_process_count()==170);
     assert(ts_cdp_factory_recipe_count()==32);
     for(size_t i=0;i<ts_portal_process_count();++i) {
         const TsPortalProcess *p=ts_portal_process_at(i);
@@ -369,14 +369,14 @@ int main(int argc,char **argv)
     ui.portal.tab=0;snprintf(ui.portal.query,sizeof(ui.portal.query),"partials");
     assert(ts_portal_filter(&ui.portal,0,&recipe));
     assert(ts_portal_process_find(recipe.process_id)->family==TS_PORTAL_SPECTRAL);
-    ui.portal.query[0]=0;assert(ts_portal_filter(&ui.portal,49,&recipe));assert(!ts_portal_filter(&ui.portal,50,&recipe));
+    ui.portal.query[0]=0;assert(ts_portal_filter(&ui.portal,62,&recipe));assert(!ts_portal_filter(&ui.portal,63,&recipe));
     ui.portal.family=TS_PORTAL_TIME+1;
-    assert(ts_portal_filter(&ui.portal,3,&recipe));assert(!ts_portal_filter(&ui.portal,4,&recipe));
+    assert(ts_portal_filter(&ui.portal,6,&recipe));assert(!ts_portal_filter(&ui.portal,7,&recipe));
     snprintf(ui.portal.query,sizeof(ui.portal.query),"semitones");
     assert(ts_portal_filter(&ui.portal,0,&recipe) && !strcmp(recipe.process_id,"modify.speed.2"));
     ui.portal.query[0]=0;
     ui.portal.family=TS_PORTAL_FILTER+1;
-    assert(ts_portal_filter(&ui.portal,12,&recipe));assert(!ts_portal_filter(&ui.portal,13,&recipe));
+    assert(ts_portal_filter(&ui.portal,13,&recipe));assert(!ts_portal_filter(&ui.portal,14,&recipe));
     snprintf(ui.portal.query,sizeof(ui.portal.query),"sweeping");
     assert(ts_portal_filter_slot(&ui.portal,0,&recipe)==24);
     assert(!strcmp(recipe.process_id,"filter.sweeping.2"));

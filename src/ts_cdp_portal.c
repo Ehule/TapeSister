@@ -440,17 +440,22 @@ static const TsPortalProcess processes[] = {
 #undef SPECTRUM_PARAMS
 #undef SWEEP_PARAMS
 
+#include "ts_cdp_portal_expansion_defs.inc"
 #include "ts_cdp_portal_factory.inc"
 
 static int fail(char *error, size_t size, const char *message)
 { if (error && size) snprintf(error, size, "%s", message); return 0; }
-size_t ts_portal_process_count(void) { return sizeof(processes)/sizeof(processes[0]); }
+#include "ts_cdp_portal_expansion.inc"
+size_t ts_portal_process_count(void) { return sizeof(processes)/sizeof(processes[0])+sizeof(expansion_processes)/sizeof(expansion_processes[0]); }
 const TsPortalProcess *ts_portal_process_at(size_t index)
-{ return index < ts_portal_process_count() ? &processes[index] : NULL; }
+{
+    size_t original=sizeof(processes)/sizeof(processes[0]);
+    return index<original?&processes[index]:index<ts_portal_process_count()?&expansion_processes[index-original]:NULL;
+}
 const TsPortalProcess *ts_portal_process_find(const char *id)
 {
     if (id) for (size_t i=0; i<ts_portal_process_count(); ++i)
-        if (!strcmp(id, processes[i].id)) return &processes[i];
+        if (!strcmp(id, ts_portal_process_at(i)->id)) return ts_portal_process_at(i);
     const TsCdpRecipe *f=ts_portal_factory_find(id);
     return f?ts_portal_factory_process_at((size_t)ts_cdp_recipe_index_for_id(f->id)):NULL;
 }
@@ -629,17 +634,18 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
     if(!p)return fail(error,size,"CHAINS MUST BE RENDERED ONE STAGE AT A TIME");
     if(p->family==TS_PORTAL_FACTORY)return fail(error,size,"FACTORY INSTRUMENTS USE THEIR EXISTING RENDERER");
     memset(commands,0,sizeof(*commands)*TS_CDP_MAX_STAGES);
+    if(portal_expansion_process(p))return portal_expansion_build(r,p,input,commands,count,error,size);
     if(p->family==TS_PORTAL_WAVESET) {
         if(!ts_portal_build_command(r,input,&commands[0],error,size))return 0;
         *count=1;return 1;
     }
     if(p->family==TS_PORTAL_STRUCTURE) {
-        if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
+        if(!input || !input->data || !portal_input_channels(r,input) || !input->sample_rate ||
            input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES)
-            return fail(error,size,"STRUCTURE PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+            return fail(error,size,"STRUCTURE PROCESSES REQUIRE A SUPPORTED SOURCE WITHIN THE PORTAL LIMIT");
         double duration=(double)input->frames/input->sample_rate, estimate=duration;
         if(duration<.04)return fail(error,size,"STRUCTURE SOURCE NEEDS AT LEAST 40 MS");
-        for(size_t i=0;i<input->frames;++i)if(!isfinite(input->data[i]))
+        for(size_t i=0;i<input->frames*input->channels;++i)if(!isfinite(input->data[i]))
             return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
         if(!strcmp(p->executable,"sfedit")) {
             double first=!strcmp(p->command,"cutend")?duration-r->values[0]:r->values[0];
@@ -690,9 +696,9 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         c->expected_output_type=TS_CDP_IO_WAV;*count=1;return 1;
     }
     if(p->family==TS_PORTAL_ENVELOPE) {
-        if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
+        if(!input || !input->data || !portal_input_channels(r,input) || !input->sample_rate ||
            input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES)
-            return fail(error,size,"ENVELOPE PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+            return fail(error,size,"ENVELOPE PROCESSES REQUIRE A SUPPORTED SOURCE WITHIN THE PORTAL LIMIT");
         double duration=(double)input->frames/input->sample_rate;
         if(duration<.04)return fail(error,size,"ENVELOPE SOURCE NEEDS AT LEAST 40 MS");
         if(!strcmp(p->command,"warp")) {
@@ -719,7 +725,7 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         if(!strcmp(p->command,"swell") && r->values[0]>duration-.005)
             return fail(error,size,"SWELL PEAK MUST LEAVE AT LEAST 5 MS AT EACH END");
         double peak=0;
-        for(size_t i=0;i<input->frames;++i) {
+        for(size_t i=0;i<input->frames*input->channels;++i) {
             if(!isfinite(input->data[i]))return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
             peak=fmax(peak,fabs(input->data[i]));
         }
@@ -741,9 +747,9 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         *count=1;return 1;
     }
     if(p->family==TS_PORTAL_GRAIN) {
-        if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
+        if(!input || !input->data || !portal_input_channels(r,input) || !input->sample_rate ||
            input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES)
-            return fail(error,size,"GRANULAR PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+            return fail(error,size,"GRANULAR PROCESSES REQUIRE A SUPPORTED SOURCE WITHIN THE PORTAL LIMIT");
         if((double)input->frames/input->sample_rate<.04)
             return fail(error,size,"GRANULAR SOURCE NEEDS AT LEAST 40 MS");
         double grain=round((p->mode==4?r->values[0]:50)*.001*input->sample_rate);
@@ -767,7 +773,7 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         double output_bound=(grains-1)*outstep+ceil(outstep*.5)+grain+2;
         if(output_bound>TS_PORTAL_MAX_FRAMES)
             return fail(error,size,"REQUESTED GRANULAR OUTPUT EXCEEDS PORTAL LIMIT");
-        for(size_t i=0;i<input->frames;++i)if(!isfinite(input->data[i]))
+        for(size_t i=0;i<input->frames*input->channels;++i)if(!isfinite(input->data[i]))
             return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
         TsCdpCommand *c=&commands[0];
         snprintf(c->executable,sizeof(c->executable),"%s",p->executable);
@@ -782,9 +788,9 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         *count=1;return 1;
     }
     if(p->family==TS_PORTAL_FILTER) {
-        if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
+        if(!input || !input->data || !portal_input_channels(r,input) || !input->sample_rate ||
            input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES)
-            return fail(error,size,"FILTER PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+            return fail(error,size,"FILTER PROCESSES REQUIRE A SUPPORTED SOURCE WITHIN THE PORTAL LIMIT");
         if((double)input->frames/input->sample_rate<.04)
             return fail(error,size,"FILTER SOURCE NEEDS AT LEAST 40 MS");
         double tail=0;
@@ -807,7 +813,7 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         }
         if((double)input->frames+ceil(tail*input->sample_rate)>TS_PORTAL_MAX_FRAMES)
             return fail(error,size,"SOURCE PLUS FILTER TAIL EXCEEDS PORTAL LIMIT");
-        for(size_t i=0;i<input->frames;++i)if(!isfinite(input->data[i]))
+        for(size_t i=0;i<input->frames*input->channels;++i)if(!isfinite(input->data[i]))
             return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
         TsCdpCommand *c=&commands[0];
         snprintf(c->executable,sizeof(c->executable),"%s",p->executable);
@@ -823,13 +829,13 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
     }
     if(p->family==TS_PORTAL_TIME || p->family==TS_PORTAL_LOFI ||
        p->family==TS_PORTAL_LEVEL || p->family==TS_PORTAL_DELAY) {
-        if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
+        if(!input || !input->data || !portal_input_channels(r,input) || !input->sample_rate ||
            input->frames<2 || input->frames>TS_PORTAL_MAX_FRAMES)
-            return fail(error,size,"PROCESS REQUIRES A MONO SOURCE WITHIN THE PORTAL LIMIT");
+            return fail(error,size,"PROCESS REQUIRES A SUPPORTED SOURCE WITHIN THE PORTAL LIMIT");
         if(input->frames<(size_t)input->sample_rate/25)
             return fail(error,size,"SOURCE NEEDS AT LEAST 40 MS");
         double peak=0,tail=0;
-        for(size_t i=0;i<input->frames;++i) {
+        for(size_t i=0;i<input->frames*input->channels;++i) {
             if(!isfinite(input->data[i]))return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
             peak=fmax(peak,fabs(input->data[i]));
         }
@@ -878,11 +884,11 @@ int ts_portal_build_commands(const TsPortalRecipe *r,const TsSample *input,
         c->expected_output_type=TS_CDP_IO_WAV;
         *count=1;return 1;
     }
-    if(!input || !input->data || input->channels!=1 || !input->sample_rate ||
-       input->frames>TS_PORTAL_MAX_FRAMES)return fail(error,size,"SPECTRAL PROCESSES REQUIRE A MONO SOURCE WITHIN THE PORTAL LIMIT");
+    if(!input || !input->data || !portal_input_channels(r,input) || !input->sample_rate ||
+       input->frames>TS_PORTAL_MAX_FRAMES)return fail(error,size,"SPECTRAL PROCESSES REQUIRE A SUPPORTED SOURCE WITHIN THE PORTAL LIMIT");
     if(input->frames<2048 || input->frames<(size_t)input->sample_rate/25)
         return fail(error,size,"SPECTRAL SOURCE NEEDS AT LEAST 2048 FRAMES AND 40 MS");
-    for(size_t i=0;i<input->frames;++i)if(!isfinite(input->data[i]))
+    for(size_t i=0;i<input->frames*input->channels;++i)if(!isfinite(input->data[i]))
         return fail(error,size,"SOURCE CONTAINS NONFINITE AUDIO");
     if(!strcmp(p->executable,"focus") || !strcmp(p->executable,"hilite") || !strcmp(p->executable,"strange")) {
         for(unsigned i=0;i<p->parameter_count;++i) {
@@ -1173,24 +1179,37 @@ int ts_portal_filter_slot(const TsPortalUi *ui,int row,TsPortalRecipe *out)
 }
 int ts_portal_filter(const TsPortalUi *ui,int row,TsPortalRecipe *out)
 {return ts_portal_filter_slot(ui,row,out)>=0;}
-int ts_portal_stereo_supported(const TsPortalRecipe *r)
+TsPortalStereoPolicy ts_portal_stereo_policy(const TsPortalRecipe *r)
 {
-    if(!r)return 0;
+    if(!r)return TS_PORTAL_STEREO_MONO;
     if(r->stage_count) {
-        if(r->stage_count>TS_PORTAL_CHAIN_STAGES)return 0;
+        if(r->stage_count>TS_PORTAL_CHAIN_STAGES)return TS_PORTAL_STEREO_MONO;
         for(unsigned i=0;i<r->stage_count;++i)if(!r->stages[i].bypass) {
             TsPortalRecipe step;ts_portal_step_get(&r->stages[i],&step);
-            if(!ts_portal_stereo_supported(&step))return 0;
+            if(ts_portal_stereo_policy(&step)==TS_PORTAL_STEREO_MONO)return TS_PORTAL_STEREO_MONO;
         }
-        return 1;
+        return TS_PORTAL_STEREO_NATIVE; /* Stage-by-stage dispatch, never split a whole chain. */
     }
-    static const char *ids[]={"modify.loudness.1","modify.loudness.2","modify.loudness.6",
+    static const char *split[]={"modify.loudness.1","modify.loudness.2","modify.loudness.6",
         "modify.speed.1","modify.speed.2","modify.speed.6","modify.radical.1",
         "modify.radical.4","modify.radical.5","modify.radical.7","filter.fixed.1",
         "filter.fixed.2","filter.fixed.3"};
-    for(size_t i=0;i<sizeof(ids)/sizeof(ids[0]);++i)if(!strcmp(r->process_id,ids[i]))return 1;
-    return 0;
+    static const char *native[]={"modify.loudness.3","modify.loudness.4","modify.revecho.1",
+        "filter.variable.2","filter.sweeping.2","filter.phasing.1","filter.phasing.2",
+        "sfedit.cut.1","sfedit.cutend.1","sfedit.excise.1","extend.doublets",
+        "extend.loop.1","extend.loop.2","extend.loop.3","extend.scramble.1",
+        "envel.dovetail.1","envel.dovetail.2","envel.swell","envel.tremolo.1","envel.warp.2",
+        "modify.speed.5","modify.stack","extend.zigzag.1","extend.drunk.1","extend.drunk.2",
+        "extend.iterate.1","extend.iterate.2","extend.freeze.1","extend.freeze.2",
+        "extend.baktobak","bounce.bounce","dvdwind.dvdwind","filter.lohi.1",
+        "newdelay.newdelay","silend.silend.1","envspeak.envspeak.1","envspeak.envspeak.2",
+        "envspeak.envspeak.5","envspeak.envspeak.6","tremenv.tremenv"};
+    for(size_t i=0;i<sizeof(split)/sizeof(split[0]);++i)if(!strcmp(r->process_id,split[i]))return TS_PORTAL_STEREO_SPLIT;
+    for(size_t i=0;i<sizeof(native)/sizeof(native[0]);++i)if(!strcmp(r->process_id,native[i]))return TS_PORTAL_STEREO_NATIVE;
+    return TS_PORTAL_STEREO_MONO;
 }
+int ts_portal_stereo_supported(const TsPortalRecipe *r)
+{return ts_portal_stereo_policy(r)!=TS_PORTAL_STEREO_MONO;}
 void ts_portal_wave_refresh(TsPortalWave *w,const TsSample *s)
 {
     static uint64_t publication; /* All Portal wave refreshes run on the UI thread. */
@@ -1244,3 +1263,5 @@ void ts_portal_wave_pan(TsPortalWave *w,const TsSample *s,int direction)
 }
 
 #include "ts_cdp_portal_instruments.inc"
+
+#include "ts_cdp_portal_create.inc"

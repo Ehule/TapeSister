@@ -1,0 +1,75 @@
+{
+  "cdp_revision": "28bc42c72c1a7cb0fab933acd1c433be958a787b",
+  "main_base": "aa09233376de2d6ca462ed51d4116decf6e2307a",
+  "audit_parent": "b57c549bdbbcbfebafb8396e4f49c260a6300ef2",
+  "catalog": {
+    "raw": 170,
+    "raw_stereo": 53,
+    "new_raw": 39,
+    "new_native_stereo": 40,
+    "factory_bank": 32,
+    "starter_chains": 8,
+    "new_starter_chains": 4,
+    "runtime_targets": 37
+  },
+  "environment": {
+    "os": "Linux",
+    "compiler": "GCC 13.3",
+    "app_harness_sanitizers": [
+      "address",
+      "undefined"
+    ],
+    "leak_detection": false,
+    "cdp_subprocess_sanitizers": false,
+    "rates": [
+      44100,
+      48000
+    ]
+  },
+  "expansion": {
+    "renderer_calls": 1912,
+    "preflight_or_headroom_rejections": 347,
+    "unexpected_failures": 0,
+    "signals": [
+      "R=-0.25L",
+      "silent right",
+      "silent left",
+      "R=-L",
+      "R=-4L",
+      "seed repeats",
+      "mixed split/native shared normalization"
+    ],
+    "additional_paths": [
+      "malformed partial PCM frame",
+      "right-channel NaN",
+      "cancellation",
+      "144 deterministic CREATE choices"
+    ]
+  },
+  "verified": [
+    "170 raw defaults and existing mono semantic checks",
+    "13 split stereo reference modes",
+    "8 starter-chain defaults and macro endpoints",
+    "Portal controller including CREATE lifecycle, selection splicing, undo, stale results, chain caches and persistence",
+    "Shared Sustain, MIDI, canvas PLAY VIEW and existing native waveform tests",
+    "31 legacy factory instruments, applicable reference and mix checks",
+    "Standalone Linux build and 37 runtime targets",
+    "Audio/focus/identity packaging structural checks",
+    "Native 1920x1200 screenshots"
+  ],
+  "known_failures": [
+    {
+      "id": "factory.distshift",
+      "kind": "existing upstream uninitialized half-wave data",
+      "strict_test": "test_factory_native hash comparison",
+      "evidence": "cdp8-distshift-repeat.json",
+      "new_stereo_or_create_eligibility": false
+    }
+  ],
+  "not_run": [
+    "Windows build",
+    "physical audio/MIDI listening",
+    "leak detection",
+    "new PR CI at publication"
+  ]
+}
