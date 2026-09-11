@@ -1211,6 +1211,8 @@ static int audition_plan_ui(const TsInstrument *instrument, const TsUiState *ui,
                             TsAuditionSource source, TsAuditionRange range,
                             TsAuditionPlan *plan)
 {
+    if (range == TS_AUDITION_WORKBENCH_LOOP && ui->play_view)
+        range = TS_AUDITION_DISPLAYED;
     if (source == TS_AUDITION_PARENT && range == TS_AUDITION_DISPLAYED) {
         size_t first = ui->parent_view_first;
         size_t last = ui->parent_view_last;
@@ -1389,6 +1391,9 @@ static void keyboard_loop_policy(AudioState *audio, const TsUiState *ui)
 {
     int enabled = ui->workbench_loop_active || ui->keyboard_hold;
     audio->notes.workbench_loop = enabled;
+    audio->notes.play_view = ui->play_view;
+    audio->notes.parent_view_first = ui->parent_view_first;
+    audio->notes.parent_view_last = ui->parent_view_last;
     audio->performance.keyboard_loop = enabled;
     audio->sister.performance.keyboard_loop = enabled;
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i) {
@@ -1457,18 +1462,26 @@ static void toggle_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
                  audio->capture.overdub ?
                  "OVERDUB RECORDING %s LOOP TO TILE %02d" :
                  "CAPTURE RECORDING %s LOOP TO TILE %02d",
-                 instrument->has_selection ? "SELECTION" : "VIEW",
+                 ui->play_view ? "VIEW" : instrument->has_selection ? "SELECTION" : "WHOLE SAMPLE",
                  audio->capture.destination_slot + 1);
     else snprintf(ui->status, sizeof(ui->status), "%s: %s",
                   ui->workbench_loop_persistent ? "LOOP LOCKED" : "LOOP",
-                  instrument->has_selection ? "SELECTION" : "VIEW");
+                  ui->play_view ? "VIEW" : instrument->has_selection ? "SELECTION" : "WHOLE SAMPLE");
 }
 
 static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
                                    TsUiState *ui, const TsInstrument *instrument)
 {
     TsAuditionPlan plan;
-    if (!ui->workbench_loop_active) return;
+    if (!ui->workbench_loop_active) {
+        if (ui->play_view || ui->keyboard_hold) {
+            if (device) SDL_LockAudioDevice(device);
+            keyboard_loop_policy(audio, ui);
+            runtime_note_sync(audio, instrument, audio->output_rate);
+            if (device) SDL_UnlockAudioDevice(device);
+        }
+        return;
+    }
     if (ts_note_bank_count(&audio->notes) > 0 ||
         ts_performance_count(&audio->performance) > 0 ||
         ts_performance_count(&audio->sister.performance) > 0) {
@@ -1480,15 +1493,18 @@ static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (!audition_plan_ui(instrument, ui, TS_AUDITION_CURRENT,
-                          TS_AUDITION_WORKBENCH_LOOP, &plan)) {
+                          ui->play_view ? TS_AUDITION_DISPLAYED : TS_AUDITION_WORKBENCH_LOOP, &plan)) {
         if (ui->workbench_loop_persistent) set_loop_lock_silence(device, audio);
         else stop_all(device, audio, ui);
         return;
     }
     if (device) SDL_LockAudioDevice(device);
-    audio->position = ts_audition_map_progress(
-        audio->position, audio->range_start, audio->range_end, plan.first, plan.last);
-    if (audio->position >= (double)plan.last) audio->position = (double)plan.first;
+    if (audio->sample != plan.sample || audio->range_start != plan.first ||
+        audio->range_end != plan.last) {
+        audio->position = ts_audition_map_progress(
+            audio->position, audio->range_start, audio->range_end, plan.first, plan.last);
+        if (audio->position >= (double)plan.last) audio->position = (double)plan.first;
+    }
     audio->sample = plan.sample;
     audio->range_start = plan.first;
     audio->range_end = plan.last;
@@ -1502,6 +1518,43 @@ static void refresh_workbench_loop(SDL_AudioDeviceID device, AudioState *audio,
         audio->step = (double)plan.sample->sample_rate / audio->output_rate *
                       audio->pitch;
     if (device) SDL_UnlockAudioDevice(device);
+}
+
+/* Change the range of played notes without starting an extra transport voice. */
+static void toggle_play_view(SDL_AudioDeviceID device, AudioState *audio,
+                              TsUiState *ui, const TsInstrument *instrument)
+{
+    if (device) SDL_LockAudioDevice(device);
+    ui->play_view = !ui->play_view;
+    keyboard_loop_policy(audio, ui);
+    runtime_note_sync(audio, instrument, audio->output_rate);
+    if (device) SDL_UnlockAudioDevice(device);
+    refresh_workbench_loop(device, audio, ui, instrument);
+    snprintf(ui->status, sizeof(ui->status), ui->play_view ?
+        "PLAY VIEW ON - QWERTY / MIDI / MOUSE FOLLOW ZOOM; LOOP / HOLD REPEATS" :
+        "PLAY VIEW OFF - ZOOM / PAN ONLY CHANGES THE DISPLAY");
+}
+
+/* PLAY ALL / SEL take a fixed range once. A normal LOOP must not replace it
+   on the next UI tick; a locked loop still requires explicit release. */
+static void play_canvas_range(SDL_AudioDeviceID device, AudioState *audio,
+                               TsUiState *ui, const TsInstrument *instrument,
+                               TsAuditionRange range, int output_rate)
+{
+    TsAuditionPlan plan;
+    if (!ts_ui_loop_transport_can_stop(ui, 0)) {
+        snprintf(ui->status, sizeof(ui->status), "LOOP LOCKED - SHIFT+LOOP TO RELEASE");
+        return;
+    }
+    if (device && output_rate > 0 &&
+        audition_plan_ui(instrument, ui, ui->audition_source, range, &plan)) {
+        SDL_LockAudioDevice(device);
+        ui->workbench_loop_active = 0;
+        ui->play_view = 0;
+        keyboard_loop_policy(audio, ui);
+        SDL_UnlockAudioDevice(device);
+    }
+    begin_audition(device, audio, ui, instrument, range, 1.0, output_rate);
 }
 
 static void begin_note_event(SDL_AudioDeviceID device, AudioState *audio,
@@ -4561,6 +4614,35 @@ static void select_current_tile(SDL_AudioDeviceID device, AudioState *audio,
                  wave_only ? "NO NON-SILENT WAVE IN TILE" :
                              "SELECT ALL NEEDS AN ACTIVE TILE");
     }
+}
+
+static void select_current_view(SDL_AudioDeviceID device, AudioState *audio,
+                                TsUiState *ui, TsInstrument *instrument)
+{
+    TsAuditionPlan plan;
+    if (!audition_plan_ui(instrument, ui, ui->audition_source,
+                          TS_AUDITION_DISPLAYED, &plan)) {
+        snprintf(ui->status, sizeof(ui->status), "SEL VIEW NEEDS VISIBLE AUDIO");
+        return;
+    }
+    size_t first = plan.first, last = plan.last;
+    if (ui->audition_source == TS_AUDITION_PARENT) {
+        /* Selections are stored in current-tile coordinates. Keep the source
+           view unchanged and select only the part belonging to this tile. */
+        first = first > instrument->crop_first ? first - instrument->crop_first : 0;
+        last = last > instrument->crop_first ? last - instrument->crop_first : 0;
+    }
+    if (last > instrument->current.frames) last = instrument->current.frames;
+    if (!instrument->current.data || first >= last) {
+        snprintf(ui->status, sizeof(ui->status), "VISIBLE SOURCE IS OUTSIDE THE CURRENT TILE");
+        return;
+    }
+    cancel_pitch_preview(device, audio, ui, instrument);
+    ui->bank_view_slot = -1;ui->selecting = ui->selecting_button = 0;
+    ui->wave_pointer_pending = ui->wave_pointer_button = 0;ui->has_stretch_readout = 0;
+    ts_instrument_set_selection(instrument, first, last);
+    if (ui->play_view) toggle_play_view(device, audio, ui, instrument);
+    snprintf(ui->status, sizeof(ui->status), "SELECTED VIEW %zu - %zu; ZOOM / PAN KEEPS THIS SELECTION", first, last);
 }
 
 static void crop_selection(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui,
@@ -13591,7 +13673,10 @@ int main(int argc, char **argv)
                         stop_all(device, &audio, &ui);
                     else {
                         ui.audition_source = TS_AUDITION_CURRENT;
-                        if (ts_ui_space_plays_selection(&instrument))
+                        if (ui.play_view)
+                            begin_audition(device, &audio, &ui, &instrument,
+                                           TS_AUDITION_DISPLAYED, 1.0, obtained.freq);
+                        else if (ts_ui_space_plays_selection(&instrument))
                             begin_audition(device, &audio, &ui, &instrument,
                                            TS_AUDITION_SELECTION, 1.0,
                                            obtained.freq);
@@ -15313,14 +15398,13 @@ int main(int argc, char **argv)
                     }
                     if (changed) apply_process(device, &audio, &ui, &instrument, process, label);
                 } else if (wave_action == TS_UI_WAVE_ACTION_PLAY_ALL) {
-                    begin_audition(device, &audio, &ui, &instrument,
-                                   TS_AUDITION_ALL, 1.0, obtained.freq);
+                    play_canvas_range(device, &audio, &ui, &instrument,
+                                      TS_AUDITION_ALL, obtained.freq);
                 } else if (wave_action == TS_UI_WAVE_ACTION_PLAY_SELECTION) {
-                    begin_audition(device, &audio, &ui, &instrument,
-                                   TS_AUDITION_SELECTION, 1.0, obtained.freq);
+                    play_canvas_range(device, &audio, &ui, &instrument,
+                                      TS_AUDITION_SELECTION, obtained.freq);
                 } else if (wave_action == TS_UI_WAVE_ACTION_PLAY_VIEW) {
-                    begin_audition(device, &audio, &ui, &instrument,
-                                   TS_AUDITION_DISPLAYED, 1.0, obtained.freq);
+                    toggle_play_view(device, &audio, &ui, &instrument);
                 } else if (wave_action == TS_UI_WAVE_ACTION_CROP) {
                     ui.bank_clear_armed = 0;
                     crop_selection(device, &audio, &ui, &instrument);
@@ -15343,6 +15427,8 @@ int main(int argc, char **argv)
                     select_current_tile(device, &audio, &ui, &instrument, 0);
                 } else if (wave_action == TS_UI_WAVE_ACTION_SELECT_WAVE) {
                     select_current_tile(device, &audio, &ui, &instrument, 1);
+                } else if (wave_action == TS_UI_WAVE_ACTION_SELECT_VIEW) {
+                    select_current_view(device, &audio, &ui, &instrument);
                 } else if (wave_action == TS_UI_WAVE_ACTION_SHOW_ALL) {
                     ui.bank_view_slot = -1;
                     if (ui.audition_source == TS_AUDITION_PARENT) {

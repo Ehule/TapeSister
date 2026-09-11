@@ -19,14 +19,49 @@ The START modes retain the attack before the loop. START REV turns at the upper
 edge after its first forward pass, so it does not jump from the attack directly
 to the loop end. Every enabled loop stays within its bounds after that first pass.
 Changing pitch changes traversal speed; stereo channels share the same position.
-An ordinary PLAY ALL / PLAY SEL / PLAY VIEW remains a one-shot audition.
+PLAY ALL and PLAY SEL remain one-shot auditions.
 
 Sustain governs key release. With Sustain off, releasing an unlatched note stops
 it; with Sustain on it continues. HOLD or Shift-click makes release explicit.
 See [Keyboard Sustain](KEYBOARD_SUSTAIN.md) for the shared tile/FM controls.
 The main LOOP control additionally lets a keyboard chord repeat the selection or
-view without saving loop points. Starting notes takes over from its standalone
+whole sample without saving loop points. Starting notes takes over from its standalone
 audition, and changing a live chord's selection does not create another voice.
+
+## Zoom and explicit view playback
+
+Zooming and panning normally change only the display. LOOP and HOLD no longer
+use the visible range implicitly, including when a note starts while zoomed in.
+Played notes keep saved loop points when present; otherwise LOOP/HOLD repeats
+the selection, or the whole sample when there is no selection. The standalone
+main LOOP repeats the selection or whole sample independently of saved loop points.
+
+**PLAY VIEW** is now a highlighted range toggle, off at startup. When enabled,
+QWERTY, MIDI and the onscreen keyboard play the visible canvas range. Active
+notes follow zoom/pan with their relative playback position preserved. LOOP,
+HOLD and saved-loop enablement still determine whether notes repeat; Sustain
+still determines key-release behavior. Turning on PLAY VIEW alone starts no
+extra voice. Saved loop points are retained while the view overrides their
+bounds. Direction is retained, with START modes using their ordinary direction
+so playback stays inside the view.
+
+**SEL VIEW** selects the visible region and turns PLAY VIEW off. This selection
+stays fixed while zooming or panning elsewhere. Saved loop points still take
+priority for played notes. In Source view, SEL VIEW selects the overlapping
+portion of the current tile, without changing the Source view; an entirely
+outside view leaves the selection intact.
+
+PLAY ALL / PLAY SEL turn off PLAY VIEW and ordinary LOOP before auditioning
+their fixed range once. A locked loop still requires Shift+LOOP to release.
+With PLAY VIEW enabled, Space auditions a fixed snapshot of the visible range
+once; press it again to stop. Stop keeps the PLAY VIEW toggle enabled.
+
+This canvas setting does not change FM, Portal or file-preview ranges, or the
+individual ranges of routed groups and click-launched tiles. It is session-only
+and changes no audio, saved loop metadata or project format.
+
+![PLAY VIEW enabled above the keyboard](images/canvas-play-view.png)
+![SEL VIEW captured, then zoomed out](images/canvas-select-view.png)
 
 ## Saving and TapeHead
 
@@ -90,6 +125,12 @@ effects and recording keep running while the window is hidden.
 ![Sister Machine filling a wide window](images/sister-filled-window.png)
 
 ## Validation
+
+`tests/test_canvas_play_view.inc` exercises the actual QWERTY, MIDI and mouse
+controller routes. Stereo renders are compared with an unchanged reference
+through zoom/pan, with LOOP/HOLD, selection/no selection, and all six saved loop
+modes. It also checks PLAY VIEW takeover, fixed SEL VIEW, parent/crop coordinates,
+explicit one-shot ranges, unchanged sample/Undo state, and native toolbar output.
 
 The native controller tests render actual tile and FM voices and cover pointer,
 QWERTY and MIDI release, explicit HOLD, Shift-click, live LOOP takeover, preview

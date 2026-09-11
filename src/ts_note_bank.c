@@ -4,37 +4,54 @@
 #include <string.h>
 
 static int voice_plan(const TsInstrument *instrument, TsAuditionSource source,
-                      int looping, int workbench, TsAuditionPlan *plan)
+                      int looping, const TsNoteBank *bank, TsAuditionPlan *plan)
 {
+    if (bank->play_view) {
+        if (source != TS_AUDITION_PARENT)
+            return ts_audition_plan(instrument, source, TS_AUDITION_DISPLAYED, plan);
+        plan->sample = &instrument->parent;
+        plan->first = bank->parent_view_first;plan->last = bank->parent_view_last;
+        if (plan->last <= plan->first || plan->last > plan->sample->frames) {
+            plan->first = 0;plan->last = plan->sample->frames;
+        }
+        return plan->sample->data && plan->last > plan->first;
+    }
     return ts_audition_plan(instrument, source,
                             looping && instrument->has_loop ?
-                            TS_AUDITION_LOOP : workbench ? TS_AUDITION_WORKBENCH_LOOP : TS_AUDITION_NOTE, plan);
+                            TS_AUDITION_LOOP : bank->workbench_loop ? TS_AUDITION_WORKBENCH_LOOP : TS_AUDITION_NOTE, plan);
 }
 
 static void update_voice(TsNoteVoice *voice, const TsInstrument *instrument,
                          const TsTuning *tuning, TsAuditionSource source,
-                         int output_rate, int workbench)
+                         int output_rate, const TsNoteBank *bank)
 {
     if(voice->preview || voice->synth)return; /* The workbench owns its immutable sample/range. */
     TsAuditionPlan plan;
-    int looping = instrument->has_loop || workbench;
+    int looping = instrument->has_loop || bank->workbench_loop;
     size_t old_first = voice->range_first;
     size_t old_last = voice->range_last;
     double old_position = voice->position;
-    if (!voice_plan(instrument, source, looping, workbench, &plan) || output_rate <= 0) {
+    if (!voice_plan(instrument, source, looping, bank, &plan) || output_rate <= 0) {
         voice->active = 0;
         return;
     }
-    voice->position = ts_audition_map_progress(old_position,
-        voice->loop_intro ? 0 : old_first, old_last,
-        voice->loop_intro ? 0 : plan.first, plan.last);
-    if (voice->position >= (double)plan.last) voice->position = (double)plan.first;
+    int intro = voice->loop_intro && !bank->play_view && ts_loop_starts_at_sample(instrument->loop_mode);
+    /* The reader normalizes loop overrun on its next read. A display refresh
+       with unchanged bounds must not clamp that pending step or restart it. */
+    if (voice->sample != plan.sample || old_first != plan.first ||
+        old_last != plan.last || voice->loop_intro != intro) {
+        voice->position = ts_audition_map_progress(old_position,
+            voice->loop_intro ? 0 : old_first, old_last,
+            intro ? 0 : plan.first, plan.last);
+        if (voice->position >= (double)plan.last) voice->position = (double)plan.first;
+    }
+    voice->loop_intro = intro;
     voice->sample = plan.sample;
     voice->range_first = plan.first;
     voice->range_last = plan.last;
     voice->source = source;
     voice->looping = looping;
-    voice->loop_mode = instrument->loop_mode;
+    voice->loop_mode = bank->play_view ? ts_loop_base_mode(instrument->loop_mode) : instrument->loop_mode;
     if (!ts_loop_starts_at_sample(voice->loop_mode)) voice->loop_intro = 0;
     if (voice->loop_intro) voice->direction = 1;
     else if (ts_loop_base_mode(voice->loop_mode) == TS_LOOP_REVERSE) voice->direction = -1;
@@ -59,11 +76,14 @@ void ts_note_bank_init(TsNoteBank *bank)
 
 void ts_note_bank_clear(TsNoteBank *bank)
 {
-    int attack_ms, sustain, workbench;
+    int attack_ms, sustain, workbench, play_view;
+    size_t parent_first, parent_last;
     if (bank == NULL) return;
     attack_ms = bank->attack_ms;sustain=bank->sustain;workbench=bank->workbench_loop;
+    play_view=bank->play_view;parent_first=bank->parent_view_first;parent_last=bank->parent_view_last;
     memset(bank, 0, sizeof(*bank));
     ts_note_bank_set_attack_ms(bank, attack_ms);bank->sustain=sustain;bank->workbench_loop=workbench;
+    bank->play_view=play_view;bank->parent_view_first=parent_first;bank->parent_view_last=parent_last;
 }
 
 void ts_note_bank_set_attack_ms(TsNoteBank *bank, int milliseconds)
@@ -157,7 +177,7 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
         event->key < 0 || event->midi_note < 0 || event->midi_note > 127 ||
         event->velocity <= 0 || event->velocity > 127 ||
         tuning == NULL || output_rate <= 0 ||
-        !voice_plan(instrument, source, instrument->has_loop, bank->workbench_loop, &plan))
+        !voice_plan(instrument, source, instrument->has_loop, bank, &plan))
         return TS_NOTE_START_FAILED;
     first_voice = event->origin == TS_NOTE_ORIGIN_MIDI ?
                   TS_NOTE_VOICE_LIMIT : 0;
@@ -205,7 +225,7 @@ TsNoteStartResult ts_note_bank_start_tuned_event(
         voice->channel = event->channel;
         voice->gain = ts_note_event_gain(event);
         voice->looping = instrument->has_loop || bank->workbench_loop;
-        voice->loop_mode = instrument->loop_mode;
+        voice->loop_mode = bank->play_view ? ts_loop_base_mode(instrument->loop_mode) : instrument->loop_mode;
         voice->direction = 1;
         if (voice->looping) voice->position = ts_audition_loop_begin(
             plan.first, plan.last, voice->loop_mode, &voice->direction, &voice->loop_intro);
@@ -419,7 +439,7 @@ void ts_note_bank_sync_tuned(TsNoteBank *bank, const TsInstrument *instrument,
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active)
             update_voice(&bank->voices[i], instrument, tuning,
-                         bank->voices[i].source, output_rate, bank->workbench_loop);
+                         bank->voices[i].source, output_rate, bank);
 }
 
 void ts_note_bank_set_source(TsNoteBank *bank, const TsInstrument *instrument,
@@ -438,7 +458,7 @@ void ts_note_bank_set_source_tuned(TsNoteBank *bank,
     if (bank == NULL || instrument == NULL || tuning == NULL) return;
     for (int i = 0; i < TS_NOTE_BANK_VOICE_CAPACITY; ++i)
         if (bank->voices[i].active)
-            update_voice(&bank->voices[i], instrument, tuning, source, output_rate, bank->workbench_loop);
+            update_voice(&bank->voices[i], instrument, tuning, source, output_rate, bank);
 }
 
 void ts_note_bank_read_buses(TsNoteBank *bank,

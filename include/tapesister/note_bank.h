@@ -48,7 +48,9 @@ typedef struct {
     uint64_t next_serial;
     int attack_ms;
     int sustain;
-    int workbench_loop; /* Session-only selection/view loop for played notes. */
+    int workbench_loop; /* Session-only selection/whole-sample loop for played notes. */
+    int play_view;
+    size_t parent_view_first, parent_view_last;
 } TsNoteBank;
 
 typedef enum {

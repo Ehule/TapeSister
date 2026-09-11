@@ -1980,11 +1980,12 @@ int main(void)
         ts_instrument_clear_selection(&audition);
         CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
                                TS_AUDITION_WORKBENCH_LOOP, &plan));
-        CHECK(plan.first == 20 && plan.last == 400);
+        CHECK(plan.first == 0 && plan.last == audition.current.frames);
         audition.view_first = audition.current.frames + 10u;
         audition.view_last = audition.current.frames + 20u;
-        CHECK(!ts_audition_plan(&audition, TS_AUDITION_CURRENT,
+        CHECK(ts_audition_plan(&audition, TS_AUDITION_CURRENT,
                                 TS_AUDITION_WORKBENCH_LOOP, &plan));
+        CHECK(plan.first == 0 && plan.last == audition.current.frames);
         audition.view_first = 5;
         audition.view_last = 550;
         ts_instrument_set_selection(&audition, 10, 500);
