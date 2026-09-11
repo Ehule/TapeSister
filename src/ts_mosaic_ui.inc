@@ -19,6 +19,23 @@ static void mosaic_canvas_rect(TsFramebuffer *fb,int x,int y,int w,int h,uint32_
     if(bottom>376)bottom=376;
     if(right>x && bottom>y)rect(fb,x,y,right-x,bottom-y,color);
 }
+static void mosaic_time_label(char *label,size_t size,double time)
+{
+    if(time<100)snprintf(label,size,"%04.1f",time);
+    else if(time<10000)snprintf(label,size,"%04.0f",time);
+    else snprintf(label,size,"%3.0fm",time/60);
+}
+static void mosaic_ruler_label(TsFramebuffer *fb,int y,const char *label)
+{
+    /* The logical fallback must also clip glyphs at the canvas edges. */
+    for(int n=0;label[n];++n) {
+        char c=label[n];if(c>='a' && c<='z')c=(char)(c-'a'+'A');
+        const char *bits=glyph(c);
+        for(int gy=0;gy<7;++gy)if(y+gy>=66 && y+gy<376)
+            for(int gx=0;gx<5;++gx)if(bits[gy*5+gx]=='1' && 115+n*6+gx<151)
+                rect(fb,115+n*6+gx,y+gy,1,1,RGB(133,127,141));
+    }
+}
 static uint32_t mosaic_mix_color(uint32_t a,uint32_t b,float t)
 {
     unsigned r=(unsigned)(((a>>16)&255)*(1-t)+((b>>16)&255)*t);
@@ -162,7 +179,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     double interval=(step<=1?1:step<=2?2:step<=5?5:10)*decade;
     for(double t=ceil(ui->mosaic_scroll/interval)*interval;t<ui->mosaic_scroll+310/scale;t+=interval) {
         int y=66+(int)((t-ui->mosaic_scroll)*scale);
-        if(t<100)snprintf(label,sizeof(label),"%04.1f",t);else if(t<10000)snprintf(label,sizeof(label),"%04.0f",t);else snprintf(label,sizeof(label),"%3.0fm",t/60);text(fb,115,y+2,label,RGB(133,127,141),1);
+        mosaic_time_label(label,sizeof(label),t);mosaic_ruler_label(fb,y+2,label);
         rect(fb,147,y,484,1,RGB(28,30,35));
     }
     int any_solo=0;
@@ -175,7 +192,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
             mosaic_card(fb,ui,e,e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i],e->muted || (any_solo && !e->solo),0);
         }
     }
-    mosaic_detail_sources(fb,ui);
+    mosaic_detail_sources(fb,ui,interval);
     if(ui->mosaic_box) {
         int x=ui->mosaic_box_x<ui->mosaic_box_end_x?ui->mosaic_box_x:ui->mosaic_box_end_x;
         int y=ui->mosaic_box_y<ui->mosaic_box_end_y?ui->mosaic_box_y:ui->mosaic_box_end_y;

@@ -88,7 +88,8 @@ Waveform detail follows fixed sample intervals attached to the event. Scrolling
 moves each complete tile—waveform, labels, borders and repeat dividers—together
 in single physical-pixel steps. The tile keeps its height and waveform shape;
 header and footer spacing stays attached as it crosses the canvas edges.
-Tiles that meet end to end share the same drawn boundary.
+Tiles that meet end to end share the same drawn boundary. The time ruler and its
+labels scroll with the grid, keeping their alignment with the tiles.
 Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
 actual sample ranges instead of enlarging those bins. Source thumbnails cache
 extrema at their displayed width. None of this analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.

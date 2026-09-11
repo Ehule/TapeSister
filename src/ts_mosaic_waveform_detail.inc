@@ -1,4 +1,4 @@
-/* Two native surfaces cover every visible event and the source palette.
+/* Two native surfaces cover every visible event, the ruler and source palette.
    Controls stay on the logical framebuffer. Complete event cards move together;
    the shared compositor restores later playhead, box-selection and dialog ink. */
 static void mosaic_detail_span(TsUiWaveformDetail *d,int y,double first,double last,uint32_t color)
@@ -171,12 +171,45 @@ static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_sol
     }
     d->valid=1;detail_capture_slot(fb,0);return 1;
 }
-static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui)
+static int mosaic_detail_screen_x(const TsUiWaveformDetail *d,int x)
 {
-    TsUiWaveformDetail *d=detail_region(1,10,74,93,266);if(!d)return;
+    return detail_output_width>0?x*detail_output_width/TS_UI_WIDTH-d->output_x:
+        (x-d->x)*d->width/d->logical_width;
+}
+static int mosaic_detail_screen_y(const TsUiWaveformDetail *d,int y)
+{
+    return detail_output_height>0?y*detail_output_height/TS_UI_HEIGHT-d->output_y:
+        (y-d->y)*d->height/d->logical_height;
+}
+static void mosaic_detail_ruler(TsUiWaveformDetail *d,const TsUiState *ui,double interval)
+{
+    int left=mosaic_detail_screen_x(d,113),label_x=mosaic_detail_screen_x(d,115),tick_x=mosaic_detail_screen_x(d,147);
+    mosaic_detail_rect(d,left,0,d->width,d->height,RGB(11,13,16));
+    /* Both surfaces have exactly the same vertical bounds and pixel scale.
+       Labels and tick marks use the canvas's world rounding and pan offset. */
+    double sx=(double)(d->width-left)/38,sy=(double)d->height/310;
+    double rate=(ui->mosaic_scale>0?ui->mosaic_scale:24)*sy;
+    int64_t pan=mosaic_detail_pixel(ui->mosaic_scroll*rate),line=mosaic_detail_pixel(sy);
+    if(line<1)line=1;
+    int64_t tick=(int64_t)floor(ui->mosaic_scroll/interval);
+    for(;;++tick) {
+        double time=tick*interval;int64_t y=mosaic_detail_pixel(time*rate)-pan;
+        if(y>=d->height)break;
+        char label[32];mosaic_time_label(label,sizeof(label),time);
+        mosaic_detail_text(d,label_x,y+mosaic_detail_pixel(2*sy),label,RGB(133,127,141),sx,sy);
+        mosaic_detail_rect(d,tick_x,y,d->width,y+line,RGB(28,30,35));
+    }
+}
+static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui,double interval)
+{
+    /* Extend the existing sidebar surface to cover the time ruler. The event
+       surface and its raster dimensions stay untouched. */
+    TsUiWaveformDetail *d=detail_region(1,10,66,141,310);if(!d)return;
     static TsWaveformCache cache[16];
     detail_background(d,fb);
-    double sx=(double)d->width/93,sy=(double)d->height/266;
+    int source_y=mosaic_detail_screen_y(d,74);
+    double sx=(double)mosaic_detail_screen_x(d,103)/93;
+    double sy=(double)(mosaic_detail_screen_y(d,340)-source_y)/266;
     for(int i=0;i<16;++i) {
         int n=ui->mosaic_source_offset+i;if(n>=ui->mosaic_source_count)break;
         const TsSample *s=ui->mosaic_sources[n].sample;if(!s || !s->data)continue;
@@ -184,17 +217,18 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui)
         uint32_t fill=selected?RGB(51,47,59):RGB(40,36,44);
         uint32_t color=mosaic_color(ui->mosaic_sources[n].hash);
         int first=(int)((x+4)*sx),last=(int)((x+39)*sx);
-        int top=(int)((y+15)*sy),bottom=(int)((y+26)*sy);
+        int top=source_y+(int)((y+15)*sy),bottom=source_y+(int)((y+26)*sy);
         int width=last-first,bins=width<TS_WAVEFORM_CACHE_MAX_COLUMNS?width:TS_WAVEFORM_CACHE_MAX_COLUMNS;
         TsWaveformRequest request={.sample=s,.first=0,.last=s->frames,.width=bins,.revision=(ui->mosaic?ui->mosaic->epoch:0)^ui->mosaic_sources[n].hash};
         if(!ts_waveform_cache_prepare(&cache[i],&request))continue;
         for(int py=top;py<bottom;++py)for(int px=first;px<last;++px)d->pixels[(size_t)py*d->width+px]=fill;
         for(int px=first;px<last;++px) {
             const TsWaveformColumn *c=&cache[i].columns[(px-first)*bins/width];
-            double lo=(y+20.5-fmaxf(-1,fminf(1,c->maximum))*5)*sy;
-            double hi=(y+20.5-fmaxf(-1,fminf(1,c->minimum))*5)*sy;
+            double lo=source_y+(y+20.5-fmaxf(-1,fminf(1,c->maximum))*5)*sy;
+            double hi=source_y+(y+20.5-fmaxf(-1,fminf(1,c->minimum))*5)*sy;
             detail_line(d,px,lo,px,hi,color);
         }
     }
+    mosaic_detail_ruler(d,ui,interval);
     d->valid=1;detail_capture_slot(fb,1);
 }

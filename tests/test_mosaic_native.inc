@@ -27,7 +27,7 @@ static void mosaic_native_check(const TsInstrument *doc,const char *shot)
                 assert(pixels[(py*3+1)*width+x*3+1]==fb.pixels[py*640+x]);
             for(int y=0;y<height;++y)for(int x=0;x<width;++x) {
                 int lx=x/3,ly=y/3;
-                if(ly<66 || ly>=376 || (lx>=103 && lx<151) || lx>=631)
+                if(ly<66 || ly>=376 || (lx>=103 && lx<113) || lx>=631)
                     assert(pixels[(size_t)y*width+x]==fb.pixels[ly*640+lx]);
             }
             if(shot) {
