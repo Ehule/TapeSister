@@ -3393,7 +3393,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
     if (ui->input_meter_active) live_input_render(fb, ui);
 
     button(fb, 10, 205, 70, "LOAD", ui->browser.mode == TS_BROWSER_LOAD_WAV);
-    button(fb, 85, 205, 82, ui->cdp_creating ? "CANCEL CDP" : ui->cdp_create ? "CREATE+CDP" : "CREATE", ui->cdp_create);
+    button(fb, 85, 205, 82, ui->cdp_creating ? "CDP..." : ui->cdp_create ? "CREATE+CDP" : "CREATE", ui->cdp_create);
     button(fb, 172, 205, 70, "VARY", 0);
     button(fb, 247, 205, 78,
            ui->workbench_loop_persistent ? "LOOP LOCK" : "LOOP",

@@ -17,6 +17,8 @@ typedef struct {
     const float *seen_data;
     uint32_t seen_revision;
     size_t seen_frames;
+    int audio_dirty, resume_exit;
+    SDL_Event exit_event;
     int drag, drag_slot, drag_x, drag_y, drag_moved;
     double drag_start, drag_duration, drag_left, drag_width;
     TsMosaicEvent clipboard;
@@ -144,10 +146,14 @@ static int mosaic_commit(SDL_AudioDeviceID device,TsUiState *ui,
        lightweight properties; don't hash a long sample every UI frame. */
     int audio_changed=c->seen_data!=instrument->current.data || c->seen_revision!=instrument->current.visual_revision ||
         c->seen_frames!=instrument->current.frames;
-    if(audio_changed && !mosaic_same_audio(&instrument->current,&e->source->sample)) {
-        ui->mosaic_edit_choice=1;c->pending_id=e->id;c->pending_revision=e->revision;c->pending_epoch=ui->mosaic->epoch;
-        snprintf(ui->status,sizeof(ui->status),"EDIT COMPLETE - NEW TILE, UPDATE TILE, OR CANCEL");return 0;
+    if(audio_changed) {
+        c->audio_dirty=!mosaic_same_audio(&instrument->current,&e->source->sample);
+        c->seen_data=instrument->current.data;c->seen_revision=instrument->current.visual_revision;
+        c->seen_frames=instrument->current.frames;
     }
+    /* A working document may contain many edits. Keep its audio and bounds
+       together until the user chooses a destination on leaving the editor. */
+    if(c->audio_dirty)return 1;
     size_t first=instrument->has_loop?instrument->loop_first:instrument->has_selection?instrument->selection_first:0;
     size_t last=instrument->has_loop?instrument->loop_last:instrument->has_selection?instrument->selection_last:instrument->current.frames;
     if(audio_changed || strncmp(e->name,instrument->current.name,63) || e->first!=first || e->last!=last || e->mode!=instrument->loop_mode ||
@@ -160,79 +166,67 @@ static int mosaic_commit(SDL_AudioDeviceID device,TsUiState *ui,
     }
     return 1;
 }
-/* Native audio edits wait here before publishing. Existing voices continue
-   to read the previous immutable source while the user chooses a destination. */
+static int mosaic_leave(SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,MosaicController *);
+/* One destination decision for the complete editing session. Existing voices
+   keep reading immutable audio; Escape resumes editing without losing work. */
 static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                                TsInstrument *instrument,MosaicController *c,int choice)
 {
+    if(choice==0 && ui->mosaic_edit_choice) {
+        ui->mosaic_edit_choice=0;c->pending_id=0;
+        snprintf(ui->status,sizeof(ui->status),"KEEP EDITING - ALL CHANGES RETAINED");return 1;
+    }
     TsMosaicEvent *owner=ts_mosaic_find(ui->mosaic,c->pending_id);
     if(!ui->mosaic_edit_choice || !owner || c->pending_id!=c->active ||
        c->pending_epoch!=ui->mosaic->epoch || c->pending_revision!=owner->revision) {
         snprintf(ui->status,sizeof(ui->status),"EDIT OWNER CHANGED - RESULT KEPT IN THE EDITOR");return 0;
     }
     char error[160]={0};
-    if(choice==0) {
-        /* Restore the pre-edit document through its own history. Import is a
-           fallback for processors that replace audio without an undo entry. */
-        int unlocked=begin_native_sister_edit(device,audio);
-        int ok=ts_instrument_undo(instrument,error,sizeof(error));
-        if(!ok || !mosaic_same_audio(&instrument->current,&owner->source->sample))
-            ok=ts_instrument_import_sample(instrument,&owner->source->sample,1,owner->first,owner->last,owner->mode,error,sizeof(error));
-        if(ok) {
-            instrument->has_loop=1;instrument->loop_first=owner->first;instrument->loop_last=owner->last;
-            instrument->loop_mode=owner->mode;instrument->loop_crossfade_ms=(float)(1000.0*owner->crossfade/owner->source->sample.sample_rate);
-            instrument->tuning=owner->tuning;snprintf(instrument->current.name,sizeof(instrument->current.name),"%s",owner->name);
+    TsMosaicSource *source=ts_mosaic_source(ui->mosaic,&instrument->current,error,sizeof(error));
+    if(!source){snprintf(ui->status,sizeof(ui->status),"EVENT AUDIO NOT UPDATED: %.120s",error);return 0;}
+    ++source->pins;
+    TsInstrument *original_doc=NULL;int new_index=-1;
+    if(choice==1) {
+        int free_slot=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)free_slot+=!ui->mosaic->events[i].id;
+        if(!free_slot){--source->pins;snprintf(ui->status,sizeof(ui->status),"MOSAIC IS FULL - UPDATE TILE OR KEEP EDITING");return 0;}
+        for(int i=0;i<TS_MOSAIC_EVENTS;++i)
+            if(c->document_epochs[i]!=ui->mosaic->epoch || !ts_mosaic_find(ui->mosaic,c->document_ids[i])){new_index=i;break;}
+        original_doc=new_index>=0?malloc(sizeof(*original_doc)):NULL;
+        if(!original_doc){--source->pins;snprintf(ui->status,sizeof(ui->status),"NOT ENOUGH MEMORY FOR A NEW EVENT DOCUMENT");return 0;}
+        ts_instrument_init(original_doc);
+        if(!ts_instrument_import_sample(original_doc,&owner->source->sample,1,owner->first,owner->last,owner->mode,error,sizeof(error))) {
+            ts_instrument_free(original_doc);free(original_doc);--source->pins;
+            snprintf(ui->status,sizeof(ui->status),"COULD NOT KEEP ORIGINAL EVENT: %.110s",error);return 0;
         }
-        finish_native_sister_edit(device,audio,ui,instrument,unlocked);
-        if(!ok){snprintf(ui->status,sizeof(ui->status),"COULD NOT CANCEL EDIT: %.120s",error);return 0;}
-    } else {
-        TsMosaicSource *source=ts_mosaic_source(ui->mosaic,&instrument->current,error,sizeof(error));
-        if(!source){snprintf(ui->status,sizeof(ui->status),"EVENT AUDIO NOT UPDATED: %.120s",error);return 0;}
-        ++source->pins;
-        TsInstrument *original_doc=NULL;int new_index=-1;
-        if(choice==1) {
-            int free_slot=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)free_slot+=!ui->mosaic->events[i].id;
-            if(!free_slot){--source->pins;snprintf(ui->status,sizeof(ui->status),"MOSAIC IS FULL - UPDATE TILE OR CANCEL");return 0;}
-            for(int i=0;i<TS_MOSAIC_EVENTS;++i)
-                if(c->document_epochs[i]!=ui->mosaic->epoch || !ts_mosaic_find(ui->mosaic,c->document_ids[i])){new_index=i;break;}
-            original_doc=new_index>=0?malloc(sizeof(*original_doc)):NULL;
-            if(!original_doc){--source->pins;snprintf(ui->status,sizeof(ui->status),"NOT ENOUGH MEMORY FOR A NEW EVENT DOCUMENT");return 0;}
-            ts_instrument_init(original_doc);
-            if(!ts_instrument_import_sample(original_doc,&owner->source->sample,1,owner->first,owner->last,owner->mode,error,sizeof(error))) {
-                ts_instrument_free(original_doc);free(original_doc);--source->pins;
-                snprintf(ui->status,sizeof(ui->status),"COULD NOT KEEP ORIGINAL EVENT: %.110s",error);return 0;
-            }
-            original_doc->tuning=owner->tuning;
-            original_doc->loop_crossfade_ms=(float)(1000.0*owner->crossfade/owner->source->sample.sample_rate);
-            snprintf(original_doc->current.name,sizeof(original_doc->current.name),"%s",owner->name);
-        }
-        if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);
-        TsMosaicEvent *target=choice==1?ts_mosaic_copy(ui->mosaic,owner->id,owner->start,owner->x+owner->width+TS_MOSAIC_GUTTER):owner;
-        int muted=target?target->muted:0;
-        if(target && choice==1)target->muted=1;
-        if(device)SDL_UnlockAudioDevice(device);
-        if(!target || !mosaic_publish(device,ui,instrument,target,1)) {
-            if(original_doc){ts_instrument_free(original_doc);free(original_doc);}
-            if(target && choice==1){if(device)SDL_LockAudioDevice(device);ts_mosaic_delete(ui->mosaic,target->id);if(device)SDL_UnlockAudioDevice(device);}
-            --source->pins;return 0;
-        }
-        if(device)SDL_LockAudioDevice(device);target->muted=muted;if(device)SDL_UnlockAudioDevice(device);
-        if(choice==1) {
-            /* Keep the original ID's document for any outstanding CDP owner.
-               The empty parked container follows the currently open variation. */
-            int i=mosaic_document_index(c,c->active);
-            if(c->documents[new_index]){ts_instrument_free(c->documents[new_index]);free(c->documents[new_index]);}
-            c->documents[new_index]=c->documents[i];c->documents[i]=original_doc;
-            c->document_ids[new_index]=target->id;c->document_epochs[new_index]=ui->mosaic->epoch;
-            c->active=ui->mosaic_editing=target->id;mosaic_select_only(ui,target->id);
-        }
-        --source->pins;
+        original_doc->tuning=owner->tuning;
+        original_doc->loop_crossfade_ms=(float)(1000.0*owner->crossfade/owner->source->sample.sample_rate);
+        snprintf(original_doc->current.name,sizeof(original_doc->current.name),"%s",owner->name);
     }
+    if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);
+    TsMosaicEvent *target=choice==1?ts_mosaic_copy(ui->mosaic,owner->id,owner->start,owner->x+owner->width+TS_MOSAIC_GUTTER):owner;
+    int muted=target?target->muted:0;
+    if(target && choice==1)target->muted=1;
+    if(device)SDL_UnlockAudioDevice(device);
+    if(!target || !mosaic_publish(device,ui,instrument,target,1)) {
+        if(original_doc){ts_instrument_free(original_doc);free(original_doc);}
+        if(target && choice==1){if(device)SDL_LockAudioDevice(device);ts_mosaic_delete(ui->mosaic,target->id);if(device)SDL_UnlockAudioDevice(device);}
+        --source->pins;return 0;
+    }
+    if(device)SDL_LockAudioDevice(device);target->muted=muted;if(device)SDL_UnlockAudioDevice(device);
+    if(choice==1) {
+        /* Keep the original ID's document for any outstanding CDP owner.
+           The empty parked container follows the currently open variation. */
+        int i=mosaic_document_index(c,c->active);
+        if(c->documents[new_index]){ts_instrument_free(c->documents[new_index]);free(c->documents[new_index]);}
+        c->documents[new_index]=c->documents[i];c->documents[i]=original_doc;
+        c->document_ids[new_index]=target->id;c->document_epochs[new_index]=ui->mosaic->epoch;
+        c->active=ui->mosaic_editing=target->id;mosaic_select_only(ui,target->id);
+    }
+    --source->pins;
     c->seen_data=instrument->current.data;c->seen_revision=instrument->current.visual_revision;c->seen_frames=instrument->current.frames;
-    ui->mosaic_edit_choice=0;c->pending_id=0;
-    snprintf(ui->status,sizeof(ui->status),choice==0?"EDIT CANCELLED - ORIGINAL EVENT RESTORED":
-        choice==1?"NEW EVENT CREATED BESIDE THE ORIGINAL":"EVENT UPDATED - OTHER EVENTS UNCHANGED");
-    ts_mosaic_collect(ui->mosaic);return 1;
+    ui->mosaic_edit_choice=0;c->pending_id=0;c->audio_dirty=0;
+    snprintf(ui->status,sizeof(ui->status),choice==1?"NEW EVENT CREATED BESIDE THE ORIGINAL":"EVENT UPDATED - OTHER EVENTS UNCHANGED");
+    ts_mosaic_collect(ui->mosaic);return mosaic_leave(device,audio,ui,instrument,c);
 }
 
 static int mosaic_leave(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
@@ -249,6 +243,11 @@ static int mosaic_leave(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
     if(ui->smear_gesture.active)end_smear_gesture(device,audio,ui,instrument,1);
     if(ui->tear_gesture.active)end_tear_gesture(device,audio,ui,instrument,1);
     if(!mosaic_commit(device,ui,instrument,c))return 0;
+    if(c->audio_dirty) {
+        TsMosaicEvent *owner=ts_mosaic_find(ui->mosaic,c->active);if(!owner)return 0;
+        ui->mosaic_edit_choice=1;c->pending_id=owner->id;c->pending_revision=owner->revision;c->pending_epoch=ui->mosaic->epoch;
+        snprintf(ui->status,sizeof(ui->status),"RETURN TO MOSAIC - NEW TILE, UPDATE TILE, OR KEEP EDITING");return 0;
+    }
     int i=mosaic_document_index(c,c->active);
     stop_all_force(device,audio,ui);
     if(device)SDL_LockAudioDevice(device);
@@ -285,7 +284,7 @@ static int mosaic_enter(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
     if(device)SDL_LockAudioDevice(device);
     *c->bank=*instrument;*instrument=*doc;ts_instrument_init(doc);
     if(c->pages)c->pages->mosaic_bank=c->bank;
-    c->active=ui->mosaic_editing=id;ui->mosaic_open=0;
+    c->active=ui->mosaic_editing=id;ui->mosaic_open=0;c->audio_dirty=0;
     runtime_note_sync(audio,instrument,audio->output_rate);
     if(device)SDL_UnlockAudioDevice(device);
     c->seen_data=instrument->current.data;c->seen_revision=instrument->current.visual_revision;c->seen_frames=instrument->current.frames;

@@ -104,6 +104,8 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         text(fb,x+6,end-11,e->muted?"MUTE":e->solo?"SOLO":e->looping?"LOOP":"ONCE",color,1);
 }
 
+#include "ts_mosaic_waveform_detail.inc"
+
 static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrument *instrument)
 {
     const TsMosaic *m=ui->mosaic;
@@ -139,7 +141,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         if(selected)rect(fb,x+2,y+2,40,24,RGB(51,47,59));
         snprintf(label,sizeof(label),"%02d",n+1);text(fb,x+4,y+4,label,sample?color:RGB(74,70,82),1);
         if(sample && sample->data) {
-            TsWaveformRequest request={.sample=sample,.first=0,.last=sample->frames,.width=35,.revision=m?m->epoch:0};
+            TsWaveformRequest request={.sample=sample,.first=0,.last=sample->frames,.width=35,.revision=(m?m->epoch:0)^(ui->mosaic_sources[n].source?ui->mosaic_sources[n].source->hash:0)};
             ts_waveform_cache_prepare(&source_cache[i],&request);
             for(int px=0;px<35;++px) {
                 const TsWaveformColumn *column=&source_cache[i].columns[px];
@@ -168,6 +170,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         const TsMosaicEvent *e=&m->events[i];if(!e->id)continue;
         mosaic_card(fb,ui,e,e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i],e->muted || (any_solo && !e->solo),0);
     }
+    mosaic_detail_cards(fb,ui,any_solo);mosaic_detail_sources(fb,ui);
     if(ui->mosaic_box) {
         int x=ui->mosaic_box_x<ui->mosaic_box_end_x?ui->mosaic_box_x:ui->mosaic_box_end_x;
         int y=ui->mosaic_box_y<ui->mosaic_box_end_y?ui->mosaic_box_y:ui->mosaic_box_end_y;
@@ -190,11 +193,11 @@ void ts_ui_render_mosaic_choice(TsFramebuffer *fb,const TsUiState *ui)
     if(!fb || !ui || !ui->mosaic_edit_choice)return;
     for(int i=0;i<TS_UI_WIDTH*TS_UI_HEIGHT;++i)fb->pixels[i]=mosaic_mix_color(fb->pixels[i],RGB(9,10,14),.66f);
     rect(fb,136,131,368,140,RGB(111,95,122));rect(fb,138,133,364,136,RGB(31,28,38));
-    text(fb,154,149,"EDITED EVENT AUDIO",RGB(224,214,233),1);
+    text(fb,154,149,"RETURN TO MOSAIC",RGB(224,214,233),1);
     text(fb,154,175,"NEW TILE KEEPS THE ORIGINAL AND ADDS A VARIATION.",RGB(178,163,189),1);
     text(fb,154,192,"UPDATE TILE CHANGES ONLY THIS EVENT.",RGB(178,163,189),1);
     text(fb,154,211,"MOSAIC KEEPS PLAYING WHILE YOU CHOOSE.",RGB(129,174,177),1);
     mosaic_button(fb,148,235,106,"NEW TILE",1,0);
     mosaic_button(fb,264,235,116,"UPDATE TILE",0,0);
-    mosaic_button(fb,390,235,102,"CANCEL",0,0);
+    mosaic_button(fb,390,235,102,"KEEP EDITING",0,0);
 }

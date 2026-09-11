@@ -8364,7 +8364,6 @@ static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
 
 static int main_waveform_detail_allowed(const TsUiState *ui)
 {
-    if(ui->mosaic_open && !ui->portal.open)return 0;
     return ui->portal.open ? !ui->portal.manage_open && !ui->portal.macro_edit :
         !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
 }
@@ -12456,7 +12455,10 @@ int main(int argc, char **argv)
                              &portal,&sister_window,&transform,obtained.freq)) continue;
             if((event.type==SDL_QUIT || (event.type==SDL_WINDOWEVENT &&
                 event.window.event==SDL_WINDOWEVENT_CLOSE && event_id==SDL_GetWindowID(window))) && mosaic.active)
-                if(!mosaic_leave(device,&audio,&ui,&instrument,&mosaic))continue;
+                if(!mosaic_leave(device,&audio,&ui,&instrument,&mosaic)) {
+                    if(ui.mosaic_edit_choice){mosaic.resume_exit=1;mosaic.exit_event=event;}
+                    continue;
+                }
             if (keyboard_sustain_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode global_key = event.key.keysym.sym;

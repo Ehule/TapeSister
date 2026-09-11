@@ -12,7 +12,7 @@ Sister Machine and output recorder.
 Open **MOSAIC** in the main toolbar, or press **Ctrl+M**. Drag an occupied source
 from the left bank onto the canvas. Sources shows the audio versions used by placed events first, followed by
 unused samples from the current Sample bank. An edited event's waveform updates
-there immediately. Shared originals remain available while other events use
+there when edits are accepted on returning to Mosaic. Shared originals remain available while other events use
 them; the original Sample bank is preserved. Use the arrows beneath Sources
 for additional pages, and return to CANVAS to load/create samples or change
 Sample banks. Click a source to highlight its waveform; dragging shows a ghost
@@ -62,10 +62,12 @@ fast as C4; C3 takes twice as long. Every voice keeps its own phase. Extending
 a looping event increases its available repetitions without restarting its
 voices or changing their pitch. The waveform drawing shows source repetitions
 at the C4 reference rate; chord voices can cross those visual divisions at
-different times. Drawing uses cached 2,048-bin peak/RMS envelopes: the brighter
-body shows typical energy and the outer envelope preserves peaks. Source
-thumbnails also use cached ranges instead of isolated sample points. None of
-this waveform analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.
+different times. Event and source waveforms render at the window's actual pixel
+resolution, with antialiased edges, while the surrounding pixel UI stays familiar.
+The brighter body shows typical energy and the outer envelope preserves peaks.
+Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
+actual sample ranges instead of enlarging those bins. Source thumbnails cache
+extrema at their displayed width. None of this analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.
 
 ## Editing one event
 
@@ -83,19 +85,23 @@ retriggering the sound. Each note can finish at a different time.
 editor, CDP Portal or Sister window is open. Sample editing uses the event's
 own document. Copies share immutable source audio until an actual sample edit
 creates a new version for that event. The original Sample bank stays intact.
-After a drawing or processing edit (including Warp and Smear), the editor asks
-where to put the result. The prompt appears after the gesture finishes:
+Make as many drawing or processing edits as you like, including Warp, Smear
+and CDP. The working waveform stays in this event's editor. The destination
+prompt appears **once when returning to Mosaic**, only if its audio has changed:
 
 - **NEW TILE** (Enter or N) keeps the original event and places a new event
-  beside it, with the edited audio. The editor then belongs to that new event.
-- **UPDATE TILE** (U) replaces only the currently edited event's audio.
-- **CANCEL** (Escape) restores the event's previous audio in the editor.
+  beside it with all the accumulated audio edits, then returns to Mosaic.
+- **UPDATE TILE** (U) replaces only this event's audio, then returns to Mosaic.
+- **KEEP EDITING** (Escape) closes the question and retains all working edits.
 
-The existing Mosaic voices continue playing while this choice is open. Loop,
-one-shot, chord, region and tuning changes remain direct event properties and
-do not require an audio-destination prompt. The original Sample bank and other
-events retain their audio. Allocations and source cleanup happen outside the
-audio callback.
+Undoing all audio edits removes the question. Opening an event and leaving it
+unchanged never prompts. Loop/one-shot and chord switches remain immediate
+per-event properties; audio-dependent bounds travel with the working audio.
+Mosaic keeps playing its existing immutable sources while the working audio
+can be auditioned in the editor. Originals and sibling events retain their
+samples until a destination is chosen. Allocations and cleanup stay outside the
+audio callback. Saving, opening a project or closing the main window waits for
+this decision and then continues the requested action.
 
 ![Choosing the destination of an audio edit](images/mosaic-edit-choice.png)
 
@@ -118,8 +124,12 @@ the currently edited event after the running job finishes.
 
 If the requesting event was edited, deleted or belongs to a previous project,
 Apply retains the preview and reports the conflict. It cannot replace whichever
-event happens to be on screen. In an event's Portal, use Apply to update that
-event; duplicate the event in Mosaic first when a separate variation is wanted.
+event happens to be on screen. Apply into the currently open event joins its
+working edits and uses the same exit-time destination question. A result returning
+to a parked event updates that owner directly. Publishing the exact worker input
+on exit does not invalidate the job. Creating a new variation retains the original
+event document for any job it already requested; incompatible results remain
+available for review instead of overwriting another event.
 The older Transform workbench must finish its worker before leaving the event.
 
 ## Recording and projects
@@ -149,9 +159,12 @@ processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
   confirm that spacing changes do not move their start times unintentionally.
 - On a long loop choose C4, E4 and C5. Listen for independent repeating gestures;
   extend the event while it plays and check that the phases continue.
-- Open the other copy, set EVENT ONCE and edit its audio. Choose NEW TILE,
-  UPDATE TILE and CANCEL on separate attempts; check that siblings and the
+- Open the other copy, set EVENT ONCE and make several audio edits. Return to Mosaic and choose NEW TILE,
+  UPDATE TILE and KEEP EDITING on separate attempts; check that siblings and the
   original source bank retain their sound in every case.
+- Enlarge the window and check smooth event/source waveforms, clipping and playhead visibility.
+- Left-click CREATE for FM; right-click repeatedly for CDP variations of the same
+  source; middle-click during and after rendering to restore that source.
 - Start a CDP render, return to Mosaic and open the other event. Confirm that
   the completed result belongs to its requesting event.
 - Record while using the editor and Sister/pedalboard. Stop the file recording,

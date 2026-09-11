@@ -32,7 +32,15 @@ typedef struct {
     uint64_t generation, source_hash;
     int source_slot, source_page, selection_scope, history_count;
     int quick_apply, library_writable;
-    int create_roll, create_ready;
+    int create_roll, create_ready, create_retry;
+    TsSample create_original;
+    uint64_t create_hash, create_event, create_epoch;
+    int create_slot, create_page, create_selection, create_loop;
+    size_t create_first, create_last, create_loop_first, create_loop_last;
+    TsLoopMode create_loop_mode;
+    float create_crossfade;
+    TsTuning create_tuning, create_audible_tuning;
+    TsFmSeedSequence create_dice;
     TsFmSeedSequence *create_seeds;
     TransformController *create_transform;
     int auto_pending;
@@ -412,13 +420,15 @@ static void portal_auto_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiStat
        !SDL_TICKS_PASSED(now,c->auto_due))return;
     portal_preview(device,audio,ui,c);
 }
+static int portal_create_event(const SDL_Event *,int,int,SDL_AudioDeviceID,AudioState *,TsUiState *,TsInstrument *,PortalController *,TransformController *);
+static int portal_create_matches(const PortalController *,const TsUiState *,const TsInstrument *);
 static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
                         TsInstrument *instrument,PortalController *c)
 {
     TsPortalUi *p=&ui->portal;PortalWorker *w=c->worker;
     if(w && SDL_AtomicGet(&w->done)) {
         SDL_WaitThread(w->thread,NULL);w->thread=NULL;c->worker=NULL;p->busy=0;
-        int creating=c->create_roll,render_ok=w->result.status==TS_CDP_RUN_OK;
+        int creating=c->create_roll,create_applied=0,render_ok=w->result.status==TS_CDP_RUN_OK;
         TsInstrument *owner=c->source_event?mosaic_document(c->mosaic,ui,instrument,c->source_event):instrument;
         if((p->open || creating || c->source_event) && w->generation==c->generation && !SDL_AtomicGet(&w->cancel)) {
             if(w->result.status==TS_CDP_RUN_OK) {
@@ -481,8 +491,9 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
                     else if(!available)
                         snprintf(ui->status,sizeof(ui->status),"CDP ROLL READY - FINISH CURRENT EDIT; OPEN CDP TO REVIEW");
                     else if(portal_apply(device,audio,ui,instrument,c,0) && creating) {
+                        create_applied=1;if(owner)c->create_hash=ts_sample_hash(&owner->current);
                         if(!c->source_event || c->source_event==ui->mosaic_editing)ts_ui_reset_parent_view(ui,instrument->current.frames);
-                        snprintf(ui->status,sizeof(ui->status),"CREATED %.39s - CDP OPENS THE ROLLED RECIPE; UNDO RETURNS TO FRESH FM",portal_recipe_name(p));
+                        snprintf(ui->status,sizeof(ui->status),"CREATED %.39s - RIGHT CREATE REROLLS CDP; MIDDLE RESTORES FM",portal_recipe_name(p));
                     } else if(creating)
                         snprintf(ui->status,sizeof(ui->status),"CDP ROLL NOT APPLIED: %.130s",p->message);
                 }
@@ -496,8 +507,15 @@ static void portal_poll(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
             }
         } else if(creating)snprintf(ui->status,sizeof(ui->status),"CDP ROLL CANCELLED - FRESH FM KEPT");
         else if(p->open)snprintf(p->message,sizeof(p->message),"OLD JOB DISCARDED; PRESS PREVIEW FOR CURRENT SETTINGS");
-        if(creating) {c->create_roll=0;c->quick_apply=0;c->create_ready=1;ui->cdp_creating=0;}
+        if(creating) {c->create_roll=0;c->quick_apply=0;c->create_ready=1;ui->cdp_creating=0;ui->cdp_create=create_applied;}
         portal_worker_free(w);
+        if(c->create_retry) {
+            c->create_retry=0;
+            if(portal_create_matches(c,ui,instrument)) {
+                SDL_Event retry={0};retry.type=SDL_MOUSEBUTTONDOWN;retry.button.button=SDL_BUTTON_RIGHT;
+                portal_create_event(&retry,100,214,device,audio,ui,instrument,c,c->create_transform);
+            }
+        }
     }
     portal_auto_poll(device,audio,ui,c,SDL_GetTicks());
     if(p->playing) {
@@ -631,7 +649,8 @@ static int portal_apply_mosaic(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
     if(doc==instrument)lock_edit(device,audio);
     int ok=ts_instrument_apply_rendered_replacement(doc,p->result,c->source_first,c->source_last,error,sizeof(error));
     if(doc==instrument)unlock_edit(device,audio,ui,instrument);
-    if(ok)ok=mosaic_publish(device,ui,doc,e,1);
+    if(ok)ok=doc==instrument && c->mosaic->active==e->id?
+        mosaic_commit(device,ui,doc,c->mosaic):mosaic_publish(device,ui,doc,e,1);
     if(ok) {
         portal_invalidate(device,audio,p,c);portal_clear_history(c,p);
         ts_sample_free(&c->source);c->source=promoted;ts_sample_init(&promoted);
@@ -1429,7 +1448,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
 static void portal_free(PortalController *c)
 {
     portal_cancel(c);portal_worker_free(c->worker);c->worker=NULL;
-    ts_sample_free(&c->source);
+    ts_sample_free(&c->source);ts_sample_free(&c->create_original);
     for(int i=0;i<TS_PORTAL_CHAIN_STAGES;++i)ts_cdp_run_result_free(&c->stages[i]);
     for(int i=0;i<TS_PORTAL_HISTORY;++i)ts_cdp_run_result_free(&c->history[i]);
 }

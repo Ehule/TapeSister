@@ -138,11 +138,10 @@ copy. Existing factory chains and their settings are retained.
 
 ## CREATE + CDP
 
-Right-click the main **CREATE** button to switch between normal CREATE and
-**CREATE+CDP**. Left-click to make fresh FM followed by a bounded process roll.
-The active label stays visible; while CDP runs it becomes **CANCEL CDP**.
-The mode is a session choice and initially off. Ordinary CREATE/VARY remain
-available through their existing paths.
+Left-click **CREATE** to roll fresh FM. Right-click to roll a CDP variation of
+the retained clean waveform; repeated right-clicks reuse that same source.
+Middle-click restores the clean waveform and cancels pending CDP. **CREATE+CDP**
+marks a variation and **CDP...** marks a running worker. VARY keeps its existing path.
 
 The first palette includes Tape Transpose, Ring Modulate, Bit + Rate Reduce,
 Transposition Stack, Tuned Feedback Delay, Back-to-Back, Zigzag, Freeze Copies,
@@ -151,24 +150,25 @@ Ranges are intentionally narrower than Full controls. Regions and durations
 adapt to the generated source, and ineligible choices are skipped.
 
 All rolled parameter values and any process seed are retained in an ordinary
-Portal recipe. Its description records the successful FM Create seed. Click
+Portal recipe. Its description records the CDP dice seed. Click
 **CDP** after completion to inspect, edit, save or pin the transformation.
 Saving a recipe saves the transformation settings, not its source audio; use
 REC FILE, WAV export or a project to keep the resulting sound.
 
-The CDP part runs in the existing background worker. Cancel by clicking the
-button again or pressing Escape in the main workspace. Cancellation or failure
-keeps the fresh FM. A hot or silent result is retained for Portal review instead
-of automatic application. Source edits, tile/page changes and ongoing edit
-gestures prevent a late result from replacing current work. A successful CDP
-application supports Undo back to the fresh FM. Whole-tile CREATE still starts
-a new source/history, as normal CREATE already does; this does not add Undo
-across earlier whole-tile Create rolls.
+The CDP part runs in the existing background worker. Right-clicking during a
+render cancels it and queues the next roll. Middle-click or Escape cancels the
+pending roll; middle-click also restores the clean waveform after completion.
+Left-click starts fresh FM and cancels any pending CDP variation. A hot or silent
+result stays available for Portal review. Later audio edits, tile/page changes
+and active edit gestures prevent a late result or restore from replacing work.
+Each successful apply/restore supports Undo. Whole-tile CREATE still starts a
+new source/history, as ordinary CREATE already does.
 
-Canvas selections use the existing mono FM stamping behavior, then process that
-captured region and retain surrounding audio. CREATE+CDP stamps need at least
-100 ms. This option does not bypass the existing restriction on FM creation
-into stereo tiles. Stereo Portal processing remains available separately.
+Canvas selections retain the existing mono FM stamping behavior. CDP processes
+the captured region; the retained clean sample includes the complete waveform,
+so restoring also preserves surrounding audio and the original selection.
+CDP regions need at least 100 ms. FM creation still has its existing stereo
+restriction; right-click CDP can process an existing mono or stereo source.
 
 ![Native CREATE+CDP button](images/cdp-create-roll.png)
 

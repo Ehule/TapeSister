@@ -126,7 +126,23 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             else if(x>=264 && x<380)choice=2;
             else if(x>=390 && x<492)choice=0;
         }
-        if(choice>=0)mosaic_resolve_edit(device,audio,ui,instrument,c,choice);
+        if(choice>=0) {
+            uint64_t owner=c->pending_id,revision=c->pending_revision,epoch=c->pending_epoch;
+            int resolved=mosaic_resolve_edit(device,audio,ui,instrument,c,choice);
+            if(resolved && choice==2 && portal->source_event==owner && portal->source_event_epoch==epoch && portal->source_event_revision==revision) {
+                TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,owner);
+                TsInstrument *doc=mosaic_document(c,ui,instrument,owner);
+                /* Publishing the exact worker input on editor exit is not a
+                   conflicting edit. Keep that job attached to its owner. */
+                if(e && doc && portal->source_hash==ts_sample_hash(&doc->current))portal->source_event_revision=e->revision;
+            }
+            if(resolved && c->resume_exit) {
+                c->resume_exit=0;
+                if(choice && !c->active) {
+                    ui->mosaic_open=0;SDL_PushEvent(&c->exit_event);
+                }
+            }
+        }
         return down || up || motion || key || event->type==SDL_KEYUP || event->type==SDL_MOUSEWHEEL;
     }
     int toggle=(key && event->key.keysym.sym==SDLK_m && (mod&KMOD_CTRL) && !(mod&KMOD_SHIFT)) ||
@@ -150,7 +166,12 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
            (key && (mod&KMOD_CTRL) && (event->key.keysym.sym==SDLK_s || event->key.keysym.sym==SDLK_o)) ||
            (down && y>=4 && y<28 && x>=360 && x<398)) {
             if(transform->worker){snprintf(ui->status,sizeof(ui->status),"WAIT FOR THE CURRENT EDIT TO FINISH");return 1;}
-            if(!mosaic_leave(device,audio,ui,instrument,c))return 1;
+            if(!mosaic_leave(device,audio,ui,instrument,c)) {
+                if(ui->mosaic_edit_choice && !(key && event->key.keysym.sym==SDLK_ESCAPE)) {
+                    c->resume_exit=1;c->exit_event=*event;
+                }
+                return 1;
+            }
             if(key && event->key.keysym.sym==SDLK_ESCAPE)return 1;
             ui->mosaic_open=0;return 0;
         }

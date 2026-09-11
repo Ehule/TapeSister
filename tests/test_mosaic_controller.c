@@ -67,6 +67,7 @@ static void key(SDL_Window *window,SDL_Keycode key,SDL_Keymod mod)
     mosaic_event(&e,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
 }
 static void wait_render(void);
+#include "test_mosaic_native.inc"
 static void test_canvas_feedback(SDL_Window *window)
 {
     TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);ui.mosaic=audio.mosaic=scene;
@@ -109,7 +110,8 @@ static void test_canvas_feedback(SDL_Window *window)
     /* Edited source appears immediately, while the shared original stays. */
     assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,a->id));
     for(size_t i=0;i<instrument.current.frames*instrument.current.channels;++i)instrument.current.data[i]*=.1f;
-    ++instrument.current.visual_revision;assert(!mosaic_commit(0,&ui,&instrument,&mosaic));
+    ++instrument.current.visual_revision;assert(mosaic_commit(0,&ui,&instrument,&mosaic) && !ui.mosaic_edit_choice);
+    assert(!mosaic_leave(0,&audio,&ui,&instrument,&mosaic));
     assert(ui.mosaic_edit_choice && a->source==source && b->source==source);
     key(window,SDLK_u,KMOD_NONE);assert(!ui.mosaic_edit_choice);
     assert(mosaic_leave(0,&audio,&ui,&instrument,&mosaic));mosaic_poll(0,&ui,&instrument,&mosaic);
@@ -125,6 +127,7 @@ static void test_canvas_feedback(SDL_Window *window)
     assert(memcmp(&fb,&copy,sizeof(fb))==0);
     mosaic_select_only(&ui,a->id);ts_ui_render(&fb,&ui,&instrument);uint32_t border=fb.pixels[80*640+171];
     mosaic_select_only(&ui,0);ts_ui_render(&fb,&ui,&instrument);assert(border!=fb.pixels[80*640+171]);
+    mosaic_native_check(&instrument,NULL);
     /* Warp waits until gesture completion; NEW TILE leaves the owner and all
        siblings intact and gives the edited document a fresh event ID. */
     assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,a->id));
@@ -140,16 +143,18 @@ static void test_canvas_feedback(SDL_Window *window)
     assert(ts_instrument_warp_gesture_preview(&instrument,&ui.warp_gesture,.7f,error,sizeof(error)));
     assert(mosaic_commit(0,&ui,&instrument,&mosaic) && !ui.mosaic_edit_choice);
     assert(ts_instrument_warp_gesture_commit(&instrument,&ui.warp_gesture,error,sizeof(error)));
-    assert(!mosaic_commit(0,&ui,&instrument,&mosaic) && ui.mosaic_edit_choice);
+    assert(mosaic_commit(0,&ui,&instrument,&mosaic) && !ui.mosaic_edit_choice);
+    assert(!mosaic_leave(0,&audio,&ui,&instrument,&mosaic) && ui.mosaic_edit_choice);
     assert(a->source==original_source && b->source==source && scene->playing);
     const char *dialog=getenv("TS_MOSAIC_EDIT_SCREENSHOT");
     if(dialog){ts_audio_ui_render(&fb,&ui,&instrument);assert(ts_ui_write_ppm(&fb,dialog));}
-    key(window,SDLK_RETURN,KMOD_NONE);assert(!ui.mosaic_edit_choice && mosaic.active!=original_id);
-    TsMosaicEvent *variant=ts_mosaic_find(scene,mosaic.active);assert(variant && variant->source!=original_source);
+    key(window,SDLK_RETURN,KMOD_NONE);assert(!ui.mosaic_edit_choice && !mosaic.active && ui.mosaic_open);
+    TsMosaicEvent *variant=ts_mosaic_find(scene,ui.mosaic_selected);assert(variant && variant->source!=original_source);
     assert(a->source==original_source && b->source==source && a->id==original_id);
     assert(variant->start==a->start && variant->x>=a->x+a->width+TS_MOSAIC_GUTTER);
     TsInstrument *original_document=mosaic_document(&mosaic,&ui,&instrument,a->id);
     assert(original_document && original_document!=&instrument && mosaic_same_audio(&original_document->current,&original_source->sample));
+    assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,variant->id));
     if(background) {
         TsMosaicSource *new_audio=variant->source;wait_render();
         assert(strstr(ui.portal.message,"APPLIED TO EVENT") && a->source!=original_source);
@@ -161,12 +166,50 @@ static void test_canvas_feedback(SDL_Window *window)
     int original_notes=a->note_count;click(window,200,370,1);assert(a->note_count==original_notes && variant->note_count!=original_notes);
     TsMosaicSource *warped=variant->source;
     assert(ts_instrument_apply_smear(&instrument,.6f,error,sizeof(error)));
-    assert(!mosaic_commit(0,&ui,&instrument,&mosaic));key(window,SDLK_ESCAPE,KMOD_NONE);
-    assert(!ui.mosaic_edit_choice && mosaic_same_audio(&instrument.current,&warped->sample) && variant->source==warped);
+    assert(mosaic_commit(0,&ui,&instrument,&mosaic) && !ui.mosaic_edit_choice);
+    uint64_t smear=ts_sample_hash(&instrument.current);
+    key(window,SDLK_ESCAPE,KMOD_NONE);assert(ui.mosaic_edit_choice);
+    key(window,SDLK_ESCAPE,KMOD_NONE); /* Keep editing, not undo. */
+    assert(!ui.mosaic_edit_choice && mosaic.active==variant->id && ts_sample_hash(&instrument.current)==smear && variant->source==warped);
     assert(ts_instrument_apply_smear(&instrument,.8f,error,sizeof(error)));
-    assert(!mosaic_commit(0,&ui,&instrument,&mosaic));key(window,SDLK_u,KMOD_NONE);
-    assert(!ui.mosaic_edit_choice && variant->source!=warped && a->source==original_source && b->source==source && scene->playing);
-    assert(mosaic_leave(0,&audio,&ui,&instrument,&mosaic));
+    assert(mosaic_commit(0,&ui,&instrument,&mosaic) && !ui.mosaic_edit_choice);
+    assert(variant->source==warped);key(window,SDLK_m,KMOD_CTRL);assert(ui.mosaic_edit_choice);
+    key(window,SDLK_u,KMOD_NONE);
+    assert(!ui.mosaic_edit_choice && !mosaic.active && ui.mosaic_open && variant->source!=warped && a->source==original_source && b->source==source && scene->playing);
+    /* Undoing every working edit removes the exit question. */
+    assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,variant->id));
+    assert(ts_instrument_apply_smear(&instrument,.4f,error,sizeof(error)));
+    assert(mosaic_commit(0,&ui,&instrument,&mosaic) && mosaic.audio_dirty);
+    assert(ts_instrument_undo(&instrument,error,sizeof(error)));
+    assert(mosaic_leave(0,&audio,&ui,&instrument,&mosaic) && !ui.mosaic_edit_choice);
+    if(background) {
+        /* FM is staged in an event, then its exact CDP input is published on
+           exit. Completion must still reach that owner while B is selected. */
+        TsFmSeedSequence seeds;ts_fm_seed_sequence_init(&seeds,0x43524541);portal.create_seeds=&seeds;
+        assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,variant->id));
+        SDL_Event create={0};create.type=SDL_MOUSEBUTTONDOWN;create.button.button=SDL_BUTTON_LEFT;
+        assert(portal_create_event(&create,100,214,0,&audio,&ui,&instrument,&portal,&transform));
+        uint64_t fm=ts_sample_hash(&instrument.current),sibling=b->source->hash;
+        uint64_t root=1;for(;;++root){TsFmSeedSequence probe;ts_fm_seed_sequence_init(&probe,root);if(ts_fm_seed_sequence_next(&probe)%12==1)break;}
+        ts_fm_seed_sequence_init(&portal.create_dice,root);create.button.button=SDL_BUTTON_RIGHT;
+        assert(portal_create_event(&create,100,214,0,&audio,&ui,&instrument,&portal,&transform) && portal.worker);
+        key(window,SDLK_m,KMOD_CTRL);assert(ui.mosaic_edit_choice);key(window,SDLK_u,KMOD_NONE);
+        assert(!mosaic.active && variant->source->hash==fm);
+        assert(portal.source_event_revision==variant->revision);
+        assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,b->id));wait_render();
+        assert(variant->source->hash!=fm && b->source->hash==sibling && ts_sample_hash(&instrument.current)==sibling);
+        assert(mosaic_leave(0,&audio,&ui,&instrument,&mosaic));
+        assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,variant->id));
+        create.button.button=SDL_BUTTON_MIDDLE;
+        assert(portal_create_event(&create,100,214,0,&audio,&ui,&instrument,&portal,&transform));
+        assert(ts_sample_hash(&instrument.current)==fm && variant->source->hash!=fm);
+        /* Save waits for the destination choice, then replays exactly once. */
+        SDL_FlushEvent(SDL_KEYDOWN);key(window,SDLK_s,KMOD_CTRL);assert(ui.mosaic_edit_choice && mosaic.resume_exit);
+        key(window,SDLK_u,KMOD_NONE);assert(variant->source->hash==fm && !mosaic.resume_exit);
+        SDL_Event resumed;assert(SDL_PeepEvents(&resumed,1,SDL_GETEVENT,SDL_KEYDOWN,SDL_KEYDOWN)==1);
+        assert(resumed.key.keysym.sym==SDLK_s && (resumed.key.keysym.mod&KMOD_CTRL));
+        ui.mosaic_open=1;portal.create_seeds=NULL;
+    }
     /* Palette pagination includes edited versions, with usable sources on
        page two and no spill into the arrangement. */
     TsSample extra={0};assert(ts_sample_clone(&extra,&source->sample,error,sizeof(error)));
@@ -349,6 +392,7 @@ int main(void)
         mosaic_sources_refresh(&ui,bank,&mosaic);ui.mosaic_selected=events[3]->id;
         mosaic_source_select_event(&ui,events[3]);ui.mosaic_follow=1;
         static TsFramebuffer fb;ts_ui_render(&fb,&ui,bank);assert(ts_ui_write_ppm(&fb,shot));
+        mosaic_native_check(bank,getenv("TS_MOSAIC_NATIVE_SCREENSHOT"));
         ui.mosaic=saved;ts_mosaic_free(scene);ts_instrument_free(bank);free(bank);
     }
     portal_free(&portal);mosaic_controller_free(&mosaic);ts_mosaic_free(ui.mosaic);
