@@ -25,7 +25,9 @@ Full details and source restrictions: [CDP expansion](CDP_EXPANSION.md).
 
 Load or generate a mono or stereo tile. Click **CDP** in the main header, between Export
 and the limiter. On the CDP panel you can also click **PORTAL**, or press
-**Ctrl+Shift+P** from the main workspace. The Portal takes an immutable snapshot
+**Ctrl+Shift+P** from the main canvas, FM, Mosaic, or Sister Machine. From Mosaic,
+the selected event becomes the editing target. A visit from FM returns to the same
+FM patch when the shortcut closes Portal. The Portal takes an immutable snapshot
 of Current (the current selection when one exists). **LOAD: TILE / LOAD: SEL** toggles
 between whole-tile and main-canvas selection import; **RELOAD** refreshes the
 snapshot. Failed source loading clears the previous snapshot.

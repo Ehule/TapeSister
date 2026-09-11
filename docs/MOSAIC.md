@@ -1,4 +1,4 @@
-# Mosaic — first playable phase
+# Mosaic
 
 Mosaic arranges sample events on a free canvas. Time runs downward. Horizontal
 position and width organize the picture; they do not change timing or pan.
@@ -174,7 +174,8 @@ The older Transform workbench must finish its worker before leaving the event.
 
 ## Recording and projects
 
-REC FILE writes the final stereo OUT signal, including global effects and
+The header and footer **REC FILE** buttons, or `Ctrl+Shift+F` in the main window,
+operate the same recorder. It writes the final stereo OUT signal, including global effects and
 master output controls, through the existing asynchronous WAV recorder. It
 continues across editor/window navigation. STOP REC finishes the file without
 stopping Mosaic, allowing effects tails to be recorded deliberately. Completed
