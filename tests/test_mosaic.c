@@ -95,16 +95,52 @@ static void test_spacing_and_history(void)
     assert(ts_mosaic_undo(m,1));assert(b->duration==3);
     ts_mosaic_free(m);
 }
+static void test_mute_solo_phase(void)
+{
+    TsMosaic *m=fixture(),*reference=fixture();
+    TsMosaicEvent *a=&m->events[0],*b=ts_mosaic_copy(m,a->id,0,110);
+    ts_mosaic_copy(reference,reference->events[0].id,0,110);
+    for(int i=0;i<1000;++i){ts_mosaic_read(m,48000);ts_mosaic_read(reference,48000);}
+    uint64_t revision=a->revision,hash=ts_mosaic_hash(m);
+    ts_mosaic_checkpoint(m);a->muted=1;b->solo=1;
+    assert(ts_mosaic_hash(m)!=hash);
+    float previous=m->voices[0].audible_gain;
+    for(int i=0;i<500;++i) {
+        ts_mosaic_read(m,48000);ts_mosaic_read(reference,48000);
+        assert(m->voices[0].audible_gain<=previous);previous=m->voices[0].audible_gain;
+        assert(a->revision==revision);
+        for(int n=0;n<5;++n)assert(m->voices[0].travel[n]==reference->voices[0].travel[n]);
+    }
+    assert(previous==0 && m->voices[1].audible_gain==1);
+    a->muted=0; /* Still excluded by B's solo. */
+    ts_mosaic_read(m,48000);ts_mosaic_read(reference,48000);assert(m->voices[0].audible_gain==0);
+    b->solo=0;
+    for(int i=0;i<500;++i){ts_mosaic_read(m,48000);ts_mosaic_read(reference,48000);}
+    assert(m->voices[0].audible_gain==1);
+    assert(fabsf(m->last_output.l-reference->last_output.l)<1e-6f);
+    assert(ts_mosaic_undo(m,0));assert(!m->events[0].muted && !m->events[1].solo);
+    ts_mosaic_free(m);ts_mosaic_free(reference);
+}
+
 static void test_storage(void)
 {
     const char *dir="mosaic-storage-test";MKDIR(dir);
     TsMosaic *m=fixture(),*loaded=ts_mosaic_create();char error[160];
     ts_mosaic_copy(m,m->events[0].id,6,0);
+    m->events[0].muted=1;m->events[1].solo=1;
     assert(ts_mosaic_save(m,dir,error,sizeof(error)));
     assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
     assert(ts_mosaic_hash(m)==ts_mosaic_hash(loaded));
+    assert(loaded->events[0].muted && loaded->events[1].solo);
     assert(loaded->events[0].source==loaded->events[1].source);
     assert(!memcmp(m->events[0].source->sample.data,loaded->events[0].source->sample.data,4096*2*sizeof(float)));
+    /* Existing phase-one projects load with audible, unsoloed events. */
+    FILE *old=fopen("mosaic-storage-test/mosaic.tsm","r");assert(old);
+    char lines[4][1024];for(int i=0;i<4;++i)assert(fgets(lines[i],sizeof(lines[i]),old));fclose(old);
+    old=fopen("mosaic-storage-test/mosaic.tsm","w");assert(old);fputs("TAPESISTER_MOSAIC 1\n",old);fputs(lines[1],old);
+    for(int i=2;i<4;++i){char *end=strrchr(lines[i],' ');assert(end);*end=0;end=strrchr(lines[i],' ');assert(end);*end=0;fprintf(old,"%s\n",lines[i]);}fclose(old);
+    assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
+    assert(!loaded->events[0].muted && !loaded->events[1].solo);
     uint64_t before=ts_mosaic_hash(loaded);
     FILE *f=fopen("mosaic-storage-test/mosaic.tsm","w");assert(f);fputs("TAPESISTER_MOSAIC 1\ncorrupt\n",f);fclose(f);
     assert(!ts_mosaic_load(loaded,dir,error,sizeof(error)));assert(ts_mosaic_hash(loaded)==before);
@@ -139,6 +175,6 @@ static void test_project_transaction(void)
 }
 int main(void)
 {
-    test_ownership();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction();
+    test_mute_solo_phase();test_ownership();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction();
     puts("Mosaic ownership, independent clocks, seeking, geometry and storage passed");return 0;
 }

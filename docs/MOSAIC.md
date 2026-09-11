@@ -10,8 +10,13 @@ Sister Machine and output recorder.
 ## Playing and arranging
 
 Open **MOSAIC** in the main toolbar, or press **Ctrl+M**. Drag an occupied source
-from the left bank onto the canvas. The current Sample page supplies that bank;
-return to CANVAS to load/create sources or change Sample pages.
+from the left bank onto the canvas. Sources shows the audio versions used by placed events first, followed by
+unused samples from the current Sample bank. An edited event's waveform updates
+there immediately. Shared originals remain available while other events use
+them; the original Sample bank is preserved. Use the arrows beneath Sources
+for additional pages, and return to CANVAS to load/create samples or change
+Sample banks. Click a source to highlight its waveform; dragging shows a ghost
+of the event at its proposed position.
 
 | Action | Gesture |
 | --- | --- |
@@ -20,12 +25,17 @@ return to CANVAS to load/create sources or change Sample pages.
 | Change visual width | Drag its right edge |
 | Align starts, ends or midpoints | Hold Shift while moving or extending |
 | Edit the event | Double-click |
+| Box-select a group | Shift+left-drag on empty canvas |
+| Move a selected group | Drag any selected event body |
+| Mute / unmute selected events | M |
+| Solo / unsolo selected events | S |
 | Copy / paste at the playhead | Ctrl+C / Ctrl+V |
 | Delete | Delete or Backspace |
 | Undo / redo arrangement edits | Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y |
 | Play / pause | Space or PLAY/PAUSE |
 | Stop and rewind | Escape or STOP |
-| Seek | Click the time ruler |
+| Seek | Middle-click the canvas or click the time ruler |
+| Scroll with playback | Enable FOLLOW |
 | Return to the beginning | Home |
 | Scroll through time | Mouse wheel |
 | Scroll horizontally | Shift+wheel |
@@ -35,15 +45,27 @@ return to CANVAS to load/create sources or change Sample pages.
 
 Events that overlap in time occupy separate horizontal space, with a small
 invisible gutter. Collision handling moves only the event being placed and
-never changes its time. Events may meet exactly end to end. There are no tracks,
-beats or mandatory snapping.
+never changes its time. Group moves preserve all relative times and positions;
+the group shifts sideways together if it meets another event. A dashed waveform
+ghost marks the original position while moving. Events may meet exactly end to end. There are no tracks,
+beats or mandatory snapping. Click an unselected event to return to a single
+selection. Selection has a bright border. Muted events and events excluded by
+solo are dim; MUTE/SOLO appears on the relevant cards. Multiple events may be
+soloed together. Mute takes precedence over solo. These switches use a short
+fade, and all voice clocks continue while inaudible, so unmuting resumes their
+current phases. Delete applies to the selection; copy/paste uses the last
+clicked event. FOLLOW keeps the playhead in view while playing and suspends
+scrolling during a drag.
 
 Each event supports one to five notes. A C5 voice traverses the source twice as
 fast as C4; C3 takes twice as long. Every voice keeps its own phase. Extending
 a looping event increases its available repetitions without restarting its
 voices or changing their pitch. The waveform drawing shows source repetitions
 at the C4 reference rate; chord voices can cross those visual divisions at
-different times. **REPEAT** repeats the complete arrangement at its last event.
+different times. Drawing uses cached 2,048-bin peak/RMS envelopes: the brighter
+body shows typical energy and the outer envelope preserves peaks. Source
+thumbnails also use cached ranges instead of isolated sample points. None of
+this waveform analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.
 
 ## Editing one event
 
@@ -61,12 +83,28 @@ retriggering the sound. Each note can finish at a different time.
 editor, CDP Portal or Sister window is open. Sample editing uses the event's
 own document. Copies share immutable source audio until an actual sample edit
 creates a new version for that event. The original Sample bank stays intact.
-Completed drawing/transform gestures publish a replacement source; allocations
-and source cleanup happen outside the audio callback.
+After a drawing or processing edit (including Warp and Smear), the editor asks
+where to put the result. The prompt appears after the gesture finishes:
+
+- **NEW TILE** (Enter or N) keeps the original event and places a new event
+  beside it, with the edited audio. The editor then belongs to that new event.
+- **UPDATE TILE** (U) replaces only the currently edited event's audio.
+- **CANCEL** (Escape) restores the event's previous audio in the editor.
+
+The existing Mosaic voices continue playing while this choice is open. Loop,
+one-shot, chord, region and tuning changes remain direct event properties and
+do not require an audio-destination prompt. The original Sample bank and other
+events retain their audio. Allocations and source cleanup happen outside the
+audio callback.
+
+![Choosing the destination of an audio edit](images/mosaic-edit-choice.png)
 
 Live distortion, reverb and the other effects remain global. Mosaic feeds the
 existing **TILES** input when Sister Machine is powered. With Sister off it
-feeds the ordinary shared effects/output path. A single rendering of each
+feeds the ordinary shared Fallout/pedalboard/output path. Fallout's controls
+and processing are available with Sister off, independently of the pedalboard
+master switch. Sister power preserves the shared pedal settings, transitions,
+tails and Fallout modulation state; it only changes the rolling-machine route. A single rendering of each
 voice supplies those routes.
 
 ## CDP ownership
@@ -93,9 +131,10 @@ stopping Mosaic, allowing effects tails to be recorded deliberately. Completed
 takes use the existing timestamped `Captures/` archive.
 
 SAVE stores event positions, durations, notes, source regions, loop modes,
-names and arrangement repeat setting in the project transaction. Shared audio
+names, mute/solo flags and arrangement repeat setting in the project transaction. Shared audio
 versions are written once each as lossless 32-bit float WAVs under
-`project-data/`. Older projects open with an empty Mosaic. A project marked as
+`project-data/`. Earlier Mosaic projects load with events unmuted and unsoloed; projects from
+before Mosaic open with an empty arrangement. A project marked as
 containing Mosaic fails to load if its arrangement file is missing, preserving
 the current session. Transport position and editor/arrangement undo history
 are session state.
@@ -110,14 +149,29 @@ processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
   confirm that spacing changes do not move their start times unintentionally.
 - On a long loop choose C4, E4 and C5. Listen for independent repeating gestures;
   extend the event while it plays and check that the phases continue.
-- Open the other copy, set EVENT ONCE and edit its audio. The first copy and
-  original source bank must retain their sound.
+- Open the other copy, set EVENT ONCE and edit its audio. Choose NEW TILE,
+  UPDATE TILE and CANCEL on separate attempts; check that siblings and the
+  original source bank retain their sound in every case.
 - Start a CDP render, return to Mosaic and open the other event. Confirm that
   the completed result belongs to its requesting event.
 - Record while using the editor and Sister/pedalboard. Stop the file recording,
   then audition the saved WAV.
 - Save, close and reopen a project. Check event geometry, chords, loops and
   edited source versions before using the build for a longer composition.
+
+## Interaction update acceptance
+
+- Click a source, drag it onto the canvas, and check its highlight and placement
+  ghost. Edit one of two shared events and check the separate source previews.
+- Shift-drag a box around two events. Move the pair against another event and
+  confirm their relative gaps/times stay intact. Undo the group move.
+- Toggle M and S while playing pitched loops; confirm the dimming and smooth
+  return at the continuing phase. Save/reopen to check mute/solo state.
+- Middle-click inside a tile to seek. Enable FOLLOW and play beyond the visible
+  canvas; disable it to scroll freely.
+- Adjust the pedalboard, start a long effect transition, and toggle Sister
+  power. Check that settings and transitions survive. Use Fallout with Sister
+  off, including its power switch, modulation and feedback.
 
 Automated coverage lives in `test_mosaic.c` and `test_mosaic_controller.c`:
 independent clocks, 24 seek combinations, one-shots, resizing, source sharing,

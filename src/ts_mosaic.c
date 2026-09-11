@@ -35,11 +35,20 @@ TsMosaicSource *ts_mosaic_source(TsMosaic *m,const TsSample *sample,char *error,
     if(!s){if(error && size)snprintf(error,size,"Not enough memory for event audio");return NULL;}
     if(!ts_sample_clone(&s->sample,sample,error,size)) {free(s);return NULL;}
     s->hash=hash;
-    for(size_t i=0;i<sample->frames;++i) {
-        TsStereoFrame f=ts_sample_read_frame(sample,i);
-        size_t bin=i*256/sample->frames;
-        float peak=fmaxf(fabsf(f.l),fabsf(f.r));
-        if(peak>s->peaks[bin])s->peaks[bin]=peak;
+    /* Built once per immutable source, never on the audio thread. Peak and
+       RMS preserve transients and reveal the body of the waveform separately. */
+    for(size_t bin=0;bin<TS_MOSAIC_PEAKS;++bin) {
+        size_t first=bin*sample->frames/TS_MOSAIC_PEAKS;
+        size_t last=(bin+1)*sample->frames/TS_MOSAIC_PEAKS;
+        if(last<=first)last=first+1;
+        double energy=0;
+        for(size_t i=first;i<last;++i) {
+            TsStereoFrame f=ts_sample_read_frame(sample,i);
+            float peak=fmaxf(fabsf(f.l),fabsf(f.r));
+            if(peak>s->peaks[bin])s->peaks[bin]=peak;
+            energy+=.5*((double)f.l*f.l+(double)f.r*f.r);
+        }
+        s->rms[bin]=(float)sqrt(energy/(last-first));
     }
     s->next=m->sources;m->sources=s;return s;
 }
@@ -189,7 +198,11 @@ TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
     }
     if(!m->was_playing){for(int i=0;i<TS_MOSAIC_EVENTS;++i)m->voices[i].attack=0;m->was_playing=1;}
     if(m->rate!=rate){memset(m->voices,0,sizeof(m->voices));m->rate=rate;}
-    double end=ts_mosaic_end(m);
+    double end=0;int any_solo=0;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id) {
+        end=fmax(end,m->events[i].start+m->events[i].duration);
+        any_solo|=m->events[i].solo;
+    }
     if(m->time>=end) {
         if(m->repeat && end>0)ts_mosaic_seek(m,fmod(m->time,end));
         else {m->playing=0;return out;}
@@ -197,12 +210,17 @@ TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
     for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
         const TsMosaicEvent *e=&m->events[i];TsMosaicVoice *v=&m->voices[i];
         if(!e->id || m->time+1e-10<e->start || m->time>=e->start+e->duration) {v->active=0;continue;}
-        if(!v->active || v->id!=e->id || v->revision!=e->revision || v->start!=e->start)
+        if(!v->active || v->id!=e->id || v->revision!=e->revision || v->start!=e->start) {
             voice_begin(v,e,fmax(0,m->time-e->start),rate);
+            v->audible_gain=(!e->muted && (!any_solo || e->solo))?1.0f:0.0f;
+        }
         float envelope=ts_audition_attack_gain(v->attack++,ts_audition_attack_frames(rate,2));
         double tail=(e->start+e->duration-m->time)*rate;
         if(tail<rate*0.002)envelope*=(float)fmax(0,tail/(rate*0.002));
-        float gain=m->gain*e->gain*envelope/e->note_count;
+        float target=(!e->muted && (!any_solo || e->solo))?1.0f:0.0f;
+        float ramp=1.0f/(rate*.005f);
+        v->audible_gain=target>v->audible_gain?fminf(target,v->audible_gain+ramp):fmaxf(target,v->audible_gain-ramp);
+        float gain=m->gain*e->gain*envelope*v->audible_gain/e->note_count;
         for(int n=0;n<e->note_count;++n) {
             TsStereoFrame f;
             v->position[n]=voice_position(e,v->travel[n],&v->direction[n],&v->intro[n]);
@@ -234,6 +252,7 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
             (unsigned long long)e->id,(unsigned long long)e->source->hash,e->start,e->duration,e->x,e->width,
             e->first,e->last,e->crossfade,e->mode,e->looping,e->note_count,e->gain,e->tuning.root_note,
             e->tuning.fine_tune_cents,e->notes[0],e->notes[1],e->notes[2],e->notes[3],e->notes[4]);
+        hash^=(uint64_t)(e->muted | (e->solo<<1));hash*=1099511628211ull;
         for(const unsigned char *p=(const unsigned char *)line;*p;++p){hash^=*p;hash*=1099511628211ull;}
         for(const unsigned char *p=(const unsigned char *)e->name;*p;++p){hash^=*p;hash*=1099511628211ull;}
     }
@@ -247,7 +266,7 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"w");if(!f)goto failed;
-    if(fprintf(f,"TAPESISTER_MOSAIC 1\nSETTINGS %d %.9g\n",m->repeat,m->gain)<0)goto close_failed;
+    if(fprintf(f,"TAPESISTER_MOSAIC 2\nSETTINGS %d %.9g\n",m->repeat,m->gain)<0)goto close_failed;
     const TsMosaicSource *sources[TS_MOSAIC_EVENTS];int count=0;
     for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
         const TsMosaicEvent *e=&m->events[i];if(!e->id)continue;
@@ -259,10 +278,10 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
         }
         char name[129];
         for(int k=0;k<64;++k)snprintf(name+2*k,3,"%02x",(unsigned char)e->name[k]);
-        if(fprintf(f,"%llu %d %.17g %.17g %.17g %.17g %zu %zu %zu %d %d %d %.9g %d %.9g %d %d %d %d %d %s\n",
+        if(fprintf(f,"%llu %d %.17g %.17g %.17g %.17g %zu %zu %zu %d %d %d %.9g %d %.9g %d %d %d %d %d %s %d %d\n",
             (unsigned long long)e->id,s,e->start,e->duration,e->x,e->width,e->first,e->last,e->crossfade,
             e->mode,e->looping,e->note_count,e->gain,e->tuning.root_note,e->tuning.fine_tune_cents,
-            e->notes[0],e->notes[1],e->notes[2],e->notes[3],e->notes[4],name)<0)goto close_failed;
+            e->notes[0],e->notes[1],e->notes[2],e->notes[3],e->notes[4],name,e->muted,e->solo)<0)goto close_failed;
     }
     if(fclose(f))goto failed;
     return 1;
@@ -280,17 +299,24 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     if(!f){snprintf(error,size,"Could not open Mosaic arrangement");return 0;}
     TsMosaic *next=ts_mosaic_create();if(!next){fclose(f);return 0;}
     TsMosaicSource *sources[TS_MOSAIC_EVENTS]={0};int count=0;
-    if(!fgets(line,sizeof(line),f) || strcmp(line,"TAPESISTER_MOSAIC 1\n"))goto failed;
+    if(!fgets(line,sizeof(line),f))goto failed;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:0;
+    if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f) || sscanf(line,"SETTINGS %d %f %c",&next->repeat,&next->gain,&trailing)!=2 ||
        (next->repeat!=0 && next->repeat!=1) || !isfinite(next->gain) || next->gain<0 || next->gain>2)goto failed;
     while(fgets(line,sizeof(line),f)) {
         if(count==TS_MOSAIC_EVENTS)goto failed;
         TsMosaicEvent e={0};unsigned long long id;int source,mode;char extra,name[129];
-        if(sscanf(line,"%llu %d %lf %lf %lf %lf %zu %zu %zu %d %d %d %f %d %f %d %d %d %d %d %128s %c",
+        int consumed=0;
+        if(sscanf(line,"%llu %d %lf %lf %lf %lf %zu %zu %zu %d %d %d %f %d %f %d %d %d %d %d %128s %n",
             &id,&source,&e.start,&e.duration,&e.x,&e.width,&e.first,&e.last,&e.crossfade,&mode,
             &e.looping,&e.note_count,&e.gain,&e.tuning.root_note,&e.tuning.fine_tune_cents,
-            &e.notes[0],&e.notes[1],&e.notes[2],&e.notes[3],&e.notes[4],name,&extra)!=21)goto failed;
+            &e.notes[0],&e.notes[1],&e.notes[2],&e.notes[3],&e.notes[4],name,&consumed)!=21)goto failed;
+        if(version==2) {
+            if(sscanf(line+consumed,"%d %d %c",&e.muted,&e.solo,&extra)!=2 ||
+               (e.muted!=0 && e.muted!=1) || (e.solo!=0 && e.solo!=1))goto failed;
+        } else if(sscanf(line+consumed," %c",&extra)==1)goto failed;
         if(strlen(name)!=128 || strspn(name,"0123456789abcdef")!=128)goto failed;
         for(int k=0;k<64;++k){unsigned ch;if(sscanf(name+2*k,"%2x",&ch)!=1)goto failed;e.name[k]=(char)ch;}
         if(e.name[63])goto failed;

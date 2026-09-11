@@ -7,6 +7,7 @@
 #define TS_MOSAIC_NOTES 5
 #define TS_MOSAIC_HISTORY 32
 #define TS_MOSAIC_GUTTER 8.0
+#define TS_MOSAIC_PEAKS 2048
 
 /* Sources are immutable. Model mutations require the host's audio lock;
    source allocation, collection, project IO and editor work stay on the UI thread. */
@@ -14,7 +15,7 @@ typedef struct TsMosaicSource {
     TsSample sample;
     uint64_t hash;
     unsigned pins;
-    float peaks[256];
+    float peaks[TS_MOSAIC_PEAKS], rms[TS_MOSAIC_PEAKS];
     struct TsMosaicSource *next;
 } TsMosaicSource;
 
@@ -27,6 +28,7 @@ typedef struct {
     TsLoopMode mode;
     TsTuning tuning;
     int looping, note_count, notes[TS_MOSAIC_NOTES];
+    int muted, solo;
     float gain;
 } TsMosaicEvent;
 
@@ -37,6 +39,7 @@ typedef struct {
     int direction[TS_MOSAIC_NOTES], intro[TS_MOSAIC_NOTES];
     uint64_t attack;
     int active;
+    float audible_gain;
 } TsMosaicVoice;
 
 typedef struct TsMosaic {

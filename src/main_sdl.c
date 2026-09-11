@@ -6405,7 +6405,7 @@ static const char *path_basename(const char *path)
 
 static int ui_blocking_dialog_open_except_fm(const TsUiState *ui)
 {
-    return ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->mosaic_edit_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
            ui->portal.open || ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->import_preview_open || ui->load_selection_choice_open ||

@@ -413,7 +413,19 @@ typedef struct {
     size_t capture_capacity_frames;
     TsMosaic *mosaic;
     uint64_t mosaic_selected, mosaic_editing;
+    uint64_t mosaic_selection[TS_MOSAIC_EVENTS];
     int mosaic_open, mosaic_playing;
+    int mosaic_edit_choice;
+    int mosaic_follow, mosaic_box, mosaic_box_x, mosaic_box_y, mosaic_box_end_x, mosaic_box_end_y;
+    int mosaic_ghost_count;
+    TsMosaicEvent mosaic_ghosts[TS_MOSAIC_EVENTS];
+    struct {
+        const TsSample *sample;
+        TsMosaicSource *source;
+        uint64_t event;
+        int bank_slot;
+    } mosaic_sources[TS_MOSAIC_EVENTS + TS_BANK_SLOT_COUNT];
+    int mosaic_source_count, mosaic_source_page, mosaic_source_selected;
     double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;
     uint32_t staged_notes;
     uint32_t overlay_until_ms;
@@ -634,6 +646,7 @@ const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
                                       const TsInstrument *instrument);
 const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
                                      const TsInstrument *instrument);
+void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_foreground_panel_open(const TsUiState *ui);
 void ts_ui_draw_tile_state_borders(TsFramebuffer *fb, int slot,

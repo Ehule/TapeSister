@@ -50,6 +50,154 @@ static void test_canvas_gestures(SDL_Window *window)
     e=ts_mosaic_find(ui.mosaic,ui.mosaic_selected);assert(e && e->id!=id && e->source==source);
     ts_mosaic_delete(ui.mosaic,e->id);
 }
+static void motion(SDL_Window *window,int x,int y)
+{
+    SDL_Event e={0};e.type=SDL_MOUSEMOTION;e.motion.windowID=SDL_GetWindowID(window);e.motion.x=x;e.motion.y=y;
+    mosaic_event(&e,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
+}
+static void release(SDL_Window *window,int x,int y)
+{
+    SDL_Event e={0};e.type=SDL_MOUSEBUTTONUP;e.button.windowID=SDL_GetWindowID(window);
+    e.button.button=SDL_BUTTON_LEFT;e.button.x=x;e.button.y=y;
+    mosaic_event(&e,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
+}
+static void key(SDL_Window *window,SDL_Keycode key,SDL_Keymod mod)
+{
+    SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=key;e.key.keysym.mod=mod;
+    mosaic_event(&e,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
+}
+static void wait_render(void);
+static void test_canvas_feedback(SDL_Window *window)
+{
+    TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);ui.mosaic=audio.mosaic=scene;
+    char error[160];TsMosaicSource *source=ts_mosaic_source(scene,&instrument.current,error,sizeof(error));assert(source);
+    TsMosaicEvent *a=ts_mosaic_add(scene,source,.5,20);a->duration=2;
+    TsMosaicEvent *b=ts_mosaic_add(scene,source,1,130);b->duration=3;
+    TsMosaicEvent *obstacle=ts_mosaic_add(scene,source,1,250);obstacle->duration=3;
+    ui.mosaic_open=1;ui.mosaic_scale=24;ui.mosaic_hscale=1;ui.mosaic_scroll=ui.mosaic_xscroll=0;
+    mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_source_count==1);
+    /* Source click, waveform preview and drag cancellation keep the pin safe. */
+    click(window,20,85,1);assert(ui.mosaic_source_selected==0 && source->pins==1);
+    motion(window,530,190);assert(ui.mosaic_ghost_count==1 && ui.mosaic_ghosts[0].source==source);
+    release(window,110,190);assert(!ui.mosaic_ghost_count && !source->pins);
+    SDL_SetModState(KMOD_SHIFT);click(window,155,70,1);assert(ui.mosaic_box);
+    motion(window,385,180);release(window,385,180);SDL_SetModState(KMOD_NONE);
+    assert(mosaic_chosen(&ui,0) && mosaic_chosen(&ui,1) && !mosaic_chosen(&ui,2));
+    double gap=b->x-a->x,spacing=b->start-a->start,other_time=obstacle->start;
+    click(window,180,96,1);assert(ui.mosaic_ghost_count==2 && mosaic.drag==1);
+    motion(window,220,120);assert(ui.mosaic_ghosts[0].start==.5);
+    assert(fabs(b->x-a->x-gap)<1e-9 && fabs(b->start-a->start-spacing)<1e-9);
+    assert(a->start==1.5 && b->start==2 && obstacle->start==other_time);
+    assert(a->x>=obstacle->x+obstacle->width+TS_MOSAIC_GUTTER);
+    release(window,220,120);assert(!ui.mosaic_ghost_count);
+    key(window,SDLK_z,KMOD_CTRL);assert(a->start==.5 && b->start==1 && a->x==20 && b->x==130);
+    key(window,SDLK_m,KMOD_NONE);assert(a->muted && b->muted && !obstacle->muted);
+    key(window,SDLK_m,KMOD_NONE);assert(!a->muted && !b->muted);
+    key(window,SDLK_s,KMOD_NONE);assert(a->solo && b->solo && !obstacle->solo);
+    key(window,SDLK_s,KMOD_NONE);assert(!a->solo && !b->solo);
+    click(window,430,96,1);release(window,430,96);assert(ui.mosaic_selected==obstacle->id && !mosaic_chosen(&ui,0));
+    /* Middle click seeks through a tile without changing the selected event. */
+    SDL_Event seek={0};seek.type=SDL_MOUSEBUTTONDOWN;seek.button.windowID=SDL_GetWindowID(window);
+    seek.button.button=SDL_BUTTON_MIDDLE;seek.button.x=190;seek.button.y=110;
+    mosaic_event(&seek,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
+    assert(fabs(scene->time-44.0/24)<1e-9 && ui.mosaic_selected==obstacle->id);
+    click(window,430,46,1);assert(ui.mosaic_follow);scene->playing=1;scene->time=20;
+    mosaic_poll(0,&ui,&instrument,&mosaic);assert(fabs(ui.mosaic_scroll-(20-220.0/24))<1e-9);
+    scene->time=0;mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_scroll==0);
+    click(window,430,46,1);scene->time=20;mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_scroll==0);
+    scene->playing=0;
+    /* Edited source appears immediately, while the shared original stays. */
+    assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,a->id));
+    for(size_t i=0;i<instrument.current.frames*instrument.current.channels;++i)instrument.current.data[i]*=.1f;
+    ++instrument.current.visual_revision;assert(!mosaic_commit(0,&ui,&instrument,&mosaic));
+    assert(ui.mosaic_edit_choice && a->source==source && b->source==source);
+    key(window,SDLK_u,KMOD_NONE);assert(!ui.mosaic_edit_choice);
+    assert(mosaic_leave(0,&audio,&ui,&instrument,&mosaic));mosaic_poll(0,&ui,&instrument,&mosaic);
+    assert(ui.mosaic_source_count==2 && ui.mosaic_sources[0].source==a->source);
+    assert(ui.mosaic_sources[1].source==source && b->source==source);
+    double peaks=0,original=0;for(int i=0;i<TS_MOSAIC_PEAKS;++i){peaks+=a->source->peaks[i];original+=source->peaks[i];}
+    assert(peaks<original*.101 && peaks>original*.099);
+    /* Main-bank overlays must not touch any Mosaic pixel, even with routed,
+       selected, or locked bank tiles. Borders and mute state remain visible. */
+    static TsFramebuffer fb,copy;
+    ui.show_keyboard=0;ui.sister_source_mask=0xffff;ui.mosaic_time=0;ui.mosaic_playing=0;
+    ts_ui_render(&fb,&ui,&instrument);copy=fb;ts_overlay_tile_states(&fb,&ui,&instrument);
+    assert(memcmp(&fb,&copy,sizeof(fb))==0);
+    mosaic_select_only(&ui,a->id);ts_ui_render(&fb,&ui,&instrument);uint32_t border=fb.pixels[80*640+171];
+    mosaic_select_only(&ui,0);ts_ui_render(&fb,&ui,&instrument);assert(border!=fb.pixels[80*640+171]);
+    /* Warp waits until gesture completion; NEW TILE leaves the owner and all
+       siblings intact and gives the edited document a fresh event ID. */
+    assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,a->id));
+    uint64_t original_id=a->id;TsMosaicSource *original_source=a->source;
+    scene->playing=1;scene->time=1;
+    int background=getenv("TS_TEST_CDP_BIN")!=NULL;
+    if(background) {
+        ui.portal.open=1;assert(portal_source(0,&audio,&ui,&instrument,&portal));
+        ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("modify.speed.1"));ui.portal.recipe.values[0]=.5;
+        portal_preview(0,&audio,&ui,&portal);assert(portal.worker);portal.quick_apply=1;portal_close(0,&audio,&ui,&portal);
+    }
+    assert(ts_instrument_warp_gesture_begin(&instrument,&ui.warp_gesture,error,sizeof(error)));
+    assert(ts_instrument_warp_gesture_preview(&instrument,&ui.warp_gesture,.7f,error,sizeof(error)));
+    assert(mosaic_commit(0,&ui,&instrument,&mosaic) && !ui.mosaic_edit_choice);
+    assert(ts_instrument_warp_gesture_commit(&instrument,&ui.warp_gesture,error,sizeof(error)));
+    assert(!mosaic_commit(0,&ui,&instrument,&mosaic) && ui.mosaic_edit_choice);
+    assert(a->source==original_source && b->source==source && scene->playing);
+    const char *dialog=getenv("TS_MOSAIC_EDIT_SCREENSHOT");
+    if(dialog){ts_audio_ui_render(&fb,&ui,&instrument);assert(ts_ui_write_ppm(&fb,dialog));}
+    key(window,SDLK_RETURN,KMOD_NONE);assert(!ui.mosaic_edit_choice && mosaic.active!=original_id);
+    TsMosaicEvent *variant=ts_mosaic_find(scene,mosaic.active);assert(variant && variant->source!=original_source);
+    assert(a->source==original_source && b->source==source && a->id==original_id);
+    assert(variant->start==a->start && variant->x>=a->x+a->width+TS_MOSAIC_GUTTER);
+    TsInstrument *original_document=mosaic_document(&mosaic,&ui,&instrument,a->id);
+    assert(original_document && original_document!=&instrument && mosaic_same_audio(&original_document->current,&original_source->sample));
+    if(background) {
+        TsMosaicSource *new_audio=variant->source;wait_render();
+        assert(strstr(ui.portal.message,"APPLIED TO EVENT") && a->source!=original_source);
+        assert(variant->source==new_audio && mosaic_same_audio(&instrument.current,&new_audio->sample) && b->source==source);
+        original_source=a->source;
+    }
+    int original_loop=a->looping,other_loop=b->looping;
+    click(window,570,320,1);assert(variant->looping!=original_loop && a->looping==original_loop && b->looping==other_loop);
+    int original_notes=a->note_count;click(window,200,370,1);assert(a->note_count==original_notes && variant->note_count!=original_notes);
+    TsMosaicSource *warped=variant->source;
+    assert(ts_instrument_apply_smear(&instrument,.6f,error,sizeof(error)));
+    assert(!mosaic_commit(0,&ui,&instrument,&mosaic));key(window,SDLK_ESCAPE,KMOD_NONE);
+    assert(!ui.mosaic_edit_choice && mosaic_same_audio(&instrument.current,&warped->sample) && variant->source==warped);
+    assert(ts_instrument_apply_smear(&instrument,.8f,error,sizeof(error)));
+    assert(!mosaic_commit(0,&ui,&instrument,&mosaic));key(window,SDLK_u,KMOD_NONE);
+    assert(!ui.mosaic_edit_choice && variant->source!=warped && a->source==original_source && b->source==source && scene->playing);
+    assert(mosaic_leave(0,&audio,&ui,&instrument,&mosaic));
+    /* Palette pagination includes edited versions, with usable sources on
+       page two and no spill into the arrangement. */
+    TsSample extra={0};assert(ts_sample_clone(&extra,&source->sample,error,sizeof(error)));
+    for(int i=0;i<18;++i) {
+        extra.data[0]=.01f*(i+1);TsMosaicSource *version=ts_mosaic_source(scene,&extra,error,sizeof(error));assert(version);
+        assert(ts_mosaic_add(scene,version,20+i*4,0));
+    }
+    ts_sample_free(&extra);mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_source_count>16);
+    click(window,97,359,1);assert(ui.mosaic_source_page==1);
+    click(window,20,85,1);assert(ui.mosaic_source_selected==16 && mosaic.source_drag.source==ui.mosaic_sources[16].source);
+    release(window,110,190);click(window,20,359,1);assert(ui.mosaic_source_page==0);
+    ui.mosaic=audio.mosaic=saved;mosaic_poll(0,&ui,&instrument,&mosaic);ts_mosaic_free(scene);
+}
+static void test_fallout_without_sister(void)
+{
+    char error[160];assert(ts_sister_runtime_reconfigure(&audio.sister,48000,2,error,sizeof(error)));
+    sister.model.parameters=audio.sister.parameters;
+    TsSisterUiHit hit={.action=TS_SISTER_UI_ACTION_FALLOUT_TOGGLE,.index=TS_SISTER_UI_FALLOUT_POWER};
+    sister_apply_action(0,&audio,&ui,&instrument,&sister,NULL,NULL,hit,48000,2);
+    assert(!audio.sister.enabled && audio.sister.parameters.fx.fallout.enabled);
+    hit.action=TS_SISTER_UI_ACTION_PARAMETER;hit.index=TS_SISTER_UI_PARAM_FALLOUT_MIX;hit.normalized=1;
+    sister_apply_action(0,&audio,&ui,&instrument,&sister,NULL,NULL,hit,48000,2);
+    assert(audio.sister.parameters.fx.fallout.mix==1);
+    ts_mosaic_seek(ui.mosaic,0);ui.mosaic->playing=1;
+    float output[512];for(int i=0;i<8;++i)audio_callback(&audio,(Uint8 *)output,sizeof(output));
+    assert(audio.sister.fallout.write_clock>0 && !audio.sister.enabled);
+    hit.action=TS_SISTER_UI_ACTION_FALLOUT_TOGGLE;hit.index=TS_SISTER_UI_FALLOUT_POWER;
+    sister_apply_action(0,&audio,&ui,&instrument,&sister,NULL,NULL,hit,48000,2);
+    assert(!audio.sister.parameters.fx.fallout.enabled);
+}
+
 static void wait_render(void)
 {
     Uint32 start=SDL_GetTicks();
@@ -154,6 +302,8 @@ int main(void)
     test_async_ownership(aid,bid,original);
     test_record_file(window);
     test_canvas_gestures(window);
+    test_canvas_feedback(window);
+    test_fallout_without_sister();
 
     /* Route a single render to the direct bus and Sister input without
        advancing its clock twice. Different left/right data stays stereo. */
@@ -196,6 +346,8 @@ int main(void)
         TsMosaic *saved=ui.mosaic;ui.mosaic=scene;
         ui.mosaic_open=1;ui.mosaic_scale=24;ui.mosaic_hscale=1;ui.mosaic_time=4.35;ui.mosaic_playing=1;ui.mosaic_selected=events[3]->id;
         snprintf(ui.status,sizeof(ui.status),"FREE PLACEMENT / SHARED SOURCE AUDIO / INDEPENDENT LOOP CLOCKS");
+        mosaic_sources_refresh(&ui,bank,&mosaic);ui.mosaic_selected=events[3]->id;
+        mosaic_source_select_event(&ui,events[3]);ui.mosaic_follow=1;
         static TsFramebuffer fb;ts_ui_render(&fb,&ui,bank);assert(ts_ui_write_ppm(&fb,shot));
         ui.mosaic=saved;ts_mosaic_free(scene);ts_instrument_free(bank);free(bank);
     }
