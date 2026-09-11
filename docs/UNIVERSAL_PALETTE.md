@@ -9,7 +9,7 @@ directory. Without one, each application uses `palette.pal` beside its normal
 working files. `TAPESISTER_PALETTE` remains a full-path override for
 TapeSister.
 
-Every universal save writes and preserves these 26 color keys:
+TapeSister universal saves write and preserve these 32 color keys:
 
 - Shared interface colors: `PatternText`, `BlockMark`, `TextOnBlock`, `Mouse`,
   `Desktop`, `Buttons`, `PatternNote`, `PatternInstrument`, `PatternVolume`,
@@ -20,6 +20,8 @@ Every universal save writes and preserves these 26 color keys:
 - Tapehead transport colors: `TrackLengthPlayhead`, `FastTracksPlayhead`,
   `ControlPlayhead`, `FastTracksSync`, `FastTracksPhase`, `FastTracksSong`, and
   `FastTracksLengthPlayhead`.
+- Mosaic colors: `MosaicHighlight`, `MosaicTile1`, `MosaicTile2`, `MosaicTile3`,
+  `MosaicTile4`, and `MosaicTile5`.
 - Contrast values: `DesktopContrast` and `ButtonsContrast`, each from 1 to 100.
 
 Colors use `#RRGGBB`. Each application may present its own friendly names, but
@@ -31,3 +33,10 @@ Missing Sister source colors inherit `PatternNote` (horizontal) and
 as neutral, unset Tapehead eyedropper swatches. Loading never rewrites a legacy
 file. Choosing **Save Shared** explicitly writes the complete universal schema
 to the canonical `palette.pal` path.
+
+The Mosaic strip in the palette editor selects its highlight or one of five
+source colors without adding more sliders. RGB, PgUp/PgDn, the Tapehead
+eyedropper, Reset, Cancel and Save Shared all use the selected entry. Older
+palettes omit these six keys and load the original five source colors plus a
+bright red selection highlight. Tapehead versions that predate these keys may
+omit them when saving the shared file; loading a palette never rewrites it.

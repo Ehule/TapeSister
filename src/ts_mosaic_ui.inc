@@ -2,8 +2,7 @@
    is time in seconds vertically; horizontal space carries no audio meaning. */
 static uint32_t mosaic_color(uint64_t id)
 {
-    static const uint32_t colors[]={0xff81cec8,0xffd5b37c,0xffba93ba,0xffa2b983,0xff8da9cb};
-    return colors[id%5];
+    return active_palette()->colors[TS_PALETTE_MOSAIC_TILE_1+id%5];
 }
 static void mosaic_button(TsFramebuffer *fb,int x,int y,int w,const char *label,int active,int small)
 {
@@ -82,7 +81,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(top>=66)mosaic_canvas_rect(fb,x,y,w,1,color);
     if(bottom<376)mosaic_canvas_rect(fb,x,end-1,w,1,color);
     if(selected) {
-        uint32_t border=mosaic_mix_color(mosaic_color(e->source->hash),RGB(245,241,251),.6f);
+        uint32_t border=ui->palette.colors[TS_PALETTE_MOSAIC_HIGHLIGHT];
         mosaic_canvas_rect(fb,x,y,2,h,border);mosaic_canvas_rect(fb,x+w-2,y,2,h,border);
         if(top>=66)mosaic_canvas_rect(fb,x,y,w,2,border);
         if(bottom<376)mosaic_canvas_rect(fb,x,end-2,w,2,border);
@@ -119,29 +118,32 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     master_output_fader(fb,ui->master_output.gain,TS_UI_MASTER_OUTPUT_X,TS_UI_MASTER_OUTPUT_Y);
     master_output_meter(fb,&ui->master_output,TS_UI_MASTER_METER_X,TS_UI_MASTER_METER_Y);
     text(fb,12,43,"SOURCES",RGB(198,186,206),1);
-    char label[100];snprintf(label,sizeof(label),"BANK %02d",ui->sample_page+1);text(fb,12,55,label,RGB(133,127,141),1);
+    char label[100];
+    if(ui->mosaic_source_page<ui->mosaic_bank_count)snprintf(label,sizeof(label),"BANK %02d",ui->mosaic_source_page+1);
+    else snprintf(label,sizeof(label),"EVENTS %02d",ui->mosaic_source_page-ui->mosaic_bank_count+1);
+    text(fb,12,55,label,RGB(133,127,141),1);
     mosaic_button(fb,118,39,42,ui->mosaic_playing?"PAUSE":"PLAY",ui->mosaic_playing,1);
     mosaic_button(fb,164,39,38,"STOP",0,1);
     int rec=ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING;
     mosaic_button(fb,206,39,64,rec?"STOP REC":"REC FILE",rec,1);
     mosaic_button(fb,274,39,44,"REPEAT",m && m->repeat,1);
-    snprintf(label,sizeof(label),"%06.2f s",ui->mosaic_time);text(fb,330,44,label,mosaic_color(0),1);
+    snprintf(label,sizeof(label),"%06.2f s",ui->mosaic_time);text(fb,330,44,label,RGB(129,206,200),1);
     rect(fb,408,42,10,10,RGB(112,105,122));rect(fb,409,43,8,8,RGB(26,26,33));
-    if(ui->mosaic_follow){rect(fb,411,45,4,4,mosaic_color(0));}
-    text(fb,424,44,"FOLLOW",ui->mosaic_follow?mosaic_color(0):RGB(166,155,178),1);
+    if(ui->mosaic_follow){rect(fb,411,45,4,4,RGB(129,206,200));}
+    text(fb,424,44,"FOLLOW",ui->mosaic_follow?RGB(129,206,200):RGB(166,155,178),1);
     mosaic_button(fb,490,39,52,"FIT ALL",0,1);mosaic_button(fb,548,39,24,"-",0,1);mosaic_button(fb,578,39,24,"+",0,1);
     static TsWaveformCache source_cache[16];
     (void)instrument;
     for(int i=0;i<16;++i) {
-        int x=10+(i%2)*49,y=74+(i/2)*34,n=ui->mosaic_source_page*16+i;
+        int x=10+(i%2)*49,y=74+(i/2)*34,n=ui->mosaic_source_offset+i;
         const TsSample *sample=n<ui->mosaic_source_count?ui->mosaic_sources[n].sample:NULL;
         int selected=sample && n==ui->mosaic_source_selected;
-        uint32_t color=sample && ui->mosaic_sources[n].source?mosaic_color(ui->mosaic_sources[n].source->hash):RGB(135,171,174);
-        rect(fb,x,y,44,28,selected?color:sample?RGB(40,36,44):RGB(23,23,28));
+        uint32_t color=sample?mosaic_color(ui->mosaic_sources[n].hash):RGB(135,171,174);
+        rect(fb,x,y,44,28,selected?ui->palette.colors[TS_PALETTE_MOSAIC_HIGHLIGHT]:sample?RGB(40,36,44):RGB(23,23,28));
         if(selected)rect(fb,x+2,y+2,40,24,RGB(51,47,59));
-        snprintf(label,sizeof(label),"%02d",n+1);text(fb,x+4,y+4,label,sample?color:RGB(74,70,82),1);
+        snprintf(label,sizeof(label),"%02d",n<16?n+1:n-15);text(fb,x+4,y+4,label,sample?color:RGB(74,70,82),1);
         if(sample && sample->data) {
-            TsWaveformRequest request={.sample=sample,.first=0,.last=sample->frames,.width=35,.revision=(m?m->epoch:0)^(ui->mosaic_sources[n].source?ui->mosaic_sources[n].source->hash:0)};
+            TsWaveformRequest request={.sample=sample,.first=0,.last=sample->frames,.width=35,.revision=(m?m->epoch:0)^ui->mosaic_sources[n].hash};
             ts_waveform_cache_prepare(&source_cache[i],&request);
             for(int px=0;px<35;++px) {
                 const TsWaveformColumn *column=&source_cache[i].columns[px];
@@ -150,7 +152,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
             }
         }
     }
-    int pages=(ui->mosaic_source_count+15)/16;if(pages<1)pages=1;
+    int pages=ui->mosaic_source_pages;if(pages<1)pages=1;
     mosaic_button(fb,10,353,22,"<",0,1);mosaic_button(fb,86,353,22,">",0,1);
     snprintf(label,sizeof(label),"%02d/%02d",ui->mosaic_source_page+1,pages);text(fb,40,358,label,RGB(150,142,160),1);
     rect(fb,113,66,518,310,RGB(11,13,16));
@@ -175,13 +177,14 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         int x=ui->mosaic_box_x<ui->mosaic_box_end_x?ui->mosaic_box_x:ui->mosaic_box_end_x;
         int y=ui->mosaic_box_y<ui->mosaic_box_end_y?ui->mosaic_box_y:ui->mosaic_box_end_y;
         int w=abs(ui->mosaic_box_x-ui->mosaic_box_end_x),h=abs(ui->mosaic_box_y-ui->mosaic_box_end_y);
-        mosaic_canvas_rect(fb,x,y,w,1,mosaic_color(0));mosaic_canvas_rect(fb,x,y+h,w,1,mosaic_color(0));
-        mosaic_canvas_rect(fb,x,y,1,h,mosaic_color(0));mosaic_canvas_rect(fb,x+w,y,1,h,mosaic_color(0));
+        mosaic_canvas_rect(fb,x,y,w,1,RGB(129,206,200));mosaic_canvas_rect(fb,x,y+h,w,1,RGB(129,206,200));
+        mosaic_canvas_rect(fb,x,y,1,h,RGB(129,206,200));mosaic_canvas_rect(fb,x+w,y,1,h,RGB(129,206,200));
     }
     int py=66+(int)((ui->mosaic_time-ui->mosaic_scroll)*scale);
-    if(py>=66 && py<376){rect(fb,147,py,484,1,mosaic_color(0));rect(fb,143,py-2,4,5,mosaic_color(0));}
+    if(py>=66 && py<376){rect(fb,147,py,484,1,RGB(129,206,200));rect(fb,143,py-2,4,5,RGB(129,206,200));}
     rect(fb,0,380,640,20,RGB(20,19,25));
-    text(fb,10,386,"M: MUTE  S: SOLO  SHIFT+DRAG: BOX / ALIGN  MID: SEEK",RGB(133,127,141),1);
+    text(fb,10,386,"M MUTE  S SOLO  SHIFT DRAG: BOX/COPY  ALT: ALIGN",RGB(133,127,141),1);
+    if(!rec)text(fb,496,386,"SHIFT+GRAVE",RGB(133,127,141),1);
     if(rec) {
         double seconds=ui->file_record_rate?(double)ui->file_record_frames/ui->file_record_rate:0;
         snprintf(label,sizeof(label),"REC %05.1fs",seconds);text(fb,552,386,label,RGB(231,122,130),1);

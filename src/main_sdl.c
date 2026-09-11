@@ -6082,7 +6082,7 @@ static void palette_save_shared(TsUiState *ui)
         return;
     }
     if (ts_palette_save(&ui->palette, path, error, sizeof(error))) {
-        ui->palette.defined_colors = (1u << TS_PALETTE_COLOR_COUNT) - 1u;
+        ui->palette.defined_colors = TS_PALETTE_ALL_COLORS;
         ui->palette_suggestions = ui->palette;
         snprintf(ui->status, sizeof(ui->status), "SAVED SHARED PALETTE %.105s", path);
     }
@@ -12449,10 +12449,18 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            int mosaic_key=mosaic_toggle_key(&event);
+            int mosaic_window=event_id==SDL_GetWindowID(window) ||
+                (mosaic_key && sister_window.window && event_id==sister_window.window_id && !sister_window.model.preset_manage_open);
+            if(mosaic_window && mosaic_key && ui.fm_open && !ui_blocking_dialog_open_except_fm(&ui) &&
+               !ui.fm_bank_choice_open && !ui.fm_full_choice_open)
+                close_fm_workspace(device,&audio,&ui,&fm_preview);
             mosaic_commit(device,&ui,&instrument,&mosaic);
-            if (event_id == SDL_GetWindowID(window) &&
-                mosaic_event(&event,window,device,&audio,&ui,&instrument,&mosaic,
-                             &portal,&sister_window,&transform,obtained.freq)) continue;
+            if(mosaic_window && mosaic_event(&event,window,device,&audio,&ui,&instrument,&mosaic,
+                                             &portal,&sister_window,&transform,obtained.freq)) {
+                if(mosaic_key)application_window_focus(window,&sister_window);
+                continue;
+            }
             if((event.type==SDL_QUIT || (event.type==SDL_WINDOWEVENT &&
                 event.window.event==SDL_WINDOWEVENT_CLOSE && event_id==SDL_GetWindowID(window))) && mosaic.active)
                 if(!mosaic_leave(device,&audio,&ui,&instrument,&mosaic)) {

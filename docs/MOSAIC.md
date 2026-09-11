@@ -9,24 +9,34 @@ Sister Machine and output recorder.
 
 ## Playing and arranging
 
-Open **MOSAIC** in the main toolbar, or press **Ctrl+M**. Drag an occupied source
-from the left bank onto the canvas. Sources shows the audio versions used by placed events first, followed by
-unused samples from the current Sample bank. An edited event's waveform updates
-there when edits are accepted on returning to Mosaic. Shared originals remain available while other events use
-them; the original Sample bank is preserved. Use the arrows beneath Sources
-for additional pages, and return to CANVAS to load/create samples or change
-Sample banks. Click a source to highlight its waveform; dragging shows a ghost
-of the event at its proposed position.
+Open **MOSAIC** in the main toolbar, or press **Shift+grave** (Shift+the backtick
+key). The same shortcut returns to the main canvas or finishes editing an event;
+**Ctrl+M** remains available. The shortcut also brings Mosaic forward from the
+Sister window and leaves the ordinary FM workspace; destination dialogs retain
+keyboard focus until resolved.
+
+Sources browses **all Sample banks**, including banks created in FM or the main
+canvas. **BANK 01**, **BANK 02**, etc. retain their original slot numbers and empty
+slots. The arrows underneath move through banks, then **EVENTS** pages containing
+the audio versions used by placed events. Browsing sources does not switch the
+main editor's active Sample bank or change routing. New banks appear on the next
+refresh; returning from FM shows its active bank with the correct page number.
+
+Drag an occupied source onto the canvas. Click a source to highlight its waveform;
+dragging shows a ghost of the proposed event. An accepted audio edit appears in
+the EVENTS pages. Shared originals and the original Sample banks remain available.
 
 | Action | Gesture |
 | --- | --- |
 | Select / move an event | Click / drag its body |
 | Extend the event's playback window | Drag its bottom edge |
 | Change visual width | Drag its right edge |
-| Align starts, ends or midpoints | Hold Shift while moving or extending |
+| Align starts, ends or midpoints | Hold Alt while moving or extending |
 | Edit the event | Double-click |
 | Box-select a group | Shift+left-drag on empty canvas |
 | Move a selected group | Drag any selected event body |
+| Copy an event or selected group | Hold Shift when starting a drag on a tile |
+| Cancel a move / copy drag | Escape |
 | Mute / unmute selected events | M |
 | Solo / unsolo selected events | S |
 | Copy / paste at the playhead | Ctrl+C / Ctrl+V |
@@ -46,10 +56,14 @@ of the event at its proposed position.
 Events that overlap in time occupy separate horizontal space, with a small
 invisible gutter. Collision handling moves only the event being placed and
 never changes its time. Group moves preserve all relative times and positions;
-the group shifts sideways together if it meets another event. A dashed waveform
+the group shifts sideways together if it meets another event. Shift-dragging a
+tile duplicates the selection, keeping its relative timing, spacing and playback
+settings. The originals stay in place. A click without movement creates no copies;
+one Undo removes the copied group. If there is not enough capacity for the whole
+group, nothing is copied. Alt retains optional time alignment during a move or resize. A dashed waveform
 ghost marks the original position while moving. Events may meet exactly end to end. There are no tracks,
 beats or mandatory snapping. Click an unselected event to return to a single
-selection. Selection has a bright border. Muted events and events excluded by
+selection. Selected tiles and Sources previews use the bright red highlight color by default. Muted events and events excluded by
 solo are dim; MUTE/SOLO appears on the relevant cards. Multiple events may be
 soloed together. Mute takes precedence over solo. These switches use a short
 fade, and all voice clocks continue while inaudible, so unmuting resumes their
@@ -68,6 +82,18 @@ The brighter body shows typical energy and the outer envelope preserves peaks.
 Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
 actual sample ranges instead of enlarging those bins. Source thumbnails cache
 extrema at their displayed width. None of this analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.
+
+## Mosaic colors
+
+**CFG → PALETTE** has a compact **MOSAIC** swatch strip: **HILITE** and **1–5**.
+Click one, then use the existing RGB sliders or Tapehead eyedropper to change it.
+PgUp/PgDn cycles through the main colors and these six Mosaic entries. The five
+source colors consistently color waveforms and tile borders; the highlight color
+is separate and defaults to bright red. **Save Shared** keeps all six colors in
+`palette.pal`; **Cancel** restores the palette from before editing. Older palettes
+that omit these keys use the default Mosaic colors.
+
+![Mosaic colors in the palette editor](images/mosaic-palette.png)
 
 ## Editing one event
 
@@ -162,6 +188,11 @@ processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
 - Open the other copy, set EVENT ONCE and make several audio edits. Return to Mosaic and choose NEW TILE,
   UPDATE TILE and KEEP EDITING on separate attempts; check that siblings and the
   original source bank retain their sound in every case.
+- Create a new full bank from FM while the welcome sample remains on the first
+  bank. Browse both banks in Mosaic and place a sample from each; confirm that
+  the main editor stays on its original active bank.
+- Change HILITE and the five Mosaic swatches through RGB and the Tapehead
+  eyedropper. Save Shared, reopen and check the colors.
 - Enlarge the window and check smooth event/source waveforms, clipping and playhead visibility.
 - Left-click CREATE for FM; right-click repeatedly for CDP variations of the same
   source; middle-click during and after rendering to restore that source.
@@ -176,7 +207,7 @@ processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
 
 - Click a source, drag it onto the canvas, and check its highlight and placement
   ghost. Edit one of two shared events and check the separate source previews.
-- Shift-drag a box around two events. Move the pair against another event and
+- Shift-drag a box around two events. Shift-drag the selection to copy it, then Undo. Move the pair against another event and
   confirm their relative gaps/times stay intact. Undo the group move.
 - Toggle M and S while playing pitched loops; confirm the dimming and smooth
   return at the continuing phase. Save/reopen to check mute/solo state.

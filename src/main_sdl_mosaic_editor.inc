@@ -9,7 +9,7 @@ typedef struct {
     const float *bank_data[TS_BANK_SLOT_COUNT];
     uint32_t bank_revision[TS_BANK_SLOT_COUNT], bank_rate[TS_BANK_SLOT_COUNT];
     uint8_t bank_channels[TS_BANK_SLOT_COUNT];
-    int bank_page;
+    int bank_page, main_bank, browser_initialized;
     size_t bank_frames[TS_BANK_SLOT_COUNT];
     uint64_t bank_hash[TS_BANK_SLOT_COUNT];
     TsMosaicEvent source_drag;
@@ -19,7 +19,7 @@ typedef struct {
     size_t seen_frames;
     int audio_dirty, resume_exit;
     SDL_Event exit_event;
-    int drag, drag_slot, drag_x, drag_y, drag_moved;
+    int drag, drag_slot, drag_x, drag_y, drag_moved, drag_copy;
     double drag_start, drag_duration, drag_left, drag_width;
     TsMosaicEvent clipboard;
 } MosaicController;
@@ -42,59 +42,78 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
 {
     if(c->drag_epoch==ui->mosaic->epoch && c->source_drag.source && c->source_drag.source->pins)
         --c->source_drag.source->pins;
-    c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;
+    c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;
     ui->mosaic_ghost_count=ui->mosaic_box=0;
 }
-/* Used event versions lead the palette. Original bank audio is retained as a
-   separate source when a destructive event edit forks it. No bank is mutated. */
+/* Browse stored sample banks without swapping the live instrument or routing.
+   Keep bank slots/page numbers intact; event versions have separate pages after
+   the banks. Only one bank's descriptors and hashes are cached at a time. */
 static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,MosaicController *c)
 {
     if(c->ui_epoch!=ui->mosaic->epoch) {
         mosaic_drag_end(ui,c);mosaic_select_only(ui,0);
         ui->mosaic_source_selected=-1;ui->mosaic_source_page=0;
-        memset(c->bank_data,0,sizeof(c->bank_data));c->ui_epoch=ui->mosaic->epoch;
+        memset(c->bank_data,0,sizeof(c->bank_data));c->ui_epoch=ui->mosaic->epoch;c->browser_initialized=0;
     }
-    if(c->bank_page!=ui->sample_page){memset(c->bank_data,0,sizeof(c->bank_data));c->bank_page=ui->sample_page;}
+    int banks=c->pages?(int)ts_sample_pages_count(c->pages):1;if(banks<1)banks=1;
+    int active=c->pages?(int)ts_sample_pages_active(c->pages):0;
+    if(!c->browser_initialized || c->main_bank!=active) {
+        ui->mosaic_source_page=active;c->main_bank=active;c->browser_initialized=1;
+    }
+    /* Adding sample pages must not turn an open event-version page into a bank. */
+    else if(ui->mosaic_bank_count && banks!=ui->mosaic_bank_count && ui->mosaic_source_page>=ui->mosaic_bank_count)
+        ui->mosaic_source_page+=banks-ui->mosaic_bank_count;
+    ui->mosaic_bank_count=banks;
     const TsSample *selected=ui->mosaic_source_selected>=0 && ui->mosaic_source_selected<ui->mosaic_source_count?
         ui->mosaic_sources[ui->mosaic_source_selected].sample:NULL;
     uint64_t selected_event=ui->mosaic_source_selected>=0 && ui->mosaic_source_selected<ui->mosaic_source_count?
         ui->mosaic_sources[ui->mosaic_source_selected].event:0;
-    ui->mosaic_source_count=0;int selection=-1;
+    memset(ui->mosaic_sources,0,sizeof(ui->mosaic_sources));
+    ui->mosaic_source_count=TS_BANK_SLOT_COUNT;int selection=-1;
     for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
         TsMosaicEvent *e=&ui->mosaic->events[i];if(!e->id)continue;
-        int n=0;for(;n<ui->mosaic_source_count;++n)if(ui->mosaic_sources[n].source==e->source)break;
+        int n=TS_BANK_SLOT_COUNT;for(;n<ui->mosaic_source_count;++n)if(ui->mosaic_sources[n].source==e->source)break;
         if(n<ui->mosaic_source_count)continue;
         ui->mosaic_sources[n].sample=&e->source->sample;ui->mosaic_sources[n].source=e->source;
-        ui->mosaic_sources[n].event=e->id;ui->mosaic_sources[n].bank_slot=-1;
+        ui->mosaic_sources[n].hash=e->source->hash;
+        ui->mosaic_sources[n].event=e->id;ui->mosaic_sources[n].bank_slot=ui->mosaic_sources[n].bank_page=-1;
         if(e->id==selected_event || &e->source->sample==selected)selection=n;
         ++ui->mosaic_source_count;
     }
-    for(int i=0;i<TS_BANK_SLOT_COUNT;++i) {
-        const TsSample *sample=i==instrument->selected_slot?&instrument->current:&instrument->bank[i].sample;
-        if(!sample->data || sample->frames<2)continue;
+    ui->mosaic_source_pages=banks+(ui->mosaic_source_count-TS_BANK_SLOT_COUNT+15)/16;
+    if(ui->mosaic_source_page>=ui->mosaic_source_pages)ui->mosaic_source_page=ui->mosaic_source_pages-1;
+    if(ui->mosaic_source_page<0)ui->mosaic_source_page=0;
+    int page=ui->mosaic_source_page<banks?ui->mosaic_source_page:active;
+    const TsInstrument *bank=c->pages?ts_sample_pages_page(c->pages,instrument,(size_t)page):instrument;
+    if(c->bank_page!=page){memset(c->bank_data,0,sizeof(c->bank_data));c->bank_page=page;}
+    if(bank)for(int i=0;i<TS_BANK_SLOT_COUNT;++i) {
+        const TsSample *sample=i==bank->selected_slot?&bank->current:&bank->bank[i].sample;
+        ui->mosaic_sources[i].bank_slot=i;ui->mosaic_sources[i].bank_page=page;
+        if(!sample->data || sample->frames<2){c->bank_data[i]=NULL;continue;}
         if(c->bank_data[i]!=sample->data || c->bank_revision[i]!=sample->visual_revision || c->bank_frames[i]!=sample->frames || c->bank_rate[i]!=sample->sample_rate || c->bank_channels[i]!=sample->channels) {
             c->bank_data[i]=sample->data;c->bank_revision[i]=sample->visual_revision;c->bank_frames[i]=sample->frames;
             c->bank_rate[i]=sample->sample_rate;c->bank_channels[i]=sample->channels;
             c->bank_hash[i]=ts_sample_hash(sample);
         }
-        int duplicate=0;
-        for(int n=0;n<ui->mosaic_source_count;++n)
-            if(ui->mosaic_sources[n].source && ui->mosaic_sources[n].source->hash==c->bank_hash[i]){duplicate=1;break;}
-        if(duplicate)continue;
-        int n=ui->mosaic_source_count++;
-        ui->mosaic_sources[n].sample=sample;ui->mosaic_sources[n].source=NULL;
-        ui->mosaic_sources[n].event=0;ui->mosaic_sources[n].bank_slot=i;
-        if(sample==selected)selection=n;
+        ui->mosaic_sources[i].sample=sample;ui->mosaic_sources[i].hash=c->bank_hash[i];
+        for(int n=TS_BANK_SLOT_COUNT;n<ui->mosaic_source_count;++n)
+            if(ui->mosaic_sources[n].hash==c->bank_hash[i]){ui->mosaic_sources[i].source=ui->mosaic_sources[n].source;break;}
+        if(sample==selected && !selected_event)selection=i;
     }
     ui->mosaic_source_selected=selection;
-    int pages=(ui->mosaic_source_count+15)/16;
-    if(ui->mosaic_source_page>=pages)ui->mosaic_source_page=pages>0?pages-1:0;
+    ui->mosaic_source_offset=ui->mosaic_source_page<banks?0:TS_BANK_SLOT_COUNT+(ui->mosaic_source_page-banks)*16;
 }
 static void mosaic_source_select_event(TsUiState *ui,const TsMosaicEvent *e)
 {
-    for(int n=0;n<ui->mosaic_source_count;++n)if(ui->mosaic_sources[n].source==e->source) {
-        ui->mosaic_source_selected=n;ui->mosaic_source_page=n/16;return;
-    }
+    /* Prefer the current bank if it contains this source; otherwise show the
+       placed event's version, without changing which Sample bank is active. */
+    for(int n=ui->mosaic_source_page<ui->mosaic_bank_count?0:TS_BANK_SLOT_COUNT;n<ui->mosaic_source_count;++n)
+        if(ui->mosaic_sources[n].source==e->source) {
+            ui->mosaic_source_selected=n;
+            if(n>=TS_BANK_SLOT_COUNT)ui->mosaic_source_page=ui->mosaic_bank_count+(n-TS_BANK_SLOT_COUNT)/16;
+            ui->mosaic_source_offset=n<TS_BANK_SLOT_COUNT?0:TS_BANK_SLOT_COUNT+((n-TS_BANK_SLOT_COUNT)/16)*16;
+            return;
+        }
 }
 
 static int mosaic_document_index(MosaicController *c,uint64_t id)

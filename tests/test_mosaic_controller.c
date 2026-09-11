@@ -68,6 +68,7 @@ static void key(SDL_Window *window,SDL_Keycode key,SDL_Keymod mod)
 }
 static void wait_render(void);
 #include "test_mosaic_native.inc"
+#include "test_mosaic_arranging.inc"
 static void test_canvas_feedback(SDL_Window *window)
 {
     TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);ui.mosaic=audio.mosaic=scene;
@@ -76,7 +77,7 @@ static void test_canvas_feedback(SDL_Window *window)
     TsMosaicEvent *b=ts_mosaic_add(scene,source,1,130);b->duration=3;
     TsMosaicEvent *obstacle=ts_mosaic_add(scene,source,1,250);obstacle->duration=3;
     ui.mosaic_open=1;ui.mosaic_scale=24;ui.mosaic_hscale=1;ui.mosaic_scroll=ui.mosaic_xscroll=0;
-    mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_source_count==1);
+    mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_source_count==17 && ui.mosaic_source_pages==2);
     /* Source click, waveform preview and drag cancellation keep the pin safe. */
     click(window,20,85,1);assert(ui.mosaic_source_selected==0 && source->pins==1);
     motion(window,530,190);assert(ui.mosaic_ghost_count==1 && ui.mosaic_ghosts[0].source==source);
@@ -115,8 +116,8 @@ static void test_canvas_feedback(SDL_Window *window)
     assert(ui.mosaic_edit_choice && a->source==source && b->source==source);
     key(window,SDLK_u,KMOD_NONE);assert(!ui.mosaic_edit_choice);
     assert(mosaic_leave(0,&audio,&ui,&instrument,&mosaic));mosaic_poll(0,&ui,&instrument,&mosaic);
-    assert(ui.mosaic_source_count==2 && ui.mosaic_sources[0].source==a->source);
-    assert(ui.mosaic_sources[1].source==source && b->source==source);
+    assert(ui.mosaic_source_count==18 && ui.mosaic_sources[16].source==a->source);
+    assert(ui.mosaic_sources[17].source==source && b->source==source);
     double peaks=0,original=0;for(int i=0;i<TS_MOSAIC_PEAKS;++i){peaks+=a->source->peaks[i];original+=source->peaks[i];}
     assert(peaks<original*.101 && peaks>original*.099);
     /* Main-bank overlays must not touch any Mosaic pixel, even with routed,
@@ -126,7 +127,11 @@ static void test_canvas_feedback(SDL_Window *window)
     ts_ui_render(&fb,&ui,&instrument);copy=fb;ts_overlay_tile_states(&fb,&ui,&instrument);
     assert(memcmp(&fb,&copy,sizeof(fb))==0);
     mosaic_select_only(&ui,a->id);ts_ui_render(&fb,&ui,&instrument);uint32_t border=fb.pixels[80*640+171];
-    mosaic_select_only(&ui,0);ts_ui_render(&fb,&ui,&instrument);assert(border!=fb.pixels[80*640+171]);
+    assert(border==0xffff3131u);
+    TsPalette palette=ui.palette;
+    ui.palette.colors[TS_PALETTE_MOSAIC_HIGHLIGHT]=0xff01fefeu;
+    ts_ui_render(&fb,&ui,&instrument);assert(fb.pixels[80*640+171]==0xff01fefeu);
+    ui.palette=palette;mosaic_select_only(&ui,0);ts_ui_render(&fb,&ui,&instrument);assert(border!=fb.pixels[80*640+171]);
     mosaic_native_check(&instrument,NULL);
     /* Warp waits until gesture completion; NEW TILE leaves the owner and all
        siblings intact and gives the edited document a fresh event ID. */
@@ -173,7 +178,7 @@ static void test_canvas_feedback(SDL_Window *window)
     assert(!ui.mosaic_edit_choice && mosaic.active==variant->id && ts_sample_hash(&instrument.current)==smear && variant->source==warped);
     assert(ts_instrument_apply_smear(&instrument,.8f,error,sizeof(error)));
     assert(mosaic_commit(0,&ui,&instrument,&mosaic) && !ui.mosaic_edit_choice);
-    assert(variant->source==warped);key(window,SDLK_m,KMOD_CTRL);assert(ui.mosaic_edit_choice);
+    assert(variant->source==warped);key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_edit_choice);
     key(window,SDLK_u,KMOD_NONE);
     assert(!ui.mosaic_edit_choice && !mosaic.active && ui.mosaic_open && variant->source!=warped && a->source==original_source && b->source==source && scene->playing);
     /* Undoing every working edit removes the exit question. */
@@ -193,7 +198,7 @@ static void test_canvas_feedback(SDL_Window *window)
         uint64_t root=1;for(;;++root){TsFmSeedSequence probe;ts_fm_seed_sequence_init(&probe,root);if(ts_fm_seed_sequence_next(&probe)%12==1)break;}
         ts_fm_seed_sequence_init(&portal.create_dice,root);create.button.button=SDL_BUTTON_RIGHT;
         assert(portal_create_event(&create,100,214,0,&audio,&ui,&instrument,&portal,&transform) && portal.worker);
-        key(window,SDLK_m,KMOD_CTRL);assert(ui.mosaic_edit_choice);key(window,SDLK_u,KMOD_NONE);
+        key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_edit_choice);key(window,SDLK_u,KMOD_NONE);
         assert(!mosaic.active && variant->source->hash==fm);
         assert(portal.source_event_revision==variant->revision);
         assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,b->id));wait_render();
@@ -345,8 +350,11 @@ int main(void)
     test_async_ownership(aid,bid,original);
     test_record_file(window);
     test_canvas_gestures(window);
+    test_mosaic_copy_drag(window);
+    test_mosaic_external_banks(window);
     test_canvas_feedback(window);
     test_fallout_without_sister();
+    test_mosaic_palette_controls();
 
     /* Route a single render to the direct bus and Sister input without
        advancing its clock twice. Different left/right data stays stereo. */

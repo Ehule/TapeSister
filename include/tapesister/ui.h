@@ -55,6 +55,11 @@ enum { TS_PALETTE_SLIDER_X = 20, TS_PALETTE_SLIDER_Y = 102,
        TS_PALETTE_CONTRAST_X = 250, TS_PALETTE_CONTRAST_W = 170,
        TS_PALETTE_ACTION_Y = 174 };
 enum { TS_CONFIG_ACTION_Y = 196 };
+enum { TS_PALETTE_MOSAIC_Y = 153, TS_PALETTE_MOSAIC_H = 16,
+       TS_PALETTE_MOSAIC_HIGHLIGHT_X = 72, TS_PALETTE_MOSAIC_HIGHLIGHT_W = 64,
+       TS_PALETTE_MOSAIC_TILE_X = 145, TS_PALETTE_MOSAIC_TILE_W = 46,
+       TS_PALETTE_MOSAIC_TILE_STEP = 52 };
+
 enum { TS_PALETTE_TAPEHEAD_X = 432, TS_PALETTE_TAPEHEAD_Y = 171,
        TS_PALETTE_TAPEHEAD_W = 7, TS_PALETTE_TAPEHEAD_H = 8,
        TS_PALETTE_TAPEHEAD_STEP_X = 9 };
@@ -423,9 +428,11 @@ typedef struct {
         const TsSample *sample;
         TsMosaicSource *source;
         uint64_t event;
-        int bank_slot;
+        int bank_slot, bank_page;
+        uint64_t hash;
     } mosaic_sources[TS_MOSAIC_EVENTS + TS_BANK_SLOT_COUNT];
     int mosaic_source_count, mosaic_source_page, mosaic_source_selected;
+    int mosaic_bank_count, mosaic_source_pages, mosaic_source_offset;
     double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;
     uint32_t staged_notes;
     uint32_t overlay_until_ms;

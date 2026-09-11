@@ -85,15 +85,15 @@ static void mosaic_detail_sources(TsFramebuffer *fb,const TsUiState *ui)
     detail_background(d,fb);
     double sx=(double)d->width/93,sy=(double)d->height/266;
     for(int i=0;i<16;++i) {
-        int n=ui->mosaic_source_page*16+i;if(n>=ui->mosaic_source_count)break;
+        int n=ui->mosaic_source_offset+i;if(n>=ui->mosaic_source_count)break;
         const TsSample *s=ui->mosaic_sources[n].sample;if(!s || !s->data)continue;
         int x=(i%2)*49,y=(i/2)*34,selected=n==ui->mosaic_source_selected;
         uint32_t fill=selected?RGB(51,47,59):RGB(40,36,44);
-        uint32_t color=ui->mosaic_sources[n].source?mosaic_color(ui->mosaic_sources[n].source->hash):RGB(135,171,174);
+        uint32_t color=mosaic_color(ui->mosaic_sources[n].hash);
         int first=(int)((x+4)*sx),last=(int)((x+39)*sx);
         int top=(int)((y+15)*sy),bottom=(int)((y+26)*sy);
         int width=last-first,bins=width<TS_WAVEFORM_CACHE_MAX_COLUMNS?width:TS_WAVEFORM_CACHE_MAX_COLUMNS;
-        TsWaveformRequest request={.sample=s,.first=0,.last=s->frames,.width=bins,.revision=(ui->mosaic?ui->mosaic->epoch:0)^(ui->mosaic_sources[n].source?ui->mosaic_sources[n].source->hash:0)};
+        TsWaveformRequest request={.sample=s,.first=0,.last=s->frames,.width=bins,.revision=(ui->mosaic?ui->mosaic->epoch:0)^ui->mosaic_sources[n].hash};
         if(!ts_waveform_cache_prepare(&cache[i],&request))continue;
         for(int py=top;py<bottom;++py)for(int px=first;px<last;++px)d->pixels[(size_t)py*d->width+px]=fill;
         for(int px=first;px<last;++px) {

@@ -1708,6 +1708,14 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
     }
 }
 
+static int palette_mosaic_x(int slot)
+{
+    return slot?TS_PALETTE_MOSAIC_TILE_X+(slot-1)*TS_PALETTE_MOSAIC_TILE_STEP:TS_PALETTE_MOSAIC_HIGHLIGHT_X;
+}
+static int palette_mosaic_width(int slot)
+{
+    return slot?TS_PALETTE_MOSAIC_TILE_W:TS_PALETTE_MOSAIC_HIGHLIGHT_W;
+}
 static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
 {
     static const char *const short_names[TS_PALETTE_TAPESISTER_COLOR_COUNT] = {
@@ -1741,7 +1749,7 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
              color == ui->palette_entry ? PAL_BLOCK_TEXT : RGB(222, 218, 214), 1);
     }
     snprintf(value, sizeof(value), "%s  #%06X",
-             short_names[ui->palette_entry],
+             ui->palette_entry<TS_PALETTE_TAPESISTER_COLOR_COUNT?short_names[ui->palette_entry]:ts_palette_color_name((TsPaletteColor)ui->palette_entry),
              (unsigned)(selected & 0xffffffu));
     /* The palette now has three swatch rows. Keep the selected-color readout
        in the free lower-middle lane rather than painting across row three. */
@@ -1781,6 +1789,15 @@ static void palette_render(TsFramebuffer *fb, const TsUiState *ui)
              x >= 538 && x < 578 ? PAL_BLOCK_TEXT : PAL_NOTE);
     }
     text(fb, 541, 121, "0.25S", PAL_EFFECT, 1);
+    text(fb,20,157,"MOSAIC",PAL_TUNING,1);
+    for(int slot=0;slot<TS_PALETTE_MOSAIC_COLOR_COUNT;++slot) {
+        int color=TS_PALETTE_MOSAIC_HIGHLIGHT+slot,x=palette_mosaic_x(slot),w=palette_mosaic_width(slot);
+        int active=color==ui->palette_entry;
+        frame(fb,x,TS_PALETTE_MOSAIC_Y,w,TS_PALETTE_MOSAIC_H,active?PAL_BLOCK:RGB(18,18,18),active?PAL_MOUSE:RGB(70,61,75));
+        rect(fb,x+3,TS_PALETTE_MOSAIC_Y+3,11,10,ui->palette.colors[color]);
+        char label[12];if(slot)snprintf(label,sizeof(label),"%d",slot);else snprintf(label,sizeof(label),"HILITE");
+        text(fb,x+18,TS_PALETTE_MOSAIC_Y+5,label,active?PAL_BLOCK_TEXT:RGB(222,218,214),1);
+    }
     text(fb, TS_PALETTE_TAPEHEAD_X, 159, "TAPEHEAD EYEDROPPER", PAL_TUNING, 1);
     for (int swatch = 0; swatch < ts_palette_tapehead_swatch_count(); ++swatch) {
         TsPaletteColor source = ts_palette_tapehead_swatch_color(swatch);
@@ -1976,6 +1993,9 @@ int ts_ui_palette_entry_from_point(int x, int y)
         if (x >= left && x < left + TS_PALETTE_SWATCH_W &&
             y >= top && y < top + TS_PALETTE_SWATCH_H) return color;
     }
+    if(y>=TS_PALETTE_MOSAIC_Y && y<TS_PALETTE_MOSAIC_Y+TS_PALETTE_MOSAIC_H)
+        for(int slot=0;slot<TS_PALETTE_MOSAIC_COLOR_COUNT;++slot)
+            if(x>=palette_mosaic_x(slot) && x<palette_mosaic_x(slot)+palette_mosaic_width(slot))return TS_PALETTE_MOSAIC_HIGHLIGHT+slot;
     return -1;
 }
 
@@ -2490,7 +2510,9 @@ int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount)
 
 int ts_ui_palette_cycle_entry(int entry, int amount)
 {
-    return cycle_index(entry, amount, TS_PALETTE_TAPESISTER_COLOR_COUNT);
+    int index=entry>=TS_PALETTE_MOSAIC_HIGHLIGHT?TS_PALETTE_TAPESISTER_COLOR_COUNT+entry-TS_PALETTE_MOSAIC_HIGHLIGHT:entry;
+    index=cycle_index(index,amount,TS_PALETTE_TAPESISTER_COLOR_COUNT+TS_PALETTE_MOSAIC_COLOR_COUNT);
+    return index<TS_PALETTE_TAPESISTER_COLOR_COUNT?index:TS_PALETTE_MOSAIC_HIGHLIGHT+index-TS_PALETTE_TAPESISTER_COLOR_COUNT;
 }
 
 int ts_ui_palette_cycle_channel(int channel, int amount)
