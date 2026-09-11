@@ -1034,6 +1034,10 @@ The remaining candidates and exclusions are recorded in
 [the audit](CDP_SIMPLE_PROCESS_AUDIT.md). Reusable multi-process chains are now available as described above; the
 individual additions can also be saved as single-process recipes or pins.
 
+The subsequent [CDP expansion audit](CDP_REMAINING_PROCESS_AUDIT.md) inventories
+the wider suite and records native stereo and new-process candidates. Those
+probes do not change the current catalog or stereo allowlist.
+
 Structure provides Keep Segment, Keep Tail, Remove Segment, Segment Repeats,
 Advancing Loops, Loop to Duration, Loop Count, and Random Chunks. Position controls
 are seconds relative to the current Portal source. Loop length/advance and splice
