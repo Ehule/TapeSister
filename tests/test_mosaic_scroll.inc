@@ -14,38 +14,42 @@ static void test_mosaic_scroll_waveforms(void)
         int width=sizes[pass][0],height=sizes[pass][1];
         int native_height=376*height/400-66*height/400;
         double rate=24.0*native_height/310;
-        /* The transient enters a viewport-relative row between these two tiny
-           scroll steps. Its event-relative shape must change continuously. */
-        sample.data[(size_t)(121.5*sample.sample_rate/rate)]=1;
+        /* A sparse transient makes width-morphing visible. A scroll must keep
+           the same raster profile after accounting for whole-pixel movement. */
+        sample.data[(size_t)(121.5*sample.sample_rate/rate)]=1;sample.data[2141]=.8f;
         char error[160];TsMosaicSource *source=ts_mosaic_source(view.mosaic,&sample,error,sizeof(error));assert(source);
-        TsMosaicEvent *event=ts_mosaic_add(view.mosaic,source,0,20);assert(event);
+        TsMosaicEvent *event=ts_mosaic_add(view.mosaic,source,.137,20);assert(event);
         event->width=100;event->duration=20;event->looping=0;
-        TsUiWaveformDetail detail[2]={0};uint32_t *before=NULL;
-        for(int step=0;step<2;++step) {
-            view.mosaic_scroll=(step?.51:.49)/rate;
-            ts_ui_waveform_details_begin(detail,width,height);ts_ui_render(&fb,&view,&doc);
-            assert(ts_ui_waveform_detail_finish(&detail[0],&fb));
-            TsUiWaveformDetail *d=&detail[0];
-            if(!step) {
-                before=malloc((size_t)d->width*sizeof(*before));assert(before);
-                memcpy(before,d->pixels+120*d->width,(size_t)d->width*sizeof(*before));
-            } else {
-                unsigned difference=0;
-                for(int x=0;x<d->width;++x) {
-                    uint32_t a=before[x],b=d->pixels[120*d->width+x];
-                    for(int shift=0;shift<=16;shift+=8)
-                        difference+=(unsigned)abs((int)((a>>shift)&255)-(int)((b>>shift)&255));
+        TsUiWaveformDetail detail[2]={0};uint32_t *reference=NULL;
+        for(int mode=0;mode<2;++mode) {
+            event->looping=mode;
+            if(mode){event->first=19;event->last=5157;}
+            unsigned changed=0;Uint64 started=SDL_GetPerformanceCounter();
+            for(int step=0;step<40;++step) {
+                double travel=step*.173; /* Includes many frames between raster steps. */
+                view.mosaic_scroll=event->start+(100+travel)/rate;
+                ts_ui_waveform_details_begin(detail,width,height);ts_ui_render(&fb,&view,&doc);
+                assert(ts_ui_waveform_detail_finish(&detail[0],&fb));
+                TsUiWaveformDetail *d=&detail[0];
+                if(!step) {
+                    reference=malloc((size_t)d->width*d->height*sizeof(*reference));assert(reference);
+                    memcpy(reference,d->pixels,(size_t)d->width*d->height*sizeof(*reference));
+                } else {
+                    int shift=(int)floor(travel+.5);
+                    for(int y=4;y<210;++y)for(int x=25*d->width/480;x<115*d->width/480;++x)
+                        changed+=reference[(size_t)(y+shift)*d->width+x]!=d->pixels[(size_t)y*d->width+x];
                 }
-                printf("Mosaic scroll %dx%d: subpixel row difference=%u\n",width,height,difference);
-                assert(difference<24*255); /* Much less than one full transient flashing on/off. */
             }
+            printf("Mosaic scroll %dx%d %s: translated profile changes=%u, render_ms=%.3f\n",width,height,mode?"loop":"one-shot",changed,
+                1000.0*(SDL_GetPerformanceCounter()-started)/SDL_GetPerformanceFrequency()/40);
+            if(!getenv("TS_MOSAIC_SCROLL_COMPARE"))assert(changed==0);
+            free(reference);
         }
-        free(before);
         /* A constant signal exposes a waveform jumping into a clipped header
            or footer. These margins belong to the tile, even while offscreen. */
         for(size_t i=0;i<sample.frames;++i)sample.data[i]=.6f;
         TsMosaicSource *constant=ts_mosaic_source(view.mosaic,&sample,error,sizeof(error));assert(constant);
-        event->source=constant;event->first=0;event->last=sample.frames;event->looping=1;
+        event->source=constant;event->first=0;event->last=sample.frames;event->looping=1;event->start=0;
         for(int edge=0;edge<2;++edge) {
             view.mosaic_scroll=edge?0:2.0/24;
             event->duration=edge?(381.0-66)/24:20;
@@ -61,5 +65,5 @@ static void test_mosaic_scroll_waveforms(void)
         ts_sample_free(&sample);ts_mosaic_free(view.mosaic);view.mosaic=NULL;
     }
     ts_instrument_free(&doc);
-    puts("Mosaic scrolling continuity and clipped content margins passed");
+    puts("Mosaic scrolling translation and clipped content margins passed");
 }

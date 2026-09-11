@@ -29,9 +29,9 @@ static void mosaic_detail_envelope(const TsMosaicSource *s,size_t first,size_t l
         *rms=(float)sqrt(energy/(last-first));
     } else mosaic_envelope(s,first,last,peak,rms);
 }
-/* Sample intervals belong to the event, not the moving viewport. Interpolate
-   adjacent fixed rows while scrolling so a peak cannot suddenly enter/leave a
-   freshly sliced screen row. Only the visible rows are queried, on the UI thread. */
+/* Sample intervals belong to the event, not the moving viewport. Draw the same
+   rows at whole native-pixel offsets: interpolating their widths makes narrow
+   peaks grow and shrink during scrolling. Only visible rows are queried. */
 static void mosaic_detail_event_row(const TsMosaicEvent *e,int64_t row,double rate,float *peak,float *rms)
 {
     double duration=(double)(e->last-e->first)/e->source->sample.sample_rate;
@@ -74,23 +74,19 @@ static void mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_so
         int py=(int)((first-66)*sy),stop=(int)((last-66)*sy);
         double center=(x+w/2-151+.5)*sx,half=fmax(0,(w-14)*.43)*sx;
         double duration=(double)(e->last-e->first)/e->source->sample.sample_rate;
-        double rate=scale*sy,position=(ui->mosaic_scroll-e->start)*rate+py;
-        int64_t row=(int64_t)floor(position);
-        float fraction=(float)(position-floor(position)),peak0,rms0;
-        mosaic_detail_event_row(e,row,rate,&peak0,&rms0);
+        double rate=scale*sy;
+        int64_t origin=(int64_t)floor((ui->mosaic_scroll-e->start)*rate+.5);
         for(;py<stop;++py) {
             for(int px=a;px<b;++px)d->pixels[(size_t)py*d->width+px]=fill;
-            float peak1,rms1;mosaic_detail_event_row(e,++row,rate,&peak1,&rms1);
-            float peak=peak0+(peak1-peak0)*fraction,rms=rms0+(rms1-rms0)*fraction;
-            peak0=peak1;rms0=rms1;
-            if(!e->looping && (ui->mosaic_scroll-e->start)+py/rate>=duration)continue;
+            double elapsed=(double)(origin+py)/rate;
+            if(!e->looping && elapsed>=duration)continue;
+            float peak,rms;mosaic_detail_event_row(e,origin+py,rate,&peak,&rms);
             double amplitude=fminf(1,peak)*half,body=fminf(1,rms)*half;
             mosaic_detail_span(d,py,fmax(a,center-amplitude-.5),fmin(b,center+amplitude+.5),outer);
             mosaic_detail_span(d,py,fmax(a,center-body-.5),fmin(b,center+body+.5),color);
-            /* Repeat separators remain one logical pixel, like the other UI. */
-            int ly=66+(int)((2LL*py+1)*310/(2LL*d->height));
-            double logical_phase=fmod(fmax(0,ui->mosaic_scroll+(ly-66)/scale-e->start),duration);
-            if(e->looping && 1/scale<duration && ly>first && logical_phase<1/scale)
+            /* Keep repeat dividers on that same raster, one logical pixel thick. */
+            double phase=fmod(fmax(0,elapsed),duration);
+            if(e->looping && 1/scale<duration && py>(first-66)*sy && phase<1/scale)
                 mosaic_detail_span(d,py,fmax(a,(x+4-151)*sx),fmin(b,(x+w-4-151)*sx),dim?RGB(35,34,41):RGB(72,65,77));
         }
     }

@@ -693,8 +693,9 @@ projects without Mosaic open with an empty arrangement. Capacity is 128 events,
 with up to five voices each; practical processing capacity depends on the computer.
 
 The waveform display uses smooth edges and detailed peak/energy previews at the
-window's actual resolution. Scrolling blends between fixed event-relative sample
-intervals so waveform edges stay stable as the view moves. The five source colors and separate selection highlight
+window's actual resolution. Scrolling moves the fixed waveform drawing in single
+physical-pixel steps, preserving its shape as the view moves. The five source colors
+and separate selection highlight
 are editable in [CFG → PALETTE](#palette-and-mosaic-colors).
 See the [dedicated Mosaic guide](MOSAIC.md) for additional details and listening checks.
 
