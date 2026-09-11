@@ -12,6 +12,7 @@
 #include "tapesister/performance_recorder.h"
 #include "tapesister/recipe.h"
 #include "tapesister/sample.h"
+#include "tapesister/mosaic.h"
 #include "tapesister/transform.h"
 #include "tapesister/dsp_recipe.h"
 #include "tapesister/exchange.h"
@@ -410,6 +411,10 @@ typedef struct {
     int master_output_dragging;
     size_t capture_recorded_frames;
     size_t capture_capacity_frames;
+    TsMosaic *mosaic;
+    uint64_t mosaic_selected, mosaic_editing;
+    int mosaic_open, mosaic_playing;
+    double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;
     uint32_t staged_notes;
     uint32_t overlay_until_ms;
     int workbench_loop_active;

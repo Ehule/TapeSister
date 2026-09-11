@@ -15,7 +15,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(miniaudio)
 
 add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
-             src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
+             src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c
              src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
@@ -422,3 +422,17 @@ add_test(NAME tapesister_waveform_cache_tests COMMAND tapesister_waveform_cache_
 add_executable(tapesister_render_efficiency_tests tests/test_render_efficiency.c)
 target_link_libraries(tapesister_render_efficiency_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_render_efficiency_tests COMMAND tapesister_render_efficiency_tests)
+
+add_executable(tapesister_mosaic_tests tests/test_mosaic.c)
+target_link_libraries(tapesister_mosaic_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_mosaic_tests COMMAND tapesister_mosaic_tests)
+if(TAPESISTER_BUILD_SDL)
+  add_executable(tapesister_mosaic_controller_tests tests/test_mosaic_controller.c
+                 src/tape_link.c src/tape_companion.c src/ts_startup_diag.c src/ts_midi_input.c)
+  target_include_directories(tapesister_mosaic_controller_tests PRIVATE third_party)
+  target_link_libraries(tapesister_mosaic_controller_tests PRIVATE tapesister_core SDL2::SDL2)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(tapesister_mosaic_controller_tests PRIVATE rt)
+  endif()
+  add_test(NAME tapesister_mosaic_controller_tests COMMAND tapesister_mosaic_controller_tests)
+endif()

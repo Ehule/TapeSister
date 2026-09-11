@@ -17,6 +17,8 @@ Its basic creative loop is simple:
   recording, routing, saving, and performance techniques.
 - [Quick Reference](docs/QUICK_REFERENCE.md) — keys, mouse gestures, control ranges,
   capture modes, signal placement, and file types.
+- [Mosaic](docs/MOSAIC.md) — free event placement, independent pitched loops,
+  event editing, shared effects routing and REC FILE.
 - [CDP Portal](docs/CDP_PORTAL.md) — explore processes with source/result waveforms,
   save reusable chains, shape named macros, explore four starter chains, and
   build a personal process-pin bank. Thirteen verified processes support stereo.

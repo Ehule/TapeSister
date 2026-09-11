@@ -620,6 +620,8 @@ static uint64_t paged_project_state_hash(const TsSamplePages *pages,
                                          const TsSisterRuntime *sister)
 {
     uint64_t hash = 1469598103934665603ull;
+    uint64_t mosaic_hash = ts_mosaic_hash(pages ? pages->mosaic : NULL);
+    state_hash_bytes(&hash, &mosaic_hash, sizeof(mosaic_hash));
     size_t count = ts_sample_pages_count(pages);
     size_t active = ts_sample_pages_active(pages);
     state_hash_bytes(&hash, &count, sizeof(count));
@@ -755,6 +757,7 @@ typedef struct {
     size_t attack_frames;
     TsNoteBank notes;
     TsPerformanceBank performance;
+    TsMosaic *mosaic;
     TsPerformanceBank tile_launchers;
     TsStereoFrame tile_launcher_mix;
     int tile_launcher_active;
@@ -2277,7 +2280,8 @@ static void unlock_edit(SDL_AudioDeviceID device, AudioState *audio,
 static int native_sister_edit_can_render_unlocked(const AudioState *audio)
 {
     return audio != NULL &&
-           ts_sister_runtime_tiles_insert_active(&audio->sister) &&
+           (ts_sister_runtime_tiles_insert_active(&audio->sister) ||
+            (audio->mosaic && audio->mosaic->playing)) &&
            !audio->playing && ts_note_bank_count(&audio->notes) == 0 &&
            ts_performance_count(&audio->performance) == 0;
 }
@@ -3682,6 +3686,9 @@ static int load_instrument(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
                      loaded.name, loaded.has_tuning ? " + TUNING" : "");
         } else snprintf(ui->status, sizeof(ui->status), "TSP LOAD FAILED: %.131s", error);
         return ok;
+    }
+    if(recipe && ui->mosaic_editing) {
+        snprintf(ui->status,sizeof(ui->status),"RETURN TO MOSAIC BEFORE OPENING A PROJECT");return 0;
     }
     if (recipe && record_bank_active) {
         snprintf(ui->status, sizeof(ui->status),
@@ -8357,6 +8364,7 @@ static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
 
 static int main_waveform_detail_allowed(const TsUiState *ui)
 {
+    if(ui->mosaic_open && !ui->portal.open)return 0;
     return ui->portal.open ? !ui->portal.manage_open && !ui->portal.macro_edit :
         !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open;
 }
@@ -11714,7 +11722,9 @@ static void keep_record_bank(SDL_AudioDeviceID output_device,
                  copied, first_page, last_page);
 }
 
+#include "main_sdl_mosaic_editor.inc"
 #include "main_sdl_portal.inc"
+#include "main_sdl_mosaic.inc"
 
 /* One session-wide release policy. Explicit Shift+click latches and tile
    launches remain independent; disabling sustain preserves physically held keys. */
@@ -11846,6 +11856,7 @@ int main(int argc, char **argv)
     TransformController transform;
     ImportController import_controller;
     PortalController portal;
+    MosaicController mosaic = {0};
     PendingFileOperation pending_file = {0};
     size_t clipboard_origin_first = 0;
     size_t clipboard_source_frames = 0;
@@ -11908,6 +11919,10 @@ int main(int argc, char **argv)
     import_controller_init(&import_controller);
     ts_ui_init(&ui);
     portal_init(&portal,&ui.portal);
+    ui.mosaic = audio.mosaic = sample_pages.mosaic = ts_mosaic_create();
+    if(!ui.mosaic) {fprintf(stderr,"Mosaic: out of memory\n");return 1;}
+    ui.mosaic_scale=24.0;ui.mosaic_hscale=1.0;
+    portal.mosaic=&mosaic;mosaic.pages=&sample_pages;
     portal.create_seeds=&fm_seed_sequence;
     portal.pages=&sample_pages;portal.external_input=&external_input;
     ui.sample_page = 0;
@@ -12433,6 +12448,13 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+            mosaic_commit(device,&ui,&instrument,&mosaic);
+            if (event_id == SDL_GetWindowID(window) &&
+                mosaic_event(&event,window,device,&audio,&ui,&instrument,&mosaic,
+                             &portal,&sister_window,&transform,obtained.freq)) continue;
+            if((event.type==SDL_QUIT || (event.type==SDL_WINDOWEVENT &&
+                event.window.event==SDL_WINDOWEVENT_CLOSE && event_id==SDL_GetWindowID(window))) && mosaic.active)
+                if(!mosaic_leave(device,&audio,&ui,&instrument,&mosaic))continue;
             if (keyboard_sustain_event(&event,window,device,&audio,&ui,&sister_window,&instrument))continue;
             if (event.type == SDL_KEYDOWN && !event.key.repeat) {
                 SDL_Keycode global_key = event.key.keysym.sym;
@@ -15006,11 +15028,11 @@ int main(int argc, char **argv)
                         cancel_browser_with_import(
                             device, &audio, &ui, &import_controller);
                     }
-                } else if (y >= 4 && y < 28 && x >= 214 && x < 274) {
+                } else if (y >= 4 && y < 28 && x >= 214 && x < 260) {
                     begin_config(&ui);
-                } else if (y >= 4 && y < 28 && x >= 278 && x < 344) {
+                } else if (y >= 4 && y < 28 && x >= 264 && x < 296) {
                     begin_exchange_send(&ui, &instrument, &sample_pages);
-                } else if (y >= 4 && y < 28 && x >= 348 && x < 398) {
+                } else if (y >= 4 && y < 28 && x >= 360 && x < 398) {
                     browser_open(&ui, ui.show_ingredients ?
                                  TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
                 } else if (y >= 4 && y < 28 && x >= 402 && x < 460) {
@@ -16096,6 +16118,7 @@ int main(int argc, char **argv)
                      sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
         }
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
+        mosaic_commit(device,&ui,&instrument,&mosaic);
         portal_poll(device,&audio,&ui,&instrument,&portal);
         if (record_bank_active)
             sync_external_capture_ui(device, input_device, &external_input, &ui);
@@ -16106,6 +16129,8 @@ int main(int argc, char **argv)
             (Sint32)(SDL_GetTicks() - ui.overlay_until_ms) >= 0)
             ui.overlay[0] = '\0';
         refresh_workbench_loop(device, &audio, &ui, &instrument);
+        mosaic_poll(device,&ui,&instrument,&mosaic);
+        if(ui_dialog_open(&ui) && !ui.portal.open)ui.mosaic_open=0;
         if (device) SDL_LockAudioDevice(device);
         {
             const TsNoteVoice *voice = ts_note_bank_display_voice(&audio.notes);
@@ -16343,6 +16368,8 @@ int main(int argc, char **argv)
     audio.live_link_buffer = NULL;
     if (device) SDL_CloseAudioDevice(device);
     portal_free(&portal);
+    mosaic_controller_free(&mosaic);
+    ts_mosaic_free(ui.mosaic);
     ts_performance_free(&audio.performance);
     ts_performance_free(&audio.tile_launchers);
     ts_sister_runtime_free(&audio.sister);

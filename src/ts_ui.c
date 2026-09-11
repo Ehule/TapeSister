@@ -2840,11 +2840,13 @@ int ts_ui_foreground_panel_open(const TsUiState *ui)
 }
 
 #include "ts_cdp_portal_ui.inc"
+#include "ts_mosaic_ui.inc"
 
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
     render_palette = &ui->palette;
     if(ui->portal.open) { portal_render(fb,ui); return; }
+    if(ui->mosaic_open && ui->mosaic) {mosaic_render(fb,ui,instrument);return;}
     const TsTuning *display_tuning = &ui->tune_reference;
     int showing_bank = ui->bank_view_slot >= 0 && ui->bank_view_slot < TS_BANK_SLOT_COUNT;
     int showing_parent = !showing_bank && ui->audition_source == TS_AUDITION_PARENT;
@@ -2913,9 +2915,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                         TS_UI_MASTER_METER_X, TS_UI_MASTER_METER_Y);
     rect(fb, 576, 12, 3, 9,
          ui->midi_activity_until_ms != 0u ? PAL_TUNING : RGB(22, 22, 22));
-    button(fb, 214, 4, 60, "CONFIG", ui->config_open);
-    button(fb, 278, 4, 66, "FT2 LINK", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
-    button(fb, 348, 4, 50, "SAVE", 0);
+    button(fb, 214, 4, 46, "CFG", ui->config_open);
+    button(fb, 264, 4, 32, "FT2", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
+    button(fb, 300, 4, 56, "MOSAIC", ui->mosaic_editing != 0);
+    button(fb, 360, 4, 38, "SAVE", 0);
     button(fb, 402, 4, 58, "EXPORT", 0);
     button(fb, 464, 4, 28, "CDP", 0);
 
@@ -2926,6 +2929,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                           instrument->selected_slot + 1;
         snprintf(tile, sizeof(tile), "TILE %02d %c %.24s", tile_number,
                  sample->channels == 2u ? 'S' : 'M', sample->name);
+        if(ui->mosaic_editing)snprintf(tile,sizeof(tile),"EVENT %llu  %.24s",(unsigned long long)ui->mosaic_editing,sample->name);
         if (showing_bank && shown_slot->occupied) {
             snprintf(info, sizeof(info), "BANK %02d %s  %.2F SEC",
                      ui->bank_view_slot + 1,
@@ -3557,7 +3561,10 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING?"STOP FILE":"REC FILE",
             ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING && ui->text_cursor_visible);
         mini_button(fb,460,313,72,ui->keyboard_hold?"HOLD ON":"HOLD",ui->keyboard_hold);
-        mini_button(fb,540,313,90,ui->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",ui->keyboard_sustain);
+        if(ui->mosaic_editing) {
+            const TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_editing);
+            mini_button(fb,540,313,90,e && e->looping?"EVENT LOOP":"EVENT ONCE",e && e->looping);
+        } else mini_button(fb,540,313,90,ui->keyboard_sustain?"SUSTAIN ON":"SUSTAIN OFF",ui->keyboard_sustain);
         TsKeyboardLayout layout;
         int keyboard_base_note = ts_ui_keyboard_base_note(ui);
         keyboard_layout(keyboard_base_note, &layout);

@@ -333,6 +333,8 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     launcher = audio->tile_launcher_active ?
         ts_performance_read_stereo(&audio->tile_launchers, NULL) :
         (TsStereoFrame){0.0f, 0.0f};
+    TsStereoFrame mosaic = ts_mosaic_read(audio->mosaic, audio->output_rate);
+    launcher.l += mosaic.l; launcher.r += mosaic.r;
     audio->tile_launcher_mix = launcher;
     buses->tile_performance.l += sample.l + performance.l + launcher.l;
     buses->tile_performance.r += sample.r + performance.r + launcher.r;
