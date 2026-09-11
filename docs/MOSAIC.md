@@ -11,9 +11,14 @@ Sister Machine and output recorder.
 
 Open **MOSAIC** in the main toolbar, or press **Shift+grave** (Shift+the backtick
 key). The same shortcut returns to the main canvas or finishes editing an event;
-**Ctrl+M** remains available. The shortcut also brings Mosaic forward from the
-Sister window and leaves the ordinary FM workspace; destination dialogs retain
-keyboard focus until resolved.
+**Ctrl+M** remains available. From Sister, the shortcut brings Mosaic forward,
+even when it was already open behind Sister. From FM, it visits Mosaic and returns
+to the same FM patch on the next press. Plain **grave** opens FM directly from
+Mosaic; pressing it again returns to Mosaic. **Tab** continues to visit Sister
+without changing the open event, and **Escape** in Sister restores the main
+application window. Escape from an event editor still returns to Mosaic.
+**Ctrl+Shift+P** also reaches the Portal from these workspaces. Destination dialogs
+retain keyboard focus until resolved.
 
 Sources browses **all Sample banks**, including banks created in FM or the main
 canvas. **BANK 01**, **BANK 02**, etc. retain their original slot numbers and empty
@@ -134,10 +139,19 @@ this decision and then continues the requested action.
 Live distortion, reverb and the other effects remain global. Mosaic feeds the
 existing **TILES** input when Sister Machine is powered. With Sister off it
 feeds the ordinary shared Fallout/pedalboard/output path. Fallout's controls
-and processing are available with Sister off, independently of the pedalboard
-master switch. Sister power preserves the shared pedal settings, transitions,
+and processing are available with Sister off. **Master FX** bypasses the pedalboard
+and Fallout together, including Fallout's feedback return. Its configured transition
+time still applies. Individual pedal/Fallout settings and modulation clocks are
+preserved, so enabling Master FX restores the chosen setup. This bypass affects
+the live processors; audio previously recorded into Sister's buffer retains its
+recorded sound. Sister power preserves the shared pedal settings, transitions,
 tails and Fallout modulation state; it only changes the rolling-machine route. A single rendering of each
 voice supplies those routes.
+
+Workspace switching and audition stop leave Mosaic playback running. The toolbar
+MOSAIC button stays highlighted while it plays, and stopping an audition reports
+**AUDITION STOPPED - MOSAIC CONTINUES**. Stop the arrangement with its STOP control
+or Escape in Mosaic; Master FX bypass leaves the unprocessed source audible.
 
 ## CDP ownership
 

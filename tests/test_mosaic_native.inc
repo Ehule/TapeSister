@@ -8,7 +8,7 @@ static void mosaic_native_check(const TsInstrument *doc,const char *shot)
     for(int pass=0;pass<2;++pass) {
         int width=pass?1729:1920,height=pass?973:1200;SDL_SetWindowSize(w,width,height);
         assert(main_waveform_detail_allowed(&ui));
-        native_waveform_prepare(r,details,1);ts_ui_render(&fb,&ui,doc);
+        native_waveform_prepare(r,details,1);ts_audio_ui_render(&fb,&ui,doc);
         assert(details[0].valid && details[1].valid);
         assert(!SDL_UpdateTexture(base,NULL,fb.pixels,640*sizeof(uint32_t)));
         assert(!SDL_RenderCopy(r,base,NULL,NULL));native_waveform_copy(r,textures,details,&fb);

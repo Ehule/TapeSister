@@ -1190,7 +1190,8 @@ void ts_sister_runtime_panic(TsSisterRuntime *runtime)
 /* Same bounded, causal Fallout return on either input route. */
 static void runtime_fallout_feedback(TsSisterRuntime *runtime, TsStereoFrame wet)
 {
-    float fallout_gate = ts_sister_fallout_engage(&runtime->fallout);
+    float fallout_gate = ts_sister_fallout_engage(&runtime->fallout) *
+        ts_sister_post_fx_master_engage(&runtime->post_fx);
     if (fallout_gate <= 0.0f) {
         runtime->fallout_feedback_current = 0.0f;
         runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
@@ -1286,7 +1287,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     monitor_route = runtime_ramp_advance(&runtime->monitor_route);
     (void)runtime_ramp_advance(&runtime->direct_tile_route);
     master_fx_gate = ts_sister_post_fx_master_engage(&runtime->post_fx);
-    fallout_gate = ts_sister_fallout_engage(&runtime->fallout);
+    fallout_gate = ts_sister_fallout_engage(&runtime->fallout) * master_fx_gate;
     causal_return = frame_add(
         master_fx_gate > 0.0f ? runtime->master_feedback_previous :
                                (TsStereoFrame){0.0f, 0.0f},
@@ -1370,11 +1371,14 @@ TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
         return ts_stereo_frame_sanitize(input);
     input = ts_stereo_frame_sanitize(input);
     if (runtime->fallout.ready) {
+        float master = ts_sister_post_fx_master_engage(&runtime->post_fx);
         TsStereoFrame incoming = input;
-        if (ts_sister_fallout_engage(&runtime->fallout) > 0.0f)
+        if (master > 0.0f && ts_sister_fallout_engage(&runtime->fallout) > 0.0f)
             incoming = frame_add(incoming, runtime->fallout_feedback_previous);
         TsSisterFalloutResult fallout = ts_sister_fallout_process(&runtime->fallout, incoming);
-        input = fallout.output;
+        /* Master bypass also closes Fallout's return, without resetting its
+           controls or modulation clocks. At zero the original input is exact. */
+        input = frame_effect_return(input, fallout.output, master);
         runtime_fallout_feedback(runtime, fallout.wet);
     }
     output = ts_sister_post_fx_process(&runtime->post_fx,

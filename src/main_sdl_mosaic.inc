@@ -185,20 +185,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         }
         return down || up || motion || key || event->type==SDL_KEYUP || event->type==SDL_MOUSEWHEEL;
     }
-    int toggle=mosaic_toggle_key(event) ||
-        (down && event->button.button==SDL_BUTTON_LEFT && y>=4 && y<28 && x>=300 && x<356 && !ui->portal.open);
-    if(toggle && (!ui_dialog_open(ui) || ui->portal.open)) {
-        if(key && event->key.repeat)return 1;
-        if(ui->external_record_bank || ui->capture_state!=TS_CAPTURE_IDLE || transform->worker || portal_edit_gesture_active(ui)) {
-            snprintf(ui->status,sizeof(ui->status),"FINISH CAPTURE OR EDIT BEFORE OPENING MOSAIC");return 1;
-        }
-        if(ui->portal.open)portal_close(device,audio,ui,portal);
-        if(c->active){if(!mosaic_leave(device,audio,ui,instrument,c))return 1;}
-        else {ui->mosaic_open=!ui->mosaic_open;if(ui->mosaic_open)stop_all_force(device,audio,ui);}
-        mosaic_drag_end(ui,c);
-        if(ui->mosaic_open)snprintf(ui->status,sizeof(ui->status),"MOSAIC - DRAG A SOURCE INTO THE CANVAS; DOUBLE CLICK AN EVENT TO EDIT");
-        return 1;
-    }
+    /* Workspace keys are dispatched before panel input. */
+    if(mosaic_toggle_key(event))return 0;
     if(ui_dialog_open(ui) || ui->master_output_dragging)return 0;
     if(c->active) {
         if(!ui->show_recipes && !ui->show_ingredients)ui->show_keyboard=1;
@@ -243,6 +231,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         return 0;
     }
     if(!ui->mosaic_open)return 0;
+    if(main_file_capture_event(event,window,audio,ui,sister,(uint32_t)rate))return 1;
     if(event->type==SDL_WINDOWEVENT && event->window.event==SDL_WINDOWEVENT_FOCUS_LOST)mosaic_drag_end(ui,c);
     mosaic_sources_refresh(ui,instrument,c);
     if(down && y<32) {
@@ -262,7 +251,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         }
         mosaic_drag_end(ui,c);
         SDL_Keycode k=event->key.keysym.sym;
-        if(k==SDLK_F11 || k==SDLK_TAB)return 0;
+        if(k==SDLK_F11 || k==SDLK_TAB || k==SDLK_BACKQUOTE ||
+           (k==SDLK_p && (mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT)))return 0;
         if(k==SDLK_SPACE){mosaic_transport(device,ui,0);return 1;}
         if(k==SDLK_ESCAPE){mosaic_transport(device,ui,1);return 1;}
         if(k==SDLK_s && (mod&KMOD_CTRL)){ui->mosaic_open=0;return 0;}

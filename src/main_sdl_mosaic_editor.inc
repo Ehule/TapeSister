@@ -22,6 +22,8 @@ typedef struct {
     int drag, drag_slot, drag_x, drag_y, drag_moved, drag_copy;
     double drag_start, drag_duration, drag_left, drag_width;
     TsMosaicEvent clipboard;
+    int fm_parked, mosaic_return_fm, fm_return_mosaic, fm_edit_exit, portal_return_fm;
+    uint64_t fm_owner, fm_epoch;
 } MosaicController;
 
 static int mosaic_same_audio(const TsSample *a,const TsSample *b)
@@ -193,6 +195,7 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
 {
     if(choice==0 && ui->mosaic_edit_choice) {
         ui->mosaic_edit_choice=0;c->pending_id=0;
+        if(c->fm_edit_exit){ui->fm_open=1;c->fm_parked=0;c->fm_edit_exit=0;}
         snprintf(ui->status,sizeof(ui->status),"KEEP EDITING - ALL CHANGES RETAINED");return 1;
     }
     TsMosaicEvent *owner=ts_mosaic_find(ui->mosaic,c->pending_id);
@@ -240,10 +243,11 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
         c->documents[new_index]=c->documents[i];c->documents[i]=original_doc;
         c->document_ids[new_index]=target->id;c->document_epochs[new_index]=ui->mosaic->epoch;
         c->active=ui->mosaic_editing=target->id;mosaic_select_only(ui,target->id);
+        if(c->fm_owner==owner->id && c->fm_epoch==ui->mosaic->epoch)c->fm_owner=target->id;
     }
     --source->pins;
     c->seen_data=instrument->current.data;c->seen_revision=instrument->current.visual_revision;c->seen_frames=instrument->current.frames;
-    ui->mosaic_edit_choice=0;c->pending_id=0;c->audio_dirty=0;
+    ui->mosaic_edit_choice=0;c->pending_id=0;c->audio_dirty=0;c->fm_edit_exit=0;
     snprintf(ui->status,sizeof(ui->status),choice==1?"NEW EVENT CREATED BESIDE THE ORIGINAL":"EVENT UPDATED - OTHER EVENTS UNCHANGED");
     ts_mosaic_collect(ui->mosaic);return mosaic_leave(device,audio,ui,instrument,c);
 }

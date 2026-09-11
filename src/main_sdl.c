@@ -1871,7 +1871,9 @@ static void stop_all_force(SDL_AudioDeviceID device, AudioState *audio, TsUiStat
     ui->drone_preview_active = 0;
     snprintf(ui->status, sizeof(ui->status),
              ui->tune_reference_active ?
-             "AUDITION STOPPED - REFERENCE TONE CONTINUES" : "STOPPED");
+             "AUDITION STOPPED - REFERENCE TONE CONTINUES" :
+             audio->mosaic && audio->mosaic->playing ?
+             "AUDITION STOPPED - MOSAIC CONTINUES" : "STOPPED");
 }
 
 static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
@@ -6403,17 +6405,22 @@ static const char *path_basename(const char *path)
     return slash != NULL ? slash + 1 : path;
 }
 
-static int ui_blocking_dialog_open_except_fm(const TsUiState *ui)
+static int ui_blocking_dialog_open_except_workspaces(const TsUiState *ui)
 {
     return ui->mosaic_edit_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
-           ui->portal.open || ui->file_busy || ui->transform_open || ui->drone_open ||
+           ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->import_preview_open || ui->load_selection_choice_open ||
            ui->palette_open || ui->config_open ||
            ui->renaming_bank_slot >= 0 || ui->renaming_recipe_slot >= 0 ||
            ui->export_choice_open ||
            ui->exchange_dialog != TS_UI_EXCHANGE_NONE ||
            ui->browser.mode != TS_BROWSER_CLOSED;
+}
+
+static int ui_blocking_dialog_open_except_fm(const TsUiState *ui)
+{
+    return ui->portal.open || ui_blocking_dialog_open_except_workspaces(ui);
 }
 
 static int ui_dialog_open(const TsUiState *ui)
@@ -9238,10 +9245,13 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
     }
     if(event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT &&
        event->button.windowID==SDL_GetWindowID(window)) {
+        if(ui->midi_learn_active)return 0;
         int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
         if((!ui->portal.open || ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING ||
             ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING) &&
            x>=544 && x<630 && y>=382 && y<398)trigger=1;
+        else if(ui->mosaic_open && !ui_dialog_open(ui))
+            trigger=x>=206 && x<270 && y>=39 && y<58;
         else if(ui->portal.open && x>=464 && x<492 && y>=4 && y<30)trigger=1;
         else if(sister_performance_keys_allowed(ui) && ui->show_keyboard &&
                 x>=380 && x<454 && y>=313 && y<330)trigger=1;
@@ -11726,6 +11736,7 @@ static void keep_record_bank(SDL_AudioDeviceID output_device,
 #include "main_sdl_mosaic_editor.inc"
 #include "main_sdl_portal.inc"
 #include "main_sdl_mosaic.inc"
+#include "main_sdl_workspaces.inc"
 
 /* One session-wide release policy. Explicit Shift+click latches and tile
    launches remain independent; disabling sustain preserves physically held keys. */
@@ -12449,18 +12460,13 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
-            int mosaic_key=mosaic_toggle_key(&event);
-            int mosaic_window=event_id==SDL_GetWindowID(window) ||
-                (mosaic_key && sister_window.window && event_id==sister_window.window_id && !sister_window.model.preset_manage_open);
-            if(mosaic_window && mosaic_key && ui.fm_open && !ui_blocking_dialog_open_except_fm(&ui) &&
-               !ui.fm_bank_choice_open && !ui.fm_full_choice_open)
-                close_fm_workspace(device,&audio,&ui,&fm_preview);
             mosaic_commit(device,&ui,&instrument,&mosaic);
-            if(mosaic_window && mosaic_event(&event,window,device,&audio,&ui,&instrument,&mosaic,
-                                             &portal,&sister_window,&transform,obtained.freq)) {
-                if(mosaic_key)application_window_focus(window,&sister_window);
-                continue;
-            }
+            if(main_file_capture_event(&event,window,&audio,&ui,&sister_window,(uint32_t)obtained.freq))continue;
+            if(workspace_event(&event,window,device,&audio,&ui,&instrument,&mosaic,
+                               &portal,&sister_window,&transform,&fm_preview))continue;
+            if(event_id==SDL_GetWindowID(window) &&
+               mosaic_event(&event,window,device,&audio,&ui,&instrument,&mosaic,
+                            &portal,&sister_window,&transform,obtained.freq))continue;
             if((event.type==SDL_QUIT || (event.type==SDL_WINDOWEVENT &&
                 event.window.event==SDL_WINDOWEVENT_CLOSE && event_id==SDL_GetWindowID(window))) && mosaic.active)
                 if(!mosaic_leave(device,&audio,&ui,&instrument,&mosaic)) {
@@ -12503,15 +12509,6 @@ int main(int argc, char **argv)
                     continue;
                 }
                 if (workspace_tab_event(&event,window,&sister_window,&ui))continue;
-                if (global_key == SDLK_BACKQUOTE && !modal_key_owner) {
-                    if (ui.fm_open)
-                        close_fm_workspace(device, &audio, &ui, &fm_preview);
-                    else
-                        begin_fm_workspace(device, &audio, &ui, &instrument,
-                                           &fm_preview);
-                    application_window_focus(window,&sister_window);
-                    continue;
-                }
                 if (global_key == SDLK_s && (global_mod & KMOD_CTRL) != 0 &&
                     !modal_key_owner) {
                     begin_active_project_save(&ui);
@@ -12594,7 +12591,7 @@ int main(int argc, char **argv)
                         sister_window.model.preset_confirmation = 0;
                         SDL_StopTextInput();
                     } else {
-                        sister_window_hide(&sister_window);
+                        application_window_focus(window,&sister_window);
                     }
                 } else if (event.type == SDL_TEXTINPUT &&
                            sister_window.model.preset_manage_open &&
@@ -12794,8 +12791,6 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
-            if (main_file_capture_event(&event,window,&audio,&ui,&sister_window,
-                                         (uint32_t)obtained.freq)) continue;
             if (portal_event(&event,window,device,&audio,&ui,&instrument,
                              &portal,&sister_window,obtained.freq,&transform)) continue;
             if (import_preview_event(&event,device,&audio,&ui,&instrument,

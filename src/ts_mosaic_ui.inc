@@ -184,7 +184,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     if(py>=66 && py<376){rect(fb,147,py,484,1,RGB(129,206,200));rect(fb,143,py-2,4,5,RGB(129,206,200));}
     rect(fb,0,380,640,20,RGB(20,19,25));
     text(fb,10,386,"M MUTE  S SOLO  SHIFT DRAG: BOX/COPY  ALT: ALIGN",RGB(133,127,141),1);
-    if(!rec)text(fb,496,386,"SHIFT+GRAVE",RGB(133,127,141),1);
+    if(!rec)text(fb,426,386,"SHIFT+GRAVE",RGB(133,127,141),1);
     if(rec) {
         double seconds=ui->file_record_rate?(double)ui->file_record_frames/ui->file_record_rate:0;
         snprintf(label,sizeof(label),"REC %05.1fs",seconds);text(fb,552,386,label,RGB(231,122,130),1);

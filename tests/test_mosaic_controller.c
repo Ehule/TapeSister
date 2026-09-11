@@ -16,12 +16,21 @@ static SisterWindow sister;
 static MosaicController mosaic;
 static PortalController portal;
 static TransformController transform;
+static TsSample workspace_preview;
+
+static int dispatch(const SDL_Event *event,SDL_Window *window)
+{
+    if(main_file_capture_event(event,window,&audio,&ui,&sister,48000))return 1;
+    if(workspace_event(event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,&workspace_preview))return 1;
+    if(mosaic_event(event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000))return 1;
+    return main_file_capture_event(event,window,&audio,&ui,&sister,48000);
+}
 
 static void click(SDL_Window *window,int x,int y,int clicks)
 {
     SDL_Event event={0};event.type=SDL_MOUSEBUTTONDOWN;event.button.windowID=SDL_GetWindowID(window);
     event.button.button=SDL_BUTTON_LEFT;event.button.x=x;event.button.y=y;event.button.clicks=(Uint8)clicks;
-    (void)mosaic_event(&event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
+    (void)dispatch(&event,window);
 }
 static void test_canvas_gestures(SDL_Window *window)
 {
@@ -53,7 +62,7 @@ static void test_canvas_gestures(SDL_Window *window)
 static void motion(SDL_Window *window,int x,int y)
 {
     SDL_Event e={0};e.type=SDL_MOUSEMOTION;e.motion.windowID=SDL_GetWindowID(window);e.motion.x=x;e.motion.y=y;
-    mosaic_event(&e,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
+    dispatch(&e,window);
 }
 static void release(SDL_Window *window,int x,int y)
 {
@@ -64,11 +73,12 @@ static void release(SDL_Window *window,int x,int y)
 static void key(SDL_Window *window,SDL_Keycode key,SDL_Keymod mod)
 {
     SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.windowID=SDL_GetWindowID(window);e.key.keysym.sym=key;e.key.keysym.mod=mod;
-    mosaic_event(&e,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000);
+    dispatch(&e,window);
 }
 static void wait_render(void);
 #include "test_mosaic_native.inc"
 #include "test_mosaic_arranging.inc"
+#include "test_mosaic_routing.inc"
 static void test_canvas_feedback(SDL_Window *window)
 {
     TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);ui.mosaic=audio.mosaic=scene;
@@ -252,7 +262,7 @@ static void wait_render(void)
     while(portal.worker && SDL_GetTicks()-start<15000){portal_poll(0,&audio,&ui,&instrument,&portal);SDL_Delay(1);}
     assert(!portal.worker && !ui.portal.busy);
 }
-static void test_record_file(SDL_Window *window)
+static void test_record_file(SDL_Window *window,int x,int y)
 {
     char folder[160],path[1200],error[160];
     snprintf(folder,sizeof(folder),"mosaic-record-%lu",(unsigned long)SDL_GetTicks());
@@ -260,7 +270,8 @@ static void test_record_file(SDL_Window *window)
     ts_audio_mixer_init(&audio.mixer);ts_performance_recorder_init(&sister.performance_recorder);
     audio.sister_file_recorder=&sister.performance_recorder;
     ui.mosaic_open=1;ts_mosaic_seek(ui.mosaic,0);ui.mosaic->playing=1;
-    click(window,240,45,1);assert(ui.file_record_state==TS_PERFORMANCE_FILE_RECORDING);
+    if(x>=0)click(window,x,y,1);else key(window,SDLK_f,KMOD_CTRL|KMOD_SHIFT);
+    assert(ui.file_record_state==TS_PERFORMANCE_FILE_RECORDING);
     snprintf(path,sizeof(path),"%s",sister.performance_recorder.path);
     float output[4096];
     for(int i=0;i<8;++i)audio_callback(&audio,(Uint8 *)(output+i*512),512*sizeof(float));
@@ -268,7 +279,7 @@ static void test_record_file(SDL_Window *window)
     /* The same recorder survives opening an event editor. */
     assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,ui.mosaic->events[0].id));
     assert(ui.file_record_state==TS_PERFORMANCE_FILE_RECORDING && ui.mosaic->playing);
-    main_file_capture_toggle(&audio,&ui,&sister,48000);
+    click(window,580,389,1);
     Uint32 start=SDL_GetTicks();
     while(ts_performance_recorder_state(&sister.performance_recorder)==TS_PERFORMANCE_FILE_STOPPING && SDL_GetTicks()-start<5000)SDL_Delay(1);
     poll_file_capture_ui(&ui,&sister);assert(ui.file_record_state==TS_PERFORMANCE_FILE_IDLE);
@@ -348,7 +359,11 @@ int main(void)
     mosaic_leave(0,&audio,&ui,&instrument,&mosaic);assert(ts_sample_hash(&instrument.current)==original);
     assert(ui.mosaic->playing);
     test_async_ownership(aid,bid,original);
-    test_record_file(window);
+    test_workspace_routes(window);
+    test_mosaic_master_routes();
+    test_record_file(window,580,389);
+    test_record_file(window,240,45);
+    test_record_file(window,-1,0);
     test_canvas_gestures(window);
     test_mosaic_copy_drag(window);
     test_mosaic_external_banks(window);

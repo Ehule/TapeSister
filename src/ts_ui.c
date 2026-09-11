@@ -2939,7 +2939,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
          ui->midi_activity_until_ms != 0u ? PAL_TUNING : RGB(22, 22, 22));
     button(fb, 214, 4, 46, "CFG", ui->config_open);
     button(fb, 264, 4, 32, "FT2", ui->exchange_dialog != TS_UI_EXCHANGE_NONE);
-    button(fb, 300, 4, 56, "MOSAIC", ui->mosaic_editing != 0);
+    button(fb, 300, 4, 56, "MOSAIC", ui->mosaic_editing != 0 || ui->mosaic_playing);
     button(fb, 360, 4, 38, "SAVE", 0);
     button(fb, 402, 4, 58, "EXPORT", 0);
     button(fb, 464, 4, 28, "CDP", 0);
