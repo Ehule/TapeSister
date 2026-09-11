@@ -29,6 +29,25 @@ static void mosaic_detail_envelope(const TsMosaicSource *s,size_t first,size_t l
         *rms=(float)sqrt(energy/(last-first));
     } else mosaic_envelope(s,first,last,peak,rms);
 }
+/* Sample intervals belong to the event, not the moving viewport. Interpolate
+   adjacent fixed rows while scrolling so a peak cannot suddenly enter/leave a
+   freshly sliced screen row. Only the visible rows are queried, on the UI thread. */
+static void mosaic_detail_event_row(const TsMosaicEvent *e,int64_t row,double rate,float *peak,float *rms)
+{
+    double duration=(double)(e->last-e->first)/e->source->sample.sample_rate;
+    double elapsed=fmax(0,(double)row/rate),span=1/rate;
+    *peak=*rms=0;
+    if(!e->looping && elapsed>=duration)return;
+    double phase=fmod(elapsed,duration);
+    size_t first=e->first+(size_t)(phase*e->source->sample.sample_rate);
+    size_t last=e->first+(size_t)(fmin(duration,phase+span)*e->source->sample.sample_rate);
+    mosaic_detail_envelope(e->source,first,last,peak,rms);
+    if(e->looping && phase+span>=duration) {
+        float p,r;mosaic_detail_envelope(e->source,e->first,span>=duration?e->last:
+            e->first+(size_t)((phase+span-duration)*e->source->sample.sample_rate),&p,&r);
+        *peak=fmaxf(*peak,p);*rms=fmaxf(*rms,r);
+    }
+}
 static void mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_solo)
 {
     TsUiWaveformDetail *d=detail_region(0,151,66,480,310);
@@ -41,8 +60,10 @@ static void mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_so
         double left=151+(e->x-ui->mosaic_xscroll)*horizontal,width=e->width*horizontal;
         double top=66+(e->start-ui->mosaic_scroll)*scale,bottom=top+e->duration*scale;
         if(left+width<=151 || left>=631 || width<5 || bottom<=66 || top>=376)continue;
-        int x=(int)left,w=(int)width,y=(int)fmax(66,top),end=(int)fmin(376,bottom);
-        int first=y+(top>=66?24:0),last=end-(bottom<376?14:0);
+        int x=(int)left,w=(int)width;
+        /* Clip the event's fixed content area. Crossing a canvas edge must not
+           suddenly add/remove an entire header or footer worth of waveform. */
+        int first=(int)fmax(66,top+24),last=(int)fmin(376,bottom-14);
         if(last<=first)continue;
         int selected=e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i];
         int dim=e->muted || (any_solo && !e->solo);
@@ -53,19 +74,16 @@ static void mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_so
         int py=(int)((first-66)*sy),stop=(int)((last-66)*sy);
         double center=(x+w/2-151+.5)*sx,half=fmax(0,(w-14)*.43)*sx;
         double duration=(double)(e->last-e->first)/e->source->sample.sample_rate;
+        double rate=scale*sy,position=(ui->mosaic_scroll-e->start)*rate+py;
+        int64_t row=(int64_t)floor(position);
+        float fraction=(float)(position-floor(position)),peak0,rms0;
+        mosaic_detail_event_row(e,row,rate,&peak0,&rms0);
         for(;py<stop;++py) {
             for(int px=a;px<b;++px)d->pixels[(size_t)py*d->width+px]=fill;
-            double elapsed=fmax(0,ui->mosaic_scroll+(py/sy)/scale-e->start);
-            if(!e->looping && elapsed>=duration)continue;
-            double phase=fmod(elapsed,duration),span=1/(scale*sy);
-            size_t f=e->first+(size_t)(phase*e->source->sample.sample_rate);
-            size_t l=e->first+(size_t)(fmin(duration,phase+span)*e->source->sample.sample_rate);
-            float peak,rms;mosaic_detail_envelope(e->source,f,l,&peak,&rms);
-            if(e->looping && phase+span>=duration) {
-                float p,r;mosaic_detail_envelope(e->source,e->first,span>=duration?e->last:
-                    e->first+(size_t)((phase+span-duration)*e->source->sample.sample_rate),&p,&r);
-                peak=fmaxf(peak,p);rms=fmaxf(rms,r);
-            }
+            float peak1,rms1;mosaic_detail_event_row(e,++row,rate,&peak1,&rms1);
+            float peak=peak0+(peak1-peak0)*fraction,rms=rms0+(rms1-rms0)*fraction;
+            peak0=peak1;rms0=rms1;
+            if(!e->looping && (ui->mosaic_scroll-e->start)+py/rate>=duration)continue;
             double amplitude=fminf(1,peak)*half,body=fminf(1,rms)*half;
             mosaic_detail_span(d,py,fmax(a,center-amplitude-.5),fmin(b,center+amplitude+.5),outer);
             mosaic_detail_span(d,py,fmax(a,center-body-.5),fmin(b,center+body+.5),color);

@@ -84,6 +84,9 @@ at the C4 reference rate; chord voices can cross those visual divisions at
 different times. Event and source waveforms render at the window's actual pixel
 resolution, with antialiased edges, while the surrounding pixel UI stays familiar.
 The brighter body shows typical energy and the outer envelope preserves peaks.
+Waveform detail follows fixed sample intervals attached to the event and blends
+between them during scrolling, keeping transient edges stable as FOLLOW moves the
+view. Header and footer spacing stays attached to each tile as it crosses the canvas edges.
 Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
 actual sample ranges instead of enlarging those bins. Source thumbnails cache
 extrema at their displayed width. None of this analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.

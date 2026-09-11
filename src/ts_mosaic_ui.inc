@@ -51,8 +51,8 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(ghost)color=mosaic_mix_color(color,RGB(16,18,24),.55f);
     if(!ghost)mosaic_canvas_rect(fb,x,y,w,h,fill);
     double duration=(double)(e->last-e->first)/e->source->sample.sample_rate;
-    int header=top>=66?24:0,footer=bottom<376?14:0;
-    for(int yy=y+header;yy<end-footer;++yy) {
+    int first_row=(int)fmax(66,top+24),last_row=(int)fmin(376,bottom-14);
+    for(int yy=first_row;yy<last_row;++yy) {
         if(ghost && (yy&1))continue;
         double elapsed=fmax(0,ui->mosaic_scroll+(yy-66)/scale-e->start);
         if(!e->looping && elapsed>=duration)continue;
@@ -69,7 +69,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         int amplitude=(int)(fminf(1,peak)*half),body=(int)(fminf(1,rms)*half);
         mosaic_canvas_rect(fb,x+w/2-amplitude,yy,1+amplitude*2,1,mosaic_mix_color(color,fill,.50f));
         mosaic_canvas_rect(fb,x+w/2-body,yy,1+body*2,1,color);
-        if(e->looping && span<duration && yy>y+header && phase<span)
+        if(e->looping && span<duration && yy>first_row && phase<span)
             mosaic_canvas_rect(fb,x+4,yy,w-8,1,dim?RGB(35,34,41):RGB(72,65,77));
     }
     if(ghost) {

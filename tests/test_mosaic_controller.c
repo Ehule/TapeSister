@@ -77,6 +77,7 @@ static void key(SDL_Window *window,SDL_Keycode key,SDL_Keymod mod)
 }
 static void wait_render(void);
 #include "test_mosaic_native.inc"
+#include "test_mosaic_scroll.inc"
 #include "test_mosaic_arranging.inc"
 #include "test_mosaic_routing.inc"
 static void test_canvas_feedback(SDL_Window *window)
@@ -368,6 +369,7 @@ int main(void)
     test_mosaic_copy_drag(window);
     test_mosaic_external_banks(window);
     test_canvas_feedback(window);
+    test_mosaic_scroll_waveforms();
     test_fallout_without_sister();
     test_mosaic_palette_controls();
 
