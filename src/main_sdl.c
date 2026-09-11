@@ -9741,6 +9741,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         return;
     }
     if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
+        hit.action != TS_SISTER_UI_ACTION_FALLOUT_TOGGLE &&
+        hit.action != TS_SISTER_UI_ACTION_FX_TOGGLE &&
         hit.action != TS_SISTER_UI_ACTION_LIMITER_TOGGLE &&
         hit.action != TS_SISTER_UI_ACTION_MASTER_OUTPUT &&
         hit.action != TS_SISTER_UI_ACTION_TAPEHEAD_SONG &&

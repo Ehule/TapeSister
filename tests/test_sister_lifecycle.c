@@ -1,6 +1,7 @@
 #include "sister_test_helpers.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 static int failures;
 #define CHECK(c) do { if (!(c)) { \
@@ -8,8 +9,48 @@ static int failures;
 } } while (0)
 #define CLOSE(a,b) sister_close((a),(b),0.0002f)
 
+/* Power only owns the rolling machine, not the already playing global FX. */
+static void test_global_fx_survive_power(void)
+{
+    TsSisterRuntime runtime;char error[160];ts_sister_runtime_init(&runtime);
+    CHECK(ts_sister_runtime_reconfigure(&runtime,1000u,2u,error,sizeof(error)));
+    TsSisterParameters p=runtime.parameters;
+    p.fx.transition=ts_sister_fx_transition_normalized(1000);
+    p.fx.master_transition=ts_sister_fx_transition_normalized(1000);
+    p.fx.slot[0].type=TS_SISTER_FX_DELAY;p.fx.slot[0].mix=.7f;p.fx.slot[0].parameter_a=.17f;
+    p.fx.slot[1].enabled=0;p.fx.slot[2].parameter_a=.83f;
+    p.fx.fallout.enabled=1;p.fx.fallout.mix=1;p.fx.fallout.noise=.4f;
+    p.fx.fallout.master_transition=ts_sister_fallout_transition_normalized(1000);
+    ts_sister_runtime_set_parameters(&runtime,&p);
+    double difference=0;
+    for(int i=0;i<32;++i) {
+        TsStereoFrame f=ts_sister_runtime_process_ordinary_post_fx(&runtime,(TsStereoFrame){.2f,-.1f});
+        difference+=fabsf(f.l-.2f)+fabsf(f.r+.1f);
+    }
+    CHECK(difference>0);CHECK(!runtime.enabled && runtime.fallout.write_clock>0);
+    CHECK(runtime.post_fx.slot[0].has_pending && runtime.post_fx.slot[1].engage.remaining>0);
+    TsSisterFxControls controls=runtime.parameters.fx;
+    TsSisterPostFxEngine *fx=malloc(sizeof(*fx));CHECK(fx!=NULL);if(!fx){ts_sister_runtime_free(&runtime);return;}
+    *fx=runtime.post_fx;TsSisterFalloutEngine fallout=runtime.fallout;
+    runtime.fallout.buffer[0]=.12345f;runtime.post_fx.delay[0][4].data[0]=.4321f;
+    CHECK(ts_sister_runtime_enable(&runtime,1000u,2u,2u,.1,error,sizeof(error)));
+    CHECK(memcmp(&controls,&runtime.parameters.fx,sizeof(controls))==0);
+    CHECK(memcmp(fx,&runtime.post_fx,sizeof(*fx))==0);
+    CHECK(memcmp(&fallout,&runtime.fallout,sizeof(fallout))==0);
+    CHECK(runtime.fallout.buffer[0]==.12345f && runtime.post_fx.delay[0][4].data[0]==.4321f);
+    ts_sister_runtime_disable(&runtime);
+    CHECK(memcmp(fx,&runtime.post_fx,sizeof(*fx))==0);
+    CHECK(memcmp(&fallout,&runtime.fallout,sizeof(fallout))==0);
+    CHECK(runtime.fallout.buffer[0]==.12345f);
+    uint64_t clock=runtime.fallout.write_clock;
+    ts_sister_runtime_process_ordinary_post_fx(&runtime,(TsStereoFrame){.2f,-.1f});
+    CHECK(runtime.fallout.write_clock==clock+1);
+    free(fx);ts_sister_runtime_free(&runtime);
+}
+
 int main(void)
 {
+    test_global_fx_survive_power();
     TsSisterRuntime runtime;
     TsInstrument instrument;
     TsSisterSourceFrames source = {0};

@@ -531,6 +531,7 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
 {
     TsSisterMachine machine;
     TsSisterParameters parameters;
+    int cold_fx, cold_fallout;
     if (runtime == NULL || sample_rate == 0u || output_channels != 2u ||
         !ts_sample_valid_channels(buffer_channels) ||
         !isfinite(duration_seconds) || duration_seconds <= 0.0 ||
@@ -544,6 +545,8 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
         return 0;
     }
     memset(&machine, 0, sizeof(machine));
+    cold_fx = !runtime->post_fx.ready || runtime->post_fx.sample_rate != sample_rate;
+    cold_fallout = !runtime->fallout.ready || runtime->fallout.sample_rate != sample_rate;
     if ((!runtime->fallout.ready || runtime->fallout.sample_rate != sample_rate) &&
         !ts_sister_fallout_reconfigure(&runtime->fallout, sample_rate)) {
         runtime->warnings |= TS_SISTER_WARNING_ALLOCATION;
@@ -588,11 +591,14 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     ts_sister_machine_free(&runtime->machine);
     runtime->machine = machine;
     runtime->parameters = machine.parameters;
-    /* Audio is not running yet: restore the saved gate truth exactly. Starting
-       every new engine at fully wet made an OFF preset audibly fade from ON. */
-    ts_sister_post_fx_sync_controls(&runtime->post_fx, &runtime->parameters.fx);
-    ts_sister_fallout_sync_controls(&runtime->fallout,
-                                    &runtime->parameters.fx.fallout);
+    /* These processors may already be playing the ordinary input. Only a
+       newly allocated engine needs cold synchronization; power must preserve
+       pedal settings, pending morphs, tails and Fallout modulation phase. */
+    if (cold_fx)
+        ts_sister_post_fx_sync_controls(&runtime->post_fx, &runtime->parameters.fx);
+    if (cold_fallout)
+        ts_sister_fallout_sync_controls(&runtime->fallout,
+                                        &runtime->parameters.fx.fallout);
     runtime->enabled = 1;
     runtime->output_channels = output_channels;
     runtime->callback_failed = 0;
@@ -603,8 +609,10 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
     runtime->processed_frames = 0u;
     runtime->master_feedback_current = 0.0f;
     runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
-    runtime->fallout_feedback_current = 0.0f;
-    runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
+    if (cold_fallout) {
+        runtime->fallout_feedback_current = 0.0f;
+        runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
+    }
     memset(runtime->output_level, 0, sizeof(runtime->output_level));
     memset(runtime->output_peak_hold, 0, sizeof(runtime->output_peak_hold));
     memset(runtime->output_peak_hold_frames, 0,
@@ -655,15 +663,12 @@ void ts_sister_runtime_disable(TsSisterRuntime *runtime)
     runtime->source_target_conflict = 0;
     runtime->master_feedback_current = 0.0f;
     runtime->master_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
-    runtime->fallout_feedback_current = 0.0f;
-    runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
     memset(runtime->output_level, 0, sizeof(runtime->output_level));
     memset(runtime->output_peak_hold, 0, sizeof(runtime->output_peak_hold));
     memset(runtime->output_peak_hold_frames, 0,
            sizeof(runtime->output_peak_hold_frames));
     memset(runtime->output_clip_hold_frames, 0,
            sizeof(runtime->output_clip_hold_frames));
-    ts_sister_fallout_clear(&runtime->fallout);
     publish_snapshot(runtime);
 }
 
@@ -1182,6 +1187,35 @@ void ts_sister_runtime_panic(TsSisterRuntime *runtime)
     publish_snapshot(runtime);
 }
 
+/* Same bounded, causal Fallout return on either input route. */
+static void runtime_fallout_feedback(TsSisterRuntime *runtime, TsStereoFrame wet)
+{
+    float fallout_gate = ts_sister_fallout_engage(&runtime->fallout);
+    if (fallout_gate <= 0.0f) {
+        runtime->fallout_feedback_current = 0.0f;
+        runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
+    } else {
+        runtime->fallout_feedback_current = monitor_approach(
+            runtime->fallout_feedback_current,
+            ts_sister_fallout_feedback_amount(&runtime->fallout) * 1.20f *
+                fallout_gate,
+            runtime->fallout.sample_rate);
+        if (!runtime->parameters.fx.fallout.enabled &&
+            runtime->fallout_feedback_current < 0.000001f)
+            runtime->fallout_feedback_current = 0.0f;
+        TsStereoFrame feedback = frame_scale(
+            ts_stereo_frame_sanitize(wet),
+            runtime->fallout_feedback_current);
+        float peak = fmaxf(fabsf(feedback.l), fabsf(feedback.r));
+        if (!isfinite(peak)) feedback = (TsStereoFrame){0.0f, 0.0f};
+        else if (peak > 1.5f) feedback = frame_scale(feedback, 1.5f / peak);
+        feedback.l = tanhf(feedback.l);
+        feedback.r = tanhf(feedback.r);
+        runtime->fallout_feedback_previous =
+            ts_stereo_frame_sanitize(feedback);
+    }
+}
+
 TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     TsSisterRuntime *runtime, const TsSisterSourceFrames *sources)
 {
@@ -1301,30 +1335,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
         feedback.r = tanhf(feedback.r);
         runtime->master_feedback_previous = ts_stereo_frame_sanitize(feedback);
     }
-    fallout_gate = ts_sister_fallout_engage(&runtime->fallout);
-    if (fallout_gate <= 0.0f) {
-        runtime->fallout_feedback_current = 0.0f;
-        runtime->fallout_feedback_previous = (TsStereoFrame){0.0f, 0.0f};
-    } else {
-        runtime->fallout_feedback_current = monitor_approach(
-            runtime->fallout_feedback_current,
-            ts_sister_fallout_feedback_amount(&runtime->fallout) * 1.20f *
-                fallout_gate,
-            runtime->machine.buffer.sample_rate);
-        if (!runtime->parameters.fx.fallout.enabled &&
-            runtime->fallout_feedback_current < 0.000001f)
-            runtime->fallout_feedback_current = 0.0f;
-        TsStereoFrame feedback = frame_scale(
-            ts_stereo_frame_sanitize(output.fallout_wet),
-            runtime->fallout_feedback_current);
-        float peak = fmaxf(fabsf(feedback.l), fabsf(feedback.r));
-        if (!isfinite(peak)) feedback = (TsStereoFrame){0.0f, 0.0f};
-        else if (peak > 1.5f) feedback = frame_scale(feedback, 1.5f / peak);
-        feedback.l = tanhf(feedback.l);
-        feedback.r = tanhf(feedback.r);
-        runtime->fallout_feedback_previous =
-            ts_stereo_frame_sanitize(feedback);
-    }
+    runtime_fallout_feedback(runtime, output.fallout_wet);
     frame.input = ts_stereo_frame_sanitize(output.input);
     frame.duck_sidechain = frame.input;
     ts_sister_wave_publisher_push(&runtime->waveform, output.write,
@@ -1358,6 +1369,14 @@ TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
     if (runtime == NULL || !runtime->post_fx.ready)
         return ts_stereo_frame_sanitize(input);
     input = ts_stereo_frame_sanitize(input);
+    if (runtime->fallout.ready) {
+        TsStereoFrame incoming = input;
+        if (ts_sister_fallout_engage(&runtime->fallout) > 0.0f)
+            incoming = frame_add(incoming, runtime->fallout_feedback_previous);
+        TsSisterFalloutResult fallout = ts_sister_fallout_process(&runtime->fallout, incoming);
+        input = fallout.output;
+        runtime_fallout_feedback(runtime, fallout.wet);
+    }
     output = ts_sister_post_fx_process(&runtime->post_fx,
         TS_SISTER_HEAD_COUNT, input, 0);
     return_gain = runtime_ramp_advance(&runtime->ordinary_fx_return_gain);

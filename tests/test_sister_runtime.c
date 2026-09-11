@@ -269,8 +269,11 @@ int main(void)
     CHECK(CLOSE(frame.tap[TS_SISTER_TAP_H1].l, 0.0f));
     CHECK(CLOSE(frame.dry_monitor_gain, 1.0f));
 
-    /* A saved OFF state applied while audio is stopped must be the first live
-       state after restart, not a one-hour fade from an internal ON default. */
+    /* A saved OFF state on a cold application start must be the first live
+       state, not a one-hour fade from an internal ON default. Hot power toggles
+       preserve ordinary-route transitions (covered in lifecycle tests). */
+    ts_sister_runtime_free(&runtime);
+    ts_sister_runtime_init(&runtime);
     parameters = runtime.parameters;
     parameters.fx.enabled = 0;
     parameters.fx.master_transition =
