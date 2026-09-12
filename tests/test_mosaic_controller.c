@@ -299,14 +299,22 @@ static void test_record_file(SDL_Window *window,int x,int y)
     SDL_setenv("TAPESISTER_CAPTURES","",1);mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
     ts_performance_recorder_free(&sister.performance_recorder);audio.sister_file_recorder=NULL;
 }
-static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original)
+static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original,int supersaw)
 {
     const char *bin=getenv("TS_TEST_CDP_BIN");if(!bin){puts("Set TS_TEST_CDP_BIN for native CDP ownership checks");return;}
     snprintf(ui.config.cdp_bin_path,sizeof(ui.config.cdp_bin_path),"%s",bin);
     assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,a));ui.portal.open=1;
     assert(portal_source(0,&audio,&ui,&instrument,&portal));
     assert(portal.source_event==a);
-    ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("modify.speed.1"));ui.portal.recipe.values[0]=.5;
+    TsPortalRecipe recipe;
+    if(supersaw) {
+        assert(ts_portal_instrument_recipe(9,&recipe));
+        TsMosaicEvent *owner=ts_mosaic_find(ui.mosaic,a);
+        owner->gain=.42f;owner->pan=-.3f;owner->fade_in=.25;owner->fade_out=.4;
+    } else {
+        ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.speed.1"));recipe.values[0]=.5;
+    }
+    portal_load_recipe(&ui.portal,&recipe);
     portal_preview(0,&audio,&ui,&portal);assert(portal.worker);portal.quick_apply=1;
     portal_close(0,&audio,&ui,&portal);assert(!SDL_AtomicGet(&portal.worker->cancel));
     mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
@@ -317,6 +325,10 @@ static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original)
     assert(ts_mosaic_find(ui.mosaic,b)->source->hash==original);
     assert(ts_mosaic_find(ui.mosaic,a)->source!=ts_mosaic_find(ui.mosaic,b)->source);
     assert(ts_sample_hash(&mosaic.bank->current)==original);
+    if(supersaw) {
+        TsMosaicEvent *owner=ts_mosaic_find(ui.mosaic,a);
+        assert(owner->gain==.42f && owner->pan==-.3f && owner->fade_in==.25 && owner->fade_out==.4);
+    }
 
     /* Same ID, edited document: preserve the result instead of overwriting. */
     mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
@@ -362,7 +374,8 @@ int main(void)
     click(window,570,320,1);assert(!a->looping && b->looping);
     mosaic_leave(0,&audio,&ui,&instrument,&mosaic);assert(ts_sample_hash(&instrument.current)==original);
     assert(ui.mosaic->playing);
-    test_async_ownership(aid,bid,original);
+    test_async_ownership(aid,bid,original,0);
+    test_async_ownership(aid,bid,original,1);
     test_workspace_routes(window);
     test_mosaic_master_routes();
     test_record_file(window,580,389);

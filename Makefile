@@ -101,6 +101,12 @@ tapesister_portal_tests: tests/test_portal_stereo.inc tests/test_portal_instrume
 tapesister_portal_expansion_tests: src/ts_cdp_portal_instruments.inc $(CORE) tests/test_portal_expansion.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/test_portal_expansion.c -o $@ -lm
 
+tapesister_supersaw_tests: src/ts_cdp_portal_instruments.inc $(CORE) tests/test_supersaw.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/test_supersaw.c -o $@ -lm
+
+tapesister_render_supersaw: src/ts_cdp_portal_instruments.inc $(CORE) tests/render_supersaw.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/render_supersaw.c -o $@ -lm
+
 tapesister_portal_final_tests: $(CORE) tests/test_portal_final_batch.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/test_portal_final_batch.c -o $@ -lm
 

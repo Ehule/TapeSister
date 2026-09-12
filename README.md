@@ -20,8 +20,10 @@ Its basic creative loop is simple:
 - [Mosaic](docs/MOSAIC.md) — free event placement, independent pitched loops,
   event editing, shared effects routing and REC FILE.
 - [CDP Portal](docs/CDP_PORTAL.md) — explore processes with source/result waveforms,
-  save reusable chains, shape named macros, explore four starter chains, and
-  build a personal process-pin bank. Thirteen verified processes support stereo.
+  save reusable chains, shape named macros, explore eleven starter chains, and
+  build a personal process-pin bank. Fifty-three raw processes support stereo.
+- [Supersaw prototype](docs/SUPERSAW.md) — three centered unison chain presets,
+  a reproducible FM saw source and a playable Mosaic audition project.
 - [Design Charter](DESIGN_CHARTER.md) — the principles behind the instrument.
 - [Technical documentation](#technical-documentation) — architecture, exchange,
   packaging, and certification notes.
