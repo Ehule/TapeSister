@@ -164,16 +164,20 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             if(event->key.keysym.sym==SDLK_ESCAPE)choice=0;
             if(event->key.keysym.sym==SDLK_RETURN || event->key.keysym.sym==SDLK_n)choice=1;
             if(event->key.keysym.sym==SDLK_u)choice=2;
+            if(event->key.keysym.sym==SDLK_a)choice=3;
         }
-        if(down && event->button.button==SDL_BUTTON_LEFT && y>=235 && y<259) {
-            if(x>=148 && x<254)choice=1;
-            else if(x>=264 && x<380)choice=2;
-            else if(x>=390 && x<492)choice=0;
+        if(down && event->button.button==SDL_BUTTON_LEFT) {
+            if(y>=220 && y<244) {
+                if(x>=128 && x<242)choice=2;
+                else if(x>=250 && x<364)choice=3;
+                else if(x>=372 && x<486)choice=1;
+            }
+            if(y>=254 && y<278 && x>=256 && x<370)choice=0;
         }
         if(choice>=0) {
             uint64_t owner=c->pending_id,revision=c->pending_revision,epoch=c->pending_epoch;
             int resolved=mosaic_resolve_edit(device,audio,ui,instrument,c,choice);
-            if(resolved && choice==2 && portal->source_event==owner && portal->source_event_epoch==epoch && portal->source_event_revision==revision) {
+            if(resolved && (choice==2 || choice==3) && portal->source_event==owner && portal->source_event_epoch==epoch && portal->source_event_revision==revision) {
                 TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,owner);
                 TsInstrument *doc=mosaic_document(c,ui,instrument,owner);
                 /* Publishing the exact worker input on editor exit is not a

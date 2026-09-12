@@ -65,8 +65,9 @@ Double-click to edit; audio changes accumulate until returning to Mosaic:
 
 | Exit choice | Result |
 | --- | --- |
-| NEW TILE — Enter or N | Keep original, reveal edited event and store a regular Sample-bank copy |
-| UPDATE TILE — U | Update only this event |
+| CREATE TILE — Enter or N | Keep original; add a card and a regular Sample-bank source |
+| UPDATE INSTANCE — U | Replace this card and add a new source |
+| UPDATE ALL — A | Replace all cards using this source and update matching Sample-bank tiles |
 | KEEP EDITING — Escape | Continue working without publishing the audio |
 
 Speed changes pitch and arrangement timing together. Its wheel moves by semitones;

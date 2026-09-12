@@ -193,23 +193,32 @@ retriggering the sound. Each note can finish at a different time.
 
 **MOSAIC** returns to the arrangement. Event voices keep playing while the main
 editor, CDP Portal or Sister window is open. Sample editing uses the event's
-own document. Copies share immutable source audio until an actual sample edit
-creates a new version for that event. The original Sample bank stays intact.
+own document. Copies share source audio; on leaving, choose whether the edited
+sound belongs to this instance, all instances using that source, or a new card.
 Make as many drawing or processing edits as you like, including Warp, Smear
 and CDP. The working waveform stays in this event's editor. The destination
 prompt appears **once when returning to Mosaic**, only if its audio has changed:
 
-- **NEW TILE** (Enter or N) keeps the original event and places a new event
+- **CREATE TILE** (Enter or N) keeps the original event and places a new event
   beside it with all the accumulated audio edits. It also places a reusable snapshot
   into a free regular Sample-bank tile, adding a bank if needed. The arrangement
   scrolls to reveal the new event and Sources highlights its bank tile; the status
   names the bank and slot. The main editor's previous selection stays intact.
-- **UPDATE TILE** (U) replaces only this event's audio, then returns to Mosaic and
-  highlights its current source. Existing bank snapshots remain independent.
+- **UPDATE INSTANCE** (U) replaces this card's audio without adding another card.
+  It creates a reusable source in a free regular Sample-bank tile, adding a bank
+  if needed. Other cards and the original source retain their sound.
+- **UPDATE ALL** (A) replaces every card using the same source and updates its
+  matching Sample-bank tiles in place, across all bank pages. The dialog shows
+  the number of affected cards. Notes, timing, loop mode, tuning, level, pan and
+  fades stay individual; source regions scale proportionally if the new audio
+  length changes. The edited card takes its working region/tuning. Custom names
+  on other cards remain intact. A legacy source without a regular bank tile gets
+  one. A locked matching bank tile prevents the update before anything changes.
 - **KEEP EDITING** (Escape) closes the question and retains all working edits.
 
-An occupied or protected bank tile is never overwritten by NEW TILE. Arrangement
-Undo can remove the new event while its reusable bank snapshot remains available.
+CREATE TILE and UPDATE INSTANCE use free bank slots. Arrangement Undo restores
+the cards together; published Sample-bank sounds remain available, including
+the source replaced by UPDATE ALL. Bank publication is not part of arrangement Undo.
 If a new bank snapshot cannot be stored, the working edit stays open for another choice.
 
 Undoing all audio edits removes the question. Opening an event and leaving it
@@ -283,7 +292,7 @@ processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
 
 ## Performance update acceptance
 
-- Smear an event and choose NEW TILE with enough overlapping cards to fill the view.
+- Smear an event and choose CREATE TILE with enough overlapping cards to fill the view.
   Confirm the new waveform is revealed, selected and present in the regular Sample
   banks. Save/reopen and audition the bank tile and event.
 - Solo a card and scroll it offscreen. Check CLEAR SOLO and the other cards' SOLO OUT
@@ -299,9 +308,9 @@ processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
   confirm that spacing changes do not move their start times unintentionally.
 - On a long loop choose C4, E4 and C5. Listen for independent repeating gestures;
   extend the event while it plays and check that the phases continue.
-- Open the other copy, set EVENT ONCE and make several audio edits. Return to Mosaic and choose NEW TILE,
-  UPDATE TILE and KEEP EDITING on separate attempts; check that siblings and the
-  original source bank retain their sound in every case.
+- Open a copy, set EVENT ONCE and make audio edits. Try CREATE TILE, UPDATE INSTANCE,
+  UPDATE ALL and KEEP EDITING separately; verify the stated card/source scope and
+  that UPDATE ALL preserves each card's timing, notes and mix settings.
 - Create a new full bank from FM while the welcome sample remains on the first
   bank. Browse both banks in Mosaic and place a sample from each; confirm that
   the main editor stays on its original active bank.

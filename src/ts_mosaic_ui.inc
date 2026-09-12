@@ -312,12 +312,17 @@ void ts_ui_render_mosaic_choice(TsFramebuffer *fb,const TsUiState *ui)
 {
     if(!fb || !ui || !ui->mosaic_edit_choice)return;
     for(int i=0;i<TS_UI_WIDTH*TS_UI_HEIGHT;++i)fb->pixels[i]=mosaic_mix_color(fb->pixels[i],RGB(9,10,14),.66f);
-    rect(fb,136,131,368,140,RGB(111,95,122));rect(fb,138,133,364,136,RGB(31,28,38));
-    text(fb,154,149,"RETURN TO MOSAIC",RGB(224,214,233),1);
-    text(fb,154,175,"NEW TILE KEEPS THE ORIGINAL AND ADDS A VARIATION.",RGB(178,163,189),1);
-    text(fb,154,192,"UPDATE TILE CHANGES ONLY THIS EVENT.",RGB(178,163,189),1);
-    text(fb,154,211,"MOSAIC KEEPS PLAYING WHILE YOU CHOOSE.",RGB(129,174,177),1);
-    mosaic_button(fb,148,235,106,"NEW TILE",1,0);
-    mosaic_button(fb,264,235,116,"UPDATE TILE",0,0);
-    mosaic_button(fb,390,235,102,"KEEP EDITING",0,0);
+    rect(fb,114,117,386,174,RGB(111,95,122));rect(fb,116,119,382,170,RGB(31,28,38));
+    text(fb,128,132,"RETURN TO MOSAIC",RGB(224,214,233),1);
+    const TsMosaicEvent *owner=ts_mosaic_find(ui->mosaic,ui->mosaic_editing);int count=0;
+    if(owner)for(int i=0;i<TS_MOSAIC_EVENTS;++i)count+=ui->mosaic->events[i].id && ui->mosaic->events[i].source==owner->source;
+    char label[64];snprintf(label,sizeof(label),"UPDATE ALL: %d SHARED INSTANCE%s",count,count==1?"":"S");
+    text(fb,128,148,label,RGB(129,174,177),1);
+    text(fb,128,168,"INSTANCE: REPLACE THIS CARD; ADD A NEW SOURCE.",RGB(178,163,189),1);
+    text(fb,128,181,"ALL: REPLACE SHARED AUDIO AND ITS SOURCE TILE.",RGB(178,163,189),1);
+    text(fb,128,194,"CREATE: KEEP ORIGINAL; ADD A CARD AND SOURCE.",RGB(178,163,189),1);
+    mosaic_button(fb,128,220,114,"UPDATE INSTANCE",0,0);
+    mosaic_button(fb,250,220,114,"UPDATE ALL",0,0);
+    mosaic_button(fb,372,220,114,"CREATE TILE",1,0);
+    mosaic_button(fb,256,254,114,"KEEP EDITING",0,0);
 }

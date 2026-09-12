@@ -586,12 +586,14 @@ Sources browses every Sample bank, including pages made in FM Logic or the main
 canvas. **BANK 01**, **BANK 02**, and later banks keep their original numbers and
 16 slot positions, including empty slots. The arrows below Sources move through
 these banks and then **EVENTS** pages containing audio versions used by placed events.
-An accepted event audio edit receives its own waveform preview there. **NEW TILE**
-also saves a reusable copy in a free regular Sample-bank slot, creating a bank when
-needed. It reveals the new event, highlights its source and names the bank/slot in
-status. Existing sounds and the main editor's selection remain intact. **UPDATE TILE**
-continues to change only the event. Arrangement Undo leaves reusable bank copies
-available.
+**CREATE TILE** adds a card beside the original and a reusable source in a free
+Sample-bank slot. **UPDATE INSTANCE** replaces just the current card and adds its
+edited source to a free Sample-bank slot. Both create a bank when needed.
+**UPDATE ALL** changes every card sharing the source and replaces matching source
+tiles across the Sample banks. It preserves each card's timing, notes and mix
+settings; custom source regions scale when the audio length changes. The main
+editor keeps its selected bank/slot. Arrangement Undo restores the cards; bank
+publication remains in place.
 
 Browsing Sources does not change the main editor's active bank or Sister's routing.
 Returning from FM shows its active bank with the correct bank number; the original
@@ -682,11 +684,12 @@ When you return to Mosaic after changing the audio, one destination question app
 
 | Choice | Result |
 | --- | --- |
-| **NEW TILE** — Enter or N | Keep the original, reveal the edited event, and store a regular Sample-bank copy |
-| **UPDATE TILE** — U | Replace only this event's audio |
+| **CREATE TILE** — Enter or N | Keep the original; add a new card and a regular Sample-bank source |
+| **UPDATE INSTANCE** — U | Replace this card; add a new source, leaving siblings and the original source alone |
+| **UPDATE ALL** — A | Replace all cards sharing the sound and update matching Sample-bank source tiles |
 | **KEEP EDITING** — Escape | Keep the working edits open without publishing them |
 
-![Choosing new tile or update tile after editing](images/mosaic-edit-choice.png)
+![Choosing the scope of an audio edit](images/mosaic-edit-choice.png)
 
 The question appears on leaving the editor, not after every processing operation.
 Leaving an unchanged event, or undoing all audio changes, needs no question. Saving,
