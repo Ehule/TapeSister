@@ -2,6 +2,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
                           TsInstrument *instrument,MosaicController *c)
 {
     if(!ui->mosaic)return;
+    if(!ui->mosaic_open || c->active)c->mix_drag=c->mix_changed=0;
     if(device)SDL_LockAudioDevice(device);
     ui->mosaic_time=ui->mosaic->time;ui->mosaic_playing=ui->mosaic->playing;
     if(device)SDL_UnlockAudioDevice(device);
@@ -142,6 +143,8 @@ static void mosaic_source_drag(TsUiState *ui,const TsInstrument *instrument,Mosa
     ui->mosaic_source_selected=n;
 }
 
+#include "main_sdl_mosaic_controls.inc"
+
 static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
     AudioState *audio,TsUiState *ui,TsInstrument *instrument,MosaicController *c,
     PortalController *portal,SisterWindow *sister,TransformController *transform,int rate)
@@ -234,6 +237,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(main_file_capture_event(event,window,audio,ui,sister,(uint32_t)rate))return 1;
     if(event->type==SDL_WINDOWEVENT && event->window.event==SDL_WINDOWEVENT_FOCUS_LOST)mosaic_drag_end(ui,c);
     mosaic_sources_refresh(ui,instrument,c);
+    if(mosaic_controls_event(event,window,device,ui,c,x,y,mod))return 1;
     if(down && y<32) {
         if(x>=402 && x<494 && ui->mosaic_selected)
             (void)mosaic_enter(device,audio,ui,instrument,c,ui->mosaic_selected);
@@ -316,6 +320,16 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         if(device)SDL_UnlockAudioDevice(device);return 1;
     }
     if(down && event->button.button==SDL_BUTTON_LEFT) {
+        if(x>=444 && x<538 && y>=381 && y<399) {
+            int solos=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)solos+=ui->mosaic->events[i].id && ui->mosaic->events[i].solo;
+            if(solos) {
+                if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);
+                for(int i=0;i<TS_MOSAIC_EVENTS;++i)ui->mosaic->events[i].solo=0;
+                if(device)SDL_UnlockAudioDevice(device);
+                snprintf(ui->status,sizeof(ui->status),"ALL SOLO SWITCHES CLEARED - MUTE SETTINGS RETAINED");
+            }
+            return 1;
+        }
         if(y>=39 && y<58) {
             if(x>=118 && x<160)mosaic_transport(device,ui,0);
             else if(x>=164 && x<202)mosaic_transport(device,ui,1);

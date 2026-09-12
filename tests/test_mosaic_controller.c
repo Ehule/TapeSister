@@ -80,6 +80,7 @@ static void wait_render(void);
 #include "test_mosaic_scroll.inc"
 #include "test_mosaic_scroll_cards.inc"
 #include "test_mosaic_arranging.inc"
+#include "test_mosaic_controls.inc"
 #include "test_mosaic_routing.inc"
 static void test_canvas_feedback(SDL_Window *window)
 {
@@ -235,6 +236,7 @@ static void test_canvas_feedback(SDL_Window *window)
         assert(ts_mosaic_add(scene,version,20+i*4,0));
     }
     ts_sample_free(&extra);mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_source_count>16);
+    ui.mosaic_source_page=0;mosaic_poll(0,&ui,&instrument,&mosaic);
     click(window,97,359,1);assert(ui.mosaic_source_page==1);
     click(window,20,85,1);assert(ui.mosaic_source_selected==16 && mosaic.source_drag.source==ui.mosaic_sources[16].source);
     release(window,110,190);click(window,20,359,1);assert(ui.mosaic_source_page==0);
@@ -369,6 +371,8 @@ int main(void)
     test_canvas_gestures(window);
     test_mosaic_copy_drag(window);
     test_mosaic_external_banks(window);
+    test_mosaic_variation_banks(window);
+    test_mosaic_live_controls(window);
     test_canvas_feedback(window);
     test_mosaic_scroll_waveforms();
     test_mosaic_scroll_cards();
@@ -412,10 +416,11 @@ int main(void)
         events[4]=ts_mosaic_add(scene,sources[1],9.1,0);events[4]->duration=2.3;events[4]->looping=0;
         events[5]=ts_mosaic_add(scene,sources[2],10.1,320);events[5]->duration=1.6;
         events[0]->note_count=3;events[0]->notes[1]=64;events[0]->notes[2]=67;
+        events[3]->gain=.8f;events[3]->pan=.25f;events[3]->fade_in=2;events[3]->fade_out=3.5;
         events[3]->note_count=2;events[3]->notes[1]=72;
         TsMosaic *saved=ui.mosaic;ui.mosaic=scene;
         ui.mosaic_open=1;ui.mosaic_scale=24;ui.mosaic_hscale=1;ui.mosaic_time=4.35;ui.mosaic_playing=1;ui.mosaic_selected=events[3]->id;
-        snprintf(ui.status,sizeof(ui.status),"FREE PLACEMENT / SHARED SOURCE AUDIO / INDEPENDENT LOOP CLOCKS");
+        snprintf(ui.status,sizeof(ui.status),"SELECT A TILE TO SHAPE LEVEL, PAN AND FADES");
         mosaic_sources_refresh(&ui,bank,&mosaic);ui.mosaic_selected=events[3]->id;
         mosaic_source_select_event(&ui,events[3]);ui.mosaic_follow=1;
         static TsFramebuffer fb;ts_ui_render(&fb,&ui,bank);assert(ts_ui_write_ppm(&fb,shot));

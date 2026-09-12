@@ -116,11 +116,55 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         int chars=((x+w>631?631-x:w)-12)/6;snprintf(label,sizeof(label),"%.*s",chars,notes);
         text(fb,x+6,y+14,label,dim?RGB(66,64,75):RGB(156,147,165),1);
     }
-    if(h>38 && bottom<376 && x>=151 && x+36<631 && w>=36)
-        text(fb,x+6,end-11,e->muted?"MUTE":e->solo?"SOLO":e->looping?"LOOP":"ONCE",color,1);
+    if(h>38 && bottom<376 && x>=151 && x+36<631 && w>=36) {
+        int chars=((x+w>631?631-x:w)-12)/6;
+        const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->looping?"LOOP":"ONCE";
+        snprintf(label,sizeof(label),"%.*s",chars,state);text(fb,x+6,end-11,label,color,1);
+    }
 }
 
 #include "ts_mosaic_waveform_detail.inc"
+
+static void mosaic_slider(TsFramebuffer *fb,int x,int y,int width,double amount,int center,int enabled)
+{
+    uint32_t ink=enabled?RGB(129,206,200):RGB(65,62,73);
+    rect(fb,x,y+2,width,2,RGB(66,60,77));
+    if(center)rect(fb,x+width/2,y,1,6,RGB(185,171,154));
+    int at=(int)llround(fmax(0,fmin(1,amount))*(width-1));
+    if(enabled)rect(fb,x+at-1,y,3,6,ink);
+}
+static void mosaic_mix_controls(TsFramebuffer *fb,const TsUiState *ui,int any_solo)
+{
+    TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,ui->mosaic_selected);
+    const char *names[]={"LEVEL","PAN","IN","OUT"};
+    for(int i=0;i<4;++i) {
+        int x=TS_MOSAIC_MIX_X+i*TS_MOSAIC_MIX_STEP;char label[32];double value=0;
+        if(!e)snprintf(label,sizeof(label),"%s --",names[i]);
+        else if(i==0) {
+            value=e->gain/2;
+            if(e->gain<=0)snprintf(label,sizeof(label),"LEVEL -INF");
+            else snprintf(label,sizeof(label),"LEVEL %+.1fDB",20*log10(e->gain));
+        } else if(i==1) {
+            value=(e->pan+1)*.5;
+            if(fabsf(e->pan)<.005f)snprintf(label,sizeof(label),"PAN CENTER");
+            else snprintf(label,sizeof(label),"PAN %s %.0f%%",e->pan<0?"L":"R",100*fabsf(e->pan));
+        } else {
+            double seconds=i==2?e->fade_in:e->fade_out;
+            value=sqrt(fmin(1,seconds/e->duration));
+            snprintf(label,sizeof(label),"%s %.2fS",names[i],seconds);
+        }
+        text(fb,x,382,label,e?RGB(182,174,190):RGB(97,92,105),1);
+        mosaic_slider(fb,x+2,392,TS_MOSAIC_MIX_W-4,value,i<2,e!=NULL);
+    }
+    if(any_solo)mosaic_button(fb,444,381,94,"CLEAR SOLO",1,1);
+    else {
+        int count=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+            uint64_t id=ui->mosaic->events[i].id;
+            count+=id && (id==ui->mosaic_selected || id==ui->mosaic_selection[i]);
+        }
+        char label[20];snprintf(label,sizeof(label),"%d SELECTED",count);text(fb,444,386,label,RGB(133,127,141),1);
+    }
+}
 
 static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrument *instrument)
 {
@@ -173,7 +217,9 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     mosaic_button(fb,10,353,22,"<",0,1);mosaic_button(fb,86,353,22,">",0,1);
     snprintf(label,sizeof(label),"%02d/%02d",ui->mosaic_source_page+1,pages);text(fb,40,358,label,RGB(150,142,160),1);
     rect(fb,113,66,518,310,RGB(11,13,16));
-    snprintf(label,sizeof(label),"%.84s",ui->status);text(fb,118,58,label,RGB(133,127,141),1);
+    snprintf(label,sizeof(label),strlen(ui->status)>48?"%.45s...":"%s",ui->status);text(fb,118,58,label,RGB(133,127,141),1);
+    snprintf(label,sizeof(label),"SPEED %.2fX",m?m->speed:1);text(fb,416,58,label,RGB(129,206,200),1);
+    mosaic_slider(fb,TS_MOSAIC_SPEED_X,58,TS_MOSAIC_SPEED_W,(log2(m?m->speed:1)+1)*.5,1,1);
     double scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
     double decade=pow(10,floor(log10(40/scale))),step=40/scale/decade;
     double interval=(step<=1?1:step<=2?2:step<=5?5:10)*decade;
@@ -203,8 +249,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     int py=66+(int)((ui->mosaic_time-ui->mosaic_scroll)*scale);
     if(py>=66 && py<376){rect(fb,147,py,484,1,RGB(129,206,200));rect(fb,143,py-2,4,5,RGB(129,206,200));}
     rect(fb,0,380,640,20,RGB(20,19,25));
-    text(fb,10,386,"M MUTE  S SOLO  SHIFT DRAG: BOX/COPY  ALT: ALIGN",RGB(133,127,141),1);
-    if(!rec)text(fb,426,386,"SHIFT+GRAVE",RGB(133,127,141),1);
+    mosaic_mix_controls(fb,ui,any_solo);
     if(rec) {
         double seconds=ui->file_record_rate?(double)ui->file_record_frames/ui->file_record_rate:0;
         snprintf(label,sizeof(label),"REC %05.1fs",seconds);text(fb,552,386,label,RGB(231,122,130),1);

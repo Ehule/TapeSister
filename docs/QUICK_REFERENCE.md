@@ -39,7 +39,11 @@ does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
 | Move group / copy group | Drag a selected tile / hold Shift when starting that drag |
 | Extend duration / change visual width | Drag bottom / right edge |
 | Optional start, end, midpoint alignment | Alt during move or duration resize |
-| Mute / solo selected events | M / S; muted and excluded events dim |
+| Mute / solo selected events | M / S; excluded cards say SOLO OUT |
+| Clear all solos, including offscreen cards | CLEAR SOLO in footer |
+| Selection level / pan / fade-in / fade-out | LEVEL / PAN / IN / OUT in footer |
+| Global tape speed | SPEED: 0.5× (−12 st), center 1×, 2× (+12 st) |
+| Fine control / reset | Shift+wheel / right-click or double-click |
 | Copy / paste last-clicked event at playhead | Ctrl+C / Ctrl+V; use Shift-drag for group copies |
 | Delete selection | Delete or Backspace |
 | Undo / redo arrangement edit | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
@@ -61,13 +65,19 @@ Double-click to edit; audio changes accumulate until returning to Mosaic:
 
 | Exit choice | Result |
 | --- | --- |
-| NEW TILE — Enter or N | Keep original and place edited variation beside it |
+| NEW TILE — Enter or N | Keep original, reveal edited event and store a regular Sample-bank copy |
 | UPDATE TILE — U | Update only this event |
 | KEEP EDITING — Escape | Continue working without publishing the audio |
 
+Speed changes pitch and arrangement timing together. Its wheel moves by semitones;
+Shift+wheel uses tenths. Mix controls apply to the selection without editing audio.
+Pan balances the original stereo channels; IN/OUT are linear fades in arrangement
+seconds. Reset returns to 0 dB, center pan, zero fades, or 1× speed. Escape cancels
+a drag; Undo/Redo includes the controls. CLEAR SOLO leaves mute switches intact.
+
 No audio change means no question. Loop and chord changes are immediate and local
 to the event. Background CDP results retain their requesting event. SAVE includes
-the arrangement and shared audio versions; capacity is 128 events, five voices each.
+the arrangement, level/pan/fades, global speed and shared audio versions; capacity is 128 events, five voices each.
 
 **CFG → PALETTE → MOSAIC** offers HILITE and colors 1–5. Select a swatch and use
 the existing RGB sliders or Tapehead eyedropper. SAVE SHARED stores them; CANCEL

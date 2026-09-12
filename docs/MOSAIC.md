@@ -44,6 +44,10 @@ the EVENTS pages. Shared originals and the original Sample banks remain availabl
 | Cancel a move / copy drag | Escape |
 | Mute / unmute selected events | M |
 | Solo / unsolo selected events | S |
+| Clear every solo, including offscreen events | CLEAR SOLO in footer |
+| Set selection level, pan and fades | LEVEL / PAN / IN / OUT in footer |
+| Global tape speed, 0.5×–2× | SPEED slider above canvas |
+| Reset a mix or speed control | Right-click or double-click |
 | Copy / paste at the playhead | Ctrl+C / Ctrl+V |
 | Delete | Delete or Backspace |
 | Undo / redo arrangement edits | Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y |
@@ -69,7 +73,9 @@ group, nothing is copied. Alt retains optional time alignment during a move or r
 ghost marks the original position while moving. Events may meet exactly end to end. There are no tracks,
 beats or mandatory snapping. Click an unselected event to return to a single
 selection. Selected tiles and Sources previews use the bright red highlight color by default. Muted events and events excluded by
-solo are dim; MUTE/SOLO appears on the relevant cards. Multiple events may be
+solo are dim; MUTE/SOLO appears on the relevant cards, and excluded cards say
+SOLO OUT (EXCL on narrow cards). CLEAR SOLO stays visible in the footer whenever any event is soloed,
+including events outside the viewport. Multiple events may be
 soloed together. Mute takes precedence over solo. These switches use a short
 fade, and all voice clocks continue while inaudible, so unmuting resumes their
 current phases. Delete applies to the selection; copy/paste uses the last
@@ -93,6 +99,33 @@ labels scroll with the grid, keeping their alignment with the tiles.
 Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
 actual sample ranges instead of enlarging those bins. Source thumbnails cache
 extrema at their displayed width. None of this analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.
+
+## Performance controls
+
+Select an event, then use **LEVEL**, **PAN**, **IN** and **OUT** in the footer.
+A selected group receives the same adjustment in one undoable gesture. These controls
+shape the event's playback without changing its source audio or restarting its voices.
+LEVEL runs from silence to +6 dB (center = 0 dB). PAN is a stereo balance: center
+preserves both original channels, and moving to either side attenuates the opposite
+channel without summing it into the other. Mono samples can also be positioned this way.
+IN and OUT set linear fade times in arrangement seconds, from zero to the selected
+event's duration. For a group, each fade is capped at that member's duration. Fades
+that overlap after editing or shortening a tile scale proportionally to fit its length.
+
+**SPEED** above the canvas is global tape speed: left = **0.5× / one octave down**,
+center = **1× / C4 reference**, right = **2× / one octave up**. Movement is continuous
+and smoothed; the playhead, starts, durations, fades and every note's source phase
+advance together. Chord intervals and relative event placement stay intact. It affects
+Mosaic before the shared effects, so pedalboard delays and reverbs retain their own
+settings. A stopped arrangement uses the selected rate when playback starts.
+
+Drag a control, or wheel over it for increments. Speed wheel steps are one semitone;
+LEVEL steps are 1 dB, PAN steps are 5%, and fade steps are 0.1 second. **Shift+wheel**
+uses one-tenth steps. **Right-click or double-click** resets to unity level, center pan,
+zero fade or 1× speed. **Escape during a drag** restores its initial setting; Undo/Redo
+also includes these controls. The saved project includes level, pan, fades and speed;
+older projects start with center pan, zero fades and 1× speed. Projects saved with
+these controls use Mosaic format 3 and need this version or newer to reopen.
 
 ## Mosaic colors
 
@@ -127,9 +160,17 @@ and CDP. The working waveform stays in this event's editor. The destination
 prompt appears **once when returning to Mosaic**, only if its audio has changed:
 
 - **NEW TILE** (Enter or N) keeps the original event and places a new event
-  beside it with all the accumulated audio edits, then returns to Mosaic.
-- **UPDATE TILE** (U) replaces only this event's audio, then returns to Mosaic.
+  beside it with all the accumulated audio edits. It also places a reusable snapshot
+  into a free regular Sample-bank tile, adding a bank if needed. The arrangement
+  scrolls to reveal the new event and Sources highlights its bank tile; the status
+  names the bank and slot. The main editor's previous selection stays intact.
+- **UPDATE TILE** (U) replaces only this event's audio, then returns to Mosaic and
+  highlights its current source. Existing bank snapshots remain independent.
 - **KEEP EDITING** (Escape) closes the question and retains all working edits.
+
+An occupied or protected bank tile is never overwritten by NEW TILE. Arrangement
+Undo can remove the new event while its reusable bank snapshot remains available.
+If a new bank snapshot cannot be stored, the working edit stays open for another choice.
 
 Undoing all audio edits removes the question. Opening an event and leaving it
 unchanged never prompts. Loop/one-shot and chord switches remain immediate
@@ -188,7 +229,7 @@ stopping Mosaic, allowing effects tails to be recorded deliberately. Completed
 takes use the existing timestamped `Captures/` archive.
 
 SAVE stores event positions, durations, notes, source regions, loop modes,
-names, mute/solo flags and arrangement repeat setting in the project transaction. Shared audio
+names, level/pan/fades, mute/solo flags, global speed and arrangement repeat setting in the project transaction. Shared audio
 versions are written once each as lossless 32-bit float WAVs under
 `project-data/`. Earlier Mosaic projects load with events unmuted and unsoloed; projects from
 before Mosaic open with an empty arrangement. A project marked as
@@ -199,6 +240,18 @@ are session state.
 The initial capacity is 128 events, with five voices per event. This is a storage
 limit, not a promise that every machine can run 640 voices plus all global
 processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
+
+## Performance update acceptance
+
+- Smear an event and choose NEW TILE with enough overlapping cards to fill the view.
+  Confirm the new waveform is revealed, selected and present in the regular Sample
+  banks. Save/reopen and audition the bank tile and event.
+- Solo a card and scroll it offscreen. Check CLEAR SOLO and the other cards' SOLO OUT
+  labels; clear solo and confirm deliberate mute switches remain intact.
+- Move SPEED during a long chord. Check both octave endpoints, continuous phase,
+  pause/resume, repeat, and reset to center. Record a take while moving the control.
+- Shape a group with level, pan and fades. Check undo, reset, stereo separation and
+  save/reopen. Existing projects should play as they did before these controls.
 
 ## First build acceptance
 

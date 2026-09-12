@@ -147,8 +147,10 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         snprintf(label,sizeof(label),"%.*s",chars,notes);
         mosaic_detail_text(d,tx,y+mosaic_detail_pixel(14*sy),label,dim?RGB(66,64,75):RGB(156,147,165),sx,sy);
     }
-    if(chars>=4 && h>mosaic_detail_pixel(38*sy))
-        mosaic_detail_text(d,tx,bottom-mosaic_detail_pixel(11*sy),e->muted?"MUTE":e->solo?"SOLO":e->looping?"LOOP":"ONCE",color,sx,sy);
+    if(chars>=4 && h>mosaic_detail_pixel(38*sy)) {
+        const char *state=e->muted?"MUTE":e->solo?"SOLO":dim?(chars>=8?"SOLO OUT":"EXCL"):e->looping?"LOOP":"ONCE";
+        mosaic_detail_text(d,tx,bottom-mosaic_detail_pixel(11*sy),state,color,sx,sy);
+    }
 }
 static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_solo,double interval)
 {

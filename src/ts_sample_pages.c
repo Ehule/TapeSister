@@ -125,8 +125,9 @@ TsInstrument *ts_sample_pages_page_mut(TsSamplePages *pages,
     return (TsInstrument *)ts_sample_pages_page(pages, active, page);
 }
 
-static int append_page(TsSamplePages *pages, char *error, size_t error_size)
+int ts_sample_pages_append(TsSamplePages *pages, char *error, size_t error_size)
 {
+    if(!pages || !pages->pages){pages_error(error,error_size,"Sample page storage is unavailable");return 0;}
     TsInstrument **grown;
     TsInstrument *page;
     size_t capacity;
@@ -190,7 +191,7 @@ int ts_sample_pages_append_and_switch(TsSamplePages *pages,
         return 0;
     }
     page = pages->page_count;
-    if (!append_page(pages, error, error_size)) return 0;
+    if (!ts_sample_pages_append(pages, error, error_size)) return 0;
     if (!ts_sample_pages_switch(pages, active, page, error, error_size)) {
         TsInstrument *discard = pages->pages[page];
         ts_instrument_free(discard);
@@ -291,7 +292,7 @@ static int find_empty_destination(TsSamplePages *pages,
                 }
             }
         }
-        if (!append_page(pages, error, error_size)) return 0;
+        if (!ts_sample_pages_append(pages, error, error_size)) return 0;
     }
 }
 
@@ -1113,7 +1114,7 @@ int ts_sample_pages_load_project(TsSamplePages *pages,
                        &manifest_found, &mosaic_present, error, error_size)) goto failed;
     if (manifest_found) {
         while (loaded.page_count < page_count)
-            if (!append_page(&loaded, error, error_size)) goto failed;
+            if (!ts_sample_pages_append(&loaded, error, error_size)) goto failed;
         for (size_t page = 1u; page < page_count; ++page) {
             if (snprintf(page_path, sizeof(page_path),
                          layout == 2 ? "%s/project-data/page-%03zu.tsr" :

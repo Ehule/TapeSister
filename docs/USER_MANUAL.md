@@ -563,7 +563,12 @@ Sources browses every Sample bank, including pages made in FM Logic or the main
 canvas. **BANK 01**, **BANK 02**, and later banks keep their original numbers and
 16 slot positions, including empty slots. The arrows below Sources move through
 these banks and then **EVENTS** pages containing audio versions used by placed events.
-An accepted event audio edit receives its own waveform preview there.
+An accepted event audio edit receives its own waveform preview there. **NEW TILE**
+also saves a reusable copy in a free regular Sample-bank slot, creating a bank when
+needed. It reveals the new event, highlights its source and names the bank/slot in
+status. Existing sounds and the main editor's selection remain intact. **UPDATE TILE**
+continues to change only the event. Arrangement Undo leaves reusable bank copies
+available.
 
 Browsing Sources does not change the main editor's active bank or Sister's routing.
 Returning from FM shows its active bank with the correct bank number; the original
@@ -614,6 +619,28 @@ mute takes precedence. These switches fade briefly while the voice clocks contin
 so unmuting resumes at the current phases. Clicking an unselected tile returns to
 a single selection. FOLLOW suspends scrolling during a drag.
 
+### Live mix, fades, and global speed
+
+Select an event or group and adjust the footer's **LEVEL**, **PAN**, **IN** and **OUT**.
+Level spans silence to +6 dB with 0 dB at center. Pan balances the original channels,
+with both preserved at center. IN/OUT are linear fades in arrangement seconds.
+Overlapping fades scale proportionally to fit the event. These controls do not change
+the source recording; voice phases keep running while you adjust them.
+
+The **SPEED** slider above the canvas spans **0.5× to 2×**. Its center is **1×**, the
+normal C4 reference. The endpoints are an octave down and up. Pitch, event timing,
+fades and playhead speed change together; note intervals stay intact. Movement is
+smoothed for performance, and the shared effects retain their own time settings.
+
+Drag or wheel over a control. **Shift+wheel** gives fine adjustment. **Right-click or
+double-click** resets to 0 dB, center pan, zero fade or 1× speed. **Escape during a drag**
+restores the starting value. Undo/Redo and project saving include these settings;
+older projects load at 1× with neutral pan and fades.
+
+When any card is soloed, the footer shows **CLEAR SOLO**, even when that card is
+outside the view. Excluded cards say **SOLO OUT**. Clear Solo restores those events
+without changing deliberate mute switches.
+
 ### Editing a Mosaic event
 
 Double-click an event to use the familiar main waveform editor. Click the onscreen
@@ -632,7 +659,7 @@ When you return to Mosaic after changing the audio, one destination question app
 
 | Choice | Result |
 | --- | --- |
-| **NEW TILE** — Enter or N | Keep the original event and place the edited variation beside it |
+| **NEW TILE** — Enter or N | Keep the original, reveal the edited event, and store a regular Sample-bank copy |
 | **UPDATE TILE** — U | Replace only this event's audio |
 | **KEEP EDITING** — Escape | Keep the working edits open without publishing them |
 
@@ -687,7 +714,7 @@ OUT fader, continues across windows, and saves completed takes in `Captures/`.
 Stopping the file does not stop the arrangement. See [Direct output recording](#direct-output-recording).
 
 SAVE preserves the events, notes, source regions, loop modes, positions, durations,
-mute/solo states, repeat setting, and shared source versions in the project folder.
+mute/solo states, level/pan/fades, global speed, repeat setting, and shared source versions in the project folder.
 Transport position and arrangement/editor undo history are session state. Older
 projects without Mosaic open with an empty arrangement. Capacity is 128 events,
 with up to five voices each; practical processing capacity depends on the computer.

@@ -653,6 +653,10 @@ const TsTuning *ts_ui_audition_tuning(const TsUiState *ui,
                                       const TsInstrument *instrument);
 const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
                                      const TsInstrument *instrument);
+enum {
+    TS_MOSAIC_MIX_X = 10, TS_MOSAIC_MIX_STEP = 108, TS_MOSAIC_MIX_W = 100,
+    TS_MOSAIC_MIX_Y = 380, TS_MOSAIC_SPEED_X = 500, TS_MOSAIC_SPEED_W = 128
+};
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_foreground_panel_open(const TsUiState *ui);
