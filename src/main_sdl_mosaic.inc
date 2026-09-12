@@ -305,6 +305,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(event->type==SDL_MOUSEWHEEL) {
         if(c->drag)return 1;
         int mx,my;SDL_GetMouseState(&mx,&my);logical_mouse(window,mx,my,&x,&y);
+        if(x>=TS_MOSAIC_ENV_X && x<=TS_MOSAIC_ENV_RIGHT && y>=TS_MOSAIC_ENV_TOP && y<=TS_MOSAIC_ENV_BOTTOM)
+            y=66+(int)lrint((ts_ui_mosaic_volume_time(ui,y)-ui->mosaic_scroll)*ui->mosaic_scale);
         double amount=event->wheel.y;
         if(mod&KMOD_CTRL) {
             double anchor=ui->mosaic_scroll+fmax(0,y-66)/ui->mosaic_scale;

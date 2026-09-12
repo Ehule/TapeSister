@@ -660,8 +660,12 @@ enum {
     TS_MOSAIC_MIX_X = 10, TS_MOSAIC_MIX_STEP = 108, TS_MOSAIC_MIX_W = 100,
     TS_MOSAIC_CANVAS_RIGHT = 565,
     TS_MOSAIC_ENV_X = 568, TS_MOSAIC_ENV_RIGHT = 630,
+    TS_MOSAIC_ENV_TOP = 86, TS_MOSAIC_ENV_BOTTOM = 355,
+    TS_MOSAIC_ENV_PAD = 3,
     TS_MOSAIC_MIX_Y = 380, TS_MOSAIC_SPEED_X = 500, TS_MOSAIC_SPEED_W = 128
 };
+double ts_ui_mosaic_volume_y(const TsUiState *ui, double time);
+double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_foreground_panel_open(const TsUiState *ui);

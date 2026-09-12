@@ -106,6 +106,11 @@ extrema at their displayed width. None of this analysis runs in the audio callba
 
 The narrow lane at the right follows the arrangement timeline vertically.
 **Left-click and drag** to draw volume: left is silence, right is full level.
+The curve has its own border, with every tool button outside it. Small square
+handles mark the start and end when visible; drag sideways at either endpoint
+to set its exact level. **FIT ALL** reveals both endpoints. The lane fits the
+same visible time range into its smaller drawing area and has its own time
+guides and playhead marker, keeping the curve clear of the buttons.
 The envelope is multiplied with event levels and fades before Mosaic enters its
 normal effects/recording route. Live curve changes receive a short gain slew.
 
@@ -127,6 +132,8 @@ the beginning; drawing either endpoint then moves both. This prevents a gain
 jump caused by the envelope at wraparound. Audio content still needs its normal
 loop fades/crossfades. With Repeat on, a straight ramp between the equal endpoints
 is flat; turn Repeat off to draw an unequal start-to-end ramp.
+The status message explains when Repeat already links the endpoints or a ramp
+is flat because the endpoint levels are equal.
 
 Each stroke or tool action is one undo step. **Escape** cancels a stroke, and
 Ctrl+Z / Ctrl+Y undo and redo it. The curve saves in Mosaic format 4; older
