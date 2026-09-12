@@ -19,6 +19,23 @@ static void mosaic_canvas_rect(TsFramebuffer *fb,int x,int y,int w,int h,uint32_
     if(bottom>376)bottom=376;
     if(right>x && bottom>y)rect(fb,x,y,right-x,bottom-y,color);
 }
+static void mosaic_time_label(char *label,size_t size,double time)
+{
+    if(time<100)snprintf(label,size,"%04.1f",time);
+    else if(time<10000)snprintf(label,size,"%04.0f",time);
+    else snprintf(label,size,"%3.0fm",time/60);
+}
+static void mosaic_ruler_label(TsFramebuffer *fb,int y,const char *label)
+{
+    /* The logical fallback must also clip glyphs at the canvas edges. */
+    for(int n=0;label[n];++n) {
+        char c=label[n];if(c>='a' && c<='z')c=(char)(c-'a'+'A');
+        const char *bits=glyph(c);
+        for(int gy=0;gy<7;++gy)if(y+gy>=66 && y+gy<376)
+            for(int gx=0;gx<5;++gx)if(bits[gy*5+gx]=='1' && 115+n*6+gx<151)
+                rect(fb,115+n*6+gx,y+gy,1,1,RGB(133,127,141));
+    }
+}
 static uint32_t mosaic_mix_color(uint32_t a,uint32_t b,float t)
 {
     unsigned r=(unsigned)(((a>>16)&255)*(1-t)+((b>>16)&255)*t);
@@ -51,8 +68,8 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(ghost)color=mosaic_mix_color(color,RGB(16,18,24),.55f);
     if(!ghost)mosaic_canvas_rect(fb,x,y,w,h,fill);
     double duration=(double)(e->last-e->first)/e->source->sample.sample_rate;
-    int header=top>=66?24:0,footer=bottom<376?14:0;
-    for(int yy=y+header;yy<end-footer;++yy) {
+    int first_row=(int)fmax(66,top+24),last_row=(int)fmin(376,bottom-14);
+    for(int yy=first_row;yy<last_row;++yy) {
         if(ghost && (yy&1))continue;
         double elapsed=fmax(0,ui->mosaic_scroll+(yy-66)/scale-e->start);
         if(!e->looping && elapsed>=duration)continue;
@@ -69,7 +86,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         int amplitude=(int)(fminf(1,peak)*half),body=(int)(fminf(1,rms)*half);
         mosaic_canvas_rect(fb,x+w/2-amplitude,yy,1+amplitude*2,1,mosaic_mix_color(color,fill,.50f));
         mosaic_canvas_rect(fb,x+w/2-body,yy,1+body*2,1,color);
-        if(e->looping && span<duration && yy>y+header && phase<span)
+        if(e->looping && span<duration && yy>first_row && phase<span)
             mosaic_canvas_rect(fb,x+4,yy,w-8,1,dim?RGB(35,34,41):RGB(72,65,77));
     }
     if(ghost) {
@@ -162,17 +179,20 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
     double interval=(step<=1?1:step<=2?2:step<=5?5:10)*decade;
     for(double t=ceil(ui->mosaic_scroll/interval)*interval;t<ui->mosaic_scroll+310/scale;t+=interval) {
         int y=66+(int)((t-ui->mosaic_scroll)*scale);
-        if(t<100)snprintf(label,sizeof(label),"%04.1f",t);else if(t<10000)snprintf(label,sizeof(label),"%04.0f",t);else snprintf(label,sizeof(label),"%3.0fm",t/60);text(fb,115,y+2,label,RGB(133,127,141),1);
+        mosaic_time_label(label,sizeof(label),t);mosaic_ruler_label(fb,y+2,label);
         rect(fb,147,y,484,1,RGB(28,30,35));
     }
-    for(int i=0;i<ui->mosaic_ghost_count;++i)mosaic_card(fb,ui,&ui->mosaic_ghosts[i],0,0,1);
     int any_solo=0;
     if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)any_solo|=m->events[i].solo;
-    if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
-        const TsMosaicEvent *e=&m->events[i];if(!e->id)continue;
-        mosaic_card(fb,ui,e,e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i],e->muted || (any_solo && !e->solo),0);
+    if(!mosaic_detail_cards(fb,ui,any_solo,interval)) {
+        /* Keep the logical renderer for disabled/unavailable native surfaces. */
+        for(int i=0;i<ui->mosaic_ghost_count;++i)mosaic_card(fb,ui,&ui->mosaic_ghosts[i],0,0,1);
+        if(m)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
+            const TsMosaicEvent *e=&m->events[i];if(!e->id)continue;
+            mosaic_card(fb,ui,e,e->id==ui->mosaic_selected || e->id==ui->mosaic_selection[i],e->muted || (any_solo && !e->solo),0);
+        }
     }
-    mosaic_detail_cards(fb,ui,any_solo);mosaic_detail_sources(fb,ui);
+    mosaic_detail_sources(fb,ui,interval);
     if(ui->mosaic_box) {
         int x=ui->mosaic_box_x<ui->mosaic_box_end_x?ui->mosaic_box_x:ui->mosaic_box_end_x;
         int y=ui->mosaic_box_y<ui->mosaic_box_end_y?ui->mosaic_box_y:ui->mosaic_box_end_y;

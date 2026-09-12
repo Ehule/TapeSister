@@ -5,6 +5,13 @@
 > duplicate-capable Reverb/Delay/Distortion/Grain slots. See the
 > [User Manual](USER_MANUAL.md#the-four-slot-fx-pedalboard) for current operation.
 
+Current routing also supports Fallout and POST slots with Sister powered off,
+including Mosaic input. **MASTER FX** bypasses the live pedalboard and Fallout
+together, including Fallout feedback, over its configured transition. Sister power
+changes preserve their settings and transitions. See [Mosaic](MOSAIC.md) and
+[Fallout](SISTER_MACHINE_FALLOUT.md) for those current paths; the fixed-chain design
+below is retained as historical context.
+
 The earlier compact fixed chain was **DISTORTION → GRAIN → DELAY → REVERB**, with one
 explicit Master FX Feedback return. Those effects shared PR8's generic target bits;
 there was no second routing language and no per-head parameter copy.

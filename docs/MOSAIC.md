@@ -1,4 +1,4 @@
-# Mosaic — first playable phase
+# Mosaic
 
 Mosaic arranges sample events on a free canvas. Time runs downward. Horizontal
 position and width organize the picture; they do not change timing or pan.
@@ -84,6 +84,12 @@ at the C4 reference rate; chord voices can cross those visual divisions at
 different times. Event and source waveforms render at the window's actual pixel
 resolution, with antialiased edges, while the surrounding pixel UI stays familiar.
 The brighter body shows typical energy and the outer envelope preserves peaks.
+Waveform detail follows fixed sample intervals attached to the event. Scrolling
+moves each complete tile—waveform, labels, borders and repeat dividers—together
+in single physical-pixel steps. The tile keeps its height and waveform shape;
+header and footer spacing stays attached as it crosses the canvas edges.
+Tiles that meet end to end share the same drawn boundary. The time ruler and its
+labels scroll with the grid, keeping their alignment with the tiles.
 Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
 actual sample ranges instead of enlarging those bins. Source thumbnails cache
 extrema at their displayed width. None of this analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.
@@ -174,7 +180,8 @@ The older Transform workbench must finish its worker before leaving the event.
 
 ## Recording and projects
 
-REC FILE writes the final stereo OUT signal, including global effects and
+The header and footer **REC FILE** buttons, or `Ctrl+Shift+F` in the main window,
+operate the same recorder. It writes the final stereo OUT signal, including global effects and
 master output controls, through the existing asynchronous WAV recorder. It
 continues across editor/window navigation. STOP REC finishes the file without
 stopping Mosaic, allowing effects tails to be recorded deliberately. Completed

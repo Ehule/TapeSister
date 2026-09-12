@@ -2,14 +2,13 @@
 
 TapeSister is a standalone sound-making, sample-sculpting, and performance instrument.
 It can generate material, reshape imported recordings, build related sound families,
-capture live performances into new tiles, and send sound through Sister Machine,
+arrange events in Mosaic, capture live performances into new tiles, and send sound through Sister Machine,
 Fallout, and a four-slot effects pedalboard. It is designed to make playable audio,
 not to hide sound behind a project format: saved projects include ordinary WAV copies
 of every occupied tile.
 
 This manual describes the current instrument. MIDI notes and global MIDI Learn are
-supported. The direct
-TapeHead live link is also planned. The existing FT2 Link folder exchange is described
+supported, along with Tapehead's direct [Live Link](LIVE_LINK.md). FT2 Link folder exchange is described
 in [TapeSister and TapeHead exchange](#tapesister-and-tapehead-exchange).
 
 For a compact list of keys, gestures, ranges, and file types, see the
@@ -25,6 +24,7 @@ For a compact list of keys, gestures, ranges, and file types, see the
 - [Variation and sound families](#variation-and-sound-families)
 - [FM Logic](#fm-logic)
 - [Editing and sculpting audio](#editing-and-sculpting-audio)
+- [Mosaic](#mosaic)
 - [Recording and capture](#recording-and-capture)
 - [Sister Machine](#sister-machine)
 - [The four-slot FX pedalboard](#the-four-slot-fx-pedalboard)
@@ -36,18 +36,22 @@ For a compact list of keys, gestures, ranges, and file types, see the
 - [Exporting and exchanging sounds](#exporting-and-exchanging-sounds)
 - [Configuration](#configuration)
 - [Performance safety and troubleshooting](#performance-safety-and-troubleshooting)
+- [MIDI Learn and performance controllers](#midi-learn-and-performance-controllers)
+- [Current boundaries](#current-boundaries)
 
 ## The instrument at a glance
 
-TapeSister has three closely connected working areas.
+TapeSister has four closely connected working areas.
 
 1. **The main sample laboratory** holds independent sound tiles. This is where sounds
    are generated, imported, selected, edited, varied, looped, transformed, played,
    recorded, and saved.
-2. **Sister Machine** is a live rolling-tape instrument with one moving write head,
+2. **Mosaic** arranges freely placed events on a downward timeline. Each event plays
+   its own pitched notes and loops through the shared effects and recording path.
+3. **Sister Machine** is a live rolling-tape instrument with one moving write head,
    three playback heads, feedback, filtering, stereo weave, source routing, capture,
    and long-form recording.
-3. **Fallout and the FX pedalboard** extend Sister Machine into a performance processor.
+4. **Fallout and the FX pedalboard** process the shared sound, with Sister powered on or off.
    Fallout produces unstable deterioration and generative change. The pedalboard holds
    four independently placed effects: Reverb, Delay, Distortion, or Grain.
 
@@ -90,6 +94,11 @@ The top row remains available across the main workspaces.
   and works whether or not Live Link audio is enabled.
 - **CONFIG** selects audio, input, MIDI, paths, palette, and performance defaults.
 - **FT2 LINK** opens the current folder-based TapeSister/TapeHead exchange.
+- **MOSAIC** or `Shift+grave` opens the arrangement; the shortcut returns to the
+  previous main or FM workspace. `Ctrl+M` is an alternative. See
+  [Mosaic workspace navigation](#mosaic-workspace-navigation).
+- **CDP** or `Ctrl+Shift+P` opens the CDP Portal, also reachable from Mosaic, FM,
+  and Sister Machine. Portal retains its own `Tab` source/result audition shortcut.
 - **SAVE** saves the complete active project.
 - **EXPORT** exports the selected tile or the complete sound collection.
 - **LIM** enables or bypasses the global output limiter.
@@ -188,7 +197,7 @@ CANCEL** choice instead of replacing the whole tile.
 
 ### Lower workspaces
 
-The number keys choose the lower area:
+In the main canvas, the number keys choose the lower area:
 
 - `1` — Sample Tiles. Press `1` again to cycle through Sample pages.
 - `Shift+1` — external REC BANK.
@@ -218,6 +227,10 @@ Use **+ PAGE** when more than 16 sounds are needed. Pressing `1` while Sample Ti
 already visible cycles through the existing pages. The REC BANK is separate from this
 page cycle.
 
+These Sample banks also supply Mosaic's Sources browser. A placed Mosaic event owns
+its playback settings and shares the source audio until an audio edit is accepted.
+Changing one event never changes every use of that bank tile. See [Mosaic](#mosaic).
+
 ### Tile borders and marks
 
 - The active editing tile has the main active outline.
@@ -241,8 +254,29 @@ it deliberately before replacing or clearing it.
 3. TapeSister renders a fresh six-voice FM sound into that tile.
 4. Audition it with Space, the tile, the onscreen keyboard, QWERTY, or MIDI.
 
-Create always proposes a fresh FM source. It does not depend on another special Source
+Left-clicking Create always proposes a fresh FM source. It does not depend on another special Source
 tile.
+
+### CREATE and CDP variations
+
+CREATE has two independent dice rolls and a way back to the clean sound:
+
+| Gesture on CREATE | Result |
+| --- | --- |
+| Left-click | Generate a fresh FM sound |
+| Right-click | Render a random CDP variation of the retained clean waveform |
+| Middle-click | Cancel the pending CDP variation and restore the retained clean waveform |
+
+Left-click until the FM sound interests you, then right-click to explore CDP versions.
+Successive right-clicks start from the same clean waveform; they do not stack the last
+CDP result. A right-click during a render queues one more roll. Middle-click restores
+the clean version without rolling a new FM sound. A later manual edit or a different
+source cannot be overwritten by an old restore operation.
+
+Selection-based creation retains the surrounding audio. When working on a Mosaic
+event, these audio edits join that event's working changes and use the destination
+choice when you return to Mosaic. See [Editing a Mosaic event](#editing-a-mosaic-event)
+and the [CREATE palette notes](CDP_EXPANSION.md).
 
 ### Create a sound at a precise length
 
@@ -301,6 +335,10 @@ stamp becomes the next source.
 Press the grave/backquote key (`` ` ``) or open **FM LOGIC** from the Family area.
 The workspace is a complete six-voice synthesizer and genome editor. Its preview is
 temporary until **APPLY** is pressed.
+
+`Shift+grave` visits Mosaic and returns to the same FM patch on the next press.
+From Mosaic, plain grave opens FM and pressing it again returns to Mosaic. Visiting
+Sister with `Tab` also preserves the current workspace and event being edited.
 
 ### Pages
 
@@ -497,6 +535,170 @@ Some operations are intentionally unavailable for linked stereo material until t
 channel relationship can be preserved exactly. TapeSister reports that boundary rather
 than silently folding the tile to mono.
 
+## Mosaic
+
+![Mosaic with freely placed events and a downward playhead](images/mosaic.png)
+
+Mosaic turns the existing sample playback into an arrangement. Time runs from top
+to bottom in seconds. Horizontal position and width provide visual space; neither
+changes pan or pitch. Events playing at the same time sit side by side with a small
+gap. Events may meet exactly end to end. There are no tracks or required beat grid.
+
+### Your first arrangement
+
+1. Open **MOSAIC** or press `Shift+grave` (Shift plus the backtick key).
+2. Drag an occupied source from the left-hand browser onto the canvas. Its top
+   edge sets the start time; a waveform ghost shows the proposed placement.
+3. Double-click the event to open its editor. Choose notes on the keyboard and
+   **EVENT LOOP** or **EVENT ONCE**, then return with **MOSAIC** or Escape.
+4. Extend a loop by dragging its bottom edge. Drag another source alongside it
+   to hear overlapping events. Press Space to play or pause.
+5. Enable **FOLLOW** to keep the moving playhead visible. Middle-click to seek.
+6. Click **REC FILE** to record the final output; click the recording button again
+   to finish the file. Recording continues while you edit or visit Sister Machine.
+
+### Sources and bank pages
+
+Sources browses every Sample bank, including pages made in FM Logic or the main
+canvas. **BANK 01**, **BANK 02**, and later banks keep their original numbers and
+16 slot positions, including empty slots. The arrows below Sources move through
+these banks and then **EVENTS** pages containing audio versions used by placed events.
+An accepted event audio edit receives its own waveform preview there.
+
+Browsing Sources does not change the main editor's active bank or Sister's routing.
+Returning from FM shows its active bank with the correct bank number; the original
+bank remains accessible. Click a source to highlight it, then drag it into place.
+
+### Pitch, repetition, and one-shots
+
+An event has one to five notes, each with its own playback phase. C4 is the reference
+speed; C5 traverses the same fragment twice as fast and C3 takes twice as long.
+A chord therefore creates different loop lengths as well as different pitches.
+Octaves line up regularly; other intervals produce shifting relationships between
+repetitions. Try C4, E4, and C5 on a short sound inside one long looping event.
+
+Dragging the bottom edge extends the event's playback window. A looping voice gets
+more repetitions at its existing speed; the sample is not time-stretched. Each
+one-shot voice stops after one traversal or at the event's bottom, whichever comes
+first. Making a one-shot event longer does not retrigger it. The waveform repeats
+visually at the C4 reference speed, while the chord voices follow their own rates.
+
+### Selecting, moving, and copying
+
+| Action | Control |
+| --- | --- |
+| Select an event | Click its body; the highlight border is red by default |
+| Select a group | Shift+left-drag a box on empty canvas |
+| Move the selection | Drag any selected event body |
+| Copy an event or selected group | Hold Shift when starting a drag on a tile |
+| Extend duration / change visual width | Drag the bottom / right edge |
+| Align starts, ends, or midpoints | Hold Alt during a move or duration resize |
+| Mute / solo the selection | M / S |
+| Copy / paste the last-clicked event at the playhead | Ctrl+C / Ctrl+V |
+| Delete the selection | Delete or Backspace |
+| Undo / redo arrangement changes | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
+| Cancel a move or copy drag | Escape |
+| Play / pause; stop and rewind | Space; STOP or Escape when no gesture is active |
+| Seek / return to the beginning | Middle-click canvas or click time ruler / Home |
+| Scroll time / scroll sideways / zoom | Wheel / Shift+wheel / Ctrl+wheel |
+| Keep playhead visible / fit arrangement | FOLLOW / FIT ALL |
+| Repeat the complete arrangement | REPEAT |
+
+Group moves and copies keep relative timing and spacing. Collision handling shifts
+the group sideways rather than changing its start times. A Shift-click without a
+drag creates no copies; one Undo removes a copied group. Ctrl+C/Ctrl+V handles the
+last-clicked event, so use Shift-drag for a whole group.
+
+Muted events and events excluded by solo become dim. Multiple events can be soloed;
+mute takes precedence. These switches fade briefly while the voice clocks continue,
+so unmuting resumes at the current phases. Clicking an unselected tile returns to
+a single selection. FOLLOW suspends scrolling during a drag.
+
+### Editing a Mosaic event
+
+Double-click an event to use the familiar main waveform editor. Click the onscreen
+keys to add or remove persistent chord notes, up to five; at least one remains.
+**EVENT LOOP / EVENT ONCE** changes this event's playback behavior. Existing loop
+handles set the source region, direction, and crossfade. Without a defined loop,
+the selection or complete source provides the region.
+
+Loop/one-shot and chord changes apply to this event immediately. Copies retain their
+own settings. Sample audio is shared until you make an actual audio edit. Draw,
+Warp, Smear, CREATE, and CDP changes accumulate in this event's working editor;
+Mosaic continues playing its published sources while you can audition the edits.
+The original Sample bank and sibling events keep their audio.
+
+When you return to Mosaic after changing the audio, one destination question appears:
+
+| Choice | Result |
+| --- | --- |
+| **NEW TILE** — Enter or N | Keep the original event and place the edited variation beside it |
+| **UPDATE TILE** — U | Replace only this event's audio |
+| **KEEP EDITING** — Escape | Keep the working edits open without publishing them |
+
+![Choosing new tile or update tile after editing](images/mosaic-edit-choice.png)
+
+The question appears on leaving the editor, not after every processing operation.
+Leaving an unchanged event, or undoing all audio changes, needs no question. Saving,
+opening another project, or closing the main window also resolves pending edits first.
+
+A CDP render remembers the event that requested it even after you select another
+event or window. Results cannot overwrite the event that merely happens to be open.
+If its source has changed or its owner has disappeared, the result remains available
+for review instead of replacing unrelated audio. The [Mosaic guide](MOSAIC.md#cdp-ownership)
+describes the full background-render behavior.
+
+### Mosaic workspace navigation
+
+| Where you are | Key | Destination |
+| --- | --- | --- |
+| Main canvas | Shift+grave or Ctrl+M | Mosaic; press again to return |
+| FM Logic | Shift+grave | Mosaic; press again to return to the same FM patch |
+| Mosaic | Plain grave | FM Logic; press again to return to Mosaic |
+| Main, FM, Mosaic, or event editor | Tab | Visit Sister and return without changing the edited event |
+| Sister Machine | Shift+grave / plain grave | Bring Mosaic / FM forward, even if already open behind Sister |
+| Sister Machine | Escape | Close its active subpanel first, otherwise restore the main application window |
+| Event editor | Escape or MOSAIC | Return to Mosaic, resolving changed audio if needed |
+| Main, FM, Mosaic, or Sister | Ctrl+Shift+P | Reach the CDP Portal |
+
+Active dialogs retain focus until resolved. Portal uses Tab for source/result A-B
+audition. Workspace navigation leaves the arrangement playing; the MOSAIC toolbar
+button stays highlighted during background playback. Stopping an editor audition
+can report **AUDITION STOPPED - MOSAIC CONTINUES**. Use Mosaic's STOP or Escape in
+the arrangement to stop and rewind it.
+
+### Shared effects, recording, and saving
+
+Live effects are global. Mosaic supplies the **TILES** source to Sister when Sister
+is powered; enable that source to hear the arrangement through its rolling tape.
+With Sister off, Mosaic feeds the ordinary Fallout and POST pedalboard path.
+PRE and head placements require Sister. Sister power changes preserve the shared
+effect settings and transitions.
+
+**MASTER FX** bypasses the pedalboard and Fallout together, including Fallout's
+feedback return, over the configured Master transition. It leaves the dry source
+audible and preserves individual settings and modulation clocks. Material already
+recorded into Sister's buffer retains its printed sound. See
+[FX transitions](#effect-and-master-transitions) and [Fallout](#fallout).
+
+Mosaic's header and footer **REC FILE** buttons, and `Ctrl+Shift+F`, operate the
+shared final stereo output recorder. It includes the live processing, limiter, and
+OUT fader, continues across windows, and saves completed takes in `Captures/`.
+Stopping the file does not stop the arrangement. See [Direct output recording](#direct-output-recording).
+
+SAVE preserves the events, notes, source regions, loop modes, positions, durations,
+mute/solo states, repeat setting, and shared source versions in the project folder.
+Transport position and arrangement/editor undo history are session state. Older
+projects without Mosaic open with an empty arrangement. Capacity is 128 events,
+with up to five voices each; practical processing capacity depends on the computer.
+
+The waveform display uses smooth edges and detailed peak/energy previews at the
+window's actual resolution. Scrolling moves the waveform, labels and borders
+together in single physical-pixel steps, preserving the tile's height and waveform
+shape as the view moves. The five source colors and separate selection highlight
+are editable in [CFG → PALETTE](#palette-and-mosaic-colors).
+See the [dedicated Mosaic guide](MOSAIC.md) for additional details and listening checks.
+
 ## Recording and capture
 
 TapeSister has four related recording paths. They share audio foundations but serve
@@ -600,6 +802,23 @@ When **CHAIN** is on, a finished REC take advances to the next empty REC tile an
 **KEEP** copies every occupied REC tile into the first empty Sample slots, creates
 another page if required, and clears the REC BANK only after every copy succeeds.
 
+### Direct output recording
+
+**REC FILE** immediately records the final stereo output into a WAV without choosing
+a destination tile. Use the button in the main footer, keyboard, Sample bank, Mosaic
+header or footer, or Sister's FX page. `Ctrl+Shift+F` is the main-window shortcut,
+including while Mosaic or FM is open. These controls operate the same recorder.
+
+The file includes the global processing, limiter, and final OUT fader. Sister may
+be powered off. Recording continues while you switch workspaces, edit an event, or
+stop an audition. Click the active recording button again to finish the file; it
+does not stop Mosaic playback. To capture the arrangement's effects tails, stop the
+arrangement first, let the tails finish, and then stop the file.
+
+Completed takes are timestamped 32-bit float WAVs in `Captures/`. Long recordings
+automatically upgrade to RF64 if needed. This is separate from recording into an
+editable tile with CAPTURE or using the external REC BANK.
+
 ### Sister capture and long-form file recording
 
 In Sister Machine, choose the tap, channel format, and destination before recording:
@@ -632,6 +851,9 @@ Click the TapeSister/Sister Machine emblem or press `Tab` to open the second win
 Closing or hiding the window does not stop its audio. **POWER** is the actual engine
 boundary. **ROLL**, **HOLD**, Capture, feedback, and head movement continue while the
 window is hidden according to their current state.
+
+Escape closes an active Sister subpanel first; otherwise it brings the main
+application window back. It does not minimize the application to the desktop.
 
 ### Source routing
 
@@ -790,11 +1012,25 @@ combination are valid. Every slot owns independent state and history.
 Only one placement is active for each slot. If several slots share a placement, their
 slot numbers determine their order at that point.
 
+With Sister powered off, ordinary playback, including Mosaic, still passes through
+Fallout and enabled **POST** slots. PRE and head placements require the rolling
+machine. Turning Sister on or off preserves the global pedalboard settings,
+transitions, and tails, along with Fallout's modulation state.
+
 ### Effect and master transitions
 
 **EFFECT TRANSITION** controls slot power changes and live topology morphs such as type,
 placement, and reordering. **MASTER TRANSITION** independently controls the MASTER FX
 gate. Both are logarithmic from 10 ms to 60 minutes.
+
+**MASTER FX** governs the complete live pedalboard and Fallout, including Fallout's
+feedback return, with Sister powered on or off. Once its bypass transition finishes,
+those processors add no effect to the signal. Their individual settings and
+modulation clocks remain intact for re-enabling the master switch.
+
+Bypass leaves the dry source playing; it is not a transport stop. Processing already
+printed into Sister's tape memory remains part of that recorded sound. A long Master
+transition can also keep effects audible while the bypass fades toward completion.
 
 Changing a slot during a long transition does not freeze the interface or stop audio.
 The old and new structures are handed over smoothly. Reversing an on/off transition
@@ -828,10 +1064,17 @@ passes, especially with long reverb, delay, low ERASE, or additional H1/H2 feedb
 Fallout sits after Sister's completed MIX and before the POST pedalboard location. It is
 a stereo deterioration and instability instrument with its own 20-second history.
 
+It also works with Sister powered off, processing ordinary playback and Mosaic before
+POST slots. Its own FALLOUT switch enables the insert, while **MASTER FX** controls
+the combined Fallout/pedalboard bypass. Master FX bypass preserves Fallout's settings
+and modulation phase; turning the FALLOUT insert itself off clears its history after
+the transition so a later re-enable starts cleanly.
+
 ### Main controls
 
 - **MIX** blends Fallout with its input.
-- **FEEDBACK** returns Fallout's wet-only result to Sister's rolling write.
+- **FEEDBACK** returns Fallout's wet-only result to Sister's rolling write when powered,
+  or through a bounded return in the ordinary playback path with Sister off.
 - **NOISE** selects White, Pink, Brown, or Blue noise and controls its level.
 - **DROP** creates random amplitude failures.
 - **PAN** creates smoothed random equal-power positions.
@@ -974,28 +1217,23 @@ or rolling tape audio. Fallout presets omit master power and live modulation pha
 
 Saving `Terra Night.tsr` creates one movable folder named `Terra Night/`:
 
-```text
-Terra Night/
-├── Terra Night.tsr
-├── manifest.txt
-├── sister-state.ini
-├── project-data/
-│   ├── additional Sample pages
-│   └── optional REC BANK state
-└── samples/
-    ├── page-01/
-    ├── page-02/
-    └── rec-bank/
-```
-
-The primary TSR contains the complete first page. `project-data/` carries later pages
-and REC state. `sister-state.ini` stores Sister Machine and Fallout state. The manifest
-maps the collection.
+| Inside the project folder | Contents |
+| --- | --- |
+| `Terra Night.tsr` | Complete first Sample page |
+| `manifest.txt` | Collection map |
+| `sister-state.ini` | Sister Machine, pedalboard, and Fallout state |
+| `project-data/` | Additional Sample pages and optional REC BANK state |
+| `project-data/mosaic.tsm` | Mosaic event layout and playback settings |
+| `project-data/mosaic-000.wav`, etc. | Shared Mosaic source versions, stored once each as lossless 32-bit float audio |
+| `samples/page-01/`, `samples/page-02/`, etc. | Extractable Sample-bank WAV copies |
+| `samples/rec-bank/` | Extractable REC BANK WAV copies |
 
 Every occupied Sample and REC tile also appears under `samples/` as an ordinary 16-bit
 PCM WAV. Those copies retain standard tuning and loop metadata and can be extracted by
-the user or loaded into another sampler. The TSR remains the lossless source of truth
-for editor state, project structure, and Undo/Redo.
+the user or loaded into another sampler. The TSR and its accompanying project data
+preserve the editable project; the 16-bit copies are for extraction and interchange.
+Mosaic stores its event audio in `project-data/`, including versions that differ from
+the original Sample banks. Transport position and Mosaic undo history are not saved.
 
 Move, copy, share, or back up the complete named folder. Separating the TSR from its
 associated folder members breaks the complete multi-page project. TapeSister writes and
@@ -1024,7 +1262,8 @@ usable audio; any other non-project file can be auditioned and imported as raw d
 
 **FT2 LINK** uses an atomic exchange folder. TapeSister can send selected tiles or a
 collection for TapeHead import and can receive a staged TapeHead transfer. The existing
-exchange is file-based; the planned live link is a separate future feature.
+exchange is file-based. For direct audio, select **TapeSister Live Link** as Tapehead's
+output and enable the **TH SRC** input in Sister. See [Live Link](LIVE_LINK.md).
 
 See [FT2 Exchange](FT2_EXCHANGE.md) for the exchange protocol and TapeHead receiver
 requirements.
@@ -1047,6 +1286,21 @@ Saving CONFIG applies a new MIDI choice immediately. Output and input device cha
 are applied on the control thread; a backend change applies after restart. Named
 presets and saved projects preserve musical state separately from machine-specific
 device choices.
+
+### Palette and Mosaic colors
+
+Open **CFG → PALETTE** to edit live interface colors. The compact **MOSAIC** strip
+adds **HILITE** and five source-color swatches, **1–5**, to the existing palette.
+Select a swatch, then adjust the existing RGB sliders or pick a color from the
+Tapehead eyedropper. PgUp/PgDn cycles through the available palette entries.
+
+![Compact Mosaic swatches in the palette editor](images/mosaic-palette.png)
+
+HILITE controls the selection border and Sources highlight; its default is bright
+red. The five source colors consistently color event waveforms and borders by source
+identity. **SAVE SHARED** stores the six entries in `palette.pal`; **CANCEL** restores
+the palette from before editing. Older palettes use defaults for omitted Mosaic
+entries. See [Universal palette](UNIVERSAL_PALETTE.md).
 
 ### Windows backend and device policy
 
@@ -1100,8 +1354,11 @@ channels, and current activity.
 
 ### Immediate safety actions
 
-- Space stops current playback and acts as the ordinary panic control.
-- Escape cancels the current gesture/dialog before it asks to quit.
+- Space controls the current audition; in Mosaic it plays or pauses the arrangement.
+- Mosaic's STOP or Escape stops and rewinds the arrangement when no gesture is active.
+- Escape cancels an active gesture/dialog first. From an event editor it returns to
+  Mosaic; from Sister it restores the main application window. The ordinary main
+  canvas retains its exit confirmation.
 - Lower the final OUT fader if speaker level is unsafe.
 - Leave LIM enabled when exploring feedback and extreme synthesis.
 - Use headphones for microphone monitoring.
@@ -1111,6 +1368,21 @@ channels, and current activity.
 Check POWER, ROLL, the relevant source switch, source mask, MONITOR, DRY/WET, source
 mixer trim, head levels, internal OUT, master FX, final OUT, and the audio device. A
 source routed into Sister is intentionally removed from its ordinary direct path.
+
+For Mosaic, check that the arrangement is playing, the events are not muted or
+excluded by solo, and the **TILES** input is enabled when Sister is powered.
+
+### Sound continues after stopping an audition or bypassing effects
+
+Mosaic has its own transport. Changing windows, stopping an editor audition, or
+closing Sister's window leaves it running. The MOSAIC toolbar button remains lit
+during background playback. Use STOP in Mosaic to stop the arrangement.
+
+MASTER FX bypass fades the live processors to dry; it does not mute playback or
+erase processed sound already recorded into Sister's tape. Check the Master
+transition time if the effect takes longer than expected to disappear. Sister's
+heads and feedback can also continue reading its memory after a source stops.
+The final OUT fader controls the combined listening and output-file level.
 
 ### Capture will not start
 
@@ -1233,10 +1505,11 @@ faders.
 - MIDI note input, velocity, channels, All Notes Off, sample polyphony, CC mapping,
   14-bit pitch bend, and global MIDI Learn are supported.
 - MIDI output feedback to controller LEDs and motorized controls is not implemented.
-- FT2 Link exchange is supported; direct TapeHead-to-TapeSister live audio is not yet
-  implemented.
-- Portable Windows/Linux build staging exists; final end-user packaging remains a
-  release task.
+- FT2 Link exchange and direct Tapehead-to-TapeSister Live Link audio are supported.
+- Mosaic holds up to 128 events with five voices per event; these are storage limits,
+  and available processing capacity depends on the computer and effects in use.
+- Portable builds still need target-machine audio and interaction checks before
+  release. See the [Windows audio validation guide](WINDOWS_AUDIO_VALIDATION.md).
 
 These boundaries are stated here so the manual can describe the current instrument
 without confusing planned features with controls that already exist.

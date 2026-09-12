@@ -18,7 +18,9 @@ also remain in place.
 
 For coexistence with Tapehead, REAPER, or VB-CABLE, start with Auto or WASAPI
 shared mode and matching sample rates. TapeSister does not provide native ASIO.
-See docs/QUICK_REFERENCE.md and docs/USER_MANUAL.md for operating guidance.
+See docs/USER_MANUAL.md for the illustrated manual, including Mosaic, and
+docs/QUICK_REFERENCE.md for controls and shortcuts. docs/MOSAIC.md covers the
+arrangement workflow in detail. Linked guides and screenshots are included in docs/.
 
 BUILDING THE WINDOWS ARCHIVE
 ----------------------------

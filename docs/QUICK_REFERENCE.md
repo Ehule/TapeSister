@@ -6,19 +6,72 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 
 | Control | Action |
 | --- | --- |
-| `Tab` | Open Sister Machine or move focus between Sister and the main window |
+| `Tab` | Visit Sister and return to the current workspace/event editor; Portal uses Tab for A-B audition |
 | `Ctrl+Tab` | Move to a running Tapehead; press again there to return unchanged |
-| `` ` `` | Open/close FM Logic |
+| `` ` `` | Open/close FM Logic; from Mosaic, return to Mosaic on the next press |
+| Shift+grave (backtick) or `Ctrl+M` | Open Mosaic / return to the previous main or FM workspace |
 | `1` | Show Sample Tiles; press again to cycle Sample pages |
 | `Shift+1` | Open external REC BANK |
 | `2` | Show performance keyboard |
 | `3` | Show CDP; press again to cycle CDP pages |
-| `Ctrl+Shift+P` | Open CDP Portal from Main |
+| `Ctrl+Shift+P` | Reach CDP Portal from main, FM, Mosaic, or Sister |
 | `4` | Show native DSP; press again to cycle DSP pages |
 | `F1`–`F8` | Select keyboard octave |
-| `Space` | Play selection/from playhead; press again for panic stop |
+| `Space` | Main: play/stop audition. Mosaic: play/pause arrangement |
 | `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
-| `Escape` | Cancel active gesture/dialog; otherwise request exit |
+| `Escape` | Cancel active gesture/dialog first; event editor → Mosaic, Sister → main application, idle Mosaic → stop/rewind, ordinary main canvas → exit question |
+
+From Sister, grave and Shift+grave bring FM and Mosaic forward even if already open
+behind it. Active dialogs keep focus until resolved. Number-key lower-panel shortcuts
+apply to the main canvas. Navigation and audition stop leave Mosaic playback running.
+
+## Mosaic
+
+Time runs downward in seconds; horizontal placement and width are visual. Drag an
+occupied source onto the canvas. Sources arrows browse every numbered Sample bank
+(including FM-created pages), then EVENTS pages with event audio versions. Browsing
+does not switch the main bank. See the [Mosaic chapter](USER_MANUAL.md#mosaic).
+
+| Action | Control |
+| --- | --- |
+| Select / edit | Click / double-click event |
+| Box-select a group | Shift+left-drag on empty canvas |
+| Move group / copy group | Drag a selected tile / hold Shift when starting that drag |
+| Extend duration / change visual width | Drag bottom / right edge |
+| Optional start, end, midpoint alignment | Alt during move or duration resize |
+| Mute / solo selected events | M / S; muted and excluded events dim |
+| Copy / paste last-clicked event at playhead | Ctrl+C / Ctrl+V; use Shift-drag for group copies |
+| Delete selection | Delete or Backspace |
+| Undo / redo arrangement edit | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
+| Cancel move/copy drag | Escape |
+| Play / pause | Space or PLAY/PAUSE |
+| Stop and rewind | STOP or Escape when no gesture is active |
+| Seek | Middle-click canvas or click time ruler |
+| Return to beginning | Home |
+| Scroll time / sideways / zoom | Wheel / Shift+wheel / Ctrl+wheel |
+| Follow playhead / fit arrangement / repeat arrangement | FOLLOW / FIT ALL / REPEAT |
+| Record final stereo output | Header or footer REC FILE; Ctrl+Shift+F |
+
+Each event owns its one-to-five-note chord and **EVENT LOOP / EVENT ONCE** setting.
+C5 plays twice as fast as C4; C3 takes twice as long. Extending a loop allows more
+repetitions at the same pitches. One-shots play once, ending at their own completion
+or the event's bottom. Shared source audio does not mean shared playback settings.
+
+Double-click to edit; audio changes accumulate until returning to Mosaic:
+
+| Exit choice | Result |
+| --- | --- |
+| NEW TILE — Enter or N | Keep original and place edited variation beside it |
+| UPDATE TILE — U | Update only this event |
+| KEEP EDITING — Escape | Continue working without publishing the audio |
+
+No audio change means no question. Loop and chord changes are immediate and local
+to the event. Background CDP results retain their requesting event. SAVE includes
+the arrangement and shared audio versions; capacity is 128 events, five voices each.
+
+**CFG → PALETTE → MOSAIC** offers HILITE and colors 1–5. Select a swatch and use
+the existing RGB sliders or Tapehead eyedropper. SAVE SHARED stores them; CANCEL
+restores the previous palette. HILITE defaults to bright red.
 
 ## CDP Portal
 
@@ -167,7 +220,7 @@ Ordinary sliders accept click/drag, wheel, and Left/Right while hovered. Shift m
 wheel/arrow adjustment finer in Sister Machine and coarser where the main interface
 explicitly indicates it.
 
-## Tile interaction
+## Sample-bank tile interaction
 
 | Gesture | Occupied tile | Empty tile |
 | --- | --- | --- |
@@ -183,13 +236,18 @@ Capture destination use separate visual marks.
 
 | Control | No selection | With selection |
 | --- | --- | --- |
-| CREATE | Fresh FM sound replaces selected tile | Fresh FM sound is fitted into range |
+| Left-click CREATE | Fresh FM sound replaces selected tile | Fresh FM sound is fitted into range |
 | VARY, Chain off | Replace current tile with related sound | Replace range with related sound |
 | VARY, Chain on | Put relative in next empty tile | Stamp and advance same-width range |
 | RANGE | Controls family distance | Controls variation distance |
 
 Precise-duration recipe: double-click empty tile → select desired time → CREATE → VARY
 as desired → CROP.
+
+Right-click CREATE to roll a CDP variation of the retained clean waveform; repeated
+rolls use that same clean source without stacking results. Middle-click cancels a
+pending variation and restores the clean waveform. A right-click during processing
+queues one more roll. See [CREATE and CDP variations](USER_MANUAL.md#create-and-cdp-variations).
 
 ## Main Capture
 
@@ -231,7 +289,7 @@ STEREO maps odd channels to L and even channels to R.
 | CLEAR | Safely clear rolling memory |
 | MONITOR | Gate complete Sister DRY+WET return |
 | BUFFER | Live 5–60 second rolling tape |
-| TILES | Route page-specific Shift-click tile mask |
+| TILES | Route Mosaic plus the page-specific Shift-click tile sources |
 | FM | Route live FM Logic |
 | EXT | Route external input |
 | AUDITION | Route preview/audition bus |
@@ -240,6 +298,8 @@ STEREO maps odd channels to L and even channels to R.
 | TH PATT | Toggle Tapehead Pattern Play/Stop; lit only while Pattern mode is playing |
 
 A routed source leaves its ordinary direct speaker path and returns through Sister.
+Power changes preserve shared pedalboard settings and transitions and Fallout's
+modulation state. With Sister off, ordinary playback uses Fallout and POST slots.
 
 ## Sister heads and tape controls
 
@@ -294,7 +354,17 @@ Placement is exactly one of:
 Effect and Master transitions: 10 ms–60 min. Slot Gain: -12 to +12 dB. FX Feedback:
 0–135%.
 
+**MASTER FX** bypasses the live pedalboard and Fallout together, including Fallout's
+feedback, over the Master transition time. It preserves settings and modulation
+clocks. Bypass leaves dry playback audible and cannot remove effects printed into
+Sister's tape. With Sister off, only POST slots process ordinary playback; PRE and
+head placements require Sister.
+
 ## Fallout
+
+Works with Sister powered on or off, before POST slots. Enable both its FALLOUT
+switch and MASTER FX to hear it. Feedback returns to Sister's write when powered,
+or through the bounded ordinary playback return when Sister is off.
 
 | Section | Controls/function |
 | --- | --- |
@@ -349,7 +419,9 @@ coexistence and validate REAPER/ASIO against the interface driver's own sharing 
 | --- | --- | --- |
 | `.tsr` | complete editable project/page state | keep inside its named project folder |
 | `samples/` | extractable 16-bit PCM WAV copies | move with the project folder |
-| `project-data/` | additional pages and REC BANK | move with the project folder |
+| `project-data/` | additional pages, REC BANK, and Mosaic | move with the project folder |
+| `project-data/mosaic.tsm` | event layout, notes, regions, loop/mute/solo/repeat settings | move with the project folder |
+| `project-data/mosaic-000.wav`, etc. | shared event audio versions, lossless 32-bit float | move with the project folder |
 | `sister-state.ini` | Sister/Fallout project state | move with the project folder |
 | `manifest.txt` | collection map | move with the project folder |
 | `.tsp` | processing recipe, no audio | standalone |
@@ -382,7 +454,8 @@ characters where needed. You can edit the suggested name before saving.
 
 ## Safety
 
-- Space is the immediate playback panic stop.
+- Space controls the active audition; in Mosaic it plays/pauses the arrangement.
+- Use Mosaic STOP or Escape in the idle arrangement to stop and rewind it.
 - Escape cancels the active gesture or dialog.
 - Keep LIM on during feedback and Extreme exploration.
 - Lower Sister/FX/Fallout levels before the limiter when GR is excessive.
@@ -394,10 +467,17 @@ characters where needed. You can edit the suggested name before saving.
 | Control | Action |
 | --- | --- |
 | **REC FILE** above the virtual keyboard | Record tile or FM playing; remains accessible with FM open |
-| **REC FILE** in the bottom-right footer | Start/stop output recording from any main-window panel |
+| **REC FILE** in the bottom-right footer | Start/stop output recording from any main-window workspace, including Mosaic |
+| **REC FILE** in the Mosaic header | Operate that same final stereo output recorder |
 | **REC FILE** on the sample bank | Start a stereo output WAV immediately; no tile destination |
 | **REC FILE** on the FX/pedalboard page | Record the final stereo master output, including effects; works with Sister power off |
 | `Ctrl+Shift+F` in the main window | Start/stop the output file from any main-window panel |
+
+Recording continues through workspace changes and event editing. Click the active
+recording button again to finish the timestamped file in `Captures/`; Mosaic keeps
+playing. Stop the arrangement first and record its effects tails if desired. The
+file contains the final processing, limiter, and OUT level and requires no tile
+destination or powered Sister engine.
 | **STOP FILE** in the recording footer | Finish the WAV and keep playback running |
 | QWERTY on the canvas | Up to five simultaneous notes; newest voice supplies the playhead |
 

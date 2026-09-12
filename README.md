@@ -2,7 +2,7 @@
 
 TapeSister is a standalone sound-making, sample-sculpting, and performance instrument
 for Windows and Linux. It combines independent sample tiles, generative six-voice FM,
-waveform editing, native DSP and curated CDP8 processes, real-time recording, Sister
+Mosaic event sequencing, waveform editing, native DSP and curated CDP8 processes, real-time recording, Sister
 Machine's rolling tape memory, Fallout deterioration, and a four-slot effects pedalboard.
 
 Its basic creative loop is simple:
@@ -45,7 +45,10 @@ lets the same source be auditioned through several interpretations before import
 
 ### Create and Variation
 
-CREATE renders a fresh deterministic six-voice FM sound. VARY answers the material that
+Left-click CREATE to render a fresh deterministic six-voice FM sound. Right-click
+to explore CDP variations of the retained clean waveform; middle-click cancels the
+variation and restores that clean sound. Successive CDP rolls use the same source.
+VARY answers the material that
 actually exists now: after drawing, tape gestures, tuning, pasting, or other destructive
 shaping, the audible waveform becomes the source of the next variation.
 
@@ -72,6 +75,32 @@ The live preview can be played from QWERTY or MIDI before it is applied. MAKE BA
 creates a complete 16-sound family in one atomic operation.
 
 ![Six-voice FM Logic](docs/images/manual/fm-logic.png)
+
+### Mosaic
+
+Mosaic places sample events freely on a top-to-bottom timeline. Drag sources into
+place, stretch events to allow more loop repetitions, and overlap them side by side.
+Each event has its own loop/one-shot setting and up to five pitched notes with
+independent playback speeds. A chord can turn one fragment into an evolving texture
+as its different loop lengths move in and out of alignment.
+
+![Mosaic's free canvas with independent pitched events](docs/images/mosaic.png)
+
+Double-click an event to use the familiar waveform editor. Audio edits accumulate
+until you return to Mosaic, then **NEW TILE** preserves the original or **UPDATE
+TILE** changes only that event. Copies share source audio until an edit creates a
+new version. Sources browses all Sample banks and the event audio versions.
+
+Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to
+copy the group. M/S mutes or solos, middle-click seeks, and FOLLOW scrolls with the
+playhead. **Shift+grave** visits Mosaic and returns to the previous main or FM
+workspace. Its colors and selection highlight are editable in CFG → PALETTE.
+
+Mosaic plays through the existing global Fallout, pedalboard, and Sister routing.
+**REC FILE** records the final stereo output while you arrange or edit. Saving
+preserves the arrangement and shared audio versions in the project folder. See the
+[illustrated Mosaic chapter](docs/USER_MANUAL.md#mosaic) and
+[controls reference](docs/QUICK_REFERENCE.md#mosaic).
 
 ### Waveform and transform tools
 
@@ -149,12 +178,18 @@ Effect and Master transitions span 10 ms to 60 minutes. Live type, placement, an
 changes morph without stopping audio. FX Feedback returns the effect contribution into
 the rolling write and reaches 135% for deliberately self-building structures.
 
+**MASTER FX** bypasses both the pedalboard and Fallout, including Fallout feedback,
+over its selected transition. Individual settings are preserved. With Sister off,
+ordinary playback and Mosaic still use Fallout and POST slots; PRE and head slots
+require Sister. Turning Sister on preserves the shared effect setup.
+
 ![Four reorderable and independently placed FX slots](docs/images/manual/fx-pedalboard.png)
 
 ## Fallout
 
 Fallout is a stereo deterioration instrument between Sister's completed MIX and the
-POST pedalboard location. Drop, Pan, Skip, Bit, Pitch, colored Noise, and Feedback can
+POST pedalboard location. With Sister off, it processes ordinary playback, including
+Mosaic, before POST effects. Drop, Pan, Skip, Bit, Pitch, colored Noise, and Feedback can
 be combined or modulated.
 
 Its three independent transition clocks—Preset, Parts, and Master—each span 10 ms to
@@ -197,6 +232,9 @@ Terra Night/
 The TSR and project data preserve complete editable state. `samples/` contains an
 ordinary 16-bit PCM WAV for every occupied Sample and REC tile, with standard tuning
 and loop metadata for extraction or interchange.
+
+Mosaic's layout is stored in `project-data/mosaic.tsm`; its shared source versions
+are lossless 32-bit float `mosaic-000.wav`, etc., in the same directory.
 
 Move, share, or back up the complete named folder. The persistent `Captures/` archive
 remains outside projects by design.

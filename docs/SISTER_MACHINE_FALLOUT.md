@@ -9,12 +9,18 @@ Pedalboard slots placed at PRE or H1/H2/H3 enter at their named earlier location
 therefore do not appear in this post-MIX shorthand. See the
 [User Manual](USER_MANUAL.md#the-four-slot-fx-pedalboard) for the current rack.
 
+Fallout also processes ordinary playback with Sister powered off, including Mosaic:
+the shared input mix enters Fallout, then POST slots, the limiter, and final OUT.
+PRE and head placements require Sister. Mosaic supplies Sister's **TILES** input
+when Sister is powered, and uses this ordinary route when it is off. Switching
+Sister power preserves the global effect settings, transitions, and modulation state.
+
 It is an original C reimplementation inspired by Bahiamansa's freely shared
 `failure_v2` ppooll act. No Max, ppooll, patcher, artwork, or UI code is embedded.
 
 ## Bypass and lifecycle
 
-FALLOUT is a real insert switch. OFF returns the dry Sister frame exactly after its
+FALLOUT is a real insert switch. OFF returns the dry input frame exactly after its
 selected transition, stops loop-buffer activity, and clears history. ON starts from a
 clean 20-second stereo store and fades into the selected MIX. TRANSITION is logarithmic
 from 10 ms to 60 minutes, so the insert can arrive almost immediately or emerge over a
@@ -22,10 +28,18 @@ performance-length ramp. `sister_fallout_transition_ms` selects the startup defa
 `tapesister.ini`; presets and projects preserve the live setting. This prevents a stale
 fragment from appearing after a later re-enable and keeps the callback allocation free.
 
+The pedalboard's **MASTER FX** switch separately governs all live pedalboard and
+Fallout processing, including Fallout feedback, on both the Sister and ordinary
+routes. Its selected Master transition applies to this combined bypass. Individual
+Fallout settings and modulation clocks survive Master FX bypass; the FALLOUT switch
+above has its own history-reset behavior. Bypass leaves dry playback audible and
+does not undo processing already recorded into Sister's tape memory.
+
 ## Controls
 
-- MIX blends Fallout with the incoming Sister MIX.
-- FEEDBACK returns Fallout's wet-only signal to Sister's rolling write.
+- MIX blends Fallout with the incoming Sister MIX or ordinary playback mix.
+- FEEDBACK returns Fallout's wet-only signal to Sister's rolling write when powered,
+  or through the bounded ordinary playback return with Sister off.
 - NOISE cycles among WHITE, PINK, BROWN, and BLUE spectra; LEVEL sets its amount.
 - DROP creates Gaussian amplitude failures.
 - PAN creates smoothed random equal-power positions.
@@ -101,9 +115,14 @@ that event immediately so its saved panel value resumes without a stale interval
 
 ## Feedback safety
 
-Fallout feedback is tapped before Fallout MIX and before Master FX. It follows both
-the LFO-modulated FEEDBACK value and the insert's transition envelope. It is smoothed,
+Fallout feedback is tapped from the wet signal before Fallout MIX. It follows
+the LFO-modulated FEEDBACK value, the insert's transition envelope, and the Master FX
+gate, so a bypassed master cannot continue feeding Fallout into the tape. It is smoothed,
 linked-capped, saturated, delayed by one sample, and then combined with the existing
 Master FX return. The shared return enters after Sister INPUT trim and is processed by
 the established DC blocker and rolling-write soft saturation. Turning Fallout off
 drives its feedback state to exact zero and clears its loop history.
+
+With Sister off, the runtime uses a separate bounded, one-sample-delayed return
+around the ordinary Fallout input. Master FX gates that return too. No powered
+rolling-tape engine is needed for this route.

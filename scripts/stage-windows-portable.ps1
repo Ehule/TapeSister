@@ -78,10 +78,10 @@ Copy-PortableFile -Source (Join-Path $RepoRoot "THIRD_PARTY_NOTICES.md") `
 
 $Documentation = Join-Path $DestinationPath "docs"
 New-Item -ItemType Directory -Path $Documentation -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $RepoRoot "docs/QUICK_REFERENCE.md") `
-    -Destination $Documentation -Force
-Copy-Item -LiteralPath (Join-Path $RepoRoot "docs/USER_MANUAL.md") `
-    -Destination $Documentation -Force
+# Preserve relative links to guides and screenshots in the offline manual.
+Get-ChildItem -LiteralPath (Join-Path $RepoRoot "docs") | ForEach-Object {
+    Copy-Item -LiteralPath $_.FullName -Destination $Documentation -Recurse -Force
+}
 
 $RequiredLayout = @(
     "TapeSister.exe",
@@ -91,7 +91,13 @@ $RequiredLayout = @(
     "cdp/bin",
     "licenses/THIRD_PARTY_NOTICES.md",
     "tapesister.ini.example",
-    "README.txt"
+    "README.txt",
+    "docs/USER_MANUAL.md",
+    "docs/QUICK_REFERENCE.md",
+    "docs/MOSAIC.md",
+    "docs/images/mosaic.png",
+    "docs/images/mosaic-edit-choice.png",
+    "docs/images/mosaic-palette.png"
 )
 foreach ($RelativePath in $RequiredLayout) {
     if (-not (Test-Path -LiteralPath (Join-Path $DestinationPath $RelativePath))) {
