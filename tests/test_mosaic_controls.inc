@@ -58,7 +58,7 @@ static void test_mosaic_variation_banks(SDL_Window *window)
     assert(mosaic_resolve_edit(0,a,view,bank,c,1));
     TsMosaicEvent *variation=ts_mosaic_find(view->mosaic,view->mosaic_selected);assert(variation && variation!=owner);
     assert(variation->source->hash==changed && owner->source->hash==original);
-    assert(variation->x>=view->mosaic_xscroll && variation->x+variation->width<=view->mosaic_xscroll+480);
+    assert(variation->x>=view->mosaic_xscroll && variation->x+variation->width<=view->mosaic_xscroll+TS_MOSAIC_CANVAS_RIGHT-151);
     assert(view->mosaic_source_page==1 && view->sample_page_count==2 && view->mosaic_source_selected>=0);
     assert(view->mosaic_sources[view->mosaic_source_selected].hash==changed);
     assert(ts_sample_pages_active(&pages)==0 && bank->selected_slot==selected && ts_sample_hash(&bank->current)==original);
@@ -66,12 +66,14 @@ static void test_mosaic_variation_banks(SDL_Window *window)
     assert(other && ts_sample_hash(&other->bank[slot].sample)==changed);
     assert(slot==0 && ts_sample_hash(&other->current)==changed);
     assert(other->tuning.root_note==65 && other->bank[slot].tuning.root_note==65);
-    /* UPDATE remains event-only, leaving the reusable NEW TILE bank snapshot
-       intact. Save/reopen retains the bank snapshot and updated event audio. */
+    /* UPDATE INSTANCE keeps the old source and publishes a new regular bank
+       tile as well as replacing this one card. */
     assert(mosaic_enter(0,a,view,bank,c,variation->id));assert(ts_instrument_apply_smear(bank,.6f,error,sizeof(error)));
     uint64_t updated=ts_sample_hash(&bank->current);assert(updated!=changed);
     assert(!mosaic_leave(0,a,view,bank,c));assert(mosaic_resolve_edit(0,a,view,bank,c,2));
     assert(variation->source->hash==updated && ts_sample_hash(&other->bank[slot].sample)==changed);
+    assert(view->mosaic_source_page==1 && view->mosaic_source_selected==1);
+    assert(ts_sample_hash(&other->bank[1].sample)==updated);
     /* Empty slot 0 in an existing bank is not a freshly allocated bank. A new
        snapshot there must not replace the other fifteen sounds or its editor. */
     assert(ts_instrument_bank_clear(bank,0,error,sizeof(error)));
@@ -83,10 +85,74 @@ static void test_mosaic_variation_banks(SDL_Window *window)
     assert(bank->selected_slot==selected && ts_sample_hash(&bank->current)==original);
     assert(ts_sample_hash(&bank->bank[0].sample)==zero_slot);
     for(int i=1;i<16;++i)assert(ts_sample_hash(&bank->bank[i].sample)==original);
+    /* UPDATE ALL replaces shared cards and matching source slots across bank
+       pages, including both selected live editors, but preserves other sounds. */
+    TsInstrument *other_mut=ts_sample_pages_page_mut(&pages,bank,1);
+    assert(ts_instrument_copy_bank_slot_from(other_mut,2,bank,selected,error,sizeof(error)));
+    TsMosaicEvent *sibling=NULL;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(view->mosaic->events[i].id && &view->mosaic->events[i]!=owner && view->mosaic->events[i].source==source){sibling=&view->mosaic->events[i];break;}
+    assert(sibling);sibling->first=480;sibling->last=3000;sibling->crossfade=80;sibling->mode=TS_LOOP_REVERSE;
+    sibling->notes[0]=48;sibling->notes[1]=55;sibling->note_count=2;sibling->gain=.6f;sibling->pan=-.4f;
+    sibling->fade_in=1.2;sibling->fade_out=1.5;sibling->tuning.root_note=70;
+    strcpy(sibling->name,"MY CHORD");
+    TsMosaicEvent before=*sibling;
+    assert(mosaic_enter(0,a,view,bank,c,sibling->id));assert(mosaic_leave(0,a,view,bank,c)); /* Cache the old document. */
+    assert(mosaic_enter(0,a,view,bank,c,owner->id));assert(ts_instrument_apply_smear(bank,.3f,error,sizeof(error)));
+    TsSample shortened=bank->current;shortened.frames/=2;strcpy(shortened.name,"SHARED UPDATE");
+    assert(ts_instrument_import_sample(bank,&shortened,0,0,0,TS_LOOP_FORWARD,error,sizeof(error)));
+    uint64_t shared=ts_sample_hash(&bank->current);assert(shared!=original);
+    assert(!mosaic_leave(0,a,view,bank,c));
+    uint64_t arrangement=ts_mosaic_hash(view->mosaic);int undo_count=view->mosaic->history_count;
+    other_mut->bank[2].locked=1;
+    assert(!mosaic_resolve_edit(0,a,view,bank,c,3));
+    assert(strstr(view->status,"locked") && view->mosaic_edit_choice && c->active==owner->id);
+    assert(ts_mosaic_hash(view->mosaic)==arrangement && view->mosaic->history_count==undo_count);
+    assert(ts_sample_hash(&c->bank->current)==original && ts_sample_hash(&other_mut->current)==original);
+    other_mut->bank[2].locked=0;
+    /* Exercise the visible UPDATE ALL button through its real hit target. */
+    SDL_Event accept={0};accept.type=SDL_MOUSEBUTTONDOWN;accept.button.windowID=SDL_GetWindowID(window);
+    accept.button.button=SDL_BUTTON_LEFT;accept.button.x=300;accept.button.y=230;
+    assert(mosaic_event(&accept,window,0,a,view,bank,c,&portal,&sister,&transform,48000));
+    assert(!view->mosaic_edit_choice && !c->active && ts_sample_hash(&bank->current)==shared);
+    assert(owner->source->hash==shared && sibling->source==owner->source && variation->source->hash==updated);
+    assert(sibling->start==before.start && sibling->duration==before.duration && sibling->x==before.x);
+    assert(sibling->first==240 && sibling->last==1500 && sibling->crossfade==40 && sibling->mode==before.mode);
+    assert(sibling->note_count==2 && sibling->notes[0]==48 && sibling->notes[1]==55 && sibling->tuning.root_note==70);
+    assert(sibling->gain==before.gain && sibling->pan==before.pan && sibling->fade_in==before.fade_in && sibling->fade_out==before.fade_out);
+    assert(!strcmp(sibling->name,"MY CHORD") && !strcmp(owner->name,"SHARED UPDATE"));
+    assert(ts_sample_pages_count(&pages)==2 && bank->selected_slot==selected);
+    assert(ts_sample_hash(&bank->bank[0].sample)==zero_slot);
+    for(int i=1;i<16;++i)assert(ts_sample_hash(&bank->bank[i].sample)==shared);
+    assert(ts_sample_hash(&other_mut->bank[2].sample)==shared && ts_sample_hash(&other_mut->current)==shared);
+    assert(ts_sample_hash(&other_mut->bank[0].sample)==changed && ts_sample_hash(&other_mut->bank[1].sample)==updated);
+    assert(mosaic_enter(0,a,view,bank,c,sibling->id));assert(ts_sample_hash(&bank->current)==shared);
+    assert(bank->loop_first==240 && bank->loop_last==1500 && bank->loop_mode==TS_LOOP_REVERSE);
+    assert(mosaic_leave(0,a,view,bank,c));
+    assert(ts_mosaic_undo(view->mosaic,0));assert(owner->source->hash==original && sibling->source==source);
+    assert(ts_mosaic_undo(view->mosaic,1));assert(owner->source->hash==shared && sibling->source==owner->source);
+    /* A subsequent shared edit must leave an unrelated selected editor exactly
+       intact, rather than reconstructing it from its stored bank slot. */
+    assert(ts_instrument_select_bank(bank,0,error,sizeof(error)));
+    assert(ts_instrument_select_bank(other_mut,0,error,sizeof(error)));
+    bank->view_first=11;bank->view_last=1500;bank->source_kind=TS_SOURCE_GENERATED;
+    unsigned char *editor=malloc(offsetof(TsInstrument,bank));assert(editor);
+    memcpy(editor,bank,offsetof(TsInstrument,bank));
+    assert(mosaic_enter(0,a,view,bank,c,owner->id));assert(ts_instrument_apply_smear(bank,.5f,error,sizeof(error)));
+    shared=ts_sample_hash(&bank->current);assert(!mosaic_leave(0,a,view,bank,c));
+    assert(mosaic_resolve_edit(0,a,view,bank,c,3));
+    /* Audio allocations may change, but every scalar/embedded editor field is preserved. */
+    TsInstrument *expected=(TsInstrument *)editor;
+    expected->current=bank->current;expected->parent=bank->parent;
+    assert(!memcmp(editor,bank,offsetof(TsInstrument,bank)));free(editor);
+    assert(ts_sample_hash(&bank->current)==zero_slot && ts_sample_hash(&other_mut->current)==changed);
+    assert(owner->source->hash==shared && ts_sample_hash(&bank->bank[selected].sample)==shared);
+    assert(ts_instrument_select_bank(bank,selected,error,sizeof(error)));
     assert(ts_sample_pages_save_project(&pages,bank,record,NULL,"test-mosaic-variations/test-mosaic-variations.tsr",error,sizeof(error)));
     assert(ts_sample_pages_load_project(&pages,bank,record,"test-mosaic-variations/test-mosaic-variations.tsr",error,sizeof(error)));
     assert(ts_sample_hash(&ts_sample_pages_page(&pages,bank,1)->bank[slot].sample)==changed);
-    assert(ts_sample_hash(&bank->current)==original);
+    assert(ts_sample_hash(&bank->current)==shared);
+    assert(ts_sample_hash(&ts_sample_pages_page(&pages,bank,1)->bank[1].sample)==updated);
+    assert(ts_sample_hash(&ts_sample_pages_page(&pages,bank,1)->bank[2].sample)==shared);
     mosaic_controller_free(c);free(c);ts_mosaic_free(view->mosaic);ts_sample_pages_free(&pages);
     ts_instrument_free(bank);ts_instrument_free(record);free(bank);free(record);free(view);
     ts_performance_free(&a->performance);ts_performance_free(&a->tile_launchers);ts_sister_runtime_free(&a->sister);ts_capture_free(&a->capture);free(a);

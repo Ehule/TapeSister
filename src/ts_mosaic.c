@@ -9,7 +9,8 @@ TsMosaic *ts_mosaic_create(void)
 {
     static uint64_t epoch=0;
     TsMosaic *m=calloc(1,sizeof(*m));
-    if(m) {m->next_id=1;m->gain=0.7f;m->speed=m->speed_current=1;m->epoch=++epoch;}
+    if(m) {m->next_id=1;m->gain=0.7f;m->speed=m->speed_current=1;m->epoch=++epoch;m->volume_current=1;
+        for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)m->volume[i]=1;}
     return m;
 }
 void ts_mosaic_free(TsMosaic *m)
@@ -71,9 +72,13 @@ void ts_mosaic_checkpoint(TsMosaic *m)
     if(m->history_count==TS_MOSAIC_HISTORY) {
         memmove(m->history,m->history+1,(TS_MOSAIC_HISTORY-1)*sizeof(m->history[0]));
         memmove(m->history_speed,m->history_speed+1,(TS_MOSAIC_HISTORY-1)*sizeof(m->history_speed[0]));
+        memmove(m->history_volume,m->history_volume+1,(TS_MOSAIC_HISTORY-1)*sizeof(m->history_volume[0]));
+        memmove(m->history_repeat,m->history_repeat+1,(TS_MOSAIC_HISTORY-1)*sizeof(m->history_repeat[0]));
         --m->history_count;
     }
     m->history_speed[m->history_count]=m->speed;
+    m->history_repeat[m->history_count]=m->repeat;
+    memcpy(m->history_volume[m->history_count],m->volume,sizeof(m->volume));
     memcpy(m->history[m->history_count++],m->events,sizeof(m->events));
     m->history_cursor=m->history_count;++m->revision;
 }
@@ -86,6 +91,10 @@ int ts_mosaic_undo(TsMosaic *m,int redo)
         TsMosaicEvent e=m->events[i];m->events[i]=m->history[at][i];m->history[at][i]=e;
     }
     double speed=m->speed;ts_mosaic_set_speed(m,m->history_speed[at]);m->history_speed[at]=speed;
+    for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i) {
+        float value=m->volume[i];m->volume[i]=m->history_volume[at][i];m->history_volume[at][i]=value;
+    }
+    int repeat=m->repeat;m->repeat=m->history_repeat[at];m->history_repeat[at]=repeat;
     m->history_cursor+=redo?1:-1;memset(m->voices,0,sizeof(m->voices));++m->revision;return 1;
 }
 static int overlap(const TsMosaicEvent *a,const TsMosaicEvent *b)
@@ -149,7 +158,8 @@ double ts_mosaic_end(const TsMosaic *m)
 void ts_mosaic_seek(TsMosaic *m,double time)
 {
     if(m){m->time=isfinite(time)?fmax(0,time):0;memset(m->voices,0,sizeof(m->voices));
-        m->transition_from=m->last_output;m->transition_total=m->transition_remaining=(unsigned)(m->rate>0?m->rate/500:0);}
+        m->transition_from=m->last_output;m->transition_total=m->transition_remaining=(unsigned)(m->rate>0?m->rate/500:0);
+        double end=ts_mosaic_end(m);m->volume_current=ts_mosaic_volume_at(m,end>0?m->time/end:0);}
 }
 void ts_mosaic_set_speed(TsMosaic *m,double speed)
 {
@@ -213,6 +223,56 @@ static void voice_begin(TsMosaicVoice *v,const TsMosaicEvent *e,double elapsed,i
         v->step[n]=(double)e->source->sample.sample_rate/rate*pitch;
     }
 }
+float ts_mosaic_volume_at(const TsMosaic *m,double position)
+{
+    if(!m || !isfinite(position))return 1;
+    double point=fmax(0,fmin(1,position))*(TS_MOSAIC_ENVELOPE_POINTS-1);
+    int a=(int)point,b=a<TS_MOSAIC_ENVELOPE_POINTS-1?a+1:a;
+    float last=m->repeat && b==TS_MOSAIC_ENVELOPE_POINTS-1?m->volume[0]:m->volume[b];
+    float first=m->repeat && a==TS_MOSAIC_ENVELOPE_POINTS-1?m->volume[0]:m->volume[a];
+    return first+(last-first)*(float)(point-a);
+}
+void ts_mosaic_set_repeat(TsMosaic *m,int repeat)
+{
+    if(!m)return;
+    m->repeat=repeat!=0;
+    if(m->repeat)m->volume[TS_MOSAIC_ENVELOPE_POINTS-1]=m->volume[0];
+    ++m->revision;
+}
+void ts_mosaic_volume_draw(TsMosaic *m,double from,float a,double to,float b)
+{
+    if(!m || !isfinite(from) || !isfinite(to) || !isfinite(a) || !isfinite(b))return;
+    int first=(int)llround(fmax(0,fmin(1,from))*(TS_MOSAIC_ENVELOPE_POINTS-1));
+    int last=(int)llround(fmax(0,fmin(1,to))*(TS_MOSAIC_ENVELOPE_POINTS-1));
+    a=fmaxf(0,fminf(1,a));b=fmaxf(0,fminf(1,b));
+    int direction=last>=first?1:-1;
+    for(int i=first;;i+=direction) {
+        m->volume[i]=first==last?b:a+(b-a)*(float)(i-first)/(last-first);
+        if(i==last)break;
+    }
+    if(m->repeat) {
+        if(last==TS_MOSAIC_ENVELOPE_POINTS-1)m->volume[0]=m->volume[last];
+        m->volume[TS_MOSAIC_ENVELOPE_POINTS-1]=m->volume[0];
+    }
+    ++m->revision;
+}
+void ts_mosaic_volume_action(TsMosaic *m,TsMosaicEnvelopeAction action)
+{
+    if(!m)return;
+    int last=TS_MOSAIC_ENVELOPE_POINTS-1;
+    if(action==TS_MOSAIC_ENV_RESET)for(int i=0;i<=last;++i)m->volume[i]=1;
+    else if(action==TS_MOSAIC_ENV_MATCH_START)m->volume[0]=m->volume[last];
+    else if(action==TS_MOSAIC_ENV_MATCH_END)m->volume[last]=m->volume[0];
+    else if(action==TS_MOSAIC_ENV_RAMP)
+        ts_mosaic_volume_draw(m,0,m->volume[0],1,m->volume[last]);
+    else if(action==TS_MOSAIC_ENV_SMOOTH) {
+        float old[TS_MOSAIC_ENVELOPE_POINTS];memcpy(old,m->volume,sizeof(old));
+        for(int i=1;i<last;++i)m->volume[i]=(old[i-1]+2*old[i]+old[i+1])*.25f;
+    }
+    if(m->repeat)m->volume[last]=m->volume[0];
+    ++m->revision;
+}
+
 TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
 {
     TsStereoFrame out={0,0};if(!m || rate<=0)return out;
@@ -224,7 +284,8 @@ TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
         }
         m->last_output=out;return out;
     }
-    if(!m->was_playing){for(int i=0;i<TS_MOSAIC_EVENTS;++i)m->voices[i].attack=0;m->was_playing=1;m->speed_current=m->speed;}
+    int starting=!m->was_playing;
+    if(starting){for(int i=0;i<TS_MOSAIC_EVENTS;++i)m->voices[i].attack=0;m->was_playing=1;m->speed_current=m->speed;}
     if(m->rate!=rate){memset(m->voices,0,sizeof(m->voices));m->rate=rate;}
     /* Smooth live changes over at most 20 ms. The same speed advances both
        arrangement time and every source phase, without retriggering voices. */
@@ -240,6 +301,10 @@ TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
         if(m->repeat && end>0)ts_mosaic_seek(m,fmod(m->time,end));
         else {m->playing=0;return out;}
     }
+    float target_volume=ts_mosaic_volume_at(m,end>0?m->time/end:0);
+    if(starting)m->volume_current=target_volume;
+    float volume_step=1.0f/(rate*.005f);
+    m->volume_current+=fmaxf(-volume_step,fminf(volume_step,target_volume-m->volume_current));
     for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
         const TsMosaicEvent *e=&m->events[i];TsMosaicVoice *v=&m->voices[i];
         if(!e->id || m->time+1e-10<e->start || m->time>=e->start+e->duration) {v->active=0;continue;}
@@ -257,7 +322,7 @@ TsStereoFrame ts_mosaic_read(TsMosaic *m,int rate)
         float mix_ramp=2.0f/(rate*.005f);
         v->mix_left+=fmaxf(-mix_ramp,fminf(mix_ramp,left-v->mix_left));
         v->mix_right+=fmaxf(-mix_ramp,fminf(mix_ramp,right-v->mix_right));
-        float gain=m->gain*envelope*v->audible_gain*event_fade(e,m->time-e->start)/e->note_count;
+        float gain=m->gain*m->volume_current*envelope*v->audible_gain*event_fade(e,m->time-e->start)/e->note_count;
         for(int n=0;n<e->note_count;++n) {
             TsStereoFrame f;
             v->position[n]=voice_position(e,v->travel[n],&v->direction[n],&v->intro[n]);
@@ -295,6 +360,10 @@ uint64_t ts_mosaic_hash(const TsMosaic *m)
         for(const unsigned char *p=(const unsigned char *)line;*p;++p){hash^=*p;hash*=1099511628211ull;}
         for(const unsigned char *p=(const unsigned char *)e->name;*p;++p){hash^=*p;hash*=1099511628211ull;}
     }
+    for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i) {
+        char value[32];snprintf(value,sizeof(value),"%.9g",m->volume[i]);
+        for(const unsigned char *p=(const unsigned char *)value;*p;++p){hash^=*p;hash*=1099511628211ull;}
+    }
     char speed[48];snprintf(speed,sizeof(speed),"%.17g",m->speed);
     for(const unsigned char *p=(const unsigned char *)speed;*p;++p){hash^=*p;hash*=1099511628211ull;}
     hash^=(uint64_t)m->repeat;hash*=1099511628211ull;
@@ -307,7 +376,10 @@ int ts_mosaic_save(const TsMosaic *m,const char *dir,char *error,size_t size)
     char path[4096];
     if(snprintf(path,sizeof(path),"%s/mosaic.tsm",dir)>=(int)sizeof(path))return 0;
     FILE *f=fopen(path,"w");if(!f)goto failed;
-    if(fprintf(f,"TAPESISTER_MOSAIC 3\nSETTINGS %d %.9g %.17g\n",m->repeat,m->gain,m->speed)<0)goto close_failed;
+    if(fprintf(f,"TAPESISTER_MOSAIC 4\nSETTINGS %d %.9g %.17g\n",m->repeat,m->gain,m->speed)<0)goto close_failed;
+    if(fprintf(f,"VOLUME %d\n",TS_MOSAIC_ENVELOPE_POINTS)<0)goto close_failed;
+    for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)
+        if(fprintf(f,"%.9g\n",m->repeat && i==TS_MOSAIC_ENVELOPE_POINTS-1?m->volume[0]:m->volume[i])<0)goto close_failed;
     const TsMosaicSource *sources[TS_MOSAIC_EVENTS];int count=0;
     for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
         const TsMosaicEvent *e=&m->events[i];if(!e->id)continue;
@@ -341,7 +413,7 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
     TsMosaic *next=ts_mosaic_create();if(!next){fclose(f);return 0;}
     TsMosaicSource *sources[TS_MOSAIC_EVENTS]={0};int count=0;
     if(!fgets(line,sizeof(line),f))goto failed;
-    int version=!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
+    int version=!strcmp(line,"TAPESISTER_MOSAIC 4\n")?4:!strcmp(line,"TAPESISTER_MOSAIC 1\n")?1:!strcmp(line,"TAPESISTER_MOSAIC 2\n")?2:!strcmp(line,"TAPESISTER_MOSAIC 3\n")?3:0;
     if(!version)goto failed;
     char trailing;
     if(!fgets(line,sizeof(line),f))goto failed;
@@ -350,6 +422,15 @@ int ts_mosaic_load(TsMosaic *m,const char *dir,char *error,size_t size)
            !isfinite(next->speed) || next->speed<.5 || next->speed>2)goto failed;
     } else if(sscanf(line,"SETTINGS %d %f %c",&next->repeat,&next->gain,&trailing)!=2)goto failed;
     if((next->repeat!=0 && next->repeat!=1) || !isfinite(next->gain) || next->gain<0 || next->gain>2)goto failed;
+    if(version>=4) {
+        int points;
+        if(!fgets(line,sizeof(line),f) || sscanf(line,"VOLUME %d %c",&points,&trailing)!=1 ||
+           points!=TS_MOSAIC_ENVELOPE_POINTS)goto failed;
+        for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)
+            if(!fgets(line,sizeof(line),f) || sscanf(line,"%f %c",&next->volume[i],&trailing)!=1 ||
+               !isfinite(next->volume[i]) || next->volume[i]<0 || next->volume[i]>1)goto failed;
+        if(next->repeat && next->volume[0]!=next->volume[TS_MOSAIC_ENVELOPE_POINTS-1])goto failed;
+    }
     next->speed_current=next->speed;
     while(fgets(line,sizeof(line),f)) {
         if(count==TS_MOSAIC_EVENTS)goto failed;

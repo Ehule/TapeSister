@@ -6,26 +6,26 @@ static void sister_key(SDL_Window *window,SDL_Keycode sym,SDL_Keymod mod)
 static void test_workspace_routes(SDL_Window *window)
 {
     ui.mosaic_open=0;ui.fm_open=0;
-    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.fm_open && !ui.mosaic_open);
-    ui.fm_patch.ratios[0]=1.75f;
+    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.fm_open && !ui.mosaic_open);
+    ui.fm_patch.ratios[0]=1.75f;ts_fm_toggle_unison(&ui.fm_patch);
     TsFmPatch patch=ui.fm_patch;const float *preview=workspace_preview.data;
     key(window,SDLK_p,KMOD_CTRL|KMOD_SHIFT);assert(ui.portal.open && !ui.fm_open);
     key(window,SDLK_p,KMOD_CTRL|KMOD_SHIFT);assert(!ui.portal.open && ui.fm_open);
-    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_open && !ui.fm_open);
-    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(!ui.mosaic_open && ui.fm_open);
+    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_open && !ui.fm_open);
+    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(!ui.mosaic_open && ui.fm_open);
     assert(workspace_preview.data==preview && !memcmp(&patch,&ui.fm_patch,sizeof(patch)));
-    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);
-    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.fm_open && !ui.mosaic_open);
-    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(!ui.fm_open && ui.mosaic_open);
+    key(window,SDLK_BACKQUOTE,KMOD_NONE);
+    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.fm_open && !ui.mosaic_open);
+    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(!ui.fm_open && ui.mosaic_open);
     sister.window=SDL_CreateWindow("Sister transitions",0,0,640,400,SDL_WINDOW_HIDDEN);assert(sister.window);
     sister.window_id=SDL_GetWindowID(sister.window);
     for(int underlying=0;underlying<3;++underlying) {
         ui.mosaic_open=underlying==1;ui.fm_open=underlying==2;
-        sister_window_show(&sister);sister_key(window,SDLK_BACKQUOTE,KMOD_SHIFT);
+        sister_window_show(&sister);sister_key(window,SDLK_BACKQUOTE,KMOD_NONE);
         assert(ui.mosaic_open && !ui.fm_open && !sister.model.visible);
-        sister_window_show(&sister);sister_key(window,SDLK_BACKQUOTE,KMOD_NONE);
+        sister_window_show(&sister);sister_key(window,SDLK_BACKQUOTE,KMOD_SHIFT);
         assert(ui.fm_open && !ui.mosaic_open && !sister.model.visible);
-        sister_window_show(&sister);sister_key(window,SDLK_BACKQUOTE,KMOD_NONE);
+        sister_window_show(&sister);sister_key(window,SDLK_BACKQUOTE,KMOD_SHIFT);
         assert(ui.fm_open && !sister.model.visible); /* Focus FM, don't close hidden FM. */
     }
     SDL_HideWindow(window);sister_window_show(&sister);
@@ -41,16 +41,16 @@ static void test_workspace_routes(SDL_Window *window)
     assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,owner));
     key(window,SDLK_ESCAPE,KMOD_NONE);assert(ui.mosaic_open && !mosaic.active);
     assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,owner));
-    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.fm_open && mosaic.active==owner);
-    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_open && !mosaic.active);
     key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.fm_open && mosaic.active==owner);
+    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_open && !mosaic.active);
+    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.fm_open && mosaic.active==owner);
     for(size_t i=0;i<instrument.current.frames*instrument.current.channels;++i)instrument.current.data[i]*=.9f;
     ++instrument.current.visual_revision;
-    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_edit_choice && !ui.fm_open);
+    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_edit_choice && !ui.fm_open);
     key(window,SDLK_ESCAPE,KMOD_NONE);assert(!ui.mosaic_edit_choice && ui.fm_open && mosaic.active==owner);
-    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_edit_choice);
+    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_edit_choice);
     key(window,SDLK_u,KMOD_NONE);assert(!ui.mosaic_edit_choice && ui.mosaic_open && !mosaic.active && !ui.fm_open);
-    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.fm_open && mosaic.active==owner);
+    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.fm_open && mosaic.active==owner);
     close_fm_workspace(0,&audio,&ui,&workspace_preview);mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
     SDL_DestroyWindow(sister.window);sister.window=NULL;sister.window_id=0;
     mosaic.fm_parked=mosaic.mosaic_return_fm=mosaic.fm_return_mosaic=0;

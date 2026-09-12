@@ -19,6 +19,10 @@ typedef struct {
     size_t seen_frames;
     int audio_dirty, resume_exit;
     int mix_drag, mix_changed;
+    int volume_drag;
+    double volume_position, volume_end;
+    float volume_value;
+    uint64_t volume_epoch;
     uint64_t mix_epoch;
     SDL_Event exit_event;
     int drag, drag_slot, drag_x, drag_y, drag_moved, drag_copy;
@@ -47,7 +51,7 @@ static void mosaic_drag_end(TsUiState *ui,MosaicController *c)
     if(c->drag_epoch==ui->mosaic->epoch && c->source_drag.source && c->source_drag.source->pins)
         --c->source_drag.source->pins;
     c->source_drag=(TsMosaicEvent){0};c->drag=0;c->drag_moved=0;c->drag_copy=0;
-    ui->mosaic_ghost_count=ui->mosaic_box=0;
+    ui->mosaic_ghost_count=ui->mosaic_box=0;c->volume_drag=0;
 }
 /* Browse stored sample banks without swapping the live instrument or routing.
    Keep bank slots/page numbers intact; event versions have separate pages after
@@ -120,7 +124,7 @@ static void mosaic_source_select_event(TsUiState *ui,const TsMosaicEvent *e)
         }
 }
 
-/* NEW TILE publishes a reusable bank snapshot as well as an owned event.
+/* Instance and new-card edits publish a reusable bank snapshot.
    Stage all allocations first. Never select/overwrite a live bank slot. */
 static TsInstrument *mosaic_stage_bank_tile(const TsInstrument *doc,char *error,size_t size)
 {
@@ -154,12 +158,14 @@ static TsBankSlot *mosaic_bank_destination(MosaicController *c,TsInstrument *ban
 static void mosaic_reveal_event(TsUiState *ui,const TsMosaicEvent *e)
 {
     double h=ui->mosaic_hscale>0?ui->mosaic_hscale:1,scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
-    double width=480/h,height=310/scale;
+    double width=(TS_MOSAIC_CANVAS_RIGHT-151)/h,height=310/scale;
     if(e->x<ui->mosaic_xscroll || e->x+e->width>ui->mosaic_xscroll+width)
         ui->mosaic_xscroll=fmax(0,e->x-fmax(8/h,(width-e->width)*.5));
     if(e->start<ui->mosaic_scroll || e->start>=ui->mosaic_scroll+height)
         ui->mosaic_scroll=fmax(0,e->start-20/scale);
 }
+
+#include "main_sdl_mosaic_source_update.inc"
 
 static int mosaic_document_index(MosaicController *c,uint64_t id)
 {
@@ -247,13 +253,15 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
         snprintf(ui->status,sizeof(ui->status),"EDIT OWNER CHANGED - RESULT KEPT IN THE EDITOR");return 0;
     }
     char error[160]={0};
+    if(choice<1 || choice>3)return 0;
+    TsMosaicSource *previous_source=owner->source;
     TsMosaicSource *source=ts_mosaic_source(ui->mosaic,&instrument->current,error,sizeof(error));
     if(!source){snprintf(ui->status,sizeof(ui->status),"EVENT AUDIO NOT UPDATED: %.120s",error);return 0;}
     ++source->pins;
     TsInstrument *original_doc=NULL;int new_index=-1;
     if(choice==1) {
         int free_slot=0;for(int i=0;i<TS_MOSAIC_EVENTS;++i)free_slot+=!ui->mosaic->events[i].id;
-        if(!free_slot){--source->pins;snprintf(ui->status,sizeof(ui->status),"MOSAIC IS FULL - UPDATE TILE OR KEEP EDITING");return 0;}
+        if(!free_slot){--source->pins;snprintf(ui->status,sizeof(ui->status),"MOSAIC IS FULL - UPDATE INSTANCE, UPDATE ALL OR KEEP EDITING");return 0;}
         for(int i=0;i<TS_MOSAIC_EVENTS;++i)
             if(c->document_epochs[i]!=ui->mosaic->epoch || !ts_mosaic_find(ui->mosaic,c->document_ids[i])){new_index=i;break;}
         original_doc=new_index>=0?malloc(sizeof(*original_doc)):NULL;
@@ -267,12 +275,18 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
         original_doc->loop_crossfade_ms=(float)(1000.0*owner->crossfade/owner->source->sample.sample_rate);
         snprintf(original_doc->current.name,sizeof(original_doc->current.name),"%s",owner->name);
     }
-    TsInstrument *staged=choice==1?mosaic_stage_bank_tile(instrument,error,sizeof(error)):NULL;
-    int bank_page=0,bank_slot=0,fresh_bank=0;
+    MosaicSharedUpdate *updates=NULL;
+    int bank_page=-1,bank_slot=0,fresh_bank=0;
+    if(choice==3 && !mosaic_stage_shared_update(c,instrument,previous_source,&updates,&bank_page,&bank_slot,error,sizeof(error))) {
+        --source->pins;snprintf(ui->status,sizeof(ui->status),"EDIT KEPT: %.140s",error);return 0;
+    }
+    int new_source=choice!=3 || !updates;
+    TsInstrument *staged=new_source?mosaic_stage_bank_tile(instrument,error,sizeof(error)):NULL;
     TsBankSlot *destination=staged?mosaic_bank_destination(c,c->bank,&bank_page,&bank_slot,&fresh_bank,error,sizeof(error)):NULL;
-    if(choice==1 && !destination) {
+    if(new_source && !destination) {
         if(staged){ts_instrument_free(staged);free(staged);}
         if(original_doc){ts_instrument_free(original_doc);free(original_doc);}
+        mosaic_shared_update_free(updates);
         --source->pins;snprintf(ui->status,sizeof(ui->status),"EDIT KEPT: %.140s",error[0]?error:"Not enough memory for Sample tile");return 0;
     }
     if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);
@@ -284,10 +298,13 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
         if(original_doc){ts_instrument_free(original_doc);free(original_doc);}
         if(target && choice==1){if(device)SDL_LockAudioDevice(device);ts_mosaic_delete(ui->mosaic,target->id);if(device)SDL_UnlockAudioDevice(device);}
         if(staged){ts_instrument_free(staged);free(staged);}
+        mosaic_shared_update_free(updates);
         --source->pins;return 0;
     }
     if(device)SDL_LockAudioDevice(device);
     target->muted=muted;
+    if(choice==3)mosaic_replace_shared_events(ui->mosaic,previous_source,source,owner->id);
+    mosaic_shared_update_publish(updates);
     if(staged) {
         if(fresh_bank) {
             /* This is the freshly appended, empty bank. Populate its current
@@ -314,16 +331,18 @@ static int mosaic_resolve_edit(SDL_AudioDeviceID device,AudioState *audio,TsUiSt
     c->seen_data=instrument->current.data;c->seen_revision=instrument->current.visual_revision;c->seen_frames=instrument->current.frames;
     ui->mosaic_edit_choice=0;c->pending_id=0;c->audio_dirty=0;c->fm_edit_exit=0;
     int result=mosaic_leave(device,audio,ui,instrument,c);
+    mosaic_shared_update_free(updates);
     if(result) {
         mosaic_drag_end(ui,c);mosaic_sources_refresh(ui,instrument,c);
-        if(choice==1) {
+        if(bank_page>=0) {
             ui->mosaic_source_page=bank_page;mosaic_sources_refresh(ui,instrument,c);
             ui->mosaic_source_selected=bank_slot;
             if(c->pages)ui->sample_page_count=(int)ts_sample_pages_count(c->pages);
-            snprintf(ui->status,sizeof(ui->status),"NEW TILE - BANK %02d TILE %02d",bank_page+1,bank_slot+1);
+            snprintf(ui->status,sizeof(ui->status),"%s - BANK %02d TILE %02d",
+                choice==1?"NEW TILE":choice==2?"INSTANCE UPDATED, NEW SOURCE":"ALL INSTANCES AND SOURCE UPDATED",bank_page+1,bank_slot+1);
         } else {
             mosaic_source_select_event(ui,target);
-            snprintf(ui->status,sizeof(ui->status),"EVENT UPDATED - ORIGINAL BANK AUDIO RETAINED");
+            snprintf(ui->status,sizeof(ui->status),"ALL INSTANCES AND SOURCE UPDATED");
         }
         mosaic_select_only(ui,target->id);mosaic_reveal_event(ui,target);
     }
@@ -347,7 +366,7 @@ static int mosaic_leave(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
     if(c->audio_dirty) {
         TsMosaicEvent *owner=ts_mosaic_find(ui->mosaic,c->active);if(!owner)return 0;
         ui->mosaic_edit_choice=1;c->pending_id=owner->id;c->pending_revision=owner->revision;c->pending_epoch=ui->mosaic->epoch;
-        snprintf(ui->status,sizeof(ui->status),"RETURN TO MOSAIC - NEW TILE, UPDATE TILE, OR KEEP EDITING");return 0;
+        snprintf(ui->status,sizeof(ui->status),"RETURN TO MOSAIC - CREATE TILE, UPDATE INSTANCE, OR UPDATE ALL");return 0;
     }
     int i=mosaic_document_index(c,c->active);
     stop_all_force(device,audio,ui);

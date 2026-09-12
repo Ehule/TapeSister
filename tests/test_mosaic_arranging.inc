@@ -43,9 +43,9 @@ static void test_mosaic_copy_drag(SDL_Window *window)
     history=scene->history_count;click(window,180,96,1);motion(window,220,120);release(window,220,120);SDL_SetModState(KMOD_NONE);
     assert(mosaic_event_count(scene)==127 && a->x==20 && a->start==.5 && scene->history_count==history);
     assert(strstr(ui.status,"WHOLE SELECTION"));
-    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(!ui.mosaic_open);
-    key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_open);
-    ui.config_open=1;key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_open);ui.config_open=0;
+    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(!ui.mosaic_open);
+    key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_open);
+    ui.config_open=1;key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_open);ui.config_open=0;
     ui.mosaic=audio.mosaic=saved;mosaic_poll(0,&ui,&instrument,&mosaic);ts_mosaic_free(scene);
 }
 static void test_mosaic_external_banks(SDL_Window *window)

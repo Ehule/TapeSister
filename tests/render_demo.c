@@ -2,6 +2,7 @@
 #include "tapesister/dsp_transform.h"
 #include "tapesister/ui.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -26,13 +27,25 @@ int main(int argc, char **argv)
     snprintf(ui.status, sizeof(ui.status), "PARENT PRESERVED - CURRENT READY TO SHAPE");
     if (argc > 2 && (strcmp(argv[2], "fm") == 0 ||
                      strcmp(argv[2], "fm-pitch") == 0 ||
-                     strcmp(argv[2], "fm-bank") == 0)) {
+                     strcmp(argv[2], "fm-bank") == 0 ||
+                     strncmp(argv[2], "fm-unison", 9) == 0)) {
         TsGeneratorRecipe recipe = instrument.generator;
         recipe.kind = TS_GENERATOR_FM;
         ts_fm_patch_from_recipe(&recipe, &ui.fm_patch);
         ui.fm_patch.drone_mode = 1;
         ui.fm_patch.extreme_mode = 1;
         ts_fm_patch_sanitize(&ui.fm_patch);
+        if (strncmp(argv[2], "fm-unison", 9) == 0) {
+            ui.fm_patch.ratios[0] = 1;
+            ui.fm_patch.waveforms[0] = TS_FM_WAVE_SAW;
+            ui.fm_patch.lfo_types[0] = TS_FM_LFO_OFF;
+            ui.fm_patch.filter_cutoff_hz = 6000;
+            ui.fm_patch.filter_resonance = .19f;
+            ui.fm_patch.filter_envelope_amount = 0;
+            ui.fm_patch.extreme_mode = 0;
+            ts_fm_patch_unison(&ui.fm_patch);
+            ui.fm_voice_bank = strcmp(argv[2], "fm-unison-extra") == 0;
+        }
         if (!ts_fm_render_sample(&drone_preview, &ui.fm_patch, 2.0f, 130.8128f,
                                  44100u, 0x50524556u,
                                  error, sizeof(error))) {
@@ -51,7 +64,10 @@ int main(int argc, char **argv)
         ui.playhead_frame = drone_preview.frames * 2u / 5u;
         ui.playhead_frames = drone_preview.frames;
         instrument.family_mutation = 0.78f;
-        if (strcmp(argv[2], "fm-bank") == 0) {
+        if (strncmp(argv[2], "fm-unison", 9) == 0) {
+            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                     "UNISON ON - NINE VOICES + THREE LOWER VOICES");
+        } else if (strcmp(argv[2], "fm-bank") == 0) {
             ui.fm_bank_choice_open = 1;
             snprintf(ui.fm_message, sizeof(ui.fm_message),
                      "CONFIRM 16-SOUND BANK DESTINATION");
@@ -66,6 +82,22 @@ int main(int argc, char **argv)
                      "DRONE EDGES ZEROED - HELD CHORD CONTINUES UNDER THE WINDOW");
         snprintf(ui.status, sizeof(ui.status),
                  "FM LOGIC PREVIEW - APPLY PRINTS THE GENOME TO THE ACTIVE TILE");
+    } else if (argc > 2 && strcmp(argv[2], "mosaic-volume") == 0) {
+        ui.mosaic=ts_mosaic_create();ui.mosaic_open=1;ui.mosaic_scale=13;
+        TsMosaicSource *source=ts_mosaic_source(ui.mosaic,&instrument.current,error,sizeof(error));
+        for(int i=0;i<4;++i) {
+            TsMosaicEvent *e=ts_mosaic_add(ui.mosaic,source,i*2,30+i*90);
+            e->duration=16-i;e->width=68;e->notes[0]=48+i*7;
+            snprintf(e->name,sizeof(e->name),"UNISON %d",i+1);
+        }
+        for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i) {
+            double t=(double)i/(TS_MOSAIC_ENVELOPE_POINTS-1);
+            ui.mosaic->volume[i]=(float)(.6+.22*sin(t*18.8495559215)+.1*sin(t*43.9822971503));
+        }
+        ts_mosaic_set_repeat(ui.mosaic,1);ui.mosaic_time=8.5;
+        ui.mosaic_source_count=4;ui.mosaic_source_pages=1;ui.mosaic_bank_count=1;
+        for(int i=0;i<4;++i){ui.mosaic_sources[i].sample=&source->sample;ui.mosaic_sources[i].hash=source->hash+i;}
+        snprintf(ui.status,sizeof(ui.status),"DRAW VOLUME - CURVE SCALES WITH ARRANGEMENT");
     } else if (argc > 2 && strcmp(argv[2], "palette") == 0) {
         ui.palette_open = 1;
         ui.palette_entry = TS_PALETTE_WAVE_SELECTION;

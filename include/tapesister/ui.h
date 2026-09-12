@@ -253,7 +253,9 @@ typedef enum {
     TS_UI_FM_ACTION_NEW_PAGE,
     TS_UI_FM_ACTION_CANCEL_FULL,
     TS_UI_FM_ACTION_OUTPUT_TRIM,
-    TS_UI_FM_ACTION_BACK
+    TS_UI_FM_ACTION_BACK,
+    TS_UI_FM_ACTION_UNISON,
+    TS_UI_FM_ACTION_VOICE_BANK
 } TsUiFmAction;
 
 typedef enum {
@@ -489,6 +491,7 @@ typedef struct {
     int transform_open;
     int fm_open;
     TsFmPage fm_page;
+    int fm_voice_bank;
     TsFmPatch fm_patch;
     const TsSample *fm_preview_sample;
     int fm_held_notes;
@@ -655,8 +658,14 @@ const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
                                      const TsInstrument *instrument);
 enum {
     TS_MOSAIC_MIX_X = 10, TS_MOSAIC_MIX_STEP = 108, TS_MOSAIC_MIX_W = 100,
+    TS_MOSAIC_CANVAS_RIGHT = 565,
+    TS_MOSAIC_ENV_X = 568, TS_MOSAIC_ENV_RIGHT = 630,
+    TS_MOSAIC_ENV_TOP = 86, TS_MOSAIC_ENV_BOTTOM = 355,
+    TS_MOSAIC_ENV_PAD = 3,
     TS_MOSAIC_MIX_Y = 380, TS_MOSAIC_SPEED_X = 500, TS_MOSAIC_SPEED_W = 128
 };
+double ts_ui_mosaic_volume_y(const TsUiState *ui, double time);
+double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
 int ts_ui_foreground_panel_open(const TsUiState *ui);
@@ -698,6 +707,8 @@ int ts_ui_fm_button_from_point(int x, int y);
 TsFmPage ts_ui_fm_page_from_point(int x, int y);
 int ts_ui_fm_control_from_point(int x, int y);
 int ts_ui_fm_voice_from_point(int x, int y);
+int ts_ui_fm_voice_index(const TsUiState *ui, int column);
+int ts_ui_fm_control_index(const TsUiState *ui, int column);
 uint32_t ts_ui_fm_mutation_from_point(int x, int y);
 TsUiFmAction ts_ui_fm_action_from_point(int x, int y);
 TsUiFmAction ts_ui_fm_bank_action_from_point(int x, int y);

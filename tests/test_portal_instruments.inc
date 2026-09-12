@@ -2,11 +2,12 @@ static void test_instrument_recipes(void)
 {
     static TsPortalLibrary lib,loaded,before;static TsPortalUi ui;TsPortalRecipe r,step;char error[256];
     const char *path="portal-instruments-test.recipes";
-    assert(ts_portal_instrument_count()==8);
+    assert(ts_portal_instrument_count()==11);
     for(unsigned n=0;n<ts_portal_instrument_count();++n) {
         assert(ts_portal_instrument_recipe(n,&r));assert(ts_portal_recipe_validate(&r,error,sizeof(error)));
         lib.recipes[n]=r;lib.pins[n]=r;ts_portal_recipe_exact(&lib.pins[n]);
-        for(unsigned i=0;i<3;++i)assert(!lib.pins[n].stages[i].exposed && lib.pins[n].stages[i].macros[0].configured);
+        for(unsigned i=0;i<r.stage_count;++i)assert(!lib.pins[n].stages[i].exposed);
+        if(n<8)for(unsigned i=0;i<3;++i)assert(lib.pins[n].stages[i].macros[0].configured);
     }
     ts_portal_step_get(&lib.recipes[0].stages[0],&step);
     TsPortalRecipe original=step;
@@ -15,7 +16,7 @@ static void test_instrument_recipes(void)
     assert(!ts_portal_macro_set(&step,0,"BAD|NAME",25,100,error,sizeof(error)));
     assert(!memcmp(&original,&step,sizeof(step)));
     assert(ts_portal_macro_set(&step,0,"SHARDS",25,100,error,sizeof(error)));
-    lib.recipes[10]=step;
+    lib.recipes[12]=step;
     assert(ts_portal_library_save(&lib,path,error,sizeof(error)));
     FILE *f=fopen(path,"rb");char header[64];assert(f && fgets(header,sizeof(header),f));fclose(f);
     assert(!strcmp(header,"TSCDPPORTAL 3\n"));assert(ts_portal_library_load(&loaded,path,error,sizeof(error)));
@@ -35,7 +36,7 @@ static void test_instrument_recipes(void)
     TsPortalStep changed=ui.chain.stages[0];snprintf(changed.macros[0].name,sizeof(changed.macros[0].name),"RENAMED");
     assert(ts_portal_step_equal(&changed,&ui.chain.stages[0]));changed.values[0]=90;
     assert(!ts_portal_step_equal(&changed,&ui.chain.stages[0]));
-    ui.family=TS_PORTAL_INSTRUMENTS+1;assert(ts_portal_filter(&ui,3,&r));assert(!ts_portal_filter(&ui,8,&r));
+    ui.family=TS_PORTAL_INSTRUMENTS+1;assert(ts_portal_filter(&ui,3,&r));assert(!ts_portal_filter(&ui,11,&r));
     snprintf(ui.query,sizeof(ui.query),"sidebands");assert(ts_portal_filter(&ui,0,&r) && !strcmp(r.name,"BROKEN SIGNAL"));
     remove(path);
 }
@@ -76,5 +77,5 @@ static void test_instrument_audio(const char *bin)
         }
         ts_sample_free(&source);
     }
-    puts("Eight factory chains: defaults, macro endpoints and duration checks passed at 44.1/48 kHz");
+    puts("Factory chains: defaults, macro endpoints and duration checks passed at 44.1/48 kHz");
 }

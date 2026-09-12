@@ -152,7 +152,8 @@ limits and evidence are in [CDP expansion](CDP_EXPANSION.md).
 
 A chain accepts stereo when every enabled stage supports it. Each stage uses
 its own channel policy, including chains mixing native and independent-channel
-stages. **BROKEN SIGNAL, TAPE COMET, WIRE CHOIR and SYLLABLE RAIN** support stereo. Saved recipes need no format
+stages. **BROKEN SIGNAL, TAPE COMET, WIRE CHOIR, SYLLABLE RAIN** and all three
+**SUPERSAW / WITCH SAW** voicings support stereo. Saved recipes need no format
 change: the source determines whether one or two channels are rendered.
 
 **PROCESS: SEL** processes the same frame range on both channels, preserves
@@ -719,7 +720,7 @@ processes also preflight their output estimate. CDP timeouts remain enforced.
 
 ![Native chain-wide Macros view](images/cdp-chain-macros.png)
 
-Select **CHAIN TOOLS** in the family filter, or search ALL, to load one of eight
+Select **CHAIN TOOLS** in the family filter, or search ALL, to load one of eleven
 factory starter chains. These are combinations of existing processes, in
 addition to the 170 raw processes and 32 single-process factory instruments.
 Loading one opens its Macros view with EDIT OFF and shows its description in
@@ -735,6 +736,11 @@ the status line. The selected process description stays above REMOVE and EDIT.
 | WIRE CHOIR | Transposition Stack → Low/High Pass → Linear Gain | INTERVAL, VOICES, REJECTION, COLOUR, OUTPUT |
 | SYLLABLE RAIN | Syllable Shrink Tail → Tuned Feedback Delay → Linear Gain | WINDOW, DROPS, RING PITCH, MEMORY, OUTPUT |
 | FORMANT LANTERN | Spectral Magnify → Rotate Formants → Linear Gain | MOMENT, GLOW TIME, ORBIT, OUTPUT |
+| SUPERSAW TIGHT / SUPERSAW / WITCH SAW | Two Transposition Stacks → Tape Transpose → Low/High Pass → Set Peak | COLOUR, OUTPUT |
+
+The three [supersaw presets](SUPERSAW.md) render nine centered unison layers
+from a saw, FM sound or other tile. They accept mono or stereo and use fixed
+detune voicings; no additional runtime executables are required.
 
 DUST HALO scatters fragments into a blurred texture; start with at least one
 second of mono audio. DARK GLASS lowers the tape pitch before blurring its

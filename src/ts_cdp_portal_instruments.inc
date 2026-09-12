@@ -74,7 +74,50 @@ static int portal_original_instrument(size_t index,TsPortalRecipe *r)
     }
     return 1;
 }
-size_t ts_portal_instrument_count(void){return 8;}
+/* Fixed, centered voicings use only ordinary saved chain data. The two stack
+   intervals and compensating transpose deliberately stay out of Macros: a
+   one-parameter macro cannot change all three while preserving the root. */
+static int portal_supersaw_instrument(size_t index,TsPortalRecipe *r)
+{
+    static const char *names[]={"SUPERSAW TIGHT","SUPERSAW","WITCH SAW"};
+    static const char *descriptions[]={
+        "Nine close unison layers, centered on the source pitch. Try a sustained saw or FM tile. COLOUR and OUTPUT shape the result; Full edits the recipe.",
+        "Nine detuned unison layers, centered on the source pitch. Try a sustained saw or FM tile. COLOUR and OUTPUT shape the result; Full edits the recipe.",
+        "Nine widely detuned layers with a darker low-pass. Centered on the source pitch. Try saws or FM; use Mosaic pan and fades to build a larger ensemble."};
+    static const double spread[]={.5,1,1.6};
+    static const double colour[]={5000,3500,900};
+    static const char *ids[]={"modify.stack","modify.stack","modify.speed.2",
+                              "filter.lohi.1","modify.loudness.4"};
+    if(index>=3 || !r)return 0;
+    memset(r,0,sizeof(*r));snprintf(r->process_id,sizeof(r->process_id),"@chain");
+    r->version=1;r->stage_count=5;
+    snprintf(r->name,sizeof(r->name),"%s",names[index]);
+    snprintf(r->description,sizeof(r->description),"%s",descriptions[index]);
+    for(unsigned stage=0;stage<r->stage_count;++stage) {
+        TsPortalRecipe step;ts_portal_recipe_default(&step,ts_portal_process_find(ids[stage]));
+        step.exposed=0;
+        if(stage<2) {
+            step.values[0]=(stage==0?.07:.19)*spread[index];
+            step.values[1]=3;step.values[2]=1;step.values[3]=0;
+            step.values[4]=1;step.values[5]=1;
+        } else if(stage==2) {
+            /* Three layers start at 0, interval, 2*interval. Two stacks have
+               midpoint interval A + interval B; subtract it in semitones. */
+            step.values[0]=-.26*spread[index];
+        } else if(stage==3) {
+            step.values[0]=-40;step.values[1]=colour[index];step.values[2]=10000;
+            step.values[3]=.01;step.values[4]=.5;
+            step.exposed=1u<<1;
+            if(!ts_portal_macro_set(&step,1,"COLOUR",400,6000,NULL,0))return 0;
+        } else {
+            step.values[0]=.7;step.exposed=1;
+            if(!ts_portal_macro_set(&step,0,"OUTPUT",.1,.85,NULL,0))return 0;
+        }
+        ts_portal_step_set(&r->stages[stage],&step);
+    }
+    return 1;
+}
+size_t ts_portal_instrument_count(void){return 11;}
 int ts_portal_instrument_recipe(size_t index,TsPortalRecipe *r)
 {
     static const char *names[]={"DUST HALO","DARK GLASS","BROKEN SIGNAL","SLOW BLOOM"};
@@ -88,6 +131,7 @@ int ts_portal_instrument_recipe(size_t index,TsPortalRecipe *r)
         {"modify.speed.2","blur.blur","modify.loudness.1"},
         {"modify.radical.4","modify.radical.5","modify.loudness.1"},
         {"modify.brassage.2","blur.blur","modify.loudness.1"}};
+    if(index>=8)return portal_supersaw_instrument(index-8,r);
     if(index>=4)return portal_original_instrument(index-4,r);
     if(!r)return 0;
     memset(r,0,sizeof(*r));snprintf(r->process_id,sizeof(r->process_id),"@chain");r->version=1;r->stage_count=3;

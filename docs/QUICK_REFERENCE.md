@@ -8,8 +8,8 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | --- | --- |
 | `Tab` | Visit Sister and return to the current workspace/event editor; Portal uses Tab for A-B audition |
 | `Ctrl+Tab` | Move to a running Tapehead; press again there to return unchanged |
-| `` ` `` | Open/close FM Logic; from Mosaic, return to Mosaic on the next press |
-| Shift+grave (backtick) or `Ctrl+M` | Open Mosaic / return to the previous main or FM workspace |
+| `Shift+grave` | Open/close FM Logic; from Mosaic, return to Mosaic on the next press |
+| grave (backtick) or `Ctrl+M` | Open Mosaic / return to the previous main or FM workspace |
 | `1` | Show Sample Tiles; press again to cycle Sample pages |
 | `Shift+1` | Open external REC BANK |
 | `2` | Show performance keyboard |
@@ -21,7 +21,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
 | `Escape` | Cancel active gesture/dialog first; event editor → Mosaic, Sister → main application, idle Mosaic → stop/rewind, ordinary main canvas → exit question |
 
-From Sister, grave and Shift+grave bring FM and Mosaic forward even if already open
+From Sister, Shift+grave and grave bring FM and Mosaic forward even if already open
 behind it. Active dialogs keep focus until resolved. Number-key lower-panel shortcuts
 apply to the main canvas. Navigation and audition stop leave Mosaic playback running.
 
@@ -65,8 +65,9 @@ Double-click to edit; audio changes accumulate until returning to Mosaic:
 
 | Exit choice | Result |
 | --- | --- |
-| NEW TILE — Enter or N | Keep original, reveal edited event and store a regular Sample-bank copy |
-| UPDATE TILE — U | Update only this event |
+| CREATE TILE — Enter or N | Keep original; add a card and a regular Sample-bank source |
+| UPDATE INSTANCE — U | Replace this card and add a new source |
+| UPDATE ALL — A | Replace all cards using this source and update matching Sample-bank tiles |
 | KEEP EDITING — Escape | Continue working without publishing the audio |
 
 Speed changes pitch and arrangement timing together. Its wheel moves by semitones;
@@ -513,3 +514,17 @@ The loop MODE button now also offers **START FWD**, **START REV**, and
 [Playback and loop modes](PLAYBACK_LOOPS.md) explains all six choices and TapeHead
 compatibility. Zoomed waveforms now connect adjacent sample columns; at high zoom
 they draw a continuous line through the sample values.
+
+### FM Unison
+
+Open FM with **Shift+grave**, shape voice 1, then toggle **UNISON** on. Nine detuned
+voices and three lower voices sound together. **VOICES 1–6 / 7–12** switches controls;
+**Shift+wheel** adjusts pitch by one cent. Toggle off to restore the original source.
+APPLY saves the active sound and original source with the tile.
+
+### Mosaic volume lane
+
+Left-drag in the right-side lane to draw volume. **R** resets, **S** smooths, the top
+arrow matches start to end, **V** matches end to start, and **/** makes a ramp.
+REPEAT links endpoint levels. The curve scales with the arrangement length.
+Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.

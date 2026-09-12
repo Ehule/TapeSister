@@ -20,8 +20,10 @@ Its basic creative loop is simple:
 - [Mosaic](docs/MOSAIC.md) — free event placement, independent pitched loops,
   event editing, shared effects routing and REC FILE.
 - [CDP Portal](docs/CDP_PORTAL.md) — explore processes with source/result waveforms,
-  save reusable chains, shape named macros, explore four starter chains, and
-  build a personal process-pin bank. Thirteen verified processes support stereo.
+  save reusable chains, shape named macros, explore eleven starter chains, and
+  build a personal process-pin bank. Fifty-three raw processes support stereo.
+- [Supersaw prototype](docs/SUPERSAW.md) — three centered unison chain presets,
+  a reproducible FM saw source and a playable Mosaic audition project.
 - [Design Charter](DESIGN_CHARTER.md) — the principles behind the instrument.
 - [Technical documentation](#technical-documentation) — architecture, exchange,
   packaging, and certification notes.
@@ -94,7 +96,7 @@ new version. Sources browses all Sample banks and the event audio versions.
 
 Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to
 copy the group. M/S mutes or solos, middle-click seeks, and FOLLOW scrolls with the
-playhead. **Shift+grave** visits Mosaic and returns to the previous main or FM
+playhead. **grave** visits Mosaic and returns to the previous main or FM
 workspace. Its colors and selection highlight are editable in CFG → PALETTE.
 
 The footer controls level, stereo balance and fade-in/out for an event or selection.
@@ -359,3 +361,10 @@ For an ordinary developer build without creating the ZIP, continue to use
 - [Universal TapeSister/TapeHead Palette](docs/UNIVERSAL_PALETTE.md)
 - [Windows Audio Validation](docs/WINDOWS_AUDIO_VALIDATION.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+FM Logic also has a [twelve-voice Unison toggle](docs/FM_UNISON.md): set voice 1,
+make a detuned ensemble with three lower voices, and toggle back to the original.
+**Grave** opens Mosaic; **Shift+grave** opens FM.
+
+Mosaic has a [drawable arrangement volume envelope](docs/MOSAIC.md#arrangement-volume-envelope)
+that stretches with the timeline and links its endpoints during Repeat.

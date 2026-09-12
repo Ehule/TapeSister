@@ -2,7 +2,9 @@
 
 This implementation follows the [pinned CDP8 audit](CDP_REMAINING_PROCESS_AUDIT.md).
 The Portal now contains **170 raw processes, 32 curated bank instruments and
-8 starter chains**. **53 raw processes and four starter chains** accept stereo.
+11 starter chains**. **53 raw processes and seven starter chains** accept stereo.
+The three [supersaw voicings](SUPERSAW.md) use existing processes to render
+centered unison layers into ordinary tiles.
 The 39 new raw entries expose scalar subsets of CDP modes; several were already
 used inside curated instruments, so this is not a claim of 39 new DSP algorithms.
 

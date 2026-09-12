@@ -9,7 +9,9 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#define TS_FM_GENOME_VERSION 4u
+#define TS_FM_GENOME_VERSION 6u
+_Static_assert(offsetof(TsFmPatch, has_unison_source) >= sizeof(TsFmSound),
+               "FM sound snapshot must fit before its backup");
 #define TS_FM_MIN_USABLE_PEAK 1.0e-5f
 #define TS_FM_MIN_USABLE_MEAN_SQUARE 1.0e-12
 
@@ -117,7 +119,7 @@ const char *ts_fm_structure_name(int structure)
 {
     static const char *names[TS_FM_STRUCTURE_COUNT] = {
         "CHAIN", "BRANCH", "TWIN", "PARALLEL", "STRIKE",
-        "CLUSTER", "BRAID", "CASCADE", "MIRROR", "SWARM"
+        "CLUSTER", "BRAID", "CASCADE", "MIRROR", "SWARM", "UNISON"
     };
     return structure >= 0 && structure < TS_FM_STRUCTURE_COUNT ?
            names[structure] : "UNKNOWN";
@@ -179,6 +181,72 @@ const char *ts_fm_page_name(TsFmPage page)
     return (int)page >= 0 && (int)page < TS_FM_PAGE_COUNT ? names[page] : "UNKNOWN";
 }
 
+int ts_fm_voice_count(const TsFmPatch *patch)
+{
+    return patch && patch->structure == TS_FM_STRUCTURE_UNISON ?
+           TS_FM_UNISON_VOICE_COUNT : TS_FM_OPERATOR_COUNT;
+}
+
+int ts_fm_control_available(const TsFmPatch *patch, TsFmPage page, int control)
+{
+    if (!patch || control < 0 || control >=
+        (page <= TS_FM_PAGE_LFO_TYPE ? ts_fm_voice_count(patch) : TS_FM_OPERATOR_COUNT)) return 0;
+    if (patch->drone_mode && ((page == TS_FM_PAGE_FILTER && (control == 2 || control == 3)) ||
+        (page == TS_FM_PAGE_STRUCTURE && control == 5))) return 0;
+    return !(patch->structure == TS_FM_STRUCTURE_UNISON && page == TS_FM_PAGE_STRUCTURE &&
+             (control == 1 || control == 2 || control == 4));
+}
+
+/* A one-shot template: V1 stays at the center; every copied voice is then
+   independently editable. Reapplying never moves the center pitch. */
+void ts_fm_patch_unison(TsFmPatch *patch)
+{
+    static const float cents[TS_FM_UNISON_VOICE_COUNT] =
+        {0, -7, 7, -12, 12, -19, 19, -26, 26, -1200, -1207, -1193};
+    float center;
+    if (!patch) return;
+    ts_fm_patch_sanitize(patch);
+    if (patch->structure != TS_FM_STRUCTURE_UNISON) {
+        memcpy(&patch->unison_source, patch, sizeof(patch->unison_source));
+        patch->has_unison_source = 1;
+    }
+    center = clampf(patch->ratios[0], 0.05f * exp2f(1207.0f / 1200.0f),
+                    ratio_maximum(patch) / exp2f(26.0f / 1200.0f));
+    patch->structure = TS_FM_STRUCTURE_UNISON;
+    patch->active_mask = (1u << TS_FM_UNISON_VOICE_COUNT) - 1u;
+    patch->pitch_lock = 1;
+    patch->mutation_mask &= ~TS_FM_MUTATE_STRUCTURE;
+    patch->feedback = patch->interaction_mix = patch->transient_mix = 0;
+    patch->drone_mode = 1;
+    for (int voice = 0; voice < TS_FM_UNISON_VOICE_COUNT; ++voice) {
+        patch->ratios[voice] = center * exp2f(cents[voice] / 1200.0f);
+        patch->waveforms[voice] = patch->waveforms[0];
+        patch->lfo_rates[voice] = patch->lfo_rates[0];
+        patch->lfo_depths[voice] = patch->lfo_depths[0];
+        patch->lfo_types[voice] = patch->lfo_types[0];
+    }
+}
+
+int ts_fm_toggle_unison(TsFmPatch *patch)
+{
+    if (!patch) return 0;
+    ts_fm_patch_sanitize(patch);
+    if (patch->structure != TS_FM_STRUCTURE_UNISON) {
+        ts_fm_patch_unison(patch);
+        return 1;
+    }
+    if (patch->has_unison_source)
+        memcpy(patch, &patch->unison_source, sizeof(patch->unison_source));
+    else {
+        /* Older nine-voice tiles did not save the original source. */
+        patch->structure = 0;
+        patch->active_mask = 1;
+    }
+    patch->has_unison_source = 0;
+    memset(&patch->unison_source, 0, sizeof(patch->unison_source));
+    return 0;
+}
+
 void ts_fm_patch_sanitize(TsFmPatch *patch)
 {
     int legacy;
@@ -207,6 +275,26 @@ void ts_fm_patch_sanitize(TsFmPatch *patch)
     patch->pitch_root = patch->pitch_root < 0 ? 0 : patch->pitch_root % 12;
     if (patch->pitch_scale < 0 || patch->pitch_scale >= TS_FM_PITCH_SCALE_COUNT)
         patch->pitch_scale = TS_FM_PITCH_SCALE_MAJOR;
+    if (patch->genome_version < 5u || patch->genome_version > TS_FM_GENOME_VERSION) {
+        for (int voice = TS_FM_OPERATOR_COUNT; voice < TS_FM_UNISON_VOICE_COUNT; ++voice) {
+            patch->ratios[voice] = 1.0f;
+            patch->waveforms[voice] = TS_FM_WAVE_SINE;
+            patch->lfo_rates[voice] = 0.1f;
+            patch->lfo_depths[voice] = 0;
+            patch->lfo_types[voice] = TS_FM_LFO_OFF;
+        }
+    }
+    if (patch->genome_version < 6u || patch->genome_version > TS_FM_GENOME_VERSION) {
+        for (int voice = 9; voice < TS_FM_UNISON_VOICE_COUNT; ++voice) {
+            patch->ratios[voice] = 1;
+            patch->waveforms[voice] = TS_FM_WAVE_SINE;
+            patch->lfo_rates[voice] = .1f;
+            patch->lfo_depths[voice] = 0;
+            patch->lfo_types[voice] = TS_FM_LFO_OFF;
+        }
+        patch->has_unison_source = 0;
+        memset(&patch->unison_source, 0, sizeof(patch->unison_source));
+    }
     patch->genome_version = TS_FM_GENOME_VERSION;
     ratio_high = ratio_maximum(patch);
     depth_high = depth_maximum(patch);
@@ -247,11 +335,11 @@ void ts_fm_patch_sanitize(TsFmPatch *patch)
             patch->lfo_types[voice] = TS_FM_LFO_OFF;
         }
     }
-    patch->active_mask &= (1u << TS_FM_OPERATOR_COUNT) - 1u;
+    patch->active_mask &= (1u << TS_FM_UNISON_VOICE_COUNT) - 1u;
     if (patch->active_mask == 0u && legacy)
         patch->active_mask = (1u << TS_FM_OPERATOR_COUNT) - 1u;
     patch->mutation_mask &= TS_FM_MUTATE_ALL;
-    for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+    for (int voice = 0; voice < TS_FM_UNISON_VOICE_COUNT; ++voice) {
         patch->ratios[voice] = clampf(isfinite(patch->ratios[voice]) ?
                                       patch->ratios[voice] : 1.0f, 0.05f, ratio_high);
         if (patch->waveforms[voice] < 0 ||
@@ -307,7 +395,7 @@ void ts_fm_patch_from_recipe(const TsGeneratorRecipe *recipe, TsFmPatch *patch)
     patch->pitch_lock = 1;
     patch->pitch_root = 0;
     patch->pitch_scale = TS_FM_PITCH_SCALE_MAJOR;
-    patch->structure = (int)(rng_next(&rng) % TS_FM_STRUCTURE_COUNT);
+    patch->structure = (int)(rng_next(&rng) % TS_FM_STRUCTURE_UNISON);
     patch->ratio_family = (int)(rng_next(&rng) % TS_FM_RATIO_FAMILY_COUNT);
     patch->depth = 0.8f + rng_unit(&rng) * 7.2f;
     patch->shape = rng_unit(&rng);
@@ -396,7 +484,7 @@ int ts_fm_apply_pitch_scale(TsFmPatch *patch)
     safe = *patch;
     ts_fm_patch_sanitize(&safe);
     high = ratio_maximum(&safe);
-    for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+    for (int voice = 0; voice < ts_fm_voice_count(&safe); ++voice) {
         float quantized;
         if ((safe.active_mask & (1u << voice)) == 0u) continue;
         quantized = quantize_ratio_to_scale(safe.ratios[voice],
@@ -442,7 +530,7 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
     envelope_high = filter_envelope_maximum(&base);
     if (!base.pitch_lock &&
         (base.mutation_mask & TS_FM_MUTATE_PITCH) != 0u) {
-        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+        for (int voice = 0; voice < ts_fm_voice_count(&base); ++voice) {
             float reach = base.extreme_mode ? 2.4f : 0.9f;
             float step = rng_bipolar(&rng) * amount *
                          (amount < 0.35f ? 0.12f : reach);
@@ -453,17 +541,17 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
             varied->ratio_family = nearby_category(base.ratio_family,
                                                     TS_FM_RATIO_FAMILY_COUNT,
                                                     amount, &rng);
-            for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
-                varied->ratios[voice] = ratio_families[varied->ratio_family][voice] *
+            for (int voice = 0; voice < ts_fm_voice_count(&base); ++voice)
+                varied->ratios[voice] = ratio_families[varied->ratio_family][voice % TS_FM_OPERATOR_COUNT] *
                     (1.0f + rng_bipolar(&rng) * 0.025f * amount);
         }
-        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
+        for (int voice = 0; voice < ts_fm_voice_count(&base); ++voice)
             varied->ratios[voice] = quantize_ratio_to_scale(
                 varied->ratios[voice], base.pitch_root,
                 base.pitch_scale, ratio_high);
     }
     if ((base.mutation_mask & TS_FM_MUTATE_WAVE) != 0u) {
-        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+        for (int voice = 0; voice < ts_fm_voice_count(&base); ++voice) {
             float chance = amount * amount * (0.18f + 0.10f * (float)voice);
             if (rng_unit(&rng) < chance)
                 varied->waveforms[voice] = nearby_category(
@@ -472,7 +560,7 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
         }
     }
     if ((base.mutation_mask & TS_FM_MUTATE_LFO) != 0u) {
-        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+        for (int voice = 0; voice < ts_fm_voice_count(&base); ++voice) {
             varied->lfo_rates[voice] = clampf(base.lfo_rates[voice] *
                 exp2f(rng_bipolar(&rng) * amount *
                       (base.extreme_mode ? 5.5f : 3.0f)), 0.03f, lfo_rate_high);
@@ -520,10 +608,10 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
                                                    amount, &rng);
         if (amount > 0.74f && rng_unit(&rng) < amount * 0.55f)
             varied->structure = nearby_category(base.structure,
-                                                 TS_FM_STRUCTURE_COUNT,
+                                                 (base.structure == TS_FM_STRUCTURE_UNISON ? TS_FM_STRUCTURE_COUNT : TS_FM_STRUCTURE_UNISON),
                                                  amount, &rng);
         if (amount > 0.84f && rng_unit(&rng) < amount * 0.40f) {
-            unsigned voice = rng_next(&rng) % TS_FM_OPERATOR_COUNT;
+            unsigned voice = rng_next(&rng) % (unsigned)ts_fm_voice_count(&base);
             varied->active_mask ^= 1u << voice;
             if (varied->active_mask == 0u) varied->active_mask = 1u << voice;
         }
@@ -553,7 +641,7 @@ float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied)
     distance += a.active_mask == b.active_mask ? 0.0f : 1.0f;
     distance += fabsf(log2f(b.filter_cutoff_hz / a.filter_cutoff_hz)) / 10.0f;
     distance += fabsf(a.filter_resonance - b.filter_resonance);
-    for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+    for (int voice = 0; voice < (a.structure == TS_FM_STRUCTURE_UNISON || b.structure == TS_FM_STRUCTURE_UNISON ? TS_FM_UNISON_VOICE_COUNT : TS_FM_OPERATOR_COUNT); ++voice) {
         distance += fabsf(log2f(b.ratios[voice] / a.ratios[voice])) / 4.0f;
         distance += a.waveforms[voice] == b.waveforms[voice] ? 0.0f : 0.35f;
         distance += fabsf(log2f(b.lfo_rates[voice] / a.lfo_rates[voice])) / 12.0f;
@@ -566,7 +654,7 @@ float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied)
 float ts_fm_control_normalized(const TsFmPatch *patch, TsFmPage page, int control)
 {
     TsFmPatch safe;
-    if (patch == NULL || control < 0 || control >= TS_FM_OPERATOR_COUNT) return 0.0f;
+    if (patch == NULL || control < 0 || control >= (page <= TS_FM_PAGE_LFO_TYPE ? ts_fm_voice_count(patch) : TS_FM_OPERATOR_COUNT)) return 0.0f;
     safe = *patch;
     ts_fm_patch_sanitize(&safe);
     switch (page) {
@@ -605,7 +693,7 @@ int ts_fm_set_control_normalized(TsFmPatch *patch, TsFmPage page, int control,
                                  float normalized)
 {
     if (patch == NULL || (int)page < 0 || (int)page >= TS_FM_PAGE_COUNT ||
-        control < 0 || control >= TS_FM_OPERATOR_COUNT || !isfinite(normalized)) return 0;
+        control < 0 || control >= (page <= TS_FM_PAGE_LFO_TYPE ? ts_fm_voice_count(patch) : TS_FM_OPERATOR_COUNT) || !isfinite(normalized)) return 0;
     ts_fm_patch_sanitize(patch);
     normalized = clampf(normalized, 0.0f, 1.0f);
     switch (page) {
@@ -657,7 +745,7 @@ int ts_fm_step_control(TsFmPatch *patch, TsFmPage page, int control,
     float normalized;
     float amount;
     if (patch == NULL || direction == 0 || control < 0 ||
-        control >= TS_FM_OPERATOR_COUNT) return 0;
+        control >= (page <= TS_FM_PAGE_LFO_TYPE ? ts_fm_voice_count(patch) : TS_FM_OPERATOR_COUNT)) return 0;
     ts_fm_patch_sanitize(patch);
     if (page == TS_FM_PAGE_WAVE) {
         category = &patch->waveforms[control];
@@ -681,6 +769,12 @@ int ts_fm_step_control(TsFmPatch *patch, TsFmPage page, int control,
         if (next >= count) next = count - 1;
         if (next == *category) return 0;
         *category = next;
+        return 1;
+    }
+    if (page == TS_FM_PAGE_PITCH && patch->structure == TS_FM_STRUCTURE_UNISON) {
+        float cents = (fine ? 1.0f : 100.0f) * (direction > 0 ? 1.0f : -1.0f);
+        patch->ratios[control] = clampf(patch->ratios[control] * exp2f(cents / 1200.0f),
+                                        0.05f, ratio_maximum(patch));
         return 1;
     }
     normalized = ts_fm_control_normalized(patch, page, control);
@@ -720,7 +814,7 @@ void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
     TsFmPatch safe;
     if (label != NULL && label_size > 0u) label[0] = '\0';
     if (value != NULL && value_size > 0u) value[0] = '\0';
-    if (patch == NULL || control < 0 || control >= TS_FM_OPERATOR_COUNT) return;
+    if (patch == NULL || control < 0 || control >= (page <= TS_FM_PAGE_LFO_TYPE ? ts_fm_voice_count(patch) : TS_FM_OPERATOR_COUNT)) return;
     safe = *patch;
     ts_fm_patch_sanitize(&safe);
     if (page <= TS_FM_PAGE_LFO_TYPE) {
@@ -735,7 +829,10 @@ void ts_fm_control_format(const TsFmPatch *patch, TsFmPage page, int control,
         } else if (label != NULL)
             snprintf(label, label_size, "VOICE %d", control + 1);
         if (value == NULL) return;
-        if (page == TS_FM_PAGE_PITCH) snprintf(value, value_size, "X%.3F", safe.ratios[control]);
+        if (page == TS_FM_PAGE_PITCH && safe.structure == TS_FM_STRUCTURE_UNISON) {
+            float semitones = 12.0f * log2f(safe.ratios[control]);
+            snprintf(value, value_size, "%+.1FC", (semitones - roundf(semitones)) * 100.0f);
+        } else if (page == TS_FM_PAGE_PITCH) snprintf(value, value_size, "X%.3F", safe.ratios[control]);
         else if (page == TS_FM_PAGE_WAVE) snprintf(value, value_size, "%s", ts_fm_waveform_name(safe.waveforms[control]));
         else if (page == TS_FM_PAGE_LFO_RATE) snprintf(value, value_size, safe.lfo_rates[control] < 10.0f ? "%.2FHZ" : "%.1FHZ", safe.lfo_rates[control]);
         else if (page == TS_FM_PAGE_LFO_DEPTH)
@@ -912,6 +1009,7 @@ static float topology_modulation(const TsFmPatch *patch, int voice,
 
 static int topology_carrier(int structure, int voice)
 {
+    if (structure == TS_FM_STRUCTURE_UNISON) return 1;
     if (structure == 0 || structure == 1 || structure == 6 || structure == 7)
         return voice == 0;
     if (structure == 2) return voice <= 1;
@@ -1003,11 +1101,11 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
     TsFmPatch safe;
     float *data;
     size_t frames;
-    float phases[TS_FM_OPERATOR_COUNT] = {0};
-    float previous[TS_FM_OPERATOR_COUNT] = {0};
-    float lfo_phases[TS_FM_OPERATOR_COUNT] = {0};
-    float lfo_random[TS_FM_OPERATOR_COUNT] = {0};
-    uint32_t voice_rng[TS_FM_OPERATOR_COUNT];
+    float phases[TS_FM_UNISON_VOICE_COUNT] = {0};
+    float previous[TS_FM_UNISON_VOICE_COUNT] = {0};
+    float lfo_phases[TS_FM_UNISON_VOICE_COUNT] = {0};
+    float lfo_random[TS_FM_UNISON_VOICE_COUNT] = {0};
+    uint32_t voice_rng[TS_FM_UNISON_VOICE_COUNT];
     float low = 0.0f, band = 0.0f;
     float dc_x = 0.0f, dc_y = 0.0f;
     if (sample == NULL || patch == NULL || sample_rate == 0u ||
@@ -1029,12 +1127,12 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
         if (error != NULL && error_size > 0u) snprintf(error, error_size, "Out of memory rendering FM source");
         return 0;
     }
-    for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice) {
+    for (int voice = 0; voice < ts_fm_voice_count(&safe); ++voice) {
         voice_rng[voice] = seed ^ (0x9e3779b9u * (uint32_t)(voice + 1));
         lfo_random[voice] = rng_bipolar(&voice_rng[voice]);
     }
     for (size_t frame = 0; frame < frames; ++frame) {
-        float current[TS_FM_OPERATOR_COUNT] = {0};
+        float current[TS_FM_UNISON_VOICE_COUNT] = {0};
         float carriers = 0.0f;
         float filter_lfo = 0.0f;
         float t = (float)frame / (float)sample_rate;
@@ -1048,7 +1146,7 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
             expf(-t * (0.08f + safe.shape * 2.8f));
         int carrier_count = 0;
         int first_active = -1;
-        for (int voice = TS_FM_OPERATOR_COUNT - 1; voice >= 0; --voice) {
+        for (int voice = ts_fm_voice_count(&safe) - 1; voice >= 0; --voice) {
             float lfo_phase;
             float lfo = 0.0f;
             float pitch_scale = 1.0f;
@@ -1096,12 +1194,15 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
             increment = clampf(frequency * safe.ratios[voice] * pitch_scale /
                                (float)sample_rate, 0.0f, 0.49f);
             phases[voice] = wrap_phase(phases[voice] + increment);
-            modulation = topology_modulation(&safe, voice, current, previous);
-            if (voice == 5) modulation += previous[5] * safe.feedback;
+            modulation = safe.structure == TS_FM_STRUCTURE_UNISON ? 0.0f :
+                         topology_modulation(&safe, voice, current, previous);
+            if (safe.structure != TS_FM_STRUCTURE_UNISON && voice == 5)
+                modulation += previous[5] * safe.feedback;
             noise = rng_bipolar(&voice_rng[voice]);
-            current[voice] = interaction_sample(&safe, voice, phases[voice],
-                                                increment, modulation, noise,
-                                                index_scale) * amp_scale;
+            current[voice] = (safe.structure == TS_FM_STRUCTURE_UNISON ?
+                oscillator(safe.waveforms[voice], phases[voice], increment, noise) :
+                interaction_sample(&safe, voice, phases[voice], increment,
+                                   modulation, noise, index_scale)) * amp_scale;
             if (!safe.drone_mode && !topology_carrier(safe.structure, voice))
                 current[voice] *= expf(-t * (0.25f + (float)voice * 0.16f +
                                              safe.shape * 3.2f));
@@ -1114,7 +1215,7 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
             carriers = current[first_active];
             carrier_count = 1;
         }
-        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
+        for (int voice = 0; voice < ts_fm_voice_count(&safe); ++voice)
             previous[voice] = current[voice];
         {
             float value = carrier_count > 0 ? carriers / sqrtf((float)carrier_count) : 0.0f;

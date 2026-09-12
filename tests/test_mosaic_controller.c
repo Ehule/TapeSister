@@ -81,6 +81,7 @@ static void wait_render(void);
 #include "test_mosaic_scroll_cards.inc"
 #include "test_mosaic_arranging.inc"
 #include "test_mosaic_controls.inc"
+#include "test_mosaic_volume_controls.inc"
 #include "test_mosaic_routing.inc"
 static void test_canvas_feedback(SDL_Window *window)
 {
@@ -191,7 +192,7 @@ static void test_canvas_feedback(SDL_Window *window)
     assert(!ui.mosaic_edit_choice && mosaic.active==variant->id && ts_sample_hash(&instrument.current)==smear && variant->source==warped);
     assert(ts_instrument_apply_smear(&instrument,.8f,error,sizeof(error)));
     assert(mosaic_commit(0,&ui,&instrument,&mosaic) && !ui.mosaic_edit_choice);
-    assert(variant->source==warped);key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_edit_choice);
+    assert(variant->source==warped);key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_edit_choice);
     key(window,SDLK_u,KMOD_NONE);
     assert(!ui.mosaic_edit_choice && !mosaic.active && ui.mosaic_open && variant->source!=warped && a->source==original_source && b->source==source && scene->playing);
     /* Undoing every working edit removes the exit question. */
@@ -211,7 +212,7 @@ static void test_canvas_feedback(SDL_Window *window)
         uint64_t root=1;for(;;++root){TsFmSeedSequence probe;ts_fm_seed_sequence_init(&probe,root);if(ts_fm_seed_sequence_next(&probe)%12==1)break;}
         ts_fm_seed_sequence_init(&portal.create_dice,root);create.button.button=SDL_BUTTON_RIGHT;
         assert(portal_create_event(&create,100,214,0,&audio,&ui,&instrument,&portal,&transform) && portal.worker);
-        key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_edit_choice);key(window,SDLK_u,KMOD_NONE);
+        key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_edit_choice);key(window,SDLK_u,KMOD_NONE);
         assert(!mosaic.active && variant->source->hash==fm);
         assert(portal.source_event_revision==variant->revision);
         assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,b->id));wait_render();
@@ -299,14 +300,22 @@ static void test_record_file(SDL_Window *window,int x,int y)
     SDL_setenv("TAPESISTER_CAPTURES","",1);mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
     ts_performance_recorder_free(&sister.performance_recorder);audio.sister_file_recorder=NULL;
 }
-static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original)
+static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original,int supersaw)
 {
     const char *bin=getenv("TS_TEST_CDP_BIN");if(!bin){puts("Set TS_TEST_CDP_BIN for native CDP ownership checks");return;}
     snprintf(ui.config.cdp_bin_path,sizeof(ui.config.cdp_bin_path),"%s",bin);
     assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,a));ui.portal.open=1;
     assert(portal_source(0,&audio,&ui,&instrument,&portal));
     assert(portal.source_event==a);
-    ts_portal_recipe_default(&ui.portal.recipe,ts_portal_process_find("modify.speed.1"));ui.portal.recipe.values[0]=.5;
+    TsPortalRecipe recipe;
+    if(supersaw) {
+        assert(ts_portal_instrument_recipe(9,&recipe));
+        TsMosaicEvent *owner=ts_mosaic_find(ui.mosaic,a);
+        owner->gain=.42f;owner->pan=-.3f;owner->fade_in=.25;owner->fade_out=.4;
+    } else {
+        ts_portal_recipe_default(&recipe,ts_portal_process_find("modify.speed.1"));recipe.values[0]=.5;
+    }
+    portal_load_recipe(&ui.portal,&recipe);
     portal_preview(0,&audio,&ui,&portal);assert(portal.worker);portal.quick_apply=1;
     portal_close(0,&audio,&ui,&portal);assert(!SDL_AtomicGet(&portal.worker->cancel));
     mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
@@ -317,6 +326,10 @@ static void test_async_ownership(uint64_t a,uint64_t b,uint64_t original)
     assert(ts_mosaic_find(ui.mosaic,b)->source->hash==original);
     assert(ts_mosaic_find(ui.mosaic,a)->source!=ts_mosaic_find(ui.mosaic,b)->source);
     assert(ts_sample_hash(&mosaic.bank->current)==original);
+    if(supersaw) {
+        TsMosaicEvent *owner=ts_mosaic_find(ui.mosaic,a);
+        assert(owner->gain==.42f && owner->pan==-.3f && owner->fade_in==.25 && owner->fade_out==.4);
+    }
 
     /* Same ID, edited document: preserve the result instead of overwriting. */
     mosaic_leave(0,&audio,&ui,&instrument,&mosaic);
@@ -362,17 +375,21 @@ int main(void)
     click(window,570,320,1);assert(!a->looping && b->looping);
     mosaic_leave(0,&audio,&ui,&instrument,&mosaic);assert(ts_sample_hash(&instrument.current)==original);
     assert(ui.mosaic->playing);
-    test_async_ownership(aid,bid,original);
+    test_async_ownership(aid,bid,original,0);
+    test_async_ownership(aid,bid,original,1);
     test_workspace_routes(window);
     test_mosaic_master_routes();
+    ts_mosaic_volume_draw(ui.mosaic,0,.3f,1,.8f);
     test_record_file(window,580,389);
     test_record_file(window,240,45);
     test_record_file(window,-1,0);
+    ts_mosaic_volume_action(ui.mosaic,TS_MOSAIC_ENV_RESET);
     test_canvas_gestures(window);
     test_mosaic_copy_drag(window);
     test_mosaic_external_banks(window);
     test_mosaic_variation_banks(window);
     test_mosaic_live_controls(window);
+    test_mosaic_volume_controls(window);
     test_canvas_feedback(window);
     test_mosaic_scroll_waveforms();
     test_mosaic_scroll_cards();

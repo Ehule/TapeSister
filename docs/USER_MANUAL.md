@@ -94,7 +94,7 @@ The top row remains available across the main workspaces.
   and works whether or not Live Link audio is enabled.
 - **CONFIG** selects audio, input, MIDI, paths, palette, and performance defaults.
 - **FT2 LINK** opens the current folder-based TapeSister/TapeHead exchange.
-- **MOSAIC** or `Shift+grave` opens the arrangement; the shortcut returns to the
+- **MOSAIC** or `grave` opens the arrangement; the shortcut returns to the
   previous main or FM workspace. `Ctrl+M` is an alternative. See
   [Mosaic workspace navigation](#mosaic-workspace-navigation).
 - **CDP** or `Ctrl+Shift+P` opens the CDP Portal, also reachable from Mosaic, FM,
@@ -332,12 +332,12 @@ stamp becomes the next source.
 
 ![The six-voice FM Logic workspace](images/manual/fm-logic.png)
 
-Press the grave/backquote key (`` ` ``) or open **FM LOGIC** from the Family area.
-The workspace is a complete six-voice synthesizer and genome editor. Its preview is
+Press **Shift+grave** (Shift plus the backtick key) or open **FM LOGIC** from the Family area.
+The workspace has six-operator FM routings plus a twelve-voice Unison toggle. Its preview is
 temporary until **APPLY** is pressed.
 
-`Shift+grave` visits Mosaic and returns to the same FM patch on the next press.
-From Mosaic, plain grave opens FM and pressing it again returns to Mosaic. Visiting
+`grave` visits Mosaic and returns to the same FM patch on the next press.
+From Mosaic, Shift+grave opens FM and pressing it again returns to Mosaic. Visiting
 Sister with `Tab` also preserves the current workspace and event being edited.
 
 ### Pages
@@ -355,6 +355,23 @@ FM Logic provides seven pages through the same compact control area:
 Six **VOICE** buttons enable or disable voices. Permission buttons determine which
 domains Randomize and later variations may change. The visible page is protected during
 Randomize, which makes it possible to hold one aspect steady while exploring the rest.
+
+### Twelve-voice Unison
+
+Shape voice 1, then press **UNISON**. The compact button highlights while nine
+voices at 0, ±7, ±12, ±19 and ±26 cents play alongside three voices an octave
+below, at 0 and ±7 cents. **VOICES 1–6 / 7–12** switches the voice controls.
+Each oscillator remains editable; **Shift+wheel** adjusts its pitch by one cent.
+
+Press **UNISON** again to restore the complete original patch. Edit that source
+and activate Unison again to build a new stack. **APPLY** stores both the active
+sound and original source, preserving the toggle after save/reopen. Switching
+off replaces edits made to the stack; the source is the next activation's basis.
+
+Unison enables Drone and Pitch Lock, protects Structure from randomization, and
+copies voice 1's waveform/LFO settings. Your global filter remains. For a saw
+ensemble, start with SAW, LFO OFF, a 6000 Hz low-pass and 20% resonance.
+[FM Unison](FM_UNISON.md) shows both banks and explains older-tile compatibility.
 
 ### Pitch behavior
 
@@ -518,6 +535,12 @@ can change the process too. Collection changes require confirmation and persist
 separately from audio projects. See the illustrated [CDP Portal guide](CDP_PORTAL.md)
 for the complete workflow and process-family controls.
 
+**CHAIN TOOLS → SUPERSAW TIGHT / SUPERSAW / WITCH SAW** renders nine centered
+unison layers from a saw, FM sound or other tile. Choose a fixed detune voicing,
+adjust COLOUR and OUTPUT, then Apply or New Tile. The resulting audio works
+with normal Mosaic notes, loops, volume, pan and fades. See the
+[supersaw source recipe and audition project](SUPERSAW.md).
+
 The Filter family adds Notch, Band Pass, Low Pass, High Pass, Sweeping Band, and
 Phasing. Wheel over parameter labels to reach additional controls, including the
 explicit decay tail. Smaller acuity values give narrower, more resonant filters;
@@ -546,7 +569,7 @@ gap. Events may meet exactly end to end. There are no tracks or required beat gr
 
 ### Your first arrangement
 
-1. Open **MOSAIC** or press `Shift+grave` (Shift plus the backtick key).
+1. Open **MOSAIC** or press `grave` (the backtick key).
 2. Drag an occupied source from the left-hand browser onto the canvas. Its top
    edge sets the start time; a waveform ghost shows the proposed placement.
 3. Double-click the event to open its editor. Choose notes on the keyboard and
@@ -563,12 +586,14 @@ Sources browses every Sample bank, including pages made in FM Logic or the main
 canvas. **BANK 01**, **BANK 02**, and later banks keep their original numbers and
 16 slot positions, including empty slots. The arrows below Sources move through
 these banks and then **EVENTS** pages containing audio versions used by placed events.
-An accepted event audio edit receives its own waveform preview there. **NEW TILE**
-also saves a reusable copy in a free regular Sample-bank slot, creating a bank when
-needed. It reveals the new event, highlights its source and names the bank/slot in
-status. Existing sounds and the main editor's selection remain intact. **UPDATE TILE**
-continues to change only the event. Arrangement Undo leaves reusable bank copies
-available.
+**CREATE TILE** adds a card beside the original and a reusable source in a free
+Sample-bank slot. **UPDATE INSTANCE** replaces just the current card and adds its
+edited source to a free Sample-bank slot. Both create a bank when needed.
+**UPDATE ALL** changes every card sharing the source and replaces matching source
+tiles across the Sample banks. It preserves each card's timing, notes and mix
+settings; custom source regions scale when the audio length changes. The main
+editor keeps its selected bank/slot. Arrangement Undo restores the cards; bank
+publication remains in place.
 
 Browsing Sources does not change the main editor's active bank or Sister's routing.
 Returning from FM shows its active bank with the correct bank number; the original
@@ -659,11 +684,12 @@ When you return to Mosaic after changing the audio, one destination question app
 
 | Choice | Result |
 | --- | --- |
-| **NEW TILE** — Enter or N | Keep the original, reveal the edited event, and store a regular Sample-bank copy |
-| **UPDATE TILE** — U | Replace only this event's audio |
+| **CREATE TILE** — Enter or N | Keep the original; add a new card and a regular Sample-bank source |
+| **UPDATE INSTANCE** — U | Replace this card; add a new source, leaving siblings and the original source alone |
+| **UPDATE ALL** — A | Replace all cards sharing the sound and update matching Sample-bank source tiles |
 | **KEEP EDITING** — Escape | Keep the working edits open without publishing them |
 
-![Choosing new tile or update tile after editing](images/mosaic-edit-choice.png)
+![Choosing the scope of an audio edit](images/mosaic-edit-choice.png)
 
 The question appears on leaving the editor, not after every processing operation.
 Leaving an unchanged event, or undoing all audio changes, needs no question. Saving,
@@ -679,11 +705,11 @@ describes the full background-render behavior.
 
 | Where you are | Key | Destination |
 | --- | --- | --- |
-| Main canvas | Shift+grave or Ctrl+M | Mosaic; press again to return |
-| FM Logic | Shift+grave | Mosaic; press again to return to the same FM patch |
-| Mosaic | Plain grave | FM Logic; press again to return to Mosaic |
+| Main canvas | grave or Ctrl+M | Mosaic; press again to return |
+| FM Logic | grave | Mosaic; press again to return to the same FM patch |
+| Mosaic | Shift+grave | FM Logic; press again to return to Mosaic |
 | Main, FM, Mosaic, or event editor | Tab | Visit Sister and return without changing the edited event |
-| Sister Machine | Shift+grave / plain grave | Bring Mosaic / FM forward, even if already open behind Sister |
+| Sister Machine | grave / Shift+grave | Bring Mosaic / FM forward, even if already open behind Sister |
 | Sister Machine | Escape | Close its active subpanel first, otherwise restore the main application window |
 | Event editor | Escape or MOSAIC | Return to Mosaic, resolving changed audio if needed |
 | Main, FM, Mosaic, or Sister | Ctrl+Shift+P | Reach the CDP Portal |
@@ -725,6 +751,17 @@ together in single physical-pixel steps, preserving the tile's height and wavefo
 shape as the view moves. The five source colors and separate selection highlight
 are editable in [CFG → PALETTE](#palette-and-mosaic-colors).
 See the [dedicated Mosaic guide](MOSAIC.md) for additional details and listening checks.
+
+### Mosaic volume envelope
+
+The narrow lane at the right of Mosaic controls the arrangement's volume. Left-drag
+to draw: left is silence, right is full level. Its shape stretches with the total
+arrangement length and follows scrolling/zooming. REPEAT links its endpoint levels.
+**R** resets, **S** smooths, the top arrow makes the start match the end, **V** makes
+the end match the start, and **/** draws a straight ramp between them. A stroke is
+one undo step; Escape cancels the current stroke. The envelope is saved with the
+project and heard through the normal Mosaic effects/recording route. See
+[Mosaic](MOSAIC.md#arrangement-volume-envelope) for the full behavior.
 
 ## Recording and capture
 

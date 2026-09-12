@@ -131,6 +131,7 @@ static void test_storage(void)
     ts_mosaic_copy(m,m->events[0].id,6,0);
     m->events[0].muted=1;m->events[1].solo=1;
     m->events[0].pan=-.35f;m->events[0].fade_in=1.25;m->events[0].fade_out=2.5;ts_mosaic_set_speed(m,1.5);
+    ts_mosaic_volume_draw(m,0,.2f,1,.8f);
     assert(ts_mosaic_save(m,dir,error,sizeof(error)));
     assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
     assert(ts_mosaic_hash(m)==ts_mosaic_hash(loaded));
@@ -140,22 +141,30 @@ static void test_storage(void)
     /* Both previous formats load with neutral new controls, preserving the
        second format's mute/solo state. */
     FILE *old=fopen("mosaic-storage-test/mosaic.tsm","r");assert(old);
-    char lines[4][1024];for(int i=0;i<4;++i)assert(fgets(lines[i],sizeof(lines[i]),old));fclose(old);
-    for(int version=2;version>=1;--version) {
+    char lines[4][1024];
+    for(int i=0;i<2;++i)assert(fgets(lines[i],sizeof(lines[i]),old));
+    for(int i=0;i<=TS_MOSAIC_ENVELOPE_POINTS;++i)assert(fgets(lines[2],sizeof(lines[2]),old));
+    for(int i=2;i<4;++i)assert(fgets(lines[i],sizeof(lines[i]),old));fclose(old);
+    for(int version=3;version>=1;--version) {
         old=fopen("mosaic-storage-test/mosaic.tsm","w");assert(old);
-        fprintf(old,"TAPESISTER_MOSAIC %d\nSETTINGS 0 0.7\n",version);
+        fprintf(old,"TAPESISTER_MOSAIC %d\nSETTINGS 0 0.7%s\n",version,version==3?" 1.5":"");
         for(int i=2;i<4;++i) {
-            char line[1024];snprintf(line,sizeof(line),"%s",lines[i]);
-            for(int k=0;k<(version==2?3:5);++k){char *end=strrchr(line,' ');assert(end);*end=0;}
+            char line[1024];snprintf(line,sizeof(line),"%s",lines[i]);line[strcspn(line,"\r\n")]=0;
+            for(int k=0;k<(version==3?0:version==2?3:5);++k){char *end=strrchr(line,' ');assert(end);*end=0;}
             fprintf(old,"%s\n",line);
         }
         fclose(old);assert(ts_mosaic_load(loaded,dir,error,sizeof(error)));
-        assert(loaded->speed==1 && loaded->speed_current==1 && loaded->events[0].pan==0 && loaded->events[0].fade_in==0 && loaded->events[0].fade_out==0);
-        assert(loaded->events[0].muted==(version==2) && loaded->events[1].solo==(version==2));
+        for(int i=0;i<TS_MOSAIC_ENVELOPE_POINTS;++i)assert(loaded->volume[i]==1);
+        if(version==3)assert(loaded->speed==1.5 && loaded->events[0].pan==-.35f);
+        else assert(loaded->speed==1 && loaded->speed_current==1 && loaded->events[0].pan==0 && loaded->events[0].fade_in==0 && loaded->events[0].fade_out==0);
+        assert(loaded->events[0].muted==(version>=2) && loaded->events[1].solo==(version>=2));
     }
     uint64_t before=ts_mosaic_hash(loaded);
     FILE *f=fopen("mosaic-storage-test/mosaic.tsm","w");assert(f);fputs("TAPESISTER_MOSAIC 1\ncorrupt\n",f);fclose(f);
     assert(!ts_mosaic_load(loaded,dir,error,sizeof(error)));assert(ts_mosaic_hash(loaded)==before);
+    f=fopen("mosaic-storage-test/mosaic.tsm","w");assert(f);
+    fputs("TAPESISTER_MOSAIC 4\nSETTINGS 0 0.7 1\nVOLUME 257\nnan\n",f);fclose(f);
+    assert(!ts_mosaic_load(loaded,dir,error,sizeof(error)) && ts_mosaic_hash(loaded)==before);
     remove("mosaic-storage-test/mosaic.tsm");remove("mosaic-storage-test/mosaic-000.wav");RMDIR(dir);
     ts_mosaic_free(m);ts_mosaic_free(loaded);
 }
@@ -185,8 +194,10 @@ static void test_project_transaction(void)
     RMDIR("mosaic-project-test/samples/page-001");RMDIR("mosaic-project-test/samples");
     RMDIR("mosaic-project-test/project-data");RMDIR("mosaic-project-test");
 }
+#include "test_mosaic_volume.inc"
 int main(void)
 {
+    test_mosaic_volume();
     test_tape_speed();test_event_mix_and_fades();test_mute_solo_phase();test_ownership();test_seek();test_one_shot_and_resize();test_spacing_and_history();test_storage();test_project_transaction();
     puts("Mosaic ownership, independent clocks, seeking, geometry and storage passed");return 0;
 }

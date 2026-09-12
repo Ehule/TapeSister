@@ -9,11 +9,11 @@ Sister Machine and output recorder.
 
 ## Playing and arranging
 
-Open **MOSAIC** in the main toolbar, or press **Shift+grave** (Shift+the backtick
+Open **MOSAIC** in the main toolbar, or press **grave** (the backtick
 key). The same shortcut returns to the main canvas or finishes editing an event;
 **Ctrl+M** remains available. From Sister, the shortcut brings Mosaic forward,
 even when it was already open behind Sister. From FM, it visits Mosaic and returns
-to the same FM patch on the next press. Plain **grave** opens FM directly from
+to the same FM patch on the next press. **Shift+grave** opens FM directly from
 Mosaic; pressing it again returns to Mosaic. **Tab** continues to visit Sister
 without changing the open event, and **Escape** in Sister restores the main
 application window. Escape from an event editor still returns to Mosaic.
@@ -100,6 +100,46 @@ Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
 actual sample ranges instead of enlarging those bins. Source thumbnails cache
 extrema at their displayed width. None of this analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.
 
+## Arrangement volume envelope
+
+![Mosaic volume lane](images/mosaic-volume.png)
+
+The narrow lane at the right follows the arrangement timeline vertically.
+**Left-click and drag** to draw volume: left is silence, right is full level.
+The curve has its own border, with every tool button outside it. Small square
+handles mark the start and end when visible; drag sideways at either endpoint
+to set its exact level. **FIT ALL** reveals both endpoints. The lane fits the
+same visible time range into its smaller drawing area and has its own time
+guides and playhead marker, keeping the curve clear of the buttons.
+The envelope is multiplied with event levels and fades before Mosaic enters its
+normal effects/recording route. Live curve changes receive a short gain slew.
+
+The curve is stored from 0–100% of the entire arrangement. Moving or resizing
+its last event stretches or shrinks the envelope with the new total duration.
+Scrolling and zooming only change the view. Follow temporarily pauses while
+painting so the timeline does not move under the stroke.
+
+| Control | Action |
+| --- | --- |
+| R, top left | Reset to full level |
+| S, top right | Smooth the curve, keeping its endpoints |
+| Top arrow | Make the beginning match the end |
+| V, bottom right | Make the end match the beginning |
+| /, bottom left | Draw a straight ramp between the endpoint levels |
+
+**REPEAT** links the endpoint levels. Enabling it initially matches the end to
+the beginning; drawing either endpoint then moves both. This prevents a gain
+jump caused by the envelope at wraparound. Audio content still needs its normal
+loop fades/crossfades. With Repeat on, a straight ramp between the equal endpoints
+is flat; turn Repeat off to draw an unequal start-to-end ramp.
+The status message explains when Repeat already links the endpoints or a ramp
+is flat because the endpoint levels are equal.
+
+Each stroke or tool action is one undo step. **Escape** cancels a stroke, and
+Ctrl+Z / Ctrl+Y undo and redo it. The curve saves in Mosaic format 4; older
+arrangements open with a flat, full-level envelope. Failed loads leave the current
+arrangement intact.
+
 ## Performance controls
 
 Select an event, then use **LEVEL**, **PAN**, **IN** and **OUT** in the footer.
@@ -153,23 +193,32 @@ retriggering the sound. Each note can finish at a different time.
 
 **MOSAIC** returns to the arrangement. Event voices keep playing while the main
 editor, CDP Portal or Sister window is open. Sample editing uses the event's
-own document. Copies share immutable source audio until an actual sample edit
-creates a new version for that event. The original Sample bank stays intact.
+own document. Copies share source audio; on leaving, choose whether the edited
+sound belongs to this instance, all instances using that source, or a new card.
 Make as many drawing or processing edits as you like, including Warp, Smear
 and CDP. The working waveform stays in this event's editor. The destination
 prompt appears **once when returning to Mosaic**, only if its audio has changed:
 
-- **NEW TILE** (Enter or N) keeps the original event and places a new event
+- **CREATE TILE** (Enter or N) keeps the original event and places a new event
   beside it with all the accumulated audio edits. It also places a reusable snapshot
   into a free regular Sample-bank tile, adding a bank if needed. The arrangement
   scrolls to reveal the new event and Sources highlights its bank tile; the status
   names the bank and slot. The main editor's previous selection stays intact.
-- **UPDATE TILE** (U) replaces only this event's audio, then returns to Mosaic and
-  highlights its current source. Existing bank snapshots remain independent.
+- **UPDATE INSTANCE** (U) replaces this card's audio without adding another card.
+  It creates a reusable source in a free regular Sample-bank tile, adding a bank
+  if needed. Other cards and the original source retain their sound.
+- **UPDATE ALL** (A) replaces every card using the same source and updates its
+  matching Sample-bank tiles in place, across all bank pages. The dialog shows
+  the number of affected cards. Notes, timing, loop mode, tuning, level, pan and
+  fades stay individual; source regions scale proportionally if the new audio
+  length changes. The edited card takes its working region/tuning. Custom names
+  on other cards remain intact. A legacy source without a regular bank tile gets
+  one. A locked matching bank tile prevents the update before anything changes.
 - **KEEP EDITING** (Escape) closes the question and retains all working edits.
 
-An occupied or protected bank tile is never overwritten by NEW TILE. Arrangement
-Undo can remove the new event while its reusable bank snapshot remains available.
+CREATE TILE and UPDATE INSTANCE use free bank slots. Arrangement Undo restores
+the cards together; published Sample-bank sounds remain available, including
+the source replaced by UPDATE ALL. Bank publication is not part of arrangement Undo.
 If a new bank snapshot cannot be stored, the working edit stays open for another choice.
 
 Undoing all audio edits removes the question. Opening an event and leaving it
@@ -229,7 +278,7 @@ stopping Mosaic, allowing effects tails to be recorded deliberately. Completed
 takes use the existing timestamped `Captures/` archive.
 
 SAVE stores event positions, durations, notes, source regions, loop modes,
-names, level/pan/fades, mute/solo flags, global speed and arrangement repeat setting in the project transaction. Shared audio
+names, level/pan/fades, mute/solo flags, global speed, volume envelope and arrangement repeat setting in the project transaction. Shared audio
 versions are written once each as lossless 32-bit float WAVs under
 `project-data/`. Earlier Mosaic projects load with events unmuted and unsoloed; projects from
 before Mosaic open with an empty arrangement. A project marked as
@@ -243,7 +292,7 @@ processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
 
 ## Performance update acceptance
 
-- Smear an event and choose NEW TILE with enough overlapping cards to fill the view.
+- Smear an event and choose CREATE TILE with enough overlapping cards to fill the view.
   Confirm the new waveform is revealed, selected and present in the regular Sample
   banks. Save/reopen and audition the bank tile and event.
 - Solo a card and scroll it offscreen. Check CLEAR SOLO and the other cards' SOLO OUT
@@ -259,9 +308,9 @@ processing simultaneously. DISTSHIFT and further CDP expansion are unchanged.
   confirm that spacing changes do not move their start times unintentionally.
 - On a long loop choose C4, E4 and C5. Listen for independent repeating gestures;
   extend the event while it plays and check that the phases continue.
-- Open the other copy, set EVENT ONCE and make several audio edits. Return to Mosaic and choose NEW TILE,
-  UPDATE TILE and KEEP EDITING on separate attempts; check that siblings and the
-  original source bank retain their sound in every case.
+- Open a copy, set EVENT ONCE and make audio edits. Try CREATE TILE, UPDATE INSTANCE,
+  UPDATE ALL and KEEP EDITING separately; verify the stated card/source scope and
+  that UPDATE ALL preserves each card's timing, notes and mix settings.
 - Create a new full bank from FM while the welcome sample remains on the first
   bank. Browse both banks in Mosaic and place a sample from each; confirm that
   the main editor stays on its original active bank.
