@@ -29,7 +29,8 @@ typedef struct {
     TsTuning tuning;
     int looping, note_count, notes[TS_MOSAIC_NOTES];
     int muted, solo;
-    float gain;
+    float gain, pan;
+    double fade_in, fade_out; /* Seconds on the arrangement timeline. */
 } TsMosaicEvent;
 
 typedef struct {
@@ -39,17 +40,19 @@ typedef struct {
     int direction[TS_MOSAIC_NOTES], intro[TS_MOSAIC_NOTES];
     uint64_t attack;
     int active;
-    float audible_gain;
+    float audible_gain, mix_left, mix_right;
 } TsMosaicVoice;
 
 typedef struct TsMosaic {
     TsMosaicEvent events[TS_MOSAIC_EVENTS];
     TsMosaicVoice voices[TS_MOSAIC_EVENTS];
     TsMosaicEvent history[TS_MOSAIC_HISTORY][TS_MOSAIC_EVENTS];
+    double history_speed[TS_MOSAIC_HISTORY];
     int history_count, history_cursor;
     TsMosaicSource *sources;
     uint64_t next_id, revision, epoch;
     double time;
+    double speed, speed_current; /* Target and smoothed tape speed, 0.5 .. 2. */
     int playing, repeat, rate;
     float gain;
     TsStereoFrame last_output, transition_from;
@@ -75,6 +78,7 @@ void ts_mosaic_space(TsMosaic *m, TsMosaicEvent *e);
 double ts_mosaic_snap(const TsMosaic *m, uint64_t id, double time, double tolerance);
 double ts_mosaic_end(const TsMosaic *m);
 void ts_mosaic_seek(TsMosaic *m, double time);
+void ts_mosaic_set_speed(TsMosaic *m, double speed);
 TsStereoFrame ts_mosaic_read(TsMosaic *m, int output_rate);
 uint64_t ts_mosaic_hash(const TsMosaic *m);
 /* Project-data directory; optional on load for pre-Mosaic projects. */

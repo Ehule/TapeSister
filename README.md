@@ -88,13 +88,19 @@ as its different loop lengths move in and out of alignment.
 
 Double-click an event to use the familiar waveform editor. Audio edits accumulate
 until you return to Mosaic, then **NEW TILE** preserves the original or **UPDATE
-TILE** changes only that event. Copies share source audio until an edit creates a
+TILE** changes only that event. NEW TILE reveals the new card and also stores a
+reusable copy in the regular Sample banks. Copies share source audio until an edit creates a
 new version. Sources browses all Sample banks and the event audio versions.
 
 Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to
 copy the group. M/S mutes or solos, middle-click seeks, and FOLLOW scrolls with the
 playhead. **Shift+grave** visits Mosaic and returns to the previous main or FM
 workspace. Its colors and selection highlight are editable in CFG → PALETTE.
+
+The footer controls level, stereo balance and fade-in/out for an event or selection.
+A centered global SPEED slider covers 0.5×–2×, changing pitch and arrangement timing
+together with smooth live movement. These settings save with the project. CLEAR SOLO
+remains visible while any card is soloed, including cards outside the view.
 
 Mosaic plays through the existing global Fallout, pedalboard, and Sister routing.
 **REC FILE** records the final stereo output while you arrange or edit. Saving

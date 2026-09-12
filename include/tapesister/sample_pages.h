@@ -29,6 +29,8 @@ TsInstrument *ts_sample_pages_page_mut(TsSamplePages *pages,
                                        TsInstrument *active, size_t page);
 int ts_sample_pages_switch(TsSamplePages *pages, TsInstrument *active,
                            size_t page, char *error, size_t error_size);
+/* Append an empty stored bank without changing the active editor. */
+int ts_sample_pages_append(TsSamplePages *pages, char *error, size_t error_size);
 int ts_sample_pages_append_and_switch(TsSamplePages *pages,
                                       TsInstrument *active,
                                       size_t *new_page,
