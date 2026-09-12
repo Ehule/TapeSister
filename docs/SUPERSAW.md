@@ -1,5 +1,8 @@
 # Supersaw prototype
 
+For nine oscillators directly in FM Logic, see [FM Unison](FM_UNISON.md).
+The Portal chains below remain available for processing recorded tiles.
+
 ![Supersaw in the existing CDP Portal](images/cdp-supersaw.png)
 
 Open **CDP → CHAIN TOOLS**, or search **SAW** in ALL. Three ordinary saved
@@ -75,7 +78,7 @@ Use a new output directory. It writes the exact FM source, three rendered WAVs,
 a dry comparison, a Mosaic performance, a native Portal screenshot, an ordinary
 recipe file and `Supersaw-Mosaic/Supersaw-Mosaic.tsr` with its project data.
 The project opens on main after PR #98 and includes four bank tiles and an
-arrangement using per-event pan/fades. Press Shift+grave to enter Mosaic, then
+arrangement using per-event pan/fades. Press grave to enter Mosaic, then
 Play. The rendered sounds work without the new factory preset entries.
 
 The standalone `.recipes` file contains only these three chains. It is a

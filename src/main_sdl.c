@@ -3919,6 +3919,7 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ui->fm_bank_choice_open = 0;
     ui->fm_output_dragging = 0;
     ui->fm_page = TS_FM_PAGE_PITCH;
+    ui->fm_voice_bank = 0;
     ui->fm_preview_sample = preview;
     (void)render_fm_workspace(device, audio, ui, instrument, preview);
 }
@@ -3953,9 +3954,7 @@ static uint32_t fm_page_mutation_bit(TsFmPage page)
 
 static int fm_control_disabled(const TsFmPatch *patch, TsFmPage page, int control)
 {
-    return patch != NULL && patch->drone_mode &&
-           ((page == TS_FM_PAGE_FILTER && (control == 2 || control == 3)) ||
-            (page == TS_FM_PAGE_STRUCTURE && control == 5));
+    return !ts_fm_control_available(patch, page, control);
 }
 
 static void randomize_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
@@ -13813,7 +13812,7 @@ int main(int argc, char **argv)
                              "CHOOSE OVERWRITE, NEW SAMPLE PAGE, OR CANCEL");
                     continue;
                 }
-                control = ts_ui_fm_control_from_point(x, y);
+                control = ts_ui_fm_control_index(&ui, ts_ui_fm_control_from_point(x, y));
                 if (wheel_y != 0) {
                     int target = -1;
                     if (ui.fm_page == TS_FM_PAGE_PITCH &&
@@ -13853,7 +13852,7 @@ int main(int argc, char **argv)
                 } else if (wheel_y != 0 && control >= 0 &&
                     fm_control_disabled(&ui.fm_patch, ui.fm_page, control)) {
                     snprintf(ui.fm_message, sizeof(ui.fm_message),
-                             "ENVELOPE CONTROL DISABLED IN DRONE MODE");
+                             "CONTROL INACTIVE IN THIS SYNTH MODE");
                 } else if (wheel_y != 0 && control >= 0) {
                     int amount = wheel_y < 0 ? -wheel_y : wheel_y;
                     int changed = 0;
@@ -14596,8 +14595,8 @@ int main(int argc, char **argv)
                         continue;
                     }
                     TsFmPage page = ts_ui_fm_page_from_point(x, y);
-                    int control = ts_ui_fm_control_from_point(x, y);
-                    int voice = ts_ui_fm_voice_from_point(x, y);
+                    int control = ts_ui_fm_control_index(&ui, ts_ui_fm_control_from_point(x, y));
+                    int voice = ts_ui_fm_voice_index(&ui, ts_ui_fm_voice_from_point(x, y));
                     uint32_t mutation = ui.fm_page == TS_FM_PAGE_PITCH ? 0u :
                                         ts_ui_fm_mutation_from_point(x, y);
                     TsUiFmAction fm_action = ts_ui_fm_action_from_point(x, y);
@@ -14607,11 +14606,11 @@ int main(int argc, char **argv)
                                  "%s PAGE - SAME SIX CONTROLS",
                                  ts_fm_page_name(page));
                     } else if (control >= 0) {
-                        float amount = (float)(x - (20 + control * 100)) / 94.0f;
+                        float amount = (float)(x - (20 + (control % TS_FM_OPERATOR_COUNT) * 100)) / 94.0f;
                         if (fm_control_disabled(&ui.fm_patch, ui.fm_page,
                                                 control))
                             snprintf(ui.fm_message, sizeof(ui.fm_message),
-                                     "ENVELOPE CONTROL DISABLED IN DRONE MODE");
+                                     "CONTROL INACTIVE IN THIS SYNTH MODE");
                         else if (ts_fm_set_control_normalized(
                                      &ui.fm_patch, ui.fm_page, control, amount))
                             (void)render_fm_workspace(device, &audio, &ui,
@@ -14624,6 +14623,15 @@ int main(int argc, char **argv)
                         ui.fm_patch.mutation_mask ^= mutation;
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  "MUTATION PERMISSIONS UPDATED");
+                    } else if (fm_action == TS_UI_FM_ACTION_UNISON) {
+                        ts_fm_patch_unison(&ui.fm_patch);
+                        ui.fm_voice_bank = 0;
+                        (void)render_fm_workspace(device, &audio, &ui, &instrument, &fm_preview);
+                        snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                 "NINE VOICES FROM V1 - EACH EDITABLE; CLICK UNISON V1 TO COPY AGAIN");
+                    } else if (fm_action == TS_UI_FM_ACTION_VOICE_BANK) {
+                        if (ts_fm_voice_count(&ui.fm_patch) > TS_FM_OPERATOR_COUNT)
+                            ui.fm_voice_bank = !ui.fm_voice_bank;
                     } else if (fm_action == TS_UI_FM_ACTION_RANDOMIZE) {
                         randomize_fm_workspace(device, &audio, &ui,
                                                &instrument, &fm_seed_sequence,

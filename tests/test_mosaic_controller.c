@@ -191,7 +191,7 @@ static void test_canvas_feedback(SDL_Window *window)
     assert(!ui.mosaic_edit_choice && mosaic.active==variant->id && ts_sample_hash(&instrument.current)==smear && variant->source==warped);
     assert(ts_instrument_apply_smear(&instrument,.8f,error,sizeof(error)));
     assert(mosaic_commit(0,&ui,&instrument,&mosaic) && !ui.mosaic_edit_choice);
-    assert(variant->source==warped);key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_edit_choice);
+    assert(variant->source==warped);key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_edit_choice);
     key(window,SDLK_u,KMOD_NONE);
     assert(!ui.mosaic_edit_choice && !mosaic.active && ui.mosaic_open && variant->source!=warped && a->source==original_source && b->source==source && scene->playing);
     /* Undoing every working edit removes the exit question. */
@@ -211,7 +211,7 @@ static void test_canvas_feedback(SDL_Window *window)
         uint64_t root=1;for(;;++root){TsFmSeedSequence probe;ts_fm_seed_sequence_init(&probe,root);if(ts_fm_seed_sequence_next(&probe)%12==1)break;}
         ts_fm_seed_sequence_init(&portal.create_dice,root);create.button.button=SDL_BUTTON_RIGHT;
         assert(portal_create_event(&create,100,214,0,&audio,&ui,&instrument,&portal,&transform) && portal.worker);
-        key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.mosaic_edit_choice);key(window,SDLK_u,KMOD_NONE);
+        key(window,SDLK_BACKQUOTE,KMOD_NONE);assert(ui.mosaic_edit_choice);key(window,SDLK_u,KMOD_NONE);
         assert(!mosaic.active && variant->source->hash==fm);
         assert(portal.source_event_revision==variant->revision);
         assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,b->id));wait_render();

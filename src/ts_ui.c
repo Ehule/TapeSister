@@ -1577,9 +1577,13 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         TS_FM_MUTATE_FILTER, TS_FM_MUTATE_STRUCTURE
     };
     const TsSample *preview = ui->fm_preview_sample;
-    frame(fb, 10, 40, 620, 274, RGB(36, 33, 37), PAL_MOUSE);
+    frame(fb, 10, 38, 620, 276, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 46, "FM SOUND LOGIC", PAL_NOTE, 1);
-    text(fb, 474, 46, "SIX-VOICE SOURCE", PAL_EFFECT, 1);
+    button(fb, 178, 38, 112, "UNISON V1", 0);
+    if (ts_fm_voice_count(&ui->fm_patch) > TS_FM_OPERATOR_COUNT)
+        button(fb, 296, 38, 128, ui->fm_voice_bank ? "VOICES 7-9" : "VOICES 1-6", ui->fm_voice_bank);
+    text(fb, 474, 46, ui->fm_patch.structure == TS_FM_STRUCTURE_UNISON ?
+         "NINE-VOICE UNISON" : "SIX-VOICE FM", PAL_EFFECT, 1);
     frame(fb, 20, 62, 600, 48, RGB(8, 8, 8), PAL_BUTTON);
     rect(fb, 22, 85, 596, 1, PAL_BUTTON);
     if (preview != NULL && preview->data != NULL && preview->frames > 1u) {
@@ -1609,15 +1613,15 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         button(fb, x, 116, 82, ts_fm_page_name((TsFmPage)page),
                ui->fm_page == (TsFmPage)page);
     }
-    for (int control = 0; control < TS_FM_OPERATOR_COUNT; ++control) {
-        int x = 20 + control * 100;
+    for (int column = 0; column < TS_FM_OPERATOR_COUNT; ++column) {
+        int x = 20 + column * 100;
+        int control = ts_ui_fm_control_index(ui, column);
+        int voice = ts_ui_fm_voice_index(ui, column);
+        if (control < 0) continue;
         char label[24];
         char value[32];
         float amount = ts_fm_control_normalized(&ui->fm_patch, ui->fm_page, control);
-        int disabled = ui->fm_patch.drone_mode &&
-            ((ui->fm_page == TS_FM_PAGE_FILTER &&
-              (control == 2 || control == 3)) ||
-             (ui->fm_page == TS_FM_PAGE_STRUCTURE && control == 5));
+        int disabled = !ts_fm_control_available(&ui->fm_patch, ui->fm_page, control);
         ts_fm_control_format(&ui->fm_patch, ui->fm_page, control,
                              label, sizeof(label), value, sizeof(value));
         text(fb, x, 146, label, disabled ? RGB(112, 108, 114) : PAL_TUNING, 1);
@@ -1625,10 +1629,10 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
         frame(fb, x, 171, 94, 17, RGB(12, 12, 12), PAL_BUTTON);
         rect(fb, x + 3, 174, (int)lrintf(amount * 88.0f), 11,
              disabled ? RGB(70, 66, 72) : PAL_BLOCK);
-        button(fb, x, 193, 94,
-               (ui->fm_patch.active_mask & (1u << control)) != 0u ?
+        if (voice >= 0) button(fb, x, 193, 94,
+               (ui->fm_patch.active_mask & (1u << voice)) != 0u ?
                "VOICE ON" : "VOICE OFF",
-               (ui->fm_patch.active_mask & (1u << control)) != 0u);
+               (ui->fm_patch.active_mask & (1u << voice)) != 0u);
     }
     if (ui->fm_page == TS_FM_PAGE_PITCH) {
         static const char *pitch_classes[12] = {
@@ -2218,6 +2222,20 @@ int ts_ui_fm_voice_from_point(int x, int y)
     return -1;
 }
 
+int ts_ui_fm_voice_index(const TsUiState *ui, int column)
+{
+    int voice;
+    if (!ui || column < 0 || column >= TS_FM_OPERATOR_COUNT) return -1;
+    voice = column + (ui->fm_voice_bank && ts_fm_voice_count(&ui->fm_patch) > TS_FM_OPERATOR_COUNT ? TS_FM_OPERATOR_COUNT : 0);
+    return voice < ts_fm_voice_count(&ui->fm_patch) ? voice : -1;
+}
+
+int ts_ui_fm_control_index(const TsUiState *ui, int column)
+{
+    if (!ui || column < 0 || column >= TS_FM_OPERATOR_COUNT) return -1;
+    return ui->fm_page <= TS_FM_PAGE_LFO_TYPE ? ts_ui_fm_voice_index(ui, column) : column;
+}
+
 uint32_t ts_ui_fm_mutation_from_point(int x, int y)
 {
     static const uint32_t bits[5] = {
@@ -2232,6 +2250,10 @@ uint32_t ts_ui_fm_mutation_from_point(int x, int y)
 
 TsUiFmAction ts_ui_fm_action_from_point(int x, int y)
 {
+    if (y >= 38 && y < 62) {
+        if (x >= 178 && x < 290) return TS_UI_FM_ACTION_UNISON;
+        if (x >= 296 && x < 424) return TS_UI_FM_ACTION_VOICE_BANK;
+    }
     if (y >= 218 && y < 242) {
         if (x >= 96 && x < 208) return TS_UI_FM_ACTION_PITCH_LOCK;
         if (x >= 214 && x < 310) return TS_UI_FM_ACTION_PITCH_ROOT;

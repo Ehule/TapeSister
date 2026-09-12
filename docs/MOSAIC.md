@@ -9,11 +9,11 @@ Sister Machine and output recorder.
 
 ## Playing and arranging
 
-Open **MOSAIC** in the main toolbar, or press **Shift+grave** (Shift+the backtick
+Open **MOSAIC** in the main toolbar, or press **grave** (the backtick
 key). The same shortcut returns to the main canvas or finishes editing an event;
 **Ctrl+M** remains available. From Sister, the shortcut brings Mosaic forward,
 even when it was already open behind Sister. From FM, it visits Mosaic and returns
-to the same FM patch on the next press. Plain **grave** opens FM directly from
+to the same FM patch on the next press. **Shift+grave** opens FM directly from
 Mosaic; pressing it again returns to Mosaic. **Tab** continues to visit Sister
 without changing the open event, and **Escape** in Sister restores the main
 application window. Escape from an event editor still returns to Mosaic.

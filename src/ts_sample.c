@@ -133,6 +133,13 @@ static void put_fm_patch(FILE *f, const TsFmPatch *patch)
     put32(f, (uint32_t)safe.pitch_lock);
     put32(f, (uint32_t)safe.pitch_root);
     put32(f, (uint32_t)safe.pitch_scale);
+    for (int voice = TS_FM_OPERATOR_COUNT; voice < TS_FM_UNISON_VOICE_COUNT; ++voice) {
+        put_float(f, safe.ratios[voice]);
+        put32(f, (uint32_t)safe.waveforms[voice]);
+        put_float(f, safe.lfo_rates[voice]);
+        put_float(f, safe.lfo_depths[voice]);
+        put32(f, (uint32_t)safe.lfo_types[voice]);
+    }
 }
 
 static int get_fm_patch(FILE *f, TsFmPatch *patch, int version)
@@ -148,7 +155,7 @@ static int get_fm_patch(FILE *f, TsFmPatch *patch, int version)
     for (int op = 0; op < TS_FM_OPERATOR_COUNT; ++op)
         if (!get_float(f, &patch->ratios[op])) return 0;
     if (version >= 22) {
-        uint32_t expected_genome = version >= 26 ? 4u : version >= 23 ? 3u : 2u;
+        uint32_t expected_genome = version >= 28 ? 5u : version >= 26 ? 4u : version >= 23 ? 3u : 2u;
         if (!get32(f, &patch->genome_version) ||
             patch->genome_version != expected_genome ||
             !get32(f, &patch->active_mask) || !get32(f, &patch->mutation_mask)) return 0;
@@ -197,7 +204,16 @@ static int get_fm_patch(FILE *f, TsFmPatch *patch, int version)
             patch->pitch_scale = TS_FM_PITCH_SCALE_MAJOR;
             patch->genome_version = 4u;
         }
-        if ((patch->active_mask & ~((1u << TS_FM_OPERATOR_COUNT) - 1u)) != 0u ||
+        if (version >= 28) {
+            for (int voice = TS_FM_OPERATOR_COUNT; voice < TS_FM_UNISON_VOICE_COUNT; ++voice) {
+                if (!get_float(f, &patch->ratios[voice]) || !get32(f, &value)) return 0;
+                patch->waveforms[voice] = (int)value;
+                if (!get_float(f, &patch->lfo_rates[voice]) ||
+                    !get_float(f, &patch->lfo_depths[voice]) || !get32(f, &value)) return 0;
+                patch->lfo_types[voice] = (int)value;
+            }
+        }
+        if ((patch->active_mask & ~((1u << (version >= 28 ? TS_FM_UNISON_VOICE_COUNT : TS_FM_OPERATOR_COUNT)) - 1u)) != 0u ||
             (patch->mutation_mask & ~TS_FM_MUTATE_ALL) != 0u ||
             patch->filter_mode < 0 || patch->filter_mode >= TS_FILTER_MODE_COUNT ||
             patch->interaction < 0 || patch->interaction >= TS_FM_INTERACTION_COUNT ||
@@ -213,7 +229,7 @@ static int get_fm_patch(FILE *f, TsFmPatch *patch, int version)
             patch->filter_envelope_amount < (patch->extreme_mode ? -2.0f : -1.0f) ||
             patch->filter_envelope_amount > (patch->extreme_mode ? 2.0f : 1.0f) ||
             patch->interaction_mix < 0.0f || patch->interaction_mix > 1.0f) return 0;
-        for (int voice = 0; voice < TS_FM_OPERATOR_COUNT; ++voice)
+        for (int voice = 0; voice < (version >= 28 ? TS_FM_UNISON_VOICE_COUNT : TS_FM_OPERATOR_COUNT); ++voice)
             if (patch->waveforms[voice] < 0 ||
                 patch->waveforms[voice] >= TS_FM_WAVEFORM_COUNT ||
                 patch->ratios[voice] < 0.05f ||
@@ -225,7 +241,8 @@ static int get_fm_patch(FILE *f, TsFmPatch *patch, int version)
                 patch->lfo_types[voice] < 0 ||
                 patch->lfo_types[voice] >= TS_FM_LFO_TYPE_COUNT) return 0;
     } else ts_fm_patch_sanitize(patch);
-    return patch->structure >= 0 && patch->structure < TS_FM_STRUCTURE_COUNT &&
+    if (version < 28 && patch->structure >= TS_FM_STRUCTURE_UNISON) return 0;
+    int valid = patch->structure >= 0 && patch->structure < TS_FM_STRUCTURE_COUNT &&
            patch->ratio_family >= 0 && patch->ratio_family < TS_FM_RATIO_FAMILY_COUNT &&
            patch->depth >= 0.15f &&
            patch->depth <= (patch->extreme_mode ? 48.0f : 12.0f) &&
@@ -234,6 +251,8 @@ static int get_fm_patch(FILE *f, TsFmPatch *patch, int version)
            patch->feedback <= (patch->extreme_mode ? 0.99f : 0.82f) &&
            patch->transient_mix >= 0.0f &&
            patch->transient_mix <= (patch->extreme_mode ? 1.0f : 0.60f);
+    if (valid) ts_fm_patch_sanitize(patch);
+    return valid;
 }
 
 static float clampf(float value, float low, float high)
@@ -9738,9 +9757,9 @@ static int snapshot_fits_tile(const TsEditSnapshot *state, const TsBankSlot *slo
            state->grid_snap < TS_GRID_SNAP_MODE_COUNT;
 }
 
-static int save_tsr27(const TsInstrument *instrument, FILE *f)
+static int save_tsr28(const TsInstrument *instrument, FILE *f)
 {
-    fwrite("TSR27\r\n\032", 1, 8, f);
+    fwrite("TSR28\r\n\032", 1, 8, f);
     put32(f, (uint32_t)instrument->selected_slot);
     put_float(f, instrument->family_mutation);
     put32(f, instrument->family_sequence);
@@ -10007,10 +10026,10 @@ static int load_tsr15_or_newer(FILE *f, int version, TsInstrument *instrument,
     set_error(error, error_size, "");
     return 1;
 out_of_memory:
-    set_error(error, error_size, "Out of memory while loading TSR15-TSR27 project");
+    set_error(error, error_size, "Out of memory while loading TSR15-TSR28 project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR15-TSR27 project");
+    set_error(error, error_size, "Malformed or unsupported TSR15-TSR28 project");
 failed:
     ts_instrument_free(&loaded);
     return 0;
@@ -10029,13 +10048,13 @@ int ts_instrument_save_recipe(const TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Could not create recipe file");
         return 0;
     }
-    if (!save_tsr27(instrument, f)) {
+    if (!save_tsr28(instrument, f)) {
         fclose(f);
-        set_error(error, error_size, "Could not write TSR27 project");
+        set_error(error, error_size, "Could not write TSR28 project");
         return 0;
     }
     if (fclose(f) != 0) {
-        set_error(error, error_size, "Could not finish TSR27 project");
+        set_error(error, error_size, "Could not finish TSR28 project");
         return 0;
     }
     set_error(error, error_size, "");
@@ -10070,7 +10089,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         set_error(error, error_size, "Truncated TSR project");
         return 0;
     }
-    if (memcmp(magic, "TSR27\r\n\032", 8) == 0 ||
+    if (memcmp(magic, "TSR28\r\n\032", 8) == 0 ||
+        memcmp(magic, "TSR27\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR26\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR25\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR24\r\n\032", 8) == 0 ||
@@ -10083,7 +10103,8 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         memcmp(magic, "TSR17\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR16\r\n\032", 8) == 0 ||
         memcmp(magic, "TSR15\r\n\032", 8) == 0) {
-        int self_contained_version = memcmp(magic, "TSR27\r\n\032", 8) == 0 ? 27 :
+        int self_contained_version = memcmp(magic, "TSR28\r\n\032", 8) == 0 ? 28 :
+                                     memcmp(magic, "TSR27\r\n\032", 8) == 0 ? 27 :
                                      memcmp(magic, "TSR26\r\n\032", 8) == 0 ? 26 :
                                      memcmp(magic, "TSR25\r\n\032", 8) == 0 ? 25 :
                                      memcmp(magic, "TSR24\r\n\032", 8) == 0 ? 24 :
@@ -10114,7 +10135,7 @@ int ts_instrument_load_recipe(TsInstrument *instrument, const char *path,
         fclose(f);
         ts_instrument_free(&loaded);
         set_error(error, error_size,
-                  "Not a self-contained TSR6-TSR27 project");
+                  "Not a self-contained TSR6-TSR28 project");
         return 0;
     }
 #define GET_U32(dst) do { if (!get32(f, &u32)) goto malformed; (dst) = u32; } while (0)
@@ -10395,7 +10416,7 @@ out_of_memory:
     set_error(error, error_size, "Out of memory while loading TSR project");
     goto failed;
 malformed:
-    set_error(error, error_size, "Malformed or unsupported TSR6-TSR27 project");
+    set_error(error, error_size, "Malformed or unsupported TSR6-TSR28 project");
 failed:
     fclose(f);
     ts_instrument_free(&loaded);

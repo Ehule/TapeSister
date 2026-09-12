@@ -104,6 +104,9 @@ tapesister_portal_expansion_tests: src/ts_cdp_portal_instruments.inc $(CORE) tes
 tapesister_supersaw_tests: src/ts_cdp_portal_instruments.inc $(CORE) tests/test_supersaw.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/test_supersaw.c -o $@ -lm
 
+tapesister_fm_unison_tests: $(CORE) tests/test_fm_unison.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/test_fm_unison.c -o $@ -lm
+
 tapesister_render_supersaw: src/ts_cdp_portal_instruments.inc $(CORE) tests/render_supersaw.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(CORE) tests/render_supersaw.c -o $@ -lm
 

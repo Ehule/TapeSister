@@ -8,8 +8,8 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | --- | --- |
 | `Tab` | Visit Sister and return to the current workspace/event editor; Portal uses Tab for A-B audition |
 | `Ctrl+Tab` | Move to a running Tapehead; press again there to return unchanged |
-| `` ` `` | Open/close FM Logic; from Mosaic, return to Mosaic on the next press |
-| Shift+grave (backtick) or `Ctrl+M` | Open Mosaic / return to the previous main or FM workspace |
+| `Shift+grave` | Open/close FM Logic; from Mosaic, return to Mosaic on the next press |
+| grave (backtick) or `Ctrl+M` | Open Mosaic / return to the previous main or FM workspace |
 | `1` | Show Sample Tiles; press again to cycle Sample pages |
 | `Shift+1` | Open external REC BANK |
 | `2` | Show performance keyboard |
@@ -21,7 +21,7 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | `Ctrl+Shift+M` | Enter or leave MIDI Learn in either window |
 | `Escape` | Cancel active gesture/dialog first; event editor → Mosaic, Sister → main application, idle Mosaic → stop/rewind, ordinary main canvas → exit question |
 
-From Sister, grave and Shift+grave bring FM and Mosaic forward even if already open
+From Sister, Shift+grave and grave bring FM and Mosaic forward even if already open
 behind it. Active dialogs keep focus until resolved. Number-key lower-panel shortcuts
 apply to the main canvas. Navigation and audition stop leave Mosaic playback running.
 
@@ -513,3 +513,10 @@ The loop MODE button now also offers **START FWD**, **START REV**, and
 [Playback and loop modes](PLAYBACK_LOOPS.md) explains all six choices and TapeHead
 compatibility. Zoomed waveforms now connect adjacent sample columns; at high zoom
 they draw a continuous line through the sample values.
+
+### FM Unison
+
+Open FM with **Shift+grave**, set voice 1, then **UNISON V1** copies it into nine
+independent oscillators at 0, ±7, ±12, ±19 and ±26 cents. **VOICES 1–6 / 7–9**
+switches the voice controls; each stays editable. **Shift+wheel** adjusts pitch
+by one cent. Press UNISON V1 again to recopy, or APPLY to store the result.

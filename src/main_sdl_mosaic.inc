@@ -110,7 +110,7 @@ static int mosaic_toggle_key(const SDL_Event *event)
     if(event->type!=SDL_KEYDOWN)return 0;
     SDL_Keymod mod=(SDL_Keymod)event->key.keysym.mod;
     return (event->key.keysym.sym==SDLK_m && (mod&KMOD_CTRL) && !(mod&(KMOD_SHIFT|KMOD_ALT|KMOD_GUI))) ||
-        (event->key.keysym.sym==SDLK_BACKQUOTE && (mod&KMOD_SHIFT) && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)));
+        (event->key.keysym.sym==SDLK_BACKQUOTE && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI)));
 }
 static void mosaic_source_drag(TsUiState *ui,const TsInstrument *instrument,MosaicController *c,int n)
 {

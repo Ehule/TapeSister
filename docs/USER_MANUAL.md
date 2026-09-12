@@ -94,7 +94,7 @@ The top row remains available across the main workspaces.
   and works whether or not Live Link audio is enabled.
 - **CONFIG** selects audio, input, MIDI, paths, palette, and performance defaults.
 - **FT2 LINK** opens the current folder-based TapeSister/TapeHead exchange.
-- **MOSAIC** or `Shift+grave` opens the arrangement; the shortcut returns to the
+- **MOSAIC** or `grave` opens the arrangement; the shortcut returns to the
   previous main or FM workspace. `Ctrl+M` is an alternative. See
   [Mosaic workspace navigation](#mosaic-workspace-navigation).
 - **CDP** or `Ctrl+Shift+P` opens the CDP Portal, also reachable from Mosaic, FM,
@@ -332,12 +332,12 @@ stamp becomes the next source.
 
 ![The six-voice FM Logic workspace](images/manual/fm-logic.png)
 
-Press the grave/backquote key (`` ` ``) or open **FM LOGIC** from the Family area.
-The workspace is a complete six-voice synthesizer and genome editor. Its preview is
+Press **Shift+grave** (Shift plus the backtick key) or open **FM LOGIC** from the Family area.
+The workspace has six-operator FM routings plus a nine-voice Unison preset. Its preview is
 temporary until **APPLY** is pressed.
 
-`Shift+grave` visits Mosaic and returns to the same FM patch on the next press.
-From Mosaic, plain grave opens FM and pressing it again returns to Mosaic. Visiting
+`grave` visits Mosaic and returns to the same FM patch on the next press.
+From Mosaic, Shift+grave opens FM and pressing it again returns to Mosaic. Visiting
 Sister with `Tab` also preserves the current workspace and event being edited.
 
 ### Pages
@@ -355,6 +355,25 @@ FM Logic provides seven pages through the same compact control area:
 Six **VOICE** buttons enable or disable voices. Permission buttons determine which
 domains Randomize and later variations may change. The visible page is protected during
 Randomize, which makes it possible to hold one aspect steady while exploring the rest.
+
+### Nine-voice Unison
+
+Set voice 1's waveform and pitch, then click **UNISON V1**. Voice 1 remains at
+the center; the other eight copy its waveform and LFO settings at ±7, ±12, ±19
+and ±26 cents. Every voice is an audible, independent oscillator. Use **VOICES
+1–6 / VOICES 7–9** to reach all nine voice controls. Filter and Structure always
+show the six global controls. Wheel changes unison pitch by a semitone;
+**Shift+wheel** changes it by one cent, shown beneath the note name.
+
+This is a preset operation: individual edits remain until you press **UNISON V1**
+again, which recopies voice 1. It enables Drone, locks pitch for variations, and
+protects Structure from randomization. Your global filter settings remain.
+For a saw ensemble, use SAW, LFO OFF, a 6000 Hz low-pass and 20% resonance as a
+starting point. Interaction, modulation depth and interaction mix are inactive in
+Unison. Select an earlier Structure routing to return to six-operator FM.
+
+**APPLY** stores the audio and all nine editable voice settings in the tile.
+[FM Unison](FM_UNISON.md) shows both voice banks and explains project compatibility.
 
 ### Pitch behavior
 
@@ -552,7 +571,7 @@ gap. Events may meet exactly end to end. There are no tracks or required beat gr
 
 ### Your first arrangement
 
-1. Open **MOSAIC** or press `Shift+grave` (Shift plus the backtick key).
+1. Open **MOSAIC** or press `grave` (the backtick key).
 2. Drag an occupied source from the left-hand browser onto the canvas. Its top
    edge sets the start time; a waveform ghost shows the proposed placement.
 3. Double-click the event to open its editor. Choose notes on the keyboard and
@@ -685,11 +704,11 @@ describes the full background-render behavior.
 
 | Where you are | Key | Destination |
 | --- | --- | --- |
-| Main canvas | Shift+grave or Ctrl+M | Mosaic; press again to return |
-| FM Logic | Shift+grave | Mosaic; press again to return to the same FM patch |
-| Mosaic | Plain grave | FM Logic; press again to return to Mosaic |
+| Main canvas | grave or Ctrl+M | Mosaic; press again to return |
+| FM Logic | grave | Mosaic; press again to return to the same FM patch |
+| Mosaic | Shift+grave | FM Logic; press again to return to Mosaic |
 | Main, FM, Mosaic, or event editor | Tab | Visit Sister and return without changing the edited event |
-| Sister Machine | Shift+grave / plain grave | Bring Mosaic / FM forward, even if already open behind Sister |
+| Sister Machine | grave / Shift+grave | Bring Mosaic / FM forward, even if already open behind Sister |
 | Sister Machine | Escape | Close its active subpanel first, otherwise restore the main application window |
 | Event editor | Escape or MOSAIC | Return to Mosaic, resolving changed audio if needed |
 | Main, FM, Mosaic, or Sister | Ctrl+Shift+P | Reach the CDP Portal |

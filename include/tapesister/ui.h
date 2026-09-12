@@ -253,7 +253,9 @@ typedef enum {
     TS_UI_FM_ACTION_NEW_PAGE,
     TS_UI_FM_ACTION_CANCEL_FULL,
     TS_UI_FM_ACTION_OUTPUT_TRIM,
-    TS_UI_FM_ACTION_BACK
+    TS_UI_FM_ACTION_BACK,
+    TS_UI_FM_ACTION_UNISON,
+    TS_UI_FM_ACTION_VOICE_BANK
 } TsUiFmAction;
 
 typedef enum {
@@ -489,6 +491,7 @@ typedef struct {
     int transform_open;
     int fm_open;
     TsFmPage fm_page;
+    int fm_voice_bank;
     TsFmPatch fm_patch;
     const TsSample *fm_preview_sample;
     int fm_held_notes;
@@ -698,6 +701,8 @@ int ts_ui_fm_button_from_point(int x, int y);
 TsFmPage ts_ui_fm_page_from_point(int x, int y);
 int ts_ui_fm_control_from_point(int x, int y);
 int ts_ui_fm_voice_from_point(int x, int y);
+int ts_ui_fm_voice_index(const TsUiState *ui, int column);
+int ts_ui_fm_control_index(const TsUiState *ui, int column);
 uint32_t ts_ui_fm_mutation_from_point(int x, int y);
 TsUiFmAction ts_ui_fm_action_from_point(int x, int y);
 TsUiFmAction ts_ui_fm_bank_action_from_point(int x, int y);

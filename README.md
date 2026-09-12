@@ -96,7 +96,7 @@ new version. Sources browses all Sample banks and the event audio versions.
 
 Shift-drag a box to select a group; drag to move it or Shift-drag a selected tile to
 copy the group. M/S mutes or solos, middle-click seeks, and FOLLOW scrolls with the
-playhead. **Shift+grave** visits Mosaic and returns to the previous main or FM
+playhead. **grave** visits Mosaic and returns to the previous main or FM
 workspace. Its colors and selection highlight are editable in CFG → PALETTE.
 
 The footer controls level, stereo balance and fade-in/out for an event or selection.
@@ -361,3 +361,7 @@ For an ordinary developer build without creating the ZIP, continue to use
 - [Universal TapeSister/TapeHead Palette](docs/UNIVERSAL_PALETTE.md)
 - [Windows Audio Validation](docs/WINDOWS_AUDIO_VALIDATION.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+FM Logic also has a [nine-voice Unison preset](docs/FM_UNISON.md): set voice 1,
+copy it into a centered detuned ensemble, then edit any voice independently.
+**Grave** opens Mosaic; **Shift+grave** opens FM.

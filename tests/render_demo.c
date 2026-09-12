@@ -26,13 +26,25 @@ int main(int argc, char **argv)
     snprintf(ui.status, sizeof(ui.status), "PARENT PRESERVED - CURRENT READY TO SHAPE");
     if (argc > 2 && (strcmp(argv[2], "fm") == 0 ||
                      strcmp(argv[2], "fm-pitch") == 0 ||
-                     strcmp(argv[2], "fm-bank") == 0)) {
+                     strcmp(argv[2], "fm-bank") == 0 ||
+                     strncmp(argv[2], "fm-unison", 9) == 0)) {
         TsGeneratorRecipe recipe = instrument.generator;
         recipe.kind = TS_GENERATOR_FM;
         ts_fm_patch_from_recipe(&recipe, &ui.fm_patch);
         ui.fm_patch.drone_mode = 1;
         ui.fm_patch.extreme_mode = 1;
         ts_fm_patch_sanitize(&ui.fm_patch);
+        if (strncmp(argv[2], "fm-unison", 9) == 0) {
+            ui.fm_patch.ratios[0] = 1;
+            ui.fm_patch.waveforms[0] = TS_FM_WAVE_SAW;
+            ui.fm_patch.lfo_types[0] = TS_FM_LFO_OFF;
+            ui.fm_patch.filter_cutoff_hz = 6000;
+            ui.fm_patch.filter_resonance = .19f;
+            ui.fm_patch.filter_envelope_amount = 0;
+            ui.fm_patch.extreme_mode = 0;
+            ts_fm_patch_unison(&ui.fm_patch);
+            ui.fm_voice_bank = strcmp(argv[2], "fm-unison-extra") == 0;
+        }
         if (!ts_fm_render_sample(&drone_preview, &ui.fm_patch, 2.0f, 130.8128f,
                                  44100u, 0x50524556u,
                                  error, sizeof(error))) {
@@ -51,7 +63,10 @@ int main(int argc, char **argv)
         ui.playhead_frame = drone_preview.frames * 2u / 5u;
         ui.playhead_frames = drone_preview.frames;
         instrument.family_mutation = 0.78f;
-        if (strcmp(argv[2], "fm-bank") == 0) {
+        if (strncmp(argv[2], "fm-unison", 9) == 0) {
+            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                     "NINE VOICES FROM V1 - EACH EDITABLE; CLICK UNISON V1 TO COPY AGAIN");
+        } else if (strcmp(argv[2], "fm-bank") == 0) {
             ui.fm_bank_choice_open = 1;
             snprintf(ui.fm_message, sizeof(ui.fm_message),
                      "CONFIRM 16-SOUND BANK DESTINATION");

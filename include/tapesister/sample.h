@@ -77,7 +77,9 @@ typedef enum {
 
 enum {
     TS_FM_OPERATOR_COUNT = 6,
-    TS_FM_STRUCTURE_COUNT = 10,
+    TS_FM_UNISON_VOICE_COUNT = 9,
+    TS_FM_STRUCTURE_UNISON = 10,
+    TS_FM_STRUCTURE_COUNT = 11,
     TS_FM_RATIO_FAMILY_COUNT = 8,
     TS_FM_WAVEFORM_COUNT = 10,
     TS_FM_LFO_TYPE_COUNT = 12,
@@ -177,13 +179,13 @@ typedef struct {
     float shape;
     float feedback;
     float transient_mix;
-    float ratios[TS_FM_OPERATOR_COUNT];
+    float ratios[TS_FM_UNISON_VOICE_COUNT];
     uint32_t active_mask;
     uint32_t mutation_mask;
-    int waveforms[TS_FM_OPERATOR_COUNT];
-    float lfo_rates[TS_FM_OPERATOR_COUNT];
-    float lfo_depths[TS_FM_OPERATOR_COUNT];
-    int lfo_types[TS_FM_OPERATOR_COUNT];
+    int waveforms[TS_FM_UNISON_VOICE_COUNT];
+    float lfo_rates[TS_FM_UNISON_VOICE_COUNT];
+    float lfo_depths[TS_FM_UNISON_VOICE_COUNT];
+    int lfo_types[TS_FM_UNISON_VOICE_COUNT];
     int filter_mode;
     float filter_cutoff_hz;
     float filter_resonance;
@@ -791,6 +793,10 @@ void ts_fm_patch_vary(const TsFmPatch *source, uint32_t seed, float range,
                       TsFmPatch *varied);
 float ts_fm_patch_distance(const TsFmPatch *source, const TsFmPatch *varied);
 void ts_fm_patch_sanitize(TsFmPatch *patch);
+/* Existing FM algorithms use six operators; UNISON exposes nine carriers. */
+int ts_fm_voice_count(const TsFmPatch *patch);
+int ts_fm_control_available(const TsFmPatch *patch, TsFmPage page, int control);
+void ts_fm_patch_unison(TsFmPatch *patch);
 float ts_fm_control_normalized(const TsFmPatch *patch, TsFmPage page, int control);
 int ts_fm_set_control_normalized(TsFmPatch *patch, TsFmPage page, int control,
                                  float normalized);

@@ -48,8 +48,8 @@ static int workspace_event(const SDL_Event *event,SDL_Window *window,
         return 1;
     }
     int to_mosaic=mosaic_toggle_key(event);
-    int to_fm=key && event->key.keysym.sym==SDLK_BACKQUOTE &&
-        !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI));
+    int to_fm=key && event->key.keysym.sym==SDLK_BACKQUOTE && (mod&KMOD_SHIFT) &&
+        !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI));
     int to_portal=key && event->key.keysym.sym==SDLK_p &&
         (mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT) && !(mod&(KMOD_ALT|KMOD_GUI));
     if(!from_sister && event->type==SDL_MOUSEBUTTONDOWN && event->button.button==SDL_BUTTON_LEFT && !ui->portal.open) {
