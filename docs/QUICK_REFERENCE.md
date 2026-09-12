@@ -516,7 +516,14 @@ they draw a continuous line through the sample values.
 
 ### FM Unison
 
-Open FM with **Shift+grave**, set voice 1, then **UNISON V1** copies it into nine
-independent oscillators at 0, ±7, ±12, ±19 and ±26 cents. **VOICES 1–6 / 7–9**
-switches the voice controls; each stays editable. **Shift+wheel** adjusts pitch
-by one cent. Press UNISON V1 again to recopy, or APPLY to store the result.
+Open FM with **Shift+grave**, shape voice 1, then toggle **UNISON** on. Nine detuned
+voices and three lower voices sound together. **VOICES 1–6 / 7–12** switches controls;
+**Shift+wheel** adjusts pitch by one cent. Toggle off to restore the original source.
+APPLY saves the active sound and original source with the tile.
+
+### Mosaic volume lane
+
+Left-drag in the right-side lane to draw volume. **R** resets, **S** smooths, the top
+arrow matches start to end, **V** matches end to start, and **/** makes a ramp.
+REPEAT links endpoint levels. The curve scales with the arrangement length.
+Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.

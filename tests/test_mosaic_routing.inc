@@ -7,7 +7,7 @@ static void test_workspace_routes(SDL_Window *window)
 {
     ui.mosaic_open=0;ui.fm_open=0;
     key(window,SDLK_BACKQUOTE,KMOD_SHIFT);assert(ui.fm_open && !ui.mosaic_open);
-    ui.fm_patch.ratios[0]=1.75f;
+    ui.fm_patch.ratios[0]=1.75f;ts_fm_toggle_unison(&ui.fm_patch);
     TsFmPatch patch=ui.fm_patch;const float *preview=workspace_preview.data;
     key(window,SDLK_p,KMOD_CTRL|KMOD_SHIFT);assert(ui.portal.open && !ui.fm_open);
     key(window,SDLK_p,KMOD_CTRL|KMOD_SHIFT);assert(!ui.portal.open && ui.fm_open);

@@ -14624,11 +14624,16 @@ int main(int argc, char **argv)
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  "MUTATION PERMISSIONS UPDATED");
                     } else if (fm_action == TS_UI_FM_ACTION_UNISON) {
-                        ts_fm_patch_unison(&ui.fm_patch);
-                        ui.fm_voice_bank = 0;
-                        (void)render_fm_workspace(device, &audio, &ui, &instrument, &fm_preview);
-                        snprintf(ui.fm_message, sizeof(ui.fm_message),
-                                 "NINE VOICES FROM V1 - EACH EDITABLE; CLICK UNISON V1 TO COPY AGAIN");
+                        TsFmPatch previous = ui.fm_patch;
+                        int had_source = ui.fm_patch.has_unison_source;
+                        int enabled = ts_fm_toggle_unison(&ui.fm_patch);
+                        if (render_fm_workspace(device, &audio, &ui, &instrument, &fm_preview)) {
+                            ui.fm_voice_bank = 0;
+                            snprintf(ui.fm_message, sizeof(ui.fm_message),
+                                     enabled ? "UNISON ON - NINE VOICES + THREE LOWER VOICES" :
+                                     had_source ? "UNISON OFF - ORIGINAL SOUND RESTORED" :
+                                     "UNISON OFF - V1 SOURCE; OLDER TILE HAS NO ORIGINAL");
+                        } else ui.fm_patch = previous;
                     } else if (fm_action == TS_UI_FM_ACTION_VOICE_BANK) {
                         if (ts_fm_voice_count(&ui.fm_patch) > TS_FM_OPERATOR_COUNT)
                             ui.fm_voice_bank = !ui.fm_voice_bank;

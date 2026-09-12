@@ -58,7 +58,7 @@ static void test_mosaic_variation_banks(SDL_Window *window)
     assert(mosaic_resolve_edit(0,a,view,bank,c,1));
     TsMosaicEvent *variation=ts_mosaic_find(view->mosaic,view->mosaic_selected);assert(variation && variation!=owner);
     assert(variation->source->hash==changed && owner->source->hash==original);
-    assert(variation->x>=view->mosaic_xscroll && variation->x+variation->width<=view->mosaic_xscroll+480);
+    assert(variation->x>=view->mosaic_xscroll && variation->x+variation->width<=view->mosaic_xscroll+TS_MOSAIC_CANVAS_RIGHT-151);
     assert(view->mosaic_source_page==1 && view->sample_page_count==2 && view->mosaic_source_selected>=0);
     assert(view->mosaic_sources[view->mosaic_source_selected].hash==changed);
     assert(ts_sample_pages_active(&pages)==0 && bank->selected_slot==selected && ts_sample_hash(&bank->current)==original);

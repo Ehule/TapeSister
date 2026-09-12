@@ -658,6 +658,8 @@ const TsTuning *ts_ui_display_tuning(const TsUiState *ui,
                                      const TsInstrument *instrument);
 enum {
     TS_MOSAIC_MIX_X = 10, TS_MOSAIC_MIX_STEP = 108, TS_MOSAIC_MIX_W = 100,
+    TS_MOSAIC_CANVAS_RIGHT = 565,
+    TS_MOSAIC_ENV_X = 568, TS_MOSAIC_ENV_RIGHT = 630,
     TS_MOSAIC_MIX_Y = 380, TS_MOSAIC_SPEED_X = 500, TS_MOSAIC_SPEED_W = 128
 };
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);

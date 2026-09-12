@@ -1,6 +1,6 @@
 # Supersaw prototype
 
-For nine oscillators directly in FM Logic, see [FM Unison](FM_UNISON.md).
+For twelve oscillators directly in FM Logic, see [FM Unison](FM_UNISON.md).
 The Portal chains below remain available for processing recorded tiles.
 
 ![Supersaw in the existing CDP Portal](images/cdp-supersaw.png)

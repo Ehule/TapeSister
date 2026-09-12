@@ -77,7 +77,7 @@ typedef enum {
 
 enum {
     TS_FM_OPERATOR_COUNT = 6,
-    TS_FM_UNISON_VOICE_COUNT = 9,
+    TS_FM_UNISON_VOICE_COUNT = 12,
     TS_FM_STRUCTURE_UNISON = 10,
     TS_FM_STRUCTURE_COUNT = 11,
     TS_FM_RATIO_FAMILY_COUNT = 8,
@@ -166,35 +166,44 @@ enum {
     TS_FM_MUTATE_ALL = (1u << 5) - 1u
 };
 
-typedef struct {
-    uint32_t genome_version;
-    int drone_mode;
-    int extreme_mode;
-    int pitch_lock;
-    int pitch_root;
-    int pitch_scale;
-    int structure;
-    int ratio_family;
-    float depth;
-    float shape;
-    float feedback;
-    float transient_mix;
-    float ratios[TS_FM_UNISON_VOICE_COUNT];
-    uint32_t active_mask;
-    uint32_t mutation_mask;
-    int waveforms[TS_FM_UNISON_VOICE_COUNT];
-    float lfo_rates[TS_FM_UNISON_VOICE_COUNT];
-    float lfo_depths[TS_FM_UNISON_VOICE_COUNT];
-    int lfo_types[TS_FM_UNISON_VOICE_COUNT];
-    int filter_mode;
-    float filter_cutoff_hz;
-    float filter_resonance;
-    float filter_attack_seconds;
-    float filter_release_seconds;
-    float filter_envelope_amount;
-    int interaction;
+/* One field list keeps the reversible Unison source identical to the live
+   sound settings, without pointers or recursive patch ownership. */
+#define TS_FM_SOUND_FIELDS \
+    uint32_t genome_version; \
+    int drone_mode; \
+    int extreme_mode; \
+    int pitch_lock; \
+    int pitch_root; \
+    int pitch_scale; \
+    int structure; \
+    int ratio_family; \
+    float depth; \
+    float shape; \
+    float feedback; \
+    float transient_mix; \
+    float ratios[TS_FM_UNISON_VOICE_COUNT]; \
+    uint32_t active_mask; \
+    uint32_t mutation_mask; \
+    int waveforms[TS_FM_UNISON_VOICE_COUNT]; \
+    float lfo_rates[TS_FM_UNISON_VOICE_COUNT]; \
+    float lfo_depths[TS_FM_UNISON_VOICE_COUNT]; \
+    int lfo_types[TS_FM_UNISON_VOICE_COUNT]; \
+    int filter_mode; \
+    float filter_cutoff_hz; \
+    float filter_resonance; \
+    float filter_attack_seconds; \
+    float filter_release_seconds; \
+    float filter_envelope_amount; \
+    int interaction; \
     float interaction_mix;
+
+typedef struct { TS_FM_SOUND_FIELDS } TsFmSound;
+typedef struct {
+    TS_FM_SOUND_FIELDS
+    int has_unison_source;
+    TsFmSound unison_source;
 } TsFmPatch;
+#undef TS_FM_SOUND_FIELDS
 
 typedef enum {
     TS_SOURCE_NONE = 0,
@@ -797,6 +806,8 @@ void ts_fm_patch_sanitize(TsFmPatch *patch);
 int ts_fm_voice_count(const TsFmPatch *patch);
 int ts_fm_control_available(const TsFmPatch *patch, TsFmPage page, int control);
 void ts_fm_patch_unison(TsFmPatch *patch);
+/* Returns 1 when enabled, 0 when the source is restored. */
+int ts_fm_toggle_unison(TsFmPatch *patch);
 float ts_fm_control_normalized(const TsFmPatch *patch, TsFmPage page, int control);
 int ts_fm_set_control_normalized(TsFmPatch *patch, TsFmPage page, int control,
                                  float normalized);

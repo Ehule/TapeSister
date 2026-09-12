@@ -9,7 +9,9 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#define TS_FM_GENOME_VERSION 5u
+#define TS_FM_GENOME_VERSION 6u
+_Static_assert(offsetof(TsFmPatch, has_unison_source) >= sizeof(TsFmSound),
+               "FM sound snapshot must fit before its backup");
 #define TS_FM_MIN_USABLE_PEAK 1.0e-5f
 #define TS_FM_MIN_USABLE_MEAN_SQUARE 1.0e-12
 
@@ -200,11 +202,15 @@ int ts_fm_control_available(const TsFmPatch *patch, TsFmPage page, int control)
 void ts_fm_patch_unison(TsFmPatch *patch)
 {
     static const float cents[TS_FM_UNISON_VOICE_COUNT] =
-        {0, -7, 7, -12, 12, -19, 19, -26, 26};
+        {0, -7, 7, -12, 12, -19, 19, -26, 26, -1200, -1207, -1193};
     float center;
     if (!patch) return;
     ts_fm_patch_sanitize(patch);
-    center = clampf(patch->ratios[0], 0.05f * exp2f(26.0f / 1200.0f),
+    if (patch->structure != TS_FM_STRUCTURE_UNISON) {
+        memcpy(&patch->unison_source, patch, sizeof(patch->unison_source));
+        patch->has_unison_source = 1;
+    }
+    center = clampf(patch->ratios[0], 0.05f * exp2f(1207.0f / 1200.0f),
                     ratio_maximum(patch) / exp2f(26.0f / 1200.0f));
     patch->structure = TS_FM_STRUCTURE_UNISON;
     patch->active_mask = (1u << TS_FM_UNISON_VOICE_COUNT) - 1u;
@@ -219,6 +225,26 @@ void ts_fm_patch_unison(TsFmPatch *patch)
         patch->lfo_depths[voice] = patch->lfo_depths[0];
         patch->lfo_types[voice] = patch->lfo_types[0];
     }
+}
+
+int ts_fm_toggle_unison(TsFmPatch *patch)
+{
+    if (!patch) return 0;
+    ts_fm_patch_sanitize(patch);
+    if (patch->structure != TS_FM_STRUCTURE_UNISON) {
+        ts_fm_patch_unison(patch);
+        return 1;
+    }
+    if (patch->has_unison_source)
+        memcpy(patch, &patch->unison_source, sizeof(patch->unison_source));
+    else {
+        /* Older nine-voice tiles did not save the original source. */
+        patch->structure = 0;
+        patch->active_mask = 1;
+    }
+    patch->has_unison_source = 0;
+    memset(&patch->unison_source, 0, sizeof(patch->unison_source));
+    return 0;
 }
 
 void ts_fm_patch_sanitize(TsFmPatch *patch)
@@ -257,6 +283,17 @@ void ts_fm_patch_sanitize(TsFmPatch *patch)
             patch->lfo_depths[voice] = 0;
             patch->lfo_types[voice] = TS_FM_LFO_OFF;
         }
+    }
+    if (patch->genome_version < 6u || patch->genome_version > TS_FM_GENOME_VERSION) {
+        for (int voice = 9; voice < TS_FM_UNISON_VOICE_COUNT; ++voice) {
+            patch->ratios[voice] = 1;
+            patch->waveforms[voice] = TS_FM_WAVE_SINE;
+            patch->lfo_rates[voice] = .1f;
+            patch->lfo_depths[voice] = 0;
+            patch->lfo_types[voice] = TS_FM_LFO_OFF;
+        }
+        patch->has_unison_source = 0;
+        memset(&patch->unison_source, 0, sizeof(patch->unison_source));
     }
     patch->genome_version = TS_FM_GENOME_VERSION;
     ratio_high = ratio_maximum(patch);

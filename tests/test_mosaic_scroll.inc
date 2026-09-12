@@ -36,7 +36,7 @@ static void test_mosaic_scroll_waveforms(void)
                     memcpy(reference,d->pixels,(size_t)d->width*d->height*sizeof(*reference));
                 } else {
                     int shift=(int)floor(travel+.5);
-                    for(int y=4;y<210;++y)for(int x=25*d->width/480;x<115*d->width/480;++x)
+                    for(int y=4;y<210;++y)for(int x=25*d->width/(TS_MOSAIC_CANVAS_RIGHT-151);x<115*d->width/(TS_MOSAIC_CANVAS_RIGHT-151);++x)
                         changed+=reference[(size_t)(y+shift)*d->width+x]!=d->pixels[(size_t)y*d->width+x];
                 }
             }
@@ -57,7 +57,7 @@ static void test_mosaic_scroll_waveforms(void)
             assert(ts_ui_waveform_detail_finish(&detail[0],&fb));
             int y=edge?370:70,x=221;
             TsUiWaveformDetail *d=&detail[0];
-            int px=(int)((x-151+.5)*d->width/480),py=(int)((y-66+.5)*d->height/310);
+            int px=(int)((x-151+.5)*d->width/(TS_MOSAIC_CANVAS_RIGHT-151)),py=(int)((y-66+.5)*d->height/310);
             assert(d->pixels[(size_t)py*d->width+px]==0xff201f27u);
             /* With native detail disabled the coarse fallback still draws. */
             ts_ui_waveform_detail_begin(NULL);ts_ui_render(&fb,&view,&doc);

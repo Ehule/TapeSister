@@ -362,6 +362,9 @@ For an ordinary developer build without creating the ZIP, continue to use
 - [Windows Audio Validation](docs/WINDOWS_AUDIO_VALIDATION.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 
-FM Logic also has a [nine-voice Unison preset](docs/FM_UNISON.md): set voice 1,
-copy it into a centered detuned ensemble, then edit any voice independently.
+FM Logic also has a [twelve-voice Unison toggle](docs/FM_UNISON.md): set voice 1,
+make a detuned ensemble with three lower voices, and toggle back to the original.
 **Grave** opens Mosaic; **Shift+grave** opens FM.
+
+Mosaic has a [drawable arrangement volume envelope](docs/MOSAIC.md#arrangement-volume-envelope)
+that stretches with the timeline and links its endpoints during Repeat.

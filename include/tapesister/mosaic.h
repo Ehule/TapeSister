@@ -8,6 +8,12 @@
 #define TS_MOSAIC_HISTORY 32
 #define TS_MOSAIC_GUTTER 8.0
 #define TS_MOSAIC_PEAKS 2048
+#define TS_MOSAIC_ENVELOPE_POINTS 257
+
+typedef enum {
+    TS_MOSAIC_ENV_RESET, TS_MOSAIC_ENV_SMOOTH, TS_MOSAIC_ENV_MATCH_START,
+    TS_MOSAIC_ENV_MATCH_END, TS_MOSAIC_ENV_RAMP
+} TsMosaicEnvelopeAction;
 
 /* Sources are immutable. Model mutations require the host's audio lock;
    source allocation, collection, project IO and editor work stay on the UI thread. */
@@ -48,6 +54,10 @@ typedef struct TsMosaic {
     TsMosaicVoice voices[TS_MOSAIC_EVENTS];
     TsMosaicEvent history[TS_MOSAIC_HISTORY][TS_MOSAIC_EVENTS];
     double history_speed[TS_MOSAIC_HISTORY];
+    float volume[TS_MOSAIC_ENVELOPE_POINTS];
+    float history_volume[TS_MOSAIC_HISTORY][TS_MOSAIC_ENVELOPE_POINTS];
+    int history_repeat[TS_MOSAIC_HISTORY];
+    float volume_current;
     int history_count, history_cursor;
     TsMosaicSource *sources;
     uint64_t next_id, revision, epoch;
@@ -79,6 +89,11 @@ double ts_mosaic_snap(const TsMosaic *m, uint64_t id, double time, double tolera
 double ts_mosaic_end(const TsMosaic *m);
 void ts_mosaic_seek(TsMosaic *m, double time);
 void ts_mosaic_set_speed(TsMosaic *m, double speed);
+/* Envelope positions are fractions of the whole arrangement, not seconds. */
+float ts_mosaic_volume_at(const TsMosaic *m, double position);
+void ts_mosaic_volume_draw(TsMosaic *m, double from, float a, double to, float b);
+void ts_mosaic_volume_action(TsMosaic *m, TsMosaicEnvelopeAction action);
+void ts_mosaic_set_repeat(TsMosaic *m, int repeat);
 TsStereoFrame ts_mosaic_read(TsMosaic *m, int output_rate);
 uint64_t ts_mosaic_hash(const TsMosaic *m);
 /* Project-data directory; optional on load for pre-Mosaic projects. */

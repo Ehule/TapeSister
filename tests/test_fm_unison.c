@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const double offsets[9]={0,-7,7,-12,12,-19,19,-26,26};
+static const double offsets[12]={0,-7,7,-12,12,-19,19,-26,26,-1200,-1207,-1193};
 static double magnitude(const TsSample *s,double hz)
 {
     size_t first=s->sample_rate/2, count=s->frames-first-s->sample_rate/2;
@@ -35,8 +35,8 @@ static TsFmPatch source(void)
 static void check_controls(void)
 {
     TsFmPatch p=source(),before=p;
-    assert(ts_fm_voice_count(&p)==9 && p.active_mask==511);
-    for(int v=0;v<9;++v) {
+    assert(ts_fm_voice_count(&p)==12 && p.active_mask==4095);
+    for(int v=0;v<12;++v) {
         assert(fabs(1200*log2(p.ratios[v])-offsets[v])<.001);
         assert(p.waveforms[v]==p.waveforms[0] && p.lfo_rates[v]==p.lfo_rates[0]);
         assert(p.lfo_depths[v]==p.lfo_depths[0] && p.lfo_types[v]==p.lfo_types[0]);
@@ -54,7 +54,7 @@ static void check_controls(void)
     TsUiState *ui=calloc(1,sizeof(*ui));assert(ui);ts_ui_init(ui);
     ui->fm_patch=p;ui->fm_voice_bank=1;ui->fm_page=TS_FM_PAGE_PITCH;
     assert(ts_ui_fm_control_index(ui,0)==6 && ts_ui_fm_voice_index(ui,2)==8);
-    assert(ts_ui_fm_control_index(ui,3)==-1 && ts_ui_fm_voice_index(ui,5)==-1);
+    assert(ts_ui_fm_control_index(ui,3)==9 && ts_ui_fm_voice_index(ui,5)==11);
     ui->fm_page=TS_FM_PAGE_FILTER;
     assert(ts_ui_fm_control_index(ui,5)==5 && ts_ui_fm_voice_index(ui,0)==6);
     assert(ts_ui_fm_action_from_point(200,48)==TS_UI_FM_ACTION_UNISON);
@@ -68,6 +68,23 @@ static void check_controls(void)
         assert(!memcmp(v.ratios,p.ratios,sizeof(p.ratios)));
     }
 }
+static void check_toggle(void)
+{
+    TsGeneratorRecipe r={.seed=765,.kind=TS_GENERATOR_FM};TsFmPatch p;
+    ts_fm_patch_from_recipe(&r,&p);p.filter_cutoff_hz=4000;
+    TsFmPatch original=p;TsSample before={0},after={0};char error[160];
+    assert(ts_fm_render_sample(&before,&p,.5f,261.6256f,44100,345,error,sizeof(error)));
+    assert(ts_fm_toggle_unison(&p) && p.has_unison_source && p.structure==TS_FM_STRUCTURE_UNISON);
+    p.waveforms[10]=TS_FM_WAVE_SQUARE;p.filter_cutoff_hz=800;p.ratios[0]*=2;
+    assert(!ts_fm_toggle_unison(&p));
+    assert(!memcmp(&p,&original,sizeof(p)));
+    assert(ts_fm_render_sample(&after,&p,.5f,261.6256f,44100,345,error,sizeof(error)));
+    assert(ts_sample_hash(&before)==ts_sample_hash(&after));
+    p.waveforms[0]=TS_FM_WAVE_SAW;
+    assert(ts_fm_toggle_unison(&p) && p.waveforms[11]==TS_FM_WAVE_SAW);
+    assert(!ts_fm_toggle_unison(&p) && p.waveforms[0]==TS_FM_WAVE_SAW);
+    ts_sample_free(&before);ts_sample_free(&after);
+}
 static void check_audio(unsigned rate)
 {
     TsFmPatch p=source();TsSample all={0},again={0},solo={0},other={0};char error[160];
@@ -75,7 +92,7 @@ static void check_audio(unsigned rate)
     assert(ts_fm_render_sample(&again,&p,8,880,rate,123,error,sizeof(error)));
     assert(ts_sample_hash(&all)==ts_sample_hash(&again));
     for(size_t i=0;i<all.frames;++i)assert(isfinite(all.data[i]) && fabsf(all.data[i])<=.98f);
-    for(int v=0;v<9;++v) {
+    for(int v=0;v<12;++v) {
         double target=880*exp2(offsets[v]/1200),best=0,found=0;
         for(int j=-3;j<=3;++j) {
             double hz=target+j*.15,amp=magnitude(&all,hz);
@@ -85,7 +102,7 @@ static void check_audio(unsigned rate)
         /* Every operator can sound alone; other operators never modulate it. */
         p=source();p.active_mask=1u<<v;
         assert(ts_fm_render_sample(&solo,&p,.2f,880,rate,123,error,sizeof(error)));
-        p.waveforms[(v+1)%9]=TS_FM_WAVE_NOISE;
+        p.waveforms[(v+1)%12]=TS_FM_WAVE_NOISE;
         p.interaction=TS_FM_INTERACTION_RING;p.interaction_mix=1;p.depth=12;
         assert(ts_fm_render_sample(&other,&p,.2f,880,rate,123,error,sizeof(error)));
         assert(ts_sample_hash(&solo)==ts_sample_hash(&other));
@@ -97,6 +114,7 @@ static void check_persistence(const char *legacy_path)
     TsInstrument *a=calloc(1,sizeof(*a)),*b=calloc(1,sizeof(*b));char error[160];
     assert(a && b);ts_instrument_init(a);ts_instrument_init(b);
     TsFmPatch p=source();p.waveforms[6]=TS_FM_WAVE_TRIANGLE;p.lfo_types[8]=TS_FM_LFO_AMP_SINE;
+    p.lfo_types[11]=TS_FM_LFO_PITCH_SINE;p.lfo_rates[11]=.23f;p.lfo_depths[11]=.02f;
     p.lfo_rates[8]=.17f;p.lfo_depths[8]=.03f;p.active_mask&=~(1u<<7);
     assert(ts_instrument_apply_fm_patch(a,&p,error,sizeof(error)));
     assert(ts_instrument_save_recipe(a,"test-nine-voice.tsr",error,sizeof(error)));
@@ -104,12 +122,18 @@ static void check_persistence(const char *legacy_path)
     assert(!memcmp(&a->generator.fm_patch,&b->generator.fm_patch,sizeof(p)));
     assert(!memcmp(&a->bank[0].generator.fm_patch,&b->bank[0].generator.fm_patch,sizeof(p)));
     assert(ts_sample_hash(&a->current)==ts_sample_hash(&b->current));
+    assert(b->generator.fm_patch.has_unison_source);
+    TsFmPatch dry=b->generator.fm_patch;
+    assert(!ts_fm_toggle_unison(&dry) && dry.structure!=TS_FM_STRUCTURE_UNISON);
+    assert(!memcmp(&dry,&a->generator.fm_patch.unison_source,sizeof(TsFmSound)));
     ts_instrument_free(a);ts_instrument_free(b);remove("test-nine-voice.tsr");
     if(legacy_path) {
         ts_instrument_init(b);
         assert(ts_instrument_load_recipe(b,legacy_path,error,sizeof(error)));
-        assert(ts_fm_voice_count(&b->generator.fm_patch)==6);
-        for(int i=6;i<9;++i)assert(b->generator.fm_patch.ratios[i]==1 && b->generator.fm_patch.lfo_types[i]==TS_FM_LFO_OFF);
+        int extra=b->generator.fm_patch.structure==TS_FM_STRUCTURE_UNISON?9:6;
+        assert(ts_fm_voice_count(&b->generator.fm_patch)==(extra==9?12:6));
+        assert((b->generator.fm_patch.active_mask>>extra)==0 && !b->generator.fm_patch.has_unison_source);
+        for(int i=extra;i<12;++i)assert(b->generator.fm_patch.ratios[i]==1 && b->generator.fm_patch.lfo_types[i]==TS_FM_LFO_OFF);
         TsSample old={0};
         assert(ts_sample_generate(&old,&b->generator,error,sizeof(error)));
         assert(ts_sample_hash(&old)==ts_sample_hash(&b->current));
@@ -119,8 +143,8 @@ static void check_persistence(const char *legacy_path)
 }
 int main(int argc,char **argv)
 {
-    check_controls();check_audio(44100);check_audio(48000);
+    check_controls();check_toggle();check_audio(44100);check_audio(48000);
     check_persistence(argc>1?argv[1]:NULL);
-    puts("Unison: nine pitches and carriers, editing, repeatability and saved patches passed");
+    puts("Unison: twelve pitches and carriers, reversible toggling, editing, repeatability and saved patches passed");
     return 0;
 }

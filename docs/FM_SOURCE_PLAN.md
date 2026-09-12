@@ -19,12 +19,11 @@ Each stored patch contains:
 
 The renderer bounds feedback, applies a DC blocker and output saturation, and replaces
 non-finite samples with silence. A seed plus complete genome always produces the same
-audio. TSR28 adds three stored Unison voices to the complete genome, pitch-randomization
-rules, and tile protection. TSR6 through TSR27 remain loadable and derive safe defaults
+audio. TSR29 stores the twelve voice settings, original Unison source, pitch-randomization
+rules, and tile protection. TSR6 through TSR28 remain loadable and derive safe defaults
 for fields that did not exist in those formats; formats before TSR27 load as mono.
 
-The [nine-voice Unison preset](FM_UNISON.md) copies voice 1 into nine independent
-carriers. The original ten FM routings and their seed sequences stay at six operators.
+The [twelve-voice Unison toggle](FM_UNISON.md) copies voice 1 into nine detuned carriers plus three an octave below. The original ten FM routings and their seed sequences stay at six operators.
 
 ## FM LOGIC workspace
 

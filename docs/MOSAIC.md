@@ -100,6 +100,39 @@ Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
 actual sample ranges instead of enlarging those bins. Source thumbnails cache
 extrema at their displayed width. None of this analysis runs in the audio callback. **REPEAT** repeats the complete arrangement at its last event.
 
+## Arrangement volume envelope
+
+![Mosaic volume lane](images/mosaic-volume.png)
+
+The narrow lane at the right follows the arrangement timeline vertically.
+**Left-click and drag** to draw volume: left is silence, right is full level.
+The envelope is multiplied with event levels and fades before Mosaic enters its
+normal effects/recording route. Live curve changes receive a short gain slew.
+
+The curve is stored from 0–100% of the entire arrangement. Moving or resizing
+its last event stretches or shrinks the envelope with the new total duration.
+Scrolling and zooming only change the view. Follow temporarily pauses while
+painting so the timeline does not move under the stroke.
+
+| Control | Action |
+| --- | --- |
+| R, top left | Reset to full level |
+| S, top right | Smooth the curve, keeping its endpoints |
+| Top arrow | Make the beginning match the end |
+| V, bottom right | Make the end match the beginning |
+| /, bottom left | Draw a straight ramp between the endpoint levels |
+
+**REPEAT** links the endpoint levels. Enabling it initially matches the end to
+the beginning; drawing either endpoint then moves both. This prevents a gain
+jump caused by the envelope at wraparound. Audio content still needs its normal
+loop fades/crossfades. With Repeat on, a straight ramp between the equal endpoints
+is flat; turn Repeat off to draw an unequal start-to-end ramp.
+
+Each stroke or tool action is one undo step. **Escape** cancels a stroke, and
+Ctrl+Z / Ctrl+Y undo and redo it. The curve saves in Mosaic format 4; older
+arrangements open with a flat, full-level envelope. Failed loads leave the current
+arrangement intact.
+
 ## Performance controls
 
 Select an event, then use **LEVEL**, **PAN**, **IN** and **OUT** in the footer.
@@ -229,7 +262,7 @@ stopping Mosaic, allowing effects tails to be recorded deliberately. Completed
 takes use the existing timestamped `Captures/` archive.
 
 SAVE stores event positions, durations, notes, source regions, loop modes,
-names, level/pan/fades, mute/solo flags, global speed and arrangement repeat setting in the project transaction. Shared audio
+names, level/pan/fades, mute/solo flags, global speed, volume envelope and arrangement repeat setting in the project transaction. Shared audio
 versions are written once each as lossless 32-bit float WAVs under
 `project-data/`. Earlier Mosaic projects load with events unmuted and unsoloed; projects from
 before Mosaic open with an empty arrangement. A project marked as

@@ -15,7 +15,7 @@ static void mosaic_canvas_rect(TsFramebuffer *fb,int x,int y,int w,int h,uint32_
     int right=x+w,bottom=y+h;
     if(x<151)x=151;
     if(y<66)y=66;
-    if(right>631)right=631;
+    if(right>TS_MOSAIC_CANVAS_RIGHT)right=TS_MOSAIC_CANVAS_RIGHT;
     if(bottom>376)bottom=376;
     if(right>x && bottom>y)rect(fb,x,y,right-x,bottom-y,color);
 }
@@ -60,7 +60,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1,scale=ui->mosaic_scale;
     double left=151+(e->x-ui->mosaic_xscroll)*horizontal,width=e->width*horizontal;
     double top=66+(e->start-ui->mosaic_scroll)*scale,bottom=top+e->duration*scale;
-    if(left+width<=151 || left>=631 || width<1 || bottom<=66 || top>=376)return;
+    if(left+width<=151 || left>=TS_MOSAIC_CANVAS_RIGHT || width<1 || bottom<=66 || top>=376)return;
     int x=(int)left,w=(int)width,y=(int)fmax(66,top),end=(int)fmin(376,bottom),h=end-y;
     if(h<1)h=1;
     uint32_t color=mosaic_color(e->source->hash),fill=selected?RGB(50,46,59):RGB(32,31,39);
@@ -166,6 +166,33 @@ static void mosaic_mix_controls(TsFramebuffer *fb,const TsUiState *ui,int any_so
     }
 }
 
+static void mosaic_volume_lane(TsFramebuffer *fb,const TsUiState *ui,double interval)
+{
+    const TsMosaic *m=ui->mosaic;
+    int left=TS_MOSAIC_ENV_X,right=TS_MOSAIC_ENV_RIGHT;
+    rect(fb,left-1,66,right-left+2,310,RGB(31,25,38));
+    rect(fb,left,67,right-left,308,RGB(11,13,16));
+    double end=ts_mosaic_end(m),scale=ui->mosaic_scale>0?ui->mosaic_scale:24;
+    for(double t=ceil(ui->mosaic_scroll/interval)*interval;t<ui->mosaic_scroll+310/scale;t+=interval) {
+        int y=66+(int)((t-ui->mosaic_scroll)*scale);
+        rect(fb,left,y,right-left,1,RGB(28,30,35));
+    }
+    int previous=-1;
+    for(int y=66;y<376;++y) {
+        double t=ui->mosaic_scroll+(y-66)/scale;
+        if(end<=0 || t>end){previous=-1;continue;}
+        int x=left+1+(int)lrintf(ts_mosaic_volume_at(m,t/end)*(right-left-2));
+        int a=previous<0?x:previous;
+        rect(fb,a<x?a:x,y,abs(x-a)+1,1,RGB(91,206,211));previous=x;
+    }
+    mosaic_button(fb,left,68,15,"R",0,1);
+    mosaic_button(fb,left+23,68,15,"",0,1);
+    for(int i=0;i<4;++i){rect(fb,left+30-i,73+i,1,1,RGB(210,199,217));rect(fb,left+30+i,73+i,1,1,RGB(210,199,217));}
+    mosaic_button(fb,right-15,68,15,"S",0,1);
+    mosaic_button(fb,left,359,15,"/",0,1);
+    mosaic_button(fb,right-15,359,15,"V",0,1);
+}
+
 static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrument *instrument)
 {
     const TsMosaic *m=ui->mosaic;
@@ -246,6 +273,7 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         mosaic_canvas_rect(fb,x,y,w,1,RGB(129,206,200));mosaic_canvas_rect(fb,x,y+h,w,1,RGB(129,206,200));
         mosaic_canvas_rect(fb,x,y,1,h,RGB(129,206,200));mosaic_canvas_rect(fb,x+w,y,1,h,RGB(129,206,200));
     }
+    mosaic_volume_lane(fb,ui,interval);
     int py=66+(int)((ui->mosaic_time-ui->mosaic_scroll)*scale);
     if(py>=66 && py<376){rect(fb,147,py,484,1,RGB(129,206,200));rect(fb,143,py-2,4,5,RGB(129,206,200));}
     rect(fb,0,380,640,20,RGB(20,19,25));

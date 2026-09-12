@@ -1579,11 +1579,11 @@ static void fm_render(TsFramebuffer *fb, const TsUiState *ui,
     const TsSample *preview = ui->fm_preview_sample;
     frame(fb, 10, 38, 620, 276, RGB(36, 33, 37), PAL_MOUSE);
     text(fb, 20, 46, "FM SOUND LOGIC", PAL_NOTE, 1);
-    button(fb, 178, 38, 112, "UNISON V1", 0);
+    mini_button(fb,178,42,78,"UNISON",ui->fm_patch.structure==TS_FM_STRUCTURE_UNISON);
     if (ts_fm_voice_count(&ui->fm_patch) > TS_FM_OPERATOR_COUNT)
-        button(fb, 296, 38, 128, ui->fm_voice_bank ? "VOICES 7-9" : "VOICES 1-6", ui->fm_voice_bank);
+        mini_button(fb,262,42,90,ui->fm_voice_bank?"VOICES 7-12":"VOICES 1-6",ui->fm_voice_bank);
     text(fb, 474, 46, ui->fm_patch.structure == TS_FM_STRUCTURE_UNISON ?
-         "NINE-VOICE UNISON" : "SIX-VOICE FM", PAL_EFFECT, 1);
+         "12-VOICE UNISON" : "SIX-VOICE FM", PAL_EFFECT, 1);
     frame(fb, 20, 62, 600, 48, RGB(8, 8, 8), PAL_BUTTON);
     rect(fb, 22, 85, 596, 1, PAL_BUTTON);
     if (preview != NULL && preview->data != NULL && preview->frames > 1u) {
@@ -2250,9 +2250,9 @@ uint32_t ts_ui_fm_mutation_from_point(int x, int y)
 
 TsUiFmAction ts_ui_fm_action_from_point(int x, int y)
 {
-    if (y >= 38 && y < 62) {
-        if (x >= 178 && x < 290) return TS_UI_FM_ACTION_UNISON;
-        if (x >= 296 && x < 424) return TS_UI_FM_ACTION_VOICE_BANK;
+    if (y >= 42 && y < 58) {
+        if (x >= 178 && x < 256) return TS_UI_FM_ACTION_UNISON;
+        if (x >= 262 && x < 352) return TS_UI_FM_ACTION_VOICE_BANK;
     }
     if (y >= 218 && y < 242) {
         if (x >= 96 && x < 208) return TS_UI_FM_ACTION_PITCH_LOCK;

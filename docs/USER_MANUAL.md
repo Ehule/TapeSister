@@ -333,7 +333,7 @@ stamp becomes the next source.
 ![The six-voice FM Logic workspace](images/manual/fm-logic.png)
 
 Press **Shift+grave** (Shift plus the backtick key) or open **FM LOGIC** from the Family area.
-The workspace has six-operator FM routings plus a nine-voice Unison preset. Its preview is
+The workspace has six-operator FM routings plus a twelve-voice Unison toggle. Its preview is
 temporary until **APPLY** is pressed.
 
 `grave` visits Mosaic and returns to the same FM patch on the next press.
@@ -356,24 +356,22 @@ Six **VOICE** buttons enable or disable voices. Permission buttons determine whi
 domains Randomize and later variations may change. The visible page is protected during
 Randomize, which makes it possible to hold one aspect steady while exploring the rest.
 
-### Nine-voice Unison
+### Twelve-voice Unison
 
-Set voice 1's waveform and pitch, then click **UNISON V1**. Voice 1 remains at
-the center; the other eight copy its waveform and LFO settings at ±7, ±12, ±19
-and ±26 cents. Every voice is an audible, independent oscillator. Use **VOICES
-1–6 / VOICES 7–9** to reach all nine voice controls. Filter and Structure always
-show the six global controls. Wheel changes unison pitch by a semitone;
-**Shift+wheel** changes it by one cent, shown beneath the note name.
+Shape voice 1, then press **UNISON**. The compact button highlights while nine
+voices at 0, ±7, ±12, ±19 and ±26 cents play alongside three voices an octave
+below, at 0 and ±7 cents. **VOICES 1–6 / 7–12** switches the voice controls.
+Each oscillator remains editable; **Shift+wheel** adjusts its pitch by one cent.
 
-This is a preset operation: individual edits remain until you press **UNISON V1**
-again, which recopies voice 1. It enables Drone, locks pitch for variations, and
-protects Structure from randomization. Your global filter settings remain.
-For a saw ensemble, use SAW, LFO OFF, a 6000 Hz low-pass and 20% resonance as a
-starting point. Interaction, modulation depth and interaction mix are inactive in
-Unison. Select an earlier Structure routing to return to six-operator FM.
+Press **UNISON** again to restore the complete original patch. Edit that source
+and activate Unison again to build a new stack. **APPLY** stores both the active
+sound and original source, preserving the toggle after save/reopen. Switching
+off replaces edits made to the stack; the source is the next activation's basis.
 
-**APPLY** stores the audio and all nine editable voice settings in the tile.
-[FM Unison](FM_UNISON.md) shows both voice banks and explains project compatibility.
+Unison enables Drone and Pitch Lock, protects Structure from randomization, and
+copies voice 1's waveform/LFO settings. Your global filter remains. For a saw
+ensemble, start with SAW, LFO OFF, a 6000 Hz low-pass and 20% resonance.
+[FM Unison](FM_UNISON.md) shows both banks and explains older-tile compatibility.
 
 ### Pitch behavior
 
@@ -750,6 +748,17 @@ together in single physical-pixel steps, preserving the tile's height and wavefo
 shape as the view moves. The five source colors and separate selection highlight
 are editable in [CFG → PALETTE](#palette-and-mosaic-colors).
 See the [dedicated Mosaic guide](MOSAIC.md) for additional details and listening checks.
+
+### Mosaic volume envelope
+
+The narrow lane at the right of Mosaic controls the arrangement's volume. Left-drag
+to draw: left is silence, right is full level. Its shape stretches with the total
+arrangement length and follows scrolling/zooming. REPEAT links its endpoint levels.
+**R** resets, **S** smooths, the top arrow makes the start match the end, **V** makes
+the end match the start, and **/** draws a straight ramp between them. A stroke is
+one undo step; Escape cancels the current stroke. The envelope is saved with the
+project and heard through the normal Mosaic effects/recording route. See
+[Mosaic](MOSAIC.md#arrangement-volume-envelope) for the full behavior.
 
 ## Recording and capture
 
