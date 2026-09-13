@@ -75,6 +75,14 @@ int main(int argc,char **argv)
     if (argc>3) model.parameters.prism.mode=atoi(argv[3]);
     if (argc>4) model.parameters.prism.focus=(float)atof(argv[4]);
     if (argc>5) model.parameters.prism.mix=(float)atof(argv[5]);
+    if (argc>6 && !strcmp(argv[6],"custom")) {
+        model.parameters.prism.pitch_offset[2]=700;
+        model.parameters.prism.pan_offset[2]=.5f;
+        model.parameters.prism.pitch_offset[5]=-350;
+        model.parameters.prism.pan_offset[5]=-.5f;
+        model.parameters.prism.pitch_offset[8]=-20;
+        model.prism_selected=3;
+    }
     model.routing.limiter_enabled=1; model.routing.master_output_gain=1;
     model.routing.limiter_ceiling_db=-1;
     TsPrism prism={0}; assert(ts_prism_prepare(&prism,48000));

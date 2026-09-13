@@ -907,8 +907,14 @@ Open Sister Machine with **Tab**, then cycle its page button through FX and Fall
 to **PRISM**. Prism splits incoming audio into 2–12 related lenses and recombines
 it. Choose **SUPERSAW** for detuned layers plus three optional octave-body voices,
 or **ENSEMBLE** for closer pitches and more time displacement. The rays follow
-smoothed pitch, delay, pan, level and Wet; Focus draws fine pitch/time differences
-back together. **REC FILE** records the final processed stereo output.
+smoothed pitch, pan, level and Wet; Focus draws fine pitch/time differences
+back together. Drag hollow middle points up/down for individual pitch and
+left/right for pan. Right-click resets one lens; Escape undoes an active drag.
+Lens 01 remains the direct body anchor. Focus gathers hand edits too; lower it
+from 100 to spread pitches again. Edits survive lens-count changes and save/recall.
+Spread and Drift become more extreme above 50. Energy compensation preserves
+level as lenses are added, with −12 to +12 dB Output and the existing final limiter.
+**REC FILE** records the final processed stereo output.
 
 With Sister POWER off, Prism processes ordinary program audio and enabled external
 monitoring before the shared FX. With POWER on, select Sister sources and enable

@@ -132,6 +132,9 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
     if (fprintf(file, "PrismEnabled=%d\nPrismMode=%d\nPrismLenses=%d\nPrismSpread=%.9g\nPrismDrift=%.9g\nPrismFocus=%.9g\nPrismStereo=%.9g\nPrismBody=%.9g\nPrismMix=%.9g\nPrismOutputDb=%.9g\n",
         p->prism.enabled, p->prism.mode, p->prism.lenses, p->prism.spread, p->prism.drift, p->prism.focus, p->prism.stereo, p->prism.body, p->prism.mix, p->prism.output_db) < 0) return 0;
+    for (int i = 0; i < TS_PRISM_LENSES; ++i)
+        if (fprintf(file, "PrismPitchOffset%d=%.9g\nPrismPanOffset%d=%.9g\n",
+            i, p->prism.pitch_offset[i], i, p->prism.pan_offset[i]) < 0) return 0;
     if (fprintf(file,
         "H1Level=%.9g\nH1TimeMs=%.9g\nH1Feedback=%.9g\n"
         "H2Level=%.9g\nH2Scrub=%.9g\nH2Rate=%d\nH2Feedback=%.9g\n"
@@ -381,6 +384,13 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
         if (strcmp(slot_field, "Mix") == 0)
             return parse_float_value(value, &slot->mix);
         return 1;
+    }
+    for (int i = 0; i < TS_PRISM_LENSES; ++i) {
+        char lens_key[40];
+        snprintf(lens_key, sizeof(lens_key), "PrismPitchOffset%d", i);
+        if (!strcmp(key, lens_key)) return parse_float_value(value, &p->prism.pitch_offset[i]);
+        snprintf(lens_key, sizeof(lens_key), "PrismPanOffset%d", i);
+        if (!strcmp(key, lens_key)) return parse_float_value(value, &p->prism.pan_offset[i]);
     }
     PI("PrismEnabled", prism.enabled);
     PI("PrismMode", prism.mode);

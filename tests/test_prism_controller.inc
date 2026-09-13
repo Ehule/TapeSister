@@ -1,6 +1,62 @@
 /* Runs through the actual SDL application callback and control dispatcher. */
+static void test_prism_points(void)
+{
+    AudioState *a=routing_audio(0);
+    SisterWindow *panel=calloc(1,sizeof(*panel)); assert(panel);
+    ts_sister_ui_model_init(&panel->model,&ui.config);
+    panel->model.parameters=a->sister.parameters;
+    panel->model.parameters.prism.enabled=1;
+    panel->model.parameters.prism.drift=0;
+    ts_sister_runtime_set_parameters(&a->sister,&panel->model.parameters);
+    panel->model.fx_page=3;
+    ts_sister_runtime_set_selected_preset(&a->sister,"PRISM TEST");
+    panel->window=SDL_CreateWindow("Prism points",0,0,1280,800,SDL_WINDOW_HIDDEN); assert(panel->window);
+    panel->window_id=SDL_GetWindowID(panel->window);
+    TsPrismView v=ts_prism_control_view(&panel->model.parameters.prism);
+    int x,y; ts_sister_ui_prism_point(v.lens[8],&x,&y);
+    assert(ts_sister_ui_prism_hit(&panel->model,x,y)==8);
+    SDL_Event e={0}; e.type=SDL_MOUSEBUTTONDOWN; e.button.button=SDL_BUTTON_LEFT;
+    e.button.x=x*2; e.button.y=y*2;
+    assert(sister_prism_event(0,a,panel,&e) && panel->prism_drag_lens==9);
+    assert(!a->sister.parameters.prism.pitch_offset[8]); /* No click jump. */
+    e.type=SDL_MOUSEMOTION; e.motion.state=SDL_BUTTON_LMASK;
+    e.motion.x=(x+80)*2; e.motion.y=(y-70)*2;
+    assert(sister_prism_event(0,a,panel,&e));
+    assert(a->sister.parameters.prism.pitch_offset[8]>600);
+    assert(fabsf(a->sister.parameters.prism.pan_offset[8]-.8f)<.001f);
+    assert(!a->sister.parameters.prism.pitch_offset[7]);
+    assert(a->sister.selected_preset_modified);
+    e.type=SDL_KEYDOWN; e.key.windowID=panel->window_id; e.key.keysym.sym=SDLK_ESCAPE;
+    assert(workspace_event(&e,panel->window,0,a,&ui,&instrument,&mosaic,&portal,panel,&transform,&workspace_preview));
+    assert(!panel->prism_drag_lens);
+    assert(!a->sister.parameters.prism.pitch_offset[8] && !a->sister.parameters.prism.pan_offset[8]);
+    e.type=SDL_MOUSEBUTTONDOWN; e.button.button=SDL_BUTTON_LEFT; e.button.x=x*2; e.button.y=y*2;
+    assert(sister_prism_event(0,a,panel,&e));
+    e.type=SDL_MOUSEMOTION; e.motion.state=SDL_BUTTON_LMASK; e.motion.x=1800; e.motion.y=-100;
+    assert(sister_prism_event(0,a,panel,&e)); /* Captured out-of-window drag clamps. */
+    assert(a->sister.parameters.prism.pitch_offset[8]==1200);
+    e.type=SDL_MOUSEBUTTONUP; e.button.button=SDL_BUTTON_LEFT;
+    assert(sister_prism_event(0,a,panel,&e) && !panel->prism_drag_lens);
+    float w[512]; for (int i=0;i<200;++i) audio_callback(a,(Uint8 *)w,sizeof(w));
+    TsSisterRoutingSnapshot snapshot; assert(ts_sister_runtime_get_snapshot(&a->sister,&snapshot));
+    assert(fabsf(snapshot.prism.lens[8].cents-1226)<.1f && snapshot.prism.lens[8].pan>.99f);
+    panel->model.routing.prism=snapshot.prism;
+    ts_sister_ui_prism_point(snapshot.prism.lens[8],&x,&y);
+    e.type=SDL_MOUSEBUTTONDOWN; e.button.button=SDL_BUTTON_RIGHT; e.button.x=x*2; e.button.y=y*2;
+    assert(sister_prism_event(0,a,panel,&e));
+    assert(!a->sister.parameters.prism.pitch_offset[8] && !a->sister.parameters.prism.pan_offset[8]);
+    /* The body anchor is not advertised as a pitch-shifted lens. */
+    panel->model.routing.prism.valid=0;
+    ts_sister_ui_prism_point(v.lens[0],&x,&y);
+    assert(ts_sister_ui_prism_hit(&panel->model,x,y)==-1);
+    panel->model.fx_page=0;
+    assert(ts_sister_ui_prism_hit(&panel->model,308,167)==-1);
+    SDL_DestroyWindow(panel->window); free(panel); routing_free(a);
+}
+
 static void test_prism_controller(void)
 {
+    test_prism_points();
     for (int powered=0; powered<2; ++powered) {
         AudioState *a=routing_audio(powered), *dry=routing_audio(powered);
         SisterWindow *panel=calloc(1,sizeof(*panel)); assert(panel);

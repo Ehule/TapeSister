@@ -252,6 +252,7 @@ typedef struct {
     int preset_editing;
     int preset_confirmation;
     int fx_page;
+    int prism_selected; /* One-based lens identity; zero means no selection. */
     int fallout_lfo_open;
     int midi_learn_active;
     int midi_activity;
@@ -260,6 +261,11 @@ typedef struct {
     char midi_learn_pending[TS_MIDI_TARGET_ID_MAX];
     const TsMidiMap *midi_map;
 } TsSisterUiModel;
+
+/* Shared optical coordinates for rendering and direct manipulation. */
+void ts_sister_ui_prism_point(TsPrismLensView ray, int *x, int *y);
+float ts_sister_ui_prism_pitch_at_y(float y);
+int ts_sister_ui_prism_hit(const TsSisterUiModel *model, int x, int y);
 
 int ts_sister_ui_parameter_lockable(int parameter);
 int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,

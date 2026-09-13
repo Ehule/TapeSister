@@ -38,6 +38,7 @@ static int workspace_event(const SDL_Event *event,SDL_Window *window,
     if((uint32_t)id!=SDL_GetWindowID(window) && !from_sister)return 0;
     SDL_Keymod mod=key?(SDL_Keymod)event->key.keysym.mod:KMOD_NONE;
     if(from_sister && key && event->key.keysym.sym==SDLK_ESCAPE && !ui->midi_learn_active) {
+        if(sister->prism_drag_lens && sister_prism_event(device,audio,sister,event))return 1;
         if(!event->key.repeat) {
             if(sister->model.fallout_lfo_open)sister->model.fallout_lfo_open=0;
             else if(sister->model.preset_manage_open) {

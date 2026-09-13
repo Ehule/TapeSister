@@ -10,6 +10,8 @@ typedef enum { TS_PRISM_SUPERSAW, TS_PRISM_ENSEMBLE, TS_PRISM_MODE_COUNT } TsPri
 typedef struct {
     int enabled, mode, lenses;
     float spread, drift, focus, stereo, body, mix, output_db;
+    /* Additive per-lens edits; lens zero remains the direct body anchor. */
+    float pitch_offset[TS_PRISM_LENSES], pan_offset[TS_PRISM_LENSES];
 } TsPrismControls;
 
 /* Shared voicing, also used by the original FM Unison template. */

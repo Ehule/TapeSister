@@ -534,7 +534,10 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 - **Tab**, then page cycle: Tape → FX → Fallout → **Prism** → Tape.
 - **PRISM ON/OFF**: smoothed insert bypass. **Mode** cycles Supersaw / Ensemble.
 - **Lenses** 2–12; wheel changes one lens. Spread, Drift, Focus, Stereo, Body and
-  Wet are percentages. **Output** trims the wet sum from −12 to +6 dB.
+  Wet are percentages. **Output** trims the wet sum from −12 to +12 dB.
+- Drag hollow ray points up/down for individual pitch, left/right for pan.
+  Right-click resets one lens; Escape undoes the active drag. Full Focus closes
+  pitch spread, including hand edits; lens 01 remains the body anchor.
 - Tape POWER off: ordinary sound and enabled external monitoring → Prism → FX.
 - Tape POWER on: selected sources → Prism → PRE FX → tape. DRY 100 / WET 0 monitors
   the direct Prism input; raise Sister WET for heads.

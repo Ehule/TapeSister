@@ -1,5 +1,6 @@
 #include "tapesister/sister_ui.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -240,6 +241,37 @@ void ts_sister_ui_model_update(TsSisterUiModel *model,
     if (engine != NULL) model->engine = *engine;
     if (waveform != NULL) model->waveform = *waveform;
     if (parameters != NULL) model->parameters = *parameters;
+}
+
+void ts_sister_ui_prism_point(TsPrismLensView ray, int *x, int *y)
+{
+    *x = 308 + (int)lrintf(100 * ray.pan);
+    *y = 167 - (int)lrintf(copysignf(78 * log1pf(fabsf(ray.cents) / 12) /
+                                      log1pf(2600.f / 12), ray.cents));
+}
+
+float ts_sister_ui_prism_pitch_at_y(float y)
+{
+    float distance = fmaxf(-78, fminf(78, 167 - y));
+    return copysignf(12 * expm1f(fabsf(distance) * log1pf(2600.f / 12) / 78), distance);
+}
+
+int ts_sister_ui_prism_hit(const TsSisterUiModel *model, int x, int y)
+{
+    if (!model || model->fx_page != 3 || model->preset_manage_open ||
+        model->midi_learn_active) return -1;
+    TsPrismView v = model->routing.prism.valid ? model->routing.prism :
+        ts_prism_control_view(&model->parameters.prism);
+    int best = -1, distance = 65;
+    /* Lens one is the direct body anchor, never a pitch-shifted voice. */
+    for (int i = 1; i < model->parameters.prism.lenses; ++i) {
+        if (v.lens[i].level <= .001f) continue;
+        int px, py; ts_sister_ui_prism_point(v.lens[i], &px, &py);
+        int dx = x - px, dy = y - py;
+        int d = dx * dx + dy * dy;
+        if (d < distance) { distance = d; best = i; }
+    }
+    return best;
 }
 
 TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,

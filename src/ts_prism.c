@@ -14,7 +14,7 @@ static float bounded(float x, float lo, float hi, float fallback)
 void ts_prism_controls_default(TsPrismControls *p)
 {
     if (p) *p = (TsPrismControls){0, TS_PRISM_SUPERSAW, 12,
-                                 .5f, .15f, 0, .8f, .5f, .8f, 0};
+                                 .5f, .15f, 0, .8f, .5f, .8f, 0, {0}, {0}};
 }
 
 void ts_prism_controls_sanitize(TsPrismControls *p)
@@ -28,7 +28,11 @@ void ts_prism_controls_sanitize(TsPrismControls *p)
     UNIT(spread, .5f); UNIT(drift, 0); UNIT(focus, 0);
     UNIT(stereo, .8f); UNIT(body, .5f); UNIT(mix, .8f);
 #undef UNIT
-    p->output_db = bounded(p->output_db, -12, 6, 0);
+    p->output_db = bounded(p->output_db, -12, 12, 0);
+    for (int i = 0; i < TS_PRISM_LENSES; ++i) {
+        p->pitch_offset[i] = i ? bounded(p->pitch_offset[i], -1200, 1200, 0) : 0;
+        p->pan_offset[i] = i ? bounded(p->pan_offset[i], -2, 2, 0) : 0;
+    }
 }
 
 const char *ts_prism_mode_name(int mode)
@@ -53,12 +57,19 @@ static TsPrismLensView geometry(const TsPrismControls *p, int i, double seconds)
     float wander = i == 0 ? 0 : (float)(
         .7 * sin(seconds * (.29 + .031 * i) + 1.71 * i) +
         .3 * sin(seconds * (.13 + .017 * i) + .93 * i));
-    v.cents = octave + (fine * 2 * p->spread + wander * 5 * p->drift) * divergence;
+    /* Preserve the first half of each dial, then open the upper range. */
+    float wide = fmaxf(0, 2 * p->spread - 1);
+    float wild = fmaxf(0, 2 * p->drift - 1);
+    float detune = 2 * p->spread + 6 * wide * wide;
+    float drift_cents = 5 * p->drift + 20 * wild * wild;
+    v.cents = octave + (fine * detune + p->pitch_offset[i] +
+                        wander * drift_cents) * divergence;
     v.delay_ms = i == 0 ? 0 : (p->mode == TS_PRISM_ENSEMBLE ?
         2.f + i * .6f : .2f + (i % 5) * .3f) * divergence;
     v.pan = i == 0 ? 0 : (i & 1 ? -1.f : 1.f) *
         (.3f + .65f * ((i + 1) / 2) / 6.f) * p->stereo;
     if (octave) v.pan *= .25f; /* Keep sub voices near the center. */
+    v.pan = bounded(v.pan + p->pan_offset[i], -1, 1, 0);
     v.level = i >= p->lenses ? 0 : i == 0 ? 1 + 2 * p->body :
         octave ? .3f + .7f * p->body : 1.f;
     return v;
@@ -264,7 +275,7 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
     /* Gain target is cached at control rate; no pow in the voice loop. */
     p->gain += p->smoothing * (p->gain_target - p->gain);
     TsStereoFrame sum = {0};
-    float normalization = 0;
+    float energy_l = 0, energy_r = 0;
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
         TsPrismLens *v = &p->lens[i];
 #define SMOOTH(field) v->field += p->smoothing * (v->field##_target - v->field)
@@ -289,17 +300,25 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
         }
         /* Stereo balance retains the channels; no mono summing, phase flips,
            or artificial cross-channel signal. Center and bass stay solid. */
-        sum.l += lens.l * v->level * (v->pan > 0 ? 1 - v->pan : 1);
-        sum.r += lens.r * v->level * (v->pan < 0 ? 1 + v->pan : 1);
-        normalization += v->level;
+        float left = v->level * (v->pan > 0 ? 1 - v->pan : 1);
+        float right = v->level * (v->pan < 0 ? 1 + v->pan : 1);
+        sum.l += lens.l * left;
+        sum.r += lens.r * right;
+        energy_l += left * left;
+        energy_r += right * right;
     }
     p->write = (p->write + 1) % p->capacity;
     ++p->clock;
     if (p->wet == 0) return input; /* Exact settled bypass, including output trim. */
-    float gain = normalization > 0 ? p->gain / normalization : 0;
+    /* Root-sum-square compensation preserves decorrelated voice energy,
+       including the actual stereo balance and smoothed lens fades. A floor
+       of one avoids boosting the first samples of engagement. Correlated
+       peaks intentionally reach the existing final linked limiter. */
+    float gain_l = p->gain / sqrtf(fmaxf(1, energy_l));
+    float gain_r = p->gain / sqrtf(fmaxf(1, energy_r));
     return ts_stereo_frame_sanitize((TsStereoFrame){
-        input.l * (1 - p->wet) + sum.l * gain * p->wet,
-        input.r * (1 - p->wet) + sum.r * gain * p->wet});
+        input.l * (1 - p->wet) + sum.l * gain_l * p->wet,
+        input.r * (1 - p->wet) + sum.r * gain_r * p->wet});
 }
 
 TsPrismView ts_prism_view(const TsPrism *p)

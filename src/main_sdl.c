@@ -8164,6 +8164,8 @@ typedef struct {
     int fallout_preset_modified;
     int parameter_lock_gesture;
     TsUiPointerDrag parameter_drag;
+    int prism_drag_lens, prism_drag_x, prism_drag_y, prism_node_y;
+    float prism_drag_pitch, prism_drag_pan, prism_drag_divergence;
     TsPerformanceRecorder performance_recorder;
     SDL_Thread *performance_writer;
 } SisterWindow;
@@ -8286,6 +8288,8 @@ static void sister_window_hide(SisterWindow *sister)
 {
     if (sister == NULL) return;
     sister->parameter_lock_gesture = 0;
+    sister->prism_drag_lens = 0;
+    SDL_CaptureMouse(SDL_FALSE);
     ts_ui_pointer_drag_cancel(&sister->parameter_drag);
     ts_sister_ui_model_hide(&sister->model);
     if (sister->window != NULL) SDL_HideWindow(sister->window);
@@ -8430,7 +8434,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_STEREO: parameters->prism.stereo = amount; break;
     case TS_SISTER_UI_PARAM_PRISM_BODY: parameters->prism.body = amount; break;
     case TS_SISTER_UI_PARAM_PRISM_MIX: parameters->prism.mix = amount; break;
-    case TS_SISTER_UI_PARAM_PRISM_OUTPUT: parameters->prism.output_db = -12 + amount * 18; break;
+    case TS_SISTER_UI_PARAM_PRISM_OUTPUT: parameters->prism.output_db = -12 + amount * 24; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: parameters->head1_level = amount; break;
     case TS_SISTER_UI_PARAM_H1_TIME: parameters->head1_time_ms = amount * 4000.0f; break;
     case TS_SISTER_UI_PARAM_H1_FEEDBACK: parameters->head1_feedback = amount; break;
@@ -8562,7 +8566,7 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_STEREO: value = parameters->prism.stereo; break;
     case TS_SISTER_UI_PARAM_PRISM_BODY: value = parameters->prism.body; break;
     case TS_SISTER_UI_PARAM_PRISM_MIX: value = parameters->prism.mix; break;
-    case TS_SISTER_UI_PARAM_PRISM_OUTPUT: value = (parameters->prism.output_db + 12) / 18.f; break;
+    case TS_SISTER_UI_PARAM_PRISM_OUTPUT: value = (parameters->prism.output_db + 12) / 24.f; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: value = parameters->head1_level; break;
     case TS_SISTER_UI_PARAM_H1_TIME: value = parameters->head1_time_ms / 4000.0f; break;
     case TS_SISTER_UI_PARAM_H1_FEEDBACK: value = parameters->head1_feedback; break;
@@ -8956,6 +8960,117 @@ static void sister_preset_model_sync(SisterWindow *sister,
                  sizeof(sister->model.preset_name), "CUSTOM");
         sister->model.preset_factory = 0;
     }
+}
+
+/* Optical gestures update only their own lens under the existing device lock.
+   Keep the original values so Escape can undo the entire drag. */
+static void sister_prism_set_point(SDL_AudioDeviceID device, AudioState *audio,
+                                   SisterWindow *sister, int lens, float pitch, float pan)
+{
+    if (device) SDL_LockAudioDevice(device);
+    TsSisterParameters p = audio->sister.parameters;
+    p.prism.pitch_offset[lens] = pitch;
+    p.prism.pan_offset[lens] = pan;
+    ts_sister_runtime_set_parameters(&audio->sister, &p);
+    ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+    sister->model.parameters = audio->sister.parameters;
+    if (device) SDL_UnlockAudioDevice(device);
+    sister_preset_model_sync(sister, &audio->sister);
+    sister->rendered_model_valid = 0;
+}
+
+static void sister_prism_end_drag(SisterWindow *sister)
+{
+    sister->prism_drag_lens = 0;
+    SDL_CaptureMouse(SDL_FALSE);
+}
+
+static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
+                               SisterWindow *sister, const SDL_Event *event)
+{
+    if (sister->model.fx_page != 3 || sister->model.preset_manage_open ||
+        sister->model.midi_learn_active ||
+        sister->prism_drag_lens > sister->model.parameters.prism.lenses) {
+        if (sister->prism_drag_lens) sister_prism_end_drag(sister);
+        return 0;
+    }
+    if (event->type == SDL_WINDOWEVENT &&
+        (event->window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+         event->window.event == SDL_WINDOWEVENT_HIDDEN ||
+         event->window.event == SDL_WINDOWEVENT_MINIMIZED)) {
+        if (sister->prism_drag_lens) sister_prism_end_drag(sister);
+        return 0;
+    }
+    if (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_ESCAPE &&
+        sister->prism_drag_lens) {
+        sister_prism_set_point(device, audio, sister, sister->prism_drag_lens - 1,
+                               sister->prism_drag_pitch, sister->prism_drag_pan);
+        sister_prism_end_drag(sister);
+        snprintf(sister->model.status, sizeof(sister->model.status), "LENS DRAG CANCELLED");
+        return 1;
+    }
+    if (event->type == SDL_MOUSEBUTTONUP && event->button.button == SDL_BUTTON_LEFT &&
+        sister->prism_drag_lens) {
+        sister_prism_end_drag(sister);
+        return 1;
+    }
+    int x, y;
+    if (event->type == SDL_MOUSEBUTTONDOWN &&
+        (event->button.button == SDL_BUTTON_LEFT || event->button.button == SDL_BUTTON_RIGHT)) {
+        if (!sister_event_mouse(sister->window, event->button.x, event->button.y, &x, &y)) return 0;
+        int lens = ts_sister_ui_prism_hit(&sister->model, x, y);
+        if (lens < 0) return 0;
+        sister->model.prism_selected = lens + 1;
+        ts_ui_pointer_drag_cancel(&sister->parameter_drag);
+        sister->parameter_lock_gesture = 0;
+        if (event->button.button == SDL_BUTTON_RIGHT) {
+            sister_prism_end_drag(sister);
+            sister_prism_set_point(device, audio, sister, lens, 0, 0);
+            snprintf(sister->model.status, sizeof(sister->model.status), "LENS %02d RESET", lens + 1);
+            return 1;
+        }
+        TsPrismView view = sister->model.routing.prism.valid ? sister->model.routing.prism :
+            ts_prism_control_view(&sister->model.parameters.prism);
+        int node_x;
+        ts_sister_ui_prism_point(view.lens[lens], &node_x, &sister->prism_node_y);
+        sister->prism_drag_lens = lens + 1;
+        sister->prism_drag_x = x; sister->prism_drag_y = y;
+        sister->prism_drag_pitch = sister->model.parameters.prism.pitch_offset[lens];
+        sister->prism_drag_pan = sister->model.parameters.prism.pan_offset[lens];
+        sister->prism_drag_divergence = 1 - sister->model.parameters.prism.focus;
+        SDL_CaptureMouse(SDL_TRUE);
+        sister->rendered_model_valid = 0;
+        return 1;
+    }
+    if (event->type == SDL_MOUSEMOTION && sister->prism_drag_lens) {
+        if (!(event->motion.state & SDL_BUTTON_LMASK)) {
+            sister_prism_end_drag(sister); return 1;
+        }
+        int width, height;
+        SDL_GetWindowSize(sister->window, &width, &height);
+        if (!sister_event_mouse(sister->window,
+                SDL_clamp(event->motion.x, 0, width - 1),
+                SDL_clamp(event->motion.y, 0, height - 1), &x, &y)) return 1;
+        int lens = sister->prism_drag_lens - 1;
+        float pitch = sister->prism_drag_pitch;
+        float delta = ts_sister_ui_prism_pitch_at_y(sister->prism_node_y + y - sister->prism_drag_y) -
+                      ts_sister_ui_prism_pitch_at_y(sister->prism_node_y);
+        if (sister->prism_drag_divergence > .0001f) pitch += delta / sister->prism_drag_divergence;
+        float pan = sister->prism_drag_pan + (x - sister->prism_drag_x) / 100.f;
+        sister_prism_set_point(device, audio, sister, lens, pitch, pan);
+        const TsPrismControls *p = &sister->model.parameters.prism;
+        if (sister->prism_drag_divergence <= .0001f)
+            snprintf(sister->model.status, sizeof(sister->model.status), "FOCUS CLOSED: LOWER FOCUS TO BEND PITCH");
+        else {
+            TsPrismControls target = *p; target.drift = 0;
+            TsPrismLensView ray = ts_prism_control_view(&target).lens[lens];
+            snprintf(sister->model.status, sizeof(sister->model.status),
+                     "LENS %02d: TARGET %+.0F CT / PAN %+.2F   ESC: UNDO", lens + 1,
+                     ray.cents, ray.pan);
+        }
+        return 1;
+    }
+    return 0;
 }
 
 static int sister_preset_file_save(const SisterWindow *sister,
@@ -12591,6 +12706,7 @@ int main(int argc, char **argv)
                 continue;
             if (sister_window.window != NULL &&
                 event_id == sister_window.window_id) {
+                if (sister_prism_event(device, &audio, &sister_window, &event)) continue;
                 if (event.type == SDL_WINDOWEVENT &&
                     event.window.event == SDL_WINDOWEVENT_CLOSE) {
                     SDL_GetWindowPosition(sister_window.window,

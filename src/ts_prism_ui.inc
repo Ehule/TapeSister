@@ -49,18 +49,13 @@ static void sister_prism_render(TsFramebuffer *fb, const TsSisterUiModel *model)
     ui_line(fb, 30, 166, 147, 166, RGB(229,232,212));
     ui_line(fb, 92, 162, 99, 167, RGB(229,232,212));
     ui_line(fb, 92, 172, 99, 167, RGB(229,232,212));
-    text(fb, 194, 174, "ORIGINAL", blend_color(background, dry, 75), 1);
+    text(fb, 52, 178, "ORIGINAL", blend_color(background, dry, 75), 1);
 
     for (int i = TS_PRISM_LENSES - 1; i >= 0; --i) {
         TsPrismLensView ray = v.lens[i];
         if (ray.level <= .001f) continue;
-        /* Octave band plus expanded fine cents: the diagram communicates the
-           relationships, not a falsely linear frequency or delay scale. */
-        float ordinate = ray.cents < -700 ?
-            224 - 20 * tanhf((ray.cents + 1200) / 18) :
-            167 - 53 * tanhf(ray.cents / 28);
-        int y = (int)lrintf(ordinate);
-        int x = 308 + (int)lrintf(48 * ray.pan + 3 * ray.delay_ms);
+        int x, y;
+        ts_sister_ui_prism_point(ray, &x, &y);
         float strength = sqrtf(fminf(1, ray.level / 3));
         uint32_t color = blend_color(background, colors[i],
             (int)lrintf(strength * (14 + 86 * v.wet)));
@@ -70,17 +65,25 @@ static void sister_prism_render(TsFramebuffer *fb, const TsSisterUiModel *model)
         ui_line(fb, 172, exit_y, x, y, color);
         ui_line(fb, x, y, 462, rejoin_y, color);
         ui_line(fb, 462, rejoin_y, 527, 167, color);
-        rect(fb, x - 2, y - 2, 5, 5, color);
+        if (i == 0) rect(fb, x - 2, y - 2, 5, 5, color);
+        else {
+            rect(fb, x - 3, y - 3, 7, 7, color);
+            rect(fb, x - 1, y - 1, 3, 3, background);
+            if (model->prism_selected == i + 1) {
+                snprintf(label, sizeof(label), "%02d", i + 1);
+                text(fb, x + 7, y - 3, label, RGB(240,240,220), 1);
+            }
+        }
     }
     ui_line(fb, 527, 167, 608, 167, RGB(229,232,212));
     ui_line(fb, 600, 162, 608, 167, RGB(229,232,212));
     ui_line(fb, 600, 172, 608, 167, RGB(229,232,212));
-    text(fb, 24, 252, "PITCH: FAN / TIME + PAN: POSITION / LEVEL: LIGHT", ink, 1);
+    text(fb, 24, 252, "DRAG: UP/DOWN PITCH, LEFT/RIGHT PAN / RIGHT CLICK: RESET", ink, 1);
     static const char *const names[8] = {
         "LENSES", "SPREAD", "DRIFT", "FOCUS", "STEREO", "BODY", "WET", "OUTPUT"
     };
     float amounts[8] = {(p->lenses - 2) / 10.f, p->spread, p->drift, p->focus,
-                        p->stereo, p->body, p->mix, (p->output_db + 12) / 18};
+                        p->stereo, p->body, p->mix, (p->output_db + 12) / 24};
     for (int i = 0; i < 8; ++i) {
         int x = 16 + (i % 4) * 154, y = 280 + (i / 4) * 28;
         int locked = ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_PRISM_LENSES + i);
