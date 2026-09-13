@@ -235,10 +235,10 @@ explicitly indicates it.
 
 | Gesture | Occupied tile | Empty tile |
 | --- | --- | --- |
-| Click | Select and audition | Select destination |
-| Double-click | Select/audition | Create silent editable tape |
+| Click | Select; audition only with PLAY ON SEL on | Select destination |
+| Double-click | Follows PLAY ON SEL | Create silent editable tape |
 | Shift-click | Toggle Sister source membership | Copy active tile here |
-| Plain click during performance | Launch/release layer | Select destination |
+| Plain click during performance | Launch/release with PLAY ON SEL on; otherwise select only | Select destination |
 
 The active editing tile, current preview, Sister source membership, loop state, and
 Capture destination use separate visual marks.
@@ -478,9 +478,9 @@ characters where needed. You can edit the suggested name before saving.
 | Control | Action |
 | --- | --- |
 | **REC FILE** above the virtual keyboard | Record tile or FM playing; remains accessible with FM open |
-| **REC FILE** in the bottom-right footer | Start/stop output recording from any main-window workspace, including Mosaic |
+| **REC FILE** in the bottom-right footer | Start/stop output recording from any main-window workspace, including CDP Portal and Mosaic |
+| **PLAY ON SEL** above the sample bank | On: click to audition/release; off: select for editing without changing tile playback. Defaults on each session |
 | **REC FILE** in the Mosaic header | Operate that same final stereo output recorder |
-| **REC FILE** on the sample bank | Start a stereo output WAV immediately; no tile destination |
 | **REC FILE** on the FX/pedalboard page | Record the final stereo master output, including effects; works with Sister power off |
 | `Ctrl+Shift+F` in the main window | Start/stop the output file from any main-window panel |
 

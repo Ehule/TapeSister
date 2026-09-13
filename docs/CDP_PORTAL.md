@@ -1216,6 +1216,11 @@ compilation and physical QWERTY/MIDI listening remain user checks.
 
 Recipe/chain names and the manager's rename field show a blinking caret while
 editing, including an empty field. Long names scroll to keep the typing position
-inside the field. The Portal retains its permanent header REC control.
+inside the field. **REC FILE** stays in the bottom-right footer, in the same place
+as the main canvas recorder. The top **CDP** button remains the active workspace
+indicator; a second click there cannot start recording. **Ctrl+Shift+F** also
+starts/stops the same final-output recorder.
+
+![CDP stays in the header; REC FILE stays in the bottom-right footer](images/portal-record-footer.png)
 
 ![Portal recipe rename caret](images/portal-rename-caret.png)

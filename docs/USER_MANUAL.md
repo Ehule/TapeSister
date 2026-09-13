@@ -219,8 +219,14 @@ Each Sample page contains 16 independent tiles. A tile owns all of the following
 - a private 20-step Undo/Redo history;
 - protection state and capture provenance.
 
-Clicking an occupied tile selects and auditions it. Clicking an empty tile selects the
+**PLAY ON SEL** above the sample bank controls click audition. It starts on;
+turn it off to select an occupied tile for editing without launching or releasing
+its playback. Existing tile layers continue, and explicit Play/QWERTY/MIDI still
+work. The toggle lasts for the current session and stays set while changing views.
+With it on, clicking an occupied tile selects and auditions it. Clicking an empty tile selects the
 destination without playing. Double-clicking an empty tile creates editable silent tape.
+
+![PLAY ON SEL above the sample bank, with REC FILE in the footer](images/main-play-on-select.png)
 Clearing a tile leaves that empty destination selected.
 
 Use **+ PAGE** when more than 16 sounds are needed. Pressing `1` while Sample Tiles is
@@ -847,7 +853,7 @@ Shift-click occupied tiles to build a source group. QWERTY and MIDI notes fan ou
 the complete group. Shift-clicking a member during recording removes it from future
 triggers without cutting off its current pass.
 
-Plain-clicked tiles form a separate performance layer: one-shots overlap and end
+With **PLAY ON SEL** on, plain-clicked tiles form a separate performance layer: one-shots overlap and end
 naturally; loops fade in and fade out when clicked again. **FADE ALL** releases those
 mouse-launched layers. Space remains the immediate panic stop.
 
@@ -878,8 +884,10 @@ another page if required, and clears the REC BANK only after every copy succeeds
 ### Direct output recording
 
 **REC FILE** immediately records the final stereo output into a WAV without choosing
-a destination tile. Use the button in the main footer, keyboard, Sample bank, Mosaic
-header or footer, or Sister's FX page. `Ctrl+Shift+F` is the main-window shortcut,
+a destination tile. Use the button in the bottom-right footer (including CDP Portal),
+keyboard, Mosaic header, or Sister's FX page. The main Sample bank uses the footer
+button. Portal's top CDP button stays CDP, so clicking again cannot start recording.
+`Ctrl+Shift+F` is the main-window shortcut,
 including while Mosaic or FM is open. These controls operate the same recorder.
 
 The file includes the global processing, limiter, and final OUT fader. Sister may

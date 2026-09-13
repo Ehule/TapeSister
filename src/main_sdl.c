@@ -1906,6 +1906,40 @@ static void stop_all(SDL_AudioDeviceID device, AudioState *audio, TsUiState *ui)
     stop_all_force(device, audio, ui);
 }
 
+/* Selection and playback are separate: silent selection keeps the tile editable
+   and leaves existing launchers alone. Explicit transport/MIDI still plays it. */
+static void sample_bank_audition_selected(SDL_AudioDeviceID device, AudioState *audio,
+    TsUiState *ui, TsInstrument *instrument, int bank_slot, int rate)
+{
+    ui->audition_source=TS_AUDITION_CURRENT;ui->bank_view_slot=-1;
+    if(!ui->play_on_select) {
+        snprintf(ui->status,sizeof(ui->status),"TILE %02d SELECTED FOR EDITING - PLAY ON SEL OFF",bank_slot+1);
+        return;
+    }
+    if (ui->workbench_loop_active &&
+        ui->workbench_loop_persistent) {
+        ui->audition_source = TS_AUDITION_CURRENT;
+        ui->bank_view_slot = -1;
+        refresh_workbench_loop(device, audio, ui,
+                               instrument);
+        snprintf(ui->status, sizeof(ui->status),
+                 "LOOP LOCKED TO BANK %02d %s",
+                 bank_slot + 1,
+                 instrument->has_selection ?
+                 "SELECTION" : "VIEW");
+    } else {
+        if (ui->workbench_loop_active)
+            stop_all(device, audio, ui);
+        /* Keep the selected tile in Current-edit mode. Bank-preview
+           mode intentionally makes the waveform read-only. */
+        ui->audition_source = TS_AUDITION_CURRENT;
+        ui->bank_view_slot = -1;
+        toggle_tile_launcher(
+            device, audio, ui, instrument,
+            bank_slot, rate);
+    }
+}
+
 static void sync_capture_ui(SDL_AudioDeviceID device, AudioState *audio,
                             TsUiState *ui)
 {
@@ -9484,21 +9518,30 @@ static int main_file_capture_event(const SDL_Event *event, SDL_Window *window,
        event->button.windowID==SDL_GetWindowID(window)) {
         if(ui->midi_learn_active)return 0;
         int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
-        if((!ui->portal.open || ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING ||
-            ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING) &&
-           x>=544 && x<630 && y>=382 && y<398)trigger=1;
+        if(x>=544 && x<630 && y>=382 && y<398)trigger=1;
         else if(ui->mosaic_open && !ui_dialog_open(ui))
             trigger=x>=206 && x<270 && y>=39 && y<58;
-        else if(ui->portal.open && x>=464 && x<492 && y>=4 && y<30)trigger=1;
         else if(sister_performance_keys_allowed(ui) && ui->show_keyboard &&
                 x>=380 && x<454 && y>=313 && y<330)trigger=1;
-        else if(!ui_dialog_open(ui) && !ui->show_keyboard && !ui->show_recipes &&
-                !ui->show_ingredients && !ui->external_record_bank &&
-                x>=250 && x<344 && y>=313 && y<329)trigger=1;
     }
     if(!trigger)return 0;
     main_file_capture_toggle(audio,ui,sister,sample_rate);
     if(ui->portal.open)snprintf(ui->portal.message,sizeof(ui->portal.message),"%s",ui->status);
+    return 1;
+}
+
+static int sample_bank_play_select_event(const SDL_Event *event, SDL_Window *window, TsUiState *ui)
+{
+    if(ui_dialog_open(ui) || ui->mosaic_open || ui->external_record_bank ||
+       ui->show_keyboard || ui->show_recipes || ui->show_ingredients || ui->midi_learn_active ||
+       event->type!=SDL_MOUSEBUTTONDOWN || event->button.button!=SDL_BUTTON_LEFT ||
+       event->button.windowID!=SDL_GetWindowID(window))return 0;
+    int x,y;logical_mouse(window,event->button.x,event->button.y,&x,&y);
+    if(x<250 || x>=344 || y<313 || y>=329)return 0;
+    ui->play_on_select=!ui->play_on_select;
+    snprintf(ui->status,sizeof(ui->status),ui->play_on_select ?
+        "PLAY ON SEL ON - CLICK TILES TO PLAY / RELEASE" :
+        "PLAY ON SEL OFF - CLICK TILES TO SELECT FOR EDITING");
     return 1;
 }
 
@@ -12717,6 +12760,7 @@ int main(int argc, char **argv)
             }
             mosaic_commit(device,&ui,&instrument,&mosaic);
             if(main_file_capture_event(&event,window,&audio,&ui,&sister_window,(uint32_t)obtained.freq))continue;
+            if(sample_bank_play_select_event(&event,window,&ui))continue;
             if(workspace_event(&event,window,device,&audio,&ui,&instrument,&mosaic,
                                &portal,&sister_window,&transform,&fm_preview))continue;
             if(event_id==SDL_GetWindowID(window) &&
@@ -15977,28 +16021,7 @@ int main(int argc, char **argv)
                                 }
                             }
                             else if (selected && occupied) {
-                                if (ui.workbench_loop_active &&
-                                    ui.workbench_loop_persistent) {
-                                    ui.audition_source = TS_AUDITION_CURRENT;
-                                    ui.bank_view_slot = -1;
-                                    refresh_workbench_loop(device, &audio, &ui,
-                                                           &instrument);
-                                    snprintf(ui.status, sizeof(ui.status),
-                                             "LOOP LOCKED TO BANK %02d %s",
-                                             bank_slot + 1,
-                                             instrument.has_selection ?
-                                             "SELECTION" : "VIEW");
-                                } else {
-                                    if (ui.workbench_loop_active)
-                                        stop_all(device, &audio, &ui);
-                                    /* Keep the selected tile in Current-edit mode. Bank-preview
-                                       mode intentionally makes the waveform read-only. */
-                                    ui.audition_source = TS_AUDITION_CURRENT;
-                                    ui.bank_view_slot = -1;
-                                    toggle_tile_launcher(
-                                        device, &audio, &ui, &instrument,
-                                        bank_slot, obtained.freq);
-                                }
+                                sample_bank_audition_selected(device,&audio,&ui,&instrument,bank_slot,obtained.freq);
                             }
                             else if (attempted_silence) {
                                 stop_all(device, &audio, &ui);

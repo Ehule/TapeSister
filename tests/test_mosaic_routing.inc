@@ -156,6 +156,45 @@ static void routing_free(AudioState *a)
     ts_mosaic_free(a->mosaic);ts_sister_runtime_free(&a->sister);ts_capture_free(&a->capture);
     ts_performance_free(&a->performance);ts_performance_free(&a->tile_launchers);free(a);
 }
+static void test_play_on_select(SDL_Window *window)
+{
+    TsInstrument *inst=calloc(1,sizeof(*inst));TsUiState *state=calloc(1,sizeof(*state));assert(inst && state);
+    AudioState *a=routing_audio(0);a->mosaic->playing=0;
+    ts_instrument_init(inst);ts_ui_init(state);assert(state->play_on_select);
+    char error[160];assert(ts_instrument_generate(inst,TS_GENERATOR_METALLIC,987,error,sizeof(error)));
+    assert(ts_instrument_copy_selected(inst,1,error,sizeof(error)));
+    assert(ts_instrument_select_bank(inst,0,error,sizeof(error)));
+    state->show_keyboard=state->show_recipes=state->show_ingredients=0;
+    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+    e.button.button=SDL_BUTTON_LEFT;e.button.x=290;e.button.y=320;
+    sample_bank_audition_selected(0,a,state,inst,inst->selected_slot,48000);
+    assert(ts_performance_count(&a->tile_launchers)==1);
+    assert(sample_bank_play_select_event(&e,window,state) && !state->play_on_select);
+    assert(ts_performance_count(&a->tile_launchers)==1); /* Toggle never stops an existing layer. */
+    assert(ts_ui_execute_bank_action(inst,1,TS_UI_BANK_ACTION_AUDITION,error,sizeof(error)));
+    unlock_edit(0,a,state,inst);
+    sample_bank_audition_selected(0,a,state,inst,1,48000);
+    assert(inst->selected_slot==1 && inst->current.data && state->bank_view_slot==-1);
+    assert(state->audition_source==TS_AUDITION_CURRENT && ts_performance_count(&a->tile_launchers)==1);
+    /* Explicit keyboard playing remains available when selection is silent. */
+    assert(ts_note_bank_start(&a->notes,inst,TS_AUDITION_CURRENT,0,0,48000)==TS_NOTE_STARTED);
+    assert(sample_bank_play_select_event(&e,window,state) && state->play_on_select);
+    assert(ts_performance_count(&a->tile_launchers)==1);
+    sample_bank_audition_selected(0,a,state,inst,1,48000);
+    assert(ts_performance_count(&a->tile_launchers)==2);
+    assert(sample_bank_play_select_event(&e,window,state) && !state->play_on_select);
+    sample_bank_audition_selected(0,a,state,inst,1,48000);
+    assert(ts_performance_count(&a->tile_launchers)==2); /* Selecting a playing tile does not release it. */
+    ts_performance_clear(&a->tile_launchers);ts_note_bank_clear(&a->notes);
+    sample_bank_audition_selected(0,a,state,inst,1,48000);
+    TsAudioBuses buses;TsStereoFrame capture;ts_audio_buses_clear(&buses);
+    runtime_note_render(a,&buses,&capture);
+    assert(!buses.tile_performance.l && !buses.tile_performance.r && !a->playing);
+    state->portal.open=1;assert(!sample_bank_play_select_event(&e,window,state));state->portal.open=0;
+    state->show_keyboard=1;assert(!sample_bank_play_select_event(&e,window,state));state->show_keyboard=0;
+    state->mosaic_open=1;assert(!sample_bank_play_select_event(&e,window,state));
+    routing_free(a);ts_instrument_free(inst);free(inst);free(state);
+}
 static void test_mosaic_master_routes(void)
 {
     for(int powered=0;powered<2;++powered) {
