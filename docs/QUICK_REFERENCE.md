@@ -528,3 +528,15 @@ Left-drag in the right-side lane to draw volume. **R** resets, **S** smooths, th
 arrow matches start to end, **V** matches end to start, and **/** makes a ramp.
 REPEAT links endpoint levels. The curve scales with the arrangement length.
 Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
+
+### Prism
+
+- **Tab**, then page cycle: Tape → FX → Fallout → **Prism** → Tape.
+- **PRISM ON/OFF**: smoothed insert bypass. **Mode** cycles Supersaw / Ensemble.
+- **Lenses** 2–12; wheel changes one lens. Spread, Drift, Focus, Stereo, Body and
+  Wet are percentages. **Output** trims the wet sum from −12 to +6 dB.
+- Tape POWER off: ordinary sound and enabled external monitoring → Prism → FX.
+- Tape POWER on: selected sources → Prism → PRE FX → tape. DRY 100 / WET 0 monitors
+  the direct Prism input; raise Sister WET for heads.
+- **REC FILE** captures final stereo OUT. **Ctrl+Shift+M** learns controls.
+- [Prism guide and measured performance](PRISM.md).

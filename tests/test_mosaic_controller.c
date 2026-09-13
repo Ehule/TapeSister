@@ -83,6 +83,7 @@ static void wait_render(void);
 #include "test_mosaic_controls.inc"
 #include "test_mosaic_volume_controls.inc"
 #include "test_mosaic_routing.inc"
+#include "test_prism_controller.inc"
 static void test_canvas_feedback(SDL_Window *window)
 {
     TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);ui.mosaic=audio.mosaic=scene;
@@ -379,6 +380,7 @@ int main(void)
     test_async_ownership(aid,bid,original,1);
     test_workspace_routes(window);
     test_mosaic_master_routes();
+    test_prism_controller();
     ts_mosaic_volume_draw(ui.mosaic,0,.3f,1,.8f);
     test_record_file(window,580,389);
     test_record_file(window,240,45);

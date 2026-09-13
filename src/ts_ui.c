@@ -5015,6 +5015,8 @@ static void sister_spirit_render(TsFramebuffer *fb,
     }
 }
 
+#include "ts_prism_ui.inc"
+
 void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          const TsPalette *palette)
 {
@@ -5056,7 +5058,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     }
     button(fb, 440, 8, 50,
            model->fx_page == 0 ? "FX" :
-           model->fx_page == 1 ? "FALL" : "TAPE",
+           model->fx_page == 1 ? "FALL" :
+           model->fx_page == 2 ? "PRISM" : "TAPE",
            model->fx_page != 0);
     button(fb, 494, 8, 30, "LIM", model->routing.limiter_enabled);
     master_output_fader(fb, model->routing.master_output_gain, 528, 8);
@@ -5064,6 +5067,10 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     rect(fb, 576, 12, 3, 9,
          model->midi_activity ? PAL_TUNING : RGB(22, 22, 22));
 
+    if (model->fx_page == 3) {
+        sister_prism_render(fb, model);
+        goto sister_footer;
+    }
     if (model->fx_page == 2) {
         const TsSisterFalloutControls *f = &model->parameters.fx.fallout;
         char transition_caption[24];

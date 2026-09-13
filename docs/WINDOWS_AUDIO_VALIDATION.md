@@ -64,3 +64,21 @@ rates/buffers.
 WASAPI shared mode is the recommended coexistence baseline. Native ASIO is not
 implemented by TapeSister, and an ASIO driver's exclusive or single-client limitation
 cannot be repaired inside TapeSister.
+
+## Prism instrument audition
+
+- [ ] At 256 frames, audition 2, 4, 8 and 12 lenses with a physical mono synth.
+- [ ] Compare bypass and Wet zero with the original; vary count, mode, Spread,
+  Focus and Drift during sustained notes and note changes. Listen for clicks,
+  unwanted pitch bends, transient smearing and gain changes.
+- [ ] Try speech, breath/contact sounds, percussion, field recordings, tape and
+  complex polyphony. Compare Supersaw with Ensemble and confirm source identity.
+- [ ] Test left-only, right-only and stereo material without channel collapse.
+- [ ] Test both tape POWER states, subsequent FX and Live Link from TapeHead.
+- [ ] Record using Prism's REC FILE button while playing and switching pages.
+  Confirm recorded sound and final output agree.
+- [ ] Map On/Off, Mode, Lenses, Spread, Drift, Focus and Wet using the existing
+  MIDI learn flow. Reopen the project and confirm settings and mappings.
+
+[Prism](PRISM.md) records the headless checks and server CPU measurements. Those
+measurements do not certify this Windows interface or its hardware latency.

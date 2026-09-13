@@ -130,6 +130,8 @@ int ts_sister_project_state_apply(const TsSisterProjectState *state,
 
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
+    if (fprintf(file, "PrismEnabled=%d\nPrismMode=%d\nPrismLenses=%d\nPrismSpread=%.9g\nPrismDrift=%.9g\nPrismFocus=%.9g\nPrismStereo=%.9g\nPrismBody=%.9g\nPrismMix=%.9g\nPrismOutputDb=%.9g\n",
+        p->prism.enabled, p->prism.mode, p->prism.lenses, p->prism.spread, p->prism.drift, p->prism.focus, p->prism.stereo, p->prism.body, p->prism.mix, p->prism.output_db) < 0) return 0;
     if (fprintf(file,
         "H1Level=%.9g\nH1TimeMs=%.9g\nH1Feedback=%.9g\n"
         "H2Level=%.9g\nH2Scrub=%.9g\nH2Rate=%d\nH2Feedback=%.9g\n"
@@ -380,6 +382,16 @@ static int assign_parameter(TsSisterParameters *p, const char *key,
             return parse_float_value(value, &slot->mix);
         return 1;
     }
+    PI("PrismEnabled", prism.enabled);
+    PI("PrismMode", prism.mode);
+    PI("PrismLenses", prism.lenses);
+    PF("PrismSpread", prism.spread);
+    PF("PrismDrift", prism.drift);
+    PF("PrismFocus", prism.focus);
+    PF("PrismStereo", prism.stereo);
+    PF("PrismBody", prism.body);
+    PF("PrismMix", prism.mix);
+    PF("PrismOutputDb", prism.output_db);
     PF("H1Level", head1_level); PF("H1TimeMs", head1_time_ms); PF("H1Feedback", head1_feedback);
     PF("H2Level", head2_level); PF("H2Scrub", head2_scrub); PI("H2Rate", head2_rate_index);
     PF("H2Feedback", head2_feedback); PF("H3Level", head3_level); PF("H3Span", head3_span);
@@ -573,7 +585,7 @@ int ts_sister_project_state_load_file(TsSisterProjectState *state,
     if (ferror(file) || !header || !version || !have_pages ||
         loaded.active_page >= loaded.page_count) goto malformed;
     fclose(file);
-    if (version < TS_SISTER_PROJECT_STATE_VERSION) {
+    if (version < 12 /* FX slot migration predates Prism */) {
         ts_sister_fx_controls_migrate_legacy(&loaded.parameters.fx);
         ts_sister_ui_migrate_legacy_effect_locks(
             &loaded.parameter_locks, &loaded.parameter_locks_high);

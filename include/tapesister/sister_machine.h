@@ -1,6 +1,7 @@
 #ifndef TAPESISTER_SISTER_MACHINE_H
 #define TAPESISTER_SISTER_MACHINE_H
 
+#include "tapesister/prism.h"
 #include "tapesister/sample.h"
 #include "tapesister/sister_effects.h"
 #include "tapesister/sister_post_fx.h"
@@ -157,6 +158,7 @@ typedef struct {
        preserves the processor's established output exactly. */
     float fx_return_gain;
     float clear_ms;
+    TsPrismControls prism;
 } TsSisterParameters;
 
 const char *ts_sister_filter_type_name(TsSisterFilterType type);

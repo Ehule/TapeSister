@@ -354,6 +354,30 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         hit.action = TS_SISTER_UI_ACTION_PRESET_NEXT;
         return hit;
     }
+    if (model != NULL && model->fx_page == 3) {
+        if (contains(x, y, 16, 48, 96, 22)) hit.action = TS_SISTER_UI_ACTION_PRISM_TOGGLE;
+        else if (contains(x, y, 122, 48, 116, 22)) hit.action = TS_SISTER_UI_ACTION_PRISM_MODE;
+        else if (contains(x, y, TS_SISTER_UI_FX_REC_X, TS_SISTER_UI_FX_REC_Y,
+                          TS_SISTER_UI_FX_REC_W, TS_SISTER_UI_FX_REC_H))
+            hit.action = TS_SISTER_UI_ACTION_RECORD_FILE;
+        else {
+            for (int i = 0; i < 8; ++i) {
+                int px = 16 + (i % 4) * 154, py = 280 + (i / 4) * 28;
+                if (contains(x, y, px, py, 144, 18)) {
+                    hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+                    hit.index = TS_SISTER_UI_PARAM_PRISM_LENSES + i;
+                    hit.normalized = (float)(x - px) / 143;
+                    return hit;
+                }
+            }
+            if (contains(x, y, 10, 370, 58, 22)) hit.action = TS_SISTER_UI_ACTION_TAP;
+            else if (contains(x, y, 74, 370, 44, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE_FORMAT;
+            else if (contains(x, y, 124, 370, 100, 22)) hit.action = TS_SISTER_UI_ACTION_DESTINATION;
+            else if (contains(x, y, 450, 370, 82, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE;
+            else if (contains(x, y, 538, 370, 92, 22)) hit.action = TS_SISTER_UI_ACTION_OVERDUB;
+        }
+        return hit;
+    }
     if (model != NULL && model->fx_page == 2) {
         static const int toggle[7][5] = {
             {TS_SISTER_UI_FALLOUT_POWER, 16, 50, 86, 22},
@@ -661,7 +685,9 @@ int ts_sister_ui_midi_target(TsSisterUiHit hit, char *target,
                               hit.index);
             return result > 0 && (size_t)result < target_size;
         }
-    } else if (hit.action == TS_SISTER_UI_ACTION_POWER) name = "sister.power";
+    } else if (hit.action == TS_SISTER_UI_ACTION_PRISM_TOGGLE) name = "sister.prism.toggle";
+    else if (hit.action == TS_SISTER_UI_ACTION_PRISM_MODE) name = "sister.prism.mode";
+    else if (hit.action == TS_SISTER_UI_ACTION_POWER) name = "sister.power";
     else if (hit.action == TS_SISTER_UI_ACTION_ROLL) name = "sister.roll";
     else if (hit.action == TS_SISTER_UI_ACTION_HOLD) name = "sister.hold";
     else if (hit.action == TS_SISTER_UI_ACTION_MONITOR) name = "sister.monitor";

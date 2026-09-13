@@ -901,6 +901,24 @@ H1/H2/H3 file taps require Sister to be powered. OUT and raw TAPEHEAD remain ava
 with Sister off. OUT records the final sound reaching the output path, including
 ordinary post effects, the global limiter, and the final OUT fader.
 
+## Prism live refraction
+
+Open Sister Machine with **Tab**, then cycle its page button through FX and Fallout
+to **PRISM**. Prism splits incoming audio into 2–12 related lenses and recombines
+it. Choose **SUPERSAW** for detuned layers plus three optional octave-body voices,
+or **ENSEMBLE** for closer pitches and more time displacement. The rays follow
+smoothed pitch, delay, pan, level and Wet; Focus draws fine pitch/time differences
+back together. **REC FILE** records the final processed stereo output.
+
+With Sister POWER off, Prism processes ordinary program audio and enabled external
+monitoring before the shared FX. With POWER on, select Sister sources and enable
+Monitor; Prism precedes the tape input and PRE slots. Sister DRY 100 / WET 0 gives
+a direct Prism performance without delayed heads. Prism WET controls the lens blend.
+
+Controls participate in the existing MIDI learn and saved Sister project/preset
+state. Old projects start with Prism off. See [Prism](PRISM.md) for the signal path,
+optical meanings, gain and latency behavior, measured CPU costs and test results.
+
 ## Sister Machine
 
 ![Sister Machine recording a routed performance](images/manual/sister-machine.png)

@@ -8423,6 +8423,14 @@ static void sister_set_parameter(TsSisterParameters *parameters,
         return;
     }
     switch ((TsSisterUiParameter)parameter) {
+    case TS_SISTER_UI_PARAM_PRISM_LENSES: parameters->prism.lenses = 2 + (int)lrintf(amount * 10); break;
+    case TS_SISTER_UI_PARAM_PRISM_SPREAD: parameters->prism.spread = amount; break;
+    case TS_SISTER_UI_PARAM_PRISM_DRIFT: parameters->prism.drift = amount; break;
+    case TS_SISTER_UI_PARAM_PRISM_FOCUS: parameters->prism.focus = amount; break;
+    case TS_SISTER_UI_PARAM_PRISM_STEREO: parameters->prism.stereo = amount; break;
+    case TS_SISTER_UI_PARAM_PRISM_BODY: parameters->prism.body = amount; break;
+    case TS_SISTER_UI_PARAM_PRISM_MIX: parameters->prism.mix = amount; break;
+    case TS_SISTER_UI_PARAM_PRISM_OUTPUT: parameters->prism.output_db = -12 + amount * 18; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: parameters->head1_level = amount; break;
     case TS_SISTER_UI_PARAM_H1_TIME: parameters->head1_time_ms = amount * 4000.0f; break;
     case TS_SISTER_UI_PARAM_H1_FEEDBACK: parameters->head1_feedback = amount; break;
@@ -8547,6 +8555,14 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
         return value > 1.0f ? 1.0f : value;
     }
     switch ((TsSisterUiParameter)parameter) {
+    case TS_SISTER_UI_PARAM_PRISM_LENSES: value = (parameters->prism.lenses - 2) / 10.f; break;
+    case TS_SISTER_UI_PARAM_PRISM_SPREAD: value = parameters->prism.spread; break;
+    case TS_SISTER_UI_PARAM_PRISM_DRIFT: value = parameters->prism.drift; break;
+    case TS_SISTER_UI_PARAM_PRISM_FOCUS: value = parameters->prism.focus; break;
+    case TS_SISTER_UI_PARAM_PRISM_STEREO: value = parameters->prism.stereo; break;
+    case TS_SISTER_UI_PARAM_PRISM_BODY: value = parameters->prism.body; break;
+    case TS_SISTER_UI_PARAM_PRISM_MIX: value = parameters->prism.mix; break;
+    case TS_SISTER_UI_PARAM_PRISM_OUTPUT: value = (parameters->prism.output_db + 12) / 18.f; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: value = parameters->head1_level; break;
     case TS_SISTER_UI_PARAM_H1_TIME: value = parameters->head1_time_ms / 4000.0f; break;
     case TS_SISTER_UI_PARAM_H1_FEEDBACK: value = parameters->head1_feedback; break;
@@ -8646,6 +8662,11 @@ static float sister_parameter_wheel_normalized(
     int value;
     if (parameters == NULL || wheel == 0) return 0.0f;
     switch ((TsSisterUiParameter)parameter) {
+    case TS_SISTER_UI_PARAM_PRISM_LENSES:
+        value = parameters->prism.lenses + direction * steps;
+        if (value < 2) value = 2;
+        if (value > TS_PRISM_LENSES) value = TS_PRISM_LENSES;
+        return (value - 2) / 10.f;
     case TS_SISTER_UI_PARAM_DECORRELATE:
         return direction > 0 ? 1.0f : 0.0f;
     case TS_SISTER_UI_PARAM_FILTER_TYPE:
@@ -8778,6 +8799,14 @@ static const char *sister_parameter_name(int parameter)
         return names[slot_offset % 5];
     }
     switch ((TsSisterUiParameter)parameter) {
+    case TS_SISTER_UI_PARAM_PRISM_LENSES: return "PRISM LENSES";
+    case TS_SISTER_UI_PARAM_PRISM_SPREAD: return "PRISM SPREAD";
+    case TS_SISTER_UI_PARAM_PRISM_DRIFT: return "PRISM DRIFT";
+    case TS_SISTER_UI_PARAM_PRISM_FOCUS: return "PRISM FOCUS";
+    case TS_SISTER_UI_PARAM_PRISM_STEREO: return "PRISM STEREO";
+    case TS_SISTER_UI_PARAM_PRISM_BODY: return "PRISM BODY";
+    case TS_SISTER_UI_PARAM_PRISM_MIX: return "PRISM MIX";
+    case TS_SISTER_UI_PARAM_PRISM_OUTPUT: return "PRISM OUTPUT";
     case TS_SISTER_UI_PARAM_H1_LEVEL: return "H1 LEVEL";
     case TS_SISTER_UI_PARAM_H1_TIME: return "H1 TIME";
     case TS_SISTER_UI_PARAM_H1_FEEDBACK: return "H1 FEED";
@@ -9680,7 +9709,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     if (hit.action == TS_SISTER_UI_ACTION_PAGE) {
         sister->model.fallout_lfo_open = 0;
-        sister->model.fx_page = (sister->model.fx_page + 1) % 3;
+        sister->model.fx_page = (sister->model.fx_page + 1) % 4;
         sister->rendered_model_valid = 0;
         return;
     }
@@ -9748,7 +9777,8 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
                      ts_sister_fallout_rise_mode_name(fallout->rise_mode));
         return;
     }
-    if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
+    if (!audio->sister.enabled && hit.action != TS_SISTER_UI_ACTION_PRISM_TOGGLE &&
+        hit.action != TS_SISTER_UI_ACTION_PRISM_MODE && hit.action != TS_SISTER_UI_ACTION_WAVE_MODE &&
         hit.action != TS_SISTER_UI_ACTION_FALLOUT_TOGGLE &&
         hit.action != TS_SISTER_UI_ACTION_FX_TOGGLE &&
         hit.action != TS_SISTER_UI_ACTION_LIMITER_TOGGLE &&
@@ -9773,6 +9803,18 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     }
     if (device) SDL_LockAudioDevice(device);
     switch (hit.action) {
+    case TS_SISTER_UI_ACTION_PRISM_TOGGLE:
+    case TS_SISTER_UI_ACTION_PRISM_MODE:
+        if (hit.action == TS_SISTER_UI_ACTION_PRISM_TOGGLE)
+            sister->model.parameters.prism.enabled = !sister->model.parameters.prism.enabled;
+        else
+            sister->model.parameters.prism.mode = (sister->model.parameters.prism.mode + 1) % TS_PRISM_MODE_COUNT;
+        ts_sister_runtime_set_parameters(&audio->sister, &sister->model.parameters);
+        ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
+        snprintf(sister->model.status, sizeof(sister->model.status), "PRISM %s - %s",
+            sister->model.parameters.prism.enabled ? "ON" : "BYPASS",
+            ts_prism_mode_name(sister->model.parameters.prism.mode));
+        break;
     case TS_SISTER_UI_ACTION_ROLL:
         ts_sister_runtime_set_rolling(&audio->sister, !audio->sister.rolling); break;
     case TS_SISTER_UI_ACTION_HOLD:
@@ -9980,6 +10022,9 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
     default: break;
     }
     if (device) SDL_UnlockAudioDevice(device);
+    if (hit.action == TS_SISTER_UI_ACTION_PRISM_TOGGLE ||
+        hit.action == TS_SISTER_UI_ACTION_PRISM_MODE)
+        sister_preset_model_sync(sister, &audio->sister);
     if (fallout_toggle_changed >= 0) {
         const TsSisterFalloutControls *fallout =
             &sister->model.parameters.fx.fallout;
@@ -10291,7 +10336,9 @@ static int midi_sister_hit_from_target(const char *target, float normalized,
         hit->index = parameter;
         return 1;
     }
-    if (strcmp(target, "sister.power") == 0) hit->action = TS_SISTER_UI_ACTION_POWER;
+    if (strcmp(target, "sister.prism.toggle") == 0) hit->action = TS_SISTER_UI_ACTION_PRISM_TOGGLE;
+    else if (strcmp(target, "sister.prism.mode") == 0) hit->action = TS_SISTER_UI_ACTION_PRISM_MODE;
+    else if (strcmp(target, "sister.power") == 0) hit->action = TS_SISTER_UI_ACTION_POWER;
     else if (strcmp(target, "sister.roll") == 0) hit->action = TS_SISTER_UI_ACTION_ROLL;
     else if (strcmp(target, "sister.hold") == 0) hit->action = TS_SISTER_UI_ACTION_HOLD;
     else if (strcmp(target, "sister.monitor") == 0) hit->action = TS_SISTER_UI_ACTION_MONITOR;
