@@ -8,8 +8,8 @@ For explanations and complete workflows, see the [User Manual](USER_MANUAL.md).
 | --- | --- |
 | `Tab` | Visit Sister and return to the current workspace/event editor; Portal uses Tab for A-B audition |
 | `Ctrl+Tab` | Move to a running Tapehead; press again there to return unchanged |
-| `Shift+grave` | Open/close FM Logic; from Mosaic, return to Mosaic on the next press |
-| grave (backtick) or `Ctrl+M` | Open Mosaic / return to the previous main or FM workspace |
+| `Shift+grave` | Open FM Logic; press in FM to return to the main canvas |
+| grave (backtick) or `Ctrl+M` | Open Mosaic; press in Mosaic to return to the main canvas |
 | `1` | Show Sample Tiles; press again to cycle Sample pages |
 | `Shift+1` | Open external REC BANK |
 | `2` | Show performance keyboard |
@@ -528,3 +528,20 @@ Left-drag in the right-side lane to draw volume. **R** resets, **S** smooths, th
 arrow matches start to end, **V** matches end to start, and **/** makes a ramp.
 REPEAT links endpoint levels. The curve scales with the arrangement length.
 Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
+
+### Prism
+
+- **Tab**, then page cycle: Tape → FX → Fallout → **Prism** → Tape.
+- **PRISM ON/OFF**: smoothed insert bypass. **Mode** cycles Supersaw / Ensemble.
+- **Lenses** 2–12; wheel changes one lens. Spread/Drift 0–200%, Body 0–300%,
+  Dry Level 0–200%; Focus, Stereo and Wet 0–100%. **Output** trims the wet sum from −12 to +12 dB.
+- Drag hollow ray points up/down for individual pitch, left/right for pan.
+  Wheel trims −24 to +12 dB (Shift-wheel: fine); brightness shows lens level.
+  Shift-click mutes, Ctrl-click solos. Right-click resets one lens; right-click
+  the mode/preset name restores all lenses to stock. Escape undoes a drag. Full Focus closes
+  pitch spread, including hand edits; lens 01 remains the body anchor.
+- Tape POWER off: ordinary sound and enabled external monitoring → Prism → FX.
+- Tape POWER on: selected sources → Prism → PRE FX → tape. DRY 100 / WET 0 monitors
+  the direct Prism input; raise Sister WET for heads.
+- **REC FILE** captures final stereo OUT. **Ctrl+Shift+M** learns controls.
+- [Prism guide and measured performance](PRISM.md).

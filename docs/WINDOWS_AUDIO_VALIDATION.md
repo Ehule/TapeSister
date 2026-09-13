@@ -64,3 +64,40 @@ rates/buffers.
 WASAPI shared mode is the recommended coexistence baseline. Native ASIO is not
 implemented by TapeSister, and an ASIO driver's exclusive or single-client limitation
 cannot be repaired inside TapeSister.
+
+## Prism instrument audition
+
+- [ ] At 256 frames, audition 2, 4, 8 and 12 lenses with a physical mono synth.
+- [ ] Feed FM 12-voice Unison into all 12 Prism lenses. Compare level and bass
+  against bypass at Output 0 dB, then use Output while watching the existing LIM.
+- [ ] Pull one hollow point wide and keep another narrow. Test pitch/pan, right-click
+  reset, Escape during drag, focus contraction, count changes and saved recall.
+- [ ] Explore Spread/Drift through 200%, Body through 300%, and Dry Level 0–200%.
+- [ ] Shift-click mute, Ctrl-click solo and wheel-trim each lens, including 01.
+  Confirm muted handles remain clickable, trim changes brightness and audible level,
+  and right-clicking either the mode button or preset name restores stock lenses.
+- [ ] Repeat main → FM → Mosaic → main and main → Mosaic → FM → main. The
+  active view's own grave shortcut must return to the canvas. Reopen FM to confirm
+  its parked patch remains intact; test unresolved event edits too.
+- [ ] Open/close Sister repeatedly with Tab at full-screen size. Check for desktop
+  flashes, retained first frames, F11 restoration and placement on another monitor.
+  The headless test checks window ownership; Windows compositor behavior needs this audition.
+- [ ] Compare bypass and Wet zero with the original; vary count, mode, Spread,
+  Focus and Drift during sustained notes and note changes. Listen for clicks,
+  unwanted pitch bends, transient smearing and gain changes.
+- [ ] Try speech, breath/contact sounds, percussion, field recordings, tape and
+  complex polyphony. Compare Supersaw with Ensemble and confirm source identity.
+- [ ] Test left-only, right-only and stereo material without channel collapse.
+- [ ] Test both tape POWER states, subsequent FX and Live Link from TapeHead.
+- [ ] Record using Prism's REC FILE button while playing and switching pages.
+  Confirm recorded sound and final output agree.
+- [ ] Map On/Off, Mode, Lenses, Spread, Drift, Focus and Wet using the existing
+  MIDI learn flow. Reopen the project and confirm settings and mappings.
+
+[Prism](PRISM.md) records the headless checks and server CPU measurements. Those
+measurements do not certify this Windows interface or its hardware latency.
+
+- Hold a sample keyboard note and an FM latch, open Mosaic without pressing Play,
+  then play/stop the arrangement: the existing voices should continue. Release
+  the held key over Mosaic and confirm it stops normally (unless latched or
+  sustained). Switching views must not free a playing FM preview.

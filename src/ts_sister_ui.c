@@ -1,5 +1,6 @@
 #include "tapesister/sister_ui.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -242,6 +243,36 @@ void ts_sister_ui_model_update(TsSisterUiModel *model,
     if (parameters != NULL) model->parameters = *parameters;
 }
 
+void ts_sister_ui_prism_point(TsPrismLensView ray, int *x, int *y)
+{
+    *x = 308 + (int)lrintf(100 * ray.pan);
+    *y = 167 - (int)lrintf(copysignf(70 * log1pf(fabsf(ray.cents) / 12) /
+                                      log1pf(3200.f / 12), ray.cents));
+}
+
+float ts_sister_ui_prism_pitch_at_y(float y)
+{
+    float distance = fmaxf(-70, fminf(70, 167 - y));
+    return copysignf(12 * expm1f(fabsf(distance) * log1pf(3200.f / 12) / 70), distance);
+}
+
+int ts_sister_ui_prism_hit(const TsSisterUiModel *model, int x, int y)
+{
+    if (!model || model->fx_page != 3 || model->preset_manage_open ||
+        model->midi_learn_active) return -1;
+    TsPrismView v = model->routing.prism.valid ? model->routing.prism :
+        ts_prism_control_view(&model->parameters.prism);
+    int best = -1, distance = 65;
+    /* Muted/solo-excluded handles remain available, including the body anchor. */
+    for (int i = 0; i < model->parameters.prism.lenses; ++i) {
+        int px, py; ts_sister_ui_prism_point(v.lens[i], &px, &py);
+        int dx = x - px, dy = y - py;
+        int d = dx * dx + dy * dy;
+        if (d < distance) { distance = d; best = i; }
+    }
+    return best;
+}
+
 TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                                           int x, int y)
 {
@@ -352,6 +383,35 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
     }
     if (contains(x, y, 400, 370, 28, 22)) {
         hit.action = TS_SISTER_UI_ACTION_PRESET_NEXT;
+        return hit;
+    }
+    if (model != NULL && model->fx_page == 3) {
+        if (contains(x, y, 16, 48, 96, 22)) hit.action = TS_SISTER_UI_ACTION_PRISM_TOGGLE;
+        else if (contains(x, y, 122, 48, 116, 22)) hit.action = TS_SISTER_UI_ACTION_PRISM_MODE;
+        else if (contains(x, y, 16, 332, 144, 18)) {
+            hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+            hit.index = TS_SISTER_UI_PARAM_PRISM_DRY;
+            hit.normalized = (float)(x - 16) / 143;
+        }
+        else if (contains(x, y, TS_SISTER_UI_FX_REC_X, TS_SISTER_UI_FX_REC_Y,
+                          TS_SISTER_UI_FX_REC_W, TS_SISTER_UI_FX_REC_H))
+            hit.action = TS_SISTER_UI_ACTION_RECORD_FILE;
+        else {
+            for (int i = 0; i < 8; ++i) {
+                int px = 16 + (i % 4) * 154, py = 280 + (i / 4) * 28;
+                if (contains(x, y, px, py, 144, 18)) {
+                    hit.action = TS_SISTER_UI_ACTION_PARAMETER;
+                    hit.index = TS_SISTER_UI_PARAM_PRISM_LENSES + i;
+                    hit.normalized = (float)(x - px) / 143;
+                    return hit;
+                }
+            }
+            if (contains(x, y, 10, 370, 58, 22)) hit.action = TS_SISTER_UI_ACTION_TAP;
+            else if (contains(x, y, 74, 370, 44, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE_FORMAT;
+            else if (contains(x, y, 124, 370, 100, 22)) hit.action = TS_SISTER_UI_ACTION_DESTINATION;
+            else if (contains(x, y, 450, 370, 82, 22)) hit.action = TS_SISTER_UI_ACTION_CAPTURE;
+            else if (contains(x, y, 538, 370, 92, 22)) hit.action = TS_SISTER_UI_ACTION_OVERDUB;
+        }
         return hit;
     }
     if (model != NULL && model->fx_page == 2) {
@@ -661,7 +721,9 @@ int ts_sister_ui_midi_target(TsSisterUiHit hit, char *target,
                               hit.index);
             return result > 0 && (size_t)result < target_size;
         }
-    } else if (hit.action == TS_SISTER_UI_ACTION_POWER) name = "sister.power";
+    } else if (hit.action == TS_SISTER_UI_ACTION_PRISM_TOGGLE) name = "sister.prism.toggle";
+    else if (hit.action == TS_SISTER_UI_ACTION_PRISM_MODE) name = "sister.prism.mode";
+    else if (hit.action == TS_SISTER_UI_ACTION_POWER) name = "sister.power";
     else if (hit.action == TS_SISTER_UI_ACTION_ROLL) name = "sister.roll";
     else if (hit.action == TS_SISTER_UI_ACTION_HOLD) name = "sister.hold";
     else if (hit.action == TS_SISTER_UI_ACTION_MONITOR) name = "sister.monitor";

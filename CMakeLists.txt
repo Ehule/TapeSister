@@ -14,7 +14,7 @@ FetchContent_Declare(
   SOURCE_SUBDIR _tapesister_header_only)
 FetchContent_MakeAvailable(miniaudio)
 
-add_library(tapesister_core src/ts_sample.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
+add_library(tapesister_core src/ts_sample.c src/ts_prism.c src/ts_fm.c src/ts_audition.c src/ts_note_bank.c
              src/ts_mosaic.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c
              src/ts_realtime_diagnostics.c
@@ -444,3 +444,9 @@ if(TAPESISTER_BUILD_SDL)
   endif()
   add_test(NAME tapesister_mosaic_controller_tests COMMAND tapesister_mosaic_controller_tests)
 endif()
+
+add_executable(test_prism tests/test_prism.c)
+target_link_libraries(test_prism PRIVATE tapesister_core)
+add_test(NAME test_prism COMMAND test_prism)
+add_executable(prism_probe EXCLUDE_FROM_ALL tests/prism_probe.c)
+target_link_libraries(prism_probe PRIVATE tapesister_core)

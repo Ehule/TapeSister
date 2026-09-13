@@ -1,3 +1,4 @@
+#include "tapesister/prism.h"
 #include "tapesister/sample.h"
 
 #include <math.h>
@@ -201,8 +202,8 @@ int ts_fm_control_available(const TsFmPatch *patch, TsFmPage page, int control)
    independently editable. Reapplying never moves the center pitch. */
 void ts_fm_patch_unison(TsFmPatch *patch)
 {
-    static const float cents[TS_FM_UNISON_VOICE_COUNT] =
-        {0, -7, 7, -12, 12, -19, 19, -26, 26, -1200, -1207, -1193};
+    const float *cents = ts_prism_unison_cents;
+    _Static_assert(TS_FM_UNISON_VOICE_COUNT == TS_PRISM_LENSES, "Shared Unison voicing");
     float center;
     if (!patch) return;
     ts_fm_patch_sanitize(patch);

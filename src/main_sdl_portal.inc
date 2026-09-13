@@ -1376,7 +1376,7 @@ static int portal_event(SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID de
         if(ts_ui_master_limiter_contains(x,y))set_output_limiter_enabled(device,audio,ui,sister,!audio->sister.limiter.enabled);
         else if(ts_ui_master_output_contains(x,y)) {ui->master_output_dragging=1;set_master_output_gain(device,audio,ui,sister,ts_ui_master_output_normalized_from_x(x));}
         else if(x>=165 && x<219)portal_close(device,audio,ui,c);
-        else if(x<155 || (x>=224 && x<290)) {if(sister_window_ensure(sister,&ui->config))sister_window_show(sister);}
+        else if(x<155 || (x>=224 && x<290)) {if(sister_window_ensure(sister,&ui->config))sister_window_show(sister,&ui->palette);}
         else if(x>=295 && x<460) {if(x>=366)c->selection_scope=!c->selection_scope;(void)portal_source(device,audio,ui,instrument,c);}
         return 1;
     }

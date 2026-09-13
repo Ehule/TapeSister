@@ -95,7 +95,7 @@ The top row remains available across the main workspaces.
 - **CONFIG** selects audio, input, MIDI, paths, palette, and performance defaults.
 - **FT2 LINK** opens the current folder-based TapeSister/TapeHead exchange.
 - **MOSAIC** or `grave` opens the arrangement; the shortcut returns to the
-  previous main or FM workspace. `Ctrl+M` is an alternative. See
+  main canvas when Mosaic is already open. `Ctrl+M` is an alternative. See
   [Mosaic workspace navigation](#mosaic-workspace-navigation).
 - **CDP** or `Ctrl+Shift+P` opens the CDP Portal, also reachable from Mosaic, FM,
   and Sister Machine. Portal retains its own `Tab` source/result audition shortcut.
@@ -336,9 +336,12 @@ Press **Shift+grave** (Shift plus the backtick key) or open **FM LOGIC** from th
 The workspace has six-operator FM routings plus a twelve-voice Unison toggle. Its preview is
 temporary until **APPLY** is pressed.
 
-`grave` visits Mosaic and returns to the same FM patch on the next press.
-From Mosaic, Shift+grave opens FM and pressing it again returns to Mosaic. Visiting
-Sister with `Tab` also preserves the current workspace and event being edited.
+`grave` selects Mosaic; pressing it in Mosaic returns to the main canvas.
+`Shift+grave` selects FM; pressing it in FM returns to the main canvas (or active
+event editor). Switching between FM and Mosaic keeps the parked FM patch available
+for the next explicit `Shift+grave`. Visiting Sister with `Tab` preserves the
+current workspace and edited event. Sister fills the screen using a borderless
+window, avoiding SDL's forced minimization between two fullscreen windows.
 
 ### Pages
 
@@ -706,13 +709,19 @@ describes the full background-render behavior.
 | Where you are | Key | Destination |
 | --- | --- | --- |
 | Main canvas | grave or Ctrl+M | Mosaic; press again to return |
-| FM Logic | grave | Mosaic; press again to return to the same FM patch |
-| Mosaic | Shift+grave | FM Logic; press again to return to Mosaic |
+| FM Logic | grave | Mosaic; press grave again for the main canvas |
+| Mosaic | Shift+grave | FM Logic; press Shift+grave again for the main canvas |
 | Main, FM, Mosaic, or event editor | Tab | Visit Sister and return without changing the edited event |
 | Sister Machine | grave / Shift+grave | Bring Mosaic / FM forward, even if already open behind Sister |
 | Sister Machine | Escape | Close its active subpanel first, otherwise restore the main application window |
 | Event editor | Escape or MOSAIC | Return to Mosaic, resolving changed audio if needed |
 | Main, FM, Mosaic, or Sister | Ctrl+Shift+P | Reach the CDP Portal |
+
+Opening Mosaic or parking FM with the workspace shortcuts preserves playing
+keyboard notes, FM latches, and tile launches. Mosaic Play adds the arrangement to
+those sources; its Stop affects only the arrangement. Physical key releases still
+reach notes started in the previous view. Opening or closing an event's sample
+editor can still stop its audition when the underlying sample document is replaced.
 
 Active dialogs retain focus until resolved. Portal uses Tab for source/result A-B
 audition. Workspace navigation leaves the arrangement playing; the MOSAIC toolbar
@@ -900,6 +909,35 @@ and automatically become RF64 in the same file when necessary. A dedicated
 H1/H2/H3 file taps require Sister to be powered. OUT and raw TAPEHEAD remain available
 with Sister off. OUT records the final sound reaching the output path, including
 ordinary post effects, the global limiter, and the final OUT fader.
+
+## Prism live refraction
+
+Open Sister Machine with **Tab**, then cycle its page button through FX and Fallout
+to **PRISM**. Prism splits incoming audio into 2–12 related lenses and recombines
+it. Choose **SUPERSAW** for detuned layers plus three optional octave-body voices,
+or **ENSEMBLE** for closer pitches and more time displacement. The rays follow
+smoothed pitch, pan, level and Wet; Focus draws fine pitch/time differences
+back together. Drag hollow middle points up/down for individual pitch and
+left/right for pan. Wheel over any lens for −24 to +12 dB trim (Shift-wheel for
+fine steps); brightness follows its level. Shift-click mutes and Ctrl-click solos;
+muted handles remain clickable. Right-click resets one lens; right-click the mode
+button or preset name resets all lens edits, trims, mutes and solos. Escape undoes
+an active drag. Lens 01 remains the direct body anchor, with trim/mute/solo available. Focus gathers hand edits too; lower it
+from 100 to spread pitches again. Edits survive lens-count changes and save/recall.
+Spread and Drift extend to 200%, Body to 300%. Dry Level trims the original
+branch from 0–200% before the Wet crossfade. Energy compensation preserves level
+as lenses are added; manual trims remain effective even in solo. Output provides
+−12 to +12 dB through the existing final limiter.
+**REC FILE** records the final processed stereo output.
+
+With Sister POWER off, Prism processes ordinary program audio and enabled external
+monitoring before the shared FX. With POWER on, select Sister sources and enable
+Monitor; Prism precedes the tape input and PRE slots. Sister DRY 100 / WET 0 gives
+a direct Prism performance without delayed heads. Prism WET controls the lens blend.
+
+Controls participate in the existing MIDI learn and saved Sister project/preset
+state. Old projects start with Prism off. See [Prism](PRISM.md) for the signal path,
+optical meanings, gain and latency behavior, measured CPU costs and test results.
 
 ## Sister Machine
 

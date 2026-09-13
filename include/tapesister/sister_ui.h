@@ -56,7 +56,9 @@ typedef enum {
     TS_SISTER_UI_ACTION_PRESET_DELETE,
     TS_SISTER_UI_ACTION_PRESET_CONFIRM,
     TS_SISTER_UI_ACTION_PRESET_CANCEL,
-    TS_SISTER_UI_ACTION_RECORD_FILE
+    TS_SISTER_UI_ACTION_RECORD_FILE,
+    TS_SISTER_UI_ACTION_PRISM_TOGGLE,
+    TS_SISTER_UI_ACTION_PRISM_MODE
 } TsSisterUiAction;
 
 typedef enum {
@@ -159,6 +161,15 @@ typedef enum {
     TS_SISTER_UI_PARAM_SLOT4_C,
     TS_SISTER_UI_PARAM_SLOT4_MIX,
     TS_SISTER_UI_PARAM_TAPEHEAD_GAIN,
+    TS_SISTER_UI_PARAM_PRISM_LENSES,
+    TS_SISTER_UI_PARAM_PRISM_SPREAD,
+    TS_SISTER_UI_PARAM_PRISM_DRIFT,
+    TS_SISTER_UI_PARAM_PRISM_FOCUS,
+    TS_SISTER_UI_PARAM_PRISM_STEREO,
+    TS_SISTER_UI_PARAM_PRISM_BODY,
+    TS_SISTER_UI_PARAM_PRISM_MIX,
+    TS_SISTER_UI_PARAM_PRISM_OUTPUT,
+    TS_SISTER_UI_PARAM_PRISM_DRY,
     TS_SISTER_UI_PARAM_COUNT,
     /* These clocks are intentionally not preset-lock bits: the established
        63 lock indices remain stable in existing preset files. */
@@ -242,6 +253,7 @@ typedef struct {
     int preset_editing;
     int preset_confirmation;
     int fx_page;
+    int prism_selected; /* One-based lens identity; zero means no selection. */
     int fallout_lfo_open;
     int midi_learn_active;
     int midi_activity;
@@ -250,6 +262,11 @@ typedef struct {
     char midi_learn_pending[TS_MIDI_TARGET_ID_MAX];
     const TsMidiMap *midi_map;
 } TsSisterUiModel;
+
+/* Shared optical coordinates for rendering and direct manipulation. */
+void ts_sister_ui_prism_point(TsPrismLensView ray, int *x, int *y);
+float ts_sister_ui_prism_pitch_at_y(float y);
+int ts_sister_ui_prism_hit(const TsSisterUiModel *model, int x, int y);
 
 int ts_sister_ui_parameter_lockable(int parameter);
 int ts_sister_ui_parameter_locked(const TsSisterUiModel *model,

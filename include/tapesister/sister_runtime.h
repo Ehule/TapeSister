@@ -127,9 +127,13 @@ typedef struct {
     float fallout_preset_transition_progress;
     int fallout_preset_transition_active;
     uint64_t revision;
+    TsPrismView prism;
 } TsSisterRoutingSnapshot;
 
 typedef struct {
+    atomic_int prism_valid;
+    atomic_uint_least32_t prism_wet, prism_dry;
+    atomic_uint_least32_t prism_lens[TS_PRISM_LENSES][4];
     atomic_uint_least64_t revision;
     atomic_int enabled;
     atomic_int rolling;
@@ -183,6 +187,7 @@ typedef struct {
 } TsSisterRoutingSnapshotAtomic;
 
 typedef struct {
+    TsPrism prism;
     TsSisterMachine machine;
     TsSisterFalloutEngine fallout;
     TsSisterPostFxEngine post_fx;
