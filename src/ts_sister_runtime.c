@@ -159,7 +159,7 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     atomic_init(&snapshot->prism_wet, 0);
     atomic_init(&snapshot->prism_dry, float_bits(1));
     for (int i = 0; i < TS_PRISM_LENSES; ++i)
-        for (int j = 0; j < 4; ++j) atomic_init(&snapshot->prism_lens[i][j], 0);
+        for (int j = 0; j < 6; ++j) atomic_init(&snapshot->prism_lens[i][j], 0);
     atomic_init(&snapshot->revision, 0u);
     atomic_init(&snapshot->enabled, 0);
     atomic_init(&snapshot->rolling, 1);
@@ -246,9 +246,10 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     atomic_store_explicit(&snapshot->prism_wet, float_bits(prism.wet), memory_order_relaxed);
     atomic_store_explicit(&snapshot->prism_dry, float_bits(prism.dry), memory_order_relaxed);
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
-        float values[4] = {prism.lens[i].cents, prism.lens[i].delay_ms,
-                           prism.lens[i].pan, prism.lens[i].level};
-        for (int j = 0; j < 4; ++j)
+        float values[6] = {prism.lens[i].cents, prism.lens[i].delay_ms,
+                           prism.lens[i].pan, prism.lens[i].level,
+                           prism.lens[i].refraction_cents, prism.lens[i].refraction_pan};
+        for (int j = 0; j < 6; ++j)
             atomic_store_explicit(&snapshot->prism_lens[i][j], float_bits(values[j]), memory_order_relaxed);
     }
     if (runtime->active_page < TS_SISTER_RUNTIME_PAGE_LIMIT)
@@ -1889,10 +1890,10 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
         snapshot->prism.wet = bits_float(atomic_load_explicit(&source->prism_wet, memory_order_relaxed));
         snapshot->prism.dry = bits_float(atomic_load_explicit(&source->prism_dry, memory_order_relaxed));
         for (int i = 0; i < TS_PRISM_LENSES; ++i) {
-            float values[4];
-            for (int j = 0; j < 4; ++j)
+            float values[6];
+            for (int j = 0; j < 6; ++j)
                 values[j] = bits_float(atomic_load_explicit(&source->prism_lens[i][j], memory_order_relaxed));
-            snapshot->prism.lens[i] = (TsPrismLensView){values[0], values[1], values[2], values[3]};
+            snapshot->prism.lens[i] = (TsPrismLensView){values[0], values[1], values[2], values[3], values[4], values[5]};
         }
         snapshot->enabled = atomic_load_explicit(&source->enabled,
                                                  memory_order_relaxed);

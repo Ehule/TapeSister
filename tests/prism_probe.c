@@ -19,7 +19,7 @@ static int compare(const void *a, const void *b)
     double x=*(const double *)a, y=*(const double *)b;
     return (x > y) - (x < y);
 }
-static void benchmark(void)
+static void benchmark(int colored)
 {
     enum { BLOCKS=4000, FRAMES=256 };
     static double times[BLOCKS];
@@ -32,6 +32,7 @@ static void benchmark(void)
         TsSisterParameters c=r->parameters;
         c.prism.enabled=counts[k]!=0; c.prism.lenses=counts[k]?counts[k]:12;
         c.prism.mix=1; c.prism.drift=1; c.monitor_dry=1; c.monitor_wet=0;
+        if(colored) {c.prism.input_shape=TS_PRISM_MENISCUS_POSITIVE;c.prism.output_shape=TS_PRISM_MENISCUS_NEGATIVE;c.prism.color=1;}
         ts_sister_runtime_set_parameters(r,&c);
         ts_sister_runtime_set_sources(r,TS_SISTER_SOURCE_EXT);
         ts_sister_runtime_set_monitor(r,1);
@@ -65,7 +66,7 @@ static void benchmark(void)
 
 int main(int argc,char **argv)
 {
-    if (argc>1 && !strcmp(argv[1],"--bench")) {benchmark();return 0;}
+    if (argc>1 && !strcmp(argv[1],"--bench")) {benchmark(argc>2);return 0;}
     TsConfig config; TsPalette palette; TsSisterUiModel model;
     static TsFramebuffer fb;
     ts_config_init(&config); ts_palette_default(&palette);
@@ -93,6 +94,9 @@ int main(int argc,char **argv)
         model.prism_selected=9;
     }
     model.routing.limiter_enabled=1; model.routing.master_output_gain=1;
+    if(argc>7)model.parameters.prism.input_shape=atoi(argv[7]);
+    if(argc>8)model.parameters.prism.output_shape=atoi(argv[8]);
+    if(argc>9)model.parameters.prism.color=(float)atof(argv[9]);
     model.routing.limiter_ceiling_db=-1;
     TsPrism prism={0}; assert(ts_prism_prepare(&prism,48000));
     ts_prism_set_controls(&prism,&model.parameters.prism);
@@ -102,6 +106,12 @@ int main(int argc,char **argv)
     }
     model.routing.prism=ts_prism_view(&prism);
     snprintf(model.status,sizeof(model.status),"PRISM: ONE SOUND, RELATED REFRACTIONS");
+    if(argc>1 && !strcmp(argv[1],"--render-bench")) {
+        double start=now();
+        for(int n=0;n<1000;++n)ts_sister_ui_render(&fb,&model,&palette);
+        printf("native_prism_mean_ms=%.3f\n",(now()-start));
+        ts_prism_free(&prism);return 0;
+    }
     ts_sister_ui_render(&fb,&model,&palette);
     assert(ts_ui_write_ppm(&fb,argc>1?argv[1]:"prism.ppm"));
     ts_prism_free(&prism);

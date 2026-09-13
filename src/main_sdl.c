@@ -8501,6 +8501,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_BODY: parameters->prism.body = amount * 3; break;
     case TS_SISTER_UI_PARAM_PRISM_MIX: parameters->prism.mix = amount; break;
     case TS_SISTER_UI_PARAM_PRISM_DRY: parameters->prism.dry_level = amount * 2; break;
+    case TS_SISTER_UI_PARAM_PRISM_COLOR: parameters->prism.color = amount; break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: parameters->prism.output_db = -12 + amount * 24; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: parameters->head1_level = amount; break;
     case TS_SISTER_UI_PARAM_H1_TIME: parameters->head1_time_ms = amount * 4000.0f; break;
@@ -8634,6 +8635,7 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     case TS_SISTER_UI_PARAM_PRISM_BODY: value = parameters->prism.body / 3; break;
     case TS_SISTER_UI_PARAM_PRISM_MIX: value = parameters->prism.mix; break;
     case TS_SISTER_UI_PARAM_PRISM_DRY: value = parameters->prism.dry_level / 2; break;
+    case TS_SISTER_UI_PARAM_PRISM_COLOR: value = parameters->prism.color; break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: value = (parameters->prism.output_db + 12) / 24.f; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: value = parameters->head1_level; break;
     case TS_SISTER_UI_PARAM_H1_TIME: value = parameters->head1_time_ms / 4000.0f; break;
@@ -8879,6 +8881,7 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_PRISM_BODY: return "PRISM BODY";
     case TS_SISTER_UI_PARAM_PRISM_MIX: return "PRISM MIX";
     case TS_SISTER_UI_PARAM_PRISM_DRY: return "PRISM DRY LEVEL";
+    case TS_SISTER_UI_PARAM_PRISM_COLOR: return "PRISM COLOR";
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: return "PRISM OUTPUT";
     case TS_SISTER_UI_PARAM_H1_LEVEL: return "H1 LEVEL";
     case TS_SISTER_UI_PARAM_H1_TIME: return "H1 TIME";
@@ -9033,7 +9036,8 @@ static void sister_preset_model_sync(SisterWindow *sister,
 
 /* Optical gestures update only their own lens under the existing device lock.
    Keep the original values so Escape can undo the entire drag. */
-enum { PRISM_POINT, PRISM_RESET, PRISM_MUTE, PRISM_SOLO, PRISM_TRIM, PRISM_RESET_ALL };
+enum { PRISM_POINT, PRISM_RESET, PRISM_MUTE, PRISM_SOLO, PRISM_TRIM, PRISM_RESET_ALL,
+       PRISM_INPUT_SHAPE, PRISM_OUTPUT_SHAPE };
 static void sister_prism_edit(SDL_AudioDeviceID device, AudioState *audio,
                               SisterWindow *sister, int lens, int action, float x, float y)
 {
@@ -9049,6 +9053,10 @@ static void sister_prism_edit(SDL_AudioDeviceID device, AudioState *audio,
     case PRISM_SOLO: p.prism.solo_mask ^= 1 << lens; break;
     case PRISM_TRIM: p.prism.trim_db[lens] += x; break;
     case PRISM_RESET_ALL: ts_prism_reset_lenses(&p.prism); break;
+    case PRISM_INPUT_SHAPE:
+        p.prism.input_shape=(p.prism.input_shape+(int)x+TS_PRISM_SHAPE_COUNT)%TS_PRISM_SHAPE_COUNT;break;
+    case PRISM_OUTPUT_SHAPE:
+        p.prism.output_shape=(p.prism.output_shape+(int)x+TS_PRISM_SHAPE_COUNT)%TS_PRISM_SHAPE_COUNT;break;
     }
     ts_sister_runtime_set_parameters(&audio->sister, &p);
     ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
@@ -9124,6 +9132,18 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
     if (event->type == SDL_MOUSEBUTTONDOWN &&
         (event->button.button == SDL_BUTTON_LEFT || event->button.button == SDL_BUTTON_RIGHT)) {
         if (!sister_event_mouse(sister->window, event->button.x, event->button.y, &x, &y)) return 0;
+        int optical_stage=-1;
+        if((y>=108 && y<=224 && x>=128 && x<=168) || (y>=228 && y<=238 && x>=102 && x<194))optical_stage=0;
+        if((y>=108 && y<=224 && x>=442 && x<=482) || (y>=228 && y<=238 && x>=416 && x<508))optical_stage=1;
+        if(optical_stage>=0) {
+            sister_prism_end_drag(sister);
+            int direction=event->button.button==SDL_BUTTON_RIGHT ? -1 : 1;
+            sister_prism_edit(device,audio,sister,0,optical_stage ? PRISM_OUTPUT_SHAPE : PRISM_INPUT_SHAPE,direction,0);
+            int shape=optical_stage ? sister->model.parameters.prism.output_shape : sister->model.parameters.prism.input_shape;
+            snprintf(sister->model.status,sizeof(sister->model.status),"%s %s / %s - COLOR SETS TIMBRE DEPTH",
+                optical_stage ? "OUTPUT" : "INPUT",ts_prism_shape_name(shape),ts_prism_shape_color_name(shape));
+            return 1;
+        }
         if (event->button.button==SDL_BUTTON_RIGHT &&
             ((x>=122 && x<238 && y>=48 && y<70) || (x>=264 && x<394 && y>=370 && y<392))) {
             sister_prism_end_drag(sister);
@@ -9154,7 +9174,7 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
             return 1;
         }
         if (lens==0) {
-            snprintf(sister->model.status,sizeof(sister->model.status),"BODY ANCHOR: WHEEL TRIM / SHIFT MUTE / CTRL SOLO");
+            snprintf(sister->model.status,sizeof(sister->model.status),"01 WET BODY ANCHOR - DRY LEVEL CONTROLS THE SEPARATE DRY PATH");
             return 1;
         }
         TsPrismView view = sister->model.routing.prism.valid ? sister->model.routing.prism :

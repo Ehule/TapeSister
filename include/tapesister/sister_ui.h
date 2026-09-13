@@ -170,6 +170,7 @@ typedef enum {
     TS_SISTER_UI_PARAM_PRISM_MIX,
     TS_SISTER_UI_PARAM_PRISM_OUTPUT,
     TS_SISTER_UI_PARAM_PRISM_DRY,
+    TS_SISTER_UI_PARAM_PRISM_COLOR,
     TS_SISTER_UI_PARAM_COUNT,
     /* These clocks are intentionally not preset-lock bits: the established
        63 lock indices remain stable in existing preset files. */
@@ -265,6 +266,8 @@ typedef struct {
 
 /* Shared optical coordinates for rendering and direct manipulation. */
 void ts_sister_ui_prism_point(TsPrismLensView ray, int *x, int *y);
+void ts_sister_ui_prism_point_f(TsPrismLensView ray, float *x, float *y);
+float ts_sister_ui_prism_y(float cents);
 float ts_sister_ui_prism_pitch_at_y(float y);
 int ts_sister_ui_prism_hit(const TsSisterUiModel *model, int x, int y);
 

@@ -7,6 +7,11 @@
 
 enum { TS_PRISM_LENSES = 12, TS_PRISM_HOP = 64 };
 typedef enum { TS_PRISM_SUPERSAW, TS_PRISM_ENSEMBLE, TS_PRISM_MODE_COUNT } TsPrismMode;
+typedef enum {
+    TS_PRISM_BICONVEX, TS_PRISM_PLANO_CONVEX, TS_PRISM_MENISCUS_POSITIVE,
+    TS_PRISM_BICONCAVE, TS_PRISM_PLANO_CONCAVE, TS_PRISM_MENISCUS_NEGATIVE,
+    TS_PRISM_SHAPE_COUNT
+} TsPrismShape;
 typedef struct {
     int enabled, mode, lenses;
     float spread, drift, focus, stereo, body, mix, output_db;
@@ -14,12 +19,21 @@ typedef struct {
     float pitch_offset[TS_PRISM_LENSES], pan_offset[TS_PRISM_LENSES];
     float trim_db[TS_PRISM_LENSES], dry_level;
     int mute_mask, solo_mask;
+    int input_shape, output_shape;
+    float color;
 } TsPrismControls;
 
 /* Shared voicing, also used by the original FM Unison template. */
 extern const float ts_prism_unison_cents[TS_PRISM_LENSES];
 
-typedef struct { float cents, delay_ms, pan, level; } TsPrismLensView;
+typedef struct {
+    TsStereoFrame low, allpass_memory;
+    float low_coefficient, allpass_coefficient;
+} TsPrismGlass;
+typedef struct {
+    float cents, delay_ms, pan, level;
+    float refraction_cents, refraction_pan; /* Before the output shape mapping. */
+} TsPrismLensView;
 typedef struct {
     TsPrismLensView lens[TS_PRISM_LENSES];
     float wet, dry;
@@ -28,9 +42,12 @@ typedef struct {
 typedef struct {
     double phase, previous_phase;
     double ratio, ratio_target;
+    double refraction_ratio, refraction_ratio_target;
+    float refraction_pan, refraction_pan_target;
     float delay, delay_target;
     float level, level_target, pan, pan_target;
     float weight, weight_target; /* Nominal energy reference, before manual mix. */
+    TsPrismGlass glass[2];
 } TsPrismLens;
 typedef struct {
     TsStereoFrame *history;
@@ -41,6 +58,7 @@ typedef struct {
     float window_fade, window_fade_step;
     float smoothing, wet, gain, gain_target;
     double dry;
+    float glass_mix[2][TS_PRISM_SHAPE_COUNT];
     float period_difference[260];
     float hann[1025];
     TsPrismControls controls;
@@ -50,6 +68,8 @@ typedef struct {
 void ts_prism_controls_default(TsPrismControls *controls);
 void ts_prism_controls_sanitize(TsPrismControls *controls);
 const char *ts_prism_mode_name(int mode);
+const char *ts_prism_shape_name(int shape);
+const char *ts_prism_shape_color_name(int shape);
 void ts_prism_reset_lenses(TsPrismControls *controls);
 /* Setup/free occur with the audio device paused, never in process(). */
 int ts_prism_prepare(TsPrism *prism, uint32_t sample_rate);

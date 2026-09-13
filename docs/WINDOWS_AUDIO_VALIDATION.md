@@ -73,6 +73,15 @@ cannot be repaired inside TapeSister.
 - [ ] Pull one hollow point wide and keep another narrow. Test pitch/pan, right-click
   reset, Escape during drag, focus contraction, count changes and saved recall.
 - [ ] Explore Spread/Drift through 200%, Body through 300%, and Dry Level 0–200%.
+- [ ] At Wet 100, confirm Dry Level does not change 01 BODY; wheel-trim or mute
+  01 instead. At Wet 50, Dry Level should change the separate labeled DRY lane.
+- [ ] Cycle each big glass lens forward/backward through all six silhouettes.
+  Try all 36 pairs with Color zero and then raised; check pitch inversion,
+  narrower fans, stereo remapping, warm/hollow filtering, phase color and drive.
+  Switch shapes during sustained notes; listen for clicks and assess high-frequency
+  saturation texture. Save and reopen a mixed-shape patch with hand-edited points.
+- [ ] Check smooth curves and moving handles at native and enlarged window sizes;
+  output inversion should bend rays across the center inside the output glass.
 - [ ] Shift-click mute, Ctrl-click solo and wheel-trim each lens, including 01.
   Confirm muted handles remain clickable, trim changes brightness and audible level,
   and right-clicking either the mode button or preset name restores stock lenses.
@@ -92,7 +101,7 @@ cannot be repaired inside TapeSister.
 - [ ] Record using Prism's REC FILE button while playing and switching pages.
   Confirm recorded sound and final output agree.
 - [ ] Map On/Off, Mode, Lenses, Spread, Drift, Focus and Wet using the existing
-  MIDI learn flow. Reopen the project and confirm settings and mappings.
+  MIDI learn flow, including Color. Reopen the project and confirm settings and mappings.
 
 [Prism](PRISM.md) records the headless checks and server CPU measurements. Those
 measurements do not certify this Windows interface or its hardware latency.

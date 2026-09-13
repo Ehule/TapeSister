@@ -938,13 +938,25 @@ as lenses are added; manual trims remain effective even in solo. Output provides
 −12 to +12 dB through the existing final limiter.
 **REC FILE** records the final processed stereo output.
 
+The **01 BODY** label identifies the unshifted voice inside the wet sum. Its
+wheel trim and Body affect its gain; **Dry Level** instead controls the separately
+labeled original lane. Neither path receives glass coloration. Click either large
+lens or its name to cycle six shapes; right-click cycles backward. Convex glass
+preserves or narrows intervals, concave glass inverts them, and meniscus glass
+weights upper/lower intervals differently. The output shape also maps stereo pan.
+The **Color** slider blends per-voice warmth, phase coloration, saturation or
+high-pass filtering according to the two selected shapes. Color zero leaves just
+the pitch/pan mappings. Both BI-CONVEX shapes preserve the previous clear sound.
+The smooth curves display the intermediate and final pitches as rays pass through
+the output glass, while retaining the native pixel text and controls.
+
 With Sister POWER off, Prism processes ordinary program audio and enabled external
 monitoring before the shared FX. With POWER on, select Sister sources and enable
 Monitor; Prism precedes the tape input and PRE slots. Sister DRY 100 / WET 0 gives
 a direct Prism performance without delayed heads. Prism WET controls the lens blend.
 
-Controls participate in the existing MIDI learn and saved Sister project/preset
-state. Old projects start with Prism off. See [Prism](PRISM.md) for the signal path,
+Sliders, On/Off and Mode participate in the existing MIDI learn; shape selectors
+use the mouse. All settings persist in Sister projects/presets. Old projects start with Prism off. See [Prism](PRISM.md) for the signal path,
 optical meanings, gain and latency behavior, measured CPU costs and test results.
 
 ## Sister Machine

@@ -84,6 +84,27 @@ static void test_prism_points(void)
         for(int i=0;i<12;++i) assert(!a->sister.parameters.prism.pitch_offset[i] &&
             !a->sister.parameters.prism.pan_offset[i] && !a->sister.parameters.prism.trim_db[i]);
     }
+    /* Each large optical element cycles independently; right-click reverses. */
+    for(int stage=0;stage<2;++stage) {
+        for(int shape=1;shape<=TS_PRISM_SHAPE_COUNT;++shape) {
+            e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;
+            e.button.x=(stage?462:148)*2;e.button.y=180*2;
+            assert(sister_prism_event(0,a,&ui,panel,&e));
+            assert((stage?a->sister.parameters.prism.output_shape:a->sister.parameters.prism.input_shape)==shape%TS_PRISM_SHAPE_COUNT);
+            assert(!panel->prism_drag_lens);
+        }
+        e.button.button=SDL_BUTTON_RIGHT;
+        assert(sister_prism_event(0,a,&ui,panel,&e));
+        assert((stage?a->sister.parameters.prism.output_shape:a->sister.parameters.prism.input_shape)==TS_PRISM_MENISCUS_NEGATIVE);
+    }
+    /* Middle handles track the pre-output map, while the audible output can invert it. */
+    panel->model.parameters.prism.input_shape=0;
+    panel->model.parameters.prism.output_shape=TS_PRISM_BICONCAVE;
+    ts_sister_runtime_set_parameters(&a->sister,&panel->model.parameters);
+    for(int i=0;i<200;++i)audio_callback(a,(Uint8 *)w,sizeof(w));
+    assert(ts_sister_runtime_get_snapshot(&a->sister,&snapshot));
+    assert(snapshot.prism.lens[1].refraction_cents<0 && snapshot.prism.lens[1].cents>0);
+    assert(snapshot.prism.lens[1].refraction_pan<0 && snapshot.prism.lens[1].pan>0);
     panel->model.fx_page=0;
     assert(ts_sister_ui_prism_hit(&panel->model,308,167)==-1);
     SDL_DestroyWindow(panel->window); free(panel); routing_free(a);
@@ -131,6 +152,12 @@ static void test_prism_controller(void)
         assert(midi_sister_hit_from_target(target,.75f,&midi));
         sister_apply_action(0,a,&ui,&instrument,panel,NULL,NULL,midi,48000,2);
         assert(a->sister.parameters.prism.dry_level==1.5f);
+        hit=ts_sister_ui_hit_test_model(&panel->model,240,339);
+        assert(hit.action==TS_SISTER_UI_ACTION_PARAMETER && hit.index==TS_SISTER_UI_PARAM_PRISM_COLOR);
+        assert(ts_sister_ui_midi_target(hit,target,sizeof(target)));
+        assert(midi_sister_hit_from_target(target,.75f,&midi));
+        sister_apply_action(0,a,&ui,&instrument,panel,NULL,NULL,midi,48000,2);
+        assert(a->sister.parameters.prism.color==.75f);
         assert(a->sister.parameters.prism.lenses==10);
         float wheel=sister_parameter_wheel_normalized(&a->sister.parameters,TS_SISTER_UI_PARAM_PRISM_LENSES,1,1);
         sister_set_parameter(&panel->model.parameters,TS_SISTER_UI_PARAM_PRISM_LENSES,wheel);
