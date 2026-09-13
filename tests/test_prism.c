@@ -120,10 +120,11 @@ static void check_state(void)
     char error[160]; int present;
     ts_sister_project_state_init(&state, 48000);
     assert(!state.parameters.prism.enabled);
-    state.parameters.prism = (TsPrismControls){1,1,8,.21f,.77f,.62f,.3f,.8f,.66f,3,{0},{0}};
+    state.parameters.prism = (TsPrismControls){1,1,8,.21f,.77f,.62f,.3f,.8f,.66f,3,{0},{0},{0},1.4f,5,10};
     for (int i=1; i<12; ++i) {
         state.parameters.prism.pitch_offset[i] = (i - 6) * 190.f;
         state.parameters.prism.pan_offset[i] = (i - 6) * .125f;
+        state.parameters.prism.trim_db[i] = i - 6;
     }
     state.parameters.fx.slot[0].type = TS_SISTER_FX_GRAIN;
     state.parameters.fx.slot[0].parameter_a = .876f;
@@ -133,7 +134,7 @@ static void check_state(void)
     /* Previous version's explicit slots must not be migrated as legacy FX. */
     FILE *f = fopen("prism-state.ini","r+b"); assert(f);
     char data[16384]; size_t size = fread(data,1,sizeof(data)-1,f); data[size]=0;
-    char *version=strstr(data,"Version=14"); assert(version); version[9]='2';
+    char *version=strstr(data,"Version=15"); assert(version); version[9]='2';
     rewind(f); assert(fwrite(data,1,size,f)==size); fclose(f);
     assert(ts_sister_project_state_load_file(&loaded,"prism-state.ini",48000,&present,error,sizeof(error)));
     assert(loaded.parameters.fx.slot[0].type == TS_SISTER_FX_GRAIN);
@@ -143,6 +144,7 @@ static void check_state(void)
     assert(ts_sister_project_state_load_file(&loaded,"prism-state.ini",48000,&present,error,sizeof(error)));
     assert(!loaded.parameters.prism.enabled && loaded.parameters.prism.lenses == 12);
     for (int i=0; i<12; ++i) assert(!loaded.parameters.prism.pitch_offset[i] && !loaded.parameters.prism.pan_offset[i]);
+    assert(loaded.parameters.prism.dry_level==1 && !loaded.parameters.prism.mute_mask && !loaded.parameters.prism.solo_mask);
     remove("prism-state.ini");
     TsSisterPresetBank bank, restored;
     ts_sister_preset_bank_init(&bank,48000);
@@ -248,13 +250,63 @@ static void check_manual_geometry(void)
     ts_prism_free(&p);
 }
 
+static void check_lens_mixer(void)
+{
+    TsPrism p={0}; TsPrismControls c=settings();
+    assert(ts_prism_prepare(&p,48000));
+    c.solo_mask=1; c.stereo=0; /* Isolate the direct anchor for exact gain ratios. */
+    float previous=0;
+    for (int test=0; test<4; ++test) {
+        c.trim_db[0]=test==1 ? -6 : 0;
+        c.mute_mask=test==2 ? 1 : 0;
+        if(test==3) {c.lenses=2;c.solo_mask=1<<11;} /* Inactive solo cannot silence active lenses. */
+        ts_prism_set_controls(&p,&c);
+        TsStereoFrame out={0};
+        for (int n=0;n<48000;++n) out=ts_prism_process(&p,(TsStereoFrame){.1f,-.1f});
+        if(test==0) {previous=out.l; assert(out.l>.02f);}
+        if(test==1) assert(fabsf(out.l/previous-powf(10,-6.f/20))<.0001f);
+        if(test==2) assert(out.l==0 && out.r==0);
+        if(test==3) assert(out.l>.02f);
+    }
+    c=settings();c.dry_level=0;c.mix=0;
+    ts_prism_set_controls(&p,&c);
+    for (int n=0;n<48000;++n) ts_prism_process(&p,(TsStereoFrame){.1f,-.1f});
+    TsStereoFrame out=ts_prism_process(&p,(TsStereoFrame){.2f,-.3f});
+    assert(out.l==0 && out.r==0);
+    c.dry_level=2;ts_prism_set_controls(&p,&c);
+    for (int n=0;n<48000;++n) ts_prism_process(&p,(TsStereoFrame){.1f,-.1f});
+    out=ts_prism_process(&p,(TsStereoFrame){.2f,-.3f});
+    assert(fabsf(out.l-.4f)<.0001f && fabsf(out.r+.6f)<.0001f);
+    assert(fabsf(ts_prism_view(&p).dry-2)<.0001f);
+    c.enabled=0;ts_prism_set_controls(&p,&c);
+    for (int n=0;n<48000;++n) ts_prism_process(&p,(TsStereoFrame){0});
+    out=ts_prism_process(&p,(TsStereoFrame){.2f,-.3f});
+    assert(out.l==.2f && out.r==-.3f);
+    c=settings();c.spread=c.drift=2;c.body=3;c.pitch_offset[8]=1200;
+    c.trim_db[8]=12;c.mute_mask=2;c.solo_mask=4;
+    ts_prism_controls_sanitize(&c);assert(c.spread==2 && c.drift==2 && c.body==3);
+    /* Very low rates and extreme ratios still wrap read phases inside history. */
+    for(int rate=8;rate<=96000;rate=rate==8 ? 44100 : rate==44100 ? 48000 : rate==48000 ? 96000 : 96001) {
+        assert(ts_prism_prepare(&p,rate));ts_prism_set_controls(&p,&c);
+        for(int n=0;n<rate/4+100;++n) {
+            out=ts_prism_process(&p,(TsStereoFrame){.1f,-.1f});
+            assert(isfinite(out.l) && isfinite(out.r));
+            for(int i=0;i<12;++i) assert(p.lens[i].phase>=0 && p.lens[i].phase<1);
+        }
+    }
+    ts_prism_reset_lenses(&c);
+    assert(c.spread==2 && c.drift==2 && c.body==3 && !c.mute_mask && !c.solo_mask);
+    for(int i=0;i<12;++i) assert(!c.pitch_offset[i] && !c.pan_offset[i] && !c.trim_db[i]);
+    ts_prism_free(&p);
+}
+
 int main(void)
 {
     TsPrismControls c = settings(); c.spread=NAN; c.mix=INFINITY; c.mode=999; c.lenses=999;
     ts_prism_controls_sanitize(&c); assert(isfinite(c.spread) && isfinite(c.mix) && c.mode==0 && c.lenses==12);
     check_stream(44100); check_stream(48000); check_stream(96000);
     check_pitch_and_focus(44100); check_pitch_and_focus(48000); check_state();
-    check_gain(); check_manual_geometry();
+    check_gain(); check_manual_geometry(); check_lens_mixer();
     puts("Prism streaming, pitch, stereo, bypass and state checks passed.");
     return 0;
 }

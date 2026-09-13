@@ -169,6 +169,7 @@ typedef enum {
     TS_SISTER_UI_PARAM_PRISM_BODY,
     TS_SISTER_UI_PARAM_PRISM_MIX,
     TS_SISTER_UI_PARAM_PRISM_OUTPUT,
+    TS_SISTER_UI_PARAM_PRISM_DRY,
     TS_SISTER_UI_PARAM_COUNT,
     /* These clocks are intentionally not preset-lock bits: the established
        63 lock indices remain stable in existing preset files. */

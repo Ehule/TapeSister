@@ -44,7 +44,7 @@ static void sister_prism_render(TsFramebuffer *fb, const TsSisterUiModel *model)
     prism_lens_outline(fb, 462, 167, 64, RGB(91,144,161));
     /* The dry path stays straight and belongs to the same input/output. */
     uint32_t dry = blend_color(background, RGB(235,237,219),
-                               8 + (int)lrintf(92 * (1 - v.wet)));
+                               8 + (int)lrintf(92 * fminf(1, v.dry)));
     ui_line(fb, 30, 167, 608, 167, dry);
     ui_line(fb, 30, 166, 147, 166, RGB(229,232,212));
     ui_line(fb, 92, 162, 99, 167, RGB(229,232,212));
@@ -53,12 +53,12 @@ static void sister_prism_render(TsFramebuffer *fb, const TsSisterUiModel *model)
 
     for (int i = TS_PRISM_LENSES - 1; i >= 0; --i) {
         TsPrismLensView ray = v.lens[i];
-        if (ray.level <= .001f) continue;
+        if (i >= p->lenses && ray.level <= .001f) continue;
         int x, y;
         ts_sister_ui_prism_point(ray, &x, &y);
-        float strength = sqrtf(fminf(1, ray.level / 3));
+        float strength = ray.level / (1 + ray.level);
         uint32_t color = blend_color(background, colors[i],
-            (int)lrintf(strength * (14 + 86 * v.wet)));
+            (int)lrintf(8 + strength * (12 + 80 * v.wet)));
         int exit_y = 167 + (y - 167) / 3;
         int rejoin_y = 167 + (y - 167) / 2;
         ui_line(fb, 148, 167, 172, exit_y, color);
@@ -69,26 +69,29 @@ static void sister_prism_render(TsFramebuffer *fb, const TsSisterUiModel *model)
         else {
             rect(fb, x - 3, y - 3, 7, 7, color);
             rect(fb, x - 1, y - 1, 3, 3, background);
-            if (model->prism_selected == i + 1) {
-                snprintf(label, sizeof(label), "%02d", i + 1);
-                text(fb, x + 7, y - 3, label, RGB(240,240,220), 1);
-            }
         }
+        if (model->prism_selected == i + 1) {
+            snprintf(label, sizeof(label), "%02d %+.0FDB", i + 1, p->trim_db[i]);
+            text(fb, x + 7, y - 3, label, RGB(240,240,220), 1);
+        }
+        if ((p->mute_mask | p->solo_mask) & (1 << i))
+            text(fb,x-3,y+6,(p->mute_mask & (1 << i)) ? "M" : "S",ink,1);
     }
     ui_line(fb, 527, 167, 608, 167, RGB(229,232,212));
     ui_line(fb, 600, 162, 608, 167, RGB(229,232,212));
     ui_line(fb, 600, 172, 608, 167, RGB(229,232,212));
-    text(fb, 24, 252, "DRAG: UP/DOWN PITCH, LEFT/RIGHT PAN / RIGHT CLICK: RESET", ink, 1);
+    text(fb, 24, 252, "DRAG: PITCH/PAN  WHEEL: TRIM  RIGHT CLICK: RESET", ink, 1);
+    text(fb,24,262,"SHIFT CLICK: MUTE  CTRL CLICK: SOLO  PRESET RIGHT CLICK: STOCK",ink,1);
     static const char *const names[8] = {
         "LENSES", "SPREAD", "DRIFT", "FOCUS", "STEREO", "BODY", "WET", "OUTPUT"
     };
-    float amounts[8] = {(p->lenses - 2) / 10.f, p->spread, p->drift, p->focus,
-                        p->stereo, p->body, p->mix, (p->output_db + 12) / 24};
+    float amounts[8] = {(p->lenses - 2) / 10.f, p->spread / 2, p->drift / 2, p->focus,
+                        p->stereo, p->body / 3, p->mix, (p->output_db + 12) / 24};
     for (int i = 0; i < 8; ++i) {
         int x = 16 + (i % 4) * 154, y = 280 + (i / 4) * 28;
         int locked = ts_sister_ui_parameter_locked(model, TS_SISTER_UI_PARAM_PRISM_LENSES + i);
         sister_percent_parameter_state(fb, x, y, 144, names[i], amounts[i],
-                                       100, colors[i], locked);
+                                       i==1 || i==2 ? 200 : i==5 ? 300 : 100, colors[i], locked);
         if (i == 0 || i == 7) {
             rect(fb, x + 2, y + 2, 140, 11, RGB(24,23,25));
             if (i == 0) snprintf(label, sizeof(label), "LENSES %02d", p->lenses);
@@ -96,9 +99,9 @@ static void sister_prism_render(TsFramebuffer *fb, const TsSisterUiModel *model)
             text(fb, x + 3, y + 3, label, locked ? sister_dim_color(colors[i]) : colors[i], 1);
         }
     }
-    text(fb, 16, 338, model->routing.enabled ?
-        "SELECTED SOURCES > PRISM > TAPE + FX" :
-        "MAIN AUDIO > PRISM > FX  /  TAPE OFF", ink, 1);
+    sister_percent_parameter_state(fb,16,332,144,"DRY LEVEL",p->dry_level/2,200,colors[0],
+        ts_sister_ui_parameter_locked(model,TS_SISTER_UI_PARAM_PRISM_DRY));
+    text(fb,180,338,model->routing.enabled ? "PRISM > TAPE + FX" : "PRISM > FX / TAPE OFF",ink,1);
     button(fb, TS_SISTER_UI_FX_REC_X, TS_SISTER_UI_FX_REC_Y, TS_SISTER_UI_FX_REC_W,
         model->file_capture_state == TS_PERFORMANCE_FILE_STOPPING ? "FILE WAIT" :
         model->file_capture_state == TS_PERFORMANCE_FILE_RECORDING ? "STOP FILE" : "REC FILE",

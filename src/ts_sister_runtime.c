@@ -157,6 +157,7 @@ static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
     if (snapshot == NULL) return;
     atomic_init(&snapshot->prism_valid, 0);
     atomic_init(&snapshot->prism_wet, 0);
+    atomic_init(&snapshot->prism_dry, float_bits(1));
     for (int i = 0; i < TS_PRISM_LENSES; ++i)
         for (int j = 0; j < 4; ++j) atomic_init(&snapshot->prism_lens[i][j], 0);
     atomic_init(&snapshot->revision, 0u);
@@ -243,6 +244,7 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     TsPrismView prism = ts_prism_view(&runtime->prism);
     atomic_store_explicit(&snapshot->prism_valid, prism.valid, memory_order_relaxed);
     atomic_store_explicit(&snapshot->prism_wet, float_bits(prism.wet), memory_order_relaxed);
+    atomic_store_explicit(&snapshot->prism_dry, float_bits(prism.dry), memory_order_relaxed);
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
         float values[4] = {prism.lens[i].cents, prism.lens[i].delay_ms,
                            prism.lens[i].pan, prism.lens[i].level};
@@ -1885,6 +1887,7 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
         if ((before & 1u) != 0u) continue;
         snapshot->prism.valid = atomic_load_explicit(&source->prism_valid, memory_order_relaxed);
         snapshot->prism.wet = bits_float(atomic_load_explicit(&source->prism_wet, memory_order_relaxed));
+        snapshot->prism.dry = bits_float(atomic_load_explicit(&source->prism_dry, memory_order_relaxed));
         for (int i = 0; i < TS_PRISM_LENSES; ++i) {
             float values[4];
             for (int j = 0; j < 4; ++j)

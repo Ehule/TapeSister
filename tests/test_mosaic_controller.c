@@ -21,6 +21,7 @@ static TsSample workspace_preview;
 static int dispatch(const SDL_Event *event,SDL_Window *window)
 {
     if(main_file_capture_event(event,window,&audio,&ui,&sister,48000))return 1;
+    if(workspace_tab_event(event,window,&sister,&ui))return 1;
     if(workspace_event(event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,&workspace_preview))return 1;
     if(mosaic_event(event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000))return 1;
     return main_file_capture_event(event,window,&audio,&ui,&sister,48000);
@@ -378,6 +379,7 @@ int main(void)
     assert(ui.mosaic->playing);
     test_async_ownership(aid,bid,original,0);
     test_async_ownership(aid,bid,original,1);
+    test_workspace_playback(window);
     test_workspace_routes(window);
     test_mosaic_master_routes();
     test_prism_controller();

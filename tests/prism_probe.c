@@ -83,6 +83,15 @@ int main(int argc,char **argv)
         model.parameters.prism.pitch_offset[8]=-20;
         model.prism_selected=3;
     }
+    if (argc>6 && !strcmp(argv[6],"mixer")) {
+        model.parameters.prism.pitch_offset[2]=700;
+        model.parameters.prism.pan_offset[2]=.5f;
+        model.parameters.prism.trim_db[2]=9;
+        model.parameters.prism.trim_db[8]=-12;
+        model.parameters.prism.mute_mask=1 << 5;
+        model.parameters.prism.dry_level=1.5f;
+        model.prism_selected=9;
+    }
     model.routing.limiter_enabled=1; model.routing.master_output_gain=1;
     model.routing.limiter_ceiling_db=-1;
     TsPrism prism={0}; assert(ts_prism_prepare(&prism,48000));

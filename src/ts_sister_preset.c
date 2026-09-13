@@ -237,11 +237,13 @@ int ts_sister_preset_delete(TsSisterPresetBank *bank, size_t index,
 
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
+    if (fprintf(file, "prism_dry_level=%.9g\nprism_mute_mask=%d\nprism_solo_mask=%d\n",
+        p->prism.dry_level, p->prism.mute_mask, p->prism.solo_mask) < 0) return 0;
     if (fprintf(file, "prism_enabled=%d\nprism_mode=%d\nprism_lenses=%d\nprism_spread=%.9g\nprism_drift=%.9g\nprism_focus=%.9g\nprism_stereo=%.9g\nprism_body=%.9g\nprism_mix=%.9g\nprism_output_db=%.9g\n",
         p->prism.enabled, p->prism.mode, p->prism.lenses, p->prism.spread, p->prism.drift, p->prism.focus, p->prism.stereo, p->prism.body, p->prism.mix, p->prism.output_db) < 0) return 0;
     for (int i = 0; i < TS_PRISM_LENSES; ++i)
-        if (fprintf(file, "prism_pitch_offset_%d=%.9g\nprism_pan_offset_%d=%.9g\n",
-            i, p->prism.pitch_offset[i], i, p->prism.pan_offset[i]) < 0) return 0;
+        if (fprintf(file, "prism_pitch_offset_%d=%.9g\nprism_pan_offset_%d=%.9g\nprism_trim_db_%d=%.9g\n",
+            i, p->prism.pitch_offset[i], i, p->prism.pan_offset[i], i, p->prism.trim_db[i]) < 0) return 0;
     if (fprintf(file,
         "h1_level=%.9g\nh1_time_ms=%.9g\nh1_feedback=%.9g\n"
         "h2_level=%.9g\nh2_scrub=%.9g\nh2_rate=%d\nh2_feedback=%.9g\n"
@@ -461,7 +463,12 @@ static int assign_field(TsSisterParameters *p, const char *key,
         if (!strcmp(key, lens_key)) return parse_float(value, &p->prism.pitch_offset[i]);
         snprintf(lens_key, sizeof(lens_key), "prism_pan_offset_%d", i);
         if (!strcmp(key, lens_key)) return parse_float(value, &p->prism.pan_offset[i]);
+        snprintf(lens_key, sizeof(lens_key), "prism_trim_db_%d", i);
+        if (!strcmp(key, lens_key)) return parse_float(value, &p->prism.trim_db[i]);
     }
+    FLOAT_FIELD("prism_dry_level", prism.dry_level);
+    INT_FIELD("prism_mute_mask", prism.mute_mask);
+    INT_FIELD("prism_solo_mask", prism.solo_mask);
     INT_FIELD("prism_enabled", prism.enabled);
     INT_FIELD("prism_mode", prism.mode);
     INT_FIELD("prism_lenses", prism.lenses);

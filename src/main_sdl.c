@@ -3911,7 +3911,6 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
                                TsSample *preview)
 {
     TsGeneratorRecipe recipe = current_fm_workspace_recipe(instrument);
-    stop_all_force(device, audio, ui);
     recipe.kind = TS_GENERATOR_FM;
     ts_fm_patch_from_recipe(&recipe, &ui->fm_patch);
     ui->fm_open = 1;
@@ -8157,6 +8156,7 @@ typedef struct {
     TsSisterUiPowerVisual power_visual;
     int rendered_model_valid;
     int minimized;
+    int screen_filling, windowed_x, windowed_y, windowed_w, windowed_h;
     TsSisterPresetBank presets;
     size_t preset_index;
     TsSisterPresetBank fallout_presets;
@@ -8236,6 +8236,8 @@ static void sync_sister_ext_consumer(SDL_AudioDeviceID *input_device,
                  "EXT - DEVICE UNAVAILABLE: %.91s", error);
 }
 
+static void sister_window_fullscreen(SisterWindow *sister, int enabled);
+
 static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
 {
     int x = SDL_WINDOWPOS_CENTERED;
@@ -8246,8 +8248,6 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
     if (sister->window != NULL) return 1;
     if (config != NULL && config->sister_window_x >= 0) x = config->sister_window_x;
     if (config != NULL && config->sister_window_y >= 0) y = config->sister_window_y;
-    if (config == NULL || config->sister_window_maximized)
-        flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     sister->window = SDL_CreateWindow(
         TAPESISTER_SISTER_WINDOW_TITLE, x, y,
         TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT, flags);
@@ -8281,6 +8281,7 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
     /* Fill the entire client area; input is mapped explicitly for both
        queued events and polled mouse state, including high-DPI output. */
     sister->window_id = SDL_GetWindowID(sister->window);
+    if (config == NULL || config->sister_window_maximized) sister_window_fullscreen(sister,1);
     return 1;
 }
 
@@ -8295,13 +8296,32 @@ static void sister_window_hide(SisterWindow *sister)
     if (sister->window != NULL) SDL_HideWindow(sister->window);
 }
 
+/* SDL permits only one fullscreen owner per display and minimizes the other
+   window on handoff. Sister fills the display as a normal borderless window. */
 static void sister_window_fullscreen(SisterWindow *sister, int enabled)
 {
-    if (!sister || !sister->window) return;
-    if (SDL_SetWindowFullscreen(sister->window,enabled?SDL_WINDOW_FULLSCREEN_DESKTOP:0)==0) {
-        if (!enabled) SDL_RestoreWindow(sister->window);
-        sister->rendered_model_valid=0;
+    if (!sister || !sister->window || sister->screen_filling==!!enabled) return;
+    if (enabled) {
+        SDL_Rect bounds;
+        int display=SDL_GetWindowDisplayIndex(sister->window);
+        if (display<0 || SDL_GetDisplayBounds(display,&bounds)!=0) return;
+        SDL_GetWindowPosition(sister->window,&sister->windowed_x,&sister->windowed_y);
+        SDL_GetWindowSize(sister->window,&sister->windowed_w,&sister->windowed_h);
+        if (SDL_GetWindowFlags(sister->window)&SDL_WINDOW_MAXIMIZED) {
+            SDL_RestoreWindow(sister->window);
+            SDL_GetWindowSize(sister->window,&sister->windowed_w,&sister->windowed_h);
+        }
+        sister->screen_filling=1;
+        SDL_SetWindowBordered(sister->window,SDL_FALSE);
+        SDL_SetWindowPosition(sister->window,bounds.x,bounds.y);
+        SDL_SetWindowSize(sister->window,bounds.w,bounds.h);
+    } else {
+        sister->screen_filling=0;
+        SDL_SetWindowBordered(sister->window,SDL_TRUE);
+        SDL_SetWindowSize(sister->window,sister->windowed_w,sister->windowed_h);
+        SDL_SetWindowPosition(sister->window,sister->windowed_x,sister->windowed_y);
     }
+    sister->rendered_model_valid=0;
 }
 
 static int sister_event_mouse(SDL_Window *window, int event_x, int event_y, int *x, int *y)
@@ -8329,11 +8349,21 @@ static int sister_window_mouse(SDL_Window *window, SDL_Renderer *renderer,
                                      output_width, output_height, x, y);
 }
 
-static void sister_window_show(SisterWindow *sister)
+static void sister_window_show(SisterWindow *sister, const TsPalette *palette)
 {
     if (sister == NULL || sister->window == NULL) return;
     ts_sister_ui_model_show(&sister->model);
     sister->rendered_model_valid = 0;
+    /* Present a complete backing image before the OS exposes the window. */
+    if (sister->renderer && sister->texture && palette) {
+        ts_sister_ui_render(&sister->framebuffer,&sister->model,palette);
+        if (SDL_UpdateTexture(sister->texture,NULL,sister->framebuffer.pixels,
+                              TS_SISTER_UI_WIDTH*(int)sizeof(uint32_t))==0) {
+            SDL_RenderClear(sister->renderer);
+            SDL_RenderCopy(sister->renderer,sister->texture,NULL,NULL);
+            SDL_RenderPresent(sister->renderer);
+        }
+    }
     SDL_ShowWindow(sister->window);
     SDL_RaiseWindow(sister->window);
     (void)SDL_SetWindowInputFocus(sister->window);
@@ -8341,17 +8371,19 @@ static void sister_window_show(SisterWindow *sister)
 
 static void application_window_focus(SDL_Window *window, SisterWindow *sister)
 {
-    if(sister && sister->model.visible)sister_window_hide(sister);
-    if (window == NULL) return;
+    if (window == NULL) {
+        if(sister && sister->model.visible)sister_window_hide(sister);
+        return;
+    }
     if ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0u)
         SDL_RestoreWindow(window);
     SDL_ShowWindow(window);
     SDL_RaiseWindow(window);
+    if(sister && sister->model.visible)sister_window_hide(sister);
     (void)SDL_SetWindowInputFocus(window);
 }
 
-/* Hide fullscreen Sister before raising the canvas: raising alone can leave
-   the desktop-fullscreen sibling above it on Windows. Audio ownership stays put. */
+/* Prepare the destination before releasing the covering window. */
 static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
                                 SisterWindow *sister, TsUiState *ui)
 {
@@ -8366,7 +8398,7 @@ static int workspace_tab_event(const SDL_Event *event, SDL_Window *window,
     if(id!=SDL_GetWindowID(window) || ui_blocking_dialog_open_except_fm(ui) ||
        ui->fm_bank_choice_open || ui->fm_full_choice_open)return 0;
     if(!event->key.repeat) {
-        if(sister_window_ensure(sister,&ui->config))sister_window_show(sister);
+        if(sister_window_ensure(sister,&ui->config))sister_window_show(sister,&ui->palette);
         else snprintf(ui->status,sizeof(ui->status),"SISTER WINDOW UNAVAILABLE: %.112s",SDL_GetError());
     }
     return 1;
@@ -8428,12 +8460,13 @@ static void sister_set_parameter(TsSisterParameters *parameters,
     }
     switch ((TsSisterUiParameter)parameter) {
     case TS_SISTER_UI_PARAM_PRISM_LENSES: parameters->prism.lenses = 2 + (int)lrintf(amount * 10); break;
-    case TS_SISTER_UI_PARAM_PRISM_SPREAD: parameters->prism.spread = amount; break;
-    case TS_SISTER_UI_PARAM_PRISM_DRIFT: parameters->prism.drift = amount; break;
+    case TS_SISTER_UI_PARAM_PRISM_SPREAD: parameters->prism.spread = amount * 2; break;
+    case TS_SISTER_UI_PARAM_PRISM_DRIFT: parameters->prism.drift = amount * 2; break;
     case TS_SISTER_UI_PARAM_PRISM_FOCUS: parameters->prism.focus = amount; break;
     case TS_SISTER_UI_PARAM_PRISM_STEREO: parameters->prism.stereo = amount; break;
-    case TS_SISTER_UI_PARAM_PRISM_BODY: parameters->prism.body = amount; break;
+    case TS_SISTER_UI_PARAM_PRISM_BODY: parameters->prism.body = amount * 3; break;
     case TS_SISTER_UI_PARAM_PRISM_MIX: parameters->prism.mix = amount; break;
+    case TS_SISTER_UI_PARAM_PRISM_DRY: parameters->prism.dry_level = amount * 2; break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: parameters->prism.output_db = -12 + amount * 24; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: parameters->head1_level = amount; break;
     case TS_SISTER_UI_PARAM_H1_TIME: parameters->head1_time_ms = amount * 4000.0f; break;
@@ -8560,12 +8593,13 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
     }
     switch ((TsSisterUiParameter)parameter) {
     case TS_SISTER_UI_PARAM_PRISM_LENSES: value = (parameters->prism.lenses - 2) / 10.f; break;
-    case TS_SISTER_UI_PARAM_PRISM_SPREAD: value = parameters->prism.spread; break;
-    case TS_SISTER_UI_PARAM_PRISM_DRIFT: value = parameters->prism.drift; break;
+    case TS_SISTER_UI_PARAM_PRISM_SPREAD: value = parameters->prism.spread / 2; break;
+    case TS_SISTER_UI_PARAM_PRISM_DRIFT: value = parameters->prism.drift / 2; break;
     case TS_SISTER_UI_PARAM_PRISM_FOCUS: value = parameters->prism.focus; break;
     case TS_SISTER_UI_PARAM_PRISM_STEREO: value = parameters->prism.stereo; break;
-    case TS_SISTER_UI_PARAM_PRISM_BODY: value = parameters->prism.body; break;
+    case TS_SISTER_UI_PARAM_PRISM_BODY: value = parameters->prism.body / 3; break;
     case TS_SISTER_UI_PARAM_PRISM_MIX: value = parameters->prism.mix; break;
+    case TS_SISTER_UI_PARAM_PRISM_DRY: value = parameters->prism.dry_level / 2; break;
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: value = (parameters->prism.output_db + 12) / 24.f; break;
     case TS_SISTER_UI_PARAM_H1_LEVEL: value = parameters->head1_level; break;
     case TS_SISTER_UI_PARAM_H1_TIME: value = parameters->head1_time_ms / 4000.0f; break;
@@ -8810,6 +8844,7 @@ static const char *sister_parameter_name(int parameter)
     case TS_SISTER_UI_PARAM_PRISM_STEREO: return "PRISM STEREO";
     case TS_SISTER_UI_PARAM_PRISM_BODY: return "PRISM BODY";
     case TS_SISTER_UI_PARAM_PRISM_MIX: return "PRISM MIX";
+    case TS_SISTER_UI_PARAM_PRISM_DRY: return "PRISM DRY LEVEL";
     case TS_SISTER_UI_PARAM_PRISM_OUTPUT: return "PRISM OUTPUT";
     case TS_SISTER_UI_PARAM_H1_LEVEL: return "H1 LEVEL";
     case TS_SISTER_UI_PARAM_H1_TIME: return "H1 TIME";
@@ -8964,19 +8999,35 @@ static void sister_preset_model_sync(SisterWindow *sister,
 
 /* Optical gestures update only their own lens under the existing device lock.
    Keep the original values so Escape can undo the entire drag. */
-static void sister_prism_set_point(SDL_AudioDeviceID device, AudioState *audio,
-                                   SisterWindow *sister, int lens, float pitch, float pan)
+enum { PRISM_POINT, PRISM_RESET, PRISM_MUTE, PRISM_SOLO, PRISM_TRIM, PRISM_RESET_ALL };
+static void sister_prism_edit(SDL_AudioDeviceID device, AudioState *audio,
+                              SisterWindow *sister, int lens, int action, float x, float y)
 {
+    if (lens < 0 || lens >= TS_PRISM_LENSES) return;
     if (device) SDL_LockAudioDevice(device);
     TsSisterParameters p = audio->sister.parameters;
-    p.prism.pitch_offset[lens] = pitch;
-    p.prism.pan_offset[lens] = pan;
+    switch (action) {
+    case PRISM_POINT: p.prism.pitch_offset[lens]=x; p.prism.pan_offset[lens]=y; break;
+    case PRISM_RESET:
+        p.prism.pitch_offset[lens]=p.prism.pan_offset[lens]=p.prism.trim_db[lens]=0;
+        p.prism.mute_mask &= ~(1 << lens); p.prism.solo_mask &= ~(1 << lens); break;
+    case PRISM_MUTE: p.prism.mute_mask ^= 1 << lens; break;
+    case PRISM_SOLO: p.prism.solo_mask ^= 1 << lens; break;
+    case PRISM_TRIM: p.prism.trim_db[lens] += x; break;
+    case PRISM_RESET_ALL: ts_prism_reset_lenses(&p.prism); break;
+    }
     ts_sister_runtime_set_parameters(&audio->sister, &p);
     ts_sister_runtime_mark_selected_preset_modified(&audio->sister);
     sister->model.parameters = audio->sister.parameters;
     if (device) SDL_UnlockAudioDevice(device);
     sister_preset_model_sync(sister, &audio->sister);
     sister->rendered_model_valid = 0;
+}
+
+static void sister_prism_set_point(SDL_AudioDeviceID device, AudioState *audio,
+                                   SisterWindow *sister, int lens, float pitch, float pan)
+{
+    sister_prism_edit(device,audio,sister,lens,PRISM_POINT,pitch,pan);
 }
 
 static void sister_prism_end_drag(SisterWindow *sister)
@@ -8986,7 +9037,7 @@ static void sister_prism_end_drag(SisterWindow *sister)
 }
 
 static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
-                               SisterWindow *sister, const SDL_Event *event)
+                               TsUiState *ui, SisterWindow *sister, const SDL_Event *event)
 {
     if (sister->model.fx_page != 3 || sister->model.preset_manage_open ||
         sister->model.midi_learn_active ||
@@ -9015,9 +9066,37 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
         return 1;
     }
     int x, y;
+    if (event->type == SDL_MOUSEWHEEL) {
+        int raw_x, raw_y;
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+        raw_x=event->wheel.mouseX; raw_y=event->wheel.mouseY;
+#else
+        SDL_GetMouseState(&raw_x,&raw_y);
+#endif
+        if (!sister_event_mouse(sister->window,raw_x,raw_y,&x,&y)) return 0;
+        int lens=ts_sister_ui_prism_hit(&sister->model,x,y);
+        if (lens<0) return 0;
+        int wheel=event->wheel.direction==SDL_MOUSEWHEEL_FLIPPED ? -event->wheel.y : event->wheel.y;
+        if (wheel && ts_ui_wheel_guard_accept(&ui->wheel_guard,
+                WHEEL_TARGET_SISTER+0x200+lens,SDL_GetTicks())) {
+            float step=(SDL_GetModState() & KMOD_SHIFT) ? .1f : 1;
+            sister_prism_edit(device,audio,sister,lens,PRISM_TRIM,step*wheel,0);
+            sister->model.prism_selected=lens+1;
+            snprintf(sister->model.status,sizeof(sister->model.status),"LENS %02d TRIM %+.1F DB",lens+1,
+                     sister->model.parameters.prism.trim_db[lens]);
+        }
+        return 1;
+    }
     if (event->type == SDL_MOUSEBUTTONDOWN &&
         (event->button.button == SDL_BUTTON_LEFT || event->button.button == SDL_BUTTON_RIGHT)) {
         if (!sister_event_mouse(sister->window, event->button.x, event->button.y, &x, &y)) return 0;
+        if (event->button.button==SDL_BUTTON_RIGHT &&
+            ((x>=122 && x<238 && y>=48 && y<70) || (x>=264 && x<394 && y>=370 && y<392))) {
+            sister_prism_end_drag(sister);
+            sister_prism_edit(device,audio,sister,0,PRISM_RESET_ALL,0,0);
+            snprintf(sister->model.status,sizeof(sister->model.status),"ALL LENSES RESTORED TO STOCK");
+            return 1;
+        }
         int lens = ts_sister_ui_prism_hit(&sister->model, x, y);
         if (lens < 0) return 0;
         sister->model.prism_selected = lens + 1;
@@ -9025,8 +9104,23 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
         sister->parameter_lock_gesture = 0;
         if (event->button.button == SDL_BUTTON_RIGHT) {
             sister_prism_end_drag(sister);
-            sister_prism_set_point(device, audio, sister, lens, 0, 0);
+            sister_prism_edit(device, audio, sister, lens, PRISM_RESET, 0, 0);
             snprintf(sister->model.status, sizeof(sister->model.status), "LENS %02d RESET", lens + 1);
+            return 1;
+        }
+        SDL_Keymod mod=SDL_GetModState();
+        if (mod & (KMOD_SHIFT | KMOD_CTRL)) {
+            int action=(mod & KMOD_CTRL) ? PRISM_SOLO : PRISM_MUTE;
+            sister_prism_end_drag(sister);
+            sister_prism_edit(device,audio,sister,lens,action,0,0);
+            int active=action==PRISM_SOLO ? sister->model.parameters.prism.solo_mask :
+                                          sister->model.parameters.prism.mute_mask;
+            snprintf(sister->model.status,sizeof(sister->model.status),"LENS %02d %s %s",lens+1,
+                     action==PRISM_SOLO ? "SOLO" : "MUTE",(active & (1 << lens)) ? "ON" : "OFF");
+            return 1;
+        }
+        if (lens==0) {
+            snprintf(sister->model.status,sizeof(sister->model.status),"BODY ANCHOR: WHEEL TRIM / SHIFT MUTE / CTRL SOLO");
             return 1;
         }
         TsPrismView view = sister->model.routing.prism.valid ? sister->model.routing.prism :
@@ -12706,7 +12800,7 @@ int main(int argc, char **argv)
                 continue;
             if (sister_window.window != NULL &&
                 event_id == sister_window.window_id) {
-                if (sister_prism_event(device, &audio, &sister_window, &event)) continue;
+                if (sister_prism_event(device, &audio, &ui, &sister_window, &event)) continue;
                 if (event.type == SDL_WINDOWEVENT &&
                     event.window.event == SDL_WINDOWEVENT_CLOSE) {
                     SDL_GetWindowPosition(sister_window.window,
@@ -12742,7 +12836,7 @@ int main(int argc, char **argv)
                     ui.config.sister_window_y = event.window.data2;
                 } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F11) {
                     if(!event.key.repeat)sister_window_fullscreen(&sister_window,
-                        !(SDL_GetWindowFlags(sister_window.window)&SDL_WINDOW_FULLSCREEN_DESKTOP));
+                        !sister_window.screen_filling);
                 } else if (event.type == SDL_KEYDOWN &&
                            event.key.keysym.sym == SDLK_ESCAPE) {
                     if (sister_window.model.fallout_lfo_open) {
@@ -12975,7 +13069,7 @@ int main(int argc, char **argv)
                         snprintf(ui.status, sizeof(ui.status),
                                  "SISTER WINDOW UNAVAILABLE: %.112s", SDL_GetError());
                     } else {
-                        sister_window_show(&sister_window);
+                        sister_window_show(&sister_window,&ui.palette);
                     }
                     continue;
                 }

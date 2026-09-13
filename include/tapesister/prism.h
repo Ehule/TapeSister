@@ -12,6 +12,8 @@ typedef struct {
     float spread, drift, focus, stereo, body, mix, output_db;
     /* Additive per-lens edits; lens zero remains the direct body anchor. */
     float pitch_offset[TS_PRISM_LENSES], pan_offset[TS_PRISM_LENSES];
+    float trim_db[TS_PRISM_LENSES], dry_level;
+    int mute_mask, solo_mask;
 } TsPrismControls;
 
 /* Shared voicing, also used by the original FM Unison template. */
@@ -20,7 +22,7 @@ extern const float ts_prism_unison_cents[TS_PRISM_LENSES];
 typedef struct { float cents, delay_ms, pan, level; } TsPrismLensView;
 typedef struct {
     TsPrismLensView lens[TS_PRISM_LENSES];
-    float wet;
+    float wet, dry;
     int valid;
 } TsPrismView;
 typedef struct {
@@ -28,6 +30,7 @@ typedef struct {
     double ratio, ratio_target;
     float delay, delay_target;
     float level, level_target, pan, pan_target;
+    float weight, weight_target; /* Nominal energy reference, before manual mix. */
 } TsPrismLens;
 typedef struct {
     TsStereoFrame *history;
@@ -37,6 +40,7 @@ typedef struct {
     double window_frames, window_target, previous_window;
     float window_fade, window_fade_step;
     float smoothing, wet, gain, gain_target;
+    double dry;
     float period_difference[260];
     float hann[1025];
     TsPrismControls controls;
@@ -46,6 +50,7 @@ typedef struct {
 void ts_prism_controls_default(TsPrismControls *controls);
 void ts_prism_controls_sanitize(TsPrismControls *controls);
 const char *ts_prism_mode_name(int mode);
+void ts_prism_reset_lenses(TsPrismControls *controls);
 /* Setup/free occur with the audio device paused, never in process(). */
 int ts_prism_prepare(TsPrism *prism, uint32_t sample_rate);
 void ts_prism_free(TsPrism *prism);

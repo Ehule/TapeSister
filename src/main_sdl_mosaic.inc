@@ -151,6 +151,18 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     PortalController *portal,SisterWindow *sister,TransformController *transform,int rate)
 {
     if(!ui->mosaic)return 0;
+    /* Notes started in another workspace still own their key/pointer releases.
+       Handle these before Mosaic's panel and edit dialog consume input. */
+    if(ui->mosaic_open || ui->mosaic_edit_choice) {
+        if(event->type==SDL_KEYUP && note_for_key(event->key.keysym.sym)>=0) {
+            release_note(device,audio,ui,note_for_key(event->key.keysym.sym));
+            return 1;
+        }
+        if(event->type==SDL_MOUSEBUTTONUP && event->button.button==SDL_BUTTON_LEFT && ui->mouse_note>=0) {
+            release_note(device,audio,ui,ui->mouse_note);ui->mouse_note=-1;
+            return 1;
+        }
+    }
     double horizontal=ui->mosaic_hscale>0?ui->mosaic_hscale:1;
     int down=event->type==SDL_MOUSEBUTTONDOWN,up=event->type==SDL_MOUSEBUTTONUP;
     int motion=event->type==SDL_MOUSEMOTION,key=event->type==SDL_KEYDOWN;

@@ -32,11 +32,12 @@ Head-tap capture still selects the corresponding head; **REC FILE** uses final O
 |---|---|---|
 | Mode | Supersaw or Ensemble; click to cycle | Wide fine-pitch fan plus octave body, or a tighter fan with more time displacement |
 | Lenses | 2–12, with fading entry/removal; wheel steps one lens | One ray per contributing lens; coincident pitches can overlap |
-| Spread | Fine detune scale; 50 reproduces the FM offsets at Focus 0, 100 reaches 8× the fine offsets (up to ±208 cents) | Angular separation follows the actual smoothed pitches |
-| Drift | Independent, deterministic slow pitch wandering, up to ±25 cents before Focus; the first half retains its subtle range | Rays wander with the audio; no separate animation clock |
+| Spread | 0–200%; 50 reproduces the FM offsets at Focus 0, 100 reaches ±208 cents, 200 reaches ±1508 cents | Angular separation follows the actual smoothed pitches |
+| Drift | Independent, deterministic slow pitch wandering, 0–200%; up to ±25 cents at 100 and ±190 cents at 200 before Focus; lower settings retain subtle movement | Rays wander with the audio; no separate animation clock |
 | Focus | Contracts fine pitch, hand-drawn pitch offsets and added time toward zero | Rays converge; intentional octave relationships remain |
 | Stereo | Per-lens stereo balance; body voices stay near center | The control points move laterally with the actual pan values |
-| Body | Stronger original central lens and stronger low octave lenses | The corresponding rays become more prominent |
+| Body | 0–300%; stronger original central lens and stronger low octave lenses | The corresponding rays become more prominent |
+| Dry Level | 0–200% trim on the original branch, before the Wet crossfade; 100 is unity | Original beam brightness follows its smoothed gain |
 | Wet | Original input versus normalized lens sum | Original straight path fades as refracted rays brighten |
 | Output | −12 to +12 dB on the refracted sum | Audio output trim; the existing OUT meters show final level |
 
@@ -54,10 +55,28 @@ pitch offsets too; at Focus 100, lower Focus to bend pitches again. Horizontal
 edits add to the automatic Stereo placement and stop at hard left/right. The
 filled central point, lens 01, is the direct body anchor.
 
-**Right-click a point to reset that lens**; **Escape during a drag** restores its
-starting pitch/pan. Dragging outside the window holds at the edge. Lens identities
+**Shift-left-click mutes a lens**, **Ctrl-left-click solos it**. Solo is additive:
+Ctrl-click several lenses to hear them together. Mute wins if both are set; solos
+on lenses outside the current count do not silence the active lenses. The dry
+branch remains independent. Mute/solo and wheel trim also work on the fixed body
+anchor, lens 01. Muted and solo-excluded rays stay faint and clickable; **M/S**
+marks show explicit mute/solo states.
+
+**Wheel over a point** trims it from −24 to +12 dB in 1 dB steps; Shift-wheel uses
+0.1 dB steps. Brightness follows its actual smoothed level, and the selected lens
+shows its trim. Trim and mute/solo sit after the nominal energy reference, so
+changing one lens never makes normalization undo the fader or raise the others.
+
+**Right-click a point to reset that lens** (pitch, pan, trim, mute and solo).
+**Right-click the mode button or preset name** restores all lenses to stock:
+zero offsets/trim and no mute/solo, keeping the global controls and current mode.
+**Escape during a drag** restores its starting pitch/pan. Dragging outside the window holds at the edge. Lens identities
 and edits survive count changes, modes, project saves and full Sister presets.
 The selected ray shows its number; the status line shows its target pitch/pan.
+Dry Level trims the original branch before the existing Wet crossfade: Wet 100
+still excludes that branch, and disabling Prism restores unity dry output.
+
+![Per-lens trim brightness, a muted ray, and the separate dry control](images/prism-mixer.png)
 
 ![Independently placed lenses, with the other rays still near the original fan](images/prism-custom.png)
 
@@ -102,7 +121,7 @@ folding in the signal path. The period detector observes whichever input channel
 has more energy, so opposite-polarity stereo does not cancel its analysis input.
 
 Gain divides each channel's weighted sum by the square root of its squared lens
-weights, including the current pan and lens fades. This restores decorrelated
+weights, including the current pan and lens-count fades, before manual trim/mute/solo. This restores decorrelated
 voice energy instead of averaging it away as the count grows. The direct body
 and lower octave voices keep their original weights and are more audible because
 the sum no longer loses 10–12 dB at twelve lenses. This is fixed energy compensation,
@@ -142,30 +161,31 @@ Measured on a shared Linux AMD EPYC 9V74 host, C11 `-O2`, stereo 48 kHz,
 
 | Lenses | Prism mean / block | Prism p99 | Prism share of block budget | Sister + Prism + limiter mean |
 |---:|---:|---:|---:|---:|
-| Bypass | 12.69 µs | 25.51 µs | 0.24% | 296.62 µs |
-| 2 | 32.23 µs | 83.21 µs | 0.60% | 307.40 µs |
-| 4 | 40.10 µs | 110.86 µs | 0.75% | 313.57 µs |
-| 6 | 46.00 µs | 108.96 µs | 0.86% | 321.21 µs |
-| 8 | 53.46 µs | 128.03 µs | 1.00% | 340.23 µs |
-| 12 | 70.86 µs | 124.45 µs | 1.33% | 345.07 µs |
+| Bypass | 23.12 µs | 55.31 µs | 0.43% | 305.31 µs |
+| 2 | 51.48 µs | 135.90 µs | 0.97% | 320.42 µs |
+| 4 | 60.13 µs | 124.45 µs | 1.13% | 327.83 µs |
+| 6 | 63.06 µs | 119.69 µs | 1.18% | 328.80 µs |
+| 8 | 75.42 µs | 161.65 µs | 1.41% | 340.91 µs |
+| 12 | 85.12 µs | 159.74 µs | 1.60% | 355.28 µs |
 
-These are offline processing measurements after the gain/gesture revision, not
+These are offline processing measurements after the per-lens mixer revision, not
 whole-application CPU percentages or hardware underrun certification. Shared-host
-scheduling produced outliers: Prism alone reached 14.62 ms at twelve lenses and
-the full runtime reached 10.77 ms at eight. Full-runtime p99 stayed below 0.55 ms;
-at twelve lenses its maximum was 1.38 ms. Physical Windows and Linux interface
+scheduling produced outliers: Prism alone reached 1.78 ms at two lenses and
+the full runtime reached 6.03 ms in bypass. Full-runtime p99 stayed below 0.57 ms;
+at twelve lenses its maximum was 2.15 ms. Physical Windows and Linux interface
 tests at 256 frames remain part of live audition.
 
 ## MIDI and saved projects
 
 Use the existing **Ctrl+Shift+M** MIDI learn flow. Prism On/Off and Mode are
-trigger targets; all eight sliders, including Focus and lens count, use the
+trigger targets; all nine sliders, including Dry Level, Focus and lens count, use the
 existing continuous mapping and pickup system. Lens count is rounded to 2–12.
 The sliders participate in the existing parameter-lock system. Individual points
 are mouse gestures; they do not repurpose the global sliders or their MIDI targets.
 
-Project state version **14** and Sister user preset version **13** persist all
-Prism controls and per-lens edits. Files without the new lens keys use zero offsets;
+Project state version **15** and Sister user preset version **14** persist all
+Prism controls, dry level and per-lens pitch/pan/trim/mute/solo. Missing lens keys
+use zero offsets and trim with no mute/solo; missing Dry Level uses unity;
 files predating Prism initialize it **off**. The older FX-slot migrations
 retain their original version cutoffs, so PR99 slots and locks are not migrated
 again. The main TSR29 sample format is unchanged. Sister presets on this page
@@ -184,9 +204,15 @@ are the existing full Sister presets, not a second Prism-only preset bank.
 - Native application tests exercise page cycling, mouse hit regions, MIDI target
   resolution, knob changes, lens-count wheel steps, scaled-window point drags,
   Escape via workspace dispatch, out-of-window release, independent DSP changes
-  and per-lens reset. Both tape power states
+  and per-lens reset, muted-handle hit testing, modifier clicks, wheel trim,
+  stock reset on both labels, and the ninth global MIDI target (Dry Level). Both tape power states
   capture 16,384 stereo frames through REC FILE and compare every recorded sample
   against the actual output callback, while changing pages during recording.
+- Workspace regressions preserve held sample/FM notes through view changes,
+  mix FM and Mosaic simultaneously, release old keys over Mosaic, and preserve
+  FM latches and preview storage. Grave shortcuts return directly to the canvas;
+  repeated Tab switches keep the main fullscreen window visible. Windows
+  compositor appearance still needs a physical desktop check.
 - Save/load tests cover every Prism setting, user presets, missing old settings
   and preservation of PR99's explicit FX slots. FM Unison and the other previously passing
   tests retain their results. Four existing failures are reproduced
@@ -195,7 +221,7 @@ are the existing full Sister presets, not a second Prism-only preset bank.
 - AddressSanitizer and UndefinedBehaviorSanitizer pass the new streaming/pitch/state
   tests with the Prism engine instrumented (LeakSanitizer disabled because this
   host cannot inspect process threads). Native screenshots were checked in
-  Supersaw, Ensemble, fully focused and zero-Wet states.
+  Supersaw, Ensemble, fully focused, zero-Wet, custom-pitch and lens-mixer states.
 - Native CDP executable integration was skipped because that runtime is absent
   in this checkout. Prism itself has no CDP dependency.
 

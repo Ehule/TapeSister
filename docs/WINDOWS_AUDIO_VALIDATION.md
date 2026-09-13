@@ -72,7 +72,16 @@ cannot be repaired inside TapeSister.
   against bypass at Output 0 dB, then use Output while watching the existing LIM.
 - [ ] Pull one hollow point wide and keep another narrow. Test pitch/pan, right-click
   reset, Escape during drag, focus contraction, count changes and saved recall.
-- [ ] Explore the upper half of Spread and Drift on sustained and transient input.
+- [ ] Explore Spread/Drift through 200%, Body through 300%, and Dry Level 0–200%.
+- [ ] Shift-click mute, Ctrl-click solo and wheel-trim each lens, including 01.
+  Confirm muted handles remain clickable, trim changes brightness and audible level,
+  and right-clicking either the mode button or preset name restores stock lenses.
+- [ ] Repeat main → FM → Mosaic → main and main → Mosaic → FM → main. The
+  active view's own grave shortcut must return to the canvas. Reopen FM to confirm
+  its parked patch remains intact; test unresolved event edits too.
+- [ ] Open/close Sister repeatedly with Tab at full-screen size. Check for desktop
+  flashes, retained first frames, F11 restoration and placement on another monitor.
+  The headless test checks window ownership; Windows compositor behavior needs this audition.
 - [ ] Compare bypass and Wet zero with the original; vary count, mode, Spread,
   Focus and Drift during sustained notes and note changes. Listen for clicks,
   unwanted pitch bends, transient smearing and gain changes.
@@ -87,3 +96,8 @@ cannot be repaired inside TapeSister.
 
 [Prism](PRISM.md) records the headless checks and server CPU measurements. Those
 measurements do not certify this Windows interface or its hardware latency.
+
+- Hold a sample keyboard note and an FM latch, open Mosaic without pressing Play,
+  then play/stop the arrangement: the existing voices should continue. Release
+  the held key over Mosaic and confirm it stops normally (unless latched or
+  sustained). Switching views must not free a playing FM preview.

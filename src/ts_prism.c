@@ -14,7 +14,7 @@ static float bounded(float x, float lo, float hi, float fallback)
 void ts_prism_controls_default(TsPrismControls *p)
 {
     if (p) *p = (TsPrismControls){0, TS_PRISM_SUPERSAW, 12,
-                                 .5f, .15f, 0, .8f, .5f, .8f, 0, {0}, {0}};
+                                 .5f, .15f, 0, .8f, .5f, .8f, 0, {0}, {0}, {0}, 1, 0, 0};
 }
 
 void ts_prism_controls_sanitize(TsPrismControls *p)
@@ -25,14 +25,38 @@ void ts_prism_controls_sanitize(TsPrismControls *p)
     if (p->lenses < 2) p->lenses = 2;
     if (p->lenses > TS_PRISM_LENSES) p->lenses = TS_PRISM_LENSES;
 #define UNIT(member, fallback) p->member = bounded(p->member, 0, 1, fallback)
-    UNIT(spread, .5f); UNIT(drift, 0); UNIT(focus, 0);
-    UNIT(stereo, .8f); UNIT(body, .5f); UNIT(mix, .8f);
+    UNIT(focus, 0);
+    UNIT(stereo, .8f); UNIT(mix, .8f);
 #undef UNIT
+    p->spread = bounded(p->spread, 0, 2, .5f);
+    p->drift = bounded(p->drift, 0, 2, 0);
+    p->body = bounded(p->body, 0, 3, .5f);
+    p->dry_level = bounded(p->dry_level, 0, 2, 1);
+    p->mute_mask &= (1 << TS_PRISM_LENSES) - 1;
+    p->solo_mask &= (1 << TS_PRISM_LENSES) - 1;
     p->output_db = bounded(p->output_db, -12, 12, 0);
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
+        p->trim_db[i] = bounded(p->trim_db[i], -24, 12, 0);
         p->pitch_offset[i] = i ? bounded(p->pitch_offset[i], -1200, 1200, 0) : 0;
         p->pan_offset[i] = i ? bounded(p->pan_offset[i], -2, 2, 0) : 0;
     }
+}
+
+void ts_prism_reset_lenses(TsPrismControls *p)
+{
+    if (!p) return;
+    memset(p->pitch_offset, 0, sizeof(p->pitch_offset));
+    memset(p->pan_offset, 0, sizeof(p->pan_offset));
+    memset(p->trim_db, 0, sizeof(p->trim_db));
+    p->mute_mask = p->solo_mask = 0;
+}
+
+/* Keep manual faders and mute/solo outside the normalization reference. Their
+   gain changes must remain audible even when only one lens is being heard. */
+static float lens_weight(const TsPrismControls *p, int i)
+{
+    return i >= p->lenses ? 0 : i == 0 ? 1 + 2 * p->body :
+        (p->mode == TS_PRISM_SUPERSAW && i >= 9) ? .3f + .7f * p->body : 1;
 }
 
 const char *ts_prism_mode_name(int mode)
@@ -70,8 +94,9 @@ static TsPrismLensView geometry(const TsPrismControls *p, int i, double seconds)
         (.3f + .65f * ((i + 1) / 2) / 6.f) * p->stereo;
     if (octave) v.pan *= .25f; /* Keep sub voices near the center. */
     v.pan = bounded(v.pan + p->pan_offset[i], -1, 1, 0);
-    v.level = i >= p->lenses ? 0 : i == 0 ? 1 + 2 * p->body :
-        octave ? .3f + .7f * p->body : 1.f;
+    int solo = p->solo_mask & ((1 << p->lenses) - 1);
+    int audible = !(p->mute_mask & (1 << i)) && (!solo || (solo & (1 << i)));
+    v.level = audible ? lens_weight(p, i) * powf(10, p->trim_db[i] / 20) : 0;
     return v;
 }
 
@@ -83,6 +108,7 @@ TsPrismView ts_prism_control_view(const TsPrismControls *controls)
     ts_prism_controls_sanitize(&p);
     for (int i = 0; i < TS_PRISM_LENSES; ++i) v.lens[i] = geometry(&p, i, 0);
     v.wet = p.enabled ? p.mix : 0;
+    v.dry = p.enabled ? (1 - p.mix) * p.dry_level : 1;
     return v;
 }
 
@@ -106,6 +132,7 @@ int ts_prism_prepare(TsPrism *p, uint32_t rate)
     p->window_fade_step = 1.f / fmaxf(1, rate * .040f);
     p->smoothing = 1 - expf(-1.f / (.020f * rate));
     p->gain = p->gain_target = 1;
+    p->dry = 1;
     p->controls = controls;
     ts_prism_controls_sanitize(&p->controls);
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
@@ -159,8 +186,7 @@ static TsStereoFrame read_lens(const TsPrism *p, double phase, double span, floa
 static double advance_phase(double phase, double ratio, double span)
 {
     phase += (1 - ratio) / span;
-    if (phase < 0) phase += 1;
-    if (phase >= 1) phase -= 1;
+    phase -= floor(phase); /* Wide pitch edits can advance over a full cycle. */
     return phase;
 }
 
@@ -267,9 +293,13 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
             p->lens[i].ratio_target = exp2f(v.cents / 1200.f);
             p->lens[i].delay_target = v.delay_ms * p->sample_rate / 1000;
             p->lens[i].level_target = v.level;
+            p->lens[i].weight_target = lens_weight(c, i);
             p->lens[i].pan_target = v.pan;
         }
     }
+    float dry_target = c->enabled ? (1 - c->mix) * c->dry_level : 1;
+    p->dry += p->smoothing * (dry_target - p->dry);
+    if (fabsf(p->dry - dry_target) < .000001f) p->dry = dry_target;
     p->wet += p->smoothing * (wet_target - p->wet);
     if (wet_target == 0 && p->wet < .000001f) p->wet = 0;
     /* Gain target is cached at control rate; no pow in the voice loop. */
@@ -279,13 +309,19 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
         TsPrismLens *v = &p->lens[i];
 #define SMOOTH(field) v->field += p->smoothing * (v->field##_target - v->field)
-        SMOOTH(ratio); SMOOTH(delay); SMOOTH(level); SMOOTH(pan);
+        SMOOTH(ratio); SMOOTH(delay); SMOOTH(level); SMOOTH(pan); SMOOTH(weight);
 #undef SMOOTH
         if (!v->level_target && v->level < .000001f) v->level = 0;
+        if (!v->weight_target && v->weight < .000001f) v->weight = 0;
         /* Phase runs independently of bypass, GUI visibility and block size. */
         v->phase = advance_phase(v->phase, v->ratio, p->window_frames);
         if (p->window_fade < 1)
             v->previous_phase = advance_phase(v->previous_phase, v->ratio, p->previous_window);
+        float balance_l = v->pan > 0 ? 1 - v->pan : 1;
+        float balance_r = v->pan < 0 ? 1 + v->pan : 1;
+        float reference_l = v->weight * balance_l, reference_r = v->weight * balance_r;
+        energy_l += reference_l * reference_l;
+        energy_r += reference_r * reference_r;
         if (p->wet == 0 || v->level == 0) continue;
         TsStereoFrame lens = input;
         if (i != 0) {
@@ -300,16 +336,15 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
         }
         /* Stereo balance retains the channels; no mono summing, phase flips,
            or artificial cross-channel signal. Center and bass stay solid. */
-        float left = v->level * (v->pan > 0 ? 1 - v->pan : 1);
-        float right = v->level * (v->pan < 0 ? 1 + v->pan : 1);
+        float left = v->level * balance_l;
+        float right = v->level * balance_r;
         sum.l += lens.l * left;
         sum.r += lens.r * right;
-        energy_l += left * left;
-        energy_r += right * right;
+
     }
     p->write = (p->write + 1) % p->capacity;
     ++p->clock;
-    if (p->wet == 0) return input; /* Exact settled bypass, including output trim. */
+    if (p->wet == 0 && p->dry == 1) return input; /* Exact settled bypass, including output trim. */
     /* Root-sum-square compensation preserves decorrelated voice energy,
        including the actual stereo balance and smoothed lens fades. A floor
        of one avoids boosting the first samples of engagement. Correlated
@@ -317,8 +352,8 @@ TsStereoFrame ts_prism_process(TsPrism *p, TsStereoFrame input)
     float gain_l = p->gain / sqrtf(fmaxf(1, energy_l));
     float gain_r = p->gain / sqrtf(fmaxf(1, energy_r));
     return ts_stereo_frame_sanitize((TsStereoFrame){
-        input.l * (1 - p->wet) + sum.l * gain_l * p->wet,
-        input.r * (1 - p->wet) + sum.r * gain_r * p->wet});
+        input.l * p->dry + sum.l * gain_l * p->wet,
+        input.r * p->dry + sum.r * gain_r * p->wet});
 }
 
 TsPrismView ts_prism_view(const TsPrism *p)
@@ -327,6 +362,7 @@ TsPrismView ts_prism_view(const TsPrism *p)
     if (!p || !p->history) return v;
     v.valid = 1;
     v.wet = p->wet;
+    v.dry = p->dry;
     for (int i = 0; i < TS_PRISM_LENSES; ++i) {
         v.lens[i] = (TsPrismLensView){1200 * log2f(p->lens[i].ratio),
             p->lens[i].delay * 1000 / p->sample_rate,
