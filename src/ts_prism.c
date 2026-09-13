@@ -4,7 +4,8 @@
 #include <string.h>
 
 const float ts_prism_unison_cents[TS_PRISM_LENSES] =
-    {0, -7, 7, -12, 12, -19, 19, -26, 26, -1200, -1207, -1193};
+    {0, -7, 7, -12, 12, -19, 19, -26, 26, -1200, -1207, -1193,
+     -3, 3, -10, 10, -16, 16, -23, 23, -31, 31, -1203, -1197};
 
 static float bounded(float x, float lo, float hi, float fallback)
 {
@@ -13,7 +14,7 @@ static float bounded(float x, float lo, float hi, float fallback)
 
 void ts_prism_controls_default(TsPrismControls *p)
 {
-    if (p) *p = (TsPrismControls){0, TS_PRISM_SUPERSAW, 12,
+    if (p) *p = (TsPrismControls){0, TS_PRISM_SUPERSAW, TS_PRISM_BASE_LENSES,
                                  .5f, .15f, 0, .8f, .5f, .8f, 0, {0}, {0}, {0}, 1, 0, 0, 0, 0, .5f};
 }
 
@@ -58,7 +59,7 @@ void ts_prism_reset_lenses(TsPrismControls *p)
 static float lens_weight(const TsPrismControls *p, int i)
 {
     return i >= p->lenses ? 0 : i == 0 ? 1 + 2 * p->body :
-        (p->mode == TS_PRISM_SUPERSAW && i >= 9) ? .3f + .7f * p->body : 1;
+        (p->mode == TS_PRISM_SUPERSAW && ts_prism_unison_cents[i] < -1000) ? .3f + .7f * p->body : 1;
 }
 
 const char *ts_prism_mode_name(int mode)
@@ -96,14 +97,14 @@ static float shape_map(float value, int shape)
 }
 
 /* Stable lens identities: count changes never reassign the surviving pitches
-   or pans. Body lenses are the last three, exactly as in FM Unison. Focus
+   or pans. The original twelve retain FM's voicing; 23/24 add two body lenses. Focus
    contracts fine pitch/time differences, retaining intentional octave bands. */
 static TsPrismLensView geometry(const TsPrismControls *p, int i, double seconds)
 {
     TsPrismLensView v = {0};
     float fine = ts_prism_unison_cents[i];
     float octave = 0, divergence = 1 - p->focus;
-    if (p->mode == TS_PRISM_SUPERSAW && i >= 9) {
+    if (p->mode == TS_PRISM_SUPERSAW && fine < -1000) {
         octave = -1200;
         fine += 1200;
     } else if (p->mode == TS_PRISM_ENSEMBLE) {
@@ -126,6 +127,10 @@ static TsPrismLensView geometry(const TsPrismControls *p, int i, double seconds)
         2.f + i * .6f : .2f + (i % 5) * .3f) * divergence;
     v.pan = i == 0 ? 0 : (i & 1 ? -1.f : 1.f) *
         (.3f + .65f * ((i + 1) / 2) / 6.f) * p->stereo;
+    /* Interleave new pan positions without moving any original voice. */
+    if (i >= TS_PRISM_BASE_LENSES)
+        v.pan = (i & 1 ? 1.f : -1.f) *
+            (.3f + .65f * (((i - TS_PRISM_BASE_LENSES) / 2) + .5f) / 6.f) * p->stereo;
     if (octave) v.pan *= .25f; /* Keep sub voices near the center. */
     v.pan = bounded(v.pan + p->pan_offset[i], -1, 1, 0);
     v.refraction_pan = v.pan;

@@ -266,13 +266,30 @@ float ts_sister_ui_prism_pitch_at_y(float y)
     return copysignf(12 * expm1f(fabsf(distance) * log1pf(6400.f / 12) / 68), distance);
 }
 
+int ts_sister_ui_prism_strip_hit(int x, int y)
+{
+    x-=TS_PRISM_STRIP_X;
+    if(x<0 || x>=TS_PRISM_LENSES*TS_PRISM_STRIP_STEP ||
+       y<TS_PRISM_STRIP_Y || y>=TS_PRISM_STRIP_Y+TS_PRISM_STRIP_H ||
+       x%TS_PRISM_STRIP_STEP>=TS_PRISM_STRIP_W)return -1;
+    return x/TS_PRISM_STRIP_STEP;
+}
+
 int ts_sister_ui_prism_hit(const TsSisterUiModel *model, int x, int y)
 {
     if (!model || model->fx_page != 3 || model->preset_manage_open ||
         model->midi_learn_active) return -1;
+    int strip=ts_sister_ui_prism_strip_hit(x,y);
+    if(strip>=0)return strip<model->parameters.prism.lenses ? strip : -1;
     TsPrismView v = model->routing.prism.valid ? model->routing.prism :
         ts_prism_control_view(&model->parameters.prism);
     int best = -1, distance = 65;
+    int selected=model->prism_selected-1;
+    if(selected>=0 && selected<model->parameters.prism.lenses) {
+        int px,py;ts_sister_ui_prism_point(v.lens[selected],&px,&py);
+        int d=(x-px)*(x-px)+(y-py)*(y-py);
+        if(d<distance){best=selected;distance=d;}
+    }
     /* Muted/solo-excluded handles remain available, including the body anchor. */
     for (int i = 0; i < model->parameters.prism.lenses; ++i) {
         int px, py; ts_sister_ui_prism_point(v.lens[i], &px, &py);

@@ -533,8 +533,10 @@ Ctrl+Z / Ctrl+Y undo/redo; Escape cancels the current stroke.
 
 - **Tab**, then page cycle: Tape → FX → Fallout → **Prism** → Tape.
 - **PRISM ON/OFF**: smoothed insert bypass. **Mode** cycles Supersaw / Ensemble.
-- **Lenses** 2–12; wheel changes one lens. Spread/Drift 0–200%, Body 0–300%,
+- **Lenses** 2–24 (default 12); wheel changes one lens. Spread/Drift 0–200%, Body 0–300%,
   Dry Level 0–200%; Focus, Stereo, Wet and Color 0–100%. **Output** trims the wet sum from −12 to +12 dB.
+- Click a number in the **01–24 strip** to select an overlapping lens. Numbers
+  also accept mute/solo, wheel trim and right-click reset.
 - Drag hollow ray points up/down for individual pitch, left/right for pan.
   Wheel trims −24 to +12 dB (Shift-wheel: fine); brightness shows lens level.
   Shift-click mutes, Ctrl-click solos. Right-click resets one lens; right-click

@@ -19,12 +19,29 @@ static int compare(const void *a, const void *b)
     double x=*(const double *)a, y=*(const double *)b;
     return (x > y) - (x < y);
 }
+/* Same-host before/after compatibility check for the original voice counts. */
+static void signatures(void)
+{
+    for(int count=2;count<=12;count+=2)for(int mode=0;mode<2;++mode) {
+        TsPrism p={0};assert(ts_prism_prepare(&p,48000));TsPrismControls c;
+        ts_prism_controls_default(&c);c.enabled=1;c.lenses=count;c.mode=mode;
+        c.spread=1.2f;c.drift=1.1f;c.input_shape=2;c.output_shape=5;c.color=.75f;
+        ts_prism_set_controls(&p,&c);uint64_t hash=1469598103934665603ull;
+        for(int n=0;n<48000;++n) {
+            TsStereoFrame y=ts_prism_process(&p,(TsStereoFrame){.3f*sinf(n*.023f),.2f*cosf(n*.057f)});
+            uint32_t bits[2];memcpy(bits,&y,sizeof(bits));
+            hash=(hash^bits[0])*1099511628211ull;hash=(hash^bits[1])*1099511628211ull;
+        }
+        printf("count=%d mode=%d hash=%016llx\n",count,mode,(unsigned long long)hash);
+        ts_prism_free(&p);
+    }
+}
 static void benchmark(int colored)
 {
     enum { BLOCKS=4000, FRAMES=256 };
     static double times[BLOCKS];
-    const int counts[] = {0,2,4,6,8,12};
-    for (int full=0; full<2; ++full) for (int k=0; k<6; ++k) {
+    const int counts[] = {0,2,4,6,8,12,16,20,24};
+    for (int full=0; full<2; ++full) for (int k=0; k<(int)(sizeof(counts)/sizeof(counts[0])); ++k) {
         TsSisterRuntime *r=calloc(1,sizeof(*r)); assert(r);
         ts_sister_runtime_init(r);
         char error[160];
@@ -66,19 +83,21 @@ static void benchmark(int colored)
 
 /* Reproduce the reported wide-spread patch from audio-owned snapshots, without
    a UI animation clock. Optional prefix writes a 15 fps native-frame sequence. */
-static void motion_probe(const char *prefix,float drift,float focus)
+static void motion_probe(const char *prefix,float drift,float focus,int lenses)
 {
+    if(lenses<2)lenses=2;
+    if(lenses>TS_PRISM_LENSES)lenses=TS_PRISM_LENSES;
     TsConfig config;TsPalette palette;TsSisterUiModel model;static TsFramebuffer fb;
     TsSisterRuntime *r=calloc(1,sizeof(*r));assert(r);char error[160];
     ts_config_init(&config);ts_palette_default(&palette);ts_sister_ui_model_init(&model,&config);
     ts_sister_runtime_init(r);assert(ts_sister_runtime_reconfigure(r,48000,2,error,sizeof(error)));
     TsSisterParameters p=r->parameters;
-    p.prism.enabled=1;p.prism.spread=2;p.prism.drift=drift;p.prism.focus=focus;
+    p.prism.enabled=1;p.prism.lenses=lenses;p.prism.spread=2;p.prism.drift=drift;p.prism.focus=focus;
     p.prism.stereo=1;p.prism.body=.9f;p.prism.mix=1;p.prism.dry_level=.6f;
     p.prism.input_shape=TS_PRISM_PLANO_CONVEX;p.prism.output_shape=TS_PRISM_MENISCUS_NEGATIVE;p.prism.color=.95f;
     ts_sister_runtime_set_parameters(r,&p);model.fx_page=3;
     snprintf(model.status,sizeof(model.status),"DRIFT: LIVE AUDIO SNAPSHOTS / NO MOUSE INPUT");
-    float lo[12],hi[12];for(int i=0;i<12;++i){lo[i]=1000;hi[i]=-1000;}
+    float lo[TS_PRISM_LENSES],hi[TS_PRISM_LENSES];for(int i=0;i<TS_PRISM_LENSES;++i){lo[i]=1000;hi[i]=-1000;}
     for(int frame=-30;frame<180;++frame) {
         ts_sister_runtime_begin_audio_block(r);
         for(int n=0;n<3200;++n) {
@@ -89,7 +108,7 @@ static void motion_probe(const char *prefix,float drift,float focus)
         TsSisterRoutingSnapshot snapshot;assert(ts_sister_runtime_get_snapshot(r,&snapshot));
         ts_sister_ui_model_update(&model,&snapshot,NULL,NULL,&p);
         if(frame<0)continue;
-        for(int i=0;i<12;++i) {
+        for(int i=0;i<TS_PRISM_LENSES;++i) {
             float x,y;ts_sister_ui_prism_point_f(snapshot.prism.lens[i],&x,&y);
             lo[i]=fminf(lo[i],y);hi[i]=fmaxf(hi[i],y);
         }
@@ -98,15 +117,16 @@ static void motion_probe(const char *prefix,float drift,float focus)
             ts_sister_ui_render(&fb,&model,&palette);assert(ts_ui_write_ppm(&fb,path));
         }
     }
-    for(int i=0;i<12;++i)printf("lens=%02d travel_native_pixels=%.3f\n",i+1,hi[i]-lo[i]);
+    for(int i=0;i<lenses;++i)printf("lens=%02d travel_native_pixels=%.3f\n",i+1,hi[i]-lo[i]);
     ts_sister_runtime_free(r);free(r);
 }
 
 int main(int argc,char **argv)
 {
+    if(argc>1 && !strcmp(argv[1],"--signatures")){signatures();return 0;}
     if (argc>1 && !strcmp(argv[1],"--bench")) {benchmark(argc>2);return 0;}
     if (argc>1 && !strcmp(argv[1],"--motion")) {
-        motion_probe(argc>2?argv[2]:NULL,argc>3?(float)atof(argv[3]):2,argc>4?(float)atof(argv[4]):.6f);return 0;
+        motion_probe(argc>2?argv[2]:NULL,argc>3?(float)atof(argv[3]):2,argc>4?(float)atof(argv[4]):.6f,argc>5?atoi(argv[5]):12);return 0;
     }
     TsConfig config; TsPalette palette; TsSisterUiModel model;
     static TsFramebuffer fb;
@@ -138,6 +158,7 @@ int main(int argc,char **argv)
     if(argc>7)model.parameters.prism.input_shape=atoi(argv[7]);
     if(argc>8)model.parameters.prism.output_shape=atoi(argv[8]);
     if(argc>9)model.parameters.prism.color=(float)atof(argv[9]);
+    ts_prism_controls_sanitize(&model.parameters.prism);
     model.routing.limiter_ceiling_db=-1;
     TsPrism prism={0}; assert(ts_prism_prepare(&prism,48000));
     ts_prism_set_controls(&prism,&model.parameters.prism);

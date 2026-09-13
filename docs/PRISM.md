@@ -1,7 +1,8 @@
 # Prism: real-time refraction
 
-Prism turns live or recorded audio into 2–12 related voices inside Sister Machine.
-At twelve, that means **11 shifted lenses plus lens 01, a clean wet body anchor**.
+Prism turns live or recorded audio into **2–24 related voices** inside Sister Machine.
+The cap is **23 shifted lenses plus lens 01, a clean wet body anchor**.
+The default remains twelve, and existing patches retain their saved lens count.
 The **DRY** lane is a separate copy of the original signal.
 Supersaw and Ensemble are the first two geometries. No render job or CDP executable
 is involved. The existing FM Unison remains available.
@@ -33,8 +34,8 @@ Head-tap capture still selects the corresponding head; **REC FILE** uses final O
 | Control | Audio | Diagram |
 |---|---|---|
 | Mode | Supersaw or Ensemble; click to cycle | Wide fine-pitch fan plus octave body, or a tighter fan with more time displacement |
-| Lenses | 2–12, with fading entry/removal; wheel steps one lens | One ray per contributing lens; coincident pitches can overlap |
-| Spread | 0–200%; 50 reproduces the FM offsets at Focus 0, 100 reaches ±208 cents, 200 reaches ±1508 cents | Angular separation follows the actual smoothed pitches |
+| Lenses | 2–24, with fading entry/removal; wheel steps one lens | One ray per contributing lens; the numbered strip selects overlapping points |
+| Spread | 0–200%; 50 reproduces the voicing table at Focus 0; the full fan reaches ±248 cents at 100 and ±1798 cents at 200 | Angular separation follows the actual smoothed pitches |
 | Drift | Independent, deterministic slow pitch wandering, 0–200%; up to ±25 cents at 100 and ±190 cents at 200 before Focus; lower settings retain subtle movement | Rays wander with the audio; no separate animation clock |
 | Focus | Contracts fine pitch, hand-drawn pitch offsets and added time toward zero | Rays converge; intentional octave relationships remain |
 | Stereo | Per-lens stereo balance; body voices stay near center | The control points move laterally with the actual pan values |
@@ -52,6 +53,11 @@ path dominates. This is a parameter diagram, not an amplitude scope or frequency
 analyzer. Pitch distances are expanded/compressed for readability; octave bands
 are not a linear frequency scale. Vertical position represents pitch on a continuous compressed scale; horizontal
 position represents pan. Neither axis represents physical distance or device latency.
+
+The **01–24 numbered strip** selects individual lenses even when their points
+overlap. Select a number, then drag its highlighted point; the selected point wins
+an exact overlap. Shift/Ctrl-click, wheel trim and right-click reset also work
+directly on the numbers. Numbers above the active count are dim and inactive.
 
 Grab a **hollow middle point** and drag **up/down for pitch**, **left/right for pan**.
 Each shifted lens accepts an independent ±1 octave offset around its mode/Spread
@@ -143,23 +149,29 @@ All six glass silhouettes and sound mappings remain available.
 The displayed movement comes from the audio snapshot, including during silence;
 there is no UI animation oscillator. At Drift zero or full Focus it settles.
 A 12-second native-frame sequence at Spread 200, Drift 200, Focus 60, Stereo 100,
-PLANO-CONVEX input and MENISCUS − output demonstrates the reported patch:
+PLANO-CONVEX input and MENISCUS − output demonstrates the reported settings
+with all 24 lenses:
 
 ![Crisp Prism motion driven by live DSP snapshots](images/prism-drift.gif)
 
-More lenses are possible: the audio history is shared and each added lens needs
-another reader, filter state and mixing work. The current voicing table, mute/solo
-masks, saved arrays and draggable layout still support **twelve** in this revision.
-Increasing that limit deserves a dedicated voicing/layout change and measurement
-on the target machine, rather than silently changing existing twelve-lens patches.
+The **24-lens cap** adds ten fine-detuned voices and two lower-octave voices.
+The first twelve keep their original pitch, pan and weight definitions. New pan
+positions interleave with the original fan; adding lenses does not reassign the
+surviving voices. The added lenses share the existing audio history.
+
+![All 24 lenses with independently edited points and two colored glass stages](images/prism-24.png)
 
 ## Sound and architecture
 
 The PR99 audit found two different source models: FM Unison creates oscillators;
 Sister receives an arbitrary stereo stream. The reusable part is the voicing:
 `0, −7, +7, −12, +12, −19, +19, −26, +26, −1200, −1207, −1193` cents.
-Both engines now use one shared table. FM's oscillator, editing and reversible
-Unison behavior are otherwise unchanged. A streaming reconstruction will have a
+FM uses these first twelve entries of the shared table and remains a twelve-voice
+synth. Prism adds lenses 13–24 at
+`−3, +3, −10, +10, −16, +16, −23, +23, −31, +31, −1203, −1197` cents.
+In Supersaw, lenses 10–12 and 23–24 form the lower-octave body band. The original
+fine fan still reaches ±208 cents at Spread 100 and ±1508 at 200. FM's oscillator,
+editing and reversible Unison behavior are unchanged. A streaming reconstruction will have a
 different texture from directly generated oscillators.
 
 Prism has one preallocated 80 ms stereo history and bounded per-lens read state.
@@ -194,21 +206,21 @@ not an automatic loudness rider; correlated voices can add up more strongly. The
 existing final stereo-linked limiter handles those peaks. Output now spans
 −12 to +12 dB on the wet sum; Wet keeps its existing linear crossfade.
 
-A matched 48 kHz test at 12 lenses, Spread 50, Drift 0, Focus 0, Stereo 80,
+A matched 48 kHz test at 12 and 24 lenses, Spread 50, Drift 0, Focus 0, Stereo 80,
 Body 50, Wet 100 and Output 0 dB measured RMS relative to bypass:
 
-| Input / mode | First run | Revised |
-|---|---:|---:|
-| 110 Hz bass / Supersaw | −11.81 dB | −0.39 dB |
-| 110 Hz bass / Ensemble | −11.73 dB | +0.26 dB |
-| Actual FM 12-voice saw Unison / Supersaw | −10.48 dB | +0.95 dB |
-| Actual FM 12-voice saw Unison / Ensemble | −12.35 dB | −0.40 dB |
+| Input / mode | First run, 12 lenses | Revised, 12 lenses | Revised, 24 lenses |
+|---|---:|---:|---:|
+| 110 Hz bass / Supersaw | −11.81 dB | −0.39 dB | −0.41 dB |
+| 110 Hz bass / Ensemble | −11.73 dB | +0.26 dB | +0.02 dB |
+| Actual FM 12-voice saw Unison / Supersaw | −10.48 dB | +0.95 dB | +1.36 dB |
+| Actual FM 12-voice saw Unison / Ensemble | −12.35 dB | −0.40 dB | −0.70 dB |
 
 The FM test uses the native FM renderer at 220 Hz. Measurements use the last
 three seconds of four, before limiting, with the same input and settings in both
-engines. Noise retained roughly −1.6 dB because the windowed reads smooth its
-energy. Maximum Output, full Focus and abrupt lens edits produced internal peaks
-of 6.828; the existing limiter held both output channels to its −1 dB ceiling
+engines. Noise measures roughly −1.6 dB at twelve and −2.1 dB at 24 because
+the windowed reads smooth its energy. Maximum Output, full Focus and abrupt lens
+edits at 24 lenses produced internal peaks of 9.673; the existing limiter held both output channels to its −1 dB ceiling
 (0.891 linear). No extra Prism limiter or compressor is added.
 
 ## Latency and performance
@@ -216,7 +228,7 @@ of 6.828; the existing limiter held both output channels to its −1 dB ceiling
 The dry path and central lens add **zero Prism buffering**. Other voices use
 variable read ages: nominally a 40 ms window plus a 2 ms guard and small per-lens
 offsets. Detected periods can change the window, bounded to 60 ms. The oldest
-Ensemble read is under approximately **71 ms** at normal audio rates; Supersaw
+Ensemble read at 24 lenses is under approximately **78 ms** at normal audio rates; Supersaw
 adds less offset. This is a blend of different read ages, not one fixed latency
 that can be removed by delaying the dry signal. Device buffers and the existing
 output limiter add their own latency. Lens count does not increase the window.
@@ -227,31 +239,38 @@ Color 100) on a shared Linux AMD EPYC 9V74 host, C11 `-O2`, stereo 48 kHz,
 
 | Lenses | Prism mean / block | Prism p99 | Prism share of block budget | Sister + Prism + limiter mean |
 |---:|---:|---:|---:|---:|
-| Bypass | 29.41 µs | 43.87 µs | 0.55% | 312.00 µs |
-| 2 | 60.41 µs | 120.64 µs | 1.13% | 342.64 µs |
-| 4 | 84.72 µs | 172.85 µs | 1.59% | 390.38 µs |
-| 6 | 105.69 µs | 163.56 µs | 1.98% | 407.47 µs |
-| 8 | 133.37 µs | 250.34 µs | 2.50% | 440.33 µs |
-| 12 | 177.60 µs | 299.22 µs | 3.33% | 464.72 µs |
+| Bypass | 57.46 µs | 154.26 µs | 1.08% | 362.77 µs |
+| 2 | 87.60 µs | 166.18 µs | 1.64% | 415.01 µs |
+| 4 | 107.01 µs | 166.42 µs | 2.01% | 420.46 µs |
+| 6 | 132.10 µs | 212.91 µs | 2.48% | 469.65 µs |
+| 8 | 154.23 µs | 222.21 µs | 2.89% | 490.14 µs |
+| 12 | 200.64 µs | 297.31 µs | 3.76% | 519.46 µs |
+| 16 | 249.66 µs | 385.76 µs | 4.68% | 564.45 µs |
+| 20 | 296.67 µs | 447.51 µs | 5.56% | 616.18 µs |
+| 24 | 348.12 µs | 570.77 µs | 6.53% | 659.21 µs |
 
-These are offline processing measurements after the glass revision, not
+These are offline processing measurements after the 24-lens expansion, not
 whole-application CPU percentages or hardware underrun certification. Shared-host
-scheduling produced outliers: Prism alone reached 1.77 ms at two lenses and
-the full runtime reached 3.47 ms at eight. Full-runtime p99 stayed below 0.78 ms.
-Rendering the native Prism panel averaged 0.147 ms across 1,000 frames, excluding
-SDL presentation and the desktop compositor. Physical Windows and Linux interface
-tests at 256 frames remain part of live audition.
+scheduling produced outliers: Prism alone reached 2.33 ms at 24 lenses, and the
+full runtime reached 25.82 ms at eight. Full-runtime p99 stayed below 0.99 ms.
+The shared-host stalls prevent using these measurements as a device deadline
+guarantee. Physical Windows and Linux interface tests at 256 frames remain part
+of live audition. Drawing the native 24-lens panel averaged **0.232 ms** over
+1,000 frames, excluding SDL presentation and the desktop compositor.
 
 ## MIDI and saved projects
 
 Use the existing **Ctrl+Shift+M** MIDI learn flow. Prism On/Off and Mode are
 trigger targets; all ten sliders, including Color, Dry Level, Focus and lens count, use the
-existing continuous mapping and pickup system. Lens count is rounded to 2–12.
+existing continuous mapping and pickup system. Lens count is rounded to 2–24;
+a learned hardware fader now spans that range, while saved counts are not rescaled.
 The sliders participate in the existing parameter-lock system. Individual points
 and the two shape selectors are mouse gestures; they do not repurpose the global sliders or their MIDI targets.
 
-Project state version **16** and Sister user preset version **15** persist all
-Prism controls, both shapes, Color, dry level and per-lens pitch/pan/trim/mute/solo. Missing lens keys
+Project state version **17** and Sister user preset version **16** persist all
+Prism controls, both shapes, Color, dry level and all 24 lenses' pitch/pan/trim/mute/solo.
+Edits and mute/solo bits for lenses 13–24 survive reducing the count and reloading.
+Missing lens keys
 use zero offsets and trim with no mute/solo; missing Dry Level uses unity;
 missing shape keys use clear BI-CONVEX glass and missing Color uses 50%;
 files predating Prism initialize it **off**. The older FX-slot migrations
@@ -261,7 +280,7 @@ are the existing full Sister presets, not a second Prism-only preset bank.
 
 ## Verification and remaining listening work
 
-- Shape tests stream all 36 combinations at 8 Hz (stability edge case), 44.1,
+- Shape tests stream all 36 combinations with 24 lenses at 8 Hz (stability edge case), 44.1,
   48 and 96 kHz with maximum ranges through the real final limiter. A spectral
   test verifies that concave glass moves the sub-octave above the source. Noise
   checks verify low-pass energy reduction, all-pass energy retention and audible
@@ -270,14 +289,17 @@ are the existing full Sister presets, not a second Prism-only preset bank.
   stereo channel isolation, retained opposite-polarity stereo, finite output,
   energy compensation, final limiter ceilings, silent input, exact settled bypass,
   focus and control sanitizing. Gain regressions include bass, noise and the actual
-  twelve-voice FM Unison at 2/4/6/8/10/12 lenses in both modes.
+  twelve-voice FM Unison at every even lens count from 2 through 24 in both modes.
 - Test sources include sine, saw, triangle, pulse, noise, impulses and dynamically
-  gated noisy tones at 44.1, 48 and 96 kHz. Spectral checks measure all twelve
-  intended pitches at 44.1 and 48 kHz, including the three lower voices.
+  gated noisy tones at 44.1, 48 and 96 kHz. Spectral checks measure all 24
+  intended pitches at 44.1 and 48 kHz, including the five lower voices.
 - A callback-to-pixel motion regression covers both tape power states, playback
   and silence. At the reported wide-spread settings every sampled transition
   changes the diagram; Drift zero and full Focus produce stationary frames after
   settling. This checks the actual snapshot/model/render path without mouse events.
+- The numbered strip is exercised at 1280×800 for all 24 lenses, including
+  selection when points overlap, high-index mute/solo/trim/reset, dragging lens 24,
+  inactive numbers and the MIDI/wheel count cap.
 - Native application tests exercise page cycling, mouse hit regions, MIDI target
   resolution, knob changes, lens-count wheel steps, scaled-window point drags,
   Escape via workspace dispatch, out-of-window release, independent DSP changes
@@ -291,7 +313,12 @@ are the existing full Sister presets, not a second Prism-only preset bank.
   FM latches and preview storage. Grave shortcuts return directly to the canvas;
   repeated Tab switches keep the main fullscreen window visible. Windows
   compositor appearance still needs a physical desktop check.
-- Save/load tests cover every Prism setting, user presets, populated PR100 files
+- Same-host output signatures match the pre-expansion engine exactly for sampled
+  stereo streams at 2/4/6/8/10/12 lenses in both modes, with drift and both color
+  stages active. This checks preservation of existing sounds independently of
+  the 24-lens tests.
+- Save/load tests cover every Prism setting, all 24 lens edits and high mute/solo
+  bits, user presets, pre-expansion PR101 files, populated PR100 files
   without shape/Color keys, missing old settings
   and preservation of PR99's explicit FX slots. FM Unison and the other previously passing
   tests retain their results. Four existing failures are reproduced
@@ -324,8 +351,10 @@ build/prism_probe --bench color
 build/prism_probe --render-bench
 build/prism_probe --motion
 # Optional native PPM sequence (15 fps):
-build/prism_probe --motion drift-frame
-build/prism_probe shapes.ppm 12 0 0 .8 custom 2 3 .7
+build/prism_probe --motion drift-frame 2 .6 24
+build/prism_probe shapes.ppm 24 0 0 .8 custom 2 3 .7
+# Compare output signatures with the previous revision on the same host:
+build/prism_probe --signatures
 ```
 
 On Windows the executables have `.exe` suffixes. The application adds no new

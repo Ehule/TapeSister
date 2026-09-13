@@ -66,6 +66,13 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
     button(fb,122,48,116,ts_prism_mode_name(p->mode),1);
     snprintf(label,sizeof(label),"%d SHIFTED + 01 BODY",p->lenses-1);text(fb,250,55,label,ink,1);
     text(fb,544,55,v.valid?"LIVE DSP":"SETTINGS",ink,1);
+    for(int i=0;i<TS_PRISM_LENSES;++i) {
+        int x=TS_PRISM_STRIP_X+i*TS_PRISM_STRIP_STEP;
+        uint32_t color=colors[i%12];
+        if(i>=p->lenses || v.lens[i].level<.001f)color=blend_color(background,color,28);
+        if(model->prism_selected==i+1)rect(fb,x,TS_PRISM_STRIP_Y,TS_PRISM_STRIP_W,TS_PRISM_STRIP_H,RGB(55,18,64));
+        snprintf(label,sizeof(label),"%02d",i+1);text(fb,x+5,TS_PRISM_STRIP_Y+2,label,color,1);
+    }
     text(fb,28,85,"SOURCE",ink,1);text(fb,118,85,"INPUT",ink,1);
     text(fb,290,85,"ALTER",ink,1);text(fb,440,85,"OUTPUT",ink,1);text(fb,574,85,"OUT",ink,1);
     prism_lens_outline(fb,148,p->input_shape,RGB(114,181,203));
@@ -91,7 +98,7 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
         TsPrismLensView ray=v.lens[i];if(i>=p->lenses && ray.level<=.001f)continue;
         float x,y;ts_sister_ui_prism_point_f(ray,&x,&y);
         float strength=ray.level/(1+ray.level);
-        uint32_t color=blend_color(background,colors[i],(int)lrintf(8+strength*(12+80*v.wet)));
+        uint32_t color=blend_color(background,colors[i%12],(int)lrintf(8+strength*(12+80*v.wet)));
         float arrive_y=167+(y-167)*.7f;
         float exit_y=167+(ts_sister_ui_prism_y(ray.cents)-167)*.7f;
         float join_x=548+16*ray.pan;
@@ -108,12 +115,21 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
             rect(fb,px-3,py-3,7,7,color);
             rect(fb,px-1,py-1,3,3,background);
         }
-        if(model->prism_selected==i+1) {
-            if(i==0)snprintf(label,sizeof(label),"01 BODY %+.0FDB",p->trim_db[0]);
-            else snprintf(label,sizeof(label),"%02d %+.0FDB",i+1,p->trim_db[i]);
-            text(fb,(int)x+7,(int)y-3,label,RGB(240,240,220),1);
-        }
         if((p->mute_mask|p->solo_mask)&(1<<i))text(fb,(int)x-3,(int)y+6,(p->mute_mask&(1<<i))?"M":"S",ink,1);
+    }
+    /* Keep the selected handle and readout visible when other rays coincide. */
+    int selected=model->prism_selected-1;
+    if(selected>=0 && selected<p->lenses) {
+        int x,y;ts_sister_ui_prism_point(v.lens[selected],&x,&y);
+        uint32_t highlight=RGB(240,240,220);
+        if(selected==0) {
+            rect(fb,x-2,y-2,5,5,highlight);
+            snprintf(label,sizeof(label),"01 BODY %+.0FDB",p->trim_db[0]);
+        } else {
+            rect(fb,x-3,y-3,7,7,highlight);rect(fb,x-1,y-1,3,3,background);
+            snprintf(label,sizeof(label),"%02d %+.0FDB",selected+1,p->trim_db[selected]);
+        }
+        text(fb,x+7,y-3,label,highlight,1);
     }
     prism_line(fb,602,167,609,167,original);
     prism_line(fb,601,163,609,167,original);prism_line(fb,601,171,609,167,original);
@@ -122,7 +138,7 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
     static const char *const names[8] = {
         "LENSES", "SPREAD", "DRIFT", "FOCUS", "STEREO", "BODY", "WET", "OUTPUT"
     };
-    float amounts[8] = {(p->lenses - 2) / 10.f, p->spread / 2, p->drift / 2, p->focus,
+    float amounts[8] = {(p->lenses - 2) / (float)(TS_PRISM_LENSES - 2), p->spread / 2, p->drift / 2, p->focus,
                         p->stereo, p->body / 3, p->mix, (p->output_db + 12) / 24};
     for (int i = 0; i < 8; ++i) {
         int x = 16 + (i % 4) * 154, y = 280 + (i / 4) * 28;

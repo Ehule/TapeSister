@@ -67,9 +67,15 @@ cannot be repaired inside TapeSister.
 
 ## Prism instrument audition
 
-- [ ] At 256 frames, audition 2, 4, 8 and 12 lenses with a physical mono synth.
-- [ ] Feed FM 12-voice Unison into all 12 Prism lenses. Compare level and bass
+- [ ] At 256 frames, audition 2, 4, 8, 12, 16, 20 and 24 lenses with a physical mono synth.
+- [ ] Feed FM 12-voice Unison into 12 and then 24 Prism lenses. Compare level and bass
   against bypass at Output 0 dB, then use Output while watching the existing LIM.
+- [ ] Select all 24 lenses from the numbered strip, including overlapping points
+  at full Focus / Stereo zero. Test mute/solo, wheel trim and reset on lens 24;
+  reduce to 12, save/reload, and return to 24 to check retained edits. Confirm
+  older twelve-lens patches keep their sound.
+- [ ] At 24 lenses, run MENISCUS + into MENISCUS − with Color 100 while recording
+  and moving controls. Check for device underruns at the normal buffer size.
 - [ ] Pull one hollow point wide and keep another narrow. Test pitch/pan, right-click
   reset, Escape during drag, focus contraction, count changes and saved recall.
 - [ ] Explore Spread/Drift through 200%, Body through 300%, and Dry Level 0–200%.

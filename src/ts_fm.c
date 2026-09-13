@@ -203,7 +203,7 @@ int ts_fm_control_available(const TsFmPatch *patch, TsFmPage page, int control)
 void ts_fm_patch_unison(TsFmPatch *patch)
 {
     const float *cents = ts_prism_unison_cents;
-    _Static_assert(TS_FM_UNISON_VOICE_COUNT == TS_PRISM_LENSES, "Shared Unison voicing");
+    _Static_assert(TS_FM_UNISON_VOICE_COUNT == TS_PRISM_BASE_LENSES, "Original shared Unison voicing");
     float center;
     if (!patch) return;
     ts_fm_patch_sanitize(patch);

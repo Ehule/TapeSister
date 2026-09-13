@@ -265,6 +265,9 @@ typedef struct {
 } TsSisterUiModel;
 
 /* Shared optical coordinates for rendering and direct manipulation. */
+enum { TS_PRISM_STRIP_X = 32, TS_PRISM_STRIP_Y = 72, TS_PRISM_STRIP_STEP = 24,
+       TS_PRISM_STRIP_W = 22, TS_PRISM_STRIP_H = 11 };
+int ts_sister_ui_prism_strip_hit(int x, int y);
 void ts_sister_ui_prism_point(TsPrismLensView ray, int *x, int *y);
 void ts_sister_ui_prism_point_f(TsPrismLensView ray, float *x, float *y);
 float ts_sister_ui_prism_y(float cents);

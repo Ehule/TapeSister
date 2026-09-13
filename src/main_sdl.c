@@ -8497,7 +8497,7 @@ static void sister_set_parameter(TsSisterParameters *parameters,
         return;
     }
     switch ((TsSisterUiParameter)parameter) {
-    case TS_SISTER_UI_PARAM_PRISM_LENSES: parameters->prism.lenses = 2 + (int)lrintf(amount * 10); break;
+    case TS_SISTER_UI_PARAM_PRISM_LENSES: parameters->prism.lenses = 2 + (int)lrintf(amount * (TS_PRISM_LENSES - 2)); break;
     case TS_SISTER_UI_PARAM_PRISM_SPREAD: parameters->prism.spread = amount * 2; break;
     case TS_SISTER_UI_PARAM_PRISM_DRIFT: parameters->prism.drift = amount * 2; break;
     case TS_SISTER_UI_PARAM_PRISM_FOCUS: parameters->prism.focus = amount; break;
@@ -8631,7 +8631,7 @@ static float sister_parameter_normalized(const TsSisterParameters *parameters,
         return value > 1.0f ? 1.0f : value;
     }
     switch ((TsSisterUiParameter)parameter) {
-    case TS_SISTER_UI_PARAM_PRISM_LENSES: value = (parameters->prism.lenses - 2) / 10.f; break;
+    case TS_SISTER_UI_PARAM_PRISM_LENSES: value = (parameters->prism.lenses - 2) / (float)(TS_PRISM_LENSES - 2); break;
     case TS_SISTER_UI_PARAM_PRISM_SPREAD: value = parameters->prism.spread / 2; break;
     case TS_SISTER_UI_PARAM_PRISM_DRIFT: value = parameters->prism.drift / 2; break;
     case TS_SISTER_UI_PARAM_PRISM_FOCUS: value = parameters->prism.focus; break;
@@ -8744,7 +8744,7 @@ static float sister_parameter_wheel_normalized(
         value = parameters->prism.lenses + direction * steps;
         if (value < 2) value = 2;
         if (value > TS_PRISM_LENSES) value = TS_PRISM_LENSES;
-        return (value - 2) / 10.f;
+        return (value - 2) / (float)(TS_PRISM_LENSES - 2);
     case TS_SISTER_UI_PARAM_DECORRELATE:
         return direction > 0 ? 1.0f : 0.0f;
     case TS_SISTER_UI_PARAM_FILTER_TYPE:
@@ -9179,6 +9179,12 @@ static int sister_prism_event(SDL_AudioDeviceID device, AudioState *audio,
         }
         if (lens==0) {
             snprintf(sister->model.status,sizeof(sister->model.status),"01 WET BODY ANCHOR - DRY LEVEL CONTROLS THE SEPARATE DRY PATH");
+            return 1;
+        }
+        if (ts_sister_ui_prism_strip_hit(x,y)>=0) {
+            sister_prism_end_drag(sister);
+            snprintf(sister->model.status,sizeof(sister->model.status),"LENS %02d SELECTED - DRAG ITS POINT / WHEEL TRIM / SHIFT MUTE / CTRL SOLO",lens+1);
+            sister->rendered_model_valid=0;
             return 1;
         }
         TsPrismView view = sister->model.routing.prism.valid ? sister->model.routing.prism :

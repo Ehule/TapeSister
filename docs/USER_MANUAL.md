@@ -921,11 +921,15 @@ ordinary post effects, the global limiter, and the final OUT fader.
 ## Prism live refraction
 
 Open Sister Machine with **Tab**, then cycle its page button through FX and Fallout
-to **PRISM**. Prism splits incoming audio into 2–12 related lenses and recombines
-it. Choose **SUPERSAW** for detuned layers plus three optional octave-body voices,
+to **PRISM**. Prism splits incoming audio into 2–24 related lenses and recombines
+it. The default stays at twelve; at 24 there are 23 shifted lenses plus the clean
+body anchor. Existing patch counts and FM's twelve-voice Unison are preserved.
+Choose **SUPERSAW** for detuned layers plus up to five octave-body voices,
 or **ENSEMBLE** for closer pitches and more time displacement. The rays follow
 smoothed pitch, pan, level and Wet; Focus draws fine pitch/time differences
-back together. Drag hollow middle points up/down for individual pitch and
+back together. The **01–24 strip** selects lenses when their points overlap;
+its numbers also accept mute/solo, wheel trim and right-click reset. Numbers above
+the active count are dim and inactive. Drag hollow middle points up/down for individual pitch and
 left/right for pan. Wheel over any lens for −24 to +12 dB trim (Shift-wheel for
 fine steps); brightness follows its level. Shift-click mutes and Ctrl-click solos;
 muted handles remain clickable. Right-click resets one lens; right-click the mode

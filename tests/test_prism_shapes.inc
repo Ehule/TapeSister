@@ -10,7 +10,7 @@ static void check_optical_shapes(void)
     assert(b.lens[1].pan==-b.lens[1].refraction_pan);
     c.input_shape=TS_PRISM_BICONCAVE;c.pitch_offset[1]=0;
     a=ts_prism_control_view(&c);c.input_shape=c.output_shape=0;b=ts_prism_control_view(&c);
-    for(int i=0;i<12;++i)assert(fabsf(a.lens[i].cents-b.lens[i].cents)<.001f);
+    for(int i=0;i<TS_PRISM_LENSES;++i)assert(fabsf(a.lens[i].cents-b.lens[i].cents)<.001f);
     c.input_shape=-1;c.output_shape=999;c.color=NAN;ts_prism_controls_sanitize(&c);
     assert(!c.input_shape && !c.output_shape && c.color==.5f);
 
@@ -20,8 +20,8 @@ static void check_optical_shapes(void)
     for(int r=0;r<4;++r) {
         TsPrism p={0};assert(ts_prism_prepare(&p,rates[r]));
         TsSisterLimiter limiter;ts_sister_limiter_init(&limiter);assert(ts_sister_limiter_reconfigure(&limiter,rates[r]));
-        c=settings();c.color=1;c.spread=c.drift=2;c.body=3;c.output_db=12;
-        for(int i=0;i<12;++i)c.trim_db[i]=12;
+        c=settings();c.lenses=TS_PRISM_LENSES;c.color=1;c.spread=c.drift=2;c.body=3;c.output_db=12;
+        for(int i=0;i<TS_PRISM_LENSES;++i)c.trim_db[i]=12;
         for(int in=0;in<6;++in)for(int out=0;out<6;++out) {
             c.input_shape=in;c.output_shape=out;c.pitch_offset[8]=(in&1)?1200:-1200;
             ts_prism_set_controls(&p,&c);
@@ -34,7 +34,7 @@ static void check_optical_shapes(void)
             }
             TsPrismView v=ts_prism_view(&p);
             assert(v.lens[0].cents==0 && v.lens[0].refraction_cents==0);
-            for(int i=0;i<12;++i)assert(p.lens[i].phase>=0 && p.lens[i].phase<1);
+            for(int i=0;i<TS_PRISM_LENSES;++i)assert(p.lens[i].phase>=0 && p.lens[i].phase<1);
         }
         ts_prism_free(&p);ts_sister_limiter_free(&limiter);
     }

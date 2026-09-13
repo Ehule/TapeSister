@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum { TS_PRISM_LENSES = 12, TS_PRISM_HOP = 64 };
+enum { TS_PRISM_BASE_LENSES = 12, TS_PRISM_LENSES = 24, TS_PRISM_HOP = 64 };
 typedef enum { TS_PRISM_SUPERSAW, TS_PRISM_ENSEMBLE, TS_PRISM_MODE_COUNT } TsPrismMode;
 typedef enum {
     TS_PRISM_BICONVEX, TS_PRISM_PLANO_CONVEX, TS_PRISM_MENISCUS_POSITIVE,
@@ -23,7 +23,7 @@ typedef struct {
     float color;
 } TsPrismControls;
 
-/* Shared voicing, also used by the original FM Unison template. */
+/* The first BASE_LENSES entries also serve the unchanged FM Unison template. */
 extern const float ts_prism_unison_cents[TS_PRISM_LENSES];
 
 typedef struct {
