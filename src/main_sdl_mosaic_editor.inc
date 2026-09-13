@@ -28,7 +28,7 @@ typedef struct {
     int drag, drag_slot, drag_x, drag_y, drag_moved, drag_copy;
     double drag_start, drag_duration, drag_left, drag_width;
     TsMosaicEvent clipboard;
-    int fm_parked, mosaic_return_fm, fm_return_mosaic, fm_edit_exit, portal_return_fm;
+    int fm_parked, fm_edit_exit, portal_return_fm;
     uint64_t fm_owner, fm_epoch;
 } MosaicController;
 

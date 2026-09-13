@@ -70,7 +70,7 @@ static void test_portal_workflow_ui(SDL_Window *window,SDL_AudioDeviceID device)
     uint64_t original=ts_sample_hash(&instrument.current);
     char folder[160],path[1200];snprintf(folder,sizeof(folder),"/tmp/tapesister-portal-record-%lu",(unsigned long)SDL_GetTicks());
     SDL_setenv("TAPESISTER_CAPTURES",folder,1);
-    click.button.x=478;click.button.y=12;
+    click.button.x=580;click.button.y=389;
     assert(main_file_capture_event(&click,window,&audio,&ui,&sister,44100));
     assert(ui.file_record_state==TS_PERFORMANCE_FILE_RECORDING && p->open && !audio.sister.enabled);
     snprintf(path,sizeof(path),"%s",sister.performance_recorder.path);

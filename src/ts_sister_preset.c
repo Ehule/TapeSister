@@ -237,6 +237,13 @@ int ts_sister_preset_delete(TsSisterPresetBank *bank, size_t index,
 
 static int write_parameters(FILE *file, const TsSisterParameters *p)
 {
+    if (fprintf(file, "prism_dry_level=%.9g\nprism_mute_mask=%d\nprism_solo_mask=%d\n",
+        p->prism.dry_level, p->prism.mute_mask, p->prism.solo_mask) < 0) return 0;
+    if (fprintf(file, "prism_enabled=%d\nprism_mode=%d\nprism_lenses=%d\nprism_spread=%.9g\nprism_drift=%.9g\nprism_focus=%.9g\nprism_stereo=%.9g\nprism_body=%.9g\nprism_mix=%.9g\nprism_output_db=%.9g\n",
+        p->prism.enabled, p->prism.mode, p->prism.lenses, p->prism.spread, p->prism.drift, p->prism.focus, p->prism.stereo, p->prism.body, p->prism.mix, p->prism.output_db) < 0) return 0;
+    for (int i = 0; i < TS_PRISM_LENSES; ++i)
+        if (fprintf(file, "prism_pitch_offset_%d=%.9g\nprism_pan_offset_%d=%.9g\nprism_trim_db_%d=%.9g\n",
+            i, p->prism.pitch_offset[i], i, p->prism.pan_offset[i], i, p->prism.trim_db[i]) < 0) return 0;
     if (fprintf(file,
         "h1_level=%.9g\nh1_time_ms=%.9g\nh1_feedback=%.9g\n"
         "h2_level=%.9g\nh2_scrub=%.9g\nh2_rate=%d\nh2_feedback=%.9g\n"
@@ -450,6 +457,28 @@ static int assign_field(TsSisterParameters *p, const char *key,
             return parse_float(value, &slot->mix);
         return 1;
     }
+    for (int i = 0; i < TS_PRISM_LENSES; ++i) {
+        char lens_key[40];
+        snprintf(lens_key, sizeof(lens_key), "prism_pitch_offset_%d", i);
+        if (!strcmp(key, lens_key)) return parse_float(value, &p->prism.pitch_offset[i]);
+        snprintf(lens_key, sizeof(lens_key), "prism_pan_offset_%d", i);
+        if (!strcmp(key, lens_key)) return parse_float(value, &p->prism.pan_offset[i]);
+        snprintf(lens_key, sizeof(lens_key), "prism_trim_db_%d", i);
+        if (!strcmp(key, lens_key)) return parse_float(value, &p->prism.trim_db[i]);
+    }
+    FLOAT_FIELD("prism_dry_level", prism.dry_level);
+    INT_FIELD("prism_mute_mask", prism.mute_mask);
+    INT_FIELD("prism_solo_mask", prism.solo_mask);
+    INT_FIELD("prism_enabled", prism.enabled);
+    INT_FIELD("prism_mode", prism.mode);
+    INT_FIELD("prism_lenses", prism.lenses);
+    FLOAT_FIELD("prism_spread", prism.spread);
+    FLOAT_FIELD("prism_drift", prism.drift);
+    FLOAT_FIELD("prism_focus", prism.focus);
+    FLOAT_FIELD("prism_stereo", prism.stereo);
+    FLOAT_FIELD("prism_body", prism.body);
+    FLOAT_FIELD("prism_mix", prism.mix);
+    FLOAT_FIELD("prism_output_db", prism.output_db);
     FLOAT_FIELD("h1_level", head1_level); FLOAT_FIELD("h1_time_ms", head1_time_ms);
     FLOAT_FIELD("h1_feedback", head1_feedback); FLOAT_FIELD("h2_level", head2_level);
     FLOAT_FIELD("h2_scrub", head2_scrub); INT_FIELD("h2_rate", head2_rate_index);
@@ -633,7 +662,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
         }
         if (strcmp(text, "[Preset]") == 0) {
             if (in_preset) {
-                if (file_version < TS_SISTER_PRESET_VERSION) {
+                if (file_version < 11 /* FX slot migration predates Prism */) {
                     ts_sister_fx_controls_migrate_legacy(&current.fx);
                     ts_sister_ui_migrate_legacy_effect_locks(
                         &current_locks, &current_locks_high);
@@ -687,7 +716,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
     if (ferror(file)) goto malformed;
     if (!saw_header || !saw_version) goto malformed;
     if (in_preset) {
-        if (file_version < TS_SISTER_PRESET_VERSION) {
+        if (file_version < 11 /* FX slot migration predates Prism */) {
             ts_sister_fx_controls_migrate_legacy(&current.fx);
             ts_sister_ui_migrate_legacy_effect_locks(
                 &current_locks, &current_locks_high);

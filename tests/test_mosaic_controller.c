@@ -21,6 +21,8 @@ static TsSample workspace_preview;
 static int dispatch(const SDL_Event *event,SDL_Window *window)
 {
     if(main_file_capture_event(event,window,&audio,&ui,&sister,48000))return 1;
+    if(sample_bank_play_select_event(event,window,&ui))return 1;
+    if(workspace_tab_event(event,window,&sister,&ui))return 1;
     if(workspace_event(event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,&workspace_preview))return 1;
     if(mosaic_event(event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000))return 1;
     return main_file_capture_event(event,window,&audio,&ui,&sister,48000);
@@ -83,6 +85,7 @@ static void wait_render(void);
 #include "test_mosaic_controls.inc"
 #include "test_mosaic_volume_controls.inc"
 #include "test_mosaic_routing.inc"
+#include "test_prism_controller.inc"
 static void test_canvas_feedback(SDL_Window *window)
 {
     TsMosaic *saved=ui.mosaic,*scene=ts_mosaic_create();assert(scene);ui.mosaic=audio.mosaic=scene;
@@ -267,7 +270,7 @@ static void wait_render(void)
     while(portal.worker && SDL_GetTicks()-start<15000){portal_poll(0,&audio,&ui,&instrument,&portal);SDL_Delay(1);}
     assert(!portal.worker && !ui.portal.busy);
 }
-static void test_record_file(SDL_Window *window,int x,int y)
+static void test_record_file(SDL_Window *window,int x,int y,int in_portal)
 {
     char folder[160],path[1200],error[160];
     snprintf(folder,sizeof(folder),"mosaic-record-%lu",(unsigned long)SDL_GetTicks());
@@ -275,12 +278,38 @@ static void test_record_file(SDL_Window *window,int x,int y)
     ts_audio_mixer_init(&audio.mixer);ts_performance_recorder_init(&sister.performance_recorder);
     audio.sister_file_recorder=&sister.performance_recorder;
     ui.mosaic_open=1;ts_mosaic_seek(ui.mosaic,0);ui.mosaic->playing=1;
+    if(in_portal) {
+        ui.mosaic_open=0;ui.show_keyboard=ui.show_recipes=ui.show_ingredients=0;
+        SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+        e.button.button=SDL_BUTTON_LEFT;e.button.x=290;e.button.y=320;
+        /* Removed bank duplicate has no invisible recorder hit area. */
+        assert(!main_file_capture_event(&e,window,&audio,&ui,&sister,48000));
+        static TsFramebuffer fb;
+        ts_ui_render(&fb,&ui,&instrument);ts_ui_render_file_recording(&fb,&ui);
+        const char *shot=getenv("TS_TEST_MAIN_REC_FOOTER");if(shot)assert(ts_ui_write_ppm(&fb,shot));
+        e.button.x=478;e.button.y=12;
+        for(int n=0;n<2;++n) {
+            assert(!main_file_capture_event(&e,window,&audio,&ui,&sister,48000));
+            assert(portal_event(&e,window,0,&audio,&ui,&instrument,&portal,&sister,48000,&transform));
+            assert(ui.portal.open && ui.file_record_state==TS_PERFORMANCE_FILE_IDLE);
+        }
+        ts_ui_render(&fb,&ui,&instrument);ts_ui_render_file_recording(&fb,&ui);
+        shot=getenv("TS_TEST_PORTAL_REC_FOOTER");if(shot)assert(ts_ui_write_ppm(&fb,shot));
+    }
     if(x>=0)click(window,x,y,1);else key(window,SDLK_f,KMOD_CTRL|KMOD_SHIFT);
     assert(ui.file_record_state==TS_PERFORMANCE_FILE_RECORDING);
+    if(in_portal) {
+        SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.windowID=SDL_GetWindowID(window);
+        e.button.button=SDL_BUTTON_LEFT;e.button.x=478;e.button.y=12;
+        assert(!main_file_capture_event(&e,window,&audio,&ui,&sister,48000));
+        assert(portal_event(&e,window,0,&audio,&ui,&instrument,&portal,&sister,48000,&transform));
+        assert(ui.file_record_state==TS_PERFORMANCE_FILE_RECORDING);
+    }
     snprintf(path,sizeof(path),"%s",sister.performance_recorder.path);
     float output[4096];
     for(int i=0;i<8;++i)audio_callback(&audio,(Uint8 *)(output+i*512),512*sizeof(float));
     poll_file_capture_ui(&ui,&sister);assert(ui.file_record_frames==2048);
+    if(in_portal)portal_close(0,&audio,&ui,&portal);
     /* The same recorder survives opening an event editor. */
     assert(mosaic_enter(0,&audio,&ui,&instrument,&mosaic,ui.mosaic->events[0].id));
     assert(ui.file_record_state==TS_PERFORMANCE_FILE_RECORDING && ui.mosaic->playing);
@@ -377,12 +406,16 @@ int main(void)
     assert(ui.mosaic->playing);
     test_async_ownership(aid,bid,original,0);
     test_async_ownership(aid,bid,original,1);
+    test_workspace_playback(window);
     test_workspace_routes(window);
     test_mosaic_master_routes();
+    test_play_on_select(window);
+    test_prism_controller();
     ts_mosaic_volume_draw(ui.mosaic,0,.3f,1,.8f);
-    test_record_file(window,580,389);
-    test_record_file(window,240,45);
-    test_record_file(window,-1,0);
+    test_record_file(window,580,389,0);
+    test_record_file(window,240,45,0);
+    test_record_file(window,-1,0,0);
+    test_record_file(window,580,389,1);
     ts_mosaic_volume_action(ui.mosaic,TS_MOSAIC_ENV_RESET);
     test_canvas_gestures(window);
     test_mosaic_copy_drag(window);

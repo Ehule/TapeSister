@@ -3,7 +3,7 @@
 TapeSister is a standalone sound-making, sample-sculpting, and performance instrument
 for Windows and Linux. It combines independent sample tiles, generative six-voice FM,
 Mosaic event sequencing, waveform editing, native DSP and curated CDP8 processes, real-time recording, Sister
-Machine's rolling tape memory, Fallout deterioration, and a four-slot effects pedalboard.
+Machine's rolling tape memory, real-time Prism refraction, Fallout deterioration, and a four-slot effects pedalboard.
 
 Its basic creative loop is simple:
 
@@ -22,6 +22,8 @@ Its basic creative loop is simple:
 - [CDP Portal](docs/CDP_PORTAL.md) — explore processes with source/result waveforms,
   save reusable chains, shape named macros, explore eleven starter chains, and
   build a personal process-pin bank. Fifty-three raw processes support stereo.
+- [Prism](docs/PRISM.md) — live 2–12-lens Supersaw/Ensemble, DSP-driven optics,
+  MIDI learn, REC FILE, and measured performance.
 - [Supersaw prototype](docs/SUPERSAW.md) — three centered unison chain presets,
   a reproducible FM saw source and a playable Mosaic audition project.
 - [Design Charter](DESIGN_CHARTER.md) — the principles behind the instrument.

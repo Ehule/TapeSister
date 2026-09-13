@@ -361,6 +361,7 @@ typedef struct {
     TsUiWheelGuard wheel_guard;
     uint32_t active_notes;
     uint16_t tile_launcher_mask;
+    int play_on_select; /* Sample-bank click auditions; off selects for editing only. */
     int mouse_note;
     int selecting;
     int bank_clear_armed;

@@ -254,6 +254,7 @@ void ts_sister_parameters_default(TsSisterParameters *parameters,
     parameters->bleed = 0.25f;
     parameters->soak_targets = TS_SISTER_EFFECT_TARGET_MIX;
     ts_sister_fx_controls_default(&parameters->fx);
+    ts_prism_controls_default(&parameters->prism);
     parameters->buffer_seconds = (float)TS_SISTER_DEFAULT_SECONDS;
     parameters->headroom = 0.5f;
     parameters->write_erase = 1.0f;
@@ -689,6 +690,7 @@ static TsSisterParameters sanitize_parameters(const TsSisterMachine *machine,
     result.soak_targets = ts_sister_effect_targets_sanitize(
         result.soak_targets);
     ts_sister_fx_controls_sanitize(&result.fx);
+    ts_prism_controls_sanitize(&result.prism);
     result.buffer_seconds = clampf(result.buffer_seconds,
                                    (float)TS_SISTER_MIN_SECONDS,
                                    (float)TS_SISTER_MAX_SECONDS);

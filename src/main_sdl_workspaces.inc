@@ -1,12 +1,9 @@
 /* Workspace focus is independent of playback ownership. FM can be parked
    behind Mosaic without losing its patch; Sister is a separate window. */
-static void workspace_park_fm(SDL_AudioDeviceID device,AudioState *audio,
-                              TsUiState *ui,MosaicController *c)
+static void workspace_park_fm(TsUiState *ui,MosaicController *c)
 {
-    if(device)SDL_LockAudioDevice(device);
-    runtime_note_clear(audio);
-    if(device)SDL_UnlockAudioDevice(device);
-    ui->active_notes=0;ui->fm_held_notes=0;ui->fm_output_dragging=0;
+    /* The preview stays owned by the workspace while its voices keep playing. */
+    ui->fm_output_dragging=0;
     ui->fm_open=0;c->fm_parked=1;
 }
 
@@ -38,6 +35,7 @@ static int workspace_event(const SDL_Event *event,SDL_Window *window,
     if((uint32_t)id!=SDL_GetWindowID(window) && !from_sister)return 0;
     SDL_Keymod mod=key?(SDL_Keymod)event->key.keysym.mod:KMOD_NONE;
     if(from_sister && key && event->key.keysym.sym==SDLK_ESCAPE && !ui->midi_learn_active) {
+        if(sister->prism_drag_lens && sister_prism_event(device,audio,ui,sister,event))return 1;
         if(!event->key.repeat) {
             if(sister->model.fallout_lfo_open)sister->model.fallout_lfo_open=0;
             else if(sister->model.preset_manage_open) {
@@ -74,7 +72,7 @@ static int workspace_event(const SDL_Event *event,SDL_Window *window,
             c->portal_return_fm=ui->fm_open;
             if(ui->fm_open) {
                 c->fm_owner=c->active;c->fm_epoch=ui->mosaic->epoch;
-                workspace_park_fm(device,audio,ui,c);
+                workspace_park_fm(ui,c);
             }
             if(ui->mosaic_open && ui->mosaic_selected &&
                !mosaic_enter(device,audio,ui,instrument,c,ui->mosaic_selected))return 1;
@@ -90,36 +88,26 @@ static int workspace_event(const SDL_Event *event,SDL_Window *window,
     if(to_fm) {
         if(ui->fm_open) {
             if(!from_sister) {
-                int back=c->fm_return_mosaic;
                 c->fm_owner=c->active;c->fm_epoch=ui->mosaic->epoch;
-                workspace_park_fm(device,audio,ui,c);
-                if(back && c->active && !mosaic_leave(device,audio,ui,instrument,c)) {
-                    if(ui->mosaic_edit_choice)c->fm_edit_exit=1;
-                    else {ui->fm_open=1;c->fm_parked=0;}
-                    return 1;
-                }
-                if(back)ui->mosaic_open=1;
+                workspace_park_fm(ui,c);
+                ui->mosaic_open=0; /* The active view's shortcut returns to the canvas. */
             }
         } else {
-            c->fm_return_mosaic=ui->mosaic_open;
             workspace_open_fm(device,audio,ui,instrument,c,preview);
         }
     } else if(ui->mosaic_open) {
         if(!from_sister) {
             ui->mosaic_open=0;
-            if(c->mosaic_return_fm)workspace_open_fm(device,audio,ui,instrument,c,preview);
         }
     } else {
         int was_fm=ui->fm_open;
         if(was_fm && c->active){c->fm_owner=c->active;c->fm_epoch=ui->mosaic->epoch;}
-        c->mosaic_return_fm=was_fm;
-        if(was_fm)workspace_park_fm(device,audio,ui,c);
+        if(was_fm)workspace_park_fm(ui,c);
         if(c->active && !mosaic_leave(device,audio,ui,instrument,c)) {
             if(ui->mosaic_edit_choice)c->fm_edit_exit=was_fm;
             else if(was_fm){ui->fm_open=1;c->fm_parked=0;}
             application_window_focus(window,sister);return 1;
         }
-        if(!was_fm)stop_all_force(device,audio,ui);
         ui->mosaic_open=1;
         snprintf(ui->status,sizeof(ui->status),"MOSAIC - DRAG SOURCES; DOUBLE CLICK EVENTS TO EDIT");
     }

@@ -155,6 +155,11 @@ static float bits_float(uint32_t bits)
 static void snapshot_atomic_init(TsSisterRoutingSnapshotAtomic *snapshot)
 {
     if (snapshot == NULL) return;
+    atomic_init(&snapshot->prism_valid, 0);
+    atomic_init(&snapshot->prism_wet, 0);
+    atomic_init(&snapshot->prism_dry, float_bits(1));
+    for (int i = 0; i < TS_PRISM_LENSES; ++i)
+        for (int j = 0; j < 4; ++j) atomic_init(&snapshot->prism_lens[i][j], 0);
     atomic_init(&snapshot->revision, 0u);
     atomic_init(&snapshot->enabled, 0);
     atomic_init(&snapshot->rolling, 1);
@@ -236,6 +241,16 @@ static void publish_snapshot(TsSisterRuntime *runtime)
     if ((revision & 1u) != 0u) ++revision;
     atomic_store_explicit(&snapshot->revision, revision + 1u,
                           memory_order_release);
+    TsPrismView prism = ts_prism_view(&runtime->prism);
+    atomic_store_explicit(&snapshot->prism_valid, prism.valid, memory_order_relaxed);
+    atomic_store_explicit(&snapshot->prism_wet, float_bits(prism.wet), memory_order_relaxed);
+    atomic_store_explicit(&snapshot->prism_dry, float_bits(prism.dry), memory_order_relaxed);
+    for (int i = 0; i < TS_PRISM_LENSES; ++i) {
+        float values[4] = {prism.lens[i].cents, prism.lens[i].delay_ms,
+                           prism.lens[i].pan, prism.lens[i].level};
+        for (int j = 0; j < 4; ++j)
+            atomic_store_explicit(&snapshot->prism_lens[i][j], float_bits(values[j]), memory_order_relaxed);
+    }
     if (runtime->active_page < TS_SISTER_RUNTIME_PAGE_LIMIT)
         mask = runtime->page_source_masks[runtime->active_page];
     atomic_store_explicit(&snapshot->enabled, runtime->enabled,
@@ -469,6 +484,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     if (runtime == NULL) return;
     memset(runtime, 0, sizeof(*runtime));
     ts_sister_parameters_default(&runtime->parameters, 48000u);
+    ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_performance_init(&runtime->performance);
     ts_capture_init(&runtime->capture);
     ts_sister_limiter_init(&runtime->limiter);
@@ -505,6 +521,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
 void ts_sister_runtime_free(TsSisterRuntime *runtime)
 {
     if (runtime == NULL) return;
+    ts_prism_free(&runtime->prism);
     ts_sister_machine_free(&runtime->machine);
     ts_sister_fallout_free(&runtime->fallout);
     ts_sister_post_fx_free(&runtime->post_fx);
@@ -544,6 +561,11 @@ int ts_sister_runtime_enable(TsSisterRuntime *runtime, uint32_t sample_rate,
                       "Sister requires a valid rate and stereo output contract");
         return 0;
     }
+    if (!ts_prism_prepare(&runtime->prism, sample_rate)) {
+        runtime_error(error, error_size, "Could not allocate Prism history");
+        return 0;
+    }
+    ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     memset(&machine, 0, sizeof(machine));
     cold_fx = !runtime->post_fx.ready || runtime->post_fx.sample_rate != sample_rate;
     cold_fallout = !runtime->fallout.ready || runtime->fallout.sample_rate != sample_rate;
@@ -681,6 +703,12 @@ int ts_sister_runtime_reconfigure(TsSisterRuntime *runtime,
         runtime_error(error, error_size, "Sister runtime is unavailable");
         return 0;
     }
+    if (sample_rate != 0u && output_channels == 2u &&
+        !ts_prism_prepare(&runtime->prism, sample_rate)) {
+        runtime_error(error, error_size, "Could not allocate Prism history");
+        return 0;
+    }
+    ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     if (!runtime->enabled) {
         if (sample_rate == 0u || output_channels != 2u) {
             runtime->warnings |= TS_SISTER_WARNING_DEVICE_CONTRACT;
@@ -793,6 +821,7 @@ void ts_sister_runtime_set_parameters(TsSisterRuntime *runtime,
         ts_sister_machine_set_parameters(&runtime->machine, &runtime->parameters);
         runtime->parameters = runtime->machine.parameters;
     }
+    ts_prism_set_controls(&runtime->prism, &runtime->parameters.prism);
     ts_sister_post_fx_set_controls(&runtime->post_fx, &runtime->parameters.fx);
     /* Publish sanitized, authoritative slot state back to the controller and
        persistence model after every edit. */
@@ -1283,6 +1312,7 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     /* PRE slots touch only newly arriving source material. They run before
        Sister's input trim, rolling write, Duck detector, and head feedback;
        material already resident in the tape buffer is never processed again. */
+    input = ts_prism_process(&runtime->prism, input);
     input = ts_sister_post_fx_process_pre(&runtime->post_fx, input, 0);
     monitor_route = runtime_ramp_advance(&runtime->monitor_route);
     (void)runtime_ramp_advance(&runtime->direct_tile_route);
@@ -1369,7 +1399,8 @@ TsStereoFrame ts_sister_runtime_process_ordinary_post_fx(
     float return_gain;
     if (runtime == NULL || !runtime->post_fx.ready)
         return ts_stereo_frame_sanitize(input);
-    input = ts_stereo_frame_sanitize(input);
+    input = ts_prism_process(&runtime->prism, input);
+    publish_frame_snapshot(runtime);
     if (runtime->fallout.ready) {
         float master = ts_sister_post_fx_master_engage(&runtime->post_fx);
         TsStereoFrame incoming = input;
@@ -1854,6 +1885,15 @@ int ts_sister_runtime_get_snapshot(const TsSisterRuntime *runtime,
     for (int attempt = 0; attempt < 8; ++attempt) {
         before = atomic_load_explicit(&source->revision, memory_order_acquire);
         if ((before & 1u) != 0u) continue;
+        snapshot->prism.valid = atomic_load_explicit(&source->prism_valid, memory_order_relaxed);
+        snapshot->prism.wet = bits_float(atomic_load_explicit(&source->prism_wet, memory_order_relaxed));
+        snapshot->prism.dry = bits_float(atomic_load_explicit(&source->prism_dry, memory_order_relaxed));
+        for (int i = 0; i < TS_PRISM_LENSES; ++i) {
+            float values[4];
+            for (int j = 0; j < 4; ++j)
+                values[j] = bits_float(atomic_load_explicit(&source->prism_lens[i][j], memory_order_relaxed));
+            snapshot->prism.lens[i] = (TsPrismLensView){values[0], values[1], values[2], values[3]};
+        }
         snapshot->enabled = atomic_load_explicit(&source->enabled,
                                                  memory_order_relaxed);
         snapshot->rolling = atomic_load_explicit(&source->rolling,

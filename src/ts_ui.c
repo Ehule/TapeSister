@@ -1838,6 +1838,7 @@ int ts_ui_request_startup_welcome(TsUiState *ui, int splash_complete,
 void ts_ui_init(TsUiState *ui)
 {
     memset(ui, 0, sizeof(*ui));
+    ui->play_on_select = 1;
     ts_portal_ui_init(&ui->portal);
     ts_raw_import_settings_default(&ui->import_raw_settings);
     for (int i = 0; i < TS_UI_WAVEFORM_COUNT; ++i)
@@ -3723,7 +3724,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
             "CREATE FRESH STAMP  VARY ANSWERS SCULPTED SELECTION" :
             ui->fx_page == TS_FX_FAMILY ?
             "CREATE FRESH SOURCE  VARY ANSWERS CURRENT MATERIAL" :
-            "CLICK LAUNCH  CLICK AGAIN RELEASE";
+            ui->play_on_select ? "CLICK LAUNCH  CLICK AGAIN RELEASE" : "CLICK SELECTS FOR EDITING";
         if (ui->external_record_bank)
             bank_hint = ui->capture_state == TS_CAPTURE_ARMED_WAITING_FOR_TRIGGER ?
                         "REC BANK ARMED  MAKE SOUND  THRESHOLD STARTS TAPE" :
@@ -3757,10 +3758,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
                                    ui->config.capture_channels;
             mini_button(fb, 154, 313, 78, "FADE ALL",
                         ui->tile_launcher_mask != 0u);
-            mini_button(fb,250,313,94,
-                        ui->file_record_state==TS_PERFORMANCE_FILE_STOPPING?"FILE WAIT":
-                        ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING?"STOP FILE":"REC FILE",
-                        ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING && ui->text_cursor_visible);
+            mini_button(fb,250,313,94,"PLAY ON SEL",ui->play_on_select);
             mini_button(fb, 350, 313, 28,
                         capture_channels == 2 ? "S" : "M",
                         capture_channels == 2);
@@ -4026,7 +4024,6 @@ void ts_ui_render_file_recording(TsFramebuffer *fb, const TsUiState *ui)
     render_palette=&ui->palette;
     if(ui->file_record_state!=TS_PERFORMANCE_FILE_RECORDING &&
        ui->file_record_state!=TS_PERFORMANCE_FILE_STOPPING) {
-        if(ui->portal.open)return; /* Portal already has a permanent header REC. */
         mini_button(fb,544,382,86,"REC FILE",0);
         return;
     }
@@ -5015,6 +5012,8 @@ static void sister_spirit_render(TsFramebuffer *fb,
     }
 }
 
+#include "ts_prism_ui.inc"
+
 void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                          const TsPalette *palette)
 {
@@ -5056,7 +5055,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     }
     button(fb, 440, 8, 50,
            model->fx_page == 0 ? "FX" :
-           model->fx_page == 1 ? "FALL" : "TAPE",
+           model->fx_page == 1 ? "FALL" :
+           model->fx_page == 2 ? "PRISM" : "TAPE",
            model->fx_page != 0);
     button(fb, 494, 8, 30, "LIM", model->routing.limiter_enabled);
     master_output_fader(fb, model->routing.master_output_gain, 528, 8);
@@ -5064,6 +5064,10 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     rect(fb, 576, 12, 3, 9,
          model->midi_activity ? PAL_TUNING : RGB(22, 22, 22));
 
+    if (model->fx_page == 3) {
+        sister_prism_render(fb, model);
+        goto sister_footer;
+    }
     if (model->fx_page == 2) {
         const TsSisterFalloutControls *f = &model->parameters.fx.fallout;
         char transition_caption[24];

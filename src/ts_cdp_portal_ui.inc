@@ -133,8 +133,7 @@ static void portal_render(TsFramebuffer *fb,const TsUiState *ui)
     button(fb,224,4,66,"SISTER",0);
     button(fb,295,4,66,"RELOAD",0);
     button(fb,366,4,94,p->load_selection?"LOAD: SEL":"LOAD: TILE",p->load_selection);
-    int recording=ui->file_record_state==TS_PERFORMANCE_FILE_RECORDING;
-    button(fb,464,4,28,"REC",recording && ui->text_cursor_visible);
+    button(fb,464,4,28,"CDP",1);
     button(fb,TS_UI_MASTER_LIMITER_X,5,28,"LIM",ui->master_output.limiter_enabled);
     master_output_fader(fb,ui->master_output.gain,528,5);
     master_output_meter(fb,&ui->master_output,580,8);
