@@ -64,9 +64,50 @@ static void benchmark(int colored)
     }
 }
 
+/* Reproduce the reported wide-spread patch from audio-owned snapshots, without
+   a UI animation clock. Optional prefix writes a 15 fps native-frame sequence. */
+static void motion_probe(const char *prefix,float drift,float focus)
+{
+    TsConfig config;TsPalette palette;TsSisterUiModel model;static TsFramebuffer fb;
+    TsSisterRuntime *r=calloc(1,sizeof(*r));assert(r);char error[160];
+    ts_config_init(&config);ts_palette_default(&palette);ts_sister_ui_model_init(&model,&config);
+    ts_sister_runtime_init(r);assert(ts_sister_runtime_reconfigure(r,48000,2,error,sizeof(error)));
+    TsSisterParameters p=r->parameters;
+    p.prism.enabled=1;p.prism.spread=2;p.prism.drift=drift;p.prism.focus=focus;
+    p.prism.stereo=1;p.prism.body=.9f;p.prism.mix=1;p.prism.dry_level=.6f;
+    p.prism.input_shape=TS_PRISM_PLANO_CONVEX;p.prism.output_shape=TS_PRISM_MENISCUS_NEGATIVE;p.prism.color=.95f;
+    ts_sister_runtime_set_parameters(r,&p);model.fx_page=3;
+    snprintf(model.status,sizeof(model.status),"DRIFT: LIVE AUDIO SNAPSHOTS / NO MOUSE INPUT");
+    float lo[12],hi[12];for(int i=0;i<12;++i){lo[i]=1000;hi[i]=-1000;}
+    for(int frame=-30;frame<180;++frame) {
+        ts_sister_runtime_begin_audio_block(r);
+        for(int n=0;n<3200;++n) {
+            float x=.2f*sinf((frame*3200+n)*.031f);
+            ts_sister_runtime_process_ordinary_post_fx(r,(TsStereoFrame){x,-x});
+        }
+        ts_sister_runtime_end_audio_block(r);
+        TsSisterRoutingSnapshot snapshot;assert(ts_sister_runtime_get_snapshot(r,&snapshot));
+        ts_sister_ui_model_update(&model,&snapshot,NULL,NULL,&p);
+        if(frame<0)continue;
+        for(int i=0;i<12;++i) {
+            float x,y;ts_sister_ui_prism_point_f(snapshot.prism.lens[i],&x,&y);
+            lo[i]=fminf(lo[i],y);hi[i]=fmaxf(hi[i],y);
+        }
+        if(prefix) {
+            char path[1024];snprintf(path,sizeof(path),"%s-%03d.ppm",prefix,frame);
+            ts_sister_ui_render(&fb,&model,&palette);assert(ts_ui_write_ppm(&fb,path));
+        }
+    }
+    for(int i=0;i<12;++i)printf("lens=%02d travel_native_pixels=%.3f\n",i+1,hi[i]-lo[i]);
+    ts_sister_runtime_free(r);free(r);
+}
+
 int main(int argc,char **argv)
 {
     if (argc>1 && !strcmp(argv[1],"--bench")) {benchmark(argc>2);return 0;}
+    if (argc>1 && !strcmp(argv[1],"--motion")) {
+        motion_probe(argc>2?argv[2]:NULL,argc>3?(float)atof(argv[3]):2,argc>4?(float)atof(argv[4]):.6f);return 0;
+    }
     TsConfig config; TsPalette palette; TsSisterUiModel model;
     static TsFramebuffer fb;
     ts_config_init(&config); ts_palette_default(&palette);

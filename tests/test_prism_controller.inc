@@ -110,9 +110,61 @@ static void test_prism_points(void)
     SDL_DestroyWindow(panel->window); free(panel); routing_free(a);
 }
 
+/* Exercise the complete callback -> atomic snapshot -> UI model -> pixels
+   path. The reported patch must visibly move without mouse events; Drift zero
+   and full Focus must settle instead of acquiring a decorative animation. */
+static void test_prism_motion(void)
+{
+    static TsFramebuffer current,previous;
+    for(int powered=0;powered<2;++powered)for(int kind=0;kind<3;++kind) {
+        AudioState *a=routing_audio(powered);TsSisterUiModel model;
+        a->mosaic->events[0].looping=1;
+        ts_sister_ui_model_init(&model,&ui.config);model.fx_page=3;
+        TsSisterParameters p=a->sister.parameters;
+        p.prism.enabled=1;p.prism.spread=2;p.prism.drift=kind==1?0:2;
+        p.prism.focus=kind==2?1:.6f;p.prism.stereo=1;p.prism.body=.9f;p.prism.mix=1;
+        p.prism.input_shape=TS_PRISM_PLANO_CONVEX;p.prism.output_shape=TS_PRISM_MENISCUS_NEGATIVE;
+        p.prism.color=.95f;ts_sister_runtime_set_parameters(&a->sister,&p);
+        float lo[12],hi[12],samples[6400];int changed[2]={0};
+        for(int i=0;i<12;++i){lo[i]=1000;hi[i]=-1000;}
+        for(int frame=-30;frame<150;++frame) {
+            if(frame==75)a->mosaic->playing=0; /* Drift also advances in silence. */
+            audio_callback(a,(Uint8 *)samples,sizeof(samples));
+            if(frame==74) {
+                double energy=0;for(int i=0;i<6400;++i)energy+=samples[i]*samples[i];
+                assert(energy>1e-6); /* The first half really contains playback. */
+            }
+            TsSisterRoutingSnapshot snapshot;assert(ts_sister_runtime_get_snapshot(&a->sister,&snapshot));
+            assert(snapshot.prism.valid);
+            ts_sister_ui_model_update(&model,&snapshot,NULL,NULL,&p);
+            ts_sister_ui_render(&current,&model,&ui.palette);
+            if(frame>=0) {
+                for(int i=0;i<12;++i) {
+                    float x,y;ts_sister_ui_prism_point_f(model.routing.prism.lens[i],&x,&y);
+                    lo[i]=fminf(lo[i],y);hi[i]=fmaxf(hi[i],y);
+                }
+                if(frame && memcmp(current.pixels+100*640,previous.pixels+100*640,
+                                    150*640*sizeof(uint32_t)))++changed[frame>=75];
+            }
+            previous=current;
+        }
+        assert(hi[0]==lo[0]); /* Fixed body anchor. */
+        if(kind==0) {
+            for(int i=1;i<12;++i)assert(hi[i]-lo[i]>.5f);
+            assert(changed[0]>30 && changed[1]>30);
+        } else {
+            for(int i=1;i<12;++i)assert(hi[i]-lo[i]<.02f);
+            assert(!changed[0] && !changed[1]);
+        }
+        printf("Prism motion power=%d case=%d changed=%d/%d\n",powered,kind,changed[0],changed[1]);
+        routing_free(a);
+    }
+}
+
 static void test_prism_controller(void)
 {
     test_prism_points();
+    test_prism_motion();
     for (int powered=0; powered<2; ++powered) {
         AudioState *a=routing_audio(powered), *dry=routing_audio(powered);
         SisterWindow *panel=calloc(1,sizeof(*panel)); assert(panel);

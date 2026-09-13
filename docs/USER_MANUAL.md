@@ -947,8 +947,10 @@ weights upper/lower intervals differently. The output shape also maps stereo pan
 The **Color** slider blends per-voice warmth, phase coloration, saturation or
 high-pass filtering according to the two selected shapes. Color zero leaves just
 the pitch/pan mappings. Both BI-CONVEX shapes preserve the previous clear sound.
-The smooth curves display the intermediate and final pitches as rays pass through
-the output glass, while retaining the native pixel text and controls.
+The crisp curves display intermediate and final pitches as rays pass through
+the output glass. Solid strokes and nearest-neighbor enlargement retain the
+native pixel style. Drift movement follows the DSP even during silence; Drift
+zero and full Focus settle the movement.
 
 With Sister POWER off, Prism processes ordinary program audio and enabled external
 monitoring before the shared FX. With POWER on, select Sister sources and enable

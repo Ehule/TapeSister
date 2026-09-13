@@ -245,7 +245,7 @@ void ts_sister_ui_model_update(TsSisterUiModel *model,
 
 float ts_sister_ui_prism_y(float cents)
 {
-    return 167 - copysignf(57 * log1pf(fabsf(cents) / 12) / log1pf(6400.f / 12), cents);
+    return 167 - copysignf(68 * log1pf(fabsf(cents) / 12) / log1pf(6400.f / 12), cents);
 }
 
 void ts_sister_ui_prism_point_f(TsPrismLensView ray, float *x, float *y)
@@ -262,8 +262,8 @@ void ts_sister_ui_prism_point(TsPrismLensView ray, int *x, int *y)
 
 float ts_sister_ui_prism_pitch_at_y(float y)
 {
-    float distance = fmaxf(-57, fminf(57, 167 - y));
-    return copysignf(12 * expm1f(fabsf(distance) * log1pf(6400.f / 12) / 57), distance);
+    float distance = fmaxf(-68, fminf(68, 167 - y));
+    return copysignf(12 * expm1f(fabsf(distance) * log1pf(6400.f / 12) / 68), distance);
 }
 
 int ts_sister_ui_prism_hit(const TsSisterUiModel *model, int x, int y)

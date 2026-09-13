@@ -132,10 +132,20 @@ There are no additional per-voice color selectors in this revision.
 
 ![Meniscus phase coloration followed by concave inversion and saturation](images/prism-shapes.png)
 
-The optical curves use fractional coordinates and antialiased coverage. Each
-complete curve is blended once to avoid dim seams between drawing segments.
-The six silhouettes use curved profiles, while controls and text keep the native
-pixel style. This retains the existing framebuffer and maximum 30 fps refresh.
+The optical curves use dense sampling with **solid native-pixel strokes**, matching
+the rest of the instrument. The initial PR101 antialiasing made thin rays and
+handles look blurred when enlarged; it has been removed. Sister explicitly uses
+nearest-neighbor texture scaling. Hollow handles have their original stronger
+borders, and the pitch diagram has 19% more vertical travel to expose subtle
+Drift changes. The inverse drag mapping uses the same expanded coordinates.
+All six glass silhouettes and sound mappings remain available.
+
+The displayed movement comes from the audio snapshot, including during silence;
+there is no UI animation oscillator. At Drift zero or full Focus it settles.
+A 12-second native-frame sequence at Spread 200, Drift 200, Focus 60, Stereo 100,
+PLANO-CONVEX input and MENISCUS − output demonstrates the reported patch:
+
+![Crisp Prism motion driven by live DSP snapshots](images/prism-drift.gif)
 
 More lenses are possible: the audio history is shared and each added lens needs
 another reader, filter state and mixing work. The current voicing table, mute/solo
@@ -228,7 +238,7 @@ These are offline processing measurements after the glass revision, not
 whole-application CPU percentages or hardware underrun certification. Shared-host
 scheduling produced outliers: Prism alone reached 1.77 ms at two lenses and
 the full runtime reached 3.47 ms at eight. Full-runtime p99 stayed below 0.78 ms.
-Rendering the native Prism panel averaged 0.418 ms across 1,000 frames, excluding
+Rendering the native Prism panel averaged 0.147 ms across 1,000 frames, excluding
 SDL presentation and the desktop compositor. Physical Windows and Linux interface
 tests at 256 frames remain part of live audition.
 
@@ -264,6 +274,10 @@ are the existing full Sister presets, not a second Prism-only preset bank.
 - Test sources include sine, saw, triangle, pulse, noise, impulses and dynamically
   gated noisy tones at 44.1, 48 and 96 kHz. Spectral checks measure all twelve
   intended pitches at 44.1 and 48 kHz, including the three lower voices.
+- A callback-to-pixel motion regression covers both tape power states, playback
+  and silence. At the reported wide-spread settings every sampled transition
+  changes the diagram; Drift zero and full Focus produce stationary frames after
+  settling. This checks the actual snapshot/model/render path without mouse events.
 - Native application tests exercise page cycling, mouse hit regions, MIDI target
   resolution, knob changes, lens-count wheel steps, scaled-window point drags,
   Escape via workspace dispatch, out-of-window release, independent DSP changes
@@ -308,6 +322,9 @@ build/prism_probe prism.ppm
 build/prism_probe --bench
 build/prism_probe --bench color
 build/prism_probe --render-bench
+build/prism_probe --motion
+# Optional native PPM sequence (15 fps):
+build/prism_probe --motion drift-frame
 build/prism_probe shapes.ppm 12 0 0 .8 custom 2 3 .7
 ```
 

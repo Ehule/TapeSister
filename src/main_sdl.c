@@ -8292,6 +8292,10 @@ static int sister_window_ensure(SisterWindow *sister, const TsConfig *config)
     sister->texture = sister->renderer ? SDL_CreateTexture(
         sister->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
         TS_SISTER_UI_WIDTH, TS_SISTER_UI_HEIGHT) : NULL;
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+    /* The native UI is pixel art: enlargement must not blur its strokes. */
+    if (sister->texture) SDL_SetTextureScaleMode(sister->texture, SDL_ScaleModeNearest);
+#endif
     if (sister->window == NULL || sister->renderer == NULL || sister->texture == NULL) {
         if (sister->texture != NULL) SDL_DestroyTexture(sister->texture);
         if (sister->renderer != NULL) SDL_DestroyRenderer(sister->renderer);

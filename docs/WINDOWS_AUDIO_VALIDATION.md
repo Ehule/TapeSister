@@ -80,8 +80,12 @@ cannot be repaired inside TapeSister.
   narrower fans, stereo remapping, warm/hollow filtering, phase color and drive.
   Switch shapes during sustained notes; listen for clicks and assess high-frequency
   saturation texture. Save and reopen a mixed-shape patch with hand-edited points.
-- [ ] Check smooth curves and moving handles at native and enlarged window sizes;
-  output inversion should bend rays across the center inside the output glass.
+- [ ] Check crisp curves and solid handle borders at native and enlarged window
+  sizes; output inversion should bend rays across the center inside the output glass.
+  At Spread 200 / Drift 200 / Focus 60 with PLANO-CONVEX input and MENISCUS −
+  output, watch for independent ray movement with no mouse activity, both while
+  playing and after stopping. Repeat with tape POWER on/off. Drift zero and
+  Focus 100 should settle the motion.
 - [ ] Shift-click mute, Ctrl-click solo and wheel-trim each lens, including 01.
   Confirm muted handles remain clickable, trim changes brightness and audible level,
   and right-clicking either the mode button or preset name restores stock lenses.

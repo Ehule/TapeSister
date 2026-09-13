@@ -1,86 +1,24 @@
-/* Subpixel optical geometry inside the native framebuffer. Text and controls
-   retain the application's pixel style; the optical paths use coverage blending. */
-static void prism_pixel(TsFramebuffer *fb, int x, int y, uint32_t color, float coverage)
-{
-    if(x<10 || x>=630 || y<96 || y>=250 || coverage<=0)return;
-    int opacity=(int)lrintf(fminf(1,coverage)*100);
-    fb->pixels[y*TS_UI_WIDTH+x]=blend_color(fb->pixels[y*TS_UI_WIDTH+x],color,opacity);
-}
-
-/* Accumulate coverage across a whole curve before compositing. Blending each
-   short segment separately leaves dark seams at the shared endpoints. */
-typedef struct {
-    unsigned char coverage[620*154];
-    int x,y,w,h;
-} PrismStroke;
-
-static void prism_stroke_begin(PrismStroke *s,float x0,float y0,float x1,float y1)
-{
-    s->x=(int)fmaxf(10,floorf(x0)-1);s->y=(int)fmaxf(96,floorf(y0)-1);
-    s->w=(int)fminf(630,ceilf(x1)+2)-s->x;
-    s->h=(int)fminf(250,ceilf(y1)+2)-s->y;
-    if(s->w<0)s->w=0;
-    if(s->h<0)s->h=0;
-    memset(s->coverage,0,(size_t)s->w*s->h);
-}
-
-static void prism_stroke_pixel(TsFramebuffer *fb,PrismStroke *s,int x,int y,uint32_t color,float amount)
-{
-    if(!s){prism_pixel(fb,x,y,color,amount);return;}
-    x-=s->x;y-=s->y;
-    if(x<0 || y<0 || x>=s->w || y>=s->h)return;
-    int i=y*s->w+x,alpha=s->coverage[i]+(int)lrintf(amount*255);
-    s->coverage[i]=(unsigned char)(alpha>255?255:alpha);
-}
-
-static void prism_stroke_end(TsFramebuffer *fb,const PrismStroke *s,uint32_t color)
-{
-    for(int y=0;y<s->h;++y)for(int x=0;x<s->w;++x)
-        if(s->coverage[y*s->w+x])prism_pixel(fb,s->x+x,s->y+y,color,s->coverage[y*s->w+x]/255.f);
-}
-
-static void prism_stroke_line(TsFramebuffer *fb,PrismStroke *stroke,
-                              float x0,float y0,float x1,float y1,uint32_t color)
-{
-    int steep=fabsf(y1-y0)>fabsf(x1-x0);
-    if(steep){float t=x0;x0=y0;y0=t;t=x1;x1=y1;y1=t;}
-    if(x0>x1){float t=x0;x0=x1;x1=t;t=y0;y0=y1;y1=t;}
-    float dx=x1-x0;
-    if(dx<.00001f)return;
-    float gradient=(y1-y0)/dx;
-    for(int x=(int)floorf(x0);x<=(int)ceilf(x1);++x) {
-        float first=fmaxf(x-.5f,x0),last=fminf(x+.5f,x1);
-        if(last<=first)continue;
-        float y=y0+gradient*((first+last)*.5f-x0);
-        int iy=(int)floorf(y);float fraction=y-iy,weight=last-first;
-        prism_stroke_pixel(fb,stroke,steep?iy:x,steep?x:iy,color,weight*(1-fraction));
-        prism_stroke_pixel(fb,stroke,steep?iy+1:x,steep?x:iy+1,color,weight*fraction);
-    }
-}
-
+/* Crisp native-pixel optics. Curves are sampled densely, but each stroke
+   writes solid pixels rather than a low-resolution antialiasing fringe. */
 static void prism_line(TsFramebuffer *fb,float x0,float y0,float x1,float y1,uint32_t color)
 {
-    prism_stroke_line(fb,NULL,x0,y0,x1,y1,color);
+    ui_line(fb,(int)lrintf(x0),(int)lrintf(y0),(int)lrintf(x1),(int)lrintf(y1),color);
 }
 
 static void prism_curve(TsFramebuffer *fb,float x0,float y0,float x1,float y1,
                          float x2,float y2,float x3,float y3,uint32_t color)
 {
-    PrismStroke stroke;
-    prism_stroke_begin(&stroke,fminf(fminf(x0,x1),fminf(x2,x3)),fminf(fminf(y0,y1),fminf(y2,y3)),
-                       fmaxf(fmaxf(x0,x1),fmaxf(x2,x3)),fmaxf(fmaxf(y0,y1),fmaxf(y2,y3)));
     float px=x0,py=y0;
     int steps=(int)ceilf((fabsf(x1-x0)+fabsf(y1-y0)+fabsf(x2-x1)+fabsf(y2-y1)+
-                         fabsf(x3-x2)+fabsf(y3-y2))/5);
+                         fabsf(x3-x2)+fabsf(y3-y2))/2);
     if(steps<8)steps=8;
-    if(steps>160)steps=160;
+    if(steps>256)steps=256;
     for(int i=1;i<=steps;++i) {
         float t=(float)i/steps,u=1-t;
         float x=u*u*u*x0+3*u*u*t*x1+3*u*t*t*x2+t*t*t*x3;
         float y=u*u*u*y0+3*u*u*t*y1+3*u*t*t*y2+t*t*t*y3;
-        prism_stroke_line(fb,&stroke,px,py,x,y,color);px=x;py=y;
+        prism_line(fb,px,py,x,y,color);px=x;py=y;
     }
-    prism_stroke_end(fb,&stroke,color);
 }
 
 static void prism_profile(int shape,float t,float *left,float *right)
@@ -98,18 +36,20 @@ static void prism_profile(int shape,float t,float *left,float *right)
 
 static void prism_lens_outline(TsFramebuffer *fb,int x,int shape,uint32_t color)
 {
-    PrismStroke stroke;prism_stroke_begin(&stroke,x-20,110,x+20,224);
-    float pl,pr;prism_profile(shape,-1,&pl,&pr);
-    prism_stroke_line(fb,&stroke,x+pl,111,x+pr,111,color);
-    for(int j=-56;j<56;++j) {
-        float l,r,nl,nr;prism_profile(shape,j/56.f,&l,&r);prism_profile(shape,(j+1)/56.f,&nl,&nr);
-        for(int px=(int)floorf(x+l)+1;px<x+r;++px)
-            prism_pixel(fb,px,167+j,RGB(27,42,49),.75f);
-        prism_stroke_line(fb,&stroke,x+pl,167+j,x+nl,168+j,color);
-        prism_stroke_line(fb,&stroke,x+pr,167+j,x+nr,168+j,color);pl=nl;pr=nr;
+    /* Fill first so the next row cannot erase a previously drawn edge. */
+    for(int j=-56;j<=56;++j) {
+        float l,r;prism_profile(shape,j/56.f,&l,&r);
+        int left=(int)lrintf(x+l),right=(int)lrintf(x+r);
+        rect(fb,left,167+j,right-left+1,1,RGB(18,27,31));
     }
-    prism_stroke_line(fb,&stroke,x+pl,223,x+pr,223,color);
-    prism_stroke_end(fb,&stroke,color);
+    float pl,pr;prism_profile(shape,-1,&pl,&pr);
+    prism_line(fb,x+pl,111,x+pr,111,color);
+    for(int j=-56;j<56;++j) {
+        float l,r;prism_profile(shape,(j+1)/56.f,&l,&r);
+        prism_line(fb,x+pl,167+j,x+l,168+j,color);
+        prism_line(fb,x+pr,167+j,x+r,168+j,color);pl=l;pr=r;
+    }
+    prism_line(fb,x+pl,223,x+pr,223,color);
 }
 
 static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
@@ -164,8 +104,9 @@ static void sister_prism_render(TsFramebuffer *fb,const TsSisterUiModel *model)
             rect(fb,(int)lrintf(x)-2,(int)lrintf(y)-2,5,5,color);
             if(model->prism_selected!=1)text(fb,(int)x-20,(int)y+8,"01 BODY",color,1);
         } else {
-            prism_line(fb,x-3,y-3,x+3,y-3,color);prism_line(fb,x+3,y-3,x+3,y+3,color);
-            prism_line(fb,x+3,y+3,x-3,y+3,color);prism_line(fb,x-3,y+3,x-3,y-3,color);
+            int px=(int)lrintf(x),py=(int)lrintf(y);
+            rect(fb,px-3,py-3,7,7,color);
+            rect(fb,px-1,py-1,3,3,background);
         }
         if(model->prism_selected==i+1) {
             if(i==0)snprintf(label,sizeof(label),"01 BODY %+.0FDB",p->trim_db[0]);
