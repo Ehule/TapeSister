@@ -63,7 +63,9 @@ static void prism_zoya_figures(TsFramebuffer *fb,const TsSisterUiModel *m,
             int lens=(point->region*3+(int)((hash>>9)%3u))%p->lenses;
             float wander=side ? motion[lens] : 0;
             float x=side ? 610-point->x : 22+point->x;
-            float y=110+point->y;
+            /* Same seated posture at both ends. A fixed, modest lift makes
+               OUT feel suspended without adding an idle bob or new clock. */
+            float y=110+point->y-(side?10:0);
             x+=wander*((hash>>12)&1u?1:-1);
             y+=wander*.4f*((hash>>13)&1u?1:-1);
             if(copy) {

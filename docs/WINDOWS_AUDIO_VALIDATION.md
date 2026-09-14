@@ -141,6 +141,10 @@ measurements do not certify this Windows interface or its hardware latency.
 
 ## Prism performance and amplitude redraw
 
+- [ ] Meditation variation: check the cross-legged pose and hands resting on the
+  knees at SOURCE, with the same pose slightly suspended at OUT. Compare against
+  `feature/prism-zoya` after rebuilding each branch. Check clear arm/torso spacing
+  at native size and no new idle bobbing, clipped head or overlap with labels.
 - [ ] Switch PRISM off/on while its page is visible. Source Zoya forms, packets
   traverse existing rays, and output Zoya reconstructs once, then settles.
   Sound/Perform/Presets must retain the same continuous introduction. Verify

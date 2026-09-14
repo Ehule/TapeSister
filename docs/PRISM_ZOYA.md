@@ -1,17 +1,40 @@
-# Zoya inside Prism — visual proof of concept
+# Zoya inside Prism — meditation variation
 
 Zoya appears at SOURCE and OUT as two manifestations of **the same entity**:
 one presence becomes many possibilities, then recombines. The mirrored figures
 share one precomputed **field of particle density**. Denser regions suggest the
 head, powerful shoulders, shaped waist and heavy legs; sparse matter diffuses
 their edges into the surrounding space. There are no traced facial, garment,
-muscle or body contours. The latest reference guides an open stance: one palm
-reaches toward Prism and the rear arm falls back into the haze.
+muscle or body contours. At SOURCE she sits upright with crossed legs and both
+hands resting on her knees. At OUT the same seated posture is gently suspended,
+ten native pixels higher. Suspension is a fixed placement, with the existing
+sound-driven dispersion; it adds no independent bobbing or recurring animation.
 They occupy the existing spaces at the two ends of the diagram. The lenses,
 ray geometry, numbered strip, editing handles, labels and controls keep their
 positions and behavior.
 
 ![Native particle manifestations at rest](images/prism-zoya-settled.png)
+
+## Compare the two poses
+
+This branch, `feature/prism-zoya-meditation`, is a separately buildable alternative
+to the standing/reaching pose in [PR #103](https://github.com/Ehule/TapeSister/pull/103)
+on `feature/prism-zoya`. It starts from the same recovered density-field revision,
+`c28f42d`, and changes only the baked pose, output height and accompanying previews
+and documentation. The animation timing, particle colors/diffusion, Prism controls
+and audio behavior are the same. There is no pose selector in the application.
+
+Fetch the branches, switch to the pose you want, then use your usual build steps:
+
+```sh
+git fetch origin
+git switch feature/prism-zoya-meditation
+# To compare the standing version instead:
+git switch feature/prism-zoya
+```
+
+Both PRs are alternatives for visual comparison; neither needs to be merged to
+compile it. Build after switching branches to update the executable.
 
 ## Activation and visibility
 
@@ -64,8 +87,8 @@ Hover either manifestation for a brief explanation.
 ## Implementation and cost
 
 - Soft overlapping volumes and low-density wisps are sampled **offline** by
-  `scripts/generate-prism-zoya.py` into `src/ts_prism_zoya_points.inc`: 2,468 points,
-  9,872 bytes of read-only position/density/region data. No contour samples remain.
+  `scripts/generate-prism-zoya.py` into `src/ts_prism_zoya_points.inc`: 2,329 points,
+  9,316 bytes of read-only position/density/region data. No contour samples remain.
   All field evaluation, erosion and sampling happen in the development generator;
   the application only transforms and draws the cached points.
 - Crisp native single-pixel particles; no bitmap loading,
@@ -82,18 +105,18 @@ Hover either manifestation for a brief explanation.
   UI rendering still consumes a small amount of shared CPU time.
 
 On a shared Linux server (Intel Xeon Platinum 8573C), a release-with-debug-info
-build measured the density-field revision over 1,500 native framebuffer draws per case
+build measured this meditation variation over 1,500 native framebuffer draws per case
 after 50 warmup draws:
 
 | Drawing case | Mean | p99 |
 | --- | ---: | ---: |
-| Existing optics, manifestations hidden | 0.455 ms | 2.383 ms |
-| Settled manifestations, 24 lenses | 0.746 ms | 2.699 ms |
-| Maximum Spread, Drift, Body and Color | 0.752 ms | 2.807 ms |
-| Introduction sampled across its duration | 0.562 ms | 2.027 ms |
+| Existing optics, manifestations hidden | 0.323 ms | 0.681 ms |
+| Settled manifestations, 24 lenses | 0.634 ms | 2.159 ms |
+| Maximum Spread, Drift, Body and Color | 0.628 ms | 2.007 ms |
+| Introduction sampled across its duration | 0.488 ms | 1.357 ms |
 
-The settled comparison adds about 0.292 ms per frame, equivalent to roughly
-0.88% of one CPU core at 30 FPS on that host. These are development drawing
+The settled comparison adds about 0.311 ms per frame, equivalent to roughly
+0.93% of one CPU core at 30 FPS on that host. These are development drawing
 measurements, excluding window presentation/compositor cost; physical
 Windows/audio/MIDI audition remains needed.
 
@@ -106,15 +129,17 @@ unchanged controls/optics outside the figure margins, and motion from an actual
 silent DSP stream. It also checks that a stationary snapshot cannot invent idle
 animation.
 
-The native application builds. `test_prism_zoya`, `test_prism`,
-`test_sister_ui_model` and `tapesister_mosaic_controller_tests` pass locally;
-the controller run used SDL's dummy video/audio drivers. After replacing the
-contours with the density field,
-the native application was rebuilt and the focused Zoya test and render benchmark
-were rerun. The complete suite was
-not rerun for this visual change. The four previously documented baseline
-failures remain outside this work; this is not a claim that the whole suite or
-physical hardware validation is green.
+The native application builds, and `test_prism_zoya` and `test_sister_ui_model`
+pass locally for this meditation variation. The focused rendering benchmark was
+rerun, and native framebuffer previews were inspected. The generated point data
+reproduces exactly. The local SDL build used MIDI and CDP bundling disabled;
+physical Windows/audio/MIDI audition remains outstanding.
+
+The earlier `test_prism` and `tapesister_mosaic_controller_tests` passes belong
+to the original Zoya implementation. The complete suite and those broader
+checks were not rerun for this pose-only variation. The four previously
+documented baseline failures remain outside this work; this is not a claim
+that the whole suite or physical hardware validation is green.
 
 ```sh
 ./build/test_prism_zoya

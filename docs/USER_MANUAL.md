@@ -1030,6 +1030,8 @@ RESET/CLEAR preserve A/B; bottom-row CAPTURE records audio from a Sister tap.
 
 Two small particle manifestations of **the same Zoya** appear near SOURCE and OUT.
 Their volume comes from varying particle density, with diffuse edges and no traced contours.
+This meditation variation seats her with hands on her knees at SOURCE; at OUT she
+holds the same posture slightly aloft, without an independent bobbing animation.
 Turning **PRISM ON** while visible plays a brief materialize/refract/reconstruct
 introduction, then settles. Spread/Drift disperse the output figure; Focus gathers
 it; Body, Color and wet/dry affect density, color and prominence. Returning from
