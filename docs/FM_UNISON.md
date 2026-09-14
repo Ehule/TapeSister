@@ -40,6 +40,23 @@ stores both the active sound and its original source in the tile, so the toggle
 also works after saving and reopening. The usual Chain/Mosaic destination choices
 still apply. **Grave** visits Mosaic; **Shift+grave** visits FM.
 
+Restoration also works after editing voices 7–12 or when the original patch is
+silent. A quiet preview displays **FM PREVIEW QUIET** and replaces the old waveform
+and audio, so a previous sound cannot disguise an all-off or heavily filtered patch.
+The usable-signal check still applies when generating or applying a tile.
+
+Sound edits render the full eight-second preview in a background worker. The
+header shows **UPDATING** until the latest settings reach the waveform and held
+notes together. Rapid edits coalesce over 50 ms; an obsolete result is discarded.
+The previous preview keeps playing during that update, and held notes keep their
+positions and latches. Initial workspace opening still prepares its first preview
+synchronously so immediately played notes have audio available.
+
+Returning to the same unchanged tile keeps the parked patch. Selecting a different
+tile or changing/deleting its source starts from the newly selected sound; an empty
+destination starts a fresh FM patch rather than inheriting a deleted tile's Unison.
+Mosaic event workspaces retain their existing event ownership.
+
 Interaction type, modulation depth and interaction mix are inactive and dimmed in
 Unison. Index LFOs have no modulation index to change. Feedback still affects final
 output saturation. Filter and output trim remain shared. Selecting an older
@@ -60,4 +77,9 @@ The previously supplied Portal audition pack remains TSR27.
 Native tests measure all twelve pitches at 44.1/48 kHz, each carrier in isolation,
 cent edits, voice-bank mapping, exact restoration, and persistence of both sounds.
 Compatibility checks load and regenerate files produced by the prior six- and
-nine-voice builds. Workspace tests cover parked FM state and event ownership.
+nine-voice builds. Workspace tests cover parked FM state and event ownership,
+restoring a quiet source after edits to voices 7–12, all-off/on waveform and held-note
+updates, stale worker completion, deleting/replacing the source, and closing while
+a preview job is running. The tile renderer still rejects unusable output.
+The native controller and FM renderer also pass AddressSanitizer and
+UndefinedBehaviorSanitizer checks (LeakSanitizer disabled on the test host).

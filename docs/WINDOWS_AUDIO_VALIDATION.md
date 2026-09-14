@@ -120,3 +120,21 @@ measurements do not certify this Windows interface or its hardware latency.
   then play/stop the arrangement: the existing voices should continue. Release
   the held key over Mosaic and confirm it stops normally (unless latched or
   sustained). Switching views must not free a playing FM preview.
+
+## FM Unison and preview recovery
+
+- [ ] Enable Unison, edit pitches/waveforms on voices 7–12, then switch it off.
+  Confirm the original routing, voices, filter and modulation return. Repeat after
+  saving/reopening an applied Unison tile and with a silent original patch.
+- [ ] Toggle all Unison voices off while holding a note. The waveform and audio
+  should become silent after UPDATING clears; enable one voice and confirm both
+  return without retriggering the latch.
+- [ ] Quickly toggle voices and wheel several pitches while a preview is rendering.
+  Controls should respond immediately; only the final settings should become the
+  new waveform/audio. Check that there is no sequence of outdated renders afterward.
+- [ ] Park FM with Shift+grave and reopen the unchanged tile: retain its edits.
+  Then select another tile, clear the source tile, or create a replacement in that
+  slot and reopen FM: it should load the newly selected sound. An empty destination
+  should open a fresh six-voice patch.
+- [ ] Close FM or quit while UPDATING is visible. Reopen and check that no old job
+  replaces the new workspace. Check UPDATING visibility at native/enlarged sizes.

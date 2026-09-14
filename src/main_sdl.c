@@ -3871,49 +3871,18 @@ static int generate_family_candidate(SDL_AudioDeviceID device, AudioState *audio
     return 1;
 }
 
-static int render_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
-                               TsUiState *ui, const TsInstrument *instrument,
-                               TsSample *preview)
-{
-    TsSample rendered;
-    char error[160];
-    const TsTuning unity = {TS_KEYBOARD_BASE_NOTE, 0.0f};
-    double root_frequency = ts_tuning_frequency(&unity);
-    uint32_t seed = instrument->generator.seed ^ 0x50524556u;
-    ts_sample_init(&rendered);
-    if (!ts_fm_render_sample(&rendered, &ui->fm_patch, TS_FM_LOGIC_SECONDS,
-                             (float)root_frequency, 44100u, seed,
-                             error, sizeof(error))) {
-        snprintf(ui->fm_message, sizeof(ui->fm_message),
-                 "FM PREVIEW FAILED: %.72s", error);
-        return 0;
-    }
-    if (device) SDL_LockAudioDevice(device);
-    {
-        TsSample old = *preview;
-        *preview = rendered;
-        rendered = old;
-    }
-    /* Voices retain the stable preview object address while its owned buffer is
-       atomically replaced. Re-map their progress/range before freeing old audio. */
-    ts_note_bank_replace_sample(&audio->notes, preview, preview,
-                                audio->output_rate);
-    ui->fm_preview_sample = preview;
-    if (device) SDL_UnlockAudioDevice(device);
-    ts_sample_free(&rendered);
-    ts_ui_waveform_cache_invalidate(ui,TS_UI_WAVEFORM_FM);
-    snprintf(ui->fm_message, sizeof(ui->fm_message),
-             "%s / %s  %d VOICE MASK",
-             ts_fm_structure_name(ui->fm_patch.structure),
-             ts_fm_interaction_name(ui->fm_patch.interaction),
-             (int)ui->fm_patch.active_mask);
-    return 1;
-}
+#include "main_sdl_fm_preview.inc"
 
 static TsGeneratorRecipe current_fm_workspace_recipe(
     const TsInstrument *instrument)
 {
     TsGeneratorRecipe recipe = instrument->generator;
+    /* An empty destination must not inherit a deleted tile's stored patch. */
+    if (instrument->selected_slot >= 0 && instrument->selected_slot < TS_BANK_SLOT_COUNT &&
+        !instrument->bank[instrument->selected_slot].occupied) {
+        recipe.has_fm_patch = 0;
+        return recipe;
+    }
     if (instrument->selected_slot >= 0 &&
         instrument->selected_slot < TS_BANK_SLOT_COUNT &&
         instrument->bank[instrument->selected_slot].occupied &&
@@ -3953,6 +3922,9 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ui->fm_output_dragging = 0;
     ui->fm_page = TS_FM_PAGE_PITCH;
     ui->fm_voice_bank = 0;
+    ui->fm_source_slot = instrument->selected_slot;
+    ui->fm_source_page = ui->sample_page;
+    ui->fm_source_hash = ts_sample_hash(&instrument->current);
     ui->fm_preview_sample = preview;
     (void)render_fm_workspace(device, audio, ui, instrument, preview);
 }
@@ -3960,6 +3932,7 @@ static void begin_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
 static void close_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
                                TsUiState *ui, TsSample *preview)
 {
+    discard_fm_preview_job(ui);
     if (device) SDL_LockAudioDevice(device);
     runtime_note_clear(audio);
     if (device) SDL_UnlockAudioDevice(device);
@@ -3990,10 +3963,8 @@ static int fm_control_disabled(const TsFmPatch *patch, TsFmPage page, int contro
     return !ts_fm_control_available(patch, page, control);
 }
 
-static void randomize_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
-                                   TsUiState *ui, const TsInstrument *instrument,
-                                   TsFmSeedSequence *seed_sequence,
-                                   TsSample *preview)
+static void randomize_fm_workspace(TsUiState *ui, const TsInstrument *instrument,
+                                   TsFmSeedSequence *seed_sequence)
 {
     TsFmPatch source = ui->fm_patch;
     TsFmPatch varied;
@@ -4005,7 +3976,7 @@ static void randomize_fm_workspace(SDL_AudioDeviceID device, AudioState *audio,
     ts_fm_patch_vary(&source, seed, distance, &varied);
     varied.mutation_mask = original_mask;
     ui->fm_patch = varied;
-    (void)render_fm_workspace(device, audio, ui, instrument, preview);
+    request_fm_preview(ui,instrument);
     snprintf(ui->fm_message, sizeof(ui->fm_message),
              "RANDOMIZED OTHER UNLOCKED DOMAINS - %s PROTECTED",
              ts_fm_page_name(ui->fm_page));
@@ -13484,8 +13455,7 @@ int main(int argc, char **argv)
                         apply_fm_workspace(device, &audio, &ui, &instrument,
                                            &sample_pages, 0);
                     } else if ((mod & KMOD_SHIFT) && key == SDLK_r) {
-                        randomize_fm_workspace(device, &audio, &ui, &instrument,
-                                               &fm_seed_sequence, &fm_preview);
+                        randomize_fm_workspace(&ui,&instrument,&fm_seed_sequence);
                     } else if ((mod & KMOD_SHIFT) && key == SDLK_b) {
                         ui.fm_bank_choice_open = 1;
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
@@ -14193,8 +14163,7 @@ int main(int argc, char **argv)
                             wheel_y > 0 ? 1 : -1,
                             (SDL_GetModState() & KMOD_SHIFT) != 0);
                     if (changed)
-                        (void)render_fm_workspace(device, &audio, &ui,
-                                                  &instrument, &fm_preview);
+                        request_fm_preview(&ui,&instrument);
                 } else if (wheel_y != 0 && ts_ui_fm_range_contains(x, y)) {
                     float step = (SDL_GetModState() & KMOD_SHIFT) ? 0.01f : 0.05f;
                     instrument.family_mutation += wheel_y > 0 ? step : -step;
@@ -14944,34 +14913,20 @@ int main(int argc, char **argv)
                                      "CONTROL INACTIVE IN THIS SYNTH MODE");
                         else if (ts_fm_set_control_normalized(
                                      &ui.fm_patch, ui.fm_page, control, amount))
-                            (void)render_fm_workspace(device, &audio, &ui,
-                                                      &instrument, &fm_preview);
+                            request_fm_preview(&ui,&instrument);
                     } else if (voice >= 0) {
-                        ui.fm_patch.active_mask ^= 1u << voice;
-                        (void)render_fm_workspace(device, &audio, &ui,
-                                                  &instrument, &fm_preview);
+                        toggle_fm_voice_workspace(&ui,&instrument,voice);
                     } else if (mutation != 0u) {
                         ui.fm_patch.mutation_mask ^= mutation;
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  "MUTATION PERMISSIONS UPDATED");
                     } else if (fm_action == TS_UI_FM_ACTION_UNISON) {
-                        TsFmPatch previous = ui.fm_patch;
-                        int had_source = ui.fm_patch.has_unison_source;
-                        int enabled = ts_fm_toggle_unison(&ui.fm_patch);
-                        if (render_fm_workspace(device, &audio, &ui, &instrument, &fm_preview)) {
-                            ui.fm_voice_bank = 0;
-                            snprintf(ui.fm_message, sizeof(ui.fm_message),
-                                     enabled ? "UNISON ON - NINE VOICES + THREE LOWER VOICES" :
-                                     had_source ? "UNISON OFF - ORIGINAL SOUND RESTORED" :
-                                     "UNISON OFF - V1 SOURCE; OLDER TILE HAS NO ORIGINAL");
-                        } else ui.fm_patch = previous;
+                        toggle_fm_unison_workspace(&ui,&instrument);
                     } else if (fm_action == TS_UI_FM_ACTION_VOICE_BANK) {
                         if (ts_fm_voice_count(&ui.fm_patch) > TS_FM_OPERATOR_COUNT)
                             ui.fm_voice_bank = !ui.fm_voice_bank;
                     } else if (fm_action == TS_UI_FM_ACTION_RANDOMIZE) {
-                        randomize_fm_workspace(device, &audio, &ui,
-                                               &instrument, &fm_seed_sequence,
-                                               &fm_preview);
+                        randomize_fm_workspace(&ui,&instrument,&fm_seed_sequence);
                     } else if (fm_action == TS_UI_FM_ACTION_BANK_MAKER) {
                         ui.fm_bank_choice_open = 1;
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
@@ -14997,8 +14952,7 @@ int main(int argc, char **argv)
                     } else if (ui.fm_page == TS_FM_PAGE_PITCH &&
                                fm_action == TS_UI_FM_ACTION_APPLY_PITCHES) {
                         int changed = ts_fm_apply_pitch_scale(&ui.fm_patch);
-                        (void)render_fm_workspace(device, &audio, &ui,
-                                                  &instrument, &fm_preview);
+                        request_fm_preview(&ui,&instrument);
                         if (changed > 0)
                             snprintf(ui.fm_message, sizeof(ui.fm_message),
                                      "APPLIED %s PITCHES TO %d ACTIVE VOICE%s",
@@ -15021,8 +14975,7 @@ int main(int argc, char **argv)
                     } else if (fm_action == TS_UI_FM_ACTION_DRONE) {
                         ui.fm_patch.drone_mode = !ui.fm_patch.drone_mode;
                         ts_fm_patch_sanitize(&ui.fm_patch);
-                        (void)render_fm_workspace(device, &audio, &ui,
-                                                  &instrument, &fm_preview);
+                        request_fm_preview(&ui,&instrument);
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  ui.fm_patch.drone_mode ?
                                  "DRONE ON - ENVELOPES BYPASSED, EDGES ZEROED" :
@@ -15030,8 +14983,7 @@ int main(int argc, char **argv)
                     } else if (fm_action == TS_UI_FM_ACTION_EXTREME) {
                         ui.fm_patch.extreme_mode = !ui.fm_patch.extreme_mode;
                         ts_fm_patch_sanitize(&ui.fm_patch);
-                        (void)render_fm_workspace(device, &audio, &ui,
-                                                  &instrument, &fm_preview);
+                        request_fm_preview(&ui,&instrument);
                         snprintf(ui.fm_message, sizeof(ui.fm_message),
                                  ui.fm_patch.extreme_mode ?
                                  "EXTREME ON - FULL SYNTH RANGE, LIMITER ACTIVE" :
@@ -16447,6 +16399,7 @@ int main(int argc, char **argv)
             snprintf(sister_window.model.status,
                      sizeof(sister_window.model.status), "ROLLING MEMORY CLEARED");
         }
+        poll_fm_preview(device,&audio,&ui,&fm_preview);
         poll_transform_worker(device, &audio, &ui, &instrument, &transform);
         mosaic_commit(device,&ui,&instrument,&mosaic);
         portal_poll(device,&audio,&ui,&instrument,&portal);
@@ -16705,6 +16658,7 @@ int main(int argc, char **argv)
     ts_sister_runtime_free(&audio.sister);
     ts_external_recorder_free(&external_input.recorder);
     ts_capture_free(&audio.capture);
+    discard_fm_preview_job(&ui);
     ts_sample_free(&fm_preview);
     ts_sample_free(&drone_preview);
     ts_sample_free(&pending_selection_load);

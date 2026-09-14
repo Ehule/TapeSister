@@ -345,7 +345,9 @@ temporary until **APPLY** is pressed.
 `grave` selects Mosaic; pressing it in Mosaic returns to the main canvas.
 `Shift+grave` selects FM; pressing it in FM returns to the main canvas (or active
 event editor). Switching between FM and Mosaic keeps the parked FM patch available
-for the next explicit `Shift+grave`. Visiting Sister with `Tab` preserves the
+for the next explicit `Shift+grave` on the same unchanged tile. Selecting a different
+tile or changing/deleting its source opens the newly selected sound; an empty
+destination starts a fresh FM patch. Visiting Sister with `Tab` preserves the
 current workspace and edited event. Sister fills the screen using a borderless
 window, avoiding SDL's forced minimization between two fullscreen windows.
 
@@ -376,6 +378,12 @@ Press **UNISON** again to restore the complete original patch. Edit that source
 and activate Unison again to build a new stack. **APPLY** stores both the active
 sound and original source, preserving the toggle after save/reopen. Switching
 off replaces edits made to the stack; the source is the next activation's basis.
+
+This remains reversible after editing voices 7–12 or restoring a quiet source.
+Sound edits update the full preview in the background; **UPDATING** appears while
+it catches up. Rapid edits coalesce, and only the newest result reaches the
+waveform and held notes. Quiet settings replace the previous preview with their
+actual output. Applying a tile still requires a usable signal.
 
 Unison enables Drone and Pitch Lock, protects Structure from randomization, and
 copies voice 1's waveform/LFO settings. Your global filter remains. For a saw

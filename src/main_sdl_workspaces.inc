@@ -14,7 +14,10 @@ static void workspace_open_fm(SDL_AudioDeviceID device,AudioState *audio,
     if(c->fm_parked && c->fm_epoch==ui->mosaic->epoch &&
        ui->fm_preview_sample==preview && preview->data &&
        (!c->active || c->active==c->fm_owner) &&
-       (!c->fm_owner || ts_mosaic_find(ui->mosaic,c->fm_owner))) {
+       (!c->fm_owner || ts_mosaic_find(ui->mosaic,c->fm_owner)) &&
+       (c->fm_owner || (ui->fm_source_slot==instrument->selected_slot &&
+        ui->fm_source_page==ui->sample_page &&
+        ui->fm_source_hash==ts_sample_hash(&instrument->current)))) {
         if(c->fm_owner && c->active!=c->fm_owner &&
            !mosaic_enter(device,audio,ui,instrument,c,c->fm_owner))return;
         ui->mosaic_open=0;ui->fm_open=1;c->fm_parked=0;

@@ -109,6 +109,27 @@ static void check_audio(unsigned rate)
     }
     ts_sample_free(&all);ts_sample_free(&again);ts_sample_free(&solo);ts_sample_free(&other);
 }
+static void check_quiet_preview(void)
+{
+    TsFmPatch p=source();assert(!ts_fm_toggle_unison(&p));
+    p.active_mask=0;p.transient_mix=0;p.drone_mode=1;
+    TsFmPatch original=p;TsSample preview={0};char error[160];
+    assert(!ts_fm_render_sample(&preview,&p,.2f,261.6256f,44100,345,error,sizeof(error)));
+    assert(ts_fm_render_preview(&preview,&p,.2f,261.6256f,44100,345,error,sizeof(error)));
+    assert(preview.data && ts_sample_peak(&preview)==0);
+    assert(ts_fm_toggle_unison(&p));
+    for(int i=6;i<12;++i)assert(ts_fm_step_control(&p,TS_FM_PAGE_PITCH,i,i&1?1:-1,0));
+    assert(ts_fm_render_preview(&preview,&p,.2f,261.6256f,44100,345,error,sizeof(error)));
+    assert(ts_fm_sample_is_usable(&preview));
+    assert(!ts_fm_toggle_unison(&p) && !memcmp(&p,&original,sizeof(p)));
+    assert(ts_fm_render_preview(&preview,&p,.2f,261.6256f,44100,345,error,sizeof(error)));
+    assert(ts_sample_peak(&preview)==0);
+    /* Applying/generating still rejects silence and leaves its target untouched. */
+    uint64_t hash=ts_sample_hash(&preview);
+    assert(!ts_fm_render_sample(&preview,&p,.2f,261.6256f,44100,345,error,sizeof(error)));
+    assert(ts_sample_hash(&preview)==hash);
+    ts_sample_free(&preview);
+}
 static void check_persistence(const char *legacy_path)
 {
     TsInstrument *a=calloc(1,sizeof(*a)),*b=calloc(1,sizeof(*b));char error[160];
@@ -143,7 +164,7 @@ static void check_persistence(const char *legacy_path)
 }
 int main(int argc,char **argv)
 {
-    check_controls();check_toggle();check_audio(44100);check_audio(48000);
+    check_controls();check_toggle();check_audio(44100);check_audio(48000);check_quiet_preview();
     check_persistence(argc>1?argv[1]:NULL);
     puts("Unison: twelve pitches and carriers, reversible toggling, editing, repeatability and saved patches passed");
     return 0;

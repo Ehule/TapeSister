@@ -1095,9 +1095,9 @@ int ts_fm_sample_is_usable(const TsSample *sample)
            energy / (double)scalar_count >= TS_FM_MIN_USABLE_MEAN_SQUARE;
 }
 
-int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
+static int render_sample(TsSample *sample, const TsFmPatch *patch,
                         float seconds, float frequency, uint32_t sample_rate,
-                        uint32_t seed, char *error, size_t error_size)
+                        uint32_t seed, int require_usable, char *error, size_t error_size)
 {
     TsFmPatch safe;
     float *data;
@@ -1268,7 +1268,7 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
         candidate.frames = frames;
         candidate.sample_rate = sample_rate;
         candidate.channels = 1u;
-        if (!ts_fm_sample_is_usable(&candidate)) {
+        if (require_usable && !ts_fm_sample_is_usable(&candidate)) {
             free(data);
             if (error != NULL && error_size > 0u)
                 snprintf(error, error_size,
@@ -1286,4 +1286,20 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
              ts_fm_interaction_name(safe.interaction), seed);
     if (error != NULL && error_size > 0u) error[0] = '\0';
     return 1;
+}
+
+int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
+                        float seconds, float frequency, uint32_t sample_rate,
+                        uint32_t seed, char *error, size_t error_size)
+{
+    return render_sample(sample,patch,seconds,frequency,sample_rate,seed,1,error,error_size);
+}
+
+/* Editing can intentionally produce silence. Only generated/applied tiles need
+   the usable-signal gate; a preview must always reflect the current controls. */
+int ts_fm_render_preview(TsSample *sample, const TsFmPatch *patch,
+                         float seconds, float frequency, uint32_t sample_rate,
+                         uint32_t seed, char *error, size_t error_size)
+{
+    return render_sample(sample,patch,seconds,frequency,sample_rate,seed,0,error,error_size);
 }

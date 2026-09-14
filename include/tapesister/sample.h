@@ -823,6 +823,10 @@ int ts_fm_render_sample(TsSample *sample, const TsFmPatch *patch,
                         float seconds, float frequency, uint32_t sample_rate,
                         uint32_t seed, char *error, size_t error_size);
 int ts_fm_sample_is_usable(const TsSample *sample);
+/* Live editing accepts quiet/silent output; tile generation keeps its signal gate. */
+int ts_fm_render_preview(TsSample *sample, const TsFmPatch *patch,
+                         float seconds, float frequency, uint32_t sample_rate,
+                         uint32_t seed, char *error, size_t error_size);
 void ts_fm_seed_sequence_init(TsFmSeedSequence *sequence,
                               uint64_t session_root);
 uint32_t ts_fm_seed_sequence_next(TsFmSeedSequence *sequence);

@@ -520,7 +520,10 @@ they draw a continuous line through the sample values.
 Open FM with **Shift+grave**, shape voice 1, then toggle **UNISON** on. Nine detuned
 voices and three lower voices sound together. **VOICES 1–6 / 7–12** switches controls;
 **Shift+wheel** adjusts pitch by one cent. Toggle off to restore the original source.
-APPLY saves the active sound and original source with the tile.
+APPLY saves the active sound and original source with the tile. Edits render in
+the background (**UPDATING**); quiet settings replace the old audio and waveform.
+Unison off restores even a silent original. A deleted or different source does
+not inherit the previous tile's parked FM patch.
 
 ### Mosaic volume lane
 
